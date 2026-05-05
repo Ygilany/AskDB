@@ -19,6 +19,7 @@ AskDB is a tool that allows you to ask questions about your data and get answers
 - we will need to be able to give the user the ability to mark certain fields as sensitive and not be included in the RAG process.
 - in a database where it may be supporting a multi-tenant environment, we will need to be able to support the ability to ask questions about specific tenants.
 - mult-tenanted databases would need to be able to support the ability for the query to be scoped to the tenant (non negotiable).
+- we might want to be implementing Headless + UI Kit or SDK + component library type of system. something similar to what Clerk or OpenRouter does
 
 ## Different Modes
 - AI only having access to the database schema and would provide a sql query to the database that would then be executed and the results would be passed into a report. (AI doesn't see the data)
