@@ -11,6 +11,14 @@ AskDB is a tool that allows you to ask questions about your data and get answers
 ## Thoughts
 - When plugged into a project, we'd need to provide the database schema in a format that can be indexed/RAG'd or searched for best results.
 - When plugged into a project, the developers would need to provide their own API Keys. (BYOAPI)
+- The schema would need to be provided in a format that can be indexed/RAG'd or searched for best results.
+- we will need to be able to accept different database description formats.
+- will need to be able to support different database types.
+- we will need to be able to support the addition of a RAG system
+- we will need to be able to prompt the user for more information about the database if anything is unclear.
+- we will need to be able to give the user the ability to mark certain fields as sensitive and not be included in the RAG process.
+- in a database where it may be supporting a multi-tenant environment, we will need to be able to support the ability to ask questions about specific tenants.
+- mult-tenanted databases would need to be able to support the ability for the query to be scoped to the tenant (non negotiable).
 
 ## Different Modes
 - AI only having access to the database schema and would provide a sql query to the database that would then be executed and the results would be passed into a report. (AI doesn't see the data)
