@@ -1,0 +1,26 @@
+{
+  "version": 1,
+  "tables": [
+    {
+      "name": "users",
+      "columns": [
+        { "name": "id", "type": "uuid", "nullable": false, "primaryKey": true },
+        { "name": "email", "type": "text", "nullable": false },
+        {
+          "name": "secret_recovery_token",
+          "type": "text",
+          "nullable": false,
+          "sensitive": true
+        }
+      ]
+    },
+    {
+      "name": "orders",
+      "columns": [
+        { "name": "id", "type": "uuid", "nullable": false, "primaryKey": true },
+        { "name": "user_id", "type": "uuid", "nullable": false },
+        { "name": "total_cents", "type": "integer", "nullable": false }
+      ]
+    }
+  ]
+}
