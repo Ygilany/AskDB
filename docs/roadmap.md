@@ -2,7 +2,9 @@
 
 High-level implementation order in **small phases**. Each phase should end with something demoable and ideally shippable. Scope expands only after the previous phase is stable.
 
-## Phase 1 — Schema in, SQL out (CLI), tabular results
+## Phase 1 ✅ — Schema in, SQL out (CLI), tabular results
+
+Phase 1 ships `@askdb/core` and the `askdb` CLI with AskDB schema JSON v1, BYO-provider NL→SQL plus dev guardrails, optional read-only Postgres execution, tabular results, fixtures/tests, Turborepo, and CI.
 
 **Goal:** Prove the core loop on a single stack.
 
