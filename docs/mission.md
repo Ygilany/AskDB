@@ -2,6 +2,11 @@
 
 AskDB turns natural language into **schema-grounded SQL and reports** so teams can ask questions about their own data without becoming SQL experts.
 
+## Target audience
+
+- **Primary — builders and integrators** — Software engineers and platform teams who **embed or wire up** AskDB (CLI, MCP, HTTP API, future SDK, embeddable UI). They own schema supply, API keys, execution boundaries, and how “modes” and tenant rules are enforced in their stack.
+- **Secondary — askers inside the product** — Analysts, product managers, operators, and similar roles who **use** natural-language query and reporting **through an app or dashboard** that already integrated AskDB. They benefit from plain-language questions and structured outputs without living in SQL; governance and data access remain defined by the integrating team.
+
 ## North star
 
 We optimize for two things at once:
