@@ -15,6 +15,8 @@ This document fixes **trust boundaries** for headless pipelines (CLI today; MCP/
 
 **Default:** `schema_only`.
 
+**Sensitive metadata:** NL→SQL DDL **includes** sensitive identifiers by default (tagged `(sensitive)`); optional omission is configurable. **Stripping sensitive columns before any summary LLM** and related rules are in [**`sensitive-fields-and-modes.md`**](./sensitive-fields-and-modes.md).
+
 ---
 
 ## Out of scope for v1 (reserved names / roadmap)
@@ -45,3 +47,4 @@ Structured logs emit **`askdb.pipeline.mode`** at pipeline start and **`askdb.pi
 
 - [`docs/mission.md`](../mission.md) — trust-first analytics, explicit bounded data  
 - [`docs/specs/phase-2-hardening-modes/requirements.md`](../specs/phase-2-hardening-modes/requirements.md) — Phase 2 scope  
+- [`docs/contracts/sensitive-fields-and-modes.md`](./sensitive-fields-and-modes.md) — sensitive DDL defaults, optional omission, bounded summaries  

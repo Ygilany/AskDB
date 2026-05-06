@@ -40,14 +40,15 @@ Numbered groups are **ordered** so each milestone is **demoable**: something you
 ## 4 — Sensitive-field metadata plumbing
 
 - Extend normalized schema/metadata model with **sensitive** markers on tables/columns (exact representation TBD in implementation; align with roadmap “early plumbing”).
-- Strip or redact marked fields from **prompt assembly** used for NL→SQL in Phase 2; log at debug that redaction occurred (without leaking values).
-- **Fixtures**: at least one schema including sensitive columns proving they never appear in constructed prompt snapshots in tests.
-- **Demo:** Run test or CLI against fixture schema showing non-sensitive columns present in debug prompt trace and sensitive ones absent.
+- **Default:** include sensitive **identifiers** in NL→SQL DDL (tagged `(sensitive)`) for grounding; optional **omit** mode for stricter deployments; log at debug with **counts only** (no values).
+- **Fixtures**: at least one schema including sensitive columns; tests cover **default include** and **omit** paths.
+- **Demo:** Fixture-driven tests showing sensitive columns listed with tags by default; omission mode withholds names when explicitly enabled.
 
 ## 5 — Documentation and continuity
 
 - Update **`README.md`** (and/or `docs/roadmap.md` cross-links): modes, logging flags, correlation IDs, sensitive-field schema notes.
 - Cross-link [**`requirements.md`**](./requirements.md) and [**`validation.md`**](./validation.md).
+- Keep [**`docs/contracts/sensitive-fields-and-modes.md`**](../../contracts/sensitive-fields-and-modes.md) updated as the canonical place for **sensitive metadata vs. NL questions**, optional **names + warning** designs, and **`bounded_results`** row→model stripping rules.
 - Confirm Phase 3 readiness: observability fields and mode types are **stable enough** for an MCP or HTTP wrapper to call the same core entrypoints without duplicating policy.
 
 **Implementation locus:** `packages/core`, `packages/cli`, existing `fixtures/` trees, tests; no new Phase 3 transport packages required for Phase 2 merge.

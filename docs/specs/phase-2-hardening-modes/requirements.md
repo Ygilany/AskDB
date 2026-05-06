@@ -62,6 +62,10 @@ Implementation detail (non-normative): Pino’s recommended approach for multipl
 - Minimum **explainability** surface (CLI text only vs. structured sidecar for future API).
 - How **sensitive fields** are represented in schema JSON v1 (additive optional fields vs. companion doc)—prefer **additive** where possible.
 
+## Sensitive fields — behavior beyond Phase 2 plumbing
+
+Phase 2 **lists** sensitive column/table names in NL→SQL DDL by default (tagged), with optional **omission** for stricter deployments; debug logs use **counts only**. **`bounded_results`** rules for **stripping sensitive columns before row data hits an LLM** and future **post-SQL warnings** are documented in [**`docs/contracts/sensitive-fields-and-modes.md`**](../../contracts/sensitive-fields-and-modes.md).
+
 ## Success (product)
 
 After Phase 2:
@@ -69,10 +73,11 @@ After Phase 2:
 1. An integrator can run the CLI (and later analogous headless callers) with **consistent structured logs**, **configurable log destinations**, and a **correlation ID** tying one user question through generation, validation, and optional execution.
 2. **Modes** are **documented and enforced** so it is obvious whether result rows may enter model context and under what bounds.
 3. **Ambiguous** schema or questions yield **clearer** validation and prompts instead of opaque failures—without claiming domain correctness without human review ([`docs/mission.md`](../../mission.md)).
-4. **Sensitive** columns/tables marked in metadata are **excluded** from prompt construction paths that Phase 2 controls, with tests proving the omission.
+4. **Sensitive** columns/tables marked in metadata are **represented safely** in NL→SQL prompt construction (default: identifiers listed with `(sensitive)` tags; optional omission mode for stricter deployments), with tests proving both behaviors.
 
 ## References
 
 - [`docs/mission.md`](../../mission.md) — modes, trust, BYO keys, same core/many surfaces  
 - [`docs/platform.md`](../../platform.md) — monorepo, Postgres-first, headless vs web UI  
 - [`docs/roadmap.md`](../../roadmap.md) — Phase 2 definition and ordering  
+- [`docs/contracts/sensitive-fields-and-modes.md`](../../contracts/sensitive-fields-and-modes.md) — sensitive metadata vs. models and bounded results  

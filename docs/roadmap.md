@@ -22,7 +22,7 @@ Phase 1 ships `@askdb/core` and the `askdb` CLI with AskDB schema JSON v1, BYO-p
 - Introduce **structured logging** and **trace / correlation IDs** across headless surfaces (CLI first; reused by MCP/HTTP later) so integrators can debug and correlate runs—details land with Phase 2/3 wiring, scoped so Phase 1 stays minimal.
 - Document and implement the **operating modes** (e.g., schema-only execution vs. optional second pass with bounded result data for summaries).
 - Improve SQL validation, explainability, and user prompts when the schema or intent is ambiguous.
-- Introduce **sensitive field** exclusions in metadata handling as early plumbing for RAG/prompt safety.
+- Introduce **sensitive field** handling in metadata (tagged identifiers in NL→SQL DDL by default; optional omission). Longer-term behavior (**bounded_results** summarization with **sensitive columns stripped before any LLM**, post-SQL warnings) lives in [**`docs/contracts/sensitive-fields-and-modes.md`**](contracts/sensitive-fields-and-modes.md).
 
 ## Phase 3 — Second surface (MCP or minimal API)
 
