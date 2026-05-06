@@ -3,6 +3,7 @@ import { generateText as defaultGenerateText } from "ai";
 import { SqlGenerationError } from "../errors.js";
 import type { AskDbLogger } from "../logging/askdb-logger.js";
 import { AskDbLogEvent } from "../logging/log-events.js";
+import type { FormatNlToSqlOptions } from "../schema/normalize.js";
 import type { NormalizedSchema } from "../schema/types.js";
 import { extractSqlFromModelText } from "./extract-sql.js";
 import { buildNlToSqlUserPrompt, nlToSqlSystemPrompt } from "./prompt.js";
@@ -17,6 +18,11 @@ export type GenerateSqlDeps = {
   logger?: AskDbLogger;
   /** When true, include heuristic guardrail explanation in {@link GeneratePostgresSelectSqlResult.explain}. */
   explain?: boolean;
+  /**
+   * When true, omit sensitive identifiers from NL→SQL DDL (stricter). Default false — names are listed
+   * with `(sensitive)` so the model can ground queries (see `docs/contracts/sensitive-fields-and-modes.md`).
+   */
+  omitSensitiveIdentifiersFromNlToSqlPrompt?: boolean;
 };
 
 /** Result of NL→SQL generation (always includes `sql`; `explain` when {@link GenerateSqlDeps.explain}). */
@@ -35,6 +41,10 @@ export async function generatePostgresSelectSql(
   const ambiguityNotes = nlToSqlAmbiguityNotes(question, schema);
   const generateText = deps.generateText ?? defaultGenerateText;
   const logger = deps.logger;
+  const nlToSqlSchemaOptions: FormatNlToSqlOptions | undefined =
+    deps.omitSensitiveIdentifiersFromNlToSqlPrompt === true
+      ? { omitSensitiveIdentifiersFromPrompt: true }
+      : undefined;
 
   logger?.info(
     {
@@ -51,7 +61,7 @@ export async function generatePostgresSelectSql(
       const result = await generateText({
         model,
         system: nlToSqlSystemPrompt,
-        prompt: buildNlToSqlUserPrompt(question, schema, ambiguityNotes),
+        prompt: buildNlToSqlUserPrompt(question, schema, ambiguityNotes, logger, nlToSqlSchemaOptions),
         temperature: 0,
       });
       text = result.text;

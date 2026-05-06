@@ -1,6 +1,11 @@
 import type { LanguageModel } from "ai";
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { describe, expect, it, vi } from "vitest";
+import { AskDbLogEvent } from "../logging/log-events.js";
 import type { NormalizedSchema } from "../schema/types.js";
+import { loadNormalizedSchemaFromJson } from "../schema/parse.js";
 import { AskDbError, SqlValidationError } from "../errors.js";
 import { generatePostgresSelectSql } from "./generate.js";
 
@@ -9,6 +14,9 @@ const minimalSchema: NormalizedSchema = {
 };
 
 const fakeModel = {} as LanguageModel;
+
+const here = dirname(fileURLToPath(import.meta.url));
+const sensitiveFixture = join(here, "../../../../fixtures/schemas/orders-users-sensitive.schema.json");
 
 describe("generatePostgresSelectSql", () => {
   it("parses fenced SQL and validates SELECT", async () => {
@@ -66,6 +74,52 @@ describe("generatePostgresSelectSql", () => {
     const prompt = (generateText.mock.calls[0]![0] as { prompt: string }).prompt;
     expect(prompt).toContain('table "phantom"');
     expect(prompt).toContain("users");
+  });
+
+  it("lists sensitive column names in the model prompt by default (fixture)", async () => {
+    const schema = loadNormalizedSchemaFromJson(readFileSync(sensitiveFixture, "utf8"));
+    const generateText = vi.fn(async () => ({
+      text: "```sql\nSELECT id FROM users\n```",
+    }));
+    const debug = vi.fn();
+    await generatePostgresSelectSql("list users", schema, fakeModel, {
+      generateText,
+      logger: { info: vi.fn(), error: vi.fn(), debug },
+    });
+    const prompt = (generateText.mock.calls[0]![0] as { prompt: string }).prompt;
+    expect(prompt).toMatch(/secret_recovery_token/i);
+    expect(prompt).toContain("(sensitive)");
+    expect(prompt).toContain("email");
+    expect(debug).toHaveBeenCalledWith(
+      expect.objectContaining({
+        event: AskDbLogEvent.PromptSensitiveIdentifiersListed,
+        listedSensitiveColumnCount: 1,
+      }),
+      expect.any(String),
+    );
+  });
+
+  it("omits sensitive identifiers from the prompt when deps omit flag is set", async () => {
+    const schema = loadNormalizedSchemaFromJson(readFileSync(sensitiveFixture, "utf8"));
+    const generateText = vi.fn(async () => ({
+      text: "```sql\nSELECT id FROM users\n```",
+    }));
+    const debug = vi.fn();
+    await generatePostgresSelectSql("list users", schema, fakeModel, {
+      generateText,
+      omitSensitiveIdentifiersFromNlToSqlPrompt: true,
+      logger: { info: vi.fn(), error: vi.fn(), debug },
+    });
+    const prompt = (generateText.mock.calls[0]![0] as { prompt: string }).prompt;
+    expect(prompt).not.toMatch(/secret_recovery_token/i);
+    expect(debug).toHaveBeenCalledWith(
+      expect.objectContaining({
+        event: AskDbLogEvent.PromptSensitiveRedacted,
+        redactedColumnCount: 1,
+        sensitiveTableStubCount: 0,
+      }),
+      expect.any(String),
+    );
   });
 
   it("returns explain metadata when deps.explain is true", async () => {
