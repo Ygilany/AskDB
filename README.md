@@ -9,6 +9,7 @@ Product direction and technical baseline live in **`docs/`**:
 - [`docs/mission.md`](docs/mission.md) — north star, principles, non-goals  
 - [`docs/platform.md`](docs/platform.md) — languages, monorepo shape, Postgres-first  
 - [`docs/roadmap.md`](docs/roadmap.md) — phased implementation order  
+- [`docs/contracts/sensitive-fields-and-modes.md`](docs/contracts/sensitive-fields-and-modes.md) — sensitive schema markers vs. models, bounded summaries (intent / contract)  
 - [`docs/specs/phase-1-schema-sql-cli/requirements.md`](docs/specs/phase-1-schema-sql-cli/requirements.md) — Phase 1 scope (implemented in this repo)  
 
 ## Development (Phase 1)
@@ -43,7 +44,7 @@ Then point AskDB at it:
 export DATABASE_URL="postgres://postgres:postgres@127.0.0.1:5433/pagila"
 ```
 
-**Phase 1 schema format** is **AskDB schema JSON v1** — see [`fixtures/schemas/README.md`](fixtures/schemas/README.md) and the sample [`fixtures/schemas/orders-users.schema.json`](fixtures/schemas/orders-users.schema.json).
+**Phase 1 schema format** is **AskDB schema JSON v1** — see [`fixtures/schemas/README.md`](fixtures/schemas/README.md) and the sample [`fixtures/schemas/orders-users.schema.json`](fixtures/schemas/orders-users.schema.json). Optional **`sensitive`** markers (Phase 2) tag columns/tables in NL→SQL DDL by default (`(sensitive)`); use **`--omit-sensitive-from-prompt`** or **`ASKDB_OMIT_SENSITIVE_FROM_PROMPT`** to withhold names instead. Policy for modes and summaries is in [`docs/contracts/sensitive-fields-and-modes.md`](docs/contracts/sensitive-fields-and-modes.md).
 
 **Environment variables**
 
@@ -58,6 +59,7 @@ See [`.env.example`](.env.example) for a copy/paste template. Keep real secrets 
 | `ASKDB_LOG_LEVEL` | Optional structured log level: `trace` \| `debug` \| `info` \| `warn` \| `error` \| `fatal` \| `silent` (default: `silent` unless `--verbose`, `--log-file`, or `--log-stdout` implies `info`). |
 | `ASKDB_CORRELATION_ID` | Optional; override the correlation id emitted on every JSON log line for the run. |
 | `ASKDB_MODE` | Optional operating mode (`schema_only` \| `bounded_results`); default `schema_only`. Formal contract: [`docs/contracts/modes-v1.md`](docs/contracts/modes-v1.md). |
+| `ASKDB_OMIT_SENSITIVE_FROM_PROMPT` | When `true`/`1`/`yes`, omit sensitive column/table names from NL→SQL DDL (default is to **include** names, tagged `(sensitive)`). See [`docs/contracts/sensitive-fields-and-modes.md`](docs/contracts/sensitive-fields-and-modes.md). |
 
 **Structured logging (Phase 2)** — JSON lines via [Pino](https://github.com/pinojs/pino); diagnostics go to **stderr** by default so **stdout** stays free for SQL/results. Flags:
 
@@ -69,6 +71,7 @@ See [`.env.example`](.env.example) for a copy/paste template. Keep real secrets 
 | `--log-stdout` | Mirror structured logs to stdout. Implies `info` if level was `silent`. |
 | `--correlation-id <id>` | Override correlation id (else random UUID per run). |
 | `--explain` | After `-- sql --`, print `-- explain --` plus JSON describing heuristic guardrails satisfied (`statementKind`, `checksVerified`, `remediationNote`). |
+| `--omit-sensitive-from-prompt` | Omit sensitive identifiers from NL→SQL DDL (default: include names with `(sensitive)` tag). Overrides default when combined with `ASKDB_OMIT_SENSITIVE_FROM_PROMPT`. |
 | `--mode <id>` | Operating mode: `schema_only` (default) or `bounded_results`. With `--execute` and logging, post-execute branches differ (see contract doc). |
 
 **Modes + structured logs (Phase 2)** — same `ask` subcommand; pass `--mode` or set `ASKDB_MODE`. Use `-v` / `--log-file` so JSON events (including `askdb.pipeline.mode` and, after `--execute`, `askdb.pipeline.post_execute`) appear on **stderr** or in a file — see [`docs/contracts/modes-v1.md`](docs/contracts/modes-v1.md).
