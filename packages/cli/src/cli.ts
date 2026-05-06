@@ -7,8 +7,11 @@ import {
   AskDbError,
   AskDbLogEvent,
   type AskDbLogLevel,
+  type AskDbModeV1,
+  formatAskDbModesV1,
   formatSupportedAskDbLogLevels,
   isSupportedAskDbLogLevel,
+  parseAskDbModeV1,
   type TabularResult,
   ask,
   createAskDbLogger,
@@ -92,6 +95,10 @@ program
   .option("--log-file <path>", "Append structured JSON logs to this file")
   .option("--log-stdout", "Mirror structured JSON logs to stdout", false)
   .option("--correlation-id <id>", "Correlation ID for logs (overrides ASKDB_CORRELATION_ID)")
+  .option(
+    "--mode <id>",
+    `Operating mode (${formatAskDbModesV1()}); default schema_only. Override with ASKDB_MODE`,
+  )
   .action(
     async (opts: {
       schema: string;
@@ -103,10 +110,13 @@ program
       logFile?: string;
       logStdout?: boolean;
       correlationId?: string;
+      mode?: string;
     }) => {
       let logLevel: AskDbLogLevel;
+      let mode: AskDbModeV1;
       try {
         logLevel = resolveAskDbLogLevel(opts);
+        mode = parseAskDbModeV1(opts.mode ?? process.env.ASKDB_MODE);
       } catch (e) {
         printCliError(e);
         process.exitCode = 1;
@@ -138,6 +148,7 @@ program
         {
           event: AskDbLogEvent.RunStart,
           execute: Boolean(opts.execute),
+          mode,
         },
         "askdb run start",
       );
@@ -160,6 +171,7 @@ program
           execute: Boolean(opts.execute),
           connectionString: process.env.DATABASE_URL,
           logger,
+          mode,
         });
 
         console.log("-- sql --");
