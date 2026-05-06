@@ -5,6 +5,7 @@ AskDB turns natural language into **schema-grounded SQL and reports** so teams c
 ## Target audience
 
 - **Primary — builders and integrators** — Software engineers and platform teams who **embed or wire up** AskDB (CLI, MCP, HTTP API, future SDK, embeddable UI). They own schema supply, API keys, execution boundaries, and how “modes” and tenant rules are enforced in their stack.
+- **Agents** — Autonomous or LLM-driven agents (coding assistants, workflow bots, internal tools) that invoke AskDB through **headless, machine-friendly surfaces**—especially **MCP** and **CLI** with stable inputs/outputs—so they can generate or validate SQL, run approved queries, and assemble reports under the same contracts as human integrators. **Accountability and policy** (what may execute, on which data, with which keys) remain with the team that deployed the agent.
 - **Secondary — askers inside the product** — Analysts, product managers, operators, and similar roles who **use** natural-language query and reporting **through an app or dashboard** that already integrated AskDB. They benefit from plain-language questions and structured outputs without living in SQL; governance and data access remain defined by the integrating team.
 
 ## North star
