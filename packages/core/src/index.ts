@@ -2,6 +2,18 @@ export * from "./errors.js";
 export type { TabularResult } from "./exec/postgres.js";
 export { executeReadOnlySelect } from "./exec/postgres.js";
 export { ask, type AskPipelineOptions, type AskPipelineResult } from "./ask.js";
+export { AskDbLogEvent } from "./logging/log-events.js";
+export type { AskDbLogger } from "./logging/askdb-logger.js";
+export {
+  createAskDbLogger,
+  type AskDbLogLevel,
+  type CreateAskDbLoggerOptions,
+} from "./logging/create-askdb-logger.js";
+export {
+  formatSupportedAskDbLogLevels,
+  isSupportedAskDbLogLevel,
+  SUPPORTED_ASKDB_LOG_LEVELS,
+} from "./logging/pino-supported-levels.js";
 export { loadNormalizedSchemaFromJson, parseAskDbSchemaJson } from "./schema/parse.js";
 export type { AskDbSchemaFile, NormalizedSchema } from "./schema/types.js";
 export { formatSchemaForPrompt, normalizeAskDbSchema } from "./schema/normalize.js";
