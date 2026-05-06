@@ -1,34 +1,38 @@
 # AskDB
 
-AskDB is a tool that allows you to ask questions about your data and get answers.
+AskDB turns natural language into **schema-grounded SQL and reports** so you can ask questions about your data without writing SQL by hand.
 
-## Features
+## Constitution
 
-- Ask questions about your data
-- Get answers from your data
-- Get answers from your data
+Product direction and technical baseline live in **`docs/`**:
 
-## Thoughts
-- When plugged into a project, we'd need to provide the database schema in a format that can be indexed/RAG'd or searched for best results.
-- When plugged into a project, the developers would need to provide their own API Keys. (BYOAPI)
-- The schema would need to be provided in a format that can be indexed/RAG'd or searched for best results.
-- we will need to be able to accept different database description formats.
-- will need to be able to support different database types.
-- we will need to be able to support the addition of a RAG system
-- we will need to be able to prompt the user for more information about the database if anything is unclear.
-- we will need to be able to give the user the ability to mark certain fields as sensitive and not be included in the RAG process.
-- in a database where it may be supporting a multi-tenant environment, we will need to be able to support the ability to ask questions about specific tenants.
-- mult-tenanted databases would need to be able to support the ability for the query to be scoped to the tenant (non negotiable).
-- we might want to be implementing Headless + UI Kit or SDK + component library type of system. something similar to what Clerk or OpenRouter does
+- [`docs/mission.md`](docs/mission.md) — north star, principles, non-goals  
+- [`docs/platform.md`](docs/platform.md) — languages, monorepo shape, Postgres-first  
+- [`docs/roadmap.md`](docs/roadmap.md) — phased implementation order  
 
-## Different Modes
-- AI only having access to the database schema and would provide a sql query to the database that would then be executed and the results would be passed into a report. (AI doesn't see the data)
-- AI only having access to the database schema and would provide provide a sql query to the database as well as a report structure format that would be used alongside the query results to generate a report. (AI doesn't see the data)
-- AI having access to the database schema and the query results could be feed into the AI again to provide a summary of the results alongside the report. (AI Sees a subset of the data; users has semi-control over the data that is passed into the AI)
-- AI having access to the database and is able to generate the report itself in different AI-enabled formats.
+## What it does
 
-## Different usage ways
-- CLI tool to ask questions about a database and get query
-- MCP to ask questions about a database and get query
-- Web interface to ask questions about a database and get query and results.
-- the Web interface is embeddable into other projects as a component.
+- **Natural language → SQL** grounded in your database schema (with validation and guardrails).
+- **Execute** queries and return results; **reports** build on top of that pipeline.
+- **Multiple surfaces** — same core idea across CLI, MCP, and web; web aims to be **embeddable** with a future SDK / component-style integration.
+
+## Product notes
+
+- **BYO API keys** — developers bring their own model credentials.
+- **Schema as input** — describe your schema in a supported format; later support multiple formats and retrieval (e.g. RAG) over schema/metadata.
+- **Clarification** — prompt or surface follow-ups when intent or schema context is unclear.
+- **Sensitive fields** — allow marking fields so they stay out of retrieval and LLM context where applicable.
+- **Multi-tenant** — questions can target a tenant; **query scope must respect tenant boundaries** when the deployment requires it.
+
+## Modes (trust boundaries)
+
+How much of the **data** (not just schema) the model sees depends on the chosen mode:
+
+1. **Schema only** — model proposes SQL; results feed reporting **without** row data going back to the model.
+2. **Schema + report shape** — same as (1), plus a structured report template alongside executed results.
+3. **Schema + bounded results** — a subset of query results may go to the model for summaries; user retains control over what is shared.
+4. **Full AI-assisted reporting** — richer AI-driven report generation where product rules allow.
+
+## Status
+
+Early-stage; see **`docs/roadmap.md`** for the current planned phases.
