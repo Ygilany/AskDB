@@ -33,9 +33,16 @@ High-level implementation order in **small phases**. Each phase should end with 
 
 **Goal:** First-party app + developer embed story from `mission.md`.
 
+Phase 1 delivered **AskDB schema JSON v1**: a minimal **pure** artifact (physical tables/columns/types/keys) sufficient for the MVP NL→SQL loop. Phase 4 extends that artifact into a **describable schema** that carries the semantic layer the MVP JSON intentionally omitted.
+
 - Next.js app for **web** use cases.
 - **No-DB-required path** — Import schema artifacts; work with **describable schema** without mandating a live database connection to AskDB.
-- **Enrichment UX** — Turn **pure** imported schema into a **describable schema**: AI surfaces gaps or ambiguities; users interact with the UI (tables, fields) to add **business context**; persist that catalog for **future** NL→SQL and reporting.
+- **Enrichment UX** — Turn **pure** imported schema (Phase 1-style JSON) into a **describable schema**: AI surfaces gaps or ambiguities; users interact with the UI (tables, fields) to add **business context**; persist that catalog for **future** NL→SQL and reporting.
+- **Semantic fields in the schema artifact** — Evolve the same JSON model (additive fields and/or explicit version bump) so the persisted catalog supports, at minimum:
+  - **Table and column descriptions** — Human-readable summaries and richer **business context** (what this entity measures, how it is used).
+  - **Aliases / synonyms** — Alternate names NL questions might use (e.g. *clients*, *customers* mapping to the same table or concept) so grounding stays accurate without renaming physical objects.
+  - **Optional concept dictionary** — Shared domain terms linked to tables/columns where a single concept should resolve across many names.
+- **Generation and embed** — Headless and UI paths read the **merged** physical + semantic metadata when building prompts and validation; the CLI’s pure-schema phase remains the floor, with the web catalog as the place **enrichment** is authored and stored.
 - Begin **SDK + embeddable components** for consumers who want AskDB inside their apps (BYO keys; DB optional per workflow).
 - **Example application** — Add a **small in-repo example consumer app** to validate the embeddable UI/SDK in realistic integration scenarios (internal dev/QA; not a separate product).
 
@@ -61,7 +68,7 @@ Early phases intentionally stay **Postgres-only** so execution and guardrails st
 
 **Goal:** Better retrieval over large schemas and richer grounding.
 
-- Add **RAG** (or equivalent retrieval) for schema and documentation when scale demands it; keep sensitive-field rules enforced.
+- Add **RAG** (or equivalent retrieval) for schema and documentation when scale demands it; index and retrieve primarily over the **describable schema** (Phase 4: descriptions, aliases, concepts) layered on physical metadata; keep sensitive-field rules enforced.
 
 ## Phase 8 — Reports beyond tables
 
