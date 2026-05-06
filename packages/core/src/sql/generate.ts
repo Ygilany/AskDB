@@ -6,11 +6,23 @@ import { AskDbLogEvent } from "../logging/log-events.js";
 import type { NormalizedSchema } from "../schema/types.js";
 import { extractSqlFromModelText } from "./extract-sql.js";
 import { buildNlToSqlUserPrompt, nlToSqlSystemPrompt } from "./prompt.js";
-import { validatePostgresSelectSql } from "./validate.js";
+import { assertNlToSqlInputs, nlToSqlAmbiguityNotes } from "./schema-question-precheck.js";
+import type { PostgresSelectGuardrailExplain } from "./validate.js";
+import { buildPostgresSelectGuardrailExplanation, validatePostgresSelectSql } from "./validate.js";
+
+export type { PostgresSelectGuardrailExplain } from "./validate.js";
 
 export type GenerateSqlDeps = {
   generateText?: typeof defaultGenerateText;
   logger?: AskDbLogger;
+  /** When true, include heuristic guardrail explanation in {@link GeneratePostgresSelectSqlResult.explain}. */
+  explain?: boolean;
+};
+
+/** Result of NL→SQL generation (always includes `sql`; `explain` when {@link GenerateSqlDeps.explain}). */
+export type GeneratePostgresSelectSqlResult = {
+  sql: string;
+  explain?: PostgresSelectGuardrailExplain;
 };
 
 export async function generatePostgresSelectSql(
@@ -18,7 +30,9 @@ export async function generatePostgresSelectSql(
   schema: NormalizedSchema,
   model: LanguageModel,
   deps: GenerateSqlDeps = {},
-): Promise<string> {
+): Promise<GeneratePostgresSelectSqlResult> {
+  assertNlToSqlInputs(schema, question);
+  const ambiguityNotes = nlToSqlAmbiguityNotes(question, schema);
   const generateText = deps.generateText ?? defaultGenerateText;
   const logger = deps.logger;
 
@@ -37,7 +51,7 @@ export async function generatePostgresSelectSql(
       const result = await generateText({
         model,
         system: nlToSqlSystemPrompt,
-        prompt: buildNlToSqlUserPrompt(question, schema),
+        prompt: buildNlToSqlUserPrompt(question, schema, ambiguityNotes),
         temperature: 0,
       });
       text = result.text;
@@ -47,6 +61,7 @@ export async function generatePostgresSelectSql(
     }
     const extracted = extractSqlFromModelText(text);
     const sql = validatePostgresSelectSql(extracted);
+    const explain = deps.explain ? buildPostgresSelectGuardrailExplanation(sql) : undefined;
     logger?.info(
       {
         event: AskDbLogEvent.PipelineGenerateComplete,
@@ -54,7 +69,7 @@ export async function generatePostgresSelectSql(
       },
       "nl-to-sql generate complete",
     );
-    return sql;
+    return explain !== undefined ? { sql, explain } : { sql };
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
     logger?.error(

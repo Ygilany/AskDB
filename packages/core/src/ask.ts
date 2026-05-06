@@ -6,13 +6,15 @@ import { AskDbLogEvent } from "./logging/log-events.js";
 import type { NormalizedSchema } from "./schema/types.js";
 import { logPostExecuteModeBranch } from "./modes/post-execute-log.js";
 import { DEFAULT_ASKDB_MODE, type AskDbModeV1 } from "./modes/types.js";
-import type { GenerateSqlDeps } from "./sql/generate.js";
+import type { GenerateSqlDeps, PostgresSelectGuardrailExplain } from "./sql/generate.js";
 import { generatePostgresSelectSql } from "./sql/generate.js";
 
 export type AskPipelineOptions = {
   question: string;
   schema: NormalizedSchema;
   model: LanguageModel;
+  /** When true, callers may inspect heuristic guardrail metadata (hosts/CLI). */
+  explain?: boolean;
   /** When set with `execute: true`, runs the generated SELECT in a read-only transaction. */
   connectionString?: string;
   /** Default false — only generate + validate unless explicitly requested. */
@@ -30,6 +32,7 @@ export type AskPipelineOptions = {
 export type AskPipelineResult = {
   sql: string;
   result?: TabularResult;
+  explain?: PostgresSelectGuardrailExplain;
 };
 
 export async function ask(options: AskPipelineOptions): Promise<AskPipelineResult> {
@@ -37,12 +40,16 @@ export async function ask(options: AskPipelineOptions): Promise<AskPipelineResul
   const mode = options.mode ?? DEFAULT_ASKDB_MODE;
   logger?.info({ event: AskDbLogEvent.PipelineMode, mode }, "pipeline mode");
 
-  const sql = await generatePostgresSelectSql(options.question, options.schema, options.model, {
+  const explainRequested = options.explain ?? options.deps?.explain ?? false;
+  const generated = await generatePostgresSelectSql(options.question, options.schema, options.model, {
     ...options.deps,
     logger,
+    explain: explainRequested,
   });
+  const sql = generated.sql;
+  const explain = generated.explain;
   if (!options.execute) {
-    return { sql };
+    return explain !== undefined ? { sql, explain } : { sql };
   }
   const url = options.connectionString;
   if (!url) {
@@ -59,7 +66,7 @@ export async function ask(options: AskPipelineOptions): Promise<AskPipelineResul
       "execute complete",
     );
     logPostExecuteModeBranch(logger, mode, result.rows.length);
-    return { sql, result };
+    return explain !== undefined ? { sql, result, explain } : { sql, result };
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
     logger?.error(
