@@ -9,10 +9,14 @@ Product direction and technical baseline live in **`docs/`**:
 - [`docs/mission.md`](docs/mission.md) — north star, principles, non-goals  
 - [`docs/platform.md`](docs/platform.md) — languages, monorepo shape, Postgres-first  
 - [`docs/roadmap.md`](docs/roadmap.md) — phased implementation order  
-- [`docs/contracts/sensitive-fields-and-modes.md`](docs/contracts/sensitive-fields-and-modes.md) — sensitive schema markers vs. models, bounded summaries (intent / contract)  
+- [`docs/specs/phase-2-hardening-modes/README.md`](docs/specs/phase-2-hardening-modes/README.md) — **Phase 2** spec hub (links plan, requirements, validation merge bar)  
+- [`docs/contracts/modes-v1.md`](docs/contracts/modes-v1.md) — operating modes (`schema_only`, `bounded_results`)  
+- [`docs/contracts/sensitive-fields-and-modes.md`](docs/contracts/sensitive-fields-and-modes.md) — sensitive schema markers vs. models, bounded summaries  
+- [`docs/integration/reuse-core-phase-3.md`](docs/integration/reuse-core-phase-3.md) — stable `@askdb/core` entrypoints for wrappers (MCP/HTTP)  
 - [`docs/specs/phase-1-schema-sql-cli/requirements.md`](docs/specs/phase-1-schema-sql-cli/requirements.md) — Phase 1 scope (implemented in this repo)  
+- Structured logging rationale: [`docs/adrs/0001-structured-logging-pino.md`](docs/adrs/0001-structured-logging-pino.md)  
 
-## Development (Phase 1)
+## Development
 
 **Stack:** pnpm workspace + **Turborepo**, TypeScript, [`packages/core`](packages/core) (library) and [`packages/cli`](packages/cli) (binary `askdb`).
 
@@ -119,7 +123,7 @@ pnpm exec askdb ask \
 
 Use `--json` with `--execute` for JSON rows instead of TSV.
 
-**Limitations (Phase 1 / dev):** single schema JSON format; Postgres execution only; SQL guardrails are heuristic (not a full SQL parser); no MCP/web yet. See [`docs/specs/phase-1-schema-sql-cli/validation.md`](docs/specs/phase-1-schema-sql-cli/validation.md) for merge criteria.
+**Limitations (Phase 1 / dev):** single schema JSON format; Postgres execution only; SQL guardrails are heuristic (not a full SQL parser); no MCP/web yet. Merge bars: **[Phase 1](docs/specs/phase-1-schema-sql-cli/validation.md)** · **[Phase 2](docs/specs/phase-2-hardening-modes/validation.md)**.
 
 **CI:** [`.github/workflows/ci.yml`](.github/workflows/ci.yml) runs `pnpm install --frozen-lockfile`, `pnpm build`, and `pnpm test` with a Postgres service so integration tests exercise a real database.
 
@@ -134,7 +138,7 @@ Use `--json` with `--execute` for JSON rows instead of TSV.
 - **BYO API keys** — developers bring their own model credentials.
 - **Schema as input** — describe your schema in a supported format; later support multiple formats and retrieval (e.g. RAG) over schema/metadata.
 - **Clarification** — prompt or surface follow-ups when intent or schema context is unclear.
-- **Sensitive fields** — allow marking fields so they stay out of retrieval and LLM context where applicable.
+- **Sensitive fields** — schema JSON can mark tables/columns; NL→SQL prompts **list** identifiers by default (tagged) with an optional **omit** mode ([`docs/contracts/sensitive-fields-and-modes.md`](docs/contracts/sensitive-fields-and-modes.md)); row payloads and RAG paths remain policy-controlled by mode/host.
 - **Multi-tenant** — questions can target a tenant; **query scope must respect tenant boundaries** when the deployment requires it.
 
 ## Modes (trust boundaries)
