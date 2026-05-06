@@ -112,6 +112,11 @@ program
     "--mode <id>",
     `Operating mode (${formatAskDbModesV1()}); default schema_only. Override with ASKDB_MODE`,
   )
+  .option(
+    "--omit-sensitive-from-prompt",
+    "Omit sensitive column/table names from NL→SQL DDL (default: include names, tagged as sensitive)",
+    false,
+  )
   .action(
     async (opts: {
       schema: string;
@@ -125,6 +130,7 @@ program
       logStdout?: boolean;
       correlationId?: string;
       mode?: string;
+      omitSensitiveFromPrompt?: boolean;
     }) => {
       let logLevel: AskDbLogLevel;
       let mode: AskDbModeV1;
@@ -178,6 +184,12 @@ program
         const modelId = process.env.ASKDB_MODEL ?? process.env.OPENAI_MODEL ?? "gpt-4o-mini";
         const model = openai(modelId);
 
+        const omitSensitiveFromPrompt =
+          Boolean(opts.omitSensitiveFromPrompt) ||
+          ["1", "true", "yes"].includes(
+            (process.env.ASKDB_OMIT_SENSITIVE_FROM_PROMPT ?? "").toLowerCase(),
+          );
+
         const out = await ask({
           question: opts.question,
           schema,
@@ -187,6 +199,7 @@ program
           logger,
           mode,
           explain: Boolean(opts.explain),
+          omitSensitiveIdentifiersFromNlToSqlPrompt: omitSensitiveFromPrompt,
         });
 
         console.log("-- sql --");
