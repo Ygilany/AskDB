@@ -4,7 +4,7 @@
 
 AskDB turns natural language into **schema-grounded SQL** with execution and reporting, with **trust-first** defaults and a **developer-first embed** story ([`docs/mission.md`](../../mission.md)).
 
-For implementation discipline, the platform baseline is **TypeScript**, **pnpm**, a **monorepo** layout, and **Postgres-first** execution when a live database is used ([`docs/platform.md`](../../platform.md)). Phase 1 establishes the first vertical slice on that baseline.
+For implementation discipline, the platform baseline is **TypeScript**, **pnpm + Turborepo**, a **monorepo** layout, and **Postgres-first** execution when a live database is used ([`docs/platform.md`](../../platform.md)). Phase 1 establishes the first vertical slice on that baseline.
 
 ## Problem
 
@@ -14,7 +14,7 @@ Teams need a fast, reproducible way to go from a **known schema description** an
 
 Aligned with **Phase 1** in [`docs/roadmap.md`](../../roadmap.md):
 
-- Accept **one** supported schema description format end-to-end (exact format is an implementation decision recorded when chosen; start with one, no multi-format matrix in Phase 1).
+- Accept **one** supported schema description format end-to-end — **AskDB schema JSON v1** (see [`fixtures/schemas/README.md`](../../../fixtures/schemas/README.md)); no multi-format matrix in Phase 1.
 - **Natural language → SQL** with guardrails appropriate for **local / dev** use (validation, safety checks, clear failures—no claim of production multi-tenant policy yet).
 - **Execute** generated SQL against a **configured Postgres** instance and return **tabular results** (rows/columns; no rich report builder).
 - **CLI** as the first user surface (iteration speed, no UI coupling).
@@ -40,7 +40,7 @@ As in Phase 1 of the roadmap:
 | Topic | Decision |
 |--------|-----------|
 | Monorepo package split | Separate **core** library from **CLI** package early; keeps MCP/API alignment later (`platform.md`). |
-| Schema format | **One** format for Phase 1; pick before heavy implementation (document in-repo when chosen). |
+| Schema format | **AskDB schema JSON v1** — `{ "version": 1, "tables": [...] }` with columns `name`, `type`, optional `nullable` / `primaryKey` (fixtures under `fixtures/schemas/`). |
 | LLM / keys | **BYO** API keys (`mission.md`, `platform.md`); no centralized vendor requirement. |
 | Safety posture | Optimize for **dev honesty**: block obvious foot-guns; document limitations vs. production governance. |
 

@@ -4,9 +4,9 @@ Numbered groups follow **shared core first**, then Postgres execution, then CLI,
 
 ## 1 — Repository and packages
 
-- Initialize **pnpm workspace** monorepo layout (`platform.md`): e.g. `packages/core`, `packages/cli` (names may vary; keep boundaries clear).
+- Initialize **pnpm workspace + Turborepo** monorepo layout (`platform.md`): e.g. `packages/core`, `packages/cli` (names may vary; keep boundaries clear).
 - Add baseline tooling: TypeScript config, linter/formatter placeholders consistent with repo conventions once chosen.
-- Document how to install and run from root (`README.md` pointers).
+- Document how to install and run from root (`README.md` pointers). Prefer root scripts that invoke Turbo (`pnpm build`, `pnpm test`, `pnpm lint`).
 
 ## 2 — Schema ingest and normalization (core)
 
@@ -38,3 +38,5 @@ Numbered groups follow **shared core first**, then Postgres execution, then CLI,
 - Update **`README.md`**: prerequisites, env vars, example session, limitation callouts (Phase 1 dev scope).
 - Cross-link this spec ([`requirements.md`](./requirements.md)) and validation ([`validation.md`](./validation.md)).
 - Confirm roadmap Phase 1 checkboxes mentally: demoable end-to-end **CLI** on **one** schema format.
+
+**Implementation:** `packages/core`, `packages/cli`, `fixtures/schemas`, root scripts backed by Turborepo (`pnpm build` / `pnpm test` / `pnpm lint`), documented in [`README.md`](../../../README.md).

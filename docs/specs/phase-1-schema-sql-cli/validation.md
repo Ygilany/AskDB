@@ -14,13 +14,14 @@ Implementation is ready to merge when all of the following hold. This encodes an
    - Asserts: successful round-trip **execute** of a known-safe query and correct **tabular** result shape (not just “no throw”).
 
 3. **CI-ready script**  
-   - A single documented command (e.g. `pnpm test` or `pnpm -r test`) that runs unit + integration suites.  
-   - CI configuration may be added in the same PR or immediately after; the **script** must exist so CI is trivial to wire.
+   - From the repo root: **`pnpm build`** and **`pnpm test`** run via **Turborepo** (declared task graph + caching). Integration runs when `DATABASE_URL` is set (CI sets it).  
+   - **GitHub Actions:** [`.github/workflows/ci.yml`](../../../.github/workflows/ci.yml) runs those commands with a Postgres service and sets `DATABASE_URL` so the integration test is not skipped.
 
 ## Manual (short)
 
-- Run the **documented CLI example** from a clean checkout (or equivalent): schema fixture + local Postgres + one NL question → SQL + results.  
-- Confirm error messages for: bad connection, rejected SQL, missing schema file.
+- **Generate only:** after `pnpm install && pnpm build`, run the CLI example in [`README.md`](../../../README.md) against `fixtures/schemas/orders-users.schema.json` with `OPENAI_API_KEY` set.  
+- **Execute:** set `DATABASE_URL` to a dev database, add `--execute`, confirm TSV or `--json` output.  
+- Confirm error messages for: bad connection, unsafe/rejected SQL, missing schema file, missing `OPENAI_API_KEY`, or `--execute` without `DATABASE_URL`.
 
 ## Non-blockers for Phase 1 merge
 
