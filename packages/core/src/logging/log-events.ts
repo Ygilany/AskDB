@@ -10,6 +10,10 @@ export const AskDbLogEvent = {
   PipelineMode: "askdb.pipeline.mode",
   PipelineGenerateStart: "askdb.pipeline.generate.start",
   PipelineGenerateComplete: "askdb.pipeline.generate.complete",
+  /** NL→SQL prompt DDL omitted sensitive tables/columns — counts only (no identifiers). */
+  PromptSensitiveRedacted: "askdb.prompt.sensitive_redacted",
+  /** Sensitive identifiers included in DDL for grounding — counts only (see `listedSensitiveColumnCount`). */
+  PromptSensitiveIdentifiersListed: "askdb.prompt.sensitive_identifiers_listed",
   PipelineExecuteStart: "askdb.pipeline.execute.start",
   PipelineExecuteComplete: "askdb.pipeline.execute.complete",
   /**

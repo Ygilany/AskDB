@@ -31,6 +31,9 @@ function wrapPinoAsAskDbLogger(pinoLogger: PinoLogger): AskDbLogger {
     error(context: Record<string, unknown>, message: string) {
       pinoLogger.error(context, message);
     },
+    debug(context: Record<string, unknown>, message: string) {
+      pinoLogger.debug(context, message);
+    },
   };
 }
 

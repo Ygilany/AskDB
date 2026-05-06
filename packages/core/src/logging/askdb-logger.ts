@@ -7,4 +7,6 @@
 export type AskDbLogger = {
   info(context: Record<string, unknown>, message: string): void;
   error(context: Record<string, unknown>, message: string): void;
+  /** Optional — used for prompt redaction notices without leaking sensitive identifiers. */
+  debug?(context: Record<string, unknown>, message: string): void;
 };
