@@ -51,4 +51,19 @@ describe("parseAskDbSchemaJson", () => {
     });
     expect(() => parseAskDbSchemaJson(bad)).toThrow(SchemaParseError);
   });
+
+  it("accepts optional sensitive markers on tables and columns", () => {
+    const raw = JSON.stringify({
+      version: 1,
+      tables: [
+        {
+          name: "t",
+          sensitive: true,
+          columns: [{ name: "x", type: "int" }],
+        },
+      ],
+    });
+    const parsed = parseAskDbSchemaJson(raw);
+    expect(parsed.tables[0]?.sensitive).toBe(true);
+  });
 });
