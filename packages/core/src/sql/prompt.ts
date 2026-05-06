@@ -1,9 +1,13 @@
 import { formatSchemaForPrompt } from "../schema/normalize.js";
 import type { NormalizedSchema } from "../schema/types.js";
 
-export function buildNlToSqlUserPrompt(question: string, schema: NormalizedSchema): string {
+export function buildNlToSqlUserPrompt(
+  question: string,
+  schema: NormalizedSchema,
+  ambiguityNotes: readonly string[] = [],
+): string {
   const ddl = formatSchemaForPrompt(schema);
-  return [
+  const lines = [
     "You translate natural language questions into a single PostgreSQL SELECT (or WITH ... SELECT).",
     "Rules:",
     "- Output exactly one PostgreSQL SELECT query (CTE WITH is ok). End with optional semicolon.",
@@ -14,8 +18,18 @@ export function buildNlToSqlUserPrompt(question: string, schema: NormalizedSchem
     "Database schema:",
     ddl,
     "",
-    `Question: ${question}`,
-  ].join("\n");
+  ];
+  if (ambiguityNotes.length > 0) {
+    lines.push(
+      "Context (deterministic checks from AskDB—these hints may be irrelevant; weigh them against the question):",
+    );
+    for (const note of ambiguityNotes) {
+      lines.push(`- ${note}`);
+    }
+    lines.push("");
+  }
+  lines.push(`Question: ${question}`);
+  return lines.join("\n");
 }
 
 export const nlToSqlSystemPrompt =
