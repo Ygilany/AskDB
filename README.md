@@ -68,6 +68,7 @@ See [`.env.example`](.env.example) for a copy/paste template. Keep real secrets 
 | `--log-file <path>` | Append the same JSON logs to a file (sync writes; parent dirs created). Implies `info` if level was `silent`. |
 | `--log-stdout` | Mirror structured logs to stdout. Implies `info` if level was `silent`. |
 | `--correlation-id <id>` | Override correlation id (else random UUID per run). |
+| `--explain` | After `-- sql --`, print `-- explain --` plus JSON describing heuristic guardrails satisfied (`statementKind`, `checksVerified`, `remediationNote`). |
 | `--mode <id>` | Operating mode: `schema_only` (default) or `bounded_results`. With `--execute` and logging, post-execute branches differ (see contract doc). |
 
 **Modes + structured logs (Phase 2)** — same `ask` subcommand; pass `--mode` or set `ASKDB_MODE`. Use `-v` / `--log-file` so JSON events (including `askdb.pipeline.mode` and, after `--execute`, `askdb.pipeline.post_execute`) appear on **stderr** or in a file — see [`docs/contracts/modes-v1.md`](docs/contracts/modes-v1.md).
