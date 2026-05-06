@@ -5,12 +5,14 @@ This document records the **initial** technical baseline for AskDB (runtime, sta
 ## Package management
 
 - **pnpm** for all installs, workspaces, and scripts.
+- **Turborepo** for task orchestration and caching across the monorepo (build/test/lint), with `pnpm` as the package manager. Prefer `turbo run …` (or root `pnpm` scripts that invoke Turbo) so task ordering is declared and cacheable.
 
 ## Language and repo layout
 
 - **TypeScript** as the primary language for application code, shared libraries, and tooling.
 - **Monorepo** layout: separate packages for reusable core logic, CLI, SDK/API clients, and the web/embed experience.
 - **Example consumer application (later)** — For development and QA, the repo may include a **small example app** that consumes the embeddable UI/SDK so we can exercise integration without relying on every consumer’s production host (see `roadmap.md`).
+  - **Workspace conventions** — packages live under `packages/*`; each package owns its `build` / `test` scripts. Root scripts invoke Turbo to run these consistently.
 
 ## Runtime and frameworks
 

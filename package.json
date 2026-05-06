@@ -1,0 +1,21 @@
+{
+  "name": "askdb",
+  "private": true,
+  "packageManager": "pnpm@9.15.4",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "turbo run build",
+    "test": "turbo run test",
+    "test:watch": "vitest",
+    "lint": "turbo run lint"
+  },
+  "devDependencies": {
+    "@askdb/cli": "workspace:*",
+    "@types/node": "^22.13.14",
+    "turbo": "^2.5.6",
+    "typescript": "^5.7.3",
+    "vitest": "^3.0.9"
+  }
+}
