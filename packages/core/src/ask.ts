@@ -4,6 +4,8 @@ import { executeReadOnlySelect, type TabularResult } from "./exec/postgres.js";
 import type { AskDbLogger } from "./logging/askdb-logger.js";
 import { AskDbLogEvent } from "./logging/log-events.js";
 import type { NormalizedSchema } from "./schema/types.js";
+import { logPostExecuteModeBranch } from "./modes/post-execute-log.js";
+import { DEFAULT_ASKDB_MODE, type AskDbModeV1 } from "./modes/types.js";
 import type { GenerateSqlDeps } from "./sql/generate.js";
 import { generatePostgresSelectSql } from "./sql/generate.js";
 
@@ -18,6 +20,11 @@ export type AskPipelineOptions = {
   deps?: GenerateSqlDeps;
   /** Optional structured logger (host-provided — e.g. `createAskDbLogger` wraps Pino). */
   logger?: AskDbLogger;
+  /**
+   * Trust boundary for optional post-execute model paths. Default {@link DEFAULT_ASKDB_MODE}.
+   * @see `docs/contracts/modes-v1.md`
+   */
+  mode?: AskDbModeV1;
 };
 
 export type AskPipelineResult = {
@@ -27,6 +34,9 @@ export type AskPipelineResult = {
 
 export async function ask(options: AskPipelineOptions): Promise<AskPipelineResult> {
   const logger = options.logger;
+  const mode = options.mode ?? DEFAULT_ASKDB_MODE;
+  logger?.info({ event: AskDbLogEvent.PipelineMode, mode }, "pipeline mode");
+
   const sql = await generatePostgresSelectSql(options.question, options.schema, options.model, {
     ...options.deps,
     logger,
@@ -48,6 +58,7 @@ export async function ask(options: AskPipelineOptions): Promise<AskPipelineResul
       },
       "execute complete",
     );
+    logPostExecuteModeBranch(logger, mode, result.rows.length);
     return { sql, result };
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);

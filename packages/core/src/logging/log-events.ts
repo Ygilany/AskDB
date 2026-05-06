@@ -6,10 +6,17 @@ export const AskDbLogEvent = {
   RunStart: "askdb.run.start",
   RunEnd: "askdb.run.end",
   RunError: "askdb.run.error",
+  /** Operating mode for this pipeline run (`mode` field). Emitted before NL→SQL. */
+  PipelineMode: "askdb.pipeline.mode",
   PipelineGenerateStart: "askdb.pipeline.generate.start",
   PipelineGenerateComplete: "askdb.pipeline.generate.complete",
   PipelineExecuteStart: "askdb.pipeline.execute.start",
   PipelineExecuteComplete: "askdb.pipeline.execute.complete",
+  /**
+   * After successful execute — whether a post-execute model path runs (v1: logging only).
+   * Payload includes `branch`: `skipped` | `stub` (see `docs/contracts/modes-v1.md`).
+   */
+  PipelinePostExecute: "askdb.pipeline.post_execute",
   /** Generation or execution failed after pipeline logging began (includes `phase`). */
   PipelineFailed: "askdb.pipeline.failed",
 } as const;

@@ -2,6 +2,13 @@ export * from "./errors.js";
 export type { TabularResult } from "./exec/postgres.js";
 export { executeReadOnlySelect } from "./exec/postgres.js";
 export { ask, type AskPipelineOptions, type AskPipelineResult } from "./ask.js";
+export {
+  parseAskDbModeV1,
+  formatAskDbModesV1,
+  DEFAULT_ASKDB_MODE,
+  ASKDB_MODES_V1,
+  type AskDbModeV1,
+} from "./modes/types.js";
 export { AskDbLogEvent } from "./logging/log-events.js";
 export type { AskDbLogger } from "./logging/askdb-logger.js";
 export {
