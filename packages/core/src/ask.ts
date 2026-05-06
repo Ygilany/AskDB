@@ -15,6 +15,11 @@ export type AskPipelineOptions = {
   model: LanguageModel;
   /** When true, callers may inspect heuristic guardrail metadata (hosts/CLI). */
   explain?: boolean;
+  /**
+   * When true, omit sensitive table/column names from NL→SQL DDL. Default false — names are included
+   * with `(sensitive)` tags (merged with `deps.omitSensitiveIdentifiersFromNlToSqlPrompt`; top-level wins).
+   */
+  omitSensitiveIdentifiersFromNlToSqlPrompt?: boolean;
   /** When set with `execute: true`, runs the generated SELECT in a read-only transaction. */
   connectionString?: string;
   /** Default false — only generate + validate unless explicitly requested. */
@@ -41,10 +46,15 @@ export async function ask(options: AskPipelineOptions): Promise<AskPipelineResul
   logger?.info({ event: AskDbLogEvent.PipelineMode, mode }, "pipeline mode");
 
   const explainRequested = options.explain ?? options.deps?.explain ?? false;
+  const omitSensitive =
+    options.omitSensitiveIdentifiersFromNlToSqlPrompt ??
+    options.deps?.omitSensitiveIdentifiersFromNlToSqlPrompt ??
+    false;
   const generated = await generatePostgresSelectSql(options.question, options.schema, options.model, {
     ...options.deps,
     logger,
     explain: explainRequested,
+    omitSensitiveIdentifiersFromNlToSqlPrompt: omitSensitive || undefined,
   });
   const sql = generated.sql;
   const explain = generated.explain;

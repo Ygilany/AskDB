@@ -23,7 +23,13 @@ export {
 } from "./logging/pino-supported-levels.js";
 export { loadNormalizedSchemaFromJson, parseAskDbSchemaJson } from "./schema/parse.js";
 export type { AskDbSchemaFile, NormalizedSchema } from "./schema/types.js";
-export { formatSchemaForPrompt, normalizeAskDbSchema } from "./schema/normalize.js";
+export {
+  formatSchemaForNlToSql,
+  formatSchemaForPrompt,
+  normalizeAskDbSchema,
+  type FormatNlToSqlOptions,
+  type NlToSqlSchemaFormatStats,
+} from "./schema/normalize.js";
 export {
   validatePostgresSelectSql,
   buildPostgresSelectGuardrailExplanation,
