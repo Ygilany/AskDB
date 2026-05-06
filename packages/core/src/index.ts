@@ -24,7 +24,16 @@ export {
 export { loadNormalizedSchemaFromJson, parseAskDbSchemaJson } from "./schema/parse.js";
 export type { AskDbSchemaFile, NormalizedSchema } from "./schema/types.js";
 export { formatSchemaForPrompt, normalizeAskDbSchema } from "./schema/normalize.js";
-export { validatePostgresSelectSql } from "./sql/validate.js";
+export {
+  validatePostgresSelectSql,
+  buildPostgresSelectGuardrailExplanation,
+  type PostgresSelectGuardrailExplain,
+} from "./sql/validate.js";
 export { extractSqlFromModelText } from "./sql/extract-sql.js";
-export { generatePostgresSelectSql, type GenerateSqlDeps } from "./sql/generate.js";
+export {
+  generatePostgresSelectSql,
+  type GeneratePostgresSelectSqlResult,
+  type GenerateSqlDeps,
+} from "./sql/generate.js";
+export { assertNlToSqlInputs, nlToSqlAmbiguityNotes } from "./sql/schema-question-precheck.js";
 export { buildNlToSqlUserPrompt, nlToSqlSystemPrompt } from "./sql/prompt.js";
