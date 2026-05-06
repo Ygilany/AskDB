@@ -1,5 +1,7 @@
 # Phase 2 — Hardening and “modes” as contracts
 
+See also **[`README.md`](./README.md)** (spec index), **[`plan.md`](./plan.md)** (milestones), and **[`validation.md`](./validation.md)** (Phase 2 merge bar).
+
 ## Context
 
 AskDB’s north star couples **trust-first analytics** with **developer-first embed**: schema-grounded generation, explicit boundaries when data touches the model, and one core reused across CLI, MCP, HTTP, and web ([`docs/mission.md`](../../mission.md)).
@@ -77,6 +79,8 @@ After Phase 2:
 
 ## References
 
+- [`README.md`](./README.md) — Phase 2 spec index (cross-links plan, validation, contracts)  
+- [`plan.md`](./plan.md), [`validation.md`](./validation.md)  
 - [`docs/mission.md`](../../mission.md) — modes, trust, BYO keys, same core/many surfaces  
 - [`docs/platform.md`](../../platform.md) — monorepo, Postgres-first, headless vs web UI  
 - [`docs/roadmap.md`](../../roadmap.md) — Phase 2 definition and ordering  

@@ -47,4 +47,5 @@ Structured logs emit **`askdb.pipeline.mode`** at pipeline start and **`askdb.pi
 
 - [`docs/mission.md`](../mission.md) — trust-first analytics, explicit bounded data  
 - [`docs/specs/phase-2-hardening-modes/requirements.md`](../specs/phase-2-hardening-modes/requirements.md) — Phase 2 scope  
+- [`docs/integration/reuse-core-phase-3.md`](../integration/reuse-core-phase-3.md) — stable `ask()` surface for MCP/HTTP  
 - [`docs/contracts/sensitive-fields-and-modes.md`](./sensitive-fields-and-modes.md) — sensitive DDL defaults, optional omission, bounded summaries  

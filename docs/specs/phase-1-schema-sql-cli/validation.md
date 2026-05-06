@@ -32,3 +32,4 @@ Implementation is ready to merge when all of the following hold. This encodes an
 
 - [`requirements.md`](./requirements.md) — scope and testing strategy  
 - [`plan.md`](./plan.md) — implementation order  
+- Phase 2 merge bar: [`docs/specs/phase-2-hardening-modes/validation.md`](../phase-2-hardening-modes/validation.md)  

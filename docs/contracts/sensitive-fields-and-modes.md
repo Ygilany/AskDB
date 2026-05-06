@@ -52,4 +52,5 @@ Validation and tests for this belong in the milestone that ships real post-execu
 
 - [`docs/contracts/modes-v1.md`](./modes-v1.md)
 - [`docs/specs/phase-2-hardening-modes/requirements.md`](../specs/phase-2-hardening-modes/requirements.md)
+- [`docs/integration/reuse-core-phase-3.md`](../integration/reuse-core-phase-3.md) — avoid duplicating prompt/validation policy in wrappers
 - [`fixtures/schemas/README.md`](../../fixtures/schemas/README.md) — `sensitive` in schema JSON
