@@ -46,9 +46,9 @@ Numbered groups are **ordered** so each milestone is **demoable**: something you
 
 ## 5 — Documentation and continuity
 
-- Update **`README.md`** (and/or `docs/roadmap.md` cross-links): modes, logging flags, correlation IDs, sensitive-field schema notes.
-- Cross-link [**`requirements.md`**](./requirements.md) and [**`validation.md`**](./validation.md).
-- Keep [**`docs/contracts/sensitive-fields-and-modes.md`**](../../contracts/sensitive-fields-and-modes.md) updated as the canonical place for **sensitive metadata vs. NL questions**, optional **names + warning** designs, and **`bounded_results`** row→model stripping rules.
-- Confirm Phase 3 readiness: observability fields and mode types are **stable enough** for an MCP or HTTP wrapper to call the same core entrypoints without duplicating policy.
+- Update **`README.md`** (and/or `docs/roadmap.md` cross-links): modes, logging flags, correlation IDs, sensitive-field schema notes.  
+- Cross-link **`requirements.md`**, **`validation.md`**, and a small **Phase 2 spec hub** (**[`README.md`](./README.md)** in this folder).  
+- Publish **Phase 3 integration** guidance: [**`docs/integration/reuse-core-phase-3.md`**](../../integration/reuse-core-phase-3.md) — stable `ask()` surface, logger events, reuse vs. duplication.  
+- Keep [**`docs/contracts/sensitive-fields-and-modes.md`**](../../contracts/sensitive-fields-and-modes.md) updated for **sensitive metadata vs. NL questions**, optional **names + warning** designs, and **`bounded_results`** row→model stripping rules.
 
 **Implementation locus:** `packages/core`, `packages/cli`, existing `fixtures/` trees, tests; no new Phase 3 transport packages required for Phase 2 merge.

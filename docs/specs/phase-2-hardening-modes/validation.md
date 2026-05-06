@@ -1,5 +1,7 @@
 # Validation — Phase 2 merge bar
 
+Pair with **[`requirements.md`](./requirements.md)** (scope), **[`plan.md`](./plan.md)** (order), and the **[spec `README.md`](./README.md)** hub.
+
 Implementation is ready to merge when **automated CI** passes and **contract-heavy** behavior is backed by **fixtures or golden-output** tests, per planning input.
 
 ## Automated
@@ -17,6 +19,8 @@ Implementation is ready to merge when **automated CI** passes and **contract-hea
    - Existing Phase 1 scenarios (schemas, validation, execution shape) remain green; Phase 2 must not regress tabular execution or schema v1 ingestion without an explicit bump and docs.
 
 ## Manual (short)
+
+Some checks stay **manual** because they depend on **your environment**: a real **`OPENAI_API_KEY`**, subjective readability of stderr vs stdout, or confirming **two modes** against a live or local Postgres. Automated tests cover **contract logic** (modes branch, file sink JSON shape, sensitive DDL); they cannot replace every integrator-specific run without embedding secrets in CI or duplicating the whole CLI in tests—which we defer to the roadmap [**Phase 2 carried-forward backlog**](../../../roadmap.md) (“Shrink manual validation”).
 
 - Run CLI documented in `README.md` with **logging** enabled: confirm readable **structured** lines and one **correlation ID** per run. Repeat with logs directed to a **file** (per documented flag/env): confirm the file receives the same JSON lines.  
 - Exercise **two modes** on the same question and confirm behavior matches the written contract (including “no bounded data in model context” for strict schema-only mode).  
