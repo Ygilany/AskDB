@@ -22,6 +22,27 @@ pnpm test     # turbo run test (integration runs when DATABASE_URL is set)
 pnpm lint     # turbo run lint (TypeScript noEmit)
 ```
 
+**Pagila dev fixture** — optional PostgreSQL loaded with the [Pagila](https://github.com/devrimgunduz/pagila) sample database ([`fixtures/pagila/README.md`](fixtures/pagila/README.md)):
+
+```bash
+pnpm pagila:up        # docker compose up --build -d (PostgreSQL on localhost:5433)
+pnpm pagila:logs      # follow container logs
+pnpm pagila:down      # stop and remove containers (keeps volume)
+pnpm pagila:reset     # down and delete volume — next `pagila:up` re-imports Pagila
+```
+
+Equivalent without pnpm:
+
+```bash
+docker compose -f fixtures/pagila/docker-compose.yml up --build -d
+```
+
+Then point AskDB at it:
+
+```bash
+export DATABASE_URL="postgres://postgres:postgres@127.0.0.1:5433/pagila"
+```
+
 **Phase 1 schema format** is **AskDB schema JSON v1** — see [`fixtures/schemas/README.md`](fixtures/schemas/README.md) and the sample [`fixtures/schemas/orders-users.schema.json`](fixtures/schemas/orders-users.schema.json).
 
 **Environment variables**
@@ -36,6 +57,7 @@ See [`.env.example`](.env.example) for a copy/paste template. Keep real secrets 
 | `DATABASE_URL` | Optional; required with `askdb ask --execute` to run generated SQL in a **read-only** Postgres transaction. |
 | `ASKDB_LOG_LEVEL` | Optional structured log level: `trace` \| `debug` \| `info` \| `warn` \| `error` \| `fatal` \| `silent` (default: `silent` unless `--verbose`, `--log-file`, or `--log-stdout` implies `info`). |
 | `ASKDB_CORRELATION_ID` | Optional; override the correlation id emitted on every JSON log line for the run. |
+| `ASKDB_MODE` | Optional operating mode (`schema_only` \| `bounded_results`); default `schema_only`. Formal contract: [`docs/contracts/modes-v1.md`](docs/contracts/modes-v1.md). |
 
 **Structured logging (Phase 2)** — JSON lines via [Pino](https://github.com/pinojs/pino); diagnostics go to **stderr** by default so **stdout** stays free for SQL/results. Flags:
 
@@ -46,6 +68,30 @@ See [`.env.example`](.env.example) for a copy/paste template. Keep real secrets 
 | `--log-file <path>` | Append the same JSON logs to a file (sync writes; parent dirs created). Implies `info` if level was `silent`. |
 | `--log-stdout` | Mirror structured logs to stdout. Implies `info` if level was `silent`. |
 | `--correlation-id <id>` | Override correlation id (else random UUID per run). |
+| `--mode <id>` | Operating mode: `schema_only` (default) or `bounded_results`. With `--execute` and logging, post-execute branches differ (see contract doc). |
+
+**Modes + structured logs (Phase 2)** — same `ask` subcommand; pass `--mode` or set `ASKDB_MODE`. Use `-v` / `--log-file` so JSON events (including `askdb.pipeline.mode` and, after `--execute`, `askdb.pipeline.post_execute`) appear on **stderr** or in a file — see [`docs/contracts/modes-v1.md`](docs/contracts/modes-v1.md).
+
+```bash
+pnpm build
+# Generate only — logs on stderr include askdb.pipeline.mode (default schema_only unless you pass --mode)
+pnpm exec askdb ask \
+  --schema fixtures/schemas/orders-users.schema.json \
+  --question "How many orders?" \
+  --mode schema_only \
+  -v
+
+# With --execute: DATABASE_URL must reference a Postgres that actually has the tables in your schema file.
+export DATABASE_URL="postgres://user:pass@localhost:5432/dbname"
+pnpm exec askdb ask \
+  --schema fixtures/schemas/orders-users.schema.json \
+  --question "List user emails" \
+  --execute \
+  --mode bounded_results \
+  -v
+```
+
+After a successful `--execute`, check stderr for `askdb.pipeline.post_execute`: `branch: skipped` for `schema_only`, `branch: stub` for `bounded_results`. For local exploration with sample data only, [`pnpm pagila:up`](#pagila-dev-fixture) gives Pagila on port **5433** — pair it with a **schema JSON that describes those tables** when you NL→SQL + execute against it.
 
 **CLI example** (generate SQL only):
 
@@ -95,6 +141,8 @@ How much of the **data** (not just schema) the model sees depends on the chosen 
 2. **Schema + report shape** — same as (1), plus a structured report template alongside executed results.
 3. **Schema + bounded results** — a subset of query results may go to the model for summaries; user retains control over what is shared.
 4. **Full AI-assisted reporting** — richer AI-driven report generation where product rules allow.
+
+**Engine v1 (CLI `@askdb/core`):** selectable modes **`schema_only`** and **`bounded_results`** are documented in [`docs/contracts/modes-v1.md`](docs/contracts/modes-v1.md). Modes **(2)** and **(4)** above are roadmap-only until later phases.
 
 ## Status
 
