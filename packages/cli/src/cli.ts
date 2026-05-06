@@ -12,6 +12,7 @@ import {
   formatSupportedAskDbLogLevels,
   isSupportedAskDbLogLevel,
   parseAskDbModeV1,
+  SqlValidationError,
   type TabularResult,
   ask,
   createAskDbLogger,
@@ -42,6 +43,13 @@ function printTsv(result: TabularResult): void {
 }
 
 function printCliError(error: unknown): void {
+  if (error instanceof SqlValidationError) {
+    console.error(`${error.name} [${error.rule}]: ${error.message}`);
+    if (error.hint) {
+      console.error(`Hint: ${error.hint}`);
+    }
+    return;
+  }
   if (error instanceof AskDbError) {
     console.error(`${error.name}: ${error.message}`);
     return;
@@ -90,6 +98,11 @@ program
   .requiredOption("-q, --question <text>", "Natural language question")
   .option("-e, --execute", "Execute generated SQL using DATABASE_URL (read-only transaction)")
   .option("--json", "With --execute: print rows as JSON (default is TSV)")
+  .option(
+    "--explain",
+    "After SQL, print a JSON block describing heuristic guardrails satisfied (Phase 2 explainability)",
+    false,
+  )
   .option("-v, --verbose", "Emit structured JSON logs (info) to stderr", false)
   .option("--log-level <level>", "Structured log level (trace|debug|info|warn|error|fatal|silent)")
   .option("--log-file <path>", "Append structured JSON logs to this file")
@@ -105,6 +118,7 @@ program
       question: string;
       execute?: boolean;
       json?: boolean;
+      explain?: boolean;
       verbose?: boolean;
       logLevel?: string;
       logFile?: string;
@@ -172,10 +186,15 @@ program
           connectionString: process.env.DATABASE_URL,
           logger,
           mode,
+          explain: Boolean(opts.explain),
         });
 
         console.log("-- sql --");
         console.log(`${out.sql};`);
+        if (opts.explain) {
+          console.log("-- explain --");
+          console.log(JSON.stringify(out.explain ?? null, null, 2));
+        }
         if (out.result) {
           console.log("-- result --");
           if (opts.json) {
