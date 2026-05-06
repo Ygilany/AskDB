@@ -34,6 +34,18 @@ See [`.env.example`](.env.example) for a copy/paste template. Keep real secrets 
 | `OPENAI_BASE_URL` | Optional custom base URL for OpenAI-compatible APIs. |
 | `ASKDB_MODEL` or `OPENAI_MODEL` | Optional model id (default `gpt-4o-mini`). |
 | `DATABASE_URL` | Optional; required with `askdb ask --execute` to run generated SQL in a **read-only** Postgres transaction. |
+| `ASKDB_LOG_LEVEL` | Optional structured log level: `trace` \| `debug` \| `info` \| `warn` \| `error` \| `fatal` \| `silent` (default: `silent` unless `--verbose`, `--log-file`, or `--log-stdout` implies `info`). |
+| `ASKDB_CORRELATION_ID` | Optional; override the correlation id emitted on every JSON log line for the run. |
+
+**Structured logging (Phase 2)** — JSON lines via [Pino](https://github.com/pinojs/pino); diagnostics go to **stderr** by default so **stdout** stays free for SQL/results. Flags:
+
+| Flag | Purpose |
+|------|---------|
+| `-v` / `--verbose` | Sets log level to `info` (stderr). |
+| `--log-level <level>` | Explicit level (overrides `ASKDB_LOG_LEVEL`). |
+| `--log-file <path>` | Append the same JSON logs to a file (sync writes; parent dirs created). Implies `info` if level was `silent`. |
+| `--log-stdout` | Mirror structured logs to stdout. Implies `info` if level was `silent`. |
+| `--correlation-id <id>` | Override correlation id (else random UUID per run). |
 
 **CLI example** (generate SQL only):
 
