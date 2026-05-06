@@ -17,6 +17,7 @@ High-level implementation order in **small phases**. Each phase should end with 
 
 **Goal:** Encode product semantics before more surfaces.
 
+- Introduce **structured logging** and **trace / correlation IDs** across headless surfaces (CLI first; reused by MCP/HTTP later) so integrators can debug and correlate runs—details land with Phase 2/3 wiring, scoped so Phase 1 stays minimal.
 - Document and implement the **operating modes** (e.g., schema-only execution vs. optional second pass with bounded result data for summaries).
 - Improve SQL validation, explainability, and user prompts when the schema or intent is ambiguous.
 - Introduce **sensitive field** exclusions in metadata handling as early plumbing for RAG/prompt safety.

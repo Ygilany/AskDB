@@ -9,6 +9,57 @@ Product direction and technical baseline live in **`docs/`**:
 - [`docs/mission.md`](docs/mission.md) — north star, principles, non-goals  
 - [`docs/platform.md`](docs/platform.md) — languages, monorepo shape, Postgres-first  
 - [`docs/roadmap.md`](docs/roadmap.md) — phased implementation order  
+- [`docs/specs/phase-1-schema-sql-cli/requirements.md`](docs/specs/phase-1-schema-sql-cli/requirements.md) — Phase 1 scope (implemented in this repo)  
+
+## Development (Phase 1)
+
+**Stack:** pnpm workspace + **Turborepo**, TypeScript, [`packages/core`](packages/core) (library) and [`packages/cli`](packages/cli) (binary `askdb`).
+
+```bash
+pnpm install
+pnpm build    # turbo run build
+pnpm test     # turbo run test (integration runs when DATABASE_URL is set)
+pnpm lint     # turbo run lint (TypeScript noEmit)
+```
+
+**Phase 1 schema format** is **AskDB schema JSON v1** — see [`fixtures/schemas/README.md`](fixtures/schemas/README.md) and the sample [`fixtures/schemas/orders-users.schema.json`](fixtures/schemas/orders-users.schema.json).
+
+**Environment variables**
+
+See [`.env.example`](.env.example) for a copy/paste template. Keep real secrets in a local **`.env`** (gitignored); the CLI **loads `.env` automatically** and then reads `process.env`.
+
+| Variable | Purpose |
+|----------|---------|
+| `OPENAI_API_KEY` | Required for NL→SQL (BYO; OpenAI-compatible). |
+| `OPENAI_BASE_URL` | Optional custom base URL for OpenAI-compatible APIs. |
+| `ASKDB_MODEL` or `OPENAI_MODEL` | Optional model id (default `gpt-4o-mini`). |
+| `DATABASE_URL` | Optional; required with `askdb ask --execute` to run generated SQL in a **read-only** Postgres transaction. |
+
+**CLI example** (generate SQL only):
+
+```bash
+pnpm build
+pnpm exec askdb ask \
+  --schema fixtures/schemas/orders-users.schema.json \
+  --question "How many orders are there?"
+```
+
+With execution (Postgres must be reachable):
+
+```bash
+export DATABASE_URL="postgres://user:pass@localhost:5432/dbname"
+pnpm build
+pnpm exec askdb ask \
+  --schema fixtures/schemas/orders-users.schema.json \
+  --question "List user emails" \
+  --execute
+```
+
+Use `--json` with `--execute` for JSON rows instead of TSV.
+
+**Limitations (Phase 1 / dev):** single schema JSON format; Postgres execution only; SQL guardrails are heuristic (not a full SQL parser); no MCP/web yet. See [`docs/specs/phase-1-schema-sql-cli/validation.md`](docs/specs/phase-1-schema-sql-cli/validation.md) for merge criteria.
+
+**CI:** [`.github/workflows/ci.yml`](.github/workflows/ci.yml) runs `pnpm install --frozen-lockfile`, `pnpm build`, and `pnpm test` with a Postgres service so integration tests exercise a real database.
 
 ## What it does
 
@@ -35,4 +86,4 @@ How much of the **data** (not just schema) the model sees depends on the chosen 
 
 ## Status
 
-Early-stage; see **`docs/roadmap.md`** for the current planned phases.
+Phase 1 CLI + core path is implemented; later phases are in [`docs/roadmap.md`](docs/roadmap.md).

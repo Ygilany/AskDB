@@ -1,0 +1,21 @@
+{
+  "version": 1,
+  "tables": [
+    {
+      "name": "users",
+      "columns": [
+        { "name": "id", "type": "uuid", "nullable": false, "primaryKey": true },
+        { "name": "email", "type": "text", "nullable": false },
+        { "name": "created_at", "type": "timestamptz", "nullable": false }
+      ]
+    },
+    {
+      "name": "orders",
+      "columns": [
+        { "name": "id", "type": "uuid", "nullable": false, "primaryKey": true },
+        { "name": "user_id", "type": "uuid", "nullable": false },
+        { "name": "total_cents", "type": "integer", "nullable": false }
+      ]
+    }
+  ]
+}
