@@ -54,3 +54,68 @@ Integrators want a server surface to:
 - Execution: whether HTTP surface supports execution at all in Phase 3, or is “generate + validate only” with execution remaining CLI-only for now (must still preserve mode semantics).
 - Header names for correlation and mode selection (align with existing contracts where possible).
 
+## HTTP contract (current)
+
+This spec intentionally keeps the HTTP surface **thin**. Implementation lives in `packages/http-api/`.
+
+### Endpoints
+
+- `GET /health` → `200 { "ok": true }`
+- `POST /ask` → generates SQL (and only executes when explicitly enabled)
+
+### Headers
+
+- `x-correlation-id` (optional): if provided, echoed back in responses and used in logs
+- `x-askdb-mode` (optional): mode id (body `mode` wins if present)
+- `x-askdb-execute` (optional): boolean (body `execute` wins if present)
+
+### Environment variables (server-side)
+
+- `OPENAI_API_KEY`: required for NL→SQL generation (unless using mock SQL)
+- `ASKDB_MOCK_SQL`: when set, bypasses live model calls and returns deterministic SQL
+- `ASKDB_MODE`: default mode when neither request body nor header sets it
+- `ASKDB_HTTP_ENABLE_EXECUTION`: must be truthy to allow execution requests (otherwise `/ask` returns `403 execution_disabled`)
+- Logging: `ASKDB_LOG_LEVEL`, `ASKDB_LOG_FILE`, `ASKDB_LOG_STDOUT`
+
+### Request body (`POST /ask`)
+
+```json
+{
+  "question": "How many users are there?",
+  "schemaJson": "{...AskDB schema JSON v1...}",
+  "mode": "schema_only",
+  "execute": false,
+  "connectionString": "postgres://…",
+  "explain": false,
+  "omitSensitiveFromPrompt": false
+}
+```
+
+### Success response
+
+```json
+{
+  "ok": true,
+  "correlationId": "demo-123",
+  "sql": "select …",
+  "result": { "columns": ["…"], "rows": [["…"]] },
+  "explain": { "...": "..." }
+}
+```
+
+### Error response envelope
+
+```json
+{
+  "ok": false,
+  "correlationId": "demo-123",
+  "error": { "code": "bad_request", "message": "…" }
+}
+```
+
+Error codes are **stable** and include (non-exhaustive): `not_found`, `bad_request`, `schema_parse_error`, `generation_not_configured`, `execution_disabled`, `sql_validation_error` (includes `rule`), `sql_generation_error`, `sql_execution_error`, `internal_error`.
+
+### Examples
+
+See `packages/http-api/README.md` for curl + Node examples.
+
