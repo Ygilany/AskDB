@@ -46,6 +46,7 @@ Completed: CI spawn tests (no live LLM), richer CLI schema-load errors, and sens
 
 - Ship a small **HTTP API** wrapping the same core as the CLI (choice driven by immediate integration demand).
 - Same contracts as Phase 2 so CLI and server stay aligned. Prefer calling **`ask()`** and shared types from `@askdb/core`—see [**`docs/integration/reuse-core-phase-3.md`**](integration/reuse-core-phase-3.md).
+- Prefer **server-configured schema** (e.g. schema file path/env) over sending schema JSON on every request; allow per-request overrides only for tests/special cases.
 
 ## Phase 4 — Web, schema catalog UI, and embed path
 
@@ -91,6 +92,7 @@ Early phases intentionally stay **Postgres-only** so execution and guardrails st
 **Goal:** Better retrieval over large schemas and richer grounding.
 
 - Add **RAG** (or equivalent retrieval) for schema and documentation when scale demands it; index and retrieve primarily over the **describable schema** (Phase 4: descriptions, aliases, concepts) layered on physical metadata; keep sensitive-field rules enforced.
+- Add a **schema registry / schemaId** pattern for hosts that need **multiple schemas** (multi-tenant or multi-project), so callers can reference a schema without re-sending it.
 
 ## Phase 8 — Reports beyond tables
 
