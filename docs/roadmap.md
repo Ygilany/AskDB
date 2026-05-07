@@ -40,11 +40,11 @@ Completed: CI spawn tests (no live LLM), richer CLI schema-load errors, and sens
 - **Richer CLI errors** — reference schema **file path** or fixture hints when parse/validation fails.
 - **Post-SQL warnings** — surface host-visible warning when generated SQL references **sensitive**-marked columns ([`sensitive-fields-and-modes.md`](contracts/sensitive-fields-and-modes.md)).
 
-## Phase 3 — Second surface (MCP or minimal API)
+## Phase 3 — Second surface (minimal HTTP API)
 
 **Goal:** Meet developers where they work.
 
-- Ship either **MCP** or a small **HTTP API** wrapping the same core as the CLI (choice driven by immediate integration demand).
+- Ship a small **HTTP API** wrapping the same core as the CLI (choice driven by immediate integration demand).
 - Same contracts as Phase 2 so CLI and server stay aligned. Prefer calling **`ask()`** and shared types from `@askdb/core`—see [**`docs/integration/reuse-core-phase-3.md`**](integration/reuse-core-phase-3.md).
 
 ## Phase 4 — Web, schema catalog UI, and embed path
@@ -104,6 +104,13 @@ Early phases intentionally stay **Postgres-only** so execution and guardrails st
 **Goal:** First-class tenant scoping where required.
 
 - Query generation and execution paths enforce **tenant scope** when metadata/policies define it; treat as non-negotiable for supported configurations.
+
+## Phase 10 — Second surface follow-on (MCP server)
+
+**Goal:** Meet developers and agents where they work.
+
+- Ship an **MCP** surface (tools/resources) that wraps the same core as the CLI and HTTP API.
+- Preserve the same contracts as Phase 2 so CLI, HTTP, and MCP stay aligned (modes, correlation IDs, validation, sensitive-field rules).
 
 ---
 
