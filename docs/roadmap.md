@@ -30,6 +30,8 @@ Phase 2 ships modes as explicit contracts, structured logging with correlation I
 
 ## Phase 2.5 ✅ — Hardening follow-ups (DX + CI + trust UX)
 
+Completed: CI spawn tests (no live LLM), richer CLI schema-load errors, and sensitive SQL warnings.
+
 **Goal:** Reduce manual validation and tighten the developer + operator experience before introducing more surfaces.
 
 - **Shrink manual validation** — CI/spawn tests that run `askdb` with `--log-file` / `-v`, assert JSON lines + stable `event` + `correlationId` **without** a live LLM (mock generation or subprocess smoke); optional smoke with secrets only in trusted CI (reduces reliance on [`validation.md`](specs/phase-2-hardening-modes/validation.md)).
