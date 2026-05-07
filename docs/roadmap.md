@@ -28,18 +28,15 @@ Phase 2 ships modes as explicit contracts, structured logging with correlation I
 - Improve SQL validation, explainability, and user prompts when the schema or intent is ambiguous.
 - Introduce **sensitive field** handling in metadata (tagged identifiers in NL→SQL DDL by default; optional omission). Longer-term behavior (**bounded_results** summarization with **sensitive columns stripped before any LLM**, post-SQL warnings) lives in [**`docs/contracts/sensitive-fields-and-modes.md`**](contracts/sensitive-fields-and-modes.md).
 
-### Carried forward from Phase 2 (explicit backlog)
+## Phase 2.5 — Hardening follow-ups (DX + CI + trust UX)
 
-These were called out in the Phase 2 [**plan**](specs/phase-2-hardening-modes/plan.md) or [**validation**](specs/phase-2-hardening-modes/validation.md) but are **not** required to consider Phase 2 “done” for merge purposes:
+**Goal:** Reduce manual validation and tighten the developer + operator experience before introducing more surfaces.
 
-| Item | Where it likely lands |
-|------|------------------------|
-| **Shrink manual validation** — CI/spawn tests that run `askdb` with `--log-file` / `-v`, assert JSON lines + stable `event` + `correlationId` **without** a live LLM (mock generation or subprocess smoke); optional smoke with secrets only in trusted CI | Near-term hardening (same repo); reduces reliance on [`validation.md`](specs/phase-2-hardening-modes/validation.md) manual steps |
-| **Optional `pino-pretty`** for human-readable dev output only (never sole production path per [**ADR 0001**](adrs/0001-structured-logging-pino.md)) | Quality-of-life / DX |
-| **`pino.transport()` / worker-thread** logging — only if current multistream file+stderr hits limits | Observability hardening |
-| **Richer CLI errors** — reference schema **file path** or fixture hints when parse/validation fails | CLI polish |
-| **Post-SQL warnings** — surface host-visible warning when generated SQL references **sensitive**-marked columns ([`sensitive-fields-and-modes.md`](contracts/sensitive-fields-and-modes.md)) | Product trust UX (after NL→SQL ships everywhere) |
-| **`bounded_results` non-stub** — optional second model pass with **explicit** consent; **project out sensitive columns** from row payloads before any summary LLM; budgets per [`modes-v1.md`](contracts/modes-v1.md) | **Phase 8** (reports / summaries on execution path) and/or **Phase 3** transport if API exposes summaries first |
+- **Shrink manual validation** — CI/spawn tests that run `askdb` with `--log-file` / `-v`, assert JSON lines + stable `event` + `correlationId` **without** a live LLM (mock generation or subprocess smoke); optional smoke with secrets only in trusted CI (reduces reliance on [`validation.md`](specs/phase-2-hardening-modes/validation.md)).
+- **Optional `pino-pretty`** for human-readable dev output only (never sole production path per [**ADR 0001**](adrs/0001-structured-logging-pino.md)).
+- **`pino.transport()` / worker-thread** logging — only if current multistream file+stderr hits limits.
+- **Richer CLI errors** — reference schema **file path** or fixture hints when parse/validation fails.
+- **Post-SQL warnings** — surface host-visible warning when generated SQL references **sensitive**-marked columns ([`sensitive-fields-and-modes.md`](contracts/sensitive-fields-and-modes.md)).
 
 ## Phase 3 — Second surface (MCP or minimal API)
 
@@ -98,6 +95,7 @@ Early phases intentionally stay **Postgres-only** so execution and guardrails st
 **Goal:** Full “text to SQL and into reports” promise.
 
 - Structured **report templates** and richer outputs on top of Phase 1’s execution path, still respecting mode and data-boundary rules.
+- Make **`bounded_results` non-stub** — optional second model pass with **explicit** consent; **project out sensitive columns** from row payloads before any summary LLM; budgets per [`modes-v1.md`](contracts/modes-v1.md).
 
 ## Phase 9 — Multi-tenant depth
 
