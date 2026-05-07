@@ -9,6 +9,7 @@ import {
   type AskDbLogLevel,
   type AskDbModeV1,
   type GenerateSqlDeps,
+  SchemaParseError,
   formatAskDbModesV1,
   formatSupportedAskDbLogLevels,
   isSupportedAskDbLogLevel,
@@ -60,6 +61,31 @@ function printCliError(error: unknown): void {
     return;
   }
   console.error(String(error));
+}
+
+function formatSchemaPathHint(schemaPath: string): string {
+  return `Schema path: ${schemaPath}\nHint: Try \`fixtures/schemas/orders-users.schema.json\` as a known-good example.`;
+}
+
+async function loadSchemaFromPath(schemaPath: string): Promise<ReturnType<typeof loadNormalizedSchemaFromJson>> {
+  try {
+    const raw = await readFile(schemaPath, "utf8");
+    return loadNormalizedSchemaFromJson(raw);
+  } catch (e) {
+    const err = e as unknown as { code?: unknown; message?: unknown };
+    const code = typeof err.code === "string" ? err.code : undefined;
+    if (code === "ENOENT") {
+      throw new AskDbError(`Schema file not found.\n${formatSchemaPathHint(schemaPath)}`, e);
+    }
+    if (code === "EACCES") {
+      throw new AskDbError(`Schema file is not readable (permission denied).\n${formatSchemaPathHint(schemaPath)}`, e);
+    }
+    if (e instanceof SchemaParseError) {
+      throw new AskDbError(`Failed to parse schema JSON.\n${formatSchemaPathHint(schemaPath)}\nDetails: ${e.message}`, e);
+    }
+    const msg = e instanceof Error ? e.message : String(e);
+    throw new AskDbError(`Failed to load schema.\n${formatSchemaPathHint(schemaPath)}\nDetails: ${msg}`, e);
+  }
 }
 function resolveAskDbLogLevel(opts: {
   verbose?: boolean;
@@ -182,8 +208,7 @@ program
       );
 
       try {
-        const raw = await readFile(opts.schema, "utf8");
-        const schema = loadNormalizedSchemaFromJson(raw);
+        const schema = await loadSchemaFromPath(opts.schema);
 
         type AskModel = Parameters<typeof ask>[0]["model"];
         const model: AskModel = mockSql
