@@ -11,6 +11,7 @@ Ready to merge when **automated CI** proves the new behavior and regressions are
 
 2. **Spawn / smoke test: CLI structured logs (no live LLM)**
    - A test runs `askdb` as a subprocess using a **mock provider** (no `OPENAI_API_KEY`).
+     - Preferred mechanism: `--mock-sql "<sql>"` or `ASKDB_MOCK_SQL`.
    - Logs are captured deterministically (prefer `--log-file <tmp>` or equivalent).
    - The captured JSONL parses successfully.
    - Every record includes required fields (minimum):
@@ -30,6 +31,7 @@ Ready to merge when **automated CI** proves the new behavior and regressions are
 5. **Sensitive-column warning coverage**
    - At least one test asserts that when generated SQL references a sensitive-marked column:
      - a structured warning event is emitted (stable `event` name)
+       - event name (v1): `askdb.pipeline.sensitive_sql_warning`
      - a human-readable warning appears on stderr
    - The warning must not include any row values (identifiers only).
 
