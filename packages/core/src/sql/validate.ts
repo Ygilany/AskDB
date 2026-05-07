@@ -1,3 +1,4 @@
+import type { SqlValidationRuleCode } from "../errors.js";
 import { SqlValidationError } from "../errors.js";
 
 const FORBIDDEN = new Set([
@@ -16,6 +17,10 @@ const FORBIDDEN = new Set([
   "call",
 ]);
 
+function validationError(rule: SqlValidationRuleCode, summary: string, hint: string): SqlValidationError {
+  return new SqlValidationError(summary, rule, hint);
+}
+
 /**
  * Phase-1 dev guardrails: single-statement read shape. Not a SQL parser;
  * blocks obvious foot-guns and multi-statement abuse.
@@ -23,33 +28,79 @@ const FORBIDDEN = new Set([
 export function validatePostgresSelectSql(sql: string): string {
   const trimmed = sql.trim();
   if (!trimmed) {
-    throw new SqlValidationError("Generated SQL is empty.");
+    throw validationError(
+      "SQL_EMPTY",
+      "Generated SQL is empty after extraction.",
+      "The model reply had no usable ```sql fenced block or the block was blank. Retry with a clearer question or inspect the raw model output with logging.",
+    );
   }
   const withoutStrings = stripSqlStringLiterals(trimmed);
   if (/;/.test(withoutStrings)) {
     const parts = withoutStrings.split(";").map((p) => p.trim()).filter(Boolean);
     if (parts.length > 1) {
-      throw new SqlValidationError("Multiple SQL statements are not allowed (found ';').");
+      throw validationError(
+        "SQL_MULTI_STATEMENT",
+        "Multiple SQL statements are not allowed (semicolon separates more than one statement).",
+        "Ask for a single SELECT (WITH … SELECT allowed). Split analytical steps into separate questions or use a CTE instead of multiple statements.",
+      );
     }
   }
   if (/--|\/\*/.test(withoutStrings)) {
-    throw new SqlValidationError("SQL comments (-- or /*) are not allowed in Phase 1 guardrails.");
+    throw validationError(
+      "SQL_COMMENT",
+      "SQL comments (-- or /* … */) are not allowed under current guardrails.",
+      "Remove comments from generated SQL; rely on clear column aliases and CTE names instead.",
+    );
   }
 
   const head = firstMeaningfulToken(withoutStrings);
   if (head !== "select" && head !== "with") {
-    throw new SqlValidationError(`SQL must start with SELECT or WITH (got '${head || "none"}').`);
+    throw validationError(
+      "SQL_NOT_SELECT_OR_WITH",
+      `SQL must start with SELECT or WITH (got '${head || "none"}').`,
+      "Regenerate as a read-only SELECT (optionally with WITH). INSERT/UPDATE/DELETE and procedural calls are blocked in dev guardrails.",
+    );
   }
 
   const lower = withoutStrings.toLowerCase();
   for (const word of FORBIDDEN) {
     const re = new RegExp(`\\b${word}\\b`, "i");
     if (re.test(lower)) {
-      throw new SqlValidationError(`Forbidden keyword in generated SQL: ${word.toUpperCase()}.`);
+      throw validationError(
+        "SQL_FORBIDDEN_KEYWORD",
+        `Forbidden keyword in generated SQL: ${word.toUpperCase()}.`,
+        `Matched whole-word guardrail keyword "${word}". This build allows read-only SELECT shape only; DDL/DML and similar verbs are rejected.`,
+      );
     }
   }
 
   return trimmed.replace(/;\s*$/, "").trim();
+}
+
+/** Explanation of guardrails satisfied by a string already passing {@link validatePostgresSelectSql}. */
+export type PostgresSelectGuardrailExplain = {
+  statementKind: "select" | "with";
+  checksVerified: readonly string[];
+  remediationNote: string;
+};
+
+/** Build a structured summary for hosts/CLI `--explain`; input must already be validated. */
+export function buildPostgresSelectGuardrailExplanation(validatedSql: string): PostgresSelectGuardrailExplain {
+  const trimmed = validatedSql.trim();
+  const head = firstMeaningfulToken(stripSqlStringLiterals(trimmed));
+  const statementKind: "select" | "with" = head === "with" ? "with" : "select";
+  return {
+    statementKind,
+    checksVerified: [
+      "non_empty_sql",
+      "single_statement",
+      "no_line_or_block_comments",
+      "leading_select_or_with",
+      "no_blocked_write_or_ddl_keywords",
+    ],
+    remediationNote:
+      "Heuristic Phase-2 checks only—not a full SQL parser or production policy engine. Always review before trusted execution.",
+  };
 }
 
 function stripSqlStringLiterals(sql: string): string {
