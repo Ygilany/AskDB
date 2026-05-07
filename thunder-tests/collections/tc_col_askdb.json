@@ -45,8 +45,7 @@
                 "type": "json",
                 "raw": [
                     "{",
-                    "  \"question\": \"How many users are there?\",",
-                    "  \"schemaJson\": \"{\\\"version\\\":1,\\\"tables\\\":[{\\\"name\\\":\\\"users\\\",\\\"columns\\\":[{\\\"name\\\":\\\"id\\\",\\\"type\\\":\\\"uuid\\\"},{\\\"name\\\":\\\"email\\\",\\\"type\\\":\\\"text\\\"}]}]}\"",
+                    "  \"question\": \"How many users are there?\"",
                     "}",
                     ""
                 ],
@@ -74,7 +73,6 @@
                 "raw": [
                     "{",
                     "  \"question\": \"How many users are there?\",",
-                    "  \"schemaJson\": \"{\\\"version\\\":1,\\\"tables\\\":[{\\\"name\\\":\\\"users\\\",\\\"columns\\\":[{\\\"name\\\":\\\"id\\\",\\\"type\\\":\\\"uuid\\\"}]}]}\",",
                     "  \"execute\": true,",
                     "  \"connectionString\": \"postgres://postgres:postgres@127.0.0.1:5433/pagila\"",
                     "}",
