@@ -26,7 +26,7 @@ Make AskDB easier to trust and operate by:
   - Stable presence of core fields (at minimum): `event`, `level`, `timestamp` (or `time`), and `correlationId`.
   - The run includes a minimal expected sequence of events (start → generation/validation branch → end) without over-constraining message text.
 - Tests must run **without** real model credentials:
-  - Use a **mock provider** / stubbed NL→SQL step, or a deterministic local provider path already supported by `@askdb/core`.
+  - Use a deterministic NL→SQL stub via **`--mock-sql "<sql>"`** or `ASKDB_MOCK_SQL` (preferred for CI), or another deterministic local provider path already supported by `@askdb/core`.
   - Ensure the test still exercises the same CLI pipeline wiring (args parsing, logger configuration, correlation propagation).
 
 ### 2) Richer CLI errors
@@ -44,6 +44,7 @@ Make AskDB easier to trust and operate by:
   - Prefer a **structured log event** (stable `event` name) and a **human-readable CLI warning** (stderr).
   - Warning should identify **which** sensitive columns were referenced when allowed by the contract (identifiers only; never values).
   - Ensure the warning mechanism works whether or not execution happens (it’s about the SQL text).
+  - Event name (v1): `askdb.pipeline.sensitive_sql_warning`
 
 ## Out of scope
 
