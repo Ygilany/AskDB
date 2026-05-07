@@ -82,5 +82,25 @@ describe("http-api", () => {
       await app.close();
     }
   });
+
+  it("unknown routes return not_found", async () => {
+    process.env.ASKDB_LOG_LEVEL = "silent";
+    const app = createAskDbHttpServer({ host: "127.0.0.1", port: 0 });
+    await new Promise<void>((resolve) => app.server.listen(0, "127.0.0.1", resolve));
+    const addr = app.server.address();
+    if (!addr || typeof addr === "string") throw new Error("expected inet address");
+
+    try {
+      const res = await fetch(`http://127.0.0.1:${addr.port}/nope`);
+      expect(res.status).toBe(404);
+      const json = (await res.json()) as any;
+      expect(json.ok).toBe(false);
+      expect(json.error?.code).toBe("not_found");
+      expect(typeof json.correlationId).toBe("string");
+      expect(json.correlationId.length).toBeGreaterThan(0);
+    } finally {
+      await app.close();
+    }
+  });
 });
 

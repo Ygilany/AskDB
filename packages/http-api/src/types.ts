@@ -29,13 +29,17 @@ export type AskHttpErrorResponse = {
   correlationId: string;
   error: {
     code:
+      | "not_found"
       | "bad_request"
       | "schema_parse_error"
       | "generation_not_configured"
       | "execution_disabled"
-      | "core_error"
+      | "sql_validation_error"
+      | "sql_generation_error"
+      | "sql_execution_error"
       | "internal_error";
     message: string;
+    rule?: string;
   };
 };
 
