@@ -8,6 +8,7 @@ import {
   AskDbLogEvent,
   type AskDbLogLevel,
   type AskDbModeV1,
+  type GenerateSqlDeps,
   formatAskDbModesV1,
   formatSupportedAskDbLogLevels,
   isSupportedAskDbLogLevel,
@@ -109,6 +110,10 @@ program
   .option("--log-stdout", "Mirror structured JSON logs to stdout", false)
   .option("--correlation-id <id>", "Correlation ID for logs (overrides ASKDB_CORRELATION_ID)")
   .option(
+    "--mock-sql <sql>",
+    "Deterministic NL→SQL for tests (bypasses live model call). Also via ASKDB_MOCK_SQL.",
+  )
+  .option(
     "--mode <id>",
     `Operating mode (${formatAskDbModesV1()}); default schema_only. Override with ASKDB_MODE`,
   )
@@ -129,6 +134,7 @@ program
       logFile?: string;
       logStdout?: boolean;
       correlationId?: string;
+      mockSql?: string;
       mode?: string;
       omitSensitiveFromPrompt?: boolean;
     }) => {
@@ -152,9 +158,11 @@ program
         logStdout: opts.logStdout,
       });
 
+      const mockSql = opts.mockSql ?? process.env.ASKDB_MOCK_SQL;
       const apiKey = process.env.OPENAI_API_KEY;
-      if (!apiKey) {
+      if (!mockSql && !apiKey) {
         console.error("OPENAI_API_KEY is required for NL→SQL generation.");
+        console.error("Tip: in tests, set ASKDB_MOCK_SQL to bypass live model calls.");
         process.exitCode = 1;
         return;
       }
@@ -177,12 +185,18 @@ program
         const raw = await readFile(opts.schema, "utf8");
         const schema = loadNormalizedSchemaFromJson(raw);
 
-        const openai = createOpenAI({
-          apiKey,
-          baseURL: process.env.OPENAI_BASE_URL,
-        });
-        const modelId = process.env.ASKDB_MODEL ?? process.env.OPENAI_MODEL ?? "gpt-4o-mini";
-        const model = openai(modelId);
+        type AskModel = Parameters<typeof ask>[0]["model"];
+        const model: AskModel = mockSql
+          ? // The model won't be used when `deps.generateText` is overridden.
+            (undefined as unknown as AskModel)
+          : (() => {
+              const openai = createOpenAI({
+                apiKey: apiKey!,
+                baseURL: process.env.OPENAI_BASE_URL,
+              });
+              const modelId = process.env.ASKDB_MODEL ?? process.env.OPENAI_MODEL ?? "gpt-4o-mini";
+              return openai(modelId);
+            })();
 
         const omitSensitiveFromPrompt =
           Boolean(opts.omitSensitiveFromPrompt) ||
@@ -200,6 +214,15 @@ program
           mode,
           explain: Boolean(opts.explain),
           omitSensitiveIdentifiersFromNlToSqlPrompt: omitSensitiveFromPrompt,
+          deps:
+            mockSql !== undefined
+              ? {
+                  // `ai.generateText` has a rich return type; for test-mode we only need `text`.
+                  generateText: (async () => ({ text: mockSql } as any)) as NonNullable<
+                    GenerateSqlDeps["generateText"]
+                  >,
+                }
+              : undefined,
         });
 
         console.log("-- sql --");
