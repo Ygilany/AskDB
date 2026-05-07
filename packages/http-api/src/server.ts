@@ -8,6 +8,9 @@ import {
   type AskDbLogLevel,
   type AskDbModeV1,
   DEFAULT_ASKDB_MODE,
+  SqlExecutionError,
+  SqlGenerationError,
+  SqlValidationError,
   ask,
   createAskDbLogger,
   loadNormalizedSchemaFromJson,
@@ -51,6 +54,15 @@ function writeJson(res: ServerResponse, status: number, body: unknown): void {
   res.setHeader("content-type", "application/json; charset=utf-8");
   res.setHeader("content-length", Buffer.byteLength(json));
   res.end(json);
+}
+
+function writeError(
+  res: ServerResponse,
+  status: number,
+  correlationId: string,
+  error: AskHttpErrorResponse["error"],
+): void {
+  writeJson(res, status, { ok: false, correlationId, error } satisfies AskHttpErrorResponse);
 }
 
 function getCorrelationId(req: IncomingMessage): string {
@@ -98,7 +110,7 @@ export function createAskDbHttpServer(options: AskDbHttpServerOptions = {}) {
     }
 
     if (method !== "POST" || url !== "/ask") {
-      writeJson(res, 404, { ok: false, error: { code: "not_found", message: "not found" } });
+      writeError(res, 404, correlationId, { code: "not_found", message: "not found" });
       return;
     }
 
@@ -117,20 +129,20 @@ export function createAskDbHttpServer(options: AskDbHttpServerOptions = {}) {
         { event: AskDbLogEvent.RunError, errMessage: e instanceof Error ? e.message : String(e) },
         "invalid JSON body",
       );
-      writeJson(res, 400, badRequest(correlationId, "invalid JSON body"));
+      writeError(res, 400, correlationId, badRequest(correlationId, "invalid JSON body").error);
       return;
     }
 
     if (!body || typeof body !== "object") {
-      writeJson(res, 400, badRequest(correlationId, "request body must be an object"));
+      writeError(res, 400, correlationId, badRequest(correlationId, "request body must be an object").error);
       return;
     }
     if (typeof body.question !== "string" || body.question.trim() === "") {
-      writeJson(res, 400, badRequest(correlationId, "`question` is required"));
+      writeError(res, 400, correlationId, badRequest(correlationId, "`question` is required").error);
       return;
     }
     if (typeof body.schemaJson !== "string" || body.schemaJson.trim() === "") {
-      writeJson(res, 400, badRequest(correlationId, "`schemaJson` is required"));
+      writeError(res, 400, correlationId, badRequest(correlationId, "`schemaJson` is required").error);
       return;
     }
 
@@ -149,25 +161,20 @@ export function createAskDbHttpServer(options: AskDbHttpServerOptions = {}) {
         ["1", "true", "yes"].includes((process.env.ASKDB_HTTP_ENABLE_EXECUTION ?? "").toLowerCase()) ||
         false;
       if (requestExecute && !executionEnabled) {
-        writeJson(res, 403, {
-          ok: false,
-          correlationId,
-          error: { code: "execution_disabled", message: "Execution is disabled on this server." },
-        } satisfies AskHttpErrorResponse);
+        writeError(res, 403, correlationId, {
+          code: "execution_disabled",
+          message: "Execution is disabled on this server.",
+        });
         return;
       }
 
       const mockSql = process.env.ASKDB_MOCK_SQL;
       const apiKey = process.env.OPENAI_API_KEY;
       if (!mockSql && !apiKey) {
-        writeJson(res, 500, {
-          ok: false,
-          correlationId,
-          error: {
-            code: "generation_not_configured",
-            message: "OPENAI_API_KEY is required for NL→SQL generation (or set ASKDB_MOCK_SQL).",
-          },
-        } satisfies AskHttpErrorResponse);
+        writeError(res, 500, correlationId, {
+          code: "generation_not_configured",
+          message: "OPENAI_API_KEY is required for NL→SQL generation (or set ASKDB_MOCK_SQL).",
+        });
         return;
       }
 
@@ -181,11 +188,7 @@ export function createAskDbHttpServer(options: AskDbHttpServerOptions = {}) {
         schema = loadNormalizedSchemaFromJson(body.schemaJson);
       } catch (e) {
         const msg = e instanceof Error ? e.message : String(e);
-        writeJson(res, 400, {
-          ok: false,
-          correlationId,
-          error: { code: "schema_parse_error", message: msg },
-        } satisfies AskHttpErrorResponse);
+        writeError(res, 400, correlationId, { code: "schema_parse_error", message: msg });
         return;
       }
 
@@ -233,16 +236,34 @@ export function createAskDbHttpServer(options: AskDbHttpServerOptions = {}) {
       // parseAskDbModeV1 throws on invalid ids; treat as caller error if it looks like a mode issue.
       const msg = e instanceof Error ? e.message : String(e);
       if (msg.toLowerCase().includes("mode")) {
-        writeJson(res, 400, badRequest(correlationId, msg));
+        writeError(res, 400, correlationId, badRequest(correlationId, msg).error);
         return;
       }
-      const isCore = e instanceof AskDbError;
       logger.error({ event: AskDbLogEvent.RunError, errMessage: msg }, "askdb http run error");
-      writeJson(res, 500, {
-        ok: false,
-        correlationId,
-        error: { code: isCore ? "core_error" : "internal_error", message: msg },
-      } satisfies AskHttpErrorResponse);
+
+      if (e instanceof SqlValidationError) {
+        writeError(res, 400, correlationId, {
+          code: "sql_validation_error",
+          message: e.message,
+          rule: e.rule,
+        });
+        return;
+      }
+      if (e instanceof SqlGenerationError) {
+        writeError(res, 502, correlationId, { code: "sql_generation_error", message: e.message });
+        return;
+      }
+      if (e instanceof SqlExecutionError) {
+        writeError(res, 502, correlationId, { code: "sql_execution_error", message: e.message });
+        return;
+      }
+      if (e instanceof AskDbError) {
+        // Default mapping for other core errors.
+        writeError(res, 500, correlationId, { code: "internal_error", message: e.message });
+        return;
+      }
+
+      writeError(res, 500, correlationId, { code: "internal_error", message: msg });
       return;
     }
   });
