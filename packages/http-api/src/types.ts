@@ -3,10 +3,15 @@ import type { AskDbModeV1 } from "@askdb/core";
 export type AskHttpRequest = {
   question: string;
   /**
-   * AskDB schema JSON v1 as a string. This keeps the transport contract stable across
-   * languages and avoids leaking internal schema types.
+   * Optional override: AskDB schema JSON v1 as a string.
+   *
+   * Preferred: configure a server-default schema via env (e.g. ASKDB_SCHEMA_PATH)
+   * and omit this field in requests.
+   *
+   * This keeps the transport contract stable across languages and avoids leaking
+   * internal schema types.
    */
-  schemaJson: string;
+  schemaJson?: string;
   /** Default false. */
   execute?: boolean;
   /** Required when execute=true; otherwise ignored. */

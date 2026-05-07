@@ -9,13 +9,15 @@ describe("http-api", () => {
     delete process.env.ASKDB_MOCK_SQL;
     delete process.env.OPENAI_API_KEY;
     delete process.env.ASKDB_LOG_LEVEL;
+    delete process.env.ASKDB_SCHEMA_PATH;
+    delete process.env.ASKDB_SCHEMA_JSON;
   });
 
   it("POST /ask returns sql + correlationId (mocked)", async () => {
     process.env.ASKDB_MOCK_SQL = "select 1";
     process.env.ASKDB_LOG_LEVEL = "silent";
+    process.env.ASKDB_SCHEMA_PATH = schemaPath.pathname;
 
-    const schemaJson = await readFile(schemaPath, "utf8");
     const app = createAskDbHttpServer({ host: "127.0.0.1", port: 0 });
     await new Promise<void>((resolve) => app.server.listen(0, "127.0.0.1", resolve));
     const addr = app.server.address();
@@ -28,7 +30,7 @@ describe("http-api", () => {
           "content-type": "application/json",
           "x-correlation-id": "cid-123",
         },
-        body: JSON.stringify({ question: "hi", schemaJson }),
+        body: JSON.stringify({ question: "hi" }),
       });
       expect(res.status).toBe(200);
       const json = (await res.json()) as any;
@@ -44,8 +46,8 @@ describe("http-api", () => {
     process.env.ASKDB_MOCK_SQL = "select 1";
     process.env.ASKDB_LOG_LEVEL = "silent";
     delete process.env.ASKDB_HTTP_ENABLE_EXECUTION;
+    process.env.ASKDB_SCHEMA_PATH = schemaPath.pathname;
 
-    const schemaJson = await readFile(schemaPath, "utf8");
     const app = createAskDbHttpServer({ host: "127.0.0.1", port: 0 });
     await new Promise<void>((resolve) => app.server.listen(0, "127.0.0.1", resolve));
     const addr = app.server.address();
@@ -55,7 +57,7 @@ describe("http-api", () => {
       const res = await fetch(`http://127.0.0.1:${addr.port}/ask`, {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ question: "hi", schemaJson, execute: true }),
+        body: JSON.stringify({ question: "hi", execute: true }),
       });
       expect(res.status).toBe(403);
       const json = (await res.json()) as any;
@@ -128,8 +130,8 @@ describe("http-api", () => {
   it("invalid mode returns bad_request", async () => {
     process.env.ASKDB_MOCK_SQL = "select 1";
     process.env.ASKDB_LOG_LEVEL = "silent";
+    process.env.ASKDB_SCHEMA_PATH = schemaPath.pathname;
 
-    const schemaJson = await readFile(schemaPath, "utf8");
     const app = createAskDbHttpServer({ host: "127.0.0.1", port: 0 });
     await new Promise<void>((resolve) => app.server.listen(0, "127.0.0.1", resolve));
     const addr = app.server.address();
@@ -139,7 +141,7 @@ describe("http-api", () => {
       const res = await fetch(`http://127.0.0.1:${addr.port}/ask`, {
         method: "POST",
         headers: { "content-type": "application/json", "x-askdb-mode": "nope" },
-        body: JSON.stringify({ question: "hi", schemaJson }),
+        body: JSON.stringify({ question: "hi" }),
       });
       expect(res.status).toBe(400);
       const json = (await res.json()) as any;
@@ -153,8 +155,8 @@ describe("http-api", () => {
   it("SQL validation errors map to sql_validation_error + rule", async () => {
     process.env.ASKDB_MOCK_SQL = "delete from users";
     process.env.ASKDB_LOG_LEVEL = "silent";
+    process.env.ASKDB_SCHEMA_PATH = schemaPath.pathname;
 
-    const schemaJson = await readFile(schemaPath, "utf8");
     const app = createAskDbHttpServer({ host: "127.0.0.1", port: 0 });
     await new Promise<void>((resolve) => app.server.listen(0, "127.0.0.1", resolve));
     const addr = app.server.address();
@@ -164,13 +166,40 @@ describe("http-api", () => {
       const res = await fetch(`http://127.0.0.1:${addr.port}/ask`, {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ question: "hi", schemaJson }),
+        body: JSON.stringify({ question: "hi" }),
       });
       expect(res.status).toBe(400);
       const json = (await res.json()) as any;
       expect(json.ok).toBe(false);
       expect(json.error?.code).toBe("sql_validation_error");
       expect(json.error?.rule).toBeTruthy();
+    } finally {
+      await app.close();
+    }
+  });
+
+  it("missing schema returns bad_request", async () => {
+    process.env.ASKDB_MOCK_SQL = "select 1";
+    process.env.ASKDB_LOG_LEVEL = "silent";
+    delete process.env.ASKDB_SCHEMA_PATH;
+    delete process.env.ASKDB_SCHEMA_JSON;
+
+    const app = createAskDbHttpServer({ host: "127.0.0.1", port: 0 });
+    await new Promise<void>((resolve) => app.server.listen(0, "127.0.0.1", resolve));
+    const addr = app.server.address();
+    if (!addr || typeof addr === "string") throw new Error("expected inet address");
+
+    try {
+      const res = await fetch(`http://127.0.0.1:${addr.port}/ask`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ question: "hi" }),
+      });
+      expect(res.status).toBe(400);
+      const json = (await res.json()) as any;
+      expect(json.ok).toBe(false);
+      expect(json.error?.code).toBe("bad_request");
+      expect(String(json.error?.message ?? "")).toContain("No schema configured");
     } finally {
       await app.close();
     }
