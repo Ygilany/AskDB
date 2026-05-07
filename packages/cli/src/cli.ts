@@ -8,6 +8,8 @@ import {
   AskDbLogEvent,
   type AskDbLogLevel,
   type AskDbModeV1,
+  type GenerateSqlDeps,
+  SchemaParseError,
   formatAskDbModesV1,
   formatSupportedAskDbLogLevels,
   isSupportedAskDbLogLevel,
@@ -60,6 +62,69 @@ function printCliError(error: unknown): void {
   }
   console.error(String(error));
 }
+
+function formatSchemaPathHint(schemaPath: string): string {
+  return `Schema path: ${schemaPath}\nHint: Try \`fixtures/schemas/orders-users.schema.json\` as a known-good example.`;
+}
+
+async function loadSchemaFromPath(schemaPath: string): Promise<ReturnType<typeof loadNormalizedSchemaFromJson>> {
+  try {
+    const raw = await readFile(schemaPath, "utf8");
+    return loadNormalizedSchemaFromJson(raw);
+  } catch (e) {
+    const err = e as unknown as { code?: unknown; message?: unknown };
+    const code = typeof err.code === "string" ? err.code : undefined;
+    if (code === "ENOENT") {
+      throw new AskDbError(`Schema file not found.\n${formatSchemaPathHint(schemaPath)}`, e);
+    }
+    if (code === "EACCES") {
+      throw new AskDbError(`Schema file is not readable (permission denied).\n${formatSchemaPathHint(schemaPath)}`, e);
+    }
+    if (e instanceof SchemaParseError) {
+      throw new AskDbError(`Failed to parse schema JSON.\n${formatSchemaPathHint(schemaPath)}\nDetails: ${e.message}`, e);
+    }
+    const msg = e instanceof Error ? e.message : String(e);
+    throw new AskDbError(`Failed to load schema.\n${formatSchemaPathHint(schemaPath)}\nDetails: ${msg}`, e);
+  }
+}
+
+type SensitiveSqlReference = { table: string; column: string };
+const SENSITIVE_SQL_WARNING_EVENT = "askdb.pipeline.sensitive_sql_warning" as const;
+
+function escapeRegExp(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function findSensitiveReferencesInSql(
+  sql: string,
+  schema: Awaited<ReturnType<typeof loadSchemaFromPath>>,
+): SensitiveSqlReference[] {
+  const lower = sql.toLowerCase();
+  const refs: SensitiveSqlReference[] = [];
+
+  for (const t of schema.tables) {
+    for (const c of t.columns) {
+      if (!t.sensitive && !c.sensitive) continue;
+
+      const col = c.name.toLowerCase();
+      const table = t.name.toLowerCase();
+      const qualified = new RegExp(`\\b${escapeRegExp(table)}\\s*\\.\\s*${escapeRegExp(col)}\\b`, "i");
+      const unqualified = new RegExp(`\\b${escapeRegExp(col)}\\b`, "i");
+
+      if (qualified.test(lower) || unqualified.test(lower)) {
+        refs.push({ table: t.name, column: c.name });
+      }
+    }
+  }
+
+  const seen = new Set<string>();
+  return refs.filter((r) => {
+    const k = `${r.table}.${r.column}`.toLowerCase();
+    if (seen.has(k)) return false;
+    seen.add(k);
+    return true;
+  });
+}
 function resolveAskDbLogLevel(opts: {
   verbose?: boolean;
   logLevel?: string;
@@ -109,6 +174,10 @@ program
   .option("--log-stdout", "Mirror structured JSON logs to stdout", false)
   .option("--correlation-id <id>", "Correlation ID for logs (overrides ASKDB_CORRELATION_ID)")
   .option(
+    "--mock-sql <sql>",
+    "Deterministic NL→SQL for tests (bypasses live model call). Also via ASKDB_MOCK_SQL.",
+  )
+  .option(
     "--mode <id>",
     `Operating mode (${formatAskDbModesV1()}); default schema_only. Override with ASKDB_MODE`,
   )
@@ -129,6 +198,7 @@ program
       logFile?: string;
       logStdout?: boolean;
       correlationId?: string;
+      mockSql?: string;
       mode?: string;
       omitSensitiveFromPrompt?: boolean;
     }) => {
@@ -152,9 +222,11 @@ program
         logStdout: opts.logStdout,
       });
 
+      const mockSql = opts.mockSql ?? process.env.ASKDB_MOCK_SQL;
       const apiKey = process.env.OPENAI_API_KEY;
-      if (!apiKey) {
+      if (!mockSql && !apiKey) {
         console.error("OPENAI_API_KEY is required for NL→SQL generation.");
+        console.error("Tip: in tests, set ASKDB_MOCK_SQL to bypass live model calls.");
         process.exitCode = 1;
         return;
       }
@@ -174,15 +246,20 @@ program
       );
 
       try {
-        const raw = await readFile(opts.schema, "utf8");
-        const schema = loadNormalizedSchemaFromJson(raw);
+        const schema = await loadSchemaFromPath(opts.schema);
 
-        const openai = createOpenAI({
-          apiKey,
-          baseURL: process.env.OPENAI_BASE_URL,
-        });
-        const modelId = process.env.ASKDB_MODEL ?? process.env.OPENAI_MODEL ?? "gpt-4o-mini";
-        const model = openai(modelId);
+        type AskModel = Parameters<typeof ask>[0]["model"];
+        const model: AskModel = mockSql
+          ? // The model won't be used when `deps.generateText` is overridden.
+            (undefined as unknown as AskModel)
+          : (() => {
+              const openai = createOpenAI({
+                apiKey: apiKey!,
+                baseURL: process.env.OPENAI_BASE_URL,
+              });
+              const modelId = process.env.ASKDB_MODEL ?? process.env.OPENAI_MODEL ?? "gpt-4o-mini";
+              return openai(modelId);
+            })();
 
         const omitSensitiveFromPrompt =
           Boolean(opts.omitSensitiveFromPrompt) ||
@@ -200,7 +277,33 @@ program
           mode,
           explain: Boolean(opts.explain),
           omitSensitiveIdentifiersFromNlToSqlPrompt: omitSensitiveFromPrompt,
+          deps:
+            mockSql !== undefined
+              ? {
+                  // `ai.generateText` has a rich return type; for test-mode we only need `text`.
+                  generateText: (async () => ({ text: mockSql } as any)) as NonNullable<
+                    GenerateSqlDeps["generateText"]
+                  >,
+                }
+              : undefined,
         });
+
+        const sensitiveRefs = findSensitiveReferencesInSql(out.sql, schema);
+        if (sensitiveRefs.length > 0) {
+          const cols = sensitiveRefs.map((r: SensitiveSqlReference) => `${r.table}.${r.column}`);
+          logger.info(
+            {
+              event: SENSITIVE_SQL_WARNING_EVENT,
+              sensitiveColumnCount: cols.length,
+              sensitiveColumns: cols,
+            },
+            "generated SQL references sensitive identifiers",
+          );
+          console.error(
+            `Warning: generated SQL references sensitive columns: ${cols.join(", ")}\n` +
+              "Review carefully before executing or sharing results.",
+          );
+        }
 
         console.log("-- sql --");
         console.log(`${out.sql};`);

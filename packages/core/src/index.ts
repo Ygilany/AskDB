@@ -12,6 +12,10 @@ export {
 export { AskDbLogEvent } from "./logging/log-events.js";
 export type { AskDbLogger } from "./logging/askdb-logger.js";
 export {
+  ASKDB_LOG_REQUIRED_EVENTS,
+  ASKDB_LOG_REQUIRED_FIELDS,
+} from "./logging/log-contract.js";
+export {
   createAskDbLogger,
   type AskDbLogLevel,
   type CreateAskDbLoggerOptions,
