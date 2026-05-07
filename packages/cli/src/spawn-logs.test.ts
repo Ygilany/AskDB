@@ -28,8 +28,8 @@ describe("cli spawn: structured logs contract", () => {
     mkdirSync(logDir, { recursive: true });
     const logFile = join(logDir, "run.log");
 
-    const schemaPath = join(repoRoot, "fixtures/schemas/orders-users.schema.json");
-    const mockSql = "SELECT 1 AS one";
+    const schemaPath = join(repoRoot, "fixtures/schemas/orders-users-sensitive.schema.json");
+    const mockSql = "SELECT users.secret_recovery_token FROM users";
 
     const exec = run(
       "node",
@@ -58,6 +58,7 @@ describe("cli spawn: structured logs contract", () => {
     try {
       expect(exec.status).toBe(0);
       expect(exec.stderr).not.toContain("OPENAI_API_KEY is required");
+      expect(exec.stderr).toContain("Warning: generated SQL references sensitive columns:");
 
       const lines = readFileSync(logFile, "utf8")
         .trim()
