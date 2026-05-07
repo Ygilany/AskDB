@@ -7,6 +7,7 @@ import {
   AskDbLogEvent,
   type AskDbLogLevel,
   type AskDbModeV1,
+  DEFAULT_ASKDB_MODE,
   ask,
   createAskDbLogger,
   loadNormalizedSchemaFromJson,
@@ -58,8 +59,28 @@ function getCorrelationId(req: IncomingMessage): string {
   return randomUUID();
 }
 
+function getHeader(req: IncomingMessage, name: string): string | undefined {
+  const v = req.headers[name.toLowerCase()];
+  if (typeof v === "string") return v;
+  if (Array.isArray(v)) return v[0];
+  return undefined;
+}
+
 function badRequest(correlationId: string, message: string): AskHttpErrorResponse {
   return { ok: false, correlationId, error: { code: "bad_request", message } };
+}
+
+function boolFromHeader(v: string | undefined): boolean | undefined {
+  if (!v) return undefined;
+  const s = v.trim().toLowerCase();
+  if (["1", "true", "yes", "on"].includes(s)) return true;
+  if (["0", "false", "no", "off"].includes(s)) return false;
+  return undefined;
+}
+
+function modeFromHeader(v: string | undefined): AskDbModeV1 | undefined {
+  if (!v) return undefined;
+  return parseAskDbModeV1(v);
 }
 
 export function createAskDbHttpServer(options: AskDbHttpServerOptions = {}) {
@@ -88,8 +109,6 @@ export function createAskDbHttpServer(options: AskDbHttpServerOptions = {}) {
       logStdout: ["1", "true", "yes"].includes((process.env.ASKDB_LOG_STDOUT ?? "").toLowerCase()),
     });
 
-    logger.info({ event: AskDbLogEvent.RunStart }, "askdb http run start");
-
     let body: AskHttpRequest;
     try {
       body = await readJsonBody<AskHttpRequest>(req);
@@ -115,42 +134,61 @@ export function createAskDbHttpServer(options: AskDbHttpServerOptions = {}) {
       return;
     }
 
-    let mode: AskDbModeV1;
     try {
-      mode = parseAskDbModeV1(body.mode ?? process.env.ASKDB_MODE);
-    } catch (e) {
-      writeJson(
-        res,
-        400,
-        badRequest(correlationId, e instanceof Error ? e.message : "invalid mode"),
+      // Mode may be supplied by request JSON or header; JSON wins.
+      const headerMode = getHeader(req, "x-askdb-mode");
+      const effectiveMode = body.mode ?? (headerMode ? modeFromHeader(headerMode) : undefined);
+      const mode: AskDbModeV1 = effectiveMode ?? parseAskDbModeV1(process.env.ASKDB_MODE);
+
+      // Default to generation+validation only. Execution must be explicitly enabled both:
+      // - by the request, and
+      // - by server config (ASKDB_HTTP_ENABLE_EXECUTION).
+      const headerExecute = boolFromHeader(getHeader(req, "x-askdb-execute"));
+      const requestExecute = body.execute ?? headerExecute ?? false;
+      const executionEnabled =
+        ["1", "true", "yes"].includes((process.env.ASKDB_HTTP_ENABLE_EXECUTION ?? "").toLowerCase()) ||
+        false;
+      if (requestExecute && !executionEnabled) {
+        writeJson(res, 403, {
+          ok: false,
+          correlationId,
+          error: { code: "execution_disabled", message: "Execution is disabled on this server." },
+        } satisfies AskHttpErrorResponse);
+        return;
+      }
+
+      const mockSql = process.env.ASKDB_MOCK_SQL;
+      const apiKey = process.env.OPENAI_API_KEY;
+      if (!mockSql && !apiKey) {
+        writeJson(res, 500, {
+          ok: false,
+          correlationId,
+          error: {
+            code: "generation_not_configured",
+            message: "OPENAI_API_KEY is required for NL→SQL generation (or set ASKDB_MOCK_SQL).",
+          },
+        } satisfies AskHttpErrorResponse);
+        return;
+      }
+
+      logger.info(
+        { event: AskDbLogEvent.RunStart, execute: requestExecute, mode },
+        "askdb http run start",
       );
-      return;
-    }
 
-    let schema;
-    try {
-      schema = loadNormalizedSchemaFromJson(body.schemaJson);
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e);
-      writeJson(res, 400, { ok: false, correlationId, error: { code: "schema_parse_error", message: msg } });
-      return;
-    }
+      let schema;
+      try {
+        schema = loadNormalizedSchemaFromJson(body.schemaJson);
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        writeJson(res, 400, {
+          ok: false,
+          correlationId,
+          error: { code: "schema_parse_error", message: msg },
+        } satisfies AskHttpErrorResponse);
+        return;
+      }
 
-    const mockSql = process.env.ASKDB_MOCK_SQL;
-    const apiKey = process.env.OPENAI_API_KEY;
-    if (!mockSql && !apiKey) {
-      writeJson(res, 500, {
-        ok: false,
-        correlationId,
-        error: {
-          code: "execution_not_configured",
-          message: "OPENAI_API_KEY is required for NL→SQL generation (or set ASKDB_MOCK_SQL).",
-        },
-      } satisfies AskHttpErrorResponse);
-      return;
-    }
-
-    try {
       type AskModel = Parameters<typeof ask>[0]["model"];
       const model: AskModel = mockSql
         ? (undefined as unknown as AskModel)
@@ -167,10 +205,10 @@ export function createAskDbHttpServer(options: AskDbHttpServerOptions = {}) {
         question: body.question,
         schema,
         model,
-        execute: Boolean(body.execute),
+        execute: requestExecute,
         connectionString: body.connectionString,
         logger,
-        mode,
+        mode: mode ?? DEFAULT_ASKDB_MODE,
         explain: Boolean(body.explain),
         omitSensitiveIdentifiersFromNlToSqlPrompt: Boolean(body.omitSensitiveFromPrompt),
         deps:
@@ -190,19 +228,22 @@ export function createAskDbHttpServer(options: AskDbHttpServerOptions = {}) {
       };
       logger.info({ event: AskDbLogEvent.RunEnd, ok: true }, "askdb http run end");
       writeJson(res, 200, payload);
+      return;
     } catch (e) {
+      // parseAskDbModeV1 throws on invalid ids; treat as caller error if it looks like a mode issue.
       const msg = e instanceof Error ? e.message : String(e);
+      if (msg.toLowerCase().includes("mode")) {
+        writeJson(res, 400, badRequest(correlationId, msg));
+        return;
+      }
       const isCore = e instanceof AskDbError;
       logger.error({ event: AskDbLogEvent.RunError, errMessage: msg }, "askdb http run error");
-      const payload: AskHttpErrorResponse = {
+      writeJson(res, 500, {
         ok: false,
         correlationId,
-        error: {
-          code: isCore ? "core_error" : "internal_error",
-          message: msg,
-        },
-      };
-      writeJson(res, 500, payload);
+        error: { code: isCore ? "core_error" : "internal_error", message: msg },
+      } satisfies AskHttpErrorResponse);
+      return;
     }
   });
 
