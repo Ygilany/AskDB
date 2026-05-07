@@ -1,0 +1,115 @@
+{
+    "_id": "43586dea-e767-4294-8252-19d53cffc7d6",
+    "colName": "AskDB",
+    "created": "2026-05-07T18:38:31.265Z",
+    "sortNum": 10000,
+    "folders": [],
+    "requests": [
+        {
+            "_id": "6ec3b96f-514b-4316-9bb5-447deab4ef25",
+            "colId": "43586dea-e767-4294-8252-19d53cffc7d6",
+            "containerId": "",
+            "name": "http-api: health",
+            "url": "http://127.0.0.1:3000/health",
+            "method": "GET",
+            "sortNum": 10000,
+            "created": "2026-05-07T18:38:36.898Z",
+            "modified": "2026-05-07T18:44:00.000Z",
+            "headers": []
+        },
+        {
+            "_id": "2f8b1cd2-5c5b-47aa-9f39-3b71f08f89b5",
+            "colId": "43586dea-e767-4294-8252-19d53cffc7d6",
+            "containerId": "",
+            "name": "http-api: ask (mocked SQL)",
+            "url": "http://127.0.0.1:3000/ask",
+            "method": "POST",
+            "sortNum": 10100,
+            "created": "2026-05-07T18:44:00.000Z",
+            "modified": "2026-05-07T18:44:00.000Z",
+            "headers": [
+                {
+                    "name": "content-type",
+                    "value": "application/json"
+                },
+                {
+                    "name": "x-correlation-id",
+                    "value": "tc-demo-123"
+                },
+                {
+                    "name": "x-askdb-mode",
+                    "value": "schema_only"
+                }
+            ],
+            "body": {
+                "type": "json",
+                "raw": [
+                    "{",
+                    "  \"question\": \"How many users are there?\",",
+                    "  \"schemaJson\": \"{\\\"version\\\":1,\\\"tables\\\":[{\\\"name\\\":\\\"users\\\",\\\"columns\\\":[{\\\"name\\\":\\\"id\\\",\\\"type\\\":\\\"uuid\\\"},{\\\"name\\\":\\\"email\\\",\\\"type\\\":\\\"text\\\"}]}]}\"",
+                    "}",
+                    ""
+                ],
+                "form": []
+            }
+        },
+        {
+            "_id": "de6c39d3-f8d4-48f1-9e3f-1d7b1c540ad7",
+            "colId": "43586dea-e767-4294-8252-19d53cffc7d6",
+            "containerId": "",
+            "name": "http-api: ask (execution disabled → 403)",
+            "url": "http://127.0.0.1:3000/ask",
+            "method": "POST",
+            "sortNum": 10200,
+            "created": "2026-05-07T18:44:00.000Z",
+            "modified": "2026-05-07T18:44:00.000Z",
+            "headers": [
+                {
+                    "name": "content-type",
+                    "value": "application/json"
+                }
+            ],
+            "body": {
+                "type": "json",
+                "raw": [
+                    "{",
+                    "  \"question\": \"How many users are there?\",",
+                    "  \"schemaJson\": \"{\\\"version\\\":1,\\\"tables\\\":[{\\\"name\\\":\\\"users\\\",\\\"columns\\\":[{\\\"name\\\":\\\"id\\\",\\\"type\\\":\\\"uuid\\\"}]}]}\",",
+                    "  \"execute\": true,",
+                    "  \"connectionString\": \"postgres://postgres:postgres@127.0.0.1:5433/pagila\"",
+                    "}",
+                    ""
+                ]
+            }
+        },
+        {
+            "_id": "d0a5a2ff-3f4d-4a24-8f9e-46aa06e2f250",
+            "colId": "43586dea-e767-4294-8252-19d53cffc7d6",
+            "containerId": "",
+            "name": "http-api: not found",
+            "url": "http://127.0.0.1:3000/nope",
+            "method": "GET",
+            "sortNum": 10300,
+            "created": "2026-05-07T18:44:00.000Z",
+            "modified": "2026-05-07T18:44:00.000Z",
+            "headers": []
+        },
+        {
+            "_id": "f5c73d1d-88fe-4a7f-8d1a-bb4e0d437bf1",
+            "colId": "43586dea-e767-4294-8252-19d53cffc7d6",
+            "containerId": "",
+            "name": "http-api: bad JSON → 400",
+            "url": "http://127.0.0.1:3000/ask",
+            "method": "POST",
+            "sortNum": 10400,
+            "created": "2026-05-07T18:44:00.000Z",
+            "modified": "2026-05-07T18:44:00.000Z",
+            "headers": [
+                {
+                    "name": "content-type",
+                    "value": "application/json"
+                }
+            ]
+        }
+    ]
+}
