@@ -28,7 +28,7 @@ Phase 2 ships modes as explicit contracts, structured logging with correlation I
 - Improve SQL validation, explainability, and user prompts when the schema or intent is ambiguous.
 - Introduce **sensitive field** handling in metadata (tagged identifiers in NL→SQL DDL by default; optional omission). Longer-term behavior (**bounded_results** summarization with **sensitive columns stripped before any LLM**, post-SQL warnings) lives in [**`docs/contracts/sensitive-fields-and-modes.md`**](contracts/sensitive-fields-and-modes.md).
 
-## Phase 2.5 — Hardening follow-ups (DX + CI + trust UX)
+## Phase 2.5 ✅ — Hardening follow-ups (DX + CI + trust UX)
 
 **Goal:** Reduce manual validation and tighten the developer + operator experience before introducing more surfaces.
 
