@@ -102,5 +102,78 @@ describe("http-api", () => {
       await app.close();
     }
   });
+
+  it("bad JSON returns bad_request", async () => {
+    process.env.ASKDB_LOG_LEVEL = "silent";
+    const app = createAskDbHttpServer({ host: "127.0.0.1", port: 0 });
+    await new Promise<void>((resolve) => app.server.listen(0, "127.0.0.1", resolve));
+    const addr = app.server.address();
+    if (!addr || typeof addr === "string") throw new Error("expected inet address");
+
+    try {
+      const res = await fetch(`http://127.0.0.1:${addr.port}/ask`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: "{not json",
+      });
+      expect(res.status).toBe(400);
+      const json = (await res.json()) as any;
+      expect(json.ok).toBe(false);
+      expect(json.error?.code).toBe("bad_request");
+    } finally {
+      await app.close();
+    }
+  });
+
+  it("invalid mode returns bad_request", async () => {
+    process.env.ASKDB_MOCK_SQL = "select 1";
+    process.env.ASKDB_LOG_LEVEL = "silent";
+
+    const schemaJson = await readFile(schemaPath, "utf8");
+    const app = createAskDbHttpServer({ host: "127.0.0.1", port: 0 });
+    await new Promise<void>((resolve) => app.server.listen(0, "127.0.0.1", resolve));
+    const addr = app.server.address();
+    if (!addr || typeof addr === "string") throw new Error("expected inet address");
+
+    try {
+      const res = await fetch(`http://127.0.0.1:${addr.port}/ask`, {
+        method: "POST",
+        headers: { "content-type": "application/json", "x-askdb-mode": "nope" },
+        body: JSON.stringify({ question: "hi", schemaJson }),
+      });
+      expect(res.status).toBe(400);
+      const json = (await res.json()) as any;
+      expect(json.ok).toBe(false);
+      expect(json.error?.code).toBe("bad_request");
+    } finally {
+      await app.close();
+    }
+  });
+
+  it("SQL validation errors map to sql_validation_error + rule", async () => {
+    process.env.ASKDB_MOCK_SQL = "delete from users";
+    process.env.ASKDB_LOG_LEVEL = "silent";
+
+    const schemaJson = await readFile(schemaPath, "utf8");
+    const app = createAskDbHttpServer({ host: "127.0.0.1", port: 0 });
+    await new Promise<void>((resolve) => app.server.listen(0, "127.0.0.1", resolve));
+    const addr = app.server.address();
+    if (!addr || typeof addr === "string") throw new Error("expected inet address");
+
+    try {
+      const res = await fetch(`http://127.0.0.1:${addr.port}/ask`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ question: "hi", schemaJson }),
+      });
+      expect(res.status).toBe(400);
+      const json = (await res.json()) as any;
+      expect(json.ok).toBe(false);
+      expect(json.error?.code).toBe("sql_validation_error");
+      expect(json.error?.rule).toBeTruthy();
+    } finally {
+      await app.close();
+    }
+  });
 });
 
