@@ -31,7 +31,8 @@ export type AskHttpErrorResponse = {
     code:
       | "bad_request"
       | "schema_parse_error"
-      | "execution_not_configured"
+      | "generation_not_configured"
+      | "execution_disabled"
       | "core_error"
       | "internal_error";
     message: string;
