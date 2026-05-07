@@ -9,7 +9,11 @@
     "build": "turbo run build",
     "test": "turbo run test",
     "test:watch": "vitest",
-    "lint": "turbo run lint"
+    "lint": "turbo run lint",
+    "pagila:up": "docker compose -f fixtures/pagila/docker-compose.yml up --build -d",
+    "pagila:down": "docker compose -f fixtures/pagila/docker-compose.yml down",
+    "pagila:logs": "docker compose -f fixtures/pagila/docker-compose.yml logs -f",
+    "pagila:reset": "docker compose -f fixtures/pagila/docker-compose.yml down -v"
   },
   "devDependencies": {
     "@askdb/cli": "workspace:*",

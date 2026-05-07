@@ -1,9 +1,43 @@
-import { formatSchemaForPrompt } from "../schema/normalize.js";
+import type { AskDbLogger } from "../logging/askdb-logger.js";
+import { AskDbLogEvent } from "../logging/log-events.js";
+import type { FormatNlToSqlOptions } from "../schema/normalize.js";
+import { formatSchemaForNlToSql } from "../schema/normalize.js";
 import type { NormalizedSchema } from "../schema/types.js";
 
-export function buildNlToSqlUserPrompt(question: string, schema: NormalizedSchema): string {
-  const ddl = formatSchemaForPrompt(schema);
-  return [
+export function buildNlToSqlUserPrompt(
+  question: string,
+  schema: NormalizedSchema,
+  ambiguityNotes: readonly string[] = [],
+  logger?: AskDbLogger,
+  nlToSqlSchemaOptions?: FormatNlToSqlOptions,
+): string {
+  const { ddl, stats } = formatSchemaForNlToSql(schema, nlToSqlSchemaOptions);
+  if (
+    stats.omitSensitiveIdentifiersFromPrompt &&
+    (stats.redactedColumnCount > 0 || stats.sensitiveTableStubCount > 0)
+  ) {
+    logger?.debug?.(
+      {
+        event: AskDbLogEvent.PromptSensitiveRedacted,
+        redactedColumnCount: stats.redactedColumnCount,
+        sensitiveTableStubCount: stats.sensitiveTableStubCount,
+      },
+      "nl-to-sql prompt omitted sensitive schema metadata from DDL",
+    );
+  }
+  if (
+    !stats.omitSensitiveIdentifiersFromPrompt &&
+    stats.listedSensitiveColumnCount > 0
+  ) {
+    logger?.debug?.(
+      {
+        event: AskDbLogEvent.PromptSensitiveIdentifiersListed,
+        listedSensitiveColumnCount: stats.listedSensitiveColumnCount,
+      },
+      "nl-to-sql prompt lists sensitive schema identifiers for SQL grounding (names only)",
+    );
+  }
+  const lines = [
     "You translate natural language questions into a single PostgreSQL SELECT (or WITH ... SELECT).",
     "Rules:",
     "- Output exactly one PostgreSQL SELECT query (CTE WITH is ok). End with optional semicolon.",
@@ -14,8 +48,18 @@ export function buildNlToSqlUserPrompt(question: string, schema: NormalizedSchem
     "Database schema:",
     ddl,
     "",
-    `Question: ${question}`,
-  ].join("\n");
+  ];
+  if (ambiguityNotes.length > 0) {
+    lines.push(
+      "Context (deterministic checks from AskDB—these hints may be irrelevant; weigh them against the question):",
+    );
+    for (const note of ambiguityNotes) {
+      lines.push(`- ${note}`);
+    }
+    lines.push("");
+  }
+  lines.push(`Question: ${question}`);
+  return lines.join("\n");
 }
 
 export const nlToSqlSystemPrompt =

@@ -19,17 +19,32 @@ Phase 1 ships `@askdb/core` and the `askdb` CLI with AskDB schema JSON v1, BYO-p
 
 **Goal:** Encode product semantics before more surfaces.
 
-- Introduce **structured logging** and **trace / correlation IDs** across headless surfaces (CLI first; reused by MCP/HTTP later) so integrators can debug and correlate runs—details land with Phase 2/3 wiring, scoped so Phase 1 stays minimal.
-- Document and implement the **operating modes** (e.g., schema-only execution vs. optional second pass with bounded result data for summaries).
+**Spec pack:** [`docs/specs/phase-2-hardening-modes/README.md`](specs/phase-2-hardening-modes/README.md) (links **plan**, **requirements**, **validation** merge bar).
+
+- Introduce **structured logging** and **trace / correlation IDs** across headless surfaces (CLI first; reused by MCP/HTTP later) so integrators can debug and correlate runs—details land with Phase 2/3 wiring, scoped so Phase 1 stays minimal. Rationale: [**ADR 0001 — Structured logging with Pino**](adrs/0001-structured-logging-pino.md).
+- Document and implement the **operating modes** (e.g., schema-only execution vs. optional second pass with bounded result data for summaries). Contract: [`docs/contracts/modes-v1.md`](contracts/modes-v1.md).
 - Improve SQL validation, explainability, and user prompts when the schema or intent is ambiguous.
-- Introduce **sensitive field** exclusions in metadata handling as early plumbing for RAG/prompt safety.
+- Introduce **sensitive field** handling in metadata (tagged identifiers in NL→SQL DDL by default; optional omission). Longer-term behavior (**bounded_results** summarization with **sensitive columns stripped before any LLM**, post-SQL warnings) lives in [**`docs/contracts/sensitive-fields-and-modes.md`**](contracts/sensitive-fields-and-modes.md).
+
+### Carried forward from Phase 2 (explicit backlog)
+
+These were called out in the Phase 2 [**plan**](specs/phase-2-hardening-modes/plan.md) or [**validation**](specs/phase-2-hardening-modes/validation.md) but are **not** required to consider Phase 2 “done” for merge purposes:
+
+| Item | Where it likely lands |
+|------|------------------------|
+| **Shrink manual validation** — CI/spawn tests that run `askdb` with `--log-file` / `-v`, assert JSON lines + stable `event` + `correlationId` **without** a live LLM (mock generation or subprocess smoke); optional smoke with secrets only in trusted CI | Near-term hardening (same repo); reduces reliance on [`validation.md`](specs/phase-2-hardening-modes/validation.md) manual steps |
+| **Optional `pino-pretty`** for human-readable dev output only (never sole production path per [**ADR 0001**](adrs/0001-structured-logging-pino.md)) | Quality-of-life / DX |
+| **`pino.transport()` / worker-thread** logging — only if current multistream file+stderr hits limits | Observability hardening |
+| **Richer CLI errors** — reference schema **file path** or fixture hints when parse/validation fails | CLI polish |
+| **Post-SQL warnings** — surface host-visible warning when generated SQL references **sensitive**-marked columns ([`sensitive-fields-and-modes.md`](contracts/sensitive-fields-and-modes.md)) | Product trust UX (after NL→SQL ships everywhere) |
+| **`bounded_results` non-stub** — optional second model pass with **explicit** consent; **project out sensitive columns** from row payloads before any summary LLM; budgets per [`modes-v1.md`](contracts/modes-v1.md) | **Phase 8** (reports / summaries on execution path) and/or **Phase 3** transport if API exposes summaries first |
 
 ## Phase 3 — Second surface (MCP or minimal API)
 
 **Goal:** Meet developers where they work.
 
 - Ship either **MCP** or a small **HTTP API** wrapping the same core as the CLI (choice driven by immediate integration demand).
-- Same contracts as Phase 2 so CLI and server stay aligned.
+- Same contracts as Phase 2 so CLI and server stay aligned. Prefer calling **`ask()`** and shared types from `@askdb/core`—see [**`docs/integration/reuse-core-phase-3.md`**](integration/reuse-core-phase-3.md).
 
 ## Phase 4 — Web, schema catalog UI, and embed path
 
@@ -50,11 +65,15 @@ Phase 1 delivered **AskDB schema JSON v1**: a minimal **pure** artifact (physica
 
 ## Phase 5 — User-run introspection queries (schema export)
 
-**Goal:** Help users who cannot or will not connect AskDB directly to their DB still feed accurate metadata to the model.
+**Goal:** Turn **Postgres catalog metadata** into an **AskDB schema JSON v1** artifact **without** requiring AskDB to hold DB credentials or open a live connection—unless we add an optional connector later.
 
-- Ship **documented SQL (or engine-specific) queries** customers run **in their own environment** to extract schemas, tables, and related metadata.
-- Output is **importable** into AskDB (aligned with the Phase 4 import path)—no tunnel through our app required.
-- **Postgres-first** templates; extend alongside **Phase 6** as additional engines land.
+**Primary workflow:** Ship **documented `information_schema` SQL** (see [**`docs/specs/postgres-introspection-for-askdb-schema-v1.md`**](specs/postgres-introspection-for-askdb-schema-v1.md)) that users run in **`psql`**, their IDE, or CI; they export rows (CSV/JSON) and pass them to a **converter** that emits **`{ "version": 1, "tables": [...] }`**. Same queries can be unified or split (schemas / tables / columns+PK / FKs) depending on ergonomics.
+
+- Ship **reference queries + mapping notes** to AskDB schema v1 (`type` string, `nullable`, `primaryKey`, multi-schema naming as `schema.table`).
+- Ship a **converter** that accepts **exported query results** (format TBD: single unified extract vs. multiple files) and outputs valid AskDB schema JSON v1.
+- **Optional later:** a **live introspection** mode (CLI connects with `DATABASE_URL` and runs the same SQL inside AskDB) for teams that want one command—does not replace the air-gapped template path.
+- Output remains **importable** into AskDB (aligned with the Phase 4 import path).
+- **Postgres-first**; extend alongside **Phase 6** for other engines.
 
 ## Phase 6 — Additional databases (beyond Postgres) and schema adapters
 

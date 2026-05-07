@@ -1,0 +1,9 @@
+# Keep `docker compose build` context small when using repo root as context.
+.git
+node_modules
+**/node_modules
+**/dist
+.turbo
+.pnpm-store
+.env
+.env.*
