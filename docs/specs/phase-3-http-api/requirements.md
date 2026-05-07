@@ -73,6 +73,8 @@ This spec intentionally keeps the HTTP surface **thin**. Implementation lives in
 
 - `OPENAI_API_KEY`: required for NL→SQL generation (unless using mock SQL)
 - `ASKDB_MOCK_SQL`: when set, bypasses live model calls and returns deterministic SQL
+- `ASKDB_SCHEMA_PATH`: path to an AskDB schema JSON v1 file used as the server default
+- `ASKDB_SCHEMA_JSON`: inline AskDB schema JSON v1 string used as the server default (prefer `ASKDB_SCHEMA_PATH`)
 - `ASKDB_MODE`: default mode when neither request body nor header sets it
 - `ASKDB_HTTP_ENABLE_EXECUTION`: must be truthy to allow execution requests (otherwise `/ask` returns `403 execution_disabled`)
 - Logging: `ASKDB_LOG_LEVEL`, `ASKDB_LOG_FILE`, `ASKDB_LOG_STDOUT`
@@ -82,7 +84,7 @@ This spec intentionally keeps the HTTP surface **thin**. Implementation lives in
 ```json
 {
   "question": "How many users are there?",
-  "schemaJson": "{...AskDB schema JSON v1...}",
+  "schemaJson": "{...AskDB schema JSON v1... (optional override)}",
   "mode": "schema_only",
   "execute": false,
   "connectionString": "postgres://…",
