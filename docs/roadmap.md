@@ -15,7 +15,9 @@ Phase 1 ships `@askdb/core` and the `askdb` CLI with AskDB schema JSON v1, BYO-p
 
 **Out of scope for Phase 1:** Embeddable UI, **non-Postgres database engines** (see Phase 6), full RAG, sensitive-field registry UI, production-grade multi-tenant policy engine, introspection-query templates (see Phase 5).
 
-## Phase 2 — Hardening and “modes” as contracts
+## Phase 2 ✅ — Hardening and “modes” as contracts
+
+Phase 2 ships modes as explicit contracts, structured logging with correlation IDs, improved SQL validation/explainability, and baseline sensitive-field handling in prompts and docs.
 
 **Goal:** Encode product semantics before more surfaces.
 
