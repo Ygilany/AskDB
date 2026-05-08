@@ -13,9 +13,9 @@ Phase 1 ships `@askdb/core` and the `askdb` CLI with AskDB schema JSON v1, BYO-p
 - **Execute** against a configured Postgres instance and return **tabular results** (no rich report builder yet).
 - **CLI** as the first surface (fast iteration, no UI coupling).
 
-**Out of scope for Phase 1:** Embeddable UI, **non-Postgres database engines** (see Phase 6), full RAG, sensitive-field registry UI, production-grade multi-tenant policy engine, introspection-query templates (see Phase 4).
+**Out of scope for Phase 1:** Embeddable UI, **non-Postgres database engines** (see Phase 10), full RAG, sensitive-field registry UI, production-grade multi-tenant policy engine, introspection-query templates (see Phase 6).
 
-## Phase 2 ✅ — Hardening and “modes” as contracts
+## Phase 2 ✅ — Hardening and "modes" as contracts
 
 Phase 2 ships modes as explicit contracts, structured logging with correlation IDs, improved SQL validation/explainability, and baseline sensitive-field handling in prompts and docs.
 
@@ -23,7 +23,7 @@ Phase 2 ships modes as explicit contracts, structured logging with correlation I
 
 **Spec pack:** [`docs/specs/phase-2-hardening-modes/README.md`](specs/phase-2-hardening-modes/README.md) (links **plan**, **requirements**, **validation** merge bar).
 
-- Introduce **structured logging** and **trace / correlation IDs** across headless surfaces (CLI first; reused by MCP/HTTP later) so integrators can debug and correlate runs—details land with Phase 2/3 wiring, scoped so Phase 1 stays minimal. Rationale: [**ADR 0001 — Structured logging with Pino**](adrs/0001-structured-logging-pino.md).
+- Introduce **structured logging** and **trace / correlation IDs** across headless surfaces (CLI first; reused by TUI/HTTP/MCP later) so integrators can debug and correlate runs. Rationale: [**ADR 0001 — Structured logging with Pino**](adrs/0001-structured-logging-pino.md).
 - Document and implement the **operating modes** (e.g., schema-only execution vs. optional second pass with bounded result data for summaries). Contract: [`docs/contracts/modes-v1.md`](contracts/modes-v1.md).
 - Improve SQL validation, explainability, and user prompts when the schema or intent is ambiguous.
 - Introduce **sensitive field** handling in metadata (tagged identifiers in NL→SQL DDL by default; optional omission). Longer-term behavior (**bounded_results** summarization with **sensitive columns stripped before any LLM**, post-SQL warnings) lives in [**`docs/contracts/sensitive-fields-and-modes.md`**](contracts/sensitive-fields-and-modes.md).
@@ -34,43 +34,20 @@ Completed: CI spawn tests (no live LLM), richer CLI schema-load errors, and sens
 
 **Goal:** Reduce manual validation and tighten the developer + operator experience before introducing more surfaces.
 
-- **Shrink manual validation** — CI/spawn tests that run `askdb` with `--log-file` / `-v`, assert JSON lines + stable `event` + `correlationId` **without** a live LLM (mock generation or subprocess smoke); optional smoke with secrets only in trusted CI (reduces reliance on [`validation.md`](specs/phase-2-hardening-modes/validation.md)).
+- **Shrink manual validation** — CI/spawn tests that run `askdb` with `--log-file` / `-v`, assert JSON lines + stable `event` + `correlationId` **without** a live LLM.
 - **Optional `pino-pretty`** for human-readable dev output only (never sole production path per [**ADR 0001**](adrs/0001-structured-logging-pino.md)).
-- **`pino.transport()` / worker-thread** logging — only if current multistream file+stderr hits limits.
 - **Richer CLI errors** — reference schema **file path** or fixture hints when parse/validation fails.
 - **Post-SQL warnings** — surface host-visible warning when generated SQL references **sensitive**-marked columns ([`sensitive-fields-and-modes.md`](contracts/sensitive-fields-and-modes.md)).
 
-## Phase 3 — Second surface (minimal HTTP API)
+## Phase 3 ✅ — HTTP API surface
 
 **Goal:** Meet developers where they work.
 
-- Ship a small **HTTP API** wrapping the same core as the CLI (choice driven by immediate integration demand).
-- Same contracts as Phase 2 so CLI and server stay aligned. Prefer calling **`ask()`** and shared types from `@askdb/core`—see [**`docs/integration/reuse-core-phase-3.md`**](integration/reuse-core-phase-3.md).
+Phase 3 ships `@askdb/http-api` as a thin wrapper over `@askdb/core` with the same modes, correlation, and sensitive-field semantics as the CLI.
 - Prefer **server-configured schema** (e.g. schema file path/env) over sending schema JSON on every request; allow per-request overrides only for tests/special cases.
 
-## Phase 4 — User-run introspection + headless describable schema enrichment
+**Spec pack:** [`docs/specs/phase-3-http-api/`](specs/phase-3-http-api/).
 
-**Goal:** Turn **Postgres catalog metadata** into an **AskDB schema JSON v1** artifact **without** requiring AskDB to hold DB credentials or open a live connection—then enrich it into a **describable schema** (semantic layer) in a headless-first way.
-
-**Primary workflow:** Ship **documented `information_schema` SQL** (see [**`docs/specs/postgres-introspection-for-askdb-schema-v1.md`**](specs/postgres-introspection-for-askdb-schema-v1.md)) that users run in **`psql`**, their IDE, or CI; they export rows (CSV/JSON) and pass them to a **converter** that emits **`{ "version": 1, "tables": [...] }`**. Same queries can be unified or split (schemas / tables / columns+PK / FKs) depending on ergonomics.
-
-- Ship **reference queries + mapping notes** to AskDB schema v1 (`type` string, `nullable`, `primaryKey`, multi-schema naming as `schema.table`).
-- Ship a **converter** that accepts **exported query results** (format TBD: single unified extract vs. multiple files) and outputs valid AskDB schema JSON v1.
-- **Optional later:** a **live introspection** mode (CLI connects with `DATABASE_URL` and runs the same SQL inside AskDB) for teams that want one command—does not replace the air-gapped template path.
-- Output remains **importable** into AskDB.
-
-Headless enrichment (no web dependency):
-
-- **No-DB-required path** — Import schema artifacts; work with **describable schema** without mandating a live database connection to AskDB.
-- **Enrichment pipeline (headless-first)** — Turn **pure** imported schema into a **describable schema**: AI-assisted gap detection + human confirmation through prompts/workflows, producing a persisted semantic catalog for future NL→SQL and reporting.
-- **Semantic fields in the schema artifact** — Evolve the same JSON model (additive fields and/or explicit version bump) so the persisted catalog supports, at minimum:
-  - **Table and column descriptions** — Human-readable summaries and richer **business context** (what this entity measures, how it is used).
-  - **Aliases / synonyms** — Alternate names NL questions might use (e.g. *clients*, *customers* mapping to the same table or concept) so grounding stays accurate without renaming physical objects.
-  - **Optional concept dictionary** — Shared domain terms linked to tables/columns where a single concept should resolve across many names.
-- **Generation and embed** — Headless flows read the merged physical + semantic metadata when building prompts and validation; the CLI’s pure-schema phase remains the floor, with the web catalog as the later place **enrichment** is authored/edited.
-- **Postgres-first**; extend alongside **Phase 6** for other engines.
-
-## Phase 5 — Web, schema catalog UI, and embed path
 
 **Goal:** First-party app + developer embed story from `mission.md`.
 
