@@ -13,7 +13,7 @@ Phase 1 ships `@askdb/core` and the `askdb` CLI with AskDB schema JSON v1, BYO-p
 - **Execute** against a configured Postgres instance and return **tabular results** (no rich report builder yet).
 - **CLI** as the first surface (fast iteration, no UI coupling).
 
-**Out of scope for Phase 1:** Embeddable UI, **non-Postgres database engines** (see Phase 6), full RAG, sensitive-field registry UI, production-grade multi-tenant policy engine, introspection-query templates (see Phase 5).
+**Out of scope for Phase 1:** Embeddable UI, **non-Postgres database engines** (see Phase 6), full RAG, sensitive-field registry UI, production-grade multi-tenant policy engine, introspection-query templates (see Phase 4).
 
 ## Phase 2 ✅ — Hardening and “modes” as contracts
 
@@ -48,34 +48,41 @@ Completed: CI spawn tests (no live LLM), richer CLI schema-load errors, and sens
 - Same contracts as Phase 2 so CLI and server stay aligned. Prefer calling **`ask()`** and shared types from `@askdb/core`—see [**`docs/integration/reuse-core-phase-3.md`**](integration/reuse-core-phase-3.md).
 - Prefer **server-configured schema** (e.g. schema file path/env) over sending schema JSON on every request; allow per-request overrides only for tests/special cases.
 
-## Phase 4 — Web, schema catalog UI, and embed path
+## Phase 4 — User-run introspection + headless describable schema enrichment
 
-**Goal:** First-party app + developer embed story from `mission.md`.
-
-Phase 1 delivered **AskDB schema JSON v1**: a minimal **pure** artifact (physical tables/columns/types/keys) sufficient for the MVP NL→SQL loop. Phase 4 extends that artifact into a **describable schema** that carries the semantic layer the MVP JSON intentionally omitted.
-
-- Next.js app for **web** use cases.
-- **No-DB-required path** — Import schema artifacts; work with **describable schema** without mandating a live database connection to AskDB.
-- **Enrichment UX** — Turn **pure** imported schema (Phase 1-style JSON) into a **describable schema**: AI surfaces gaps or ambiguities; users interact with the UI (tables, fields) to add **business context**; persist that catalog for **future** NL→SQL and reporting.
-- **Semantic fields in the schema artifact** — Evolve the same JSON model (additive fields and/or explicit version bump) so the persisted catalog supports, at minimum:
-  - **Table and column descriptions** — Human-readable summaries and richer **business context** (what this entity measures, how it is used).
-  - **Aliases / synonyms** — Alternate names NL questions might use (e.g. *clients*, *customers* mapping to the same table or concept) so grounding stays accurate without renaming physical objects.
-  - **Optional concept dictionary** — Shared domain terms linked to tables/columns where a single concept should resolve across many names.
-- **Generation and embed** — Headless and UI paths read the **merged** physical + semantic metadata when building prompts and validation; the CLI’s pure-schema phase remains the floor, with the web catalog as the place **enrichment** is authored and stored.
-- Begin **SDK + embeddable components** for consumers who want AskDB inside their apps (BYO keys; DB optional per workflow).
-- **Example application** — Add a **small in-repo example consumer app** to validate the embeddable UI/SDK in realistic integration scenarios (internal dev/QA; not a separate product).
-
-## Phase 5 — User-run introspection queries (schema export)
-
-**Goal:** Turn **Postgres catalog metadata** into an **AskDB schema JSON v1** artifact **without** requiring AskDB to hold DB credentials or open a live connection—unless we add an optional connector later.
+**Goal:** Turn **Postgres catalog metadata** into an **AskDB schema JSON v1** artifact **without** requiring AskDB to hold DB credentials or open a live connection—then enrich it into a **describable schema** (semantic layer) in a headless-first way.
 
 **Primary workflow:** Ship **documented `information_schema` SQL** (see [**`docs/specs/postgres-introspection-for-askdb-schema-v1.md`**](specs/postgres-introspection-for-askdb-schema-v1.md)) that users run in **`psql`**, their IDE, or CI; they export rows (CSV/JSON) and pass them to a **converter** that emits **`{ "version": 1, "tables": [...] }`**. Same queries can be unified or split (schemas / tables / columns+PK / FKs) depending on ergonomics.
 
 - Ship **reference queries + mapping notes** to AskDB schema v1 (`type` string, `nullable`, `primaryKey`, multi-schema naming as `schema.table`).
 - Ship a **converter** that accepts **exported query results** (format TBD: single unified extract vs. multiple files) and outputs valid AskDB schema JSON v1.
 - **Optional later:** a **live introspection** mode (CLI connects with `DATABASE_URL` and runs the same SQL inside AskDB) for teams that want one command—does not replace the air-gapped template path.
-- Output remains **importable** into AskDB (aligned with the Phase 4 import path).
+- Output remains **importable** into AskDB.
+
+Headless enrichment (no web dependency):
+
+- **No-DB-required path** — Import schema artifacts; work with **describable schema** without mandating a live database connection to AskDB.
+- **Enrichment pipeline (headless-first)** — Turn **pure** imported schema into a **describable schema**: AI-assisted gap detection + human confirmation through prompts/workflows, producing a persisted semantic catalog for future NL→SQL and reporting.
+- **Semantic fields in the schema artifact** — Evolve the same JSON model (additive fields and/or explicit version bump) so the persisted catalog supports, at minimum:
+  - **Table and column descriptions** — Human-readable summaries and richer **business context** (what this entity measures, how it is used).
+  - **Aliases / synonyms** — Alternate names NL questions might use (e.g. *clients*, *customers* mapping to the same table or concept) so grounding stays accurate without renaming physical objects.
+  - **Optional concept dictionary** — Shared domain terms linked to tables/columns where a single concept should resolve across many names.
+- **Generation and embed** — Headless flows read the merged physical + semantic metadata when building prompts and validation; the CLI’s pure-schema phase remains the floor, with the web catalog as the later place **enrichment** is authored/edited.
 - **Postgres-first**; extend alongside **Phase 6** for other engines.
+
+## Phase 5 — Web, schema catalog UI, and embed path
+
+**Goal:** First-party app + developer embed story from `mission.md`.
+
+- Next.js app for **web** use cases.
+
+Phase 4 delivers **describable schema** semantics (semantic catalog + optional alias/concept metadata) without requiring DB credentials on AskDB. Phase 5 adds the web UI to author, confirm, and save that semantic layer.
+
+- **No-DB-required path** — Import schema artifacts and author the semantic catalog in the web UI without mandating a live database connection to AskDB.
+- **Enrichment UX (web catalog)** — AI-assisted enrichment suggestions; users interact with the UI (tables, fields) to add **business context** and semantic fields; persist that catalog for **future** NL→SQL and reporting.
+- Web catalog reads/writes the semantic fields produced by Phase 4 and feeds merged metadata into prompt/validation pipelines.
+- Begin **SDK + embeddable components** for consumers who want AskDB inside their apps (BYO keys; DB optional per workflow).
+- **Example application** — Add a **small in-repo example consumer app** to validate the embeddable UI/SDK in realistic integration scenarios (internal dev/QA; not a separate product).
 
 ## Phase 6 — Additional databases (beyond Postgres) and schema adapters
 
@@ -83,7 +90,7 @@ Phase 1 delivered **AskDB schema JSON v1**: a minimal **pure** artifact (physica
 
 - **Additional SQL database engines** — Beyond PostgreSQL: drivers, **dialect-aware** NL→SQL and validation, execution paths, and regression tests—**one engine at a time** (order driven by demand; no “support everything” lump sum).
 - **Schema ingestion** — Additional **schema description formats** as needed, with the same “one format at a time + tests” rule.
-- Pair **introspection templates** (Phase 5) with each new engine as it is added.
+- Pair **introspection templates** (Phase 4) with each new engine as it is added.
 
 Early phases intentionally stay **Postgres-only** so execution and guardrails stabilize before we multiply dialects.
 
