@@ -297,10 +297,10 @@ describe("createPostgresConnector wiring", () => {
     }
   });
 
-  it("describe() rejects from-export mode until milestone 5 lands", async () => {
+  it("describe() rejects missing from-export bundles with a clear error", async () => {
     const connector = createPostgresConnector();
     await expect(
       connector.describe({ mode: "from-export", bundlePath: "/tmp/x" }),
-    ).rejects.toThrow(/from-export.*milestone 5/i);
+    ).rejects.toThrow(/missing manifest\.json/i);
   });
 });

@@ -4,13 +4,13 @@ import type {
   IntrospectionResult,
   SqlTemplateBundle,
 } from "../types.js";
+import { describePostgresFromExport } from "./bundle.js";
 import { describePostgres } from "./describe.js";
 import { POSTGRES_TEMPLATE_BUNDLE } from "./templates.js";
 
 /**
  * Postgres connector. The catalog SQL suite + describe() implementation land
- * in milestone 2; air-gapped bundle reading lands in milestone 5 (this entry
- * point will dispatch on `input.mode` once that lands).
+ * in milestone 2; air-gapped bundle reading lands in milestone 5.
  *
  * See docs/specs/phase-6-introspection/requirements.md §4.
  */
@@ -19,10 +19,10 @@ export function createPostgresConnector(): Connector {
     engine: "postgres",
     async describe(input: IntrospectionInput): Promise<IntrospectionResult> {
       if (input.mode === "from-export") {
-        throw new Error(
-          "@askdb/introspect/postgres: from-export mode is not implemented yet. " +
-            "It lands in milestone 5 of phase 6 (see docs/specs/phase-6-introspection/plan.md).",
-        );
+        return describePostgresFromExport({
+          bundlePath: input.bundlePath,
+          filters: input.filters,
+        });
       }
       return describePostgres({
         executor: input.executor,
@@ -42,3 +42,5 @@ export {
 } from "./templates.js";
 export { describePostgres } from "./describe.js";
 export type { DescribePostgresInput } from "./describe.js";
+export { describePostgresFromExport } from "./bundle.js";
+export type { DescribePostgresExportInput } from "./bundle.js";
