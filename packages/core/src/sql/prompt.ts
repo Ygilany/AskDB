@@ -3,15 +3,25 @@ import { AskDbLogEvent } from "../logging/log-events.js";
 import type { FormatNlToSqlOptions } from "../schema/normalize.js";
 import { formatSchemaForNlToSql } from "../schema/normalize.js";
 import type { NormalizedSchema } from "../schema/types.js";
+import type { NormalizedSchemaV2 } from "../schema/v2/normalized.js";
+import { formatSchemaV2ForNlToSql } from "../schema/v2/format.js";
+
+export type AnyNormalizedSchema = NormalizedSchema | NormalizedSchemaV2;
+
+function isV2(schema: AnyNormalizedSchema): schema is NormalizedSchemaV2 {
+  return "schemaId" in schema;
+}
 
 export function buildNlToSqlUserPrompt(
   question: string,
-  schema: NormalizedSchema,
+  schema: AnyNormalizedSchema,
   ambiguityNotes: readonly string[] = [],
   logger?: AskDbLogger,
   nlToSqlSchemaOptions?: FormatNlToSqlOptions,
 ): string {
-  const { ddl, stats } = formatSchemaForNlToSql(schema, nlToSqlSchemaOptions);
+  const { ddl, stats } = isV2(schema)
+    ? formatSchemaV2ForNlToSql(schema, nlToSqlSchemaOptions)
+    : formatSchemaForNlToSql(schema, nlToSqlSchemaOptions);
   if (
     stats.omitSensitiveIdentifiersFromPrompt &&
     (stats.redactedColumnCount > 0 || stats.sensitiveTableStubCount > 0)

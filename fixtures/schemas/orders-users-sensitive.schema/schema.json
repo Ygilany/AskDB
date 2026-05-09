@@ -1,0 +1,66 @@
+{
+  "version": 2,
+  "schemaId": "orders-users-sensitive",
+  "tables": [
+    {
+      "id": "table:public.users",
+      "name": "users",
+      "schema": "public",
+      "sensitive": false,
+      "columns": [
+        {
+          "id": "table:public.users#id",
+          "name": "id",
+          "type": "uuid",
+          "nullable": false,
+          "primaryKey": true,
+          "sensitive": false
+        },
+        {
+          "id": "table:public.users#email",
+          "name": "email",
+          "type": "text",
+          "nullable": false,
+          "sensitive": false
+        },
+        {
+          "id": "table:public.users#secret_recovery_token",
+          "name": "secret_recovery_token",
+          "type": "text",
+          "nullable": false,
+          "sensitive": true
+        }
+      ]
+    },
+    {
+      "id": "table:public.orders",
+      "name": "orders",
+      "schema": "public",
+      "sensitive": false,
+      "columns": [
+        {
+          "id": "table:public.orders#id",
+          "name": "id",
+          "type": "uuid",
+          "nullable": false,
+          "primaryKey": true,
+          "sensitive": false
+        },
+        {
+          "id": "table:public.orders#user_id",
+          "name": "user_id",
+          "type": "uuid",
+          "nullable": false,
+          "sensitive": false
+        },
+        {
+          "id": "table:public.orders#total_cents",
+          "name": "total_cents",
+          "type": "integer",
+          "nullable": false,
+          "sensitive": false
+        }
+      ]
+    }
+  ]
+}
