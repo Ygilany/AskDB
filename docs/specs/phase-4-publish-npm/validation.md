@@ -2,7 +2,9 @@
 
 Pair with **[`requirements.md`](./requirements.md)** (scope/decisions) and **[`plan.md`](./plan.md)** (milestones).
 
-Implementation is ready to merge when **automated CI** passes, the **executor seam** is contract-tested, and a **consumer install smoke test** proves the published artifacts are usable.
+**Merge bar (implementation PR):** CI green, **executor seam** contract tests, **`pnpm pack`** + metadata checks, **consumer install smoke** from local tarballs, and **changesets** gate. **First public `npm publish` is not required to merge** — it may follow as a **separate maintainer step** once credentials and registry access are ready.
+
+**Post-merge / release:** Maintainers publish `@askdb/core`, `@askdb/cli`, and `@askdb/http-api` to the public registry when appropriate; optional smoke against `pnpm view` and a clean `pnpm add` outside the repo validates the published artifact.
 
 ## Automated
 
@@ -38,15 +40,15 @@ Implementation is ready to merge when **automated CI** passes, the **executor se
    - CI fails on PRs that change published-package source without a corresponding changeset.
    - `pnpm changeset publish --dry-run` (or equivalent) succeeds and reports the expected versions in CI logs.
 
-## Manual (short)
+## Manual (short) — optional until first public publish
 
-- Run a real publish (e.g. `0.1.0-rc.1` or the chosen first version) from a maintainer's machine; `pnpm view @askdb/core` returns the version.
-- Check a short reusable smoke script into the repo (e.g. `examples/installable-smoke/index.ts` plus a tiny `package.json`) that imports `ask` from `@askdb/core` and calls it against a mock `LanguageModel` + fake executor. The same script powers the **Consumer install smoke** automated job above and the manual run below — keep them in lockstep so this isn't ad-hoc maintainer-only knowledge.
-- In a fresh directory outside the repo: `pnpm init && pnpm add @askdb/core@<published-version>`, copy the fixture script over (or `pnpm add` from the published tarball URL), and run it. Confirm it works without cloning the AskDB repo.
-- Spot-check the published tarballs on npm for accidental files (especially secrets, source maps to private paths, etc.).
+- **After first publish:** from a maintainer machine, `pnpm view @askdb/core` returns the expected version; spot-check tarballs on npm for accidental files (secrets, source maps pointing at private paths).
+- Check a short reusable smoke script into the repo (e.g. `examples/installable-smoke/index.ts` plus a tiny `package.json`) that imports `ask` from `@askdb/core` and calls it against a mock `LanguageModel` + fake executor. The same script powers the **Consumer install smoke** automated job above — keep them in lockstep.
+- **Validates the registry artifact (post-publish):** in a fresh directory outside the repo, `pnpm init && pnpm add @askdb/core@<published-version>`, run the same smoke; confirms consumers work without cloning the repo.
 
 ## Non-blockers for Phase 4 merge
 
+- **Packages appearing on the public npm registry** — merge is satisfied by local tarballs + dry-run; publish is a follow-on maintainer action ([`requirements.md`](./requirements.md) “Merge vs npm”).
 - Schema v2 (Phase 5).
 - `@askdb/introspect`, `@askdb/tui`, and `@askdb/rag` packages (Phases 6–8).
 - Web app, embed SDK, multi-engine support, MCP surface.

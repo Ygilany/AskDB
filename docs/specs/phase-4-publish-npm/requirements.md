@@ -22,7 +22,7 @@ Without publishable packages and a pluggable executor, AskDB is effectively a pr
 ### 1) Publish-readiness for `@askdb/core`, `@askdb/cli`, `@askdb/http-api`
 
 - Drop `"private": true`. Set initial published version (e.g. `0.1.0` — pre-1.0 contract).
-- Add per-package `LICENSE` (repo-level decision; recommended MIT for the open path), `README.md`, and accurate `keywords` / `repository` / `homepage` fields in `package.json`.
+- Add per-package `LICENSE` (Apache-2.0; include **`NOTICE`** at repo root if bundling third-party notices per Apache practice), `README.md`, and accurate `keywords` / `repository` / `homepage` fields in `package.json`.
 - Tighten `exports` and `files`. `@askdb/core` already exports a clean barrel (`packages/core/src/index.ts`); confirm types resolve under both `bundler` and `node16` `moduleResolution` for downstream consumers.
 - Mark Node engine constraint aligned with the monorepo root (`engines.node: ">=20"` today); document supported runtimes ([`docs/platform.md`](../../platform.md) targets current Node LTS for production integrators).
 - Confirm CJS interop story (ESM-only is acceptable; document it).
@@ -75,8 +75,11 @@ ask({
 
 | Topic | Decision |
 |---|---|
-| First published version | **`0.1.0`** for `@askdb/core` (pre-1.0; semver applies to current `index.ts` exports + contract docs). Companion packages versioned in lockstep. |
-| License | **MIT** unless user overrides (record final choice in this section before merge). |
+| First published version | **`0.1.0`** for `@askdb/core` (pre-1.0; semver applies to current `index.ts` exports + contract docs). |
+| First npm release scope | **`@askdb/core`**, **`@askdb/cli`**, and **`@askdb/http-api`** published together at **`0.1.0`** (lockstep). |
+| License | **Apache License 2.0** (SPDX: `Apache-2.0`) — permissive, with explicit patent grant; `LICENSE` + **`NOTICE`** at repo root; mirror or reference in each published package as required for npm. |
+| Merge vs npm | **Implementation PR merges** when CI, pack/smoke, and changesets gates pass. **First public `npm publish`** may be a **separate maintainer step** after merge (not a merge blocker). |
+| Postgres helper packaging | **Subpath `@askdb/core/postgres`** for `createPostgresExecutor` (and any `pg`-touching code). Main `@askdb/core` entry stays free of `pg` load for consumers who only import `ask` + custom `executor`. See [Postgres helper packaging](#postgres-helper-packaging-tradeoffs). |
 | Module format | **ESM-only** (matches current `"type": "module"`); CJS interop deferred until a consumer needs it. |
 | Node engines | **`>=20`** for published packages (match root `package.json`); document in each published `package.json`. |
 | Executor seam shape | Single function type `AskDbExecutor` that returns `TabularResult`. Mirrors the existing `executeReadOnlySelect` return shape so the built-in path becomes a default executor. |
@@ -110,13 +113,30 @@ export type AskDbExecutor = (
 
 **Built-in default:**
 
-- `import { createPostgresExecutor } from "@askdb/core/postgres";` (or equivalent sub-export) returns an `AskDbExecutor` configured with a connection string. The default `ask()` path (no `executor`) lazy-instantiates it from `connectionString`.
+- `import { createPostgresExecutor } from "@askdb/core/postgres";` returns an `AskDbExecutor` configured with a connection string. The default `ask()` path (no `executor`) lazy-instantiates it from `connectionString` (internal lazy `pg` load via the same factory as the subpath).
+
+## Postgres helper packaging (tradeoffs)
+
+**Option A — Subpath (`@askdb/core/postgres` via `package.json` `exports` + separate chunk)**
+
+| Pros | Cons |
+|------|------|
+| Importers of `@askdb/core` only never load `pg`; matches “executor-only, no `pg` installed” story. | Two import paths to document (`@askdb/core` vs `@askdb/core/postgres`). |
+| Bundlers analyze entry points per subpath; fewer accidental `pg` resolutions. | Slightly more `exports`/`build` wiring (second entry in `tsc` or bundler config). |
+| Clear signal: “you opted into the Node `pg` stack.” | Consumers using `connectionString` must still transitively need `pg` — docs must say to install `pg` or import the postgres subpath. |
+
+**Option B — Top-level named export (e.g. `createPostgresExecutor` from `@askdb/core`)**
+
+| Pros | Cons |
+|------|------|
+| Single package import path; simpler mental model. | Some tools may still resolve `pg` when *any* export from the package is used, depending on bundler and how the package is built; risk of surprise `pg` in client bundles if misconfigured. |
+| Less `exports` surface area. | Harder to guarantee the main barrel never statically references `pg`. |
+
+**Decision for Phase 4:** **Option A (subpath)** — prioritizes executor-only consumers and keeps the optional-`pg` story auditable.
 
 ## Open choices (to resolve during implementation)
 
-- Whether to expose the built-in Postgres executor under a sub-export (`@askdb/core/postgres`) vs. a top-level named export. Sub-export keeps `@askdb/core` consumers from accidentally pulling in `pg` at load time.
 - Exact `peerDependenciesMeta` shape and how the lazy import surfaces helpful errors when a consumer forgets to install `pg` *and* doesn't supply an executor.
-- Initial license choice (MIT vs. Apache-2.0 vs. proprietary) — record in this doc before merge.
 - Whether `@askdb/cli` ships under a separate scope (`@askdb/cli`) or as a flat package (`askdb`). Recommend keeping `@askdb/cli` and exposing the binary as `askdb`.
 
 ## Success (product)
