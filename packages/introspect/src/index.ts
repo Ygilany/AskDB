@@ -23,5 +23,9 @@ export type {
 
 export type { RenderOptions, RenderResult } from "./render/types.js";
 
-export { introspect } from "./introspect.js";
-export { renderToSchemaV2 } from "./render/render.js";
+export {
+  introspect,
+  type IntrospectOptions,
+  type IntrospectResult,
+} from "./introspect.js";
+export { renderToSchemaV2, toV2SchemaJson } from "./render/render.js";
