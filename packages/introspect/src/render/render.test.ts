@@ -1,4 +1,10 @@
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import {
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -100,15 +106,158 @@ describe("renderToSchemaV2 — clean write", () => {
     expect(() => readFileSync(render.schemaJsonPath, "utf8")).not.toThrow();
   });
 
-  it("rejects existingArtifactDir until milestone 6 lands the merge", () => {
-    const empty: SqlSchema = { schemaId: "x", schemas: [] };
-    expect(() =>
-      renderToSchemaV2(empty, {
-        outDir: workDir,
-        schemaId: "x",
-        existingArtifactDir: "/tmp/whatever",
-      }),
-    ).toThrow(/milestone 6/i);
+  it("re-rendering with no DB change produces zero schema.json diff", async () => {
+    const snapshot = loadCatalogSnapshot(
+      resolve(FIXTURE_DIR, "orders-users.catalog.json"),
+    );
+    const result = await describePostgres({
+      executor: createSnapshotExecutor(snapshot),
+      schemaId: "orders-users",
+    });
+    const outDir = join(workDir, "orders-users.schema");
+    const first = renderToSchemaV2(result.schema, {
+      outDir,
+      schemaId: "orders-users",
+    });
+    const before = readFileSync(first.schemaJsonPath, "utf8");
+
+    const second = renderToSchemaV2(result.schema, {
+      outDir,
+      schemaId: "orders-users",
+      existingArtifactDir: outDir,
+    });
+
+    expect(second.warnings).toEqual([]);
+    expect(readFileSync(second.schemaJsonPath, "utf8")).toBe(before);
+  });
+});
+
+describe("renderToSchemaV2 — ID-anchored merge", () => {
+  it("preserves existing sensitive flags and warns for new columns", async () => {
+    const schema = await loadOrdersUsersSqlSchema();
+    const outDir = join(workDir, "orders-users.schema");
+    renderToSchemaV2(schema, { outDir, schemaId: "orders-users" });
+    editPhysical(outDir, (physical) => {
+      physical.tables.find((table) => table.id === "table:public.users")!.columns.find(
+        (column) => column.id === "table:public.users#email",
+      )!.sensitive = true;
+    });
+
+    const next = cloneSqlSchema(schema);
+    const users = next.schemas[0]!.tables.find((table) => table.name === "users")!;
+    users.columns.push({
+      id: "table:public.users#phone",
+      name: "phone",
+      ordinalPosition: 4,
+      dataType: "text",
+      udtName: "text",
+      nullable: true,
+      primaryKey: false,
+    });
+
+    const render = renderToSchemaV2(next, {
+      outDir,
+      schemaId: "orders-users",
+      existingArtifactDir: outDir,
+    });
+    const physical = readPhysical(outDir);
+    const email = physical.tables
+      .find((table) => table.id === "table:public.users")!
+      .columns.find((column) => column.id === "table:public.users#email")!;
+
+    expect(email.sensitive).toBe(true);
+    expect(render.warnings).toEqual([
+      {
+        code: "new_column",
+        id: "table:public.users#phone",
+        tableId: "table:public.users",
+      },
+    ]);
+  });
+
+  it("updates structural column fields while preserving IDs and sensitive flags", async () => {
+    const schema = await loadOrdersUsersSqlSchema();
+    const outDir = join(workDir, "orders-users.schema");
+    renderToSchemaV2(schema, { outDir, schemaId: "orders-users" });
+    editPhysical(outDir, (physical) => {
+      physical.tables.find((table) => table.id === "table:public.users")!.columns.find(
+        (column) => column.id === "table:public.users#email",
+      )!.sensitive = true;
+    });
+
+    const next = cloneSqlSchema(schema);
+    const email = next.schemas[0]!.tables
+      .find((table) => table.name === "users")!
+      .columns.find((column) => column.name === "email")!;
+    email.dataType = "character varying(255)";
+    email.udtName = "varchar";
+    email.nullable = true;
+
+    const render = renderToSchemaV2(next, {
+      outDir,
+      schemaId: "orders-users",
+      existingArtifactDir: outDir,
+    });
+
+    const physicalEmail = readPhysical(outDir).tables
+      .find((table) => table.id === "table:public.users")!
+      .columns.find((column) => column.id === "table:public.users#email")!;
+    expect(render.warnings).toEqual([]);
+    expect(physicalEmail).toMatchObject({
+      id: "table:public.users#email",
+      type: "varchar(255)",
+      nullable: true,
+      sensitive: true,
+    });
+  });
+
+  it("drops removed columns, warns for markdown orphan IDs, and leaves tables/*.md untouched", async () => {
+    const schema = await loadOrdersUsersSqlSchema();
+    const outDir = join(workDir, "orders-users.schema");
+    renderToSchemaV2(schema, { outDir, schemaId: "orders-users" });
+    const tableDir = join(outDir, "tables");
+    mkdirSync(tableDir, { recursive: true });
+    const markdownPath = join(tableDir, "orders.md");
+    const markdown = [
+      "---",
+      "id: table:public.orders",
+      "name: orders",
+      "schemaId: orders-users",
+      "columns:",
+      "  - id: table:public.orders#status",
+      "    description: Workflow status",
+      "---",
+      "# Orders",
+      "",
+      "Operational order records.",
+      "",
+    ].join("\n");
+    writeFileSync(markdownPath, markdown, "utf8");
+
+    const next = cloneSqlSchema(schema);
+    const orders = next.schemas[0]!.tables.find((table) => table.name === "orders")!;
+    orders.columns = orders.columns.filter((column) => column.name !== "status");
+
+    const render = renderToSchemaV2(next, {
+      outDir,
+      schemaId: "orders-users",
+      existingArtifactDir: outDir,
+    });
+
+    const physicalOrders = readPhysical(outDir).tables.find(
+      (table) => table.id === "table:public.orders",
+    )!;
+    expect(physicalOrders.columns.map((column) => column.name)).not.toContain(
+      "status",
+    );
+    expect(readFileSync(markdownPath, "utf8")).toBe(markdown);
+    expect(render.warnings).toEqual([
+      {
+        code: "orphan_id",
+        id: "table:public.orders#status",
+        file: "tables/orders.md",
+      },
+    ]);
   });
 });
 
@@ -191,3 +340,33 @@ describe("compactPostgresType", () => {
     expect(compactPostgresType("jsonb", "jsonb")).toBe("jsonb");
   });
 });
+
+async function loadOrdersUsersSqlSchema(): Promise<SqlSchema> {
+  const snapshot = loadCatalogSnapshot(
+    resolve(FIXTURE_DIR, "orders-users.catalog.json"),
+  );
+  const result = await describePostgres({
+    executor: createSnapshotExecutor(snapshot),
+    schemaId: "orders-users",
+  });
+  return result.schema;
+}
+
+function cloneSqlSchema(schema: SqlSchema): SqlSchema {
+  return JSON.parse(JSON.stringify(schema)) as SqlSchema;
+}
+
+function readPhysical(outDir: string): ReturnType<typeof toV2SchemaJson> {
+  return JSON.parse(readFileSync(join(outDir, "schema.json"), "utf8")) as ReturnType<
+    typeof toV2SchemaJson
+  >;
+}
+
+function editPhysical(
+  outDir: string,
+  edit: (physical: ReturnType<typeof toV2SchemaJson>) => void,
+): void {
+  const physical = readPhysical(outDir);
+  edit(physical);
+  writeFileSync(join(outDir, "schema.json"), JSON.stringify(physical, null, 2) + "\n");
+}

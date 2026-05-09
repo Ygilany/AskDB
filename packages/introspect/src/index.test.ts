@@ -1,4 +1,7 @@
 import type { AskDbExecutor } from "@askdb/core";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { renderToSchemaV2 } from "./index.js";
 import { createPostgresConnector } from "./postgres/index.js";
@@ -6,17 +9,17 @@ import { createPostgresConnector } from "./postgres/index.js";
 const noopExecutor: AskDbExecutor = async () => ({ columns: [], rows: [] });
 
 describe("@askdb/introspect public surface", () => {
-  it("exports renderToSchemaV2() that rejects existingArtifactDir until M6", () => {
-    expect(() =>
-      renderToSchemaV2(
+  it("exports renderToSchemaV2()", () => {
+    const outDir = mkdtempSync(join(tmpdir(), "askdb-introspect-surface-"));
+    try {
+      const render = renderToSchemaV2(
         { schemaId: "x", schemas: [] },
-        {
-          outDir: "/tmp/askdb-introspect-noop.schema",
-          schemaId: "x",
-          existingArtifactDir: "/tmp/whatever",
-        },
-      ),
-    ).toThrow(/milestone 6/i);
+        { outDir, schemaId: "x" },
+      );
+      expect(render.schemaJsonPath).toBe(join(outDir, "schema.json"));
+    } finally {
+      rmSync(outDir, { recursive: true, force: true });
+    }
   });
 
   it("exposes a postgres connector with engine='postgres'", () => {
