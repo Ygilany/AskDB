@@ -1,7 +1,7 @@
 {
   "name": "askdb",
   "private": true,
-  "packageManager": "pnpm@9.15.4",
+  "packageManager": "pnpm@11.0.9",
   "engines": {
     "node": ">=20"
   },
@@ -13,10 +13,15 @@
     "pagila:up": "docker compose -f fixtures/pagila/docker-compose.yml up --build -d",
     "pagila:down": "docker compose -f fixtures/pagila/docker-compose.yml down",
     "pagila:logs": "docker compose -f fixtures/pagila/docker-compose.yml logs -f",
-    "pagila:reset": "docker compose -f fixtures/pagila/docker-compose.yml down -v"
+    "pagila:reset": "docker compose -f fixtures/pagila/docker-compose.yml down -v",
+    "smoke:install": "bash examples/installable-smoke/run.sh",
+    "preflight": "bash scripts/release-preflight.sh",
+    "changeset": "changeset",
+    "release": "pnpm -r build && changeset publish"
   },
   "devDependencies": {
     "@askdb/cli": "workspace:*",
+    "@changesets/cli": "^2.27.10",
     "@types/node": "^22.13.14",
     "turbo": "^2.5.6",
     "typescript": "^5.7.3",

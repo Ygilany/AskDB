@@ -1,0 +1,33 @@
+name: Changesets
+
+# Validate that any PR touching publishable sources includes a changeset entry.
+# Publishing itself remains a maintainer step (see release.yml).
+on:
+  pull_request:
+    paths:
+      - "packages/core/src/**"
+      - "packages/core/package.json"
+      - "packages/cli/src/**"
+      - "packages/cli/package.json"
+      - "packages/http-api/src/**"
+      - "packages/http-api/package.json"
+
+jobs:
+  status:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Verify a changeset is present for this PR
+        run: pnpm changeset status --since=origin/${{ github.base_ref }}

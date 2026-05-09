@@ -2,6 +2,58 @@
 
 AskDB turns natural language into **schema-grounded SQL and reports** so you can ask questions about your data without writing SQL by hand.
 
+## Use as a library
+
+```bash
+pnpm add @askdb/core
+# only if you want the built-in pg executor:
+pnpm add pg
+```
+
+`pg` is an **optional peer dependency**. Skip it if you supply your own executor.
+
+**Minimal example — built-in `pg` executor:**
+
+```ts
+import { ask, loadNormalizedSchemaFromJson } from "@askdb/core";
+import { createOpenAI } from "@ai-sdk/openai";
+import { readFile } from "node:fs/promises";
+
+const schema = loadNormalizedSchemaFromJson(
+  await readFile("./schema.json", "utf8"),
+);
+const openai = createOpenAI({ apiKey: process.env.OPENAI_API_KEY });
+
+const { sql, result } = await ask({
+  question: "How many users signed up last week?",
+  schema,
+  model: openai("gpt-4o-mini"),
+  connectionString: process.env.DATABASE_URL,
+  execute: true,
+});
+```
+
+**Minimal example — BYO executor (no `pg`):**
+
+```ts
+import { ask, type AskDbExecutor, loadNormalizedSchemaFromJson } from "@askdb/core";
+
+const executor: AskDbExecutor = async (sql) => {
+  // Run sql in a read-only transaction with whatever driver you use
+  // (postgres.js, Neon HTTP, Hyperdrive, MCP-mediated DB, …) and return
+  // the canonical TabularResult shape.
+  return { columns: ["x"], rows: [[1]] };
+};
+
+const { sql, result } = await ask({
+  question, schema, model,
+  executor,
+  execute: true,
+});
+```
+
+Per-provider model recipes (OpenAI, Anthropic, Bedrock, Ollama, AI Gateway) and per-driver executor recipes (`pg`, `postgres.js`, Neon HTTP, MCP-mediated DB) live in [`docs/integration/installable-package.md`](docs/integration/installable-package.md).
+
 ## Constitution
 
 Product direction and technical baseline live in **`docs/`**:
@@ -13,6 +65,7 @@ Product direction and technical baseline live in **`docs/`**:
 - [`docs/contracts/modes-v1.md`](docs/contracts/modes-v1.md) — operating modes (`schema_only`, `bounded_results`)  
 - [`docs/contracts/sensitive-fields-and-modes.md`](docs/contracts/sensitive-fields-and-modes.md) — sensitive schema markers vs. models, bounded summaries  
 - [`docs/integration/reuse-core-phase-3.md`](docs/integration/reuse-core-phase-3.md) — stable `@askdb/core` entrypoints for wrappers (MCP/HTTP)  
+- [`docs/integration/installable-package.md`](docs/integration/installable-package.md) — **Phase 4** install + BYO model + BYO executor recipes  
 - [`docs/specs/phase-1-schema-sql-cli/requirements.md`](docs/specs/phase-1-schema-sql-cli/requirements.md) — Phase 1 scope (implemented in this repo)  
 - Structured logging rationale: [`docs/adrs/0001-structured-logging-pino.md`](docs/adrs/0001-structured-logging-pino.md)  
 

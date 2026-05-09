@@ -1,0 +1,37 @@
+name: Release
+
+# Manual maintainer workflow. Run on `main` after merging a PR that bumps versions
+# (via `pnpm changeset version`). Publishes the current versions to npm.
+#
+# Phase 4 ships this as opt-in; the very first 0.1.0 publish may also be done by hand
+# (`pnpm -r build && pnpm -r publish --access=public`) before this workflow is wired up.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          registry-url: https://registry.npmjs.org
+
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm -r build
+      - run: pnpm test
+
+      - name: Publish to npm
+        run: pnpm changeset publish
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          NPM_CONFIG_PROVENANCE: "true"
