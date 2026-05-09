@@ -428,7 +428,7 @@ function buildChecks(rows: CheckConstraintsRow[]): SqlCheck[] {
 function buildIndexes(rows: IndexesRow[]): SqlIndex[] {
   return rows
     .map((r) => {
-      const cols = (r.columns ?? []).filter(
+      const cols = normalizePgTextArray(r.columns).filter(
         (c): c is string => typeof c === "string" && c.length > 0,
       );
       const idx: SqlIndex = {
@@ -441,6 +441,26 @@ function buildIndexes(rows: IndexesRow[]): SqlIndex[] {
       return idx;
     })
     .sort((a, b) => a.name.localeCompare(b.name));
+}
+
+function normalizePgTextArray(value: unknown): Array<string | null> {
+  if (Array.isArray(value)) return [...value];
+  if (typeof value !== "string") return [];
+  if (value === "") return [];
+
+  // Defensive compatibility for executors that do not decode Postgres arrays.
+  // The canonical SQL casts to text[], so `pg` returns arrays on the live path;
+  // bundle ingestion in M5 may still surface literal strings.
+  if (!value.startsWith("{") || !value.endsWith("}")) return [value];
+  const inner = value.slice(1, -1);
+  if (inner === "") return [];
+  return inner.split(",").map((item) => {
+    if (item === "NULL") return null;
+    if (item.startsWith('"') && item.endsWith('"')) {
+      return item.slice(1, -1).replace(/\\"/g, '"').replace(/\\\\/g, "\\");
+    }
+    return item;
+  });
 }
 
 function byName<T extends { name: string }>(a: T, b: T): number {

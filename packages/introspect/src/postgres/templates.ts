@@ -259,12 +259,12 @@ SELECT
   i.indisunique AS is_unique,
   am.amname AS method,
   ARRAY(
-    SELECT a.attname
+    SELECT a.attname::text
     FROM pg_catalog.unnest(i.indkey) WITH ORDINALITY AS k(attnum, ord)
     LEFT JOIN pg_catalog.pg_attribute a
       ON a.attrelid = i.indrelid AND a.attnum = k.attnum
     ORDER BY k.ord
-  ) AS columns,
+  )::text[] AS columns,
   pg_catalog.pg_get_expr(i.indexprs, i.indrelid) AS expressions
 FROM pg_catalog.pg_index i
 JOIN pg_catalog.pg_class c ON c.oid = i.indrelid

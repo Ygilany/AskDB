@@ -1,7 +1,7 @@
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { describePostgres } from "./describe.js";
+import { describePostgres, foldIntrospectionResult } from "./describe.js";
 import { createPostgresConnector } from "./index.js";
 import {
   createSnapshotExecutor,
@@ -184,6 +184,76 @@ describe("describePostgres — filters", () => {
     });
     expect(empty.warnings).toEqual([
       { code: "ambiguous_filter", filter: "public.does_not_exist" },
+    ]);
+  });
+});
+
+describe("foldIntrospectionResult - live executor compatibility", () => {
+  it("normalizes Postgres text-array literals for index columns", () => {
+    const result = foldIntrospectionResult({
+      schemaId: "indexes",
+      declaredFilters: [],
+      tableFilter: () => true,
+      schemasRows: [{ schema_name: "public" }],
+      tablesRows: [
+        {
+          schema_name: "public",
+          table_name: "users",
+          relkind: "r",
+          row_level_security: false,
+          comment: null,
+        },
+      ],
+      columnsRows: [
+        {
+          schema_name: "public",
+          table_name: "users",
+          column_name: "email",
+          ordinal_position: 1,
+          data_type: "text",
+          udt_schema: "pg_catalog",
+          udt_name: "text",
+          is_nullable: false,
+          default_expression: null,
+          comment: null,
+        },
+        {
+          schema_name: "public",
+          table_name: "users",
+          column_name: "created_at",
+          ordinal_position: 2,
+          data_type: "timestamp with time zone",
+          udt_schema: "pg_catalog",
+          udt_name: "timestamptz",
+          is_nullable: false,
+          default_expression: null,
+          comment: null,
+        },
+      ],
+      pkRows: [],
+      fkRows: [],
+      uniqueRows: [],
+      checkRows: [],
+      indexRows: [
+        {
+          schema_name: "public",
+          table_name: "users",
+          index_name: "users_email_created_at_idx",
+          is_unique: false,
+          method: "btree",
+          columns: "{email,created_at}" as unknown as string[],
+          expressions: null,
+        },
+      ],
+      enumRows: [],
+      sequenceRows: [],
+      viewRows: [],
+      commentRows: [],
+    });
+
+    expect(result.schema.schemas[0]!.tables[0]!.indexes[0]!.columns).toEqual([
+      "email",
+      "created_at",
     ]);
   });
 });
