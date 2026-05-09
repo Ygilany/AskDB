@@ -24,7 +24,7 @@ Without publishable packages and a pluggable executor, AskDB is effectively a pr
 - Drop `"private": true`. Set initial published version (e.g. `0.1.0` — pre-1.0 contract).
 - Add per-package `LICENSE` (repo-level decision; recommended MIT for the open path), `README.md`, and accurate `keywords` / `repository` / `homepage` fields in `package.json`.
 - Tighten `exports` and `files`. `@askdb/core` already exports a clean barrel (`packages/core/src/index.ts`); confirm types resolve under both `bundler` and `node16` `moduleResolution` for downstream consumers.
-- Mark Node engine constraint (`engines.node: ">=18"` or current minimum); document supported runtimes.
+- Mark Node engine constraint aligned with the monorepo root (`engines.node: ">=20"` today); document supported runtimes ([`docs/platform.md`](../../platform.md) targets current Node LTS for production integrators).
 - Confirm CJS interop story (ESM-only is acceptable; document it).
 
 ### 2) Executor seam in `@askdb/core`
@@ -78,6 +78,7 @@ ask({
 | First published version | **`0.1.0`** for `@askdb/core` (pre-1.0; semver applies to current `index.ts` exports + contract docs). Companion packages versioned in lockstep. |
 | License | **MIT** unless user overrides (record final choice in this section before merge). |
 | Module format | **ESM-only** (matches current `"type": "module"`); CJS interop deferred until a consumer needs it. |
+| Node engines | **`>=20`** for published packages (match root `package.json`); document in each published `package.json`. |
 | Executor seam shape | Single function type `AskDbExecutor` that returns `TabularResult`. Mirrors the existing `executeReadOnlySelect` return shape so the built-in path becomes a default executor. |
 | `pg` dependency | Becomes an **optional `peerDependency`**. Built-in executor lazy-imports `pg`; if not installed and the consumer only uses `executor`, no error. |
 | Release tooling | **changesets** at repo root; manual publish initially, automated tagged release later. |
@@ -126,6 +127,11 @@ After Phase 4:
 2. A developer using a non-`pg` driver (e.g. `postgres.js` or Neon HTTP) implements an `AskDbExecutor` and gets the same end-to-end loop without `pg` installed.
 3. The CLI (`askdb`) and HTTP API (`@askdb/http-api`) are installable from npm with the same modes / correlation / sensitive-field semantics as today.
 4. A changeset-driven release flow produces tagged versions and changelogs; downstream consumers can pin versions.
+
+## Alignment with mission and platform
+
+- **Mission** ([`docs/mission.md`](../../mission.md)) — Phase 4 delivers the **installable contract** and **pluggable database seam** so integrators embed `@askdb/core` without cloning; secrets and connectivity remain BYO.
+- **Platform** ([`docs/platform.md`](../../platform.md)) — **pnpm** workspaces, **semver** on `packages/*/src/index.ts` exports plus `docs/contracts/`, **Postgres-first** with executor seam for non-`pg` drivers, companion packages thin wrappers over core.
 
 ## References
 

@@ -29,9 +29,9 @@ Implementation is ready to merge when **automated CI** passes, the **executor se
      - `package.json` has `"private": false`, valid `repository`, `license`, `engines`, `keywords`.
 
 5. **Consumer install smoke**
-   - A CI-only job (or the `fixtures/installable-smoke/` workspace shared with the manual run below):
+   - A CI-only job (or the `examples/installable-smoke/` workspace shared with the manual run below):
      - Installs the three packages from local tarballs into a fresh directory.
-     - Runs the checked-in TypeScript program (`fixtures/installable-smoke/index.ts` or equivalent) that imports `ask` and uses a mock `LanguageModel` + fake executor.
+     - Runs the checked-in TypeScript program (`examples/installable-smoke/index.ts` or equivalent) that imports `ask` and uses a mock `LanguageModel` + fake executor.
      - `tsc --noEmit` succeeds — types resolve cleanly.
 
 6. **Changesets gate**
@@ -41,14 +41,14 @@ Implementation is ready to merge when **automated CI** passes, the **executor se
 ## Manual (short)
 
 - Run a real publish (e.g. `0.1.0-rc.1` or the chosen first version) from a maintainer's machine; `pnpm view @askdb/core` returns the version.
-- Check a short reusable smoke script into the repo (e.g. `fixtures/installable-smoke/index.ts` plus a tiny `package.json`) that imports `ask` from `@askdb/core` and calls it against a mock `LanguageModel` + fake executor. The same script powers the **Consumer install smoke** automated job above and the manual run below — keep them in lockstep so this isn't ad-hoc maintainer-only knowledge.
+- Check a short reusable smoke script into the repo (e.g. `examples/installable-smoke/index.ts` plus a tiny `package.json`) that imports `ask` from `@askdb/core` and calls it against a mock `LanguageModel` + fake executor. The same script powers the **Consumer install smoke** automated job above and the manual run below — keep them in lockstep so this isn't ad-hoc maintainer-only knowledge.
 - In a fresh directory outside the repo: `pnpm init && pnpm add @askdb/core@<published-version>`, copy the fixture script over (or `pnpm add` from the published tarball URL), and run it. Confirm it works without cloning the AskDB repo.
 - Spot-check the published tarballs on npm for accidental files (especially secrets, source maps to private paths, etc.).
 
 ## Non-blockers for Phase 4 merge
 
 - Schema v2 (Phase 5).
-- `@askdb/tui` and `@askdb/rag` packages (Phases 5 and 6).
+- `@askdb/introspect`, `@askdb/tui`, and `@askdb/rag` packages (Phases 6–8).
 - Web app, embed SDK, multi-engine support, MCP surface.
 - 1.0 release — pre-1.0 is acceptable and expected.
 
