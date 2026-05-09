@@ -26,6 +26,7 @@ jobs:
 
     env:
       DATABASE_URL: postgres://postgres:postgres@localhost:5432/askdb_test
+      PAGILA_DATABASE_URL: postgres://postgres:postgres@127.0.0.1:5433/pagila
 
     steps:
       - name: Checkout
@@ -45,6 +46,9 @@ jobs:
 
       - name: Build all packages
         run: pnpm build
+
+      - name: Start Pagila introspection fixture
+        run: docker compose -f fixtures/pagila/docker-compose.yml up --build --wait -d
 
       - name: Run unit + integration tests
         run: pnpm test
