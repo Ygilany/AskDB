@@ -1,6 +1,9 @@
 export * from "./errors.js";
-export type { TabularResult } from "./exec/postgres.js";
-export { executeReadOnlySelect } from "./exec/postgres.js";
+// Executor seam contract types — the main barrel deliberately does NOT re-export the built-in
+// `pg`-backed helpers; consumers reach those via the `@askdb/core/postgres` subpath. See
+// `docs/specs/phase-4-publish-npm/requirements.md` ("Postgres helper packaging").
+export type { TabularResult } from "./exec/types.js";
+export type { AskDbExecutor } from "./exec/executor.js";
 export { ask, type AskPipelineOptions, type AskPipelineResult } from "./ask.js";
 export {
   parseAskDbModeV1,

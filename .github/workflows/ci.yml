@@ -28,15 +28,31 @@ jobs:
       DATABASE_URL: postgres://postgres:postgres@localhost:5432/askdb_test
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v4
 
-      - uses: pnpm/action-setup@v4
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
 
-      - uses: actions/setup-node@v4
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: pnpm
 
-      - run: pnpm install --frozen-lockfile
-      - run: pnpm build
-      - run: pnpm test
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build all packages
+        run: pnpm build
+
+      - name: Run unit + integration tests
+        run: pnpm test
+
+      # Release preflight — mirrored locally by `scripts/release-preflight.sh`.
+      # Broken into discrete steps so failures are attributable in the Actions UI.
+      - name: Installable smoke test
+        run: pnpm smoke:install
+
+      - name: Validate publish (dry-run)
+        run: pnpm -r publish --dry-run --no-git-checks --access=public

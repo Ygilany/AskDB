@@ -1,6 +1,17 @@
-# @askdb/http-api (Phase 3)
+# @askdb/http-api
 
-Minimal HTTP surface that wraps `@askdb/core` (no duplicated NL→SQL logic).
+Minimal HTTP surface that wraps [`@askdb/core`](https://www.npmjs.com/package/@askdb/core) — no duplicated NL→SQL logic. `POST /ask` returns a validated read-only `SELECT` (with optional execution behind a server-side feature flag).
+
+> **Status:** pre-1.0.
+
+## Install
+
+```bash
+pnpm add -g @askdb/http-api
+askdb-http
+```
+
+Or run from a clone — see "Local run" below.
 
 ## Local run
 
@@ -69,3 +80,7 @@ const res = await fetch("http://127.0.0.1:3000/ask", {
 
 console.log(await res.json());
 ```
+
+## License
+
+Apache-2.0 © Yahya Gilany. See [LICENSE](./LICENSE) and [NOTICE](./NOTICE).

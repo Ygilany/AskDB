@@ -86,12 +86,12 @@ Front-matter is validated by zod (round-trippable from the TUI); the markdown bo
 ## Data access
 
 - **Postgres-first** — The first shipped path targets **PostgreSQL** end-to-end when a **live** connection or executor is used (connection, dialect assumptions in generation, execution, guardrails). Treat this as the **reference implementation** quality bar.
-- **Pluggable executor seam** — `@askdb/core` ships a built-in Postgres executor (`pg`) but accepts an **integrator-supplied executor function** at the `ask()` boundary. Consumers using a different driver (postgres.js, Neon HTTP, Cloudflare Hyperdrive, a serverless pool, an MCP-mediated DB) plug in their own executor without forking. The executor contract is part of the published `@askdb/core` API.
+- **Pluggable executor seam** — `@askdb/core` ships a built-in Postgres executor (`pg`) but accepts an **integrator-supplied executor function** at the `ask()` boundary. Consumers using a different driver (postgres.js, Neon HTTP, Cloudflare Hyperdrive, a serverless pool, an MCP-mediated DB) plug in their own executor without forking. The executor contract is part of the published `@askdb/core` API. Recipes in [`docs/integration/installable-package.md`](integration/installable-package.md).
 - **Other databases later** — Support for **additional engines** (beyond Postgres) lands in a **later roadmap phase**: per-engine drivers, dialect-aware generation/validation, and tests—rolled out **one database at a time** so we do not dilute safety or correctness. See **`roadmap.md`** (multi-database phase).
 
 ## AI and integrations
 
-- **BYO chat model** — `ask({ model })` accepts any AI SDK `LanguageModel`. Customers wire OpenAI, Anthropic, Google, Bedrock, AI Gateway, Ollama, etc. without changes inside AskDB.
+- **BYO chat model** — `ask({ model })` accepts any AI SDK `LanguageModel`. Customers wire OpenAI, Anthropic, Google, Bedrock, AI Gateway, Ollama, etc. without changes inside AskDB. Per-provider recipes in [`docs/integration/installable-package.md`](integration/installable-package.md).
 - **BYO embedder** (Phase 8) — `@askdb/rag` chunking and retrieval accept any embedder function (AI SDK `embed()` / `embedMany()` shape). Default reference: `text-embedding-3-small`; nothing in `@askdb/core` requires it.
 - **BYO vector store** (Phase 8) — `@askdb/rag` ships an `VectorStore` interface with adapters added one at a time: in-memory (default, zero deps), file-backed (`*.embeddings.bin` checked in next to the schema artifact), pgvector, then others as demand drives. Consumers pick the adapter or implement their own.
 - **No mandatory vendors** — Nothing in the package requires an AskDB-owned account or service. Every external dependency is a seam the integrator chooses.

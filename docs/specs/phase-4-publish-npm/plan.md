@@ -18,6 +18,7 @@ Numbered groups are **ordered** so each milestone is **demoable** without waitin
 ## 2 — Make `pg` an optional peer dependency
 
 - Move `pg` from `dependencies` to `peerDependencies` and add `peerDependenciesMeta: { pg: { optional: true } }` in `packages/core/package.json`.
+- Add **`package.json` `exports`** entry for **`@askdb/core/postgres`** pointing at the built chunk (`./dist/postgres.js` or equivalent) so `createPostgresExecutor` is not re-exported from the main barrel.
 - Lazy-import `pg` inside `createPostgresExecutor`; throw a helpful error (`AskDbError("Postgres executor requires the 'pg' peer dependency...")`) only when the built-in executor is actually constructed.
 - Update root + workspace `pnpm install` so the dev environment still installs `pg` (it stays a `devDependency` of the workspace, or a regular dep of `@askdb/cli` and `@askdb/http-api` which use the built-in executor).
 
@@ -49,7 +50,7 @@ For `@askdb/core`, `@askdb/cli`, `@askdb/http-api`:
 
 - Adopt **changesets** at the repo root (`pnpm dlx @changesets/cli init`).
 - Configure for the workspace; commit initial changeset describing the v0.1.0 release.
-- Add CI workflow: on PR → validate changesets present; on merge to main → run `changeset version` + manually-approved `changeset publish`.
+- Add CI workflow: on PR → validate changesets present when publishable sources change; publishing can remain **manual** until the team wires automated `changeset publish` (first **public** npm release may be a **post-merge maintainer step** — see [`validation.md`](./validation.md)).
 - Run a **dry-run publish** (`pnpm changeset publish --dry-run` or `npm publish --dry-run`) and confirm output.
 
 **Demo:** A dry-run publish reports the expected versions for all three packages and surfaces no warnings about missing fields, `private: true`, or oversized tarballs.
@@ -67,11 +68,11 @@ For `@askdb/core`, `@askdb/cli`, `@askdb/http-api`:
 
 **Demo:** A new contributor following only the `README.md` install snippet can import `@askdb/core` and run `ask()` against a mock model + fake executor without reading the rest of the repo.
 
-## 7 — First real publish
+## 7 — First real publish (maintainer follow-up, not a merge prerequisite)
 
-- Tag and publish `0.1.0` for all three packages.
+- After the Phase 4 implementation PR is merged (CI + pack + smoke + changesets already green), maintainers **tag and publish** `0.1.0` for all three packages when ready.
 - Smoke-test in a fresh project (`mkdir /tmp/askdb-test && cd $_ && pnpm init && pnpm add @askdb/core`).
-- Confirm CI publish workflow handles the next release end-to-end.
+- Optionally confirm CI publish workflow for subsequent releases.
 
 **Demo:** `pnpm view @askdb/core` returns the newly published version; a fresh `pnpm add @askdb/core` install works in a clean directory.
 

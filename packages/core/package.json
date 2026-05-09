@@ -1,7 +1,30 @@
 {
   "name": "@askdb/core",
-  "version": "0.0.1",
-  "private": true,
+  "version": "0.1.0",
+  "description": "AskDB core: NL→SQL pipeline with BYO LanguageModel and BYO database executor. Generates validated read-only PostgreSQL SELECTs from a normalized schema.",
+  "keywords": [
+    "askdb",
+    "nl-to-sql",
+    "natural-language-to-sql",
+    "postgres",
+    "postgresql",
+    "ai",
+    "llm",
+    "ai-sdk",
+    "openai",
+    "sql"
+  ],
+  "homepage": "https://github.com/Ygilany/AskDB#readme",
+  "bugs": {
+    "url": "https://github.com/Ygilany/AskDB/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Ygilany/AskDB.git",
+    "directory": "packages/core"
+  },
+  "license": "Apache-2.0",
+  "author": "Yahya Gilany",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -9,9 +32,16 @@
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
+    },
+    "./postgres": {
+      "types": "./dist/postgres.d.ts",
+      "import": "./dist/postgres.js"
     }
   },
-  "files": ["dist"],
+  "files": ["dist", "README.md", "LICENSE", "NOTICE"],
+  "engines": {
+    "node": ">=20"
+  },
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
     "lint": "tsc -p tsconfig.build.json --noEmit",
@@ -21,11 +51,19 @@
     "@ai-sdk/openai": "^1.3.21",
     "ai": "^4.3.19",
     "pino": "^9.6.0",
-    "pg": "^8.14.1",
     "zod": "^3.24.4"
+  },
+  "peerDependencies": {
+    "pg": ">=8"
+  },
+  "peerDependenciesMeta": {
+    "pg": {
+      "optional": true
+    }
   },
   "devDependencies": {
     "@types/pg": "^8.11.12",
+    "pg": "^8.14.1",
     "typescript": "^5.7.3",
     "vitest": "^3.0.9"
   }

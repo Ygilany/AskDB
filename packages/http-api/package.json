@@ -1,14 +1,41 @@
 {
   "name": "@askdb/http-api",
-  "version": "0.0.1",
-  "private": true,
+  "version": "0.1.0",
+  "description": "AskDB HTTP API: minimal HTTP wrapper around @askdb/core. POST /ask returns validated read-only SELECT (with optional execution behind a feature flag).",
+  "keywords": [
+    "askdb",
+    "http",
+    "api",
+    "server",
+    "nl-to-sql",
+    "natural-language-to-sql",
+    "postgres",
+    "postgresql",
+    "ai",
+    "llm",
+    "sql"
+  ],
+  "homepage": "https://github.com/Ygilany/AskDB#readme",
+  "bugs": {
+    "url": "https://github.com/Ygilany/AskDB/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Ygilany/AskDB.git",
+    "directory": "packages/http-api"
+  },
+  "license": "Apache-2.0",
+  "author": "Yahya Gilany",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "bin": {
     "askdb-http": "./dist/bin.js"
   },
-  "files": ["dist"],
+  "files": ["dist", "README.md", "LICENSE", "NOTICE"],
+  "engines": {
+    "node": ">=20"
+  },
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
     "start": "node dist/bin.js",
@@ -20,7 +47,8 @@
   "dependencies": {
     "@ai-sdk/openai": "^1.3.21",
     "@askdb/core": "workspace:*",
-    "dotenv": "^16.6.1"
+    "dotenv": "^16.6.1",
+    "pg": "^8.14.1"
   },
   "devDependencies": {
     "tsx": "^4.20.5",
@@ -28,4 +56,3 @@
     "vitest": "^3.0.9"
   }
 }
-
