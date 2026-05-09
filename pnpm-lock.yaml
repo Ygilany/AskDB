@@ -108,6 +108,19 @@ importers:
         specifier: ^3.0.9
         version: 3.2.4(@types/node@22.19.17)(tsx@4.21.0)
 
+  packages/introspect:
+    dependencies:
+      '@askdb/core':
+        specifier: workspace:*
+        version: link:../core
+    devDependencies:
+      typescript:
+        specifier: ^5.7.3
+        version: 5.9.3
+      vitest:
+        specifier: ^3.0.9
+        version: 3.2.4(@types/node@22.19.17)(tsx@4.21.0)
+
 packages:
 
   '@ai-sdk/openai@1.3.24':
