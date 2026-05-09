@@ -254,9 +254,16 @@ function extractFirstParagraph(body: string): string | undefined {
   const lines = body.split("\n");
   const paragraphLines: string[] = [];
   let inParagraph = false;
+  let seenHeading = false;
 
   for (const line of lines) {
-    if (line.startsWith("#")) continue; // skip headings
+    if (line.startsWith("#")) {
+      // Skip the leading H1 (table title), but stop at any subsequent heading
+      // so we don't leak content from the next section into the description.
+      if (seenHeading) break;
+      seenHeading = true;
+      continue;
+    }
     if (line.trim() === "") {
       if (inParagraph) break;
       continue;

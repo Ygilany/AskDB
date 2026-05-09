@@ -1,15 +1,16 @@
-import { dirname } from "node:path";
-import { fileURLToPath } from "node:url";
 import { defineConfig } from "vitest/config";
 
-const repoRoot = dirname(fileURLToPath(import.meta.url));
-
+// Tests are scoped to the directory vitest is invoked from (process.cwd()).
+// When run from the repo root this picks up all packages; when run from a
+// package (e.g. via turbo's per-package `test` script) it picks up only
+// that package's tests. The latter is required because each package only
+// has @askdb/core symlinked into its own node_modules — running another
+// package's tests inside the wrong cwd breaks vite's module resolution.
 export default defineConfig({
-  root: repoRoot,
   test: {
     globals: false,
     environment: "node",
-    include: ["packages/**/*.test.ts", "packages/**/*.integration.test.ts"],
+    include: ["**/*.test.ts", "**/*.integration.test.ts"],
     exclude: ["**/node_modules/**", "**/dist/**"],
     testTimeout: 45_000,
     hookTimeout: 45_000,
