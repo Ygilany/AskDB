@@ -23,6 +23,12 @@ export const AskDbLogEvent = {
   PipelinePostExecute: "askdb.pipeline.post_execute",
   /** Generation or execution failed after pipeline logging began (includes `phase`). */
   PipelineFailed: "askdb.pipeline.failed",
+  /**
+   * Both `executor` and `connectionString` were supplied to `ask()`. The custom `executor` wins;
+   * `connectionString` is ignored. Emitted before generation so the resolution is observable in logs.
+   * See `docs/specs/phase-4-publish-npm/requirements.md` (“Resolution rule when both inputs are passed”).
+   */
+  ConfigExecutorOverridesConnectionString: "askdb.config.executor_overrides_connection_string",
 } as const;
 
 export type AskDbLogEventName = (typeof AskDbLogEvent)[keyof typeof AskDbLogEvent];

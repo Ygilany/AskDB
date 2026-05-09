@@ -1,6 +1,7 @@
 export * from "./errors.js";
 export type { TabularResult } from "./exec/postgres.js";
-export { executeReadOnlySelect } from "./exec/postgres.js";
+export { executeReadOnlySelect, createPostgresExecutor } from "./exec/postgres.js";
+export type { AskDbExecutor } from "./exec/executor.js";
 export { ask, type AskPipelineOptions, type AskPipelineResult } from "./ask.js";
 export {
   parseAskDbModeV1,
