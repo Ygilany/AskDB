@@ -1,17 +1,11 @@
+import type { AskDbExecutor } from "@askdb/core";
 import { describe, expect, it } from "vitest";
-import { introspect, renderToSchemaV2 } from "./index.js";
+import { renderToSchemaV2 } from "./index.js";
 import { createPostgresConnector } from "./postgres/index.js";
 
-describe("@askdb/introspect public surface (milestone 1 skeleton)", () => {
-  it("exports introspect() that throws until milestone 2+ wires it in", async () => {
-    await expect(
-      introspect({
-        mode: "live",
-        executor: { run: async () => ({ columns: [], rows: [] }) },
-      }),
-    ).rejects.toThrow(/not implemented yet/);
-  });
+const noopExecutor: AskDbExecutor = async () => ({ columns: [], rows: [] });
 
+describe("@askdb/introspect public surface", () => {
   it("exports renderToSchemaV2() that throws until milestone 3 wires it in", () => {
     expect(() =>
       renderToSchemaV2(
@@ -21,15 +15,16 @@ describe("@askdb/introspect public surface (milestone 1 skeleton)", () => {
     ).toThrow(/not implemented yet/);
   });
 
-  it("exposes a postgres connector with engine='postgres' and stubbed members", async () => {
+  it("exposes a postgres connector with engine='postgres'", () => {
     const connector = createPostgresConnector();
     expect(connector.engine).toBe("postgres");
-    expect(() => connector.templates()).toThrow(/not implemented yet/);
+  });
+
+  it("postgres connector accepts a live IntrospectionInput shape", async () => {
+    // We do not assert on the result here; M2 wires describe() and adds richer tests.
+    const connector = createPostgresConnector();
     await expect(
-      connector.describe({
-        mode: "live",
-        executor: { run: async () => ({ columns: [], rows: [] }) },
-      }),
-    ).rejects.toThrow(/not implemented yet/);
+      connector.describe({ mode: "live", executor: noopExecutor }),
+    ).resolves.toBeDefined();
   });
 });

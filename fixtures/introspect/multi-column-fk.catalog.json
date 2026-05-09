@@ -1,0 +1,232 @@
+{
+  "schemas": [{ "schema_name": "public" }],
+  "tables": [
+    {
+      "schema_name": "public",
+      "table_name": "products",
+      "relkind": "r",
+      "row_level_security": false,
+      "comment": null
+    },
+    {
+      "schema_name": "public",
+      "table_name": "stores",
+      "relkind": "r",
+      "row_level_security": false,
+      "comment": null
+    },
+    {
+      "schema_name": "public",
+      "table_name": "store_inventory",
+      "relkind": "r",
+      "row_level_security": false,
+      "comment": null
+    }
+  ],
+  "columns": [
+    {
+      "schema_name": "public",
+      "table_name": "products",
+      "column_name": "tenant_id",
+      "ordinal_position": 1,
+      "data_type": "uuid",
+      "udt_schema": "pg_catalog",
+      "udt_name": "uuid",
+      "is_nullable": false,
+      "default_expression": null,
+      "comment": null
+    },
+    {
+      "schema_name": "public",
+      "table_name": "products",
+      "column_name": "sku",
+      "ordinal_position": 2,
+      "data_type": "text",
+      "udt_schema": "pg_catalog",
+      "udt_name": "text",
+      "is_nullable": false,
+      "default_expression": null,
+      "comment": null
+    },
+    {
+      "schema_name": "public",
+      "table_name": "stores",
+      "column_name": "tenant_id",
+      "ordinal_position": 1,
+      "data_type": "uuid",
+      "udt_schema": "pg_catalog",
+      "udt_name": "uuid",
+      "is_nullable": false,
+      "default_expression": null,
+      "comment": null
+    },
+    {
+      "schema_name": "public",
+      "table_name": "stores",
+      "column_name": "store_code",
+      "ordinal_position": 2,
+      "data_type": "text",
+      "udt_schema": "pg_catalog",
+      "udt_name": "text",
+      "is_nullable": false,
+      "default_expression": null,
+      "comment": null
+    },
+    {
+      "schema_name": "public",
+      "table_name": "store_inventory",
+      "column_name": "tenant_id",
+      "ordinal_position": 1,
+      "data_type": "uuid",
+      "udt_schema": "pg_catalog",
+      "udt_name": "uuid",
+      "is_nullable": false,
+      "default_expression": null,
+      "comment": null
+    },
+    {
+      "schema_name": "public",
+      "table_name": "store_inventory",
+      "column_name": "store_code",
+      "ordinal_position": 2,
+      "data_type": "text",
+      "udt_schema": "pg_catalog",
+      "udt_name": "text",
+      "is_nullable": false,
+      "default_expression": null,
+      "comment": null
+    },
+    {
+      "schema_name": "public",
+      "table_name": "store_inventory",
+      "column_name": "sku",
+      "ordinal_position": 3,
+      "data_type": "text",
+      "udt_schema": "pg_catalog",
+      "udt_name": "text",
+      "is_nullable": false,
+      "default_expression": null,
+      "comment": null
+    },
+    {
+      "schema_name": "public",
+      "table_name": "store_inventory",
+      "column_name": "qty",
+      "ordinal_position": 4,
+      "data_type": "integer",
+      "udt_schema": "pg_catalog",
+      "udt_name": "int4",
+      "is_nullable": false,
+      "default_expression": "0",
+      "comment": null
+    }
+  ],
+  "primary_keys": [
+    {
+      "schema_name": "public",
+      "table_name": "products",
+      "constraint_name": "products_pkey",
+      "key_position": 1,
+      "column_name": "tenant_id"
+    },
+    {
+      "schema_name": "public",
+      "table_name": "products",
+      "constraint_name": "products_pkey",
+      "key_position": 2,
+      "column_name": "sku"
+    },
+    {
+      "schema_name": "public",
+      "table_name": "stores",
+      "constraint_name": "stores_pkey",
+      "key_position": 1,
+      "column_name": "tenant_id"
+    },
+    {
+      "schema_name": "public",
+      "table_name": "stores",
+      "constraint_name": "stores_pkey",
+      "key_position": 2,
+      "column_name": "store_code"
+    },
+    {
+      "schema_name": "public",
+      "table_name": "store_inventory",
+      "constraint_name": "store_inventory_pkey",
+      "key_position": 1,
+      "column_name": "tenant_id"
+    },
+    {
+      "schema_name": "public",
+      "table_name": "store_inventory",
+      "constraint_name": "store_inventory_pkey",
+      "key_position": 2,
+      "column_name": "store_code"
+    },
+    {
+      "schema_name": "public",
+      "table_name": "store_inventory",
+      "constraint_name": "store_inventory_pkey",
+      "key_position": 3,
+      "column_name": "sku"
+    }
+  ],
+  "foreign_keys": [
+    {
+      "schema_name": "public",
+      "table_name": "store_inventory",
+      "constraint_name": "store_inventory_store_fk",
+      "key_position": 1,
+      "column_name": "tenant_id",
+      "referenced_schema_name": "public",
+      "referenced_table_name": "stores",
+      "referenced_column_name": "tenant_id",
+      "on_delete_code": "c",
+      "on_update_code": "a"
+    },
+    {
+      "schema_name": "public",
+      "table_name": "store_inventory",
+      "constraint_name": "store_inventory_store_fk",
+      "key_position": 2,
+      "column_name": "store_code",
+      "referenced_schema_name": "public",
+      "referenced_table_name": "stores",
+      "referenced_column_name": "store_code",
+      "on_delete_code": "c",
+      "on_update_code": "a"
+    },
+    {
+      "schema_name": "public",
+      "table_name": "store_inventory",
+      "constraint_name": "store_inventory_product_fk",
+      "key_position": 1,
+      "column_name": "tenant_id",
+      "referenced_schema_name": "public",
+      "referenced_table_name": "products",
+      "referenced_column_name": "tenant_id",
+      "on_delete_code": "r",
+      "on_update_code": "a"
+    },
+    {
+      "schema_name": "public",
+      "table_name": "store_inventory",
+      "constraint_name": "store_inventory_product_fk",
+      "key_position": 2,
+      "column_name": "sku",
+      "referenced_schema_name": "public",
+      "referenced_table_name": "products",
+      "referenced_column_name": "sku",
+      "on_delete_code": "r",
+      "on_update_code": "a"
+    }
+  ],
+  "unique_constraints": [],
+  "check_constraints": [],
+  "indexes": [],
+  "enums": [],
+  "sequences": [],
+  "views": [],
+  "comments": []
+}
