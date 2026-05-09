@@ -45,7 +45,7 @@
                 "type": "json",
                 "raw": [
                     "{",
-                    "  \"question\": \"How many users are there?\"",
+                    "  \"question\": \"delete the database\"",
                     "}",
                     ""
                 ],
