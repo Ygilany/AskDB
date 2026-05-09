@@ -1,7 +1,30 @@
 {
   "name": "@askdb/core",
-  "version": "0.0.1",
-  "private": true,
+  "version": "0.1.0",
+  "description": "AskDB core: NL→SQL pipeline with BYO LanguageModel and BYO database executor. Generates validated read-only PostgreSQL SELECTs from a normalized schema.",
+  "keywords": [
+    "askdb",
+    "nl-to-sql",
+    "natural-language-to-sql",
+    "postgres",
+    "postgresql",
+    "ai",
+    "llm",
+    "ai-sdk",
+    "openai",
+    "sql"
+  ],
+  "homepage": "https://github.com/Ygilany/AskDB#readme",
+  "bugs": {
+    "url": "https://github.com/Ygilany/AskDB/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Ygilany/AskDB.git",
+    "directory": "packages/core"
+  },
+  "license": "Apache-2.0",
+  "author": "Yahya Gilany",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -15,7 +38,10 @@
       "import": "./dist/postgres.js"
     }
   },
-  "files": ["dist"],
+  "files": ["dist", "README.md", "LICENSE", "NOTICE"],
+  "engines": {
+    "node": ">=20"
+  },
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
     "lint": "tsc -p tsconfig.build.json --noEmit",
