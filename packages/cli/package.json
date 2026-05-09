@@ -1,6 +1,6 @@
 {
   "name": "@askdb/cli",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "AskDB CLI: ask natural-language questions, get validated read-only PostgreSQL SELECTs (and optional execution) from your terminal.",
   "keywords": [
     "askdb",
@@ -28,7 +28,12 @@
   "bin": {
     "askdb": "./dist/cli.js"
   },
-  "files": ["dist", "README.md", "LICENSE", "NOTICE"],
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE",
+    "NOTICE"
+  ],
   "engines": {
     "node": ">=20"
   },

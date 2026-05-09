@@ -1,0 +1,74 @@
+{
+  "version": 2,
+  "schemaId": "orders-users",
+  "tables": [
+    {
+      "id": "table:users",
+      "name": "users",
+      "sensitive": false,
+      "columns": [
+        {
+          "id": "table:users#id",
+          "name": "id",
+          "type": "uuid",
+          "nullable": false,
+          "primaryKey": true,
+          "sensitive": false
+        },
+        {
+          "id": "table:users#email",
+          "name": "email",
+          "type": "text",
+          "nullable": false,
+          "sensitive": true
+        },
+        {
+          "id": "table:users#created_at",
+          "name": "created_at",
+          "type": "timestamptz",
+          "nullable": false,
+          "sensitive": false
+        }
+      ]
+    },
+    {
+      "id": "table:orders",
+      "name": "orders",
+      "sensitive": false,
+      "columns": [
+        {
+          "id": "table:orders#id",
+          "name": "id",
+          "type": "uuid",
+          "nullable": false,
+          "primaryKey": true,
+          "sensitive": false
+        },
+        {
+          "id": "table:orders#user_id",
+          "name": "user_id",
+          "type": "uuid",
+          "nullable": false,
+          "sensitive": false
+        },
+        {
+          "id": "table:orders#status",
+          "name": "status",
+          "type": "text",
+          "nullable": false,
+          "sensitive": false
+        },
+        {
+          "id": "table:orders#total_amount",
+          "name": "total_amount",
+          "type": "integer",
+          "nullable": false,
+          "sensitive": false
+        }
+      ],
+      "relationships": [
+        { "from": "table:orders#user_id", "to": "table:users#id" }
+      ]
+    }
+  ]
+}

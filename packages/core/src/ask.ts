@@ -5,7 +5,7 @@ import { createPostgresExecutor } from "./exec/postgres.js";
 import type { TabularResult } from "./exec/types.js";
 import type { AskDbLogger } from "./logging/askdb-logger.js";
 import { AskDbLogEvent } from "./logging/log-events.js";
-import type { NormalizedSchema } from "./schema/types.js";
+import type { AnyNormalizedSchema } from "./sql/prompt.js";
 import { logPostExecuteModeBranch } from "./modes/post-execute-log.js";
 import { DEFAULT_ASKDB_MODE, type AskDbModeV1 } from "./modes/types.js";
 import type { GenerateSqlDeps, PostgresSelectGuardrailExplain } from "./sql/generate.js";
@@ -13,7 +13,7 @@ import { generatePostgresSelectSql } from "./sql/generate.js";
 
 export type AskPipelineOptions = {
   question: string;
-  schema: NormalizedSchema;
+  schema: AnyNormalizedSchema;
   model: LanguageModel;
   /** When true, callers may inspect heuristic guardrail metadata (hosts/CLI). */
   explain?: boolean;

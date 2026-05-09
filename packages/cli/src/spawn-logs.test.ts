@@ -28,7 +28,7 @@ describe("cli spawn: structured logs contract", () => {
     mkdirSync(logDir, { recursive: true });
     const logFile = join(logDir, "run.log");
 
-    const schemaPath = join(repoRoot, "fixtures/schemas/orders-users-sensitive.schema.json");
+    const schemaPath = join(repoRoot, "fixtures/schemas/orders-users-sensitive.schema");
     const mockSql = "SELECT users.secret_recovery_token FROM users";
 
     const exec = run(

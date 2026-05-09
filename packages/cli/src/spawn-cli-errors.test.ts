@@ -39,9 +39,9 @@ describe("cli spawn: rich errors", () => {
     );
 
     expect(exec.status).toBe(1);
-    expect(exec.stderr).toContain("Schema file not found.");
+    expect(exec.stderr).toContain("Schema path not found.");
     expect(exec.stderr).toContain("Schema path:");
-    expect(exec.stderr).toContain("fixtures/schemas/orders-users.schema.json");
+    expect(exec.stderr).toContain("fixtures/schemas/orders-users.schema/");
   });
 
   it("prints schema path + details when schema JSON is invalid", () => {
@@ -75,7 +75,7 @@ describe("cli spawn: rich errors", () => {
       );
 
       expect(exec.status).toBe(1);
-      expect(exec.stderr).toContain("Failed to parse schema JSON.");
+      expect(exec.stderr).toContain("Failed to parse schema.");
       expect(exec.stderr).toContain(`Schema path: ${schemaFile}`);
       expect(exec.stderr).toContain("Details:");
     } finally {

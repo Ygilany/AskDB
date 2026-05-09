@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { createServer as createNodeServer } from "node:http";
@@ -16,7 +17,8 @@ import {
   SqlValidationError,
   ask,
   createAskDbLogger,
-  loadNormalizedSchemaFromJson,
+  loadSchema,
+  loadSchemaFromJson,
   parseAskDbModeV1,
 } from "@askdb/core";
 import type { AskHttpErrorResponse, AskHttpRequest, AskHttpSuccessResponse } from "./types.js";
@@ -97,30 +99,27 @@ function resolveSchemaJsonFromEnv(): { schemaJson?: string; source?: string } {
   return { schemaJson: undefined, source: undefined };
 }
 
-async function readSchemaFileWithFallbacks(schemaPath: string): Promise<{ raw: string; source: string }> {
+async function resolveSchemaPathWithFallbacks(schemaPath: string): Promise<{ resolvedPath: string; source: string }> {
   const trimmed = schemaPath.trim();
-  const attempted: string[] = [];
 
   // 1) As provided (absolute or relative to current working directory)
-  attempted.push(trimmed);
-  try {
-    const raw = await readFile(trimmed, "utf8");
-    return { raw, source: `ASKDB_SCHEMA_PATH (${trimmed})` };
-  } catch (e) {
-    const err = e as any;
-    if (err?.code !== "ENOENT" || isAbsolute(trimmed)) throw e;
+  if (isAbsolute(trimmed)) {
+    return { resolvedPath: trimmed, source: `ASKDB_SCHEMA_PATH (${trimmed})` };
   }
 
-  // 2) If relative, also try resolving relative to the repo root (3 levels up from this file).
+  // 2) Relative to CWD — accept both files and directories
+  if (existsSync(trimmed)) {
+    return { resolvedPath: trimmed, source: `ASKDB_SCHEMA_PATH (${trimmed})` };
+  }
+
+  // 3) If relative, also try resolving relative to the repo root (3 levels up from this file).
   // Works for both `src/` and compiled `dist/` layouts:
   // - .../packages/http-api/src/server.ts  -> repo root is ../../..
   // - .../packages/http-api/dist/server.js -> repo root is ../../..
   const here = dirname(fileURLToPath(import.meta.url));
   const repoRoot = resolvePath(here, "../../..");
   const repoRelative = resolvePath(repoRoot, trimmed);
-  attempted.push(repoRelative);
-  const raw = await readFile(repoRelative, "utf8");
-  return { raw, source: `ASKDB_SCHEMA_PATH (${trimmed}) resolved from repo root (${repoRelative})` };
+  return { resolvedPath: repoRelative, source: `ASKDB_SCHEMA_PATH (${trimmed}) resolved from repo root (${repoRelative})` };
 }
 
 function boolFromHeader(v: string | undefined): boolean | undefined {
@@ -139,7 +138,7 @@ function modeFromHeader(v: string | undefined): AskDbModeV1 | undefined {
 export function createAskDbHttpServer(options: AskDbHttpServerOptions = {}) {
   const host = options.host ?? "127.0.0.1";
   const port = options.port ?? 3000;
-  let cachedSchema: ReturnType<typeof loadNormalizedSchemaFromJson> | undefined;
+  let cachedSchema: ReturnType<typeof loadSchema> | undefined;
   let cachedSchemaSource: string | undefined;
 
   const server = createNodeServer(async (req, res) => {
@@ -228,17 +227,17 @@ export function createAskDbHttpServer(options: AskDbHttpServerOptions = {}) {
         const requestOverride =
           typeof body.schemaJson === "string" && body.schemaJson.trim() !== "" ? body.schemaJson : undefined;
         if (requestOverride) {
-          schema = loadNormalizedSchemaFromJson(requestOverride);
+          schema = loadSchemaFromJson(requestOverride);
         } else {
           if (!cachedSchema) {
             const env = resolveSchemaJsonFromEnv();
             cachedSchemaSource = env.source;
             if (env.schemaJson) {
-              cachedSchema = loadNormalizedSchemaFromJson(env.schemaJson);
+              cachedSchema = loadSchemaFromJson(env.schemaJson);
             } else if (process.env.ASKDB_SCHEMA_PATH && process.env.ASKDB_SCHEMA_PATH.trim() !== "") {
-              const { raw, source } = await readSchemaFileWithFallbacks(process.env.ASKDB_SCHEMA_PATH);
+              const { resolvedPath, source } = await resolveSchemaPathWithFallbacks(process.env.ASKDB_SCHEMA_PATH);
               cachedSchemaSource = source;
-              cachedSchema = loadNormalizedSchemaFromJson(raw);
+              cachedSchema = loadSchema(resolvedPath);
             } else {
               writeError(res, 400, correlationId, {
                 code: "bad_request",

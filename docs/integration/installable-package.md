@@ -26,12 +26,10 @@ pnpm add pg
 ## Minimal pipeline
 
 ```ts
-import { ask, loadNormalizedSchemaFromJson } from "@askdb/core";
-import { readFile } from "node:fs/promises";
+import { ask, loadSchema } from "@askdb/core";
 
-const schema = loadNormalizedSchemaFromJson(
-  await readFile("./schema.json", "utf8"),
-);
+// Load a Schema v2 directory (physical + describable layers)
+const schema = loadSchema("./my-app.schema");
 
 const { sql, result } = await ask({
   question: "How many users signed up last week?",
@@ -41,6 +39,21 @@ const { sql, result } = await ask({
   execute: true,
 });
 ```
+
+`loadSchema` autodetects between a v2 directory, a bundled JSON file, and a direct `schema.json` path. For inline JSON (e.g. from an env var), use `loadSchemaFromJson(raw)` instead.
+
+### Schema v2 directory layout
+
+```text
+my-app.schema/
+  schema.json        # physical layer — tables, columns, types, FKs, sensitive flags
+  tables/
+    users.md         # describable layer — descriptions, aliases, common query language
+    orders.md
+  concepts.md        # optional — cross-table domain vocabulary
+```
+
+A directory with only `schema.json` (no `tables/*.md`) is valid — tables fall back to bare names + types. See [`docs/contracts/schema-v2.md`](../contracts/schema-v2.md) for the full format contract.
 
 Pass either `executor` (BYO) or `connectionString` (built-in `pg`). If both are passed, `executor` wins and the pipeline emits a `askdb.config.executor_overrides_connection_string` log event.
 

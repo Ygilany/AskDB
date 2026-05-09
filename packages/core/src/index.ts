@@ -31,6 +31,31 @@ export {
 export { loadNormalizedSchemaFromJson, parseAskDbSchemaJson } from "./schema/parse.js";
 export type { AskDbSchemaFile, NormalizedSchema } from "./schema/types.js";
 export {
+  loadSchema,
+  loadSchemaFromJson,
+  parseTableMarkdown,
+  parseConceptsMarkdown,
+  writeTableMarkdown,
+  writeConceptsMarkdown,
+  formatSchemaV2ForNlToSql,
+} from "./schema/v2/index.js";
+export type {
+  V2SchemaJson,
+  V2Table,
+  V2Column,
+  V2TableFrontmatter,
+  V2ColumnFrontmatter,
+  V2ConceptsFrontmatter,
+  V2Concept,
+  ParsedTableMarkdown,
+  ParsedConceptsMarkdown,
+  RecognizedH2Section,
+  NormalizedSchemaV2,
+  NormalizedV2Table,
+  NormalizedV2Column,
+  SchemaV2Warning,
+} from "./schema/v2/index.js";
+export {
   formatSchemaForNlToSql,
   formatSchemaForPrompt,
   normalizeAskDbSchema,
@@ -49,4 +74,4 @@ export {
   type GenerateSqlDeps,
 } from "./sql/generate.js";
 export { assertNlToSqlInputs, nlToSqlAmbiguityNotes } from "./sql/schema-question-precheck.js";
-export { buildNlToSqlUserPrompt, nlToSqlSystemPrompt } from "./sql/prompt.js";
+export { buildNlToSqlUserPrompt, nlToSqlSystemPrompt, type AnyNormalizedSchema } from "./sql/prompt.js";
