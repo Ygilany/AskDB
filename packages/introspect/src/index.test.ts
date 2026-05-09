@@ -6,13 +6,17 @@ import { createPostgresConnector } from "./postgres/index.js";
 const noopExecutor: AskDbExecutor = async () => ({ columns: [], rows: [] });
 
 describe("@askdb/introspect public surface", () => {
-  it("exports renderToSchemaV2() that throws until milestone 3 wires it in", () => {
+  it("exports renderToSchemaV2() that rejects existingArtifactDir until M6", () => {
     expect(() =>
       renderToSchemaV2(
         { schemaId: "x", schemas: [] },
-        { outDir: "/tmp/x.schema", schemaId: "x" },
+        {
+          outDir: "/tmp/askdb-introspect-noop.schema",
+          schemaId: "x",
+          existingArtifactDir: "/tmp/whatever",
+        },
       ),
-    ).toThrow(/not implemented yet/);
+    ).toThrow(/milestone 6/i);
   });
 
   it("exposes a postgres connector with engine='postgres'", () => {
