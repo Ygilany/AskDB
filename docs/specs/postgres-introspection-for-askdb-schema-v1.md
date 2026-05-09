@@ -1,5 +1,9 @@
 # Postgres introspection → AskDB schema JSON v1 (Phase 5 direction)
 
+> **Status: superseded by [Phase 6 — Schema introspection](./phase-6-introspection/).**
+>
+> This document captures the original direction (user-run `information_schema` SQL plus a converter targeting Schema v1) and remains useful as **reference SQL**. Schema v1 is no longer the AskDB schema format — Phase 5 makes a clean breaking change to **Schema v2** (no migrator; pre-1.0), and Phase 6 ships **`@askdb/introspect`** with two equally-supported front doors (live + air-gapped) that emit Schema v2 directly. The Phase 6 spec embeds the canonical Postgres catalog SQL the connector runs; the queries below are still valid as a starting point and are explicitly cited from [Phase 6 `requirements.md`](./phase-6-introspection/requirements.md).
+
 ## Approach (no live DB required in AskDB)
 
 AskDB does **not** need a network path into the customer database for this workflow.
