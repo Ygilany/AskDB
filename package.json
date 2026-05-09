@@ -1,7 +1,7 @@
 {
   "name": "askdb",
   "private": true,
-  "packageManager": "pnpm@9.15.4",
+  "packageManager": "pnpm@11.0.9",
   "engines": {
     "node": ">=20"
   },
