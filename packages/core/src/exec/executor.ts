@@ -1,4 +1,4 @@
-import type { TabularResult } from "./postgres.js";
+import type { TabularResult } from "./types.js";
 
 /**
  * BYO database execution seam for {@link import("../ask.js").ask}.

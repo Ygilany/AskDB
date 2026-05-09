@@ -1,7 +1,8 @@
 import type { LanguageModel } from "ai";
 import { AskDbError } from "./errors.js";
 import type { AskDbExecutor } from "./exec/executor.js";
-import { createPostgresExecutor, type TabularResult } from "./exec/postgres.js";
+import { createPostgresExecutor } from "./exec/postgres.js";
+import type { TabularResult } from "./exec/types.js";
 import type { AskDbLogger } from "./logging/askdb-logger.js";
 import { AskDbLogEvent } from "./logging/log-events.js";
 import type { NormalizedSchema } from "./schema/types.js";
