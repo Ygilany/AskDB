@@ -1,7 +1,6 @@
 #!/usr/bin/env node
 import dotenv from "dotenv";
 import { randomUUID } from "node:crypto";
-import { readFile } from "node:fs/promises";
 import { createOpenAI } from "@ai-sdk/openai";
 import {
   AskDbError,
@@ -18,7 +17,7 @@ import {
   type TabularResult,
   ask,
   createAskDbLogger,
-  loadNormalizedSchemaFromJson,
+  loadSchema,
 } from "@askdb/core";
 import { Command } from "commander";
 
@@ -64,24 +63,23 @@ function printCliError(error: unknown): void {
 }
 
 function formatSchemaPathHint(schemaPath: string): string {
-  return `Schema path: ${schemaPath}\nHint: Try \`fixtures/schemas/orders-users.schema.json\` as a known-good example.`;
+  return `Schema path: ${schemaPath}\nHint: Try \`fixtures/schemas/orders-users.schema/\` (v2 directory) as a known-good example.`;
 }
 
-async function loadSchemaFromPath(schemaPath: string): Promise<ReturnType<typeof loadNormalizedSchemaFromJson>> {
+function loadSchemaFromPath(schemaPath: string): ReturnType<typeof loadSchema> {
   try {
-    const raw = await readFile(schemaPath, "utf8");
-    return loadNormalizedSchemaFromJson(raw);
+    return loadSchema(schemaPath);
   } catch (e) {
     const err = e as unknown as { code?: unknown; message?: unknown };
     const code = typeof err.code === "string" ? err.code : undefined;
     if (code === "ENOENT") {
-      throw new AskDbError(`Schema file not found.\n${formatSchemaPathHint(schemaPath)}`, e);
+      throw new AskDbError(`Schema path not found.\n${formatSchemaPathHint(schemaPath)}`, e);
     }
     if (code === "EACCES") {
-      throw new AskDbError(`Schema file is not readable (permission denied).\n${formatSchemaPathHint(schemaPath)}`, e);
+      throw new AskDbError(`Schema path is not readable (permission denied).\n${formatSchemaPathHint(schemaPath)}`, e);
     }
     if (e instanceof SchemaParseError) {
-      throw new AskDbError(`Failed to parse schema JSON.\n${formatSchemaPathHint(schemaPath)}\nDetails: ${e.message}`, e);
+      throw new AskDbError(`Failed to parse schema.\n${formatSchemaPathHint(schemaPath)}\nDetails: ${e.message}`, e);
     }
     const msg = e instanceof Error ? e.message : String(e);
     throw new AskDbError(`Failed to load schema.\n${formatSchemaPathHint(schemaPath)}\nDetails: ${msg}`, e);
@@ -159,7 +157,7 @@ program.name("askdb").description("AskDB — natural language → PostgreSQL SEL
 program
   .command("ask")
   .description("Generate SQL from schema + question; optionally execute in read-only Postgres")
-  .requiredOption("-s, --schema <path>", "Path to AskDB schema JSON v1 file")
+  .requiredOption("-s, --schema <path>", "Path to AskDB Schema v2 directory, bundled JSON, or schema.json")
   .requiredOption("-q, --question <text>", "Natural language question")
   .option("-e, --execute", "Execute generated SQL using DATABASE_URL (read-only transaction)")
   .option("--json", "With --execute: print rows as JSON (default is TSV)")
@@ -246,7 +244,7 @@ program
       );
 
       try {
-        const schema = await loadSchemaFromPath(opts.schema);
+        const schema = loadSchemaFromPath(opts.schema);
 
         type AskModel = Parameters<typeof ask>[0]["model"];
         const model: AskModel = mockSql

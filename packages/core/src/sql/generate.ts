@@ -4,7 +4,7 @@ import { SqlGenerationError } from "../errors.js";
 import type { AskDbLogger } from "../logging/askdb-logger.js";
 import { AskDbLogEvent } from "../logging/log-events.js";
 import type { FormatNlToSqlOptions } from "../schema/normalize.js";
-import type { NormalizedSchema } from "../schema/types.js";
+import type { AnyNormalizedSchema } from "./prompt.js";
 import { extractSqlFromModelText } from "./extract-sql.js";
 import { buildNlToSqlUserPrompt, nlToSqlSystemPrompt } from "./prompt.js";
 import { assertNlToSqlInputs, nlToSqlAmbiguityNotes } from "./schema-question-precheck.js";
@@ -33,7 +33,7 @@ export type GeneratePostgresSelectSqlResult = {
 
 export async function generatePostgresSelectSql(
   question: string,
-  schema: NormalizedSchema,
+  schema: AnyNormalizedSchema,
   model: LanguageModel,
   deps: GenerateSqlDeps = {},
 ): Promise<GeneratePostgresSelectSqlResult> {

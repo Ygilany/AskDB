@@ -1,5 +1,5 @@
 import { AskDbError } from "../errors.js";
-import type { NormalizedSchema } from "../schema/types.js";
+import type { AnyNormalizedSchema } from "./prompt.js";
 
 const JOIN_RELATION_HINT =
   /\b(join|joined|joins|inner\s+join|left\s+join|right\s+join|full\s+join|together\s+with|along\s+with|versus|vs\.?|compare|both\s+tables|each\s+other|relationship\s+between|how\s+they\s+relate)\b/i;
@@ -7,7 +7,7 @@ const JOIN_RELATION_HINT =
 /** FROM / JOIN table names in the question (simple identifier; no schema-qualified names in v1). */
 const FROM_JOIN_TABLE = /\b(?:from|join)\s+([a-zA-Z_][\w]*)\b/gi;
 
-export function assertNlToSqlInputs(schema: NormalizedSchema, question: string): void {
+export function assertNlToSqlInputs(schema: AnyNormalizedSchema, question: string): void {
   if (schema.tables.length === 0) {
     throw new AskDbError(
       "Schema has no tables. Add at least one table to the AskDB schema JSON (see fixtures/schemas/ in this repo).",
@@ -21,7 +21,7 @@ export function assertNlToSqlInputs(schema: NormalizedSchema, question: string):
 /**
  * Deterministic notes appended to the NL→SQL user prompt when the question and schema look misaligned.
  */
-export function nlToSqlAmbiguityNotes(question: string, schema: NormalizedSchema): string[] {
+export function nlToSqlAmbiguityNotes(question: string, schema: AnyNormalizedSchema): string[] {
   const notes: string[] = [];
   const tableNames = new Set(schema.tables.map((t) => t.name.toLowerCase()));
 

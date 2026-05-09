@@ -1,0 +1,44 @@
+import matter from "gray-matter";
+import type { V2TableFrontmatter, V2ConceptsFrontmatter } from "./describable.js";
+
+/**
+ * Serialize a table front-matter model back to markdown.
+ *
+ * - Front-matter keys are emitted in a stable order.
+ * - The markdown body is preserved verbatim from the parsed input.
+ * - Round-trip property: `parse(write(parse(file)))` equals `parse(file)` for structured fields.
+ */
+export function writeTableMarkdown(frontmatter: V2TableFrontmatter, body: string): string {
+  const data = orderedTableFrontmatter(frontmatter);
+  return matter.stringify(body, data);
+}
+
+/**
+ * Serialize `concepts.md` front-matter + body back to markdown.
+ */
+export function writeConceptsMarkdown(frontmatter: V2ConceptsFrontmatter, body: string): string {
+  return matter.stringify(body, { concepts: frontmatter.concepts });
+}
+
+/** Emit front-matter keys in a stable, spec-defined order. */
+function orderedTableFrontmatter(fm: V2TableFrontmatter): Record<string, unknown> {
+  const ordered: Record<string, unknown> = {};
+  ordered["id"] = fm.id;
+  ordered["name"] = fm.name;
+  ordered["schemaId"] = fm.schemaId;
+  if (fm.primaryEntity !== undefined) ordered["primaryEntity"] = fm.primaryEntity;
+  if (fm.aliases !== undefined) ordered["aliases"] = fm.aliases;
+  if (fm.tags !== undefined) ordered["tags"] = fm.tags;
+  if (fm.sensitive !== undefined) ordered["sensitive"] = fm.sensitive;
+  if (fm.columns !== undefined) {
+    ordered["columns"] = fm.columns.map((c) => {
+      const col: Record<string, unknown> = { id: c.id };
+      if (c.aliases !== undefined) col["aliases"] = c.aliases;
+      if (c.enum !== undefined) col["enum"] = c.enum;
+      if (c.description !== undefined) col["description"] = c.description;
+      if (c.sensitive !== undefined) col["sensitive"] = c.sensitive;
+      return col;
+    });
+  }
+  return ordered;
+}

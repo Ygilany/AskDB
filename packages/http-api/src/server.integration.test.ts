@@ -2,7 +2,7 @@ import { readFile } from "node:fs/promises";
 import { afterEach, describe, expect, it } from "vitest";
 import { createAskDbHttpServer } from "./server.js";
 
-const schemaPath = new URL("../../../fixtures/schemas/orders-users.schema.json", import.meta.url);
+const schemaPath = new URL("../../../fixtures/schemas/orders-users.schema/", import.meta.url);
 
 describe("http-api", () => {
   afterEach(() => {
