@@ -14,10 +14,13 @@
     "pagila:down": "docker compose -f fixtures/pagila/docker-compose.yml down",
     "pagila:logs": "docker compose -f fixtures/pagila/docker-compose.yml logs -f",
     "pagila:reset": "docker compose -f fixtures/pagila/docker-compose.yml down -v",
-    "smoke:install": "bash examples/installable-smoke/run.sh"
+    "smoke:install": "bash examples/installable-smoke/run.sh",
+    "changeset": "changeset",
+    "release": "pnpm -r build && changeset publish"
   },
   "devDependencies": {
     "@askdb/cli": "workspace:*",
+    "@changesets/cli": "^2.27.10",
     "@types/node": "^22.13.14",
     "turbo": "^2.5.6",
     "typescript": "^5.7.3",
