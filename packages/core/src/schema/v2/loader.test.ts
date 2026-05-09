@@ -17,12 +17,16 @@ describe("loadSchema — v2 directory", () => {
     expect(schema.tables.map((t) => t.name)).toEqual(["users", "orders"]);
 
     const users = schema.tables.find((t) => t.name === "users")!;
+    expect(users.schema).toBe("public");
+    expect(users.id).toBe("table:public.users");
     expect(users.aliases).toEqual(["accounts", "members"]);
     expect(users.primaryEntity).toBe("user");
     expect(users.description).toContain("Registered user account");
     expect(users.commonQueryLanguage).toContain("new users");
 
     const orders = schema.tables.find((t) => t.name === "orders")!;
+    expect(orders.schema).toBe("public");
+    expect(orders.id).toBe("table:public.orders");
     expect(orders.aliases).toEqual(["purchases", "sales", "transactions"]);
     expect(orders.commonQueryLanguage).toContain("revenue");
   });

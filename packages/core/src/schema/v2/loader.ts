@@ -218,6 +218,7 @@ function buildNormalized(
     const normalized: NormalizedV2Table = {
       id: physTable.id,
       name: physTable.name,
+      schema: physTable.schema,
       sensitive: tableSensitive,
       columns,
       relationships: physTable.relationships,

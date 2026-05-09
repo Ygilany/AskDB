@@ -20,12 +20,13 @@ export function formatSchemaV2ForNlToSql(
   const lines: string[] = [];
 
   for (const t of schema.tables) {
-    // Table header with optional alias annotation
+    // Table header — always qualify with database schema name; add alias annotation when present
+    const qualifiedName = `${t.schema}.${t.name}`;
     const aliasNote =
       !t.sensitive && t.aliases?.length
         ? ` -- aliases: ${t.aliases.join(", ")}`
         : "";
-    lines.push(`TABLE ${t.name}${aliasNote}`);
+    lines.push(`TABLE ${qualifiedName}${aliasNote}`);
 
     // Table description as a comment line
     if (!t.sensitive && t.description) {

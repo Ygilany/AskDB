@@ -18,6 +18,8 @@ export type NormalizedV2Column = {
 export type NormalizedV2Table = {
   id: string;
   name: string;
+  /** Database schema (namespace) this table belongs to, e.g. `"public"`, `"app"`. */
+  schema: string;
   sensitive: boolean;
   columns: NormalizedV2Column[];
   relationships?: Array<{ from: string; to: string }>;

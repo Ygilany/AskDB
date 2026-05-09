@@ -9,10 +9,10 @@ const v2Dir = join(here, "../../../../../fixtures/schemas/orders-users.schema");
 const v2SchemaJson = join(v2Dir, "schema.json");
 
 describe("formatSchemaV2ForNlToSql — enriched fixture", () => {
-  it("includes table aliases in the TABLE header line", () => {
+  it("includes qualified table name and aliases in the TABLE header line", () => {
     const schema = loadSchema(v2Dir);
     const { ddl } = formatSchemaV2ForNlToSql(schema);
-    expect(ddl).toContain("TABLE orders -- aliases: purchases, sales, transactions");
+    expect(ddl).toContain("TABLE public.orders -- aliases: purchases, sales, transactions");
   });
 
   it("includes table description as a comment line", () => {
@@ -58,17 +58,17 @@ describe("formatSchemaV2ForNlToSql — schema.json only (bare baseline)", () => 
   it("produces DDL without any aliases or descriptions (bare baseline)", () => {
     const schema = loadSchema(v2SchemaJson);
     const { ddl } = formatSchemaV2ForNlToSql(schema);
-    // No aliases annotation on TABLE line
-    expect(ddl).toContain("TABLE orders\n");
+    // No aliases annotation on TABLE line — just schema-qualified name
+    expect(ddl).toContain("TABLE public.orders\n");
     expect(ddl).not.toContain("aliases:");
     expect(ddl).not.toContain("-- common query language");
   });
 
-  it("still lists tables and columns", () => {
+  it("still lists tables and columns with qualified names", () => {
     const schema = loadSchema(v2SchemaJson);
     const { ddl } = formatSchemaV2ForNlToSql(schema);
-    expect(ddl).toContain("TABLE users");
-    expect(ddl).toContain("TABLE orders");
+    expect(ddl).toContain("TABLE public.users");
+    expect(ddl).toContain("TABLE public.orders");
     expect(ddl).toContain("  - email");
   });
 });

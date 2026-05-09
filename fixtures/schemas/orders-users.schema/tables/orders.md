@@ -1,18 +1,18 @@
 ---
-id: table:orders
+id: table:public.orders
 name: orders
 schemaId: orders-users
 primaryEntity: order
 aliases: [purchases, sales, transactions]
 tags: [revenue, transactional]
 columns:
-  - id: table:orders#id
+  - id: table:public.orders#id
     aliases: [order_id]
-  - id: table:orders#status
+  - id: table:public.orders#status
     aliases: [order_status]
     enum: [pending, paid, shipped, cancelled]
     description: Order lifecycle state. Most reporting filters on `paid`.
-  - id: table:orders#total_amount
+  - id: table:public.orders#total_amount
     aliases: [revenue, sale_amount]
     description: Stored in cents. Use `total_amount / 100.0` for dollar values.
 ---

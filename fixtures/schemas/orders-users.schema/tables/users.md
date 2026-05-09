@@ -1,16 +1,16 @@
 ---
-id: table:users
+id: table:public.users
 name: users
 schemaId: orders-users
 primaryEntity: user
 aliases: [accounts, members]
 tags: [pii]
 columns:
-  - id: table:users#id
+  - id: table:public.users#id
     aliases: [user_id]
-  - id: table:users#email
+  - id: table:public.users#email
     sensitive: true
-  - id: table:users#created_at
+  - id: table:public.users#created_at
     aliases: [signup_date, registered_at]
     description: When the user account was created.
 ---

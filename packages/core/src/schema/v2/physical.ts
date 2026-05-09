@@ -17,6 +17,8 @@ export const v2RelationshipSchema = z.object({
 export const v2TableSchema = z.object({
   id: z.string().min(1),
   name: z.string().min(1),
+  /** Database schema (namespace) this table belongs to, e.g. `"public"`, `"app"`. Required. */
+  schema: z.string().min(1),
   sensitive: z.boolean().optional(),
   columns: z.array(v2ColumnSchema).min(1),
   relationships: z.array(v2RelationshipSchema).optional(),

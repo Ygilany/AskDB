@@ -20,7 +20,7 @@ describe("parseTableMarkdown", () => {
     const content = readFileSync(ordersPath, "utf8");
     const parsed = parseTableMarkdown(content, ordersPath);
 
-    expect(parsed.frontmatter.id).toBe("table:orders");
+    expect(parsed.frontmatter.id).toBe("table:public.orders");
     expect(parsed.frontmatter.name).toBe("orders");
     expect(parsed.frontmatter.schemaId).toBe("orders-users");
     expect(parsed.frontmatter.aliases).toEqual(["purchases", "sales", "transactions"]);
@@ -31,7 +31,7 @@ describe("parseTableMarkdown", () => {
     const content = readFileSync(ordersPath, "utf8");
     const parsed = parseTableMarkdown(content, ordersPath);
 
-    const statusCol = parsed.frontmatter.columns?.find((c) => c.id === "table:orders#status");
+    const statusCol = parsed.frontmatter.columns?.find((c) => c.id === "table:public.orders#status");
     expect(statusCol).toBeDefined();
     expect(statusCol!.enum).toEqual(["pending", "paid", "shipped", "cancelled"]);
     expect(statusCol!.description).toContain("lifecycle state");

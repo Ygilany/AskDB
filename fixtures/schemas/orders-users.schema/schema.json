@@ -3,12 +3,13 @@
   "schemaId": "orders-users",
   "tables": [
     {
-      "id": "table:users",
+      "id": "table:public.users",
       "name": "users",
+      "schema": "public",
       "sensitive": false,
       "columns": [
         {
-          "id": "table:users#id",
+          "id": "table:public.users#id",
           "name": "id",
           "type": "uuid",
           "nullable": false,
@@ -16,14 +17,14 @@
           "sensitive": false
         },
         {
-          "id": "table:users#email",
+          "id": "table:public.users#email",
           "name": "email",
           "type": "text",
           "nullable": false,
           "sensitive": true
         },
         {
-          "id": "table:users#created_at",
+          "id": "table:public.users#created_at",
           "name": "created_at",
           "type": "timestamptz",
           "nullable": false,
@@ -32,12 +33,13 @@
       ]
     },
     {
-      "id": "table:orders",
+      "id": "table:public.orders",
       "name": "orders",
+      "schema": "public",
       "sensitive": false,
       "columns": [
         {
-          "id": "table:orders#id",
+          "id": "table:public.orders#id",
           "name": "id",
           "type": "uuid",
           "nullable": false,
@@ -45,21 +47,21 @@
           "sensitive": false
         },
         {
-          "id": "table:orders#user_id",
+          "id": "table:public.orders#user_id",
           "name": "user_id",
           "type": "uuid",
           "nullable": false,
           "sensitive": false
         },
         {
-          "id": "table:orders#status",
+          "id": "table:public.orders#status",
           "name": "status",
           "type": "text",
           "nullable": false,
           "sensitive": false
         },
         {
-          "id": "table:orders#total_amount",
+          "id": "table:public.orders#total_amount",
           "name": "total_amount",
           "type": "integer",
           "nullable": false,
@@ -67,7 +69,7 @@
         }
       ],
       "relationships": [
-        { "from": "table:orders#user_id", "to": "table:users#id" }
+        { "from": "table:public.orders#user_id", "to": "table:public.users#id" }
       ]
     }
   ]
