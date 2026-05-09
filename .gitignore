@@ -8,3 +8,5 @@ coverage/
 .turbo/
 .pnpm-store/
 *.tgz
+examples/**/node_modules/
+examples/**/package-lock.json

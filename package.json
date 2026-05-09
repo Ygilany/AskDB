@@ -13,7 +13,8 @@
     "pagila:up": "docker compose -f fixtures/pagila/docker-compose.yml up --build -d",
     "pagila:down": "docker compose -f fixtures/pagila/docker-compose.yml down",
     "pagila:logs": "docker compose -f fixtures/pagila/docker-compose.yml logs -f",
-    "pagila:reset": "docker compose -f fixtures/pagila/docker-compose.yml down -v"
+    "pagila:reset": "docker compose -f fixtures/pagila/docker-compose.yml down -v",
+    "smoke:install": "bash examples/installable-smoke/run.sh"
   },
   "devDependencies": {
     "@askdb/cli": "workspace:*",
