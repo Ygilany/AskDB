@@ -15,6 +15,7 @@
     "pagila:logs": "docker compose -f fixtures/pagila/docker-compose.yml logs -f",
     "pagila:reset": "docker compose -f fixtures/pagila/docker-compose.yml down -v",
     "smoke:install": "bash examples/installable-smoke/run.sh",
+    "preflight": "bash scripts/release-preflight.sh",
     "changeset": "changeset",
     "release": "pnpm -r build && changeset publish"
   },
