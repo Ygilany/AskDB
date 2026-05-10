@@ -1,0 +1,198 @@
+{
+  "chunks": [
+    {
+      "id": "chunk:concept:customer",
+      "type": "concept",
+      "schemaId": "orders-users",
+      "refs": [
+        "concept:customer",
+        "table:public.users"
+      ],
+      "sensitive": false,
+      "text": "# Concept: Customer\nId: concept:customer\nSynonyms: user, client, buyer, account holder\nLinks: table:public.users\nA person who has signed up and placed at least one order."
+    },
+    {
+      "id": "chunk:concept:revenue",
+      "type": "concept",
+      "schemaId": "orders-users",
+      "refs": [
+        "concept:revenue",
+        "table:public.orders#total_amount"
+      ],
+      "sensitive": false,
+      "text": "# Concept: Revenue\nId: concept:revenue\nSynonyms: sales, gross sales, top line\nLinks: table:public.orders#total_amount\nSum of `orders.total_amount` where `status = 'paid'`, expressed in cents."
+    },
+    {
+      "id": "chunk:table:public.orders",
+      "type": "table",
+      "schemaId": "orders-users",
+      "refs": [
+        "table:public.orders",
+        "table:public.orders#id",
+        "table:public.orders#user_id",
+        "table:public.orders#status",
+        "table:public.orders#total_amount"
+      ],
+      "sensitive": false,
+      "text": "# public.orders\nCustomer purchase orders. One row per submitted order.\nAliases: purchases, sales, transactions\nPrimary entity: order\nRelationships:\n- table:public.orders#user_id -> table:public.users#id\nColumns:\n- id uuid (PK NOT NULL)\n- user_id uuid (NOT NULL)\n- status text (NOT NULL) — Order lifecycle state. Most reporting filters on `paid`.\n- total_amount integer (NOT NULL) — Stored in cents. Use `total_amount / 100.0` for dollar values."
+    },
+    {
+      "id": "chunk:table:public.orders#biz",
+      "type": "table",
+      "schemaId": "orders-users",
+      "refs": [
+        "table:public.orders"
+      ],
+      "sensitive": false,
+      "text": "# public.orders — business context\nOrders move through `pending → paid → shipped` and may end in `cancelled`. The `total_amount` column is stored in cents."
+    },
+    {
+      "id": "chunk:table:public.orders#cql",
+      "type": "cql",
+      "schemaId": "orders-users",
+      "refs": [
+        "table:public.orders"
+      ],
+      "sensitive": false,
+      "text": "# public.orders (also: purchases, sales, transactions) — common query language\n- \"sales\" usually means paid orders (`status = 'paid'`)\n- \"revenue\" usually means `sum(total_amount)` where `status = 'paid'`\n- \"new orders\" usually means orders created in the selected date range"
+    },
+    {
+      "id": "chunk:table:public.orders#id",
+      "type": "column",
+      "schemaId": "orders-users",
+      "refs": [
+        "table:public.orders",
+        "table:public.orders#id"
+      ],
+      "sensitive": false,
+      "text": "Column: public.orders.id uuid (PK NOT NULL)\nId: table:public.orders#id\nAliases: order_id"
+    },
+    {
+      "id": "chunk:table:public.orders#q:1",
+      "type": "question",
+      "schemaId": "orders-users",
+      "refs": [
+        "table:public.orders"
+      ],
+      "sensitive": false,
+      "text": "# public.orders [order] — example question\nHow much revenue did we make last month?"
+    },
+    {
+      "id": "chunk:table:public.orders#q:2",
+      "type": "question",
+      "schemaId": "orders-users",
+      "refs": [
+        "table:public.orders"
+      ],
+      "sensitive": false,
+      "text": "# public.orders [order] — example question\nWhich customers placed the most orders?"
+    },
+    {
+      "id": "chunk:table:public.orders#q:3",
+      "type": "question",
+      "schemaId": "orders-users",
+      "refs": [
+        "table:public.orders"
+      ],
+      "sensitive": false,
+      "text": "# public.orders [order] — example question\nHow many orders were cancelled this week?"
+    },
+    {
+      "id": "chunk:table:public.orders#status",
+      "type": "column",
+      "schemaId": "orders-users",
+      "refs": [
+        "table:public.orders",
+        "table:public.orders#status"
+      ],
+      "sensitive": false,
+      "text": "Column: public.orders.status text (NOT NULL)\nId: table:public.orders#status\nOrder lifecycle state. Most reporting filters on `paid`.\nAliases: order_status\nValues: pending, paid, shipped, cancelled"
+    },
+    {
+      "id": "chunk:table:public.orders#total_amount",
+      "type": "column",
+      "schemaId": "orders-users",
+      "refs": [
+        "table:public.orders",
+        "table:public.orders#total_amount"
+      ],
+      "sensitive": false,
+      "text": "Column: public.orders.total_amount integer (NOT NULL)\nId: table:public.orders#total_amount\nStored in cents. Use `total_amount / 100.0` for dollar values.\nAliases: revenue, sale_amount"
+    },
+    {
+      "id": "chunk:table:public.orders#user_id",
+      "type": "column",
+      "schemaId": "orders-users",
+      "refs": [
+        "table:public.orders",
+        "table:public.orders#user_id"
+      ],
+      "sensitive": false,
+      "text": "Column: public.orders.user_id uuid (NOT NULL)\nId: table:public.orders#user_id"
+    },
+    {
+      "id": "chunk:table:public.users",
+      "type": "table",
+      "schemaId": "orders-users",
+      "refs": [
+        "table:public.users",
+        "table:public.users#id",
+        "table:public.users#created_at"
+      ],
+      "sensitive": false,
+      "text": "# public.users\nRegistered user accounts. One row per signed-up user.\nAliases: accounts, members\nPrimary entity: user\nColumns:\n- id uuid (PK NOT NULL)\n- created_at timestamptz (NOT NULL) — When the user account was created."
+    },
+    {
+      "id": "chunk:table:public.users#cql",
+      "type": "cql",
+      "schemaId": "orders-users",
+      "refs": [
+        "table:public.users"
+      ],
+      "sensitive": false,
+      "text": "# public.users (also: accounts, members) — common query language\n- \"users\" and \"members\" refer to this table\n- \"new users\" usually means accounts created in the selected date range\n- \"active users\" typically means users who placed at least one order"
+    },
+    {
+      "id": "chunk:table:public.users#created_at",
+      "type": "column",
+      "schemaId": "orders-users",
+      "refs": [
+        "table:public.users",
+        "table:public.users#created_at"
+      ],
+      "sensitive": false,
+      "text": "Column: public.users.created_at timestamptz (NOT NULL)\nId: table:public.users#created_at\nWhen the user account was created.\nAliases: signup_date, registered_at"
+    },
+    {
+      "id": "chunk:table:public.users#id",
+      "type": "column",
+      "schemaId": "orders-users",
+      "refs": [
+        "table:public.users",
+        "table:public.users#id"
+      ],
+      "sensitive": false,
+      "text": "Column: public.users.id uuid (PK NOT NULL)\nId: table:public.users#id\nAliases: user_id"
+    },
+    {
+      "id": "chunk:table:public.users#q:1",
+      "type": "question",
+      "schemaId": "orders-users",
+      "refs": [
+        "table:public.users"
+      ],
+      "sensitive": false,
+      "text": "# public.users [user] — example question\nHow many users signed up last month?"
+    },
+    {
+      "id": "chunk:table:public.users#q:2",
+      "type": "question",
+      "schemaId": "orders-users",
+      "refs": [
+        "table:public.users"
+      ],
+      "sensitive": false,
+      "text": "# public.users [user] — example question\nWhich users placed the most orders?"
+    }
+  ]
+}

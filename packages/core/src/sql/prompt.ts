@@ -18,10 +18,20 @@ export function buildNlToSqlUserPrompt(
   ambiguityNotes: readonly string[] = [],
   logger?: AskDbLogger,
   nlToSqlSchemaOptions?: FormatNlToSqlOptions,
+  /**
+   * Optional pre-synthesized DDL block. When supplied, this replaces the
+   * formatter output verbatim — used by `ask({ retriever })` to inject a
+   * focused DDL built from retrieved chunks. Sensitive-redaction logging
+   * still fires using the consumer-supplied `nlToSqlSchemaOptions` to keep
+   * observability consistent.
+   */
+  prebuiltDdl?: string,
 ): string {
-  const { ddl, stats } = isV2(schema)
+  const formatted = isV2(schema)
     ? formatSchemaV2ForNlToSql(schema, nlToSqlSchemaOptions)
     : formatSchemaForNlToSql(schema, nlToSqlSchemaOptions);
+  const ddl = prebuiltDdl ?? formatted.ddl;
+  const stats = formatted.stats;
   if (
     stats.omitSensitiveIdentifiersFromPrompt &&
     (stats.redactedColumnCount > 0 || stats.sensitiveTableStubCount > 0)

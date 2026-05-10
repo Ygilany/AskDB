@@ -19,7 +19,7 @@ pnpm -C "$ROOT" -r build >/dev/null
 
 echo "smoke: packing tarballs…"
 mkdir -p "$WORK/tarballs"
-for pkg in core cli http-api introspect tui; do
+for pkg in core cli http-api introspect tui rag; do
   (cd "$ROOT/packages/$pkg" && pnpm pack --pack-destination "$WORK/tarballs" >/dev/null)
 done
 
@@ -29,6 +29,8 @@ INTROSPECT_TARBALL="$(ls "$WORK/tarballs"/askdb-introspect-*.tgz | head -n1)"
 [ -f "$INTROSPECT_TARBALL" ] || { echo "smoke: missing introspect tarball" >&2; exit 1; }
 TUI_TARBALL="$(ls "$WORK/tarballs"/askdb-tui-*.tgz | head -n1)"
 [ -f "$TUI_TARBALL" ] || { echo "smoke: missing tui tarball" >&2; exit 1; }
+RAG_TARBALL="$(ls "$WORK/tarballs"/askdb-rag-*.tgz | head -n1)"
+[ -f "$RAG_TARBALL" ] || { echo "smoke: missing rag tarball" >&2; exit 1; }
 
 echo "smoke: validating @askdb/introspect tarball contents…"
 INTROSPECT_TARBALL_FILES="$(tar -tzf "$INTROSPECT_TARBALL")"
@@ -52,6 +54,19 @@ if grep -Eq '(^package/src/|\.test\.)' <<<"$TUI_TARBALL_FILES"; then
   exit 1
 fi
 
+echo "smoke: validating @askdb/rag tarball contents…"
+RAG_TARBALL_FILES="$(tar -tzf "$RAG_TARBALL")"
+grep -q '^package/dist/index.js$' <<<"$RAG_TARBALL_FILES"
+grep -q '^package/dist/bin.js$' <<<"$RAG_TARBALL_FILES"
+grep -q '^package/dist/stores/memory.js$' <<<"$RAG_TARBALL_FILES"
+grep -q '^package/dist/embedders/openai.js$' <<<"$RAG_TARBALL_FILES"
+grep -q '^package/README.md$' <<<"$RAG_TARBALL_FILES"
+grep -q '^package/LICENSE$' <<<"$RAG_TARBALL_FILES"
+if grep -Eq '(^package/src/|\.test\.)' <<<"$RAG_TARBALL_FILES"; then
+  echo "smoke: FAILED — @askdb/rag tarball includes source/tests" >&2
+  exit 1
+fi
+
 echo "smoke: staging consumer fixture…"
 cp -R "$SCRIPT_DIR/consumer" "$WORK/consumer"
 # Wire the just-packed AskDB tarballs into the consumer's package.json.
@@ -62,6 +77,7 @@ node -e "
   j.dependencies['@askdb/core'] = 'file:$CORE_TARBALL';
   j.dependencies['@askdb/introspect'] = 'file:$INTROSPECT_TARBALL';
   j.dependencies['@askdb/tui'] = 'file:$TUI_TARBALL';
+  j.dependencies['@askdb/rag'] = 'file:$RAG_TARBALL';
   fs.writeFileSync(p, JSON.stringify(j, null, 2) + '\n');
 "
 
@@ -86,5 +102,8 @@ echo "smoke: askdb-introspect bin…"
 
 echo "smoke: askdb-tui bin…"
 (cd "$WORK/consumer" && ./node_modules/.bin/askdb-tui --version >/dev/null)
+
+echo "smoke: askdb-rag bin…"
+(cd "$WORK/consumer" && ./node_modules/.bin/askdb-rag --version >/dev/null)
 
 echo "smoke: PASSED"
