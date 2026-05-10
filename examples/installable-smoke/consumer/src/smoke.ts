@@ -14,6 +14,13 @@ import {
   type AskDbSchemaFile,
   type TabularResult,
 } from "@askdb/core";
+import {
+  introspect,
+  renderToSchemaV2,
+  type IntrospectionInput,
+  type SqlTemplateBundle,
+} from "@askdb/introspect";
+import { createPostgresConnector } from "@askdb/introspect/postgres";
 
 const schemaJson: AskDbSchemaFile = {
   version: 1,
@@ -71,7 +78,22 @@ async function main(): Promise<void> {
   if (!out.result || out.result.rows.length !== 1 || out.result.rows[0]![0] !== 42) {
     throw new Error(`smoke: executor result did not round-trip: ${JSON.stringify(out.result)}`);
   }
-  console.log("smoke: ok — sql + executor result round-tripped through @askdb/core");
+
+  const connector = createPostgresConnector();
+  const templates: SqlTemplateBundle = connector.templates();
+  if (templates.engine !== "postgres" || templates.templates.length === 0) {
+    throw new Error("smoke: @askdb/introspect postgres templates did not load");
+  }
+
+  const input: IntrospectionInput = { mode: "live", executor };
+  if (input.mode !== "live") {
+    throw new Error("smoke: IntrospectionInput type did not narrow");
+  }
+  if (typeof introspect !== "function" || typeof renderToSchemaV2 !== "function") {
+    throw new Error("smoke: @askdb/introspect public functions did not load");
+  }
+
+  console.log("smoke: ok - core and introspect package surfaces loaded");
 }
 
 main().catch((e: unknown) => {

@@ -2,6 +2,7 @@
 import dotenv from "dotenv";
 import { randomUUID } from "node:crypto";
 import { createOpenAI } from "@ai-sdk/openai";
+import { runIntrospectCli } from "@askdb/introspect/cli";
 import {
   AskDbError,
   AskDbLogEvent,
@@ -34,6 +35,11 @@ import { Command } from "commander";
       process.exitCode = 1;
     }
   }
+}
+
+if (process.argv[2] === "introspect") {
+  const exitCode = await runIntrospectCli(process.argv.slice(3));
+  process.exit(exitCode);
 }
 
 function printTsv(result: TabularResult): void {

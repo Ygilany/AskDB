@@ -1,0 +1,86 @@
+{
+  "schemas": [{ "schema_name": "public" }],
+  "tables": [
+    {
+      "schema_name": "public",
+      "table_name": "tickets",
+      "relkind": "r",
+      "row_level_security": false,
+      "comment": null
+    }
+  ],
+  "columns": [
+    {
+      "schema_name": "public",
+      "table_name": "tickets",
+      "column_name": "id",
+      "ordinal_position": 1,
+      "data_type": "uuid",
+      "udt_schema": "pg_catalog",
+      "udt_name": "uuid",
+      "is_nullable": false,
+      "default_expression": "gen_random_uuid()",
+      "comment": null
+    },
+    {
+      "schema_name": "public",
+      "table_name": "tickets",
+      "column_name": "status",
+      "ordinal_position": 2,
+      "data_type": "ticket_status",
+      "udt_schema": "public",
+      "udt_name": "ticket_status",
+      "is_nullable": false,
+      "default_expression": "'open'::ticket_status",
+      "comment": null
+    }
+  ],
+  "primary_keys": [
+    {
+      "schema_name": "public",
+      "table_name": "tickets",
+      "constraint_name": "tickets_pkey",
+      "key_position": 1,
+      "column_name": "id"
+    }
+  ],
+  "foreign_keys": [],
+  "unique_constraints": [],
+  "check_constraints": [],
+  "indexes": [],
+  "enums": [
+    {
+      "schema_name": "public",
+      "enum_name": "ticket_status",
+      "enum_position": 1,
+      "enum_value": "open"
+    },
+    {
+      "schema_name": "public",
+      "enum_name": "ticket_status",
+      "enum_position": 2,
+      "enum_value": "in_progress"
+    },
+    {
+      "schema_name": "public",
+      "enum_name": "ticket_status",
+      "enum_position": 3,
+      "enum_value": "blocked"
+    },
+    {
+      "schema_name": "public",
+      "enum_name": "ticket_status",
+      "enum_position": 4,
+      "enum_value": "resolved"
+    },
+    {
+      "schema_name": "public",
+      "enum_name": "ticket_status",
+      "enum_position": 5,
+      "enum_value": "closed"
+    }
+  ],
+  "sequences": [],
+  "views": [],
+  "comments": []
+}

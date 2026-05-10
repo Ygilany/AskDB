@@ -59,6 +59,93 @@ Pass either `executor` (BYO) or `connectionString` (built-in `pg`). If both are 
 
 ---
 
+## Produce a Schema v2 Artifact with `@askdb/introspect`
+
+`@askdb/introspect` is the canonical first-run path before enrichment. It writes the physical layer (`schema.json`) from database catalog metadata; the describable layer (`tables/*.md`, `concepts.md`) can then be added by Phase 7 tooling or by hand.
+
+### Live Postgres
+
+```bash
+pnpm add @askdb/introspect @askdb/core pg
+
+export DATABASE_URL=postgres://user:pass@host:5432/db
+
+askdb-introspect \
+  --url "$DATABASE_URL" \
+  --out my-app.schema \
+  --schema-id my-app
+```
+
+The same runner is available through `@askdb/cli`:
+
+```bash
+askdb introspect --url "$DATABASE_URL" --out my-app.schema --schema-id my-app
+```
+
+### Air-Gapped Postgres
+
+Use this path when AskDB cannot connect to the database.
+
+```bash
+askdb-introspect templates --engine postgres > pg-introspection.sql
+```
+
+Run the template queries in `psql`, an IDE, or CI, and save one CSV or JSON file per template plus a manifest:
+
+```text
+pg-export/
+  manifest.json
+  schemas.csv
+  tables.csv
+  columns.csv
+  primary_keys.csv
+  foreign_keys.csv
+  unique_constraints.csv
+  check_constraints.csv
+  indexes.csv
+  enums.csv
+  sequences.csv
+  views.csv
+  comments.csv
+```
+
+```json
+{
+  "engine": "postgres",
+  "version": 1
+}
+```
+
+Then render the same Schema v2 artifact without opening a database connection:
+
+```bash
+askdb-introspect \
+  --from-export ./pg-export \
+  --out my-app.schema \
+  --schema-id my-app
+```
+
+### Re-Introspection and Enrichment
+
+Re-running introspection against an existing output directory performs an ID-anchored merge:
+
+- `schema.json` is updated for physical changes.
+- Existing IDs and physical `sensitive` flags are preserved.
+- New columns emit `new_column` warnings.
+- Removed IDs referenced from `tables/*.md` emit `orphan_id` warnings.
+- The describable layer is never written by introspection.
+
+This supports the intended flow:
+
+```text
+askdb-introspect -> my-app.schema/schema.json
+enrich descriptions/aliases/concepts in my-app.schema/
+re-run askdb-introspect as the database changes
+loadSchema("./my-app.schema") for NL-to-SQL or RAG
+```
+
+---
+
 ## BYO `LanguageModel` recipes
 
 ### OpenAI (direct)
@@ -245,6 +332,7 @@ If both are passed, `executor` wins. The pipeline emits a structured warning eve
 ## See also
 
 - [`packages/core/README.md`](../../packages/core/README.md) — quick install + minimal examples
+- [`packages/introspect/README.md`](../../packages/introspect/README.md) — live and air-gapped schema introspection
 - [`docs/specs/phase-4-publish-npm/requirements.md`](../specs/phase-4-publish-npm/requirements.md) — Phase 4 contract decisions, including executor-seam invariants
 - [`docs/contracts/modes-v1.md`](../contracts/modes-v1.md) — operating modes around execution (`schema_only`, `bounded_results`)
 - [`docs/integration/reuse-core-phase-3.md`](./reuse-core-phase-3.md) — stable surfaces for thin wrappers (CLI/HTTP/MCP)
