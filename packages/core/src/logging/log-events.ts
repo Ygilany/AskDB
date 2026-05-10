@@ -29,6 +29,17 @@ export const AskDbLogEvent = {
    * See `docs/specs/phase-4-publish-npm/requirements.md` (“Resolution rule when both inputs are passed”).
    */
   ConfigExecutorOverridesConnectionString: "askdb.config.executor_overrides_connection_string",
+  /**
+   * Retriever was supplied to `ask()` and used to synthesize a focused DDL
+   * block (counts only — `tablesEmitted`, `resultCount`, `k`, `threshold`).
+   */
+  PipelineRetrievalUsed: "askdb.pipeline.retrieval.used",
+  /**
+   * Retriever was supplied but **not** used (`reason`: `below_threshold` |
+   * `schema_not_v2` | `no_results`). Lets operators tell "supplied but
+   * skipped" apart from "never wired up".
+   */
+  PipelineRetrievalSkipped: "askdb.pipeline.retrieval.skipped",
 } as const;
 
 export type AskDbLogEventName = (typeof AskDbLogEvent)[keyof typeof AskDbLogEvent];

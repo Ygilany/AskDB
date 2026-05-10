@@ -95,3 +95,10 @@ export {
 } from "./sql/generate.js";
 export { assertNlToSqlInputs, nlToSqlAmbiguityNotes } from "./sql/schema-question-precheck.js";
 export { buildNlToSqlUserPrompt, nlToSqlSystemPrompt, type AnyNormalizedSchema } from "./sql/prompt.js";
+export type {
+  Retriever,
+  RetrievedChunk,
+  RetrievedChunkType,
+  RetrievedResult,
+} from "./retrieval/types.js";
+export { synthesizeRetrievedDdl } from "./retrieval/synthesize-ddl.js";
