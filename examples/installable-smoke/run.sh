@@ -19,7 +19,7 @@ pnpm -C "$ROOT" -r build >/dev/null
 
 echo "smoke: packing tarballs…"
 mkdir -p "$WORK/tarballs"
-for pkg in core cli http-api introspect; do
+for pkg in core cli http-api introspect tui; do
   (cd "$ROOT/packages/$pkg" && pnpm pack --pack-destination "$WORK/tarballs" >/dev/null)
 done
 
@@ -27,6 +27,8 @@ CORE_TARBALL="$(ls "$WORK/tarballs"/askdb-core-*.tgz | head -n1)"
 [ -f "$CORE_TARBALL" ] || { echo "smoke: missing core tarball" >&2; exit 1; }
 INTROSPECT_TARBALL="$(ls "$WORK/tarballs"/askdb-introspect-*.tgz | head -n1)"
 [ -f "$INTROSPECT_TARBALL" ] || { echo "smoke: missing introspect tarball" >&2; exit 1; }
+TUI_TARBALL="$(ls "$WORK/tarballs"/askdb-tui-*.tgz | head -n1)"
+[ -f "$TUI_TARBALL" ] || { echo "smoke: missing tui tarball" >&2; exit 1; }
 
 echo "smoke: validating @askdb/introspect tarball contents…"
 INTROSPECT_TARBALL_FILES="$(tar -tzf "$INTROSPECT_TARBALL")"
@@ -39,6 +41,17 @@ if grep -Eq '(^package/src/|\.test\.)' <<<"$INTROSPECT_TARBALL_FILES"; then
   exit 1
 fi
 
+echo "smoke: validating @askdb/tui tarball contents…"
+TUI_TARBALL_FILES="$(tar -tzf "$TUI_TARBALL")"
+grep -q '^package/dist/index.js$' <<<"$TUI_TARBALL_FILES"
+grep -q '^package/dist/bin.js$' <<<"$TUI_TARBALL_FILES"
+grep -q '^package/README.md$' <<<"$TUI_TARBALL_FILES"
+grep -q '^package/LICENSE$' <<<"$TUI_TARBALL_FILES"
+if grep -Eq '(^package/src/|\.test\.)' <<<"$TUI_TARBALL_FILES"; then
+  echo "smoke: FAILED — @askdb/tui tarball includes source/tests" >&2
+  exit 1
+fi
+
 echo "smoke: staging consumer fixture…"
 cp -R "$SCRIPT_DIR/consumer" "$WORK/consumer"
 # Wire the just-packed AskDB tarballs into the consumer's package.json.
@@ -48,6 +61,7 @@ node -e "
   const j = JSON.parse(fs.readFileSync(p, 'utf8'));
   j.dependencies['@askdb/core'] = 'file:$CORE_TARBALL';
   j.dependencies['@askdb/introspect'] = 'file:$INTROSPECT_TARBALL';
+  j.dependencies['@askdb/tui'] = 'file:$TUI_TARBALL';
   fs.writeFileSync(p, JSON.stringify(j, null, 2) + '\n');
 "
 
@@ -69,5 +83,8 @@ echo "smoke: tsx src/smoke.ts…"
 echo "smoke: askdb-introspect bin…"
 (cd "$WORK/consumer" && ./node_modules/.bin/askdb-introspect --version >/dev/null)
 (cd "$WORK/consumer" && ./node_modules/.bin/askdb-introspect templates --engine postgres | grep -q '^-- schemas')
+
+echo "smoke: askdb-tui bin…"
+(cd "$WORK/consumer" && ./node_modules/.bin/askdb-tui --version >/dev/null)
 
 echo "smoke: PASSED"

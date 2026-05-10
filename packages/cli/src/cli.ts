@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import dotenv from "dotenv";
+import { spawnSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { createOpenAI } from "@ai-sdk/openai";
 import { runIntrospectCli } from "@askdb/introspect/cli";
@@ -42,6 +43,14 @@ if (process.argv[2] === "introspect") {
   process.exit(exitCode);
 }
 
+if (process.argv[2] === "enrich") {
+  process.exit(runTuiShim(process.argv.slice(3)));
+}
+
+if (process.argv[2] === "bundle") {
+  process.exit(runTuiShim(["bundle", ...process.argv.slice(3)]));
+}
+
 function printTsv(result: TabularResult): void {
   console.log(result.columns.join("\t"));
   for (const row of result.rows) {
@@ -66,6 +75,25 @@ function printCliError(error: unknown): void {
     return;
   }
   console.error(String(error));
+}
+
+function runTuiShim(args: string[]): number {
+  const result = spawnSync("askdb-tui", args, {
+    stdio: "inherit",
+    env: process.env,
+  });
+  if (result.error) {
+    const err = result.error as NodeJS.ErrnoException;
+    if (err.code === "ENOENT") {
+      console.error(
+        "`askdb-tui` was not found. Install `@askdb/tui` alongside `@askdb/cli`, then retry.",
+      );
+      return 1;
+    }
+    console.error(err.message);
+    return 1;
+  }
+  return result.status ?? 1;
 }
 
 function formatSchemaPathHint(schemaPath: string): string {
