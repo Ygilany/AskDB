@@ -24,6 +24,10 @@ export type TableDraft = {
   tags?: string[];
   /** Override (only set when user explicitly toggles). */
   sensitive?: boolean;
+  /** Verbatim content under `## Common query language`. */
+  commonQueryLanguage?: string;
+  /** Verbatim content under `## Example questions`. */
+  exampleQuestions?: string;
   /** Per-column drafts keyed by column id. */
   columns: Record<string, ColumnDraft>;
 };
@@ -50,6 +54,8 @@ export function buildTableDraft(
     primaryEntity: fm?.primaryEntity,
     tags: fm?.tags ? [...fm.tags] : undefined,
     sensitive: fm?.sensitive,
+    commonQueryLanguage: parsed?.sections["Common query language"],
+    exampleQuestions: parsed?.sections["Example questions"],
     columns,
   };
 }

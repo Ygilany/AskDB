@@ -64,6 +64,18 @@ export type {
   SchemaV2Warning,
 } from "./schema/v2/index.js";
 export {
+  ENRICHMENT_SYSTEM_PROMPT,
+  buildEnrichmentUserPrompt,
+  parseCandidates,
+  suggestEnrichment,
+} from "./enrichment/index.js";
+export type {
+  EnrichmentCandidate,
+  EnrichmentContext,
+  EnrichmentTarget,
+  SuggestEnrichmentDeps,
+} from "./enrichment/index.js";
+export {
   formatSchemaForNlToSql,
   formatSchemaForPrompt,
   normalizeAskDbSchema,

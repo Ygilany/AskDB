@@ -3,11 +3,15 @@ import { join } from "node:path";
 import {
   parseConceptsMarkdown,
   parseTableMarkdown,
+  loadSchema,
   writeConceptsMarkdown,
   writeTableMarkdown,
   v2SchemaJsonSchema,
   type ParsedConceptsMarkdown,
   type ParsedTableMarkdown,
+  type SchemaV2Warning,
+  type V2Concept,
+  type V2ConceptsFrontmatter,
   type V2SchemaJson,
   type V2Table,
   type V2TableFrontmatter,
@@ -31,6 +35,14 @@ export type Workspace = {
   physical: V2SchemaJson;
   tables: WorkspaceTable[];
   concepts: ParsedConceptsMarkdown | undefined;
+  warnings: SchemaV2Warning[];
+};
+
+export type BundledSchemaV2 = {
+  bundled: true;
+  physical: V2SchemaJson;
+  tables: Record<string, string>;
+  concepts?: string;
 };
 
 /**
@@ -73,7 +85,13 @@ export function loadWorkspace(schemaDir: string): Workspace {
     concepts = parseConceptsMarkdown(readFileSync(conceptsPath, "utf8"), conceptsPath);
   }
 
-  return { schemaDir, physical, tables, concepts };
+  return {
+    schemaDir,
+    physical,
+    tables,
+    concepts,
+    warnings: [...loadSchema(schemaDir).warnings, ...computeMissingDescribableWarnings(tables)],
+  };
 }
 
 /**
@@ -97,17 +115,79 @@ export function saveTable(
   wt.parsed = reparsed;
 }
 
-/**
- * Save concepts.md back to disk via the Phase 5 writer.
- */
-export function saveConcepts(workspace: Workspace, body: string): void {
-  if (!workspace.concepts) {
-    throw new Error("No concepts to save");
+/** Save concepts.md back to disk via the Phase 5 writer. */
+export function saveConcepts(
+  workspace: Workspace,
+  frontmatter: V2ConceptsFrontmatter,
+  body = workspace.concepts?.body ?? "# Concepts\n\nCross-table vocabulary.\n",
+): void {
+  const invalid = validateConceptLinks(workspace, frontmatter.concepts);
+  if (invalid.length > 0) {
+    throw new Error(`Invalid concept link(s): ${invalid.join(", ")}`);
   }
   const filePath = join(workspace.schemaDir, "concepts.md");
-  const md = writeConceptsMarkdown(workspace.concepts.frontmatter, body);
+  const md = writeConceptsMarkdown(frontmatter, body);
   writeFileSync(filePath, md, "utf8");
   workspace.concepts = parseConceptsMarkdown(md, filePath);
+}
+
+export function validateConceptLinks(workspace: Workspace, concepts: V2Concept[]): string[] {
+  const known = new Set<string>();
+  for (const table of workspace.physical.tables) {
+    known.add(table.id);
+    for (const column of table.columns) known.add(column.id);
+  }
+  return concepts.flatMap((concept) => concept.links ?? []).filter((link) => !known.has(link));
+}
+
+export function pruneOrphanedColumns(workspace: Workspace): number {
+  const physicalColumnIds = new Set(
+    workspace.physical.tables.flatMap((table) => table.columns.map((column) => column.id)),
+  );
+  let pruned = 0;
+
+  for (const table of workspace.tables) {
+    const parsed = table.parsed;
+    if (!parsed?.frontmatter.columns) continue;
+    const nextColumns = parsed.frontmatter.columns.filter((column) => {
+      const keep = physicalColumnIds.has(column.id);
+      if (!keep) pruned += 1;
+      return keep;
+    });
+    if (nextColumns.length === parsed.frontmatter.columns.length) continue;
+    const nextFrontmatter = {
+      ...parsed.frontmatter,
+      columns: nextColumns.length > 0 ? nextColumns : undefined,
+    };
+    saveTable(workspace, table.physical.id, nextFrontmatter, parsed.body);
+  }
+
+  workspace.warnings = [
+    ...loadSchema(workspace.schemaDir).warnings,
+    ...computeMissingDescribableWarnings(workspace.tables),
+  ];
+  return pruned;
+}
+
+function computeMissingDescribableWarnings(tables: WorkspaceTable[]): SchemaV2Warning[] {
+  const warnings: SchemaV2Warning[] = [];
+  for (const table of tables) {
+    if (!table.parsed) {
+      warnings.push({ kind: "missing_table_md", tableId: table.physical.id });
+      continue;
+    }
+    const described = new Set((table.parsed.frontmatter.columns ?? []).map((column) => column.id));
+    for (const column of table.physical.columns) {
+      if (!described.has(column.id)) {
+        warnings.push({
+          kind: "missing_column_md",
+          tableId: table.physical.id,
+          columnId: column.id,
+        });
+      }
+    }
+  }
+  return warnings;
 }
 
 function parsePhysical(raw: string, filePath: string): V2SchemaJson {
@@ -122,6 +202,32 @@ function parsePhysical(raw: string, filePath: string): V2SchemaJson {
     throw new Error(`Invalid schema.json at ${filePath}: ${result.error.message}`);
   }
   return result.data;
+}
+
+export function bundleSchemaDirectory(schemaDir: string): BundledSchemaV2 {
+  const schemaJsonPath = join(schemaDir, "schema.json");
+  if (!existsSync(schemaJsonPath)) {
+    throw new Error(`No schema.json found in ${schemaDir}`);
+  }
+  const physical = parsePhysical(readFileSync(schemaJsonPath, "utf8"), schemaJsonPath);
+  const tables: Record<string, string> = {};
+  const tableDir = join(schemaDir, "tables");
+  if (existsSync(tableDir)) {
+    for (const entry of readdirSync(tableDir).sort()) {
+      if (!entry.endsWith(".md")) continue;
+      tables[entry] = readFileSync(join(tableDir, entry), "utf8");
+    }
+  }
+  const conceptsPath = join(schemaDir, "concepts.md");
+  const concepts = existsSync(conceptsPath)
+    ? readFileSync(conceptsPath, "utf8")
+    : undefined;
+  return {
+    bundled: true,
+    physical,
+    tables,
+    ...(concepts !== undefined ? { concepts } : {}),
+  };
 }
 
 /**
@@ -192,4 +298,37 @@ export function replaceTableDescription(body: string, newDescription: string): s
   const trailingNewline = body.endsWith("\n");
   const out = segments.join("\n");
   return trailingNewline && !out.endsWith("\n") ? `${out}\n` : out;
+}
+
+/**
+ * Replace or append a recognized H2 section body without touching the rest of
+ * the markdown body. The section content is normalized to one blank line after
+ * the heading and a trailing newline before the next section.
+ */
+export function replaceH2Section(body: string, heading: string, content: string): string {
+  const normalized = normalizeSection(heading, content);
+  const pattern = new RegExp(`^## ${escapeRegex(heading)}\\s*$`, "im");
+  const match = pattern.exec(body);
+  if (!match) {
+    const base = body.endsWith("\n") ? body : `${body}\n`;
+    return `${base}\n${normalized}`;
+  }
+
+  const start = match.index;
+  const afterHeading = start + match[0].length;
+  const rest = body.slice(afterHeading);
+  const nextMatch = /^## .+$/m.exec(rest);
+  const end = nextMatch ? afterHeading + nextMatch.index : body.length;
+  const before = body.slice(0, start).replace(/\s*$/, "\n\n");
+  const after = body.slice(end).replace(/^\s*/, "");
+  return after ? `${before}${normalized}\n${after}` : `${before}${normalized}`;
+}
+
+function normalizeSection(heading: string, content: string): string {
+  const trimmed = content.trim();
+  return trimmed ? `## ${heading}\n\n${trimmed}\n` : `## ${heading}\n`;
+}
+
+function escapeRegex(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }

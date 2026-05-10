@@ -7,6 +7,7 @@ import {
   parseListInput,
   type TableDraft,
 } from "../draft.js";
+import type { TableSuggestField } from "../suggest.js";
 import { TextInput } from "./TextInput.js";
 
 type TableDetailProps = {
@@ -15,11 +16,22 @@ type TableDetailProps = {
   saved: boolean;
   onChange: (next: TableDraft) => void;
   onSave: () => void;
+  onSuggestField?: (field: TableSuggestField) => void;
   onOpenColumn: (columnId: string) => void;
   onBack: () => void;
+  suggesting?: boolean;
+  suggestError?: string | null;
+  missingColumnIds?: Set<string>;
 };
 
-type FieldId = "description" | "aliases" | "primaryEntity" | "tags" | "sensitive";
+type FieldId =
+  | "description"
+  | "aliases"
+  | "primaryEntity"
+  | "tags"
+  | "sensitive"
+  | "commonQueryLanguage"
+  | "exampleQuestions";
 
 const TABLE_FIELDS: FieldId[] = [
   "description",
@@ -27,6 +39,8 @@ const TABLE_FIELDS: FieldId[] = [
   "primaryEntity",
   "tags",
   "sensitive",
+  "commonQueryLanguage",
+  "exampleQuestions",
 ];
 
 export function TableDetail({
@@ -35,8 +49,12 @@ export function TableDetail({
   saved,
   onChange,
   onSave,
+  onSuggestField,
   onOpenColumn,
   onBack,
+  suggesting = false,
+  suggestError = null,
+  missingColumnIds = new Set(),
 }: TableDetailProps): JSX.Element {
   const items = TABLE_FIELDS.length + physical.columns.length;
   const [activeIdx, setActiveIdx] = useState(0);
@@ -60,7 +78,10 @@ export function TableDetail({
         onOpenColumn(col.id);
       }
     } else if (input === "s") onSave();
-    else if (input === "b" || key.escape) onBack();
+    else if (input === "g" && activeIdx < TABLE_FIELDS.length) {
+      const f = TABLE_FIELDS[activeIdx]!;
+      if (isSuggestableTableField(f)) onSuggestField?.(f);
+    } else if (input === "b" || key.escape) onBack();
   });
 
   const sensitiveRefs = findSensitiveColumnReferences(draft.description, physical);
@@ -81,7 +102,11 @@ export function TableDetail({
             value={fieldDisplay(f, draft, physical)}
             active={i === activeIdx && editing === null}
             editing={editing === f}
-            multiline={f === "description"}
+            multiline={
+              f === "description" ||
+              f === "commonQueryLanguage" ||
+              f === "exampleQuestions"
+            }
             onSubmit={(text) => {
               onChange(applyTableEdit(f, draft, text));
               setEditing(null);
@@ -116,6 +141,7 @@ export function TableDetail({
               <Text dimColor> {c.type}</Text>
               {c.primaryKey ? <Text color="cyan"> [pk]</Text> : null}
               {(cd?.sensitive ?? c.sensitive) ? <Text color="yellow"> [sensitive]</Text> : null}
+              {missingColumnIds.has(c.id) ? <Text color="yellow"> [needs description]</Text> : null}
               {described ? <Text color="green"> ✓</Text> : null}
             </Text>
           );
@@ -127,15 +153,34 @@ export function TableDetail({
           <Text color="green">✓ Saved</Text>
         </Box>
       ) : null}
+      {suggesting ? (
+        <Box marginTop={1}>
+          <Text color="cyan">Suggesting…</Text>
+        </Box>
+      ) : null}
+      {suggestError ? (
+        <Box marginTop={1}>
+          <Text color="red">{suggestError}</Text>
+        </Box>
+      ) : null}
 
       <Box marginTop={1}>
         <Text dimColor>
           {editing
             ? "type to edit · ⏎ submit (Ctrl-D for multiline) · Esc cancel"
-            : "↑↓ navigate · ⏎ edit/open · s save · b back"}
+            : "↑↓ navigate · ⏎ edit/open · g suggest · s save · b back"}
         </Text>
       </Box>
     </Box>
+  );
+}
+
+function isSuggestableTableField(f: FieldId): f is TableSuggestField {
+  return (
+    f === "description" ||
+    f === "aliases" ||
+    f === "primaryEntity" ||
+    f === "commonQueryLanguage"
   );
 }
 
@@ -151,6 +196,10 @@ function fieldLabel(f: FieldId): string {
       return "Tags";
     case "sensitive":
       return "Sensitive";
+    case "commonQueryLanguage":
+      return "Common language";
+    case "exampleQuestions":
+      return "Examples";
   }
 }
 
@@ -166,6 +215,10 @@ function fieldDisplay(f: FieldId, d: TableDraft, t: V2Table): string {
       return formatList(d.tags);
     case "sensitive":
       return (d.sensitive ?? t.sensitive ?? false) ? "yes" : "no";
+    case "commonQueryLanguage":
+      return d.commonQueryLanguage ?? "";
+    case "exampleQuestions":
+      return d.exampleQuestions ?? "";
   }
 }
 
@@ -186,6 +239,12 @@ function applyTableEdit(f: FieldId, d: TableDraft, text: string): TableDraft {
       break;
     case "sensitive":
       // Toggled in place.
+      break;
+    case "commonQueryLanguage":
+      next.commonQueryLanguage = text;
+      break;
+    case "exampleQuestions":
+      next.exampleQuestions = text;
       break;
   }
   return next;

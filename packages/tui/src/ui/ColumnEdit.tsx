@@ -7,6 +7,7 @@ import {
   parseListInput,
   type ColumnDraft,
 } from "../draft.js";
+import type { ColumnSuggestField } from "../suggest.js";
 import { TextInput } from "./TextInput.js";
 
 type ColumnEditProps = {
@@ -15,7 +16,10 @@ type ColumnEditProps = {
   saved: boolean;
   onChange: (next: ColumnDraft) => void;
   onSave: () => void;
+  onSuggestField?: (field: ColumnSuggestField) => void;
   onBack: () => void;
+  suggesting?: boolean;
+  suggestError?: string | null;
 };
 
 type FieldId = "description" | "aliases" | "enum" | "sensitive";
@@ -26,7 +30,10 @@ export function ColumnEdit({
   saved,
   onChange,
   onSave,
+  onSuggestField,
   onBack,
+  suggesting = false,
+  suggestError = null,
 }: ColumnEditProps): JSX.Element {
   const fields = buildFields(column);
   const [activeIdx, setActiveIdx] = useState(0);
@@ -45,6 +52,10 @@ export function ColumnEdit({
         setEditing(f);
       }
     } else if (input === "s") onSave();
+    else if (input === "g") {
+      const f = fields[activeIdx]!;
+      if (isSuggestableColumnField(f)) onSuggestField?.(f);
+    }
     else if (input === "b" || key.escape) onBack();
   });
 
@@ -76,15 +87,29 @@ export function ColumnEdit({
           <Text color="green">✓ Saved</Text>
         </Box>
       ) : null}
+      {suggesting ? (
+        <Box marginTop={1}>
+          <Text color="cyan">Suggesting…</Text>
+        </Box>
+      ) : null}
+      {suggestError ? (
+        <Box marginTop={1}>
+          <Text color="red">{suggestError}</Text>
+        </Box>
+      ) : null}
       <Box marginTop={1}>
         <Text dimColor>
           {editing
             ? "type to edit · ⏎ submit (Ctrl-D for multiline) · Esc cancel"
-            : "↑↓ field · ⏎ edit/toggle · s save · b back"}
+            : "↑↓ field · ⏎ edit/toggle · g suggest · s save · b back"}
         </Text>
       </Box>
     </Box>
   );
+}
+
+function isSuggestableColumnField(f: FieldId): f is ColumnSuggestField {
+  return f === "description" || f === "aliases";
 }
 
 function buildFields(col: V2Column): FieldId[] {

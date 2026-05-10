@@ -44,7 +44,7 @@ export function TableList({
         })}
       </Box>
       <Box marginTop={1}>
-        <Text dimColor>↑↓ select · ⏎ open · q quit</Text>
+        <Text dimColor>↑↓ select · ⏎ open · c concepts · q quit</Text>
       </Box>
     </Box>
   );

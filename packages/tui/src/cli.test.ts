@@ -1,5 +1,14 @@
+import { cpSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
+import { loadSchema, loadSchemaFromJson } from "@askdb/core";
 import { runTuiCli } from "./cli.js";
+
+const FIXTURE = new URL(
+  "../../../fixtures/schemas/orders-users.schema",
+  import.meta.url,
+).pathname;
 
 describe("runTuiCli", () => {
   it("--version prints package version", async () => {
@@ -68,6 +77,24 @@ describe("runTuiCli", () => {
       expect(stderr.join("")).toContain("not found");
     } finally {
       process.stderr.write = original;
+    }
+  });
+
+  it("bundle writes loader-compatible JSON", async () => {
+    const tmp = mkdtempSync(join(tmpdir(), "askdb-tui-bundle-"));
+    const schemaDir = join(tmp, "orders-users.schema");
+    const out = join(tmp, "bundle.json");
+    cpSync(FIXTURE, schemaDir, { recursive: true });
+    const originalStdout = process.stdout.write.bind(process.stdout);
+    process.stdout.write = (() => true) as typeof process.stdout.write;
+
+    try {
+      const code = await runTuiCli(["bundle", schemaDir, "--out", out]);
+      expect(code).toBe(0);
+      expect(loadSchemaFromJson(readFileSync(out, "utf8"))).toEqual(loadSchema(schemaDir));
+    } finally {
+      process.stdout.write = originalStdout;
+      rmSync(tmp, { recursive: true, force: true });
     }
   });
 });

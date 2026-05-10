@@ -1,9 +1,12 @@
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
+import { createOpenAI } from "@ai-sdk/openai";
+import { suggestEnrichment } from "@askdb/core";
 import { render } from "ink";
 import { createElement } from "react";
 import { App } from "./ui/App.js";
-import { loadWorkspace } from "./workspace.js";
+import { bundleSchemaDirectory, loadWorkspace } from "./workspace.js";
+import type { SuggestEnrichmentForTui } from "./suggest.js";
 
 type CliOptions = {
   schema?: string;
@@ -12,6 +15,10 @@ type CliOptions = {
 };
 
 export async function runTuiCli(argv: readonly string[]): Promise<number> {
+  if (argv[0] === "bundle") {
+    return runBundleCli(argv.slice(1));
+  }
+
   let opts: CliOptions;
   try {
     opts = parseOptions(argv);
@@ -51,12 +58,33 @@ export async function runTuiCli(argv: readonly string[]): Promise<number> {
     return 1;
   }
 
-  const { waitUntilExit } = render(createElement(App, { workspace }));
+  const { waitUntilExit } = render(
+    createElement(App, { workspace, suggest: buildOpenAiSuggester() }),
+  );
   try {
     await waitUntilExit();
     return 0;
   } catch (error) {
     process.stderr.write(`askdb-tui: ${formatError(error)}\n`);
+    return 1;
+  }
+}
+
+function runBundleCli(argv: readonly string[]): number {
+  const schemaDir = argv[0];
+  const outFlag = argv[1];
+  const outPath = argv[2];
+  if (!schemaDir || outFlag !== "--out" || !outPath) {
+    process.stderr.write("Usage: askdb-tui bundle <schema-dir> --out <bundle.json>\n");
+    return 1;
+  }
+  try {
+    const bundle = bundleSchemaDirectory(resolve(schemaDir));
+    writeFileSync(resolve(outPath), `${JSON.stringify(bundle, null, 2)}\n`, "utf8");
+    process.stdout.write(`Wrote ${resolve(outPath)}\n`);
+    return 0;
+  } catch (error) {
+    process.stderr.write(`askdb-tui bundle: ${formatError(error)}\n`);
     return 1;
   }
 }
@@ -105,6 +133,7 @@ function printHelp(stream: NodeJS.WriteStream): void {
       "",
       "Usage:",
       "  askdb-tui --schema <dir>          Open a Schema v2 directory for enrichment",
+      "  askdb-tui bundle <dir> --out <bundle.json>",
       "  askdb-tui --version               Print package version",
       "  askdb-tui --help                  Print this help",
       "",
@@ -112,10 +141,26 @@ function printHelp(stream: NodeJS.WriteStream): void {
       "(Phase 6) or hand-authored. Bundled JSON is read-only and not yet supported",
       "as a TUI input.",
       "",
+      "AI suggestions are enabled when OPENAI_API_KEY is set. Override the model",
+      "with ASKDB_TUI_MODEL, ASKDB_MODEL, or OPENAI_MODEL.",
+      "",
     ].join("\n"),
   );
 }
 
 function formatError(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+function buildOpenAiSuggester(): SuggestEnrichmentForTui | undefined {
+  const apiKey = process.env.OPENAI_API_KEY;
+  if (!apiKey) return undefined;
+  const openai = createOpenAI({
+    apiKey,
+    baseURL: process.env.OPENAI_BASE_URL,
+  });
+  const modelId =
+    process.env.ASKDB_TUI_MODEL ?? process.env.ASKDB_MODEL ?? process.env.OPENAI_MODEL ?? "gpt-4o-mini";
+  const model = openai(modelId);
+  return (target, context) => suggestEnrichment(target, context, model);
 }

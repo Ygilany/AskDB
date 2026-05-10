@@ -126,6 +126,9 @@ importers:
 
   packages/tui:
     dependencies:
+      '@ai-sdk/openai':
+        specifier: ^1.3.21
+        version: 1.3.24(zod@3.25.76)
       '@askdb/core':
         specifier: workspace:*
         version: link:../core

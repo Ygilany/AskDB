@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { render } from "ink-testing-library";
 import { createElement } from "react";
+import { loadSchema } from "@askdb/core";
 import { App } from "./App.js";
 import { loadWorkspace } from "../workspace.js";
 
@@ -134,8 +135,8 @@ describe("App headless author flow", () => {
     await flush();
     stdin.write(KEY_ENTER);
     await flush();
-    // Table-level fields are 5; column #0 = id (idx 5), col #1 = user_id (idx 6).
-    for (let i = 0; i < 6; i += 1) {
+    // Table-level fields are 7; column #0 = id (idx 7), col #1 = user_id (idx 8).
+    for (let i = 0; i < 8; i += 1) {
       stdin.write(KEY_DOWN);
       await flush();
     }
@@ -165,6 +166,122 @@ describe("App headless author flow", () => {
     await flush();
     expect(lastFrame()).toMatch(/sensitive column/i);
     expect(lastFrame()).toContain("email");
+    unmount();
+  });
+
+  it("edits the Common query language section without disturbing other sections", async () => {
+    const ws = loadWorkspace(schemaDir);
+    const { stdin, unmount } = render(createElement(App, { workspace: ws }));
+    await flush();
+    // Open orders.
+    stdin.write(KEY_DOWN);
+    await flush();
+    stdin.write(KEY_ENTER);
+    await flush();
+
+    // Common query language field.
+    for (let i = 0; i < 5; i += 1) {
+      stdin.write(KEY_DOWN);
+      await flush();
+    }
+    stdin.write(KEY_ENTER);
+    await flush();
+    stdin.write(KEY_ENTER);
+    await flush();
+    stdin.write('- "paid customers" means users with paid orders');
+    await flush();
+    stdin.write(KEY_CTRL_D);
+    await flush();
+    stdin.write("s");
+    await flush();
+
+    const saved = readFileSync(join(schemaDir, "tables/orders.md"), "utf8");
+    expect(saved).toContain('- "paid customers" means users with paid orders');
+    expect(saved).toContain("## Example questions");
+    expect(saved).toContain("How much revenue did we make last month?");
+    expect(saved).toContain("## Business context");
+    unmount();
+  });
+
+  it("queues an AI suggestion and only persists it after confirmation", async () => {
+    const ws = loadWorkspace(schemaDir);
+    const suggest = async () => [{ text: "AI suggested order records." }];
+    const { stdin, lastFrame, unmount } = render(
+      createElement(App, { workspace: ws, suggest }),
+    );
+    await flush();
+    // Open orders.
+    stdin.write(KEY_DOWN);
+    await flush();
+    stdin.write(KEY_ENTER);
+    await flush();
+
+    stdin.write("g");
+    await flush(100);
+    expect(lastFrame()).toContain("AI suggested order records.");
+
+    // Rejecting a suggestion must not mutate the draft or disk.
+    stdin.write("r");
+    await flush();
+    stdin.write("s");
+    await flush();
+    let saved = readFileSync(join(schemaDir, "tables/orders.md"), "utf8");
+    expect(saved).not.toContain("AI suggested order records.");
+
+    // Accepting updates the draft; the explicit save persists it.
+    stdin.write("g");
+    await flush(100);
+    stdin.write(KEY_ENTER);
+    await flush();
+    stdin.write("s");
+    await flush();
+    saved = readFileSync(join(schemaDir, "tables/orders.md"), "utf8");
+    expect(saved).toContain("AI suggested order records.");
+
+    unmount();
+  });
+
+  it("adds a concept and saves a reloadable concepts.md", async () => {
+    const ws = loadWorkspace(schemaDir);
+    const { stdin, lastFrame, unmount } = render(createElement(App, { workspace: ws }));
+    await flush();
+
+    stdin.write("c");
+    await flush();
+    expect(lastFrame()).toContain("Concepts");
+
+    stdin.write("a");
+    await flush();
+    stdin.write("concept:vip_customer");
+    await flush();
+    stdin.write(KEY_ENTER);
+    await flush();
+    stdin.write("VIP Customer");
+    await flush();
+    stdin.write(KEY_ENTER);
+    await flush();
+    stdin.write("vip, high value");
+    await flush();
+    stdin.write(KEY_ENTER);
+    await flush();
+    stdin.write("table:public.users");
+    await flush();
+    stdin.write(KEY_ENTER);
+    await flush();
+    stdin.write("A customer segment used for retention analysis.");
+    await flush();
+    stdin.write(KEY_CTRL_D);
+    await flush();
+    expect(lastFrame()).toContain("Concept queued");
+    stdin.write("s");
+    await flush();
+    expect(lastFrame()).toContain("Saved");
+
+    const saved = readFileSync(join(schemaDir, "concepts.md"), "utf8");
+    expect(saved).toContain("concept:vip_customer");
+    expect(saved).toContain("VIP Customer");
+    const normalized = loadSchema(schemaDir);
+    expect(normalized.concepts?.some((c) => c.id === "concept:vip_customer")).toBe(true);
     unmount();
   });
 

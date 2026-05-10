@@ -27,10 +27,25 @@ pnpm dlx @askdb/tui --schema my-app.schema/
 In the TUI:
 
 - `↑/↓` select a table, `⏎` open it.
-- `e` edit the description; `Ctrl-D` to submit, `Esc` to cancel.
+- `⏎` edit the active field; `Ctrl-D` submits multiline fields, `Esc` cancels.
+- `g` requests an AI suggestion when `OPENAI_API_KEY` is set; accept, edit, or reject before saving.
+- `c` opens Concepts from the table list.
 - `s` save (writes `tables/<table>.md` via the Phase 5 writer).
 - `b` or `Esc` back to the list.
 - `q` quit.
+
+Bundle a directory for distribution:
+
+```sh
+askdb-tui bundle my-app.schema/ --out my-app.schema.bundle.json
+```
+
+The main `askdb` CLI also exposes thin shims when `@askdb/tui` is installed:
+
+```sh
+askdb enrich --schema my-app.schema/
+askdb bundle my-app.schema/ --out my-app.schema.bundle.json
+```
 
 ## Output
 
