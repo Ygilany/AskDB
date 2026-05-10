@@ -29,11 +29,12 @@ INTROSPECT_TARBALL="$(ls "$WORK/tarballs"/askdb-introspect-*.tgz | head -n1)"
 [ -f "$INTROSPECT_TARBALL" ] || { echo "smoke: missing introspect tarball" >&2; exit 1; }
 
 echo "smoke: validating @askdb/introspect tarball contents…"
-tar -tzf "$INTROSPECT_TARBALL" | grep -q '^package/dist/index.js$'
-tar -tzf "$INTROSPECT_TARBALL" | grep -q '^package/dist/bin.js$'
-tar -tzf "$INTROSPECT_TARBALL" | grep -q '^package/README.md$'
-tar -tzf "$INTROSPECT_TARBALL" | grep -q '^package/LICENSE$'
-if tar -tzf "$INTROSPECT_TARBALL" | grep -Eq '(^package/src/|\.test\.)'; then
+INTROSPECT_TARBALL_FILES="$(tar -tzf "$INTROSPECT_TARBALL")"
+grep -q '^package/dist/index.js$' <<<"$INTROSPECT_TARBALL_FILES"
+grep -q '^package/dist/bin.js$' <<<"$INTROSPECT_TARBALL_FILES"
+grep -q '^package/README.md$' <<<"$INTROSPECT_TARBALL_FILES"
+grep -q '^package/LICENSE$' <<<"$INTROSPECT_TARBALL_FILES"
+if grep -Eq '(^package/src/|\.test\.)' <<<"$INTROSPECT_TARBALL_FILES"; then
   echo "smoke: FAILED — @askdb/introspect tarball includes source/tests" >&2
   exit 1
 fi
