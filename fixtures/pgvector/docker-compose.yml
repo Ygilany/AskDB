@@ -1,0 +1,31 @@
+# pgvector Postgres dev fixture for @askdb/rag integration tests.
+#
+# From repo root:
+#   docker compose -f fixtures/pgvector/docker-compose.yml up -d
+#
+# ASKDB_PGVECTOR_URL:
+#   postgres://postgres:postgres@127.0.0.1:5434/askdb_rag
+#
+# Reset volume:
+#   docker compose -f fixtures/pgvector/docker-compose.yml down -v
+
+services:
+  pgvector-db:
+    image: pgvector/pgvector:pg16
+    ports:
+      - "5434:5432"
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: askdb_rag
+    volumes:
+      - pgvector_pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d askdb_rag"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 20s
+
+volumes:
+  pgvector_pg_data:
