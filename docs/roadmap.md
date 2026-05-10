@@ -50,7 +50,9 @@ Phase 3 ships `@askdb/http-api` as a thin wrapper over `@askdb/core` with the sa
 
 ---
 
-## Phase 4 — Publish to npm + BYO executor seam
+## Phase 4 ✅ — Publish to npm + BYO executor seam
+
+Completed: Published installable packages to npm, introduced the BYO executor seam in `ask({ executor })`, and finalized release tooling/contracts for pre-1.0 distribution.
 
 **Goal:** Turn AskDB into an actually installable package — `pnpm add @askdb/core` from any project, plug in your own database driver and LLM, and call `ask()` from your runtime.
 
@@ -61,7 +63,9 @@ Phase 3 ships `@askdb/http-api` as a thin wrapper over `@askdb/core` with the sa
 - **Release tooling** — pick and configure (e.g. **changesets**); set up CI publish workflow; add `LICENSE`, package READMEs, examples.
 - **Schema format unchanged** — Phase 4 ships the existing pre-v2 format. **Phase 5 makes the breaking change to Schema v2 with no migrator** (acceptable pre-1.0).
 
-## Phase 5 — Schema v2 in `@askdb/core`
+## Phase 5 ✅ — Schema v2 in `@askdb/core`
+
+Completed: Landed Schema v2 reader/writer + validation in `@askdb/core`, switched prompt assembly to v2 describable artifacts, and completed the pre-1.0 break from v1 without a migrator.
 
 **Goal:** Ship the **describable schema** (Schema v2) format inside the published `@askdb/core` so consumers can author and prompt against it without any new package — text editors, CI, and downstream tools all work as soon as Phase 5 lands.
 
@@ -75,7 +79,9 @@ Phase 3 ships `@askdb/http-api` as a thin wrapper over `@askdb/core` with the sa
 - **Hand-authored fixture** — `fixtures/schemas/orders-users.schema/` lands as a hand-authored v2 fixture used by Phase 5/7/8 tests.
 - **No TUI in this phase** — Authoring is by hand-editing the markdown front-matter (or by the Phase 7 TUI once it ships). No interactive surface ships in Phase 5.
 
-## Phase 6 — Schema introspection (`@askdb/introspect`)
+## Phase 6 ✅ — Schema introspection (`@askdb/introspect`)
+
+Completed: Shipped `@askdb/introspect` with Postgres connector support, live + air-gapped introspection paths to identical v2 artifacts, and deterministic re-introspection with stable ID preservation.
 
 **Goal:** Turn a real database into a Schema v2 physical artifact through a clean **connector pattern**, with **two equally-supported front doors** (live + air-gapped) that produce identical artifacts.
 
@@ -89,7 +95,9 @@ Phase 3 ships `@askdb/http-api` as a thin wrapper over `@askdb/core` with the sa
 - **ID-anchored re-introspection** — On a second run, `schema.json` is the only file rewritten. Stable IDs from the previous run are preserved; new columns get fresh IDs; orphaned IDs surface as `IntrospectionResult.warnings`. The describable layer (`tables/*.md`, `concepts.md`) is **never** modified.
 - **CLI surface** — `askdb introspect --url …` and `askdb introspect --from-export …` (also `--print` and `--diff`). Library API mirrors the CLI.
 
-## Phase 7 — TUI enrichment (`@askdb/tui`)
+## Phase 7 ✅ — TUI enrichment (`@askdb/tui`)
+
+Completed: Delivered `@askdb/tui` interactive schema enrichment for Schema v2, including AI-assisted table/column description workflows, round-trippable `tables/*.md` writes, and idempotent re-open/re-enrichment flows.
 
 **Goal:** Ship the interactive **terminal authoring surface** that turns a Schema v2 physical artifact (typically introspected in Phase 6) into a fully described one with AI-suggest + human-confirm.
 
