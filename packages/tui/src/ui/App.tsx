@@ -1,12 +1,13 @@
 import { Box, Text, useApp, useInput } from "ink";
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import {
   buildDefaultTableBody,
   replaceTableDescription,
   saveTable,
   type Workspace,
-  type WorkspaceTable,
 } from "../workspace.js";
+import { buildFrontmatter, buildTableDraft, type TableDraft } from "../draft.js";
+import { ColumnEdit } from "./ColumnEdit.js";
 import { TableDetail } from "./TableDetail.js";
 import { TableList } from "./TableList.js";
 
@@ -14,49 +15,45 @@ type AppProps = {
   workspace: Workspace;
 };
 
-type Screen = "list" | "detail";
+type Screen =
+  | { kind: "list" }
+  | { kind: "table" }
+  | { kind: "column"; columnId: string };
 
 export function App({ workspace }: AppProps): JSX.Element {
   const { exit } = useApp();
-  const [screen, setScreen] = useState<Screen>("list");
+  const [screen, setScreen] = useState<Screen>({ kind: "list" });
   const [selectedIndex, setSelectedIndex] = useState(0);
-  const [drafts, setDrafts] = useState<Record<string, string>>(() =>
+  const [drafts, setDrafts] = useState<Record<string, TableDraft>>(() =>
     buildInitialDrafts(workspace),
   );
   const [savedFlash, setSavedFlash] = useState<string | null>(null);
 
   const current = workspace.tables[selectedIndex];
-  const draftDescription = current ? drafts[current.physical.id] ?? "" : "";
+  const draft = current ? drafts[current.physical.id]! : undefined;
+  const showSaved = current ? savedFlash === current.physical.id : false;
 
   useInput((input) => {
-    if (screen === "list" && input === "q") {
-      exit();
-    }
+    if (screen.kind === "list" && input === "q") exit();
   });
 
-  const detailKey = current?.physical.id ?? "none";
-  const showSaved = savedFlash === detailKey;
+  const updateDraft = (next: TableDraft) => {
+    if (!current) return;
+    setDrafts((prev) => ({ ...prev, [current.physical.id]: next }));
+    setSavedFlash(null);
+  };
 
-  const handleSave = useMemo(
-    () => () => {
-      if (!current) return;
-      const fm = current.parsed
-        ? { ...current.parsed.frontmatter }
-        : {
-            id: current.physical.id,
-            name: current.physical.name,
-            schemaId: workspace.physical.schemaId,
-          };
-      const body = current.parsed
-        ? replaceTableDescription(current.parsed.body, draftDescription)
-        : buildDefaultTableBody(current.physical.name, draftDescription);
-      saveTable(workspace, current.physical.id, fm, body);
-      setSavedFlash(current.physical.id);
-    },
-    [current, draftDescription, workspace],
-  );
+  const handleSave = () => {
+    if (!current || !draft) return;
+    const fm = buildFrontmatter(current.physical, workspace.physical.schemaId, draft);
+    const body = current.parsed
+      ? replaceTableDescription(current.parsed.body, draft.description)
+      : buildDefaultTableBody(current.physical.name, draft.description);
+    saveTable(workspace, current.physical.id, fm, body);
+    setSavedFlash(current.physical.id);
+  };
 
-  if (screen === "list" || !current) {
+  if (screen.kind === "list" || !current || !draft) {
     return (
       <Box flexDirection="row">
         <TableList
@@ -65,7 +62,7 @@ export function App({ workspace }: AppProps): JSX.Element {
           onSelect={setSelectedIndex}
           onOpen={(i) => {
             setSelectedIndex(i);
-            setScreen("detail");
+            setScreen({ kind: "table" });
           }}
         />
         <Box flexDirection="column" paddingX={2} paddingY={1}>
@@ -76,6 +73,44 @@ export function App({ workspace }: AppProps): JSX.Element {
             <Text>Select a table on the left and press Enter.</Text>
           </Box>
         </Box>
+      </Box>
+    );
+  }
+
+  if (screen.kind === "column") {
+    const col = current.physical.columns.find((c) => c.id === screen.columnId);
+    if (!col) {
+      setScreen({ kind: "table" });
+      return <Text>Loading…</Text>;
+    }
+    return (
+      <Box flexDirection="row">
+        <TableList
+          workspace={workspace}
+          selectedIndex={selectedIndex}
+          onSelect={(i) => {
+            setSelectedIndex(i);
+            setSavedFlash(null);
+            setScreen({ kind: "table" });
+          }}
+          onOpen={(i) => {
+            setSelectedIndex(i);
+            setScreen({ kind: "table" });
+          }}
+        />
+        <ColumnEdit
+          column={col}
+          draft={draft.columns[col.id] ?? {}}
+          saved={showSaved}
+          onChange={(next) =>
+            updateDraft({
+              ...draft,
+              columns: { ...draft.columns, [col.id]: next },
+            })
+          }
+          onSave={handleSave}
+          onBack={() => setScreen({ kind: "table" })}
+        />
       </Box>
     );
   }
@@ -91,56 +126,27 @@ export function App({ workspace }: AppProps): JSX.Element {
         }}
         onOpen={(i) => {
           setSelectedIndex(i);
-          setScreen("detail");
+          setScreen({ kind: "table" });
         }}
       />
       <TableDetail
         key={current.physical.id}
         physical={current.physical}
-        parsed={current.parsed}
-        description={draftDescription}
+        draft={draft}
         saved={showSaved}
-        onEditDescription={(next) => {
-          setDrafts((prev) => ({ ...prev, [current.physical.id]: next }));
-          setSavedFlash(null);
-        }}
-        onSaveDescription={handleSave}
-        onBack={() => setScreen("list")}
+        onChange={updateDraft}
+        onSave={handleSave}
+        onOpenColumn={(columnId) => setScreen({ kind: "column", columnId })}
+        onBack={() => setScreen({ kind: "list" })}
       />
     </Box>
   );
 }
 
-function buildInitialDrafts(workspace: Workspace): Record<string, string> {
-  const out: Record<string, string> = {};
+function buildInitialDrafts(workspace: Workspace): Record<string, TableDraft> {
+  const out: Record<string, TableDraft> = {};
   for (const t of workspace.tables) {
-    out[t.physical.id] = extractDescriptionFromTable(t);
+    out[t.physical.id] = buildTableDraft(t.physical, t.parsed);
   }
   return out;
-}
-
-function extractDescriptionFromTable(t: WorkspaceTable): string {
-  if (!t.parsed) return "";
-  return extractFirstParagraph(t.parsed.body) ?? "";
-}
-
-function extractFirstParagraph(body: string): string | undefined {
-  const lines = body.split("\n");
-  const out: string[] = [];
-  let inParagraph = false;
-  let seenHeading = false;
-  for (const line of lines) {
-    if (line.startsWith("#")) {
-      if (seenHeading) break;
-      seenHeading = true;
-      continue;
-    }
-    if (line.trim() === "") {
-      if (inParagraph) break;
-      continue;
-    }
-    inParagraph = true;
-    out.push(line.trim());
-  }
-  return out.length > 0 ? out.join(" ") : undefined;
 }

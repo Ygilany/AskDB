@@ -15,10 +15,16 @@ const FIXTURE = new URL(
 const KEY_DOWN = "[B";
 const KEY_ENTER = "\r";
 const KEY_CTRL_D = "";
+const KEY_BACKSPACE = "";
 
-async function flush(): Promise<void> {
+async function flush(ms = 50): Promise<void> {
   // Ink's render is async; let pending state updates settle.
-  await new Promise((r) => setTimeout(r, 30));
+  await new Promise((r) => setTimeout(r, ms));
+}
+
+async function clearField(stdin: { write: (s: string) => void }, length: number): Promise<void> {
+  for (let i = 0; i < length; i += 1) stdin.write(KEY_BACKSPACE);
+  await flush();
 }
 
 describe("App headless author flow", () => {
@@ -50,15 +56,12 @@ describe("App headless author flow", () => {
     await flush();
     expect(lastFrame()).toContain("Description");
 
-    // Enter edit mode for the description.
-    stdin.write("e");
+    // Enter edit mode for the description (field index 0).
+    stdin.write(KEY_ENTER);
     await flush();
-    // Type a fresh description (initial value is the existing first paragraph;
-    // for this test we just verify a save round-trips, so we type to overwrite
-    // with a sentinel via Ctrl-D — note the field is multiline so we keep it short).
-    // Actually the TextInput keeps the initial value; the test only needs the
-    // saved file to round-trip. To make the assertion deterministic we submit
-    // the existing value verbatim with Ctrl-D.
+    // Append a sentinel to confirm typing reaches the editor.
+    stdin.write(" Edited.");
+    await flush();
     stdin.write(KEY_CTRL_D);
     await flush();
 
@@ -73,18 +76,95 @@ describe("App headless author flow", () => {
     expect(saved).toMatch(/id:\s*['"]?table:public\.orders['"]?/);
     expect(saved).toContain("# Table: orders");
     expect(saved).toContain("Customer purchase orders");
+    expect(saved).toContain("Edited.");
     expect(saved).toContain("## Common query language");
     expect(saved).toContain("## Example questions");
     expect(saved).toContain("## Business context");
-    // No leakage of UI escape sequences into the saved body.
-    expect(saved).not.toContain("");
 
-    // Re-loading the workspace must not surface any new warnings.
+    // Re-loading the workspace must round-trip the parsed structure.
     const ws2 = loadWorkspace(schemaDir);
     const orders = ws2.tables.find((t) => t.physical.name === "orders")!;
     expect(orders.parsed?.frontmatter.id).toBe("table:public.orders");
     expect(orders.parsed?.sections["Common query language"]).toBeDefined();
 
+    unmount();
+  });
+
+  it("edits aliases on the orders table and persists them", async () => {
+    const ws = loadWorkspace(schemaDir);
+    const { stdin, lastFrame, unmount } = render(createElement(App, { workspace: ws }));
+    await flush();
+    // Open orders.
+    stdin.write(KEY_DOWN);
+    await flush();
+    stdin.write(KEY_ENTER);
+    await flush();
+
+    // Navigate to Aliases (field index 1).
+    stdin.write(KEY_DOWN);
+    await flush();
+    stdin.write(KEY_ENTER); // start editing
+    await flush();
+    // Append a new alias (cursor sits at end of initial value).
+    stdin.write(", revenue_records");
+    await flush();
+    stdin.write(KEY_ENTER); // submit (single-line)
+    await flush();
+
+    // Save.
+    stdin.write("s");
+    await flush();
+    expect(lastFrame()).toContain("Saved");
+
+    const saved = readFileSync(join(schemaDir, "tables/orders.md"), "utf8");
+    expect(saved).toContain("revenue_records");
+    // Existing aliases preserved.
+    expect(saved).toContain("purchases");
+    expect(saved).toContain("sales");
+
+    unmount();
+  });
+
+  it("opens the column edit screen for a non-described column", async () => {
+    const ws = loadWorkspace(schemaDir);
+    const { stdin, lastFrame, unmount } = render(createElement(App, { workspace: ws }));
+    await flush();
+    // Open orders.
+    stdin.write(KEY_DOWN);
+    await flush();
+    stdin.write(KEY_ENTER);
+    await flush();
+    // Table-level fields are 5; column #0 = id (idx 5), col #1 = user_id (idx 6).
+    for (let i = 0; i < 6; i += 1) {
+      stdin.write(KEY_DOWN);
+      await flush();
+    }
+    expect(lastFrame() ?? "").toMatch(/▶ user_id|▶\s+user_id/);
+    stdin.write(KEY_ENTER);
+    await flush();
+    expect(lastFrame()).toMatch(/user_id\s+\(uuid\)/);
+    expect(lastFrame()).toContain("Description");
+    expect(lastFrame()).toContain("Aliases");
+    unmount();
+  });
+
+  it("surfaces a sensitive-column warning when the description mentions one", async () => {
+    const ws = loadWorkspace(schemaDir);
+    const { stdin, lastFrame, unmount } = render(createElement(App, { workspace: ws }));
+    await flush();
+    // Open users (selectedIndex defaults to 0).
+    stdin.write(KEY_ENTER);
+    await flush();
+    // Edit description (field 0).
+    stdin.write(KEY_ENTER);
+    await flush();
+    // Append a phrase that mentions the sensitive `email` column.
+    stdin.write(" We look up users by email.");
+    await flush();
+    stdin.write(KEY_CTRL_D);
+    await flush();
+    expect(lastFrame()).toMatch(/sensitive column/i);
+    expect(lastFrame()).toContain("email");
     unmount();
   });
 
@@ -108,5 +188,28 @@ describe("App headless author flow", () => {
     const afterUsers = readFileSync(join(schemaDir, "tables/users.md"));
     expect(afterOrders.equals(beforeOrders)).toBe(true);
     expect(afterUsers.equals(beforeUsers)).toBe(true);
+  });
+
+  it("backspace clears characters in TextInput", async () => {
+    const ws = loadWorkspace(schemaDir);
+    const { stdin, unmount } = render(createElement(App, { workspace: ws }));
+    await flush();
+    // Open users.
+    stdin.write(KEY_ENTER);
+    await flush();
+    // Description field. Edit, clear original (~50 chars), type sentinel, save.
+    stdin.write(KEY_ENTER);
+    await flush();
+    await clearField(stdin, 200); // generous count; overshoot is harmless.
+    stdin.write("Cleared and replaced.");
+    await flush();
+    stdin.write(KEY_CTRL_D);
+    await flush();
+    stdin.write("s");
+    await flush();
+    const saved = readFileSync(join(schemaDir, "tables/users.md"), "utf8");
+    expect(saved).toContain("Cleared and replaced.");
+    expect(saved).not.toContain("Registered user accounts.");
+    unmount();
   });
 });

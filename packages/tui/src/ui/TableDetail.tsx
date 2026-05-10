@@ -1,42 +1,69 @@
 import { Box, Text, useInput } from "ink";
 import { useState } from "react";
-import type { ParsedTableMarkdown, V2Table } from "@askdb/core";
+import type { V2Table } from "@askdb/core";
+import {
+  findSensitiveColumnReferences,
+  formatList,
+  parseListInput,
+  type TableDraft,
+} from "../draft.js";
 import { TextInput } from "./TextInput.js";
-
-type Mode = "view" | "edit-description";
 
 type TableDetailProps = {
   physical: V2Table;
-  parsed: ParsedTableMarkdown | undefined;
-  /** Current draft description (the first paragraph of the body). */
-  description: string;
+  draft: TableDraft;
   saved: boolean;
-  onEditDescription: (next: string) => void;
-  onSaveDescription: () => void;
+  onChange: (next: TableDraft) => void;
+  onSave: () => void;
+  onOpenColumn: (columnId: string) => void;
   onBack: () => void;
 };
 
+type FieldId = "description" | "aliases" | "primaryEntity" | "tags" | "sensitive";
+
+const TABLE_FIELDS: FieldId[] = [
+  "description",
+  "aliases",
+  "primaryEntity",
+  "tags",
+  "sensitive",
+];
+
 export function TableDetail({
   physical,
-  parsed,
-  description,
+  draft,
   saved,
-  onEditDescription,
-  onSaveDescription,
+  onChange,
+  onSave,
+  onOpenColumn,
   onBack,
 }: TableDetailProps): JSX.Element {
-  const [mode, setMode] = useState<Mode>("view");
+  const items = TABLE_FIELDS.length + physical.columns.length;
+  const [activeIdx, setActiveIdx] = useState(0);
+  const [editing, setEditing] = useState<FieldId | null>(null);
 
   useInput((input, key) => {
-    if (mode !== "view") return;
-    if (input === "e") {
-      setMode("edit-description");
-    } else if (input === "s") {
-      onSaveDescription();
-    } else if (input === "b" || key.escape) {
-      onBack();
-    }
+    if (editing) return;
+    if (key.upArrow) setActiveIdx(Math.max(0, activeIdx - 1));
+    else if (key.downArrow) setActiveIdx(Math.min(items - 1, activeIdx + 1));
+    else if (key.return) {
+      if (activeIdx < TABLE_FIELDS.length) {
+        const f = TABLE_FIELDS[activeIdx]!;
+        if (f === "sensitive") {
+          const current = draft.sensitive ?? physical.sensitive ?? false;
+          onChange({ ...draft, sensitive: !current });
+        } else {
+          setEditing(f);
+        }
+      } else {
+        const col = physical.columns[activeIdx - TABLE_FIELDS.length]!;
+        onOpenColumn(col.id);
+      }
+    } else if (input === "s") onSave();
+    else if (input === "b" || key.escape) onBack();
   });
+
+  const sensitiveRefs = findSensitiveColumnReferences(draft.description, physical);
 
   return (
     <Box flexDirection="column" flexGrow={1} borderStyle="single" paddingX={1}>
@@ -47,41 +74,53 @@ export function TableDetail({
       </Text>
 
       <Box marginTop={1} flexDirection="column">
-        <Text bold>Description</Text>
-        {mode === "edit-description" ? (
-          <TextInput
-            initialValue={description}
-            multiline
-            placeholder="Describe what this table holds (Ctrl-D to submit, Esc to cancel)…"
-            onSubmit={(next) => {
-              onEditDescription(next);
-              setMode("view");
+        {TABLE_FIELDS.map((f, i) => (
+          <FieldRow
+            key={f}
+            label={fieldLabel(f)}
+            value={fieldDisplay(f, draft, physical)}
+            active={i === activeIdx && editing === null}
+            editing={editing === f}
+            multiline={f === "description"}
+            onSubmit={(text) => {
+              onChange(applyTableEdit(f, draft, text));
+              setEditing(null);
             }}
-            onCancel={() => setMode("view")}
+            onCancel={() => setEditing(null)}
           />
-        ) : (
-          <Text>{description || <Text dimColor>(none)</Text>}</Text>
-        )}
-      </Box>
-
-      <Box marginTop={1} flexDirection="column">
-        <Text bold>Columns</Text>
-        {physical.columns.map((c) => (
-          <Text key={c.id}>
-            {" - "}
-            {c.name}
-            <Text dimColor> {c.type}</Text>
-            {c.primaryKey ? <Text color="cyan"> [pk]</Text> : null}
-            {c.sensitive ? <Text color="yellow"> [sensitive]</Text> : null}
-          </Text>
         ))}
       </Box>
 
-      {parsed === undefined ? (
+      {sensitiveRefs.length > 0 ? (
         <Box marginTop={1}>
-          <Text color="yellow">No tables/{physical.name}.md yet — saving will create it.</Text>
+          <Text color="yellow">
+            ⚠ Description mentions sensitive column(s): {sensitiveRefs.join(", ")}.
+            RAG will exclude this chunk by default.
+          </Text>
         </Box>
       ) : null}
+
+      <Box marginTop={1} flexDirection="column">
+        <Text bold>Columns</Text>
+        {physical.columns.map((c, i) => {
+          const idx = TABLE_FIELDS.length + i;
+          const active = idx === activeIdx && editing === null;
+          const cd = draft.columns[c.id];
+          const described = (cd?.description ?? "") !== "" || (cd?.aliases?.length ?? 0) > 0;
+          return (
+            <Text key={c.id}>
+              <Text color={active ? "cyan" : undefined}>
+                {active ? "▶ " : "  "}
+                {c.name}
+              </Text>
+              <Text dimColor> {c.type}</Text>
+              {c.primaryKey ? <Text color="cyan"> [pk]</Text> : null}
+              {(cd?.sensitive ?? c.sensitive) ? <Text color="yellow"> [sensitive]</Text> : null}
+              {described ? <Text color="green"> ✓</Text> : null}
+            </Text>
+          );
+        })}
+      </Box>
 
       {saved ? (
         <Box marginTop={1}>
@@ -89,11 +128,108 @@ export function TableDetail({
         </Box>
       ) : null}
 
-      {mode === "view" ? (
-        <Box marginTop={1}>
-          <Text dimColor>e edit description · s save · b back</Text>
-        </Box>
-      ) : null}
+      <Box marginTop={1}>
+        <Text dimColor>
+          {editing
+            ? "type to edit · ⏎ submit (Ctrl-D for multiline) · Esc cancel"
+            : "↑↓ navigate · ⏎ edit/open · s save · b back"}
+        </Text>
+      </Box>
+    </Box>
+  );
+}
+
+function fieldLabel(f: FieldId): string {
+  switch (f) {
+    case "description":
+      return "Description";
+    case "aliases":
+      return "Aliases";
+    case "primaryEntity":
+      return "Primary entity";
+    case "tags":
+      return "Tags";
+    case "sensitive":
+      return "Sensitive";
+  }
+}
+
+function fieldDisplay(f: FieldId, d: TableDraft, t: V2Table): string {
+  switch (f) {
+    case "description":
+      return d.description;
+    case "aliases":
+      return formatList(d.aliases);
+    case "primaryEntity":
+      return d.primaryEntity ?? "";
+    case "tags":
+      return formatList(d.tags);
+    case "sensitive":
+      return (d.sensitive ?? t.sensitive ?? false) ? "yes" : "no";
+  }
+}
+
+function applyTableEdit(f: FieldId, d: TableDraft, text: string): TableDraft {
+  const next = { ...d };
+  switch (f) {
+    case "description":
+      next.description = text;
+      break;
+    case "aliases":
+      next.aliases = parseListInput(text);
+      break;
+    case "primaryEntity":
+      next.primaryEntity = text.trim() || undefined;
+      break;
+    case "tags":
+      next.tags = parseListInput(text);
+      break;
+    case "sensitive":
+      // Toggled in place.
+      break;
+  }
+  return next;
+}
+
+type FieldRowProps = {
+  label: string;
+  value: string;
+  active: boolean;
+  editing: boolean;
+  multiline: boolean;
+  onSubmit: (text: string) => void;
+  onCancel: () => void;
+};
+
+function FieldRow({
+  label,
+  value,
+  active,
+  editing,
+  multiline,
+  onSubmit,
+  onCancel,
+}: FieldRowProps): JSX.Element {
+  return (
+    <Box>
+      <Box width={16}>
+        <Text color={active ? "cyan" : undefined}>
+          {active ? "▶ " : "  "}
+          {label}
+        </Text>
+      </Box>
+      <Box flexGrow={1}>
+        {editing ? (
+          <TextInput
+            initialValue={value}
+            multiline={multiline}
+            onSubmit={onSubmit}
+            onCancel={onCancel}
+          />
+        ) : (
+          <Text>{value || <Text dimColor>(none)</Text>}</Text>
+        )}
+      </Box>
     </Box>
   );
 }
