@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-# Phase 4 Group 4 — installable smoke test for @askdb/core.
+# Installable smoke test for AskDB packages.
 #
-# Builds the workspace, packs each of the three published packages, copies the consumer fixture
-# into a fresh tmpdir, installs @askdb/core from the local tarball (no `pg`, no workspace), runs
-# `tsc --noEmit`, and executes the smoke script. Fails clearly if `private: true` slips back,
-# `dist/` loses files, types break, or the executor seam regresses.
+# Builds the workspace, packs published packages, copies the consumer fixture into a fresh
+# tmpdir, installs selected packages from local tarballs (no workspace), runs `tsc --noEmit`,
+# executes the smoke script, and checks package bins. Fails clearly if `private: true` slips
+# back, `dist/` loses files, types break, or key package surfaces regress.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -19,21 +19,34 @@ pnpm -C "$ROOT" -r build >/dev/null
 
 echo "smoke: packing tarballs…"
 mkdir -p "$WORK/tarballs"
-for pkg in core cli http-api; do
+for pkg in core cli http-api introspect; do
   (cd "$ROOT/packages/$pkg" && pnpm pack --pack-destination "$WORK/tarballs" >/dev/null)
 done
 
 CORE_TARBALL="$(ls "$WORK/tarballs"/askdb-core-*.tgz | head -n1)"
 [ -f "$CORE_TARBALL" ] || { echo "smoke: missing core tarball" >&2; exit 1; }
+INTROSPECT_TARBALL="$(ls "$WORK/tarballs"/askdb-introspect-*.tgz | head -n1)"
+[ -f "$INTROSPECT_TARBALL" ] || { echo "smoke: missing introspect tarball" >&2; exit 1; }
+
+echo "smoke: validating @askdb/introspect tarball contents…"
+tar -tzf "$INTROSPECT_TARBALL" | grep -q '^package/dist/index.js$'
+tar -tzf "$INTROSPECT_TARBALL" | grep -q '^package/dist/bin.js$'
+tar -tzf "$INTROSPECT_TARBALL" | grep -q '^package/README.md$'
+tar -tzf "$INTROSPECT_TARBALL" | grep -q '^package/LICENSE$'
+if tar -tzf "$INTROSPECT_TARBALL" | grep -Eq '(^package/src/|\.test\.)'; then
+  echo "smoke: FAILED — @askdb/introspect tarball includes source/tests" >&2
+  exit 1
+fi
 
 echo "smoke: staging consumer fixture…"
 cp -R "$SCRIPT_DIR/consumer" "$WORK/consumer"
-# Wire the just-packed @askdb/core tarball into the consumer's package.json.
+# Wire the just-packed AskDB tarballs into the consumer's package.json.
 node -e "
   const fs = require('fs');
   const p = '$WORK/consumer/package.json';
   const j = JSON.parse(fs.readFileSync(p, 'utf8'));
   j.dependencies['@askdb/core'] = 'file:$CORE_TARBALL';
+  j.dependencies['@askdb/introspect'] = 'file:$INTROSPECT_TARBALL';
   fs.writeFileSync(p, JSON.stringify(j, null, 2) + '\n');
 "
 
@@ -51,5 +64,9 @@ echo "smoke: tsc --noEmit…"
 
 echo "smoke: tsx src/smoke.ts…"
 (cd "$WORK/consumer" && npx --yes tsx src/smoke.ts)
+
+echo "smoke: askdb-introspect bin…"
+(cd "$WORK/consumer" && ./node_modules/.bin/askdb-introspect --version >/dev/null)
+(cd "$WORK/consumer" && ./node_modules/.bin/askdb-introspect templates --engine postgres | grep -q '^-- schemas')
 
 echo "smoke: PASSED"

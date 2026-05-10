@@ -3,10 +3,12 @@
 ---
 
 New workspace package: `@askdb/introspect` — schema introspection on the
-connector pattern. Phase 6 milestone 1 ships only the package skeleton and
-the public type surface (`SqlSchema`, `Connector`, `IntrospectionInput`,
-`IntrospectionResult`, `IntrospectionWarning`, `SqlTemplateBundle`,
-`RenderOptions`) plus stubbed `introspect()`, `renderToSchemaV2()`, and a
-postgres sub-export at `@askdb/introspect/postgres`. Catalog SQL, live mode,
-air-gapped bundle ingestion, ID-anchored re-introspection merge, and the
-`askdb-introspect` CLI surface arrive in milestones 2–7.
+connector pattern. Phase 6 ships a Postgres connector, deterministic catalog
+SQL templates, live mode through the `AskDbExecutor` seam, air-gapped CSV/JSON
+export bundle ingestion, Schema v2 rendering, ID-anchored re-introspection
+merge, and the `askdb-introspect` CLI (`--url`, `--from-export`, `--out`,
+`--print`, `--diff`, and `templates`).
+
+The public surface includes `introspect()`, `renderToSchemaV2()`,
+`toV2SchemaJson()`, connector/types exports from `@askdb/introspect`, and the
+Postgres sub-export at `@askdb/introspect/postgres`.
