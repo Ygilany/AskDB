@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>AskDB Docs</title>
+    <meta
+      name="description"
+      content="Documentation for AskDB packages, CLI tools, schema artifacts, and HTTP API."
+    />
+    <link rel="stylesheet" href="./assets/styles.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <a class="brand" href="#/">
+        <span class="brand-mark">A</span>
+        <span>
+          <strong>AskDB</strong>
+          <small>Documentation</small>
+        </span>
+      </a>
+      <button class="icon-button nav-toggle" type="button" aria-label="Open navigation" data-nav-toggle>
+        <span></span>
+        <span></span>
+        <span></span>
+      </button>
+      <label class="search" for="docs-search">
+        <span aria-hidden="true">/</span>
+        <input id="docs-search" type="search" placeholder="Search docs" autocomplete="off" />
+      </label>
+      <nav class="toplinks" aria-label="Top links">
+        <a href="https://github.com/Ygilany/AskDB">GitHub</a>
+        <a href="#/quickstart">Quickstart</a>
+        <a href="#/packages">Packages</a>
+      </nav>
+    </header>
+
+    <div class="shell">
+      <aside class="sidebar" data-sidebar>
+        <div class="sidebar-section">
+          <p>Start</p>
+          <a href="#/" data-nav-link="/">Overview</a>
+          <a href="#/quickstart" data-nav-link="/quickstart">Quickstart</a>
+          <a href="#/concepts" data-nav-link="/concepts">Core concepts</a>
+        </div>
+        <div class="sidebar-section">
+          <p>Packages</p>
+          <a href="#/packages" data-nav-link="/packages">Package index</a>
+          <a href="#/core" data-nav-link="/core">@askdb/core</a>
+          <a href="#/cli" data-nav-link="/cli">@askdb/cli</a>
+          <a href="#/introspect" data-nav-link="/introspect">@askdb/introspect</a>
+          <a href="#/http-api" data-nav-link="/http-api">@askdb/http-api</a>
+        </div>
+        <div class="sidebar-section">
+          <p>Contracts</p>
+          <a href="#/schema-v2" data-nav-link="/schema-v2">Schema v2</a>
+          <a href="#/modes" data-nav-link="/modes">Modes and safety</a>
+          <a href="#/environment" data-nav-link="/environment">Environment</a>
+        </div>
+      </aside>
+
+      <main class="content" id="content" tabindex="-1"></main>
+
+      <aside class="toc" aria-label="On this page">
+        <p>On this page</p>
+        <div data-toc></div>
+      </aside>
+    </div>
+
+    <div class="search-panel" data-search-panel hidden></div>
+
+    <script type="module" src="./assets/app.js"></script>
+  </body>
+</html>

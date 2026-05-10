@@ -86,6 +86,8 @@ importers:
         specifier: ^3.0.9
         version: 3.2.4(@types/node@22.19.17)(tsx@4.21.0)
 
+  packages/docs-site: {}
+
   packages/http-api:
     dependencies:
       '@ai-sdk/openai':
