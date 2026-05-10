@@ -4,7 +4,7 @@ const pages = [
     title: "AskDB Documentation",
     eyebrow: "Natural language to governed SQL",
     description:
-      "AskDB turns natural-language questions into schema-grounded PostgreSQL SELECTs, with package seams for models, execution, introspection, and HTTP integration.",
+      "AskDB turns natural-language questions into schema-grounded PostgreSQL SELECTs, with package seams for models, execution, introspection, schema enrichment, and HTTP integration.",
     sections: [
       {
         heading: "What AskDB Gives You",
@@ -19,8 +19,8 @@ const pages = [
               <p>Use any AI SDK-compatible language model and any database driver that can return tabular rows.</p>
             </article>
             <article>
-              <h3>Postgres-first tooling</h3>
-              <p>The CLI, HTTP API, and introspector focus on PostgreSQL today, with connector seams for future engines.</p>
+              <h3>Schema enrichment tools</h3>
+              <p>The TUI turns raw introspection output into described, aliased Schema v2 artifacts with human-reviewed AI suggestions.</p>
             </article>
           </div>
         `,
@@ -38,6 +38,8 @@ pnpm exec askdb introspect \\
   --out my-app.schema \\
   --schema-id my-app
 
+pnpm exec askdb enrich --schema my-app.schema
+
 pnpm exec askdb ask \\
   --schema my-app.schema \\
   --question "Which tables look active?"</code></pre>
@@ -50,6 +52,7 @@ pnpm exec askdb ask \\
             <a href="#/quickstart"><strong>Quickstart</strong><span>Local setup, schema creation, and your first question.</span></a>
             <a href="#/packages"><strong>Packages</strong><span>What each package owns and when to use it.</span></a>
             <a href="#/schema-v2"><strong>Schema v2</strong><span>The physical and describable schema artifact contract.</span></a>
+            <a href="#/tui"><strong>TUI enrichment</strong><span>Add descriptions, aliases, concepts, and common query language.</span></a>
           </div>
         `,
       },
@@ -59,7 +62,7 @@ pnpm exec askdb ask \\
     path: "/quickstart",
     title: "Quickstart",
     eyebrow: "From clone to first query",
-    description: "Build the workspace, generate or use a schema artifact, and run AskDB from the CLI.",
+    description: "Build the workspace, generate or use a schema artifact, enrich it, and run AskDB from the CLI.",
     sections: [
       {
         heading: "Prerequisites",
@@ -95,9 +98,21 @@ pnpm exec askdb ask \\
   --out my-app.schema \\
   --schema-id my-app
 
+pnpm exec askdb enrich --schema my-app.schema
+
 pnpm exec askdb ask \\
   --schema my-app.schema \\
   --question "Which tables are connected to users?"</code></pre>
+        `,
+      },
+      {
+        heading: "Enrich the Schema",
+        body: `
+          <p>Raw introspection gives AskDB physical metadata. The TUI adds the describable layer: table descriptions, aliases, column notes, common query language, example questions, and concepts.</p>
+          <pre><code>pnpm exec askdb enrich --schema my-app.schema
+
+# produce a single read-only artifact for distribution
+pnpm exec askdb bundle my-app.schema --out my-app.schema.bundle.json</code></pre>
         `,
       },
       {
@@ -120,7 +135,7 @@ pnpm exec askdb ask \\
     title: "Core Concepts",
     eyebrow: "How the pieces fit",
     description:
-      "AskDB is built around schema artifacts, validated SQL generation, optional execution, and explicit safety modes.",
+      "AskDB is built around schema artifacts, human-reviewed enrichment, validated SQL generation, optional execution, and explicit safety modes.",
     sections: [
       {
         heading: "Pipeline",
@@ -147,6 +162,15 @@ pnpm exec askdb ask \\
         `,
       },
       {
+        heading: "Enrichment",
+        body: `
+          <p><code>@askdb/tui</code> operates on a Schema v2 directory after introspection. It never opens a live database; it edits the on-disk artifact and saves valid <code>tables/&lt;table&gt;.md</code> plus concepts content.</p>
+          <pre><code>askdb introspect --url "$DATABASE_URL" --out my-app.schema --schema-id my-app
+askdb enrich --schema my-app.schema
+askdb bundle my-app.schema --out my-app.schema.bundle.json</code></pre>
+        `,
+      },
+      {
         heading: "Execution Boundary",
         body: `
           <p><code>@askdb/core</code> validates generated SQL before execution. Consumers still own database-level safety: read-only roles, read-only transactions, network policy, and audit logging.</p>
@@ -167,6 +191,7 @@ pnpm exec askdb ask \\
             <a href="#/core"><strong>@askdb/core</strong><span>Library pipeline: schema loading, generation, validation, optional execution.</span></a>
             <a href="#/cli"><strong>@askdb/cli</strong><span>Terminal frontend for asking questions and running introspection.</span></a>
             <a href="#/introspect"><strong>@askdb/introspect</strong><span>Postgres catalog introspection into Schema v2 artifacts.</span></a>
+            <a href="#/tui"><strong>@askdb/tui</strong><span>Interactive terminal authoring for descriptions, aliases, concepts, and AI suggestions.</span></a>
             <a href="#/http-api"><strong>@askdb/http-api</strong><span>Small HTTP wrapper around core for server deployments.</span></a>
           </div>
         `,
@@ -188,7 +213,7 @@ pnpm preflight</code></pre>
     title: "@askdb/core",
     eyebrow: "Library API",
     description:
-      "The core package owns the NL-to-SQL pipeline, Schema v2 loading, SQL validation, logging contracts, and executor interfaces.",
+      "The core package owns the NL-to-SQL pipeline, Schema v2 loading, enrichment suggestion helpers, SQL validation, logging contracts, and executor interfaces.",
     sections: [
       {
         heading: "Install",
@@ -239,6 +264,27 @@ await ask({
         `,
       },
       {
+        heading: "Enrichment Suggestions",
+        body: `
+          <p>Phase 7 adds core helpers used by the TUI to ask a model for human-reviewed schema enrichment candidates.</p>
+          <pre><code>import {
+  suggestEnrichment,
+  type EnrichmentTarget,
+} from "@askdb/core";
+
+const target: EnrichmentTarget = {
+  kind: "table-description",
+  table,
+};
+
+const candidates = await suggestEnrichment(
+  target,
+  { schemaId: "my-app", neighbors },
+  model,
+);</code></pre>
+        `,
+      },
+      {
         heading: "Exports to Know",
         body: `
           <ul>
@@ -246,6 +292,7 @@ await ask({
             <li><code>loadSchema</code>: load a Schema v2 directory, bundle, or schema JSON path.</li>
             <li><code>loadSchemaFromJson</code>: parse inline Schema v2 JSON.</li>
             <li><code>parseTableMarkdown</code> and <code>writeTableMarkdown</code>: work with describable table docs.</li>
+            <li><code>suggestEnrichment</code>: produce candidate descriptions, aliases, primary entities, and common query language for review.</li>
             <li><code>createAskDbLogger</code>: produce structured log events.</li>
           </ul>
         `,
@@ -257,7 +304,7 @@ await ask({
     title: "@askdb/cli",
     eyebrow: "Terminal workflow",
     description:
-      "The CLI ships the `askdb` binary for asking questions, generating SQL, optional execution, logging, and introspection.",
+      "The CLI ships the `askdb` binary for asking questions, generating SQL, optional execution, logging, introspection, enrichment, and bundling.",
     sections: [
       {
         heading: "Install",
@@ -285,6 +332,14 @@ askdb ask \\
   --question "List user emails" \\
   --execute \\
   --mode bounded_results</code></pre>
+        `,
+      },
+      {
+        heading: "Enrich and Bundle",
+        body: `
+          <p>When <code>@askdb/tui</code> is installed, the main CLI exposes thin shims for interactive enrichment and bundle creation.</p>
+          <pre><code>askdb enrich --schema ./my-app.schema
+askdb bundle ./my-app.schema --out ./my-app.schema.bundle.json</code></pre>
         `,
       },
       {
@@ -345,6 +400,14 @@ askdb-introspect \\
         `,
       },
       {
+        heading: "Handoff to Enrichment",
+        body: `
+          <p>Introspection writes physical metadata only. After creating the directory, open it in the TUI to author the describable layer.</p>
+          <pre><code>askdb-introspect --url "$DATABASE_URL" --out my-app.schema --schema-id my-app
+askdb-tui --schema my-app.schema</code></pre>
+        `,
+      },
+      {
         heading: "Library API",
         body: `
           <pre><code>import { introspect } from "@askdb/introspect";
@@ -361,6 +424,60 @@ await introspect(
     schemaId: "my-app",
   },
 );</code></pre>
+        `,
+      },
+    ],
+  },
+  {
+    path: "/tui",
+    title: "@askdb/tui",
+    eyebrow: "Interactive enrichment",
+    description:
+      "The TUI opens a Schema v2 directory and helps authors add descriptions, aliases, common query language, example questions, and concepts with AI-suggest plus human-confirm.",
+    sections: [
+      {
+        heading: "Install",
+        body: `
+          <pre><code>pnpm add @askdb/tui
+# commonly installed with the CLI and introspector
+pnpm add @askdb/cli @askdb/introspect @askdb/tui pg</code></pre>
+        `,
+      },
+      {
+        heading: "Quick Start",
+        body: `
+          <pre><code>askdb-introspect \\
+  --url "$DATABASE_URL" \\
+  --out my-app.schema \\
+  --schema-id my-app
+
+askdb-tui --schema my-app.schema</code></pre>
+          <p>The TUI operates on the on-disk Schema v2 directory only. It does not connect to the database.</p>
+        `,
+      },
+      {
+        heading: "Authoring Flow",
+        body: `
+          <ul>
+            <li>Select a table, then edit table descriptions, aliases, primary entity, columns, and common query language.</li>
+            <li>Use <code>g</code> on supported fields to request AI suggestions when <code>OPENAI_API_KEY</code> is set.</li>
+            <li>Accept, edit, or reject suggestions before saving.</li>
+            <li>Press <code>s</code> to write valid Schema v2 markdown through the core writer.</li>
+          </ul>
+        `,
+      },
+      {
+        heading: "CLI Shims",
+        body: `
+          <p>The main <code>askdb</code> binary can delegate to the TUI package when it is installed.</p>
+          <pre><code>askdb enrich --schema my-app.schema
+askdb bundle my-app.schema --out my-app.schema.bundle.json</code></pre>
+        `,
+      },
+      {
+        heading: "Output",
+        body: `
+          <p>Saving writes <code>tables/&lt;table&gt;.md</code> and concept content in the Schema v2 format. Bundling produces a single <code>*.schema.bundle.json</code> that <code>loadSchema</code> can read like the directory form.</p>
         `,
       },
     ],
@@ -410,7 +527,7 @@ node packages/http-api/dist/bin.js</code></pre>
     title: "Schema v2",
     eyebrow: "Artifact contract",
     description:
-      "Schema v2 is a describable schema artifact: one physical JSON layer, optional markdown table docs, and optional concepts.",
+      "Schema v2 is a describable schema artifact: one physical JSON layer, optional markdown table docs, optional concepts, and bundle output for distribution.",
     sections: [
       {
         heading: "Layout",
@@ -472,6 +589,15 @@ Customer purchase orders. One row per submitted order.
 ## Common query language
 
 - "sales" usually means paid orders</code></pre>
+        `,
+      },
+      {
+        heading: "Enrichment Workflow",
+        body: `
+          <p>The intended authoring flow is introspect, enrich, re-introspect as the database changes, then bundle when another service needs one file.</p>
+          <pre><code>askdb introspect --url "$DATABASE_URL" --out my-app.schema --schema-id my-app
+askdb enrich --schema my-app.schema
+askdb bundle my-app.schema --out my-app.schema.bundle.json</code></pre>
         `,
       },
       {
@@ -546,7 +672,14 @@ Customer purchase orders. One row per submitted order.
             <div><code>ASKDB_SCHEMA_PATH</code><span>Default schema path for CLI and HTTP server workflows.</span></div>
             <div><code>ASKDB_LOG_LEVEL</code><span>Structured log level.</span></div>
             <div><code>ASKDB_MODE</code><span>Default operating mode.</span></div>
+            <div><code>ASKDB_OMIT_SENSITIVE_FROM_PROMPT</code><span>Omit sensitive identifiers from generation prompts when set to a truthy value.</span></div>
           </div>
+        `,
+      },
+      {
+        heading: "TUI Suggestions",
+        body: `
+          <p><code>@askdb/tui</code> uses <code>OPENAI_API_KEY</code> when you press <code>g</code> to request AI enrichment suggestions. Without the key, the TUI still supports manual authoring and saving.</p>
         `,
       },
       {
