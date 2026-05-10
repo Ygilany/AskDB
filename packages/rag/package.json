@@ -1,0 +1,94 @@
+{
+  "name": "@askdb/rag",
+  "version": "0.1.0",
+  "description": "AskDB RAG layer: deterministic chunker over Schema v2, BYO embedder + vector store (in-memory, file-backed, pgvector), and an optional retriever wired into @askdb/core ask().",
+  "keywords": [
+    "askdb",
+    "rag",
+    "retrieval",
+    "embeddings",
+    "schema-v2",
+    "pgvector",
+    "ai"
+  ],
+  "homepage": "https://github.com/Ygilany/AskDB#readme",
+  "bugs": {
+    "url": "https://github.com/Ygilany/AskDB/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Ygilany/AskDB.git",
+    "directory": "packages/rag"
+  },
+  "license": "Apache-2.0",
+  "author": "Yahya Gilany",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./stores/memory": {
+      "types": "./dist/stores/memory.d.ts",
+      "import": "./dist/stores/memory.js"
+    },
+    "./stores/file": {
+      "types": "./dist/stores/file.d.ts",
+      "import": "./dist/stores/file.js"
+    },
+    "./stores/pgvector": {
+      "types": "./dist/stores/pgvector.d.ts",
+      "import": "./dist/stores/pgvector.js"
+    },
+    "./embedders/openai": {
+      "types": "./dist/embedders/openai.d.ts",
+      "import": "./dist/embedders/openai.js"
+    }
+  },
+  "bin": {
+    "askdb-rag": "./dist/bin.js"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE",
+    "NOTICE"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "lint": "tsc -p tsconfig.build.json --noEmit",
+    "test": "vitest run --config ../../vitest.config.ts"
+  },
+  "dependencies": {
+    "@askdb/core": "workspace:*"
+  },
+  "peerDependencies": {
+    "@ai-sdk/openai": ">=1",
+    "ai": ">=4",
+    "pg": ">=8"
+  },
+  "peerDependenciesMeta": {
+    "@ai-sdk/openai": {
+      "optional": true
+    },
+    "ai": {
+      "optional": true
+    },
+    "pg": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@ai-sdk/openai": "^1.3.21",
+    "@types/pg": "^8.11.12",
+    "ai": "^4.3.19",
+    "pg": "^8.14.1",
+    "typescript": "^5.7.3",
+    "vitest": "^3.0.9"
+  }
+}
