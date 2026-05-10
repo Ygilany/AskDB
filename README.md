@@ -2,6 +2,29 @@
 
 AskDB turns natural language into **schema-grounded SQL and reports** so you can ask questions about your data without writing SQL by hand.
 
+## Quickstart
+
+For local development, use Node **20+**, pnpm **11**, and Docker if you want the Pagila sample database.
+
+```bash
+pnpm install
+cp .env.example .env
+# edit .env and set OPENAI_API_KEY before calling a live model
+pnpm build
+pnpm exec askdb ask \
+  --schema fixtures/schemas/orders-users.schema \
+  --question "How many orders are there?"
+```
+
+The current schema path is **Schema v2**: either a directory such as `fixtures/schemas/orders-users.schema/`, a bundled JSON file, or a direct `schema.json`. To create that artifact from a real Postgres database, use the introspection package:
+
+```bash
+pnpm exec askdb introspect --url "$DATABASE_URL" --out my-app.schema --schema-id my-app
+pnpm exec askdb ask --schema my-app.schema --question "Which tables look active?"
+```
+
+The detailed first-run paths live in [`packages/introspect/README.md`](packages/introspect/README.md) and [`docs/integration/installable-package.md`](docs/integration/installable-package.md).
+
 ## Use as a library
 
 ```bash
@@ -15,13 +38,10 @@ pnpm add pg
 **Minimal example — built-in `pg` executor:**
 
 ```ts
-import { ask, loadNormalizedSchemaFromJson } from "@askdb/core";
+import { ask, loadSchema } from "@askdb/core";
 import { createOpenAI } from "@ai-sdk/openai";
-import { readFile } from "node:fs/promises";
 
-const schema = loadNormalizedSchemaFromJson(
-  await readFile("./schema.json", "utf8"),
-);
+const schema = loadSchema("./my-app.schema");
 const openai = createOpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
 const { sql, result } = await ask({
@@ -36,7 +56,9 @@ const { sql, result } = await ask({
 **Minimal example — BYO executor (no `pg`):**
 
 ```ts
-import { ask, type AskDbExecutor, loadNormalizedSchemaFromJson } from "@askdb/core";
+import { ask, loadSchema, type AskDbExecutor } from "@askdb/core";
+
+const schema = loadSchema("./my-app.schema");
 
 const executor: AskDbExecutor = async (sql) => {
   // Run sql in a read-only transaction with whatever driver you use
@@ -65,19 +87,32 @@ Product direction and technical baseline live in **`docs/`**:
 - [`docs/contracts/modes-v1.md`](docs/contracts/modes-v1.md) — operating modes (`schema_only`, `bounded_results`)  
 - [`docs/contracts/sensitive-fields-and-modes.md`](docs/contracts/sensitive-fields-and-modes.md) — sensitive schema markers vs. models, bounded summaries  
 - [`docs/integration/reuse-core-phase-3.md`](docs/integration/reuse-core-phase-3.md) — stable `@askdb/core` entrypoints for wrappers (MCP/HTTP)  
-- [`docs/integration/installable-package.md`](docs/integration/installable-package.md) — **Phase 4** install + BYO model + BYO executor recipes  
+- [`docs/integration/installable-package.md`](docs/integration/installable-package.md) — install + BYO model + BYO executor + introspection workflow recipes  
+- [`docs/specs/phase-6-introspection/README.md`](docs/specs/phase-6-introspection/README.md) — **Phase 6** introspection spec hub  
 - [`docs/specs/phase-1-schema-sql-cli/requirements.md`](docs/specs/phase-1-schema-sql-cli/requirements.md) — Phase 1 scope (implemented in this repo)  
 - Structured logging rationale: [`docs/adrs/0001-structured-logging-pino.md`](docs/adrs/0001-structured-logging-pino.md)  
 
 ## Development
 
-**Stack:** pnpm workspace + **Turborepo**, TypeScript, [`packages/core`](packages/core) (library) and [`packages/cli`](packages/cli) (binary `askdb`).
+**Stack:** pnpm workspace + **Turborepo**, TypeScript, and four packages:
+
+- [`packages/core`](packages/core) — NL→SQL library and Schema v2 loader.
+- [`packages/cli`](packages/cli) — binary `askdb`, including the `askdb introspect` shim.
+- [`packages/http-api`](packages/http-api) — HTTP wrapper over core.
+- [`packages/introspect`](packages/introspect) — Postgres-first schema introspection.
 
 ```bash
 pnpm install
 pnpm build    # turbo run build
 pnpm test     # turbo run test (integration runs when DATABASE_URL is set)
 pnpm lint     # turbo run lint (TypeScript noEmit)
+```
+
+Before opening or updating a PR, run the release-style checks:
+
+```bash
+pnpm smoke:install
+pnpm preflight
 ```
 
 **Pagila dev fixture** — optional PostgreSQL loaded with the [Pagila](https://github.com/devrimgunduz/pagila) sample database ([`fixtures/pagila/README.md`](fixtures/pagila/README.md)):
@@ -101,7 +136,7 @@ Then point AskDB at it:
 export DATABASE_URL="postgres://postgres:postgres@127.0.0.1:5433/pagila"
 ```
 
-**Phase 1 schema format** is **AskDB schema JSON v1** — see [`fixtures/schemas/README.md`](fixtures/schemas/README.md) and the sample [`fixtures/schemas/orders-users.schema.json`](fixtures/schemas/orders-users.schema.json). Optional **`sensitive`** markers (Phase 2) tag columns/tables in NL→SQL DDL by default (`(sensitive)`); use **`--omit-sensitive-from-prompt`** or **`ASKDB_OMIT_SENSITIVE_FROM_PROMPT`** to withhold names instead. Policy for modes and summaries is in [`docs/contracts/sensitive-fields-and-modes.md`](docs/contracts/sensitive-fields-and-modes.md).
+**Schema artifacts** use **AskDB Schema v2** — see [`docs/contracts/schema-v2.md`](docs/contracts/schema-v2.md), [`fixtures/schemas/README.md`](fixtures/schemas/README.md), and the sample [`fixtures/schemas/orders-users.schema/`](fixtures/schemas/orders-users.schema). Schema v2 can be hand-authored, bundled as JSON, or produced from Postgres with `@askdb/introspect`. Optional **`sensitive`** markers tag columns/tables in NL→SQL DDL by default (`(sensitive)`); use **`--omit-sensitive-from-prompt`** or **`ASKDB_OMIT_SENSITIVE_FROM_PROMPT`** to withhold names instead. Policy for modes and summaries is in [`docs/contracts/sensitive-fields-and-modes.md`](docs/contracts/sensitive-fields-and-modes.md).
 
 **Environment variables**
 
@@ -112,7 +147,7 @@ See [`.env.example`](.env.example) for a copy/paste template. Keep real secrets 
 | `OPENAI_API_KEY` | Required for NL→SQL (BYO; OpenAI-compatible). |
 | `OPENAI_BASE_URL` | Optional custom base URL for OpenAI-compatible APIs. |
 | `ASKDB_MODEL` or `OPENAI_MODEL` | Optional model id (default `gpt-4o-mini`). |
-| `DATABASE_URL` | Optional; required with `askdb ask --execute` to run generated SQL in a **read-only** Postgres transaction. |
+| `DATABASE_URL` | Optional; required with `askdb ask --execute` to run generated SQL in a **read-only** Postgres transaction, and commonly passed to `askdb introspect --url`. |
 | `ASKDB_LOG_LEVEL` | Optional structured log level: `trace` \| `debug` \| `info` \| `warn` \| `error` \| `fatal` \| `silent` (default: `silent` unless `--verbose`, `--log-file`, or `--log-stdout` implies `info`). |
 | `ASKDB_CORRELATION_ID` | Optional; override the correlation id emitted on every JSON log line for the run. |
 | `ASKDB_MODE` | Optional operating mode (`schema_only` \| `bounded_results`); default `schema_only`. Formal contract: [`docs/contracts/modes-v1.md`](docs/contracts/modes-v1.md). |
@@ -137,7 +172,7 @@ See [`.env.example`](.env.example) for a copy/paste template. Keep real secrets 
 pnpm build
 # Generate only — logs on stderr include askdb.pipeline.mode (default schema_only unless you pass --mode)
 pnpm exec askdb ask \
-  --schema fixtures/schemas/orders-users.schema.json \
+  --schema fixtures/schemas/orders-users.schema \
   --question "How many orders?" \
   --mode schema_only \
   -v
@@ -145,21 +180,21 @@ pnpm exec askdb ask \
 # With --execute: DATABASE_URL must reference a Postgres that actually has the tables in your schema file.
 export DATABASE_URL="postgres://user:pass@localhost:5432/dbname"
 pnpm exec askdb ask \
-  --schema fixtures/schemas/orders-users.schema.json \
+  --schema fixtures/schemas/orders-users.schema \
   --question "List user emails" \
   --execute \
   --mode bounded_results \
   -v
 ```
 
-After a successful `--execute`, check stderr for `askdb.pipeline.post_execute`: `branch: skipped` for `schema_only`, `branch: stub` for `bounded_results`. For local exploration with sample data only, [`pnpm pagila:up`](#pagila-dev-fixture) gives Pagila on port **5433** — pair it with a **schema JSON that describes those tables** when you NL→SQL + execute against it.
+After a successful `--execute`, check stderr for `askdb.pipeline.post_execute`: `branch: skipped` for `schema_only`, `branch: stub` for `bounded_results`. For local exploration with sample data only, [`pnpm pagila:up`](#pagila-dev-fixture) gives Pagila on port **5433** — pair it with a Schema v2 artifact that describes those tables when you NL→SQL + execute against it.
 
 **CLI example** (generate SQL only):
 
 ```bash
 pnpm build
 pnpm exec askdb ask \
-  --schema fixtures/schemas/orders-users.schema.json \
+  --schema fixtures/schemas/orders-users.schema \
   --question "How many orders are there?"
 ```
 
@@ -169,16 +204,16 @@ With execution (Postgres must be reachable):
 export DATABASE_URL="postgres://user:pass@localhost:5432/dbname"
 pnpm build
 pnpm exec askdb ask \
-  --schema fixtures/schemas/orders-users.schema.json \
+  --schema fixtures/schemas/orders-users.schema \
   --question "List user emails" \
   --execute
 ```
 
 Use `--json` with `--execute` for JSON rows instead of TSV.
 
-**Limitations (Phase 1 / dev):** single schema JSON format; Postgres execution only; SQL guardrails are heuristic (not a full SQL parser); no MCP/web yet. Merge bars: **[Phase 1](docs/specs/phase-1-schema-sql-cli/validation.md)** · **[Phase 2](docs/specs/phase-2-hardening-modes/validation.md)**.
+**Current limitations (pre-1.0 / dev):** Postgres-only execution and introspection; SQL guardrails are heuristic (not a full SQL parser); enrichment, RAG, MCP, web, and richer report generation are roadmap work. Merge bars: **[Phase 1](docs/specs/phase-1-schema-sql-cli/validation.md)** · **[Phase 2](docs/specs/phase-2-hardening-modes/validation.md)**.
 
-**CI:** [`.github/workflows/ci.yml`](.github/workflows/ci.yml) runs `pnpm install --frozen-lockfile`, `pnpm build`, and `pnpm test` with a Postgres service so integration tests exercise a real database.
+**CI:** [`.github/workflows/ci.yml`](.github/workflows/ci.yml) runs `pnpm install --frozen-lockfile`, `pnpm build`, starts the Pagila introspection fixture, runs `pnpm test`, runs the installable smoke test, and validates publish with a dry run.
 
 ## What it does
 
@@ -191,7 +226,7 @@ Use `--json` with `--execute` for JSON rows instead of TSV.
 - **BYO API keys** — developers bring their own model credentials.
 - **Schema as input** — describe your schema in a supported format; later support multiple formats and retrieval (e.g. RAG) over schema/metadata.
 - **Clarification** — prompt or surface follow-ups when intent or schema context is unclear.
-- **Sensitive fields** — schema JSON can mark tables/columns; NL→SQL prompts **list** identifiers by default (tagged) with an optional **omit** mode ([`docs/contracts/sensitive-fields-and-modes.md`](docs/contracts/sensitive-fields-and-modes.md)); row payloads and RAG paths remain policy-controlled by mode/host.
+- **Sensitive fields** — schema artifacts can mark tables/columns; NL→SQL prompts **list** identifiers by default (tagged) with an optional **omit** mode ([`docs/contracts/sensitive-fields-and-modes.md`](docs/contracts/sensitive-fields-and-modes.md)); row payloads and RAG paths remain policy-controlled by mode/host.
 - **Multi-tenant** — questions can target a tenant; **query scope must respect tenant boundaries** when the deployment requires it.
 
 ## Modes (trust boundaries)
@@ -207,4 +242,4 @@ How much of the **data** (not just schema) the model sees depends on the chosen 
 
 ## Status
 
-Phase 1 CLI + core path is implemented; later phases are in [`docs/roadmap.md`](docs/roadmap.md).
+Phases 1-6 are implemented on this branch: core, CLI, HTTP API, installable package seams, Schema v2, and Postgres introspection. Later phases are in [`docs/roadmap.md`](docs/roadmap.md).
