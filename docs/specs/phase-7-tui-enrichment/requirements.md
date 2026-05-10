@@ -75,7 +75,7 @@ A new workspace package: `packages/tui/`, published as `@askdb/tui`, exposing th
 
 | Topic | Decision |
 |---|---|
-| TUI library choice | Recommended **`@clack/prompts`** for v0 (lighter, faster to build); upgrade to `Ink` if richer panes become necessary. Final choice recorded in `plan.md` after a small spike. |
+| TUI library choice | **Ink** for v0. The implementation uses split-pane table navigation plus editable detail panels, and Ink fits that layout better than a prompt-only flow. |
 | AI-suggest gating | **Always confirm** — AI suggestions are proposals, not auto-saves. Even in batch mode (`--auto-suggest-all`), each suggestion is queued for human review before save. |
 | Sensitive identifier authoring | TUI shows a non-blocking warning when a description mentions a sensitive column by name, explaining that the chunk will be excluded by `@askdb/rag` (Phase 8). User can save anyway. |
 | Bundle format | Single packed JSON, **read-only** for downstream consumers (authoring stays in the directory). The Phase 5 loader accepts both forms. |

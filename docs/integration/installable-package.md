@@ -144,6 +144,27 @@ re-run askdb-introspect as the database changes
 loadSchema("./my-app.schema") for NL-to-SQL or RAG
 ```
 
+### Enrich with `@askdb/tui`
+
+Install the TUI alongside the CLI when you want guided authoring:
+
+```bash
+pnpm add @askdb/cli @askdb/introspect @askdb/tui pg
+
+askdb introspect --url "$DATABASE_URL" --out my-app.schema --schema-id my-app
+askdb enrich --schema my-app.schema
+```
+
+Inside the TUI, walk tables and columns to add descriptions, aliases, `Common query language`, example questions, and concepts. Press `g` on supported fields to request an AI suggestion when `OPENAI_API_KEY` is set; suggestions are queued for accept/edit/reject and are never saved until you press `s`.
+
+To ship a single read-only artifact to another service:
+
+```bash
+askdb bundle my-app.schema --out my-app.schema.bundle.json
+```
+
+`loadSchema("./my-app.schema.bundle.json")` and `loadSchema("./my-app.schema")` produce the same normalized representation.
+
 ---
 
 ## BYO `LanguageModel` recipes
