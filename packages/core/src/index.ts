@@ -38,6 +38,14 @@ export {
   writeTableMarkdown,
   writeConceptsMarkdown,
   formatSchemaV2ForNlToSql,
+  v2SchemaJsonSchema,
+  v2TableSchema,
+  v2ColumnSchema,
+  v2TableFrontmatterSchema,
+  v2ColumnFrontmatterSchema,
+  v2ConceptsFrontmatterSchema,
+  v2ConceptSchema,
+  RECOGNIZED_H2_SECTIONS,
 } from "./schema/v2/index.js";
 export type {
   V2SchemaJson,
