@@ -8,7 +8,8 @@
     "smoke": "tsx src/smoke.ts"
   },
   "dependencies": {
-    "@askdb/core": "__ASKDB_CORE_TARBALL__"
+    "@askdb/core": "__ASKDB_CORE_TARBALL__",
+    "@askdb/introspect": "__ASKDB_INTROSPECT_TARBALL__"
   },
   "devDependencies": {
     "@types/node": "^22.13.14",

@@ -1,0 +1,66 @@
+{
+  "name": "@askdb/introspect",
+  "version": "0.1.0",
+  "description": "AskDB schema introspection: per-engine connector pattern that reads database catalogs (Postgres first) and emits a Schema v2 physical artifact. Supports live (BYO executor) and air-gapped (SQL templates + export bundle) front doors.",
+  "keywords": [
+    "askdb",
+    "introspection",
+    "schema",
+    "postgres",
+    "postgresql",
+    "pg-catalog",
+    "schema-v2"
+  ],
+  "homepage": "https://github.com/Ygilany/AskDB#readme",
+  "bugs": {
+    "url": "https://github.com/Ygilany/AskDB/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Ygilany/AskDB.git",
+    "directory": "packages/introspect"
+  },
+  "license": "Apache-2.0",
+  "author": "Yahya Gilany",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./postgres": {
+      "types": "./dist/postgres/index.d.ts",
+      "import": "./dist/postgres/index.js"
+    },
+    "./cli": {
+      "types": "./dist/cli.d.ts",
+      "import": "./dist/cli.js"
+    }
+  },
+  "bin": {
+    "askdb-introspect": "./dist/bin.js"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE",
+    "NOTICE"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "lint": "tsc -p tsconfig.build.json --noEmit",
+    "test": "vitest run --config ../../vitest.config.ts"
+  },
+  "dependencies": {
+    "@askdb/core": "workspace:*"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.3",
+    "vitest": "^3.0.9"
+  }
+}
