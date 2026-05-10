@@ -35,6 +35,9 @@ importers:
       '@askdb/core':
         specifier: workspace:*
         version: link:../core
+      '@askdb/introspect':
+        specifier: workspace:*
+        version: link:../introspect
       commander:
         specifier: ^13.1.0
         version: 13.1.0
