@@ -10,10 +10,13 @@
 import {
   ask,
   loadNormalizedSchemaFromJson,
+  loadSchemaFromJson,
   type AskDbExecutor,
   type AskDbSchemaFile,
   type TabularResult,
 } from "@askdb/core";
+import { buildSchemaIndex, type Embedder } from "@askdb/rag";
+import { createMemoryStore } from "@askdb/rag/stores/memory";
 import {
   introspect,
   renderToSchemaV2,
@@ -59,6 +62,29 @@ const fakeGenerateText = (async () => ({ text: fakeSql })) as unknown as Paramet
     : never
   : never;
 
+const v2SchemaJson = JSON.stringify({
+  version: 2,
+  schemaId: "smoke",
+  tables: [
+    {
+      id: "table:public.users",
+      name: "users",
+      schema: "public",
+      columns: [
+        {
+          id: "table:public.users#id",
+          name: "id",
+          type: "uuid",
+          nullable: false,
+          primaryKey: true,
+        },
+      ],
+    },
+  ],
+});
+
+const fakeEmbedder: Embedder = async (texts) => texts.map((text) => [text.length, 1]);
+
 async function main(): Promise<void> {
   const schema = loadNormalizedSchemaFromJson(JSON.stringify(schemaJson));
 
@@ -93,7 +119,31 @@ async function main(): Promise<void> {
     throw new Error("smoke: @askdb/introspect public functions did not load");
   }
 
-  console.log("smoke: ok - core and introspect package surfaces loaded");
+  const v2Schema = loadSchemaFromJson(v2SchemaJson);
+  const index = await buildSchemaIndex({
+    schema: v2Schema,
+    embedder: fakeEmbedder,
+    store: createMemoryStore(),
+    embedderId: "smoke:fake",
+  });
+  if (index.stats.chunksTotal === 0 || typeof index.retriever !== "function") {
+    throw new Error("smoke: @askdb/rag did not build an in-memory index");
+  }
+
+  const ragOut = await ask({
+    question: "How many users are there?",
+    schema: v2Schema,
+    model: {} as never,
+    retriever: index.retriever,
+    totalSchemaChunkCount: index.stats.chunksTotal,
+    retrievalThresholdChunks: 0,
+    deps: { generateText: fakeGenerateText },
+  });
+  if (ragOut.sql !== fakeSql) {
+    throw new Error("smoke: ask({ retriever }) did not complete");
+  }
+
+  console.log("smoke: ok - core, introspect, and rag package surfaces loaded");
 }
 
 main().catch((e: unknown) => {

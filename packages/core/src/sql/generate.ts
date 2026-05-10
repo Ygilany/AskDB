@@ -23,6 +23,13 @@ export type GenerateSqlDeps = {
    * with `(sensitive)` so the model can ground queries (see `docs/contracts/sensitive-fields-and-modes.md`).
    */
   omitSensitiveIdentifiersFromNlToSqlPrompt?: boolean;
+  /**
+   * Pre-synthesized DDL block. When supplied, replaces the formatter output
+   * in the NL→SQL prompt. Used by `ask({ retriever })` to inject a focused
+   * DDL synthesized from retrieved chunks; consumers usually don't set this
+   * directly.
+   */
+  prebuiltDdl?: string;
 };
 
 /** Result of NL→SQL generation (always includes `sql`; `explain` when {@link GenerateSqlDeps.explain}). */
@@ -61,7 +68,14 @@ export async function generatePostgresSelectSql(
       const result = await generateText({
         model,
         system: nlToSqlSystemPrompt,
-        prompt: buildNlToSqlUserPrompt(question, schema, ambiguityNotes, logger, nlToSqlSchemaOptions),
+        prompt: buildNlToSqlUserPrompt(
+          question,
+          schema,
+          ambiguityNotes,
+          logger,
+          nlToSqlSchemaOptions,
+          deps.prebuiltDdl,
+        ),
         temperature: 0,
       });
       text = result.text;
