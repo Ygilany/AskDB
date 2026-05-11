@@ -14,21 +14,8 @@ export const AskDbLogEvent = {
   PromptSensitiveRedacted: "askdb.prompt.sensitive_redacted",
   /** Sensitive identifiers included in DDL for grounding — counts only (see `listedSensitiveColumnCount`). */
   PromptSensitiveIdentifiersListed: "askdb.prompt.sensitive_identifiers_listed",
-  PipelineExecuteStart: "askdb.pipeline.execute.start",
-  PipelineExecuteComplete: "askdb.pipeline.execute.complete",
-  /**
-   * After successful execute — whether a post-execute model path runs (v1: logging only).
-   * Payload includes `branch`: `skipped` | `stub` (see `docs/contracts/modes-v1.md`).
-   */
-  PipelinePostExecute: "askdb.pipeline.post_execute",
-  /** Generation or execution failed after pipeline logging began (includes `phase`). */
+  /** Generation failed after pipeline logging began (includes `phase`). */
   PipelineFailed: "askdb.pipeline.failed",
-  /**
-   * Both `executor` and `connectionString` were supplied to `ask()`. The custom `executor` wins;
-   * `connectionString` is ignored. Emitted before generation so the resolution is observable in logs.
-   * See `docs/specs/phase-4-publish-npm/requirements.md` (“Resolution rule when both inputs are passed”).
-   */
-  ConfigExecutorOverridesConnectionString: "askdb.config.executor_overrides_connection_string",
   /**
    * Retriever was supplied to `ask()` and used to synthesize a focused DDL
    * block (counts only — `tablesEmitted`, `resultCount`, `k`, `threshold`).

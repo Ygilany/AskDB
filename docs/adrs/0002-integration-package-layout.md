@@ -21,14 +21,14 @@ Forward-looking integrations make this layout untenable:
 
 Reorganize AskDB around **one package per integration surface**, not per database engine and not per layer.
 
-- `@askdb/core` is dialect-agnostic. It defines the `ask()` pipeline, the executor port (`AskDbExecutor`), the schema/IR types, modes, and logging. It does not import `pg`, does not know what SQL dialect is being generated, and does not construct executors.
+- `@askdb/core` is dialect-agnostic. It defines the `ask()` pipeline, the schema/IR types, modes, and logging. It returns SQL only, does not import `pg`, does not know what SQL dialect is being generated, and does not construct executors.
 - `@askdb/introspect` is engine-agnostic. It defines the `Connector<TInput>` interface (generic over the integration's input shape), the orchestrator, and the Schema v2 renderer. It does not ship a default connector and does not declare what live vs. from-export means.
-- Integration packages (`@askdb/postgres`, future `@askdb/mysql`, `@askdb/prisma`, ...) own their dialect, their connector, their input shape, their executor adapters, and any engine-specific helpers (e.g. SQL templates, bundle readers).
+- Integration packages (`@askdb/postgres`, future `@askdb/mysql`, `@askdb/prisma`, ...) own their dialect, their connector, their input shape, their catalog query runners, and any engine-specific helpers (e.g. SQL templates, bundle readers).
 
 Concretely:
 
-1. The `@askdb/core/postgres` subpath is removed. `createPostgresExecutor` now lives in `@askdb/postgres`.
-2. `ask()` accepts a required `dialect` adapter (`AskDialect`). `@askdb/postgres` exports `postgresDialect`. The `connectionString` shortcut on `ask()` is removed; callers construct the executor themselves and pass it via `executor`.
+1. The `@askdb/core/postgres` subpath is removed.
+2. `ask()` accepts a required `dialect` adapter (`AskDialect`). `@askdb/postgres` exports `postgresDialect`. The `connectionString`, `execute`, and `executor` options on `ask()` are removed.
 3. `@askdb/introspect`'s `IntrospectionInput` discriminated union is removed from the public API. `@askdb/postgres` exports `PostgresIntrospectionInput`. Future integrations export their own input types.
 4. `Connector` becomes generic over `TInput`; `templates()` is optional (Prisma legitimately does not have one).
 5. The standalone `askdb-introspect` binary retires. Introspection is reached via `askdb introspect` (an `@askdb/cli` subcommand).
@@ -38,11 +38,11 @@ Concretely:
 - **Prisma's input is not the same kind of thing as Postgres's.** A discriminated `live | from-export` union baked into the core contract forces every future integration to pretend it fits that model. Connector-owned input shapes keep each integration's seam honest.
 - **Dialect is integration-package knowledge.** Validating that a string starts with `SELECT` is universal; the actual forbidden-keyword list, the prompt wording, and the catalog query strings are not.
 - **Apps are not libraries.** `cli`, `http-api`, `tui`, and `docs-site` are first-party reference apps, not extension points. They live under `apps/` to make that boundary explicit. The supported user-facing product surface is `@askdb/cli`, batteries-included Prisma-style.
-- **Driver split is a future refactor, not pre-extracted today.** `@askdb/postgres` bundles dialect + connector + bundle reader + `pg` executor. When a second driver (`postgres.js`, Neon HTTP) lands, splitting executor packages off will be a deliberate breaking change. Pre-extracting now would optimize for a problem we don't have.
+- **Catalog runners are scoped to introspection.** `@askdb/postgres` bundles dialect + connector + bundle reader + a `pg` catalog query runner for live introspection. Generated-SQL execution is outside AskDB's package API.
 
 ## Consequences
 
-- Breaking changes for pre-1.0 consumers: import paths, `ask()` signature, executor construction, introspection wiring. No migrator ships — pre-1.0 makes this acceptable. The changeset records the break.
+- Breaking changes for pre-1.0 consumers: import paths, `ask()` signature, removal of generated-SQL execution, and introspection wiring. No migrator ships — pre-1.0 makes this acceptable. The changeset records the break.
 - Adding a new integration (`@askdb/mysql`, `@askdb/prisma`) is a self-contained package addition. No core or introspect changes required as long as the contracts stay stable.
 - The Postgres dialect remains the only one shipping in this PR. A second dialect would prove out the contract; until then we treat the dialect adapter shape as provisional and stable enough for one user.
 

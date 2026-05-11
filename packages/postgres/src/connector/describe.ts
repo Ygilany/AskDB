@@ -1,5 +1,6 @@
-import type { AskDbExecutor, TabularResult } from "@askdb/core";
 import type {
+  CatalogQueryResult,
+  CatalogQueryRunner,
   IntrospectionFilters,
   IntrospectionResult,
   IntrospectionWarning,
@@ -41,18 +42,18 @@ import {
 const DEFAULT_INCLUDE_SCHEMAS = ["public"] as const;
 
 /**
- * Coerce a `TabularResult` (positional rows) into a list of records using the
+ * Coerce a `CatalogQueryResult` (positional rows) into a list of records using the
  * template's documented column list. Tolerates extra trailing columns (which
  * shouldn't happen but keeps the path tolerant). Throws if a documented
- * column is missing — that signals an executor or bundle that does not match
+ * column is missing — that signals a runner or bundle that does not match
  * the template's contract.
  */
 export function coerceRows<T>(
-  result: TabularResult,
+  result: CatalogQueryResult,
   expected: readonly string[],
 ): T[] {
-  // An executor that returns zero rows is allowed even if it omits the column
-  // headers (some drivers / fake executors don't bother populating them on
+  // A runner that returns zero rows is allowed even if it omits the column
+  // headers (some drivers / fake runners don't bother populating them on
   // empty result sets). Fail loudly only when there's data to coerce.
   if (result.rows.length === 0) return [];
   const indexByName = new Map<string, number>();
@@ -75,7 +76,7 @@ export function coerceRows<T>(
 }
 
 export type DescribePostgresInput = {
-  executor: AskDbExecutor;
+  runner: CatalogQueryRunner;
   filters?: IntrospectionFilters;
   /** Optional `schemaId` for the resulting `SqlSchema`. Defaults to `"introspected"`. */
   schemaId?: string;
@@ -94,7 +95,7 @@ export async function describePostgres(
 
   const run = async <T>(name: Parameters<typeof findTemplate>[0]) => {
     const tpl = findTemplate(name);
-    const result = await input.executor(tpl.sql, params);
+    const result = await input.runner(tpl.sql, params);
     return coerceRows<T>(result, tpl.columns);
   };
 
@@ -448,7 +449,7 @@ function normalizePgTextArray(value: unknown): Array<string | null> {
   if (typeof value !== "string") return [];
   if (value === "") return [];
 
-  // Defensive compatibility for executors that do not decode Postgres arrays.
+  // Defensive compatibility for runners that do not decode Postgres arrays.
   // The canonical SQL casts to text[], so `pg` returns arrays on the live path;
   // bundle ingestion in M5 may still surface literal strings.
   if (!value.startsWith("{") || !value.endsWith("}")) return [value];

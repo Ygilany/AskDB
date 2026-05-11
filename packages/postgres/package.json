@@ -1,7 +1,7 @@
 {
   "name": "@askdb/postgres",
   "version": "0.1.0",
-  "description": "AskDB Postgres integration: dialect (NL→SQL prompt + validate + generate), introspection connector (live + from-export bundle), catalog SQL templates, and a `pg`-backed read-only executor.",
+  "description": "AskDB Postgres integration: dialect (NL→SQL prompt + validate + generate), introspection connector (live + from-export bundle), catalog SQL templates, and a `pg`-backed catalog query runner.",
   "keywords": [
     "askdb",
     "postgres",

@@ -18,7 +18,7 @@ import {
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { describePostgres } from "./describe.js";
 import {
-  createSnapshotExecutor,
+  createSnapshotCatalogQueryRunner,
   loadCatalogSnapshot,
 } from "./test-utils.js";
 
@@ -38,7 +38,7 @@ async function renderOrdersUsers(): Promise<{ outDir: string; bytes: string }> {
     resolve(FIXTURE_DIR, "orders-users.catalog.json"),
   );
   const result = await describePostgres({
-    executor: createSnapshotExecutor(snapshot),
+    runner: createSnapshotCatalogQueryRunner(snapshot),
     schemaId: "orders-users",
   });
   const outDir = join(workDir, "orders-users.schema");
@@ -94,7 +94,7 @@ describe("renderToSchemaV2 — clean write", () => {
       resolve(FIXTURE_DIR, "orders-users.catalog.json"),
     );
     const result = await describePostgres({
-      executor: createSnapshotExecutor(snapshot),
+      runner: createSnapshotCatalogQueryRunner(snapshot),
       schemaId: "orders-users",
     });
     const nestedDir = join(workDir, "deeply", "nested", "out.schema");
@@ -111,7 +111,7 @@ describe("renderToSchemaV2 — clean write", () => {
       resolve(FIXTURE_DIR, "orders-users.catalog.json"),
     );
     const result = await describePostgres({
-      executor: createSnapshotExecutor(snapshot),
+      runner: createSnapshotCatalogQueryRunner(snapshot),
       schemaId: "orders-users",
     });
     const outDir = join(workDir, "orders-users.schema");
@@ -267,7 +267,7 @@ describe("toV2SchemaJson — pure form (no disk I/O)", () => {
       resolve(FIXTURE_DIR, "orders-users.catalog.json"),
     );
     const result = await describePostgres({
-      executor: createSnapshotExecutor(snapshot),
+      runner: createSnapshotCatalogQueryRunner(snapshot),
       schemaId: "orders-users",
     });
     const v2 = toV2SchemaJson(result.schema, "orders-users");
@@ -288,7 +288,7 @@ describe("toV2SchemaJson — pure form (no disk I/O)", () => {
       resolve(FIXTURE_DIR, "multi-column-fk.catalog.json"),
     );
     const result = await describePostgres({
-      executor: createSnapshotExecutor(snapshot),
+      runner: createSnapshotCatalogQueryRunner(snapshot),
       schemaId: "multi-fk",
     });
     const v2 = toV2SchemaJson(result.schema, "multi-fk");
@@ -346,7 +346,7 @@ async function loadOrdersUsersSqlSchema(): Promise<SqlSchema> {
     resolve(FIXTURE_DIR, "orders-users.catalog.json"),
   );
   const result = await describePostgres({
-    executor: createSnapshotExecutor(snapshot),
+    runner: createSnapshotCatalogQueryRunner(snapshot),
     schemaId: "orders-users",
   });
   return result.schema;

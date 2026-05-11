@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 import { describePostgres, foldIntrospectionResult } from "./describe.js";
 import { createPostgresConnector } from "./index.js";
 import {
-  createSnapshotExecutor,
+  createSnapshotCatalogQueryRunner,
   loadCatalogSnapshot,
 } from "./test-utils.js";
 
@@ -20,10 +20,10 @@ function loadFixture(name: string) {
 describe("describePostgres — orders-users snapshot", () => {
   it("produces the expected SqlSchema for the canonical fixture", async () => {
     const snapshot = loadFixture("orders-users.catalog.json");
-    const executor = createSnapshotExecutor(snapshot);
+    const runner = createSnapshotCatalogQueryRunner(snapshot);
 
     const result = await describePostgres({
-      executor,
+      runner,
       schemaId: "orders-users",
     });
 
@@ -81,10 +81,10 @@ describe("describePostgres — orders-users snapshot", () => {
 
   it("is deterministic — two runs produce a byte-identical SqlSchema JSON", async () => {
     const snapshot = loadFixture("orders-users.catalog.json");
-    const executor = createSnapshotExecutor(snapshot);
+    const runner = createSnapshotCatalogQueryRunner(snapshot);
 
-    const a = await describePostgres({ executor, schemaId: "orders-users" });
-    const b = await describePostgres({ executor, schemaId: "orders-users" });
+    const a = await describePostgres({ runner, schemaId: "orders-users" });
+    const b = await describePostgres({ runner, schemaId: "orders-users" });
 
     expect(JSON.stringify(a.schema)).toBe(JSON.stringify(b.schema));
   });
@@ -93,10 +93,10 @@ describe("describePostgres — orders-users snapshot", () => {
 describe("describePostgres — multi-column FK regression guard", () => {
   it("preserves declared conkey/confkey order for composite FKs", async () => {
     const snapshot = loadFixture("multi-column-fk.catalog.json");
-    const executor = createSnapshotExecutor(snapshot);
+    const runner = createSnapshotCatalogQueryRunner(snapshot);
 
     const result = await describePostgres({
-      executor,
+      runner,
       schemaId: "multi-fk",
     });
 
@@ -134,10 +134,10 @@ describe("describePostgres — multi-column FK regression guard", () => {
 describe("describePostgres — enum sort order regression guard", () => {
   it("preserves pg_enum.enumsortorder, not alphabetical order", async () => {
     const snapshot = loadFixture("enum-sort-order.catalog.json");
-    const executor = createSnapshotExecutor(snapshot);
+    const runner = createSnapshotCatalogQueryRunner(snapshot);
 
     const result = await describePostgres({
-      executor,
+      runner,
       schemaId: "enums",
     });
 
@@ -157,9 +157,9 @@ describe("describePostgres — enum sort order regression guard", () => {
 describe("describePostgres — filters", () => {
   it("default include = ['public']; system schemas always excluded", async () => {
     const snapshot = loadFixture("orders-users.catalog.json");
-    const executor = createSnapshotExecutor(snapshot);
+    const runner = createSnapshotCatalogQueryRunner(snapshot);
 
-    const result = await describePostgres({ executor });
+    const result = await describePostgres({ runner });
 
     // The fixture only contains 'public' — the default filter is satisfied.
     expect(result.schema.schemas.map((s) => s.name)).toEqual(["public"]);
@@ -167,10 +167,10 @@ describe("describePostgres — filters", () => {
 
   it("table glob filters out unmatched tables and emits ambiguous_filter on no match", async () => {
     const snapshot = loadFixture("orders-users.catalog.json");
-    const executor = createSnapshotExecutor(snapshot);
+    const runner = createSnapshotCatalogQueryRunner(snapshot);
 
     const matched = await describePostgres({
-      executor,
+      runner,
       filters: { tables: ["public.users"] },
     });
     expect(matched.schema.schemas[0]!.tables.map((t) => t.name)).toEqual([
@@ -179,7 +179,7 @@ describe("describePostgres — filters", () => {
     expect(matched.warnings).toEqual([]);
 
     const empty = await describePostgres({
-      executor,
+      runner,
       filters: { tables: ["public.does_not_exist"] },
     });
     expect(empty.warnings).toEqual([
@@ -188,7 +188,7 @@ describe("describePostgres — filters", () => {
   });
 });
 
-describe("foldIntrospectionResult - live executor compatibility", () => {
+describe("foldIntrospectionResult - live runner compatibility", () => {
   it("normalizes Postgres text-array literals for index columns", () => {
     const result = foldIntrospectionResult({
       schemaId: "indexes",
@@ -264,7 +264,7 @@ describe("createPostgresConnector wiring", () => {
     const connector = createPostgresConnector();
     const result = await connector.describe({
       mode: "live",
-      executor: createSnapshotExecutor(snapshot),
+      runner: createSnapshotCatalogQueryRunner(snapshot),
     });
     expect(result.schema.schemaId).toBe("introspected");
     expect(result.schema.schemas[0]!.tables).toHaveLength(2);

@@ -9,8 +9,6 @@ export type AskHttpRequest = {
    * and omit this field in requests.
    */
   schemaJson?: string;
-  /** Default false. Server must also enable execution via ASKDB_HTTP_ENABLE_EXECUTION. */
-  execute?: boolean;
   explain?: boolean;
   mode?: AskDbModeV1;
   omitSensitiveFromPrompt?: boolean;
@@ -20,7 +18,6 @@ export type AskHttpSuccessResponse = {
   ok: true;
   correlationId: string;
   sql: string;
-  result?: unknown;
   explain?: unknown;
 };
 
@@ -33,11 +30,8 @@ export type AskHttpErrorResponse = {
       | "bad_request"
       | "schema_parse_error"
       | "generation_not_configured"
-      | "execution_disabled"
-      | "execution_not_configured"
       | "sql_validation_error"
       | "sql_generation_error"
-      | "sql_execution_error"
       | "internal_error";
     message: string;
     rule?: string;

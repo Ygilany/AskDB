@@ -50,16 +50,16 @@ Phase 3 ships `@askdb/http-api` as a thin wrapper over `@askdb/core` with the sa
 
 ---
 
-## Phase 4 ✅ — Publish to npm + BYO executor seam
+## Phase 4 ✅ — Publish to npm
 
-Completed: Published installable packages to npm, introduced the BYO executor seam in `ask({ executor })`, and finalized release tooling/contracts for pre-1.0 distribution.
+Completed: Published installable packages to npm and finalized release tooling/contracts for pre-1.0 distribution.
 
-**Goal:** Turn AskDB into an actually installable package — `pnpm add @askdb/core` from any project, plug in your own database driver and LLM, and call `ask()` from your runtime.
+**Goal:** Turn AskDB into an actually installable package — `pnpm add @askdb/core` from any project, plug in your own LLM, and call `ask()` from your runtime.
 
 **Spec pack:** [`docs/specs/phase-4-publish-npm/`](specs/phase-4-publish-npm/).
 
 - **Drop `private: true`** on `@askdb/core`, `@askdb/cli`, and `@askdb/http-api`. Pre-1.0 versions; semver applied to the published `index.ts` exports plus the contract docs under `docs/contracts/`.
-- **Executor seam** — `ask({ executor })` accepts an integrator-supplied executor function (built-in `pg` Postgres executor remains the default). Decouples `@askdb/core` from `pg` for consumers using postgres.js, Neon HTTP, Hyperdrive, MCP-mediated DBs, etc.
+- **SQL output contract** — `ask()` returns validated SQL. Applications own any later execution outside AskDB.
 - **Release tooling** — pick and configure (e.g. **changesets**); set up CI publish workflow; add `LICENSE`, package READMEs, examples.
 - **Schema format unchanged** — Phase 4 ships the existing pre-v2 format. **Phase 5 makes the breaking change to Schema v2 with no migrator** (acceptable pre-1.0).
 
@@ -89,7 +89,7 @@ Completed: Shipped `@askdb/introspect` with Postgres connector support, live + a
 
 - **`@askdb/introspect` package** — New workspace package. Sub-export per engine: `@askdb/introspect/postgres` ships in this phase; the `Connector` interface is the seam for additional engines in Phase 10.
 - **Two front doors, one connector** — Both modes return the same `IntrospectionResult` and write the same artifact:
-  - **Live** — `introspect({ executor, ... })` reuses Phase 4's `AskDbExecutor` to run documented `pg_catalog`/`information_schema` queries.
+  - **Live** — `introspect({ runner, ... })` uses a `CatalogQueryRunner` to run documented `pg_catalog`/`information_schema` queries.
   - **Air-gapped** — `introspect({ bundlePath, ... })` reads exports produced by running the same SQL templates in `psql`/CI/IDE.
 - **Determinism** — Catalog queries always include explicit `ORDER BY`. Multi-column foreign keys preserve the constraint's column ordering (regression guard for the documented Drizzle bug). Enum values preserve `pg_enum.enumsortorder`.
 - **ID-anchored re-introspection** — On a second run, `schema.json` is the only file rewritten. Stable IDs from the previous run are preserved; new columns get fresh IDs; orphaned IDs surface as `IntrospectionResult.warnings`. The describable layer (`tables/*.md`, `concepts.md`) is **never** modified.
@@ -122,7 +122,7 @@ Completed: Delivered `@askdb/tui` interactive schema enrichment for Schema v2, i
 
 - **`@askdb/core` is dialect-agnostic** — `ask()` takes a required `dialect` adapter (`AskDialect`). The `connectionString` shortcut and `createPostgresExecutor` are removed from core. The `@askdb/core/postgres` subpath is retired.
 - **`@askdb/introspect` is engine-agnostic** — `Connector<TInput>` becomes generic over the integration's input shape; `templates()` is optional. The `IntrospectionInput` discriminated union leaves the public surface.
-- **`@askdb/postgres` is the first complete integration** — Bundles dialect (`postgresDialect`), connector (live + from-export), catalog templates, bundle reader, and the `pg`-backed executor. `PostgresIntrospectionInput` is exported from this package, not from introspect.
+- **`@askdb/postgres` is the first complete integration** — Bundles dialect (`postgresDialect`), connector (live + from-export), catalog templates, bundle reader, and the `pg`-backed catalog query runner. `PostgresIntrospectionInput` is exported from this package, not from introspect.
 - **Apps moved to `apps/`** — `cli`, `http-api`, `tui`, `docs-site` are first-party reference apps. The supported product surface is `@askdb/cli`, batteries-included Prisma-style. The standalone `askdb-introspect` binary retires; introspection is reached via `askdb introspect`.
 - **Pre-1.0 breaking change, no migrator** — see the changeset for the full surface diff.
 

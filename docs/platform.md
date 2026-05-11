@@ -20,10 +20,10 @@ AskDB ships as a small set of focused npm packages. Each one has a single respon
 
 | Package | Role | Status |
 |---|---|---|
-| `@askdb/core` | Headless library: schema parsing, prompt assembly, NL→SQL, validation, modes, logging, **executor seam** (BYO database driver). Stable, semver-versioned. Schema v2 reader/writer/prompt-assembly land in Phase 5. | Phase 4 (publish), Phase 5 (Schema v2) |
+| `@askdb/core` | Headless library: schema parsing, prompt assembly, NL→SQL, validation, modes, logging, and retrieval input. Returns SQL only. Stable, semver-versioned. Schema v2 reader/writer/prompt-assembly land in Phase 5. | Phase 4 (publish), Phase 5 (Schema v2) |
 | `@askdb/cli` | `askdb` binary; thin wrapper over `@askdb/core`. Already shipped; published alongside core. | Phase 4 (publish) |
 | `@askdb/http-api` | HTTP server surface; thin wrapper over `@askdb/core`. Already shipped (Phase 3). | Phase 4 (publish) |
-| `@askdb/introspect` | Schema introspection: per-engine connector pattern that reads database catalogs (Postgres first) and emits a Schema v2 physical artifact. Live (BYO connection / executor) and air-gapped (run SQL templates, hand off the export bundle) front doors share one connector. | Phase 6 |
+| `@askdb/introspect` | Schema introspection: per-engine connector pattern that reads database catalogs (Postgres first) and emits a Schema v2 physical artifact. Live (`CatalogQueryRunner`) and air-gapped (run SQL templates, hand off the export bundle) front doors share one connector. | Phase 6 |
 | `@askdb/tui` | `askdb-tui` (or `askdb enrich`) interactive enrichment surface; reads a Schema v2 physical artifact (typically produced by `@askdb/introspect`), AI-suggests descriptions/aliases, writes the **describable schema artifact** ([`docs/contracts/schema-v2.md`](contracts/schema-v2.md)). | Phase 7 |
 | `@askdb/rag` | Chunker + retriever; **bring-your-own embedder** (AI SDK `embed()` style) and **bring-your-own vector store** (in-memory default, file-backed, pgvector adapters). Wires into `@askdb/core` `ask()` as an optional retriever. | Phase 8 |
 
@@ -55,7 +55,7 @@ After init, add components with `pnpm dlx shadcn@latest add …` as needed.
 ## Schema vs. database connectivity
 
 - **Import-first** — Headless and first-party UIs must support workflows where AskDB **never holds credentials** to the customer’s database: users **import** schema descriptions (or paste exported metadata). Generation and review run against that **describable schema** artifact.
-- **Optional live database** — When customers want **in-app execution**, validation against a live instance, or automated sync, they can attach **BYO** connection details on their infrastructure; that path is **not** required for schema enrichment, NL→SQL drafting, or export-only workflows.
+- **Optional live database** — When customers want live schema introspection, they can attach **BYO** connection details on their infrastructure. That path is **not** required for schema enrichment, NL→SQL drafting, or export-only workflows.
 - **Enrichment pipeline (headless-first)** — A Schema v2 physical layer (typically produced by `@askdb/introspect` in Phase 6, or hand-authored) is enriched into a **describable schema** through:
   - **`@askdb/tui`** — interactive terminal authoring with AI-suggest + human-confirm, producing the markdown + YAML front-matter artifact ([`docs/contracts/schema-v2.md`](contracts/schema-v2.md)).
   - **Web catalog UI** (later phase) — graphical alternative authoring against the **same** Schema v2 artifact.
@@ -67,7 +67,7 @@ After init, add components with `pnpm dlx shadcn@latest add …` as needed.
 
 - **Connector pattern** — One small `Connector` interface per engine. Phase 6 ships **only the Postgres connector** (`@askdb/introspect/postgres`); the seam is the entry point for additional engines added one at a time in [`roadmap.md`](roadmap.md) Phase 10.
 - **Two front doors, one connector** — Both modes produce the **same** `IntrospectionResult` and the **same** on-disk artifact:
-  - **Live** — pass an `AskDbExecutor` (the same seam Phase 4 introduces for `ask()`); the connector runs documented `pg_catalog` / `information_schema` queries against the live database.
+  - **Live** — pass a `CatalogQueryRunner`; the connector runs documented `pg_catalog` / `information_schema` queries against the live database.
   - **Air-gapped** — run the same SQL templates in `psql`, an IDE, or CI; export the rows as a bundle (CSV/JSON); hand the bundle path to `@askdb/introspect` and get an identical artifact without AskDB ever touching credentials.
 - **Output** — a `<schemaId>.schema/` directory whose `schema.json` is the Schema v2 physical layer ([`docs/contracts/schema-v2.md`](contracts/schema-v2.md)). The describable layer (`tables/*.md`, `concepts.md`) is **never written or rewritten** by introspection; that belongs to `@askdb/tui` (Phase 7) or hand-authoring.
 - **ID-anchored re-introspection** — On a second run against an existing artifact, only `schema.json` is rewritten. Stable IDs from the previous run are preserved; new columns appear with new IDs; orphaned IDs (deleted columns) surface as `IntrospectionResult.warnings` for the TUI to act on. The describable layer is preserved verbatim.
@@ -85,8 +85,8 @@ Front-matter is validated by zod (round-trippable from the TUI); the markdown bo
 
 ## Data access
 
-- **Postgres-first** — The first shipped path targets **PostgreSQL** end-to-end when a **live** connection or executor is used (connection, dialect assumptions in generation, execution, guardrails). Treat this as the **reference implementation** quality bar.
-- **Pluggable executor seam** — `@askdb/core` ships a built-in Postgres executor (`pg`) but accepts an **integrator-supplied executor function** at the `ask()` boundary. Consumers using a different driver (postgres.js, Neon HTTP, Cloudflare Hyperdrive, a serverless pool, an MCP-mediated DB) plug in their own executor without forking. The executor contract is part of the published `@askdb/core` API. Recipes in [`docs/integration/installable-package.md`](integration/installable-package.md).
+- **Postgres-first** — The first shipped path targets **PostgreSQL** for dialect assumptions in generation, validation guardrails, and live introspection. Treat this as the **reference implementation** quality bar.
+- **No generated-SQL execution in core** — `@askdb/core` returns validated SQL only. Applications own any later approval, execution, read-only roles, network policy, and audit logging outside AskDB.
 - **Other databases later** — Support for **additional engines** (beyond Postgres) lands in a **later roadmap phase**: per-engine drivers, dialect-aware generation/validation, and tests—rolled out **one database at a time** so we do not dilute safety or correctness. See **`roadmap.md`** (multi-database phase).
 
 ## AI and integrations

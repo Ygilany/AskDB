@@ -82,5 +82,34 @@ describe("cli spawn: rich errors", () => {
       rmSync(workDir, { recursive: true, force: true });
     }
   });
-});
 
+  it("rejects the removed --execute option", () => {
+    const repoRoot = join(import.meta.dirname, "../../..");
+    const cliDir = join(repoRoot, "apps/cli");
+
+    const build = run("pnpm", ["-C", cliDir, "build"], { cwd: repoRoot });
+    expect(build.status).toBe(0);
+
+    const exec = run(
+      "node",
+      [
+        join(cliDir, "dist/cli.js"),
+        "ask",
+        "--schema",
+        "fixtures/schemas/orders-users.schema/",
+        "--question",
+        "anything",
+        "--execute",
+      ],
+      {
+        cwd: repoRoot,
+        env: {
+          ASKDB_MOCK_SQL: "SELECT 1",
+        },
+      },
+    );
+
+    expect(exec.status).toBe(1);
+    expect(exec.stderr).toContain("unknown option '--execute'");
+  });
+});
