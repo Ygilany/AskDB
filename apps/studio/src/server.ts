@@ -1,9 +1,20 @@
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
-import { resolve } from "node:path";
+import { join, resolve } from "node:path";
 import { createOpenAI } from "@ai-sdk/openai";
 import { ask, loadSchema, suggestEnrichment, type AskGenerateDeps } from "@askdb/core";
 import { postgresDialect } from "@askdb/postgres";
+import {
+  buildSchemaIndex,
+  chunkContentHash,
+  chunkSchema,
+  createRetriever,
+  loadChunkerSourcesFromDir,
+  type ChunkType,
+  type Embedder,
+  type QueryResult,
+} from "@askdb/rag";
+import { createFileStore } from "@askdb/rag/stores/file";
 import {
   buildDefaultTableBody,
   buildFrontmatter,
@@ -32,6 +43,9 @@ type StudioState = {
   schemaDir: string;
   workspace: Workspace;
 };
+
+const STUDIO_RAG_EMBEDDER_ID = "studio:mock-lexical-64";
+const STUDIO_RAG_DIMENSIONS = 64;
 
 export function createStudioServer(options: StudioOptions): StudioServer {
   const schemaDir = resolve(options.schema);
@@ -71,6 +85,19 @@ export function createStudioServer(options: StudioOptions): StudioServer {
         const source = parseSuggestSource(body);
         const candidates = await suggestForSource(state.workspace, source);
         return writeJson(res, 200, { candidates });
+      }
+      if (req.method === "GET" && url.pathname === "/api/rag/status") {
+        return writeJson(res, 200, getRagStatus(state.schemaDir));
+      }
+      if (req.method === "POST" && url.pathname === "/api/rag/index") {
+        const result = await indexRag(state.schemaDir);
+        return writeJson(res, 200, result);
+      }
+      if (req.method === "POST" && url.pathname === "/api/rag/query") {
+        const body = await readJson(req);
+        const query = parseRagQuery(body);
+        const result = await queryRag(state.schemaDir, query);
+        return writeJson(res, 200, result);
       }
       if (req.method === "POST" && url.pathname === "/api/ask") {
         const body = await readJson(req);
@@ -216,6 +243,140 @@ async function askSampleQuestion(schemaDir: string, question: string): Promise<u
   };
 }
 
+function getRagStatus(schemaDir: string): unknown {
+  const sources = loadChunkerSourcesFromDir(schemaDir);
+  const chunkResult = chunkSchema(sources);
+  const lockPath = join(schemaDir, "schema.lock.json");
+  const embeddingsJsonPath = join(schemaDir, "schema.embeddings.json");
+  const embeddingsBinPath = join(schemaDir, "schema.embeddings.bin");
+  const lock = readOptionalJson(lockPath) as
+    | { embedderId?: string; updatedAt?: string; hashes?: Record<string, string> }
+    | undefined;
+  const embeddings = readOptionalJson(embeddingsJsonPath) as
+    | { records?: unknown[]; dimensions?: number }
+    | undefined;
+
+  const currentHashes = Object.fromEntries(
+    chunkResult.chunks.map((chunk) => [chunk.id, chunkContentHash(chunk.text)]),
+  );
+  const lockHashes = lock?.hashes ?? {};
+  const hashIds = Object.keys(currentHashes);
+  const stale =
+    !lock ||
+    !existsSync(embeddingsJsonPath) ||
+    !existsSync(embeddingsBinPath) ||
+    Object.keys(lockHashes).length !== hashIds.length ||
+    hashIds.some((id) => lockHashes[id] !== currentHashes[id]);
+
+  return {
+    schemaId: sources.schema.schemaId,
+    embedderId: lock?.embedderId ?? STUDIO_RAG_EMBEDDER_ID,
+    expectedEmbedderId: STUDIO_RAG_EMBEDDER_ID,
+    hasIndex: Boolean(lock && existsSync(embeddingsJsonPath) && existsSync(embeddingsBinPath)),
+    stale,
+    updatedAt: lock?.updatedAt ?? null,
+    chunksTotal: chunkResult.chunks.length,
+    chunksIndexed: Array.isArray(embeddings?.records) ? embeddings.records.length : 0,
+    dimensions: typeof embeddings?.dimensions === "number" ? embeddings.dimensions : STUDIO_RAG_DIMENSIONS,
+    sensitiveExcluded: chunkResult.stats.sensitiveExcluded,
+    sensitiveIncluded: chunkResult.stats.sensitiveIncluded,
+    files: {
+      lock: existsSync(lockPath),
+      embeddingsJson: existsSync(embeddingsJsonPath),
+      embeddingsBin: existsSync(embeddingsBinPath),
+    },
+  };
+}
+
+async function indexRag(schemaDir: string): Promise<unknown> {
+  const sources = loadChunkerSourcesFromDir(schemaDir);
+  const store = createFileStore({ basePath: join(schemaDir, "schema") });
+  const result = await buildSchemaIndex({
+    schema: sources,
+    embedder: createStudioMockEmbedder(),
+    store,
+    embedderId: STUDIO_RAG_EMBEDDER_ID,
+    lockFilePath: join(schemaDir, "schema.lock.json"),
+  });
+  store.flush();
+  return {
+    status: getRagStatus(schemaDir),
+    stats: result.stats,
+  };
+}
+
+async function queryRag(
+  schemaDir: string,
+  query: { question: string; k: number; types?: ChunkType[] },
+): Promise<unknown> {
+  const status = getRagStatus(schemaDir) as { hasIndex?: boolean; schemaId?: string };
+  if (!status.hasIndex) {
+    throw new StudioHttpError(400, "Build the RAG index before querying chunks.");
+  }
+  const store = createFileStore({ basePath: join(schemaDir, "schema") });
+  const retriever = createRetriever({
+    embedder: createStudioMockEmbedder(),
+    store,
+  });
+  const results = await retriever({
+    question: query.question,
+    k: query.k,
+    filter: {
+      schemaId: status.schemaId,
+      ...(query.types && query.types.length > 0 ? { types: query.types } : {}),
+    },
+  });
+
+  return {
+    question: query.question,
+    k: query.k,
+    results: results.map(serializeRagResult),
+  };
+}
+
+function serializeRagResult(result: QueryResult): unknown {
+  return {
+    id: result.id,
+    score: Number(result.score.toFixed(6)),
+    type: result.payload.type,
+    refs: result.payload.refs,
+    sensitive: result.payload.sensitive,
+    text: result.payload.text,
+  };
+}
+
+function createStudioMockEmbedder(dim = STUDIO_RAG_DIMENSIONS): Embedder {
+  return async (texts: string[]) => {
+    return texts.map((text) => {
+      const vector = new Array<number>(dim).fill(0);
+      const tokens = text.toLowerCase().match(/[a-z0-9_]+/g) ?? [];
+      for (const token of tokens) {
+        vector[stableTokenHash(token) % dim] += 1;
+      }
+      const norm = Math.sqrt(vector.reduce((sum, value) => sum + value * value, 0)) || 1;
+      return vector.map((value) => value / norm);
+    });
+  };
+}
+
+function stableTokenHash(token: string): number {
+  let hash = 2166136261;
+  for (let i = 0; i < token.length; i++) {
+    hash ^= token.charCodeAt(i);
+    hash = Math.imul(hash, 16777619);
+  }
+  return hash >>> 0;
+}
+
+function readOptionalJson(path: string): unknown | undefined {
+  if (!existsSync(path)) return undefined;
+  try {
+    return JSON.parse(readFileSync(path, "utf8"));
+  } catch {
+    return undefined;
+  }
+}
+
 function parseTableDraftBody(body: unknown): TableDraft {
   if (!isRecord(body) || !isRecord(body.draft)) {
     throw new StudioHttpError(400, "`draft` is required.");
@@ -268,6 +429,26 @@ function parseQuestion(body: unknown): string {
     throw new StudioHttpError(400, "`question` is required.");
   }
   return body.question.trim();
+}
+
+function parseRagQuery(body: unknown): { question: string; k: number; types?: ChunkType[] } {
+  if (!isRecord(body) || typeof body.question !== "string" || body.question.trim() === "") {
+    throw new StudioHttpError(400, "`question` is required.");
+  }
+  const k = typeof body.k === "number" && Number.isFinite(body.k) ? Math.trunc(body.k) : 8;
+  if (k < 1 || k > 25) {
+    throw new StudioHttpError(400, "`k` must be between 1 and 25.");
+  }
+  const allowed = new Set<ChunkType>(["table", "column", "cql", "question", "concept", "relationship"]);
+  let types: ChunkType[] | undefined;
+  if (Array.isArray(body.types)) {
+    types = body.types.filter((type): type is ChunkType => typeof type === "string" && allowed.has(type as ChunkType));
+  }
+  return {
+    question: body.question.trim(),
+    k,
+    ...(types && types.length > 0 ? { types } : {}),
+  };
 }
 
 async function readJson(req: IncomingMessage): Promise<unknown> {
