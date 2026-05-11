@@ -2,7 +2,7 @@
 
 Engine-agnostic introspection orchestrator for AskDB. Defines the `Connector` contract and turns the integration package's `SqlSchema` output into a Schema v2 directory.
 
-> Status: pre-1.0. `@askdb/introspect` itself does not bundle any engine support — integration packages (e.g. `@askdb/postgres`) supply connectors and input shapes.
+> Status: pre-1.0. `@askdb/introspect` itself does not bundle any engine support — integration packages (e.g. `@askdb/postgres`, `@askdb/prisma`) supply connectors and input shapes.
 
 ## Install
 
@@ -10,6 +10,8 @@ Engine-agnostic introspection orchestrator for AskDB. Defines the `Connector` co
 pnpm add @askdb/introspect @askdb/core
 # Plus an integration package for the engine you're targeting, e.g.:
 pnpm add @askdb/postgres pg
+# Or for Prisma schema-file introspection:
+pnpm add @askdb/prisma
 ```
 
 ## Programmatic usage
@@ -27,6 +29,19 @@ const result = await introspect(
 
 The output directory contains a physical Schema v2 artifact (`schema.json`) plus the Phase 5 describable layer.
 
+For Prisma projects, use `@askdb/prisma` to read schema files without connecting to the database:
+
+```ts
+import { introspect } from "@askdb/introspect";
+import { createPrismaConnector } from "@askdb/prisma";
+
+const result = await introspect(
+  { schemaPath: "./prisma", schemaId: "my-app" },
+  { outDir: "./my-app.schema", schemaId: "my-app" },
+  { connector: createPrismaConnector() },
+);
+```
+
 ## CLI
 
 The user-facing CLI for introspection ships in `@askdb/cli` as `askdb introspect`. `@askdb/introspect` does not provide a standalone binary.
@@ -38,4 +53,4 @@ A `Connector<TInput>` has two methods:
 - `describe(input: TInput): Promise<IntrospectionResult>` — the integration's input shape goes through unchanged.
 - `templates?(): SqlTemplateBundle` — optional; only relevant for engines that introspect via catalog SQL.
 
-The integration package owns its own input type (e.g. `PostgresIntrospectionInput`). `@askdb/introspect` does not assume a live catalog runner exists, a bundle path exists, or a template suite exists.
+The integration package owns its own input type (e.g. `PostgresIntrospectionInput`, `PrismaIntrospectionInput`). `@askdb/introspect` does not assume a live catalog runner exists, a bundle path exists, a schema-file path exists, or a template suite exists.

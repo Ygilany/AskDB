@@ -1,0 +1,90 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`describePrismaSchema > wires through the Connector contract and renders deterministic Schema v2 JSON 1`] = `
+{
+  "schemaId": "simple",
+  "tables": [
+    {
+      "columns": [
+        {
+          "id": "table:public.Order#id",
+          "name": "id",
+          "nullable": false,
+          "primaryKey": true,
+          "sensitive": false,
+          "type": "Uuid",
+        },
+        {
+          "id": "table:public.Order#userId",
+          "name": "userId",
+          "nullable": false,
+          "sensitive": false,
+          "type": "Uuid",
+        },
+        {
+          "id": "table:public.Order#status",
+          "name": "status",
+          "nullable": false,
+          "sensitive": false,
+          "type": "OrderStatus",
+        },
+        {
+          "id": "table:public.Order#total",
+          "name": "total",
+          "nullable": false,
+          "sensitive": false,
+          "type": "Decimal(10,2)",
+        },
+      ],
+      "id": "table:public.Order",
+      "name": "Order",
+      "relationships": [
+        {
+          "from": "table:public.Order#userId",
+          "to": "table:public.User#id",
+        },
+      ],
+      "schema": "public",
+      "sensitive": false,
+    },
+    {
+      "columns": [
+        {
+          "id": "table:public.User#id",
+          "name": "id",
+          "nullable": false,
+          "primaryKey": true,
+          "sensitive": false,
+          "type": "Uuid",
+        },
+        {
+          "id": "table:public.User#email",
+          "name": "email",
+          "nullable": false,
+          "sensitive": false,
+          "type": "String",
+        },
+        {
+          "id": "table:public.User#name",
+          "name": "name",
+          "nullable": true,
+          "sensitive": false,
+          "type": "String",
+        },
+        {
+          "id": "table:public.User#createdAt",
+          "name": "createdAt",
+          "nullable": false,
+          "sensitive": false,
+          "type": "DateTime",
+        },
+      ],
+      "id": "table:public.User",
+      "name": "User",
+      "schema": "public",
+      "sensitive": false,
+    },
+  ],
+  "version": 2,
+}
+`;

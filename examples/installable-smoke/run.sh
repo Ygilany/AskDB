@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Installable smoke test for AskDB packages.
 #
-# Builds the workspace, packs the three library packages (core, introspect, postgres) plus the
-# app packages (cli, http-api, tui), copies the consumer fixture into a fresh tmpdir, installs
+# Builds the workspace, packs the library packages plus the app packages
+# (cli, http-api, tui), copies the consumer fixture into a fresh tmpdir, installs
 # library tarballs (no workspace), runs `tsc --noEmit`, and executes the smoke script.
 set -euo pipefail
 
@@ -18,7 +18,7 @@ pnpm -C "$ROOT" -r build >/dev/null
 
 echo "smoke: packing tarballs…"
 mkdir -p "$WORK/tarballs"
-for pkg in packages/core packages/introspect packages/postgres apps/cli apps/http-api apps/tui; do
+for pkg in packages/core packages/introspect packages/postgres packages/prisma apps/cli apps/http-api apps/tui; do
   (cd "$ROOT/$pkg" && pnpm pack --pack-destination "$WORK/tarballs" >/dev/null)
 done
 for pkg in packages/rag; do
@@ -31,6 +31,8 @@ INTROSPECT_TARBALL="$(ls "$WORK/tarballs"/askdb-introspect-*.tgz | head -n1)"
 [ -f "$INTROSPECT_TARBALL" ] || { echo "smoke: missing introspect tarball" >&2; exit 1; }
 POSTGRES_TARBALL="$(ls "$WORK/tarballs"/askdb-postgres-*.tgz | head -n1)"
 [ -f "$POSTGRES_TARBALL" ] || { echo "smoke: missing postgres tarball" >&2; exit 1; }
+PRISMA_TARBALL="$(ls "$WORK/tarballs"/askdb-prisma-*.tgz | head -n1)"
+[ -f "$PRISMA_TARBALL" ] || { echo "smoke: missing prisma tarball" >&2; exit 1; }
 CLI_TARBALL="$(ls "$WORK/tarballs"/askdb-cli-*.tgz | head -n1)"
 [ -f "$CLI_TARBALL" ] || { echo "smoke: missing cli tarball" >&2; exit 1; }
 TUI_TARBALL="$(ls "$WORK/tarballs"/askdb-tui-*.tgz | head -n1)"
@@ -59,6 +61,16 @@ grep -q '^package/README.md$' <<<"$POSTGRES_TARBALL_FILES"
 grep -q '^package/LICENSE$' <<<"$POSTGRES_TARBALL_FILES"
 if grep -Eq '(^package/src/|\.test\.)' <<<"$POSTGRES_TARBALL_FILES"; then
   echo "smoke: FAILED — @askdb/postgres tarball includes source/tests" >&2
+  exit 1
+fi
+
+echo "smoke: validating @askdb/prisma tarball contents…"
+PRISMA_TARBALL_FILES="$(tar -tzf "$PRISMA_TARBALL")"
+grep -q '^package/dist/index.js$' <<<"$PRISMA_TARBALL_FILES"
+grep -q '^package/README.md$' <<<"$PRISMA_TARBALL_FILES"
+grep -q '^package/LICENSE$' <<<"$PRISMA_TARBALL_FILES"
+if grep -Eq '(^package/src/|\.test\.)' <<<"$PRISMA_TARBALL_FILES"; then
+  echo "smoke: FAILED — @askdb/prisma tarball includes source/tests" >&2
   exit 1
 fi
 
@@ -107,6 +119,7 @@ node -e "
   j.dependencies['@askdb/core'] = 'file:$CORE_TARBALL';
   j.dependencies['@askdb/introspect'] = 'file:$INTROSPECT_TARBALL';
   j.dependencies['@askdb/postgres'] = 'file:$POSTGRES_TARBALL';
+  j.dependencies['@askdb/prisma'] = 'file:$PRISMA_TARBALL';
   j.dependencies['@askdb/rag'] = 'file:$RAG_TARBALL';
   fs.writeFileSync(p, JSON.stringify(j, null, 2) + '\n');
 "
@@ -139,6 +152,7 @@ node -e "
       '@askdb/core': 'file:$CORE_TARBALL',
       '@askdb/introspect': 'file:$INTROSPECT_TARBALL',
       '@askdb/postgres': 'file:$POSTGRES_TARBALL',
+      '@askdb/prisma': 'file:$PRISMA_TARBALL',
       '@askdb/cli': 'file:$CLI_TARBALL',
       '@askdb/tui': 'file:$TUI_TARBALL',
       '@askdb/rag': 'file:$RAG_TARBALL'

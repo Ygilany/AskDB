@@ -31,6 +31,23 @@ askdb ask --schema "$ASKDB_SCHEMA_PATH" --question "How many users signed up las
 
 Run `askdb --help` for the full list.
 
+## Introspection
+
+Postgres live and air-gapped introspection:
+
+```bash
+askdb introspect --url "$DATABASE_URL" --out my-app.schema
+askdb introspect --from-export ./pg-export-bundle --out my-app.schema
+```
+
+Prisma schema-file introspection does not connect to the database:
+
+```bash
+askdb introspect --engine prisma --prisma-schema ./prisma --out my-app.schema
+askdb introspect --engine prisma --prisma-schema ./prisma/schema.prisma --print
+askdb introspect --engine prisma --prisma-schema ./prisma --diff my-app.schema
+```
+
 ## Environment variables
 
 | Variable | Purpose |
