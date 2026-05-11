@@ -90,6 +90,16 @@ export {
   type NlToSqlSchemaFormatStats,
 } from "./schema/normalize.js";
 export { extractSqlFromModelText } from "./sql/extract-sql.js";
+export {
+  resolveAskDbAiConfig,
+  createAskDbLanguageModel,
+  createAskDbLanguageModelFromEnv,
+  askDbAiKeyMissingMessage,
+  type AskDbAiProvider,
+  type AskDbAiConfig,
+  type AskDbAiEnv,
+  type ResolveAskDbAiConfigOptions,
+} from "./ai/provider.js";
 export type {
   Retriever,
   RetrievedChunk,

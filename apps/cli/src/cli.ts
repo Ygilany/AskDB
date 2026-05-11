@@ -1,7 +1,6 @@
 #!/usr/bin/env node
 import dotenv from "dotenv";
 import { randomUUID } from "node:crypto";
-import { createOpenAI } from "@ai-sdk/openai";
 import {
   AskDbError,
   AskDbLogEvent,
@@ -15,8 +14,11 @@ import {
   parseAskDbModeV1,
   SqlValidationError,
   ask,
+  askDbAiKeyMissingMessage,
+  createAskDbLanguageModelFromEnv,
   createAskDbLogger,
   loadSchema,
+  resolveAskDbAiConfig,
 } from "@askdb/core";
 import { postgresDialect } from "@askdb/postgres";
 import { Command } from "commander";
@@ -270,9 +272,9 @@ program
       });
 
       const mockSql = opts.mockSql ?? process.env.ASKDB_MOCK_SQL;
-      const apiKey = process.env.OPENAI_API_KEY;
-      if (!mockSql && !apiKey) {
-        console.error("OPENAI_API_KEY is required for NL→SQL generation.");
+      const aiConfig = mockSql ? undefined : resolveAskDbAiConfig();
+      if (!mockSql && !aiConfig) {
+        console.error(askDbAiKeyMissingMessage("NL→SQL generation"));
         console.error("Tip: in tests, set ASKDB_MOCK_SQL to bypass live model calls.");
         process.exitCode = 1;
         return;
@@ -292,14 +294,7 @@ program
         const model: AskModel = mockSql
           ? // The model won't be used when `deps.generateText` is overridden.
             (undefined as unknown as AskModel)
-          : (() => {
-              const openai = createOpenAI({
-                apiKey: apiKey!,
-                baseURL: process.env.OPENAI_BASE_URL,
-              });
-              const modelId = process.env.ASKDB_MODEL ?? process.env.OPENAI_MODEL ?? "gpt-4o-mini";
-              return openai(modelId);
-            })();
+          : ((await createAskDbLanguageModelFromEnv()) as AskModel);
 
         const omitSensitiveFromPrompt =
           Boolean(opts.omitSensitiveFromPrompt) ||
