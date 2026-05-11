@@ -10,3 +10,4 @@ coverage/
 *.tgz
 examples/**/node_modules/
 examples/**/package-lock.json
+output/**
