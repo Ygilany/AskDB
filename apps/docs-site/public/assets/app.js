@@ -889,6 +889,50 @@ const searchPanel = document.querySelector("[data-search-panel]");
 const sidebar = document.querySelector("[data-sidebar]");
 const navToggle = document.querySelector("[data-nav-toggle]");
 const navLinks = Array.from(document.querySelectorAll("[data-nav-link]"));
+const themeToggle = document.querySelector("[data-theme-toggle]");
+
+const THEME_STORAGE_KEY = "askdb-docs-theme";
+const prefersDark = window.matchMedia("(prefers-color-scheme: dark)");
+
+function getStoredTheme() {
+  try {
+    const value = localStorage.getItem(THEME_STORAGE_KEY);
+    return value === "light" || value === "dark" ? value : null;
+  } catch (error) {
+    return null;
+  }
+}
+
+function getActiveTheme() {
+  return document.documentElement.getAttribute("data-theme") === "dark" ? "dark" : "light";
+}
+
+function applyTheme(theme, persist) {
+  const next = theme === "dark" ? "dark" : "light";
+  document.documentElement.setAttribute("data-theme", next);
+  if (themeToggle) {
+    const label = next === "dark" ? "Switch to light theme" : "Switch to dark theme";
+    themeToggle.setAttribute("aria-label", label);
+    themeToggle.setAttribute("title", label);
+  }
+  if (persist) {
+    try {
+      localStorage.setItem(THEME_STORAGE_KEY, next);
+    } catch (error) {
+      // Storage may be unavailable (private mode, etc.) — theme still applies for the session.
+    }
+  }
+}
+
+applyTheme(getActiveTheme(), false);
+
+if (prefersDark.addEventListener) {
+  prefersDark.addEventListener("change", (event) => {
+    if (!getStoredTheme()) {
+      applyTheme(event.matches ? "dark" : "light", false);
+    }
+  });
+}
 
 function escapeHtml(value) {
   return value
@@ -1005,6 +1049,9 @@ function renderSearchResults(query) {
 
 window.addEventListener("hashchange", renderPage);
 navToggle.addEventListener("click", () => sidebar.classList.toggle("is-open"));
+themeToggle?.addEventListener("click", () => {
+  applyTheme(getActiveTheme() === "dark" ? "light" : "dark", true);
+});
 searchInput.addEventListener("input", (event) => renderSearchResults(event.target.value));
 searchPanel.addEventListener("click", (event) => {
   if (event.target.closest("[data-search-result]")) {
