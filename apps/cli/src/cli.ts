@@ -15,12 +15,11 @@ import {
   isSupportedAskDbLogLevel,
   parseAskDbModeV1,
   SqlValidationError,
-  type TabularResult,
   ask,
   createAskDbLogger,
   loadSchema,
 } from "@askdb/core";
-import { postgresDialect, createPostgresExecutor } from "@askdb/postgres";
+import { postgresDialect } from "@askdb/postgres";
 import { Command } from "commander";
 import { runIntrospectCli } from "./introspect.js";
 
@@ -50,13 +49,6 @@ if (process.argv[2] === "enrich") {
 
 if (process.argv[2] === "bundle") {
   process.exit(runTuiShim(["bundle", ...process.argv.slice(3)]));
-}
-
-function printTsv(result: TabularResult): void {
-  console.log(result.columns.join("\t"));
-  for (const row of result.rows) {
-    console.log(row.map((c) => (c === null || c === undefined ? "" : String(c))).join("\t"));
-  }
 }
 
 function printCliError(error: unknown): void {
@@ -187,15 +179,13 @@ function resolveAskDbLogLevel(opts: {
 }
 
 const program = new Command();
-program.name("askdb").description("AskDB — natural language → PostgreSQL SELECT (Phase 1 CLI)");
+program.name("askdb").description("AskDB — natural language → PostgreSQL SELECT");
 
 program
   .command("ask")
-  .description("Generate SQL from schema + question; optionally execute in read-only Postgres")
+  .description("Generate SQL from schema + question")
   .requiredOption("-s, --schema <path>", "Path to AskDB Schema v2 directory, bundled JSON, or schema.json")
   .requiredOption("-q, --question <text>", "Natural language question")
-  .option("-e, --execute", "Execute generated SQL using DATABASE_URL (read-only transaction)")
-  .option("--json", "With --execute: print rows as JSON (default is TSV)")
   .option(
     "--explain",
     "After SQL, print a JSON block describing heuristic guardrails satisfied (Phase 2 explainability)",
@@ -223,8 +213,6 @@ program
     async (opts: {
       schema: string;
       question: string;
-      execute?: boolean;
-      json?: boolean;
       explain?: boolean;
       verbose?: boolean;
       logLevel?: string;
@@ -263,16 +251,9 @@ program
         process.exitCode = 1;
         return;
       }
-      if (opts.execute && !process.env.DATABASE_URL) {
-        console.error("--execute requires DATABASE_URL in the environment.");
-        process.exitCode = 1;
-        return;
-      }
-
       logger.info(
         {
           event: AskDbLogEvent.RunStart,
-          execute: Boolean(opts.execute),
           mode,
         },
         "askdb run start",
@@ -305,8 +286,6 @@ program
           schema,
           model,
           dialect: postgresDialect,
-          execute: Boolean(opts.execute),
-          executor: opts.execute ? createPostgresExecutor(process.env.DATABASE_URL!) : undefined,
           logger,
           mode,
           explain: Boolean(opts.explain),
@@ -335,7 +314,7 @@ program
           );
           console.error(
             `Warning: generated SQL references sensitive columns: ${cols.join(", ")}\n` +
-              "Review carefully before executing or sharing results.",
+              "Review carefully before sharing or running this SQL outside AskDB.",
           );
         }
 
@@ -344,14 +323,6 @@ program
         if (opts.explain) {
           console.log("-- explain --");
           console.log(JSON.stringify(out.explain ?? null, null, 2));
-        }
-        if (out.result) {
-          console.log("-- result --");
-          if (opts.json) {
-            console.log(JSON.stringify(out.result, null, 2));
-          } else {
-            printTsv(out.result);
-          }
         }
 
         logger.info({ event: AskDbLogEvent.RunEnd, ok: true }, "askdb run end");

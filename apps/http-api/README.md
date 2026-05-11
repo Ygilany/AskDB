@@ -1,6 +1,6 @@
 # @askdb/http-api
 
-Minimal HTTP surface that wraps [`@askdb/core`](https://www.npmjs.com/package/@askdb/core) — no duplicated NL→SQL logic. `POST /ask` returns a validated read-only `SELECT` (with optional execution behind a server-side feature flag).
+Minimal HTTP surface that wraps [`@askdb/core`](https://www.npmjs.com/package/@askdb/core) — no duplicated NL→SQL logic. `POST /ask` returns validated SQL only.
 
 > **Status:** pre-1.0.
 
@@ -59,7 +59,7 @@ Notes:
 
 - **Correlation**: if you omit `x-correlation-id`, the server generates one and returns it.
 - **Mode**: optional `x-askdb-mode` header (body `mode` wins if present).
-- **Execution**: disabled by default. Requests that set `execute: true` (or `x-askdb-execute: true`) get **403** unless `ASKDB_HTTP_ENABLE_EXECUTION=true` is set on the server.
+- **Execution**: not supported. Retired execution controls return `400`; run any approved SQL outside AskDB.
 - **Generation config**: set `OPENAI_API_KEY` (or for tests/dev, set `ASKDB_MOCK_SQL` to bypass live model calls).
 - **Schema config (recommended)**: set `ASKDB_SCHEMA_PATH` to an AskDB schema JSON v1 file. You *can* also send `schemaJson` per request as an override, but it doesn’t scale.
 

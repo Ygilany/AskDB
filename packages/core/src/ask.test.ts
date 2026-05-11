@@ -46,14 +46,13 @@ const promptForwardingDialect: AskDialect = {
 };
 
 describe("ask (mode + logging)", () => {
-  it("emits pipeline mode before generation and does not post_execute without execute", async () => {
+  it("emits pipeline mode before generation", async () => {
     const info = vi.fn();
     await ask({
       question: "count users",
       schema: minimalSchema,
       model: fakeModel,
       dialect: cannedDialect,
-      execute: false,
       mode: "bounded_results",
       logger: { info, error: vi.fn() },
     });
@@ -61,11 +60,6 @@ describe("ask (mode + logging)", () => {
     const modes = info.mock.calls.filter((c) => (c[0] as { event?: string })?.event === AskDbLogEvent.PipelineMode);
     expect(modes.length).toBeGreaterThanOrEqual(1);
     expect(modes[0]![0]).toMatchObject({ mode: "bounded_results" });
-
-    const post = info.mock.calls.filter(
-      (c) => (c[0] as { event?: string })?.event === AskDbLogEvent.PipelinePostExecute,
-    );
-    expect(post).toHaveLength(0);
   });
 });
 
@@ -98,7 +92,6 @@ describe("ask — retriever wiring", () => {
       schema,
       model: fakeModel,
       dialect: promptForwardingDialect,
-      execute: false,
       retriever,
       retrievalK: 4,
       totalSchemaChunkCount: 100,
@@ -144,7 +137,6 @@ describe("ask — retriever wiring", () => {
       schema,
       model: fakeModel,
       dialect: promptForwardingDialect,
-      execute: false,
       deps: { generateText: baselineGenerateText },
     });
 
@@ -153,7 +145,6 @@ describe("ask — retriever wiring", () => {
       schema,
       model: fakeModel,
       dialect: promptForwardingDialect,
-      execute: false,
       retriever,
       totalSchemaChunkCount: 2,
       retrievalThresholdChunks: 30,
@@ -201,7 +192,6 @@ describe("ask — retriever wiring", () => {
       schema,
       model: fakeModel,
       dialect: promptForwardingDialect,
-      execute: false,
       retriever,
       totalSchemaChunkCount: 100,
       deps: { generateText },
@@ -224,7 +214,6 @@ describe("ask — retriever wiring", () => {
       schema,
       model: fakeModel,
       dialect: promptForwardingDialect,
-      execute: false,
       retriever,
       totalSchemaChunkCount: 100,
       logger,

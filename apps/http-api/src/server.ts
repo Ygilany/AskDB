@@ -11,7 +11,6 @@ import {
   type AskDbLogLevel,
   type AskDbModeV1,
   DEFAULT_ASKDB_MODE,
-  SqlExecutionError,
   SqlGenerationError,
   SqlValidationError,
   ask,
@@ -20,7 +19,7 @@ import {
   loadSchemaFromJson,
   parseAskDbModeV1,
 } from "@askdb/core";
-import { createPostgresExecutor, postgresDialect } from "@askdb/postgres";
+import { postgresDialect } from "@askdb/postgres";
 import type { AskHttpErrorResponse, AskHttpRequest, AskHttpSuccessResponse } from "./types.js";
 
 export type AskDbHttpServerOptions = {
@@ -122,14 +121,6 @@ async function resolveSchemaPathWithFallbacks(schemaPath: string): Promise<{ res
   return { resolvedPath: repoRelative, source: `ASKDB_SCHEMA_PATH (${trimmed}) resolved from repo root (${repoRelative})` };
 }
 
-function boolFromHeader(v: string | undefined): boolean | undefined {
-  if (!v) return undefined;
-  const s = v.trim().toLowerCase();
-  if (["1", "true", "yes", "on"].includes(s)) return true;
-  if (["0", "false", "no", "off"].includes(s)) return false;
-  return undefined;
-}
-
 function modeFromHeader(v: string | undefined): AskDbModeV1 | undefined {
   if (!v) return undefined;
   return parseAskDbModeV1(v);
@@ -190,18 +181,10 @@ export function createAskDbHttpServer(options: AskDbHttpServerOptions = {}) {
       const effectiveMode = body.mode ?? (headerMode ? modeFromHeader(headerMode) : undefined);
       const mode: AskDbModeV1 = effectiveMode ?? parseAskDbModeV1(process.env.ASKDB_MODE);
 
-      // Default to generation+validation only. Execution must be explicitly enabled both:
-      // - by the request, and
-      // - by server config (ASKDB_HTTP_ENABLE_EXECUTION).
-      const headerExecute = boolFromHeader(getHeader(req, "x-askdb-execute"));
-      const requestExecute = body.execute ?? headerExecute ?? false;
-      const executionEnabled =
-        ["1", "true", "yes"].includes((process.env.ASKDB_HTTP_ENABLE_EXECUTION ?? "").toLowerCase()) ||
-        false;
-      if (requestExecute && !executionEnabled) {
-        writeError(res, 403, correlationId, {
-          code: "execution_disabled",
-          message: "Execution is disabled on this server.",
+      if ("execute" in body || getHeader(req, "x-askdb-execute") !== undefined) {
+        writeError(res, 400, correlationId, {
+          code: "bad_request",
+          message: "Execution is not supported. This endpoint returns generated SQL only.",
         });
         return;
       }
@@ -217,7 +200,7 @@ export function createAskDbHttpServer(options: AskDbHttpServerOptions = {}) {
       }
 
       logger.info(
-        { event: AskDbLogEvent.RunStart, execute: requestExecute, mode },
+        { event: AskDbLogEvent.RunStart, mode },
         "askdb http run start",
       );
 
@@ -268,23 +251,11 @@ export function createAskDbHttpServer(options: AskDbHttpServerOptions = {}) {
             return openai(modelId);
           })();
 
-      const databaseUrl = process.env.DATABASE_URL;
-      if (requestExecute && !databaseUrl) {
-        writeError(res, 500, correlationId, {
-          code: "execution_not_configured",
-          message:
-            "Execution requested but DATABASE_URL is not set. Configure it on the server before enabling execution.",
-        });
-        return;
-      }
-
       const out = await ask({
         question: body.question,
         schema,
         model,
         dialect: postgresDialect,
-        execute: requestExecute,
-        executor: requestExecute ? createPostgresExecutor(databaseUrl!) : undefined,
         logger,
         mode: mode ?? DEFAULT_ASKDB_MODE,
         explain: Boolean(body.explain),
@@ -301,7 +272,6 @@ export function createAskDbHttpServer(options: AskDbHttpServerOptions = {}) {
         ok: true,
         correlationId,
         sql: out.sql,
-        result: out.result,
         explain: out.explain,
       };
       logger.info({ event: AskDbLogEvent.RunEnd, ok: true }, "askdb http run end");
@@ -326,10 +296,6 @@ export function createAskDbHttpServer(options: AskDbHttpServerOptions = {}) {
       }
       if (e instanceof SqlGenerationError) {
         writeError(res, 502, correlationId, { code: "sql_generation_error", message: e.message });
-        return;
-      }
-      if (e instanceof SqlExecutionError) {
-        writeError(res, 502, correlationId, { code: "sql_execution_error", message: e.message });
         return;
       }
       if (e instanceof AskDbError) {
@@ -358,4 +324,3 @@ export function createAskDbHttpServer(options: AskDbHttpServerOptions = {}) {
       }),
   };
 }
-

@@ -1,10 +1,10 @@
 /**
  * End-to-end install smoke test for AskDB.
  *
- * Imports `ask` + executor seam types from `@askdb/core`, the engine-agnostic
+ * Imports `ask` from `@askdb/core`, the engine-agnostic
  * `introspect()` from `@askdb/introspect`, and the Postgres dialect + connector
- * from `@askdb/postgres`. Runs the pipeline against a fake LanguageModel and a
- * fake `AskDbExecutor`, asserts the executor's canned `TabularResult` round-trips.
+ * from `@askdb/postgres`. Runs the pipeline against a fake LanguageModel and
+ * confirms generated SQL is returned without any execution seam in core.
  *
  * Crucially, this consumer does NOT install `pg` — the test verifies the optional-peer story.
  */
@@ -12,14 +12,12 @@ import {
   ask,
   loadNormalizedSchemaFromJson,
   loadSchemaFromJson,
-  type AskDbExecutor,
   type AskDbSchemaFile,
   type AskDialect,
-  type TabularResult,
 } from "@askdb/core";
 import { buildSchemaIndex, type Embedder } from "@askdb/rag";
 import { createMemoryStore } from "@askdb/rag/stores/memory";
-import { introspect, renderToSchemaV2 } from "@askdb/introspect";
+import { introspect, renderToSchemaV2, type CatalogQueryRunner } from "@askdb/introspect";
 import {
   createPostgresConnector,
   postgresDialect,
@@ -41,16 +39,11 @@ const schemaJson: AskDbSchemaFile = {
 
 const fakeSql = "SELECT COUNT(*)::int AS n FROM users";
 
-const fakeResult: TabularResult = {
-  columns: ["n"],
-  rows: [[42]],
-};
-
-const executor: AskDbExecutor = async (sql) => {
+const catalogRunner: CatalogQueryRunner = async (sql) => {
   if (typeof sql !== "string" || sql.length === 0) {
-    throw new Error("smoke: executor received empty SQL");
+    throw new Error("smoke: catalog runner received empty SQL");
   }
-  return fakeResult;
+  return { columns: [], rows: [] };
 };
 
 // Stub dialect — bypasses the live model entirely.
@@ -86,21 +79,16 @@ const fakeEmbedder: Embedder = async (texts) => texts.map((text) => [text.length
 async function main(): Promise<void> {
   const schema = loadNormalizedSchemaFromJson(JSON.stringify(schemaJson));
 
-  // Verify ask() works with a fake dialect + fake executor (no @askdb/postgres needed at runtime).
+  // Verify ask() works with a fake dialect and no execution seam.
   const out = await ask({
     question: "How many users are there?",
     schema,
     model: {} as never,
     dialect: fakeDialect,
-    executor,
-    execute: true,
   });
 
   if (out.sql !== fakeSql) {
     throw new Error(`smoke: expected sql ${JSON.stringify(fakeSql)}, got ${JSON.stringify(out.sql)}`);
-  }
-  if (!out.result || out.result.rows.length !== 1 || out.result.rows[0]![0] !== 42) {
-    throw new Error(`smoke: executor result did not round-trip: ${JSON.stringify(out.result)}`);
   }
 
   // Verify @askdb/postgres exports the expected surface.
@@ -114,7 +102,7 @@ async function main(): Promise<void> {
   }
 
   // Verify the connector input type narrows.
-  const input: PostgresIntrospectionInput = { mode: "live", executor };
+  const input: PostgresIntrospectionInput = { mode: "live", runner: catalogRunner };
   if (input.mode !== "live") {
     throw new Error("smoke: PostgresIntrospectionInput type did not narrow");
   }

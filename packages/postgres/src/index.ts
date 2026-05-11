@@ -5,7 +5,7 @@
  *   1. **Dialect** — `postgresDialect`, plus the underlying validate/generate functions.
  *   2. **Connector** — `createPostgresConnector()` for `@askdb/introspect`.
  *   3. **Templates** — `POSTGRES_TEMPLATE_BUNDLE` (catalog SQL suite for live + from-export modes).
- *   4. **Executor** — `createPostgresExecutor()` for the `pg` driver.
+ *   4. **Catalog query runner** — `createPostgresCatalogQueryRunner()` for live introspection via `pg`.
  */
 
 export { postgresDialect } from "./dialect.js";
@@ -44,7 +44,7 @@ export {
 } from "./connector/index.js";
 
 export {
-  createPostgresExecutor,
-  executeReadOnlySelect,
-  type TabularResult,
+  createPostgresCatalogQueryRunner,
+  type CatalogQueryResult,
+  type CatalogQueryRunner,
 } from "./exec/postgres.js";

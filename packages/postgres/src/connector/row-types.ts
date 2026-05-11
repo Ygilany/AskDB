@@ -1,7 +1,7 @@
 /**
  * Typed shapes for the rows each template returns. Pairs with
- * `templates.ts`. `coerceRows()` (in describe.ts) maps the executor's
- * `TabularResult` (positional row arrays) into these record shapes by
+ * `templates.ts`. `coerceRows()` (in describe.ts) maps the runner's
+ * `CatalogQueryResult` (positional row arrays) into these record shapes by
  * looking up each template's `columns` list — see SqlTemplate.columns.
  */
 

@@ -16,6 +16,8 @@ export type {
   IntrospectionWarning,
   SqlTemplate,
   SqlTemplateBundle,
+  CatalogQueryResult,
+  CatalogQueryRunner,
   Connector,
 } from "./types.js";
 

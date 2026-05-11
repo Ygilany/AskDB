@@ -9,8 +9,7 @@
  * That's fine — it's small and unused outside of tests.
  */
 import { readFileSync } from "node:fs";
-import type { AskDbExecutor, TabularResult } from "@askdb/core";
-import type { SqlTemplate } from "@askdb/introspect";
+import type { CatalogQueryResult, CatalogQueryRunner, SqlTemplate } from "@askdb/introspect";
 import { POSTGRES_TEMPLATES, type PostgresSqlTemplateName } from "./templates.js";
 
 export type CatalogSnapshot = Partial<
@@ -27,32 +26,32 @@ export function loadCatalogSnapshot(path: string): CatalogSnapshot {
 }
 
 /**
- * Build a fake `AskDbExecutor` that dispatches on the SQL string identity:
+ * Build a fake `CatalogQueryRunner` that dispatches on the SQL string identity:
  * for each known template, returns the rows in the snapshot (or an empty
  * result if the snapshot omits that template). Fails loudly on an unknown
  * SQL — that catches drift between the templates and the snapshot.
  */
-export function createSnapshotExecutor(
+export function createSnapshotCatalogQueryRunner(
   snapshot: CatalogSnapshot,
-): AskDbExecutor {
+): CatalogQueryRunner {
   const byTemplateSql = new Map<string, SqlTemplate>();
   for (const tpl of POSTGRES_TEMPLATES) byTemplateSql.set(tpl.sql, tpl);
   return async (sql) => {
     const tpl = byTemplateSql.get(sql);
     if (!tpl) {
       throw new Error(
-        "snapshot executor: SQL did not match any known Postgres template — drift between templates.ts and the snapshot.",
+        "snapshot runner: SQL did not match any known Postgres template — drift between templates.ts and the snapshot.",
       );
     }
     const rows = snapshot[tpl.name as PostgresSqlTemplateName] ?? [];
-    return rowsToTabularResult(tpl, rows);
+    return rowsToCatalogQueryResult(tpl, rows);
   };
 }
 
-function rowsToTabularResult(
+function rowsToCatalogQueryResult(
   tpl: SqlTemplate,
   rows: ReadonlyArray<Record<string, unknown>>,
-): TabularResult {
+): CatalogQueryResult {
   const cols = [...tpl.columns];
   return {
     columns: cols,

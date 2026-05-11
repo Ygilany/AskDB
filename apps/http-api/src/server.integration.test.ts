@@ -42,10 +42,9 @@ describe("http-api", () => {
     }
   });
 
-  it("POST /ask rejects execution unless explicitly enabled", async () => {
+  it("POST /ask rejects the old execution header", async () => {
     process.env.ASKDB_MOCK_SQL = "select 1";
     process.env.ASKDB_LOG_LEVEL = "silent";
-    delete process.env.ASKDB_HTTP_ENABLE_EXECUTION;
     process.env.ASKDB_SCHEMA_PATH = schemaPath.pathname;
 
     const app = createAskDbHttpServer({ host: "127.0.0.1", port: 0 });
@@ -56,13 +55,14 @@ describe("http-api", () => {
     try {
       const res = await fetch(`http://127.0.0.1:${addr.port}/ask`, {
         method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ question: "hi", execute: true }),
+        headers: { "content-type": "application/json", "x-askdb-execute": "true" },
+        body: JSON.stringify({ question: "hi" }),
       });
-      expect(res.status).toBe(403);
+      expect(res.status).toBe(400);
       const json = (await res.json()) as any;
       expect(json.ok).toBe(false);
-      expect(json.error?.code).toBe("execution_disabled");
+      expect(json.error?.code).toBe("bad_request");
+      expect(json.error?.message).toContain("Execution is not supported");
     } finally {
       await app.close();
     }
@@ -205,4 +205,3 @@ describe("http-api", () => {
     }
   });
 });
-

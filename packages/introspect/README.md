@@ -16,10 +16,10 @@ pnpm add @askdb/postgres pg
 
 ```ts
 import { introspect } from "@askdb/introspect";
-import { createPostgresConnector, createPostgresExecutor } from "@askdb/postgres";
+import { createPostgresCatalogQueryRunner, createPostgresConnector } from "@askdb/postgres";
 
 const result = await introspect(
-  { mode: "live", executor: createPostgresExecutor(process.env.DATABASE_URL!) },
+  { mode: "live", runner: createPostgresCatalogQueryRunner(process.env.DATABASE_URL!) },
   { outDir: "./my-app.schema", schemaId: "my-app" },
   { connector: createPostgresConnector() },
 );
@@ -38,4 +38,4 @@ A `Connector<TInput>` has two methods:
 - `describe(input: TInput): Promise<IntrospectionResult>` — the integration's input shape goes through unchanged.
 - `templates?(): SqlTemplateBundle` — optional; only relevant for engines that introspect via catalog SQL.
 
-The integration package owns its own input type (e.g. `PostgresIntrospectionInput`). `@askdb/introspect` does not assume an executor exists, a bundle path exists, or a template suite exists.
+The integration package owns its own input type (e.g. `PostgresIntrospectionInput`). `@askdb/introspect` does not assume a live catalog runner exists, a bundle path exists, or a template suite exists.

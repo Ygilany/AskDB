@@ -13,7 +13,7 @@ import { introspect } from "@askdb/introspect";
 import type { SqlTemplate } from "@askdb/introspect";
 import { createPostgresConnector } from "./index.js";
 import {
-  createSnapshotExecutor,
+  createSnapshotCatalogQueryRunner,
   loadCatalogSnapshot,
   type CatalogSnapshot,
 } from "./test-utils.js";
@@ -49,7 +49,7 @@ describe("describePostgresFromExport", () => {
     });
     const live = await connector.describe({
       mode: "live",
-      executor: createSnapshotExecutor(snapshot),
+      runner: createSnapshotCatalogQueryRunner(snapshot),
     });
 
     expect(fromExport).toEqual(live);
@@ -69,7 +69,7 @@ describe("describePostgresFromExport", () => {
       { connector },
     );
     const live = await introspect(
-      { mode: "live", executor: createSnapshotExecutor(snapshot) },
+      { mode: "live", runner: createSnapshotCatalogQueryRunner(snapshot) },
       { outDir: liveDir, schemaId: "orders-users" },
       { connector },
     );

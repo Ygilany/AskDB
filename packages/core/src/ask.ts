@@ -1,11 +1,7 @@
 import type { LanguageModel, generateText as defaultGenerateText } from "ai";
-import { AskDbError } from "./errors.js";
-import type { AskDbExecutor } from "./exec/executor.js";
-import type { TabularResult } from "./exec/types.js";
 import type { AskDbLogger } from "./logging/askdb-logger.js";
 import { AskDbLogEvent } from "./logging/log-events.js";
 import type { AnyNormalizedSchema } from "./schema/types.js";
-import { logPostExecuteModeBranch } from "./modes/post-execute-log.js";
 import { DEFAULT_ASKDB_MODE, type AskDbModeV1 } from "./modes/types.js";
 import type { Retriever } from "./retrieval/types.js";
 import { synthesizeRetrievedDdl } from "./retrieval/synthesize-ddl.js";
@@ -54,13 +50,6 @@ export type AskPipelineOptions = {
    * with `(sensitive)` tags so the model can ground SQL.
    */
   omitSensitiveIdentifiersFromNlToSqlPrompt?: boolean;
-  /**
-   * BYO database execution seam. Required when `execute: true`. The executor is responsible for
-   * read-only semantics (see {@link AskDbExecutor}).
-   */
-  executor?: AskDbExecutor;
-  /** Default false — only generate + validate unless explicitly requested. */
-  execute?: boolean;
   deps?: AskGenerateDeps;
   /** Optional structured logger (host-provided — e.g. `createAskDbLogger` wraps Pino). */
   logger?: AskDbLogger;
@@ -100,7 +89,6 @@ export type AskPipelineOptions = {
 
 export type AskPipelineResult = {
   sql: string;
-  result?: TabularResult;
   explain?: unknown;
 };
 
@@ -130,41 +118,7 @@ export async function ask(options: AskPipelineOptions): Promise<AskPipelineResul
   );
   const sql = generated.sql;
   const explain = generated.explain;
-  if (!options.execute) {
-    return explain !== undefined ? { sql, explain } : { sql };
-  }
-
-  if (!options.executor) {
-    throw new AskDbError(
-      "Execution was requested but no `executor` was provided. " +
-        "Construct one (e.g. `createPostgresExecutor` from `@askdb/postgres`) and pass it to `ask({ executor })`.",
-    );
-  }
-
-  try {
-    logger?.info({ event: AskDbLogEvent.PipelineExecuteStart }, "execute start");
-    const result = await options.executor(sql);
-    logger?.info(
-      {
-        event: AskDbLogEvent.PipelineExecuteComplete,
-        rowCount: result.rows.length,
-      },
-      "execute complete",
-    );
-    logPostExecuteModeBranch(logger, mode, result.rows.length);
-    return explain !== undefined ? { sql, result, explain } : { sql, result };
-  } catch (e) {
-    const msg = e instanceof Error ? e.message : String(e);
-    logger?.error(
-      {
-        event: AskDbLogEvent.PipelineFailed,
-        phase: "execute",
-        errMessage: msg,
-      },
-      "execute failed",
-    );
-    throw e;
-  }
+  return explain !== undefined ? { sql, explain } : { sql };
 }
 
 /** Default chunk-count threshold below which the full DDL is preferred. */

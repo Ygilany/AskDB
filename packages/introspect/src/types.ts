@@ -167,6 +167,26 @@ export type SqlTemplateBundle = {
 };
 
 /**
+ * Row shape returned by a connector's catalog query runner.
+ *
+ * This is intentionally scoped to introspection. It is for connector-owned
+ * catalog templates, not for running generated user SQL.
+ */
+export type CatalogQueryResult = {
+  columns: string[];
+  rows: unknown[][];
+};
+
+/**
+ * Introspection-only query port used by live connectors to run documented
+ * catalog SQL templates.
+ */
+export type CatalogQueryRunner = (
+  sql: string,
+  params?: ReadonlyArray<unknown>,
+) => Promise<CatalogQueryResult>;
+
+/**
  * Engine-agnostic introspection connector. Each integration package (`@askdb/postgres`,
  * a future `@askdb/mysql`, `@askdb/prisma`, ...) exports its own connector and its own
  * input shape; the introspect orchestrator just hands the input through.
