@@ -108,6 +108,9 @@ importers:
       '@askdb/postgres':
         specifier: workspace:*
         version: link:../../packages/postgres
+      '@askdb/rag':
+        specifier: workspace:*
+        version: link:../../packages/rag
       '@askdb/tui':
         specifier: workspace:*
         version: link:../../packages/tui
