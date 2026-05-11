@@ -8,7 +8,7 @@ For local development, use Node **20+**, pnpm **11**, and Docker if you want the
 
 ```bash
 pnpm install
-cp .env.example .env
+pnpm exec askdb init
 # edit .env and set OPENAI_API_KEY before calling a live model
 pnpm build
 pnpm exec askdb ask \
