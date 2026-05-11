@@ -1,0 +1,20 @@
+model Tenant {
+  tenantId String @map("tenant_id")
+  code     String
+  products Product[]
+
+  @@id([tenantId, code])
+  @@schema("shop")
+  @@map("tenants")
+}
+
+model Product {
+  tenantId String @map("tenant_id")
+  sku      String
+  tenantCode String @map("tenant_code")
+  tenant   Tenant @relation(fields: [tenantId, tenantCode], references: [tenantId, code])
+
+  @@id([tenantId, sku])
+  @@schema("shop")
+  @@map("products")
+}

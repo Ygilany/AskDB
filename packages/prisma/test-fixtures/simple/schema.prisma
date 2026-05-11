@@ -1,0 +1,32 @@
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+enum OrderStatus {
+  pending
+  paid
+  shipped
+}
+
+model User {
+  id        String  @id @default(uuid()) @db.Uuid
+  email     String  @unique
+  name      String?
+  orders    Order[]
+  createdAt DateTime @default(now())
+}
+
+model Order {
+  id     String      @id @default(uuid()) @db.Uuid
+  userId String      @db.Uuid
+  status OrderStatus @default(pending)
+  total  Decimal     @db.Decimal(10, 2)
+  user   User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, status], name: "orders_user_status_unique")
+}

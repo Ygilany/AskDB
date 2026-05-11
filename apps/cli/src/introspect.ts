@@ -8,6 +8,7 @@ import {
   type AskDbLogLevel,
 } from "@askdb/core";
 import {
+  type Connector,
   introspect,
   toV2SchemaJson,
   type IntrospectResult,
@@ -16,8 +17,8 @@ import {
 import {
   createPostgresConnector,
   createPostgresCatalogQueryRunner,
-  type PostgresIntrospectionInput,
 } from "@askdb/postgres";
+import { createPrismaConnector } from "@askdb/prisma";
 
 const INTROSPECT_EVENTS = {
   started: "askdb.introspect.started",
@@ -29,6 +30,7 @@ const INTROSPECT_EVENTS = {
 type CliOptions = {
   url?: string;
   fromExport?: string;
+  prismaSchema?: string;
   out?: string;
   print?: boolean;
   diff?: string;
@@ -66,7 +68,10 @@ export async function runIntrospectCli(argv: readonly string[]): Promise<number>
 
 function runTemplatesCommand(argv: readonly string[]): number {
   const opts = parseOptions(argv);
-  assertPostgresEngine(opts.engine);
+  const engine = resolveEngine(opts.engine);
+  if (engine === "prisma") {
+    throw new Error("Prisma introspection reads schema files and does not provide SQL templates.");
+  }
   const bundle = createPostgresConnector().templates!();
   const body = bundle.templates
     .map((tpl) => [`-- ${tpl.name}`, tpl.sql, ""].join("\n"))
@@ -77,9 +82,18 @@ function runTemplatesCommand(argv: readonly string[]): number {
 
 async function runIntrospectCommand(argv: readonly string[]): Promise<number> {
   const opts = parseOptions(argv);
-  assertPostgresEngine(opts.engine);
-  if (!opts.url && !opts.fromExport) {
+  const engine = resolveEngine(opts.engine);
+  if (engine === "postgres" && !opts.url && !opts.fromExport) {
     throw new Error("Provide either --url <postgres-url> or --from-export <bundle-dir>.");
+  }
+  if (engine === "postgres" && opts.prismaSchema) {
+    throw new Error("Use --prisma-schema only with --engine prisma.");
+  }
+  if (engine === "prisma" && !opts.prismaSchema) {
+    throw new Error("Provide --prisma-schema <schema.prisma|schema-dir> with --engine prisma.");
+  }
+  if (engine === "prisma" && (opts.url || opts.fromExport)) {
+    throw new Error("Use --prisma-schema with --engine prisma, not --url or --from-export.");
   }
   if (opts.url && opts.fromExport) {
     throw new Error("Use only one input mode: --url or --from-export.");
@@ -102,11 +116,12 @@ async function runIntrospectCommand(argv: readonly string[]): Promise<number> {
     logStdout: opts.logStdout,
   });
 
-  const input = buildInput(opts);
+  const runConfig = buildRunConfig(opts, engine, schemaId);
   logger.info(
     {
       event: INTROSPECT_EVENTS.started,
-      mode: input.mode,
+      mode: runConfig.mode,
+      engine,
       schemaId,
       outputMode: opts.print ? "print" : opts.diff ? "diff" : "out",
     },
@@ -114,7 +129,7 @@ async function runIntrospectCommand(argv: readonly string[]): Promise<number> {
   );
 
   try {
-    const result = await runWithOutput(input, opts, schemaId);
+    const result = await runWithOutput(runConfig, opts, schemaId);
     for (const warning of result.warnings) {
       logger.info(
         { event: INTROSPECT_EVENTS.warning, warning },
@@ -140,20 +155,29 @@ async function runIntrospectCommand(argv: readonly string[]): Promise<number> {
   }
 }
 
+type IntrospectRunConfig = {
+  input: unknown;
+  connector: Connector<unknown>;
+  mode: string;
+};
+
 async function runWithOutput(
-  input: PostgresIntrospectionInput,
+  runConfig: IntrospectRunConfig,
   opts: CliOptions,
   schemaId: string,
 ): Promise<IntrospectResult> {
-  const connector = createPostgresConnector();
   if (opts.print) {
-    const result = await introspect(input, undefined, { connector });
+    const result = await introspect(runConfig.input, undefined, {
+      connector: runConfig.connector,
+    });
     process.stdout.write(`${JSON.stringify(toV2SchemaJson(result.schema, schemaId), null, 2)}\n`);
     return result;
   }
 
   if (opts.diff) {
-    const result = await introspect(input, undefined, { connector });
+    const result = await introspect(runConfig.input, undefined, {
+      connector: runConfig.connector,
+    });
     const generated = `${JSON.stringify(toV2SchemaJson(result.schema, schemaId), null, 2)}\n`;
     const existingPath = join(opts.diff, "schema.json");
     const existing = existsSync(existingPath) ? readFileSync(existingPath, "utf8") : "";
@@ -165,25 +189,49 @@ async function runWithOutput(
 
   const outDir = opts.out!;
   return introspect(
-    input,
+    runConfig.input,
     {
       outDir,
       schemaId,
       existingArtifactDir: existsSync(join(outDir, "schema.json")) ? outDir : undefined,
     },
-    { connector },
+    { connector: runConfig.connector },
   );
 }
 
-function buildInput(opts: CliOptions): PostgresIntrospectionInput {
+function buildRunConfig(
+  opts: CliOptions,
+  engine: "postgres" | "prisma",
+  schemaId: string,
+): IntrospectRunConfig {
+  if (engine === "prisma") {
+    return {
+      mode: "prisma-schema",
+      input: {
+        schemaPath: opts.prismaSchema!,
+        schemaId,
+        filters: buildFilters(opts),
+      },
+      connector: createPrismaConnector() as Connector<unknown>,
+    };
+  }
+
   const filters = buildFilters(opts);
   if (opts.fromExport) {
-    return { mode: "from-export", bundlePath: opts.fromExport, filters };
+    return {
+      mode: "from-export",
+      input: { mode: "from-export", bundlePath: opts.fromExport, filters },
+      connector: createPostgresConnector() as Connector<unknown>,
+    };
   }
   return {
     mode: "live",
-    runner: createPostgresCatalogQueryRunner(opts.url!),
-    filters,
+    input: {
+      mode: "live",
+      runner: createPostgresCatalogQueryRunner(opts.url!),
+      filters,
+    },
+    connector: createPostgresConnector() as Connector<unknown>,
   };
 }
 
@@ -205,6 +253,9 @@ function parseOptions(argv: readonly string[]): CliOptions {
         break;
       case "--from-export":
         opts.fromExport = readValue(argv, ++i, arg);
+        break;
+      case "--prisma-schema":
+        opts.prismaSchema = readValue(argv, ++i, arg);
         break;
       case "--out":
         opts.out = readValue(argv, ++i, arg);
@@ -268,10 +319,11 @@ function parseList(value: string): string[] {
     .filter(Boolean);
 }
 
-function assertPostgresEngine(engine = "postgres"): void {
-  if (engine !== "postgres") {
-    throw new Error(`Unsupported introspection engine '${engine}' (expected 'postgres').`);
+function resolveEngine(engine = "postgres"): "postgres" | "prisma" {
+  if (engine === "postgres" || engine === "prisma") {
+    return engine;
   }
+  throw new Error(`Unsupported introspection engine '${engine}' (expected 'postgres' or 'prisma').`);
 }
 
 function inferSchemaId(path: string | undefined): string | undefined {
@@ -310,12 +362,16 @@ function printHelp(): void {
       "Usage:",
       "  askdb introspect --url <postgres-url> --out <dir>",
       "  askdb introspect --from-export <bundle-dir> --out <dir>",
+      "  askdb introspect --engine prisma --prisma-schema <schema.prisma|schema-dir> --out <dir>",
+      "  askdb introspect --engine prisma --prisma-schema <schema.prisma|schema-dir> --print",
+      "  askdb introspect --engine prisma --prisma-schema <schema.prisma|schema-dir> --diff <existing-dir>",
       "  askdb introspect --from-export <bundle-dir> --print",
       "  askdb introspect --from-export <bundle-dir> --diff <existing-dir>",
       "  askdb introspect templates --engine postgres",
       "",
       "Options:",
       "  --schema-id <id>",
+      "  --prisma-schema <schema.prisma|schema-dir>",
       "  --schemas <a,b>",
       "  --exclude-schemas <a,b>",
       "  --tables <glob[,glob]>",

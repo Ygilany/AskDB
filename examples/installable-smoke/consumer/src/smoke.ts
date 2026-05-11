@@ -3,8 +3,9 @@
  *
  * Imports `ask` from `@askdb/core`, the engine-agnostic
  * `introspect()` from `@askdb/introspect`, and the Postgres dialect + connector
- * from `@askdb/postgres`. Runs the pipeline against a fake LanguageModel and
- * confirms generated SQL is returned without any execution seam in core.
+ * from `@askdb/postgres`, plus the Prisma connector from `@askdb/prisma`.
+ * Runs the pipeline against a fake LanguageModel and confirms generated SQL is
+ * returned without any execution seam in core.
  *
  * Crucially, this consumer does NOT install `pg` — the test verifies the optional-peer story.
  */
@@ -23,6 +24,7 @@ import {
   postgresDialect,
   type PostgresIntrospectionInput,
 } from "@askdb/postgres";
+import { createPrismaConnector } from "@askdb/prisma";
 
 const schemaJson: AskDbSchemaFile = {
   version: 1,
@@ -100,6 +102,10 @@ async function main(): Promise<void> {
   if (templates.engine !== "postgres" || templates.templates.length === 0) {
     throw new Error("smoke: @askdb/postgres connector templates did not load");
   }
+  const prismaConnector = createPrismaConnector();
+  if (typeof prismaConnector.describe !== "function") {
+    throw new Error("smoke: @askdb/prisma connector did not load");
+  }
 
   // Verify the connector input type narrows.
   const input: PostgresIntrospectionInput = { mode: "live", runner: catalogRunner };
@@ -136,7 +142,7 @@ async function main(): Promise<void> {
     throw new Error("smoke: ask({ retriever }) did not complete");
   }
 
-  console.log("smoke: ok - core, introspect, postgres, and rag package surfaces loaded");
+  console.log("smoke: ok - core, introspect, postgres, prisma, and rag package surfaces loaded");
 }
 
 main().catch((e: unknown) => {
