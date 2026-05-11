@@ -63,7 +63,7 @@ describe("App headless author flow", () => {
     // Append a sentinel to confirm typing reaches the editor.
     stdin.write(" Edited.");
     await flush();
-    stdin.write(KEY_CTRL_D);
+    stdin.write(KEY_ENTER);
     await flush();
 
     // Save.
@@ -126,6 +126,35 @@ describe("App headless author flow", () => {
     unmount();
   });
 
+  it("submits a table description with Enter and advances to aliases", async () => {
+    const ws = loadWorkspace(schemaDir);
+    const { stdin, lastFrame, unmount } = render(createElement(App, { workspace: ws }));
+    await flush();
+    // Open users.
+    stdin.write(KEY_ENTER);
+    await flush();
+
+    // Edit description, append text, and submit with Enter.
+    stdin.write(KEY_ENTER);
+    await flush();
+    stdin.write(" Enter submitted.");
+    await flush();
+    stdin.write(KEY_ENTER);
+    await flush();
+
+    expect(lastFrame()).toMatch(/▶\s+Aliases/);
+
+    stdin.write("s");
+    await flush();
+    const saved = readFileSync(join(schemaDir, "tables/users.md"), "utf8");
+    expect(saved).toContain("Enter submitted.");
+    expect(saved).toMatch(
+      /# Table: users\n\nRegistered user accounts\. One row per signed-up user\. Enter submitted\.\n\n## Common query language/,
+    );
+
+    unmount();
+  });
+
   it("opens the column edit screen for a non-described column", async () => {
     const ws = loadWorkspace(schemaDir);
     const { stdin, lastFrame, unmount } = render(createElement(App, { workspace: ws }));
@@ -162,7 +191,7 @@ describe("App headless author flow", () => {
     // Append a phrase that mentions the sensitive `email` column.
     stdin.write(" We look up users by email.");
     await flush();
-    stdin.write(KEY_CTRL_D);
+    stdin.write(KEY_ENTER);
     await flush();
     expect(lastFrame()).toMatch(/sensitive column/i);
     expect(lastFrame()).toContain("email");
@@ -320,7 +349,7 @@ describe("App headless author flow", () => {
     await clearField(stdin, 200); // generous count; overshoot is harmless.
     stdin.write("Cleared and replaced.");
     await flush();
-    stdin.write(KEY_CTRL_D);
+    stdin.write(KEY_ENTER);
     await flush();
     stdin.write("s");
     await flush();
