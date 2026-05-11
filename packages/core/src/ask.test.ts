@@ -2,9 +2,11 @@ import type { LanguageModel } from "ai";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it, vi } from "vitest";
-import { ask } from "./ask.js";
+import { ask, type AskDialect } from "./ask.js";
 import { AskDbLogEvent } from "./logging/log-events.js";
+import { formatSchemaForNlToSql } from "./schema/normalize.js";
 import type { NormalizedSchema } from "./schema/types.js";
+import { formatSchemaV2ForNlToSql } from "./schema/v2/index.js";
 import { loadSchema } from "./schema/v2/loader.js";
 
 const minimalSchema: NormalizedSchema = {
@@ -16,6 +18,33 @@ const fakeModel = {} as LanguageModel;
 const here = dirname(fileURLToPath(import.meta.url));
 const v2Dir = join(here, "../../../fixtures/schemas/orders-users.schema");
 
+const cannedDialect: AskDialect = {
+  generate: async () => ({ sql: "SELECT COUNT(*) AS n FROM users" }),
+};
+
+const promptForwardingDialect: AskDialect = {
+  async generate(_question, schema, _model, options) {
+    const prompt =
+      options?.prebuiltDdl ??
+      ("schemaId" in schema
+        ? formatSchemaV2ForNlToSql(schema, {
+            omitSensitiveIdentifiersFromPrompt: options?.omitSensitiveIdentifiersFromNlToSqlPrompt,
+          }).ddl
+        : formatSchemaForNlToSql(schema, {
+            omitSensitiveIdentifiersFromPrompt: options?.omitSensitiveIdentifiersFromNlToSqlPrompt,
+          }).ddl);
+
+    await options?.generateText?.({
+      model: fakeModel,
+      system: "test",
+      prompt,
+      temperature: 0,
+    } as never);
+
+    return { sql: "SELECT COUNT(*) AS n FROM users" };
+  },
+};
+
 describe("ask (mode + logging)", () => {
   it("emits pipeline mode before generation and does not post_execute without execute", async () => {
     const info = vi.fn();
@@ -23,14 +52,10 @@ describe("ask (mode + logging)", () => {
       question: "count users",
       schema: minimalSchema,
       model: fakeModel,
+      dialect: cannedDialect,
       execute: false,
       mode: "bounded_results",
       logger: { info, error: vi.fn() },
-      deps: {
-        generateText: vi.fn(async () => ({
-          text: "```sql\nSELECT COUNT(*) AS n FROM users\n```",
-        })),
-      },
     });
 
     const modes = info.mock.calls.filter((c) => (c[0] as { event?: string })?.event === AskDbLogEvent.PipelineMode);
@@ -72,6 +97,7 @@ describe("ask — retriever wiring", () => {
       question: "How much revenue did we make?",
       schema,
       model: fakeModel,
+      dialect: promptForwardingDialect,
       execute: false,
       retriever,
       retrievalK: 4,
@@ -117,6 +143,7 @@ describe("ask — retriever wiring", () => {
       question: "How many users?",
       schema,
       model: fakeModel,
+      dialect: promptForwardingDialect,
       execute: false,
       deps: { generateText: baselineGenerateText },
     });
@@ -125,6 +152,7 @@ describe("ask — retriever wiring", () => {
       question: "How many users?",
       schema,
       model: fakeModel,
+      dialect: promptForwardingDialect,
       execute: false,
       retriever,
       totalSchemaChunkCount: 2,
@@ -172,6 +200,7 @@ describe("ask — retriever wiring", () => {
       question: "How many users?",
       schema,
       model: fakeModel,
+      dialect: promptForwardingDialect,
       execute: false,
       retriever,
       totalSchemaChunkCount: 100,
@@ -194,6 +223,7 @@ describe("ask — retriever wiring", () => {
       question: "How many users?",
       schema,
       model: fakeModel,
+      dialect: promptForwardingDialect,
       execute: false,
       retriever,
       totalSchemaChunkCount: 100,

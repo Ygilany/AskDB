@@ -1,5 +1,3 @@
-import type { AskDbExecutor } from "@askdb/core";
-
 /**
  * Intermediate representation produced by every connector. Renders into a
  * Schema v2 `schema.json`. See docs/specs/phase-6-introspection/requirements.md §2.
@@ -129,10 +127,6 @@ export type IntrospectionFilters = {
   tables?: string[];
 };
 
-export type IntrospectionInput =
-  | { mode: "live"; executor: AskDbExecutor; filters?: IntrospectionFilters }
-  | { mode: "from-export"; bundlePath: string; filters?: IntrospectionFilters };
-
 export type IntrospectionWarning =
   | { code: "orphan_id"; id: string; file: string }
   | { code: "new_column"; id: string; tableId: string }
@@ -149,31 +143,13 @@ export type IntrospectionResult = {
 };
 
 /**
- * Stable identifier for a catalog query template. Used by the air-gapped path
- * to map bundle files (CSV/JSON) to template results.
- *
- * Names mirror requirements.md §4 (Postgres connector — catalog SQL suite).
+ * Generic catalog query template. Integration packages (e.g. `@askdb/postgres`) own the
+ * concrete set of template names; the engine-agnostic introspect package treats names as
+ * opaque strings used for bundle-file mapping and header validation.
  */
-export type SqlTemplateName =
-  | "schemas"
-  | "tables"
-  | "columns"
-  | "primary_keys"
-  | "foreign_keys"
-  | "unique_constraints"
-  | "check_constraints"
-  | "indexes"
-  | "enums"
-  | "sequences"
-  | "views"
-  | "comments";
-
 export type SqlTemplate = {
-  name: SqlTemplateName;
-  /**
-   * Parameterized SQL string. The connector binds params at run time; the
-   * air-gapped front door substitutes filter values into the printed output.
-   */
+  name: string;
+  /** Parameterized SQL string. The connector binds params at run time. */
   sql: string;
   /**
    * Stable ordered column list emitted by the SQL — used by the bundle reader
@@ -183,15 +159,22 @@ export type SqlTemplate = {
 };
 
 export type SqlTemplateBundle = {
-  engine: "postgres";
+  /** Engine identifier (e.g. `"postgres"`, `"mysql"`). Set by the integration package. */
+  engine: string;
   /** Schema/version of the template suite. Bumped whenever templates change shape. */
   version: number;
   templates: readonly SqlTemplate[];
 };
 
-export interface Connector {
-  readonly engine: "postgres";
-  describe(input: IntrospectionInput): Promise<IntrospectionResult>;
-  /** SQL templates for the air-gapped path. */
-  templates(): SqlTemplateBundle;
+/**
+ * Engine-agnostic introspection connector. Each integration package (`@askdb/postgres`,
+ * a future `@askdb/mysql`, `@askdb/prisma`, ...) exports its own connector and its own
+ * input shape; the introspect orchestrator just hands the input through.
+ *
+ * `templates()` is optional — integrations like Prisma that read schema files do not have
+ * a catalog template suite.
+ */
+export interface Connector<TInput = unknown> {
+  describe(input: TInput): Promise<IntrospectionResult>;
+  templates?(): SqlTemplateBundle;
 }

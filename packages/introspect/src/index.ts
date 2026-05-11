@@ -12,12 +12,10 @@ export type {
   SqlSequence,
   SqlView,
   IntrospectionFilters,
-  IntrospectionInput,
   IntrospectionResult,
   IntrospectionWarning,
   SqlTemplate,
   SqlTemplateBundle,
-  SqlTemplateName,
   Connector,
 } from "./types.js";
 
@@ -28,4 +26,4 @@ export {
   type IntrospectOptions,
   type IntrospectResult,
 } from "./introspect.js";
-export { renderToSchemaV2, toV2SchemaJson } from "./render/render.js";
+export { renderToSchemaV2, toV2SchemaJson, compactPostgresType } from "./render/render.js";

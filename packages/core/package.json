@@ -1,18 +1,15 @@
 {
   "name": "@askdb/core",
-  "version": "0.2.0",
-  "description": "AskDB core: NL→SQL pipeline with BYO LanguageModel and BYO database executor. Generates validated read-only PostgreSQL SELECTs from a normalized schema.",
+  "version": "0.3.0",
+  "description": "AskDB core: dialect-agnostic NL→SQL pipeline. Provides ask() orchestration, executor seam, schema/IR types, modes, and logging. Bring your own dialect (e.g. @askdb/postgres) and executor.",
   "keywords": [
     "askdb",
     "nl-to-sql",
     "natural-language-to-sql",
-    "postgres",
-    "postgresql",
     "ai",
     "llm",
     "ai-sdk",
-    "openai",
-    "sql"
+    "schema-v2"
   ],
   "homepage": "https://github.com/Ygilany/AskDB#readme",
   "bugs": {
@@ -32,10 +29,6 @@
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
-    },
-    "./postgres": {
-      "types": "./dist/postgres.d.ts",
-      "import": "./dist/postgres.js"
     }
   },
   "files": [
@@ -59,17 +52,7 @@
     "pino": "^9.6.0",
     "zod": "^3.24.4"
   },
-  "peerDependencies": {
-    "pg": ">=8"
-  },
-  "peerDependenciesMeta": {
-    "pg": {
-      "optional": true
-    }
-  },
   "devDependencies": {
-    "@types/pg": "^8.11.12",
-    "pg": "^8.14.1",
     "typescript": "^5.7.3",
     "vitest": "^3.0.9"
   }

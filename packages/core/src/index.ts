@@ -1,10 +1,15 @@
 export * from "./errors.js";
-// Executor seam contract types — the main barrel deliberately does NOT re-export the built-in
-// `pg`-backed helpers; consumers reach those via the `@askdb/core/postgres` subpath. See
-// `docs/specs/phase-4-publish-npm/requirements.md` ("Postgres helper packaging").
 export type { TabularResult } from "./exec/types.js";
 export type { AskDbExecutor } from "./exec/executor.js";
-export { ask, type AskPipelineOptions, type AskPipelineResult } from "./ask.js";
+export {
+  ask,
+  type AskPipelineOptions,
+  type AskPipelineResult,
+  type AskDialect,
+  type AskDialectGenerateOptions,
+  type AskDialectGenerateResult,
+  type AskGenerateDeps,
+} from "./ask.js";
 export {
   parseAskDbModeV1,
   formatAskDbModesV1,
@@ -29,7 +34,11 @@ export {
   SUPPORTED_ASKDB_LOG_LEVELS,
 } from "./logging/pino-supported-levels.js";
 export { loadNormalizedSchemaFromJson, parseAskDbSchemaJson } from "./schema/parse.js";
-export type { AskDbSchemaFile, NormalizedSchema } from "./schema/types.js";
+export type {
+  AskDbSchemaFile,
+  NormalizedSchema,
+  AnyNormalizedSchema,
+} from "./schema/types.js";
 export {
   loadSchema,
   loadSchemaFromJson,
@@ -82,19 +91,7 @@ export {
   type FormatNlToSqlOptions,
   type NlToSqlSchemaFormatStats,
 } from "./schema/normalize.js";
-export {
-  validatePostgresSelectSql,
-  buildPostgresSelectGuardrailExplanation,
-  type PostgresSelectGuardrailExplain,
-} from "./sql/validate.js";
 export { extractSqlFromModelText } from "./sql/extract-sql.js";
-export {
-  generatePostgresSelectSql,
-  type GeneratePostgresSelectSqlResult,
-  type GenerateSqlDeps,
-} from "./sql/generate.js";
-export { assertNlToSqlInputs, nlToSqlAmbiguityNotes } from "./sql/schema-question-precheck.js";
-export { buildNlToSqlUserPrompt, nlToSqlSystemPrompt, type AnyNormalizedSchema } from "./sql/prompt.js";
 export type {
   Retriever,
   RetrievedChunk,
