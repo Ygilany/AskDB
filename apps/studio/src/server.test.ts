@@ -58,6 +58,23 @@ describe("AskDB Studio server", () => {
       question: "How many users are there?",
     });
     expect(generated.sql).toBe("select count(*) from users");
+
+    const initialRag = await getJson(`${baseUrl}/api/rag/status`);
+    expect(initialRag.hasIndex).toBe(false);
+    expect(initialRag.chunksTotal).toBeGreaterThan(0);
+
+    const indexed = await postJson(`${baseUrl}/api/rag/index`, {});
+    expect(indexed.stats.chunksTotal).toBeGreaterThan(0);
+    expect(indexed.status.hasIndex).toBe(true);
+    expect(indexed.status.stale).toBe(false);
+
+    const retrieved = await postJson(`${baseUrl}/api/rag/query`, {
+      question: "How many users are there?",
+      k: 3,
+      types: ["table", "column", "cql", "question", "concept"],
+    });
+    expect(retrieved.results.length).toBeGreaterThan(0);
+    expect(retrieved.results[0].text).toEqual(expect.any(String));
   });
 });
 
