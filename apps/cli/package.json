@@ -1,7 +1,7 @@
 {
   "name": "@askdb/cli",
   "version": "0.3.0",
-  "description": "AskDB CLI: ask natural-language questions, get validated read-only PostgreSQL SELECTs (and optional execution) from your terminal.",
+  "description": "AskDB CLI: ask natural-language questions and get validated SQL from the configured dialect.",
   "keywords": [
     "askdb",
     "cli",

@@ -1,6 +1,4 @@
 export * from "./errors.js";
-export type { TabularResult } from "./exec/types.js";
-export type { AskDbExecutor } from "./exec/executor.js";
 export {
   ask,
   type AskPipelineOptions,

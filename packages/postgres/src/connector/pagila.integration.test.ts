@@ -13,7 +13,7 @@ import { join } from "node:path";
 import { loadSchema } from "@askdb/core";
 import { introspect } from "@askdb/introspect";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { createPostgresExecutor } from "../exec/postgres.js";
+import { createPostgresCatalogQueryRunner } from "../exec/postgres.js";
 import { createPostgresConnector } from "./index.js";
 
 const url = process.env.PAGILA_DATABASE_URL;
@@ -31,7 +31,7 @@ pagilaSuite("introspect() against Pagila (live Postgres)", () => {
   it("produces a v2 directory the Phase 5 loader accepts", async () => {
     const outDir = join(workDir, "pagila.schema");
     const result = await introspect(
-      { mode: "live", executor: createPostgresExecutor(url!) },
+      { mode: "live", runner: createPostgresCatalogQueryRunner(url!) },
       { outDir, schemaId: "pagila" },
       { connector: createPostgresConnector() },
     );
@@ -71,7 +71,7 @@ pagilaSuite("introspect() against Pagila (live Postgres)", () => {
   it("preserves composite primary-key column order on film_actor", async () => {
     const outDir = join(workDir, "pagila.schema");
     await introspect(
-      { mode: "live", executor: createPostgresExecutor(url!) },
+      { mode: "live", runner: createPostgresCatalogQueryRunner(url!) },
       { outDir, schemaId: "pagila" },
       { connector: createPostgresConnector() },
     );
@@ -92,12 +92,12 @@ pagilaSuite("introspect() against Pagila (live Postgres)", () => {
     const outA = join(workDir, "pagila-a.schema");
     const outB = join(workDir, "pagila-b.schema");
     await introspect(
-      { mode: "live", executor: createPostgresExecutor(url!) },
+      { mode: "live", runner: createPostgresCatalogQueryRunner(url!) },
       { outDir: outA, schemaId: "pagila" },
       { connector: createPostgresConnector() },
     );
     await introspect(
-      { mode: "live", executor: createPostgresExecutor(url!) },
+      { mode: "live", runner: createPostgresCatalogQueryRunner(url!) },
       { outDir: outB, schemaId: "pagila" },
       { connector: createPostgresConnector() },
     );
@@ -109,7 +109,7 @@ pagilaSuite("introspect() against Pagila (live Postgres)", () => {
   it("default include filter ['public'] excludes system schemas", async () => {
     const outDir = join(workDir, "pagila.schema");
     const result = await introspect(
-      { mode: "live", executor: createPostgresExecutor(url!) },
+      { mode: "live", runner: createPostgresCatalogQueryRunner(url!) },
       { outDir, schemaId: "pagila" },
       { connector: createPostgresConnector() },
     );

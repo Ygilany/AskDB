@@ -1,7 +1,7 @@
 {
   "name": "@askdb/http-api",
   "version": "0.3.0",
-  "description": "AskDB HTTP API: minimal HTTP wrapper around @askdb/core. POST /ask returns validated read-only SELECT (with optional execution behind a feature flag).",
+  "description": "AskDB HTTP API: minimal HTTP wrapper around @askdb/core. POST /ask returns validated SQL only.",
   "keywords": [
     "askdb",
     "http",

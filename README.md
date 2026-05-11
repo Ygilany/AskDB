@@ -1,6 +1,6 @@
 # AskDB
 
-AskDB turns natural language into **schema-grounded SQL and reports** so you can ask questions about your data without writing SQL by hand.
+AskDB turns natural language into **schema-grounded SQL** so you can ask questions about your data without writing SQL by hand.
 
 ## Quickstart
 
@@ -29,52 +29,28 @@ The detailed first-run paths live in [`packages/introspect/README.md`](packages/
 
 ```bash
 pnpm add @askdb/core
-# only if you want the built-in pg executor:
-pnpm add pg
+pnpm add @askdb/postgres
 ```
 
-`pg` is an **optional peer dependency**. Skip it if you supply your own executor.
-
-**Minimal example — built-in `pg` executor:**
+`pg` is optional and only needed for live Postgres introspection through `@askdb/postgres`.
 
 ```ts
 import { ask, loadSchema } from "@askdb/core";
+import { postgresDialect } from "@askdb/postgres";
 import { createOpenAI } from "@ai-sdk/openai";
 
 const schema = loadSchema("./my-app.schema");
 const openai = createOpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
-const { sql, result } = await ask({
+const { sql } = await ask({
   question: "How many users signed up last week?",
   schema,
   model: openai("gpt-4o-mini"),
-  connectionString: process.env.DATABASE_URL,
-  execute: true,
+  dialect: postgresDialect,
 });
 ```
 
-**Minimal example — BYO executor (no `pg`):**
-
-```ts
-import { ask, loadSchema, type AskDbExecutor } from "@askdb/core";
-
-const schema = loadSchema("./my-app.schema");
-
-const executor: AskDbExecutor = async (sql) => {
-  // Run sql in a read-only transaction with whatever driver you use
-  // (postgres.js, Neon HTTP, Hyperdrive, MCP-mediated DB, …) and return
-  // the canonical TabularResult shape.
-  return { columns: ["x"], rows: [[1]] };
-};
-
-const { sql, result } = await ask({
-  question, schema, model,
-  executor,
-  execute: true,
-});
-```
-
-Per-provider model recipes (OpenAI, Anthropic, Bedrock, Ollama, AI Gateway) and per-driver executor recipes (`pg`, `postgres.js`, Neon HTTP, MCP-mediated DB) live in [`docs/integration/installable-package.md`](docs/integration/installable-package.md).
+Per-provider model recipes (OpenAI, Anthropic, Bedrock, Ollama, AI Gateway) and introspection recipes live in [`docs/integration/installable-package.md`](docs/integration/installable-package.md).
 
 ## Constitution
 
@@ -87,7 +63,7 @@ Product direction and technical baseline live in **`docs/`**:
 - [`docs/contracts/modes-v1.md`](docs/contracts/modes-v1.md) — operating modes (`schema_only`, `bounded_results`)  
 - [`docs/contracts/sensitive-fields-and-modes.md`](docs/contracts/sensitive-fields-and-modes.md) — sensitive schema markers vs. models, bounded summaries  
 - [`docs/integration/reuse-core-phase-3.md`](docs/integration/reuse-core-phase-3.md) — stable `@askdb/core` entrypoints for wrappers (MCP/HTTP)  
-- [`docs/integration/installable-package.md`](docs/integration/installable-package.md) — install + BYO model + BYO executor + introspection workflow recipes  
+- [`docs/integration/installable-package.md`](docs/integration/installable-package.md) — install + BYO model + introspection workflow recipes
 - [`docs/specs/phase-6-introspection/README.md`](docs/specs/phase-6-introspection/README.md) — **Phase 6** introspection spec hub  
 - [`docs/specs/phase-1-schema-sql-cli/requirements.md`](docs/specs/phase-1-schema-sql-cli/requirements.md) — Phase 1 scope (implemented in this repo)  
 - Structured logging rationale: [`docs/adrs/0001-structured-logging-pino.md`](docs/adrs/0001-structured-logging-pino.md)  
@@ -147,13 +123,13 @@ See [`.env.example`](.env.example) for a copy/paste template. Keep real secrets 
 | `OPENAI_API_KEY` | Required for NL→SQL (BYO; OpenAI-compatible). |
 | `OPENAI_BASE_URL` | Optional custom base URL for OpenAI-compatible APIs. |
 | `ASKDB_MODEL` or `OPENAI_MODEL` | Optional model id (default `gpt-4o-mini`). |
-| `DATABASE_URL` | Optional; required with `askdb ask --execute` to run generated SQL in a **read-only** Postgres transaction, and commonly passed to `askdb introspect --url`. |
+| `DATABASE_URL` | Optional; commonly passed to `askdb introspect --url` for live Postgres introspection. |
 | `ASKDB_LOG_LEVEL` | Optional structured log level: `trace` \| `debug` \| `info` \| `warn` \| `error` \| `fatal` \| `silent` (default: `silent` unless `--verbose`, `--log-file`, or `--log-stdout` implies `info`). |
 | `ASKDB_CORRELATION_ID` | Optional; override the correlation id emitted on every JSON log line for the run. |
 | `ASKDB_MODE` | Optional operating mode (`schema_only` \| `bounded_results`); default `schema_only`. Formal contract: [`docs/contracts/modes-v1.md`](docs/contracts/modes-v1.md). |
 | `ASKDB_OMIT_SENSITIVE_FROM_PROMPT` | When `true`/`1`/`yes`, omit sensitive column/table names from NL→SQL DDL (default is to **include** names, tagged `(sensitive)`). See [`docs/contracts/sensitive-fields-and-modes.md`](docs/contracts/sensitive-fields-and-modes.md). |
 
-**Structured logging (Phase 2)** — JSON lines via [Pino](https://github.com/pinojs/pino); diagnostics go to **stderr** by default so **stdout** stays free for SQL/results. Flags:
+**Structured logging (Phase 2)** — JSON lines via [Pino](https://github.com/pinojs/pino); diagnostics go to **stderr** by default so **stdout** stays free for SQL. Flags:
 
 | Flag | Purpose |
 |------|---------|
@@ -164,9 +140,9 @@ See [`.env.example`](.env.example) for a copy/paste template. Keep real secrets 
 | `--correlation-id <id>` | Override correlation id (else random UUID per run). |
 | `--explain` | After `-- sql --`, print `-- explain --` plus JSON describing heuristic guardrails satisfied (`statementKind`, `checksVerified`, `remediationNote`). |
 | `--omit-sensitive-from-prompt` | Omit sensitive identifiers from NL→SQL DDL (default: include names with `(sensitive)` tag). Overrides default when combined with `ASKDB_OMIT_SENSITIVE_FROM_PROMPT`. |
-| `--mode <id>` | Operating mode: `schema_only` (default) or `bounded_results`. With `--execute` and logging, post-execute branches differ (see contract doc). |
+| `--mode <id>` | Operating mode: `schema_only` (default) or `bounded_results`. Current AskDB surfaces return SQL only. |
 
-**Modes + structured logs (Phase 2)** — same `ask` subcommand; pass `--mode` or set `ASKDB_MODE`. Use `-v` / `--log-file` so JSON events (including `askdb.pipeline.mode` and, after `--execute`, `askdb.pipeline.post_execute`) appear on **stderr** or in a file — see [`docs/contracts/modes-v1.md`](docs/contracts/modes-v1.md).
+**Modes + structured logs (Phase 2)** — same `ask` subcommand; pass `--mode` or set `ASKDB_MODE`. Use `-v` / `--log-file` so JSON events, including `askdb.pipeline.mode`, appear on **stderr** or in a file — see [`docs/contracts/modes-v1.md`](docs/contracts/modes-v1.md).
 
 ```bash
 pnpm build
@@ -177,17 +153,7 @@ pnpm exec askdb ask \
   --mode schema_only \
   -v
 
-# With --execute: DATABASE_URL must reference a Postgres that actually has the tables in your schema file.
-export DATABASE_URL="postgres://user:pass@localhost:5432/dbname"
-pnpm exec askdb ask \
-  --schema fixtures/schemas/orders-users.schema \
-  --question "List user emails" \
-  --execute \
-  --mode bounded_results \
-  -v
 ```
-
-After a successful `--execute`, check stderr for `askdb.pipeline.post_execute`: `branch: skipped` for `schema_only`, `branch: stub` for `bounded_results`. For local exploration with sample data only, [`pnpm pagila:up`](#pagila-dev-fixture) gives Pagila on port **5433** — pair it with a Schema v2 artifact that describes those tables when you NL→SQL + execute against it.
 
 **CLI example** (generate SQL only):
 
@@ -198,27 +164,14 @@ pnpm exec askdb ask \
   --question "How many orders are there?"
 ```
 
-With execution (Postgres must be reachable):
-
-```bash
-export DATABASE_URL="postgres://user:pass@localhost:5432/dbname"
-pnpm build
-pnpm exec askdb ask \
-  --schema fixtures/schemas/orders-users.schema \
-  --question "List user emails" \
-  --execute
-```
-
-Use `--json` with `--execute` for JSON rows instead of TSV.
-
-**Current limitations (pre-1.0 / dev):** Postgres-only execution and introspection; SQL guardrails are heuristic (not a full SQL parser); enrichment, RAG, MCP, web, and richer report generation are roadmap work. Merge bars: **[Phase 1](docs/specs/phase-1-schema-sql-cli/validation.md)** · **[Phase 2](docs/specs/phase-2-hardening-modes/validation.md)**.
+**Current limitations (pre-1.0 / dev):** Postgres-only dialect and introspection; AskDB returns SQL only; SQL guardrails are heuristic (not a full SQL parser); MCP, web, and richer report generation are roadmap work. Merge bars: **[Phase 1](docs/specs/phase-1-schema-sql-cli/validation.md)** · **[Phase 2](docs/specs/phase-2-hardening-modes/validation.md)**.
 
 **CI:** [`.github/workflows/ci.yml`](.github/workflows/ci.yml) runs `pnpm install --frozen-lockfile`, `pnpm build`, starts the Pagila introspection fixture, runs `pnpm test`, runs the installable smoke test, and validates publish with a dry run.
 
 ## What it does
 
 - **Natural language → SQL** grounded in your database schema (with validation and guardrails).
-- **Execute** queries and return results; **reports** build on top of that pipeline.
+- **Introspect** schemas with connector packages, then use an LLM to return SQL from the selected schema context.
 - **Multiple surfaces** — same core idea across CLI, MCP, and web; web aims to be **embeddable** with a future SDK / component-style integration.
 
 ## Product notes
@@ -226,19 +179,19 @@ Use `--json` with `--execute` for JSON rows instead of TSV.
 - **BYO API keys** — developers bring their own model credentials.
 - **Schema as input** — describe your schema in a supported format; later support multiple formats and retrieval (e.g. RAG) over schema/metadata.
 - **Clarification** — prompt or surface follow-ups when intent or schema context is unclear.
-- **Sensitive fields** — schema artifacts can mark tables/columns; NL→SQL prompts **list** identifiers by default (tagged) with an optional **omit** mode ([`docs/contracts/sensitive-fields-and-modes.md`](docs/contracts/sensitive-fields-and-modes.md)); row payloads and RAG paths remain policy-controlled by mode/host.
+- **Sensitive fields** — schema artifacts can mark tables/columns; NL→SQL prompts **list** identifiers by default (tagged) with an optional **omit** mode ([`docs/contracts/sensitive-fields-and-modes.md`](docs/contracts/sensitive-fields-and-modes.md)); RAG paths remain policy-controlled by mode/host.
 - **Multi-tenant** — questions can target a tenant; **query scope must respect tenant boundaries** when the deployment requires it.
 
 ## Modes (trust boundaries)
 
-How much of the **data** (not just schema) the model sees depends on the chosen mode:
+How much of the **schema context** the model sees depends on the chosen mode:
 
-1. **Schema only** — model proposes SQL; results feed reporting **without** row data going back to the model.
-2. **Schema + report shape** — same as (1), plus a structured report template alongside executed results.
-3. **Schema + bounded results** — a subset of query results may go to the model for summaries; user retains control over what is shared.
-4. **Full AI-assisted reporting** — richer AI-driven report generation where product rules allow.
+1. **Schema only** — model proposes SQL from schema context only.
+2. **Schema + report shape** — roadmap-only structured report template alongside generated SQL.
+3. **Schema + bounded results** — reserved for hosts that may summarize approved result subsets outside the current AskDB surfaces.
+4. **Full AI-assisted reporting** — roadmap-only richer AI-driven report generation where product rules allow.
 
-**Engine v1 (CLI `@askdb/core`):** selectable modes **`schema_only`** and **`bounded_results`** are documented in [`docs/contracts/modes-v1.md`](docs/contracts/modes-v1.md). Modes **(2)** and **(4)** above are roadmap-only until later phases.
+**Engine v1 (CLI `@askdb/core`):** selectable modes **`schema_only`** and **`bounded_results`** are documented in [`docs/contracts/modes-v1.md`](docs/contracts/modes-v1.md). Current AskDB surfaces still return SQL only.
 
 ## Status
 

@@ -1,6 +1,6 @@
 # @askdb/cli
 
-Command-line frontend for [`@askdb/core`](https://www.npmjs.com/package/@askdb/core). Ask natural-language questions, get a validated read-only PostgreSQL `SELECT`, and (optionally) execute it.
+Command-line frontend for [`@askdb/core`](https://www.npmjs.com/package/@askdb/core). Ask natural-language questions and get validated SQL from the configured dialect.
 
 > **Status:** pre-1.0.
 
@@ -12,27 +12,19 @@ pnpm add -g @askdb/cli
 pnpm dlx @askdb/cli --help
 ```
 
-The CLI ships with `pg` so the built-in Postgres executor works out of the box.
+The CLI delegates live introspection to AskDB connector packages; each connector owns any database driver it needs.
 
 ## Quickstart
 
 ```bash
 export OPENAI_API_KEY=sk-...
 export ASKDB_SCHEMA_PATH=./schema.json
-askdb "How many users signed up last week?"
-```
-
-To execute the generated SQL against a database:
-
-```bash
-export DATABASE_URL=postgres://user:pass@host:5432/db
-askdb --execute "Top 5 customers by lifetime value"
+askdb ask --schema "$ASKDB_SCHEMA_PATH" --question "How many users signed up last week?"
 ```
 
 ## Common flags
 
-- `--schema <path>` — AskDB schema JSON v1 file (overrides `ASKDB_SCHEMA_PATH`).
-- `--execute` — run the generated SELECT in a read-only transaction.
+- `--schema <path>` — AskDB Schema v2 directory, bundled JSON, or schema JSON file.
 - `--mode <mode>` — one of the supported modes (see `docs/contracts/modes-v1.md`).
 - `--explain` — emit heuristic guardrail metadata alongside the SQL.
 - `--log-level <level>` — Pino log level (silent, error, warn, info, debug, trace).
@@ -45,7 +37,7 @@ Run `askdb --help` for the full list.
 |---|---|
 | `OPENAI_API_KEY` | Default LanguageModel provider key. |
 | `ASKDB_SCHEMA_PATH` | Default schema file. |
-| `DATABASE_URL` | Postgres connection string for `--execute`. |
+| `DATABASE_URL` | Postgres connection string for `askdb introspect --url`. |
 | `ASKDB_MOCK_SQL` | Bypass live model calls in tests/dev. |
 
 ## License

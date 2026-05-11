@@ -1,5 +1,5 @@
-import type { AskDbExecutor } from "@askdb/core";
 import type {
+  CatalogQueryRunner,
   Connector,
   IntrospectionFilters,
   IntrospectionResult,
@@ -12,7 +12,7 @@ import { POSTGRES_TEMPLATE_BUNDLE } from "./templates.js";
 /**
  * Connector input for the Postgres integration. Two modes:
  *
- * - `live` runs the catalog SQL suite through a `pg`-backed (or BYO) `AskDbExecutor`.
+ * - `live` runs the catalog SQL suite through a `pg`-backed (or BYO) `CatalogQueryRunner`.
  * - `from-export` reads a directory of CSV/JSON files exported by an air-gapped operator
  *   running the same catalog SQL suite (`POSTGRES_TEMPLATE_BUNDLE`) in their environment.
  *
@@ -20,7 +20,7 @@ import { POSTGRES_TEMPLATE_BUNDLE } from "./templates.js";
  * not know about live vs. from-export modes.
  */
 export type PostgresIntrospectionInput =
-  | { mode: "live"; executor: AskDbExecutor; filters?: IntrospectionFilters }
+  | { mode: "live"; runner: CatalogQueryRunner; filters?: IntrospectionFilters }
   | { mode: "from-export"; bundlePath: string; filters?: IntrospectionFilters };
 
 export function createPostgresConnector(): Connector<PostgresIntrospectionInput> {
@@ -33,7 +33,7 @@ export function createPostgresConnector(): Connector<PostgresIntrospectionInput>
         });
       }
       return describePostgres({
-        executor: input.executor,
+        runner: input.runner,
         filters: input.filters,
       });
     },

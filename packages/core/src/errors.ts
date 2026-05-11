@@ -41,10 +41,3 @@ export class SqlGenerationError extends AskDbError {
     this.name = "SqlGenerationError";
   }
 }
-
-export class SqlExecutionError extends AskDbError {
-  constructor(message: string, cause?: unknown) {
-    super(message, cause);
-    this.name = "SqlExecutionError";
-  }
-}

@@ -15,7 +15,7 @@ import {
 } from "@askdb/introspect";
 import {
   createPostgresConnector,
-  createPostgresExecutor,
+  createPostgresCatalogQueryRunner,
   type PostgresIntrospectionInput,
 } from "@askdb/postgres";
 
@@ -182,7 +182,7 @@ function buildInput(opts: CliOptions): PostgresIntrospectionInput {
   }
   return {
     mode: "live",
-    executor: createPostgresExecutor(opts.url!),
+    runner: createPostgresCatalogQueryRunner(opts.url!),
     filters,
   };
 }

@@ -1,10 +1,10 @@
-# AskDB as an installable package — BYO model + BYO executor
+# AskDB as an installable package — BYO model + SQL output
 
 AskDB ships three library packages:
 
-1. [`@askdb/core`](../../packages/core/README.md) — dialect-agnostic NL→SQL pipeline (`ask()`, schema/IR types, executor seam, modes, logging).
-2. [`@askdb/introspect`](../../packages/introspect/README.md) — engine-agnostic introspection orchestrator + Schema v2 renderer.
-3. [`@askdb/postgres`](../../packages/postgres/README.md) — Postgres integration: dialect adapter (`postgresDialect`), connector (live + from-export), catalog templates, and the `pg`-backed executor.
+1. [`@askdb/core`](../../packages/core/README.md) — dialect-agnostic NL→SQL pipeline (`ask()`, schema/IR types, modes, logging, retrieval input).
+2. [`@askdb/introspect`](../../packages/introspect/README.md) — engine-agnostic introspection orchestrator, `CatalogQueryRunner` type, and Schema v2 renderer.
+3. [`@askdb/postgres`](../../packages/postgres/README.md) — Postgres integration: dialect adapter (`postgresDialect`), connector (live + from-export), catalog templates, and a `pg`-backed catalog query runner for live introspection.
 
 The supported user-facing CLI is [`@askdb/cli`](../../apps/cli/README.md) (`askdb` binary, `npm i -g @askdb/cli`). `@askdb/http-api`, `@askdb/tui`, and `@askdb/docs-site` are first-party reference apps.
 
@@ -18,11 +18,11 @@ Architecture rationale: [**ADR 0002 — Integration-package layout**](../adrs/00
 pnpm add @askdb/core @askdb/postgres
 # Optional: introspection
 pnpm add @askdb/introspect
-# Optional: the built-in pg executor lives behind @askdb/postgres
+# Optional: live Postgres introspection
 pnpm add pg
 ```
 
-`pg` is an **optional peer dependency** of `@askdb/postgres`. Skip it if you supply your own `AskDbExecutor`.
+`pg` is an **optional peer dependency** of `@askdb/postgres`. You do not need it when you only use `@askdb/core` to generate SQL.
 
 ---
 
@@ -30,17 +30,15 @@ pnpm add pg
 
 ```ts
 import { ask, loadSchema } from "@askdb/core";
-import { postgresDialect, createPostgresExecutor } from "@askdb/postgres";
+import { postgresDialect } from "@askdb/postgres";
 
 const schema = loadSchema("./my-app.schema");
 
-const { sql, result } = await ask({
+const { sql } = await ask({
   question: "How many users signed up last week?",
   schema,
   model: /* your LanguageModel */,
   dialect: postgresDialect,
-  executor: createPostgresExecutor(process.env.DATABASE_URL!),
-  execute: true,
 });
 ```
 
@@ -61,45 +59,14 @@ A directory with only `schema.json` (no `tables/*.md`) is valid — tables fall 
 
 ---
 
-## BYO executor (no `pg` install)
-
-If you supply your own `AskDbExecutor`, you do not need `pg` installed. `@askdb/postgres` only loads `pg` at the point you actually call `createPostgresExecutor(...)`.
-
-```ts
-import { ask, loadSchema, type AskDbExecutor } from "@askdb/core";
-import { postgresDialect } from "@askdb/postgres";
-
-const schema = loadSchema("./my-app.schema");
-
-const executor: AskDbExecutor = async (sql) => {
-  // Run sql in a read-only transaction with whatever driver you use
-  // (postgres.js, Neon HTTP, Cloudflare Hyperdrive, MCP, ...) and return
-  // rows in the canonical TabularResult shape.
-  return { columns: ["x"], rows: [[1]] };
-};
-
-await ask({
-  question: "anything",
-  schema,
-  model: /* … */,
-  dialect: postgresDialect,
-  executor,
-  execute: true,
-});
-```
-
-The executor seam contract lives at [`packages/core/src/exec/executor.ts`](../../packages/core/src/exec/executor.ts).
-
----
-
 ## Introspection
 
 ```ts
 import { introspect } from "@askdb/introspect";
-import { createPostgresConnector, createPostgresExecutor } from "@askdb/postgres";
+import { createPostgresCatalogQueryRunner, createPostgresConnector } from "@askdb/postgres";
 
 const result = await introspect(
-  { mode: "live", executor: createPostgresExecutor(process.env.DATABASE_URL!) },
+  { mode: "live", runner: createPostgresCatalogQueryRunner(process.env.DATABASE_URL!) },
   { outDir: "./my-app.schema", schemaId: "my-app" },
   { connector: createPostgresConnector() },
 );
@@ -111,15 +78,12 @@ For air-gapped operation, pass `{ mode: "from-export", bundlePath }` with a dire
 
 ---
 
-## Pre-1.0 break (0.3.0)
+## Breaking change
 
-If you are migrating from `@askdb/core@0.2.x`:
+Generated-SQL execution is no longer part of the AskDB package API:
 
-- Add `@askdb/postgres` as a dependency.
-- Pass `dialect: postgresDialect` to `ask()` (now required).
-- Replace `connectionString: process.env.DATABASE_URL` with `executor: createPostgresExecutor(process.env.DATABASE_URL!)`.
-- Replace imports from `@askdb/core/postgres` with imports from `@askdb/postgres`.
-- For introspection, replace any imports from `@askdb/introspect/postgres` or `@askdb/introspect/cli` with imports from `@askdb/postgres` (connector) or `@askdb/cli` (subcommand).
-- The standalone `askdb-introspect` binary is retired; use `askdb introspect`.
-
-See the [`Phase 7.5 changeset`](../../.changeset/phase-7-5-architecture-reshape.md) for the full breaking-change list.
+- `@askdb/core` returns `{ sql, explain? }` from `ask()`.
+- `AskDbExecutor`, `TabularResult`, `execute`, and `result` are removed from core.
+- `@askdb/postgres` no longer exports `createPostgresExecutor` or `executeReadOnlySelect`.
+- Live introspection uses `CatalogQueryRunner` via `createPostgresCatalogQueryRunner`.
+- CLI and HTTP surfaces return SQL only; applications run any approved SQL outside AskDB.
