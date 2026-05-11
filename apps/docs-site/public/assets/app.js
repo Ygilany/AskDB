@@ -4,7 +4,7 @@ const pages = [
     title: "AskDB Documentation",
     eyebrow: "Natural language to governed SQL",
     description:
-      "AskDB turns natural-language questions into schema-grounded PostgreSQL SELECTs, with package seams for models, execution, introspection, schema enrichment, and HTTP integration.",
+      "AskDB turns natural-language questions into schema-grounded SQL. Start with the CLI, embed the core library, or add retrieval over enriched schema artifacts when your schema gets large.",
     sections: [
       {
         heading: "What AskDB Gives You",
@@ -15,13 +15,28 @@ const pages = [
               <p>Questions are grounded in an AskDB Schema v2 artifact before SQL is generated and validated.</p>
             </article>
             <article>
-              <h3>BYO model and executor</h3>
-              <p>Use any AI SDK-compatible language model and any database driver that can return tabular rows.</p>
+              <h3>Bring your own runtime</h3>
+              <p>Use any AI SDK-compatible language model, any executor that returns tabular rows, and only install <code>pg</code> when you choose the built-in Postgres executor or pgvector store.</p>
             </article>
             <article>
               <h3>Schema enrichment tools</h3>
               <p>The TUI turns raw introspection output into described, aliased Schema v2 artifacts with human-reviewed AI suggestions.</p>
             </article>
+            <article>
+              <h3>Retrieval-ready context</h3>
+              <p><code>@askdb/rag</code> chunks Schema v2, indexes it with your embedder and vector store, then passes focused context into <code>ask()</code>.</p>
+            </article>
+          </div>
+        `,
+      },
+      {
+        heading: "Choose a Path",
+        body: `
+          <div class="link-cards">
+            <a href="#/quickstart"><strong>Run the CLI</strong><span>Use a committed fixture or introspect a Postgres database, then ask a question.</span></a>
+            <a href="#/core"><strong>Embed AskDB</strong><span>Call <code>ask()</code> with your model, dialect, schema, and executor.</span></a>
+            <a href="#/rag"><strong>Add retrieval</strong><span>Index enriched schema docs and retrieve only the chunks needed for each question.</span></a>
+            <a href="#/postgres"><strong>Target Postgres</strong><span>Use the first-party dialect, introspection connector, catalog templates, and optional <code>pg</code> executor.</span></a>
           </div>
         `,
       },
@@ -52,6 +67,7 @@ pnpm exec askdb ask \\
             <a href="#/quickstart"><strong>Quickstart</strong><span>Local setup, schema creation, and your first question.</span></a>
             <a href="#/packages"><strong>Packages</strong><span>What each package owns and when to use it.</span></a>
             <a href="#/schema-v2"><strong>Schema v2</strong><span>The physical and describable schema artifact contract.</span></a>
+            <a href="#/rag"><strong>RAG</strong><span>Chunk, index, and retrieve schema context with BYO embeddings and storage.</span></a>
             <a href="#/tui"><strong>TUI enrichment</strong><span>Add descriptions, aliases, concepts, and common query language.</span></a>
           </div>
         `,
@@ -62,7 +78,7 @@ pnpm exec askdb ask \\
     path: "/quickstart",
     title: "Quickstart",
     eyebrow: "From clone to first query",
-    description: "Build the workspace, generate or use a schema artifact, enrich it, and run AskDB from the CLI.",
+    description: "Build the workspace, generate or use a schema artifact, enrich it, and run AskDB from the CLI. The same pieces can then move into your application code.",
     sections: [
       {
         heading: "Prerequisites",
@@ -71,7 +87,7 @@ pnpm exec askdb ask \\
             <li>Node 20 or newer.</li>
             <li>pnpm 11.</li>
             <li>An OpenAI-compatible API key for live NL-to-SQL generation.</li>
-            <li>A PostgreSQL connection string if you want live execution or introspection.</li>
+            <li>A PostgreSQL connection string only if you want live execution or live introspection.</li>
           </ul>
         `,
       },
@@ -128,6 +144,17 @@ pnpm exec askdb ask \\
   --json</code></pre>
         `,
       },
+      {
+        heading: "Use the Packages",
+        body: `
+          <p>For application code, install the small set of packages that match the surface you need. <code>@askdb/core</code> is dialect-agnostic. Postgres-specific behavior lives in <code>@askdb/postgres</code>.</p>
+          <pre><code>pnpm add @askdb/core @askdb/postgres
+# Optional: only for the built-in Postgres executor or live Postgres introspection
+pnpm add pg
+# Optional: only when you want retrieval over schema chunks
+pnpm add @askdb/rag</code></pre>
+        `,
+      },
     ],
   },
   {
@@ -142,11 +169,18 @@ pnpm exec askdb ask \\
         body: `
           <ol>
             <li>Load an AskDB Schema v2 artifact from a directory, bundle, or <code>schema.json</code>.</li>
-            <li>Build a prompt from physical schema metadata and optional describable context.</li>
+            <li>Optionally retrieve focused schema chunks from <code>@askdb/rag</code> for large enriched schemas.</li>
+            <li>Build a prompt from physical schema metadata, describable context, and the selected dialect.</li>
             <li>Call the supplied language model to generate SQL.</li>
             <li>Validate that the SQL is a read-only PostgreSQL <code>SELECT</code>.</li>
             <li>Optionally execute it through a built-in or custom executor.</li>
           </ol>
+        `,
+      },
+      {
+        heading: "Integration Packages",
+        body: `
+          <p><code>@askdb/core</code> does not bundle database-specific behavior. It asks for an <code>AskDialect</code>, and integration packages provide those adapters. Today that means <code>@askdb/postgres</code>; future packages can own their own dialects, connectors, and input shapes without changing core.</p>
         `,
       },
       {
@@ -173,7 +207,7 @@ askdb bundle my-app.schema --out my-app.schema.bundle.json</code></pre>
       {
         heading: "Execution Boundary",
         body: `
-          <p><code>@askdb/core</code> validates generated SQL before execution. Consumers still own database-level safety: read-only roles, read-only transactions, network policy, and audit logging.</p>
+          <p><code>@askdb/core</code> validates generated SQL before execution. Consumers still own database-level safety: read-only roles, read-only transactions, network policy, and audit logging. Installing <code>pg</code> is not required unless you choose a first-party adapter that uses it at runtime.</p>
         `,
       },
     ],
@@ -188,12 +222,20 @@ askdb bundle my-app.schema --out my-app.schema.bundle.json</code></pre>
         heading: "Packages",
         body: `
           <div class="package-table">
-            <a href="#/core"><strong>@askdb/core</strong><span>Library pipeline: schema loading, generation, validation, optional execution.</span></a>
-            <a href="#/cli"><strong>@askdb/cli</strong><span>Terminal frontend for asking questions and running introspection.</span></a>
-            <a href="#/introspect"><strong>@askdb/introspect</strong><span>Postgres catalog introspection into Schema v2 artifacts.</span></a>
+            <a href="#/core"><strong>@askdb/core</strong><span>Dialect-agnostic library pipeline: schema loading, prompt assembly, generation, validation, optional execution, and retrieval input.</span></a>
+            <a href="#/postgres"><strong>@askdb/postgres</strong><span>Postgres integration package: dialect, catalog connector, templates, bundle reader, and optional <code>pg</code> executor.</span></a>
+            <a href="#/introspect"><strong>@askdb/introspect</strong><span>Engine-agnostic introspection orchestrator and Schema v2 renderer.</span></a>
+            <a href="#/rag"><strong>@askdb/rag</strong><span>Schema v2 chunking, BYO embeddings, vector stores, lock-file reuse, and retriever wiring.</span></a>
+            <a href="#/cli"><strong>@askdb/cli</strong><span>Batteries-included terminal frontend for asking questions and running Postgres introspection.</span></a>
             <a href="#/tui"><strong>@askdb/tui</strong><span>Interactive terminal authoring for descriptions, aliases, concepts, and AI suggestions.</span></a>
             <a href="#/http-api"><strong>@askdb/http-api</strong><span>Small HTTP wrapper around core for server deployments.</span></a>
           </div>
+        `,
+      },
+      {
+        heading: "Apps vs Libraries",
+        body: `
+          <p>The reusable contracts live in <code>packages/*</code>. The first-party product surfaces live in <code>apps/*</code>: CLI, HTTP API, TUI, and this docs site. That split keeps the embed API small while still shipping complete developer workflows.</p>
         `,
       },
       {
@@ -213,31 +255,50 @@ pnpm preflight</code></pre>
     title: "@askdb/core",
     eyebrow: "Library API",
     description:
-      "The core package owns the NL-to-SQL pipeline, Schema v2 loading, enrichment suggestion helpers, SQL validation, logging contracts, and executor interfaces.",
+      "The core package owns the NL-to-SQL pipeline, Schema v2 loading, enrichment suggestion helpers, logging contracts, retrieval input, and executor interfaces. It stays dialect-agnostic.",
     sections: [
       {
         heading: "Install",
         body: `
           <pre><code>pnpm add @askdb/core
-# only when using the built-in pg executor
-pnpm add pg</code></pre>
-          <p><code>pg</code> is an optional peer dependency. Skip it when you supply your own executor.</p>
+# add an integration package for the engine you target
+pnpm add @askdb/postgres</code></pre>
+          <p><code>@askdb/core</code> does not depend on <code>pg</code> and does not expose a Postgres subpath. Database-specific behavior comes from integration packages such as <code>@askdb/postgres</code>.</p>
         `,
       },
       {
-        heading: "Minimal Pipeline",
+        heading: "Generate SQL",
         body: `
           <pre><code>import { ask, loadSchema } from "@askdb/core";
+import { postgresDialect } from "@askdb/postgres";
 import { createOpenAI } from "@ai-sdk/openai";
 
 const schema = loadSchema("./my-app.schema");
 const openai = createOpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
-const { sql, result } = await ask({
+const { sql } = await ask({
   question: "How many users signed up last week?",
   schema,
   model: openai("gpt-4o-mini"),
-  connectionString: process.env.DATABASE_URL,
+  dialect: postgresDialect,
+});</code></pre>
+        `,
+      },
+      {
+        heading: "Execute with Postgres",
+        body: `
+          <p>Execution is explicit. Build an executor in the integration package and pass it to <code>ask()</code>. This path is where the built-in Postgres adapter uses <code>pg</code>.</p>
+          <pre><code>import { ask, loadSchema } from "@askdb/core";
+import { createPostgresExecutor, postgresDialect } from "@askdb/postgres";
+
+const schema = loadSchema("./my-app.schema");
+
+const { sql, result } = await ask({
+  question: "Top customers by lifetime value",
+  schema,
+  model,
+  dialect: postgresDialect,
+  executor: createPostgresExecutor(process.env.DATABASE_URL!),
   execute: true,
 });</code></pre>
         `,
@@ -246,6 +307,7 @@ const { sql, result } = await ask({
         heading: "BYO Executor",
         body: `
           <pre><code>import { ask, loadSchema, type AskDbExecutor } from "@askdb/core";
+import { postgresDialect } from "@askdb/postgres";
 
 const schema = loadSchema("./my-app.schema");
 
@@ -258,8 +320,24 @@ await ask({
   question,
   schema,
   model,
+  dialect: postgresDialect,
   executor,
   execute: true,
+});</code></pre>
+          <p>Use this path for <code>postgres.js</code>, Neon HTTP, Cloudflare Hyperdrive, a database proxy, an MCP-mediated database, or any other driver that can run the validated SQL and return <code>{ columns, rows }</code>.</p>
+        `,
+      },
+      {
+        heading: "Retrieval Input",
+        body: `
+          <p>Phase 8 adds an optional <code>retriever</code> to <code>ask()</code>. When present, core asks the retriever for relevant Schema v2 chunks and builds a focused DDL block. Without a retriever, the existing full-schema prompt path is preserved.</p>
+          <pre><code>const { sql } = await ask({
+  question,
+  schema,
+  model,
+  dialect: postgresDialect,
+  retriever: index.retriever,
+  totalSchemaChunkCount: index.stats.chunksTotal,
 });</code></pre>
         `,
       },
@@ -289,12 +367,79 @@ const candidates = await suggestEnrichment(
         body: `
           <ul>
             <li><code>ask</code>: generate and optionally execute SQL.</li>
+            <li><code>AskDialect</code>: dialect adapter contract consumed by <code>ask()</code>.</li>
             <li><code>loadSchema</code>: load a Schema v2 directory, bundle, or schema JSON path.</li>
             <li><code>loadSchemaFromJson</code>: parse inline Schema v2 JSON.</li>
             <li><code>parseTableMarkdown</code> and <code>writeTableMarkdown</code>: work with describable table docs.</li>
             <li><code>suggestEnrichment</code>: produce candidate descriptions, aliases, primary entities, and common query language for review.</li>
             <li><code>createAskDbLogger</code>: produce structured log events.</li>
           </ul>
+        `,
+      },
+    ],
+  },
+  {
+    path: "/postgres",
+    title: "@askdb/postgres",
+    eyebrow: "Postgres integration",
+    description:
+      "The Postgres package owns everything that is specific to PostgreSQL: the dialect adapter, catalog introspection connector, template bundle, and optional pg-backed executor.",
+    sections: [
+      {
+        heading: "Install",
+        body: `
+          <pre><code>pnpm add @askdb/core @askdb/postgres
+# only when using createPostgresExecutor
+pnpm add pg</code></pre>
+          <p><code>pg</code> is an optional peer dependency. The package can still provide the dialect, templates, and connector types without forcing a driver into applications that supply their own executor.</p>
+        `,
+      },
+      {
+        heading: "What It Provides",
+        body: `
+          <div class="definition-list">
+            <div><code>postgresDialect</code><span>Prompting, SQL generation, and validation rules for read-only Postgres <code>SELECT</code> statements.</span></div>
+            <div><code>createPostgresExecutor()</code><span>A read-only executor backed by <code>pg</code>, lazy-loaded when called.</span></div>
+            <div><code>createPostgresConnector()</code><span>The connector used by <code>@askdb/introspect</code> for live and from-export catalog reads.</span></div>
+            <div><code>POSTGRES_TEMPLATE_BUNDLE</code><span>The catalog SQL suite for air-gapped exports and documented inspection.</span></div>
+          </div>
+        `,
+      },
+      {
+        heading: "Ask with Postgres",
+        body: `
+          <pre><code>import { ask, loadSchema } from "@askdb/core";
+import { createPostgresExecutor, postgresDialect } from "@askdb/postgres";
+
+const schema = loadSchema("./my-app.schema");
+
+await ask({
+  question: "How many paid orders were created last month?",
+  schema,
+  model,
+  dialect: postgresDialect,
+  executor: createPostgresExecutor(process.env.DATABASE_URL!),
+  execute: true,
+});</code></pre>
+        `,
+      },
+      {
+        heading: "Introspect with Postgres",
+        body: `
+          <pre><code>import { introspect } from "@askdb/introspect";
+import { createPostgresConnector, createPostgresExecutor } from "@askdb/postgres";
+
+await introspect(
+  { mode: "live", executor: createPostgresExecutor(process.env.DATABASE_URL!) },
+  { outDir: "./my-app.schema", schemaId: "my-app" },
+  { connector: createPostgresConnector() },
+);</code></pre>
+        `,
+      },
+      {
+        heading: "Why This Split Exists",
+        body: `
+          <p><code>@askdb/core</code> should be usable by teams that do not use <code>pg</code>, or eventually do not use Postgres at all. Keeping Postgres behavior in one integration package makes the dependency boundary explicit and gives future integrations, such as Prisma-shaped schema inputs, their own honest API shape.</p>
         `,
       },
     ],
@@ -312,6 +457,7 @@ const candidates = await suggestEnrichment(
           <pre><code>pnpm add -g @askdb/cli
 # or run from a workspace clone
 pnpm exec askdb --help</code></pre>
+          <p>The CLI is the batteries-included workflow and ships with the Postgres executor dependency. Library consumers can keep <code>pg</code> optional by using <code>@askdb/core</code> and <code>@askdb/postgres</code> directly.</p>
         `,
       },
       {
@@ -332,6 +478,16 @@ askdb ask \\
   --question "List user emails" \\
   --execute \\
   --mode bounded_results</code></pre>
+        `,
+      },
+      {
+        heading: "Introspect",
+        body: `
+          <pre><code>askdb introspect \\
+  --url "$DATABASE_URL" \\
+  --out ./my-app.schema \\
+  --schema-id my-app</code></pre>
+          <p>The retired standalone <code>askdb-introspect</code> binary is no longer the documented path.</p>
         `,
       },
       {
@@ -362,26 +518,34 @@ askdb bundle ./my-app.schema --out ./my-app.schema.bundle.json</code></pre>
     title: "@askdb/introspect",
     eyebrow: "Schema creation",
     description:
-      "The introspection package reads PostgreSQL catalog metadata and writes the physical layer of a Schema v2 directory.",
+      "The introspection package is engine-agnostic. It defines the connector contract, runs an integration package, and writes the physical layer of a Schema v2 directory.",
     sections: [
       {
-        heading: "Live Postgres",
+        heading: "Install",
         body: `
-          <pre><code>pnpm add @askdb/introspect @askdb/core pg
-
-askdb-introspect \\
+          <pre><code>pnpm add @askdb/introspect
+# add the integration package for the source you want to inspect
+pnpm add @askdb/postgres</code></pre>
+          <p><code>@askdb/introspect</code> does not ship a default database connector or a standalone binary. Use <code>@askdb/cli</code> for the command-line workflow.</p>
+        `,
+      },
+      {
+        heading: "CLI Workflow",
+        body: `
+          <pre><code>askdb introspect \\
   --url "$DATABASE_URL" \\
   --out my-app.schema \\
   --schema-id my-app</code></pre>
+          <p>For Postgres, the CLI wires <code>@askdb/introspect</code> to <code>@askdb/postgres</code> and writes <code>schema.json</code> into the output directory.</p>
         `,
       },
       {
         heading: "Air-Gapped Mode",
         body: `
           <p>Use export bundles when AskDB should not connect to the database.</p>
-          <pre><code>askdb-introspect templates --engine postgres > pg-introspection.sql
+          <pre><code>askdb introspect templates --engine postgres > pg-introspection.sql
 
-askdb-introspect \\
+askdb introspect \\
   --from-export ./pg-export \\
   --out my-app.schema \\
   --schema-id my-app</code></pre>
@@ -403,7 +567,7 @@ askdb-introspect \\
         heading: "Handoff to Enrichment",
         body: `
           <p>Introspection writes physical metadata only. After creating the directory, open it in the TUI to author the describable layer.</p>
-          <pre><code>askdb-introspect --url "$DATABASE_URL" --out my-app.schema --schema-id my-app
+          <pre><code>askdb introspect --url "$DATABASE_URL" --out my-app.schema --schema-id my-app
 askdb-tui --schema my-app.schema</code></pre>
         `,
       },
@@ -411,19 +575,21 @@ askdb-tui --schema my-app.schema</code></pre>
         heading: "Library API",
         body: `
           <pre><code>import { introspect } from "@askdb/introspect";
-import { createPostgresExecutor } from "@askdb/core/postgres";
+import { createPostgresConnector, createPostgresExecutor } from "@askdb/postgres";
 
 await introspect(
   {
     mode: "live",
-    executor: createPostgresExecutor(process.env.DATABASE_URL),
+    executor: createPostgresExecutor(process.env.DATABASE_URL!),
     filters: { schemas: ["public"] },
   },
   {
     outDir: "my-app.schema",
     schemaId: "my-app",
   },
+  { connector: createPostgresConnector() },
 );</code></pre>
+          <p>The input shape is owned by the integration package. For Postgres that shape is <code>PostgresIntrospectionInput</code>; another integration can use a different shape without changing <code>@askdb/introspect</code>.</p>
         `,
       },
     ],
@@ -440,13 +606,13 @@ await introspect(
         body: `
           <pre><code>pnpm add @askdb/tui
 # commonly installed with the CLI and introspector
-pnpm add @askdb/cli @askdb/introspect @askdb/tui pg</code></pre>
+pnpm add @askdb/cli @askdb/introspect @askdb/postgres @askdb/tui</code></pre>
         `,
       },
       {
         heading: "Quick Start",
         body: `
-          <pre><code>askdb-introspect \\
+          <pre><code>askdb introspect \\
   --url "$DATABASE_URL" \\
   --out my-app.schema \\
   --schema-id my-app
@@ -483,6 +649,88 @@ askdb bundle my-app.schema --out my-app.schema.bundle.json</code></pre>
     ],
   },
   {
+    path: "/rag",
+    title: "@askdb/rag",
+    eyebrow: "Schema retrieval",
+    description:
+      "The RAG package turns enriched Schema v2 artifacts into deterministic chunks, indexes them with your embedder and vector store, and returns a retriever for @askdb/core.",
+    sections: [
+      {
+        heading: "Install",
+        body: `
+          <pre><code>pnpm add @askdb/rag @askdb/core
+# only for the pgvector store when passing a connection string
+pnpm add pg</code></pre>
+          <p>The chunker, in-memory store, and file store do not require <code>pg</code>. The pgvector adapter can also use a pre-built client so applications can keep driver ownership outside AskDB.</p>
+        `,
+      },
+      {
+        heading: "Index a Schema",
+        body: `
+          <pre><code>import { buildSchemaIndex, loadChunkerSourcesFromDir } from "@askdb/rag";
+import { createFileStore } from "@askdb/rag/stores/file";
+
+const schemaDir = "./my-app.schema";
+const sources = loadChunkerSourcesFromDir(schemaDir);
+
+const index = await buildSchemaIndex({
+  schema: sources,
+  embedder,
+  store: createFileStore({ basePath: "./my-app.schema/schema" }),
+  embedderId: "openai:text-embedding-3-small",
+  lockFilePath: "./my-app.schema/schema.lock.json",
+});</code></pre>
+          <p>The lock file records chunk content hashes so unchanged schema text can skip re-embedding on the next run.</p>
+        `,
+      },
+      {
+        heading: "Ask with Retrieval",
+        body: `
+          <pre><code>import { ask, loadSchema } from "@askdb/core";
+import { postgresDialect } from "@askdb/postgres";
+
+const schema = loadSchema("./my-app.schema");
+
+const { sql } = await ask({
+  question: "How much revenue did we make last month?",
+  schema,
+  model,
+  dialect: postgresDialect,
+  retriever: index.retriever,
+  totalSchemaChunkCount: index.stats.chunksTotal,
+});</code></pre>
+          <p>Core still validates against the dialect. Retrieval changes how much schema context is sent to the model; it does not bypass SQL guardrails.</p>
+        `,
+      },
+      {
+        heading: "CLI",
+        body: `
+          <pre><code>askdb-rag index ./my-app.schema --store file --embedder openai
+askdb-rag query ./my-app.schema \\
+  --question "How much revenue did we make last month?" \\
+  -k 8</code></pre>
+          <p>The default CLI embedder is a deterministic mock for smoke tests. Use <code>--embedder openai</code> with <code>OPENAI_API_KEY</code> for real embeddings.</p>
+        `,
+      },
+      {
+        heading: "Stores",
+        body: `
+          <div class="definition-list">
+            <div><code>memory</code><span>Ephemeral cosine store for tests and local smoke checks.</span></div>
+            <div><code>file</code><span>Binary embeddings plus JSON metadata persisted next to the schema.</span></div>
+            <div><code>pgvector</code><span>Postgres vector storage; setup SQL is documented and intentionally not auto-run.</span></div>
+          </div>
+        `,
+      },
+      {
+        heading: "Sensitive Content",
+        body: `
+          <p>Sensitive describable-layer content and sensitive identifiers are excluded from chunks by default. Identifier grounding remains in core prompt formatting, where sensitive columns are tagged unless the caller explicitly omits them.</p>
+        `,
+      },
+    ],
+  },
+  {
     path: "/http-api",
     title: "@askdb/http-api",
     eyebrow: "Server wrapper",
@@ -492,8 +740,8 @@ askdb bundle my-app.schema --out my-app.schema.bundle.json</code></pre>
       {
         heading: "Run Locally",
         body: `
-          <pre><code>pnpm -C packages/http-api build
-node packages/http-api/dist/bin.js</code></pre>
+          <pre><code>pnpm -C apps/http-api build
+node apps/http-api/dist/bin.js</code></pre>
           <p>Set <code>ASKDB_SCHEMA_PATH</code> in the repo-root <code>.env</code> before starting the server.</p>
         `,
       },
@@ -668,7 +916,7 @@ askdb bundle my-app.schema --out my-app.schema.bundle.json</code></pre>
             <div><code>OPENAI_API_KEY</code><span>Required for live NL-to-SQL generation.</span></div>
             <div><code>OPENAI_BASE_URL</code><span>Optional custom OpenAI-compatible base URL.</span></div>
             <div><code>ASKDB_MODEL</code><span>Optional model ID; defaults are package-specific.</span></div>
-            <div><code>DATABASE_URL</code><span>Required for execution and live introspection.</span></div>
+            <div><code>DATABASE_URL</code><span>Required only for CLI execution, live Postgres introspection, or examples that create a Postgres-backed executor.</span></div>
             <div><code>ASKDB_SCHEMA_PATH</code><span>Default schema path for CLI and HTTP server workflows.</span></div>
             <div><code>ASKDB_LOG_LEVEL</code><span>Structured log level.</span></div>
             <div><code>ASKDB_MODE</code><span>Default operating mode.</span></div>
@@ -680,6 +928,12 @@ askdb bundle my-app.schema --out my-app.schema.bundle.json</code></pre>
         heading: "TUI Suggestions",
         body: `
           <p><code>@askdb/tui</code> uses <code>OPENAI_API_KEY</code> when you press <code>g</code> to request AI enrichment suggestions. Without the key, the TUI still supports manual authoring and saving.</p>
+        `,
+      },
+      {
+        heading: "RAG Embeddings",
+        body: `
+          <p><code>askdb-rag</code> defaults to a deterministic mock embedder for smoke tests. Set <code>OPENAI_API_KEY</code> and pass <code>--embedder openai</code> when you want real embeddings; pass <code>--pg-url</code> only when using the pgvector store.</p>
         `,
       },
       {
