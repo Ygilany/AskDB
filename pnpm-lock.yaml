@@ -44,6 +44,9 @@ importers:
       '@askdb/prisma':
         specifier: workspace:*
         version: link:../../packages/prisma
+      '@askdb/studio':
+        specifier: workspace:*
+        version: link:../studio
       '@askdb/tui':
         specifier: workspace:*
         version: link:../../packages/tui
@@ -87,6 +90,28 @@ importers:
       tsx:
         specifier: ^4.20.5
         version: 4.21.0
+      typescript:
+        specifier: ^5.7.3
+        version: 5.9.3
+      vitest:
+        specifier: ^3.0.9
+        version: 3.2.4(@types/node@22.19.17)(jiti@2.7.0)(tsx@4.21.0)
+
+  apps/studio:
+    dependencies:
+      '@ai-sdk/openai':
+        specifier: ^1.3.21
+        version: 1.3.24(zod@3.25.76)
+      '@askdb/core':
+        specifier: workspace:*
+        version: link:../../packages/core
+      '@askdb/postgres':
+        specifier: workspace:*
+        version: link:../../packages/postgres
+      '@askdb/tui':
+        specifier: workspace:*
+        version: link:../../packages/tui
+    devDependencies:
       typescript:
         specifier: ^5.7.3
         version: 5.9.3
