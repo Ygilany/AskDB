@@ -103,13 +103,15 @@ export function TableDetail({
             active={i === activeIdx && editing === null}
             editing={editing === f}
             multiline={
-              f === "description" ||
               f === "commonQueryLanguage" ||
               f === "exampleQuestions"
             }
             onSubmit={(text) => {
               onChange(applyTableEdit(f, draft, text));
               setEditing(null);
+              if (f === "description") {
+                setActiveIdx(Math.min(items - 1, i + 1));
+              }
             }}
             onCancel={() => setEditing(null)}
           />
