@@ -84,7 +84,11 @@ async function runIntrospectCommand(argv: readonly string[]): Promise<number> {
   const opts = parseOptions(argv);
   const engine = resolveEngine(opts.engine);
   if (engine === "postgres" && !opts.url && !opts.fromExport) {
-    throw new Error("Provide either --url <postgres-url> or --from-export <bundle-dir>.");
+    if (process.env.DATABASE_URL) {
+      opts.url = process.env.DATABASE_URL;
+    } else {
+      throw new Error("Provide either --url <postgres-url> or --from-export <bundle-dir>.");
+    }
   }
   if (engine === "postgres" && opts.prismaSchema) {
     throw new Error("Use --prisma-schema only with --engine prisma.");
@@ -360,6 +364,7 @@ function printHelp(): void {
       "askdb introspect - Schema introspection for AskDB",
       "",
       "Usage:",
+      "  askdb introspect --out <dir>                        (uses DATABASE_URL from env/.env)",
       "  askdb introspect --url <postgres-url> --out <dir>",
       "  askdb introspect --from-export <bundle-dir> --out <dir>",
       "  askdb introspect --engine prisma --prisma-schema <schema.prisma|schema-dir> --out <dir>",
