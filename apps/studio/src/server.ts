@@ -1,8 +1,15 @@
 import { existsSync, readFileSync, rmSync } from "node:fs";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { join, resolve } from "node:path";
-import { createOpenAI } from "@ai-sdk/openai";
-import { ask, loadSchema, suggestEnrichment, type AskGenerateDeps } from "@askdb/core";
+import {
+  ask,
+  askDbAiKeyMissingMessage,
+  createAskDbLanguageModelFromEnv,
+  loadSchema,
+  resolveAskDbAiConfig,
+  suggestEnrichment,
+  type AskGenerateDeps,
+} from "@askdb/core";
 import { postgresDialect } from "@askdb/postgres";
 import {
   buildSchemaIndex,
@@ -138,16 +145,24 @@ export function createStudioServer(options: StudioOptions): StudioServer {
 }
 
 export function serializeWorkspace(workspace: Workspace): unknown {
+  const aiConfig = (() => {
+    try {
+      return resolveAskDbAiConfig(process.env, {
+        modelEnvVar: process.env.ASKDB_STUDIO_MODEL ? "ASKDB_STUDIO_MODEL" : undefined,
+      });
+    } catch {
+      // A misconfigured AI env (e.g. azure without resourceName) shouldn't crash the workspace
+      // listing — surface it as "not configured" in the UI and let the user fix .env.
+      return undefined;
+    }
+  })();
   return {
     schemaDir: workspace.schemaDir,
     schemaId: workspace.physical.schemaId,
     warnings: workspace.warnings,
-    aiConfigured: Boolean(process.env.OPENAI_API_KEY),
-    model:
-      process.env.ASKDB_STUDIO_MODEL ??
-      process.env.ASKDB_MODEL ??
-      process.env.OPENAI_MODEL ??
-      "gpt-4o-mini",
+    aiConfigured: Boolean(aiConfig),
+    model: aiConfig?.model ?? "gpt-4o-mini",
+    aiProvider: aiConfig?.provider ?? "openai",
     tables: workspace.tables.map((table) => {
       const draft = buildTableDraft(table.physical, table.parsed);
       return {
@@ -193,35 +208,31 @@ function saveDraft(state: StudioState, tableId: string, draft: TableDraft): void
 }
 
 async function suggestForSource(workspace: Workspace, source: SuggestSource): Promise<Array<{ text: string }>> {
-  const apiKey = process.env.OPENAI_API_KEY;
-  if (!apiKey) {
-    throw new StudioHttpError(400, "OPENAI_API_KEY is required for AI enrichment suggestions.");
-  }
-  const openai = createOpenAI({
-    apiKey,
-    baseURL: process.env.OPENAI_BASE_URL,
+  const model = await createAskDbLanguageModelFromEnv(process.env, {
+    modelEnvVar: process.env.ASKDB_STUDIO_MODEL
+      ? "ASKDB_STUDIO_MODEL"
+      : process.env.ASKDB_TUI_MODEL
+        ? "ASKDB_TUI_MODEL"
+        : undefined,
   });
-  const modelId =
-    process.env.ASKDB_STUDIO_MODEL ??
-    process.env.ASKDB_TUI_MODEL ??
-    process.env.ASKDB_MODEL ??
-    process.env.OPENAI_MODEL ??
-    "gpt-4o-mini";
+  if (!model) {
+    throw new StudioHttpError(400, askDbAiKeyMissingMessage("AI enrichment suggestions"));
+  }
   const candidates = await suggestEnrichment(
     buildSuggestionTarget(workspace, source),
     buildSuggestionContext(workspace, source.tableId),
-    openai(modelId),
+    model,
   );
   return candidates.map((candidate) => ({ text: candidate.text }));
 }
 
 async function askSampleQuestion(schemaDir: string, question: string): Promise<unknown> {
   const mockSql = process.env.ASKDB_MOCK_SQL;
-  const apiKey = process.env.OPENAI_API_KEY;
-  if (!mockSql && !apiKey) {
+  const aiConfig = mockSql ? undefined : resolveAskDbAiConfig();
+  if (!mockSql && !aiConfig) {
     throw new StudioHttpError(
       400,
-      "OPENAI_API_KEY is required for sample NL-to-SQL generation. Set ASKDB_MOCK_SQL to bypass the live model.",
+      `${askDbAiKeyMissingMessage("Sample NL-to-SQL generation")} Set ASKDB_MOCK_SQL to bypass the live model.`,
     );
   }
 
@@ -229,18 +240,9 @@ async function askSampleQuestion(schemaDir: string, question: string): Promise<u
   type AskModel = Parameters<typeof ask>[0]["model"];
   const model: AskModel = mockSql
     ? (undefined as unknown as AskModel)
-    : (() => {
-        const openai = createOpenAI({
-          apiKey: apiKey!,
-          baseURL: process.env.OPENAI_BASE_URL,
-        });
-        const modelId =
-          process.env.ASKDB_STUDIO_MODEL ??
-          process.env.ASKDB_MODEL ??
-          process.env.OPENAI_MODEL ??
-          "gpt-4o-mini";
-        return openai(modelId);
-      })();
+    : ((await createAskDbLanguageModelFromEnv(process.env, {
+        modelEnvVar: process.env.ASKDB_STUDIO_MODEL ? "ASKDB_STUDIO_MODEL" : undefined,
+      })) as AskModel);
 
   const result = await ask({
     question,

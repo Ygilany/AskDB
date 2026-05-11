@@ -1,0 +1,154 @@
+import { describe, expect, it } from "vitest";
+import { resolveAskDbAiConfig } from "./provider.js";
+
+describe("resolveAskDbAiConfig", () => {
+  it("returns undefined when no key is configured", () => {
+    expect(resolveAskDbAiConfig({})).toBeUndefined();
+  });
+
+  it("defaults to the openai provider and the default model", () => {
+    const cfg = resolveAskDbAiConfig({ ASKDB_AI_API_KEY: "k" });
+    expect(cfg).toEqual({ provider: "openai", apiKey: "k", model: "gpt-4o-mini" });
+  });
+
+  it("prefers ASKDB_AI_API_KEY over the provider-native OPENAI_API_KEY and the secondary", () => {
+    const cfg = resolveAskDbAiConfig({
+      ASKDB_AI_API_KEY: "primary",
+      OPENAI_API_KEY: "openai-native",
+      ASKDB_AI_API_KEY_SECONDARY: "secondary",
+    });
+    expect(cfg?.apiKey).toBe("primary");
+  });
+
+  it("uses OPENAI_API_KEY as the provider-native key when ASKDB_AI_API_KEY is absent", () => {
+    const cfg = resolveAskDbAiConfig({ OPENAI_API_KEY: "openai-native" });
+    expect(cfg?.apiKey).toBe("openai-native");
+  });
+
+  it("uses AZURE_OPENAI_API_KEY as the provider-native key for azure", () => {
+    const cfg = resolveAskDbAiConfig({
+      ASKDB_AI_PROVIDER: "azure",
+      AZURE_OPENAI_API_KEY: "azure-native",
+      ASKDB_AI_AZURE_RESOURCE_NAME: "my-foundry",
+      OPENAI_API_KEY: "should-be-ignored",
+    });
+    expect(cfg?.apiKey).toBe("azure-native");
+  });
+
+  it("does not use OPENAI_API_KEY when the azure provider is selected", () => {
+    expect(() =>
+      resolveAskDbAiConfig({
+        ASKDB_AI_PROVIDER: "azure",
+        ASKDB_AI_AZURE_RESOURCE_NAME: "my-foundry",
+        OPENAI_API_KEY: "openai-only",
+      }),
+    ).not.toThrow();
+    expect(
+      resolveAskDbAiConfig({
+        ASKDB_AI_PROVIDER: "azure",
+        ASKDB_AI_AZURE_RESOURCE_NAME: "my-foundry",
+        OPENAI_API_KEY: "openai-only",
+      }),
+    ).toBeUndefined();
+  });
+
+  it("falls back to the secondary key after both the universal and provider-native keys are absent", () => {
+    const cfg = resolveAskDbAiConfig({ ASKDB_AI_API_KEY_SECONDARY: "secondary" });
+    expect(cfg?.apiKey).toBe("secondary");
+  });
+
+  it("uses OPENAI_API_KEY_SECONDARY as a provider-native rotation fallback", () => {
+    const cfg = resolveAskDbAiConfig({ OPENAI_API_KEY_SECONDARY: "openai-secondary" });
+    expect(cfg?.apiKey).toBe("openai-secondary");
+  });
+
+  it("uses AZURE_OPENAI_API_KEY_SECONDARY as a provider-native rotation fallback", () => {
+    const cfg = resolveAskDbAiConfig({
+      ASKDB_AI_PROVIDER: "azure",
+      AZURE_OPENAI_API_KEY_SECONDARY: "azure-secondary",
+      ASKDB_AI_AZURE_RESOURCE_NAME: "my-foundry",
+    });
+    expect(cfg?.apiKey).toBe("azure-secondary");
+  });
+
+  it("recognizes AZURE_OPENAI_BASE_URL as the azure base URL", () => {
+    const cfg = resolveAskDbAiConfig({
+      ASKDB_AI_PROVIDER: "azure",
+      AZURE_OPENAI_API_KEY: "k",
+      AZURE_OPENAI_BASE_URL: "https://my-foundry.services.ai.azure.com/openai/deployment/foo",
+    });
+    expect(cfg?.baseURL).toBe(
+      "https://my-foundry.services.ai.azure.com/openai/deployment/foo",
+    );
+  });
+
+  it("resolves the azure provider with resourceName + apiVersion", () => {
+    const cfg = resolveAskDbAiConfig({
+      ASKDB_AI_PROVIDER: "azure",
+      ASKDB_AI_API_KEY: "k",
+      ASKDB_AI_AZURE_RESOURCE_NAME: "my-foundry",
+      ASKDB_AI_AZURE_API_VERSION: "2024-10-21",
+      ASKDB_AI_MODEL: "gpt-4o-mini-deployment",
+    });
+    expect(cfg).toEqual({
+      provider: "azure",
+      apiKey: "k",
+      model: "gpt-4o-mini-deployment",
+      resourceName: "my-foundry",
+      apiVersion: "2024-10-21",
+    });
+  });
+
+  it("accepts the `foundry` alias for the azure provider", () => {
+    const cfg = resolveAskDbAiConfig({
+      ASKDB_AI_PROVIDER: "foundry",
+      ASKDB_AI_API_KEY: "k",
+      ASKDB_AI_BASE_URL: "https://my-foundry.services.ai.azure.com/openai/v1",
+    });
+    expect(cfg?.provider).toBe("azure");
+    expect(cfg?.baseURL).toBe("https://my-foundry.services.ai.azure.com/openai/v1");
+  });
+
+  it("throws when azure is selected without resourceName or baseURL", () => {
+    expect(() =>
+      resolveAskDbAiConfig({ ASKDB_AI_PROVIDER: "azure", ASKDB_AI_API_KEY: "k" }),
+    ).toThrowError(/Azure provider requires/);
+  });
+
+  it("throws on an unknown provider", () => {
+    expect(() =>
+      resolveAskDbAiConfig({ ASKDB_AI_PROVIDER: "bedrock", ASKDB_AI_API_KEY: "k" }),
+    ).toThrowError(/Unknown ASKDB_AI_PROVIDER/);
+  });
+
+  it("prefers ASKDB_AI_MODEL over ASKDB_MODEL and the provider-native model env var", () => {
+    const cfg = resolveAskDbAiConfig({
+      ASKDB_AI_API_KEY: "k",
+      ASKDB_AI_MODEL: "from-new",
+      ASKDB_MODEL: "from-askdb",
+      OPENAI_MODEL: "from-openai",
+    });
+    expect(cfg?.model).toBe("from-new");
+  });
+
+  it("uses the provider-native model var only when ASKDB_AI_MODEL and ASKDB_MODEL are absent", () => {
+    const openaiCfg = resolveAskDbAiConfig({ OPENAI_API_KEY: "k", OPENAI_MODEL: "gpt-4.1" });
+    expect(openaiCfg?.model).toBe("gpt-4.1");
+
+    const azureCfg = resolveAskDbAiConfig({
+      ASKDB_AI_PROVIDER: "azure",
+      AZURE_OPENAI_API_KEY: "k",
+      ASKDB_AI_AZURE_RESOURCE_NAME: "my-foundry",
+      AZURE_OPENAI_DEPLOYMENT: "my-deployment",
+    });
+    expect(azureCfg?.model).toBe("my-deployment");
+  });
+
+  it("honours a per-app modelEnvVar override", () => {
+    const cfg = resolveAskDbAiConfig(
+      { ASKDB_AI_API_KEY: "k", ASKDB_TUI_MODEL: "tui-only", ASKDB_AI_MODEL: "shared" },
+      { modelEnvVar: "ASKDB_TUI_MODEL" },
+    );
+    expect(cfg?.model).toBe("tui-only");
+  });
+});
