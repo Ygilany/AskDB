@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { askDbSchemaFileSchema } from "./format.js";
+import type { NormalizedSchemaV2 } from "./v2/normalized.js";
 
 export type AskDbSchemaFile = z.infer<typeof askDbSchemaFileSchema>;
 
@@ -19,3 +20,6 @@ export type NormalizedSchema = {
     }>;
   }>;
 };
+
+/** Schema shape accepted by the dialect-agnostic pipeline (covers both v1 and v2 normalized forms). */
+export type AnyNormalizedSchema = NormalizedSchema | NormalizedSchemaV2;

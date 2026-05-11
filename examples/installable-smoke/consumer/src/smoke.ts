@@ -1,9 +1,10 @@
 /**
- * End-to-end install smoke test for `@askdb/core` (Phase 4 Group 4).
+ * End-to-end install smoke test for AskDB.
  *
- * Imports `ask` and the executor seam types from the *installed* package, runs the pipeline
- * against a fake LanguageModel (via `deps.generateText`) and a fake `AskDbExecutor`, and asserts
- * the executor's canned `TabularResult` round-trips back through `ask()`.
+ * Imports `ask` + executor seam types from `@askdb/core`, the engine-agnostic
+ * `introspect()` from `@askdb/introspect`, and the Postgres dialect + connector
+ * from `@askdb/postgres`. Runs the pipeline against a fake LanguageModel and a
+ * fake `AskDbExecutor`, asserts the executor's canned `TabularResult` round-trips.
  *
  * Crucially, this consumer does NOT install `pg` — the test verifies the optional-peer story.
  */
@@ -13,17 +14,17 @@ import {
   loadSchemaFromJson,
   type AskDbExecutor,
   type AskDbSchemaFile,
+  type AskDialect,
   type TabularResult,
 } from "@askdb/core";
 import { buildSchemaIndex, type Embedder } from "@askdb/rag";
 import { createMemoryStore } from "@askdb/rag/stores/memory";
+import { introspect, renderToSchemaV2 } from "@askdb/introspect";
 import {
-  introspect,
-  renderToSchemaV2,
-  type IntrospectionInput,
-  type SqlTemplateBundle,
-} from "@askdb/introspect";
-import { createPostgresConnector } from "@askdb/introspect/postgres";
+  createPostgresConnector,
+  postgresDialect,
+  type PostgresIntrospectionInput,
+} from "@askdb/postgres";
 
 const schemaJson: AskDbSchemaFile = {
   version: 1,
@@ -52,15 +53,12 @@ const executor: AskDbExecutor = async (sql) => {
   return fakeResult;
 };
 
-// AI SDK's `generateText` has a wide return shape; the pipeline only reads `.text`. Cast through
-// `unknown` to keep the smoke test self-contained (no AI SDK dependency in the consumer).
-const fakeGenerateText = (async () => ({ text: fakeSql })) as unknown as Parameters<
-  typeof ask
->[0]["deps"] extends infer D
-  ? D extends { generateText?: infer F }
-    ? NonNullable<F>
-    : never
-  : never;
+// Stub dialect — bypasses the live model entirely.
+const fakeDialect: AskDialect = {
+  async generate() {
+    return { sql: fakeSql };
+  },
+};
 
 const v2SchemaJson = JSON.stringify({
   version: 2,
@@ -88,14 +86,14 @@ const fakeEmbedder: Embedder = async (texts) => texts.map((text) => [text.length
 async function main(): Promise<void> {
   const schema = loadNormalizedSchemaFromJson(JSON.stringify(schemaJson));
 
+  // Verify ask() works with a fake dialect + fake executor (no @askdb/postgres needed at runtime).
   const out = await ask({
     question: "How many users are there?",
     schema,
-    // Model is forwarded into `deps.generateText`, which we override — the value is unused.
     model: {} as never,
+    dialect: fakeDialect,
     executor,
     execute: true,
-    deps: { generateText: fakeGenerateText },
   });
 
   if (out.sql !== fakeSql) {
@@ -105,16 +103,23 @@ async function main(): Promise<void> {
     throw new Error(`smoke: executor result did not round-trip: ${JSON.stringify(out.result)}`);
   }
 
+  // Verify @askdb/postgres exports the expected surface.
+  if (typeof postgresDialect.generate !== "function") {
+    throw new Error("smoke: postgresDialect.generate is not a function");
+  }
   const connector = createPostgresConnector();
-  const templates: SqlTemplateBundle = connector.templates();
+  const templates = connector.templates!();
   if (templates.engine !== "postgres" || templates.templates.length === 0) {
-    throw new Error("smoke: @askdb/introspect postgres templates did not load");
+    throw new Error("smoke: @askdb/postgres connector templates did not load");
   }
 
-  const input: IntrospectionInput = { mode: "live", executor };
+  // Verify the connector input type narrows.
+  const input: PostgresIntrospectionInput = { mode: "live", executor };
   if (input.mode !== "live") {
-    throw new Error("smoke: IntrospectionInput type did not narrow");
+    throw new Error("smoke: PostgresIntrospectionInput type did not narrow");
   }
+
+  // Verify @askdb/introspect public functions are reachable.
   if (typeof introspect !== "function" || typeof renderToSchemaV2 !== "function") {
     throw new Error("smoke: @askdb/introspect public functions did not load");
   }
@@ -134,16 +139,16 @@ async function main(): Promise<void> {
     question: "How many users are there?",
     schema: v2Schema,
     model: {} as never,
+    dialect: fakeDialect,
     retriever: index.retriever,
     totalSchemaChunkCount: index.stats.chunksTotal,
     retrievalThresholdChunks: 0,
-    deps: { generateText: fakeGenerateText },
   });
   if (ragOut.sql !== fakeSql) {
     throw new Error("smoke: ask({ retriever }) did not complete");
   }
 
-  console.log("smoke: ok - core, introspect, and rag package surfaces loaded");
+  console.log("smoke: ok - core, introspect, postgres, and rag package surfaces loaded");
 }
 
 main().catch((e: unknown) => {

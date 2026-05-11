@@ -1,0 +1,69 @@
+{
+  "name": "@askdb/postgres",
+  "version": "0.1.0",
+  "description": "AskDB Postgres integration: dialect (NL→SQL prompt + validate + generate), introspection connector (live + from-export bundle), catalog SQL templates, and a `pg`-backed read-only executor.",
+  "keywords": [
+    "askdb",
+    "postgres",
+    "postgresql",
+    "pg",
+    "nl-to-sql",
+    "natural-language-to-sql",
+    "schema-v2",
+    "introspection",
+    "pg-catalog"
+  ],
+  "homepage": "https://github.com/Ygilany/AskDB#readme",
+  "bugs": {
+    "url": "https://github.com/Ygilany/AskDB/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Ygilany/AskDB.git",
+    "directory": "packages/postgres"
+  },
+  "license": "Apache-2.0",
+  "author": "Yahya Gilany",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE",
+    "NOTICE"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "lint": "tsc -p tsconfig.build.json --noEmit",
+    "test": "vitest run --config ../../vitest.config.ts"
+  },
+  "dependencies": {
+    "@askdb/core": "workspace:*",
+    "@askdb/introspect": "workspace:*",
+    "ai": "^4.3.19"
+  },
+  "peerDependencies": {
+    "pg": ">=8"
+  },
+  "peerDependenciesMeta": {
+    "pg": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@types/pg": "^8.11.12",
+    "pg": "^8.14.1",
+    "typescript": "^5.7.3",
+    "vitest": "^3.0.9"
+  }
+}

@@ -10,6 +10,7 @@
   "dependencies": {
     "@askdb/core": "__ASKDB_CORE_TARBALL__",
     "@askdb/introspect": "__ASKDB_INTROSPECT_TARBALL__",
+    "@askdb/postgres": "__ASKDB_POSTGRES_TARBALL__",
     "@askdb/rag": "__ASKDB_RAG_TARBALL__"
   },
   "devDependencies": {
