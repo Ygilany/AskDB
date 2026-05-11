@@ -51,6 +51,10 @@ if (process.argv[2] === "enrich") {
   process.exit(await runTuiCommand(process.argv.slice(3)));
 }
 
+if (process.argv[2] === "studio") {
+  process.exit(await runStudioCommand(process.argv.slice(3)));
+}
+
 if (process.argv[2] === "bundle") {
   process.exit(await runTuiCommand(["bundle", ...process.argv.slice(3)]));
 }
@@ -77,6 +81,11 @@ function printCliError(error: unknown): void {
 async function runTuiCommand(args: string[]): Promise<number> {
   const { runTuiCli } = await import("@askdb/tui");
   return runTuiCli(args);
+}
+
+async function runStudioCommand(args: string[]): Promise<number> {
+  const { runStudioCli } = await import("@askdb/studio");
+  return runStudioCli(args);
 }
 
 function formatSchemaPathHint(schemaPath: string): string {
@@ -182,6 +191,21 @@ program
     if (opts.path && opts.path !== ".env") args.push("--path", opts.path);
     process.exit(runInitCli(args));
   });
+
+program
+  .command("enrich")
+  .description("Open the terminal UI for Schema v2 enrichment")
+  .allowUnknownOption(true);
+
+program
+  .command("studio")
+  .description("Start the local browser UI for Schema v2 enrichment")
+  .allowUnknownOption(true);
+
+program
+  .command("bundle")
+  .description("Bundle a Schema v2 directory into a single JSON file")
+  .allowUnknownOption(true);
 
 program
   .command("ask")

@@ -31,6 +31,15 @@ askdb ask --schema "$ASKDB_SCHEMA_PATH" --question "How many users signed up las
 
 Run `askdb --help` for the full list.
 
+## Enrichment UIs
+
+```bash
+askdb enrich --schema my-app.schema
+askdb studio --schema my-app.schema
+```
+
+`askdb enrich` opens the terminal UI. `askdb studio` starts a local browser UI for browsing tables, editing Schema v2 enrichment, requesting AI suggestions, and generating sample NL-to-SQL output before shipping the schema.
+
 ## Introspection
 
 Postgres live and air-gapped introspection:
