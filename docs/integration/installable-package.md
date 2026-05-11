@@ -11,6 +11,8 @@ The supported user-facing CLI is [`@askdb/cli`](../../apps/cli/README.md) (`askd
 
 Architecture rationale: [**ADR 0002 — Integration-package layout**](../adrs/0002-integration-package-layout.md).
 
+Authoring a new integration: [**Connectors — what each connector needs**](connectors.md).
+
 ---
 
 ## Install
