@@ -48,6 +48,7 @@
     "@askdb/introspect": "workspace:*",
     "@askdb/postgres": "workspace:*",
     "@askdb/prisma": "workspace:*",
+    "@askdb/tui": "workspace:*",
     "commander": "^13.1.0",
     "dotenv": "^16.6.1",
     "pg": "^8.14.1"
