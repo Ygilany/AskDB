@@ -64,8 +64,8 @@ fi
 
 echo "smoke: validating @askdb/cli tarball contents…"
 CLI_TARBALL_FILES="$(tar -tzf "$CLI_TARBALL")"
-grep -q '^package/dist/index.js$' <<<"$CLI_TARBALL_FILES"
-grep -q '^package/dist/bin.js$' <<<"$CLI_TARBALL_FILES"
+grep -q '^package/dist/cli.js$' <<<"$CLI_TARBALL_FILES"
+grep -q '^package/dist/introspect.js$' <<<"$CLI_TARBALL_FILES"
 grep -q '^package/README.md$' <<<"$CLI_TARBALL_FILES"
 grep -q '^package/LICENSE$' <<<"$CLI_TARBALL_FILES"
 if grep -Eq '(^package/src/|\.test\.)' <<<"$CLI_TARBALL_FILES"; then
@@ -107,8 +107,6 @@ node -e "
   j.dependencies['@askdb/core'] = 'file:$CORE_TARBALL';
   j.dependencies['@askdb/introspect'] = 'file:$INTROSPECT_TARBALL';
   j.dependencies['@askdb/postgres'] = 'file:$POSTGRES_TARBALL';
-  j.dependencies['@askdb/cli'] = 'file:$CLI_TARBALL';
-  j.dependencies['@askdb/tui'] = 'file:$TUI_TARBALL';
   j.dependencies['@askdb/rag'] = 'file:$RAG_TARBALL';
   fs.writeFileSync(p, JSON.stringify(j, null, 2) + '\n');
 "
@@ -128,13 +126,37 @@ echo "smoke: tsc --noEmit…"
 echo "smoke: tsx src/smoke.ts…"
 (cd "$WORK/consumer" && npx --yes tsx src/smoke.ts)
 
+echo "smoke: staging app sandbox…"
+mkdir -p "$WORK/apps"
+node -e "
+  const fs = require('fs');
+  const p = '$WORK/apps/package.json';
+  const j = {
+    name: 'askdb-app-smoke',
+    private: true,
+    type: 'module',
+    dependencies: {
+      '@askdb/core': 'file:$CORE_TARBALL',
+      '@askdb/introspect': 'file:$INTROSPECT_TARBALL',
+      '@askdb/postgres': 'file:$POSTGRES_TARBALL',
+      '@askdb/cli': 'file:$CLI_TARBALL',
+      '@askdb/tui': 'file:$TUI_TARBALL',
+      '@askdb/rag': 'file:$RAG_TARBALL'
+    }
+  };
+  fs.writeFileSync(p, JSON.stringify(j, null, 2) + '\n');
+"
+
+echo "smoke: npm install app sandbox…"
+(cd "$WORK/apps" && npm install --silent --no-audit --no-fund --no-package-lock)
+
 echo "smoke: askdb cli bin…"
-(cd "$WORK/consumer" && ./node_modules/.bin/askdb --version >/dev/null)
-(cd "$WORK/consumer" && ./node_modules/.bin/askdb introspect templates --engine postgres | grep -q '^-- schemas')
+(cd "$WORK/apps" && ./node_modules/.bin/askdb --help | grep -q 'AskDB')
+(cd "$WORK/apps" && ./node_modules/.bin/askdb introspect templates --engine postgres | grep -q '^-- schemas')
 
 echo "smoke: askdb-tui bin…"
-(cd "$WORK/consumer" && ./node_modules/.bin/askdb-tui --version >/dev/null)
+(cd "$WORK/apps" && ./node_modules/.bin/askdb-tui --version >/dev/null)
 
 echo "smoke: askdb-rag bin…"
-(cd "$WORK/consumer" && ./node_modules/.bin/askdb-rag --version >/dev/null)
+(cd "$WORK/apps" && ./node_modules/.bin/askdb-rag --version >/dev/null)
 echo "smoke: PASSED"
