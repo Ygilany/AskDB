@@ -1,0 +1,36 @@
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+enum TicketStatus {
+  open @map("OPEN")
+  closed @map("CLOSED")
+
+  @@map("ticket_status")
+}
+
+model Account {
+  id       Int      @id @default(autoincrement()) @map("account_id")
+  email    String   @unique @db.VarChar(255)
+  posts    Post[]
+
+  @@map("accounts")
+}
+
+model Post {
+  id        Int          @id @default(autoincrement())
+  accountId Int         @map("account_id")
+  title     String
+  tags      String[]
+  metadata  Unsupported("jsonb")?
+  status    TicketStatus
+  account   Account     @relation(fields: [accountId], references: [id], onUpdate: Restrict)
+
+  @@index([title], map: "posts_title_idx")
+  @@map("posts")
+}

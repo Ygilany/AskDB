@@ -1,10 +1,11 @@
 # AskDB as an installable package — BYO model + SQL output
 
-AskDB ships three library packages:
+AskDB ships four library packages:
 
 1. [`@askdb/core`](../../packages/core/README.md) — dialect-agnostic NL→SQL pipeline (`ask()`, schema/IR types, modes, logging, retrieval input).
 2. [`@askdb/introspect`](../../packages/introspect/README.md) — engine-agnostic introspection orchestrator, `CatalogQueryRunner` type, and Schema v2 renderer.
 3. [`@askdb/postgres`](../../packages/postgres/README.md) — Postgres integration: dialect adapter (`postgresDialect`), connector (live + from-export), catalog templates, and a `pg`-backed catalog query runner for live introspection.
+4. [`@askdb/prisma`](../../packages/prisma/README.md) — Prisma integration: schema-file connector that renders Schema v2 from `.prisma` files without a database connection.
 
 The supported user-facing CLI is [`@askdb/cli`](../../apps/cli/README.md) (`askdb` binary, `npm i -g @askdb/cli`). `@askdb/http-api`, `@askdb/tui`, and `@askdb/docs-site` are first-party reference apps.
 
@@ -18,6 +19,8 @@ Architecture rationale: [**ADR 0002 — Integration-package layout**](../adrs/00
 pnpm add @askdb/core @askdb/postgres
 # Optional: introspection
 pnpm add @askdb/introspect
+# Optional: Prisma schema-file introspection
+pnpm add @askdb/prisma
 # Optional: live Postgres introspection
 pnpm add pg
 ```
@@ -75,6 +78,21 @@ const result = await introspect(
 The connector input shape (`PostgresIntrospectionInput`) is owned by `@askdb/postgres`. `@askdb/introspect` is engine-agnostic and does not know about live vs. from-export modes — each integration package defines its own input type.
 
 For air-gapped operation, pass `{ mode: "from-export", bundlePath }` with a directory of CSV/JSON files exported by running the templates from `POSTGRES_TEMPLATE_BUNDLE` in your sealed environment.
+
+For Prisma schema-file introspection:
+
+```ts
+import { introspect } from "@askdb/introspect";
+import { createPrismaConnector } from "@askdb/prisma";
+
+const result = await introspect(
+  { schemaPath: "./prisma", schemaId: "my-app" },
+  { outDir: "./my-app.schema", schemaId: "my-app" },
+  { connector: createPrismaConnector() },
+);
+```
+
+`@askdb/prisma` reads a `schema.prisma` file or a directory of `.prisma` files. It supports relational Prisma providers and rejects MongoDB schemas because AskDB Schema v2 is relational.
 
 ---
 
