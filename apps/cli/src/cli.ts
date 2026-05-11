@@ -21,6 +21,7 @@ import {
 } from "@askdb/core";
 import { postgresDialect } from "@askdb/postgres";
 import { Command } from "commander";
+import { runInitCli } from "./init.js";
 import { runIntrospectCli } from "./introspect.js";
 
 // Load repo/local `.env` into process.env (if present).
@@ -36,6 +37,10 @@ import { runIntrospectCli } from "./introspect.js";
       process.exitCode = 1;
     }
   }
+}
+
+if (process.argv[2] === "init") {
+  process.exit(runInitCli(process.argv.slice(3)));
 }
 
 if (process.argv[2] === "introspect") {
@@ -180,6 +185,18 @@ function resolveAskDbLogLevel(opts: {
 
 const program = new Command();
 program.name("askdb").description("AskDB — natural language → PostgreSQL SELECT");
+
+program
+  .command("init")
+  .description("Create a local .env from the AskDB template")
+  .option("-f, --force", "Overwrite an existing file", false)
+  .option("--path <path>", "Target path", ".env")
+  .action((opts: { force?: boolean; path?: string }) => {
+    const args: string[] = [];
+    if (opts.force) args.push("--force");
+    if (opts.path && opts.path !== ".env") args.push("--path", opts.path);
+    process.exit(runInitCli(args));
+  });
 
 program
   .command("ask")
