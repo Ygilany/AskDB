@@ -797,6 +797,198 @@ askdb bundle my-app.schema --out my-app.schema.bundle.json</code></pre>
     ],
   },
   {
+    path: "/connectors",
+    title: "Authoring a Connector",
+    eyebrow: "Integration contract",
+    description:
+      "What a connector needs to plug into @askdb/introspect. The same contract powers @askdb/postgres and @askdb/prisma today and is the path for adding new engines.",
+    sections: [
+      {
+        heading: "The Connector Interface",
+        body: `
+          <p>A connector is a TypeScript object satisfying <code>Connector&lt;TInput&gt;</code> from <code>@askdb/introspect</code>. <code>describe</code> is required; <code>templates</code> is optional and only relevant when the engine introspects through catalog SQL.</p>
+          <pre><code>import type {
+  Connector,
+  IntrospectionResult,
+  SqlTemplateBundle,
+} from "@askdb/introspect";
+
+export interface MyConnector extends Connector&lt;MyInput&gt; {
+  describe(input: MyInput): Promise&lt;IntrospectionResult&gt;;
+  templates?(): SqlTemplateBundle;
+}</code></pre>
+          <p>The integration package owns <code>MyInput</code>. <code>@askdb/introspect</code> hands it through to <code>describe</code> unchanged.</p>
+        `,
+      },
+      {
+        heading: "What describe() Must Return",
+        body: `
+          <p><code>IntrospectionResult</code> is the whole contract — the orchestrator does not rewrite the schema before rendering Schema v2.</p>
+          <pre><code>type IntrospectionResult = {
+  schema: SqlSchema;                              // namespaces, tables, columns, FKs, enums, views
+  warnings: IntrospectionWarning[];
+  isEmpty: boolean;                               // no namespace contains a table
+  viewDefinitions: Record&lt;string, string&gt;;    // keyed by "table:&lt;schema&gt;.&lt;view&gt;"
+};</code></pre>
+        `,
+      },
+      {
+        heading: "Stable IDs",
+        body: `
+          <p>Every table and column needs an ID that survives re-introspection so enrichment markdown stays attached to the same physical entity.</p>
+          <div class="definition-list">
+            <div><code>table:&lt;schema&gt;.&lt;name&gt;</code><span>Table ID. In the <code>public</code> schema, Schema v2 accepts the shorter <code>table:&lt;name&gt;</code> form.</span></div>
+            <div><code>table:&lt;schema&gt;.&lt;name&gt;#&lt;column&gt;</code><span>Column ID. Use the same format as the reference connectors.</span></div>
+          </div>
+        `,
+      },
+      {
+        heading: "Filters",
+        body: `
+          <p><code>IntrospectionFilters</code> is shared across every connector. Honour all three fields.</p>
+          <div class="definition-list">
+            <div><code>schemas</code><span>Include list. Default to <code>["public"]</code> for relational engines.</span></div>
+            <div><code>excludeSchemas</code><span>Additive exclude list. System schemas (<code>information_schema</code>, <code>pg_catalog</code>, <code>pg_toast*</code>, <code>pg_temp_*</code>) are always excluded regardless of this field.</span></div>
+            <div><code>tables</code><span>Glob patterns matched against <code>"&lt;schema&gt;.&lt;name&gt;"</code>. Emit an <code>ambiguous_filter</code> warning when a pattern matches nothing.</span></div>
+          </div>
+        `,
+      },
+      {
+        heading: "Determinism",
+        body: `
+          <p>Re-introspecting an unchanged source must produce a byte-identical <code>schema.json</code>. That means:</p>
+          <ul>
+            <li>Sort tables, columns, foreign keys, unique constraints, indexes, and enums by name.</li>
+            <li>Preserve the source's declared order for multi-column foreign keys — alphabetising the local or referenced column lists is a bug.</li>
+            <li>Preserve enum value order (in Postgres: <code>pg_enum.enumsortorder</code>; in Prisma: declaration order).</li>
+            <li>Populate <code>ordinalPosition</code> on every column starting at <code>1</code>.</li>
+          </ul>
+        `,
+      },
+      {
+        heading: "Warnings, Not Exceptions",
+        body: `
+          <p>Use <code>IntrospectionWarning</code> for surfaces the user should see but that should not abort the run. Hard failures (missing input, unsupported provider, runner crash) should throw and let the CLI exit non-zero.</p>
+          <div class="definition-list">
+            <div><code>unsupported_type</code><span>A column type the connector cannot fully represent (e.g. Prisma <code>Unsupported("…")</code>).</span></div>
+            <div><code>view_with_array_columns</code><span>A view exposes array columns the renderer cannot fully describe.</span></div>
+            <div><code>ambiguous_filter</code><span>A <code>tables</code> glob matched no rows.</span></div>
+            <div><code>new_column</code><span>Render-time: a new column ID appeared since the previous run.</span></div>
+            <div><code>orphan_id</code><span>Render-time: an ID referenced by table markdown is gone from the source.</span></div>
+          </div>
+        `,
+      },
+      {
+        heading: "templates() — Catalog SQL Only",
+        body: `
+          <p>Implement <code>templates()</code> when the engine reads its schema through catalog SQL. The bundle is what <code>askdb introspect templates --engine &lt;id&gt;</code> prints and what the air-gapped <code>--from-export</code> path consumes.</p>
+          <pre><code>type SqlTemplateBundle = {
+  engine: string;            // e.g. "postgres"
+  version: number;           // bump when any template's shape changes
+  templates: readonly SqlTemplate[];
+};
+
+type SqlTemplate = {
+  name: string;              // stable; maps to a CSV/JSON file in an export bundle
+  sql: string;               // parameterized; bound by the connector at run time
+  columns: readonly string[]; // declared columns — used to validate CSV headers
+};</code></pre>
+          <p>File-driven connectors (Prisma) legitimately omit <code>templates()</code>; <code>@askdb/introspect</code> checks for its presence before calling.</p>
+        `,
+      },
+      {
+        heading: "Input Shape",
+        body: `
+          <p>Each integration exports the input type it actually needs — there is no shared discriminated union. Choose the shape that's honest for the source.</p>
+          <pre><code>// @askdb/postgres
+type PostgresIntrospectionInput =
+  | { mode: "live"; runner: CatalogQueryRunner; filters?: IntrospectionFilters }
+  | { mode: "from-export"; bundlePath: string; filters?: IntrospectionFilters };
+
+// @askdb/prisma
+type PrismaIntrospectionInput = {
+  schemaPath: string;        // .prisma file or directory of .prisma files
+  schemaId?: string;
+  filters?: IntrospectionFilters;
+};</code></pre>
+        `,
+      },
+      {
+        heading: "Live Mode — CatalogQueryRunner",
+        body: `
+          <p>For database-backed connectors, expose a runner factory rather than baking in a driver. The runner is introspection-only; generated user SQL never flows through it.</p>
+          <pre><code>type CatalogQueryResult = { columns: string[]; rows: unknown[][] };
+type CatalogQueryRunner = (
+  sql: string,
+  params?: ReadonlyArray&lt;unknown&gt;,
+) =&gt; Promise&lt;CatalogQueryResult&gt;;</code></pre>
+          <ul>
+            <li>Drivers are optional peer dependencies — <code>@askdb/postgres</code> lazy-loads <code>pg</code> inside the factory so callers that only generate SQL never pull the driver in.</li>
+            <li>Export the runner type so tests and alternative drivers (e.g. <code>postgres.js</code>, Neon HTTP) can plug in.</li>
+          </ul>
+        `,
+      },
+      {
+        heading: "Optional: AskDialect",
+        body: `
+          <p>Introspection and SQL generation are separate seams. A connector covers introspection; SQL generation goes through an <code>AskDialect</code> adapter consumed by <code>ask()</code> in <code>@askdb/core</code>.</p>
+          <pre><code>import type { AskDialect } from "@askdb/core";
+
+export const myDialect: AskDialect = {
+  async generate(question, schema, model, options) {
+    // build a prompt, call the model, validate the SELECT
+  },
+};</code></pre>
+          <p>Ship a dialect when the target has a distinct SQL surface (a new engine, different read-only rules, a different prompt body). Skip it when your connector simply produces Schema v2 for an engine that already has one — <code>@askdb/prisma</code> is the canonical example.</p>
+        `,
+      },
+      {
+        heading: "Package Layout",
+        body: `
+          <pre><code>packages/&lt;name&gt;/
+  package.json          # name "@askdb/&lt;name&gt;", "type": "module"
+  README.md
+  LICENSE
+  NOTICE
+  tsconfig.json
+  tsconfig.build.json
+  src/
+    index.ts            # public exports
+    &lt;connector&gt;.ts      # createXConnector(), describeX()</code></pre>
+          <p>Expected exports:</p>
+          <ul>
+            <li><code>createXConnector(): Connector&lt;XInput&gt;</code> — the factory the CLI and library callers wire up.</li>
+            <li><code>describeX(input: XInput)</code> — the bare function for tests and bespoke pipelines.</li>
+            <li>The input type (<code>XIntrospectionInput</code>).</li>
+            <li>(Optional) a dialect, template bundle constants, and runner factory.</li>
+          </ul>
+          <p>Wire the engine into <code>apps/cli/src/introspect.ts</code> behind <code>--engine</code> and add the package to <a href="#/packages">Packages</a> and the installable-package guide.</p>
+        `,
+      },
+      {
+        heading: "Testing Checklist",
+        body: `
+          <ul>
+            <li><strong>Unit:</strong> representative source → expected <code>SqlSchema</code>, including filters, ordering, and warnings.</li>
+            <li><strong>Filters:</strong> <code>schemas</code>, <code>excludeSchemas</code>, <code>tables</code> globs, the system-schema guarantee, and <code>ambiguous_filter</code> emission.</li>
+            <li><strong>Determinism:</strong> re-running on unchanged input produces byte-identical <code>schema.json</code>.</li>
+            <li><strong>Re-introspection:</strong> through <code>introspect()</code> with an existing output dir, IDs are preserved, additions emit <code>new_column</code>, removals emit <code>orphan_id</code>.</li>
+            <li><strong>Integration:</strong> for a live runner, hit a real instance (e.g. Pagila for Postgres) and snapshot. For file readers, commit fixture inputs next to the snapshot.</li>
+          </ul>
+        `,
+      },
+      {
+        heading: "Reference Connectors",
+        body: `
+          <div class="link-cards">
+            <a href="#/postgres"><strong>@askdb/postgres</strong><span>Live + air-gapped modes, full template bundle, <code>pg</code>-backed catalog runner, and <code>postgresDialect</code>.</span></a>
+            <a href="#/packages"><strong>@askdb/prisma</strong><span>File-only input, no <code>templates()</code>, no dialect. Pair with <code>postgresDialect</code> for SQL generation.</span></a>
+          </div>
+        `,
+      },
+    ],
+  },
+  {
     path: "/modes",
     title: "Modes and Safety",
     eyebrow: "Guardrails",
