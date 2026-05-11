@@ -1,4 +1,4 @@
-import { existsSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import {
   parseConceptsMarkdown,
@@ -107,6 +107,7 @@ export function saveTable(
   const wt = workspace.tables.find((t) => t.physical.id === tableId);
   if (!wt) throw new Error(`No such table: ${tableId}`);
   const tablesDir = join(workspace.schemaDir, "tables");
+  mkdirSync(tablesDir, { recursive: true });
   const filePath = join(tablesDir, wt.filename);
   const md = writeTableMarkdown(frontmatter, body);
   writeFileSync(filePath, md, "utf8");

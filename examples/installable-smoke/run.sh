@@ -2,7 +2,7 @@
 # Installable smoke test for AskDB packages.
 #
 # Builds the workspace, packs the library packages (including tui) plus the app
-# packages (cli, http-api), copies the consumer fixture into a fresh tmpdir, installs
+# packages (cli, studio, http-api), copies the consumer fixture into a fresh tmpdir, installs
 # library tarballs (no workspace), runs `tsc --noEmit`, and executes the smoke script.
 set -euo pipefail
 
@@ -18,7 +18,7 @@ pnpm -C "$ROOT" -r build >/dev/null
 
 echo "smoke: packing tarballs…"
 mkdir -p "$WORK/tarballs"
-for pkg in packages/core packages/introspect packages/postgres packages/prisma packages/tui apps/cli apps/http-api; do
+for pkg in packages/core packages/introspect packages/postgres packages/prisma packages/tui apps/cli apps/studio apps/http-api; do
   (cd "$ROOT/$pkg" && pnpm pack --pack-destination "$WORK/tarballs" >/dev/null)
 done
 for pkg in packages/rag; do
@@ -35,6 +35,8 @@ PRISMA_TARBALL="$(ls "$WORK/tarballs"/askdb-prisma-*.tgz | head -n1)"
 [ -f "$PRISMA_TARBALL" ] || { echo "smoke: missing prisma tarball" >&2; exit 1; }
 CLI_TARBALL="$(ls "$WORK/tarballs"/askdb-cli-*.tgz | head -n1)"
 [ -f "$CLI_TARBALL" ] || { echo "smoke: missing cli tarball" >&2; exit 1; }
+STUDIO_TARBALL="$(ls "$WORK/tarballs"/askdb-studio-*.tgz | head -n1)"
+[ -f "$STUDIO_TARBALL" ] || { echo "smoke: missing studio tarball" >&2; exit 1; }
 TUI_TARBALL="$(ls "$WORK/tarballs"/askdb-tui-*.tgz | head -n1)"
 [ -f "$TUI_TARBALL" ] || { echo "smoke: missing tui tarball" >&2; exit 1; }
 RAG_TARBALL="$(ls "$WORK/tarballs"/askdb-rag-*.tgz | head -n1)"
@@ -82,6 +84,17 @@ grep -q '^package/README.md$' <<<"$CLI_TARBALL_FILES"
 grep -q '^package/LICENSE$' <<<"$CLI_TARBALL_FILES"
 if grep -Eq '(^package/src/|\.test\.)' <<<"$CLI_TARBALL_FILES"; then
   echo "smoke: FAILED — @askdb/cli tarball includes source/tests" >&2
+  exit 1
+fi
+
+echo "smoke: validating @askdb/studio tarball contents…"
+STUDIO_TARBALL_FILES="$(tar -tzf "$STUDIO_TARBALL")"
+grep -q '^package/dist/index.js$' <<<"$STUDIO_TARBALL_FILES"
+grep -q '^package/dist/bin.js$' <<<"$STUDIO_TARBALL_FILES"
+grep -q '^package/README.md$' <<<"$STUDIO_TARBALL_FILES"
+grep -q '^package/LICENSE$' <<<"$STUDIO_TARBALL_FILES"
+if grep -Eq '(^package/src/|\.test\.)' <<<"$STUDIO_TARBALL_FILES"; then
+  echo "smoke: FAILED — @askdb/studio tarball includes source/tests" >&2
   exit 1
 fi
 
@@ -154,6 +167,7 @@ node -e "
       '@askdb/postgres': 'file:$POSTGRES_TARBALL',
       '@askdb/prisma': 'file:$PRISMA_TARBALL',
       '@askdb/cli': 'file:$CLI_TARBALL',
+      '@askdb/studio': 'file:$STUDIO_TARBALL',
       '@askdb/tui': 'file:$TUI_TARBALL',
       '@askdb/rag': 'file:$RAG_TARBALL'
     }
@@ -170,6 +184,10 @@ echo "smoke: askdb cli bin…"
 
 echo "smoke: askdb-tui bin…"
 (cd "$WORK/apps" && ./node_modules/.bin/askdb-tui --version >/dev/null)
+
+echo "smoke: askdb-studio bin…"
+(cd "$WORK/apps" && ./node_modules/.bin/askdb-studio --version >/dev/null)
+(cd "$WORK/apps" && ./node_modules/.bin/askdb studio --help | grep -q 'askdb-studio')
 
 echo "smoke: askdb-rag bin…"
 (cd "$WORK/apps" && ./node_modules/.bin/askdb-rag --version >/dev/null)
