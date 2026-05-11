@@ -1,4 +1,4 @@
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, rmSync } from "node:fs";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { join, resolve } from "node:path";
 import { createOpenAI } from "@ai-sdk/openai";
@@ -44,8 +44,30 @@ type StudioState = {
   workspace: Workspace;
 };
 
-const STUDIO_RAG_EMBEDDER_ID = "studio:mock-lexical-64";
-const STUDIO_RAG_DIMENSIONS = 64;
+type StudioRagEmbedderConfig =
+  | {
+      kind: "mock";
+      embedderId: string;
+      dimensions: number;
+      configured: true;
+      label: string;
+    }
+  | {
+      kind: "openai";
+      embedderId: string;
+      dimensions: number;
+      configured: boolean;
+      label: string;
+      model: string;
+      baseUrl: string;
+      apiKey?: string;
+      requestDimensions?: number;
+    };
+
+const STUDIO_RAG_MOCK_DIMENSIONS = 64;
+const STUDIO_RAG_MOCK_EMBEDDER_ID = `studio:mock-lexical-${STUDIO_RAG_MOCK_DIMENSIONS}`;
+const DEFAULT_OPENAI_EMBEDDING_MODEL = "text-embedding-3-small";
+const DEFAULT_OPENAI_BASE_URL = "https://api.openai.com/v1";
 
 export function createStudioServer(options: StudioOptions): StudioServer {
   const schemaDir = resolve(options.schema);
@@ -244,6 +266,7 @@ async function askSampleQuestion(schemaDir: string, question: string): Promise<u
 }
 
 function getRagStatus(schemaDir: string): unknown {
+  const config = resolveStudioRagEmbedderConfig();
   const sources = loadChunkerSourcesFromDir(schemaDir);
   const chunkResult = chunkSchema(sources);
   const lockPath = join(schemaDir, "schema.lock.json");
@@ -265,19 +288,31 @@ function getRagStatus(schemaDir: string): unknown {
     !lock ||
     !existsSync(embeddingsJsonPath) ||
     !existsSync(embeddingsBinPath) ||
+    lock.embedderId !== config.embedderId ||
+    embeddings?.dimensions !== config.dimensions ||
     Object.keys(lockHashes).length !== hashIds.length ||
     hashIds.some((id) => lockHashes[id] !== currentHashes[id]);
 
   return {
     schemaId: sources.schema.schemaId,
-    embedderId: lock?.embedderId ?? STUDIO_RAG_EMBEDDER_ID,
-    expectedEmbedderId: STUDIO_RAG_EMBEDDER_ID,
+    embedder: {
+      kind: config.kind,
+      label: config.label,
+      configured: config.configured,
+      expectedId: config.embedderId,
+      indexedId: lock?.embedderId ?? null,
+      model: config.kind === "openai" ? config.model : null,
+      baseUrl: config.kind === "openai" ? config.baseUrl : null,
+    },
+    embedderId: lock?.embedderId ?? config.embedderId,
+    expectedEmbedderId: config.embedderId,
     hasIndex: Boolean(lock && existsSync(embeddingsJsonPath) && existsSync(embeddingsBinPath)),
     stale,
     updatedAt: lock?.updatedAt ?? null,
     chunksTotal: chunkResult.chunks.length,
     chunksIndexed: Array.isArray(embeddings?.records) ? embeddings.records.length : 0,
-    dimensions: typeof embeddings?.dimensions === "number" ? embeddings.dimensions : STUDIO_RAG_DIMENSIONS,
+    dimensions: typeof embeddings?.dimensions === "number" ? embeddings.dimensions : config.dimensions,
+    expectedDimensions: config.dimensions,
     sensitiveExcluded: chunkResult.stats.sensitiveExcluded,
     sensitiveIncluded: chunkResult.stats.sensitiveIncluded,
     files: {
@@ -289,13 +324,18 @@ function getRagStatus(schemaDir: string): unknown {
 }
 
 async function indexRag(schemaDir: string): Promise<unknown> {
+  const config = resolveStudioRagEmbedderConfig();
+  if (!config.configured) {
+    throw new StudioHttpError(400, "OPENAI_API_KEY is required when Studio RAG uses the OpenAI embedder.");
+  }
+  clearIncompatibleRagStore(schemaDir, config);
   const sources = loadChunkerSourcesFromDir(schemaDir);
   const store = createFileStore({ basePath: join(schemaDir, "schema") });
   const result = await buildSchemaIndex({
     schema: sources,
-    embedder: createStudioMockEmbedder(),
+    embedder: createStudioRagEmbedder(config),
     store,
-    embedderId: STUDIO_RAG_EMBEDDER_ID,
+    embedderId: config.embedderId,
     lockFilePath: join(schemaDir, "schema.lock.json"),
   });
   store.flush();
@@ -309,13 +349,20 @@ async function queryRag(
   schemaDir: string,
   query: { question: string; k: number; types?: ChunkType[] },
 ): Promise<unknown> {
-  const status = getRagStatus(schemaDir) as { hasIndex?: boolean; schemaId?: string };
+  const config = resolveStudioRagEmbedderConfig();
+  if (!config.configured) {
+    throw new StudioHttpError(400, "OPENAI_API_KEY is required when Studio RAG uses the OpenAI embedder.");
+  }
+  const status = getRagStatus(schemaDir) as { hasIndex?: boolean; stale?: boolean; schemaId?: string };
   if (!status.hasIndex) {
     throw new StudioHttpError(400, "Build the RAG index before querying chunks.");
   }
+  if (status.stale) {
+    throw new StudioHttpError(400, "Reindex before querying chunks. The current index is stale or uses a different embedder.");
+  }
   const store = createFileStore({ basePath: join(schemaDir, "schema") });
   const retriever = createRetriever({
-    embedder: createStudioMockEmbedder(),
+    embedder: createStudioRagEmbedder(config),
     store,
   });
   const results = await retriever({
@@ -334,6 +381,111 @@ async function queryRag(
   };
 }
 
+function resolveStudioRagEmbedderConfig(): StudioRagEmbedderConfig {
+  const kind = (
+    process.env.ASKDB_RAG_EMBEDDER ??
+    process.env.ASKDB_STUDIO_RAG_EMBEDDER ??
+    "mock"
+  ).toLowerCase();
+  if (kind === "mock") {
+    return {
+      kind: "mock",
+      embedderId: STUDIO_RAG_MOCK_EMBEDDER_ID,
+      dimensions: STUDIO_RAG_MOCK_DIMENSIONS,
+      configured: true,
+      label: "Mock lexical",
+    };
+  }
+  if (kind !== "openai") {
+    throw new StudioHttpError(400, `Unsupported Studio RAG embedder: ${kind}`);
+  }
+
+  const model =
+    process.env.ASKDB_RAG_EMBEDDER_MODEL ??
+    process.env.ASKDB_STUDIO_RAG_EMBEDDER_MODEL ??
+    process.env.ASKDB_EMBEDDING_MODEL ??
+    DEFAULT_OPENAI_EMBEDDING_MODEL;
+  const dimensionOverride = readPositiveIntegerEnv(
+    process.env.ASKDB_RAG_EMBEDDER_DIMENSIONS ??
+      process.env.ASKDB_STUDIO_RAG_EMBEDDER_DIMENSIONS,
+  );
+  const dimensions = dimensionOverride ?? defaultOpenAiEmbeddingDimensions(model);
+  return {
+    kind: "openai",
+    embedderId: `openai:${model}:${dimensions}`,
+    dimensions,
+    configured: Boolean(process.env.OPENAI_API_KEY),
+    label: "OpenAI",
+    model,
+    baseUrl: process.env.OPENAI_BASE_URL ?? DEFAULT_OPENAI_BASE_URL,
+    apiKey: process.env.OPENAI_API_KEY,
+    requestDimensions: dimensionOverride,
+  };
+}
+
+function createStudioRagEmbedder(config: StudioRagEmbedderConfig): Embedder {
+  if (config.kind === "mock") return createStudioMockEmbedder(config.dimensions);
+  return createStudioOpenAiEmbedder(config);
+}
+
+function createStudioOpenAiEmbedder(config: Extract<StudioRagEmbedderConfig, { kind: "openai" }>): Embedder {
+  return async (texts: string[]) => {
+    const url = `${config.baseUrl.replace(/\/+$/, "")}/embeddings`;
+    const body: Record<string, unknown> = {
+      input: texts,
+      model: config.model,
+    };
+    if (config.requestDimensions !== undefined) {
+      body.dimensions = config.requestDimensions;
+    }
+    const response = await fetch(url, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        authorization: `Bearer ${config.apiKey}`,
+      },
+      body: JSON.stringify(body),
+    });
+    if (!response.ok) {
+      const text = await response.text();
+      throw new Error(`OpenAI embeddings failed: ${response.status} ${text}`);
+    }
+    const json = (await response.json()) as { data?: { embedding: number[] }[] };
+    const embeddings = json.data?.map((item) => item.embedding) ?? [];
+    if (embeddings.length !== texts.length) {
+      throw new Error(`OpenAI embeddings returned ${embeddings.length} vectors for ${texts.length} inputs.`);
+    }
+    return embeddings;
+  };
+}
+
+function clearIncompatibleRagStore(schemaDir: string, config: StudioRagEmbedderConfig): void {
+  const embeddingsJsonPath = join(schemaDir, "schema.embeddings.json");
+  const embeddings = readOptionalJson(embeddingsJsonPath) as { dimensions?: number } | undefined;
+  if (embeddings?.dimensions === undefined || embeddings.dimensions === config.dimensions) return;
+  for (const path of [
+    join(schemaDir, "schema.embeddings.json"),
+    join(schemaDir, "schema.embeddings.bin"),
+    join(schemaDir, "schema.lock.json"),
+  ]) {
+    rmSync(path, { force: true });
+  }
+}
+
+function defaultOpenAiEmbeddingDimensions(model: string): number {
+  if (model === "text-embedding-3-large") return 3072;
+  return 1536;
+}
+
+function readPositiveIntegerEnv(value: string | undefined): number | undefined {
+  if (value === undefined || value.trim() === "") return undefined;
+  const parsed = Number(value);
+  if (!Number.isInteger(parsed) || parsed <= 0) {
+    throw new StudioHttpError(400, `Invalid Studio RAG embedding dimensions: ${value}`);
+  }
+  return parsed;
+}
+
 function serializeRagResult(result: QueryResult): unknown {
   return {
     id: result.id,
@@ -345,7 +497,7 @@ function serializeRagResult(result: QueryResult): unknown {
   };
 }
 
-function createStudioMockEmbedder(dim = STUDIO_RAG_DIMENSIONS): Embedder {
+function createStudioMockEmbedder(dim: number): Embedder {
   return async (texts: string[]) => {
     return texts.map((text) => {
       const vector = new Array<number>(dim).fill(0);

@@ -881,6 +881,7 @@ function renderSidebar() {
 
 function renderRagPage() {
   const status = state.ragStatus || {};
+  const embedder = status.embedder || {};
   const queryInput = h("textarea", { name: "question" });
   queryInput.value = state.ragQuestion || "How much revenue did customers generate last month?";
   const kInput = h("input", { name: "k", type: "number", min: "1", max: "25", value: "8" });
@@ -894,7 +895,7 @@ function renderRagPage() {
       h("div", { class: "toolbar-actions" }, [
         h("span", { class: "status " + state.ragStatusKind, text: state.ragStatusText }),
         h("button", { onclick: async () => { await refreshRagStatus(); render(); }, text: "Refresh" }),
-        h("button", { class: "primary", onclick: buildRagIndex, text: status.hasIndex ? "Reindex" : "Build index" })
+        h("button", { class: "primary", onclick: buildRagIndex, disabled: embedder.configured === false ? "true" : undefined, text: status.hasIndex ? "Reindex" : "Build index" })
       ])
     ]),
     h("div", { class: "content" }, [
@@ -905,14 +906,19 @@ function renderRagPage() {
             metric(status.chunksTotal ?? 0, "chunks"),
             metric(status.chunksIndexed ?? 0, "indexed"),
             metric(status.sensitiveExcluded ?? 0, "sensitive skipped"),
-            metric(status.dimensions ?? 64, "dimensions")
+            metric(status.expectedDimensions ?? status.dimensions ?? 64, "dimensions")
           ]),
           h("p", { class: "status " + (status.stale ? "error" : "ok"), text:
             status.hasIndex
               ? (status.stale ? "Index is stale. Reindex before tuning." : "Index is current.")
               : "No local RAG index has been built."
           }),
-          h("p", { class: "status", text: "Embedder: " + (status.embedderId || status.expectedEmbedderId || "studio:mock-lexical-64") }),
+          h("p", { class: "status " + (embedder.configured === false ? "error" : ""), text:
+            "Configured embedder: " + (embedder.label || "Mock lexical") +
+            (embedder.model ? " / " + embedder.model : "")
+          }),
+          h("p", { class: "status", text: "Index embedder: " + (embedder.indexedId || "none") }),
+          h("p", { class: "status", text: "Expected embedder: " + (embedder.expectedId || status.expectedEmbedderId || "studio:mock-lexical-64") }),
           h("p", { class: "status", text: "Updated: " + (status.updatedAt || "never") }),
           h("div", { class: "badges" }, [
             h("span", { class: "badge", text: "lock " + (status.files?.lock ? "yes" : "no") }),
@@ -937,7 +943,7 @@ function renderRagPage() {
               input.checked = true;
               return h("label", {}, [input, type]);
             })),
-            h("button", { class: "primary", type: "submit", disabled: status.hasIndex ? undefined : "true", text: "Retrieve chunks" })
+            h("button", { class: "primary", type: "submit", disabled: status.hasIndex && !status.stale && embedder.configured !== false ? undefined : "true", text: "Retrieve chunks" })
           ])
         ])
       ]),
