@@ -1,7 +1,6 @@
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { createOpenAI } from "@ai-sdk/openai";
-import { suggestEnrichment } from "@askdb/core";
+import { createAskDbLanguageModelFromEnv, suggestEnrichment } from "@askdb/core";
 import { render } from "ink";
 import { createElement } from "react";
 import { App } from "./ui/App.js";
@@ -58,8 +57,9 @@ export async function runTuiCli(argv: readonly string[]): Promise<number> {
     return 1;
   }
 
+  const suggest = await buildSuggester();
   const { waitUntilExit } = render(
-    createElement(App, { workspace, suggest: buildOpenAiSuggester() }),
+    createElement(App, { workspace, suggest }),
   );
   try {
     await waitUntilExit();
@@ -141,8 +141,10 @@ function printHelp(stream: NodeJS.WriteStream): void {
       "(Phase 6) or hand-authored. Bundled JSON is read-only and not yet supported",
       "as a TUI input.",
       "",
-      "AI suggestions are enabled when OPENAI_API_KEY is set. Override the model",
-      "with ASKDB_TUI_MODEL, ASKDB_MODEL, or OPENAI_MODEL.",
+      "AI suggestions are enabled when ASKDB_AI_API_KEY (or OPENAI_API_KEY) is set.",
+      "For Microsoft Foundry / Azure OpenAI: set ASKDB_AI_PROVIDER=azure plus",
+      "ASKDB_AI_AZURE_RESOURCE_NAME (or ASKDB_AI_BASE_URL). Override the model",
+      "with ASKDB_TUI_MODEL, ASKDB_AI_MODEL, ASKDB_MODEL, or OPENAI_MODEL.",
       "",
     ].join("\n"),
   );
@@ -152,15 +154,10 @@ function formatError(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
-function buildOpenAiSuggester(): SuggestEnrichmentForTui | undefined {
-  const apiKey = process.env.OPENAI_API_KEY;
-  if (!apiKey) return undefined;
-  const openai = createOpenAI({
-    apiKey,
-    baseURL: process.env.OPENAI_BASE_URL,
+async function buildSuggester(): Promise<SuggestEnrichmentForTui | undefined> {
+  const model = await createAskDbLanguageModelFromEnv(process.env, {
+    modelEnvVar: process.env.ASKDB_TUI_MODEL ? "ASKDB_TUI_MODEL" : undefined,
   });
-  const modelId =
-    process.env.ASKDB_TUI_MODEL ?? process.env.ASKDB_MODEL ?? process.env.OPENAI_MODEL ?? "gpt-4o-mini";
-  const model = openai(modelId);
+  if (!model) return undefined;
   return (target, context) => suggestEnrichment(target, context, model);
 }

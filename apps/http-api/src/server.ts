@@ -4,7 +4,6 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import { createServer as createNodeServer } from "node:http";
 import { dirname, isAbsolute, resolve as resolvePath } from "node:path";
 import { fileURLToPath } from "node:url";
-import { createOpenAI } from "@ai-sdk/openai";
 import {
   AskDbError,
   AskDbLogEvent,
@@ -14,10 +13,13 @@ import {
   SqlGenerationError,
   SqlValidationError,
   ask,
+  askDbAiKeyMissingMessage,
+  createAskDbLanguageModelFromEnv,
   createAskDbLogger,
   loadSchema,
   loadSchemaFromJson,
   parseAskDbModeV1,
+  resolveAskDbAiConfig,
 } from "@askdb/core";
 import { postgresDialect } from "@askdb/postgres";
 import type { AskHttpErrorResponse, AskHttpRequest, AskHttpSuccessResponse } from "./types.js";
@@ -190,11 +192,11 @@ export function createAskDbHttpServer(options: AskDbHttpServerOptions = {}) {
       }
 
       const mockSql = process.env.ASKDB_MOCK_SQL;
-      const apiKey = process.env.OPENAI_API_KEY;
-      if (!mockSql && !apiKey) {
+      const aiConfig = mockSql ? undefined : resolveAskDbAiConfig();
+      if (!mockSql && !aiConfig) {
         writeError(res, 500, correlationId, {
           code: "generation_not_configured",
-          message: "OPENAI_API_KEY is required for NL→SQL generation (or set ASKDB_MOCK_SQL).",
+          message: `${askDbAiKeyMissingMessage("NL→SQL generation")} (or set ASKDB_MOCK_SQL).`,
         });
         return;
       }
@@ -242,14 +244,7 @@ export function createAskDbHttpServer(options: AskDbHttpServerOptions = {}) {
       type AskModel = Parameters<typeof ask>[0]["model"];
       const model: AskModel = mockSql
         ? (undefined as unknown as AskModel)
-        : (() => {
-            const openai = createOpenAI({
-              apiKey: apiKey!,
-              baseURL: process.env.OPENAI_BASE_URL,
-            });
-            const modelId = process.env.ASKDB_MODEL ?? process.env.OPENAI_MODEL ?? "gpt-4o-mini";
-            return openai(modelId);
-          })();
+        : ((await createAskDbLanguageModelFromEnv()) as AskModel);
 
       const out = await ask({
         question: body.question,
