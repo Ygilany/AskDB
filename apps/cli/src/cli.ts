@@ -1,6 +1,5 @@
 #!/usr/bin/env node
 import dotenv from "dotenv";
-import { spawnSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { createOpenAI } from "@ai-sdk/openai";
 import {
@@ -49,11 +48,11 @@ if (process.argv[2] === "introspect") {
 }
 
 if (process.argv[2] === "enrich") {
-  process.exit(runTuiShim(process.argv.slice(3)));
+  process.exit(await runTuiCommand(process.argv.slice(3)));
 }
 
 if (process.argv[2] === "bundle") {
-  process.exit(runTuiShim(["bundle", ...process.argv.slice(3)]));
+  process.exit(await runTuiCommand(["bundle", ...process.argv.slice(3)]));
 }
 
 function printCliError(error: unknown): void {
@@ -75,23 +74,9 @@ function printCliError(error: unknown): void {
   console.error(String(error));
 }
 
-function runTuiShim(args: string[]): number {
-  const result = spawnSync("askdb-tui", args, {
-    stdio: "inherit",
-    env: process.env,
-  });
-  if (result.error) {
-    const err = result.error as NodeJS.ErrnoException;
-    if (err.code === "ENOENT") {
-      console.error(
-        "`askdb-tui` was not found. Install `@askdb/tui` alongside `@askdb/cli`, then retry.",
-      );
-      return 1;
-    }
-    console.error(err.message);
-    return 1;
-  }
-  return result.status ?? 1;
+async function runTuiCommand(args: string[]): Promise<number> {
+  const { runTuiCli } = await import("@askdb/tui");
+  return runTuiCli(args);
 }
 
 function formatSchemaPathHint(schemaPath: string): string {

@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Installable smoke test for AskDB packages.
 #
-# Builds the workspace, packs the library packages plus the app packages
-# (cli, http-api, tui), copies the consumer fixture into a fresh tmpdir, installs
+# Builds the workspace, packs the library packages (including tui) plus the app
+# packages (cli, http-api), copies the consumer fixture into a fresh tmpdir, installs
 # library tarballs (no workspace), runs `tsc --noEmit`, and executes the smoke script.
 set -euo pipefail
 
@@ -18,7 +18,7 @@ pnpm -C "$ROOT" -r build >/dev/null
 
 echo "smoke: packing tarballs…"
 mkdir -p "$WORK/tarballs"
-for pkg in packages/core packages/introspect packages/postgres packages/prisma apps/cli apps/http-api apps/tui; do
+for pkg in packages/core packages/introspect packages/postgres packages/prisma packages/tui apps/cli apps/http-api; do
   (cd "$ROOT/$pkg" && pnpm pack --pack-destination "$WORK/tarballs" >/dev/null)
 done
 for pkg in packages/rag; do
