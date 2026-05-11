@@ -1,46 +1,67 @@
-import type { LanguageModel } from "ai";
+import type { LanguageModel, generateText as defaultGenerateText } from "ai";
 import { AskDbError } from "./errors.js";
 import type { AskDbExecutor } from "./exec/executor.js";
-import { createPostgresExecutor } from "./exec/postgres.js";
 import type { TabularResult } from "./exec/types.js";
 import type { AskDbLogger } from "./logging/askdb-logger.js";
 import { AskDbLogEvent } from "./logging/log-events.js";
-import type { AnyNormalizedSchema } from "./sql/prompt.js";
+import type { AnyNormalizedSchema } from "./schema/types.js";
 import { logPostExecuteModeBranch } from "./modes/post-execute-log.js";
 import { DEFAULT_ASKDB_MODE, type AskDbModeV1 } from "./modes/types.js";
-import type { GenerateSqlDeps, PostgresSelectGuardrailExplain } from "./sql/generate.js";
-import { generatePostgresSelectSql } from "./sql/generate.js";
 import type { Retriever } from "./retrieval/types.js";
 import { synthesizeRetrievedDdl } from "./retrieval/synthesize-ddl.js";
 import type { NormalizedSchemaV2 } from "./schema/v2/normalized.js";
+
+/** Options forwarded to a dialect's generator. Stable across dialects. */
+export type AskDialectGenerateOptions = {
+  logger?: AskDbLogger;
+  explain?: boolean;
+  omitSensitiveIdentifiersFromNlToSqlPrompt?: boolean;
+  generateText?: typeof defaultGenerateText;
+  prebuiltDdl?: string;
+};
+
+/** Output of a dialect's generator: validated SQL plus optional dialect-specific explain metadata. */
+export type AskDialectGenerateResult = {
+  sql: string;
+  explain?: unknown;
+};
+
+/** Adapter that knows how to turn a question + schema + model into validated dialect-specific SQL. */
+export type AskDialect = {
+  generate(
+    question: string,
+    schema: AnyNormalizedSchema,
+    model: LanguageModel,
+    options?: AskDialectGenerateOptions,
+  ): Promise<AskDialectGenerateResult>;
+};
+
+/** Generic deps the pipeline forwards into the dialect (test-time mock for `generateText`, etc.). */
+export type AskGenerateDeps = {
+  generateText?: typeof defaultGenerateText;
+};
 
 export type AskPipelineOptions = {
   question: string;
   schema: AnyNormalizedSchema;
   model: LanguageModel;
+  /** Required: the SQL dialect adapter to use (e.g. `postgresDialect` from `@askdb/postgres`). */
+  dialect: AskDialect;
   /** When true, callers may inspect heuristic guardrail metadata (hosts/CLI). */
   explain?: boolean;
   /**
    * When true, omit sensitive table/column names from NL→SQL DDL. Default false — names are included
-   * with `(sensitive)` tags (merged with `deps.omitSensitiveIdentifiersFromNlToSqlPrompt`; top-level wins).
+   * with `(sensitive)` tags so the model can ground SQL.
    */
   omitSensitiveIdentifiersFromNlToSqlPrompt?: boolean;
   /**
-   * When set with `execute: true`, runs the generated SELECT in a read-only transaction using the
-   * built-in `pg`-backed executor (see {@link createPostgresExecutor}). Ignored when `executor`
-   * is also supplied — the consumer-supplied executor wins and a
-   * `askdb.config.executor_overrides_connection_string` event is emitted.
-   */
-  connectionString?: string;
-  /**
-   * BYO database execution seam. When supplied, `ask()` calls this function with the validated
-   * SELECT instead of the built-in `pg` path. The executor is responsible for read-only semantics
-   * (see {@link AskDbExecutor}).
+   * BYO database execution seam. Required when `execute: true`. The executor is responsible for
+   * read-only semantics (see {@link AskDbExecutor}).
    */
   executor?: AskDbExecutor;
   /** Default false — only generate + validate unless explicitly requested. */
   execute?: boolean;
-  deps?: GenerateSqlDeps;
+  deps?: AskGenerateDeps;
   /** Optional structured logger (host-provided — e.g. `createAskDbLogger` wraps Pino). */
   logger?: AskDbLogger;
   /**
@@ -80,7 +101,7 @@ export type AskPipelineOptions = {
 export type AskPipelineResult = {
   sql: string;
   result?: TabularResult;
-  explain?: PostgresSelectGuardrailExplain;
+  explain?: unknown;
 };
 
 export async function ask(options: AskPipelineOptions): Promise<AskPipelineResult> {
@@ -88,61 +109,41 @@ export async function ask(options: AskPipelineOptions): Promise<AskPipelineResul
   const mode = options.mode ?? DEFAULT_ASKDB_MODE;
   logger?.info({ event: AskDbLogEvent.PipelineMode, mode }, "pipeline mode");
 
-  // Resolve the execution seam up front so the precedence-warning event lands in logs before
-  // generation, matching the documented "Resolution rule when both inputs are passed".
-  if (options.executor && options.connectionString) {
-    logger?.info(
-      {
-        event: AskDbLogEvent.ConfigExecutorOverridesConnectionString,
-        chosen: "executor",
-      },
-      "executor supplied; ignoring connectionString",
-    );
-  }
-
-  const explainRequested = options.explain ?? options.deps?.explain ?? false;
-  const omitSensitive =
-    options.omitSensitiveIdentifiersFromNlToSqlPrompt ??
-    options.deps?.omitSensitiveIdentifiersFromNlToSqlPrompt ??
-    false;
-
-  // Resolve retrieval. The threshold gate keeps small schemas on the full-DDL
-  // path even when a retriever is supplied — measured in chunk count, not tokens.
+  const explainRequested = options.explain ?? false;
+  const omitSensitive = options.omitSensitiveIdentifiersFromNlToSqlPrompt ?? false;
   const prebuiltDdl = await maybeRetrieveDdl({
     options,
     logger,
     omitSensitive,
   });
-
-  const generated = await generatePostgresSelectSql(options.question, options.schema, options.model, {
-    ...options.deps,
-    logger,
-    explain: explainRequested,
-    omitSensitiveIdentifiersFromNlToSqlPrompt: omitSensitive || undefined,
-    prebuiltDdl,
-  });
+  const generated = await options.dialect.generate(
+    options.question,
+    options.schema,
+    options.model,
+    {
+      logger,
+      explain: explainRequested,
+      omitSensitiveIdentifiersFromNlToSqlPrompt: omitSensitive || undefined,
+      generateText: options.deps?.generateText,
+      prebuiltDdl,
+    },
+  );
   const sql = generated.sql;
   const explain = generated.explain;
   if (!options.execute) {
     return explain !== undefined ? { sql, explain } : { sql };
   }
 
-  // Pick the executor: BYO wins, otherwise lazy-build the built-in pg-backed one from the
-  // connection string. Group 2 will make the pg import lazy at the factory boundary.
-  let executor: AskDbExecutor;
-  if (options.executor) {
-    executor = options.executor;
-  } else if (options.connectionString) {
-    executor = createPostgresExecutor(options.connectionString);
-  } else {
+  if (!options.executor) {
     throw new AskDbError(
-      "Execution was requested but neither `executor` nor `connectionString` was provided.",
+      "Execution was requested but no `executor` was provided. " +
+        "Construct one (e.g. `createPostgresExecutor` from `@askdb/postgres`) and pass it to `ask({ executor })`.",
     );
   }
 
   try {
     logger?.info({ event: AskDbLogEvent.PipelineExecuteStart }, "execute start");
-    const result = await executor(sql);
+    const result = await options.executor(sql);
     logger?.info(
       {
         event: AskDbLogEvent.PipelineExecuteComplete,

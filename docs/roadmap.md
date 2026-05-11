@@ -114,6 +114,18 @@ Completed: Delivered `@askdb/tui` interactive schema enrichment for Schema v2, i
 - **Optional `bundle` command** — Compiles a v2 directory into a single packed JSON for distribution.
 - **No live-DB or migrator paths** — Phase 6 owns introspection; Phase 5 owns the format. The TUI focuses entirely on enrichment.
 
+## Phase 7.5 ✅ — Architecture reshape for integration packages
+
+**Goal:** Reorganize AskDB around one package per integration surface, so future engines (MySQL, Prisma) plug in without touching `@askdb/core` or `@askdb/introspect`.
+
+**Spec/decision:** [**ADR 0002 — Integration-package layout**](adrs/0002-integration-package-layout.md) (supersedes the Phase 4 `@askdb/core/postgres` subpath decision).
+
+- **`@askdb/core` is dialect-agnostic** — `ask()` takes a required `dialect` adapter (`AskDialect`). The `connectionString` shortcut and `createPostgresExecutor` are removed from core. The `@askdb/core/postgres` subpath is retired.
+- **`@askdb/introspect` is engine-agnostic** — `Connector<TInput>` becomes generic over the integration's input shape; `templates()` is optional. The `IntrospectionInput` discriminated union leaves the public surface.
+- **`@askdb/postgres` is the first complete integration** — Bundles dialect (`postgresDialect`), connector (live + from-export), catalog templates, bundle reader, and the `pg`-backed executor. `PostgresIntrospectionInput` is exported from this package, not from introspect.
+- **Apps moved to `apps/`** — `cli`, `http-api`, `tui`, `docs-site` are first-party reference apps. The supported product surface is `@askdb/cli`, batteries-included Prisma-style. The standalone `askdb-introspect` binary retires; introspection is reached via `askdb introspect`.
+- **Pre-1.0 breaking change, no migrator** — see the changeset for the full surface diff.
+
 ## Phase 8 — RAG layer (`@askdb/rag`)
 
 **Goal:** Ship retrieval over the describable schema so large schemas don't blow up the prompt and `Common query language` sections actually ground NL→SQL.

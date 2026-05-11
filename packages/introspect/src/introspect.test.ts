@@ -1,17 +1,9 @@
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
-import { loadSchema } from "@askdb/core";
+import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { introspect } from "./introspect.js";
-import {
-  createSnapshotExecutor,
-  loadCatalogSnapshot,
-} from "./postgres/test-utils.js";
-
-const here = dirname(fileURLToPath(import.meta.url));
-const FIXTURE_DIR = resolve(here, "../../../fixtures/introspect");
+import type { Connector, IntrospectionResult, SqlSchema } from "./types.js";
 
 let workDir: string;
 beforeEach(() => {
@@ -21,93 +13,104 @@ afterEach(() => {
   rmSync(workDir, { recursive: true, force: true });
 });
 
-describe("introspect() - end-to-end (snapshot executor, no live DB)", () => {
-  it("returns IntrospectionResult when no renderOptions are passed", async () => {
-    const snapshot = loadCatalogSnapshot(
-      resolve(FIXTURE_DIR, "orders-users.catalog.json"),
-    );
-    const result = await introspect({
-      mode: "live",
-      executor: createSnapshotExecutor(snapshot),
-    });
-    expect(result.schema.schemaId).toBe("introspected");
+type FakeInput = { tag: string };
+
+const fakeSchema: SqlSchema = {
+  schemaId: "fake",
+  schemas: [
+    {
+      name: "public",
+      tables: [
+        {
+          id: "table:public.users",
+          schema: "public",
+          name: "users",
+          columns: [
+            {
+              id: "table:public.users#id",
+              name: "id",
+              ordinalPosition: 1,
+              dataType: "uuid",
+              udtName: "uuid",
+              nullable: false,
+              primaryKey: true,
+            },
+          ],
+          primaryKey: { columns: ["id"] },
+          foreignKeys: [],
+          uniqueConstraints: [],
+          indexes: [],
+          checkConstraints: [],
+        },
+      ],
+      views: [],
+      enums: [],
+      sequences: [],
+    },
+  ],
+};
+
+function makeFakeConnector(calls: string[]): Connector<FakeInput> {
+  return {
+    async describe(input): Promise<IntrospectionResult> {
+      calls.push(input.tag);
+      return {
+        schema: fakeSchema,
+        warnings: [],
+        isEmpty: false,
+        viewDefinitions: {},
+      };
+    },
+  };
+}
+
+describe("introspect() — engine-agnostic orchestrator", () => {
+  it("delegates to the supplied connector and returns its IntrospectionResult when no renderOptions are passed", async () => {
+    const calls: string[] = [];
+    const connector = makeFakeConnector(calls);
+    const result = await introspect<FakeInput>({ tag: "hello" }, undefined, { connector });
+
+    expect(calls).toEqual(["hello"]);
+    expect(result.schema.schemaId).toBe("fake");
     expect(result.render).toBeUndefined();
-    expect(result.warnings).toEqual([]);
   });
 
-  it("connector to renderer to on-disk artifact, single call", async () => {
-    const snapshot = loadCatalogSnapshot(
-      resolve(FIXTURE_DIR, "orders-users.catalog.json"),
-    );
-    const outDir = join(workDir, "orders-users.schema");
+  it("writes the rendered Schema v2 directory when renderOptions are supplied", async () => {
+    const connector = makeFakeConnector([]);
+    const outDir = join(workDir, "fake.schema");
 
-    const result = await introspect(
-      { mode: "live", executor: createSnapshotExecutor(snapshot) },
-      { outDir, schemaId: "orders-users" },
+    const result = await introspect<FakeInput>(
+      { tag: "render" },
+      { outDir, schemaId: "fake" },
+      { connector },
     );
 
-    expect(result.render?.schemaJsonPath).toBe(resolve(outDir, "schema.json"));
-
-    // The artifact byte-matches the M3 golden.
-    const golden = readFileSync(
-      resolve(FIXTURE_DIR, "orders-users.expected-schema.json"),
-      "utf8",
-    );
+    expect(result.render?.schemaJsonPath).toBe(join(outDir, "schema.json"));
     const written = readFileSync(result.render!.schemaJsonPath, "utf8");
-    expect(written).toBe(golden);
-
-    // It also round-trips through the Phase 5 v2 loader cleanly.
-    const loaded = loadSchema(outDir);
-    expect(loaded.schemaId).toBe("orders-users");
-    expect(loaded.warnings).toEqual([]);
+    expect(written).toContain('"schemaId": "fake"');
+    expect(written).toContain('"table:public.users"');
   });
 
   it("merges connector and render warnings", async () => {
-    const snapshot = loadCatalogSnapshot(
-      resolve(FIXTURE_DIR, "orders-users.catalog.json"),
-    );
-    const outDir = join(workDir, "orders-users.schema");
-
-    const result = await introspect(
-      {
-        mode: "live",
-        executor: createSnapshotExecutor(snapshot),
-        // Unmatched glob causes the connector to emit ambiguous_filter.
-        filters: { tables: ["public.does_not_exist"] },
-      },
-      { outDir, schemaId: "orders-users" },
-    );
-    expect(result.warnings).toEqual([
-      { code: "ambiguous_filter", filter: "public.does_not_exist" },
-    ]);
-  });
-
-  it("accepts a custom connector via options.connector", async () => {
-    const snapshot = loadCatalogSnapshot(
-      resolve(FIXTURE_DIR, "orders-users.catalog.json"),
-    );
-    const calls: string[] = [];
-    const connector = {
-      engine: "postgres" as const,
-      async describe(_input: unknown) {
-        calls.push("describe");
+    const connector: Connector<FakeInput> = {
+      async describe() {
         return {
-          schema: { schemaId: "stub", schemas: [] },
-          warnings: [],
-          isEmpty: true,
+          schema: fakeSchema,
+          warnings: [{ code: "ambiguous_filter", filter: "public.missing" }],
+          isEmpty: false,
           viewDefinitions: {},
         };
       },
-      templates() {
-        throw new Error("not used in this test");
-      },
     };
-    const result = await introspect(
-      { mode: "live", executor: createSnapshotExecutor(snapshot) },
-      undefined,
+    const outDir = join(workDir, "fake.schema");
+    const result = await introspect<FakeInput>(
+      { tag: "warn" },
+      { outDir, schemaId: "fake" },
       { connector },
     );
-    expect(calls).toEqual(["describe"]);
-    expect(result.schema.schemaId).toBe("stub");
+
+    expect(result.warnings).toEqual([
+      { code: "ambiguous_filter", filter: "public.missing" },
+    ]);
   });
 });

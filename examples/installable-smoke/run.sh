@@ -1,10 +1,9 @@
 #!/usr/bin/env bash
 # Installable smoke test for AskDB packages.
 #
-# Builds the workspace, packs published packages, copies the consumer fixture into a fresh
-# tmpdir, installs selected packages from local tarballs (no workspace), runs `tsc --noEmit`,
-# executes the smoke script, and checks package bins. Fails clearly if `private: true` slips
-# back, `dist/` loses files, types break, or key package surfaces regress.
+# Builds the workspace, packs the three library packages (core, introspect, postgres) plus the
+# app packages (cli, http-api, tui), copies the consumer fixture into a fresh tmpdir, installs
+# library tarballs (no workspace), runs `tsc --noEmit`, and executes the smoke script.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -19,14 +18,21 @@ pnpm -C "$ROOT" -r build >/dev/null
 
 echo "smoke: packing tarballs…"
 mkdir -p "$WORK/tarballs"
-for pkg in core cli http-api introspect tui rag; do
-  (cd "$ROOT/packages/$pkg" && pnpm pack --pack-destination "$WORK/tarballs" >/dev/null)
+for pkg in packages/core packages/introspect packages/postgres apps/cli apps/http-api apps/tui; do
+  (cd "$ROOT/$pkg" && pnpm pack --pack-destination "$WORK/tarballs" >/dev/null)
+done
+for pkg in packages/rag; do
+  (cd "$ROOT/$pkg" && pnpm pack --pack-destination "$WORK/tarballs" >/dev/null)
 done
 
 CORE_TARBALL="$(ls "$WORK/tarballs"/askdb-core-*.tgz | head -n1)"
 [ -f "$CORE_TARBALL" ] || { echo "smoke: missing core tarball" >&2; exit 1; }
 INTROSPECT_TARBALL="$(ls "$WORK/tarballs"/askdb-introspect-*.tgz | head -n1)"
 [ -f "$INTROSPECT_TARBALL" ] || { echo "smoke: missing introspect tarball" >&2; exit 1; }
+POSTGRES_TARBALL="$(ls "$WORK/tarballs"/askdb-postgres-*.tgz | head -n1)"
+[ -f "$POSTGRES_TARBALL" ] || { echo "smoke: missing postgres tarball" >&2; exit 1; }
+CLI_TARBALL="$(ls "$WORK/tarballs"/askdb-cli-*.tgz | head -n1)"
+[ -f "$CLI_TARBALL" ] || { echo "smoke: missing cli tarball" >&2; exit 1; }
 TUI_TARBALL="$(ls "$WORK/tarballs"/askdb-tui-*.tgz | head -n1)"
 [ -f "$TUI_TARBALL" ] || { echo "smoke: missing tui tarball" >&2; exit 1; }
 RAG_TARBALL="$(ls "$WORK/tarballs"/askdb-rag-*.tgz | head -n1)"
@@ -35,11 +41,35 @@ RAG_TARBALL="$(ls "$WORK/tarballs"/askdb-rag-*.tgz | head -n1)"
 echo "smoke: validating @askdb/introspect tarball contents…"
 INTROSPECT_TARBALL_FILES="$(tar -tzf "$INTROSPECT_TARBALL")"
 grep -q '^package/dist/index.js$' <<<"$INTROSPECT_TARBALL_FILES"
-grep -q '^package/dist/bin.js$' <<<"$INTROSPECT_TARBALL_FILES"
 grep -q '^package/README.md$' <<<"$INTROSPECT_TARBALL_FILES"
 grep -q '^package/LICENSE$' <<<"$INTROSPECT_TARBALL_FILES"
 if grep -Eq '(^package/src/|\.test\.)' <<<"$INTROSPECT_TARBALL_FILES"; then
   echo "smoke: FAILED — @askdb/introspect tarball includes source/tests" >&2
+  exit 1
+fi
+if grep -Eq '^package/dist/bin\.js$' <<<"$INTROSPECT_TARBALL_FILES"; then
+  echo "smoke: FAILED — @askdb/introspect should no longer ship a standalone bin" >&2
+  exit 1
+fi
+
+echo "smoke: validating @askdb/postgres tarball contents…"
+POSTGRES_TARBALL_FILES="$(tar -tzf "$POSTGRES_TARBALL")"
+grep -q '^package/dist/index.js$' <<<"$POSTGRES_TARBALL_FILES"
+grep -q '^package/README.md$' <<<"$POSTGRES_TARBALL_FILES"
+grep -q '^package/LICENSE$' <<<"$POSTGRES_TARBALL_FILES"
+if grep -Eq '(^package/src/|\.test\.)' <<<"$POSTGRES_TARBALL_FILES"; then
+  echo "smoke: FAILED — @askdb/postgres tarball includes source/tests" >&2
+  exit 1
+fi
+
+echo "smoke: validating @askdb/cli tarball contents…"
+CLI_TARBALL_FILES="$(tar -tzf "$CLI_TARBALL")"
+grep -q '^package/dist/index.js$' <<<"$CLI_TARBALL_FILES"
+grep -q '^package/dist/bin.js$' <<<"$CLI_TARBALL_FILES"
+grep -q '^package/README.md$' <<<"$CLI_TARBALL_FILES"
+grep -q '^package/LICENSE$' <<<"$CLI_TARBALL_FILES"
+if grep -Eq '(^package/src/|\.test\.)' <<<"$CLI_TARBALL_FILES"; then
+  echo "smoke: FAILED — @askdb/cli tarball includes source/tests" >&2
   exit 1
 fi
 
@@ -76,6 +106,8 @@ node -e "
   const j = JSON.parse(fs.readFileSync(p, 'utf8'));
   j.dependencies['@askdb/core'] = 'file:$CORE_TARBALL';
   j.dependencies['@askdb/introspect'] = 'file:$INTROSPECT_TARBALL';
+  j.dependencies['@askdb/postgres'] = 'file:$POSTGRES_TARBALL';
+  j.dependencies['@askdb/cli'] = 'file:$CLI_TARBALL';
   j.dependencies['@askdb/tui'] = 'file:$TUI_TARBALL';
   j.dependencies['@askdb/rag'] = 'file:$RAG_TARBALL';
   fs.writeFileSync(p, JSON.stringify(j, null, 2) + '\n');
@@ -96,14 +128,13 @@ echo "smoke: tsc --noEmit…"
 echo "smoke: tsx src/smoke.ts…"
 (cd "$WORK/consumer" && npx --yes tsx src/smoke.ts)
 
-echo "smoke: askdb-introspect bin…"
-(cd "$WORK/consumer" && ./node_modules/.bin/askdb-introspect --version >/dev/null)
-(cd "$WORK/consumer" && ./node_modules/.bin/askdb-introspect templates --engine postgres | grep -q '^-- schemas')
+echo "smoke: askdb cli bin…"
+(cd "$WORK/consumer" && ./node_modules/.bin/askdb --version >/dev/null)
+(cd "$WORK/consumer" && ./node_modules/.bin/askdb introspect templates --engine postgres | grep -q '^-- schemas')
 
 echo "smoke: askdb-tui bin…"
 (cd "$WORK/consumer" && ./node_modules/.bin/askdb-tui --version >/dev/null)
 
 echo "smoke: askdb-rag bin…"
 (cd "$WORK/consumer" && ./node_modules/.bin/askdb-rag --version >/dev/null)
-
 echo "smoke: PASSED"

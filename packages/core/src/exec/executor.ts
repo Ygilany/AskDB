@@ -10,9 +10,8 @@ import type { TabularResult } from "./types.js";
  * Contract — see `docs/specs/phase-4-publish-npm/requirements.md` (“Executor seam — contract”):
  *
  * 1. **Read-only execution.** The consumer is responsible for ensuring the executor cannot perform
- *    writes. The built-in Postgres executor does this with `BEGIN READ ONLY` (see
- *    {@link import("./postgres.js").executeReadOnlySelect}). Custom executors should document their
- *    guarantee.
+ *    writes. The reference Postgres executor (`createPostgresExecutor` in `@askdb/postgres`) does
+ *    this with `BEGIN READ ONLY`. Custom executors should document their guarantee.
  * 2. **`TabularResult` shape stays stable** as part of the published `@askdb/core` contract.
  * 3. **Errors propagate.** Executor errors must throw or reject; the pipeline logs
  *    `askdb.pipeline.failed` with `phase: "execute"` and rethrows. No silent swallowing.
