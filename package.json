@@ -1,5 +1,5 @@
 {
-  "name": "askdb",
+  "name": "askdb-monorepo",
   "private": true,
   "packageManager": "pnpm@11.0.9",
   "engines": {

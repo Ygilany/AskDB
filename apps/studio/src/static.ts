@@ -412,6 +412,19 @@ textarea:focus {
   gap: 10px;
 }
 
+.chunk-list.compact {
+  margin-top: 10px;
+}
+
+.chunk-list.compact .chunk {
+  padding: 10px;
+}
+
+.chunk-list.compact .chunk-text {
+  max-height: 180px;
+  overflow: auto;
+}
+
 .chunk {
   border: 1px solid var(--line);
   background: #fff;
@@ -579,6 +592,8 @@ let state = {
   statusKind: "",
   askStatus: "",
   askStatusKind: "",
+  askMode: "full",
+  askRagChunks: [],
   sql: "",
   explain: null,
   ragStatus: null,
@@ -782,20 +797,27 @@ async function requestSuggestion(source, title, apply) {
 
 async function askQuestion(event) {
   event.preventDefault();
-  const question = new FormData(event.currentTarget).get("question");
+  const form = new FormData(event.currentTarget);
+  const question = form.get("question");
+  const mode = String(form.get("mode") || "full");
+  state.askMode = mode === "rag" ? "rag" : "full";
   state.askStatus = "Generating SQL...";
   state.askStatusKind = "";
+  state.askRagChunks = [];
   state.sql = "";
   state.explain = null;
   render();
   try {
     const result = await api("/api/ask", {
       method: "POST",
-      body: JSON.stringify({ question })
+      body: JSON.stringify({ question, mode: state.askMode })
     });
     state.sql = result.sql.endsWith(";") ? result.sql : result.sql + ";";
     state.explain = result.explain;
-    state.askStatus = "Generated against the current saved schema enrichment.";
+    state.askRagChunks = result.rag?.chunks || [];
+    state.askStatus = state.askMode === "rag"
+      ? "Generated with retrieved schema chunks."
+      : "Generated against the current saved schema enrichment.";
     state.askStatusKind = "ok";
     render();
   } catch (error) {
@@ -1100,6 +1122,21 @@ function textareaField(label, value, onChange, onSuggest) {
 function renderTester() {
   const question = h("textarea", { name: "question" });
   question.value = "How many records are in each table?";
+  const ragStatus = state.ragStatus || {};
+  const embedder = ragStatus.embedder || {};
+  const canUseRag = Boolean(ragStatus.hasIndex && !ragStatus.stale && embedder.configured !== false);
+  const fullInput = h("input", { type: "radio", name: "mode", value: "full" });
+  fullInput.checked = state.askMode !== "rag";
+  fullInput.addEventListener("change", () => {
+    state.askMode = "full";
+    render();
+  });
+  const ragInput = h("input", { type: "radio", name: "mode", value: "rag" });
+  ragInput.checked = state.askMode === "rag";
+  ragInput.addEventListener("change", () => {
+    state.askMode = "rag";
+    render();
+  });
   return h("aside", { class: "tester" }, [
     h("div", { class: "tester-head" }, [
       h("h2", { text: "Sample NL question" }),
@@ -1111,10 +1148,26 @@ function renderTester() {
           h("label", { text: "Question" }),
           question
         ]),
+        h("div", { class: "field" }, [
+          h("label", { text: "Schema context" }),
+          h("div", { class: "checks ask-mode" }, [
+            h("label", {}, [fullInput, "Full schema"]),
+            h("label", {}, [ragInput, "RAG chunks"])
+          ]),
+          h("p", { class: "status " + (state.askMode === "rag" && !canUseRag ? "error" : ""), text:
+            state.askMode === "rag"
+              ? (canUseRag ? "Using the current local RAG index." : "Build or refresh the RAG index before generating with chunks.")
+              : "Using the saved schema without retrieval."
+          })
+        ]),
         h("button", { class: "primary", type: "submit", text: "Generate SQL" })
       ]),
       h("p", { class: "status " + state.askStatusKind, text: state.askStatus }),
       h("pre", { class: "sql", text: state.sql || "-- generated SQL appears here" }),
+      state.askMode === "rag" && state.askRagChunks.length ? h("details", { open: "true" }, [
+        h("summary", { text: "Retrieved chunks" }),
+        h("div", { class: "chunk-list compact" }, state.askRagChunks.map(renderChunk))
+      ]) : null,
       state.explain ? h("details", {}, [
         h("summary", { text: "Guardrail explanation" }),
         h("pre", { class: "sql", text: JSON.stringify(state.explain, null, 2) })

@@ -91,10 +91,28 @@ describe("AskDB Studio server", () => {
     expect(initialRag.hasIndex).toBe(false);
     expect(initialRag.chunksTotal).toBeGreaterThan(0);
 
+    const ragBeforeIndex = await postRaw(`${baseUrl}/api/ask`, {
+      question: "How many users are there?",
+      mode: "rag",
+    });
+    expect(ragBeforeIndex.status).toBe(400);
+    await expect(ragBeforeIndex.json()).resolves.toMatchObject({
+      error: { message: expect.stringContaining("Build the RAG index") },
+    });
+
     const indexed = await postJson(`${baseUrl}/api/rag/index`, {});
     expect(indexed.stats.chunksTotal).toBeGreaterThan(0);
     expect(indexed.status.hasIndex).toBe(true);
     expect(indexed.status.stale).toBe(false);
+
+    const generatedWithRag = await postJson(`${baseUrl}/api/ask`, {
+      question: "How many users are there?",
+      mode: "rag",
+    });
+    expect(generatedWithRag.sql).toBe("select count(*) from users");
+    expect(generatedWithRag.rag.enabled).toBe(true);
+    expect(generatedWithRag.rag.chunks.length).toBeGreaterThan(0);
+    expect(generatedWithRag.rag.chunks[0].text).toEqual(expect.any(String));
 
     const retrieved = await postJson(`${baseUrl}/api/rag/query`, {
       question: "How many users are there?",
