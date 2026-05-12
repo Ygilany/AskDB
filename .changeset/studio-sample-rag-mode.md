@@ -1,3 +1,4 @@
+---
 "@askdb/studio": patch
 ---
 

@@ -1,3 +1,4 @@
+---
 "@askdb/cli": patch
 "@askdb/http-api": patch
 "@askdb/studio": patch

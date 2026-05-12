@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Installable smoke test for AskDB packages.
 #
-# Builds the workspace, packs the library packages (including tui) plus the app
+# Builds the workspace, packs the library packages (including enrich and tui) plus the app
 # packages (cli, studio, http-api), copies the consumer fixture into a fresh tmpdir, installs
 # library tarballs (no workspace), runs `tsc --noEmit`, and executes the smoke script.
 set -euo pipefail
@@ -18,7 +18,7 @@ pnpm -C "$ROOT" -r build >/dev/null
 
 echo "smoke: packing tarballs…"
 mkdir -p "$WORK/tarballs"
-for pkg in packages/core packages/introspect packages/postgres packages/prisma packages/tui apps/cli apps/studio apps/http-api; do
+for pkg in packages/core packages/introspect packages/postgres packages/prisma packages/enrich packages/tui apps/cli apps/studio apps/http-api; do
   (cd "$ROOT/$pkg" && pnpm pack --pack-destination "$WORK/tarballs" >/dev/null)
 done
 for pkg in packages/rag; do
@@ -33,6 +33,8 @@ POSTGRES_TARBALL="$(ls "$WORK/tarballs"/askdb-postgres-*.tgz | head -n1)"
 [ -f "$POSTGRES_TARBALL" ] || { echo "smoke: missing postgres tarball" >&2; exit 1; }
 PRISMA_TARBALL="$(ls "$WORK/tarballs"/askdb-prisma-*.tgz | head -n1)"
 [ -f "$PRISMA_TARBALL" ] || { echo "smoke: missing prisma tarball" >&2; exit 1; }
+ENRICH_TARBALL="$(ls "$WORK/tarballs"/askdb-enrich-*.tgz | head -n1)"
+[ -f "$ENRICH_TARBALL" ] || { echo "smoke: missing enrich tarball" >&2; exit 1; }
 CLI_TARBALL="$(ls "$WORK/tarballs"/askdb-cli-*.tgz | head -n1)"
 [ -f "$CLI_TARBALL" ] || { echo "smoke: missing cli tarball" >&2; exit 1; }
 STUDIO_TARBALL="$(ls "$WORK/tarballs"/askdb-studio-*.tgz | head -n1)"
@@ -73,6 +75,16 @@ grep -q '^package/README.md$' <<<"$PRISMA_TARBALL_FILES"
 grep -q '^package/LICENSE$' <<<"$PRISMA_TARBALL_FILES"
 if grep -Eq '(^package/src/|\.test\.)' <<<"$PRISMA_TARBALL_FILES"; then
   echo "smoke: FAILED — @askdb/prisma tarball includes source/tests" >&2
+  exit 1
+fi
+
+echo "smoke: validating @askdb/enrich tarball contents…"
+ENRICH_TARBALL_FILES="$(tar -tzf "$ENRICH_TARBALL")"
+grep -q '^package/dist/index.js$' <<<"$ENRICH_TARBALL_FILES"
+grep -q '^package/README.md$' <<<"$ENRICH_TARBALL_FILES"
+grep -q '^package/LICENSE$' <<<"$ENRICH_TARBALL_FILES"
+if grep -Eq '(^package/src/|\.test\.)' <<<"$ENRICH_TARBALL_FILES"; then
+  echo "smoke: FAILED — @askdb/enrich tarball includes source/tests" >&2
   exit 1
 fi
 
@@ -133,6 +145,7 @@ node -e "
   j.dependencies['@askdb/introspect'] = 'file:$INTROSPECT_TARBALL';
   j.dependencies['@askdb/postgres'] = 'file:$POSTGRES_TARBALL';
   j.dependencies['@askdb/prisma'] = 'file:$PRISMA_TARBALL';
+  j.dependencies['@askdb/enrich'] = 'file:$ENRICH_TARBALL';
   j.dependencies['@askdb/rag'] = 'file:$RAG_TARBALL';
   fs.writeFileSync(p, JSON.stringify(j, null, 2) + '\n');
 "
@@ -166,6 +179,7 @@ node -e "
       '@askdb/introspect': 'file:$INTROSPECT_TARBALL',
       '@askdb/postgres': 'file:$POSTGRES_TARBALL',
       '@askdb/prisma': 'file:$PRISMA_TARBALL',
+      '@askdb/enrich': 'file:$ENRICH_TARBALL',
       '@askdb/cli': 'file:$CLI_TARBALL',
       '@askdb/studio': 'file:$STUDIO_TARBALL',
       '@askdb/tui': 'file:$TUI_TARBALL',

@@ -6,8 +6,8 @@ import {
   isEnumCandidate,
   parseListInput,
   type ColumnDraft,
-} from "../draft.js";
-import type { ColumnSuggestField } from "../suggest.js";
+} from "@askdb/enrich";
+import type { ColumnSuggestField } from "@askdb/enrich";
 import { TextInput } from "./TextInput.js";
 
 type ColumnEditProps = {

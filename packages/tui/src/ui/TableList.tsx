@@ -1,5 +1,5 @@
 import { Box, Text, useInput } from "ink";
-import type { Workspace } from "../workspace.js";
+import type { Workspace } from "@askdb/enrich";
 
 type TableListProps = {
   workspace: Workspace;

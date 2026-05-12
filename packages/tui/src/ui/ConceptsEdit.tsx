@@ -1,8 +1,8 @@
 import { Box, Text, useInput } from "ink";
 import { useState } from "react";
 import type { V2Concept } from "@askdb/core";
-import { parseListInput } from "../draft.js";
-import { saveConcepts, type Workspace } from "../workspace.js";
+import { parseListInput } from "@askdb/enrich";
+import { saveConcepts, type Workspace } from "@askdb/enrich";
 import { TextInput } from "./TextInput.js";
 
 type ConceptsEditProps = {
