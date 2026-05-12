@@ -9,19 +9,35 @@ const repoRoot = new URL("../../..", import.meta.url).pathname;
 
 describe("AskDB Studio server", () => {
   const originalMockSql = process.env.ASKDB_MOCK_SQL;
+  const originalAskDbAiProvider = process.env.ASKDB_AI_PROVIDER;
+  const originalAskDbAiApiKey = process.env.ASKDB_AI_API_KEY;
+  const originalAskDbAiBaseUrl = process.env.ASKDB_AI_BASE_URL;
   const originalOpenAiApiKey = process.env.OPENAI_API_KEY;
   const originalOpenAiBaseUrl = process.env.OPENAI_BASE_URL;
   const originalRagEmbedder = process.env.ASKDB_RAG_EMBEDDER;
+  const originalRagEmbedderBaseUrl = process.env.ASKDB_RAG_EMBEDDER_BASE_URL;
+  const originalRagEmbedderModel = process.env.ASKDB_RAG_EMBEDDER_MODEL;
   const originalRagEmbedderDimensions = process.env.ASKDB_RAG_EMBEDDER_DIMENSIONS;
+  const originalAzureOpenAiApiKey = process.env.AZURE_OPENAI_API_KEY;
+  const originalAzureOpenAiBaseUrl = process.env.AZURE_OPENAI_BASE_URL;
+  const originalAzureOpenAiEmbeddingDeployment = process.env.AZURE_OPENAI_EMBEDDING_DEPLOYMENT;
   const servers: ReturnType<typeof createStudioServer>[] = [];
   const embeddingServers: ReturnType<typeof createServer>[] = [];
 
   afterEach(async () => {
-    process.env.ASKDB_MOCK_SQL = originalMockSql;
-    process.env.OPENAI_API_KEY = originalOpenAiApiKey;
-    process.env.OPENAI_BASE_URL = originalOpenAiBaseUrl;
-    process.env.ASKDB_RAG_EMBEDDER = originalRagEmbedder;
-    process.env.ASKDB_RAG_EMBEDDER_DIMENSIONS = originalRagEmbedderDimensions;
+    restoreEnv("ASKDB_MOCK_SQL", originalMockSql);
+    restoreEnv("ASKDB_AI_PROVIDER", originalAskDbAiProvider);
+    restoreEnv("ASKDB_AI_API_KEY", originalAskDbAiApiKey);
+    restoreEnv("ASKDB_AI_BASE_URL", originalAskDbAiBaseUrl);
+    restoreEnv("OPENAI_API_KEY", originalOpenAiApiKey);
+    restoreEnv("OPENAI_BASE_URL", originalOpenAiBaseUrl);
+    restoreEnv("ASKDB_RAG_EMBEDDER", originalRagEmbedder);
+    restoreEnv("ASKDB_RAG_EMBEDDER_BASE_URL", originalRagEmbedderBaseUrl);
+    restoreEnv("ASKDB_RAG_EMBEDDER_MODEL", originalRagEmbedderModel);
+    restoreEnv("ASKDB_RAG_EMBEDDER_DIMENSIONS", originalRagEmbedderDimensions);
+    restoreEnv("AZURE_OPENAI_API_KEY", originalAzureOpenAiApiKey);
+    restoreEnv("AZURE_OPENAI_BASE_URL", originalAzureOpenAiBaseUrl);
+    restoreEnv("AZURE_OPENAI_EMBEDDING_DEPLOYMENT", originalAzureOpenAiEmbeddingDeployment);
     await Promise.all(
       [...servers, ...embeddingServers].map(
         (server) =>
@@ -35,6 +51,7 @@ describe("AskDB Studio server", () => {
   });
 
   it("loads, saves enrichment, and generates sample SQL with the mock model", async () => {
+    process.env.ASKDB_RAG_EMBEDDER = "mock";
     const schemaDir = copyFixture();
     const server = createStudioServer({ schema: schemaDir });
     servers.push(server);
@@ -103,9 +120,10 @@ describe("AskDB Studio server", () => {
     const baseUrl = await listen(server);
 
     const status = await getJson(`${baseUrl}/api/rag/status`);
-    expect(status.embedder.kind).toBe("openai");
+    expect(status.embedder.kind).toBe("ai-sdk");
+    expect(status.embedder.provider).toBe("openai");
     expect(status.embedder.configured).toBe(true);
-    expect(status.expectedEmbedderId).toBe("openai:text-embedding-3-small:4");
+    expect(status.expectedEmbedderId).toBe("ai-sdk:openai:text-embedding-3-small:4");
     expect(status.expectedDimensions).toBe(4);
 
     const indexed = await postJson(`${baseUrl}/api/rag/index`, {});
@@ -119,6 +137,72 @@ describe("AskDB Studio server", () => {
     });
     expect(retrieved.results.length).toBeGreaterThan(0);
     expect(retrieved.results[0].score).toEqual(expect.any(Number));
+  });
+
+  it("defaults Studio RAG to AI SDK embeddings when an AI key is configured", async () => {
+    delete process.env.ASKDB_RAG_EMBEDDER;
+    delete process.env.OPENAI_API_KEY;
+    process.env.ASKDB_AI_PROVIDER = "openai";
+    process.env.ASKDB_AI_API_KEY = "test-key";
+    process.env.ASKDB_RAG_EMBEDDER_DIMENSIONS = "4";
+
+    const schemaDir = copyFixture();
+    const server = createStudioServer({ schema: schemaDir });
+    servers.push(server);
+    const baseUrl = await listen(server);
+
+    const status = await getJson(`${baseUrl}/api/rag/status`);
+    expect(status.embedder.kind).toBe("ai-sdk");
+    expect(status.embedder.provider).toBe("openai");
+    expect(status.embedder.configured).toBe(true);
+    expect(status.expectedEmbedderId).toBe("ai-sdk:openai:text-embedding-3-small:4");
+    expect(status.embedder.label).toBe("AI SDK (openai)");
+  });
+
+  it("uses the configured Azure AI SDK connection for Studio RAG status", async () => {
+    delete process.env.ASKDB_RAG_EMBEDDER;
+    delete process.env.OPENAI_API_KEY;
+    process.env.ASKDB_AI_PROVIDER = "azure";
+    process.env.AZURE_OPENAI_API_KEY = "test-key";
+    process.env.AZURE_OPENAI_BASE_URL = "https://example.test/openai/v1";
+    process.env.AZURE_OPENAI_EMBEDDING_DEPLOYMENT = "embedding-deployment";
+    process.env.ASKDB_RAG_EMBEDDER_DIMENSIONS = "4";
+
+    const schemaDir = copyFixture();
+    const server = createStudioServer({ schema: schemaDir });
+    servers.push(server);
+    const baseUrl = await listen(server);
+
+    const status = await getJson(`${baseUrl}/api/rag/status`);
+    expect(status.embedder.kind).toBe("ai-sdk");
+    expect(status.embedder.provider).toBe("azure");
+    expect(status.embedder.configured).toBe(true);
+    expect(status.expectedEmbedderId).toBe("ai-sdk:azure:embedding-deployment:4");
+    expect(status.embedder.label).toBe("AI SDK (azure)");
+  });
+
+  it("surfaces provider details when Studio RAG embedding requests fail", async () => {
+    const embeddingServer = createFailingEmbeddingServer();
+    embeddingServers.push(embeddingServer);
+    const embeddingBaseUrl = await listen(embeddingServer);
+    process.env.ASKDB_RAG_EMBEDDER = "openai";
+    process.env.ASKDB_RAG_EMBEDDER_DIMENSIONS = "4";
+    process.env.OPENAI_API_KEY = "test-key";
+    process.env.OPENAI_BASE_URL = embeddingBaseUrl;
+
+    const schemaDir = copyFixture();
+    const server = createStudioServer({ schema: schemaDir });
+    servers.push(server);
+    const baseUrl = await listen(server);
+
+    const response = await postRaw(`${baseUrl}/api/rag/index`, {});
+    expect(response.status).toBe(502);
+    const body = await response.json();
+    expect(body.error.message).toContain("Studio RAG embedding request failed");
+    expect(body.error.message).toContain("provider openai");
+    expect(body.error.message).toContain("model text-embedding-3-small");
+    expect(body.error.message).toContain("Status: 500");
+    expect(body.error.message).toContain("embedding endpoint unavailable");
   });
 });
 
@@ -161,6 +245,13 @@ function createEmbeddingServer(): ReturnType<typeof createServer> {
   });
 }
 
+function createFailingEmbeddingServer(): ReturnType<typeof createServer> {
+  return createServer(async (_req: IncomingMessage, res: ServerResponse) => {
+    res.writeHead(500, { "content-type": "application/json" });
+    res.end(JSON.stringify({ error: { message: "embedding endpoint unavailable" } }));
+  });
+}
+
 async function readBody(req: IncomingMessage): Promise<string> {
   const chunks: Buffer[] = [];
   for await (const chunk of req) {
@@ -178,6 +269,14 @@ function lexicalVector(text: string, dim: number): number[] {
   return vector.map((value) => value / norm);
 }
 
+function restoreEnv(name: string, value: string | undefined): void {
+  if (value === undefined) {
+    delete process.env[name];
+  } else {
+    process.env[name] = value;
+  }
+}
+
 async function getJson(url: string): Promise<any> {
   const response = await fetch(url);
   expect(response.status).toBe(200);
@@ -185,11 +284,18 @@ async function getJson(url: string): Promise<any> {
 }
 
 async function postJson(url: string, body: unknown): Promise<any> {
+  const response = await postRaw(url, body);
+  if (response.status !== 200) {
+    throw new Error(`Expected 200 from ${url}, got ${response.status}: ${await response.text()}`);
+  }
+  return response.json();
+}
+
+async function postRaw(url: string, body: unknown): Promise<Response> {
   const response = await fetch(url, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify(body),
   });
-  expect(response.status).toBe(200);
-  return response.json();
+  return response;
 }

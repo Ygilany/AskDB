@@ -10,6 +10,7 @@ import {
 } from "@askdb/core";
 import { buildSchemaIndex } from "./indexer/index.js";
 import { loadChunkerSourcesFromDir } from "./chunker/sources.js";
+import { createOpenAiEmbedder as createAiSdkOpenAiEmbedder } from "./embedders/openai.js";
 import { createMemoryStore } from "./stores/memory.js";
 import { createFileStore } from "./stores/file.js";
 import {
@@ -168,7 +169,8 @@ function buildEmbedder(opts: CliOptions): Embedder {
 function embedderId(opts: CliOptions): string {
   const choice = opts.embedder ?? "mock";
   if (choice === "openai") {
-    return `openai:${opts.embedderModel ?? "text-embedding-3-small"}`;
+    const base = `openai:${opts.embedderModel ?? "text-embedding-3-small"}`;
+    return opts.dimensions ? `${base}:${opts.dimensions}` : base;
   }
   return `mock:lexical-${embedderDimensions(opts)}`;
 }
@@ -220,26 +222,15 @@ function createOpenAiEmbedder(opts: CliOptions): Embedder {
   const apiKey = opts.apiKey ?? process.env.OPENAI_API_KEY;
   if (!apiKey) {
     throw new Error(
-      "createOpenAiEmbedder: set OPENAI_API_KEY or pass --api-key. The OpenAI embedder uses the public REST endpoint directly so the package stays free of an AI-SDK dependency.",
+      "createOpenAiEmbedder: set OPENAI_API_KEY or pass --api-key. The OpenAI embedder uses the AI SDK optional peers (`ai` and `@ai-sdk/openai`).",
     );
   }
-  const model = opts.embedderModel ?? "text-embedding-3-small";
-  return async (texts: string[]) => {
-    const res = await fetch("https://api.openai.com/v1/embeddings", {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
-        authorization: `Bearer ${apiKey}`,
-      },
-      body: JSON.stringify({ input: texts, model }),
-    });
-    if (!res.ok) {
-      const text = await res.text();
-      throw new Error(`OpenAI embeddings failed: ${res.status} ${text}`);
-    }
-    const json = (await res.json()) as { data: { embedding: number[] }[] };
-    return json.data.map((d) => d.embedding);
-  };
+  return createAiSdkOpenAiEmbedder({
+    apiKey,
+    model: opts.embedderModel ?? "text-embedding-3-small",
+    baseURL: process.env.OPENAI_BASE_URL,
+    dimensions: opts.dimensions,
+  });
 }
 
 async function buildStore(
@@ -401,7 +392,7 @@ function printHelp(): void {
       "",
       "Embedders:",
       "  mock       deterministic lexical hash. Default. CI-safe.",
-      "  openai     OPENAI_API_KEY (or --api-key); --embedder-model text-embedding-3-small (default).",
+      "  openai     AI SDK OpenAI embeddings; OPENAI_API_KEY (or --api-key); --embedder-model text-embedding-3-small (default).",
       "",
       "Logging matches `askdb`:",
       "  --log-level <level> --log-file <path> --log-stdout --correlation-id <id> -v/--verbose",

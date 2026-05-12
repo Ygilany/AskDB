@@ -1,4 +1,4 @@
-import type { LanguageModel } from "ai";
+import type { EmbeddingModel, LanguageModel } from "ai";
 import { createOpenAI } from "@ai-sdk/openai";
 
 /**
@@ -42,6 +42,7 @@ export type ResolveAskDbAiConfigOptions = {
 };
 
 const DEFAULT_MODEL = "gpt-4o-mini";
+const DEFAULT_EMBEDDING_MODEL = "text-embedding-3-small";
 
 function readProvider(env: AskDbAiEnv): AskDbAiProvider {
   const raw = (env.ASKDB_AI_PROVIDER ?? "").toLowerCase().trim();
@@ -131,6 +132,86 @@ export function resolveAskDbAiConfig(
   };
 }
 
+export type ResolveAskDbEmbeddingConfigOptions = {
+  /** Default embedding model/deployment when no env override is set. */
+  modelDefault?: string;
+  /**
+   * Per-app embedding model env var checked first
+   * (e.g. `ASKDB_STUDIO_RAG_EMBEDDER_MODEL`).
+   */
+  modelEnvVar?: string;
+};
+
+/**
+ * Resolves an embedding model config from the same provider/key/base URL
+ * connection as `resolveAskDbAiConfig`, but with embedding-specific model
+ * precedence so chat model ids (for example `gpt-4o`) are not used as
+ * embedding model ids by accident.
+ */
+export function resolveAskDbEmbeddingConfig(
+  env: AskDbAiEnv = process.env,
+  options: ResolveAskDbEmbeddingConfigOptions = {},
+): AskDbAiConfig | undefined {
+  const provider = readProvider(env);
+
+  const providerNativeKey =
+    provider === "azure"
+      ? env.AZURE_OPENAI_API_KEY || env.AZURE_API_KEY
+      : env.OPENAI_API_KEY;
+  const providerNativeKeySecondary =
+    provider === "azure"
+      ? env.AZURE_OPENAI_API_KEY_SECONDARY || env.AZURE_API_KEY_SECONDARY
+      : env.OPENAI_API_KEY_SECONDARY;
+  const apiKey =
+    env.ASKDB_AI_API_KEY ||
+    providerNativeKey ||
+    providerNativeKeySecondary ||
+    env.ASKDB_AI_API_KEY_SECONDARY ||
+    undefined;
+  if (!apiKey) return undefined;
+
+  const perAppModel = options.modelEnvVar ? env[options.modelEnvVar] : undefined;
+  const providerNativeModel =
+    provider === "azure"
+      ? env.AZURE_OPENAI_EMBEDDING_DEPLOYMENT ||
+        env.AZURE_EMBEDDING_DEPLOYMENT_NAME
+      : env.OPENAI_EMBEDDING_MODEL;
+  const model =
+    perAppModel ||
+    env.ASKDB_AI_EMBEDDING_MODEL ||
+    env.ASKDB_EMBEDDING_MODEL ||
+    providerNativeModel ||
+    options.modelDefault ||
+    DEFAULT_EMBEDDING_MODEL;
+
+  const providerNativeBaseURL =
+    provider === "azure"
+      ? env.AZURE_OPENAI_BASE_URL || env.AZURE_OPENAI_ENDPOINT || env.AZURE_BASE_URL
+      : env.OPENAI_BASE_URL;
+  const baseURL = env.ASKDB_AI_BASE_URL || providerNativeBaseURL || undefined;
+
+  const resourceName =
+    env.ASKDB_AI_AZURE_RESOURCE_NAME || env.AZURE_RESOURCE_NAME || undefined;
+  const apiVersion =
+    env.ASKDB_AI_AZURE_API_VERSION || env.AZURE_OPENAI_API_VERSION || env.AZURE_API_VERSION || undefined;
+
+  if (provider === "azure" && !baseURL && !resourceName) {
+    throw new Error(
+      "Azure provider requires ASKDB_AI_AZURE_RESOURCE_NAME (e.g. 'my-foundry') " +
+        "or ASKDB_AI_BASE_URL pointing at the full endpoint.",
+    );
+  }
+
+  return {
+    provider,
+    apiKey,
+    model,
+    ...(baseURL ? { baseURL } : {}),
+    ...(resourceName ? { resourceName } : {}),
+    ...(apiVersion ? { apiVersion } : {}),
+  };
+}
+
 /** Build a {@link LanguageModel} from an already-resolved config. */
 export async function createAskDbLanguageModel(
   config: AskDbAiConfig,
@@ -153,6 +234,41 @@ export async function createAskDbLanguageModel(
   return openai(config.model);
 }
 
+export type CreateAskDbEmbeddingModelOptions = {
+  /** Optional dimensionality override for providers that support it. */
+  dimensions?: number;
+  /** Optional end-user id forwarded to providers that support it. */
+  user?: string;
+};
+
+/** Build an AI SDK text embedding model from an already-resolved config. */
+export async function createAskDbEmbeddingModel(
+  config: AskDbAiConfig,
+  options: CreateAskDbEmbeddingModelOptions = {},
+): Promise<EmbeddingModel<string>> {
+  if (config.provider === "azure") {
+    const { createAzure } = await import("@ai-sdk/azure");
+    const azure = createAzure({
+      apiKey: config.apiKey,
+      ...(config.resourceName ? { resourceName: config.resourceName } : {}),
+      ...(config.baseURL ? { baseURL: config.baseURL } : {}),
+      ...(config.apiVersion ? { apiVersion: config.apiVersion } : {}),
+    });
+    return azure.embedding(config.model, {
+      dimensions: options.dimensions,
+      user: options.user,
+    });
+  }
+  const openai = createOpenAI({
+    apiKey: config.apiKey,
+    ...(config.baseURL ? { baseURL: config.baseURL } : {}),
+  });
+  return openai.embedding(config.model, {
+    dimensions: options.dimensions,
+    user: options.user,
+  });
+}
+
 /**
  * Convenience wrapper: resolve config from env, then construct a model.
  * Returns `undefined` when no API key is configured.
@@ -164,6 +280,16 @@ export async function createAskDbLanguageModelFromEnv(
   const config = resolveAskDbAiConfig(env, options);
   if (!config) return undefined;
   return createAskDbLanguageModel(config);
+}
+
+/** Resolve embedding config from env, then construct an AI SDK embedding model. */
+export async function createAskDbEmbeddingModelFromEnv(
+  env: AskDbAiEnv = process.env,
+  options: ResolveAskDbEmbeddingConfigOptions & CreateAskDbEmbeddingModelOptions = {},
+): Promise<EmbeddingModel<string> | undefined> {
+  const config = resolveAskDbEmbeddingConfig(env, options);
+  if (!config) return undefined;
+  return createAskDbEmbeddingModel(config, options);
 }
 
 /**

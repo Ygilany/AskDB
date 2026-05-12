@@ -26,12 +26,17 @@ ASKDB_MODEL=gpt-4o-mini
 # pgvector dev fixture (docker compose -f fixtures/pgvector/docker-compose.yml up -d → port 5434):
 # ASKDB_PGVECTOR_URL=postgres://postgres:postgres@127.0.0.1:5434/askdb_rag
 
-# Optional: Studio RAG embedder. Defaults to a local mock lexical embedder.
-# Set to \`openai\` to test retrieval with production-like embeddings; requires OPENAI_API_KEY.
+# Optional: Studio RAG embedder. Defaults to the configured AskDB AI SDK
+# connection when an embedding-capable key is configured, otherwise falls back
+# to a local mock lexical embedder.
 # ASKDB_RAG_EMBEDDER=mock
-# ASKDB_RAG_EMBEDDER=openai
+# ASKDB_RAG_EMBEDDER=ai-sdk
+# ASKDB_RAG_EMBEDDER=openai                 # compatibility alias for AI SDK OpenAI
+# Uses the configured AskDB AI connection URL (ASKDB_AI_BASE_URL / provider-native base URL).
 # ASKDB_RAG_EMBEDDER_MODEL=text-embedding-3-small
 # ASKDB_RAG_EMBEDDER_DIMENSIONS=1536
+# Azure/Foundry can use a separate embedding deployment/model name from the chat deployment:
+# AZURE_OPENAI_EMBEDDING_DEPLOYMENT=text-embedding-3-small
 
 # Optional: Phase 2 structured logs (Pino JSON lines). Default silent unless CLI flags imply info.
 # ASKDB_LOG_LEVEL=info

@@ -45,6 +45,10 @@
     "./embedders/openai": {
       "types": "./dist/embedders/openai.d.ts",
       "import": "./dist/embedders/openai.js"
+    },
+    "./embedders/ai-sdk": {
+      "types": "./dist/embedders/ai-sdk.d.ts",
+      "import": "./dist/embedders/ai-sdk.js"
     }
   },
   "bin": {

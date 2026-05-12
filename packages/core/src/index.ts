@@ -92,13 +92,18 @@ export {
 export { extractSqlFromModelText } from "./sql/extract-sql.js";
 export {
   resolveAskDbAiConfig,
+  resolveAskDbEmbeddingConfig,
   createAskDbLanguageModel,
   createAskDbLanguageModelFromEnv,
+  createAskDbEmbeddingModel,
+  createAskDbEmbeddingModelFromEnv,
   askDbAiKeyMissingMessage,
   type AskDbAiProvider,
   type AskDbAiConfig,
   type AskDbAiEnv,
   type ResolveAskDbAiConfigOptions,
+  type ResolveAskDbEmbeddingConfigOptions,
+  type CreateAskDbEmbeddingModelOptions,
 } from "./ai/provider.js";
 export type {
   Retriever,
