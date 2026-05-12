@@ -6,8 +6,8 @@ import {
   formatList,
   parseListInput,
   type TableDraft,
-} from "../draft.js";
-import type { TableSuggestField } from "../suggest.js";
+} from "@askdb/enrich";
+import type { TableSuggestField } from "@askdb/enrich";
 import { TextInput } from "./TextInput.js";
 
 type TableDetailProps = {

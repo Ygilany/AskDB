@@ -7,20 +7,20 @@ import {
   replaceTableDescription,
   saveTable,
   type Workspace,
-} from "../workspace.js";
+} from "@askdb/enrich";
 import {
   buildFrontmatter,
   buildTableDraft,
   parseListInput,
   type TableDraft,
-} from "../draft.js";
+} from "@askdb/enrich";
 import {
   buildSuggestionContext,
   buildSuggestionTarget,
   type SuggestEnrichmentForTui,
   type SuggestSource,
   type TableSuggestField,
-} from "../suggest.js";
+} from "@askdb/enrich";
 import { ColumnEdit } from "./ColumnEdit.js";
 import { ConceptsEdit } from "./ConceptsEdit.js";
 import { SuggestionReview } from "./SuggestionReview.js";

@@ -6,7 +6,7 @@ import { render } from "ink-testing-library";
 import { createElement } from "react";
 import { loadSchema } from "@askdb/core";
 import { App } from "./App.js";
-import { loadWorkspace } from "../workspace.js";
+import { loadWorkspace } from "@askdb/enrich";
 
 const FIXTURE = new URL(
   "../../../../fixtures/schemas/orders-users.schema",

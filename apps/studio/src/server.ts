@@ -40,7 +40,7 @@ import {
   type SuggestSource,
   type TableDraft,
   type Workspace,
-} from "@askdb/tui";
+} from "@askdb/enrich";
 import { APP_JS, INDEX_HTML, STYLES_CSS } from "./static.js";
 
 export type StudioOptions = {

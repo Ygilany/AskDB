@@ -6,10 +6,12 @@ import type {
 } from "@askdb/core";
 import type { Workspace } from "./workspace.js";
 
-export type SuggestEnrichmentForTui = (
+export type SuggestEnrichment = (
   target: EnrichmentTarget,
   context: EnrichmentContext,
 ) => Promise<EnrichmentCandidate[]>;
+
+export type SuggestEnrichmentForTui = SuggestEnrichment;
 
 export type TableSuggestField =
   | "description"

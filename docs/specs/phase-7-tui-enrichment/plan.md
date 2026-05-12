@@ -75,4 +75,16 @@ Numbered groups are **ordered** so each milestone is **demoable**. The package s
 
 ---
 
-**Implementation locus:** `packages/tui/` (new package), `fixtures/schemas/`, `docs/integration/`, `packages/cli/` (optional `askdb enrich` shim). No changes to `@askdb/core` or `@askdb/http-api` beyond consuming the existing Phase 5 reader/writer; no changes to `@askdb/introspect` (Phase 6) — the TUI consumes its output but does not invoke it.
+## 9 — Shared enrichment package extraction
+
+- Extract non-UI enrichment workspace logic from `@askdb/tui` into `@askdb/enrich`.
+- Move draft construction, workspace loading/saving, concepts persistence, markdown section updates, bundling, and suggestion target/context helpers into `packages/enrich/`.
+- Update `@askdb/tui` to depend on `@askdb/enrich` for shared behavior while retaining terminal UI ownership.
+- Update `@askdb/studio` to depend on `@askdb/enrich` instead of `@askdb/tui`.
+- Keep compatibility re-exports from `@askdb/tui` where practical, but document `@askdb/enrich` as the canonical import path for shared authoring helpers.
+
+**Demo:** `pnpm build` and `pnpm test` pass with `@askdb/tui` and `@askdb/studio` both consuming `@askdb/enrich`; Studio has no dependency on `@askdb/tui`.
+
+---
+
+**Implementation locus:** `packages/tui/` (terminal UI package), `packages/enrich/` (shared headless enrichment workspace package), `fixtures/schemas/`, `docs/integration/`, `packages/cli/` (optional `askdb enrich` shim). No changes to `@askdb/core` or `@askdb/http-api` beyond consuming the existing Phase 5 reader/writer; no changes to `@askdb/introspect` (Phase 6) — the TUI consumes its output but does not invoke it.
