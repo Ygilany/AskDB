@@ -59,12 +59,13 @@ The physical layer is JSON with stable IDs and relationships. The current `versi
   "schemaId": "orders-users",
   "tables": [
     {
-      "id": "table:users",
+      "id": "table:public.users",
       "name": "users",
+      "schema": "public",
       "sensitive": false,
       "columns": [
         {
-          "id": "table:users#id",
+          "id": "table:public.users#id",
           "name": "id",
           "type": "uuid",
           "nullable": false,
@@ -72,7 +73,7 @@ The physical layer is JSON with stable IDs and relationships. The current `versi
           "sensitive": false
         },
         {
-          "id": "table:users#email",
+          "id": "table:public.users#email",
           "name": "email",
           "type": "text",
           "nullable": false,
@@ -80,27 +81,30 @@ The physical layer is JSON with stable IDs and relationships. The current `versi
         }
       ],
       "relationships": [
-        { "from": "table:orders#user_id", "to": "table:users#id" }
+        { "from": "table:public.orders#user_id", "to": "table:public.users#id" }
       ]
     }
   ]
 }
 ```
 
+Required table fields are `id`, `name`, `schema`, and `columns`. Required column fields are `id`, `name`, `type`, and `nullable`. `primaryKey`, `sensitive`, and `relationships` are optional at the schema level, though AskDB's generated artifacts currently emit `sensitive: false` for tables and columns so the physical layer remains explicit.
+
 ### Stable ID scheme
 
 | Entity | ID format | Example |
 |---|---|---|
 | Schema | the `schemaId` string | `orders-users` |
-| Table | `table:<table_name>` | `table:users` |
-| Column | `table:<table_name>#<column_name>` | `table:users#email` |
+| Table | `table:<schema>.<table_name>` | `table:public.users` |
+| Column | `table:<schema>.<table_name>#<column_name>` | `table:public.users#email` |
 | Concept | `concept:<slug>` | `concept:customer` |
-| Relationship | `<from-id>→<to-id>` (derived; not authored) | `table:orders#user_id→table:users#id` |
+| Relationship | `<from-id>-><to-id>` (derived chunk id; relationships are authored as `{ from, to }`) | `table:public.orders#user_id->table:public.users#id` |
 
 **Rules:**
 
-- IDs are **lowercase**; column/table names are kept verbatim from the database.
-- Multi-schema Postgres tables are addressed with a dot inside the table name: `table:public.users`. The `#` separator is reserved for column suffixes.
+- IDs preserve the connector's physical identifier casing. Postgres introspection usually emits lowercase identifiers because unquoted Postgres names are folded to lowercase; Prisma schema introspection can emit mixed-case names such as `table:public.Order#userId` when those are the physical/model identifiers AskDB is describing.
+- The database schema/namespace is always included in table and column IDs, including `public`: `table:public.users`. The `schema` table field stores the namespace separately for prompt formatting.
+- Multi-schema tables are addressed with the dot between namespace and table name. The `#` separator is reserved for column suffixes.
 - IDs **must not change** when the same logical entity is re-introspected; renaming a table or column is a **breaking change** and requires re-embedding.
 - IDs are the **only** cross-reference mechanism between the physical layer and the describable layer. Names alone are never used for linking.
 
@@ -112,7 +116,7 @@ One file per described table. Format: **YAML front-matter** for structured field
 
 ```markdown
 ---
-id: table:orders
+id: table:public.orders
 name: orders
 schemaId: orders-users
 primaryEntity: order
@@ -120,13 +124,13 @@ aliases: [purchases, sales, transactions]
 tags: [revenue, transactional]
 sensitive: false
 columns:
-  - id: table:orders#id
+  - id: table:public.orders#id
     aliases: [order_id]
-  - id: table:orders#status
+  - id: table:public.orders#status
     aliases: [order_status]
     enum: [pending, paid, shipped, cancelled]
     description: Order lifecycle state. Most reporting filters on `paid`.
-  - id: table:orders#total_amount
+  - id: table:public.orders#total_amount
     aliases: [revenue, sale_amount]
     description: Stored in USD. Pre-discount totals live in `order_items`.
 ---
@@ -154,25 +158,25 @@ Orders move through `pending → paid → shipped` and may end in `cancelled`. R
 
 ### Front-matter schema
 
-Validated by zod (in `@askdb/core`):
+The front-matter shape is validated by zod (in `@askdb/core`). Cross-reference checks are performed by the loader as warnings, not zod parse failures.
 
 | Field | Type | Required | Meaning |
 |---|---|---|---|
-| `id` | string | yes | Must equal a `table:*` id from `schema.json`. |
+| `id` | string | yes | Intended to equal a `table:*` id from `schema.json`. Unknown table IDs are reported as loader warnings and are ignored by normalization/chunking. |
 | `name` | string | yes | Human-friendly table name (often equals the SQL name). |
-| `schemaId` | string | yes | Must match the parent `schema.json`'s `schemaId`. |
+| `schemaId` | string | yes | Intended to match the parent `schema.json`'s `schemaId`. Current zod validation only requires a non-empty string; the loader does not enforce equality. |
 | `primaryEntity` | string | no | Slug of the concept this table primarily represents (e.g. `order`). |
 | `aliases` | string[] | no | Alternate phrases users say for this table. |
 | `tags` | string[] | no | Free-form labels (`pii`, `revenue`, `internal-only`). |
-| `sensitive` | boolean | no | Override `schema.json`'s table-level sensitive flag (front-matter wins for describable-layer behavior; physical sensitive flag is independent). |
+| `sensitive` | boolean | no | Accepted by the front-matter parser, but the current loader does not apply it. Effective sensitivity comes from `schema.json` only. |
 | `columns` | array | no | Per-column overrides and additions. Items keyed by `id`. |
-| `columns[].id` | string | yes (in array) | Must equal a `table:*#*` id from `schema.json`. |
+| `columns[].id` | string | yes (in array) | Intended to equal a `table:*#*` id from `schema.json`. Unknown column IDs are reported as loader warnings and are ignored by normalization/chunking. |
 | `columns[].aliases` | string[] | no | Alternate names for this column. |
 | `columns[].enum` | string[] | no | Known value set, used in prompts and "common query language" chunks. |
 | `columns[].description` | string | no | One- or two-sentence description. Goes into the column chunk. |
-| `columns[].sensitive` | boolean | no | Override; same rule as table-level. |
+| `columns[].sensitive` | boolean | no | Accepted by the front-matter parser, but the current loader does not apply it. Effective sensitivity comes from `schema.json` only. |
 
-Front-matter must be **complete enough to validate** — unknown keys are an error (caught early so typos don't silently disappear). Use markdown body for anything not modeled.
+Front-matter must be **complete enough to validate** — unknown keys are an error (caught early so typos don't silently disappear). Use markdown body for anything not modeled. Cross-reference mismatches are non-fatal so re-introspection can surface orphaned describable metadata and authoring tools can offer a prune flow instead of refusing to load.
 
 ### Markdown body — recognized H2 sections
 
@@ -199,12 +203,12 @@ concepts:
   - id: concept:customer
     label: Customer
     synonyms: [user, client, buyer, account holder]
-    links: [table:users, table:leads]
+    links: [table:public.users, table:public.leads]
     description: A person who has either signed up or expressed intent to purchase.
   - id: concept:revenue
     label: Revenue
     synonyms: [sales, gross sales, top line]
-    links: [table:orders#total_amount]
+    links: [table:public.orders#total_amount]
     description: Sum of `orders.total_amount` where `status = 'paid'`.
 ---
 
@@ -223,20 +227,22 @@ Concepts produce their own chunks at retrieval time (see [Chunking rules](#chunk
 
 | Chunk type | `id` | Chunk text contains |
 |---|---|---|
-| **Table** | `chunk:table:<name>` | `# <name>` + first paragraph + `aliases` joined inline + relationship summary + column **headlines** (`name: type — description`). |
-| **Column** | `chunk:table:<name>#<col>` | qualified column id + type + flags + description + aliases + enum values + any matching `Column notes` line. |
-| **Common query language** | `chunk:table:<name>#cql` | the H2 body verbatim, prefixed with the table name + aliases so retrieval has table context. |
-| **Example question** | `chunk:table:<name>#q:<n>` | one bullet from `Example questions`, prefixed with the table name + primary entity. |
-| **Concept** | `chunk:<concept-id>` | label + synonyms + linked-id labels + description. |
-| **Relationship** (optional) | `chunk:<from-id>→<to-id>` | natural-language summary: "`<from-table>` has many `<to-table>` via `<from-col>`". |
+| **Table** | `chunk:<table-id>` | `# <schema>.<name>` + first paragraph + aliases + primary entity + relationship IDs + column **headlines** (`name type (flags) — description`). |
+| **Column** | `chunk:<column-id>` | qualified column name + type + flags + physical id + description + aliases + enum values + any matching `Column notes` line. |
+| **Common query language** | `chunk:<table-id>#cql` | the H2 body verbatim, prefixed with the table name + aliases so retrieval has table context. Long CQL bodies use `#bc:<n>` suffixes. |
+| **Example question** | `chunk:<table-id>#q:<n>` | one bullet from `Example questions`, prefixed with the table name + primary entity. |
+| **Business context** | `chunk:<table-id>#biz` | the `Business context` H2 body, prefixed with the table name. Long bodies use `#bc:<n>` suffixes, e.g. `chunk:table:public.orders#biz#bc:1`. |
+| **Concept** | `chunk:<concept-id>` | label + synonyms + link IDs + description when the concept is included. |
+| **Relationship** (optional) | `chunk:<from-id>-><to-id>` | natural-language summary: `Relationship: <from-table>.<from-col> references <to-table>.<to-col>`. |
 
 ### Determinism
 
 Given the same v2 artifact, the chunker must produce the **same chunk ids and the same chunk texts** on every run. Re-embedding only happens when chunk text changes (tracked via `schema.lock.json`).
 
-### Size guidance (non-normative)
+### Size guidance
 
-- Target **per-chunk token count**: 60–250 tokens. Long bodies (`Business context` over ~300 tokens) get split on paragraph boundaries with suffix `#bc:1`, `#bc:2`, etc.
+- Current chunk splitting uses a character ceiling, not a tokenizer. The default ceiling is 1000 characters.
+- Long `Common query language` and `Business context` bodies get split on paragraph boundaries with suffix `#bc:1`, `#bc:2`, etc.
 - Table chunks include column **headlines** but not full descriptions, so retrieval can fan out to column chunks for detail.
 
 ---
@@ -248,9 +254,10 @@ The `sensitive` flag must flow consistently from the physical layer through prom
 | Surface | Default behavior for sensitive table/column | Override |
 |---|---|---|
 | **NL→SQL DDL** (in core prompt) | Identifier listed, tagged `(sensitive)` — model can ground SQL. | `omitSensitiveIdentifiersFromNlToSqlPrompt` strips identifiers entirely (existing flag). |
-| **Describable layer chunks (table/column)** | Identifier and **type** included; **description, aliases, enum, examples — excluded** from chunk text. | `@askdb/rag` option `includeSensitiveDescribable: true` (off by default). |
+| **Describable layer chunks (table/column)** | Sensitive table chunks and sensitive column chunks are excluded entirely. Non-sensitive table chunks omit sensitive columns from their column headline list and refs. | `@askdb/rag` option `includeSensitiveDescribable: true` (off by default). |
 | **`Common query language` chunk** | If the H2 body **mentions** a sensitive column by name, the chunk is **excluded entirely**. The chunker does not partial-redact prose. | Same option as above. |
-| **Concept chunks** | Concepts that **link to** a sensitive id include the link metadata but exclude any description text that names the sensitive column. | Same option. |
+| **Example question / `Business context` chunks** | If the table is sensitive or the source text mentions a sensitive column by name, the affected chunks are excluded entirely. | Same option as above. |
+| **Concept chunks** | Concepts that **link to** a sensitive id, or whose description mentions a sensitive column by name, are excluded entirely by default. | Same option as above. |
 | **Logs** | Counts only — `askdb.rag.sensitive_chunks_excluded`, `askdb.rag.sensitive_chunks_included`. Never log identifiers or values. | n/a |
 
 **Authoring rule (TUI):** when a user adds a description that mentions a sensitive column by name, the TUI shows a non-blocking warning explaining the chunk-exclusion behavior. The user can still save; the chunker will exclude the resulting chunk.
@@ -279,12 +286,12 @@ Re-introspection and on-disk evolution behavior:
 
 | Concern | Package |
 |---|---|
-| Parser, validator, normalizer, prompt assembly | `@askdb/core` (Phase 5) |
-| Schema introspection (catalog → physical layer + stable id assignment) | `@askdb/introspect` (Phase 6) |
-| Headless authoring workflow (read/write `tables/*.md`, `concepts.md`, drafts, markdown-section updates, bundling, suggestion target/context helpers) | `@askdb/enrich` (Phase 7 follow-up) |
-| Terminal authoring surface | `@askdb/tui` (Phase 7), built on `@askdb/enrich` |
+| Parser, validator, normalizer, prompt assembly | `@askdb/core` |
+| Schema introspection (catalog → physical layer + stable id assignment) | `@askdb/introspect` |
+| Headless authoring workflow (read/write `tables/*.md`, `concepts.md`, drafts, markdown-section updates, bundling, suggestion target/context helpers) | `@askdb/enrich` |
+| Terminal authoring surface | `@askdb/tui`, built on `@askdb/enrich` |
 | Local browser authoring surface | `@askdb/studio`, built on `@askdb/enrich` |
-| Chunker, sensitive propagation, lock file | `@askdb/rag` (Phase 8) |
+| Chunker, sensitive propagation, lock file | `@askdb/rag` |
 
 ---
 
@@ -294,7 +301,11 @@ Re-introspection and on-disk evolution behavior:
 - [`docs/platform.md`](../platform.md) — package layout, BYO seams
 - [`docs/adrs/0004-enrichment-package-boundary.md`](../adrs/0004-enrichment-package-boundary.md) — shared enrichment package boundary
 - [`docs/contracts/sensitive-fields-and-modes.md`](./sensitive-fields-and-modes.md) — sensitive identifier rules in NL→SQL prompts
-- [`docs/specs/phase-5-schema-v2-core/`](../specs/phase-5-schema-v2-core/) — implementation of v2 reader/writer in `@askdb/core`
-- [`docs/specs/phase-6-introspection/`](../specs/phase-6-introspection/) — `@askdb/introspect` connector + two-path semantics
-- [`docs/specs/phase-7-tui-enrichment/`](../specs/phase-7-tui-enrichment/) — `@askdb/tui` describable-layer authoring surface
-- [`docs/specs/phase-8-rag/`](../specs/phase-8-rag/) — chunker + retriever
+- [`packages/core/src/schema/v2/physical.ts`](../../packages/core/src/schema/v2/physical.ts) — physical `schema.json` zod shape
+- [`packages/core/src/schema/v2/describable.ts`](../../packages/core/src/schema/v2/describable.ts) — describable front-matter zod shapes
+- [`packages/core/src/schema/v2/loader.ts`](../../packages/core/src/schema/v2/loader.ts) — v2 loader, normalizer, and orphan warning behavior
+- [`packages/core/src/schema/v2/format.ts`](../../packages/core/src/schema/v2/format.ts) — NL→SQL prompt formatting for normalized v2 schemas
+- [`packages/introspect/src/render/render.ts`](../../packages/introspect/src/render/render.ts) — introspection renderer and stable physical ID assignment
+- [`packages/enrich/src/workspace.ts`](../../packages/enrich/src/workspace.ts) — authoring workspace, pruning, and bundling
+- [`packages/rag/src/chunker/chunker.ts`](../../packages/rag/src/chunker/chunker.ts) — chunk IDs, chunk text, and sensitive propagation
+- [`packages/rag/src/indexer/lock-file.ts`](../../packages/rag/src/indexer/lock-file.ts) — `schema.lock.json` shape
