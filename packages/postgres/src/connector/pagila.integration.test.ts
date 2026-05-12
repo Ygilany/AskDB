@@ -106,6 +106,26 @@ pagilaSuite("introspect() against Pagila (live Postgres)", () => {
     expect(b).toBe(a);
   });
 
+  it("excludes declarative-partition leaves of pagila.payment (ADR 0003)", async () => {
+    const outDir = join(workDir, "pagila.schema");
+    await introspect(
+      { mode: "live", runner: createPostgresCatalogQueryRunner(url!) },
+      { outDir, schemaId: "pagila" },
+      { connector: createPostgresConnector() },
+    );
+    const schema = loadSchema(outDir);
+    const names = schema.tables.map((t) => t.name);
+
+    // Parent kept.
+    expect(names).toContain("payment");
+
+    // Pagila partitions `payment` by range on payment_date with monthly
+    // children named `payment_p<YYYY>_<MM>`. None of those leaves should
+    // appear in the introspected schema.
+    const leaves = names.filter((n) => /^payment_p\d{4}_\d{2}$/.test(n));
+    expect(leaves).toEqual([]);
+  });
+
   it("default include filter ['public'] excludes system schemas", async () => {
     const outDir = join(workDir, "pagila.schema");
     const result = await introspect(
