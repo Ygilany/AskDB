@@ -26,9 +26,10 @@
   "author": "Yahya Gilany",
   "type": "module",
   "bin": {
-    "askdb": "./dist/cli.js"
+    "askdb": "./bin/askdb.js"
   },
   "files": [
+    "bin",
     "dist",
     "README.md",
     "LICENSE",
