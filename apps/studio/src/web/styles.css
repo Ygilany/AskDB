@@ -48,6 +48,13 @@
   box-sizing: border-box;
 }
 
+html,
+body,
+#root {
+  height: 100%;
+  overflow: hidden;
+}
+
 body {
   margin: 0;
   min-width: 360px;
@@ -74,8 +81,7 @@ button:disabled {
 .studio-shell {
   display: grid;
   grid-template-columns: 300px minmax(520px, 1fr) 420px;
-  min-height: 100vh;
-  max-height: 100vh;
+  height: 100%;
   overflow: hidden;
   background: hsl(var(--background));
 }
@@ -96,6 +102,7 @@ button:disabled {
 
 .studio-sidebar {
   border-right: 1px solid hsl(var(--border));
+  overflow: hidden;
 }
 
 .studio-main {
@@ -378,37 +385,42 @@ button:disabled {
 @media (max-width: 1180px) {
   .studio-shell {
     grid-template-columns: 280px minmax(480px, 1fr);
-    max-height: none;
-    overflow: visible;
+    grid-template-rows: 1fr 1fr;
   }
 
   .studio-inspector {
     grid-column: 1 / -1;
-    min-height: 520px;
     border-left: 0;
     border-top: 1px solid hsl(var(--border));
+    overflow: hidden;
   }
 }
 
 @media (max-width: 780px) {
   .studio-shell {
-    display: block;
+    display: flex;
+    flex-direction: column;
   }
 
-  .studio-sidebar,
-  .studio-main,
-  .studio-inspector {
-    max-height: none;
+  .studio-sidebar {
+    max-height: 35vh;
+    border-right: 0;
+    border-bottom: 1px solid hsl(var(--border));
+  }
+
+  .studio-main {
+    flex: 1;
+    min-height: 200px;
     border-left: 0;
     border-right: 0;
   }
 
-  .studio-sidebar {
-    border-bottom: 1px solid hsl(var(--border));
-  }
-
-  .studio-sidebar nav {
-    max-height: 280px;
+  .studio-inspector {
+    max-height: 40vh;
+    border-left: 0;
+    border-right: 0;
+    border-top: 1px solid hsl(var(--border));
+    overflow: hidden;
   }
 
   .definition-list {
