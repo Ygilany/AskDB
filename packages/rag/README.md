@@ -10,9 +10,11 @@ Deterministic retrieval over AskDB Schema v2 artifacts. `@askdb/rag` chunks the 
 pnpm add @askdb/rag @askdb/core
 # only if you use the pgvector adapter:
 pnpm add pg
+# only if you use the OpenAI embedder helper or CLI `--embedder openai`:
+pnpm add ai @ai-sdk/openai
 ```
 
-`pg` is an optional peer dependency. The chunker, in-memory store, and file store do not require it.
+`pg`, `ai`, and `@ai-sdk/openai` are optional peer dependencies. The chunker, in-memory store, and file store do not require them.
 
 ## Quickstart
 
@@ -62,7 +64,8 @@ The default CLI embedder is a deterministic mock for smoke tests. Use `--embedde
 - `@askdb/rag/stores/memory` — in-memory cosine store.
 - `@askdb/rag/stores/file` — binary embedding file plus JSON metadata.
 - `@askdb/rag/stores/pgvector` — pgvector adapter with documented setup SQL.
-- `@askdb/rag/embedders/openai` — optional AI SDK `embedMany()` reference helper using `text-embedding-3-small` by default.
+- `@askdb/rag/embedders/ai-sdk` — generic AI SDK `EmbeddingModel<string>` adapter.
+- `@askdb/rag/embedders/openai` — optional OpenAI convenience helper using `text-embedding-3-small` by default.
 
 ## Sensitive Fields
 
