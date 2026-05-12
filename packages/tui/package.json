@@ -37,9 +37,10 @@
     }
   },
   "bin": {
-    "askdb-tui": "./dist/bin.js"
+    "askdb-tui": "./bin/askdb-tui.js"
   },
   "files": [
+    "bin",
     "dist",
     "README.md",
     "LICENSE",

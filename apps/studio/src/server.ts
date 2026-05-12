@@ -135,8 +135,8 @@ export function createStudioServer(options: StudioOptions): StudioServer {
       }
       if (req.method === "POST" && url.pathname === "/api/ask") {
         const body = await readJson(req);
-        const question = parseQuestion(body);
-        const result = await askSampleQuestion(state.schemaDir, question);
+        const options = parseAskBody(body);
+        const result = await askSampleQuestion(state.schemaDir, options);
         return writeJson(res, 200, result);
       }
       writeJson(res, 404, { error: { message: "Not found" } });
@@ -231,7 +231,10 @@ async function suggestForSource(workspace: Workspace, source: SuggestSource): Pr
   return candidates.map((candidate) => ({ text: candidate.text }));
 }
 
-async function askSampleQuestion(schemaDir: string, question: string): Promise<unknown> {
+async function askSampleQuestion(
+  schemaDir: string,
+  options: { question: string; useRag: boolean },
+): Promise<unknown> {
   const mockSql = process.env.ASKDB_MOCK_SQL;
   const aiConfig = mockSql ? undefined : resolveAskDbAiConfig();
   if (!mockSql && !aiConfig) {
@@ -242,6 +245,10 @@ async function askSampleQuestion(schemaDir: string, question: string): Promise<u
   }
 
   const schema = loadSchema(schemaDir);
+  const retrievedChunks: QueryResult[] = [];
+  const ragIndex = options.useRag
+    ? await createCurrentStudioRagIndex(schemaDir, "using RAG for sample generation")
+    : undefined;
   type AskModel = Parameters<typeof ask>[0]["model"];
   const model: AskModel = mockSql
     ? (undefined as unknown as AskModel)
@@ -250,11 +257,28 @@ async function askSampleQuestion(schemaDir: string, question: string): Promise<u
       })) as AskModel);
 
   const result = await ask({
-    question,
+    question: options.question,
     schema,
     model,
     dialect: postgresDialect,
     explain: true,
+    ...(ragIndex
+      ? {
+          retriever: async (params) => {
+            let results: QueryResult[];
+            try {
+              results = await ragIndex.retriever(params);
+            } catch (error) {
+              throw formatStudioRagEmbeddingError(error, ragIndex.config);
+            }
+            retrievedChunks.splice(0, retrievedChunks.length, ...results);
+            return results;
+          },
+          retrievalK: 8,
+          retrievalThresholdChunks: 0,
+          totalSchemaChunkCount: ragIndex.status.chunksTotal,
+        }
+      : {}),
     deps:
       mockSql !== undefined
         ? {
@@ -269,6 +293,10 @@ async function askSampleQuestion(schemaDir: string, question: string): Promise<u
     sql: result.sql,
     explain: result.explain ?? null,
     warnings: schema.warnings,
+    rag: {
+      enabled: options.useRag,
+      chunks: options.useRag ? retrievedChunks.map(serializeRagResult) : [],
+    },
   };
 }
 
@@ -362,40 +390,62 @@ async function queryRag(
   schemaDir: string,
   query: { question: string; k: number; types?: ChunkType[] },
 ): Promise<unknown> {
-  const config = resolveStudioRagEmbedderConfig();
-  if (!config.configured) {
-    throw new StudioHttpError(400, studioRagAiSdkKeyMissingMessage());
-  }
-  const status = getRagStatus(schemaDir) as { hasIndex?: boolean; stale?: boolean; schemaId?: string };
-  if (!status.hasIndex) {
-    throw new StudioHttpError(400, "Build the RAG index before querying chunks.");
-  }
-  if (status.stale) {
-    throw new StudioHttpError(400, "Reindex before querying chunks. The current index is stale or uses a different embedder.");
-  }
-  const store = createFileStore({ basePath: join(schemaDir, "schema") });
-  const retriever = createRetriever({
-    embedder: await createStudioRagEmbedder(config),
-    store,
-  });
+  const ragIndex = await createCurrentStudioRagIndex(schemaDir, "querying chunks");
   let results: QueryResult[];
   try {
-    results = await retriever({
+    results = await ragIndex.retriever({
       question: query.question,
       k: query.k,
       filter: {
-        schemaId: status.schemaId,
+        schemaId: ragIndex.status.schemaId,
         ...(query.types && query.types.length > 0 ? { types: query.types } : {}),
       },
     });
   } catch (error) {
-    throw formatStudioRagEmbeddingError(error, config);
+    throw formatStudioRagEmbeddingError(error, ragIndex.config);
   }
 
   return {
     question: query.question,
     k: query.k,
     results: results.map(serializeRagResult),
+  };
+}
+
+async function createCurrentStudioRagIndex(schemaDir: string, action: string): Promise<{
+  config: StudioRagEmbedderConfig;
+  status: { schemaId: string; chunksTotal: number };
+  retriever: ReturnType<typeof createRetriever>;
+}> {
+  const config = resolveStudioRagEmbedderConfig();
+  if (!config.configured) {
+    throw new StudioHttpError(400, studioRagAiSdkKeyMissingMessage());
+  }
+  const status = getRagStatus(schemaDir) as {
+    hasIndex?: boolean;
+    stale?: boolean;
+    schemaId?: string;
+    chunksTotal?: number;
+  };
+  if (!status.hasIndex) {
+    throw new StudioHttpError(400, `Build the RAG index before ${action}.`);
+  }
+  if (status.stale) {
+    throw new StudioHttpError(400, `Reindex before ${action}. The current index is stale or uses a different embedder.`);
+  }
+  if (!status.schemaId || typeof status.chunksTotal !== "number") {
+    throw new StudioHttpError(500, "Studio RAG status is missing schema metadata.");
+  }
+  return {
+    config,
+    status: {
+      schemaId: status.schemaId,
+      chunksTotal: status.chunksTotal,
+    },
+    retriever: createRetriever({
+      embedder: await createStudioRagEmbedder(config),
+      store: createFileStore({ basePath: join(schemaDir, "schema") }),
+    }),
   };
 }
 
@@ -664,11 +714,18 @@ function parseSuggestSource(body: unknown): SuggestSource {
   throw new StudioHttpError(400, "Unsupported suggestion source.");
 }
 
-function parseQuestion(body: unknown): string {
+function parseAskBody(body: unknown): { question: string; useRag: boolean } {
   if (!isRecord(body) || typeof body.question !== "string" || body.question.trim() === "") {
     throw new StudioHttpError(400, "`question` is required.");
   }
-  return body.question.trim();
+  const mode = typeof body.mode === "string" ? body.mode : "full";
+  if (mode !== "full" && mode !== "rag") {
+    throw new StudioHttpError(400, "`mode` must be `full` or `rag`.");
+  }
+  return {
+    question: body.question.trim(),
+    useRag: mode === "rag",
+  };
 }
 
 function parseRagQuery(body: unknown): { question: string; k: number; types?: ChunkType[] } {

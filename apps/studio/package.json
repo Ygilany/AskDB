@@ -25,9 +25,10 @@
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "bin": {
-    "askdb-studio": "./dist/bin.js"
+    "askdb-studio": "./bin/askdb-studio.js"
   },
   "files": [
+    "bin",
     "dist",
     "README.md",
     "LICENSE",
