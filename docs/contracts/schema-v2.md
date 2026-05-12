@@ -261,7 +261,7 @@ The `sensitive` flag must flow consistently from the physical layer through prom
 
 ## Versioning
 
-Schema v2 is the only format AskDB reads. Pre-1.0, v2 may evolve **in place** — additive fields can land without a version bump, and breaking field changes require a contract-doc revision (this file) plus a coordinated release across `@askdb/core`, `@askdb/introspect`, `@askdb/tui`, and `@askdb/rag`. Post-1.0, any breaking change requires a `version: 3` bump and a new contract document at `docs/contracts/schema-v3.md`.
+Schema v2 is the only format AskDB reads. Pre-1.0, v2 may evolve **in place** — additive fields can land without a version bump, and breaking field changes require a contract-doc revision (this file) plus a coordinated release across `@askdb/core`, `@askdb/introspect`, `@askdb/enrich`, `@askdb/tui`, and `@askdb/rag`. Post-1.0, any breaking change requires a `version: 3` bump and a new contract document at `docs/contracts/schema-v3.md`.
 
 Re-introspection and on-disk evolution behavior:
 
@@ -269,9 +269,9 @@ Re-introspection and on-disk evolution behavior:
 |---|---|
 | v2 directory with **only** `schema.json` (no `tables/*.md`) | Loaded with an empty describable layer; every table falls back to physical names + types. |
 | v2 directory with `tables/*.md` for **some** tables | Described tables benefit; un-described tables fall back to physical names + types. |
-| Adding a new column via re-introspection | `schema.json` updates with a fresh column id; matching `tables/<table>.md` is **not** auto-edited; the TUI shows the new column as un-described on next open; chunker emits a chunk for the new column with no description. |
-| Removing a column | `schema.json` drops the column id; the TUI flags any now-orphaned `columns[].id` in front-matter and offers a one-shot prune. Chunker drops the dead chunk. |
-| Renaming a column | Treated as remove + add (IDs are not auto-mapped). User confirms in TUI; embeddings re-fire. |
+| Adding a new column via re-introspection | `schema.json` updates with a fresh column id; matching `tables/<table>.md` is **not** auto-edited; `@askdb/enrich`-backed authoring surfaces show the new column as un-described on next open; chunker emits a chunk for the new column with no description. |
+| Removing a column | `schema.json` drops the column id; `@askdb/enrich` flags any now-orphaned `columns[].id` in front-matter and authoring surfaces can offer a one-shot prune. Chunker drops the dead chunk. |
+| Renaming a column | Treated as remove + add (IDs are not auto-mapped). User confirms in an authoring surface; embeddings re-fire. |
 
 ---
 
@@ -281,7 +281,9 @@ Re-introspection and on-disk evolution behavior:
 |---|---|
 | Parser, validator, normalizer, prompt assembly | `@askdb/core` (Phase 5) |
 | Schema introspection (catalog → physical layer + stable id assignment) | `@askdb/introspect` (Phase 6) |
-| Authoring (read/write `tables/*.md`, `concepts.md`) | `@askdb/tui` (Phase 7) |
+| Headless authoring workflow (read/write `tables/*.md`, `concepts.md`, drafts, markdown-section updates, bundling, suggestion target/context helpers) | `@askdb/enrich` (Phase 7 follow-up) |
+| Terminal authoring surface | `@askdb/tui` (Phase 7), built on `@askdb/enrich` |
+| Local browser authoring surface | `@askdb/studio`, built on `@askdb/enrich` |
 | Chunker, sensitive propagation, lock file | `@askdb/rag` (Phase 8) |
 
 ---
@@ -290,6 +292,7 @@ Re-introspection and on-disk evolution behavior:
 
 - [`docs/mission.md`](../mission.md) — describable schema, RAG-friendly format
 - [`docs/platform.md`](../platform.md) — package layout, BYO seams
+- [`docs/adrs/0004-enrichment-package-boundary.md`](../adrs/0004-enrichment-package-boundary.md) — shared enrichment package boundary
 - [`docs/contracts/sensitive-fields-and-modes.md`](./sensitive-fields-and-modes.md) — sensitive identifier rules in NL→SQL prompts
 - [`docs/specs/phase-5-schema-v2-core/`](../specs/phase-5-schema-v2-core/) — implementation of v2 reader/writer in `@askdb/core`
 - [`docs/specs/phase-6-introspection/`](../specs/phase-6-introspection/) — `@askdb/introspect` connector + two-path semantics

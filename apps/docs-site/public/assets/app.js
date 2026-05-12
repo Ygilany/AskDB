@@ -20,7 +20,7 @@ const pages = [
             </article>
             <article>
               <h3>Schema enrichment tools</h3>
-              <p>The TUI turns raw introspection output into described, aliased Schema v2 artifacts with human-reviewed AI suggestions.</p>
+              <p><code>@askdb/enrich</code> provides shared authoring logic; the TUI and Studio turn raw introspection output into described, aliased Schema v2 artifacts with human-reviewed AI suggestions.</p>
             </article>
             <article>
               <h3>Retrieval-ready context</h3>
@@ -143,10 +143,12 @@ pnpm exec askdb bundle my-app.schema --out my-app.schema.bundle.json</code></pre
       {
         heading: "Use the Packages",
         body: `
-          <p>For application code, install the small set of packages that match the surface you need. <code>@askdb/core</code> is dialect-agnostic. Postgres-specific behavior lives in <code>@askdb/postgres</code>.</p>
+          <p>For application code, install the small set of packages that match the surface you need. <code>@askdb/core</code> is dialect-agnostic. Postgres-specific behavior lives in <code>@askdb/postgres</code>. Custom enrichment UIs use <code>@askdb/enrich</code>.</p>
           <pre><code>pnpm add @askdb/core @askdb/postgres
 # Optional: only for live Postgres introspection
 pnpm add pg
+# Optional: only for custom Schema v2 enrichment authoring
+pnpm add @askdb/enrich
 # Optional: only when you want retrieval over schema chunks
 pnpm add @askdb/rag</code></pre>
         `,
@@ -193,7 +195,7 @@ pnpm add @askdb/rag</code></pre>
       {
         heading: "Enrichment",
         body: `
-          <p><code>@askdb/tui</code> operates on a Schema v2 directory after introspection. It never opens a live database; it edits the on-disk artifact and saves valid <code>tables/&lt;table&gt;.md</code> plus concepts content.</p>
+          <p><code>@askdb/enrich</code> owns the shared Schema v2 authoring workflow. <code>@askdb/tui</code> and <code>@askdb/studio</code> operate on a Schema v2 directory after introspection; they never open a live database for enrichment, and they save valid <code>tables/&lt;table&gt;.md</code> plus concepts content.</p>
           <pre><code>askdb introspect --url "$DATABASE_URL" --out my-app.schema --schema-id my-app
 askdb enrich --schema my-app.schema
 askdb bundle my-app.schema --out my-app.schema.bundle.json</code></pre>
@@ -220,6 +222,7 @@ askdb bundle my-app.schema --out my-app.schema.bundle.json</code></pre>
             <a href="#/core"><strong>@askdb/core</strong><span>Dialect-agnostic library pipeline: schema loading, prompt assembly, generation, validation, and retrieval input.</span></a>
             <a href="#/postgres"><strong>@askdb/postgres</strong><span>Postgres integration package: dialect, catalog connector, templates, bundle reader, and optional <code>pg</code> catalog runner.</span></a>
             <a href="#/introspect"><strong>@askdb/introspect</strong><span>Engine-agnostic introspection orchestrator and Schema v2 renderer.</span></a>
+            <a href="#/enrich"><strong>@askdb/enrich</strong><span>Headless Schema v2 enrichment workspace helpers shared by TUI, Studio, and custom authoring UIs.</span></a>
             <a href="#/rag"><strong>@askdb/rag</strong><span>Schema v2 chunking, BYO embeddings, vector stores, lock-file reuse, and retriever wiring.</span></a>
             <a href="#/cli"><strong>@askdb/cli</strong><span>Batteries-included terminal frontend for asking questions and running Postgres introspection.</span></a>
             <a href="#/tui"><strong>@askdb/tui</strong><span>Interactive terminal authoring for descriptions, aliases, concepts, and AI suggestions.</span></a>
@@ -230,7 +233,7 @@ askdb bundle my-app.schema --out my-app.schema.bundle.json</code></pre>
       {
         heading: "Apps vs Libraries",
         body: `
-          <p>The reusable contracts live in <code>packages/*</code>. The first-party product surfaces live in <code>apps/*</code>: CLI, HTTP API, TUI, and this docs site. That split keeps the embed API small while still shipping complete developer workflows.</p>
+          <p>The reusable contracts live in <code>packages/*</code>. The first-party product surfaces live in <code>apps/*</code> or package binaries: CLI, HTTP API, TUI, Studio, and this docs site. UI surfaces depend on shared headless packages instead of each other.</p>
         `,
       },
       {
@@ -531,6 +534,55 @@ await introspect(
     ],
   },
   {
+    path: "/enrich",
+    title: "@askdb/enrich",
+    eyebrow: "Headless enrichment",
+    description:
+      "The enrich package owns reusable Schema v2 authoring workflow logic for TUI, Studio, and custom enrichment UIs.",
+    sections: [
+      {
+        heading: "Install",
+        body: `
+          <pre><code>pnpm add @askdb/enrich
+# usually paired with schema primitives
+pnpm add @askdb/core</code></pre>
+        `,
+      },
+      {
+        heading: "What It Owns",
+        body: `
+          <ul>
+            <li>Loading a Schema v2 directory as an editable workspace.</li>
+            <li>Building table drafts and front-matter from physical schema plus markdown.</li>
+            <li>Saving <code>tables/*.md</code> and <code>concepts.md</code>.</li>
+            <li>Preserving markdown body sections during scoped edits.</li>
+            <li>Building AI suggestion targets and context.</li>
+            <li>Bundling a split Schema v2 directory into a single JSON artifact.</li>
+          </ul>
+        `,
+      },
+      {
+        heading: "Package Boundary",
+        body: `
+          <p><code>@askdb/enrich</code> depends on <code>@askdb/core</code>. Authoring surfaces such as <code>@askdb/tui</code> and <code>@askdb/studio</code> depend on <code>@askdb/enrich</code>. Studio does not depend on the TUI.</p>
+          <pre><code>@askdb/core
+   ^
+   |
+@askdb/enrich
+   ^          ^
+   |          |
+@askdb/tui   @askdb/studio</code></pre>
+        `,
+      },
+      {
+        heading: "When to Use It",
+        body: `
+          <p>Use <code>@askdb/enrich</code> directly when building a custom Schema v2 authoring UI. Use <code>@askdb/tui</code> for the maintained terminal workflow, and <code>@askdb/studio</code> for the maintained local browser workflow.</p>
+        `,
+      },
+    ],
+  },
+  {
     path: "/tui",
     title: "@askdb/tui",
     eyebrow: "Interactive enrichment",
@@ -564,7 +616,7 @@ askdb-tui --schema my-app.schema</code></pre>
             <li>Select a table, then edit table descriptions, aliases, primary entity, columns, and common query language.</li>
             <li>Use <code>g</code> on supported fields to request AI suggestions when <code>OPENAI_API_KEY</code> is set.</li>
             <li>Accept, edit, or reject suggestions before saving.</li>
-            <li>Press <code>s</code> to write valid Schema v2 markdown through the core writer.</li>
+            <li>Press <code>s</code> to write valid Schema v2 markdown through the shared <code>@askdb/enrich</code> workspace helpers.</li>
           </ul>
         `,
       },

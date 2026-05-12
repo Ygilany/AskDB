@@ -1,15 +1,18 @@
 # AskDB as an installable package — BYO model + SQL output
 
-AskDB ships four library packages:
+AskDB ships focused library packages:
 
 1. [`@askdb/core`](../../packages/core/README.md) — dialect-agnostic NL→SQL pipeline (`ask()`, schema/IR types, modes, logging, retrieval input).
 2. [`@askdb/introspect`](../../packages/introspect/README.md) — engine-agnostic introspection orchestrator, `CatalogQueryRunner` type, and Schema v2 renderer.
 3. [`@askdb/postgres`](../../packages/postgres/README.md) — Postgres integration: dialect adapter (`postgresDialect`), connector (live + from-export), catalog templates, and a `pg`-backed catalog query runner for live introspection.
 4. [`@askdb/prisma`](../../packages/prisma/README.md) — Prisma integration: schema-file connector that renders Schema v2 from `.prisma` files without a database connection.
+5. [`@askdb/enrich`](../../packages/enrich/README.md) — headless Schema v2 enrichment workspace helpers used by TUI, Studio, and custom authoring surfaces.
 
-The supported user-facing CLI is [`@askdb/cli`](../../apps/cli/README.md) (`askdb` binary, `npm i -g @askdb/cli`). `@askdb/http-api`, `@askdb/tui`, and `@askdb/docs-site` are first-party reference apps.
+The supported user-facing CLI is [`@askdb/cli`](../../apps/cli/README.md) (`askdb` binary, `npm i -g @askdb/cli`). `@askdb/http-api`, `@askdb/tui`, `@askdb/studio`, and `@askdb/docs-site` are first-party reference apps.
 
 Architecture rationale: [**ADR 0002 — Integration-package layout**](../adrs/0002-integration-package-layout.md).
+
+Enrichment package boundary: [**ADR 0004 — Enrichment-package boundary**](../adrs/0004-enrichment-package-boundary.md).
 
 Authoring a new integration: [**Connectors — what each connector needs**](connectors.md).
 
@@ -21,6 +24,8 @@ Authoring a new integration: [**Connectors — what each connector needs**](conn
 pnpm add @askdb/core @askdb/postgres
 # Optional: introspection
 pnpm add @askdb/introspect
+# Optional: build a custom Schema v2 enrichment authoring surface
+pnpm add @askdb/enrich
 # Optional: Prisma schema-file introspection
 pnpm add @askdb/prisma
 # Optional: live Postgres introspection
@@ -61,6 +66,22 @@ my-app.schema/
 ```
 
 A directory with only `schema.json` (no `tables/*.md`) is valid — tables fall back to bare names + types. See [`docs/contracts/schema-v2.md`](../contracts/schema-v2.md) for the full format contract.
+
+---
+
+## Enrichment authoring
+
+`@askdb/enrich` is the shared headless package for authoring the Schema v2 describable layer. It does not render a terminal or browser UI; it provides the workspace operations both first-party authoring surfaces use:
+
+- load a Schema v2 directory as an editable workspace
+- build table drafts from physical tables plus parsed markdown
+- write `tables/*.md` and `concepts.md`
+- preserve recognized markdown sections during scoped edits
+- validate concept links against physical table/column ids
+- build AI suggestion targets and context
+- bundle a split Schema v2 directory into a single JSON artifact
+
+Use `@askdb/tui` or `askdb enrich` when you want the maintained terminal authoring flow. Use `@askdb/studio` when you want the maintained local browser authoring flow. Use `@askdb/enrich` directly when building another authoring UI.
 
 ---
 

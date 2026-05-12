@@ -18,6 +18,7 @@ import {
 } from "@askdb/core";
 import { buildSchemaIndex, type Embedder } from "@askdb/rag";
 import { createMemoryStore } from "@askdb/rag/stores/memory";
+import { buildDefaultTableBody, replaceH2Section } from "@askdb/enrich";
 import { introspect, renderToSchemaV2, type CatalogQueryRunner } from "@askdb/introspect";
 import {
   createPostgresConnector,
@@ -118,6 +119,15 @@ async function main(): Promise<void> {
     throw new Error("smoke: @askdb/introspect public functions did not load");
   }
 
+  const tableBody = replaceH2Section(
+    buildDefaultTableBody("users", "Application users."),
+    "Common query language",
+    "active users = users with recent sign-ins",
+  );
+  if (!tableBody.includes("## Common query language")) {
+    throw new Error("smoke: @askdb/enrich helpers did not update table body");
+  }
+
   const v2Schema = loadSchemaFromJson(v2SchemaJson);
   const index = await buildSchemaIndex({
     schema: v2Schema,
@@ -142,7 +152,7 @@ async function main(): Promise<void> {
     throw new Error("smoke: ask({ retriever }) did not complete");
   }
 
-  console.log("smoke: ok - core, introspect, postgres, prisma, and rag package surfaces loaded");
+  console.log("smoke: ok - core, introspect, postgres, prisma, enrich, and rag package surfaces loaded");
 }
 
 main().catch((e: unknown) => {

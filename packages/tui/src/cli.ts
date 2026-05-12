@@ -4,8 +4,8 @@ import { createAskDbLanguageModelFromEnv, suggestEnrichment } from "@askdb/core"
 import { render } from "ink";
 import { createElement } from "react";
 import { App } from "./ui/App.js";
-import { bundleSchemaDirectory, loadWorkspace } from "./workspace.js";
-import type { SuggestEnrichmentForTui } from "./suggest.js";
+import { bundleSchemaDirectory, loadWorkspace } from "@askdb/enrich";
+import type { SuggestEnrichmentForTui } from "@askdb/enrich";
 
 type CliOptions = {
   schema?: string;

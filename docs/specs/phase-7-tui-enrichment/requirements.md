@@ -10,6 +10,8 @@ Phase 5 ships the **Schema v2** format inside `@askdb/core` — reader, writer, 
 
 Phase 7 closes that gap with **`@askdb/tui`** — the interactive terminal app that authors the describable layer (`tables/*.md`, `concepts.md`) on top of an existing Schema v2 physical artifact, with AI-suggest + human-confirm.
 
+Post-implementation boundary update: the reusable non-UI enrichment workflow extracted from `@askdb/tui` now lives in **`@askdb/enrich`**. TUI remains the terminal authoring surface; `@askdb/enrich` owns the shared workspace/draft/save/bundle/suggestion helpers used by TUI, Studio, and future authoring surfaces.
+
 The mission frames "schema intelligence" as the gap between **bare DDL** and **good NL→SQL grounding**: descriptions, business context, aliases, and a vocabulary mapping ("sales" = paid orders) need to be **authored once** and **reused** ([`docs/mission.md`](../../mission.md)). The headless-first SDK pivot makes a TUI the natural first authoring surface — an installable headless package shouldn't require a Next.js app to enrich a schema.
 
 The web catalog (Phase 9) becomes an alternative authoring surface against the same artifact; nothing in Phase 7 blocks that path, but Phase 7 must work entirely without it.
@@ -49,7 +51,8 @@ A new workspace package: `packages/tui/`, published as `@askdb/tui`, exposing th
 - TypeScript, ESM.
 - Terminal UI library: **decided in implementation** between `@clack/prompts` (lighter) and `Ink` (richer split-pane). Recommendation in `plan.md`.
 - BYO model via AI SDK — same `LanguageModel` boundary as `@askdb/core`.
-- Depends on `@askdb/core` (Phase 5) for parsing, validation, prompt building (for AI-suggest), and writing.
+- Depends on `@askdb/enrich` for Schema v2 workspace loading, drafts, persistence, section-preserving body updates, bundling, and suggestion target/context helpers.
+- `@askdb/enrich` depends on `@askdb/core` (Phase 5) for Schema v2 parsing, validation, prompt contracts, and writing primitives.
 
 ### 2) `bundle` command
 
@@ -80,6 +83,7 @@ A new workspace package: `packages/tui/`, published as `@askdb/tui`, exposing th
 | Sensitive identifier authoring | TUI shows a non-blocking warning when a description mentions a sensitive column by name, explaining that the chunk will be excluded by `@askdb/rag` (Phase 8). User can save anyway. |
 | Bundle format | Single packed JSON, **read-only** for downstream consumers (authoring stays in the directory). The Phase 5 loader accepts both forms. |
 | Package locus | `packages/tui/` published as `@askdb/tui`; binary `askdb-tui`. `@askdb/cli` may shell to it via `askdb enrich` (decided in implementation). |
+| Shared authoring locus | `packages/enrich/` published as `@askdb/enrich`; owns headless workspace/draft/save/bundle/suggestion helpers shared by TUI and Studio. |
 | Input format | Schema v2 directory or bundled JSON (read-only). The TUI does **not** accept a live DB URL — that's Phase 6's job; the canonical flow is `askdb introspect` → `askdb-tui`. |
 | Re-introspection ingestion | TUI ingests orphan/new-column warnings from the Phase 5 loader and offers prune/describe actions. |
 
@@ -104,6 +108,7 @@ After Phase 7:
 - [`docs/contracts/schema-v2.md`](../../contracts/schema-v2.md) — format contract
 - [`docs/mission.md`](../../mission.md) — describable schema, headless-first authoring
 - [`docs/platform.md`](../../platform.md) — package layout, BYO model
+- [`docs/adrs/0004-enrichment-package-boundary.md`](../../adrs/0004-enrichment-package-boundary.md) — `@askdb/enrich` boundary
 - [`docs/roadmap.md`](../../roadmap.md) — Phase 7
 - [`docs/contracts/sensitive-fields-and-modes.md`](../../contracts/sensitive-fields-and-modes.md) — sensitive identifier rules
 - [`docs/specs/phase-5-schema-v2-core/`](../phase-5-schema-v2-core/) — v2 reader/writer this phase consumes

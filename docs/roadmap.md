@@ -99,6 +99,8 @@ Completed: Shipped `@askdb/introspect` with Postgres connector support, live + a
 
 Completed: Delivered `@askdb/tui` interactive schema enrichment for Schema v2, including AI-assisted table/column description workflows, round-trippable `tables/*.md` writes, and idempotent re-open/re-enrichment flows.
 
+Follow-up: shared non-UI enrichment workspace behavior now lives in `@askdb/enrich`, so `@askdb/tui`, `@askdb/studio`, and future custom authoring surfaces can share the same Schema v2 draft/save/suggestion logic without depending on each other.
+
 **Goal:** Ship the interactive **terminal authoring surface** that turns a Schema v2 physical artifact (typically introspected in Phase 6) into a fully described one with AI-suggest + human-confirm.
 
 **Contract:** [`docs/contracts/schema-v2.md`](contracts/schema-v2.md).

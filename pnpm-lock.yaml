@@ -105,15 +105,15 @@ importers:
       '@askdb/core':
         specifier: workspace:*
         version: link:../../packages/core
+      '@askdb/enrich':
+        specifier: workspace:*
+        version: link:../../packages/enrich
       '@askdb/postgres':
         specifier: workspace:*
         version: link:../../packages/postgres
       '@askdb/rag':
         specifier: workspace:*
         version: link:../../packages/rag
-      '@askdb/tui':
-        specifier: workspace:*
-        version: link:../../packages/tui
       ai:
         specifier: ^4.3.19
         version: 4.3.19(react@19.2.5)(zod@3.25.76)
@@ -145,6 +145,19 @@ importers:
       zod:
         specifier: ^3.24.4
         version: 3.25.76
+    devDependencies:
+      typescript:
+        specifier: ^5.7.3
+        version: 5.9.3
+      vitest:
+        specifier: ^3.0.9
+        version: 3.2.4(@types/node@22.19.17)(jiti@2.7.0)(tsx@4.21.0)
+
+  packages/enrich:
+    dependencies:
+      '@askdb/core':
+        specifier: workspace:*
+        version: link:../core
     devDependencies:
       typescript:
         specifier: ^5.7.3
@@ -240,6 +253,9 @@ importers:
       '@askdb/core':
         specifier: workspace:*
         version: link:../core
+      '@askdb/enrich':
+        specifier: workspace:*
+        version: link:../enrich
       ink:
         specifier: ^5.0.1
         version: 5.2.1(@types/react@18.3.28)(react@18.3.1)

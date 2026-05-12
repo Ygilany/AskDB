@@ -6,10 +6,10 @@ export {
   hasAnyColumnDescribable,
   isEnumCandidate,
   parseListInput,
-} from "./draft.js";
-export type { ColumnDraft, TableDraft } from "./draft.js";
-export { buildSuggestionContext, buildSuggestionTarget } from "./suggest.js";
-export type { SuggestEnrichmentForTui, SuggestSource } from "./suggest.js";
+} from "@askdb/enrich";
+export type { ColumnDraft, TableDraft } from "@askdb/enrich";
+export { buildSuggestionContext, buildSuggestionTarget } from "@askdb/enrich";
+export type { SuggestEnrichmentForTui, SuggestSource } from "@askdb/enrich";
 export {
   buildDefaultTableBody,
   bundleSchemaDirectory,
@@ -17,5 +17,5 @@ export {
   replaceH2Section,
   replaceTableDescription,
   saveTable,
-} from "./workspace.js";
-export type { BundledSchemaV2, Workspace, WorkspaceTable } from "./workspace.js";
+} from "@askdb/enrich";
+export type { BundledSchemaV2, Workspace, WorkspaceTable } from "@askdb/enrich";
