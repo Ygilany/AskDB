@@ -4,6 +4,7 @@ import {
   BrainCircuit,
   Check,
   ChevronRight,
+  Copy,
   Database,
   Loader2,
   RefreshCw,
@@ -14,7 +15,7 @@ import {
   Sparkles,
   Wand2,
 } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
 import type { ChunkType } from "@askdb/rag";
 import type { ColumnDraft, SuggestSource, TableDraft } from "@askdb/enrich";
@@ -994,7 +995,7 @@ function AskPanel({
         </div>
       </Panel>
 
-      <Panel title="Generated SQL">
+      <Panel title="Generated SQL" action={result?.sql ? <CopyButton value={result.sql} /> : undefined}>
         {result?.sql ? <pre className="sql-block">{result.sql}</pre> : <EmptyText text="No SQL generated yet." />}
       </Panel>
 
@@ -1192,6 +1193,24 @@ function InlineStatus({ status }: { status: StatusMessage }) {
 
 function EmptyText({ text }: { text: string }) {
   return <p className="rounded-md border border-dashed border-border px-3 py-6 text-center text-sm text-muted-foreground">{text}</p>;
+}
+
+function CopyButton({ value }: { value: string }) {
+  const [copied, setCopied] = useState(false);
+
+  const handleCopy = useCallback(() => {
+    void navigator.clipboard.writeText(value).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    });
+  }, [value]);
+
+  return (
+    <Button variant="ghost" size="sm" onClick={handleCopy}>
+      {copied ? <Check className="h-3.5 w-3.5 text-green-500" /> : <Copy className="h-3.5 w-3.5" />}
+      {copied ? "Copied" : "Copy"}
+    </Button>
+  );
 }
 
 function makeDraftMap(workspace: StudioWorkspaceDto): Record<string, TableDraft> {
