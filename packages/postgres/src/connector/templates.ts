@@ -83,6 +83,12 @@ const TABLES_TEMPLATE: PostgresSqlTemplate = {
     "row_level_security",
     "comment",
   ],
+  // Declarative-partition leaves have relkind='r' — indistinguishable from a
+  // plain table on relkind alone. The NOT EXISTS clause drops any relation
+  // that is a leaf of a partitioned parent (relkind='p') at any depth. The
+  // partitioned parent itself is retained as the canonical table. Plain-
+  // inheritance children (parent relkind='r') are kept — they are independent
+  // tables in PG semantics. See docs/adrs/0003-postgres-partition-handling.md.
   sql: `
 SELECT
   n.nspname AS schema_name,
@@ -93,6 +99,12 @@ SELECT
 FROM pg_catalog.pg_class c
 JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
 WHERE c.relkind IN ('r', 'p', 'v', 'm')
+  AND NOT EXISTS (
+    SELECT 1
+    FROM pg_catalog.pg_inherits inh
+    JOIN pg_catalog.pg_class p ON p.oid = inh.inhparent
+    WHERE inh.inhrelid = c.oid AND p.relkind = 'p'
+  )
   AND ${SYSTEM_SCHEMA_PREDICATE}
   AND ${FILTER_PREDICATE}
 ORDER BY n.nspname, c.relname;

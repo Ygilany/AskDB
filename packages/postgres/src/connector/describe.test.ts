@@ -258,6 +258,23 @@ describe("foldIntrospectionResult - live runner compatibility", () => {
   });
 });
 
+describe("describePostgres — declarative partitions (ADR 0003)", () => {
+  // Catalog rows are pre-filtered at the SQL boundary, so an in-memory
+  // snapshot runner can't reproduce the exclusion (it would have to also
+  // re-implement pg_inherits semantics). The unit-level assertion here is
+  // that the canonical `tables` template carries the NOT EXISTS clause; the
+  // end-to-end behavior is covered by the live pagila integration test
+  // (pagila's `payment` table is range-partitioned).
+  it("tables template SQL filters partition leaves via NOT EXISTS on pg_inherits", () => {
+    const connector = createPostgresConnector();
+    const bundle = connector.templates!();
+    const tablesTpl = bundle.templates.find((t) => t.name === "tables")!;
+    expect(tablesTpl.sql).toMatch(/NOT EXISTS/);
+    expect(tablesTpl.sql).toMatch(/pg_catalog\.pg_inherits/);
+    expect(tablesTpl.sql).toMatch(/p\.relkind\s*=\s*'p'/);
+  });
+});
+
 describe("createPostgresConnector wiring", () => {
   it("describe() routes live mode through describePostgres", async () => {
     const snapshot = loadFixture("orders-users.catalog.json");
