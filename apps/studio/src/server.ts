@@ -1,6 +1,7 @@
 import { existsSync, readFileSync, rmSync } from "node:fs";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
-import { join, resolve } from "node:path";
+import { extname, relative, join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import {
   ask,
   askDbAiKeyMissingMessage,
@@ -41,7 +42,17 @@ import {
   type TableDraft,
   type Workspace,
 } from "@askdb/enrich";
-import { APP_JS, INDEX_HTML, STYLES_CSS } from "./static.js";
+import type {
+  AskResponse,
+  RagIndexResponse,
+  RagQueryResponse,
+  StudioRagChunkDto,
+  StudioRagStatusDto,
+  StudioWorkspaceDto,
+  SuggestResponse,
+} from "./shared/api.js";
+
+const CLIENT_DIR = fileURLToPath(new URL("./client/", import.meta.url));
 
 export type StudioOptions = {
   schema: string;
@@ -96,13 +107,10 @@ export function createStudioServer(options: StudioOptions): StudioServer {
     try {
       const url = new URL(req.url ?? "/", `http://${req.headers.host ?? "localhost"}`);
       if (req.method === "GET" && url.pathname === "/") {
-        return writeText(res, 200, "text/html; charset=utf-8", INDEX_HTML);
+        return serveClientFile(res, "index.html");
       }
-      if (req.method === "GET" && url.pathname === "/assets/styles.css") {
-        return writeText(res, 200, "text/css; charset=utf-8", STYLES_CSS);
-      }
-      if (req.method === "GET" && url.pathname === "/assets/app.js") {
-        return writeText(res, 200, "text/javascript; charset=utf-8", APP_JS);
+      if (req.method === "GET" && url.pathname.startsWith("/assets/")) {
+        return serveClientFile(res, decodeURIComponent(url.pathname.slice(1)));
       }
       if (req.method === "GET" && url.pathname === "/api/workspace") {
         return writeJson(res, 200, serializeWorkspace(state.workspace));
@@ -139,6 +147,9 @@ export function createStudioServer(options: StudioOptions): StudioServer {
         const result = await askSampleQuestion(state.schemaDir, options);
         return writeJson(res, 200, result);
       }
+      if (req.method === "GET" && !url.pathname.startsWith("/api/")) {
+        return serveClientFile(res, "index.html");
+      }
       writeJson(res, 404, { error: { message: "Not found" } });
     } catch (error) {
       const status = error instanceof StudioHttpError ? error.status : 500;
@@ -149,7 +160,7 @@ export function createStudioServer(options: StudioOptions): StudioServer {
   });
 }
 
-export function serializeWorkspace(workspace: Workspace): unknown {
+export function serializeWorkspace(workspace: Workspace): StudioWorkspaceDto {
   const aiConfig = (() => {
     try {
       return resolveAskDbAiConfig(process.env, {
@@ -212,7 +223,7 @@ function saveDraft(state: StudioState, tableId: string, draft: TableDraft): void
   state.workspace = loadWorkspace(state.schemaDir);
 }
 
-async function suggestForSource(workspace: Workspace, source: SuggestSource): Promise<Array<{ text: string }>> {
+async function suggestForSource(workspace: Workspace, source: SuggestSource): Promise<SuggestResponse["candidates"]> {
   const model = await createAskDbLanguageModelFromEnv(process.env, {
     modelEnvVar: process.env.ASKDB_STUDIO_MODEL
       ? "ASKDB_STUDIO_MODEL"
@@ -234,7 +245,7 @@ async function suggestForSource(workspace: Workspace, source: SuggestSource): Pr
 async function askSampleQuestion(
   schemaDir: string,
   options: { question: string; useRag: boolean },
-): Promise<unknown> {
+): Promise<AskResponse> {
   const mockSql = process.env.ASKDB_MOCK_SQL;
   const aiConfig = mockSql ? undefined : resolveAskDbAiConfig();
   if (!mockSql && !aiConfig) {
@@ -300,7 +311,7 @@ async function askSampleQuestion(
   };
 }
 
-function getRagStatus(schemaDir: string): unknown {
+function getRagStatus(schemaDir: string): StudioRagStatusDto {
   const config = resolveStudioRagEmbedderConfig();
   const sources = loadChunkerSourcesFromDir(schemaDir);
   const chunkResult = chunkSchema(sources);
@@ -359,7 +370,7 @@ function getRagStatus(schemaDir: string): unknown {
   };
 }
 
-async function indexRag(schemaDir: string): Promise<unknown> {
+async function indexRag(schemaDir: string): Promise<RagIndexResponse> {
   const config = resolveStudioRagEmbedderConfig();
   if (!config.configured) {
     throw new StudioHttpError(400, studioRagAiSdkKeyMissingMessage());
@@ -389,7 +400,7 @@ async function indexRag(schemaDir: string): Promise<unknown> {
 async function queryRag(
   schemaDir: string,
   query: { question: string; k: number; types?: ChunkType[] },
-): Promise<unknown> {
+): Promise<RagQueryResponse> {
   const ragIndex = await createCurrentStudioRagIndex(schemaDir, "querying chunks");
   let results: QueryResult[];
   try {
@@ -624,7 +635,7 @@ function readPositiveIntegerEnv(value: string | undefined): number | undefined {
   return parsed;
 }
 
-function serializeRagResult(result: QueryResult): unknown {
+function serializeRagResult(result: QueryResult): StudioRagChunkDto {
   return {
     id: result.id,
     score: Number(result.score.toFixed(6)),
@@ -771,6 +782,42 @@ function writeText(res: ServerResponse, status: number, contentType: string, bod
     "cache-control": "no-store",
   });
   res.end(body);
+}
+
+function serveClientFile(res: ServerResponse, relativePath: string): void {
+  const filePath = resolve(CLIENT_DIR, relativePath);
+  const fileRelativeToClientDir = relative(CLIENT_DIR, filePath);
+  if (fileRelativeToClientDir.startsWith("..") || fileRelativeToClientDir === "") {
+    return writeJson(res, 404, { error: { message: "Not found" } });
+  }
+  if (!existsSync(filePath)) {
+    return writeJson(res, 500, {
+      error: {
+        message:
+          "Studio client assets are missing. Run `pnpm --filter @askdb/studio build` before starting Studio.",
+      },
+    });
+  }
+  writeText(res, 200, contentTypeFor(filePath), readFileSync(filePath, "utf8"));
+}
+
+function contentTypeFor(path: string): string {
+  switch (extname(path)) {
+    case ".html":
+      return "text/html; charset=utf-8";
+    case ".css":
+      return "text/css; charset=utf-8";
+    case ".js":
+      return "text/javascript; charset=utf-8";
+    case ".svg":
+      return "image/svg+xml";
+    case ".png":
+      return "image/png";
+    case ".ico":
+      return "image/x-icon";
+    default:
+      return "application/octet-stream";
+  }
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

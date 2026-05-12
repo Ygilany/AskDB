@@ -123,6 +123,14 @@ describe("AskDB Studio server", () => {
     expect(retrieved.results[0].text).toEqual(expect.any(String));
   });
 
+  it("keeps Studio on the shared enrichment package instead of the TUI surface", () => {
+    const packageJson = JSON.parse(
+      readFileSync(join(repoRoot, "apps/studio/package.json"), "utf8"),
+    ) as { dependencies?: Record<string, string> };
+    expect(packageJson.dependencies?.["@askdb/enrich"]).toBe("workspace:*");
+    expect(packageJson.dependencies?.["@askdb/tui"]).toBeUndefined();
+  });
+
   it("indexes and queries Studio RAG with the OpenAI embedder", async () => {
     const embeddingServer = createEmbeddingServer();
     embeddingServers.push(embeddingServer);
