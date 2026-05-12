@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { resolveAskDbAiConfig } from "./provider.js";
+import { resolveAskDbAiConfig, resolveAskDbEmbeddingConfig } from "./provider.js";
 
 describe("resolveAskDbAiConfig", () => {
   it("returns undefined when no key is configured", () => {
@@ -150,5 +150,58 @@ describe("resolveAskDbAiConfig", () => {
       { modelEnvVar: "ASKDB_TUI_MODEL" },
     );
     expect(cfg?.model).toBe("tui-only");
+  });
+});
+
+describe("resolveAskDbEmbeddingConfig", () => {
+  it("uses the configured OpenAI connection with the default embedding model", () => {
+    const cfg = resolveAskDbEmbeddingConfig({
+      ASKDB_AI_API_KEY: "k",
+      ASKDB_AI_MODEL: "gpt-4o-mini",
+      OPENAI_MODEL: "gpt-4.1",
+    });
+    expect(cfg).toEqual({
+      provider: "openai",
+      apiKey: "k",
+      model: "text-embedding-3-small",
+    });
+  });
+
+  it("prefers embedding-specific model env vars over chat model env vars", () => {
+    const cfg = resolveAskDbEmbeddingConfig({
+      OPENAI_API_KEY: "k",
+      ASKDB_AI_MODEL: "gpt-4o-mini",
+      ASKDB_AI_EMBEDDING_MODEL: "text-embedding-3-large",
+      OPENAI_EMBEDDING_MODEL: "text-embedding-ada-002",
+    });
+    expect(cfg?.model).toBe("text-embedding-3-large");
+  });
+
+  it("honours a per-app embedding model override", () => {
+    const cfg = resolveAskDbEmbeddingConfig(
+      {
+        ASKDB_AI_API_KEY: "k",
+        ASKDB_AI_EMBEDDING_MODEL: "shared-embedding",
+        ASKDB_STUDIO_RAG_EMBEDDER_MODEL: "studio-only",
+      },
+      { modelEnvVar: "ASKDB_STUDIO_RAG_EMBEDDER_MODEL" },
+    );
+    expect(cfg?.model).toBe("studio-only");
+  });
+
+  it("resolves Azure embedding deployments from the configured Azure connection", () => {
+    const cfg = resolveAskDbEmbeddingConfig({
+      ASKDB_AI_PROVIDER: "azure",
+      AZURE_OPENAI_API_KEY: "k",
+      ASKDB_AI_AZURE_RESOURCE_NAME: "my-foundry",
+      AZURE_OPENAI_DEPLOYMENT: "chat-deployment",
+      AZURE_OPENAI_EMBEDDING_DEPLOYMENT: "embedding-deployment",
+    });
+    expect(cfg).toEqual({
+      provider: "azure",
+      apiKey: "k",
+      model: "embedding-deployment",
+      resourceName: "my-foundry",
+    });
   });
 });

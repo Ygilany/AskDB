@@ -86,6 +86,18 @@ import { createOpenAiEmbedder } from "@askdb/rag/embedders/openai";
 
 const embedder = createOpenAiEmbedder({
   model: "text-embedding-3-small",
+  baseURL: process.env.OPENAI_BASE_URL,
+});
+```
+
+- Any AI SDK embedding model:
+
+```ts
+import { openai } from "@ai-sdk/openai";
+import { createAiSdkEmbedder } from "@askdb/rag/embedders/ai-sdk";
+
+const embedder = createAiSdkEmbedder({
+  model: openai.embedding("text-embedding-3-small"),
 });
 ```
 
