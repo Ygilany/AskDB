@@ -279,6 +279,10 @@ button:disabled {
   padding: 8px;
 }
 
+.usage-grid .usage-total {
+  grid-column: 1 / -1;
+}
+
 .usage-grid dt {
   color: hsl(var(--muted-foreground));
   font-size: 11px;
