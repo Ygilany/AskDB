@@ -2,6 +2,10 @@
 
 This document records the **initial** technical baseline for AskDB (runtime, stack, and repo shape). Adjustments are expected as requirements sharpen; the constitution should stay aligned with `mission.md` and `roadmap.md`.
 
+For the package-level architecture, diagrams, dependency boundaries, install
+profiles, and connector-vs-peer guidance, see
+[`docs/architecture.md`](architecture.md).
+
 ## Package management
 
 - **pnpm** for all installs, workspaces, and scripts.
@@ -30,7 +34,7 @@ AskDB ships as a small set of focused npm packages. Each one has a single respon
 
 A future **`@askdb/sdk`** + **embeddable UI** package may follow once the headless surfaces stabilize (later phase).
 
-Shared dependencies are layered by concern. `@askdb/core` is the schema/NL-to-SQL contract package. `@askdb/enrich` depends on Core and owns reusable Schema v2 authoring workflow logic. UI surfaces such as `@askdb/tui` and `@askdb/studio` depend on `@askdb/enrich` instead of each other. See [ADR 0004 — Enrichment-package boundary](adrs/0004-enrichment-package-boundary.md).
+Shared dependencies are layered by concern. `@askdb/core` is the schema/NL-to-SQL contract package. `@askdb/enrich` depends on Core and owns reusable Schema v2 authoring workflow logic. UI surfaces such as `@askdb/tui` and `@askdb/studio` depend on `@askdb/enrich` instead of each other. See [AskDB Architecture](architecture.md) and [ADR 0004 — Enrichment-package boundary](adrs/0004-enrichment-package-boundary.md).
 
 ## Runtime and frameworks
 

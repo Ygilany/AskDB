@@ -65,6 +65,7 @@ Per-provider model recipes (OpenAI, Anthropic, Bedrock, Ollama, AI Gateway) and 
 Product direction and technical baseline live in **`docs/`**:
 
 - [`docs/mission.md`](docs/mission.md) — north star, principles, non-goals  
+- [`docs/architecture.md`](docs/architecture.md) — package boundaries, diagrams, install profiles, connectors vs. optional peers
 - [`docs/platform.md`](docs/platform.md) — languages, monorepo shape, Postgres-first  
 - [`docs/roadmap.md`](docs/roadmap.md) — phased implementation order  
 - [`docs/specs/phase-2-hardening-modes/README.md`](docs/specs/phase-2-hardening-modes/README.md) — **Phase 2** spec hub (links plan, requirements, validation merge bar)  
