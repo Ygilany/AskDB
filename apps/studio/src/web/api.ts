@@ -10,7 +10,7 @@ import type {
   StudioWorkspaceDto,
   SuggestRequest,
   SuggestResponse,
-} from "../shared/api.js";
+} from "@/shared/api";
 
 export async function getWorkspace(): Promise<StudioWorkspaceDto> {
   return api<StudioWorkspaceDto>("/api/workspace");

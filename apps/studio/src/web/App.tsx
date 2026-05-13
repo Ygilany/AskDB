@@ -27,7 +27,7 @@ import type {
   StudioRagStatusDto,
   StudioTableDto,
   StudioWorkspaceDto,
-} from "../shared/api.js";
+} from "@/shared/api";
 import {
   ask,
   buildRagIndex,
