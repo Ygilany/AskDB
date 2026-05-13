@@ -22,6 +22,8 @@ Authoring a new integration: [**Connectors — what each connector needs**](conn
 
 ```bash
 pnpm add @askdb/core @askdb/postgres
+# Example model provider; use any AI SDK-compatible provider you prefer
+pnpm add ai @ai-sdk/openai
 # Optional: introspection
 pnpm add @askdb/introspect
 # Optional: build a custom Schema v2 enrichment authoring surface

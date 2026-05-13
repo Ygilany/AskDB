@@ -127,6 +127,28 @@ describe("http-api", () => {
     }
   });
 
+  it("oversized JSON returns payload_too_large", async () => {
+    process.env.ASKDB_LOG_LEVEL = "silent";
+    const app = createAskDbHttpServer({ host: "127.0.0.1", port: 0, maxBodyBytes: 32 });
+    await new Promise<void>((resolve) => app.server.listen(0, "127.0.0.1", resolve));
+    const addr = app.server.address();
+    if (!addr || typeof addr === "string") throw new Error("expected inet address");
+
+    try {
+      const res = await fetch(`http://127.0.0.1:${addr.port}/ask`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ question: "x".repeat(64) }),
+      });
+      expect(res.status).toBe(413);
+      const json = (await res.json()) as any;
+      expect(json.ok).toBe(false);
+      expect(json.error?.code).toBe("payload_too_large");
+    } finally {
+      await app.close();
+    }
+  });
+
   it("invalid mode returns bad_request", async () => {
     process.env.ASKDB_MOCK_SQL = "select 1";
     process.env.ASKDB_LOG_LEVEL = "silent";

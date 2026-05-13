@@ -9,7 +9,7 @@ import { createAskDbHttpServer } from "./server.js";
 // We treat missing `.env` as normal (developers may export env vars another way).
 {
   const here = dirname(fileURLToPath(import.meta.url));
-  // When compiled, `here` is `.../packages/http-api/dist`, so repo root is 3 levels up.
+  // When compiled, `here` is `.../apps/http-api/dist`, so repo root is 3 levels up.
   const repoRootEnv = resolve(here, "../../../.env");
   const cwdEnv = resolve(process.cwd(), ".env");
   const pkgEnv = resolve(here, "../.env");
@@ -45,4 +45,3 @@ const host = process.env.HOST ?? "127.0.0.1";
 const app = createAskDbHttpServer({ port, host });
 await app.listen();
 console.log(`AskDB HTTP API listening on http://${app.host}:${app.port}`);
-

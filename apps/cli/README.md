@@ -18,9 +18,12 @@ The CLI delegates live introspection to AskDB connector packages; each connector
 
 ```bash
 export OPENAI_API_KEY=sk-...
-export ASKDB_SCHEMA_PATH=./schema.json
-askdb ask --schema "$ASKDB_SCHEMA_PATH" --question "How many users signed up last week?"
+askdb ask \
+  --schema fixtures/schemas/orders-users.schema \
+  --question "How many users signed up last week?"
 ```
+
+AskDB returns SQL for review. Run approved SQL outside AskDB under your own database roles, tenant policy, and audit logging.
 
 ## Common flags
 
@@ -45,8 +48,8 @@ askdb studio --schema my-app.schema
 Postgres live and air-gapped introspection:
 
 ```bash
-askdb introspect --url "$DATABASE_URL" --out my-app.schema
-askdb introspect --from-export ./pg-export-bundle --out my-app.schema
+askdb introspect --url "$DATABASE_URL" --out my-app.schema --schema-id my-app
+askdb introspect --from-export ./pg-export-bundle --out my-app.schema --schema-id my-app
 ```
 
 Prisma schema-file introspection does not connect to the database:

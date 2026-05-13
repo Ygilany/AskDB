@@ -29,6 +29,8 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm -r build
       - run: pnpm test
+      - run: pnpm smoke:install
+      - run: pnpm -r publish --dry-run --no-git-checks --access=public
 
       - name: Publish to npm
         run: pnpm changeset publish

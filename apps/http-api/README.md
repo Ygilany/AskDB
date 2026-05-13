@@ -18,14 +18,14 @@ Or run from a clone — see "Local run" below.
 From repo root:
 
 ```bash
-pnpm -C packages/http-api build
-node packages/http-api/dist/bin.js
+pnpm -C apps/http-api build
+node apps/http-api/dist/bin.js
 ```
 
-Dev watch (runs with `packages/http-api` as the working directory):
+Dev watch (runs with `apps/http-api` as the working directory):
 
 ```bash
-pnpm -C packages/http-api dev:watch
+pnpm -C apps/http-api dev:watch
 ```
 
 Set `ASKDB_SCHEMA_PATH` in the repo-root `.env` (recommended):
@@ -59,9 +59,9 @@ Notes:
 
 - **Correlation**: if you omit `x-correlation-id`, the server generates one and returns it.
 - **Mode**: optional `x-askdb-mode` header (body `mode` wins if present).
-- **Execution**: not supported. Retired execution controls return `400`; run any approved SQL outside AskDB.
+- **Execution**: not supported. Retired execution controls return `400`; review generated SQL and run any approved query outside AskDB under your own database roles, read-only controls, tenant policy, and audit logging.
 - **Generation config**: set `OPENAI_API_KEY` (or for tests/dev, set `ASKDB_MOCK_SQL` to bypass live model calls).
-- **Schema config (recommended)**: set `ASKDB_SCHEMA_PATH` to an AskDB schema JSON v1 file. You *can* also send `schemaJson` per request as an override, but it doesn’t scale.
+- **Schema config (recommended)**: set `ASKDB_SCHEMA_PATH` to an AskDB Schema v2 directory, bundled JSON file, or `schema.json`. You *can* also send `schemaJson` per request as an override, but it doesn’t scale.
 
 ## Ask (Node)
 
