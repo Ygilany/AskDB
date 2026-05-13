@@ -1135,27 +1135,34 @@ function UsageSummary({
   usage: StudioRequestUsageDto | null;
 }) {
   if (!usage) return null;
-  const details = [
-    ["Total", usage.totalTokens],
-    ["Prompt", usage.promptTokens],
-    ["Completion", usage.completionTokens],
-    ["Embeddings", usage.embeddingTokens],
-    ["Provider calls", usage.requests.length],
-  ] as const;
+  const promptTokens = usage.promptTokens ?? usage.embeddingTokens;
   return (
     <section className="usage-summary" aria-label={title}>
       <h3>{title}</h3>
       <dl className="usage-grid">
-        {details.map(([label, value]) =>
-          value === null ? null : (
-            <div key={label}>
-              <dt>{label}</dt>
-              <dd>{formatNumber(value)}</dd>
-            </div>
-          ),
-        )}
+        <UsageMetric label={usage.embeddingTokens === null ? "Prompt" : "Embeddings"} value={promptTokens} />
+        <UsageMetric label="Completion" value={usage.completionTokens} />
+        <UsageMetric className="usage-total" label="Total" value={usage.totalTokens} />
       </dl>
     </section>
+  );
+}
+
+function UsageMetric({
+  className,
+  label,
+  value,
+}: {
+  className?: string;
+  label: string;
+  value: number | null;
+}) {
+  if (value === null) return null;
+  return (
+    <div className={className}>
+      <dt>{label}</dt>
+      <dd>{formatNumber(value)}</dd>
+    </div>
   );
 }
 
