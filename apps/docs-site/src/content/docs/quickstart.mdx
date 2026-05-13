@@ -1,0 +1,99 @@
+---
+title: "Quickstart"
+description: "Build the workspace, generate or use a schema artifact, enrich it, and run AskDB from the CLI. The same pieces can then move into your application code."
+---
+
+<p className="doc-eyebrow">From clone to first query</p>
+
+<p className="doc-lede">Build the workspace, generate or use a schema artifact, enrich it, and run AskDB from the CLI. The same pieces can then move into your application code.</p>
+
+## Prerequisites
+
+<ul>
+            <li>Node 20 or newer.</li>
+            <li>pnpm 11.</li>
+            <li>An OpenAI-compatible API key for live NL-to-SQL generation.</li>
+            <li>A PostgreSQL connection string only if you want live introspection.</li>
+          </ul>
+
+## Use the Bundled Fixture
+
+<p>The fastest path uses the sample Schema v2 directory committed under <code>{"fixtures/schemas/orders-users.schema"}</code>.</p>
+
+
+```
+pnpm install
+cp .env.example .env
+# edit .env and set OPENAI_API_KEY
+pnpm build
+
+pnpm exec askdb ask \
+  --schema fixtures/schemas/orders-users.schema \
+  --question "How many orders are there?"
+```
+
+
+
+## Create a Schema from Postgres
+
+<p>For a real database, generate a Schema v2 directory first, then point AskDB at it.</p>
+
+
+```
+pnpm exec askdb introspect \
+  --url "$DATABASE_URL" \
+  --out my-app.schema \
+  --schema-id my-app
+
+pnpm exec askdb enrich --schema my-app.schema
+
+pnpm exec askdb ask \
+  --schema my-app.schema \
+  --question "Which tables are connected to users?"
+```
+
+
+
+## Enrich the Schema
+
+<p>Raw introspection gives AskDB physical metadata. The TUI adds the describable layer: table descriptions, aliases, column notes, common query language, example questions, and concepts.</p>
+
+
+```
+pnpm exec askdb enrich --schema my-app.schema
+
+# produce a single read-only artifact for distribution
+pnpm exec askdb bundle my-app.schema --out my-app.schema.bundle.json
+```
+
+
+
+## SQL Output Only
+
+<p>AskDB returns validated SQL. Run it through your own application, approval flow, or database tooling outside AskDB.</p>
+
+
+```
+pnpm exec askdb ask \
+  --schema my-app.schema \
+  --question "List the newest users"
+```
+
+
+
+## Use the Packages
+
+<p>For application code, install the small set of packages that match the surface you need. <code>{"@askdb/core"}</code> is dialect-agnostic. Postgres-specific behavior lives in <code>{"@askdb/postgres"}</code>. Custom enrichment UIs use <code>{"@askdb/enrich"}</code>.</p>
+
+
+```
+pnpm add @askdb/core @askdb/postgres
+# Example model provider for live generation
+pnpm add ai @ai-sdk/openai
+# Optional: only for live Postgres introspection
+pnpm add pg
+# Optional: only for custom Schema v2 enrichment authoring
+pnpm add @askdb/enrich
+# Optional: only when you want retrieval over schema chunks
+pnpm add @askdb/rag
+```

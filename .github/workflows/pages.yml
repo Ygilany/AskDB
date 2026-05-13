@@ -42,6 +42,8 @@ jobs:
 
       - name: Build docs site
         run: pnpm docs:build
+        env:
+          ASTRO_BASE: /AskDB
 
       - name: Configure GitHub Pages
         uses: actions/configure-pages@v5

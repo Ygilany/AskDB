@@ -1,0 +1,38 @@
+---
+title: "Environment"
+description: "Use a local .env file for secrets and runtime defaults. The CLI loads .env automatically."
+---
+
+<p className="doc-eyebrow">Configuration</p>
+
+<p className="doc-lede">Use a local .env file for secrets and runtime defaults. The CLI loads .env automatically.</p>
+
+## Common Variables
+
+<div className="definition-list">
+            <div><code>{"OPENAI_API_KEY"}</code><span>Required for live NL-to-SQL generation.</span></div>
+            <div><code>{"OPENAI_BASE_URL"}</code><span>Optional custom OpenAI-compatible base URL.</span></div>
+            <div><code>{"ASKDB_MODEL"}</code><span>Optional model ID; defaults are package-specific.</span></div>
+            <div><code>{"DATABASE_URL"}</code><span>Required only for live Postgres introspection.</span></div>
+            <div><code>{"ASKDB_SCHEMA_PATH"}</code><span>Default schema path for CLI and HTTP server workflows.</span></div>
+            <div><code>{"ASKDB_LOG_LEVEL"}</code><span>Structured log level.</span></div>
+            <div><code>{"ASKDB_MODE"}</code><span>Default operating mode.</span></div>
+            <div><code>{"ASKDB_OMIT_SENSITIVE_FROM_PROMPT"}</code><span>Omit sensitive identifiers from generation prompts when set to a truthy value.</span></div>
+          </div>
+
+## TUI Suggestions
+
+<p><code>{"@askdb/tui"}</code> uses <code>{"OPENAI_API_KEY"}</code> when you press <code>{"g"}</code> to request AI enrichment suggestions. Without the key, the TUI still supports manual authoring and saving.</p>
+
+## RAG Embeddings
+
+<p><code>{"askdb-rag"}</code> defaults to a deterministic mock embedder for smoke tests. Set <code>{"OPENAI_API_KEY"}</code> and pass <code>{"--embedder openai"}</code> when you want real embeddings; pass <code>{"--pg-url"}</code> only when using the pgvector store.</p>
+
+## Local Template
+
+
+
+```
+cp .env.example .env
+# edit .env before calling a live model or database
+```

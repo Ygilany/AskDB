@@ -1,0 +1,52 @@
+---
+title: "@askdb/enrich"
+description: "The enrich package owns reusable Schema v2 authoring workflow logic for TUI, Studio, and custom enrichment UIs."
+---
+
+<p className="doc-eyebrow">Headless enrichment</p>
+
+<p className="doc-lede">The enrich package owns reusable Schema v2 authoring workflow logic for TUI, Studio, and custom enrichment UIs.</p>
+
+## Install
+
+
+
+```
+pnpm add @askdb/enrich
+# usually paired with schema primitives
+pnpm add @askdb/core
+```
+
+
+
+## What It Owns
+
+<ul>
+            <li>Loading a Schema v2 directory as an editable workspace.</li>
+            <li>Building table drafts and front-matter from physical schema plus markdown.</li>
+            <li>Saving <code>{"tables/*.md"}</code> and <code>{"concepts.md"}</code>.</li>
+            <li>Preserving markdown body sections during scoped edits.</li>
+            <li>Building AI suggestion targets and context.</li>
+            <li>Bundling a split Schema v2 directory into a single JSON artifact.</li>
+          </ul>
+
+## Package Boundary
+
+<p><code>{"@askdb/enrich"}</code> depends on <code>{"@askdb/core"}</code>. Authoring surfaces such as <code>{"@askdb/tui"}</code> and <code>{"@askdb/studio"}</code> depend on <code>{"@askdb/enrich"}</code>. Studio does not depend on the TUI.</p>
+
+
+```
+@askdb/core
+   ^
+   |
+@askdb/enrich
+   ^          ^
+   |          |
+@askdb/tui   @askdb/studio
+```
+
+
+
+## When to Use It
+
+<p>Use <code>{"@askdb/enrich"}</code> directly when building a custom Schema v2 authoring UI. Use <code>{"@askdb/tui"}</code> for the maintained terminal workflow, and <code>{"@askdb/studio"}</code> for the maintained local browser workflow.</p>
