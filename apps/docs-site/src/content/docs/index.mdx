@@ -1,0 +1,82 @@
+---
+title: "AskDB Documentation"
+description: "AskDB turns natural-language questions into schema-grounded SQL. Start with the CLI, embed the core library, or add retrieval over enriched schema artifacts when your schema gets large."
+template: "splash"
+hero:
+  tagline: "AskDB turns natural-language questions into schema-grounded SQL. Start with the CLI, embed the core library, or add retrieval over enriched schema artifacts when your schema gets large."
+  actions:
+    - text: "Quickstart"
+      link: "./quickstart/"
+      variant: "primary"
+      icon: "right-arrow"
+    - text: "Packages"
+      link: "./packages/"
+      variant: "secondary"
+      icon: "seti:npm"
+---
+
+## What AskDB Gives You
+
+<div className="feature-grid">
+            <article>
+              <h3>Schema-grounded generation</h3>
+              <p>Questions are grounded in an AskDB Schema v2 artifact before SQL is generated and validated.</p>
+            </article>
+            <article>
+              <h3>Bring your own runtime</h3>
+              <p>Use any AI SDK-compatible language model. Install <code>{"pg"}</code> only when you choose live Postgres introspection or the pgvector store.</p>
+            </article>
+            <article>
+              <h3>Schema enrichment tools</h3>
+              <p><code>{"@askdb/enrich"}</code> provides shared authoring logic; the TUI and Studio turn raw introspection output into described, aliased Schema v2 artifacts with human-reviewed AI suggestions.</p>
+            </article>
+            <article>
+              <h3>Retrieval-ready context</h3>
+              <p><code>{"@askdb/rag"}</code> chunks Schema v2, indexes it with your embedder and vector store, then passes focused context into <code>{"ask()"}</code>.</p>
+            </article>
+          </div>
+
+## Choose a Path
+
+<div className="link-cards">
+            <a href="./quickstart/"><strong>Run the CLI</strong><span>Use a committed fixture or introspect a Postgres database, then ask a question.</span></a>
+            <a href="./core/"><strong>Embed AskDB</strong><span>Call <code>{"ask()"}</code> with your model, dialect, and schema to return validated SQL.</span></a>
+            <a href="./architecture/"><strong>Understand the architecture</strong><span>See package boundaries, install profiles, connectors, optional peers, and extension seams.</span></a>
+            <a href="./rag/"><strong>Add retrieval</strong><span>Index enriched schema docs and retrieve only the chunks needed for each question.</span></a>
+            <a href="./postgres/"><strong>Target Postgres</strong><span>Use the first-party dialect, introspection connector, catalog templates, and optional <code>{"pg"}</code> catalog runner.</span></a>
+          </div>
+
+## First Run
+
+<p>Install dependencies, create a Schema v2 artifact, then ask a question against it.</p>
+
+
+```
+pnpm install
+cp .env.example .env
+pnpm build
+
+pnpm exec askdb introspect \
+  --url "$DATABASE_URL" \
+  --out my-app.schema \
+  --schema-id my-app
+
+pnpm exec askdb enrich --schema my-app.schema
+
+pnpm exec askdb ask \
+  --schema my-app.schema \
+  --question "Which tables look active?"
+```
+
+
+
+## Documentation Map
+
+<div className="link-cards">
+            <a href="./quickstart/"><strong>Quickstart</strong><span>Local setup, schema creation, and your first question.</span></a>
+            <a href="./architecture/"><strong>Architecture</strong><span>Package map, dependency direction, install profiles, and extension points.</span></a>
+            <a href="./packages/"><strong>Packages</strong><span>What each package owns and when to use it.</span></a>
+            <a href="./schema-v2/"><strong>Schema v2</strong><span>The physical and describable schema artifact contract.</span></a>
+            <a href="./rag/"><strong>RAG</strong><span>Chunk, index, and retrieve schema context with BYO embeddings and storage.</span></a>
+            <a href="./tui/"><strong>TUI enrichment</strong><span>Add descriptions, aliases, concepts, and common query language.</span></a>
+          </div>

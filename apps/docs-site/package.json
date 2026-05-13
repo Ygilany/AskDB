@@ -5,11 +5,16 @@
   "description": "Static documentation site for AskDB.",
   "type": "module",
   "scripts": {
-    "build": "node scripts/build.mjs",
-    "dev": "node scripts/dev.mjs",
-    "lint": "node scripts/build.mjs --check"
+    "build": "astro build",
+    "dev": "astro dev --host 127.0.0.1 --port 4310",
+    "lint": "astro check"
   },
   "engines": {
     "node": ">=20"
+  },
+  "devDependencies": {
+    "@astrojs/check": "^0.9.9",
+    "@astrojs/starlight": "^0.39.2",
+    "astro": "^6.3.1"
   }
 }

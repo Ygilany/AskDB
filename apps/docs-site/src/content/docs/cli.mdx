@@ -1,0 +1,68 @@
+---
+title: "@askdb/cli"
+description: "The CLI ships the `askdb` binary for asking questions, generating SQL, logging, introspection, enrichment, and bundling."
+---
+
+<p className="doc-eyebrow">Terminal workflow</p>
+
+<p className="doc-lede">The CLI ships the `askdb` binary for asking questions, generating SQL, logging, introspection, enrichment, and bundling.</p>
+
+## Install
+
+
+
+```
+pnpm add -g @askdb/cli
+# or run from a workspace clone
+pnpm exec askdb --help
+```
+
+
+          <p>The CLI is the batteries-included workflow for SQL generation and schema introspection. It uses <code>{"pg"}</code> only for live Postgres introspection.</p>
+
+## Ask
+
+
+
+```
+askdb ask \
+  --schema ./my-app.schema \
+  --question "Top 5 customers by lifetime value"
+```
+
+
+
+## Introspect
+
+
+
+```
+askdb introspect \
+  --url "$DATABASE_URL" \
+  --out ./my-app.schema \
+  --schema-id my-app
+```
+
+
+          <p>The retired standalone <code>{"askdb-introspect"}</code> binary is no longer the documented path.</p>
+
+## Enrich and Bundle
+
+<p>When <code>{"@askdb/tui"}</code> is installed, the main CLI exposes thin shims for interactive enrichment and bundle creation.</p>
+
+
+```
+askdb enrich --schema ./my-app.schema
+askdb bundle ./my-app.schema --out ./my-app.schema.bundle.json
+```
+
+
+
+## Useful Flags
+
+<div className="definition-list">
+            <div><code>{"--schema <path>"}</code><span>Path to a Schema v2 directory, bundle, or schema JSON.</span></div>
+            <div><code>{"--mode <id>"}</code><span>Select <code>{"schema_only"}</code> or <code>{"bounded_results"}</code>.</span></div>
+            <div><code>{"--explain"}</code><span>Print heuristic guardrail metadata.</span></div>
+            <div><code>{"--log-file <path>"}</code><span>Append structured JSON logs to a file.</span></div>
+          </div>

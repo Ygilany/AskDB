@@ -1,0 +1,73 @@
+---
+title: "@askdb/postgres"
+description: "The Postgres package owns everything that is specific to PostgreSQL: the dialect adapter, catalog introspection connector, template bundle, and optional pg-backed catalog query runner."
+---
+
+<p className="doc-eyebrow">Postgres integration</p>
+
+<p className="doc-lede">The Postgres package owns everything that is specific to PostgreSQL: the dialect adapter, catalog introspection connector, template bundle, and optional pg-backed catalog query runner.</p>
+
+## Install
+
+
+
+```
+pnpm add @askdb/core @askdb/postgres
+# add a model provider when your app calls ask()
+pnpm add ai @ai-sdk/openai
+# only when using live Postgres introspection
+pnpm add pg
+```
+
+
+          <p><code>{"pg"}</code> is an optional peer dependency. The package can still provide the dialect, templates, and connector types without forcing a driver into applications that only generate SQL.</p>
+
+## What It Provides
+
+<div className="definition-list">
+            <div><code>{"postgresDialect"}</code><span>Prompting, SQL generation, and validation rules for read-only Postgres <code>{"SELECT"}</code> statements.</span></div>
+            <div><code>{"createPostgresCatalogQueryRunner()"}</code><span>An introspection-only catalog query runner backed by <code>{"pg"}</code>, lazy-loaded when called.</span></div>
+            <div><code>{"createPostgresConnector()"}</code><span>The connector used by <code>{"@askdb/introspect"}</code> for live and from-export catalog reads.</span></div>
+            <div><code>{"POSTGRES_TEMPLATE_BUNDLE"}</code><span>The catalog SQL suite for air-gapped exports and documented inspection.</span></div>
+          </div>
+
+## Ask with Postgres
+
+
+
+```
+import { ask, loadSchema } from "@askdb/core";
+import { postgresDialect } from "@askdb/postgres";
+
+const schema = loadSchema("./my-app.schema");
+
+const { sql } = await ask({
+  question: "How many paid orders were created last month?",
+  schema,
+  model,
+  dialect: postgresDialect,
+});
+```
+
+
+
+## Introspect with Postgres
+
+
+
+```
+import { introspect } from "@askdb/introspect";
+import { createPostgresCatalogQueryRunner, createPostgresConnector } from "@askdb/postgres";
+
+await introspect(
+  { mode: "live", runner: createPostgresCatalogQueryRunner(process.env.DATABASE_URL!) },
+  { outDir: "./my-app.schema", schemaId: "my-app" },
+  { connector: createPostgresConnector() },
+);
+```
+
+
+
+## Why This Split Exists
+
+<p><code>{"@askdb/core"}</code> should be usable by teams that do not use <code>{"pg"}</code>, or eventually do not use Postgres at all. Keeping Postgres behavior in one integration package makes the dependency boundary explicit and gives future integrations, such as Prisma-shaped schema inputs, their own honest API shape.</p>

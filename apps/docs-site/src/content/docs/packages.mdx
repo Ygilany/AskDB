@@ -1,0 +1,37 @@
+---
+title: "Package Index"
+description: "AskDB is split into focused packages so apps can adopt only the layers they need."
+---
+
+<p className="doc-eyebrow">Choose the right surface</p>
+
+<p className="doc-lede">AskDB is split into focused packages so apps can adopt only the layers they need.</p>
+
+## Packages
+
+<div className="package-table">
+            <a href="../core/"><strong>@askdb/core</strong><span>Dialect-agnostic library pipeline: schema loading, prompt assembly, generation, validation, and retrieval input.</span></a>
+            <a href="../postgres/"><strong>@askdb/postgres</strong><span>Postgres integration package: dialect, catalog connector, templates, bundle reader, and optional <code>{"pg"}</code> catalog runner.</span></a>
+            <a href="../introspect/"><strong>@askdb/introspect</strong><span>Engine-agnostic introspection orchestrator and Schema v2 renderer.</span></a>
+            <a href="../enrich/"><strong>@askdb/enrich</strong><span>Headless Schema v2 enrichment workspace helpers shared by TUI, Studio, and custom authoring UIs.</span></a>
+            <a href="../rag/"><strong>@askdb/rag</strong><span>Schema v2 chunking, BYO embeddings, vector stores, lock-file reuse, and retriever wiring.</span></a>
+            <a href="../cli/"><strong>@askdb/cli</strong><span>Batteries-included terminal frontend for asking questions and running Postgres introspection.</span></a>
+            <a href="../tui/"><strong>@askdb/tui</strong><span>Interactive terminal authoring for descriptions, aliases, concepts, and AI suggestions.</span></a>
+            <a href="../http-api/"><strong>@askdb/http-api</strong><span>Small HTTP wrapper around core for server deployments.</span></a>
+          </div>
+
+## Apps vs Libraries
+
+<p>The reusable contracts live in <code>{"packages/*"}</code>. The first-party product surfaces live in <code>{"apps/*"}</code> or package binaries: CLI, HTTP API, TUI, Studio, and this docs site. UI surfaces depend on shared headless packages instead of each other.</p>
+
+## Workspace Commands
+
+
+
+```
+pnpm build
+pnpm test
+pnpm lint
+pnpm smoke:install
+pnpm preflight
+```

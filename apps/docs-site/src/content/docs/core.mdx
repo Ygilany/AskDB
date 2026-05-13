@@ -1,0 +1,100 @@
+---
+title: "@askdb/core"
+description: "The core package owns the NL-to-SQL pipeline, Schema v2 loading, enrichment suggestion helpers, logging contracts, and retrieval input. It stays dialect-agnostic and returns SQL only."
+---
+
+<p className="doc-eyebrow">Library API</p>
+
+<p className="doc-lede">The core package owns the NL-to-SQL pipeline, Schema v2 loading, enrichment suggestion helpers, logging contracts, and retrieval input. It stays dialect-agnostic and returns SQL only.</p>
+
+## Install
+
+
+
+```
+pnpm add @askdb/core
+# add an integration package for the engine you target
+pnpm add @askdb/postgres
+# add a model provider, for example
+pnpm add ai @ai-sdk/openai
+```
+
+
+          <p><code>{"@askdb/core"}</code> does not depend on <code>{"pg"}</code> and does not expose a Postgres subpath. Database-specific behavior comes from integration packages such as <code>{"@askdb/postgres"}</code>.</p>
+
+## Generate SQL
+
+
+
+```
+import { ask, loadSchema } from "@askdb/core";
+import { postgresDialect } from "@askdb/postgres";
+import { createOpenAI } from "@ai-sdk/openai";
+
+const schema = loadSchema("./my-app.schema");
+const openai = createOpenAI({ apiKey: process.env.OPENAI_API_KEY });
+
+const { sql } = await ask({
+  question: "How many users signed up last week?",
+  schema,
+  model: openai("gpt-4o-mini"),
+  dialect: postgresDialect,
+});
+```
+
+
+
+## Retrieval Input
+
+<p>Phase 8 adds an optional <code>{"retriever"}</code> to <code>{"ask()"}</code>. When present, core asks the retriever for relevant Schema v2 chunks and builds a focused DDL block. Without a retriever, the existing full-schema prompt path is preserved.</p>
+
+
+```
+const { sql } = await ask({
+  question,
+  schema,
+  model,
+  dialect: postgresDialect,
+  retriever: index.retriever,
+  totalSchemaChunkCount: index.stats.chunksTotal,
+});
+```
+
+
+
+## Enrichment Suggestions
+
+<p>Phase 7 adds core helpers used by the TUI to ask a model for human-reviewed schema enrichment candidates.</p>
+
+
+```
+import {
+  suggestEnrichment,
+  type EnrichmentTarget,
+} from "@askdb/core";
+
+const target: EnrichmentTarget = {
+  kind: "table-description",
+  table,
+};
+
+const candidates = await suggestEnrichment(
+  target,
+  { schemaId: "my-app", neighbors },
+  model,
+);
+```
+
+
+
+## Exports to Know
+
+<ul>
+            <li><code>{"ask"}</code>: generate validated SQL.</li>
+            <li><code>{"AskDialect"}</code>: dialect adapter contract consumed by <code>{"ask()"}</code>.</li>
+            <li><code>{"loadSchema"}</code>: load a Schema v2 directory, bundle, or schema JSON path.</li>
+            <li><code>{"loadSchemaFromJson"}</code>: parse inline Schema v2 JSON.</li>
+            <li><code>{"parseTableMarkdown"}</code> and <code>{"writeTableMarkdown"}</code>: work with describable table docs.</li>
+            <li><code>{"suggestEnrichment"}</code>: produce candidate descriptions, aliases, primary entities, and common query language for review.</li>
+            <li><code>{"createAskDbLogger"}</code>: produce structured log events.</li>
+          </ul>

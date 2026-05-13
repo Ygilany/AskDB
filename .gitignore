@@ -6,6 +6,7 @@ dist/
 .DS_Store
 coverage/
 .turbo/
+.astro/
 .pnpm-store/
 *.tgz
 examples/**/node_modules/
