@@ -1,5 +1,13 @@
 {
   "extends": "astro/tsconfigs/strict",
+  "compilerOptions": {
+    "baseUrl": ".",
+    "paths": {
+      "@starlight/icon": [
+        "node_modules/@astrojs/starlight/user-components/Icon.astro"
+      ]
+    }
+  },
   "include": [".astro/types.d.ts", "**/*"],
   "exclude": ["dist"]
 }
