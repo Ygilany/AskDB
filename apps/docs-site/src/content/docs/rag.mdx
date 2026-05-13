@@ -1,0 +1,93 @@
+---
+title: "@askdb/rag"
+description: "The RAG package turns enriched Schema v2 artifacts into deterministic chunks, indexes them with your embedder and vector store, and returns a retriever for @askdb/core."
+---
+
+<p className="doc-eyebrow">Schema retrieval</p>
+
+<p className="doc-lede">The RAG package turns enriched Schema v2 artifacts into deterministic chunks, indexes them with your embedder and vector store, and returns a retriever for @askdb/core.</p>
+
+## Install
+
+
+
+```
+pnpm add @askdb/rag @askdb/core
+# only for the pgvector store when passing a connection string
+pnpm add pg
+```
+
+
+          <p>The chunker, in-memory store, and file store do not require <code>{"pg"}</code>. The pgvector adapter can also use a pre-built client so applications can keep driver ownership outside AskDB.</p>
+
+## Index a Schema
+
+
+
+```
+import { buildSchemaIndex, loadChunkerSourcesFromDir } from "@askdb/rag";
+import { createFileStore } from "@askdb/rag/stores/file";
+
+const schemaDir = "./my-app.schema";
+const sources = loadChunkerSourcesFromDir(schemaDir);
+
+const index = await buildSchemaIndex({
+  schema: sources,
+  embedder,
+  store: createFileStore({ basePath: "./my-app.schema/schema" }),
+  embedderId: "openai:text-embedding-3-small",
+  lockFilePath: "./my-app.schema/schema.lock.json",
+});
+```
+
+
+          <p>The lock file records chunk content hashes so unchanged schema text can skip re-embedding on the next run.</p>
+
+## Ask with Retrieval
+
+
+
+```
+import { ask, loadSchema } from "@askdb/core";
+import { postgresDialect } from "@askdb/postgres";
+
+const schema = loadSchema("./my-app.schema");
+
+const { sql } = await ask({
+  question: "How much revenue did we make last month?",
+  schema,
+  model,
+  dialect: postgresDialect,
+  retriever: index.retriever,
+  totalSchemaChunkCount: index.stats.chunksTotal,
+});
+```
+
+
+          <p>Core still validates against the dialect. Retrieval changes how much schema context is sent to the model; it does not bypass SQL guardrails.</p>
+
+## CLI
+
+
+
+```
+askdb-rag index ./my-app.schema --store file --embedder openai
+askdb-rag query ./my-app.schema \
+  --question "How much revenue did we make last month?" \
+  -k 8
+```
+
+
+          <p>The default CLI embedder is a deterministic mock for smoke tests. Use <code>{"--embedder openai"}</code> with <code>{"OPENAI_API_KEY"}</code> for real embeddings.</p>
+
+## Stores
+
+<div className="definition-list">
+            <div><code>{"memory"}</code><span>Ephemeral cosine store for tests and local smoke checks.</span></div>
+            <div><code>{"file"}</code><span>Binary embeddings plus JSON metadata persisted next to the schema.</span></div>
+            <div><code>{"pgvector"}</code><span>Postgres vector storage; setup SQL is documented and intentionally not auto-run.</span></div>
+          </div>
+
+## Sensitive Content
+
+<p>Sensitive describable-layer content and sensitive identifiers are excluded from chunks by default. Identifier grounding remains in core prompt formatting, where sensitive columns are tagged unless the caller explicitly omits them.</p>

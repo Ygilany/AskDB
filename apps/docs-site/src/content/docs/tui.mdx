@@ -1,0 +1,61 @@
+---
+title: "@askdb/tui"
+description: "The TUI opens a Schema v2 directory and helps authors add descriptions, aliases, common query language, example questions, and concepts with AI-suggest plus human-confirm."
+---
+
+<p className="doc-eyebrow">Interactive enrichment</p>
+
+<p className="doc-lede">The TUI opens a Schema v2 directory and helps authors add descriptions, aliases, common query language, example questions, and concepts with AI-suggest plus human-confirm.</p>
+
+## Install
+
+
+
+```
+pnpm add @askdb/tui
+# commonly installed with the CLI and introspector
+pnpm add @askdb/cli @askdb/introspect @askdb/postgres @askdb/tui
+```
+
+
+
+## Quick Start
+
+
+
+```
+askdb introspect \
+  --url "$DATABASE_URL" \
+  --out my-app.schema \
+  --schema-id my-app
+
+askdb-tui --schema my-app.schema
+```
+
+
+          <p>The TUI operates on the on-disk Schema v2 directory only. It does not connect to the database.</p>
+
+## Authoring Flow
+
+<ul>
+            <li>Select a table, then edit table descriptions, aliases, primary entity, columns, and common query language.</li>
+            <li>Use <code>{"g"}</code> on supported fields to request AI suggestions when <code>{"OPENAI_API_KEY"}</code> is set.</li>
+            <li>Accept, edit, or reject suggestions before saving.</li>
+            <li>Press <code>{"s"}</code> to write valid Schema v2 markdown through the shared <code>{"@askdb/enrich"}</code> workspace helpers.</li>
+          </ul>
+
+## CLI Shims
+
+<p>The main <code>{"askdb"}</code> binary can delegate to the TUI package when it is installed.</p>
+
+
+```
+askdb enrich --schema my-app.schema
+askdb bundle my-app.schema --out my-app.schema.bundle.json
+```
+
+
+
+## Output
+
+<p>Saving writes <code>{"tables/<table>.md"}</code> and concept content in the Schema v2 format. Bundling produces a single <code>{"*.schema.bundle.json"}</code> that <code>{"loadSchema"}</code> can read like the directory form.</p>

@@ -1,0 +1,49 @@
+---
+title: "@askdb/http-api"
+description: "The HTTP API exposes a minimal server around @askdb/core. POST /ask returns validated SQL only."
+---
+
+<p className="doc-eyebrow">Server wrapper</p>
+
+<p className="doc-lede">The HTTP API exposes a minimal server around @askdb/core. POST /ask returns validated SQL only.</p>
+
+## Run Locally
+
+
+
+```
+pnpm -C apps/http-api build
+node apps/http-api/dist/bin.js
+```
+
+
+          <p>Set <code>{"ASKDB_SCHEMA_PATH"}</code> in the repo-root <code>{".env"}</code> before starting the server.</p>
+
+## Health Check
+
+
+
+```
+curl -sS http://127.0.0.1:3000/health
+```
+
+
+
+## Ask Endpoint
+
+
+
+```
+curl -sS http://127.0.0.1:3000/ask \
+  -H 'content-type: application/json' \
+  -H 'x-correlation-id: demo-123' \
+  -d '{
+    "question": "How many users are there?"
+  }'
+```
+
+
+
+## Execution Boundary
+
+<p>Execution is not part of this API. Requests using the retired execution controls receive <code>{"400"}</code>. Review generated SQL and run any approved query outside AskDB under your own database roles, read-only controls, tenant policy, and audit logging.</p>

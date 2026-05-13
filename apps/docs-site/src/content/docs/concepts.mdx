@@ -1,0 +1,55 @@
+---
+title: "Core Concepts"
+description: "AskDB is built around schema artifacts, human-reviewed enrichment, validated SQL generation, and explicit safety modes."
+---
+
+<p className="doc-eyebrow">How the pieces fit</p>
+
+<p className="doc-lede">AskDB is built around schema artifacts, human-reviewed enrichment, validated SQL generation, and explicit safety modes.</p>
+
+## Pipeline
+
+<ol>
+            <li>Load an AskDB Schema v2 artifact from a directory, bundle, or <code>{"schema.json"}</code>.</li>
+            <li>Optionally retrieve focused schema chunks from <code>{"@askdb/rag"}</code> for large enriched schemas.</li>
+            <li>Build a prompt from physical schema metadata, describable context, and the selected dialect.</li>
+            <li>Call the supplied language model to generate SQL.</li>
+            <li>Validate that the SQL is a read-only PostgreSQL <code>{"SELECT"}</code>.</li>
+          </ol>
+
+## Integration Packages
+
+<p><code>{"@askdb/core"}</code> does not bundle database-specific behavior. It asks for an <code>{"AskDialect"}</code>, and integration packages provide those adapters. Today that means <code>{"@askdb/postgres"}</code>; future packages can own their own dialects, connectors, and input shapes without changing core.</p>
+
+## Schema v2
+
+<p>Schema v2 is a directory with a physical JSON layer and optional markdown descriptions.</p>
+
+
+```
+my-app.schema/
+  schema.json
+  tables/
+    users.md
+    orders.md
+  concepts.md
+```
+
+
+
+## Enrichment
+
+<p><code>{"@askdb/enrich"}</code> owns the shared Schema v2 authoring workflow. <code>{"@askdb/tui"}</code> and <code>{"@askdb/studio"}</code> operate on a Schema v2 directory after introspection; they never open a live database for enrichment, and they save valid <code>{"tables/<table>.md"}</code> plus concepts content.</p>
+
+
+```
+askdb introspect --url "$DATABASE_URL" --out my-app.schema --schema-id my-app
+askdb enrich --schema my-app.schema
+askdb bundle my-app.schema --out my-app.schema.bundle.json
+```
+
+
+
+## Execution Boundary
+
+<p><code>{"@askdb/core"}</code> returns SQL only. Review generated SQL before running it. Consumers own any later database execution, approval workflow, read-only roles, tenant policy, network controls, and audit logging. Installing <code>{"pg"}</code> is not required unless you use live Postgres introspection or pgvector.</p>
