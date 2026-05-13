@@ -1,3 +1,9 @@
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/assets/brand/logo-dark.png">
+  <source media="(prefers-color-scheme: light)" srcset="docs/assets/brand/logo.png">
+  <img alt="AskDB - Ask your data." src="docs/assets/brand/logo.png" width="420">
+</picture>
+
 # AskDB
 
 AskDB turns natural language into **schema-grounded SQL** so you can ask questions about your data without writing SQL by hand.

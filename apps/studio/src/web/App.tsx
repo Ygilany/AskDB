@@ -5,7 +5,6 @@ import {
   Check,
   ChevronRight,
   Copy,
-  Database,
   Loader2,
   RefreshCw,
   RotateCcw,
@@ -309,8 +308,11 @@ export function App() {
       <aside className="studio-sidebar">
         <div className="border-b border-border px-4 py-4">
           <div className="flex items-center gap-2">
-            <Database className="h-5 w-5 text-primary" />
-            <h1 className="text-lg font-semibold">AskDB Studio</h1>
+            <img className="h-9 w-auto" src="/assets/brand/logo.png" alt="AskDB" />
+            <h1 className="sr-only">AskDB Studio</h1>
+            <span className="rounded border border-border px-1.5 py-0.5 text-[11px] font-semibold text-muted-foreground">
+              Studio
+            </span>
           </div>
           <p className="mt-1 break-all text-xs text-muted-foreground">{workspace.schemaDir}</p>
         </div>
