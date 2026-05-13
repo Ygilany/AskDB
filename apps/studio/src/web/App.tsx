@@ -21,6 +21,7 @@ import type { ColumnDraft, SuggestSource, TableDraft } from "@askdb/enrich";
 import type {
   AskResponse,
   RagQueryResponse,
+  StudioRequestUsageDto,
   StudioRagChunkDto,
   StudioRagStatusDto,
   StudioTableDto,
@@ -69,6 +70,7 @@ export function App() {
   const [ragK, setRagK] = useState(8);
   const [ragTypes, setRagTypes] = useState<ChunkType[]>(["table", "column", "cql", "question", "concept"]);
   const [ragResults, setRagResults] = useState<RagQueryResponse | null>(null);
+  const [ragIndexUsage, setRagIndexUsage] = useState<StudioRequestUsageDto | null>(null);
   const [askQuestion, setAskQuestion] = useState("");
   const [askMode, setAskMode] = useState<"full" | "rag">("full");
   const [askMessage, setAskMessage] = useState<StatusMessage | null>(null);
@@ -206,9 +208,10 @@ export function App() {
       try {
         const result = await buildRagIndex();
         setRagStatus(result.status);
+        setRagIndexUsage(result.usage);
         setRagMessage({
           kind: "success",
-          text: `Indexed ${result.stats.chunksIndexed ?? 0} chunks, reused ${result.stats.chunksReused ?? 0}.`,
+          text: `Indexed ${result.stats.chunksIndexed ?? 0} chunks, reused ${result.stats.chunksReused ?? 0}${formatUsageInline(result.usage)}.`,
         });
       } catch (error) {
         setRagMessage({ kind: "error", text: getErrorMessage(error) });
@@ -442,6 +445,7 @@ export function App() {
               onTypesChange={setRagTypes}
               question={ragQuestion}
               ragK={ragK}
+              indexUsage={ragIndexUsage}
               results={ragResults}
               selectedTypes={ragTypes}
               setRagK={setRagK}
@@ -811,6 +815,7 @@ function FieldWithSuggest({
 
 function RagPanel({
   busy,
+  indexUsage,
   message,
   onBuild,
   onQuestionChange,
@@ -825,6 +830,7 @@ function RagPanel({
   status,
 }: {
   busy: Set<string>;
+  indexUsage: StudioRequestUsageDto | null;
   message: StatusMessage | null;
   onBuild: () => Promise<void>;
   onQuestionChange: (question: string) => void;
@@ -932,6 +938,8 @@ function RagPanel({
             Query RAG
           </Button>
           {message ? <InlineStatus status={message} /> : null}
+          <UsageSummary title="Last Index Usage" usage={indexUsage} />
+          <UsageSummary title="Last Query Usage" usage={results?.usage ?? null} />
         </div>
       </Panel>
 
@@ -997,6 +1005,8 @@ function AskPanel({
       <Panel title="Generated SQL">
         {result?.sql ? <pre className="sql-block">{result.sql}</pre> : <EmptyText text="No SQL generated yet." />}
       </Panel>
+
+      <UsageSummary title="Request Usage" usage={result?.usage ?? null} />
 
       {result?.explain !== null && result?.explain !== undefined ? (
         <Panel title="Explain">
@@ -1114,6 +1124,38 @@ function ChunkList({
   );
 }
 
+function UsageSummary({
+  title,
+  usage,
+}: {
+  title: string;
+  usage: StudioRequestUsageDto | null;
+}) {
+  if (!usage) return null;
+  const details = [
+    ["Total", usage.totalTokens],
+    ["Prompt", usage.promptTokens],
+    ["Completion", usage.completionTokens],
+    ["Embeddings", usage.embeddingTokens],
+    ["Provider calls", usage.requests.length],
+  ] as const;
+  return (
+    <section className="usage-summary" aria-label={title}>
+      <h3>{title}</h3>
+      <dl className="usage-grid">
+        {details.map(([label, value]) =>
+          value === null ? null : (
+            <div key={label}>
+              <dt>{label}</dt>
+              <dd>{formatNumber(value)}</dd>
+            </div>
+          ),
+        )}
+      </dl>
+    </section>
+  );
+}
+
 function SensitiveSelect({
   label,
   onChange,
@@ -1204,6 +1246,15 @@ function clone<T>(value: T): T {
 
 function formatList(list: string[] | undefined): string {
   return list?.join(", ") ?? "";
+}
+
+function formatUsageInline(usage: StudioRequestUsageDto | null): string {
+  const tokens = usage?.totalTokens ?? usage?.embeddingTokens ?? null;
+  return tokens === null ? "" : `, ${formatNumber(tokens)} tokens`;
+}
+
+function formatNumber(value: number): string {
+  return new Intl.NumberFormat().format(value);
 }
 
 function parseList(value: string): string[] {
