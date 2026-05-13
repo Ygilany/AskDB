@@ -1,0 +1,122 @@
+---
+import Icon from "@starlight/icon";
+
+const t = Astro.locals.t;
+const labelBase = t("themeSelect.accessibleLabel");
+---
+
+<starlight-theme-select
+	data-label-base={labelBase}
+	data-label-auto={t("themeSelect.auto")}
+	data-label-light={t("themeSelect.light")}
+	data-label-dark={t("themeSelect.dark")}
+>
+	<button type="button" class="sl-theme-toggle" aria-label={labelBase}>
+		<Icon name="laptop" class="label-icon" />
+	</button>
+</starlight-theme-select>
+
+<script is:inline>
+	StarlightThemeProvider.updatePickers();
+</script>
+
+<script>
+	declare const StarlightThemeProvider: {
+		updatePickers(theme?: string): void;
+	};
+
+	type Theme = "auto" | "dark" | "light";
+
+	const storageKey = "starlight-theme";
+
+	const parseTheme = (theme: unknown): Theme =>
+		theme === "auto" || theme === "dark" || theme === "light" ? theme : "auto";
+
+	const loadTheme = (): Theme =>
+		parseTheme(typeof localStorage !== "undefined" && localStorage.getItem(storageKey));
+
+	function storeTheme(theme: Theme): void {
+		if (typeof localStorage !== "undefined") {
+			localStorage.setItem(storageKey, theme === "light" || theme === "dark" ? theme : "");
+		}
+	}
+
+	const getPreferredColorScheme = (): Theme =>
+		matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
+
+	function ariaForTheme(root: HTMLElement, theme: Theme): void {
+		const base = root.dataset.labelBase ?? "Color theme";
+		const auto = root.dataset.labelAuto ?? "Auto";
+		const light = root.dataset.labelLight ?? "Light";
+		const dark = root.dataset.labelDark ?? "Dark";
+		const mode = theme === "auto" ? auto : theme === "light" ? light : dark;
+		const btn = root.querySelector("button");
+		if (btn) btn.setAttribute("aria-label", `${base}: ${mode}`);
+	}
+
+	function onThemeChange(theme: Theme): void {
+		StarlightThemeProvider.updatePickers(theme);
+		document.documentElement.dataset.theme = theme === "auto" ? getPreferredColorScheme() : theme;
+		storeTheme(theme);
+		document.querySelectorAll("starlight-theme-select").forEach((el) => {
+			if (el instanceof HTMLElement) ariaForTheme(el, theme);
+		});
+	}
+
+	const nextTheme = (current: Theme): Theme => {
+		if (current === "auto") return "light";
+		if (current === "light") return "dark";
+		return "auto";
+	};
+
+	matchMedia("(prefers-color-scheme: light)").addEventListener("change", () => {
+		if (loadTheme() === "auto") onThemeChange("auto");
+	});
+
+	class StarlightThemeSelect extends HTMLElement {
+		constructor() {
+			super();
+			const initial = loadTheme();
+			onThemeChange(initial);
+			this.querySelector("button")?.addEventListener("click", () => {
+				onThemeChange(nextTheme(loadTheme()));
+			});
+		}
+	}
+
+	if (!customElements.get("starlight-theme-select")) {
+		customElements.define("starlight-theme-select", StarlightThemeSelect);
+	}
+</script>
+
+<style>
+	@layer starlight.core {
+		.sl-theme-toggle {
+			align-items: center;
+			background: transparent;
+			border: 0;
+			border-radius: 0.25rem;
+			color: var(--sl-color-gray-2);
+			cursor: pointer;
+			display: flex;
+			justify-content: center;
+			margin: -0.5em;
+			padding: 0.5em;
+		}
+
+		.sl-theme-toggle:hover {
+			color: var(--sl-color-white);
+		}
+
+		.sl-theme-toggle:focus-visible {
+			outline: 2px solid var(--sl-color-accent);
+			outline-offset: 2px;
+		}
+
+		.sl-theme-toggle .label-icon {
+			font-size: 0.875rem;
+			height: 1.25rem;
+			width: 1.25rem;
+		}
+	}
+</style>

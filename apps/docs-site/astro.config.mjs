@@ -1,12 +1,25 @@
+import { fileURLToPath } from "node:url";
 import { defineConfig } from "astro/config";
 import starlight from "@astrojs/starlight";
 
 const base = process.env.ASTRO_BASE ?? "/";
 const normalizedBase = base === "/" ? "" : base.replace(/\/$/, "");
 
+/** Starlight does not export `user-components/Icon.astro` in package.json `exports`. */
+const starlightIcon = fileURLToPath(
+  new URL("node_modules/@astrojs/starlight/user-components/Icon.astro", import.meta.url)
+);
+
 export default defineConfig({
   site: `https://ygilany.github.io${normalizedBase}`,
   base,
+  vite: {
+    resolve: {
+      alias: {
+        "@starlight/icon": starlightIcon,
+      },
+    },
+  },
   integrations: [
     starlight({
       title: "AskDB",
@@ -20,6 +33,9 @@ export default defineConfig({
       },
       favicon: "/favicon-light.png",
       customCss: ["./src/styles/custom.css"],
+      components: {
+        ThemeSelect: "./src/components/ThemeSelect.astro",
+      },
       editLink: {
         baseUrl: "https://github.com/Ygilany/AskDB/edit/main/apps/docs-site/",
       },
