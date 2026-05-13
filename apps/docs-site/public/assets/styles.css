@@ -1,25 +1,25 @@
 :root,
 :root[data-theme="light"] {
   color-scheme: light;
-  --bg: #fbfaf7;
+  --bg: #f8fafc;
   --surface: #ffffff;
-  --surface-2: #f2f6f4;
-  --text: #15201c;
-  --muted: #5c6a65;
-  --muted-2: #82908a;
-  --line: #dce3df;
-  --accent: #0f766e;
-  --accent-2: #ffcf5a;
-  --code-bg: #10201d;
-  --code-text: #e8fff8;
-  --shadow: 0 18px 50px rgba(15, 36, 31, 0.12);
-  --topbar-bg: rgba(251, 250, 247, 0.88);
-  --hero-glow: rgba(15, 118, 110, 0.08);
-  --inline-code-bg: rgba(15, 118, 110, 0.1);
-  --inline-code-border: rgba(15, 118, 110, 0.18);
-  --inline-code-text: #064e48;
-  --card-hover-border: rgba(15, 118, 110, 0.48);
-  --card-hover-shadow: 0 12px 30px rgba(15, 36, 31, 0.08);
+  --surface-2: #e5e7eb;
+  --text: #111827;
+  --muted: #4b5563;
+  --muted-2: #6b7280;
+  --line: #e5e7eb;
+  --accent: #a10b2c;
+  --accent-2: #a10b2c;
+  --code-bg: #111827;
+  --code-text: #f8fafc;
+  --shadow: 0 18px 50px rgba(17, 24, 39, 0.12);
+  --topbar-bg: rgba(248, 250, 252, 0.9);
+  --hero-glow: rgba(161, 11, 44, 0.08);
+  --inline-code-bg: rgba(161, 11, 44, 0.08);
+  --inline-code-border: rgba(161, 11, 44, 0.2);
+  --inline-code-text: #7f0922;
+  --card-hover-border: rgba(161, 11, 44, 0.42);
+  --card-hover-shadow: 0 12px 30px rgba(17, 24, 39, 0.08);
   --pre-border: rgba(255, 255, 255, 0.08);
   font-family:
     Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
@@ -27,24 +27,24 @@
 
 :root[data-theme="dark"] {
   color-scheme: dark;
-  --bg: #0b1311;
-  --surface: #111c19;
-  --surface-2: #172722;
-  --text: #e8f1ee;
-  --muted: #9aa8a3;
-  --muted-2: #6f7d78;
-  --line: #1f2e29;
-  --accent: #5eead4;
-  --accent-2: #ffcf5a;
-  --code-bg: #060f0d;
-  --code-text: #e8fff8;
+  --bg: #111827;
+  --surface: #182232;
+  --surface-2: #273142;
+  --text: #f8fafc;
+  --muted: #d1d5db;
+  --muted-2: #9ca3af;
+  --line: #4b5563;
+  --accent: #fb7185;
+  --accent-2: #a10b2c;
+  --code-bg: #0b1020;
+  --code-text: #f8fafc;
   --shadow: 0 18px 50px rgba(0, 0, 0, 0.45);
-  --topbar-bg: rgba(11, 19, 17, 0.82);
-  --hero-glow: rgba(94, 234, 212, 0.07);
-  --inline-code-bg: rgba(94, 234, 212, 0.12);
-  --inline-code-border: rgba(94, 234, 212, 0.24);
-  --inline-code-text: #a7f3e3;
-  --card-hover-border: rgba(94, 234, 212, 0.55);
+  --topbar-bg: rgba(17, 24, 39, 0.88);
+  --hero-glow: rgba(161, 11, 44, 0.18);
+  --inline-code-bg: rgba(251, 113, 133, 0.12);
+  --inline-code-border: rgba(251, 113, 133, 0.28);
+  --inline-code-text: #fecdd3;
+  --card-hover-border: rgba(251, 113, 133, 0.5);
   --card-hover-shadow: 0 12px 30px rgba(0, 0, 0, 0.5);
   --pre-border: rgba(255, 255, 255, 0.06);
 }
@@ -99,32 +99,32 @@ pre {
 .brand {
   align-items: center;
   display: inline-flex;
-  gap: 12px;
-  min-width: 210px;
+  gap: 10px;
+  min-width: 250px;
 }
 
-.brand-mark {
-  align-items: center;
-  background: var(--text);
-  border-radius: 8px;
-  color: var(--accent-2);
-  display: inline-flex;
-  font-weight: 800;
-  height: 36px;
-  justify-content: center;
-  width: 36px;
-}
-
-.brand strong,
-.brand small {
+.brand-logo,
+.brand-logo img {
   display: block;
-  line-height: 1.1;
+}
+
+.brand-logo img {
+  height: 38px;
+  object-fit: contain;
+  width: auto;
+}
+
+:root[data-theme="light"] .brand-logo-dark,
+:root[data-theme="dark"] .brand-logo-light {
+  display: none;
 }
 
 .brand small {
   color: var(--muted);
   font-size: 12px;
-  margin-top: 3px;
+  font-weight: 650;
+  line-height: 1;
+  padding-top: 15px;
 }
 
 .search {
@@ -552,6 +552,11 @@ pre code {
   .brand small,
   .toplinks {
     display: none;
+  }
+
+  .brand-logo img {
+    height: 34px;
+    max-width: 130px;
   }
 
   .icon-button {

@@ -923,7 +923,11 @@ function serveClientFile(res: ServerResponse, relativePath: string): void {
       },
     });
   }
-  writeText(res, 200, contentTypeFor(filePath), readFileSync(filePath, "utf8"));
+  res.writeHead(200, {
+    "content-type": contentTypeFor(filePath),
+    "cache-control": "no-store",
+  });
+  res.end(readFileSync(filePath));
 }
 
 function contentTypeFor(path: string): string {

@@ -2,24 +2,24 @@
 
 :root {
   color-scheme: light;
-  --background: 210 20% 98%;
-  --foreground: 218 28% 12%;
+  --background: 210 40% 98%;
+  --foreground: 221 39% 11%;
   --card: 0 0% 100%;
-  --card-foreground: 218 28% 12%;
-  --primary: 173 70% 28%;
+  --card-foreground: 221 39% 11%;
+  --primary: 347 87% 34%;
   --primary-foreground: 0 0% 100%;
-  --secondary: 214 24% 92%;
-  --secondary-foreground: 218 28% 16%;
-  --muted: 216 22% 94%;
-  --muted-foreground: 217 14% 42%;
-  --destructive: 4 74% 40%;
+  --secondary: 220 13% 91%;
+  --secondary-foreground: 221 39% 11%;
+  --muted: 220 13% 91%;
+  --muted-foreground: 215 14% 34%;
+  --destructive: 347 87% 34%;
   --destructive-foreground: 0 0% 100%;
-  --warning: 39 88% 90%;
-  --warning-foreground: 28 72% 26%;
-  --border: 214 22% 85%;
-  --input: 214 22% 76%;
-  --ring: 173 70% 36%;
-  --code: 218 35% 11%;
+  --warning: 343 78% 95%;
+  --warning-foreground: 347 87% 34%;
+  --border: 220 13% 91%;
+  --input: 215 14% 34%;
+  --ring: 347 87% 34%;
+  --code: 221 39% 11%;
   --code-foreground: 210 40% 98%;
 }
 
