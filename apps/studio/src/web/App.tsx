@@ -6,6 +6,7 @@ import {
   ChevronRight,
   Copy,
   Loader2,
+  Lock,
   RefreshCw,
   RotateCcw,
   Save,
@@ -80,6 +81,14 @@ export function App() {
   useEffect(() => {
     void load();
   }, []);
+
+  const ragAvailable = Boolean(ragStatus?.hasIndex);
+
+  useEffect(() => {
+    if (!ragAvailable && askMode === "rag") {
+      setAskMode("full");
+    }
+  }, [ragAvailable, askMode]);
 
   const tables = workspace?.tables ?? [];
   const selectedTable = useMemo(
@@ -461,9 +470,11 @@ export function App() {
               message={askMessage}
               mode={askMode}
               onAsk={handleAsk}
+              onGoToRag={() => setRightPanel("rag")}
               onModeChange={setAskMode}
               onQuestionChange={setAskQuestion}
               question={askQuestion}
+              ragAvailable={ragAvailable}
               result={askResult}
             />
           ) : null}
@@ -956,20 +967,25 @@ function AskPanel({
   message,
   mode,
   onAsk,
+  onGoToRag,
   onModeChange,
   onQuestionChange,
   question,
+  ragAvailable,
   result,
 }: {
   busy: Set<string>;
   message: StatusMessage | null;
   mode: "full" | "rag";
   onAsk: () => Promise<void>;
+  onGoToRag: () => void;
   onModeChange: (mode: "full" | "rag") => void;
   onQuestionChange: (question: string) => void;
   question: string;
+  ragAvailable: boolean;
   result: AskResponse | null;
 }) {
+  const ragDisabledReason = "Build the RAG index first to query with retrieval.";
   return (
     <div className="grid gap-0">
       <Panel title="Sample SQL">
@@ -981,21 +997,55 @@ function AskPanel({
               placeholder="How many users placed orders?"
             />
           </Field>
-          <div className="segmented">
-            <button
-              className={cn(mode === "full" && "active")}
-              type="button"
-              onClick={() => onModeChange("full")}
+          <div className="grid gap-1.5">
+            <span className="text-xs font-semibold text-muted-foreground">Retrieval mode</span>
+            <div
+              className={cn("segmented", !ragAvailable && "segmented-with-disabled")}
+              role="group"
+              aria-label="Retrieval mode"
             >
-              Full schema
-            </button>
-            <button
-              className={cn(mode === "rag" && "active")}
-              type="button"
-              onClick={() => onModeChange("rag")}
-            >
-              RAG
-            </button>
+              <button
+                className={cn(mode === "full" && "active")}
+                type="button"
+                onClick={() => onModeChange("full")}
+              >
+                Full schema
+              </button>
+              <button
+                aria-disabled={!ragAvailable}
+                aria-describedby={!ragAvailable ? "ask-rag-disabled-reason" : undefined}
+                className={cn(mode === "rag" && "active")}
+                disabled={!ragAvailable}
+                title={!ragAvailable ? ragDisabledReason : undefined}
+                type="button"
+                onClick={() => onModeChange("rag")}
+              >
+                <span className="inline-flex items-center gap-1.5">
+                  {!ragAvailable ? <Lock className="h-3.5 w-3.5" aria-hidden="true" /> : null}
+                  RAG
+                </span>
+              </button>
+            </div>
+            {!ragAvailable ? (
+              <div
+                className="rag-unavailable-hint"
+                id="ask-rag-disabled-reason"
+                role="note"
+              >
+                <AlertCircle className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+                <span>
+                  RAG retrieval is unavailable — no index has been built yet.{" "}
+                  <button
+                    className="link-button"
+                    type="button"
+                    onClick={onGoToRag}
+                  >
+                    Open the RAG tab
+                  </button>{" "}
+                  to build one.
+                </span>
+              </div>
+            ) : null}
           </div>
           <Button disabled={busy.has("ask")} onClick={() => void onAsk()}>
             {busy.has("ask") ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
