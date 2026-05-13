@@ -156,6 +156,8 @@ describe("AskDB Studio server", () => {
     expect(indexed.status.hasIndex).toBe(true);
     expect(indexed.status.stale).toBe(false);
     expect(indexed.status.dimensions).toBe(4);
+    expect(indexed.usage.embeddingTokens).toBeGreaterThan(0);
+    expect(indexed.usage.requests[0].kind).toBe("embedding");
 
     const retrieved = await postJson(`${baseUrl}/api/rag/query`, {
       question: "Which users placed orders?",
@@ -163,6 +165,7 @@ describe("AskDB Studio server", () => {
     });
     expect(retrieved.results.length).toBeGreaterThan(0);
     expect(retrieved.results[0].score).toEqual(expect.any(Number));
+    expect(retrieved.usage.embeddingTokens).toBeGreaterThan(0);
   });
 
   it("defaults Studio RAG to AI SDK embeddings when an AI key is configured", async () => {
@@ -266,6 +269,10 @@ function createEmbeddingServer(): ReturnType<typeof createServer> {
     res.end(
       JSON.stringify({
         data: input.map((text) => ({ embedding: lexicalVector(text, dim) })),
+        usage: {
+          prompt_tokens: input.reduce((sum, text) => sum + tokenCount(text), 0),
+          total_tokens: input.reduce((sum, text) => sum + tokenCount(text), 0),
+        },
       }),
     );
   });
@@ -293,6 +300,10 @@ function lexicalVector(text: string, dim: number): number[] {
   }
   const norm = Math.sqrt(vector.reduce((sum, value) => sum + value * value, 0)) || 1;
   return vector.map((value) => value / norm);
+}
+
+function tokenCount(text: string): number {
+  return text.toLowerCase().match(/[a-z0-9_]+/g)?.length ?? 0;
 }
 
 function restoreEnv(name: string, value: string | undefined): void {

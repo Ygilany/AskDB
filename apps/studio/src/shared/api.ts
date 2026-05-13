@@ -78,6 +78,7 @@ export type RagIndexResponse = {
     sensitiveExcluded?: number;
     sensitiveIncluded?: number;
   };
+  usage: StudioRequestUsageDto | null;
 };
 
 export type RagQueryRequest = {
@@ -99,6 +100,7 @@ export type RagQueryResponse = {
   question: string;
   k: number;
   results: StudioRagChunkDto[];
+  usage: StudioRequestUsageDto | null;
 };
 
 export type AskRequest = {
@@ -114,4 +116,19 @@ export type AskResponse = {
     enabled: boolean;
     chunks: StudioRagChunkDto[];
   };
+  usage: StudioRequestUsageDto | null;
+};
+
+export type StudioRequestUsageDto = {
+  totalTokens: number | null;
+  promptTokens: number | null;
+  completionTokens: number | null;
+  embeddingTokens: number | null;
+  requests: Array<{
+    kind: "generation" | "embedding";
+    totalTokens: number | null;
+    promptTokens: number | null;
+    completionTokens: number | null;
+    embeddingTokens: number | null;
+  }>;
 };

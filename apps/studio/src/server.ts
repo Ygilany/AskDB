@@ -2,6 +2,7 @@ import { existsSync, readFileSync, rmSync } from "node:fs";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { extname, relative, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { generateText as defaultGenerateText } from "ai";
 import {
   ask,
   askDbAiKeyMissingMessage,
@@ -46,6 +47,7 @@ import type {
   AskResponse,
   RagIndexResponse,
   RagQueryResponse,
+  StudioRequestUsageDto,
   StudioRagChunkDto,
   StudioRagStatusDto,
   StudioWorkspaceDto,
@@ -87,6 +89,15 @@ type StudioRagEmbedderConfig =
       aiConfig?: AskDbAiConfig;
       requestDimensions?: number;
     };
+
+type StudioRequestUsageCollector = ReturnType<typeof createRequestUsageCollector>;
+
+type StudioTokenUsageInput = {
+  totalTokens?: number;
+  promptTokens?: number;
+  completionTokens?: number;
+  embeddingTokens?: number;
+};
 
 const STUDIO_RAG_MOCK_DIMENSIONS = 64;
 const STUDIO_RAG_MOCK_EMBEDDER_ID = `studio:mock-lexical-${STUDIO_RAG_MOCK_DIMENSIONS}`;
@@ -257,8 +268,9 @@ async function askSampleQuestion(
 
   const schema = loadSchema(schemaDir);
   const retrievedChunks: QueryResult[] = [];
+  const usage = createRequestUsageCollector();
   const ragIndex = options.useRag
-    ? await createCurrentStudioRagIndex(schemaDir, "using RAG for sample generation")
+    ? await createCurrentStudioRagIndex(schemaDir, "using RAG for sample generation", usage)
     : undefined;
   type AskModel = Parameters<typeof ask>[0]["model"];
   const model: AskModel = mockSql
@@ -297,7 +309,9 @@ async function askSampleQuestion(
               AskGenerateDeps["generateText"]
             >,
           }
-        : undefined,
+        : {
+            generateText: createTrackedGenerateText(usage),
+          },
   });
 
   return {
@@ -308,6 +322,7 @@ async function askSampleQuestion(
       enabled: options.useRag,
       chunks: options.useRag ? retrievedChunks.map(serializeRagResult) : [],
     },
+    usage: usage.toDto(),
   };
 }
 
@@ -375,6 +390,7 @@ async function indexRag(schemaDir: string): Promise<RagIndexResponse> {
   if (!config.configured) {
     throw new StudioHttpError(400, studioRagAiSdkKeyMissingMessage());
   }
+  const usage = createRequestUsageCollector();
   clearIncompatibleRagStore(schemaDir, config);
   const sources = loadChunkerSourcesFromDir(schemaDir);
   const store = createFileStore({ basePath: join(schemaDir, "schema") });
@@ -382,7 +398,7 @@ async function indexRag(schemaDir: string): Promise<RagIndexResponse> {
   try {
     result = await buildSchemaIndex({
       schema: sources,
-      embedder: await createStudioRagEmbedder(config),
+      embedder: await createStudioRagEmbedder(config, usage),
       store,
       embedderId: config.embedderId,
       lockFilePath: join(schemaDir, "schema.lock.json"),
@@ -394,6 +410,7 @@ async function indexRag(schemaDir: string): Promise<RagIndexResponse> {
   return {
     status: getRagStatus(schemaDir),
     stats: result.stats,
+    usage: usage.toDto(),
   };
 }
 
@@ -401,7 +418,8 @@ async function queryRag(
   schemaDir: string,
   query: { question: string; k: number; types?: ChunkType[] },
 ): Promise<RagQueryResponse> {
-  const ragIndex = await createCurrentStudioRagIndex(schemaDir, "querying chunks");
+  const usage = createRequestUsageCollector();
+  const ragIndex = await createCurrentStudioRagIndex(schemaDir, "querying chunks", usage);
   let results: QueryResult[];
   try {
     results = await ragIndex.retriever({
@@ -420,10 +438,15 @@ async function queryRag(
     question: query.question,
     k: query.k,
     results: results.map(serializeRagResult),
+    usage: usage.toDto(),
   };
 }
 
-async function createCurrentStudioRagIndex(schemaDir: string, action: string): Promise<{
+async function createCurrentStudioRagIndex(
+  schemaDir: string,
+  action: string,
+  usage?: StudioRequestUsageCollector,
+): Promise<{
   config: StudioRagEmbedderConfig;
   status: { schemaId: string; chunksTotal: number };
   retriever: ReturnType<typeof createRetriever>;
@@ -454,7 +477,7 @@ async function createCurrentStudioRagIndex(schemaDir: string, action: string): P
       chunksTotal: status.chunksTotal,
     },
     retriever: createRetriever({
-      embedder: await createStudioRagEmbedder(config),
+      embedder: await createStudioRagEmbedder(config, usage),
       store: createFileStore({ basePath: join(schemaDir, "schema") }),
     }),
   };
@@ -547,7 +570,10 @@ function studioRagAiSdkKeyMissingMessage(): string {
   );
 }
 
-async function createStudioRagEmbedder(config: StudioRagEmbedderConfig): Promise<Embedder> {
+async function createStudioRagEmbedder(
+  config: StudioRagEmbedderConfig,
+  usage?: StudioRequestUsageCollector,
+): Promise<Embedder> {
   if (config.kind === "mock") return createStudioMockEmbedder(config.dimensions);
   if (!config.aiConfig) {
     throw new StudioHttpError(400, studioRagAiSdkKeyMissingMessage());
@@ -555,7 +581,17 @@ async function createStudioRagEmbedder(config: StudioRagEmbedderConfig): Promise
   const model = await createAskDbEmbeddingModel(config.aiConfig, {
     dimensions: config.requestDimensions,
   });
-  return createAiSdkEmbedder({ model, maxRetries: 0 });
+  return createAiSdkEmbedder({
+    model,
+    maxRetries: 0,
+    onUsage: (reported) => {
+      usage?.add("embedding", {
+        totalTokens: reported.totalTokens ?? reported.tokens ?? reported.promptTokens,
+        promptTokens: reported.promptTokens ?? reported.tokens,
+        embeddingTokens: reported.tokens ?? reported.totalTokens ?? reported.promptTokens,
+      });
+    },
+  });
 }
 
 function formatStudioRagEmbeddingError(
@@ -757,6 +793,95 @@ function parseRagQuery(body: unknown): { question: string; k: number; types?: Ch
     k,
     ...(types && types.length > 0 ? { types } : {}),
   };
+}
+
+function createTrackedGenerateText(
+  usage: StudioRequestUsageCollector,
+): NonNullable<AskGenerateDeps["generateText"]> {
+  const generateText = defaultGenerateText as unknown as (
+    ...args: unknown[]
+  ) => Promise<{ usage?: unknown }>;
+  return (async (...args: unknown[]) => {
+    const result = await generateText(...args);
+    usage.add("generation", normalizeGenerationUsage((result as { usage?: unknown }).usage));
+    return result;
+  }) as NonNullable<AskGenerateDeps["generateText"]>;
+}
+
+function createRequestUsageCollector() {
+  const requests: StudioRequestUsageDto["requests"] = [];
+  return {
+    add(kind: "generation" | "embedding", usage: StudioTokenUsageInput | undefined): void {
+      if (!usage) return;
+      const derivedTotal =
+        usage.totalTokens ??
+        sumDefined([usage.promptTokens, usage.completionTokens]) ??
+        usage.embeddingTokens;
+      const request = {
+        kind,
+        totalTokens: derivedTotal ?? null,
+        promptTokens: usage.promptTokens ?? null,
+        completionTokens: usage.completionTokens ?? null,
+        embeddingTokens: usage.embeddingTokens ?? null,
+      };
+      if (
+        request.totalTokens === null &&
+        request.promptTokens === null &&
+        request.completionTokens === null &&
+        request.embeddingTokens === null
+      ) {
+        return;
+      }
+      requests.push(request);
+    },
+    toDto(): StudioRequestUsageDto | null {
+      if (requests.length === 0) return null;
+      return {
+        totalTokens: sumNullable(requests.map((request) => request.totalTokens)),
+        promptTokens: sumNullable(requests.map((request) => request.promptTokens)),
+        completionTokens: sumNullable(requests.map((request) => request.completionTokens)),
+        embeddingTokens: sumNullable(requests.map((request) => request.embeddingTokens)),
+        requests,
+      };
+    },
+  };
+}
+
+function normalizeGenerationUsage(value: unknown): StudioTokenUsageInput | undefined {
+  if (!isRecord(value)) return undefined;
+  const promptTokens = readFiniteNumber(value.promptTokens);
+  const completionTokens = readFiniteNumber(value.completionTokens);
+  const totalTokens = readFiniteNumber(value.totalTokens);
+  if (promptTokens === undefined && completionTokens === undefined && totalTokens === undefined) {
+    return undefined;
+  }
+  return { promptTokens, completionTokens, totalTokens };
+}
+
+function sumDefined(values: Array<number | undefined>): number | undefined {
+  let total = 0;
+  let seen = false;
+  for (const value of values) {
+    if (value === undefined) continue;
+    total += value;
+    seen = true;
+  }
+  return seen ? total : undefined;
+}
+
+function sumNullable(values: Array<number | null>): number | null {
+  let total = 0;
+  let seen = false;
+  for (const value of values) {
+    if (value === null) continue;
+    total += value;
+    seen = true;
+  }
+  return seen ? total : null;
+}
+
+function readFiniteNumber(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
 }
 
 async function readJson(req: IncomingMessage): Promise<unknown> {
