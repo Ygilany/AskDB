@@ -61,7 +61,7 @@ export function App() {
   const [selectedTableId, setSelectedTableId] = useState<string | null>(null);
   const [drafts, setDrafts] = useState<Record<string, TableDraft>>({});
   const [tableSearch, setTableSearch] = useState("");
-  const [rightPanel, setRightPanel] = useState<PanelKey>("rag");
+  const [rightPanel, setRightPanel] = useState<PanelKey>("ask");
   const [saveStatus, setSaveStatus] = useState<StatusMessage | null>(null);
   const [suggestionDialog, setSuggestionDialog] = useState<SuggestionDialog | null>(null);
   const [suggestingKey, setSuggestingKey] = useState<string | null>(null);
@@ -417,16 +417,16 @@ export function App() {
         <div className="border-b border-border p-3">
           <div className="grid grid-cols-3 gap-2">
             <InspectorTab
-              active={rightPanel === "rag"}
-              icon={<BrainCircuit className="h-4 w-4" />}
-              label="RAG"
-              onClick={() => setRightPanel("rag")}
-            />
-            <InspectorTab
               active={rightPanel === "ask"}
               icon={<Bot className="h-4 w-4" />}
               label="Ask"
               onClick={() => setRightPanel("ask")}
+            />
+            <InspectorTab
+              active={rightPanel === "rag"}
+              icon={<BrainCircuit className="h-4 w-4" />}
+              label="RAG"
+              onClick={() => setRightPanel("rag")}
             />
             <InspectorTab
               active={rightPanel === "settings"}
