@@ -65,6 +65,7 @@ pnpm exec askdb ask \\
         body: `
           <div class="link-cards">
             <a href="#/quickstart"><strong>Quickstart</strong><span>Local setup, schema creation, and your first question.</span></a>
+            <a href="#/architecture"><strong>Architecture</strong><span>Package boundaries, install profiles, connectors, optional peers, and extension seams.</span></a>
             <a href="#/packages"><strong>Packages</strong><span>What each package owns and when to use it.</span></a>
             <a href="#/schema-v2"><strong>Schema v2</strong><span>The physical and describable schema artifact contract.</span></a>
             <a href="#/rag"><strong>RAG</strong><span>Chunk, index, and retrieve schema context with BYO embeddings and storage.</span></a>
@@ -207,6 +208,105 @@ askdb bundle my-app.schema --out my-app.schema.bundle.json</code></pre>
         heading: "Execution Boundary",
         body: `
           <p><code>@askdb/core</code> returns SQL only. Review generated SQL before running it. Consumers own any later database execution, approval workflow, read-only roles, tenant policy, network controls, and audit logging. Installing <code>pg</code> is not required unless you use live Postgres introspection or pgvector.</p>
+        `,
+      },
+    ],
+  },
+  {
+    path: "/architecture",
+    title: "Architecture",
+    eyebrow: "Packages and boundaries",
+    description:
+      "AskDB is split into focused packages so integrators can choose the exact SQL generation, introspection, enrichment, and retrieval surfaces they need.",
+    sections: [
+      {
+        heading: "Runtime Boundary",
+        body: `
+          <p><code>@askdb/core</code> loads Schema v2, builds model prompts, calls the supplied model, and returns validated SQL. It does not own database drivers or generated-SQL execution. The host application owns approval, execution, database roles, tenant policy, network controls, and audit logging.</p>
+          <pre><code>Question + Schema v2
+  -> @askdb/core ask()
+  -> AskDialect + BYO LanguageModel
+  -> validated SQL
+  -> host-owned execution boundary</code></pre>
+        `,
+      },
+      {
+        heading: "Package Layers",
+        body: `
+          <div class="package-table">
+            <a href="#/core"><strong>@askdb/core</strong><span>Dialect-agnostic Schema v2 and NL-to-SQL contract package.</span></a>
+            <a href="#/introspect"><strong>@askdb/introspect</strong><span>Engine-agnostic connector contract and Schema v2 renderer.</span></a>
+            <a href="#/postgres"><strong>@askdb/postgres</strong><span>Postgres dialect, connector, templates, and optional <code>pg</code> catalog runner.</span></a>
+            <a href="#/connectors"><strong>@askdb/prisma</strong><span>Prisma schema-file connector with no live database and no dialect.</span></a>
+            <a href="#/enrich"><strong>@askdb/enrich</strong><span>Headless Schema v2 authoring helpers shared by TUI and Studio.</span></a>
+            <a href="#/rag"><strong>@askdb/rag</strong><span>Optional Schema v2 retrieval with BYO embedder and vector store.</span></a>
+            <a href="#/cli"><strong>@askdb/cli</strong><span>Batteries-included first-party command surface.</span></a>
+            <a href="#/http-api"><strong>@askdb/http-api</strong><span>First-party HTTP wrapper around core.</span></a>
+          </div>
+        `,
+      },
+      {
+        heading: "Dependency Direction",
+        body: `
+          <p>Reusable packages stay small and layered. First-party surfaces compose them into workflows.</p>
+          <pre><code>@askdb/core
+  ^       ^        ^
+  |       |        |
+enrich   rag   postgres
+  ^                ^
+  |                |
+tui, studio     cli, http-api
+
+@askdb/introspect
+  ^          ^
+  |          |
+postgres   prisma</code></pre>
+          <p><code>@askdb/tui</code> and <code>@askdb/studio</code> are authoring surfaces over Schema v2 artifacts. They are not database connectors.</p>
+        `,
+      },
+      {
+        heading: "Connectors vs Peers",
+        body: `
+          <div class="definition-list">
+            <div><code>Connector package</code><span>An AskDB integration that describes a schema source, such as <code>@askdb/postgres</code> or <code>@askdb/prisma</code>.</span></div>
+            <div><code>Optional peer</code><span>A runtime dependency installed only when a selected feature needs it, such as <code>pg</code> for live Postgres introspection or pgvector.</span></div>
+            <div><code>Provider package</code><span>A model or embedding integration selected by the host, such as <code>ai</code> and <code>@ai-sdk/openai</code>.</span></div>
+          </div>
+        `,
+      },
+      {
+        heading: "Install Profiles",
+        body: `
+          <div class="definition-list">
+            <div><code>SQL generation</code><span>Install <code>@askdb/core</code>, a dialect package such as <code>@askdb/postgres</code>, and your model provider. <code>pg</code> is not required.</span></div>
+            <div><code>Live Postgres introspection</code><span>Install <code>@askdb/introspect</code>, <code>@askdb/postgres</code>, and <code>pg</code> if using the bundled catalog runner.</span></div>
+            <div><code>Air-gapped Postgres introspection</code><span>Install <code>@askdb/introspect</code> and <code>@askdb/postgres</code>. Use from-export bundles without <code>pg</code>.</span></div>
+            <div><code>Prisma introspection</code><span>Install <code>@askdb/introspect</code> and <code>@askdb/prisma</code>. It reads schema files and does not include a SQL dialect.</span></div>
+            <div><code>Enrichment</code><span>Use <code>@askdb/tui</code> or <code>@askdb/studio</code> for maintained UIs, or <code>@askdb/enrich</code> for custom authoring surfaces.</span></div>
+            <div><code>RAG</code><span>Install <code>@askdb/rag</code>; add embedding providers and <code>pg</code> only for the adapters you choose.</span></div>
+          </div>
+        `,
+      },
+      {
+        heading: "Connector Matrix",
+        body: `
+          <div class="definition-list">
+            <div><code>@askdb/postgres</code><span>Live catalog reads, from-export bundles, catalog SQL templates, optional <code>pg</code> runner, and <code>postgresDialect</code>.</span></div>
+            <div><code>@askdb/prisma</code><span>Offline <code>schema.prisma</code> or Prisma directory reads. No live database, no templates, and no dialect.</span></div>
+          </div>
+        `,
+      },
+      {
+        heading: "Extension Points",
+        body: `
+          <ul>
+            <li><code>AskDialect</code> for SQL generation and validation policy.</li>
+            <li><code>Connector&lt;TInput&gt;</code> for schema metadata sources.</li>
+            <li><code>CatalogQueryRunner</code> for alternate live database clients.</li>
+            <li><code>@askdb/enrich</code> workspace helpers for custom authoring UIs.</li>
+            <li><code>Embedder</code>, <code>VectorStore</code>, and <code>Retriever</code> for retrieval over Schema v2.</li>
+          </ul>
+          <p>The full Mermaid diagrams and installation matrix live in <code>docs/architecture.md</code>.</p>
         `,
       },
     ],
