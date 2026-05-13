@@ -3,7 +3,7 @@
 # From repo root:
 #   docker compose -f fixtures/pagila/docker-compose.yml up --build -d
 #
-# DATABASE_URL for `askdb ask --execute`:
+# DATABASE_URL for `askdb introspect --url`:
 #   postgres://postgres:postgres@127.0.0.1:5433/pagila
 #
 # Reset volume (re-run Pagila init):

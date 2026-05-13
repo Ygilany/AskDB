@@ -14,7 +14,7 @@ OPENAI_API_KEY=
 ASKDB_MODEL=gpt-4o-mini
 # OPENAI_MODEL=
 
-# Optional: required when using \`askdb ask --execute\`
+# Optional: required for live Postgres introspection
 # DATABASE_URL=postgres://user:password@localhost:5432/database
 #
 # Pagila dev fixture (docker compose -f fixtures/pagila/docker-compose.yml up --build -d → port 5433):
@@ -48,9 +48,9 @@ ASKDB_MODEL=gpt-4o-mini
 # Optional: omit sensitive table/column *names* from NL→SQL DDL (default: include names, tagged sensitive)
 # ASKDB_OMIT_SENSITIVE_FROM_PROMPT=true
 
-# Optional (HTTP API / other hosts): default schema configured server-side
-# ASKDB_SCHEMA_PATH=fixtures/schemas/orders-users.schema.json
-# ASKDB_SCHEMA_JSON={"version":1,"tables":[...]}  # prefer ASKDB_SCHEMA_PATH
+# Optional (HTTP API / other hosts): default Schema v2 artifact configured server-side
+# ASKDB_SCHEMA_PATH=fixtures/schemas/orders-users.schema
+# ASKDB_SCHEMA_JSON={"version":2,"schemaId":"...","tables":[...]}  # prefer ASKDB_SCHEMA_PATH
 `;
 
 type InitOptions = {

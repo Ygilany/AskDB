@@ -10,6 +10,8 @@ Dialect-agnostic NL→SQL pipeline for AskDB. Provides `ask()` orchestration, sc
 pnpm add @askdb/core
 # Plus a dialect adapter for the engine you target:
 pnpm add @askdb/postgres
+# Plus a model provider, for example:
+pnpm add ai @ai-sdk/openai
 ```
 
 `@askdb/core` itself does not depend on `pg`. The optional `pg` peer lives on `@askdb/postgres` for live Postgres introspection.
