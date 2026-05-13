@@ -326,6 +326,46 @@ button:disabled {
   color: hsl(var(--primary-foreground));
 }
 
+.segmented button:disabled {
+  cursor: not-allowed;
+  background: hsl(var(--muted));
+  color: hsl(var(--muted-foreground));
+  opacity: 0.7;
+}
+
+.segmented button:disabled.active {
+  background: hsl(var(--muted));
+  color: hsl(var(--muted-foreground));
+}
+
+.rag-unavailable-hint {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  border: 1px dashed hsl(var(--warning-foreground) / 0.35);
+  border-radius: 6px;
+  background: hsl(var(--warning));
+  padding: 8px 10px;
+  color: hsl(var(--warning-foreground));
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.link-button {
+  border: 0;
+  background: transparent;
+  padding: 0;
+  color: inherit;
+  font: inherit;
+  font-weight: 600;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.link-button:hover {
+  text-decoration-thickness: 2px;
+}
+
 .sql-block,
 .plain-block,
 .warning-block,
