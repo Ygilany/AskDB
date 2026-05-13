@@ -260,6 +260,45 @@ button:disabled {
   width: auto;
 }
 
+.usage-summary {
+  display: grid;
+  gap: 8px;
+}
+
+.usage-summary h3 {
+  margin: 0;
+  color: hsl(var(--muted-foreground));
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.usage-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.usage-grid div {
+  min-width: 0;
+  border: 1px solid hsl(var(--border));
+  border-radius: 6px;
+  background: hsl(var(--background));
+  padding: 8px;
+}
+
+.usage-grid dt {
+  color: hsl(var(--muted-foreground));
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.usage-grid dd {
+  margin-top: 3px;
+  overflow-wrap: anywhere;
+  font-size: 15px;
+  font-weight: 700;
+}
+
 .segmented {
   display: grid;
   grid-template-columns: 1fr 1fr;
