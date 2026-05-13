@@ -5,12 +5,14 @@ name: Changesets
 on:
   pull_request:
     paths:
-      - "packages/core/src/**"
-      - "packages/core/package.json"
-      - "packages/cli/src/**"
-      - "packages/cli/package.json"
-      - "packages/http-api/src/**"
-      - "packages/http-api/package.json"
+      - "packages/*/src/**"
+      - "packages/*/package.json"
+      - "apps/cli/src/**"
+      - "apps/cli/package.json"
+      - "apps/http-api/src/**"
+      - "apps/http-api/package.json"
+      - "apps/studio/src/**"
+      - "apps/studio/package.json"
 
 jobs:
   status:

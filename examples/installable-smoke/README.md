@@ -8,12 +8,12 @@ This is the executable form of Phase 4 Group 4 (`docs/specs/phase-4-publish-npm/
 
 1. **`@askdb/core` is installable** — `npm install <tarball>` succeeds without the workspace.
 2. **No `pg` is required** — the consumer never installs the optional `pg` peer; importing `@askdb/core` and generating SQL works.
-3. **`@askdb/introspect` is installable** — public exports and the `@askdb/introspect/postgres` subpath resolve from the packed tarball.
+3. **`@askdb/introspect` is installable** — public exports resolve from the packed tarball.
 4. **`@askdb/prisma` is installable** — the schema-file connector resolves without a database connection.
 5. **`@askdb/enrich` is installable** — public workspace helper exports resolve from the packed tarball.
 6. **`@askdb/rag` is installable** — public exports and the `@askdb/rag/stores/memory` subpath resolve, an in-memory index builds, and `ask({ retriever })` completes.
 7. **Catalog runner type resolves** — `@askdb/introspect` exposes `CatalogQueryRunner` for connector-owned catalog reads.
-8. **Package bins are packaged** — `askdb`, `askdb-tui`, and `askdb-rag` run from `node_modules/.bin`.
+8. **Package bins are packaged** — `askdb`, `askdb-tui`, `askdb-studio`, and `askdb-rag` run from `node_modules/.bin`.
 
 The test fails clearly if any of these regress: `private: true` slips back, `dist/` loses files, types break, or package surfaces stop resolving.
 

@@ -30,6 +30,8 @@ The detailed first-run paths live in [`packages/introspect/README.md`](packages/
 ```bash
 pnpm add @askdb/core
 pnpm add @askdb/postgres
+# Example provider for the code below
+pnpm add ai @ai-sdk/openai
 ```
 
 `pg` is optional and only needed for live Postgres introspection through `@askdb/postgres`.
@@ -70,12 +72,16 @@ Product direction and technical baseline live in **`docs/`**:
 
 ## Development
 
-**Stack:** pnpm workspace + **Turborepo**, TypeScript, and four packages:
+**Stack:** pnpm workspace + **Turborepo**, TypeScript, and focused packages/apps:
 
 - [`packages/core`](packages/core) — NL→SQL library and Schema v2 loader.
-- [`packages/cli`](packages/cli) — binary `askdb`, including the `askdb introspect` shim.
-- [`packages/http-api`](packages/http-api) — HTTP wrapper over core.
 - [`packages/introspect`](packages/introspect) — Postgres-first schema introspection.
+- [`packages/postgres`](packages/postgres) — Postgres dialect, connector, templates, and catalog runner.
+- [`packages/rag`](packages/rag) — Schema v2 chunking, indexing, and retrieval helpers.
+- [`packages/enrich`](packages/enrich) — shared Schema v2 enrichment workspace helpers.
+- [`apps/cli`](apps/cli) — binary `askdb`, including the `askdb introspect` shim.
+- [`apps/http-api`](apps/http-api) — HTTP wrapper over core.
+- [`apps/studio`](apps/studio) — local browser UI for enrichment and sample NL-to-SQL checks.
 
 ```bash
 pnpm install
@@ -90,6 +96,8 @@ Before opening or updating a PR, run the release-style checks:
 pnpm smoke:install
 pnpm preflight
 ```
+
+Public release steps are tracked in [`docs/release.md`](docs/release.md).
 
 **Pagila dev fixture** — optional PostgreSQL loaded with the [Pagila](https://github.com/devrimgunduz/pagila) sample database ([`fixtures/pagila/README.md`](fixtures/pagila/README.md)):
 
@@ -163,6 +171,8 @@ pnpm exec askdb ask \
   --schema fixtures/schemas/orders-users.schema \
   --question "How many orders are there?"
 ```
+
+AskDB returns SQL for review; it does not execute generated SQL. Treat generated SQL as an artifact that must be approved and run under your own database roles, read-only controls, tenant policy, and audit logging.
 
 **Current limitations (pre-1.0 / dev):** Postgres-only dialect and introspection; AskDB returns SQL only; SQL guardrails are heuristic (not a full SQL parser); MCP, web, and richer report generation are roadmap work. Merge bars: **[Phase 1](docs/specs/phase-1-schema-sql-cli/validation.md)** · **[Phase 2](docs/specs/phase-2-hardening-modes/validation.md)**.
 

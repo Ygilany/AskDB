@@ -1,13 +1,32 @@
-# Schema fixtures (Phase 1)
+# Schema Fixtures
 
-Phase 1 accepts a single JSON format: **`AskDB schema v1`**.
+The maintained fixture path is **AskDB Schema v2**. Use the split directory form for local development and docs examples:
+
+```text
+orders-users.schema/
+  schema.json
+  tables/
+    orders.md
+    users.md
+  concepts.md
+```
+
+Run a known-good local question with:
+
+```bash
+pnpm exec askdb ask \
+  --schema fixtures/schemas/orders-users.schema \
+  --question "How many orders are there?"
+```
+
+Schema v2 can also be bundled into a single JSON file and loaded through the same `loadSchema` / `askdb ask --schema` paths. See [`docs/contracts/schema-v2.md`](../../docs/contracts/schema-v2.md) for the current contract.
+
+## Legacy v1 Fixtures
+
+Some JSON files in this directory are legacy fixtures retained for regression coverage of pre-v2 parsing and migration behavior. The legacy shape is:
 
 - Top level: `{ "version": 1, "tables": [ ... ] }`
 - Each table: `name`, `columns[]` with `name`, `type`, optional `nullable`, optional `primaryKey`
 - **Phase 2 (additive):** optional `sensitive` on a **table** or **column**. By default, NL→SQL DDL **lists** those identifiers with an `(sensitive)` tag; use CLI **`--omit-sensitive-from-prompt`** or env **`ASKDB_OMIT_SENSITIVE_FROM_PROMPT`** to withhold names (see [`docs/contracts/sensitive-fields-and-modes.md`](../../docs/contracts/sensitive-fields-and-modes.md)). Example: `fixtures/schemas/orders-users-sensitive.schema.json`.
 
-**Roadmap (Phase 6 — `@askdb/introspect`):** generating a Schema v2 physical artifact from a live Postgres instance lands as the dedicated `@askdb/introspect` package with two equally-supported front doors: a **live** connection (BYO executor) and an **air-gapped** path (run documented `pg_catalog`/`information_schema` SQL in `psql`/CI/IDE, hand AskDB the export bundle). Both produce identical artifacts. Spec: [`docs/specs/phase-6-introspection/`](../../docs/specs/phase-6-introspection/). Reference SQL (still cited; superseded by Phase 6): [`docs/specs/postgres-introspection-for-askdb-schema-v1.md`](../../docs/specs/postgres-introspection-for-askdb-schema-v1.md).
-
-**Schema v2 (Phase 5):** the format described above is the pre-v2 internal format that ships through Phase 4. **Phase 5 introduces Schema v2 as a breaking change** (no migrator; pre-1.0); see [`docs/contracts/schema-v2.md`](../../docs/contracts/schema-v2.md) for the post-Phase-5 format.
-
-See [`docs/specs/phase-1-schema-sql-cli/requirements.md`](../../docs/specs/phase-1-schema-sql-cli/requirements.md) for product context.
+Historical phase specs may still reference v1 because they document prior implementation milestones, not the current first-run path.

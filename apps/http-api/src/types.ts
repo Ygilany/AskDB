@@ -3,7 +3,7 @@ import type { AskDbModeV1 } from "@askdb/core";
 export type AskHttpRequest = {
   question: string;
   /**
-   * Optional override: AskDB schema JSON v1 as a string.
+   * Optional override: AskDB Schema v2 bundled JSON as a string.
    *
    * Preferred: configure a server-default schema via env (e.g. ASKDB_SCHEMA_PATH)
    * and omit this field in requests.
@@ -28,6 +28,7 @@ export type AskHttpErrorResponse = {
     code:
       | "not_found"
       | "bad_request"
+      | "payload_too_large"
       | "schema_parse_error"
       | "generation_not_configured"
       | "sql_validation_error"

@@ -145,6 +145,8 @@ pnpm exec askdb bundle my-app.schema --out my-app.schema.bundle.json</code></pre
         body: `
           <p>For application code, install the small set of packages that match the surface you need. <code>@askdb/core</code> is dialect-agnostic. Postgres-specific behavior lives in <code>@askdb/postgres</code>. Custom enrichment UIs use <code>@askdb/enrich</code>.</p>
           <pre><code>pnpm add @askdb/core @askdb/postgres
+# Example model provider for live generation
+pnpm add ai @ai-sdk/openai
 # Optional: only for live Postgres introspection
 pnpm add pg
 # Optional: only for custom Schema v2 enrichment authoring
@@ -204,7 +206,7 @@ askdb bundle my-app.schema --out my-app.schema.bundle.json</code></pre>
       {
         heading: "Execution Boundary",
         body: `
-          <p><code>@askdb/core</code> returns SQL only. Consumers own any later database execution, approval workflow, read-only roles, network policy, and audit logging. Installing <code>pg</code> is not required unless you use live Postgres introspection or pgvector.</p>
+          <p><code>@askdb/core</code> returns SQL only. Review generated SQL before running it. Consumers own any later database execution, approval workflow, read-only roles, tenant policy, network controls, and audit logging. Installing <code>pg</code> is not required unless you use live Postgres introspection or pgvector.</p>
         `,
       },
     ],
@@ -260,7 +262,9 @@ pnpm preflight</code></pre>
         body: `
           <pre><code>pnpm add @askdb/core
 # add an integration package for the engine you target
-pnpm add @askdb/postgres</code></pre>
+pnpm add @askdb/postgres
+# add a model provider, for example
+pnpm add ai @ai-sdk/openai</code></pre>
           <p><code>@askdb/core</code> does not depend on <code>pg</code> and does not expose a Postgres subpath. Database-specific behavior comes from integration packages such as <code>@askdb/postgres</code>.</p>
         `,
       },
@@ -344,6 +348,8 @@ const candidates = await suggestEnrichment(
         heading: "Install",
         body: `
           <pre><code>pnpm add @askdb/core @askdb/postgres
+# add a model provider when your app calls ask()
+pnpm add ai @ai-sdk/openai
 # only when using live Postgres introspection
 pnpm add pg</code></pre>
           <p><code>pg</code> is an optional peer dependency. The package can still provide the dialect, templates, and connector types without forcing a driver into applications that only generate SQL.</p>
@@ -753,7 +759,7 @@ node apps/http-api/dist/bin.js</code></pre>
       {
         heading: "Execution Boundary",
         body: `
-          <p>Execution is not part of this API. Requests using the retired execution controls receive <code>400</code>; applications run any approved SQL outside AskDB.</p>
+          <p>Execution is not part of this API. Requests using the retired execution controls receive <code>400</code>. Review generated SQL and run any approved query outside AskDB under your own database roles, read-only controls, tenant policy, and audit logging.</p>
         `,
       },
     ],
@@ -1045,7 +1051,7 @@ export const myDialect: AskDialect = {
     title: "Modes and Safety",
     eyebrow: "Guardrails",
     description:
-      "AskDB validates generated SQL and supports operating modes that control post-execution behavior and reporting boundaries.",
+      "AskDB validates generated SQL and supports operating modes that define review, execution, and reporting boundaries.",
     sections: [
       {
         heading: "SQL Validation",

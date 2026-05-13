@@ -29,7 +29,18 @@ export type AskDbHttpServerOptions = {
   port?: number;
   /** Default: 127.0.0.1 */
   host?: string;
+  /** Default: 1 MiB */
+  maxBodyBytes?: number;
 };
+
+const DEFAULT_MAX_BODY_BYTES = 1024 * 1024;
+
+class RequestBodyTooLargeError extends Error {
+  constructor(readonly limitBytes: number) {
+    super(`request body exceeds ${limitBytes} bytes`);
+    this.name = "RequestBodyTooLargeError";
+  }
+}
 
 function resolveAskDbLogLevelFromEnv(): AskDbLogLevel {
   const env = process.env.ASKDB_LOG_LEVEL?.toLowerCase();
@@ -47,9 +58,17 @@ function resolveAskDbLogLevelFromEnv(): AskDbLogLevel {
   return "info";
 }
 
-async function readJsonBody<T>(req: IncomingMessage): Promise<T> {
+async function readJsonBody<T>(req: IncomingMessage, maxBodyBytes: number): Promise<T> {
   const chunks: Buffer[] = [];
-  for await (const c of req) chunks.push(Buffer.isBuffer(c) ? c : Buffer.from(c));
+  let total = 0;
+  for await (const c of req) {
+    const chunk = Buffer.isBuffer(c) ? c : Buffer.from(c);
+    total += chunk.byteLength;
+    if (total > maxBodyBytes) {
+      throw new RequestBodyTooLargeError(maxBodyBytes);
+    }
+    chunks.push(chunk);
+  }
   const raw = Buffer.concat(chunks).toString("utf8");
   return JSON.parse(raw) as T;
 }
@@ -115,8 +134,8 @@ async function resolveSchemaPathWithFallbacks(schemaPath: string): Promise<{ res
 
   // 3) If relative, also try resolving relative to the repo root (3 levels up from this file).
   // Works for both `src/` and compiled `dist/` layouts:
-  // - .../packages/http-api/src/server.ts  -> repo root is ../../..
-  // - .../packages/http-api/dist/server.js -> repo root is ../../..
+  // - .../apps/http-api/src/server.ts  -> repo root is ../../..
+  // - .../apps/http-api/dist/server.js -> repo root is ../../..
   const here = dirname(fileURLToPath(import.meta.url));
   const repoRoot = resolvePath(here, "../../..");
   const repoRelative = resolvePath(repoRoot, trimmed);
@@ -131,6 +150,7 @@ function modeFromHeader(v: string | undefined): AskDbModeV1 | undefined {
 export function createAskDbHttpServer(options: AskDbHttpServerOptions = {}) {
   const host = options.host ?? "127.0.0.1";
   const port = options.port ?? 3000;
+  const maxBodyBytes = options.maxBodyBytes ?? DEFAULT_MAX_BODY_BYTES;
   let cachedSchema: ReturnType<typeof loadSchema> | undefined;
   let cachedSchemaSource: string | undefined;
 
@@ -158,12 +178,19 @@ export function createAskDbHttpServer(options: AskDbHttpServerOptions = {}) {
 
     let body: AskHttpRequest;
     try {
-      body = await readJsonBody<AskHttpRequest>(req);
+      body = await readJsonBody<AskHttpRequest>(req, maxBodyBytes);
     } catch (e) {
       logger.error(
         { event: AskDbLogEvent.RunError, errMessage: e instanceof Error ? e.message : String(e) },
         "invalid JSON body",
       );
+      if (e instanceof RequestBodyTooLargeError) {
+        writeError(res, 413, correlationId, {
+          code: "payload_too_large",
+          message: `request body exceeds ${e.limitBytes} bytes`,
+        });
+        return;
+      }
       writeError(res, 400, correlationId, badRequest(correlationId, "invalid JSON body").error);
       return;
     }

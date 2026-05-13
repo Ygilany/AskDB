@@ -1,9 +1,9 @@
 ---
-"@askdb/core": major
-"@askdb/introspect": major
-"@askdb/postgres": major
-"@askdb/cli": major
-"@askdb/http-api": major
+"@askdb/core": minor
+"@askdb/introspect": minor
+"@askdb/postgres": minor
+"@askdb/cli": minor
+"@askdb/http-api": minor
 ---
 
 Remove generated-SQL execution from AskDB package surfaces.
