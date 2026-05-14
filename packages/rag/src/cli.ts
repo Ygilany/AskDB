@@ -274,8 +274,8 @@ function buildLogger(opts: CliOptions, runtimeConfig: AskDbRuntimeConfig): AskDb
     correlationId:
       opts.correlationId ?? runtimeConfig.logging.correlationId ?? randomUUID(),
     level,
-    logFile: opts.logFile,
-    logStdout: opts.logStdout,
+    logFile: opts.logFile ?? runtimeConfig.logging.logFile,
+    logStdout: opts.logStdout ?? runtimeConfig.logging.logStdout,
   });
 }
 

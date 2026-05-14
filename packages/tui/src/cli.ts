@@ -157,7 +157,7 @@ function formatError(error: unknown): string {
 
 async function buildSuggester(): Promise<SuggestEnrichmentForTui | undefined> {
   const runtimeConfig = getAskDbRuntimeConfig();
-  const model = await createAskDbLanguageModelFromEnv(runtimeConfig.ai.env, {
+  const model = await createAskDbLanguageModelFromEnv(runtimeConfig.ai.aiEnv, {
     modelEnvVar: runtimeConfig.ai.tuiModel ? "ASKDB_TUI_MODEL" : undefined,
   });
   if (!model) return undefined;
