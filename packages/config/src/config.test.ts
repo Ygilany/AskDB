@@ -9,8 +9,10 @@ import {
   discoverAskDbConfigPath,
   env,
   flattenAskDbConfig,
-  mergeAskDbConfigIntoEnvSync,
+  getAskDbRuntimeConfig,
+  loadAskDbConfigProjectionSync,
   requiredEnv,
+  resetAskDbRuntimeForTests,
 } from "./index.js";
 import type { AskDbConfig } from "./types.js";
 
@@ -131,36 +133,13 @@ describe("flattenAskDbConfig", () => {
     expect(flat.ASKDB_MODEL).toBe("gpt-4o-mini");
   });
 
-  it("defaults DATABASE_URL when postgres URL omitted and process unset", () => {
-    const prev = process.env.DATABASE_URL;
-    delete process.env.DATABASE_URL;
-    try {
-      const flat = flattenAskDbConfig(
-        minimalConfig({
-          database: { provider: "postgres", providerConfig: { postgres: {} } },
-        }),
-      );
-      expect(flat.DATABASE_URL).toBe("postgres://postgres:postgres@127.0.0.1:5432/postgres");
-    } finally {
-      if (prev === undefined) delete process.env.DATABASE_URL;
-      else process.env.DATABASE_URL = prev;
-    }
-  });
-
-  it("prefers process.env.DATABASE_URL when config databaseUrl omitted", () => {
-    const prev = process.env.DATABASE_URL;
-    process.env.DATABASE_URL = "postgres://from-shell/db";
-    try {
-      const flat = flattenAskDbConfig(
-        minimalConfig({
-          database: { provider: "postgres", providerConfig: { postgres: {} } },
-        }),
-      );
-      expect(flat.DATABASE_URL).toBe("postgres://from-shell/db");
-    } finally {
-      if (prev === undefined) delete process.env.DATABASE_URL;
-      else process.env.DATABASE_URL = prev;
-    }
+  it("defaults DATABASE_URL when postgres URL omitted", () => {
+    const flat = flattenAskDbConfig(
+      minimalConfig({
+        database: { provider: "postgres", providerConfig: { postgres: {} } },
+      }),
+    );
+    expect(flat.DATABASE_URL).toBe("postgres://postgres:postgres@127.0.0.1:5432/postgres");
   });
 
   it("defaults file-store base path when basePath omitted", () => {
@@ -178,13 +157,14 @@ describe("flattenAskDbConfig", () => {
   });
 });
 
-describe("mergeAskDbConfigIntoEnvSync (projection)", () => {
+describe("loadAskDbConfigProjectionSync", () => {
   let dir: string;
   afterEach(() => {
+    resetAskDbRuntimeForTests();
     if (dir) rmSync(dir, { recursive: true, force: true });
   });
 
-  it("merges defineConfig projection from disk", () => {
+  it("loads defineConfig projection from disk", () => {
     dir = mkdtempSync(join(tmpdir(), "askdb-config-"));
     linkWorkspacePackage(dir);
     writeFileSync(
@@ -201,15 +181,12 @@ describe("mergeAskDbConfigIntoEnvSync (projection)", () => {
     );
     process.env.MY_KEY = "secret";
     process.env.MY_DB = "postgres://x/y";
-    mergeAskDbConfigIntoEnvSync(dir);
-    expect(process.env.OPENAI_API_KEY).toBe("secret");
-    expect(process.env.DATABASE_URL).toBe("postgres://x/y");
-    expect(process.env.ASKDB_INTROSPECT_OUT).toBe("./out/");
+    const { projection } = loadAskDbConfigProjectionSync(dir);
+    expect(projection?.entries.OPENAI_API_KEY).toBe("secret");
+    expect(projection?.entries.DATABASE_URL).toBe("postgres://x/y");
+    expect(projection?.entries.ASKDB_INTROSPECT_OUT).toBe("./out/");
     delete process.env.MY_KEY;
     delete process.env.MY_DB;
-    delete process.env.OPENAI_API_KEY;
-    delete process.env.DATABASE_URL;
-    delete process.env.ASKDB_INTROSPECT_OUT;
   });
 });
 
@@ -220,6 +197,7 @@ describe("bootstrapAskDbEnv", () => {
   const prevDb = process.env.MY_DB;
 
   afterEach(() => {
+    resetAskDbRuntimeForTests();
     if (dir) rmSync(dir, { recursive: true, force: true });
     if (prevOpenAi === undefined) delete process.env.OPENAI_API_KEY;
     else process.env.OPENAI_API_KEY = prevOpenAi;
@@ -229,7 +207,7 @@ describe("bootstrapAskDbEnv", () => {
     else process.env.MY_DB = prevDb;
   });
 
-  it("loads .env then merges nested askdb.config", () => {
+  it("loads .env then installs runtime from nested askdb.config", () => {
     dir = mkdtempSync(join(tmpdir(), "askdb-config-"));
     linkWorkspacePackage(dir);
     writeFileSync(join(dir, ".env"), "MY_AI=dog\nMY_DB=postgres://localhost/db\n", "utf8");
@@ -247,11 +225,9 @@ describe("bootstrapAskDbEnv", () => {
     );
 
     bootstrapAskDbEnv({ cwd: dir });
-    expect(process.env.OPENAI_API_KEY).toBe("dog");
-    expect(process.env.DATABASE_URL).toBe("postgres://localhost/db");
-    delete process.env.OPENAI_API_KEY;
-    delete process.env.DATABASE_URL;
-    delete process.env.ASKDB_INTROSPECT_OUT;
+    const rt = getAskDbRuntimeConfig();
+    expect(rt.ai.aiEnv.OPENAI_API_KEY).toBe("dog");
+    expect(rt.ai.aiEnv.DATABASE_URL).toBe("postgres://localhost/db");
     delete process.env.MY_AI;
     delete process.env.MY_DB;
   });

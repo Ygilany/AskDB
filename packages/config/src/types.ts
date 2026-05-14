@@ -9,12 +9,11 @@ import type {
 
 /**
  * Authoring-time AskDB configuration: nested groups (`ai`, `database`, `introspection`, `rag`, …)
- * passed to {@link defineConfig} in `askdb.config.*`, then flattened to canonical `process.env` keys.
+ * passed to {@link defineConfig} in `askdb.config.*`, then flattened to canonical env keys for the runtime snapshot.
  *
  * Use with TypeScript’s `satisfies` operator to validate the object literal without widening it, e.g.
  * `defineConfig({ ... } satisfies AskDbConfig)` or `const cfg = { ... } satisfies AskDbConfig`.
  *
- * @see {@link AskDbEnvConfig} for the legacy flat merge shape.
  */
 export type OpenaiConfig = {
   apiKey?: string;
@@ -96,8 +95,8 @@ export type AskDbConfig = {
     provider: "postgres";
     providerConfig: {
       /**
-       * When unset/blank, `flattenAskDbConfig` uses `process.env.DATABASE_URL` if set,
-       * else the package default local Postgres URL.
+       * When unset/blank, `flattenAskDbConfig` uses the package default local Postgres URL.
+       * Use `env("DATABASE_URL")` (or another key) in `askdb.config.*` to supply a URL from `.env`.
        */
       postgres: { databaseUrl?: string };
     };
@@ -137,14 +136,42 @@ export type AskDbConfig = {
     };
   };
 
-  logging?: { level?: AskDbLogLevel; correlationId?: string };
+  logging?: {
+    level?: AskDbLogLevel;
+    correlationId?: string;
+    /** Maps to `ASKDB_LOG_FILE`. */
+    logFile?: string;
+    /** When true, maps to `ASKDB_LOG_STDOUT=true`. */
+    logStdout?: boolean;
+  };
   modes?: { askdbMode?: AskDbModeV1; omitSensitiveFromPrompt?: boolean };
   host?: { schemaPath?: string; schemaJson?: string };
-};
 
-/**
- * Legacy flat map: canonical `process.env` key → resolved string value.
- * Used only for `export default { OPENAI_API_KEY: "…", … }` merge compatibility.
- * Prefer {@link AskDbConfig} with {@link defineConfig}.
- */
-export type AskDbEnvConfig = Record<string, string>;
+  /** Deterministic NL→SQL for tests / local dev (maps to `ASKDB_MOCK_SQL`). */
+  dev?: { mockSql?: string };
+
+  /** Default listen options for `askdb-tui` / other CLIs that need a model id. */
+  tui?: { model?: string };
+
+  /** Studio browser server and optional RAG overrides. */
+  studio?: {
+    model?: string;
+    listen?: { host?: string; port?: number };
+    rag?: {
+      embedder?: string;
+      dimensions?: string | number;
+      apiKey?: string;
+      baseUrl?: string;
+      model?: string;
+    };
+  };
+
+  /** HTTP API server defaults (first-party `apps/http-api`). */
+  httpApi?: {
+    listen?: {
+      /** When unset, servers default to `3000`. Use `env("PORT")` for platforms that inject `PORT`. */
+      port?: number;
+      host?: string;
+    };
+  };
+};

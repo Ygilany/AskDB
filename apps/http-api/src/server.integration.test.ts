@@ -1,22 +1,50 @@
-import { readFile } from "node:fs/promises";
+import {
+  flattenAskDbConfig,
+  resetAskDbRuntimeForTests,
+  setAskDbRuntimeForTests,
+  type AskDbConfig,
+  type AskDbLogLevel,
+  type AskDbModeV1,
+} from "@askdb/config";
 import { afterEach, describe, expect, it } from "vitest";
 import { createAskDbHttpServer } from "./server.js";
 
 const schemaPath = new URL("../../../fixtures/schemas/orders-users.schema/", import.meta.url);
 
+const BASE_CONFIG: AskDbConfig = {
+  ai: { provider: "openai", providerConfig: { openai: { apiKey: "x", model: "gpt-4o-mini" } } },
+  database: { provider: "postgres", providerConfig: { postgres: { databaseUrl: "postgres://localhost/db" } } },
+  introspection: { provider: "postgres", providerConfig: { postgres: {} }, outputDir: "./askdb/" },
+  rag: { embedder: "mock", embedderConfig: {}, store: "memory", storeConfig: { memory: {} } },
+};
+
+function installTestRuntime(opts: {
+  mockSql?: string;
+  logLevel?: AskDbLogLevel;
+  host?: { schemaPath?: string; schemaJson?: string };
+  modes?: { askdbMode?: AskDbModeV1 };
+}): void {
+  const structured: AskDbConfig = {
+    ...BASE_CONFIG,
+    ...(opts.mockSql !== undefined ? { dev: { mockSql: opts.mockSql } } : {}),
+    ...(opts.logLevel ? { logging: { level: opts.logLevel } } : {}),
+    ...(opts.host ? { host: opts.host } : {}),
+    ...(opts.modes ? { modes: opts.modes } : {}),
+  };
+  setAskDbRuntimeForTests({ structured, flat: flattenAskDbConfig(structured) });
+}
+
 describe("http-api", () => {
   afterEach(() => {
-    delete process.env.ASKDB_MOCK_SQL;
-    delete process.env.OPENAI_API_KEY;
-    delete process.env.ASKDB_LOG_LEVEL;
-    delete process.env.ASKDB_SCHEMA_PATH;
-    delete process.env.ASKDB_SCHEMA_JSON;
+    resetAskDbRuntimeForTests();
   });
 
   it("POST /ask returns sql + correlationId (mocked)", async () => {
-    process.env.ASKDB_MOCK_SQL = "select 1";
-    process.env.ASKDB_LOG_LEVEL = "silent";
-    process.env.ASKDB_SCHEMA_PATH = schemaPath.pathname;
+    installTestRuntime({
+      mockSql: "select 1",
+      logLevel: "silent",
+      host: { schemaPath: schemaPath.pathname },
+    });
 
     const app = createAskDbHttpServer({ host: "127.0.0.1", port: 0 });
     await new Promise<void>((resolve) => app.server.listen(0, "127.0.0.1", resolve));
@@ -43,9 +71,11 @@ describe("http-api", () => {
   });
 
   it("POST /ask rejects the old execution header", async () => {
-    process.env.ASKDB_MOCK_SQL = "select 1";
-    process.env.ASKDB_LOG_LEVEL = "silent";
-    process.env.ASKDB_SCHEMA_PATH = schemaPath.pathname;
+    installTestRuntime({
+      mockSql: "select 1",
+      logLevel: "silent",
+      host: { schemaPath: schemaPath.pathname },
+    });
 
     const app = createAskDbHttpServer({ host: "127.0.0.1", port: 0 });
     await new Promise<void>((resolve) => app.server.listen(0, "127.0.0.1", resolve));
@@ -69,7 +99,7 @@ describe("http-api", () => {
   });
 
   it("GET /health ok", async () => {
-    process.env.ASKDB_LOG_LEVEL = "silent";
+    installTestRuntime({ logLevel: "silent" });
     const app = createAskDbHttpServer({ host: "127.0.0.1", port: 0 });
     await new Promise<void>((resolve) => app.server.listen(0, "127.0.0.1", resolve));
     const addr = app.server.address();
@@ -86,7 +116,7 @@ describe("http-api", () => {
   });
 
   it("unknown routes return not_found", async () => {
-    process.env.ASKDB_LOG_LEVEL = "silent";
+    installTestRuntime({ logLevel: "silent" });
     const app = createAskDbHttpServer({ host: "127.0.0.1", port: 0 });
     await new Promise<void>((resolve) => app.server.listen(0, "127.0.0.1", resolve));
     const addr = app.server.address();
@@ -106,7 +136,7 @@ describe("http-api", () => {
   });
 
   it("bad JSON returns bad_request", async () => {
-    process.env.ASKDB_LOG_LEVEL = "silent";
+    installTestRuntime({ logLevel: "silent" });
     const app = createAskDbHttpServer({ host: "127.0.0.1", port: 0 });
     await new Promise<void>((resolve) => app.server.listen(0, "127.0.0.1", resolve));
     const addr = app.server.address();
@@ -128,7 +158,7 @@ describe("http-api", () => {
   });
 
   it("oversized JSON returns payload_too_large", async () => {
-    process.env.ASKDB_LOG_LEVEL = "silent";
+    installTestRuntime({ logLevel: "silent" });
     const app = createAskDbHttpServer({ host: "127.0.0.1", port: 0, maxBodyBytes: 32 });
     await new Promise<void>((resolve) => app.server.listen(0, "127.0.0.1", resolve));
     const addr = app.server.address();
@@ -150,9 +180,12 @@ describe("http-api", () => {
   });
 
   it("invalid mode returns bad_request", async () => {
-    process.env.ASKDB_MOCK_SQL = "select 1";
-    process.env.ASKDB_LOG_LEVEL = "silent";
-    process.env.ASKDB_SCHEMA_PATH = schemaPath.pathname;
+    installTestRuntime({
+      mockSql: "select 1",
+      logLevel: "silent",
+      host: { schemaPath: schemaPath.pathname },
+      modes: { askdbMode: "schema_only" },
+    });
 
     const app = createAskDbHttpServer({ host: "127.0.0.1", port: 0 });
     await new Promise<void>((resolve) => app.server.listen(0, "127.0.0.1", resolve));
@@ -175,9 +208,11 @@ describe("http-api", () => {
   });
 
   it("SQL validation errors map to sql_validation_error + rule", async () => {
-    process.env.ASKDB_MOCK_SQL = "delete from users";
-    process.env.ASKDB_LOG_LEVEL = "silent";
-    process.env.ASKDB_SCHEMA_PATH = schemaPath.pathname;
+    installTestRuntime({
+      mockSql: "delete from users",
+      logLevel: "silent",
+      host: { schemaPath: schemaPath.pathname },
+    });
 
     const app = createAskDbHttpServer({ host: "127.0.0.1", port: 0 });
     await new Promise<void>((resolve) => app.server.listen(0, "127.0.0.1", resolve));
@@ -201,10 +236,10 @@ describe("http-api", () => {
   });
 
   it("missing schema returns bad_request", async () => {
-    process.env.ASKDB_MOCK_SQL = "select 1";
-    process.env.ASKDB_LOG_LEVEL = "silent";
-    delete process.env.ASKDB_SCHEMA_PATH;
-    delete process.env.ASKDB_SCHEMA_JSON;
+    installTestRuntime({
+      mockSql: "select 1",
+      logLevel: "silent",
+    });
 
     const app = createAskDbHttpServer({ host: "127.0.0.1", port: 0 });
     await new Promise<void>((resolve) => app.server.listen(0, "127.0.0.1", resolve));

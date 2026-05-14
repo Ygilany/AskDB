@@ -71,7 +71,7 @@ askdb introspect --engine prisma --prisma-schema ./prisma --diff my-app.schema
 
 ## Environment
 
-The CLI loads `.env` from the current working directory, then merges an optional AskDB config file (`askdb.config.*` or `.config/askdb.*`) via [`@askdb/config`](https://www.npmjs.com/package/@askdb/config) (`bootstrapAskDbEnv`). Run `askdb init` to create **`askdb.config.ts`** with nested `defineConfig` and `env()` examples; optional `.env` guidance is in comments in that file (no `.env` is generated).
+The CLI loads `.env` from the current working directory (via dotenv), then evaluates an optional AskDB config file (`askdb.config.*` or `.config/askdb.*`) via [`@askdb/config`](https://www.npmjs.com/package/@askdb/config) (`bootstrapAskDbEnv`), which installs the **runtime snapshot** used by `getAskDbRuntimeConfig()` — AskDB does **not** copy the full flattened map into `process.env`. Run `askdb init` to create **`askdb.config.ts`** with nested `defineConfig` and `env()` examples; optional `.env` guidance is in comments in that file (no `.env` is generated).
 
 `askdb init` **skips** loading config so a broken template never blocks scaffolding.
 

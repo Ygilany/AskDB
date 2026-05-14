@@ -68,9 +68,16 @@ function readProvider(env: AskDbAiEnv): AskDbAiProvider {
  *   2. provider-native primary          — `OPENAI_API_KEY` or `AZURE_OPENAI_API_KEY` / `AZURE_API_KEY`
  *   3. provider-native secondary        — `OPENAI_API_KEY_SECONDARY` or `AZURE_OPENAI_API_KEY_SECONDARY`
  *   4. `ASKDB_AI_API_KEY_SECONDARY`     — universal rotation fallback
+ *
+ * **Important:** Only `@askdb/config` reads `process.env` (during dotenv load and while evaluating
+ * `askdb.config.*`). Pass `getAskDbRuntimeConfig().ai.aiEnv` from `@askdb/config` after
+ * `bootstrapAskDbEnv()`, or an explicit plain object in tests.
+ *
+ * @param env - String map in the shape of canonical AskDB env keys (from the runtime snapshot).
+ * @param options - Optional per-app overrides (e.g. a per-app model env var).
  */
 export function resolveAskDbAiConfig(
-  env: AskDbAiEnv = process.env,
+  env: AskDbAiEnv,
   options: ResolveAskDbAiConfigOptions = {},
 ): AskDbAiConfig | undefined {
   const provider = readProvider(env);
@@ -147,9 +154,16 @@ export type ResolveAskDbEmbeddingConfigOptions = {
  * connection as `resolveAskDbAiConfig`, but with embedding-specific model
  * precedence so chat model ids (for example `gpt-4o`) are not used as
  * embedding model ids by accident.
+ *
+ * **Important:** Only `@askdb/config` reads `process.env` (during dotenv load and while evaluating
+ * `askdb.config.*`). Pass `getAskDbRuntimeConfig().ai.aiEnv` from `@askdb/config` after
+ * `bootstrapAskDbEnv()`, or an explicit plain object in tests.
+ *
+ * @param env - String map in the shape of canonical AskDB env keys (from the runtime snapshot).
+ * @param options - Optional per-app overrides (e.g. a per-app embedding model env var).
  */
 export function resolveAskDbEmbeddingConfig(
-  env: AskDbAiEnv = process.env,
+  env: AskDbAiEnv,
   options: ResolveAskDbEmbeddingConfigOptions = {},
 ): AskDbAiConfig | undefined {
   const provider = readProvider(env);
@@ -272,9 +286,16 @@ export async function createAskDbEmbeddingModel(
 /**
  * Convenience wrapper: resolve config from env, then construct a model.
  * Returns `undefined` when no API key is configured.
+ *
+ * **Important:** Only `@askdb/config` reads `process.env` (during dotenv load and while evaluating
+ * `askdb.config.*`). Pass `getAskDbRuntimeConfig().ai.aiEnv` from `@askdb/config` after
+ * `bootstrapAskDbEnv()`, or an explicit plain object in tests.
+ *
+ * @param env - String map in the shape of canonical AskDB env keys (from the runtime snapshot).
+ * @param options - Optional per-app overrides (e.g. a per-app model env var).
  */
 export async function createAskDbLanguageModelFromEnv(
-  env: AskDbAiEnv = process.env,
+  env: AskDbAiEnv,
   options: ResolveAskDbAiConfigOptions = {},
 ): Promise<LanguageModel | undefined> {
   const config = resolveAskDbAiConfig(env, options);
@@ -282,9 +303,17 @@ export async function createAskDbLanguageModelFromEnv(
   return createAskDbLanguageModel(config);
 }
 
-/** Resolve embedding config from env, then construct an AI SDK embedding model. */
+/** Resolve embedding config from env, then construct an AI SDK embedding model.
+ *
+ * **Important:** Only `@askdb/config` reads `process.env` (during dotenv load and while evaluating
+ * `askdb.config.*`). Pass `getAskDbRuntimeConfig().ai.aiEnv` after `bootstrapAskDbEnv()`, or
+ * an explicit plain object in tests.
+ *
+ * @param env - String map in the shape of canonical AskDB env keys (from the runtime snapshot).
+ * @param options - Optional per-app overrides plus embedding-specific model/dimensions settings.
+ */
 export async function createAskDbEmbeddingModelFromEnv(
-  env: AskDbAiEnv = process.env,
+  env: AskDbAiEnv,
   options: ResolveAskDbEmbeddingConfigOptions & CreateAskDbEmbeddingModelOptions = {},
 ): Promise<EmbeddingModel<string> | undefined> {
   const config = resolveAskDbEmbeddingConfig(env, options);

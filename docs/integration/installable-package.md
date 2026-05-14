@@ -7,7 +7,7 @@ AskDB ships focused library packages:
 3. [`@askdb/postgres`](../../packages/postgres/README.md) — Postgres integration: dialect adapter (`postgresDialect`), connector (live + from-export), catalog templates, and a `pg`-backed catalog query runner for live introspection.
 4. [`@askdb/prisma`](../../packages/prisma/README.md) — Prisma integration: schema-file connector that renders Schema v2 from `.prisma` files without a database connection.
 5. [`@askdb/enrich`](../../packages/enrich/README.md) — headless Schema v2 enrichment workspace helpers used by TUI, Studio, and custom authoring surfaces.
-6. [`@askdb/config`](../../packages/config/README.md) — Prisma-style `askdb.config.*` / `.config/askdb.*` discovery and `bootstrapAskDbEnv()` so friendly `.env` names map onto the canonical `process.env` keys `@askdb/core` reads.
+6. [`@askdb/config`](../../packages/config/README.md) — Prisma-style `askdb.config.*` / `.config/askdb.*` discovery and `bootstrapAskDbEnv()`. **This is the only package that reads `process.env` directly.** All other packages use **`getAskDbRuntimeConfig()`** from here (not raw `process.env`).
 
 The supported user-facing CLI is [`@askdb/cli`](../../apps/cli/README.md) (`askdb` binary, `npm i -g @askdb/cli`). `@askdb/http-api`, `@askdb/tui`, `@askdb/studio`, and `@askdb/docs-site` are first-party reference apps.
 
@@ -41,7 +41,7 @@ pnpm add pg
 
 `pg` is an **optional peer dependency** of `@askdb/postgres`. You do not need it when you only use `@askdb/core` to generate SQL.
 
-[`@askdb/config`](../../packages/config/README.md) is optional for library-only usage: `@askdb/core` reads **`process.env`**. Call `bootstrapAskDbEnv({ cwd: process.cwd() })` from `@askdb/config` when you want the same `.env` + `askdb.config.ts` mapping behavior as the first-party CLI and HTTP API.
+[`@askdb/config`](../../packages/config/README.md) is the **only** package that reads `process.env` directly. Library packages (`@askdb/rag`, `@askdb/tui`, …) depend on `@askdb/config` and use **`getAskDbRuntimeConfig()`** (and pass `config.ai.aiEnv` into `@askdb/core` where an env map is required). Call `bootstrapAskDbEnv({ cwd: process.cwd() })` at start-up when you want the same `.env` + `askdb.config.*` behavior as the first-party CLI and HTTP API. `env()` is reserved for use **inside** `askdb.config.*` files.
 
 ---
 
