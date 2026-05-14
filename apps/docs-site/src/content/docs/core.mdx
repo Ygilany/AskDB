@@ -20,7 +20,7 @@ pnpm add ai @ai-sdk/openai
 ```
 
 
-          <p><code>{"@askdb/core"}</code> does not depend on <code>{"pg"}</code> and does not expose a Postgres subpath. Database-specific behavior comes from integration packages such as <code>{"@askdb/postgres"}</code>.</p>
+          <p><code>{"@askdb/core"}</code> does not depend on <code>{"pg"}</code> and does not expose a Postgres subpath. Database-specific behavior comes from integration packages such as <code>{"@askdb/postgres"}</code>. For AI keys, the snippet below reads <code>{"process.env"}</code> directly; if you use <code>{"@askdb/config"}</code>, call <code>{"bootstrapAskDbEnv()"}</code> at startup and pass <code>{"getAskDbRuntimeConfig().ai.aiEnv"}</code> into helpers such as <code>{"createAskDbLanguageModelFromEnv"}</code> instead of relying on globals.</p>
 
 ## Generate SQL
 

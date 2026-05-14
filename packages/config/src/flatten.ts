@@ -56,8 +56,7 @@ function applyAzureLikeAi(
 function resolveDatabaseUrl(config: AskDbConfig): string {
   const raw = config.database.providerConfig.postgres.databaseUrl;
   const fromConfig = raw?.trim();
-  const fromShell = process.env.DATABASE_URL?.trim();
-  return fromConfig || fromShell || DEFAULT_LOCAL_POSTGRES_URL;
+  return fromConfig || DEFAULT_LOCAL_POSTGRES_URL;
 }
 
 function resolveRagEmbeddingDimensions(rag: AskDbConfig["rag"]): number {
@@ -74,7 +73,8 @@ function resolveRagEmbeddingDimensions(rag: AskDbConfig["rag"]): number {
 }
 
 /**
- * Flattens a nested {@link AskDbConfig} into canonical `process.env` keys consumed by AskDB apps.
+ * Flattens a nested {@link AskDbConfig} into canonical env keys for the runtime snapshot
+ * (`AskDbEnvProjection.entries`).
  */
 export function flattenAskDbConfig(config: AskDbConfig): Record<string, string> {
   const out: Record<string, string> = {};
@@ -215,6 +215,58 @@ export function flattenAskDbConfig(config: AskDbConfig): Record<string, string> 
   // --- Host ---
   set(out, "ASKDB_SCHEMA_PATH", config.host?.schemaPath);
   set(out, "ASKDB_SCHEMA_JSON", config.host?.schemaJson);
+
+  if (config.logging?.logFile) {
+    set(out, "ASKDB_LOG_FILE", config.logging.logFile);
+  }
+  if (config.logging?.logStdout === true) {
+    set(out, "ASKDB_LOG_STDOUT", "true");
+  }
+
+  // --- Dev ---
+  if (config.dev?.mockSql) {
+    set(out, "ASKDB_MOCK_SQL", config.dev.mockSql);
+  }
+
+  // --- TUI / Studio ---
+  if (config.tui?.model) {
+    set(out, "ASKDB_TUI_MODEL", config.tui.model);
+  }
+  if (config.studio?.model) {
+    set(out, "ASKDB_STUDIO_MODEL", config.studio.model);
+  }
+  if (config.studio?.listen?.host) {
+    set(out, "ASKDB_STUDIO_HOST", config.studio.listen.host);
+  }
+  if (config.studio?.listen?.port !== undefined && !Number.isNaN(config.studio.listen.port)) {
+    set(out, "ASKDB_STUDIO_PORT", String(config.studio.listen.port));
+  }
+  const sr = config.studio?.rag;
+  if (sr?.embedder) {
+    set(out, "ASKDB_STUDIO_RAG_EMBEDDER", sr.embedder);
+  }
+  if (sr?.dimensions !== undefined) {
+    const d = typeof sr.dimensions === "number" ? String(sr.dimensions) : sr.dimensions?.trim();
+    if (d) set(out, "ASKDB_STUDIO_RAG_EMBEDDER_DIMENSIONS", d);
+  }
+  if (sr?.apiKey) {
+    set(out, "ASKDB_STUDIO_RAG_EMBEDDER_API_KEY", sr.apiKey);
+  }
+  if (sr?.baseUrl) {
+    set(out, "ASKDB_STUDIO_RAG_EMBEDDER_BASE_URL", sr.baseUrl);
+  }
+  if (sr?.model) {
+    set(out, "ASKDB_STUDIO_RAG_EMBEDDER_MODEL", sr.model);
+  }
+
+  // --- HTTP API listen (canonical keys on runtime flat map) ---
+  const httpListen = config.httpApi?.listen;
+  if (httpListen?.port !== undefined && !Number.isNaN(httpListen.port)) {
+    set(out, "PORT", String(httpListen.port));
+  }
+  if (httpListen?.host) {
+    set(out, "HOST", httpListen.host);
+  }
 
   return out;
 }

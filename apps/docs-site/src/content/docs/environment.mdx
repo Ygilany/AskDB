@@ -1,17 +1,22 @@
 ---
 title: "Environment"
-description: "Load secrets from .env, optionally map friendly names through askdb.config.ts using @askdb/config."
+description: "Load secrets from .env, author askdb.config.ts with defineConfig, and read runtime settings through @askdb/config."
 ---
 
 <p className="doc-eyebrow">Configuration</p>
 
-<p className="doc-lede">First-party apps load a local <code>{".env"}</code> file, then merge an optional <code>{"askdb.config.*"}</code> file. The supported shape is a nested <code>{"AskDbConfig"}</code> wrapped in <code>{"defineConfig(...)"}</code> from <code>{"@askdb/config"}</code>, which flattens into the canonical <code>{"process.env"}</code> keys <code>{"@askdb/core"}</code> and other packages read.</p>
+<p className="doc-lede">First-party apps call <code>{"bootstrapAskDbEnv()"}</code> from <code>{"@askdb/config"}</code>, which loads a local <code>{".env"}</code> (via dotenv), discovers <code>{"askdb.config.*"}</code> or <code>{".config/askdb.*"}</code>, and evaluates a nested <code>{"defineConfig({ ... } satisfies AskDbConfig)"}</code> export. That produces an <strong>in-memory runtime snapshot</strong> (structured config + flattened canonical map + <code>{"aiEnv"}</code> for <code>{"@askdb/core"}</code>). AskDB does <strong>not</strong> copy the full flattened map into <code>{"process.env"}</code>; use <code>{"getAskDbRuntimeConfig()"}</code> instead.</p>
 
 ## Bootstrap order
 
 <ol>
   <li><code>{"dotenv"}</code> loads <code>{".env"}</code> (missing file is normal).</li>
-  <li>If present, <code>{"askdb.config.*"}</code> or <code>{".config/askdb.*"}</code> is evaluated. A nested <code>{"defineConfig"}</code> export is flattened to canonical keys; legacy flat string maps are still merged as a plain record. Non-empty string values are applied to <code>{"process.env"}</code>.</li>
+  <li>
+    If present, <code>{"askdb.config.*"}</code> or <code>{".config/askdb.*"}</code> is evaluated. The default export must be <code>{"defineConfig(...)"}</code> (legacy flat maps are rejected). Values are flattened to canonical keys and stored with the structured object.
+  </li>
+  <li>
+    A small allowlist of non-empty shell variables (for example <code>{"PORT"}</code>, <code>{"HOST"}</code>, <code>{"ASKDB_MOCK_SQL"}</code>, <code>{"ASKDB_CORRELATION_ID"}</code>, <code>{"ASKDB_PRISMA_SCHEMA"}</code>, <code>{"ASKDB_INTROSPECT_OUT"}</code>, <code>{"DATABASE_URL"}</code>) may override matching flat entries at bootstrap time so CI and subprocesses can inject overrides without editing the config file.
+  </li>
 </ol>
 
 <p>This mirrors the ergonomics of <a href="https://www.prisma.io/docs/orm/reference/prisma-config-reference">Prisma’s config reference</a>, but AskDB uses <code>{".config/askdb.*"}</code> so it does not collide with Prisma’s own <code>{".config/prisma.*"}</code> files.</p>
@@ -63,7 +68,7 @@ export default defineConfig({
 
 <p>Omit <code>{"introspection.providerConfig.postgres.databaseUrl"}</code> to reuse <code>{"database.providerConfig.postgres.databaseUrl"}</code> as <code>{"DATABASE_URL"}</code> for live Postgres introspection.</p>
 
-<p><code>{"introspection.outputDir"}</code> maps to <code>{"ASKDB_INTROSPECT_OUT"}</code>. After bootstrap, <code>{"askdb introspect"}</code> uses that variable as the default <code>{"--out"}</code> when you omit <code>{"--out"}</code>, <code>{"--print"}</code>, and <code>{"--diff"}</code>. For Prisma engine introspection, <code>{"ASKDB_PRISMA_SCHEMA"}</code> can default <code>{"--prisma-schema"}</code>.</p>
+<p><code>{"introspection.outputDir"}</code> maps to <code>{"ASKDB_INTROSPECT_OUT"}</code> in the flattened snapshot. After bootstrap, <code>{"askdb introspect"}</code> reads the runtime snapshot (including <code>{"ASKDB_INTROSPECT_OUT"}</code> and <code>{"ASKDB_PRISMA_SCHEMA"}</code> via <code>{"getAskDbRuntimeConfig().ai.aiEnv"}</code>) to default <code>{"--out"}</code> or <code>{"--prisma-schema"}</code> when those flags are omitted.</p>
 
 ## Config discovery
 
@@ -75,6 +80,8 @@ export default defineConfig({
 </ul>
 
 ## Common canonical variables
+
+<p>These names are what <code>{"flattenAskDbConfig"}</code> emits and what appears on <code>{"getAskDbRuntimeConfig().flat"}</code> / <code>{"getAskDbRuntimeConfig().ai.aiEnv"}</code>. You normally set underlying secrets in <code>{".env"}</code> and wire them through <code>{"env(\"MY_KEY\")"}</code> inside <code>{"askdb.config.ts"}</code>, or rely on defaults where documented.</p>
 
 <div className="definition-list">
             <div><code>{"OPENAI_API_KEY"}</code><span>Required for live NL-to-SQL generation (unless using mocks).</span></div>
@@ -91,7 +98,7 @@ export default defineConfig({
 
 ## TUI Suggestions
 
-<p><code>{"@askdb/tui"}</code> uses <code>{"OPENAI_API_KEY"}</code> when you press <code>{"g"}</code> to request AI enrichment suggestions. Without the key, the TUI still supports manual authoring and saving.</p>
+<p><code>{"@askdb/tui"}</code> resolves AI settings from the same runtime snapshot after <code>{"bootstrapAskDbEnv()"}</code>. When an OpenAI-compatible key is configured (typically via <code>{"askdb.config"}</code> / <code>{".env"}</code>), pressing <code>{"g"}</code> requests AI enrichment suggestions. Without a key, the TUI still supports manual authoring and saving.</p>
 
 ## RAG Embeddings
 

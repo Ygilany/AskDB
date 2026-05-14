@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { bootstrapAskDbEnv } from "@askdb/config";
+import { bootstrapAskDbEnv, getAskDbRuntimeConfig } from "@askdb/config";
 import { randomUUID } from "node:crypto";
 import {
   AskDbError,
@@ -156,7 +156,7 @@ function resolveAskDbLogLevel(opts: {
     }
     return l;
   }
-  const env = process.env.ASKDB_LOG_LEVEL?.toLowerCase();
+  const env = getAskDbRuntimeConfig().logging.level?.toLowerCase();
   if (env && isSupportedAskDbLogLevel(env)) {
     return env;
   }
@@ -243,9 +243,10 @@ program
     }) => {
       let logLevel: AskDbLogLevel;
       let mode: AskDbModeV1;
+      const runtime = getAskDbRuntimeConfig();
       try {
         logLevel = resolveAskDbLogLevel(opts);
-        mode = parseAskDbModeV1(opts.mode ?? process.env.ASKDB_MODE);
+        mode = parseAskDbModeV1(opts.mode ?? runtime.modes.askdbMode);
       } catch (e) {
         printCliError(e);
         process.exitCode = 1;
@@ -253,16 +254,16 @@ program
       }
 
       const correlationId =
-        opts.correlationId ?? process.env.ASKDB_CORRELATION_ID ?? randomUUID();
+        opts.correlationId ?? runtime.logging.correlationId ?? randomUUID();
       const logger = createAskDbLogger({
         correlationId,
         level: logLevel,
-        logFile: opts.logFile,
-        logStdout: opts.logStdout,
+        logFile: opts.logFile ?? runtime.logging.logFile,
+        logStdout: opts.logStdout ?? runtime.logging.logStdout,
       });
 
-      const mockSql = opts.mockSql ?? process.env.ASKDB_MOCK_SQL;
-      const aiConfig = mockSql ? undefined : resolveAskDbAiConfig();
+      const mockSql = opts.mockSql ?? runtime.dev.mockSql;
+      const aiConfig = mockSql ? undefined : resolveAskDbAiConfig(runtime.ai.aiEnv);
       if (!mockSql && !aiConfig) {
         console.error(askDbAiKeyMissingMessage("NL→SQL generation"));
         console.error("Tip: in tests, set ASKDB_MOCK_SQL to bypass live model calls.");
@@ -284,13 +285,10 @@ program
         const model: AskModel = mockSql
           ? // The model won't be used when `deps.generateText` is overridden.
             (undefined as unknown as AskModel)
-          : ((await createAskDbLanguageModelFromEnv()) as AskModel);
+          : ((await createAskDbLanguageModelFromEnv(runtime.ai.aiEnv)) as AskModel);
 
         const omitSensitiveFromPrompt =
-          Boolean(opts.omitSensitiveFromPrompt) ||
-          ["1", "true", "yes"].includes(
-            (process.env.ASKDB_OMIT_SENSITIVE_FROM_PROMPT ?? "").toLowerCase(),
-          );
+          Boolean(opts.omitSensitiveFromPrompt) || runtime.modes.omitSensitiveFromPrompt;
 
         const out = await ask({
           question: opts.question,

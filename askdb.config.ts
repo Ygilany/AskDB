@@ -2,7 +2,7 @@ import "dotenv/config";
 import { defineConfig, env, type AskDbConfig } from "@askdb/config";
 
 // `dotenv/config` loads a local `.env` when this module runs (missing file is OK).
-// CLIs also call `bootstrapAskDbEnv`, which loads `.env` then merges this config into `process.env`.
+// CLIs call `bootstrapAskDbEnv`, which loads `.env` then evaluates this file and installs the AskDB runtime snapshot.
 // Use `env("VAR")` for every value read from the environment; `flattenAskDbConfig` applies defaults
 // for optional fields (see `@askdb/config` / `defaults.ts`).
 export default defineConfig({
@@ -30,7 +30,7 @@ export default defineConfig({
     provider: "postgres",
     providerConfig: {
       postgres: {
-        // Postgres URL — DATABASE_URL (e.g. CI), else `process.env.DATABASE_URL`, else local default in flatten
+        // Postgres URL — set DATABASE_URL in `.env` (e.g. CI) or rely on flatten default when omitted here
         // Pagila fixture (docker compose -f fixtures/pagila/docker-compose.yml …): often port 5433
         databaseUrl: env("DATABASE_URL"),
       },
@@ -70,6 +70,21 @@ export default defineConfig({
         databaseUrl: env("ASKDB_PGVECTOR_URL"),
         dimensions: env("ASKDB_RAG_EMBEDDER_DIMENSIONS"),
       },
+    },
+  },
+  tui: {
+    model: env("ASKDB_TUI_MODEL"),
+  },
+  studio: {
+    listen: {
+      host: env("ASKDB_STUDIO_HOST"),
+      ...(env("ASKDB_STUDIO_PORT") ? { port: Number(env("ASKDB_STUDIO_PORT")) } : {}),
+    },
+  },
+  httpApi: {
+    listen: {
+      host: env("HOST"),
+      ...(env("PORT") ? { port: Number(env("PORT")) } : {}),
     },
   },
 } satisfies AskDbConfig);

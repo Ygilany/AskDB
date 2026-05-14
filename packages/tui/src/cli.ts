@@ -1,6 +1,7 @@
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { createAskDbLanguageModelFromEnv, suggestEnrichment } from "@askdb/core";
+import { getAskDbRuntimeConfig } from "@askdb/config";
 import { render } from "ink";
 import { createElement } from "react";
 import { App } from "./ui/App.js";
@@ -155,8 +156,9 @@ function formatError(error: unknown): string {
 }
 
 async function buildSuggester(): Promise<SuggestEnrichmentForTui | undefined> {
-  const model = await createAskDbLanguageModelFromEnv(process.env, {
-    modelEnvVar: process.env.ASKDB_TUI_MODEL ? "ASKDB_TUI_MODEL" : undefined,
+  const runtimeConfig = getAskDbRuntimeConfig();
+  const model = await createAskDbLanguageModelFromEnv(runtimeConfig.ai.aiEnv, {
+    modelEnvVar: runtimeConfig.ai.tuiModel ? "ASKDB_TUI_MODEL" : undefined,
   });
   if (!model) return undefined;
   return (target, context) => suggestEnrichment(target, context, model);

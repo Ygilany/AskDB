@@ -24,7 +24,8 @@ description: "Build the workspace, generate or use a schema artifact, enrich it,
 ```
 pnpm install
 cp .env.example .env
-# edit .env (canonical names) — or run `pnpm exec askdb init` for askdb.config.ts (example .env keys in comments)
+# edit .env for local secrets. This repo also ships a root askdb.config.ts;
+# or run `pnpm exec askdb init` in a new project (comments document .env keys).
 pnpm build
 
 pnpm exec askdb ask \

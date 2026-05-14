@@ -70,6 +70,7 @@
     "test": "vitest run --config ../../vitest.config.ts"
   },
   "dependencies": {
+    "@askdb/config": "workspace:*",
     "@askdb/core": "workspace:*"
   },
   "peerDependencies": {
