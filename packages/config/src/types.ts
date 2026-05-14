@@ -17,22 +17,25 @@ import type {
  * @see {@link AskDbEnvConfig} for the legacy flat merge shape.
  */
 export type OpenaiConfig = {
-  apiKey: string;
+  apiKey?: string;
   baseUrl?: string;
-  model: string;
+  /** When unset, `flattenAskDbConfig` applies the default OpenAI chat model (see `@askdb/config` defaults). */
+  model?: string;
 };
 
 export type AzureConfig = {
-  apiKey: string;
+  apiKey?: string;
+  secondaryApiKey?: string;
   baseUrl?: string;
-  model: string;
+  /** When unset, `flattenAskDbConfig` applies the default Azure deployment name (see `@askdb/config` defaults). */
+  model?: string;
   apiVersion?: string;
 };
 
 export type FoundryConfig = {
-  apiKey: string;
+  apiKey?: string;
   secondaryApiKey?: string;
-  model: string;
+  model?: string;
   apiVersion?: string;
   baseUrl?: string;
 };
@@ -42,15 +45,16 @@ export type AnthropicConfig = Record<string, never>;
 export type GoogleConfig = Record<string, never>;
 
 export type OpenaiRagEmbedderConfig = {
-  model: string;
-  dimension: number;
-  apiKey: string;
+  model?: string;
+  /** Raw env string or number; positive integer parsed in {@link flattenAskDbConfig}, else derived from `model`. */
+  dimension?: string | number;
+  apiKey?: string;
   baseUrl?: string;
 };
 
 export type FileStoreConfig = {
   /** Passed to `createFileStore({ basePath })` — vector files use `<basePath>.embeddings.*`. */
-  basePath: string;
+  basePath?: string;
   autoFlush?: boolean;
 };
 
@@ -59,10 +63,12 @@ export type MemoryStoreConfig = Record<string, never>;
 
 export type PgvectorStoreConfig = {
   /** Connection string for pgvector (maps to `ASKDB_PGVECTOR_URL`). */
-  databaseUrl: string;
+  databaseUrl?: string;
   table?: string;
-  dimensions: number;
-  indexStrategy?: "ivfflat" | "hnsw" | "none";
+  /** Positive integer from env or number; when unset, matches resolved RAG embedder dimensions in {@link flattenAskDbConfig}. */
+  dimensions?: string | number;
+  /** When unset, {@link flattenAskDbConfig} uses `hnsw`. */
+  indexStrategy?: string;
 };
 
 /**
@@ -89,7 +95,11 @@ export type AskDbConfig = {
   database: {
     provider: "postgres";
     providerConfig: {
-      postgres: { databaseUrl: string };
+      /**
+       * When unset/blank, `flattenAskDbConfig` uses `process.env.DATABASE_URL` if set,
+       * else the package default local Postgres URL.
+       */
+      postgres: { databaseUrl?: string };
     };
   };
 
@@ -98,8 +108,8 @@ export type AskDbConfig = {
     providerConfig: {
       postgres?: {
         /**
-         * When omitted or blank, `flattenAskDbConfig` leaves `DATABASE_URL` as the value from
-         * `database.providerConfig.postgres.databaseUrl`. Set this only for an introspection-only URL.
+         * When omitted or blank, live introspection reuses the resolved `DATABASE_URL` from the
+         * `database` section. Set this only for an introspection-only URL.
          */
         databaseUrl?: string;
       };
@@ -107,7 +117,10 @@ export type AskDbConfig = {
         schemaPath?: string;
       };
     };
-    /** Default introspection output directory (maps to `ASKDB_INTROSPECT_OUT`). */
+    /**
+     * Default introspection output directory (maps to `ASKDB_INTROSPECT_OUT`).
+     * When unset/blank, `flattenAskDbConfig` uses the package default `./askdb/`.
+     */
     outputDir?: string;
   };
 

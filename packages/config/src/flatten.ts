@@ -4,6 +4,18 @@ import {
   ASKDB_RAG_EMBEDDERS,
   ASKDB_RAG_STORES,
 } from "./constants.js";
+import {
+  DEFAULT_AZURE_OPENAI_DEPLOYMENT,
+  DEFAULT_INTROSPECT_OUTPUT_DIR,
+  DEFAULT_LOCAL_POSTGRES_URL,
+  DEFAULT_MOCK_RAG_EMBEDDING_DIMENSIONS,
+  DEFAULT_OPENAI_CHAT_MODEL,
+  DEFAULT_RAG_EMBEDDING_MODEL,
+  DEFAULT_RAG_FILE_BASE_PATH,
+  defaultRagEmbeddingDimensions,
+  normalizePgvectorIndexStrategy,
+  parsePositiveInteger,
+} from "./defaults.js";
 import type { AskDbConfig } from "./types.js";
 
 function isMember<T extends readonly string[]>(value: string, allowed: T): value is T[number] {
@@ -20,8 +32,9 @@ function set(out: Record<string, string>, key: string, value: string | undefined
 function applyOpenAiAi(out: Record<string, string>, cfg: NonNullable<AskDbConfig["ai"]["providerConfig"]["openai"]>): void {
   set(out, "OPENAI_API_KEY", cfg.apiKey);
   set(out, "OPENAI_BASE_URL", cfg.baseUrl);
-  set(out, "OPENAI_MODEL", cfg.model);
-  set(out, "ASKDB_MODEL", cfg.model);
+  const model = cfg.model?.trim() || DEFAULT_OPENAI_CHAT_MODEL;
+  set(out, "OPENAI_MODEL", model);
+  set(out, "ASKDB_MODEL", model);
 }
 
 function applyAzureLikeAi(
@@ -32,11 +45,32 @@ function applyAzureLikeAi(
   if ("secondaryApiKey" in cfg && cfg.secondaryApiKey) {
     set(out, "AZURE_OPENAI_API_KEY_SECONDARY", cfg.secondaryApiKey);
   }
-  set(out, "AZURE_OPENAI_DEPLOYMENT", cfg.model);
-  set(out, "AZURE_DEPLOYMENT_NAME", cfg.model);
-  set(out, "ASKDB_AI_MODEL", cfg.model);
+  const model = cfg.model?.trim() || DEFAULT_AZURE_OPENAI_DEPLOYMENT;
+  set(out, "AZURE_OPENAI_DEPLOYMENT", model);
+  set(out, "AZURE_DEPLOYMENT_NAME", model);
+  set(out, "ASKDB_AI_MODEL", model);
   set(out, "AZURE_OPENAI_BASE_URL", cfg.baseUrl);
   set(out, "AZURE_OPENAI_API_VERSION", cfg.apiVersion);
+}
+
+function resolveDatabaseUrl(config: AskDbConfig): string {
+  const raw = config.database.providerConfig.postgres.databaseUrl;
+  const fromConfig = raw?.trim();
+  const fromShell = process.env.DATABASE_URL?.trim();
+  return fromConfig || fromShell || DEFAULT_LOCAL_POSTGRES_URL;
+}
+
+function resolveRagEmbeddingDimensions(rag: AskDbConfig["rag"]): number {
+  if (rag.embedder === "openai" || rag.embedder === "ai-sdk") {
+    const ec = rag.embedderConfig.openai;
+    if (!ec) {
+      throw new Error(`askdb.config: rag.embedderConfig.openai is required for embedder "${rag.embedder}".`);
+    }
+    const model = ec.model?.trim() || DEFAULT_RAG_EMBEDDING_MODEL;
+    const parsed = parsePositiveInteger(ec.dimension);
+    return parsed ?? defaultRagEmbeddingDimensions(model);
+  }
+  return DEFAULT_MOCK_RAG_EMBEDDING_DIMENSIONS;
 }
 
 /**
@@ -79,8 +113,7 @@ export function flattenAskDbConfig(config: AskDbConfig): Record<string, string> 
   if (config.database.provider !== "postgres") {
     throw new Error(`askdb.config: unsupported database.provider "${config.database.provider}".`);
   }
-  const databaseUrl = config.database.providerConfig.postgres.databaseUrl;
-  set(out, "DATABASE_URL", databaseUrl);
+  set(out, "DATABASE_URL", resolveDatabaseUrl(config));
 
   // --- Introspection ---
   const intro = config.introspection;
@@ -88,7 +121,7 @@ export function flattenAskDbConfig(config: AskDbConfig): Record<string, string> 
   // `introspection.providerConfig.postgres.databaseUrl` only when you need a URL that
   // differs from the main app database; when omitted, live introspection reuses the same URL.
   if (intro.provider === "postgres") {
-    const introUrl = intro.providerConfig.postgres?.databaseUrl;
+    const introUrl = intro.providerConfig.postgres?.databaseUrl?.trim();
     if (introUrl) {
       set(out, "DATABASE_URL", introUrl);
     }
@@ -97,7 +130,7 @@ export function flattenAskDbConfig(config: AskDbConfig): Record<string, string> 
     if (schemaPath) set(out, "ASKDB_PRISMA_SCHEMA", schemaPath);
   }
 
-  const outDir = intro.outputDir ?? "./askdb/";
+  const outDir = intro.outputDir?.trim() || DEFAULT_INTROSPECT_OUTPUT_DIR;
   set(out, "ASKDB_INTROSPECT_OUT", outDir);
 
   // --- RAG ---
@@ -109,13 +142,16 @@ export function flattenAskDbConfig(config: AskDbConfig): Record<string, string> 
   }
   set(out, "ASKDB_RAG_EMBEDDER", rag.embedder);
 
+  const resolvedRagDimensions = resolveRagEmbeddingDimensions(rag);
+
   if (rag.embedder === "openai" || rag.embedder === "ai-sdk") {
     const ec = rag.embedderConfig.openai;
     if (!ec) {
       throw new Error(`askdb.config: rag.embedderConfig.openai is required for embedder "${rag.embedder}".`);
     }
-    set(out, "ASKDB_RAG_EMBEDDER_MODEL", ec.model);
-    set(out, "ASKDB_RAG_EMBEDDER_DIMENSIONS", String(ec.dimension));
+    const model = ec.model?.trim() || DEFAULT_RAG_EMBEDDING_MODEL;
+    set(out, "ASKDB_RAG_EMBEDDER_MODEL", model);
+    set(out, "ASKDB_RAG_EMBEDDER_DIMENSIONS", String(resolvedRagDimensions));
     set(out, "ASKDB_RAG_EMBEDDER_API_KEY", ec.apiKey);
     set(out, "ASKDB_RAG_EMBEDDER_BASE_URL", ec.baseUrl);
   }
@@ -128,13 +164,26 @@ export function flattenAskDbConfig(config: AskDbConfig): Record<string, string> 
   if (rag.store === "file") {
     const f = rag.storeConfig.file;
     if (!f) throw new Error('askdb.config: rag.store is "file" but `rag.storeConfig.file` is missing.');
-    set(out, "ASKDB_RAG_FILE_BASE_PATH", f.basePath);
+    const basePath = f.basePath?.trim() || DEFAULT_RAG_FILE_BASE_PATH;
+    set(out, "ASKDB_RAG_FILE_BASE_PATH", basePath);
   } else if (rag.store === "memory") {
     // no env keys
   } else if (rag.store === "pgvector") {
     const p = rag.storeConfig.pgvector;
     if (!p) throw new Error('askdb.config: rag.store is "pgvector" but `rag.storeConfig.pgvector` is missing.');
-    set(out, "ASKDB_PGVECTOR_URL", p.databaseUrl);
+    const url = p.databaseUrl?.trim();
+    if (!url) {
+      throw new Error(
+        'askdb.config: rag.store is "pgvector" but `storeConfig.pgvector.databaseUrl` is missing (set ASKDB_PGVECTOR_URL via env in askdb.config).',
+      );
+    }
+    set(out, "ASKDB_PGVECTOR_URL", url);
+    const pgDims = parsePositiveInteger(p.dimensions) ?? resolvedRagDimensions;
+    set(out, "ASKDB_RAG_EMBEDDER_DIMENSIONS", String(pgDims));
+    const strategy = normalizePgvectorIndexStrategy(
+      typeof p.indexStrategy === "string" ? p.indexStrategy : undefined,
+    );
+    set(out, "ASKDB_PGVECTOR_INDEX_STRATEGY", strategy);
   }
 
   // --- Logging ---
