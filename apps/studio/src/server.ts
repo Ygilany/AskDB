@@ -3,6 +3,7 @@ import { createServer, type IncomingMessage, type ServerResponse } from "node:ht
 import { extname, relative, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { generateText as defaultGenerateText } from "ai";
+import { getAskDbRuntimeConfig } from "@askdb/config";
 import {
   ask,
   askDbAiKeyMissingMessage,
@@ -13,6 +14,7 @@ import {
   resolveAskDbEmbeddingConfig,
   suggestEnrichment,
   type AskDbAiConfig,
+  type AskDbAiEnv,
   type AskDbAiProvider,
   type AskGenerateDeps,
 } from "@askdb/core";
@@ -172,10 +174,11 @@ export function createStudioServer(options: StudioOptions): StudioServer {
 }
 
 export function serializeWorkspace(workspace: Workspace): StudioWorkspaceDto {
+  const rt = getAskDbRuntimeConfig();
   const aiConfig = (() => {
     try {
-      return resolveAskDbAiConfig(process.env, {
-        modelEnvVar: process.env.ASKDB_STUDIO_MODEL ? "ASKDB_STUDIO_MODEL" : undefined,
+      return resolveAskDbAiConfig(rt.ai.aiEnv, {
+        modelEnvVar: rt.ai.studioModel ? "ASKDB_STUDIO_MODEL" : undefined,
       });
     } catch {
       // A misconfigured AI env (e.g. azure without resourceName) shouldn't crash the workspace
@@ -235,12 +238,14 @@ function saveDraft(state: StudioState, tableId: string, draft: TableDraft): void
 }
 
 async function suggestForSource(workspace: Workspace, source: SuggestSource): Promise<SuggestResponse["candidates"]> {
-  const model = await createAskDbLanguageModelFromEnv(process.env, {
-    modelEnvVar: process.env.ASKDB_STUDIO_MODEL
-      ? "ASKDB_STUDIO_MODEL"
-      : process.env.ASKDB_TUI_MODEL
-        ? "ASKDB_TUI_MODEL"
-        : undefined,
+  const rt = getAskDbRuntimeConfig();
+  const modelEnvVar = rt.ai.studioModel
+    ? "ASKDB_STUDIO_MODEL"
+    : rt.ai.tuiModel
+      ? "ASKDB_TUI_MODEL"
+      : undefined;
+  const model = await createAskDbLanguageModelFromEnv(rt.ai.aiEnv, {
+    modelEnvVar,
   });
   if (!model) {
     throw new StudioHttpError(400, askDbAiKeyMissingMessage("AI enrichment suggestions"));
@@ -257,8 +262,9 @@ async function askSampleQuestion(
   schemaDir: string,
   options: { question: string; useRag: boolean },
 ): Promise<AskResponse> {
-  const mockSql = process.env.ASKDB_MOCK_SQL;
-  const aiConfig = mockSql ? undefined : resolveAskDbAiConfig(process.env);
+  const rt = getAskDbRuntimeConfig();
+  const mockSql = rt.dev.mockSql;
+  const aiConfig = mockSql ? undefined : resolveAskDbAiConfig(rt.ai.aiEnv);
   if (!mockSql && !aiConfig) {
     throw new StudioHttpError(
       400,
@@ -275,8 +281,8 @@ async function askSampleQuestion(
   type AskModel = Parameters<typeof ask>[0]["model"];
   const model: AskModel = mockSql
     ? (undefined as unknown as AskModel)
-    : ((await createAskDbLanguageModelFromEnv(process.env, {
-        modelEnvVar: process.env.ASKDB_STUDIO_MODEL ? "ASKDB_STUDIO_MODEL" : undefined,
+    : ((await createAskDbLanguageModelFromEnv(rt.ai.aiEnv, {
+        modelEnvVar: rt.ai.studioModel ? "ASKDB_STUDIO_MODEL" : undefined,
       })) as AskModel);
 
   const result = await ask({
@@ -483,9 +489,16 @@ async function createCurrentStudioRagIndex(
   };
 }
 
+function pickEnv(env: AskDbAiEnv, key: string): string | undefined {
+  const v = env[key];
+  return typeof v === "string" && v.trim() !== "" ? v.trim() : undefined;
+}
+
 function resolveStudioRagEmbedderConfig(): StudioRagEmbedderConfig {
+  const rt = getAskDbRuntimeConfig();
+  const base = rt.ai.aiEnv;
   const explicitKind =
-    process.env.ASKDB_RAG_EMBEDDER ?? process.env.ASKDB_STUDIO_RAG_EMBEDDER;
+    pickEnv(base, "ASKDB_RAG_EMBEDDER") ?? pickEnv(base, "ASKDB_STUDIO_RAG_EMBEDDER");
   const kind = explicitKind?.toLowerCase();
   if (kind === "mock") {
     return {
@@ -500,7 +513,7 @@ function resolveStudioRagEmbedderConfig(): StudioRagEmbedderConfig {
     throw new StudioHttpError(400, `Unsupported Studio RAG embedder: ${kind}`);
   }
 
-  const env = buildStudioRagEmbeddingEnv(kind);
+  const env = buildStudioRagEmbeddingEnv(kind, base);
   const aiConfig = resolveAskDbEmbeddingConfig(env, {
     modelEnvVar: "ASKDB_STUDIO_RAG_EMBEDDER_MODEL",
     modelDefault: DEFAULT_EMBEDDING_MODEL,
@@ -515,11 +528,11 @@ function resolveStudioRagEmbedderConfig(): StudioRagEmbedderConfig {
     };
   }
 
-  const provider = aiConfig?.provider ?? fallbackStudioRagProvider(kind);
+  const provider = aiConfig?.provider ?? fallbackStudioRagProvider(kind, base);
   const model = aiConfig?.model ?? DEFAULT_EMBEDDING_MODEL;
   const dimensionOverride = readPositiveIntegerEnv(
-    process.env.ASKDB_RAG_EMBEDDER_DIMENSIONS ??
-      process.env.ASKDB_STUDIO_RAG_EMBEDDER_DIMENSIONS,
+    pickEnv(base, "ASKDB_RAG_EMBEDDER_DIMENSIONS") ??
+      pickEnv(base, "ASKDB_STUDIO_RAG_EMBEDDER_DIMENSIONS"),
   );
   const dimensions = dimensionOverride ?? defaultEmbeddingDimensions(model);
   return {
@@ -536,18 +549,15 @@ function resolveStudioRagEmbedderConfig(): StudioRagEmbedderConfig {
   };
 }
 
-function buildStudioRagEmbeddingEnv(kind: string | undefined): NodeJS.ProcessEnv {
+function buildStudioRagEmbeddingEnv(kind: string | undefined, base: AskDbAiEnv): AskDbAiEnv {
   const apiKeyOverride =
-    process.env.ASKDB_RAG_EMBEDDER_API_KEY ??
-    process.env.ASKDB_STUDIO_RAG_EMBEDDER_API_KEY;
+    pickEnv(base, "ASKDB_RAG_EMBEDDER_API_KEY") ?? pickEnv(base, "ASKDB_STUDIO_RAG_EMBEDDER_API_KEY");
   const modelOverride =
-    process.env.ASKDB_RAG_EMBEDDER_MODEL ??
-    process.env.ASKDB_STUDIO_RAG_EMBEDDER_MODEL;
+    pickEnv(base, "ASKDB_RAG_EMBEDDER_MODEL") ?? pickEnv(base, "ASKDB_STUDIO_RAG_EMBEDDER_MODEL");
   const baseUrlOverride =
-    process.env.ASKDB_RAG_EMBEDDER_BASE_URL ??
-    process.env.ASKDB_STUDIO_RAG_EMBEDDER_BASE_URL;
+    pickEnv(base, "ASKDB_RAG_EMBEDDER_BASE_URL") ?? pickEnv(base, "ASKDB_STUDIO_RAG_EMBEDDER_BASE_URL");
   return {
-    ...process.env,
+    ...base,
     ...(kind === "openai" ? { ASKDB_AI_PROVIDER: "openai" } : {}),
     ...(apiKeyOverride ? { ASKDB_AI_API_KEY: apiKeyOverride } : {}),
     ...(modelOverride ? { ASKDB_STUDIO_RAG_EMBEDDER_MODEL: modelOverride } : {}),
@@ -555,9 +565,9 @@ function buildStudioRagEmbeddingEnv(kind: string | undefined): NodeJS.ProcessEnv
   };
 }
 
-function fallbackStudioRagProvider(kind: string | undefined): AskDbAiProvider {
+function fallbackStudioRagProvider(kind: string | undefined, base: AskDbAiEnv): AskDbAiProvider {
   if (kind === "openai") return "openai";
-  const raw = (process.env.ASKDB_AI_PROVIDER ?? "").toLowerCase();
+  const raw = (pickEnv(base, "ASKDB_AI_PROVIDER") ?? "").toLowerCase();
   return raw === "azure" || raw === "azure-openai" || raw === "foundry"
     ? "azure"
     : "openai";

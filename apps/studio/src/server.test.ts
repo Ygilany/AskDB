@@ -2,42 +2,48 @@ import { cpSync, existsSync, mkdtempSync, readFileSync } from "node:fs";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { flattenAskDbConfig, resetAskDbRuntimeForTests, setAskDbRuntimeForTests } from "@askdb/config";
+import type { AskDbConfig } from "@askdb/config";
 import { afterEach, describe, expect, it } from "vitest";
 import { createStudioServer } from "./server.js";
 
 const repoRoot = new URL("../../..", import.meta.url).pathname;
 
+const STUDIO_TEST_BASE: AskDbConfig = {
+  ai: {
+    provider: "openai",
+    providerConfig: {
+      openai: { apiKey: "test-key", model: "gpt-4o-mini" },
+    },
+  },
+  database: { provider: "postgres", providerConfig: { postgres: { databaseUrl: "postgres://localhost/db" } } },
+  introspection: { provider: "postgres", providerConfig: { postgres: {} }, outputDir: "./askdb/" },
+  rag: {
+    embedder: "mock",
+    embedderConfig: {},
+    store: "memory",
+    storeConfig: { memory: {} },
+  },
+};
+
+function installStudioRuntime(
+  flatExtra: Record<string, string> = {},
+  structured: AskDbConfig = STUDIO_TEST_BASE,
+  options?: { omitFlatKeys?: readonly string[] },
+): void {
+  let flat: Record<string, string> = { ...flattenAskDbConfig(structured), ...flatExtra };
+  for (const key of options?.omitFlatKeys ?? []) {
+    delete flat[key];
+  }
+  setAskDbRuntimeForTests({ structured, flat });
+}
+
 describe("AskDB Studio server", () => {
-  const originalMockSql = process.env.ASKDB_MOCK_SQL;
-  const originalAskDbAiProvider = process.env.ASKDB_AI_PROVIDER;
-  const originalAskDbAiApiKey = process.env.ASKDB_AI_API_KEY;
-  const originalAskDbAiBaseUrl = process.env.ASKDB_AI_BASE_URL;
-  const originalOpenAiApiKey = process.env.OPENAI_API_KEY;
-  const originalOpenAiBaseUrl = process.env.OPENAI_BASE_URL;
-  const originalRagEmbedder = process.env.ASKDB_RAG_EMBEDDER;
-  const originalRagEmbedderBaseUrl = process.env.ASKDB_RAG_EMBEDDER_BASE_URL;
-  const originalRagEmbedderModel = process.env.ASKDB_RAG_EMBEDDER_MODEL;
-  const originalRagEmbedderDimensions = process.env.ASKDB_RAG_EMBEDDER_DIMENSIONS;
-  const originalAzureOpenAiApiKey = process.env.AZURE_OPENAI_API_KEY;
-  const originalAzureOpenAiBaseUrl = process.env.AZURE_OPENAI_BASE_URL;
-  const originalAzureOpenAiEmbeddingDeployment = process.env.AZURE_OPENAI_EMBEDDING_DEPLOYMENT;
   const servers: ReturnType<typeof createStudioServer>[] = [];
   const embeddingServers: ReturnType<typeof createServer>[] = [];
 
   afterEach(async () => {
-    restoreEnv("ASKDB_MOCK_SQL", originalMockSql);
-    restoreEnv("ASKDB_AI_PROVIDER", originalAskDbAiProvider);
-    restoreEnv("ASKDB_AI_API_KEY", originalAskDbAiApiKey);
-    restoreEnv("ASKDB_AI_BASE_URL", originalAskDbAiBaseUrl);
-    restoreEnv("OPENAI_API_KEY", originalOpenAiApiKey);
-    restoreEnv("OPENAI_BASE_URL", originalOpenAiBaseUrl);
-    restoreEnv("ASKDB_RAG_EMBEDDER", originalRagEmbedder);
-    restoreEnv("ASKDB_RAG_EMBEDDER_BASE_URL", originalRagEmbedderBaseUrl);
-    restoreEnv("ASKDB_RAG_EMBEDDER_MODEL", originalRagEmbedderModel);
-    restoreEnv("ASKDB_RAG_EMBEDDER_DIMENSIONS", originalRagEmbedderDimensions);
-    restoreEnv("AZURE_OPENAI_API_KEY", originalAzureOpenAiApiKey);
-    restoreEnv("AZURE_OPENAI_BASE_URL", originalAzureOpenAiBaseUrl);
-    restoreEnv("AZURE_OPENAI_EMBEDDING_DEPLOYMENT", originalAzureOpenAiEmbeddingDeployment);
+    resetAskDbRuntimeForTests();
     await Promise.all(
       [...servers, ...embeddingServers].map(
         (server) =>
@@ -51,7 +57,7 @@ describe("AskDB Studio server", () => {
   });
 
   it("loads, saves enrichment, and generates sample SQL with the mock model", async () => {
-    process.env.ASKDB_RAG_EMBEDDER = "mock";
+    installStudioRuntime({ ASKDB_RAG_EMBEDDER: "mock" });
     const schemaDir = copyFixture();
     const server = createStudioServer({ schema: schemaDir });
     servers.push(server);
@@ -81,7 +87,10 @@ describe("AskDB Studio server", () => {
     expect(existsSync(usersMd)).toBe(true);
     expect(readFileSync(usersMd, "utf8")).toContain("Application users who can place orders.");
 
-    process.env.ASKDB_MOCK_SQL = "select count(*) from users";
+    installStudioRuntime({
+      ASKDB_RAG_EMBEDDER: "mock",
+      ASKDB_MOCK_SQL: "select count(*) from users",
+    });
     const generated = await postJson(`${baseUrl}/api/ask`, {
       question: "How many users are there?",
     });
@@ -135,10 +144,12 @@ describe("AskDB Studio server", () => {
     const embeddingServer = createEmbeddingServer();
     embeddingServers.push(embeddingServer);
     const embeddingBaseUrl = await listen(embeddingServer);
-    process.env.ASKDB_RAG_EMBEDDER = "openai";
-    process.env.ASKDB_RAG_EMBEDDER_DIMENSIONS = "4";
-    process.env.OPENAI_API_KEY = "test-key";
-    process.env.OPENAI_BASE_URL = embeddingBaseUrl;
+    installStudioRuntime({
+      ASKDB_RAG_EMBEDDER: "openai",
+      ASKDB_RAG_EMBEDDER_DIMENSIONS: "4",
+      OPENAI_API_KEY: "test-key",
+      OPENAI_BASE_URL: embeddingBaseUrl,
+    });
 
     const schemaDir = copyFixture();
     const server = createStudioServer({ schema: schemaDir });
@@ -169,11 +180,15 @@ describe("AskDB Studio server", () => {
   });
 
   it("defaults Studio RAG to AI SDK embeddings when an AI key is configured", async () => {
-    delete process.env.ASKDB_RAG_EMBEDDER;
-    delete process.env.OPENAI_API_KEY;
-    process.env.ASKDB_AI_PROVIDER = "openai";
-    process.env.ASKDB_AI_API_KEY = "test-key";
-    process.env.ASKDB_RAG_EMBEDDER_DIMENSIONS = "4";
+    installStudioRuntime(
+      {
+        ASKDB_AI_PROVIDER: "openai",
+        ASKDB_AI_API_KEY: "test-key",
+        ASKDB_RAG_EMBEDDER_DIMENSIONS: "4",
+      },
+      STUDIO_TEST_BASE,
+      { omitFlatKeys: ["ASKDB_RAG_EMBEDDER"] },
+    );
 
     const schemaDir = copyFixture();
     const server = createStudioServer({ schema: schemaDir });
@@ -189,13 +204,29 @@ describe("AskDB Studio server", () => {
   });
 
   it("uses the configured Azure AI SDK connection for Studio RAG status", async () => {
-    delete process.env.ASKDB_RAG_EMBEDDER;
-    delete process.env.OPENAI_API_KEY;
-    process.env.ASKDB_AI_PROVIDER = "azure";
-    process.env.AZURE_OPENAI_API_KEY = "test-key";
-    process.env.AZURE_OPENAI_BASE_URL = "https://example.test/openai/v1";
-    process.env.AZURE_OPENAI_EMBEDDING_DEPLOYMENT = "embedding-deployment";
-    process.env.ASKDB_RAG_EMBEDDER_DIMENSIONS = "4";
+    const azureStructured: AskDbConfig = {
+      ...STUDIO_TEST_BASE,
+      ai: {
+        provider: "azure",
+        providerConfig: {
+          azure: {
+            apiKey: "test-key",
+            baseUrl: "https://example.test/openai/v1",
+            model: "embedding-deployment",
+          },
+        },
+      },
+    };
+    installStudioRuntime(
+      {
+        ASKDB_RAG_EMBEDDER_DIMENSIONS: "4",
+        AZURE_OPENAI_EMBEDDING_DEPLOYMENT: "embedding-deployment",
+      },
+      azureStructured,
+      {
+        omitFlatKeys: ["ASKDB_RAG_EMBEDDER"],
+      },
+    );
 
     const schemaDir = copyFixture();
     const server = createStudioServer({ schema: schemaDir });
@@ -214,10 +245,12 @@ describe("AskDB Studio server", () => {
     const embeddingServer = createFailingEmbeddingServer();
     embeddingServers.push(embeddingServer);
     const embeddingBaseUrl = await listen(embeddingServer);
-    process.env.ASKDB_RAG_EMBEDDER = "openai";
-    process.env.ASKDB_RAG_EMBEDDER_DIMENSIONS = "4";
-    process.env.OPENAI_API_KEY = "test-key";
-    process.env.OPENAI_BASE_URL = embeddingBaseUrl;
+    installStudioRuntime({
+      ASKDB_RAG_EMBEDDER: "openai",
+      ASKDB_RAG_EMBEDDER_DIMENSIONS: "4",
+      OPENAI_API_KEY: "test-key",
+      OPENAI_BASE_URL: embeddingBaseUrl,
+    });
 
     const schemaDir = copyFixture();
     const server = createStudioServer({ schema: schemaDir });
@@ -304,14 +337,6 @@ function lexicalVector(text: string, dim: number): number[] {
 
 function tokenCount(text: string): number {
   return text.toLowerCase().match(/[a-z0-9_]+/g)?.length ?? 0;
-}
-
-function restoreEnv(name: string, value: string | undefined): void {
-  if (value === undefined) {
-    delete process.env[name];
-  } else {
-    process.env[name] = value;
-  }
 }
 
 async function getJson(url: string): Promise<any> {

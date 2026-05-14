@@ -1,3 +1,4 @@
+import { getAskDbRuntimeConfig } from "@askdb/config";
 import { readFileSync } from "node:fs";
 import { networkInterfaces } from "node:os";
 import { createStudioServer } from "./server.js";
@@ -71,9 +72,15 @@ export async function runStudioCli(argv: readonly string[]): Promise<number> {
 }
 
 function parseOptions(argv: readonly string[]): CliOptions {
+  const rt = getAskDbRuntimeConfig();
+  const listen = rt.structured.studio?.listen;
+  const portFromEnv = rt.ai.aiEnv.ASKDB_STUDIO_PORT;
+  const parsedPort =
+    listen?.port ??
+    (portFromEnv !== undefined && portFromEnv.trim() !== "" ? Number(portFromEnv) : NaN);
   const opts: CliOptions = {
-    host: process.env.ASKDB_STUDIO_HOST ?? "127.0.0.1",
-    port: Number(process.env.ASKDB_STUDIO_PORT ?? "5556"),
+    host: listen?.host ?? rt.ai.aiEnv.ASKDB_STUDIO_HOST ?? "127.0.0.1",
+    port: Number.isFinite(parsedPort) && parsedPort > 0 && parsedPort <= 65535 ? parsedPort : 5556,
   };
 
   for (let i = 0; i < argv.length; i += 1) {
