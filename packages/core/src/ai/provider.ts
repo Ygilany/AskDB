@@ -69,13 +69,11 @@ function readProvider(env: AskDbAiEnv): AskDbAiProvider {
  *   3. provider-native secondary        — `OPENAI_API_KEY_SECONDARY` or `AZURE_OPENAI_API_KEY_SECONDARY`
  *   4. `ASKDB_AI_API_KEY_SECONDARY`     — universal rotation fallback
  *
- * **Important:** `@askdb/config` is the only package that reads `process.env` directly.
- * App-level callers (after running `bootstrapAskDbEnv`) should pass `process.env` explicitly.
- * Package-level callers should obtain the env map via `getAskDbRuntimeEnv()` from `@askdb/config`.
+ * **Important:** Only `@askdb/config` reads `process.env` (during dotenv load and while evaluating
+ * `askdb.config.*`). Pass `getAskDbRuntimeConfig().ai.aiEnv` from `@askdb/config` after
+ * `bootstrapAskDbEnv()`, or an explicit plain object in tests.
  *
- * @param env - The environment variable map to resolve config from. Apps pass `process.env`
- *   (after `bootstrapAskDbEnv()`); library packages pass `getAskDbRuntimeEnv()` from `@askdb/config`.
- *   Tests pass a mock object to avoid reading real env state.
+ * @param env - String map in the shape of canonical AskDB env keys (from the runtime snapshot).
  * @param options - Optional per-app overrides (e.g. a per-app model env var).
  */
 export function resolveAskDbAiConfig(
@@ -157,13 +155,11 @@ export type ResolveAskDbEmbeddingConfigOptions = {
  * precedence so chat model ids (for example `gpt-4o`) are not used as
  * embedding model ids by accident.
  *
- * **Important:** `@askdb/config` is the only package that reads `process.env` directly.
- * App-level callers (after running `bootstrapAskDbEnv`) should pass `process.env` explicitly.
- * Package-level callers should obtain the env map via `getAskDbRuntimeEnv()` from `@askdb/config`.
+ * **Important:** Only `@askdb/config` reads `process.env` (during dotenv load and while evaluating
+ * `askdb.config.*`). Pass `getAskDbRuntimeConfig().ai.aiEnv` from `@askdb/config` after
+ * `bootstrapAskDbEnv()`, or an explicit plain object in tests.
  *
- * @param env - The environment variable map to resolve config from. Apps pass `process.env`
- *   (after `bootstrapAskDbEnv()`); library packages pass `getAskDbRuntimeEnv()` from `@askdb/config`.
- *   Tests pass a mock object to avoid reading real env state.
+ * @param env - String map in the shape of canonical AskDB env keys (from the runtime snapshot).
  * @param options - Optional per-app overrides (e.g. a per-app embedding model env var).
  */
 export function resolveAskDbEmbeddingConfig(
@@ -291,13 +287,11 @@ export async function createAskDbEmbeddingModel(
  * Convenience wrapper: resolve config from env, then construct a model.
  * Returns `undefined` when no API key is configured.
  *
- * **Important:** `@askdb/config` is the only package that reads `process.env` directly.
- * App-level callers (after running `bootstrapAskDbEnv`) should pass `process.env` explicitly.
- * Package-level callers should obtain the env map via `getAskDbRuntimeEnv()` from `@askdb/config`.
+ * **Important:** Only `@askdb/config` reads `process.env` (during dotenv load and while evaluating
+ * `askdb.config.*`). Pass `getAskDbRuntimeConfig().ai.aiEnv` from `@askdb/config` after
+ * `bootstrapAskDbEnv()`, or an explicit plain object in tests.
  *
- * @param env - The environment variable map to resolve config from. Apps pass `process.env`
- *   (after `bootstrapAskDbEnv()`); library packages pass `getAskDbRuntimeEnv()` from `@askdb/config`.
- *   Tests pass a mock object to avoid reading real env state.
+ * @param env - String map in the shape of canonical AskDB env keys (from the runtime snapshot).
  * @param options - Optional per-app overrides (e.g. a per-app model env var).
  */
 export async function createAskDbLanguageModelFromEnv(
@@ -311,13 +305,11 @@ export async function createAskDbLanguageModelFromEnv(
 
 /** Resolve embedding config from env, then construct an AI SDK embedding model.
  *
- * **Important:** `@askdb/config` is the only package that reads `process.env` directly.
- * App-level callers (after running `bootstrapAskDbEnv`) should pass `process.env` explicitly.
- * Package-level callers should obtain the env map via `getAskDbRuntimeEnv()` from `@askdb/config`.
+ * **Important:** Only `@askdb/config` reads `process.env` (during dotenv load and while evaluating
+ * `askdb.config.*`). Pass `getAskDbRuntimeConfig().ai.aiEnv` after `bootstrapAskDbEnv()`, or
+ * an explicit plain object in tests.
  *
- * @param env - The environment variable map to resolve config from. Apps pass `process.env`
- *   (after `bootstrapAskDbEnv()`); library packages pass `getAskDbRuntimeEnv()` from `@askdb/config`.
- *   Tests pass a mock object to avoid reading real env state.
+ * @param env - String map in the shape of canonical AskDB env keys (from the runtime snapshot).
  * @param options - Optional per-app overrides plus embedding-specific model/dimensions settings.
  */
 export async function createAskDbEmbeddingModelFromEnv(

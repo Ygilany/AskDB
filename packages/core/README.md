@@ -2,7 +2,7 @@
 
 Dialect-agnostic NL→SQL pipeline for AskDB. Provides `ask()` orchestration, schema/IR types, modes, logging, and retrieval input. Bring your own dialect adapter (e.g. `@askdb/postgres`) and your own model.
 
-> **Status:** pre-1.0. `0.3.0` is a **breaking change**: the Postgres dialect, the `connectionString` shortcut, and the `@askdb/core/postgres` subpath move out to `@askdb/postgres`. See [`docs/adrs/0002-integration-package-layout.md`](../../docs/adrs/0002-integration-package-layout.md).
+> **Status:** pre-1.0. `0.3.0` moved the Postgres dialect and `@askdb/core/postgres` to `@askdb/postgres`. `0.4.0` documents runtime AI config: pass **`getAskDbRuntimeConfig().ai.aiEnv`** from `@askdb/config` (after `bootstrapAskDbEnv`) into env-aware helpers — core does not read `process.env` by default. See [`docs/adrs/0002-integration-package-layout.md`](../../docs/adrs/0002-integration-package-layout.md) and [`docs/adrs/0005-askdb-config-and-env-bootstrap.md`](../../docs/adrs/0005-askdb-config-and-env-bootstrap.md).
 
 ## Install
 
@@ -16,7 +16,7 @@ pnpm add ai @ai-sdk/openai
 
 `@askdb/core` itself does not depend on `pg`. The optional `pg` peer lives on `@askdb/postgres` for live Postgres introspection.
 
-Runtime AI configuration is resolved from **`process.env`** (see `resolveAskDbAiConfig` in the source). If you use [`@askdb/config`](../../packages/config/README.md), call `bootstrapAskDbEnv()` before constructing models from env so `askdb.config.*` / `.config/askdb.*` hydrate canonical names.
+Runtime AI configuration is resolved from an **explicit env map** you pass to `resolveAskDbAiConfig` / `createAskDbLanguageModelFromEnv` (type `AskDbAiEnv`). If you use [`@askdb/config`](../../packages/config/README.md), call `bootstrapAskDbEnv()` then pass **`getAskDbRuntimeConfig().ai.aiEnv`** so `askdb.config.*` / `.config/askdb.*` populate that map.
 
 ## Schema format
 
