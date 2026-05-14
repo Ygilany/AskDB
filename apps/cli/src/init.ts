@@ -9,7 +9,7 @@ const DEFAULT_CONFIG_PATH = "askdb.config.ts";
  * (when loaded via `import "dotenv/config"`) or from the process environment.
  */
 const CONFIG_TEMPLATE = `import "dotenv/config";
-import { defineConfig, optionalEnv, type AskDbConfig } from "@askdb/config";
+import { defineConfig, env, type AskDbConfig } from "@askdb/config";
 
 /**
  * Nested AskDB configuration (grouped like Prisma's \`defineConfig\`).
@@ -17,8 +17,8 @@ import { defineConfig, optionalEnv, type AskDbConfig } from "@askdb/config";
  * \`import "dotenv/config"\` loads a local \`.env\` when this file is evaluated (missing file is OK).
  * First-party CLIs also call \`bootstrapAskDbEnv\`, which loads \`.env\` then merges this file into \`process.env\`.
  *
- * Use \`env("VAR")\` for Prisma-style fail-fast reads from the environment (shell exports or \`.env\`).
- * Use string literals for optional values until you wire \`env(...)\`.
+ * Use \`env("VAR")\` for values read from the environment (shell or \`.env\`). Missing values are OK at
+ * file load time; \`flattenAskDbConfig\` applies documented defaults when merging into \`process.env\`.
  *
  * \`satisfies AskDbConfig\` validates the nested shape at compile time.
  *
@@ -33,7 +33,7 @@ import { defineConfig, optionalEnv, type AskDbConfig } from "@askdb/config";
  *   MY_OPENAI_API_KEY=
  *   # MY_OPENAI_BASE_URL=
  *
- *   # Chat model id (template uses optionalEnv("MY_CHAT_MODEL", "gpt-4o-mini"); override in .env)
+ *   # Chat model id — optional; defaults are applied when unset (see \`@askdb/config\` / flattenAskDbConfig).
  *   MY_CHAT_MODEL=gpt-4o-mini
  *
  *   # --- Postgres (live DB URL for introspection + connectors) ---
@@ -79,7 +79,7 @@ export default defineConfig({
       openai: {
         // Optional until live NL→SQL; then use env("MY_OPENAI_API_KEY") or your own key name.
         apiKey: "",
-        model: optionalEnv("MY_CHAT_MODEL", "gpt-4o-mini"),
+        model: env("MY_CHAT_MODEL"),
       },
     },
   },
@@ -89,10 +89,7 @@ export default defineConfig({
     provider: "postgres",
     providerConfig: {
       postgres: {
-        databaseUrl: optionalEnv(
-          "MY_DATABASE_URL",
-          process.env.DATABASE_URL?.trim() ?? "postgres://postgres:postgres@127.0.0.1:5432/postgres",
-        ),
+        databaseUrl: env("MY_DATABASE_URL"),
       },
     },
   },
@@ -105,7 +102,7 @@ export default defineConfig({
         // Omit databaseUrl to reuse database.providerConfig.postgres.databaseUrl (see flattenAskDbConfig).
       },
     },
-    outputDir: optionalEnv("MY_INTROSPECT_OUTPUT_DIR", "./askdb/"),
+    outputDir: env("MY_INTROSPECT_OUTPUT_DIR"),
   },
 
   rag: {

@@ -10,7 +10,7 @@ import {
   env,
   flattenAskDbConfig,
   mergeAskDbConfigIntoEnvSync,
-  optionalEnv,
+  requiredEnv,
 } from "./index.js";
 import type { AskDbConfig } from "./types.js";
 
@@ -69,20 +69,20 @@ describe("discoverAskDbConfigPath", () => {
 });
 
 describe("env helpers", () => {
-  it("env throws when missing", () => {
+  it("env returns undefined when missing", () => {
     delete process.env.ASKDB_CONFIG_TEST_MISSING;
-    expect(() => env("ASKDB_CONFIG_TEST_MISSING")).toThrow(/ASKDB_CONFIG_TEST_MISSING/);
+    expect(env("ASKDB_CONFIG_TEST_MISSING")).toBeUndefined();
   });
 
-  it("optionalEnv returns default when missing", () => {
-    delete process.env.ASKDB_CONFIG_TEST_OPT;
-    expect(optionalEnv("ASKDB_CONFIG_TEST_OPT", "fallback")).toBe("fallback");
-  });
-
-  it("optionalEnv trims and returns set value", () => {
+  it("env trims when set", () => {
     process.env.ASKDB_CONFIG_TEST_OPT = "  x  ";
-    expect(optionalEnv("ASKDB_CONFIG_TEST_OPT", "fallback")).toBe("x");
+    expect(env("ASKDB_CONFIG_TEST_OPT")).toBe("x");
     delete process.env.ASKDB_CONFIG_TEST_OPT;
+  });
+
+  it("requiredEnv throws when missing", () => {
+    delete process.env.ASKDB_CONFIG_TEST_MISSING;
+    expect(() => requiredEnv("ASKDB_CONFIG_TEST_MISSING")).toThrow(/ASKDB_CONFIG_TEST_MISSING/);
   });
 });
 
@@ -116,6 +116,65 @@ describe("flattenAskDbConfig", () => {
       }),
     );
     expect(flat.DATABASE_URL).toBe("postgres://introspect/db");
+  });
+
+  it("defaults OpenAI chat model when model omitted", () => {
+    const flat = flattenAskDbConfig(
+      minimalConfig({
+        ai: {
+          provider: "openai",
+          providerConfig: { openai: { apiKey: "k" } },
+        },
+      }),
+    );
+    expect(flat.OPENAI_MODEL).toBe("gpt-4o-mini");
+    expect(flat.ASKDB_MODEL).toBe("gpt-4o-mini");
+  });
+
+  it("defaults DATABASE_URL when postgres URL omitted and process unset", () => {
+    const prev = process.env.DATABASE_URL;
+    delete process.env.DATABASE_URL;
+    try {
+      const flat = flattenAskDbConfig(
+        minimalConfig({
+          database: { provider: "postgres", providerConfig: { postgres: {} } },
+        }),
+      );
+      expect(flat.DATABASE_URL).toBe("postgres://postgres:postgres@127.0.0.1:5432/postgres");
+    } finally {
+      if (prev === undefined) delete process.env.DATABASE_URL;
+      else process.env.DATABASE_URL = prev;
+    }
+  });
+
+  it("prefers process.env.DATABASE_URL when config databaseUrl omitted", () => {
+    const prev = process.env.DATABASE_URL;
+    process.env.DATABASE_URL = "postgres://from-shell/db";
+    try {
+      const flat = flattenAskDbConfig(
+        minimalConfig({
+          database: { provider: "postgres", providerConfig: { postgres: {} } },
+        }),
+      );
+      expect(flat.DATABASE_URL).toBe("postgres://from-shell/db");
+    } finally {
+      if (prev === undefined) delete process.env.DATABASE_URL;
+      else process.env.DATABASE_URL = prev;
+    }
+  });
+
+  it("defaults file-store base path when basePath omitted", () => {
+    const flat = flattenAskDbConfig(
+      minimalConfig({
+        rag: {
+          embedder: "mock",
+          embedderConfig: {},
+          store: "file",
+          storeConfig: { file: {} },
+        },
+      }),
+    );
+    expect(flat.ASKDB_RAG_FILE_BASE_PATH).toBe("./askdb/rag");
   });
 });
 

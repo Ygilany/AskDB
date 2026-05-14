@@ -1,27 +1,26 @@
 /**
- * Read `process.env[name]`. Throws if missing or empty (after trim).
- * Mirrors the ergonomics of Prisma's `env()` helper from `prisma/config`.
+ * Read `process.env[name]`. Returns `undefined` when missing or blank (after trim).
+ * Use in `askdb.config.*` for every env-backed value; {@link flattenAskDbConfig} supplies defaults.
  */
-export function env(name: string): string {
+export function env(name: string): string | undefined {
   const raw = process.env[name];
   if (raw === undefined || raw.trim() === "") {
-    throw new Error(
-      `Missing required environment variable "${name}". ` +
-        `Set it in your .env file (or your shell environment) before loading askdb.config.`,
-    );
+    return undefined;
   }
-  return raw;
+  return raw.trim();
 }
 
 /**
- * Read `process.env[name]`. When missing or empty, returns `defaultValue`.
- * Use for template `askdb.config.ts` values so the file can load in CI or fresh clones
- * before a `.env` exists; switch to {@link env} when you want fail-fast instead.
+ * Read `process.env[name]`. Throws if missing or empty (after trim).
+ * For programmatic / non-config callers that need fail-fast semantics.
  */
-export function optionalEnv(name: string, defaultValue: string): string {
-  const raw = process.env[name];
-  if (raw === undefined || raw.trim() === "") {
-    return defaultValue;
+export function requiredEnv(name: string): string {
+  const v = env(name);
+  if (v === undefined) {
+    throw new Error(
+      `Missing required environment variable "${name}". ` +
+        `Set it in your .env file (or your shell environment) before using this code path.`,
+    );
   }
-  return raw.trim();
+  return v;
 }
