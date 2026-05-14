@@ -72,7 +72,7 @@ After init, add components with `pnpm dlx shadcn@latest add …` as needed.
 
 `@askdb/introspect` (Phase 6) is the package that turns a real database into a Schema v2 physical artifact.
 
-- **Connector pattern** — One small `Connector` interface per engine. Phase 6 ships **only the Postgres connector** (`@askdb/introspect/postgres`); the seam is the entry point for additional engines added one at a time in [`roadmap.md`](roadmap.md) Phase 10.
+- **Connector pattern** — One small `Connector` interface per engine. Phase 6 ships **only the Postgres connector** (`@askdb/introspect/postgres`); the seam is the entry point for additional engines added one at a time in [`roadmap.md`](roadmap.md) Phase 11.
 - **Two front doors, one connector** — Both modes produce the **same** `IntrospectionResult` and the **same** on-disk artifact:
   - **Live** — pass a `CatalogQueryRunner`; the connector runs documented `pg_catalog` / `information_schema` queries against the live database.
   - **Air-gapped** — run the same SQL templates in `psql`, an IDE, or CI; export the rows as a bundle (CSV/JSON); hand the bundle path to `@askdb/introspect` and get an identical artifact without AskDB ever touching credentials.

@@ -58,7 +58,7 @@ Implementation is ready to merge when **automated CI** passes, **determinism is 
 
 ## Non-blockers for Phase 6 merge
 
-- Non-Postgres engines (Phase 10).
+- Non-Postgres engines (Phase 11).
 - Heuristic rename detection.
 - Capturing every Postgres feature in Schema v2 (RLS, partitioning, expression indexes, generated columns).
 - Auto-detecting sensitive columns.
