@@ -12,8 +12,8 @@ description: "Build the workspace, generate or use a schema artifact, enrich it,
 <ul>
             <li>Node 20 or newer.</li>
             <li>pnpm 11.</li>
-            <li>An OpenAI-compatible API key for live NL-to-SQL generation.</li>
-            <li>A PostgreSQL connection string only if you want live introspection.</li>
+            <li>An API key for a supported AI provider — OpenAI (or any OpenAI-compatible endpoint) or Azure OpenAI — for live NL-to-SQL generation.</li>
+            <li>A PostgreSQL connection string only if you want live Postgres introspection. A Prisma schema file is enough if you use <code>{"--engine prisma"}</code>.</li>
           </ul>
 
 ## Use the Bundled Fixture
@@ -24,7 +24,8 @@ description: "Build the workspace, generate or use a schema artifact, enrich it,
 ```
 pnpm install
 cp .env.example .env
-# edit .env (canonical names) — or run `pnpm exec askdb init` for askdb.config.ts (example .env keys in comments)
+# Edit .env: uncomment OPENAI_API_KEY=sk-...  (or Azure equivalents from Stanza B).
+# Run `pnpm exec askdb init` instead if you prefer an askdb.config.ts starter.
 pnpm build
 
 pnpm exec askdb ask \
@@ -34,9 +35,11 @@ pnpm exec askdb ask \
 
 
 
-## Create a Schema from Postgres
+## Create a Schema from a Database
 
-<p>For a real database, generate a Schema v2 directory first, then point AskDB at it.</p>
+### From Postgres
+
+<p>For a live Postgres database, generate a Schema v2 directory first, then point AskDB at it.</p>
 
 
 ```
@@ -54,14 +57,47 @@ pnpm exec askdb ask \
 
 
 
-## Enrich the Schema
+### From a Prisma Schema
 
-<p>Raw introspection gives AskDB physical metadata. The TUI adds the describable layer: table descriptions, aliases, column notes, common query language, example questions, and concepts.</p>
+<p>If you already have a Prisma schema file, introspect directly from it — no live database required.</p>
 
 
 ```
-pnpm exec askdb enrich --schema my-app.schema
+pnpm exec askdb introspect \
+  --engine prisma \
+  --prisma-schema ./prisma/schema.prisma \
+  --out my-app.schema \
+  --schema-id my-app
 
+pnpm exec askdb ask \
+  --schema my-app.schema \
+  --question "Which tables are connected to users?"
+```
+
+
+<p>Set <code>{"ASKDB_PRISMA_SCHEMA"}</code> in <code>{".env"}</code> to make <code>{"--prisma-schema"}</code> optional on repeat runs. See <a href="../prisma/">@askdb/prisma</a> for supported providers.</p>
+
+
+
+## Enrich the Schema
+
+<p>Raw introspection gives AskDB physical metadata. The enrichment step adds the describable layer: table descriptions, aliases, column notes, common query language, example questions, and concepts. AskDB ships two enrichment UIs — pick whichever suits your workflow.</p>
+
+**Terminal UI** — keyboard-driven, works in any terminal:
+
+```
+pnpm exec askdb enrich --schema my-app.schema
+```
+
+**Studio** — browser-based UI served locally at <code>http://127.0.0.1:5556</code>:
+
+```
+pnpm exec askdb studio --schema my-app.schema
+```
+
+<p>Both UIs use <code>{"@askdb/enrich"}</code> under the hood and produce the same describable layer on disk. Once enriched, bundle the directory into a single portable artifact:</p>
+
+```
 # produce a single read-only artifact for distribution
 pnpm exec askdb bundle my-app.schema --out my-app.schema.bundle.json
 ```
@@ -92,8 +128,12 @@ pnpm add @askdb/core @askdb/postgres
 pnpm add ai @ai-sdk/openai
 # Optional: only for live Postgres introspection
 pnpm add pg
+# Optional: Prisma schema-file introspection (no live database required)
+pnpm add @askdb/introspect @askdb/prisma
 # Optional: only for custom Schema v2 enrichment authoring
 pnpm add @askdb/enrich
+# Optional: browser enrichment UI served locally
+pnpm add @askdb/studio
 # Optional: only when you want retrieval over schema chunks
 pnpm add @askdb/rag
 ```
