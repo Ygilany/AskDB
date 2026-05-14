@@ -23,7 +23,7 @@ pnpm exec askdb init
 # writes ./askdb.config.ts only (no .env file)
 ```
 
-<p><code>{"askdb init"}</code> emits a grouped <code>{"defineConfig({ ... } satisfies AskDbConfig)"}</code> in <code>{"askdb.config.ts"}</code>. Example <code>{".env"}</code> keys and setup notes from the old split template are preserved as <strong>comments</strong> in that file. Use Prisma-style <code>{"env(\"VAR\")"}</code> for values you keep in <code>{".env"}</code> (loaded via <code>{"import \"dotenv/config\""}</code>) or in the shell environment; optional fields can stay as literals until you switch them to <code>{"env(...)"}</code>.</p>
+<p><code>{"askdb init"}</code> emits a grouped <code>{"defineConfig({ ... } satisfies AskDbConfig)"}</code> in <code>{"askdb.config.ts"}</code>. Example <code>{".env"}</code> keys and setup notes from the old split template are preserved as <strong>comments</strong> in that file. Use <code>{"env(\"VAR\")"}</code> for values you keep in <code>{".env"}</code> (loaded via <code>{"import \"dotenv/config\""}</code>) or in the shell environment; when a variable is unset, <code>{"flattenAskDbConfig"}</code> applies documented defaults (chat model, introspection output dir, database URL fallbacks, RAG embedding dimensions, and similar — see <code>{"@askdb/config"}</code>).</p>
 
 ```
 import "dotenv/config";
