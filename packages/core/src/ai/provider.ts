@@ -72,6 +72,11 @@ function readProvider(env: AskDbAiEnv): AskDbAiProvider {
  * **Important:** `@askdb/config` is the only package that reads `process.env` directly.
  * App-level callers (after running `bootstrapAskDbEnv`) should pass `process.env` explicitly.
  * Package-level callers should obtain the env map via `getAskDbRuntimeEnv()` from `@askdb/config`.
+ *
+ * @param env - The environment variable map to resolve config from. Apps pass `process.env`
+ *   (after `bootstrapAskDbEnv()`); library packages pass `getAskDbRuntimeEnv()` from `@askdb/config`.
+ *   Tests pass a mock object to avoid reading real env state.
+ * @param options - Optional per-app overrides (e.g. a per-app model env var).
  */
 export function resolveAskDbAiConfig(
   env: AskDbAiEnv,
@@ -155,6 +160,11 @@ export type ResolveAskDbEmbeddingConfigOptions = {
  * **Important:** `@askdb/config` is the only package that reads `process.env` directly.
  * App-level callers (after running `bootstrapAskDbEnv`) should pass `process.env` explicitly.
  * Package-level callers should obtain the env map via `getAskDbRuntimeEnv()` from `@askdb/config`.
+ *
+ * @param env - The environment variable map to resolve config from. Apps pass `process.env`
+ *   (after `bootstrapAskDbEnv()`); library packages pass `getAskDbRuntimeEnv()` from `@askdb/config`.
+ *   Tests pass a mock object to avoid reading real env state.
+ * @param options - Optional per-app overrides (e.g. a per-app embedding model env var).
  */
 export function resolveAskDbEmbeddingConfig(
   env: AskDbAiEnv,
@@ -284,6 +294,11 @@ export async function createAskDbEmbeddingModel(
  * **Important:** `@askdb/config` is the only package that reads `process.env` directly.
  * App-level callers (after running `bootstrapAskDbEnv`) should pass `process.env` explicitly.
  * Package-level callers should obtain the env map via `getAskDbRuntimeEnv()` from `@askdb/config`.
+ *
+ * @param env - The environment variable map to resolve config from. Apps pass `process.env`
+ *   (after `bootstrapAskDbEnv()`); library packages pass `getAskDbRuntimeEnv()` from `@askdb/config`.
+ *   Tests pass a mock object to avoid reading real env state.
+ * @param options - Optional per-app overrides (e.g. a per-app model env var).
  */
 export async function createAskDbLanguageModelFromEnv(
   env: AskDbAiEnv,
@@ -299,6 +314,11 @@ export async function createAskDbLanguageModelFromEnv(
  * **Important:** `@askdb/config` is the only package that reads `process.env` directly.
  * App-level callers (after running `bootstrapAskDbEnv`) should pass `process.env` explicitly.
  * Package-level callers should obtain the env map via `getAskDbRuntimeEnv()` from `@askdb/config`.
+ *
+ * @param env - The environment variable map to resolve config from. Apps pass `process.env`
+ *   (after `bootstrapAskDbEnv()`); library packages pass `getAskDbRuntimeEnv()` from `@askdb/config`.
+ *   Tests pass a mock object to avoid reading real env state.
+ * @param options - Optional per-app overrides plus embedding-specific model/dimensions settings.
  */
 export async function createAskDbEmbeddingModelFromEnv(
   env: AskDbAiEnv,
