@@ -1,0 +1,2 @@
+SVG diagrams in this folder are committed build artifacts for the docs site.
+They are imported from architecture.mdx via Vite (?url) so paths respect Astro `base`.

@@ -1,0 +1,30 @@
+---
+title: Agents and MCP (status)
+description: What works today for coding agents and automation versus the MCP server on the roadmap; stable core contracts for hosts.
+---
+
+<p className="doc-eyebrow">Agent integrator journey</p>
+
+<p className="doc-lede">
+  AskDB’s mission includes <strong>machine-friendly surfaces</strong> so agents can generate or validate SQL under the same contracts as human integrators. Today that means the <strong>CLI</strong>, <strong>library</strong>, and <strong>HTTP API</strong>; a dedicated <strong>MCP</strong> server is <strong>roadmap</strong> work, not shipped in this repository yet.
+</p>
+
+## What works today
+
+- **CLI** — Stable flags and JSON-friendly logs for scripting and CI; run <code>{"askdb ask"}</code> with a schema path and question.
+- **Library** — Embed <code>{"ask()"}</code> in your agent runtime with explicit schema and model wiring (<a href="./embed-in-app/">Embed NL→SQL</a>).
+- **HTTP API** — Wrap the core for tools that speak HTTP (<a href="./http-api/">Run the HTTP API</a>).
+
+## MCP status
+
+- **MCP** is planned as a first-party surface that reuses the same core (see <a href="https://github.com/Ygilany/AskDB/blob/main/docs/roadmap.md">docs/roadmap.md</a> — Phase 13 MCP server surface).
+- Until MCP ships, build your own thin adapter that calls <code>{"ask()"}</code> or the HTTP API, and enforce **policy** (modes, sensitive fields, which connection strings exist) in your host.
+
+## Stable contracts for hosts
+
+- <a href="https://github.com/Ygilany/AskDB/blob/main/docs/integration/reuse-core-phase-3.md">docs/integration/reuse-core-phase-3.md</a> — entrypoints and semantics MCP/HTTP wrappers should reuse.
+- <a href="../../modes/">Modes and safety</a> — trust boundaries for model context.
+
+## README alignment
+
+The repository README lists current limitations, including that **MCP** and richer report generation are **roadmap** work. Treat this page and the README as the source of truth for **shipping status**; treat <a href="https://github.com/Ygilany/AskDB/blob/main/docs/mission.md">docs/mission.md</a> as the **directional** north star.

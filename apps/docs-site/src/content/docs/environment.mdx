@@ -1,11 +1,20 @@
 ---
-title: "Environment"
+title: "Environment (@askdb/config)"
 description: "Load secrets from .env, author askdb.config.ts with defineConfig, and read runtime settings through @askdb/config."
 ---
 
 <p className="doc-eyebrow">Configuration</p>
 
 <p className="doc-lede">First-party apps call <code>{"bootstrapAskDbEnv()"}</code> from <code>{"@askdb/config"}</code>, which loads a local <code>{".env"}</code> (via dotenv), discovers <code>{"askdb.config.*"}</code> or <code>{".config/askdb.*"}</code>, and evaluates a nested <code>{"defineConfig({ ... } satisfies AskDbConfig)"}</code> export. That produces an <strong>in-memory runtime snapshot</strong> (structured config + flattened canonical map + <code>{"aiEnv"}</code> for <code>{"@askdb/core"}</code>). AskDB does <strong>not</strong> copy the full flattened map into <code>{"process.env"}</code>; use <code>{"getAskDbRuntimeConfig()"}</code> instead.</p>
+
+## When to use this package
+
+<ul>
+  <li>You run first-party binaries (CLI, HTTP API, Studio) or your own Node host and want Prisma-style config discovery plus a typed runtime snapshot.</li>
+  <li>You need <code>{"env(\"VAR\")"}</code> helpers and <code>{"defineConfig"}</code> nesting without mutating global <code>{"process.env"}</code> for every AskDB key.</li>
+</ul>
+
+<p>Spec and rationale: <a href="https://github.com/Ygilany/AskDB/blob/main/docs/adrs/0005-askdb-config-and-env-bootstrap.md">ADR 0005 — askdb config and env bootstrap</a>.</p>
 
 ## Bootstrap order
 

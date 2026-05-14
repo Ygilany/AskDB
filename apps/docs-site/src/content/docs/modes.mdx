@@ -1,20 +1,22 @@
 ---
 title: "Modes and Safety"
-description: "AskDB validates generated SQL and supports operating modes that define review, execution, and reporting boundaries."
+description: "Operating modes define how much schema context reaches the model and how results may be summarized—see modes-v1 in the repo for the full contract."
 ---
 
 <p className="doc-eyebrow">Guardrails</p>
 
-<p className="doc-lede">AskDB validates generated SQL and supports operating modes that define review, execution, and reporting boundaries.</p>
+<p className="doc-lede">
+  Modes fix <strong>trust boundaries</strong> for headless pipelines: what may enter model context beyond the AskDB schema and the natural-language question. The authoritative contract is{" "}
+  <a href="https://github.com/Ygilany/AskDB/blob/main/docs/contracts/modes-v1.md">docs/contracts/modes-v1.md</a>. Surfaces such as MCP (roadmap) and HTTP should reuse the same semantics—see <a href="../guides/agents-and-mcp/">Agents and MCP (status)</a>.
+</p>
 
-## SQL Validation
+## SQL validation
 
 <p>Generated SQL is expected to be a PostgreSQL read-only <code>{"SELECT"}</code>. Guardrails reject writes, multi-statements, and system-schema access.</p>
 
 ## schema_only
 
 <p>The default mode. AskDB grounds generation in schema context and returns SQL only.</p>
-
 
 ```
 askdb ask \
@@ -23,12 +25,9 @@ askdb ask \
   --mode schema_only
 ```
 
-
-
 ## bounded_results
 
 <p>Reserved for future workflows where a host application may summarize bounded tabular results. Current AskDB surfaces still return SQL only.</p>
-
 
 ```
 askdb ask \
@@ -38,8 +37,13 @@ askdb ask \
   -v
 ```
 
+## Sensitive fields
 
+<p>Sensitive column and table markers can be included in prompts as tagged names, or omitted with <code>{"--omit-sensitive-from-prompt"}</code> / <code>{"ASKDB_OMIT_SENSITIVE_FROM_PROMPT"}</code>. Full rules live in{" "}
+  <a href="https://github.com/Ygilany/AskDB/blob/main/docs/contracts/sensitive-fields-and-modes.md">docs/contracts/sensitive-fields-and-modes.md</a>.</p>
 
-## Sensitive Fields
+## Spec in the repo
 
-<p>Sensitive column and table markers can be included in prompts as tagged names, or omitted with <code>{"--omit-sensitive-from-prompt"}</code> / <code>{"ASKDB_OMIT_SENSITIVE_FROM_PROMPT"}</code>.</p>
+<p>
+  This page is a short operator view. For merge-bar language and edge cases, read <a href="https://github.com/Ygilany/AskDB/blob/main/docs/contracts/modes-v1.md">modes-v1</a> next to your integration code.
+</p>

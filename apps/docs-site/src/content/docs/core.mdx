@@ -7,6 +7,13 @@ description: "The core package owns the NL-to-SQL pipeline, Schema v2 loading, e
 
 <p className="doc-lede">The core package owns the NL-to-SQL pipeline, Schema v2 loading, enrichment suggestion helpers, logging contracts, and retrieval input. It stays dialect-agnostic and returns SQL only.</p>
 
+## When to use
+
+<ul>
+  <li>You embed AskDB in <strong>application code</strong> (see <a href="../guides/embed-in-app/">Embed NL→SQL in a Node app</a>).</li>
+  <li>You need validated SQL from a question + Schema v2 + dialect + model—without bundling database drivers by default.</li>
+</ul>
+
 ## Install
 
 

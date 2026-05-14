@@ -7,6 +7,11 @@ description: "What a connector needs to plug into @askdb/introspect. The same co
 
 <p className="doc-lede">What a connector needs to plug into @askdb/introspect. The same contract powers @askdb/postgres and @askdb/prisma today and is the path for adding new engines.</p>
 
+<p>
+  Long-form notes and recipes also live in{" "}
+  <a href="https://github.com/Ygilany/AskDB/blob/main/docs/integration/connectors.md">docs/integration/connectors.md</a>.
+</p>
+
 ## The Connector Interface
 
 <p>A connector is a TypeScript object satisfying <code>{"Connector<TInput>"}</code> from <code>{"@askdb/introspect"}</code>. <code>{"describe"}</code> is required; <code>{"templates"}</code> is optional and only relevant when the engine introspects through catalog SQL.</p>
@@ -203,5 +208,5 @@ packages/<name>/
 
 <div className="link-cards">
             <a href="../postgres/"><strong>@askdb/postgres</strong><span>Live + air-gapped modes, full template bundle, <code>{"pg"}</code>-backed catalog runner, and <code>{"postgresDialect"}</code>.</span></a>
-            <a href="../packages/"><strong>@askdb/prisma</strong><span>File-only input, no <code>{"templates()"}</code>, no dialect. Pair with <code>{"postgresDialect"}</code> for SQL generation.</span></a>
+            <a href="../prisma/"><strong>@askdb/prisma</strong><span>File-only input, no <code>{"templates()"}</code>, no dialect. Pair with <code>{"postgresDialect"}</code> for SQL generation.</span></a>
           </div>
