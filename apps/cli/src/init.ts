@@ -9,7 +9,7 @@ const DEFAULT_CONFIG_PATH = "askdb.config.ts";
  * (when loaded via `import "dotenv/config"`) or from the process environment.
  */
 const CONFIG_TEMPLATE = `import "dotenv/config";
-import { defineConfig, env, type AskDbConfig } from "@askdb/config";
+import { defineConfig, optionalEnv, type AskDbConfig } from "@askdb/config";
 
 /**
  * Nested AskDB configuration (grouped like Prisma's \`defineConfig\`).
@@ -33,7 +33,7 @@ import { defineConfig, env, type AskDbConfig } from "@askdb/config";
  *   MY_OPENAI_API_KEY=
  *   # MY_OPENAI_BASE_URL=
  *
- *   # Chat model id (this template uses env("MY_CHAT_MODEL"))
+ *   # Chat model id (template uses optionalEnv("MY_CHAT_MODEL", "gpt-4o-mini"); override in .env)
  *   MY_CHAT_MODEL=gpt-4o-mini
  *
  *   # --- Postgres (live DB URL for introspection + connectors) ---
@@ -79,7 +79,7 @@ export default defineConfig({
       openai: {
         // Optional until live NL→SQL; then use env("MY_OPENAI_API_KEY") or your own key name.
         apiKey: "",
-        model: env("MY_CHAT_MODEL"),
+        model: optionalEnv("MY_CHAT_MODEL", "gpt-4o-mini"),
       },
     },
   },
@@ -89,7 +89,10 @@ export default defineConfig({
     provider: "postgres",
     providerConfig: {
       postgres: {
-        databaseUrl: env("MY_DATABASE_URL"),
+        databaseUrl: optionalEnv(
+          "MY_DATABASE_URL",
+          process.env.DATABASE_URL?.trim() ?? "postgres://postgres:postgres@127.0.0.1:5432/postgres",
+        ),
       },
     },
   },
@@ -102,7 +105,7 @@ export default defineConfig({
         // Omit databaseUrl to reuse database.providerConfig.postgres.databaseUrl (see flattenAskDbConfig).
       },
     },
-    outputDir: env("MY_INTROSPECT_OUTPUT_DIR"),
+    outputDir: optionalEnv("MY_INTROSPECT_OUTPUT_DIR", "./askdb/"),
   },
 
   rag: {

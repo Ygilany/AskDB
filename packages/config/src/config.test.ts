@@ -10,6 +10,7 @@ import {
   env,
   flattenAskDbConfig,
   mergeAskDbConfigIntoEnvSync,
+  optionalEnv,
 } from "./index.js";
 import type { AskDbConfig } from "./types.js";
 
@@ -71,6 +72,17 @@ describe("env helpers", () => {
   it("env throws when missing", () => {
     delete process.env.ASKDB_CONFIG_TEST_MISSING;
     expect(() => env("ASKDB_CONFIG_TEST_MISSING")).toThrow(/ASKDB_CONFIG_TEST_MISSING/);
+  });
+
+  it("optionalEnv returns default when missing", () => {
+    delete process.env.ASKDB_CONFIG_TEST_OPT;
+    expect(optionalEnv("ASKDB_CONFIG_TEST_OPT", "fallback")).toBe("fallback");
+  });
+
+  it("optionalEnv trims and returns set value", () => {
+    process.env.ASKDB_CONFIG_TEST_OPT = "  x  ";
+    expect(optionalEnv("ASKDB_CONFIG_TEST_OPT", "fallback")).toBe("x");
+    delete process.env.ASKDB_CONFIG_TEST_OPT;
   });
 });
 

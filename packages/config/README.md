@@ -35,6 +35,7 @@ Your `.env` can use friendly names (`MY_OPENAI_API_KEY`, …). The config file m
 ## API
 
 - `env(name)` — reads `process.env[name]`; throws if missing or blank (after trim).
+- `optionalEnv(name, defaultValue)` — same read, but returns `defaultValue` when unset (use in repo-root templates so `askdb.config.ts` loads in CI before `.env` exists).
 - `defineConfig(config)` — typing helper (returns the object unchanged).
 - `bootstrapAskDbEnv(options?)` — loads `.env` (optional candidate paths), then merges the discovered AskDB config into `process.env`.
 - `discoverAskDbConfigPath(cwd)` — returns the resolved config path, if any.

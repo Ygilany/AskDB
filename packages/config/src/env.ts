@@ -12,3 +12,16 @@ export function env(name: string): string {
   }
   return raw;
 }
+
+/**
+ * Read `process.env[name]`. When missing or empty, returns `defaultValue`.
+ * Use for template `askdb.config.ts` values so the file can load in CI or fresh clones
+ * before a `.env` exists; switch to {@link env} when you want fail-fast instead.
+ */
+export function optionalEnv(name: string, defaultValue: string): string {
+  const raw = process.env[name];
+  if (raw === undefined || raw.trim() === "") {
+    return defaultValue;
+  }
+  return raw.trim();
+}

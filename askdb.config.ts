@@ -1,9 +1,9 @@
 import "dotenv/config";
-import { defineConfig, env, type AskDbConfig } from "@askdb/config";
+import { defineConfig, optionalEnv, type AskDbConfig } from "@askdb/config";
 
 // `dotenv/config` loads a local `.env` when this module runs (missing file is OK).
 // CLIs also call `bootstrapAskDbEnv`, which loads `.env` then merges this config into `process.env`.
-// Use `env("VAR")` for required values from the environment; use literals until you wire a key.
+// Use `optionalEnv` for values that must exist at file load time (CI clones); use `env` from `@askdb/config` for fail-fast once you rely on `.env`.
 export default defineConfig({
   ai: {
     // openai | azure | foundry (foundry uses Azure-compatible env vars)
@@ -12,8 +12,8 @@ export default defineConfig({
       openai: {
         // Live NL→SQL: set in `.env`, e.g. MY_OPENAI_API_KEY=… (optional MY_OPENAI_BASE_URL=…)
         apiKey: "",
-        // Chat model id — set MY_CHAT_MODEL in `.env` (e.g. gpt-4o-mini)
-        model: env("MY_CHAT_MODEL"),
+        // Chat model id — override with MY_CHAT_MODEL in `.env` if needed
+        model: optionalEnv("MY_CHAT_MODEL", "gpt-4o-mini"),
       },
     },
   },
@@ -23,9 +23,12 @@ export default defineConfig({
     provider: "postgres",
     providerConfig: {
       postgres: {
-        // Postgres URL for connectors — set MY_DATABASE_URL in `.env`
+        // Postgres URL — MY_DATABASE_URL, else DATABASE_URL (e.g. CI), else local default
         // Pagila fixture (docker compose -f fixtures/pagila/docker-compose.yml …): often port 5433
-        databaseUrl: env("MY_DATABASE_URL"),
+        databaseUrl: optionalEnv(
+          "MY_DATABASE_URL",
+          process.env.DATABASE_URL?.trim() ?? "postgres://postgres:postgres@127.0.0.1:5432/postgres",
+        ),
       },
     },
   },
@@ -40,7 +43,7 @@ export default defineConfig({
       },
     },
     // Default Schema v2 output when you omit `askdb introspect --out` (maps to ASKDB_INTROSPECT_OUT)
-    outputDir: env("MY_INTROSPECT_OUTPUT_DIR"),
+    outputDir: optionalEnv("MY_INTROSPECT_OUTPUT_DIR", "./askdb/"),
   },
 
   rag: {

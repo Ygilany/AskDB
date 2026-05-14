@@ -2,7 +2,7 @@ export { ASKDB_CONFIG_EXTENSION_PRECEDENCE, discoverAskDbConfigPath } from "./di
 export type { AskDbConfigExtension } from "./discover.js";
 export { bootstrapAskDbEnv } from "./bootstrap.js";
 export type { BootstrapAskDbEnvOptions } from "./bootstrap.js";
-export { env } from "./env.js";
+export { env, optionalEnv } from "./env.js";
 export { defineConfig, isAskDbEnvProjection, ASKDB_ENV_PROJECTION } from "./projection.js";
 export type { AskDbEnvProjection } from "./projection.js";
 export { mergeAskDbConfigIntoEnv, mergeAskDbConfigIntoEnvSync } from "./load-merge.js";
