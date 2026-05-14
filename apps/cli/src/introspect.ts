@@ -94,7 +94,15 @@ async function runIntrospectCommand(argv: readonly string[]): Promise<number> {
     throw new Error("Use --prisma-schema only with --engine prisma.");
   }
   if (engine === "prisma" && !opts.prismaSchema) {
-    throw new Error("Provide --prisma-schema <schema.prisma|schema-dir> with --engine prisma.");
+    const fromEnv = process.env.ASKDB_PRISMA_SCHEMA?.trim();
+    if (fromEnv) {
+      opts.prismaSchema = fromEnv;
+    }
+  }
+  if (engine === "prisma" && !opts.prismaSchema) {
+    throw new Error(
+      "Provide --prisma-schema <schema.prisma|schema-dir> with --engine prisma, or set ASKDB_PRISMA_SCHEMA.",
+    );
   }
   if (engine === "prisma" && (opts.url || opts.fromExport)) {
     throw new Error("Use --prisma-schema with --engine prisma, not --url or --from-export.");
@@ -103,7 +111,15 @@ async function runIntrospectCommand(argv: readonly string[]): Promise<number> {
     throw new Error("Use only one input mode: --url or --from-export.");
   }
   if (!opts.print && !opts.diff && !opts.out) {
-    throw new Error("Provide one output mode: --out <dir>, --print, or --diff <existing-dir>.");
+    const fromEnv = process.env.ASKDB_INTROSPECT_OUT?.trim();
+    if (fromEnv) {
+      opts.out = fromEnv;
+    }
+  }
+  if (!opts.print && !opts.diff && !opts.out) {
+    throw new Error(
+      "Provide one output mode: --out <dir>, --print, or --diff <existing-dir> (or set ASKDB_INTROSPECT_OUT to default --out).",
+    );
   }
   if ([opts.print, Boolean(opts.diff), Boolean(opts.out)].filter(Boolean).length > 1) {
     throw new Error("Use only one output mode: --out, --print, or --diff.");
@@ -373,6 +389,10 @@ function printHelp(): void {
       "  askdb introspect --from-export <bundle-dir> --print",
       "  askdb introspect --from-export <bundle-dir> --diff <existing-dir>",
       "  askdb introspect templates --engine postgres",
+      "",
+      "Defaults (after askdb.config bootstrap):",
+      "  ASKDB_INTROSPECT_OUT  Used as --out when you omit --out, --print, and --diff.",
+      "  ASKDB_PRISMA_SCHEMA   Used as --prisma-schema when --engine prisma and the flag is omitted.",
       "",
       "Options:",
       "  --schema-id <id>",
