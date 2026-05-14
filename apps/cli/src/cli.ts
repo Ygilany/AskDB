@@ -262,7 +262,7 @@ program
       });
 
       const mockSql = opts.mockSql ?? process.env.ASKDB_MOCK_SQL;
-      const aiConfig = mockSql ? undefined : resolveAskDbAiConfig();
+      const aiConfig = mockSql ? undefined : resolveAskDbAiConfig(process.env);
       if (!mockSql && !aiConfig) {
         console.error(askDbAiKeyMissingMessage("NL→SQL generation"));
         console.error("Tip: in tests, set ASKDB_MOCK_SQL to bypass live model calls.");
@@ -284,7 +284,7 @@ program
         const model: AskModel = mockSql
           ? // The model won't be used when `deps.generateText` is overridden.
             (undefined as unknown as AskModel)
-          : ((await createAskDbLanguageModelFromEnv()) as AskModel);
+          : ((await createAskDbLanguageModelFromEnv(process.env)) as AskModel);
 
         const omitSensitiveFromPrompt =
           Boolean(opts.omitSensitiveFromPrompt) ||

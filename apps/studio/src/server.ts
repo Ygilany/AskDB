@@ -258,7 +258,7 @@ async function askSampleQuestion(
   options: { question: string; useRag: boolean },
 ): Promise<AskResponse> {
   const mockSql = process.env.ASKDB_MOCK_SQL;
-  const aiConfig = mockSql ? undefined : resolveAskDbAiConfig();
+  const aiConfig = mockSql ? undefined : resolveAskDbAiConfig(process.env);
   if (!mockSql && !aiConfig) {
     throw new StudioHttpError(
       400,

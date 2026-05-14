@@ -68,9 +68,13 @@ function readProvider(env: AskDbAiEnv): AskDbAiProvider {
  *   2. provider-native primary          — `OPENAI_API_KEY` or `AZURE_OPENAI_API_KEY` / `AZURE_API_KEY`
  *   3. provider-native secondary        — `OPENAI_API_KEY_SECONDARY` or `AZURE_OPENAI_API_KEY_SECONDARY`
  *   4. `ASKDB_AI_API_KEY_SECONDARY`     — universal rotation fallback
+ *
+ * **Important:** `@askdb/config` is the only package that reads `process.env` directly.
+ * App-level callers (after running `bootstrapAskDbEnv`) should pass `process.env` explicitly.
+ * Package-level callers should obtain the env map via `getAskDbRuntimeEnv()` from `@askdb/config`.
  */
 export function resolveAskDbAiConfig(
-  env: AskDbAiEnv = process.env,
+  env: AskDbAiEnv,
   options: ResolveAskDbAiConfigOptions = {},
 ): AskDbAiConfig | undefined {
   const provider = readProvider(env);
@@ -147,9 +151,13 @@ export type ResolveAskDbEmbeddingConfigOptions = {
  * connection as `resolveAskDbAiConfig`, but with embedding-specific model
  * precedence so chat model ids (for example `gpt-4o`) are not used as
  * embedding model ids by accident.
+ *
+ * **Important:** `@askdb/config` is the only package that reads `process.env` directly.
+ * App-level callers (after running `bootstrapAskDbEnv`) should pass `process.env` explicitly.
+ * Package-level callers should obtain the env map via `getAskDbRuntimeEnv()` from `@askdb/config`.
  */
 export function resolveAskDbEmbeddingConfig(
-  env: AskDbAiEnv = process.env,
+  env: AskDbAiEnv,
   options: ResolveAskDbEmbeddingConfigOptions = {},
 ): AskDbAiConfig | undefined {
   const provider = readProvider(env);
@@ -272,9 +280,13 @@ export async function createAskDbEmbeddingModel(
 /**
  * Convenience wrapper: resolve config from env, then construct a model.
  * Returns `undefined` when no API key is configured.
+ *
+ * **Important:** `@askdb/config` is the only package that reads `process.env` directly.
+ * App-level callers (after running `bootstrapAskDbEnv`) should pass `process.env` explicitly.
+ * Package-level callers should obtain the env map via `getAskDbRuntimeEnv()` from `@askdb/config`.
  */
 export async function createAskDbLanguageModelFromEnv(
-  env: AskDbAiEnv = process.env,
+  env: AskDbAiEnv,
   options: ResolveAskDbAiConfigOptions = {},
 ): Promise<LanguageModel | undefined> {
   const config = resolveAskDbAiConfig(env, options);
@@ -282,9 +294,14 @@ export async function createAskDbLanguageModelFromEnv(
   return createAskDbLanguageModel(config);
 }
 
-/** Resolve embedding config from env, then construct an AI SDK embedding model. */
+/** Resolve embedding config from env, then construct an AI SDK embedding model.
+ *
+ * **Important:** `@askdb/config` is the only package that reads `process.env` directly.
+ * App-level callers (after running `bootstrapAskDbEnv`) should pass `process.env` explicitly.
+ * Package-level callers should obtain the env map via `getAskDbRuntimeEnv()` from `@askdb/config`.
+ */
 export async function createAskDbEmbeddingModelFromEnv(
-  env: AskDbAiEnv = process.env,
+  env: AskDbAiEnv,
   options: ResolveAskDbEmbeddingConfigOptions & CreateAskDbEmbeddingModelOptions = {},
 ): Promise<EmbeddingModel<string> | undefined> {
   const config = resolveAskDbEmbeddingConfig(env, options);

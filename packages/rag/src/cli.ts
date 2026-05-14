@@ -8,6 +8,7 @@ import {
   type AskDbLogger,
   type AskDbLogLevel,
 } from "@askdb/core";
+import { env } from "@askdb/config";
 import { buildSchemaIndex } from "./indexer/index.js";
 import { loadChunkerSourcesFromDir } from "./chunker/sources.js";
 import { createOpenAiEmbedder as createAiSdkOpenAiEmbedder } from "./embedders/openai.js";
@@ -219,7 +220,7 @@ function stableTokenHash(token: string): number {
 }
 
 function createOpenAiEmbedder(opts: CliOptions): Embedder {
-  const apiKey = opts.apiKey ?? process.env.OPENAI_API_KEY;
+  const apiKey = opts.apiKey ?? env("OPENAI_API_KEY");
   if (!apiKey) {
     throw new Error(
       "createOpenAiEmbedder: set OPENAI_API_KEY or pass --api-key. The OpenAI embedder uses the AI SDK optional peers (`ai` and `@ai-sdk/openai`).",
@@ -228,7 +229,7 @@ function createOpenAiEmbedder(opts: CliOptions): Embedder {
   return createAiSdkOpenAiEmbedder({
     apiKey,
     model: opts.embedderModel ?? "text-embedding-3-small",
-    baseURL: process.env.OPENAI_BASE_URL,
+    baseURL: env("OPENAI_BASE_URL"),
     dimensions: opts.dimensions,
   });
 }
@@ -270,7 +271,7 @@ function buildLogger(opts: CliOptions): AskDbLogger {
   const level = resolveLogLevel(opts);
   return createAskDbLogger({
     correlationId:
-      opts.correlationId ?? process.env.ASKDB_CORRELATION_ID ?? randomUUID(),
+      opts.correlationId ?? env("ASKDB_CORRELATION_ID") ?? randomUUID(),
     level,
     logFile: opts.logFile,
     logStdout: opts.logStdout,
@@ -287,8 +288,8 @@ function resolveLogLevel(opts: CliOptions): AskDbLogLevel {
     }
     return lvl;
   }
-  const env = process.env.ASKDB_LOG_LEVEL?.toLowerCase();
-  if (env && isSupportedAskDbLogLevel(env)) return env;
+  const envLevel = env("ASKDB_LOG_LEVEL")?.toLowerCase();
+  if (envLevel && isSupportedAskDbLogLevel(envLevel)) return envLevel;
   if (opts.verbose || opts.logFile || opts.logStdout) return "info";
   return "silent";
 }

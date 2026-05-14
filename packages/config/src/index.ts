@@ -2,7 +2,7 @@ export { ASKDB_CONFIG_EXTENSION_PRECEDENCE, discoverAskDbConfigPath } from "./di
 export type { AskDbConfigExtension } from "./discover.js";
 export { bootstrapAskDbEnv } from "./bootstrap.js";
 export type { BootstrapAskDbEnvOptions } from "./bootstrap.js";
-export { env, requiredEnv } from "./env.js";
+export { env, requiredEnv, getAskDbRuntimeEnv } from "./env.js";
 export {
   DEFAULT_AZURE_OPENAI_DEPLOYMENT,
   DEFAULT_INTROSPECT_OUTPUT_DIR,

@@ -219,7 +219,7 @@ export function createAskDbHttpServer(options: AskDbHttpServerOptions = {}) {
       }
 
       const mockSql = process.env.ASKDB_MOCK_SQL;
-      const aiConfig = mockSql ? undefined : resolveAskDbAiConfig();
+      const aiConfig = mockSql ? undefined : resolveAskDbAiConfig(process.env);
       if (!mockSql && !aiConfig) {
         writeError(res, 500, correlationId, {
           code: "generation_not_configured",
@@ -271,7 +271,7 @@ export function createAskDbHttpServer(options: AskDbHttpServerOptions = {}) {
       type AskModel = Parameters<typeof ask>[0]["model"];
       const model: AskModel = mockSql
         ? (undefined as unknown as AskModel)
-        : ((await createAskDbLanguageModelFromEnv()) as AskModel);
+        : ((await createAskDbLanguageModelFromEnv(process.env)) as AskModel);
 
       const out = await ask({
         question: body.question,
