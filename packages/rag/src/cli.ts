@@ -8,7 +8,7 @@ import {
   type AskDbLogger,
   type AskDbLogLevel,
 } from "@askdb/core";
-import { getAskDbRuntimeConfig } from "@askdb/config";
+import { getAskDbRuntimeConfig, type AskDbRuntimeConfig } from "@askdb/config";
 import { buildSchemaIndex } from "./indexer/index.js";
 import { loadChunkerSourcesFromDir } from "./chunker/sources.js";
 import { createOpenAiEmbedder as createAiSdkOpenAiEmbedder } from "./embedders/openai.js";
@@ -65,18 +65,19 @@ export async function runRagCli(argv: readonly string[]): Promise<number> {
     if (!opts.schemaDir) {
       throw new Error("Missing positional <schema-dir>.");
     }
-    const logger = buildLogger(opts);
-    if (cmd === "index") return await runIndex(opts, logger);
-    return await runQuery(opts, logger);
+    const runtimeConfig = getAskDbRuntimeConfig();
+    const logger = buildLogger(opts, runtimeConfig);
+    if (cmd === "index") return await runIndex(opts, logger, runtimeConfig);
+    return await runQuery(opts, logger, runtimeConfig);
   } catch (e) {
     process.stderr.write(`${e instanceof Error ? e.message : String(e)}\n`);
     return 1;
   }
 }
 
-async function runIndex(opts: CliOptions, logger: AskDbLogger): Promise<number> {
+async function runIndex(opts: CliOptions, logger: AskDbLogger, runtimeConfig: AskDbRuntimeConfig): Promise<number> {
   const sources = loadChunkerSourcesFromDir(opts.schemaDir!);
-  const embedder = buildEmbedder(opts);
+  const embedder = buildEmbedder(opts, runtimeConfig);
   const dimensions = embedderDimensions(opts);
   const store = await buildStore(opts, dimensions);
 
@@ -109,12 +110,12 @@ async function runIndex(opts: CliOptions, logger: AskDbLogger): Promise<number> 
   return 0;
 }
 
-async function runQuery(opts: CliOptions, logger: AskDbLogger): Promise<number> {
+async function runQuery(opts: CliOptions, logger: AskDbLogger, runtimeConfig: AskDbRuntimeConfig): Promise<number> {
   if (!opts.question) {
     throw new Error("Missing --question for query command.");
   }
   const sources = loadChunkerSourcesFromDir(opts.schemaDir!);
-  const embedder = buildEmbedder(opts);
+  const embedder = buildEmbedder(opts, runtimeConfig);
   const dimensions = embedderDimensions(opts);
   const store = await buildStore(opts, dimensions);
 
@@ -160,10 +161,10 @@ async function runQuery(opts: CliOptions, logger: AskDbLogger): Promise<number> 
   return 0;
 }
 
-function buildEmbedder(opts: CliOptions): Embedder {
+function buildEmbedder(opts: CliOptions, runtimeConfig: AskDbRuntimeConfig): Embedder {
   const choice = opts.embedder ?? "mock";
   if (choice === "mock") return createMockEmbedder();
-  if (choice === "openai") return createOpenAiEmbedder(opts);
+  if (choice === "openai") return createOpenAiEmbedder(opts, runtimeConfig);
   throw new Error(`Unknown embedder: ${choice}`);
 }
 
@@ -219,8 +220,7 @@ function stableTokenHash(token: string): number {
   return h >>> 0;
 }
 
-function createOpenAiEmbedder(opts: CliOptions): Embedder {
-  const runtimeConfig = getAskDbRuntimeConfig();
+function createOpenAiEmbedder(opts: CliOptions, runtimeConfig: AskDbRuntimeConfig): Embedder {
   const apiKey = opts.apiKey ?? runtimeConfig.rag.embedder.apiKey;
   if (!apiKey) {
     throw new Error(
@@ -268,9 +268,8 @@ async function closeStore(store: VectorStore & { close?: () => Promise<void>; fl
   if (typeof store.close === "function") await store.close();
 }
 
-function buildLogger(opts: CliOptions): AskDbLogger {
-  const level = resolveLogLevel(opts);
-  const runtimeConfig = getAskDbRuntimeConfig();
+function buildLogger(opts: CliOptions, runtimeConfig: AskDbRuntimeConfig): AskDbLogger {
+  const level = resolveLogLevel(opts, runtimeConfig);
   return createAskDbLogger({
     correlationId:
       opts.correlationId ?? runtimeConfig.logging.correlationId ?? randomUUID(),
@@ -280,7 +279,7 @@ function buildLogger(opts: CliOptions): AskDbLogger {
   });
 }
 
-function resolveLogLevel(opts: CliOptions): AskDbLogLevel {
+function resolveLogLevel(opts: CliOptions, runtimeConfig: AskDbRuntimeConfig): AskDbLogLevel {
   if (opts.logLevel !== undefined && opts.logLevel !== "") {
     const lvl = opts.logLevel.toLowerCase();
     if (!isSupportedAskDbLogLevel(lvl)) {
@@ -290,7 +289,7 @@ function resolveLogLevel(opts: CliOptions): AskDbLogLevel {
     }
     return lvl;
   }
-  const envLevel = getAskDbRuntimeConfig().logging.level?.toLowerCase();
+  const envLevel = runtimeConfig.logging.level?.toLowerCase();
   if (envLevel && isSupportedAskDbLogLevel(envLevel)) return envLevel;
   if (opts.verbose || opts.logFile || opts.logStdout) return "info";
   return "silent";

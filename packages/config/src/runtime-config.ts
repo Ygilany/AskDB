@@ -13,6 +13,8 @@ export type AskDbRuntimeAiConfig = {
    * Full runtime env map (post-bootstrap).
    * Pass this to `@askdb/core` functions that accept an `AskDbAiEnv` parameter instead of
    * referencing `process.env` or calling `getAskDbRuntimeEnv()` directly.
+   *
+   * **Do not mutate** this object — it is the live `process.env` reference.
    */
   env: NodeJS.ProcessEnv;
   /** Value of `ASKDB_TUI_MODEL` — per-app model override for the TUI. */
