@@ -1,0 +1,62 @@
+---
+title: Journeys
+description: Pick an outcome-first path through AskDB—embed in code, enrich schema, add retrieval, expose HTTP, or plan agent integration.
+---
+
+<p className="doc-eyebrow">Use-case first</p>
+
+<p className="doc-lede">
+  AskDB optimizes for <strong>trust-first analytics</strong> (answers grounded in your schema and explicit boundaries when data touches a model) and a <strong>developer-first embed</strong> (BYO keys, database connectivity, embeddings, and vector stores). Choose the journey that matches what you are shipping—not the package name you might install first.
+</p>
+
+## Guides
+
+<div className="link-cards">
+  <a href="../guides/embed-in-app/">
+    <strong>Embed NL→SQL in a Node app</strong>
+    <span>Install <code>@askdb/core</code>, load Schema v2, call <code>ask()</code>, and keep execution in your host.</span>
+  </a>
+  <a href="../guides/author-enrich-schema/">
+    <strong>Author and enrich schema</strong>
+    <span>Introspect, then use the TUI or Studio so humans confirm AI-suggested descriptions and aliases on Schema v2.</span>
+  </a>
+  <a href="../guides/rag-large-schema/">
+    <strong>Add RAG for large schemas</strong>
+    <span>Chunk and index the same Schema v2 artifact with BYO embedder and vector store; retrieve context per question.</span>
+  </a>
+  <a href="../guides/http-api/">
+    <strong>Run the HTTP API</strong>
+    <span>Expose the same engine over HTTP for services and dashboards with your auth and policy boundary.</span>
+  </a>
+  <a href="../guides/agents-and-mcp/">
+    <strong>Agents and MCP (status)</strong>
+    <span>What works today (CLI, library, HTTP) versus MCP on the roadmap; stable contracts for future hosts.</span>
+  </a>
+</div>
+
+## Still starting out?
+
+<div className="link-cards">
+  <a href="../quickstart/">
+    <strong>Quickstart</strong>
+    <span>From clone or fresh install to your first <code>askdb ask</code> against a fixture or introspected schema.</span>
+  </a>
+  <a href="../concepts/">
+    <strong>Core concepts</strong>
+    <span>Schema v2, enrichment, validation, modes, and where execution stops.</span>
+  </a>
+  <a href="../architecture/">
+    <strong>Architecture</strong>
+    <span>Package layers, dependency direction, connectors vs optional peers.</span>
+  </a>
+</div>
+
+## Deeper contracts in the repo
+
+<p>
+  Merge-bar language and full contracts live under <code>docs/</code> in the repository—for example{" "}
+  <a href="https://github.com/Ygilany/AskDB/blob/main/docs/mission.md">docs/mission.md</a>,{" "}
+  <a href="https://github.com/Ygilany/AskDB/blob/main/docs/contracts/modes-v1.md">docs/contracts/modes-v1.md</a>, and{" "}
+  <a href="https://github.com/Ygilany/AskDB/blob/main/docs/integration/installable-package.md">docs/integration/installable-package.md</a>.
+  This site summarizes for day-to-day integration; link out when you need the exact spec.
+</p>
