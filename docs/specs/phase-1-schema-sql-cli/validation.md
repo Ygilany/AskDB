@@ -19,7 +19,7 @@ Implementation is ready to merge when all of the following hold. This encodes an
 
 ## Manual (short)
 
-- **Generate only:** after `pnpm install && pnpm build`, run the CLI example in [`README.md`](../../../README.md) against `fixtures/schemas/orders-users.schema.json` with `OPENAI_API_KEY` set.  
+- **Generate only:** after `pnpm install && pnpm build`, run the CLI example in [`README.md`](../../../README.md) against `fixtures/schemas/orders-users.schema.json` with `OPENAI_API_KEY` set (or use `pnpm exec askdb init` and create a `.env` / adjust `env("...")` in `askdb.config.ts` per [`@askdb/config`](../../../packages/config/README.md)).  
 - **Execute:** set `DATABASE_URL` to a dev database, add `--execute`, confirm TSV or `--json` output.  
 - Confirm error messages for: bad connection, unsafe/rejected SQL, missing schema file, missing `OPENAI_API_KEY`, or `--execute` without `DATABASE_URL`.
 
