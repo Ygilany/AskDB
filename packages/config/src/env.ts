@@ -24,20 +24,3 @@ export function requiredEnv(name: string): string {
   }
   return v;
 }
-
-/**
- * Returns the current runtime environment (`process.env`).
- *
- * `@askdb/config` is the **only** package that reads `process.env` directly.
- * All other packages that need to pass a full env map to library functions (for example
- * `@askdb/core`'s `resolveAskDbAiConfig`) must obtain it through this helper rather than
- * referencing `process.env` themselves. This keeps `process.env` access centralised and
- * makes it easy to replace or augment the runtime env in future (e.g. for testing shims).
- *
- * First-party apps call {@link bootstrapAskDbEnv} (which loads `.env` and merges
- * `askdb.config.*`) **before** calling this helper so that all canonical env keys are
- * already populated.
- */
-export function getAskDbRuntimeEnv(): NodeJS.ProcessEnv {
-  return process.env;
-}

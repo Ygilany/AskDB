@@ -1,8 +1,8 @@
 export { ASKDB_CONFIG_EXTENSION_PRECEDENCE, discoverAskDbConfigPath } from "./discover.js";
 export type { AskDbConfigExtension } from "./discover.js";
-export { bootstrapAskDbEnv } from "./bootstrap.js";
+export { bootstrapAskDbEnv, bootstrapAskDbRuntime } from "./bootstrap.js";
 export type { BootstrapAskDbEnvOptions } from "./bootstrap.js";
-export { env, requiredEnv, getAskDbRuntimeEnv } from "./env.js";
+export { env, requiredEnv } from "./env.js";
 export {
   getAskDbRuntimeConfig,
 } from "./runtime-config.js";
@@ -12,7 +12,15 @@ export type {
   AskDbRuntimeRagConfig,
   AskDbRuntimeRagEmbedderConfig,
   AskDbRuntimeLoggingConfig,
+  AskDbRuntimeHttpApiConfig,
+  AskDbRuntimeDevConfig,
+  AskDbRuntimeModesConfig,
 } from "./runtime-config.js";
+export {
+  mergeAskDbFlatIntoEnvMap,
+  resetAskDbRuntimeForTests,
+  setAskDbRuntimeForTests,
+} from "./runtime-store.js";
 export {
   DEFAULT_AZURE_OPENAI_DEPLOYMENT,
   DEFAULT_INTROSPECT_OUTPUT_DIR,
@@ -26,9 +34,8 @@ export {
 } from "./defaults.js";
 export { defineConfig, isAskDbEnvProjection, ASKDB_ENV_PROJECTION } from "./projection.js";
 export type { AskDbEnvProjection } from "./projection.js";
-export { mergeAskDbConfigIntoEnv, mergeAskDbConfigIntoEnvSync } from "./load-merge.js";
+export { loadAskDbConfigProjection, loadAskDbConfigProjectionSync } from "./load-merge.js";
 export type {
-  AskDbEnvConfig,
   AskDbConfig,
   OpenaiConfig,
   AzureConfig,

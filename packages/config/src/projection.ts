@@ -5,6 +5,8 @@ export const ASKDB_ENV_PROJECTION = Symbol.for("askdb.envProjection");
 
 export type AskDbEnvProjection = {
   readonly [ASKDB_ENV_PROJECTION]: true;
+  /** Nested config as authored (same reference passed to {@link defineConfig}). */
+  readonly config: AskDbConfig;
   readonly entries: Readonly<Record<string, string>>;
 };
 
@@ -22,6 +24,7 @@ export type AskDbEnvProjection = {
 export function defineConfig<const T extends AskDbConfig>(config: T): AskDbEnvProjection {
   return {
     [ASKDB_ENV_PROJECTION]: true,
+    config,
     entries: flattenAskDbConfig(config),
   };
 }
@@ -33,6 +36,9 @@ export function isAskDbEnvProjection(value: unknown): value is AskDbEnvProjectio
     ASKDB_ENV_PROJECTION in value &&
     (value as AskDbEnvProjection)[ASKDB_ENV_PROJECTION] === true &&
     typeof (value as AskDbEnvProjection).entries === "object" &&
-    (value as AskDbEnvProjection).entries !== null
+    (value as AskDbEnvProjection).entries !== null &&
+    "config" in value &&
+    typeof (value as AskDbEnvProjection).config === "object" &&
+    (value as AskDbEnvProjection).config !== null
   );
 }
