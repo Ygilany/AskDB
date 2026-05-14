@@ -2,6 +2,8 @@
 
 Prisma-style helpers for AskDB: `env()`, `defineConfig()`, plus discovery and loading of `askdb.config.*` / `.config/askdb.*` files used by first-party apps (`@askdb/cli`, `@askdb/http-api`, `@askdb/studio`).
 
+**`@askdb/config` is the single package that reads `process.env` directly** (during dotenv load, while `askdb.config.*` evaluates, and for a tiny bootstrap-time overlay allowlist). All other packages obtain configuration through **`getAskDbRuntimeConfig()`**.
+
 ## Install
 
 ```bash
@@ -15,7 +17,7 @@ AskDB searches the working directory (`cwd`, usually `process.cwd()`) in this or
 1. `askdb.config.<ext>` — extension precedence: `ts` → `mts` → `cts` → `js` → `mjs` → `cjs` (first existing file wins).
 2. `.config/askdb.<ext>` — same extension precedence.
 
-This mirrors the layout described in [Prisma’s config reference](https://www.prisma.io/docs/orm/reference/prisma-config-reference), but uses **`.config/askdb.*`** so it does not collide with Prisma’s own `.config/prisma.*` files.
+This mirrors the layout described in [Prisma's config reference](https://www.prisma.io/docs/orm/reference/prisma-config-reference), but uses **`.config/askdb.*`** so it does not collide with Prisma's own `.config/prisma.*` files.
 
 ## Example `askdb.config.ts`
 
@@ -51,17 +53,44 @@ export default defineConfig({
 } satisfies AskDbConfig);
 ```
 
-Your `.env` can use friendly names (`MY_OPENAI_API_KEY`, …). `defineConfig` runs `flattenAskDbConfig`, which maps the nested object onto the canonical environment variable names that AskDB apps read via `process.env`. **Unset optional fields get defaults inside `flattenAskDbConfig`** (chat model, introspection output dir, database URL fallbacks, RAG embedding dimensions, file-store base path, pgvector index strategy, etc. — see `packages/config/src/defaults.ts`).
+Your `.env` can use friendly names (`MY_OPENAI_API_KEY`, …). `defineConfig` runs `flattenAskDbConfig`, which maps the nested object onto the canonical environment variable names used in the **runtime flat map** (and in `aiEnv` for `@askdb/core`). **Unset optional fields get defaults inside `flattenAskDbConfig`** (chat model, introspection output dir, database URL fallbacks, RAG embedding dimensions, file-store base path, pgvector index strategy, etc. — see `packages/config/src/defaults.ts`).
+
+## Architectural rule — `@askdb/config` is the sole `process.env` reader
+
+**Only `@askdb/config` reads `process.env` directly.** All AskDB library packages obtain their
+configuration through a single typed gateway:
+
+```ts
+import { getAskDbRuntimeConfig } from "@askdb/config";
+
+const config = getAskDbRuntimeConfig();
+const apiKey = opts.apiKey ?? config.rag.embedder.apiKey;
+const level = config.logging.level;
+// For @askdb/core functions that accept an env-map argument:
+const model = await createAskDbLanguageModelFromEnv(config.ai.aiEnv, { ... });
+```
+
+**Rules:**
+
+- Library packages (`@askdb/rag`, `@askdb/tui`, …) must call `getAskDbRuntimeConfig()` and use the returned typed fields. They must **not** call `env()`, `requiredEnv()`, or access `process.env` directly.
+- `env(name)` is only for use inside `askdb.config.*` files authored by end users — it maps friendly `.env` names onto values that become part of the structured config and flat map.
+- First-party app entry points call `bootstrapAskDbEnv()` at start-up. That loads dotenv, evaluates `askdb.config.*`, and installs an **in-memory runtime snapshot** (structured config + flat map + derived `aiEnv`). It does **not** copy AskDB settings into `process.env`.
+
+## Migration from legacy flat config
+
+`export default { OPENAI_API_KEY: "…" }` is **no longer supported**. Use nested `defineConfig({ ... satisfies AskDbConfig })` and `export default defineConfig({ … })`.
 
 ## API
 
-- `env(name)` — reads `process.env[name]`; returns `undefined` when missing or blank (after trim). Use for every env-backed field in `askdb.config.*`.
-- `requiredEnv(name)` — same read, but throws if missing or blank (for programmatic callers outside config files).
-- `defineConfig(config)` — returns a projection object whose `entries` are produced by `flattenAskDbConfig(config)` for merge into `process.env`.
-- `flattenAskDbConfig(config)` — nested config → flat canonical env map (applies defaults for optional values).
-- `bootstrapAskDbEnv(options?)` — loads `.env` (optional candidate paths), then merges the discovered AskDB config into `process.env`.
+- `getAskDbRuntimeConfig()` — **primary API for library packages**. Returns a typed `AskDbRuntimeConfig` from the bootstrapped snapshot (`structured`, `flat`-derived fields, and `ai.aiEnv` for `@askdb/core`).
+- `env(name)` / `requiredEnv(name)` — read `process.env` while authoring `askdb.config.*` only.
+- `defineConfig(config)` — returns an `AskDbEnvProjection` with `config` (structured) and `entries` (flattened canonical map).
+- `flattenAskDbConfig(config)` — nested config → flat canonical map (applies defaults for optional values).
+- `bootstrapAskDbEnv(options?)` / `bootstrapAskDbRuntime` — load dotenv, load config, install the runtime snapshot.
+- `loadAskDbConfigProjection(cwd)` / `loadAskDbConfigProjectionSync(cwd)` — load projection without installing the singleton (advanced / tests).
 - `discoverAskDbConfigPath(cwd)` — returns the resolved config path, if any.
-- `mergeAskDbConfigIntoEnvSync(cwd)` / `mergeAskDbConfigIntoEnv(cwd)` — merge only (dotenv already applied).
+- `mergeAskDbFlatIntoEnvMap(base, flat)` — merge AskDB flat entries into an env map for **child processes** (does not read `process.env` itself). Use `getAskDbRuntimeConfig().flat` as `flat` after bootstrap.
+- `setAskDbRuntimeForTests` / `resetAskDbRuntimeForTests` — test helpers for the runtime snapshot.
 
 ## License
 

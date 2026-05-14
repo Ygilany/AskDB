@@ -87,7 +87,6 @@ describe("cli spawn: introspect subcommand", () => {
 
   it("defaults --out from ASKDB_INTROSPECT_OUT for Prisma introspection", () => {
     const tmp = mkdtempSync(join(tmpdir(), "askdb-introspect-out-env-"));
-    const isoCwd = mkdtempSync(join(tmpdir(), "askdb-introspect-out-isolated-"));
     try {
       const exec = run(
         "node",
@@ -102,13 +101,12 @@ describe("cli spawn: introspect subcommand", () => {
           "simple",
         ],
         { ASKDB_INTROSPECT_OUT: tmp },
-        isoCwd,
+        repoRoot,
       );
       expect(exec.status).toBe(0);
       expect(readFileSync(join(tmp, "schema.json"), "utf8")).toContain('"id": "table:public.User"');
     } finally {
       rmSync(tmp, { recursive: true, force: true });
-      rmSync(isoCwd, { recursive: true, force: true });
     }
   });
 

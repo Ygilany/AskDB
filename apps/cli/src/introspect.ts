@@ -7,6 +7,7 @@ import {
   isSupportedAskDbLogLevel,
   type AskDbLogLevel,
 } from "@askdb/core";
+import { getAskDbRuntimeConfig } from "@askdb/config";
 import {
   type Connector,
   introspect,
@@ -83,9 +84,12 @@ function runTemplatesCommand(argv: readonly string[]): number {
 async function runIntrospectCommand(argv: readonly string[]): Promise<number> {
   const opts = parseOptions(argv);
   const engine = resolveEngine(opts.engine);
+  const rt = getAskDbRuntimeConfig();
+  const envMap = rt.ai.aiEnv;
   if (engine === "postgres" && !opts.url && !opts.fromExport) {
-    if (process.env.DATABASE_URL) {
-      opts.url = process.env.DATABASE_URL;
+    const dbUrl = envMap.DATABASE_URL?.trim();
+    if (dbUrl) {
+      opts.url = dbUrl;
     } else {
       throw new Error("Provide either --url <postgres-url> or --from-export <bundle-dir>.");
     }
@@ -94,9 +98,9 @@ async function runIntrospectCommand(argv: readonly string[]): Promise<number> {
     throw new Error("Use --prisma-schema only with --engine prisma.");
   }
   if (engine === "prisma" && !opts.prismaSchema) {
-    const fromEnv = process.env.ASKDB_PRISMA_SCHEMA?.trim();
-    if (fromEnv) {
-      opts.prismaSchema = fromEnv;
+    const fromRt = envMap.ASKDB_PRISMA_SCHEMA?.trim();
+    if (fromRt) {
+      opts.prismaSchema = fromRt;
     }
   }
   if (engine === "prisma" && !opts.prismaSchema) {
@@ -111,9 +115,9 @@ async function runIntrospectCommand(argv: readonly string[]): Promise<number> {
     throw new Error("Use only one input mode: --url or --from-export.");
   }
   if (!opts.print && !opts.diff && !opts.out) {
-    const fromEnv = process.env.ASKDB_INTROSPECT_OUT?.trim();
-    if (fromEnv) {
-      opts.out = fromEnv;
+    const fromRt = envMap.ASKDB_INTROSPECT_OUT?.trim();
+    if (fromRt) {
+      opts.out = fromRt;
     }
   }
   if (!opts.print && !opts.diff && !opts.out) {
@@ -126,14 +130,14 @@ async function runIntrospectCommand(argv: readonly string[]): Promise<number> {
   }
 
   const schemaId = opts.schemaId ?? inferSchemaId(opts.out ?? opts.diff) ?? "introspected";
-  const logLevel = resolveLogLevel(opts);
+  const logLevel = resolveLogLevel(opts, rt);
   const correlationId =
-    opts.correlationId ?? process.env.ASKDB_CORRELATION_ID ?? randomUUID();
+    opts.correlationId ?? rt.logging.correlationId ?? randomUUID();
   const logger = createAskDbLogger({
     correlationId,
     level: logLevel,
-    logFile: opts.logFile,
-    logStdout: opts.logStdout,
+    logFile: opts.logFile ?? rt.logging.logFile,
+    logStdout: opts.logStdout ?? rt.logging.logStdout,
   });
 
   const runConfig = buildRunConfig(opts, engine, schemaId);
@@ -352,7 +356,7 @@ function inferSchemaId(path: string | undefined): string | undefined {
   return name.endsWith(".schema") ? name.slice(0, -".schema".length) : name;
 }
 
-function resolveLogLevel(opts: CliOptions): AskDbLogLevel {
+function resolveLogLevel(opts: CliOptions, rt: ReturnType<typeof getAskDbRuntimeConfig>): AskDbLogLevel {
   if (opts.logLevel !== undefined && opts.logLevel !== "") {
     const level = opts.logLevel.toLowerCase();
     if (!isSupportedAskDbLogLevel(level)) {
@@ -362,7 +366,7 @@ function resolveLogLevel(opts: CliOptions): AskDbLogLevel {
     }
     return level;
   }
-  const env = process.env.ASKDB_LOG_LEVEL?.toLowerCase();
+  const env = rt.logging.level?.toLowerCase();
   if (env && isSupportedAskDbLogLevel(env)) return env;
   if (opts.verbose || opts.logFile || opts.logStdout) return "info";
   return "silent";

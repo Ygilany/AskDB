@@ -13,7 +13,7 @@ description: "How AskDB packages, product surfaces, connectors, optional peers, 
 
 ## Env bootstrap
 
-<p>First-party Node entrypoints load <code>{".env"}</code> and optional <code>{"askdb.config.*"}</code> / <code>{".config/askdb.*"}</code> through <code>{"@askdb/config"}</code> before reading canonical environment variables. See <a href="../environment/">Environment</a> and <a href="https://github.com/Ygilany/AskDB/blob/main/docs/adrs/0005-askdb-config-and-env-bootstrap.md">ADR 0005</a>.</p>
+<p>First-party Node entrypoints call <code>{"bootstrapAskDbEnv()"}</code> from <code>{"@askdb/config"}</code> (after loading <code>{".env"}</code> where the binary wires dotenv candidate paths). That evaluates <code>{"askdb.config.*"}</code> / <code>{".config/askdb.*"}</code> for the chosen working directory and installs the <strong>runtime snapshot</strong>. Downstream code reads <code>{"getAskDbRuntimeConfig()"}</code>; pass <code>{"getAskDbRuntimeConfig().ai.aiEnv"}</code> into <code>{"@askdb/core"}</code> helpers that take an explicit env map. See <a href="../environment/">Environment</a> and <a href="https://github.com/Ygilany/AskDB/blob/main/docs/adrs/0005-askdb-config-and-env-bootstrap.md">ADR 0005</a>.</p>
 
 ```
 Question + Schema v2
@@ -26,7 +26,7 @@ Question + Schema v2
 ## Package Layers
 
 <div className="package-table">
-  <a href="../environment/"><strong>@askdb/config</strong><span>Optional env bootstrap: <code>{"askdb.config.*"}</code> discovery and mapping into <code>{"process.env"}</code>.</span></a>
+  <a href="../environment/"><strong>@askdb/config</strong><span>Optional env bootstrap: <code>{"askdb.config.*"}</code> discovery, <code>{"defineConfig"}</code>, <code>{"bootstrapAskDbEnv()"}</code>, and <code>{"getAskDbRuntimeConfig()"}</code> (runtime snapshot, not a full merge into <code>{"process.env"}</code>).</span></a>
   <a href="../core/"><strong>@askdb/core</strong><span>Dialect-agnostic Schema v2 and NL-to-SQL contract package.</span></a>
   <a href="../introspect/"><strong>@askdb/introspect</strong><span>Engine-agnostic connector contract and Schema v2 renderer.</span></a>
   <a href="../postgres/"><strong>@askdb/postgres</strong><span>Postgres dialect, connector, templates, and optional <code>{"pg"}</code> catalog runner.</span></a>

@@ -24,8 +24,8 @@ description: "Build the workspace, generate or use a schema artifact, enrich it,
 ```
 pnpm install
 cp .env.example .env
-# Edit .env: uncomment OPENAI_API_KEY=sk-...  (or Azure equivalents from Stanza B).
-# Run `pnpm exec askdb init` instead if you prefer an askdb.config.ts starter.
+# edit .env for local secrets. This repo also ships a root askdb.config.ts;
+# or run `pnpm exec askdb init` in a new project (comments document .env keys).
 pnpm build
 
 pnpm exec askdb ask \

@@ -17,7 +17,7 @@ node apps/http-api/dist/bin.js
 ```
 
 
-          <p>Set <code>{"ASKDB_SCHEMA_PATH"}</code> in the repo-root <code>{".env"}</code> before starting the server. The binary loads <code>{".env"}</code> candidates (repo root, cwd, package dir), then merges <code>{"askdb.config.*"}</code> / <code>{".config/askdb.*"}</code> from the current working directory via <code>{"@askdb/config"}</code>.</p>
+          <p>Set <code>{"ASKDB_SCHEMA_PATH"}</code> in the repo-root <code>{".env"}</code> and/or in nested fields under <code>{"askdb.config.*"}</code> for the process working directory. The binary runs <code>{"bootstrapAskDbEnv()"}</code>: it loads the first existing <code>{".env"}</code> among repo root, current working directory, and the http-api package directory, then evaluates <code>{"askdb.config.*"}</code> / <code>{".config/askdb.*"}</code> from <code>{"cwd"}</code> and installs the AskDB runtime snapshot. The server reads settings with <code>{"getAskDbRuntimeConfig()"}</code>; AskDB does not merge the full config into <code>{"process.env"}</code>.</p>
 
 ## Health Check
 

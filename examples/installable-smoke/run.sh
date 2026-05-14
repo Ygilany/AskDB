@@ -3,7 +3,9 @@
 #
 # Builds the workspace, packs the library packages (including config, enrich, and tui) plus the app
 # packages (cli, studio, http-api), copies the consumer fixture into a fresh tmpdir, installs
-# library tarballs (no workspace), runs `tsc --noEmit`, and executes the smoke script.
+# library tarballs (no workspace; includes @askdb/config for @askdb/rag's dependency), runs `tsc --noEmit`,
+# and executes the smoke script. The app sandbox gets a minimal askdb.config.ts because the CLI
+# bootstraps runtime config on startup.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -153,6 +155,7 @@ node -e "
   const fs = require('fs');
   const p = '$WORK/consumer/package.json';
   const j = JSON.parse(fs.readFileSync(p, 'utf8'));
+  j.dependencies['@askdb/config'] = 'file:$CONFIG_TARBALL';
   j.dependencies['@askdb/core'] = 'file:$CORE_TARBALL';
   j.dependencies['@askdb/introspect'] = 'file:$INTROSPECT_TARBALL';
   j.dependencies['@askdb/postgres'] = 'file:$POSTGRES_TARBALL';
@@ -204,6 +207,39 @@ node -e "
 
 echo "smoke: npm install app sandbox…"
 (cd "$WORK/apps" && npm install --silent --no-audit --no-fund --no-package-lock)
+
+echo "smoke: minimal askdb.config.ts for cli bootstrap…"
+cat >"$WORK/apps/askdb.config.ts" <<'SMOKEASKDB'
+import "dotenv/config";
+import { defineConfig, type AskDbConfig } from "@askdb/config";
+
+/** Minimal valid config so installable-smoke can run `askdb` (bootstrap requires askdb.config.*). */
+export default defineConfig({
+  ai: {
+    provider: "openai",
+    providerConfig: {
+      openai: { apiKey: "", model: "gpt-4o-mini" },
+    },
+  },
+  database: {
+    provider: "postgres",
+    providerConfig: {
+      postgres: { databaseUrl: "postgres://127.0.0.1:65432/askdb_smoke_placeholder" },
+    },
+  },
+  introspection: {
+    provider: "postgres",
+    providerConfig: { postgres: {} },
+    outputDir: "./.askdb-smoke-introspect",
+  },
+  rag: {
+    embedder: "mock",
+    embedderConfig: {},
+    store: "memory",
+    storeConfig: { memory: {} },
+  },
+} satisfies AskDbConfig);
+SMOKEASKDB
 
 echo "smoke: askdb cli bin…"
 (cd "$WORK/apps" && ./node_modules/.bin/askdb --help | grep -q 'AskDB')

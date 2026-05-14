@@ -4,6 +4,7 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import { createServer as createNodeServer } from "node:http";
 import { dirname, isAbsolute, resolve as resolvePath } from "node:path";
 import { fileURLToPath } from "node:url";
+import { getAskDbRuntimeConfig } from "@askdb/config";
 import {
   AskDbError,
   AskDbLogEvent,
@@ -42,8 +43,8 @@ class RequestBodyTooLargeError extends Error {
   }
 }
 
-function resolveAskDbLogLevelFromEnv(): AskDbLogLevel {
-  const env = process.env.ASKDB_LOG_LEVEL?.toLowerCase();
+function resolveAskDbLogLevelFromRt(rt: ReturnType<typeof getAskDbRuntimeConfig>): AskDbLogLevel {
+  const env = rt.logging.level?.toLowerCase();
   if (
     env === "trace" ||
     env === "debug" ||
@@ -107,12 +108,15 @@ function badRequest(correlationId: string, message: string): AskHttpErrorRespons
   return { ok: false, correlationId, error: { code: "bad_request", message } };
 }
 
-function resolveSchemaJsonFromEnv(): { schemaJson?: string; source?: string } {
-  const inline = process.env.ASKDB_SCHEMA_JSON;
+function resolveSchemaJsonFromRt(rt: ReturnType<typeof getAskDbRuntimeConfig>): {
+  schemaJson?: string;
+  source?: string;
+} {
+  const inline = rt.ai.aiEnv.ASKDB_SCHEMA_JSON;
   if (typeof inline === "string" && inline.trim() !== "") {
     return { schemaJson: inline, source: "ASKDB_SCHEMA_JSON" };
   }
-  const p = process.env.ASKDB_SCHEMA_PATH;
+  const p = rt.ai.aiEnv.ASKDB_SCHEMA_PATH;
   if (typeof p === "string" && p.trim() !== "") {
     return { schemaJson: undefined, source: `ASKDB_SCHEMA_PATH (${p})` };
   }
@@ -169,11 +173,13 @@ export function createAskDbHttpServer(options: AskDbHttpServerOptions = {}) {
       return;
     }
 
+    const rt = getAskDbRuntimeConfig();
+
     const logger = createAskDbLogger({
       correlationId,
-      level: resolveAskDbLogLevelFromEnv(),
-      logFile: process.env.ASKDB_LOG_FILE,
-      logStdout: ["1", "true", "yes"].includes((process.env.ASKDB_LOG_STDOUT ?? "").toLowerCase()),
+      level: resolveAskDbLogLevelFromRt(rt),
+      logFile: rt.logging.logFile,
+      logStdout: rt.logging.logStdout,
     });
 
     let body: AskHttpRequest;
@@ -208,7 +214,7 @@ export function createAskDbHttpServer(options: AskDbHttpServerOptions = {}) {
       // Mode may be supplied by request JSON or header; JSON wins.
       const headerMode = getHeader(req, "x-askdb-mode");
       const effectiveMode = body.mode ?? (headerMode ? modeFromHeader(headerMode) : undefined);
-      const mode: AskDbModeV1 = effectiveMode ?? parseAskDbModeV1(process.env.ASKDB_MODE);
+      const mode: AskDbModeV1 = effectiveMode ?? parseAskDbModeV1(rt.modes.askdbMode);
 
       if ("execute" in body || getHeader(req, "x-askdb-execute") !== undefined) {
         writeError(res, 400, correlationId, {
@@ -218,8 +224,8 @@ export function createAskDbHttpServer(options: AskDbHttpServerOptions = {}) {
         return;
       }
 
-      const mockSql = process.env.ASKDB_MOCK_SQL;
-      const aiConfig = mockSql ? undefined : resolveAskDbAiConfig();
+      const mockSql = rt.dev.mockSql;
+      const aiConfig = mockSql ? undefined : resolveAskDbAiConfig(rt.ai.aiEnv);
       if (!mockSql && !aiConfig) {
         writeError(res, 500, correlationId, {
           code: "generation_not_configured",
@@ -242,12 +248,12 @@ export function createAskDbHttpServer(options: AskDbHttpServerOptions = {}) {
           schema = loadSchemaFromJson(requestOverride);
         } else {
           if (!cachedSchema) {
-            const env = resolveSchemaJsonFromEnv();
-            cachedSchemaSource = env.source;
-            if (env.schemaJson) {
-              cachedSchema = loadSchemaFromJson(env.schemaJson);
-            } else if (process.env.ASKDB_SCHEMA_PATH && process.env.ASKDB_SCHEMA_PATH.trim() !== "") {
-              const { resolvedPath, source } = await resolveSchemaPathWithFallbacks(process.env.ASKDB_SCHEMA_PATH);
+            const envSchema = resolveSchemaJsonFromRt(rt);
+            cachedSchemaSource = envSchema.source;
+            if (envSchema.schemaJson) {
+              cachedSchema = loadSchemaFromJson(envSchema.schemaJson);
+            } else if (rt.ai.aiEnv.ASKDB_SCHEMA_PATH && rt.ai.aiEnv.ASKDB_SCHEMA_PATH.trim() !== "") {
+              const { resolvedPath, source } = await resolveSchemaPathWithFallbacks(rt.ai.aiEnv.ASKDB_SCHEMA_PATH);
               cachedSchemaSource = source;
               cachedSchema = loadSchema(resolvedPath);
             } else {
@@ -271,7 +277,7 @@ export function createAskDbHttpServer(options: AskDbHttpServerOptions = {}) {
       type AskModel = Parameters<typeof ask>[0]["model"];
       const model: AskModel = mockSql
         ? (undefined as unknown as AskModel)
-        : ((await createAskDbLanguageModelFromEnv()) as AskModel);
+        : ((await createAskDbLanguageModelFromEnv(rt.ai.aiEnv)) as AskModel);
 
       const out = await ask({
         question: body.question,

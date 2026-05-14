@@ -1,5 +1,8 @@
 #!/usr/bin/env node
-import { bootstrapAskDbEnv } from "@askdb/config";
+import {
+  bootstrapAskDbEnv,
+  getAskDbRuntimeConfig,
+} from "@askdb/config";
 import { existsSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -20,9 +23,7 @@ import { createAskDbHttpServer } from "./server.js";
   });
 }
 
-const port = process.env.PORT ? Number(process.env.PORT) : 3000;
-const host = process.env.HOST ?? "127.0.0.1";
-
-const app = createAskDbHttpServer({ port, host });
+const { httpApi } = getAskDbRuntimeConfig();
+const app = createAskDbHttpServer({ port: httpApi.listen.port, host: httpApi.listen.host });
 await app.listen();
 console.log(`AskDB HTTP API listening on http://${app.host}:${app.port}`);

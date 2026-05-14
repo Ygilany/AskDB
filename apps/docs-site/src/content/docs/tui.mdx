@@ -39,7 +39,7 @@ askdb-tui --schema my-app.schema
 
 <ul>
             <li>Select a table, then edit table descriptions, aliases, primary entity, columns, and common query language.</li>
-            <li>Use <code>{"g"}</code> on supported fields to request AI suggestions when <code>{"OPENAI_API_KEY"}</code> is set.</li>
+            <li>Use <code>{"g"}</code> on supported fields to request AI suggestions when the runtime snapshot includes a configured OpenAI-compatible key (typically from <code>{"askdb.config"}</code> / <code>{".env"}</code> after <code>{"bootstrapAskDbEnv()"}</code>).</li>
             <li>Accept, edit, or reject suggestions before saving.</li>
             <li>Press <code>{"s"}</code> to write valid Schema v2 markdown through the shared <code>{"@askdb/enrich"}</code> workspace helpers.</li>
           </ul>
