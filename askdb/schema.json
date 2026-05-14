@@ -1,0 +1,86 @@
+{
+  "version": 2,
+  "schemaId": "simple",
+  "tables": [
+    {
+      "id": "table:public.Order",
+      "name": "Order",
+      "schema": "public",
+      "sensitive": false,
+      "columns": [
+        {
+          "id": "table:public.Order#id",
+          "name": "id",
+          "type": "Uuid",
+          "nullable": false,
+          "primaryKey": true,
+          "sensitive": false
+        },
+        {
+          "id": "table:public.Order#userId",
+          "name": "userId",
+          "type": "Uuid",
+          "nullable": false,
+          "sensitive": false
+        },
+        {
+          "id": "table:public.Order#status",
+          "name": "status",
+          "type": "OrderStatus",
+          "nullable": false,
+          "sensitive": false
+        },
+        {
+          "id": "table:public.Order#total",
+          "name": "total",
+          "type": "Decimal(10,2)",
+          "nullable": false,
+          "sensitive": false
+        }
+      ],
+      "relationships": [
+        {
+          "from": "table:public.Order#userId",
+          "to": "table:public.User#id"
+        }
+      ]
+    },
+    {
+      "id": "table:public.User",
+      "name": "User",
+      "schema": "public",
+      "sensitive": false,
+      "columns": [
+        {
+          "id": "table:public.User#id",
+          "name": "id",
+          "type": "Uuid",
+          "nullable": false,
+          "primaryKey": true,
+          "sensitive": false
+        },
+        {
+          "id": "table:public.User#email",
+          "name": "email",
+          "type": "String",
+          "nullable": false,
+          "sensitive": false
+        },
+        {
+          "id": "table:public.User#name",
+          "name": "name",
+          "type": "String",
+          "nullable": true,
+          "sensitive": false
+        },
+        {
+          "id": "table:public.User#createdAt",
+          "name": "createdAt",
+          "type": "DateTime",
+          "nullable": false,
+          "sensitive": false
+        }
+      ]
+    }
+  ]
+}
