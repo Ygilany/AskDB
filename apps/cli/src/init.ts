@@ -15,10 +15,10 @@ import { defineConfig, env, type AskDbConfig } from "@askdb/config";
  * Nested AskDB configuration (grouped like Prisma's \`defineConfig\`).
  *
  * \`import "dotenv/config"\` loads a local \`.env\` when this file is evaluated (missing file is OK).
- * First-party CLIs also call \`bootstrapAskDbEnv\`, which loads \`.env\` then merges this file into \`process.env\`.
+ * First-party CLIs call \`bootstrapAskDbEnv\`, which loads \`.env\` then evaluates this file and installs the AskDB runtime snapshot.
  *
  * Use \`env("VAR")\` for values read from the environment (shell or \`.env\`). Missing values are OK at
- * file load time; \`flattenAskDbConfig\` applies documented defaults when merging into \`process.env\`.
+ * file load time; \`flattenAskDbConfig\` applies documented defaults for optional fields.
  *
  * \`satisfies AskDbConfig\` validates the nested shape at compile time.
  *
