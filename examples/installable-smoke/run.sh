@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Installable smoke test for AskDB packages.
 #
-# Builds the workspace, packs the library packages (including enrich and tui) plus the app
+# Builds the workspace, packs the library packages (including config, enrich, and tui) plus the app
 # packages (cli, studio, http-api), copies the consumer fixture into a fresh tmpdir, installs
 # library tarballs (no workspace), runs `tsc --noEmit`, and executes the smoke script.
 set -euo pipefail
@@ -18,13 +18,15 @@ pnpm -C "$ROOT" -r build >/dev/null
 
 echo "smoke: packing tarballs…"
 mkdir -p "$WORK/tarballs"
-for pkg in packages/core packages/introspect packages/postgres packages/prisma packages/enrich packages/tui apps/cli apps/studio apps/http-api; do
+for pkg in packages/config packages/core packages/introspect packages/postgres packages/prisma packages/enrich packages/tui apps/cli apps/studio apps/http-api; do
   (cd "$ROOT/$pkg" && pnpm pack --pack-destination "$WORK/tarballs" >/dev/null)
 done
 for pkg in packages/rag; do
   (cd "$ROOT/$pkg" && pnpm pack --pack-destination "$WORK/tarballs" >/dev/null)
 done
 
+CONFIG_TARBALL="$(ls "$WORK/tarballs"/askdb-config-*.tgz | head -n1)"
+[ -f "$CONFIG_TARBALL" ] || { echo "smoke: missing config tarball" >&2; exit 1; }
 CORE_TARBALL="$(ls "$WORK/tarballs"/askdb-core-*.tgz | head -n1)"
 [ -f "$CORE_TARBALL" ] || { echo "smoke: missing core tarball" >&2; exit 1; }
 INTROSPECT_TARBALL="$(ls "$WORK/tarballs"/askdb-introspect-*.tgz | head -n1)"
@@ -43,6 +45,16 @@ TUI_TARBALL="$(ls "$WORK/tarballs"/askdb-tui-*.tgz | head -n1)"
 [ -f "$TUI_TARBALL" ] || { echo "smoke: missing tui tarball" >&2; exit 1; }
 RAG_TARBALL="$(ls "$WORK/tarballs"/askdb-rag-*.tgz | head -n1)"
 [ -f "$RAG_TARBALL" ] || { echo "smoke: missing rag tarball" >&2; exit 1; }
+
+echo "smoke: validating @askdb/config tarball contents…"
+CONFIG_TARBALL_FILES="$(tar -tzf "$CONFIG_TARBALL")"
+grep -q '^package/dist/index.js$' <<<"$CONFIG_TARBALL_FILES"
+grep -q '^package/README.md$' <<<"$CONFIG_TARBALL_FILES"
+grep -q '^package/LICENSE$' <<<"$CONFIG_TARBALL_FILES"
+if grep -Eq '(^package/src/|\.test\.)' <<<"$CONFIG_TARBALL_FILES"; then
+  echo "smoke: FAILED — @askdb/config tarball includes source/tests" >&2
+  exit 1
+fi
 
 echo "smoke: validating @askdb/introspect tarball contents…"
 INTROSPECT_TARBALL_FILES="$(tar -tzf "$INTROSPECT_TARBALL")"
@@ -175,6 +187,7 @@ node -e "
     private: true,
     type: 'module',
     dependencies: {
+      '@askdb/config': 'file:$CONFIG_TARBALL',
       '@askdb/core': 'file:$CORE_TARBALL',
       '@askdb/introspect': 'file:$INTROSPECT_TARBALL',
       '@askdb/postgres': 'file:$POSTGRES_TARBALL',
