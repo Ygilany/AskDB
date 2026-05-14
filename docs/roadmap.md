@@ -13,7 +13,7 @@ Phase 1 ships `@askdb/core` and the `askdb` CLI with AskDB schema JSON v1, BYO-p
 - **Execute** against a configured Postgres instance and return **tabular results** (no rich report builder yet).
 - **CLI** as the first surface (fast iteration, no UI coupling).
 
-**Out of scope for Phase 1:** Embeddable UI, **non-Postgres database engines** (see Phase 10), full RAG, sensitive-field registry UI, production-grade multi-tenant policy engine, introspection-query templates (see Phase 6).
+**Out of scope for Phase 1:** Embeddable UI, **non-Postgres database engines** (see Phase 11), full RAG, sensitive-field registry UI, production-grade multi-tenant policy engine, introspection-query templates (see Phase 6).
 
 ## Phase 2 ✅ — Hardening and "modes" as contracts
 
@@ -87,7 +87,7 @@ Completed: Shipped `@askdb/introspect` with Postgres connector support, live + a
 
 **Spec pack:** [`docs/specs/phase-6-introspection/`](specs/phase-6-introspection/).
 
-- **`@askdb/introspect` package** — New workspace package. Sub-export per engine: `@askdb/introspect/postgres` ships in this phase; the `Connector` interface is the seam for additional engines in Phase 10.
+- **`@askdb/introspect` package** — New workspace package. Sub-export per engine: `@askdb/introspect/postgres` ships in this phase; the `Connector` interface is the seam for additional engines in Phase 11.
 - **Two front doors, one connector** — Both modes return the same `IntrospectionResult` and write the same artifact:
   - **Live** — `introspect({ runner, ... })` uses a `CatalogQueryRunner` to run documented `pg_catalog`/`information_schema` queries.
   - **Air-gapped** — `introspect({ bundlePath, ... })` reads exports produced by running the same SQL templates in `psql`/CI/IDE.
@@ -156,30 +156,55 @@ Follow-up: shared non-UI enrichment workspace behavior now lives in `@askdb/enri
 - Begin **SDK + embeddable components** for consumers who want AskDB inside their apps (BYO keys; DB optional per workflow).
 - **Example application** — Add a small in-repo example consumer app to validate the embeddable UI/SDK in realistic integration scenarios.
 
-## Phase 10 — Additional databases (beyond Postgres) and schema adapters
+## Phase 10 — Multi-tenant proof
+
+**Goal:** Prove AskDB can safely generate SQL for a multi-tenant database by capturing the tenant model at setup, accepting the current user's authorized scope at query time, and carrying both into prompt assembly and validation.
+
+**Spec pack:** [`docs/specs/phase-10-multi-tenant-proof/`](specs/phase-10-multi-tenant-proof/).
+
+This phase is intentionally **Postgres-first**. Tenant boundaries are too central to correctness to defer until after multiple dialects multiply the surface area.
+
+- **Tenant model capture at setup** — Add schema metadata for how tenancy is represented:
+  - tenant root tables and tenant identifier columns
+  - child entity relationships that inherit tenant scope through foreign keys
+  - hierarchy semantics such as agency -> sub-agency -> client/account/store
+  - whether access is limited to one tenant, a set of tenants, a subtree, or the entire organization
+- **Authoring surface** — Studio/TUI prompts the integrator to confirm the tenant boundary instead of guessing from names alone. Introspection may suggest likely tenant columns and relationships, but human confirmation is required before enabling tenant-enforced generation.
+- **Runtime access scope** — Add a typed input to `ask()` for the current user's allowed tenant scope, e.g. exact tenant ids, allowed agency subtree, allowed sub-agency ids, or an admin/global bypass explicitly marked by the host.
+- **Prompt boundary** — Prompt assembly includes a compact, explicit tenant policy section: the tenant graph, the user's allowed scope, and the rule that generated SQL must constrain every tenant-scoped table to that scope.
+- **SQL guardrails** — Validation checks that generated SQL contains the required tenant predicates or joins for scoped tables. Prompting alone is not enough; unsafe or unscoped SQL must fail closed with a clear error.
+- **RAG propagation** — Retrieved schema chunks must preserve enough tenant metadata for focused prompts to enforce the same boundary as full-schema prompts.
+- **Fixtures and tests** — Add a representative multi-tenant fixture with nested agencies/sub-agencies and tenant-scoped operational tables. Cover direct tenant filters, inherited scope through joins, subtree access, cross-tenant denial, and admin/global scope.
+
+**Demo:** Given a question like "show revenue by client this quarter" and a user scoped to one agency subtree, AskDB generates SQL that only includes rows reachable through that agency/sub-agency boundary. The same question with no tenant scope configured fails closed instead of producing broad SQL.
+
+## Phase 11 — Additional databases (beyond Postgres) and schema adapters
 
 **Goal:** Keep Postgres as the proven reference; generalize **carefully** so other engines reach the same bar.
 
 - **Additional SQL engines** — Beyond PostgreSQL: drivers, **dialect-aware** NL→SQL and validation, execution paths, and regression tests — **one engine at a time** (order driven by demand; no "support everything" lump sum).
 - **Schema ingestion** — Additional schema description formats as needed, with the same "one format at a time + tests" rule.
 - Pair **introspection connectors** (Phase 6) with each new engine as it is added — new entries under `@askdb/introspect/<engine>` behind the existing `Connector` interface.
+- Port the Phase 10 tenant proof deliberately per engine instead of assuming Postgres tenant predicates translate automatically.
 
 Early phases intentionally stay **Postgres-only** so execution and guardrails stabilize before we multiply dialects.
 
-## Phase 11 — Reports beyond tables
+## Phase 12 — Reports beyond tables
 
 **Goal:** Full "text to SQL and into reports" promise.
 
 - Structured **report templates** and richer outputs on top of Phase 1's execution path, still respecting mode and data-boundary rules.
 - Make **`bounded_results` non-stub** — optional second model pass with **explicit** consent; **project out sensitive columns** from row payloads before any summary LLM; budgets per [`modes-v1.md`](contracts/modes-v1.md).
 
-## Phase 12 — Multi-tenant depth
+## Phase 13 — Multi-tenant production depth
 
-**Goal:** First-class tenant scoping where required.
+**Goal:** Move beyond the Phase 10 proof into first-class tenant scoping for production deployments.
 
+- Harden policy composition across surfaces, database engines, and report-generation modes.
+- Support richer tenant-policy authoring, audit output, and host integration hooks for production access-control systems.
 - Query generation and execution paths enforce **tenant scope** when metadata/policies define it; treat as non-negotiable for supported configurations.
 
-## Phase 13 — MCP server surface
+## Phase 14 — MCP server surface
 
 **Goal:** Meet developers and agents where they work.
 

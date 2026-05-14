@@ -67,7 +67,7 @@ ask({
 
 - Schema v2 (lands in Phase 5 as a pre-1.0 breaking change with no migrator — this phase ships the existing format).
 - Introspection, TUI, RAG, web UI (Phases 6–9).
-- Non-Postgres dialect support in NL→SQL generation (still Phase 10).
+- Non-Postgres dialect support in NL→SQL generation (still Phase 11).
 - A `@askdb/sdk` higher-level facade — the published `@askdb/core` is the SDK for now.
 - 1.0 stability — pre-1.0 versions allow contract evolution.
 
