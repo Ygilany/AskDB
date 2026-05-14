@@ -1,0 +1,31 @@
+---
+title: Add RAG for large schemas
+description: Chunk and index the same Schema v2 artifact with @askdb/rag using your embedder and vector store, then pass retrieved context into ask().
+---
+
+<p className="doc-eyebrow">Scale-up journey</p>
+
+<p className="doc-lede">
+  The describable schema is stored in a format meant for <strong>chunking and retrieval</strong>. <code>{"@askdb/rag"}</code> indexes that same artifact—there is no separate knowledge base that can drift from schema truth.
+</p>
+
+## When this guide fits
+
+- Your Schema v2 directory is **large** or you want **only relevant** tables in each prompt.
+- You can run a **BYO embedder** and **BYO vector store** (in-memory, file-backed, or pgvector, depending on your profile).
+
+## Trust boundary
+
+- Sensitive-field rules from the schema artifact should flow into chunking; flagged content can be **excluded from embeddings** by policy—see <a href="../../rag/">@askdb/rag</a> and repo <a href="https://github.com/Ygilany/AskDB/blob/main/docs/contracts/sensitive-fields-and-modes.md">sensitive-fields-and-modes.md</a>.
+
+## Steps
+
+1. **Enrich first** — RAG works best when table markdown and concepts exist; follow <a href="../author-enrich-schema/">Author and enrich schema</a>.
+2. **Install** <code>{"@askdb/rag"}</code> plus your embedding provider and optional <code>{"pg"}</code> for pgvector.
+3. **Index** — Build an index from your Schema v2 path using the package APIs (see <a href="../../rag/">RAG reference</a>).
+4. **Query** — For each question, retrieve chunks and pass them into the retrieval inputs accepted by <code>{"ask()"}</code> / your pipeline.
+
+## See also
+
+- <a href="../../concepts/">Core concepts</a> — pipeline overview.
+- <a href="./embed-in-app/">Embed NL→SQL</a> — wiring <code>{"ask()"}</code> without RAG first.

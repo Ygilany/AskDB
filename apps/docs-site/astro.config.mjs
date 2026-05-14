@@ -24,7 +24,7 @@ export default defineConfig({
     starlight({
       title: "AskDB",
       description:
-        "Documentation for AskDB packages, CLI tools, schema artifacts, and HTTP API.",
+        "Schema-grounded natural language to SQL: trust-first analytics and developer-first embed guides.",
       logo: {
         light: "./src/assets/brand/logo.png",
         dark: "./src/assets/brand/logo-dark.png",
@@ -52,20 +52,34 @@ export default defineConfig({
           items: [
             { label: "Overview", slug: "index" },
             { label: "Quickstart", slug: "quickstart" },
+            { label: "Journeys", slug: "journeys" },
             { label: "Core concepts", slug: "concepts" },
             { label: "Architecture", slug: "architecture" },
           ],
         },
         {
-          label: "Packages",
+          label: "Guides",
           items: [
-            { label: "Package index", slug: "packages" },
+            { label: "Embed NL→SQL in a Node app", slug: "guides/embed-in-app" },
+            { label: "Author and enrich schema", slug: "guides/author-enrich-schema" },
+            { label: "Add RAG for large schemas", slug: "guides/rag-large-schema" },
+            { label: "Run the HTTP API", slug: "guides/http-api" },
+            { label: "Agents and MCP (status)", slug: "guides/agents-and-mcp" },
+          ],
+        },
+        {
+          label: "Reference",
+          items: [
+            { label: "Package reference", slug: "packages" },
+            { label: "@askdb/config", slug: "environment" },
             { label: "@askdb/core", slug: "core" },
             { label: "@askdb/postgres", slug: "postgres" },
+            { label: "@askdb/prisma", slug: "prisma" },
             { label: "@askdb/cli", slug: "cli" },
             { label: "@askdb/introspect", slug: "introspect" },
             { label: "@askdb/enrich", slug: "enrich" },
             { label: "@askdb/tui", slug: "tui" },
+            { label: "@askdb/studio", slug: "studio" },
             { label: "@askdb/rag", slug: "rag" },
             { label: "@askdb/http-api", slug: "http-api" },
           ],

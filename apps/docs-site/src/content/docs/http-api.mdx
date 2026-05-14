@@ -7,6 +7,13 @@ description: "The HTTP API exposes a minimal server around @askdb/core. POST /as
 
 <p className="doc-lede">The HTTP API exposes a minimal server around @askdb/core. POST /ask returns validated SQL only.</p>
 
+## When to use
+
+<ul>
+  <li>A browser or remote service should call AskDB over <strong>HTTP</strong> instead of linking <code>{"@askdb/core"}</code> directly.</li>
+  <li>You will mount your own <strong>auth, TLS, and rate limits</strong> in front—see <a href="../guides/http-api/">Run the HTTP API</a>.</li>
+</ul>
+
 ## Run Locally
 
 

@@ -1,0 +1,33 @@
+---
+title: Author and enrich schema
+description: Introspect Postgres or Prisma, then enrich Schema v2 with the TUI or Studio so business context and aliases are human-reviewed.
+---
+
+<p className="doc-eyebrow">Schema author journey</p>
+
+<p className="doc-lede">
+  Raw introspection captures physical metadata. AskDB’s strength is the <strong>describable layer</strong>: table and column meaning, aliases, concepts, and example questions—authored <strong>headless-first</strong> with AI suggestions and human confirmation.
+</p>
+
+## When this guide fits
+
+- You want analysts or engineers to **improve** NL→SQL quality without writing SQL by hand.
+- You are fine working in the **TUI** or **local Studio** (both use <code>{"@askdb/enrich"}</code>).
+
+## Trust boundary
+
+- Enrichment UIs work on **Schema v2 on disk**; they are not arbitrary database browsers for production data.
+- AI suggestions should be **reviewed** before you rely on them in production prompts.
+
+## Steps
+
+1. **Create Schema v2** — <code>{"askdb introspect"}</code> from Postgres or Prisma (see <a href="../../quickstart/">Quickstart</a>).
+2. **Enrich** — Run <code>{"askdb enrich --schema ./my-app.schema"}</code> or <code>{"askdb studio --schema ./my-app.schema"}</code>.
+3. **Review** — Edit table markdown, concepts, aliases; accept or reject AI-assisted gaps.
+4. **Bundle** (optional) — <code>{"askdb bundle"}</code> for a single portable artifact for CI or embeds.
+
+## See also
+
+- <a href="../../tui/">TUI</a> and <a href="../../studio/">Studio</a> reference pages.
+- <a href="../../schema-v2/">Schema v2</a> contract summary.
+- <a href="./embed-in-app/">Embed NL→SQL</a> once the artifact is ready.

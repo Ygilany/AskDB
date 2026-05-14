@@ -3,6 +3,9 @@ title: "Architecture"
 description: "How AskDB packages, product surfaces, connectors, optional peers, and extension seams fit together."
 ---
 
+import askdbRuntimeBoundaryUrl from '../../assets/diagrams/askdb-runtime-boundary.svg?url';
+import askdbPackageDependenciesUrl from '../../assets/diagrams/askdb-package-dependencies.svg?url';
+
 <p className="doc-eyebrow">Packages and boundaries</p>
 
 <p className="doc-lede">AskDB is split into focused packages so integrators can choose the exact SQL generation, introspection, enrichment, and retrieval surfaces they need.</p>
@@ -11,17 +14,24 @@ description: "How AskDB packages, product surfaces, connectors, optional peers, 
 
 <p><code>{"@askdb/core"}</code> loads Schema v2, builds model prompts, calls the supplied model, and returns validated SQL. It does not own database drivers or generated-SQL execution. The host application owns approval, execution, database roles, tenant policy, network controls, and audit logging.</p>
 
+<figure>
+  <img
+    class="askdb-diagram"
+    width="920"
+    height="140"
+    loading="lazy"
+    decoding="async"
+    alt="Flow from question and Schema v2 through ask(), dialect and BYO model, to validated read-only SQL, then host-owned execution with approval and audit."
+    src={askdbRuntimeBoundaryUrl}
+  />
+  <figcaption>
+    SQL generation stops inside AskDB; <strong>your application</strong> decides whether and how to run the returned <code>{"SELECT"}</code>.
+  </figcaption>
+</figure>
+
 ## Env bootstrap
 
 <p>First-party Node entrypoints call <code>{"bootstrapAskDbEnv()"}</code> from <code>{"@askdb/config"}</code> (after loading <code>{".env"}</code> where the binary wires dotenv candidate paths). That evaluates <code>{"askdb.config.*"}</code> / <code>{".config/askdb.*"}</code> for the chosen working directory and installs the <strong>runtime snapshot</strong>. Downstream code reads <code>{"getAskDbRuntimeConfig()"}</code>; pass <code>{"getAskDbRuntimeConfig().ai.aiEnv"}</code> into <code>{"@askdb/core"}</code> helpers that take an explicit env map. See <a href="../environment/">Environment</a> and <a href="https://github.com/Ygilany/AskDB/blob/main/docs/adrs/0005-askdb-config-and-env-bootstrap.md">ADR 0005</a>.</p>
-
-```
-Question + Schema v2
-  -> @askdb/core ask()
-  -> AskDialect + BYO LanguageModel
-  -> validated SQL
-  -> host-owned execution boundary
-```
 
 ## Package Layers
 
@@ -30,7 +40,7 @@ Question + Schema v2
   <a href="../core/"><strong>@askdb/core</strong><span>Dialect-agnostic Schema v2 and NL-to-SQL contract package.</span></a>
   <a href="../introspect/"><strong>@askdb/introspect</strong><span>Engine-agnostic connector contract and Schema v2 renderer.</span></a>
   <a href="../postgres/"><strong>@askdb/postgres</strong><span>Postgres dialect, connector, templates, and optional <code>{"pg"}</code> catalog runner.</span></a>
-  <a href="../connectors/"><strong>@askdb/prisma</strong><span>Prisma schema-file connector with no live database and no dialect.</span></a>
+  <a href="../prisma/"><strong>@askdb/prisma</strong><span>Prisma schema-file connector with no live database and no dialect.</span></a>
   <a href="../enrich/"><strong>@askdb/enrich</strong><span>Headless Schema v2 authoring helpers shared by TUI and Studio.</span></a>
   <a href="../rag/"><strong>@askdb/rag</strong><span>Optional Schema v2 retrieval with BYO embedder and vector store.</span></a>
   <a href="../cli/"><strong>@askdb/cli</strong><span>Batteries-included first-party command surface.</span></a>
@@ -39,24 +49,22 @@ Question + Schema v2
 
 ## Dependency Direction
 
-<p>Reusable packages stay small and layered. First-party surfaces compose them into workflows.</p>
+<p>Reusable packages stay small and layered. First-party surfaces compose them into workflows. Arrows point <strong>toward the dependency</strong> (children depend on parents).</p>
 
-```
-@askdb/core
-  ^       ^        ^
-  |       |        |
-enrich   rag   postgres
-  ^                ^
-  |                |
-tui, studio     cli, http-api
-
-@askdb/introspect
-  ^          ^
-  |          |
-postgres   prisma
-```
-
-<p><code>{"@askdb/tui"}</code> and <code>{"@askdb/studio"}</code> are authoring surfaces over Schema v2 artifacts. They are not database connectors.</p>
+<figure>
+  <img
+    class="askdb-diagram"
+    width="720"
+    height="320"
+    loading="lazy"
+    decoding="async"
+    alt="Package diagram: enrich, rag, and postgres depend on @askdb/core; tui and studio depend on enrich and rag; cli and http-api depend on postgres; postgres and prisma depend on @askdb/introspect."
+    src={askdbPackageDependenciesUrl}
+  />
+  <figcaption>
+    <code>{"@askdb/tui"}</code> and <code>{"@askdb/studio"}</code> are <strong>authoring surfaces</strong> on Schema v2 artifacts, not database connectors. <code>{"@askdb/postgres"}</code> participates in both NL→SQL (dialect) and introspection (connector).
+  </figcaption>
+</figure>
 
 ## Connectors vs Peers
 
@@ -92,4 +100,4 @@ postgres   prisma
 - <code>{"@askdb/enrich"}</code> workspace helpers for custom authoring UIs.
 - <code>{"Embedder"}</code>, <code>{"VectorStore"}</code>, and <code>{"Retriever"}</code> for retrieval over Schema v2.
 
-The full Mermaid diagrams and installation matrix live in [`docs/architecture.md`](https://github.com/Ygilany/AskDB/blob/main/docs/architecture.md).
+Figures above are the **canonical diagrams for this documentation site** (SVG under <code>{"src/assets/diagrams/"}</code>, imported with Vite <code>{"?url"}</code> so <code>{"base"}</code> is applied). The repository’s <a href="https://github.com/Ygilany/AskDB/blob/main/docs/architecture.md">docs/architecture.md</a> also contains Mermaid and narrative detail—keep the two in sync when package edges change.
