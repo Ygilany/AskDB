@@ -31,7 +31,7 @@ First-party apps (`@askdb/cli`, `@askdb/http-api`, `@askdb/studio`) load secrets
 
 5. **Legacy flat** `export default { OPENAI_API_KEY: "..." }` (string values only) remains supported briefly: merge treats it like today’s string map. New projects should use nested `defineConfig`.
 
-6. **`@askdb/config`** is the **single package that reads `process.env`** directly. `@askdb/core`'s env-aware functions (e.g. `resolveAskDbAiConfig`, `createAskDbLanguageModelFromEnv`) accept the env map as an **explicit, required parameter** rather than defaulting to `process.env`. Library packages that need to read individual env values use `env()` from `@askdb/config`; those that need to pass a full env map use `getAskDbRuntimeEnv()` from `@askdb/config`. Apps call `bootstrapAskDbEnv()` to populate `process.env` before passing it to library functions.
+6. **`@askdb/config`** is the **single package that reads `process.env`** directly. `@askdb/core`'s env-aware functions (e.g. `resolveAskDbAiConfig`, `createAskDbLanguageModelFromEnv`) accept the env map as an **explicit, required parameter** rather than defaulting to `process.env`. Library packages obtain all runtime configuration through **`getAskDbRuntimeConfig()`** from `@askdb/config`, which returns a typed `AskDbRuntimeConfig` object. Library packages must not call `env()`, `requiredEnv()`, or `getAskDbRuntimeEnv()` directly — `env()` is reserved for end-user `askdb.config.*` authoring only. Apps call `bootstrapAskDbEnv()` to populate `process.env` before any library code runs, then may pass `process.env` directly to `@askdb/core` env-aware functions.
 
 7. **Introspection CLI defaults:** after bootstrap, `askdb introspect` may take **`ASKDB_INTROSPECT_OUT`** as the effective **`--out`** when the user omits `--out`, `--print`, and `--diff`. For **`--engine prisma`**, **`ASKDB_PRISMA_SCHEMA`** may supply **`--prisma-schema`** when the flag is omitted. These env keys are produced from `introspection.outputDir` and `introspection.providerConfig.prisma.schemaPath` when using the nested config file.
 
@@ -39,8 +39,8 @@ First-party apps (`@askdb/cli`, `@askdb/http-api`, `@askdb/studio`) load secrets
 
 - New workspace package and dependency edges from `apps/cli`, `apps/http-api`, `apps/studio`, `packages/rag`, and `packages/tui`.
 - Documentation and examples describe the `askdb init` single-file template, optional self-managed `.env`, nested authoring, and optional config discovery.
-- **`@askdb/config` is the sole `process.env` reader.** Library packages (`@askdb/rag`, `@askdb/tui`, …) depend on `@askdb/config` and use `env()` / `getAskDbRuntimeEnv()` from it. They never reference `process.env` directly.
-- Library-only consumers who embed AskDB packages in their own application call `bootstrapAskDbEnv()` first (or set `process.env` themselves), then pass `process.env` explicitly to env-aware core functions.
+- **`@askdb/config` is the sole `process.env` reader.** Library packages (`@askdb/rag`, `@askdb/tui`, …) depend on `@askdb/config` and use the typed `getAskDbRuntimeConfig()` gateway. They never reference `process.env`, `env()`, or `getAskDbRuntimeEnv()` directly.
+- Library-only consumers who embed AskDB packages in their own application call `bootstrapAskDbEnv()` first (or set `process.env` themselves), then library code reads configuration through `getAskDbRuntimeConfig()`.
 
 ## Related
 

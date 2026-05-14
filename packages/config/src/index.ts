@@ -4,6 +4,16 @@ export { bootstrapAskDbEnv } from "./bootstrap.js";
 export type { BootstrapAskDbEnvOptions } from "./bootstrap.js";
 export { env, requiredEnv, getAskDbRuntimeEnv } from "./env.js";
 export {
+  getAskDbRuntimeConfig,
+} from "./runtime-config.js";
+export type {
+  AskDbRuntimeConfig,
+  AskDbRuntimeAiConfig,
+  AskDbRuntimeRagConfig,
+  AskDbRuntimeRagEmbedderConfig,
+  AskDbRuntimeLoggingConfig,
+} from "./runtime-config.js";
+export {
   DEFAULT_AZURE_OPENAI_DEPLOYMENT,
   DEFAULT_INTROSPECT_OUTPUT_DIR,
   DEFAULT_LOCAL_POSTGRES_URL,

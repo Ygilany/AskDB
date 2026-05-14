@@ -8,7 +8,7 @@ import {
   type AskDbLogger,
   type AskDbLogLevel,
 } from "@askdb/core";
-import { env } from "@askdb/config";
+import { getAskDbRuntimeConfig } from "@askdb/config";
 import { buildSchemaIndex } from "./indexer/index.js";
 import { loadChunkerSourcesFromDir } from "./chunker/sources.js";
 import { createOpenAiEmbedder as createAiSdkOpenAiEmbedder } from "./embedders/openai.js";
@@ -220,7 +220,8 @@ function stableTokenHash(token: string): number {
 }
 
 function createOpenAiEmbedder(opts: CliOptions): Embedder {
-  const apiKey = opts.apiKey ?? env("OPENAI_API_KEY");
+  const runtimeConfig = getAskDbRuntimeConfig();
+  const apiKey = opts.apiKey ?? runtimeConfig.rag.embedder.apiKey;
   if (!apiKey) {
     throw new Error(
       "createOpenAiEmbedder: set OPENAI_API_KEY or pass --api-key. The OpenAI embedder uses the AI SDK optional peers (`ai` and `@ai-sdk/openai`).",
@@ -229,7 +230,7 @@ function createOpenAiEmbedder(opts: CliOptions): Embedder {
   return createAiSdkOpenAiEmbedder({
     apiKey,
     model: opts.embedderModel ?? "text-embedding-3-small",
-    baseURL: env("OPENAI_BASE_URL"),
+    baseURL: runtimeConfig.rag.embedder.baseURL,
     dimensions: opts.dimensions,
   });
 }
@@ -269,9 +270,10 @@ async function closeStore(store: VectorStore & { close?: () => Promise<void>; fl
 
 function buildLogger(opts: CliOptions): AskDbLogger {
   const level = resolveLogLevel(opts);
+  const runtimeConfig = getAskDbRuntimeConfig();
   return createAskDbLogger({
     correlationId:
-      opts.correlationId ?? env("ASKDB_CORRELATION_ID") ?? randomUUID(),
+      opts.correlationId ?? runtimeConfig.logging.correlationId ?? randomUUID(),
     level,
     logFile: opts.logFile,
     logStdout: opts.logStdout,
@@ -288,7 +290,7 @@ function resolveLogLevel(opts: CliOptions): AskDbLogLevel {
     }
     return lvl;
   }
-  const envLevel = env("ASKDB_LOG_LEVEL")?.toLowerCase();
+  const envLevel = getAskDbRuntimeConfig().logging.level?.toLowerCase();
   if (envLevel && isSupportedAskDbLogLevel(envLevel)) return envLevel;
   if (opts.verbose || opts.logFile || opts.logStdout) return "info";
   return "silent";
