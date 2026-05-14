@@ -7,6 +7,13 @@ description: "The Prisma connector reads .prisma schema files and produces a Sch
 
 <p className="doc-lede">The Prisma connector reads <code>{".prisma"}</code> schema files and produces a Schema v2 physical artifact without connecting to a database.</p>
 
+## When to use
+
+<ul>
+  <li>You already maintain a <strong>Prisma schema file</strong> and want Schema v2 without a live DB connection.</li>
+  <li>You will pair SQL generation with <code>{"@askdb/postgres"}</code> when the <strong>runtime engine</strong> is still Postgres.</li>
+</ul>
+
 ## Install
 
 ```

@@ -7,6 +7,11 @@ description: "What a connector needs to plug into @askdb/introspect. The same co
 
 <p className="doc-lede">What a connector needs to plug into @askdb/introspect. The same contract powers @askdb/postgres and @askdb/prisma today and is the path for adding new engines.</p>
 
+<p>
+  Long-form notes and recipes also live in{" "}
+  <a href="https://github.com/Ygilany/AskDB/blob/main/docs/integration/connectors.md">docs/integration/connectors.md</a>.
+</p>
+
 ## The Connector Interface
 
 <p>A connector is a TypeScript object satisfying <code>{"Connector<TInput>"}</code> from <code>{"@askdb/introspect"}</code>. <code>{"describe"}</code> is required; <code>{"templates"}</code> is optional and only relevant when the engine introspects through catalog SQL.</p>

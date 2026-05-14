@@ -7,6 +7,13 @@ description: "The introspection package is engine-agnostic. It defines the conne
 
 <p className="doc-lede">The introspection package is engine-agnostic. It defines the connector contract, runs an integration package, and writes the physical layer of a Schema v2 directory.</p>
 
+## When to use
+
+<ul>
+  <li>You are implementing or running <code>{"askdb introspect"}</code> (CLI) or your own host that materializes Schema v2 from a connector.</li>
+  <li>You need the shared <code>{"Connector<TInput>"}</code> contract—see <a href="../connectors/">Authoring a Connector</a>.</li>
+</ul>
+
 ## Install
 
 

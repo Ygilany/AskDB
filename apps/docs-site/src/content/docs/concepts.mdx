@@ -1,30 +1,36 @@
 ---
 title: "Core Concepts"
-description: "AskDB is built around schema artifacts, human-reviewed enrichment, validated SQL generation, and explicit safety modes."
+description: "Schema v2 as the contract, optional RAG over the same artifact, validated read-only SQL, and explicit modes—aligned with AskDB’s trust-first mission."
 ---
 
 <p className="doc-eyebrow">How the pieces fit</p>
 
-<p className="doc-lede">AskDB is built around schema artifacts, human-reviewed enrichment, validated SQL generation, and explicit safety modes.</p>
+<p className="doc-lede">
+  AskDB is built around <strong>schema artifacts</strong>, <strong>human-reviewed enrichment</strong>, <strong>validated SQL generation</strong>, and <strong>explicit safety modes</strong>. That matches the product constitution in{" "}
+  <a href="https://github.com/Ygilany/AskDB/blob/main/docs/mission.md">docs/mission.md</a>: trust-first analytics and a developer-first embed. For outcome-first steps, start at <a href="../journeys/">Journeys</a>.
+</p>
 
 ## Pipeline
 
 <ol>
-            <li>Load an AskDB Schema v2 artifact from a directory, bundle, or <code>{"schema.json"}</code>.</li>
-            <li>Optionally retrieve focused schema chunks from <code>{"@askdb/rag"}</code> for large enriched schemas.</li>
-            <li>Build a prompt from physical schema metadata, describable context, and the selected dialect.</li>
-            <li>Call the supplied language model to generate SQL.</li>
-            <li>Validate that the SQL is a read-only PostgreSQL <code>{"SELECT"}</code>.</li>
-          </ol>
+  <li>Load an AskDB Schema v2 artifact from a directory, bundle, or <code>{"schema.json"}</code>.</li>
+  <li>Optionally retrieve focused schema chunks from <code>{"@askdb/rag"}</code> for large enriched schemas—still the <strong>same</strong> artifact, not a forked knowledge base.</li>
+  <li>Build a prompt from physical schema metadata, describable context, and the selected dialect.</li>
+  <li>Call the supplied language model to generate SQL.</li>
+  <li>Validate that the SQL is a read-only PostgreSQL <code>{"SELECT"}</code>.</li>
+</ol>
 
-## Integration Packages
+<p>
+  A visual of the runtime boundary (where generation stops and your host owns execution) is on the <a href="../architecture/">Architecture</a> page.
+</p>
+
+## Integration packages
 
 <p><code>{"@askdb/core"}</code> does not bundle database-specific behavior. It asks for an <code>{"AskDialect"}</code>, and integration packages provide those adapters. Today that means <code>{"@askdb/postgres"}</code>; future packages can own their own dialects, connectors, and input shapes without changing core.</p>
 
 ## Schema v2
 
 <p>Schema v2 is a directory with a physical JSON layer and optional markdown descriptions.</p>
-
 
 ```
 my-app.schema/
@@ -35,12 +41,9 @@ my-app.schema/
   concepts.md
 ```
 
-
-
 ## Enrichment
 
 <p><code>{"@askdb/enrich"}</code> owns the shared Schema v2 authoring workflow. <code>{"@askdb/tui"}</code> and <code>{"@askdb/studio"}</code> operate on a Schema v2 directory after introspection; they never open a live database for enrichment, and they save valid <code>{"tables/<table>.md"}</code> plus concepts content.</p>
-
 
 ```
 askdb introspect --url "$DATABASE_URL" --out my-app.schema --schema-id my-app
@@ -48,8 +51,12 @@ askdb enrich --schema my-app.schema
 askdb bundle my-app.schema --out my-app.schema.bundle.json
 ```
 
-
-
-## Execution Boundary
+## Execution boundary
 
 <p><code>{"@askdb/core"}</code> returns SQL only. Review generated SQL before running it. Consumers own any later database execution, approval workflow, read-only roles, tenant policy, network controls, and audit logging. Installing <code>{"pg"}</code> is not required unless you use live Postgres introspection or pgvector.</p>
+
+## Agents and MCP
+
+<p>
+  Coding agents and automation should use the same contracts as human integrators. Today that is the <strong>CLI</strong>, <strong>library</strong>, or <strong>HTTP API</strong>. A first-party <strong>MCP</strong> server is <strong>roadmap</strong> work—see <a href="../guides/agents-and-mcp/">Agents and MCP (status)</a> and the README “Current limitations” so shipping expectations stay honest.
+</p>
