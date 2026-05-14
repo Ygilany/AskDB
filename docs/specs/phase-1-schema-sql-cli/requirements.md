@@ -52,6 +52,15 @@ A developer can, from this repo:
 2. Point at a schema artifact + Postgres config.
 3. Ask a natural-language question and receive **validated SQL** and **tabular results** or a **clear error** explaining what failed (schema mismatch, unsafe SQL, connection, etc.).
 
+## Supplement — CLI environment templates (post–Phase 1)
+
+The Phase 1 CLI scope predates the current **single-file** developer onboarding flow:
+
+- `askdb init` writes **`askdb.config.ts` only** (no generated `.env`). The file uses nested `defineConfig` and `env()` for values you set in a **self-managed** `.env` or in the shell; example `.env` keys and notes from the old split template live in **comments** in that file.
+- First-party apps load `.env`, then merge `askdb.config.*` / `.config/askdb.*` via [`@askdb/config`](../../../packages/config/README.md) (`bootstrapAskDbEnv`). See [**ADR 0005 — AskDB config package and env bootstrap**](../../adrs/0005-askdb-config-and-env-bootstrap.md).
+
+This supplement does not change the original Phase 1 schema/NL→SQL contract; it documents how developers configure keys for the maintained CLI.
+
 ## References
 
 - [`docs/mission.md`](../../mission.md) — audience, modes, principles  

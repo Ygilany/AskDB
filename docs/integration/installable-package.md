@@ -7,10 +7,13 @@ AskDB ships focused library packages:
 3. [`@askdb/postgres`](../../packages/postgres/README.md) — Postgres integration: dialect adapter (`postgresDialect`), connector (live + from-export), catalog templates, and a `pg`-backed catalog query runner for live introspection.
 4. [`@askdb/prisma`](../../packages/prisma/README.md) — Prisma integration: schema-file connector that renders Schema v2 from `.prisma` files without a database connection.
 5. [`@askdb/enrich`](../../packages/enrich/README.md) — headless Schema v2 enrichment workspace helpers used by TUI, Studio, and custom authoring surfaces.
+6. [`@askdb/config`](../../packages/config/README.md) — Prisma-style `askdb.config.*` / `.config/askdb.*` discovery and `bootstrapAskDbEnv()` so friendly `.env` names map onto the canonical `process.env` keys `@askdb/core` reads.
 
 The supported user-facing CLI is [`@askdb/cli`](../../apps/cli/README.md) (`askdb` binary, `npm i -g @askdb/cli`). `@askdb/http-api`, `@askdb/tui`, `@askdb/studio`, and `@askdb/docs-site` are first-party reference apps.
 
 Architecture rationale: [**ADR 0002 — Integration-package layout**](../adrs/0002-integration-package-layout.md).
+
+Configuration bootstrap: [**ADR 0005 — AskDB config package and env bootstrap**](../adrs/0005-askdb-config-and-env-bootstrap.md).
 
 Enrichment package boundary: [**ADR 0004 — Enrichment-package boundary**](../adrs/0004-enrichment-package-boundary.md).
 
@@ -30,11 +33,15 @@ pnpm add @askdb/introspect
 pnpm add @askdb/enrich
 # Optional: Prisma schema-file introspection
 pnpm add @askdb/prisma
+# Optional: Prisma-style env mapping + askdb.config discovery (used by the CLI; optional for library hosts)
+pnpm add @askdb/config
 # Optional: live Postgres introspection
 pnpm add pg
 ```
 
 `pg` is an **optional peer dependency** of `@askdb/postgres`. You do not need it when you only use `@askdb/core` to generate SQL.
+
+[`@askdb/config`](../../packages/config/README.md) is optional for library-only usage: `@askdb/core` reads **`process.env`**. Call `bootstrapAskDbEnv({ cwd: process.cwd() })` from `@askdb/config` when you want the same `.env` + `askdb.config.ts` mapping behavior as the first-party CLI and HTTP API.
 
 ---
 

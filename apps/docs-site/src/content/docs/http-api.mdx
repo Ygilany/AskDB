@@ -17,7 +17,7 @@ node apps/http-api/dist/bin.js
 ```
 
 
-          <p>Set <code>{"ASKDB_SCHEMA_PATH"}</code> in the repo-root <code>{".env"}</code> before starting the server.</p>
+          <p>Set <code>{"ASKDB_SCHEMA_PATH"}</code> in the repo-root <code>{".env"}</code> before starting the server. The binary loads <code>{".env"}</code> candidates (repo root, cwd, package dir), then merges <code>{"askdb.config.*"}</code> / <code>{".config/askdb.*"}</code> from the current working directory via <code>{"@askdb/config"}</code>.</p>
 
 ## Health Check
 

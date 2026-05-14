@@ -16,6 +16,8 @@ pnpm add ai @ai-sdk/openai
 
 `@askdb/core` itself does not depend on `pg`. The optional `pg` peer lives on `@askdb/postgres` for live Postgres introspection.
 
+Runtime AI configuration is resolved from **`process.env`** (see `resolveAskDbAiConfig` in the source). If you use [`@askdb/config`](../../packages/config/README.md), call `bootstrapAskDbEnv()` before constructing models from env so `askdb.config.*` / `.config/askdb.*` hydrate canonical names.
+
 ## Schema format
 
 `@askdb/core` uses **Schema v2** — a split artifact designed for business-context enrichment and RAG chunking. See [`docs/contracts/schema-v2.md`](../../docs/contracts/schema-v2.md) for the full contract.

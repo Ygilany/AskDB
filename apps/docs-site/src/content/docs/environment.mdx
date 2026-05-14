@@ -1,19 +1,88 @@
 ---
 title: "Environment"
-description: "Use a local .env file for secrets and runtime defaults. The CLI loads .env automatically."
+description: "Load secrets from .env, optionally map friendly names through askdb.config.ts using @askdb/config."
 ---
 
 <p className="doc-eyebrow">Configuration</p>
 
-<p className="doc-lede">Use a local .env file for secrets and runtime defaults. The CLI loads .env automatically.</p>
+<p className="doc-lede">First-party apps load a local <code>{".env"}</code> file, then merge an optional <code>{"askdb.config.*"}</code> file. The supported shape is a nested <code>{"AskDbConfig"}</code> wrapped in <code>{"defineConfig(...)"}</code> from <code>{"@askdb/config"}</code>, which flattens into the canonical <code>{"process.env"}</code> keys <code>{"@askdb/core"}</code> and other packages read.</p>
 
-## Common Variables
+## Bootstrap order
+
+<ol>
+  <li><code>{"dotenv"}</code> loads <code>{".env"}</code> (missing file is normal).</li>
+  <li>If present, <code>{"askdb.config.*"}</code> or <code>{".config/askdb.*"}</code> is evaluated. A nested <code>{"defineConfig"}</code> export is flattened to canonical keys; legacy flat string maps are still merged as a plain record. Non-empty string values are applied to <code>{"process.env"}</code>.</li>
+</ol>
+
+<p>This mirrors the ergonomics of <a href="https://www.prisma.io/docs/orm/reference/prisma-config-reference">Prisma’s config reference</a>, but AskDB uses <code>{".config/askdb.*"}</code> so it does not collide with Prisma’s own <code>{".config/prisma.*"}</code> files.</p>
+
+## `askdb init`
+
+```
+pnpm exec askdb init
+# writes ./askdb.config.ts only (no .env file)
+```
+
+<p><code>{"askdb init"}</code> emits a grouped <code>{"defineConfig({ ... } satisfies AskDbConfig)"}</code> in <code>{"askdb.config.ts"}</code>. Example <code>{".env"}</code> keys and setup notes from the old split template are preserved as <strong>comments</strong> in that file. Use Prisma-style <code>{"env(\"VAR\")"}</code> for values you keep in <code>{".env"}</code> (loaded via <code>{"import \"dotenv/config\""}</code>) or in the shell environment; optional fields can stay as literals until you switch them to <code>{"env(...)"}</code>.</p>
+
+```
+import "dotenv/config";
+import { defineConfig, env, type AskDbConfig } from "@askdb/config";
+
+export default defineConfig({
+  ai: {
+    provider: "openai",
+    providerConfig: {
+      openai: {
+        apiKey: "",
+        model: env("MY_CHAT_MODEL"),
+      },
+    },
+  },
+  database: {
+    provider: "postgres",
+    providerConfig: {
+      postgres: { databaseUrl: env("MY_DATABASE_URL") },
+    },
+  },
+  introspection: {
+    provider: "postgres",
+    providerConfig: {
+      postgres: {},
+    },
+    outputDir: env("MY_INTROSPECT_OUTPUT_DIR"),
+  },
+  rag: {
+    embedder: "mock",
+    embedderConfig: {},
+    store: "memory",
+    storeConfig: { memory: {} },
+  },
+} satisfies AskDbConfig);
+```
+
+<p>Omit <code>{"introspection.providerConfig.postgres.databaseUrl"}</code> to reuse <code>{"database.providerConfig.postgres.databaseUrl"}</code> as <code>{"DATABASE_URL"}</code> for live Postgres introspection.</p>
+
+<p><code>{"introspection.outputDir"}</code> maps to <code>{"ASKDB_INTROSPECT_OUT"}</code>. After bootstrap, <code>{"askdb introspect"}</code> uses that variable as the default <code>{"--out"}</code> when you omit <code>{"--out"}</code>, <code>{"--print"}</code>, and <code>{"--diff"}</code>. For Prisma engine introspection, <code>{"ASKDB_PRISMA_SCHEMA"}</code> can default <code>{"--prisma-schema"}</code>.</p>
+
+## Config discovery
+
+<p>From the working directory (usually the process cwd):</p>
+
+<ul>
+  <li><code>{"askdb.config.<ext>"}</code> — extension precedence: <code>{"ts"}</code> → <code>{"mts"}</code> → <code>{"cts"}</code> → <code>{"js"}</code> → <code>{"mjs"}</code> → <code>{"cjs"}</code> (first existing file wins).</li>
+  <li><code>{".config/askdb.<ext>"}</code> — same extension precedence if no root config exists.</li>
+</ul>
+
+## Common canonical variables
 
 <div className="definition-list">
-            <div><code>{"OPENAI_API_KEY"}</code><span>Required for live NL-to-SQL generation.</span></div>
+            <div><code>{"OPENAI_API_KEY"}</code><span>Required for live NL-to-SQL generation (unless using mocks).</span></div>
             <div><code>{"OPENAI_BASE_URL"}</code><span>Optional custom OpenAI-compatible base URL.</span></div>
             <div><code>{"ASKDB_MODEL"}</code><span>Optional model ID; defaults are package-specific.</span></div>
             <div><code>{"DATABASE_URL"}</code><span>Required only for live Postgres introspection.</span></div>
+            <div><code>{"ASKDB_INTROSPECT_OUT"}</code><span>Default output directory for <code>{"askdb introspect"}</code> when <code>{"--out"}</code> is omitted (set from nested <code>{"introspection.outputDir"}</code>).</span></div>
+            <div><code>{"ASKDB_PRISMA_SCHEMA"}</code><span>Default Prisma schema path for <code>{"askdb introspect --engine prisma"}</code> when <code>{"--prisma-schema"}</code> is omitted.</span></div>
             <div><code>{"ASKDB_SCHEMA_PATH"}</code><span>Default schema path for CLI and HTTP server workflows.</span></div>
             <div><code>{"ASKDB_LOG_LEVEL"}</code><span>Structured log level.</span></div>
             <div><code>{"ASKDB_MODE"}</code><span>Default operating mode.</span></div>
@@ -28,11 +97,9 @@ description: "Use a local .env file for secrets and runtime defaults. The CLI lo
 
 <p><code>{"askdb-rag"}</code> defaults to a deterministic mock embedder for smoke tests. Set <code>{"OPENAI_API_KEY"}</code> and pass <code>{"--embedder openai"}</code> when you want real embeddings; pass <code>{"--pg-url"}</code> only when using the pgvector store.</p>
 
-## Local Template
-
-
+## Monorepo template
 
 ```
 cp .env.example .env
-# edit .env before calling a live model or database
+# edit .env; optionally add askdb.config.ts / .config/askdb.ts (or run `pnpm exec askdb init` for a commented starter)
 ```

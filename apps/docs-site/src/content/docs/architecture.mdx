@@ -11,6 +11,10 @@ description: "How AskDB packages, product surfaces, connectors, optional peers, 
 
 <p><code>{"@askdb/core"}</code> loads Schema v2, builds model prompts, calls the supplied model, and returns validated SQL. It does not own database drivers or generated-SQL execution. The host application owns approval, execution, database roles, tenant policy, network controls, and audit logging.</p>
 
+## Env bootstrap
+
+<p>First-party Node entrypoints load <code>{".env"}</code> and optional <code>{"askdb.config.*"}</code> / <code>{".config/askdb.*"}</code> through <code>{"@askdb/config"}</code> before reading canonical environment variables. See <a href="../environment/">Environment</a> and <a href="https://github.com/Ygilany/AskDB/blob/main/docs/adrs/0005-askdb-config-and-env-bootstrap.md">ADR 0005</a>.</p>
+
 ```
 Question + Schema v2
   -> @askdb/core ask()
@@ -22,6 +26,7 @@ Question + Schema v2
 ## Package Layers
 
 <div className="package-table">
+  <a href="../environment/"><strong>@askdb/config</strong><span>Optional env bootstrap: <code>{"askdb.config.*"}</code> discovery and mapping into <code>{"process.env"}</code>.</span></a>
   <a href="../core/"><strong>@askdb/core</strong><span>Dialect-agnostic Schema v2 and NL-to-SQL contract package.</span></a>
   <a href="../introspect/"><strong>@askdb/introspect</strong><span>Engine-agnostic connector contract and Schema v2 renderer.</span></a>
   <a href="../postgres/"><strong>@askdb/postgres</strong><span>Postgres dialect, connector, templates, and optional <code>{"pg"}</code> catalog runner.</span></a>
