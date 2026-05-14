@@ -28,7 +28,7 @@ Dev watch (runs with `apps/http-api` as the working directory):
 pnpm -C apps/http-api dev:watch
 ```
 
-Set `ASKDB_SCHEMA_PATH` in the repo-root `.env` (recommended):
+Set `ASKDB_SCHEMA_PATH` in the repo-root `.env` (recommended). The binary also loads `askdb.config.*` / `.config/askdb.*` from the current working directory via [`@askdb/config`](https://www.npmjs.com/package/@askdb/config) after resolving `.env` candidates (repo root, cwd, package dir).
 
 ```bash
 # in ../../.env (repo root):

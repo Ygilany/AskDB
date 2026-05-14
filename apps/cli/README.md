@@ -34,6 +34,15 @@ AskDB returns SQL for review. Run approved SQL outside AskDB under your own data
 
 Run `askdb --help` for the full list.
 
+## Init
+
+```bash
+askdb init
+# writes ./askdb.config.ts only (refuses to overwrite unless --force)
+```
+
+Use `--path` to write the template to a different file. Example `.env` keys and notes live in **comments** inside `askdb.config.ts`; create your own `.env` if you use `env("...")` with `dotenv`.
+
 ## Enrichment UIs
 
 ```bash
@@ -60,11 +69,15 @@ askdb introspect --engine prisma --prisma-schema ./prisma/schema.prisma --print
 askdb introspect --engine prisma --prisma-schema ./prisma --diff my-app.schema
 ```
 
-## Environment variables
+## Environment
+
+The CLI loads `.env` from the current working directory, then merges an optional AskDB config file (`askdb.config.*` or `.config/askdb.*`) via [`@askdb/config`](https://www.npmjs.com/package/@askdb/config) (`bootstrapAskDbEnv`). Run `askdb init` to create **`askdb.config.ts`** with nested `defineConfig` and `env()` examples; optional `.env` guidance is in comments in that file (no `.env` is generated).
+
+`askdb init` **skips** loading config so a broken template never blocks scaffolding.
 
 | Variable | Purpose |
 |---|---|
-| `OPENAI_API_KEY` | Default LanguageModel provider key. |
+| `OPENAI_API_KEY` | Default LanguageModel provider key (often set via `askdb.config.ts`). |
 | `ASKDB_SCHEMA_PATH` | Default schema file. |
 | `DATABASE_URL` | Postgres connection string for `askdb introspect --url`. |
 | `ASKDB_MOCK_SQL` | Bypass live model calls in tests/dev. |

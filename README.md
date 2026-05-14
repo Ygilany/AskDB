@@ -15,7 +15,7 @@ For local development, use Node **20+**, pnpm **11**, and Docker if you want the
 ```bash
 pnpm install
 pnpm exec askdb init
-# edit .env and set OPENAI_API_KEY before calling a live model
+# create .env with keys from askdb.config.ts header comments (optional); adjust env("...") names as needed
 pnpm build
 pnpm exec askdb ask \
   --schema fixtures/schemas/orders-users.schema \
@@ -76,6 +76,7 @@ Product direction and technical baseline live in **`docs/`**:
 - [`docs/specs/phase-6-introspection/README.md`](docs/specs/phase-6-introspection/README.md) — **Phase 6** introspection spec hub  
 - [`docs/specs/phase-1-schema-sql-cli/requirements.md`](docs/specs/phase-1-schema-sql-cli/requirements.md) — Phase 1 scope (implemented in this repo)  
 - Structured logging rationale: [`docs/adrs/0001-structured-logging-pino.md`](docs/adrs/0001-structured-logging-pino.md)  
+- Env / `askdb.config` bootstrap: [`docs/adrs/0005-askdb-config-and-env-bootstrap.md`](docs/adrs/0005-askdb-config-and-env-bootstrap.md)  
 
 ## Development
 

@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import dotenv from "dotenv";
+import { bootstrapAskDbEnv } from "@askdb/config";
 import { randomUUID } from "node:crypto";
 import {
   AskDbError,
@@ -25,19 +25,9 @@ import { Command } from "commander";
 import { runInitCli } from "./init.js";
 import { runIntrospectCli } from "./introspect.js";
 
-// Load repo/local `.env` into process.env (if present).
-// We treat missing `.env` as normal (developers may export env vars another way).
-{
-  const { error } = dotenv.config();
-  if (error) {
-    // ignore missing file; surface everything else
-    const err = error as unknown as { code?: unknown; message?: unknown };
-    const code = typeof err.code === "string" ? err.code : undefined;
-    if (code !== "ENOENT") {
-      console.error(`Failed to load .env: ${error.message}`);
-      process.exitCode = 1;
-    }
-  }
+// `askdb init` writes templates and should not require a valid askdb.config.
+if (process.argv[2] !== "init") {
+  bootstrapAskDbEnv({ cwd: process.cwd() });
 }
 
 if (process.argv[2] === "init") {
@@ -184,13 +174,13 @@ program.name("askdb").description("AskDB — natural language → PostgreSQL SEL
 
 program
   .command("init")
-  .description("Create a local .env from the AskDB template")
+  .description("Create askdb.config.ts (nested defineConfig + env() examples; .env guidance in comments only)")
   .option("-f, --force", "Overwrite an existing file", false)
-  .option("--path <path>", "Target path", ".env")
+  .option("--path <path>", "Output path for askdb.config.ts", "askdb.config.ts")
   .action((opts: { force?: boolean; path?: string }) => {
     const args: string[] = [];
     if (opts.force) args.push("--force");
-    if (opts.path && opts.path !== ".env") args.push("--path", opts.path);
+    if (opts.path && opts.path !== "askdb.config.ts") args.push("--path", opts.path);
     process.exit(runInitCli(args));
   });
 

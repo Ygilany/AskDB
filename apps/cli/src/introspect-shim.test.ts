@@ -66,6 +66,52 @@ describe("cli spawn: introspect subcommand", () => {
     expect(exec.stdout).toContain('"id": "table:public.User"');
   });
 
+  it("defaults --prisma-schema from ASKDB_PRISMA_SCHEMA", () => {
+    const exec = run(
+      "node",
+      [
+        join(cliDir, "dist/cli.js"),
+        "introspect",
+        "--engine",
+        "prisma",
+        "--schema-id",
+        "simple",
+        "--print",
+      ],
+      { ASKDB_PRISMA_SCHEMA: prismaFixture },
+    );
+
+    expect(exec.status).toBe(0);
+    expect(exec.stdout).toContain('"schemaId": "simple"');
+  });
+
+  it("defaults --out from ASKDB_INTROSPECT_OUT for Prisma introspection", () => {
+    const tmp = mkdtempSync(join(tmpdir(), "askdb-introspect-out-env-"));
+    const isoCwd = mkdtempSync(join(tmpdir(), "askdb-introspect-out-isolated-"));
+    try {
+      const exec = run(
+        "node",
+        [
+          join(cliDir, "dist/cli.js"),
+          "introspect",
+          "--engine",
+          "prisma",
+          "--prisma-schema",
+          prismaFixture,
+          "--schema-id",
+          "simple",
+        ],
+        { ASKDB_INTROSPECT_OUT: tmp },
+        isoCwd,
+      );
+      expect(exec.status).toBe(0);
+      expect(readFileSync(join(tmp, "schema.json"), "utf8")).toContain('"id": "table:public.User"');
+    } finally {
+      rmSync(tmp, { recursive: true, force: true });
+      rmSync(isoCwd, { recursive: true, force: true });
+    }
+  });
+
   it("supports Prisma diff and out modes", () => {
     const tmp = mkdtempSync(join(tmpdir(), "askdb-prisma-cli-"));
     try {
@@ -109,10 +155,15 @@ describe("cli spawn: introspect subcommand", () => {
   });
 });
 
-function run(command: string, args: string[]) {
+function run(
+  command: string,
+  args: string[],
+  extraEnv?: Record<string, string>,
+  cwd: string = repoRoot,
+) {
   return spawnSync(command, args, {
-    cwd: repoRoot,
-    env: process.env,
+    cwd,
+    env: { ...process.env, ...extraEnv },
     encoding: "utf8",
   });
 }

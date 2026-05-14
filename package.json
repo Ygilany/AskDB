@@ -6,10 +6,10 @@
     "node": ">=20"
   },
   "scripts": {
-    "build": "turbo run build",
-    "test": "turbo run test",
+    "build": "pnpm exec turbo run build",
+    "test": "pnpm exec turbo run test",
     "test:watch": "vitest",
-    "lint": "turbo run lint",
+    "lint": "pnpm exec turbo run lint",
     "docs:build": "pnpm -C apps/docs-site build",
     "docs:dev": "pnpm -C apps/docs-site dev",
     "pagila:up": "docker compose -f fixtures/pagila/docker-compose.yml up --build -d",
@@ -28,6 +28,7 @@
   },
   "devDependencies": {
     "@askdb/cli": "workspace:*",
+    "@askdb/config": "workspace:*",
     "@changesets/cli": "^2.27.10",
     "@types/node": "^22.13.14",
     "turbo": "^2.5.6",

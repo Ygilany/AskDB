@@ -20,6 +20,19 @@ pnpm exec askdb --help
 
           <p>The CLI is the batteries-included workflow for SQL generation and schema introspection. It uses <code>{"pg"}</code> only for live Postgres introspection.</p>
 
+## Init
+
+
+
+```
+pnpm exec askdb init
+# writes ./askdb.config.ts (refuses to overwrite unless --force)
+```
+
+
+
+          <p>Use <code>{"--path"}</code> to write the template to a different file. <code>{"askdb init"}</code> does not create a <code>{".env"}</code> file; example <code>{".env"}</code> keys and notes live in comments inside <code>{"askdb.config.ts"}</code>. <code>{"askdb init"}</code> intentionally skips loading config so scaffolding cannot be blocked by a broken config file.</p>
+
 ## Ask
 
 
@@ -41,6 +54,9 @@ askdb introspect \
   --url "$DATABASE_URL" \
   --out ./my-app.schema \
   --schema-id my-app
+
+# If ASKDB_INTROSPECT_OUT is set (e.g. from askdb.config introspection.outputDir),
+# you can omit --out when you are not using --print or --diff.
 ```
 
 
