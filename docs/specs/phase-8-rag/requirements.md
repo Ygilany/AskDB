@@ -138,7 +138,7 @@ Per [`schema-v2.md`](../../contracts/schema-v2.md#sensitive-propagation):
 ## Out of scope
 
 - **Reranking / hybrid search / lexical-pull** — pure dense retrieval for v0; reranking is a clean extension behind the same `Retriever` shape later.
-- **Embeddings for raw row data** — Phase 8 chunks the **describable schema** only. `bounded_results` data → model is a separate contract (Phase 11) with stripping rules already documented.
+- **Embeddings for raw row data** — Phase 8 chunks the **describable schema** only. `bounded_results` data → model is a separate contract (Phase 12) with stripping rules already documented.
 - **Lancedb / sqlite-vss / Pinecone / Weaviate adapters** — interface is in scope; specific adapters are deferred.
 - **Multi-modal / image embeddings** — text only.
 - **Tokenizer in core** — chunk size guidance is character-based with documented assumptions; precise token counting belongs to consumers (or an opt-in helper later).

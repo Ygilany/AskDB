@@ -33,7 +33,7 @@ A new workspace package: `packages/introspect/`, published as `@askdb/introspect
 **Sub-exports:**
 
 - `@askdb/introspect` — public types (`SqlSchema`, `IntrospectionInput`, `IntrospectionResult`, `Connector`), `introspect()` entry point, and the renderer.
-- `@askdb/introspect/postgres` — the Postgres connector. Phase 6 ships this only; the seam is the entry point for additional engines in Phase 10.
+- `@askdb/introspect/postgres` — the Postgres connector. Phase 6 ships this only; the seam is the entry point for additional engines in Phase 11.
 
 **Binary:** `bin: { "askdb-introspect": "./dist/bin.js" }`. CLI is also available as `askdb introspect` via a thin shim in `@askdb/cli`.
 
@@ -241,7 +241,7 @@ CLI logging follows Phase 2's structured-logging conventions; events use the `as
 
 ## Out of scope
 
-- **Non-Postgres engines** — Phase 10 introduces additional connectors against the same interface. Phase 6 ships Postgres only.
+- **Non-Postgres engines** — Phase 11 introduces additional connectors against the same interface. Phase 6 ships Postgres only.
 - **Heuristic rename detection** — explicitly chosen out: renames are remove + add. Future work can add a `--detect-renames` opt-in.
 - **Capturing every Postgres feature in Schema v2** — RLS, partitioning, generated columns, expression indexes, etc. are captured in `SqlSchema` for completeness but are **not** emitted into `schema.json` until Schema v2 grows fields for them. The connector is forward-compatible with those extensions without a major version bump.
 - **Auto-detecting sensitive columns** — column-name heuristics are intentionally not in scope. Sensitive flags are user-set in the TUI (Phase 7) or by hand and preserved across re-introspections.
