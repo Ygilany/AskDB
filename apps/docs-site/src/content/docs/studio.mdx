@@ -1,0 +1,79 @@
+---
+title: "@askdb/studio"
+description: "Studio is a local browser UI for browsing, enriching, and testing Schema v2 artifacts. It serves a React app on localhost and never connects to production databases."
+---
+
+<p className="doc-eyebrow">Local browser UI</p>
+
+<p className="doc-lede">Studio is a local browser UI for browsing, enriching, and testing Schema v2 artifacts. It serves a React app on <code>{"localhost"}</code> and never connects to production databases.</p>
+
+## Install
+
+```
+pnpm add @askdb/studio
+# commonly used alongside the introspector
+pnpm add @askdb/cli @askdb/introspect @askdb/postgres @askdb/studio
+```
+
+## Quick Start
+
+```
+# Start Studio from the main CLI
+askdb studio --schema ./my-app.schema
+
+# or run the standalone binary
+askdb-studio --schema ./my-app.schema
+```
+
+<p>Studio serves a local web app at <code>{"http://127.0.0.1:5556"}</code> by default. Open the URL in a browser after starting.</p>
+
+## What It Provides
+
+<ul>
+  <li>Browse all physical tables and columns from <code>{"schema.json"}</code>.</li>
+  <li>Edit table descriptions, aliases, primary entities, tags, common query language, example questions, and column metadata.</li>
+  <li>Write the describable layer back to <code>{"tables/*.md"}</code> using <code>{"@askdb/enrich"}</code> workspace helpers.</li>
+  <li>Request AI enrichment suggestions when <code>{"OPENAI_API_KEY"}</code> is configured.</li>
+  <li>Build and query the local file-backed RAG index from the browser.</li>
+  <li>Generate sample Postgres SQL for natural-language questions against the currently saved enrichment.</li>
+</ul>
+
+## Environment Variables
+
+<div className="definition-list">
+  <div><code>{"OPENAI_API_KEY"}</code><span>Enables AI enrichment suggestions and sample NL-to-SQL generation.</span></div>
+  <div><code>{"OPENAI_BASE_URL"}</code><span>Optional OpenAI-compatible base URL.</span></div>
+  <div><code>{"ASKDB_STUDIO_MODEL"}</code><span>Studio-specific model override. Falls back to <code>{"ASKDB_MODEL"}</code>, then <code>{"gpt-4o-mini"}</code>.</span></div>
+  <div><code>{"ASKDB_STUDIO_HOST"}</code><span>Bind host. Defaults to <code>{"127.0.0.1"}</code>.</span></div>
+  <div><code>{"ASKDB_STUDIO_PORT"}</code><span>Bind port. Defaults to <code>{"5556"}</code>.</span></div>
+</div>
+
+## Package Boundary
+
+<p>Studio depends on <code>{"@askdb/enrich"}</code> for shared non-UI Schema v2 authoring logic. It does not depend on <code>{"@askdb/tui"}</code>, which is the separate terminal authoring surface.</p>
+
+```
+@askdb/core
+   ^
+   |
+@askdb/enrich
+   ^          ^
+   |          |
+@askdb/tui   @askdb/studio
+```
+
+## Typical Workflow
+
+```
+# 1. Introspect the database
+askdb introspect \
+  --url "$DATABASE_URL" \
+  --out my-app.schema \
+  --schema-id my-app
+
+# 2. Open Studio to enrich and review
+askdb studio --schema my-app.schema
+
+# 3. Bundle the enriched artifact for distribution
+askdb bundle my-app.schema --out my-app.schema.bundle.json
+```
