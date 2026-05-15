@@ -1,6 +1,6 @@
 ---
 "@askdb/prisma": minor
-"@askdb/cli": minor
+"askdb": minor
 "@askdb/introspect": patch
 ---
 

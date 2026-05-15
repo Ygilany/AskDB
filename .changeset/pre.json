@@ -2,7 +2,7 @@
   "mode": "pre",
   "tag": "beta",
   "initialVersions": {
-    "@askdb/cli": "0.3.0",
+    "askdb": "0.3.0",
     "@askdb/docs-site": "0.0.0",
     "@askdb/http-api": "0.3.0",
     "@askdb/studio": "0.1.0",

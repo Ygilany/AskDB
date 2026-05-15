@@ -1,6 +1,6 @@
 ---
 "@askdb/studio": minor
-"@askdb/cli": minor
+"askdb": minor
 "@askdb/tui": patch
 ---
 

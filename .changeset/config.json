@@ -3,7 +3,7 @@
   "changelog": "@changesets/cli/changelog",
   "commit": false,
   "fixed": [],
-  "linked": [["@askdb/core", "@askdb/cli", "@askdb/http-api"]],
+  "linked": [["@askdb/core", "askdb", "@askdb/http-api"]],
   "access": "public",
   "baseBranch": "main",
   "updateInternalDependencies": "patch",

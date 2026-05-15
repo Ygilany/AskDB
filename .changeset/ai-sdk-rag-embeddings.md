@@ -1,7 +1,7 @@
 ---
 "@askdb/rag": patch
 "@askdb/studio": patch
-"@askdb/cli": patch
+"askdb": patch
 "@askdb/core": patch
 ---
 
