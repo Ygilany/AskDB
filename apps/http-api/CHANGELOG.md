@@ -1,5 +1,13 @@
 # @askdb/http-api
 
+## 0.5.0-beta.1
+
+### Patch Changes
+
+- Updated dependencies [06e5f54]
+  - @askdb/config@0.3.0-beta.1
+  - @askdb/postgres@0.2.0-beta.1
+
 ## 0.5.0-beta.0
 
 ### Minor Changes
