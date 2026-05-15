@@ -1,0 +1,42 @@
+{
+  "mode": "pre",
+  "tag": "beta",
+  "initialVersions": {
+    "@askdb/cli": "0.3.0",
+    "@askdb/docs-site": "0.0.0",
+    "@askdb/http-api": "0.3.0",
+    "@askdb/studio": "0.1.0",
+    "@askdb/config": "0.2.0",
+    "@askdb/core": "0.4.0",
+    "@askdb/enrich": "0.1.0",
+    "@askdb/introspect": "0.2.0",
+    "@askdb/postgres": "0.1.0",
+    "@askdb/prisma": "0.1.0",
+    "@askdb/rag": "0.1.0",
+    "@askdb/tui": "0.1.0"
+  },
+  "changesets": [
+    "ai-provider-configuration",
+    "ai-sdk-rag-embeddings",
+    "askdb-config-bootstrap",
+    "askdb-studio",
+    "config-env-flatten-defaults",
+    "enrich-shared-workspace",
+    "fix-postgres-zod-resolution",
+    "initial-0-1-0",
+    "long-items-count",
+    "phase-6-introspect-skeleton",
+    "phase-7-5-architecture-reshape",
+    "phase-7-tui-enrichment",
+    "phase-8-rag",
+    "prisma-schema-connector",
+    "remove-generated-sql-execution",
+    "runtime-config-snapshot",
+    "schema-v2-breaking",
+    "studio-sample-rag-mode",
+    "studio-token-usage",
+    "studio-usage-layout",
+    "studio-web-primitives",
+    "workspace-bin-wrappers"
+  ]
+}
