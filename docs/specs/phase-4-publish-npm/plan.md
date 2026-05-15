@@ -20,13 +20,13 @@ Numbered groups are **ordered** so each milestone is **demoable** without waitin
 - Move `pg` from `dependencies` to `peerDependencies` and add `peerDependenciesMeta: { pg: { optional: true } }` in `packages/core/package.json`.
 - Add **`package.json` `exports`** entry for **`@askdb/core/postgres`** pointing at the built chunk (`./dist/postgres.js` or equivalent) so `createPostgresExecutor` is not re-exported from the main barrel.
 - Lazy-import `pg` inside `createPostgresExecutor`; throw a helpful error (`AskDbError("Postgres executor requires the 'pg' peer dependency...")`) only when the built-in executor is actually constructed.
-- Update root + workspace `pnpm install` so the dev environment still installs `pg` (it stays a `devDependency` of the workspace, or a regular dep of `@askdb/cli` and `@askdb/http-api` which use the built-in executor).
+- Update root + workspace `pnpm install` so the dev environment still installs `pg` (it stays a `devDependency` of the workspace, or a regular dep of `askdb` and `@askdb/http-api` which use the built-in executor).
 
 **Demo:** A consumer mock-package that depends on `@askdb/core` only (no `pg`) imports `ask` and runs against a fake executor with no install errors.
 
 ## 3 — Drop `private`, fill in package metadata
 
-For `@askdb/core`, `@askdb/cli`, `@askdb/http-api`:
+For `@askdb/core`, `askdb`, `@askdb/http-api`:
 
 - Remove `"private": true`; bump version to `0.1.0`.
 - Add or update fields: `description`, `keywords`, `repository`, `homepage`, `bugs`, `license`, `author`, `engines`.

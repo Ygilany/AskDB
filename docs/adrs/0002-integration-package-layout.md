@@ -31,13 +31,13 @@ Concretely:
 2. `ask()` accepts a required `dialect` adapter (`AskDialect`). `@askdb/postgres` exports `postgresDialect`. The `connectionString`, `execute`, and `executor` options on `ask()` are removed.
 3. `@askdb/introspect`'s `IntrospectionInput` discriminated union is removed from the public API. `@askdb/postgres` exports `PostgresIntrospectionInput`. Future integrations export their own input types.
 4. `Connector` becomes generic over `TInput`; `templates()` is optional (Prisma legitimately does not have one).
-5. The standalone `askdb-introspect` binary retires. Introspection is reached via `askdb introspect` (an `@askdb/cli` subcommand).
+5. The standalone `askdb-introspect` binary retires. Introspection is reached via `askdb introspect` (an `askdb` subcommand).
 
 ## Rationale
 
 - **Prisma's input is not the same kind of thing as Postgres's.** A discriminated `live | from-export` union baked into the core contract forces every future integration to pretend it fits that model. Connector-owned input shapes keep each integration's seam honest.
 - **Dialect is integration-package knowledge.** Validating that a string starts with `SELECT` is universal; the actual forbidden-keyword list, the prompt wording, and the catalog query strings are not.
-- **Apps are not libraries.** `cli`, `http-api`, `tui`, and `docs-site` are first-party reference apps, not extension points. They live under `apps/` to make that boundary explicit. The supported user-facing product surface is `@askdb/cli`, batteries-included Prisma-style.
+- **Apps are not libraries.** `cli`, `http-api`, `tui`, and `docs-site` are first-party reference apps, not extension points. They live under `apps/` to make that boundary explicit. The supported user-facing product surface is `askdb`, batteries-included Prisma-style.
 - **Catalog runners are scoped to introspection.** `@askdb/postgres` bundles dialect + connector + bundle reader + a `pg` catalog query runner for live introspection. Generated-SQL execution is outside AskDB's package API.
 
 ## Consequences

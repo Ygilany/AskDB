@@ -29,7 +29,7 @@ Without Phase 7:
 
 ### 1) `@askdb/tui` package
 
-A new workspace package: `packages/tui/`, published as `@askdb/tui`, exposing the binary `askdb-tui` (and discoverable via `askdb enrich` if `@askdb/cli` shells out to it).
+A new workspace package: `packages/tui/`, published as `@askdb/tui`, exposing the binary `askdb-tui` (and discoverable via `askdb enrich` if `askdb` shells out to it).
 
 **Core flow:**
 
@@ -56,7 +56,7 @@ A new workspace package: `packages/tui/`, published as `@askdb/tui`, exposing th
 
 ### 2) `bundle` command
 
-`@askdb/tui` (or a thin shim in `@askdb/cli`) gains a `bundle` subcommand that compiles a v2 directory into a single packed JSON artifact for distribution (`my-app.schema.bundle.json`). The bundle preserves all front-matter, body text, and IDs faithfully. Reading the bundle is supported by the `@askdb/core` loader (Phase 5) as a third input form (alongside v2 directory and `schema.json`).
+`@askdb/tui` (or a thin shim in `askdb`) gains a `bundle` subcommand that compiles a v2 directory into a single packed JSON artifact for distribution (`my-app.schema.bundle.json`). The bundle preserves all front-matter, body text, and IDs faithfully. Reading the bundle is supported by the `@askdb/core` loader (Phase 5) as a third input form (alongside v2 directory and `schema.json`).
 
 ### 3) Documentation and fixtures
 
@@ -82,7 +82,7 @@ A new workspace package: `packages/tui/`, published as `@askdb/tui`, exposing th
 | AI-suggest gating | **Always confirm** — AI suggestions are proposals, not auto-saves. Even in batch mode (`--auto-suggest-all`), each suggestion is queued for human review before save. |
 | Sensitive identifier authoring | TUI shows a non-blocking warning when a description mentions a sensitive column by name, explaining that the chunk will be excluded by `@askdb/rag` (Phase 8). User can save anyway. |
 | Bundle format | Single packed JSON, **read-only** for downstream consumers (authoring stays in the directory). The Phase 5 loader accepts both forms. |
-| Package locus | `packages/tui/` published as `@askdb/tui`; binary `askdb-tui`. `@askdb/cli` may shell to it via `askdb enrich` (decided in implementation). |
+| Package locus | `packages/tui/` published as `@askdb/tui`; binary `askdb-tui`. `askdb` may shell to it via `askdb enrich` (decided in implementation). |
 | Shared authoring locus | `packages/enrich/` published as `@askdb/enrich`; owns headless workspace/draft/save/bundle/suggestion helpers shared by TUI and Studio. |
 | Input format | Schema v2 directory or bundled JSON (read-only). The TUI does **not** accept a live DB URL — that's Phase 6's job; the canonical flow is `askdb introspect` → `askdb-tui`. |
 | Re-introspection ingestion | TUI ingests orphan/new-column warnings from the Phase 5 loader and offers prune/describe actions. |
@@ -90,7 +90,7 @@ A new workspace package: `packages/tui/`, published as `@askdb/tui`, exposing th
 ## Open choices (to resolve during implementation)
 
 - **TUI library** — Clack vs. Ink (decide after a one-day spike comparing developer ergonomics for split-pane and form-style flows).
-- **`askdb enrich` command in `@askdb/cli`** — bundle the TUI as a CLI subcommand vs. ship as a separate binary. Recommendation: separate binary for now (`askdb-tui`), with a thin `askdb enrich` shim that spawns it.
+- **`askdb enrich` command in `askdb`** — bundle the TUI as a CLI subcommand vs. ship as a separate binary. Recommendation: separate binary for now (`askdb-tui`), with a thin `askdb enrich` shim that spawns it.
 - **Multi-schema Postgres naming in IDs** — confirmed in the contract (`table:public.users`); validate that the TUI handles the `.` correctly throughout (the Phase 5 loader is already responsible; this is a UI verification).
 - **Markdown body emit style** — whether to enforce a deterministic emit (e.g. always sorted columns in `Column notes`) or preserve user ordering. Recommendation: preserve user ordering; only auto-sort front-matter `columns` when adding new ones (the Phase 5 writer handles this; the TUI just calls it).
 

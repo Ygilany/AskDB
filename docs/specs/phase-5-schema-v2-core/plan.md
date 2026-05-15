@@ -72,4 +72,4 @@ Numbered groups are **ordered** so each milestone is **demoable**. Phase 5 is li
 
 ---
 
-**Implementation locus:** `packages/core/src/schema/` (parser, validator, writer, prompt assembly), `fixtures/schemas/`, `docs/integration/`, top-level `README.md`. No new packages added in Phase 5; `@askdb/cli` and `@askdb/http-api` pick up v2 transparently via the shared `@askdb/core` reader.
+**Implementation locus:** `packages/core/src/schema/` (parser, validator, writer, prompt assembly), `fixtures/schemas/`, `docs/integration/`, top-level `README.md`. No new packages added in Phase 5; `askdb` and `@askdb/http-api` pick up v2 transparently via the shared `@askdb/core` reader.

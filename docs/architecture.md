@@ -50,7 +50,7 @@ flowchart TB
   end
 
   subgraph Surfaces["First-party surfaces"]
-    cli["@askdb/cli<br/>askdb binary"]
+    cli["askdb<br/>askdb binary"]
     http["@askdb/http-api<br/>POST /ask wrapper"]
     tui["@askdb/tui<br/>terminal enrichment UI"]
     studio["@askdb/studio<br/>local browser authoring UI"]
@@ -87,7 +87,7 @@ flowchart TB
 | `@askdb/tui` | Maintained terminal authoring surface over a Schema v2 directory. | Operates on files; does not introspect or connect to databases. |
 | `@askdb/studio` | Maintained local browser UI for enrichment, sample NL-to-SQL checks, and local RAG exploration. | Authoring surface over Schema v2, not a connector package. |
 | `@askdb/rag` | Deterministic Schema v2 chunking, BYO embedder/store interfaces, in-memory/file/pgvector adapters, and retriever wiring. | Optional layer; prompt generation still flows through `@askdb/core` and a dialect. |
-| `@askdb/cli` | Batteries-included `askdb` workflow for ask, introspect, enrich, studio, and bundle commands. | Product surface that composes packages; not the reusable contract layer. |
+| `askdb` | Batteries-included `askdb` workflow for ask, introspect, enrich, studio, and bundle commands. | Product surface that composes packages; not the reusable contract layer. |
 | `@askdb/http-api` | Minimal HTTP wrapper around `@askdb/core` that returns SQL from `POST /ask`. | No duplicate NL-to-SQL implementation and no SQL execution. |
 | `@askdb/docs-site` | Static documentation site. | Mirrors selected docs content; Markdown files remain canonical for architecture and contracts. |
 
@@ -105,7 +105,7 @@ flowchart BT
   prisma["@askdb/prisma"]
   tui["@askdb/tui"]
   studio["@askdb/studio"]
-  cli["@askdb/cli"]
+  cli["askdb"]
   http["@askdb/http-api"]
 
   enrich --> core
@@ -271,7 +271,7 @@ In the table below, "selected packages" are packages the consumer chooses for a 
 | Live Postgres introspection | `@askdb/introspect`, `@askdb/postgres` | `@askdb/postgres` pulls `@askdb/core`, `@askdb/introspect`, and `ai`. | `pg` for `createPostgresCatalogQueryRunner()`. | Callers can also supply their own `CatalogQueryRunner`. |
 | Air-gapped Postgres introspection | `@askdb/introspect`, `@askdb/postgres` | Same as live Postgres introspection. | No `pg` required if using from-export bundles only. | Templates come from `POSTGRES_TEMPLATE_BUNDLE`. |
 | Prisma schema-file introspection | `@askdb/introspect`, `@askdb/prisma` | `@askdb/prisma` pulls `@askdb/introspect` and `@prisma/internals`. | No database driver peer declared. | Produces Schema v2 physical metadata from Prisma files; no dialect included. |
-| CLI workflow | `@askdb/cli` | Pulls first-party integrations and surfaces used by the `askdb` binary, including core, introspect, postgres, prisma, studio, tui, OpenAI helper, and `pg`. | Environment variables choose which runtime paths are active. | Batteries-included product surface, not the smallest library install. |
+| CLI workflow | `askdb` | Pulls first-party integrations and surfaces used by the `askdb` binary, including core, introspect, postgres, prisma, studio, tui, OpenAI helper, and `pg`. | Environment variables choose which runtime paths are active. | Batteries-included product surface, not the smallest library install. |
 | Terminal enrichment | `@askdb/tui` | Pulls `@askdb/core`, `@askdb/enrich`, Ink, React, and OpenAI helper. | `OPENAI_API_KEY` enables suggestions; manual authoring works without live suggestions. | Operates on Schema v2 files only. |
 | Local browser Studio | `@askdb/studio` | Pulls core, enrich, postgres, rag, React UI dependencies, AI SDK/OpenAI helpers. | `OPENAI_API_KEY` enables suggestions/sample generation; RAG provider choices are runtime config. | Local authoring UI, sample SQL checks, and local RAG exploration. |
 | RAG with memory or file store | `@askdb/rag`, `@askdb/core` | `@askdb/rag` pulls `@askdb/core`. | Embedder packages only if using a helper such as OpenAI. | In-memory and file stores do not need `pg`. |

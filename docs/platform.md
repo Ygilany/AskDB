@@ -25,7 +25,7 @@ AskDB ships as a small set of focused npm packages. Each one has a single respon
 | Package | Role | Status |
 |---|---|---|
 | `@askdb/core` | Headless library: schema parsing, prompt assembly, NL→SQL, validation, modes, logging, and retrieval input. Returns SQL only. Stable, semver-versioned. Schema v2 reader/writer/prompt-assembly land in Phase 5. | Phase 4 (publish), Phase 5 (Schema v2) |
-| `@askdb/cli` | `askdb` binary; thin wrapper over `@askdb/core`. Already shipped; published alongside core. | Phase 4 (publish) |
+| `askdb` | `askdb` binary; thin wrapper over `@askdb/core`. Already shipped; published alongside core. | Phase 4 (publish) |
 | `@askdb/http-api` | HTTP server surface; thin wrapper over `@askdb/core`. Already shipped (Phase 3). | Phase 4 (publish) |
 | `@askdb/introspect` | Schema introspection: per-engine connector pattern that reads database catalogs (Postgres first) and emits a Schema v2 physical artifact. Live (`CatalogQueryRunner`) and air-gapped (run SQL templates, hand off the export bundle) front doors share one connector. | Phase 6 |
 | `@askdb/enrich` | Headless Schema v2 enrichment workspace helpers: load/save authoring workspaces, build table drafts, preserve markdown sections, validate concept links, bundle split artifacts, and build AI suggestion targets/context. Shared by TUI, Studio, and custom authoring surfaces. | Phase 7 follow-up |
@@ -111,7 +111,7 @@ Front-matter is validated by zod (round-trippable through `@askdb/enrich` author
 ## Release and versioning
 
 - `@askdb/core` is published to npm with **semver** discipline. The contract surface (exports from `packages/core/src/index.ts` plus the formal contract docs under `docs/contracts/`) is the boundary that semver applies to.
-- Companion packages (`@askdb/cli`, `@askdb/http-api`, `@askdb/introspect`, `@askdb/enrich`, `@askdb/tui`, `@askdb/rag`) are versioned in lockstep where shared types matter; release tooling lives at the repo root (e.g. **changesets** — exact tooling decided in Phase 4).
+- Companion packages (`askdb`, `@askdb/http-api`, `@askdb/introspect`, `@askdb/enrich`, `@askdb/tui`, `@askdb/rag`) are versioned in lockstep where shared types matter; release tooling lives at the repo root (e.g. **changesets** — exact tooling decided in Phase 4).
 - Pre-1.0 versions allow contract evolution; once 1.0 ships, breaking changes require a contract doc bump (e.g. `schema-v2` → `schema-v3`) and a major version.
 
 ## Other tooling

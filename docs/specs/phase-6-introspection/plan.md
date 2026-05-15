@@ -78,7 +78,7 @@ Numbered groups are **ordered** so each milestone is **demoable**. The connector
 ## 7 — CLI surface + structured logging
 
 - `askdb introspect --url …` (live), `askdb introspect --from-export …` (air-gapped), `askdb introspect --diff …` (no writes), `askdb introspect --print` (stdout), `askdb introspect templates --engine postgres` (dump SQL).
-- Also publish a standalone `askdb-introspect` binary in the package; `askdb introspect` is a thin shim in `@askdb/cli`.
+- Also publish a standalone `askdb-introspect` binary in the package; `askdb introspect` is a thin shim in `askdb`.
 - Reuse Phase 2 logging conventions: structured events with `correlationId`; events under `askdb.introspect.*` (e.g. `askdb.introspect.started`, `askdb.introspect.completed`, `askdb.introspect.warning`).
 - Tests:
   - CLI smoke tests with a fake executor (no live DB) cover `--url` (mocked executor), `--from-export`, `--diff`, `--print`, and `templates`.

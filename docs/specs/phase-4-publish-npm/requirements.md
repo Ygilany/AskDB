@@ -4,7 +4,7 @@ See also **[`plan.md`](./plan.md)** (milestones) and **[`validation.md`](./valid
 
 ## Context
 
-AskDB's mission positions it as a **developer-first embed**: an installable package teams plug into their own apps, with **BYO API keys**, **BYO database connectivity**, and (next) BYO embedder + vector store ([`docs/mission.md`](../../mission.md)). Today, every workspace package — `@askdb/core`, `@askdb/cli`, `@askdb/http-api` — is `"private": true` and tightly coupled to the in-repo `pg` dependency.
+AskDB's mission positions it as a **developer-first embed**: an installable package teams plug into their own apps, with **BYO API keys**, **BYO database connectivity**, and (next) BYO embedder + vector store ([`docs/mission.md`](../../mission.md)). Today, every workspace package — `@askdb/core`, `askdb`, `@askdb/http-api` — is `"private": true` and tightly coupled to the in-repo `pg` dependency.
 
 Phase 4 closes that gap: **ship to npm**, and decouple `@askdb/core` from a hardcoded database driver so consumers using `postgres.js`, Neon HTTP, Cloudflare Hyperdrive, MCP-mediated DBs, or a serverless pool can plug their own executor in without forking.
 
@@ -19,7 +19,7 @@ Without publishable packages and a pluggable executor, AskDB is effectively a pr
 
 ## Scope (in)
 
-### 1) Publish-readiness for `@askdb/core`, `@askdb/cli`, `@askdb/http-api`
+### 1) Publish-readiness for `@askdb/core`, `askdb`, `@askdb/http-api`
 
 - Drop `"private": true`. Set initial published version (e.g. `0.1.0` — pre-1.0 contract).
 - Add per-package `LICENSE` (Apache-2.0; include **`NOTICE`** at repo root if bundling third-party notices per Apache practice), `README.md`, and accurate `keywords` / `repository` / `homepage` fields in `package.json`.
@@ -76,7 +76,7 @@ ask({
 | Topic | Decision |
 |---|---|
 | First published version | **`0.1.0`** for `@askdb/core` (pre-1.0; semver applies to current `index.ts` exports + contract docs). |
-| First npm release scope | **`@askdb/core`**, **`@askdb/cli`**, and **`@askdb/http-api`** published together at **`0.1.0`** (lockstep). |
+| First npm release scope | **`@askdb/core`**, **`askdb`**, and **`@askdb/http-api`** published together at **`0.1.0`** (lockstep). |
 | License | **Apache License 2.0** (SPDX: `Apache-2.0`) — permissive, with explicit patent grant; `LICENSE` + **`NOTICE`** at repo root; mirror or reference in each published package as required for npm. |
 | Merge vs npm | **Implementation PR merges** when CI, pack/smoke, and changesets gates pass. **First public `npm publish`** may be a **separate maintainer step** after merge (not a merge blocker). |
 | Postgres helper packaging | **Subpath `@askdb/core/postgres`** for `createPostgresExecutor` (and any `pg`-touching code). Main `@askdb/core` entry stays free of `pg` load for consumers who only import `ask` + custom `executor`. See [Postgres helper packaging](#postgres-helper-packaging-tradeoffs). |
@@ -137,7 +137,7 @@ export type AskDbExecutor = (
 ## Open choices (to resolve during implementation)
 
 - Exact `peerDependenciesMeta` shape and how the lazy import surfaces helpful errors when a consumer forgets to install `pg` *and* doesn't supply an executor.
-- Whether `@askdb/cli` ships under a separate scope (`@askdb/cli`) or as a flat package (`askdb`). Recommend keeping `@askdb/cli` and exposing the binary as `askdb`.
+- **CLI npm package name:** the batteries-included CLI is published as the **unscoped** package **`askdb`** (`npm i askdb`, `npx askdb …`). The executable name is also `askdb`.
 
 ## Success (product)
 

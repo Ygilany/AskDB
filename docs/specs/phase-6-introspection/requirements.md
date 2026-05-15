@@ -35,7 +35,7 @@ A new workspace package: `packages/introspect/`, published as `@askdb/introspect
 - `@askdb/introspect` — public types (`SqlSchema`, `IntrospectionInput`, `IntrospectionResult`, `Connector`), `introspect()` entry point, and the renderer.
 - `@askdb/introspect/postgres` — the Postgres connector. Phase 6 ships this only; the seam is the entry point for additional engines in Phase 11.
 
-**Binary:** `bin: { "askdb-introspect": "./dist/bin.js" }`. CLI is also available as `askdb introspect` via a thin shim in `@askdb/cli`.
+**Binary:** `bin: { "askdb-introspect": "./dist/bin.js" }`. CLI is also available as `askdb introspect` via a thin shim in `askdb`.
 
 ### 2) Connector contract
 

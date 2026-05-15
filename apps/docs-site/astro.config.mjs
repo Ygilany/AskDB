@@ -84,7 +84,7 @@ export default defineConfig({
             { label: "@askdb/core", slug: "core" },
             { label: "@askdb/postgres", slug: "postgres" },
             { label: "@askdb/prisma", slug: "prisma" },
-            { label: "@askdb/cli", slug: "cli" },
+            { label: "askdb", slug: "cli" },
             { label: "@askdb/introspect", slug: "introspect" },
             { label: "@askdb/enrich", slug: "enrich" },
             { label: "@askdb/tui", slug: "tui" },

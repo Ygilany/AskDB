@@ -18,7 +18,7 @@ will not be frozen until 1.0.
 
 ```sh
 # 1. Get a Schema v2 directory (Phase 6)
-pnpm dlx @askdb/cli introspect --url postgres://... --out my-app.schema/ --schema-id my-app
+pnpm dlx askdb introspect --url postgres://... --out my-app.schema/ --schema-id my-app
 
 # 2. Enrich it
 pnpm dlx @askdb/tui --schema my-app.schema/
