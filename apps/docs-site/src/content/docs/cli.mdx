@@ -39,7 +39,7 @@ npx askdb init
 
 
 
-          <p>Use <code>{"--path"}</code> to write the template to a different file. <code>{"askdb init"}</code> does not create a <code>{".env"}</code> file; example <code>{".env"}</code> keys and notes live in comments inside <code>{"askdb.config.ts"}</code>. <code>{"askdb init"}</code> intentionally skips loading config so scaffolding cannot be blocked by a broken config file.</p>
+          <p>Use <code>{"--path"}</code> to write the template to a different file. In a normal app folder (not a monorepo workspace root), <code>{"askdb init"}</code> also runs your package manager to add <code>{"@askdb/config"}</code> and <code>{"dotenv"}</code> so the template imports resolve. Use <code>{"--skip-install"}</code> to only write the file. <code>{"askdb init"}</code> does not create a <code>{".env"}</code> file; example <code>{".env"}</code> keys and notes live in comments inside <code>{"askdb.config.ts"}</code>. <code>{"askdb init"}</code> intentionally skips loading config so scaffolding cannot be blocked by a broken config file.</p>
 
 ## Ask
 
