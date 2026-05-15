@@ -1,6 +1,6 @@
 ---
 "@askdb/core": minor
-"@askdb/cli": minor
+"askdb": minor
 "@askdb/tui": minor
 ---
 
@@ -12,5 +12,5 @@ It includes AI suggestion helpers with human confirm-before-save and a `bundle`
 command that emits loader-compatible single-file Schema v2 JSON artifacts.
 
 `@askdb/core` now exports enrichment-suggestion prompt helpers for BYO
-`LanguageModel` integrations. `@askdb/cli` adds `askdb enrich` and `askdb bundle`
+`LanguageModel` integrations. The `askdb` CLI adds `askdb enrich` and `askdb bundle`
 shims that delegate to `askdb-tui` when installed.

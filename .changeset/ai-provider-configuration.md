@@ -1,6 +1,6 @@
 ---
 "@askdb/core": minor
-"@askdb/cli": minor
+"askdb": minor
 "@askdb/http-api": minor
 "@askdb/studio": minor
 "@askdb/tui": minor

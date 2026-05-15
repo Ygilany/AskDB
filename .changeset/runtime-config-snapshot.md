@@ -1,7 +1,7 @@
 ---
 "@askdb/config": minor
 "@askdb/core": minor
-"@askdb/cli": patch
+"askdb": patch
 "@askdb/http-api": patch
 "@askdb/studio": patch
 "@askdb/rag": patch

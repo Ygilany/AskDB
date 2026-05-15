@@ -1,6 +1,6 @@
 ---
 "@askdb/core": minor
-"@askdb/cli": minor
+"askdb": minor
 "@askdb/http-api": minor
 ---
 
@@ -13,7 +13,7 @@ guardrail. `pg` is an **optional peer dependency** — consumers using a custom
 `@askdb/core/postgres` subpath and lazy-load `pg` on first invocation, with a
 helpful error if the peer is missing.
 
-`@askdb/cli` (`askdb` binary) and `@askdb/http-api` (`askdb-http` binary,
+`askdb` (npm package; `askdb` binary) and `@askdb/http-api` (`askdb-http` binary,
 `POST /ask`) are thin wrappers over `@askdb/core` and ship together at the
 same version.
 

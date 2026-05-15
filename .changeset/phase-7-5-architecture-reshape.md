@@ -2,7 +2,7 @@
 "@askdb/core": minor
 "@askdb/introspect": minor
 "@askdb/postgres": minor
-"@askdb/cli": minor
+"askdb": minor
 "@askdb/http-api": minor
 "@askdb/tui": patch
 ---
@@ -24,7 +24,7 @@ Reshape AskDB around one package per integration surface (Phase 7.5).
 - The `Connector` interface is now `Connector<TInput>`, generic over the integration's input. `templates()` is optional. The `engine: "postgres"` literal is gone.
 - `SqlTemplateName` and the Postgres-specific template name union are removed from the public surface. `SqlTemplate.name` is now `string`; `SqlTemplateBundle.engine` is now `string`.
 - `introspect()` no longer has a default connector. Callers must supply one via `options.connector` (e.g. `createPostgresConnector()`).
-- The `askdb-introspect` standalone binary and the `@askdb/introspect/cli` and `@askdb/introspect/postgres` subpaths are removed. Use `askdb introspect` from `@askdb/cli`, and import the connector from `@askdb/postgres`.
+- The `askdb-introspect` standalone binary and the `@askdb/introspect/cli` and `@askdb/introspect/postgres` subpaths are removed. Use `askdb introspect` from the `askdb` package, and import the connector from `@askdb/postgres`.
 
 **New — `@askdb/postgres`**
 
@@ -33,6 +33,6 @@ Reshape AskDB around one package per integration surface (Phase 7.5).
 
 **Pre-1.0 breaking — apps**
 
-- `@askdb/cli` now wires `postgresDialect` internally. The `askdb introspect` subcommand replaces the retired `askdb-introspect` binary.
+- The `askdb` CLI package now wires `postgresDialect` internally. The `askdb introspect` subcommand replaces the retired `askdb-introspect` binary.
 - `@askdb/http-api` no longer accepts execution controls or `connectionString` in request bodies. It returns generated SQL only.
 - `apps/{cli,http-api,tui,docs-site}` moved from `packages/*` to `apps/*`. Repository `directory` metadata updated accordingly.

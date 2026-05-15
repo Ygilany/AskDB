@@ -1,6 +1,6 @@
 ---
 "@askdb/config": patch
-"@askdb/cli": patch
+"askdb": patch
 "@askdb/core": patch
 "@askdb/http-api": patch
 ---
