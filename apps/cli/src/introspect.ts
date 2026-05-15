@@ -53,7 +53,7 @@ export async function runIntrospectCli(argv: readonly string[]): Promise<number>
       process.stdout.write(`${readPackageVersion()}\n`);
       return 0;
     }
-    if (argv.length === 0 || argv.includes("--help") || argv.includes("-h")) {
+    if (argv.includes("--help") || argv.includes("-h")) {
       printHelp();
       return 0;
     }
@@ -384,6 +384,7 @@ function printHelp(): void {
       "askdb introspect - Schema introspection for AskDB",
       "",
       "Usage:",
+      "  askdb introspect                                    (Postgres: DATABASE_URL + ASKDB_INTROSPECT_OUT from askdb.config after bootstrap)",
       "  askdb introspect --out <dir>                        (uses DATABASE_URL from env/.env)",
       "  askdb introspect --url <postgres-url> --out <dir>",
       "  askdb introspect --from-export <bundle-dir> --out <dir>",
@@ -395,7 +396,8 @@ function printHelp(): void {
       "  askdb introspect templates --engine postgres",
       "",
       "Defaults (after askdb.config bootstrap):",
-      "  ASKDB_INTROSPECT_OUT  Used as --out when you omit --out, --print, and --diff.",
+      "  DATABASE_URL          From database.postgres (and introspection override if set).",
+      "  ASKDB_INTROSPECT_OUT  From introspection.outputDir (default ./askdb/) when you omit --out, --print, and --diff.",
       "  ASKDB_PRISMA_SCHEMA   Used as --prisma-schema when --engine prisma and the flag is omitted.",
       "",
       "Options:",
