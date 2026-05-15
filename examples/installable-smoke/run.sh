@@ -39,7 +39,7 @@ PRISMA_TARBALL="$(ls "$WORK/tarballs"/askdb-prisma-*.tgz | head -n1)"
 [ -f "$PRISMA_TARBALL" ] || { echo "smoke: missing prisma tarball" >&2; exit 1; }
 ENRICH_TARBALL="$(ls "$WORK/tarballs"/askdb-enrich-*.tgz | head -n1)"
 [ -f "$ENRICH_TARBALL" ] || { echo "smoke: missing enrich tarball" >&2; exit 1; }
-CLI_TARBALL="$(ls "$WORK/tarballs"/askdb-cli-*.tgz | head -n1)"
+CLI_TARBALL="$(ls "$WORK/tarballs"/askdb-[0-9]*.tgz | head -n1)"
 [ -f "$CLI_TARBALL" ] || { echo "smoke: missing cli tarball" >&2; exit 1; }
 STUDIO_TARBALL="$(ls "$WORK/tarballs"/askdb-studio-*.tgz | head -n1)"
 [ -f "$STUDIO_TARBALL" ] || { echo "smoke: missing studio tarball" >&2; exit 1; }
@@ -102,14 +102,14 @@ if grep -Eq '(^package/src/|\.test\.)' <<<"$ENRICH_TARBALL_FILES"; then
   exit 1
 fi
 
-echo "smoke: validating @askdb/cli tarball contents…"
+echo "smoke: validating askdb tarball contents…"
 CLI_TARBALL_FILES="$(tar -tzf "$CLI_TARBALL")"
 grep -q '^package/dist/cli.js$' <<<"$CLI_TARBALL_FILES"
 grep -q '^package/dist/introspect.js$' <<<"$CLI_TARBALL_FILES"
 grep -q '^package/README.md$' <<<"$CLI_TARBALL_FILES"
 grep -q '^package/LICENSE$' <<<"$CLI_TARBALL_FILES"
 if grep -Eq '(^package/src/|\.test\.)' <<<"$CLI_TARBALL_FILES"; then
-  echo "smoke: FAILED — @askdb/cli tarball includes source/tests" >&2
+  echo "smoke: FAILED — askdb tarball includes source/tests" >&2
   exit 1
 fi
 
@@ -196,7 +196,7 @@ node -e "
       '@askdb/postgres': 'file:$POSTGRES_TARBALL',
       '@askdb/prisma': 'file:$PRISMA_TARBALL',
       '@askdb/enrich': 'file:$ENRICH_TARBALL',
-      '@askdb/cli': 'file:$CLI_TARBALL',
+      askdb: 'file:$CLI_TARBALL',
       '@askdb/studio': 'file:$STUDIO_TARBALL',
       '@askdb/tui': 'file:$TUI_TARBALL',
       '@askdb/rag': 'file:$RAG_TARBALL'

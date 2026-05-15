@@ -39,7 +39,7 @@ export type BootstrapAskDbEnvOptions = {
   dotenvCandidatePaths?: readonly string[];
   /**
    * When `true` (default), non-ENOENT dotenv issues are logged to stderr and `process.exitCode`
-   * is set to `1`, matching legacy `@askdb/cli` / `@askdb/http-api` behavior. Set `false` to throw instead.
+   * is set to `1`, matching legacy `askdb` CLI / `@askdb/http-api` behavior. Set `false` to throw instead.
    */
   dotenvNonFatal?: boolean;
 };
