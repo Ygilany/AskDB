@@ -23,6 +23,7 @@
     "config-env-flatten-defaults",
     "enrich-shared-workspace",
     "fix-postgres-zod-resolution",
+    "init-install-template-deps",
     "initial-0-1-0",
     "long-items-count",
     "phase-6-introspect-skeleton",

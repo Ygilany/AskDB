@@ -1,5 +1,11 @@
 # askdb
 
+## 0.5.0-beta.2
+
+### Patch Changes
+
+- cadd642: `askdb init` now installs **`@askdb/config`** and **`dotenv`** in the nearest non-workspace package (detects pnpm / npm / yarn / bun via lockfiles). Workspace roots get copy-paste install instructions instead. Add **`--skip-install`** to only write `askdb.config.ts`.
+
 ## 0.5.0-beta.1
 
 ### Minor Changes
