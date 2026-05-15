@@ -14,7 +14,7 @@ We optimize for two things at once:
 
 1. **Trust-first analytics** — Answers are anchored in the customer’s database schema and executed queries. Row-level data is treated as sensitive by default: the system prefers flows where the model reasons over schema (and optional bounded result subsets) rather than ingesting full datasets. When data must touch the model, it should be **explicit, bounded, and user-controlled**, aligned with the product’s “modes” (schema-only execution vs. summaries over approved result sets).
 
-2. **Developer-first embed** — AskDB is built to be **plugged into projects** as an **installable npm package**: bring-your-own API keys, bring-your-own database connectivity, bring-your-own embedding provider, and bring-your-own vector store. The headless core (`@askdb/core`) plus optional companion packages (`@askdb/cli`, `@askdb/tui`, `@askdb/rag`) and a future SDK + embeddable UI (similar in spirit to Clerk or OpenRouter) let teams ship “ask your data” inside their own apps without rebuilding the pipeline.
+2. **Developer-first embed** — AskDB is built to be **plugged into projects** as an **installable npm package**: bring-your-own API keys, bring-your-own database connectivity, bring-your-own embedding provider, and bring-your-own vector store. The headless core (`@askdb/core`) plus optional companion packages (`askdb`, `@askdb/tui`, `@askdb/rag`) and a future SDK + embeddable UI (similar in spirit to Clerk or OpenRouter) let teams ship “ask your data” inside their own apps without rebuilding the pipeline.
 
 ## What success looks like
 

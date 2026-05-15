@@ -4,7 +4,7 @@ Pair with **[`requirements.md`](./requirements.md)** (scope/decisions) and **[`p
 
 **Merge bar (implementation PR):** CI green, **executor seam** contract tests, **`pnpm pack`** + metadata checks, **consumer install smoke** from local tarballs, and **changesets** gate. **First public `npm publish` is not required to merge** — it may follow as a **separate maintainer step** once credentials and registry access are ready.
 
-**Post-merge / release:** Maintainers publish `@askdb/core`, `@askdb/cli`, and `@askdb/http-api` to the public registry when appropriate; optional smoke against `pnpm view` and a clean `pnpm add` outside the repo validates the published artifact.
+**Post-merge / release:** Maintainers publish `@askdb/core`, `askdb`, and `@askdb/http-api` to the public registry when appropriate; optional smoke against `pnpm view` and a clean `pnpm add` outside the repo validates the published artifact.
 
 ## Automated
 
@@ -25,7 +25,7 @@ Pair with **[`requirements.md`](./requirements.md)** (scope/decisions) and **[`p
      - Calling it with `connectionString` produces a clear error mentioning the missing peer dependency.
 
 4. **Pack and metadata checks**
-   - For each of `@askdb/core`, `@askdb/cli`, `@askdb/http-api`:
+   - For each of `@askdb/core`, `askdb`, `@askdb/http-api`:
      - `pnpm pack` succeeds; tarball contents include `dist/`, `package.json`, `README.md`, `LICENSE`.
      - Tarball contents **exclude** `src/`, `tsconfig*`, `node_modules/`, test files.
      - `package.json` has `"private": false`, valid `repository`, `license`, `engines`, `keywords`.

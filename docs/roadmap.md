@@ -58,7 +58,7 @@ Completed: Published installable packages to npm and finalized release tooling/c
 
 **Spec pack:** [`docs/specs/phase-4-publish-npm/`](specs/phase-4-publish-npm/).
 
-- **Drop `private: true`** on `@askdb/core`, `@askdb/cli`, and `@askdb/http-api`. Pre-1.0 versions; semver applied to the published `index.ts` exports plus the contract docs under `docs/contracts/`.
+- **Drop `private: true`** on `@askdb/core`, `askdb`, and `@askdb/http-api`. Pre-1.0 versions; semver applied to the published `index.ts` exports plus the contract docs under `docs/contracts/`.
 - **SQL output contract** — `ask()` returns validated SQL. Applications own any later execution outside AskDB.
 - **Release tooling** — pick and configure (e.g. **changesets**); set up CI publish workflow; add `LICENSE`, package READMEs, examples.
 - **Schema format unchanged** — Phase 4 ships the existing pre-v2 format. **Phase 5 makes the breaking change to Schema v2 with no migrator** (acceptable pre-1.0).
@@ -125,7 +125,7 @@ Follow-up: shared non-UI enrichment workspace behavior now lives in `@askdb/enri
 - **`@askdb/core` is dialect-agnostic** — `ask()` takes a required `dialect` adapter (`AskDialect`). The `connectionString` shortcut and `createPostgresExecutor` are removed from core. The `@askdb/core/postgres` subpath is retired.
 - **`@askdb/introspect` is engine-agnostic** — `Connector<TInput>` becomes generic over the integration's input shape; `templates()` is optional. The `IntrospectionInput` discriminated union leaves the public surface.
 - **`@askdb/postgres` is the first complete integration** — Bundles dialect (`postgresDialect`), connector (live + from-export), catalog templates, bundle reader, and the `pg`-backed catalog query runner. `PostgresIntrospectionInput` is exported from this package, not from introspect.
-- **Apps moved to `apps/`** — `cli`, `http-api`, `tui`, `docs-site` are first-party reference apps. The supported product surface is `@askdb/cli`, batteries-included Prisma-style. The standalone `askdb-introspect` binary retires; introspection is reached via `askdb introspect`.
+- **Apps moved to `apps/`** — `cli`, `http-api`, `tui`, `docs-site` are first-party reference apps. The supported product surface is `askdb`, batteries-included Prisma-style. The standalone `askdb-introspect` binary retires; introspection is reached via `askdb introspect`.
 - **Pre-1.0 breaking change, no migrator** — see the changeset for the full surface diff.
 
 ## Phase 8 — RAG layer (`@askdb/rag`)

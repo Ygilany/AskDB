@@ -44,7 +44,7 @@ const result = await introspect(
 
 ## CLI
 
-The user-facing CLI for introspection ships in `@askdb/cli` as `askdb introspect`. `@askdb/introspect` does not provide a standalone binary.
+The user-facing CLI for introspection ships in the [`askdb`](https://www.npmjs.com/package/askdb) package as `askdb introspect`. `@askdb/introspect` does not provide a standalone binary.
 
 ## Implementing a new connector
 
