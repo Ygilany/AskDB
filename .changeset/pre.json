@@ -25,6 +25,7 @@
     "fix-postgres-zod-resolution",
     "init-install-template-deps",
     "initial-0-1-0",
+    "introspect-zero-args-config",
     "long-items-count",
     "phase-6-introspect-skeleton",
     "phase-7-5-architecture-reshape",
