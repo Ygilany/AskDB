@@ -214,3 +214,7 @@ How much of the **schema context** the model sees depends on the chosen mode:
 ## Status
 
 Phases 1-6 are implemented on this branch: core, CLI, HTTP API, installable package seams, Schema v2, and Postgres introspection. Later phases are in [`docs/roadmap.md`](docs/roadmap.md).
+
+## Support
+
+[![Buy Me A Coffee](https://img.shields.io/badge/Buy%20Me%20A%20Coffee-ffdd00?style=for-the-badge&logo=buy-me-a-coffee&logoColor=black)](https://www.buymeacoffee.com/ygilany)
