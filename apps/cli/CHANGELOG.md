@@ -1,4 +1,4 @@
-# @askdb/cli
+# askdb
 
 ## 0.5.0-beta.0
 
@@ -21,7 +21,7 @@
   `@askdb/core/postgres` subpath and lazy-load `pg` on first invocation, with a
   helpful error if the peer is missing.
 
-  `@askdb/cli` (`askdb` binary) and `@askdb/http-api` (`askdb-http` binary,
+  `askdb` (`askdb` binary) and `@askdb/http-api` (`askdb-http` binary,
   `POST /ask`) are thin wrappers over `@askdb/core` and ship together at the
   same version.
 
@@ -43,14 +43,14 @@
   - The `Connector` interface is now `Connector<TInput>`, generic over the integration's input. `templates()` is optional. The `engine: "postgres"` literal is gone.
   - `SqlTemplateName` and the Postgres-specific template name union are removed from the public surface. `SqlTemplate.name` is now `string`; `SqlTemplateBundle.engine` is now `string`.
   - `introspect()` no longer has a default connector. Callers must supply one via `options.connector` (e.g. `createPostgresConnector()`).
-  - The `askdb-introspect` standalone binary and the `@askdb/introspect/cli` and `@askdb/introspect/postgres` subpaths are removed. Use `askdb introspect` from `@askdb/cli`, and import the connector from `@askdb/postgres`.
+  - The `askdb-introspect` standalone binary and the `@askdb/introspect/cli` and `@askdb/introspect/postgres` subpaths are removed. Use `askdb introspect` from `askdb`, and import the connector from `@askdb/postgres`.
 
   **New — `@askdb/postgres`**
   - New package bundling the Postgres dialect (`postgresDialect`, `generatePostgresSelectSql`, `validatePostgresSelectSql`), the connector (`createPostgresConnector`, live + from-export), the catalog SQL suite (`POSTGRES_TEMPLATE_BUNDLE`), the bundle reader, and the `pg`-backed catalog runner (`createPostgresCatalogQueryRunner`).
   - `pg` is an optional peer dependency, lazy-loaded only when live catalog introspection is invoked.
 
   **Pre-1.0 breaking — apps**
-  - `@askdb/cli` now wires `postgresDialect` internally. The `askdb introspect` subcommand replaces the retired `askdb-introspect` binary.
+  - `askdb` now wires `postgresDialect` internally. The `askdb introspect` subcommand replaces the retired `askdb-introspect` binary.
   - `@askdb/http-api` no longer accepts execution controls or `connectionString` in request bodies. It returns generated SQL only.
   - `apps/{cli,http-api,tui,docs-site}` moved from `packages/*` to `apps/*`. Repository `directory` metadata updated accordingly.
 
@@ -62,7 +62,7 @@
   command that emits loader-compatible single-file Schema v2 JSON artifacts.
 
   `@askdb/core` now exports enrichment-suggestion prompt helpers for BYO
-  `LanguageModel` integrations. `@askdb/cli` adds `askdb enrich` and `askdb bundle`
+  `LanguageModel` integrations. `askdb` adds `askdb enrich` and `askdb bundle`
   shims that delegate to `askdb-tui` when installed.
 
 - d9d69bb: Add `@askdb/prisma`, a schema-file introspection connector that reads relational Prisma schemas and renders AskDB Schema v2 without connecting to a database.
@@ -75,7 +75,7 @@
   - `@askdb/core` no longer exports `AskDbExecutor` / `TabularResult`, no longer accepts `execute` or `executor`, and `ask()` now returns generated SQL only.
   - `@askdb/introspect` now owns the introspection-only `CatalogQueryRunner` / `CatalogQueryResult` contract for connector catalog reads.
   - `@askdb/postgres` replaces `createPostgresExecutor` / `executeReadOnlySelect` with `createPostgresCatalogQueryRunner` for live introspection.
-  - `@askdb/cli` and `@askdb/http-api` no longer execute generated SQL; old execution controls are rejected.
+  - `askdb` and `@askdb/http-api` no longer execute generated SQL; old execution controls are rejected.
 
 - cd23f50: **Breaking change (pre-1.0):** Schema v2 replaces the previous format. `loadSchema()` and `loadSchemaFromJson()` are the new entry points; the pre-v2 format is rejected with a clear error pointing at `docs/contracts/schema-v2.md`.
 

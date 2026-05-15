@@ -8,9 +8,6 @@ importers:
 
   .:
     devDependencies:
-      '@askdb/cli':
-        specifier: workspace:*
-        version: link:apps/cli
       '@askdb/config':
         specifier: workspace:*
         version: link:packages/config
@@ -20,6 +17,9 @@ importers:
       '@types/node':
         specifier: ^22.13.14
         version: 22.19.17
+      askdb:
+        specifier: workspace:*
+        version: link:apps/cli
       turbo:
         specifier: ^2.5.6
         version: 2.9.9

@@ -1,15 +1,19 @@
-# @askdb/cli
+# askdb
 
 Command-line frontend for [`@askdb/core`](https://www.npmjs.com/package/@askdb/core). Ask natural-language questions and get validated SQL from the configured dialect.
+
+Published on npm as [`askdb`](https://www.npmjs.com/package/askdb) (unscoped); the `askdb` binary name is unchanged.
 
 > **Status:** pre-1.0.
 
 ## Install
 
 ```bash
-pnpm add -g @askdb/cli
+pnpm add -g askdb
 # or run without installing:
-pnpm dlx @askdb/cli --help
+pnpm dlx askdb --help
+# e.g. scaffold config:
+pnpm dlx askdb init
 ```
 
 The CLI delegates live introspection to AskDB connector packages; each connector owns any database driver it needs.
