@@ -174,12 +174,16 @@ program.name("askdb").description("AskDB — natural language → PostgreSQL SEL
 
 program
   .command("init")
-  .description("Create askdb.config.ts (nested defineConfig + env() examples; .env guidance in comments only)")
+  .description(
+    "Create askdb.config.ts, then install @askdb/config + dotenv in the nearest non-workspace package (unless --skip-install)",
+  )
   .option("-f, --force", "Overwrite an existing file", false)
   .option("--path <path>", "Output path for askdb.config.ts", "askdb.config.ts")
-  .action((opts: { force?: boolean; path?: string }) => {
+  .option("--skip-install", "Only write the file; do not install dependencies", false)
+  .action((opts: { force?: boolean; path?: string; skipInstall?: boolean }) => {
     const args: string[] = [];
     if (opts.force) args.push("--force");
+    if (opts.skipInstall) args.push("--skip-install");
     if (opts.path && opts.path !== "askdb.config.ts") args.push("--path", opts.path);
     process.exit(runInitCli(args));
   });
