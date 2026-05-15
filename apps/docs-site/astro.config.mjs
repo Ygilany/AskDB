@@ -5,6 +5,13 @@ import starlight from "@astrojs/starlight";
 const base = process.env.ASTRO_BASE ?? "/";
 const normalizedBase = base === "/" ? "" : base.replace(/\/$/, "");
 
+/** Old slug kept as redirect for bookmarks and external links (single entry avoids Astro route collision). */
+const schemaSlugRedirects = (() => {
+  const from = normalizedBase ? `${normalizedBase}/schema-v2/` : "/schema-v2/";
+  const to = normalizedBase ? `${normalizedBase}/askdb-schema/` : "/askdb-schema/";
+  return { [from]: to };
+})();
+
 /** Starlight does not export `user-components/Icon.astro` in package.json `exports`. */
 const starlightIcon = fileURLToPath(
   new URL("node_modules/@astrojs/starlight/user-components/Icon.astro", import.meta.url)
@@ -13,6 +20,7 @@ const starlightIcon = fileURLToPath(
 export default defineConfig({
   site: `https://ygilany.github.io${normalizedBase}`,
   base,
+  redirects: schemaSlugRedirects,
   vite: {
     resolve: {
       alias: {
@@ -24,7 +32,7 @@ export default defineConfig({
     starlight({
       title: "AskDB",
       description:
-        "Schema-grounded natural language to SQL: trust-first analytics and developer-first embed guides.",
+        "Natural language to validated SQL—grounded in your schema so models never need your rows. npm-first guides for embed, CLI, and HTTP.",
       logo: {
         light: "./src/assets/brand/logo.png",
         dark: "./src/assets/brand/logo-dark.png",
@@ -34,6 +42,7 @@ export default defineConfig({
       favicon: "/favicon-light.png",
       customCss: ["./src/styles/custom.css"],
       components: {
+        Hero: "./src/components/overrides/Hero.astro",
         ThemeSelect: "./src/components/ThemeSelect.astro",
       },
       editLink: {
@@ -87,7 +96,7 @@ export default defineConfig({
         {
           label: "Contracts",
           items: [
-            { label: "Schema v2", slug: "schema-v2" },
+            { label: "AskDB schema", slug: "askdb-schema" },
             { label: "Connectors", slug: "connectors" },
             { label: "Modes and safety", slug: "modes" },
             { label: "Environment", slug: "environment" },

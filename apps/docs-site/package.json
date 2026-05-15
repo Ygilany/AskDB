@@ -6,6 +6,7 @@
   "type": "module",
   "scripts": {
     "build": "astro build",
+    "preview": "astro preview",
     "dev": "astro dev --host 127.0.0.1 --port 4310",
     "lint": "astro check"
   },

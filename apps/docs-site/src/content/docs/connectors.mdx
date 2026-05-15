@@ -8,8 +8,8 @@ description: "What a connector needs to plug into @askdb/introspect. The same co
 <p className="doc-lede">What a connector needs to plug into @askdb/introspect. The same contract powers @askdb/postgres and @askdb/prisma today and is the path for adding new engines.</p>
 
 <p>
-  Long-form notes and recipes also live in{" "}
-  <a href="https://github.com/Ygilany/AskDB/blob/main/docs/integration/connectors.md">docs/integration/connectors.md</a>.
+  Extended integration notes for connector authors live in the{" "}
+  <a href="https://github.com/Ygilany/AskDB/blob/main/docs/integration/connectors.md">AskDB connector guide (GitHub)</a>.
 </p>
 
 ## The Connector Interface
@@ -35,7 +35,7 @@ export interface MyConnector extends Connector<MyInput> {
 
 ## What describe() Must Return
 
-<p><code>{"IntrospectionResult"}</code> is the whole contract - the orchestrator does not rewrite the schema before rendering Schema v2.</p>
+          <p><code>{"IntrospectionResult"}</code> is the whole contract—the orchestrator does not rewrite the schema before rendering the AskDB on-disk format.</p>
 
 
 ```
@@ -53,7 +53,7 @@ type IntrospectionResult = {
 
 <p>Every table and column needs an ID that survives re-introspection so enrichment markdown stays attached to the same physical entity.</p>
           <div className="definition-list">
-            <div><code>{"table:<schema>.<name>"}</code><span>Table ID. In the <code>{"public"}</code> schema, Schema v2 accepts the shorter <code>{"table:<name>"}</code> form.</span></div>
+            <div><code>{"table:<schema>.<name>"}</code><span>Table ID. In the <code>{"public"}</code> schema, the format allows the shorter <code>{"table:<name>"}</code> form.</span></div>
             <div><code>{"table:<schema>.<name>#<column>"}</code><span>Column ID. Use the same format as the reference connectors.</span></div>
           </div>
 
@@ -165,15 +165,16 @@ export const myDialect: AskDialect = {
 ```
 
 
-          <p>Ship a dialect when the target has a distinct SQL surface (a new engine, different read-only rules, a different prompt body). Skip it when your connector simply produces Schema v2 for an engine that already has one - <code>{"@askdb/prisma"}</code> is the canonical example.</p>
+          <p>Ship a dialect when the target has a distinct SQL surface (a new engine, different read-only rules, a different prompt body). Skip it when your connector feeds an engine that already ships a dialect—<code>{"@askdb/prisma"}</code> is the canonical example (introspection only; pair with <code>{"postgresDialect"}</code> for SQL generation).</p>
 
-## Package Layout
+## Package layout
 
+<p>Publish connectors as focused packages (for example <code>{"@askdb/<engine>"}</code>) with a clear public surface—typically <code>{"createXConnector()"}</code> plus any runner or template helpers.</p>
 
 
 ```
-packages/<name>/
-  package.json          # name "@askdb/<name>", "type": "module"
+@askdb/my-engine/
+  package.json          # "name": "@askdb/my-engine", "type": "module"
   README.md
   LICENSE
   NOTICE
@@ -181,7 +182,7 @@ packages/<name>/
   tsconfig.build.json
   src/
     index.ts            # public exports
-    <connector>.ts      # createXConnector(), describeX()
+    connector.ts        # createMyConnector(), describeMyEngine()
 ```
 
 
@@ -192,7 +193,7 @@ packages/<name>/
             <li>The input type (<code>{"XIntrospectionInput"}</code>).</li>
             <li>(Optional) a dialect, template bundle constants, and runner factory.</li>
           </ul>
-          <p>Wire the engine into <code>{"apps/cli/src/introspect.ts"}</code> behind <code>{"--engine"}</code> and add the package to <a href="../packages/">Packages</a> and the installable-package guide.</p>
+          <p>To contribute a <strong>first-party</strong> engine to the maintained AskDB CLI, open a discussion or pull request on GitHub—wiring lives in the upstream repository alongside the <a href="../packages/">package catalog</a>.</p>
 
 ## Testing Checklist
 

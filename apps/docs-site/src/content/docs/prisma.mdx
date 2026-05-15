@@ -1,16 +1,16 @@
 ---
 title: "@askdb/prisma"
-description: "The Prisma connector reads .prisma schema files and produces a Schema v2 physical artifact without connecting to a database."
+description: "The Prisma connector reads .prisma schema files and produces AskDB physical metadata without connecting to a database."
 ---
 
 <p className="doc-eyebrow">Prisma integration</p>
 
-<p className="doc-lede">The Prisma connector reads <code>{".prisma"}</code> schema files and produces a Schema v2 physical artifact without connecting to a database.</p>
+<p className="doc-lede">The Prisma connector reads <code>{".prisma"}</code> schema files and produces AskDB physical metadata without connecting to a database.</p>
 
 ## When to use
 
 <ul>
-  <li>You already maintain a <strong>Prisma schema file</strong> and want Schema v2 without a live DB connection.</li>
+  <li>You already maintain a <strong>Prisma schema file</strong> and want an AskDB schema directory without a live DB connection.</li>
   <li>You will pair SQL generation with <code>{"@askdb/postgres"}</code> when the <strong>runtime engine</strong> is still Postgres.</li>
 </ul>
 
@@ -70,7 +70,7 @@ await introspect(
   <div><code>{"cockroachdb"}</code><span>CockroachDB tables and columns.</span></div>
 </div>
 
-<p>MongoDB is not supported — AskDB Schema v2 and SQL generation are relational.</p>
+<p>MongoDB is not supported — AskDB’s relational schema format and SQL generation target relational engines.</p>
 
 ## What It Does Not Have
 

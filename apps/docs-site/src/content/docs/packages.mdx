@@ -13,21 +13,19 @@ description: "Index of @askdb/* packages: what each owns, when to install it, an
             <a href="../environment/"><strong>@askdb/config</strong><span>Optional Prisma-style <code>{"askdb.config.*"}</code> discovery, nested <code>{"defineConfig"}</code>, <code>{"env()"}</code> helpers, <code>{"bootstrapAskDbEnv()"}</code>, and <code>{"getAskDbRuntimeConfig()"}</code> used by first-party apps (runtime snapshot, not a full <code>{"process.env"}</code> merge).</span></a>
             <a href="../core/"><strong>@askdb/core</strong><span>Dialect-agnostic library pipeline: schema loading, prompt assembly, generation, validation, and retrieval input.</span></a>
             <a href="../postgres/"><strong>@askdb/postgres</strong><span>Postgres integration package: dialect, catalog connector, templates, bundle reader, and optional <code>{"pg"}</code> catalog runner.</span></a>
-            <a href="../prisma/"><strong>@askdb/prisma</strong><span>Prisma schema-file connector: reads <code>{".prisma"}</code> files and produces a Schema v2 artifact without connecting to a database.</span></a>
-            <a href="../introspect/"><strong>@askdb/introspect</strong><span>Engine-agnostic introspection orchestrator and Schema v2 renderer.</span></a>
-            <a href="../enrich/"><strong>@askdb/enrich</strong><span>Headless Schema v2 enrichment workspace helpers shared by TUI, Studio, and custom authoring UIs.</span></a>
-            <a href="../rag/"><strong>@askdb/rag</strong><span>Schema v2 chunking, BYO embeddings, vector stores, lock-file reuse, and retriever wiring.</span></a>
+            <a href="../prisma/"><strong>@askdb/prisma</strong><span>Prisma schema-file connector: reads <code>{".prisma"}</code> files and produces an AskDB schema directory without connecting to a database.</span></a>
+            <a href="../introspect/"><strong>@askdb/introspect</strong><span>Engine-agnostic introspection orchestrator and schema directory renderer.</span></a>
+            <a href="../enrich/"><strong>@askdb/enrich</strong><span>Headless enrichment workspace helpers shared by TUI, Studio, and custom authoring UIs.</span></a>
+            <a href="../rag/"><strong>@askdb/rag</strong><span>Deterministic schema chunking, BYO embeddings, vector stores, lock-file reuse, and retriever wiring.</span></a>
             <a href="../cli/"><strong>@askdb/cli</strong><span>Batteries-included terminal frontend for asking questions and running Postgres introspection.</span></a>
             <a href="../tui/"><strong>@askdb/tui</strong><span>Interactive terminal authoring for descriptions, aliases, concepts, and AI suggestions.</span></a>
-            <a href="../studio/"><strong>@askdb/studio</strong><span>Local browser UI for enriching Schema v2 artifacts, querying the RAG index, and generating sample SQL.</span></a>
+            <a href="../studio/"><strong>@askdb/studio</strong><span>Local browser UI for enriching schema folders, querying the RAG index, and generating sample SQL.</span></a>
             <a href="../http-api/"><strong>@askdb/http-api</strong><span>Small HTTP wrapper around core for server deployments.</span></a>
           </div>
 
-## Apps vs Libraries
+## Monorepo development
 
-<p>The reusable contracts live in <code>{"packages/*"}</code>. The first-party product surfaces live in <code>{"apps/*"}</code> or package binaries: CLI, HTTP API, TUI, Studio, and this docs site. UI surfaces depend on shared headless packages instead of each other.</p>
-
-## Workspace Commands
+<p>If you work inside the AskDB source repository, reusable libraries live under <code>{"packages/*"}</code> and first-party apps under <code>{"apps/*"}</code>. UI surfaces depend on shared headless packages instead of each other. Common workspace commands:</p>
 
 
 

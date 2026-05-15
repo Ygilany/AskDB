@@ -1,9 +1,10 @@
 ---
 title: "AskDB Documentation"
-description: "Trust-first, schema-grounded natural language to SQL—embed in your stack with BYO keys, connectors, and optional retrieval over the same Schema v2 artifact."
+description: "Natural language to validated SQL—grounded in your AskDB schema so models reason over structure and policy, not your rows. Embed with BYO keys, connectors, and optional retrieval over the same artifact."
 template: "splash"
 hero:
-  tagline: "AskDB turns natural language into schema-grounded SQL and reports—anchored in your describable schema, with explicit boundaries when data touches a model. Ship it as a library, CLI, or HTTP surface you control."
+  title: '<span class="home-hero-title">Natural language → <span class="home-hero-accent">trusted SQL</span></span>'
+  tagline: "Give your LLM the schema and business context—not raw rows. Every answer is grounded, SQL is validated read-only, and execution stays on your side."
   actions:
     - text: "Quickstart"
       link: "./quickstart/"
@@ -12,96 +13,120 @@ hero:
     - text: "Journeys"
       link: "./journeys/"
       variant: "secondary"
-      icon: "document"
+      icon: "open-book"
 ---
 
-## North star
+import HomeCliStrip from "../../components/HomeCliStrip.astro";
 
-<p>
-  We optimize for <strong>trust-first analytics</strong> (generation stays grounded in schema and validated SQL; row-level data is sensitive by default) and a <strong>developer-first embed</strong> (install from npm, bring your own model keys, database connectivity, embeddings, and vector store). The full principles and audience definitions live in{" "}
-  <a href="https://github.com/Ygilany/AskDB/blob/main/docs/mission.md">docs/mission.md</a> in the repository.
-</p>
+<div class="home-landing">
 
-## Who you are
+<HomeCliStrip />
 
-<div className="feature-grid">
-  <article>
+<div class="home-pill-row" role="list">
+  <span class="home-pill" role="listitem">Schema-grounded generation</span>
+  <span class="home-pill" role="listitem">Validated SQL boundary</span>
+  <span class="home-pill" role="listitem">BYO models &amp; connectors</span>
+</div>
+
+## Why AskDB
+
+<div class="home-north-card">
+  <p class="doc-lede home-north-lede">
+    We optimize for <strong>trust-first analytics</strong>: the model sees your <strong>AskDB schema</strong> (structure plus optional table docs you approve)—not a dump of production data—and row-level fields stay sensitive by default. We optimize for a <strong>developer-first embed</strong>: install from npm, bring your own model keys, database connectivity, embeddings, and vector store when you need them. For philosophy and limitations, see the{" "}
+    <a href="https://github.com/Ygilany/AskDB">AskDB project on GitHub</a>.
+  </p>
+</div>
+
+## Pick your lane
+
+<div class="home-bento">
+  <article class="home-bento-card home-bento-span-2">
+    <span class="home-bento-icon" aria-hidden="true">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/><path d="M3 12c0 1.66 4 3 9 3s9-1.34 9-3"/></svg>
+    </span>
     <h3>Integrator</h3>
-    <p>You wire AskDB into a service or internal app: config bootstrap, <code>{"ask()"}</code>, HTTP, or CLI automation.</p>
+    <p>You wire AskDB into a service or internal app: optional config bootstrap, <code>ask()</code>, HTTP, or CLI automation.</p>
   </article>
-  <article>
+  <article class="home-bento-card">
+    <span class="home-bento-icon" aria-hidden="true">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+    </span>
     <h3>Schema author</h3>
-    <p>You turn introspected DDL into a describable Schema v2 artifact with reviewed descriptions, aliases, and concepts.</p>
+    <p>You turn introspected metadata into an enriched AskDB schema: reviewed descriptions, aliases, and concepts your team trusts.</p>
   </article>
-  <article>
+  <article class="home-bento-card">
+    <span class="home-bento-icon" aria-hidden="true">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 21V9"/></svg>
+    </span>
     <h3>Agent or platform owner</h3>
-    <p>You need stable headless contracts for tools and CI. MCP is on the roadmap—see <a href="./guides/agents-and-mcp/">Agents and MCP (status)</a>.</p>
+    <p>Stable headless contracts for tools and CI. A first-party <strong>Model Context Protocol (MCP)</strong> server is on the roadmap—see <a href="./guides/agents-and-mcp/">Agents and MCP (status)</a>.</p>
   </article>
 </div>
 
-## What AskDB gives you
+## What you get
 
-<div className="feature-grid">
+<div class="home-value-grid">
   <article>
     <h3>Schema-grounded generation</h3>
-    <p>Questions are grounded in an AskDB Schema v2 artifact before SQL is generated and validated.</p>
+    <p>Questions are grounded in your AskDB schema before SQL is generated and validated.</p>
   </article>
   <article>
     <h3>Bring your own runtime</h3>
-    <p>Use any AI SDK-compatible language model. Install <code>{"pg"}</code> only when you choose live Postgres introspection or the pgvector store.</p>
+    <p>Use any AI SDK-compatible language model. Add <code>pg</code> only when you choose live Postgres introspection or the pgvector store.</p>
   </article>
   <article>
     <h3>Schema enrichment tools</h3>
-    <p><code>{"@askdb/enrich"}</code> powers the TUI and Studio so humans confirm AI-suggested descriptions and aliases.</p>
+    <p><code>@askdb/enrich</code> powers the TUI and Studio so humans confirm AI-suggested descriptions and aliases.</p>
   </article>
   <article>
     <h3>Retrieval-ready context</h3>
-    <p><code>{"@askdb/rag"}</code> chunks the same Schema v2 artifact—no separate knowledge base that can drift from schema truth.</p>
+    <p><code>@askdb/rag</code> chunks the same schema artifact—no separate knowledge base that can drift from what you ship.</p>
   </article>
 </div>
 
 ## Choose a path
 
-<div className="link-cards">
-  <a href="./journeys/"><strong>Journeys</strong><span>Outcome-first links: embed, enrich, RAG, HTTP, and agent/MCP status.</span></a>
-  <a href="./guides/embed-in-app/"><strong>Embed in your app</strong><span>Call <code>{"ask()"}</code> from Node with your dialect and model.</span></a>
+<div class="home-path-grid">
+  <a href="./journeys/"><strong>Journeys</strong><span>Embed, enrich, RAG, HTTP, and agent/MCP status.</span></a>
+  <a href="./guides/embed-in-app/"><strong>Embed in your app</strong><span>Call <code>ask()</code> from Node with your dialect and model.</span></a>
   <a href="./guides/author-enrich-schema/"><strong>Author schema</strong><span>Introspect, enrich in TUI or Studio, optional bundle.</span></a>
-  <a href="./environment/"><strong>Configure environment</strong><span><code>{"askdb.config.ts"}</code>, <code>{"bootstrapAskDbEnv()"}</code>, and <code>{"getAskDbRuntimeConfig()"}</code>.</span></a>
-  <a href="./quickstart/"><strong>Run the CLI</strong><span>Fixture or live introspection, then <code>{"askdb ask"}</code>.</span></a>
+  <a href="./environment/"><strong>Configure environment</strong><span><code>askdb.config.ts</code>, env loading, and runtime config.</span></a>
+  <a href="./quickstart/"><strong>Run the CLI</strong><span>Install, introspect or use a sample, then <code>askdb ask</code>.</span></a>
   <a href="./architecture/"><strong>Architecture</strong><span>Layers, dependency direction, connectors vs optional peers.</span></a>
 </div>
 
 ## First run
 
-<p>Install dependencies, create a Schema v2 artifact, then ask a question against it.</p>
+<p class="home-terminal-intro">Install the CLI, create a schema folder, then ask a question against it.</p>
 
-```
-pnpm install
-cp .env.example .env
-# or: pnpm exec askdb init  (writes askdb.config.ts; .env guidance is in comments)
-pnpm build
+```bash
+npm install @askdb/cli
+npx askdb init
+# add API keys to .env (see comments from init)
 
-pnpm exec askdb introspect \
+npx askdb introspect \
   --url "$DATABASE_URL" \
   --out my-app.schema \
   --schema-id my-app
 
-pnpm exec askdb enrich --schema my-app.schema
+npx askdb enrich --schema my-app.schema
 
-pnpm exec askdb ask \
+npx askdb ask \
   --schema my-app.schema \
   --question "Which tables look active?"
 ```
 
 ## Documentation map
 
-<div className="link-cards">
-  <a href="./quickstart/"><strong>Quickstart</strong><span>Local setup, schema creation, and your first question.</span></a>
-  <a href="./journeys/"><strong>Journeys</strong><span>Guides hub and links to deeper contracts in <code>docs/</code>.</span></a>
-  <a href="./concepts/"><strong>Core concepts</strong><span>Pipeline, Schema v2, enrichment, execution boundary.</span></a>
+<div class="home-map-grid">
+  <a href="./quickstart/"><strong>Quickstart</strong><span>Install, schema creation, and your first question.</span></a>
+  <a href="./journeys/"><strong>Journeys</strong><span>Guides hub for embed, enrich, RAG, HTTP, and agents.</span></a>
+  <a href="./concepts/"><strong>Core concepts</strong><span>Pipeline, AskDB schema, enrichment, execution boundary.</span></a>
   <a href="./architecture/"><strong>Architecture</strong><span>Diagrams, install profiles, extension points.</span></a>
-  <a href="./packages/"><strong>Package reference</strong><span>What each <code>{"@askdb/*"}</code> package owns.</span></a>
-  <a href="./schema-v2/"><strong>Schema v2</strong><span>Physical and describable schema contract.</span></a>
+  <a href="./packages/"><strong>Package reference</strong><span>What each <code>@askdb/*</code> package owns.</span></a>
+  <a href="./askdb-schema/"><strong>AskDB schema</strong><span>On-disk layout: JSON + optional table docs and bundle.</span></a>
   <a href="./modes/"><strong>Modes and safety</strong><span>Trust boundaries for model context.</span></a>
   <a href="./rag/"><strong>RAG</strong><span>Chunk, index, and retrieve schema context.</span></a>
+</div>
+
 </div>

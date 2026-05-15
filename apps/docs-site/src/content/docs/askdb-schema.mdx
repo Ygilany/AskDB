@@ -1,15 +1,15 @@
 ---
-title: "Schema v2"
-description: "Schema v2 is a describable schema artifact: one physical JSON layer, optional markdown table docs, optional concepts, and bundle output for distribution."
+title: "AskDB schema"
+description: "The AskDB schema format: a physical JSON layer, optional markdown table docs, optional concepts, and bundle output for distribution."
 ---
 
 <p className="doc-eyebrow">Artifact contract</p>
 
-<p className="doc-lede">Schema v2 is a describable schema artifact: one physical JSON layer, optional markdown table docs, optional concepts, and bundle output for distribution.</p>
+<p className="doc-lede">An <strong>AskDB schema</strong> is a folder (or single bundle file) that pairs machine-readable structure with optional human-written context: one physical JSON layer, optional markdown per table, optional concepts, and bundle output when you need one portable file.</p>
 
 <p>
-  Authoritative contract (field names, validation, bundling):{" "}
-  <a href="https://github.com/Ygilany/AskDB/blob/main/docs/contracts/schema-v2.md">docs/contracts/schema-v2.md</a>.
+  On disk, <code>{"schema.json"}</code> uses <code>{"\"version\": 2"}</code> to identify this layout. For field-level validation and bundling rules maintained with the source tree, see the{" "}
+  <a href="https://github.com/Ygilany/AskDB/blob/main/docs/contracts/schema-v2.md">schema contract on GitHub</a>.
 </p>
 
 ## Layout
@@ -29,7 +29,7 @@ my-app.schema/
 
           <p>Only <code>{"schema.json"}</code> is required. A directory with no table markdown files is valid.</p>
 
-## Physical Layer
+## Physical layer
 
 <p><code>{"schema.json"}</code> stores stable table and column IDs, physical names, data types, nullability, primary keys, relationships, and sensitivity flags.</p>
 
@@ -58,7 +58,7 @@ my-app.schema/
 
 
 
-## Describable Layer
+## Enrichment layer (table docs)
 
 <p><code>{"tables/<name>.md"}</code> adds aliases, descriptions, examples, common query language, and business context without changing physical metadata.</p>
 
@@ -86,9 +86,9 @@ Customer purchase orders. One row per submitted order.
 
 
 
-## Enrichment Workflow
+## Enrichment workflow
 
-<p>The intended authoring flow is introspect, enrich, re-introspect as the database changes, then bundle when another service needs one file.</p>
+<p>The typical flow is introspect, enrich, re-introspect as the database changes, then bundle when another service needs one file.</p>
 
 
 ```

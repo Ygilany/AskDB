@@ -8,7 +8,7 @@
   </defs>
   <rect x="8" y="28" width="150" height="84" rx="8" fill="#f8fafc" stroke="#475569" stroke-width="2"/>
   <text x="83" y="58" text-anchor="middle" font-family="ui-sans-serif,system-ui,sans-serif" font-size="13" font-weight="600" fill="#0f172a">Question +</text>
-  <text x="83" y="78" text-anchor="middle" font-family="ui-sans-serif,system-ui,sans-serif" font-size="13" font-weight="600" fill="#0f172a">Schema v2</text>
+  <text x="83" y="78" text-anchor="middle" font-family="ui-sans-serif,system-ui,sans-serif" font-size="13" font-weight="600" fill="#0f172a">AskDB schema</text>
   <line x1="158" y1="70" x2="198" y2="70" stroke="#475569" stroke-width="2" marker-end="url(#arrow)"/>
   <rect x="198" y="28" width="130" height="84" rx="8" fill="#fef2f2" stroke="#a10b2c" stroke-width="2"/>
   <text x="263" y="78" text-anchor="middle" font-family="ui-sans-serif,system-ui,sans-serif" font-size="14" font-weight="700" fill="#5b0719">ask()</text>

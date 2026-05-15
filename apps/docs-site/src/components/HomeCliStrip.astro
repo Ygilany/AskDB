@@ -1,0 +1,58 @@
+---
+const installLine = "npm install @askdb/core";
+const hintLine = "# optional: npx askdb init";
+---
+
+<section class="home-cli-strip" aria-labelledby="home-cli-heading">
+	<h2 id="home-cli-heading" class="home-sr-only">Install AskDB</h2>
+	<div class="home-cli-window">
+		<div class="home-cli-titlebar" aria-hidden="true">
+			<span class="home-cli-dot home-cli-dot--r"></span>
+			<span class="home-cli-dot home-cli-dot--y"></span>
+			<span class="home-cli-dot home-cli-dot--g"></span>
+		</div>
+		<div class="home-cli-body">
+			<div class="home-cli-lines">
+				<p class="home-cli-line">
+					<span class="home-cli-prompt">$</span>
+					<code class="home-cli-cmd" data-install-cmd>{installLine}</code>
+				</p>
+				<p class="home-cli-comment">{hintLine}</p>
+			</div>
+			<button type="button" class="home-cli-copy" aria-label="Copy install commands">
+				Copy
+			</button>
+		</div>
+	</div>
+	<p class="home-cli-foot">
+		Next: <a href="./quickstart/">Quickstart</a>
+		<span class="home-cli-foot-sep" aria-hidden="true">·</span>
+		<a href="./environment/">Environment</a>
+		<span class="home-cli-foot-sep" aria-hidden="true">·</span>
+		<a href="https://github.com/Ygilany/AskDB">GitHub</a>
+	</p>
+</section>
+
+<script>
+	document.addEventListener("click", async (event) => {
+		const target = event.target;
+		if (!(target instanceof Element)) return;
+		const btn = target.closest(".home-cli-copy");
+		if (!(btn instanceof HTMLButtonElement)) return;
+		const cmdEl = btn.closest(".home-cli-body")?.querySelector("[data-install-cmd]");
+		const commentEl = btn.closest(".home-cli-body")?.querySelector(".home-cli-comment");
+		const parts = [cmdEl?.textContent?.trim(), commentEl?.textContent?.trim()].filter(Boolean);
+		const text = parts.join("\n");
+		if (!text) return;
+		try {
+			await navigator.clipboard.writeText(text);
+			const prev = btn.textContent;
+			btn.textContent = "Copied";
+			setTimeout(() => {
+				btn.textContent = prev;
+			}, 1800);
+		} catch {
+			/* clipboard may be denied */
+		}
+	});
+</script>

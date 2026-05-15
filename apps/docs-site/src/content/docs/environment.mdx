@@ -14,7 +14,7 @@ description: "Load secrets from .env, author askdb.config.ts with defineConfig, 
   <li>You need <code>{"env(\"VAR\")"}</code> helpers and <code>{"defineConfig"}</code> nesting without mutating global <code>{"process.env"}</code> for every AskDB key.</li>
 </ul>
 
-<p>Spec and rationale: <a href="https://github.com/Ygilany/AskDB/blob/main/docs/adrs/0005-askdb-config-and-env-bootstrap.md">ADR 0005 — askdb config and env bootstrap</a>.</p>
+<p>Full rationale: <a href="https://github.com/Ygilany/AskDB/blob/main/docs/adrs/0005-askdb-config-and-env-bootstrap.md">ADR 0005 — config and env bootstrap (GitHub)</a>.</p>
 
 ## Bootstrap order
 
@@ -33,7 +33,7 @@ description: "Load secrets from .env, author askdb.config.ts with defineConfig, 
 ## `askdb init`
 
 ```
-pnpm exec askdb init
+npx askdb init
 # writes ./askdb.config.ts only (no .env file)
 ```
 
@@ -113,9 +113,11 @@ export default defineConfig({
 
 <p><code>{"askdb-rag"}</code> defaults to a deterministic mock embedder for smoke tests. Set <code>{"OPENAI_API_KEY"}</code> and pass <code>{"--embedder openai"}</code> when you want real embeddings; pass <code>{"--pg-url"}</code> only when using the pgvector store.</p>
 
-## Monorepo template
+## Example `.env`
 
 ```
-cp .env.example .env
-# edit .env; optionally add askdb.config.ts / .config/askdb.ts (or run `pnpm exec askdb init` for a commented starter)
+# OPENAI_API_KEY=sk-...
+# DATABASE_URL=postgres://user:pass@localhost:5432/mydb
 ```
+
+<p>Create this file next to <code>{"askdb.config.ts"}</code>, or rely on your host’s secret injection. Run <code>{"npx askdb init"}</code> for a commented <code>{"askdb.config.ts"}</code> template.</p>

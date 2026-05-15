@@ -11,6 +11,7 @@
     "test:watch": "vitest",
     "lint": "pnpm exec turbo run lint",
     "docs:build": "pnpm -C apps/docs-site build",
+    "docs:preview": "pnpm -C apps/docs-site preview",
     "docs:dev": "pnpm -C apps/docs-site dev",
     "pagila:up": "docker compose -f fixtures/pagila/docker-compose.yml up --build -d",
     "pagila:down": "docker compose -f fixtures/pagila/docker-compose.yml down",

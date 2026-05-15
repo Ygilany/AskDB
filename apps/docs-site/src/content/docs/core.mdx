@@ -1,17 +1,17 @@
 ---
 title: "@askdb/core"
-description: "The core package owns the NL-to-SQL pipeline, Schema v2 loading, enrichment suggestion helpers, logging contracts, and retrieval input. It stays dialect-agnostic and returns SQL only."
+description: "The core package owns the NL-to-SQL pipeline, AskDB schema loading, enrichment suggestion helpers, logging contracts, and retrieval input. It stays dialect-agnostic and returns SQL only."
 ---
 
 <p className="doc-eyebrow">Library API</p>
 
-<p className="doc-lede">The core package owns the NL-to-SQL pipeline, Schema v2 loading, enrichment suggestion helpers, logging contracts, and retrieval input. It stays dialect-agnostic and returns SQL only.</p>
+<p className="doc-lede">The core package owns the NL-to-SQL pipeline, AskDB schema loading, enrichment suggestion helpers, logging contracts, and retrieval input. It stays dialect-agnostic and returns SQL only.</p>
 
 ## When to use
 
 <ul>
   <li>You embed AskDB in <strong>application code</strong> (see <a href="../guides/embed-in-app/">Embed NL→SQL in a Node app</a>).</li>
-  <li>You need validated SQL from a question + Schema v2 + dialect + model—without bundling database drivers by default.</li>
+  <li>You need validated SQL from a question + AskDB schema + dialect + model—without bundling database drivers by default.</li>
 </ul>
 
 ## Install
@@ -19,11 +19,11 @@ description: "The core package owns the NL-to-SQL pipeline, Schema v2 loading, e
 
 
 ```
-pnpm add @askdb/core
+npm add @askdb/core
 # add an integration package for the engine you target
-pnpm add @askdb/postgres
+npm add @askdb/postgres
 # add a model provider, for example
-pnpm add ai @ai-sdk/openai
+npm add ai @ai-sdk/openai
 ```
 
 
@@ -53,7 +53,7 @@ const { sql } = await ask({
 
 ## Retrieval Input
 
-<p>Phase 8 adds an optional <code>{"retriever"}</code> to <code>{"ask()"}</code>. When present, core asks the retriever for relevant Schema v2 chunks and builds a focused DDL block. Without a retriever, the existing full-schema prompt path is preserved.</p>
+<p><code>{"ask()"}</code> accepts an optional <code>{"retriever"}</code>. When present, core asks the retriever for relevant schema chunks and builds a focused DDL block. Without a retriever, the full-schema prompt path is used.</p>
 
 
 ```
@@ -71,7 +71,7 @@ const { sql } = await ask({
 
 ## Enrichment Suggestions
 
-<p>Phase 7 adds core helpers used by the TUI to ask a model for human-reviewed schema enrichment candidates.</p>
+<p>Core also exposes helpers the TUI uses to ask a model for human-reviewed schema enrichment candidates.</p>
 
 
 ```
@@ -99,9 +99,9 @@ const candidates = await suggestEnrichment(
 <ul>
             <li><code>{"ask"}</code>: generate validated SQL.</li>
             <li><code>{"AskDialect"}</code>: dialect adapter contract consumed by <code>{"ask()"}</code>.</li>
-            <li><code>{"loadSchema"}</code>: load a Schema v2 directory, bundle, or schema JSON path.</li>
-            <li><code>{"loadSchemaFromJson"}</code>: parse inline Schema v2 JSON.</li>
-            <li><code>{"parseTableMarkdown"}</code> and <code>{"writeTableMarkdown"}</code>: work with describable table docs.</li>
+            <li><code>{"loadSchema"}</code>: load a schema directory, bundle, or <code>{"schema.json"}</code> path.</li>
+            <li><code>{"loadSchemaFromJson"}</code>: parse inline schema JSON.</li>
+            <li><code>{"parseTableMarkdown"}</code> and <code>{"writeTableMarkdown"}</code>: work with table markdown (<code>{"tables/*.md"}</code>).</li>
             <li><code>{"suggestEnrichment"}</code>: produce candidate descriptions, aliases, primary entities, and common query language for review.</li>
             <li><code>{"createAskDbLogger"}</code>: produce structured log events.</li>
           </ul>

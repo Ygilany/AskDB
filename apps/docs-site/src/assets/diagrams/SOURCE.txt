@@ -1,2 +1,6 @@
 SVG diagrams in this folder are committed build artifacts for the docs site.
 They are imported from architecture.mdx via Vite (?url) so paths respect Astro `base`.
+
+The splash home hero diagram uses two editable vector files (theme toggle in
+`custom.css`): `askdb-hero-visual.svg` (light) and `askdb-hero-visual-dark.svg`
+(dark). Both are inlined as raw HTML in `HomeHeroDiagram.astro`.
