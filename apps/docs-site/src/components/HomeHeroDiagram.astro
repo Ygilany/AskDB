@@ -1,0 +1,21 @@
+---
+import heroVisualLight from "../assets/diagrams/askdb-hero-visual.svg?raw";
+import heroVisualDark from "../assets/diagrams/askdb-hero-visual-dark.svg?raw";
+
+const aria =
+	"Diagram of AskDB turning a natural language question into validated read-only SQL, with connections to database, keys, runtime, and policy.";
+---
+
+<div class="home-hero-diagram" data-home-hero-diagram role="img" aria-label={aria}>
+	<div class="home-hero-diagram-layer home-hero-diagram-layer--light" set:html={heroVisualLight} />
+	<div class="home-hero-diagram-layer home-hero-diagram-layer--dark" set:html={heroVisualDark} />
+</div>
+
+<style>
+	.home-hero-diagram :global(svg) {
+		display: block;
+		height: auto;
+		max-width: 100%;
+		vertical-align: middle;
+	}
+</style>

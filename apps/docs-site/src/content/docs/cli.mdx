@@ -19,9 +19,9 @@ description: "The CLI ships the `askdb` binary for asking questions, generating 
 
 
 ```
-pnpm add -g @askdb/cli
-# or run from a workspace clone
-pnpm exec askdb --help
+npm install -g @askdb/cli
+# or use per-project:
+npx askdb --help
 ```
 
 
@@ -32,7 +32,7 @@ pnpm exec askdb --help
 
 
 ```
-pnpm exec askdb init
+npx askdb init
 # writes ./askdb.config.ts (refuses to overwrite unless --force)
 ```
 
@@ -84,7 +84,7 @@ askdb bundle ./my-app.schema --out ./my-app.schema.bundle.json
 ## Useful Flags
 
 <div className="definition-list">
-            <div><code>{"--schema <path>"}</code><span>Path to a Schema v2 directory, bundle, or schema JSON.</span></div>
+            <div><code>{"--schema <path>"}</code><span>Path to a schema directory, bundle, or <code>{"schema.json"}</code>.</span></div>
             <div><code>{"--mode <id>"}</code><span>Select <code>{"schema_only"}</code> or <code>{"bounded_results"}</code>.</span></div>
             <div><code>{"--explain"}</code><span>Print heuristic guardrail metadata.</span></div>
             <div><code>{"--log-file <path>"}</code><span>Append structured JSON logs to a file.</span></div>

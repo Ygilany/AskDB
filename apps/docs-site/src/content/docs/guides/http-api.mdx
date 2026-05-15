@@ -21,7 +21,7 @@ description: Expose AskDB over HTTP for services and dashboards; you own auth, n
 
 ## Steps
 
-1. **Run from the monorepo** during development or depend on the published package in your service (see <a href="../../http-api/">@askdb/http-api</a> for flags and env).
+1. **Install and run** — Add <code>{"@askdb/http-api"}</code> to your service and start the published binary (see <a href="../../http-api/">@askdb/http-api</a> for flags and env). If you develop AskDB from a source clone, use that repo’s build scripts for local iteration.
 2. **Bootstrap config** — Align <code>{"askdb.config.ts"}</code> and <code>{"bootstrapAskDbEnv()"}</code> with how you load secrets in production (<a href="../../environment/">Environment</a>).
 3. **Mount behind your gateway** — Terminate TLS and auth at your edge or API gateway.
 
