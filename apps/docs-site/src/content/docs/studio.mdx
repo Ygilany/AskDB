@@ -1,17 +1,17 @@
 ---
 title: "@askdb/studio"
-description: "Studio is a local browser UI for browsing, enriching, and testing Schema v2 artifacts. It serves a React app on localhost and never connects to production databases."
+description: "Studio is a local browser UI for browsing, enriching, and testing AskDB schema folders. It serves a React app on localhost and never connects to production databases."
 ---
 
 <p className="doc-eyebrow">Local browser UI</p>
 
-<p className="doc-lede">Studio is a local browser UI for browsing, enriching, and testing Schema v2 artifacts. It serves a React app on <code>{"localhost"}</code> and never connects to production databases.</p>
+<p className="doc-lede">Studio is a local browser UI for browsing, enriching, and testing AskDB schema folders. It serves a React app on <code>{"localhost"}</code> and never connects to production databases.</p>
 
 ## When to use
 
 <ul>
   <li>You want a <strong>mouse-friendly</strong> enrichment and smoke-test loop on a developer machine.</li>
-  <li>You are iterating on describable schema with collaborators who prefer a browser—see <a href="../guides/author-enrich-schema/">Author and enrich schema</a>.</li>
+  <li>You are iterating on enriched schema metadata with collaborators who prefer a browser—see <a href="../guides/author-enrich-schema/">Author and enrich schema</a>.</li>
 </ul>
 
 ## Install
@@ -39,7 +39,7 @@ askdb-studio --schema ./my-app.schema
 <ul>
   <li>Browse all physical tables and columns from <code>{"schema.json"}</code>.</li>
   <li>Edit table descriptions, aliases, primary entities, tags, common query language, example questions, and column metadata.</li>
-  <li>Write the describable layer back to <code>{"tables/*.md"}</code> using <code>{"@askdb/enrich"}</code> workspace helpers.</li>
+  <li>Write table docs back to <code>{"tables/*.md"}</code> using <code>{"@askdb/enrich"}</code> workspace helpers.</li>
   <li>Request AI enrichment suggestions when <code>{"OPENAI_API_KEY"}</code> is configured.</li>
   <li>Build and query the local file-backed RAG index from the browser.</li>
   <li>Generate sample Postgres SQL for natural-language questions against the currently saved enrichment.</li>
@@ -57,7 +57,7 @@ askdb-studio --schema ./my-app.schema
 
 ## Package Boundary
 
-<p>Studio depends on <code>{"@askdb/enrich"}</code> for shared non-UI Schema v2 authoring logic. It does not depend on <code>{"@askdb/tui"}</code>, which is the separate terminal authoring surface.</p>
+<p>Studio depends on <code>{"@askdb/enrich"}</code> for shared non-UI authoring logic. It does not depend on <code>{"@askdb/tui"}</code>, which is the separate terminal authoring surface.</p>
 
 ```
 @askdb/core

@@ -19,12 +19,12 @@ description: "The HTTP API exposes a minimal server around @askdb/core. POST /as
 
 
 ```
-pnpm -C apps/http-api build
-node apps/http-api/dist/bin.js
+npm install @askdb/http-api
+npx askdb-http
 ```
 
 
-          <p>Set <code>{"ASKDB_SCHEMA_PATH"}</code> in the repo-root <code>{".env"}</code> and/or in nested fields under <code>{"askdb.config.*"}</code> for the process working directory. The binary runs <code>{"bootstrapAskDbEnv()"}</code>: it loads the first existing <code>{".env"}</code> among repo root, current working directory, and the http-api package directory, then evaluates <code>{"askdb.config.*"}</code> / <code>{".config/askdb.*"}</code> from <code>{"cwd"}</code> and installs the AskDB runtime snapshot. The server reads settings with <code>{"getAskDbRuntimeConfig()"}</code>; AskDB does not merge the full config into <code>{"process.env"}</code>.</p>
+          <p>Set <code>{"ASKDB_SCHEMA_PATH"}</code> in a <code>{".env"}</code> next to your process (or configure nested fields under <code>{"askdb.config.*"}</code> for the working directory). The server loads env and config via <code>{"@askdb/config"}</code> (<code>{"bootstrapAskDbEnv()"}</code>): it discovers <code>{".env"}</code> and <code>{"askdb.config.*"}</code> / <code>{".config/askdb.*"}</code>, then exposes settings through <code>{"getAskDbRuntimeConfig()"}</code>. AskDB does not merge the full config into <code>{"process.env"}</code>. See <a href="../environment/">Environment</a> for details.</p>
 
 ## Health Check
 

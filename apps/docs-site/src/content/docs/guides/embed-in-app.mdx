@@ -1,6 +1,6 @@
 ---
 title: Embed NL→SQL in a Node app
-description: Install @askdb/core, load Schema v2, call ask() with a Postgres dialect and your model, and keep query execution in your application.
+description: Install @askdb/core, load your AskDB schema, call ask() with a Postgres dialect and your model, and keep query execution in your application.
 ---
 
 <p className="doc-eyebrow">Integrator journey</p>
@@ -11,7 +11,7 @@ description: Install @askdb/core, load Schema v2, call ask() with a Postgres dia
 
 ## When this guide fits
 
-- You already have (or will generate) an AskDB **Schema v2** artifact.
+- You already have (or will generate) an AskDB **schema artifact** (folder or bundle).
 - You want **programmatic** NL→SQL inside Node, not only the CLI.
 
 ## Trust boundary
@@ -29,9 +29,9 @@ description: Install @askdb/core, load Schema v2, call ask() with a Postgres dia
 
 ## Large schemas
 
-If prompts get too large, add <a href="../rag-large-schema/">retrieval over Schema v2</a> with <code>{"@askdb/rag"}</code> instead of stuffing the whole artifact into every request.
+If prompts get too large, add <a href="../rag-large-schema/">retrieval over your schema</a> with <code>{"@askdb/rag"}</code> instead of stuffing the whole artifact into every request.
 
 ## See also
 
 - <a href="../../quickstart/">Quickstart</a> — same flow from the CLI first.
-- <a href="https://github.com/Ygilany/AskDB/blob/main/docs/integration/installable-package.md">docs/integration/installable-package.md</a> — provider-specific model recipes.
+- <a href="https://github.com/Ygilany/AskDB/blob/main/docs/integration/installable-package.md">Installable package notes (GitHub)</a> — provider-specific model recipes maintained with the source.

@@ -1,17 +1,17 @@
 ---
 title: "@askdb/rag"
-description: "The RAG package turns enriched Schema v2 artifacts into deterministic chunks, indexes them with your embedder and vector store, and returns a retriever for @askdb/core."
+description: "The RAG package turns enriched AskDB schema artifacts into deterministic chunks, indexes them with your embedder and vector store, and returns a retriever for @askdb/core."
 ---
 
 <p className="doc-eyebrow">Schema retrieval</p>
 
-<p className="doc-lede">The RAG package turns enriched Schema v2 artifacts into deterministic chunks, indexes them with your embedder and vector store, and returns a retriever for @askdb/core.</p>
+<p className="doc-lede">The RAG package turns enriched AskDB schema artifacts into deterministic chunks, indexes them with your embedder and vector store, and returns a retriever for @askdb/core.</p>
 
 ## When to use
 
 <ul>
-  <li>Your Schema v2 artifact is <strong>too large</strong> to fit comfortably in every prompt.</li>
-  <li>You want retrieval over the <strong>same</strong> describable schema—not a forked knowledge base—see <a href="../guides/rag-large-schema/">Add RAG for large schemas</a>.</li>
+  <li>Your schema artifact is <strong>too large</strong> to fit comfortably in every prompt.</li>
+  <li>You want retrieval over the <strong>same</strong> enrichment text the rest of AskDB uses—not a forked knowledge base—see <a href="../guides/rag-large-schema/">Add RAG for large schemas</a>.</li>
 </ul>
 
 ## Install
@@ -97,4 +97,4 @@ askdb-rag query ./my-app.schema \
 
 ## Sensitive Content
 
-<p>Sensitive describable-layer content and sensitive identifiers are excluded from chunks by default. Identifier grounding remains in core prompt formatting, where sensitive columns are tagged unless the caller explicitly omits them.</p>
+<p>Sensitive enrichment text and sensitive identifiers are excluded from chunks by default. Identifier grounding remains in core prompt formatting, where sensitive columns are tagged unless the caller explicitly omits them.</p>

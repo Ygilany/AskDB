@@ -1,31 +1,30 @@
 ---
 title: "Quickstart"
-description: "Build the workspace, generate or use a schema artifact, enrich it, and run AskDB from the CLI. The same pieces can then move into your application code."
+description: "Install AskDB, generate or use a schema artifact, enrich it, and run your first question from the CLI—then carry the same pieces into your application."
 ---
 
-<p className="doc-eyebrow">From clone to first query</p>
+<p className="doc-eyebrow">From install to first query</p>
 
-<p className="doc-lede">Build the workspace, generate or use a schema artifact, enrich it, and run AskDB from the CLI. The same pieces can then move into your application code.</p>
+<p className="doc-lede">Install AskDB, generate or point at an <strong>AskDB schema</strong> folder, optionally enrich it, and run questions from the CLI. The same packages then drop into your Node services.</p>
 
 ## Prerequisites
 
 <ul>
             <li>Node 20 or newer.</li>
-            <li>pnpm 11.</li>
+            <li>npm, pnpm, or yarn (examples use <code>{"npx"}</code> / <code>{"npm exec"}</code>).</li>
             <li>An API key for a supported AI provider — OpenAI (or any OpenAI-compatible endpoint) or Azure OpenAI — for live NL-to-SQL generation.</li>
             <li>A PostgreSQL connection string only if you want live Postgres introspection. A Prisma schema file is enough if you use <code>{"--engine prisma"}</code>.</li>
           </ul>
 
-## Use the Bundled Fixture
+## Option A — Try with a sample (AskDB repo contributors)
 
-<p>The fastest path uses the sample Schema v2 directory committed under <code>{"fixtures/schemas/orders-users.schema"}</code>.</p>
+<p>If you are working inside a clone of the AskDB repository, you can use the bundled sample schema under <code>{"fixtures/schemas/orders-users.schema"}</code> after installing dependencies and building the workspace.</p>
 
 
 ```
 pnpm install
 cp .env.example .env
-# edit .env for local secrets. This repo also ships a root askdb.config.ts;
-# or run `pnpm exec askdb init` in a new project (comments document .env keys).
+# edit .env for API keys; optional: pnpm exec askdb init
 pnpm build
 
 pnpm exec askdb ask \
@@ -35,41 +34,65 @@ pnpm exec askdb ask \
 
 
 
-## Create a Schema from a Database
+## Option B — npm install (typical)
 
-### From Postgres
-
-<p>For a live Postgres database, generate a Schema v2 directory first, then point AskDB at it.</p>
+<p>Install the CLI globally or per project, add keys to <code>{".env"}</code>, then introspect your own database (or Prisma file) to produce a schema folder.</p>
 
 
 ```
-pnpm exec askdb introspect \
+npm install @askdb/cli
+npx askdb init
+# follow comments in askdb.config.ts / .env for API keys
+
+npx askdb introspect \
   --url "$DATABASE_URL" \
   --out my-app.schema \
   --schema-id my-app
 
-pnpm exec askdb enrich --schema my-app.schema
+npx askdb enrich --schema my-app.schema
 
-pnpm exec askdb ask \
+npx askdb ask \
   --schema my-app.schema \
   --question "Which tables are connected to users?"
 ```
 
 
 
-### From a Prisma Schema
+## Create a schema from a database
+
+### From Postgres
+
+<p>Point introspection at a live database; AskDB writes an AskDB schema directory you can enrich and query.</p>
+
+
+```
+npx askdb introspect \
+  --url "$DATABASE_URL" \
+  --out my-app.schema \
+  --schema-id my-app
+
+npx askdb enrich --schema my-app.schema
+
+npx askdb ask \
+  --schema my-app.schema \
+  --question "Which tables are connected to users?"
+```
+
+
+
+### From a Prisma schema
 
 <p>If you already have a Prisma schema file, introspect directly from it — no live database required.</p>
 
 
 ```
-pnpm exec askdb introspect \
+npx askdb introspect \
   --engine prisma \
   --prisma-schema ./prisma/schema.prisma \
   --out my-app.schema \
   --schema-id my-app
 
-pnpm exec askdb ask \
+npx askdb ask \
   --schema my-app.schema \
   --question "Which tables are connected to users?"
 ```
@@ -79,64 +102,66 @@ pnpm exec askdb ask \
 
 
 
-## Enrich the Schema
+## Enrich the schema
 
-<p>Raw introspection gives AskDB physical metadata. The enrichment step adds the describable layer: table descriptions, aliases, column notes, common query language, example questions, and concepts. AskDB ships two enrichment UIs — pick whichever suits your workflow.</p>
+<p>Raw introspection captures structure from the catalog (or Prisma file). Enrichment adds the <strong>markdown table layer</strong>: descriptions, aliases, column notes, common query language, example questions, and concepts. AskDB ships two UIs — pick whichever fits your workflow.</p>
 
 **Terminal UI** — keyboard-driven, works in any terminal:
 
 ```
-pnpm exec askdb enrich --schema my-app.schema
+npx askdb enrich --schema my-app.schema
 ```
 
 **Studio** — browser-based UI served locally at <code>http://127.0.0.1:5556</code>:
 
 ```
-pnpm exec askdb studio --schema my-app.schema
+npx askdb studio --schema my-app.schema
 ```
 
-<p>Both UIs use <code>{"@askdb/enrich"}</code> under the hood and produce the same describable layer on disk. Once enriched, bundle the directory into a single portable artifact:</p>
+<p>Both UIs use <code>{"@askdb/enrich"}</code> under the hood and write the same files on disk. When you want one portable file, bundle the directory:</p>
 
 ```
 # produce a single read-only artifact for distribution
-pnpm exec askdb bundle my-app.schema --out my-app.schema.bundle.json
+npx askdb bundle my-app.schema --out my-app.schema.bundle.json
 ```
 
 
 
-## SQL Output Only
+## SQL output only
 
 <p>AskDB returns validated SQL. Run it through your own application, approval flow, or database tooling outside AskDB.</p>
 
 
 ```
-pnpm exec askdb ask \
+npx askdb ask \
   --schema my-app.schema \
   --question "List the newest users"
 ```
 
 
 
-## Use the Packages
+## Use the packages
 
-<p>For application code, install the small set of packages that match the surface you need. <code>{"@askdb/core"}</code> is dialect-agnostic. Postgres-specific behavior lives in <code>{"@askdb/postgres"}</code>. Custom enrichment UIs use <code>{"@askdb/enrich"}</code>.</p>
+<p>For application code, install the packages that match the surface you need. <code>{"@askdb/core"}</code> is dialect-agnostic. Postgres-specific behavior lives in <code>{"@askdb/postgres"}</code>. Custom enrichment UIs use <code>{"@askdb/enrich"}</code>.</p>
 
 
 ```
-pnpm add @askdb/core @askdb/postgres
+npm add @askdb/core @askdb/postgres
 # Example model provider for live generation
-pnpm add ai @ai-sdk/openai
+npm add ai @ai-sdk/openai
 # Optional: only for live Postgres introspection
-pnpm add pg
+npm add pg
 # Optional: Prisma schema-file introspection (no live database required)
-pnpm add @askdb/introspect @askdb/prisma
-# Optional: only for custom Schema v2 enrichment authoring
-pnpm add @askdb/enrich
+npm add @askdb/introspect @askdb/prisma
+# Optional: only for custom enrichment authoring in your own UI
+npm add @askdb/enrich
 # Optional: browser enrichment UI served locally
-pnpm add @askdb/studio
+npm add @askdb/studio
 # Optional: only when you want retrieval over schema chunks
-pnpm add @askdb/rag
+npm add @askdb/rag
 ```
+
+
 
 ## Guides (outcome-first)
 
