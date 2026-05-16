@@ -1,18 +1,27 @@
+import { AskDbLogEvent } from "../logging/log-events.js";
+import type { AskDbLogger } from "../logging/askdb-logger.js";
 import {
-  AskDbLogEvent,
   formatSchemaForNlToSql,
-  formatSchemaV2ForNlToSql,
-  type AnyNormalizedSchema,
-  type AskDbLogger,
   type FormatNlToSqlOptions,
+} from "../schema/normalize.js";
+import type { AnyNormalizedSchema } from "../schema/types.js";
+import {
+  formatSchemaV2ForNlToSql,
   type NormalizedSchemaV2,
-} from "@askdb/core";
+} from "../schema/v2/index.js";
+import type { DialectSpec } from "./dialect-spec.js";
 
 function isV2(schema: AnyNormalizedSchema): schema is NormalizedSchemaV2 {
   return "schemaId" in schema;
 }
 
+/**
+ * Build the dialect-parameterized NL→SQL user prompt. The same scaffolding is used
+ * for every dialect; the dialect's `displayName` and `promptBrief` are interpolated
+ * to steer the model toward dialect-correct syntax.
+ */
 export function buildNlToSqlUserPrompt(
+  dialect: DialectSpec,
   question: string,
   schema: AnyNormalizedSchema,
   ambiguityNotes: readonly string[] = [],
@@ -58,12 +67,13 @@ export function buildNlToSqlUserPrompt(
     );
   }
   const lines = [
-    "You translate natural language questions into a single PostgreSQL SELECT (or WITH ... SELECT).",
+    `You translate natural language questions into a single ${dialect.displayName} SELECT (or WITH ... SELECT).`,
     "Rules:",
-    "- Output exactly one PostgreSQL SELECT query (CTE WITH is ok). End with optional semicolon.",
+    `- Output exactly one ${dialect.displayName} SELECT query (CTE WITH is ok). End with optional semicolon.`,
     '- Put the SQL only inside one markdown fenced block labelled ```sql (preferred). No extra commentary.',
     "- Use identifiers from the schema below; qualify table names where it helps readability.",
     "- Do NOT use DDL or write statements (INSERT, UPDATE, DELETE, etc.). SELECT-only.",
+    `- Dialect notes: ${dialect.promptBrief}`,
     "",
     "Database schema:",
     ddl,
@@ -82,5 +92,7 @@ export function buildNlToSqlUserPrompt(
   return lines.join("\n");
 }
 
-export const nlToSqlSystemPrompt =
-  "You are AskDB SQL generator—correct, deterministic PostgreSQL for analytics. Produce one SELECT (or WITH) only.";
+/** Dialect-parameterized system prompt for the NL→SQL generator. */
+export function buildNlToSqlSystemPrompt(dialect: DialectSpec): string {
+  return `You are AskDB SQL generator—correct, deterministic ${dialect.displayName} for analytics. Produce one SELECT (or WITH) only.`;
+}

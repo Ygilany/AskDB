@@ -140,6 +140,17 @@ export type IntrospectionResult = {
   isEmpty: boolean;
   /** Keyed by `"table:<schema>.<view>"`. */
   viewDefinitions: Record<string, string>;
+  /**
+   * Optional SQL dialect identifier the connector inferred for this source.
+   * Live connectors set this from the engine they connect to; schema-file
+   * connectors (e.g. `@askdb/prisma`) set it from the declared `datasource.provider`.
+   *
+   * Hosts may use this to auto-select the NL→SQL dialect when the user has not
+   * specified one explicitly. The string matches `@askdb/core`'s `DialectId`
+   * (e.g. `"postgres"`, `"mysql"`, `"sqlite"`, `"sqlserver"`, `"cockroachdb"`).
+   * Kept loose here to avoid a cross-package import for a stable string set.
+   */
+  provider?: string;
 };
 
 /**

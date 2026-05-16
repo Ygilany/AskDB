@@ -243,6 +243,7 @@ function buildNormalized(
 
   return {
     schemaId: physical.schemaId,
+    provider: physical.provider,
     tables,
     concepts: concepts?.concepts,
     warnings,

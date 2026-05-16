@@ -6,10 +6,14 @@ import {
   AskDbLogEvent,
   type AskDbLogLevel,
   type AskDbModeV1,
+  type AskDialectInput,
   type AskGenerateDeps,
+  type BuiltInDialectId,
   SchemaParseError,
+  SUPPORTED_DIALECT_IDS,
   formatAskDbModesV1,
   formatSupportedAskDbLogLevels,
+  isBuiltInDialectId,
   isSupportedAskDbLogLevel,
   parseAskDbModeV1,
   SqlValidationError,
@@ -20,7 +24,6 @@ import {
   loadSchema,
   resolveAskDbAiConfig,
 } from "@askdb/core";
-import { postgresDialect } from "@askdb/postgres";
 import { Command } from "commander";
 import { runInitCli } from "./init.js";
 import { runIntrospectCli } from "./introspect.js";
@@ -141,6 +144,51 @@ function findSensitiveReferencesInSql(
     return true;
   });
 }
+type ResolvedDialect = {
+  dialect: AskDialectInput;
+  source: "config" | "schema" | "default";
+  note?: string;
+};
+
+const DIALECT_ID_LIST = SUPPORTED_DIALECT_IDS.join(", ");
+
+/**
+ * Resolve the NL→SQL dialect for an `ask` invocation.
+ *
+ * Priority: `askdb.config.dialect` → `schema.provider` (set by introspect) → `"postgres"`.
+ * When config and schema disagree the config wins; the mismatch surfaces as a note
+ * the caller can log/print so users know we ignored the schema's hint.
+ *
+ * Throws `AskDbError` when the schema persisted a provider id that has no shipped
+ * `DialectSpec` (e.g. a Prisma `mysql` schema introspected before MySQL specs ship).
+ */
+function resolveAskDbDialect(
+  configDialect: BuiltInDialectId | undefined,
+  schemaProvider: string | undefined,
+): ResolvedDialect {
+  if (configDialect) {
+    if (schemaProvider && schemaProvider !== configDialect) {
+      return {
+        dialect: configDialect,
+        source: "config",
+        note: `Using config.dialect '${configDialect}'; schema.json declared provider '${schemaProvider}'.`,
+      };
+    }
+    return { dialect: configDialect, source: "config" };
+  }
+  if (schemaProvider) {
+    if (!isBuiltInDialectId(schemaProvider)) {
+      throw new AskDbError(
+        `Schema declares provider '${schemaProvider}', but AskDB does not yet ship a DialectSpec for it.\n` +
+          `Hint: set \`dialect: "postgres"\` (or another supported id) in askdb.config.ts to override. ` +
+          `Supported: ${DIALECT_ID_LIST}.`,
+      );
+    }
+    return { dialect: schemaProvider, source: "schema" };
+  }
+  return { dialect: "postgres", source: "default" };
+}
+
 function resolveAskDbLogLevel(opts: {
   verbose?: boolean;
   logLevel?: string;
@@ -284,6 +332,26 @@ program
 
       try {
         const schema = loadSchemaFromPath(opts.schema);
+        const schemaProvider =
+          "provider" in schema && typeof schema.provider === "string"
+            ? schema.provider
+            : undefined;
+        const resolvedDialect = resolveAskDbDialect(
+          runtime.nlToSql.dialect,
+          schemaProvider,
+        );
+        if (resolvedDialect.note) {
+          logger.info(
+            {
+              event: "askdb.pipeline.dialect_override",
+              configDialect: runtime.nlToSql.dialect,
+              schemaProvider,
+              effectiveDialect: resolvedDialect.dialect,
+            },
+            resolvedDialect.note,
+          );
+          console.error(`Note: ${resolvedDialect.note}`);
+        }
 
         type AskModel = Parameters<typeof ask>[0]["model"];
         const model: AskModel = mockSql
@@ -298,7 +366,7 @@ program
           question: opts.question,
           schema,
           model,
-          dialect: postgresDialect,
+          dialect: resolvedDialect.dialect,
           logger,
           mode,
           explain: Boolean(opts.explain),

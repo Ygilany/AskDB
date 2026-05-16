@@ -94,9 +94,23 @@ async function main(): Promise<void> {
     throw new Error(`smoke: expected sql ${JSON.stringify(fakeSql)}, got ${JSON.stringify(out.sql)}`);
   }
 
-  // Verify @askdb/postgres exports the expected surface.
-  if (typeof postgresDialect.generate !== "function") {
-    throw new Error("smoke: postgresDialect.generate is not a function");
+  // Verify @askdb/postgres re-exports the DialectSpec from @askdb/core.
+  if (postgresDialect.id !== "postgres") {
+    throw new Error("smoke: postgresDialect.id is not 'postgres'");
+  }
+  if (typeof postgresDialect.promptBrief !== "string" || postgresDialect.promptBrief.length === 0) {
+    throw new Error("smoke: postgresDialect.promptBrief is missing");
+  }
+  // Smoke a string-id dialect through ask().
+  const stringIdOut = await ask({
+    question: "How many users are there?",
+    schema,
+    model: {} as never,
+    dialect: "postgres",
+    deps: { generateText: (async () => ({ text: `\`\`\`sql\n${fakeSql}\n\`\`\`` } as never)) as never },
+  });
+  if (stringIdOut.sql !== fakeSql) {
+    throw new Error(`smoke: dialect:"postgres" produced ${JSON.stringify(stringIdOut.sql)}`);
   }
   const connector = createPostgresConnector();
   const templates = connector.templates!();

@@ -4,6 +4,7 @@ export {
   type AskPipelineOptions,
   type AskPipelineResult,
   type AskDialect,
+  type AskDialectInput,
   type AskDialectGenerateOptions,
   type AskDialectGenerateResult,
   type AskGenerateDeps,
@@ -90,6 +91,35 @@ export {
   type NlToSqlSchemaFormatStats,
 } from "./schema/normalize.js";
 export { extractSqlFromModelText } from "./sql/extract-sql.js";
+export {
+  type DialectId,
+  type DialectSpec,
+  type BuiltInDialectId,
+  POSTGRES_DIALECT,
+  COCKROACHDB_DIALECT,
+  BUILT_IN_DIALECTS,
+  SUPPORTED_DIALECT_IDS,
+  isBuiltInDialectId,
+  getDialectSpec,
+} from "./sql/dialect-spec.js";
+export {
+  generateSelectSql,
+  type GenerateSelectSqlResult,
+  type GenerateSqlDeps,
+} from "./sql/generate.js";
+export {
+  validateSelectSql,
+  buildSelectGuardrailExplanation,
+  type SelectGuardrailExplain,
+} from "./sql/validate.js";
+export {
+  buildNlToSqlUserPrompt,
+  buildNlToSqlSystemPrompt,
+} from "./sql/prompt.js";
+export {
+  assertNlToSqlInputs,
+  nlToSqlAmbiguityNotes,
+} from "./sql/schema-question-precheck.js";
 export {
   resolveAskDbAiConfig,
   resolveAskDbEmbeddingConfig,

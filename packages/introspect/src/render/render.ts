@@ -43,7 +43,7 @@ export function renderToSchemaV2(
   options: RenderOptions,
 ): RenderResult {
   const warnings: IntrospectionWarning[] = [];
-  const fresh = toV2SchemaJson(schema, options.schemaId);
+  const fresh = toV2SchemaJson(schema, options.schemaId, options.provider);
   const v2 = options.existingArtifactDir
     ? mergeWithExistingArtifact(fresh, options.existingArtifactDir, warnings)
     : fresh;
@@ -180,10 +180,14 @@ function appendOrphanWarning(
 /**
  * Pure-function form of {@link renderToSchemaV2} — exposed so callers (and
  * M6's merge) can produce the V2 JSON without writing it to disk.
+ *
+ * Pass `provider` (e.g. `"postgres"`, `"mysql"`) to persist the detected
+ * dialect so hosts can auto-select it at `ask` time.
  */
 export function toV2SchemaJson(
   schema: SqlSchema,
   schemaId: string,
+  provider?: string,
 ): V2SchemaJson {
   const tables: V2Table[] = [];
 
@@ -203,6 +207,7 @@ export function toV2SchemaJson(
   return {
     version: 2,
     schemaId,
+    ...(provider ? { provider } : {}),
     tables,
   };
 }

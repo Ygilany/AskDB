@@ -6,6 +6,13 @@ import { DEFAULT_ASKDB_MODE, type AskDbModeV1 } from "./modes/types.js";
 import type { Retriever } from "./retrieval/types.js";
 import { synthesizeRetrievedDdl } from "./retrieval/synthesize-ddl.js";
 import type { NormalizedSchemaV2 } from "./schema/v2/normalized.js";
+import {
+  type BuiltInDialectId,
+  type DialectSpec,
+  getDialectSpec,
+  isBuiltInDialectId,
+} from "./sql/dialect-spec.js";
+import { generateSelectSql } from "./sql/generate.js";
 
 /** Options forwarded to a dialect's generator. Stable across dialects. */
 export type AskDialectGenerateOptions = {
@@ -22,7 +29,15 @@ export type AskDialectGenerateResult = {
   explain?: unknown;
 };
 
-/** Adapter that knows how to turn a question + schema + model into validated dialect-specific SQL. */
+/**
+ * Escape-hatch interface for fully custom NL→SQL generators (agentic flows,
+ * tool-calling, non-SELECT targets, fine-tuned models with bespoke prompts).
+ *
+ * 95% of consumers should pass a {@link BuiltInDialectId} (e.g. `"postgres"`) or
+ * a {@link DialectSpec} to `ask({ dialect })` and let the centralized pipeline
+ * handle prompt assembly + validation. Implement `AskDialect` only when those
+ * defaults won't fit.
+ */
 export type AskDialect = {
   generate(
     question: string,
@@ -31,6 +46,14 @@ export type AskDialect = {
     options?: AskDialectGenerateOptions,
   ): Promise<AskDialectGenerateResult>;
 };
+
+/**
+ * Anything `ask()` accepts as a dialect:
+ *   - A {@link BuiltInDialectId} string (e.g. `"postgres"`) — looked up in the registry.
+ *   - A {@link DialectSpec} object — descriptive; uses the centralized generator.
+ *   - An {@link AskDialect} object — full escape hatch.
+ */
+export type AskDialectInput = BuiltInDialectId | DialectSpec | AskDialect;
 
 /** Generic deps the pipeline forwards into the dialect (test-time mock for `generateText`, etc.). */
 export type AskGenerateDeps = {
@@ -41,8 +64,11 @@ export type AskPipelineOptions = {
   question: string;
   schema: AnyNormalizedSchema;
   model: LanguageModel;
-  /** Required: the SQL dialect adapter to use (e.g. `postgresDialect` from `@askdb/postgres`). */
-  dialect: AskDialect;
+  /**
+   * Required: the SQL dialect. Accepts a {@link BuiltInDialectId} (e.g. `"postgres"`),
+   * a {@link DialectSpec} descriptor, or a fully custom {@link AskDialect} adapter.
+   */
+  dialect: AskDialectInput;
   /** When true, callers may inspect heuristic guardrail metadata (hosts/CLI). */
   explain?: boolean;
   /**
@@ -104,7 +130,8 @@ export async function ask(options: AskPipelineOptions): Promise<AskPipelineResul
     logger,
     omitSensitive,
   });
-  const generated = await options.dialect.generate(
+  const dialect = resolveDialect(options.dialect);
+  const generated = await dialect.generate(
     options.question,
     options.schema,
     options.model,
@@ -119,6 +146,35 @@ export async function ask(options: AskPipelineOptions): Promise<AskPipelineResul
   const sql = generated.sql;
   const explain = generated.explain;
   return explain !== undefined ? { sql, explain } : { sql };
+}
+
+function isAskDialect(value: DialectSpec | AskDialect): value is AskDialect {
+  return typeof (value as AskDialect).generate === "function";
+}
+
+/**
+ * Normalize an {@link AskDialectInput} to an {@link AskDialect}. Built-in ids
+ * and {@link DialectSpec}s are wrapped around the centralized
+ * {@link generateSelectSql} generator; an {@link AskDialect} is passed through.
+ */
+function resolveDialect(input: AskDialectInput): AskDialect {
+  if (typeof input === "string") {
+    if (!isBuiltInDialectId(input)) {
+      throw new Error(
+        `Unknown dialect id '${input}'. Pass a built-in DialectId, a DialectSpec object, or a custom AskDialect.`,
+      );
+    }
+    return specToDialect(getDialectSpec(input));
+  }
+  if (isAskDialect(input)) return input;
+  return specToDialect(input);
+}
+
+function specToDialect(spec: DialectSpec): AskDialect {
+  return {
+    generate: (question, schema, model, options) =>
+      generateSelectSql(spec, question, schema, model, options),
+  };
 }
 
 /** Default chunk-count threshold below which the full DDL is preferred. */

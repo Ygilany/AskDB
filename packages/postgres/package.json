@@ -1,7 +1,7 @@
 {
   "name": "@askdb/postgres",
   "version": "0.2.0-beta.1",
-  "description": "AskDB Postgres integration: dialect (NL→SQL prompt + validate + generate), introspection connector (live + from-export bundle), catalog SQL templates, and a `pg`-backed catalog query runner.",
+  "description": "AskDB Postgres integration: re-exports the Postgres DialectSpec from @askdb/core and ships the introspection connector (live + from-export bundle), catalog SQL templates, and a `pg`-backed catalog query runner.",
   "keywords": [
     "askdb",
     "postgres",
@@ -49,9 +49,7 @@
   },
   "dependencies": {
     "@askdb/core": "workspace:*",
-    "@askdb/introspect": "workspace:*",
-    "ai": "^4.3.19",
-    "zod": "^3.24.4"
+    "@askdb/introspect": "workspace:*"
   },
   "peerDependencies": {
     "pg": ">=8"
