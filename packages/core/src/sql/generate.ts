@@ -1,24 +1,24 @@
 import type { LanguageModel } from "ai";
 import { generateText as defaultGenerateText } from "ai";
-import {
-  AskDbLogEvent,
-  SqlGenerationError,
-  extractSqlFromModelText,
-  type AnyNormalizedSchema,
-  type AskDbLogger,
-  type FormatNlToSqlOptions,
-} from "@askdb/core";
-import { buildNlToSqlUserPrompt, nlToSqlSystemPrompt } from "./prompt.js";
+import { SqlGenerationError } from "../errors.js";
+import { AskDbLogEvent } from "../logging/log-events.js";
+import type { AskDbLogger } from "../logging/askdb-logger.js";
+import type { FormatNlToSqlOptions } from "../schema/normalize.js";
+import type { AnyNormalizedSchema } from "../schema/types.js";
+import type { DialectSpec } from "./dialect-spec.js";
+import { extractSqlFromModelText } from "./extract-sql.js";
+import { buildNlToSqlSystemPrompt, buildNlToSqlUserPrompt } from "./prompt.js";
 import { assertNlToSqlInputs, nlToSqlAmbiguityNotes } from "./schema-question-precheck.js";
-import type { PostgresSelectGuardrailExplain } from "./validate.js";
-import { buildPostgresSelectGuardrailExplanation, validatePostgresSelectSql } from "./validate.js";
-
-export type { PostgresSelectGuardrailExplain } from "./validate.js";
+import {
+  buildSelectGuardrailExplanation,
+  validateSelectSql,
+  type SelectGuardrailExplain,
+} from "./validate.js";
 
 export type GenerateSqlDeps = {
   generateText?: typeof defaultGenerateText;
   logger?: AskDbLogger;
-  /** When true, include heuristic guardrail explanation in {@link GeneratePostgresSelectSqlResult.explain}. */
+  /** When true, include heuristic guardrail explanation in {@link GenerateSelectSqlResult.explain}. */
   explain?: boolean;
   /**
    * When true, omit sensitive identifiers from NL→SQL DDL (stricter). Default false — names are listed
@@ -35,17 +35,23 @@ export type GenerateSqlDeps = {
 };
 
 /** Result of NL→SQL generation (always includes `sql`; `explain` when {@link GenerateSqlDeps.explain}). */
-export type GeneratePostgresSelectSqlResult = {
+export type GenerateSelectSqlResult = {
   sql: string;
-  explain?: PostgresSelectGuardrailExplain;
+  explain?: SelectGuardrailExplain;
 };
 
-export async function generatePostgresSelectSql(
+/**
+ * Dialect-parameterized NL→SQL generator. Validates inputs, builds the user/system
+ * prompt with the dialect's syntax brief, calls the model, extracts the fenced SQL,
+ * and runs the shared read-only validator (plus any dialect-specific `extraValidate`).
+ */
+export async function generateSelectSql(
+  dialect: DialectSpec,
   question: string,
   schema: AnyNormalizedSchema,
   model: LanguageModel,
   deps: GenerateSqlDeps = {},
-): Promise<GeneratePostgresSelectSqlResult> {
+): Promise<GenerateSelectSqlResult> {
   assertNlToSqlInputs(schema, question);
   const ambiguityNotes = nlToSqlAmbiguityNotes(question, schema);
   const generateText = deps.generateText ?? defaultGenerateText;
@@ -69,8 +75,9 @@ export async function generatePostgresSelectSql(
     try {
       const result = await generateText({
         model,
-        system: nlToSqlSystemPrompt,
+        system: buildNlToSqlSystemPrompt(dialect),
         prompt: buildNlToSqlUserPrompt(
+          dialect,
           question,
           schema,
           ambiguityNotes,
@@ -86,8 +93,8 @@ export async function generatePostgresSelectSql(
       throw new SqlGenerationError(`Model call failed: ${message}`, e);
     }
     const extracted = extractSqlFromModelText(text);
-    const sql = validatePostgresSelectSql(extracted);
-    const explain = deps.explain ? buildPostgresSelectGuardrailExplanation(sql) : undefined;
+    const sql = validateSelectSql(dialect, extracted);
+    const explain = deps.explain ? buildSelectGuardrailExplanation(sql) : undefined;
     logger?.info(
       {
         event: AskDbLogEvent.PipelineGenerateComplete,

@@ -10,7 +10,10 @@ import {
   AskDbLogEvent,
   type AskDbLogLevel,
   type AskDbModeV1,
+  type AskDialectInput,
+  type BuiltInDialectId,
   DEFAULT_ASKDB_MODE,
+  isBuiltInDialectId,
   SqlGenerationError,
   SqlValidationError,
   ask,
@@ -22,7 +25,6 @@ import {
   parseAskDbModeV1,
   resolveAskDbAiConfig,
 } from "@askdb/core";
-import { postgresDialect } from "@askdb/postgres";
 import type { AskHttpErrorResponse, AskHttpRequest, AskHttpSuccessResponse } from "./types.js";
 
 export type AskDbHttpServerOptions = {
@@ -149,6 +151,20 @@ async function resolveSchemaPathWithFallbacks(schemaPath: string): Promise<{ res
 function modeFromHeader(v: string | undefined): AskDbModeV1 | undefined {
   if (!v) return undefined;
   return parseAskDbModeV1(v);
+}
+
+/**
+ * Resolve the NL→SQL dialect for an HTTP `/ask` invocation. Same priority as
+ * the CLI: `config.dialect` → `schema.provider` → `"postgres"`. Mirrors the
+ * CLI's behavior so a request hits the same dialect the user authored against.
+ */
+function resolveHttpApiDialect(
+  configDialect: BuiltInDialectId | undefined,
+  schemaProvider: string | undefined,
+): AskDialectInput {
+  if (configDialect) return configDialect;
+  if (schemaProvider && isBuiltInDialectId(schemaProvider)) return schemaProvider;
+  return "postgres";
 }
 
 export function createAskDbHttpServer(options: AskDbHttpServerOptions = {}) {
@@ -279,11 +295,17 @@ export function createAskDbHttpServer(options: AskDbHttpServerOptions = {}) {
         ? (undefined as unknown as AskModel)
         : ((await createAskDbLanguageModelFromEnv(rt.ai.aiEnv)) as AskModel);
 
+      const schemaProvider =
+        "provider" in schema && typeof schema.provider === "string"
+          ? schema.provider
+          : undefined;
+      const dialect = resolveHttpApiDialect(rt.nlToSql.dialect, schemaProvider);
+
       const out = await ask({
         question: body.question,
         schema,
         model,
-        dialect: postgresDialect,
+        dialect,
         logger,
         mode: mode ?? DEFAULT_ASKDB_MODE,
         explain: Boolean(body.explain),

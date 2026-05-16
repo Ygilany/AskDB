@@ -3,14 +3,12 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it, vi } from "vitest";
-import {
-  AskDbError,
-  AskDbLogEvent,
-  SqlValidationError,
-  loadNormalizedSchemaFromJson,
-  type NormalizedSchema,
-} from "@askdb/core";
-import { generatePostgresSelectSql } from "./generate.js";
+import { AskDbError, SqlValidationError } from "../errors.js";
+import { AskDbLogEvent } from "../logging/log-events.js";
+import { loadNormalizedSchemaFromJson } from "../schema/parse.js";
+import type { NormalizedSchema } from "../schema/types.js";
+import { POSTGRES_DIALECT } from "./dialect-spec.js";
+import { generateSelectSql } from "./generate.js";
 
 const minimalSchema: NormalizedSchema = {
   tables: [{ name: "users", columns: [{ name: "id", type: "integer", nullable: false, primaryKey: true }] }],
@@ -22,12 +20,12 @@ const here = dirname(fileURLToPath(import.meta.url));
 const sensitiveFixture = join(here, "../../../../fixtures/schemas/orders-users-sensitive.schema.json");
 
 
-describe("generatePostgresSelectSql", () => {
+describe("generateSelectSql (postgres)", () => {
   it("parses fenced SQL and validates SELECT", async () => {
     const generateText = vi.fn(async () => ({
       text: "```sql\nSELECT id FROM users\n```",
     }));
-    const out = await generatePostgresSelectSql("list users", minimalSchema, fakeModel, {
+    const out = await generateSelectSql(POSTGRES_DIALECT, "list users", minimalSchema, fakeModel, {
       generateText,
     });
     expect(out.sql).toBe("SELECT id FROM users");
@@ -39,7 +37,7 @@ describe("generatePostgresSelectSql", () => {
       text: "```sql\nDELETE FROM users\n```",
     }));
     await expect(
-      generatePostgresSelectSql("nuke", minimalSchema, fakeModel, {
+      generateSelectSql(POSTGRES_DIALECT, "nuke", minimalSchema, fakeModel, {
         generateText,
       }),
     ).rejects.toThrow(SqlValidationError);
@@ -50,7 +48,7 @@ describe("generatePostgresSelectSql", () => {
       text: "```sql\nSELECT 1\n```",
     }));
     await expect(
-      generatePostgresSelectSql("anything", { tables: [] }, fakeModel, { generateText }),
+      generateSelectSql(POSTGRES_DIALECT, "anything", { tables: [] }, fakeModel, { generateText }),
     ).rejects.toThrow(AskDbError);
     expect(generateText).not.toHaveBeenCalled();
   });
@@ -59,7 +57,7 @@ describe("generatePostgresSelectSql", () => {
     const generateText = vi.fn(async () => ({
       text: "```sql\nSELECT id FROM users\n```",
     }));
-    await generatePostgresSelectSql("How do orders join to users?", minimalSchema, fakeModel, {
+    await generateSelectSql(POSTGRES_DIALECT, "How do orders join to users?", minimalSchema, fakeModel, {
       generateText,
     });
     const prompt = (generateText.mock.calls[0]![0] as { prompt: string }).prompt;
@@ -72,7 +70,7 @@ describe("generatePostgresSelectSql", () => {
     const generateText = vi.fn(async () => ({
       text: "```sql\nSELECT id FROM users\n```",
     }));
-    await generatePostgresSelectSql("Run select * from phantom", minimalSchema, fakeModel, {
+    await generateSelectSql(POSTGRES_DIALECT, "Run select * from phantom", minimalSchema, fakeModel, {
       generateText,
     });
     const prompt = (generateText.mock.calls[0]![0] as { prompt: string }).prompt;
@@ -86,7 +84,7 @@ describe("generatePostgresSelectSql", () => {
       text: "```sql\nSELECT id FROM users\n```",
     }));
     const debug = vi.fn();
-    await generatePostgresSelectSql("list users", schema, fakeModel, {
+    await generateSelectSql(POSTGRES_DIALECT, "list users", schema, fakeModel, {
       generateText,
       logger: { info: vi.fn(), error: vi.fn(), debug },
     });
@@ -109,7 +107,7 @@ describe("generatePostgresSelectSql", () => {
       text: "```sql\nSELECT id FROM users\n```",
     }));
     const debug = vi.fn();
-    await generatePostgresSelectSql("list users", schema, fakeModel, {
+    await generateSelectSql(POSTGRES_DIALECT, "list users", schema, fakeModel, {
       generateText,
       omitSensitiveIdentifiersFromNlToSqlPrompt: true,
       logger: { info: vi.fn(), error: vi.fn(), debug },
@@ -130,7 +128,7 @@ describe("generatePostgresSelectSql", () => {
     const generateText = vi.fn(async () => ({
       text: "```sql\nWITH c AS (SELECT 1 AS n) SELECT n FROM c\n```",
     }));
-    const out = await generatePostgresSelectSql("count", minimalSchema, fakeModel, {
+    const out = await generateSelectSql(POSTGRES_DIALECT, "count", minimalSchema, fakeModel, {
       generateText,
       explain: true,
     });

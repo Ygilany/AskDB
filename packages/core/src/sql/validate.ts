@@ -1,7 +1,7 @@
-import type { SqlValidationRuleCode } from "@askdb/core";
-import { SqlValidationError } from "@askdb/core";
+import { SqlValidationError, type SqlValidationRuleCode } from "../errors.js";
+import type { DialectSpec } from "./dialect-spec.js";
 
-const FORBIDDEN = new Set([
+const BASE_FORBIDDEN: readonly string[] = [
   "insert",
   "update",
   "delete",
@@ -15,17 +15,18 @@ const FORBIDDEN = new Set([
   "analyze",
   "copy",
   "call",
-]);
+];
 
 function validationError(rule: SqlValidationRuleCode, summary: string, hint: string): SqlValidationError {
   return new SqlValidationError(summary, rule, hint);
 }
 
 /**
- * Phase-1 dev guardrails: single-statement read shape. Not a SQL parser;
- * blocks obvious foot-guns and multi-statement abuse.
+ * Dialect-agnostic read-only SELECT guardrail. Not a SQL parser — blocks obvious
+ * foot-guns and multi-statement abuse. The dialect's `extraForbiddenKeywords`
+ * augment the base list; `extraValidate` runs after base checks pass.
  */
-export function validatePostgresSelectSql(sql: string): string {
+export function validateSelectSql(dialect: DialectSpec, sql: string): string {
   const trimmed = sql.trim();
   if (!trimmed) {
     throw validationError(
@@ -63,7 +64,8 @@ export function validatePostgresSelectSql(sql: string): string {
   }
 
   const lower = withoutStrings.toLowerCase();
-  for (const word of FORBIDDEN) {
+  const forbidden = [...BASE_FORBIDDEN, ...(dialect.extraForbiddenKeywords ?? [])];
+  for (const word of forbidden) {
     const re = new RegExp(`\\b${word}\\b`, "i");
     if (re.test(lower)) {
       throw validationError(
@@ -74,18 +76,20 @@ export function validatePostgresSelectSql(sql: string): string {
     }
   }
 
-  return trimmed.replace(/;\s*$/, "").trim();
+  const normalized = trimmed.replace(/;\s*$/, "").trim();
+  dialect.extraValidate?.(normalized);
+  return normalized;
 }
 
-/** Explanation of guardrails satisfied by a string already passing {@link validatePostgresSelectSql}. */
-export type PostgresSelectGuardrailExplain = {
+/** Explanation of guardrails satisfied by a string already passing {@link validateSelectSql}. */
+export type SelectGuardrailExplain = {
   statementKind: "select" | "with";
   checksVerified: readonly string[];
   remediationNote: string;
 };
 
 /** Build a structured summary for hosts/CLI `--explain`; input must already be validated. */
-export function buildPostgresSelectGuardrailExplanation(validatedSql: string): PostgresSelectGuardrailExplain {
+export function buildSelectGuardrailExplanation(validatedSql: string): SelectGuardrailExplain {
   const trimmed = validatedSql.trim();
   const head = firstMeaningfulToken(stripSqlStringLiterals(trimmed));
   const statementKind: "select" | "with" = head === "with" ? "with" : "select";

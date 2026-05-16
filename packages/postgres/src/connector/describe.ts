@@ -334,7 +334,7 @@ export function foldIntrospectionResult(input: FoldInput): IntrospectionResult {
         ns.sequences.length === 0,
     );
 
-  return { schema, warnings, isEmpty, viewDefinitions };
+  return { schema, warnings, isEmpty, viewDefinitions, provider: "postgres" };
 }
 
 function buildColumn(

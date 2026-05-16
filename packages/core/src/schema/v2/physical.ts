@@ -27,6 +27,13 @@ export const v2TableSchema = z.object({
 export const v2SchemaJsonSchema = z.object({
   version: z.literal(2),
   schemaId: z.string().min(1),
+  /**
+   * Optional SQL dialect the connector inferred when introspection produced
+   * this file (e.g. `"postgres"`, `"mysql"`, `"sqlite"`). Hosts use this to
+   * auto-select the NL→SQL dialect; `askdb.config.dialect` overrides it.
+   * Matches `DialectId` in `@askdb/core` — kept loose to forward-allow new ids.
+   */
+  provider: z.string().min(1).optional(),
   tables: z.array(v2TableSchema).min(1),
 });
 

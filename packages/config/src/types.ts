@@ -1,4 +1,10 @@
-import type { AskDbLogLevel, AskDbModeV1, AskDbRagEmbedder, AskDbRagStore } from "./constants.js";
+import type {
+  AskDbDialectId,
+  AskDbLogLevel,
+  AskDbModeV1,
+  AskDbRagEmbedder,
+  AskDbRagStore,
+} from "./constants.js";
 
 /**
  * Authoring-time AskDB configuration: nested groups (`ai`, `database`, `introspection`, `rag`, …)
@@ -184,6 +190,16 @@ export type AskDbConfig = {
   };
 
   introspection: AskDbIntrospectionConfig;
+
+  /**
+   * Override the NL→SQL dialect. When unset, the dialect is inferred from the
+   * introspection provider (or, for Prisma, from the detected `datasource.provider`).
+   * Use this when the inferred dialect is wrong — e.g. Prisma `schema.prisma` declares
+   * `provider = "postgresql"` but you actually target a different engine.
+   *
+   * Keep aligned with `DialectId` in `@askdb/core`. Currently shipped specs: `"postgres"`, `"cockroachdb"`.
+   */
+  dialect?: AskDbDialectId;
 
   rag: {
     embedder: AskDbRagEmbedder;

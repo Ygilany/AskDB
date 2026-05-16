@@ -2,7 +2,8 @@ import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { AskDbError, loadNormalizedSchemaFromJson } from "@askdb/core";
+import { AskDbError } from "../errors.js";
+import { loadNormalizedSchemaFromJson } from "../schema/parse.js";
 import { assertNlToSqlInputs, nlToSqlAmbiguityNotes } from "./schema-question-precheck.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));

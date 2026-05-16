@@ -33,7 +33,14 @@ export async function introspect<TInput>(
 
   if (!renderOptions) return result;
 
-  const render = renderToSchemaV2(result.schema, renderOptions);
+  // Forward the connector-detected provider into the render unless the caller
+  // already supplied one explicitly. Lets hosts auto-select the NL→SQL dialect
+  // from the persisted `schema.json` without re-introspection.
+  const effectiveRenderOptions: RenderOptions =
+    renderOptions.provider === undefined && result.provider !== undefined
+      ? { ...renderOptions, provider: result.provider }
+      : renderOptions;
+  const render = renderToSchemaV2(result.schema, effectiveRenderOptions);
   return {
     ...result,
     warnings: [...result.warnings, ...render.warnings],
