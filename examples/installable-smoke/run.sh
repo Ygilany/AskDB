@@ -20,7 +20,7 @@ pnpm -C "$ROOT" -r build >/dev/null
 
 echo "smoke: packing tarballs…"
 mkdir -p "$WORK/tarballs"
-for pkg in packages/config packages/core packages/introspect packages/postgres packages/prisma packages/enrich packages/tui apps/cli apps/studio apps/http-api; do
+for pkg in packages/config packages/core packages/introspect packages/postgres packages/prisma packages/enrich packages/tui packages/mysql packages/sqlite packages/sqlserver apps/cli apps/studio apps/http-api; do
   (cd "$ROOT/$pkg" && pnpm pack --pack-destination "$WORK/tarballs" >/dev/null)
 done
 for pkg in packages/rag; do
@@ -47,6 +47,12 @@ TUI_TARBALL="$(ls "$WORK/tarballs"/askdb-tui-*.tgz | head -n1)"
 [ -f "$TUI_TARBALL" ] || { echo "smoke: missing tui tarball" >&2; exit 1; }
 RAG_TARBALL="$(ls "$WORK/tarballs"/askdb-rag-*.tgz | head -n1)"
 [ -f "$RAG_TARBALL" ] || { echo "smoke: missing rag tarball" >&2; exit 1; }
+MYSQL_TARBALL="$(ls "$WORK/tarballs"/askdb-mysql-*.tgz | head -n1)"
+[ -f "$MYSQL_TARBALL" ] || { echo "smoke: missing mysql tarball" >&2; exit 1; }
+SQLITE_TARBALL="$(ls "$WORK/tarballs"/askdb-sqlite-*.tgz | head -n1)"
+[ -f "$SQLITE_TARBALL" ] || { echo "smoke: missing sqlite tarball" >&2; exit 1; }
+SQLSERVER_TARBALL="$(ls "$WORK/tarballs"/askdb-sqlserver-*.tgz | head -n1)"
+[ -f "$SQLSERVER_TARBALL" ] || { echo "smoke: missing sqlserver tarball" >&2; exit 1; }
 
 echo "smoke: validating @askdb/config tarball contents…"
 CONFIG_TARBALL_FILES="$(tar -tzf "$CONFIG_TARBALL")"
@@ -148,6 +154,36 @@ if grep -Eq '(^package/src/|\.test\.)' <<<"$RAG_TARBALL_FILES"; then
   exit 1
 fi
 
+echo "smoke: validating @askdb/mysql tarball contents…"
+MYSQL_TARBALL_FILES="$(tar -tzf "$MYSQL_TARBALL")"
+grep -q '^package/dist/index.js$' <<<"$MYSQL_TARBALL_FILES"
+grep -q '^package/README.md$' <<<"$MYSQL_TARBALL_FILES"
+grep -q '^package/LICENSE$' <<<"$MYSQL_TARBALL_FILES"
+if grep -Eq '(^package/src/|\.test\.)' <<<"$MYSQL_TARBALL_FILES"; then
+  echo "smoke: FAILED — @askdb/mysql tarball includes source/tests" >&2
+  exit 1
+fi
+
+echo "smoke: validating @askdb/sqlite tarball contents…"
+SQLITE_TARBALL_FILES="$(tar -tzf "$SQLITE_TARBALL")"
+grep -q '^package/dist/index.js$' <<<"$SQLITE_TARBALL_FILES"
+grep -q '^package/README.md$' <<<"$SQLITE_TARBALL_FILES"
+grep -q '^package/LICENSE$' <<<"$SQLITE_TARBALL_FILES"
+if grep -Eq '(^package/src/|\.test\.)' <<<"$SQLITE_TARBALL_FILES"; then
+  echo "smoke: FAILED — @askdb/sqlite tarball includes source/tests" >&2
+  exit 1
+fi
+
+echo "smoke: validating @askdb/sqlserver tarball contents…"
+SQLSERVER_TARBALL_FILES="$(tar -tzf "$SQLSERVER_TARBALL")"
+grep -q '^package/dist/index.js$' <<<"$SQLSERVER_TARBALL_FILES"
+grep -q '^package/README.md$' <<<"$SQLSERVER_TARBALL_FILES"
+grep -q '^package/LICENSE$' <<<"$SQLSERVER_TARBALL_FILES"
+if grep -Eq '(^package/src/|\.test\.)' <<<"$SQLSERVER_TARBALL_FILES"; then
+  echo "smoke: FAILED — @askdb/sqlserver tarball includes source/tests" >&2
+  exit 1
+fi
+
 echo "smoke: staging consumer fixture…"
 cp -R "$SCRIPT_DIR/consumer" "$WORK/consumer"
 # Wire the just-packed AskDB tarballs into the consumer's package.json.
@@ -199,7 +235,10 @@ node -e "
       askdb: 'file:$CLI_TARBALL',
       '@askdb/studio': 'file:$STUDIO_TARBALL',
       '@askdb/tui': 'file:$TUI_TARBALL',
-      '@askdb/rag': 'file:$RAG_TARBALL'
+      '@askdb/rag': 'file:$RAG_TARBALL',
+      '@askdb/mysql': 'file:$MYSQL_TARBALL',
+      '@askdb/sqlite': 'file:$SQLITE_TARBALL',
+      '@askdb/sqlserver': 'file:$SQLSERVER_TARBALL'
     }
   };
   fs.writeFileSync(p, JSON.stringify(j, null, 2) + '\n');
