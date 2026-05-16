@@ -1,0 +1,66 @@
+{
+  "name": "@askdb/mysql",
+  "version": "0.1.0-beta.0",
+  "description": "AskDB MySQL integration: introspection connector via information_schema and a mysql2-backed catalog query runner. Pairs with @askdb/core's MYSQL_DIALECT.",
+  "keywords": [
+    "askdb",
+    "mysql",
+    "mariadb",
+    "nl-to-sql",
+    "natural-language-to-sql",
+    "schema-v2",
+    "introspection",
+    "information-schema"
+  ],
+  "homepage": "https://github.com/Ygilany/AskDB#readme",
+  "bugs": {
+    "url": "https://github.com/Ygilany/AskDB/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Ygilany/AskDB.git",
+    "directory": "packages/mysql"
+  },
+  "license": "Apache-2.0",
+  "author": "Yahya Gilany",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE",
+    "NOTICE"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "lint": "tsc -p tsconfig.build.json --noEmit",
+    "test": "vitest run --config ../../vitest.config.ts"
+  },
+  "dependencies": {
+    "@askdb/core": "workspace:*",
+    "@askdb/introspect": "workspace:*"
+  },
+  "peerDependencies": {
+    "mysql2": ">=3"
+  },
+  "peerDependenciesMeta": {
+    "mysql2": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "mysql2": "^3.11.5",
+    "typescript": "^5.7.3",
+    "vitest": "^3.0.9"
+  }
+}
