@@ -7,7 +7,12 @@ import { AskDbError, SqlValidationError } from "../errors.js";
 import { AskDbLogEvent } from "../logging/log-events.js";
 import { loadNormalizedSchemaFromJson } from "../schema/parse.js";
 import type { NormalizedSchema } from "../schema/types.js";
-import { POSTGRES_DIALECT } from "./dialect-spec.js";
+import {
+  MYSQL_DIALECT,
+  POSTGRES_DIALECT,
+  SQLITE_DIALECT,
+  SQLSERVER_DIALECT,
+} from "./dialect-spec.js";
 import { generateSelectSql } from "./generate.js";
 
 const minimalSchema: NormalizedSchema = {
@@ -136,5 +141,66 @@ describe("generateSelectSql (postgres)", () => {
     expect(out.explain?.statementKind).toBe("with");
     expect(out.explain?.checksVerified).toContain("no_blocked_write_or_ddl_keywords");
     expect(out.explain?.remediationNote).toContain("Heuristic");
+  });
+});
+
+describe("generateSelectSql — prompt parameterization per dialect", () => {
+  async function capturedPrompt(
+    dialect: typeof POSTGRES_DIALECT,
+    sqlForModel: string,
+  ): Promise<{ system: string; prompt: string }> {
+    const generateText = vi.fn(async () => ({ text: `\`\`\`sql\n${sqlForModel}\n\`\`\`` }));
+    await generateSelectSql(dialect, "show me users", minimalSchema, fakeModel, {
+      generateText,
+    });
+    const call = generateText.mock.calls[0]![0] as { system: string; prompt: string };
+    return { system: call.system, prompt: call.prompt };
+  }
+
+  it("MySQL prompt mentions backticks and CONCAT(), system prompt names MySQL", async () => {
+    const { system, prompt } = await capturedPrompt(MYSQL_DIALECT, "SELECT id FROM users");
+    expect(system).toMatch(/MySQL/);
+    expect(prompt).toMatch(/MySQL SELECT/);
+    expect(prompt).toMatch(/backtick/i);
+    expect(prompt).toMatch(/CONCAT/);
+  });
+
+  it("SQLite prompt mentions strftime() and `||` concat, system prompt names SQLite", async () => {
+    const { system, prompt } = await capturedPrompt(SQLITE_DIALECT, "SELECT id FROM users");
+    expect(system).toMatch(/SQLite/);
+    expect(prompt).toMatch(/SQLite SELECT/);
+    expect(prompt).toMatch(/strftime/);
+    expect(prompt).toMatch(/\|\|/);
+  });
+
+  it("SQL Server prompt mentions TOP and OFFSET .. FETCH NEXT", async () => {
+    const { system, prompt } = await capturedPrompt(
+      SQLSERVER_DIALECT,
+      "SELECT TOP (5) id FROM users",
+    );
+    expect(system).toMatch(/SQL Server/);
+    expect(prompt).toMatch(/SQL Server SELECT/);
+    expect(prompt).toMatch(/TOP/);
+    expect(prompt).toMatch(/OFFSET .* FETCH NEXT/);
+  });
+
+  it("rejects SQLite ATTACH via dialect's extraForbiddenKeywords", async () => {
+    const generateText = vi.fn(async () => ({
+      text: "```sql\nSELECT * FROM users; ATTACH 'other.db' AS o\n```",
+    }));
+    await expect(
+      generateSelectSql(SQLITE_DIALECT, "list users", minimalSchema, fakeModel, { generateText }),
+    ).rejects.toThrow(SqlValidationError);
+  });
+
+  it("rejects SQL Server EXEC via dialect's extraForbiddenKeywords", async () => {
+    const generateText = vi.fn(async () => ({
+      text: "```sql\nSELECT id FROM users WHERE id = exec('boom')\n```",
+    }));
+    await expect(
+      generateSelectSql(SQLSERVER_DIALECT, "list users", minimalSchema, fakeModel, {
+        generateText,
+      }),
+    ).rejects.toThrow(SqlValidationError);
   });
 });
