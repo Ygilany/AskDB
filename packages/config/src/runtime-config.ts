@@ -1,3 +1,4 @@
+import type { AskDbDialectId } from "./constants.js";
 import type { AskDbConfig } from "./types.js";
 import { flatToAiEnv, getAskDbRuntimeStore } from "./runtime-store.js";
 
@@ -55,6 +56,15 @@ export type AskDbRuntimeModesConfig = {
   omitSensitiveFromPrompt: boolean;
 };
 
+export type AskDbRuntimeNlToSqlConfig = {
+  /**
+   * Optional NL→SQL dialect override from `askdb.config.ts`. When set, hosts
+   * (CLI / HTTP API / Studio) pass this to `ask({ dialect })` instead of
+   * inferring from the introspection provider.
+   */
+  dialect: AskDbDialectId | undefined;
+};
+
 /**
  * Typed runtime view over the bootstrapped AskDB config snapshot.
  */
@@ -69,6 +79,7 @@ export type AskDbRuntimeConfig = {
   httpApi: AskDbRuntimeHttpApiConfig;
   dev: AskDbRuntimeDevConfig;
   modes: AskDbRuntimeModesConfig;
+  nlToSql: AskDbRuntimeNlToSqlConfig;
 };
 
 function pickFlat(flat: Readonly<Record<string, string>>, key: string): string | undefined {
@@ -144,6 +155,9 @@ export function getAskDbRuntimeConfig(): AskDbRuntimeConfig {
     modes: {
       askdbMode: structured.modes?.askdbMode ?? pickFlat(flat, "ASKDB_MODE"),
       omitSensitiveFromPrompt: Boolean(structured.modes?.omitSensitiveFromPrompt) || omitFromFlat,
+    },
+    nlToSql: {
+      dialect: structured.dialect,
     },
   };
 }

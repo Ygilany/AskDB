@@ -172,7 +172,27 @@ export async function describePrismaSchema(
     warnings,
     isEmpty: schema.schemas.every((ns) => ns.tables.length === 0),
     viewDefinitions: {},
+    provider: mapPrismaProviderToDialectId(provider),
   };
+}
+
+/**
+ * Map a Prisma `datasource.provider` to the matching AskDB `DialectId`
+ * (the stable id used by `@askdb/core`'s dialect registry).
+ */
+function mapPrismaProviderToDialectId(provider: PrismaSchemaProvider): string {
+  switch (provider) {
+    case "postgresql":
+      return "postgres";
+    case "mysql":
+      return "mysql";
+    case "sqlite":
+      return "sqlite";
+    case "sqlserver":
+      return "sqlserver";
+    case "cockroachdb":
+      return "cockroachdb";
+  }
 }
 
 function readPrismaSchema(schemaPath: string): PrismaSchemaInput {

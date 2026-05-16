@@ -9,6 +9,7 @@ import {
   askDbAiKeyMissingMessage,
   createAskDbEmbeddingModel,
   createAskDbLanguageModelFromEnv,
+  isBuiltInDialectId,
   loadSchema,
   resolveAskDbAiConfig,
   resolveAskDbEmbeddingConfig,
@@ -16,9 +17,9 @@ import {
   type AskDbAiConfig,
   type AskDbAiEnv,
   type AskDbAiProvider,
+  type AskDialectInput,
   type AskGenerateDeps,
 } from "@askdb/core";
-import { postgresDialect } from "@askdb/postgres";
 import {
   buildSchemaIndex,
   chunkContentHash,
@@ -285,11 +286,19 @@ async function askSampleQuestion(
         modelEnvVar: rt.ai.studioModel ? "ASKDB_STUDIO_MODEL" : undefined,
       })) as AskModel);
 
+  const schemaProvider =
+    "provider" in schema && typeof schema.provider === "string"
+      ? schema.provider
+      : undefined;
+  const dialect: AskDialectInput =
+    rt.nlToSql.dialect ??
+    (schemaProvider && isBuiltInDialectId(schemaProvider) ? schemaProvider : "postgres");
+
   const result = await ask({
     question: options.question,
     schema,
     model,
-    dialect: postgresDialect,
+    dialect,
     explain: true,
     ...(ragIndex
       ? {

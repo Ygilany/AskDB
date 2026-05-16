@@ -16,6 +16,7 @@ export type {
   AskDbRuntimeHttpApiConfig,
   AskDbRuntimeDevConfig,
   AskDbRuntimeModesConfig,
+  AskDbRuntimeNlToSqlConfig,
 } from "./runtime-config.js";
 export {
   mergeAskDbFlatIntoEnvMap,
@@ -65,6 +66,7 @@ export {
   ASKDB_RAG_STORES,
   ASKDB_AI_PROVIDERS,
   ASKDB_INTROSPECTION_PROVIDERS,
+  ASKDB_DIALECTS,
 } from "./constants.js";
 export type {
   AskDbModeV1,
@@ -73,4 +75,5 @@ export type {
   AskDbRagStore,
   AskDbAiProviderId,
   AskDbIntrospectionProvider,
+  AskDbDialectId,
 } from "./constants.js";

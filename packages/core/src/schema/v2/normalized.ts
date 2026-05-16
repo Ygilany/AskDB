@@ -34,6 +34,12 @@ export type NormalizedV2Table = {
 /** Fully normalized Schema v2 artifact — physical + describable layers merged. */
 export type NormalizedSchemaV2 = {
   schemaId: string;
+  /**
+   * SQL dialect identifier the connector inferred when introspection produced
+   * this schema (e.g. `"postgres"`, `"mysql"`). Hosts may use this to auto-
+   * select the NL→SQL dialect; `askdb.config.dialect` overrides it.
+   */
+  provider?: string;
   tables: NormalizedV2Table[];
   concepts?: V2Concept[];
   /** Structured warnings from ID validation (orphaned/missing ids). */

@@ -1,4 +1,5 @@
-import { AskDbError, type AnyNormalizedSchema } from "@askdb/core";
+import { AskDbError } from "../errors.js";
+import type { AnyNormalizedSchema } from "../schema/types.js";
 
 const JOIN_RELATION_HINT =
   /\b(join|joined|joins|inner\s+join|left\s+join|right\s+join|full\s+join|together\s+with|along\s+with|versus|vs\.?|compare|both\s+tables|each\s+other|relationship\s+between|how\s+they\s+relate)\b/i;

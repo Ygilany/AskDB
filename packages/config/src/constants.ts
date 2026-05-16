@@ -30,3 +30,11 @@ export type AskDbAiProviderId = (typeof ASKDB_AI_PROVIDERS)[number];
 
 export const ASKDB_INTROSPECTION_PROVIDERS = ["postgres", "prisma"] as const;
 export type AskDbIntrospectionProvider = (typeof ASKDB_INTROSPECTION_PROVIDERS)[number];
+
+/**
+ * NL→SQL dialect identifiers. Keep aligned with `DialectId` in `@askdb/core`
+ * (`packages/core/src/sql/dialect-spec.ts`). Only dialects with a shipped
+ * `DialectSpec` should be listed here.
+ */
+export const ASKDB_DIALECTS = ["postgres", "cockroachdb"] as const;
+export type AskDbDialectId = (typeof ASKDB_DIALECTS)[number];
