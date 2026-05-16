@@ -9,6 +9,7 @@ export {
 export type {
   AskDbRuntimeConfig,
   AskDbRuntimeAiConfig,
+  AskDbRuntimeIntrospectionConfig,
   AskDbRuntimeRagConfig,
   AskDbRuntimeRagEmbedderConfig,
   AskDbRuntimeLoggingConfig,
@@ -37,11 +38,20 @@ export type { AskDbEnvProjection } from "./projection.js";
 export { loadAskDbConfigProjection, loadAskDbConfigProjectionSync } from "./load-merge.js";
 export type {
   AskDbConfig,
+  AskDbAiConfig,
+  OpenaiAiConfig,
+  AzureAiConfig,
+  FoundryAiConfig,
+  AnthropicAiConfig,
+  GoogleAiConfig,
   OpenaiConfig,
   AzureConfig,
   FoundryConfig,
   AnthropicConfig,
   GoogleConfig,
+  AskDbIntrospectionConfig,
+  PostgresIntrospectionConfig,
+  PrismaIntrospectionConfig,
   OpenaiRagEmbedderConfig,
   FileStoreConfig,
   MemoryStoreConfig,

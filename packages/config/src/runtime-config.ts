@@ -38,6 +38,14 @@ export type AskDbRuntimeHttpApiConfig = {
   };
 };
 
+export type AskDbRuntimeIntrospectionConfig = {
+  provider: "postgres" | "prisma";
+  /** Resolved from `introspection.providerConfig.prisma.schemaPath`; `undefined` triggers auto-discovery in `@askdb/prisma`. */
+  prismaSchemaPath: string | undefined;
+  /** Resolved from `introspection.outputDir`; `undefined` means the package default (`./askdb/`) is used. */
+  outputDir: string | undefined;
+};
+
 export type AskDbRuntimeDevConfig = {
   mockSql: string | undefined;
 };
@@ -55,6 +63,7 @@ export type AskDbRuntimeConfig = {
   /** Canonical flattened map (subprocess env via {@link mergeAskDbFlatIntoEnvMap}). */
   readonly flat: Readonly<Record<string, string>>;
   ai: AskDbRuntimeAiConfig;
+  introspection: AskDbRuntimeIntrospectionConfig;
   rag: AskDbRuntimeRagConfig;
   logging: AskDbRuntimeLoggingConfig;
   httpApi: AskDbRuntimeHttpApiConfig;
@@ -89,6 +98,11 @@ export function getAskDbRuntimeConfig(): AskDbRuntimeConfig {
   const omitFromFlat =
     omitRaw !== undefined && ["1", "true", "yes"].includes(omitRaw.toLowerCase());
 
+  const prismaSchemaPathRaw =
+    structured.introspection.provider === "prisma"
+      ? structured.introspection.providerConfig?.prisma?.schemaPath?.trim()
+      : undefined;
+
   return {
     structured,
     flat,
@@ -96,6 +110,11 @@ export function getAskDbRuntimeConfig(): AskDbRuntimeConfig {
       aiEnv,
       tuiModel: structured.tui?.model ?? pickFlat(flat, "ASKDB_TUI_MODEL"),
       studioModel: structured.studio?.model ?? pickFlat(flat, "ASKDB_STUDIO_MODEL"),
+    },
+    introspection: {
+      provider: structured.introspection.provider,
+      prismaSchemaPath: prismaSchemaPathRaw || undefined,
+      outputDir: structured.introspection.outputDir?.trim() || undefined,
     },
     rag: {
       embedder: {

@@ -15,13 +15,6 @@ export default defineConfig({
         apiKey: env("OPENAI_API_KEY"),
         model: env("OPENAI_MODEL"),
       },
-      azure: {
-        apiKey: env("AZURE_OPENAI_API_KEY"),
-        secondaryApiKey: env("AZURE_OPENAI_API_KEY_SECONDARY"),
-        model: env("AZURE_OPENAI_DEPLOYMENT"),
-        apiVersion: env("AZURE_OPENAI_API_VERSION"),
-        baseUrl: env("AZURE_OPENAI_BASE_URL"),
-      },
     },
   },
 
@@ -71,6 +64,12 @@ export default defineConfig({
         dimensions: env("ASKDB_RAG_EMBEDDER_DIMENSIONS"),
       },
     },
+  },
+  logging: {
+    correlationId: env("ASKDB_CORRELATION_ID"),
+  },
+  dev: {
+    mockSql: env("ASKDB_MOCK_SQL"),
   },
   tui: {
     model: env("ASKDB_TUI_MODEL"),

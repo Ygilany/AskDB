@@ -1,20 +1,18 @@
-import type {
-  AskDbAiProviderId,
-  AskDbIntrospectionProvider,
-  AskDbLogLevel,
-  AskDbModeV1,
-  AskDbRagEmbedder,
-  AskDbRagStore,
-} from "./constants.js";
+import type { AskDbLogLevel, AskDbModeV1, AskDbRagEmbedder, AskDbRagStore } from "./constants.js";
 
 /**
  * Authoring-time AskDB configuration: nested groups (`ai`, `database`, `introspection`, `rag`, …)
  * passed to {@link defineConfig} in `askdb.config.*`, then flattened to canonical env keys for the runtime snapshot.
  *
- * Use with TypeScript’s `satisfies` operator to validate the object literal without widening it, e.g.
+ * Use with TypeScript's `satisfies` operator to validate the object literal without widening it, e.g.
  * `defineConfig({ ... } satisfies AskDbConfig)` or `const cfg = { ... } satisfies AskDbConfig`.
  *
  */
+
+// ---------------------------------------------------------------------------
+// AI provider configs
+// ---------------------------------------------------------------------------
+
 export type OpenaiConfig = {
   apiKey?: string;
   baseUrl?: string;
@@ -43,6 +41,48 @@ export type FoundryConfig = {
 export type AnthropicConfig = Record<string, never>;
 export type GoogleConfig = Record<string, never>;
 
+/** Discriminated union branch for `ai` when `provider` is `"openai"`. */
+export type OpenaiAiConfig = {
+  provider: "openai";
+  providerConfig: { openai: OpenaiConfig };
+};
+
+/** Discriminated union branch for `ai` when `provider` is `"azure"`. */
+export type AzureAiConfig = {
+  provider: "azure";
+  providerConfig: { azure: AzureConfig };
+};
+
+/** Discriminated union branch for `ai` when `provider` is `"foundry"`. */
+export type FoundryAiConfig = {
+  provider: "foundry";
+  providerConfig: { foundry: FoundryConfig };
+};
+
+/** Placeholder — not yet supported; `flattenAskDbConfig` throws. */
+export type AnthropicAiConfig = {
+  provider: "anthropic";
+  providerConfig: { anthropic: AnthropicConfig };
+};
+
+/** Placeholder — not yet supported; `flattenAskDbConfig` throws. */
+export type GoogleAiConfig = {
+  provider: "google";
+  providerConfig: { google: GoogleConfig };
+};
+
+/** Discriminated union of all supported (and placeholder) AI provider branches. */
+export type AskDbAiConfig =
+  | OpenaiAiConfig
+  | AzureAiConfig
+  | FoundryAiConfig
+  | AnthropicAiConfig
+  | GoogleAiConfig;
+
+// ---------------------------------------------------------------------------
+// RAG configs
+// ---------------------------------------------------------------------------
+
 export type OpenaiRagEmbedderConfig = {
   model?: string;
   /** Raw env string or number; positive integer parsed in {@link flattenAskDbConfig}, else derived from `model`. */
@@ -70,26 +110,67 @@ export type PgvectorStoreConfig = {
   indexStrategy?: string;
 };
 
+// ---------------------------------------------------------------------------
+// Introspection configs
+// ---------------------------------------------------------------------------
+
+/** Discriminated union branch for `introspection` when `provider` is `"postgres"`. */
+export type PostgresIntrospectionConfig = {
+  provider: "postgres";
+  providerConfig?: {
+    postgres?: {
+      /**
+       * When omitted or blank, live introspection reuses the resolved `DATABASE_URL` from the
+       * `database` section. Set this only for an introspection-only URL.
+       */
+      databaseUrl?: string;
+    };
+  };
+  /**
+   * Default introspection output directory (maps to `ASKDB_INTROSPECT_OUT`).
+   * When unset/blank, `flattenAskDbConfig` uses the package default `./askdb/`.
+   */
+  outputDir?: string;
+};
+
+/** Discriminated union branch for `introspection` when `provider` is `"prisma"`. */
+export type PrismaIntrospectionConfig = {
+  provider: "prisma";
+  providerConfig?: {
+    prisma?: {
+      /**
+       * Path to a `schema.prisma` file or directory containing `.prisma` files.
+       * When omitted, `@askdb/prisma` auto-discovers `prisma/schema.prisma` or `schema.prisma`
+       * in the project root — no explicit path needed.
+       */
+      schemaPath?: string;
+    };
+  };
+  /**
+   * Default introspection output directory (maps to `ASKDB_INTROSPECT_OUT`).
+   * When unset/blank, `flattenAskDbConfig` uses the package default `./askdb/`.
+   */
+  outputDir?: string;
+};
+
+/** Discriminated union of all supported introspection provider branches. */
+export type AskDbIntrospectionConfig = PostgresIntrospectionConfig | PrismaIntrospectionConfig;
+
+// ---------------------------------------------------------------------------
+// Root config
+// ---------------------------------------------------------------------------
+
 /**
  * Root shape for `export default defineConfig({ ... })` in `askdb.config.*`.
  *
- * - **`ai`**: LLM provider + discriminated `providerConfig` branch (`openai` | `azure` | `foundry`).
+ * - **`ai`**: LLM provider discriminated union — selecting `provider` determines which `providerConfig` branch is required.
  * - **`database`**: primary app DB (Postgres today); supplies default `DATABASE_URL`.
- * - **`introspection`**: Postgres vs Prisma engine; Postgres may omit `databaseUrl` to reuse `database`.
+ * - **`introspection`**: Postgres vs Prisma engine — selecting `provider` determines which `providerConfig` branch is valid.
  * - **`rag`**: embedder + store branches flattened to `ASKDB_RAG_*` / `ASKDB_PGVECTOR_URL` / file paths.
  * - **`logging` | `modes` | `host`**: optional operational defaults.
  */
 export type AskDbConfig = {
-  ai: {
-    provider: AskDbAiProviderId;
-    providerConfig: {
-      openai?: OpenaiConfig;
-      azure?: AzureConfig;
-      foundry?: FoundryConfig;
-      anthropic?: AnthropicConfig;
-      google?: GoogleConfig;
-    };
-  };
+  ai: AskDbAiConfig;
 
   database: {
     provider: "postgres";
@@ -102,26 +183,7 @@ export type AskDbConfig = {
     };
   };
 
-  introspection: {
-    provider: AskDbIntrospectionProvider;
-    providerConfig: {
-      postgres?: {
-        /**
-         * When omitted or blank, live introspection reuses the resolved `DATABASE_URL` from the
-         * `database` section. Set this only for an introspection-only URL.
-         */
-        databaseUrl?: string;
-      };
-      prisma?: {
-        schemaPath?: string;
-      };
-    };
-    /**
-     * Default introspection output directory (maps to `ASKDB_INTROSPECT_OUT`).
-     * When unset/blank, `flattenAskDbConfig` uses the package default `./askdb/`.
-     */
-    outputDir?: string;
-  };
+  introspection: AskDbIntrospectionConfig;
 
   rag: {
     embedder: AskDbRagEmbedder;
