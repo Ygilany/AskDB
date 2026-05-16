@@ -197,7 +197,7 @@ export type AskDbConfig = {
    * Use this when the inferred dialect is wrong — e.g. Prisma `schema.prisma` declares
    * `provider = "postgresql"` but you actually target a different engine.
    *
-   * Keep aligned with `DialectId` in `@askdb/core`. Currently shipped specs: `"postgres"`, `"cockroachdb"`.
+   * Keep aligned with `DialectId` in `@askdb/core`. Shipped specs: see `ASKDB_DIALECTS`.
    */
   dialect?: AskDbDialectId;
 
