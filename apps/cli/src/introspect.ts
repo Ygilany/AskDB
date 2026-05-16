@@ -20,6 +20,17 @@ import {
   createPostgresCatalogQueryRunner,
 } from "@askdb/postgres";
 import { createPrismaConnector } from "@askdb/prisma";
+import { createMysqlConnector, createMysqlCatalogQueryRunner } from "@askdb/mysql";
+import { createSqliteConnector, createSqliteCatalogQueryRunner } from "@askdb/sqlite";
+import {
+  createSqlServerConnector,
+  createSqlServerCatalogQueryRunner,
+} from "@askdb/sqlserver";
+
+type Engine = "postgres" | "prisma" | "mysql" | "sqlite" | "sqlserver";
+const LIVE_DRIVER_ENGINES = ["postgres", "mysql", "sqlite", "sqlserver"] as const satisfies ReadonlyArray<
+  Exclude<Engine, "prisma">
+>;
 
 const INTROSPECT_EVENTS = {
   started: "askdb.introspect.started",
@@ -73,6 +84,11 @@ function runTemplatesCommand(argv: readonly string[]): number {
   if (engine === "prisma") {
     throw new Error("Prisma introspection reads schema files and does not provide SQL templates.");
   }
+  if (engine !== "postgres") {
+    throw new Error(
+      `Engine '${engine}' does not provide SQL templates yet. 'askdb introspect templates' is currently supported only for --engine postgres.`,
+    );
+  }
   const bundle = createPostgresConnector().templates!();
   const body = bundle.templates
     .map((tpl) => [`-- ${tpl.name}`, tpl.sql, ""].join("\n"))
@@ -93,6 +109,23 @@ async function runIntrospectCommand(argv: readonly string[]): Promise<number> {
     } else {
       throw new Error("Provide either --url <postgres-url> or --from-export <bundle-dir>.");
     }
+  }
+  // The new live-driver engines (mysql/sqlite/sqlserver) accept a connection
+  // string (or file path for sqlite) via --url; fall back to DATABASE_URL.
+  if ((engine === "mysql" || engine === "sqlserver") && !opts.url) {
+    const dbUrl = envMap.DATABASE_URL?.trim();
+    if (dbUrl) opts.url = dbUrl;
+    else throw new Error(`Provide --url <${engine}-url> (or set DATABASE_URL).`);
+  }
+  if (engine === "sqlite" && !opts.url) {
+    const dbUrl = envMap.DATABASE_URL?.trim();
+    if (dbUrl) opts.url = dbUrl;
+    else throw new Error("Provide --url <path-to-sqlite-file> (or set DATABASE_URL).");
+  }
+  if ((engine === "mysql" || engine === "sqlite" || engine === "sqlserver") && opts.fromExport) {
+    throw new Error(
+      `--from-export is currently supported only for --engine postgres (got ${engine}).`,
+    );
   }
   if (engine === "postgres" && opts.prismaSchema) {
     throw new Error("Use --prisma-schema only with --engine prisma.");
@@ -221,7 +254,7 @@ async function runWithOutput(
 
 function buildRunConfig(
   opts: CliOptions,
-  engine: "postgres" | "prisma",
+  engine: Engine,
   schemaId: string,
 ): IntrospectRunConfig {
   if (engine === "prisma") {
@@ -237,21 +270,39 @@ function buildRunConfig(
   }
 
   const filters = buildFilters(opts);
-  if (opts.fromExport) {
+  if (engine === "postgres") {
+    if (opts.fromExport) {
+      return {
+        mode: "from-export",
+        input: { mode: "from-export", bundlePath: opts.fromExport, filters },
+        connector: createPostgresConnector() as Connector<unknown>,
+      };
+    }
     return {
-      mode: "from-export",
-      input: { mode: "from-export", bundlePath: opts.fromExport, filters },
+      mode: "live",
+      input: { mode: "live", runner: createPostgresCatalogQueryRunner(opts.url!), filters },
       connector: createPostgresConnector() as Connector<unknown>,
     };
   }
+  if (engine === "mysql") {
+    return {
+      mode: "live",
+      input: { mode: "live", runner: createMysqlCatalogQueryRunner(opts.url!), filters },
+      connector: createMysqlConnector() as Connector<unknown>,
+    };
+  }
+  if (engine === "sqlite") {
+    return {
+      mode: "live",
+      input: { mode: "live", runner: createSqliteCatalogQueryRunner(opts.url!), filters },
+      connector: createSqliteConnector() as Connector<unknown>,
+    };
+  }
+  // sqlserver
   return {
     mode: "live",
-    input: {
-      mode: "live",
-      runner: createPostgresCatalogQueryRunner(opts.url!),
-      filters,
-    },
-    connector: createPostgresConnector() as Connector<unknown>,
+    input: { mode: "live", runner: createSqlServerCatalogQueryRunner(opts.url!), filters },
+    connector: createSqlServerConnector() as Connector<unknown>,
   };
 }
 
@@ -339,11 +390,18 @@ function parseList(value: string): string[] {
     .filter(Boolean);
 }
 
-function resolveEngine(engine = "postgres"): "postgres" | "prisma" {
-  if (engine === "postgres" || engine === "prisma") {
+function resolveEngine(engine = "postgres"): Engine {
+  if (
+    engine === "postgres" ||
+    engine === "prisma" ||
+    engine === "mysql" ||
+    engine === "sqlite" ||
+    engine === "sqlserver"
+  ) {
     return engine;
   }
-  throw new Error(`Unsupported introspection engine '${engine}' (expected 'postgres' or 'prisma').`);
+  const supported = [...LIVE_DRIVER_ENGINES, "prisma"].join(", ");
+  throw new Error(`Unsupported introspection engine '${engine}' (expected one of: ${supported}).`);
 }
 
 function inferSchemaId(path: string | undefined): string | undefined {
@@ -384,6 +442,9 @@ function printHelp(): void {
       "  askdb introspect --out <dir>                        (uses DATABASE_URL from env/.env)",
       "  askdb introspect --url <postgres-url> --out <dir>",
       "  askdb introspect --from-export <bundle-dir> --out <dir>",
+      "  askdb introspect --engine mysql --url <mysql-url> --out <dir>",
+      "  askdb introspect --engine sqlite --url <path-to-.db> --out <dir>",
+      "  askdb introspect --engine sqlserver --url <mssql-url> --out <dir>",
       "  askdb introspect --engine prisma --prisma-schema <schema.prisma|schema-dir> --out <dir>",
       "  askdb introspect --engine prisma --prisma-schema <schema.prisma|schema-dir> --print",
       "  askdb introspect --engine prisma --prisma-schema <schema.prisma|schema-dir> --diff <existing-dir>",
