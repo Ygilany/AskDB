@@ -33,8 +33,15 @@ export type AskDbIntrospectionProvider = (typeof ASKDB_INTROSPECTION_PROVIDERS)[
 
 /**
  * NL→SQL dialect identifiers. Keep aligned with `DialectId` in `@askdb/core`
- * (`packages/core/src/sql/dialect-spec.ts`). Only dialects with a shipped
- * `DialectSpec` should be listed here.
+ * (`packages/core/src/sql/dialect-spec.ts`). Every id here must have a
+ * shipped `DialectSpec`; this list authoritatively bounds `askdb.config.dialect`.
  */
-export const ASKDB_DIALECTS = ["postgres", "cockroachdb"] as const;
+export const ASKDB_DIALECTS = [
+  "postgres",
+  "cockroachdb",
+  "mysql",
+  "mariadb",
+  "sqlite",
+  "sqlserver",
+] as const;
 export type AskDbDialectId = (typeof ASKDB_DIALECTS)[number];
