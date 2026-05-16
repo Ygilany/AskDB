@@ -98,15 +98,11 @@ async function runIntrospectCommand(argv: readonly string[]): Promise<number> {
     throw new Error("Use --prisma-schema only with --engine prisma.");
   }
   if (engine === "prisma" && !opts.prismaSchema) {
-    const fromRt = envMap.ASKDB_PRISMA_SCHEMA?.trim();
-    if (fromRt) {
-      opts.prismaSchema = fromRt;
+    const fromConfig = rt.introspection.prismaSchemaPath;
+    if (fromConfig) {
+      opts.prismaSchema = fromConfig;
     }
-  }
-  if (engine === "prisma" && !opts.prismaSchema) {
-    throw new Error(
-      "Provide --prisma-schema <schema.prisma|schema-dir> with --engine prisma, or set ASKDB_PRISMA_SCHEMA.",
-    );
+    // When still unset, @askdb/prisma will auto-discover prisma/schema.prisma or schema.prisma at runtime.
   }
   if (engine === "prisma" && (opts.url || opts.fromExport)) {
     throw new Error("Use --prisma-schema with --engine prisma, not --url or --from-export.");
@@ -232,7 +228,7 @@ function buildRunConfig(
     return {
       mode: "prisma-schema",
       input: {
-        schemaPath: opts.prismaSchema!,
+        schemaPath: opts.prismaSchema,
         schemaId,
         filters: buildFilters(opts),
       },
@@ -398,7 +394,8 @@ function printHelp(): void {
       "Defaults (after askdb.config bootstrap):",
       "  DATABASE_URL          From database.postgres (and introspection override if set).",
       "  ASKDB_INTROSPECT_OUT  From introspection.outputDir (default ./askdb/) when you omit --out, --print, and --diff.",
-      "  ASKDB_PRISMA_SCHEMA   Used as --prisma-schema when --engine prisma and the flag is omitted.",
+      "  --prisma-schema       From introspection.providerConfig.prisma.schemaPath when set; otherwise",
+      "                        prisma/schema.prisma or schema.prisma is auto-discovered in the project root.",
       "",
       "Options:",
       "  --schema-id <id>",

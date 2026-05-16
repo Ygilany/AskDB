@@ -66,27 +66,22 @@ describe("cli spawn: introspect subcommand", () => {
     expect(exec.stdout).toContain('"id": "table:public.User"');
   });
 
-  it("defaults --prisma-schema from ASKDB_PRISMA_SCHEMA", () => {
-    const exec = run(
-      "node",
-      [
-        join(cliDir, "dist/cli.js"),
-        "introspect",
-        "--engine",
-        "prisma",
-        "--schema-id",
-        "simple",
-        "--print",
-      ],
-      { ASKDB_PRISMA_SCHEMA: prismaFixture },
-    );
+  it("auto-discovers prisma schema or errors with a helpful message when none is found", () => {
+    const exec = run("node", [
+      join(cliDir, "dist/cli.js"),
+      "introspect",
+      "--engine",
+      "prisma",
+      "--print",
+    ]);
 
-    expect(exec.status).toBe(0);
-    expect(exec.stdout).toContain('"schemaId": "simple"');
+    // The repo root has no prisma/schema.prisma, so discovery fails with a clear message.
+    expect(exec.status).toBe(1);
+    expect(exec.stderr).toContain("auto-discover");
   });
 
-  it("defaults --out from ASKDB_INTROSPECT_OUT for Prisma introspection", () => {
-    const tmp = mkdtempSync(join(tmpdir(), "askdb-introspect-out-env-"));
+  it("writes schema to --out directory for Prisma introspection", () => {
+    const tmp = mkdtempSync(join(tmpdir(), "askdb-introspect-out-"));
     try {
       const exec = run(
         "node",
@@ -99,8 +94,10 @@ describe("cli spawn: introspect subcommand", () => {
           prismaFixture,
           "--schema-id",
           "simple",
+          "--out",
+          tmp,
         ],
-        { ASKDB_INTROSPECT_OUT: tmp },
+        undefined,
         repoRoot,
       );
       expect(exec.status).toBe(0);

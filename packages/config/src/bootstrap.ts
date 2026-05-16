@@ -4,31 +4,6 @@ import { join } from "node:path";
 import { loadAskDbConfigProjectionSync } from "./load-merge.js";
 import { setAskDbRuntime } from "./runtime-store.js";
 
-/**
- * After loading `askdb.config.*`, non-empty values for these keys in `process.env`
- * override the flattened snapshot (tests, subprocess env, platform-assigned `PORT`, …).
- * Scoped to `@askdb/config` bootstrap only — library code still uses `getAskDbRuntimeConfig()`.
- */
-const RUNTIME_SHELL_FLAT_OVERRIDES: readonly string[] = [
-  "ASKDB_MOCK_SQL",
-  "ASKDB_CORRELATION_ID",
-  "ASKDB_PRISMA_SCHEMA",
-  "ASKDB_INTROSPECT_OUT",
-  "DATABASE_URL",
-  "PORT",
-  "HOST",
-];
-
-function mergeShellOverridesOntoFlat(flat: Record<string, string>): void {
-  for (const key of RUNTIME_SHELL_FLAT_OVERRIDES) {
-    const raw = process.env[key];
-    if (raw === undefined) continue;
-    const trimmed = raw.trim();
-    if (trimmed === "") continue;
-    flat[key] = trimmed;
-  }
-}
-
 export type BootstrapAskDbEnvOptions = {
   /** Working directory for `.env` default path and config discovery. Defaults to `process.cwd()`. */
   cwd?: string;
@@ -63,9 +38,8 @@ function handleDotenvError(error: unknown, nonFatal: boolean | undefined): void 
  *
  * Does **not** merge AskDB settings into `process.env`. Use {@link getAskDbRuntimeConfig} to read configuration.
  *
- * A small allowlist of shell variables (e.g. `ASKDB_MOCK_SQL`, `ASKDB_CORRELATION_ID`,
- * `ASKDB_PRISMA_SCHEMA`, `ASKDB_INTROSPECT_OUT`, `DATABASE_URL`, `PORT`, `HOST`) may override flattened entries
- * so CI/subprocesses can inject values such as `ASKDB_MOCK_SQL` without editing the config file.
+ * `askdb.config.*` is the sole source of truth — use `env("VAR")` in the config file to read
+ * from the environment at load time.
  */
 export function bootstrapAskDbEnv(options: BootstrapAskDbEnvOptions = {}): {
   dotenvPath?: string;
@@ -114,12 +88,9 @@ export function bootstrapAskDbEnv(options: BootstrapAskDbEnvOptions = {}): {
     );
   }
 
-  const flat: Record<string, string> = { ...projection.entries };
-  mergeShellOverridesOntoFlat(flat);
-
   setAskDbRuntime({
     structured: projection.config,
-    flat,
+    flat: { ...projection.entries },
   });
 
   return { dotenvPath, configPath };

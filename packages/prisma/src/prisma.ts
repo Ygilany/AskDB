@@ -25,8 +25,11 @@ export type PrismaSchemaProvider =
   | "cockroachdb";
 
 export type PrismaIntrospectionInput = {
-  /** Path to a `schema.prisma` file or a directory containing one or more `.prisma` files. */
-  schemaPath: string;
+  /**
+   * Path to a `schema.prisma` file or a directory containing one or more `.prisma` files.
+   * When omitted, common project locations are probed automatically via {@link discoverPrismaSchemaPath}.
+   */
+  schemaPath?: string;
   /** Optional `schemaId` for the resulting `SqlSchema`. Defaults to `"introspected"`. */
   schemaId?: string;
   filters?: IntrospectionFilters;
@@ -114,10 +117,41 @@ export function createPrismaConnector(): Connector<PrismaIntrospectionInput> {
   };
 }
 
+const PRISMA_SCHEMA_CANDIDATES = ["prisma/schema.prisma", "schema.prisma"] as const;
+
+/**
+ * Probes standard Prisma schema locations relative to `cwd`.
+ * Checks `prisma/schema.prisma`, `schema.prisma`, and `prisma/` (multi-file schemas) in order.
+ * Throws if nothing is found.
+ */
+export function discoverPrismaSchemaPath(cwd: string = process.cwd()): string {
+  for (const candidate of PRISMA_SCHEMA_CANDIDATES) {
+    const full = join(cwd, candidate);
+    try {
+      if (statSync(full).isFile()) return full;
+    } catch {
+      // not found, continue
+    }
+  }
+  const prismaDir = join(cwd, "prisma");
+  try {
+    if (statSync(prismaDir).isDirectory() && listPrismaFiles(prismaDir).length > 0) {
+      return prismaDir;
+    }
+  } catch {
+    // not found
+  }
+  throw new Error(
+    `@askdb/prisma: could not auto-discover a Prisma schema under ${cwd}. ` +
+      "Set introspection.providerConfig.prisma.schemaPath in askdb.config, or create prisma/schema.prisma.",
+  );
+}
+
 export async function describePrismaSchema(
   input: PrismaIntrospectionInput,
 ): Promise<IntrospectionResult> {
-  const datamodel = stripDatasourceConnectionUrls(readPrismaSchema(input.schemaPath));
+  const schemaPath = input.schemaPath ?? discoverPrismaSchemaPath();
+  const datamodel = stripDatasourceConnectionUrls(readPrismaSchema(schemaPath));
   const config = await getConfig({ datamodel });
   const provider = config.datasources[0]?.provider;
   assertSupportedProvider(provider);

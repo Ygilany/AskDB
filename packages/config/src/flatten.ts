@@ -16,7 +16,7 @@ import {
   normalizePgvectorIndexStrategy,
   parsePositiveInteger,
 } from "./defaults.js";
-import type { AskDbConfig } from "./types.js";
+import type { AskDbConfig, AzureConfig, FoundryConfig, OpenaiConfig } from "./types.js";
 
 function isMember<T extends readonly string[]>(value: string, allowed: T): value is T[number] {
   return (allowed as readonly string[]).includes(value);
@@ -29,7 +29,7 @@ function set(out: Record<string, string>, key: string, value: string | undefined
   out[key] = t;
 }
 
-function applyOpenAiAi(out: Record<string, string>, cfg: NonNullable<AskDbConfig["ai"]["providerConfig"]["openai"]>): void {
+function applyOpenAiAi(out: Record<string, string>, cfg: OpenaiConfig): void {
   set(out, "OPENAI_API_KEY", cfg.apiKey);
   set(out, "OPENAI_BASE_URL", cfg.baseUrl);
   const model = cfg.model?.trim() || DEFAULT_OPENAI_CHAT_MODEL;
@@ -37,12 +37,9 @@ function applyOpenAiAi(out: Record<string, string>, cfg: NonNullable<AskDbConfig
   set(out, "ASKDB_MODEL", model);
 }
 
-function applyAzureLikeAi(
-  out: Record<string, string>,
-  cfg: NonNullable<AskDbConfig["ai"]["providerConfig"]["azure"] | AskDbConfig["ai"]["providerConfig"]["foundry"]>,
-): void {
+function applyAzureLikeAi(out: Record<string, string>, cfg: AzureConfig | FoundryConfig): void {
   set(out, "AZURE_OPENAI_API_KEY", cfg.apiKey);
-  if ("secondaryApiKey" in cfg && cfg.secondaryApiKey) {
+  if (cfg.secondaryApiKey) {
     set(out, "AZURE_OPENAI_API_KEY_SECONDARY", cfg.secondaryApiKey);
   }
   const model = cfg.model?.trim() || DEFAULT_AZURE_OPENAI_DEPLOYMENT;
@@ -80,32 +77,19 @@ export function flattenAskDbConfig(config: AskDbConfig): Record<string, string> 
   const out: Record<string, string> = {};
 
   // --- AI ---
-  const { provider, providerConfig } = config.ai;
-  if (provider === "openai") {
-    if (!providerConfig.openai) {
-      throw new Error('askdb.config: ai.provider is "openai" but `ai.providerConfig.openai` is missing.');
-    }
+  if (config.ai.provider === "openai") {
     set(out, "ASKDB_AI_PROVIDER", "openai");
-    applyOpenAiAi(out, providerConfig.openai);
-  } else if (provider === "azure") {
-    if (!providerConfig.azure) {
-      throw new Error('askdb.config: ai.provider is "azure" but `ai.providerConfig.azure` is missing.');
-    }
+    applyOpenAiAi(out, config.ai.providerConfig.openai);
+  } else if (config.ai.provider === "azure") {
     set(out, "ASKDB_AI_PROVIDER", "azure");
-    applyAzureLikeAi(out, providerConfig.azure);
-  } else if (provider === "foundry") {
-    if (!providerConfig.foundry) {
-      throw new Error('askdb.config: ai.provider is "foundry" but `ai.providerConfig.foundry` is missing.');
-    }
+    applyAzureLikeAi(out, config.ai.providerConfig.azure);
+  } else if (config.ai.provider === "foundry") {
     // `@askdb/core` treats `foundry` like Azure for env parsing.
     set(out, "ASKDB_AI_PROVIDER", "foundry");
-    applyAzureLikeAi(out, providerConfig.foundry);
-  }
-
-  if (providerConfig.anthropic !== undefined && Object.keys(providerConfig.anthropic as object).length > 0) {
+    applyAzureLikeAi(out, config.ai.providerConfig.foundry);
+  } else if (config.ai.provider === "anthropic") {
     throw new Error("askdb.config: Anthropic AI provider is not supported yet.");
-  }
-  if (providerConfig.google !== undefined && Object.keys(providerConfig.google as object).length > 0) {
+  } else if (config.ai.provider === "google") {
     throw new Error("askdb.config: Google AI provider is not supported yet.");
   }
 
@@ -121,13 +105,13 @@ export function flattenAskDbConfig(config: AskDbConfig): Record<string, string> 
   // `introspection.providerConfig.postgres.databaseUrl` only when you need a URL that
   // differs from the main app database; when omitted, live introspection reuses the same URL.
   if (intro.provider === "postgres") {
-    const introUrl = intro.providerConfig.postgres?.databaseUrl?.trim();
+    const introUrl = intro.providerConfig?.postgres?.databaseUrl?.trim();
     if (introUrl) {
       set(out, "DATABASE_URL", introUrl);
     }
   } else if (intro.provider === "prisma") {
-    const schemaPath = intro.providerConfig.prisma?.schemaPath;
-    if (schemaPath) set(out, "ASKDB_PRISMA_SCHEMA", schemaPath);
+    // schemaPath lives in structured config (introspection.providerConfig.prisma.schemaPath);
+    // @askdb/prisma discovers it at runtime — no flat env key needed.
   }
 
   const outDir = intro.outputDir?.trim() || DEFAULT_INTROSPECT_OUTPUT_DIR;
