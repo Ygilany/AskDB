@@ -1,4 +1,4 @@
-import type { AskDbDialectId } from "./constants.js";
+import type { AskDbDialectId, AskDbIntrospectionProvider } from "./constants.js";
 import type { AskDbConfig } from "./types.js";
 import { flatToAiEnv, getAskDbRuntimeStore } from "./runtime-store.js";
 
@@ -40,7 +40,7 @@ export type AskDbRuntimeHttpApiConfig = {
 };
 
 export type AskDbRuntimeIntrospectionConfig = {
-  provider: "postgres" | "prisma";
+  provider: AskDbIntrospectionProvider;
   /** Resolved from `introspection.providerConfig.prisma.schemaPath`; `undefined` triggers auto-discovery in `@askdb/prisma`. */
   prismaSchemaPath: string | undefined;
   /** Resolved from `introspection.outputDir`; `undefined` means the package default (`./askdb/`) is used. */
