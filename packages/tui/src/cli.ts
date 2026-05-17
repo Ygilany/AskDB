@@ -1,7 +1,7 @@
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { createAskDbLanguageModelFromEnv, suggestEnrichment } from "@askdb/core";
-import { getAskDbRuntimeConfig } from "@askdb/config";
+import { DEFAULT_INTROSPECT_OUTPUT_DIR, getAskDbRuntimeConfig } from "@askdb/config";
 import { render } from "ink";
 import { createElement } from "react";
 import { App } from "./ui/App.js";
@@ -33,18 +33,13 @@ export async function runTuiCli(argv: readonly string[]): Promise<number> {
     return 0;
   }
 
-  if (opts.help || argv.length === 0) {
+  if (opts.help) {
     printHelp(process.stdout);
     return 0;
   }
 
-  if (!opts.schema) {
-    process.stderr.write("askdb-tui: --schema <dir> is required.\n\n");
-    printHelp(process.stderr);
-    return 1;
-  }
-
-  const schemaDir = resolve(opts.schema);
+  const rt = getAskDbRuntimeConfig();
+  const schemaDir = resolve(opts.schema ?? rt.flat["ASKDB_INTROSPECT_OUT"] ?? DEFAULT_INTROSPECT_OUTPUT_DIR);
   if (!existsSync(schemaDir)) {
     process.stderr.write(`askdb-tui: schema directory not found: ${schemaDir}\n`);
     return 1;
@@ -133,10 +128,13 @@ function printHelp(stream: NodeJS.WriteStream): void {
       "askdb-tui - Interactive Schema v2 enrichment for AskDB",
       "",
       "Usage:",
-      "  askdb-tui --schema <dir>          Open a Schema v2 directory for enrichment",
+      "  askdb-tui [--schema <dir>]         Open a Schema v2 directory for enrichment",
       "  askdb-tui bundle <dir> --out <bundle.json>",
       "  askdb-tui --version               Print package version",
       "  askdb-tui --help                  Print this help",
+      "",
+      "  --schema <dir>  Schema v2 directory (default: introspection.outputDir from",
+      "                  askdb.config, or ASKDB_INTROSPECT_OUT env, or ./askdb/)",
       "",
       "Schema input must be a Schema v2 directory produced by `askdb introspect`",
       "(Phase 6) or hand-authored. Bundled JSON is read-only and not yet supported",
