@@ -24,9 +24,40 @@ jobs:
           --health-timeout 5s
           --health-retries 5
 
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_ROOT_PASSWORD: mysql
+          MYSQL_DATABASE: askdb_test
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd "mysqladmin ping -h localhost -u root -pmysql"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 15
+          --health-start-period 30s
+
+      sqlserver:
+        image: mcr.microsoft.com/mssql/server:2022-latest
+        env:
+          ACCEPT_EULA: Y
+          SA_PASSWORD: "AskDB.123"
+          MSSQL_PID: Developer
+        ports:
+          - 1433:1433
+        options: >-
+          --health-cmd "/opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P 'AskDB.123' -Q 'SELECT 1' -b -C"
+          --health-interval 10s
+          --health-timeout 10s
+          --health-retries 18
+          --health-start-period 90s
+
     env:
       DATABASE_URL: postgres://postgres:postgres@localhost:5432/askdb_test
       PAGILA_DATABASE_URL: postgres://postgres:postgres@127.0.0.1:5433/pagila
+      MYSQL_DATABASE_URL: mysql://root:mysql@127.0.0.1:3306/askdb_test
+      MSSQL_DATABASE_URL: "Server=127.0.0.1,1433;Database=askdb_test;User Id=sa;Password=AskDB.123;Encrypt=false"
 
     steps:
       - name: Checkout
@@ -46,6 +77,15 @@ jobs:
 
       - name: Build all packages
         run: pnpm build
+
+      - name: Create SQL Server test database
+        run: >-
+          docker exec
+          $(docker ps -q --filter "ancestor=mcr.microsoft.com/mssql/server:2022-latest")
+          /opt/mssql-tools18/bin/sqlcmd
+          -S localhost -U sa -P 'AskDB.123'
+          -Q "IF DB_ID('askdb_test') IS NULL CREATE DATABASE askdb_test"
+          -C
 
       - name: Start Pagila introspection fixture
         run: docker compose -f fixtures/pagila/docker-compose.yml up --build --wait -d
