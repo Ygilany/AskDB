@@ -13,6 +13,7 @@ import {
   loadAskDbConfigProjectionSync,
   requiredEnv,
   resetAskDbRuntimeForTests,
+  setAskDbRuntimeForTests,
 } from "./index.js";
 import type { AskDbConfig } from "./types.js";
 
@@ -120,6 +121,47 @@ describe("flattenAskDbConfig", () => {
     expect(flat.DATABASE_URL).toBe("postgres://introspect/db");
   });
 
+  it("flattens MySQL introspection branch to ASKDB_INTROSPECT_MYSQL_URL", () => {
+    const flat = flattenAskDbConfig(
+      minimalConfig({
+        introspection: {
+          provider: "mysql",
+          providerConfig: { mysql: { databaseUrl: "mysql://app:pw@localhost/shop" } },
+          outputDir: "./askdb/",
+        },
+      }),
+    );
+    expect(flat.ASKDB_INTROSPECT_MYSQL_URL).toBe("mysql://app:pw@localhost/shop");
+    // Keep the postgres-app DATABASE_URL pinned so the rest of the stack still works.
+    expect(flat.DATABASE_URL).toBe("postgres://localhost/db");
+  });
+
+  it("flattens SQLite introspection branch to ASKDB_INTROSPECT_SQLITE_FILE", () => {
+    const flat = flattenAskDbConfig(
+      minimalConfig({
+        introspection: {
+          provider: "sqlite",
+          providerConfig: { sqlite: { file: "./data/app.db" } },
+          outputDir: "./askdb/",
+        },
+      }),
+    );
+    expect(flat.ASKDB_INTROSPECT_SQLITE_FILE).toBe("./data/app.db");
+  });
+
+  it("flattens SQL Server introspection branch to ASKDB_INTROSPECT_SQLSERVER_URL", () => {
+    const flat = flattenAskDbConfig(
+      minimalConfig({
+        introspection: {
+          provider: "sqlserver",
+          providerConfig: { sqlserver: { databaseUrl: "Server=localhost;Database=app;" } },
+          outputDir: "./askdb/",
+        },
+      }),
+    );
+    expect(flat.ASKDB_INTROSPECT_SQLSERVER_URL).toBe("Server=localhost;Database=app;");
+  });
+
   it("defaults OpenAI chat model when model omitted", () => {
     const flat = flattenAskDbConfig(
       minimalConfig({
@@ -187,6 +229,101 @@ describe("loadAskDbConfigProjectionSync", () => {
     expect(projection?.entries.ASKDB_INTROSPECT_OUT).toBe("./out/");
     delete process.env.MY_KEY;
     delete process.env.MY_DB;
+  });
+});
+
+describe("getAskDbRuntimeConfig — introspection branches", () => {
+  afterEach(() => resetAskDbRuntimeForTests());
+
+  function installRuntime(intro: AskDbConfig["introspection"], flat: Record<string, string>): void {
+    const structured = minimalConfig({ introspection: intro });
+    setAskDbRuntimeForTests({ structured, flat });
+  }
+
+  it("resolves mysqlDatabaseUrl from the structured branch first", () => {
+    installRuntime(
+      {
+        provider: "mysql",
+        providerConfig: { mysql: { databaseUrl: "mysql://structured/host" } },
+        outputDir: "./askdb/",
+      },
+      { ASKDB_INTROSPECT_MYSQL_URL: "mysql://flat/host", DATABASE_URL: "postgres://fallback/db" },
+    );
+    const rt = getAskDbRuntimeConfig();
+    expect(rt.introspection.provider).toBe("mysql");
+    expect(rt.introspection.mysqlDatabaseUrl).toBe("mysql://structured/host");
+    expect(rt.introspection.sqliteFile).toBeUndefined();
+    expect(rt.introspection.sqlserverDatabaseUrl).toBeUndefined();
+  });
+
+  it("falls back to ASKDB_INTROSPECT_MYSQL_URL when the structured field is blank", () => {
+    installRuntime(
+      { provider: "mysql", providerConfig: { mysql: {} }, outputDir: "./askdb/" },
+      { ASKDB_INTROSPECT_MYSQL_URL: "mysql://flat/host", DATABASE_URL: "postgres://fallback/db" },
+    );
+    const rt = getAskDbRuntimeConfig();
+    expect(rt.introspection.mysqlDatabaseUrl).toBe("mysql://flat/host");
+  });
+
+  it("falls back to DATABASE_URL for MySQL when the structured + env-specific keys are missing", () => {
+    installRuntime(
+      { provider: "mysql", providerConfig: { mysql: {} }, outputDir: "./askdb/" },
+      { DATABASE_URL: "mysql://fallback/db" },
+    );
+    const rt = getAskDbRuntimeConfig();
+    expect(rt.introspection.mysqlDatabaseUrl).toBe("mysql://fallback/db");
+  });
+
+  it("resolves sqliteFile but does NOT fall back to DATABASE_URL (paths and URLs aren't interchangeable)", () => {
+    installRuntime(
+      {
+        provider: "sqlite",
+        providerConfig: { sqlite: { file: "./data/app.db" } },
+        outputDir: "./askdb/",
+      },
+      { DATABASE_URL: "postgres://should-not-leak/db" },
+    );
+    const rt = getAskDbRuntimeConfig();
+    expect(rt.introspection.sqliteFile).toBe("./data/app.db");
+  });
+
+  it("returns undefined sqliteFile when neither structured nor env key is set (no DATABASE_URL fallback)", () => {
+    installRuntime(
+      { provider: "sqlite", providerConfig: { sqlite: {} }, outputDir: "./askdb/" },
+      { DATABASE_URL: "postgres://should-not-leak/db" },
+    );
+    const rt = getAskDbRuntimeConfig();
+    expect(rt.introspection.sqliteFile).toBeUndefined();
+  });
+
+  it("falls back to ASKDB_INTROSPECT_SQLITE_FILE when the structured field is blank", () => {
+    installRuntime(
+      { provider: "sqlite", providerConfig: { sqlite: {} }, outputDir: "./askdb/" },
+      { ASKDB_INTROSPECT_SQLITE_FILE: "/var/db/app.db" },
+    );
+    const rt = getAskDbRuntimeConfig();
+    expect(rt.introspection.sqliteFile).toBe("/var/db/app.db");
+  });
+
+  it("resolves sqlserverDatabaseUrl with DATABASE_URL fallback", () => {
+    installRuntime(
+      { provider: "sqlserver", providerConfig: { sqlserver: {} }, outputDir: "./askdb/" },
+      { DATABASE_URL: "Server=fallback;Database=app;" },
+    );
+    const rt = getAskDbRuntimeConfig();
+    expect(rt.introspection.sqlserverDatabaseUrl).toBe("Server=fallback;Database=app;");
+  });
+
+  it("leaves all per-engine fields undefined when provider is postgres", () => {
+    installRuntime(
+      { provider: "postgres", providerConfig: { postgres: {} }, outputDir: "./askdb/" },
+      { DATABASE_URL: "postgres://localhost/db", ASKDB_INTROSPECT_MYSQL_URL: "mysql://nope/db" },
+    );
+    const rt = getAskDbRuntimeConfig();
+    expect(rt.introspection.provider).toBe("postgres");
+    expect(rt.introspection.mysqlDatabaseUrl).toBeUndefined();
+    expect(rt.introspection.sqliteFile).toBeUndefined();
+    expect(rt.introspection.sqlserverDatabaseUrl).toBeUndefined();
   });
 });
 

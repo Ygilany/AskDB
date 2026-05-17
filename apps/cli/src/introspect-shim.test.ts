@@ -7,6 +7,7 @@ import { beforeAll, describe, expect, it } from "vitest";
 const repoRoot = join(import.meta.dirname, "../../..");
 const cliDir = join(repoRoot, "apps/cli");
 const corePkgDir = join(repoRoot, "packages/core");
+const configDir = join(repoRoot, "packages/config");
 const introspectDir = join(repoRoot, "packages/introspect");
 const postgresDir = join(repoRoot, "packages/postgres");
 const prismaDir = join(repoRoot, "packages/prisma");
@@ -14,6 +15,7 @@ const prismaFixture = join(prismaDir, "test-fixtures/simple/schema.prisma");
 
 describe("cli spawn: introspect subcommand", () => {
   beforeAll(() => {
+    expect(run("pnpm", ["-C", configDir, "build"]).status).toBe(0);
     expect(run("pnpm", ["-C", corePkgDir, "build"]).status).toBe(0);
     expect(run("pnpm", ["-C", introspectDir, "build"]).status).toBe(0);
     expect(run("pnpm", ["-C", postgresDir, "build"]).status).toBe(0);
@@ -102,6 +104,43 @@ describe("cli spawn: introspect subcommand", () => {
       );
       expect(exec.status).toBe(0);
       expect(readFileSync(join(tmp, "schema.json"), "utf8")).toContain('"id": "table:public.User"');
+    } finally {
+      rmSync(tmp, { recursive: true, force: true });
+    }
+  });
+
+  it("defaults engine to introspection.provider from askdb.config when --engine is absent (prisma)", () => {
+    const tmp = mkdtempSync(join(tmpdir(), "askdb-config-engine-"));
+    try {
+      // Symlink workspace packages so `import "@askdb/config"` in askdb.config.ts resolves
+      // when jiti loads it during bootstrap.
+      run("mkdir", ["-p", join(tmp, "node_modules/@askdb")]);
+      run("ln", ["-s", configDir, join(tmp, "node_modules/@askdb/config")]);
+      writeFileSync(
+        join(tmp, "askdb.config.ts"),
+        `import { defineConfig, type AskDbConfig } from "@askdb/config";
+         export default defineConfig({
+           ai: { provider: "openai", providerConfig: { openai: { apiKey: "k", model: "gpt-4o-mini" } } },
+           database: { provider: "postgres", providerConfig: { postgres: { databaseUrl: "postgres://localhost/db" } } },
+           introspection: {
+             provider: "prisma",
+             providerConfig: { prisma: { schemaPath: ${JSON.stringify(prismaFixture)} } },
+             outputDir: "./askdb/",
+           },
+           rag: { embedder: "mock", embedderConfig: {}, store: "memory", storeConfig: { memory: {} } },
+         } satisfies AskDbConfig);
+        `,
+        "utf8",
+      );
+      const exec = run(
+        "node",
+        [join(cliDir, "dist/cli.js"), "introspect", "--schema-id", "simple", "--print"],
+        undefined,
+        tmp,
+      );
+      expect(exec.status).toBe(0);
+      expect(exec.stdout).toContain('"schemaId": "simple"');
+      expect(exec.stdout).toContain('"id": "table:public.User"');
     } finally {
       rmSync(tmp, { recursive: true, force: true });
     }

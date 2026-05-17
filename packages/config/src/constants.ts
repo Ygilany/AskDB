@@ -28,7 +28,13 @@ export type AskDbRagStore = (typeof ASKDB_RAG_STORES)[number];
 export const ASKDB_AI_PROVIDERS = ["openai", "azure", "foundry"] as const;
 export type AskDbAiProviderId = (typeof ASKDB_AI_PROVIDERS)[number];
 
-export const ASKDB_INTROSPECTION_PROVIDERS = ["postgres", "prisma"] as const;
+export const ASKDB_INTROSPECTION_PROVIDERS = [
+  "postgres",
+  "prisma",
+  "mysql",
+  "sqlite",
+  "sqlserver",
+] as const;
 export type AskDbIntrospectionProvider = (typeof ASKDB_INTROSPECTION_PROVIDERS)[number];
 
 /**

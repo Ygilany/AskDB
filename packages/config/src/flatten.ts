@@ -112,6 +112,12 @@ export function flattenAskDbConfig(config: AskDbConfig): Record<string, string> 
   } else if (intro.provider === "prisma") {
     // schemaPath lives in structured config (introspection.providerConfig.prisma.schemaPath);
     // @askdb/prisma discovers it at runtime — no flat env key needed.
+  } else if (intro.provider === "mysql") {
+    set(out, "ASKDB_INTROSPECT_MYSQL_URL", intro.providerConfig?.mysql?.databaseUrl);
+  } else if (intro.provider === "sqlite") {
+    set(out, "ASKDB_INTROSPECT_SQLITE_FILE", intro.providerConfig?.sqlite?.file);
+  } else if (intro.provider === "sqlserver") {
+    set(out, "ASKDB_INTROSPECT_SQLSERVER_URL", intro.providerConfig?.sqlserver?.databaseUrl);
   }
 
   const outDir = intro.outputDir?.trim() || DEFAULT_INTROSPECT_OUTPUT_DIR;
