@@ -43,6 +43,25 @@ export type AskDbRuntimeIntrospectionConfig = {
   provider: AskDbIntrospectionProvider;
   /** Resolved from `introspection.providerConfig.prisma.schemaPath`; `undefined` triggers auto-discovery in `@askdb/prisma`. */
   prismaSchemaPath: string | undefined;
+  /**
+   * Resolved MySQL connection URL when `provider === "mysql"`:
+   * `providerConfig.mysql.databaseUrl` → `ASKDB_INTROSPECT_MYSQL_URL` env → `DATABASE_URL` fallback.
+   * `undefined` for non-MySQL providers.
+   */
+  mysqlDatabaseUrl: string | undefined;
+  /**
+   * Resolved SQLite file path when `provider === "sqlite"`:
+   * `providerConfig.sqlite.file` → `ASKDB_INTROSPECT_SQLITE_FILE` env.
+   * No `DATABASE_URL` fallback — SQLite paths and URLs aren't interchangeable.
+   * `undefined` for non-SQLite providers.
+   */
+  sqliteFile: string | undefined;
+  /**
+   * Resolved SQL Server connection URL when `provider === "sqlserver"`:
+   * `providerConfig.sqlserver.databaseUrl` → `ASKDB_INTROSPECT_SQLSERVER_URL` env → `DATABASE_URL` fallback.
+   * `undefined` for non-SQL Server providers.
+   */
+  sqlserverDatabaseUrl: string | undefined;
   /** Resolved from `introspection.outputDir`; `undefined` means the package default (`./askdb/`) is used. */
   outputDir: string | undefined;
 };
@@ -114,6 +133,28 @@ export function getAskDbRuntimeConfig(): AskDbRuntimeConfig {
       ? structured.introspection.providerConfig?.prisma?.schemaPath?.trim()
       : undefined;
 
+  // Per-engine connection lookup. We deliberately only resolve the field for
+  // the active provider so the runtime view stays minimal and other branches
+  // surface `undefined` (cheap exhaustiveness check at the consumer).
+  const databaseUrlFallback = pickFlat(flat, "DATABASE_URL");
+  const mysqlDatabaseUrl =
+    structured.introspection.provider === "mysql"
+      ? structured.introspection.providerConfig?.mysql?.databaseUrl?.trim() ||
+        pickFlat(flat, "ASKDB_INTROSPECT_MYSQL_URL") ||
+        databaseUrlFallback
+      : undefined;
+  const sqliteFile =
+    structured.introspection.provider === "sqlite"
+      ? structured.introspection.providerConfig?.sqlite?.file?.trim() ||
+        pickFlat(flat, "ASKDB_INTROSPECT_SQLITE_FILE")
+      : undefined;
+  const sqlserverDatabaseUrl =
+    structured.introspection.provider === "sqlserver"
+      ? structured.introspection.providerConfig?.sqlserver?.databaseUrl?.trim() ||
+        pickFlat(flat, "ASKDB_INTROSPECT_SQLSERVER_URL") ||
+        databaseUrlFallback
+      : undefined;
+
   return {
     structured,
     flat,
@@ -125,6 +166,9 @@ export function getAskDbRuntimeConfig(): AskDbRuntimeConfig {
     introspection: {
       provider: structured.introspection.provider,
       prismaSchemaPath: prismaSchemaPathRaw || undefined,
+      mysqlDatabaseUrl,
+      sqliteFile,
+      sqlserverDatabaseUrl,
       outputDir: structured.introspection.outputDir?.trim() || undefined,
     },
     rag: {
