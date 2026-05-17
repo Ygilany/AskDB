@@ -47,7 +47,7 @@ const SQL_COLUMNS = `SELECT
   p.cid AS cid,
   p.name AS column_name,
   p.type AS type,
-  p."notnull" AS notnull,
+  p."notnull" AS "notnull",
   p.dflt_value AS dflt_value,
   p.pk AS pk
 FROM sqlite_master m, pragma_table_info(m.name) p

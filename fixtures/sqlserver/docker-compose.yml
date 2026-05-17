@@ -1,0 +1,38 @@
+# SQL Server 2022 dev fixture for @askdb/sqlserver integration tests.
+#
+# From repo root:
+#   docker compose -f fixtures/sqlserver/docker-compose.yml up -d --wait
+#
+# After the container is healthy, create the test database:
+#   docker compose -f fixtures/sqlserver/docker-compose.yml exec sqlserver-db \
+#     /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P 'AskDB.123' \
+#     -Q "IF DB_ID('askdb_test') IS NULL CREATE DATABASE askdb_test" -C
+#
+# MSSQL_DATABASE_URL for integration tests:
+#   Server=127.0.0.1,1433;Database=askdb_test;User Id=sa;Password=AskDB.123;Encrypt=false
+#
+# Tear down:
+#   docker compose -f fixtures/sqlserver/docker-compose.yml down -v
+
+services:
+  sqlserver-db:
+    image: mcr.microsoft.com/mssql/server:2022-latest
+    environment:
+      ACCEPT_EULA: "Y"
+      SA_PASSWORD: "AskDB.123"
+      MSSQL_PID: Developer
+    ports:
+      - "1433:1433"
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - >-
+          /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa
+          -P 'AskDB.123' -Q 'SELECT 1' -b -C
+      interval: 10s
+      timeout: 10s
+      retries: 18
+      start_period: 90s
+
+volumes:
+  sqlserver_data:
