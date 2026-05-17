@@ -38,8 +38,9 @@ export async function runTuiCli(argv: readonly string[]): Promise<number> {
     return 0;
   }
 
-  const rt = getAskDbRuntimeConfig();
-  const schemaDir = resolve(opts.schema ?? rt.flat["ASKDB_INTROSPECT_OUT"] ?? DEFAULT_INTROSPECT_OUTPUT_DIR);
+  const schemaDir = opts.schema
+    ? resolve(opts.schema)
+    : resolve(getAskDbRuntimeConfig().flat["ASKDB_INTROSPECT_OUT"] ?? DEFAULT_INTROSPECT_OUTPUT_DIR);
   if (!existsSync(schemaDir)) {
     process.stderr.write(`askdb-tui: schema directory not found: ${schemaDir}\n`);
     return 1;
