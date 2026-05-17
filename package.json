@@ -27,6 +27,9 @@
     "changeset": "changeset",
     "release": "pnpm -r build && changeset publish"
   },
+  "pnpm": {
+    "publicHoistPattern": ["*turbo*"]
+  },
   "devDependencies": {
     "askdb": "workspace:*",
     "@askdb/config": "workspace:*",
