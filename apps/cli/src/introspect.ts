@@ -99,8 +99,10 @@ function runTemplatesCommand(argv: readonly string[]): number {
 
 async function runIntrospectCommand(argv: readonly string[]): Promise<number> {
   const opts = parseOptions(argv);
-  const engine = resolveEngine(opts.engine);
   const rt = getAskDbRuntimeConfig();
+  // When --engine isn't passed, fall back to the configured introspection.provider
+  // so `askdb introspect` works flag-free for any configured engine.
+  const engine = resolveEngine(opts.engine ?? rt.introspection.provider);
   const envMap = rt.ai.aiEnv;
   if (engine === "postgres" && !opts.url && !opts.fromExport) {
     const dbUrl = envMap.DATABASE_URL?.trim();
@@ -110,17 +112,29 @@ async function runIntrospectCommand(argv: readonly string[]): Promise<number> {
       throw new Error("Provide either --url <postgres-url> or --from-export <bundle-dir>.");
     }
   }
-  // The new live-driver engines (mysql/sqlite/sqlserver) accept a connection
-  // string (or file path for sqlite) via --url; fall back to DATABASE_URL.
-  if ((engine === "mysql" || engine === "sqlserver") && !opts.url) {
-    const dbUrl = envMap.DATABASE_URL?.trim();
-    if (dbUrl) opts.url = dbUrl;
-    else throw new Error(`Provide --url <${engine}-url> (or set DATABASE_URL).`);
+  // For the new live-driver engines, prefer the runtime-resolved per-engine
+  // field (structured config -> provider-specific env -> DATABASE_URL fallback
+  // for URL-shaped engines). SQLite has no DATABASE_URL fallback by design.
+  if (engine === "mysql" && !opts.url) {
+    if (rt.introspection.mysqlDatabaseUrl) opts.url = rt.introspection.mysqlDatabaseUrl;
+    else
+      throw new Error(
+        "Provide --url <mysql-url> (or set introspection.providerConfig.mysql.databaseUrl / ASKDB_INTROSPECT_MYSQL_URL / DATABASE_URL).",
+      );
+  }
+  if (engine === "sqlserver" && !opts.url) {
+    if (rt.introspection.sqlserverDatabaseUrl) opts.url = rt.introspection.sqlserverDatabaseUrl;
+    else
+      throw new Error(
+        "Provide --url <sqlserver-url> (or set introspection.providerConfig.sqlserver.databaseUrl / ASKDB_INTROSPECT_SQLSERVER_URL / DATABASE_URL).",
+      );
   }
   if (engine === "sqlite" && !opts.url) {
-    const dbUrl = envMap.DATABASE_URL?.trim();
-    if (dbUrl) opts.url = dbUrl;
-    else throw new Error("Provide --url <path-to-sqlite-file> (or set DATABASE_URL).");
+    if (rt.introspection.sqliteFile) opts.url = rt.introspection.sqliteFile;
+    else
+      throw new Error(
+        "Provide --url <path-to-sqlite-file> (or set introspection.providerConfig.sqlite.file / ASKDB_INTROSPECT_SQLITE_FILE).",
+      );
   }
   if ((engine === "mysql" || engine === "sqlite" || engine === "sqlserver") && opts.fromExport) {
     throw new Error(

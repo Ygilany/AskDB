@@ -159,8 +159,74 @@ export type PrismaIntrospectionConfig = {
   outputDir?: string;
 };
 
+/** Discriminated union branch for `introspection` when `provider` is `"mysql"`. */
+export type MysqlIntrospectionConfig = {
+  provider: "mysql";
+  providerConfig?: {
+    mysql?: {
+      /**
+       * MySQL connection URL (e.g. `mysql://user:pass@host:port/database`).
+       * When omitted, `flattenAskDbConfig` falls back to the top-level `DATABASE_URL`
+       * resolved from the `database` section / env, since the `database` block remains
+       * Postgres-only today.
+       */
+      databaseUrl?: string;
+    };
+  };
+  /**
+   * Default introspection output directory (maps to `ASKDB_INTROSPECT_OUT`).
+   * When unset/blank, `flattenAskDbConfig` uses the package default `./askdb/`.
+   */
+  outputDir?: string;
+};
+
+/** Discriminated union branch for `introspection` when `provider` is `"sqlite"`. */
+export type SqliteIntrospectionConfig = {
+  provider: "sqlite";
+  providerConfig?: {
+    sqlite?: {
+      /**
+       * Path to a `.db` / `.sqlite` file (or `:memory:` for an empty DB). Required —
+       * SQLite has no URL-shaped fallback because `DATABASE_URL` is typically a URL
+       * for a network engine.
+       */
+      file?: string;
+    };
+  };
+  /**
+   * Default introspection output directory (maps to `ASKDB_INTROSPECT_OUT`).
+   * When unset/blank, `flattenAskDbConfig` uses the package default `./askdb/`.
+   */
+  outputDir?: string;
+};
+
+/** Discriminated union branch for `introspection` when `provider` is `"sqlserver"`. */
+export type SqlServerIntrospectionConfig = {
+  provider: "sqlserver";
+  providerConfig?: {
+    sqlserver?: {
+      /**
+       * Microsoft SQL Server connection URL (mssql URI form or the equivalent
+       * `Server=...;` connection string). When omitted, falls back to
+       * `DATABASE_URL`, same as the MySQL branch.
+       */
+      databaseUrl?: string;
+    };
+  };
+  /**
+   * Default introspection output directory (maps to `ASKDB_INTROSPECT_OUT`).
+   * When unset/blank, `flattenAskDbConfig` uses the package default `./askdb/`.
+   */
+  outputDir?: string;
+};
+
 /** Discriminated union of all supported introspection provider branches. */
-export type AskDbIntrospectionConfig = PostgresIntrospectionConfig | PrismaIntrospectionConfig;
+export type AskDbIntrospectionConfig =
+  | PostgresIntrospectionConfig
+  | PrismaIntrospectionConfig
+  | MysqlIntrospectionConfig
+  | SqliteIntrospectionConfig
+  | SqlServerIntrospectionConfig;
 
 // ---------------------------------------------------------------------------
 // Root config
@@ -171,7 +237,7 @@ export type AskDbIntrospectionConfig = PostgresIntrospectionConfig | PrismaIntro
  *
  * - **`ai`**: LLM provider discriminated union — selecting `provider` determines which `providerConfig` branch is required.
  * - **`database`**: primary app DB (Postgres today); supplies default `DATABASE_URL`.
- * - **`introspection`**: Postgres vs Prisma engine — selecting `provider` determines which `providerConfig` branch is valid.
+ * - **`introspection`**: target engine for `askdb introspect` (postgres / prisma / mysql / sqlite / sqlserver) — selecting `provider` determines which `providerConfig` branch is valid.
  * - **`rag`**: embedder + store branches flattened to `ASKDB_RAG_*` / `ASKDB_PGVECTOR_URL` / file paths.
  * - **`logging` | `modes` | `host`**: optional operational defaults.
  */
