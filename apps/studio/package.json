@@ -1,6 +1,6 @@
 {
   "name": "@askdb/studio",
-  "version": "0.2.0-beta.1",
+  "version": "0.2.0-beta.2",
   "description": "AskDB Studio: local browser UI for Schema v2 enrichment and sample NL-to-SQL checks.",
   "keywords": [
     "askdb",

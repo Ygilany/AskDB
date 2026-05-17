@@ -1,7 +1,7 @@
 {
   "name": "askdb-monorepo",
   "private": true,
-  "packageManager": "pnpm@11.0.9",
+  "packageManager": "pnpm@11.1.2",
   "engines": {
     "node": ">=20"
   },
@@ -28,13 +28,15 @@
     "release": "pnpm -r build && changeset publish"
   },
   "pnpm": {
-    "publicHoistPattern": ["*turbo*"]
+    "publicHoistPattern": [
+      "*turbo*"
+    ]
   },
   "devDependencies": {
-    "askdb": "workspace:*",
     "@askdb/config": "workspace:*",
     "@changesets/cli": "^2.27.10",
     "@types/node": "^22.13.14",
+    "askdb": "workspace:*",
     "turbo": "^2.5.6",
     "typescript": "^5.7.3",
     "vitest": "^3.0.9"
