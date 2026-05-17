@@ -1,5 +1,6 @@
 ---
 "@askdb/config": minor
+"@askdb/sqlite": patch
 "askdb": minor
 ---
 

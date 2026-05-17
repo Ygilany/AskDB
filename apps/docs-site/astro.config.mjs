@@ -84,6 +84,7 @@ export default defineConfig({
             { label: "@askdb/core", slug: "core" },
             { label: "@askdb/postgres", slug: "postgres" },
             { label: "@askdb/prisma", slug: "prisma" },
+            { label: "MySQL · SQLite · SQL Server", slug: "engines" },
             { label: "askdb", slug: "cli" },
             { label: "@askdb/introspect", slug: "introspect" },
             { label: "@askdb/enrich", slug: "enrich" },

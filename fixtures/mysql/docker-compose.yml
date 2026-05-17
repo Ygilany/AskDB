@@ -1,0 +1,28 @@
+# MySQL 8 dev fixture for @askdb/mysql integration tests.
+#
+# From repo root:
+#   docker compose -f fixtures/mysql/docker-compose.yml up -d --wait
+#
+# MYSQL_DATABASE_URL for integration tests:
+#   mysql://root:mysql@127.0.0.1:3306/askdb_test
+#
+# Tear down (remove volume):
+#   docker compose -f fixtures/mysql/docker-compose.yml down -v
+
+services:
+  mysql-db:
+    image: mysql:8.0
+    environment:
+      MYSQL_ROOT_PASSWORD: mysql
+      MYSQL_DATABASE: askdb_test
+    ports:
+      - "3306:3306"
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-pmysql"]
+      interval: 5s
+      timeout: 5s
+      retries: 15
+      start_period: 30s
+
+volumes:
+  mysql_data:
