@@ -30,6 +30,7 @@
     "enrich-shared-workspace",
     "fix-postgres-zod-resolution",
     "init-install-template-deps",
+    "init-template-root-config",
     "initial-0-1-0",
     "introspect-zero-args-config",
     "long-items-count",

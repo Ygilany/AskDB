@@ -1,5 +1,11 @@
 # askdb
 
+## 0.5.0-beta.5
+
+### Patch Changes
+
+- 1a3c63e: Align the `askdb init` generated `askdb.config.ts` template with the repo root config: canonical env names (`OPENAI_API_KEY`, `DATABASE_URL`, etc.), OpenAI RAG + file store defaults, and `logging`, `dev`, `tui`, `studio`, and `httpApi` sections.
+
 ## 0.5.0-beta.4
 
 ### Minor Changes
