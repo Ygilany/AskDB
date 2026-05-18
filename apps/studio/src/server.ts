@@ -602,6 +602,7 @@ async function openStudioRagStore(
     dimensions,
     ...(config.indexStrategy ? { indexStrategy: config.indexStrategy as "ivfflat" | "hnsw" | "none" } : {}),
   });
+  await store.ensureSchema();
   return {
     kind: "pgvector",
     store,

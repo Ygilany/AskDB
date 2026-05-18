@@ -92,8 +92,25 @@ askdb-rag query ./my-app.schema \
 <div className="definition-list">
             <div><code>{"memory"}</code><span>Ephemeral cosine store for tests and local smoke checks.</span></div>
             <div><code>{"file"}</code><span>Binary embeddings plus JSON metadata persisted next to the schema.</span></div>
-            <div><code>{"pgvector"}</code><span>Postgres vector storage; setup SQL is documented and intentionally not auto-run.</span></div>
+            <div><code>{"pgvector"}</code><span>Postgres vector storage. Schema setup is idempotent via <code>{"ensureSchema()"}</code> or explicit via <code>{"setupSql()"}</code>. See <a href="../guides/pgvector-setup/">pgvector setup guide</a>.</span></div>
           </div>
+
+## pgvector Schema Setup
+
+<p>The pgvector adapter needs a table and the <code>{"vector"}</code> extension before it can store embeddings. Three options:</p>
+
+<div className="definition-list">
+  <div><code>{"ensureSchema()"}</code><span>Runs the DDL directly against the database. All statements use <code>{"IF NOT EXISTS"}</code> — safe to call on every startup. Studio calls this automatically when pgvector is configured.</span></div>
+  <div><code>{"setupSql()"}</code><span>Returns the DDL as a string for use in your own migration system. Keeps production DDL explicit and version-controlled.</span></div>
+  <div><code>{"setup-store"}</code><span>CLI command that calls <code>{"ensureSchema()"}</code> from the terminal — useful in CI or Dockerfile bootstrap steps.</span></div>
+</div>
+
+```
+# CLI: provision the schema in one step
+askdb-rag setup-store --pg-url "$DATABASE_URL" --dimensions 1536
+```
+
+See the <a href="../guides/pgvector-setup/">pgvector setup guide</a> for step-by-step instructions covering each path.
 
 ## Sensitive Content
 
