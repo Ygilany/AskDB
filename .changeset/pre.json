@@ -28,6 +28,7 @@
     "dialect-package-split",
     "dialect-specs-mysql-sqlite-sqlserver",
     "enrich-shared-workspace",
+    "enrich-studio-zero-args-config",
     "fix-postgres-zod-resolution",
     "init-install-template-deps",
     "init-template-root-config",

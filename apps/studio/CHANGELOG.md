@@ -1,5 +1,11 @@
 # @askdb/studio
 
+## 0.2.0-beta.3
+
+### Patch Changes
+
+- 9c01a6d: Running **`askdb enrich`** and **`askdb studio`** with no arguments now opens the schema directory resolved from `askdb.config` (`introspection.outputDir` → `ASKDB_INTROSPECT_OUT` env → `./askdb/`) instead of printing usage. Pass **`--schema <dir>`** to override, or **`--help`** for the command reference.
+
 ## 0.2.0-beta.2
 
 ### Patch Changes
