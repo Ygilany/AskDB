@@ -2,8 +2,19 @@ import { Slot } from "@radix-ui/react-slot";
 import { cva, type VariantProps } from "class-variance-authority";
 import type { ComponentPropsWithoutRef, ElementRef } from "react";
 import type { ReactNode } from "react";
-import { forwardRef } from "react";
+import { forwardRef, useEffect, useRef, useState } from "react";
 import { cn } from "../lib/utils";
+
+function formatList(list: string[] | undefined): string {
+  return list?.join(", ") ?? "";
+}
+
+export function parseList(value: string): string[] {
+  return value
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
 
 const buttonVariants = cva(
   "inline-flex h-9 shrink-0 items-center justify-center gap-2 rounded-md border px-3 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50",
@@ -62,6 +73,38 @@ export const Input = forwardRef<ElementRef<"input">, ComponentPropsWithoutRef<"i
   ),
 );
 Input.displayName = "Input";
+
+export function ListInput({
+  value,
+  onChange,
+}: {
+  value: string[] | undefined;
+  onChange: (value: string[]) => void;
+}) {
+  const [raw, setRaw] = useState(() => formatList(value));
+  const focused = useRef(false);
+
+  useEffect(() => {
+    if (!focused.current) {
+      setRaw(formatList(value));
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [value]);
+
+  return (
+    <Input
+      value={raw}
+      onChange={(e) => setRaw(e.target.value)}
+      onFocus={() => {
+        focused.current = true;
+      }}
+      onBlur={() => {
+        focused.current = false;
+        onChange(parseList(raw));
+      }}
+    />
+  );
+}
 
 export const Textarea = forwardRef<
   ElementRef<"textarea">,
