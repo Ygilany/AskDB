@@ -71,9 +71,6 @@ export default defineConfig({
   dev: {
     mockSql: env("ASKDB_MOCK_SQL"),
   },
-  tui: {
-    model: env("ASKDB_TUI_MODEL"),
-  },
   studio: {
     listen: {
       host: env("ASKDB_STUDIO_HOST"),

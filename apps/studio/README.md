@@ -49,7 +49,6 @@ Environment variables:
 | --- | --- |
 | `OPENAI_API_KEY` | Enables AI suggestions and sample NL-to-SQL generation. |
 | `OPENAI_BASE_URL` | Optional OpenAI-compatible base URL. |
-| `ASKDB_STUDIO_MODEL` | Studio-specific model override. Falls back to `ASKDB_MODEL`, `OPENAI_MODEL`, then `gpt-4o-mini`. |
 | `ASKDB_STUDIO_HOST` | Bind host. Defaults to `127.0.0.1`. |
 | `ASKDB_STUDIO_PORT` | Bind port. Defaults to `5556`. |
 | `ASKDB_MOCK_SQL` | Deterministic generated SQL for tests or offline demos. |

@@ -218,37 +218,13 @@ export function flattenAskDbConfig(config: AskDbConfig): Record<string, string> 
     set(out, "ASKDB_MOCK_SQL", config.dev.mockSql);
   }
 
-  // --- TUI / Studio ---
-  if (config.tui?.model) {
-    set(out, "ASKDB_TUI_MODEL", config.tui.model);
-  }
-  if (config.studio?.model) {
-    set(out, "ASKDB_STUDIO_MODEL", config.studio.model);
-  }
+  // --- Studio ---
   if (config.studio?.listen?.host) {
     set(out, "ASKDB_STUDIO_HOST", config.studio.listen.host);
   }
   if (config.studio?.listen?.port !== undefined && !Number.isNaN(config.studio.listen.port)) {
     set(out, "ASKDB_STUDIO_PORT", String(config.studio.listen.port));
   }
-  const sr = config.studio?.rag;
-  if (sr?.embedder) {
-    set(out, "ASKDB_STUDIO_RAG_EMBEDDER", sr.embedder);
-  }
-  if (sr?.dimensions !== undefined) {
-    const d = typeof sr.dimensions === "number" ? String(sr.dimensions) : sr.dimensions?.trim();
-    if (d) set(out, "ASKDB_STUDIO_RAG_EMBEDDER_DIMENSIONS", d);
-  }
-  if (sr?.apiKey) {
-    set(out, "ASKDB_STUDIO_RAG_EMBEDDER_API_KEY", sr.apiKey);
-  }
-  if (sr?.baseUrl) {
-    set(out, "ASKDB_STUDIO_RAG_EMBEDDER_BASE_URL", sr.baseUrl);
-  }
-  if (sr?.model) {
-    set(out, "ASKDB_STUDIO_RAG_EMBEDDER_MODEL", sr.model);
-  }
-
   // --- HTTP API listen (canonical keys on runtime flat map) ---
   const httpListen = config.httpApi?.listen;
   if (httpListen?.port !== undefined && !Number.isNaN(httpListen.port)) {
