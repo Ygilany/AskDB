@@ -369,7 +369,7 @@
     <div class="pkg-card" style="border-left-color:#f472b6">
       <div class="pkg-name" style="color:#f472b6">@askdb/rag</div>
       <div class="pkg-version">packages/rag</div>
-      <div class="pkg-desc">Deterministic Schema v2 chunking (table, column, cql, question, concept, relationship chunks), BYO <code>Embedder</code> / <code>VectorStore</code> / <code>Retriever</code> interfaces, and built-in adapters: in-memory, file-backed, pgvector. Wires a retriever into <code>ask()</code> for large schemas.</div>
+      <div class="pkg-desc">Deterministic Schema v2 chunking (table, column, cql, question, concept, relationship chunks), BYO <code>Embedder</code> / <code>VectorStore</code> / <code>Retriever</code> interfaces, and built-in adapters: in-memory, file-backed, pgvector. All stores (<code>createMemoryStore</code>, <code>createFileStore</code>, <code>createPgvectorStore</code>) and embedders (<code>createAiSdkEmbedder</code>, <code>createOpenAiEmbedder</code>) are exported from the root barrel — no sub-path imports required. Also ships a <code>setup-store</code> CLI command for pgvector schema provisioning.</div>
       <div class="pkg-tags">
         <span class="tag tag-rag">rag</span>
         <span class="tag tag-lib">library</span>
@@ -456,7 +456,7 @@
     <div class="pkg-card" style="border-left-color:#fbbf24">
       <div class="pkg-name" style="color:#fbbf24">askdb (CLI)</div>
       <div class="pkg-version">apps/cli · bin: askdb</div>
-      <div class="pkg-desc">Batteries-included <code>askdb</code> binary. Commands: <code>ask</code> (NL→SQL), <code>introspect</code> (schema discovery), <code>enrich</code> (launch TUI), <code>studio</code> (launch browser UI), <code>init</code> (bootstrap config), <code>bundle</code> (pack schema directory). Composed from all reusable packages.</div>
+      <div class="pkg-desc">Batteries-included <code>askdb</code> binary. Commands: <code>ask</code> (NL→SQL), <code>introspect</code> (schema discovery — engine and connection URL now resolved from <code>askdb.config.ts</code> without flags), <code>enrich</code> (launch TUI), <code>studio</code> (launch browser UI), <code>init</code> (bootstrap config), <code>bundle</code> (pack schema directory). Composed from all reusable packages.</div>
       <div class="pkg-tags">
         <span class="tag tag-app">CLI</span>
         <span class="tag tag-app">batteries-included</span>
@@ -478,7 +478,7 @@
     <div class="pkg-card" style="border-left-color:#e879f9">
       <div class="pkg-name" style="color:#e879f9">@askdb/studio</div>
       <div class="pkg-version">apps/studio · bin: askdb-studio</div>
-      <div class="pkg-desc">Local browser UI serving a React SPA. Routes: <code>/api/workspace</code>, <code>/api/tables/:id</code>, <code>/api/suggest</code>, <code>/api/rag/status</code>, <code>/api/rag/index</code>, <code>/api/rag/query</code>, <code>/api/ask</code>. Integrates enrichment, RAG exploration, and sample NL→SQL with token usage tracking.</div>
+      <div class="pkg-desc">Local browser UI serving a React SPA. Routes: <code>/api/workspace</code>, <code>/api/tables/:id</code>, <code>/api/suggest</code>, <code>/api/rag/status</code>, <code>/api/rag/index</code>, <code>/api/rag/query</code>, <code>/api/ask</code>. Integrates enrichment, RAG exploration, and sample NL→SQL with token usage tracking. RAG vector store is configurable via <code>askdb.config.ts</code> <code>rag.store</code> field: <code>memory</code>, <code>file</code> (default), or <code>pgvector</code> (auto-provisions schema via <code>ensureSchema()</code>). Default schema directory resolved from config without requiring a CLI flag.</div>
       <div class="pkg-tags">
         <span class="tag tag-app">browser UI</span>
         <span class="tag tag-app">React</span>
@@ -1237,15 +1237,21 @@
           <tr><td>ASKDB_AI_API_KEY</td><td>Provider-agnostic API key override</td></tr>
           <tr><td>ASKDB_AI_PROVIDER</td><td><code>openai</code> | <code>azure</code> | <code>foundry</code></td></tr>
           <tr><td>ASKDB_MODEL / OPENAI_MODEL</td><td>Model ID (default: gpt-4o-mini)</td></tr>
-          <tr><td>ASKDB_TUI_MODEL</td><td>Override model for TUI enrichment suggestions</td></tr>
-          <tr><td>ASKDB_STUDIO_MODEL</td><td>Override model for Studio suggestions</td></tr>
           <tr><td>ASKDB_MODE</td><td><code>schema_only</code> | <code>bounded_results</code></td></tr>
           <tr><td>ASKDB_OMIT_SENSITIVE_FROM_PROMPT</td><td>Omit sensitive column/table names from DDL</td></tr>
           <tr><td>ASKDB_LOG_LEVEL</td><td>Pino log level: trace|debug|info|warn|error|fatal|silent</td></tr>
           <tr><td>DATABASE_URL</td><td>Postgres URL for live introspection</td></tr>
           <tr><td>ASKDB_SCHEMA_PATH</td><td>Schema path for HTTP API server</td></tr>
           <tr><td>ASKDB_SCHEMA_JSON</td><td>Inline schema JSON for HTTP API</td></tr>
-          <tr><td>ASKDB_RAG_EMBEDDER</td><td><code>ai-sdk</code> | <code>openai</code> | <code>mock</code></td></tr>
+          <tr><td>ASKDB_RAG_EMBEDDER</td><td><code>ai-sdk</code> | <code>openai</code> | <code>mock</code> — selects RAG embedder backend</td></tr>
+          <tr><td>ASKDB_RAG_EMBEDDER_API_KEY</td><td>API key override for RAG embedder (falls back to ASKDB_AI_API_KEY)</td></tr>
+          <tr><td>ASKDB_RAG_EMBEDDER_MODEL</td><td>Embedding model override (default: text-embedding-3-small)</td></tr>
+          <tr><td>ASKDB_RAG_EMBEDDER_DIMENSIONS</td><td>Embedding vector dimensions override</td></tr>
+          <tr><td>ASKDB_PGVECTOR_URL</td><td>Postgres connection string for pgvector RAG store</td></tr>
+          <tr><td>ASKDB_PGVECTOR_INDEX_STRATEGY</td><td><code>ivfflat</code> | <code>hnsw</code> | <code>none</code> — pgvector index type</td></tr>
+          <tr><td>ASKDB_INTROSPECT_MYSQL_URL</td><td>MySQL connection URL for introspection (via config)</td></tr>
+          <tr><td>ASKDB_INTROSPECT_SQLSERVER_URL</td><td>SQL Server connection URL for introspection (via config)</td></tr>
+          <tr><td>ASKDB_INTROSPECT_SQLITE_FILE</td><td>SQLite file path for introspection (via config)</td></tr>
           <tr><td>ASKDB_MOCK_SQL</td><td>Bypass live model in tests</td></tr>
           <tr><td>ASKDB_CORRELATION_ID</td><td>Override correlation ID for log lines</td></tr>
         </tbody>
@@ -1259,8 +1265,10 @@
         <tbody>
           <tr><td><code>askdb init</code></td><td>Create <code>askdb.config.ts</code> and install <code>@askdb/config</code></td></tr>
           <tr><td><code>askdb ask -s &lt;schema&gt; -q &lt;question&gt;</code></td><td>Generate SQL from schema + question</td></tr>
-          <tr><td><code>askdb introspect --url $DB_URL --out my.schema</code></td><td>Live Postgres introspection</td></tr>
+          <tr><td><code>askdb introspect --out my.schema</code></td><td>Introspect using engine + URL from <code>askdb.config.ts</code> (zero-flag mode)</td></tr>
+          <tr><td><code>askdb introspect --url $DB_URL --out my.schema</code></td><td>Live Postgres introspection (explicit URL)</td></tr>
           <tr><td><code>askdb introspect --prisma --out my.schema</code></td><td>Prisma schema-file introspection</td></tr>
+          <tr><td><code>askdb-rag setup-store --store pgvector --pg-url $URL</code></td><td>Auto-provision pgvector extension, table, and indexes</td></tr>
           <tr><td><code>askdb enrich --schema my.schema</code></td><td>Launch terminal enrichment UI</td></tr>
           <tr><td><code>askdb studio --schema my.schema</code></td><td>Launch browser Studio UI</td></tr>
           <tr><td><code>askdb bundle &lt;dir&gt; --out bundle.json</code></td><td>Bundle schema directory to JSON</td></tr>
@@ -1381,7 +1389,7 @@
           <td><strong>RAG with pgvector</strong></td>
           <td><code>@askdb/rag @askdb/core</code></td>
           <td><code>pg</code> + embedder package</td>
-          <td>Vector storage is optional and selected by the host.</td>
+          <td>Use <code>createPgvectorStore()</code>; call <code>store.ensureSchema()</code> once to auto-provision extension, table, and indexes. Or run <code>askdb-rag setup-store --store pgvector</code>. Studio auto-provisions on every request when <code>rag.store = "pgvector"</code>.</td>
         </tr>
         <tr>
           <td><strong>Batteries-included CLI</strong></td>
