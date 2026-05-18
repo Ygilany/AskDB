@@ -53,34 +53,43 @@ export type GoogleConfig = {
   model?: string;
 };
 
+/** All provider-specific configs as optional fields — intersected per-branch to require only the active provider's key. */
+export type AiProviderConfigs = {
+  openai?: OpenaiConfig;
+  azure?: AzureConfig;
+  foundry?: FoundryConfig;
+  anthropic?: AnthropicConfig;
+  google?: GoogleConfig;
+};
+
 /** Discriminated union branch for `ai` when `provider` is `"openai"`. */
 export type OpenaiAiConfig = {
   provider: "openai";
-  providerConfig: { openai: OpenaiConfig };
+  providerConfig: AiProviderConfigs & { openai: OpenaiConfig };
 };
 
 /** Discriminated union branch for `ai` when `provider` is `"azure"`. */
 export type AzureAiConfig = {
   provider: "azure";
-  providerConfig: { azure: AzureConfig };
+  providerConfig: AiProviderConfigs & { azure: AzureConfig };
 };
 
 /** Discriminated union branch for `ai` when `provider` is `"foundry"`. */
 export type FoundryAiConfig = {
   provider: "foundry";
-  providerConfig: { foundry: FoundryConfig };
+  providerConfig: AiProviderConfigs & { foundry: FoundryConfig };
 };
 
 /** Placeholder — not yet supported; `flattenAskDbConfig` throws. */
 export type AnthropicAiConfig = {
   provider: "anthropic";
-  providerConfig: { anthropic: AnthropicConfig };
+  providerConfig: AiProviderConfigs & { anthropic: AnthropicConfig };
 };
 
 /** Placeholder — not yet supported; `flattenAskDbConfig` throws. */
 export type GoogleAiConfig = {
   provider: "google";
-  providerConfig: { google: GoogleConfig };
+  providerConfig: AiProviderConfigs & { google: GoogleConfig };
 };
 
 /** Discriminated union of all supported (and placeholder) AI provider branches. */
@@ -126,18 +135,54 @@ export type PgvectorStoreConfig = {
 // Introspection configs
 // ---------------------------------------------------------------------------
 
+/** All introspection provider-specific configs as optional fields — allows storing multiple provider configs simultaneously. */
+export type IntrospectionProviderConfigs = {
+  postgres?: {
+    /**
+     * When omitted or blank, live introspection reuses the resolved `DATABASE_URL` from the
+     * `database` section. Set this only for an introspection-only URL.
+     */
+    databaseUrl?: string;
+  };
+  prisma?: {
+    /**
+     * Path to a `schema.prisma` file or directory containing `.prisma` files.
+     * When omitted, `@askdb/prisma` auto-discovers `prisma/schema.prisma` or `schema.prisma`
+     * in the project root — no explicit path needed.
+     */
+    schemaPath?: string;
+  };
+  mysql?: {
+    /**
+     * MySQL connection URL (e.g. `mysql://user:pass@host:port/database`).
+     * When omitted, `flattenAskDbConfig` falls back to the top-level `DATABASE_URL`
+     * resolved from the `database` section / env, since the `database` block remains
+     * Postgres-only today.
+     */
+    databaseUrl?: string;
+  };
+  sqlite?: {
+    /**
+     * Path to a `.db` / `.sqlite` file (or `:memory:` for an empty DB). Required —
+     * SQLite has no URL-shaped fallback because `DATABASE_URL` is typically a URL
+     * for a network engine.
+     */
+    file?: string;
+  };
+  sqlserver?: {
+    /**
+     * Microsoft SQL Server connection URL (mssql URI form or the equivalent
+     * `Server=...;` connection string). When omitted, falls back to
+     * `DATABASE_URL`, same as the MySQL branch.
+     */
+    databaseUrl?: string;
+  };
+};
+
 /** Discriminated union branch for `introspection` when `provider` is `"postgres"`. */
 export type PostgresIntrospectionConfig = {
   provider: "postgres";
-  providerConfig?: {
-    postgres?: {
-      /**
-       * When omitted or blank, live introspection reuses the resolved `DATABASE_URL` from the
-       * `database` section. Set this only for an introspection-only URL.
-       */
-      databaseUrl?: string;
-    };
-  };
+  providerConfig?: IntrospectionProviderConfigs;
   /**
    * Default introspection output directory (maps to `ASKDB_INTROSPECT_OUT`).
    * When unset/blank, `flattenAskDbConfig` uses the package default `./askdb/`.
@@ -148,16 +193,7 @@ export type PostgresIntrospectionConfig = {
 /** Discriminated union branch for `introspection` when `provider` is `"prisma"`. */
 export type PrismaIntrospectionConfig = {
   provider: "prisma";
-  providerConfig?: {
-    prisma?: {
-      /**
-       * Path to a `schema.prisma` file or directory containing `.prisma` files.
-       * When omitted, `@askdb/prisma` auto-discovers `prisma/schema.prisma` or `schema.prisma`
-       * in the project root — no explicit path needed.
-       */
-      schemaPath?: string;
-    };
-  };
+  providerConfig?: IntrospectionProviderConfigs;
   /**
    * Default introspection output directory (maps to `ASKDB_INTROSPECT_OUT`).
    * When unset/blank, `flattenAskDbConfig` uses the package default `./askdb/`.
@@ -168,17 +204,7 @@ export type PrismaIntrospectionConfig = {
 /** Discriminated union branch for `introspection` when `provider` is `"mysql"`. */
 export type MysqlIntrospectionConfig = {
   provider: "mysql";
-  providerConfig?: {
-    mysql?: {
-      /**
-       * MySQL connection URL (e.g. `mysql://user:pass@host:port/database`).
-       * When omitted, `flattenAskDbConfig` falls back to the top-level `DATABASE_URL`
-       * resolved from the `database` section / env, since the `database` block remains
-       * Postgres-only today.
-       */
-      databaseUrl?: string;
-    };
-  };
+  providerConfig?: IntrospectionProviderConfigs;
   /**
    * Default introspection output directory (maps to `ASKDB_INTROSPECT_OUT`).
    * When unset/blank, `flattenAskDbConfig` uses the package default `./askdb/`.
@@ -189,16 +215,7 @@ export type MysqlIntrospectionConfig = {
 /** Discriminated union branch for `introspection` when `provider` is `"sqlite"`. */
 export type SqliteIntrospectionConfig = {
   provider: "sqlite";
-  providerConfig?: {
-    sqlite?: {
-      /**
-       * Path to a `.db` / `.sqlite` file (or `:memory:` for an empty DB). Required —
-       * SQLite has no URL-shaped fallback because `DATABASE_URL` is typically a URL
-       * for a network engine.
-       */
-      file?: string;
-    };
-  };
+  providerConfig?: IntrospectionProviderConfigs;
   /**
    * Default introspection output directory (maps to `ASKDB_INTROSPECT_OUT`).
    * When unset/blank, `flattenAskDbConfig` uses the package default `./askdb/`.
@@ -209,16 +226,7 @@ export type SqliteIntrospectionConfig = {
 /** Discriminated union branch for `introspection` when `provider` is `"sqlserver"`. */
 export type SqlServerIntrospectionConfig = {
   provider: "sqlserver";
-  providerConfig?: {
-    sqlserver?: {
-      /**
-       * Microsoft SQL Server connection URL (mssql URI form or the equivalent
-       * `Server=...;` connection string). When omitted, falls back to
-       * `DATABASE_URL`, same as the MySQL branch.
-       */
-      databaseUrl?: string;
-    };
-  };
+  providerConfig?: IntrospectionProviderConfigs;
   /**
    * Default introspection output directory (maps to `ASKDB_INTROSPECT_OUT`).
    * When unset/blank, `flattenAskDbConfig` uses the package default `./askdb/`.
