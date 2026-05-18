@@ -106,7 +106,7 @@ Studio remains a local authoring surface:
 - Does not require a live database connection.
 - Does not introduce hosted auth, accounts, telemetry, or a project cloud.
 - AI calls remain BYO-provider through existing environment variables.
-- RAG embeddings remain local to the schema artifact unless the user explicitly configures an external store in a later phase.
+- Studio must honor the configured `rag.store` runtime branch. File-backed indices remain local to the schema artifact; `memory` stays in-process; `pgvector` uses the configured Postgres vector store.
 
 ### 6) UX baseline
 
@@ -119,7 +119,7 @@ Required views:
 - **Column editor**: description, aliases, enum notes, sensitive metadata display, tags where supported.
 - **RAG panel**: index status, stale reasons, build action, query debugger, retrieved chunks.
 - **Ask panel**: natural-language question input, generated SQL, explain text, warnings, retrieved chunks when enabled.
-- **Settings/status panel**: schema path, AI model/provider, embedder status, environment-driven capabilities.
+- **Settings/status panel**: schema path, AI model/provider, embedder status, active RAG store, and environment-driven capabilities.
 
 Interaction rules:
 
@@ -152,7 +152,7 @@ API compatibility is best-effort within pre-1.0, but tests should pin the Studio
 - Next.js migration for `apps/studio`.
 - New schema format or Schema v3 changes.
 - Replacing `@askdb/enrich` helpers for Schema v2 markdown writing.
-- External vector stores in Studio UI beyond the existing local file-backed RAG path.
+- In-app editing of vector-store configuration beyond reading the active runtime config.
 - Embeddable SDK package. This phase may inform it, but does not publish it.
 
 ## Spec decisions

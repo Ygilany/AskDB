@@ -22,8 +22,8 @@ Implementation is ready to merge when the React Studio builds as part of `@askdb
    - `GET /api/workspace` returns typed schema metadata, table drafts, warning summaries, AI config status, and concepts.
    - `POST /api/tables/:tableId` saves a draft and reloads the workspace from disk.
    - `POST /api/suggest` returns candidate text or a typed config error.
-   - `GET /api/rag/status` reports index state and stale reasons.
-   - `POST /api/rag/index` builds the local file-backed index with a mock or configured embedder.
+   - `GET /api/rag/status` reports index state, stale reasons, and the active store metadata.
+   - `POST /api/rag/index` builds the configured index (`memory`, file-backed, or `pgvector`) with a mock or configured embedder.
    - `POST /api/rag/query` returns scored chunks.
    - `POST /api/ask` returns SQL, explain text, warnings, and optional RAG chunks.
 
@@ -42,7 +42,9 @@ Implementation is ready to merge when the React Studio builds as part of `@askdb
 
 6. **RAG workflow**
    - Without an index, the RAG panel shows missing/stale state and disables query actions.
-   - Building an index updates status and writes the expected local index files.
+   - Building an index updates status for the configured store.
+   - When `rag.store=file`, Studio writes the expected local index files.
+   - When `rag.store=pgvector`, Studio reports the configured table/strategy and does not require local embedding files.
    - Querying RAG renders chunk id, type, score, refs, and text preview.
    - Changing relevant schema content marks the index stale.
    - Sensitive counts are displayed as counts only.
@@ -76,6 +78,7 @@ Implementation is ready to merge when the React Studio builds as part of `@askdb
   - RAG index can be built with mock embedder mode
   - RAG query returns chunks
   - sample Ask flow works with `ASKDB_MOCK_SQL`
+  - if `rag.store=pgvector`, the status panel reports the pgvector table/strategy instead of local embedding files
 - Inspect the edited `tables/*.md` diff to confirm only intended describable-layer changes occurred.
 - Pack the package and inspect the tarball contents:
 
@@ -89,7 +92,7 @@ pnpm --filter @askdb/studio pack
 - Hosted Studio deployment.
 - Next.js hosted app.
 - Embeddable SDK package.
-- External vector store configuration UI.
+- In-app vector store configuration editing.
 - Streaming RAG indexing progress.
 - Browser auto-open behavior, as long as the local URL is printed.
 

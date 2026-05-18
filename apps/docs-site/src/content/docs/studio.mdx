@@ -41,9 +41,11 @@ askdb-studio --schema ./my-app.schema
   <li>Edit table descriptions, aliases, primary entities, tags, common query language, example questions, and column metadata.</li>
   <li>Write table docs back to <code>{"tables/*.md"}</code> using <code>{"@askdb/enrich"}</code> workspace helpers.</li>
   <li>Request AI enrichment suggestions when <code>{"OPENAI_API_KEY"}</code> is configured.</li>
-  <li>Build and query the local file-backed RAG index from the browser.</li>
+  <li>Build and query the configured RAG index from the browser, including <code>{"memory"}</code>, file-backed, and <code>{"pgvector"}</code> stores.</li>
   <li>Generate sample Postgres SQL for natural-language questions against the currently saved enrichment.</li>
 </ul>
+
+<p>Studio reads the active <code>{"rag.store"}</code> branch from <code>{"askdb.config.*"}</code>. If you point that at <code>{"pgvector"}</code>, Studio uses the configured vector table rather than writing local embedding files. Studio does not yet provide an in-app editor for vector-store configuration.</p>
 
 ## Environment Variables
 
