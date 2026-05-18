@@ -16,7 +16,7 @@ import { defineConfig, env, type AskDbConfig } from "@askdb/config";
 // for optional fields (see \`@askdb/config\` / \`defaults.ts\`).
 export default defineConfig({
   ai: {
-    // openai | azure | foundry (foundry uses Azure-compatible env vars)
+    // openai | azure | foundry (foundry uses Azure-compatible env vars) | google
     provider: "openai",
     providerConfig: {
       openai: {
