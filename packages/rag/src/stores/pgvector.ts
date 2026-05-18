@@ -38,6 +38,8 @@ export type PgvectorStore = VectorStore & {
   setupSql(): string;
   /** Close any pool the adapter built internally. No-op when an external client was supplied. */
   close(): Promise<void>;
+  /** Diagnostic helper for hosts that need to verify persisted row counts. */
+  count(filter?: Filter): Promise<number>;
 };
 
 const DEFAULT_TABLE = "askdb_rag_chunks";
@@ -183,6 +185,32 @@ export function createPgvectorStore(
     );
   };
 
+  const count = async (filter?: Filter): Promise<number> => {
+    const c = await getClient();
+    const wheres: string[] = [];
+    const params: unknown[] = [];
+    if (filter?.schemaId !== undefined) {
+      params.push(filter.schemaId);
+      wheres.push(`schema_id = $${params.length}`);
+    }
+    if (filter?.types && filter.types.length > 0) {
+      params.push(filter.types);
+      wheres.push(`type = ANY($${params.length}::text[])`);
+    }
+    if (filter?.refs && filter.refs.length > 0) {
+      params.push(filter.refs);
+      wheres.push(`refs ?| $${params.length}::text[]`);
+    }
+    const whereSql = wheres.length > 0 ? `WHERE ${wheres.join(" AND ")}` : "";
+    const result = await c.query(
+      `SELECT COUNT(*)::int AS count FROM ${quoteIdent(table)} ${whereSql}`,
+      params,
+    );
+    const row = result.rows[0] as { count?: number | string } | undefined;
+    const raw = row?.count;
+    return typeof raw === "number" ? raw : Number(raw ?? 0);
+  };
+
   const setupSql = (): string => {
     const indexClause =
       indexStrategy === "hnsw"
@@ -229,6 +257,7 @@ export function createPgvectorStore(
     upsert,
     query,
     delete: del,
+    count,
     hashesByPrefix,
     setupSql,
     close,

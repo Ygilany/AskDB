@@ -4,8 +4,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { flattenAskDbConfig, resetAskDbRuntimeForTests, setAskDbRuntimeForTests } from "@askdb/config";
 import type { AskDbConfig } from "@askdb/config";
+import { createMemoryStore } from "@askdb/rag/stores/memory";
 import { afterEach, describe, expect, it } from "vitest";
-import { createStudioServer } from "./server.js";
+import { createStudioServer, setStudioPgvectorStoreFactoryForTests } from "./server.js";
 
 const repoRoot = new URL("../../..", import.meta.url).pathname;
 
@@ -44,6 +45,7 @@ describe("AskDB Studio server", () => {
 
   afterEach(async () => {
     resetAskDbRuntimeForTests();
+    setStudioPgvectorStoreFactoryForTests(undefined);
     await Promise.all(
       [...servers, ...embeddingServers].map(
         (server) =>
@@ -266,6 +268,66 @@ describe("AskDB Studio server", () => {
     expect(body.error.message).toContain("Status: 500");
     expect(body.error.message).toContain("embedding endpoint unavailable");
   });
+
+  it("honors the configured pgvector store for Studio RAG", async () => {
+    const backingStore = createMemoryStore();
+    setStudioPgvectorStoreFactoryForTests(() => ({
+      upsert: backingStore.upsert,
+      query: backingStore.query,
+      delete: backingStore.delete,
+      hashesByPrefix: backingStore.hashesByPrefix,
+      count: async (filter) => {
+        const snapshot = backingStore.snapshot();
+        return snapshot.records.filter((record) =>
+          filter?.schemaId ? record.payload.schemaId === filter.schemaId : true,
+        ).length;
+      },
+      setupSql: () => "",
+      close: async () => {},
+    }));
+    const pgvectorStructured: AskDbConfig = {
+      ...STUDIO_TEST_BASE,
+      rag: {
+        embedder: "mock",
+        embedderConfig: {},
+        store: "pgvector",
+        storeConfig: {
+          pgvector: {
+            databaseUrl: "postgres://pgvector.test/askdb",
+            table: "studio_rag_chunks",
+            dimensions: 64,
+            indexStrategy: "hnsw",
+          },
+        },
+      },
+    };
+    installStudioRuntime({}, pgvectorStructured);
+
+    const schemaDir = copyFixture();
+    const server = createStudioServer({ schema: schemaDir });
+    servers.push(server);
+    const baseUrl = await listen(server);
+
+    const initialStatus = await getJson(`${baseUrl}/api/rag/status`);
+    expect(initialStatus.store.kind).toBe("pgvector");
+    expect(initialStatus.store.table).toBe("studio_rag_chunks");
+    expect(initialStatus.hasIndex).toBe(false);
+
+    const indexed = await postJson(`${baseUrl}/api/rag/index`, {});
+    expect(indexed.status.store.kind).toBe("pgvector");
+    expect(indexed.status.store.table).toBe("studio_rag_chunks");
+    expect(indexed.status.hasIndex).toBe(true);
+    expect(indexed.status.stale).toBe(false);
+    expect(indexed.status.files.embeddingsJson).toBe(false);
+    expect(indexed.status.files.embeddingsBin).toBe(false);
+
+    const retrieved = await postJson(`${baseUrl}/api/rag/query`, {
+      question: "Which users placed orders?",
+      k: 2,
+    });
+    expect(retrieved.results.length).toBeGreaterThan(0);
+    expect(retrieved.results[0].score).toEqual(expect.any(Number));
+  });
 });
 
 function copyFixture(): string {
@@ -339,9 +401,12 @@ function tokenCount(text: string): number {
   return text.toLowerCase().match(/[a-z0-9_]+/g)?.length ?? 0;
 }
 
+
 async function getJson(url: string): Promise<any> {
   const response = await fetch(url);
-  expect(response.status).toBe(200);
+  if (response.status !== 200) {
+    throw new Error(`GET ${url} failed with ${response.status}: ${await response.text()}`);
+  }
   return response.json();
 }
 

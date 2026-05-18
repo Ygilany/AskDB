@@ -29,9 +29,12 @@ import {
   type ChunkType,
   type Embedder,
   type QueryResult,
+  type VectorStore,
 } from "@askdb/rag";
 import { createAiSdkEmbedder } from "@askdb/rag/embedders/ai-sdk";
 import { createFileStore } from "@askdb/rag/stores/file";
+import { createMemoryStore } from "@askdb/rag/stores/memory";
+import { createPgvectorStore } from "@askdb/rag/stores/pgvector";
 import {
   buildDefaultTableBody,
   buildFrontmatter,
@@ -70,6 +73,7 @@ export type StudioServer = ReturnType<typeof createServer>;
 type StudioState = {
   schemaDir: string;
   workspace: Workspace;
+  ragMemoryStore?: ReturnType<typeof createMemoryStore>;
 };
 
 type StudioRagEmbedderConfig =
@@ -95,6 +99,20 @@ type StudioRagEmbedderConfig =
 
 type StudioRequestUsageCollector = ReturnType<typeof createRequestUsageCollector>;
 
+type StudioOpenRagStore = {
+  kind: StudioRagStatusDto["store"]["kind"];
+  store: VectorStore & {
+    flush?: () => void;
+    close?: () => Promise<void>;
+    size?: () => number;
+    count?: (filter?: { schemaId?: string }) => Promise<number>;
+  };
+  basePath?: string;
+  table?: string;
+  indexStrategy?: string;
+  dispose: () => Promise<void>;
+};
+
 type StudioTokenUsageInput = {
   totalTokens?: number;
   promptTokens?: number;
@@ -105,6 +123,13 @@ type StudioTokenUsageInput = {
 const STUDIO_RAG_MOCK_DIMENSIONS = 64;
 const STUDIO_RAG_MOCK_EMBEDDER_ID = `studio:mock-lexical-${STUDIO_RAG_MOCK_DIMENSIONS}`;
 const DEFAULT_EMBEDDING_MODEL = "text-embedding-3-small";
+let studioPgvectorStoreFactoryForTests: typeof createPgvectorStore | undefined;
+
+export function setStudioPgvectorStoreFactoryForTests(
+  factory: typeof createPgvectorStore | undefined,
+): void {
+  studioPgvectorStoreFactoryForTests = factory;
+}
 
 export function createStudioServer(options: StudioOptions): StudioServer {
   const schemaDir = resolve(options.schema);
@@ -143,22 +168,22 @@ export function createStudioServer(options: StudioOptions): StudioServer {
         return writeJson(res, 200, { candidates });
       }
       if (req.method === "GET" && url.pathname === "/api/rag/status") {
-        return writeJson(res, 200, getRagStatus(state.schemaDir));
+        return writeJson(res, 200, await getRagStatus(state));
       }
       if (req.method === "POST" && url.pathname === "/api/rag/index") {
-        const result = await indexRag(state.schemaDir);
+        const result = await indexRag(state);
         return writeJson(res, 200, result);
       }
       if (req.method === "POST" && url.pathname === "/api/rag/query") {
         const body = await readJson(req);
         const query = parseRagQuery(body);
-        const result = await queryRag(state.schemaDir, query);
+        const result = await queryRag(state, query);
         return writeJson(res, 200, result);
       }
       if (req.method === "POST" && url.pathname === "/api/ask") {
         const body = await readJson(req);
         const options = parseAskBody(body);
-        const result = await askSampleQuestion(state.schemaDir, options);
+        const result = await askSampleQuestion(state, options);
         return writeJson(res, 200, result);
       }
       if (req.method === "GET" && !url.pathname.startsWith("/api/")) {
@@ -260,7 +285,7 @@ async function suggestForSource(workspace: Workspace, source: SuggestSource): Pr
 }
 
 async function askSampleQuestion(
-  schemaDir: string,
+  state: StudioState,
   options: { question: string; useRag: boolean },
 ): Promise<AskResponse> {
   const rt = getAskDbRuntimeConfig();
@@ -273,11 +298,11 @@ async function askSampleQuestion(
     );
   }
 
-  const schema = loadSchema(schemaDir);
+  const schema = loadSchema(state.schemaDir);
   const retrievedChunks: QueryResult[] = [];
   const usage = createRequestUsageCollector();
   const ragIndex = options.useRag
-    ? await createCurrentStudioRagIndex(schemaDir, "using RAG for sample generation", usage)
+    ? await createCurrentStudioRagIndex(state, "using RAG for sample generation", usage)
     : undefined;
   type AskModel = Parameters<typeof ask>[0]["model"];
   const model: AskModel = mockSql
@@ -307,7 +332,7 @@ async function askSampleQuestion(
             try {
               results = await ragIndex.retriever(params);
             } catch (error) {
-              throw formatStudioRagEmbeddingError(error, ragIndex.config);
+              throw formatStudioRagOperationError(error, ragIndex.config);
             }
             retrievedChunks.splice(0, retrievedChunks.length, ...results);
             return results;
@@ -327,6 +352,8 @@ async function askSampleQuestion(
         : {
             generateText: createTrackedGenerateText(usage),
           },
+  }).finally(async () => {
+    await ragIndex?.dispose();
   });
 
   return {
@@ -341,100 +368,113 @@ async function askSampleQuestion(
   };
 }
 
-function getRagStatus(schemaDir: string): StudioRagStatusDto {
+async function getRagStatus(state: StudioState): Promise<StudioRagStatusDto> {
   const config = resolveStudioRagEmbedderConfig();
-  const sources = loadChunkerSourcesFromDir(schemaDir);
+  const sources = loadChunkerSourcesFromDir(state.schemaDir);
   const chunkResult = chunkSchema(sources);
-  const lockPath = join(schemaDir, "schema.lock.json");
-  const embeddingsJsonPath = join(schemaDir, "schema.embeddings.json");
-  const embeddingsBinPath = join(schemaDir, "schema.embeddings.bin");
+  const lockPath = join(state.schemaDir, "schema.lock.json");
   const lock = readOptionalJson(lockPath) as
     | { embedderId?: string; updatedAt?: string; hashes?: Record<string, string> }
     | undefined;
-  const embeddings = readOptionalJson(embeddingsJsonPath) as
-    | { records?: unknown[]; dimensions?: number }
-    | undefined;
-
   const currentHashes = Object.fromEntries(
     chunkResult.chunks.map((chunk) => [chunk.id, chunkContentHash(chunk.text)]),
   );
   const lockHashes = lock?.hashes ?? {};
   const hashIds = Object.keys(currentHashes);
-  const stale =
-    !lock ||
-    !existsSync(embeddingsJsonPath) ||
-    !existsSync(embeddingsBinPath) ||
-    lock.embedderId !== config.embedderId ||
-    embeddings?.dimensions !== config.dimensions ||
-    Object.keys(lockHashes).length !== hashIds.length ||
-    hashIds.some((id) => lockHashes[id] !== currentHashes[id]);
+  const store = await openStudioRagStore(state, config.dimensions);
+  try {
+    const chunksIndexed = await countStudioRagStoreChunks(store, sources.schema.schemaId);
+    const stale =
+      !lock ||
+      lock.embedderId !== config.embedderId ||
+      Object.keys(lockHashes).length !== hashIds.length ||
+      hashIds.some((id) => lockHashes[id] !== currentHashes[id]) ||
+      chunksIndexed !== hashIds.length;
+    const fileArtifacts =
+      store.kind === "file" && store.basePath
+        ? {
+            lock: existsSync(lockPath),
+            embeddingsJson: existsSync(`${store.basePath}.embeddings.json`),
+            embeddingsBin: existsSync(`${store.basePath}.embeddings.bin`),
+          }
+        : {
+            lock: existsSync(lockPath),
+            embeddingsJson: false,
+            embeddingsBin: false,
+          };
 
-  return {
-    schemaId: sources.schema.schemaId,
-    embedder: {
-      kind: config.kind,
-      label: config.label,
-      configured: config.configured,
-      expectedId: config.embedderId,
-      indexedId: lock?.embedderId ?? null,
-      provider: config.kind === "ai-sdk" ? config.provider : null,
-      model: config.kind === "ai-sdk" ? config.model : null,
-      baseUrl: config.kind === "ai-sdk" ? config.baseUrl ?? null : null,
-    },
-    embedderId: lock?.embedderId ?? config.embedderId,
-    expectedEmbedderId: config.embedderId,
-    hasIndex: Boolean(lock && existsSync(embeddingsJsonPath) && existsSync(embeddingsBinPath)),
-    stale,
-    updatedAt: lock?.updatedAt ?? null,
-    chunksTotal: chunkResult.chunks.length,
-    chunksIndexed: Array.isArray(embeddings?.records) ? embeddings.records.length : 0,
-    dimensions: typeof embeddings?.dimensions === "number" ? embeddings.dimensions : config.dimensions,
-    expectedDimensions: config.dimensions,
-    sensitiveExcluded: chunkResult.stats.sensitiveExcluded,
-    sensitiveIncluded: chunkResult.stats.sensitiveIncluded,
-    files: {
-      lock: existsSync(lockPath),
-      embeddingsJson: existsSync(embeddingsJsonPath),
-      embeddingsBin: existsSync(embeddingsBinPath),
-    },
-  };
+    return {
+      schemaId: sources.schema.schemaId,
+      store: {
+        kind: store.kind,
+        basePath: store.basePath ?? null,
+        table: store.table ?? null,
+        indexStrategy: store.indexStrategy ?? null,
+      },
+      embedder: {
+        kind: config.kind,
+        label: config.label,
+        configured: config.configured,
+        expectedId: config.embedderId,
+        indexedId: lock?.embedderId ?? null,
+        provider: config.kind === "ai-sdk" ? config.provider : null,
+        model: config.kind === "ai-sdk" ? config.model : null,
+        baseUrl: config.kind === "ai-sdk" ? config.baseUrl ?? null : null,
+      },
+      embedderId: lock?.embedderId ?? config.embedderId,
+      expectedEmbedderId: config.embedderId,
+      hasIndex: Boolean(lock && chunksIndexed > 0),
+      stale,
+      updatedAt: lock?.updatedAt ?? null,
+      chunksTotal: chunkResult.chunks.length,
+      chunksIndexed,
+      dimensions: config.dimensions,
+      expectedDimensions: config.dimensions,
+      sensitiveExcluded: chunkResult.stats.sensitiveExcluded,
+      sensitiveIncluded: chunkResult.stats.sensitiveIncluded,
+      files: fileArtifacts,
+    };
+  } finally {
+    await store.dispose();
+  }
 }
 
-async function indexRag(schemaDir: string): Promise<RagIndexResponse> {
+async function indexRag(state: StudioState): Promise<RagIndexResponse> {
   const config = resolveStudioRagEmbedderConfig();
   if (!config.configured) {
     throw new StudioHttpError(400, studioRagAiSdkKeyMissingMessage());
   }
   const usage = createRequestUsageCollector();
-  clearIncompatibleRagStore(schemaDir, config);
-  const sources = loadChunkerSourcesFromDir(schemaDir);
-  const store = createFileStore({ basePath: join(schemaDir, "schema") });
+  clearIncompatibleRagStore(state, config);
+  const sources = loadChunkerSourcesFromDir(state.schemaDir);
+  const store = await openStudioRagStore(state, config.dimensions);
   let result: Awaited<ReturnType<typeof buildSchemaIndex>>;
   try {
     result = await buildSchemaIndex({
       schema: sources,
       embedder: await createStudioRagEmbedder(config, usage),
-      store,
+      store: store.store,
       embedderId: config.embedderId,
-      lockFilePath: join(schemaDir, "schema.lock.json"),
+      lockFilePath: join(state.schemaDir, "schema.lock.json"),
     });
   } catch (error) {
-    throw formatStudioRagEmbeddingError(error, config);
+    throw formatStudioRagOperationError(error, config);
+  } finally {
+    await store.dispose();
   }
-  store.flush();
   return {
-    status: getRagStatus(schemaDir),
+    status: await getRagStatus(state),
     stats: result.stats,
     usage: usage.toDto(),
   };
 }
 
 async function queryRag(
-  schemaDir: string,
+  state: StudioState,
   query: { question: string; k: number; types?: ChunkType[] },
 ): Promise<RagQueryResponse> {
   const usage = createRequestUsageCollector();
-  const ragIndex = await createCurrentStudioRagIndex(schemaDir, "querying chunks", usage);
+  const ragIndex = await createCurrentStudioRagIndex(state, "querying chunks", usage);
   let results: QueryResult[];
   try {
     results = await ragIndex.retriever({
@@ -446,7 +486,9 @@ async function queryRag(
       },
     });
   } catch (error) {
-    throw formatStudioRagEmbeddingError(error, ragIndex.config);
+    throw formatStudioRagOperationError(error, ragIndex.config);
+  } finally {
+    await ragIndex.dispose();
   }
 
   return {
@@ -458,19 +500,20 @@ async function queryRag(
 }
 
 async function createCurrentStudioRagIndex(
-  schemaDir: string,
+  state: StudioState,
   action: string,
   usage?: StudioRequestUsageCollector,
 ): Promise<{
   config: StudioRagEmbedderConfig;
   status: { schemaId: string; chunksTotal: number };
   retriever: ReturnType<typeof createRetriever>;
+  dispose: () => Promise<void>;
 }> {
   const config = resolveStudioRagEmbedderConfig();
   if (!config.configured) {
     throw new StudioHttpError(400, studioRagAiSdkKeyMissingMessage());
   }
-  const status = getRagStatus(schemaDir) as {
+  const status = (await getRagStatus(state)) as {
     hasIndex?: boolean;
     stale?: boolean;
     schemaId?: string;
@@ -485,6 +528,7 @@ async function createCurrentStudioRagIndex(
   if (!status.schemaId || typeof status.chunksTotal !== "number") {
     throw new StudioHttpError(500, "Studio RAG status is missing schema metadata.");
   }
+  const store = await openStudioRagStore(state, config.dimensions);
   return {
     config,
     status: {
@@ -493,9 +537,98 @@ async function createCurrentStudioRagIndex(
     },
     retriever: createRetriever({
       embedder: await createStudioRagEmbedder(config, usage),
-      store: createFileStore({ basePath: join(schemaDir, "schema") }),
+      store: store.store,
     }),
+    dispose: async () => {
+      await store.dispose();
+    },
   };
+}
+
+function resolveStudioRagStoreConfig(state: StudioState):
+  | { kind: "memory" }
+  | { kind: "file"; basePath: string }
+  | { kind: "pgvector"; connectionString?: string; table?: string; indexStrategy?: string } {
+  const rt = getAskDbRuntimeConfig();
+  const kind = rt.structured.rag.store;
+  if (kind === "memory") return { kind };
+  if (kind === "file") {
+    const basePath = rt.structured.rag.storeConfig.file?.basePath?.trim();
+    return { kind, basePath: basePath ? resolve(basePath) : join(state.schemaDir, "schema") };
+  }
+  const connectionString = pickFlat(rt.flat, "ASKDB_PGVECTOR_URL");
+  return {
+    kind,
+    connectionString,
+    table: rt.structured.rag.storeConfig.pgvector?.table?.trim() || undefined,
+    indexStrategy: pickFlat(rt.flat, "ASKDB_PGVECTOR_INDEX_STRATEGY"),
+  };
+}
+
+async function openStudioRagStore(
+  state: StudioState,
+  dimensions: number,
+): Promise<StudioOpenRagStore> {
+  const config = resolveStudioRagStoreConfig(state);
+  if (config.kind === "memory") {
+    state.ragMemoryStore ??= createMemoryStore();
+    return {
+      kind: "memory",
+      store: state.ragMemoryStore,
+      dispose: async () => {},
+    };
+  }
+  if (config.kind === "file") {
+    const store = createFileStore({ basePath: config.basePath });
+    return {
+      kind: "file",
+      store,
+      basePath: config.basePath,
+      dispose: async () => {
+        store.flush();
+      },
+    };
+  }
+  if (!config.connectionString) {
+    throw new StudioHttpError(
+      400,
+      'Studio pgvector RAG requires `ASKDB_PGVECTOR_URL` via `askdb.config.ts`.',
+    );
+  }
+  const pgvectorFactory = studioPgvectorStoreFactoryForTests ?? createPgvectorStore;
+  const store = pgvectorFactory({
+    connectionString: config.connectionString,
+    table: config.table,
+    dimensions,
+    ...(config.indexStrategy ? { indexStrategy: config.indexStrategy as "ivfflat" | "hnsw" | "none" } : {}),
+  });
+  return {
+    kind: "pgvector",
+    store,
+    table: config.table,
+    indexStrategy: config.indexStrategy,
+    dispose: async () => {
+      await store.close();
+    },
+  };
+}
+
+async function countStudioRagStoreChunks(
+  store: StudioOpenRagStore,
+  schemaId: string,
+): Promise<number> {
+  if (typeof store.store.count === "function") {
+    return store.store.count({ schemaId });
+  }
+  if (typeof store.store.size === "function") {
+    return store.store.size();
+  }
+  return 0;
+}
+
+function pickFlat(flat: Readonly<Record<string, string>>, key: string): string | undefined {
+  const value = flat[key];
+  return typeof value === "string" && value.trim() !== "" ? value.trim() : undefined;
 }
 
 function pickEnv(env: AskDbAiEnv, key: string): string | undefined {
@@ -613,15 +746,19 @@ async function createStudioRagEmbedder(
   });
 }
 
-function formatStudioRagEmbeddingError(
+function formatStudioRagOperationError(
   error: unknown,
   config: StudioRagEmbedderConfig,
 ): StudioHttpError {
+  if (error instanceof StudioHttpError) return error;
   if (config.kind === "mock") {
     return new StudioHttpError(500, error instanceof Error ? error.message : String(error));
   }
 
   const apiError = findApiCallError(error);
+  if (!apiError) {
+    return new StudioHttpError(500, error instanceof Error ? error.message : String(error));
+  }
   const parts = [
     `Studio RAG embedding request failed for provider ${config.provider}, model ${config.model}.`,
   ];
@@ -663,14 +800,16 @@ function truncateForMessage(value: string | undefined): string | undefined {
   return trimmed.length > 500 ? `${trimmed.slice(0, 500)}...` : trimmed;
 }
 
-function clearIncompatibleRagStore(schemaDir: string, config: StudioRagEmbedderConfig): void {
-  const embeddingsJsonPath = join(schemaDir, "schema.embeddings.json");
+function clearIncompatibleRagStore(state: StudioState, config: StudioRagEmbedderConfig): void {
+  const store = resolveStudioRagStoreConfig(state);
+  if (store.kind !== "file") return;
+  const embeddingsJsonPath = `${store.basePath}.embeddings.json`;
   const embeddings = readOptionalJson(embeddingsJsonPath) as { dimensions?: number } | undefined;
   if (embeddings?.dimensions === undefined || embeddings.dimensions === config.dimensions) return;
   for (const path of [
-    join(schemaDir, "schema.embeddings.json"),
-    join(schemaDir, "schema.embeddings.bin"),
-    join(schemaDir, "schema.lock.json"),
+    `${store.basePath}.embeddings.json`,
+    `${store.basePath}.embeddings.bin`,
+    join(state.schemaDir, "schema.lock.json"),
   ]) {
     rmSync(path, { force: true });
   }
