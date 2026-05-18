@@ -1,5 +1,13 @@
 # @askdb/studio
 
+## 0.2.0-beta.6
+
+### Patch Changes
+
+- 0084012: Add `ensureSchema()` to the pgvector adapter and auto-invoke it in Studio on every RAG operation, eliminating the "relation does not exist" error when pgvector is configured. Add `askdb-rag setup-store` CLI command for explicit schema provisioning in CI and production pipelines.
+- Updated dependencies [0084012]
+  - @askdb/rag@0.2.0-beta.5
+
 ## 0.2.0-beta.5
 
 ### Patch Changes

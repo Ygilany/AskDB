@@ -38,6 +38,7 @@
     "introspect-zero-args-config",
     "long-items-count",
     "mysql-sqlite-sqlserver-connectors",
+    "pgvector-auto-schema-setup",
     "phase-6-introspect-skeleton",
     "phase-7-5-architecture-reshape",
     "phase-7-tui-enrichment",
