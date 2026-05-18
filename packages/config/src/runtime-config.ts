@@ -11,8 +11,6 @@ export type AskDbRuntimeAiConfig = {
    * `resolveAskDbAiConfig`, `createAskDbLanguageModelFromEnv`, etc.
    */
   aiEnv: Record<string, string | undefined>;
-  tuiModel: string | undefined;
-  studioModel: string | undefined;
 };
 
 export type AskDbRuntimeRagEmbedderConfig = {
@@ -160,8 +158,6 @@ export function getAskDbRuntimeConfig(): AskDbRuntimeConfig {
     flat,
     ai: {
       aiEnv,
-      tuiModel: structured.tui?.model ?? pickFlat(flat, "ASKDB_TUI_MODEL"),
-      studioModel: structured.studio?.model ?? pickFlat(flat, "ASKDB_STUDIO_MODEL"),
     },
     introspection: {
       provider: structured.introspection.provider,

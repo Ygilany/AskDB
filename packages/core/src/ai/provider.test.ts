@@ -144,13 +144,6 @@ describe("resolveAskDbAiConfig", () => {
     expect(azureCfg?.model).toBe("my-deployment");
   });
 
-  it("honours a per-app modelEnvVar override", () => {
-    const cfg = resolveAskDbAiConfig(
-      { ASKDB_AI_API_KEY: "k", ASKDB_TUI_MODEL: "tui-only", ASKDB_AI_MODEL: "shared" },
-      { modelEnvVar: "ASKDB_TUI_MODEL" },
-    );
-    expect(cfg?.model).toBe("tui-only");
-  });
 });
 
 describe("resolveAskDbEmbeddingConfig", () => {
@@ -182,11 +175,11 @@ describe("resolveAskDbEmbeddingConfig", () => {
       {
         ASKDB_AI_API_KEY: "k",
         ASKDB_AI_EMBEDDING_MODEL: "shared-embedding",
-        ASKDB_STUDIO_RAG_EMBEDDER_MODEL: "studio-only",
+        ASKDB_RAG_EMBEDDER_MODEL: "rag-only",
       },
-      { modelEnvVar: "ASKDB_STUDIO_RAG_EMBEDDER_MODEL" },
+      { modelEnvVar: "ASKDB_RAG_EMBEDDER_MODEL" },
     );
-    expect(cfg?.model).toBe("studio-only");
+    expect(cfg?.model).toBe("rag-only");
   });
 
   it("resolves Azure embedding deployments from the configured Azure connection", () => {

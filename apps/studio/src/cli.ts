@@ -139,7 +139,7 @@ function printHelp(stream: NodeJS.WriteStream): void {
       "  -h, --help           Print this help",
       "",
       "AI enrichment and sample NL-to-SQL use OPENAI_API_KEY. Override the model",
-      "with ASKDB_STUDIO_MODEL, ASKDB_MODEL, or OPENAI_MODEL.",
+      "with ASKDB_AI_MODEL, ASKDB_MODEL, or OPENAI_MODEL.",
       "",
     ].join("\n"),
   );

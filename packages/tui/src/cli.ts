@@ -144,7 +144,7 @@ function printHelp(stream: NodeJS.WriteStream): void {
       "AI suggestions are enabled when ASKDB_AI_API_KEY (or OPENAI_API_KEY) is set.",
       "For Microsoft Foundry / Azure OpenAI: set ASKDB_AI_PROVIDER=azure plus",
       "ASKDB_AI_AZURE_RESOURCE_NAME (or ASKDB_AI_BASE_URL). Override the model",
-      "with ASKDB_TUI_MODEL, ASKDB_AI_MODEL, ASKDB_MODEL, or OPENAI_MODEL.",
+      "with ASKDB_AI_MODEL, ASKDB_MODEL, or OPENAI_MODEL.",
       "",
     ].join("\n"),
   );
@@ -156,9 +156,7 @@ function formatError(error: unknown): string {
 
 async function buildSuggester(): Promise<SuggestEnrichmentForTui | undefined> {
   const runtimeConfig = getAskDbRuntimeConfig();
-  const model = await createAskDbLanguageModelFromEnv(runtimeConfig.ai.aiEnv, {
-    modelEnvVar: runtimeConfig.ai.tuiModel ? "ASKDB_TUI_MODEL" : undefined,
-  });
+  const model = await createAskDbLanguageModelFromEnv(runtimeConfig.ai.aiEnv);
   if (!model) return undefined;
   return (target, context) => suggestEnrichment(target, context, model);
 }
