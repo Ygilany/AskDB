@@ -203,9 +203,7 @@ export function serializeWorkspace(workspace: Workspace): StudioWorkspaceDto {
   const rt = getAskDbRuntimeConfig();
   const aiConfig = (() => {
     try {
-      return resolveAskDbAiConfig(rt.ai.aiEnv, {
-        modelEnvVar: rt.ai.studioModel ? "ASKDB_STUDIO_MODEL" : undefined,
-      });
+      return resolveAskDbAiConfig(rt.ai.aiEnv);
     } catch {
       // A misconfigured AI env (e.g. azure without resourceName) shouldn't crash the workspace
       // listing — surface it as "not configured" in the UI and let the user fix .env.
@@ -265,14 +263,7 @@ function saveDraft(state: StudioState, tableId: string, draft: TableDraft): void
 
 async function suggestForSource(workspace: Workspace, source: SuggestSource): Promise<SuggestResponse["candidates"]> {
   const rt = getAskDbRuntimeConfig();
-  const modelEnvVar = rt.ai.studioModel
-    ? "ASKDB_STUDIO_MODEL"
-    : rt.ai.tuiModel
-      ? "ASKDB_TUI_MODEL"
-      : undefined;
-  const model = await createAskDbLanguageModelFromEnv(rt.ai.aiEnv, {
-    modelEnvVar,
-  });
+  const model = await createAskDbLanguageModelFromEnv(rt.ai.aiEnv);
   if (!model) {
     throw new StudioHttpError(400, askDbAiKeyMissingMessage("AI enrichment suggestions"));
   }
@@ -307,9 +298,7 @@ async function askSampleQuestion(
   type AskModel = Parameters<typeof ask>[0]["model"];
   const model: AskModel = mockSql
     ? (undefined as unknown as AskModel)
-    : ((await createAskDbLanguageModelFromEnv(rt.ai.aiEnv, {
-        modelEnvVar: rt.ai.studioModel ? "ASKDB_STUDIO_MODEL" : undefined,
-      })) as AskModel);
+    : ((await createAskDbLanguageModelFromEnv(rt.ai.aiEnv)) as AskModel);
 
   const schemaProvider =
     "provider" in schema && typeof schema.provider === "string"
@@ -640,8 +629,7 @@ function pickEnv(env: AskDbAiEnv, key: string): string | undefined {
 function resolveStudioRagEmbedderConfig(): StudioRagEmbedderConfig {
   const rt = getAskDbRuntimeConfig();
   const base = rt.ai.aiEnv;
-  const explicitKind =
-    pickEnv(base, "ASKDB_RAG_EMBEDDER") ?? pickEnv(base, "ASKDB_STUDIO_RAG_EMBEDDER");
+  const explicitKind = pickEnv(base, "ASKDB_RAG_EMBEDDER");
   const kind = explicitKind?.toLowerCase();
   if (kind === "mock") {
     return {
@@ -658,7 +646,7 @@ function resolveStudioRagEmbedderConfig(): StudioRagEmbedderConfig {
 
   const env = buildStudioRagEmbeddingEnv(kind, base);
   const aiConfig = resolveAskDbEmbeddingConfig(env, {
-    modelEnvVar: "ASKDB_STUDIO_RAG_EMBEDDER_MODEL",
+    modelEnvVar: "ASKDB_RAG_EMBEDDER_MODEL",
     modelDefault: DEFAULT_EMBEDDING_MODEL,
   });
   if (!aiConfig && kind === undefined) {
@@ -673,10 +661,7 @@ function resolveStudioRagEmbedderConfig(): StudioRagEmbedderConfig {
 
   const provider = aiConfig?.provider ?? fallbackStudioRagProvider(kind, base);
   const model = aiConfig?.model ?? DEFAULT_EMBEDDING_MODEL;
-  const dimensionOverride = readPositiveIntegerEnv(
-    pickEnv(base, "ASKDB_RAG_EMBEDDER_DIMENSIONS") ??
-      pickEnv(base, "ASKDB_STUDIO_RAG_EMBEDDER_DIMENSIONS"),
-  );
+  const dimensionOverride = readPositiveIntegerEnv(pickEnv(base, "ASKDB_RAG_EMBEDDER_DIMENSIONS"));
   const dimensions = dimensionOverride ?? defaultEmbeddingDimensions(model);
   return {
     kind: "ai-sdk",
@@ -693,17 +678,12 @@ function resolveStudioRagEmbedderConfig(): StudioRagEmbedderConfig {
 }
 
 function buildStudioRagEmbeddingEnv(kind: string | undefined, base: AskDbAiEnv): AskDbAiEnv {
-  const apiKeyOverride =
-    pickEnv(base, "ASKDB_RAG_EMBEDDER_API_KEY") ?? pickEnv(base, "ASKDB_STUDIO_RAG_EMBEDDER_API_KEY");
-  const modelOverride =
-    pickEnv(base, "ASKDB_RAG_EMBEDDER_MODEL") ?? pickEnv(base, "ASKDB_STUDIO_RAG_EMBEDDER_MODEL");
-  const baseUrlOverride =
-    pickEnv(base, "ASKDB_RAG_EMBEDDER_BASE_URL") ?? pickEnv(base, "ASKDB_STUDIO_RAG_EMBEDDER_BASE_URL");
+  const apiKeyOverride = pickEnv(base, "ASKDB_RAG_EMBEDDER_API_KEY");
+  const baseUrlOverride = pickEnv(base, "ASKDB_RAG_EMBEDDER_BASE_URL");
   return {
     ...base,
     ...(kind === "openai" ? { ASKDB_AI_PROVIDER: "openai" } : {}),
     ...(apiKeyOverride ? { ASKDB_AI_API_KEY: apiKeyOverride } : {}),
-    ...(modelOverride ? { ASKDB_STUDIO_RAG_EMBEDDER_MODEL: modelOverride } : {}),
     ...(baseUrlOverride ? { ASKDB_AI_BASE_URL: baseUrlOverride } : {}),
   };
 }

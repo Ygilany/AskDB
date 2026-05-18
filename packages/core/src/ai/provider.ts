@@ -34,11 +34,6 @@ export type AskDbAiEnv = Record<string, string | undefined>;
 export type ResolveAskDbAiConfigOptions = {
   /** Default model when no env override is set. */
   modelDefault?: string;
-  /**
-   * Per-app model env var checked first (e.g. `ASKDB_TUI_MODEL`, `ASKDB_STUDIO_MODEL`).
-   * Falls through to `ASKDB_AI_MODEL`, `ASKDB_MODEL`, `OPENAI_MODEL`, `modelDefault`.
-   */
-  modelEnvVar?: string;
 };
 
 const DEFAULT_MODEL = "gpt-4o-mini";
@@ -98,13 +93,11 @@ export function resolveAskDbAiConfig(
     undefined;
   if (!apiKey) return undefined;
 
-  const perAppModel = options.modelEnvVar ? env[options.modelEnvVar] : undefined;
   const providerNativeModel =
     provider === "azure"
       ? env.AZURE_OPENAI_DEPLOYMENT || env.AZURE_DEPLOYMENT_NAME
       : env.OPENAI_MODEL;
   const model =
-    perAppModel ||
     env.ASKDB_AI_MODEL ||
     env.ASKDB_MODEL ||
     providerNativeModel ||
@@ -143,8 +136,7 @@ export type ResolveAskDbEmbeddingConfigOptions = {
   /** Default embedding model/deployment when no env override is set. */
   modelDefault?: string;
   /**
-   * Per-app embedding model env var checked first
-   * (e.g. `ASKDB_STUDIO_RAG_EMBEDDER_MODEL`).
+   * Embedding model env var (e.g. `ASKDB_RAG_EMBEDDER_MODEL`).
    */
   modelEnvVar?: string;
 };

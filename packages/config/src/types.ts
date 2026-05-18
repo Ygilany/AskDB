@@ -294,20 +294,9 @@ export type AskDbConfig = {
   /** Deterministic NL→SQL for tests / local dev (maps to `ASKDB_MOCK_SQL`). */
   dev?: { mockSql?: string };
 
-  /** Default listen options for `askdb-tui` / other CLIs that need a model id. */
-  tui?: { model?: string };
-
-  /** Studio browser server and optional RAG overrides. */
+  /** Studio browser server listen defaults. */
   studio?: {
-    model?: string;
     listen?: { host?: string; port?: number };
-    rag?: {
-      embedder?: string;
-      dimensions?: string | number;
-      apiKey?: string;
-      baseUrl?: string;
-      model?: string;
-    };
   };
 
   /** HTTP API server defaults (first-party `apps/http-api`). */
