@@ -37,7 +37,7 @@ import {
   saveTable,
   suggest,
 } from "./api";
-import { Badge, Button, Field, Input, Panel, Textarea } from "./components/ui";
+import { Badge, Button, Field, Input, ListInput, Panel, Textarea, parseList } from "./components/ui";
 import { cn } from "./lib/utils";
 
 type PanelKey = "rag" | "ask" | "settings";
@@ -575,14 +575,9 @@ function TableEditor({
               }
               suggesting={suggestingKey === `table:${tableId}:aliases`}
             >
-              <Input
-                value={formatList(draft.aliases)}
-                onChange={(event) =>
-                  onUpdateTable(tableId, (current) => ({
-                    ...current,
-                    aliases: parseList(event.target.value),
-                  }))
-                }
+              <ListInput
+                value={draft.aliases}
+                onChange={(value) => onUpdateTable(tableId, (current) => ({ ...current, aliases: value }))}
               />
             </FieldWithSuggest>
             <FieldWithSuggest
@@ -610,14 +605,9 @@ function TableEditor({
 
           <div className="grid gap-4 lg:grid-cols-[1fr_220px]">
             <Field label="Tags" description="Comma-separated labels used for browsing and filtering.">
-              <Input
-                value={formatList(draft.tags)}
-                onChange={(event) =>
-                  onUpdateTable(tableId, (current) => ({
-                    ...current,
-                    tags: parseList(event.target.value),
-                  }))
-                }
+              <ListInput
+                value={draft.tags}
+                onChange={(value) => onUpdateTable(tableId, (current) => ({ ...current, tags: value }))}
               />
             </Field>
             <SensitiveSelect
@@ -735,24 +725,18 @@ function TableEditor({
                       }
                       suggesting={suggestingKey === `column:${tableId}:${column.id}:aliases`}
                     >
-                      <Input
-                        value={formatList(columnDraft.aliases)}
-                        onChange={(event) =>
-                          onUpdateColumn(tableId, column.id, (current) => ({
-                            ...current,
-                            aliases: parseList(event.target.value),
-                          }))
+                      <ListInput
+                        value={columnDraft.aliases}
+                        onChange={(value) =>
+                          onUpdateColumn(tableId, column.id, (current) => ({ ...current, aliases: value }))
                         }
                       />
                     </FieldWithSuggest>
                     <Field label="Enum notes">
-                      <Input
-                        value={formatList(columnDraft.enum)}
-                        onChange={(event) =>
-                          onUpdateColumn(tableId, column.id, (current) => ({
-                            ...current,
-                            enum: parseList(event.target.value),
-                          }))
+                      <ListInput
+                        value={columnDraft.enum}
+                        onChange={(value) =>
+                          onUpdateColumn(tableId, column.id, (current) => ({ ...current, enum: value }))
                         }
                       />
                     </Field>
@@ -1344,10 +1328,6 @@ function clone<T>(value: T): T {
   return JSON.parse(JSON.stringify(value)) as T;
 }
 
-function formatList(list: string[] | undefined): string {
-  return list?.join(", ") ?? "";
-}
-
 function formatUsageInline(usage: StudioRequestUsageDto | null): string {
   const tokens = usage?.totalTokens ?? usage?.embeddingTokens ?? null;
   return tokens === null ? "" : `, ${formatNumber(tokens)} tokens`;
@@ -1357,25 +1337,25 @@ function formatNumber(value: number): string {
   return new Intl.NumberFormat().format(value);
 }
 
-function parseList(value: string): string[] {
-  return value
-    .split(",")
-    .map((item) => item.trim())
-    .filter(Boolean);
-}
-
 function emptyToUndefined(value: string): string | undefined {
   const trimmed = value.trim();
   return trimmed ? trimmed : undefined;
 }
 
+function mergeList(existing: string[] | undefined, incoming: string[]): string[] {
+  const base = existing ?? [];
+  return [...base, ...incoming.filter((item) => !base.includes(item))];
+}
+
 function applyTableSuggestion(draft: TableDraft, field: string, text: string): TableDraft {
-  if (field === "aliases" || field === "tags") return { ...draft, [field]: parseList(text) };
+  if (field === "aliases" || field === "tags")
+    return { ...draft, [field]: mergeList((draft as Record<string, string[]>)[field], parseList(text)) };
   return { ...draft, [field]: text };
 }
 
 function applyColumnSuggestion(draft: ColumnDraft, field: string, text: string): ColumnDraft {
-  if (field === "aliases" || field === "enum") return { ...draft, [field]: parseList(text) };
+  if (field === "aliases" || field === "enum")
+    return { ...draft, [field]: mergeList((draft as Record<string, string[]>)[field], parseList(text)) };
   return { ...draft, [field]: text };
 }
 
