@@ -1,5 +1,13 @@
 # askdb
 
+## 0.5.0-beta.6
+
+### Patch Changes
+
+- Updated dependencies [9c01a6d]
+  - @askdb/tui@0.2.0-beta.3
+  - @askdb/studio@0.2.0-beta.3
+
 ## 0.5.0-beta.5
 
 ### Patch Changes
