@@ -1,10 +1,10 @@
-import { getAskDbRuntimeConfig } from "@askdb/config";
+import { DEFAULT_INTROSPECT_OUTPUT_DIR, getAskDbRuntimeConfig } from "@askdb/config";
 import { readFileSync } from "node:fs";
 import { networkInterfaces } from "node:os";
 import { createStudioServer } from "./server.js";
 
 type CliOptions = {
-  schema?: string;
+  schema: string;
   host: string;
   port: number;
   help?: boolean;
@@ -26,15 +26,9 @@ export async function runStudioCli(argv: readonly string[]): Promise<number> {
     return 0;
   }
 
-  if (opts.help || argv.length === 0) {
+  if (opts.help) {
     printHelp(process.stdout);
     return 0;
-  }
-
-  if (!opts.schema) {
-    process.stderr.write("askdb-studio: --schema <dir> is required.\n\n");
-    printHelp(process.stderr);
-    return 1;
   }
 
   let server;
@@ -78,7 +72,9 @@ function parseOptions(argv: readonly string[]): CliOptions {
   const parsedPort =
     listen?.port ??
     (portFromEnv !== undefined && portFromEnv.trim() !== "" ? Number(portFromEnv) : NaN);
+  const introspectOut = rt.flat["ASKDB_INTROSPECT_OUT"] ?? DEFAULT_INTROSPECT_OUTPUT_DIR;
   const opts: CliOptions = {
+    schema: introspectOut,
     host: listen?.host ?? rt.ai.aiEnv.ASKDB_STUDIO_HOST ?? "127.0.0.1",
     port: Number.isFinite(parsedPort) && parsedPort > 0 && parsedPort <= 65535 ? parsedPort : 5556,
   };
@@ -132,10 +128,11 @@ function printHelp(stream: NodeJS.WriteStream): void {
       "askdb-studio - Local browser UI for AskDB Schema v2 enrichment",
       "",
       "Usage:",
-      "  askdb-studio --schema <dir> [--port <number>] [--host <host>]",
+      "  askdb-studio [--schema <dir>] [--port <number>] [--host <host>]",
       "",
       "Options:",
-      "  -s, --schema <dir>   Schema v2 directory produced by `askdb introspect`",
+      "  -s, --schema <dir>   Schema v2 directory (default: introspection.outputDir from",
+      "                       askdb.config, or ASKDB_INTROSPECT_OUT env, or ./askdb/)",
       "  --port <number>      Port to listen on (default: 5556 or ASKDB_STUDIO_PORT)",
       "  --host <host>        Host to bind (default: 127.0.0.1 or ASKDB_STUDIO_HOST)",
       "  -V, --version        Print package version",
