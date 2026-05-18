@@ -46,6 +46,7 @@
     "rename-cli-npm-package",
     "runtime-config-snapshot",
     "schema-v2-breaking",
+    "studio-rag-store-config",
     "studio-sample-rag-mode",
     "studio-token-usage",
     "studio-usage-layout",

@@ -1,5 +1,13 @@
 # @askdb/studio
 
+## 0.2.0-beta.4
+
+### Patch Changes
+
+- 52cfa58: Honor the configured `rag.store` branch in Studio RAG flows and expose pgvector store metadata in Studio status.
+- Updated dependencies [52cfa58]
+  - @askdb/rag@0.2.0-beta.3
+
 ## 0.2.0-beta.3
 
 ### Patch Changes
