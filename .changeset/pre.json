@@ -47,6 +47,7 @@
     "prisma-schema-connector",
     "rag-root-barrel-exports",
     "remove-generated-sql-execution",
+    "remove-per-app-model-overrides",
     "rename-cli-npm-package",
     "runtime-config-snapshot",
     "schema-v2-breaking",

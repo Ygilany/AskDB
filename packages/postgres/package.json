@@ -1,6 +1,6 @@
 {
   "name": "@askdb/postgres",
-  "version": "0.2.0-beta.2",
+  "version": "0.2.0-beta.3",
   "description": "AskDB Postgres integration: re-exports the Postgres DialectSpec from @askdb/core and ships the introspection connector (live + from-export bundle), catalog SQL templates, and a `pg`-backed catalog query runner.",
   "keywords": [
     "askdb",

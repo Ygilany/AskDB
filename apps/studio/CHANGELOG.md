@@ -1,5 +1,22 @@
 # @askdb/studio
 
+## 0.2.0-beta.7
+
+### Minor Changes
+
+- 1f46cd1: Remove per-app model override config keys (`tui.model`, `studio.model`, `studio.rag`).
+
+  The `tui.model` / `ASKDB_TUI_MODEL` and `studio.model` / `ASKDB_STUDIO_MODEL` config keys are removed — the AI model is now always resolved from the shared `ai` provider config (`ASKDB_AI_MODEL`, `ASKDB_MODEL`, etc.). The `studio.rag` nested block and its `ASKDB_STUDIO_RAG_*` env var aliases are also removed; Studio RAG now reads purely from the top-level `rag` config (`ASKDB_RAG_EMBEDDER*`). The `modelEnvVar` option is removed from `ResolveAskDbAiConfigOptions` as it is no longer needed for language models.
+
+### Patch Changes
+
+- Updated dependencies [1f46cd1]
+  - @askdb/config@0.3.0-beta.3
+  - @askdb/core@0.5.0-beta.10
+  - @askdb/rag@0.2.0-beta.6
+  - @askdb/enrich@0.2.0-beta.2
+  - @askdb/postgres@0.2.0-beta.3
+
 ## 0.2.0-beta.6
 
 ### Patch Changes
