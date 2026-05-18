@@ -20,8 +20,12 @@ pnpm add ai @ai-sdk/openai
 
 ```ts
 import { ask, loadSchema } from "@askdb/core";
-import { buildSchemaIndex, loadChunkerSourcesFromDir } from "@askdb/rag";
-import { createMemoryStore } from "@askdb/rag/stores/memory";
+import {
+  buildSchemaIndex,
+  loadChunkerSourcesFromDir,
+  createMemoryStore,
+  createAiSdkEmbedder,
+} from "@askdb/rag";
 
 const schemaDir = "./fixtures/schemas/orders-users.schema";
 const schema = loadSchema(schemaDir);
@@ -58,14 +62,47 @@ The default CLI embedder is a deterministic mock for smoke tests. Use `--embedde
 
 ## Public Surface
 
+All exports are available from the root `@askdb/rag` import. Sub-path imports are also supported and point to the same modules — use whichever style you prefer.
+
+### Core
+
 - `chunkSchema`, `chunkSchemaDir`, `chunkSchemaBundle` — deterministic Schema v2 chunking.
 - `buildSchemaIndex` — chunk, embed, upsert, write `schema.lock.json`, and return a retriever.
 - `createRetriever` — bind an existing store and embedder without indexing.
-- `@askdb/rag/stores/memory` — in-memory cosine store.
-- `@askdb/rag/stores/file` — binary embedding file plus JSON metadata.
-- `@askdb/rag/stores/pgvector` — pgvector adapter with documented setup SQL.
-- `@askdb/rag/embedders/ai-sdk` — generic AI SDK `EmbeddingModel<string>` adapter.
-- `@askdb/rag/embedders/openai` — optional OpenAI convenience helper using `text-embedding-3-small` by default.
+
+### Stores
+
+| Root import | Sub-path import | Description |
+|---|---|---|
+| `createMemoryStore` | `@askdb/rag/stores/memory` | In-memory cosine store. Zero deps. |
+| `createFileStore` | `@askdb/rag/stores/file` | Binary embedding file + JSON metadata. |
+| `createPgvectorStore` | `@askdb/rag/stores/pgvector` | pgvector adapter with documented setup SQL. Requires `pg`. |
+
+### Embedders
+
+| Root import | Sub-path import | Description |
+|---|---|---|
+| `createAiSdkEmbedder` | `@askdb/rag/embedders/ai-sdk` | Generic AI SDK `EmbeddingModel<string>` adapter. Requires `ai`. |
+| `createOpenAiEmbedder` | `@askdb/rag/embedders/openai` | OpenAI convenience helper (`text-embedding-3-small` by default). Requires `ai` and `@ai-sdk/openai`. |
+
+### Import examples
+
+```ts
+// Everything from the root — simplest DX
+import {
+  buildSchemaIndex,
+  createMemoryStore,
+  createAiSdkEmbedder,
+  createPgvectorStore,
+} from "@askdb/rag";
+
+// Sub-path imports — same modules, explicit namespacing
+import { createMemoryStore } from "@askdb/rag/stores/memory";
+import { createFileStore } from "@askdb/rag/stores/file";
+import { createPgvectorStore } from "@askdb/rag/stores/pgvector";
+import { createAiSdkEmbedder } from "@askdb/rag/embedders/ai-sdk";
+import { createOpenAiEmbedder } from "@askdb/rag/embedders/openai";
+```
 
 ## Sensitive Fields
 
