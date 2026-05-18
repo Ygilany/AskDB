@@ -283,6 +283,7 @@ describe("AskDB Studio server", () => {
         ).length;
       },
       setupSql: () => "",
+      ensureSchema: async () => {},
       close: async () => {},
     }));
     const pgvectorStructured: AskDbConfig = {

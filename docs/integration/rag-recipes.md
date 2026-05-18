@@ -63,11 +63,33 @@ const store = createPgvectorStore({
   dimensions: 1536,
   table: "askdb_rag_chunks",
 });
-
-console.log(store.setupSql()); // run in your migration system
 ```
 
-The adapter does not create extensions, tables, or indexes automatically. Run the setup SQL through your own migrations so production DDL remains explicit.
+The adapter exposes two ways to provision the required extension, table, and indexes:
+
+**`ensureSchema()` — idempotent, runs the DDL directly**
+
+```ts
+await store.ensureSchema(); // safe to call on every startup
+```
+
+Uses `CREATE EXTENSION IF NOT EXISTS` and `CREATE TABLE IF NOT EXISTS` guards throughout, so repeated calls are a no-op against an already-provisioned database. Studio calls this automatically whenever pgvector is configured.
+
+**`setupSql()` — returns the DDL for your own migration system**
+
+```ts
+console.log(store.setupSql()); // pipe into psql or your migration runner
+```
+
+Use this when you want explicit DDL in a versioned migration file rather than runtime provisioning.
+
+**CLI — `askdb-rag setup-store`**
+
+```bash
+askdb-rag setup-store --pg-url "$DATABASE_URL" --dimensions 1536
+```
+
+Runs `ensureSchema()` from the command line. Useful in CI pipelines, Dockerfiles, and staging environment bootstrap scripts.
 
 ## Embedder Providers
 
