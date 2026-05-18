@@ -6,7 +6,9 @@
 
 # AskDB
 
-AskDB turns natural language into **schema-grounded SQL** so you can ask questions about your data without writing SQL by hand.
+**AskDB is a developer toolkit for adding natural-language analytics to your application.** It turns user questions into validated SQL using a human-enriched schema artifact. It gives developers library, CLI, and HTTP surfaces while keeping database execution, permissions, and audit logging inside the host application.
+
+> **Ask your data. Keep control of the query.**
 
 ## Quickstart
 
@@ -22,7 +24,7 @@ pnpm exec askdb ask \
   --question "How many orders are there?"
 ```
 
-The current schema path is **Schema v2**: either a directory such as `fixtures/schemas/orders-users.schema/`, a bundled JSON file, or a direct `schema.json`. To create that artifact from a real Postgres database, use the introspection package:
+AskDB uses a **schema artifact**: either a directory such as `fixtures/schemas/orders-users.schema/`, a bundled JSON file, or a direct `schema.json`. To create that artifact from a real Postgres database, use the introspection package:
 
 ```bash
 pnpm exec askdb introspect --url "$DATABASE_URL" --out my-app.schema --schema-id my-app
@@ -82,11 +84,11 @@ Product direction and technical baseline live in **`docs/`**:
 
 **Stack:** pnpm workspace + **Turborepo**, TypeScript, and focused packages/apps:
 
-- [`packages/core`](packages/core) — NL→SQL library and Schema v2 loader.
+- [`packages/core`](packages/core) — NL→SQL library and schema artifact loader.
 - [`packages/introspect`](packages/introspect) — Postgres-first schema introspection.
 - [`packages/postgres`](packages/postgres) — Postgres dialect, connector, templates, and catalog runner.
-- [`packages/rag`](packages/rag) — Schema v2 chunking, indexing, and retrieval helpers.
-- [`packages/enrich`](packages/enrich) — shared Schema v2 enrichment workspace helpers.
+- [`packages/rag`](packages/rag) — schema artifact chunking, indexing, and retrieval helpers.
+- [`packages/enrich`](packages/enrich) — shared schema artifact enrichment workspace helpers.
 - [`apps/cli`](apps/cli) — binary `askdb`, including the `askdb introspect` shim.
 - [`apps/http-api`](apps/http-api) — HTTP wrapper over core.
 - [`apps/studio`](apps/studio) — local browser UI for enrichment and sample NL-to-SQL checks.
@@ -128,7 +130,7 @@ Then point AskDB at it:
 export DATABASE_URL="postgres://postgres:postgres@127.0.0.1:5433/pagila"
 ```
 
-**Schema artifacts** use **AskDB Schema v2** — see [`docs/contracts/schema-v2.md`](docs/contracts/schema-v2.md), [`fixtures/schemas/README.md`](fixtures/schemas/README.md), and the sample [`fixtures/schemas/orders-users.schema/`](fixtures/schemas/orders-users.schema). Schema v2 can be hand-authored, bundled as JSON, or produced from Postgres with `@askdb/introspect`. Optional **`sensitive`** markers tag columns/tables in NL→SQL DDL by default (`(sensitive)`); use **`--omit-sensitive-from-prompt`** or **`ASKDB_OMIT_SENSITIVE_FROM_PROMPT`** to withhold names instead. Policy for modes and summaries is in [`docs/contracts/sensitive-fields-and-modes.md`](docs/contracts/sensitive-fields-and-modes.md).
+**Schema artifacts** — see [`docs/contracts/schema-v2.md`](docs/contracts/schema-v2.md), [`fixtures/schemas/README.md`](fixtures/schemas/README.md), and the sample [`fixtures/schemas/orders-users.schema/`](fixtures/schemas/orders-users.schema). A schema artifact can be hand-authored, bundled as JSON, or produced from Postgres with `@askdb/introspect`. Optional **`sensitive`** markers tag columns/tables in NL→SQL DDL by default (`(sensitive)`); use **`--omit-sensitive-from-prompt`** or **`ASKDB_OMIT_SENSITIVE_FROM_PROMPT`** to withhold names instead. Policy for modes and summaries is in [`docs/contracts/sensitive-fields-and-modes.md`](docs/contracts/sensitive-fields-and-modes.md).
 
 **Environment variables**
 
@@ -188,9 +190,10 @@ AskDB returns SQL for review; it does not execute generated SQL. Treat generated
 
 ## What it does
 
-- **Natural language → SQL** grounded in your database schema (with validation and guardrails).
-- **Introspect** schemas with connector packages, then use an LLM to return SQL from the selected schema context.
-- **Multiple surfaces** — same core idea across CLI, MCP, and web; web aims to be **embeddable** with a future SDK / component-style integration.
+- **Natural language → validated SQL** grounded in your database schema, with SQL validation and guardrails.
+- **Human-reviewed schema enrichment** — introspect your database, then enrich the schema artifact with descriptions, aliases, and business concepts using the TUI or Studio.
+- **Clear execution boundary** — AskDB returns SQL; it does not execute against your database. Your application decides whether to show it, review it, approve it, run it, log it, or reject it.
+- **Multiple surfaces** — the same schema artifact and generation pipeline across the CLI, a Node library, and an HTTP API.
 
 ## Product notes
 
@@ -213,7 +216,7 @@ How much of the **schema context** the model sees depends on the chosen mode:
 
 ## Status
 
-Phases 1-6 are implemented on this branch: core, CLI, HTTP API, installable package seams, Schema v2, and Postgres introspection. Later phases are in [`docs/roadmap.md`](docs/roadmap.md).
+Phases 1-6 are implemented on this branch: core, CLI, HTTP API, installable package seams, schema artifact format, and Postgres introspection. Later phases are in [`docs/roadmap.md`](docs/roadmap.md).
 
 ## Support
 

@@ -1,10 +1,10 @@
 ---
 title: "AskDB Documentation"
-description: "Natural language to validated SQL—grounded in your AskDB schema so models reason over structure and policy, not your rows. Embed with BYO keys, connectors, and optional retrieval over the same artifact."
+description: "AskDB is a developer toolkit for adding natural-language analytics to your application. It turns user questions into validated SQL using schema context your team can review, enrich, and control."
 template: "splash"
 hero:
   title: '<span class="home-hero-title">Natural language → <span class="home-hero-accent">trusted SQL</span></span>'
-  tagline: "Give your LLM the schema and business context—not raw rows. Every answer is grounded, SQL is validated read-only, and execution stays on your side."
+  tagline: "Turn user questions into validated SQL. Your team controls the schema. Your application owns execution."
   actions:
     - text: "Quickstart"
       link: "./quickstart/"
@@ -25,62 +25,72 @@ import HomeCliStrip from "../../components/HomeCliStrip.astro";
 <div class="home-pill-row" role="list">
   <span class="home-pill" role="listitem">Schema-grounded generation</span>
   <span class="home-pill" role="listitem">Validated SQL boundary</span>
-  <span class="home-pill" role="listitem">BYO models &amp; connectors</span>
+  <span class="home-pill" role="listitem">Bring-your-own runtime</span>
 </div>
 
-## Why AskDB
+## What AskDB is
 
 <div class="home-north-card">
   <p class="doc-lede home-north-lede">
-    We optimize for <strong>trust-first analytics</strong>: the model sees your <strong>AskDB schema</strong> (structure plus optional table docs you approve)—not a dump of production data—and row-level fields stay sensitive by default. We optimize for a <strong>developer-first embed</strong>: install from npm, bring your own model keys, database connectivity, embeddings, and vector store when you need them. For philosophy and limitations, see the{" "}
+    AskDB helps developers add natural-language analytics to their own applications. It turns user questions into validated SQL using a schema that your team can inspect, enrich, and control. AskDB does not take over your database—it generates SQL from trusted schema context, validates the query, and leaves execution, approval, permissions, and audit logging in your application. The AI model receives your schema context—table names, column types, and descriptions your team approved—not your actual data. Your rows stay inside your infrastructure. This is what we mean by <strong>trust-first analytics</strong>: answers are grounded, inspectable, and controlled by the application that uses them. For philosophy and limitations, see the{" "}
     <a href="https://github.com/Ygilany/AskDB">AskDB project on GitHub</a>.
   </p>
 </div>
 
-## Pick your lane
+## How AskDB works
 
-<div class="home-bento">
-  <article class="home-bento-card home-bento-span-2">
-    <span class="home-bento-icon" aria-hidden="true">
-      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/><path d="M3 12c0 1.66 4 3 9 3s9-1.34 9-3"/></svg>
-    </span>
-    <h3>Integrator</h3>
-    <p>You wire AskDB into a service or internal app: optional config bootstrap, <code>ask()</code>, HTTP, or CLI automation.</p>
-  </article>
-  <article class="home-bento-card">
-    <span class="home-bento-icon" aria-hidden="true">
-      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
-    </span>
-    <h3>Schema author</h3>
-    <p>You turn introspected metadata into an enriched AskDB schema: reviewed descriptions, aliases, and concepts your team trusts.</p>
-  </article>
-  <article class="home-bento-card">
-    <span class="home-bento-icon" aria-hidden="true">
-      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 21V9"/></svg>
-    </span>
-    <h3>Agent or platform owner</h3>
-    <p>Stable headless contracts for tools and CI. A first-party <strong>Model Context Protocol (MCP)</strong> server is on the roadmap—see <a href="./guides/agents-and-mcp/">Agents and MCP (status)</a>.</p>
-  </article>
-</div>
+<p>AskDB uses the same core workflow whether you use the CLI, the Node library, or the HTTP API.</p>
 
-## What you get
+<ol class="home-workflow-steps">
+  <li><strong>Initialize AskDB</strong> — Set up AskDB for your project and connect your database, AI model, and optional vector store.</li>
+  <li><strong>Create a schema artifact</strong> — Introspect your database so AskDB has a structured view of your tables, columns, relationships, and constraints.</li>
+  <li><strong>Ask questions</strong> — Test natural-language questions and inspect the SQL AskDB generates.</li>
+  <li><strong>Enrich the schema</strong> — Add descriptions, aliases, business concepts, and common query patterns using Studio or the TUI.</li>
+  <li><strong>Add retrieval when needed</strong> — For large schemas, index the schema artifact so AskDB retrieves only the most relevant context per question.</li>
+  <li><strong>Embed AskDB where you need it</strong> — Use AskDB through the CLI, Node library, or HTTP API depending on how you want to integrate it.</li>
+</ol>
+
+<p>Start with SQL generation from an introspected schema. Add enrichment when you need more business context. Add retrieval when your schema is too large for a single prompt. Expose through HTTP when you want to put it behind your own authentication, permissions, logging, and approval flow.</p>
+
+## What AskDB gives you
 
 <div class="home-value-grid">
   <article>
-    <h3>Schema-grounded generation</h3>
+    <h3>Schema-grounded SQL generation</h3>
     <p>Questions are grounded in your AskDB schema before SQL is generated and validated.</p>
   </article>
   <article>
-    <h3>Bring your own runtime</h3>
-    <p>Use any AI SDK-compatible language model. Add <code>pg</code> only when you choose live Postgres introspection or the pgvector store.</p>
+    <h3>Clear execution boundaries</h3>
+    <p>AskDB returns validated SQL. Your application decides whether to show it, review it, approve it, run it, log it, or reject it. AskDB does not execute SQL against your database.</p>
   </article>
   <article>
-    <h3>Schema enrichment tools</h3>
+    <h3>Human-reviewed schema enrichment</h3>
     <p><code>@askdb/enrich</code> powers the TUI and Studio so humans confirm AI-suggested descriptions and aliases.</p>
   </article>
   <article>
-    <h3>Retrieval-ready context</h3>
+    <h3>Retrieval-ready schema context</h3>
     <p><code>@askdb/rag</code> chunks the same schema artifact—no separate knowledge base that can drift from what you ship.</p>
+  </article>
+  <article>
+    <h3>Bring-your-own runtime</h3>
+    <p>Use your own model provider, database connection, embeddings, and vector store. Install only the packages your integration needs.</p>
+  </article>
+</div>
+
+## Who AskDB is for
+
+<div class="home-value-grid">
+  <article>
+    <h3>Application developers</h3>
+    <p>Use AskDB to embed natural-language analytics into an app, dashboard, or internal tool.</p>
+  </article>
+  <article>
+    <h3>Data and product teams</h3>
+    <p>Use AskDB to encode business meaning into the schema so answers match how your team talks about the data.</p>
+  </article>
+  <article>
+    <h3>Platform teams</h3>
+    <p>Use AskDB to expose a controlled SQL-generation layer behind your own auth, permissions, logging, and approval workflows. A first-party <strong>Model Context Protocol (MCP)</strong> server is on the roadmap—see <a href="./guides/agents-and-mcp/">Agents and MCP (status)</a>.</p>
   </article>
 </div>
 
