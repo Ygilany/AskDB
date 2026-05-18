@@ -1,5 +1,13 @@
 # @askdb/studio
 
+## 0.2.0-beta.8
+
+### Patch Changes
+
+- eff2f5d: Fix alias, tags, and enum fields in the studio to allow spaces and multi-word entries. Previously, spaces were stripped and commas swallowed on every keystroke because `parseList` ran inside `onChange`. A new `ListInput` component holds the raw string locally and only parses on blur. AI suggestions now append to existing values rather than replacing them.
+- Updated dependencies [cd364e3]
+  - @askdb/postgres@0.2.0-beta.4
+
 ## 0.2.0-beta.7
 
 ### Minor Changes

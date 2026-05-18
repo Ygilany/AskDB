@@ -1,5 +1,11 @@
 # @askdb/introspect
 
+## 0.3.0-beta.4
+
+### Patch Changes
+
+- cd364e3: Remove the `["public"]` default schema filter in the Postgres connector so that introspection now covers all non-system schemas by default. Previously, databases with tables in custom schemas (e.g. `audit`, `reporting`, `db_changelog`) were silently omitted unless the caller explicitly passed `filters.schemas`. Explicit `schemas` and `excludeSchemas` filters continue to work as before.
+
 ## 0.3.0-beta.3
 
 ### Patch Changes

@@ -1,6 +1,6 @@
 {
   "name": "@askdb/mysql",
-  "version": "0.1.0-beta.2",
+  "version": "0.1.0-beta.3",
   "description": "AskDB MySQL integration: introspection connector via information_schema and a mysql2-backed catalog query runner. Pairs with @askdb/core's MYSQL_DIALECT.",
   "keywords": [
     "askdb",
