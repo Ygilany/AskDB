@@ -7,24 +7,39 @@ description: "Index of @askdb/* packages: what each owns, when to install it, an
 
 <p className="doc-lede">Use <a href="../journeys/">Journeys</a> when you want a task-shaped path. This page is the <strong>package catalog</strong>: what each <code>{"@askdb/*"}</code> module owns and when it belongs in your dependency graph.</p>
 
-## Packages
+## Core runtime
 
-<div className="package-table">
-            <a href="../environment/"><strong>@askdb/config</strong><span>Optional Prisma-style <code>{"askdb.config.*"}</code> discovery, nested <code>{"defineConfig"}</code>, <code>{"env()"}</code> helpers, <code>{"bootstrapAskDbEnv()"}</code>, and <code>{"getAskDbRuntimeConfig()"}</code> used by first-party apps (runtime snapshot, not a full <code>{"process.env"}</code> merge).</span></a>
-            <a href="../core/"><strong>@askdb/core</strong><span>Dialect-agnostic library pipeline: schema loading, prompt assembly, generation, validation, and retrieval input.</span></a>
-            <a href="../postgres/"><strong>@askdb/postgres</strong><span>Postgres integration package: dialect, catalog connector, templates, bundle reader, and optional <code>{"pg"}</code> catalog runner.</span></a>
-            <a href="../prisma/"><strong>@askdb/prisma</strong><span>Prisma schema-file connector: reads <code>{".prisma"}</code> files and produces an AskDB schema directory without connecting to a database.</span></a>
-            <a href="../engines/#mysql"><strong>@askdb/mysql</strong><span>MySQL and MariaDB integration: <code>{"MYSQL_DIALECT"}</code>, <code>{"MARIADB_DIALECT"}</code>, live introspection connector, and optional <code>{"mysql2"}</code> catalog runner.</span></a>
-            <a href="../engines/#sqlite"><strong>@askdb/sqlite</strong><span>SQLite integration: <code>{"SQLITE_DIALECT"}</code>, live introspection connector, and optional <code>{"better-sqlite3"}</code> catalog runner.</span></a>
-            <a href="../engines/#sql-server"><strong>@askdb/sqlserver</strong><span>SQL Server integration: <code>{"SQLSERVER_DIALECT"}</code>, live introspection connector via <code>{"sys.*"}</code> views, and optional <code>{"mssql"}</code> catalog runner.</span></a>
-            <a href="../introspect/"><strong>@askdb/introspect</strong><span>Engine-agnostic introspection orchestrator and schema directory renderer.</span></a>
-            <a href="../enrich/"><strong>@askdb/enrich</strong><span>Headless enrichment workspace helpers shared by TUI, Studio, and custom authoring UIs.</span></a>
-            <a href="../rag/"><strong>@askdb/rag</strong><span>Deterministic schema chunking, BYO embeddings, vector stores, lock-file reuse, and retriever wiring.</span></a>
-            <a href="../cli/"><strong>askdb</strong><span>Batteries-included terminal frontend for asking questions and running Postgres introspection.</span></a>
-            <a href="../tui/"><strong>@askdb/tui</strong><span>Interactive terminal authoring for descriptions, aliases, concepts, and AI suggestions.</span></a>
-            <a href="../studio/"><strong>@askdb/studio</strong><span>Local browser UI for enriching schema folders, querying the RAG index, and generating sample SQL.</span></a>
-            <a href="../http-api/"><strong>@askdb/http-api</strong><span>Small HTTP wrapper around core for server deployments.</span></a>
-          </div>
+| Package | Use it when |
+| --- | --- |
+| [`@askdb/config`](../environment/) | You want Prisma-style `askdb.config.*` discovery, `defineConfig`, `env()` helpers, and `bootstrapAskDbEnv()`. |
+| [`@askdb/core`](../core/) | You want schema loading, prompt assembly, SQL generation, and validation. |
+| [`@askdb/postgres`](../postgres/) | You need Postgres SQL generation, validation, or catalog introspection. |
+| [`@askdb/mysql`](../engines/#mysql) | You need MySQL or MariaDB SQL generation or live introspection. |
+| [`@askdb/sqlite`](../engines/#sqlite) | You need SQLite SQL generation or live introspection. |
+| [`@askdb/sqlserver`](../engines/#sql-server) | You need SQL Server SQL generation or live introspection. |
+
+## Schema authoring
+
+| Package | Use it when |
+| --- | --- |
+| [`@askdb/introspect`](../introspect/) | You want to create an AskDB schema artifact from a database or Prisma file. |
+| [`@askdb/prisma`](../prisma/) | You want to introspect from a Prisma schema file without connecting to a database. |
+| [`@askdb/enrich`](../enrich/) | You are building or extending a schema authoring workflow. |
+| [`@askdb/tui`](../tui/) | You want terminal-based schema enrichment. |
+| [`@askdb/studio`](../studio/) | You want browser-based schema enrichment. |
+
+## Retrieval
+
+| Package | Use it when |
+| --- | --- |
+| [`@askdb/rag`](../rag/) | Your schema is too large to send in every prompt and you need focused schema retrieval. |
+
+## Surfaces
+
+| Package | Use it when |
+| --- | --- |
+| [`askdb`](../cli/) | You want the CLI for asking questions and running introspection. |
+| [`@askdb/http-api`](../http-api/) | You want to expose AskDB through HTTP behind your own auth and policy layer. |
 
 ## Monorepo development
 
