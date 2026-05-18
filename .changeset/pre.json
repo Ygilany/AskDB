@@ -16,9 +16,11 @@
     "@askdb/tui": "0.1.0",
     "@askdb/mysql": "0.1.0-beta.0",
     "@askdb/sqlite": "0.1.0-beta.0",
-    "@askdb/sqlserver": "0.1.0-beta.0"
+    "@askdb/sqlserver": "0.1.0-beta.0",
+    "askdb-ask-question-example": "0.0.0"
   },
   "changesets": [
+    "add-ask-question-example",
     "ai-provider-configuration",
     "ai-sdk-rag-embeddings",
     "askdb-config-bootstrap",
@@ -42,6 +44,7 @@
     "phase-8-rag",
     "prisma-auto-discovery",
     "prisma-schema-connector",
+    "rag-root-barrel-exports",
     "remove-generated-sql-execution",
     "rename-cli-npm-package",
     "runtime-config-snapshot",

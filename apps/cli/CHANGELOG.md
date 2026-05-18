@@ -1,5 +1,11 @@
 # askdb
 
+## 0.5.0-beta.8
+
+### Patch Changes
+
+- @askdb/studio@0.2.0-beta.5
+
 ## 0.5.0-beta.7
 
 ### Patch Changes
