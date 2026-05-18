@@ -45,7 +45,13 @@ export type FoundryConfig = {
 
 /** Placeholder for future providers — not flattened today. */
 export type AnthropicConfig = Record<string, never>;
-export type GoogleConfig = Record<string, never>;
+
+export type GoogleConfig = {
+  apiKey?: string;
+  baseUrl?: string;
+  /** When unset, `flattenAskDbConfig` applies the default Gemini chat model (see `@askdb/config` defaults). */
+  model?: string;
+};
 
 /** Discriminated union branch for `ai` when `provider` is `"openai"`. */
 export type OpenaiAiConfig = {
