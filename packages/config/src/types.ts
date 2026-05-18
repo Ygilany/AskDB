@@ -53,34 +53,43 @@ export type GoogleConfig = {
   model?: string;
 };
 
+/** All provider-specific configs as optional fields — intersected per-branch to require only the active provider's key. */
+export type AiProviderConfigs = {
+  openai?: OpenaiConfig;
+  azure?: AzureConfig;
+  foundry?: FoundryConfig;
+  anthropic?: AnthropicConfig;
+  google?: GoogleConfig;
+};
+
 /** Discriminated union branch for `ai` when `provider` is `"openai"`. */
 export type OpenaiAiConfig = {
   provider: "openai";
-  providerConfig: { openai: OpenaiConfig };
+  providerConfig: AiProviderConfigs & { openai: OpenaiConfig };
 };
 
 /** Discriminated union branch for `ai` when `provider` is `"azure"`. */
 export type AzureAiConfig = {
   provider: "azure";
-  providerConfig: { azure: AzureConfig };
+  providerConfig: AiProviderConfigs & { azure: AzureConfig };
 };
 
 /** Discriminated union branch for `ai` when `provider` is `"foundry"`. */
 export type FoundryAiConfig = {
   provider: "foundry";
-  providerConfig: { foundry: FoundryConfig };
+  providerConfig: AiProviderConfigs & { foundry: FoundryConfig };
 };
 
 /** Placeholder — not yet supported; `flattenAskDbConfig` throws. */
 export type AnthropicAiConfig = {
   provider: "anthropic";
-  providerConfig: { anthropic: AnthropicConfig };
+  providerConfig: AiProviderConfigs & { anthropic: AnthropicConfig };
 };
 
 /** Placeholder — not yet supported; `flattenAskDbConfig` throws. */
 export type GoogleAiConfig = {
   provider: "google";
-  providerConfig: { google: GoogleConfig };
+  providerConfig: AiProviderConfigs & { google: GoogleConfig };
 };
 
 /** Discriminated union of all supported (and placeholder) AI provider branches. */
