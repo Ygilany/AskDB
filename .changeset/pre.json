@@ -49,6 +49,8 @@
     "prisma-auto-discovery",
     "prisma-schema-connector",
     "rag-root-barrel-exports",
+    "relax-introspection-provider-config-type",
+    "relax-provider-config-type",
     "remove-generated-sql-execution",
     "remove-per-app-model-overrides",
     "rename-cli-npm-package",
