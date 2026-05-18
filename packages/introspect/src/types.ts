@@ -116,7 +116,7 @@ export type SqlView = {
 };
 
 export type IntrospectionFilters = {
-  /** Include-list; default `["public"]`. */
+  /** Include-list; defaults to all non-system schemas when omitted. */
   schemas?: string[];
   /**
    * Always excludes `information_schema`, `pg_catalog`, `pg_toast*`, `pg_temp_*`

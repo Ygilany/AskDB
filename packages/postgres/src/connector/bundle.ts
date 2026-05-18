@@ -27,7 +27,6 @@ import {
   type PostgresSqlTemplateName,
 } from "./templates.js";
 
-const DEFAULT_INCLUDE_SCHEMAS = ["public"] as const;
 const SYSTEM_SCHEMA_PATTERNS = [
   "information_schema",
   "pg_catalog",
@@ -141,7 +140,7 @@ function validateFilesMap(
 }
 
 function filterBundleRows(rows: BundleRows, filters?: IntrospectionFilters): BundleRows {
-  const include = filters?.schemas ?? Array.from(DEFAULT_INCLUDE_SCHEMAS);
+  const include = filters?.schemas ?? [];
   const includeSet = include.length === 0 ? undefined : new Set(include);
   const excludeSet = new Set(filters?.excludeSchemas ?? []);
   const keep = (schema: string) =>

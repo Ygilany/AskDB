@@ -39,7 +39,6 @@ import {
   findTemplate,
 } from "./templates.js";
 
-const DEFAULT_INCLUDE_SCHEMAS = ["public"] as const;
 
 /**
  * Coerce a `CatalogQueryResult` (positional rows) into a list of records using the
@@ -85,7 +84,7 @@ export type DescribePostgresInput = {
 export async function describePostgres(
   input: DescribePostgresInput,
 ): Promise<IntrospectionResult> {
-  const include = input.filters?.schemas ?? Array.from(DEFAULT_INCLUDE_SCHEMAS);
+  const include = input.filters?.schemas ?? [];
   const exclude = input.filters?.excludeSchemas ?? [];
   const tableFilter = compileTableFilters(input.filters?.tables);
 

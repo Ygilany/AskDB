@@ -155,13 +155,13 @@ describe("describePostgres — enum sort order regression guard", () => {
 });
 
 describe("describePostgres — filters", () => {
-  it("default include = ['public']; system schemas always excluded", async () => {
+  it("no include filter by default — all non-system schemas returned", async () => {
     const snapshot = loadFixture("orders-users.catalog.json");
     const runner = createSnapshotCatalogQueryRunner(snapshot);
 
     const result = await describePostgres({ runner });
 
-    // The fixture only contains 'public' — the default filter is satisfied.
+    // The fixture only contains 'public', so that's all we get back.
     expect(result.schema.schemas.map((s) => s.name)).toEqual(["public"]);
   });
 
