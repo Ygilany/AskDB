@@ -21,6 +21,7 @@
   },
   "changesets": [
     "add-ask-question-example",
+    "add-google-gemini-provider",
     "ai-provider-configuration",
     "ai-sdk-rag-embeddings",
     "apply-editorial-changes-docs",

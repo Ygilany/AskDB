@@ -1,5 +1,20 @@
 # @askdb/http-api
 
+## 0.5.0-beta.12
+
+### Minor Changes
+
+- 02edcc5: Add Google Gemini as a supported AI provider.
+
+  Set `ASKDB_AI_PROVIDER=google` and `GOOGLE_GENERATIVE_AI_API_KEY` (or the universal `ASKDB_AI_API_KEY`) to use Gemini models. The default model is `gemini-2.0-flash`; override with `ASKDB_AI_MODEL` or `GOOGLE_AI_MODEL`. The `google` provider is also configurable via `askdb.config.*` using the existing `providerConfig.google` branch.
+
+### Patch Changes
+
+- Updated dependencies [02edcc5]
+  - @askdb/config@0.3.0-beta.4
+  - @askdb/core@0.5.0-beta.12
+  - @askdb/postgres@0.2.0-beta.5
+
 ## 0.5.0-beta.11
 
 ### Patch Changes
