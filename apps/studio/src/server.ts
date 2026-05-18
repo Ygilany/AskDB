@@ -24,6 +24,10 @@ import {
   buildSchemaIndex,
   chunkContentHash,
   chunkSchema,
+  createAiSdkEmbedder,
+  createFileStore,
+  createMemoryStore,
+  createPgvectorStore,
   createRetriever,
   loadChunkerSourcesFromDir,
   type ChunkType,
@@ -31,10 +35,6 @@ import {
   type QueryResult,
   type VectorStore,
 } from "@askdb/rag";
-import { createAiSdkEmbedder } from "@askdb/rag/embedders/ai-sdk";
-import { createFileStore } from "@askdb/rag/stores/file";
-import { createMemoryStore } from "@askdb/rag/stores/memory";
-import { createPgvectorStore } from "@askdb/rag/stores/pgvector";
 import {
   buildDefaultTableBody,
   buildFrontmatter,
