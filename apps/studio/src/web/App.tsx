@@ -1109,15 +1109,37 @@ function SettingsPanel({
           <dd>{workspace.aiConfigured ? "Configured" : "Not configured"}</dd>
         </dl>
       </Panel>
-      <Panel title="RAG Files">
+      <Panel title="RAG Store">
         {ragStatus ? (
           <dl className="definition-list">
+            <dt>Store</dt>
+            <dd>{ragStatus.store.kind}</dd>
             <dt>Lock file</dt>
             <dd>{ragStatus.files.lock ? "present" : "missing"}</dd>
-            <dt>Embeddings JSON</dt>
-            <dd>{ragStatus.files.embeddingsJson ? "present" : "missing"}</dd>
-            <dt>Embeddings binary</dt>
-            <dd>{ragStatus.files.embeddingsBin ? "present" : "missing"}</dd>
+            {ragStatus.store.kind === "file" ? (
+              <>
+                <dt>Base path</dt>
+                <dd>{ragStatus.store.basePath ?? "n/a"}</dd>
+                <dt>Embeddings JSON</dt>
+                <dd>{ragStatus.files.embeddingsJson ? "present" : "missing"}</dd>
+                <dt>Embeddings binary</dt>
+                <dd>{ragStatus.files.embeddingsBin ? "present" : "missing"}</dd>
+              </>
+            ) : null}
+            {ragStatus.store.kind === "pgvector" ? (
+              <>
+                <dt>Table</dt>
+                <dd>{ragStatus.store.table ?? "askdb_rag_chunks"}</dd>
+                <dt>Index strategy</dt>
+                <dd>{ragStatus.store.indexStrategy ?? "default"}</dd>
+              </>
+            ) : null}
+            {ragStatus.store.kind === "memory" ? (
+              <>
+                <dt>Persistence</dt>
+                <dd>In-process only</dd>
+              </>
+            ) : null}
           </dl>
         ) : (
           <EmptyText text="RAG status is unavailable." />

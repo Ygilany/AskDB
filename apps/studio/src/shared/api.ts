@@ -41,6 +41,12 @@ export type SuggestResponse = {
 
 export type StudioRagStatusDto = {
   schemaId: string;
+  store: {
+    kind: "file" | "memory" | "pgvector";
+    basePath: string | null;
+    table: string | null;
+    indexStrategy: string | null;
+  };
   embedder: {
     kind: "mock" | "ai-sdk";
     label: string;

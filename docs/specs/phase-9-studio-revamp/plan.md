@@ -82,11 +82,13 @@ pnpm dlx shadcn@latest init --preset b1D0eCA4
 
 - Add RAG status panel:
   - configured embedder
+  - active store
   - index presence
   - stale state
   - dimensions/embedder mismatch
   - sensitive excluded/included counts
-  - file presence
+  - file presence when `rag.store=file`
+  - store metadata when `rag.store=pgvector`
 - Add build action through `POST /api/rag/index`.
 - Add query debugger through `POST /api/rag/query`.
 - Render retrieved chunks with ids, types, scores, refs, and sensitivity metadata.

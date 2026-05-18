@@ -17,7 +17,7 @@ It can:
 - edit table descriptions, aliases, primary entities, tags, common query language, example questions, and column metadata
 - write the describable layer back to `tables/*.md`
 - request AI enrichment suggestions when `OPENAI_API_KEY` is configured
-- build and query the local file-backed RAG index
+- build and query the configured RAG index (`memory`, file-backed, or `pgvector`)
 - generate sample Postgres SQL for natural-language questions against the currently saved enrichment
 
 Studio uses `@askdb/enrich` for the shared non-UI Schema v2 authoring logic:
@@ -56,3 +56,7 @@ Environment variables:
 | `ASKDB_RAG_EMBEDDER` | Set to `mock`, `openai`, or `ai-sdk` for Studio RAG indexing. Defaults to the mock lexical embedder unless an AI key is configured. |
 | `ASKDB_RAG_EMBEDDER_MODEL` | Embedding model override for Studio RAG. |
 | `ASKDB_RAG_EMBEDDER_DIMENSIONS` | Optional embedding dimension override. |
+
+Studio uses the active `rag.store` branch from `askdb.config.*`. For `pgvector`,
+make sure the configured table/extension already exist and `ASKDB_PGVECTOR_URL`
+resolves correctly.
