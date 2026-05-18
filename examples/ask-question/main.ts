@@ -28,9 +28,7 @@ import {
   createAskDbLanguageModelFromEnv,
   createAskDbEmbeddingModelFromEnv,
 } from "@askdb/core";
-import { buildSchemaIndex } from "@askdb/rag";
-import { createMemoryStore } from "@askdb/rag/stores/memory";
-import { createAiSdkEmbedder } from "@askdb/rag/embedders/ai-sdk";
+import { buildSchemaIndex, createMemoryStore, createAiSdkEmbedder } from "@askdb/rag";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -110,8 +108,8 @@ async function main(): Promise<void> {
   const embedder = createAiSdkEmbedder({ model: embeddingModel });
 
   // createMemoryStore keeps the index in-process.
-  // Swap in @askdb/rag/stores/file for a persistent disk cache, or
-  // @askdb/rag/stores/pgvector to store vectors in PostgreSQL.
+  // Swap in createFileStore for a persistent disk cache, or
+  // createPgvectorStore to store vectors in PostgreSQL.
   const index = await buildSchemaIndex({
     schema,
     embedder,

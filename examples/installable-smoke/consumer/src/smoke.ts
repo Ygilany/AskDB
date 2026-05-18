@@ -16,8 +16,8 @@ import {
   type AskDbSchemaFile,
   type AskDialect,
 } from "@askdb/core";
-import { buildSchemaIndex, type Embedder } from "@askdb/rag";
-import { createMemoryStore } from "@askdb/rag/stores/memory";
+import { buildSchemaIndex, createMemoryStore, type Embedder } from "@askdb/rag";
+import { createFileStore } from "@askdb/rag/stores/file";
 import { buildDefaultTableBody, replaceH2Section } from "@askdb/enrich";
 import { introspect, renderToSchemaV2, type CatalogQueryRunner } from "@askdb/introspect";
 import {
@@ -151,6 +151,11 @@ async function main(): Promise<void> {
   });
   if (index.stats.chunksTotal === 0 || typeof index.retriever !== "function") {
     throw new Error("smoke: @askdb/rag did not build an in-memory index");
+  }
+
+  // Verify the sub-path export resolves to the same factory (both import styles must work).
+  if (typeof createFileStore !== "function") {
+    throw new Error("smoke: @askdb/rag/stores/file sub-path export did not resolve");
   }
 
   const ragOut = await ask({

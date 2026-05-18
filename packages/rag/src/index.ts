@@ -1,8 +1,9 @@
 // Public API surface for `@askdb/rag`.
 //
-// Adapters live behind `./stores/<name>` sub-exports so consumers only
-// pay for what they import. The core (`.`) export ships chunker, indexer,
-// retriever wiring, and the BYO interfaces.
+// All adapters (stores, embedders) are re-exported here for convenience so
+// consumers can import everything from `@askdb/rag`. Sub-path exports
+// (`@askdb/rag/stores/memory`, `@askdb/rag/embedders/ai-sdk`, etc.) remain
+// available and point to the same modules — use whichever style you prefer.
 
 export type {
   Chunk,
@@ -47,3 +48,22 @@ export {
 export { synthesizeRetrievedDdl } from "@askdb/core";
 
 export { AskDbRagLogEvent, type AskDbRagLogEventName } from "./log-events.js";
+
+// Stores
+export { createMemoryStore, type MemoryStore } from "./stores/memory.js";
+export { createFileStore, type FileStore, type FileStoreOptions } from "./stores/file.js";
+export {
+  createPgvectorStore,
+  type PgvectorStore,
+  type PgClient,
+  type PgvectorIndexStrategy,
+  type CreatePgvectorStoreOptions,
+} from "./stores/pgvector.js";
+
+// Embedders
+export {
+  createAiSdkEmbedder,
+  type CreateAiSdkEmbedderOptions,
+  type AiSdkEmbedderUsage,
+} from "./embedders/ai-sdk.js";
+export { createOpenAiEmbedder, type CreateOpenAiEmbedderOptions } from "./embedders/openai.js";

@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { flattenAskDbConfig, resetAskDbRuntimeForTests, setAskDbRuntimeForTests } from "@askdb/config";
 import type { AskDbConfig } from "@askdb/config";
-import { createMemoryStore } from "@askdb/rag/stores/memory";
+import { createMemoryStore } from "@askdb/rag";
 import { afterEach, describe, expect, it } from "vitest";
 import { createStudioServer, setStudioPgvectorStoreFactoryForTests } from "./server.js";
 
