@@ -204,6 +204,28 @@ importers:
         specifier: ^3.0.9
         version: 3.2.4(@types/debug@4.1.13)(@types/node@24.12.4)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.21.0)(yaml@2.9.0)
 
+  examples/ask-question:
+    dependencies:
+      '@askdb/config':
+        specifier: workspace:*
+        version: link:../../packages/config
+      '@askdb/core':
+        specifier: workspace:*
+        version: link:../../packages/core
+      '@askdb/rag':
+        specifier: workspace:*
+        version: link:../../packages/rag
+    devDependencies:
+      '@types/node':
+        specifier: ^22.13.14
+        version: 22.19.17
+      tsx:
+        specifier: ^4.20.5
+        version: 4.21.0
+      typescript:
+        specifier: ^5.7.3
+        version: 5.9.3
+
   packages/config:
     dependencies:
       dotenv:
@@ -285,13 +307,13 @@ importers:
     devDependencies:
       mysql2:
         specifier: ^3.11.5
-        version: 3.22.3(@types/node@24.12.4)
+        version: 3.22.3(@types/node@22.19.17)
       typescript:
         specifier: ^5.7.3
         version: 5.9.3
       vitest:
         specifier: ^3.0.9
-        version: 3.2.4(@types/debug@4.1.13)(@types/node@24.12.4)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.21.0)(yaml@2.9.0)
+        version: 3.2.4(@types/debug@4.1.13)(@types/node@22.19.17)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.21.0)(yaml@2.9.0)
 
   packages/postgres:
     dependencies:
@@ -9375,9 +9397,9 @@ snapshots:
 
   muggle-string@0.4.1: {}
 
-  mysql2@3.22.3(@types/node@24.12.4):
+  mysql2@3.22.3(@types/node@22.19.17):
     dependencies:
-      '@types/node': 24.12.4
+      '@types/node': 22.19.17
       aws-ssl-profiles: 1.1.2
       denque: 2.1.0
       generate-function: 2.3.1
