@@ -1,6 +1,6 @@
 ---
 title: "Core Concepts"
-description: "AskDB schema as the contract, optional RAG over the same artifact, validated read-only SQL, and explicit safety modes—trust-first analytics for your stack."
+description: "AskDB schema as the contract, optional retrieval over the same artifact, validated read-only SQL, and explicit safety modes—how the pieces fit together."
 ---
 
 <p className="doc-eyebrow">How the pieces fit</p>
@@ -53,6 +53,8 @@ askdb bundle my-app.schema --out my-app.schema.bundle.json
 ## Execution boundary
 
 <p><code>{"@askdb/core"}</code> returns SQL only. Review generated SQL before running it. Consumers own any later database execution, approval workflow, read-only roles, tenant policy, network controls, and audit logging. Installing <code>{"pg"}</code> is not required unless you use live Postgres introspection or pgvector.</p>
+
+<p>Because you supply your own model provider and API key, requests go directly from your environment to the model provider you chose. AskDB does not proxy, log, or transmit your query results. The only thing the model receives is the schema context assembled from your AskDB schema artifact—table names, column types, and any descriptions your team approved. Your data rows never leave your infrastructure.</p>
 
 ## Agents and MCP
 

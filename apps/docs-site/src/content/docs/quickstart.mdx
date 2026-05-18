@@ -16,27 +16,9 @@ description: "Install AskDB, generate or use a schema artifact, enrich it, and r
             <li>A PostgreSQL connection string only if you want live Postgres introspection. A Prisma schema file is enough if you use <code>{"--engine prisma"}</code>.</li>
           </ul>
 
-## Option A — Try with a sample (AskDB repo contributors)
+## Typical install
 
-<p>If you are working inside a clone of the AskDB repository, you can use the bundled sample schema under <code>{"fixtures/schemas/orders-users.schema"}</code> after installing dependencies and building the workspace.</p>
-
-
-```
-pnpm install
-cp .env.example .env
-# edit .env for API keys; optional: pnpm exec askdb init
-pnpm build
-
-pnpm exec askdb ask \
-  --schema fixtures/schemas/orders-users.schema \
-  --question "How many orders are there?"
-```
-
-
-
-## Option B — npm install (typical)
-
-<p>Install the CLI globally or per project, add keys to <code>{".env"}</code>, then introspect your own database (or Prisma file) to produce a schema folder.</p>
+<p>Use this path when you are adding AskDB to your own project. Install the CLI globally or per project, add keys to <code>{".env"}</code>, then introspect your own database (or Prisma file) to produce a schema folder.</p>
 
 
 ```
@@ -54,6 +36,24 @@ npx askdb enrich --schema my-app.schema
 npx askdb ask \
   --schema my-app.schema \
   --question "Which tables are connected to users?"
+```
+
+
+
+## Working from the AskDB repository
+
+<p>Use this path when you are contributing to AskDB itself. You can use the bundled sample schema under <code>{"fixtures/schemas/orders-users.schema"}</code> after installing dependencies and building the workspace.</p>
+
+
+```
+pnpm install
+cp .env.example .env
+# edit .env for API keys; optional: pnpm exec askdb init
+pnpm build
+
+pnpm exec askdb ask \
+  --schema fixtures/schemas/orders-users.schema \
+  --question "How many orders are there?"
 ```
 
 
