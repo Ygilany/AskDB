@@ -6,6 +6,7 @@ import {
 } from "./constants.js";
 import {
   DEFAULT_AZURE_OPENAI_DEPLOYMENT,
+  DEFAULT_GOOGLE_CHAT_MODEL,
   DEFAULT_INTROSPECT_OUTPUT_DIR,
   DEFAULT_LOCAL_POSTGRES_URL,
   DEFAULT_MOCK_RAG_EMBEDDING_DIMENSIONS,
@@ -16,7 +17,7 @@ import {
   normalizePgvectorIndexStrategy,
   parsePositiveInteger,
 } from "./defaults.js";
-import type { AskDbConfig, AzureConfig, FoundryConfig, OpenaiConfig } from "./types.js";
+import type { AskDbConfig, AzureConfig, FoundryConfig, GoogleConfig, OpenaiConfig } from "./types.js";
 
 function isMember<T extends readonly string[]>(value: string, allowed: T): value is T[number] {
   return (allowed as readonly string[]).includes(value);
@@ -35,6 +36,13 @@ function applyOpenAiAi(out: Record<string, string>, cfg: OpenaiConfig): void {
   const model = cfg.model?.trim() || DEFAULT_OPENAI_CHAT_MODEL;
   set(out, "OPENAI_MODEL", model);
   set(out, "ASKDB_MODEL", model);
+}
+
+function applyGoogleAi(out: Record<string, string>, cfg: GoogleConfig): void {
+  set(out, "GOOGLE_GENERATIVE_AI_API_KEY", cfg.apiKey);
+  set(out, "GOOGLE_AI_BASE_URL", cfg.baseUrl);
+  const model = cfg.model?.trim() || DEFAULT_GOOGLE_CHAT_MODEL;
+  set(out, "ASKDB_AI_MODEL", model);
 }
 
 function applyAzureLikeAi(out: Record<string, string>, cfg: AzureConfig | FoundryConfig): void {
@@ -87,10 +95,11 @@ export function flattenAskDbConfig(config: AskDbConfig): Record<string, string> 
     // `@askdb/core` treats `foundry` like Azure for env parsing.
     set(out, "ASKDB_AI_PROVIDER", "foundry");
     applyAzureLikeAi(out, config.ai.providerConfig.foundry);
+  } else if (config.ai.provider === "google") {
+    set(out, "ASKDB_AI_PROVIDER", "google");
+    applyGoogleAi(out, config.ai.providerConfig.google);
   } else if (config.ai.provider === "anthropic") {
     throw new Error("askdb.config: Anthropic AI provider is not supported yet.");
-  } else if (config.ai.provider === "google") {
-    throw new Error("askdb.config: Google AI provider is not supported yet.");
   }
 
   // --- Database ---

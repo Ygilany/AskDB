@@ -14,7 +14,7 @@ import { createOpenAI } from "@ai-sdk/openai";
  *                `@ai-sdk/azure`. Uses the `resourceName` + deployment-name
  *                URL shape with the `api-key` header.
  */
-export type AskDbAiProvider = "openai" | "azure";
+export type AskDbAiProvider = "openai" | "azure" | "google";
 
 export type AskDbAiConfig = {
   provider: AskDbAiProvider;
@@ -43,8 +43,9 @@ function readProvider(env: AskDbAiEnv): AskDbAiProvider {
   const raw = (env.ASKDB_AI_PROVIDER ?? "").toLowerCase().trim();
   if (raw === "" || raw === "openai") return "openai";
   if (raw === "azure" || raw === "azure-openai" || raw === "foundry") return "azure";
+  if (raw === "google") return "google";
   throw new Error(
-    `Unknown ASKDB_AI_PROVIDER "${env.ASKDB_AI_PROVIDER}". Expected "openai" or "azure".`,
+    `Unknown ASKDB_AI_PROVIDER "${env.ASKDB_AI_PROVIDER}". Expected "openai", "azure", or "google".`,
   );
 }
 
@@ -80,7 +81,9 @@ export function resolveAskDbAiConfig(
   const providerNativeKey =
     provider === "azure"
       ? env.AZURE_OPENAI_API_KEY || env.AZURE_API_KEY
-      : env.OPENAI_API_KEY;
+      : provider === "google"
+        ? env.GOOGLE_GENERATIVE_AI_API_KEY || env.GOOGLE_AI_API_KEY
+        : env.OPENAI_API_KEY;
   const providerNativeKeySecondary =
     provider === "azure"
       ? env.AZURE_OPENAI_API_KEY_SECONDARY || env.AZURE_API_KEY_SECONDARY
@@ -96,7 +99,9 @@ export function resolveAskDbAiConfig(
   const providerNativeModel =
     provider === "azure"
       ? env.AZURE_OPENAI_DEPLOYMENT || env.AZURE_DEPLOYMENT_NAME
-      : env.OPENAI_MODEL;
+      : provider === "google"
+        ? env.GOOGLE_AI_MODEL
+        : env.OPENAI_MODEL;
   const model =
     env.ASKDB_AI_MODEL ||
     env.ASKDB_MODEL ||
@@ -107,7 +112,9 @@ export function resolveAskDbAiConfig(
   const providerNativeBaseURL =
     provider === "azure"
       ? env.AZURE_OPENAI_BASE_URL || env.AZURE_OPENAI_ENDPOINT || env.AZURE_BASE_URL
-      : env.OPENAI_BASE_URL;
+      : provider === "google"
+        ? env.GOOGLE_AI_BASE_URL
+        : env.OPENAI_BASE_URL;
   const baseURL = env.ASKDB_AI_BASE_URL || providerNativeBaseURL || undefined;
 
   const resourceName =
@@ -163,7 +170,9 @@ export function resolveAskDbEmbeddingConfig(
   const providerNativeKey =
     provider === "azure"
       ? env.AZURE_OPENAI_API_KEY || env.AZURE_API_KEY
-      : env.OPENAI_API_KEY;
+      : provider === "google"
+        ? env.GOOGLE_GENERATIVE_AI_API_KEY || env.GOOGLE_AI_API_KEY
+        : env.OPENAI_API_KEY;
   const providerNativeKeySecondary =
     provider === "azure"
       ? env.AZURE_OPENAI_API_KEY_SECONDARY || env.AZURE_API_KEY_SECONDARY
@@ -181,7 +190,9 @@ export function resolveAskDbEmbeddingConfig(
     provider === "azure"
       ? env.AZURE_OPENAI_EMBEDDING_DEPLOYMENT ||
         env.AZURE_EMBEDDING_DEPLOYMENT_NAME
-      : env.OPENAI_EMBEDDING_MODEL;
+      : provider === "google"
+        ? env.GOOGLE_AI_EMBEDDING_MODEL
+        : env.OPENAI_EMBEDDING_MODEL;
   const model =
     perAppModel ||
     env.ASKDB_AI_EMBEDDING_MODEL ||
@@ -193,7 +204,9 @@ export function resolveAskDbEmbeddingConfig(
   const providerNativeBaseURL =
     provider === "azure"
       ? env.AZURE_OPENAI_BASE_URL || env.AZURE_OPENAI_ENDPOINT || env.AZURE_BASE_URL
-      : env.OPENAI_BASE_URL;
+      : provider === "google"
+        ? env.GOOGLE_AI_BASE_URL
+        : env.OPENAI_BASE_URL;
   const baseURL = env.ASKDB_AI_BASE_URL || providerNativeBaseURL || undefined;
 
   const resourceName =
@@ -233,6 +246,15 @@ export async function createAskDbLanguageModel(
     });
     return azure(config.model);
   }
+  if (config.provider === "google") {
+    // Lazy-loaded so `@ai-sdk/google` is only required when actually used.
+    const { createGoogleGenerativeAI } = await import("@ai-sdk/google");
+    const google = createGoogleGenerativeAI({
+      apiKey: config.apiKey,
+      ...(config.baseURL ? { baseURL: config.baseURL } : {}),
+    });
+    return google(config.model);
+  }
   const openai = createOpenAI({
     apiKey: config.apiKey,
     ...(config.baseURL ? { baseURL: config.baseURL } : {}),
@@ -264,6 +286,14 @@ export async function createAskDbEmbeddingModel(
       dimensions: options.dimensions,
       user: options.user,
     });
+  }
+  if (config.provider === "google") {
+    const { createGoogleGenerativeAI } = await import("@ai-sdk/google");
+    const google = createGoogleGenerativeAI({
+      apiKey: config.apiKey,
+      ...(config.baseURL ? { baseURL: config.baseURL } : {}),
+    });
+    return google.textEmbeddingModel(config.model);
   }
   const openai = createOpenAI({
     apiKey: config.apiKey,
@@ -324,6 +354,8 @@ export function askDbAiKeyMissingMessage(context: string): string {
     `For Azure / Microsoft Foundry, set ASKDB_AI_PROVIDER=azure plus ` +
     `AZURE_OPENAI_API_KEY (or ASKDB_AI_API_KEY), ` +
     `ASKDB_AI_AZURE_RESOURCE_NAME (or ASKDB_AI_BASE_URL), and a deployment name ` +
-    `via ASKDB_AI_MODEL.`
+    `via ASKDB_AI_MODEL. ` +
+    `For Google Gemini, set ASKDB_AI_PROVIDER=google plus ` +
+    `GOOGLE_GENERATIVE_AI_API_KEY (or ASKDB_AI_API_KEY).`
   );
 }
