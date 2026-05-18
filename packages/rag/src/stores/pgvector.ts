@@ -34,8 +34,10 @@ export type CreatePgvectorStoreOptions = {
 };
 
 export type PgvectorStore = VectorStore & {
-  /** Documented DDL the consumer must run before first use. */
+  /** Returns the DDL needed to provision the extension, table, and indexes. */
   setupSql(): string;
+  /** Executes setupSql() against the configured database. Idempotent — safe to call on every start. */
+  ensureSchema(): Promise<void>;
   /** Close any pool the adapter built internally. No-op when an external client was supplied. */
   close(): Promise<void>;
   /** Diagnostic helper for hosts that need to verify persisted row counts. */
@@ -238,6 +240,11 @@ export function createPgvectorStore(
       .join("\n");
   };
 
+  const ensureSchema = async (): Promise<void> => {
+    const c = await getClient();
+    await c.query(setupSql());
+  };
+
   const close = async (): Promise<void> => {
     if (internalPool) {
       await internalPool.end();
@@ -260,6 +267,7 @@ export function createPgvectorStore(
     count,
     hashesByPrefix,
     setupSql,
+    ensureSchema,
     close,
   };
 }

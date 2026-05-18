@@ -26,7 +26,7 @@ import type {
 } from "./types.js";
 
 type CliOptions = {
-  command?: "index" | "query";
+  command?: "index" | "query" | "setup-store";
   schemaDir?: string;
   store?: "memory" | "file" | "pgvector";
   embedder?: "mock" | "openai";
@@ -57,11 +57,12 @@ export async function runRagCli(argv: readonly string[]): Promise<number> {
       return 0;
     }
     const cmd = argv[0];
-    if (cmd !== "index" && cmd !== "query") {
-      throw new Error(`Unknown command: ${cmd} (expected 'index' or 'query')`);
+    if (cmd !== "index" && cmd !== "query" && cmd !== "setup-store") {
+      throw new Error(`Unknown command: ${cmd} (expected 'index', 'query', or 'setup-store')`);
     }
     const opts = parseOptions(argv.slice(1));
     opts.command = cmd;
+    if (cmd === "setup-store") return await runSetupStore(opts);
     if (!opts.schemaDir) {
       throw new Error("Missing positional <schema-dir>.");
     }
@@ -158,6 +159,27 @@ async function runQuery(opts: CliOptions, logger: AskDbLogger, runtimeConfig: As
   );
 
   await closeStore(store);
+  return 0;
+}
+
+async function runSetupStore(opts: CliOptions): Promise<number> {
+  if (!opts.pgUrl) {
+    throw new Error(
+      "setup-store requires --pg-url <connection-string>.",
+    );
+  }
+  const dimensions = opts.dimensions ?? 1536;
+  const store = createPgvectorStore({
+    connectionString: opts.pgUrl,
+    table: opts.pgTable,
+    dimensions,
+  });
+  await store.ensureSchema();
+  await store.close();
+  const table = opts.pgTable ?? "askdb_rag_chunks";
+  process.stdout.write(
+    `pgvector schema ready: table "${table}" (dimensions=${dimensions})\n`,
+  );
   return 0;
 }
 
@@ -384,8 +406,14 @@ function printHelp(): void {
       "askdb-rag - Chunk + index + query a Schema v2 directory.",
       "",
       "Usage:",
-      "  askdb-rag index <schema-dir>  [--store memory|file|pgvector] [--embedder mock|openai] [--dimensions <n>]",
-      "  askdb-rag query <schema-dir>  --question \"...\" [-k 8] [--types table,column,cql]",
+      "  askdb-rag index <schema-dir>      [--store memory|file|pgvector] [--embedder mock|openai] [--dimensions <n>]",
+      "  askdb-rag query <schema-dir>      --question \"...\" [-k 8] [--types table,column,cql]",
+      "  askdb-rag setup-store             --pg-url <conn> [--pg-table askdb_rag_chunks] [--dimensions <n>]",
+      "",
+      "Commands:",
+      "  index        Chunk and embed a schema directory into the configured store.",
+      "  query        Run a similarity query against an indexed store.",
+      "  setup-store  Create the pgvector extension, table, and indexes. Idempotent — safe to re-run.",
       "",
       "Stores:",
       "  memory     in-memory cosine. Ephemeral. Default for `query`-only smoke checks against `index --store memory`.",

@@ -47,6 +47,8 @@ askdb-studio --schema ./my-app.schema
 
 <p>Studio reads the active <code>{"rag.store"}</code> branch from <code>{"askdb.config.*"}</code>. If you point that at <code>{"pgvector"}</code>, Studio uses the configured vector table rather than writing local embedding files. Studio does not yet provide an in-app editor for vector-store configuration.</p>
 
+<p>When <code>{"pgvector"}</code> is configured, Studio automatically runs <code>{"ensureSchema()"}</code> before any RAG operation. This provisions the <code>{"vector"}</code> extension, table, and indexes using <code>{"IF NOT EXISTS"}</code> guards — no manual migration step is needed for local development. For production deployments, use <code>{"askdb-rag setup-store"}</code> or <code>{"setupSql()"}</code> explicitly — see the <a href="../guides/pgvector-setup/">pgvector setup guide</a>.</p>
+
 ## Environment Variables
 
 <div className="definition-list">

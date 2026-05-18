@@ -72,6 +72,7 @@ export default defineConfig({
             { label: "Embed NL→SQL in a Node app", slug: "guides/embed-in-app" },
             { label: "Author and enrich schema", slug: "guides/author-enrich-schema" },
             { label: "Add RAG for large schemas", slug: "guides/rag-large-schema" },
+            { label: "Set up pgvector for RAG", slug: "guides/pgvector-setup" },
             { label: "Run the HTTP API", slug: "guides/http-api" },
             { label: "Agents and MCP (status)", slug: "guides/agents-and-mcp" },
           ],
