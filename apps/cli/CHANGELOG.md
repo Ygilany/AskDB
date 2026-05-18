@@ -1,5 +1,19 @@
 # askdb
 
+## 0.5.0-beta.11
+
+### Patch Changes
+
+- Updated dependencies [cd364e3]
+- Updated dependencies [eff2f5d]
+  - @askdb/postgres@0.2.0-beta.4
+  - @askdb/introspect@0.3.0-beta.4
+  - @askdb/studio@0.2.0-beta.8
+  - @askdb/mysql@0.1.0-beta.3
+  - @askdb/prisma@0.2.0-beta.4
+  - @askdb/sqlite@0.1.0-beta.3
+  - @askdb/sqlserver@0.1.0-beta.3
+
 ## 0.5.0-beta.10
 
 ### Minor Changes
