@@ -25,7 +25,7 @@ export type AskDbRagEmbedder = (typeof ASKDB_RAG_EMBEDDERS)[number];
 export const ASKDB_RAG_STORES = ["file", "memory", "pgvector"] as const;
 export type AskDbRagStore = (typeof ASKDB_RAG_STORES)[number];
 
-export const ASKDB_AI_PROVIDERS = ["openai", "azure", "foundry"] as const;
+export const ASKDB_AI_PROVIDERS = ["openai", "azure", "foundry", "google"] as const;
 export type AskDbAiProviderId = (typeof ASKDB_AI_PROVIDERS)[number];
 
 export const ASKDB_INTROSPECTION_PROVIDERS = [

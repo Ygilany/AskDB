@@ -121,6 +121,57 @@ describe("resolveAskDbAiConfig", () => {
     ).toThrowError(/Unknown ASKDB_AI_PROVIDER/);
   });
 
+  it("resolves the google provider with GOOGLE_GENERATIVE_AI_API_KEY", () => {
+    const cfg = resolveAskDbAiConfig({
+      ASKDB_AI_PROVIDER: "google",
+      GOOGLE_GENERATIVE_AI_API_KEY: "goog-key",
+    });
+    expect(cfg).toEqual({ provider: "google", apiKey: "goog-key", model: "gpt-4o-mini" });
+  });
+
+  it("uses GOOGLE_AI_API_KEY as an alias for the Google provider key", () => {
+    const cfg = resolveAskDbAiConfig({
+      ASKDB_AI_PROVIDER: "google",
+      GOOGLE_AI_API_KEY: "goog-alias",
+    });
+    expect(cfg?.apiKey).toBe("goog-alias");
+  });
+
+  it("prefers ASKDB_AI_API_KEY over provider-native Google key", () => {
+    const cfg = resolveAskDbAiConfig({
+      ASKDB_AI_PROVIDER: "google",
+      ASKDB_AI_API_KEY: "universal",
+      GOOGLE_GENERATIVE_AI_API_KEY: "goog-native",
+    });
+    expect(cfg?.apiKey).toBe("universal");
+  });
+
+  it("uses GOOGLE_AI_MODEL as the provider-native model var for google", () => {
+    const cfg = resolveAskDbAiConfig({
+      ASKDB_AI_PROVIDER: "google",
+      GOOGLE_GENERATIVE_AI_API_KEY: "k",
+      GOOGLE_AI_MODEL: "gemini-1.5-pro",
+    });
+    expect(cfg?.model).toBe("gemini-1.5-pro");
+  });
+
+  it("passes through GOOGLE_AI_BASE_URL as baseURL for google", () => {
+    const cfg = resolveAskDbAiConfig({
+      ASKDB_AI_PROVIDER: "google",
+      GOOGLE_GENERATIVE_AI_API_KEY: "k",
+      GOOGLE_AI_BASE_URL: "https://custom.google.endpoint/v1",
+    });
+    expect(cfg?.baseURL).toBe("https://custom.google.endpoint/v1");
+  });
+
+  it("does not use OPENAI_API_KEY when the google provider is selected", () => {
+    const cfg = resolveAskDbAiConfig({
+      ASKDB_AI_PROVIDER: "google",
+      OPENAI_API_KEY: "openai-only",
+    });
+    expect(cfg).toBeUndefined();
+  });
+
   it("prefers ASKDB_AI_MODEL over ASKDB_MODEL and the provider-native model env var", () => {
     const cfg = resolveAskDbAiConfig({
       ASKDB_AI_API_KEY: "k",
