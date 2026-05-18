@@ -100,7 +100,7 @@ describe("describePostgresFromExport", () => {
     ]);
   });
 
-  it("applies the default ['public'] schema filter to bundles", async () => {
+  it("includes all non-system schemas by default (no include filter)", async () => {
     const snapshot = loadFixture("orders-users.catalog.json");
     const bundleDir = join(workDir, "bundle");
     writeCsvBundle(bundleDir, {
@@ -124,6 +124,7 @@ describe("describePostgresFromExport", () => {
     });
 
     expect(result.schema.schemas.map((schema) => schema.name)).toEqual([
+      "private",
       "public",
     ]);
   });
