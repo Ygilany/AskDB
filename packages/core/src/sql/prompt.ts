@@ -9,7 +9,9 @@ import {
   formatSchemaV2ForNlToSql,
   type NormalizedSchemaV2,
 } from "../schema/v2/index.js";
+import type { NormalizedTenantPolicy, TenantScope } from "../schema/v2/tenant-policy.js";
 import type { DialectSpec } from "./dialect-spec.js";
+import { buildTenantPromptBlock } from "./tenant-prompt.js";
 
 function isV2(schema: AnyNormalizedSchema): schema is NormalizedSchemaV2 {
   return "schemaId" in schema;
@@ -35,6 +37,8 @@ export function buildNlToSqlUserPrompt(
    * observability consistent.
    */
   prebuiltDdl?: string,
+  tenantPolicy?: NormalizedTenantPolicy,
+  tenantScope?: TenantScope,
 ): string {
   const formatted = isV2(schema)
     ? formatSchemaV2ForNlToSql(schema, nlToSqlSchemaOptions)
@@ -79,6 +83,13 @@ export function buildNlToSqlUserPrompt(
     ddl,
     "",
   ];
+
+  // Tenant policy block (always injected when present — security boundary)
+  if (tenantPolicy && tenantScope) {
+    lines.push("");
+    lines.push(buildTenantPromptBlock(tenantPolicy, tenantScope));
+    lines.push("");
+  }
   if (ambiguityNotes.length > 0) {
     lines.push(
       "Context (deterministic checks from AskDB—these hints may be irrelevant; weigh them against the question):",

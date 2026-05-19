@@ -3,6 +3,7 @@ import type {
   NormalizedV2Column,
   NormalizedV2Table,
   ParsedTableMarkdown,
+  ParsedTenantPolicyMarkdown,
   V2Concept,
 } from "@askdb/core";
 import type { Chunk } from "../types.js";
@@ -63,6 +64,7 @@ export function chunkSchema(
       question: 0,
       concept: 0,
       relationship: 0,
+      "tenant-policy": 0,
     },
     sensitiveExcluded: 0,
     sensitiveIncluded: 0,
@@ -229,6 +231,13 @@ export function chunkSchema(
         if (conceptResult.sensitive) stats.sensitiveIncluded++;
         chunks.push(conceptResult.chunk);
       }
+    }
+  }
+
+  // Tenant policy body chunks — one per H2 section.
+  if (sources.tenantPolicy) {
+    for (const chunk of buildTenantPolicyChunks(sources.tenantPolicy, schema.schemaId, maxChars)) {
+      chunks.push(chunk);
     }
   }
 
@@ -447,6 +456,45 @@ function buildConceptChunk(
     sensitive: linkedSensitive || descriptionMentionsSensitive,
     excluded: excludeForSensitive,
   };
+}
+
+function buildTenantPolicyChunks(
+  tenantPolicy: ParsedTenantPolicyMarkdown,
+  schemaId: string,
+  maxChars: number,
+): Chunk[] {
+  const chunks: Chunk[] = [];
+  const sections = tenantPolicy.sections;
+
+  for (const [sectionName, sectionBody] of Object.entries(sections)) {
+    if (!sectionBody?.trim()) continue;
+    const slug = sectionName.toLowerCase().replace(/[^a-z0-9]+/g, "-");
+    for (const part of splitLong(sectionBody.trim(), maxChars)) {
+      chunks.push({
+        id: `chunk:tenant-policy#${slug}${part.suffix}`,
+        type: "tenant-policy",
+        text: `# Tenant policy — ${sectionName}\n${part.text}`,
+        schemaId,
+        refs: [],
+        sensitive: false,
+      });
+    }
+  }
+
+  if (chunks.length === 0 && tenantPolicy.body.trim()) {
+    for (const part of splitLong(tenantPolicy.body.trim(), maxChars)) {
+      chunks.push({
+        id: `chunk:tenant-policy#body${part.suffix}`,
+        type: "tenant-policy",
+        text: `# Tenant policy\n${part.text}`,
+        schemaId,
+        refs: [],
+        sensitive: false,
+      });
+    }
+  }
+
+  return chunks;
 }
 
 // ---------- helpers ----------

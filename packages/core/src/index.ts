@@ -1,4 +1,18 @@
 export * from "./errors.js";
+export { validateTenantScope } from "./sql/tenant-scope-validate.js";
+export { buildTenantPromptBlock } from "./sql/tenant-prompt.js";
+export {
+  validateTenantGuardrails,
+  type TenantGuardrailResult,
+} from "./sql/tenant-guardrail.js";
+export {
+  resolveTenantSql,
+  extractTenantPlaceholders,
+  placeholderForRoot,
+  type TenantSqlOutputMode,
+  type TenantPlaceholderResult,
+  type TenantBinding,
+} from "./sql/tenant-placeholders.js";
 export {
   ask,
   type AskPipelineOptions,
@@ -54,6 +68,17 @@ export {
   v2ConceptsFrontmatterSchema,
   v2ConceptSchema,
   RECOGNIZED_H2_SECTIONS,
+  parseTenantPolicyMarkdown,
+  normalizeTenantPolicy,
+  tenantPolicyFrontmatterSchema,
+  tenantRootSchema,
+  hierarchyEdgeSchema,
+  scopedTableSchema,
+  polymorphicTableSchema,
+  enforcementModeSchema,
+  tenantScopeSchema,
+  tenantAccessSchema,
+  TENANT_POLICY_H2_SECTIONS,
 } from "./schema/v2/index.js";
 export type {
   V2SchemaJson,
@@ -70,6 +95,28 @@ export type {
   NormalizedV2Table,
   NormalizedV2Column,
   SchemaV2Warning,
+  TenantPolicyFrontmatter,
+  TenantRoot,
+  HierarchyEdge,
+  ScopedTable,
+  ScopeThrough,
+  PolymorphicTable,
+  EnforcementMode,
+  TenantScope,
+  TenantAccess,
+  TenantAccessIds,
+  TenantAccessSubtree,
+  TenantAccessMultiRoot,
+  TenantAccessGlobal,
+  TenantFilter,
+  TenantFilterCondition,
+  TenantScopeContext,
+  ParsedTenantPolicyMarkdown,
+  NormalizedTenantPolicy,
+  TenantPolicyWarning,
+  TableCoverageEntry,
+  TableTenantClassification,
+  TenantPolicyH2Section,
 } from "./schema/v2/index.js";
 export {
   ENRICHMENT_SYSTEM_PROMPT,
