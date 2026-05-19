@@ -10,6 +10,8 @@ import type {
   SchemaV2Warning,
 } from "./normalized.js";
 import type { V2ConceptsFrontmatter } from "./describable.js";
+import { parseTenantPolicyMarkdown, normalizeTenantPolicy } from "./tenant-policy-loader.js";
+import type { NormalizedTenantPolicy } from "./tenant-policy.js";
 
 /** Bundled JSON produced by `askdb bundle` — packs the full directory into one file. */
 type BundledSchemaJson = {
@@ -17,6 +19,7 @@ type BundledSchemaJson = {
   physical: V2SchemaJson;
   tables: Record<string, string>; // filename → raw markdown content
   concepts?: string; // raw concepts.md content
+  tenantPolicy?: string; // raw tenant-policy.md content
 };
 
 /**
@@ -36,7 +39,7 @@ export function loadSchemaFromJson(raw: string): NormalizedSchemaV2 {
     return loadFromBundle(parsed as BundledSchemaJson, "<inline JSON>");
   }
   const physical = parsePhysicalLayer(parsed, "<inline JSON>");
-  return buildNormalized(physical, {}, undefined, []);
+  return buildNormalized(physical, {}, undefined, [], undefined);
 }
 
 /**
@@ -70,7 +73,7 @@ export function loadSchema(path: string): NormalizedSchemaV2 {
 
   // Bare schema.json — treat enclosing directory as the schema directory
   const physical = parsePhysicalLayer(parsed, resolved);
-  return buildNormalized(physical, {}, undefined, []);
+  return buildNormalized(physical, {}, undefined, [], undefined);
 }
 
 function loadFromDirectory(dir: string): NormalizedSchemaV2 {
@@ -118,7 +121,23 @@ function loadFromDirectory(dir: string): NormalizedSchemaV2 {
     // optional
   }
 
-  return buildNormalized(physical, tableMarkdowns, concepts, []);
+  // Load optional tenant-policy.md
+  let tenantPolicy: NormalizedTenantPolicy | undefined;
+  try {
+    const policyPath = join(dir, "tenant-policy.md");
+    const content = readFileSync(policyPath, "utf8");
+    const parsed = parseTenantPolicyMarkdown(content, policyPath);
+    const physicalTableIds = new Set(physical.tables.map((t) => t.id));
+    const physicalColumnIds = new Set(
+      physical.tables.flatMap((t) => t.columns.map((c) => c.id)),
+    );
+    tenantPolicy = normalizeTenantPolicy(parsed, physicalTableIds, physicalColumnIds);
+  } catch (e) {
+    if (e instanceof SchemaParseError) throw e;
+    // optional — file not found is fine
+  }
+
+  return buildNormalized(physical, tableMarkdowns, concepts, [], tenantPolicy);
 }
 
 function loadFromBundle(bundle: BundledSchemaJson, filePath: string): NormalizedSchemaV2 {
@@ -135,7 +154,17 @@ function loadFromBundle(bundle: BundledSchemaJson, filePath: string): Normalized
     concepts = parseConceptsMarkdown(bundle.concepts, "concepts.md").frontmatter;
   }
 
-  return buildNormalized(physical, tableMarkdowns, concepts, []);
+  let tenantPolicy: NormalizedTenantPolicy | undefined;
+  if (bundle.tenantPolicy) {
+    const parsed = parseTenantPolicyMarkdown(bundle.tenantPolicy, "tenant-policy.md");
+    const physicalTableIds = new Set(physical.tables.map((t) => t.id));
+    const physicalColumnIds = new Set(
+      physical.tables.flatMap((t) => t.columns.map((c) => c.id)),
+    );
+    tenantPolicy = normalizeTenantPolicy(parsed, physicalTableIds, physicalColumnIds);
+  }
+
+  return buildNormalized(physical, tableMarkdowns, concepts, [], tenantPolicy);
 }
 
 function parsePhysicalLayer(data: unknown, filePath: string): V2SchemaJson {
@@ -167,6 +196,7 @@ function buildNormalized(
   tableMarkdowns: Record<string, ReturnType<typeof parseTableMarkdown>>,
   concepts: V2ConceptsFrontmatter | undefined,
   extraWarnings: SchemaV2Warning[],
+  tenantPolicy: NormalizedTenantPolicy | undefined,
 ): NormalizedSchemaV2 {
   const warnings: SchemaV2Warning[] = [...extraWarnings];
 
@@ -246,6 +276,7 @@ function buildNormalized(
     provider: physical.provider,
     tables,
     concepts: concepts?.concepts,
+    tenantPolicy,
     warnings,
   };
 }

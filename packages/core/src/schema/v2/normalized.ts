@@ -1,4 +1,5 @@
 import type { V2Concept } from "./describable.js";
+import type { NormalizedTenantPolicy } from "./tenant-policy.js";
 
 /** Normalized column with optional v2 describable-layer fields. */
 export type NormalizedV2Column = {
@@ -42,6 +43,7 @@ export type NormalizedSchemaV2 = {
   provider?: string;
   tables: NormalizedV2Table[];
   concepts?: V2Concept[];
+  tenantPolicy?: NormalizedTenantPolicy;
   /** Structured warnings from ID validation (orphaned/missing ids). */
   warnings: SchemaV2Warning[];
 };

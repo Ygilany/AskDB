@@ -1,0 +1,391 @@
+{
+  "version": 2,
+  "schemaId": "agency-multi-tenant",
+  "provider": "postgres",
+  "tables": [
+    {
+      "id": "table:public.agencies",
+      "name": "agencies",
+      "schema": "public",
+      "sensitive": false,
+      "columns": [
+        {
+          "id": "table:public.agencies#id",
+          "name": "id",
+          "type": "uuid",
+          "nullable": false,
+          "primaryKey": true,
+          "sensitive": false
+        },
+        {
+          "id": "table:public.agencies#name",
+          "name": "name",
+          "type": "text",
+          "nullable": false,
+          "sensitive": false
+        },
+        {
+          "id": "table:public.agencies#region",
+          "name": "region",
+          "type": "text",
+          "nullable": true,
+          "sensitive": false
+        },
+        {
+          "id": "table:public.agencies#created_at",
+          "name": "created_at",
+          "type": "timestamptz",
+          "nullable": false,
+          "sensitive": false
+        }
+      ]
+    },
+    {
+      "id": "table:public.sub_agencies",
+      "name": "sub_agencies",
+      "schema": "public",
+      "sensitive": false,
+      "columns": [
+        {
+          "id": "table:public.sub_agencies#id",
+          "name": "id",
+          "type": "uuid",
+          "nullable": false,
+          "primaryKey": true,
+          "sensitive": false
+        },
+        {
+          "id": "table:public.sub_agencies#agency_id",
+          "name": "agency_id",
+          "type": "uuid",
+          "nullable": false,
+          "sensitive": false
+        },
+        {
+          "id": "table:public.sub_agencies#name",
+          "name": "name",
+          "type": "text",
+          "nullable": false,
+          "sensitive": false
+        },
+        {
+          "id": "table:public.sub_agencies#created_at",
+          "name": "created_at",
+          "type": "timestamptz",
+          "nullable": false,
+          "sensitive": false
+        }
+      ],
+      "relationships": [
+        { "from": "table:public.sub_agencies#agency_id", "to": "table:public.agencies#id" }
+      ]
+    },
+    {
+      "id": "table:public.clients",
+      "name": "clients",
+      "schema": "public",
+      "sensitive": false,
+      "columns": [
+        {
+          "id": "table:public.clients#id",
+          "name": "id",
+          "type": "uuid",
+          "nullable": false,
+          "primaryKey": true,
+          "sensitive": false
+        },
+        {
+          "id": "table:public.clients#sub_agency_id",
+          "name": "sub_agency_id",
+          "type": "uuid",
+          "nullable": false,
+          "sensitive": false
+        },
+        {
+          "id": "table:public.clients#name",
+          "name": "name",
+          "type": "text",
+          "nullable": false,
+          "sensitive": false
+        },
+        {
+          "id": "table:public.clients#email",
+          "name": "email",
+          "type": "text",
+          "nullable": true,
+          "sensitive": true
+        },
+        {
+          "id": "table:public.clients#phone",
+          "name": "phone",
+          "type": "text",
+          "nullable": true,
+          "sensitive": true
+        },
+        {
+          "id": "table:public.clients#created_at",
+          "name": "created_at",
+          "type": "timestamptz",
+          "nullable": false,
+          "sensitive": false
+        }
+      ],
+      "relationships": [
+        { "from": "table:public.clients#sub_agency_id", "to": "table:public.sub_agencies#id" }
+      ]
+    },
+    {
+      "id": "table:public.orders",
+      "name": "orders",
+      "schema": "public",
+      "sensitive": false,
+      "columns": [
+        {
+          "id": "table:public.orders#id",
+          "name": "id",
+          "type": "uuid",
+          "nullable": false,
+          "primaryKey": true,
+          "sensitive": false
+        },
+        {
+          "id": "table:public.orders#agency_id",
+          "name": "agency_id",
+          "type": "uuid",
+          "nullable": false,
+          "sensitive": false
+        },
+        {
+          "id": "table:public.orders#client_id",
+          "name": "client_id",
+          "type": "uuid",
+          "nullable": false,
+          "sensitive": false
+        },
+        {
+          "id": "table:public.orders#status",
+          "name": "status",
+          "type": "text",
+          "nullable": false,
+          "sensitive": false
+        },
+        {
+          "id": "table:public.orders#total_amount",
+          "name": "numeric",
+          "type": "numeric",
+          "nullable": false,
+          "sensitive": false
+        },
+        {
+          "id": "table:public.orders#created_at",
+          "name": "created_at",
+          "type": "timestamptz",
+          "nullable": false,
+          "sensitive": false
+        }
+      ],
+      "relationships": [
+        { "from": "table:public.orders#agency_id", "to": "table:public.agencies#id" },
+        { "from": "table:public.orders#client_id", "to": "table:public.clients#id" }
+      ]
+    },
+    {
+      "id": "table:public.campaigns",
+      "name": "campaigns",
+      "schema": "public",
+      "sensitive": false,
+      "columns": [
+        {
+          "id": "table:public.campaigns#id",
+          "name": "id",
+          "type": "uuid",
+          "nullable": false,
+          "primaryKey": true,
+          "sensitive": false
+        },
+        {
+          "id": "table:public.campaigns#owning_agency",
+          "name": "owning_agency",
+          "type": "uuid",
+          "nullable": false,
+          "sensitive": false
+        },
+        {
+          "id": "table:public.campaigns#name",
+          "name": "name",
+          "type": "text",
+          "nullable": false,
+          "sensitive": false
+        },
+        {
+          "id": "table:public.campaigns#budget",
+          "name": "budget",
+          "type": "numeric",
+          "nullable": true,
+          "sensitive": false
+        },
+        {
+          "id": "table:public.campaigns#start_date",
+          "name": "start_date",
+          "type": "date",
+          "nullable": true,
+          "sensitive": false
+        },
+        {
+          "id": "table:public.campaigns#end_date",
+          "name": "end_date",
+          "type": "date",
+          "nullable": true,
+          "sensitive": false
+        }
+      ],
+      "relationships": [
+        { "from": "table:public.campaigns#owning_agency", "to": "table:public.agencies#id" }
+      ]
+    },
+    {
+      "id": "table:public.appointments",
+      "name": "appointments",
+      "schema": "public",
+      "sensitive": false,
+      "columns": [
+        {
+          "id": "table:public.appointments#id",
+          "name": "id",
+          "type": "uuid",
+          "nullable": false,
+          "primaryKey": true,
+          "sensitive": false
+        },
+        {
+          "id": "table:public.appointments#client_id",
+          "name": "client_id",
+          "type": "uuid",
+          "nullable": false,
+          "sensitive": false
+        },
+        {
+          "id": "table:public.appointments#scheduled_at",
+          "name": "scheduled_at",
+          "type": "timestamptz",
+          "nullable": false,
+          "sensitive": false
+        },
+        {
+          "id": "table:public.appointments#status",
+          "name": "status",
+          "type": "text",
+          "nullable": false,
+          "sensitive": false
+        },
+        {
+          "id": "table:public.appointments#notes",
+          "name": "notes",
+          "type": "text",
+          "nullable": true,
+          "sensitive": false
+        }
+      ],
+      "relationships": [
+        { "from": "table:public.appointments#client_id", "to": "table:public.clients#id" }
+      ]
+    },
+    {
+      "id": "table:public.notes",
+      "name": "notes",
+      "schema": "public",
+      "sensitive": false,
+      "columns": [
+        {
+          "id": "table:public.notes#id",
+          "name": "id",
+          "type": "uuid",
+          "nullable": false,
+          "primaryKey": true,
+          "sensitive": false
+        },
+        {
+          "id": "table:public.notes#owner_type",
+          "name": "owner_type",
+          "type": "text",
+          "nullable": false,
+          "sensitive": false
+        },
+        {
+          "id": "table:public.notes#owner_id",
+          "name": "owner_id",
+          "type": "uuid",
+          "nullable": false,
+          "sensitive": false
+        },
+        {
+          "id": "table:public.notes#body",
+          "name": "body",
+          "type": "text",
+          "nullable": false,
+          "sensitive": false
+        },
+        {
+          "id": "table:public.notes#created_at",
+          "name": "created_at",
+          "type": "timestamptz",
+          "nullable": false,
+          "sensitive": false
+        }
+      ]
+    },
+    {
+      "id": "table:public.lookup_states",
+      "name": "lookup_states",
+      "schema": "public",
+      "sensitive": false,
+      "columns": [
+        {
+          "id": "table:public.lookup_states#code",
+          "name": "code",
+          "type": "text",
+          "nullable": false,
+          "primaryKey": true,
+          "sensitive": false
+        },
+        {
+          "id": "table:public.lookup_states#name",
+          "name": "name",
+          "type": "text",
+          "nullable": false,
+          "sensitive": false
+        }
+      ]
+    },
+    {
+      "id": "table:public.service_types",
+      "name": "service_types",
+      "schema": "public",
+      "sensitive": false,
+      "columns": [
+        {
+          "id": "table:public.service_types#id",
+          "name": "id",
+          "type": "integer",
+          "nullable": false,
+          "primaryKey": true,
+          "sensitive": false
+        },
+        {
+          "id": "table:public.service_types#name",
+          "name": "name",
+          "type": "text",
+          "nullable": false,
+          "sensitive": false
+        },
+        {
+          "id": "table:public.service_types#category",
+          "name": "category",
+          "type": "text",
+          "nullable": true,
+          "sensitive": false
+        }
+      ]
+    }
+  ]
+}
