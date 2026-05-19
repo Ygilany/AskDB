@@ -10,7 +10,8 @@ export type RetrievedChunkType =
   | "cql"
   | "question"
   | "concept"
-  | "relationship";
+  | "relationship"
+  | "tenant-policy";
 
 export type RetrievedChunk = {
   id: string;

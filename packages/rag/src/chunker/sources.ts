@@ -5,11 +5,13 @@ import {
   loadSchemaFromJson,
   parseConceptsMarkdown,
   parseTableMarkdown,
+  parseTenantPolicyMarkdown,
 } from "@askdb/core";
 import type {
   NormalizedSchemaV2,
   ParsedConceptsMarkdown,
   ParsedTableMarkdown,
+  ParsedTenantPolicyMarkdown,
 } from "@askdb/core";
 
 /**
@@ -23,6 +25,7 @@ export type ChunkerSources = {
   /** Keyed by table id (`table:<schema>.<name>`). Missing when no `tables/<x>.md` exists. */
   tables: Record<string, ParsedTableMarkdown>;
   concepts?: ParsedConceptsMarkdown;
+  tenantPolicy?: ParsedTenantPolicyMarkdown;
 };
 
 /**
@@ -63,7 +66,16 @@ export function loadChunkerSourcesFromDir(dir: string): ChunkerSources {
     // optional
   }
 
-  return { schema, tables, concepts };
+  let tenantPolicy: ParsedTenantPolicyMarkdown | undefined;
+  try {
+    const tenantPolicyPath = join(resolved, "tenant-policy.md");
+    const content = readFileSync(tenantPolicyPath, "utf8");
+    tenantPolicy = parseTenantPolicyMarkdown(content);
+  } catch {
+    // optional
+  }
+
+  return { schema, tables, concepts, tenantPolicy };
 }
 
 /**
@@ -77,6 +89,7 @@ export function loadChunkerSourcesFromBundleJson(raw: string): ChunkerSources {
     physical?: unknown;
     tables?: Record<string, string>;
     concepts?: string;
+    tenantPolicy?: string;
   };
   if (!parsed.bundled) {
     throw new Error("Expected a bundled schema JSON (missing `bundled: true`).");
@@ -96,5 +109,10 @@ export function loadChunkerSourcesFromBundleJson(raw: string): ChunkerSources {
     concepts = parseConceptsMarkdown(parsed.concepts, "concepts.md");
   }
 
-  return { schema, tables, concepts };
+  let tenantPolicy: ParsedTenantPolicyMarkdown | undefined;
+  if (parsed.tenantPolicy) {
+    tenantPolicy = parseTenantPolicyMarkdown(parsed.tenantPolicy);
+  }
+
+  return { schema, tables, concepts, tenantPolicy };
 }

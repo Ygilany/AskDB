@@ -6,6 +6,14 @@ export {
   type TenantGuardrailResult,
 } from "./sql/tenant-guardrail.js";
 export {
+  resolveTenantSql,
+  extractTenantPlaceholders,
+  placeholderForRoot,
+  type TenantSqlOutputMode,
+  type TenantPlaceholderResult,
+  type TenantBinding,
+} from "./sql/tenant-placeholders.js";
+export {
   ask,
   type AskPipelineOptions,
   type AskPipelineResult,

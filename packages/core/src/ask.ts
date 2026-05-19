@@ -14,6 +14,12 @@ import {
   isBuiltInDialectId,
 } from "./sql/dialect-spec.js";
 import { generateSelectSql } from "./sql/generate.js";
+import {
+  resolveTenantSql,
+  type TenantSqlOutputMode,
+  type TenantPlaceholderResult,
+  type TenantBinding,
+} from "./sql/tenant-placeholders.js";
 import { validateTenantScope } from "./sql/tenant-scope-validate.js";
 
 /** Options forwarded to a dialect's generator. Stable across dialects. */
@@ -122,12 +128,19 @@ export type AskPipelineOptions = {
    * Carries enforceable access + optional advisory context.
    */
   tenantScope?: TenantScope;
+  /**
+   * SQL output mode for tenant placeholders. Default `"sql-only"` inlines
+   * literal values; `"sql-params"` converts to positional `$N` parameters.
+   */
+  tenantSqlMode?: TenantSqlOutputMode;
 };
 
 export type AskPipelineResult = {
   sql: string;
   explain?: unknown;
   tenantGuardrail?: import("./sql/tenant-guardrail.js").TenantGuardrailResult;
+  tenantParams?: unknown[];
+  tenantBindings?: TenantBinding[];
 };
 
 export async function ask(options: AskPipelineOptions): Promise<AskPipelineResult> {
@@ -171,12 +184,23 @@ export async function ask(options: AskPipelineOptions): Promise<AskPipelineResul
       tenantScope: options.tenantScope,
     },
   );
-  const sql = generated.sql;
+  let sql = generated.sql;
   const explain = generated.explain;
   const tenantGuardrail = generated.tenantGuardrail;
   const result: AskPipelineResult = { sql };
   if (explain !== undefined) result.explain = explain;
   if (tenantGuardrail !== undefined) result.tenantGuardrail = tenantGuardrail;
+
+  if (tenantPolicy && options.tenantScope) {
+    const mode = options.tenantSqlMode ?? "sql-only";
+    const resolved = resolveTenantSql(sql, tenantPolicy, options.tenantScope, mode);
+    result.sql = resolved.sql;
+    if (resolved.bindings.length > 0) result.tenantBindings = resolved.bindings;
+    if (resolved.mode === "sql-params" && resolved.params.length > 0) {
+      result.tenantParams = resolved.params;
+    }
+  }
+
   return result;
 }
 
