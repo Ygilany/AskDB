@@ -1,5 +1,11 @@
 # @askdb/studio
 
+## 0.2.0-beta.12
+
+### Minor Changes
+
+- 4d8d87f: Add multi-tenancy Studio surfaces: Tenancy configuration main view with coverage report, tenant roots, hierarchy, scoped/polymorphic/global tables, and policy warnings; Ask panel tenant scope controls with JSON input, SQL output mode toggle, and tenant binding display.
+
 ## 0.2.0-beta.11
 
 ### Patch Changes
