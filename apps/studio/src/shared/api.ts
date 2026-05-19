@@ -2,6 +2,7 @@ import type {
   NormalizedTenantPolicy,
   SchemaV2Warning,
   TenantBinding,
+  TenantPolicyFrontmatter,
   TenantScope,
   TenantSqlOutputMode,
   V2Concept,
@@ -42,6 +43,16 @@ export type SaveTableRequest = {
 };
 
 export type SaveConceptsRequest = V2ConceptsFrontmatter;
+
+export type SaveTenantPolicyRequest = {
+  frontmatter: TenantPolicyFrontmatter;
+  body?: string;
+};
+
+export type SuggestTenantPolicyResponse = {
+  frontmatter: TenantPolicyFrontmatter;
+  body: string;
+};
 
 export type SuggestRequest = {
   source: SuggestSource;

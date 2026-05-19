@@ -1,6 +1,6 @@
 export { loadSchema, loadSchemaFromJson } from "./loader.js";
 export { parseTableMarkdown, parseConceptsMarkdown } from "./parser.js";
-export { writeTableMarkdown, writeConceptsMarkdown } from "./writer.js";
+export { writeTableMarkdown, writeConceptsMarkdown, writeTenantPolicyMarkdown } from "./writer.js";
 export { formatSchemaV2ForNlToSql } from "./format.js";
 export { v2SchemaJsonSchema, v2TableSchema, v2ColumnSchema } from "./physical.js";
 export type { V2SchemaJson, V2Table, V2Column } from "./physical.js";
