@@ -9,17 +9,14 @@ description: "Install AskDB, generate or use a schema artifact, enrich it, and r
 
 ## Prerequisites
 
-<ul>
-            <li>Node 20 or newer.</li>
-            <li>npm, pnpm, or yarn (examples use <code>{"npx"}</code> / <code>{"npm exec"}</code>).</li>
-            <li>An API key for a supported AI provider — OpenAI (or any OpenAI-compatible endpoint) or Azure OpenAI — for live NL-to-SQL generation.</li>
-            <li>A PostgreSQL connection string only if you want live Postgres introspection. A Prisma schema file is enough if you use <code>{"--engine prisma"}</code>.</li>
-          </ul>
+- Node 20 or newer.
+- npm, pnpm, or yarn (examples use <code>{"npx"}</code> / <code>{"npm exec"}</code>).
+- An API key for a supported AI provider — OpenAI (or any OpenAI-compatible endpoint) or Azure OpenAI — for live NL-to-SQL generation.
+- A PostgreSQL connection string only if you want live Postgres introspection. A Prisma schema file is enough if you use <code>{"--engine prisma"}</code>.
 
 ## Typical install
 
-<p>Use this path when you are adding AskDB to your own project. Install the CLI globally or per project, add keys to <code>{".env"}</code>, then introspect your own database (or Prisma file) to produce a schema folder.</p>
-
+Use this path when you are adding AskDB to your own project. Install the CLI globally or per project, add keys to <code>{".env"}</code>, then introspect your own database (or Prisma file) to produce a schema folder.
 
 ```
 npm install askdb
@@ -38,12 +35,9 @@ npx askdb ask \
   --question "Which tables are connected to users?"
 ```
 
-
-
 ## Working from the AskDB repository
 
-<p>Use this path when you are contributing to AskDB itself. You can use the bundled sample schema under <code>{"fixtures/schemas/orders-users.schema"}</code> after installing dependencies and building the workspace.</p>
-
+Use this path when you are contributing to AskDB itself. You can use the bundled sample schema under <code>{"fixtures/schemas/orders-users.schema"}</code> after installing dependencies and building the workspace.
 
 ```
 pnpm install
@@ -56,14 +50,11 @@ pnpm exec askdb ask \
   --question "How many orders are there?"
 ```
 
-
-
 ## Create a schema from a database
 
 ### From Postgres
 
-<p>Point introspection at a live database; AskDB writes an AskDB schema directory you can enrich and query.</p>
-
+Point introspection at a live database; AskDB writes an AskDB schema directory you can enrich and query.
 
 ```
 npx askdb introspect \
@@ -78,12 +69,9 @@ npx askdb ask \
   --question "Which tables are connected to users?"
 ```
 
-
-
 ### From a Prisma schema
 
-<p>If you already have a Prisma schema file, introspect directly from it — no live database required.</p>
-
+If you already have a Prisma schema file, introspect directly from it — no live database required.
 
 ```
 npx askdb introspect \
@@ -97,14 +85,11 @@ npx askdb ask \
   --question "Which tables are connected to users?"
 ```
 
-
-<p>Set <code>{"ASKDB_PRISMA_SCHEMA"}</code> in <code>{".env"}</code> to make <code>{"--prisma-schema"}</code> optional on repeat runs. See <a href="../prisma/">@askdb/prisma</a> for supported providers.</p>
-
-
+Set <code>{"ASKDB_PRISMA_SCHEMA"}</code> in <code>{".env"}</code> to make <code>{"--prisma-schema"}</code> optional on repeat runs. See <a href="../prisma/">@askdb/prisma</a> for supported providers.
 
 ## Enrich the schema
 
-<p>Raw introspection captures structure from the catalog (or Prisma file). Enrichment adds the <strong>markdown table layer</strong>: descriptions, aliases, column notes, common query language, example questions, and concepts. AskDB ships two UIs — pick whichever fits your workflow.</p>
+Raw introspection captures structure from the catalog (or Prisma file). Enrichment adds the **markdown table layer**: descriptions, aliases, column notes, common query language, example questions, and concepts. AskDB ships two UIs — pick whichever fits your workflow.
 
 **Terminal UI** — keyboard-driven, works in any terminal:
 
@@ -118,19 +103,16 @@ npx askdb enrich --schema my-app.schema
 npx askdb studio --schema my-app.schema
 ```
 
-<p>Both UIs use <code>{"@askdb/enrich"}</code> under the hood and write the same files on disk. When you want one portable file, bundle the directory:</p>
+Both UIs use <code>{"@askdb/enrich"}</code> under the hood and write the same files on disk. When you want one portable file, bundle the directory:
 
 ```
 # produce a single read-only artifact for distribution
 npx askdb bundle my-app.schema --out my-app.schema.bundle.json
 ```
 
-
-
 ## SQL output only
 
-<p>AskDB returns validated SQL. Run it through your own application, approval flow, or database tooling outside AskDB.</p>
-
+AskDB returns validated SQL. Run it through your own application, approval flow, or database tooling outside AskDB.
 
 ```
 npx askdb ask \
@@ -138,12 +120,9 @@ npx askdb ask \
   --question "List the newest users"
 ```
 
-
-
 ## Use the packages
 
-<p>For application code, install the packages that match the surface you need. <code>{"@askdb/core"}</code> is dialect-agnostic. Postgres-specific behavior lives in <code>{"@askdb/postgres"}</code>. Custom enrichment UIs use <code>{"@askdb/enrich"}</code>.</p>
-
+For application code, install the packages that match the surface you need. <code>{"@askdb/core"}</code> is dialect-agnostic. Postgres-specific behavior lives in <code>{"@askdb/postgres"}</code>. Custom enrichment UIs use <code>{"@askdb/enrich"}</code>.
 
 ```
 npm add @askdb/core @askdb/postgres
@@ -161,17 +140,13 @@ npm add @askdb/studio
 npm add @askdb/rag
 ```
 
-
-
 ## Guides (outcome-first)
 
-<p>Prefer a task-shaped walkthrough:</p>
+Prefer a task-shaped walkthrough:
 
-<ul>
-  <li><a href="../journeys/">Journeys</a> — hub for all guides.</li>
-  <li><a href="../guides/embed-in-app/">Embed NL→SQL in a Node app</a></li>
-  <li><a href="../guides/author-enrich-schema/">Author and enrich schema</a></li>
-  <li><a href="../guides/rag-large-schema/">Add RAG for large schemas</a></li>
-  <li><a href="../guides/http-api/">Run the HTTP API</a></li>
-  <li><a href="../guides/agents-and-mcp/">Agents and MCP (status)</a></li>
-</ul>
+- <a href="../journeys/">Journeys</a> — hub for all guides.
+- <a href="../guides/embed-in-app/">Embed NL→SQL in a Node app</a>
+- <a href="../guides/author-enrich-schema/">Author and enrich schema</a>
+- <a href="../guides/rag-large-schema/">Add RAG for large schemas</a>
+- <a href="../guides/http-api/">Run the HTTP API</a>
+- <a href="../guides/agents-and-mcp/">Agents and MCP (status)</a>
