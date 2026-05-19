@@ -1,4 +1,4 @@
-import { existsSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { extname, relative, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -20,9 +20,12 @@ import {
   type AskDbAiProvider,
   type AskDialectInput,
   type AskGenerateDeps,
+  type TenantPolicyFrontmatter,
   type TenantScope,
   type TenantSqlOutputMode,
   type V2Concept,
+  writeTenantPolicyMarkdown,
+  tenantPolicyFrontmatterSchema,
 } from "@askdb/core";
 import {
   buildSchemaIndex,
@@ -63,6 +66,7 @@ import type {
   StudioRagStatusDto,
   StudioWorkspaceDto,
   SuggestResponse,
+  SuggestTenantPolicyResponse,
 } from "./shared/api.js";
 
 const CLIENT_DIR = fileURLToPath(new URL("./client/", import.meta.url));
@@ -172,6 +176,16 @@ export function createStudioServer(options: StudioOptions): StudioServer {
         saveConceptsDraft(state, concepts);
         return writeJson(res, 200, serializeWorkspace(state.workspace));
       }
+      if (req.method === "POST" && url.pathname === "/api/tenant-policy") {
+        const body = await readJson(req);
+        const { frontmatter, bodyText } = parseTenantPolicyBody(body);
+        saveTenantPolicy(state, frontmatter, bodyText);
+        return writeJson(res, 200, serializeWorkspace(state.workspace));
+      }
+      if (req.method === "POST" && url.pathname === "/api/suggest-tenant-policy") {
+        const draft = await suggestTenantPolicyDraft(state);
+        return writeJson(res, 200, draft);
+      }
       if (req.method === "POST" && url.pathname === "/api/suggest") {
         const body = await readJson(req);
         const source = parseSuggestSource(body);
@@ -258,6 +272,32 @@ function saveConceptsDraft(state: StudioState, concepts: V2Concept[]): void {
   state.workspace = loadWorkspace(state.schemaDir);
 }
 
+function saveTenantPolicy(
+  state: StudioState,
+  frontmatter: TenantPolicyFrontmatter,
+  body: string,
+): void {
+  const filePath = join(state.schemaDir, "tenant-policy.md");
+  const md = writeTenantPolicyMarkdown(frontmatter, body);
+  writeFileSync(filePath, md, "utf8");
+  state.workspace = loadWorkspace(state.schemaDir);
+}
+
+function parseTenantPolicyBody(body: unknown): {
+  frontmatter: TenantPolicyFrontmatter;
+  bodyText: string;
+} {
+  if (!isRecord(body) || !isRecord(body.frontmatter)) {
+    throw new StudioHttpError(400, "`frontmatter` object is required.");
+  }
+  const parsed = tenantPolicyFrontmatterSchema.safeParse(body.frontmatter);
+  if (!parsed.success) {
+    throw new StudioHttpError(400, `Invalid tenant policy: ${parsed.error.message}`);
+  }
+  const bodyText = typeof body.body === "string" ? body.body : "";
+  return { frontmatter: parsed.data, bodyText };
+}
+
 function saveDraft(state: StudioState, tableId: string, draft: TableDraft): void {
   const table = state.workspace.tables.find((candidate) => candidate.physical.id === tableId);
   if (!table) throw new StudioHttpError(404, `No such table: ${tableId}`);
@@ -293,6 +333,104 @@ async function suggestForSource(workspace: Workspace, source: SuggestSource): Pr
     model,
   );
   return candidates.map((candidate) => ({ text: candidate.text }));
+}
+
+async function suggestTenantPolicyDraft(state: StudioState): Promise<SuggestTenantPolicyResponse> {
+  const rt = getAskDbRuntimeConfig();
+  const model = await createAskDbLanguageModelFromEnv(rt.ai.aiEnv);
+  if (!model) {
+    throw new StudioHttpError(400, askDbAiKeyMissingMessage("AI tenant policy suggestion"));
+  }
+
+  // Build a compact DDL-like representation of the schema for the prompt
+  const workspace = state.workspace;
+  const schemaId = workspace.physical.schemaId;
+  const schemaDdl = workspace.tables
+    .map((t) => {
+      const cols = t.physical.columns
+        .map((c) => {
+          const parts = [c.name, c.type];
+          if (c.primaryKey) parts.push("PRIMARY KEY");
+          if (!c.nullable) parts.push("NOT NULL");
+          return `  ${parts.join(" ")}`;
+        })
+        .join(",\n");
+      const rels = (t.physical.relationships ?? [])
+        .map((r) => `  -- FK: ${r.from} -> ${r.to}`)
+        .join("\n");
+      return `CREATE TABLE ${t.physical.schema}.${t.physical.name} (\n${cols}\n);\n${rels}`.trim();
+    })
+    .join("\n\n");
+
+  const tableIds = workspace.tables.map((t) => t.physical.id);
+
+  const systemPrompt = `You are an expert database architect specializing in multi-tenant SaaS systems.
+You analyze database schemas and produce a tenant-policy configuration in a specific JSON format.
+
+The tenant policy identifies:
+1. **roots** — Tables whose rows represent tenants (organizations, companies, accounts, etc).
+   Each root has: id (table ID like "table:public.orgs"), tenantIdColumn (column ref like "table:public.orgs#id"), label (human-readable name).
+   If a root has a parent root (e.g. sub_org belongs to org), include parent: { root: "<parent-root-id>", foreignKey: "<fk-column-ref>" }.
+2. **hierarchy** — Edges showing parent→child relationships between roots or tenant-scoped tables.
+   Each edge: { parent: "<table-id>", child: "<table-id>", foreignKey: "<child-fk-column-ref>" }.
+3. **scopedTables** — Tables that belong to a tenant via a direct column or a JOIN chain.
+   Each entry: { id: "<table-id>", scopeThrough: [{ root: "<root-id>", column: "<column-ref>" }] } for direct FK,
+   or { id: "<table-id>", scopeThrough: [{ root: "<root-id>", join: [{ from: "<col-ref>", to: "<col-ref>" }] }] } for indirect.
+4. **polymorphicTables** — Tables with a type/id polymorphic association pattern.
+   Each entry: { id: "<table-id>", typeColumn: "<col-ref>", idColumn: "<col-ref>", mapping: { "<type_value>": "<target-table-id>" } }.
+5. **globalTables** — Tables shared across all tenants (lookup tables, reference data). Array of table IDs.
+6. **enforcement** — "strict" (reject queries on unknown tables) or "warn" (allow with warnings).
+
+Column references use the format "table:<schema>.<table>#<column>".
+Table IDs use the format "table:<schema>.<table>".
+
+Available table IDs: ${JSON.stringify(tableIds)}
+
+Return a JSON object with two keys:
+- "frontmatter": the TenantPolicyFrontmatter object (schemaId, enforcement, roots, hierarchy?, scopedTables?, polymorphicTables?, globalTables?)
+- "body": a markdown body string with sections "## Hierarchy", "## Scope rules", "## Sensitive interactions" explaining the policy in plain English.
+
+Return ONLY valid JSON, no markdown fences or explanations.`;
+
+  const userPrompt = `Analyze this database schema and draft a complete multi-tenant policy.
+
+Schema ID: ${schemaId}
+
+${schemaDdl}
+
+Look for:
+- Tables that represent organizations, companies, accounts, tenants, or workspaces — these are roots.
+- Foreign key columns like org_id, company_id, tenant_id, account_id that scope data to a tenant.
+- Tables with no tenant FK that are clearly shared/global (lookup tables, enums, config).
+- Polymorphic association patterns (type_column + id_column pointing to multiple parent tables).
+- Multi-level hierarchies (org → team → user, company → department → employee).
+
+If the schema has no clear multi-tenant pattern, still make your best guess at what would be the tenant root.`;
+
+  const result = await defaultGenerateText({
+    model,
+    system: systemPrompt,
+    prompt: userPrompt,
+  });
+
+  let parsed: SuggestTenantPolicyResponse;
+  try {
+    parsed = JSON.parse(result.text) as SuggestTenantPolicyResponse;
+  } catch {
+    throw new StudioHttpError(500, `AI returned invalid JSON for tenant policy suggestion. Raw text: ${result.text.slice(0, 500)}`);
+  }
+
+  // Validate frontmatter shape
+  const validation = tenantPolicyFrontmatterSchema.safeParse(parsed.frontmatter);
+  if (!validation.success) {
+    throw new StudioHttpError(
+      500,
+      `AI-generated tenant policy frontmatter is invalid: ${validation.error.issues.map((i) => i.message).join("; ")}`,
+    );
+  }
+  parsed.frontmatter = validation.data;
+
+  return parsed;
 }
 
 async function askSampleQuestion(

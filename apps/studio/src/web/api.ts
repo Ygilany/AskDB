@@ -6,11 +6,13 @@ import type {
   RagQueryResponse,
   SaveConceptsRequest,
   SaveTableRequest,
+  SaveTenantPolicyRequest,
   StudioErrorDto,
   StudioRagStatusDto,
   StudioWorkspaceDto,
   SuggestRequest,
   SuggestResponse,
+  SuggestTenantPolicyResponse,
 } from "@/shared/api";
 
 export async function getWorkspace(): Promise<StudioWorkspaceDto> {
@@ -28,6 +30,20 @@ export async function saveConcepts(request: SaveConceptsRequest): Promise<Studio
   return api<StudioWorkspaceDto>("/api/concepts", {
     method: "POST",
     body: JSON.stringify(request),
+  });
+}
+
+export async function saveTenantPolicy(request: SaveTenantPolicyRequest): Promise<StudioWorkspaceDto> {
+  return api<StudioWorkspaceDto>("/api/tenant-policy", {
+    method: "POST",
+    body: JSON.stringify(request),
+  });
+}
+
+export async function suggestTenantPolicy(): Promise<SuggestTenantPolicyResponse> {
+  return api<SuggestTenantPolicyResponse>("/api/suggest-tenant-policy", {
+    method: "POST",
+    body: JSON.stringify({}),
   });
 }
 

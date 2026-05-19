@@ -59,6 +59,7 @@ export {
   parseConceptsMarkdown,
   writeTableMarkdown,
   writeConceptsMarkdown,
+  writeTenantPolicyMarkdown,
   formatSchemaV2ForNlToSql,
   v2SchemaJsonSchema,
   v2TableSchema,
