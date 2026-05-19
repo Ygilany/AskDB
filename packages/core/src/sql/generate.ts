@@ -5,10 +5,12 @@ import { AskDbLogEvent } from "../logging/log-events.js";
 import type { AskDbLogger } from "../logging/askdb-logger.js";
 import type { FormatNlToSqlOptions } from "../schema/normalize.js";
 import type { AnyNormalizedSchema } from "../schema/types.js";
+import type { NormalizedTenantPolicy, TenantScope } from "../schema/v2/tenant-policy.js";
 import type { DialectSpec } from "./dialect-spec.js";
 import { extractSqlFromModelText } from "./extract-sql.js";
 import { buildNlToSqlSystemPrompt, buildNlToSqlUserPrompt } from "./prompt.js";
 import { assertNlToSqlInputs, nlToSqlAmbiguityNotes } from "./schema-question-precheck.js";
+import { validateTenantGuardrails, type TenantGuardrailResult } from "./tenant-guardrail.js";
 import {
   buildSelectGuardrailExplanation,
   validateSelectSql,
@@ -32,12 +34,17 @@ export type GenerateSqlDeps = {
    * directly.
    */
   prebuiltDdl?: string;
+  /** Normalized tenant policy from the schema artifact. Forwarded from ask(). */
+  tenantPolicy?: NormalizedTenantPolicy;
+  /** Validated tenant scope from the host. Forwarded from ask(). */
+  tenantScope?: TenantScope;
 };
 
 /** Result of NL→SQL generation (always includes `sql`; `explain` when {@link GenerateSqlDeps.explain}). */
 export type GenerateSelectSqlResult = {
   sql: string;
   explain?: SelectGuardrailExplain;
+  tenantGuardrail?: TenantGuardrailResult;
 };
 
 /**
@@ -84,6 +91,8 @@ export async function generateSelectSql(
           logger,
           nlToSqlSchemaOptions,
           deps.prebuiltDdl,
+          deps.tenantPolicy,
+          deps.tenantScope,
         ),
         temperature: 0,
       });
@@ -94,6 +103,28 @@ export async function generateSelectSql(
     }
     const extracted = extractSqlFromModelText(text);
     const sql = validateSelectSql(dialect, extracted);
+
+    // Tenant guardrail validation (after base validation, before returning)
+    let tenantGuardrail: TenantGuardrailResult | undefined;
+    if (deps.tenantPolicy && deps.tenantScope) {
+      tenantGuardrail = validateTenantGuardrails(sql, deps.tenantPolicy, deps.tenantScope);
+      if (tenantGuardrail.passed) {
+        logger?.info(
+          { event: AskDbLogEvent.TenantGuardrailPassed },
+          "tenant guardrail validation passed",
+        );
+      } else {
+        logger?.info(
+          {
+            event: AskDbLogEvent.TenantGuardrailFailed,
+            warningCount: tenantGuardrail.warnings.length,
+            enforcement: deps.tenantPolicy.enforcement,
+          },
+          "tenant guardrail validation found issues",
+        );
+      }
+    }
+
     const explain = deps.explain ? buildSelectGuardrailExplanation(sql) : undefined;
     logger?.info(
       {
@@ -102,7 +133,10 @@ export async function generateSelectSql(
       },
       "nl-to-sql generate complete",
     );
-    return explain !== undefined ? { sql, explain } : { sql };
+    const result: GenerateSelectSqlResult = { sql };
+    if (explain !== undefined) result.explain = explain;
+    if (tenantGuardrail !== undefined) result.tenantGuardrail = tenantGuardrail;
+    return result;
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
     logger?.error(

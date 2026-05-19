@@ -6,6 +6,7 @@ import { DEFAULT_ASKDB_MODE, type AskDbModeV1 } from "./modes/types.js";
 import type { Retriever } from "./retrieval/types.js";
 import { synthesizeRetrievedDdl } from "./retrieval/synthesize-ddl.js";
 import type { NormalizedSchemaV2 } from "./schema/v2/normalized.js";
+import type { TenantScope } from "./schema/v2/tenant-policy.js";
 import {
   type BuiltInDialectId,
   type DialectSpec,
@@ -13,6 +14,7 @@ import {
   isBuiltInDialectId,
 } from "./sql/dialect-spec.js";
 import { generateSelectSql } from "./sql/generate.js";
+import { validateTenantScope } from "./sql/tenant-scope-validate.js";
 
 /** Options forwarded to a dialect's generator. Stable across dialects. */
 export type AskDialectGenerateOptions = {
@@ -21,12 +23,15 @@ export type AskDialectGenerateOptions = {
   omitSensitiveIdentifiersFromNlToSqlPrompt?: boolean;
   generateText?: typeof defaultGenerateText;
   prebuiltDdl?: string;
+  tenantPolicy?: import("./schema/v2/tenant-policy.js").NormalizedTenantPolicy;
+  tenantScope?: TenantScope;
 };
 
 /** Output of a dialect's generator: validated SQL plus optional dialect-specific explain metadata. */
 export type AskDialectGenerateResult = {
   sql: string;
   explain?: unknown;
+  tenantGuardrail?: import("./sql/tenant-guardrail.js").TenantGuardrailResult;
 };
 
 /**
@@ -111,17 +116,38 @@ export type AskPipelineOptions = {
    * "consumer decides" stance for hosts that don't surface a count.
    */
   totalSchemaChunkCount?: number;
+  /**
+   * Tenant scope for the current user. Required when the schema has a
+   * `tenant-policy.md` (the pipeline will fail closed without it).
+   * Carries enforceable access + optional advisory context.
+   */
+  tenantScope?: TenantScope;
 };
 
 export type AskPipelineResult = {
   sql: string;
   explain?: unknown;
+  tenantGuardrail?: import("./sql/tenant-guardrail.js").TenantGuardrailResult;
 };
 
 export async function ask(options: AskPipelineOptions): Promise<AskPipelineResult> {
   const logger = options.logger;
   const mode = options.mode ?? DEFAULT_ASKDB_MODE;
   logger?.info({ event: AskDbLogEvent.PipelineMode, mode }, "pipeline mode");
+
+  // Tenant scope validation (fail closed when policy exists but no scope provided)
+  const tenantPolicy = isV2Schema(options.schema) ? options.schema.tenantPolicy : undefined;
+  if (tenantPolicy) {
+    validateTenantScope(tenantPolicy, options.tenantScope);
+    logger?.info(
+      {
+        event: AskDbLogEvent.TenantScopeValidated,
+        scopeKind: options.tenantScope!.access.kind,
+        enforcement: tenantPolicy.enforcement,
+      },
+      "tenant scope validated",
+    );
+  }
 
   const explainRequested = options.explain ?? false;
   const omitSensitive = options.omitSensitiveIdentifiersFromNlToSqlPrompt ?? false;
@@ -141,11 +167,17 @@ export async function ask(options: AskPipelineOptions): Promise<AskPipelineResul
       omitSensitiveIdentifiersFromNlToSqlPrompt: omitSensitive || undefined,
       generateText: options.deps?.generateText,
       prebuiltDdl,
+      tenantPolicy,
+      tenantScope: options.tenantScope,
     },
   );
   const sql = generated.sql;
   const explain = generated.explain;
-  return explain !== undefined ? { sql, explain } : { sql };
+  const tenantGuardrail = generated.tenantGuardrail;
+  const result: AskPipelineResult = { sql };
+  if (explain !== undefined) result.explain = explain;
+  if (tenantGuardrail !== undefined) result.tenantGuardrail = tenantGuardrail;
+  return result;
 }
 
 function isAskDialect(value: DialectSpec | AskDialect): value is AskDialect {

@@ -1,4 +1,10 @@
 export * from "./errors.js";
+export { validateTenantScope } from "./sql/tenant-scope-validate.js";
+export { buildTenantPromptBlock } from "./sql/tenant-prompt.js";
+export {
+  validateTenantGuardrails,
+  type TenantGuardrailResult,
+} from "./sql/tenant-guardrail.js";
 export {
   ask,
   type AskPipelineOptions,
