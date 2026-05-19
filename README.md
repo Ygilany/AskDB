@@ -194,6 +194,7 @@ AskDB returns SQL for review; it does not execute generated SQL. Treat generated
 - **Human-reviewed schema enrichment** — introspect your database, then enrich the schema artifact with descriptions, aliases, and business concepts using the TUI or Studio.
 - **Clear execution boundary** — AskDB returns SQL; it does not execute against your database. Your application decides whether to show it, review it, approve it, run it, log it, or reject it.
 - **Multiple surfaces** — the same schema artifact and generation pipeline across the CLI, a Node library, and an HTTP API.
+- **Multi-tenancy** — define a tenant policy (roots, hierarchy, scoped/polymorphic/global tables) and pass a runtime tenant scope to `ask()`; AskDB injects tenant-filtering predicates into generated SQL automatically.
 
 ## Product notes
 
@@ -216,7 +217,7 @@ How much of the **schema context** the model sees depends on the chosen mode:
 
 ## Status
 
-Phases 1-6 are implemented on this branch: core, CLI, HTTP API, installable package seams, schema artifact format, and Postgres introspection. Later phases are in [`docs/roadmap.md`](docs/roadmap.md).
+Phases 1–10 are implemented on this branch: core, CLI, HTTP API, installable package seams, schema artifact format, Postgres introspection, TUI enrichment, RAG indexing and retrieval, Studio (React browser UI), and multi-tenancy proof. Later phases are in [`docs/roadmap.md`](docs/roadmap.md).
 
 ## Support
 

@@ -1,13 +1,15 @@
 import {
   AlertCircle,
-  Bot,
   BrainCircuit,
   Check,
   ChevronDown,
   ChevronRight,
   Copy,
+  Globe,
+  Layers,
   Loader2,
   Lock,
+  Play,
   RefreshCw,
   RotateCcw,
   Save,
@@ -15,16 +17,20 @@ import {
   Settings,
   Shield,
   Sparkles,
+  Menu,
   Wand2,
+  X,
 } from "lucide-react";
-import { useCallback, useEffect, useMemo, useState } from "react";
-import type { ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { ReactNode, RefObject } from "react";
 import type { TenantSqlOutputMode, NormalizedTenantPolicy, TenantScope, TenantPolicyFrontmatter } from "@askdb/core";
 import type { ChunkType } from "@askdb/rag";
 import type { ColumnDraft, SuggestSource, TableDraft } from "@askdb/enrich";
 import type { V2Concept } from "@askdb/core";
 import type {
   AskResponse,
+  ExecuteResponse,
+  PlaygroundHistoryEntry,
   RagQueryResponse,
   StudioRequestUsageDto,
   StudioRagChunkDto,
@@ -35,20 +41,24 @@ import type {
 import {
   ask,
   buildRagIndex,
+  deleteFromHistory,
+  executeQuery,
+  getHistory,
   getRagStatus,
   getWorkspace,
   queryRag,
   saveConcepts,
   saveTable,
   saveTenantPolicy,
+  saveToHistory,
   suggest,
   suggestTenantPolicy,
 } from "./api";
 import { Badge, Button, Field, Input, ListInput, Panel, Textarea, parseList } from "./components/ui";
 import { cn } from "./lib/utils";
 
-type PanelKey = "rag" | "ask" | "settings";
-type MainView = "tables" | "concepts" | "tenancy";
+type PanelKey = "rag" | "settings";
+type MainView = "tables" | "concepts" | "tenancy" | "playground";
 
 type SuggestionDialog = {
   source: SuggestSource;
@@ -71,7 +81,7 @@ export function App() {
   const [mainView, setMainView] = useState<MainView>("tables");
   const [drafts, setDrafts] = useState<Record<string, TableDraft>>({});
   const [tableSearch, setTableSearch] = useState("");
-  const [rightPanel, setRightPanel] = useState<PanelKey>("ask");
+  const [rightPanel, setRightPanel] = useState<PanelKey>("rag");
   const [saveStatus, setSaveStatus] = useState<StatusMessage | null>(null);
   const [suggestionDialog, setSuggestionDialog] = useState<SuggestionDialog | null>(null);
   const [suggestingKey, setSuggestingKey] = useState<string | null>(null);
@@ -89,10 +99,44 @@ export function App() {
   const [askTenantSqlMode, setAskTenantSqlMode] = useState<TenantSqlOutputMode>("sql-only");
   const [askTenantEnabled, setAskTenantEnabled] = useState(false);
   const [busy, setBusy] = useState<Set<string>>(() => new Set());
+  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [historyEntries, setHistoryEntries] = useState<PlaygroundHistoryEntry[]>([]);
+  const [executeResult, setExecuteResult] = useState<ExecuteResponse | null>(null);
+  const [executeMessage, setExecuteMessage] = useState<StatusMessage | null>(null);
+  const [tenancyActiveSection, setTenancyActiveSection] = useState<string>("roots");
+  const tenancySectionRefs = {
+    roots: useRef<HTMLDivElement>(null),
+    hierarchy: useRef<HTMLDivElement>(null),
+    scopedTables: useRef<HTMLDivElement>(null),
+    polymorphicTables: useRef<HTMLDivElement>(null),
+    globalTables: useRef<HTMLDivElement>(null),
+    warnings: useRef<HTMLDivElement>(null),
+  };
 
   useEffect(() => {
     void load();
   }, []);
+
+  useEffect(() => {
+    if (saveStatus?.kind === "success" || saveStatus?.kind === "neutral") {
+      const id = setTimeout(() => setSaveStatus(null), 4000);
+      return () => clearTimeout(id);
+    }
+  }, [saveStatus]);
+
+  useEffect(() => {
+    if (ragMessage?.kind === "success" || ragMessage?.kind === "neutral") {
+      const id = setTimeout(() => setRagMessage(null), 4000);
+      return () => clearTimeout(id);
+    }
+  }, [ragMessage]);
+
+  useEffect(() => {
+    if (askMessage?.kind === "success" || askMessage?.kind === "neutral") {
+      const id = setTimeout(() => setAskMessage(null), 4000);
+      return () => clearTimeout(id);
+    }
+  }, [askMessage]);
 
   const ragAvailable = Boolean(ragStatus?.hasIndex);
 
@@ -132,15 +176,27 @@ export function App() {
   async function load() {
     setLoadState({ kind: "loading" });
     try {
-      const [nextWorkspace, nextRagStatus] = await Promise.all([getWorkspace(), getRagStatus()]);
+      const [nextWorkspace, nextRagStatus, nextHistory] = await Promise.all([
+        getWorkspace(),
+        getRagStatus(),
+        getHistory(),
+      ]);
       setWorkspace(nextWorkspace);
       setRagStatus(nextRagStatus);
       setDrafts(makeDraftMap(nextWorkspace));
       setSelectedTableId((current) => current ?? nextWorkspace.tables[0]?.physical.id ?? null);
+      setHistoryEntries(nextHistory.entries);
       setLoadState({ kind: "ready" });
     } catch (error) {
       setLoadState({ kind: "error", message: getErrorMessage(error) });
     }
+  }
+
+  async function refreshHistory() {
+    try {
+      const h = await getHistory();
+      setHistoryEntries(h.entries);
+    } catch { /* silent */ }
   }
 
   async function refreshRagStatus() {
@@ -286,6 +342,17 @@ export function App() {
         });
         setAskResult(result);
         setAskMessage({ kind: "success", text: "Generated SQL." });
+        void saveToHistory({
+          question: askQuestion.trim(),
+          mode: askMode,
+          sql: result.sql,
+          sqlMode: askTenantSqlMode,
+          tenantScope: askTenantEnabled && askTenantScopeJson.trim() ? JSON.parse(askTenantScopeJson) as Record<string, unknown> : undefined,
+          tenantParams: result.tenant?.params && result.tenant.params.length > 0
+            ? Object.fromEntries(result.tenant.params.map((v, i) => [String(i + 1), v]))
+            : undefined,
+          explain: result.explain ?? undefined,
+        }).then(() => void refreshHistory());
       } catch (error) {
         setAskMessage({ kind: "error", text: getErrorMessage(error) });
       }
@@ -336,7 +403,7 @@ export function App() {
 
   return (
     <div className="studio-shell">
-      <aside className="studio-sidebar">
+      <aside className={cn("studio-sidebar", !sidebarOpen && "hidden", "lg:flex")}>
         <div className="border-b border-border px-4 py-4">
           <div className="flex items-center gap-2">
             <img className="h-9 w-auto" src="/assets/brand/logo.png" alt="AskDB" />
@@ -373,53 +440,204 @@ export function App() {
             <strong>{workspace.tenantPolicy ? workspace.tenantPolicy.roots.length : 0}</strong>
             <span>Tenancy</span>
           </button>
-          <Metric value={workspace.warnings.length} label="Warnings" />
+          <button
+            type="button"
+            className={cn("metric text-left", mainView === "playground" && "metric-active")}
+            onClick={() => setMainView("playground")}
+          >
+            <strong>{historyEntries.length}</strong>
+            <span>Playground</span>
+          </button>
         </div>
 
-        <div className="border-b border-border p-3">
-          <div className="relative">
-            <Search className="pointer-events-none absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-            <Input
-              className="pl-8"
-              placeholder="Search tables"
-              value={tableSearch}
-              onChange={(event) => setTableSearch(event.target.value)}
-            />
-          </div>
-        </div>
+        {mainView === "playground" ? (
+          <>
+            <div className="border-b border-border px-4 py-3">
+              <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                Playground History
+              </span>
+            </div>
+            <nav className="min-h-0 flex-1 overflow-auto p-2" aria-label="Playground history">
+              {historyEntries.length === 0 ? (
+                <p className="px-2 py-4 text-xs text-muted-foreground">
+                  No history yet. Ask a question to get started.
+                </p>
+              ) : (
+                historyEntries.map((entry) => (
+                  <div
+                    className="table-nav-item group relative"
+                    key={entry.id}
+                  >
+                    <button
+                      className="min-w-0 flex-1 text-left"
+                      type="button"
+                      onClick={() => {
+                        setAskQuestion(entry.question);
+                        setAskMode(entry.mode as "full" | "rag");
+                        setAskResult({ sql: entry.sql, explain: entry.explain ?? null, warnings: [], rag: { enabled: false, chunks: [] }, tenant: null, usage: null } as AskResponse);
+                        setAskTenantSqlMode(entry.sqlMode as TenantSqlOutputMode);
+                        setExecuteResult(null);
+                      }}
+                    >
+                      <span className="block truncate font-medium">{entry.question}</span>
+                      <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                        <Badge variant="outline">{entry.mode}</Badge>
+                        {new Date(entry.timestamp).toLocaleString()}
+                      </span>
+                    </button>
+                    <button
+                      className="ml-1 shrink-0 rounded p-0.5 opacity-0 hover:bg-muted group-hover:opacity-100"
+                      type="button"
+                      title="Delete"
+                      onClick={() => {
+                        void deleteFromHistory(entry.id).then(() => void refreshHistory());
+                      }}
+                    >
+                      <X className="h-3.5 w-3.5 text-muted-foreground" />
+                    </button>
+                  </div>
+                ))
+              )}
+            </nav>
+          </>
+        ) : mainView === "tenancy" ? (
+          <>
+            <div className="border-b border-border px-4 py-2.5">
+              <span className="text-xs font-semibold text-muted-foreground">Tenancy</span>
+            </div>
+            <nav className="min-h-0 flex-1 overflow-auto p-2" aria-label="Tenancy sections">
+              {(
+                [
+                  {
+                    key: "roots",
+                    label: "Roots",
+                    icon: <Shield className="h-4 w-4 shrink-0" />,
+                    count: workspace.tenantPolicy?.roots.length ?? 0,
+                    warning: false,
+                  },
+                  {
+                    key: "hierarchy",
+                    label: "Hierarchy",
+                    icon: <ChevronRight className="h-4 w-4 shrink-0" />,
+                    count: workspace.tenantPolicy?.hierarchy.length ?? 0,
+                    warning: false,
+                  },
+                  {
+                    key: "scopedTables",
+                    label: "Scoped Tables",
+                    icon: <Lock className="h-4 w-4 shrink-0" />,
+                    count: workspace.tenantPolicy?.scopedTables.length ?? 0,
+                    warning: false,
+                  },
+                  {
+                    key: "polymorphicTables",
+                    label: "Polymorphic Tables",
+                    icon: <Layers className="h-4 w-4 shrink-0" />,
+                    count: workspace.tenantPolicy?.polymorphicTables.length ?? 0,
+                    warning: false,
+                  },
+                  {
+                    key: "globalTables",
+                    label: "Global Tables",
+                    icon: <Globe className="h-4 w-4 shrink-0" />,
+                    count: workspace.tenantPolicy?.globalTables.length ?? 0,
+                    warning: false,
+                  },
+                  {
+                    key: "warnings",
+                    label: "Policy Warnings",
+                    icon: <AlertCircle className="h-4 w-4 shrink-0" />,
+                    count: workspace.tenantPolicy?.warnings.length ?? 0,
+                    warning: true,
+                  },
+                ] as Array<{ key: string; label: string; icon: ReactNode; count: number; warning: boolean }>
+              ).map(({ key, label, icon, count, warning }) => {
+                const isActive = tenancyActiveSection === key;
+                return (
+                  <button
+                    className={cn("table-nav-item", isActive && "table-nav-item-active")}
+                    key={key}
+                    type="button"
+                    onClick={() => {
+                      setTenancyActiveSection(key);
+                      tenancySectionRefs[key as keyof typeof tenancySectionRefs].current?.scrollIntoView({
+                        behavior: "smooth",
+                        block: "start",
+                      });
+                    }}
+                  >
+                    <span className="flex min-w-0 items-center gap-2">
+                      {icon}
+                      <span className="truncate font-medium">{label}</span>
+                    </span>
+                    <Badge variant={warning && count > 0 ? "warning" : "secondary"}
+                      className={warning && count > 0 ? "text-amber-400" : undefined}
+                    >
+                      {count}
+                    </Badge>
+                  </button>
+                );
+              })}
+            </nav>
+          </>
+        ) : (
+          <>
+            <div className="border-b border-border p-3">
+              <div className="relative">
+                <Search className="pointer-events-none absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+                <Input
+                  className="pl-8"
+                  placeholder="Search tables"
+                  value={tableSearch}
+                  onChange={(event) => setTableSearch(event.target.value)}
+                />
+              </div>
+            </div>
 
-        <nav className="min-h-0 flex-1 overflow-auto p-2" aria-label="Tables">
-          {filteredTables.map((table) => {
-            const isActive = table.physical.id === selectedTable?.physical.id;
-            const warningCount =
-              table.missingColumnIds.length +
-              workspace.warnings.filter(
-                (warning) => "tableId" in warning && warning.tableId === table.physical.id,
-              ).length;
-            return (
-              <button
-                className={cn("table-nav-item", isActive && "table-nav-item-active")}
-                key={table.physical.id}
-                type="button"
-                onClick={() => setSelectedTableId(table.physical.id)}
-              >
-                <span className="min-w-0">
-                  <span className="block truncate font-medium">{table.physical.name}</span>
-                  <span className="block truncate text-xs text-muted-foreground">
-                    {table.physical.schema} · {table.physical.columns.length} columns
-                  </span>
-                </span>
-                <span className="flex items-center gap-1">
-                  {warningCount > 0 ? <Badge variant="warning">{warningCount}</Badge> : null}
-                  <ChevronRight className="h-4 w-4 text-muted-foreground" />
-                </span>
-              </button>
-            );
-          })}
-        </nav>
+            <nav className="min-h-0 flex-1 overflow-auto p-2" aria-label="Tables">
+              {filteredTables.map((table) => {
+                const isActive = table.physical.id === selectedTable?.physical.id;
+                const warningCount =
+                  table.missingColumnIds.length +
+                  workspace.warnings.filter(
+                    (warning) => "tableId" in warning && warning.tableId === table.physical.id,
+                  ).length;
+                return (
+                  <button
+                    className={cn("table-nav-item", isActive && "table-nav-item-active")}
+                    key={table.physical.id}
+                    type="button"
+                    onClick={() => setSelectedTableId(table.physical.id)}
+                  >
+                    <span className="min-w-0">
+                      <span className="block truncate font-medium">{table.physical.name}</span>
+                      <span className="block truncate text-xs text-muted-foreground">
+                        {table.physical.schema} · {table.physical.columns.length} columns
+                      </span>
+                    </span>
+                    <span className="flex items-center gap-1">
+                      {warningCount > 0 ? <Badge variant="warning">{warningCount}</Badge> : null}
+                      <ChevronRight className="h-4 w-4 text-muted-foreground" />
+                    </span>
+                  </button>
+                );
+              })}
+            </nav>
+          </>
+        )}
       </aside>
 
       <main className="studio-main">
+        <div className="flex items-center border-b border-border bg-card px-3 py-2 lg:hidden">
+          <button
+            type="button"
+            className="rounded p-1.5 text-muted-foreground hover:bg-accent hover:text-foreground"
+            onClick={() => setSidebarOpen((open) => !open)}
+            aria-label="Toggle sidebar"
+          >
+            <Menu className="h-5 w-5" />
+          </button>
+        </div>
         {mainView === "tables" ? (
           <>
             <header className="flex min-h-16 items-center justify-between gap-4 border-b border-border bg-card px-5 py-3">
@@ -474,6 +692,7 @@ export function App() {
             schemaId={workspace.schemaId}
             aiConfigured={workspace.aiConfigured}
             busy={busy}
+            sectionRefs={tenancySectionRefs}
             onSave={async (frontmatter, body) => {
               setSaveStatus({ kind: "loading", text: "Saving tenant policy..." });
               await withBusy("save-tenant-policy", async () => {
@@ -487,6 +706,47 @@ export function App() {
               });
             }}
             saveStatus={saveStatus}
+          />
+        ) : mainView === "playground" ? (
+          <PlaygroundMain
+            workspace={workspace}
+            askQuestion={askQuestion}
+            setAskQuestion={setAskQuestion}
+            askMode={askMode}
+            setAskMode={setAskMode}
+            askMessage={askMessage}
+            askResult={askResult}
+            askTenantEnabled={askTenantEnabled}
+            setAskTenantEnabled={setAskTenantEnabled}
+            askTenantScopeJson={askTenantScopeJson}
+            setAskTenantScopeJson={setAskTenantScopeJson}
+            askTenantSqlMode={askTenantSqlMode}
+            setAskTenantSqlMode={setAskTenantSqlMode}
+            ragAvailable={ragAvailable}
+            busy={busy}
+            executeResult={executeResult}
+            executeMessage={executeMessage}
+            onAsk={handleAsk}
+            onExecute={async () => {
+              if (!askResult?.sql) return;
+              setExecuteMessage({ kind: "loading", text: "Executing query..." });
+              await withBusy("execute", async () => {
+                try {
+                  const params = askResult.tenant?.params
+                    ? (askResult.tenant.params as unknown[])
+                    : [];
+                  const result = await executeQuery({ sql: askResult.sql, params });
+                  setExecuteResult(result);
+                  if (result.ok) {
+                    setExecuteMessage({ kind: "success", text: `${result.rowCount ?? 0} rows${result.truncated ? " (truncated to 500)" : ""} · ${result.durationMs ?? 0}ms` });
+                  } else {
+                    setExecuteMessage({ kind: "error", text: result.error ?? "Unknown error" });
+                  }
+                } catch (err) {
+                  setExecuteMessage({ kind: "error", text: getErrorMessage(err) });
+                }
+              });
+            }}
           />
         ) : (
           <ConceptsMain
@@ -512,13 +772,7 @@ export function App() {
 
       <aside className="studio-inspector">
         <div className="border-b border-border p-3">
-          <div className="grid grid-cols-3 gap-2">
-            <InspectorTab
-              active={rightPanel === "ask"}
-              icon={<Bot className="h-4 w-4" />}
-              label="Ask"
-              onClick={() => setRightPanel("ask")}
-            />
+          <div className="grid grid-cols-2 gap-2">
             <InspectorTab
               active={rightPanel === "rag"}
               icon={<BrainCircuit className="h-4 w-4" />}
@@ -550,27 +804,6 @@ export function App() {
               selectedTypes={ragTypes}
               setRagK={setRagK}
               status={ragStatus}
-            />
-          ) : null}
-          {rightPanel === "ask" ? (
-            <AskPanel
-              busy={busy}
-              message={askMessage}
-              mode={askMode}
-              onAsk={handleAsk}
-              onGoToRag={() => setRightPanel("rag")}
-              onModeChange={setAskMode}
-              onQuestionChange={setAskQuestion}
-              question={askQuestion}
-              ragAvailable={ragAvailable}
-              result={askResult}
-              tenantEnabled={askTenantEnabled}
-              onTenantEnabledChange={setAskTenantEnabled}
-              tenantScopeJson={askTenantScopeJson}
-              onTenantScopeJsonChange={setAskTenantScopeJson}
-              tenantSqlMode={askTenantSqlMode}
-              onTenantSqlModeChange={setAskTenantSqlMode}
-              hasTenantPolicy={Boolean(workspace?.tenantPolicy)}
             />
           ) : null}
           {rightPanel === "settings" ? (
@@ -1303,12 +1536,287 @@ function RagPanel({
   );
 }
 
+function PlaygroundMain({
+  workspace,
+  askQuestion,
+  setAskQuestion,
+  askMode,
+  setAskMode,
+  askMessage,
+  askResult,
+  askTenantEnabled,
+  setAskTenantEnabled,
+  askTenantScopeJson,
+  setAskTenantScopeJson,
+  askTenantSqlMode,
+  setAskTenantSqlMode,
+  ragAvailable,
+  busy,
+  executeResult,
+  executeMessage,
+  onAsk,
+  onExecute,
+}: {
+  workspace: StudioWorkspaceDto;
+  askQuestion: string;
+  setAskQuestion: (q: string) => void;
+  askMode: "full" | "rag";
+  setAskMode: (m: "full" | "rag") => void;
+  askMessage: StatusMessage | null;
+  askResult: AskResponse | null;
+  askTenantEnabled: boolean;
+  setAskTenantEnabled: (v: boolean) => void;
+  askTenantScopeJson: string;
+  setAskTenantScopeJson: (v: string) => void;
+  askTenantSqlMode: TenantSqlOutputMode;
+  setAskTenantSqlMode: (v: TenantSqlOutputMode) => void;
+  ragAvailable: boolean;
+  busy: Set<string>;
+  executeResult: ExecuteResponse | null;
+  executeMessage: StatusMessage | null;
+  onAsk: () => Promise<void>;
+  onExecute: () => Promise<void>;
+}) {
+  const hasTenantPolicy = Boolean(workspace.tenantPolicy);
+  return (
+    <>
+      <header className="flex min-h-16 items-center gap-4 border-b border-border bg-card px-5 py-3">
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-2">
+            <Sparkles className="h-5 w-5" />
+            <h2 className="text-lg font-semibold">Query Playground</h2>
+          </div>
+          <p className="text-xs text-muted-foreground">
+            Generate SQL from natural language and execute it against your database
+          </p>
+        </div>
+      </header>
+
+      <div className="min-h-0 flex-1 overflow-auto">
+        <div className="grid h-full gap-0 lg:grid-cols-[2fr_3fr]">
+          <div className="border-r border-border">
+            <Panel title="Question">
+              <div className="grid gap-3">
+                <Field label="Natural language question">
+                  <Textarea
+                    value={askQuestion}
+                    onChange={(event) => setAskQuestion(event.target.value)}
+                    placeholder="How many users placed orders last month?"
+                    rows={4}
+                  />
+                </Field>
+
+                <div className="grid gap-1.5">
+                  <span className="text-xs font-semibold text-muted-foreground">Retrieval mode</span>
+                  <div
+                    className={cn("segmented", !ragAvailable && "segmented-with-disabled")}
+                    role="group"
+                    aria-label="Retrieval mode"
+                  >
+                    <button
+                      className={cn(askMode === "full" && "active")}
+                      type="button"
+                      onClick={() => setAskMode("full")}
+                    >
+                      Full schema
+                    </button>
+                    <button
+                      className={cn(askMode === "rag" && "active")}
+                      disabled={!ragAvailable}
+                      title={!ragAvailable ? "Build the RAG index first to query with retrieval." : undefined}
+                      type="button"
+                      onClick={() => setAskMode("rag")}
+                    >
+                      <span className="inline-flex items-center gap-1.5">
+                        {!ragAvailable ? <Lock className="h-3.5 w-3.5" aria-hidden="true" /> : null}
+                        RAG
+                      </span>
+                    </button>
+                  </div>
+                </div>
+
+                {hasTenantPolicy ? (
+                  <div className="grid gap-1.5">
+                    <label className="flex items-center gap-2">
+                      <input
+                        type="checkbox"
+                        checked={askTenantEnabled}
+                        onChange={(event) => setAskTenantEnabled(event.target.checked)}
+                        className="h-4 w-4 rounded border-input"
+                      />
+                      <span className="text-xs font-semibold text-muted-foreground">
+                        <Shield className="mr-1 inline h-3.5 w-3.5" />
+                        Tenant scope
+                      </span>
+                    </label>
+                    {askTenantEnabled ? (
+                      <div className="grid gap-2">
+                        <Field label="Scope JSON">
+                          <Textarea
+                            className="font-mono text-xs"
+                            value={askTenantScopeJson}
+                            onChange={(event) => setAskTenantScopeJson(event.target.value)}
+                            placeholder={'{\n  "access": {\n    "kind": "ids",\n    "tenantRoot": "orgs",\n    "ids": ["org-1"]\n  }\n}'}
+                            rows={5}
+                          />
+                        </Field>
+                        <div className="grid gap-1.5">
+                          <span className="text-xs font-semibold text-muted-foreground">SQL output mode</span>
+                          <div className="segmented" role="group" aria-label="SQL output mode">
+                            <button
+                              className={cn(askTenantSqlMode === "sql-only" && "active")}
+                              type="button"
+                              onClick={() => setAskTenantSqlMode("sql-only")}
+                            >
+                              Inline literals
+                            </button>
+                            <button
+                              className={cn(askTenantSqlMode === "sql-params" && "active")}
+                              type="button"
+                              onClick={() => setAskTenantSqlMode("sql-params")}
+                            >
+                              $N parameters
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    ) : null}
+                  </div>
+                ) : null}
+
+                <Button disabled={busy.has("ask")} onClick={() => void onAsk()}>
+                  {busy.has("ask") ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <Sparkles className="h-4 w-4" />
+                  )}
+                  Generate SQL
+                </Button>
+                {askMessage ? <InlineStatus status={askMessage} /> : null}
+              </div>
+            </Panel>
+          </div>
+
+          <div className="min-h-0">
+            {!askResult ? (
+              <div className="flex h-full items-center justify-center p-8">
+                <EmptyText text="Ask a question to generate SQL" />
+              </div>
+            ) : (
+              <div className="grid gap-0">
+                <Panel
+                  title="Generated SQL"
+                  action={askResult.sql ? <CopyButton value={askResult.sql} /> : undefined}
+                >
+                  {askResult.sql ? (
+                    <pre className="sql-block">{askResult.sql}</pre>
+                  ) : (
+                    <EmptyText text="No SQL generated." />
+                  )}
+                </Panel>
+
+                {askResult.explain !== null && askResult.explain !== undefined ? (
+                  <Panel title="Explain">
+                    <pre className="plain-block">{formatUnknown(askResult.explain)}</pre>
+                  </Panel>
+                ) : null}
+
+                {askResult.tenant?.enabled ? (
+                  <Panel title="Tenant Params">
+                    {askResult.tenant.params.length > 0 ? (
+                      <div className="rounded-md border border-border bg-muted/30 p-2 text-xs">
+                        <span className="font-semibold">Positional params:</span>{" "}
+                        <code>{JSON.stringify(askResult.tenant.params)}</code>
+                      </div>
+                    ) : (
+                      <EmptyText text="No tenant params." />
+                    )}
+                  </Panel>
+                ) : null}
+
+                <div className="border-t border-border px-5 py-3">
+                  <div className="flex items-center gap-3">
+                    <Button
+                      disabled={busy.has("execute") || !askResult.sql}
+                      onClick={() => void onExecute()}
+                    >
+                      {busy.has("execute") ? (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      ) : (
+                        <Play className="h-4 w-4" />
+                      )}
+                      Execute Query
+                    </Button>
+                    {executeMessage ? <InlineStatus status={executeMessage} /> : null}
+                  </div>
+                </div>
+
+                {executeResult?.ok === true ? (
+                  <Panel
+                    title="Results"
+                    action={
+                      executeResult.truncated ? (
+                        <Badge variant="warning">Showing first 500 rows</Badge>
+                      ) : undefined
+                    }
+                  >
+                    {executeResult.columns && executeResult.rows ? (
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-sm">
+                          <thead>
+                            <tr className="border-b border-border bg-muted/30">
+                              {executeResult.columns.map((col) => (
+                                <th
+                                  className="px-3 py-2 text-left font-semibold"
+                                  key={col}
+                                >
+                                  {col}
+                                </th>
+                              ))}
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {executeResult.rows.map((row, rowIndex) => (
+                              <tr
+                                className="border-b border-border last:border-b-0"
+                                key={rowIndex}
+                              >
+                                {(row as unknown[]).map((cell, cellIndex) => (
+                                  <td
+                                    className="px-3 py-1.5 font-mono text-xs"
+                                    key={cellIndex}
+                                  >
+                                    {cell === null || cell === undefined
+                                      ? <span className="text-muted-foreground">NULL</span>
+                                      : String(cell)}
+                                  </td>
+                                ))}
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    ) : (
+                      <EmptyText text="No results." />
+                    )}
+                  </Panel>
+                ) : null}
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    </>
+  );
+}
+
 function TenancyMain({
   tenantPolicy,
   tables,
   schemaId,
   aiConfigured,
   busy,
+  sectionRefs,
   onSave,
   saveStatus,
 }: {
@@ -1317,6 +1825,14 @@ function TenancyMain({
   schemaId: string;
   aiConfigured: boolean;
   busy: Set<string>;
+  sectionRefs: {
+    roots: RefObject<HTMLDivElement | null>;
+    hierarchy: RefObject<HTMLDivElement | null>;
+    scopedTables: RefObject<HTMLDivElement | null>;
+    polymorphicTables: RefObject<HTMLDivElement | null>;
+    globalTables: RefObject<HTMLDivElement | null>;
+    warnings: RefObject<HTMLDivElement | null>;
+  };
   onSave: (frontmatter: TenantPolicyFrontmatter, body?: string) => Promise<void>;
   saveStatus: StatusMessage | null;
 }) {
@@ -1373,103 +1889,113 @@ function TenancyMain({
           </CollapsibleSection>
 
           {/* Tenant roots */}
-          <CollapsibleSection title="Tenant Roots" count={tenantPolicy.roots.length}>
-            <div className="grid gap-2">
-              {tenantPolicy.roots.map((root) => (
-                <div className="rounded-md border border-border bg-card p-3" key={root.id}>
-                  <div className="flex items-center justify-between gap-2">
-                    <div>
-                      <span className="font-mono text-sm font-semibold">{root.id}</span>
-                      <span className="ml-2 text-xs text-muted-foreground">{root.label}</span>
+          <div ref={sectionRefs.roots}>
+            <CollapsibleSection title="Tenant Roots" count={tenantPolicy.roots.length}>
+              <div className="grid gap-2">
+                {tenantPolicy.roots.map((root) => (
+                  <div className="rounded-md border border-border bg-card p-3" key={root.id}>
+                    <div className="flex items-center justify-between gap-2">
+                      <div>
+                        <span className="font-mono text-sm font-semibold">{root.id}</span>
+                        <span className="ml-2 text-xs text-muted-foreground">{root.label}</span>
+                      </div>
+                      <Badge variant="outline">col: {root.tenantIdColumn}</Badge>
                     </div>
-                    <Badge variant="outline">col: {root.tenantIdColumn}</Badge>
+                    {root.parent ? (
+                      <p className="mt-1 text-xs text-muted-foreground">
+                        Parent: <code>{root.parent.root}</code> via <code>{root.parent.foreignKey}</code>
+                      </p>
+                    ) : null}
                   </div>
-                  {root.parent ? (
-                    <p className="mt-1 text-xs text-muted-foreground">
-                      Parent: <code>{root.parent.root}</code> via <code>{root.parent.foreignKey}</code>
-                    </p>
-                  ) : null}
-                </div>
-              ))}
-            </div>
-          </CollapsibleSection>
+                ))}
+              </div>
+            </CollapsibleSection>
+          </div>
 
           {/* Hierarchy */}
-          {tenantPolicy.hierarchy.length > 0 ? (
-            <CollapsibleSection title="Hierarchy Edges" count={tenantPolicy.hierarchy.length}>
-              <div className="grid gap-2">
-                {tenantPolicy.hierarchy.map((edge, index) => (
-                  <div className="rounded-md border border-border bg-card p-3 text-sm" key={index}>
-                    <div>
-                      <code>{edge.parent}</code>
-                      <span className="mx-2 text-muted-foreground">&rarr;</span>
-                      <code>{edge.child}</code>
+          <div ref={sectionRefs.hierarchy}>
+            {tenantPolicy.hierarchy.length > 0 ? (
+              <CollapsibleSection title="Hierarchy Edges" count={tenantPolicy.hierarchy.length}>
+                <div className="grid gap-2">
+                  {tenantPolicy.hierarchy.map((edge, index) => (
+                    <div className="rounded-md border border-border bg-card p-3 text-sm" key={index}>
+                      <div>
+                        <code>{edge.parent}</code>
+                        <span className="mx-2 text-muted-foreground">&rarr;</span>
+                        <code>{edge.child}</code>
+                      </div>
+                      <div className="mt-1 text-xs text-muted-foreground">FK: {edge.foreignKey}</div>
                     </div>
-                    <div className="mt-1 text-xs text-muted-foreground">FK: {edge.foreignKey}</div>
-                  </div>
-                ))}
-              </div>
-            </CollapsibleSection>
-          ) : null}
+                  ))}
+                </div>
+              </CollapsibleSection>
+            ) : null}
+          </div>
 
           {/* Scoped tables */}
-          {tenantPolicy.scopedTables.length > 0 ? (
-            <CollapsibleSection title="Scoped Tables" count={tenantPolicy.scopedTables.length} defaultOpen={false}>
-              <div className="grid gap-2">
-                {tenantPolicy.scopedTables.map((scoped) => (
-                  <div className="rounded-md border border-border bg-card p-3" key={scoped.id}>
-                    <span className="font-mono text-sm font-semibold">{scoped.id}</span>
-                    <div className="mt-1 grid gap-1">
-                      {scoped.scopeThrough.map((scope, index) => (
-                        <p className="text-xs text-muted-foreground" key={index}>
-                          via <Badge variant="outline">{scope.root}</Badge>{" "}
-                          {"column" in scope
-                            ? <span>column <code>{scope.column}</code></span>
-                            : <span>join {scope.join.map((j) => `${j.from} -> ${j.to}`).join(", ")}</span>}
-                        </p>
-                      ))}
+          <div ref={sectionRefs.scopedTables}>
+            {tenantPolicy.scopedTables.length > 0 ? (
+              <CollapsibleSection title="Scoped Tables" count={tenantPolicy.scopedTables.length} defaultOpen={false}>
+                <div className="grid gap-2">
+                  {tenantPolicy.scopedTables.map((scoped) => (
+                    <div className="rounded-md border border-border bg-card p-3" key={scoped.id}>
+                      <span className="font-mono text-sm font-semibold">{scoped.id}</span>
+                      <div className="mt-1 grid gap-1">
+                        {scoped.scopeThrough.map((scope, index) => (
+                          <p className="text-xs text-muted-foreground" key={index}>
+                            via <Badge variant="outline">{scope.root}</Badge>{" "}
+                            {"column" in scope
+                              ? <span>column <code>{scope.column}</code></span>
+                              : <span>join {scope.join.map((j) => `${j.from} -> ${j.to}`).join(", ")}</span>}
+                          </p>
+                        ))}
+                      </div>
                     </div>
-                  </div>
-                ))}
-              </div>
-            </CollapsibleSection>
-          ) : null}
+                  ))}
+                </div>
+              </CollapsibleSection>
+            ) : null}
+          </div>
 
           {/* Polymorphic tables */}
-          {tenantPolicy.polymorphicTables.length > 0 ? (
-            <CollapsibleSection title="Polymorphic Tables" count={tenantPolicy.polymorphicTables.length} defaultOpen={false}>
-              <div className="grid gap-2">
-                {tenantPolicy.polymorphicTables.map((poly) => (
-                  <div className="rounded-md border border-border bg-card p-3" key={poly.id}>
-                    <span className="font-mono text-sm font-semibold">{poly.id}</span>
-                    <p className="mt-1 text-xs text-muted-foreground">
-                      Type: <code>{poly.typeColumn}</code> · ID: <code>{poly.idColumn}</code>
-                    </p>
-                    <div className="mt-1 flex flex-wrap gap-1">
-                      {Object.entries(poly.mapping).map(([typeValue, targetTable]) => (
-                        <Badge variant="outline" key={typeValue}>
-                          {typeValue} &rarr; {targetTable}
-                        </Badge>
-                      ))}
+          <div ref={sectionRefs.polymorphicTables}>
+            {tenantPolicy.polymorphicTables.length > 0 ? (
+              <CollapsibleSection title="Polymorphic Tables" count={tenantPolicy.polymorphicTables.length} defaultOpen={false}>
+                <div className="grid gap-2">
+                  {tenantPolicy.polymorphicTables.map((poly) => (
+                    <div className="rounded-md border border-border bg-card p-3" key={poly.id}>
+                      <span className="font-mono text-sm font-semibold">{poly.id}</span>
+                      <p className="mt-1 text-xs text-muted-foreground">
+                        Type: <code>{poly.typeColumn}</code> · ID: <code>{poly.idColumn}</code>
+                      </p>
+                      <div className="mt-1 flex flex-wrap gap-1">
+                        {Object.entries(poly.mapping).map(([typeValue, targetTable]) => (
+                          <Badge variant="outline" key={typeValue}>
+                            {typeValue} &rarr; {targetTable}
+                          </Badge>
+                        ))}
+                      </div>
                     </div>
-                  </div>
-                ))}
-              </div>
-            </CollapsibleSection>
-          ) : null}
+                  ))}
+                </div>
+              </CollapsibleSection>
+            ) : null}
+          </div>
 
           {/* Global tables */}
-          {tenantPolicy.globalTables.length > 0 ? (
-            <CollapsibleSection title="Global Tables" count={tenantPolicy.globalTables.length} defaultOpen={false}>
-              <div className="flex flex-wrap gap-2">
-                {tenantPolicy.globalTables.map((tableId) => (
-                  <Badge variant="secondary" key={tableId}>
-                    {tableId}
-                  </Badge>
-                ))}
-              </div>
-            </CollapsibleSection>
-          ) : null}
+          <div ref={sectionRefs.globalTables}>
+            {tenantPolicy.globalTables.length > 0 ? (
+              <CollapsibleSection title="Global Tables" count={tenantPolicy.globalTables.length} defaultOpen={false}>
+                <div className="flex flex-wrap gap-2">
+                  {tenantPolicy.globalTables.map((tableId) => (
+                    <Badge variant="secondary" key={tableId}>
+                      {tableId}
+                    </Badge>
+                  ))}
+                </div>
+              </CollapsibleSection>
+            ) : null}
+          </div>
 
           {/* Full table coverage list */}
           <CollapsibleSection title="Table Coverage" count={tenantPolicy.coverage.length} defaultOpen={false}>
@@ -1510,17 +2036,19 @@ function TenancyMain({
           </CollapsibleSection>
 
           {/* Warnings */}
-          {tenantPolicy.warnings.length > 0 ? (
-            <CollapsibleSection title="Policy Warnings" count={tenantPolicy.warnings.length}>
-              <div className="grid gap-2">
-                {tenantPolicy.warnings.map((warning, index) => (
-                  <pre className="warning-block" key={index}>
-                    {formatUnknown(warning)}
-                  </pre>
-                ))}
-              </div>
-            </CollapsibleSection>
-          ) : null}
+          <div ref={sectionRefs.warnings}>
+            {tenantPolicy.warnings.length > 0 ? (
+              <CollapsibleSection title="Policy Warnings" count={tenantPolicy.warnings.length}>
+                <div className="grid gap-2">
+                  {tenantPolicy.warnings.map((warning, index) => (
+                    <pre className="warning-block" key={index}>
+                      {formatUnknown(warning)}
+                    </pre>
+                  ))}
+                </div>
+              </CollapsibleSection>
+            ) : null}
+          </div>
         </div>
       </div>
     </>
@@ -2175,228 +2703,6 @@ function CoverageStat({
     </div>
   );
 }
-
-function AskPanel({
-  busy,
-  message,
-  mode,
-  onAsk,
-  onGoToRag,
-  onModeChange,
-  onQuestionChange,
-  question,
-  ragAvailable,
-  result,
-  tenantEnabled,
-  onTenantEnabledChange,
-  tenantScopeJson,
-  onTenantScopeJsonChange,
-  tenantSqlMode,
-  onTenantSqlModeChange,
-  hasTenantPolicy,
-}: {
-  busy: Set<string>;
-  message: StatusMessage | null;
-  mode: "full" | "rag";
-  onAsk: () => Promise<void>;
-  onGoToRag: () => void;
-  onModeChange: (mode: "full" | "rag") => void;
-  onQuestionChange: (question: string) => void;
-  question: string;
-  ragAvailable: boolean;
-  result: AskResponse | null;
-  tenantEnabled: boolean;
-  onTenantEnabledChange: (enabled: boolean) => void;
-  tenantScopeJson: string;
-  onTenantScopeJsonChange: (json: string) => void;
-  tenantSqlMode: TenantSqlOutputMode;
-  onTenantSqlModeChange: (mode: TenantSqlOutputMode) => void;
-  hasTenantPolicy: boolean;
-}) {
-  const ragDisabledReason = "Build the RAG index first to query with retrieval.";
-  return (
-    <div className="grid gap-0">
-      <Panel title="Sample SQL">
-        <div className="grid gap-3">
-          <Field label="Question">
-            <Textarea
-              value={question}
-              onChange={(event) => onQuestionChange(event.target.value)}
-              placeholder="How many users placed orders?"
-            />
-          </Field>
-          <div className="grid gap-1.5">
-            <span className="text-xs font-semibold text-muted-foreground">Retrieval mode</span>
-            <div
-              className={cn("segmented", !ragAvailable && "segmented-with-disabled")}
-              role="group"
-              aria-label="Retrieval mode"
-            >
-              <button
-                className={cn(mode === "full" && "active")}
-                type="button"
-                onClick={() => onModeChange("full")}
-              >
-                Full schema
-              </button>
-              <button
-                aria-disabled={!ragAvailable}
-                aria-describedby={!ragAvailable ? "ask-rag-disabled-reason" : undefined}
-                className={cn(mode === "rag" && "active")}
-                disabled={!ragAvailable}
-                title={!ragAvailable ? ragDisabledReason : undefined}
-                type="button"
-                onClick={() => onModeChange("rag")}
-              >
-                <span className="inline-flex items-center gap-1.5">
-                  {!ragAvailable ? <Lock className="h-3.5 w-3.5" aria-hidden="true" /> : null}
-                  RAG
-                </span>
-              </button>
-            </div>
-            {!ragAvailable ? (
-              <div
-                className="rag-unavailable-hint"
-                id="ask-rag-disabled-reason"
-                role="note"
-              >
-                <AlertCircle className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
-                <span>
-                  RAG retrieval is unavailable — no index has been built yet.{" "}
-                  <button
-                    className="link-button"
-                    type="button"
-                    onClick={onGoToRag}
-                  >
-                    Open the RAG tab
-                  </button>{" "}
-                  to build one.
-                </span>
-              </div>
-            ) : null}
-          </div>
-
-          {/* Tenant scope controls */}
-          <div className="grid gap-1.5">
-            <label className="flex items-center gap-2">
-              <input
-                type="checkbox"
-                checked={tenantEnabled}
-                disabled={!hasTenantPolicy}
-                onChange={(event) => onTenantEnabledChange(event.target.checked)}
-                className="h-4 w-4 rounded border-input"
-              />
-              <span className="text-xs font-semibold text-muted-foreground">
-                <Shield className="mr-1 inline h-3.5 w-3.5" />
-                Tenant scope
-              </span>
-            </label>
-            {!hasTenantPolicy ? (
-              <p className="text-xs text-muted-foreground">
-                No tenant-policy.md found in this schema.
-              </p>
-            ) : null}
-            {tenantEnabled && hasTenantPolicy ? (
-              <div className="grid gap-2">
-                <Field label="Scope JSON">
-                  <Textarea
-                    className="font-mono text-xs"
-                    value={tenantScopeJson}
-                    onChange={(event) => onTenantScopeJsonChange(event.target.value)}
-                    placeholder={'{\n  "access": {\n    "kind": "ids",\n    "tenantRoot": "orgs",\n    "ids": ["org-1"]\n  }\n}'}
-                    rows={5}
-                  />
-                </Field>
-                <div className="grid gap-1.5">
-                  <span className="text-xs font-semibold text-muted-foreground">SQL output mode</span>
-                  <div className="segmented" role="group" aria-label="SQL output mode">
-                    <button
-                      className={cn(tenantSqlMode === "sql-only" && "active")}
-                      type="button"
-                      onClick={() => onTenantSqlModeChange("sql-only")}
-                    >
-                      Inline literals
-                    </button>
-                    <button
-                      className={cn(tenantSqlMode === "sql-params" && "active")}
-                      type="button"
-                      onClick={() => onTenantSqlModeChange("sql-params")}
-                    >
-                      $N parameters
-                    </button>
-                  </div>
-                </div>
-              </div>
-            ) : null}
-          </div>
-
-          <Button disabled={busy.has("ask")} onClick={() => void onAsk()}>
-            {busy.has("ask") ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
-            Generate SQL
-          </Button>
-          {message ? <InlineStatus status={message} /> : null}
-        </div>
-      </Panel>
-
-      <Panel title="Generated SQL" action={result?.sql ? <CopyButton value={result.sql} /> : undefined}>
-        {result?.sql ? <pre className="sql-block">{result.sql}</pre> : <EmptyText text="No SQL generated yet." />}
-      </Panel>
-
-      {result?.tenant?.enabled ? (
-        <Panel title="Tenant Bindings">
-          {result.tenant.bindings.length > 0 ? (
-            <div className="grid gap-2">
-              {result.tenant.bindings.map((binding, index) => (
-                <div className="rounded-md border border-border bg-muted/30 p-2 text-xs" key={index}>
-                  <div className="flex items-center justify-between gap-2">
-                    <code className="font-semibold">{binding.placeholder}</code>
-                    <Badge variant="outline">{binding.rootLabel}</Badge>
-                  </div>
-                  <div className="mt-1 text-muted-foreground">
-                    IDs: <code>{JSON.stringify(binding.ids)}</code>
-                  </div>
-                </div>
-              ))}
-              {result.tenant.sqlMode === "sql-params" && result.tenant.params.length > 0 ? (
-                <div className="rounded-md border border-border bg-muted/30 p-2 text-xs">
-                  <span className="font-semibold">Positional params:</span>{" "}
-                  <code>{JSON.stringify(result.tenant.params)}</code>
-                </div>
-              ) : null}
-            </div>
-          ) : (
-            <EmptyText text="No tenant bindings in the generated SQL." />
-          )}
-        </Panel>
-      ) : null}
-
-      <UsageSummary title="Request Usage" usage={result?.usage ?? null} />
-
-      {result?.explain !== null && result?.explain !== undefined ? (
-        <Panel title="Explain">
-          <pre className="plain-block">{formatUnknown(result.explain)}</pre>
-        </Panel>
-      ) : null}
-
-      {result?.warnings && result.warnings.length > 0 ? (
-        <Panel title="Warnings">
-          <div className="grid gap-2">
-            {result.warnings.map((warning, index) => (
-              <pre className="warning-block" key={index}>
-                {formatUnknown(warning)}
-              </pre>
-            ))}
-          </div>
-        </Panel>
-      ) : null}
-
-      {result?.rag.enabled ? (
-        <ChunkList chunks={result.rag.chunks} emptyText="RAG returned no chunks." />
-      ) : null}
-    </div>
-  );
-}
-
 function SettingsPanel({
   ragStatus,
   workspace,

@@ -169,3 +169,35 @@ export type StudioRequestUsageDto = {
     embeddingTokens: number | null;
   }>;
 };
+
+export type PlaygroundHistoryEntry = {
+  id: string;
+  timestamp: string;          // ISO 8601
+  question: string;
+  mode: "full" | "rag";
+  tenantScope?: unknown;       // TenantScope — use unknown to avoid importing core types here
+  sqlMode: string;             // TenantSqlOutputMode
+  sql: string;
+  tenantParams?: Record<string, unknown>;
+  explain?: string;
+  executionResult?: {
+    rowCount: number;
+    durationMs: number;
+    truncated: boolean;
+    error?: string;
+  };
+  ragChunkIds?: string[];
+};
+
+export type PlaygroundHistoryDto = {
+  entries: PlaygroundHistoryEntry[];
+};
+
+export type ExecuteRequest = {
+  sql: string;
+  params?: unknown[];
+};
+
+export type ExecuteResponse =
+  | { ok: true; columns: string[]; rows: unknown[][]; rowCount: number; durationMs: number; truncated: boolean }
+  | { ok: false; error: string };

@@ -128,7 +128,9 @@ Follow-up: shared non-UI enrichment workspace behavior now lives in `@askdb/enri
 - **Apps moved to `apps/`** — `cli`, `http-api`, `tui`, `docs-site` are first-party reference apps. The supported product surface is `askdb`, batteries-included Prisma-style. The standalone `askdb-introspect` binary retires; introspection is reached via `askdb introspect`.
 - **Pre-1.0 breaking change, no migrator** — see the changeset for the full surface diff.
 
-## Phase 8 — RAG layer (`@askdb/rag`)
+## Phase 8 ✅ — RAG layer (`@askdb/rag`)
+
+Completed: Shipped `@askdb/rag` with deterministic schema chunking, BYO embedder interface (`mock`, `openai`, `ai-sdk`), in-memory and file-backed vector stores, `pgvector` adapter, and `ask({ retriever })` wiring so top-k chunks replace the full DDL block for large schemas.
 
 **Goal:** Ship retrieval over the describable schema so large schemas don't blow up the prompt and `Common query language` sections actually ground NL→SQL.
 
@@ -147,7 +149,9 @@ Follow-up: shared non-UI enrichment workspace behavior now lives in `@askdb/enri
 
 ---
 
-## Phase 9 — Web app, schema catalog UI, and embed path
+## Phase 9 ✅ — Studio revamp (React app with Vite, shadcn/ui)
+
+Completed: Delivered `@askdb/studio` as a full Vite + React browser UI with shadcn/ui primitives, table/column browsing, AI-assisted enrichment, RAG index management, and sample NL-to-SQL generation — all reading and writing the same Schema v2 artifact as the TUI.
 
 **Goal:** First-party web app + developer embed story. Web catalog is an **alternative authoring surface** for the same Schema v2 artifact, not a prerequisite.
 
@@ -156,7 +160,9 @@ Follow-up: shared non-UI enrichment workspace behavior now lives in `@askdb/enri
 - Begin **SDK + embeddable components** for consumers who want AskDB inside their apps (BYO keys; DB optional per workflow).
 - **Example application** — Add a small in-repo example consumer app to validate the embeddable UI/SDK in realistic integration scenarios.
 
-## Phase 10 — Multi-tenant proof
+## Phase 10 ✅ — Multi-tenancy proof
+
+Completed: Delivered multi-tenancy proof with tenant policy authoring (roots, hierarchy, scoped/polymorphic/global tables), AI-assisted policy drafting in Studio, runtime tenant scope input to `ask()`, tenant-predicate injection into generated SQL, and `sql-only`/`sql-params` output modes. `tenant-policy.md` lives alongside `schema.json` and `concepts.md` in the schema artifact directory.
 
 **Goal:** Prove AskDB can safely generate SQL for a multi-tenant database by capturing the tenant model at setup, accepting the current user's authorized scope at query time, and carrying both into prompt assembly and validation.
 
