@@ -21,6 +21,7 @@ import type { ReactNode } from "react";
 import type { TenantSqlOutputMode, NormalizedTenantPolicy, TenantScope } from "@askdb/core";
 import type { ChunkType } from "@askdb/rag";
 import type { ColumnDraft, SuggestSource, TableDraft } from "@askdb/enrich";
+import type { V2Concept } from "@askdb/core";
 import type {
   AskResponse,
   RagQueryResponse,
@@ -36,6 +37,7 @@ import {
   getRagStatus,
   getWorkspace,
   queryRag,
+  saveConcepts,
   saveTable,
   suggest,
 } from "./api";
@@ -43,7 +45,7 @@ import { Badge, Button, Field, Input, ListInput, Panel, Textarea, parseList } fr
 import { cn } from "./lib/utils";
 
 type PanelKey = "rag" | "ask" | "settings";
-type MainView = "tables" | "tenancy";
+type MainView = "tables" | "concepts" | "tenancy";
 
 type SuggestionDialog = {
   source: SuggestSource;
@@ -354,6 +356,14 @@ export function App() {
           </button>
           <button
             type="button"
+            className={cn("metric text-left", mainView === "concepts" && "metric-active")}
+            onClick={() => setMainView("concepts")}
+          >
+            <strong>{workspace.concepts.length}</strong>
+            <span>Concepts</span>
+          </button>
+          <button
+            type="button"
             className={cn("metric text-left", mainView === "tenancy" && "metric-active")}
             onClick={() => setMainView("tenancy")}
           >
@@ -361,7 +371,6 @@ export function App() {
             <span>Tenancy</span>
           </button>
           <Metric value={workspace.warnings.length} label="Warnings" />
-          <Metric value={workspace.concepts.length} label="Concepts" />
         </div>
 
         <div className="border-b border-border p-3">
@@ -455,8 +464,27 @@ export function App() {
               )}
             </div>
           </>
-        ) : (
+        ) : mainView === "tenancy" ? (
           <TenancyMain tenantPolicy={workspace.tenantPolicy} tables={workspace.tables} />
+        ) : (
+          <ConceptsMain
+            busy={busy}
+            concepts={workspace.concepts}
+            tables={workspace.tables}
+            onSave={async (concepts) => {
+              setSaveStatus({ kind: "loading", text: "Saving concepts..." });
+              await withBusy("save-concepts", async () => {
+                try {
+                  const nextWorkspace = await saveConcepts({ concepts });
+                  setWorkspace(nextWorkspace);
+                  setSaveStatus({ kind: "success", text: "Concepts saved." });
+                } catch (error) {
+                  setSaveStatus({ kind: "error", text: getErrorMessage(error) });
+                }
+              });
+            }}
+            saveStatus={saveStatus}
+          />
         )}
       </main>
 
@@ -819,6 +847,268 @@ function TableEditor({
         )}
       </Panel>
     </>
+  );
+}
+
+function ConceptsMain({
+  busy,
+  concepts,
+  tables,
+  onSave,
+  saveStatus,
+}: {
+  busy: Set<string>;
+  concepts: V2Concept[];
+  tables: StudioTableDto[];
+  onSave: (concepts: V2Concept[]) => Promise<void>;
+  saveStatus: StatusMessage | null;
+}) {
+  const [draft, setDraft] = useState<V2Concept[]>(() => clone(concepts));
+  const [addOpen, setAddOpen] = useState(false);
+  const [addDraft, setAddDraft] = useState<Partial<V2Concept>>({});
+
+  useEffect(() => {
+    setDraft(clone(concepts));
+  }, [concepts]);
+
+  const dirty = JSON.stringify(draft) !== JSON.stringify(concepts);
+
+  function updateConcept(index: number, updater: (c: V2Concept) => V2Concept) {
+    setDraft((current) => current.map((c, i) => (i === index ? updater(clone(c)) : c)));
+  }
+
+  function removeConcept(index: number) {
+    setDraft((current) => current.filter((_, i) => i !== index));
+  }
+
+  function commitAdd() {
+    if (!addDraft.id?.trim() || !addDraft.label?.trim()) return;
+    const concept: V2Concept = {
+      id: addDraft.id.trim(),
+      label: addDraft.label.trim(),
+      ...(addDraft.synonyms?.length ? { synonyms: addDraft.synonyms } : {}),
+      ...(addDraft.links?.length ? { links: addDraft.links } : {}),
+      ...(addDraft.description?.trim() ? { description: addDraft.description.trim() } : {}),
+    };
+    setDraft((current) => [...current, concept]);
+    setAddDraft({});
+    setAddOpen(false);
+  }
+
+  const tableIds = tables.map((t) => t.physical.id);
+
+  return (
+    <>
+      <header className="flex min-h-16 items-center justify-between gap-4 border-b border-border bg-card px-5 py-3">
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-2">
+            <h2 className="truncate text-lg font-semibold">Concepts</h2>
+            {dirty ? <Badge variant="warning">Unsaved</Badge> : <Badge variant="secondary">Saved</Badge>}
+          </div>
+          <p className="truncate text-xs text-muted-foreground">
+            Cross-table domain vocabulary for NL→SQL grounding
+          </p>
+        </div>
+        <div className="flex shrink-0 items-center gap-2">
+          <Button
+            variant="outline"
+            onClick={() => setDraft(clone(concepts))}
+            disabled={!dirty || busy.has("save-concepts")}
+          >
+            <RotateCcw className="h-4 w-4" />
+            Revert
+          </Button>
+          <Button
+            onClick={() => void onSave(draft)}
+            disabled={!dirty || busy.has("save-concepts")}
+          >
+            {busy.has("save-concepts") ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <Save className="h-4 w-4" />
+            )}
+            Save
+          </Button>
+        </div>
+      </header>
+
+      {saveStatus ? <StatusBanner status={saveStatus} /> : null}
+
+      <div className="min-h-0 flex-1 overflow-auto">
+        <Panel title="What are concepts?">
+          <p className="text-sm text-muted-foreground">
+            Concepts map business vocabulary to your physical schema so the AI can translate natural language into correct SQL.
+            Each concept has a canonical label, synonyms users might say, links to the tables or columns that back it, and an optional description of how it is computed.
+          </p>
+          <div className="mt-3 rounded-md border border-dashed border-border bg-muted/30 px-4 py-3 text-xs text-muted-foreground">
+            <p className="font-semibold">Example</p>
+            <dl className="mt-1 grid gap-1">
+              <div className="grid grid-cols-[80px_1fr] gap-2">
+                <dt className="font-medium">id</dt>
+                <dd>concept:revenue</dd>
+              </div>
+              <div className="grid grid-cols-[80px_1fr] gap-2">
+                <dt className="font-medium">label</dt>
+                <dd>Revenue</dd>
+              </div>
+              <div className="grid grid-cols-[80px_1fr] gap-2">
+                <dt className="font-medium">synonyms</dt>
+                <dd>sales, gross sales, top line</dd>
+              </div>
+              <div className="grid grid-cols-[80px_1fr] gap-2">
+                <dt className="font-medium">links</dt>
+                <dd>table:public.orders#total_amount</dd>
+              </div>
+              <div className="grid grid-cols-[80px_1fr] gap-2">
+                <dt className="font-medium">description</dt>
+                <dd>Sum of orders.total_amount where status = &apos;paid&apos;, expressed in cents.</dd>
+              </div>
+            </dl>
+          </div>
+        </Panel>
+
+        <Panel
+          title="Concepts"
+          action={
+            <Button size="sm" variant="outline" onClick={() => setAddOpen((open) => !open)}>
+              {addOpen ? "Cancel" : "+ Add concept"}
+            </Button>
+          }
+        >
+          <div className="grid gap-4">
+            {addOpen ? (
+              <div className="rounded-md border border-border bg-muted/30 p-4">
+                <p className="mb-3 text-xs font-semibold text-muted-foreground">New concept</p>
+                <div className="grid gap-3">
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <Field label="ID" description='Unique identifier, e.g. "concept:revenue"'>
+                      <Input
+                        value={addDraft.id ?? ""}
+                        placeholder="concept:revenue"
+                        onChange={(e) => setAddDraft((d) => ({ ...d, id: e.target.value }))}
+                      />
+                    </Field>
+                    <Field label="Label" description='Human-readable name, e.g. "Revenue"'>
+                      <Input
+                        value={addDraft.label ?? ""}
+                        placeholder="Revenue"
+                        onChange={(e) => setAddDraft((d) => ({ ...d, label: e.target.value }))}
+                      />
+                    </Field>
+                  </div>
+                  <Field label="Synonyms" description='Comma-separated terms users might say, e.g. "sales, gross sales, top line"'>
+                    <ListInput
+                      value={addDraft.synonyms}
+                      onChange={(v) => setAddDraft((d) => ({ ...d, synonyms: v }))}
+                    />
+                  </Field>
+                  <Field label="Links" description={`Comma-separated table or column IDs from this schema, e.g. "${tableIds[0] ?? "table:public.orders"}" or "${tableIds[0] ? tableIds[0] + "#amount" : "table:public.orders#total_amount"}"`}>
+                    <ListInput
+                      value={addDraft.links}
+                      onChange={(v) => setAddDraft((d) => ({ ...d, links: v }))}
+                    />
+                  </Field>
+                  <Field label="Description" description="How this concept is computed or what it means, e.g. &quot;Sum of orders.total_amount where status = 'paid'&quot;">
+                    <Textarea
+                      value={addDraft.description ?? ""}
+                      placeholder="Sum of orders.total_amount where status = 'paid', expressed in cents."
+                      onChange={(e) => setAddDraft((d) => ({ ...d, description: e.target.value }))}
+                    />
+                  </Field>
+                  <div className="flex justify-end">
+                    <Button
+                      onClick={commitAdd}
+                      disabled={!addDraft.id?.trim() || !addDraft.label?.trim()}
+                    >
+                      Add concept
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            ) : null}
+
+            {draft.length === 0 && !addOpen ? (
+              <EmptyText text="No concepts defined yet. Click &quot;Add concept&quot; to create your first one." />
+            ) : null}
+
+            {draft.map((concept, index) => (
+              <ConceptRow
+                key={`${concept.id}-${index}`}
+                concept={concept}
+                tableIds={tableIds}
+                onChange={(updater) => updateConcept(index, updater)}
+                onRemove={() => removeConcept(index)}
+              />
+            ))}
+          </div>
+        </Panel>
+      </div>
+    </>
+  );
+}
+
+function ConceptRow({
+  concept,
+  tableIds,
+  onChange,
+  onRemove,
+}: {
+  concept: V2Concept;
+  tableIds: string[];
+  onChange: (updater: (c: V2Concept) => V2Concept) => void;
+  onRemove: () => void;
+}) {
+  return (
+    <section className="column-row">
+      <div className="flex min-w-0 items-center justify-between gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          <h4 className="text-sm font-semibold">{concept.label}</h4>
+          <Badge variant="outline">{concept.id}</Badge>
+        </div>
+        <Button size="sm" variant="ghost" onClick={onRemove} title="Remove concept">
+          ×
+        </Button>
+      </div>
+      <div className="mt-3 grid gap-3">
+        <div className="grid gap-3 sm:grid-cols-2">
+          <Field label="ID" description='Unique identifier, e.g. "concept:revenue"'>
+            <Input
+              value={concept.id}
+              onChange={(e) => onChange((c) => ({ ...c, id: e.target.value }))}
+            />
+          </Field>
+          <Field label="Label" description='Human-readable name shown to users'>
+            <Input
+              value={concept.label}
+              onChange={(e) => onChange((c) => ({ ...c, label: e.target.value }))}
+            />
+          </Field>
+        </div>
+        <Field label="Synonyms" description='Comma-separated alternative terms users might say'>
+          <ListInput
+            value={concept.synonyms}
+            onChange={(v) => onChange((c) => ({ ...c, synonyms: v.length ? v : undefined }))}
+          />
+        </Field>
+        <Field
+          label="Links"
+          description={`Comma-separated table or column IDs${tableIds.length ? `, e.g. "${tableIds[0]}"` : ""}`}
+        >
+          <ListInput
+            value={concept.links}
+            onChange={(v) => onChange((c) => ({ ...c, links: v.length ? v : undefined }))}
+          />
+        </Field>
+        <Field label="Description" description="How this concept is computed or what it means">
+          <Textarea
+            value={concept.description ?? ""}
+            onChange={(e) =>
+              onChange((c) => ({ ...c, description: e.target.value || undefined }))
+            }
+          />
+        </Field>
+      </div>
+    </section>
   );
 }
 

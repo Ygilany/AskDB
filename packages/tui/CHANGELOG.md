@@ -1,5 +1,15 @@
 # @askdb/tui
 
+## 0.2.0-beta.7
+
+### Patch Changes
+
+- d220e9f: Clip the TUI tables sidebar to the terminal height and scroll the selection with above/below indicators.
+- c7026a8: Add guided concept editing in Studio and improve TUI concept authoring prompts.
+- Updated dependencies [c3c0f21]
+  - @askdb/core@0.5.0-beta.14
+  - @askdb/enrich@0.2.0-beta.4
+
 ## 0.2.0-beta.6
 
 ### Patch Changes

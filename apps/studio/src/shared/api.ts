@@ -5,6 +5,7 @@ import type {
   TenantScope,
   TenantSqlOutputMode,
   V2Concept,
+  V2ConceptsFrontmatter,
   V2Table,
 } from "@askdb/core";
 import type { SuggestSource, TableDraft } from "@askdb/enrich";
@@ -39,6 +40,8 @@ export type StudioErrorDto = {
 export type SaveTableRequest = {
   draft: TableDraft;
 };
+
+export type SaveConceptsRequest = V2ConceptsFrontmatter;
 
 export type SuggestRequest = {
   source: SuggestSource;

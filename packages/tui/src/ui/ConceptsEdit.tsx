@@ -47,12 +47,21 @@ export function ConceptsEdit({ workspace, onBack }: ConceptsEditProps): JSX.Elem
       <Text dimColor>{workspace.physical.schemaId}</Text>
 
       <Box marginTop={1} flexDirection="column">
+        <Text dimColor>
+          Concepts map business vocabulary to your schema so the AI can translate natural
+          language into correct SQL. Each concept has an id, a human-readable label,
+          optional synonyms users might say, links to tables/columns, and a description.
+        </Text>
+      </Box>
+
+      <Box marginTop={1} flexDirection="column">
         {concepts.length === 0 ? (
-          <Text dimColor>(none)</Text>
+          <Text dimColor>(none — press a to add your first concept)</Text>
         ) : (
           concepts.map((concept) => (
             <Text key={concept.id}>
               <Text color="cyan">{concept.id}</Text> {concept.label}
+              {concept.synonyms?.length ? <Text dimColor> [{concept.synonyms.join(", ")}]</Text> : null}
               {concept.links?.length ? <Text dimColor> → {concept.links.join(", ")}</Text> : null}
             </Text>
           ))
@@ -61,10 +70,12 @@ export function ConceptsEdit({ workspace, onBack }: ConceptsEditProps): JSX.Elem
 
       {adding ? (
         <Box marginTop={1} flexDirection="column">
-          <Text>Add concept: {fieldLabel(currentField)}</Text>
+          <Text bold>Add concept — {fieldLabel(currentField)}</Text>
+          <Text dimColor>{fieldHint(currentField, workspace)}</Text>
           <TextInput
             key={currentField}
             multiline={currentField === "description"}
+            placeholder={fieldPlaceholder(currentField)}
             onSubmit={(value) => {
               const nextDraft = { ...draft, [currentField]: value };
               if (fieldIndex < ADD_FIELDS.length - 1) {
@@ -90,7 +101,7 @@ export function ConceptsEdit({ workspace, onBack }: ConceptsEditProps): JSX.Elem
 
       <Box marginTop={1}>
         <Text dimColor>
-          {adding ? "enter field · Esc cancel" : "a add · s save · b back"}
+          {adding ? "enter · next field · Ctrl-D submit (description) · Esc cancel" : "a add · s save · b back"}
         </Text>
       </Box>
     </Box>
@@ -114,14 +125,49 @@ function buildConcept(draft: Partial<Record<AddField, string>>): V2Concept {
 function fieldLabel(field: AddField): string {
   switch (field) {
     case "id":
-      return "id";
+      return "ID";
     case "label":
-      return "label";
+      return "Label";
     case "synonyms":
-      return "synonyms (comma-separated)";
+      return "Synonyms";
     case "links":
-      return "links (comma-separated table/column ids)";
+      return "Links";
     case "description":
-      return "description";
+      return "Description";
+  }
+}
+
+function fieldHint(field: AddField, workspace: Workspace): string {
+  const sampleTable = workspace.physical.tables[0];
+  const sampleTableId = sampleTable?.id ?? "table:public.orders";
+  const sampleColumnId = sampleTable?.columns[0]
+    ? `${sampleTableId}#${sampleTable.columns[0].name}`
+    : `${sampleTableId}#total_amount`;
+  switch (field) {
+    case "id":
+      return 'Unique identifier prefixed with "concept:", e.g. concept:revenue or concept:customer';
+    case "label":
+      return 'Human-readable name shown in prompts, e.g. Revenue or Active Customer';
+    case "synonyms":
+      return `Comma-separated terms users might ask about, e.g. sales, gross sales, top line — leave blank to skip`;
+    case "links":
+      return `Comma-separated table or column IDs from this schema, e.g. ${sampleTableId} or ${sampleColumnId} — leave blank to skip`;
+    case "description":
+      return "How this concept is computed or what it means, e.g. Sum of orders.total_amount where status = 'paid'. Press Ctrl-D to submit.";
+  }
+}
+
+function fieldPlaceholder(field: AddField): string {
+  switch (field) {
+    case "id":
+      return "concept:revenue";
+    case "label":
+      return "Revenue";
+    case "synonyms":
+      return "sales, gross sales, top line";
+    case "links":
+      return "table:public.orders#total_amount";
+    case "description":
+      return "Sum of orders.total_amount where status = 'paid'";
   }
 }
