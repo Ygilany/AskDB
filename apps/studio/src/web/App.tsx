@@ -18,7 +18,7 @@ import {
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
-import type { TenantSqlOutputMode, NormalizedTenantPolicy, TenantScope } from "@askdb/core";
+import type { TenantSqlOutputMode, NormalizedTenantPolicy, TenantScope, TenantPolicyFrontmatter } from "@askdb/core";
 import type { ChunkType } from "@askdb/rag";
 import type { ColumnDraft, SuggestSource, TableDraft } from "@askdb/enrich";
 import type { V2Concept } from "@askdb/core";
@@ -39,7 +39,9 @@ import {
   queryRag,
   saveConcepts,
   saveTable,
+  saveTenantPolicy,
   suggest,
+  suggestTenantPolicy,
 } from "./api";
 import { Badge, Button, Field, Input, ListInput, Panel, Textarea, parseList } from "./components/ui";
 import { cn } from "./lib/utils";
@@ -465,7 +467,26 @@ export function App() {
             </div>
           </>
         ) : mainView === "tenancy" ? (
-          <TenancyMain tenantPolicy={workspace.tenantPolicy} tables={workspace.tables} />
+          <TenancyMain
+            tenantPolicy={workspace.tenantPolicy}
+            tables={workspace.tables}
+            schemaId={workspace.schemaId}
+            aiConfigured={workspace.aiConfigured}
+            busy={busy}
+            onSave={async (frontmatter, body) => {
+              setSaveStatus({ kind: "loading", text: "Saving tenant policy..." });
+              await withBusy("save-tenant-policy", async () => {
+                try {
+                  const nextWorkspace = await saveTenantPolicy({ frontmatter, body });
+                  setWorkspace(nextWorkspace);
+                  setSaveStatus({ kind: "success", text: "Tenant policy saved." });
+                } catch (error) {
+                  setSaveStatus({ kind: "error", text: getErrorMessage(error) });
+                }
+              });
+            }}
+            saveStatus={saveStatus}
+          />
         ) : (
           <ConceptsMain
             busy={busy}
@@ -1284,34 +1305,30 @@ function RagPanel({
 function TenancyMain({
   tenantPolicy,
   tables,
+  schemaId,
+  aiConfigured,
+  busy,
+  onSave,
+  saveStatus,
 }: {
   tenantPolicy: NormalizedTenantPolicy | null;
   tables: StudioTableDto[];
+  schemaId: string;
+  aiConfigured: boolean;
+  busy: Set<string>;
+  onSave: (frontmatter: TenantPolicyFrontmatter, body?: string) => Promise<void>;
+  saveStatus: StatusMessage | null;
 }) {
   if (!tenantPolicy) {
     return (
-      <>
-        <header className="flex min-h-16 items-center gap-4 border-b border-border bg-card px-5 py-3">
-          <div className="min-w-0">
-            <div className="flex items-center gap-2">
-              <Shield className="h-5 w-5 text-muted-foreground" />
-              <h2 className="text-lg font-semibold">Multi-Tenancy</h2>
-            </div>
-            <p className="text-xs text-muted-foreground">No tenant policy configured</p>
-          </div>
-        </header>
-        <div className="flex flex-1 items-center justify-center p-8">
-          <div className="max-w-md text-center">
-            <Shield className="mx-auto mb-3 h-10 w-10 text-muted-foreground/50" />
-            <h3 className="mb-2 font-semibold">No tenant-policy.md found</h3>
-            <p className="text-sm text-muted-foreground">
-              Create a <code className="rounded bg-muted px-1 py-0.5 text-xs">tenant-policy.md</code> file
-              in your schema directory to configure multi-tenant isolation. It defines tenant roots,
-              hierarchy edges, scoped tables, and enforcement mode.
-            </p>
-          </div>
-        </div>
-      </>
+      <TenancyCreateForm
+        tables={tables}
+        schemaId={schemaId}
+        aiConfigured={aiConfigured}
+        busy={busy}
+        onSave={onSave}
+        saveStatus={saveStatus}
+      />
     );
   }
 
@@ -1514,6 +1531,599 @@ function TenancyMain({
             </section>
           ) : null}
         </div>
+      </div>
+    </>
+  );
+}
+
+function TenancyCreateForm({
+  tables,
+  schemaId,
+  aiConfigured,
+  busy,
+  onSave,
+  saveStatus,
+}: {
+  tables: StudioTableDto[];
+  schemaId: string;
+  aiConfigured: boolean;
+  busy: Set<string>;
+  onSave: (frontmatter: TenantPolicyFrontmatter, body?: string) => Promise<void>;
+  saveStatus: StatusMessage | null;
+}) {
+  const [mode, setMode] = useState<"choose" | "manual" | "review">("choose");
+  const [draftStatus, setDraftStatus] = useState<StatusMessage | null>(null);
+
+  // Review-mode state (populated by AI or manual)
+  const [draftFrontmatter, setDraftFrontmatter] = useState<TenantPolicyFrontmatter | null>(null);
+  const [draftBody, setDraftBody] = useState("");
+
+  // Manual-mode state
+  const [enforcement, setEnforcement] = useState<"strict" | "warn">("strict");
+  const [rootTableId, setRootTableId] = useState("");
+  const [rootTenantIdColumn, setRootTenantIdColumn] = useState("");
+  const [rootLabel, setRootLabel] = useState("");
+  const [globalTableIds, setGlobalTableIds] = useState<string[]>([]);
+
+  const selectedRootTable = tables.find((t) => t.physical.id === rootTableId);
+  const rootColumns = selectedRootTable?.physical.columns ?? [];
+
+  useEffect(() => {
+    if (selectedRootTable && !rootLabel) {
+      setRootLabel(selectedRootTable.physical.name);
+    }
+  }, [rootTableId]);
+
+  useEffect(() => {
+    setRootTenantIdColumn("");
+  }, [rootTableId]);
+
+  async function handleDraftWithAi() {
+    setDraftStatus({ kind: "loading", text: "Analyzing schema and drafting tenant policy..." });
+    try {
+      const result = await suggestTenantPolicy();
+      setDraftFrontmatter(result.frontmatter);
+      setDraftBody(result.body);
+      setMode("review");
+      setDraftStatus({ kind: "success", text: "AI draft ready for review." });
+    } catch (error) {
+      setDraftStatus({ kind: "error", text: getErrorMessage(error) });
+    }
+  }
+
+  function handleManualToReview() {
+    const canBuild = rootTableId && rootTenantIdColumn && rootLabel.trim();
+    if (!canBuild) return;
+    const frontmatter: TenantPolicyFrontmatter = {
+      schemaId,
+      enforcement,
+      roots: [
+        {
+          id: rootTableId,
+          tenantIdColumn: rootTenantIdColumn,
+          label: rootLabel.trim(),
+        },
+      ],
+      ...(globalTableIds.length > 0 ? { globalTables: globalTableIds } : {}),
+    };
+    setDraftFrontmatter(frontmatter);
+    setDraftBody("");
+    setMode("review");
+  }
+
+  function handleConfirm() {
+    if (!draftFrontmatter) return;
+    void onSave(draftFrontmatter, draftBody || undefined);
+  }
+
+  const manualCanProceed = rootTableId && rootTenantIdColumn && rootLabel.trim();
+
+  // ─── Step 1: Choose mode ───
+  if (mode === "choose") {
+    return (
+      <>
+        <header className="flex min-h-16 items-center gap-4 border-b border-border bg-card px-5 py-3">
+          <div className="min-w-0">
+            <div className="flex flex-wrap items-center gap-2">
+              <Shield className="h-5 w-5" />
+              <h2 className="text-lg font-semibold">Enable Multi-Tenancy</h2>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Configure tenant isolation for your schema. A tenant-policy.md file will be created.
+            </p>
+          </div>
+        </header>
+
+        {draftStatus ? <StatusBanner status={draftStatus} /> : null}
+
+        <div className="min-h-0 flex-1 overflow-auto">
+          <Panel title="Getting Started">
+            <p className="text-sm text-muted-foreground">
+              Multi-tenancy ensures generated SQL is always scoped to the correct tenant.
+              Choose how you want to configure it:
+            </p>
+          </Panel>
+
+          <div className="grid gap-4 p-5 sm:grid-cols-2">
+            <button
+              type="button"
+              className="group rounded-lg border-2 border-dashed border-border p-6 text-left transition hover:border-primary/50 hover:bg-primary/5 disabled:opacity-50 disabled:hover:border-border disabled:hover:bg-transparent"
+              disabled={!aiConfigured || draftStatus?.kind === "loading"}
+              onClick={() => void handleDraftWithAi()}
+            >
+              <div className="mb-3 flex items-center gap-2">
+                {draftStatus?.kind === "loading" ? (
+                  <Loader2 className="h-6 w-6 animate-spin text-primary" />
+                ) : (
+                  <Wand2 className="h-6 w-6 text-primary" />
+                )}
+                <h3 className="font-semibold">Draft with AI</h3>
+              </div>
+              <p className="text-sm text-muted-foreground">
+                {draftStatus?.kind === "loading"
+                  ? "Analyzing your schema..."
+                  : "Let AI analyze your schema and propose a complete tenant policy. You will review and edit every section before saving."}
+              </p>
+              {!aiConfigured ? (
+                <p className="mt-2 text-xs text-destructive">
+                  Configure an AI provider to use this option.
+                </p>
+              ) : null}
+            </button>
+
+            <button
+              type="button"
+              className="group rounded-lg border-2 border-dashed border-border p-6 text-left transition hover:border-primary/50 hover:bg-primary/5"
+              onClick={() => setMode("manual")}
+            >
+              <div className="mb-3 flex items-center gap-2">
+                <Settings className="h-6 w-6 text-muted-foreground" />
+                <h3 className="font-semibold">Configure manually</h3>
+              </div>
+              <p className="text-sm text-muted-foreground">
+                Pick the tenant root table and column yourself, then review before saving.
+              </p>
+            </button>
+          </div>
+        </div>
+      </>
+    );
+  }
+
+  // ─── Step 2a: Manual configuration ───
+  if (mode === "manual") {
+    return (
+      <>
+        <header className="flex min-h-16 items-center justify-between gap-4 border-b border-border bg-card px-5 py-3">
+          <div className="min-w-0">
+            <div className="flex flex-wrap items-center gap-2">
+              <Shield className="h-5 w-5" />
+              <h2 className="text-lg font-semibold">Manual Configuration</h2>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Configure the basics, then review before saving.
+            </p>
+          </div>
+          <Button variant="outline" onClick={() => setMode("choose")}>
+            Back
+          </Button>
+        </header>
+
+        <div className="min-h-0 flex-1 overflow-auto">
+          <Panel title="Tenant Root">
+            <div className="grid gap-4">
+              <Field label="Root table" description="The table whose rows represent tenants.">
+                <select
+                  className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  value={rootTableId}
+                  onChange={(e) => {
+                    setRootTableId(e.target.value);
+                    setRootLabel("");
+                  }}
+                >
+                  <option value="">Select a table...</option>
+                  {tables.map((t) => (
+                    <option key={t.physical.id} value={t.physical.id}>
+                      {t.physical.schema}.{t.physical.name}
+                    </option>
+                  ))}
+                </select>
+              </Field>
+
+              {rootTableId ? (
+                <Field label="Tenant ID column" description="The column that uniquely identifies a tenant (usually a primary key or unique identifier).">
+                  <select
+                    className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    value={rootTenantIdColumn}
+                    onChange={(e) => setRootTenantIdColumn(e.target.value)}
+                  >
+                    <option value="">Select a column...</option>
+                    {rootColumns.map((col) => (
+                      <option key={col.id} value={col.name}>
+                        {col.name} ({col.type}{col.primaryKey ? ", PK" : ""})
+                      </option>
+                    ))}
+                  </select>
+                </Field>
+              ) : null}
+
+              <Field label="Label" description='A human-readable label for this tenant root, e.g. "Organization" or "Company".'>
+                <Input
+                  value={rootLabel}
+                  placeholder="e.g. Organization"
+                  onChange={(e) => setRootLabel(e.target.value)}
+                />
+              </Field>
+            </div>
+          </Panel>
+
+          <Panel title="Enforcement Mode">
+            <div className="grid gap-2">
+              <p className="text-sm text-muted-foreground">
+                Controls how unscoped tables are handled during SQL generation.
+              </p>
+              <div className="segmented" role="group" aria-label="Enforcement mode">
+                <button
+                  className={cn(enforcement === "strict" && "active")}
+                  type="button"
+                  onClick={() => setEnforcement("strict")}
+                >
+                  Strict
+                </button>
+                <button
+                  className={cn(enforcement === "warn" && "active")}
+                  type="button"
+                  onClick={() => setEnforcement("warn")}
+                >
+                  Warn
+                </button>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                {enforcement === "strict"
+                  ? "Strict: queries touching unknown (unscoped) tables will be rejected."
+                  : "Warn: queries touching unknown tables will succeed but emit warnings."}
+              </p>
+            </div>
+          </Panel>
+
+          <Panel title="Global Tables (optional)">
+            <div className="grid gap-2">
+              <p className="text-sm text-muted-foreground">
+                Global tables are shared across all tenants and never filtered (e.g. lookup tables, reference data).
+              </p>
+              <div className="flex flex-wrap gap-2">
+                {tables.map((t) => {
+                  if (t.physical.id === rootTableId) return null;
+                  const checked = globalTableIds.includes(t.physical.id);
+                  return (
+                    <label className="chunk-toggle" key={t.physical.id}>
+                      <input
+                        type="checkbox"
+                        checked={checked}
+                        onChange={(e) => {
+                          if (e.target.checked) setGlobalTableIds((ids) => [...ids, t.physical.id]);
+                          else setGlobalTableIds((ids) => ids.filter((id) => id !== t.physical.id));
+                        }}
+                      />
+                      {t.physical.schema}.{t.physical.name}
+                    </label>
+                  );
+                })}
+              </div>
+            </div>
+          </Panel>
+
+          <div className="border-t border-border p-5">
+            <Button onClick={handleManualToReview} disabled={!manualCanProceed}>
+              <ChevronRight className="h-4 w-4" />
+              Review &amp; Confirm
+            </Button>
+          </div>
+        </div>
+      </>
+    );
+  }
+
+  // ─── Step 3: Review draft ───
+  return (
+    <TenancyReviewDraft
+      tables={tables}
+      frontmatter={draftFrontmatter!}
+      body={draftBody}
+      busy={busy}
+      saveStatus={saveStatus}
+      onFrontmatterChange={setDraftFrontmatter}
+      onBodyChange={setDraftBody}
+      onConfirm={handleConfirm}
+      onBack={() => setMode("choose")}
+    />
+  );
+}
+
+function TenancyReviewDraft({
+  tables,
+  frontmatter,
+  body,
+  busy,
+  saveStatus,
+  onFrontmatterChange,
+  onBodyChange,
+  onConfirm,
+  onBack,
+}: {
+  tables: StudioTableDto[];
+  frontmatter: TenantPolicyFrontmatter;
+  body: string;
+  busy: Set<string>;
+  saveStatus: StatusMessage | null;
+  onFrontmatterChange: (fm: TenantPolicyFrontmatter) => void;
+  onBodyChange: (body: string) => void;
+  onConfirm: () => void;
+  onBack: () => void;
+}) {
+  function updateEnforcement(enforcement: "strict" | "warn") {
+    onFrontmatterChange({ ...frontmatter, enforcement });
+  }
+
+  function updateRootLabel(index: number, label: string) {
+    const roots = [...frontmatter.roots];
+    roots[index] = { ...roots[index], label };
+    onFrontmatterChange({ ...frontmatter, roots });
+  }
+
+  function removeRoot(index: number) {
+    const roots = frontmatter.roots.filter((_, i) => i !== index);
+    if (roots.length === 0) return; // must have at least one
+    onFrontmatterChange({ ...frontmatter, roots });
+  }
+
+  function removeHierarchyEdge(index: number) {
+    const hierarchy = (frontmatter.hierarchy ?? []).filter((_, i) => i !== index);
+    onFrontmatterChange({ ...frontmatter, hierarchy: hierarchy.length > 0 ? hierarchy : undefined });
+  }
+
+  function removeScopedTable(index: number) {
+    const scopedTables = (frontmatter.scopedTables ?? []).filter((_, i) => i !== index);
+    onFrontmatterChange({ ...frontmatter, scopedTables: scopedTables.length > 0 ? scopedTables : undefined });
+  }
+
+  function removePolymorphicTable(index: number) {
+    const polymorphicTables = (frontmatter.polymorphicTables ?? []).filter((_, i) => i !== index);
+    onFrontmatterChange({ ...frontmatter, polymorphicTables: polymorphicTables.length > 0 ? polymorphicTables : undefined });
+  }
+
+  function toggleGlobalTable(tableId: string) {
+    const current = frontmatter.globalTables ?? [];
+    const next = current.includes(tableId)
+      ? current.filter((id) => id !== tableId)
+      : [...current, tableId];
+    onFrontmatterChange({ ...frontmatter, globalTables: next.length > 0 ? next : undefined });
+  }
+
+  const rootIds = new Set(frontmatter.roots.map((r) => r.id));
+  const scopedIds = new Set((frontmatter.scopedTables ?? []).map((s) => s.id));
+  const polyIds = new Set((frontmatter.polymorphicTables ?? []).map((p) => p.id));
+  const globalIds = new Set(frontmatter.globalTables ?? []);
+
+  return (
+    <>
+      <header className="flex min-h-16 items-center justify-between gap-4 border-b border-border bg-card px-5 py-3">
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-2">
+            <Shield className="h-5 w-5" />
+            <h2 className="text-lg font-semibold">Review Tenant Policy</h2>
+            <Badge variant="warning">Draft</Badge>
+          </div>
+          <p className="text-xs text-muted-foreground">
+            Review each section below. Edit or remove items before confirming.
+          </p>
+        </div>
+        <div className="flex shrink-0 items-center gap-2">
+          <Button variant="outline" onClick={onBack}>
+            <RotateCcw className="h-4 w-4" />
+            Start Over
+          </Button>
+          <Button
+            onClick={onConfirm}
+            disabled={busy.has("save-tenant-policy") || frontmatter.roots.length === 0}
+          >
+            {busy.has("save-tenant-policy") ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <Save className="h-4 w-4" />
+            )}
+            Confirm &amp; Save
+          </Button>
+        </div>
+      </header>
+
+      {saveStatus ? <StatusBanner status={saveStatus} /> : null}
+
+      <div className="min-h-0 flex-1 overflow-auto">
+        {/* Enforcement */}
+        <Panel title="Enforcement Mode">
+          <div className="grid gap-2">
+            <div className="segmented" role="group" aria-label="Enforcement mode">
+              <button
+                className={cn(frontmatter.enforcement === "strict" && "active")}
+                type="button"
+                onClick={() => updateEnforcement("strict")}
+              >
+                Strict
+              </button>
+              <button
+                className={cn(frontmatter.enforcement === "warn" && "active")}
+                type="button"
+                onClick={() => updateEnforcement("warn")}
+              >
+                Warn
+              </button>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              {frontmatter.enforcement === "strict"
+                ? "Queries touching unknown (unscoped) tables will be rejected."
+                : "Queries touching unknown tables will succeed but emit warnings."}
+            </p>
+          </div>
+        </Panel>
+
+        {/* Roots */}
+        <Panel title={`Tenant Roots (${frontmatter.roots.length})`}>
+          <div className="grid gap-3">
+            {frontmatter.roots.map((root, index) => (
+              <div className="rounded-md border border-border bg-card p-3" key={root.id}>
+                <div className="flex items-center justify-between gap-2">
+                  <div className="min-w-0">
+                    <span className="font-mono text-sm font-semibold">{root.id}</span>
+                    <div className="mt-1 flex flex-wrap gap-2">
+                      <Badge variant="outline">col: {root.tenantIdColumn}</Badge>
+                      {root.parent ? (
+                        <Badge variant="outline">
+                          parent: {root.parent.root} via {root.parent.foreignKey}
+                        </Badge>
+                      ) : null}
+                    </div>
+                  </div>
+                  {frontmatter.roots.length > 1 ? (
+                    <Button size="sm" variant="ghost" onClick={() => removeRoot(index)} title="Remove root">
+                      ×
+                    </Button>
+                  ) : null}
+                </div>
+                <div className="mt-2">
+                  <Field label="Label" description="Human-readable name for this tenant root.">
+                    <Input
+                      value={root.label}
+                      onChange={(e) => updateRootLabel(index, e.target.value)}
+                    />
+                  </Field>
+                </div>
+              </div>
+            ))}
+          </div>
+        </Panel>
+
+        {/* Hierarchy */}
+        {(frontmatter.hierarchy ?? []).length > 0 ? (
+          <Panel title={`Hierarchy Edges (${frontmatter.hierarchy!.length})`}>
+            <div className="grid gap-2">
+              {frontmatter.hierarchy!.map((edge, index) => (
+                <div className="flex items-center justify-between gap-2 rounded-md border border-border bg-card p-3 text-sm" key={index}>
+                  <div>
+                    <code>{edge.parent}</code>
+                    <span className="mx-2 text-muted-foreground">&rarr;</span>
+                    <code>{edge.child}</code>
+                    <span className="ml-2 text-xs text-muted-foreground">FK: {edge.foreignKey}</span>
+                  </div>
+                  <Button size="sm" variant="ghost" onClick={() => removeHierarchyEdge(index)} title="Remove edge">
+                    ×
+                  </Button>
+                </div>
+              ))}
+            </div>
+          </Panel>
+        ) : null}
+
+        {/* Scoped Tables */}
+        {(frontmatter.scopedTables ?? []).length > 0 ? (
+          <Panel title={`Scoped Tables (${frontmatter.scopedTables!.length})`}>
+            <div className="grid gap-2">
+              {frontmatter.scopedTables!.map((scoped, index) => (
+                <div className="flex items-start justify-between gap-2 rounded-md border border-border bg-card p-3" key={scoped.id}>
+                  <div className="min-w-0">
+                    <span className="font-mono text-sm font-semibold">{scoped.id}</span>
+                    <div className="mt-1 grid gap-1">
+                      {scoped.scopeThrough.map((scope, si) => (
+                        <p className="text-xs text-muted-foreground" key={si}>
+                          via <Badge variant="outline">{scope.root}</Badge>{" "}
+                          {"column" in scope
+                            ? <span>column <code>{scope.column}</code></span>
+                            : <span>join {scope.join.map((j) => `${j.from} -> ${j.to}`).join(", ")}</span>}
+                        </p>
+                      ))}
+                    </div>
+                  </div>
+                  <Button size="sm" variant="ghost" onClick={() => removeScopedTable(index)} title="Remove">
+                    ×
+                  </Button>
+                </div>
+              ))}
+            </div>
+          </Panel>
+        ) : null}
+
+        {/* Polymorphic Tables */}
+        {(frontmatter.polymorphicTables ?? []).length > 0 ? (
+          <Panel title={`Polymorphic Tables (${frontmatter.polymorphicTables!.length})`}>
+            <div className="grid gap-2">
+              {frontmatter.polymorphicTables!.map((poly, index) => (
+                <div className="flex items-start justify-between gap-2 rounded-md border border-border bg-card p-3" key={poly.id}>
+                  <div className="min-w-0">
+                    <span className="font-mono text-sm font-semibold">{poly.id}</span>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      Type: <code>{poly.typeColumn}</code> · ID: <code>{poly.idColumn}</code>
+                    </p>
+                    <div className="mt-1 flex flex-wrap gap-1">
+                      {Object.entries(poly.mapping).map(([typeValue, targetTable]) => (
+                        <Badge variant="outline" key={typeValue}>
+                          {typeValue} &rarr; {targetTable}
+                        </Badge>
+                      ))}
+                    </div>
+                  </div>
+                  <Button size="sm" variant="ghost" onClick={() => removePolymorphicTable(index)} title="Remove">
+                    ×
+                  </Button>
+                </div>
+              ))}
+            </div>
+          </Panel>
+        ) : null}
+
+        {/* Global Tables */}
+        <Panel title="Global Tables">
+          <div className="grid gap-2">
+            <p className="text-sm text-muted-foreground">
+              Global tables are shared across all tenants and never filtered.
+            </p>
+            <div className="flex flex-wrap gap-2">
+              {tables.map((t) => {
+                if (rootIds.has(t.physical.id) || scopedIds.has(t.physical.id) || polyIds.has(t.physical.id)) return null;
+                const checked = globalIds.has(t.physical.id);
+                return (
+                  <label className="chunk-toggle" key={t.physical.id}>
+                    <input
+                      type="checkbox"
+                      checked={checked}
+                      onChange={() => toggleGlobalTable(t.physical.id)}
+                    />
+                    {t.physical.schema}.{t.physical.name}
+                  </label>
+                );
+              })}
+            </div>
+          </div>
+        </Panel>
+
+        {/* Body / documentation */}
+        <Panel title="Documentation (body)">
+          <div className="grid gap-2">
+            <p className="text-sm text-muted-foreground">
+              Optional markdown body explaining the tenant policy. Included in the tenant-policy.md file.
+            </p>
+            <Textarea
+              className="min-h-48 font-mono text-xs"
+              value={body}
+              onChange={(e) => onBodyChange(e.target.value)}
+              placeholder={"# Tenant Policy\n\nDescribe the tenancy model here...\n\n## Hierarchy\n\n...\n\n## Scope rules\n\n...\n\n## Sensitive interactions\n\n..."}
+            />
+          </div>
+        </Panel>
+
+        {/* Raw frontmatter preview */}
+        <Panel title="Frontmatter Preview">
+          <pre className="plain-block text-xs">{JSON.stringify(frontmatter, null, 2)}</pre>
+        </Panel>
       </div>
     </>
   );

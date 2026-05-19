@@ -1,5 +1,6 @@
 import matter from "gray-matter";
 import type { V2TableFrontmatter, V2ConceptsFrontmatter } from "./describable.js";
+import type { TenantPolicyFrontmatter } from "./tenant-policy.js";
 
 /**
  * Serialize a table front-matter model back to markdown.
@@ -18,6 +19,35 @@ export function writeTableMarkdown(frontmatter: V2TableFrontmatter, body: string
  */
 export function writeConceptsMarkdown(frontmatter: V2ConceptsFrontmatter, body: string): string {
   return matter.stringify(body, { concepts: frontmatter.concepts });
+}
+
+/**
+ * Serialize `tenant-policy.md` front-matter + body back to markdown.
+ */
+export function writeTenantPolicyMarkdown(frontmatter: TenantPolicyFrontmatter, body: string): string {
+  const data = orderedTenantPolicyFrontmatter(frontmatter);
+  return matter.stringify(body, data);
+}
+
+/** Emit tenant policy front-matter keys in a stable order. */
+function orderedTenantPolicyFrontmatter(fm: TenantPolicyFrontmatter): Record<string, unknown> {
+  const ordered: Record<string, unknown> = {};
+  ordered["schemaId"] = fm.schemaId;
+  ordered["enforcement"] = fm.enforcement;
+  ordered["roots"] = fm.roots.map((r) => {
+    const root: Record<string, unknown> = {
+      id: r.id,
+      tenantIdColumn: r.tenantIdColumn,
+      label: r.label,
+    };
+    if (r.parent) root["parent"] = r.parent;
+    return root;
+  });
+  if (fm.hierarchy && fm.hierarchy.length > 0) ordered["hierarchy"] = fm.hierarchy;
+  if (fm.scopedTables && fm.scopedTables.length > 0) ordered["scopedTables"] = fm.scopedTables;
+  if (fm.polymorphicTables && fm.polymorphicTables.length > 0) ordered["polymorphicTables"] = fm.polymorphicTables;
+  if (fm.globalTables && fm.globalTables.length > 0) ordered["globalTables"] = fm.globalTables;
+  return ordered;
 }
 
 /** Emit front-matter keys in a stable, spec-defined order. */
