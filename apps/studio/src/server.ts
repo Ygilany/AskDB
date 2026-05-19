@@ -14,11 +14,14 @@ import {
   resolveAskDbAiConfig,
   resolveAskDbEmbeddingConfig,
   suggestEnrichment,
+  tenantScopeSchema,
   type AskDbAiConfig,
   type AskDbAiEnv,
   type AskDbAiProvider,
   type AskDialectInput,
   type AskGenerateDeps,
+  type TenantScope,
+  type TenantSqlOutputMode,
   type V2Concept,
 } from "@askdb/core";
 import {
@@ -243,6 +246,10 @@ export function serializeWorkspace(workspace: Workspace): StudioWorkspaceDto {
       };
     }),
     concepts: workspace.concepts?.frontmatter.concepts ?? [],
+    tenantPolicy: (() => {
+      const schema = loadSchema(workspace.schemaDir);
+      return schema.tenantPolicy ?? null;
+    })(),
   };
 }
 
@@ -290,7 +297,12 @@ async function suggestForSource(workspace: Workspace, source: SuggestSource): Pr
 
 async function askSampleQuestion(
   state: StudioState,
-  options: { question: string; useRag: boolean },
+  options: {
+    question: string;
+    useRag: boolean;
+    tenantScope?: TenantScope;
+    tenantSqlMode?: TenantSqlOutputMode;
+  },
 ): Promise<AskResponse> {
   const rt = getAskDbRuntimeConfig();
   const mockSql = rt.dev.mockSql;
@@ -327,6 +339,8 @@ async function askSampleQuestion(
     model,
     dialect,
     explain: true,
+    ...(options.tenantScope ? { tenantScope: options.tenantScope } : {}),
+    ...(options.tenantSqlMode ? { tenantSqlMode: options.tenantSqlMode } : {}),
     ...(ragIndex
       ? {
           retriever: async (params) => {
@@ -366,6 +380,14 @@ async function askSampleQuestion(
       enabled: options.useRag,
       chunks: options.useRag ? retrievedChunks.map(serializeRagResult) : [],
     },
+    tenant: options.tenantScope
+      ? {
+          enabled: true,
+          sqlMode: options.tenantSqlMode ?? "sql-only",
+          bindings: result.tenantBindings ?? [],
+          params: result.tenantParams ?? [],
+        }
+      : null,
     usage: usage.toDto(),
   };
 }
@@ -925,7 +947,12 @@ function parseSuggestSource(body: unknown): SuggestSource {
   throw new StudioHttpError(400, "Unsupported suggestion source.");
 }
 
-function parseAskBody(body: unknown): { question: string; useRag: boolean } {
+function parseAskBody(body: unknown): {
+  question: string;
+  useRag: boolean;
+  tenantScope?: TenantScope;
+  tenantSqlMode?: TenantSqlOutputMode;
+} {
   if (!isRecord(body) || typeof body.question !== "string" || body.question.trim() === "") {
     throw new StudioHttpError(400, "`question` is required.");
   }
@@ -933,9 +960,26 @@ function parseAskBody(body: unknown): { question: string; useRag: boolean } {
   if (mode !== "full" && mode !== "rag") {
     throw new StudioHttpError(400, "`mode` must be `full` or `rag`.");
   }
+  let tenantScope: TenantScope | undefined;
+  if (body.tenantScope !== undefined && body.tenantScope !== null) {
+    const parsed = tenantScopeSchema.safeParse(body.tenantScope);
+    if (!parsed.success) {
+      throw new StudioHttpError(400, `Invalid tenantScope: ${parsed.error.message}`);
+    }
+    tenantScope = parsed.data;
+  }
+  let tenantSqlMode: TenantSqlOutputMode | undefined;
+  if (typeof body.tenantSqlMode === "string") {
+    if (body.tenantSqlMode !== "sql-only" && body.tenantSqlMode !== "sql-params") {
+      throw new StudioHttpError(400, "`tenantSqlMode` must be `sql-only` or `sql-params`.");
+    }
+    tenantSqlMode = body.tenantSqlMode;
+  }
   return {
     question: body.question.trim(),
     useRag: mode === "rag",
+    tenantScope,
+    tenantSqlMode,
   };
 }
 

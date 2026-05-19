@@ -12,11 +12,13 @@ import {
   Save,
   Search,
   Settings,
+  Shield,
   Sparkles,
   Wand2,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
+import type { TenantSqlOutputMode, NormalizedTenantPolicy, TenantScope } from "@askdb/core";
 import type { ChunkType } from "@askdb/rag";
 import type { ColumnDraft, SuggestSource, TableDraft } from "@askdb/enrich";
 import type { V2Concept } from "@askdb/core";
@@ -43,7 +45,7 @@ import { Badge, Button, Field, Input, ListInput, Panel, Textarea, parseList } fr
 import { cn } from "./lib/utils";
 
 type PanelKey = "rag" | "ask" | "settings";
-type MainView = "tables" | "concepts";
+type MainView = "tables" | "concepts" | "tenancy";
 
 type SuggestionDialog = {
   source: SuggestSource;
@@ -56,7 +58,7 @@ type LoadState = {
   message?: string;
 };
 
-const CHUNK_TYPES: ChunkType[] = ["table", "column", "cql", "question", "concept", "relationship"];
+const CHUNK_TYPES: ChunkType[] = ["table", "column", "cql", "question", "concept", "relationship", "tenant-policy"];
 
 export function App() {
   const [loadState, setLoadState] = useState<LoadState>({ kind: "loading" });
@@ -80,6 +82,9 @@ export function App() {
   const [askMode, setAskMode] = useState<"full" | "rag">("full");
   const [askMessage, setAskMessage] = useState<StatusMessage | null>(null);
   const [askResult, setAskResult] = useState<AskResponse | null>(null);
+  const [askTenantScopeJson, setAskTenantScopeJson] = useState("");
+  const [askTenantSqlMode, setAskTenantSqlMode] = useState<TenantSqlOutputMode>("sql-only");
+  const [askTenantEnabled, setAskTenantEnabled] = useState(false);
   const [busy, setBusy] = useState<Set<string>>(() => new Set());
 
   useEffect(() => {
@@ -258,6 +263,15 @@ export function App() {
       setAskMessage({ kind: "error", text: "Enter a question before generating SQL." });
       return;
     }
+    let tenantScope: TenantScope | undefined;
+    if (askTenantEnabled && askTenantScopeJson.trim()) {
+      try {
+        tenantScope = JSON.parse(askTenantScopeJson.trim()) as TenantScope;
+      } catch {
+        setAskMessage({ kind: "error", text: "Invalid tenant scope JSON." });
+        return;
+      }
+    }
     setAskMessage({ kind: "loading", text: "Generating SQL..." });
     setAskResult(null);
     await withBusy("ask", async () => {
@@ -265,6 +279,7 @@ export function App() {
         const result = await ask({
           question: askQuestion.trim(),
           mode: askMode,
+          ...(tenantScope ? { tenantScope, tenantSqlMode: askTenantSqlMode } : {}),
         });
         setAskResult(result);
         setAskMessage({ kind: "success", text: "Generated SQL." });
@@ -330,7 +345,7 @@ export function App() {
           <p className="mt-1 break-all text-xs text-muted-foreground">{workspace.schemaDir}</p>
         </div>
 
-        <div className="grid grid-cols-3 gap-2 border-b border-border p-3">
+        <div className="grid grid-cols-2 gap-2 border-b border-border p-3">
           <button
             type="button"
             className={cn("metric text-left", mainView === "tables" && "metric-active")}
@@ -339,7 +354,6 @@ export function App() {
             <strong>{workspace.tables.length}</strong>
             <span>Tables</span>
           </button>
-          <Metric value={workspace.warnings.length} label="Warnings" />
           <button
             type="button"
             className={cn("metric text-left", mainView === "concepts" && "metric-active")}
@@ -348,6 +362,15 @@ export function App() {
             <strong>{workspace.concepts.length}</strong>
             <span>Concepts</span>
           </button>
+          <button
+            type="button"
+            className={cn("metric text-left", mainView === "tenancy" && "metric-active")}
+            onClick={() => setMainView("tenancy")}
+          >
+            <strong>{workspace.tenantPolicy ? workspace.tenantPolicy.roots.length : 0}</strong>
+            <span>Tenancy</span>
+          </button>
+          <Metric value={workspace.warnings.length} label="Warnings" />
         </div>
 
         <div className="border-b border-border p-3">
@@ -441,6 +464,8 @@ export function App() {
               )}
             </div>
           </>
+        ) : mainView === "tenancy" ? (
+          <TenancyMain tenantPolicy={workspace.tenantPolicy} tables={workspace.tables} />
         ) : (
           <ConceptsMain
             busy={busy}
@@ -517,6 +542,13 @@ export function App() {
               question={askQuestion}
               ragAvailable={ragAvailable}
               result={askResult}
+              tenantEnabled={askTenantEnabled}
+              onTenantEnabledChange={setAskTenantEnabled}
+              tenantScopeJson={askTenantScopeJson}
+              onTenantScopeJsonChange={setAskTenantScopeJson}
+              tenantSqlMode={askTenantSqlMode}
+              onTenantSqlModeChange={setAskTenantSqlMode}
+              hasTenantPolicy={Boolean(workspace?.tenantPolicy)}
             />
           ) : null}
           {rightPanel === "settings" ? (
@@ -1249,6 +1281,268 @@ function RagPanel({
   );
 }
 
+function TenancyMain({
+  tenantPolicy,
+  tables,
+}: {
+  tenantPolicy: NormalizedTenantPolicy | null;
+  tables: StudioTableDto[];
+}) {
+  if (!tenantPolicy) {
+    return (
+      <>
+        <header className="flex min-h-16 items-center gap-4 border-b border-border bg-card px-5 py-3">
+          <div className="min-w-0">
+            <div className="flex items-center gap-2">
+              <Shield className="h-5 w-5 text-muted-foreground" />
+              <h2 className="text-lg font-semibold">Multi-Tenancy</h2>
+            </div>
+            <p className="text-xs text-muted-foreground">No tenant policy configured</p>
+          </div>
+        </header>
+        <div className="flex flex-1 items-center justify-center p-8">
+          <div className="max-w-md text-center">
+            <Shield className="mx-auto mb-3 h-10 w-10 text-muted-foreground/50" />
+            <h3 className="mb-2 font-semibold">No tenant-policy.md found</h3>
+            <p className="text-sm text-muted-foreground">
+              Create a <code className="rounded bg-muted px-1 py-0.5 text-xs">tenant-policy.md</code> file
+              in your schema directory to configure multi-tenant isolation. It defines tenant roots,
+              hierarchy edges, scoped tables, and enforcement mode.
+            </p>
+          </div>
+        </div>
+      </>
+    );
+  }
+
+  const coverageByClassification = tenantPolicy.coverage.reduce(
+    (acc, entry) => {
+      acc[entry.classification] = (acc[entry.classification] ?? 0) + 1;
+      return acc;
+    },
+    {} as Record<string, number>,
+  );
+  const totalTables = tenantPolicy.coverage.length;
+  const coveredTables = totalTables - (coverageByClassification["unknown"] ?? 0);
+  const coveragePct = totalTables > 0 ? Math.round((coveredTables / totalTables) * 100) : 0;
+
+  return (
+    <>
+      <header className="flex min-h-16 items-center gap-4 border-b border-border bg-card px-5 py-3">
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-2">
+            <Shield className="h-5 w-5" />
+            <h2 className="text-lg font-semibold">Multi-Tenancy</h2>
+            <Badge variant={tenantPolicy.enforcement === "strict" ? "danger" : "warning"}>
+              {tenantPolicy.enforcement}
+            </Badge>
+          </div>
+          <p className="text-xs text-muted-foreground">
+            Schema: {tenantPolicy.schemaId} · {coveragePct}% table coverage ({coveredTables}/{totalTables})
+          </p>
+        </div>
+      </header>
+      <div className="min-h-0 flex-1 overflow-auto p-5">
+        <div className="grid gap-5">
+          {/* Coverage overview */}
+          <section>
+            <h3 className="mb-2 text-sm font-semibold">Coverage</h3>
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+              <CoverageStat label="Root" count={coverageByClassification["root"] ?? 0} variant="primary" />
+              <CoverageStat label="Scoped" count={coverageByClassification["scoped"] ?? 0} variant="primary" />
+              <CoverageStat label="Global" count={coverageByClassification["global"] ?? 0} variant="secondary" />
+              <CoverageStat label="Unknown" count={coverageByClassification["unknown"] ?? 0} variant="warning" />
+            </div>
+          </section>
+
+          {/* Tenant roots */}
+          <section>
+            <h3 className="mb-2 text-sm font-semibold">Tenant Roots ({tenantPolicy.roots.length})</h3>
+            <div className="grid gap-2">
+              {tenantPolicy.roots.map((root) => (
+                <div className="rounded-md border border-border bg-card p-3" key={root.id}>
+                  <div className="flex items-center justify-between gap-2">
+                    <div>
+                      <span className="font-mono text-sm font-semibold">{root.id}</span>
+                      <span className="ml-2 text-xs text-muted-foreground">{root.label}</span>
+                    </div>
+                    <Badge variant="outline">col: {root.tenantIdColumn}</Badge>
+                  </div>
+                  {root.parent ? (
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      Parent: <code>{root.parent.root}</code> via <code>{root.parent.foreignKey}</code>
+                    </p>
+                  ) : null}
+                </div>
+              ))}
+            </div>
+          </section>
+
+          {/* Hierarchy */}
+          {tenantPolicy.hierarchy.length > 0 ? (
+            <section>
+              <h3 className="mb-2 text-sm font-semibold">Hierarchy Edges ({tenantPolicy.hierarchy.length})</h3>
+              <div className="grid gap-2">
+                {tenantPolicy.hierarchy.map((edge, index) => (
+                  <div className="rounded-md border border-border bg-card p-3 text-sm" key={index}>
+                    <code>{edge.parent}</code>
+                    <span className="mx-2 text-muted-foreground">&rarr;</span>
+                    <code>{edge.child}</code>
+                    <span className="ml-2 text-xs text-muted-foreground">FK: {edge.foreignKey}</span>
+                  </div>
+                ))}
+              </div>
+            </section>
+          ) : null}
+
+          {/* Scoped tables */}
+          {tenantPolicy.scopedTables.length > 0 ? (
+            <section>
+              <h3 className="mb-2 text-sm font-semibold">Scoped Tables ({tenantPolicy.scopedTables.length})</h3>
+              <div className="grid gap-2">
+                {tenantPolicy.scopedTables.map((scoped) => (
+                  <div className="rounded-md border border-border bg-card p-3" key={scoped.id}>
+                    <span className="font-mono text-sm font-semibold">{scoped.id}</span>
+                    <div className="mt-1 grid gap-1">
+                      {scoped.scopeThrough.map((scope, index) => (
+                        <p className="text-xs text-muted-foreground" key={index}>
+                          via <Badge variant="outline">{scope.root}</Badge>{" "}
+                          {"column" in scope
+                            ? <span>column <code>{scope.column}</code></span>
+                            : <span>join {scope.join.map((j) => `${j.from} -> ${j.to}`).join(", ")}</span>}
+                        </p>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </section>
+          ) : null}
+
+          {/* Polymorphic tables */}
+          {tenantPolicy.polymorphicTables.length > 0 ? (
+            <section>
+              <h3 className="mb-2 text-sm font-semibold">
+                Polymorphic Tables ({tenantPolicy.polymorphicTables.length})
+              </h3>
+              <div className="grid gap-2">
+                {tenantPolicy.polymorphicTables.map((poly) => (
+                  <div className="rounded-md border border-border bg-card p-3" key={poly.id}>
+                    <span className="font-mono text-sm font-semibold">{poly.id}</span>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      Type: <code>{poly.typeColumn}</code> · ID: <code>{poly.idColumn}</code>
+                    </p>
+                    <div className="mt-1 flex flex-wrap gap-1">
+                      {Object.entries(poly.mapping).map(([typeValue, targetTable]) => (
+                        <Badge variant="outline" key={typeValue}>
+                          {typeValue} &rarr; {targetTable}
+                        </Badge>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </section>
+          ) : null}
+
+          {/* Global tables */}
+          {tenantPolicy.globalTables.length > 0 ? (
+            <section>
+              <h3 className="mb-2 text-sm font-semibold">Global Tables ({tenantPolicy.globalTables.length})</h3>
+              <div className="flex flex-wrap gap-2">
+                {tenantPolicy.globalTables.map((tableId) => (
+                  <Badge variant="secondary" key={tableId}>
+                    {tableId}
+                  </Badge>
+                ))}
+              </div>
+            </section>
+          ) : null}
+
+          {/* Full table coverage list */}
+          <section>
+            <h3 className="mb-2 text-sm font-semibold">Table Coverage ({tenantPolicy.coverage.length})</h3>
+            <div className="rounded-md border border-border">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-border bg-muted/30">
+                    <th className="px-3 py-2 text-left font-semibold">Table</th>
+                    <th className="px-3 py-2 text-left font-semibold">Classification</th>
+                    <th className="px-3 py-2 text-left font-semibold">Scope Roots</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {tenantPolicy.coverage.map((entry) => (
+                    <tr className="border-b border-border last:border-b-0" key={entry.tableId}>
+                      <td className="px-3 py-1.5 font-mono text-xs">{entry.tableId}</td>
+                      <td className="px-3 py-1.5">
+                        <Badge
+                          variant={
+                            entry.classification === "unknown"
+                              ? "warning"
+                              : entry.classification === "global"
+                                ? "secondary"
+                                : "outline"
+                          }
+                        >
+                          {entry.classification}
+                        </Badge>
+                      </td>
+                      <td className="px-3 py-1.5 text-xs text-muted-foreground">
+                        {entry.scopeRoots?.join(", ") ?? "—"}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </section>
+
+          {/* Warnings */}
+          {tenantPolicy.warnings.length > 0 ? (
+            <section>
+              <h3 className="mb-2 text-sm font-semibold">
+                Policy Warnings ({tenantPolicy.warnings.length})
+              </h3>
+              <div className="grid gap-2">
+                {tenantPolicy.warnings.map((warning, index) => (
+                  <pre className="warning-block" key={index}>
+                    {formatUnknown(warning)}
+                  </pre>
+                ))}
+              </div>
+            </section>
+          ) : null}
+        </div>
+      </div>
+    </>
+  );
+}
+
+function CoverageStat({
+  label,
+  count,
+  variant,
+}: {
+  label: string;
+  count: number;
+  variant: "primary" | "secondary" | "warning";
+}) {
+  return (
+    <div
+      className={cn(
+        "rounded-md border p-3 text-center",
+        variant === "primary" && "border-primary/20 bg-primary/5",
+        variant === "secondary" && "border-border bg-muted/30",
+        variant === "warning" && "border-yellow-500/20 bg-yellow-500/5",
+      )}
+    >
+      <div className="text-2xl font-bold">{count}</div>
+      <div className="text-xs text-muted-foreground">{label}</div>
+    </div>
+  );
+}
+
 function AskPanel({
   busy,
   message,
@@ -1260,6 +1554,13 @@ function AskPanel({
   question,
   ragAvailable,
   result,
+  tenantEnabled,
+  onTenantEnabledChange,
+  tenantScopeJson,
+  onTenantScopeJsonChange,
+  tenantSqlMode,
+  onTenantSqlModeChange,
+  hasTenantPolicy,
 }: {
   busy: Set<string>;
   message: StatusMessage | null;
@@ -1271,6 +1572,13 @@ function AskPanel({
   question: string;
   ragAvailable: boolean;
   result: AskResponse | null;
+  tenantEnabled: boolean;
+  onTenantEnabledChange: (enabled: boolean) => void;
+  tenantScopeJson: string;
+  onTenantScopeJsonChange: (json: string) => void;
+  tenantSqlMode: TenantSqlOutputMode;
+  onTenantSqlModeChange: (mode: TenantSqlOutputMode) => void;
+  hasTenantPolicy: boolean;
 }) {
   const ragDisabledReason = "Build the RAG index first to query with retrieval.";
   return (
@@ -1334,6 +1642,61 @@ function AskPanel({
               </div>
             ) : null}
           </div>
+
+          {/* Tenant scope controls */}
+          <div className="grid gap-1.5">
+            <label className="flex items-center gap-2">
+              <input
+                type="checkbox"
+                checked={tenantEnabled}
+                disabled={!hasTenantPolicy}
+                onChange={(event) => onTenantEnabledChange(event.target.checked)}
+                className="h-4 w-4 rounded border-input"
+              />
+              <span className="text-xs font-semibold text-muted-foreground">
+                <Shield className="mr-1 inline h-3.5 w-3.5" />
+                Tenant scope
+              </span>
+            </label>
+            {!hasTenantPolicy ? (
+              <p className="text-xs text-muted-foreground">
+                No tenant-policy.md found in this schema.
+              </p>
+            ) : null}
+            {tenantEnabled && hasTenantPolicy ? (
+              <div className="grid gap-2">
+                <Field label="Scope JSON">
+                  <Textarea
+                    className="font-mono text-xs"
+                    value={tenantScopeJson}
+                    onChange={(event) => onTenantScopeJsonChange(event.target.value)}
+                    placeholder={'{\n  "access": {\n    "kind": "ids",\n    "tenantRoot": "orgs",\n    "ids": ["org-1"]\n  }\n}'}
+                    rows={5}
+                  />
+                </Field>
+                <div className="grid gap-1.5">
+                  <span className="text-xs font-semibold text-muted-foreground">SQL output mode</span>
+                  <div className="segmented" role="group" aria-label="SQL output mode">
+                    <button
+                      className={cn(tenantSqlMode === "sql-only" && "active")}
+                      type="button"
+                      onClick={() => onTenantSqlModeChange("sql-only")}
+                    >
+                      Inline literals
+                    </button>
+                    <button
+                      className={cn(tenantSqlMode === "sql-params" && "active")}
+                      type="button"
+                      onClick={() => onTenantSqlModeChange("sql-params")}
+                    >
+                      $N parameters
+                    </button>
+                  </div>
+                </div>
+              </div>
+            ) : null}
+          </div>
+
           <Button disabled={busy.has("ask")} onClick={() => void onAsk()}>
             {busy.has("ask") ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
             Generate SQL
@@ -1345,6 +1708,34 @@ function AskPanel({
       <Panel title="Generated SQL" action={result?.sql ? <CopyButton value={result.sql} /> : undefined}>
         {result?.sql ? <pre className="sql-block">{result.sql}</pre> : <EmptyText text="No SQL generated yet." />}
       </Panel>
+
+      {result?.tenant?.enabled ? (
+        <Panel title="Tenant Bindings">
+          {result.tenant.bindings.length > 0 ? (
+            <div className="grid gap-2">
+              {result.tenant.bindings.map((binding, index) => (
+                <div className="rounded-md border border-border bg-muted/30 p-2 text-xs" key={index}>
+                  <div className="flex items-center justify-between gap-2">
+                    <code className="font-semibold">{binding.placeholder}</code>
+                    <Badge variant="outline">{binding.rootLabel}</Badge>
+                  </div>
+                  <div className="mt-1 text-muted-foreground">
+                    IDs: <code>{JSON.stringify(binding.ids)}</code>
+                  </div>
+                </div>
+              ))}
+              {result.tenant.sqlMode === "sql-params" && result.tenant.params.length > 0 ? (
+                <div className="rounded-md border border-border bg-muted/30 p-2 text-xs">
+                  <span className="font-semibold">Positional params:</span>{" "}
+                  <code>{JSON.stringify(result.tenant.params)}</code>
+                </div>
+              ) : null}
+            </div>
+          ) : (
+            <EmptyText text="No tenant bindings in the generated SQL." />
+          )}
+        </Panel>
+      ) : null}
 
       <UsageSummary title="Request Usage" usage={result?.usage ?? null} />
 
