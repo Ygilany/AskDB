@@ -3,6 +3,7 @@ import {
   Bot,
   BrainCircuit,
   Check,
+  ChevronDown,
   ChevronRight,
   Copy,
   Loader2,
@@ -1362,19 +1363,17 @@ function TenancyMain({
       <div className="min-h-0 flex-1 overflow-auto p-5">
         <div className="grid gap-5">
           {/* Coverage overview */}
-          <section>
-            <h3 className="mb-2 text-sm font-semibold">Coverage</h3>
+          <CollapsibleSection title="Coverage">
             <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
               <CoverageStat label="Root" count={coverageByClassification["root"] ?? 0} variant="primary" />
               <CoverageStat label="Scoped" count={coverageByClassification["scoped"] ?? 0} variant="primary" />
               <CoverageStat label="Global" count={coverageByClassification["global"] ?? 0} variant="secondary" />
               <CoverageStat label="Unknown" count={coverageByClassification["unknown"] ?? 0} variant="warning" />
             </div>
-          </section>
+          </CollapsibleSection>
 
           {/* Tenant roots */}
-          <section>
-            <h3 className="mb-2 text-sm font-semibold">Tenant Roots ({tenantPolicy.roots.length})</h3>
+          <CollapsibleSection title="Tenant Roots" count={tenantPolicy.roots.length}>
             <div className="grid gap-2">
               {tenantPolicy.roots.map((root) => (
                 <div className="rounded-md border border-border bg-card p-3" key={root.id}>
@@ -1393,29 +1392,29 @@ function TenancyMain({
                 </div>
               ))}
             </div>
-          </section>
+          </CollapsibleSection>
 
           {/* Hierarchy */}
           {tenantPolicy.hierarchy.length > 0 ? (
-            <section>
-              <h3 className="mb-2 text-sm font-semibold">Hierarchy Edges ({tenantPolicy.hierarchy.length})</h3>
+            <CollapsibleSection title="Hierarchy Edges" count={tenantPolicy.hierarchy.length}>
               <div className="grid gap-2">
                 {tenantPolicy.hierarchy.map((edge, index) => (
                   <div className="rounded-md border border-border bg-card p-3 text-sm" key={index}>
-                    <code>{edge.parent}</code>
-                    <span className="mx-2 text-muted-foreground">&rarr;</span>
-                    <code>{edge.child}</code>
-                    <span className="ml-2 text-xs text-muted-foreground">FK: {edge.foreignKey}</span>
+                    <div>
+                      <code>{edge.parent}</code>
+                      <span className="mx-2 text-muted-foreground">&rarr;</span>
+                      <code>{edge.child}</code>
+                    </div>
+                    <div className="mt-1 text-xs text-muted-foreground">FK: {edge.foreignKey}</div>
                   </div>
                 ))}
               </div>
-            </section>
+            </CollapsibleSection>
           ) : null}
 
           {/* Scoped tables */}
           {tenantPolicy.scopedTables.length > 0 ? (
-            <section>
-              <h3 className="mb-2 text-sm font-semibold">Scoped Tables ({tenantPolicy.scopedTables.length})</h3>
+            <CollapsibleSection title="Scoped Tables" count={tenantPolicy.scopedTables.length} defaultOpen={false}>
               <div className="grid gap-2">
                 {tenantPolicy.scopedTables.map((scoped) => (
                   <div className="rounded-md border border-border bg-card p-3" key={scoped.id}>
@@ -1433,15 +1432,12 @@ function TenancyMain({
                   </div>
                 ))}
               </div>
-            </section>
+            </CollapsibleSection>
           ) : null}
 
           {/* Polymorphic tables */}
           {tenantPolicy.polymorphicTables.length > 0 ? (
-            <section>
-              <h3 className="mb-2 text-sm font-semibold">
-                Polymorphic Tables ({tenantPolicy.polymorphicTables.length})
-              </h3>
+            <CollapsibleSection title="Polymorphic Tables" count={tenantPolicy.polymorphicTables.length} defaultOpen={false}>
               <div className="grid gap-2">
                 {tenantPolicy.polymorphicTables.map((poly) => (
                   <div className="rounded-md border border-border bg-card p-3" key={poly.id}>
@@ -1459,13 +1455,12 @@ function TenancyMain({
                   </div>
                 ))}
               </div>
-            </section>
+            </CollapsibleSection>
           ) : null}
 
           {/* Global tables */}
           {tenantPolicy.globalTables.length > 0 ? (
-            <section>
-              <h3 className="mb-2 text-sm font-semibold">Global Tables ({tenantPolicy.globalTables.length})</h3>
+            <CollapsibleSection title="Global Tables" count={tenantPolicy.globalTables.length} defaultOpen={false}>
               <div className="flex flex-wrap gap-2">
                 {tenantPolicy.globalTables.map((tableId) => (
                   <Badge variant="secondary" key={tableId}>
@@ -1473,12 +1468,11 @@ function TenancyMain({
                   </Badge>
                 ))}
               </div>
-            </section>
+            </CollapsibleSection>
           ) : null}
 
           {/* Full table coverage list */}
-          <section>
-            <h3 className="mb-2 text-sm font-semibold">Table Coverage ({tenantPolicy.coverage.length})</h3>
+          <CollapsibleSection title="Table Coverage" count={tenantPolicy.coverage.length} defaultOpen={false}>
             <div className="rounded-md border border-border">
               <table className="w-full text-sm">
                 <thead>
@@ -1513,14 +1507,11 @@ function TenancyMain({
                 </tbody>
               </table>
             </div>
-          </section>
+          </CollapsibleSection>
 
           {/* Warnings */}
           {tenantPolicy.warnings.length > 0 ? (
-            <section>
-              <h3 className="mb-2 text-sm font-semibold">
-                Policy Warnings ({tenantPolicy.warnings.length})
-              </h3>
+            <CollapsibleSection title="Policy Warnings" count={tenantPolicy.warnings.length}>
               <div className="grid gap-2">
                 {tenantPolicy.warnings.map((warning, index) => (
                   <pre className="warning-block" key={index}>
@@ -1528,7 +1519,7 @@ function TenancyMain({
                   </pre>
                 ))}
               </div>
-            </section>
+            </CollapsibleSection>
           ) : null}
         </div>
       </div>
@@ -1607,7 +1598,7 @@ function TenancyCreateForm({
       ...(globalTableIds.length > 0 ? { globalTables: globalTableIds } : {}),
     };
     setDraftFrontmatter(frontmatter);
-    setDraftBody("");
+    setDraftBody("# Tenant Policy\n\n\n\n## Hierarchy\n\n\n\n## Scope Rules\n\n\n\n## Sensitive Interactions\n\n");
     setMode("review");
   }
 
@@ -1968,7 +1959,7 @@ function TenancyReviewDraft({
         </Panel>
 
         {/* Roots */}
-        <Panel title={`Tenant Roots (${frontmatter.roots.length})`}>
+        <Panel title={`Tenant Roots (${frontmatter.roots.length})`} collapsible>
           <div className="grid gap-3">
             {frontmatter.roots.map((root, index) => (
               <div className="rounded-md border border-border bg-card p-3" key={root.id}>
@@ -2005,15 +1996,17 @@ function TenancyReviewDraft({
 
         {/* Hierarchy */}
         {(frontmatter.hierarchy ?? []).length > 0 ? (
-          <Panel title={`Hierarchy Edges (${frontmatter.hierarchy!.length})`}>
+          <Panel title={`Hierarchy Edges (${frontmatter.hierarchy!.length})`} collapsible>
             <div className="grid gap-2">
               {frontmatter.hierarchy!.map((edge, index) => (
-                <div className="flex items-center justify-between gap-2 rounded-md border border-border bg-card p-3 text-sm" key={index}>
+                <div className="flex items-start justify-between gap-2 rounded-md border border-border bg-card p-3 text-sm" key={index}>
                   <div>
-                    <code>{edge.parent}</code>
-                    <span className="mx-2 text-muted-foreground">&rarr;</span>
-                    <code>{edge.child}</code>
-                    <span className="ml-2 text-xs text-muted-foreground">FK: {edge.foreignKey}</span>
+                    <div>
+                      <code>{edge.parent}</code>
+                      <span className="mx-2 text-muted-foreground">&rarr;</span>
+                      <code>{edge.child}</code>
+                    </div>
+                    <div className="mt-1 text-xs text-muted-foreground">FK: {edge.foreignKey}</div>
                   </div>
                   <Button size="sm" variant="ghost" onClick={() => removeHierarchyEdge(index)} title="Remove edge">
                     ×
@@ -2026,7 +2019,7 @@ function TenancyReviewDraft({
 
         {/* Scoped Tables */}
         {(frontmatter.scopedTables ?? []).length > 0 ? (
-          <Panel title={`Scoped Tables (${frontmatter.scopedTables!.length})`}>
+          <Panel title={`Scoped Tables (${frontmatter.scopedTables!.length})`} collapsible defaultOpen={false}>
             <div className="grid gap-2">
               {frontmatter.scopedTables!.map((scoped, index) => (
                 <div className="flex items-start justify-between gap-2 rounded-md border border-border bg-card p-3" key={scoped.id}>
@@ -2054,7 +2047,7 @@ function TenancyReviewDraft({
 
         {/* Polymorphic Tables */}
         {(frontmatter.polymorphicTables ?? []).length > 0 ? (
-          <Panel title={`Polymorphic Tables (${frontmatter.polymorphicTables!.length})`}>
+          <Panel title={`Polymorphic Tables (${frontmatter.polymorphicTables!.length})`} collapsible defaultOpen={false}>
             <div className="grid gap-2">
               {frontmatter.polymorphicTables!.map((poly, index) => (
                 <div className="flex items-start justify-between gap-2 rounded-md border border-border bg-card p-3" key={poly.id}>
@@ -2081,7 +2074,7 @@ function TenancyReviewDraft({
         ) : null}
 
         {/* Global Tables */}
-        <Panel title="Global Tables">
+        <Panel title="Global Tables" collapsible defaultOpen={false}>
           <div className="grid gap-2">
             <p className="text-sm text-muted-foreground">
               Global tables are shared across all tenants and never filtered.
@@ -2106,7 +2099,7 @@ function TenancyReviewDraft({
         </Panel>
 
         {/* Body / documentation */}
-        <Panel title="Documentation (body)">
+        <Panel title="Documentation (body)" collapsible>
           <div className="grid gap-2">
             <p className="text-sm text-muted-foreground">
               Optional markdown body explaining the tenant policy. Included in the tenant-policy.md file.
@@ -2115,17 +2108,47 @@ function TenancyReviewDraft({
               className="min-h-48 font-mono text-xs"
               value={body}
               onChange={(e) => onBodyChange(e.target.value)}
-              placeholder={"# Tenant Policy\n\nDescribe the tenancy model here...\n\n## Hierarchy\n\n...\n\n## Scope rules\n\n...\n\n## Sensitive interactions\n\n..."}
             />
           </div>
         </Panel>
 
         {/* Raw frontmatter preview */}
-        <Panel title="Frontmatter Preview">
+        <Panel title="Frontmatter Preview" collapsible defaultOpen={false}>
           <pre className="plain-block text-xs">{JSON.stringify(frontmatter, null, 2)}</pre>
         </Panel>
       </div>
     </>
+  );
+}
+
+function CollapsibleSection({
+  title,
+  count,
+  children,
+  defaultOpen = true,
+}: {
+  title: string;
+  count?: number;
+  children: ReactNode;
+  defaultOpen?: boolean;
+}) {
+  const [open, setOpen] = useState(defaultOpen);
+  return (
+    <section>
+      <button
+        type="button"
+        className="mb-2 flex w-full items-center gap-1.5 text-sm font-semibold hover:text-primary transition-colors"
+        onClick={() => setOpen(!open)}
+      >
+        {open ? (
+          <ChevronDown className="h-3.5 w-3.5 shrink-0" />
+        ) : (
+          <ChevronRight className="h-3.5 w-3.5 shrink-0" />
+        )}
+        {title}{count != null ? ` (${count})` : ""}
+      </button>
+      {open ? children : null}
+    </section>
   );
 }
 
