@@ -1,4 +1,4 @@
-import { Box, Text, useApp, useInput } from "ink";
+import { Box, Text, useApp, useInput, useStdout } from "ink";
 import { useState } from "react";
 import {
   buildDefaultTableBody,
@@ -321,6 +321,8 @@ function buildInitialDrafts(workspace: Workspace): Record<string, TableDraft> {
   return out;
 }
 
+const STATIC_CHROME_ROWS = 6; // 2 borders + title + schemaId + marginTop + bottom border
+
 function StaticTableList({
   workspace,
   selectedIndex,
@@ -328,19 +330,41 @@ function StaticTableList({
   workspace: Workspace;
   selectedIndex: number;
 }): JSX.Element {
+  const { stdout } = useStdout();
+  const terminalHeight = stdout?.rows ?? 24;
+
+  const total = workspace.tables.length;
+  const maxVisible = Math.max(1, terminalHeight - STATIC_CHROME_ROWS - 2);
+  const needsScroll = total > maxVisible;
+
+  let viewStart = 0;
+  if (needsScroll) {
+    viewStart = Math.max(0, selectedIndex - Math.floor(maxVisible / 2));
+    viewStart = Math.min(viewStart, total - maxVisible);
+  }
+  const viewEnd = Math.min(total, viewStart + maxVisible);
+  const visibleTables = workspace.tables.slice(viewStart, viewEnd);
+  const hasAbove = viewStart > 0;
+  const hasBelow = viewEnd < total;
+
   return (
     <Box flexDirection="column" width={28} borderStyle="single" paddingX={1}>
       <Text bold>Tables ({workspace.tables.length})</Text>
       <Text dimColor>{workspace.physical.schemaId}</Text>
       <Box marginTop={1} flexDirection="column">
-        {workspace.tables.map((t, i) => (
-          <Text key={t.physical.id}>
-            <Text color={i === selectedIndex ? "cyan" : undefined}>
-              {i === selectedIndex ? "▶ " : "  "}
-              {t.physical.name}
+        {hasAbove ? <Text dimColor>↑ {viewStart} more</Text> : null}
+        {visibleTables.map((t, vi) => {
+          const i = viewStart + vi;
+          return (
+            <Text key={t.physical.id}>
+              <Text color={i === selectedIndex ? "cyan" : undefined}>
+                {i === selectedIndex ? "▶ " : "  "}
+                {t.physical.name}
+              </Text>
             </Text>
-          </Text>
-        ))}
+          );
+        })}
+        {hasBelow ? <Text dimColor>↓ {total - viewEnd} more</Text> : null}
       </Box>
     </Box>
   );
