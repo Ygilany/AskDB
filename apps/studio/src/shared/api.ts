@@ -1,4 +1,4 @@
-import type { SchemaV2Warning, V2Concept, V2Table } from "@askdb/core";
+import type { SchemaV2Warning, V2Concept, V2ConceptsFrontmatter, V2Table } from "@askdb/core";
 import type { SuggestSource, TableDraft } from "@askdb/enrich";
 import type { ChunkType } from "@askdb/rag";
 
@@ -30,6 +30,8 @@ export type StudioErrorDto = {
 export type SaveTableRequest = {
   draft: TableDraft;
 };
+
+export type SaveConceptsRequest = V2ConceptsFrontmatter;
 
 export type SuggestRequest = {
   source: SuggestSource;

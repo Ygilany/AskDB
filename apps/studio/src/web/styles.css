@@ -123,6 +123,21 @@ button:disabled {
   padding: 8px;
 }
 
+button.metric {
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s;
+}
+
+button.metric:hover {
+  border-color: hsl(var(--ring));
+  background: hsl(var(--muted));
+}
+
+button.metric.metric-active {
+  border-color: hsl(var(--ring));
+  background: hsl(var(--muted));
+}
+
 .metric strong {
   display: block;
   overflow: hidden;

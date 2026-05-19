@@ -19,6 +19,7 @@ import {
   type AskDbAiProvider,
   type AskDialectInput,
   type AskGenerateDeps,
+  type V2Concept,
 } from "@askdb/core";
 import {
   buildSchemaIndex,
@@ -44,6 +45,7 @@ import {
   loadWorkspace,
   replaceH2Section,
   replaceTableDescription,
+  saveConcepts,
   saveTable,
   type SuggestSource,
   type TableDraft,
@@ -161,6 +163,12 @@ export function createStudioServer(options: StudioOptions): StudioServer {
         saveDraft(state, tableId, draft);
         return writeJson(res, 200, serializeWorkspace(state.workspace));
       }
+      if (req.method === "POST" && url.pathname === "/api/concepts") {
+        const body = await readJson(req);
+        const concepts = parseConceptsBody(body);
+        saveConceptsDraft(state, concepts);
+        return writeJson(res, 200, serializeWorkspace(state.workspace));
+      }
       if (req.method === "POST" && url.pathname === "/api/suggest") {
         const body = await readJson(req);
         const source = parseSuggestSource(body);
@@ -236,6 +244,11 @@ export function serializeWorkspace(workspace: Workspace): StudioWorkspaceDto {
     }),
     concepts: workspace.concepts?.frontmatter.concepts ?? [],
   };
+}
+
+function saveConceptsDraft(state: StudioState, concepts: V2Concept[]): void {
+  saveConcepts(state.workspace, { concepts });
+  state.workspace = loadWorkspace(state.schemaDir);
 }
 
 function saveDraft(state: StudioState, tableId: string, draft: TableDraft): void {
@@ -851,6 +864,18 @@ function readOptionalJson(path: string): unknown | undefined {
   } catch {
     return undefined;
   }
+}
+
+function parseConceptsBody(body: unknown): V2Concept[] {
+  if (!isRecord(body) || !Array.isArray(body.concepts)) {
+    throw new StudioHttpError(400, "`concepts` array is required.");
+  }
+  for (const concept of body.concepts) {
+    if (!isRecord(concept) || typeof concept.id !== "string" || typeof concept.label !== "string") {
+      throw new StudioHttpError(400, "Each concept requires a string `id` and `label`.");
+    }
+  }
+  return body.concepts as V2Concept[];
 }
 
 function parseTableDraftBody(body: unknown): TableDraft {

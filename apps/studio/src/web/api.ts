@@ -4,6 +4,7 @@ import type {
   RagIndexResponse,
   RagQueryRequest,
   RagQueryResponse,
+  SaveConceptsRequest,
   SaveTableRequest,
   StudioErrorDto,
   StudioRagStatusDto,
@@ -18,6 +19,13 @@ export async function getWorkspace(): Promise<StudioWorkspaceDto> {
 
 export async function saveTable(tableId: string, request: SaveTableRequest): Promise<StudioWorkspaceDto> {
   return api<StudioWorkspaceDto>(`/api/tables/${encodeURIComponent(tableId)}`, {
+    method: "POST",
+    body: JSON.stringify(request),
+  });
+}
+
+export async function saveConcepts(request: SaveConceptsRequest): Promise<StudioWorkspaceDto> {
+  return api<StudioWorkspaceDto>("/api/concepts", {
     method: "POST",
     body: JSON.stringify(request),
   });
