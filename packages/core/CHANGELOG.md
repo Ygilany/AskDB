@@ -1,5 +1,11 @@
 # @askdb/core
 
+## 0.5.0-beta.16
+
+### Minor Changes
+
+- 36c35b4: Add AI-drafted tenant policy creation flow: new `POST /api/suggest-tenant-policy` endpoint analyzes schema DDL and proposes a complete tenant policy for user review; manual configuration fallback with table/column dropdowns; editable review screen for roots, hierarchy, scoped tables, polymorphic tables, global tables, enforcement mode, and documentation body before confirming. Add `writeTenantPolicyMarkdown` to `@askdb/core` for round-trip serialization of tenant-policy.md.
+
 ## 0.5.0-beta.14
 
 ### Minor Changes

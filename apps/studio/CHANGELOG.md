@@ -1,5 +1,35 @@
 # @askdb/studio
 
+## 0.2.0-beta.13
+
+### Minor Changes
+
+- 36c35b4: Add AI-drafted tenant policy creation flow: new `POST /api/suggest-tenant-policy` endpoint analyzes schema DDL and proposes a complete tenant policy for user review; manual configuration fallback with table/column dropdowns; editable review screen for roots, hierarchy, scoped tables, polymorphic tables, global tables, enforcement mode, and documentation body before confirming. Add `writeTenantPolicyMarkdown` to `@askdb/core` for round-trip serialization of tenant-policy.md.
+- f314b37: Revamp Studio with adaptive navigation, UX polish, and a Query Playground.
+
+  **Adaptive sidebar navigation**: the left sidebar now adapts to the active view — Tables and Concepts show the searchable table list, Tenancy shows a six-section nav (Roots, Hierarchy, Scoped Tables, Polymorphic Tables, Global Tables, Policy Warnings) with count badges and smooth scroll-to-section on click.
+
+  **Query Playground**: a new fourth main view with a two-column layout — question input and tenant controls on the left, generated SQL and results on the right. Every successful generation is automatically saved to `playground-history.json` in the schema artifact directory. The history sidebar lets you restore, compare, and re-run past queries. When `DATABASE_URL` is configured, an Execute button runs the generated SQL in a read-only transaction and renders a results table (truncated at 500 rows).
+
+  **UX polish**: success and neutral status messages auto-dismiss after 4 s (errors persist until resolved). The sidebar collapses on small screens with a hamburger toggle in the main content area; on large screens it is always pinned.
+
+  **New server endpoints**: `GET /api/history`, `POST /api/history`, `DELETE /api/history/:id` (file-backed persistence), and `POST /api/execute` (read-only Postgres execution via lazy `pg` load).
+
+### Patch Changes
+
+- b791213: Remove duplicate Ask panel from the right inspector and add multi-tenancy to the docs-site sidebar.
+
+  The Ask/generate-SQL workflow now lives exclusively in the Playground view. The right-side inspector panel is simplified to two tabs — RAG and Status — and the `AskPanel` component is removed. The `Bot` icon import and the `"ask"` `PanelKey` are also dropped.
+
+  The multi-tenancy docs page (`/multi-tenancy/`) is now linked from the docs-site sidebar under Reference, making it discoverable through navigation.
+
+- 0d0040a: Improve multi-tenancy UI readability with collapsible sections, better hierarchy edge layout, and template-seeded documentation. Add chevron toggles to all sections in both the saved policy view and draft review view; verbose sections (scoped tables, polymorphic tables, global tables, table coverage, frontmatter preview) default to collapsed. Move FK info to its own line in hierarchy edges, and seed documentation textarea with markdown headings instead of placeholder.
+- Updated dependencies [36c35b4]
+  - @askdb/core@0.5.0-beta.16
+  - @askdb/enrich@0.2.0-beta.5
+  - @askdb/postgres@0.2.0-beta.7
+  - @askdb/rag@0.2.0-beta.10
+
 ## 0.2.0-beta.12
 
 ### Minor Changes
