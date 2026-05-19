@@ -1,4 +1,13 @@
-import type { SchemaV2Warning, V2Concept, V2ConceptsFrontmatter, V2Table } from "@askdb/core";
+import type {
+  NormalizedTenantPolicy,
+  SchemaV2Warning,
+  TenantBinding,
+  TenantScope,
+  TenantSqlOutputMode,
+  V2Concept,
+  V2ConceptsFrontmatter,
+  V2Table,
+} from "@askdb/core";
 import type { SuggestSource, TableDraft } from "@askdb/enrich";
 import type { ChunkType } from "@askdb/rag";
 
@@ -19,6 +28,7 @@ export type StudioWorkspaceDto = {
   aiProvider: string;
   tables: StudioTableDto[];
   concepts: V2Concept[];
+  tenantPolicy: NormalizedTenantPolicy | null;
 };
 
 export type StudioErrorDto = {
@@ -114,6 +124,8 @@ export type RagQueryResponse = {
 export type AskRequest = {
   question: string;
   mode?: "full" | "rag";
+  tenantScope?: TenantScope;
+  tenantSqlMode?: TenantSqlOutputMode;
 };
 
 export type AskResponse = {
@@ -124,6 +136,12 @@ export type AskResponse = {
     enabled: boolean;
     chunks: StudioRagChunkDto[];
   };
+  tenant: {
+    enabled: boolean;
+    sqlMode: TenantSqlOutputMode | null;
+    bindings: TenantBinding[];
+    params: unknown[];
+  } | null;
   usage: StudioRequestUsageDto | null;
 };
 
