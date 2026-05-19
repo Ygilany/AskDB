@@ -19,6 +19,9 @@ It can:
 - request AI enrichment suggestions when `OPENAI_API_KEY` is configured
 - build and query the configured RAG index (`memory`, file-backed, or `pgvector`)
 - generate sample Postgres SQL for natural-language questions against the currently saved enrichment
+- define and manage multi-tenancy policy (tenant roots, hierarchy, scoped/polymorphic/global tables) via the Tenancy view
+- draft tenant policy with AI assistance
+- test NL→SQL with tenant scope controls and SQL output modes (`sql-only` vs `sql-params`)
 
 Studio uses `@askdb/enrich` for the shared non-UI Schema v2 authoring logic:
 workspace loading, editable drafts, markdown/frontmatter preservation, save
