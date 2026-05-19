@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { extname, relative, join, resolve } from "node:path";
@@ -59,6 +60,8 @@ import {
 } from "@askdb/enrich";
 import type {
   AskResponse,
+  ExecuteResponse,
+  PlaygroundHistoryEntry,
   RagIndexResponse,
   RagQueryResponse,
   StudioRequestUsageDto,
@@ -209,6 +212,25 @@ export function createStudioServer(options: StudioOptions): StudioServer {
         const body = await readJson(req);
         const options = parseAskBody(body);
         const result = await askSampleQuestion(state, options);
+        return writeJson(res, 200, result);
+      }
+      if (req.method === "GET" && url.pathname === "/api/history") {
+        return writeJson(res, 200, readPlaygroundHistory(state.schemaDir));
+      }
+      if (req.method === "POST" && url.pathname === "/api/history") {
+        const body = await readJson(req);
+        const entry = parsePlaygroundHistoryEntry(body);
+        appendPlaygroundHistory(state.schemaDir, entry);
+        return writeJson(res, 200, { ok: true });
+      }
+      if (req.method === "DELETE" && url.pathname.startsWith("/api/history/")) {
+        const id = decodeURIComponent(url.pathname.slice("/api/history/".length));
+        const result = deletePlaygroundHistoryEntry(state.schemaDir, id);
+        return writeJson(res, 200, result);
+      }
+      if (req.method === "POST" && url.pathname === "/api/execute") {
+        const body = await readJson(req);
+        const result = await executeQuery(body);
         return writeJson(res, 200, result);
       }
       if (req.method === "GET" && !url.pathname.startsWith("/api/")) {
@@ -1015,6 +1037,144 @@ function stableTokenHash(token: string): number {
     hash = Math.imul(hash, 16777619);
   }
   return hash >>> 0;
+}
+
+// ---------------------------------------------------------------------------
+// Playground history helpers
+// ---------------------------------------------------------------------------
+
+const HISTORY_MAX_STORED = 200;
+const HISTORY_MAX_RETURNED = 50;
+
+function playgroundHistoryPath(schemaDir: string): string {
+  return join(schemaDir, "playground-history.json");
+}
+
+function readPlaygroundHistory(schemaDir: string): { entries: PlaygroundHistoryEntry[] } {
+  const raw = readOptionalJson(playgroundHistoryPath(schemaDir));
+  const entries = Array.isArray(raw) ? (raw as PlaygroundHistoryEntry[]) : [];
+  return { entries: entries.slice(0, HISTORY_MAX_RETURNED) };
+}
+
+function appendPlaygroundHistory(
+  schemaDir: string,
+  entry: Omit<PlaygroundHistoryEntry, "id" | "timestamp">,
+): void {
+  const histPath = playgroundHistoryPath(schemaDir);
+  const raw = readOptionalJson(histPath);
+  const existing: PlaygroundHistoryEntry[] = Array.isArray(raw)
+    ? (raw as PlaygroundHistoryEntry[])
+    : [];
+  const newEntry: PlaygroundHistoryEntry = {
+    ...entry,
+    id: randomUUID(),
+    timestamp: new Date().toISOString(),
+  };
+  const updated = [newEntry, ...existing].slice(0, HISTORY_MAX_STORED);
+  writeFileSync(histPath, JSON.stringify(updated, null, 2), "utf8");
+}
+
+function deletePlaygroundHistoryEntry(
+  schemaDir: string,
+  id: string,
+): { ok: true } | { ok: false; error: string } {
+  const histPath = playgroundHistoryPath(schemaDir);
+  const raw = readOptionalJson(histPath);
+  const existing: PlaygroundHistoryEntry[] = Array.isArray(raw)
+    ? (raw as PlaygroundHistoryEntry[])
+    : [];
+  const filtered = existing.filter((e) => e.id !== id);
+  if (filtered.length === existing.length) {
+    return { ok: false, error: "not found" };
+  }
+  writeFileSync(histPath, JSON.stringify(filtered, null, 2), "utf8");
+  return { ok: true };
+}
+
+function parsePlaygroundHistoryEntry(
+  body: unknown,
+): Omit<PlaygroundHistoryEntry, "id" | "timestamp"> {
+  if (!isRecord(body)) {
+    throw new StudioHttpError(400, "Request body must be a JSON object.");
+  }
+  if (typeof body.question !== "string" || body.question.trim() === "") {
+    throw new StudioHttpError(400, "`question` is required.");
+  }
+  if (body.mode !== "full" && body.mode !== "rag") {
+    throw new StudioHttpError(400, "`mode` must be `full` or `rag`.");
+  }
+  if (typeof body.sqlMode !== "string") {
+    throw new StudioHttpError(400, "`sqlMode` is required.");
+  }
+  if (typeof body.sql !== "string") {
+    throw new StudioHttpError(400, "`sql` is required.");
+  }
+  return body as Omit<PlaygroundHistoryEntry, "id" | "timestamp">;
+}
+
+// ---------------------------------------------------------------------------
+// Execute endpoint helper
+// ---------------------------------------------------------------------------
+
+async function executeQuery(body: unknown): Promise<ExecuteResponse> {
+  const databaseUrl = process.env["DATABASE_URL"];
+  if (!databaseUrl) {
+    return { ok: false, error: "DATABASE_URL is not configured" };
+  }
+  if (!isRecord(body) || typeof body.sql !== "string" || body.sql.trim() === "") {
+    return { ok: false, error: "`sql` is required." };
+  }
+  const sql = body.sql;
+  const params = Array.isArray(body.params) ? body.params : [];
+
+  type PgClient = {
+    connect(): Promise<void>;
+    end(): Promise<void>;
+    query(text: string): Promise<unknown>;
+    query(opts: { text: string; values: unknown[] }): Promise<{
+      fields: Array<{ name: string }>;
+      rows: Array<Record<string, unknown>>;
+      rowCount: number | null;
+    }>;
+  };
+  type PgMod = { Client: new (opts: { connectionString: string }) => PgClient };
+
+  let pgMod: PgMod;
+  try {
+    const mod = await import("pg" as string);
+    pgMod = ((mod as unknown as { default?: PgMod }).default ?? mod) as PgMod;
+  } catch {
+    return { ok: false, error: "The `pg` package is required for query execution. Install it with `pnpm add pg`." };
+  }
+
+  const client = new pgMod.Client({ connectionString: databaseUrl });
+  await client.connect();
+  const startMs = Date.now();
+  try {
+    await client.query("BEGIN READ ONLY");
+    const result = await client.query({ text: sql, values: params });
+    await client.query("COMMIT");
+    const durationMs = Date.now() - startMs;
+    const columns = result.fields.map((f) => f.name);
+    const rows = result.rows.map((r) => columns.map((c) => r[c]));
+    const truncated = rows.length > 500;
+    return {
+      ok: true,
+      columns,
+      rows: rows.slice(0, 500),
+      rowCount: result.rowCount ?? rows.length,
+      durationMs,
+      truncated,
+    };
+  } catch (err) {
+    await (client.query("ROLLBACK") as Promise<unknown>).catch(() => {});
+    return {
+      ok: false,
+      error: err instanceof Error ? err.message : String(err),
+    };
+  } finally {
+    await client.end();
+  }
 }
 
 function readOptionalJson(path: string): unknown | undefined {
