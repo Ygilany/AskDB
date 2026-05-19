@@ -1,6 +1,5 @@
 import {
   AlertCircle,
-  Bot,
   BrainCircuit,
   Check,
   ChevronRight,
@@ -57,7 +56,7 @@ import {
 import { Badge, Button, Field, Input, ListInput, Panel, Textarea, parseList } from "./components/ui";
 import { cn } from "./lib/utils";
 
-type PanelKey = "rag" | "ask" | "settings";
+type PanelKey = "rag" | "settings";
 type MainView = "tables" | "concepts" | "tenancy" | "playground";
 
 type SuggestionDialog = {
@@ -81,7 +80,7 @@ export function App() {
   const [mainView, setMainView] = useState<MainView>("tables");
   const [drafts, setDrafts] = useState<Record<string, TableDraft>>({});
   const [tableSearch, setTableSearch] = useState("");
-  const [rightPanel, setRightPanel] = useState<PanelKey>("ask");
+  const [rightPanel, setRightPanel] = useState<PanelKey>("rag");
   const [saveStatus, setSaveStatus] = useState<StatusMessage | null>(null);
   const [suggestionDialog, setSuggestionDialog] = useState<SuggestionDialog | null>(null);
   const [suggestingKey, setSuggestingKey] = useState<string | null>(null);
@@ -772,13 +771,7 @@ export function App() {
 
       <aside className="studio-inspector">
         <div className="border-b border-border p-3">
-          <div className="grid grid-cols-3 gap-2">
-            <InspectorTab
-              active={rightPanel === "ask"}
-              icon={<Bot className="h-4 w-4" />}
-              label="Ask"
-              onClick={() => setRightPanel("ask")}
-            />
+          <div className="grid grid-cols-2 gap-2">
             <InspectorTab
               active={rightPanel === "rag"}
               icon={<BrainCircuit className="h-4 w-4" />}
@@ -810,27 +803,6 @@ export function App() {
               selectedTypes={ragTypes}
               setRagK={setRagK}
               status={ragStatus}
-            />
-          ) : null}
-          {rightPanel === "ask" ? (
-            <AskPanel
-              busy={busy}
-              message={askMessage}
-              mode={askMode}
-              onAsk={handleAsk}
-              onGoToRag={() => setRightPanel("rag")}
-              onModeChange={setAskMode}
-              onQuestionChange={setAskQuestion}
-              question={askQuestion}
-              ragAvailable={ragAvailable}
-              result={askResult}
-              tenantEnabled={askTenantEnabled}
-              onTenantEnabledChange={setAskTenantEnabled}
-              tenantScopeJson={askTenantScopeJson}
-              onTenantScopeJsonChange={setAskTenantScopeJson}
-              tenantSqlMode={askTenantSqlMode}
-              onTenantSqlModeChange={setAskTenantSqlMode}
-              hasTenantPolicy={Boolean(workspace?.tenantPolicy)}
             />
           ) : null}
           {rightPanel === "settings" ? (
@@ -2708,228 +2680,6 @@ function CoverageStat({
     </div>
   );
 }
-
-function AskPanel({
-  busy,
-  message,
-  mode,
-  onAsk,
-  onGoToRag,
-  onModeChange,
-  onQuestionChange,
-  question,
-  ragAvailable,
-  result,
-  tenantEnabled,
-  onTenantEnabledChange,
-  tenantScopeJson,
-  onTenantScopeJsonChange,
-  tenantSqlMode,
-  onTenantSqlModeChange,
-  hasTenantPolicy,
-}: {
-  busy: Set<string>;
-  message: StatusMessage | null;
-  mode: "full" | "rag";
-  onAsk: () => Promise<void>;
-  onGoToRag: () => void;
-  onModeChange: (mode: "full" | "rag") => void;
-  onQuestionChange: (question: string) => void;
-  question: string;
-  ragAvailable: boolean;
-  result: AskResponse | null;
-  tenantEnabled: boolean;
-  onTenantEnabledChange: (enabled: boolean) => void;
-  tenantScopeJson: string;
-  onTenantScopeJsonChange: (json: string) => void;
-  tenantSqlMode: TenantSqlOutputMode;
-  onTenantSqlModeChange: (mode: TenantSqlOutputMode) => void;
-  hasTenantPolicy: boolean;
-}) {
-  const ragDisabledReason = "Build the RAG index first to query with retrieval.";
-  return (
-    <div className="grid gap-0">
-      <Panel title="Sample SQL">
-        <div className="grid gap-3">
-          <Field label="Question">
-            <Textarea
-              value={question}
-              onChange={(event) => onQuestionChange(event.target.value)}
-              placeholder="How many users placed orders?"
-            />
-          </Field>
-          <div className="grid gap-1.5">
-            <span className="text-xs font-semibold text-muted-foreground">Retrieval mode</span>
-            <div
-              className={cn("segmented", !ragAvailable && "segmented-with-disabled")}
-              role="group"
-              aria-label="Retrieval mode"
-            >
-              <button
-                className={cn(mode === "full" && "active")}
-                type="button"
-                onClick={() => onModeChange("full")}
-              >
-                Full schema
-              </button>
-              <button
-                aria-disabled={!ragAvailable}
-                aria-describedby={!ragAvailable ? "ask-rag-disabled-reason" : undefined}
-                className={cn(mode === "rag" && "active")}
-                disabled={!ragAvailable}
-                title={!ragAvailable ? ragDisabledReason : undefined}
-                type="button"
-                onClick={() => onModeChange("rag")}
-              >
-                <span className="inline-flex items-center gap-1.5">
-                  {!ragAvailable ? <Lock className="h-3.5 w-3.5" aria-hidden="true" /> : null}
-                  RAG
-                </span>
-              </button>
-            </div>
-            {!ragAvailable ? (
-              <div
-                className="rag-unavailable-hint"
-                id="ask-rag-disabled-reason"
-                role="note"
-              >
-                <AlertCircle className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
-                <span>
-                  RAG retrieval is unavailable — no index has been built yet.{" "}
-                  <button
-                    className="link-button"
-                    type="button"
-                    onClick={onGoToRag}
-                  >
-                    Open the RAG tab
-                  </button>{" "}
-                  to build one.
-                </span>
-              </div>
-            ) : null}
-          </div>
-
-          {/* Tenant scope controls */}
-          <div className="grid gap-1.5">
-            <label className="flex items-center gap-2">
-              <input
-                type="checkbox"
-                checked={tenantEnabled}
-                disabled={!hasTenantPolicy}
-                onChange={(event) => onTenantEnabledChange(event.target.checked)}
-                className="h-4 w-4 rounded border-input"
-              />
-              <span className="text-xs font-semibold text-muted-foreground">
-                <Shield className="mr-1 inline h-3.5 w-3.5" />
-                Tenant scope
-              </span>
-            </label>
-            {!hasTenantPolicy ? (
-              <p className="text-xs text-muted-foreground">
-                No tenant-policy.md found in this schema.
-              </p>
-            ) : null}
-            {tenantEnabled && hasTenantPolicy ? (
-              <div className="grid gap-2">
-                <Field label="Scope JSON">
-                  <Textarea
-                    className="font-mono text-xs"
-                    value={tenantScopeJson}
-                    onChange={(event) => onTenantScopeJsonChange(event.target.value)}
-                    placeholder={'{\n  "access": {\n    "kind": "ids",\n    "tenantRoot": "orgs",\n    "ids": ["org-1"]\n  }\n}'}
-                    rows={5}
-                  />
-                </Field>
-                <div className="grid gap-1.5">
-                  <span className="text-xs font-semibold text-muted-foreground">SQL output mode</span>
-                  <div className="segmented" role="group" aria-label="SQL output mode">
-                    <button
-                      className={cn(tenantSqlMode === "sql-only" && "active")}
-                      type="button"
-                      onClick={() => onTenantSqlModeChange("sql-only")}
-                    >
-                      Inline literals
-                    </button>
-                    <button
-                      className={cn(tenantSqlMode === "sql-params" && "active")}
-                      type="button"
-                      onClick={() => onTenantSqlModeChange("sql-params")}
-                    >
-                      $N parameters
-                    </button>
-                  </div>
-                </div>
-              </div>
-            ) : null}
-          </div>
-
-          <Button disabled={busy.has("ask")} onClick={() => void onAsk()}>
-            {busy.has("ask") ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
-            Generate SQL
-          </Button>
-          {message ? <InlineStatus status={message} /> : null}
-        </div>
-      </Panel>
-
-      <Panel title="Generated SQL" action={result?.sql ? <CopyButton value={result.sql} /> : undefined}>
-        {result?.sql ? <pre className="sql-block">{result.sql}</pre> : <EmptyText text="No SQL generated yet." />}
-      </Panel>
-
-      {result?.tenant?.enabled ? (
-        <Panel title="Tenant Bindings">
-          {result.tenant.bindings.length > 0 ? (
-            <div className="grid gap-2">
-              {result.tenant.bindings.map((binding, index) => (
-                <div className="rounded-md border border-border bg-muted/30 p-2 text-xs" key={index}>
-                  <div className="flex items-center justify-between gap-2">
-                    <code className="font-semibold">{binding.placeholder}</code>
-                    <Badge variant="outline">{binding.rootLabel}</Badge>
-                  </div>
-                  <div className="mt-1 text-muted-foreground">
-                    IDs: <code>{JSON.stringify(binding.ids)}</code>
-                  </div>
-                </div>
-              ))}
-              {result.tenant.sqlMode === "sql-params" && result.tenant.params.length > 0 ? (
-                <div className="rounded-md border border-border bg-muted/30 p-2 text-xs">
-                  <span className="font-semibold">Positional params:</span>{" "}
-                  <code>{JSON.stringify(result.tenant.params)}</code>
-                </div>
-              ) : null}
-            </div>
-          ) : (
-            <EmptyText text="No tenant bindings in the generated SQL." />
-          )}
-        </Panel>
-      ) : null}
-
-      <UsageSummary title="Request Usage" usage={result?.usage ?? null} />
-
-      {result?.explain !== null && result?.explain !== undefined ? (
-        <Panel title="Explain">
-          <pre className="plain-block">{formatUnknown(result.explain)}</pre>
-        </Panel>
-      ) : null}
-
-      {result?.warnings && result.warnings.length > 0 ? (
-        <Panel title="Warnings">
-          <div className="grid gap-2">
-            {result.warnings.map((warning, index) => (
-              <pre className="warning-block" key={index}>
-                {formatUnknown(warning)}
-              </pre>
-            ))}
-          </div>
-        </Panel>
-      ) : null}
-
-      {result?.rag.enabled ? (
-        <ChunkList chunks={result.rag.chunks} emptyText="RAG returned no chunks." />
-      ) : null}
-    </div>
-  );
-}
-
 function SettingsPanel({
   ragStatus,
   workspace,
