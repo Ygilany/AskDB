@@ -27,6 +27,14 @@ export const AskDbLogEvent = {
    * skipped" apart from "never wired up".
    */
   PipelineRetrievalSkipped: "askdb.pipeline.retrieval.skipped",
+  /** Tenant scope validated and accepted. Includes `scopeKind` and `enforcement`. */
+  TenantScopeValidated: "askdb.tenant.scope_validated",
+  /** Tenant scope validation failed. Includes `reason`. */
+  TenantScopeRejected: "askdb.tenant.scope_rejected",
+  /** Tenant SQL guardrail check passed. */
+  TenantGuardrailPassed: "askdb.tenant.guardrail_passed",
+  /** Tenant SQL guardrail check found issues. Includes `warnings` in warn mode. */
+  TenantGuardrailFailed: "askdb.tenant.guardrail_failed",
 } as const;
 
 export type AskDbLogEventName = (typeof AskDbLogEvent)[keyof typeof AskDbLogEvent];

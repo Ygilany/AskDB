@@ -13,7 +13,8 @@ export type ChunkType =
   | "cql"
   | "question"
   | "concept"
-  | "relationship";
+  | "relationship"
+  | "tenant-policy";
 
 /**
  * One slice of the v2 artifact, embedded as a single vector.

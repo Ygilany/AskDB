@@ -115,6 +115,58 @@ describe("long-body splitting", () => {
   });
 });
 
+const MULTI_TENANT_DIR = resolve(
+  __dirname,
+  "../../../../fixtures/schemas/agency-multi-tenant.schema",
+);
+
+describe("tenant policy chunking", () => {
+  it("emits tenant-policy chunks for the multi-tenant fixture", () => {
+    const { chunks, stats } = chunkSchemaDir(MULTI_TENANT_DIR);
+    const tpChunks = chunks.filter((c) => c.type === "tenant-policy");
+    expect(tpChunks.length).toBeGreaterThan(0);
+    expect(stats.byType["tenant-policy"]).toBe(tpChunks.length);
+  });
+
+  it("emits one chunk per H2 section", () => {
+    const { chunks } = chunkSchemaDir(MULTI_TENANT_DIR);
+    const tpChunks = chunks.filter((c) => c.type === "tenant-policy");
+    const ids = tpChunks.map((c) => c.id);
+    expect(ids).toContain("chunk:tenant-policy#hierarchy");
+    expect(ids).toContain("chunk:tenant-policy#scope-rules");
+    expect(ids).toContain("chunk:tenant-policy#sensitive-interactions");
+  });
+
+  it("chunk text includes section heading and body", () => {
+    const { chunks } = chunkSchemaDir(MULTI_TENANT_DIR);
+    const hierarchy = chunks.find((c) => c.id === "chunk:tenant-policy#hierarchy");
+    expect(hierarchy).toBeDefined();
+    expect(hierarchy!.text).toContain("Tenant policy — Hierarchy");
+    expect(hierarchy!.text).toContain("Agencies");
+  });
+
+  it("tenant-policy chunks are not sensitive", () => {
+    const { chunks } = chunkSchemaDir(MULTI_TENANT_DIR);
+    const tpChunks = chunks.filter((c) => c.type === "tenant-policy");
+    for (const c of tpChunks) {
+      expect(c.sensitive).toBe(false);
+    }
+  });
+
+  it("does not emit tenant-policy chunks when schema has no tenant policy", () => {
+    const { chunks, stats } = chunkSchemaDir(FIXTURE_DIR);
+    const tpChunks = chunks.filter((c) => c.type === "tenant-policy");
+    expect(tpChunks).toHaveLength(0);
+    expect(stats.byType["tenant-policy"]).toBe(0);
+  });
+
+  it("tenant-policy chunks are deterministic across runs", () => {
+    const a = chunkSchemaDir(MULTI_TENANT_DIR).chunks.filter((c) => c.type === "tenant-policy");
+    const b = chunkSchemaDir(MULTI_TENANT_DIR).chunks.filter((c) => c.type === "tenant-policy");
+    expect(JSON.stringify(a)).toEqual(JSON.stringify(b));
+  });
+});
+
 describe("filter inputs are tolerant", () => {
   it("works on a schema with no concepts.md", () => {
     const sources = loadChunkerSourcesFromDir(FIXTURE_DIR);

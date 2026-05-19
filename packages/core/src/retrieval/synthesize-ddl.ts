@@ -31,6 +31,7 @@ export function synthesizeRetrievedDdl(args: {
   const concepts: RetrievedResult["payload"][] = [];
   const questions: RetrievedResult["payload"][] = [];
   const relationships: RetrievedResult["payload"][] = [];
+  const tenantPolicyChunks: RetrievedResult["payload"][] = [];
 
   for (const r of results) {
     const p = r.payload;
@@ -75,6 +76,10 @@ export function synthesizeRetrievedDdl(args: {
         for (const ref of p.refs) {
           if (ref.startsWith("table:") && !ref.includes("#")) tableIds.add(ref);
         }
+        break;
+      }
+      case "tenant-policy": {
+        tenantPolicyChunks.push(p);
         break;
       }
     }
@@ -148,6 +153,14 @@ export function synthesizeRetrievedDdl(args: {
     lines.push("-- example questions for context --");
     for (const q of questions) {
       lines.push(`-- ${stripHeaderLine(q.text).replace(/\n+/g, " ")}`);
+    }
+    lines.push("");
+  }
+
+  if (tenantPolicyChunks.length > 0) {
+    lines.push("-- tenant policy context --");
+    for (const tp of tenantPolicyChunks) {
+      lines.push(`-- ${stripHeaderLine(tp.text).replace(/\n+/g, "; ")}`);
     }
     lines.push("");
   }
