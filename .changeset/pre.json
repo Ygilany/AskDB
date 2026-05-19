@@ -62,6 +62,7 @@
     "studio-list-input-deferred-parse",
     "studio-rag-store-config",
     "studio-sample-rag-mode",
+    "studio-tenancy-surfaces",
     "studio-token-usage",
     "studio-usage-layout",
     "studio-web-primitives",
