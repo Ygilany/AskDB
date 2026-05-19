@@ -91,7 +91,6 @@ export default defineConfig({
             { label: "@askdb/enrich", slug: "enrich" },
             { label: "@askdb/tui", slug: "tui" },
             { label: "@askdb/studio", slug: "studio" },
-            { label: "Multi-tenancy", slug: "multi-tenancy" },
             { label: "@askdb/rag", slug: "rag" },
             { label: "@askdb/http-api", slug: "http-api" },
           ],
