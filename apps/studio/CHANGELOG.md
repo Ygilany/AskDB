@@ -1,5 +1,16 @@
 # @askdb/studio
 
+## 0.2.0-beta.11
+
+### Patch Changes
+
+- c7026a8: Add guided concept editing in Studio and improve TUI concept authoring prompts.
+- Updated dependencies [c3c0f21]
+  - @askdb/core@0.5.0-beta.14
+  - @askdb/rag@0.2.0-beta.9
+  - @askdb/enrich@0.2.0-beta.4
+  - @askdb/postgres@0.2.0-beta.6
+
 ## 0.2.0-beta.10
 
 ### Patch Changes
