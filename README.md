@@ -184,7 +184,9 @@ pnpm exec askdb ask \
 
 AskDB returns SQL for review; it does not execute generated SQL. Treat generated SQL as an artifact that must be approved and run under your own database roles, read-only controls, tenant policy, and audit logging.
 
-**Current limitations (pre-1.0 / dev):** Postgres-only dialect and introspection; AskDB returns SQL only; SQL guardrails are heuristic (not a full SQL parser); MCP, web, and richer report generation are roadmap work. Merge bars: **[Phase 1](docs/specs/phase-1-schema-sql-cli/validation.md)** · **[Phase 2](docs/specs/phase-2-hardening-modes/validation.md)**.
+**Engines:** PostgreSQL, MySQL, SQLite, and SQL Server are all first-class — install the matching `@askdb/postgres`, `@askdb/mysql`, `@askdb/sqlite`, or `@askdb/sqlserver` adapter and pass the dialect to `ask()`. Postgres is the reference dialect; the others ship dialect and introspection with parity tracked on the roadmap.
+
+**Current limitations (pre-1.0 / dev):** AskDB returns SQL only (execution stays in your app); SQL guardrails are heuristic (not a full SQL parser); a first-party MCP server, richer report generation, and a hosted dashboard are roadmap work. Merge bars: **[Phase 1](docs/specs/phase-1-schema-sql-cli/validation.md)** · **[Phase 2](docs/specs/phase-2-hardening-modes/validation.md)**.
 
 **CI:** [`.github/workflows/ci.yml`](.github/workflows/ci.yml) runs `pnpm install --frozen-lockfile`, `pnpm build`, starts the Pagila introspection fixture, runs `pnpm test`, runs the installable smoke test, and validates publish with a dry run.
 
