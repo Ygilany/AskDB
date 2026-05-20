@@ -1,13 +1,89 @@
 ---
 title: "Agents and MCP"
-description: "Expose AskDB as a tool to an agent framework, including the Model Context Protocol."
+description: "What works today for agent integration — CLI, library, HTTP API — and the status of a first-party Model Context Protocol server."
 ---
 
-import { Aside } from "@astrojs/starlight/components";
+<p class="doc-eyebrow">Integration · Agents</p>
 
-<Aside type="caution" title="Draft">
-This page is being written as part of the docs redesign.
-</Aside>
+<p class="doc-lede">
+  AskDB is built to be machine-driven. Agents can ground SQL
+  generation through the same surfaces human integrators use — the
+  CLI, the library, and the HTTP API. A first-party Model Context
+  Protocol (MCP) server is roadmap work; for now, wrap one of the
+  existing surfaces.
+</p>
 
-Wrap AskDB as a callable tool inside an agent loop. This page covers
-the MCP server interface and the supported tool shape.
+## What works today
+
+| Surface | When to use it |
+| --- | --- |
+| **CLI** | Stable flags and structured logs. Good for scripted pipelines and CI. |
+| **Library** | Embed `ask()` directly in your agent runtime — fastest path for Node agents. See [Embed in a Node app](../embed-in-node/). |
+| **HTTP API** | `@askdb/http-api` for agents in any language. See [Deploy as HTTP service](../deploy-as-http-service/). |
+
+All three surfaces use the same `@askdb/core` pipeline and enforce
+the same validator. Whichever you wrap, you get the same safety
+guarantees.
+
+## MCP status
+
+A first-party Model Context Protocol server is planned. It will
+expose the same `ask()` contract through the MCP protocol so any
+MCP-aware agent (Claude Desktop, Cursor, IDE integrations) can call
+AskDB as a tool.
+
+Until it ships, the recommended pattern is to write a thin MCP
+adapter in your own host that calls the HTTP API or the library
+directly. Your adapter enforces the same trust boundaries — modes,
+sensitive-field handling, which schema artifact is loaded — that
+the first-party MCP server will.
+
+Track the roadmap on the [AskDB GitHub
+project](https://github.com/Ygilany/AskDB).
+
+## Wrapping AskDB as a tool
+
+A typical agent tool definition for AskDB looks like:
+
+```ts
+{
+  name: "ask_database",
+  description: "Translate a natural-language question into SQL " +
+    "against the application database. Returns SQL — execution is " +
+    "the caller's responsibility.",
+  parameters: {
+    type: "object",
+    properties: {
+      question: { type: "string" },
+    },
+    required: ["question"],
+  },
+  async invoke({ question }) {
+    const { sql } = await ask({ question, schema, dialect: "postgres", model });
+    return { sql };
+  },
+}
+```
+
+This works in Vercel AI SDK tools, OpenAI function calls, Anthropic
+tool use, and any other agent framework that takes a function and a
+schema.
+
+## Trust in an agent loop
+
+Two things matter when AskDB sits inside an agent:
+
+1. **The agent never executes SQL directly.** It calls `ask()` and
+   gets back validated SQL — your host code decides whether and how
+   to run it.
+2. **The agent operates under a tenant scope you supply.** When the
+   schema has tenant policy, pass `tenantScope` from your host's
+   auth context — not from anything the agent (or the user) sent.
+
+## Read next
+
+<div class="home-path-grid">
+  <a href="../embed-in-node/"><strong>Embed in a Node app</strong><span>The library surface you'll most likely wrap in an agent tool.</span></a>
+  <a href="../deploy-as-http-service/"><strong>Deploy as HTTP service</strong><span>The HTTP surface for non-Node agents.</span></a>
+  <a href="../../concepts/safety-boundaries/"><strong>Safety boundaries</strong><span>What the validator enforces — same rules regardless of who's asking.</span></a>
+</div>

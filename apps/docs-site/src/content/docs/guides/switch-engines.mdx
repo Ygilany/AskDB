@@ -1,14 +1,132 @@
 ---
 title: "Switch engines"
-description: "Move between Postgres, MySQL, SQLite, and SQL Server — what changes and what doesn't."
+description: "All four engines — Postgres, MySQL, SQLite, SQL Server — are first-class. Here's what changes when you move between them and what doesn't."
 ---
 
-import { Aside } from "@astrojs/starlight/components";
+<p class="doc-eyebrow">Engine migration</p>
 
-<Aside type="caution" title="Draft">
-This page is being written as part of the docs redesign.
-</Aside>
+<p class="doc-lede">
+  Most of AskDB is engine-agnostic. The dialect adapter is the part
+  that knows your SQL flavor — swap it, and the same schema-author
+  workflow and the same <code>ask()</code> call work against a
+  different engine.
+</p>
 
-All four engines are first-class. This guide covers the swap: which
-package to install, how introspection differs, and what dialect
-features each engine supports.
+## What stays the same
+
+- The schema artifact format. Same `schema.json`, same `tables/*.md`,
+  same enrichment workflow.
+- The `ask()` API. Same options, same return shape.
+- The validator semantics: read-only, single-statement, no system
+  schemas, tenant filter enforcement.
+- The privacy model. The model sees schema, not rows, regardless of
+  engine.
+
+## What changes
+
+- The engine package you install.
+- The `dialect` value you pass to `ask()`.
+- Engine-specific SQL features the validator allows (LIMIT vs TOP,
+  parameter syntax, JSON path syntax).
+- The driver your app uses to execute (`pg`, `mysql2`,
+  `better-sqlite3`, `mssql`).
+- How the CLI introspects the database (connection-string format and
+  catalog queries differ per engine).
+
+## The matrix
+
+| Engine | Adapter package | `dialect` value | Suggested driver |
+| --- | --- | --- | --- |
+| PostgreSQL | `@askdb/postgres` | `"postgres"` | `pg` |
+| MySQL | `@askdb/mysql` | `"mysql"` | `mysql2` |
+| SQLite | `@askdb/sqlite` | `"sqlite"` | `better-sqlite3` |
+| SQL Server | `@askdb/sqlserver` | `"sqlserver"` | `mssql` |
+
+## Step by step
+
+### 1. Install the new adapter
+
+```bash
+npm install @askdb/mysql            # or @askdb/sqlite, @askdb/sqlserver
+```
+
+You can keep the old adapter installed during a transition. Each
+adapter is self-contained.
+
+### 2. Re-introspect against the new database
+
+```bash
+npx askdb introspect \
+  --url "mysql://user:pass@host/dbname" \
+  --out my-app.schema \
+  --schema-id my-app
+```
+
+The connection string format follows each engine's convention. The
+CLI picks the right dialect from the URL scheme.
+
+### 3. Update the `dialect` value
+
+```ts
+const { sql } = await ask({
+  question,
+  schema,
+  dialect: "mysql",      // was "postgres"
+  model,
+});
+```
+
+### 4. Update your driver
+
+Swap `pg` for the driver that matches the new engine. The execution
+layer is yours — AskDB doesn't open the connection — so this is a
+straight library swap.
+
+```ts
+import mysql from "mysql2/promise";
+
+const pool = mysql.createPool({
+  uri: process.env.MYSQL_URL,
+  connectionLimit: 10,
+});
+
+const [rows] = await pool.execute(sql);
+```
+
+## On dialect parity
+
+Postgres is the reference dialect — features ship there first and the
+other engines follow. For most analytical questions, the four
+dialects generate equivalent SQL; for engine-specific features (JSON
+operators, window function syntax, regex variations), behavior
+follows what each engine supports natively.
+
+If you hit a dialect difference that surprises you, that's a bug —
+file it on [the project issues](https://github.com/Ygilany/AskDB/issues).
+
+## Running multiple engines side by side
+
+Nothing stops you from loading two schema artifacts and calling
+`ask()` against different dialects in the same process. Useful for
+multi-database apps:
+
+```ts
+const ordersSchema = await loadSchema("./orders.schema");
+const analyticsSchema = await loadSchema("./analytics.schema");
+
+const fromOrders = await ask({
+  question, schema: ordersSchema, dialect: "postgres", model,
+});
+
+const fromAnalytics = await ask({
+  question, schema: analyticsSchema, dialect: "mysql", model,
+});
+```
+
+## Read next
+
+<div class="home-path-grid">
+  <a href="../../concepts/modes-and-dialects/"><strong>Modes and dialects</strong><span>The conceptual model behind dialect adapters.</span></a>
+  <a href="../embed-in-node/"><strong>Embed in a Node app</strong><span>The base integration that the engine swap modifies.</span></a>
+  <a href="../../reference/packages/"><strong>Package reference</strong><span>The full per-engine package surface.</span></a>
+</div>

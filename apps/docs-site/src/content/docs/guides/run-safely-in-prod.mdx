@@ -1,14 +1,139 @@
 ---
 title: "Run safely in production"
-description: "Lock down execution, enforce read-only, scope queries, and log what the model proposes."
+description: "The operator checklist for AskDB: read-only roles, statement timeouts, row limits, audit logging, and approval flows."
 ---
 
-import { Aside } from "@astrojs/starlight/components";
+<p class="doc-eyebrow">Production checklist</p>
 
-<Aside type="caution" title="Draft">
-This page is being written as part of the docs redesign.
-</Aside>
+<p class="doc-lede">
+  AskDB validates SQL before it's returned. Your application owns
+  everything that depends on runtime context. This page is the
+  checklist for that side of the boundary.
+</p>
 
-A production checklist: connection roles, query timeouts, row limits,
-tenant scoping, audit logging, and how to handle model output you
-don't trust.
+## Database role
+
+Connect under a role that <em>can't</em> write — even if AskDB's
+validator slips. This is the single most important defense.
+
+```sql
+CREATE ROLE askdb_reader LOGIN PASSWORD '…';
+GRANT CONNECT ON DATABASE myapp TO askdb_reader;
+GRANT USAGE ON SCHEMA public TO askdb_reader;
+GRANT SELECT ON ALL TABLES IN SCHEMA public TO askdb_reader;
+-- Restrict access to system schemas and any sensitive tables
+REVOKE ALL ON ALL TABLES IN SCHEMA pg_catalog FROM askdb_reader;
+```
+
+Use that role's credentials in the connection string AskDB's
+consumers use. Don't reuse your application's admin user.
+
+## Connection limits
+
+Set a statement timeout and a small pool. Generated SQL should be
+fast — a slow query is usually a sign of a malformed question or a
+missing index, not a real long-running report.
+
+```ts
+import { Pool } from "pg";
+
+const pool = new Pool({
+  connectionString: process.env.ASKDB_DATABASE_URL,
+  max: 10,
+  statement_timeout: 5000,        // 5s — adjust to your workload
+  idle_in_transaction_session_timeout: 5000,
+});
+```
+
+## Row limits
+
+Wrap generated SQL with a hard row cap before execution. This
+protects against questions like "show me every row in this 100M-row
+table" that are valid SQL but useless to render.
+
+```ts
+const { sql } = await ask({ question, schema, dialect: "postgres", model });
+const cappedSql = `SELECT * FROM (${sql}) AS askdb_q LIMIT 1000`;
+```
+
+## Audit logging
+
+Log every question, every generated SQL string, the user who asked,
+and the outcome. Keep it in your existing logging system — AskDB
+doesn't log on your behalf.
+
+```ts
+import { ask } from "@askdb/core";
+import { logger } from "./logger.js";
+
+const correlationId = crypto.randomUUID();
+logger.info({ correlationId, userId, question }, "askdb.question");
+
+try {
+  const { sql } = await ask({ question, schema, dialect: "postgres", model });
+  logger.info({ correlationId, sql }, "askdb.generated");
+
+  const rows = await pool.query(sql);
+  logger.info({ correlationId, rowCount: rows.rowCount }, "askdb.executed");
+  return rows;
+} catch (error) {
+  logger.error({ correlationId, error }, "askdb.error");
+  throw error;
+}
+```
+
+The optional structured logger in `@askdb/core` (`createAskDbLogger`)
+emits standard events you can wire into Pino.
+
+## Approval flows
+
+For high-stakes questions — anything that touches sensitive data, or
+that runs against production reporting databases — show the SQL to a
+human before executing.
+
+A common pattern:
+
+1. Call `ask()` and return `{ sql }` (no execution).
+2. Render the SQL in the UI with the question for context.
+3. On user confirmation, POST the SQL back to a separate execution
+   endpoint that runs it under the read-only role.
+
+This works because AskDB returns validated SQL as a value — your
+application controls when, if, and how it runs.
+
+## Sensitive columns
+
+Mark sensitive columns in the schema artifact:
+
+```yaml
+columns:
+  - id: table:users#email
+    name: email
+    sensitive: true
+```
+
+Then choose the prompt-construction behavior per deployment:
+
+- **Default** — sensitive columns appear in the prompt with a
+  sensitivity tag. The model knows to be cautious.
+- **Strict** — set `ASKDB_OMIT_SENSITIVE_FROM_PROMPT=true` to omit
+  sensitive columns from the prompt entirely. The model can't
+  propose them because it doesn't know they exist.
+
+See [Privacy model](../../concepts/privacy-model/) for what crosses
+the boundary in each mode.
+
+## Multi-tenancy
+
+If your app is multi-tenant, declare tenant policy in the schema
+artifact and pass a `tenantScope` to every `ask()` call. AskDB
+enforces the tenant predicate at generation time. See
+[Multi-tenancy](../multi-tenancy/).
+
+## Read next
+
+<div class="home-path-grid">
+  <a href="../../concepts/safety-boundaries/"><strong>Safety boundaries</strong><span>What AskDB enforces before SQL leaves the validator.</span></a>
+  <a href="../../concepts/privacy-model/"><strong>Privacy model</strong><span>What crosses the boundary to the model.</span></a>
+  <a href="../multi-tenancy/"><strong>Multi-tenancy</strong><span>Scoping every query to a tenant.</span></a>
+</div>

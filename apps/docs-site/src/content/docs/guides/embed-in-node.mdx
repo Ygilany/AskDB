@@ -1,14 +1,144 @@
 ---
 title: "Embed AskDB in a Node app"
-description: "Add natural-language SQL to a TypeScript service in under twenty lines."
+description: "Add natural-language SQL to a TypeScript service in twenty lines: load a schema, call ask(), run the SQL through your own pool."
 ---
 
-import { Aside } from "@astrojs/starlight/components";
+<p class="doc-eyebrow">Integrator guide</p>
 
-<Aside type="caution" title="Draft">
-This page is being written as part of the docs redesign.
-</Aside>
+<p class="doc-lede">
+  Drop <code>@askdb/core</code> into a TypeScript service. AskDB
+  loads your schema artifact, generates validated SQL from a question,
+  and hands it back. Your service runs it through its own connection
+  pool against a read-only role.
+</p>
 
-Wire `@askdb/core` into a TypeScript service: load a schema artifact,
-generate SQL from a question, and execute it through your own
-connection pool.
+## Install
+
+```bash
+npm install @askdb/core @askdb/postgres ai @ai-sdk/openai pg
+```
+
+| Package | Why |
+| --- | --- |
+| `@askdb/core` | The pipeline — `loadSchema`, `ask`, validation. |
+| `@askdb/postgres` | The Postgres dialect adapter (swap for `@askdb/mysql`, `@askdb/sqlite`, `@askdb/sqlserver`). |
+| `ai` + `@ai-sdk/openai` | The Vercel AI SDK and an OpenAI provider — bring your own. |
+| `pg` | The Postgres driver. AskDB doesn't open the connection; your app does. |
+
+## Load the schema once
+
+The schema artifact is read from disk. Load it at startup and keep it
+in memory — it doesn't need to be reloaded per request.
+
+```ts
+// schema.ts
+import { loadSchema } from "@askdb/core";
+
+export const schema = await loadSchema("./my-app.schema");
+```
+
+## Wire `ask()` into a handler
+
+```ts
+// ask-handler.ts
+import { ask } from "@askdb/core";
+import { openai } from "@ai-sdk/openai";
+import { Pool } from "pg";
+import { schema } from "./schema.js";
+
+const model = openai("gpt-4o-mini");
+
+const pool = new Pool({
+  connectionString: process.env.DATABASE_URL,
+  // Run under a read-only role for defense in depth.
+  statement_timeout: 5000,
+  max: 10,
+});
+
+export async function askQuestion(question: string) {
+  const { sql } = await ask({
+    question,
+    schema,
+    dialect: "postgres",
+    model,
+  });
+
+  // Audit hook — log every question and generated SQL.
+  console.log({ question, sql });
+
+  const { rows } = await pool.query(sql);
+  return { sql, rows };
+}
+```
+
+That's the whole pipeline. AskDB returns validated SQL — your handler
+logs it, runs it, and returns the result.
+
+## Behind an HTTP route
+
+```ts
+// server.ts
+import { createServer } from "node:http";
+import { askQuestion } from "./ask-handler.js";
+
+const server = createServer(async (req, res) => {
+  if (req.method !== "POST" || req.url !== "/ask") {
+    res.writeHead(404).end();
+    return;
+  }
+
+  const body = await new Promise<string>((resolve) => {
+    let s = "";
+    req.on("data", (c) => (s += c));
+    req.on("end", () => resolve(s));
+  });
+
+  const { question } = JSON.parse(body);
+  const result = await askQuestion(question);
+  res.setHeader("content-type", "application/json");
+  res.end(JSON.stringify(result));
+});
+
+server.listen(3000);
+```
+
+For a production-grade HTTP surface — including request validation,
+size limits, and a `/health` endpoint — use
+[`@askdb/http-api`](./deploy-as-http-service/) instead of rolling your
+own.
+
+## Handling errors
+
+`ask()` throws when the model returns SQL that fails validation. Catch
+and surface the error to your client so the user knows the question
+wasn't translatable.
+
+```ts
+import { ask } from "@askdb/core";
+
+try {
+  const { sql } = await ask({ question, schema, dialect: "postgres", model });
+  // ...
+} catch (error) {
+  // The validator rejected the model's output.
+  // Common causes: ambiguous question, missing schema enrichment,
+  // attempted write, multi-statement, system schema access.
+  return { error: "Couldn't translate that question.", details: String(error) };
+}
+```
+
+## Switching engines
+
+Same `ask()` call, different dialect string. Install the engine's
+adapter package, then change `dialect: "postgres"` to `"mysql"`,
+`"sqlite"`, or `"sqlserver"`. See [Switch
+engines](../switch-engines/) for the full migration matrix.
+
+## Read next
+
+<div class="home-path-grid">
+  <a href="../run-safely-in-prod/"><strong>Run safely in production</strong><span>The operator checklist: roles, timeouts, audit, approval.</span></a>
+  <a href="../deploy-as-http-service/"><strong>Deploy as HTTP service</strong><span>Use @askdb/http-api instead of rolling your own.</span></a>
+  <a href="../author-your-schema/"><strong>Author your schema</strong><span>Make generation better by enriching the artifact.</span></a>
+  <a href="../../reference/packages/"><strong>Package reference</strong><span>The full API surface for every @askdb/* package.</span></a>
+</div>

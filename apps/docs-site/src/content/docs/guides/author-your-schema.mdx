@@ -1,14 +1,105 @@
 ---
 title: "Author your schema"
-description: "Use Studio (or the TUI) to enrich your introspected schema with descriptions, concepts, and policy."
+description: "Use Studio (or the TUI) to enrich your introspected schema with descriptions, aliases, concepts, sensitive markers, and tenant policy."
 ---
 
-import { Aside } from "@astrojs/starlight/components";
+<p class="doc-eyebrow">Schema author guide</p>
 
-<Aside type="caution" title="Draft">
-This page is being written as part of the docs redesign.
-</Aside>
+<p class="doc-lede">
+  Raw introspection gives the model structure. Enrichment gives it
+  meaning. Studio is the recommended authoring surface — a local
+  browser UI that edits your schema artifact directly.
+</p>
 
-The schema artifact is what the model reads. This guide walks through
-authoring it in Studio (recommended) — descriptions, aliases,
-concepts, sensitive markers, tenant policy — and committing it.
+## Before you start
+
+Have a schema artifact on disk. If you haven't run introspection yet,
+the [Quickstart](../../quickstart/) gets you to one in two commands.
+
+## Authoring in Studio
+
+Studio is the browser-based editor. Launch it pointed at your schema
+artifact:
+
+```bash
+npx askdb studio --schema ./my-app.schema
+```
+
+By default Studio serves on `http://127.0.0.1:5556`. It reads and
+writes the files in your schema folder directly — no separate
+database, no separate copy of your schema.
+
+What you'll edit:
+
+- **Tables.** Per-table description, aliases (the names users
+  actually use), and a "common query language" section that captures
+  domain phrasing.
+- **Columns.** Descriptions, enums, and sensitivity markers. Mark
+  columns like `email`, `ssn`, or `internal_notes` as `sensitive` so
+  the prompt-construction layer can tag or omit them.
+- **Concepts.** Cross-table business concepts (`customer`,
+  `active subscription`, `paid order`) that don't map to one table.
+- **Tenant policy.** When your app is multi-tenant, declare tenant
+  roots and scoped tables. See [Multi-tenancy](../multi-tenancy/) for
+  the full walkthrough.
+
+Studio also offers AI-assisted drafts: describe a table or concept
+in plain language and Studio proposes a draft for your review.
+Suggestions are always confirmed by a human before they land in the
+artifact.
+
+## Authoring in the TUI
+
+If you prefer the terminal — or you're authoring over SSH — the TUI
+covers the same workflow:
+
+```bash
+npx askdb enrich --schema ./my-app.schema
+```
+
+The TUI uses the same `@askdb/enrich` package under the hood as
+Studio and writes the same files. Pick whichever surface fits how
+you work.
+
+## Re-introspecting
+
+When your database schema changes (new columns, renamed tables,
+added relationships), re-run introspection. The physical layer
+(`schema.json`) is regenerated; your enrichment markdown
+(`tables/*.md`, `concepts.md`, `tenant-policy.md`) is preserved.
+
+```bash
+npx askdb introspect \
+  --url "$DATABASE_URL" \
+  --out ./my-app.schema \
+  --schema-id my-app
+```
+
+Stable IDs mean a renamed column doesn't break the enrichment that
+references it — the ID stays the same and the markdown follows.
+
+## Bundling for distribution
+
+When another service or build artifact needs the schema as a single
+file:
+
+```bash
+npx askdb bundle ./my-app.schema --out my-app.schema.bundle.json
+```
+
+The bundle file is the entire artifact in one JSON. Load it with
+`loadSchema` the same way as a directory.
+
+## Commit it
+
+The schema artifact is source code. Check it into the repo, review
+changes in PRs, deploy it alongside your app. The artifact is the
+single source of truth for what the model sees about your database.
+
+## Read next
+
+<div class="home-path-grid">
+  <a href="../multi-tenancy/"><strong>Multi-tenancy</strong><span>Declaring tenant roots and scoped tables in your artifact.</span></a>
+  <a href="../../concepts/the-schema-artifact/"><strong>The schema artifact</strong><span>The on-disk format in detail.</span></a>
+  <a href="../rag-for-large-schemas/"><strong>RAG for large schemas</strong><span>When your enriched artifact is too big for a single prompt.</span></a>
+</div>

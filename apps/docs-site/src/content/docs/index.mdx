@@ -45,20 +45,22 @@ import HomePrivacyBoundary from "../../components/HomePrivacyBoundary.astro";
 <p class="home-terminal-intro">A few lines of TypeScript: load a schema, ask a question, run the SQL through your own connection pool.</p>
 
 ```ts
-import { ask } from "@askdb/core";
-import { loadSchema } from "@askdb/postgres";
+import { ask, loadSchema } from "@askdb/core";
+import { openai } from "@ai-sdk/openai";
 import { Pool } from "pg";
 
-const schema = await loadSchema("./schema/app.schema");
+const schema = await loadSchema("./my-app.schema");
 const pool = new Pool({ connectionString: process.env.DATABASE_URL });
 
-const { sql, parameters } = await ask({
+const { sql } = await ask({
   question: "Which customers signed up last week?",
   schema,
+  dialect: "postgres",
+  model: openai("gpt-4o-mini"),
 });
 
 // Log or approve `sql` here, then run it through your own pool.
-const result = await pool.query(sql, parameters);
+const result = await pool.query(sql);
 ```
 
 ## Works with the database you already have

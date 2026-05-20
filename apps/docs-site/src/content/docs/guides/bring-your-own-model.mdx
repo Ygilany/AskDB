@@ -1,14 +1,143 @@
 ---
 title: "Bring your own model"
-description: "Use OpenAI, Anthropic, a local model, or any provider — your key, your billing."
+description: "Use OpenAI, Anthropic, Azure OpenAI, a local model — any provider that speaks the Vercel AI SDK interface. Your key, your billing."
 ---
 
-import { Aside } from "@astrojs/starlight/components";
+<p class="doc-eyebrow">Model providers</p>
 
-<Aside type="caution" title="Draft">
-This page is being written as part of the docs redesign.
-</Aside>
+<p class="doc-lede">
+  AskDB doesn't host inference. You pass a model in, AskDB calls it,
+  and the model's response goes back through your provider — billed
+  to your account.
+</p>
 
-AskDB doesn't host inference. Plug in any provider that speaks the
-expected interface, manage your own key, and switch models without
-changing your app.
+## How AskDB calls the model
+
+`ask()` accepts a `model` parameter typed as the Vercel AI SDK's
+`LanguageModel`. AskDB calls the model with the assembled prompt and
+parses the SQL it returns. No proxy. No middleman.
+
+```ts
+import { ask } from "@askdb/core";
+import { openai } from "@ai-sdk/openai";
+
+const { sql } = await ask({
+  question,
+  schema,
+  dialect: "postgres",
+  model: openai("gpt-4o-mini"),
+});
+```
+
+## OpenAI
+
+```bash
+npm install ai @ai-sdk/openai
+```
+
+```ts
+import { openai } from "@ai-sdk/openai";
+
+// Reads OPENAI_API_KEY from the environment
+const model = openai("gpt-4o-mini");
+```
+
+## Azure OpenAI
+
+```bash
+npm install ai @ai-sdk/azure
+```
+
+```ts
+import { createAzure } from "@ai-sdk/azure";
+
+const azure = createAzure({
+  resourceName: process.env.AZURE_RESOURCE_NAME,
+  apiKey: process.env.AZURE_API_KEY,
+});
+
+const model = azure("your-deployment-name");
+```
+
+## Anthropic
+
+```bash
+npm install ai @ai-sdk/anthropic
+```
+
+```ts
+import { anthropic } from "@ai-sdk/anthropic";
+
+const model = anthropic("claude-3-5-sonnet-latest");
+```
+
+## Any OpenAI-compatible endpoint
+
+For self-hosted or alternative providers that expose the OpenAI
+chat-completions shape (vLLM, llama.cpp server, OpenRouter, Together,
+LM Studio, Ollama, …) use `@ai-sdk/openai-compatible`:
+
+```bash
+npm install ai @ai-sdk/openai-compatible
+```
+
+```ts
+import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
+
+const local = createOpenAICompatible({
+  name: "local",
+  baseURL: "http://localhost:11434/v1",
+  apiKey: "ignored-by-local-server",
+});
+
+const model = local("llama3.1");
+```
+
+## Key management
+
+Your model API key lives in your environment, not in the schema
+artifact and not in AskDB. The CLI loads `.env` for local work; in
+production, supply the key the same way you supply your database
+URL.
+
+AskDB has no API of its own to authenticate — it's a library. The
+only credentials it touches are the ones you pass to your model
+provider through the AI SDK.
+
+## Switching models
+
+Models can be swapped without changing any other AskDB code. A
+common pattern: cheaper model for low-stakes analytics, stronger
+model for complex multi-join queries.
+
+```ts
+import { openai } from "@ai-sdk/openai";
+
+const cheapModel = openai("gpt-4o-mini");
+const strongModel = openai("gpt-4o");
+
+const model = question.length > 200 ? strongModel : cheapModel;
+
+const { sql } = await ask({ question, schema, dialect: "postgres", model });
+```
+
+## Cost
+
+You're billed by your model provider for every `ask()` call. Cost
+scales with:
+
+- Schema size (larger artifacts mean more tokens in the prompt) —
+  use [RAG for large schemas](../rag-for-large-schemas/) to send
+  only the relevant slice.
+- Question length.
+- Model tier.
+
+AskDB itself is MIT-licensed and free.
+
+## Read next
+
+<div class="home-path-grid">
+  <a href="../embed-in-node/"><strong>Embed in a Node app</strong><span>The full TypeScript walkthrough including model wiring.</span></a>
+  <a href="../rag-for-large-schemas/"><strong>RAG for large schemas</strong><span>Cut your token bill by sending only the relevant schema slice per question.</span></a>
+  <a href="../../concepts/privacy-model/"><strong>Privacy model</strong><span>What the model sees and what it doesn't.</span></a>
+</div>
