@@ -1,0 +1,14 @@
+---
+title: "Multi-tenancy"
+description: "Scope every generated query to a tenant with policy declared in the schema artifact."
+---
+
+import { Aside } from "@astrojs/starlight/components";
+
+<Aside type="caution" title="Draft">
+This page is being written as part of the docs redesign.
+</Aside>
+
+Declare tenant columns in your schema artifact and AskDB enforces the
+scope at generation time. Every query is rewritten to include the
+tenant filter, or rejected.

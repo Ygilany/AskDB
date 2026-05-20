@@ -5,12 +5,41 @@ import starlight from "@astrojs/starlight";
 const base = process.env.ASTRO_BASE ?? "/";
 const normalizedBase = base === "/" ? "" : base.replace(/\/$/, "");
 
-/** Old slug kept as redirect for bookmarks and external links (single entry avoids Astro route collision). */
-const schemaSlugRedirects = (() => {
-  const from = normalizedBase ? `${normalizedBase}/schema-v2/` : "/schema-v2/";
-  const to = normalizedBase ? `${normalizedBase}/askdb-schema/` : "/askdb-schema/";
-  return { [from]: to };
-})();
+const withBase = (path) => (normalizedBase ? `${normalizedBase}${path}` : path);
+
+const legacyRedirects = {
+  "/schema-v2/": "/concepts/the-schema-artifact/",
+  "/journeys/": "/concepts/how-askdb-works/",
+  "/concepts/": "/concepts/how-askdb-works/",
+  "/architecture/": "/concepts/how-askdb-works/",
+  "/askdb-schema/": "/concepts/the-schema-artifact/",
+  "/modes/": "/concepts/safety-boundaries/",
+  "/connectors/": "/reference/packages/",
+  "/multi-tenancy/": "/guides/multi-tenancy/",
+  "/guides/embed-in-app/": "/guides/embed-in-node/",
+  "/guides/author-enrich-schema/": "/guides/author-your-schema/",
+  "/guides/rag-large-schema/": "/guides/rag-for-large-schemas/",
+  "/guides/pgvector-setup/": "/guides/rag-for-large-schemas/",
+  "/guides/http-api/": "/guides/deploy-as-http-service/",
+  "/guides/agents-and-mcp/": "/guides/integrations/agents-mcp/",
+  "/packages/": "/reference/packages/",
+  "/environment/": "/reference/config/",
+  "/core/": "/reference/packages/",
+  "/postgres/": "/reference/packages/",
+  "/prisma/": "/guides/integrations/prisma/",
+  "/engines/": "/reference/packages/",
+  "/cli/": "/reference/cli/",
+  "/introspect/": "/reference/packages/",
+  "/enrich/": "/reference/packages/",
+  "/tui/": "/guides/author-your-schema/",
+  "/studio/": "/guides/author-your-schema/",
+  "/rag/": "/guides/rag-for-large-schemas/",
+  "/http-api/": "/reference/http-api/",
+};
+
+const redirects = Object.fromEntries(
+  Object.entries(legacyRedirects).map(([from, to]) => [withBase(from), withBase(to)])
+);
 
 /** Starlight does not export `user-components/Icon.astro` in package.json `exports`. */
 const starlightIcon = fileURLToPath(
@@ -20,7 +49,7 @@ const starlightIcon = fileURLToPath(
 export default defineConfig({
   site: `https://ygilany.github.io${normalizedBase}`,
   base,
-  redirects: schemaSlugRedirects,
+  redirects,
   vite: {
     resolve: {
       alias: {
@@ -32,7 +61,7 @@ export default defineConfig({
     starlight({
       title: "AskDB",
       description:
-        "Natural language to validated SQL—grounded in your schema so models never need your rows. npm-first guides for embed, CLI, and HTTP.",
+        "The open-source Text-to-SQL toolkit your data team trusts. Ask your data. Keep control.",
       logo: {
         light: "./src/assets/brand/logo.png",
         dark: "./src/assets/brand/logo-dark.png",
@@ -61,48 +90,46 @@ export default defineConfig({
           items: [
             { label: "Overview", slug: "index" },
             { label: "Quickstart", slug: "quickstart" },
-            { label: "Journeys", slug: "journeys" },
-            { label: "Core concepts", slug: "concepts" },
-            { label: "Architecture", slug: "architecture" },
+            { label: "Install", slug: "install" },
           ],
         },
         {
           label: "Guides",
           items: [
-            { label: "Embed NL→SQL in a Node app", slug: "guides/embed-in-app" },
-            { label: "Author and enrich schema", slug: "guides/author-enrich-schema" },
-            { label: "Add RAG for large schemas", slug: "guides/rag-large-schema" },
-            { label: "Set up pgvector for RAG", slug: "guides/pgvector-setup" },
-            { label: "Run the HTTP API", slug: "guides/http-api" },
-            { label: "Agents and MCP (status)", slug: "guides/agents-and-mcp" },
+            { label: "Embed in a Node app", slug: "guides/embed-in-node" },
+            { label: "Author your schema", slug: "guides/author-your-schema" },
+            { label: "Run safely in production", slug: "guides/run-safely-in-prod" },
+            { label: "Deploy as HTTP service", slug: "guides/deploy-as-http-service" },
+            { label: "Multi-tenancy", slug: "guides/multi-tenancy" },
+            { label: "Switch engines", slug: "guides/switch-engines" },
+            { label: "Bring your own model", slug: "guides/bring-your-own-model" },
+            { label: "RAG for large schemas", slug: "guides/rag-for-large-schemas" },
+            {
+              label: "Integrations",
+              items: [
+                { label: "Prisma", slug: "guides/integrations/prisma" },
+                { label: "Agents & MCP", slug: "guides/integrations/agents-mcp" },
+              ],
+            },
+          ],
+        },
+        {
+          label: "Concepts",
+          items: [
+            { label: "How AskDB works", slug: "concepts/how-askdb-works" },
+            { label: "The schema artifact", slug: "concepts/the-schema-artifact" },
+            { label: "Safety boundaries", slug: "concepts/safety-boundaries" },
+            { label: "Modes and dialects", slug: "concepts/modes-and-dialects" },
+            { label: "Privacy model", slug: "concepts/privacy-model" },
           ],
         },
         {
           label: "Reference",
           items: [
-            { label: "Package reference", slug: "packages" },
-            { label: "@askdb/config", slug: "environment" },
-            { label: "@askdb/core", slug: "core" },
-            { label: "@askdb/postgres", slug: "postgres" },
-            { label: "@askdb/prisma", slug: "prisma" },
-            { label: "MySQL · SQLite · SQL Server", slug: "engines" },
-            { label: "askdb", slug: "cli" },
-            { label: "@askdb/introspect", slug: "introspect" },
-            { label: "@askdb/enrich", slug: "enrich" },
-            { label: "@askdb/tui", slug: "tui" },
-            { label: "@askdb/studio", slug: "studio" },
-            { label: "Multi-tenancy", slug: "multi-tenancy" },
-            { label: "@askdb/rag", slug: "rag" },
-            { label: "@askdb/http-api", slug: "http-api" },
-          ],
-        },
-        {
-          label: "Contracts",
-          items: [
-            { label: "AskDB schema", slug: "askdb-schema" },
-            { label: "Connectors", slug: "connectors" },
-            { label: "Modes and safety", slug: "modes" },
-            { label: "Environment", slug: "environment" },
+            { label: "CLI", slug: "reference/cli" },
+            { label: "HTTP API", slug: "reference/http-api" },
+            { label: "Configuration", slug: "reference/config" },
+            { label: "Packages", slug: "reference/packages" },
           ],
         },
       ],

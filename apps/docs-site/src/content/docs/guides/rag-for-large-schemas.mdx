@@ -1,0 +1,14 @@
+---
+title: "RAG for large schemas"
+description: "When your schema is too big to fit in context, chunk it, index it, and retrieve the relevant slice per question."
+---
+
+import { Aside } from "@astrojs/starlight/components";
+
+<Aside type="caution" title="Draft">
+This page is being written as part of the docs redesign.
+</Aside>
+
+Big databases need retrieval. This guide covers chunking your schema
+artifact, indexing it (pgvector is the recommended store), and
+plugging retrieval into the generation pipeline.

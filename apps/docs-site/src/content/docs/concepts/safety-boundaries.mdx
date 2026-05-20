@@ -1,0 +1,14 @@
+---
+title: "Safety boundaries"
+description: "Where AskDB validates, what it refuses, and how your app stays the final gate."
+---
+
+import { Aside } from "@astrojs/starlight/components";
+
+<Aside type="caution" title="Draft">
+This page is being written as part of the docs redesign.
+</Aside>
+
+AskDB enforces a layered set of boundaries between the model and your
+database. Every generated query is parsed, scoped, and rejected if it
+violates the rules your schema artifact declares.
