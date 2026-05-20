@@ -1,13 +1,126 @@
 ---
 title: "Configuration reference"
-description: "Every config field for @askdb/config, environment variables, and defineConfig."
+description: "askdb.config.ts, defineConfig, environment variables, and how AskDB resolves runtime settings."
 ---
 
-import { Aside } from "@astrojs/starlight/components";
+<p class="doc-eyebrow">Reference · Configuration</p>
 
-<Aside type="caution" title="Draft">
-This page is being written as part of the docs redesign.
-</Aside>
+<p class="doc-lede">
+  AskDB resolves config from two sources: an
+  <code>askdb.config.*</code> file (TypeScript or JavaScript) and
+  environment variables. Both are loaded by
+  <code>@askdb/config</code> at startup into an in-memory runtime
+  snapshot.
+</p>
 
-How AskDB resolves config. Covers `defineConfig`, environment
-variables, and the schema artifact loading rules.
+## `askdb.config.ts`
+
+`askdb init` scaffolds this file. It uses `defineConfig` for type
+safety:
+
+```ts
+import { defineConfig } from "@askdb/config";
+
+export default defineConfig({
+  ai: {
+    provider: "openai",
+    model: "gpt-4o-mini",
+  },
+  introspection: {
+    outputDir: "./my-app.schema",
+    schemaId: "my-app",
+  },
+  rag: {
+    embedder: "openai",
+    store: "pgvector",
+    storeConfig: {
+      pgvector: {
+        databaseUrl: process.env.ASKDB_PGVECTOR_URL,
+      },
+    },
+  },
+  logging: {
+    level: "info",
+  },
+});
+```
+
+`defineConfig` returns the object unchanged at runtime — it exists
+only for type inference. The full type is `AskDbConfig`.
+
+## File discovery
+
+`bootstrapAskDbEnv()` looks for config in this order:
+
+1. `askdb.config.ts`
+2. `askdb.config.mts`
+3. `askdb.config.cts`
+4. `askdb.config.js`
+5. `askdb.config.mjs`
+6. `askdb.config.cjs`
+7. `askdb.config.json`
+8. `.config/askdb.*` (any of the above extensions)
+
+The first match wins. Looks in the current working directory, then
+walks up to find a project root.
+
+## Environment variables
+
+AskDB reads `.env` next to your process via `dotenv`, then layers
+explicit env vars on top. The most common keys:
+
+| Variable | Used by | Purpose |
+| --- | --- | --- |
+| `OPENAI_API_KEY` | model provider | Standard OpenAI key. |
+| `ANTHROPIC_API_KEY` | model provider | Standard Anthropic key. |
+| `AZURE_API_KEY`, `AZURE_RESOURCE_NAME` | model provider | Azure OpenAI. |
+| `DATABASE_URL` | CLI `introspect` | Default DB connection string. |
+| `ASKDB_SCHEMA_PATH` | HTTP server | Schema artifact to load at startup. |
+| `ASKDB_INTROSPECT_OUT` | CLI `introspect` | Default `--out` value. |
+| `ASKDB_PRISMA_SCHEMA` | CLI with `--engine prisma` | Default Prisma schema path. |
+| `ASKDB_PGVECTOR_URL` | `@askdb/rag` (pgvector store) | Connection string for the vector store. |
+| `ASKDB_OMIT_SENSITIVE_FROM_PROMPT` | core pipeline | When `true`, omit sensitive columns from the prompt. |
+| `ASKDB_LOG_LEVEL` | core / CLI / server | One of `trace`, `debug`, `info`, `warn`, `error`, `fatal`, `silent`. |
+| `ASKDB_MODE` | core pipeline | Default operating mode (`schema_only` / `bounded_results`). |
+
+The complete list of env keys is generated from the config schema
+and exposed as `ASKDB_ENV_PROJECTION` in `@askdb/config`.
+
+## Reading config at runtime
+
+In code that uses the AskDB libraries directly, call
+`bootstrapAskDbEnv()` at startup and then read settings via
+`getAskDbRuntimeConfig()`:
+
+```ts
+import { bootstrapAskDbEnv, getAskDbRuntimeConfig } from "@askdb/config";
+
+bootstrapAskDbEnv({ cwd: process.cwd() });
+
+const rt = getAskDbRuntimeConfig();
+const aiEnv = rt.ai.aiEnv;
+const schemaPath = rt.schema.path;
+```
+
+AskDB does **not** copy the full config into `process.env`. The
+runtime snapshot is the source of truth — use `getAskDbRuntimeConfig`
+rather than `process.env` for anything AskDB-specific.
+
+## Config precedence
+
+For any given setting, the precedence (highest wins) is:
+
+1. Function-call arguments (`ask({ mode: "..." })` etc.).
+2. Environment variables.
+3. `askdb.config.*` file.
+4. Built-in defaults.
+
+This lets you ship a config file with sensible defaults and override
+per-environment via env vars without rebuilding.
+
+## Read next
+
+<div class="home-path-grid">
+  <a href="../cli/"><strong>CLI reference</strong><span>How each CLI command resolves config and flags.</span></a>
+  <a href="../packages/"><strong>Package reference</strong><span>The full @askdb/config API surface.</span></a>
+</div>

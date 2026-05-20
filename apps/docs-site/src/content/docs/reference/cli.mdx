@@ -1,13 +1,169 @@
 ---
 title: "CLI reference"
-description: "Every askdb command, flag, and exit code."
+description: "Every askdb command and flag — init, introspect, enrich, studio, bundle, ask."
 ---
 
-import { Aside } from "@astrojs/starlight/components";
+<p class="doc-eyebrow">Reference · CLI</p>
 
-<Aside type="caution" title="Draft">
-This page is being written as part of the docs redesign.
-</Aside>
+<p class="doc-lede">
+  The <code>askdb</code> binary covers the full local workflow:
+  scaffolding a project, introspecting a database, authoring schema
+  artifacts, and asking questions. All commands use the same
+  <code>@askdb/core</code> pipeline as the library.
+</p>
 
-The `askdb` binary covers introspection, enrichment, schema
-validation, and local serving.
+## Install
+
+```bash
+npm install askdb
+npx askdb --help
+```
+
+For global install:
+
+```bash
+npm install -g askdb
+askdb --help
+```
+
+## Commands
+
+### `askdb init`
+
+Scaffolds `askdb.config.ts` (and adds `@askdb/config` + `dotenv` to
+your project) so the rest of the CLI can resolve config.
+
+```bash
+npx askdb init
+```
+
+| Flag | Description |
+| --- | --- |
+| `--path <file>` | Write the template to a custom path. |
+| `--force` | Overwrite an existing `askdb.config.ts`. |
+| `--skip-install` | Only write the file; don't install packages. |
+
+`init` doesn't create a `.env` — example keys live in comments inside
+`askdb.config.ts`. It intentionally skips config loading so a broken
+config can't block scaffolding.
+
+### `askdb introspect`
+
+Reads your database (or a Prisma schema file) and writes an AskDB
+schema artifact to disk.
+
+```bash
+askdb introspect \
+  --url "$DATABASE_URL" \
+  --out ./my-app.schema \
+  --schema-id my-app
+```
+
+| Flag | Description |
+| --- | --- |
+| `--url <connstr>` | Live database connection string. |
+| `--engine <id>` | Engine override: `postgres`, `mysql`, `sqlite`, `sqlserver`, `prisma`. |
+| `--prisma-schema <path>` | `.prisma` file or directory. With `--engine prisma`. |
+| `--out <dir>` | Output directory for the schema artifact. Falls back to `ASKDB_INTROSPECT_OUT`. |
+| `--schema-id <id>` | Identifier embedded in `schema.json`. |
+| `--print` | Print the introspection result without writing. |
+| `--diff <existing>` | Diff against an existing schema artifact. |
+
+### `askdb enrich`
+
+Launches the TUI for authoring per-table descriptions, aliases,
+concepts, and sensitive markers.
+
+```bash
+askdb enrich --schema ./my-app.schema
+```
+
+| Flag | Description |
+| --- | --- |
+| `--schema <path>` | Path to the schema artifact. |
+
+Requires `@askdb/tui` to be installed (the CLI lazy-imports it).
+
+### `askdb studio`
+
+Launches Studio — the browser-based authoring UI — pointed at your
+schema artifact.
+
+```bash
+askdb studio --schema ./my-app.schema
+```
+
+| Flag | Description |
+| --- | --- |
+| `--schema <path>` | Path to the schema artifact. |
+| `--port <n>` | Override the default port (5556). |
+
+Requires `@askdb/studio` to be installed (lazy-imported on first
+use).
+
+### `askdb bundle`
+
+Writes the entire schema artifact (physical layer + enrichment +
+tenant policy) as a single JSON file for distribution.
+
+```bash
+askdb bundle ./my-app.schema --out ./my-app.schema.bundle.json
+```
+
+### `askdb ask`
+
+Generates SQL from a natural-language question against a loaded
+schema artifact.
+
+```bash
+askdb ask \
+  --schema ./my-app.schema \
+  --question "Top 5 customers by lifetime value"
+```
+
+| Flag | Description |
+| --- | --- |
+| `--schema <path>` | Path to the schema artifact (required). |
+| `--question <text>` | The natural-language question (required). |
+| `--dialect <id>` | Override dialect: `postgres`, `mysql`, `sqlite`, `sqlserver`. |
+| `--mode <mode>` | Operating mode: `schema_only` (default) or `bounded_results`. |
+| `--omit-sensitive-from-prompt` | Exclude sensitive columns from the prompt entirely. |
+| `--log-level <level>` | Log level (default reads from `ASKDB_LOG_LEVEL`). |
+| `-v`, `--verbose` | Show structured log events. |
+
+`askdb ask` returns the validated SQL on stdout. Execution is not
+part of the CLI.
+
+## `askdb-rag setup-store`
+
+Provisions the pgvector schema for `@askdb/rag` idempotently. Safe
+to run in CI / deploy steps.
+
+```bash
+askdb-rag setup-store --pg-url "$DATABASE_URL" --dimensions 1536
+```
+
+| Flag | Description |
+| --- | --- |
+| `--pg-url <connstr>` | Postgres connection string (required). |
+| `--pg-table <name>` | Custom table name. Default `askdb_rag_chunks`. |
+| `--dimensions <n>` | Embedding dimensions. Default `1536`. |
+
+## Exit codes
+
+| Code | Meaning |
+| --- | --- |
+| `0` | Success. |
+| `1` | Generic error (config, IO, generation, validation). |
+| `2` | Invalid CLI arguments. |
+
+Errors print to stderr in human form; structured log events (with
+`-v`) follow the contract in
+[`@askdb/core` logging](../packages/).
+
+## Read next
+
+<div class="home-path-grid">
+  <a href="../config/"><strong>Configuration</strong><span>defineConfig, env vars, and how the CLI resolves settings.</span></a>
+  <a href="../packages/"><strong>Package reference</strong><span>What each @askdb/* package adds to the CLI.</span></a>
+</div>
