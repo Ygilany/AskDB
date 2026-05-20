@@ -1,101 +1,129 @@
 ---
 title: "Quickstart"
-description: "Install AskDB, introspect a database, enrich the schema, and ask your first question — in under five minutes."
+description: "Scaffold config, introspect a database, enrich the schema, and ask your first question — in under five minutes."
 ---
 
-<p class="doc-eyebrow">From install to first query</p>
+<p class="doc-eyebrow">From zero to first query</p>
 
 <p class="doc-lede">
-  Install the AskDB CLI, point it at your database, optionally enrich the
-  generated schema artifact, and ask your first question. The same
-  packages drop straight into a Node service when you're ready to embed.
+  Scaffold your config, point AskDB at your database, enrich the schema
+  artifact, and ask your first question. The same packages drop straight
+  into a Node service when you're ready to embed.
 </p>
 
 ## Prerequisites
 
 - Node 20 or newer.
 - npm, pnpm, or yarn (examples use `npx`).
-- An API key for any supported model provider — OpenAI (or any
-  OpenAI-compatible endpoint) or Azure OpenAI.
+- An API key from a model provider — OpenAI, Anthropic, Google,
+  OpenRouter, or any OpenAI-compatible endpoint. See [Bring your own
+  model](./guides/bring-your-own-model/).
 - A database AskDB can read — Postgres, MySQL, SQLite, or SQL Server —
   or a Prisma schema file (no live database required).
 
-## 1. Install the CLI
+## 1. Scaffold your config
 
 ```bash
-npm install askdb
-npx askdb init
+npx askdb@latest init
 ```
 
-`askdb init` scaffolds an `askdb.config.ts` and an `.env` with the
-required keys. Fill those in before continuing.
+`npx` downloads and runs `askdb` on the fly — no separate install step
+needed. `askdb init` creates `askdb.config.ts` in your project root.
+It does **not** generate a `.env` — the template includes comments
+listing the environment variables each provider needs. Copy the relevant
+ones into a `.env` at your project root (for example,
+`OPENAI_API_KEY=sk-...`). `askdb.config.ts` is checked in; `.env` is not.
+
+Open `askdb.config.ts` and fill in your settings:
+
+```ts
+import { defineConfig } from "@askdb/config";
+
+export default defineConfig({
+  ai: {
+    provider: "openai",   // or "anthropic", "google", etc.
+    model: "gpt-4o-mini",
+  },
+  introspection: {
+    outputDir: "./my-app.schema",
+    schemaId: "my-app",
+  },
+});
+```
+
+Once this is configured, most CLI flags below are optional.
 
 ## 2. Introspect your database
 
 Introspection produces an **AskDB schema artifact** — a directory on
 disk that captures your tables, columns, types, and relationships.
-That artifact is the only thing the model ever sees about your
-database.
+That artifact is the only thing the model ever sees about your database.
 
 ### From a live database
 
+With `DATABASE_URL` in `.env` and `outputDir` / `schemaId` set in
+`askdb.config.ts`, one command is enough:
+
 ```bash
-npx askdb introspect \
-  --url "$DATABASE_URL" \
-  --out my-app.schema \
-  --schema-id my-app
+npx askdb introspect
 ```
 
-Swap in any supported engine; AskDB picks the right dialect from the
-connection string. See [Switch
-engines](./guides/switch-engines/) for the install
-matrix.
+Pass `--url` to target a different database for this run:
+
+```bash
+npx askdb introspect --url "$OTHER_DATABASE_URL"
+```
+
+AskDB picks the right dialect from the connection string. See [Switch
+engines](./guides/switch-engines/) for the install matrix.
 
 ### From a Prisma schema
 
 If you already have a Prisma schema file, introspect directly from it
-— no live database required.
+— no live database required:
 
 ```bash
-npx askdb introspect \
-  --engine prisma \
-  --prisma-schema ./prisma/schema.prisma \
-  --out my-app.schema \
-  --schema-id my-app
+npx askdb introspect --engine prisma --prisma-schema ./prisma/schema.prisma
 ```
 
-## 3. Enrich the schema
+## 3. Enrich and test in Studio
 
-Raw introspection captures structure. Enrichment adds the layer that
-makes generation good: descriptions, aliases, business concepts,
-sensitive markers, and example questions. AskDB ships two authoring
-surfaces — pick whichever fits your workflow.
+Raw introspection captures structure. Enrichment adds descriptions,
+aliases, business concepts, sensitive markers, and example questions —
+the layer that makes generation good.
 
-**Studio** (recommended) — a browser UI served locally:
+Launch **Studio** — the recommended authoring surface — in a browser:
 
 ```bash
-npx askdb studio --schema my-app.schema
+npx askdb studio
 ```
 
-**TUI** — keyboard-driven, works in any terminal (including SSH):
+Studio is also the best place to **test your questions**: ask a question
+in the same session, review the generated SQL, and keep enriching if the
+answer isn't what you expected — all without switching tools.
+
+Prefer the terminal? The TUI covers the same workflow:
 
 ```bash
-npx askdb enrich --schema my-app.schema
+npx askdb enrich
 ```
 
-Both write the same files on disk. The full walkthrough lives in
-[Author your schema](./guides/author-your-schema/).
+Both commands read `outputDir` from `askdb.config.ts`. The full
+walkthrough lives in [Author your schema](./guides/author-your-schema/).
 
-## 4. Ask your first question
+## 4. Ask from the CLI
+
+Once the schema is enriched, you can also ask directly from the terminal:
 
 ```bash
-npx askdb ask \
-  --schema my-app.schema \
-  --question "Which customers signed up last week?"
+npx askdb ask --question "Which customers signed up last week?"
 ```
 
 AskDB returns validated SQL. It does **not** run it against your
 database — your application owns execution.
+
+For iterative work — asking questions and continuing to enrich in the
+same session — Studio (step 3) is the better surface.
 
 ## 5. From here
 

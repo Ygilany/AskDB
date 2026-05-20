@@ -14,8 +14,8 @@ description: "Pick the AskDB packages you need — CLI, core library, an engine 
 ## Requirements
 
 - Node 20 or newer.
-- An API key for a supported model provider (OpenAI, an
-  OpenAI-compatible endpoint, or Azure OpenAI).
+- An API key from a supported model provider — OpenAI, Anthropic,
+  Google, OpenRouter, or any OpenAI-compatible endpoint.
 - The database you want to ask questions of — or a Prisma schema file.
 
 ## The CLI
@@ -28,8 +28,10 @@ npm install askdb
 npx askdb --help
 ```
 
-Run `npx askdb init` once at the root of your project to scaffold an
-`askdb.config.ts` and an `.env` with the required keys.
+Run `npx askdb init` once at the root of your project to scaffold
+`askdb.config.ts`. The template includes comments listing the
+environment variables each provider needs — copy the relevant ones
+into a `.env` you create manually.
 
 ## Embedding in a Node app
 

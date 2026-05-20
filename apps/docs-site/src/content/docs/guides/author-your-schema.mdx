@@ -18,14 +18,15 @@ the [Quickstart](../../quickstart/) gets you to one in two commands.
 
 ## Authoring in Studio
 
-Studio is the browser-based editor. Launch it pointed at your schema
-artifact:
+Studio is the browser-based editor. Launch it from your project root:
 
 ```bash
-npx askdb studio --schema ./my-app.schema
+npx askdb studio
 ```
 
-By default Studio serves on `http://127.0.0.1:5556`. It reads and
+The command reads `outputDir` from `askdb.config.ts`. Pass
+`--schema <path>` to override for this run. By default Studio serves
+on `http://127.0.0.1:5556`. It reads and
 writes the files in your schema folder directly — no separate
 database, no separate copy of your schema.
 
@@ -54,10 +55,11 @@ If you prefer the terminal — or you're authoring over SSH — the TUI
 covers the same workflow:
 
 ```bash
-npx askdb enrich --schema ./my-app.schema
+npx askdb enrich
 ```
 
-The TUI uses the same `@askdb/enrich` package under the hood as
+Pass `--schema <path>` to override the artifact location for this
+run. The TUI uses the same `@askdb/enrich` package under the hood as
 Studio and writes the same files. Pick whichever surface fits how
 you work.
 
@@ -69,11 +71,11 @@ added relationships), re-run introspection. The physical layer
 (`tables/*.md`, `concepts.md`, `tenant-policy.md`) is preserved.
 
 ```bash
-npx askdb introspect \
-  --url "$DATABASE_URL" \
-  --out ./my-app.schema \
-  --schema-id my-app
+npx askdb introspect
 ```
+
+With `DATABASE_URL` in `.env` and `outputDir` / `schemaId` in
+`askdb.config.ts`, no flags are needed.
 
 Stable IDs mean a renamed column doesn't break the enrichment that
 references it — the ID stays the same and the markdown follows.
