@@ -73,6 +73,10 @@ export function chunkSchema(
   const { schema, tables: tableMarkdowns, concepts } = sources;
 
   for (const table of schema.tables) {
+    if (table.tracked === false) {
+      continue;
+    }
+
     const md = tableMarkdowns[table.id];
     const sensitiveColumnNames = table.columns
       .filter((c) => c.sensitive)

@@ -433,6 +433,10 @@ code, pre, .mono { font-family: var(--font-mono); }
   color: var(--red-600);
 }
 
+.sub-rail-row.untracked { opacity: 0.55; }
+.sub-rail-row.untracked:hover { opacity: 0.8; }
+.sub-rail-row.untracked.active { opacity: 1; }
+
 .sub-section-hd {
   padding: 10px 12px 4px;
   font-size: 9.5px;

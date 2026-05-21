@@ -12,6 +12,29 @@ export function SensitivityTab() {
   return (
     <div className="stack" style={{ padding: "var(--pad-y) var(--pad-x)" }}>
       <section className="card">
+        <div className="card-hd"><h3>LLM tracking</h3></div>
+        <div className="card-bd">
+          <p className="muted" style={{ fontSize: 12, marginBottom: 10 }}>
+            Untracked tables are excluded from LLM prompts and RAG indexing. They remain in the schema and are still visible here.
+          </p>
+          <label style={{ display: "grid", gap: 6 }}>
+            <span className="muted" style={{ fontSize: 11, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.04em" }}>Status</span>
+            <select
+              className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              value={draft.tracked === false ? "false" : "true"}
+              onChange={(e) => {
+                const val = e.target.value === "false" ? false : undefined;
+                updateTableDraft(tableId, (d) => ({ ...d, tracked: val }));
+              }}
+            >
+              <option value="true">Tracked — included in LLM context</option>
+              <option value="false">Untracked — excluded from LLM context</option>
+            </select>
+          </label>
+        </div>
+      </section>
+
+      <section className="card">
         <div className="card-hd"><h3>Table-level sensitivity</h3></div>
         <div className="card-bd">
           <label style={{ display: "grid", gap: 6 }}>
