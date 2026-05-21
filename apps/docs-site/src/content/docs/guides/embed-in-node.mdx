@@ -104,7 +104,7 @@ server.listen(3000);
 
 For a production-grade HTTP surface — including request validation,
 size limits, and a `/health` endpoint — use
-[`@askdb/http-api`](./deploy-as-http-service/) instead of rolling your
+[`@askdb/http-api`](/guides/deploy-as-http-service/) instead of rolling your
 own.
 
 ## Handling errors
@@ -132,13 +132,13 @@ try {
 Same `ask()` call, different dialect string. Install the engine's
 adapter package, then change `dialect: "postgres"` to `"mysql"`,
 `"sqlite"`, or `"sqlserver"`. See [Switch
-engines](../switch-engines/) for the full migration matrix.
+engines](/guides/switch-engines/) for the full migration matrix.
 
 ## Read next
 
 <div class="home-path-grid">
-  <a href="../run-safely-in-prod/"><strong>Run safely in production</strong><span>The operator checklist: roles, timeouts, audit, approval.</span></a>
-  <a href="../deploy-as-http-service/"><strong>Deploy as HTTP service</strong><span>Use @askdb/http-api instead of rolling your own.</span></a>
-  <a href="../author-your-schema/"><strong>Author your schema</strong><span>Make generation better by enriching the artifact.</span></a>
-  <a href="../../reference/packages/"><strong>Package reference</strong><span>The full API surface for every @askdb/* package.</span></a>
+  <a href="/guides/run-safely-in-prod/"><strong>Run safely in production</strong><span>The operator checklist: roles, timeouts, audit, approval.</span></a>
+  <a href="/guides/deploy-as-http-service/"><strong>Deploy as HTTP service</strong><span>Use @askdb/http-api instead of rolling your own.</span></a>
+  <a href="/guides/author-your-schema/"><strong>Author your schema</strong><span>Make generation better by enriching the artifact.</span></a>
+  <a href="/reference/packages/"><strong>Package reference</strong><span>The full API surface for every @askdb/* package.</span></a>
 </div>

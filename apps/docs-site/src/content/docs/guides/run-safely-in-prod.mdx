@@ -120,7 +120,7 @@ Then choose the prompt-construction behavior per deployment:
   sensitive columns from the prompt entirely. The model can't
   propose them because it doesn't know they exist.
 
-See [Privacy model](../../concepts/privacy-model/) for what crosses
+See [Privacy model](/concepts/privacy-model/) for what crosses
 the boundary in each mode.
 
 ## Multi-tenancy
@@ -128,12 +128,12 @@ the boundary in each mode.
 If your app is multi-tenant, declare tenant policy in the schema
 artifact and pass a `tenantScope` to every `ask()` call. AskDB
 enforces the tenant predicate at generation time. See
-[Multi-tenancy](../multi-tenancy/).
+[Multi-tenancy](/guides/multi-tenancy/).
 
 ## Read next
 
 <div class="home-path-grid">
-  <a href="../../concepts/safety-boundaries/"><strong>Safety boundaries</strong><span>What AskDB enforces before SQL leaves the validator.</span></a>
-  <a href="../../concepts/privacy-model/"><strong>Privacy model</strong><span>What crosses the boundary to the model.</span></a>
-  <a href="../multi-tenancy/"><strong>Multi-tenancy</strong><span>Scoping every query to a tenant.</span></a>
+  <a href="/concepts/safety-boundaries/"><strong>Safety boundaries</strong><span>What AskDB enforces before SQL leaves the validator.</span></a>
+  <a href="/concepts/privacy-model/"><strong>Privacy model</strong><span>What crosses the boundary to the model.</span></a>
+  <a href="/guides/multi-tenancy/"><strong>Multi-tenancy</strong><span>Scoping every query to a tenant.</span></a>
 </div>
