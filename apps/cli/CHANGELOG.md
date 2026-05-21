@@ -1,5 +1,20 @@
 # askdb
 
+## 0.5.0-beta.18
+
+### Patch Changes
+
+- Updated dependencies [70a655c]
+  - @askdb/core@0.5.0-beta.18
+  - @askdb/studio@0.2.0-beta.15
+  - @askdb/introspect@0.3.0-beta.9
+  - @askdb/mysql@0.1.0-beta.8
+  - @askdb/postgres@0.2.0-beta.9
+  - @askdb/sqlite@0.1.0-beta.8
+  - @askdb/sqlserver@0.1.0-beta.8
+  - @askdb/tui@0.2.0-beta.9
+  - @askdb/prisma@0.2.0-beta.9
+
 ## 0.5.0-beta.17
 
 ### Patch Changes

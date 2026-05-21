@@ -1,5 +1,16 @@
 # @askdb/rag
 
+## 0.2.0-beta.11
+
+### Minor Changes
+
+- 70a655c: Add untracked tables feature: tables marked as untracked are excluded from LLM prompts and RAG indexing while remaining visible in the schema and studio. Tracking status persists in the describable layer (tables/\*.md) and survives re-introspection. Studio UI adds a toggle in the Sensitivity tab and a visual indicator with filter in the table list.
+
+### Patch Changes
+
+- Updated dependencies [70a655c]
+  - @askdb/core@0.5.0-beta.18
+
 ## 0.2.0-beta.10
 
 ### Patch Changes

@@ -1,5 +1,13 @@
 # @askdb/sqlite
 
+## 0.1.0-beta.8
+
+### Patch Changes
+
+- Updated dependencies [70a655c]
+  - @askdb/core@0.5.0-beta.18
+  - @askdb/introspect@0.3.0-beta.9
+
 ## 0.1.0-beta.7
 
 ### Patch Changes
