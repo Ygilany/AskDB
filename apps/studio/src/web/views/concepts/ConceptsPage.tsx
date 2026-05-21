@@ -1,13 +1,52 @@
-import { useEffect, useState } from "react";
-import { Hexagon, Loader2, RotateCcw, Save } from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Hexagon, Loader2, RotateCcw, Save, Search, Table2, X } from "lucide-react";
 import type { V2Concept } from "@askdb/core";
 import { useWorkspace } from "../../contexts/workspace-context";
 import { Badge, Field, Input, ListInput, Textarea } from "../../components/ui";
 import { StatusBanner } from "../../components/common/StatusBanner";
 import { EmptyText } from "../../components/common/EmptyText";
 
+/* ─── helpers ─── */
+const CONCEPT_PREFIX = "concept:";
+
+function stripPrefix(id: string): string {
+  return id.startsWith(CONCEPT_PREFIX) ? id.slice(CONCEPT_PREFIX.length) : id;
+}
+function ensurePrefix(slug: string): string {
+  const trimmed = slug.trim();
+  if (!trimmed) return "";
+  return trimmed.startsWith(CONCEPT_PREFIX) ? trimmed : CONCEPT_PREFIX + trimmed;
+}
+
+function clone<T>(value: T): T {
+  return JSON.parse(JSON.stringify(value)) as T;
+}
+
+/* ═══════════════ Page ═══════════════ */
+
 export function ConceptsPage() {
   const { workspace, tables, handleSaveConcepts, saveStatus, busy } = useWorkspace();
+
+  // Build a flat list of linkable IDs (tables + columns)
+  const linkOptions = useMemo(() => {
+    if (!tables.length) return [];
+    const opts: LinkOption[] = [];
+    for (const t of tables) {
+      opts.push({
+        id: t.physical.id,
+        label: `${t.physical.schema}.${t.physical.name}`,
+        kind: "table",
+      });
+      for (const c of t.physical.columns) {
+        opts.push({
+          id: c.id,
+          label: `${t.physical.schema}.${t.physical.name} → ${c.name}`,
+          kind: "column",
+        });
+      }
+    }
+    return opts;
+  }, [tables]);
 
   if (!workspace) return null;
 
@@ -15,7 +54,7 @@ export function ConceptsPage() {
     <main className="main-pane">
       <ConceptsEditor
         concepts={workspace.concepts}
-        tableIds={tables.map((t) => t.physical.id)}
+        linkOptions={linkOptions}
         onSave={handleSaveConcepts}
         saveStatus={saveStatus}
         busy={busy}
@@ -24,15 +63,17 @@ export function ConceptsPage() {
   );
 }
 
+/* ═══════════════ Editor ═══════════════ */
+
 function ConceptsEditor({
   concepts,
-  tableIds,
+  linkOptions,
   onSave,
   saveStatus,
   busy,
 }: {
   concepts: V2Concept[];
-  tableIds: string[];
+  linkOptions: LinkOption[];
   onSave: (concepts: V2Concept[]) => Promise<void>;
   saveStatus: ReturnType<typeof useWorkspace>["saveStatus"];
   busy: Set<string>;
@@ -56,9 +97,10 @@ function ConceptsEditor({
   }
 
   function commitAdd() {
-    if (!addDraft.id?.trim() || !addDraft.label?.trim()) return;
+    const id = ensurePrefix(addDraft.id ?? "");
+    if (!id || !addDraft.label?.trim()) return;
     const concept: V2Concept = {
-      id: addDraft.id.trim(),
+      id,
       label: addDraft.label.trim(),
       ...(addDraft.synonyms?.length ? { synonyms: addDraft.synonyms } : {}),
       ...(addDraft.links?.length ? { links: addDraft.links } : {}),
@@ -125,11 +167,11 @@ function ConceptsEditor({
                     <p className="muted" style={{ fontSize: 11, fontWeight: 600, marginBottom: 12 }}>New concept</p>
                     <div style={{ display: "grid", gap: 12 }}>
                       <div style={{ display: "grid", gap: 12, gridTemplateColumns: "1fr 1fr" }}>
-                        <Field label="ID" description='Unique identifier, e.g. "concept:revenue"'>
-                          <Input
+                        <Field label="ID" description="Unique slug (concept: prefix added automatically)">
+                          <ConceptIdInput
                             value={addDraft.id ?? ""}
-                            placeholder="concept:revenue"
-                            onChange={(e) => setAddDraft((d) => ({ ...d, id: e.target.value }))}
+                            onChange={(v) => setAddDraft((d) => ({ ...d, id: v }))}
+                            placeholder="revenue"
                           />
                         </Field>
                         <Field label="Label" description='Human-readable name, e.g. "Revenue"'>
@@ -140,16 +182,17 @@ function ConceptsEditor({
                           />
                         </Field>
                       </div>
-                      <Field label="Synonyms" description='Comma-separated terms users might say'>
+                      <Field label="Synonyms" description="Comma-separated terms users might say">
                         <ListInput
                           value={addDraft.synonyms}
                           onChange={(v) => setAddDraft((d) => ({ ...d, synonyms: v }))}
                         />
                       </Field>
-                      <Field label="Links" description={`Comma-separated table or column IDs${tableIds.length ? `, e.g. "${tableIds[0]}"` : ""}`}>
-                        <ListInput
-                          value={addDraft.links}
+                      <Field label="Links" description="Tables or columns this concept maps to">
+                        <LinksInput
+                          value={addDraft.links ?? []}
                           onChange={(v) => setAddDraft((d) => ({ ...d, links: v }))}
+                          options={linkOptions}
                         />
                       </Field>
                       <Field label="Description" description="How this concept is computed or what it means">
@@ -180,7 +223,7 @@ function ConceptsEditor({
                   <ConceptRow
                     key={`${concept.id}-${index}`}
                     concept={concept}
-                    tableIds={tableIds}
+                    linkOptions={linkOptions}
                     onChange={(updater) => updateConcept(index, updater)}
                     onRemove={() => removeConcept(index)}
                   />
@@ -194,14 +237,16 @@ function ConceptsEditor({
   );
 }
 
+/* ═══════════════ Concept row ═══════════════ */
+
 function ConceptRow({
   concept,
-  tableIds,
+  linkOptions,
   onChange,
   onRemove,
 }: {
   concept: V2Concept;
-  tableIds: string[];
+  linkOptions: LinkOption[];
   onChange: (updater: (c: V2Concept) => V2Concept) => void;
   onRemove: () => void;
 }) {
@@ -216,8 +261,11 @@ function ConceptRow({
       </div>
       <div style={{ marginTop: 12, display: "grid", gap: 12 }}>
         <div style={{ display: "grid", gap: 12, gridTemplateColumns: "1fr 1fr" }}>
-          <Field label="ID" description='Unique identifier'>
-            <Input value={concept.id} onChange={(e) => onChange((c) => ({ ...c, id: e.target.value }))} />
+          <Field label="ID" description="Unique slug (concept: prefix added automatically)">
+            <ConceptIdInput
+              value={concept.id}
+              onChange={(v) => onChange((c) => ({ ...c, id: v }))}
+            />
           </Field>
           <Field label="Label" description="Human-readable name">
             <Input value={concept.label} onChange={(e) => onChange((c) => ({ ...c, label: e.target.value }))} />
@@ -229,10 +277,11 @@ function ConceptRow({
             onChange={(v) => onChange((c) => ({ ...c, synonyms: v.length ? v : undefined }))}
           />
         </Field>
-        <Field label="Links" description={`Comma-separated table or column IDs${tableIds.length ? `, e.g. "${tableIds[0]}"` : ""}`}>
-          <ListInput
-            value={concept.links}
+        <Field label="Links" description="Tables or columns this concept maps to">
+          <LinksInput
+            value={concept.links ?? []}
             onChange={(v) => onChange((c) => ({ ...c, links: v.length ? v : undefined }))}
+            options={linkOptions}
           />
         </Field>
         <Field label="Description" description="How this concept is computed or what it means">
@@ -246,6 +295,159 @@ function ConceptRow({
   );
 }
 
-function clone<T>(value: T): T {
-  return JSON.parse(JSON.stringify(value)) as T;
+/* ═══════════════ ConceptIdInput ═══════════════ */
+/* Shows a fixed "concept:" prefix badge; user only types the slug */
+
+function ConceptIdInput({
+  value,
+  onChange,
+  placeholder,
+}: {
+  value: string;
+  onChange: (fullId: string) => void;
+  placeholder?: string;
+}) {
+  const slug = stripPrefix(value);
+
+  return (
+    <div className="concept-id-input">
+      <span className="concept-id-prefix">concept:</span>
+      <input
+        type="text"
+        className="concept-id-slug"
+        value={slug}
+        placeholder={placeholder ?? "my-concept"}
+        onChange={(e) => {
+          const raw = e.target.value.replace(/\s+/g, "-").toLowerCase();
+          onChange(ensurePrefix(raw));
+        }}
+      />
+    </div>
+  );
+}
+
+/* ═══════════════ LinksInput ═══════════════ */
+/* Searchable multi-select for table / column IDs */
+
+type LinkOption = { id: string; label: string; kind: "table" | "column" };
+
+function LinksInput({
+  value,
+  onChange,
+  options,
+}: {
+  value: string[];
+  onChange: (links: string[]) => void;
+  options: LinkOption[];
+}) {
+  const [query, setQuery] = useState("");
+  const [open, setOpen] = useState(false);
+  const wrapperRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  // Close dropdown when clicking outside
+  useEffect(() => {
+    function handleClick(e: MouseEvent) {
+      if (wrapperRef.current && !wrapperRef.current.contains(e.target as Node)) {
+        setOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClick);
+    return () => document.removeEventListener("mousedown", handleClick);
+  }, []);
+
+  const selectedSet = useMemo(() => new Set(value), [value]);
+
+  const filtered = useMemo(() => {
+    if (!query) return options.filter((o) => !selectedSet.has(o.id));
+    const q = query.toLowerCase();
+    return options.filter(
+      (o) => !selectedSet.has(o.id) && (o.label.toLowerCase().includes(q) || o.id.toLowerCase().includes(q)),
+    );
+  }, [options, query, selectedSet]);
+
+  const addLink = useCallback(
+    (id: string) => {
+      onChange([...value, id]);
+      setQuery("");
+      inputRef.current?.focus();
+    },
+    [value, onChange],
+  );
+
+  const removeLink = useCallback(
+    (id: string) => {
+      onChange(value.filter((v) => v !== id));
+    },
+    [value, onChange],
+  );
+
+  function labelFor(id: string): string {
+    return options.find((o) => o.id === id)?.label ?? id;
+  }
+
+  function kindFor(id: string): string {
+    return options.find((o) => o.id === id)?.kind ?? (id.includes("#") ? "column" : "table");
+  }
+
+  return (
+    <div className="links-input" ref={wrapperRef}>
+      {/* Selected chips */}
+      {value.length > 0 && (
+        <div className="links-chips">
+          {value.map((id) => (
+            <span key={id} className={`links-chip ${kindFor(id)}`} title={id}>
+              <Table2 size={10} />
+              <span className="links-chip-label">{labelFor(id)}</span>
+              <button
+                className="links-chip-remove"
+                onClick={() => removeLink(id)}
+                title="Remove"
+              >
+                <X size={10} />
+              </button>
+            </span>
+          ))}
+        </div>
+      )}
+
+      {/* Search input */}
+      <div className="links-search">
+        <Search size={12} />
+        <input
+          ref={inputRef}
+          type="text"
+          className="links-search-input"
+          placeholder={value.length ? "Add another…" : "Search tables or columns…"}
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          onFocus={() => setOpen(true)}
+        />
+      </div>
+
+      {/* Dropdown */}
+      {open && filtered.length > 0 && (
+        <div className="links-dropdown">
+          {filtered.slice(0, 30).map((opt) => (
+            <button
+              key={opt.id}
+              className="links-dropdown-item"
+              onMouseDown={(e) => {
+                e.preventDefault(); // keep focus on input
+                addLink(opt.id);
+              }}
+            >
+              <span className={`links-kind-badge ${opt.kind}`}>{opt.kind === "table" ? "T" : "C"}</span>
+              <span className="links-dropdown-label">{opt.label}</span>
+            </button>
+          ))}
+          {filtered.length > 30 && (
+            <div className="links-dropdown-more">
+              {filtered.length - 30} more — type to narrow
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
 }

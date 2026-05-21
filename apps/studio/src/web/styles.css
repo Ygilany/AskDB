@@ -1293,6 +1293,224 @@ code, pre, .mono { font-family: var(--font-mono); }
 .usage-grid dt { color: var(--ink-500); font-size: 11px; font-weight: 600; }
 .usage-grid dd { margin-top: 3px; overflow-wrap: anywhere; font-size: 15px; font-weight: 700; }
 
+/* ───────── Concept ID input ───────── */
+.concept-id-input {
+  display: flex;
+  align-items: center;
+  height: 36px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg);
+  overflow: hidden;
+  transition: border-color 0.12s, box-shadow 0.12s;
+}
+
+.concept-id-input:focus-within {
+  border-color: var(--red-500);
+  box-shadow: 0 0 0 1.5px var(--red-100);
+}
+
+.concept-id-prefix {
+  display: flex;
+  align-items: center;
+  height: 100%;
+  padding: 0 8px;
+  background: var(--surface-2);
+  border-right: 1px solid var(--border);
+  color: var(--ink-400);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 500;
+  white-space: nowrap;
+  user-select: none;
+}
+
+.concept-id-slug {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  border: none;
+  background: transparent;
+  outline: none;
+  padding: 0 8px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--ink-900);
+}
+
+.concept-id-slug::placeholder {
+  color: var(--ink-400);
+}
+
+/* ───────── Links input (searchable multi-select) ───────── */
+.links-input {
+  position: relative;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg);
+  transition: border-color 0.12s, box-shadow 0.12s;
+}
+
+.links-input:focus-within {
+  border-color: var(--red-500);
+  box-shadow: 0 0 0 1.5px var(--red-100);
+}
+
+.links-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding: 6px 8px 2px;
+}
+
+.links-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  height: 22px;
+  padding: 0 4px 0 6px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-family: var(--font-mono);
+  white-space: nowrap;
+  max-width: 220px;
+  overflow: hidden;
+}
+
+.links-chip.table {
+  background: color-mix(in srgb, var(--blue-500) 10%, transparent);
+  color: var(--blue-500);
+  border: 1px solid color-mix(in srgb, var(--blue-500) 25%, transparent);
+}
+
+.links-chip.column {
+  background: color-mix(in srgb, var(--green-500) 10%, transparent);
+  color: var(--green-500);
+  border: 1px solid color-mix(in srgb, var(--green-500) 25%, transparent);
+}
+
+.links-chip-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.links-chip-remove {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
+  border: none;
+  background: none;
+  border-radius: 2px;
+  color: inherit;
+  opacity: 0.6;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.links-chip-remove:hover {
+  opacity: 1;
+  background: rgba(0, 0, 0, 0.08);
+}
+
+.links-search {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 8px;
+  height: 32px;
+  color: var(--ink-400);
+}
+
+.links-search-input {
+  flex: 1;
+  min-width: 0;
+  border: none;
+  background: transparent;
+  outline: none;
+  font-size: 12px;
+  color: var(--ink-900);
+}
+
+.links-search-input::placeholder {
+  color: var(--ink-400);
+}
+
+.links-dropdown {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 100%;
+  margin-top: 4px;
+  max-height: 240px;
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  box-shadow: var(--shadow-2);
+  z-index: 50;
+}
+
+.links-dropdown-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 6px 10px;
+  border: none;
+  background: none;
+  text-align: left;
+  font-size: 12px;
+  color: var(--ink-700);
+  cursor: pointer;
+  transition: background 0.08s;
+}
+
+.links-dropdown-item:hover {
+  background: var(--surface-2);
+  color: var(--ink-900);
+}
+
+.links-kind-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 3px;
+  font-size: 10px;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+
+.links-kind-badge.table {
+  background: color-mix(in srgb, var(--blue-500) 12%, transparent);
+  color: var(--blue-500);
+}
+
+.links-kind-badge.column {
+  background: color-mix(in srgb, var(--green-500) 12%, transparent);
+  color: var(--green-500);
+}
+
+.links-dropdown-label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font-mono);
+}
+
+.links-dropdown-more {
+  padding: 6px 10px;
+  font-size: 11px;
+  color: var(--ink-400);
+  text-align: center;
+  border-top: 1px solid var(--border);
+}
+
 /* ───────── Animations ───────── */
 @keyframes spin {
   from { transform: rotate(0deg); }
