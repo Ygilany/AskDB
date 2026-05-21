@@ -64,12 +64,13 @@ function AppShell() {
     <PlaygroundProvider ragAvailable={ragAvailable}>
       <SidebarProvider
         defaultOpen={true}
+        className="!min-h-0 h-svh"
         style={{
           "--sidebar-width": "var(--nav-w)",
         } as React.CSSProperties}
       >
         <NavRail />
-        <SidebarInset>
+        <SidebarInset className="min-h-0 overflow-hidden">
           <header className="topbar">
             <SidebarTrigger className="-ml-1" />
             <Separator orientation="vertical" className="mr-2 !h-4" />

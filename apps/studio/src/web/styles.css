@@ -698,7 +698,7 @@ code, pre, .mono { font-family: var(--font-mono); }
 .field textarea:focus,
 .field select:focus {
   border-color: var(--red-500);
-  box-shadow: 0 0 0 3px var(--red-100);
+  box-shadow: 0 0 0 1.5px var(--red-100);
 }
 
 /* ───────── Pills & Chips ───────── */
@@ -1245,17 +1245,22 @@ code, pre, .mono { font-family: var(--font-mono); }
 
 /* ───────── Focus ring (keyboard accessibility) ───────── */
 :focus-visible {
-  outline: 2px solid var(--red-500);
-  outline-offset: 2px;
+  outline: 1.5px solid var(--red-500);
+  outline-offset: 1px;
 }
 
 button:focus-visible,
-a:focus-visible,
+a:focus-visible {
+  outline: 1.5px solid var(--red-500);
+  outline-offset: 1px;
+}
+
 input:focus-visible,
 textarea:focus-visible,
 select:focus-visible {
-  outline: 2px solid var(--red-500);
-  outline-offset: 2px;
+  outline: none;
+  border-color: var(--red-500);
+  box-shadow: 0 0 0 1.5px var(--red-100);
 }
 
 /* ───────── Scrollbar styling (global) ───────── */
