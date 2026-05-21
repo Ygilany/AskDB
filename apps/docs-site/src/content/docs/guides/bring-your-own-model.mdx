@@ -5,17 +5,11 @@ description: "Use OpenAI, Anthropic, Azure OpenAI, a local model — any provide
 
 <p class="doc-eyebrow">Model providers</p>
 
-<p class="doc-lede">
-  AskDB doesn't host inference. You pass a model in, AskDB calls it,
-  and the model's response goes back through your provider — billed
-  to your account.
-</p>
+<p class="doc-lede">AskDB doesn't host inference. You pass a model in, AskDB calls it, and the model's response goes back through your provider — billed to your account.</p>
 
 ## How AskDB calls the model
 
-`ask()` accepts a `model` parameter typed as the Vercel AI SDK's
-`LanguageModel`. AskDB calls the model with the assembled prompt and
-parses the SQL it returns. No proxy. No middleman.
+`ask()` accepts a `model` parameter typed as the Vercel AI SDK's `LanguageModel`. AskDB calls the model with the assembled prompt and parses the SQL it returns. No proxy. No middleman.
 
 ```ts
 import { ask } from "@askdb/core";
@@ -73,9 +67,7 @@ const model = anthropic("claude-3-5-sonnet-latest");
 
 ## Any OpenAI-compatible endpoint
 
-For self-hosted or alternative providers that expose the OpenAI
-chat-completions shape (vLLM, llama.cpp server, OpenRouter, Together,
-LM Studio, Ollama, …) use `@ai-sdk/openai-compatible`:
+For self-hosted or alternative providers that expose the OpenAI chat-completions shape (vLLM, llama.cpp server, OpenRouter, Together, LM Studio, Ollama, …) use `@ai-sdk/openai-compatible`:
 
 ```bash
 npm install ai @ai-sdk/openai-compatible
@@ -95,20 +87,13 @@ const model = local("llama3.1");
 
 ## Key management
 
-Your model API key lives in your environment, not in the schema
-artifact and not in AskDB. The CLI loads `.env` for local work; in
-production, supply the key the same way you supply your database
-URL.
+Your model API key lives in your environment, not in the schema artifact and not in AskDB. The CLI loads `.env` for local work; in production, supply the key the same way you supply your database URL.
 
-AskDB has no API of its own to authenticate — it's a library. The
-only credentials it touches are the ones you pass to your model
-provider through the AI SDK.
+AskDB has no API of its own to authenticate — it's a library. The only credentials it touches are the ones you pass to your model provider through the AI SDK.
 
 ## Switching models
 
-Models can be swapped without changing any other AskDB code. A
-common pattern: cheaper model for low-stakes analytics, stronger
-model for complex multi-join queries.
+Models can be swapped without changing any other AskDB code. A common pattern: cheaper model for low-stakes analytics, stronger model for complex multi-join queries.
 
 ```ts
 import { openai } from "@ai-sdk/openai";
@@ -123,14 +108,9 @@ const { sql } = await ask({ question, schema, dialect: "postgres", model });
 
 ## Cost
 
-You're billed by your model provider for every `ask()` call. Cost
-scales with:
+You're billed by your model provider for every `ask()` call. Cost scales with:
 
-- Schema size (larger artifacts mean more tokens in the prompt) —
-  use [RAG for large schemas](/guides/rag-for-large-schemas/) to send
-  only the relevant slice. AskDB handles the chunking, embedding,
-  and retrieval; you configure the store and it takes care of the
-  rest.
+- Schema size (larger artifacts mean more tokens in the prompt) — use [RAG for large schemas](/guides/rag-for-large-schemas/) to send only the relevant slice. AskDB handles the chunking, embedding, and retrieval; you configure the store and it takes care of the rest.
 - Question length.
 - Model tier.
 

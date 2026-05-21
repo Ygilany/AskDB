@@ -5,62 +5,37 @@ description: "The end-to-end flow from a natural-language question to validated 
 
 <p class="doc-eyebrow">The pipeline</p>
 
-<p class="doc-lede">
-  AskDB is a function that turns a question and a schema artifact into
-  validated SQL. Everything else — execution, approval, audit — happens
-  in your application, not in AskDB.
-</p>
+<p class="doc-lede">AskDB is a function that turns a question and a schema artifact into validated SQL. Everything else — execution, approval, audit — happens in your application, not in AskDB.</p>
 
 ## The five steps
 
-When you call `ask()` (or the equivalent CLI / HTTP surface), AskDB
-runs these steps in order:
+When you call `ask()` (or the equivalent CLI / HTTP surface), AskDB runs these steps in order:
 
-1. **Load the schema artifact.** A directory, a bundle file, or a
-   parsed `schema.json` — whichever you supply.
-2. **Retrieve relevant chunks (optional).** For large schemas, AskDB
-   pulls only the slice of the artifact that's relevant to the
-   question, using `@askdb/rag`. Smaller schemas skip this step.
-3. **Build the prompt.** Physical metadata, any table descriptions
-   you authored, and the selected SQL dialect get assembled into the
-   context the model sees.
-4. **Generate.** The model you supplied (OpenAI, Azure, anything
-   compatible) returns SQL. AskDB does not host inference — your key,
-   your billing.
-5. **Validate.** The returned SQL is parsed and checked: read-only,
-   no multi-statements, no system-schema access, tenant filters
-   enforced if your schema declares them. Invalid SQL is rejected.
+1. **Load the schema artifact.** A directory, a bundle file, or a parsed `schema.json` — whichever you supply.
+2. **Retrieve relevant chunks (optional).** For large schemas, AskDB pulls only the slice of the artifact that's relevant to the question, using `@askdb/rag`. Smaller schemas skip this step.
+3. **Build the prompt.** Physical metadata, any table descriptions you authored, and the selected SQL dialect get assembled into the context the model sees.
+4. **Generate.** The model you supplied (OpenAI, Azure, anything compatible) returns SQL. AskDB does not host inference — your key, your billing.
+5. **Validate.** The returned SQL is parsed and checked: read-only, no multi-statements, no system-schema access, tenant filters enforced if your schema declares them. Invalid SQL is rejected.
 
-The return value is a string of validated SQL and a parameter list.
-What happens next is your call.
+The return value is a string of validated SQL and a parameter list. What happens next is your call.
 
 ## The runtime boundary
 
-AskDB stops at validated SQL. Your application — the code that
-imports `@askdb/core` or calls the HTTP API — owns everything past
-that:
+AskDB stops at validated SQL. Your application — the code that imports `@askdb/core` or calls the HTTP API — owns everything past that:
 
 - The database driver and connection pool.
 - Read-only roles and any further row-level security.
 - Query timeouts, row limits, and result pagination.
-- Whether to show the SQL to the user, log it, queue it for review,
-  or run it immediately.
+- Whether to show the SQL to the user, log it, queue it for review, or run it immediately.
 - Audit logging and observability.
 
-This split is intentional. AskDB is a code-generation step, not a
-runtime. That's what makes it safe to wire into existing services
-without rebuilding your security model.
+This split is intentional. AskDB is a code-generation step, not a runtime. That's what makes it safe to wire into existing services without rebuilding your security model.
 
 ## Where the model lives
 
-You bring the model. AskDB calls whatever provider you wire in —
-typically through the Vercel AI SDK — using your API key. Requests go
-straight from your environment to the provider. AskDB does not proxy,
-log, or cache them.
+You bring the model. AskDB calls whatever provider you wire in — typically through the Vercel AI SDK — using your API key. Requests go straight from your environment to the provider. AskDB does not proxy, log, or cache them.
 
-The same model never sees your database connection, your credentials,
-or the rows your application returns. See [Privacy model](/concepts/privacy-model/)
-for the precise list of what crosses the boundary.
+The same model never sees your database connection, your credentials, or the rows your application returns. See [Privacy model](/concepts/privacy-model/) for the precise list of what crosses the boundary.
 
 ## Read next
 

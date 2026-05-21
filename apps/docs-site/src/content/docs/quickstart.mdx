@@ -5,21 +5,14 @@ description: "Scaffold config, introspect a database, enrich the schema, and ask
 
 <p class="doc-eyebrow">From zero to first query</p>
 
-<p class="doc-lede">
-  Scaffold your config, point AskDB at your database, enrich the schema
-  artifact, and ask your first question. The same packages drop straight
-  into a Node service when you're ready to embed.
-</p>
+<p class="doc-lede">Scaffold your config, point AskDB at your database, enrich the schema artifact, and ask your first question. The same packages drop straight into a Node service when you're ready to embed.</p>
 
 ## Prerequisites
 
 - Node 20 or newer.
 - npm, pnpm, or yarn (examples use `npx`).
-- An API key from a model provider — OpenAI, Anthropic, Google,
-  OpenRouter, or any OpenAI-compatible endpoint. See [Bring your own
-  model](/guides/bring-your-own-model/).
-- A database AskDB can read — Postgres, MySQL, SQLite, or SQL Server —
-  or a Prisma schema file (no live database required).
+- An API key from a model provider — OpenAI, Anthropic, Google, OpenRouter, or any OpenAI-compatible endpoint. See [Bring your own model](/guides/bring-your-own-model/).
+- A database AskDB can read — Postgres, MySQL, SQLite, or SQL Server — or a Prisma schema file (no live database required).
 
 ## 1. Scaffold your config
 
@@ -27,12 +20,7 @@ description: "Scaffold config, introspect a database, enrich the schema, and ask
 npx askdb@latest init
 ```
 
-`npx` downloads and runs `askdb` on the fly — no separate install step
-needed. `askdb init` creates `askdb.config.ts` in your project root.
-The config file is TypeScript-checked and reads values from your
-environment using the `env()` helper — it loads from a `.env` file at
-your project root or from the system environment, whichever is set. You
-choose your own variable names and pass them to `env()`:
+`npx` downloads and runs `askdb` on the fly — no separate install step needed. `askdb init` creates `askdb.config.ts` in your project root. The config file is TypeScript-checked and reads values from your environment using the `env()` helper — it loads from a `.env` file at your project root or from the system environment, whichever is set. You choose your own variable names and pass them to `env()`:
 
 ```ts
 apiKey: env("OPENAI_API_KEY"),   // or env("MY_KEY") — you pick the name
@@ -60,16 +48,11 @@ Once this is configured, most CLI flags below are optional.
 
 ## 2. Introspect your database
 
-Introspection produces an **AskDB schema artifact** — a directory on
-disk that captures your tables, columns, types, and relationships.
-That artifact is the only thing the model ever sees about your database.
+Introspection produces an **AskDB schema artifact** — a directory on disk that captures your tables, columns, types, and relationships. That artifact is the only thing the model ever sees about your database.
 
 ### From a live database
 
-With `DATABASE_URL` in `.env` and your database connection configured in
-`askdb.config.ts`, one command is enough. `outputDir` is optional and
-defaults to `./askdb/` — see the [Configuration reference](/reference/config/)
-for all options, their defaults, and which are required:
+With `DATABASE_URL` in `.env` and your database connection configured in `askdb.config.ts`, one command is enough. `outputDir` is optional and defaults to `./askdb/` — see the [Configuration reference](/reference/config/) for all options, their defaults, and which are required:
 
 ```bash
 npx askdb introspect
@@ -81,13 +64,11 @@ Pass `--url` to target a different database for this run:
 npx askdb introspect --url "$OTHER_DATABASE_URL"
 ```
 
-AskDB picks the right dialect from the connection string. See [Switch
-engines](/guides/switch-engines/) for the install matrix.
+AskDB picks the right dialect from the connection string. See [Switch engines](/guides/switch-engines/) for the install matrix.
 
 ### From a Prisma schema
 
-If you already have a Prisma schema file, introspect directly from it
-— no live database required:
+If you already have a Prisma schema file, introspect directly from it — no live database required:
 
 ```bash
 npx askdb introspect --engine prisma --prisma-schema ./prisma/schema.prisma
@@ -106,9 +87,7 @@ introspection: {
 
 ## 3. Enrich and test in Studio
 
-Raw introspection captures structure. Enrichment adds descriptions,
-aliases, business concepts, sensitive markers, and example questions —
-the layer that makes generation good.
+Raw introspection captures structure. Enrichment adds descriptions, aliases, business concepts, sensitive markers, and example questions — the layer that makes generation good.
 
 Launch **Studio** — the recommended authoring surface — in a browser:
 
@@ -116,9 +95,7 @@ Launch **Studio** — the recommended authoring surface — in a browser:
 npx askdb studio
 ```
 
-Studio is also the best place to **test your questions**: ask a question
-in the same session, review the generated SQL, and keep enriching if the
-answer isn't what you expected — all without switching tools.
+Studio is also the best place to **test your questions**: ask a question in the same session, review the generated SQL, and keep enriching if the answer isn't what you expected — all without switching tools.
 
 Prefer the terminal? The TUI covers the same workflow:
 
@@ -126,8 +103,7 @@ Prefer the terminal? The TUI covers the same workflow:
 npx askdb enrich
 ```
 
-Both commands read `outputDir` from `askdb.config.ts`. The full
-walkthrough lives in [Author your schema](/guides/author-your-schema/).
+Both commands read `outputDir` from `askdb.config.ts`. The full walkthrough lives in [Author your schema](/guides/author-your-schema/).
 
 ## 4. Ask from the CLI
 
@@ -137,16 +113,13 @@ Once the schema is enriched, you can also ask directly from the terminal:
 npx askdb ask --question "Which customers signed up last week?"
 ```
 
-AskDB returns validated SQL. It does **not** run it against your
-database — your application owns execution.
+AskDB returns validated SQL. It does **not** run it against your database — your application owns execution.
 
-For iterative work — asking questions and continuing to enrich in the
-same session — Studio (step 3) is the better surface.
+For iterative work — asking questions and continuing to enrich in the same session — Studio (step 3) is the better surface.
 
 ## 5. From here
 
-Now that the CLI works, pick the path that matches what you're
-building:
+Now that the CLI works, pick the path that matches what you're building:
 
 <div class="home-path-grid">
   <a href="/guides/embed-in-node/"><strong>Embed in a Node app</strong><span>Drop <code>@askdb/core</code> into a TypeScript service and run the SQL through your own pool.</span></a>

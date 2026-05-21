@@ -5,18 +5,11 @@ description: "Use Studio (or the TUI) to enrich your introspected schema with de
 
 <p class="doc-eyebrow">Schema author guide</p>
 
-<p class="doc-lede">
-  Raw introspection gives the model structure, which may be enough for
-  simple schemas and simple queries. Enrichment is what gives it real meaning and context —
-  descriptions, business concepts, and domain phrasing that make
-  generation reliable. Studio is the recommended authoring surface — a
-  local browser UI that edits your schema artifact directly.
-</p>
+<p class="doc-lede">Raw introspection gives the model structure, which may be enough for simple schemas and simple queries. Enrichment is what gives it real meaning and context — descriptions, business concepts, and domain phrasing that make generation reliable. Studio is the recommended authoring surface — a local browser UI that edits your schema artifact directly.</p>
 
 ## Before you start
 
-Have a schema artifact on disk. If you haven't run introspection yet,
-the [Quickstart](/quickstart/) gets you to one in two commands.
+Have a schema artifact on disk. If you haven't run introspection yet, the [Quickstart](/quickstart/) gets you to one in two commands.
 
 ## Authoring in Studio
 
@@ -26,79 +19,52 @@ Studio is the browser-based editor. Launch it from your project root:
 npx askdb studio
 ```
 
-The command reads `outputDir` from `askdb.config.ts`. Pass
-`--schema <path>` to override for this run. By default Studio serves
-on `http://127.0.0.1:5556`. It reads and
-writes the files in your schema folder directly — no separate
-database, no separate copy of your schema.
+The command reads `outputDir` from `askdb.config.ts`. Pass `--schema <path>` to override for this run. By default Studio serves on `http://127.0.0.1:5556`. It reads and writes the files in your schema folder directly — no separate database, no separate copy of your schema.
 
 What you can edit (all fields are optional):
 
-- **Tables.** Per-table description, aliases (the names users
-  actually use), and a "common query language" section that captures
-  domain phrasing.
-- **Columns.** Descriptions, enums, and sensitivity markers. Mark
-  columns like `email`, `ssn`, or `internal_notes` as `sensitive` so
-  the prompt-construction layer can tag or omit them.
-- **Concepts.** Cross-table business concepts (`customer`,
-  `active subscription`, `paid order`) that don't map to one table.
-- **Tenant policy.** When your app is multi-tenant, declare tenant
-  roots and scoped tables. See [Multi-tenancy](/guides/multi-tenancy/) for
-  the full walkthrough.
+- **Tables.** Per-table description, aliases (the names users actually use), and a "common query language" section that captures domain phrasing.
+- **Columns.** Descriptions, enums, and sensitivity markers. Mark columns like `email`, `ssn`, or `internal_notes` as `sensitive` so the prompt-construction layer can tag or omit them.
+- **Concepts.** Cross-table business concepts (`customer`, `active subscription`, `paid order`) that don't map to one table.
+- **Tenant policy.** When your app is multi-tenant, declare tenant roots and scoped tables. See [Multi-tenancy](/guides/multi-tenancy/) for the full walkthrough.
 
-Studio also offers AI-assisted drafts: describe a table or concept
-in plain language and Studio proposes a draft for your review.
-Suggestions are always confirmed by a human before they land in the
-artifact.
+Studio also offers AI-assisted drafts: describe a table or concept in plain language and Studio proposes a draft for your review. Suggestions are always confirmed by a human before they land in the artifact.
 
 ## Authoring in the TUI
 
-If you prefer the terminal — or you're authoring over SSH — the TUI
-covers the same workflow:
+If you prefer the terminal — or you're authoring over SSH — the TUI covers the same workflow:
 
 ```bash
 npx askdb enrich
 ```
 
-Pass `--schema <path>` to override the artifact location for this
-run. The TUI uses the same `@askdb/enrich` package under the hood as
-Studio and writes the same files. Pick whichever surface fits how
-you work.
+Pass `--schema <path>` to override the artifact location for this run. The TUI uses the same `@askdb/enrich` package under the hood as Studio and writes the same files. Pick whichever surface fits how you work.
 
 ## Re-introspecting
 
-When your database schema changes (new columns, renamed tables,
-added relationships), re-run introspection. The physical layer
-(`schema.json`) is regenerated; your enrichment markdown
-(`tables/*.md`, `concepts.md`, `tenant-policy.md`) is preserved.
+When your database schema changes (new columns, renamed tables, added relationships), re-run introspection. The physical layer (`schema.json`) is regenerated; your enrichment markdown (`tables/*.md`, `concepts.md`, `tenant-policy.md`) is preserved.
 
 ```bash
 npx askdb introspect
 ```
 
-With `DATABASE_URL` in `.env` and `outputDir` / `schemaId` in
-`askdb.config.ts`, no flags are needed.
+With `DATABASE_URL` in `.env` and `outputDir` / `schemaId` in `askdb.config.ts`, no flags are needed.
 
-Stable IDs mean a renamed column doesn't break the enrichment that
-references it — the ID stays the same and the markdown follows.
+Stable IDs mean a renamed column doesn't break the enrichment that references it — the ID stays the same and the markdown follows.
 
 ## Bundling for distribution
 
-When another service or build artifact needs the schema as a single
-file:
+When another service or build artifact needs the schema as a single file:
 
 ```bash
 npx askdb bundle ./my-app.schema --out my-app.schema.bundle.json
 ```
 
-The bundle file is the entire artifact in one JSON. Load it with
-`loadSchema` the same way as a directory.
+The bundle file is the entire artifact in one JSON. Load it with `loadSchema` the same way as a directory.
 
 ## Commit it
 
-The schema artifact is source code. Check it into the repo, review
-changes in PRs, deploy it alongside your app. The artifact is the
-single source of truth for what the model sees about your database.
+The schema artifact is source code. Check it into the repo, review changes in PRs, deploy it alongside your app. The artifact is the single source of truth for what the model sees about your database.
 
 ## Read next
 

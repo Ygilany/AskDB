@@ -5,12 +5,7 @@ description: "Every askdb command and flag — init, introspect, enrich, studio,
 
 <p class="doc-eyebrow">Reference · CLI</p>
 
-<p class="doc-lede">
-  The <code>askdb</code> binary covers the full local workflow:
-  scaffolding a project, introspecting a database, authoring schema
-  artifacts, and asking questions. All commands use the same
-  <code>@askdb/core</code> pipeline as the library.
-</p>
+<p class="doc-lede">The <code>askdb</code> binary covers the full local workflow: scaffolding a project, introspecting a database, authoring schema artifacts, and asking questions. All commands use the same <code>@askdb/core</code> pipeline as the library.</p>
 
 ## Install
 
@@ -30,8 +25,7 @@ askdb --help
 
 ### `askdb init`
 
-Scaffolds `askdb.config.ts` (and adds `@askdb/config` + `dotenv` to
-your project) so the rest of the CLI can resolve config.
+Scaffolds `askdb.config.ts` (and adds `@askdb/config` + `dotenv` to your project) so the rest of the CLI can resolve config.
 
 ```bash
 npx askdb init
@@ -43,14 +37,11 @@ npx askdb init
 | `--force` | Overwrite an existing `askdb.config.ts`. |
 | `--skip-install` | Only write the file; don't install packages. |
 
-`init` doesn't create a `.env` — example keys live in comments inside
-`askdb.config.ts`. It intentionally skips config loading so a broken
-config can't block scaffolding.
+`init` doesn't create a `.env` — example keys live in comments inside `askdb.config.ts`. It intentionally skips config loading so a broken config can't block scaffolding.
 
 ### `askdb introspect`
 
-Reads your database (or a Prisma schema file) and writes an AskDB
-schema artifact to disk.
+Reads your database (or a Prisma schema file) and writes an AskDB schema artifact to disk.
 
 ```bash
 askdb introspect \
@@ -71,8 +62,7 @@ askdb introspect \
 
 ### `askdb enrich`
 
-Launches the TUI for authoring per-table descriptions, aliases,
-concepts, and sensitive markers.
+Launches the TUI for authoring per-table descriptions, aliases, concepts, and sensitive markers.
 
 ```bash
 askdb enrich --schema ./my-app.schema
@@ -86,8 +76,7 @@ Requires `@askdb/tui` to be installed (the CLI lazy-imports it).
 
 ### `askdb studio`
 
-Launches Studio — the browser-based authoring UI — pointed at your
-schema artifact.
+Launches Studio — the browser-based authoring UI — pointed at your schema artifact.
 
 ```bash
 askdb studio --schema ./my-app.schema
@@ -98,13 +87,11 @@ askdb studio --schema ./my-app.schema
 | `--schema <path>` | Path to the schema artifact. |
 | `--port <n>` | Override the default port (5556). |
 
-Requires `@askdb/studio` to be installed (lazy-imported on first
-use).
+Requires `@askdb/studio` to be installed (lazy-imported on first use).
 
 ### `askdb bundle`
 
-Writes the entire schema artifact (physical layer + enrichment +
-tenant policy) as a single JSON file for distribution.
+Writes the entire schema artifact (physical layer + enrichment + tenant policy) as a single JSON file for distribution.
 
 ```bash
 askdb bundle ./my-app.schema --out ./my-app.schema.bundle.json
@@ -112,8 +99,7 @@ askdb bundle ./my-app.schema --out ./my-app.schema.bundle.json
 
 ### `askdb ask`
 
-Generates SQL from a natural-language question against a loaded
-schema artifact.
+Generates SQL from a natural-language question against a loaded schema artifact.
 
 ```bash
 askdb ask \
@@ -131,13 +117,11 @@ askdb ask \
 | `--log-level <level>` | Log level (default reads from `ASKDB_LOG_LEVEL`). |
 | `-v`, `--verbose` | Show structured log events. |
 
-`askdb ask` returns the validated SQL on stdout. Execution is not
-part of the CLI.
+`askdb ask` returns the validated SQL on stdout. Execution is not part of the CLI.
 
 ## `askdb-rag setup-store`
 
-Provisions the pgvector schema for `@askdb/rag` idempotently. Safe
-to run in CI / deploy steps.
+Provisions the pgvector schema for `@askdb/rag` idempotently. Safe to run in CI / deploy steps.
 
 ```bash
 askdb-rag setup-store --pg-url "$DATABASE_URL" --dimensions 1536
@@ -157,9 +141,7 @@ askdb-rag setup-store --pg-url "$DATABASE_URL" --dimensions 1536
 | `1` | Generic error (config, IO, generation, validation). |
 | `2` | Invalid CLI arguments. |
 
-Errors print to stderr in human form; structured log events (with
-`-v`) follow the contract in
-[`@askdb/core` logging](/reference/packages/).
+Errors print to stderr in human form; structured log events (with `-v`) follow the contract in [`@askdb/core` logging](/reference/packages/).
 
 ## Read next
 

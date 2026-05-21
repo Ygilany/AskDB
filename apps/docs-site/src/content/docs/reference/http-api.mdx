@@ -5,11 +5,7 @@ description: "Endpoints, request and response shapes, error codes, and configura
 
 <p class="doc-eyebrow">Reference · HTTP API</p>
 
-<p class="doc-lede">
-  <code>@askdb/http-api</code> is a thin HTTP wrapper around the same
-  <code>ask()</code> pipeline as the library. Two endpoints, JSON over
-  HTTP, designed to sit behind your own gateway.
-</p>
+<p class="doc-lede"><code>@askdb/http-api</code> is a thin HTTP wrapper around the same <code>ask()</code> pipeline as the library. Two endpoints, JSON over HTTP, designed to sit behind your own gateway.</p>
 
 ## Server
 
@@ -31,9 +27,7 @@ server.listen();
 | `host` | `127.0.0.1` | Bind address. Bind to `0.0.0.0` only behind a gateway. |
 | `maxBodyBytes` | `1048576` (1 MiB) | Request body size limit. Larger requests return `payload_too_large`. |
 
-The server reads schema and AI provider config from environment
-variables via `@askdb/config` — see
-[Configuration](/reference/config/) for the resolution rules.
+The server reads schema and AI provider config from environment variables via `@askdb/config` — see [Configuration](/reference/config/) for the resolution rules.
 
 ## Endpoints
 
@@ -112,13 +106,9 @@ Generate SQL from a question.
 
 ## Correlation IDs
 
-Every response includes a `correlationId`. The same ID is emitted in
-the server's structured log events, so you can join HTTP requests to
-generated SQL and any errors.
+Every response includes a `correlationId`. The same ID is emitted in the server's structured log events, so you can join HTTP requests to generated SQL and any errors.
 
-To carry a correlation ID supplied by your gateway, send the
-`x-correlation-id` header on the request — the server uses it as-is
-if present, otherwise generates one.
+To carry a correlation ID supplied by your gateway, send the `x-correlation-id` header on the request — the server uses it as-is if present, otherwise generates one.
 
 ```bash
 curl -X POST http://localhost:3000/ask \
@@ -132,12 +122,9 @@ curl -X POST http://localhost:3000/ask \
 - **No auth.** Put your gateway in front.
 - **No TLS termination.** Use your ingress.
 - **No rate limiting.** Same.
-- **No database connection.** It returns SQL; execution is your
-  caller's responsibility.
+- **No database connection.** It returns SQL; execution is your caller's responsibility.
 
-See [Deploy as HTTP
-service](/guides/deploy-as-http-service/) for the production
-deployment pattern.
+See [Deploy as HTTP service](/guides/deploy-as-http-service/) for the production deployment pattern.
 
 ## Read next
 

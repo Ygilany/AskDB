@@ -5,18 +5,11 @@ description: "askdb.config.ts, defineConfig, environment variables, and how AskD
 
 <p class="doc-eyebrow">Reference · Configuration</p>
 
-<p class="doc-lede">
-  AskDB resolves config from two sources: an
-  <code>askdb.config.*</code> file (TypeScript or JavaScript) and
-  environment variables. Both are loaded by
-  <code>@askdb/config</code> at startup into an in-memory runtime
-  snapshot.
-</p>
+<p class="doc-lede">AskDB resolves config from two sources: an <code>askdb.config.*</code> file (TypeScript or JavaScript) and environment variables. Both are loaded by <code>@askdb/config</code> at startup into an in-memory runtime snapshot.</p>
 
 ## `askdb.config.ts`
 
-`askdb init` scaffolds this file. It uses `defineConfig` for type
-safety:
+`askdb init` scaffolds this file. It uses `defineConfig` for type safety:
 
 ```ts
 import { defineConfig } from "@askdb/config";
@@ -45,8 +38,7 @@ export default defineConfig({
 });
 ```
 
-`defineConfig` returns the object unchanged at runtime — it exists
-only for type inference. The full type is `AskDbConfig`.
+`defineConfig` returns the object unchanged at runtime — it exists only for type inference. The full type is `AskDbConfig`.
 
 ## File discovery
 
@@ -61,13 +53,11 @@ only for type inference. The full type is `AskDbConfig`.
 7. `askdb.config.json`
 8. `.config/askdb.*` (any of the above extensions)
 
-The first match wins. Looks in the current working directory, then
-walks up to find a project root.
+The first match wins. Looks in the current working directory, then walks up to find a project root.
 
 ## Environment variables
 
-AskDB reads `.env` next to your process via `dotenv`, then layers
-explicit env vars on top. The most common keys:
+AskDB reads `.env` next to your process via `dotenv`, then layers explicit env vars on top. The most common keys:
 
 | Variable | Used by | Purpose |
 | --- | --- | --- |
@@ -83,14 +73,11 @@ explicit env vars on top. The most common keys:
 | `ASKDB_LOG_LEVEL` | core / CLI / server | One of `trace`, `debug`, `info`, `warn`, `error`, `fatal`, `silent`. |
 | `ASKDB_MODE` | core pipeline | Default operating mode (`schema_only` / `bounded_results`). |
 
-The complete list of env keys is generated from the config schema
-and exposed as `ASKDB_ENV_PROJECTION` in `@askdb/config`.
+The complete list of env keys is generated from the config schema and exposed as `ASKDB_ENV_PROJECTION` in `@askdb/config`.
 
 ## Reading config at runtime
 
-In code that uses the AskDB libraries directly, call
-`bootstrapAskDbEnv()` at startup and then read settings via
-`getAskDbRuntimeConfig()`:
+In code that uses the AskDB libraries directly, call `bootstrapAskDbEnv()` at startup and then read settings via `getAskDbRuntimeConfig()`:
 
 ```ts
 import { bootstrapAskDbEnv, getAskDbRuntimeConfig } from "@askdb/config";
@@ -102,9 +89,7 @@ const aiEnv = rt.ai.aiEnv;
 const schemaPath = rt.schema.path;
 ```
 
-AskDB does **not** copy the full config into `process.env`. The
-runtime snapshot is the source of truth — use `getAskDbRuntimeConfig`
-rather than `process.env` for anything AskDB-specific.
+AskDB does **not** copy the full config into `process.env`. The runtime snapshot is the source of truth — use `getAskDbRuntimeConfig` rather than `process.env` for anything AskDB-specific.
 
 ## Config precedence
 
@@ -115,8 +100,7 @@ For any given setting, the precedence (highest wins) is:
 3. `askdb.config.*` file.
 4. Built-in defaults.
 
-This lets you ship a config file with sensible defaults and override
-per-environment via env vars without rebuilding.
+This lets you ship a config file with sensible defaults and override per-environment via env vars without rebuilding.
 
 ## Read next
 

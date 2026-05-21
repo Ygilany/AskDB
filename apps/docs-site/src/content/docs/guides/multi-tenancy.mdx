@@ -5,22 +5,13 @@ description: "Declare tenant policy in your schema artifact and AskDB enforces i
 
 <p class="doc-eyebrow">Tenant-scoped generation</p>
 
-<p class="doc-lede">
-  Tell AskDB how your schema represents tenancy. From then on, every
-  generated query against a scoped table includes the tenant predicate
-  — or it's rejected before being returned. Your app supplies the
-  tenant scope per request.
-</p>
+<p class="doc-lede">Tell AskDB how your schema represents tenancy. From then on, every generated query against a scoped table includes the tenant predicate — or it's rejected before being returned. Your app supplies the tenant scope per request.</p>
 
 ## How it works
 
-Tenant policy is a file (`tenant-policy.md`) in your schema artifact.
-It declares the tables that belong to a tenant, which column carries
-the tenant ID, and which tables are global.
+Tenant policy is a file (`tenant-policy.md`) in your schema artifact. It declares the tables that belong to a tenant, which column carries the tenant ID, and which tables are global.
 
-AskDB doesn't execute queries — but it does rewrite generated SQL to
-guarantee the tenant filter is present. Your application supplies the
-tenant ID per call. AskDB validates and binds it.
+AskDB doesn't execute queries — but it does rewrite generated SQL to guarantee the tenant filter is present. Your application supplies the tenant ID per call. AskDB validates and binds it.
 
 ## Tenant policy concepts
 
@@ -34,13 +25,9 @@ tenant ID per call. AskDB validates and binds it.
 
 ## Authoring the policy
 
-The recommended path is Studio's **Tenancy** view, which guides you
-through declaring tenant roots, scoped tables, and global tables in a
-form. Studio can also AI-draft a policy from a plain-language
-description of your tenancy model, for your review.
+The recommended path is Studio's **Tenancy** view, which guides you through declaring tenant roots, scoped tables, and global tables in a form. Studio can also AI-draft a policy from a plain-language description of your tenancy model, for your review.
 
-You can also write `tenant-policy.md` by hand. Example for a simple
-SaaS schema:
+You can also write `tenant-policy.md` by hand. Example for a simple SaaS schema:
 
 ```yaml
 ---
@@ -64,9 +51,7 @@ globalTables:
 
 ## Asking with a tenant scope
 
-When the policy exists, every `ask()` call must include a
-`tenantScope`. AskDB validates the scope against the policy and binds
-it into the generated SQL.
+When the policy exists, every `ask()` call must include a `tenantScope`. AskDB validates the scope against the policy and binds it into the generated SQL.
 
 ```ts
 import { ask } from "@askdb/core";
@@ -97,38 +82,28 @@ const result = await pool.query(sql, tenantParams);
 
 ## What gets rewritten
 
-Without policy, a question like "how many documents this month?"
-might generate:
+Without policy, a question like "how many documents this month?" might generate:
 
 ```sql
 SELECT COUNT(*) FROM documents WHERE created_at >= NOW() - INTERVAL '1 month';
 ```
 
-With the policy above and a tenant scope of
-`{ tenantRoot: "organizations", tenantIds: ["org_abc123"] }`, the
-same question generates:
+With the policy above and a tenant scope of `{ tenantRoot: "organizations", tenantIds: ["org_abc123"] }`, the same question generates:
 
 ```sql
 SELECT COUNT(*) FROM documents
 WHERE organization_id = $1 AND created_at >= NOW() - INTERVAL '1 month';
 ```
 
-The tenant predicate is present in the SQL AskDB returns — it can't
-be forgotten by the caller, and it can't be removed by a malformed
-question.
+The tenant predicate is present in the SQL AskDB returns — it can't be forgotten by the caller, and it can't be removed by a malformed question.
 
 ## Without a policy
 
-If `tenant-policy.md` is absent from the schema artifact, AskDB
-generates SQL without any tenant-scoping predicates. That's the right
-default for single-tenant deployments. Add the policy when (and only
-when) you go multi-tenant.
+If `tenant-policy.md` is absent from the schema artifact, AskDB generates SQL without any tenant-scoping predicates. That's the right default for single-tenant deployments. Add the policy when (and only when) you go multi-tenant.
 
 ## Testing in Studio
 
-Studio's **Ask** panel includes tenant scope controls — provide a
-scope as JSON before generating SQL to see how predicate injection
-works:
+Studio's **Ask** panel includes tenant scope controls — provide a scope as JSON before generating SQL to see how predicate injection works:
 
 ```json
 {
@@ -138,8 +113,7 @@ works:
 }
 ```
 
-Switch between `sql-only` and `sql-params` to compare the two output
-forms.
+Switch between `sql-only` and `sql-params` to compare the two output forms.
 
 ## Read next
 

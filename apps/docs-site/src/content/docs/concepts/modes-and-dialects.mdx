@@ -5,25 +5,17 @@ description: "How AskDB adapts to your SQL engine and the trust model you choose
 
 <p class="doc-eyebrow">Adapting to your stack</p>
 
-<p class="doc-lede">
-  Two knobs you tune per deployment: the <strong>dialect</strong>
-  (which SQL flavor AskDB generates and validates) and the
-  <strong>mode</strong> (what may enter the model's context beyond
-  the schema artifact and the question).
-</p>
+<p class="doc-lede">Two knobs you tune per deployment: the <strong>dialect</strong> (which SQL flavor AskDB generates and validates) and the <strong>mode</strong> (what may enter the model's context beyond the schema artifact and the question).</p>
 
 ## Dialects
 
-A dialect is an `AskDialect` implementation supplied by an engine
-package. It tells `@askdb/core` how to:
+A dialect is an `AskDialect` implementation supplied by an engine package. It tells `@askdb/core` how to:
 
 - Construct identifiers and quoting for this engine.
-- Format dialect-specific clauses (LIMIT vs TOP, dollar parameters
-  vs question marks, JSON path syntax).
+- Format dialect-specific clauses (LIMIT vs TOP, dollar parameters vs question marks, JSON path syntax).
 - Validate what counts as a read-only `SELECT` on this engine.
 
-Each engine ships its dialect as a first-class package. Pick the
-one that matches your database.
+Each engine ships its dialect as a first-class package. Pick the one that matches your database.
 
 | Engine | Package | Status |
 | --- | --- | --- |
@@ -32,21 +24,15 @@ one that matches your database.
 | SQLite | `@askdb/sqlite` | First-class dialect; works with embedded files. |
 | SQL Server | `@askdb/sqlserver` | T-SQL dialect and introspection. |
 
-Switching engines is mostly a package swap. The full migration
-checklist lives in [Switch engines](/guides/switch-engines/).
+Switching engines is mostly a package swap. The full migration checklist lives in [Switch engines](/guides/switch-engines/).
 
 ## Modes
 
-Modes fix trust boundaries for headless pipelines: what may enter
-model context beyond the schema artifact and the natural-language
-question. The full spec is versioned alongside the code — see the
-[modes contract on GitHub](https://github.com/Ygilany/AskDB/blob/main/docs/contracts/modes-v1.md).
+Modes fix trust boundaries for headless pipelines: what may enter model context beyond the schema artifact and the natural-language question. The full spec is versioned alongside the code — see the [modes contract on GitHub](https://github.com/Ygilany/AskDB/blob/main/docs/contracts/modes-v1.md).
 
 ### `schema_only` (default)
 
-AskDB grounds generation in the schema artifact and returns SQL
-only. The model never sees rows, credentials, or query results.
-This is the right mode for almost every production deployment.
+AskDB grounds generation in the schema artifact and returns SQL only. The model never sees rows, credentials, or query results. This is the right mode for almost every production deployment.
 
 ```bash
 askdb ask \
@@ -57,11 +43,7 @@ askdb ask \
 
 ### `bounded_results`
 
-Reserved for workflows where a host application explicitly
-summarizes bounded tabular results back through the model. Current
-AskDB surfaces still return SQL only — the bounded-results pipeline
-is a forward-looking extension point that hosts can wire when their
-trust model permits.
+Reserved for workflows where a host application explicitly summarizes bounded tabular results back through the model. Current AskDB surfaces still return SQL only — the bounded-results pipeline is a forward-looking extension point that hosts can wire when their trust model permits.
 
 ```bash
 askdb ask \
@@ -74,26 +56,18 @@ askdb ask \
 
 Columns marked `sensitive: true` in the schema artifact can be:
 
-- Included with a sensitivity tag in the prompt (default), so the
-  model knows to handle them carefully and your application can
-  decide whether to display them.
-- Omitted from the prompt entirely with
-  `--omit-sensitive-from-prompt` (or
-  `ASKDB_OMIT_SENSITIVE_FROM_PROMPT=true`), so the model never sees
-  them and therefore never proposes them.
+- Included with a sensitivity tag in the prompt (default), so the model knows to handle them carefully and your application can decide whether to display them.
+- Omitted from the prompt entirely with `--omit-sensitive-from-prompt` (or `ASKDB_OMIT_SENSITIVE_FROM_PROMPT=true`), so the model never sees them and therefore never proposes them.
 
-The complete behavior table is in the [sensitive fields
-contract on GitHub](https://github.com/Ygilany/AskDB/blob/main/docs/contracts/sensitive-fields-and-modes.md).
+The complete behavior table is in the [sensitive fields contract on GitHub](https://github.com/Ygilany/AskDB/blob/main/docs/contracts/sensitive-fields-and-modes.md).
 
 ## Picking a mode
 
 For most teams:
 
 - Start with `schema_only`. It's the safest default.
-- Mark sensitive columns in your schema artifact early. Decide per
-  deployment whether to include them tagged or omit them.
-- Don't reach for `bounded_results` until you have a concrete need —
-  most analytics use cases don't.
+- Mark sensitive columns in your schema artifact early. Decide per deployment whether to include them tagged or omit them.
+- Don't reach for `bounded_results` until you have a concrete need — most analytics use cases don't.
 
 ## Read next
 

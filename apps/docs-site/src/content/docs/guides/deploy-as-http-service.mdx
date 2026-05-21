@@ -5,12 +5,7 @@ description: "Stand up @askdb/http-api so Python, browsers, agents — anything 
 
 <p class="doc-eyebrow">Service guide</p>
 
-<p class="doc-lede">
-  <code>@askdb/http-api</code> wraps the same <code>ask()</code>
-  pipeline behind a minimal HTTP server. Use it when non-Node clients
-  need to ask questions, or when you want one AskDB service shared
-  across multiple consumers.
-</p>
+<p class="doc-lede"><code>@askdb/http-api</code> wraps the same <code>ask()</code> pipeline behind a minimal HTTP server. Use it when non-Node clients need to ask questions, or when you want one AskDB service shared across multiple consumers.</p>
 
 ## Install
 
@@ -33,10 +28,7 @@ const server = createAskDbHttpServer({
 server.listen();
 ```
 
-The server reads its schema and model config from environment
-variables — set `ASKDB_SCHEMA_PATH` to point at your schema artifact,
-and the AI provider keys (`OPENAI_API_KEY`, etc.) as you normally
-would.
+The server reads its schema and model config from environment variables — set `ASKDB_SCHEMA_PATH` to point at your schema artifact, and the AI provider keys (`OPENAI_API_KEY`, etc.) as you normally would.
 
 ## Endpoints
 
@@ -71,8 +63,7 @@ Response (success):
 }
 ```
 
-The response is SQL only — the server does not run it. Your client
-takes the SQL and decides what to do with it.
+The response is SQL only — the server does not run it. Your client takes the SQL and decides what to do with it.
 
 ## Calling from curl
 
@@ -106,11 +97,7 @@ else:
 
 ## Run it behind a gateway
 
-`@askdb/http-api` is intentionally minimal — there is no built-in
-auth, rate limiting, or TLS termination. **Don't expose it directly
-to the public internet.** Put it behind your existing API gateway,
-ingress, or reverse proxy and apply the same auth you use for the
-rest of your services.
+`@askdb/http-api` is intentionally minimal — there is no built-in auth, rate limiting, or TLS termination. **Don't expose it directly to the public internet.** Put it behind your existing API gateway, ingress, or reverse proxy and apply the same auth you use for the rest of your services.
 
 A typical production shape:
 
@@ -121,16 +108,11 @@ client  ──►  your API gateway  ──►  @askdb/http-api  ──►  mode
                   └────────────────►  read-only DB role  ◄─── (execution happens in your gateway service, not here)
 ```
 
-The server does not connect to your database. It generates SQL and
-returns it. Execution is your gateway service's job — that's where
-your auth context lives.
+The server does not connect to your database. It generates SQL and returns it. Execution is your gateway service's job — that's where your auth context lives.
 
 ## Custom schema per request
 
-The default is to load `ASKDB_SCHEMA_PATH` once at boot. If you need
-per-request schema (for example, a multi-product deployment where
-different consumers send different schemas), supply the bundled JSON
-as `schemaJson` in the request body:
+The default is to load `ASKDB_SCHEMA_PATH` once at boot. If you need per-request schema (for example, a multi-product deployment where different consumers send different schemas), supply the bundled JSON as `schemaJson` in the request body:
 
 ```json
 {
@@ -139,14 +121,11 @@ as `schemaJson` in the request body:
 }
 ```
 
-Bundle the artifact with `askdb bundle` and ship the resulting JSON
-as the value.
+Bundle the artifact with `askdb bundle` and ship the resulting JSON as the value.
 
 ## Correlation IDs
 
-Every response includes a `correlationId`. The server emits structured
-log events tagged with the same ID — so you can join HTTP requests to
-the generated SQL and any errors in your log pipeline.
+Every response includes a `correlationId`. The server emits structured log events tagged with the same ID — so you can join HTTP requests to the generated SQL and any errors in your log pipeline.
 
 ## Read next
 
