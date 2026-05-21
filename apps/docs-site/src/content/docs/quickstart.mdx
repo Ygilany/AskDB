@@ -17,7 +17,7 @@ description: "Scaffold config, introspect a database, enrich the schema, and ask
 - npm, pnpm, or yarn (examples use `npx`).
 - An API key from a model provider — OpenAI, Anthropic, Google,
   OpenRouter, or any OpenAI-compatible endpoint. See [Bring your own
-  model](./guides/bring-your-own-model.mdx).
+  model](/guides/bring-your-own-model/).
 - A database AskDB can read — Postgres, MySQL, SQLite, or SQL Server —
   or a Prisma schema file (no live database required).
 
@@ -68,7 +68,7 @@ That artifact is the only thing the model ever sees about your database.
 
 With `DATABASE_URL` in `.env` and your database connection configured in
 `askdb.config.ts`, one command is enough. `outputDir` is optional and
-defaults to `./askdb/` — see the [Configuration reference](./reference/config.mdx)
+defaults to `./askdb/` — see the [Configuration reference](/reference/config/)
 for all options, their defaults, and which are required:
 
 ```bash
@@ -82,7 +82,7 @@ npx askdb introspect --url "$OTHER_DATABASE_URL"
 ```
 
 AskDB picks the right dialect from the connection string. See [Switch
-engines](./guides/switch-engines.mdx) for the install matrix.
+engines](/guides/switch-engines/) for the install matrix.
 
 ### From a Prisma schema
 
@@ -127,7 +127,7 @@ npx askdb enrich
 ```
 
 Both commands read `outputDir` from `askdb.config.ts`. The full
-walkthrough lives in [Author your schema](./guides/author-your-schema.mdx).
+walkthrough lives in [Author your schema](/guides/author-your-schema/).
 
 ## 4. Ask from the CLI
 
@@ -149,8 +149,8 @@ Now that the CLI works, pick the path that matches what you're
 building:
 
 <div class="home-path-grid">
-  <a href="./guides/embed-in-node.mdx"><strong>Embed in a Node app</strong><span>Drop <code>@askdb/core</code> into a TypeScript service and run the SQL through your own pool.</span></a>
-  <a href="./guides/deploy-as-http-service.mdx"><strong>Deploy as HTTP service</strong><span>Stand up <code>@askdb/http-api</code> so Python, browsers, or agents can ask questions.</span></a>
-  <a href="./guides/author-your-schema.mdx"><strong>Author your schema</strong><span>Get the most out of Studio: descriptions, concepts, sensitive markers, tenant policy.</span></a>
-  <a href="./concepts/how-askdb-works.mdx"><strong>How AskDB works</strong><span>The end-to-end flow, with all the moving parts.</span></a>
+  <a href="/guides/embed-in-node/"><strong>Embed in a Node app</strong><span>Drop <code>@askdb/core</code> into a TypeScript service and run the SQL through your own pool.</span></a>
+  <a href="/guides/deploy-as-http-service/"><strong>Deploy as HTTP service</strong><span>Stand up <code>@askdb/http-api</code> so Python, browsers, or agents can ask questions.</span></a>
+  <a href="/guides/author-your-schema/"><strong>Author your schema</strong><span>Get the most out of Studio: descriptions, concepts, sensitive markers, tenant policy.</span></a>
+  <a href="/concepts/how-askdb-works/"><strong>How AskDB works</strong><span>The end-to-end flow, with all the moving parts.</span></a>
 </div>

@@ -50,7 +50,7 @@ npm install @askdb/sqlserver     # SQL Server
 ```
 
 A typical project installs `@askdb/core` plus one engine. See [Switch
-engines](./guides/switch-engines/) for what differs per engine.
+engines](/guides/switch-engines/) for what differs per engine.
 
 ## Model provider
 
@@ -63,7 +63,7 @@ npm install ai @ai-sdk/openai
 ```
 
 The full list of supported providers lives in [Bring your own
-model](./guides/bring-your-own-model/).
+model](/guides/bring-your-own-model/).
 
 ## Authoring the schema
 
@@ -85,7 +85,7 @@ npm install @askdb/enrich
 The CLI ships with `studio` and `enrich` commands that use these
 packages under the hood, so you only need to install them explicitly
 if you're embedding the authoring surfaces in your own app. See
-[Author your schema](./guides/author-your-schema/) for the workflow.
+[Author your schema](/guides/author-your-schema/) for the workflow.
 
 ## Introspection
 
@@ -112,13 +112,13 @@ npm install @askdb/rag
 ```
 
 The full walkthrough — including the recommended pgvector store —
-lives in [RAG for large schemas](./guides/rag-for-large-schemas/).
+lives in [RAG for large schemas](/guides/rag-for-large-schemas/).
 
 ## HTTP service
 
 To expose AskDB over HTTP — for Python clients, browsers, or agent
 frameworks — install the HTTP package and follow [Deploy as HTTP
-service](./guides/deploy-as-http-service/).
+service](/guides/deploy-as-http-service/).
 
 ```bash
 npm install @askdb/http-api
@@ -127,8 +127,8 @@ npm install @askdb/http-api
 ## What to install — by use case
 
 <div class="home-path-grid">
-  <a href="./quickstart.mdx"><strong>Just trying it out</strong><span><code>askdb</code> alone is enough to introspect, enrich, and ask from the CLI.</span></a>
-  <a href="./guides/embed-in-node.mdx"><strong>Embedding in a Node service</strong><span><code>@askdb/core</code> + one engine adapter + a model provider.</span></a>
-  <a href="./guides/deploy-as-http-service.mdx"><strong>Standing up an HTTP service</strong><span>Add <code>@askdb/http-api</code> on top of the embedding install.</span></a>
-  <a href="./guides/rag-for-large-schemas.mdx"><strong>Working with a large schema</strong><span>Add <code>@askdb/rag</code> and a vector store (pgvector recommended).</span></a>
+  <a href="/quickstart/"><strong>Just trying it out</strong><span><code>askdb</code> alone is enough to introspect, enrich, and ask from the CLI.</span></a>
+  <a href="/guides/embed-in-node/"><strong>Embedding in a Node service</strong><span><code>@askdb/core</code> + one engine adapter + a model provider.</span></a>
+  <a href="/guides/deploy-as-http-service/"><strong>Standing up an HTTP service</strong><span>Add <code>@askdb/http-api</code> on top of the embedding install.</span></a>
+  <a href="/guides/rag-for-large-schemas/"><strong>Working with a large schema</strong><span>Add <code>@askdb/rag</code> and a vector store (pgvector recommended).</span></a>
 </div>
