@@ -1,5 +1,11 @@
 # @askdb/http-api
 
+## 0.5.0-beta.17
+
+### Patch Changes
+
+- @askdb/postgres@0.2.0-beta.8
+
 ## 0.5.0-beta.16
 
 ### Patch Changes
