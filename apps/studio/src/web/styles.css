@@ -302,6 +302,77 @@ code, pre, .mono { font-family: var(--font-mono); }
   color: var(--ink-400);
 }
 
+.enrich-filter-bar {
+  display: flex;
+  gap: 4px;
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--border);
+}
+
+.enrich-filter-chip {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  height: 22px;
+  padding: 0 7px;
+  border: 1px solid var(--border);
+  border-radius: 11px;
+  background: transparent;
+  font-size: 10.5px;
+  color: var(--ink-400);
+  cursor: pointer;
+  transition: all 0.12s;
+  white-space: nowrap;
+}
+
+.enrich-filter-chip:hover {
+  background: var(--surface-2);
+  color: var(--ink-700);
+}
+
+.enrich-filter-chip.active {
+  color: var(--ink-700);
+  border-color: var(--border-strong);
+  background: var(--surface-2);
+}
+
+.enrich-filter-chip.active.enriched {
+  border-color: var(--green-500);
+  background: color-mix(in srgb, var(--green-500) 8%, transparent);
+}
+
+.enrich-filter-chip.active.partial {
+  border-color: var(--amber-500);
+  background: color-mix(in srgb, var(--amber-500) 8%, transparent);
+}
+
+.enrich-filter-chip.active.none {
+  border-color: var(--ink-300);
+  background: var(--surface-2);
+}
+
+.enrich-filter-chip:not(.active) {
+  opacity: 0.5;
+}
+
+.enrich-filter-chip:not(.active):hover {
+  opacity: 0.8;
+}
+
+.enrich-filter-chip .enrich-dot {
+  width: 6px;
+  height: 6px;
+}
+
+.enrich-filter-label {
+  font-weight: 500;
+}
+
+.enrich-filter-count {
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
 .sub-rail-list {
   flex: 1;
   overflow: auto;

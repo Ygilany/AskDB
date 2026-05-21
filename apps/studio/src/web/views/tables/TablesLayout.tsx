@@ -8,6 +8,14 @@ import {
   CollapsibleTrigger,
 } from "../../components/ui/collapsible";
 
+type EnrichLevel = "enriched" | "partial" | "none";
+
+const LEVEL_LABELS: Record<EnrichLevel, string> = {
+  enriched: "Complete",
+  partial: "Partial",
+  none: "Not started",
+};
+
 export function TablesLayout() {
   const navigate = useNavigate();
   const params = useParams<{ schema: string; name: string }>();
@@ -21,16 +29,40 @@ export function TablesLayout() {
     drafts,
   } = useWorkspace();
 
+  // Enrichment filter state — null means "show all"
+  const [enrichFilter, setEnrichFilter] = useState<Set<EnrichLevel> | null>(null);
+
+  // Compute enrichment level for a table
+  function getLevel(t: typeof tables[0]): EnrichLevel {
+    const draft = drafts[t.physical.id] ?? t.draft;
+    const hasSome = draft.description || (draft.aliases && draft.aliases.length > 0);
+    const allCols = Object.values(draft.columns ?? {}).every((c) => c.description);
+    return hasSome && allCols ? "enriched" : hasSome ? "partial" : "none";
+  }
+
+  // Count by enrichment level (across all tables, not just filtered)
+  const levelCounts = useMemo(() => {
+    const counts: Record<EnrichLevel, number> = { enriched: 0, partial: 0, none: 0 };
+    for (const t of tables) counts[getLevel(t)]++;
+    return counts;
+  }, [tables, drafts]);
+
+  // Apply enrichment filter on top of search-filtered tables
+  const displayTables = useMemo(() => {
+    if (!enrichFilter) return filteredTables;
+    return filteredTables.filter((t) => enrichFilter.has(getLevel(t)));
+  }, [filteredTables, enrichFilter, drafts]);
+
   // Group tables by schema
   const schemaGroups = useMemo(() => {
-    const groups = new Map<string, typeof filteredTables>();
-    for (const t of filteredTables) {
+    const groups = new Map<string, typeof displayTables>();
+    for (const t of displayTables) {
       const schema = t.physical.schema;
       if (!groups.has(schema)) groups.set(schema, []);
       groups.get(schema)!.push(t);
     }
     return Array.from(groups.entries()).sort(([a], [b]) => a.localeCompare(b));
-  }, [filteredTables]);
+  }, [displayTables]);
 
   const allSchemas = useMemo(() => schemaGroups.map(([s]) => s), [schemaGroups]);
 
@@ -68,6 +100,24 @@ export function TablesLayout() {
     }
   }, [params.schema, params.name, tables]);
 
+  function toggleFilter(level: EnrichLevel) {
+    setEnrichFilter((prev) => {
+      if (!prev) {
+        // Nothing active → activate only this level
+        return new Set([level]);
+      }
+      const next = new Set(prev);
+      if (next.has(level)) {
+        next.delete(level);
+        // If empty, clear filter entirely (show all)
+        return next.size === 0 ? null : next;
+      }
+      next.add(level);
+      // If all three selected, same as "show all"
+      return next.size === 3 ? null : next;
+    });
+  }
+
   const hasOutlet = Boolean(params.schema && params.name);
 
   return (
@@ -98,6 +148,23 @@ export function TablesLayout() {
             onChange={(e) => setTableSearch(e.target.value)}
           />
         </div>
+        <div className="enrich-filter-bar">
+          {(["enriched", "partial", "none"] as EnrichLevel[]).map((level) => {
+            const active = !enrichFilter || enrichFilter.has(level);
+            return (
+              <button
+                key={level}
+                className={`enrich-filter-chip ${level} ${active ? "active" : ""}`}
+                onClick={() => toggleFilter(level)}
+                title={`${active ? "Hide" : "Show"} ${LEVEL_LABELS[level].toLowerCase()} tables`}
+              >
+                <span className={`enrich-dot ${level}`} />
+                <span className="enrich-filter-label">{LEVEL_LABELS[level]}</span>
+                <span className="enrich-filter-count">{levelCounts[level]}</span>
+              </button>
+            );
+          })}
+        </div>
         <div className="sub-rail-list">
           {schemaGroups.map(([schema, schemaTables]) => (
             <Collapsible
@@ -126,10 +193,7 @@ export function TablesLayout() {
                 <CollapsibleContent>
                   <div className="schema-group-bd">
                     {schemaTables.map((t) => {
-                      const draft = drafts[t.physical.id] ?? t.draft;
-                      const hasSome = draft.description || (draft.aliases && draft.aliases.length > 0);
-                      const allCols = Object.values(draft.columns ?? {}).every((c) => c.description);
-                      const level = hasSome && allCols ? "enriched" : hasSome ? "partial" : "none";
+                      const level = getLevel(t);
                       const isActive = selectedTable?.physical.id === t.physical.id;
                       return (
                         <button
@@ -148,9 +212,9 @@ export function TablesLayout() {
               </div>
             </Collapsible>
           ))}
-          {filteredTables.length === 0 && (
+          {displayTables.length === 0 && (
             <div className="muted tiny" style={{ padding: "16px", textAlign: "center" }}>
-              No tables match your search
+              {enrichFilter ? "No tables match this filter" : "No tables match your search"}
             </div>
           )}
         </div>
