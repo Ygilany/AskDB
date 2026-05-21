@@ -1,5 +1,15 @@
 # @askdb/studio
 
+## 0.2.0-beta.14
+
+### Minor Changes
+
+- 75a51f7: Complete IA redesign with topbar, nav rail, URL-based routing (react-router v7), and modular view architecture replacing the monolithic App.tsx
+
+### Patch Changes
+
+- @askdb/postgres@0.2.0-beta.8
+
 ## 0.2.0-beta.13
 
 ### Minor Changes
