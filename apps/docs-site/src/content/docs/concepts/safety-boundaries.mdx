@@ -30,7 +30,7 @@ sequence:
    declares a tenant column on a table, every query that touches
    that table must include the tenant predicate. AskDB rewrites the
    query to add the filter or rejects it. See
-   [Multi-tenancy](../../guides/multi-tenancy/).
+   [Multi-tenancy](/guides/multi-tenancy/).
 6. **Sensitive columns (when configured).** Columns marked
    `sensitive: true` can be omitted from the prompt entirely with
    `--omit-sensitive-from-prompt` so the model never proposes them.
@@ -93,7 +93,7 @@ standing between a question and a misbehaving query.
 ## Read next
 
 <div class="home-path-grid">
-  <a href="../modes-and-dialects/"><strong>Modes and dialects</strong><span>How the validator adapts to your engine and your trust model.</span></a>
-  <a href="../../guides/run-safely-in-prod/"><strong>Run safely in production</strong><span>The full operator checklist for the execution side.</span></a>
-  <a href="../../guides/multi-tenancy/"><strong>Multi-tenancy</strong><span>Declaring tenant policy in your schema artifact.</span></a>
+  <a href="/concepts/modes-and-dialects/"><strong>Modes and dialects</strong><span>How the validator adapts to your engine and your trust model.</span></a>
+  <a href="/guides/run-safely-in-prod/"><strong>Run safely in production</strong><span>The full operator checklist for the execution side.</span></a>
+  <a href="/guides/multi-tenancy/"><strong>Multi-tenancy</strong><span>Declaring tenant policy in your schema artifact.</span></a>
 </div>
