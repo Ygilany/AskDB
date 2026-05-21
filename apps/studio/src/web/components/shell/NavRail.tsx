@@ -3,13 +3,16 @@ import {
   Database,
   Hexagon,
   LayoutGrid,
+  Moon,
   Play,
   Settings,
   Shield,
   Sparkles,
+  Sun,
   Table2,
 } from "lucide-react";
 import { useWorkspace } from "../../contexts/workspace-context";
+import { useTheme } from "../../contexts/theme-context";
 import {
   Sidebar,
   SidebarContent,
@@ -36,6 +39,7 @@ const NAV_ITEMS = [
 
 export function NavRail() {
   const { workspace } = useWorkspace();
+  const { theme, toggleTheme } = useTheme();
 
   function getBadge(key?: string): string | undefined {
     if (!workspace || !key) return undefined;
@@ -52,7 +56,11 @@ export function NavRail() {
             <SidebarMenuButton size="lg" asChild tooltip="AskDB Studio">
               <a href="/" className="no-underline">
                 <div className="flex aspect-square size-8 items-center justify-center shrink-0">
-                  <img src="/assets/brand/light-icon.png" alt="AskDB" className="size-7" />
+                  <img
+                    src={theme === "dark" ? "/assets/brand/dark-icon.png" : "/assets/brand/light-icon.png"}
+                    alt="AskDB"
+                    className="size-7"
+                  />
                 </div>
                 <div className="flex flex-col gap-0.5 leading-none">
                   <span className="font-semibold">AskDB</span>
@@ -96,6 +104,15 @@ export function NavRail() {
                 <Settings />
                 <span>Settings</span>
               </NavLink>
+            </SidebarMenuButton>
+          </SidebarMenuItem>
+          <SidebarMenuItem>
+            <SidebarMenuButton
+              tooltip={theme === "light" ? "Dark mode" : "Light mode"}
+              onClick={toggleTheme}
+            >
+              {theme === "light" ? <Moon /> : <Sun />}
+              <span>{theme === "light" ? "Dark mode" : "Light mode"}</span>
             </SidebarMenuButton>
           </SidebarMenuItem>
         </SidebarMenu>

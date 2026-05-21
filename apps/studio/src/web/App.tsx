@@ -1,5 +1,6 @@
 import { useEffect } from "react";
 import { Navigate, Route, Routes } from "react-router";
+import { ThemeProvider } from "./contexts/theme-context";
 import { WorkspaceProvider, useWorkspace } from "./contexts/workspace-context";
 import { RagProvider, useRag } from "./contexts/rag-context";
 import { PlaygroundProvider } from "./contexts/playground-context";
@@ -22,11 +23,13 @@ import { Separator } from "./components/ui/separator";
 
 export function App() {
   return (
-    <WorkspaceProvider>
-      <RagProvider>
-        <AppShell />
-      </RagProvider>
-    </WorkspaceProvider>
+    <ThemeProvider>
+      <WorkspaceProvider>
+        <RagProvider>
+          <AppShell />
+        </RagProvider>
+      </WorkspaceProvider>
+    </ThemeProvider>
   );
 }
 
