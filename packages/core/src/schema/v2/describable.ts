@@ -19,6 +19,8 @@ export const v2TableFrontmatterSchema = z
     aliases: z.array(z.string()).optional(),
     tags: z.array(z.string()).optional(),
     sensitive: z.boolean().optional(),
+    /** When false, this table is excluded from LLM prompts and RAG indexing. Defaults to tracked (true). */
+    tracked: z.boolean().optional(),
     columns: z.array(v2ColumnFrontmatterSchema).optional(),
   })
   .strict();

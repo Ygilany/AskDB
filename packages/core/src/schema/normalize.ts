@@ -34,6 +34,8 @@ export type NlToSqlSchemaFormatStats = {
   sensitiveTableStubCount: number;
   /** When including: sensitive-marked columns listed in DDL (with `(sensitive)`). When omitting: always 0. */
   listedSensitiveColumnCount: number;
+  /** Tables excluded from the DDL because they are marked as untracked. */
+  untrackedTableCount: number;
 };
 
 function columnLine(
@@ -115,6 +117,7 @@ export function formatSchemaForNlToSql(
       redactedColumnCount,
       sensitiveTableStubCount,
       listedSensitiveColumnCount,
+      untrackedTableCount: 0,
     },
   };
 }

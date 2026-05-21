@@ -24,6 +24,8 @@ export type TableDraft = {
   tags?: string[];
   /** Override (only set when user explicitly toggles). */
   sensitive?: boolean;
+  /** When false, table is excluded from LLM prompts and RAG indexing. Undefined means tracked. */
+  tracked?: boolean;
   /** Verbatim content under `## Common query language`. */
   commonQueryLanguage?: string;
   /** Verbatim content under `## Example questions`. */
@@ -54,6 +56,7 @@ export function buildTableDraft(
     primaryEntity: fm?.primaryEntity,
     tags: fm?.tags ? [...fm.tags] : undefined,
     sensitive: fm?.sensitive,
+    tracked: fm?.tracked,
     commonQueryLanguage: parsed?.sections["Common query language"],
     exampleQuestions: parsed?.sections["Example questions"],
     columns,
@@ -90,6 +93,7 @@ export function buildFrontmatter(
   if (nonEmptyStrings(draft.aliases)) fm.aliases = draft.aliases;
   if (nonEmptyStrings(draft.tags)) fm.tags = draft.tags;
   if (draft.sensitive !== undefined) fm.sensitive = draft.sensitive;
+  if (draft.tracked !== undefined) fm.tracked = draft.tracked;
   // Only emit columns array when at least one column has describable content,
   // so "untouched" tables stay minimal.
   if (columns.some((c) => Object.keys(c).length > 1)) fm.columns = columns;
