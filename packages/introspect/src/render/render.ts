@@ -18,6 +18,7 @@ import type {
   SqlForeignKey,
   SqlSchema,
   SqlTable,
+  SqlView,
 } from "../types.js";
 import type { RenderOptions, RenderResult } from "./types.js";
 
@@ -195,6 +196,9 @@ export function toV2SchemaJson(
     for (const t of ns.tables) {
       tables.push(toV2Table(t));
     }
+    for (const v of ns.views) {
+      tables.push(toV2View(v));
+    }
   }
 
   tables.sort((a, b) => {
@@ -232,6 +236,21 @@ function toV2Table(table: SqlTable): V2Table {
   }
 
   return v2Table;
+}
+
+function toV2View(view: SqlView): V2Table {
+  const columns = view.columns
+    .slice()
+    .sort((a, b) => a.ordinalPosition - b.ordinalPosition)
+    .map(toV2Column);
+
+  return {
+    id: `table:${view.schema}.${view.name}`,
+    name: view.name,
+    schema: view.schema,
+    sensitive: false,
+    columns,
+  };
 }
 
 function toV2Column(column: SqlColumn): V2Column {
