@@ -42,7 +42,7 @@
   --shadow-drawer: -12px 0 30px rgba(20, 18, 15, 0.08);
 
   --nav-w: 200px;
-  --sub-w: 256px;
+  --sub-w: 400px;
   --pad-y: 11px;
   --pad-x: 14px;
   --sidebar: var(--surface);
