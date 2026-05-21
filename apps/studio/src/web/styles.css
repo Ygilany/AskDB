@@ -175,8 +175,8 @@ code, pre, .mono { font-family: var(--font-mono); }
   overflow: hidden;
 }
 
-/* Pages without a sub-rail span full width */
-.app-content > .main-pane {
+/* Pages without a sub-rail span full width (only when main-pane is the sole child) */
+.app-content > .main-pane:only-child {
   grid-column: 1 / -1;
 }
 
@@ -258,7 +258,8 @@ code, pre, .mono { font-family: var(--font-mono); }
   padding: 10px 14px 8px;
   border-bottom: 1px solid var(--border);
   display: flex;
-  flex-direction: column;
+  align-items: center;
+  justify-content: space-between;
   gap: 6px;
 }
 
@@ -371,6 +372,72 @@ code, pre, .mono { font-family: var(--font-mono); }
   color: var(--ink-300);
   font-weight: 500;
   letter-spacing: 0;
+}
+
+/* ───────── Schema groups (tables sub-rail) ───────── */
+.schema-group {
+  margin-bottom: 2px;
+}
+
+.schema-group-hd {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  text-align: left;
+  gap: 6px;
+  width: 100%;
+  padding: 6px 10px;
+  border: none;
+  background: none;
+  cursor: pointer;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--ink-600);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  border-radius: 6px;
+  transition: background 0.12s;
+}
+
+.schema-group-hd:hover {
+  background: var(--surface-2);
+  color: var(--ink-900);
+}
+
+.schema-chevron {
+  flex-shrink: 0;
+  color: var(--ink-400);
+  transition: transform 0.15s ease;
+}
+
+.schema-icon {
+  flex-shrink: 0;
+  color: var(--ink-400);
+}
+
+.schema-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.schema-count {
+  flex-shrink: 0;
+  font-size: 10px;
+  font-weight: 500;
+  color: var(--ink-400);
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.schema-group-bd {
+  padding-left: 8px;
+}
+
+.table-leaf {
+  padding-left: 28px;
 }
 
 
