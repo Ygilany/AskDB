@@ -128,11 +128,13 @@ scales with:
 
 - Schema size (larger artifacts mean more tokens in the prompt) —
   use [RAG for large schemas](../rag-for-large-schemas/) to send
-  only the relevant slice.
+  only the relevant slice. AskDB handles the chunking, embedding,
+  and retrieval; you configure the store and it takes care of the
+  rest.
 - Question length.
 - Model tier.
 
-AskDB itself is MIT-licensed and free.
+AskDB itself is Apache 2.0-licensed and free.
 
 ## Read next
 

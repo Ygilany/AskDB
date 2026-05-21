@@ -17,7 +17,7 @@ description: "Scaffold config, introspect a database, enrich the schema, and ask
 - npm, pnpm, or yarn (examples use `npx`).
 - An API key from a model provider — OpenAI, Anthropic, Google,
   OpenRouter, or any OpenAI-compatible endpoint. See [Bring your own
-  model](./guides/bring-your-own-model/).
+  model](./guides/bring-your-own-model.mdx).
 - A database AskDB can read — Postgres, MySQL, SQLite, or SQL Server —
   or a Prisma schema file (no live database required).
 
@@ -29,10 +29,16 @@ npx askdb@latest init
 
 `npx` downloads and runs `askdb` on the fly — no separate install step
 needed. `askdb init` creates `askdb.config.ts` in your project root.
-It does **not** generate a `.env` — the template includes comments
-listing the environment variables each provider needs. Copy the relevant
-ones into a `.env` at your project root (for example,
-`OPENAI_API_KEY=sk-...`). `askdb.config.ts` is checked in; `.env` is not.
+The config file is TypeScript-checked and reads values from your
+environment using the `env()` helper — it loads from a `.env` file at
+your project root or from the system environment, whichever is set. You
+choose your own variable names and pass them to `env()`:
+
+```ts
+apiKey: env("OPENAI_API_KEY"),   // or env("MY_KEY") — you pick the name
+```
+
+`askdb.config.ts` is checked in; `.env` is not.
 
 Open `askdb.config.ts` and fill in your settings:
 
@@ -45,8 +51,7 @@ export default defineConfig({
     model: "gpt-4o-mini",
   },
   introspection: {
-    outputDir: "./my-app.schema",
-    schemaId: "my-app",
+    outputDir: "./my-app.schema",  // optional — defaults to ./askdb/
   },
 });
 ```
@@ -61,8 +66,10 @@ That artifact is the only thing the model ever sees about your database.
 
 ### From a live database
 
-With `DATABASE_URL` in `.env` and `outputDir` / `schemaId` set in
-`askdb.config.ts`, one command is enough:
+With `DATABASE_URL` in `.env` and your database connection configured in
+`askdb.config.ts`, one command is enough. `outputDir` is optional and
+defaults to `./askdb/` — see the [Configuration reference](./reference/config.mdx)
+for all options, their defaults, and which are required:
 
 ```bash
 npx askdb introspect
@@ -75,7 +82,7 @@ npx askdb introspect --url "$OTHER_DATABASE_URL"
 ```
 
 AskDB picks the right dialect from the connection string. See [Switch
-engines](./guides/switch-engines/) for the install matrix.
+engines](./guides/switch-engines.mdx) for the install matrix.
 
 ### From a Prisma schema
 
@@ -84,6 +91,17 @@ If you already have a Prisma schema file, introspect directly from it
 
 ```bash
 npx askdb introspect --engine prisma --prisma-schema ./prisma/schema.prisma
+```
+
+You can also set this in `askdb.config.ts` so no flags are needed:
+
+```ts
+introspection: {
+  provider: "prisma",
+  providerConfig: {
+    prisma: { schemaPath: "./prisma/schema.prisma" },
+  },
+},
 ```
 
 ## 3. Enrich and test in Studio
@@ -109,7 +127,7 @@ npx askdb enrich
 ```
 
 Both commands read `outputDir` from `askdb.config.ts`. The full
-walkthrough lives in [Author your schema](./guides/author-your-schema/).
+walkthrough lives in [Author your schema](./guides/author-your-schema.mdx).
 
 ## 4. Ask from the CLI
 
@@ -131,8 +149,8 @@ Now that the CLI works, pick the path that matches what you're
 building:
 
 <div class="home-path-grid">
-  <a href="./guides/embed-in-node/"><strong>Embed in a Node app</strong><span>Drop <code>@askdb/core</code> into a TypeScript service and run the SQL through your own pool.</span></a>
-  <a href="./guides/deploy-as-http-service/"><strong>Deploy as HTTP service</strong><span>Stand up <code>@askdb/http-api</code> so Python, browsers, or agents can ask questions.</span></a>
-  <a href="./guides/author-your-schema/"><strong>Author your schema</strong><span>Get the most out of Studio: descriptions, concepts, sensitive markers, tenant policy.</span></a>
-  <a href="./concepts/how-askdb-works/"><strong>How AskDB works</strong><span>The end-to-end flow, with all the moving parts.</span></a>
+  <a href="./guides/embed-in-node.mdx"><strong>Embed in a Node app</strong><span>Drop <code>@askdb/core</code> into a TypeScript service and run the SQL through your own pool.</span></a>
+  <a href="./guides/deploy-as-http-service.mdx"><strong>Deploy as HTTP service</strong><span>Stand up <code>@askdb/http-api</code> so Python, browsers, or agents can ask questions.</span></a>
+  <a href="./guides/author-your-schema.mdx"><strong>Author your schema</strong><span>Get the most out of Studio: descriptions, concepts, sensitive markers, tenant policy.</span></a>
+  <a href="./concepts/how-askdb-works.mdx"><strong>How AskDB works</strong><span>The end-to-end flow, with all the moving parts.</span></a>
 </div>

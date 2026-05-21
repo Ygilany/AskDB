@@ -53,7 +53,11 @@ npm install @askdb/mysql            # or @askdb/sqlite, @askdb/sqlserver
 You can keep the old adapter installed during a transition. Each
 adapter is self-contained.
 
-### 2. Re-introspect against the new database
+### 2. Introspect the new database (if the schema differs)
+
+If you are pointing at a different database instance — one that may
+have a different set of tables or columns — run introspection against
+it to regenerate the physical layer of the schema artifact:
 
 ```bash
 npx askdb introspect \
@@ -65,7 +69,19 @@ npx askdb introspect \
 The connection string format follows each engine's convention. The
 CLI picks the right dialect from the URL scheme.
 
-### 3. Update the `dialect` value
+If the logical schema is identical and you are only swapping the
+adapter package, the existing artifact is already valid — skip this
+step and go straight to step 3.
+
+### 3. Update the `dialect` value in `ask()` calls
+
+The schema artifact records which engine it was introspected from.
+The CLI (`askdb ask`) and `askdb.config.ts` use that information to
+infer the dialect automatically — no manual update needed for those
+entry points.
+
+When calling `ask()` programmatically, `dialect` is an explicit
+parameter. Update it to match the new engine:
 
 ```ts
 const { sql } = await ask({
@@ -75,6 +91,12 @@ const { sql } = await ask({
   model,
 });
 ```
+
+The dialect adapter packages (`@askdb/mysql`, `@askdb/postgres`, etc.)
+define the SQL generation rules, parameter syntax, and validator for
+each engine. Installing the right package is what *enables* the dialect
+— `ask()` still needs to know which one to activate, which is what
+this parameter does.
 
 ### 4. Update your driver
 
