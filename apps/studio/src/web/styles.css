@@ -391,10 +391,12 @@ code, pre, .mono { font-family: var(--font-mono); }
   display: flex;
   align-items: center;
   gap: 8px;
+  width: 100%;
   padding: 5px 10px;
   border-radius: 6px;
   cursor: default;
   color: var(--ink-700);
+  text-align: left;
   text-decoration: none;
   transition: background 0.12s;
 }
@@ -1467,7 +1469,8 @@ code, pre, .mono { font-family: var(--font-mono); }
   transition: background 0.08s;
 }
 
-.links-dropdown-item:hover {
+.links-dropdown-item:hover,
+.links-dropdown-item.highlighted {
   background: var(--surface-2);
   color: var(--ink-900);
 }

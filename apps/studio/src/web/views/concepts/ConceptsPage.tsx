@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Hexagon, Loader2, RotateCcw, Save, Search, Table2, X } from "lucide-react";
+import { Hexagon, Loader2, Plus, RotateCcw, Save, Search, Table2, X } from "lucide-react";
 import type { V2Concept } from "@askdb/core";
 import { useWorkspace } from "../../contexts/workspace-context";
 import { Badge, Field, Input, ListInput, Textarea } from "../../components/ui";
@@ -79,8 +79,10 @@ function ConceptsEditor({
   busy: Set<string>;
 }) {
   const [draft, setDraft] = useState<V2Concept[]>(() => clone(concepts));
+  const [selectedIndex, setSelectedIndex] = useState<number | null>(null);
   const [addOpen, setAddOpen] = useState(false);
   const [addDraft, setAddDraft] = useState<Partial<V2Concept>>({});
+  const [conceptSearch, setConceptSearch] = useState("");
 
   useEffect(() => {
     setDraft(clone(concepts));
@@ -88,12 +90,32 @@ function ConceptsEditor({
 
   const dirty = JSON.stringify(draft) !== JSON.stringify(concepts);
 
+  // Filtered concepts for the sub-rail list
+  const filteredDraft = useMemo(() => {
+    if (!conceptSearch) return draft.map((c, i) => ({ concept: c, index: i }));
+    const q = conceptSearch.toLowerCase();
+    return draft
+      .map((c, i) => ({ concept: c, index: i }))
+      .filter(({ concept }) =>
+        concept.label.toLowerCase().includes(q) ||
+        concept.id.toLowerCase().includes(q) ||
+        concept.synonyms?.some((s) => s.toLowerCase().includes(q)),
+      );
+  }, [draft, conceptSearch]);
+
+  const selectedConcept = selectedIndex !== null ? draft[selectedIndex] : null;
+
   function updateConcept(index: number, updater: (c: V2Concept) => V2Concept) {
     setDraft((current) => current.map((c, i) => (i === index ? updater(clone(c)) : c)));
   }
 
   function removeConcept(index: number) {
     setDraft((current) => current.filter((_, i) => i !== index));
+    if (selectedIndex === index) {
+      setSelectedIndex(null);
+    } else if (selectedIndex !== null && selectedIndex > index) {
+      setSelectedIndex(selectedIndex - 1);
+    }
   }
 
   function commitAdd() {
@@ -107,6 +129,7 @@ function ConceptsEditor({
       ...(addDraft.description?.trim() ? { description: addDraft.description.trim() } : {}),
     };
     setDraft((current) => [...current, concept]);
+    setSelectedIndex(draft.length); // select the newly added one
     setAddDraft({});
     setAddOpen(false);
   }
@@ -121,7 +144,7 @@ function ConceptsEditor({
         <div className="main-actions">
           <button
             className="btn"
-            onClick={() => setDraft(clone(concepts))}
+            onClick={() => { setDraft(clone(concepts)); setSelectedIndex(null); }}
             disabled={!dirty || busy.has("save-concepts")}
           >
             <RotateCcw size={14} /> Revert
@@ -139,107 +162,139 @@ function ConceptsEditor({
 
       {saveStatus && <StatusBanner status={saveStatus} />}
 
-      <div className="main-body">
-        <div className="stack" style={{ padding: "var(--pad-y) var(--pad-x)" }}>
-          <section className="card">
-            <div className="card-hd">
-              <h3>What are concepts?</h3>
-            </div>
-            <div className="card-bd">
-              <p className="muted" style={{ fontSize: 13, lineHeight: 1.6 }}>
-                Concepts map business vocabulary to your physical schema so the AI can translate natural language into correct SQL.
-                Each concept has a canonical label, synonyms users might say, links to the tables or columns that back it, and an optional description of how it is computed.
-              </p>
-            </div>
-          </section>
-
-          <section className="card">
-            <div className="card-hd">
-              <h3>Concepts ({draft.length})</h3>
-              <button className="btn sm" onClick={() => setAddOpen((o) => !o)}>
-                {addOpen ? "Cancel" : "+ Add concept"}
+      <div style={{ display: "grid", gridTemplateColumns: "280px 1fr", flex: 1, minHeight: 0, overflow: "hidden" }}>
+        {/* ── Left: concept list ── */}
+        <div className="sub-rail" style={{ borderRight: "1px solid var(--border)" }}>
+          <div className="sub-rail-hd">
+            <h2>Concepts</h2>
+            <span className="muted tiny">{draft.length}</span>
+          </div>
+          <div className="sub-rail-search">
+            <Search size={13} />
+            <input
+              type="text"
+              placeholder="Search concepts…"
+              value={conceptSearch}
+              onChange={(e) => setConceptSearch(e.target.value)}
+            />
+          </div>
+          <div style={{ padding: "6px 8px", borderBottom: "1px solid var(--border)" }}>
+            <button
+              className="btn sm"
+              style={{ width: "100%", justifyContent: "center" }}
+              onClick={() => { setAddOpen(true); setSelectedIndex(null); }}
+            >
+              <Plus size={12} /> Add concept
+            </button>
+          </div>
+          <div className="sub-rail-list">
+            {filteredDraft.map(({ concept, index }) => (
+              <button
+                key={`${concept.id}-${index}`}
+                className={`sub-rail-row ${selectedIndex === index ? "active" : ""}`}
+                onClick={() => { setSelectedIndex(index); setAddOpen(false); }}
+              >
+                <Hexagon size={12} style={{ flexShrink: 0, color: "var(--ink-400)" }} />
+                <span className="row-name">{concept.label}</span>
+                <span className="row-meta">{concept.links?.length ?? 0} links</span>
               </button>
-            </div>
-            <div className="card-bd">
-              <div style={{ display: "grid", gap: 16 }}>
-                {addOpen && (
-                  <div style={{ border: "1px dashed var(--border)", borderRadius: "var(--radius)", padding: 16 }}>
-                    <p className="muted" style={{ fontSize: 11, fontWeight: 600, marginBottom: 12 }}>New concept</p>
-                    <div style={{ display: "grid", gap: 12 }}>
-                      <div style={{ display: "grid", gap: 12, gridTemplateColumns: "1fr 1fr" }}>
-                        <Field label="ID" description="Unique slug (concept: prefix added automatically)">
-                          <ConceptIdInput
-                            value={addDraft.id ?? ""}
-                            onChange={(v) => setAddDraft((d) => ({ ...d, id: v }))}
-                            placeholder="revenue"
-                          />
-                        </Field>
-                        <Field label="Label" description='Human-readable name, e.g. "Revenue"'>
-                          <Input
-                            value={addDraft.label ?? ""}
-                            placeholder="Revenue"
-                            onChange={(e) => setAddDraft((d) => ({ ...d, label: e.target.value }))}
-                          />
-                        </Field>
-                      </div>
-                      <Field label="Synonyms" description="Comma-separated terms users might say">
-                        <ListInput
-                          value={addDraft.synonyms}
-                          onChange={(v) => setAddDraft((d) => ({ ...d, synonyms: v }))}
+            ))}
+            {filteredDraft.length === 0 && (
+              <div className="muted tiny" style={{ padding: "16px", textAlign: "center" }}>
+                {conceptSearch ? "No concepts match your search" : "No concepts yet"}
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* ── Right: detail ── */}
+        <div style={{ overflow: "auto", padding: "var(--pad-y) var(--pad-x)" }}>
+          {addOpen ? (
+            <div className="stack">
+              <section className="card">
+                <div className="card-hd"><h3>New Concept</h3></div>
+                <div className="card-bd">
+                  <div style={{ display: "grid", gap: 12 }}>
+                    <div style={{ display: "grid", gap: 12, gridTemplateColumns: "1fr 1fr" }}>
+                      <Field label="ID" description="Unique slug (concept: prefix added automatically)">
+                        <ConceptIdInput
+                          value={addDraft.id ?? ""}
+                          onChange={(v) => setAddDraft((d) => ({ ...d, id: v }))}
+                          placeholder="revenue"
                         />
                       </Field>
-                      <Field label="Links" description="Tables or columns this concept maps to">
-                        <LinksInput
-                          value={addDraft.links ?? []}
-                          onChange={(v) => setAddDraft((d) => ({ ...d, links: v }))}
-                          options={linkOptions}
+                      <Field label="Label" description='Human-readable name, e.g. "Revenue"'>
+                        <Input
+                          value={addDraft.label ?? ""}
+                          placeholder="Revenue"
+                          onChange={(e) => setAddDraft((d) => ({ ...d, label: e.target.value }))}
                         />
                       </Field>
-                      <Field label="Description" description="How this concept is computed or what it means">
-                        <Textarea
-                          value={addDraft.description ?? ""}
-                          placeholder="Sum of orders.total_amount where status = 'paid', expressed in cents."
-                          onChange={(e) => setAddDraft((d) => ({ ...d, description: e.target.value }))}
-                        />
-                      </Field>
-                      <div style={{ display: "flex", justifyContent: "flex-end" }}>
-                        <button
-                          className="btn primary"
-                          onClick={commitAdd}
-                          disabled={!addDraft.id?.trim() || !addDraft.label?.trim()}
-                        >
-                          Add concept
-                        </button>
-                      </div>
+                    </div>
+                    <Field label="Synonyms" description="Comma-separated terms users might say">
+                      <ListInput
+                        value={addDraft.synonyms}
+                        onChange={(v) => setAddDraft((d) => ({ ...d, synonyms: v }))}
+                      />
+                    </Field>
+                    <Field label="Links" description="Tables or columns this concept maps to">
+                      <LinksInput
+                        value={addDraft.links ?? []}
+                        onChange={(v) => setAddDraft((d) => ({ ...d, links: v }))}
+                        options={linkOptions}
+                      />
+                    </Field>
+                    <Field label="Description" description="How this concept is computed or what it means">
+                      <Textarea
+                        value={addDraft.description ?? ""}
+                        placeholder="Sum of orders.total_amount where status = 'paid', expressed in cents."
+                        onChange={(e) => setAddDraft((d) => ({ ...d, description: e.target.value }))}
+                      />
+                    </Field>
+                    <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+                      <button className="btn" onClick={() => { setAddOpen(false); setAddDraft({}); }}>
+                        Cancel
+                      </button>
+                      <button
+                        className="btn primary"
+                        onClick={commitAdd}
+                        disabled={!addDraft.id?.trim() || !addDraft.label?.trim()}
+                      >
+                        Add concept
+                      </button>
                     </div>
                   </div>
-                )}
-
-                {draft.length === 0 && !addOpen && (
-                  <EmptyText text='No concepts defined yet. Click "Add concept" to create your first one.' />
-                )}
-
-                {draft.map((concept, index) => (
-                  <ConceptRow
-                    key={`${concept.id}-${index}`}
-                    concept={concept}
-                    linkOptions={linkOptions}
-                    onChange={(updater) => updateConcept(index, updater)}
-                    onRemove={() => removeConcept(index)}
-                  />
-                ))}
+                </div>
+              </section>
+            </div>
+          ) : selectedConcept && selectedIndex !== null ? (
+            <ConceptDetail
+              concept={selectedConcept}
+              linkOptions={linkOptions}
+              onChange={(updater) => updateConcept(selectedIndex, updater)}
+              onRemove={() => removeConcept(selectedIndex)}
+            />
+          ) : (
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100%" }}>
+              <div style={{ textAlign: "center", color: "var(--ink-400)" }}>
+                <Hexagon size={24} style={{ margin: "0 auto 8px" }} />
+                <p style={{ fontSize: 13 }}>
+                  {draft.length === 0
+                    ? 'Click "Add concept" to create your first one'
+                    : "Select a concept to edit"}
+                </p>
               </div>
             </div>
-          </section>
+          )}
         </div>
       </div>
     </>
   );
 }
 
-/* ═══════════════ Concept row ═══════════════ */
+/* ═══════════════ Concept detail ═══════════════ */
 
-function ConceptRow({
+function ConceptDetail({
   concept,
   linkOptions,
   onChange,
@@ -251,52 +306,57 @@ function ConceptRow({
   onRemove: () => void;
 }) {
   return (
-    <section className="column-row">
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
-        <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 8 }}>
-          <h4 style={{ fontSize: 13, fontWeight: 600 }}>{concept.label}</h4>
-          <Badge variant="outline">{concept.id}</Badge>
+    <div className="stack">
+      <section className="card">
+        <div className="card-hd">
+          <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 8 }}>
+            <h3>{concept.label}</h3>
+            <Badge variant="outline">{concept.id}</Badge>
+          </div>
+          <button className="btn ghost sm" onClick={onRemove} title="Remove concept" style={{ color: "var(--red-600)" }}>
+            Remove
+          </button>
         </div>
-        <button className="btn ghost sm" onClick={onRemove} title="Remove concept">×</button>
-      </div>
-      <div style={{ marginTop: 12, display: "grid", gap: 12 }}>
-        <div style={{ display: "grid", gap: 12, gridTemplateColumns: "1fr 1fr" }}>
-          <Field label="ID" description="Unique slug (concept: prefix added automatically)">
-            <ConceptIdInput
-              value={concept.id}
-              onChange={(v) => onChange((c) => ({ ...c, id: v }))}
-            />
-          </Field>
-          <Field label="Label" description="Human-readable name">
-            <Input value={concept.label} onChange={(e) => onChange((c) => ({ ...c, label: e.target.value }))} />
-          </Field>
+        <div className="card-bd">
+          <div style={{ display: "grid", gap: 12 }}>
+            <div style={{ display: "grid", gap: 12, gridTemplateColumns: "1fr 1fr" }}>
+              <Field label="ID" description="Unique slug (concept: prefix added automatically)">
+                <ConceptIdInput
+                  value={concept.id}
+                  onChange={(v) => onChange((c) => ({ ...c, id: v }))}
+                />
+              </Field>
+              <Field label="Label" description="Human-readable name">
+                <Input value={concept.label} onChange={(e) => onChange((c) => ({ ...c, label: e.target.value }))} />
+              </Field>
+            </div>
+            <Field label="Synonyms" description="Comma-separated alternative terms">
+              <ListInput
+                value={concept.synonyms}
+                onChange={(v) => onChange((c) => ({ ...c, synonyms: v.length ? v : undefined }))}
+              />
+            </Field>
+            <Field label="Links" description="Tables or columns this concept maps to">
+              <LinksInput
+                value={concept.links ?? []}
+                onChange={(v) => onChange((c) => ({ ...c, links: v.length ? v : undefined }))}
+                options={linkOptions}
+              />
+            </Field>
+            <Field label="Description" description="How this concept is computed or what it means">
+              <Textarea
+                value={concept.description ?? ""}
+                onChange={(e) => onChange((c) => ({ ...c, description: e.target.value || undefined }))}
+              />
+            </Field>
+          </div>
         </div>
-        <Field label="Synonyms" description="Comma-separated alternative terms">
-          <ListInput
-            value={concept.synonyms}
-            onChange={(v) => onChange((c) => ({ ...c, synonyms: v.length ? v : undefined }))}
-          />
-        </Field>
-        <Field label="Links" description="Tables or columns this concept maps to">
-          <LinksInput
-            value={concept.links ?? []}
-            onChange={(v) => onChange((c) => ({ ...c, links: v.length ? v : undefined }))}
-            options={linkOptions}
-          />
-        </Field>
-        <Field label="Description" description="How this concept is computed or what it means">
-          <Textarea
-            value={concept.description ?? ""}
-            onChange={(e) => onChange((c) => ({ ...c, description: e.target.value || undefined }))}
-          />
-        </Field>
-      </div>
-    </section>
+      </section>
+    </div>
   );
 }
 
 /* ═══════════════ ConceptIdInput ═══════════════ */
-/* Shows a fixed "concept:" prefix badge; user only types the slug */
 
 function ConceptIdInput({
   value,
@@ -327,7 +387,6 @@ function ConceptIdInput({
 }
 
 /* ═══════════════ LinksInput ═══════════════ */
-/* Searchable multi-select for table / column IDs */
 
 type LinkOption = { id: string; label: string; kind: "table" | "column" };
 
@@ -342,8 +401,10 @@ function LinksInput({
 }) {
   const [query, setQuery] = useState("");
   const [open, setOpen] = useState(false);
+  const [highlightIndex, setHighlightIndex] = useState(0);
   const wrapperRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const dropdownRef = useRef<HTMLDivElement>(null);
 
   // Close dropdown when clicking outside
   useEffect(() => {
@@ -366,6 +427,14 @@ function LinksInput({
     );
   }, [options, query, selectedSet]);
 
+  // Cap visible items for dropdown
+  const visible = filtered.slice(0, 30);
+
+  // Reset highlight when filtered list changes
+  useEffect(() => {
+    setHighlightIndex(0);
+  }, [filtered.length, query]);
+
   const addLink = useCallback(
     (id: string) => {
       onChange([...value, id]);
@@ -381,6 +450,45 @@ function LinksInput({
     },
     [value, onChange],
   );
+
+  // Scroll highlighted item into view
+  useEffect(() => {
+    if (!open || !dropdownRef.current) return;
+    const items = dropdownRef.current.querySelectorAll("[data-link-item]");
+    const item = items[highlightIndex] as HTMLElement | undefined;
+    item?.scrollIntoView({ block: "nearest" });
+  }, [highlightIndex, open]);
+
+  function handleKeyDown(e: React.KeyboardEvent) {
+    if (!open) {
+      if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+        setOpen(true);
+        e.preventDefault();
+      }
+      return;
+    }
+
+    switch (e.key) {
+      case "ArrowDown":
+        e.preventDefault();
+        setHighlightIndex((prev) => Math.min(prev + 1, visible.length - 1));
+        break;
+      case "ArrowUp":
+        e.preventDefault();
+        setHighlightIndex((prev) => Math.max(prev - 1, 0));
+        break;
+      case "Enter":
+        e.preventDefault();
+        if (visible[highlightIndex]) {
+          addLink(visible[highlightIndex].id);
+        }
+        break;
+      case "Escape":
+        e.preventDefault();
+        setOpen(false);
+        break;
+    }
+  }
 
   function labelFor(id: string): string {
     return options.find((o) => o.id === id)?.label ?? id;
@@ -401,7 +509,11 @@ function LinksInput({
               <span className="links-chip-label">{labelFor(id)}</span>
               <button
                 className="links-chip-remove"
-                onClick={() => removeLink(id)}
+                onMouseDown={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  removeLink(id);
+                }}
                 title="Remove"
               >
                 <X size={10} />
@@ -422,20 +534,25 @@ function LinksInput({
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           onFocus={() => setOpen(true)}
+          onKeyDown={handleKeyDown}
         />
       </div>
 
       {/* Dropdown */}
-      {open && filtered.length > 0 && (
-        <div className="links-dropdown">
-          {filtered.slice(0, 30).map((opt) => (
+      {open && visible.length > 0 && (
+        <div className="links-dropdown" ref={dropdownRef} role="listbox">
+          {visible.map((opt, i) => (
             <button
               key={opt.id}
-              className="links-dropdown-item"
+              data-link-item
+              role="option"
+              aria-selected={i === highlightIndex}
+              className={`links-dropdown-item ${i === highlightIndex ? "highlighted" : ""}`}
               onMouseDown={(e) => {
-                e.preventDefault(); // keep focus on input
+                e.preventDefault();
                 addLink(opt.id);
               }}
+              onMouseEnter={() => setHighlightIndex(i)}
             >
               <span className={`links-kind-badge ${opt.kind}`}>{opt.kind === "table" ? "T" : "C"}</span>
               <span className="links-dropdown-label">{opt.label}</span>
