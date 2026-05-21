@@ -1,5 +1,12 @@
 # @askdb/introspect
 
+## 0.3.0-beta.9
+
+### Patch Changes
+
+- Updated dependencies [70a655c]
+  - @askdb/core@0.5.0-beta.18
+
 ## 0.3.0-beta.8
 
 ### Patch Changes
