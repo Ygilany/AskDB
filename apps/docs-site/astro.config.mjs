@@ -5,42 +5,6 @@ import starlight from "@astrojs/starlight";
 const base = process.env.ASTRO_BASE ?? "/";
 const normalizedBase = base === "/" ? "" : base.replace(/\/$/, "");
 
-const withBase = (path) => (normalizedBase ? `${normalizedBase}${path}` : path);
-
-const legacyRedirects = {
-  "/schema-v2/": "/concepts/the-schema-artifact/",
-  "/journeys/": "/concepts/how-askdb-works/",
-  "/concepts/": "/concepts/how-askdb-works/",
-  "/architecture/": "/concepts/how-askdb-works/",
-  "/askdb-schema/": "/concepts/the-schema-artifact/",
-  "/modes/": "/concepts/safety-boundaries/",
-  "/connectors/": "/reference/packages/",
-  "/multi-tenancy/": "/guides/multi-tenancy/",
-  "/guides/embed-in-app/": "/guides/embed-in-node/",
-  "/guides/author-enrich-schema/": "/guides/author-your-schema/",
-  "/guides/rag-large-schema/": "/guides/rag-for-large-schemas/",
-  "/guides/pgvector-setup/": "/guides/rag-for-large-schemas/",
-  "/guides/http-api/": "/guides/deploy-as-http-service/",
-  "/guides/agents-and-mcp/": "/guides/integrations/agents-mcp/",
-  "/packages/": "/reference/packages/",
-  "/environment/": "/reference/config/",
-  "/core/": "/reference/packages/",
-  "/postgres/": "/reference/packages/",
-  "/prisma/": "/guides/integrations/prisma/",
-  "/engines/": "/reference/packages/",
-  "/cli/": "/reference/cli/",
-  "/introspect/": "/reference/packages/",
-  "/enrich/": "/reference/packages/",
-  "/tui/": "/guides/author-your-schema/",
-  "/studio/": "/guides/author-your-schema/",
-  "/rag/": "/guides/rag-for-large-schemas/",
-  "/http-api/": "/reference/http-api/",
-};
-
-const redirects = Object.fromEntries(
-  Object.entries(legacyRedirects).map(([from, to]) => [withBase(from), withBase(to)])
-);
-
 /** Starlight does not export `user-components/Icon.astro` in package.json `exports`. */
 const starlightIcon = fileURLToPath(
   new URL("node_modules/@astrojs/starlight/user-components/Icon.astro", import.meta.url)
@@ -49,7 +13,6 @@ const starlightIcon = fileURLToPath(
 export default defineConfig({
   site: `https://ygilany.github.io${normalizedBase}`,
   base,
-  redirects,
   vite: {
     resolve: {
       alias: {
