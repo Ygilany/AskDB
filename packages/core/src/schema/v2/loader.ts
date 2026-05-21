@@ -254,6 +254,10 @@ function buildNormalized(
       relationships: physTable.relationships,
     };
 
+    if (md?.frontmatter.tracked !== undefined) {
+      normalized.tracked = md.frontmatter.tracked;
+    }
+
     // Table-level describable fields excluded when sensitive
     if (!tableSensitive && md) {
       const fm = md.frontmatter;

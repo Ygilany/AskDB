@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { Outlet, useNavigate, useParams } from "react-router";
-import { ChevronRight, ChevronsDownUp, ChevronsUpDown, FolderOpen, Search, Sparkles } from "lucide-react";
+import { ChevronRight, ChevronsDownUp, ChevronsUpDown, EyeOff, FolderOpen, Search, Sparkles } from "lucide-react";
 import { useWorkspace } from "../../contexts/workspace-context";
 import {
   Collapsible,
@@ -9,6 +9,7 @@ import {
 } from "../../components/ui/collapsible";
 
 type EnrichLevel = "enriched" | "partial" | "none";
+type TrackFilter = "tracked" | "untracked";
 
 const LEVEL_LABELS: Record<EnrichLevel, string> = {
   enriched: "Complete",
@@ -31,6 +32,8 @@ export function TablesLayout() {
 
   // Enrichment filter state — null means "show all"
   const [enrichFilter, setEnrichFilter] = useState<Set<EnrichLevel> | null>(null);
+  // Track filter — null means "show all"
+  const [trackFilter, setTrackFilter] = useState<TrackFilter | null>(null);
 
   // Compute enrichment level for a table
   function getLevel(t: typeof tables[0]): EnrichLevel {
@@ -40,6 +43,11 @@ export function TablesLayout() {
     return hasSome && allCols ? "enriched" : hasSome ? "partial" : "none";
   }
 
+  function isTracked(t: typeof tables[0]): boolean {
+    const draft = drafts[t.physical.id] ?? t.draft;
+    return draft.tracked !== false;
+  }
+
   // Count by enrichment level (across all tables, not just filtered)
   const levelCounts = useMemo(() => {
     const counts: Record<EnrichLevel, number> = { enriched: 0, partial: 0, none: 0 };
@@ -47,11 +55,16 @@ export function TablesLayout() {
     return counts;
   }, [tables, drafts]);
 
-  // Apply enrichment filter on top of search-filtered tables
+  const untrackedCount = useMemo(() => tables.filter((t) => !isTracked(t)).length, [tables, drafts]);
+
+  // Apply enrichment + track filters on top of search-filtered tables
   const displayTables = useMemo(() => {
-    if (!enrichFilter) return filteredTables;
-    return filteredTables.filter((t) => enrichFilter.has(getLevel(t)));
-  }, [filteredTables, enrichFilter, drafts]);
+    let result = filteredTables;
+    if (enrichFilter) result = result.filter((t) => enrichFilter.has(getLevel(t)));
+    if (trackFilter === "tracked") result = result.filter((t) => isTracked(t));
+    else if (trackFilter === "untracked") result = result.filter((t) => !isTracked(t));
+    return result;
+  }, [filteredTables, enrichFilter, trackFilter, drafts]);
 
   // Group tables by schema
   const schemaGroups = useMemo(() => {
@@ -127,6 +140,17 @@ export function TablesLayout() {
           <h2>Tables</h2>
           <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
             <span className="muted tiny">{tables.length} tables</span>
+            {untrackedCount > 0 && (
+              <button
+                className={`btn ghost sm${trackFilter === "untracked" ? " active" : ""}`}
+                onClick={() => setTrackFilter((f) => f === "untracked" ? null : "untracked")}
+                title={trackFilter === "untracked" ? "Show all tables" : `Show ${untrackedCount} untracked table${untrackedCount !== 1 ? "s" : ""}`}
+                style={{ padding: 2, height: 20, display: "flex", alignItems: "center", gap: 3, paddingInline: 4, fontSize: 10, color: trackFilter === "untracked" ? "var(--amber-600)" : "var(--ink-400)" }}
+              >
+                <EyeOff size={11} />
+                {untrackedCount}
+              </button>
+            )}
             {schemaGroups.length > 1 && (
               <button
                 className="btn ghost sm"
@@ -194,14 +218,16 @@ export function TablesLayout() {
                   <div className="schema-group-bd">
                     {schemaTables.map((t) => {
                       const level = getLevel(t);
+                      const tracked = isTracked(t);
                       const isActive = selectedTable?.physical.id === t.physical.id;
                       return (
                         <button
                           key={t.physical.id}
-                          className={`sub-rail-row table-leaf ${isActive ? "active" : ""}`}
+                          className={`sub-rail-row table-leaf ${isActive ? "active" : ""}${!tracked ? " untracked" : ""}`}
                           onClick={() => navigate(`/tables/${t.physical.schema}/${t.physical.name}/enrichment`)}
+                          title={!tracked ? "Untracked — excluded from LLM context" : undefined}
                         >
-                          <span className={`enrich-dot ${level}`} />
+                          {!tracked ? <EyeOff size={10} style={{ color: "var(--amber-500)", flex: "none" }} /> : <span className={`enrich-dot ${level}`} />}
                           <span className="row-name mono">{t.physical.name}</span>
                           <span className="row-meta">{t.physical.columns.length} cols</span>
                         </button>
@@ -214,7 +240,7 @@ export function TablesLayout() {
           ))}
           {displayTables.length === 0 && (
             <div className="muted tiny" style={{ padding: "16px", textAlign: "center" }}>
-              {enrichFilter ? "No tables match this filter" : "No tables match your search"}
+              {trackFilter === "untracked" ? "No untracked tables" : enrichFilter ? "No tables match this filter" : "No tables match your search"}
             </div>
           )}
         </div>

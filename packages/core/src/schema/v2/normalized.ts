@@ -22,6 +22,8 @@ export type NormalizedV2Table = {
   /** Database schema (namespace) this table belongs to, e.g. `"public"`, `"app"`. */
   schema: string;
   sensitive: boolean;
+  /** When false, excluded from LLM prompts and RAG indexing. Defaults to true when absent. */
+  tracked?: boolean;
   columns: NormalizedV2Column[];
   relationships?: Array<{ from: string; to: string }>;
   /** Describable-layer fields. */

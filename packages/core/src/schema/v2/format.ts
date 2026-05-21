@@ -17,9 +17,15 @@ export function formatSchemaV2ForNlToSql(
   let redactedColumnCount = 0;
   let sensitiveTableStubCount = 0;
   let listedSensitiveColumnCount = 0;
+  let untrackedTableCount = 0;
   const lines: string[] = [];
 
   for (const t of schema.tables) {
+    if (t.tracked === false) {
+      untrackedTableCount++;
+      continue;
+    }
+
     // Table header — always qualify with database schema name; add alias annotation when present
     const qualifiedName = `${t.schema}.${t.name}`;
     const aliasNote =
@@ -80,6 +86,7 @@ export function formatSchemaV2ForNlToSql(
       redactedColumnCount,
       sensitiveTableStubCount,
       listedSensitiveColumnCount,
+      untrackedTableCount,
     },
   };
 }
