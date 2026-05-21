@@ -3,23 +3,6 @@ import { Outlet, useNavigate, useParams } from "react-router";
 import { ChevronRight, ChevronsDownUp, ChevronsUpDown, FolderOpen, Search, Sparkles } from "lucide-react";
 import { useWorkspace } from "../../contexts/workspace-context";
 import {
-  Sidebar,
-  SidebarContent,
-  SidebarGroup,
-  SidebarGroupContent,
-  SidebarGroupLabel,
-  SidebarGroupAction,
-  SidebarHeader,
-  SidebarMenu,
-  SidebarMenuItem,
-  SidebarMenuButton,
-  SidebarMenuSub,
-  SidebarMenuSubItem,
-  SidebarMenuSubButton,
-  SidebarProvider,
-  SidebarInput,
-} from "../../components/ui/sidebar";
-import {
   Collapsible,
   CollapsibleContent,
   CollapsibleTrigger,
@@ -88,44 +71,34 @@ export function TablesLayout() {
   const hasOutlet = Boolean(params.schema && params.name);
 
   return (
-    <SidebarProvider
-      defaultOpen={true}
-      className="min-h-0"
-      style={{
-        "--sidebar-width": "var(--sub-w)",
-        "--sidebar-width-icon": "var(--sub-w)",
-        gridColumn: "2 / -1",
-      } as React.CSSProperties}
-    >
-      <Sidebar collapsible="none" className="border-r">
-        <SidebarHeader className="gap-2 px-3 py-2.5">
-          <div className="flex items-center justify-between">
-            <span className="text-sm font-semibold text-sidebar-accent-foreground">Tables</span>
-            <div className="flex items-center gap-1">
-              <span className="text-[11px] text-muted-foreground">{tables.length} tables</span>
-              {schemaGroups.length > 1 && (
-                <button
-                  onClick={allExpanded ? collapseAll : expandAll}
-                  title={allExpanded ? "Collapse all" : "Expand all"}
-                  className="inline-flex items-center justify-center rounded-md p-0.5 text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
-                >
-                  {allExpanded ? <ChevronsDownUp size={14} /> : <ChevronsUpDown size={14} />}
-                </button>
-              )}
-            </div>
+    <>
+      <div className="sub-rail">
+        <div className="sub-rail-hd">
+          <h2>Tables</h2>
+          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+            <span className="muted tiny">{tables.length} tables</span>
+            {schemaGroups.length > 1 && (
+              <button
+                className="btn ghost sm"
+                onClick={allExpanded ? expandAll : collapseAll}
+                title={allExpanded ? "Collapse all" : "Expand all"}
+                style={{ padding: 2, height: 20, width: 20 }}
+              >
+                {allExpanded ? <ChevronsDownUp size={13} /> : <ChevronsUpDown size={13} />}
+              </button>
+            )}
           </div>
-          <div className="relative">
-            <Search size={13} className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
-            <SidebarInput
-              placeholder="Search tables…"
-              value={tableSearch}
-              onChange={(e) => setTableSearch(e.target.value)}
-              className="pl-8"
-            />
-          </div>
-        </SidebarHeader>
-
-        <SidebarContent>
+        </div>
+        <div className="sub-rail-search">
+          <Search size={13} />
+          <input
+            type="text"
+            placeholder="Search tables…"
+            value={tableSearch}
+            onChange={(e) => setTableSearch(e.target.value)}
+          />
+        </div>
+        <div className="sub-rail-list">
           {schemaGroups.map(([schema, schemaTables]) => (
             <Collapsible
               key={schema}
@@ -138,57 +111,50 @@ export function TablesLayout() {
                   return next;
                 });
               }}
-              className="group/collapsible"
             >
-              <SidebarGroup className="py-0">
-                <SidebarGroupLabel asChild className="h-8 text-xs">
-                  <CollapsibleTrigger className="flex w-full items-center gap-1.5">
-                    <ChevronRight size={14} className="shrink-0 transition-transform duration-200 group-data-[state=open]/collapsible:rotate-90" />
-                    <FolderOpen size={14} className="shrink-0 text-muted-foreground" />
-                    <span className="truncate font-mono font-semibold">{schema}</span>
-                    <span className="ml-auto tabular-nums text-muted-foreground">{schemaTables.length}</span>
-                  </CollapsibleTrigger>
-                </SidebarGroupLabel>
-
+              <div className="schema-group">
+                <CollapsibleTrigger asChild>
+                  <button className="schema-group-hd">
+                    <ChevronRight size={12} className="schema-chevron" style={{
+                      transform: openSchemas.has(schema) ? "rotate(90deg)" : undefined,
+                    }} />
+                    <FolderOpen size={13} className="schema-icon" />
+                    <span className="schema-name">{schema}</span>
+                    <span className="schema-count">{schemaTables.length}</span>
+                  </button>
+                </CollapsibleTrigger>
                 <CollapsibleContent>
-                  <SidebarGroupContent>
-                    <SidebarMenu>
-                      {schemaTables.map((t) => {
-                        const draft = drafts[t.physical.id] ?? t.draft;
-                        const hasSome = draft.description || (draft.aliases && draft.aliases.length > 0);
-                        const allCols = Object.values(draft.columns ?? {}).every((c) => c.description);
-                        const level = hasSome && allCols ? "enriched" : hasSome ? "partial" : "none";
-                        const isActive = selectedTable?.physical.id === t.physical.id;
-                        return (
-                          <SidebarMenuItem key={t.physical.id}>
-                            <SidebarMenuButton
-                              isActive={isActive}
-                              onClick={() => navigate(`/tables/${t.physical.schema}/${t.physical.name}/enrichment`)}
-                              tooltip={`${t.physical.schema}.${t.physical.name}`}
-                              className="pl-8 font-mono text-xs"
-                            >
-                              <span className={`enrich-dot ${level}`} />
-                              <span className="truncate">{t.physical.name}</span>
-                              <span className="ml-auto text-[10px] tabular-nums text-muted-foreground">{t.physical.columns.length} cols</span>
-                            </SidebarMenuButton>
-                          </SidebarMenuItem>
-                        );
-                      })}
-                    </SidebarMenu>
-                  </SidebarGroupContent>
+                  <div className="schema-group-bd">
+                    {schemaTables.map((t) => {
+                      const draft = drafts[t.physical.id] ?? t.draft;
+                      const hasSome = draft.description || (draft.aliases && draft.aliases.length > 0);
+                      const allCols = Object.values(draft.columns ?? {}).every((c) => c.description);
+                      const level = hasSome && allCols ? "enriched" : hasSome ? "partial" : "none";
+                      const isActive = selectedTable?.physical.id === t.physical.id;
+                      return (
+                        <button
+                          key={t.physical.id}
+                          className={`sub-rail-row table-leaf ${isActive ? "active" : ""}`}
+                          onClick={() => navigate(`/tables/${t.physical.schema}/${t.physical.name}/enrichment`)}
+                        >
+                          <span className={`enrich-dot ${level}`} />
+                          <span className="row-name mono">{t.physical.name}</span>
+                          <span className="row-meta">{t.physical.columns.length} cols</span>
+                        </button>
+                      );
+                    })}
+                  </div>
                 </CollapsibleContent>
-              </SidebarGroup>
+              </div>
             </Collapsible>
           ))}
-
           {filteredTables.length === 0 && (
-            <div className="px-4 py-8 text-center text-xs text-muted-foreground">
+            <div className="muted tiny" style={{ padding: "16px", textAlign: "center" }}>
               No tables match your search
             </div>
           )}
-        </SidebarContent>
-      </Sidebar>
-
+        </div>
+      </div>
       {hasOutlet ? (
         <Outlet />
       ) : (
@@ -201,6 +167,6 @@ export function TablesLayout() {
           </div>
         </main>
       )}
-    </SidebarProvider>
+    </>
   );
 }

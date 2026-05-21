@@ -33,7 +33,7 @@ export function TenancyPage() {
 
   if (!tenantPolicy) {
     return (
-      <main className="main-pane" style={{ gridColumn: "2 / -1" }}>
+      <main className="main-pane">
         <TenancyCreateForm
           tables={tables}
           schemaId={workspace.schemaId}
@@ -48,7 +48,7 @@ export function TenancyPage() {
   }
 
   return (
-    <main className="main-pane" style={{ gridColumn: "2 / -1" }}>
+    <main className="main-pane">
       <TenancyView
         tenantPolicy={tenantPolicy}
         tables={tables}

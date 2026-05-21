@@ -12,7 +12,7 @@ export function ConceptsPage() {
   if (!workspace) return null;
 
   return (
-    <main className="main-pane" style={{ gridColumn: "2 / -1" }}>
+    <main className="main-pane">
       <ConceptsEditor
         concepts={workspace.concepts}
         tableIds={tables.map((t) => t.physical.id)}

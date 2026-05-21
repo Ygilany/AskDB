@@ -10,7 +10,7 @@ export function SettingsPage() {
   if (!workspace) return null;
 
   return (
-    <main className="main-pane" style={{ gridColumn: "2 / -1" }}>
+    <main className="main-pane">
       <div className="main-hd">
         <div className="main-title">
           <h1><Settings size={18} style={{ display: "inline", marginRight: 8 }} />Settings</h1>

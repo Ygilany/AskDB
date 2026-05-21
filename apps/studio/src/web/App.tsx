@@ -3,6 +3,7 @@ import { Navigate, Route, Routes } from "react-router";
 import { WorkspaceProvider, useWorkspace } from "./contexts/workspace-context";
 import { RagProvider, useRag } from "./contexts/rag-context";
 import { PlaygroundProvider } from "./contexts/playground-context";
+import { SidebarProvider, SidebarInset, SidebarTrigger } from "./components/ui/sidebar";
 import { Topbar } from "./components/shell/Topbar";
 import { NavRail } from "./components/shell/NavRail";
 import { SuggestionDialog } from "./components/common/SuggestionDialog";
@@ -17,6 +18,7 @@ import { TenancyPage } from "./views/tenancy/TenancyPage";
 import { RagIndexPage } from "./views/rag-index/RagIndexPage";
 import { PlaygroundPage } from "./views/playground/PlaygroundPage";
 import { SettingsPage } from "./views/settings/SettingsPage";
+import { Separator } from "./components/ui/separator";
 
 export function App() {
   return (
@@ -57,29 +59,40 @@ function AppShell() {
 
   return (
     <PlaygroundProvider ragAvailable={ragAvailable}>
-      <div className="app-shell">
-        <Topbar />
-        <div className="body-grid">
-          <NavRail />
-          <Routes>
-            <Route path="/" element={<Navigate to="/overview" replace />} />
-            <Route path="/overview" element={<OverviewPage />} />
-            <Route path="/tables" element={<TablesLayout />}>
-              <Route path=":schema/:name" element={<TableDetail />}>
-                <Route index element={<Navigate to="enrichment" replace />} />
-                <Route path="enrichment" element={<EnrichmentTab />} />
-                <Route path="schema" element={<SchemaTab />} />
-                <Route path="sensitivity" element={<SensitivityTab />} />
+      <SidebarProvider
+        defaultOpen={true}
+        style={{
+          "--sidebar-width": "var(--nav-w)",
+        } as React.CSSProperties}
+      >
+        <NavRail />
+        <SidebarInset>
+          <header className="topbar">
+            <SidebarTrigger className="-ml-1" />
+            <Separator orientation="vertical" className="mr-2 !h-4" />
+            <Topbar />
+          </header>
+          <div className="app-content">
+            <Routes>
+              <Route path="/" element={<Navigate to="/overview" replace />} />
+              <Route path="/overview" element={<OverviewPage />} />
+              <Route path="/tables" element={<TablesLayout />}>
+                <Route path=":schema/:name" element={<TableDetail />}>
+                  <Route index element={<Navigate to="enrichment" replace />} />
+                  <Route path="enrichment" element={<EnrichmentTab />} />
+                  <Route path="schema" element={<SchemaTab />} />
+                  <Route path="sensitivity" element={<SensitivityTab />} />
+                </Route>
               </Route>
-            </Route>
-            <Route path="/concepts" element={<ConceptsPage />} />
-            <Route path="/tenancy" element={<TenancyPage />} />
-            <Route path="/rag-index" element={<RagIndexPage />} />
-            <Route path="/playground" element={<PlaygroundPage />} />
-            <Route path="/settings" element={<SettingsPage />} />
-          </Routes>
-        </div>
-      </div>
+              <Route path="/concepts" element={<ConceptsPage />} />
+              <Route path="/tenancy" element={<TenancyPage />} />
+              <Route path="/rag-index" element={<RagIndexPage />} />
+              <Route path="/playground" element={<PlaygroundPage />} />
+              <Route path="/settings" element={<SettingsPage />} />
+            </Routes>
+          </div>
+        </SidebarInset>
+      </SidebarProvider>
 
       {suggestionDialog && (
         <SuggestionDialog

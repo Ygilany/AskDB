@@ -12,17 +12,7 @@ export function Topbar() {
   const indexFresh = ragStatus?.hasIndex && !ragStatus.stale;
 
   return (
-    <div className="topbar">
-      <div className="brand">
-        <div className="brand-mark">
-          <img src="/assets/brand/logo.png" alt="" />
-        </div>
-        <span>
-          AskDB{" "}
-          <span style={{ color: "var(--ink-400)", fontWeight: 500 }}>Studio</span>
-        </span>
-      </div>
-
+    <>
       <div className="crumbs">
         {crumbs.map((c, i) => (
           <span key={i}>
@@ -64,7 +54,7 @@ export function Topbar() {
           </span>
         )}
       </div>
-    </div>
+    </>
   );
 }
 

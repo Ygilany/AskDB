@@ -19,7 +19,7 @@ export function RagIndexPage() {
   const queryDisabled = !ragStatus?.hasIndex || ragStatus.stale || busy.has("rag-query");
 
   return (
-    <main className="main-pane" style={{ gridColumn: "2 / -1" }}>
+    <main className="main-pane">
       <div className="main-hd">
         <div className="main-title">
           <h1><Sparkles size={18} style={{ display: "inline", marginRight: 8 }} />RAG Index</h1>
