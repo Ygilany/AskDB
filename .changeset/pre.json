@@ -53,6 +53,7 @@
     "rag-root-barrel-exports",
     "relax-introspection-provider-config-type",
     "relax-provider-config-type",
+    "remove-database-config-section",
     "remove-generated-sql-execution",
     "remove-per-app-model-overrides",
     "rename-cli-npm-package",
