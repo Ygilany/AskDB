@@ -1,0 +1,53 @@
+---
+const stackNodes = [
+  { label: "Your application", note: "calls ask()" },
+  { label: "@askdb/core", note: "in your dependency tree" },
+  { label: "Your DB connection", note: "you run the SQL" },
+];
+
+const external = { label: "Your model provider", note: "OpenAI, Anthropic, …" };
+---
+
+<figure class="privacy-flow" role="img" aria-label="Data flow diagram showing prompt to model provider and SQL back to your stack, with no proxy or middleman">
+  <div class="privacy-flow__cols">
+    <section class="privacy-flow__col privacy-flow__col--stack">
+      <span class="privacy-flow__eyebrow">In your stack</span>
+      <ol class="privacy-flow__nodes">
+        {stackNodes.map((node, index) => (
+          <li>
+            <div class="privacy-flow__node">
+              <span class="privacy-flow__node-label">{node.label}</span>
+              <span class="privacy-flow__node-note">{node.note}</span>
+            </div>
+            {index < stackNodes.length - 1 ? (
+              <span class="privacy-flow__rail" aria-hidden="true"></span>
+            ) : null}
+          </li>
+        ))}
+      </ol>
+    </section>
+
+    <section class="privacy-flow__col privacy-flow__col--external">
+      <span class="privacy-flow__eyebrow">External</span>
+      <div class="privacy-flow__node privacy-flow__node--external">
+        <span class="privacy-flow__node-label">{external.label}</span>
+        <span class="privacy-flow__node-note">{external.note}</span>
+      </div>
+    </section>
+  </div>
+
+  <ul class="privacy-flow__edges">
+    <li class="privacy-flow__edge privacy-flow__edge--out">
+      <span class="privacy-flow__edge-arrow" aria-hidden="true">→</span>
+      <span><strong>Prompt out:</strong> question + schema context</span>
+    </li>
+    <li class="privacy-flow__edge privacy-flow__edge--in">
+      <span class="privacy-flow__edge-arrow" aria-hidden="true">←</span>
+      <span><strong>SQL in:</strong> validated by <code>@askdb/core</code></span>
+    </li>
+  </ul>
+
+  <figcaption class="privacy-flow__caption">
+    Two crossings only — both routed through your own process. No AskDB-hosted proxy, no relay, no cache.
+  </figcaption>
+</figure>

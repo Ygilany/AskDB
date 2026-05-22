@@ -1,0 +1,34 @@
+---
+const engines = [
+  {
+    name: "PostgreSQL",
+    pkg: "@askdb/postgres",
+    note: "Reference engine. Full dialect coverage.",
+  },
+  {
+    name: "MySQL",
+    pkg: "@askdb/mysql",
+    note: "First-class dialect and introspection.",
+  },
+  {
+    name: "SQLite",
+    pkg: "@askdb/sqlite",
+    note: "Embedded, file-backed, perfect for dev.",
+  },
+  {
+    name: "SQL Server",
+    pkg: "@askdb/sqlserver",
+    note: "T-SQL dialect and introspection.",
+  },
+];
+---
+
+<div class="home-engines">
+  {engines.map((engine) => (
+    <article class="home-engine-card">
+      <h3>{engine.name}</h3>
+      <code class="home-engine-pkg">{engine.pkg}</code>
+      <p>{engine.note}</p>
+    </article>
+  ))}
+</div>

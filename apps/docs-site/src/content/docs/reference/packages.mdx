@@ -1,0 +1,198 @@
+---
+title: "Package reference"
+description: "Every @askdb/* package: purpose, when to install, and what it exports."
+---
+
+<p class="doc-eyebrow">Reference · Packages</p>
+
+<p class="doc-lede">AskDB is a workspace of focused packages. Install the ones your use case needs. This page is the index — purpose, install, and key exports for each.</p>
+
+## Core
+
+### `@askdb/core`
+
+The dialect-agnostic NL-to-SQL pipeline. Schema loading, prompt construction, validation, and tenant-scope handling all live here.
+
+```bash
+npm install @askdb/core
+```
+
+**Key exports**
+
+| Symbol | Purpose |
+| --- | --- |
+| `ask(options)` | The main pipeline. Returns validated SQL. |
+| `loadSchema(path)` | Load a schema artifact from a directory, bundle, or `schema.json`. |
+| `validateTenantScope` / `resolveTenantSql` | Tenant-scope enforcement primitives. |
+| `createAskDbLogger` | Structured logger that emits AskDB log events. |
+| `POSTGRES_DIALECT` and built-in dialect IDs | Dialect inputs accepted by `ask()`. |
+
+### `@askdb/config`
+
+Optional config bootstrap: `.env` and `askdb.config.*` discovery, type-safe `defineConfig`, and a runtime snapshot accessor.
+
+```bash
+npm install @askdb/config
+```
+
+**Key exports**
+
+| Symbol | Purpose |
+| --- | --- |
+| `defineConfig(config)` | Type-safe config builder. |
+| `bootstrapAskDbEnv(options)` | Load `.env` + `askdb.config.*` and install the runtime snapshot. |
+| `getAskDbRuntimeConfig()` | Read the runtime snapshot (preferred over `process.env`). |
+| `discoverAskDbConfigPath()` | Programmatic config-file discovery. |
+| `env`, `requiredEnv` | Typed env-var accessors. |
+
+## Engine adapters
+
+Each engine adapter ships the dialect (SQL generation + validation), the introspection connector (for schema artifacts), and any templates the dialect uses.
+
+### `@askdb/postgres`
+
+```bash
+npm install @askdb/postgres
+```
+
+PostgreSQL dialect, connector, catalog SQL templates, and an optional `pg`-based catalog query runner for live introspection. Pass `dialect: "postgres"` to `ask()`.
+
+### `@askdb/mysql`
+
+```bash
+npm install @askdb/mysql
+```
+
+MySQL dialect and introspection. Pass `dialect: "mysql"` to `ask()`.
+
+### `@askdb/sqlite`
+
+```bash
+npm install @askdb/sqlite
+```
+
+SQLite dialect and introspection. Works with embedded file-backed databases. Pass `dialect: "sqlite"` to `ask()`.
+
+### `@askdb/sqlserver`
+
+```bash
+npm install @askdb/sqlserver
+```
+
+SQL Server (T-SQL) dialect and introspection. Pass `dialect: "sqlserver"` to `ask()`.
+
+## Introspection
+
+### `@askdb/introspect`
+
+The engine-agnostic introspection contract and the schema-directory writer. Use directly only when you're calling introspection from your own code — the CLI wraps this for you.
+
+```bash
+npm install @askdb/introspect
+```
+
+### `@askdb/prisma`
+
+File-only connector that reads `.prisma` schema files and produces AskDB physical metadata — no live database needed. Pair with an engine adapter for SQL generation at runtime.
+
+```bash
+npm install @askdb/prisma @askdb/introspect
+```
+
+See [the Prisma integration guide](/guides/integrations/prisma/).
+
+## Authoring
+
+### `@askdb/studio`
+
+Browser-based schema-authoring UI. The CLI's `askdb studio` command lazy-imports this package.
+
+```bash
+npm install @askdb/studio
+```
+
+### `@askdb/tui`
+
+Terminal-based schema-authoring UI. The CLI's `askdb enrich` command lazy-imports this package.
+
+```bash
+npm install @askdb/tui
+```
+
+### `@askdb/enrich`
+
+Headless schema-authoring helpers shared by Studio and TUI. Use directly when building a custom authoring surface.
+
+```bash
+npm install @askdb/enrich
+```
+
+## Retrieval
+
+### `@askdb/rag`
+
+Chunks the schema artifact, indexes it in a vector store, and retrieves relevant chunks per question. Use with `ask()`'s `retriever` option for large schemas.
+
+```bash
+npm install @askdb/rag
+```
+
+**Key exports**
+
+| Symbol | Purpose |
+| --- | --- |
+| `indexSchema({ schema, store, embedder })` | Index a schema artifact's chunks. |
+| `createRetriever({ store, embedder })` | Build the retriever passed to `ask()`. |
+| `createPgvectorStore` | The pgvector store factory. |
+
+Ships a small CLI binary `askdb-rag` (notably `askdb-rag setup-store` for pgvector provisioning). See [RAG for large schemas](/guides/rag-for-large-schemas/).
+
+## Service surfaces
+
+### `@askdb/http-api`
+
+Minimal HTTP server wrapping `ask()`. Two endpoints (`/health`, `POST /ask`), designed to sit behind your gateway.
+
+```bash
+npm install @askdb/http-api
+```
+
+**Key exports**
+
+| Symbol | Purpose |
+| --- | --- |
+| `createAskDbHttpServer(options)` | Build the server. |
+| `AskHttpRequest` / `AskHttpSuccessResponse` / `AskHttpErrorResponse` | Request and response types. |
+
+See [the HTTP API reference](/reference/http-api/) for endpoints and error codes.
+
+### `askdb` (CLI)
+
+The `askdb` binary. Ships as a normal npm package — install for local development, demos, and CI.
+
+```bash
+npm install askdb
+```
+
+See [the CLI reference](/reference/cli/).
+
+## Dependency direction
+
+| Package | Depends on |
+| --- | --- |
+| `@askdb/postgres`, `@askdb/mysql`, `@askdb/sqlite`, `@askdb/sqlserver` | `@askdb/core` |
+| `@askdb/prisma` | `@askdb/introspect` |
+| `@askdb/enrich`, `@askdb/rag` | `@askdb/core` |
+| `@askdb/tui`, `@askdb/studio` | `@askdb/enrich` (+ `@askdb/rag` when used) |
+| `@askdb/http-api` | `@askdb/core` (+ engine adapter) |
+| `askdb` (CLI) | All of the above (lazy-imported per command) |
+
+Reusable packages stay small and layered. First-party surfaces (CLI, Studio, TUI, HTTP API) compose them.
+
+## Read next
+
+<div class="home-path-grid">
+  <a href="/reference/cli/"><strong>CLI reference</strong><span>The askdb binary in detail.</span></a>
+  <a href="/reference/http-api/"><strong>HTTP API reference</strong><span>Endpoints, request and response shapes.</span></a>
+  <a href="/reference/config/"><strong>Configuration reference</strong><span>defineConfig and the env-var matrix.</span></a>
+</div>

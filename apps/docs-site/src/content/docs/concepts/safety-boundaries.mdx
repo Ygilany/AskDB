@@ -1,0 +1,66 @@
+---
+title: "Safety boundaries"
+description: "Every check AskDB runs on generated SQL — and where your application takes over."
+---
+
+<p class="doc-eyebrow">Guardrails</p>
+
+<p class="doc-lede">AskDB validates every SQL string the model returns before handing it back to your application. Generated SQL that violates the rules your schema artifact declares is rejected, not returned with a warning.</p>
+
+## What AskDB enforces
+
+Before `ask()` returns, the generated SQL passes through this sequence:
+
+1. **Parse.** The SQL is parsed for the selected dialect. If it doesn't parse, it's rejected.
+2. **Read-only.** Only `SELECT` (and dialect-specific read variants like `WITH … SELECT`) is allowed. `INSERT`, `UPDATE`, `DELETE`, `DROP`, `CREATE`, anything that writes — rejected.
+3. **Single statement.** Multi-statement queries are rejected.
+4. **Scope.** Queries against system schemas (`pg_catalog`, `information_schema`, MySQL `mysql`, SQL Server `sys`, and so on) are rejected.
+5. **Tenant filter (when declared).** If your schema artifact declares a tenant column on a table, every query that touches that table must include the tenant predicate. AskDB rewrites the query to add the filter or rejects it. See [Multi-tenancy](/guides/multi-tenancy/).
+6. **Sensitive columns (when configured).** Columns marked `sensitive: true` can be omitted from the prompt entirely with `--omit-sensitive-from-prompt` so the model never proposes them.
+
+The full ruleset for what counts as read-only and how dialects vary lives in the [validation contract on GitHub](https://github.com/Ygilany/AskDB/blob/main/docs/contracts/modes-v1.md).
+
+## What stays in your application
+
+AskDB returns validated SQL — it does not run it. The execution layer is yours, which means **your application** owns the boundaries that depend on runtime context:
+
+- **Connection roles.** Connect to your database with a read-only user. Defense in depth: AskDB's validator says the SQL is read-only; your database role makes it impossible for it not to be.
+- **Query timeouts and row limits.** Set `statement_timeout` (or equivalent) on the connection. Wrap results in pagination.
+- **Approval flows.** When the question is high-stakes, show the SQL to a human before executing.
+- **Audit logging.** Log every question, every generated SQL, every execution outcome.
+- **User identity.** AskDB doesn't know who's asking. Your application enforces that user A can only see tenant A's data — AskDB just enforces the tenant predicate is present.
+
+## Defense in depth
+
+The point of two layers — AskDB's validation plus your application's execution boundary — is that neither has to be perfect. The model proposes; the validator narrows; your runtime role makes the proposed shape impossible to misuse.
+
+A typical production stack looks like:
+
+```
+question
+   │
+   ▼
+ ask()  ──►  schema artifact + model
+   │
+   ▼
+ validated SQL
+   │
+   ▼
+ your app  ──►  log it, optionally show it
+   │
+   ▼
+ read-only DB role  ──►  pool with statement_timeout
+   │
+   ▼
+ paginated result
+```
+
+Each layer is doing one thing. None of them is the only thing standing between a question and a misbehaving query.
+
+## Read next
+
+<div class="home-path-grid">
+  <a href="/concepts/modes-and-dialects/"><strong>Modes and dialects</strong><span>How the validator adapts to your engine and your trust model.</span></a>
+  <a href="/guides/run-safely-in-prod/"><strong>Run safely in production</strong><span>The full operator checklist for the execution side.</span></a>
+  <a href="/guides/multi-tenancy/"><strong>Multi-tenancy</strong><span>Declaring tenant policy in your schema artifact.</span></a>
+</div>

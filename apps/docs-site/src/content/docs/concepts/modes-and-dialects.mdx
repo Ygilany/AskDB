@@ -1,0 +1,84 @@
+---
+title: "Modes and dialects"
+description: "How AskDB adapts to your SQL engine and the trust model you choose at deploy time."
+---
+
+<p class="doc-eyebrow">Adapting to your stack</p>
+
+<p class="doc-lede">Two knobs you tune per deployment: the <strong>dialect</strong> (which SQL flavor AskDB generates and validates) and the <strong>mode</strong> (what may enter the model's context beyond the schema artifact and the question).</p>
+
+## Dialects
+
+A dialect is an `AskDialect` implementation supplied by an engine package. It tells `@askdb/core` how to:
+
+- Construct identifiers and quoting for this engine.
+- Format dialect-specific clauses (LIMIT vs TOP, dollar parameters vs question marks, JSON path syntax).
+- Validate what counts as a read-only `SELECT` on this engine.
+
+Each engine ships its dialect as a first-class package. Pick the one that matches your database.
+
+| Engine | Package | Status |
+| --- | --- | --- |
+| PostgreSQL | `@askdb/postgres` | Reference dialect. |
+| MySQL | `@askdb/mysql` | First-class dialect and introspection. |
+| SQLite | `@askdb/sqlite` | First-class dialect; works with embedded files. |
+| SQL Server | `@askdb/sqlserver` | T-SQL dialect and introspection. |
+
+Switching engines is mostly a package swap. The full migration checklist lives in [Switch engines](/guides/switch-engines/).
+
+## Modes
+
+A **mode** declares the trust boundary AskDB enforces for a run: what's allowed to enter model context beyond the schema artifact and the natural-language question. Today there are two values.
+
+Set the mode three ways, highest precedence first:
+
+- `--mode <id>` on any CLI command.
+- `modes.askdbMode` in `askdb.config.ts` (env binding: `ASKDB_MODE`).
+- The built-in default (`schema_only`).
+
+### `schema_only` (default)
+
+AskDB grounds generation in the schema artifact and returns SQL only. The model never sees rows, credentials, or query results. This is the right mode for almost every production deployment.
+
+```bash
+askdb ask \
+  --question "How many orders this week?" \
+  --mode schema_only
+```
+
+### `bounded_results`
+
+Today, `bounded_results` produces the exact same SQL as `schema_only` — the NL-to-SQL pipeline does not differ, and AskDB surfaces still return SQL only. The mode value is reserved for a forward-looking extension: a post-execute step where a host application may summarize bounded tabular results back through the model. Until that branch ships, picking `bounded_results` over `schema_only` changes nothing observable.
+
+```bash
+askdb ask \
+  --question "Show recent signups" \
+  --mode bounded_results
+```
+
+The versioned spec — including the contracts an eventual bounded-results implementation must honor — lives in [`docs/contracts/modes-v1.md` on GitHub](https://github.com/Ygilany/AskDB/blob/main/docs/contracts/modes-v1.md).
+
+## Sensitive fields
+
+Columns marked `sensitive: true` in the schema artifact can be:
+
+- Included with a sensitivity tag in the prompt (default), so the model knows to handle them carefully and your application can decide whether to display them.
+- Omitted from the prompt entirely with `--omit-sensitive-from-prompt` (or `ASKDB_OMIT_SENSITIVE_FROM_PROMPT=true`), so the model never sees them and therefore never proposes them.
+
+The complete behavior table is in the [sensitive fields contract on GitHub](https://github.com/Ygilany/AskDB/blob/main/docs/contracts/sensitive-fields-and-modes.md).
+
+## Picking a mode
+
+For most teams:
+
+- Start with `schema_only`. It's the safest default.
+- Mark sensitive columns in your schema artifact early. Decide per deployment whether to include them tagged or omit them.
+- Don't reach for `bounded_results` until you have a concrete need — most analytics use cases don't.
+
+## Read next
+
+<div class="home-path-grid">
+  <a href="/concepts/safety-boundaries/"><strong>Safety boundaries</strong><span>What the validator checks regardless of mode.</span></a>
+  <a href="/concepts/privacy-model/"><strong>Privacy model</strong><span>What the model sees and what stays in your stack.</span></a>
+  <a href="/guides/switch-engines/"><strong>Switch engines</strong><span>Move between Postgres, MySQL, SQLite, and SQL Server.</span></a>
+</div>

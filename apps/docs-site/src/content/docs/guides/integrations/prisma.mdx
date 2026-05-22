@@ -1,0 +1,80 @@
+---
+title: "Prisma"
+description: "Use @askdb/prisma to read your schema directly from a .prisma file — no live database required."
+---
+
+<p class="doc-eyebrow">Integration · Prisma</p>
+
+<p class="doc-lede">If you already maintain a Prisma schema file, <code>@askdb/prisma</code> reads it directly and produces an AskDB schema artifact. No live database connection during introspection.</p>
+
+## When to use it
+
+- You have a `schema.prisma` and want to skip the live-database introspection step.
+- You're working in CI, on a laptop without DB access, or in an air-gapped environment.
+- You pair it with `@askdb/postgres` (or another engine) for the actual SQL dialect at generation time.
+
+## Install
+
+```bash
+npm install @askdb/prisma @askdb/introspect
+# Plus the dialect you want at runtime
+npm install @askdb/core @askdb/postgres ai @ai-sdk/openai
+```
+
+`@askdb/prisma` doesn't bundle a SQL dialect — pair it with whichever engine package matches your runtime database.
+
+## CLI workflow
+
+```bash
+# Introspect a Prisma schema file (or directory of .prisma files)
+npx askdb introspect \
+  --engine prisma \
+  --prisma-schema ./prisma/schema.prisma \
+  --out my-app.schema \
+  --schema-id my-app
+
+# Print the introspection result without writing
+npx askdb introspect --engine prisma --prisma-schema ./prisma --print
+
+# Diff against an existing schema artifact
+npx askdb introspect --engine prisma --prisma-schema ./prisma --diff my-app.schema
+```
+
+Set `ASKDB_PRISMA_SCHEMA` in `.env` (or `askdb.config.ts`) to make `--prisma-schema` optional on repeat runs.
+
+## Programmatic API
+
+```ts
+import { introspect } from "@askdb/introspect";
+import { createPrismaConnector } from "@askdb/prisma";
+
+await introspect(
+  { schemaPath: "./prisma", schemaId: "my-app" },
+  { outDir: "my-app.schema", schemaId: "my-app" },
+  { connector: createPrismaConnector() },
+);
+```
+
+## Supported providers
+
+`@askdb/prisma` supports any Prisma relational provider — at generation time, pair it with the matching AskDB engine adapter:
+
+| Prisma provider | Runtime engine adapter |
+| --- | --- |
+| `postgresql` / `cockroachdb` | `@askdb/postgres` |
+| `mysql` | `@askdb/mysql` |
+| `sqlite` | `@askdb/sqlite` |
+| `sqlserver` | `@askdb/sqlserver` |
+
+MongoDB is not supported — AskDB targets relational engines.
+
+## What it doesn't do
+
+`@askdb/prisma` is a file-only connector. It does not connect to a database, it does not execute generated SQL, and it does not include a SQL dialect. For SQL generation, supply a dialect from one of the engine packages above.
+
+## Read next
+
+<div class="home-path-grid">
+  <a href="/quickstart/"><strong>Quickstart</strong><span>The full introspect → enrich → ask flow.</span></a>
+  <a href="/guides/switch-engines/"><strong>Switch engines</strong><span>How to pair @askdb/prisma with each runtime engine.</span></a>
+</div>

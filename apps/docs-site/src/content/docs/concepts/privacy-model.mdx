@@ -1,0 +1,54 @@
+---
+title: "Privacy model"
+description: "What AskDB sends to the model, what stays in your stack, and why your data never leaves your infrastructure."
+---
+
+import PrivacyFlowDiagram from "../../../components/PrivacyFlowDiagram.astro";
+
+<p class="doc-eyebrow">What crosses the boundary</p>
+
+<p class="doc-lede">AskDB sends the question and your schema artifact to the model. Nothing else. Your rows, your credentials, your query results, your user identifiers — none of them cross that boundary, by design.</p>
+
+## What the model sees
+
+When `ask()` calls your model provider, the request contains:
+
+- **The user's question.** As supplied to AskDB.
+- **Schema context.** Tables, columns, types, nullability, and any descriptions you authored — drawn from the schema artifact. For large schemas, only the chunks retrieval selected.
+- **Dialect cues.** The SQL flavor AskDB expects back.
+
+That's the full payload. The model returns SQL.
+
+## What never crosses the boundary
+
+The model never receives:
+
+- **Your database rows.** AskDB does not read your data to construct prompts.
+- **Database credentials.** Connection strings, passwords, and roles live in your application's environment. AskDB doesn't open a database connection during generation.
+- **Query results.** Your application runs the SQL after AskDB returns it. Results stay between your app and your database.
+- **User identifiers, session tokens, request headers.** Unless you put them in the question text, they don't get sent.
+
+## No middlemen
+
+Requests go straight from your environment to the model provider you wired in. AskDB does not proxy, log, or cache the traffic:
+
+<PrivacyFlowDiagram />
+
+The model provider sees what's in the prompt and bills you for the tokens. AskDB is in your dependency tree, not on the wire.
+
+## Sensitive columns
+
+The schema artifact lets you mark columns as `sensitive: true`. That flag changes how AskDB constructs the prompt:
+
+- **Tagged in prompt (default).** The model sees the column name with a sensitivity tag. Useful when you want the model to acknowledge the column but generate carefully.
+- **Omitted entirely.** With `--omit-sensitive-from-prompt`, sensitive columns are removed from the prompt. The model can't propose them because it doesn't know they exist.
+
+Either way, the *values* in those columns are never in the prompt — the flag is about the schema metadata, not the data.
+
+## Where logging lives
+
+Audit logging is your application's job, not AskDB's. AskDB doesn't log questions, generated SQL, or model responses. If you want a record of every question that was asked and every SQL string that got generated, log them in the code that wraps `ask()`. That keeps the log inside your stack — same place your user identities and session data already live.
+
+## In one sentence
+
+AskDB lets you put a natural-language interface in front of your database without putting your data, your credentials, or your results in front of a model.

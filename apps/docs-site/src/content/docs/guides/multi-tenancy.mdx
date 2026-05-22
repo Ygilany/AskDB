@@ -1,0 +1,124 @@
+---
+title: "Multi-tenancy"
+description: "Declare tenant policy in your schema artifact and AskDB enforces it on every generated query — rewriting with the tenant filter or rejecting."
+---
+
+<p class="doc-eyebrow">Tenant-scoped generation</p>
+
+<p class="doc-lede">Tell AskDB how your schema represents tenancy. From then on, every generated query against a scoped table includes the tenant predicate — or it's rejected before being returned. Your app supplies the tenant scope per request.</p>
+
+## How it works
+
+Tenant policy is a file (`tenant-policy.md`) in your schema artifact. It declares the tables that belong to a tenant, which column carries the tenant ID, and which tables are global.
+
+AskDB doesn't execute queries — but it does rewrite generated SQL to guarantee the tenant filter is present. Your application supplies the tenant ID per call. AskDB validates and binds it.
+
+## Tenant policy concepts
+
+| Concept | What it means |
+| --- | --- |
+| **Tenant roots** | The primary tenant-identifying table (e.g. `organizations`) and its `tenantIdColumn`. |
+| **Hierarchy** | Parent→child foreign-key relationships between tenant roots (agency → sub-agency → client). |
+| **Scoped tables** | Tables that belong to a tenant via foreign key. Generated SQL always includes the join or predicate. |
+| **Polymorphic tables** | Tables that reference multiple entity types via a discriminator column (`owner_type` / `owner_id`). |
+| **Global tables** | Tenant-agnostic lookup tables (currencies, countries). Never tenant-filtered. |
+
+## Authoring the policy
+
+The recommended path is Studio's **Tenancy** view, which guides you through declaring tenant roots, scoped tables, and global tables in a form. Studio can also AI-draft a policy from a plain-language description of your tenancy model, for your review.
+
+You can also write `tenant-policy.md` by hand. Example for a simple SaaS schema:
+
+```yaml
+---
+tenantRoots:
+  - table: organizations
+    tenantIdColumn: id
+
+scopedTables:
+  - table: projects
+    tenantForeignKey: organization_id
+    tenantRoot: organizations
+  - table: documents
+    tenantForeignKey: organization_id
+    tenantRoot: organizations
+
+globalTables:
+  - table: plan_tiers
+  - table: countries
+---
+```
+
+## Asking with a tenant scope
+
+When the policy exists, every `ask()` call must include a `tenantScope`. AskDB validates the scope against the policy and binds it into the generated SQL.
+
+```ts
+import { ask } from "@askdb/core";
+
+const { sql, tenantParams } = await ask({
+  question: "How many documents did we create this month?",
+  schema,
+  dialect: "postgres",
+  model,
+  tenantScope: {
+    access: { kind: "exact" },
+    tenantRoot: "organizations",
+    tenantIds: ["org_abc123"],
+  },
+  tenantSqlMode: "sql-params",
+});
+
+// Execute with the tenant parameters bound:
+const result = await pool.query(sql, tenantParams);
+```
+
+## SQL output modes
+
+| Mode | When to use |
+| --- | --- |
+| `sql-only` | Tenant values inlined as literals. Useful for development inspection or ad-hoc queries you read directly. |
+| `sql-params` | Tenant values extracted as positional `$N` parameters. Use this in production with parameterized execution. |
+
+## What gets rewritten
+
+Without policy, a question like "how many documents this month?" might generate:
+
+```sql
+SELECT COUNT(*) FROM documents WHERE created_at >= NOW() - INTERVAL '1 month';
+```
+
+With the policy above and a tenant scope of `{ tenantRoot: "organizations", tenantIds: ["org_abc123"] }`, the same question generates:
+
+```sql
+SELECT COUNT(*) FROM documents
+WHERE organization_id = $1 AND created_at >= NOW() - INTERVAL '1 month';
+```
+
+The tenant predicate is present in the SQL AskDB returns — it can't be forgotten by the caller, and it can't be removed by a malformed question.
+
+## Without a policy
+
+If `tenant-policy.md` is absent from the schema artifact, AskDB generates SQL without any tenant-scoping predicates. That's the right default for single-tenant deployments. Add the policy when (and only when) you go multi-tenant.
+
+## Testing in Studio
+
+Studio's **Ask** panel includes tenant scope controls — provide a scope as JSON before generating SQL to see how predicate injection works:
+
+```json
+{
+  "kind": "exact",
+  "tenantRoot": "organizations",
+  "tenantIds": ["org_abc123"]
+}
+```
+
+Switch between `sql-only` and `sql-params` to compare the two output forms.
+
+## Read next
+
+<div class="home-path-grid">
+  <a href="/guides/run-safely-in-prod/"><strong>Run safely in production</strong><span>How tenant scoping fits with read-only roles, timeouts, and audit logging.</span></a>
+  <a href="/concepts/safety-boundaries/"><strong>Safety boundaries</strong><span>Everything AskDB validates in addition to tenant filters.</span></a>
+  <a href="/guides/author-your-schema/"><strong>Author your schema</strong><span>Use Studio's Tenancy view to draft the policy.</span></a>
+</div>
