@@ -1,5 +1,29 @@
 # @askdb/studio
 
+## 0.2.0-beta.15
+
+### Minor Changes
+
+- 70a655c: Add untracked tables feature: tables marked as untracked are excluded from LLM prompts and RAG indexing while remaining visible in the schema and studio. Tracking status persists in the describable layer (tables/\*.md) and survives re-introspection. Studio UI adds a toggle in the Sensitivity tab and a visual indicator with filter in the table list.
+
+### Patch Changes
+
+- Updated dependencies [70a655c]
+  - @askdb/core@0.5.0-beta.18
+  - @askdb/enrich@0.2.0-beta.6
+  - @askdb/rag@0.2.0-beta.11
+  - @askdb/postgres@0.2.0-beta.9
+
+## 0.2.0-beta.14
+
+### Minor Changes
+
+- 75a51f7: Complete IA redesign with topbar, nav rail, URL-based routing (react-router v7), and modular view architecture replacing the monolithic App.tsx
+
+### Patch Changes
+
+- @askdb/postgres@0.2.0-beta.8
+
 ## 0.2.0-beta.13
 
 ### Minor Changes

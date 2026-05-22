@@ -39,24 +39,29 @@ export type AskDbRuntimeHttpApiConfig = {
 
 export type AskDbRuntimeIntrospectionConfig = {
   provider: AskDbIntrospectionProvider;
+  /**
+   * Resolved Postgres connection URL when `provider === "postgres"`:
+   * `providerConfig.postgres.databaseUrl` → `ASKDB_INTROSPECT_POSTGRES_URL` env.
+   * `undefined` for non-Postgres providers.
+   */
+  postgresDatabaseUrl: string | undefined;
   /** Resolved from `introspection.providerConfig.prisma.schemaPath`; `undefined` triggers auto-discovery in `@askdb/prisma`. */
   prismaSchemaPath: string | undefined;
   /**
    * Resolved MySQL connection URL when `provider === "mysql"`:
-   * `providerConfig.mysql.databaseUrl` → `ASKDB_INTROSPECT_MYSQL_URL` env → `DATABASE_URL` fallback.
+   * `providerConfig.mysql.databaseUrl` → `ASKDB_INTROSPECT_MYSQL_URL` env.
    * `undefined` for non-MySQL providers.
    */
   mysqlDatabaseUrl: string | undefined;
   /**
    * Resolved SQLite file path when `provider === "sqlite"`:
    * `providerConfig.sqlite.file` → `ASKDB_INTROSPECT_SQLITE_FILE` env.
-   * No `DATABASE_URL` fallback — SQLite paths and URLs aren't interchangeable.
    * `undefined` for non-SQLite providers.
    */
   sqliteFile: string | undefined;
   /**
    * Resolved SQL Server connection URL when `provider === "sqlserver"`:
-   * `providerConfig.sqlserver.databaseUrl` → `ASKDB_INTROSPECT_SQLSERVER_URL` env → `DATABASE_URL` fallback.
+   * `providerConfig.sqlserver.databaseUrl` → `ASKDB_INTROSPECT_SQLSERVER_URL` env.
    * `undefined` for non-SQL Server providers.
    */
   sqlserverDatabaseUrl: string | undefined;
@@ -134,12 +139,15 @@ export function getAskDbRuntimeConfig(): AskDbRuntimeConfig {
   // Per-engine connection lookup. We deliberately only resolve the field for
   // the active provider so the runtime view stays minimal and other branches
   // surface `undefined` (cheap exhaustiveness check at the consumer).
-  const databaseUrlFallback = pickFlat(flat, "DATABASE_URL");
+  const postgresDatabaseUrl =
+    structured.introspection.provider === "postgres"
+      ? structured.introspection.providerConfig?.postgres?.databaseUrl?.trim() ||
+        pickFlat(flat, "ASKDB_INTROSPECT_POSTGRES_URL")
+      : undefined;
   const mysqlDatabaseUrl =
     structured.introspection.provider === "mysql"
       ? structured.introspection.providerConfig?.mysql?.databaseUrl?.trim() ||
-        pickFlat(flat, "ASKDB_INTROSPECT_MYSQL_URL") ||
-        databaseUrlFallback
+        pickFlat(flat, "ASKDB_INTROSPECT_MYSQL_URL")
       : undefined;
   const sqliteFile =
     structured.introspection.provider === "sqlite"
@@ -149,8 +157,7 @@ export function getAskDbRuntimeConfig(): AskDbRuntimeConfig {
   const sqlserverDatabaseUrl =
     structured.introspection.provider === "sqlserver"
       ? structured.introspection.providerConfig?.sqlserver?.databaseUrl?.trim() ||
-        pickFlat(flat, "ASKDB_INTROSPECT_SQLSERVER_URL") ||
-        databaseUrlFallback
+        pickFlat(flat, "ASKDB_INTROSPECT_SQLSERVER_URL")
       : undefined;
 
   return {
@@ -161,6 +168,7 @@ export function getAskDbRuntimeConfig(): AskDbRuntimeConfig {
     },
     introspection: {
       provider: structured.introspection.provider,
+      postgresDatabaseUrl,
       prismaSchemaPath: prismaSchemaPathRaw || undefined,
       mysqlDatabaseUrl,
       sqliteFile,

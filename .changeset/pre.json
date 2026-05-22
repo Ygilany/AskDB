@@ -37,6 +37,7 @@
     "init-install-template-deps",
     "init-template-root-config",
     "initial-0-1-0",
+    "introspect-render-views",
     "introspect-zero-args-config",
     "long-items-count",
     "mysql-sqlite-sqlserver-connectors",
@@ -61,6 +62,7 @@
     "studio-ai-tenant-policy-draft",
     "studio-cleanup-ask-panel-nav",
     "studio-concepts-editor",
+    "studio-ia-redesign",
     "studio-list-input-deferred-parse",
     "studio-rag-store-config",
     "studio-revamp-playground",
@@ -68,6 +70,7 @@
     "studio-tenancy-surfaces",
     "studio-tenancy-ui-improvements",
     "studio-token-usage",
+    "studio-untracked-tables",
     "studio-usage-layout",
     "studio-web-primitives",
     "workspace-bin-wrappers"

@@ -8,7 +8,6 @@ import {
   DEFAULT_AZURE_OPENAI_DEPLOYMENT,
   DEFAULT_GOOGLE_CHAT_MODEL,
   DEFAULT_INTROSPECT_OUTPUT_DIR,
-  DEFAULT_LOCAL_POSTGRES_URL,
   DEFAULT_MOCK_RAG_EMBEDDING_DIMENSIONS,
   DEFAULT_OPENAI_CHAT_MODEL,
   DEFAULT_RAG_EMBEDDING_MODEL,
@@ -58,12 +57,6 @@ function applyAzureLikeAi(out: Record<string, string>, cfg: AzureConfig | Foundr
   set(out, "AZURE_OPENAI_API_VERSION", cfg.apiVersion);
 }
 
-function resolveDatabaseUrl(config: AskDbConfig): string {
-  const raw = config.database.providerConfig.postgres.databaseUrl;
-  const fromConfig = raw?.trim();
-  return fromConfig || DEFAULT_LOCAL_POSTGRES_URL;
-}
-
 function resolveRagEmbeddingDimensions(rag: AskDbConfig["rag"]): number {
   if (rag.embedder === "openai" || rag.embedder === "ai-sdk") {
     const ec = rag.embedderConfig.openai;
@@ -102,22 +95,10 @@ export function flattenAskDbConfig(config: AskDbConfig): Record<string, string> 
     throw new Error("askdb.config: Anthropic AI provider is not supported yet.");
   }
 
-  // --- Database ---
-  if (config.database.provider !== "postgres") {
-    throw new Error(`askdb.config: unsupported database.provider "${config.database.provider}".`);
-  }
-  set(out, "DATABASE_URL", resolveDatabaseUrl(config));
-
   // --- Introspection ---
   const intro = config.introspection;
-  // `DATABASE_URL` already reflects `database`. For Postgres introspection, set
-  // `introspection.providerConfig.postgres.databaseUrl` only when you need a URL that
-  // differs from the main app database; when omitted, live introspection reuses the same URL.
   if (intro.provider === "postgres") {
-    const introUrl = intro.providerConfig?.postgres?.databaseUrl?.trim();
-    if (introUrl) {
-      set(out, "DATABASE_URL", introUrl);
-    }
+    set(out, "ASKDB_INTROSPECT_POSTGRES_URL", intro.providerConfig?.postgres?.databaseUrl);
   } else if (intro.provider === "prisma") {
     // schemaPath lives in structured config (introspection.providerConfig.prisma.schemaPath);
     // @askdb/prisma discovers it at runtime — no flat env key needed.
@@ -234,6 +215,7 @@ export function flattenAskDbConfig(config: AskDbConfig): Record<string, string> 
   if (config.studio?.listen?.port !== undefined && !Number.isNaN(config.studio.listen.port)) {
     set(out, "ASKDB_STUDIO_PORT", String(config.studio.listen.port));
   }
+  set(out, "ASKDB_STUDIO_DATABASE_URL", config.studio?.execute?.databaseUrl);
   // --- HTTP API listen (canonical keys on runtime flat map) ---
   const httpListen = config.httpApi?.listen;
   if (httpListen?.port !== undefined && !Number.isNaN(httpListen.port)) {

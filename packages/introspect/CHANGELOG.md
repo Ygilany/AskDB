@@ -1,5 +1,18 @@
 # @askdb/introspect
 
+## 0.3.0-beta.9
+
+### Patch Changes
+
+- Updated dependencies [70a655c]
+  - @askdb/core@0.5.0-beta.18
+
+## 0.3.0-beta.8
+
+### Patch Changes
+
+- 49efa32: Include database views in rendered Schema v2 output. Views were already introspected by all four connectors but silently dropped during rendering.
+
 ## 0.3.0-beta.7
 
 ### Patch Changes

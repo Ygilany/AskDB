@@ -10,14 +10,11 @@ export default defineConfig({
       },
     },
   },
-  database: {
+  introspection: {
     provider: "postgres",
     providerConfig: {
       postgres: { databaseUrl: env("DATABASE_URL") },
     },
-  },
-  introspection: {
-    provider: "postgres",
   },
   rag: {
     embedder: "openai",
