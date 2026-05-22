@@ -1,0 +1,124 @@
+---
+title: "Configuration reference"
+description: "askdb.config.ts, defineConfig, environment variables, and how AskDB resolves runtime settings."
+---
+
+<p class="doc-eyebrow">Reference · Configuration</p>
+
+<p class="doc-lede">AskDB resolves config from two sources: an <code>askdb.config.*</code> file (TypeScript or JavaScript) and environment variables. Both are loaded by <code>@askdb/config</code> at startup into an in-memory runtime snapshot.</p>
+
+## `askdb.config.ts`
+
+`askdb init` scaffolds this file. It uses `defineConfig` for type safety:
+
+```ts
+import { defineConfig, env } from "@askdb/config";
+
+export default defineConfig({
+  ai: {
+    provider: "openai",
+    providerConfig: {
+      openai: {
+        apiKey: env("OPENAI_API_KEY"),
+        model: env("OPENAI_MODEL"),
+      },
+    },
+  },
+  introspection: {
+    provider: "postgres",
+    providerConfig: {
+      postgres: { databaseUrl: env("DATABASE_URL") },
+    },
+    outputDir: "./my-app.schema",
+  },
+  rag: {
+    embedder: "openai",
+    store: "pgvector",
+    storeConfig: {
+      pgvector: { databaseUrl: env("ASKDB_PGVECTOR_URL") },
+    },
+  },
+  logging: {
+    level: "info",
+  },
+});
+```
+
+Use the `env()` helper (rather than `process.env`) so AskDB can capture which environment variables your config depends on and apply its defaults pass.
+
+`defineConfig` returns the object unchanged at runtime — it exists only for type inference. The full type is `AskDbConfig`.
+
+## File discovery
+
+`bootstrapAskDbEnv()` looks for config in this order:
+
+1. `askdb.config.ts`
+2. `askdb.config.mts`
+3. `askdb.config.cts`
+4. `askdb.config.js`
+5. `askdb.config.mjs`
+6. `askdb.config.cjs`
+7. `askdb.config.json`
+8. `.config/askdb.*` (any of the above extensions)
+
+The first match wins. Looks in the current working directory, then walks up to find a project root.
+
+## Environment variables
+
+AskDB reads `.env` next to your process via `dotenv`, then layers explicit env vars on top. The most common keys:
+
+Variable names you control. The variables listed below are the ones the scaffolded `askdb.config.ts` reads via `env("...")`; rename them in your config and `.env` together if you'd rather use your own scheme.
+
+| Variable | Maps to (config path) | Notes |
+| --- | --- | --- |
+| `OPENAI_API_KEY` | `ai.providerConfig.openai.apiKey` | Standard OpenAI key. |
+| `OPENAI_MODEL` | `ai.providerConfig.openai.model` | Optional model override. |
+| `ANTHROPIC_API_KEY` | `ai.providerConfig.anthropic.apiKey` | When `ai.provider = "anthropic"`. |
+| `AZURE_API_KEY`, `AZURE_RESOURCE_NAME` | `ai.providerConfig.azure.*` | Azure OpenAI. |
+| `ASKDB_INTROSPECT_POSTGRES_URL` | `introspection.providerConfig.postgres.databaseUrl` | Postgres introspection URL. Still falls back to `DATABASE_URL` if unset. |
+| `ASKDB_INTROSPECT_MYSQL_URL` | `introspection.providerConfig.mysql.databaseUrl` | MySQL introspection URL. No `DATABASE_URL` fallback. |
+| `ASKDB_INTROSPECT_SQLSERVER_URL` | `introspection.providerConfig.sqlserver.databaseUrl` | SQL Server introspection URL. No `DATABASE_URL` fallback. |
+| `ASKDB_INTROSPECT_SQLITE_FILE` | `introspection.providerConfig.sqlite.file` | SQLite file path. |
+| `ASKDB_INTROSPECT_OUT` | `introspection.outputDir` | Default schema-artifact output directory. |
+| `ASKDB_STUDIO_DATABASE_URL` | `studio.execute.databaseUrl` | Connection for the Studio playground query runner. |
+| `ASKDB_SCHEMA_PATH` | `host.schemaPath` | Schema artifact the HTTP server loads at startup. |
+| `ASKDB_PGVECTOR_URL` | `rag.storeConfig.pgvector.databaseUrl` | Connection string for the pgvector store. |
+| `ASKDB_OMIT_SENSITIVE_FROM_PROMPT` | `modes.omitSensitiveFromPrompt` | When `true`, omit sensitive columns from the prompt. |
+| `ASKDB_LOG_LEVEL` | `logging.level` | One of `trace`, `debug`, `info`, `warn`, `error`, `fatal`, `silent`. |
+| `ASKDB_MODE` | `modes.askdbMode` | Default operating mode (`schema_only` / `bounded_results`). |
+
+The complete list of env keys is generated from the config schema and exposed as `ASKDB_ENV_PROJECTION` in `@askdb/config`.
+
+## Reading config at runtime
+
+In code that uses the AskDB libraries directly, call `bootstrapAskDbEnv()` at startup and then read settings via `getAskDbRuntimeConfig()`:
+
+```ts
+import { bootstrapAskDbEnv, getAskDbRuntimeConfig } from "@askdb/config";
+
+bootstrapAskDbEnv({ cwd: process.cwd() });
+
+const rt = getAskDbRuntimeConfig();
+const aiEnv = rt.ai.aiEnv;
+const schemaPath = rt.schema.path;
+```
+
+AskDB does **not** copy the full config into `process.env`. The runtime snapshot is the source of truth — use `getAskDbRuntimeConfig` rather than `process.env` for anything AskDB-specific.
+
+## Config precedence
+
+For any given setting, the precedence (highest wins) is:
+
+1. Function-call arguments (`ask({ mode: "..." })` etc.).
+2. Environment variables.
+3. `askdb.config.*` file.
+4. Built-in defaults.
+
+This lets you ship a config file with sensible defaults and override per-environment via env vars without rebuilding.
+
+## Read next
+
+<div class="home-path-grid">
+  <a href="/reference/cli/"><strong>CLI reference</strong><span>How each CLI command resolves config and flags.</span></a>
+  <a href="/reference/packages/"><strong>Package reference</strong><span>The full @askdb/config API surface.</span></a>
+</div>

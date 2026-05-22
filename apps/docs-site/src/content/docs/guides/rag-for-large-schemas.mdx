@@ -1,0 +1,155 @@
+---
+title: "RAG for large schemas"
+description: "When your schema is too big to fit in a prompt, index it with @askdb/rag and retrieve only the relevant chunks per question."
+---
+
+<p class="doc-eyebrow">Scale-up guide</p>
+
+<p class="doc-lede">Big databases need retrieval. <code>@askdb/rag</code> chunks the same schema artifact and indexes it in a vector store. Per question, AskDB retrieves the relevant slice instead of stuffing the whole thing into every prompt.</p>
+
+## When you need it
+
+A rule of thumb: if your schema artifact has more than ~30 tables, or if rendered DDL routinely exceeds 8K tokens, you'll save money and improve generation quality by retrieving instead of stuffing.
+
+The retrieval trigger is configurable. By default `ask()` uses retrieval when a retriever is supplied <em>and</em> the schema's chunk count exceeds 30.
+
+## Install
+
+```bash
+npm install @askdb/rag
+
+# pgvector store (recommended)
+npm install pg
+```
+
+You'll also need an embedder. The Vercel AI SDK providers from [Bring your own model](/guides/bring-your-own-model/) work as embedders too — most teams use OpenAI's embeddings.
+
+## Set up pgvector
+
+pgvector is the recommended store: it lives in Postgres alongside your other data, you already know how to back it up, and AskDB ships ready-made DDL.
+
+There are three provisioning paths — pick the one that matches your deploy story.
+
+### Path 1: Studio (local development)
+
+Studio auto-provisions the pgvector schema on first use. Configure the store in `askdb.config.ts`:
+
+```ts
+export default {
+  rag: {
+    embedder: "openai",
+    store: "pgvector",
+    storeConfig: {
+      pgvector: {
+        databaseUrl: process.env.ASKDB_PGVECTOR_URL,
+      },
+    },
+  },
+};
+```
+
+Launch Studio (`npx askdb studio --schema ./my-app.schema`) and the first RAG operation creates the table.
+
+### Path 2: `askdb-rag setup-store` (CI / staging)
+
+One idempotent command. All DDL uses `IF NOT EXISTS` so it's safe to re-run on every deploy.
+
+```bash
+askdb-rag setup-store \
+  --pg-url "$ASKDB_PGVECTOR_URL" \
+  --dimensions 1536
+```
+
+Drop it into a deploy step:
+
+```yaml
+- name: Provision pgvector schema
+  run: askdb-rag setup-store --pg-url "${{ secrets.PGVECTOR_URL }}" --dimensions 1536
+```
+
+### Path 3: Explicit migration (production)
+
+For production teams that want all DDL in a versioned migration file:
+
+```ts
+import { createPgvectorStore } from "@askdb/rag/stores/pgvector";
+
+const store = createPgvectorStore({
+  connectionString: process.env.DATABASE_URL!,
+  dimensions: 1536,
+});
+
+console.log(store.setupSql());
+```
+
+Paste the output (CREATE EXTENSION, CREATE TABLE, CREATE INDEX) into Flyway, Liquibase, Drizzle, or whatever migration runner your team uses.
+
+## Index the schema artifact
+
+After the store is provisioned, index your schema's chunks:
+
+```ts
+import { createPgvectorStore, indexSchema } from "@askdb/rag";
+import { loadSchema } from "@askdb/core";
+import { openai } from "@ai-sdk/openai";
+
+const schema = await loadSchema("./my-app.schema");
+
+const store = createPgvectorStore({
+  connectionString: process.env.ASKDB_PGVECTOR_URL!,
+  dimensions: 1536,
+});
+
+await indexSchema({
+  schema,
+  store,
+  embedder: openai.embedding("text-embedding-3-small"),
+});
+```
+
+Re-run this whenever the schema artifact changes — typically as part of the same deploy that ships the artifact.
+
+## Wire retrieval into `ask()`
+
+Pass the retriever to `ask()`. AskDB calls it with the question and substitutes the retrieved chunks for the full DDL in the prompt.
+
+```ts
+import { ask } from "@askdb/core";
+import { createRetriever } from "@askdb/rag";
+
+const retriever = createRetriever({ store, embedder });
+
+const { sql } = await ask({
+  question,
+  schema,
+  dialect: "postgres",
+  model,
+  retriever,
+  retrievalThresholdChunks: 30, // default
+});
+```
+
+## Sensitive fields and embeddings
+
+Chunks marked as sensitive in the schema artifact carry that flag into the store. Configure your indexing policy to exclude sensitive content from embeddings if your trust model requires it — see the [sensitive fields contract on GitHub](https://github.com/Ygilany/AskDB/blob/main/docs/contracts/sensitive-fields-and-modes.md) for the full rules.
+
+## Custom table or dimensions
+
+To isolate multiple AskDB deployments in the same Postgres database, pass a custom table name and a matching embedding dimension:
+
+```bash
+askdb-rag setup-store \
+  --pg-url "$DATABASE_URL" \
+  --pg-table myapp_rag_chunks \
+  --dimensions 1536
+```
+
+Match the same `table` value in `askdb.config.ts` under `rag.storeConfig.pgvector.table`.
+
+## Read next
+
+<div class="home-path-grid">
+  <a href="/guides/author-your-schema/"><strong>Author your schema</strong><span>Enrichment dramatically improves retrieval quality.</span></a>
+  <a href="/guides/bring-your-own-model/"><strong>Bring your own model</strong><span>Embedder options and key management.</span></a>
+  <a href="/reference/packages/"><strong>Package reference</strong><span>The full @askdb/rag API surface.</span></a>
+</div>

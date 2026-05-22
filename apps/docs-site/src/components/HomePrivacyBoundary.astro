@@ -1,0 +1,51 @@
+---
+const sees = [
+  "The user's question",
+  "Your schema artifact (tables, columns, descriptions you authored)",
+  "Reasoning and SQL it generates",
+];
+
+const stays = [
+  "Your database rows",
+  "Database credentials and connection strings",
+  "Query results returned to your app",
+  "User identifiers, session tokens, anything you don't put in the prompt",
+];
+---
+
+<div class="home-privacy">
+  <section class="home-privacy-col home-privacy-col--sees">
+    <header>
+      <span class="home-privacy-eyebrow">The model sees</span>
+      <h3>What crosses the boundary</h3>
+    </header>
+    <ul>
+      {sees.map((item) => (
+        <li>
+          <svg viewBox="0 0 16 16" aria-hidden="true" focusable="false">
+            <circle cx="8" cy="8" r="7.2" fill="none" stroke="currentColor" stroke-width="1.4" />
+            <path d="m5 8.4 2 2 4-4.4" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" />
+          </svg>
+          <span>{item}</span>
+        </li>
+      ))}
+    </ul>
+  </section>
+  <section class="home-privacy-col home-privacy-col--stays">
+    <header>
+      <span class="home-privacy-eyebrow">Stays in your stack</span>
+      <h3>What never leaves</h3>
+    </header>
+    <ul>
+      {stays.map((item) => (
+        <li>
+          <svg viewBox="0 0 16 16" aria-hidden="true" focusable="false">
+            <rect x="2.4" y="2.4" width="11.2" height="11.2" rx="3" fill="none" stroke="currentColor" stroke-width="1.4" />
+            <path d="M5.5 8h5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" />
+          </svg>
+          <span>{item}</span>
+        </li>
+      ))}
+    </ul>
+  </section>
+</div>

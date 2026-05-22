@@ -1,142 +1,83 @@
 ---
-title: "AskDB Documentation"
-description: "AskDB is a developer toolkit for adding natural-language analytics to your application. It turns user questions into validated SQL using schema context your team can review, enrich, and control."
+title: "AskDB"
+description: "AskDB is the open-source Text-to-SQL toolkit your data team trusts. Turn natural-language questions into reviewed SQL your app runs — your schema, your model, your database. Nothing leaves your stack."
 template: "splash"
 hero:
-  title: '<span class="home-hero-title">Natural language → <span class="home-hero-accent">trusted SQL</span></span>'
-  tagline: "Turn user questions into validated SQL. Your team controls the schema. Your application owns execution."
+  title: '<span class="home-hero-title">The open-source <span class="home-hero-accent">Text-to-SQL toolkit</span><br/>your data team trusts.</span>'
+  tagline: 'Ask your data. Keep control. AskDB turns natural-language questions into reviewed SQL your app runs &mdash; your schema, your model, your database. The toolkit handles the SQL so your team can focus on the business context, not the plumbing.'
   actions:
     - text: "Quickstart"
-      link: "./quickstart/"
+      link: "/quickstart/"
       variant: "primary"
       icon: "right-arrow"
-    - text: "Journeys"
-      link: "./journeys/"
+    - text: "How it works"
+      link: "/concepts/how-askdb-works/"
       variant: "secondary"
       icon: "open-book"
 ---
 
 import HomeCliStrip from "../../components/HomeCliStrip.astro";
+import HomeDifferentiators from "../../components/HomeDifferentiators.astro";
+import HomeWorkflow from "../../components/HomeWorkflow.astro";
+import HomeEngines from "../../components/HomeEngines.astro";
+import HomePrivacyBoundary from "../../components/HomePrivacyBoundary.astro";
 
 <div class="home-landing">
 
 <HomeCliStrip />
 
 <div class="home-pill-row" role="list">
-  <span class="home-pill" role="listitem">Schema-grounded generation</span>
-  <span class="home-pill" role="listitem">Validated SQL boundary</span>
-  <span class="home-pill" role="listitem">Bring-your-own runtime</span>
+  <span class="home-pill" role="listitem">Postgres · MySQL · SQLite · SQL Server</span>
+  <span class="home-pill" role="listitem">Open source · MIT</span>
+  <span class="home-pill" role="listitem">No data leaves your stack</span>
 </div>
 
-## What AskDB is
+## What makes AskDB different
 
-<div class="home-north-card">
-  <p class="doc-lede home-north-lede">
-    AskDB helps developers add natural-language analytics to their own applications. It turns user questions into validated SQL using a schema that your team can inspect, enrich, and control. AskDB does not take over your database—it generates SQL from trusted schema context, validates the query, and leaves execution, approval, permissions, and audit logging in your application. The AI model receives your schema context—table names, column types, and descriptions your team approved—not your actual data. Your rows stay inside your infrastructure. This is what we mean by <strong>trust-first analytics</strong>: answers are grounded, inspectable, and controlled by the application that uses them. For philosophy and limitations, see the{" "}
-    <a href="https://github.com/Ygilany/AskDB">AskDB project on GitHub</a>.
-  </p>
-</div>
+<HomeDifferentiators />
 
-## How AskDB works
+## How it works
 
-<p>AskDB uses the same core workflow whether you use the CLI, the Node library, or the HTTP API.</p>
+<HomeWorkflow />
 
-<ol class="home-workflow-steps">
-  <li><strong>Initialize AskDB</strong> — Set up AskDB for your project and connect your database, AI model, and optional vector store.</li>
-  <li><strong>Create a schema artifact</strong> — Introspect your database so AskDB has a structured view of your tables, columns, relationships, and constraints.</li>
-  <li><strong>Ask questions</strong> — Test natural-language questions and inspect the SQL AskDB generates.</li>
-  <li><strong>Enrich the schema</strong> — Add descriptions, aliases, business concepts, and common query patterns using Studio or the TUI.</li>
-  <li><strong>Add retrieval when needed</strong> — For large schemas, index the schema artifact so AskDB retrieves only the most relevant context per question.</li>
-  <li><strong>Embed AskDB where you need it</strong> — Use AskDB through the CLI, Node library, or HTTP API depending on how you want to integrate it.</li>
-</ol>
+## Embed it in your app
 
-<p>Start with SQL generation from an introspected schema. Add enrichment when you need more business context. Add retrieval when your schema is too large for a single prompt. Expose through HTTP when you want to put it behind your own authentication, permissions, logging, and approval flow.</p>
+<p class="home-terminal-intro">A few lines of TypeScript: load a schema, ask a question, run the SQL through your own connection pool.</p>
 
-## What AskDB gives you
+```ts
+import { ask, loadSchema } from "@askdb/core";
+import { openai } from "@ai-sdk/openai";
+import { Pool } from "pg";
 
-<div class="home-value-grid">
-  <article>
-    <h3>Schema-grounded SQL generation</h3>
-    <p>Questions are grounded in your AskDB schema before SQL is generated and validated.</p>
-  </article>
-  <article>
-    <h3>Clear execution boundaries</h3>
-    <p>AskDB returns validated SQL. Your application decides whether to show it, review it, approve it, run it, log it, or reject it. AskDB does not execute SQL against your database.</p>
-  </article>
-  <article>
-    <h3>Human-reviewed schema enrichment</h3>
-    <p><code>@askdb/enrich</code> powers the TUI and Studio so humans confirm AI-suggested descriptions and aliases.</p>
-  </article>
-  <article>
-    <h3>Retrieval-ready schema context</h3>
-    <p><code>@askdb/rag</code> chunks the same schema artifact—no separate knowledge base that can drift from what you ship.</p>
-  </article>
-  <article>
-    <h3>Bring-your-own runtime</h3>
-    <p>Use your own model provider, database connection, embeddings, and vector store. Install only the packages your integration needs.</p>
-  </article>
-</div>
+const schema = await loadSchema("./my-app.schema");
+const pool = new Pool({ connectionString: process.env.DATABASE_URL });
 
-## Who AskDB is for
+const { sql } = await ask({
+  question: "Which customers signed up last week?",
+  schema,
+  dialect: "postgres",
+  model: openai("gpt-4o-mini"),
+});
 
-<div class="home-value-grid">
-  <article>
-    <h3>Application developers</h3>
-    <p>Use AskDB to embed natural-language analytics into an app, dashboard, or internal tool.</p>
-  </article>
-  <article>
-    <h3>Data and product teams</h3>
-    <p>Use AskDB to encode business meaning into the schema so answers match how your team talks about the data.</p>
-  </article>
-  <article>
-    <h3>Platform teams</h3>
-    <p>Use AskDB to expose a controlled SQL-generation layer behind your own auth, permissions, logging, and approval workflows. A first-party <strong>Model Context Protocol (MCP)</strong> server is on the roadmap—see <a href="./guides/agents-and-mcp/">Agents and MCP (status)</a>.</p>
-  </article>
-</div>
-
-## Choose a path
-
-<div class="home-path-grid">
-  <a href="./journeys/"><strong>Journeys</strong><span>Embed, enrich, RAG, HTTP, and agent/MCP status.</span></a>
-  <a href="./guides/embed-in-app/"><strong>Embed in your app</strong><span>Call <code>ask()</code> from Node with your dialect and model.</span></a>
-  <a href="./guides/author-enrich-schema/"><strong>Author schema</strong><span>Introspect, enrich in TUI or Studio, optional bundle.</span></a>
-  <a href="./environment/"><strong>Configure environment</strong><span><code>askdb.config.ts</code>, env loading, and runtime config.</span></a>
-  <a href="./quickstart/"><strong>Run the CLI</strong><span>Install, introspect or use a sample, then <code>askdb ask</code>.</span></a>
-  <a href="./architecture/"><strong>Architecture</strong><span>Layers, dependency direction, connectors vs optional peers.</span></a>
-</div>
-
-## First run
-
-<p class="home-terminal-intro">Install the CLI, create a schema folder, then ask a question against it.</p>
-
-```bash
-npm install askdb
-npx askdb init
-# add API keys to .env (see comments from init)
-
-npx askdb introspect \
-  --url "$DATABASE_URL" \
-  --out my-app.schema \
-  --schema-id my-app
-
-npx askdb enrich --schema my-app.schema
-
-npx askdb ask \
-  --schema my-app.schema \
-  --question "Which tables look active?"
+// Log or approve `sql` here, then run it through your own pool.
+const result = await pool.query(sql);
 ```
 
-## Documentation map
+## Works with the database you already have
 
-<div class="home-map-grid">
-  <a href="./quickstart/"><strong>Quickstart</strong><span>Install, schema creation, and your first question.</span></a>
-  <a href="./journeys/"><strong>Journeys</strong><span>Guides hub for embed, enrich, RAG, HTTP, and agents.</span></a>
-  <a href="./concepts/"><strong>Core concepts</strong><span>Pipeline, AskDB schema, enrichment, execution boundary.</span></a>
-  <a href="./architecture/"><strong>Architecture</strong><span>Diagrams, install profiles, extension points.</span></a>
-  <a href="./packages/"><strong>Package reference</strong><span>What each <code>@askdb/*</code> package owns.</span></a>
-  <a href="./askdb-schema/"><strong>AskDB schema</strong><span>On-disk layout: JSON + optional table docs and bundle.</span></a>
-  <a href="./modes/"><strong>Modes and safety</strong><span>Trust boundaries for model context.</span></a>
-  <a href="./rag/"><strong>RAG</strong><span>Chunk, index, and retrieve schema context.</span></a>
+<HomeEngines />
+
+## What the model sees — and what it doesn't
+
+<HomePrivacyBoundary />
+
+## Read next
+
+<div class="home-path-grid">
+  <a href="/quickstart/"><strong>Quickstart</strong><span>Install, introspect, and ask your first question in five minutes.</span></a>
+  <a href="/concepts/how-askdb-works/"><strong>How AskDB works</strong><span>The end-to-end flow from question to validated SQL.</span></a>
+  <a href="/guides/embed-in-node/"><strong>Embed in a Node app</strong><span>The full TypeScript walkthrough with a real connection pool.</span></a>
+  <a href="/reference/packages/"><strong>Package reference</strong><span>Every <code>@askdb/*</code> package and what it does.</span></a>
 </div>
 
 </div>

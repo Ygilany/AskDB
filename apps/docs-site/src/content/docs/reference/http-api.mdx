@@ -1,0 +1,135 @@
+---
+title: "HTTP API reference"
+description: "Endpoints, request and response shapes, error codes, and configuration for @askdb/http-api."
+---
+
+<p class="doc-eyebrow">Reference · HTTP API</p>
+
+<p class="doc-lede"><code>@askdb/http-api</code> is a thin HTTP wrapper around the same <code>ask()</code> pipeline as the library. Two endpoints, JSON over HTTP, designed to sit behind your own gateway.</p>
+
+## Server
+
+```ts
+import { createAskDbHttpServer } from "@askdb/http-api";
+
+const server = createAskDbHttpServer({
+  port: 3000,
+  host: "127.0.0.1",
+  maxBodyBytes: 1024 * 1024,
+});
+
+server.listen();
+```
+
+| Option | Default | Description |
+| --- | --- | --- |
+| `port` | `3000` | Port to listen on. |
+| `host` | `127.0.0.1` | Bind address. Bind to `0.0.0.0` only behind a gateway. |
+| `maxBodyBytes` | `1048576` (1 MiB) | Request body size limit. Larger requests return `payload_too_large`. |
+
+The server reads schema and AI provider config from environment variables via `@askdb/config` — see [Configuration](/reference/config/) for the resolution rules.
+
+## Endpoints
+
+### `GET /health`
+
+Liveness probe.
+
+```bash
+curl http://localhost:3000/health
+```
+
+```json
+{ "ok": true }
+```
+
+### `POST /ask`
+
+Generate SQL from a question.
+
+**Request**
+
+```json
+{
+  "question": "How many customers signed up last week?",
+  "mode": "schema_only",
+  "explain": false,
+  "omitSensitiveFromPrompt": false,
+  "schemaJson": "{\"version\":2, \"schemaId\":\"...\", \"tables\":[...]}"
+}
+```
+
+| Field | Required | Default | Description |
+| --- | --- | --- | --- |
+| `question` | yes | — | The natural-language question. |
+| `mode` | no | `schema_only` | One of `schema_only`, `bounded_results`. |
+| `explain` | no | `false` | Return heuristic guardrail metadata. |
+| `omitSensitiveFromPrompt` | no | env-driven | Omit sensitive columns from the prompt. |
+| `schemaJson` | no | env-driven | Inline schema artifact. Preferred: set `ASKDB_SCHEMA_PATH` server-side. |
+
+**Success response (`200`)**
+
+```json
+{
+  "ok": true,
+  "correlationId": "01H…",
+  "sql": "SELECT count(*) FROM customers WHERE created_at >= …"
+}
+```
+
+**Error response (`4xx` / `5xx`)**
+
+```json
+{
+  "ok": false,
+  "correlationId": "01H…",
+  "error": {
+    "code": "sql_validation_error",
+    "message": "Generated SQL contains a write statement.",
+    "rule": "read_only"
+  }
+}
+```
+
+## Error codes
+
+| Code | HTTP | When |
+| --- | --- | --- |
+| `not_found` | `404` | Unknown route. |
+| `bad_request` | `400` | Malformed JSON or missing required fields. |
+| `payload_too_large` | `413` | Body exceeds `maxBodyBytes`. |
+| `schema_parse_error` | `400` | Inline `schemaJson` couldn't be parsed. |
+| `generation_not_configured` | `500` | No model provider configured server-side. |
+| `sql_validation_error` | `400` | Model output failed the validator (read-only, single-statement, scope). |
+| `sql_generation_error` | `502` | Model call failed (provider error, timeout). |
+| `internal_error` | `500` | Anything else. |
+
+## Correlation IDs
+
+Every response includes a `correlationId`. The same ID is emitted in the server's structured log events, so you can join HTTP requests to generated SQL and any errors.
+
+To carry a correlation ID supplied by your gateway, send the `x-correlation-id` header on the request — the server uses it as-is if present, otherwise generates one.
+
+```bash
+curl -X POST http://localhost:3000/ask \
+  -H "content-type: application/json" \
+  -H "x-correlation-id: req_abc123" \
+  -d '{"question":"How many users?"}'
+```
+
+## What this server doesn't do
+
+- **No auth.** Put your gateway in front.
+- **No TLS termination.** Use your ingress.
+- **No rate limiting.** Same.
+- **No database connection.** It returns SQL; execution is your caller's responsibility.
+
+See [Deploy as HTTP service](/guides/deploy-as-http-service/) for the production deployment pattern.
+
+## Read next
+
+<div class="home-path-grid">
+  <a href="/guides/deploy-as-http-service/"><strong>Deploy as HTTP service</strong><span>The end-to-end deploy guide with curl and Python examples.</span></a>
+  <a href="/guides/run-safely-in-prod/"><strong>Run safely in production</strong><span>What your gateway service needs to enforce.</span></a>
+  <a href="/reference/config/"><strong>Configuration</strong><span>Environment variables the server reads at startup.</span></a>
+</div>

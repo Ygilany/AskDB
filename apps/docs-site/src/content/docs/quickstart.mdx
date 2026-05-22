@@ -1,152 +1,150 @@
 ---
 title: "Quickstart"
-description: "Install AskDB, generate or use a schema artifact, enrich it, and run your first question from the CLI—then carry the same pieces into your application."
+description: "Scaffold config, introspect a database, enrich the schema, and ask your first question — in under five minutes."
 ---
 
-<p className="doc-eyebrow">From install to first query</p>
+<p class="doc-eyebrow">From zero to first query</p>
 
-<p className="doc-lede">Install AskDB, generate or point at an <strong>AskDB schema</strong> folder, optionally enrich it, and run questions from the CLI. The same packages then drop into your Node services.</p>
+<p class="doc-lede">Scaffold your config, point AskDB at your database, enrich the schema artifact, and ask your first question. The same packages drop straight into a Node service when you're ready to embed.</p>
 
 ## Prerequisites
 
 - Node 20 or newer.
-- npm, pnpm, or yarn (examples use <code>{"npx"}</code> / <code>{"npm exec"}</code>).
-- An API key for a supported AI provider — OpenAI (or any OpenAI-compatible endpoint) or Azure OpenAI — for live NL-to-SQL generation.
-- A PostgreSQL connection string only if you want live Postgres introspection. A Prisma schema file is enough if you use <code>{"--engine prisma"}</code>.
+- npm, pnpm, or yarn (examples use `npx`).
+- An API key from a model provider — OpenAI, Anthropic, Google, OpenRouter, or any AI-SDK compatible provider. See [Bring your own model](/guides/bring-your-own-model/).
+- A database AskDB can read — Postgres, MySQL, SQLite, or SQL Server — or even a Prisma schema file (no live database required).
 
-## Typical install
+## 1. Scaffold your config
 
-Use this path when you are adding AskDB to your own project. Install the CLI globally or per project, add keys to <code>{".env"}</code>, then introspect your own database (or Prisma file) to produce a schema folder.
-
-```
-npm install askdb
-npx askdb init
-# follow comments in askdb.config.ts / .env for API keys
-
-npx askdb introspect \
-  --url "$DATABASE_URL" \
-  --out my-app.schema \
-  --schema-id my-app
-
-npx askdb enrich --schema my-app.schema
-
-npx askdb ask \
-  --schema my-app.schema \
-  --question "Which tables are connected to users?"
+```bash
+npx askdb@latest init
 ```
 
-## Working from the AskDB repository
+`npx` downloads and runs `askdb` on the fly — no separate install step needed. `askdb init` creates `askdb.config.ts` in your project root. The config file is TypeScript-checked and reads values from your environment using the `env()` helper — it loads from a `.env` file at your project root or from the system environment, whichever is set. You choose your own variable names and pass them to `env()`:
 
-Use this path when you are contributing to AskDB itself. You can use the bundled sample schema under <code>{"fixtures/schemas/orders-users.schema"}</code> after installing dependencies and building the workspace.
-
-```
-pnpm install
-cp .env.example .env
-# edit .env for API keys; optional: pnpm exec askdb init
-pnpm build
-
-pnpm exec askdb ask \
-  --schema fixtures/schemas/orders-users.schema \
-  --question "How many orders are there?"
+```ts
+{
+  ...
+  apiKey: env("OPENAI_API_KEY"),   // or env("MY_KEY") — you pick the name
+  ...
+}
 ```
 
-## Create a schema from a database
+`askdb.config.ts` is checked in; `.env` is not.
 
-### From Postgres
+Open `askdb.config.ts` and fill in your settings:
 
-Point introspection at a live database; AskDB writes an AskDB schema directory you can enrich and query.
+```ts
+import { defineConfig } from "@askdb/config";
 
+export default defineConfig({
+  ai: {
+    provider: "openai",   // or "anthropic", "google", etc.
+    model: "gpt-4o-mini",
+  },
+  introspection: {
+    outputDir: "./my-app.schema",  // optional — defaults to ./askdb/
+  },
+});
 ```
-npx askdb introspect \
-  --url "$DATABASE_URL" \
-  --out my-app.schema \
-  --schema-id my-app
 
-npx askdb enrich --schema my-app.schema
+Once this is configured, most CLI flags below are optional.
 
-npx askdb ask \
-  --schema my-app.schema \
-  --question "Which tables are connected to users?"
+## 2. Introspect your database
+
+Introspection produces an **AskDB schema artifact** — a directory on disk that captures your tables, columns, types, and relationships. Those artifacts' content are the only thing the model ever sees about your database.
+
+### From a live database
+
+With your database connection configured in `askdb.config.ts` under `introspection.provider` and `introspection.providerConfig`, one command is enough:
+
+```bash
+npx askdb introspect
 ```
+
+For example, for Postgres:
+
+```ts
+introspection: {
+  provider: "postgres",
+  providerConfig: {
+    postgres: { databaseUrl: env("DATABASE_URL") },  // env name is yours to pick
+  },
+},
+```
+
+The database is only used here — for introspection. To target a different database for one run, pass `--url`:
+
+```bash
+npx askdb introspect --url "$OTHER_DATABASE_URL"
+```
+
+AskDB picks the right dialect from the connection string. The complete config surface — `outputDir` defaults, per-engine `providerConfig`, env-var bindings — is documented in the [Configuration reference](/reference/config/). For engine-specific install steps see [Switch engines](/guides/switch-engines/).
 
 ### From a Prisma schema
 
-If you already have a Prisma schema file, introspect directly from it — no live database required.
+If you already have a Prisma schema file, introspect directly from it — no live database required:
 
-```
-npx askdb introspect \
-  --engine prisma \
-  --prisma-schema ./prisma/schema.prisma \
-  --out my-app.schema \
-  --schema-id my-app
-
-npx askdb ask \
-  --schema my-app.schema \
-  --question "Which tables are connected to users?"
+```bash
+npx askdb introspect --engine prisma --prisma-schema ./prisma/schema.prisma
 ```
 
-Set <code>{"ASKDB_PRISMA_SCHEMA"}</code> in <code>{".env"}</code> to make <code>{"--prisma-schema"}</code> optional on repeat runs. See <a href="../prisma/">@askdb/prisma</a> for supported providers.
+You can also set this in `askdb.config.ts` so no flags are needed:
 
-## Enrich the schema
-
-Raw introspection captures structure from the catalog (or Prisma file). Enrichment adds the **markdown table layer**: descriptions, aliases, column notes, common query language, example questions, and concepts. AskDB ships two UIs — pick whichever fits your workflow.
-
-**Terminal UI** — keyboard-driven, works in any terminal:
-
-```
-npx askdb enrich --schema my-app.schema
-```
-
-**Studio** — browser-based UI served locally at <code>http://127.0.0.1:5556</code>:
-
-```
-npx askdb studio --schema my-app.schema
+```ts
+introspection: {
+  provider: "prisma",
+  providerConfig: {
+    prisma: { schemaPath: "./prisma/schema.prisma" },
+  },
+},
 ```
 
-Both UIs use <code>{"@askdb/enrich"}</code> under the hood and write the same files on disk. When you want one portable file, bundle the directory:
+## 3. Enrich and test in Studio
 
-```
-# produce a single read-only artifact for distribution
-npx askdb bundle my-app.schema --out my-app.schema.bundle.json
-```
+Raw introspection captures structure. Enrichment adds descriptions, aliases, business concepts, sensitive markers, and example questions — the layer that makes generation good.
 
-## SQL output only
+Launch **Studio** — the recommended authoring surface — in a browser:
 
-AskDB returns validated SQL. Run it through your own application, approval flow, or database tooling outside AskDB.
-
-```
-npx askdb ask \
-  --schema my-app.schema \
-  --question "List the newest users"
+```bash
+npx askdb studio
 ```
 
-## Use the packages
+Studio is also the best place to **test your questions**: ask a question in the same session, review the generated SQL, and keep enriching if the answer isn't what you expected — all without switching tools.
 
-For application code, install the packages that match the surface you need. <code>{"@askdb/core"}</code> is dialect-agnostic. Postgres-specific behavior lives in <code>{"@askdb/postgres"}</code>. Custom enrichment UIs use <code>{"@askdb/enrich"}</code>.
+Prefer the terminal? The TUI covers the same workflow:
 
-```
-npm add @askdb/core @askdb/postgres
-# Example model provider for live generation
-npm add ai @ai-sdk/openai
-# Optional: only for live Postgres introspection
-npm add pg
-# Optional: Prisma schema-file introspection (no live database required)
-npm add @askdb/introspect @askdb/prisma
-# Optional: only for custom enrichment authoring in your own UI
-npm add @askdb/enrich
-# Optional: browser enrichment UI served locally
-npm add @askdb/studio
-# Optional: only when you want retrieval over schema chunks
-npm add @askdb/rag
+```bash
+npx askdb enrich
 ```
 
-## Guides (outcome-first)
+Both commands read `outputDir` from `askdb.config.ts`. The full walkthrough lives in [Author your schema](/guides/author-your-schema/).
 
-Prefer a task-shaped walkthrough:
+## 4. Ask your question
 
-- [Journeys](../journeys/) — hub for all guides.
-- [Embed NL→SQL in a Node app](../guides/embed-in-app/)
-- [Author and enrich schema](../guides/author-enrich-schema/)
-- [Add RAG for large schemas](../guides/rag-large-schema/)
-- [Run the HTTP API](../guides/http-api/)
-- [Agents and MCP (status)](../guides/agents-and-mcp/)
+You have two ways to test that your schema is generating good SQL — pick whichever fits the moment.
+
+### In Studio (recommended)
+
+If Studio is already open from step 3, ask your question there. You'll see the generated SQL alongside the schema; if the answer isn't right, keep enriching descriptions, aliases, or concepts and re-ask in the same session.
+
+### From the CLI
+
+For one-off checks and CI smoke tests, ask directly from the terminal:
+
+```bash
+npx askdb ask --question "Which customers signed up last week?"
+```
+
+In both cases AskDB returns validated SQL. It does **not** run it against your database — your application owns execution.
+
+## 5. From here
+
+Now that the CLI works, pick the path that matches what you're building:
+
+<div class="home-path-grid">
+  <a href="/guides/embed-in-node/"><strong>Embed in a Node app</strong><span>Drop <code>@askdb/core</code> into a TypeScript service and run the SQL through your own pool.</span></a>
+  <a href="/guides/deploy-as-http-service/"><strong>Deploy as HTTP service</strong><span>Stand up <code>@askdb/http-api</code> so Python, browsers, or agents can ask questions.</span></a>
+  <a href="/guides/author-your-schema/"><strong>Author your schema</strong><span>Get the most out of Studio: descriptions, concepts, sensitive markers, tenant policy.</span></a>
+  <a href="/concepts/how-askdb-works/"><strong>How AskDB works</strong><span>The end-to-end flow, with all the moving parts.</span></a>
+</div>
