@@ -1117,9 +1117,9 @@ function parsePlaygroundHistoryEntry(
 // ---------------------------------------------------------------------------
 
 async function executeQuery(body: unknown): Promise<ExecuteResponse> {
-  const databaseUrl = process.env["DATABASE_URL"];
+  const databaseUrl = process.env["ASKDB_STUDIO_DATABASE_URL"];
   if (!databaseUrl) {
-    return { ok: false, error: "DATABASE_URL is not configured" };
+    return { ok: false, error: "ASKDB_STUDIO_DATABASE_URL is not configured" };
   }
   if (!isRecord(body) || typeof body.sql !== "string" || body.sql.trim() === "") {
     return { ok: false, error: "`sql` is required." };
