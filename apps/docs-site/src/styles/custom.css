@@ -34,6 +34,18 @@
   max-height: 2.4rem;
 }
 
+/* Doc page prev/next — Starlight defaults page titles to --sl-text-2xl */
+.pagination-links .link-title {
+  font-size: var(--sl-text-base);
+  font-weight: 600;
+  line-height: 1.35;
+}
+
+.pagination-links a > span:not(.link-title) {
+  font-size: var(--sl-text-sm);
+  letter-spacing: 0.02em;
+}
+
 .hero {
   gap: clamp(1.5rem, 4vw, 4rem);
 }
