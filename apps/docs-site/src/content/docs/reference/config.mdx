@@ -12,24 +12,30 @@ description: "askdb.config.ts, defineConfig, environment variables, and how AskD
 `askdb init` scaffolds this file. It uses `defineConfig` for type safety:
 
 ```ts
-import { defineConfig } from "@askdb/config";
+import { defineConfig, env } from "@askdb/config";
 
 export default defineConfig({
   ai: {
     provider: "openai",
-    model: "gpt-4o-mini",
+    providerConfig: {
+      openai: {
+        apiKey: env("OPENAI_API_KEY"),
+        model: env("OPENAI_MODEL"),
+      },
+    },
   },
   introspection: {
+    provider: "postgres",
+    providerConfig: {
+      postgres: { databaseUrl: env("DATABASE_URL") },
+    },
     outputDir: "./my-app.schema",
-    schemaId: "my-app",
   },
   rag: {
     embedder: "openai",
     store: "pgvector",
     storeConfig: {
-      pgvector: {
-        databaseUrl: process.env.ASKDB_PGVECTOR_URL,
-      },
+      pgvector: { databaseUrl: env("ASKDB_PGVECTOR_URL") },
     },
   },
   logging: {
@@ -37,6 +43,8 @@ export default defineConfig({
   },
 });
 ```
+
+Use the `env()` helper (rather than `process.env`) so AskDB can capture which environment variables your config depends on and apply its defaults pass.
 
 `defineConfig` returns the object unchanged at runtime — it exists only for type inference. The full type is `AskDbConfig`.
 
@@ -59,19 +67,25 @@ The first match wins. Looks in the current working directory, then walks up to f
 
 AskDB reads `.env` next to your process via `dotenv`, then layers explicit env vars on top. The most common keys:
 
-| Variable | Used by | Purpose |
+Variable names you control. The variables listed below are the ones the scaffolded `askdb.config.ts` reads via `env("...")`; rename them in your config and `.env` together if you'd rather use your own scheme.
+
+| Variable | Maps to (config path) | Notes |
 | --- | --- | --- |
-| `OPENAI_API_KEY` | model provider | Standard OpenAI key. |
-| `ANTHROPIC_API_KEY` | model provider | Standard Anthropic key. |
-| `AZURE_API_KEY`, `AZURE_RESOURCE_NAME` | model provider | Azure OpenAI. |
-| `DATABASE_URL` | CLI `introspect` | Default DB connection string. |
-| `ASKDB_SCHEMA_PATH` | HTTP server | Schema artifact to load at startup. |
-| `ASKDB_INTROSPECT_OUT` | CLI `introspect` | Default `--out` value. |
-| `ASKDB_PRISMA_SCHEMA` | CLI with `--engine prisma` | Default Prisma schema path. |
-| `ASKDB_PGVECTOR_URL` | `@askdb/rag` (pgvector store) | Connection string for the vector store. |
-| `ASKDB_OMIT_SENSITIVE_FROM_PROMPT` | core pipeline | When `true`, omit sensitive columns from the prompt. |
-| `ASKDB_LOG_LEVEL` | core / CLI / server | One of `trace`, `debug`, `info`, `warn`, `error`, `fatal`, `silent`. |
-| `ASKDB_MODE` | core pipeline | Default operating mode (`schema_only` / `bounded_results`). |
+| `OPENAI_API_KEY` | `ai.providerConfig.openai.apiKey` | Standard OpenAI key. |
+| `OPENAI_MODEL` | `ai.providerConfig.openai.model` | Optional model override. |
+| `ANTHROPIC_API_KEY` | `ai.providerConfig.anthropic.apiKey` | When `ai.provider = "anthropic"`. |
+| `AZURE_API_KEY`, `AZURE_RESOURCE_NAME` | `ai.providerConfig.azure.*` | Azure OpenAI. |
+| `ASKDB_INTROSPECT_POSTGRES_URL` | `introspection.providerConfig.postgres.databaseUrl` | Postgres introspection URL. Still falls back to `DATABASE_URL` if unset. |
+| `ASKDB_INTROSPECT_MYSQL_URL` | `introspection.providerConfig.mysql.databaseUrl` | MySQL introspection URL. No `DATABASE_URL` fallback. |
+| `ASKDB_INTROSPECT_SQLSERVER_URL` | `introspection.providerConfig.sqlserver.databaseUrl` | SQL Server introspection URL. No `DATABASE_URL` fallback. |
+| `ASKDB_INTROSPECT_SQLITE_FILE` | `introspection.providerConfig.sqlite.file` | SQLite file path. |
+| `ASKDB_INTROSPECT_OUT` | `introspection.outputDir` | Default schema-artifact output directory. |
+| `ASKDB_STUDIO_DATABASE_URL` | `studio.execute.databaseUrl` | Connection for the Studio playground query runner. |
+| `ASKDB_SCHEMA_PATH` | `host.schemaPath` | Schema artifact the HTTP server loads at startup. |
+| `ASKDB_PGVECTOR_URL` | `rag.storeConfig.pgvector.databaseUrl` | Connection string for the pgvector store. |
+| `ASKDB_OMIT_SENSITIVE_FROM_PROMPT` | `modes.omitSensitiveFromPrompt` | When `true`, omit sensitive columns from the prompt. |
+| `ASKDB_LOG_LEVEL` | `logging.level` | One of `trace`, `debug`, `info`, `warn`, `error`, `fatal`, `silent`. |
+| `ASKDB_MODE` | `modes.askdbMode` | Default operating mode (`schema_only` / `bounded_results`). |
 
 The complete list of env keys is generated from the config schema and exposed as `ASKDB_ENV_PROJECTION` in `@askdb/config`.
 

@@ -14,8 +14,8 @@ When you call `ask()` (or the equivalent CLI / HTTP surface), AskDB runs these s
 1. **Load the schema artifact.** A directory, a bundle file, or a parsed `schema.json` — whichever you supply.
 2. **Retrieve relevant chunks (optional).** For large schemas, AskDB pulls only the slice of the artifact that's relevant to the question, using `@askdb/rag`. Smaller schemas skip this step.
 3. **Build the prompt.** Physical metadata, any table descriptions you authored, and the selected SQL dialect get assembled into the context the model sees.
-4. **Generate.** The model you supplied (OpenAI, Azure, anything compatible) returns SQL. AskDB does not host inference — your key, your billing.
-5. **Validate.** The returned SQL is parsed and checked: read-only, no multi-statements, no system-schema access, tenant filters enforced if your schema declares them. Invalid SQL is rejected.
+4. **Generate.** AskDB calls the model you supplied — any provider compatible with the [Vercel AI SDK](/guides/bring-your-own-model/) — and the model returns SQL. AskDB does not host inference; your key, your billing.
+5. **Validate.** The returned SQL is checked against the guardrails AskDB enforces: single statement, must start with `SELECT` or `WITH`, no DDL/DML keywords, and — when your artifact declares a tenant policy — required tenant predicates. The full list and the exact checks live in [Safety boundaries](/concepts/safety-boundaries/). Invalid SQL is rejected, not returned with a warning.
 
 The return value is a string of validated SQL and a parameter list. What happens next is your call.
 

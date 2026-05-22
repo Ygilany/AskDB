@@ -56,20 +56,30 @@ Introspection produces an **AskDB schema artifact** — a directory on disk that
 
 ### From a live database
 
-With your database connection configured in `askdb.config.ts` (`db.provider` and `db.providerConfig`), you can run the following command to introspect your database. 
+With your database connection configured in `askdb.config.ts` under `introspection.provider` and `introspection.providerConfig`, one command is enough:
 
 ```bash
 npx askdb introspect
 ```
-> You can also set the `outputDir` in `askdb.config.ts` to change the default output directory. See the [Configuration reference](/reference/config/) for all options, and their defaults.
 
-Since the database, is only for introspection, you may also choose to pass the database url as a flag. Pass `--url` to target a different database for this run:
+For example, for Postgres:
+
+```ts
+introspection: {
+  provider: "postgres",
+  providerConfig: {
+    postgres: { databaseUrl: env("DATABASE_URL") },  // env name is yours to pick
+  },
+},
+```
+
+The database is only used here — for introspection. To target a different database for one run, pass `--url`:
 
 ```bash
 npx askdb introspect --url "$OTHER_DATABASE_URL"
 ```
 
-AskDB picks the right dialect from the connection string. See [Switch engines](/guides/switch-engines/) for the install matrix.
+AskDB picks the right dialect from the connection string. The complete config surface — `outputDir` defaults, per-engine `providerConfig`, env-var bindings — is documented in the [Configuration reference](/reference/config/). For engine-specific install steps see [Switch engines](/guides/switch-engines/).
 
 ### From a Prisma schema
 
@@ -110,17 +120,23 @@ npx askdb enrich
 
 Both commands read `outputDir` from `askdb.config.ts`. The full walkthrough lives in [Author your schema](/guides/author-your-schema/).
 
-## 4. Ask from the CLI
+## 4. Ask your question
 
-Once the schema is enriched, you can also ask directly from the terminal:
+You have two ways to test that your schema is generating good SQL — pick whichever fits the moment.
+
+### In Studio (recommended)
+
+If Studio is already open from step 3, ask your question there. You'll see the generated SQL alongside the schema; if the answer isn't right, keep enriching descriptions, aliases, or concepts and re-ask in the same session.
+
+### From the CLI
+
+For one-off checks and CI smoke tests, ask directly from the terminal:
 
 ```bash
 npx askdb ask --question "Which customers signed up last week?"
 ```
 
-AskDB returns validated SQL. It does **not** run it against your database — your application owns execution.
-
-For iterative work — asking questions and continuing to enrich in the same session — Studio (step 3) is the better surface.
+In both cases AskDB returns validated SQL. It does **not** run it against your database — your application owns execution.
 
 ## 5. From here
 

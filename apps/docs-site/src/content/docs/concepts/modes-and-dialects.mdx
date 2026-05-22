@@ -28,7 +28,13 @@ Switching engines is mostly a package swap. The full migration checklist lives i
 
 ## Modes
 
-Modes fix trust boundaries for headless pipelines: what may enter model context beyond the schema artifact and the natural-language question. The full spec is versioned alongside the code — see the [modes contract on GitHub](https://github.com/Ygilany/AskDB/blob/main/docs/contracts/modes-v1.md).
+A **mode** declares the trust boundary AskDB enforces for a run: what's allowed to enter model context beyond the schema artifact and the natural-language question. Today there are two values.
+
+Set the mode three ways, highest precedence first:
+
+- `--mode <id>` on any CLI command.
+- `modes.askdbMode` in `askdb.config.ts` (env binding: `ASKDB_MODE`).
+- The built-in default (`schema_only`).
 
 ### `schema_only` (default)
 
@@ -36,21 +42,21 @@ AskDB grounds generation in the schema artifact and returns SQL only. The model 
 
 ```bash
 askdb ask \
-  --schema my-app.schema \
   --question "How many orders this week?" \
   --mode schema_only
 ```
 
 ### `bounded_results`
 
-Reserved for workflows where a host application explicitly summarizes bounded tabular results back through the model. Current AskDB surfaces still return SQL only — the bounded-results pipeline is a forward-looking extension point that hosts can wire when their trust model permits.
+Today, `bounded_results` produces the exact same SQL as `schema_only` — the NL-to-SQL pipeline does not differ, and AskDB surfaces still return SQL only. The mode value is reserved for a forward-looking extension: a post-execute step where a host application may summarize bounded tabular results back through the model. Until that branch ships, picking `bounded_results` over `schema_only` changes nothing observable.
 
 ```bash
 askdb ask \
-  --schema my-app.schema \
   --question "Show recent signups" \
   --mode bounded_results
 ```
+
+The versioned spec — including the contracts an eventual bounded-results implementation must honor — lives in [`docs/contracts/modes-v1.md` on GitHub](https://github.com/Ygilany/AskDB/blob/main/docs/contracts/modes-v1.md).
 
 ## Sensitive fields
 

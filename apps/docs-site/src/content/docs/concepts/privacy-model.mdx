@@ -3,6 +3,8 @@ title: "Privacy model"
 description: "What AskDB sends to the model, what stays in your stack, and why your data never leaves your infrastructure."
 ---
 
+import PrivacyFlowDiagram from "../../../components/PrivacyFlowDiagram.astro";
+
 <p class="doc-eyebrow">What crosses the boundary</p>
 
 <p class="doc-lede">AskDB sends the question and your schema artifact to the model. Nothing else. Your rows, your credentials, your query results, your user identifiers — none of them cross that boundary, by design.</p>
@@ -30,15 +32,7 @@ The model never receives:
 
 Requests go straight from your environment to the model provider you wired in. AskDB does not proxy, log, or cache the traffic:
 
-```
-your app  ──►  @askdb/core  ──►  your model provider
-                    │
-                    ▼
-            validated SQL
-                    │
-                    ▼
-            your DB connection
-```
+<PrivacyFlowDiagram />
 
 The model provider sees what's in the prompt and bills you for the tokens. AskDB is in your dependency tree, not on the wire.
 

@@ -48,7 +48,7 @@ When your database schema changes (new columns, renamed tables, added relationsh
 npx askdb introspect
 ```
 
-With `DATABASE_URL` in `.env` and `outputDir` / `schemaId` in `askdb.config.ts`, no flags are needed.
+With your introspection provider and URL configured in `askdb.config.ts` (and matching env vars in `.env`), no flags are needed. See the [Configuration reference](/reference/config/) for per-engine details.
 
 Stable IDs mean a renamed column doesn't break the enrichment that references it — the ID stays the same and the markdown follows.
 
