@@ -7,7 +7,7 @@ import type {
 } from "./constants.js";
 
 /**
- * Authoring-time AskDB configuration: nested groups (`ai`, `database`, `introspection`, `rag`, …)
+ * Authoring-time AskDB configuration: nested groups (`ai`, `introspection`, `rag`, …)
  * passed to {@link defineConfig} in `askdb.config.*`, then flattened to canonical env keys for the runtime snapshot.
  *
  * Use with TypeScript's `satisfies` operator to validate the object literal without widening it, e.g.
@@ -139,8 +139,8 @@ export type PgvectorStoreConfig = {
 export type IntrospectionProviderConfigs = {
   postgres?: {
     /**
-     * When omitted or blank, live introspection reuses the resolved `DATABASE_URL` from the
-     * `database` section. Set this only for an introspection-only URL.
+     * Postgres connection URL for live introspection (maps to `ASKDB_INTROSPECT_POSTGRES_URL`).
+     * When omitted, pass `--url` to `askdb introspect` or set `ASKDB_INTROSPECT_POSTGRES_URL` in env.
      */
     databaseUrl?: string;
   };
@@ -155,9 +155,7 @@ export type IntrospectionProviderConfigs = {
   mysql?: {
     /**
      * MySQL connection URL (e.g. `mysql://user:pass@host:port/database`).
-     * When omitted, `flattenAskDbConfig` falls back to the top-level `DATABASE_URL`
-     * resolved from the `database` section / env, since the `database` block remains
-     * Postgres-only today.
+     * When omitted, pass `--url` to `askdb introspect` or set `ASKDB_INTROSPECT_MYSQL_URL` in env.
      */
     databaseUrl?: string;
   };
@@ -172,8 +170,8 @@ export type IntrospectionProviderConfigs = {
   sqlserver?: {
     /**
      * Microsoft SQL Server connection URL (mssql URI form or the equivalent
-     * `Server=...;` connection string). When omitted, falls back to
-     * `DATABASE_URL`, same as the MySQL branch.
+     * `Server=...;` connection string). When omitted, pass `--url` to `askdb introspect`
+     * or set `ASKDB_INTROSPECT_SQLSERVER_URL` in env.
      */
     databaseUrl?: string;
   };
@@ -250,24 +248,12 @@ export type AskDbIntrospectionConfig =
  * Root shape for `export default defineConfig({ ... })` in `askdb.config.*`.
  *
  * - **`ai`**: LLM provider discriminated union — selecting `provider` determines which `providerConfig` branch is required.
- * - **`database`**: primary app DB (Postgres today); supplies default `DATABASE_URL`.
- * - **`introspection`**: target engine for `askdb introspect` (postgres / prisma / mysql / sqlite / sqlserver) — selecting `provider` determines which `providerConfig` branch is valid.
+ * - **`introspection`**: target engine for `askdb introspect` (postgres / prisma / mysql / sqlite / sqlserver) — selecting `provider` determines which `providerConfig` branch is valid. Each branch holds the connection URL/path for that engine.
  * - **`rag`**: embedder + store branches flattened to `ASKDB_RAG_*` / `ASKDB_PGVECTOR_URL` / file paths.
  * - **`logging` | `modes` | `host`**: optional operational defaults.
  */
 export type AskDbConfig = {
   ai: AskDbAiConfig;
-
-  database: {
-    provider: "postgres";
-    providerConfig: {
-      /**
-       * When unset/blank, `flattenAskDbConfig` uses the package default local Postgres URL.
-       * Use `env("DATABASE_URL")` (or another key) in `askdb.config.*` to supply a URL from `.env`.
-       */
-      postgres: { databaseUrl?: string };
-    };
-  };
 
   introspection: AskDbIntrospectionConfig;
 
@@ -308,9 +294,14 @@ export type AskDbConfig = {
   /** Deterministic NL→SQL for tests / local dev (maps to `ASKDB_MOCK_SQL`). */
   dev?: { mockSql?: string };
 
-  /** Studio browser server listen defaults. */
+  /** Studio browser server listen and query-execution defaults. */
   studio?: {
     listen?: { host?: string; port?: number };
+    /** Query execution against a live database from the Studio playground. */
+    execute?: {
+      /** Connection URL used by `POST /api/execute` (maps to `ASKDB_STUDIO_DATABASE_URL`). */
+      databaseUrl?: string;
+    };
   };
 
   /** HTTP API server defaults (first-party `apps/http-api`). */

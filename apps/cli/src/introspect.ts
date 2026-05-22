@@ -105,9 +105,8 @@ async function runIntrospectCommand(argv: readonly string[]): Promise<number> {
   const engine = resolveEngine(opts.engine ?? rt.introspection.provider);
   const envMap = rt.ai.aiEnv;
   if (engine === "postgres" && !opts.url && !opts.fromExport) {
-    const dbUrl = envMap.DATABASE_URL?.trim();
-    if (dbUrl) {
-      opts.url = dbUrl;
+    if (rt.introspection.postgresDatabaseUrl) {
+      opts.url = rt.introspection.postgresDatabaseUrl;
     } else {
       throw new Error("Provide either --url <postgres-url> or --from-export <bundle-dir>.");
     }
@@ -467,8 +466,8 @@ function printHelp(): void {
       "  askdb introspect templates --engine postgres",
       "",
       "Defaults (after askdb.config bootstrap):",
-      "  DATABASE_URL          From database.postgres (and introspection override if set).",
-      "  ASKDB_INTROSPECT_OUT  From introspection.outputDir (default ./askdb/) when you omit --out, --print, and --diff.",
+      "  ASKDB_INTROSPECT_POSTGRES_URL  From introspection.providerConfig.postgres.databaseUrl.",
+      "  ASKDB_INTROSPECT_OUT           From introspection.outputDir (default ./askdb/) when you omit --out, --print, and --diff.",
       "  --prisma-schema       From introspection.providerConfig.prisma.schemaPath when set; otherwise",
       "                        prisma/schema.prisma or schema.prisma is auto-discovered in the project root.",
       "",

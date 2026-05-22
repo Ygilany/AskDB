@@ -33,10 +33,9 @@ function minimalConfig(overrides: Partial<AskDbConfig> = {}): AskDbConfig {
         openai: { apiKey: "k", model: "gpt-4o-mini" },
       },
     },
-    database: { provider: "postgres", providerConfig: { postgres: { databaseUrl: "postgres://localhost/db" } } },
     introspection: {
       provider: "postgres",
-      providerConfig: { postgres: {} },
+      providerConfig: { postgres: { databaseUrl: "postgres://localhost/db" } },
       outputDir: "./askdb/",
     },
     rag: {
@@ -93,7 +92,7 @@ describe("flattenAskDbConfig", () => {
   it("maps openai + mock rag + memory store", () => {
     const flat = flattenAskDbConfig(minimalConfig());
     expect(flat.OPENAI_API_KEY).toBe("k");
-    expect(flat.DATABASE_URL).toBe("postgres://localhost/db");
+    expect(flat.ASKDB_INTROSPECT_POSTGRES_URL).toBe("postgres://localhost/db");
     expect(flat.ASKDB_RAG_EMBEDDER).toBe("mock");
     expect(flat.ASKDB_INTROSPECT_OUT).toBe("./askdb/");
   });
@@ -108,7 +107,7 @@ describe("flattenAskDbConfig", () => {
     ).toThrow(/invalid modes\.askdbMode/);
   });
 
-  it("overrides DATABASE_URL when introspection postgres sets databaseUrl", () => {
+  it("flattens postgres introspection databaseUrl to ASKDB_INTROSPECT_POSTGRES_URL", () => {
     const flat = flattenAskDbConfig(
       minimalConfig({
         introspection: {
@@ -118,7 +117,7 @@ describe("flattenAskDbConfig", () => {
         },
       }),
     );
-    expect(flat.DATABASE_URL).toBe("postgres://introspect/db");
+    expect(flat.ASKDB_INTROSPECT_POSTGRES_URL).toBe("postgres://introspect/db");
   });
 
   it("flattens MySQL introspection branch to ASKDB_INTROSPECT_MYSQL_URL", () => {
@@ -132,8 +131,7 @@ describe("flattenAskDbConfig", () => {
       }),
     );
     expect(flat.ASKDB_INTROSPECT_MYSQL_URL).toBe("mysql://app:pw@localhost/shop");
-    // Keep the postgres-app DATABASE_URL pinned so the rest of the stack still works.
-    expect(flat.DATABASE_URL).toBe("postgres://localhost/db");
+    expect(flat.DATABASE_URL).toBeUndefined();
   });
 
   it("flattens SQLite introspection branch to ASKDB_INTROSPECT_SQLITE_FILE", () => {
@@ -175,13 +173,18 @@ describe("flattenAskDbConfig", () => {
     expect(flat.ASKDB_MODEL).toBe("gpt-4o-mini");
   });
 
-  it("defaults DATABASE_URL when postgres URL omitted", () => {
+  it("omits ASKDB_INTROSPECT_POSTGRES_URL when postgres databaseUrl is not set", () => {
     const flat = flattenAskDbConfig(
       minimalConfig({
-        database: { provider: "postgres", providerConfig: { postgres: {} } },
+        introspection: {
+          provider: "postgres",
+          providerConfig: { postgres: {} },
+          outputDir: "./askdb/",
+        },
       }),
     );
-    expect(flat.DATABASE_URL).toBe("postgres://postgres:postgres@127.0.0.1:5432/postgres");
+    expect(flat.ASKDB_INTROSPECT_POSTGRES_URL).toBeUndefined();
+    expect(flat.DATABASE_URL).toBeUndefined();
   });
 
   it("defaults file-store base path when basePath omitted", () => {
@@ -214,8 +217,7 @@ describe("loadAskDbConfigProjectionSync", () => {
       `import { defineConfig, env, type AskDbConfig } from "@askdb/config";
        export default defineConfig({
          ai: { provider: "openai", providerConfig: { openai: { apiKey: env("MY_KEY"), model: "gpt-4o-mini" } } },
-         database: { provider: "postgres", providerConfig: { postgres: { databaseUrl: env("MY_DB") } } },
-         introspection: { provider: "postgres", providerConfig: { postgres: {} }, outputDir: "./out/" },
+         introspection: { provider: "postgres", providerConfig: { postgres: { databaseUrl: env("MY_DB") } }, outputDir: "./out/" },
          rag: { embedder: "mock", embedderConfig: {}, store: "memory", storeConfig: { memory: {} } },
        } satisfies AskDbConfig);
     `,
@@ -225,7 +227,7 @@ describe("loadAskDbConfigProjectionSync", () => {
     process.env.MY_DB = "postgres://x/y";
     const { projection } = loadAskDbConfigProjectionSync(dir);
     expect(projection?.entries.OPENAI_API_KEY).toBe("secret");
-    expect(projection?.entries.DATABASE_URL).toBe("postgres://x/y");
+    expect(projection?.entries.ASKDB_INTROSPECT_POSTGRES_URL).toBe("postgres://x/y");
     expect(projection?.entries.ASKDB_INTROSPECT_OUT).toBe("./out/");
     delete process.env.MY_KEY;
     delete process.env.MY_DB;
@@ -240,6 +242,32 @@ describe("getAskDbRuntimeConfig — introspection branches", () => {
     setAskDbRuntimeForTests({ structured, flat });
   }
 
+  it("resolves postgresDatabaseUrl from the structured branch first", () => {
+    installRuntime(
+      {
+        provider: "postgres",
+        providerConfig: { postgres: { databaseUrl: "postgres://structured/host" } },
+        outputDir: "./askdb/",
+      },
+      { ASKDB_INTROSPECT_POSTGRES_URL: "postgres://flat/host" },
+    );
+    const rt = getAskDbRuntimeConfig();
+    expect(rt.introspection.provider).toBe("postgres");
+    expect(rt.introspection.postgresDatabaseUrl).toBe("postgres://structured/host");
+    expect(rt.introspection.mysqlDatabaseUrl).toBeUndefined();
+    expect(rt.introspection.sqliteFile).toBeUndefined();
+    expect(rt.introspection.sqlserverDatabaseUrl).toBeUndefined();
+  });
+
+  it("falls back to ASKDB_INTROSPECT_POSTGRES_URL when the structured field is blank", () => {
+    installRuntime(
+      { provider: "postgres", providerConfig: { postgres: {} }, outputDir: "./askdb/" },
+      { ASKDB_INTROSPECT_POSTGRES_URL: "postgres://flat/host" },
+    );
+    const rt = getAskDbRuntimeConfig();
+    expect(rt.introspection.postgresDatabaseUrl).toBe("postgres://flat/host");
+  });
+
   it("resolves mysqlDatabaseUrl from the structured branch first", () => {
     installRuntime(
       {
@@ -247,10 +275,11 @@ describe("getAskDbRuntimeConfig — introspection branches", () => {
         providerConfig: { mysql: { databaseUrl: "mysql://structured/host" } },
         outputDir: "./askdb/",
       },
-      { ASKDB_INTROSPECT_MYSQL_URL: "mysql://flat/host", DATABASE_URL: "postgres://fallback/db" },
+      { ASKDB_INTROSPECT_MYSQL_URL: "mysql://flat/host" },
     );
     const rt = getAskDbRuntimeConfig();
     expect(rt.introspection.provider).toBe("mysql");
+    expect(rt.introspection.postgresDatabaseUrl).toBeUndefined();
     expect(rt.introspection.mysqlDatabaseUrl).toBe("mysql://structured/host");
     expect(rt.introspection.sqliteFile).toBeUndefined();
     expect(rt.introspection.sqlserverDatabaseUrl).toBeUndefined();
@@ -259,38 +288,38 @@ describe("getAskDbRuntimeConfig — introspection branches", () => {
   it("falls back to ASKDB_INTROSPECT_MYSQL_URL when the structured field is blank", () => {
     installRuntime(
       { provider: "mysql", providerConfig: { mysql: {} }, outputDir: "./askdb/" },
-      { ASKDB_INTROSPECT_MYSQL_URL: "mysql://flat/host", DATABASE_URL: "postgres://fallback/db" },
+      { ASKDB_INTROSPECT_MYSQL_URL: "mysql://flat/host" },
     );
     const rt = getAskDbRuntimeConfig();
     expect(rt.introspection.mysqlDatabaseUrl).toBe("mysql://flat/host");
   });
 
-  it("falls back to DATABASE_URL for MySQL when the structured + env-specific keys are missing", () => {
+  it("returns undefined mysqlDatabaseUrl when neither structured nor env key is set", () => {
     installRuntime(
       { provider: "mysql", providerConfig: { mysql: {} }, outputDir: "./askdb/" },
-      { DATABASE_URL: "mysql://fallback/db" },
+      {},
     );
     const rt = getAskDbRuntimeConfig();
-    expect(rt.introspection.mysqlDatabaseUrl).toBe("mysql://fallback/db");
+    expect(rt.introspection.mysqlDatabaseUrl).toBeUndefined();
   });
 
-  it("resolves sqliteFile but does NOT fall back to DATABASE_URL (paths and URLs aren't interchangeable)", () => {
+  it("resolves sqliteFile from the structured branch", () => {
     installRuntime(
       {
         provider: "sqlite",
         providerConfig: { sqlite: { file: "./data/app.db" } },
         outputDir: "./askdb/",
       },
-      { DATABASE_URL: "postgres://should-not-leak/db" },
+      {},
     );
     const rt = getAskDbRuntimeConfig();
     expect(rt.introspection.sqliteFile).toBe("./data/app.db");
   });
 
-  it("returns undefined sqliteFile when neither structured nor env key is set (no DATABASE_URL fallback)", () => {
+  it("returns undefined sqliteFile when neither structured nor env key is set", () => {
     installRuntime(
       { provider: "sqlite", providerConfig: { sqlite: {} }, outputDir: "./askdb/" },
-      { DATABASE_URL: "postgres://should-not-leak/db" },
+      {},
     );
     const rt = getAskDbRuntimeConfig();
     expect(rt.introspection.sqliteFile).toBeUndefined();
@@ -305,22 +334,40 @@ describe("getAskDbRuntimeConfig — introspection branches", () => {
     expect(rt.introspection.sqliteFile).toBe("/var/db/app.db");
   });
 
-  it("resolves sqlserverDatabaseUrl with DATABASE_URL fallback", () => {
+  it("resolves sqlserverDatabaseUrl from the structured branch", () => {
     installRuntime(
-      { provider: "sqlserver", providerConfig: { sqlserver: {} }, outputDir: "./askdb/" },
-      { DATABASE_URL: "Server=fallback;Database=app;" },
+      {
+        provider: "sqlserver",
+        providerConfig: { sqlserver: { databaseUrl: "Server=structured;Database=app;" } },
+        outputDir: "./askdb/",
+      },
+      {},
     );
     const rt = getAskDbRuntimeConfig();
-    expect(rt.introspection.sqlserverDatabaseUrl).toBe("Server=fallback;Database=app;");
+    expect(rt.introspection.sqlserverDatabaseUrl).toBe("Server=structured;Database=app;");
   });
 
-  it("leaves all per-engine fields undefined when provider is postgres", () => {
+  it("falls back to ASKDB_INTROSPECT_SQLSERVER_URL when the structured field is blank", () => {
     installRuntime(
-      { provider: "postgres", providerConfig: { postgres: {} }, outputDir: "./askdb/" },
-      { DATABASE_URL: "postgres://localhost/db", ASKDB_INTROSPECT_MYSQL_URL: "mysql://nope/db" },
+      { provider: "sqlserver", providerConfig: { sqlserver: {} }, outputDir: "./askdb/" },
+      { ASKDB_INTROSPECT_SQLSERVER_URL: "Server=flat;Database=app;" },
+    );
+    const rt = getAskDbRuntimeConfig();
+    expect(rt.introspection.sqlserverDatabaseUrl).toBe("Server=flat;Database=app;");
+  });
+
+  it("leaves non-active engine fields undefined", () => {
+    installRuntime(
+      {
+        provider: "postgres",
+        providerConfig: { postgres: { databaseUrl: "postgres://localhost/db" } },
+        outputDir: "./askdb/",
+      },
+      { ASKDB_INTROSPECT_MYSQL_URL: "mysql://nope/db" },
     );
     const rt = getAskDbRuntimeConfig();
     expect(rt.introspection.provider).toBe("postgres");
+    expect(rt.introspection.postgresDatabaseUrl).toBe("postgres://localhost/db");
     expect(rt.introspection.mysqlDatabaseUrl).toBeUndefined();
     expect(rt.introspection.sqliteFile).toBeUndefined();
     expect(rt.introspection.sqlserverDatabaseUrl).toBeUndefined();
@@ -353,8 +400,7 @@ describe("bootstrapAskDbEnv", () => {
       `import { defineConfig, env, type AskDbConfig } from "@askdb/config";
        export default defineConfig({
          ai: { provider: "openai", providerConfig: { openai: { apiKey: env("MY_AI"), model: "gpt-4o-mini" } } },
-         database: { provider: "postgres", providerConfig: { postgres: { databaseUrl: env("MY_DB") } } },
-         introspection: { provider: "postgres", providerConfig: { postgres: {} }, outputDir: "./askdb/" },
+         introspection: { provider: "postgres", providerConfig: { postgres: { databaseUrl: env("MY_DB") } }, outputDir: "./askdb/" },
          rag: { embedder: "mock", embedderConfig: {}, store: "memory", storeConfig: { memory: {} } },
        } satisfies AskDbConfig);
     `,
@@ -364,7 +410,7 @@ describe("bootstrapAskDbEnv", () => {
     bootstrapAskDbEnv({ cwd: dir });
     const rt = getAskDbRuntimeConfig();
     expect(rt.ai.aiEnv.OPENAI_API_KEY).toBe("dog");
-    expect(rt.ai.aiEnv.DATABASE_URL).toBe("postgres://localhost/db");
+    expect(rt.ai.aiEnv.ASKDB_INTROSPECT_POSTGRES_URL).toBe("postgres://localhost/db");
     delete process.env.MY_AI;
     delete process.env.MY_DB;
   });

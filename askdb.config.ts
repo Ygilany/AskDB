@@ -18,25 +18,14 @@ export default defineConfig({
     },
   },
 
-  database: {
-    // postgres (more dialects later)
+  introspection: {
+    // postgres | prisma | mysql | sqlite | sqlserver
     provider: "postgres",
     providerConfig: {
       postgres: {
-        // Postgres URL — set DATABASE_URL in `.env` (e.g. CI) or rely on flatten default when omitted here
+        // Postgres URL for `askdb introspect` — maps to ASKDB_INTROSPECT_POSTGRES_URL
         // Pagila fixture (docker compose -f fixtures/pagila/docker-compose.yml …): often port 5433
         databaseUrl: env("DATABASE_URL"),
-      },
-    },
-  },
-
-  introspection: {
-    // postgres | prisma — for prisma, add a prisma branch and e.g. env("MY_PRISMA_SCHEMA")
-    provider: "postgres",
-    providerConfig: {
-      postgres: {
-        // Omit databaseUrl here to reuse database.providerConfig.postgres.databaseUrl (see flattenAskDbConfig).
-        // Optional separate introspection URL: set a field here, e.g. databaseUrl: env("MY_INTROSPECT_DATABASE_URL")
       },
     },
     // Default Schema v2 output when you omit `askdb introspect --out` (maps to ASKDB_INTROSPECT_OUT)
@@ -75,6 +64,10 @@ export default defineConfig({
     listen: {
       host: env("ASKDB_STUDIO_HOST"),
       ...(env("ASKDB_STUDIO_PORT") ? { port: Number(env("ASKDB_STUDIO_PORT")) } : {}),
+    },
+    execute: {
+      // Connection URL for the Studio playground query runner (maps to ASKDB_STUDIO_DATABASE_URL)
+      databaseUrl: env("DATABASE_URL"),
     },
   },
   httpApi: {
