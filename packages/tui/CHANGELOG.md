@@ -1,5 +1,12 @@
 # @askdb/tui
 
+## 0.2.0-beta.10
+
+### Patch Changes
+
+- Updated dependencies [1eacf3f]
+  - @askdb/config@1.0.0-beta.6
+
 ## 0.2.0-beta.9
 
 ### Patch Changes
