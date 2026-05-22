@@ -11,8 +11,8 @@ description: "Scaffold config, introspect a database, enrich the schema, and ask
 
 - Node 20 or newer.
 - npm, pnpm, or yarn (examples use `npx`).
-- An API key from a model provider — OpenAI, Anthropic, Google, OpenRouter, or any OpenAI-compatible endpoint. See [Bring your own model](/guides/bring-your-own-model/).
-- A database AskDB can read — Postgres, MySQL, SQLite, or SQL Server — or a Prisma schema file (no live database required).
+- An API key from a model provider — OpenAI, Anthropic, Google, OpenRouter, or any AI-SDK compatible provider. See [Bring your own model](/guides/bring-your-own-model/).
+- A database AskDB can read — Postgres, MySQL, SQLite, or SQL Server — or even a Prisma schema file (no live database required).
 
 ## 1. Scaffold your config
 
@@ -23,7 +23,11 @@ npx askdb@latest init
 `npx` downloads and runs `askdb` on the fly — no separate install step needed. `askdb init` creates `askdb.config.ts` in your project root. The config file is TypeScript-checked and reads values from your environment using the `env()` helper — it loads from a `.env` file at your project root or from the system environment, whichever is set. You choose your own variable names and pass them to `env()`:
 
 ```ts
-apiKey: env("OPENAI_API_KEY"),   // or env("MY_KEY") — you pick the name
+{
+  ...
+  apiKey: env("OPENAI_API_KEY"),   // or env("MY_KEY") — you pick the name
+  ...
+}
 ```
 
 `askdb.config.ts` is checked in; `.env` is not.
@@ -48,17 +52,18 @@ Once this is configured, most CLI flags below are optional.
 
 ## 2. Introspect your database
 
-Introspection produces an **AskDB schema artifact** — a directory on disk that captures your tables, columns, types, and relationships. That artifact is the only thing the model ever sees about your database.
+Introspection produces an **AskDB schema artifact** — a directory on disk that captures your tables, columns, types, and relationships. Those artifacts' content are the only thing the model ever sees about your database.
 
 ### From a live database
 
-With `DATABASE_URL` in `.env` and your database connection configured in `askdb.config.ts`, one command is enough. `outputDir` is optional and defaults to `./askdb/` — see the [Configuration reference](/reference/config/) for all options, their defaults, and which are required:
+With your database connection configured in `askdb.config.ts` (`db.provider` and `db.providerConfig`), you can run the following command to introspect your database. 
 
 ```bash
 npx askdb introspect
 ```
+> You can also set the `outputDir` in `askdb.config.ts` to change the default output directory. See the [Configuration reference](/reference/config/) for all options, and their defaults.
 
-Pass `--url` to target a different database for this run:
+Since the database, is only for introspection, you may also choose to pass the database url as a flag. Pass `--url` to target a different database for this run:
 
 ```bash
 npx askdb introspect --url "$OTHER_DATABASE_URL"
