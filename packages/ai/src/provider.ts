@@ -230,41 +230,6 @@ export function resolveAskDbEmbeddingConfig(
   };
 }
 
-/** Build a {@link LanguageModel} from an already-resolved config. */
-export async function createAskDbLanguageModel(
-  config: AskDbAiConfig,
-): Promise<LanguageModel> {
-  if (config.provider === "azure") {
-    // Lazy-loaded so `@ai-sdk/azure` is only required when actually used.
-    const { createAzure } =
-      await importProvider<typeof import("@ai-sdk/azure")>("@ai-sdk/azure", "azure");
-    const azure = createAzure({
-      apiKey: config.apiKey,
-      ...(config.resourceName ? { resourceName: config.resourceName } : {}),
-      ...(config.baseURL ? { baseURL: config.baseURL } : {}),
-      ...(config.apiVersion ? { apiVersion: config.apiVersion } : {}),
-    });
-    return azure(config.model);
-  }
-  if (config.provider === "google") {
-    // Lazy-loaded so `@ai-sdk/google` is only required when actually used.
-    const { createGoogleGenerativeAI } =
-      await importProvider<typeof import("@ai-sdk/google")>("@ai-sdk/google", "google");
-    const google = createGoogleGenerativeAI({
-      apiKey: config.apiKey,
-      ...(config.baseURL ? { baseURL: config.baseURL } : {}),
-    });
-    return google(config.model);
-  }
-  const { createOpenAI } =
-    await importProvider<typeof import("@ai-sdk/openai")>("@ai-sdk/openai", "openai");
-  const openai = createOpenAI({
-    apiKey: config.apiKey,
-    ...(config.baseURL ? { baseURL: config.baseURL } : {}),
-  });
-  return openai(config.model);
-}
-
 export type CreateAskDbEmbeddingModelOptions = {
   /** Optional dimensionality override for providers that support it. */
   dimensions?: number;
@@ -272,82 +237,70 @@ export type CreateAskDbEmbeddingModelOptions = {
   user?: string;
 };
 
-/** Build an AI SDK text embedding model from an already-resolved config. */
-export async function createAskDbEmbeddingModel(
-  config: AskDbAiConfig,
-  options: CreateAskDbEmbeddingModelOptions = {},
-): Promise<EmbeddingModel<string>> {
-  if (config.provider === "azure") {
-    const { createAzure } =
-      await importProvider<typeof import("@ai-sdk/azure")>("@ai-sdk/azure", "azure");
-    const azure = createAzure({
-      apiKey: config.apiKey,
-      ...(config.resourceName ? { resourceName: config.resourceName } : {}),
-      ...(config.baseURL ? { baseURL: config.baseURL } : {}),
-      ...(config.apiVersion ? { apiVersion: config.apiVersion } : {}),
-    });
-    return azure.embedding(config.model, {
-      dimensions: options.dimensions,
-      user: options.user,
-    });
-  }
-  if (config.provider === "google") {
-    const { createGoogleGenerativeAI } =
-      await importProvider<typeof import("@ai-sdk/google")>("@ai-sdk/google", "google");
-    const google = createGoogleGenerativeAI({
-      apiKey: config.apiKey,
-      ...(config.baseURL ? { baseURL: config.baseURL } : {}),
-    });
-    return google.textEmbeddingModel(config.model);
-  }
-  const { createOpenAI } =
-    await importProvider<typeof import("@ai-sdk/openai")>("@ai-sdk/openai", "openai");
-  const openai = createOpenAI({
-    apiKey: config.apiKey,
-    ...(config.baseURL ? { baseURL: config.baseURL } : {}),
-  });
-  return openai.embedding(config.model, {
-    dimensions: options.dimensions,
-    user: options.user,
-  });
-}
+export type AskDbAiProviderAdapter = {
+  provider: AskDbAiProvider;
+  createLanguageModel(config: AskDbAiConfig): Promise<LanguageModel> | LanguageModel;
+  createEmbeddingModel(
+    config: AskDbAiConfig,
+    options?: CreateAskDbEmbeddingModelOptions,
+  ): Promise<EmbeddingModel<string>> | EmbeddingModel<string>;
+};
 
-/**
- * Convenience wrapper: resolve config from env, then construct a model.
- * Returns `undefined` when no API key is configured.
- *
- * **Important:** Only `@askdb/config` reads `process.env` (during dotenv load and while evaluating
- * `askdb.config.*`). Pass `getAskDbRuntimeConfig().ai.aiEnv` from `@askdb/config` after
- * `bootstrapAskDbEnv()`, or an explicit plain object in tests.
- *
- * @param env - String map in the shape of canonical AskDB env keys (from the runtime snapshot).
- * @param options - Optional per-app overrides (e.g. a per-app model env var).
- */
-export async function createAskDbLanguageModelFromEnv(
-  env: AskDbAiEnv,
-  options: ResolveAskDbAiConfigOptions = {},
-): Promise<LanguageModel | undefined> {
-  const config = resolveAskDbAiConfig(env, options);
-  if (!config) return undefined;
-  return createAskDbLanguageModel(config);
-}
+export type AskDbAiProviderAdapters =
+  | readonly AskDbAiProviderAdapter[]
+  | Partial<Record<AskDbAiProvider, AskDbAiProviderAdapter>>;
 
-/** Resolve embedding config from env, then construct an AI SDK embedding model.
- *
- * **Important:** Only `@askdb/config` reads `process.env` (during dotenv load and while evaluating
- * `askdb.config.*`). Pass `getAskDbRuntimeConfig().ai.aiEnv` after `bootstrapAskDbEnv()`, or
- * an explicit plain object in tests.
- *
- * @param env - String map in the shape of canonical AskDB env keys (from the runtime snapshot).
- * @param options - Optional per-app overrides plus embedding-specific model/dimensions settings.
- */
-export async function createAskDbEmbeddingModelFromEnv(
-  env: AskDbAiEnv,
-  options: ResolveAskDbEmbeddingConfigOptions & CreateAskDbEmbeddingModelOptions = {},
-): Promise<EmbeddingModel<string> | undefined> {
-  const config = resolveAskDbEmbeddingConfig(env, options);
-  if (!config) return undefined;
-  return createAskDbEmbeddingModel(config, options);
+export type AskDbAiRegistry = {
+  hasProvider(provider: AskDbAiProvider): boolean;
+  createLanguageModel(config: AskDbAiConfig): Promise<LanguageModel>;
+  createEmbeddingModel(
+    config: AskDbAiConfig,
+    options?: CreateAskDbEmbeddingModelOptions,
+  ): Promise<EmbeddingModel<string>>;
+  createLanguageModelFromEnv(
+    env: AskDbAiEnv,
+    options?: ResolveAskDbAiConfigOptions,
+  ): Promise<LanguageModel | undefined>;
+  createEmbeddingModelFromEnv(
+    env: AskDbAiEnv,
+    options?: ResolveAskDbEmbeddingConfigOptions & CreateAskDbEmbeddingModelOptions,
+  ): Promise<EmbeddingModel<string> | undefined>;
+};
+
+export function createAskDbAiRegistry(
+  adapters: AskDbAiProviderAdapters,
+): AskDbAiRegistry {
+  const byProvider = normalizeAdapters(adapters);
+
+  function adapterFor(provider: AskDbAiProvider): AskDbAiProviderAdapter {
+    const adapter = byProvider.get(provider);
+    if (!adapter) {
+      throw new Error(askDbAiProviderMissingMessage(provider));
+    }
+    return adapter;
+  }
+
+  return {
+    hasProvider(provider) {
+      return byProvider.has(provider);
+    },
+    async createLanguageModel(config) {
+      return adapterFor(config.provider).createLanguageModel(config);
+    },
+    async createEmbeddingModel(config, options = {}) {
+      return adapterFor(config.provider).createEmbeddingModel(config, options);
+    },
+    async createLanguageModelFromEnv(env, options = {}) {
+      const config = resolveAskDbAiConfig(env, options);
+      if (!config) return undefined;
+      return adapterFor(config.provider).createLanguageModel(config);
+    },
+    async createEmbeddingModelFromEnv(env, options = {}) {
+      const config = resolveAskDbEmbeddingConfig(env, options);
+      if (!config) return undefined;
+      return adapterFor(config.provider).createEmbeddingModel(config, options);
+    },
+  };
 }
 
 /**
@@ -367,22 +320,33 @@ export function askDbAiKeyMissingMessage(context: string): string {
   );
 }
 
-async function importProvider<T>(packageName: string, provider: AskDbAiProvider): Promise<T> {
-  try {
-    return (await import(packageName)) as T;
-  } catch (error) {
-    if (isModuleNotFoundFor(error, packageName)) {
-      throw new Error(
-        `Provider "${provider}" requires ${packageName}. Install it with: npm install ${packageName}`,
-        { cause: error },
-      );
-    }
-    throw error;
-  }
+export function askDbAiProviderMissingMessage(provider: AskDbAiProvider): string {
+  return (
+    `AI provider "${provider}" is not registered. ` +
+    `Install @askdb/ai-${provider} and pass its provider adapter to createAskDbAiRegistry().`
+  );
 }
 
-function isModuleNotFoundFor(error: unknown, packageName: string): boolean {
-  if (!(error instanceof Error)) return false;
-  const maybeCode = (error as { code?: unknown }).code;
-  return maybeCode === "ERR_MODULE_NOT_FOUND" && error.message.includes(packageName);
+function normalizeAdapters(
+  adapters: AskDbAiProviderAdapters,
+): Map<AskDbAiProvider, AskDbAiProviderAdapter> {
+  const entries = Array.isArray(adapters)
+    ? adapters.map((adapter) => [adapter.provider, adapter] as const)
+    : Object.entries(adapters).filter(isAdapterEntry);
+  const byProvider = new Map<AskDbAiProvider, AskDbAiProviderAdapter>();
+  for (const [provider, adapter] of entries) {
+    if (adapter.provider !== provider) {
+      throw new Error(
+        `AI provider adapter mismatch: registry key "${provider}" points to adapter "${adapter.provider}".`,
+      );
+    }
+    byProvider.set(provider, adapter);
+  }
+  return byProvider;
+}
+
+function isAdapterEntry(
+  entry: [string, AskDbAiProviderAdapter | undefined],
+): entry is [AskDbAiProvider, AskDbAiProviderAdapter] {
+  return entry[1] !== undefined;
 }

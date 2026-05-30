@@ -2,9 +2,12 @@
 import { bootstrapAskDbEnv, getAskDbRuntimeConfig } from "@askdb/config";
 import {
   askDbAiKeyMissingMessage,
-  createAskDbLanguageModelFromEnv,
+  createAskDbAiRegistry,
   resolveAskDbAiConfig,
 } from "@askdb/ai";
+import { azureProvider } from "@askdb/ai-azure";
+import { googleProvider } from "@askdb/ai-google";
+import { openaiProvider } from "@askdb/ai-openai";
 import { randomUUID } from "node:crypto";
 import {
   AskDbError,
@@ -29,6 +32,8 @@ import {
 import { Command } from "commander";
 import { runInitCli } from "./init.js";
 import { runIntrospectCli } from "./introspect.js";
+
+const askDbAi = createAskDbAiRegistry([openaiProvider, azureProvider, googleProvider]);
 
 // `askdb init` writes templates and should not require a valid askdb.config.
 if (process.argv[2] !== "init") {
@@ -359,7 +364,7 @@ program
         const model: AskModel = mockSql
           ? // The model won't be used when `deps.generateText` is overridden.
             (undefined as unknown as AskModel)
-          : ((await createAskDbLanguageModelFromEnv(runtime.ai.aiEnv)) as AskModel);
+          : ((await askDbAi.createLanguageModelFromEnv(runtime.ai.aiEnv)) as AskModel);
 
         const omitSensitiveFromPrompt =
           Boolean(opts.omitSensitiveFromPrompt) || runtime.modes.omitSensitiveFromPrompt;

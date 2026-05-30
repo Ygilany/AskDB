@@ -7,9 +7,12 @@ import { fileURLToPath } from "node:url";
 import { getAskDbRuntimeConfig } from "@askdb/config";
 import {
   askDbAiKeyMissingMessage,
-  createAskDbLanguageModelFromEnv,
+  createAskDbAiRegistry,
   resolveAskDbAiConfig,
 } from "@askdb/ai";
+import { azureProvider } from "@askdb/ai-azure";
+import { googleProvider } from "@askdb/ai-google";
+import { openaiProvider } from "@askdb/ai-openai";
 import {
   AskDbError,
   AskDbLogEvent,
@@ -28,6 +31,8 @@ import {
   parseAskDbModeV1,
 } from "@askdb/core";
 import type { AskHttpErrorResponse, AskHttpRequest, AskHttpSuccessResponse } from "./types.js";
+
+const askDbAi = createAskDbAiRegistry([openaiProvider, azureProvider, googleProvider]);
 
 export type AskDbHttpServerOptions = {
   /** Default: 3000 */
@@ -295,7 +300,7 @@ export function createAskDbHttpServer(options: AskDbHttpServerOptions = {}) {
       type AskModel = Parameters<typeof ask>[0]["model"];
       const model: AskModel = mockSql
         ? (undefined as unknown as AskModel)
-        : ((await createAskDbLanguageModelFromEnv(rt.ai.aiEnv)) as AskModel);
+        : ((await askDbAi.createLanguageModelFromEnv(rt.ai.aiEnv)) as AskModel);
 
       const schemaProvider =
         "provider" in schema && typeof schema.provider === "string"

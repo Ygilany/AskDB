@@ -66,8 +66,8 @@ import { getAskDbRuntimeConfig } from "@askdb/config";
 const config = getAskDbRuntimeConfig();
 const apiKey = opts.apiKey ?? config.rag.embedder.apiKey;
 const level = config.logging.level;
-// For @askdb/ai functions that accept an env-map argument:
-const model = await createAskDbLanguageModelFromEnv(config.ai.aiEnv, { ... });
+// For @askdb/ai registry methods that accept an env-map argument:
+const model = await aiRegistry.createLanguageModelFromEnv(config.ai.aiEnv, { ... });
 ```
 
 **Rules:**

@@ -1,6 +1,9 @@
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { createAskDbLanguageModelFromEnv } from "@askdb/ai";
+import { createAskDbAiRegistry } from "@askdb/ai";
+import { azureProvider } from "@askdb/ai-azure";
+import { googleProvider } from "@askdb/ai-google";
+import { openaiProvider } from "@askdb/ai-openai";
 import { suggestEnrichment } from "@askdb/core";
 import { DEFAULT_INTROSPECT_OUTPUT_DIR, getAskDbRuntimeConfig } from "@askdb/config";
 import { render } from "ink";
@@ -8,6 +11,8 @@ import { createElement } from "react";
 import { App } from "./ui/App.js";
 import { bundleSchemaDirectory, loadWorkspace } from "@askdb/enrich";
 import type { SuggestEnrichmentForTui } from "@askdb/enrich";
+
+const askDbAi = createAskDbAiRegistry([openaiProvider, azureProvider, googleProvider]);
 
 type CliOptions = {
   schema?: string;
@@ -157,7 +162,7 @@ function formatError(error: unknown): string {
 
 async function buildSuggester(): Promise<SuggestEnrichmentForTui | undefined> {
   const runtimeConfig = getAskDbRuntimeConfig();
-  const model = await createAskDbLanguageModelFromEnv(runtimeConfig.ai.aiEnv);
+  const model = await askDbAi.createLanguageModelFromEnv(runtimeConfig.ai.aiEnv);
   if (!model) return undefined;
   return (target, context) => suggestEnrichment(target, context, model);
 }

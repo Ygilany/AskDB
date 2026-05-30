@@ -30,9 +30,10 @@ npm install @askdb/core
 
 ### `@askdb/ai`
 
-Optional AI provider helpers. Install this when you want AskDB to construct AI SDK language or
-embedding models from `askdb.config.*` / env maps. Skip it when you already construct your own AI
-SDK model and pass it to `ask()`.
+Optional AI provider registry and shared config helpers. Install this when you want AskDB to
+construct AI SDK language or embedding models from `askdb.config.*` / env maps. Pair it with a
+provider adapter package such as `@askdb/ai-openai`. Skip it when you already construct your own
+AI SDK model and pass it to `ask()`.
 
 ```bash
 npm install @askdb/ai
@@ -42,10 +43,19 @@ npm install @askdb/ai
 
 | Symbol | Purpose |
 | --- | --- |
-| `createAskDbLanguageModelFromEnv` | Build a language model from `getAskDbRuntimeConfig().ai.aiEnv`. |
-| `createAskDbEmbeddingModelFromEnv` | Build an embedding model from the same config with embedding-specific defaults. |
+| `createAskDbAiRegistry` | Register provider adapters and build language or embedding models. |
 | `resolveAskDbAiConfig` / `resolveAskDbEmbeddingConfig` | Resolve provider config without constructing a model. |
 | `askDbAiKeyMissingMessage` | Shared human-readable missing-key guidance. |
+
+### Provider adapters
+
+Provider adapters own concrete AI SDK provider dependencies:
+
+```bash
+npm install @askdb/ai-openai
+npm install @askdb/ai-azure
+npm install @askdb/ai-google
+```
 
 ### `@askdb/config`
 
@@ -201,7 +211,8 @@ See [the CLI reference](/reference/cli/).
 | Package | Depends on |
 | --- | --- |
 | `@askdb/postgres`, `@askdb/mysql`, `@askdb/sqlite`, `@askdb/sqlserver` | `@askdb/core` |
-| `@askdb/ai` | AI SDK core package (`ai`) + optional provider packages |
+| `@askdb/ai` | AI SDK core package (`ai`) |
+| `@askdb/ai-openai`, `@askdb/ai-azure`, `@askdb/ai-google` | `@askdb/ai` + the matching AI SDK provider package |
 | `@askdb/prisma` | `@askdb/introspect` |
 | `@askdb/enrich`, `@askdb/rag` | `@askdb/core` |
 | `@askdb/tui`, `@askdb/studio` | `@askdb/enrich` (+ `@askdb/rag` when used) |

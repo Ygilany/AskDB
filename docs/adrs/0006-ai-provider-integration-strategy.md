@@ -141,6 +141,7 @@ Cons:
 
 - Existing imports of provider helpers from `@askdb/core` must move to `@askdb/ai`.
 - A single `@askdb/ai` package can grow into a registry package if many providers are added.
+- Provider-specific dependencies are still declared by the shared helper package.
 
 ### Option F - `@askdb/ai` plus provider-specific packages now
 
@@ -156,16 +157,13 @@ Pros:
 Cons:
 
 - More packages to publish, document, and version.
-- Current provider factories are small enough that the maintenance overhead is not yet justified.
-- It is more modular than the current need requires; Option E is the preferred target until
-  provider-specific complexity proves otherwise.
 - First-party apps would need more explicit dependency wiring immediately.
 
 ## Decision
 
-Adopt Option E as the preferred target: extract provider construction to a new `@askdb/ai`
-package, keep `@askdb/core` BYO-model, and defer provider-specific `@askdb/ai-*` packages until
-the provider surface justifies them.
+Adopt Option F: extract provider construction out of `@askdb/core`, keep `@askdb/core`
+BYO-model, make `@askdb/ai` the shared registry/config package, and publish provider-specific
+packages for the concrete provider factories.
 
 ### `@askdb/core`
 
@@ -194,58 +192,33 @@ pre-1.0/beta, the import-path change is an acceptable breaking change when docum
 
 ### `@askdb/ai`
 
-Create a new workspace package for AskDB's config/env-to-model convenience helpers.
+Create a workspace package for AskDB's shared AI config and provider registry.
 
 `@askdb/ai` owns:
 
 - Provider/env resolution types such as `AskDbAiProvider`, `AskDbAiConfig`, and `AskDbAiEnv`.
 - `resolveAskDbAiConfig`.
 - `resolveAskDbEmbeddingConfig`.
-- `createAskDbLanguageModel`.
-- `createAskDbLanguageModelFromEnv`.
-- `createAskDbEmbeddingModel`.
-- `createAskDbEmbeddingModelFromEnv`.
+- Provider adapter types such as `AskDbAiProviderAdapter`.
+- `createAskDbAiRegistry`.
 - `askDbAiKeyMissingMessage`.
-
-The provider helper code must not be moved verbatim from core. All concrete provider imports,
-including OpenAI, must be lazy dynamic imports so optional peer dependencies are actually
-optional:
-
-```ts
-const { createOpenAI } = await import("@ai-sdk/openai");
-```
+- `askDbAiProviderMissingMessage`.
 
 Dependency model:
 
-- `ai`: hard dependency, because the package returns AI SDK model types.
-- `@ai-sdk/openai`: optional peer dependency.
-- `@ai-sdk/azure`: optional peer dependency.
-- `@ai-sdk/google`: optional peer dependency.
+- `ai`: hard dependency, because registry methods return AI SDK model types.
+- No concrete AI SDK provider packages.
 
-When the configured provider package is not installed, `@askdb/ai` should fail with an actionable
-message, for example:
+### Provider Packages
 
-```txt
-Provider "azure" requires @ai-sdk/azure. Install it with: npm install @ai-sdk/azure
-```
+Create provider-specific packages:
 
-No provider package is special-cased as a hard default. First-party apps can declare direct
-dependencies on the providers they support.
+- `@askdb/ai-openai` depends on `@ai-sdk/openai` and exports `openaiProvider`.
+- `@askdb/ai-azure` depends on `@ai-sdk/azure` and exports `azureProvider`.
+- `@askdb/ai-google` depends on `@ai-sdk/google` and exports `googleProvider`.
 
-### Deferred `@askdb/ai-*` Packages
-
-Do not publish provider-specific AskDB packages immediately.
-
-Reserve the namespace for a future split when one or more of these become true:
-
-- Provider-specific code grows beyond thin factory wrappers.
-- Provider-specific options require their own documented public API.
-- A provider adds heavy runtime dependencies that should be isolated.
-- The single `@askdb/ai` package becomes difficult to test or reason about.
-
-At that point, `@askdb/ai` can become a lightweight registry/types package and provider
-implementations can move to `@askdb/ai-openai`, `@askdb/ai-azure`, `@askdb/ai-google`, and similar
-packages.
+First-party apps install and register the provider adapters they intentionally support. Library
+users install only the adapter packages they need.
 
 ## Integration Paths
 
@@ -270,17 +243,20 @@ await ask({
 ### AskDB Config-Driven Provider Selection
 
 Users who want AskDB's env/config provider resolution install `@askdb/ai` plus the provider
-package they use:
+adapter package they use:
 
 ```ts
 import { bootstrapAskDbEnv, getAskDbRuntimeConfig } from "@askdb/config";
-import { createAskDbLanguageModelFromEnv } from "@askdb/ai";
+import { createAskDbAiRegistry } from "@askdb/ai";
+import { openaiProvider } from "@askdb/ai-openai";
 import { ask } from "@askdb/core";
+
+const ai = createAskDbAiRegistry([openaiProvider]);
 
 bootstrapAskDbEnv({ cwd: process.cwd() });
 
 const runtime = getAskDbRuntimeConfig();
-const model = await createAskDbLanguageModelFromEnv(runtime.ai.aiEnv);
+const model = await ai.createLanguageModelFromEnv(runtime.ai.aiEnv);
 
 await ask({
   question,
@@ -313,8 +289,13 @@ No bridge adapter and no `@askdb/ai` package are required.
 First-party apps update imports from core to `@askdb/ai`:
 
 ```ts
-import { createAskDbLanguageModelFromEnv } from "@askdb/ai";
+import { createAskDbAiRegistry } from "@askdb/ai";
+import { azureProvider } from "@askdb/ai-azure";
+import { googleProvider } from "@askdb/ai-google";
+import { openaiProvider } from "@askdb/ai-openai";
 import { ask } from "@askdb/core";
+
+const ai = createAskDbAiRegistry([openaiProvider, azureProvider, googleProvider]);
 ```
 
 Apps declare the provider packages they intentionally support as direct dependencies.
@@ -323,20 +304,24 @@ Apps declare the provider packages they intentionally support as direct dependen
 
 - `@askdb/core` loses hard dependencies on concrete AI SDK provider packages.
 - `@askdb/core` keeps a dependency on `ai` while it uses `generateText`.
-- Provider construction becomes an integration-layer concern in `@askdb/ai`.
-- First-party apps and docs update provider-helper imports from `@askdb/core` to `@askdb/ai`.
-- Consumers who import provider helpers from `@askdb/core` must update to `@askdb/ai`.
+- Provider construction becomes an integration-layer concern in `@askdb/ai-*` packages.
+- `@askdb/ai` owns config resolution and registry dispatch only.
+- First-party apps and docs update provider-helper imports from `@askdb/core` to `@askdb/ai`
+  plus the provider adapter packages.
+- Consumers who import provider helpers from `@askdb/core` must update to `@askdb/ai` registry
+  usage.
 - `@askdb/rag` keeps its current optional peer dependency pattern for `ai`, `@ai-sdk/openai`,
   and `pg`. It should not rely on transitive availability of `ai`; any public type or runtime
   helper that uses AI SDK embedding models must continue declaring the relevant peer dependency.
 - Adding a new provider no longer requires changing `@askdb/core`.
-- The deferred `@askdb/ai-*` split remains available if provider-specific complexity grows.
+- Adding a new provider is a new `@askdb/ai-*` package plus a config branch when AskDB wants to
+  support it through config/env resolution.
 
 ## Related
 
 - ADR 0002 - Integration-package layout.
 - ADR 0005 - AskDB config package and env bootstrap.
 - `packages/core/src/sql/generate.ts` - current AI SDK runtime call site in core.
-- `packages/core/src/ai/provider.ts` - provider construction module to move to `@askdb/ai`.
+- `packages/ai/src/provider.ts` - shared config resolution and provider registry.
 - AI SDK providers and models: <https://ai-sdk.dev/docs/foundations/providers-and-models>.
 - AI SDK provider management: <https://ai-sdk.dev/docs/ai-sdk-core/provider-management>.

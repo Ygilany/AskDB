@@ -1,7 +1,7 @@
 # `@askdb/ai`
 
-AskDB AI provider helpers. This package turns AskDB config/env maps into AI SDK language and
-embedding models.
+AskDB AI provider registry and shared config helpers. This package resolves AskDB config/env maps
+and dispatches to provider adapters such as `@askdb/ai-openai`.
 
 `@askdb/core` stays BYO-model: it accepts a model and runs the NL-to-SQL pipeline. Use this package
 only when you want AskDB's shared provider selection and env-key precedence.
@@ -10,23 +10,26 @@ only when you want AskDB's shared provider selection and env-key precedence.
 
 ```bash
 pnpm add @askdb/ai
-# Plus the provider package you configure:
-pnpm add @ai-sdk/openai
+# Plus the AskDB provider adapter you configure:
+pnpm add @askdb/ai-openai
 ```
 
-Provider packages are optional peers. Install only the provider your runtime uses.
+Install only the provider adapter packages your runtime uses.
 
 ## Usage
 
 ```ts
 import { bootstrapAskDbEnv, getAskDbRuntimeConfig } from "@askdb/config";
-import { createAskDbLanguageModelFromEnv } from "@askdb/ai";
+import { createAskDbAiRegistry } from "@askdb/ai";
+import { openaiProvider } from "@askdb/ai-openai";
 import { ask, loadSchema } from "@askdb/core";
+
+const askdbAi = createAskDbAiRegistry([openaiProvider]);
 
 bootstrapAskDbEnv({ cwd: process.cwd() });
 
 const runtime = getAskDbRuntimeConfig();
-const model = await createAskDbLanguageModelFromEnv(runtime.ai.aiEnv);
+const model = await askdbAi.createLanguageModelFromEnv(runtime.ai.aiEnv);
 
 if (!model) throw new Error("No AI key configured.");
 
@@ -44,11 +47,9 @@ const result = await ask({
 
 - `resolveAskDbAiConfig`
 - `resolveAskDbEmbeddingConfig`
-- `createAskDbLanguageModel`
-- `createAskDbLanguageModelFromEnv`
-- `createAskDbEmbeddingModel`
-- `createAskDbEmbeddingModelFromEnv`
+- `createAskDbAiRegistry`
 - `askDbAiKeyMissingMessage`
+- `askDbAiProviderMissingMessage`
 
 ## License
 

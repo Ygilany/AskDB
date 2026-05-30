@@ -8,7 +8,7 @@ AskDB ships focused library packages:
 4. [`@askdb/prisma`](../../packages/prisma/README.md) — Prisma integration: schema-file connector that renders Schema v2 from `.prisma` files without a database connection.
 5. [`@askdb/enrich`](../../packages/enrich/README.md) — headless Schema v2 enrichment workspace helpers used by TUI, Studio, and custom authoring surfaces.
 6. [`@askdb/config`](../../packages/config/README.md) — Prisma-style `askdb.config.*` / `.config/askdb.*` discovery and `bootstrapAskDbEnv()`. **This is the only package that reads `process.env` directly.** All other packages use **`getAskDbRuntimeConfig()`** from here (not raw `process.env`).
-7. [`@askdb/ai`](../../packages/ai/README.md) — optional config/env-to-model helpers for AI SDK providers.
+7. [`@askdb/ai`](../../packages/ai/README.md) — optional config/env-to-model registry for AI SDK providers. Pair it with provider adapters such as `@askdb/ai-openai`.
 
 The supported user-facing CLI is the [`askdb`](../../apps/cli/README.md) package (`askdb` binary, `npm i -g askdb`). `@askdb/http-api`, `@askdb/tui`, `@askdb/studio`, and `@askdb/docs-site` are first-party reference apps.
 
@@ -36,15 +36,16 @@ pnpm add @askdb/enrich
 pnpm add @askdb/prisma
 # Optional: Prisma-style env mapping + askdb.config discovery (used by the CLI; optional for library hosts)
 pnpm add @askdb/config
-# Optional: AskDB config/env model factory
+# Optional: AskDB config/env model factory and matching provider adapter
 pnpm add @askdb/ai
+pnpm add @askdb/ai-openai
 # Optional: live Postgres introspection
 pnpm add pg
 ```
 
 `pg` is an **optional peer dependency** of `@askdb/postgres`. You do not need it when you only use `@askdb/core` to generate SQL.
 
-[`@askdb/config`](../../packages/config/README.md) is the **only** package that reads `process.env` directly. Library packages (`@askdb/rag`, `@askdb/tui`, …) depend on `@askdb/config` and use **`getAskDbRuntimeConfig()`**. Pass `config.ai.aiEnv` into `@askdb/ai` when you want AskDB's env/config model factory. Call `bootstrapAskDbEnv({ cwd: process.cwd() })` at start-up when you want the same `.env` + `askdb.config.*` behavior as the first-party CLI and HTTP API. `env()` is reserved for use **inside** `askdb.config.*` files.
+[`@askdb/config`](../../packages/config/README.md) is the **only** package that reads `process.env` directly. Library packages (`@askdb/rag`, `@askdb/tui`, …) depend on `@askdb/config` and use **`getAskDbRuntimeConfig()`**. Pass `config.ai.aiEnv` into an `@askdb/ai` registry when you want AskDB's env/config model factory. Call `bootstrapAskDbEnv({ cwd: process.cwd() })` at start-up when you want the same `.env` + `askdb.config.*` behavior as the first-party CLI and HTTP API. `env()` is reserved for use **inside** `askdb.config.*` files.
 
 ---
 

@@ -14,11 +14,12 @@ pnpm add @askdb/postgres
 pnpm add @ai-sdk/openai
 # Optional AskDB config/env model factory:
 pnpm add @askdb/ai
+pnpm add @askdb/ai-openai
 ```
 
 `@askdb/core` itself does not depend on `pg`. The optional `pg` peer lives on `@askdb/postgres` for live Postgres introspection.
 
-Runtime AI configuration helpers live in `@askdb/ai`. If you use [`@askdb/config`](../../packages/config/README.md), call `bootstrapAskDbEnv()` then pass **`getAskDbRuntimeConfig().ai.aiEnv`** to `createAskDbLanguageModelFromEnv` from `@askdb/ai`.
+Runtime AI configuration helpers live in `@askdb/ai` and provider adapters such as `@askdb/ai-openai`. If you use [`@askdb/config`](../../packages/config/README.md), call `bootstrapAskDbEnv()`, create an AI registry, then pass **`getAskDbRuntimeConfig().ai.aiEnv`** to `registry.createLanguageModelFromEnv(...)`.
 
 ## Schema format
 
