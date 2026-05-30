@@ -1,8 +1,6 @@
 # `@askdb/connectors`
 
-AskDB connector provider registry for app/bootstrap wiring. Maps config-driven introspection
-provider selections to concrete connector packages (`@askdb/postgres`, `@askdb/mysql`, etc.),
-following the same registry pattern as `@askdb/ai`.
+AskDB connector provider registry for app/bootstrap wiring. Maps config-driven introspection provider selections to concrete connector packages (`@askdb/postgres`, `@askdb/mysql`, etc.), following the same registry pattern as `@askdb/ai`.
 
 ## Install
 
