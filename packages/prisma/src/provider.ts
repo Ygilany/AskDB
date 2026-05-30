@@ -1,10 +1,10 @@
 import type { Connector } from "@askdb/introspect";
-import type { AskDbConnectorConfig, AskDbConnectorProviderAdapter, AskDbConnectorResult } from "@askdb/connectors";
+import type { ConnectorConfig, ConnectorProviderAdapter, ConnectorResult } from "@askdb/connectors";
 import { createPrismaConnector } from "./prisma.js";
 
-export const prismaConnectorProvider: AskDbConnectorProviderAdapter = {
+export const prismaConnectorProvider: ConnectorProviderAdapter = {
   provider: "prisma",
-  createConnector(config: AskDbConnectorConfig): AskDbConnectorResult {
+  createConnector(config: ConnectorConfig): ConnectorResult {
     return {
       mode: "prisma-schema",
       input: {

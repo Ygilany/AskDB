@@ -1,6 +1,6 @@
 import type { Connector, IntrospectionFilters, SqlTemplateBundle } from "@askdb/introspect";
 
-export const ASKDB_CONNECTOR_PROVIDERS = [
+export const CONNECTOR_PROVIDERS = [
   "postgres",
   "prisma",
   "mysql",
@@ -8,14 +8,14 @@ export const ASKDB_CONNECTOR_PROVIDERS = [
   "sqlserver",
 ] as const;
 
-export type AskDbConnectorProvider = (typeof ASKDB_CONNECTOR_PROVIDERS)[number];
+export type ConnectorProvider = (typeof CONNECTOR_PROVIDERS)[number];
 
 /**
  * Unified config passed to a connector provider adapter. The registry converts
  * this into the engine-specific connector + input pair consumed by `introspect()`.
  */
-export type AskDbConnectorConfig = {
-  provider: AskDbConnectorProvider;
+export type ConnectorConfig = {
+  provider: ConnectorProvider;
   /** Connection URL for live introspection (postgres, mysql, sqlserver) or file path (sqlite). */
   url?: string;
   /** Bundle directory path for from-export mode (postgres only). */
@@ -28,42 +28,42 @@ export type AskDbConnectorConfig = {
 };
 
 /** Connector + typed input pair returned by a provider adapter. */
-export type AskDbConnectorResult = {
+export type ConnectorResult = {
   connector: Connector<unknown>;
   input: unknown;
   /** Informational mode string (e.g. `"live"`, `"from-export"`, `"prisma-schema"`). */
   mode: string;
 };
 
-export type AskDbConnectorProviderAdapter = {
-  provider: AskDbConnectorProvider;
-  createConnector(config: AskDbConnectorConfig): AskDbConnectorResult;
+export type ConnectorProviderAdapter = {
+  provider: ConnectorProvider;
+  createConnector(config: ConnectorConfig): ConnectorResult;
   /** Returns the engine's catalog SQL template bundle, if the engine supports it. */
   getTemplates?(): SqlTemplateBundle;
 };
 
-export type AskDbConnectorProviderAdapters =
-  | readonly AskDbConnectorProviderAdapter[]
-  | Partial<Record<AskDbConnectorProvider, AskDbConnectorProviderAdapter>>;
+export type ConnectorProviderAdapters =
+  | readonly ConnectorProviderAdapter[]
+  | Partial<Record<ConnectorProvider, ConnectorProviderAdapter>>;
 
-export type AskDbConnectorRegistry = {
-  hasProvider(provider: AskDbConnectorProvider): boolean;
-  createConnector(config: AskDbConnectorConfig): AskDbConnectorResult;
+export type ConnectorRegistry = {
+  hasProvider(provider: ConnectorProvider): boolean;
+  createConnector(config: ConnectorConfig): ConnectorResult;
   /**
    * Returns the catalog SQL template bundle for the given provider, or `undefined`
    * if the provider is not registered or does not support templates.
    */
-  getTemplates(provider: AskDbConnectorProvider): SqlTemplateBundle | undefined;
+  getTemplates(provider: ConnectorProvider): SqlTemplateBundle | undefined;
 };
 
-export function createAskDbConnectorRegistry(
-  adapters: AskDbConnectorProviderAdapters,
-): AskDbConnectorRegistry {
+export function createConnectorRegistry(
+  adapters: ConnectorProviderAdapters,
+): ConnectorRegistry {
   const byProvider = normalizeAdapters(adapters);
 
-  function adapterFor(provider: AskDbConnectorProvider): AskDbConnectorProviderAdapter {
+  function adapterFor(provider: ConnectorProvider): ConnectorProviderAdapter {
     const adapter = byProvider.get(provider);
-    if (!adapter) throw new Error(askDbConnectorProviderMissingMessage(provider));
+    if (!adapter) throw new Error(connectorProviderMissingMessage(provider));
     return adapter;
   }
 
@@ -80,7 +80,7 @@ export function createAskDbConnectorRegistry(
   };
 }
 
-export function askDbConnectorProviderMissingMessage(provider: AskDbConnectorProvider): string {
+export function connectorProviderMissingMessage(provider: ConnectorProvider): string {
   const pkg =
     provider === "prisma"
       ? "@askdb/prisma"
@@ -89,17 +89,17 @@ export function askDbConnectorProviderMissingMessage(provider: AskDbConnectorPro
         : `@askdb/${provider}`;
   return (
     `Connector provider "${provider}" is not registered. ` +
-    `Install ${pkg} and pass its connector provider adapter to createAskDbConnectorRegistry().`
+    `Install ${pkg} and pass its connector provider adapter to createConnectorRegistry().`
   );
 }
 
 function normalizeAdapters(
-  adapters: AskDbConnectorProviderAdapters,
-): Map<AskDbConnectorProvider, AskDbConnectorProviderAdapter> {
+  adapters: ConnectorProviderAdapters,
+): Map<ConnectorProvider, ConnectorProviderAdapter> {
   const entries = Array.isArray(adapters)
     ? adapters.map((a) => [a.provider, a] as const)
     : Object.entries(adapters).filter(isAdapterEntry);
-  const byProvider = new Map<AskDbConnectorProvider, AskDbConnectorProviderAdapter>();
+  const byProvider = new Map<ConnectorProvider, ConnectorProviderAdapter>();
   for (const [provider, adapter] of entries) {
     if (adapter.provider !== provider) {
       throw new Error(
@@ -112,7 +112,7 @@ function normalizeAdapters(
 }
 
 function isAdapterEntry(
-  entry: [string, AskDbConnectorProviderAdapter | undefined],
-): entry is [AskDbConnectorProvider, AskDbConnectorProviderAdapter] {
+  entry: [string, ConnectorProviderAdapter | undefined],
+): entry is [ConnectorProvider, ConnectorProviderAdapter] {
   return entry[1] !== undefined;
 }

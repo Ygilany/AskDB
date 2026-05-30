@@ -1,11 +1,11 @@
 import type { Connector } from "@askdb/introspect";
-import type { AskDbConnectorConfig, AskDbConnectorProviderAdapter, AskDbConnectorResult } from "@askdb/connectors";
+import type { ConnectorConfig, ConnectorProviderAdapter, ConnectorResult } from "@askdb/connectors";
 import { createSqliteConnector } from "./index.js";
 import { createSqliteCatalogQueryRunner } from "../exec/sqlite.js";
 
-export const sqliteConnectorProvider: AskDbConnectorProviderAdapter = {
+export const sqliteConnectorProvider: ConnectorProviderAdapter = {
   provider: "sqlite",
-  createConnector(config: AskDbConnectorConfig): AskDbConnectorResult {
+  createConnector(config: ConnectorConfig): ConnectorResult {
     if (!config.url) {
       throw new Error("SQLite connector requires a file path (config.url).");
     }

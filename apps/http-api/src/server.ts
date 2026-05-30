@@ -6,9 +6,9 @@ import { dirname, isAbsolute, resolve as resolvePath } from "node:path";
 import { fileURLToPath } from "node:url";
 import { getAskDbRuntimeConfig } from "@askdb/config";
 import {
-  askDbAiKeyMissingMessage,
-  createAskDbAiRegistry,
-  resolveAskDbAiConfig,
+  aiKeyMissingMessage,
+  createAiRegistry,
+  resolveAiConfig,
 } from "@askdb/ai";
 import { azureProvider } from "@askdb/ai-azure";
 import { googleProvider } from "@askdb/ai-google";
@@ -32,7 +32,7 @@ import {
 } from "@askdb/core";
 import type { AskHttpErrorResponse, AskHttpRequest, AskHttpSuccessResponse } from "./types.js";
 
-const askDbAi = createAskDbAiRegistry([openaiProvider, azureProvider, googleProvider]);
+const ai = createAiRegistry([openaiProvider, azureProvider, googleProvider]);
 
 export type AskDbHttpServerOptions = {
   /** Default: 3000 */
@@ -248,11 +248,11 @@ export function createAskDbHttpServer(options: AskDbHttpServerOptions = {}) {
       }
 
       const mockSql = rt.dev.mockSql;
-      const aiConfig = mockSql ? undefined : resolveAskDbAiConfig(rt.ai.aiEnv);
+      const aiConfig = mockSql ? undefined : resolveAiConfig(rt.ai.aiEnv);
       if (!mockSql && !aiConfig) {
         writeError(res, 500, correlationId, {
           code: "generation_not_configured",
-          message: `${askDbAiKeyMissingMessage("NL→SQL generation")} (or set ASKDB_MOCK_SQL).`,
+          message: `${aiKeyMissingMessage("NL→SQL generation")} (or set ASKDB_MOCK_SQL).`,
         });
         return;
       }
@@ -300,7 +300,7 @@ export function createAskDbHttpServer(options: AskDbHttpServerOptions = {}) {
       type AskModel = Parameters<typeof ask>[0]["model"];
       const model: AskModel = mockSql
         ? (undefined as unknown as AskModel)
-        : ((await askDbAi.createLanguageModelFromEnv(rt.ai.aiEnv)) as AskModel);
+        : ((await ai.createLanguageModelFromEnv(rt.ai.aiEnv)) as AskModel);
 
       const schemaProvider =
         "provider" in schema && typeof schema.provider === "string"

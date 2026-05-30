@@ -1,11 +1,11 @@
 import type { Connector } from "@askdb/introspect";
-import type { AskDbConnectorConfig, AskDbConnectorProviderAdapter, AskDbConnectorResult } from "@askdb/connectors";
+import type { ConnectorConfig, ConnectorProviderAdapter, ConnectorResult } from "@askdb/connectors";
 import { createMysqlConnector } from "./index.js";
 import { createMysqlCatalogQueryRunner } from "../exec/mysql.js";
 
-export const mysqlConnectorProvider: AskDbConnectorProviderAdapter = {
+export const mysqlConnectorProvider: ConnectorProviderAdapter = {
   provider: "mysql",
-  createConnector(config: AskDbConnectorConfig): AskDbConnectorResult {
+  createConnector(config: ConnectorConfig): ConnectorResult {
     if (!config.url) {
       throw new Error("MySQL connector requires a connection URL (config.url).");
     }

@@ -1,11 +1,11 @@
 import type { Connector } from "@askdb/introspect";
-import type { AskDbConnectorConfig, AskDbConnectorProviderAdapter, AskDbConnectorResult } from "@askdb/connectors";
+import type { ConnectorConfig, ConnectorProviderAdapter, ConnectorResult } from "@askdb/connectors";
 import { createPostgresConnector } from "./index.js";
 import { createPostgresCatalogQueryRunner } from "../exec/postgres.js";
 
-export const postgresConnectorProvider: AskDbConnectorProviderAdapter = {
+export const postgresConnectorProvider: ConnectorProviderAdapter = {
   provider: "postgres",
-  createConnector(config: AskDbConnectorConfig): AskDbConnectorResult {
+  createConnector(config: ConnectorConfig): ConnectorResult {
     if (config.fromExport) {
       return {
         mode: "from-export",

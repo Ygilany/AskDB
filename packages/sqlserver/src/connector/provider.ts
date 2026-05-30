@@ -1,11 +1,11 @@
 import type { Connector } from "@askdb/introspect";
-import type { AskDbConnectorConfig, AskDbConnectorProviderAdapter, AskDbConnectorResult } from "@askdb/connectors";
+import type { ConnectorConfig, ConnectorProviderAdapter, ConnectorResult } from "@askdb/connectors";
 import { createSqlServerConnector } from "./index.js";
 import { createSqlServerCatalogQueryRunner } from "../exec/sqlserver.js";
 
-export const sqlServerConnectorProvider: AskDbConnectorProviderAdapter = {
+export const sqlServerConnectorProvider: ConnectorProviderAdapter = {
   provider: "sqlserver",
-  createConnector(config: AskDbConnectorConfig): AskDbConnectorResult {
+  createConnector(config: ConnectorConfig): ConnectorResult {
     if (!config.url) {
       throw new Error("SQL Server connector requires a connection URL (config.url).");
     }

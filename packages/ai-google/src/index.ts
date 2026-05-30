@@ -1,7 +1,7 @@
 import { createGoogleGenerativeAI } from "@ai-sdk/google";
-import type { AskDbAiProviderAdapter } from "@askdb/ai";
+import type { AiProviderAdapter } from "@askdb/ai";
 
-export const googleProvider: AskDbAiProviderAdapter = {
+export const googleProvider: AiProviderAdapter = {
   provider: "google",
   createLanguageModel(config) {
     const google = createGoogleGenerativeAI({

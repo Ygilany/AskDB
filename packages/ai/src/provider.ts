@@ -13,10 +13,10 @@ import type { EmbeddingModel, LanguageModel } from "ai";
  *                `@ai-sdk/azure`. Uses the `resourceName` + deployment-name
  *                URL shape with the `api-key` header.
  */
-export type AskDbAiProvider = "openai" | "azure" | "google";
+export type AiProvider = "openai" | "azure" | "google";
 
-export type AskDbAiConfig = {
-  provider: AskDbAiProvider;
+export type AiConfig = {
+  provider: AiProvider;
   apiKey: string;
   /** OpenAI: model id (e.g. `gpt-4o-mini`). Azure: deployment name. */
   model: string;
@@ -28,9 +28,9 @@ export type AskDbAiConfig = {
   apiVersion?: string;
 };
 
-export type AskDbAiEnv = Record<string, string | undefined>;
+export type AiEnv = Record<string, string | undefined>;
 
-export type ResolveAskDbAiConfigOptions = {
+export type ResolveAiConfigOptions = {
   /** Default model when no env override is set. */
   modelDefault?: string;
 };
@@ -38,7 +38,7 @@ export type ResolveAskDbAiConfigOptions = {
 const DEFAULT_MODEL = "gpt-4o-mini";
 const DEFAULT_EMBEDDING_MODEL = "text-embedding-3-small";
 
-function readProvider(env: AskDbAiEnv): AskDbAiProvider {
+function readProvider(env: AiEnv): AiProvider {
   const raw = (env.ASKDB_AI_PROVIDER ?? "").toLowerCase().trim();
   if (raw === "" || raw === "openai") return "openai";
   if (raw === "azure" || raw === "azure-openai" || raw === "foundry") return "azure";
@@ -71,10 +71,10 @@ function readProvider(env: AskDbAiEnv): AskDbAiProvider {
  * @param env - String map in the shape of canonical AskDB env keys (from the runtime snapshot).
  * @param options - Optional per-app overrides (e.g. a per-app model env var).
  */
-export function resolveAskDbAiConfig(
-  env: AskDbAiEnv,
-  options: ResolveAskDbAiConfigOptions = {},
-): AskDbAiConfig | undefined {
+export function resolveAiConfig(
+  env: AiEnv,
+  options: ResolveAiConfigOptions = {},
+): AiConfig | undefined {
   const provider = readProvider(env);
 
   const providerNativeKey =
@@ -138,7 +138,7 @@ export function resolveAskDbAiConfig(
   };
 }
 
-export type ResolveAskDbEmbeddingConfigOptions = {
+export type ResolveEmbeddingConfigOptions = {
   /** Default embedding model/deployment when no env override is set. */
   modelDefault?: string;
   /**
@@ -149,7 +149,7 @@ export type ResolveAskDbEmbeddingConfigOptions = {
 
 /**
  * Resolves an embedding model config from the same provider/key/base URL
- * connection as `resolveAskDbAiConfig`, but with embedding-specific model
+ * connection as `resolveAiConfig`, but with embedding-specific model
  * precedence so chat model ids (for example `gpt-4o`) are not used as
  * embedding model ids by accident.
  *
@@ -160,10 +160,10 @@ export type ResolveAskDbEmbeddingConfigOptions = {
  * @param env - String map in the shape of canonical AskDB env keys (from the runtime snapshot).
  * @param options - Optional per-app overrides (e.g. a per-app embedding model env var).
  */
-export function resolveAskDbEmbeddingConfig(
-  env: AskDbAiEnv,
-  options: ResolveAskDbEmbeddingConfigOptions = {},
-): AskDbAiConfig | undefined {
+export function resolveEmbeddingConfig(
+  env: AiEnv,
+  options: ResolveEmbeddingConfigOptions = {},
+): AiConfig | undefined {
   const provider = readProvider(env);
 
   const providerNativeKey =
@@ -230,52 +230,52 @@ export function resolveAskDbEmbeddingConfig(
   };
 }
 
-export type CreateAskDbEmbeddingModelOptions = {
+export type CreateEmbeddingModelOptions = {
   /** Optional dimensionality override for providers that support it. */
   dimensions?: number;
   /** Optional end-user id forwarded to providers that support it. */
   user?: string;
 };
 
-export type AskDbAiProviderAdapter = {
-  provider: AskDbAiProvider;
-  createLanguageModel(config: AskDbAiConfig): Promise<LanguageModel> | LanguageModel;
+export type AiProviderAdapter = {
+  provider: AiProvider;
+  createLanguageModel(config: AiConfig): Promise<LanguageModel> | LanguageModel;
   createEmbeddingModel(
-    config: AskDbAiConfig,
-    options?: CreateAskDbEmbeddingModelOptions,
+    config: AiConfig,
+    options?: CreateEmbeddingModelOptions,
   ): Promise<EmbeddingModel<string>> | EmbeddingModel<string>;
 };
 
-export type AskDbAiProviderAdapters =
-  | readonly AskDbAiProviderAdapter[]
-  | Partial<Record<AskDbAiProvider, AskDbAiProviderAdapter>>;
+export type AiProviderAdapters =
+  | readonly AiProviderAdapter[]
+  | Partial<Record<AiProvider, AiProviderAdapter>>;
 
-export type AskDbAiRegistry = {
-  hasProvider(provider: AskDbAiProvider): boolean;
-  createLanguageModel(config: AskDbAiConfig): Promise<LanguageModel>;
+export type AiRegistry = {
+  hasProvider(provider: AiProvider): boolean;
+  createLanguageModel(config: AiConfig): Promise<LanguageModel>;
   createEmbeddingModel(
-    config: AskDbAiConfig,
-    options?: CreateAskDbEmbeddingModelOptions,
+    config: AiConfig,
+    options?: CreateEmbeddingModelOptions,
   ): Promise<EmbeddingModel<string>>;
   createLanguageModelFromEnv(
-    env: AskDbAiEnv,
-    options?: ResolveAskDbAiConfigOptions,
+    env: AiEnv,
+    options?: ResolveAiConfigOptions,
   ): Promise<LanguageModel | undefined>;
   createEmbeddingModelFromEnv(
-    env: AskDbAiEnv,
-    options?: ResolveAskDbEmbeddingConfigOptions & CreateAskDbEmbeddingModelOptions,
+    env: AiEnv,
+    options?: ResolveEmbeddingConfigOptions & CreateEmbeddingModelOptions,
   ): Promise<EmbeddingModel<string> | undefined>;
 };
 
-export function createAskDbAiRegistry(
-  adapters: AskDbAiProviderAdapters,
-): AskDbAiRegistry {
+export function createAiRegistry(
+  adapters: AiProviderAdapters,
+): AiRegistry {
   const byProvider = normalizeAdapters(adapters);
 
-  function adapterFor(provider: AskDbAiProvider): AskDbAiProviderAdapter {
+  function adapterFor(provider: AiProvider): AiProviderAdapter {
     const adapter = byProvider.get(provider);
     if (!adapter) {
-      throw new Error(askDbAiProviderMissingMessage(provider));
+      throw new Error(aiProviderMissingMessage(provider));
     }
     return adapter;
   }
@@ -291,12 +291,12 @@ export function createAskDbAiRegistry(
       return adapterFor(config.provider).createEmbeddingModel(config, options);
     },
     async createLanguageModelFromEnv(env, options = {}) {
-      const config = resolveAskDbAiConfig(env, options);
+      const config = resolveAiConfig(env, options);
       if (!config) return undefined;
       return adapterFor(config.provider).createLanguageModel(config);
     },
     async createEmbeddingModelFromEnv(env, options = {}) {
-      const config = resolveAskDbEmbeddingConfig(env, options);
+      const config = resolveEmbeddingConfig(env, options);
       if (!config) return undefined;
       return adapterFor(config.provider).createEmbeddingModel(config, options);
     },
@@ -307,7 +307,7 @@ export function createAskDbAiRegistry(
  * Human-readable message describing how to configure AI, used by callers
  * when no key is configured.
  */
-export function askDbAiKeyMissingMessage(context: string): string {
+export function aiKeyMissingMessage(context: string): string {
   return (
     `${context}: no AI API key configured. ` +
     `For OpenAI, set OPENAI_API_KEY (or ASKDB_AI_API_KEY). ` +
@@ -320,20 +320,20 @@ export function askDbAiKeyMissingMessage(context: string): string {
   );
 }
 
-export function askDbAiProviderMissingMessage(provider: AskDbAiProvider): string {
+export function aiProviderMissingMessage(provider: AiProvider): string {
   return (
     `AI provider "${provider}" is not registered. ` +
-    `Install @askdb/ai-${provider} and pass its provider adapter to createAskDbAiRegistry().`
+    `Install @askdb/ai-${provider} and pass its provider adapter to createAiRegistry().`
   );
 }
 
 function normalizeAdapters(
-  adapters: AskDbAiProviderAdapters,
-): Map<AskDbAiProvider, AskDbAiProviderAdapter> {
+  adapters: AiProviderAdapters,
+): Map<AiProvider, AiProviderAdapter> {
   const entries = Array.isArray(adapters)
     ? adapters.map((adapter) => [adapter.provider, adapter] as const)
     : Object.entries(adapters).filter(isAdapterEntry);
-  const byProvider = new Map<AskDbAiProvider, AskDbAiProviderAdapter>();
+  const byProvider = new Map<AiProvider, AiProviderAdapter>();
   for (const [provider, adapter] of entries) {
     if (adapter.provider !== provider) {
       throw new Error(
@@ -346,7 +346,7 @@ function normalizeAdapters(
 }
 
 function isAdapterEntry(
-  entry: [string, AskDbAiProviderAdapter | undefined],
-): entry is [AskDbAiProvider, AskDbAiProviderAdapter] {
+  entry: [string, AiProviderAdapter | undefined],
+): entry is [AiProvider, AiProviderAdapter] {
   return entry[1] !== undefined;
 }

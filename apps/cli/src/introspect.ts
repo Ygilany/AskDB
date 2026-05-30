@@ -16,10 +16,10 @@ import {
   type IntrospectionFilters,
 } from "@askdb/introspect";
 import {
-  createAskDbConnectorRegistry,
-  type AskDbConnectorConfig,
-  type AskDbConnectorProvider,
-  type AskDbConnectorResult,
+  createConnectorRegistry,
+  type ConnectorConfig,
+  type ConnectorProvider,
+  type ConnectorResult,
 } from "@askdb/connectors";
 import { postgresConnectorProvider } from "@askdb/postgres";
 import { mysqlConnectorProvider } from "@askdb/mysql";
@@ -27,7 +27,7 @@ import { sqliteConnectorProvider } from "@askdb/sqlite";
 import { sqlServerConnectorProvider } from "@askdb/sqlserver";
 import { prismaConnectorProvider } from "@askdb/prisma";
 
-const connectorRegistry = createAskDbConnectorRegistry([
+const connectorRegistry = createConnectorRegistry([
   postgresConnectorProvider,
   mysqlConnectorProvider,
   sqliteConnectorProvider,
@@ -35,7 +35,7 @@ const connectorRegistry = createAskDbConnectorRegistry([
   prismaConnectorProvider,
 ]);
 
-type Engine = AskDbConnectorProvider;
+type Engine = ConnectorProvider;
 const LIVE_DRIVER_ENGINES = ["postgres", "mysql", "sqlite", "sqlserver"] as const satisfies ReadonlyArray<
   Exclude<Engine, "prisma">
 >;
@@ -190,7 +190,7 @@ async function runIntrospectCommand(argv: readonly string[]): Promise<number> {
     logStdout: opts.logStdout ?? rt.logging.logStdout,
   });
 
-  const connectorConfig: AskDbConnectorConfig = {
+  const connectorConfig: ConnectorConfig = {
     provider: engine,
     url: opts.url,
     fromExport: opts.fromExport,
@@ -239,7 +239,7 @@ async function runIntrospectCommand(argv: readonly string[]): Promise<number> {
 }
 
 async function runWithOutput(
-  runConfig: AskDbConnectorResult,
+  runConfig: ConnectorResult,
   opts: CliOptions,
   schemaId: string,
 ): Promise<IntrospectResult> {
