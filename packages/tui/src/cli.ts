@@ -1,6 +1,7 @@
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { createAskDbLanguageModelFromEnv, suggestEnrichment } from "@askdb/core";
+import { createAskDbLanguageModelFromEnv } from "@askdb/ai";
+import { suggestEnrichment } from "@askdb/core";
 import { DEFAULT_INTROSPECT_OUTPUT_DIR, getAskDbRuntimeConfig } from "@askdb/config";
 import { render } from "ink";
 import { createElement } from "react";

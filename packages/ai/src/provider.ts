@@ -1,5 +1,4 @@
 import type { EmbeddingModel, LanguageModel } from "ai";
-import { createOpenAI } from "@ai-sdk/openai";
 
 /**
  * AI provider selector. AskDB is BYO-LanguageModel at the function level
@@ -237,7 +236,8 @@ export async function createAskDbLanguageModel(
 ): Promise<LanguageModel> {
   if (config.provider === "azure") {
     // Lazy-loaded so `@ai-sdk/azure` is only required when actually used.
-    const { createAzure } = await import("@ai-sdk/azure");
+    const { createAzure } =
+      await importProvider<typeof import("@ai-sdk/azure")>("@ai-sdk/azure", "azure");
     const azure = createAzure({
       apiKey: config.apiKey,
       ...(config.resourceName ? { resourceName: config.resourceName } : {}),
@@ -248,13 +248,16 @@ export async function createAskDbLanguageModel(
   }
   if (config.provider === "google") {
     // Lazy-loaded so `@ai-sdk/google` is only required when actually used.
-    const { createGoogleGenerativeAI } = await import("@ai-sdk/google");
+    const { createGoogleGenerativeAI } =
+      await importProvider<typeof import("@ai-sdk/google")>("@ai-sdk/google", "google");
     const google = createGoogleGenerativeAI({
       apiKey: config.apiKey,
       ...(config.baseURL ? { baseURL: config.baseURL } : {}),
     });
     return google(config.model);
   }
+  const { createOpenAI } =
+    await importProvider<typeof import("@ai-sdk/openai")>("@ai-sdk/openai", "openai");
   const openai = createOpenAI({
     apiKey: config.apiKey,
     ...(config.baseURL ? { baseURL: config.baseURL } : {}),
@@ -275,7 +278,8 @@ export async function createAskDbEmbeddingModel(
   options: CreateAskDbEmbeddingModelOptions = {},
 ): Promise<EmbeddingModel<string>> {
   if (config.provider === "azure") {
-    const { createAzure } = await import("@ai-sdk/azure");
+    const { createAzure } =
+      await importProvider<typeof import("@ai-sdk/azure")>("@ai-sdk/azure", "azure");
     const azure = createAzure({
       apiKey: config.apiKey,
       ...(config.resourceName ? { resourceName: config.resourceName } : {}),
@@ -288,13 +292,16 @@ export async function createAskDbEmbeddingModel(
     });
   }
   if (config.provider === "google") {
-    const { createGoogleGenerativeAI } = await import("@ai-sdk/google");
+    const { createGoogleGenerativeAI } =
+      await importProvider<typeof import("@ai-sdk/google")>("@ai-sdk/google", "google");
     const google = createGoogleGenerativeAI({
       apiKey: config.apiKey,
       ...(config.baseURL ? { baseURL: config.baseURL } : {}),
     });
     return google.textEmbeddingModel(config.model);
   }
+  const { createOpenAI } =
+    await importProvider<typeof import("@ai-sdk/openai")>("@ai-sdk/openai", "openai");
   const openai = createOpenAI({
     apiKey: config.apiKey,
     ...(config.baseURL ? { baseURL: config.baseURL } : {}),
@@ -358,4 +365,24 @@ export function askDbAiKeyMissingMessage(context: string): string {
     `For Google Gemini, set ASKDB_AI_PROVIDER=google plus ` +
     `GOOGLE_GENERATIVE_AI_API_KEY (or ASKDB_AI_API_KEY).`
   );
+}
+
+async function importProvider<T>(packageName: string, provider: AskDbAiProvider): Promise<T> {
+  try {
+    return (await import(packageName)) as T;
+  } catch (error) {
+    if (isModuleNotFoundFor(error, packageName)) {
+      throw new Error(
+        `Provider "${provider}" requires ${packageName}. Install it with: npm install ${packageName}`,
+        { cause: error },
+      );
+    }
+    throw error;
+  }
+}
+
+function isModuleNotFoundFor(error: unknown, packageName: string): boolean {
+  if (!(error instanceof Error)) return false;
+  const maybeCode = (error as { code?: unknown }).code;
+  return maybeCode === "ERR_MODULE_NOT_FOUND" && error.message.includes(packageName);
 }

@@ -26,6 +26,26 @@ npm install @askdb/core
 | `validateTenantScope` / `resolveTenantSql` | Tenant-scope enforcement primitives. |
 | `createAskDbLogger` | Structured logger that emits AskDB log events. |
 | `POSTGRES_DIALECT` and built-in dialect IDs | Dialect inputs accepted by `ask()`. |
+| `AskDbLanguageModel` | AskDB's public name for the AI SDK language model contract. |
+
+### `@askdb/ai`
+
+Optional AI provider helpers. Install this when you want AskDB to construct AI SDK language or
+embedding models from `askdb.config.*` / env maps. Skip it when you already construct your own AI
+SDK model and pass it to `ask()`.
+
+```bash
+npm install @askdb/ai
+```
+
+**Key exports**
+
+| Symbol | Purpose |
+| --- | --- |
+| `createAskDbLanguageModelFromEnv` | Build a language model from `getAskDbRuntimeConfig().ai.aiEnv`. |
+| `createAskDbEmbeddingModelFromEnv` | Build an embedding model from the same config with embedding-specific defaults. |
+| `resolveAskDbAiConfig` / `resolveAskDbEmbeddingConfig` | Resolve provider config without constructing a model. |
+| `askDbAiKeyMissingMessage` | Shared human-readable missing-key guidance. |
 
 ### `@askdb/config`
 
@@ -181,6 +201,7 @@ See [the CLI reference](/reference/cli/).
 | Package | Depends on |
 | --- | --- |
 | `@askdb/postgres`, `@askdb/mysql`, `@askdb/sqlite`, `@askdb/sqlserver` | `@askdb/core` |
+| `@askdb/ai` | AI SDK core package (`ai`) + optional provider packages |
 | `@askdb/prisma` | `@askdb/introspect` |
 | `@askdb/enrich`, `@askdb/rag` | `@askdb/core` |
 | `@askdb/tui`, `@askdb/studio` | `@askdb/enrich` (+ `@askdb/rag` when used) |

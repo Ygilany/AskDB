@@ -23,10 +23,12 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { bootstrapAskDbEnv, getAskDbRuntimeConfig } from "@askdb/config";
 import {
+  createAskDbEmbeddingModelFromEnv,
+  createAskDbLanguageModelFromEnv,
+} from "@askdb/ai";
+import {
   ask,
   loadSchema,
-  createAskDbLanguageModelFromEnv,
-  createAskDbEmbeddingModelFromEnv,
 } from "@askdb/core";
 import { buildSchemaIndex, createMemoryStore, createAiSdkEmbedder } from "@askdb/rag";
 

@@ -1,5 +1,10 @@
 #!/usr/bin/env node
 import { bootstrapAskDbEnv, getAskDbRuntimeConfig } from "@askdb/config";
+import {
+  askDbAiKeyMissingMessage,
+  createAskDbLanguageModelFromEnv,
+  resolveAskDbAiConfig,
+} from "@askdb/ai";
 import { randomUUID } from "node:crypto";
 import {
   AskDbError,
@@ -18,11 +23,8 @@ import {
   parseAskDbModeV1,
   SqlValidationError,
   ask,
-  askDbAiKeyMissingMessage,
-  createAskDbLanguageModelFromEnv,
   createAskDbLogger,
   loadSchema,
-  resolveAskDbAiConfig,
 } from "@askdb/core";
 import { Command } from "commander";
 import { runInitCli } from "./init.js";

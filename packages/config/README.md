@@ -53,7 +53,7 @@ export default defineConfig({
 } satisfies AskDbConfig);
 ```
 
-Your `.env` can use friendly names (`MY_OPENAI_API_KEY`, …). `defineConfig` runs `flattenAskDbConfig`, which maps the nested object onto the canonical environment variable names used in the **runtime flat map** (and in `aiEnv` for `@askdb/core`). **Unset optional fields get defaults inside `flattenAskDbConfig`** (chat model, introspection output dir, database URL fallbacks, RAG embedding dimensions, file-store base path, pgvector index strategy, etc. — see `packages/config/src/defaults.ts`).
+Your `.env` can use friendly names (`MY_OPENAI_API_KEY`, …). `defineConfig` runs `flattenAskDbConfig`, which maps the nested object onto the canonical environment variable names used in the **runtime flat map** (and in `aiEnv` for `@askdb/ai`). **Unset optional fields get defaults inside `flattenAskDbConfig`** (chat model, introspection output dir, database URL fallbacks, RAG embedding dimensions, file-store base path, pgvector index strategy, etc. — see `packages/config/src/defaults.ts`).
 
 ## Architectural rule — `@askdb/config` is the sole `process.env` reader
 
@@ -66,7 +66,7 @@ import { getAskDbRuntimeConfig } from "@askdb/config";
 const config = getAskDbRuntimeConfig();
 const apiKey = opts.apiKey ?? config.rag.embedder.apiKey;
 const level = config.logging.level;
-// For @askdb/core functions that accept an env-map argument:
+// For @askdb/ai functions that accept an env-map argument:
 const model = await createAskDbLanguageModelFromEnv(config.ai.aiEnv, { ... });
 ```
 

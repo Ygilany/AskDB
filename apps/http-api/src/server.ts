@@ -6,6 +6,11 @@ import { dirname, isAbsolute, resolve as resolvePath } from "node:path";
 import { fileURLToPath } from "node:url";
 import { getAskDbRuntimeConfig } from "@askdb/config";
 import {
+  askDbAiKeyMissingMessage,
+  createAskDbLanguageModelFromEnv,
+  resolveAskDbAiConfig,
+} from "@askdb/ai";
+import {
   AskDbError,
   AskDbLogEvent,
   type AskDbLogLevel,
@@ -17,13 +22,10 @@ import {
   SqlGenerationError,
   SqlValidationError,
   ask,
-  askDbAiKeyMissingMessage,
-  createAskDbLanguageModelFromEnv,
   createAskDbLogger,
   loadSchema,
   loadSchemaFromJson,
   parseAskDbModeV1,
-  resolveAskDbAiConfig,
 } from "@askdb/core";
 import type { AskHttpErrorResponse, AskHttpRequest, AskHttpSuccessResponse } from "./types.js";
 
