@@ -9,25 +9,33 @@ import {
 } from "@askdb/core";
 import { getAskDbRuntimeConfig } from "@askdb/config";
 import {
-  type Connector,
   introspect,
   toV2SchemaJson,
+  type Connector,
   type IntrospectResult,
   type IntrospectionFilters,
 } from "@askdb/introspect";
 import {
-  createPostgresConnector,
-  createPostgresCatalogQueryRunner,
-} from "@askdb/postgres";
-import { createPrismaConnector } from "@askdb/prisma";
-import { createMysqlConnector, createMysqlCatalogQueryRunner } from "@askdb/mysql";
-import { createSqliteConnector, createSqliteCatalogQueryRunner } from "@askdb/sqlite";
-import {
-  createSqlServerConnector,
-  createSqlServerCatalogQueryRunner,
-} from "@askdb/sqlserver";
+  createAskDbConnectorRegistry,
+  type AskDbConnectorConfig,
+  type AskDbConnectorProvider,
+  type AskDbConnectorResult,
+} from "@askdb/connectors";
+import { postgresConnectorProvider, createPostgresConnector } from "@askdb/postgres";
+import { prismaConnectorProvider } from "@askdb/prisma";
+import { mysqlConnectorProvider } from "@askdb/mysql";
+import { sqliteConnectorProvider } from "@askdb/sqlite";
+import { sqlServerConnectorProvider } from "@askdb/sqlserver";
 
-type Engine = "postgres" | "prisma" | "mysql" | "sqlite" | "sqlserver";
+const connectorRegistry = createAskDbConnectorRegistry([
+  postgresConnectorProvider,
+  prismaConnectorProvider,
+  mysqlConnectorProvider,
+  sqliteConnectorProvider,
+  sqlServerConnectorProvider,
+]);
+
+type Engine = AskDbConnectorProvider;
 const LIVE_DRIVER_ENGINES = ["postgres", "mysql", "sqlite", "sqlserver"] as const satisfies ReadonlyArray<
   Exclude<Engine, "prisma">
 >;
@@ -182,7 +190,16 @@ async function runIntrospectCommand(argv: readonly string[]): Promise<number> {
     logStdout: opts.logStdout ?? rt.logging.logStdout,
   });
 
-  const runConfig = buildRunConfig(opts, engine, schemaId);
+  const connectorConfig: AskDbConnectorConfig = {
+    provider: engine,
+    url: opts.url,
+    fromExport: opts.fromExport,
+    schemaPath: opts.prismaSchema,
+    filters: buildFilters(opts),
+    schemaId,
+  };
+  const runConfig = connectorRegistry.createConnector(connectorConfig);
+
   logger.info(
     {
       event: INTROSPECT_EVENTS.started,
@@ -221,29 +238,22 @@ async function runIntrospectCommand(argv: readonly string[]): Promise<number> {
   }
 }
 
-type IntrospectRunConfig = {
-  input: unknown;
-  connector: Connector<unknown>;
-  mode: string;
-};
-
 async function runWithOutput(
-  runConfig: IntrospectRunConfig,
+  runConfig: AskDbConnectorResult,
   opts: CliOptions,
   schemaId: string,
 ): Promise<IntrospectResult> {
+  const connector = runConfig.connector as Connector<unknown>;
+  const input = runConfig.input;
+
   if (opts.print) {
-    const result = await introspect(runConfig.input, undefined, {
-      connector: runConfig.connector,
-    });
+    const result = await introspect(input, undefined, { connector });
     process.stdout.write(`${JSON.stringify(toV2SchemaJson(result.schema, schemaId), null, 2)}\n`);
     return result;
   }
 
   if (opts.diff) {
-    const result = await introspect(runConfig.input, undefined, {
-      connector: runConfig.connector,
-    });
+    const result = await introspect(input, undefined, { connector });
     const generated = `${JSON.stringify(toV2SchemaJson(result.schema, schemaId), null, 2)}\n`;
     const existingPath = join(opts.diff, "schema.json");
     const existing = existsSync(existingPath) ? readFileSync(existingPath, "utf8") : "";
@@ -255,68 +265,14 @@ async function runWithOutput(
 
   const outDir = opts.out!;
   return introspect(
-    runConfig.input,
+    input,
     {
       outDir,
       schemaId,
       existingArtifactDir: existsSync(join(outDir, "schema.json")) ? outDir : undefined,
     },
-    { connector: runConfig.connector },
+    { connector },
   );
-}
-
-function buildRunConfig(
-  opts: CliOptions,
-  engine: Engine,
-  schemaId: string,
-): IntrospectRunConfig {
-  if (engine === "prisma") {
-    return {
-      mode: "prisma-schema",
-      input: {
-        schemaPath: opts.prismaSchema,
-        schemaId,
-        filters: buildFilters(opts),
-      },
-      connector: createPrismaConnector() as Connector<unknown>,
-    };
-  }
-
-  const filters = buildFilters(opts);
-  if (engine === "postgres") {
-    if (opts.fromExport) {
-      return {
-        mode: "from-export",
-        input: { mode: "from-export", bundlePath: opts.fromExport, filters },
-        connector: createPostgresConnector() as Connector<unknown>,
-      };
-    }
-    return {
-      mode: "live",
-      input: { mode: "live", runner: createPostgresCatalogQueryRunner(opts.url!), filters },
-      connector: createPostgresConnector() as Connector<unknown>,
-    };
-  }
-  if (engine === "mysql") {
-    return {
-      mode: "live",
-      input: { mode: "live", runner: createMysqlCatalogQueryRunner(opts.url!), filters },
-      connector: createMysqlConnector() as Connector<unknown>,
-    };
-  }
-  if (engine === "sqlite") {
-    return {
-      mode: "live",
-      input: { mode: "live", runner: createSqliteCatalogQueryRunner(opts.url!), filters },
-      connector: createSqliteConnector() as Connector<unknown>,
-    };
-  }
-  // sqlserver
-  return {
-    mode: "live",
-    input: { mode: "live", runner: createSqlServerCatalogQueryRunner(opts.url!), filters },
-    connector: createSqlServerConnector() as Connector<unknown>,
-  };
 }
 
 function buildFilters(opts: CliOptions): IntrospectionFilters | undefined {
