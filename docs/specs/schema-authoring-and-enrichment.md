@@ -5,11 +5,11 @@
 
 ## Overview
 
-Schema enrichment is the process of authoring the describable layer of a Schema v2 artifact — writing descriptions, aliases, common query language, and example questions into `tables/*.md` files and `concepts.md`. This turns a bare physical schema (produced by introspection) into a fully grounded artifact that improves NL→SQL quality.
+Schema enrichment is the process of authoring the describable layer of a schema artifact — writing descriptions, aliases, common query language, and example questions into `tables/*.md` files and `concepts.md`. This turns a bare physical schema (produced by introspection) into a fully grounded artifact that improves NL→SQL quality.
 
 Two packages handle this:
 
-- **`@askdb/enrich`** — headless, shared workspace logic: loading a Schema v2 directory as an editable workspace, constructing and saving table drafts, round-tripping `tables/*.md` front-matter, managing `concepts.md`, building AI suggestion targets, and bundling a directory into a single JSON. This package is consumed by both the TUI and Studio.
+- **`@askdb/enrich`** — headless, shared workspace logic: loading a describable schema directory as an editable workspace, constructing and saving table drafts, round-tripping `tables/*.md` front-matter, managing `concepts.md`, building AI suggestion targets, and bundling a directory into a single JSON. This package is consumed by both the TUI and Studio.
 - **`@askdb/tui`** — the interactive terminal authoring surface. Walks tables and columns, AI-suggests descriptions and aliases (BYO key), and presents each candidate for human confirm/edit/reject before saving. No auto-save.
 
 The dependency direction: `@askdb/core ← @askdb/enrich ← @askdb/tui` and `@askdb/core ← @askdb/enrich ← @askdb/studio`. Studio does not depend on TUI. See [ADR 0004](../adrs/0004-enrichment-package-boundary.md).
@@ -19,13 +19,13 @@ The dependency direction: `@askdb/core ← @askdb/enrich ← @askdb/tui` and `@a
 ### In scope
 
 **`@askdb/enrich`:**
-- `Workspace` and `WorkspaceTable` — load a Schema v2 directory, expose tables as editable drafts
+- `Workspace` and `WorkspaceTable` — load a describable schema directory, expose tables as editable drafts
 - Table draft construction from `tables/*.md` parsed front-matter
 - `saveTable()` — round-trippable write through the Phase 5 writer
 - Markdown body section update helpers (replace H2 sections without touching the rest)
 - `concepts.md` loading, saving, and link validation
 - AI suggestion source, target, and context helpers (builds the enrichment prompt; caller supplies the model)
-- `bundleSchema(dir) → bundledJson` — compiles a v2 directory into a single packed JSON
+- `bundleSchema(dir) → bundledJson` — compiles a schema directory into a single packed JSON
 
 **`@askdb/tui`:**
 - Interactive terminal app (`askdb-tui` binary)
@@ -73,7 +73,7 @@ buildSuggestContext(workspace: Workspace): SuggestContext
 
 ```ts
 // @askdb/tui binary
-askdb-tui --schema <path>         // open TUI on a v2 directory
+askdb-tui --schema <path>         // open TUI on a schema artifact directory
 askdb-tui bundle <dir> --out <f>  // bundle directory to JSON
 ```
 
@@ -82,7 +82,7 @@ askdb-tui bundle <dir> --out <f>  // bundle directory to JSON
 - `pnpm build` and `pnpm test` pass from repo root.
 - `@askdb/enrich`: workspace loading/saving, draft construction, markdown section replacement, concepts persistence, concept link validation, and bundling all covered without Ink/terminal dependencies.
 - `@askdb/tui` and `@askdb/studio` both import shared helpers from `@askdb/enrich`; Studio has no dependency on `@askdb/tui`.
-- TUI headless author flow: mock-prompted walk through a fixture → edit table description → save → file content matches expected front-matter. Round-trip via Schema v2 writer.
+- TUI headless author flow: mock-prompted walk through a fixture → edit table description → save → file content matches expected front-matter. Round-trip via the describable schema writer.
 - AI-suggest with mock model: suggestion queued; only persists on confirm; no file changes without confirm.
 - Idempotency: opening, viewing, and quitting without edits leaves files byte-identical.
 - Sensitive warning: description mentioning a sensitive column name emits warning without blocking save.

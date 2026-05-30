@@ -5,7 +5,7 @@
 
 ## Overview
 
-Schema introspection turns a real database into a Schema v2 physical artifact (`schema.json`). The `@askdb/introspect` package is engine-agnostic: it defines the `Connector<TInput>` interface and the orchestrator. Engine-specific logic — catalog SQL, row shapes, and dialect rules — lives in the integration package (`@askdb/postgres` for Postgres).
+Schema introspection turns a real database into a describable schema physical artifact (`schema.json`). The `@askdb/introspect` package is engine-agnostic: it defines the `Connector<TInput>` interface and the orchestrator. Engine-specific logic — catalog SQL, row shapes, and dialect rules — lives in the integration package (`@askdb/postgres` for Postgres).
 
 Two equally-supported front doors produce identical artifacts: **live** (queries run against a real database via a catalog query runner) and **air-gapped** (queries are run offline and their output is bundled; the connector ingests the bundle). This separation lets teams introspect air-gapped or locked-down databases by exporting the catalog queries separately.
 
@@ -15,7 +15,7 @@ Re-introspection is ID-anchored: existing stable IDs are preserved, new columns 
 
 ### In scope
 
-- `introspect()` orchestrator in `@askdb/introspect` — connector-agnostic, produces `IntrospectionResult` and writes Schema v2 `schema.json`
+- `introspect()` orchestrator in `@askdb/introspect` — connector-agnostic, produces `IntrospectionResult` and writes the physical `schema.json`
 - `Connector<TInput>` interface — generic over the integration's input shape; `templates()` is optional
 - Postgres connector in `@askdb/postgres` — catalog SQL templates (`pg_catalog` + `information_schema`), live mode via `createPostgresCatalogRunner`, air-gapped mode via bundle ingestion
 - Deterministic catalog SQL — all queries include explicit `ORDER BY`; `pg_constraint.conkey` order preserved for multi-column FKs; `pg_enum.enumsortorder` preserved for enums
@@ -79,4 +79,4 @@ type PostgresIntrospectionInput =
 - Partition fixture: declarative partition leaves absent from output; parent retained.
 - Air-gapped round-trip: export catalog snapshot as CSV bundle; ingest via `--from-export`; result byte-identical to live-mode output from the same data.
 - ID-anchored re-introspection: adding a column preserves existing IDs, adds a fresh ID for the new column, emits one `new_column` warning; `tables/*.md` untouched.
-- Live integration test (CI-gated, requires Postgres): `askdb introspect --url $DATABASE_URL` produces a `schema.json` the Schema v2 loader accepts; two runs with no DB change produce no diff.
+- Live integration test (CI-gated, requires Postgres): `askdb introspect --url $DATABASE_URL` produces a `schema.json` the schema loader accepts; two runs with no DB change produce no diff.

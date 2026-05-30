@@ -5,7 +5,7 @@
 
 ## Overview
 
-AskDB Studio is a local browser-based authoring surface for Schema v2 artifacts. It is started with `askdb-studio --schema <path>`, which launches a local server and opens the browser app. The UI reads and writes the same `schema.json` + `tables/*.md` artifact as the TUI, using `@askdb/enrich` for all workspace logic.
+AskDB Studio is a local browser-based authoring surface for describable schema artifacts. It is started with `askdb-studio --schema <path>`, which launches a local server and opens the browser app. The UI reads and writes the same `schema.json` + `tables/*.md` artifact as the TUI, using `@askdb/enrich` for all workspace logic.
 
 Studio is built with Vite + React + shadcn/ui. The server is a small Express app that serves the compiled React assets and exposes a typed JSON API. All enrichment logic runs through `@askdb/enrich` — Studio does not depend on `@askdb/tui`.
 

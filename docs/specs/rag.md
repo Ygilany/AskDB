@@ -5,9 +5,9 @@
 
 ## Overview
 
-The RAG layer adds retrieval over the Schema v2 describable artifact so large schemas don't blow up the NL→SQL prompt. For small schemas, `ask()` inlines the full DDL block. For large schemas (50+ tables, hundreds of columns), a retriever selects the most relevant chunks for the question and uses those in place of the full DDL.
+The RAG layer adds retrieval over the describable schema artifact so large schemas don't blow up the NL→SQL prompt. For small schemas, `ask()` inlines the full DDL block. For large schemas (50+ tables, hundreds of columns), a retriever selects the most relevant chunks for the question and uses those in place of the full DDL.
 
-`@askdb/rag` provides: a deterministic chunker that segments a Schema v2 artifact into typed chunks, a BYO embedder interface, BYO vector store interface with three built-in adapters (in-memory, file-backed, pgvector), and an indexer that maintains a `schema.lock.json` to avoid re-embedding unchanged content.
+`@askdb/rag` provides: a deterministic chunker that segments a describable schema artifact into typed chunks, a BYO embedder interface, BYO vector store interface with three built-in adapters (in-memory, file-backed, pgvector), and an indexer that maintains a `schema.lock.json` to avoid re-embedding unchanged content.
 
 The retriever is wired into `ask()` via an optional `retriever` parameter. When omitted, prompt assembly is unchanged.
 
@@ -15,7 +15,7 @@ The retriever is wired into `ask()` via an optional `retriever` parameter. When 
 
 ### In scope
 
-- **Chunker** — `chunkSchema(schema) → Chunk[]`; deterministic from the v2 artifact; chunk types: `table`, `column`, `cql`, `question`, `concept`, optional `relationship`
+- **Chunker** — `chunkSchema(schema) → Chunk[]`; deterministic from the schema artifact; chunk types: `table`, `column`, `cql`, `question`, `concept`, optional `relationship`
 - **Stable chunk IDs** — based on schema ID and content; stable across OS/file-system ordering; long-body paragraph splitting with stable `#bc:N` suffixes
 - **Sensitive propagation** — describable-layer chunks for sensitive columns excluded by default; `cql` chunks mentioning a sensitive column by name excluded; `includeSensitiveDescribable: true` overrides with a warning event
 - **BYO embedder** — `Embedder = (texts: string[]) => Promise<number[][]>`; default reference: AI SDK `embedMany()`
@@ -29,7 +29,7 @@ The retriever is wired into `ask()` via an optional `retriever` parameter. When 
 
 ### Out of scope
 
-- Schema chunking for non-v2 formats
+- Schema chunking for non-describable schema formats (e.g. raw DDL strings)
 - Automatic schema change detection (consumers call `buildSchemaIndex` to refresh)
 - Hosted vector stores beyond pgvector (Pinecone, Weaviate, etc.) — BYO via the `VectorStore` interface
 - Reranking or hybrid search
@@ -81,7 +81,7 @@ Log events: `askdb.rag.indexing_started`, `askdb.rag.chunk_indexed`, `askdb.rag.
 ## Test bar
 
 - `pnpm build` and `pnpm test` pass from repo root.
-- Golden chunk snapshot for the v2 fixture matches; two consecutive chunker runs produce byte-identical output; reordering files in the v2 directory does not change chunk IDs or texts.
+- Golden chunk snapshot for the schema fixture matches; two consecutive chunker runs produce byte-identical output; reordering files in the schema directory does not change chunk IDs or texts.
 - Sensitive-column fixture: describable-layer chunks for sensitive columns absent by default; `includeSensitiveDescribable: true` includes them with warning event.
 - Indexer: first run indexes all chunks; second run with unchanged artifact reuses 100% (zero embedding calls); editing one description re-embeds only affected chunks.
 - `schema.lock.json` round-trip: read → write → read produces identical contents.
