@@ -46,4 +46,4 @@ First-party apps (`askdb`, `@askdb/http-api`, `@askdb/studio`) load secrets and 
 ## Related
 
 - Prisma config reference: [Configuration files](https://www.prisma.io/docs/orm/reference/prisma-config-reference).
-- Phase 1 spec supplement: [`docs/specs/phase-1-schema-sql-cli/requirements.md`](../specs/phase-1-schema-sql-cli/requirements.md).
+- Core pipeline spec: [`docs/specs/core-pipeline.md`](../specs/core-pipeline.md).

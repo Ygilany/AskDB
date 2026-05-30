@@ -10,7 +10,7 @@ Accepted
 
 ## Context
 
-Phase 2 introduces **structured logging** and **trace / correlation IDs** across headless surfaces (CLI first; MCP and HTTP later), per [`docs/roadmap.md`](../roadmap.md) and [`docs/specs/phase-2-hardening-modes/requirements.md`](../specs/phase-2-hardening-modes/requirements.md).
+Phase 2 introduces **structured logging** and **trace / correlation IDs** across headless surfaces (CLI first; MCP and HTTP later), per [`docs/roadmap.md`](../roadmap.md) and [`docs/specs/modes-and-observability.md`](../specs/modes-and-observability.md).
 
 AskDB needs:
 
@@ -82,7 +82,6 @@ Use **[Pino](https://github.com/pinojs/pino)** as the structured logging library
 
 ## References
 
-- [`docs/specs/phase-2-hardening-modes/requirements.md`](../specs/phase-2-hardening-modes/requirements.md) — Phase 2 logging requirements and destination configuration  
-- [`docs/specs/phase-2-hardening-modes/plan.md`](../specs/phase-2-hardening-modes/plan.md) — Milestone 1 observability tasks  
+- [`docs/specs/modes-and-observability.md`](../specs/modes-and-observability.md) — logging requirements, destination configuration, and observability contracts  
 - [Pino](https://github.com/pinojs/pino) — project repository  
 - [Pino transports](https://github.com/pinojs/pino/blob/master/docs/transports.md) — multi-destination setup  

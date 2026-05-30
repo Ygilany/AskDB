@@ -21,7 +21,7 @@ Phase 2 ships modes as explicit contracts, structured logging with correlation I
 
 **Goal:** Encode product semantics before more surfaces.
 
-**Spec pack:** [`docs/specs/phase-2-hardening-modes/README.md`](specs/phase-2-hardening-modes/README.md) (links **plan**, **requirements**, **validation** merge bar).
+**Spec:** [`docs/specs/modes-and-observability.md`](specs/modes-and-observability.md)
 
 - Introduce **structured logging** and **trace / correlation IDs** across headless surfaces (CLI first; reused by TUI/HTTP/MCP later) so integrators can debug and correlate runs. Rationale: [**ADR 0001 — Structured logging with Pino**](adrs/0001-structured-logging-pino.md).
 - Document and implement the **operating modes** (e.g., schema-only execution vs. optional second pass with bounded result data for summaries). Contract: [`docs/contracts/modes-v1.md`](contracts/modes-v1.md).
@@ -46,7 +46,7 @@ Completed: CI spawn tests (no live LLM), richer CLI schema-load errors, and sens
 Phase 3 ships `@askdb/http-api` as a thin wrapper over `@askdb/core` with the same modes, correlation, and sensitive-field semantics as the CLI.
 - Prefer **server-configured schema** (e.g. schema file path/env) over sending schema JSON on every request; allow per-request overrides only for tests/special cases.
 
-**Spec pack:** [`docs/specs/phase-3-http-api/`](specs/phase-3-http-api/).
+**Spec:** [`docs/specs/http-api.md`](specs/http-api.md)
 
 ---
 
@@ -56,7 +56,7 @@ Completed: Published installable packages to npm and finalized release tooling/c
 
 **Goal:** Turn AskDB into an actually installable package — `pnpm add @askdb/core` from any project, plug in your own LLM, and call `ask()` from your runtime.
 
-**Spec pack:** [`docs/specs/phase-4-publish-npm/`](specs/phase-4-publish-npm/).
+**Spec:** [`docs/specs/distribution.md`](specs/distribution.md)
 
 - **Drop `private: true`** on `@askdb/core`, `askdb`, and `@askdb/http-api`. Pre-1.0 versions; semver applied to the published `index.ts` exports plus the contract docs under `docs/contracts/`.
 - **SQL output contract** — `ask()` returns validated SQL. Applications own any later execution outside AskDB.
@@ -71,7 +71,7 @@ Completed: Landed Schema v2 reader/writer + validation in `@askdb/core`, switche
 
 **Contract:** [`docs/contracts/schema-v2.md`](contracts/schema-v2.md).
 
-**Spec pack:** [`docs/specs/phase-5-schema-v2-core/`](specs/phase-5-schema-v2-core/).
+**Spec:** [`docs/specs/schema-format.md`](specs/schema-format.md)
 
 - **v2 reader/writer** — Parser, validator, normalizer, and round-trippable writer for the split artifact (physical `schema.json` + describable `tables/*.md` + optional `concepts.md` + bundled JSON form). Stable IDs, sensitive propagation per the contract.
 - **Breaking change (pre-1.0)** — Phase 5 makes a clean break from the prior format. The loader accepts only Schema v2 directories or bundled JSON; **no v1 migrator** ships. Pre-1.0 makes this acceptable.
@@ -85,7 +85,7 @@ Completed: Shipped `@askdb/introspect` with Postgres connector support, live + a
 
 **Goal:** Turn a real database into a Schema v2 physical artifact through a clean **connector pattern**, with **two equally-supported front doors** (live + air-gapped) that produce identical artifacts.
 
-**Spec pack:** [`docs/specs/phase-6-introspection/`](specs/phase-6-introspection/).
+**Spec:** [`docs/specs/introspection.md`](specs/introspection.md)
 
 - **`@askdb/introspect` package** — New workspace package. Sub-export per engine: `@askdb/introspect/postgres` ships in this phase; the `Connector` interface is the seam for additional engines in Phase 11.
 - **Two front doors, one connector** — Both modes return the same `IntrospectionResult` and write the same artifact:
@@ -105,7 +105,7 @@ Follow-up: shared non-UI enrichment workspace behavior now lives in `@askdb/enri
 
 **Contract:** [`docs/contracts/schema-v2.md`](contracts/schema-v2.md).
 
-**Spec pack:** [`docs/specs/phase-7-tui-enrichment/`](specs/phase-7-tui-enrichment/).
+**Spec:** [`docs/specs/schema-authoring-and-enrichment.md`](specs/schema-authoring-and-enrichment.md)
 
 - **`@askdb/tui` package** — Interactive terminal app (Clack or Ink) that:
   - Opens an existing Schema v2 directory (introspected via Phase 6, or hand-authored).
@@ -134,7 +134,7 @@ Completed: Shipped `@askdb/rag` with deterministic schema chunking, BYO embedder
 
 **Goal:** Ship retrieval over the describable schema so large schemas don't blow up the prompt and `Common query language` sections actually ground NL→SQL.
 
-**Spec pack:** [`docs/specs/phase-8-rag/`](specs/phase-8-rag/).
+**Spec:** [`docs/specs/rag.md`](specs/rag.md)
 
 - **Chunker** — Deterministic from the v2 artifact per [`schema-v2.md`](contracts/schema-v2.md): table chunks, column chunks, common-query-language chunks, example-question chunks, concept chunks, optional relationship chunks.
 - **BYO embedder** — `Embedder = (texts) => Promise<number[][]>` interface; default reference: AI SDK `embedMany()` with `text-embedding-3-small`.
@@ -166,7 +166,7 @@ Completed: Delivered multi-tenancy proof with tenant policy authoring (roots, hi
 
 **Goal:** Prove AskDB can safely generate SQL for a multi-tenant database by capturing the tenant model at setup, accepting the current user's authorized scope at query time, and carrying both into prompt assembly and validation.
 
-**Spec pack:** [`docs/specs/phase-10-multi-tenant-proof/`](specs/phase-10-multi-tenant-proof/).
+**Spec:** [`docs/specs/multi-tenancy.md`](specs/multi-tenancy.md)
 
 This phase is intentionally **Postgres-first**. Tenant boundaries are too central to correctness to defer until after multiple dialects multiply the surface area.
 

@@ -455,6 +455,4 @@ Chunks for tenant-scoped tables carry metadata identifying their required scope 
 
 - [`docs/contracts/schema-v2.md`](./schema-v2.md) — Schema v2 format contract
 - [`docs/contracts/sensitive-fields-and-modes.md`](./sensitive-fields-and-modes.md) — sensitive identifier rules
-- [`docs/specs/phase-10-multi-tenant-proof/requirements.md`](../specs/phase-10-multi-tenant-proof/requirements.md) — Phase 10 requirements
-- [`docs/specs/phase-10-multi-tenant-proof/plan.md`](../specs/phase-10-multi-tenant-proof/plan.md) — Phase 10 milestones
-- [`docs/specs/phase-10-multi-tenant-proof/validation.md`](../specs/phase-10-multi-tenant-proof/validation.md) — Phase 10 merge bar
+- [`docs/specs/multi-tenancy.md`](../specs/multi-tenancy.md) — multi-tenancy feature spec

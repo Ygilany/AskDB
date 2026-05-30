@@ -70,4 +70,4 @@ Rejected for now. The moved logic is authoring workflow and filesystem workspace
 
 - [`docs/platform.md`](../platform.md) — package layout
 - [`docs/contracts/schema-v2.md`](../contracts/schema-v2.md) — Schema v2 implementation locus
-- [`docs/specs/phase-7-tui-enrichment/`](../specs/phase-7-tui-enrichment/) — first enrichment authoring surface
+- [`docs/specs/schema-authoring-and-enrichment.md`](../specs/schema-authoring-and-enrichment.md) — enrichment authoring feature spec
