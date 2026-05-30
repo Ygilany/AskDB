@@ -9,5 +9,3 @@ export {
   type AskDbConnectorProviderAdapters,
   type AskDbConnectorRegistry,
 } from "./registry.js";
-
-export { connectorRegistry } from "./default-registry.js";

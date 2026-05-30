@@ -1,14 +1,11 @@
-import type { Connector, IntrospectionFilters, SqlTemplateBundle } from "@askdb/introspect";
+import type { Connector } from "@askdb/introspect";
+import type { AskDbConnectorConfig, AskDbConnectorProviderAdapter, AskDbConnectorResult } from "@askdb/connectors";
 import { createPostgresConnector } from "./index.js";
 import { createPostgresCatalogQueryRunner } from "../exec/postgres.js";
 
-export const postgresConnectorProvider = {
-  provider: "postgres" as const,
-  createConnector(config: {
-    url?: string;
-    fromExport?: string;
-    filters?: IntrospectionFilters;
-  }): { connector: Connector<unknown>; input: unknown; mode: string } {
+export const postgresConnectorProvider: AskDbConnectorProviderAdapter = {
+  provider: "postgres",
+  createConnector(config: AskDbConnectorConfig): AskDbConnectorResult {
     if (config.fromExport) {
       return {
         mode: "from-export",
@@ -31,7 +28,7 @@ export const postgresConnectorProvider = {
       connector: createPostgresConnector() as Connector<unknown>,
     };
   },
-  getTemplates(): SqlTemplateBundle {
+  getTemplates() {
     return createPostgresConnector().templates!();
   },
 };

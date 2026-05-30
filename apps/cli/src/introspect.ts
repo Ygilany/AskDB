@@ -16,11 +16,24 @@ import {
   type IntrospectionFilters,
 } from "@askdb/introspect";
 import {
-  connectorRegistry,
+  createAskDbConnectorRegistry,
   type AskDbConnectorConfig,
   type AskDbConnectorProvider,
   type AskDbConnectorResult,
 } from "@askdb/connectors";
+import { postgresConnectorProvider } from "@askdb/postgres";
+import { mysqlConnectorProvider } from "@askdb/mysql";
+import { sqliteConnectorProvider } from "@askdb/sqlite";
+import { sqlServerConnectorProvider } from "@askdb/sqlserver";
+import { prismaConnectorProvider } from "@askdb/prisma";
+
+const connectorRegistry = createAskDbConnectorRegistry([
+  postgresConnectorProvider,
+  mysqlConnectorProvider,
+  sqliteConnectorProvider,
+  sqlServerConnectorProvider,
+  prismaConnectorProvider,
+]);
 
 type Engine = AskDbConnectorProvider;
 const LIVE_DRIVER_ENGINES = ["postgres", "mysql", "sqlite", "sqlserver"] as const satisfies ReadonlyArray<

@@ -56,6 +56,21 @@ importers:
       '@askdb/introspect':
         specifier: workspace:*
         version: link:../../packages/introspect
+      '@askdb/mysql':
+        specifier: workspace:*
+        version: link:../../packages/mysql
+      '@askdb/postgres':
+        specifier: workspace:*
+        version: link:../../packages/postgres
+      '@askdb/prisma':
+        specifier: workspace:*
+        version: link:../../packages/prisma
+      '@askdb/sqlite':
+        specifier: workspace:*
+        version: link:../../packages/sqlite
+      '@askdb/sqlserver':
+        specifier: workspace:*
+        version: link:../../packages/sqlserver
       '@askdb/studio':
         specifier: workspace:*
         version: link:../studio
@@ -335,21 +350,6 @@ importers:
       '@askdb/introspect':
         specifier: workspace:*
         version: link:../introspect
-      '@askdb/mysql':
-        specifier: workspace:*
-        version: link:../mysql
-      '@askdb/postgres':
-        specifier: workspace:*
-        version: link:../postgres
-      '@askdb/prisma':
-        specifier: workspace:*
-        version: link:../prisma
-      '@askdb/sqlite':
-        specifier: workspace:*
-        version: link:../sqlite
-      '@askdb/sqlserver':
-        specifier: workspace:*
-        version: link:../sqlserver
     devDependencies:
       typescript:
         specifier: ^5.7.3
@@ -408,6 +408,9 @@ importers:
 
   packages/mysql:
     dependencies:
+      '@askdb/connectors':
+        specifier: workspace:*
+        version: link:../connectors
       '@askdb/core':
         specifier: workspace:*
         version: link:../core
@@ -427,6 +430,9 @@ importers:
 
   packages/postgres:
     dependencies:
+      '@askdb/connectors':
+        specifier: workspace:*
+        version: link:../connectors
       '@askdb/core':
         specifier: workspace:*
         version: link:../core
@@ -449,6 +455,9 @@ importers:
 
   packages/prisma:
     dependencies:
+      '@askdb/connectors':
+        specifier: workspace:*
+        version: link:../connectors
       '@askdb/introspect':
         specifier: workspace:*
         version: link:../introspect
@@ -493,6 +502,9 @@ importers:
 
   packages/sqlite:
     dependencies:
+      '@askdb/connectors':
+        specifier: workspace:*
+        version: link:../connectors
       '@askdb/core':
         specifier: workspace:*
         version: link:../core
@@ -515,6 +527,9 @@ importers:
 
   packages/sqlserver:
     dependencies:
+      '@askdb/connectors':
+        specifier: workspace:*
+        version: link:../connectors
       '@askdb/core':
         specifier: workspace:*
         version: link:../core

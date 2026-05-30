@@ -7,37 +7,40 @@ Proposed.
 ## Context
 
 ADR 0002 established that adding a new integration only requires a new package, with no core or
-introspect changes. The consequence is that each integration package exports its own
-`create<Engine>Connector()` factory and `create<Engine>CatalogQueryRunner()`.
+introspect changes. Each integration package exports its own `create<Engine>Connector()` factory
+and `create<Engine>CatalogQueryRunner()`.
 
 First-party apps — principally the CLI's `apps/cli/src/introspect.ts` — must know about every
 concrete integration package and switch over the engine name at runtime. Without a registry,
 every consumer must import all concrete packages and re-implement the dispatch switch.
 
-### Why this is different from the AI registry
+This is the same problem that motivated `@askdb/ai` for AI providers (ADR 0006).
 
-For AI (ADR 0006), users pick *one* provider; the `@askdb/ai` package stays light and the CLI
-explicitly registers the three adapters it supports. For connectors, every CLI invocation needs
-*any* of the five engines depending on what the user configured. The CLI always needs all of them.
+## Design layers
 
-This asymmetry makes a batteries-included design the right choice for connectors:
-`@askdb/connectors` owns both the registry abstraction and the pre-built default registry. The
-CLI imports a single symbol and never names a concrete database package.
+```
+@askdb/introspect
+  low-level, engine-agnostic contract:
+  Connector<TInput>, introspect(input, renderOptions, { connector })
 
-### Dependency direction
+@askdb/connectors
+  higher-level bootstrap registry:
+  AskDbConnectorProviderAdapter, createAskDbConnectorRegistry
+  "given AskDB config, pick the right concrete connector adapter"
 
-The natural direction is: `CLI → @askdb/connectors → concrete packages → @askdb/introspect`.
+@askdb/postgres, @askdb/mysql, @askdb/sqlite, @askdb/sqlserver, @askdb/prisma
+  each depends on @askdb/connectors and exports a provider adapter constant
 
-Having concrete packages *also* depend on `@askdb/connectors` for its adapter type would create a
-circular package dependency (`connectors → postgres → connectors`). The solution is structural
-typing: concrete packages define their adapter shape using types from `@askdb/introspect` (which
-they already depend on). TypeScript's structural checker verifies compatibility at the call site
-inside `@askdb/connectors`. No circular dep, no extra cross-dependency.
+apps (CLI, etc.)
+  depends on @askdb/connectors + each concrete package
+  wires adapters into the registry at startup
+```
 
 ## Decision
 
-Create `@askdb/connectors` — a workspace package published as `@askdb/connectors` — as the
-batteries-included connector registry for first-party apps.
+Create `@askdb/connectors` — a lightweight workspace package published as `@askdb/connectors` —
+as the shared registry and adapter layer for introspection connectors. Follow Option F from
+ADR 0006: the registry package owns types and the factory; concrete packages export adapters.
 
 ### `@askdb/connectors`
 
@@ -47,33 +50,58 @@ Owns:
 - `AskDbConnectorResult` — `{ connector: Connector<unknown>; input: unknown; mode: string }`.
 - `AskDbConnectorProviderAdapter` — the interface each concrete package implements (includes optional `getTemplates?()`).
 - `AskDbConnectorRegistry` — `{ hasProvider, createConnector, getTemplates }`.
-- `createAskDbConnectorRegistry(adapters)` — factory for custom registries.
-- `connectorRegistry` — pre-built registry containing all five first-party adapters, exported for CLI and other apps that support all engines.
+- `createAskDbConnectorRegistry(adapters)` — registry factory.
+- `askDbConnectorProviderMissingMessage()` — actionable error helper.
 
 Dependency model:
-- `@askdb/introspect`: hard dependency, for `Connector<TInput>`, `IntrospectionFilters`, `SqlTemplateBundle`.
-- All five concrete packages as regular runtime dependencies.
+- `@askdb/introspect`: hard dependency (for `Connector<TInput>`, `IntrospectionFilters`, `SqlTemplateBundle`).
+- **No dependency on any concrete database package.** The registry stays lightweight; users
+  install only the concrete packages their runtime uses.
 
 ### Concrete packages
 
-Each package exports a provider adapter constant using local types sourced from `@askdb/introspect`.
-TypeScript structural typing ensures the exported shape satisfies `AskDbConnectorProviderAdapter`.
-No concrete package depends on `@askdb/connectors`.
+Each package depends on `@askdb/connectors` and exports a provider adapter constant typed as
+`AskDbConnectorProviderAdapter`. The `import type` in each package is erased at compile time,
+so there is no circular runtime dependency:
 
-- `@askdb/postgres` → `postgresConnectorProvider` (live + from-export modes, implements `getTemplates()`).
+```
+@askdb/connectors (registry/types, runtime: no concrete deps)
+  ← depends on (type-only, erased in JS output)
+@askdb/postgres (exports postgresConnectorProvider: AskDbConnectorProviderAdapter)
+```
+
+- `@askdb/postgres` → `postgresConnectorProvider` (live + from-export, implements `getTemplates()`).
 - `@askdb/mysql` → `mysqlConnectorProvider`.
 - `@askdb/sqlite` → `sqliteConnectorProvider`.
 - `@askdb/sqlserver` → `sqlServerConnectorProvider`.
 - `@askdb/prisma` → `prismaConnectorProvider`.
 
+All existing `create<Engine>Connector()` and `create<Engine>CatalogQueryRunner()` exports are
+retained unchanged.
+
 ### First-party apps
 
-Apps import `connectorRegistry` and are done. No adapter imports, no registry instantiation:
+Apps import the factory from `@askdb/connectors` and the adapter constants from each concrete
+package they intentionally support:
 
 ```ts
-import { connectorRegistry, type AskDbConnectorConfig } from "@askdb/connectors";
+import { createAskDbConnectorRegistry } from "@askdb/connectors";
+import { postgresConnectorProvider } from "@askdb/postgres";
+import { mysqlConnectorProvider } from "@askdb/mysql";
+import { sqliteConnectorProvider } from "@askdb/sqlite";
+import { sqlServerConnectorProvider } from "@askdb/sqlserver";
+import { prismaConnectorProvider } from "@askdb/prisma";
 
-const { connector, input, mode } = connectorRegistry.createConnector({
+const connectors = createAskDbConnectorRegistry([
+  postgresConnectorProvider,
+  mysqlConnectorProvider,
+  sqliteConnectorProvider,
+  sqlServerConnectorProvider,
+  prismaConnectorProvider,
+]);
+
+// Introspection:
+const { connector, input, mode } = connectors.createConnector({
   provider: engine,
   url,
   fromExport,
@@ -82,57 +110,50 @@ const { connector, input, mode } = connectorRegistry.createConnector({
   schemaId,
 });
 
-// Templates (postgres-specific capability surfaced generically):
-const bundle = connectorRegistry.getTemplates("postgres");
+// Templates (surfaced generically — no direct postgres import needed):
+const bundle = connectors.getTemplates("postgres");
 ```
 
-### Dependency graph (CLI)
-
-```
-askdb (CLI)
-  └─ @askdb/connectors
-       ├─ @askdb/introspect
-       ├─ @askdb/postgres  ──► @askdb/introspect, @askdb/core
-       ├─ @askdb/mysql     ──► @askdb/introspect, @askdb/core
-       ├─ @askdb/sqlite    ──► @askdb/introspect, @askdb/core
-       ├─ @askdb/sqlserver ──► @askdb/introspect, @askdb/core
-       └─ @askdb/prisma    ──► @askdb/introspect
-```
+Apps declare only the adapter packages they support. A hypothetical embedded deployment that
+only supports postgres installs `@askdb/postgres`, imports `postgresConnectorProvider`, and
+passes it to `createAskDbConnectorRegistry`.
 
 ## Rationale
 
-- **Single responsibility for the CLI.** The CLI resolves URLs and validates flags; it does not
-  know which engines exist. Engine knowledge lives entirely in `@askdb/connectors`.
-- **Clean dependency direction.** `CLI → connectors → concrete` — one-way, no cycles.
-- **Structural typing avoids coupling.** Concrete packages express adapter shape using
-  `@askdb/introspect` types they already depend on. No circular dep, no artificial type package.
-- **`@askdb/introspect` stays engine-agnostic.** It defines `Connector<TInput>`, `SqlTemplateBundle`,
-  and `IntrospectionFilters`, all of which are the right seams for the adapter shape.
-- **Templates are a generic capability.** `getTemplates?()` on the adapter and `getTemplates(provider)`
-  on the registry expose this cleanly without the CLI importing any concrete package directly.
+- **Mirrors ADR 0006 (Option F).** Same structural split as `@askdb/ai` / `@askdb/ai-*`:
+  registry package owns the abstraction, concrete packages own the implementation.
+- **`@askdb/connectors` stays lightweight.** It has one runtime dependency (`@askdb/introspect`).
+  Users who only use postgres do not pay for mysql or prisma packages.
+- **`@askdb/introspect` stays engine-agnostic.** It defines `Connector<TInput>` and
+  `introspect()`. The registry layer in `@askdb/connectors` is the right place for
+  config-to-adapter dispatch.
+- **No circular runtime dependency.** Concrete packages use `import type` from `@askdb/connectors`,
+  which TypeScript erases entirely in the JS output. The runtime module graph is acyclic.
+- **Templates are surfaced generically.** `getTemplates?()` on the adapter and `getTemplates(provider)`
+  on the registry expose engine-specific capabilities without requiring callers to import a
+  concrete package for a capability check.
 
 ## Consequences
 
-- The CLI's direct dependencies on `@askdb/postgres`, `@askdb/mysql`, `@askdb/sqlite`,
-  `@askdb/sqlserver`, and `@askdb/prisma` are removed; all five arrive transitively through
-  `@askdb/connectors`.
-- Library users who want only one engine install that engine's package and call
-  `createAskDbConnectorRegistry([postgresConnectorProvider])` directly — the factory is still
-  exported for custom registries.
-- `@askdb/connectors` is a heavyweight registry (pulls in five database packages). This is
-  intentional: it is the app-bootstrap layer, not a library component.
+- `@askdb/postgres`, `@askdb/mysql`, `@askdb/sqlite`, `@askdb/sqlserver`, and `@askdb/prisma`
+  gain `@askdb/connectors` as a direct runtime dependency (for the adapter type).
+- The CLI's inline engine switch in `buildRunConfig` is replaced by `createAskDbConnectorRegistry`
+  + `registry.createConnector(config)`.
+- Library consumers who do not want the registry layer continue to call
+  `create<Engine>Connector()` and `create<Engine>CatalogQueryRunner()` directly — nothing is
+  removed from those packages.
+- Adding a new engine integration adds a new package + adapter export; no changes to
+  `@askdb/connectors`, `@askdb/introspect`, or `@askdb/core`.
 
 ## Out of scope
 
 - Runtime query execution — connectors are for introspection only.
 - Moving `DialectSpec` out of `@askdb/core`.
-- Optional peer dep + dynamic loading pattern — deferred; the batteries-included design is
-  sufficient for all current first-party use cases.
+- Auto-registration or dynamic loading of adapters.
 
 ## Related
 
 - ADR 0002 — Integration-package layout.
-- ADR 0006 — AI provider integration strategy.
+- ADR 0006 — AI provider integration strategy (Option F).
 - `packages/connectors/src/registry.ts` — registry implementation.
-- `packages/connectors/src/default-registry.ts` — pre-built default registry.
-- `packages/ai/src/provider.ts` — AI registry (different distribution model but parallel pattern).
+- `packages/ai/src/provider.ts` — AI registry (parallel pattern).

@@ -46,6 +46,7 @@
     "test": "vitest run --config ../../vitest.config.ts"
   },
   "dependencies": {
+    "@askdb/connectors": "workspace:*",
     "@askdb/core": "workspace:*",
     "@askdb/introspect": "workspace:*"
   },
