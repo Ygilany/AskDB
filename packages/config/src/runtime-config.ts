@@ -8,7 +8,8 @@ import { flatToAiEnv, getAskDbRuntimeStore } from "./runtime-store.js";
 export type AskDbRuntimeAiConfig = {
   /**
    * Flat env-shaped map built from the runtime snapshot. Pass to
-   * `resolveAskDbAiConfig`, `createAskDbLanguageModelFromEnv`, etc.
+   * `@askdb/ai` helpers such as `resolveAskDbAiConfig` and registry methods like
+   * `createLanguageModelFromEnv`.
    */
   aiEnv: Record<string, string | undefined>;
 };

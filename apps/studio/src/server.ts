@@ -6,19 +6,23 @@ import { fileURLToPath } from "node:url";
 import { generateText as defaultGenerateText } from "ai";
 import { getAskDbRuntimeConfig } from "@askdb/config";
 import {
-  ask,
   askDbAiKeyMissingMessage,
-  createAskDbEmbeddingModel,
-  createAskDbLanguageModelFromEnv,
-  isBuiltInDialectId,
-  loadSchema,
+  createAskDbAiRegistry,
   resolveAskDbAiConfig,
   resolveAskDbEmbeddingConfig,
-  suggestEnrichment,
-  tenantScopeSchema,
   type AskDbAiConfig,
   type AskDbAiEnv,
   type AskDbAiProvider,
+} from "@askdb/ai";
+import { azureProvider } from "@askdb/ai-azure";
+import { googleProvider } from "@askdb/ai-google";
+import { openaiProvider } from "@askdb/ai-openai";
+import {
+  ask,
+  isBuiltInDialectId,
+  loadSchema,
+  suggestEnrichment,
+  tenantScopeSchema,
   type AskDialectInput,
   type AskGenerateDeps,
   type TenantPolicyFrontmatter,
@@ -71,6 +75,8 @@ import type {
   SuggestResponse,
   SuggestTenantPolicyResponse,
 } from "./shared/api.js";
+
+const askDbAi = createAskDbAiRegistry([openaiProvider, azureProvider, googleProvider]);
 
 const CLIENT_DIR = fileURLToPath(new URL("./client/", import.meta.url));
 
@@ -345,7 +351,7 @@ function saveDraft(state: StudioState, tableId: string, draft: TableDraft): void
 
 async function suggestForSource(workspace: Workspace, source: SuggestSource): Promise<SuggestResponse["candidates"]> {
   const rt = getAskDbRuntimeConfig();
-  const model = await createAskDbLanguageModelFromEnv(rt.ai.aiEnv);
+  const model = await askDbAi.createLanguageModelFromEnv(rt.ai.aiEnv);
   if (!model) {
     throw new StudioHttpError(400, askDbAiKeyMissingMessage("AI enrichment suggestions"));
   }
@@ -359,7 +365,7 @@ async function suggestForSource(workspace: Workspace, source: SuggestSource): Pr
 
 async function suggestTenantPolicyDraft(state: StudioState): Promise<SuggestTenantPolicyResponse> {
   const rt = getAskDbRuntimeConfig();
-  const model = await createAskDbLanguageModelFromEnv(rt.ai.aiEnv);
+  const model = await askDbAi.createLanguageModelFromEnv(rt.ai.aiEnv);
   if (!model) {
     throw new StudioHttpError(400, askDbAiKeyMissingMessage("AI tenant policy suggestion"));
   }
@@ -483,7 +489,7 @@ async function askSampleQuestion(
   type AskModel = Parameters<typeof ask>[0]["model"];
   const model: AskModel = mockSql
     ? (undefined as unknown as AskModel)
-    : ((await createAskDbLanguageModelFromEnv(rt.ai.aiEnv)) as AskModel);
+    : ((await askDbAi.createLanguageModelFromEnv(rt.ai.aiEnv)) as AskModel);
 
   const schemaProvider =
     "provider" in schema && typeof schema.provider === "string"
@@ -906,7 +912,7 @@ async function createStudioRagEmbedder(
   if (!config.aiConfig) {
     throw new StudioHttpError(400, studioRagAiSdkKeyMissingMessage());
   }
-  const model = await createAskDbEmbeddingModel(config.aiConfig, {
+  const model = await askDbAi.createEmbeddingModel(config.aiConfig, {
     dimensions: config.requestDimensions,
   });
   return createAiSdkEmbedder({

@@ -10,14 +10,14 @@ description: "Add natural-language SQL to a TypeScript service in twenty lines: 
 ## Install
 
 ```bash
-npm install @askdb/core @askdb/postgres ai @ai-sdk/openai pg
+npm install @askdb/core @askdb/postgres @ai-sdk/openai pg
 ```
 
 | Package | Why |
 | --- | --- |
 | `@askdb/core` | The pipeline — `loadSchema`, `ask`, validation. |
 | `@askdb/postgres` | The Postgres dialect adapter (swap for `@askdb/mysql`, `@askdb/sqlite`, `@askdb/sqlserver`). |
-| `ai` + `@ai-sdk/openai` | The Vercel AI SDK and an OpenAI provider — bring your own. |
+| `@ai-sdk/openai` | OpenAI's AI SDK provider — bring your own model provider. |
 | `pg` | The Postgres driver. AskDB doesn't open the connection; your app does. |
 
 ## Load the schema once
