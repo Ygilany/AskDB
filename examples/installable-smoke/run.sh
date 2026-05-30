@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Installable smoke test for AskDB packages.
 #
-# Builds the workspace, packs the library packages (including config, enrich, and tui) plus the app
+# Builds the workspace, packs the library packages (including config, enrich, ai, and tui) plus the app
 # packages (cli, studio, http-api), copies the consumer fixture into a fresh tmpdir, installs
 # library tarballs (no workspace; includes @askdb/config for @askdb/rag's dependency), runs `tsc --noEmit`,
 # and executes the smoke script. The app sandbox gets a minimal askdb.config.ts because the CLI
@@ -20,7 +20,7 @@ pnpm -C "$ROOT" -r build >/dev/null
 
 echo "smoke: packing tarballs…"
 mkdir -p "$WORK/tarballs"
-for pkg in packages/config packages/core packages/introspect packages/postgres packages/prisma packages/enrich packages/tui packages/mysql packages/sqlite packages/sqlserver apps/cli apps/studio apps/http-api; do
+for pkg in packages/config packages/core packages/ai packages/ai-openai packages/ai-azure packages/ai-google packages/introspect packages/postgres packages/prisma packages/enrich packages/tui packages/mysql packages/sqlite packages/sqlserver apps/cli apps/studio apps/http-api; do
   (cd "$ROOT/$pkg" && pnpm pack --pack-destination "$WORK/tarballs" >/dev/null)
 done
 for pkg in packages/rag; do
@@ -31,6 +31,14 @@ CONFIG_TARBALL="$(ls "$WORK/tarballs"/askdb-config-*.tgz | head -n1)"
 [ -f "$CONFIG_TARBALL" ] || { echo "smoke: missing config tarball" >&2; exit 1; }
 CORE_TARBALL="$(ls "$WORK/tarballs"/askdb-core-*.tgz | head -n1)"
 [ -f "$CORE_TARBALL" ] || { echo "smoke: missing core tarball" >&2; exit 1; }
+AI_TARBALL="$(ls "$WORK/tarballs"/askdb-ai-*.tgz | grep -Ev 'askdb-ai-(openai|azure|google)-' | head -n1)"
+[ -f "$AI_TARBALL" ] || { echo "smoke: missing ai tarball" >&2; exit 1; }
+AI_OPENAI_TARBALL="$(ls "$WORK/tarballs"/askdb-ai-openai-*.tgz | head -n1)"
+[ -f "$AI_OPENAI_TARBALL" ] || { echo "smoke: missing ai-openai tarball" >&2; exit 1; }
+AI_AZURE_TARBALL="$(ls "$WORK/tarballs"/askdb-ai-azure-*.tgz | head -n1)"
+[ -f "$AI_AZURE_TARBALL" ] || { echo "smoke: missing ai-azure tarball" >&2; exit 1; }
+AI_GOOGLE_TARBALL="$(ls "$WORK/tarballs"/askdb-ai-google-*.tgz | head -n1)"
+[ -f "$AI_GOOGLE_TARBALL" ] || { echo "smoke: missing ai-google tarball" >&2; exit 1; }
 INTROSPECT_TARBALL="$(ls "$WORK/tarballs"/askdb-introspect-*.tgz | head -n1)"
 [ -f "$INTROSPECT_TARBALL" ] || { echo "smoke: missing introspect tarball" >&2; exit 1; }
 POSTGRES_TARBALL="$(ls "$WORK/tarballs"/askdb-postgres-*.tgz | head -n1)"
@@ -63,6 +71,33 @@ if grep -Eq '(^package/src/|\.test\.)' <<<"$CONFIG_TARBALL_FILES"; then
   echo "smoke: FAILED — @askdb/config tarball includes source/tests" >&2
   exit 1
 fi
+
+echo "smoke: validating @askdb/ai tarball contents…"
+AI_TARBALL_FILES="$(tar -tzf "$AI_TARBALL")"
+grep -q '^package/dist/index.js$' <<<"$AI_TARBALL_FILES"
+grep -q '^package/README.md$' <<<"$AI_TARBALL_FILES"
+grep -q '^package/LICENSE$' <<<"$AI_TARBALL_FILES"
+if grep -Eq '(^package/src/|\.test\.)' <<<"$AI_TARBALL_FILES"; then
+  echo "smoke: FAILED — @askdb/ai tarball includes source/tests" >&2
+  exit 1
+fi
+
+for provider_package in \
+  "@askdb/ai-openai:$AI_OPENAI_TARBALL" \
+  "@askdb/ai-azure:$AI_AZURE_TARBALL" \
+  "@askdb/ai-google:$AI_GOOGLE_TARBALL"; do
+  provider_name="${provider_package%%:*}"
+  provider_tarball="${provider_package#*:}"
+  echo "smoke: validating $provider_name tarball contents…"
+  provider_tarball_files="$(tar -tzf "$provider_tarball")"
+  grep -q '^package/dist/index.js$' <<<"$provider_tarball_files"
+  grep -q '^package/README.md$' <<<"$provider_tarball_files"
+  grep -q '^package/LICENSE$' <<<"$provider_tarball_files"
+  if grep -Eq '(^package/src/|\.test\.)' <<<"$provider_tarball_files"; then
+    echo "smoke: FAILED — $provider_name tarball includes source/tests" >&2
+    exit 1
+  fi
+done
 
 echo "smoke: validating @askdb/introspect tarball contents…"
 INTROSPECT_TARBALL_FILES="$(tar -tzf "$INTROSPECT_TARBALL")"
@@ -228,6 +263,10 @@ node -e "
     dependencies: {
       '@askdb/config': 'file:$CONFIG_TARBALL',
       '@askdb/core': 'file:$CORE_TARBALL',
+      '@askdb/ai': 'file:$AI_TARBALL',
+      '@askdb/ai-openai': 'file:$AI_OPENAI_TARBALL',
+      '@askdb/ai-azure': 'file:$AI_AZURE_TARBALL',
+      '@askdb/ai-google': 'file:$AI_GOOGLE_TARBALL',
       '@askdb/introspect': 'file:$INTROSPECT_TARBALL',
       '@askdb/postgres': 'file:$POSTGRES_TARBALL',
       '@askdb/prisma': 'file:$PRISMA_TARBALL',

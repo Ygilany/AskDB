@@ -1,4 +1,5 @@
-import type { LanguageModel, generateText as defaultGenerateText } from "ai";
+import type { generateText as defaultGenerateText } from "ai";
+import type { AskDbLanguageModel } from "./ai/types.js";
 import type { AskDbLogger } from "./logging/askdb-logger.js";
 import { AskDbLogEvent } from "./logging/log-events.js";
 import type { AnyNormalizedSchema } from "./schema/types.js";
@@ -53,7 +54,7 @@ export type AskDialect = {
   generate(
     question: string,
     schema: AnyNormalizedSchema,
-    model: LanguageModel,
+    model: AskDbLanguageModel,
     options?: AskDialectGenerateOptions,
   ): Promise<AskDialectGenerateResult>;
 };
@@ -74,7 +75,7 @@ export type AskGenerateDeps = {
 export type AskPipelineOptions = {
   question: string;
   schema: AnyNormalizedSchema;
-  model: LanguageModel;
+  model: AskDbLanguageModel;
   /**
    * Required: the SQL dialect. Accepts a {@link BuiltInDialectId} (e.g. `"postgres"`),
    * a {@link DialectSpec} descriptor, or a fully custom {@link AskDialect} adapter.

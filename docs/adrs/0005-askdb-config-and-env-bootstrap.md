@@ -31,7 +31,7 @@ First-party apps (`askdb`, `@askdb/http-api`, `@askdb/studio`) load secrets and 
 
 5. **Legacy flat** `export default { OPENAI_API_KEY: "..." }` is **removed**: the loader requires `defineConfig({ ... })`.
 
-6. **`@askdb/config`** is the **single package that reads `process.env`** directly. `@askdb/core`'s env-aware functions (e.g. `resolveAskDbAiConfig`, `createAskDbLanguageModelFromEnv`) accept the env map as an **explicit, required parameter** (typically **`getAskDbRuntimeConfig().ai.aiEnv`**). Library packages obtain all runtime configuration through **`getAskDbRuntimeConfig()`** and must not call `env()`, `requiredEnv()`, or read `process.env` — `env()` is reserved for end-user `askdb.config.*` authoring only.
+6. **`@askdb/config`** is the **single package that reads `process.env`** directly. Env-aware AI functions in `@askdb/ai` (e.g. `resolveAskDbAiConfig` and registry methods such as `createLanguageModelFromEnv`) accept the env map as an **explicit, required parameter** (typically **`getAskDbRuntimeConfig().ai.aiEnv`**). Library packages obtain all runtime configuration through **`getAskDbRuntimeConfig()`** and must not call `env()`, `requiredEnv()`, or read `process.env` — `env()` is reserved for end-user `askdb.config.*` authoring only.
 
 7. **Introspection CLI defaults:** after bootstrap, `askdb introspect` may take **`ASKDB_INTROSPECT_OUT`** as the effective **`--out`** when the user omits `--out`, `--print`, and `--diff`. For **`--engine prisma`**, **`ASKDB_PRISMA_SCHEMA`** may supply **`--prisma-schema`** when the flag is omitted. These keys are produced from `introspection.outputDir` and `introspection.providerConfig.prisma.schemaPath` when using the nested config file.
 

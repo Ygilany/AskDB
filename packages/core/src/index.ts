@@ -173,20 +173,8 @@ export {
   nlToSqlAmbiguityNotes,
 } from "./sql/schema-question-precheck.js";
 export {
-  resolveAskDbAiConfig,
-  resolveAskDbEmbeddingConfig,
-  createAskDbLanguageModel,
-  createAskDbLanguageModelFromEnv,
-  createAskDbEmbeddingModel,
-  createAskDbEmbeddingModelFromEnv,
-  askDbAiKeyMissingMessage,
-  type AskDbAiProvider,
-  type AskDbAiConfig,
-  type AskDbAiEnv,
-  type ResolveAskDbAiConfigOptions,
-  type ResolveAskDbEmbeddingConfigOptions,
-  type CreateAskDbEmbeddingModelOptions,
-} from "./ai/provider.js";
+  type AskDbLanguageModel,
+} from "./ai/types.js";
 export type {
   Retriever,
   RetrievedChunk,

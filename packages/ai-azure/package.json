@@ -1,16 +1,8 @@
 {
-  "name": "@askdb/core",
-  "version": "0.5.0-beta.18",
-  "description": "AskDB core: dialect-agnostic NL→SQL pipeline. Provides ask() orchestration, schema/IR types, modes, logging, and retrieval input. Bring your own dialect (e.g. @askdb/postgres).",
-  "keywords": [
-    "askdb",
-    "nl-to-sql",
-    "natural-language-to-sql",
-    "ai",
-    "llm",
-    "ai-sdk",
-    "schema-v2"
-  ],
+  "name": "@askdb/ai-azure",
+  "version": "0.1.0-beta.0",
+  "description": "AskDB Azure OpenAI provider adapter for @askdb/ai.",
+  "keywords": ["askdb", "ai", "ai-sdk", "azure", "foundry"],
   "homepage": "https://github.com/Ygilany/AskDB#readme",
   "bugs": {
     "url": "https://github.com/Ygilany/AskDB/issues"
@@ -18,7 +10,7 @@
   "repository": {
     "type": "git",
     "url": "git+https://github.com/Ygilany/AskDB.git",
-    "directory": "packages/core"
+    "directory": "packages/ai-azure"
   },
   "license": "Apache-2.0",
   "author": "Yahya Gilany",
@@ -31,12 +23,7 @@
       "import": "./dist/index.js"
     }
   },
-  "files": [
-    "dist",
-    "README.md",
-    "LICENSE",
-    "NOTICE"
-  ],
+  "files": ["dist", "README.md", "LICENSE", "NOTICE"],
   "engines": {
     "node": ">=20"
   },
@@ -46,10 +33,8 @@
     "test": "vitest run --config ../../vitest.config.ts"
   },
   "dependencies": {
-    "ai": "^4.3.19",
-    "gray-matter": "^4.0.3",
-    "pino": "^9.6.0",
-    "zod": "^3.24.4"
+    "@ai-sdk/azure": "^1.3.25",
+    "@askdb/ai": "workspace:*"
   },
   "devDependencies": {
     "typescript": "^5.7.3",

@@ -22,15 +22,16 @@
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { bootstrapAskDbEnv, getAskDbRuntimeConfig } from "@askdb/config";
+import { createAskDbAiRegistry } from "@askdb/ai";
+import { openaiProvider } from "@askdb/ai-openai";
 import {
   ask,
   loadSchema,
-  createAskDbLanguageModelFromEnv,
-  createAskDbEmbeddingModelFromEnv,
 } from "@askdb/core";
 import { buildSchemaIndex, createMemoryStore, createAiSdkEmbedder } from "@askdb/rag";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const askDbAi = createAskDbAiRegistry([openaiProvider]);
 
 // Load .env (if present) and evaluate askdb.config.ts in this directory,
 // installing the AskDB runtime snapshot used by all subsequent calls.
@@ -66,9 +67,9 @@ async function main(): Promise<void> {
   // ── 2. Build the language model from askdb.config.ts settings ─────────────
   //
   // runtimeConfig.ai.aiEnv is the canonical flat env map built from
-  // askdb.config.ts. Passing it to createAskDbLanguageModelFromEnv keeps all
+  // askdb.config.ts. Passing it to the AI registry keeps all
   // provider selection, key lookup, and model defaulting in one place.
-  const model = await createAskDbLanguageModelFromEnv(runtimeConfig.ai.aiEnv);
+  const model = await askDbAi.createLanguageModelFromEnv(runtimeConfig.ai.aiEnv);
 
   if (!model) {
     console.error(
@@ -92,9 +93,9 @@ async function main(): Promise<void> {
   //
   // For larger schemas (many tables / columns), build a vector index and pass
   // a retriever so only the relevant schema chunks are sent to the model.
-  // createAskDbEmbeddingModelFromEnv uses the same config but defaults to the
+  // createEmbeddingModelFromEnv uses the same config but defaults to the
   // embedding model (text-embedding-3-small) rather than the chat model.
-  const embeddingModel = await createAskDbEmbeddingModelFromEnv(
+  const embeddingModel = await askDbAi.createEmbeddingModelFromEnv(
     runtimeConfig.ai.aiEnv,
   );
 

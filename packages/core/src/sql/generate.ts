@@ -1,5 +1,5 @@
-import type { LanguageModel } from "ai";
 import { generateText as defaultGenerateText } from "ai";
+import type { AskDbLanguageModel } from "../ai/types.js";
 import { SqlGenerationError } from "../errors.js";
 import { AskDbLogEvent } from "../logging/log-events.js";
 import type { AskDbLogger } from "../logging/askdb-logger.js";
@@ -56,7 +56,7 @@ export async function generateSelectSql(
   dialect: DialectSpec,
   question: string,
   schema: AnyNormalizedSchema,
-  model: LanguageModel,
+  model: AskDbLanguageModel,
   deps: GenerateSqlDeps = {},
 ): Promise<GenerateSelectSqlResult> {
   assertNlToSqlInputs(schema, question);

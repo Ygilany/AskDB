@@ -1,5 +1,10 @@
-import { describe, expect, it } from "vitest";
-import { resolveAskDbAiConfig, resolveAskDbEmbeddingConfig } from "./provider.js";
+import { describe, expect, it, vi } from "vitest";
+import {
+  createAskDbAiRegistry,
+  resolveAskDbAiConfig,
+  resolveAskDbEmbeddingConfig,
+  type AskDbAiProviderAdapter,
+} from "./provider.js";
 
 describe("resolveAskDbAiConfig", () => {
   it("returns undefined when no key is configured", () => {
@@ -247,5 +252,90 @@ describe("resolveAskDbEmbeddingConfig", () => {
       model: "embedding-deployment",
       resourceName: "my-foundry",
     });
+  });
+});
+
+describe("createAskDbAiRegistry", () => {
+  it("creates language and embedding models with a registered provider", async () => {
+    const languageModel = { kind: "language" };
+    const embeddingModel = { kind: "embedding" };
+    const adapter: AskDbAiProviderAdapter = {
+      provider: "openai",
+      createLanguageModel: vi.fn(() => languageModel as never),
+      createEmbeddingModel: vi.fn(() => embeddingModel as never),
+    };
+
+    const registry = createAskDbAiRegistry([adapter]);
+
+    await expect(
+      registry.createLanguageModel({
+        provider: "openai",
+        apiKey: "k",
+        model: "gpt-4o-mini",
+      }),
+    ).resolves.toBe(languageModel);
+    await expect(
+      registry.createEmbeddingModel(
+        {
+          provider: "openai",
+          apiKey: "k",
+          model: "text-embedding-3-small",
+        },
+        { dimensions: 256 },
+      ),
+    ).resolves.toBe(embeddingModel);
+    expect(adapter.createEmbeddingModel).toHaveBeenCalledWith(
+      { provider: "openai", apiKey: "k", model: "text-embedding-3-small" },
+      { dimensions: 256 },
+    );
+  });
+
+  it("resolves env config before creating a model", async () => {
+    const languageModel = { kind: "language" };
+    const adapter: AskDbAiProviderAdapter = {
+      provider: "openai",
+      createLanguageModel: vi.fn(() => languageModel as never),
+      createEmbeddingModel: vi.fn(() => ({}) as never),
+    };
+
+    const registry = createAskDbAiRegistry({ openai: adapter });
+
+    await expect(
+      registry.createLanguageModelFromEnv({
+        OPENAI_API_KEY: "k",
+        OPENAI_MODEL: "gpt-4.1",
+      }),
+    ).resolves.toBe(languageModel);
+    expect(adapter.createLanguageModel).toHaveBeenCalledWith({
+      provider: "openai",
+      apiKey: "k",
+      model: "gpt-4.1",
+    });
+  });
+
+  it("returns undefined when env config has no key", async () => {
+    const registry = createAskDbAiRegistry([]);
+    await expect(registry.createLanguageModelFromEnv({})).resolves.toBeUndefined();
+  });
+
+  it("throws an actionable error when a provider is not registered", async () => {
+    const registry = createAskDbAiRegistry([]);
+    await expect(
+      registry.createLanguageModel({
+        provider: "google",
+        apiKey: "k",
+        model: "gemini-2.0-flash",
+      }),
+    ).rejects.toThrow(/Install @askdb\/ai-google/);
+  });
+
+  it("rejects mismatched object-map adapters", () => {
+    const adapter: AskDbAiProviderAdapter = {
+      provider: "openai",
+      createLanguageModel: vi.fn(() => ({}) as never),
+      createEmbeddingModel: vi.fn(() => ({}) as never),
+    };
+
+    expect(() => createAskDbAiRegistry({ google: adapter })).toThrow(/adapter mismatch/);
   });
 });
