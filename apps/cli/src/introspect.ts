@@ -16,24 +16,11 @@ import {
   type IntrospectionFilters,
 } from "@askdb/introspect";
 import {
-  createAskDbConnectorRegistry,
+  connectorRegistry,
   type AskDbConnectorConfig,
   type AskDbConnectorProvider,
   type AskDbConnectorResult,
 } from "@askdb/connectors";
-import { postgresConnectorProvider, createPostgresConnector } from "@askdb/postgres";
-import { prismaConnectorProvider } from "@askdb/prisma";
-import { mysqlConnectorProvider } from "@askdb/mysql";
-import { sqliteConnectorProvider } from "@askdb/sqlite";
-import { sqlServerConnectorProvider } from "@askdb/sqlserver";
-
-const connectorRegistry = createAskDbConnectorRegistry([
-  postgresConnectorProvider,
-  prismaConnectorProvider,
-  mysqlConnectorProvider,
-  sqliteConnectorProvider,
-  sqlServerConnectorProvider,
-]);
 
 type Engine = AskDbConnectorProvider;
 const LIVE_DRIVER_ENGINES = ["postgres", "mysql", "sqlite", "sqlserver"] as const satisfies ReadonlyArray<
@@ -92,12 +79,12 @@ function runTemplatesCommand(argv: readonly string[]): number {
   if (engine === "prisma") {
     throw new Error("Prisma introspection reads schema files and does not provide SQL templates.");
   }
-  if (engine !== "postgres") {
+  const bundle = connectorRegistry.getTemplates(engine);
+  if (!bundle) {
     throw new Error(
       `Engine '${engine}' does not provide SQL templates yet. 'askdb introspect templates' is currently supported only for --engine postgres.`,
     );
   }
-  const bundle = createPostgresConnector().templates!();
   const body = bundle.templates
     .map((tpl) => [`-- ${tpl.name}`, tpl.sql, ""].join("\n"))
     .join("\n");

@@ -1,4 +1,4 @@
-import type { Connector, IntrospectionFilters } from "@askdb/introspect";
+import type { Connector, IntrospectionFilters, SqlTemplateBundle } from "@askdb/introspect";
 
 export const ASKDB_CONNECTOR_PROVIDERS = [
   "postgres",
@@ -38,6 +38,8 @@ export type AskDbConnectorResult = {
 export type AskDbConnectorProviderAdapter = {
   provider: AskDbConnectorProvider;
   createConnector(config: AskDbConnectorConfig): AskDbConnectorResult;
+  /** Returns the engine's catalog SQL template bundle, if the engine supports it. */
+  getTemplates?(): SqlTemplateBundle;
 };
 
 export type AskDbConnectorProviderAdapters =
@@ -47,6 +49,11 @@ export type AskDbConnectorProviderAdapters =
 export type AskDbConnectorRegistry = {
   hasProvider(provider: AskDbConnectorProvider): boolean;
   createConnector(config: AskDbConnectorConfig): AskDbConnectorResult;
+  /**
+   * Returns the catalog SQL template bundle for the given provider, or `undefined`
+   * if the provider is not registered or does not support templates.
+   */
+  getTemplates(provider: AskDbConnectorProvider): SqlTemplateBundle | undefined;
 };
 
 export function createAskDbConnectorRegistry(
@@ -66,6 +73,9 @@ export function createAskDbConnectorRegistry(
     },
     createConnector(config) {
       return adapterFor(config.provider).createConnector(config);
+    },
+    getTemplates(provider) {
+      return byProvider.get(provider)?.getTemplates?.();
     },
   };
 }

@@ -92,4 +92,27 @@ describe("createAskDbConnectorRegistry", () => {
 
     expect(adapter.createConnector).toHaveBeenCalledWith(config);
   });
+
+  it("getTemplates returns the bundle from an adapter that implements it", () => {
+    const bundle = { engine: "postgres", version: 1, templates: [] };
+    const pgAdapter: AskDbConnectorProviderAdapter = {
+      provider: "postgres",
+      createConnector: vi.fn(() => ({ connector: { describe: vi.fn() }, input: {}, mode: "live" })),
+      getTemplates: vi.fn(() => bundle as never),
+    };
+    const registry = createAskDbConnectorRegistry([pgAdapter]);
+
+    expect(registry.getTemplates("postgres")).toBe(bundle);
+    expect(pgAdapter.getTemplates).toHaveBeenCalled();
+  });
+
+  it("getTemplates returns undefined for providers that do not implement it", () => {
+    const registry = createAskDbConnectorRegistry([makeAdapter("mysql")]);
+    expect(registry.getTemplates("mysql")).toBeUndefined();
+  });
+
+  it("getTemplates returns undefined for providers that are not registered", () => {
+    const registry = createAskDbConnectorRegistry([]);
+    expect(registry.getTemplates("postgres")).toBeUndefined();
+  });
 });

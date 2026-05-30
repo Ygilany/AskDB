@@ -44,7 +44,12 @@
     "test": "vitest run --config ../../vitest.config.ts"
   },
   "dependencies": {
-    "@askdb/introspect": "workspace:*"
+    "@askdb/introspect": "workspace:*",
+    "@askdb/mysql": "workspace:*",
+    "@askdb/postgres": "workspace:*",
+    "@askdb/prisma": "workspace:*",
+    "@askdb/sqlite": "workspace:*",
+    "@askdb/sqlserver": "workspace:*"
   },
   "devDependencies": {
     "typescript": "^5.7.3",
