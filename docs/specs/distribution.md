@@ -40,11 +40,16 @@ Published packages and their primary exports:
 | Package | Primary export |
 |---|---|
 | `@askdb/core` | `ask()`, `AskDbLanguageModel`, schema loader, types, logging factory |
-| `@askdb/ai` | `resolveAskDbAiConfig`, `createAskDbAiRegistry`, provider adapter types |
-| `@askdb/ai-openai` | OpenAI provider adapter |
-| `@askdb/ai-azure` | Azure OpenAI / Foundry provider adapter |
-| `@askdb/ai-google` | Google Generative AI provider adapter |
-| `@askdb/postgres` | `postgresDialect`, `postgresConnector`, `createPostgresCatalogRunner` |
+| `@askdb/ai` | `resolveAiConfig`, `createAiRegistry`, `AiRegistry`, provider adapter types |
+| `@askdb/ai-openai` | OpenAI `AiProviderAdapter` |
+| `@askdb/ai-azure` | Azure OpenAI / Foundry `AiProviderAdapter` |
+| `@askdb/ai-google` | Google Generative AI `AiProviderAdapter` |
+| `@askdb/connectors` | `createConnectorRegistry`, `ConnectorRegistry`, `ConnectorProviderAdapter` types |
+| `@askdb/postgres` | `postgresDialect`, `postgresConnectorProvider`, `postgresConnector`, `createPostgresCatalogRunner` |
+| `@askdb/mysql` | `mysqlConnectorProvider` |
+| `@askdb/sqlite` | `sqliteConnectorProvider` |
+| `@askdb/sqlserver` | `sqlserverConnectorProvider` |
+| `@askdb/prisma` | Prisma `ConnectorProviderAdapter` |
 | `@askdb/introspect` | `introspect()`, `Connector` interface |
 | `@askdb/rag` | `chunkSchema()`, `buildSchemaIndex()`, vector store adapters |
 | `@askdb/enrich` | `Workspace`, draft/save helpers, bundler |

@@ -11,6 +11,8 @@ Two equally-supported front doors produce identical artifacts: **live** (queries
 
 Re-introspection is ID-anchored: existing stable IDs are preserved, new columns get fresh IDs, orphaned IDs (columns removed from the DB) surface as warnings. The describable layer (`tables/*.md`, `concepts.md`) is never touched by introspection.
 
+`@askdb/connectors` provides a provider registry that mirrors the `@askdb/ai` pattern: each integration package exports a `ConnectorProviderAdapter` constant (e.g. `postgresConnectorProvider`), and `createConnectorRegistry` from `@askdb/connectors` wires them together. The CLI and apps use the registry rather than importing concrete packages directly. See [ADR 0007](../adrs/0007-connector-registry.md).
+
 ## Scope
 
 ### In scope
@@ -42,7 +44,7 @@ Re-introspection is ID-anchored: existing stable IDs are preserved, new columns 
 ## Contracts and API surface
 
 ```ts
-// @askdb/introspect
+// @askdb/introspect — engine-agnostic core
 introspect(options: IntrospectOptions): Promise<IntrospectionResult>
 
 interface Connector<TInput> {
@@ -55,16 +57,29 @@ interface IntrospectionResult {
   warnings: IntrospectionWarning[]
 }
 
-// @askdb/postgres
-import { postgresConnector, createPostgresCatalogRunner } from '@askdb/postgres'
-import type { PostgresIntrospectionInput } from '@askdb/postgres'
+// @askdb/connectors — registry (mirrors @askdb/ai pattern)
+import { createConnectorRegistry } from '@askdb/connectors'
+import type { ConnectorRegistry, ConnectorProviderAdapter } from '@askdb/connectors'
+
+const registry: ConnectorRegistry = createConnectorRegistry({ postgres, mysql, ... })
+registry.createConnector(provider, config)   // returns { mode, input, connector }
+registry.getTemplates(provider)              // returns SQL template strings
+
+// Each integration package exports its adapter constant:
+// @askdb/postgres → postgresConnectorProvider: ConnectorProviderAdapter
+// @askdb/mysql    → mysqlConnectorProvider
+// @askdb/sqlite   → sqliteConnectorProvider
+// @askdb/sqlserver → sqlserverConnectorProvider
+// @askdb/prisma   → prismaConnectorProvider
 ```
 
-`PostgresIntrospectionInput`:
+`ConnectorConfig` (passed to `registry.createConnector()`):
 ```ts
-type PostgresIntrospectionInput =
-  | { mode: 'live'; runner: CatalogQueryRunner; filters?: IntrospectionFilters }
-  | { mode: 'from-export'; bundlePath: string; filters?: IntrospectionFilters }
+interface ConnectorConfig {
+  url?: string            // live mode: database connection URL
+  fromExport?: string     // air-gapped mode: path to exported catalog bundle
+  filters?: IntrospectionFilters
+}
 ```
 
 `IntrospectionWarning` codes: `orphan_id`, `new_column`, `bundle_missing_file`, `bundle_unknown_engine`
