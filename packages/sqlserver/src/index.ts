@@ -24,3 +24,5 @@ export {
   type CatalogQueryResult,
   type CatalogQueryRunner,
 } from "./exec/sqlserver.js";
+
+export { sqlServerConnectorProvider } from "./connector/provider.js";

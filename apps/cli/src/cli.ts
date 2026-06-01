@@ -1,9 +1,9 @@
 #!/usr/bin/env node
 import { bootstrapAskDbEnv, getAskDbRuntimeConfig } from "@askdb/config";
 import {
-  askDbAiKeyMissingMessage,
-  createAskDbAiRegistry,
-  resolveAskDbAiConfig,
+  aiKeyMissingMessage,
+  createAiRegistry,
+  resolveAiConfig,
 } from "@askdb/ai";
 import { azureProvider } from "@askdb/ai-azure";
 import { googleProvider } from "@askdb/ai-google";
@@ -33,7 +33,7 @@ import { Command } from "commander";
 import { runInitCli } from "./init.js";
 import { runIntrospectCli } from "./introspect.js";
 
-const askDbAi = createAskDbAiRegistry([openaiProvider, azureProvider, googleProvider]);
+const ai = createAiRegistry([openaiProvider, azureProvider, googleProvider]);
 
 // `askdb init` writes templates and should not require a valid askdb.config.
 if (process.argv[2] !== "init") {
@@ -322,9 +322,9 @@ program
       });
 
       const mockSql = opts.mockSql ?? runtime.dev.mockSql;
-      const aiConfig = mockSql ? undefined : resolveAskDbAiConfig(runtime.ai.aiEnv);
+      const aiConfig = mockSql ? undefined : resolveAiConfig(runtime.ai.aiEnv);
       if (!mockSql && !aiConfig) {
-        console.error(askDbAiKeyMissingMessage("NL→SQL generation"));
+        console.error(aiKeyMissingMessage("NL→SQL generation"));
         console.error("Tip: in tests, set ASKDB_MOCK_SQL to bypass live model calls.");
         process.exitCode = 1;
         return;
@@ -364,7 +364,7 @@ program
         const model: AskModel = mockSql
           ? // The model won't be used when `deps.generateText` is overridden.
             (undefined as unknown as AskModel)
-          : ((await askDbAi.createLanguageModelFromEnv(runtime.ai.aiEnv)) as AskModel);
+          : ((await ai.createLanguageModelFromEnv(runtime.ai.aiEnv)) as AskModel);
 
         const omitSensitiveFromPrompt =
           Boolean(opts.omitSensitiveFromPrompt) || runtime.modes.omitSensitiveFromPrompt;

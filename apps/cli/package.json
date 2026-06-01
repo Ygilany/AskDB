@@ -49,6 +49,7 @@
     "@askdb/ai-google": "workspace:*",
     "@askdb/ai-openai": "workspace:*",
     "@askdb/config": "workspace:*",
+    "@askdb/connectors": "workspace:*",
     "@askdb/core": "workspace:*",
     "@askdb/introspect": "workspace:*",
     "@askdb/mysql": "workspace:*",

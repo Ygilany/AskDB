@@ -1,7 +1,7 @@
 import { createAzure } from "@ai-sdk/azure";
-import type { AskDbAiProviderAdapter } from "@askdb/ai";
+import type { AiProviderAdapter } from "@askdb/ai";
 
-export const azureProvider: AskDbAiProviderAdapter = {
+export const azureProvider: AiProviderAdapter = {
   provider: "azure",
   createLanguageModel(config) {
     const azure = createAzure({

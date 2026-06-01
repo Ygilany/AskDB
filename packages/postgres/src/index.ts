@@ -38,3 +38,5 @@ export {
   type CatalogQueryResult,
   type CatalogQueryRunner,
 } from "./exec/postgres.js";
+
+export { postgresConnectorProvider } from "./connector/provider.js";
