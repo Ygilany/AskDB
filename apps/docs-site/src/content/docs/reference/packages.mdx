@@ -43,9 +43,9 @@ npm install @askdb/ai
 
 | Symbol | Purpose |
 | --- | --- |
-| `createAskDbAiRegistry` | Register provider adapters and build language or embedding models. |
-| `resolveAskDbAiConfig` / `resolveAskDbEmbeddingConfig` | Resolve provider config without constructing a model. |
-| `askDbAiKeyMissingMessage` | Shared human-readable missing-key guidance. |
+| `createAiRegistry` | Register provider adapters and build language or embedding models. |
+| `resolveAiConfig` / `resolveEmbeddingConfig` | Resolve provider config without constructing a model. |
+| `aiKeyMissingMessage` | Shared human-readable missing-key guidance. |
 
 ### Provider adapters
 
@@ -56,6 +56,22 @@ npm install @askdb/ai-openai
 npm install @askdb/ai-azure
 npm install @askdb/ai-google
 ```
+
+### `@askdb/connectors`
+
+Connector provider registry — mirrors the `@askdb/ai` pattern for introspection. Each engine adapter exports a `ConnectorProviderAdapter` constant; `@askdb/connectors` wires them into a unified registry used by the CLI and apps. Install directly only when you are building a custom introspection flow.
+
+```bash
+npm install @askdb/connectors
+```
+
+**Key exports**
+
+| Symbol | Purpose |
+| --- | --- |
+| `createConnectorRegistry(adapters)` | Build a registry from a set of provider adapters. |
+| `ConnectorRegistry` | Registry type — `createConnector(provider, config)`, `getTemplates(provider)`. |
+| `ConnectorProviderAdapter` | The adapter shape each engine package exports. |
 
 ### `@askdb/config`
 
@@ -210,10 +226,11 @@ See [the CLI reference](/reference/cli/).
 
 | Package | Depends on |
 | --- | --- |
-| `@askdb/postgres`, `@askdb/mysql`, `@askdb/sqlite`, `@askdb/sqlserver` | `@askdb/core` |
+| `@askdb/postgres`, `@askdb/mysql`, `@askdb/sqlite`, `@askdb/sqlserver` | `@askdb/core`, `@askdb/connectors` |
+| `@askdb/prisma` | `@askdb/introspect`, `@askdb/connectors` |
+| `@askdb/connectors` | `@askdb/introspect` |
 | `@askdb/ai` | AI SDK core package (`ai`) |
 | `@askdb/ai-openai`, `@askdb/ai-azure`, `@askdb/ai-google` | `@askdb/ai` + the matching AI SDK provider package |
-| `@askdb/prisma` | `@askdb/introspect` |
 | `@askdb/enrich`, `@askdb/rag` | `@askdb/core` |
 | `@askdb/tui`, `@askdb/studio` | `@askdb/enrich` (+ `@askdb/rag` when used) |
 | `@askdb/http-api` | `@askdb/core` (+ engine adapter) |
