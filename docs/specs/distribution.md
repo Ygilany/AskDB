@@ -1,7 +1,7 @@
 # Feature: Distribution
 
 **Status:** Complete  
-**Packages:** `@askdb/core`, `askdb`, `@askdb/http-api`, `@askdb/introspect`, `@askdb/postgres`, `@askdb/rag`, `@askdb/tui`, `@askdb/enrich`
+**Packages:** `@askdb/core`, `@askdb/ai`, `@askdb/ai-openai`, `@askdb/ai-azure`, `@askdb/ai-google`, `@askdb/connectors`, `@askdb/postgres`, `@askdb/mysql`, `@askdb/sqlite`, `@askdb/sqlserver`, `@askdb/prisma`, `@askdb/introspect`, `@askdb/rag`, `@askdb/enrich`, `@askdb/tui`, `askdb`
 
 ## Overview
 
@@ -28,8 +28,8 @@ Release tooling uses changesets for versioning and changelog generation. Package
 
 ## Design decisions
 
-- **Dialect adapter as the integration seam** — `@askdb/core` is dialect-agnostic. It does not import `pg` or any database driver. Consumers pass a `dialect` adapter; `@askdb/postgres` exports `postgresDialect`. This means `pnpm add @askdb/core` does not pull in any database dependency. See [ADR 0002](../adrs/0002-integration-package-layout.md).
-- **`pg` as optional peer dependency** — `@askdb/postgres` declares `pg` as a peer; the lazy-import path throws a helpful error if `pg` is absent and the live executor is requested.
+- **Dialect adapter as the integration seam** — `@askdb/core` is dialect-agnostic and imports no database driver. Consumers pass a built-in dialect string (`"postgres"`, `"mysql"`, etc.) or a custom `AskDialect` adapter. `pnpm add @askdb/core` pulls in no database dependency. See [ADR 0002](../adrs/0002-integration-package-layout.md).
+- **Database drivers as optional peer dependencies** — each integration package (`@askdb/postgres`, `@askdb/mysql`, etc.) declares its driver as a peer; the lazy-import path throws a clear error if the driver is absent when the live connector is used.
 - **Pre-1.0 breaking changes without migrators** — before 1.0, breaking changes ship with a changeset entry describing the break. No compatibility shims. The changeset records the full surface diff.
 - **Apps vs packages** — `apps/cli`, `apps/http-api`, `apps/studio` are first-party reference apps (batteries-included). `packages/` contains the published library surface. This boundary is explicit in the monorepo layout.
 

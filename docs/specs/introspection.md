@@ -1,11 +1,11 @@
 # Feature: Schema Introspection
 
 **Status:** Complete  
-**Packages:** `@askdb/introspect`, `@askdb/postgres`
+**Packages:** `@askdb/introspect`, `@askdb/connectors`, `@askdb/postgres`, `@askdb/mysql`, `@askdb/sqlite`, `@askdb/sqlserver`, `@askdb/prisma`
 
 ## Overview
 
-Schema introspection turns a real database into a describable schema physical artifact (`schema.json`). The `@askdb/introspect` package is engine-agnostic: it defines the `Connector<TInput>` interface and the orchestrator. Engine-specific logic — catalog SQL, row shapes, and dialect rules — lives in the integration package (`@askdb/postgres` for Postgres).
+Schema introspection turns a real database into a describable schema physical artifact (`schema.json`). The `@askdb/introspect` package is engine-agnostic: it defines the `Connector<TInput>` interface and the orchestrator. Engine-specific logic — catalog SQL, row shapes, and dialect rules — lives in the integration packages (`@askdb/postgres`, `@askdb/mysql`, `@askdb/sqlite`, `@askdb/sqlserver`, `@askdb/prisma`).
 
 Two equally-supported front doors produce identical artifacts: **live** (queries run against a real database via a catalog query runner) and **air-gapped** (queries are run offline and their output is bundled; the connector ingests the bundle). This separation lets teams introspect air-gapped or locked-down databases by exporting the catalog queries separately.
 
@@ -19,16 +19,17 @@ Re-introspection is ID-anchored: existing stable IDs are preserved, new columns 
 
 - `introspect()` orchestrator in `@askdb/introspect` — connector-agnostic, produces `IntrospectionResult` and writes the physical `schema.json`
 - `Connector<TInput>` interface — generic over the integration's input shape; `templates()` is optional
-- Postgres connector in `@askdb/postgres` — catalog SQL templates (`pg_catalog` + `information_schema`), live mode via `createPostgresCatalogRunner`, air-gapped mode via bundle ingestion
-- Deterministic catalog SQL — all queries include explicit `ORDER BY`; `pg_constraint.conkey` order preserved for multi-column FKs; `pg_enum.enumsortorder` preserved for enums
-- Partition leaf filtering — declarative partition leaves are excluded at the SQL boundary; partitioned parents (`relkind = 'p'`) are kept. See [ADR 0003](../adrs/0003-postgres-partition-handling.md)
-- `askdb introspect` CLI subcommand — `--url` (live), `--from-export` (air-gapped), `--diff` (no writes), `--print` (stdout), `templates --engine postgres` (print SQL)
+- **`@askdb/postgres`** — catalog SQL templates (`pg_catalog` + `information_schema`), live mode via `createPostgresCatalogRunner`, air-gapped mode via bundle ingestion; deterministic `ORDER BY` on all queries; `pg_constraint.conkey` order for multi-column FKs; `pg_enum.enumsortorder` for enums; partition leaf filtering (see [ADR 0003](../adrs/0003-postgres-partition-handling.md))
+- **`@askdb/mysql`** — MySQL/MariaDB connector; live and air-gapped modes
+- **`@askdb/sqlite`** — SQLite connector; live and air-gapped modes
+- **`@askdb/sqlserver`** — SQL Server connector; live and air-gapped modes
+- **`@askdb/prisma`** — Prisma schema file connector; `templates()` not applicable (no catalog SQL)
+- `askdb introspect` CLI subcommand — `--url` (live), `--from-export` (air-gapped), `--diff` (no writes), `--print` (stdout), `templates --engine <engine>` (print SQL)
 - ID-anchored re-introspection merge — preserves existing IDs, emits `IntrospectionWarning` for orphans and new columns
-- Structured logging reusing Phase 2 conventions — events under `askdb.introspect.*`
+- Structured logging reusing modes/observability conventions — events under `askdb.introspect.*`
 
 ### Out of scope
 
-- MySQL, SQLite, Prisma connectors — tracked in Phase 11; the `Connector` interface is the seam
 - Schema enrichment (writing `tables/*.md`) — see [`schema-authoring-and-enrichment.md`](./schema-authoring-and-enrichment.md)
 - Plain table inheritance (`CREATE TABLE x INHERITS (y)`) — kept; these are semantically distinct from partitions
 - Foreign tables (`relkind = 'f'`) — not included
