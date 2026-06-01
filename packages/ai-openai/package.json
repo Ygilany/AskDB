@@ -1,8 +1,13 @@
 {
   "name": "@askdb/ai-openai",
-  "version": "0.1.0-beta.0",
+  "version": "0.1.0-beta.1",
   "description": "AskDB OpenAI provider adapter for @askdb/ai.",
-  "keywords": ["askdb", "ai", "ai-sdk", "openai"],
+  "keywords": [
+    "askdb",
+    "ai",
+    "ai-sdk",
+    "openai"
+  ],
   "homepage": "https://github.com/Ygilany/AskDB#readme",
   "bugs": {
     "url": "https://github.com/Ygilany/AskDB/issues"
@@ -23,7 +28,12 @@
       "import": "./dist/index.js"
     }
   },
-  "files": ["dist", "README.md", "LICENSE", "NOTICE"],
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE",
+    "NOTICE"
+  ],
   "engines": {
     "node": ">=20"
   },

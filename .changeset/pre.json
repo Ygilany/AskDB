@@ -17,12 +17,19 @@
     "@askdb/mysql": "0.1.0-beta.0",
     "@askdb/sqlite": "0.1.0-beta.0",
     "@askdb/sqlserver": "0.1.0-beta.0",
-    "askdb-ask-question-example": "0.0.0"
+    "askdb-ask-question-example": "0.0.0",
+    "@askdb/ai": "0.1.0-beta.0",
+    "@askdb/ai-azure": "0.1.0-beta.0",
+    "@askdb/ai-google": "0.1.0-beta.0",
+    "@askdb/ai-openai": "0.1.0-beta.0",
+    "@askdb/connectors": "0.1.0-beta.0"
   },
   "changesets": [
     "add-ask-question-example",
+    "add-connectors-registry",
     "add-google-gemini-provider",
     "ai-provider-configuration",
+    "ai-provider-helpers-package",
     "ai-sdk-rag-embeddings",
     "apply-editorial-changes-docs",
     "askdb-config-bootstrap",
@@ -31,6 +38,7 @@
     "config-env-flatten-defaults",
     "dialect-package-split",
     "dialect-specs-mysql-sqlite-sqlserver",
+    "docs-specs-feature-consolidation",
     "enrich-shared-workspace",
     "enrich-studio-zero-args-config",
     "fix-postgres-zod-resolution",

@@ -1,5 +1,24 @@
 # @askdb/studio
 
+## 0.2.0-beta.17
+
+### Patch Changes
+
+- bc8642f: Move AskDB AI provider construction helpers from `@askdb/core` into the new `@askdb/ai` registry and provider adapter packages.
+
+  `@askdb/core` now exposes `AskDbLanguageModel` as its public model type and no longer installs concrete AI SDK provider packages. Consumers that used `createAskDbLanguageModelFromEnv`, embedding model factories, or AI config resolution from core should create an `@askdb/ai` registry with provider adapters such as `@askdb/ai-openai`.
+
+- Updated dependencies [efe4a1b]
+- Updated dependencies [bc8642f]
+  - @askdb/postgres@0.2.0-beta.10
+  - @askdb/ai@0.1.0-beta.1
+  - @askdb/ai-openai@0.1.0-beta.1
+  - @askdb/ai-azure@0.1.0-beta.1
+  - @askdb/ai-google@0.1.0-beta.1
+  - @askdb/core@1.0.0-beta.20
+  - @askdb/enrich@0.2.0-beta.7
+  - @askdb/rag@0.2.0-beta.13
+
 ## 0.2.0-beta.16
 
 ### Minor Changes

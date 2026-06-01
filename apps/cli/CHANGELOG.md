@@ -1,5 +1,51 @@
 # askdb
 
+## 1.0.0-beta.20
+
+### Patch Changes
+
+- efe4a1b: **Ship `@askdb/connectors` — connector provider registry for app/bootstrap wiring.**
+
+  Introduces `@askdb/connectors`, a new workspace package that mirrors the `@askdb/ai` registry pattern for introspection connectors. It provides a provider adapter abstraction and registry factory that concrete database packages register into, replacing per-app switch statements over engine names.
+
+  **`@askdb/connectors`** exports:
+  - `createAskDbConnectorRegistry(adapters)` — factory that accepts an array or object-map of provider adapters and returns a registry with `hasProvider()` and `createConnector(config)`.
+  - `AskDbConnectorConfig` — unified config shape (`provider`, `url`, `fromExport`, `schemaPath`, `filters`, `schemaId`).
+  - `AskDbConnectorResult` — `{ connector, input, mode }` pair consumed by `introspect()`.
+  - `AskDbConnectorProviderAdapter` — interface each concrete package implements.
+  - `ASKDB_CONNECTOR_PROVIDERS` and `AskDbConnectorProvider` type.
+  - `askDbConnectorProviderMissingMessage()` helper for actionable error messages.
+
+  **New provider adapter exports** from each concrete package:
+  - `@askdb/postgres` → `postgresConnectorProvider` (live + from-export modes)
+  - `@askdb/mysql` → `mysqlConnectorProvider`
+  - `@askdb/sqlite` → `sqliteConnectorProvider`
+  - `@askdb/sqlserver` → `sqlServerConnectorProvider`
+  - `@askdb/prisma` → `prismaConnectorProvider`
+
+  **CLI update:** `apps/cli` now wires all five connector providers through `createAskDbConnectorRegistry` instead of the inline switch in `buildRunConfig`. The CLI's URL resolution and validation logic is unchanged; only the connector/input construction path uses the registry.
+
+- bc8642f: Move AskDB AI provider construction helpers from `@askdb/core` into the new `@askdb/ai` registry and provider adapter packages.
+
+  `@askdb/core` now exposes `AskDbLanguageModel` as its public model type and no longer installs concrete AI SDK provider packages. Consumers that used `createAskDbLanguageModelFromEnv`, embedding model factories, or AI config resolution from core should create an `@askdb/ai` registry with provider adapters such as `@askdb/ai-openai`.
+
+- Updated dependencies [efe4a1b]
+- Updated dependencies [bc8642f]
+  - @askdb/connectors@0.1.0-beta.1
+  - @askdb/postgres@0.2.0-beta.10
+  - @askdb/mysql@0.1.0-beta.9
+  - @askdb/sqlite@0.1.0-beta.9
+  - @askdb/sqlserver@0.1.0-beta.9
+  - @askdb/prisma@0.2.0-beta.10
+  - @askdb/ai@0.1.0-beta.1
+  - @askdb/ai-openai@0.1.0-beta.1
+  - @askdb/ai-azure@0.1.0-beta.1
+  - @askdb/ai-google@0.1.0-beta.1
+  - @askdb/core@1.0.0-beta.20
+  - @askdb/studio@0.2.0-beta.17
+  - @askdb/tui@0.2.0-beta.11
+  - @askdb/introspect@0.3.0-beta.10
+
 ## 1.0.0-beta.19
 
 ### Major Changes

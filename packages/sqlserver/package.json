@@ -1,6 +1,6 @@
 {
   "name": "@askdb/sqlserver",
-  "version": "0.1.0-beta.8",
+  "version": "0.1.0-beta.9",
   "description": "AskDB Microsoft SQL Server integration: introspection connector via sys.* catalog views and an mssql-backed catalog query runner. Pairs with @askdb/core's SQLSERVER_DIALECT.",
   "keywords": [
     "askdb",
