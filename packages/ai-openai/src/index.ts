@@ -1,7 +1,7 @@
 import { createOpenAI } from "@ai-sdk/openai";
-import type { AskDbAiProviderAdapter } from "@askdb/ai";
+import type { AiProviderAdapter } from "@askdb/ai";
 
-export const openaiProvider: AskDbAiProviderAdapter = {
+export const openaiProvider: AiProviderAdapter = {
   provider: "openai",
   createLanguageModel(config) {
     const openai = createOpenAI({

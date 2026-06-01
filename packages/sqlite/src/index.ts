@@ -24,3 +24,5 @@ export {
   type CatalogQueryResult,
   type CatalogQueryRunner,
 } from "./exec/sqlite.js";
+
+export { sqliteConnectorProvider } from "./connector/provider.js";

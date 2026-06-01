@@ -6,13 +6,13 @@ import { fileURLToPath } from "node:url";
 import { generateText as defaultGenerateText } from "ai";
 import { getAskDbRuntimeConfig } from "@askdb/config";
 import {
-  askDbAiKeyMissingMessage,
-  createAskDbAiRegistry,
-  resolveAskDbAiConfig,
-  resolveAskDbEmbeddingConfig,
-  type AskDbAiConfig,
-  type AskDbAiEnv,
-  type AskDbAiProvider,
+  aiKeyMissingMessage,
+  createAiRegistry,
+  resolveAiConfig,
+  resolveEmbeddingConfig,
+  type AiConfig,
+  type AiEnv,
+  type AiProvider,
 } from "@askdb/ai";
 import { azureProvider } from "@askdb/ai-azure";
 import { googleProvider } from "@askdb/ai-google";
@@ -76,7 +76,7 @@ import type {
   SuggestTenantPolicyResponse,
 } from "./shared/api.js";
 
-const askDbAi = createAskDbAiRegistry([openaiProvider, azureProvider, googleProvider]);
+const ai = createAiRegistry([openaiProvider, azureProvider, googleProvider]);
 
 const CLIENT_DIR = fileURLToPath(new URL("./client/", import.meta.url));
 
@@ -104,14 +104,14 @@ type StudioRagEmbedderConfig =
     }
   | {
       kind: "ai-sdk";
-      provider: AskDbAiProvider;
+      provider: AiProvider;
       embedderId: string;
       dimensions: number;
       configured: boolean;
       label: string;
       model: string;
       baseUrl?: string;
-      aiConfig?: AskDbAiConfig;
+      aiConfig?: AiConfig;
       requestDimensions?: number;
     };
 
@@ -256,7 +256,7 @@ export function serializeWorkspace(workspace: Workspace): StudioWorkspaceDto {
   const rt = getAskDbRuntimeConfig();
   const aiConfig = (() => {
     try {
-      return resolveAskDbAiConfig(rt.ai.aiEnv);
+      return resolveAiConfig(rt.ai.aiEnv);
     } catch {
       // A misconfigured AI env (e.g. azure without resourceName) shouldn't crash the workspace
       // listing — surface it as "not configured" in the UI and let the user fix .env.
@@ -351,9 +351,9 @@ function saveDraft(state: StudioState, tableId: string, draft: TableDraft): void
 
 async function suggestForSource(workspace: Workspace, source: SuggestSource): Promise<SuggestResponse["candidates"]> {
   const rt = getAskDbRuntimeConfig();
-  const model = await askDbAi.createLanguageModelFromEnv(rt.ai.aiEnv);
+  const model = await ai.createLanguageModelFromEnv(rt.ai.aiEnv);
   if (!model) {
-    throw new StudioHttpError(400, askDbAiKeyMissingMessage("AI enrichment suggestions"));
+    throw new StudioHttpError(400, aiKeyMissingMessage("AI enrichment suggestions"));
   }
   const candidates = await suggestEnrichment(
     buildSuggestionTarget(workspace, source),
@@ -365,9 +365,9 @@ async function suggestForSource(workspace: Workspace, source: SuggestSource): Pr
 
 async function suggestTenantPolicyDraft(state: StudioState): Promise<SuggestTenantPolicyResponse> {
   const rt = getAskDbRuntimeConfig();
-  const model = await askDbAi.createLanguageModelFromEnv(rt.ai.aiEnv);
+  const model = await ai.createLanguageModelFromEnv(rt.ai.aiEnv);
   if (!model) {
-    throw new StudioHttpError(400, askDbAiKeyMissingMessage("AI tenant policy suggestion"));
+    throw new StudioHttpError(400, aiKeyMissingMessage("AI tenant policy suggestion"));
   }
 
   // Build a compact DDL-like representation of the schema for the prompt
@@ -472,11 +472,11 @@ async function askSampleQuestion(
 ): Promise<AskResponse> {
   const rt = getAskDbRuntimeConfig();
   const mockSql = rt.dev.mockSql;
-  const aiConfig = mockSql ? undefined : resolveAskDbAiConfig(rt.ai.aiEnv);
+  const aiConfig = mockSql ? undefined : resolveAiConfig(rt.ai.aiEnv);
   if (!mockSql && !aiConfig) {
     throw new StudioHttpError(
       400,
-      `${askDbAiKeyMissingMessage("Sample NL-to-SQL generation")} Set ASKDB_MOCK_SQL to bypass the live model.`,
+      `${aiKeyMissingMessage("Sample NL-to-SQL generation")} Set ASKDB_MOCK_SQL to bypass the live model.`,
     );
   }
 
@@ -489,7 +489,7 @@ async function askSampleQuestion(
   type AskModel = Parameters<typeof ask>[0]["model"];
   const model: AskModel = mockSql
     ? (undefined as unknown as AskModel)
-    : ((await askDbAi.createLanguageModelFromEnv(rt.ai.aiEnv)) as AskModel);
+    : ((await ai.createLanguageModelFromEnv(rt.ai.aiEnv)) as AskModel);
 
   const schemaProvider =
     "provider" in schema && typeof schema.provider === "string"
@@ -822,7 +822,7 @@ function pickFlat(flat: Readonly<Record<string, string>>, key: string): string |
   return typeof value === "string" && value.trim() !== "" ? value.trim() : undefined;
 }
 
-function pickEnv(env: AskDbAiEnv, key: string): string | undefined {
+function pickEnv(env: AiEnv, key: string): string | undefined {
   const v = env[key];
   return typeof v === "string" && v.trim() !== "" ? v.trim() : undefined;
 }
@@ -846,7 +846,7 @@ function resolveStudioRagEmbedderConfig(): StudioRagEmbedderConfig {
   }
 
   const env = buildStudioRagEmbeddingEnv(kind, base);
-  const aiConfig = resolveAskDbEmbeddingConfig(env, {
+  const aiConfig = resolveEmbeddingConfig(env, {
     modelEnvVar: "ASKDB_RAG_EMBEDDER_MODEL",
     modelDefault: DEFAULT_EMBEDDING_MODEL,
   });
@@ -878,7 +878,7 @@ function resolveStudioRagEmbedderConfig(): StudioRagEmbedderConfig {
   };
 }
 
-function buildStudioRagEmbeddingEnv(kind: string | undefined, base: AskDbAiEnv): AskDbAiEnv {
+function buildStudioRagEmbeddingEnv(kind: string | undefined, base: AiEnv): AiEnv {
   const apiKeyOverride = pickEnv(base, "ASKDB_RAG_EMBEDDER_API_KEY");
   const baseUrlOverride = pickEnv(base, "ASKDB_RAG_EMBEDDER_BASE_URL");
   return {
@@ -889,7 +889,7 @@ function buildStudioRagEmbeddingEnv(kind: string | undefined, base: AskDbAiEnv):
   };
 }
 
-function fallbackStudioRagProvider(kind: string | undefined, base: AskDbAiEnv): AskDbAiProvider {
+function fallbackStudioRagProvider(kind: string | undefined, base: AiEnv): AiProvider {
   if (kind === "openai") return "openai";
   const raw = (pickEnv(base, "ASKDB_AI_PROVIDER") ?? "").toLowerCase();
   return raw === "azure" || raw === "azure-openai" || raw === "foundry"
@@ -912,7 +912,7 @@ async function createStudioRagEmbedder(
   if (!config.aiConfig) {
     throw new StudioHttpError(400, studioRagAiSdkKeyMissingMessage());
   }
-  const model = await askDbAi.createEmbeddingModel(config.aiConfig, {
+  const model = await ai.createEmbeddingModel(config.aiConfig, {
     dimensions: config.requestDimensions,
   });
   return createAiSdkEmbedder({

@@ -25,3 +25,5 @@ export {
   type CatalogQueryResult,
   type CatalogQueryRunner,
 } from "./exec/mysql.js";
+
+export { mysqlConnectorProvider } from "./connector/provider.js";
