@@ -1,6 +1,6 @@
 # Reusing `@askdb/core` (Phase 3+ surfaces)
 
-This note lists **stable entrypoints** and **semantic contracts** that MCP servers, minimal HTTP adapters, or other hosts should reuse instead of duplicating policy. Aligns with Phase 2 “documentation and continuity” in [`docs/specs/phase-2-hardening-modes/plan.md`](../specs/phase-2-hardening-modes/plan.md).
+This note lists **stable entrypoints** and **semantic contracts** that MCP servers, minimal HTTP adapters, or other hosts should reuse instead of duplicating policy. Aligns with [`docs/specs/modes-and-observability.md`](../specs/modes-and-observability.md) and [`docs/specs/http-api.md`](../specs/http-api.md).
 
 ## Preferred integration shape
 

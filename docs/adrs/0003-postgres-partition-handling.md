@@ -164,6 +164,6 @@ partition-shaped table names (e.g. by parent prefix or naming convention).
 ## Related
 
 - ADR 0002 — Integration-package layout (`docs/adrs/0002-integration-package-layout.md`).
-- Phase 6 introspection plan (`docs/specs/phase-6-introspection/plan.md`).
-- Phase 8 RAG plan (`docs/specs/phase-8-rag/plan.md`).
+- Introspection spec (`docs/specs/introspection.md`).
+- RAG spec (`docs/specs/rag.md`).
 - Postgres docs: <https://www.postgresql.org/docs/current/ddl-partitioning.html>

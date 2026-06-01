@@ -1,7 +1,7 @@
 # ADR 0002 — Integration-package layout
 
 Status: Accepted (2026-05-10).
-Supersedes (in part): Phase 4 decision to ship `createPostgresExecutor` from a `@askdb/core/postgres` subpath (`docs/specs/phase-4-publish-npm/requirements.md`, "Postgres helper packaging").
+Supersedes (in part): Phase 4 decision to ship `createPostgresExecutor` from a `@askdb/core/postgres` subpath (`docs/specs/distribution.md`, "Postgres helper packaging").
 
 ## Context
 
@@ -54,6 +54,6 @@ Concretely:
 
 ## Related
 
-- Phase 4: `docs/specs/phase-4-publish-npm/requirements.md` (Postgres helper packaging — partially superseded).
-- Phase 6: `docs/specs/phase-6-introspection/requirements.md` (per-engine connector pattern — generalized).
+- Distribution spec: `docs/specs/distribution.md` (Postgres helper packaging — partially superseded).
+- Introspection spec: `docs/specs/introspection.md` (per-engine connector pattern — generalized).
 - Roadmap: "Phase 7.5 — Architecture reshape for integration packages."
