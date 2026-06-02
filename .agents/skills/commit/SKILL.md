@@ -7,7 +7,7 @@ description: Plans multiple atomic git commits from working-tree diffs, groups a
 
 Work from **`git diff`** / **`git diff --stat`** vs `HEAD`. Untracked: **`git status`**. If **`git diff --cached`** is non-empty, run **`git restore --staged .`** unless the user asked to keep the index.
 
-Cluster by **one intent per commit** (read patches, not only paths). Order: deps → refactors that unblock → behavior → docs-only last.
+Cluster by **one intent per commit** (read patches, not only paths). Order: deps -> refactors that unblock -> behavior -> docs-only last.
 
 | Slice | Typical contents |
 |-------|------------------|
@@ -21,7 +21,7 @@ Split files with **`git add -p`**; whole files with **`git add -- path`**.
 Per commit in order:
 
 1. Stage only that slice (`git add` / `-p`).
-2. **`git diff --cached`** — scope matches plan.
+2. **`git diff --cached`** - scope matches plan.
 3. **`git commit -m "type(scope): subject"`**
 
 Repeat until clean.
