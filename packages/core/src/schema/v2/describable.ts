@@ -10,7 +10,7 @@ export const v2ColumnFrontmatterSchema = z
   })
   .strict();
 
-export const v2TableFrontmatterSchema = z
+const v2TableFrontmatterInputSchema = z
   .object({
     id: z.string().min(1),
     name: z.string().min(1),
@@ -21,9 +21,32 @@ export const v2TableFrontmatterSchema = z
     sensitive: z.boolean().optional(),
     /** When false, this table is excluded from LLM prompts and RAG indexing. Defaults to tracked (true). */
     tracked: z.boolean().optional(),
+    /** Authoring alias for `tracked: false`; normalized away after parsing. */
+    toIgnore: z.boolean().optional(),
+    /** YAML-friendly authoring alias for `tracked: false`; normalized away after parsing. */
+    "to-ignore": z.boolean().optional(),
     columns: z.array(v2ColumnFrontmatterSchema).optional(),
   })
   .strict();
+
+export const v2TableFrontmatterSchema = v2TableFrontmatterInputSchema
+  .superRefine((fm, ctx) => {
+    const toIgnore = fm["to-ignore"] ?? fm.toIgnore;
+    if (fm.tracked !== undefined && toIgnore !== undefined && fm.tracked === toIgnore) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "`tracked` conflicts with `toIgnore`/`to-ignore`",
+        path: fm["to-ignore"] !== undefined ? ["to-ignore"] : ["toIgnore"],
+      });
+    }
+  })
+  .transform(({ toIgnore, "to-ignore": toIgnoreKebab, ...fm }) => {
+    const shouldIgnore = toIgnoreKebab ?? toIgnore;
+    if (fm.tracked === undefined && shouldIgnore !== undefined) {
+      return { ...fm, tracked: !shouldIgnore };
+    }
+    return fm;
+  });
 
 export type V2TableFrontmatter = z.infer<typeof v2TableFrontmatterSchema>;
 export type V2ColumnFrontmatter = z.infer<typeof v2ColumnFrontmatterSchema>;

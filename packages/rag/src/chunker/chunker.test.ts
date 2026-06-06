@@ -91,6 +91,24 @@ describe("sensitive propagation", () => {
   });
 });
 
+describe("ignored table propagation", () => {
+  it("excludes untracked tables from every RAG chunk type", () => {
+    const sources = loadChunkerSourcesFromDir(FIXTURE_DIR);
+    const orders = sources.schema.tables.find((table) => table.id === "table:public.orders");
+    expect(orders).toBeDefined();
+    orders!.tracked = false;
+
+    const { chunks, stats } = chunkSchema(sources, { emitRelationships: true });
+    const leaked = chunks.filter((chunk) =>
+      chunk.refs.some((ref) => ref === "table:public.orders" || ref.startsWith("table:public.orders#")),
+    );
+
+    expect(leaked).toHaveLength(0);
+    expect(chunks.find((chunk) => chunk.id === "chunk:table:public.orders")).toBeUndefined();
+    expect(stats.totalChunks).toBe(chunks.length);
+  });
+});
+
 describe("long-body splitting", () => {
   it("splits long bodies on paragraph boundaries with `#bc:N` suffixes", () => {
     const sources = loadChunkerSourcesFromDir(FIXTURE_DIR);
