@@ -1,5 +1,13 @@
 # @askdb/rag
 
+## 0.2.0-beta.14
+
+### Patch Changes
+
+- dda0abf: Persist ignored table metadata and keep ignored table references out of RAG concept and relationship chunks.
+- Updated dependencies [dda0abf]
+  - @askdb/core@1.0.0-beta.21
+
 ## 0.2.0-beta.13
 
 ### Patch Changes

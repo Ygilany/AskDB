@@ -1,6 +1,6 @@
 {
   "name": "@askdb/rag",
-  "version": "0.2.0-beta.13",
+  "version": "0.2.0-beta.14",
   "description": "AskDB RAG layer: deterministic chunker over Schema v2, BYO embedder + vector store (in-memory, file-backed, pgvector), and an optional retriever wired into @askdb/core ask().",
   "keywords": [
     "askdb",

@@ -1,5 +1,18 @@
 # @askdb/studio
 
+## 0.2.0-beta.18
+
+### Patch Changes
+
+- dda0abf: Allow saved tenant policies to be reopened and edited in Studio.
+- dda0abf: Keep AI enrichment suggestions available after using one candidate.
+- dda0abf: Show untracked tables as a sidebar filter badge alongside enrichment status badges.
+- Updated dependencies [dda0abf]
+  - @askdb/core@1.0.0-beta.21
+  - @askdb/rag@0.2.0-beta.14
+  - @askdb/enrich@0.2.0-beta.8
+  - @askdb/postgres@0.2.0-beta.11
+
 ## 0.2.0-beta.17
 
 ### Patch Changes

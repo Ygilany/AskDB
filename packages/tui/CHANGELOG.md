@@ -1,5 +1,13 @@
 # @askdb/tui
 
+## 0.2.0-beta.12
+
+### Patch Changes
+
+- Updated dependencies [dda0abf]
+  - @askdb/core@1.0.0-beta.21
+  - @askdb/enrich@0.2.0-beta.8
+
 ## 0.2.0-beta.11
 
 ### Patch Changes
