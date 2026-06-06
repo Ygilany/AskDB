@@ -1,6 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
-import type { NormalizedTenantPolicy, TenantPolicyFrontmatter, V2Concept } from "@askdb/core";
+import type { TenantPolicyFrontmatter, V2Concept } from "@askdb/core";
 import type { ColumnDraft, SuggestSource, TableDraft } from "@askdb/enrich";
 import type { StudioTableDto, StudioWorkspaceDto } from "@/shared/api";
 import {
@@ -16,6 +16,7 @@ import { parseList } from "../components/ui";
 type LoadState = { kind: "loading" | "ready" | "error"; message?: string };
 export type StatusMessage = { kind: "neutral" | "loading" | "success" | "error"; text: string };
 type SuggestionDialog = { source: SuggestSource; label: string; candidates: Array<{ text: string }> };
+type SuggestionCache = Record<string, SuggestionDialog>;
 
 interface WorkspaceContextValue {
   loadState: LoadState;
@@ -45,7 +46,7 @@ interface WorkspaceContextValue {
   requestSuggestion: (source: SuggestSource, label: string) => Promise<void>;
   applySuggestion: (text: string) => void;
   handleSaveConcepts: (concepts: V2Concept[]) => Promise<void>;
-  handleSaveTenantPolicy: (frontmatter: TenantPolicyFrontmatter, body?: string) => Promise<void>;
+  handleSaveTenantPolicy: (frontmatter: TenantPolicyFrontmatter, body?: string) => Promise<boolean>;
   handleSuggestTenantPolicy: () => Promise<{ frontmatter: TenantPolicyFrontmatter; body: string }>;
   withBusy: (key: string, task: () => Promise<void>) => Promise<void>;
 }
@@ -66,6 +67,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const [tableSearch, setTableSearch] = useState("");
   const [saveStatus, setSaveStatus] = useState<StatusMessage | null>(null);
   const [suggestionDialog, setSuggestionDialog] = useState<SuggestionDialog | null>(null);
+  const [suggestionCache, setSuggestionCache] = useState<SuggestionCache>({});
   const [suggestingKey, setSuggestingKey] = useState<string | null>(null);
   const [busy, setBusy] = useState<Set<string>>(() => new Set());
 
@@ -154,10 +156,18 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
 
   async function requestSuggestion(source: SuggestSource, label: string) {
     const key = suggestionKey(source);
+    const cached = suggestionCache[key];
+    if (cached) {
+      setSuggestionDialog(cached);
+      return;
+    }
+
     setSuggestingKey(key);
     try {
       const result = await suggest({ source });
-      setSuggestionDialog({ source, label, candidates: result.candidates });
+      const nextDialog = { source, label, candidates: result.candidates };
+      setSuggestionCache((current) => ({ ...current, [key]: nextDialog }));
+      setSuggestionDialog(nextDialog);
     } catch (error) {
       setSaveStatus({ kind: "error", text: getErrorMessage(error) });
     } finally {
@@ -173,7 +183,6 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     } else {
       updateColumnDraft(source.tableId, source.columnId, (draft) => applyColumnSuggestion(draft, source.field, text));
     }
-    setSuggestionDialog(null);
   }
 
   async function handleSaveConcepts(concepts: V2Concept[]) {
@@ -191,15 +200,18 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
 
   async function handleSaveTenantPolicy(frontmatter: TenantPolicyFrontmatter, body?: string) {
     setSaveStatus({ kind: "loading", text: "Saving tenant policy..." });
+    let saved = false;
     await withBusy("save-tenant-policy", async () => {
       try {
         const nextWorkspace = await saveTenantPolicy({ frontmatter, body });
         setWorkspace(nextWorkspace);
         setSaveStatus({ kind: "success", text: "Tenant policy saved." });
+        saved = true;
       } catch (error) {
         setSaveStatus({ kind: "error", text: getErrorMessage(error) });
       }
     });
+    return saved;
   }
 
   async function handleSuggestTenantPolicy() {

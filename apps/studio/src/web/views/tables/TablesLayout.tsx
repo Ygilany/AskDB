@@ -140,17 +140,6 @@ export function TablesLayout() {
           <h2>Tables</h2>
           <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
             <span className="muted tiny">{tables.length} tables</span>
-            {untrackedCount > 0 && (
-              <button
-                className={`btn ghost sm${trackFilter === "untracked" ? " active" : ""}`}
-                onClick={() => setTrackFilter((f) => f === "untracked" ? null : "untracked")}
-                title={trackFilter === "untracked" ? "Show all tables" : `Show ${untrackedCount} untracked table${untrackedCount !== 1 ? "s" : ""}`}
-                style={{ padding: 2, height: 20, display: "flex", alignItems: "center", gap: 3, paddingInline: 4, fontSize: 10, color: trackFilter === "untracked" ? "var(--amber-600)" : "var(--ink-400)" }}
-              >
-                <EyeOff size={11} />
-                {untrackedCount}
-              </button>
-            )}
             {schemaGroups.length > 1 && (
               <button
                 className="btn ghost sm"
@@ -188,6 +177,17 @@ export function TablesLayout() {
               </button>
             );
           })}
+          {untrackedCount > 0 && (
+            <button
+              className={`enrich-filter-chip untracked ${trackFilter === "untracked" ? "active" : ""}`}
+              onClick={() => setTrackFilter((f) => f === "untracked" ? null : "untracked")}
+              title={trackFilter === "untracked" ? "Show all tables" : `Show ${untrackedCount} untracked table${untrackedCount !== 1 ? "s" : ""}`}
+            >
+              <EyeOff size={11} />
+              <span className="enrich-filter-label">Untracked</span>
+              <span className="enrich-filter-count">{untrackedCount}</span>
+            </button>
+          )}
         </div>
         <div className="sub-rail-list">
           {schemaGroups.map(([schema, schemaTables]) => (

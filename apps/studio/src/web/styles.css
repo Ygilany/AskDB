@@ -304,6 +304,7 @@ code, pre, .mono { font-family: var(--font-mono); }
 
 .enrich-filter-bar {
   display: flex;
+  flex-wrap: wrap;
   gap: 4px;
   padding: 6px 10px;
   border-bottom: 1px solid var(--border);
@@ -351,6 +352,12 @@ code, pre, .mono { font-family: var(--font-mono); }
   background: var(--surface-2);
 }
 
+.enrich-filter-chip.active.untracked {
+  color: var(--amber-700);
+  border-color: var(--amber-500);
+  background: color-mix(in srgb, var(--amber-500) 10%, transparent);
+}
+
 .enrich-filter-chip:not(.active) {
   opacity: 0.5;
 }
@@ -362,6 +369,10 @@ code, pre, .mono { font-family: var(--font-mono); }
 .enrich-filter-chip .enrich-dot {
   width: 6px;
   height: 6px;
+}
+
+.enrich-filter-chip svg {
+  flex: none;
 }
 
 .enrich-filter-label {
@@ -1177,12 +1188,21 @@ code, pre, .mono { font-family: var(--font-mono); }
   padding: 12px;
   text-align: left;
   font-size: 12px;
-  cursor: default;
+}
+
+.candidate p {
+  margin: 0;
 }
 
 .candidate:hover {
   border-color: color-mix(in oklab, var(--red-600), transparent 55%);
   background: var(--red-50);
+}
+
+.candidate-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 10px;
 }
 
 /* ───────── Legacy compatibility (for existing Tailwind classes during migration) ───────── */

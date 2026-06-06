@@ -27,13 +27,14 @@ export function SuggestionDialog({
         </div>
         <div className="dialog-bd">
           {dialog.candidates.map((candidate, index) => (
-            <button
-              key={index}
-              className="candidate"
-              onClick={() => onApply(candidate.text)}
-            >
-              {candidate.text}
-            </button>
+            <article key={index} className="candidate">
+              <p>{candidate.text}</p>
+              <div className="candidate-actions">
+                <button className="btn sm" onClick={() => onApply(candidate.text)}>
+                  Use
+                </button>
+              </div>
+            </article>
           ))}
         </div>
       </div>
