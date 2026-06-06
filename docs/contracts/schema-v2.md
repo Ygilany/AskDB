@@ -169,6 +169,8 @@ The front-matter shape is validated by zod (in `@askdb/core`). Cross-reference c
 | `aliases` | string[] | no | Alternate phrases users say for this table. |
 | `tags` | string[] | no | Free-form labels (`pii`, `revenue`, `internal-only`). |
 | `sensitive` | boolean | no | Accepted by the front-matter parser, but the current loader does not apply it. Effective sensitivity comes from `schema.json` only. |
+| `tracked` | boolean | no | Defaults to `true`. Set `false` to keep the table in the schema artifact but exclude it from full-schema NL→SQL prompt DDL and RAG indexing. |
+| `toIgnore` / `to-ignore` | boolean | no | Authoring aliases for table exclusion. `true` is normalized to `tracked: false`; writers persist the canonical `tracked` field. |
 | `columns` | array | no | Per-column overrides and additions. Items keyed by `id`. |
 | `columns[].id` | string | yes (in array) | Intended to equal a `table:*#*` id from `schema.json`. Unknown column IDs are reported as loader warnings and are ignored by normalization/chunking. |
 | `columns[].aliases` | string[] | no | Alternate names for this column. |

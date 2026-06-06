@@ -84,3 +84,18 @@ describe("formatSchemaV2ForNlToSql — omitSensitiveIdentifiersFromPrompt", () =
     expect(stats.listedSensitiveColumnCount).toBe(0);
   });
 });
+
+describe("formatSchemaV2ForNlToSql — ignored tables", () => {
+  it("excludes untracked tables from full-schema prompt DDL", () => {
+    const schema = loadSchema(v2Dir);
+    const orders = schema.tables.find((table) => table.id === "table:public.orders");
+    expect(orders).toBeDefined();
+    orders!.tracked = false;
+
+    const { ddl, stats } = formatSchemaV2ForNlToSql(schema);
+
+    expect(ddl).not.toContain("TABLE public.orders");
+    expect(ddl).toContain("TABLE public.users");
+    expect(stats.untrackedTableCount).toBe(1);
+  });
+});

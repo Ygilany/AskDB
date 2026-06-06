@@ -64,6 +64,46 @@ Body.
     expect(() => parseTableMarkdown(bad, "fake.md")).toThrow(SchemaParseError);
   });
 
+  it("accepts to-ignore aliases and normalizes them to tracked=false", () => {
+    const camel = `---
+id: table:orders
+name: orders
+schemaId: orders-users
+toIgnore: true
+---
+Body.
+`;
+    const kebab = `---
+id: table:orders
+name: orders
+schemaId: orders-users
+to-ignore: true
+---
+Body.
+`;
+
+    expect(parseTableMarkdown(camel, "fake.md").frontmatter).toMatchObject({
+      tracked: false,
+    });
+    expect(parseTableMarkdown(kebab, "fake.md").frontmatter).toMatchObject({
+      tracked: false,
+    });
+  });
+
+  it("rejects conflicting tracked and to-ignore aliases", () => {
+    const bad = `---
+id: table:orders
+name: orders
+schemaId: orders-users
+tracked: true
+to-ignore: true
+---
+Body.
+`;
+    expect(() => parseTableMarkdown(bad, "fake.md")).toThrow(SchemaParseError);
+    expect(() => parseTableMarkdown(bad, "fake.md")).toThrow(/conflicts/);
+  });
+
   it("rejects missing required fields (id)", () => {
     const bad = `---
 name: orders
@@ -118,6 +158,19 @@ describe("writeTableMarkdown — round-trip", () => {
     const reparsed = parseTableMarkdown(written, ordersPath);
     expect(reparsed.frontmatter.aliases).toContain("invoices");
     expect(reparsed.body).toBe(parsed.body);
+  });
+
+  it("persists tracked=false in table front-matter", () => {
+    const content = readFileSync(ordersPath, "utf8");
+    const parsed = parseTableMarkdown(content, ordersPath);
+    const written = writeTableMarkdown(
+      { ...parsed.frontmatter, tracked: false },
+      parsed.body,
+    );
+    const reparsed = parseTableMarkdown(written, ordersPath);
+
+    expect(written).toContain("tracked: false");
+    expect(reparsed.frontmatter.tracked).toBe(false);
   });
 });
 

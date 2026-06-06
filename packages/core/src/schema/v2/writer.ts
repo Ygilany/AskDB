@@ -60,6 +60,7 @@ function orderedTableFrontmatter(fm: V2TableFrontmatter): Record<string, unknown
   if (fm.aliases !== undefined) ordered["aliases"] = fm.aliases;
   if (fm.tags !== undefined) ordered["tags"] = fm.tags;
   if (fm.sensitive !== undefined) ordered["sensitive"] = fm.sensitive;
+  if (fm.tracked !== undefined) ordered["tracked"] = fm.tracked;
   if (fm.columns !== undefined) {
     ordered["columns"] = fm.columns.map((c) => {
       const col: Record<string, unknown> = { id: c.id };

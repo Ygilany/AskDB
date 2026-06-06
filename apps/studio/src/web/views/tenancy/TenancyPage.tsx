@@ -1,8 +1,9 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import {
   ChevronDown,
   ChevronRight,
   Loader2,
+  Pencil,
   RotateCcw,
   Save,
   Settings,
@@ -12,7 +13,7 @@ import {
 import type { ReactNode } from "react";
 import type { NormalizedTenantPolicy, TenantPolicyFrontmatter } from "@askdb/core";
 import { useWorkspace } from "../../contexts/workspace-context";
-import { Badge, Field, Input, ListInput, Textarea } from "../../components/ui";
+import { Badge, Field, Input, Textarea } from "../../components/ui";
 import { StatusBanner } from "../../components/common/StatusBanner";
 import type { StatusMessage } from "../../contexts/workspace-context";
 import type { StudioTableDto } from "@/shared/api";
@@ -26,6 +27,7 @@ export function TenancyPage() {
     saveStatus,
     busy,
   } = useWorkspace();
+  const [editingSavedPolicy, setEditingSavedPolicy] = useState(false);
 
   if (!workspace) return null;
 
@@ -47,11 +49,30 @@ export function TenancyPage() {
     );
   }
 
+  if (editingSavedPolicy) {
+    return (
+      <main className="main-pane">
+        <TenancyEditSavedPolicy
+          tenantPolicy={tenantPolicy}
+          tables={tables}
+          busy={busy}
+          saveStatus={saveStatus}
+          onSave={async (frontmatter, body) => {
+            const saved = await handleSaveTenantPolicy(frontmatter, body);
+            if (saved) setEditingSavedPolicy(false);
+            return saved;
+          }}
+          onCancel={() => setEditingSavedPolicy(false)}
+        />
+      </main>
+    );
+  }
+
   return (
     <main className="main-pane">
       <TenancyView
         tenantPolicy={tenantPolicy}
-        tables={tables}
+        onEdit={() => setEditingSavedPolicy(true)}
       />
     </main>
   );
@@ -59,10 +80,10 @@ export function TenancyPage() {
 
 function TenancyView({
   tenantPolicy,
-  tables,
+  onEdit,
 }: {
   tenantPolicy: NormalizedTenantPolicy;
-  tables: StudioTableDto[];
+  onEdit: () => void;
 }) {
   const coverageByClassification = tenantPolicy.coverage.reduce(
     (acc, entry) => {
@@ -86,6 +107,11 @@ function TenancyView({
               {tenantPolicy.enforcement}
             </Badge>
           </div>
+        </div>
+        <div className="main-actions">
+          <button className="btn" onClick={onEdit}>
+            <Pencil size={14} /> Edit
+          </button>
         </div>
       </div>
       <div className="main-body">
@@ -227,6 +253,43 @@ function TenancyView({
         </div>
       </div>
     </>
+  );
+}
+
+function TenancyEditSavedPolicy({
+  tenantPolicy,
+  tables,
+  busy,
+  saveStatus,
+  onSave,
+  onCancel,
+}: {
+  tenantPolicy: NormalizedTenantPolicy;
+  tables: StudioTableDto[];
+  busy: Set<string>;
+  saveStatus: StatusMessage | null;
+  onSave: (frontmatter: TenantPolicyFrontmatter, body?: string) => Promise<boolean>;
+  onCancel: () => void;
+}) {
+  const [frontmatter, setFrontmatter] = useState<TenantPolicyFrontmatter>(() => frontmatterFromTenantPolicy(tenantPolicy));
+  const [body, setBody] = useState(tenantPolicy.body);
+
+  return (
+    <TenancyReviewDraft
+      tables={tables}
+      frontmatter={frontmatter}
+      body={body}
+      busy={busy}
+      saveStatus={saveStatus}
+      onFrontmatterChange={setFrontmatter}
+      onBodyChange={setBody}
+      onConfirm={() => void onSave(frontmatter, body || undefined)}
+      onBack={onCancel}
+      title="Edit Tenant Policy"
+      backLabel="Cancel"
+      confirmLabel="Save Changes"
+      badgeLabel="Saved"
+    />
   );
 }
 
@@ -491,6 +554,10 @@ function TenancyReviewDraft({
   onBodyChange,
   onConfirm,
   onBack,
+  title = "Review Tenant Policy",
+  backLabel = "Start Over",
+  confirmLabel = "Confirm & Save",
+  badgeLabel = "Draft",
 }: {
   tables: StudioTableDto[];
   frontmatter: TenantPolicyFrontmatter;
@@ -501,6 +568,10 @@ function TenancyReviewDraft({
   onBodyChange: (body: string) => void;
   onConfirm: () => void;
   onBack: () => void;
+  title?: string;
+  backLabel?: string;
+  confirmLabel?: string;
+  badgeLabel?: string;
 }) {
   function updateEnforcement(e: "strict" | "warn") {
     onFrontmatterChange({ ...frontmatter, enforcement: e });
@@ -542,18 +613,18 @@ function TenancyReviewDraft({
     <>
       <div className="main-hd">
         <div className="main-title">
-          <h1><Shield size={18} style={{ display: "inline", marginRight: 8 }} />Review Tenant Policy</h1>
-          <div className="main-sub"><Badge variant="warning">Draft</Badge></div>
+          <h1><Shield size={18} style={{ display: "inline", marginRight: 8 }} />{title}</h1>
+          <div className="main-sub"><Badge variant="warning">{badgeLabel}</Badge></div>
         </div>
         <div className="main-actions">
-          <button className="btn" onClick={onBack}><RotateCcw size={14} /> Start Over</button>
+          <button className="btn" onClick={onBack}><RotateCcw size={14} /> {backLabel}</button>
           <button
             className="btn primary"
             onClick={onConfirm}
             disabled={busy.has("save-tenant-policy") || frontmatter.roots.length === 0}
           >
             {busy.has("save-tenant-policy") ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
-            Confirm & Save
+            {confirmLabel}
           </button>
         </div>
       </div>
@@ -767,4 +838,20 @@ function CoverageStat({ label, count, variant }: { label: string; count: number;
 function formatUnknown(value: unknown): string {
   if (typeof value === "string") return value;
   return JSON.stringify(value, null, 2);
+}
+
+function frontmatterFromTenantPolicy(policy: NormalizedTenantPolicy): TenantPolicyFrontmatter {
+  return {
+    schemaId: policy.schemaId,
+    enforcement: policy.enforcement,
+    roots: clone(policy.roots),
+    ...(policy.hierarchy.length > 0 ? { hierarchy: clone(policy.hierarchy) } : {}),
+    ...(policy.scopedTables.length > 0 ? { scopedTables: clone(policy.scopedTables) } : {}),
+    ...(policy.polymorphicTables.length > 0 ? { polymorphicTables: clone(policy.polymorphicTables) } : {}),
+    ...(policy.globalTables.length > 0 ? { globalTables: [...policy.globalTables] } : {}),
+  };
+}
+
+function clone<T>(value: T): T {
+  return JSON.parse(JSON.stringify(value)) as T;
 }

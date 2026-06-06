@@ -202,6 +202,9 @@ export function chunkSchema(
     // Optional relationship chunks
     if (emitRelationships && table.relationships) {
       for (const rel of table.relationships) {
+        if (isUntrackedId(rel.from, schema) || isUntrackedId(rel.to, schema)) {
+          continue;
+        }
         const chunk = buildRelationshipChunk(table, rel, schema, schema.schemaId);
         if (chunk.sensitive && !includeSensitive) {
           stats.sensitiveExcluded++;
@@ -277,6 +280,9 @@ function buildTableChunk(
   if (table.relationships?.length) {
     lines.push("Relationships:");
     for (const r of table.relationships) {
+      if (isUntrackedId(r.from, schema) || isUntrackedId(r.to, schema)) {
+        continue;
+      }
       if (!includeSensitive && (isSensitiveId(r.from, schema) || isSensitiveId(r.to, schema))) {
         continue;
       }
@@ -429,9 +435,8 @@ function buildConceptChunk(
   allSensitiveColumnNames: string[],
   includeSensitive: boolean,
 ): { chunk: Chunk; sensitive: boolean; excluded: boolean } {
-  const linkedSensitive = (concept.links ?? []).some((id) =>
-    isSensitiveId(id, schema),
-  );
+  const links = (concept.links ?? []).filter((id) => !isUntrackedId(id, schema));
+  const linkedSensitive = links.some((id) => isSensitiveId(id, schema));
   const descriptionMentionsSensitive = concept.description
     ? mentionsAnyName(concept.description, allSensitiveColumnNames)
     : false;
@@ -440,7 +445,7 @@ function buildConceptChunk(
   lines.push(`# Concept: ${concept.label}`);
   lines.push(`Id: ${concept.id}`);
   if (concept.synonyms?.length) lines.push(`Synonyms: ${concept.synonyms.join(", ")}`);
-  if (concept.links?.length) lines.push(`Links: ${concept.links.join(", ")}`);
+  if (links.length) lines.push(`Links: ${links.join(", ")}`);
 
   const excludeForSensitive = (linkedSensitive || descriptionMentionsSensitive) && !includeSensitive;
 
@@ -454,7 +459,7 @@ function buildConceptChunk(
       type: "concept",
       text: lines.join("\n").trim(),
       schemaId,
-      refs: [concept.id, ...(concept.links ?? [])],
+      refs: [concept.id, ...links],
       sensitive: linkedSensitive || descriptionMentionsSensitive,
     },
     sensitive: linkedSensitive || descriptionMentionsSensitive,
@@ -607,4 +612,10 @@ function isSensitiveId(id: string, schema: NormalizedSchemaV2): boolean {
     }
   }
   return false;
+}
+
+function isUntrackedId(id: string, schema: NormalizedSchemaV2): boolean {
+  const tableId = id.includes("#") ? parseColumnId(id).tableId : id;
+  const table = schema.tables.find((t) => t.id === tableId);
+  return table?.tracked === false;
 }
