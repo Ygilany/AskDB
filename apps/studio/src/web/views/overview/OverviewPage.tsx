@@ -1,5 +1,5 @@
 import { useNavigate } from "react-router";
-import { Sparkles, Shield, History, Zap, RefreshCw, Check, X } from "lucide-react";
+import { Sparkles, Shield, History, Zap, RefreshCw } from "lucide-react";
 import { useWorkspace } from "../../contexts/workspace-context";
 import { useRag } from "../../contexts/rag-context";
 import { usePlayground } from "../../contexts/playground-context";

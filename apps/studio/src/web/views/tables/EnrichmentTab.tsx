@@ -2,7 +2,6 @@ import { Loader2, Sparkles, ChevronRight } from "lucide-react";
 import { useWorkspace } from "../../contexts/workspace-context";
 import { Badge, Field, Input, ListInput, Textarea } from "../../components/ui";
 import type { ReactNode } from "react";
-import type { SuggestSource } from "@askdb/enrich";
 
 export function EnrichmentTab() {
   const {

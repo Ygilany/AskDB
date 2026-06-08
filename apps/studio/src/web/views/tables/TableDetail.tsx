@@ -1,5 +1,5 @@
 import { NavLink, Outlet } from "react-router";
-import { Check, Loader2, RotateCcw, Save } from "lucide-react";
+import { Loader2, RotateCcw, Save } from "lucide-react";
 import { useWorkspace } from "../../contexts/workspace-context";
 import { StatusBanner } from "../../components/common/StatusBanner";
 

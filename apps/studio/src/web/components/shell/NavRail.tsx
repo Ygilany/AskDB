@@ -25,7 +25,6 @@ import {
   SidebarMenuBadge,
   SidebarMenuButton,
   SidebarSeparator,
-  SidebarTrigger,
 } from "../ui/sidebar";
 
 const NAV_ITEMS = [
