@@ -4,7 +4,6 @@ import type { V2Concept } from "@askdb/core";
 import { useWorkspace } from "../../contexts/workspace-context";
 import { Badge, Field, Input, ListInput, Textarea } from "../../components/ui";
 import { StatusBanner } from "../../components/common/StatusBanner";
-import { EmptyText } from "../../components/common/EmptyText";
 
 /* ─── helpers ─── */
 const CONCEPT_PREFIX = "concept:";
@@ -50,9 +49,12 @@ export function ConceptsPage() {
 
   if (!workspace) return null;
 
+  const conceptsKey = workspace.concepts.map((c) => c.id).join(",");
+
   return (
     <main className="main-pane">
       <ConceptsEditor
+        key={conceptsKey}
         concepts={workspace.concepts}
         linkOptions={linkOptions}
         onSave={handleSaveConcepts}
@@ -84,10 +86,6 @@ function ConceptsEditor({
   const [addDraft, setAddDraft] = useState<Partial<V2Concept>>({});
   const [conceptSearch, setConceptSearch] = useState("");
 
-  useEffect(() => {
-    setDraft(clone(concepts));
-  }, [concepts]);
-
   const dirty = JSON.stringify(draft) !== JSON.stringify(concepts);
 
   // Filtered concepts for the sub-rail list
@@ -111,11 +109,11 @@ function ConceptsEditor({
 
   function removeConcept(index: number) {
     setDraft((current) => current.filter((_, i) => i !== index));
-    if (selectedIndex === index) {
-      setSelectedIndex(null);
-    } else if (selectedIndex !== null && selectedIndex > index) {
-      setSelectedIndex(selectedIndex - 1);
-    }
+    setSelectedIndex((prev) => {
+      if (prev === index) return null;
+      if (prev !== null && prev > index) return prev - 1;
+      return prev;
+    });
   }
 
   function commitAdd() {
@@ -190,7 +188,7 @@ function ConceptsEditor({
           <div className="sub-rail-list">
             {filteredDraft.map(({ concept, index }) => (
               <button
-                key={`${concept.id}-${index}`}
+                key={concept.id}
                 className={`sub-rail-row ${selectedIndex === index ? "active" : ""}`}
                 onClick={() => { setSelectedIndex(index); setAddOpen(false); }}
               >
@@ -430,10 +428,6 @@ function LinksInput({
   // Cap visible items for dropdown
   const visible = filtered.slice(0, 30);
 
-  // Reset highlight when filtered list changes
-  useEffect(() => {
-    setHighlightIndex(0);
-  }, [filtered.length, query]);
 
   const addLink = useCallback(
     (id: string) => {
@@ -532,7 +526,7 @@ function LinksInput({
           className="links-search-input"
           placeholder={value.length ? "Add another…" : "Search tables or columns…"}
           value={query}
-          onChange={(e) => setQuery(e.target.value)}
+          onChange={(e) => { setQuery(e.target.value); setHighlightIndex(0); }}
           onFocus={() => setOpen(true)}
           onKeyDown={handleKeyDown}
         />

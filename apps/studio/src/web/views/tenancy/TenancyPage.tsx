@@ -149,8 +149,8 @@ function TenancyView({
           {tenantPolicy.hierarchy.length > 0 && (
             <CollapsibleSection title="Hierarchy Edges" count={tenantPolicy.hierarchy.length}>
               <div style={{ display: "grid", gap: 8 }}>
-                {tenantPolicy.hierarchy.map((edge, i) => (
-                  <div className="card" key={i} style={{ padding: 12, fontSize: 13 }}>
+                {tenantPolicy.hierarchy.map((edge) => (
+                  <div className="card" key={`${edge.parent}-${edge.child}`} style={{ padding: 12, fontSize: 13 }}>
                     <code>{edge.parent}</code>
                     <span className="muted" style={{ margin: "0 8px" }}>&rarr;</span>
                     <code>{edge.child}</code>
@@ -244,8 +244,8 @@ function TenancyView({
           {tenantPolicy.warnings.length > 0 && (
             <CollapsibleSection title="Policy Warnings" count={tenantPolicy.warnings.length}>
               <div style={{ display: "grid", gap: 8 }}>
-                {tenantPolicy.warnings.map((warning, i) => (
-                  <pre className="warning-block" key={i}>{formatUnknown(warning)}</pre>
+                {tenantPolicy.warnings.map((warning) => (
+                  <pre className="warning-block" key={String(warning)}>{formatUnknown(warning)}</pre>
                 ))}
               </div>
             </CollapsibleSection>
@@ -322,12 +322,6 @@ function TenancyCreateForm({
 
   const selectedRootTable = tables.find((t) => t.physical.id === rootTableId);
   const rootColumns = selectedRootTable?.physical.columns ?? [];
-
-  useEffect(() => {
-    if (selectedRootTable && !rootLabel) setRootLabel(selectedRootTable.physical.name);
-  }, [rootTableId]);
-
-  useEffect(() => { setRootTenantIdColumn(""); }, [rootTableId]);
 
   async function handleDraftWithAi() {
     setDraftStatus({ kind: "loading", text: "Analyzing schema and drafting tenant policy..." });
@@ -446,7 +440,13 @@ function TenancyCreateForm({
                     <select
                       className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
                       value={rootTableId}
-                      onChange={(e) => { setRootTableId(e.target.value); setRootLabel(""); }}
+                      onChange={(e) => {
+                        const tableId = e.target.value;
+                        const table = tables.find((t) => t.physical.id === tableId);
+                        setRootTableId(tableId);
+                        setRootLabel(table?.physical.name ?? "");
+                        setRootTenantIdColumn("");
+                      }}
                     >
                       <option value="">Select a table...</option>
                       {tables.map((t) => (
@@ -682,8 +682,8 @@ function TenancyReviewDraft({
               <div className="card-hd"><h3>Hierarchy Edges ({frontmatter.hierarchy!.length})</h3></div>
               <div className="card-bd">
                 <div style={{ display: "grid", gap: 8 }}>
-                  {frontmatter.hierarchy!.map((edge, i) => (
-                    <div key={i} style={{ display: "flex", alignItems: "start", justifyContent: "space-between", gap: 8, border: "1px solid var(--border)", borderRadius: "var(--radius)", padding: 12, fontSize: 13 }}>
+                  {frontmatter.hierarchy!.map((edge) => (
+                    <div key={`${edge.parent}-${edge.child}`} style={{ display: "flex", alignItems: "start", justifyContent: "space-between", gap: 8, border: "1px solid var(--border)", borderRadius: "var(--radius)", padding: 12, fontSize: 13 }}>
                       <div>
                         <code>{edge.parent}</code>
                         <span className="muted" style={{ margin: "0 8px" }}>&rarr;</span>

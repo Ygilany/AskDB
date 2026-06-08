@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Outlet, useNavigate, useParams } from "react-router";
 import { ChevronRight, ChevronsDownUp, ChevronsUpDown, EyeOff, FolderOpen, Search, Sparkles } from "lucide-react";
 import { useWorkspace } from "../../contexts/workspace-context";
@@ -35,27 +35,26 @@ export function TablesLayout() {
   // Track filter — null means "show all"
   const [trackFilter, setTrackFilter] = useState<TrackFilter | null>(null);
 
-  // Compute enrichment level for a table
-  function getLevel(t: typeof tables[0]): EnrichLevel {
+  const getLevel = useCallback((t: typeof tables[0]): EnrichLevel => {
     const draft = drafts[t.physical.id] ?? t.draft;
     const hasSome = draft.description || (draft.aliases && draft.aliases.length > 0);
     const allCols = Object.values(draft.columns ?? {}).every((c) => c.description);
     return hasSome && allCols ? "enriched" : hasSome ? "partial" : "none";
-  }
+  }, [drafts]);
 
-  function isTracked(t: typeof tables[0]): boolean {
+  const isTracked = useCallback((t: typeof tables[0]): boolean => {
     const draft = drafts[t.physical.id] ?? t.draft;
     return draft.tracked !== false;
-  }
+  }, [drafts]);
 
   // Count by enrichment level (across all tables, not just filtered)
   const levelCounts = useMemo(() => {
     const counts: Record<EnrichLevel, number> = { enriched: 0, partial: 0, none: 0 };
     for (const t of tables) counts[getLevel(t)]++;
     return counts;
-  }, [tables, drafts]);
+  }, [tables, getLevel]);
 
-  const untrackedCount = useMemo(() => tables.filter((t) => !isTracked(t)).length, [tables, drafts]);
+  const untrackedCount = useMemo(() => tables.filter((t) => !isTracked(t)).length, [tables, isTracked]);
 
   // Apply enrichment + track filters on top of search-filtered tables
   const displayTables = useMemo(() => {
@@ -64,7 +63,7 @@ export function TablesLayout() {
     if (trackFilter === "tracked") result = result.filter((t) => isTracked(t));
     else if (trackFilter === "untracked") result = result.filter((t) => !isTracked(t));
     return result;
-  }, [filteredTables, enrichFilter, trackFilter, drafts]);
+  }, [filteredTables, enrichFilter, trackFilter, getLevel, isTracked]);
 
   // Group tables by schema
   const schemaGroups = useMemo(() => {
@@ -79,28 +78,21 @@ export function TablesLayout() {
 
   const allSchemas = useMemo(() => schemaGroups.map(([s]) => s), [schemaGroups]);
 
-  // Track which schemas are open — all open by default
-  const [openSchemas, setOpenSchemas] = useState<Set<string>>(new Set(allSchemas));
+  // Track which schemas the user has explicitly collapsed; all others are open
+  const [closedSchemas, setClosedSchemas] = useState<Set<string>>(new Set());
+  const openSchemas = useMemo(
+    () => new Set(allSchemas.filter((s) => !closedSchemas.has(s))),
+    [allSchemas, closedSchemas],
+  );
 
-  // Keep openSchemas in sync when new schemas appear
-  useEffect(() => {
-    setOpenSchemas((prev) => {
-      const next = new Set(prev);
-      for (const s of allSchemas) {
-        if (!next.has(s)) next.add(s);
-      }
-      return next;
-    });
-  }, [allSchemas]);
+  const allExpanded = closedSchemas.size === 0;
 
-  const allExpanded = allSchemas.every((s) => openSchemas.has(s));
-
-  const collapseAll = () => setOpenSchemas(new Set());
-  const expandAll = () => setOpenSchemas(new Set(allSchemas));
+  const collapseAll = () => setClosedSchemas(new Set(allSchemas));
+  const expandAll = () => setClosedSchemas(new Set());
 
   // When searching, auto-expand all groups so results are visible
   useEffect(() => {
-    if (tableSearch) setOpenSchemas(new Set(allSchemas));
+    if (tableSearch) setClosedSchemas(new Set());
   }, [tableSearch]);
 
   useEffect(() => {
@@ -111,7 +103,7 @@ export function TablesLayout() {
       const first = tables[0];
       navigate(`/tables/${first.physical.schema}/${first.physical.name}/enrichment`, { replace: true });
     }
-  }, [params.schema, params.name, tables]);
+  }, [params.schema, params.name, tables, navigate, setSelectedTableId]);
 
   function toggleFilter(level: EnrichLevel) {
     setEnrichFilter((prev) => {
@@ -195,10 +187,10 @@ export function TablesLayout() {
               key={schema}
               open={openSchemas.has(schema)}
               onOpenChange={(open) => {
-                setOpenSchemas((prev) => {
+                setClosedSchemas((prev) => {
                   const next = new Set(prev);
-                  if (open) next.add(schema);
-                  else next.delete(schema);
+                  if (open) next.delete(schema);
+                  else next.add(schema);
                   return next;
                 });
               }}
