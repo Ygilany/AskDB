@@ -1,12 +1,19 @@
 import { useEffect, useCallback } from "react";
-import { Loader2, Lock, Play, Shield, Sparkles } from "lucide-react";
+import { Loader2, Lock, Play, Plus, Shield, Sparkles, Trash2 } from "lucide-react";
 import { useWorkspace } from "../../contexts/workspace-context";
 import { useRag } from "../../contexts/rag-context";
 import { usePlayground } from "../../contexts/playground-context";
-import { Field, Textarea } from "../../components/ui";
+import { Field, Input, Textarea } from "../../components/ui";
 import { CopyButton } from "../../components/common/CopyButton";
 import { InlineStatus } from "../../components/common/StatusBanner";
 import { EmptyText } from "../../components/common/EmptyText";
+
+const selectClassName = "h-9 w-full rounded-md border border-input bg-background px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring";
+const fieldsetResetStyle = { border: 0, padding: 0, margin: 0 };
+
+function makeDraftRowId(prefix: string): string {
+  return `${prefix}-${globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(36).slice(2)}`}`;
+}
 
 export function PlaygroundPage() {
   const { workspace } = useWorkspace();
@@ -15,7 +22,15 @@ export function PlaygroundPage() {
     askQuestion, setAskQuestion, askMode, setAskMode,
     askMessage, askResult,
     askTenantEnabled, setAskTenantEnabled,
-    askTenantScopeJson, setAskTenantScopeJson,
+    askTenantAccessKind, setAskTenantAccessKind,
+    askTenantRoot, setAskTenantRoot,
+    askTenantIdsText, setAskTenantIdsText,
+    askTenantMultiRootRows, setAskTenantMultiRootRows,
+    askTenantGlobalReason, setAskTenantGlobalReason,
+    askTenantContext, setAskTenantContext,
+    askTenantContextAttributes, setAskTenantContextAttributes,
+    askTenantFilterRows, setAskTenantFilterRows,
+    generatedTenantScopeJson, tenantScopeValidationError,
     askTenantSqlMode, setAskTenantSqlMode,
     executeResult, executeMessage,
     historyEntries, busy,
@@ -37,6 +52,10 @@ export function PlaygroundPage() {
   if (!workspace) return null;
 
   const hasTenantPolicy = Boolean(workspace.tenantPolicy);
+  const tenantRoots = workspace.tenantPolicy?.roots ?? [];
+  const polymorphicTables = workspace.tenantPolicy?.polymorphicTables ?? [];
+  const firstTenantRoot = tenantRoots[0]?.id ?? "";
+  const firstPolymorphicTable = polymorphicTables[0];
 
   return (
     <main className="main-pane">
@@ -63,7 +82,8 @@ export function PlaygroundPage() {
 
                 <div style={{ display: "grid", gap: 6 }}>
                   <span className="muted" style={{ fontSize: 11, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.04em" }}>Retrieval mode</span>
-                  <fieldset className="toggle-seg">
+                  <fieldset className="toggle-seg" style={fieldsetResetStyle}>
+                    <legend className="sr-only">Retrieval mode</legend>
                     <button className={askMode === "full" ? "active" : ""} onClick={() => setAskMode("full")}>
                       Full schema
                     </button>
@@ -80,7 +100,7 @@ export function PlaygroundPage() {
                 </div>
 
                 {hasTenantPolicy && (
-                  <div style={{ display: "grid", gap: 6 }}>
+                  <div style={{ display: "grid", gap: 10 }}>
                     <label style={{ display: "flex", alignItems: "center", gap: 8 }}>
                       <input
                         type="checkbox"
@@ -93,19 +113,311 @@ export function PlaygroundPage() {
                       </span>
                     </label>
                     {askTenantEnabled && (
-                      <div style={{ display: "grid", gap: 8 }}>
-                        <Field label="Scope JSON">
-                          <Textarea
-                            className="font-mono text-xs"
-                            value={askTenantScopeJson}
-                            onChange={(e) => setAskTenantScopeJson(e.target.value)}
-                            placeholder={'{\n  "access": {\n    "kind": "ids",\n    "tenantRoot": "orgs",\n    "ids": ["org-1"]\n  }\n}'}
-                            rows={5}
-                          />
-                        </Field>
+                      <div style={{ display: "grid", gap: 10 }}>
+                        <div style={{ display: "grid", gap: 6 }}>
+                          <span className="muted" style={{ fontSize: 11, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.04em" }}>Access kind</span>
+                          <fieldset className="toggle-seg" style={fieldsetResetStyle}>
+                            <legend className="sr-only">Tenant scope access kind</legend>
+                            <button className={askTenantAccessKind === "ids" ? "active" : ""} onClick={() => setAskTenantAccessKind("ids")}>
+                              IDs
+                            </button>
+                            <button className={askTenantAccessKind === "subtree" ? "active" : ""} onClick={() => setAskTenantAccessKind("subtree")}>
+                              Subtree
+                            </button>
+                            <button className={askTenantAccessKind === "multi_root" ? "active" : ""} onClick={() => setAskTenantAccessKind("multi_root")}>
+                              Multi-root
+                            </button>
+                            <button className={askTenantAccessKind === "global" ? "active" : ""} onClick={() => setAskTenantAccessKind("global")}>
+                              Super / global
+                            </button>
+                          </fieldset>
+                        </div>
+
+                        {(askTenantAccessKind === "ids" || askTenantAccessKind === "subtree") && (
+                          <div style={{ display: "grid", gap: 8 }}>
+                            <Field label="Tenant root">
+                              <select className={selectClassName} value={askTenantRoot} onChange={(e) => setAskTenantRoot(e.target.value)}>
+                                {tenantRoots.map((root) => (
+                                  <option key={root.id} value={root.id}>{root.label} ({root.id})</option>
+                                ))}
+                              </select>
+                            </Field>
+                            <Field
+                              label={askTenantAccessKind === "ids" ? "Tenant IDs" : "Subtree root IDs"}
+                              description="Comma-separated IDs from your app's auth context."
+                            >
+                              <Input
+                                value={askTenantIdsText}
+                                onChange={(e) => setAskTenantIdsText(e.target.value)}
+                                placeholder={askTenantAccessKind === "ids" ? "org-1, org-2" : "region-1"}
+                              />
+                            </Field>
+                          </div>
+                        )}
+
+                        {askTenantAccessKind === "multi_root" && (
+                          <div style={{ display: "grid", gap: 8 }}>
+                            {askTenantMultiRootRows.map((row, index) => (
+                              <div key={row.id} style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) minmax(0, 1fr) auto", gap: 8, alignItems: "end" }}>
+                                <Field label={index === 0 ? "Tenant root" : "Tenant root"} className="min-w-0">
+                                  <select
+                                    className={selectClassName}
+                                    value={row.tenantRoot}
+                                    onChange={(e) => {
+                                      const next = [...askTenantMultiRootRows];
+                                      next[index] = { ...row, tenantRoot: e.target.value };
+                                      setAskTenantMultiRootRows(next);
+                                    }}
+                                  >
+                                    {tenantRoots.map((root) => (
+                                      <option key={root.id} value={root.id}>{root.label} ({root.id})</option>
+                                    ))}
+                                  </select>
+                                </Field>
+                                <Field label="IDs" className="min-w-0">
+                                  <Input
+                                    value={row.idsText}
+                                    onChange={(e) => {
+                                      const next = [...askTenantMultiRootRows];
+                                      next[index] = { ...row, idsText: e.target.value };
+                                      setAskTenantMultiRootRows(next);
+                                    }}
+                                    placeholder="org-1, org-2"
+                                  />
+                                </Field>
+                                <button
+                                  className="btn ghost sm"
+                                  disabled={askTenantMultiRootRows.length === 1}
+                                  onClick={() => setAskTenantMultiRootRows(askTenantMultiRootRows.filter((_, i) => i !== index))}
+                                  title="Remove scope row"
+                                >
+                                  <Trash2 size={14} />
+                                </button>
+                              </div>
+                            ))}
+                            <div>
+                              <button
+                                className="btn ghost sm"
+                                onClick={() => setAskTenantMultiRootRows([
+                                  ...askTenantMultiRootRows,
+                                  { id: makeDraftRowId("multi-root"), tenantRoot: firstTenantRoot, idsText: "" },
+                                ])}
+                              >
+                                <Plus size={14} />
+                                Add root
+                              </button>
+                            </div>
+                          </div>
+                        )}
+
+                        {askTenantAccessKind === "global" && (
+                          <Field label="Super / global reason" description="Required for audit context.">
+                            <Input
+                              value={askTenantGlobalReason}
+                              onChange={(e) => setAskTenantGlobalReason(e.target.value)}
+                              placeholder="superuser access for support investigation"
+                            />
+                          </Field>
+                        )}
+
+                        <details>
+                          <summary className="muted" style={{ cursor: "pointer", fontSize: 11, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.04em" }}>
+                            Advisory context
+                          </summary>
+                          <div style={{ display: "grid", gap: 8, marginTop: 8 }}>
+                            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+                              <Field label="Role">
+                                <Input value={askTenantContext.role} onChange={(e) => setAskTenantContext({ ...askTenantContext, role: e.target.value })} placeholder="regional_manager" />
+                              </Field>
+                              <Field label="Label">
+                                <Input value={askTenantContext.label} onChange={(e) => setAskTenantContext({ ...askTenantContext, label: e.target.value })} placeholder="Jane Smith, Northeast" />
+                              </Field>
+                              <Field label="Department">
+                                <Input value={askTenantContext.department} onChange={(e) => setAskTenantContext({ ...askTenantContext, department: e.target.value })} placeholder="operations" />
+                              </Field>
+                              <Field label="Region">
+                                <Input value={askTenantContext.region} onChange={(e) => setAskTenantContext({ ...askTenantContext, region: e.target.value })} placeholder="northeast" />
+                              </Field>
+                            </div>
+                            <Field label="Description">
+                              <Textarea
+                                value={askTenantContext.description}
+                                onChange={(e) => setAskTenantContext({ ...askTenantContext, description: e.target.value })}
+                                placeholder="Business context for this user's scope."
+                                rows={2}
+                              />
+                            </Field>
+                            {askTenantContextAttributes.map((attribute, index) => (
+                              <div key={attribute.id} style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) minmax(0, 1fr) auto", gap: 8, alignItems: "end" }}>
+                                <Field label="Attribute key" className="min-w-0">
+                                  <Input
+                                    value={attribute.key}
+                                    onChange={(e) => {
+                                      const next = [...askTenantContextAttributes];
+                                      next[index] = { ...attribute, key: e.target.value };
+                                      setAskTenantContextAttributes(next);
+                                    }}
+                                    placeholder="team"
+                                  />
+                                </Field>
+                                <Field label="Attribute value" className="min-w-0">
+                                  <Input
+                                    value={attribute.value}
+                                    onChange={(e) => {
+                                      const next = [...askTenantContextAttributes];
+                                      next[index] = { ...attribute, value: e.target.value };
+                                      setAskTenantContextAttributes(next);
+                                    }}
+                                    placeholder="field-sales"
+                                  />
+                                </Field>
+                                <button
+                                  className="btn ghost sm"
+                                  onClick={() => setAskTenantContextAttributes(askTenantContextAttributes.filter((_, i) => i !== index))}
+                                  title="Remove attribute"
+                                >
+                                  <Trash2 size={14} />
+                                </button>
+                              </div>
+                            ))}
+                            <div>
+                              <button
+                                className="btn ghost sm"
+                                onClick={() => setAskTenantContextAttributes([
+                                  ...askTenantContextAttributes,
+                                  { id: makeDraftRowId("context-attribute"), key: "", value: "" },
+                                ])}
+                              >
+                                <Plus size={14} />
+                                Add attribute
+                              </button>
+                            </div>
+                          </div>
+                        </details>
+
+                        {polymorphicTables.length > 0 && (
+                          <details>
+                            <summary className="muted" style={{ cursor: "pointer", fontSize: 11, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.04em" }}>
+                              Tenant filters
+                            </summary>
+                            <div style={{ display: "grid", gap: 8, marginTop: 8 }}>
+                              {askTenantFilterRows.map((row, index) => (
+                                <div key={row.id} style={{ display: "grid", gridTemplateColumns: "minmax(0, 1.2fr) minmax(0, 1fr) 88px minmax(0, 1fr) auto", gap: 8, alignItems: "end" }}>
+                                  <Field label="Table" className="min-w-0">
+                                    <select
+                                      className={selectClassName}
+                                      value={row.tableId}
+                                      onChange={(e) => {
+                                        const selected = polymorphicTables.find((table) => table.id === e.target.value);
+                                        const next = [...askTenantFilterRows];
+                                        next[index] = { ...row, tableId: e.target.value, column: row.column || selected?.typeColumn || "" };
+                                        setAskTenantFilterRows(next);
+                                      }}
+                                    >
+                                      {polymorphicTables.map((table) => (
+                                        <option key={table.id} value={table.id}>{table.id}</option>
+                                      ))}
+                                    </select>
+                                  </Field>
+                                  <Field label="Column" className="min-w-0">
+                                    <Input
+                                      value={row.column}
+                                      onChange={(e) => {
+                                        const next = [...askTenantFilterRows];
+                                        next[index] = { ...row, column: e.target.value };
+                                        setAskTenantFilterRows(next);
+                                      }}
+                                      placeholder="owner_type"
+                                    />
+                                  </Field>
+                                  <Field label="Operator" className="min-w-0">
+                                    <select
+                                      className={selectClassName}
+                                      value={row.operator}
+                                      onChange={(e) => {
+                                        const next = [...askTenantFilterRows];
+                                        next[index] = { ...row, operator: e.target.value as typeof row.operator };
+                                        setAskTenantFilterRows(next);
+                                      }}
+                                    >
+                                      <option value="=">=</option>
+                                      <option value="IN">IN</option>
+                                      <option value="!=">!=</option>
+                                      <option value="NOT IN">NOT IN</option>
+                                    </select>
+                                  </Field>
+                                  <Field label="Value" className="min-w-0">
+                                    <Input
+                                      value={row.valueText}
+                                      onChange={(e) => {
+                                        const next = [...askTenantFilterRows];
+                                        next[index] = { ...row, valueText: e.target.value };
+                                        setAskTenantFilterRows(next);
+                                      }}
+                                      placeholder={row.operator === "IN" || row.operator === "NOT IN" ? "client, agency" : "client"}
+                                    />
+                                  </Field>
+                                  <button
+                                    className="btn ghost sm"
+                                    onClick={() => setAskTenantFilterRows(askTenantFilterRows.filter((_, i) => i !== index))}
+                                    title="Remove condition"
+                                  >
+                                    <Trash2 size={14} />
+                                  </button>
+                                </div>
+                              ))}
+                              <div>
+                                <button
+                                  className="btn ghost sm"
+                                  onClick={() => setAskTenantFilterRows([
+                                    ...askTenantFilterRows,
+                                    {
+                                      id: makeDraftRowId("tenant-filter"),
+                                      tableId: firstPolymorphicTable!.id,
+                                      column: firstPolymorphicTable!.typeColumn,
+                                      operator: "=",
+                                      valueText: "",
+                                    },
+                                  ])}
+                                >
+                                  <Plus size={14} />
+                                  Add condition
+                                </button>
+                              </div>
+                            </div>
+                          </details>
+                        )}
+
+                        <div style={{ display: "grid", gap: 6 }}>
+                          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
+                            <span className="muted" style={{ fontSize: 11, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.04em" }}>tenantScope JSON preview</span>
+                            {generatedTenantScopeJson && <CopyButton value={generatedTenantScopeJson} />}
+                          </div>
+                          <pre
+                            className="mono"
+                            style={{
+                              minHeight: 116,
+                              margin: 0,
+                              overflow: "auto",
+                              whiteSpace: "pre-wrap",
+                              border: "1px solid var(--border)",
+                              borderRadius: 6,
+                              padding: 10,
+                              fontSize: 11,
+                              background: "var(--surface-2)",
+                            }}
+                          >
+                            {generatedTenantScopeJson || tenantScopeValidationError || "Complete the tenant scope fields to preview the JSON passed to ask()."}
+                          </pre>
+                          {tenantScopeValidationError && (
+                            <span style={{ color: "var(--red-600)", fontSize: 12 }}>{tenantScopeValidationError}</span>
+                          )}
+                        </div>
+
                         <div style={{ display: "grid", gap: 6 }}>
                           <span className="muted" style={{ fontSize: 11, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.04em" }}>SQL output mode</span>
-                          <fieldset className="toggle-seg">
+                          <fieldset className="toggle-seg" style={fieldsetResetStyle}>
+                            <legend className="sr-only">SQL output mode</legend>
                             <button className={askTenantSqlMode === "sql-only" ? "active" : ""} onClick={() => setAskTenantSqlMode("sql-only")}>
                               Inline literals
                             </button>
