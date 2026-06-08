@@ -1,5 +1,14 @@
 # askdb
 
+## 1.0.0-beta.22
+
+### Patch Changes
+
+- Updated dependencies [330e1d2]
+- Updated dependencies [e3616e5]
+- Updated dependencies [93a4c26]
+  - @askdb/studio@0.2.0-beta.19
+
 ## 1.0.0-beta.21
 
 ### Patch Changes

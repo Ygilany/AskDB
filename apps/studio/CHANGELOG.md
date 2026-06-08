@@ -1,5 +1,13 @@
 # @askdb/studio
 
+## 0.2.0-beta.19
+
+### Patch Changes
+
+- 330e1d2: Fix all 40 React Doctor issues (58→100/100): hoist Intl formatters, flatMap/reduce chained iterations, useReducer for 5 large state groups, useRef for non-rendered state, lazy useState initializer for mount state, stabilise useMemo deps, aria-label on unlabelled controls, bump tiny text to 12 px, extract large inline styles to CSS classes, move pure functions to module scope, and use semantic fieldset/ARIA patterns.
+- e3616e5: Prevent Studio startup and route sync effects from re-running indefinitely after context provider state updates, and clear the remaining React Doctor warnings in Studio.
+- 93a4c26: Add guided tenant scope controls in Studio with a generated `tenantScope` JSON preview.
+
 ## 0.2.0-beta.18
 
 ### Patch Changes
