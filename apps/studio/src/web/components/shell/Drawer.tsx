@@ -1,4 +1,4 @@
-import { useCallback, useEffect } from "react";
+import { useEffect, useRef } from "react";
 import type { ReactNode } from "react";
 import { X } from "lucide-react";
 
@@ -13,17 +13,16 @@ export function Drawer({
   title: string;
   children: ReactNode;
 }) {
-  const handleKeyDown = useCallback(
-    (e: KeyboardEvent) => {
-      if (e.key === "Escape" && open) onClose();
-    },
-    [open, onClose],
-  );
+  const handleKeyDownRef = useRef<(e: KeyboardEvent) => void>(() => {});
+  handleKeyDownRef.current = (e: KeyboardEvent) => {
+    if (e.key === "Escape" && open) onClose();
+  };
 
   useEffect(() => {
-    document.addEventListener("keydown", handleKeyDown);
-    return () => document.removeEventListener("keydown", handleKeyDown);
-  }, [handleKeyDown]);
+    const listener = (e: KeyboardEvent) => handleKeyDownRef.current(e);
+    document.addEventListener("keydown", listener);
+    return () => document.removeEventListener("keydown", listener);
+  }, []);
 
   return (
     <>
@@ -32,15 +31,19 @@ export function Drawer({
         onClick={onClose}
         aria-hidden="true"
       />
-      <div className={`drawer ${open ? "open" : ""}`} role="dialog" aria-modal={open}>
+      <dialog
+        className={`drawer ${open ? "open" : ""}`}
+        aria-hidden={!open || undefined}
+        aria-label={title}
+      >
         <div className="drawer-hd">
           <h3>{title}</h3>
-          <button className="btn ghost sm" onClick={onClose} aria-label="Close drawer">
+          <button type="button" className="btn ghost sm" onClick={onClose} aria-label="Close drawer">
             <X size={14} />
           </button>
         </div>
         <div className="drawer-bd">{children}</div>
-      </div>
+      </dialog>
     </>
   );
 }
