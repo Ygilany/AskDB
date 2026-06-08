@@ -73,7 +73,7 @@ export function PlaygroundPage() {
                       title={!ragAvailable ? "Build the RAG index first to query with retrieval." : undefined}
                       onClick={() => setAskMode("rag")}
                     >
-                      {!ragAvailable && <Lock size={12} />}
+                      {!ragAvailable && <Lock size={12} style={{ display: "inline", marginRight: 4 }} />}
                       RAG
                     </button>
                   </fieldset>
