@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useReducer } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useReducer } from "react";
 import type { ReactNode } from "react";
 import type { ChunkType } from "@askdb/rag";
 import type { RagQueryResponse, StudioRagStatusDto, StudioRequestUsageDto } from "@/shared/api";
@@ -87,13 +87,13 @@ export function RagProvider({ children }: { children: ReactNode }) {
   const [state, dispatch] = useReducer(ragReducer, initialRagState);
   const { ragStatus, ragMessage, ragQuestion, ragK, ragTypes, ragResults, ragIndexUsage, busy } = state;
 
-  const setRagStatus = (v: StudioRagStatusDto | null) => dispatch({ type: "set_ragStatus", payload: v });
-  const setRagMessage = (v: StatusMessage | null) => dispatch({ type: "set_ragMessage", payload: v });
-  const setRagQuestion = (v: string) => dispatch({ type: "set_ragQuestion", payload: v });
-  const setRagK = (v: number) => dispatch({ type: "set_ragK", payload: v });
-  const setRagTypes = (v: ChunkType[]) => dispatch({ type: "set_ragTypes", payload: v });
-  const setRagResults = (v: RagQueryResponse | null) => dispatch({ type: "set_ragResults", payload: v });
-  const setRagIndexUsage = (v: StudioRequestUsageDto | null) => dispatch({ type: "set_ragIndexUsage", payload: v });
+  const setRagStatus = useCallback((v: StudioRagStatusDto | null) => dispatch({ type: "set_ragStatus", payload: v }), []);
+  const setRagMessage = useCallback((v: StatusMessage | null) => dispatch({ type: "set_ragMessage", payload: v }), []);
+  const setRagQuestion = useCallback((v: string) => dispatch({ type: "set_ragQuestion", payload: v }), []);
+  const setRagK = useCallback((v: number) => dispatch({ type: "set_ragK", payload: v }), []);
+  const setRagTypes = useCallback((v: ChunkType[]) => dispatch({ type: "set_ragTypes", payload: v }), []);
+  const setRagResults = useCallback((v: RagQueryResponse | null) => dispatch({ type: "set_ragResults", payload: v }), []);
+  const setRagIndexUsage = useCallback((v: StudioRequestUsageDto | null) => dispatch({ type: "set_ragIndexUsage", payload: v }), []);
 
   const ragAvailable = Boolean(ragStatus?.hasIndex);
 
@@ -102,24 +102,24 @@ export function RagProvider({ children }: { children: ReactNode }) {
       const id = setTimeout(() => setRagMessage(null), 4000);
       return () => clearTimeout(id);
     }
-  }, [ragMessage]);
+  }, [ragMessage, setRagMessage]);
 
-  async function withBusy(key: string, task: () => Promise<void>) {
+  const withBusy = useCallback(async (key: string, task: () => Promise<void>) => {
     dispatch({ type: "busy_add", key });
     try { await task(); } finally {
       dispatch({ type: "busy_remove", key });
     }
-  }
+  }, []);
 
-  async function refreshRagStatus() {
+  const refreshRagStatus = useCallback(async () => {
     try {
       setRagStatus(await getRagStatus());
     } catch (error) {
       setRagMessage({ kind: "error", text: error instanceof Error ? error.message : String(error) });
     }
-  }
+  }, [setRagMessage, setRagStatus]);
 
-  async function handleBuildRag() {
+  const handleBuildRag = useCallback(async () => {
     setRagMessage({ kind: "loading", text: "Indexing schema chunks..." });
     setRagResults(null);
     await withBusy("rag-build", async () => {
@@ -137,9 +137,9 @@ export function RagProvider({ children }: { children: ReactNode }) {
         setRagMessage({ kind: "error", text: error instanceof Error ? error.message : String(error) });
       }
     });
-  }
+  }, [setRagIndexUsage, setRagMessage, setRagResults, setRagStatus, withBusy]);
 
-  async function handleQueryRag() {
+  const handleQueryRag = useCallback(async () => {
     if (!ragQuestion.trim()) {
       setRagMessage({ kind: "error", text: "Enter a question before querying RAG." });
       return;
@@ -154,14 +154,18 @@ export function RagProvider({ children }: { children: ReactNode }) {
         setRagMessage({ kind: "error", text: error instanceof Error ? error.message : String(error) });
       }
     });
-  }
+  }, [ragK, ragQuestion, ragTypes, setRagMessage, setRagResults, withBusy]);
 
-  const value: RagContextValue = {
+  const value = useMemo<RagContextValue>(() => ({
     ragStatus, ragMessage, ragQuestion, setRagQuestion, ragK, setRagK,
     ragTypes, setRagTypes, ragResults, ragIndexUsage, ragAvailable, busy,
     allChunkTypes: CHUNK_TYPES,
     refreshRagStatus, handleBuildRag, handleQueryRag,
-  };
+  }), [
+    busy, handleBuildRag, handleQueryRag, ragAvailable, ragIndexUsage, ragK,
+    ragMessage, ragQuestion, ragResults, ragStatus, ragTypes, refreshRagStatus,
+    setRagK, setRagQuestion, setRagTypes,
+  ]);
 
   return <RagContext.Provider value={value}>{children}</RagContext.Provider>;
 }
