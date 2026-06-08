@@ -914,6 +914,7 @@ code, pre, .mono { font-family: var(--font-mono); }
   border-radius: 7px;
   padding: 2px;
   gap: 2px;
+  margin: 0;
 }
 
 .toggle-seg button {
@@ -1087,6 +1088,31 @@ code, pre, .mono { font-family: var(--font-mono); }
 /* ───────── Misc ───────── */
 .muted { color: var(--ink-500); }
 .tiny { font-size: 11px; }
+
+/* ───────── Tenancy page ───────── */
+.policy-edge-card {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 12px;
+  font-size: 13px;
+}
+.collapsible-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  background: none;
+  border: none;
+  padding: 0;
+  color: var(--ink-700);
+}
 
 .check {
   display: inline-flex;
@@ -1476,6 +1502,9 @@ code, pre, .mono { font-family: var(--font-mono); }
   background: var(--surface);
   box-shadow: var(--shadow-2);
   z-index: 50;
+  list-style: none;
+  padding: 0;
+  margin: 0;
 }
 
 .links-dropdown-item {

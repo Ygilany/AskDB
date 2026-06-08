@@ -17,20 +17,20 @@ export function SuggestionDialog({
   onClose: () => void;
 }) {
   return (
-    <div className="dialog-overlay" onClick={onClose}>
+    <div className="dialog-overlay" onClick={onClose} aria-hidden="true">
       <div className="dialog" onClick={(e) => e.stopPropagation()}>
         <div className="dialog-hd">
           <h3>Suggestions for {dialog.label}</h3>
-          <button className="btn ghost sm" onClick={onClose} aria-label="Close">
+          <button type="button" className="btn ghost sm" onClick={onClose} aria-label="Close">
             <X size={14} />
           </button>
         </div>
         <div className="dialog-bd">
-          {dialog.candidates.map((candidate, index) => (
-            <article key={index} className="candidate">
+          {dialog.candidates.map((candidate) => (
+            <article key={candidate.text} className="candidate">
               <p>{candidate.text}</p>
               <div className="candidate-actions">
-                <button className="btn sm" onClick={() => onApply(candidate.text)}>
+                <button type="button" className="btn sm" onClick={() => onApply(candidate.text)}>
                   Use
                 </button>
               </div>

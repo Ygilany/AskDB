@@ -1,5 +1,5 @@
 import { NavLink, Outlet } from "react-router";
-import { Check, Loader2, RotateCcw, Save } from "lucide-react";
+import { Loader2, RotateCcw, Save } from "lucide-react";
 import { useWorkspace } from "../../contexts/workspace-context";
 import { StatusBanner } from "../../components/common/StatusBanner";
 
@@ -31,6 +31,7 @@ export function TableDetail() {
         </div>
         <div className="main-actions">
           <button
+            type="button"
             className="btn"
             onClick={resetSelectedDraft}
             disabled={!dirty || busy.has("save")}
@@ -38,6 +39,7 @@ export function TableDetail() {
             <RotateCcw size={14} /> Revert
           </button>
           <button
+            type="button"
             className="btn primary"
             onClick={() => void saveSelectedTable()}
             disabled={!dirty || busy.has("save")}

@@ -2,18 +2,12 @@ import { Slot } from "@radix-ui/react-slot";
 import { cva, type VariantProps } from "class-variance-authority";
 import type { ComponentPropsWithoutRef, ElementRef } from "react";
 import type { ReactNode } from "react";
-import { forwardRef, useEffect, useRef, useState } from "react";
+import { forwardRef, useState } from "react";
+import { parseList } from "../lib/format";
 import { cn } from "../lib/utils";
 
 function formatList(list: string[] | undefined): string {
   return list?.join(", ") ?? "";
-}
-
-export function parseList(value: string): string[] {
-  return value
-    .split(",")
-    .map((item) => item.trim())
-    .filter(Boolean);
 }
 
 const buttonVariants = cva(
@@ -81,26 +75,17 @@ export function ListInput({
   value: string[] | undefined;
   onChange: (value: string[]) => void;
 }) {
-  const [raw, setRaw] = useState(() => formatList(value));
-  const focused = useRef(false);
-
-  useEffect(() => {
-    if (!focused.current) {
-      setRaw(formatList(value));
-    }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [value]);
+  const [editValue, setEditValue] = useState<string | null>(null);
+  const display = editValue ?? formatList(value);
 
   return (
     <Input
-      value={raw}
-      onChange={(e) => setRaw(e.target.value)}
-      onFocus={() => {
-        focused.current = true;
-      }}
+      value={display}
+      onChange={(e) => setEditValue(e.target.value)}
+      onFocus={() => setEditValue(formatList(value))}
       onBlur={() => {
-        focused.current = false;
-        onChange(parseList(raw));
+        onChange(parseList(editValue ?? formatList(value)));
+        setEditValue(null);
       }}
     />
   );

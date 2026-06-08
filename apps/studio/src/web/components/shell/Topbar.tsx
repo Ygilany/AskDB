@@ -1,5 +1,5 @@
 import { useLocation } from "react-router";
-import { Search, Check, Sparkles } from "lucide-react";
+import { Search, Check } from "lucide-react";
 import { useWorkspace } from "../../contexts/workspace-context";
 import { useRag } from "../../contexts/rag-context";
 
@@ -15,7 +15,7 @@ export function Topbar() {
     <>
       <div className="crumbs">
         {crumbs.map((c, i) => (
-          <span key={i}>
+          <span key={c}>
             {i > 0 && <span className="sep" style={{ marginRight: 8 }}>/</span>}
             <span className={i === crumbs.length - 1 ? "crumb cur" : "crumb"}>{c}</span>
           </span>

@@ -5,6 +5,7 @@ import { Badge, Field, Input, Textarea } from "../../components/ui";
 import { InlineStatus } from "../../components/common/StatusBanner";
 import { EmptyText } from "../../components/common/EmptyText";
 import type { StudioRagChunkDto, StudioRequestUsageDto } from "@/shared/api";
+import { formatNumber } from "../../lib/format";
 
 export function RagIndexPage() {
   const { workspace } = useWorkspace();
@@ -26,10 +27,10 @@ export function RagIndexPage() {
           <div className="main-sub">Retrieval-augmented generation index and query debugger</div>
         </div>
         <div className="main-actions">
-          <button className="btn" onClick={() => void refreshRagStatus()}>
+          <button type="button" className="btn" onClick={() => void refreshRagStatus()}>
             <RefreshCw size={14} /> Refresh
           </button>
-          <button className="btn primary" onClick={() => void handleBuildRag()} disabled={busy.has("rag-build")}>
+          <button type="button" className="btn primary" onClick={() => void handleBuildRag()} disabled={busy.has("rag-build")}>
             {busy.has("rag-build") ? <Loader2 size={14} className="animate-spin" /> : <BrainCircuit size={14} />}
             Build Index
           </button>
@@ -43,11 +44,11 @@ export function RagIndexPage() {
             <div className="grid-4">
               <div className="card stat-card">
                 <div className="stat-label">Chunks</div>
-                <div className="stat-num">{new Intl.NumberFormat().format(ragStatus.chunksTotal)}</div>
+                <div className="stat-num">{formatNumber(ragStatus.chunksTotal)}</div>
               </div>
               <div className="card stat-card">
                 <div className="stat-label">Indexed</div>
-                <div className="stat-num">{new Intl.NumberFormat().format(ragStatus.chunksIndexed)}</div>
+                <div className="stat-num">{formatNumber(ragStatus.chunksIndexed)}</div>
               </div>
               <div className="card stat-card">
                 <div className="stat-label">Sensitive excluded</div>
@@ -110,7 +111,7 @@ export function RagIndexPage() {
                     />
                   </Field>
                   <div style={{ display: "grid", gap: 6 }}>
-                    <span className="muted" style={{ fontSize: 11, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.04em" }}>Chunk types</span>
+                    <span className="muted" style={{ fontSize: 12, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.04em" }}>Chunk types</span>
                     <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
                       {allChunkTypes.map((type) => (
                         <label className="chunk-toggle" key={type}>
@@ -128,7 +129,7 @@ export function RagIndexPage() {
                     </div>
                   </div>
                 </div>
-                <button className="btn primary" disabled={queryDisabled} onClick={() => void handleQueryRag()}>
+                <button type="button" className="btn primary" disabled={queryDisabled} onClick={() => void handleQueryRag()}>
                   {busy.has("rag-query") ? <Loader2 size={14} className="animate-spin" /> : <Search size={14} />}
                   Query RAG
                 </button>
@@ -189,18 +190,18 @@ function UsageSummary({ title, usage }: { title: string; usage: StudioRequestUsa
         {promptTokens !== null && (
           <div>
             <dt>{usage.embeddingTokens === null ? "Prompt" : "Embeddings"}</dt>
-            <dd>{new Intl.NumberFormat().format(promptTokens!)}</dd>
+            <dd>{formatNumber(promptTokens!)}</dd>
           </div>
         )}
         {usage.completionTokens !== null && (
           <div>
             <dt>Completion</dt>
-            <dd>{new Intl.NumberFormat().format(usage.completionTokens!)}</dd>
+            <dd>{formatNumber(usage.completionTokens!)}</dd>
           </div>
         )}
         <div className="usage-total">
           <dt>Total</dt>
-          <dd>{new Intl.NumberFormat().format(usage.totalTokens)}</dd>
+          <dd>{formatNumber(usage.totalTokens)}</dd>
         </div>
       </dl>
     </section>

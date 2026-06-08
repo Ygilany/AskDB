@@ -39,7 +39,7 @@ function AppShell() {
 
   useEffect(() => {
     void load().then(() => void refreshRagStatus());
-  }, [load]);
+  }, [load, refreshRagStatus]);
 
   if (loadState.kind === "loading") {
     return (

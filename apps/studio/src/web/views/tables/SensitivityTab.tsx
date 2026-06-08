@@ -18,7 +18,7 @@ export function SensitivityTab() {
             Untracked tables are excluded from LLM prompts and RAG indexing. They remain in the schema and are still visible here.
           </p>
           <label style={{ display: "grid", gap: 6 }}>
-            <span className="muted" style={{ fontSize: 11, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.04em" }}>Status</span>
+            <span className="muted" style={{ fontSize: 12, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.04em" }}>Status</span>
             <select
               className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
               value={draft.tracked === false ? "false" : "true"}
@@ -38,7 +38,7 @@ export function SensitivityTab() {
         <div className="card-hd"><h3>Table-level sensitivity</h3></div>
         <div className="card-bd">
           <label style={{ display: "grid", gap: 6 }}>
-            <span className="muted" style={{ fontSize: 11, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.04em" }}>Override</span>
+            <span className="muted" style={{ fontSize: 12, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.04em" }}>Override</span>
             <select
               className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
               value={draft.sensitive === undefined ? "inherit" : draft.sensitive ? "true" : "false"}

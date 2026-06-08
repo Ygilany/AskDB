@@ -44,7 +44,8 @@
     "start": "node dist/bin.js",
     "dev": "pnpm build && pnpm start",
     "lint": "tsc -p tsconfig.build.json --noEmit && tsc -p tsconfig.web.json --noEmit && eslint .",
-    "test": "vitest run --config ../../vitest.config.ts"
+    "test": "vitest run --config ../../vitest.config.ts",
+    "doctor": "npx react-doctor@latest"
   },
   "dependencies": {
     "@askdb/ai": "workspace:*",

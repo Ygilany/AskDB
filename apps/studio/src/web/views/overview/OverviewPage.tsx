@@ -1,8 +1,9 @@
 import { useNavigate } from "react-router";
-import { Sparkles, Shield, History, Zap, RefreshCw, Check, X } from "lucide-react";
+import { Sparkles, Shield, History, Zap, RefreshCw } from "lucide-react";
 import { useWorkspace } from "../../contexts/workspace-context";
 import { useRag } from "../../contexts/rag-context";
 import { usePlayground } from "../../contexts/playground-context";
+import { formatNumber } from "../../lib/format";
 
 export function OverviewPage() {
   const navigate = useNavigate();
@@ -35,10 +36,10 @@ export function OverviewPage() {
           <div className="main-sub">{workspace.aiProvider || "postgres"} · {workspace.schemaId}</div>
         </div>
         <div className="main-actions">
-          <button className="btn" onClick={() => void 0}>
+          <button type="button" className="btn" onClick={() => void 0}>
             <RefreshCw size={14} /> Resync schema
           </button>
-          <button className="btn primary" onClick={() => navigate("/tables")}>
+          <button type="button" className="btn primary" onClick={() => navigate("/tables")}>
             <Sparkles size={14} /> Draft enrichment
           </button>
         </div>
@@ -88,7 +89,7 @@ export function OverviewPage() {
               <div className="card-bd tight">
                 <table className="tbl">
                   <thead>
-                    <tr><th>Table</th><th>Cols</th><th>Status</th><th></th></tr>
+                    <tr><th>Table</th><th>Cols</th><th>Status</th><th aria-label="Actions"></th></tr>
                   </thead>
                   <tbody>
                     {tables
@@ -163,10 +164,10 @@ export function OverviewPage() {
                 {ragStatus ? (
                   <>
                     <div className="grid-2" style={{ gap: 10 }}>
-                      <div><div className="muted tiny">Chunks</div><div style={{ fontSize: 18, fontWeight: 600 }}>{new Intl.NumberFormat().format(ragStatus.chunksTotal)}</div></div>
-                      <div><div className="muted tiny">Indexed</div><div style={{ fontSize: 18, fontWeight: 600 }}>{new Intl.NumberFormat().format(ragStatus.chunksIndexed)}</div></div>
-                      <div><div className="muted tiny">Dimensions</div><div className="mono" style={{ fontSize: 13 }}>{new Intl.NumberFormat().format(ragStatus.dimensions)}</div></div>
-                      <div><div className="muted tiny">Model</div><div className="mono" style={{ fontSize: 11 }}>{ragStatus.embedder.label}</div></div>
+                      <div><div className="muted tiny">Chunks</div><div style={{ fontSize: 18, fontWeight: 600 }}>{formatNumber(ragStatus.chunksTotal)}</div></div>
+                      <div><div className="muted tiny">Indexed</div><div style={{ fontSize: 18, fontWeight: 600 }}>{formatNumber(ragStatus.chunksIndexed)}</div></div>
+                      <div><div className="muted tiny">Dimensions</div><div className="mono" style={{ fontSize: 13 }}>{formatNumber(ragStatus.dimensions)}</div></div>
+                      <div><div className="muted tiny">Model</div><div className="mono" style={{ fontSize: 12 }}>{ragStatus.embedder.label}</div></div>
                     </div>
                     <div className="bar" style={{ marginTop: 14 }}>
                       <i style={{ width: ragStatus.chunksTotal > 0 ? `${Math.round((ragStatus.chunksIndexed / ragStatus.chunksTotal) * 100)}%` : "0%" }} />
@@ -196,7 +197,7 @@ export function OverviewPage() {
                     : "Multi-tenant scoping isn't set. Generated SQL won't enforce row-level isolation."}
                 </div>
                 {!tenancyConfigured && (
-                  <button className="btn sm primary" style={{ marginTop: 12 }} onClick={() => navigate("/tenancy")}>
+                  <button type="button" className="btn sm primary" style={{ marginTop: 12 }} onClick={() => navigate("/tenancy")}>
                     <Sparkles size={12} /> Draft tenant policy
                   </button>
                 )}

@@ -7,12 +7,16 @@ export function formatList(list: string[] | undefined): string {
 export function parseList(value: string): string[] {
   return value
     .split(",")
-    .map((item) => item.trim())
-    .filter(Boolean);
+    .flatMap((item) => {
+      const trimmed = item.trim();
+      return trimmed ? [trimmed] : [];
+    });
 }
 
+const numberFormat = new Intl.NumberFormat();
+
 export function formatNumber(value: number): string {
-  return new Intl.NumberFormat().format(value);
+  return numberFormat.format(value);
 }
 
 export function formatUsageInline(usage: StudioRequestUsageDto | null): string {

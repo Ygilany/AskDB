@@ -2,7 +2,6 @@ import { Loader2, Sparkles, ChevronRight } from "lucide-react";
 import { useWorkspace } from "../../contexts/workspace-context";
 import { Badge, Field, Input, ListInput, Textarea } from "../../components/ui";
 import type { ReactNode } from "react";
-import type { SuggestSource } from "@askdb/enrich";
 
 export function EnrichmentTab() {
   const {
@@ -239,8 +238,9 @@ function FieldWithSuggest({
   return (
     <div style={{ display: "grid", gap: 6 }}>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
-        <span className="muted" style={{ fontSize: 11, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.04em" }}>{label}</span>
+        <span className="muted" style={{ fontSize: 12, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.04em" }}>{label}</span>
         <button
+          type="button"
           className="suggest-link"
           disabled={!aiConfigured || suggesting}
           onClick={() => void onSuggest()}
@@ -266,7 +266,7 @@ function SensitiveSelect({
 }) {
   return (
     <label style={{ display: "grid", gap: 6 }}>
-      <span className="muted" style={{ fontSize: 11, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.04em" }}>{label}</span>
+      <span className="muted" style={{ fontSize: 12, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.04em" }}>{label}</span>
       <select
         className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
         value={value === undefined ? "inherit" : value ? "true" : "false"}
