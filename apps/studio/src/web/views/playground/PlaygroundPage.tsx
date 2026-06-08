@@ -5,7 +5,8 @@ import { useRag } from "../../contexts/rag-context";
 import { usePlayground } from "../../contexts/playground-context";
 import { Field, Textarea } from "../../components/ui";
 import { CopyButton } from "../../components/common/CopyButton";
-import { InlineStatus, EmptyText } from "../../components/common/StatusBanner";
+import { InlineStatus } from "../../components/common/StatusBanner";
+import { EmptyText } from "../../components/common/EmptyText";
 
 export function PlaygroundPage() {
   const { workspace } = useWorkspace();

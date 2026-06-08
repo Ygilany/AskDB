@@ -15,11 +15,3 @@ export function StatusBanner({ status }: { status: StatusMessage }) {
 export function InlineStatus({ status }: { status: StatusMessage }) {
   return <div className={`inline-status ${status.kind}`}>{status.text}</div>;
 }
-
-export function EmptyText({ text }: { text: string }) {
-  return (
-    <p className="rounded-md border border-dashed border-border px-3 py-6 text-center text-sm" style={{ color: "var(--ink-400)" }}>
-      {text}
-    </p>
-  );
-}
