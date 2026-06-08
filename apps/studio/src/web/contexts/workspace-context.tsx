@@ -161,10 +161,10 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     saveStatus, suggestionDialog, suggestionCache, suggestingKey, busy,
   } = state;
 
-  const setSelectedTableId = (v: string | null) => dispatch({ type: "set_selectedTableId", payload: v });
-  const setTableSearch = (v: string) => dispatch({ type: "set_tableSearch", payload: v });
-  const setSaveStatus = (v: StatusMessage | null) => dispatch({ type: "set_saveStatus", payload: v });
-  const setSuggestionDialog = (v: SuggestionDialog | null) => dispatch({ type: "set_suggestionDialog", payload: v });
+  const setSelectedTableId = useCallback((v: string | null) => dispatch({ type: "set_selectedTableId", payload: v }), []);
+  const setTableSearch = useCallback((v: string) => dispatch({ type: "set_tableSearch", payload: v }), []);
+  const setSaveStatus = useCallback((v: StatusMessage | null) => dispatch({ type: "set_saveStatus", payload: v }), []);
+  const setSuggestionDialog = useCallback((v: SuggestionDialog | null) => dispatch({ type: "set_suggestionDialog", payload: v }), []);
 
   const tables = useMemo(() => workspace?.tables ?? [], [workspace]);
   const selectedTable = useMemo(
@@ -193,14 +193,14 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       const id = setTimeout(() => setSaveStatus(null), 4000);
       return () => clearTimeout(id);
     }
-  }, [saveStatus]);
+  }, [saveStatus, setSaveStatus]);
 
-  async function withBusy(key: string, task: () => Promise<void>) {
+  const withBusy = useCallback(async (key: string, task: () => Promise<void>) => {
     dispatch({ type: "busy_add", key });
     try { await task(); } finally {
       dispatch({ type: "busy_remove", key });
     }
-  }
+  }, []);
 
   const load = useCallback(async () => {
     dispatch({ type: "set_loadState", payload: { kind: "loading" } });
@@ -212,7 +212,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
-  async function saveSelectedTable() {
+  const saveSelectedTable = useCallback(async () => {
     if (!selectedTable || !selectedDraft) return;
     setSaveStatus({ kind: "loading", text: "Saving changes..." });
     await withBusy("save", async () => {
@@ -224,27 +224,27 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         setSaveStatus({ kind: "error", text: getErrorMessage(error) });
       }
     });
-  }
+  }, [selectedDraft, selectedTable, setSaveStatus, withBusy]);
 
-  function resetSelectedDraft() {
+  const resetSelectedDraft = useCallback(() => {
     if (!selectedTable) return;
     dispatch({ type: "reset_draft", tableId: selectedTable.physical.id, draft: clone(selectedTable.draft) });
     setSaveStatus({ kind: "neutral", text: `Reverted ${selectedTable.physical.name}.` });
-  }
+  }, [selectedTable, setSaveStatus]);
 
-  function updateTableDraft(tableId: string, updater: (d: TableDraft) => TableDraft) {
+  const updateTableDraft = useCallback((tableId: string, updater: (d: TableDraft) => TableDraft) => {
     dispatch({ type: "update_draft", tableId, updater });
-  }
+  }, []);
 
-  function updateColumnDraft(tableId: string, columnId: string, updater: (d: ColumnDraft) => ColumnDraft) {
+  const updateColumnDraft = useCallback((tableId: string, columnId: string, updater: (d: ColumnDraft) => ColumnDraft) => {
     updateTableDraft(tableId, (draft) => {
       const columns = { ...draft.columns };
       columns[columnId] = updater({ ...(columns[columnId] ?? {}) });
       return { ...draft, columns };
     });
-  }
+  }, [updateTableDraft]);
 
-  async function requestSuggestion(source: SuggestSource, label: string) {
+  const requestSuggestion = useCallback(async (source: SuggestSource, label: string) => {
     const key = suggestionKey(source);
     const cached = suggestionCache[key];
     if (cached) {
@@ -262,9 +262,9 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     } finally {
       dispatch({ type: "set_suggestingKey", payload: null });
     }
-  }
+  }, [setSaveStatus, setSuggestionDialog, suggestionCache]);
 
-  function applySuggestion(text: string) {
+  const applySuggestion = useCallback((text: string) => {
     if (!suggestionDialog) return;
     const source = suggestionDialog.source;
     if (source.scope === "table") {
@@ -272,9 +272,9 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     } else {
       updateColumnDraft(source.tableId, source.columnId, (draft) => applyColumnSuggestion(draft, source.field, text));
     }
-  }
+  }, [suggestionDialog, updateColumnDraft, updateTableDraft]);
 
-  async function handleSaveConcepts(concepts: V2Concept[]) {
+  const handleSaveConcepts = useCallback(async (concepts: V2Concept[]) => {
     setSaveStatus({ kind: "loading", text: "Saving concepts..." });
     await withBusy("save-concepts", async () => {
       try {
@@ -285,9 +285,9 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         setSaveStatus({ kind: "error", text: getErrorMessage(error) });
       }
     });
-  }
+  }, [setSaveStatus, withBusy]);
 
-  async function handleSaveTenantPolicy(frontmatter: TenantPolicyFrontmatter, body?: string) {
+  const handleSaveTenantPolicy = useCallback(async (frontmatter: TenantPolicyFrontmatter, body?: string) => {
     setSaveStatus({ kind: "loading", text: "Saving tenant policy..." });
     let saved = false;
     await withBusy("save-tenant-policy", async () => {
@@ -301,16 +301,23 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       }
     });
     return saved;
-  }
+  }, [setSaveStatus, withBusy]);
 
-  const value: WorkspaceContextValue = {
+  const value = useMemo<WorkspaceContextValue>(() => ({
     loadState, workspace, tables, filteredTables, selectedTable, selectedTableId, setSelectedTableId,
     drafts, selectedDraft, dirty, tableSearch, setTableSearch, saveStatus, setSaveStatus, busy,
     suggestionDialog, setSuggestionDialog, suggestingKey,
     load, saveSelectedTable, resetSelectedDraft, updateTableDraft, updateColumnDraft,
     requestSuggestion, applySuggestion, handleSaveConcepts, handleSaveTenantPolicy, handleSuggestTenantPolicy,
     withBusy,
-  };
+  }), [
+    applySuggestion, busy, dirty, drafts, filteredTables, handleSaveConcepts,
+    handleSaveTenantPolicy, load, loadState, requestSuggestion, resetSelectedDraft,
+    saveSelectedTable, saveStatus, selectedDraft, selectedTable, selectedTableId,
+    setSaveStatus, setSelectedTableId, setSuggestionDialog, setTableSearch,
+    suggestingKey, suggestionDialog, tableSearch, tables, updateColumnDraft,
+    updateTableDraft, withBusy, workspace,
+  ]);
 
   return <WorkspaceContext.Provider value={value}>{children}</WorkspaceContext.Provider>;
 }

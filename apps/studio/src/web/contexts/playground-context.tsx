@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useReducer, useRef } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useReducer } from "react";
 import type { ReactNode } from "react";
 import type { TenantSqlOutputMode, TenantScope } from "@askdb/core";
 import type { AskResponse, ExecuteResponse, PlaygroundHistoryEntry } from "@/shared/api";
@@ -117,46 +117,43 @@ export function PlaygroundProvider({ children, ragAvailable }: { children: React
     askTenantEnabled, askTenantScopeJson, askTenantSqlMode,
     executeResult, executeMessage, historyEntries, busy,
   } = state;
+  const effectiveAskMode = ragAvailable ? askMode : "full";
 
-  const prevRagAvailableRef = useRef(ragAvailable);
-  if (prevRagAvailableRef.current !== ragAvailable) {
-    prevRagAvailableRef.current = ragAvailable;
-    if (!ragAvailable && askMode === "rag") dispatch({ type: "set_askMode", payload: "full" });
-  }
-
-  const setAskQuestion = (v: string) => dispatch({ type: "set_askQuestion", payload: v });
-  const setAskMode = (v: "full" | "rag") => dispatch({ type: "set_askMode", payload: v });
-  const setAskMessage = (v: StatusMessage | null) => dispatch({ type: "set_askMessage", payload: v });
-  const setAskResult = (v: AskResponse | null) => dispatch({ type: "set_askResult", payload: v });
-  const setAskTenantEnabled = (v: boolean) => dispatch({ type: "set_askTenantEnabled", payload: v });
-  const setAskTenantScopeJson = (v: string) => dispatch({ type: "set_askTenantScopeJson", payload: v });
-  const setAskTenantSqlMode = (v: TenantSqlOutputMode) => dispatch({ type: "set_askTenantSqlMode", payload: v });
-  const setExecuteResult = (v: ExecuteResponse | null) => dispatch({ type: "set_executeResult", payload: v });
-  const setExecuteMessage = (v: StatusMessage | null) => dispatch({ type: "set_executeMessage", payload: v });
-  const setHistoryEntries = (v: PlaygroundHistoryEntry[]) => dispatch({ type: "set_historyEntries", payload: v });
+  const setAskQuestion = useCallback((v: string) => dispatch({ type: "set_askQuestion", payload: v }), []);
+  const setAskMode = useCallback((v: "full" | "rag") => {
+    dispatch({ type: "set_askMode", payload: v === "rag" && !ragAvailable ? "full" : v });
+  }, [ragAvailable]);
+  const setAskMessage = useCallback((v: StatusMessage | null) => dispatch({ type: "set_askMessage", payload: v }), []);
+  const setAskResult = useCallback((v: AskResponse | null) => dispatch({ type: "set_askResult", payload: v }), []);
+  const setAskTenantEnabled = useCallback((v: boolean) => dispatch({ type: "set_askTenantEnabled", payload: v }), []);
+  const setAskTenantScopeJson = useCallback((v: string) => dispatch({ type: "set_askTenantScopeJson", payload: v }), []);
+  const setAskTenantSqlMode = useCallback((v: TenantSqlOutputMode) => dispatch({ type: "set_askTenantSqlMode", payload: v }), []);
+  const setExecuteResult = useCallback((v: ExecuteResponse | null) => dispatch({ type: "set_executeResult", payload: v }), []);
+  const setExecuteMessage = useCallback((v: StatusMessage | null) => dispatch({ type: "set_executeMessage", payload: v }), []);
+  const setHistoryEntries = useCallback((v: PlaygroundHistoryEntry[]) => dispatch({ type: "set_historyEntries", payload: v }), []);
 
   useEffect(() => {
     if (askMessage?.kind === "success" || askMessage?.kind === "neutral") {
       const id = setTimeout(() => setAskMessage(null), 4000);
       return () => clearTimeout(id);
     }
-  }, [askMessage]);
+  }, [askMessage, setAskMessage]);
 
-  async function withBusy(key: string, task: () => Promise<void>) {
+  const withBusy = useCallback(async (key: string, task: () => Promise<void>) => {
     dispatch({ type: "busy_add", key });
     try { await task(); } finally {
       dispatch({ type: "busy_remove", key });
     }
-  }
+  }, []);
 
-  async function refreshHistory() {
+  const refreshHistory = useCallback(async () => {
     try {
       const h = await getHistory();
       setHistoryEntries(h.entries);
     } catch { /* silent */ }
-  }
+  }, [setHistoryEntries]);
 
-  async function handleAsk() {
+  const handleAsk = useCallback(async () => {
     if (!askQuestion.trim()) {
       setAskMessage({ kind: "error", text: "Enter a question before generating SQL." });
       return;
@@ -176,14 +173,14 @@ export function PlaygroundProvider({ children, ragAvailable }: { children: React
       try {
         const result = await ask({
           question: askQuestion.trim(),
-          mode: askMode,
+          mode: effectiveAskMode,
           ...(tenantScope ? { tenantScope, tenantSqlMode: askTenantSqlMode } : {}),
         });
         setAskResult(result);
         setAskMessage({ kind: "success", text: "Generated SQL." });
         void saveToHistory({
           question: askQuestion.trim(),
-          mode: askMode,
+          mode: effectiveAskMode,
           sql: result.sql,
           sqlMode: askTenantSqlMode,
           tenantScope: askTenantEnabled && askTenantScopeJson.trim() ? JSON.parse(askTenantScopeJson) as Record<string, unknown> : undefined,
@@ -196,9 +193,12 @@ export function PlaygroundProvider({ children, ragAvailable }: { children: React
         setAskMessage({ kind: "error", text: error instanceof Error ? error.message : String(error) });
       }
     });
-  }
+  }, [
+    askQuestion, askTenantEnabled, askTenantScopeJson, askTenantSqlMode, effectiveAskMode,
+    refreshHistory, setAskMessage, setAskResult, withBusy,
+  ]);
 
-  async function handleExecute() {
+  const handleExecute = useCallback(async () => {
     if (!askResult?.sql) return;
     setExecuteMessage({ kind: "loading", text: "Executing query..." });
     await withBusy("execute", async () => {
@@ -218,23 +218,29 @@ export function PlaygroundProvider({ children, ragAvailable }: { children: React
         setExecuteMessage({ kind: "error", text: err instanceof Error ? err.message : String(err) });
       }
     });
-  }
+  }, [askResult, setExecuteMessage, setExecuteResult, withBusy]);
 
-  async function handleDeleteHistory(id: string) {
+  const handleDeleteHistory = useCallback(async (id: string) => {
     await deleteFromHistory(id);
     await refreshHistory();
-  }
+  }, [refreshHistory]);
 
-  function loadHistoryEntry(entry: PlaygroundHistoryEntry) {
+  const loadHistoryEntry = useCallback((entry: PlaygroundHistoryEntry) => {
     dispatch({ type: "load_history_entry", entry });
-  }
+  }, []);
 
-  const value: PlaygroundContextValue = {
-    askQuestion, setAskQuestion, askMode, setAskMode, askMessage, askResult, setAskResult,
+  const value = useMemo<PlaygroundContextValue>(() => ({
+    askQuestion, setAskQuestion, askMode: effectiveAskMode, setAskMode, askMessage, askResult, setAskResult,
     askTenantEnabled, setAskTenantEnabled, askTenantScopeJson, setAskTenantScopeJson,
     askTenantSqlMode, setAskTenantSqlMode, executeResult, executeMessage, historyEntries, busy,
     handleAsk, handleExecute, refreshHistory, handleDeleteHistory, loadHistoryEntry,
-  };
+  }), [
+    askMessage, askQuestion, askResult, askTenantEnabled, askTenantScopeJson,
+    askTenantSqlMode, busy, executeMessage, executeResult, handleAsk,
+    handleDeleteHistory, handleExecute, historyEntries, effectiveAskMode, loadHistoryEntry,
+    refreshHistory, setAskMode, setAskQuestion, setAskResult, setAskTenantEnabled,
+    setAskTenantScopeJson, setAskTenantSqlMode,
+  ]);
 
   return <PlaygroundContext.Provider value={value}>{children}</PlaygroundContext.Provider>;
 }
