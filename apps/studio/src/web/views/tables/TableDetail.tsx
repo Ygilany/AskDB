@@ -31,6 +31,7 @@ export function TableDetail() {
         </div>
         <div className="main-actions">
           <button
+            type="button"
             className="btn"
             onClick={resetSelectedDraft}
             disabled={!dirty || busy.has("save")}
@@ -38,6 +39,7 @@ export function TableDetail() {
             <RotateCcw size={14} /> Revert
           </button>
           <button
+            type="button"
             className="btn primary"
             onClick={() => void saveSelectedTable()}
             disabled={!dirty || busy.has("save")}

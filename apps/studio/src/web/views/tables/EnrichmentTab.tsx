@@ -241,6 +241,7 @@ function FieldWithSuggest({
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
         <span className="muted" style={{ fontSize: 11, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.04em" }}>{label}</span>
         <button
+          type="button"
           className="suggest-link"
           disabled={!aiConfigured || suggesting}
           onClick={() => void onSuggest()}

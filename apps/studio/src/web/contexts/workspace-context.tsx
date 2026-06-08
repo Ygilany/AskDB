@@ -11,7 +11,7 @@ import {
   suggest,
   suggestTenantPolicy,
 } from "../api";
-import { parseList } from "../components/ui";
+import { parseList } from "../lib/format";
 
 type LoadState = { kind: "loading" | "ready" | "error"; message?: string };
 export type StatusMessage = { kind: "neutral" | "loading" | "success" | "error"; text: string };

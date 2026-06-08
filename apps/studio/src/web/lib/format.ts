@@ -7,8 +7,10 @@ export function formatList(list: string[] | undefined): string {
 export function parseList(value: string): string[] {
   return value
     .split(",")
-    .map((item) => item.trim())
-    .filter(Boolean);
+    .flatMap((item) => {
+      const trimmed = item.trim();
+      return trimmed ? [trimmed] : [];
+    });
 }
 
 export function formatNumber(value: number): string {

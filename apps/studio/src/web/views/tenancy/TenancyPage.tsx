@@ -109,7 +109,7 @@ function TenancyView({
           </div>
         </div>
         <div className="main-actions">
-          <button className="btn" onClick={onEdit}>
+          <button type="button" className="btn" onClick={onEdit}>
             <Pencil size={14} /> Edit
           </button>
         </div>
@@ -427,7 +427,7 @@ function TenancyCreateForm({
             <div className="main-sub">Configure the basics, then review before saving</div>
           </div>
           <div className="main-actions">
-            <button className="btn" onClick={() => setMode("choose")}>Back</button>
+            <button type="button" className="btn" onClick={() => setMode("choose")}>Back</button>
           </div>
         </div>
         <div className="main-body">
@@ -478,10 +478,10 @@ function TenancyCreateForm({
             <section className="card">
               <div className="card-hd"><h3>Enforcement Mode</h3></div>
               <div className="card-bd">
-                <div className="toggle-seg" role="group">
-                  <button className={enforcement === "strict" ? "active" : ""} onClick={() => setEnforcement("strict")}>Strict</button>
-                  <button className={enforcement === "warn" ? "active" : ""} onClick={() => setEnforcement("warn")}>Warn</button>
-                </div>
+                <fieldset className="toggle-seg">
+                  <button type="button" className={enforcement === "strict" ? "active" : ""} onClick={() => setEnforcement("strict")}>Strict</button>
+                  <button type="button" className={enforcement === "warn" ? "active" : ""} onClick={() => setEnforcement("warn")}>Warn</button>
+                </fieldset>
                 <p className="muted tiny" style={{ marginTop: 8 }}>
                   {enforcement === "strict"
                     ? "Queries touching unknown (unscoped) tables will be rejected."
@@ -519,7 +519,7 @@ function TenancyCreateForm({
             </section>
 
             <div style={{ display: "flex", justifyContent: "flex-end" }}>
-              <button className="btn primary" onClick={handleManualToReview} disabled={!manualCanProceed}>
+              <button type="button" className="btn primary" onClick={handleManualToReview} disabled={!manualCanProceed}>
                 <ChevronRight size={14} /> Review & Confirm
               </button>
             </div>
@@ -617,8 +617,9 @@ function TenancyReviewDraft({
           <div className="main-sub"><Badge variant="warning">{badgeLabel}</Badge></div>
         </div>
         <div className="main-actions">
-          <button className="btn" onClick={onBack}><RotateCcw size={14} /> {backLabel}</button>
+          <button type="button" className="btn" onClick={onBack}><RotateCcw size={14} /> {backLabel}</button>
           <button
+            type="button"
             className="btn primary"
             onClick={onConfirm}
             disabled={busy.has("save-tenant-policy") || frontmatter.roots.length === 0}
@@ -636,10 +637,10 @@ function TenancyReviewDraft({
           <section className="card">
             <div className="card-hd"><h3>Enforcement Mode</h3></div>
             <div className="card-bd">
-              <div className="toggle-seg" role="group">
-                <button className={frontmatter.enforcement === "strict" ? "active" : ""} onClick={() => updateEnforcement("strict")}>Strict</button>
-                <button className={frontmatter.enforcement === "warn" ? "active" : ""} onClick={() => updateEnforcement("warn")}>Warn</button>
-              </div>
+              <fieldset className="toggle-seg">
+                <button type="button" className={frontmatter.enforcement === "strict" ? "active" : ""} onClick={() => updateEnforcement("strict")}>Strict</button>
+                <button type="button" className={frontmatter.enforcement === "warn" ? "active" : ""} onClick={() => updateEnforcement("warn")}>Warn</button>
+              </fieldset>
               <p className="muted tiny" style={{ marginTop: 8 }}>
                 {frontmatter.enforcement === "strict"
                   ? "Queries touching unknown (unscoped) tables will be rejected."
@@ -663,7 +664,7 @@ function TenancyReviewDraft({
                         </div>
                       </div>
                       {frontmatter.roots.length > 1 && (
-                        <button className="btn ghost sm" onClick={() => removeRoot(i)} title="Remove root">×</button>
+                        <button type="button" className="btn ghost sm" onClick={() => removeRoot(i)} title="Remove root">×</button>
                       )}
                     </div>
                     <div style={{ marginTop: 8 }}>
@@ -690,7 +691,7 @@ function TenancyReviewDraft({
                         <code>{edge.child}</code>
                         <div className="muted tiny" style={{ marginTop: 4 }}>FK: {edge.foreignKey}</div>
                       </div>
-                      <button className="btn ghost sm" onClick={() => removeHierarchyEdge(i)} title="Remove">×</button>
+                      <button type="button" className="btn ghost sm" onClick={() => removeHierarchyEdge(i)} title="Remove">×</button>
                     </div>
                   ))}
                 </div>
@@ -718,7 +719,7 @@ function TenancyReviewDraft({
                           ))}
                         </div>
                       </div>
-                      <button className="btn ghost sm" onClick={() => removeScopedTable(i)} title="Remove">×</button>
+                      <button type="button" className="btn ghost sm" onClick={() => removeScopedTable(i)} title="Remove">×</button>
                     </div>
                   ))}
                 </div>
@@ -744,7 +745,7 @@ function TenancyReviewDraft({
                           ))}
                         </div>
                       </div>
-                      <button className="btn ghost sm" onClick={() => removePolymorphicTable(i)} title="Remove">×</button>
+                      <button type="button" className="btn ghost sm" onClick={() => removePolymorphicTable(i)} title="Remove">×</button>
                     </div>
                   ))}
                 </div>

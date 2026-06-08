@@ -42,6 +42,11 @@ export function usePlayground(): PlaygroundContextValue {
 export function PlaygroundProvider({ children, ragAvailable }: { children: ReactNode; ragAvailable: boolean }) {
   const [askQuestion, setAskQuestion] = useState("");
   const [askMode, setAskMode] = useState<"full" | "rag">("full");
+  const [prevRagAvailable, setPrevRagAvailable] = useState(ragAvailable);
+  if (prevRagAvailable !== ragAvailable) {
+    setPrevRagAvailable(ragAvailable);
+    if (!ragAvailable && askMode === "rag") setAskMode("full");
+  }
   const [askMessage, setAskMessage] = useState<StatusMessage | null>(null);
   const [askResult, setAskResult] = useState<AskResponse | null>(null);
   const [askTenantEnabled, setAskTenantEnabled] = useState(false);
@@ -59,11 +64,6 @@ export function PlaygroundProvider({ children, ragAvailable }: { children: React
     }
   }, [askMessage]);
 
-  useEffect(() => {
-    if (!ragAvailable && askMode === "rag") {
-      setAskMode("full");
-    }
-  }, [ragAvailable, askMode]);
 
   async function withBusy(key: string, task: () => Promise<void>) {
     setBusy((c) => new Set(c).add(key));

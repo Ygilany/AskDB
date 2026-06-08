@@ -141,6 +141,7 @@ function ConceptsEditor({
         </div>
         <div className="main-actions">
           <button
+            type="button"
             className="btn"
             onClick={() => { setDraft(clone(concepts)); setSelectedIndex(null); }}
             disabled={!dirty || busy.has("save-concepts")}
@@ -148,6 +149,7 @@ function ConceptsEditor({
             <RotateCcw size={14} /> Revert
           </button>
           <button
+            type="button"
             className="btn primary"
             onClick={() => void onSave(draft)}
             disabled={!dirty || busy.has("save-concepts")}
@@ -178,6 +180,7 @@ function ConceptsEditor({
           </div>
           <div style={{ padding: "6px 8px", borderBottom: "1px solid var(--border)" }}>
             <button
+              type="button"
               className="btn sm"
               style={{ width: "100%", justifyContent: "center" }}
               onClick={() => { setAddOpen(true); setSelectedIndex(null); }}
@@ -188,6 +191,7 @@ function ConceptsEditor({
           <div className="sub-rail-list">
             {filteredDraft.map(({ concept, index }) => (
               <button
+                type="button"
                 key={concept.id}
                 className={`sub-rail-row ${selectedIndex === index ? "active" : ""}`}
                 onClick={() => { setSelectedIndex(index); setAddOpen(false); }}
@@ -250,10 +254,11 @@ function ConceptsEditor({
                       />
                     </Field>
                     <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
-                      <button className="btn" onClick={() => { setAddOpen(false); setAddDraft({}); }}>
+                      <button type="button" className="btn" onClick={() => { setAddOpen(false); setAddDraft({}); }}>
                         Cancel
                       </button>
                       <button
+                        type="button"
                         className="btn primary"
                         onClick={commitAdd}
                         disabled={!addDraft.id?.trim() || !addDraft.label?.trim()}
@@ -311,7 +316,7 @@ function ConceptDetail({
             <h3>{concept.label}</h3>
             <Badge variant="outline">{concept.id}</Badge>
           </div>
-          <button className="btn ghost sm" onClick={onRemove} title="Remove concept" style={{ color: "var(--red-600)" }}>
+          <button type="button" className="btn ghost sm" onClick={onRemove} title="Remove concept" style={{ color: "var(--red-600)" }}>
             Remove
           </button>
         </div>
@@ -502,6 +507,7 @@ function LinksInput({
               <Table2 size={10} />
               <span className="links-chip-label">{labelFor(id)}</span>
               <button
+                type="button"
                 className="links-chip-remove"
                 onMouseDown={(e) => {
                   e.preventDefault();
@@ -537,6 +543,7 @@ function LinksInput({
         <div className="links-dropdown" ref={dropdownRef} role="listbox">
           {visible.map((opt, i) => (
             <button
+              type="button"
               key={opt.id}
               data-link-item
               role="option"

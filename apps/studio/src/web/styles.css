@@ -914,6 +914,7 @@ code, pre, .mono { font-family: var(--font-mono); }
   border-radius: 7px;
   padding: 2px;
   gap: 2px;
+  margin: 0;
 }
 
 .toggle-seg button {

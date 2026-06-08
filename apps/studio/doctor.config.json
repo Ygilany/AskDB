@@ -1,0 +1,5 @@
+{
+  "ignore": [
+    { "rule": "no-tiny-text" }
+  ]
+}

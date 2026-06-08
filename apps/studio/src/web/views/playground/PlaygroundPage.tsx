@@ -63,7 +63,7 @@ export function PlaygroundPage() {
 
                 <div style={{ display: "grid", gap: 6 }}>
                   <span className="muted" style={{ fontSize: 11, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.04em" }}>Retrieval mode</span>
-                  <div className="toggle-seg" role="group">
+                  <fieldset className="toggle-seg">
                     <button className={askMode === "full" ? "active" : ""} onClick={() => setAskMode("full")}>
                       Full schema
                     </button>
@@ -76,7 +76,7 @@ export function PlaygroundPage() {
                       {!ragAvailable && <Lock size={12} />}
                       RAG
                     </button>
-                  </div>
+                  </fieldset>
                 </div>
 
                 {hasTenantPolicy && (
@@ -105,14 +105,14 @@ export function PlaygroundPage() {
                         </Field>
                         <div style={{ display: "grid", gap: 6 }}>
                           <span className="muted" style={{ fontSize: 11, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.04em" }}>SQL output mode</span>
-                          <div className="toggle-seg" role="group">
+                          <fieldset className="toggle-seg">
                             <button className={askTenantSqlMode === "sql-only" ? "active" : ""} onClick={() => setAskTenantSqlMode("sql-only")}>
                               Inline literals
                             </button>
                             <button className={askTenantSqlMode === "sql-params" ? "active" : ""} onClick={() => setAskTenantSqlMode("sql-params")}>
                               $N parameters
                             </button>
-                          </div>
+                          </fieldset>
                         </div>
                       </div>
                     )}

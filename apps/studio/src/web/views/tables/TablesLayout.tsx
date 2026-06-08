@@ -134,6 +134,7 @@ export function TablesLayout() {
             <span className="muted tiny">{tables.length} tables</span>
             {schemaGroups.length > 1 && (
               <button
+                type="button"
                 className="btn ghost sm"
                 onClick={allExpanded ? expandAll : collapseAll}
                 title={allExpanded ? "Collapse all" : "Expand all"}
@@ -158,6 +159,7 @@ export function TablesLayout() {
             const active = !enrichFilter || enrichFilter.has(level);
             return (
               <button
+                type="button"
                 key={level}
                 className={`enrich-filter-chip ${level} ${active ? "active" : ""}`}
                 onClick={() => toggleFilter(level)}
@@ -171,6 +173,7 @@ export function TablesLayout() {
           })}
           {untrackedCount > 0 && (
             <button
+              type="button"
               className={`enrich-filter-chip untracked ${trackFilter === "untracked" ? "active" : ""}`}
               onClick={() => setTrackFilter((f) => f === "untracked" ? null : "untracked")}
               title={trackFilter === "untracked" ? "Show all tables" : `Show ${untrackedCount} untracked table${untrackedCount !== 1 ? "s" : ""}`}
@@ -197,7 +200,7 @@ export function TablesLayout() {
             >
               <div className="schema-group">
                 <CollapsibleTrigger asChild>
-                  <button className="schema-group-hd">
+                  <button type="button" className="schema-group-hd">
                     <ChevronRight size={12} className="schema-chevron" style={{
                       transform: openSchemas.has(schema) ? "rotate(90deg)" : undefined,
                     }} />
@@ -214,6 +217,7 @@ export function TablesLayout() {
                       const isActive = selectedTable?.physical.id === t.physical.id;
                       return (
                         <button
+                          type="button"
                           key={t.physical.id}
                           className={`sub-rail-row table-leaf ${isActive ? "active" : ""}${!tracked ? " untracked" : ""}`}
                           onClick={() => navigate(`/tables/${t.physical.schema}/${t.physical.name}/enrichment`)}

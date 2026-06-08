@@ -26,10 +26,10 @@ export function RagIndexPage() {
           <div className="main-sub">Retrieval-augmented generation index and query debugger</div>
         </div>
         <div className="main-actions">
-          <button className="btn" onClick={() => void refreshRagStatus()}>
+          <button type="button" className="btn" onClick={() => void refreshRagStatus()}>
             <RefreshCw size={14} /> Refresh
           </button>
-          <button className="btn primary" onClick={() => void handleBuildRag()} disabled={busy.has("rag-build")}>
+          <button type="button" className="btn primary" onClick={() => void handleBuildRag()} disabled={busy.has("rag-build")}>
             {busy.has("rag-build") ? <Loader2 size={14} className="animate-spin" /> : <BrainCircuit size={14} />}
             Build Index
           </button>
@@ -128,7 +128,7 @@ export function RagIndexPage() {
                     </div>
                   </div>
                 </div>
-                <button className="btn primary" disabled={queryDisabled} onClick={() => void handleQueryRag()}>
+                <button type="button" className="btn primary" disabled={queryDisabled} onClick={() => void handleQueryRag()}>
                   {busy.has("rag-query") ? <Loader2 size={14} className="animate-spin" /> : <Search size={14} />}
                   Query RAG
                 </button>

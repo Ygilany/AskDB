@@ -35,10 +35,10 @@ export function OverviewPage() {
           <div className="main-sub">{workspace.aiProvider || "postgres"} · {workspace.schemaId}</div>
         </div>
         <div className="main-actions">
-          <button className="btn" onClick={() => void 0}>
+          <button type="button" className="btn" onClick={() => void 0}>
             <RefreshCw size={14} /> Resync schema
           </button>
-          <button className="btn primary" onClick={() => navigate("/tables")}>
+          <button type="button" className="btn primary" onClick={() => navigate("/tables")}>
             <Sparkles size={14} /> Draft enrichment
           </button>
         </div>
@@ -196,7 +196,7 @@ export function OverviewPage() {
                     : "Multi-tenant scoping isn't set. Generated SQL won't enforce row-level isolation."}
                 </div>
                 {!tenancyConfigured && (
-                  <button className="btn sm primary" style={{ marginTop: 12 }} onClick={() => navigate("/tenancy")}>
+                  <button type="button" className="btn sm primary" style={{ marginTop: 12 }} onClick={() => navigate("/tenancy")}>
                     <Sparkles size={12} /> Draft tenant policy
                   </button>
                 )}
