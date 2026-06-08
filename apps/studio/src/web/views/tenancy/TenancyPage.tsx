@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useReducer, useState } from "react";
 import {
   ChevronDown,
   ChevronRight,
@@ -53,6 +53,7 @@ export function TenancyPage() {
     return (
       <main className="main-pane">
         <TenancyEditSavedPolicy
+          key={tenantPolicy.schemaId}
           tenantPolicy={tenantPolicy}
           tables={tables}
           busy={busy}
@@ -272,7 +273,7 @@ function TenancyEditSavedPolicy({
   onCancel: () => void;
 }) {
   const [frontmatter, setFrontmatter] = useState<TenantPolicyFrontmatter>(() => frontmatterFromTenantPolicy(tenantPolicy));
-  const [body, setBody] = useState(tenantPolicy.body);
+  const [body, setBody] = useState(() => tenantPolicy.body);
 
   return (
     <TenancyReviewDraft
@@ -293,6 +294,80 @@ function TenancyEditSavedPolicy({
   );
 }
 
+type CreateFormState = {
+  mode: "choose" | "manual" | "review";
+  draftStatus: StatusMessage | null;
+  draftFrontmatter: TenantPolicyFrontmatter | null;
+  draftBody: string;
+  enforcement: "strict" | "warn";
+  rootTableId: string;
+  rootTenantIdColumn: string;
+  rootLabel: string;
+  globalTableIds: string[];
+};
+
+type CreateFormAction =
+  | { type: "set_mode"; payload: "choose" | "manual" | "review" }
+  | { type: "set_draftStatus"; payload: StatusMessage | null }
+  | { type: "set_draftFrontmatter"; payload: TenantPolicyFrontmatter }
+  | { type: "set_draftBody"; payload: string }
+  | { type: "set_enforcement"; payload: "strict" | "warn" }
+  | { type: "set_rootTenantIdColumn"; payload: string }
+  | { type: "set_rootLabel"; payload: string }
+  | { type: "select_root_table"; tableId: string; label: string }
+  | { type: "toggle_global_table"; tableId: string; checked: boolean }
+  | { type: "ai_draft_complete"; frontmatter: TenantPolicyFrontmatter; body: string }
+  | { type: "manual_to_review"; frontmatter: TenantPolicyFrontmatter; body: string };
+
+function createFormReducer(state: CreateFormState, action: CreateFormAction): CreateFormState {
+  switch (action.type) {
+    case "set_mode": return { ...state, mode: action.payload };
+    case "set_draftStatus": return { ...state, draftStatus: action.payload };
+    case "set_draftFrontmatter": return { ...state, draftFrontmatter: action.payload };
+    case "set_draftBody": return { ...state, draftBody: action.payload };
+    case "set_enforcement": return { ...state, enforcement: action.payload };
+    case "set_rootTenantIdColumn": return { ...state, rootTenantIdColumn: action.payload };
+    case "set_rootLabel": return { ...state, rootLabel: action.payload };
+    case "select_root_table": return {
+      ...state,
+      rootTableId: action.tableId,
+      rootLabel: action.label,
+      rootTenantIdColumn: "",
+    };
+    case "toggle_global_table": return {
+      ...state,
+      globalTableIds: action.checked
+        ? [...state.globalTableIds, action.tableId]
+        : state.globalTableIds.filter((id) => id !== action.tableId),
+    };
+    case "ai_draft_complete": return {
+      ...state,
+      draftFrontmatter: action.frontmatter,
+      draftBody: action.body,
+      mode: "review",
+      draftStatus: { kind: "success", text: "AI draft ready for review." },
+    };
+    case "manual_to_review": return {
+      ...state,
+      draftFrontmatter: action.frontmatter,
+      draftBody: action.body,
+      mode: "review",
+    };
+  }
+}
+
+const initialCreateFormState: CreateFormState = {
+  mode: "choose",
+  draftStatus: null,
+  draftFrontmatter: null,
+  draftBody: "",
+  enforcement: "strict",
+  rootTableId: "",
+  rootTenantIdColumn: "",
+  rootLabel: "",
+  globalTableIds: [],
+};
+
 function TenancyCreateForm({
   tables,
   schemaId,
@@ -310,29 +385,19 @@ function TenancyCreateForm({
   onSuggest: () => Promise<{ frontmatter: TenantPolicyFrontmatter; body: string }>;
   saveStatus: StatusMessage | null;
 }) {
-  const [mode, setMode] = useState<"choose" | "manual" | "review">("choose");
-  const [draftStatus, setDraftStatus] = useState<StatusMessage | null>(null);
-  const [draftFrontmatter, setDraftFrontmatter] = useState<TenantPolicyFrontmatter | null>(null);
-  const [draftBody, setDraftBody] = useState("");
-  const [enforcement, setEnforcement] = useState<"strict" | "warn">("strict");
-  const [rootTableId, setRootTableId] = useState("");
-  const [rootTenantIdColumn, setRootTenantIdColumn] = useState("");
-  const [rootLabel, setRootLabel] = useState("");
-  const [globalTableIds, setGlobalTableIds] = useState<string[]>([]);
+  const [state, dispatch] = useReducer(createFormReducer, initialCreateFormState);
+  const { mode, draftStatus, draftFrontmatter, draftBody, enforcement, rootTableId, rootTenantIdColumn, rootLabel, globalTableIds } = state;
 
   const selectedRootTable = tables.find((t) => t.physical.id === rootTableId);
   const rootColumns = selectedRootTable?.physical.columns ?? [];
 
   async function handleDraftWithAi() {
-    setDraftStatus({ kind: "loading", text: "Analyzing schema and drafting tenant policy..." });
+    dispatch({ type: "set_draftStatus", payload: { kind: "loading", text: "Analyzing schema and drafting tenant policy..." } });
     try {
       const result = await onSuggest();
-      setDraftFrontmatter(result.frontmatter);
-      setDraftBody(result.body);
-      setMode("review");
-      setDraftStatus({ kind: "success", text: "AI draft ready for review." });
+      dispatch({ type: "ai_draft_complete", frontmatter: result.frontmatter, body: result.body });
     } catch (error) {
-      setDraftStatus({ kind: "error", text: error instanceof Error ? error.message : String(error) });
+      dispatch({ type: "set_draftStatus", payload: { kind: "error", text: error instanceof Error ? error.message : String(error) } });
     }
   }
 
@@ -344,9 +409,7 @@ function TenancyCreateForm({
       roots: [{ id: rootTableId, tenantIdColumn: rootTenantIdColumn, label: rootLabel.trim() }],
       ...(globalTableIds.length > 0 ? { globalTables: globalTableIds } : {}),
     };
-    setDraftFrontmatter(frontmatter);
-    setDraftBody("# Tenant Policy\n\n\n\n## Hierarchy\n\n\n\n## Scope Rules\n\n\n\n## Sensitive Interactions\n\n");
-    setMode("review");
+    dispatch({ type: "manual_to_review", frontmatter, body: "# Tenant Policy\n\n\n\n## Hierarchy\n\n\n\n## Scope Rules\n\n\n\n## Sensitive Interactions\n\n" });
   }
 
   function handleConfirm() {
@@ -399,7 +462,7 @@ function TenancyCreateForm({
                 type="button"
                 className="card"
                 style={{ cursor: "pointer", textAlign: "left", border: "2px dashed var(--border)" }}
-                onClick={() => setMode("manual")}
+                onClick={() => dispatch({ type: "set_mode", payload: "manual" })}
               >
                 <div className="card-bd">
                   <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
@@ -427,7 +490,7 @@ function TenancyCreateForm({
             <div className="main-sub">Configure the basics, then review before saving</div>
           </div>
           <div className="main-actions">
-            <button type="button" className="btn" onClick={() => setMode("choose")}>Back</button>
+            <button type="button" className="btn" onClick={() => dispatch({ type: "set_mode", payload: "choose" })}>Back</button>
           </div>
         </div>
         <div className="main-body">
@@ -443,9 +506,7 @@ function TenancyCreateForm({
                       onChange={(e) => {
                         const tableId = e.target.value;
                         const table = tables.find((t) => t.physical.id === tableId);
-                        setRootTableId(tableId);
-                        setRootLabel(table?.physical.name ?? "");
-                        setRootTenantIdColumn("");
+                        dispatch({ type: "select_root_table", tableId, label: table?.physical.name ?? "" });
                       }}
                     >
                       <option value="">Select a table...</option>
@@ -459,7 +520,7 @@ function TenancyCreateForm({
                       <select
                         className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
                         value={rootTenantIdColumn}
-                        onChange={(e) => setRootTenantIdColumn(e.target.value)}
+                        onChange={(e) => dispatch({ type: "set_rootTenantIdColumn", payload: e.target.value })}
                       >
                         <option value="">Select a column...</option>
                         {rootColumns.map((col) => (
@@ -469,7 +530,7 @@ function TenancyCreateForm({
                     </Field>
                   )}
                   <Field label="Label" description='e.g. "Organization" or "Company"'>
-                    <Input value={rootLabel} placeholder="e.g. Organization" onChange={(e) => setRootLabel(e.target.value)} />
+                    <Input value={rootLabel} placeholder="e.g. Organization" onChange={(e) => dispatch({ type: "set_rootLabel", payload: e.target.value })} />
                   </Field>
                 </div>
               </div>
@@ -479,8 +540,8 @@ function TenancyCreateForm({
               <div className="card-hd"><h3>Enforcement Mode</h3></div>
               <div className="card-bd">
                 <fieldset className="toggle-seg">
-                  <button type="button" className={enforcement === "strict" ? "active" : ""} onClick={() => setEnforcement("strict")}>Strict</button>
-                  <button type="button" className={enforcement === "warn" ? "active" : ""} onClick={() => setEnforcement("warn")}>Warn</button>
+                  <button type="button" className={enforcement === "strict" ? "active" : ""} onClick={() => dispatch({ type: "set_enforcement", payload: "strict" })}>Strict</button>
+                  <button type="button" className={enforcement === "warn" ? "active" : ""} onClick={() => dispatch({ type: "set_enforcement", payload: "warn" })}>Warn</button>
                 </fieldset>
                 <p className="muted tiny" style={{ marginTop: 8 }}>
                   {enforcement === "strict"
@@ -505,10 +566,7 @@ function TenancyCreateForm({
                         <input
                           type="checkbox"
                           checked={checked}
-                          onChange={(e) => {
-                            if (e.target.checked) setGlobalTableIds((ids) => [...ids, t.physical.id]);
-                            else setGlobalTableIds((ids) => ids.filter((id) => id !== t.physical.id));
-                          }}
+                          onChange={(e) => dispatch({ type: "toggle_global_table", tableId: t.physical.id, checked: e.target.checked })}
                         />
                         {t.physical.schema}.{t.physical.name}
                       </label>
@@ -536,10 +594,10 @@ function TenancyCreateForm({
       body={draftBody}
       busy={busy}
       saveStatus={saveStatus}
-      onFrontmatterChange={setDraftFrontmatter}
-      onBodyChange={setDraftBody}
+      onFrontmatterChange={(fm) => dispatch({ type: "set_draftFrontmatter", payload: fm })}
+      onBodyChange={(b) => dispatch({ type: "set_draftBody", payload: b })}
       onConfirm={handleConfirm}
-      onBack={() => setMode("choose")}
+      onBack={() => dispatch({ type: "set_mode", payload: "choose" })}
     />
   );
 }
@@ -684,7 +742,7 @@ function TenancyReviewDraft({
               <div className="card-bd">
                 <div style={{ display: "grid", gap: 8 }}>
                   {frontmatter.hierarchy!.map((edge) => (
-                    <div key={`${edge.parent}-${edge.child}`} style={{ display: "flex", alignItems: "start", justifyContent: "space-between", gap: 8, border: "1px solid var(--border)", borderRadius: "var(--radius)", padding: 12, fontSize: 13 }}>
+                    <div key={`${edge.parent}-${edge.child}`} className="policy-edge-card">
                       <div>
                         <code>{edge.parent}</code>
                         <span className="muted" style={{ margin: "0 8px" }}>&rarr;</span>
@@ -786,7 +844,7 @@ function TenancyReviewDraft({
           <section className="card">
             <div className="card-hd"><h3>Frontmatter Preview</h3></div>
             <div className="card-bd">
-              <pre className="plain-block" style={{ fontSize: 11 }}>{JSON.stringify(frontmatter, null, 2)}</pre>
+              <pre className="plain-block" style={{ fontSize: 12 }}>{JSON.stringify(frontmatter, null, 2)}</pre>
             </div>
           </section>
         </div>
@@ -811,11 +869,7 @@ function CollapsibleSection({
     <section>
       <button
         type="button"
-        style={{
-          display: "flex", alignItems: "center", gap: 6, marginBottom: 8,
-          fontSize: 13, fontWeight: 600, cursor: "pointer", background: "none", border: "none", padding: 0,
-          color: "var(--ink-700)",
-        }}
+        className="collapsible-btn"
         onClick={() => setOpen(!open)}
       >
         {open ? <ChevronDown size={14} /> : <ChevronRight size={14} />}

@@ -3,6 +3,7 @@ import { Sparkles, Shield, History, Zap, RefreshCw, Check, X } from "lucide-reac
 import { useWorkspace } from "../../contexts/workspace-context";
 import { useRag } from "../../contexts/rag-context";
 import { usePlayground } from "../../contexts/playground-context";
+import { formatNumber } from "../../lib/format";
 
 export function OverviewPage() {
   const navigate = useNavigate();
@@ -88,7 +89,7 @@ export function OverviewPage() {
               <div className="card-bd tight">
                 <table className="tbl">
                   <thead>
-                    <tr><th>Table</th><th>Cols</th><th>Status</th><th></th></tr>
+                    <tr><th>Table</th><th>Cols</th><th>Status</th><th aria-label="Actions"></th></tr>
                   </thead>
                   <tbody>
                     {tables
@@ -163,10 +164,10 @@ export function OverviewPage() {
                 {ragStatus ? (
                   <>
                     <div className="grid-2" style={{ gap: 10 }}>
-                      <div><div className="muted tiny">Chunks</div><div style={{ fontSize: 18, fontWeight: 600 }}>{new Intl.NumberFormat().format(ragStatus.chunksTotal)}</div></div>
-                      <div><div className="muted tiny">Indexed</div><div style={{ fontSize: 18, fontWeight: 600 }}>{new Intl.NumberFormat().format(ragStatus.chunksIndexed)}</div></div>
-                      <div><div className="muted tiny">Dimensions</div><div className="mono" style={{ fontSize: 13 }}>{new Intl.NumberFormat().format(ragStatus.dimensions)}</div></div>
-                      <div><div className="muted tiny">Model</div><div className="mono" style={{ fontSize: 11 }}>{ragStatus.embedder.label}</div></div>
+                      <div><div className="muted tiny">Chunks</div><div style={{ fontSize: 18, fontWeight: 600 }}>{formatNumber(ragStatus.chunksTotal)}</div></div>
+                      <div><div className="muted tiny">Indexed</div><div style={{ fontSize: 18, fontWeight: 600 }}>{formatNumber(ragStatus.chunksIndexed)}</div></div>
+                      <div><div className="muted tiny">Dimensions</div><div className="mono" style={{ fontSize: 13 }}>{formatNumber(ragStatus.dimensions)}</div></div>
+                      <div><div className="muted tiny">Model</div><div className="mono" style={{ fontSize: 12 }}>{ragStatus.embedder.label}</div></div>
                     </div>
                     <div className="bar" style={{ marginTop: 14 }}>
                       <i style={{ width: ragStatus.chunksTotal > 0 ? `${Math.round((ragStatus.chunksIndexed / ragStatus.chunksTotal) * 100)}%` : "0%" }} />

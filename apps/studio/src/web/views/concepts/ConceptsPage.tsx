@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
 import { Hexagon, Loader2, Plus, RotateCcw, Save, Search, Table2, X } from "lucide-react";
 import type { V2Concept } from "@askdb/core";
 import { useWorkspace } from "../../contexts/workspace-context";
@@ -65,6 +65,56 @@ export function ConceptsPage() {
   );
 }
 
+/* ═══════════════ Editor state ═══════════════ */
+
+type ConceptsState = {
+  draft: V2Concept[];
+  selectedIndex: number | null;
+  addOpen: boolean;
+  addDraft: Partial<V2Concept>;
+  conceptSearch: string;
+};
+
+type ConceptsAction =
+  | { type: "set_selectedIndex"; payload: number | null }
+  | { type: "set_conceptSearch"; payload: string }
+  | { type: "merge_addDraft"; payload: Partial<V2Concept> }
+  | { type: "update_concept"; index: number; updater: (c: V2Concept) => V2Concept }
+  | { type: "remove_concept"; index: number }
+  | { type: "commit_add"; concept: V2Concept; newIndex: number }
+  | { type: "open_add_form" }
+  | { type: "select_concept"; index: number }
+  | { type: "cancel_add" };
+
+function conceptsReducer(state: ConceptsState, action: ConceptsAction): ConceptsState {
+  switch (action.type) {
+    case "set_selectedIndex": return { ...state, selectedIndex: action.payload };
+    case "set_conceptSearch": return { ...state, conceptSearch: action.payload };
+    case "merge_addDraft": return { ...state, addDraft: { ...state.addDraft, ...action.payload } };
+    case "update_concept": return {
+      ...state,
+      draft: state.draft.map((c, i) => i === action.index ? action.updater(clone(c)) : c),
+    };
+    case "remove_concept": {
+      const next = state.draft.filter((_, i) => i !== action.index);
+      let nextSelected = state.selectedIndex;
+      if (state.selectedIndex === action.index) nextSelected = null;
+      else if (state.selectedIndex !== null && state.selectedIndex > action.index) nextSelected = state.selectedIndex - 1;
+      return { ...state, draft: next, selectedIndex: nextSelected };
+    }
+    case "commit_add": return {
+      ...state,
+      draft: [...state.draft, action.concept],
+      selectedIndex: action.newIndex,
+      addDraft: {},
+      addOpen: false,
+    };
+    case "open_add_form": return { ...state, addOpen: true, selectedIndex: null };
+    case "select_concept": return { ...state, selectedIndex: action.index, addOpen: false };
+    case "cancel_add": return { ...state, addOpen: false, addDraft: {} };
+  }
+}
+
 /* ═══════════════ Editor ═══════════════ */
 
 function ConceptsEditor({
@@ -80,11 +130,14 @@ function ConceptsEditor({
   saveStatus: ReturnType<typeof useWorkspace>["saveStatus"];
   busy: Set<string>;
 }) {
-  const [draft, setDraft] = useState<V2Concept[]>(() => clone(concepts));
-  const [selectedIndex, setSelectedIndex] = useState<number | null>(null);
-  const [addOpen, setAddOpen] = useState(false);
-  const [addDraft, setAddDraft] = useState<Partial<V2Concept>>({});
-  const [conceptSearch, setConceptSearch] = useState("");
+  const [state, dispatch] = useReducer(conceptsReducer, null, (): ConceptsState => ({
+    draft: clone(concepts),
+    selectedIndex: null,
+    addOpen: false,
+    addDraft: {},
+    conceptSearch: "",
+  }));
+  const { draft, selectedIndex, addOpen, addDraft, conceptSearch } = state;
 
   const dirty = JSON.stringify(draft) !== JSON.stringify(concepts);
 
@@ -92,28 +145,23 @@ function ConceptsEditor({
   const filteredDraft = useMemo(() => {
     if (!conceptSearch) return draft.map((c, i) => ({ concept: c, index: i }));
     const q = conceptSearch.toLowerCase();
-    return draft
-      .map((c, i) => ({ concept: c, index: i }))
-      .filter(({ concept }) =>
-        concept.label.toLowerCase().includes(q) ||
-        concept.id.toLowerCase().includes(q) ||
-        concept.synonyms?.some((s) => s.toLowerCase().includes(q)),
-      );
+    return draft.flatMap((c, i) => {
+      const matches =
+        c.label.toLowerCase().includes(q) ||
+        c.id.toLowerCase().includes(q) ||
+        c.synonyms?.some((s) => s.toLowerCase().includes(q));
+      return matches ? [{ concept: c, index: i }] : [];
+    });
   }, [draft, conceptSearch]);
 
   const selectedConcept = selectedIndex !== null ? draft[selectedIndex] : null;
 
   function updateConcept(index: number, updater: (c: V2Concept) => V2Concept) {
-    setDraft((current) => current.map((c, i) => (i === index ? updater(clone(c)) : c)));
+    dispatch({ type: "update_concept", index, updater });
   }
 
   function removeConcept(index: number) {
-    setDraft((current) => current.filter((_, i) => i !== index));
-    setSelectedIndex((prev) => {
-      if (prev === index) return null;
-      if (prev !== null && prev > index) return prev - 1;
-      return prev;
-    });
+    dispatch({ type: "remove_concept", index });
   }
 
   function commitAdd() {
@@ -126,10 +174,7 @@ function ConceptsEditor({
       ...(addDraft.links?.length ? { links: addDraft.links } : {}),
       ...(addDraft.description?.trim() ? { description: addDraft.description.trim() } : {}),
     };
-    setDraft((current) => [...current, concept]);
-    setSelectedIndex(draft.length); // select the newly added one
-    setAddDraft({});
-    setAddOpen(false);
+    dispatch({ type: "commit_add", concept, newIndex: draft.length });
   }
 
   return (
@@ -173,9 +218,10 @@ function ConceptsEditor({
             <Search size={13} />
             <input
               type="text"
+              aria-label="Search concepts"
               placeholder="Search concepts…"
               value={conceptSearch}
-              onChange={(e) => setConceptSearch(e.target.value)}
+              onChange={(e) => dispatch({ type: "set_conceptSearch", payload: e.target.value })}
             />
           </div>
           <div style={{ padding: "6px 8px", borderBottom: "1px solid var(--border)" }}>
@@ -183,7 +229,7 @@ function ConceptsEditor({
               type="button"
               className="btn sm"
               style={{ width: "100%", justifyContent: "center" }}
-              onClick={() => { setAddOpen(true); setSelectedIndex(null); }}
+              onClick={() => dispatch({ type: "open_add_form" })}
             >
               <Plus size={12} /> Add concept
             </button>
@@ -194,7 +240,7 @@ function ConceptsEditor({
                 type="button"
                 key={concept.id}
                 className={`sub-rail-row ${selectedIndex === index ? "active" : ""}`}
-                onClick={() => { setSelectedIndex(index); setAddOpen(false); }}
+                onClick={() => dispatch({ type: "select_concept", index })}
               >
                 <Hexagon size={12} style={{ flexShrink: 0, color: "var(--ink-400)" }} />
                 <span className="row-name">{concept.label}</span>
@@ -221,7 +267,7 @@ function ConceptsEditor({
                       <Field label="ID" description="Unique slug (concept: prefix added automatically)">
                         <ConceptIdInput
                           value={addDraft.id ?? ""}
-                          onChange={(v) => setAddDraft((d) => ({ ...d, id: v }))}
+                          onChange={(v) => dispatch({ type: "merge_addDraft", payload: { id: v } })}
                           placeholder="revenue"
                         />
                       </Field>
@@ -229,20 +275,20 @@ function ConceptsEditor({
                         <Input
                           value={addDraft.label ?? ""}
                           placeholder="Revenue"
-                          onChange={(e) => setAddDraft((d) => ({ ...d, label: e.target.value }))}
+                          onChange={(e) => dispatch({ type: "merge_addDraft", payload: { label: e.target.value } })}
                         />
                       </Field>
                     </div>
                     <Field label="Synonyms" description="Comma-separated terms users might say">
                       <ListInput
                         value={addDraft.synonyms}
-                        onChange={(v) => setAddDraft((d) => ({ ...d, synonyms: v }))}
+                        onChange={(v) => dispatch({ type: "merge_addDraft", payload: { synonyms: v } })}
                       />
                     </Field>
                     <Field label="Links" description="Tables or columns this concept maps to">
                       <LinksInput
                         value={addDraft.links ?? []}
-                        onChange={(v) => setAddDraft((d) => ({ ...d, links: v }))}
+                        onChange={(v) => dispatch({ type: "merge_addDraft", payload: { links: v } })}
                         options={linkOptions}
                       />
                     </Field>
@@ -250,11 +296,11 @@ function ConceptsEditor({
                       <Textarea
                         value={addDraft.description ?? ""}
                         placeholder="Sum of orders.total_amount where status = 'paid', expressed in cents."
-                        onChange={(e) => setAddDraft((d) => ({ ...d, description: e.target.value }))}
+                        onChange={(e) => dispatch({ type: "merge_addDraft", payload: { description: e.target.value } })}
                       />
                     </Field>
                     <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
-                      <button type="button" className="btn" onClick={() => { setAddOpen(false); setAddDraft({}); }}>
+                      <button type="button" className="btn" onClick={() => dispatch({ type: "cancel_add" })}>
                         Cancel
                       </button>
                       <button
@@ -377,6 +423,7 @@ function ConceptIdInput({
       <span className="concept-id-prefix">concept:</span>
       <input
         type="text"
+        aria-label="Concept ID"
         className="concept-id-slug"
         value={slug}
         placeholder={placeholder ?? "my-concept"}
@@ -529,6 +576,7 @@ function LinksInput({
         <input
           ref={inputRef}
           type="text"
+          aria-label="Search tables or columns"
           className="links-search-input"
           placeholder={value.length ? "Add another…" : "Search tables or columns…"}
           value={query}
@@ -540,13 +588,13 @@ function LinksInput({
 
       {/* Dropdown */}
       {open && visible.length > 0 && (
-        <div className="links-dropdown" ref={dropdownRef} role="listbox">
+        <div className="links-dropdown" ref={dropdownRef} role={"listbox" as React.AriaRole}>
           {visible.map((opt, i) => (
             <button
               type="button"
               key={opt.id}
               data-link-item
-              role="option"
+              role={"option" as React.AriaRole}
               aria-selected={i === highlightIndex}
               className={`links-dropdown-item ${i === highlightIndex ? "highlighted" : ""}`}
               onMouseDown={(e) => {

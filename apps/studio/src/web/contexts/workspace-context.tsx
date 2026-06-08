@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useReducer } from "react";
 import type { ReactNode } from "react";
 import type { TenantPolicyFrontmatter, V2Concept } from "@askdb/core";
 import type { ColumnDraft, SuggestSource, TableDraft } from "@askdb/enrich";
@@ -12,6 +12,10 @@ import {
   suggestTenantPolicy,
 } from "../api";
 import { parseList } from "../lib/format";
+
+async function handleSuggestTenantPolicy() {
+  return suggestTenantPolicy();
+}
 
 type LoadState = { kind: "loading" | "ready" | "error"; message?: string };
 export type StatusMessage = { kind: "neutral" | "loading" | "success" | "error"; text: string };
@@ -59,19 +63,110 @@ export function useWorkspace(): WorkspaceContextValue {
   return ctx;
 }
 
-export function WorkspaceProvider({ children }: { children: ReactNode }) {
-  const [loadState, setLoadState] = useState<LoadState>({ kind: "loading" });
-  const [workspace, setWorkspace] = useState<StudioWorkspaceDto | null>(null);
-  const [selectedTableId, setSelectedTableId] = useState<string | null>(null);
-  const [drafts, setDrafts] = useState<Record<string, TableDraft>>({});
-  const [tableSearch, setTableSearch] = useState("");
-  const [saveStatus, setSaveStatus] = useState<StatusMessage | null>(null);
-  const [suggestionDialog, setSuggestionDialog] = useState<SuggestionDialog | null>(null);
-  const [suggestionCache, setSuggestionCache] = useState<SuggestionCache>({});
-  const [suggestingKey, setSuggestingKey] = useState<string | null>(null);
-  const [busy, setBusy] = useState<Set<string>>(() => new Set());
+type WorkspaceState = {
+  loadState: LoadState;
+  workspace: StudioWorkspaceDto | null;
+  selectedTableId: string | null;
+  drafts: Record<string, TableDraft>;
+  tableSearch: string;
+  saveStatus: StatusMessage | null;
+  suggestionDialog: SuggestionDialog | null;
+  suggestionCache: SuggestionCache;
+  suggestingKey: string | null;
+  busy: Set<string>;
+};
 
-  const tables = workspace?.tables ?? [];
+type WorkspaceAction =
+  | { type: "set_loadState"; payload: LoadState }
+  | { type: "load_complete"; workspace: StudioWorkspaceDto }
+  | { type: "set_workspace"; payload: StudioWorkspaceDto | null }
+  | { type: "workspace_and_drafts"; workspace: StudioWorkspaceDto }
+  | { type: "set_selectedTableId"; payload: string | null }
+  | { type: "set_drafts"; payload: Record<string, TableDraft> }
+  | { type: "set_tableSearch"; payload: string }
+  | { type: "set_saveStatus"; payload: StatusMessage | null }
+  | { type: "set_suggestionDialog"; payload: SuggestionDialog | null }
+  | { type: "set_suggestingKey"; payload: string | null }
+  | { type: "suggestion_loaded"; key: string; dialog: SuggestionDialog }
+  | { type: "busy_add"; key: string }
+  | { type: "busy_remove"; key: string }
+  | { type: "reset_draft"; tableId: string; draft: TableDraft }
+  | { type: "update_draft"; tableId: string; updater: (d: TableDraft) => TableDraft };
+
+function workspaceReducer(state: WorkspaceState, action: WorkspaceAction): WorkspaceState {
+  switch (action.type) {
+    case "set_loadState": return { ...state, loadState: action.payload };
+    case "load_complete": {
+      const draftMap = makeDraftMap(action.workspace);
+      return {
+        ...state,
+        workspace: action.workspace,
+        drafts: draftMap,
+        selectedTableId: state.selectedTableId ?? action.workspace.tables[0]?.physical.id ?? null,
+        loadState: { kind: "ready" },
+      };
+    }
+    case "set_workspace": return { ...state, workspace: action.payload };
+    case "workspace_and_drafts": return {
+      ...state,
+      workspace: action.workspace,
+      drafts: makeDraftMap(action.workspace),
+    };
+    case "set_selectedTableId": return { ...state, selectedTableId: action.payload };
+    case "set_drafts": return { ...state, drafts: action.payload };
+    case "set_tableSearch": return { ...state, tableSearch: action.payload };
+    case "set_saveStatus": return { ...state, saveStatus: action.payload };
+    case "set_suggestionDialog": return { ...state, suggestionDialog: action.payload };
+    case "set_suggestingKey": return { ...state, suggestingKey: action.payload };
+    case "suggestion_loaded": return {
+      ...state,
+      suggestionCache: { ...state.suggestionCache, [action.key]: action.dialog },
+      suggestionDialog: action.dialog,
+    };
+    case "busy_add": { const s = new Set(state.busy); s.add(action.key); return { ...state, busy: s }; }
+    case "busy_remove": { const s = new Set(state.busy); s.delete(action.key); return { ...state, busy: s }; }
+    case "reset_draft": return {
+      ...state,
+      drafts: { ...state.drafts, [action.tableId]: action.draft },
+      saveStatus: { kind: "neutral", text: `Reverted.` },
+    };
+    case "update_draft": {
+      const current = clone(state.drafts[action.tableId] ?? {} as TableDraft);
+      return {
+        ...state,
+        drafts: { ...state.drafts, [action.tableId]: action.updater(current) },
+        saveStatus: { kind: "neutral", text: "Unsaved changes." },
+      };
+    }
+  }
+}
+
+const initialWorkspaceState: WorkspaceState = {
+  loadState: { kind: "loading" },
+  workspace: null,
+  selectedTableId: null,
+  drafts: {},
+  tableSearch: "",
+  saveStatus: null,
+  suggestionDialog: null,
+  suggestionCache: {},
+  suggestingKey: null,
+  busy: new Set(),
+};
+
+export function WorkspaceProvider({ children }: { children: ReactNode }) {
+  const [state, dispatch] = useReducer(workspaceReducer, initialWorkspaceState);
+  const {
+    loadState, workspace, selectedTableId, drafts, tableSearch,
+    saveStatus, suggestionDialog, suggestionCache, suggestingKey, busy,
+  } = state;
+
+  const setSelectedTableId = (v: string | null) => dispatch({ type: "set_selectedTableId", payload: v });
+  const setTableSearch = (v: string) => dispatch({ type: "set_tableSearch", payload: v });
+  const setSaveStatus = (v: StatusMessage | null) => dispatch({ type: "set_saveStatus", payload: v });
+  const setSuggestionDialog = (v: SuggestionDialog | null) => dispatch({ type: "set_suggestionDialog", payload: v });
+
+  const tables = useMemo(() => workspace?.tables ?? [], [workspace]);
   const selectedTable = useMemo(
     () => tables.find((t) => t.physical.id === selectedTableId) ?? tables[0] ?? null,
     [tables, selectedTableId],
@@ -101,22 +196,19 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   }, [saveStatus]);
 
   async function withBusy(key: string, task: () => Promise<void>) {
-    setBusy((c) => new Set(c).add(key));
+    dispatch({ type: "busy_add", key });
     try { await task(); } finally {
-      setBusy((c) => { const n = new Set(c); n.delete(key); return n; });
+      dispatch({ type: "busy_remove", key });
     }
   }
 
   const load = useCallback(async () => {
-    setLoadState({ kind: "loading" });
+    dispatch({ type: "set_loadState", payload: { kind: "loading" } });
     try {
       const nextWorkspace = await getWorkspace();
-      setWorkspace(nextWorkspace);
-      setDrafts(makeDraftMap(nextWorkspace));
-      setSelectedTableId((c) => c ?? nextWorkspace.tables[0]?.physical.id ?? null);
-      setLoadState({ kind: "ready" });
+      dispatch({ type: "load_complete", workspace: nextWorkspace });
     } catch (error) {
-      setLoadState({ kind: "error", message: getErrorMessage(error) });
+      dispatch({ type: "set_loadState", payload: { kind: "error", message: getErrorMessage(error) } });
     }
   }, []);
 
@@ -126,8 +218,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     await withBusy("save", async () => {
       try {
         const nextWorkspace = await saveTable(selectedTable.physical.id, { draft: selectedDraft });
-        setWorkspace(nextWorkspace);
-        setDrafts(makeDraftMap(nextWorkspace));
+        dispatch({ type: "workspace_and_drafts", workspace: nextWorkspace });
         setSaveStatus({ kind: "success", text: `Saved ${selectedTable.physical.name}.` });
       } catch (error) {
         setSaveStatus({ kind: "error", text: getErrorMessage(error) });
@@ -137,13 +228,12 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
 
   function resetSelectedDraft() {
     if (!selectedTable) return;
-    setDrafts((c) => ({ ...c, [selectedTable.physical.id]: clone(selectedTable.draft) }));
+    dispatch({ type: "reset_draft", tableId: selectedTable.physical.id, draft: clone(selectedTable.draft) });
     setSaveStatus({ kind: "neutral", text: `Reverted ${selectedTable.physical.name}.` });
   }
 
   function updateTableDraft(tableId: string, updater: (d: TableDraft) => TableDraft) {
-    setDrafts((c) => ({ ...c, [tableId]: updater(clone(c[tableId])) }));
-    setSaveStatus({ kind: "neutral", text: "Unsaved changes." });
+    dispatch({ type: "update_draft", tableId, updater });
   }
 
   function updateColumnDraft(tableId: string, columnId: string, updater: (d: ColumnDraft) => ColumnDraft) {
@@ -162,16 +252,15 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       return;
     }
 
-    setSuggestingKey(key);
+    dispatch({ type: "set_suggestingKey", payload: key });
     try {
       const result = await suggest({ source });
       const nextDialog = { source, label, candidates: result.candidates };
-      setSuggestionCache((current) => ({ ...current, [key]: nextDialog }));
-      setSuggestionDialog(nextDialog);
+      dispatch({ type: "suggestion_loaded", key, dialog: nextDialog });
     } catch (error) {
       setSaveStatus({ kind: "error", text: getErrorMessage(error) });
     } finally {
-      setSuggestingKey(null);
+      dispatch({ type: "set_suggestingKey", payload: null });
     }
   }
 
@@ -190,7 +279,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     await withBusy("save-concepts", async () => {
       try {
         const nextWorkspace = await saveConcepts({ concepts });
-        setWorkspace(nextWorkspace);
+        dispatch({ type: "set_workspace", payload: nextWorkspace });
         setSaveStatus({ kind: "success", text: "Concepts saved." });
       } catch (error) {
         setSaveStatus({ kind: "error", text: getErrorMessage(error) });
@@ -204,7 +293,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     await withBusy("save-tenant-policy", async () => {
       try {
         const nextWorkspace = await saveTenantPolicy({ frontmatter, body });
-        setWorkspace(nextWorkspace);
+        dispatch({ type: "set_workspace", payload: nextWorkspace });
         setSaveStatus({ kind: "success", text: "Tenant policy saved." });
         saved = true;
       } catch (error) {
@@ -212,10 +301,6 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       }
     });
     return saved;
-  }
-
-  async function handleSuggestTenantPolicy() {
-    return suggestTenantPolicy();
   }
 
   const value: WorkspaceContextValue = {

@@ -149,6 +149,7 @@ export function TablesLayout() {
           <Search size={13} />
           <input
             type="text"
+            aria-label="Search tables"
             placeholder="Search tables…"
             value={tableSearch}
             onChange={(e) => setTableSearch(e.target.value)}

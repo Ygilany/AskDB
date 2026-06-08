@@ -13,8 +13,10 @@ export function parseList(value: string): string[] {
     });
 }
 
+const numberFormat = new Intl.NumberFormat();
+
 export function formatNumber(value: number): string {
-  return new Intl.NumberFormat().format(value);
+  return numberFormat.format(value);
 }
 
 export function formatUsageInline(usage: StudioRequestUsageDto | null): string {

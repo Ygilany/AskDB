@@ -1,8 +1,9 @@
-import { createContext, useContext, useEffect, useState } from "react";
+import { createContext, useContext, useEffect, useReducer } from "react";
 import type { ReactNode } from "react";
 import type { ChunkType } from "@askdb/rag";
 import type { RagQueryResponse, StudioRagStatusDto, StudioRequestUsageDto } from "@/shared/api";
 import { buildRagIndex, getRagStatus, queryRag } from "../api";
+import { formatNumber } from "../lib/format";
 import type { StatusMessage } from "./workspace-context";
 
 const CHUNK_TYPES: ChunkType[] = ["table", "column", "cql", "question", "concept", "relationship", "tenant-policy"];
@@ -35,15 +36,64 @@ export function useRag(): RagContextValue {
   return ctx;
 }
 
+type RagState = {
+  ragStatus: StudioRagStatusDto | null;
+  ragMessage: StatusMessage | null;
+  ragQuestion: string;
+  ragK: number;
+  ragTypes: ChunkType[];
+  ragResults: RagQueryResponse | null;
+  ragIndexUsage: StudioRequestUsageDto | null;
+  busy: Set<string>;
+};
+
+type RagAction =
+  | { type: "set_ragStatus"; payload: StudioRagStatusDto | null }
+  | { type: "set_ragMessage"; payload: StatusMessage | null }
+  | { type: "set_ragQuestion"; payload: string }
+  | { type: "set_ragK"; payload: number }
+  | { type: "set_ragTypes"; payload: ChunkType[] }
+  | { type: "set_ragResults"; payload: RagQueryResponse | null }
+  | { type: "set_ragIndexUsage"; payload: StudioRequestUsageDto | null }
+  | { type: "busy_add"; key: string }
+  | { type: "busy_remove"; key: string };
+
+function ragReducer(state: RagState, action: RagAction): RagState {
+  switch (action.type) {
+    case "set_ragStatus": return { ...state, ragStatus: action.payload };
+    case "set_ragMessage": return { ...state, ragMessage: action.payload };
+    case "set_ragQuestion": return { ...state, ragQuestion: action.payload };
+    case "set_ragK": return { ...state, ragK: action.payload };
+    case "set_ragTypes": return { ...state, ragTypes: action.payload };
+    case "set_ragResults": return { ...state, ragResults: action.payload };
+    case "set_ragIndexUsage": return { ...state, ragIndexUsage: action.payload };
+    case "busy_add": { const s = new Set(state.busy); s.add(action.key); return { ...state, busy: s }; }
+    case "busy_remove": { const s = new Set(state.busy); s.delete(action.key); return { ...state, busy: s }; }
+  }
+}
+
+const initialRagState: RagState = {
+  ragStatus: null,
+  ragMessage: null,
+  ragQuestion: "",
+  ragK: 8,
+  ragTypes: ["table", "column", "cql", "question", "concept"],
+  ragResults: null,
+  ragIndexUsage: null,
+  busy: new Set(),
+};
+
 export function RagProvider({ children }: { children: ReactNode }) {
-  const [ragStatus, setRagStatus] = useState<StudioRagStatusDto | null>(null);
-  const [ragMessage, setRagMessage] = useState<StatusMessage | null>(null);
-  const [ragQuestion, setRagQuestion] = useState("");
-  const [ragK, setRagK] = useState(8);
-  const [ragTypes, setRagTypes] = useState<ChunkType[]>(["table", "column", "cql", "question", "concept"]);
-  const [ragResults, setRagResults] = useState<RagQueryResponse | null>(null);
-  const [ragIndexUsage, setRagIndexUsage] = useState<StudioRequestUsageDto | null>(null);
-  const [busy, setBusy] = useState<Set<string>>(() => new Set());
+  const [state, dispatch] = useReducer(ragReducer, initialRagState);
+  const { ragStatus, ragMessage, ragQuestion, ragK, ragTypes, ragResults, ragIndexUsage, busy } = state;
+
+  const setRagStatus = (v: StudioRagStatusDto | null) => dispatch({ type: "set_ragStatus", payload: v });
+  const setRagMessage = (v: StatusMessage | null) => dispatch({ type: "set_ragMessage", payload: v });
+  const setRagQuestion = (v: string) => dispatch({ type: "set_ragQuestion", payload: v });
+  const setRagK = (v: number) => dispatch({ type: "set_ragK", payload: v });
+  const setRagTypes = (v: ChunkType[]) => dispatch({ type: "set_ragTypes", payload: v });
+  const setRagResults = (v: RagQueryResponse | null) => dispatch({ type: "set_ragResults", payload: v });
+  const setRagIndexUsage = (v: StudioRequestUsageDto | null) => dispatch({ type: "set_ragIndexUsage", payload: v });
 
   const ragAvailable = Boolean(ragStatus?.hasIndex);
 
@@ -55,9 +105,9 @@ export function RagProvider({ children }: { children: ReactNode }) {
   }, [ragMessage]);
 
   async function withBusy(key: string, task: () => Promise<void>) {
-    setBusy((c) => new Set(c).add(key));
+    dispatch({ type: "busy_add", key });
     try { await task(); } finally {
-      setBusy((c) => { const n = new Set(c); n.delete(key); return n; });
+      dispatch({ type: "busy_remove", key });
     }
   }
 
@@ -78,7 +128,7 @@ export function RagProvider({ children }: { children: ReactNode }) {
         setRagStatus(result.status);
         setRagIndexUsage(result.usage);
         const tokens = result.usage?.totalTokens ?? result.usage?.embeddingTokens ?? null;
-        const tokenStr = tokens === null ? "" : `, ${new Intl.NumberFormat().format(tokens)} tokens`;
+        const tokenStr = tokens === null ? "" : `, ${formatNumber(tokens)} tokens`;
         setRagMessage({
           kind: "success",
           text: `Indexed ${result.stats.chunksIndexed ?? 0} chunks, reused ${result.stats.chunksReused ?? 0}${tokenStr}.`,
