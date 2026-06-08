@@ -117,9 +117,12 @@ export function PlaygroundProvider({ children, ragAvailable }: { children: React
     askTenantEnabled, askTenantScopeJson, askTenantSqlMode,
     executeResult, executeMessage, historyEntries, busy,
   } = state;
+  const effectiveAskMode = ragAvailable ? askMode : "full";
 
   const setAskQuestion = useCallback((v: string) => dispatch({ type: "set_askQuestion", payload: v }), []);
-  const setAskMode = useCallback((v: "full" | "rag") => dispatch({ type: "set_askMode", payload: v }), []);
+  const setAskMode = useCallback((v: "full" | "rag") => {
+    dispatch({ type: "set_askMode", payload: v === "rag" && !ragAvailable ? "full" : v });
+  }, [ragAvailable]);
   const setAskMessage = useCallback((v: StatusMessage | null) => dispatch({ type: "set_askMessage", payload: v }), []);
   const setAskResult = useCallback((v: AskResponse | null) => dispatch({ type: "set_askResult", payload: v }), []);
   const setAskTenantEnabled = useCallback((v: boolean) => dispatch({ type: "set_askTenantEnabled", payload: v }), []);
@@ -128,10 +131,6 @@ export function PlaygroundProvider({ children, ragAvailable }: { children: React
   const setExecuteResult = useCallback((v: ExecuteResponse | null) => dispatch({ type: "set_executeResult", payload: v }), []);
   const setExecuteMessage = useCallback((v: StatusMessage | null) => dispatch({ type: "set_executeMessage", payload: v }), []);
   const setHistoryEntries = useCallback((v: PlaygroundHistoryEntry[]) => dispatch({ type: "set_historyEntries", payload: v }), []);
-
-  useEffect(() => {
-    if (!ragAvailable && askMode === "rag") setAskMode("full");
-  }, [askMode, ragAvailable, setAskMode]);
 
   useEffect(() => {
     if (askMessage?.kind === "success" || askMessage?.kind === "neutral") {
@@ -174,14 +173,14 @@ export function PlaygroundProvider({ children, ragAvailable }: { children: React
       try {
         const result = await ask({
           question: askQuestion.trim(),
-          mode: askMode,
+          mode: effectiveAskMode,
           ...(tenantScope ? { tenantScope, tenantSqlMode: askTenantSqlMode } : {}),
         });
         setAskResult(result);
         setAskMessage({ kind: "success", text: "Generated SQL." });
         void saveToHistory({
           question: askQuestion.trim(),
-          mode: askMode,
+          mode: effectiveAskMode,
           sql: result.sql,
           sqlMode: askTenantSqlMode,
           tenantScope: askTenantEnabled && askTenantScopeJson.trim() ? JSON.parse(askTenantScopeJson) as Record<string, unknown> : undefined,
@@ -195,7 +194,7 @@ export function PlaygroundProvider({ children, ragAvailable }: { children: React
       }
     });
   }, [
-    askMode, askQuestion, askTenantEnabled, askTenantScopeJson, askTenantSqlMode,
+    askQuestion, askTenantEnabled, askTenantScopeJson, askTenantSqlMode, effectiveAskMode,
     refreshHistory, setAskMessage, setAskResult, withBusy,
   ]);
 
@@ -231,14 +230,14 @@ export function PlaygroundProvider({ children, ragAvailable }: { children: React
   }, []);
 
   const value = useMemo<PlaygroundContextValue>(() => ({
-    askQuestion, setAskQuestion, askMode, setAskMode, askMessage, askResult, setAskResult,
+    askQuestion, setAskQuestion, askMode: effectiveAskMode, setAskMode, askMessage, askResult, setAskResult,
     askTenantEnabled, setAskTenantEnabled, askTenantScopeJson, setAskTenantScopeJson,
     askTenantSqlMode, setAskTenantSqlMode, executeResult, executeMessage, historyEntries, busy,
     handleAsk, handleExecute, refreshHistory, handleDeleteHistory, loadHistoryEntry,
   }), [
-    askMessage, askMode, askQuestion, askResult, askTenantEnabled, askTenantScopeJson,
+    askMessage, askQuestion, askResult, askTenantEnabled, askTenantScopeJson,
     askTenantSqlMode, busy, executeMessage, executeResult, handleAsk,
-    handleDeleteHistory, handleExecute, historyEntries, loadHistoryEntry,
+    handleDeleteHistory, handleExecute, historyEntries, effectiveAskMode, loadHistoryEntry,
     refreshHistory, setAskMode, setAskQuestion, setAskResult, setAskTenantEnabled,
     setAskTenantScopeJson, setAskTenantSqlMode,
   ]);

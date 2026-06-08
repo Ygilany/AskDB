@@ -1147,8 +1147,7 @@ async function executeQuery(body: unknown): Promise<ExecuteResponse> {
 
   let pgMod: PgMod;
   try {
-    const pgPackageName: string = "pg";
-    const mod = await import(pgPackageName);
+    const mod = await import("pg");
     pgMod = ((mod as unknown as { default?: PgMod }).default ?? mod) as PgMod;
   } catch {
     return { ok: false, error: "The `pg` package is required for query execution. Install it with `pnpm add pg`." };

@@ -2,4 +2,4 @@
 "@askdb/studio": patch
 ---
 
-Prevent Studio startup and route sync effects from re-running indefinitely after context provider state updates.
+Prevent Studio startup and route sync effects from re-running indefinitely after context provider state updates, and clear the remaining React Doctor warnings in Studio.
