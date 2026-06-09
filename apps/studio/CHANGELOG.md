@@ -1,5 +1,12 @@
 # @askdb/studio
 
+## 0.2.0-beta.20
+
+### Patch Changes
+
+- e4716c2: Fix warning badge illegibility in dark mode by adding `dark:` variant classes to the Badge CVA definition, following the same pattern used by Button.
+- 3ca848a: Refactor studio UI components: split monolithic `ui.tsx` into individual files under `ui/`, migrate `Badge` to `cva`-based variants, update all import sites to point directly to individual component files, and remove the unused `@radix-ui/react-slot` dependency.
+
 ## 0.2.0-beta.19
 
 ### Patch Changes

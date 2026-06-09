@@ -41,6 +41,7 @@
     "docs-specs-feature-consolidation",
     "enrich-shared-workspace",
     "enrich-studio-zero-args-config",
+    "fix-dark-mode-badge-legibility",
     "fix-postgres-zod-resolution",
     "ignored-table-aliases",
     "init-install-template-deps",
@@ -50,6 +51,7 @@
     "introspect-zero-args-config",
     "long-items-count",
     "mysql-sqlite-sqlserver-connectors",
+    "optimize-ci-workflow",
     "pgvector-auto-schema-setup",
     "phase-10-multi-tenant-proof",
     "phase-6-introspect-skeleton",
@@ -85,10 +87,12 @@
     "studio-tenancy-surfaces",
     "studio-tenancy-ui-improvements",
     "studio-token-usage",
+    "studio-ui-dedup-cva",
     "studio-untracked-table-badge",
     "studio-untracked-tables",
     "studio-usage-layout",
     "studio-web-primitives",
+    "upgrade-github-actions-node24",
     "workspace-bin-wrappers"
   ]
 }
