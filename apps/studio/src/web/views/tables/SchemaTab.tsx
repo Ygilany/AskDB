@@ -1,6 +1,6 @@
 import { ChevronRight } from "lucide-react";
 import { useWorkspace } from "../../contexts/workspace-context";
-import { Badge } from "../../components/ui";
+import { Badge } from "../../components/ui/badge";
 
 export function SchemaTab() {
   const { selectedTable } = useWorkspace();

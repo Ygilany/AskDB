@@ -1,6 +1,6 @@
 import { Check, Copy } from "lucide-react";
 import { useCallback, useState } from "react";
-import { Button } from "../ui";
+import { Button } from "../ui/button";
 
 export function CopyButton({ value }: { value: string }) {
   const [copied, setCopied] = useState(false);

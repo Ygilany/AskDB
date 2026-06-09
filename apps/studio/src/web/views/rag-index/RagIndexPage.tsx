@@ -1,7 +1,10 @@
 import { BrainCircuit, Loader2, RefreshCw, Search, Sparkles } from "lucide-react";
 import { useRag } from "../../contexts/rag-context";
 import { useWorkspace } from "../../contexts/workspace-context";
-import { Badge, Field, Input, Textarea } from "../../components/ui";
+import { Badge } from "../../components/ui/badge";
+import { Field } from "../../components/ui/field";
+import { Input } from "../../components/ui/input";
+import { Textarea } from "../../components/ui/textarea";
 import { InlineStatus } from "../../components/common/StatusBanner";
 import { EmptyText } from "../../components/common/EmptyText";
 import type { StudioRagChunkDto, StudioRequestUsageDto } from "@/shared/api";

@@ -13,7 +13,10 @@ import {
 import type { ReactNode } from "react";
 import type { NormalizedTenantPolicy, TenantPolicyFrontmatter } from "@askdb/core";
 import { useWorkspace } from "../../contexts/workspace-context";
-import { Badge, Field, Input, Textarea } from "../../components/ui";
+import { Badge } from "../../components/ui/badge";
+import { Field } from "../../components/ui/field";
+import { Input } from "../../components/ui/input";
+import { Textarea } from "../../components/ui/textarea";
 import { StatusBanner } from "../../components/common/StatusBanner";
 import type { StatusMessage } from "../../contexts/workspace-context";
 import type { StudioTableDto } from "@/shared/api";
