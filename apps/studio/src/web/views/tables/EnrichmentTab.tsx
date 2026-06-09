@@ -1,6 +1,10 @@
 import { Loader2, Sparkles, ChevronRight } from "lucide-react";
 import { useWorkspace } from "../../contexts/workspace-context";
-import { Badge, Field, Input, ListInput, Textarea } from "../../components/ui";
+import { Badge } from "../../components/ui/badge";
+import { Field } from "../../components/ui/field";
+import { Input } from "../../components/ui/input";
+import { ListInput } from "../../components/ui/list-input";
+import { Textarea } from "../../components/ui/textarea";
 import type { ReactNode } from "react";
 
 export function EnrichmentTab() {

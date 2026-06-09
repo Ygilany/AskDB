@@ -3,7 +3,9 @@ import { Loader2, Lock, Play, Plus, Shield, Sparkles, Trash2 } from "lucide-reac
 import { useWorkspace } from "../../contexts/workspace-context";
 import { useRag } from "../../contexts/rag-context";
 import { usePlayground } from "../../contexts/playground-context";
-import { Field, Input, Textarea } from "../../components/ui";
+import { Field } from "../../components/ui/field";
+import { Input } from "../../components/ui/input";
+import { Textarea } from "../../components/ui/textarea";
 import { CopyButton } from "../../components/common/CopyButton";
 import { InlineStatus } from "../../components/common/StatusBanner";
 import { EmptyText } from "../../components/common/EmptyText";

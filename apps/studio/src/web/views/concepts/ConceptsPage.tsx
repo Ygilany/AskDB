@@ -2,7 +2,11 @@ import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "r
 import { Hexagon, Loader2, Plus, RotateCcw, Save, Search, Table2, X } from "lucide-react";
 import type { V2Concept } from "@askdb/core";
 import { useWorkspace } from "../../contexts/workspace-context";
-import { Badge, Field, Input, ListInput, Textarea } from "../../components/ui";
+import { Badge } from "../../components/ui/badge";
+import { Field } from "../../components/ui/field";
+import { Input } from "../../components/ui/input";
+import { ListInput } from "../../components/ui/list-input";
+import { Textarea } from "../../components/ui/textarea";
 import { StatusBanner } from "../../components/common/StatusBanner";
 
 /* ─── helpers ─── */
