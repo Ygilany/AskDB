@@ -5,8 +5,51 @@ on:
     branches: [main]
   pull_request:
 
+# Cancel stale PR runs; never cancel in-progress main pushes.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
 jobs:
-  ci:
+  # ── 1. Build ──────────────────────────────────────────────────────────────
+  # Compiles all packages and seeds the Turbo cache for downstream jobs.
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v6
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Restore Turbo cache
+        uses: actions/cache@v4
+        with:
+          path: .turbo
+          key: turbo-${{ runner.os }}-${{ github.sha }}
+          restore-keys: |
+            turbo-${{ runner.os }}-
+
+      - name: Build all packages
+        run: pnpm build
+
+  # ── 2. Test ───────────────────────────────────────────────────────────────
+  # Runs unit + integration tests. Turbo replays build outputs from cache so
+  # packages are not rebuilt. DB services start in parallel with job setup.
+  test:
+    needs: build
     runs-on: ubuntu-latest
 
     services:
@@ -75,8 +118,13 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Build all packages
-        run: pnpm build
+      - name: Restore Turbo cache
+        uses: actions/cache/restore@v4
+        with:
+          path: .turbo
+          key: turbo-${{ runner.os }}-${{ github.sha }}
+          restore-keys: |
+            turbo-${{ runner.os }}-
 
       - name: Create SQL Server test database
         run: >-
@@ -93,8 +141,38 @@ jobs:
       - name: Run unit + integration tests
         run: pnpm test
 
-      # Release preflight — mirrored locally by `scripts/release-preflight.sh`.
-      # Broken into discrete steps so failures are attributable in the Actions UI.
+  # ── 3. Preflight ──────────────────────────────────────────────────────────
+  # Release smoke test + publish dry-run. Runs in parallel with `test` so
+  # packaging failures surface without waiting for the full DB test suite.
+  # smoke:install rebuilds packages internally; turbo cache is restored as a
+  # safety net for any direct `pnpm build` calls.
+  preflight:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v6
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Restore Turbo cache
+        uses: actions/cache/restore@v4
+        with:
+          path: .turbo
+          key: turbo-${{ runner.os }}-${{ github.sha }}
+          restore-keys: |
+            turbo-${{ runner.os }}-
+
       - name: Installable smoke test
         run: pnpm smoke:install
 
