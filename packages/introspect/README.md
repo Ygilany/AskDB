@@ -54,3 +54,7 @@ A `Connector<TInput>` has two methods:
 - `templates?(): SqlTemplateBundle` — optional; only relevant for engines that introspect via catalog SQL.
 
 The integration package owns its own input type (e.g. `PostgresIntrospectionInput`, `PrismaIntrospectionInput`). `@askdb/introspect` does not assume a live catalog runner exists, a bundle path exists, a schema-file path exists, or a template suite exists.
+
+## License
+
+Apache-2.0 © [Yahya Gilany](https://yahyagilany.io). See [LICENSE](./LICENSE) and [NOTICE](./NOTICE).

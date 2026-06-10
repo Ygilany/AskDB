@@ -60,4 +60,4 @@ Tables, views, columns (SQL Server native type strings), primary keys, unique co
 
 ## License
 
-Apache-2.0
+Apache-2.0 © [Yahya Gilany](https://yahyagilany.io). See [LICENSE](./LICENSE) and [NOTICE](./NOTICE).

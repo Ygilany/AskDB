@@ -45,4 +45,4 @@ const result = await introspect(input, { outDir: "./askdb", schemaId: "mydb" }, 
 
 ## License
 
-Apache-2.0 © Yahya Gilany. See [LICENSE](./LICENSE) and [NOTICE](./NOTICE).
+Apache-2.0 © [Yahya Gilany](https://yahyagilany.io). See [LICENSE](./LICENSE) and [NOTICE](./NOTICE).

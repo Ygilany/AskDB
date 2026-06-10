@@ -24,3 +24,7 @@ askdb introspect --engine prisma --prisma-schema ./prisma --diff my-app.schema
 ```
 
 Supported Prisma datasource providers are `postgresql`, `mysql`, `sqlite`, `sqlserver`, and `cockroachdb`. MongoDB is not supported because AskDB Schema v2 and SQL generation are relational.
+
+## License
+
+Apache-2.0 © [Yahya Gilany](https://yahyagilany.io). See [LICENSE](./LICENSE) and [NOTICE](./NOTICE).

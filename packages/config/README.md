@@ -94,4 +94,4 @@ const model = await aiRegistry.createLanguageModelFromEnv(config.ai.aiEnv, { ...
 
 ## License
 
-Apache-2.0. See [LICENSE](./LICENSE) and [NOTICE](./NOTICE).
+Apache-2.0 © [Yahya Gilany](https://yahyagilany.io). See [LICENSE](./LICENSE) and [NOTICE](./NOTICE).

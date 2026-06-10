@@ -45,3 +45,7 @@ const result = await introspect(
 ```
 
 The connector input shape (`PostgresIntrospectionInput`) lives in this package — `@askdb/introspect` is engine-agnostic and does not know about live vs. from-export modes.
+
+## License
+
+Apache-2.0 © [Yahya Gilany](https://yahyagilany.io). See [LICENSE](./LICENSE) and [NOTICE](./NOTICE).
