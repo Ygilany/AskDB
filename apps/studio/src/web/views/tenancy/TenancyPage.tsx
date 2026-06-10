@@ -1,4 +1,4 @@
-import { useReducer, useState } from "react";
+import { useCallback, useReducer, useState } from "react";
 import {
   ChevronDown,
   ChevronRight,
@@ -13,6 +13,7 @@ import {
 import type { ReactNode } from "react";
 import type { NormalizedTenantPolicy, TenantPolicyFrontmatter } from "@askdb/core";
 import { useWorkspace } from "../../contexts/workspace-context";
+import { useRag } from "../../contexts/rag-context";
 import { Badge } from "../../components/ui/badge";
 import { Field } from "../../components/ui/field";
 import { Input } from "../../components/ui/input";
@@ -30,7 +31,14 @@ export function TenancyPage() {
     saveStatus,
     busy,
   } = useWorkspace();
+  const { refreshRagStatus } = useRag();
   const [editingSavedPolicy, setEditingSavedPolicy] = useState(false);
+
+  const onSaveTenantPolicy = useCallback(async (frontmatter: TenantPolicyFrontmatter, body?: string) => {
+    const saved = await handleSaveTenantPolicy(frontmatter, body);
+    if (saved) void refreshRagStatus();
+    return saved;
+  }, [handleSaveTenantPolicy, refreshRagStatus]);
 
   if (!workspace) return null;
 
@@ -44,7 +52,7 @@ export function TenancyPage() {
           schemaId={workspace.schemaId}
           aiConfigured={workspace.aiConfigured}
           busy={busy}
-          onSave={handleSaveTenantPolicy}
+          onSave={onSaveTenantPolicy}
           onSuggest={handleSuggestTenantPolicy}
           saveStatus={saveStatus}
         />
@@ -62,7 +70,7 @@ export function TenancyPage() {
           busy={busy}
           saveStatus={saveStatus}
           onSave={async (frontmatter, body) => {
-            const saved = await handleSaveTenantPolicy(frontmatter, body);
+            const saved = await onSaveTenantPolicy(frontmatter, body);
             if (saved) setEditingSavedPolicy(false);
             return saved;
           }}
