@@ -1,12 +1,19 @@
 import { NavLink, Outlet } from "react-router";
 import { Loader2, RotateCcw, Save } from "lucide-react";
 import { useWorkspace } from "../../contexts/workspace-context";
+import { useRag } from "../../contexts/rag-context";
 import { StatusBanner } from "../../components/common/StatusBanner";
 
 export function TableDetail() {
   const { selectedTable, selectedDraft, dirty, saveStatus, saveSelectedTable, resetSelectedDraft, busy } = useWorkspace();
+  const { refreshRagStatus } = useRag();
 
   if (!selectedTable || !selectedDraft) return null;
+
+  async function handleSave() {
+    await saveSelectedTable();
+    void refreshRagStatus();
+  }
 
   const t = selectedTable;
   const hasSome = selectedDraft.description || (selectedDraft.aliases && selectedDraft.aliases.length > 0);
@@ -41,7 +48,7 @@ export function TableDetail() {
           <button
             type="button"
             className="btn primary"
-            onClick={() => void saveSelectedTable()}
+            onClick={() => void handleSave()}
             disabled={!dirty || busy.has("save")}
           >
             {busy.has("save") ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
