@@ -5,6 +5,37 @@ import starlight from "@astrojs/starlight";
 const base = process.env.ASTRO_BASE ?? "/";
 const normalizedBase = base === "/" ? "" : base.replace(/\/$/, "");
 
+/**
+ * Remark plugin that rewrites root-absolute internal links (e.g. `/quickstart/`)
+ * to be relative to the configured base path (e.g. `/AskDB/quickstart/`).
+ * This handles both Markdown links and JSX <a href="…"> elements inside .mdx files.
+ * When base is "/" the plugin is a no-op so local `astro dev` is unaffected.
+ */
+function remarkRebaseLinks() {
+  if (!normalizedBase) return (_tree) => {};
+
+  function walk(node) {
+    if (node.type === "link") {
+      if (typeof node.url === "string" && node.url.startsWith("/") && !node.url.startsWith("//")) {
+        node.url = normalizedBase + node.url;
+      }
+    } else if (node.type === "mdxJsxFlowElement" || node.type === "mdxJsxTextElement") {
+      if (node.name === "a") {
+        const hrefAttr = (node.attributes ?? []).find(
+          (a) => a.type === "mdxJsxAttribute" && a.name === "href"
+        );
+        if (hrefAttr && typeof hrefAttr.value === "string" &&
+            hrefAttr.value.startsWith("/") && !hrefAttr.value.startsWith("//")) {
+          hrefAttr.value = normalizedBase + hrefAttr.value;
+        }
+      }
+    }
+    if (node.children) node.children.forEach(walk);
+  }
+
+  return (tree) => walk(tree);
+}
+
 /** Starlight does not export `user-components/Icon.astro` in package.json `exports`. */
 const starlightIcon = fileURLToPath(
   new URL("node_modules/@astrojs/starlight/user-components/Icon.astro", import.meta.url)
@@ -13,6 +44,9 @@ const starlightIcon = fileURLToPath(
 export default defineConfig({
   site: `https://ygilany.github.io${normalizedBase}`,
   base,
+  markdown: {
+    remarkPlugins: [remarkRebaseLinks],
+  },
   vite: {
     resolve: {
       alias: {

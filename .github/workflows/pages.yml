@@ -45,6 +45,9 @@ jobs:
         env:
           ASTRO_BASE: /AskDB
 
+      - name: Check docs links
+        run: pnpm -C apps/docs-site test:links
+
       - name: Configure GitHub Pages
         uses: actions/configure-pages@v5
 

@@ -8,6 +8,7 @@ import type { ImageMetadata } from "astro";
 import DraftContentNotice from "@astrojs/starlight/components/DraftContentNotice.astro";
 import LinkButton from "../../../node_modules/@astrojs/starlight/user-components/LinkButton.astro";
 import HomeHeroDiagram from "../HomeHeroDiagram.astro";
+import { withBase } from "../../utils/links";
 
 const PAGE_TITLE_ID = "_top";
 
@@ -70,13 +71,16 @@ if (image && !isHome) {
 			actions.length > 0 && (
 				<div class="sl-flex actions">
 					{actions.map(
-						({ attrs: { class: className, ...attrs } = {}, icon, link: href, text, variant }) => (
+						({ attrs: { class: className, ...attrs } = {}, icon, link, text, variant }) => {
+						const href = withBase(link);
+						return (
 							<LinkButton {href} {variant} icon={icon?.name} class:list={[className]} {...attrs}>
 								{text}
 								{icon?.html && <Fragment set:html={icon.html} />}
 							</LinkButton>
-						)
-					)}
+						);
+					}
+				)}
 				</div>
 			)
 		}
