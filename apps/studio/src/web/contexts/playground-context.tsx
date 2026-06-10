@@ -64,7 +64,10 @@ type PlaygroundAction =
   | { type: "set_execute_message"; message: StatusMessage | null }
   | { type: "set_history_entries"; entries: PlaygroundHistoryEntry[] }
   | { type: "set_busy"; key: string; busy: boolean }
-  | { type: "load_history_entry"; entry: PlaygroundHistoryEntry; sqlMode: TenantSqlOutputMode };
+  | { type: "load_history_entry"; entry: PlaygroundHistoryEntry; sqlMode: TenantSqlOutputMode }
+  | { type: "start_ask" }
+  | { type: "ask_succeeded"; result: AskResponse }
+  | { type: "execute_completed"; result: ExecuteResponse; message: StatusMessage };
 
 const initialPlaygroundState: PlaygroundState = {
   askQuestion: "",
@@ -253,8 +256,7 @@ export function PlaygroundProvider({ children, ragAvailable }: { children: React
       dispatchPlayground({ type: "set_ask_message", message: { kind: "error", text: generatedTenantScopeState.error } });
       return;
     }
-    dispatchPlayground({ type: "set_ask_message", message: { kind: "loading", text: "Generating SQL..." } });
-    dispatchPlayground({ type: "set_ask_result", result: null });
+    dispatchPlayground({ type: "start_ask" });
     await withBusy("ask", async () => {
       try {
         const result = await ask({
@@ -262,8 +264,7 @@ export function PlaygroundProvider({ children, ragAvailable }: { children: React
           mode: effectiveAskMode,
           ...(tenantScope ? { tenantScope, tenantSqlMode: playgroundState.askTenantSqlMode } : {}),
         });
-        dispatchPlayground({ type: "set_ask_result", result });
-        dispatchPlayground({ type: "set_ask_message", message: { kind: "success", text: "Generated SQL." } });
+        dispatchPlayground({ type: "ask_succeeded", result });
         void saveToHistory({
           question: playgroundState.askQuestion.trim(),
           mode: effectiveAskMode,
@@ -288,18 +289,13 @@ export function PlaygroundProvider({ children, ragAvailable }: { children: React
       try {
         const params = playgroundState.askResult?.tenant?.params ? (playgroundState.askResult.tenant.params as unknown[]) : [];
         const result = await executeQuery({ sql: playgroundState.askResult!.sql, params });
-        dispatchPlayground({ type: "set_execute_result", result });
-        if (result.ok) {
-          dispatchPlayground({
-            type: "set_execute_message",
-            message: {
-              kind: "success",
-              text: `${result.rowCount ?? 0} rows${result.truncated ? " (truncated to 500)" : ""} · ${result.durationMs ?? 0}ms`,
-            },
-          });
-        } else {
-          dispatchPlayground({ type: "set_execute_message", message: { kind: "error", text: result.error ?? "Unknown error" } });
-        }
+        dispatchPlayground({
+          type: "execute_completed",
+          result,
+          message: result.ok
+            ? { kind: "success", text: `${result.rowCount ?? 0} rows${result.truncated ? " (truncated to 500)" : ""} · ${result.durationMs ?? 0}ms` }
+            : { kind: "error", text: result.error ?? "Unknown error" },
+        });
       } catch (err) {
         dispatchPlayground({ type: "set_execute_message", message: { kind: "error", text: err instanceof Error ? err.message : String(err) } });
       }
@@ -400,6 +396,12 @@ function playgroundReducer(state: PlaygroundState, action: PlaygroundAction): Pl
       }
       return { ...state, busy };
     }
+    case "start_ask":
+      return { ...state, askMessage: { kind: "loading", text: "Generating SQL..." }, askResult: null, executeResult: null, executeMessage: null };
+    case "ask_succeeded":
+      return { ...state, askResult: action.result, askMessage: { kind: "success", text: "Generated SQL." } };
+    case "execute_completed":
+      return { ...state, executeResult: action.result, executeMessage: action.message };
     case "load_history_entry":
       return {
         ...state,

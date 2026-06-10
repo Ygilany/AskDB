@@ -56,7 +56,9 @@ type RagAction =
   | { type: "set_ragResults"; payload: RagQueryResponse | null }
   | { type: "set_ragIndexUsage"; payload: StudioRequestUsageDto | null }
   | { type: "busy_add"; key: string }
-  | { type: "busy_remove"; key: string };
+  | { type: "busy_remove"; key: string }
+  | { type: "rag_build_completed"; status: StudioRagStatusDto | null; usage: StudioRequestUsageDto | null; message: StatusMessage }
+  | { type: "rag_query_completed"; results: RagQueryResponse; message: StatusMessage };
 
 function ragReducer(state: RagState, action: RagAction): RagState {
   switch (action.type) {
@@ -69,6 +71,8 @@ function ragReducer(state: RagState, action: RagAction): RagState {
     case "set_ragIndexUsage": return { ...state, ragIndexUsage: action.payload };
     case "busy_add": { const s = new Set(state.busy); s.add(action.key); return { ...state, busy: s }; }
     case "busy_remove": { const s = new Set(state.busy); s.delete(action.key); return { ...state, busy: s }; }
+    case "rag_build_completed": return { ...state, ragStatus: action.status, ragIndexUsage: action.usage, ragMessage: action.message };
+    case "rag_query_completed": return { ...state, ragResults: action.results, ragMessage: action.message };
   }
 }
 
@@ -93,7 +97,6 @@ export function RagProvider({ children }: { children: ReactNode }) {
   const setRagK = useCallback((v: number) => dispatch({ type: "set_ragK", payload: v }), []);
   const setRagTypes = useCallback((v: ChunkType[]) => dispatch({ type: "set_ragTypes", payload: v }), []);
   const setRagResults = useCallback((v: RagQueryResponse | null) => dispatch({ type: "set_ragResults", payload: v }), []);
-  const setRagIndexUsage = useCallback((v: StudioRequestUsageDto | null) => dispatch({ type: "set_ragIndexUsage", payload: v }), []);
 
   const ragAvailable = Boolean(ragStatus?.hasIndex);
 
@@ -125,19 +128,19 @@ export function RagProvider({ children }: { children: ReactNode }) {
     await withBusy("rag-build", async () => {
       try {
         const result = await buildRagIndex();
-        setRagStatus(result.status);
-        setRagIndexUsage(result.usage);
         const tokens = result.usage?.totalTokens ?? result.usage?.embeddingTokens ?? null;
         const tokenStr = tokens === null ? "" : `, ${formatNumber(tokens)} tokens`;
-        setRagMessage({
-          kind: "success",
-          text: `Indexed ${result.stats.chunksIndexed ?? 0} chunks, reused ${result.stats.chunksReused ?? 0}${tokenStr}.`,
+        dispatch({
+          type: "rag_build_completed",
+          status: result.status,
+          usage: result.usage,
+          message: { kind: "success", text: `Indexed ${result.stats.chunksIndexed ?? 0} chunks, reused ${result.stats.chunksReused ?? 0}${tokenStr}.` },
         });
       } catch (error) {
         setRagMessage({ kind: "error", text: error instanceof Error ? error.message : String(error) });
       }
     });
-  }, [setRagIndexUsage, setRagMessage, setRagResults, setRagStatus, withBusy]);
+  }, [setRagMessage, setRagResults, withBusy]);
 
   const handleQueryRag = useCallback(async () => {
     if (!ragQuestion.trim()) {
@@ -148,13 +151,12 @@ export function RagProvider({ children }: { children: ReactNode }) {
     await withBusy("rag-query", async () => {
       try {
         const result = await queryRag({ question: ragQuestion.trim(), k: ragK, types: ragTypes });
-        setRagResults(result);
-        setRagMessage({ kind: "success", text: `Retrieved ${result.results.length} chunks.` });
+        dispatch({ type: "rag_query_completed", results: result, message: { kind: "success", text: `Retrieved ${result.results.length} chunks.` } });
       } catch (error) {
         setRagMessage({ kind: "error", text: error instanceof Error ? error.message : String(error) });
       }
     });
-  }, [ragK, ragQuestion, ragTypes, setRagMessage, setRagResults, withBusy]);
+  }, [ragK, ragQuestion, ragTypes, setRagMessage, withBusy]);
 
   const value = useMemo<RagContextValue>(() => ({
     ragStatus, ragMessage, ragQuestion, setRagQuestion, ragK, setRagK,
