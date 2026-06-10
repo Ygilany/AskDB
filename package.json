@@ -6,7 +6,11 @@
     "node": ">=20"
   },
   "scripts": {
+    "audit": "audit-ci --config .audit-ci.json",
     "build": "pnpm exec turbo run build",
+    "check-updates": "ncu --configFileName .check-updates.json",
+    "check-updates:fix": "npm run check-updates -- --upgrade --errorLevel 1",
+    "check-updates:all": "npm run check-updates -- --target latest --errorLevel 1",
     "test": "pnpm exec turbo run test",
     "test:watch": "vitest",
     "lint": "pnpm exec turbo run lint",

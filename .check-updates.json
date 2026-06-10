@@ -1,0 +1,16 @@
+{
+  "packageManager": "pnpm",
+  "workspaces": true,
+  "root": true,
+  "target": "minor",
+  "dep": [
+    "prod",
+    "dev",
+    "optional",
+    "peer",
+    "packageManager"
+  ],
+  "format": [
+    "group"
+  ]
+}
