@@ -36,12 +36,12 @@ export default defineConfig({
       components: {
         Hero: "./src/components/overrides/Hero.astro",
         ThemeSelect: "./src/components/ThemeSelect.astro",
+        Footer: "./src/components/overrides/Footer.astro",
       },
       editLink: {
         baseUrl: "https://github.com/Ygilany/AskDB/edit/main/apps/docs-site/",
       },
       credits: true,
-      copyright: `© ${new Date().getFullYear()} <a href="https://yahyagilany.io">Yahya Gilany</a>`,
       social: [
         {
           icon: "github",
