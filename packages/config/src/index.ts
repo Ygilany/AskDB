@@ -17,6 +17,7 @@ export type {
   AskDbRuntimeDevConfig,
   AskDbRuntimeModesConfig,
   AskDbRuntimeNlToSqlConfig,
+  AskDbRuntimeStudioConfig,
 } from "./runtime-config.js";
 export {
   mergeAskDbFlatIntoEnvMap,

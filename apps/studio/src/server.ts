@@ -1123,7 +1123,7 @@ function parsePlaygroundHistoryEntry(
 // ---------------------------------------------------------------------------
 
 async function executeQuery(body: unknown): Promise<ExecuteResponse> {
-  const databaseUrl = process.env["ASKDB_STUDIO_DATABASE_URL"];
+  const databaseUrl = getAskDbRuntimeConfig().studio.execute.databaseUrl;
   if (!databaseUrl) {
     return { ok: false, error: "ASKDB_STUDIO_DATABASE_URL is not configured" };
   }
