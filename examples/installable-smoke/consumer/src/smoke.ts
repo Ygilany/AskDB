@@ -181,8 +181,8 @@ async function main(): Promise<void> {
   if (typeof aiRegistry.createEmbeddingModelFromEnv !== "function") {
     throw new Error("smoke: @askdb/ai createAiRegistry did not return a registry with createEmbeddingModelFromEnv");
   }
-  if (typeof openaiProvider.id !== "string" || openaiProvider.id.length === 0) {
-    throw new Error("smoke: @askdb/ai-openai openaiProvider.id is missing");
+  if (typeof openaiProvider.provider !== "string" || openaiProvider.provider.length === 0) {
+    throw new Error("smoke: @askdb/ai-openai openaiProvider.provider is missing");
   }
 
   console.log("smoke: ok - core, introspect, postgres, prisma, enrich, rag, and ai package surfaces loaded");
