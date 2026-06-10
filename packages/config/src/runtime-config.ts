@@ -88,6 +88,13 @@ export type AskDbRuntimeNlToSqlConfig = {
   dialect: AskDbDialectId | undefined;
 };
 
+export type AskDbRuntimeStudioConfig = {
+  execute: {
+    /** Connection URL used by the Studio playground query runner (`POST /api/execute`). */
+    databaseUrl: string | undefined;
+  };
+};
+
 /**
  * Typed runtime view over the bootstrapped AskDB config snapshot.
  */
@@ -103,6 +110,7 @@ export type AskDbRuntimeConfig = {
   dev: AskDbRuntimeDevConfig;
   modes: AskDbRuntimeModesConfig;
   nlToSql: AskDbRuntimeNlToSqlConfig;
+  studio: AskDbRuntimeStudioConfig;
 };
 
 function pickFlat(flat: Readonly<Record<string, string>>, key: string): string | undefined {
@@ -207,6 +215,11 @@ export function getAskDbRuntimeConfig(): AskDbRuntimeConfig {
     },
     nlToSql: {
       dialect: structured.dialect,
+    },
+    studio: {
+      execute: {
+        databaseUrl: pickFlat(flat, "ASKDB_STUDIO_DATABASE_URL"),
+      },
     },
   };
 }
