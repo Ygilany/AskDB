@@ -1,6 +1,6 @@
 {
   "name": "@askdb/config",
-  "version": "1.0.0-beta.6",
+  "version": "1.0.0-beta.7",
   "description": "AskDB configuration helpers: Prisma-style env() and askdb.config file discovery for first-party apps.",
   "keywords": [
     "askdb",

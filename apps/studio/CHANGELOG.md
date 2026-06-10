@@ -1,5 +1,19 @@
 # @askdb/studio
 
+## 0.2.0-beta.21
+
+### Patch Changes
+
+- 05a589a: Fix Studio execute endpoint not reading `databaseUrl` from `askdb.config.*`.
+
+  `POST /api/execute` was reading `ASKDB_STUDIO_DATABASE_URL` directly from `process.env`, which is never populated because `bootstrapAskDbEnv` intentionally does not mutate `process.env`. The studio now reads `studio.execute.databaseUrl` via `getAskDbRuntimeConfig()`.
+
+  `@askdb/config` gains `AskDbRuntimeStudioConfig` (exported) and a `studio` field on `AskDbRuntimeConfig`, making the studio database URL available through the typed runtime config accessor.
+
+- Updated dependencies [05a589a]
+  - @askdb/config@1.0.0-beta.7
+  - @askdb/rag@0.2.0-beta.15
+
 ## 0.2.0-beta.20
 
 ### Patch Changes

@@ -1,5 +1,12 @@
 # @askdb/http-api
 
+## 1.0.0-beta.24
+
+### Patch Changes
+
+- Updated dependencies [05a589a]
+  - @askdb/config@1.0.0-beta.7
+
 ## 1.0.0-beta.21
 
 ### Patch Changes

@@ -43,6 +43,7 @@
     "enrich-studio-zero-args-config",
     "fix-dark-mode-badge-legibility",
     "fix-postgres-zod-resolution",
+    "fix-studio-database-url-runtime-config",
     "ignored-table-aliases",
     "init-install-template-deps",
     "init-template-root-config",
