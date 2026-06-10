@@ -20,16 +20,16 @@ Install only the provider adapter packages your runtime uses.
 
 ```ts
 import { bootstrapAskDbEnv, getAskDbRuntimeConfig } from "@askdb/config";
-import { createAskDbAiRegistry } from "@askdb/ai";
+import { createAiRegistry } from "@askdb/ai";
 import { openaiProvider } from "@askdb/ai-openai";
 import { ask, loadSchema } from "@askdb/core";
 
-const askdbAi = createAskDbAiRegistry([openaiProvider]);
+const ai = createAiRegistry([openaiProvider]);
 
 bootstrapAskDbEnv({ cwd: process.cwd() });
 
 const runtime = getAskDbRuntimeConfig();
-const model = await askdbAi.createLanguageModelFromEnv(runtime.ai.aiEnv);
+const model = await ai.createLanguageModelFromEnv(runtime.ai.aiEnv);
 
 if (!model) throw new Error("No AI key configured.");
 
@@ -45,11 +45,11 @@ const result = await ask({
 
 ## Exports
 
-- `resolveAskDbAiConfig`
-- `resolveAskDbEmbeddingConfig`
-- `createAskDbAiRegistry`
-- `askDbAiKeyMissingMessage`
-- `askDbAiProviderMissingMessage`
+- `createAiRegistry`
+- `resolveAiConfig`
+- `resolveEmbeddingConfig`
+- `aiKeyMissingMessage`
+- `aiProviderMissingMessage`
 
 ## License
 
