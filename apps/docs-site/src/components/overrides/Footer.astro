@@ -1,26 +1,52 @@
 ---
-import Default from "@astrojs/starlight/components/Footer.astro";
+import EditLink from "virtual:starlight/components/EditLink";
+import LastUpdated from "virtual:starlight/components/LastUpdated";
+import Pagination from "virtual:starlight/components/Pagination";
 ---
 
-<Default {...Astro.props}>
-	<slot />
-</Default>
-<p class="sl-copyright">
-	© {new Date().getFullYear()} <a href="https://yahyagilany.io">Yahya Gilany</a>
-</p>
+<footer class="sl-flex">
+	<div class="meta sl-flex">
+		<EditLink />
+		<LastUpdated />
+	</div>
+	<Pagination />
+	<p class="copyright">
+		© {new Date().getFullYear()} <a href="https://yahyagilany.io">Yahya Gilany</a>
+	</p>
+</footer>
 
 <style>
-	.sl-copyright {
-		text-align: center;
-		font-size: var(--sl-text-xs);
-		color: var(--sl-color-gray-3);
-		margin: 0 auto 1.5rem;
+	@layer starlight.core {
+		footer {
+			flex-direction: column;
+			gap: 1.5rem;
+		}
+		.meta {
+			gap: 0.75rem 3rem;
+			justify-content: space-between;
+			flex-wrap: wrap;
+			margin-top: 3rem;
+			font-size: var(--sl-text-sm);
+			color: var(--sl-color-gray-3);
+		}
+		.meta > :global(p:only-child) {
+			margin-inline-start: auto;
+		}
 	}
-	.sl-copyright a {
-		color: inherit;
-		text-decoration: underline;
-	}
-	.sl-copyright a:hover {
-		color: var(--sl-color-white);
+
+	@layer starlight.components {
+		.copyright {
+			margin: 0;
+			text-align: center;
+			font-size: var(--sl-text-xs);
+			color: var(--sl-color-gray-3);
+		}
+		.copyright a {
+			color: inherit;
+			text-decoration: underline;
+		}
+		.copyright a:hover {
+			color: var(--sl-color-white);
+		}
 	}
 </style>
