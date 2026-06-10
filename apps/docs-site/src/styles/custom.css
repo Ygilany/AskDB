@@ -261,7 +261,7 @@ figure:has(.askdb-diagram) figcaption {
 .home-landing {
   margin-inline: auto;
   max-width: 56rem;
-  padding-block: 0.5rem 2.5rem;
+  padding-block: 0.5rem 0;
 }
 
 .home-landing h2 {
