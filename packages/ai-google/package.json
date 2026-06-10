@@ -44,7 +44,7 @@
     "test": "vitest run --config ../../vitest.config.ts"
   },
   "dependencies": {
-    "@ai-sdk/google": "^1.2.22",
+    "@ai-sdk/google": "^3.0.80",
     "@askdb/ai": "workspace:*"
   },
   "devDependencies": {

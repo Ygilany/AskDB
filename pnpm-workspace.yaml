@@ -9,3 +9,11 @@ allowBuilds:
   msgpackr-extract: true
   sharp: true
   unrs-resolver: true
+minimumReleaseAgeExclude:
+  - '@ai-sdk/azure@3.0.72'
+  - '@ai-sdk/deepseek@2.0.36'
+  - yaml@2.8.3
+  - astro@6.4.6
+  - ai@6.0.200
+  - oxlint-plugin-react-doctor@0.5.1
+  - react-doctor@0.5.1

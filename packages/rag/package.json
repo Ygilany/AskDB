@@ -90,10 +90,10 @@
     }
   },
   "devDependencies": {
-    "@ai-sdk/openai": "^1.3.24",
+    "@ai-sdk/openai": "^3.0.69",
     "@types/pg": "^8.20.0",
-    "ai": "^4.3.19",
-    "pg": "^8.20.0",
+    "ai": "^6.0.199",
+    "pg": "^8.21.0",
     "typescript": "^5.9.3",
     "vitest": "^3.2.6"
   }
