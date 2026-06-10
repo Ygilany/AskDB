@@ -1,10 +1,10 @@
 import fs from "node:fs";
 import path from "node:path";
-import { Resvg } from "@resvg/resvg-js";
 
 // Run from repo root: npm i -D @resvg/resvg-js && node docs/assets/brand/social-preview.generate.mjs
+const OUTPUT_TYPE = "svg"; // "png" | "svg"
 const REPO = process.cwd();
-const OUT = path.join(REPO, "docs/assets/brand/social-preview.png");
+const OUT = path.join(REPO, `docs/assets/brand/social-preview.${OUTPUT_TYPE}`);
 
 // ---- Brand palette ----
 const RED = "#B0182B";       // primary brand red (logo)
@@ -136,13 +136,19 @@ const svg = `<?xml version="1.0" encoding="UTF-8"?>
   <rect x="0" y="630" width="1280" height="10" fill="url(#stripe)"/>
 </svg>`;
 
-fs.writeFileSync("/tmp/imgtool/card.svg", svg);
-
-const resvg = new Resvg(svg, {
-  fitTo: { mode: "width", value: 1280 },
-  font: { loadSystemFonts: true, defaultFontFamily: "Liberation Sans" },
-  background: "#ffffff",
-});
-const png = resvg.render().asPng();
-fs.writeFileSync(OUT, png);
-console.log("Wrote", OUT, png.length, "bytes");
+if (OUTPUT_TYPE === "svg") {
+  fs.writeFileSync(OUT, svg);
+  console.log("Wrote", OUT, Buffer.byteLength(svg), "bytes");
+} else if (OUTPUT_TYPE === "png") {
+  const { Resvg } = await import("@resvg/resvg-js");
+  const resvg = new Resvg(svg, {
+    fitTo: { mode: "width", value: 1280 },
+    font: { loadSystemFonts: true, defaultFontFamily: "Liberation Sans" },
+    background: "#ffffff",
+  });
+  const png = resvg.render().asPng();
+  fs.writeFileSync(OUT, png);
+  console.log("Wrote", OUT, png.length, "bytes");
+} else {
+  throw new Error(`Unsupported OUTPUT_TYPE: ${OUTPUT_TYPE}`);
+}
