@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "r
 import { Hexagon, Loader2, Plus, RotateCcw, Save, Search, Table2, X } from "lucide-react";
 import type { V2Concept } from "@askdb/core";
 import { useWorkspace } from "../../contexts/workspace-context";
+import { useRag } from "../../contexts/rag-context";
 import { Badge } from "../../components/ui/badge";
 import { Field } from "../../components/ui/field";
 import { Input } from "../../components/ui/input";
@@ -29,6 +30,12 @@ function clone<T>(value: T): T {
 
 export function ConceptsPage() {
   const { workspace, tables, handleSaveConcepts, saveStatus, busy } = useWorkspace();
+  const { refreshRagStatus } = useRag();
+
+  const onSave = useCallback(async (concepts: V2Concept[]) => {
+    await handleSaveConcepts(concepts);
+    void refreshRagStatus();
+  }, [handleSaveConcepts, refreshRagStatus]);
 
   // Build a flat list of linkable IDs (tables + columns)
   const linkOptions = useMemo(() => {
@@ -61,7 +68,7 @@ export function ConceptsPage() {
         key={conceptsKey}
         concepts={workspace.concepts}
         linkOptions={linkOptions}
-        onSave={handleSaveConcepts}
+        onSave={onSave}
         saveStatus={saveStatus}
         busy={busy}
       />
