@@ -197,12 +197,12 @@ Create a workspace package for AskDB's shared AI config and provider registry.
 `@askdb/ai` owns:
 
 - Provider/env resolution types such as `AskDbAiProvider`, `AskDbAiConfig`, and `AskDbAiEnv`.
-- `resolveAskDbAiConfig`.
-- `resolveAskDbEmbeddingConfig`.
-- Provider adapter types such as `AskDbAiProviderAdapter`.
-- `createAskDbAiRegistry`.
-- `askDbAiKeyMissingMessage`.
-- `askDbAiProviderMissingMessage`.
+- `resolveAiConfig`.
+- `resolveEmbeddingConfig`.
+- Provider adapter types such as `AiProviderAdapter`.
+- `createAiRegistry`.
+- `aiKeyMissingMessage`.
+- `aiProviderMissingMessage`.
 
 Dependency model:
 
@@ -247,11 +247,11 @@ adapter package they use:
 
 ```ts
 import { bootstrapAskDbEnv, getAskDbRuntimeConfig } from "@askdb/config";
-import { createAskDbAiRegistry } from "@askdb/ai";
+import { createAiRegistry } from "@askdb/ai";
 import { openaiProvider } from "@askdb/ai-openai";
 import { ask } from "@askdb/core";
 
-const ai = createAskDbAiRegistry([openaiProvider]);
+const ai = createAiRegistry([openaiProvider]);
 
 bootstrapAskDbEnv({ cwd: process.cwd() });
 
@@ -289,13 +289,13 @@ No bridge adapter and no `@askdb/ai` package are required.
 First-party apps update imports from core to `@askdb/ai`:
 
 ```ts
-import { createAskDbAiRegistry } from "@askdb/ai";
+import { createAiRegistry } from "@askdb/ai";
 import { azureProvider } from "@askdb/ai-azure";
 import { googleProvider } from "@askdb/ai-google";
 import { openaiProvider } from "@askdb/ai-openai";
 import { ask } from "@askdb/core";
 
-const ai = createAskDbAiRegistry([openaiProvider, azureProvider, googleProvider]);
+const ai = createAiRegistry([openaiProvider, azureProvider, googleProvider]);
 ```
 
 Apps declare the provider packages they intentionally support as direct dependencies.
