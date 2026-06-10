@@ -41,7 +41,6 @@ export default defineConfig({
       editLink: {
         baseUrl: "https://github.com/Ygilany/AskDB/edit/main/apps/docs-site/",
       },
-      credits: true,
       social: [
         {
           icon: "github",
