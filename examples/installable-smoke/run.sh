@@ -240,6 +240,8 @@ node -e "
   const j = JSON.parse(fs.readFileSync(p, 'utf8'));
   j.dependencies['@askdb/config'] = 'file:$CONFIG_TARBALL';
   j.dependencies['@askdb/core'] = 'file:$CORE_TARBALL';
+  j.dependencies['@askdb/ai'] = 'file:$AI_TARBALL';
+  j.dependencies['@askdb/ai-openai'] = 'file:$AI_OPENAI_TARBALL';
   j.dependencies['@askdb/introspect'] = 'file:$INTROSPECT_TARBALL';
   j.dependencies['@askdb/connectors'] = 'file:$CONNECTORS_TARBALL';
   j.dependencies['@askdb/postgres'] = 'file:$POSTGRES_TARBALL';

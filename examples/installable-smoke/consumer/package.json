@@ -10,6 +10,8 @@
   "dependencies": {
     "@askdb/config": "__ASKDB_CONFIG_TARBALL__",
     "@askdb/core": "__ASKDB_CORE_TARBALL__",
+    "@askdb/ai": "__ASKDB_AI_TARBALL__",
+    "@askdb/ai-openai": "__ASKDB_AI_OPENAI_TARBALL__",
     "@askdb/introspect": "__ASKDB_INTROSPECT_TARBALL__",
     "@askdb/postgres": "__ASKDB_POSTGRES_TARBALL__",
     "@askdb/prisma": "__ASKDB_PRISMA_TARBALL__",

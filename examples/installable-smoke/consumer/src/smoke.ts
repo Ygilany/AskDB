@@ -16,6 +16,8 @@ import {
   type AskDbSchemaFile,
   type AskDialect,
 } from "@askdb/core";
+import { createAiRegistry, type AiRegistry } from "@askdb/ai";
+import { openaiProvider } from "@askdb/ai-openai";
 import { buildSchemaIndex, createMemoryStore, type Embedder } from "@askdb/rag";
 import { createFileStore } from "@askdb/rag/stores/file";
 import { buildDefaultTableBody, replaceH2Section } from "@askdb/enrich";
@@ -171,7 +173,19 @@ async function main(): Promise<void> {
     throw new Error("smoke: ask({ retriever }) did not complete");
   }
 
-  console.log("smoke: ok - core, introspect, postgres, prisma, enrich, and rag package surfaces loaded");
+  // Verify @askdb/ai exports the canonical (non-prefixed) names.
+  const aiRegistry: AiRegistry = createAiRegistry([openaiProvider]);
+  if (typeof aiRegistry.createLanguageModelFromEnv !== "function") {
+    throw new Error("smoke: @askdb/ai createAiRegistry did not return a registry with createLanguageModelFromEnv");
+  }
+  if (typeof aiRegistry.createEmbeddingModelFromEnv !== "function") {
+    throw new Error("smoke: @askdb/ai createAiRegistry did not return a registry with createEmbeddingModelFromEnv");
+  }
+  if (typeof openaiProvider.id !== "string" || openaiProvider.id.length === 0) {
+    throw new Error("smoke: @askdb/ai-openai openaiProvider.id is missing");
+  }
+
+  console.log("smoke: ok - core, introspect, postgres, prisma, enrich, rag, and ai package surfaces loaded");
 }
 
 main().catch((e: unknown) => {
