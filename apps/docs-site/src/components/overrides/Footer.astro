@@ -1,0 +1,28 @@
+---
+import Default from "@astrojs/starlight/components/Footer.astro";
+---
+
+<Default {...Astro.props}>
+	<slot />
+</Default>
+<p class="sl-copyright">
+	© {new Date().getFullYear()} <a href="https://yahyagilany.io">Yahya Gilany</a>
+</p>
+
+<style>
+	.sl-copyright {
+		text-align: center;
+		font-size: var(--sl-text-xs);
+		color: var(--sl-color-gray-3);
+		line-height: 1.5;
+		margin: 0 auto;
+		padding-top: 1rem;
+	}
+	.sl-copyright a {
+		color: inherit;
+		text-decoration: underline;
+	}
+	.sl-copyright a:hover {
+		color: var(--sl-color-white);
+	}
+</style>

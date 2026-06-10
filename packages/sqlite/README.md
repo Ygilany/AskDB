@@ -55,4 +55,4 @@ Tables, views, columns (SQLite affinity type strings), primary keys, unique cons
 
 ## License
 
-Apache-2.0
+Apache-2.0 © [Yahya Gilany](https://yahyagilany.io). See [LICENSE](./LICENSE) and [NOTICE](./NOTICE).
