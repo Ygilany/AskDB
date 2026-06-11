@@ -9,7 +9,7 @@ STOP conditions, and update your row when done.
 
 | Plan | Title | Priority | Effort | Depends on | Status |
 |------|-------|----------|--------|------------|--------|
-| 001 | Self-describing AI adapters: open provider string, adapter-owned env resolution, `ai` as peer dep (A1+B1+B2) | P1 | L | — | TODO |
+| 001 | Self-describing AI adapters: open provider string, adapter-owned env resolution, `ai` as peer dep (A1+B1+B2) | P1 | L | — | DONE |
 | 002 | Shared embedding-options wrapper + deprecate RAG's direct OpenAI embedder (A2+A4) | P2 | S | 001 | TODO |
 | 003 | Architecture docs refresh: diagrams/tables for all packages, ADR 0006/0007 statuses, truthful recipe claims (A5+A6) | P2 | S | 001 | TODO |
 | 004 | `@askdb/ai-anthropic` adapter, open config provider union, registry-driven key-missing message, surfaces policy wiring (B3+B4+B5) | P3 | M | 001 (hard), 003 (soft) | TODO |

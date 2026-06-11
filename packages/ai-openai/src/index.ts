@@ -1,9 +1,27 @@
 import { createOpenAI } from "@ai-sdk/openai";
-import type { AiProviderAdapter, CreateEmbeddingModelOptions } from "@askdb/ai";
+import {
+  resolveBaseConfig,
+  type AiProviderAdapter,
+  type CreateEmbeddingModelOptions,
+  type ProviderEnvSpec,
+} from "@askdb/ai";
 import { defaultEmbeddingSettingsMiddleware, wrapEmbeddingModel } from "ai";
+
+const ENV_SPEC: ProviderEnvSpec = {
+  apiKeyVars: ["OPENAI_API_KEY"],
+  apiKeySecondaryVars: ["OPENAI_API_KEY_SECONDARY"],
+  modelVars: ["OPENAI_MODEL"],
+  embeddingModelVars: ["OPENAI_EMBEDDING_MODEL"],
+  baseURLVars: ["OPENAI_BASE_URL"],
+  defaultModel: "gpt-4o-mini",
+  defaultEmbeddingModel: "text-embedding-3-small",
+};
 
 export const openaiProvider: AiProviderAdapter = {
   provider: "openai",
+  resolveConfig(env, options) {
+    return resolveBaseConfig("openai", env, ENV_SPEC, options);
+  },
   createLanguageModel(config) {
     const openai = createOpenAI({
       apiKey: config.apiKey,

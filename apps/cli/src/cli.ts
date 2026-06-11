@@ -3,7 +3,6 @@ import { bootstrapAskDbEnv, getAskDbRuntimeConfig } from "@askdb/config";
 import {
   aiKeyMissingMessage,
   createAiRegistry,
-  resolveAiConfig,
 } from "@askdb/ai";
 import { azureProvider } from "@askdb/ai-azure";
 import { googleProvider } from "@askdb/ai-google";
@@ -332,7 +331,7 @@ program
       });
 
       const mockSql = opts.mockSql ?? runtime.dev.mockSql;
-      const aiConfig = mockSql ? undefined : resolveAiConfig(runtime.ai.aiEnv);
+      const aiConfig = mockSql ? undefined : ai.resolveAiConfig(runtime.ai.aiEnv);
       if (!mockSql && !aiConfig) {
         console.error(aiKeyMissingMessage("NL→SQL generation"));
         console.error("Tip: in tests, set ASKDB_MOCK_SQL to bypass live model calls.");

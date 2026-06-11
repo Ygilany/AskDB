@@ -8,8 +8,6 @@ import { getAskDbRuntimeConfig } from "@askdb/config";
 import {
   aiKeyMissingMessage,
   createAiRegistry,
-  resolveAiConfig,
-  resolveEmbeddingConfig,
   type AiConfig,
   type AiEnv,
   type AiProvider,
@@ -256,7 +254,7 @@ export function serializeWorkspace(workspace: Workspace): StudioWorkspaceDto {
   const rt = getAskDbRuntimeConfig();
   const aiConfig = (() => {
     try {
-      return resolveAiConfig(rt.ai.aiEnv);
+      return ai.resolveAiConfig(rt.ai.aiEnv);
     } catch {
       // A misconfigured AI env (e.g. azure without resourceName) shouldn't crash the workspace
       // listing — surface it as "not configured" in the UI and let the user fix .env.
@@ -472,7 +470,7 @@ async function askSampleQuestion(
 ): Promise<AskResponse> {
   const rt = getAskDbRuntimeConfig();
   const mockSql = rt.dev.mockSql;
-  const aiConfig = mockSql ? undefined : resolveAiConfig(rt.ai.aiEnv);
+  const aiConfig = mockSql ? undefined : ai.resolveAiConfig(rt.ai.aiEnv);
   if (!mockSql && !aiConfig) {
     throw new StudioHttpError(
       400,
@@ -846,7 +844,7 @@ function resolveStudioRagEmbedderConfig(): StudioRagEmbedderConfig {
   }
 
   const env = buildStudioRagEmbeddingEnv(kind, base);
-  const aiConfig = resolveEmbeddingConfig(env, {
+  const aiConfig = ai.resolveEmbeddingConfig(env, {
     modelEnvVar: "ASKDB_RAG_EMBEDDER_MODEL",
     modelDefault: DEFAULT_EMBEDDING_MODEL,
   });

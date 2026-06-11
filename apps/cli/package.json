@@ -59,6 +59,7 @@
     "@askdb/sqlserver": "workspace:*",
     "@askdb/studio": "workspace:*",
     "@askdb/tui": "workspace:*",
+    "ai": "^6.0.200",
     "commander": "^13.1.0",
     "pg": "^8.21.0"
   },
