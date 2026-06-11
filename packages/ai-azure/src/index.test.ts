@@ -48,17 +48,21 @@ describe("azureProvider", () => {
     const languageModel = azureProvider.createLanguageModel({
       provider: "azure",
       apiKey: "test-key",
-      resourceName: "askdb-ai",
       baseURL: "https://askdb-ai.openai.azure.com",
-      apiVersion: "2024-10-21",
       model: "gpt-4o-mini",
+      providerOptions: {
+        resourceName: "askdb-ai",
+        apiVersion: "2024-10-21",
+      },
     });
     const embeddingModel = azureProvider.createEmbeddingModel(
       {
         provider: "azure",
         apiKey: "test-key",
-        resourceName: "askdb-ai",
         model: "text-embedding-3-small",
+        providerOptions: {
+          resourceName: "askdb-ai",
+        },
       },
       { dimensions: 512, user: "user-1" },
     );
@@ -94,5 +98,67 @@ describe("azureProvider", () => {
       resourceName: "askdb-ai",
     });
     expect(mocks.azure.embedding).toHaveBeenCalledWith("text-embedding-3-small");
+  });
+
+  it("resolves native Azure config into provider options", () => {
+    const config = azureProvider.resolveConfig(
+      {
+        AZURE_OPENAI_API_KEY: "azure-native",
+        OPENAI_API_KEY: "ignored",
+        ASKDB_AI_AZURE_RESOURCE_NAME: "my-foundry",
+        ASKDB_AI_AZURE_API_VERSION: "2024-10-21",
+        AZURE_OPENAI_DEPLOYMENT: "chat-deployment",
+      },
+      { usage: "language" },
+    );
+
+    expect(config).toEqual({
+      provider: "azure",
+      apiKey: "azure-native",
+      model: "chat-deployment",
+      providerOptions: {
+        resourceName: "my-foundry",
+        apiVersion: "2024-10-21",
+      },
+    });
+  });
+
+  it("resolves Azure embedding deployments", () => {
+    const config = azureProvider.resolveConfig(
+      {
+        AZURE_OPENAI_API_KEY: "k",
+        ASKDB_AI_AZURE_RESOURCE_NAME: "my-foundry",
+        AZURE_OPENAI_DEPLOYMENT: "chat-deployment",
+        AZURE_OPENAI_EMBEDDING_DEPLOYMENT: "embedding-deployment",
+      },
+      { usage: "embedding" },
+    );
+
+    expect(config).toEqual({
+      provider: "azure",
+      apiKey: "k",
+      model: "embedding-deployment",
+      providerOptions: {
+        resourceName: "my-foundry",
+      },
+    });
+  });
+
+  it("returns undefined when only OPENAI_API_KEY is configured for Azure", () => {
+    expect(
+      azureProvider.resolveConfig(
+        {
+          OPENAI_API_KEY: "openai-only",
+          ASKDB_AI_AZURE_RESOURCE_NAME: "my-foundry",
+        },
+        { usage: "language" },
+      ),
+    ).toBeUndefined();
+  });
+
+  it("throws without resourceName or baseURL", () => {
+    expect(() =>
+      azureProvider.resolveConfig({ AZURE_OPENAI_API_KEY: "k" }, { usage: "language" }),
+    ).toThrowError(/Azure provider requires/);
   });
 });

@@ -1,257 +1,205 @@
 import { describe, expect, it, vi } from "vitest";
 import {
   createAiRegistry,
-  resolveAiConfig,
-  resolveEmbeddingConfig,
+  resolveBaseConfig,
   type AiProviderAdapter,
+  type ProviderEnvSpec,
 } from "./provider.js";
 
-describe("resolveAiConfig", () => {
+const spec: ProviderEnvSpec = {
+  apiKeyVars: ["NATIVE_API_KEY"],
+  apiKeySecondaryVars: ["NATIVE_API_KEY_SECONDARY"],
+  modelVars: ["NATIVE_MODEL"],
+  embeddingModelVars: ["NATIVE_EMBEDDING_MODEL"],
+  baseURLVars: ["NATIVE_BASE_URL"],
+  defaultModel: "default-language",
+  defaultEmbeddingModel: "default-embedding",
+};
+
+describe("resolveBaseConfig", () => {
   it("returns undefined when no key is configured", () => {
-    expect(resolveAiConfig({})).toBeUndefined();
+    expect(resolveBaseConfig("test", {}, spec, { usage: "language" })).toBeUndefined();
   });
 
-  it("defaults to the openai provider and the default model", () => {
-    const cfg = resolveAiConfig({ ASKDB_AI_API_KEY: "k" });
-    expect(cfg).toEqual({ provider: "openai", apiKey: "k", model: "gpt-4o-mini" });
-  });
-
-  it("prefers ASKDB_AI_API_KEY over the provider-native OPENAI_API_KEY and the secondary", () => {
-    const cfg = resolveAiConfig({
-      ASKDB_AI_API_KEY: "primary",
-      OPENAI_API_KEY: "openai-native",
-      ASKDB_AI_API_KEY_SECONDARY: "secondary",
-    });
-    expect(cfg?.apiKey).toBe("primary");
-  });
-
-  it("uses OPENAI_API_KEY as the provider-native key when ASKDB_AI_API_KEY is absent", () => {
-    const cfg = resolveAiConfig({ OPENAI_API_KEY: "openai-native" });
-    expect(cfg?.apiKey).toBe("openai-native");
-  });
-
-  it("uses AZURE_OPENAI_API_KEY as the provider-native key for azure", () => {
-    const cfg = resolveAiConfig({
-      ASKDB_AI_PROVIDER: "azure",
-      AZURE_OPENAI_API_KEY: "azure-native",
-      ASKDB_AI_AZURE_RESOURCE_NAME: "my-foundry",
-      OPENAI_API_KEY: "should-be-ignored",
-    });
-    expect(cfg?.apiKey).toBe("azure-native");
-  });
-
-  it("does not use OPENAI_API_KEY when the azure provider is selected", () => {
-    expect(() =>
-      resolveAiConfig({
-        ASKDB_AI_PROVIDER: "azure",
-        ASKDB_AI_AZURE_RESOURCE_NAME: "my-foundry",
-        OPENAI_API_KEY: "openai-only",
-      }),
-    ).not.toThrow();
+  it("prefers universal and native API keys in the documented order", () => {
     expect(
-      resolveAiConfig({
-        ASKDB_AI_PROVIDER: "azure",
-        ASKDB_AI_AZURE_RESOURCE_NAME: "my-foundry",
-        OPENAI_API_KEY: "openai-only",
-      }),
-    ).toBeUndefined();
+      resolveBaseConfig(
+        "test",
+        {
+          ASKDB_AI_API_KEY: "universal-primary",
+          NATIVE_API_KEY: "native-primary",
+          NATIVE_API_KEY_SECONDARY: "native-secondary",
+          ASKDB_AI_API_KEY_SECONDARY: "universal-secondary",
+        },
+        spec,
+        { usage: "language" },
+      )?.apiKey,
+    ).toBe("universal-primary");
+    expect(
+      resolveBaseConfig(
+        "test",
+        {
+          NATIVE_API_KEY: "native-primary",
+          NATIVE_API_KEY_SECONDARY: "native-secondary",
+          ASKDB_AI_API_KEY_SECONDARY: "universal-secondary",
+        },
+        spec,
+        { usage: "language" },
+      )?.apiKey,
+    ).toBe("native-primary");
+    expect(
+      resolveBaseConfig(
+        "test",
+        {
+          NATIVE_API_KEY_SECONDARY: "native-secondary",
+          ASKDB_AI_API_KEY_SECONDARY: "universal-secondary",
+        },
+        spec,
+        { usage: "language" },
+      )?.apiKey,
+    ).toBe("native-secondary");
+    expect(
+      resolveBaseConfig(
+        "test",
+        { ASKDB_AI_API_KEY_SECONDARY: "universal-secondary" },
+        spec,
+        { usage: "language" },
+      )?.apiKey,
+    ).toBe("universal-secondary");
   });
 
-  it("falls back to the secondary key after both the universal and provider-native keys are absent", () => {
-    const cfg = resolveAiConfig({ ASKDB_AI_API_KEY_SECONDARY: "secondary" });
-    expect(cfg?.apiKey).toBe("secondary");
+  it("resolves language models with universal precedence before native defaults", () => {
+    expect(
+      resolveBaseConfig(
+        "test",
+        {
+          ASKDB_AI_API_KEY: "k",
+          ASKDB_AI_MODEL: "askdb-ai",
+          ASKDB_MODEL: "askdb",
+          NATIVE_MODEL: "native",
+        },
+        spec,
+        { usage: "language" },
+      )?.model,
+    ).toBe("askdb-ai");
+    expect(
+      resolveBaseConfig(
+        "test",
+        {
+          ASKDB_AI_API_KEY: "k",
+          ASKDB_MODEL: "askdb",
+          NATIVE_MODEL: "native",
+        },
+        spec,
+        { usage: "language" },
+      )?.model,
+    ).toBe("askdb");
+    expect(
+      resolveBaseConfig(
+        "test",
+        { ASKDB_AI_API_KEY: "k", NATIVE_MODEL: "native" },
+        spec,
+        { usage: "language", modelDefault: "option-default" },
+      )?.model,
+    ).toBe("native");
+    expect(
+      resolveBaseConfig(
+        "test",
+        { ASKDB_AI_API_KEY: "k" },
+        spec,
+        { usage: "language", modelDefault: "option-default" },
+      )?.model,
+    ).toBe("option-default");
+    expect(
+      resolveBaseConfig("test", { ASKDB_AI_API_KEY: "k" }, spec, {
+        usage: "language",
+      })?.model,
+    ).toBe("default-language");
   });
 
-  it("uses OPENAI_API_KEY_SECONDARY as a provider-native rotation fallback", () => {
-    const cfg = resolveAiConfig({ OPENAI_API_KEY_SECONDARY: "openai-secondary" });
-    expect(cfg?.apiKey).toBe("openai-secondary");
+  it("resolves embedding models with per-app and embedding-specific precedence", () => {
+    expect(
+      resolveBaseConfig(
+        "test",
+        {
+          ASKDB_AI_API_KEY: "k",
+          ASKDB_RAG_EMBEDDER_MODEL: "rag",
+          ASKDB_AI_EMBEDDING_MODEL: "shared",
+          ASKDB_EMBEDDING_MODEL: "legacy",
+          NATIVE_EMBEDDING_MODEL: "native",
+        },
+        spec,
+        { usage: "embedding", modelEnvVar: "ASKDB_RAG_EMBEDDER_MODEL" },
+      )?.model,
+    ).toBe("rag");
+    expect(
+      resolveBaseConfig(
+        "test",
+        {
+          ASKDB_AI_API_KEY: "k",
+          ASKDB_AI_EMBEDDING_MODEL: "shared",
+          ASKDB_EMBEDDING_MODEL: "legacy",
+          NATIVE_EMBEDDING_MODEL: "native",
+        },
+        spec,
+        { usage: "embedding", modelEnvVar: "ASKDB_RAG_EMBEDDER_MODEL" },
+      )?.model,
+    ).toBe("shared");
+    expect(
+      resolveBaseConfig(
+        "test",
+        {
+          ASKDB_AI_API_KEY: "k",
+          ASKDB_EMBEDDING_MODEL: "legacy",
+          NATIVE_EMBEDDING_MODEL: "native",
+        },
+        spec,
+        { usage: "embedding" },
+      )?.model,
+    ).toBe("legacy");
+    expect(
+      resolveBaseConfig(
+        "test",
+        { ASKDB_AI_API_KEY: "k", NATIVE_EMBEDDING_MODEL: "native" },
+        spec,
+        { usage: "embedding", modelDefault: "option-default" },
+      )?.model,
+    ).toBe("native");
+    expect(
+      resolveBaseConfig(
+        "test",
+        { ASKDB_AI_API_KEY: "k" },
+        spec,
+        { usage: "embedding", modelDefault: "option-default" },
+      )?.model,
+    ).toBe("option-default");
   });
 
-  it("uses AZURE_OPENAI_API_KEY_SECONDARY as a provider-native rotation fallback", () => {
-    const cfg = resolveAiConfig({
-      ASKDB_AI_PROVIDER: "azure",
-      AZURE_OPENAI_API_KEY_SECONDARY: "azure-secondary",
-      ASKDB_AI_AZURE_RESOURCE_NAME: "my-foundry",
-    });
-    expect(cfg?.apiKey).toBe("azure-secondary");
-  });
-
-  it("recognizes AZURE_OPENAI_BASE_URL as the azure base URL", () => {
-    const cfg = resolveAiConfig({
-      ASKDB_AI_PROVIDER: "azure",
-      AZURE_OPENAI_API_KEY: "k",
-      AZURE_OPENAI_BASE_URL: "https://my-foundry.services.ai.azure.com/openai/deployment/foo",
-    });
-    expect(cfg?.baseURL).toBe(
-      "https://my-foundry.services.ai.azure.com/openai/deployment/foo",
-    );
-  });
-
-  it("resolves the azure provider with resourceName + apiVersion", () => {
-    const cfg = resolveAiConfig({
-      ASKDB_AI_PROVIDER: "azure",
-      ASKDB_AI_API_KEY: "k",
-      ASKDB_AI_AZURE_RESOURCE_NAME: "my-foundry",
-      ASKDB_AI_AZURE_API_VERSION: "2024-10-21",
-      ASKDB_AI_MODEL: "gpt-4o-mini-deployment",
-    });
-    expect(cfg).toEqual({
-      provider: "azure",
-      apiKey: "k",
-      model: "gpt-4o-mini-deployment",
-      resourceName: "my-foundry",
-      apiVersion: "2024-10-21",
-    });
-  });
-
-  it("accepts the `foundry` alias for the azure provider", () => {
-    const cfg = resolveAiConfig({
-      ASKDB_AI_PROVIDER: "foundry",
-      ASKDB_AI_API_KEY: "k",
-      ASKDB_AI_BASE_URL: "https://my-foundry.services.ai.azure.com/openai/v1",
-    });
-    expect(cfg?.provider).toBe("azure");
-    expect(cfg?.baseURL).toBe("https://my-foundry.services.ai.azure.com/openai/v1");
-  });
-
-  it("throws when azure is selected without resourceName or baseURL", () => {
-    expect(() =>
-      resolveAiConfig({ ASKDB_AI_PROVIDER: "azure", ASKDB_AI_API_KEY: "k" }),
-    ).toThrowError(/Azure provider requires/);
-  });
-
-  it("throws on an unknown provider", () => {
-    expect(() =>
-      resolveAiConfig({ ASKDB_AI_PROVIDER: "bedrock", ASKDB_AI_API_KEY: "k" }),
-    ).toThrowError(/Unknown ASKDB_AI_PROVIDER/);
-  });
-
-  it("resolves the google provider with GOOGLE_GENERATIVE_AI_API_KEY", () => {
-    const cfg = resolveAiConfig({
-      ASKDB_AI_PROVIDER: "google",
-      GOOGLE_GENERATIVE_AI_API_KEY: "goog-key",
-    });
-    expect(cfg).toEqual({ provider: "google", apiKey: "goog-key", model: "gpt-4o-mini" });
-  });
-
-  it("uses GOOGLE_AI_API_KEY as an alias for the Google provider key", () => {
-    const cfg = resolveAiConfig({
-      ASKDB_AI_PROVIDER: "google",
-      GOOGLE_AI_API_KEY: "goog-alias",
-    });
-    expect(cfg?.apiKey).toBe("goog-alias");
-  });
-
-  it("prefers ASKDB_AI_API_KEY over provider-native Google key", () => {
-    const cfg = resolveAiConfig({
-      ASKDB_AI_PROVIDER: "google",
-      ASKDB_AI_API_KEY: "universal",
-      GOOGLE_GENERATIVE_AI_API_KEY: "goog-native",
-    });
-    expect(cfg?.apiKey).toBe("universal");
-  });
-
-  it("uses GOOGLE_AI_MODEL as the provider-native model var for google", () => {
-    const cfg = resolveAiConfig({
-      ASKDB_AI_PROVIDER: "google",
-      GOOGLE_GENERATIVE_AI_API_KEY: "k",
-      GOOGLE_AI_MODEL: "gemini-1.5-pro",
-    });
-    expect(cfg?.model).toBe("gemini-1.5-pro");
-  });
-
-  it("passes through GOOGLE_AI_BASE_URL as baseURL for google", () => {
-    const cfg = resolveAiConfig({
-      ASKDB_AI_PROVIDER: "google",
-      GOOGLE_GENERATIVE_AI_API_KEY: "k",
-      GOOGLE_AI_BASE_URL: "https://custom.google.endpoint/v1",
-    });
-    expect(cfg?.baseURL).toBe("https://custom.google.endpoint/v1");
-  });
-
-  it("does not use OPENAI_API_KEY when the google provider is selected", () => {
-    const cfg = resolveAiConfig({
-      ASKDB_AI_PROVIDER: "google",
-      OPENAI_API_KEY: "openai-only",
-    });
-    expect(cfg).toBeUndefined();
-  });
-
-  it("prefers ASKDB_AI_MODEL over ASKDB_MODEL and the provider-native model env var", () => {
-    const cfg = resolveAiConfig({
-      ASKDB_AI_API_KEY: "k",
-      ASKDB_AI_MODEL: "from-new",
-      ASKDB_MODEL: "from-askdb",
-      OPENAI_MODEL: "from-openai",
-    });
-    expect(cfg?.model).toBe("from-new");
-  });
-
-  it("uses the provider-native model var only when ASKDB_AI_MODEL and ASKDB_MODEL are absent", () => {
-    const openaiCfg = resolveAiConfig({ OPENAI_API_KEY: "k", OPENAI_MODEL: "gpt-4.1" });
-    expect(openaiCfg?.model).toBe("gpt-4.1");
-
-    const azureCfg = resolveAiConfig({
-      ASKDB_AI_PROVIDER: "azure",
-      AZURE_OPENAI_API_KEY: "k",
-      ASKDB_AI_AZURE_RESOURCE_NAME: "my-foundry",
-      AZURE_OPENAI_DEPLOYMENT: "my-deployment",
-    });
-    expect(azureCfg?.model).toBe("my-deployment");
-  });
-
-});
-
-describe("resolveEmbeddingConfig", () => {
-  it("uses the configured OpenAI connection with the default embedding model", () => {
-    const cfg = resolveEmbeddingConfig({
-      ASKDB_AI_API_KEY: "k",
-      ASKDB_AI_MODEL: "gpt-4o-mini",
-      OPENAI_MODEL: "gpt-4.1",
-    });
-    expect(cfg).toEqual({
-      provider: "openai",
-      apiKey: "k",
-      model: "text-embedding-3-small",
-    });
-  });
-
-  it("prefers embedding-specific model env vars over chat model env vars", () => {
-    const cfg = resolveEmbeddingConfig({
-      OPENAI_API_KEY: "k",
-      ASKDB_AI_MODEL: "gpt-4o-mini",
-      ASKDB_AI_EMBEDDING_MODEL: "text-embedding-3-large",
-      OPENAI_EMBEDDING_MODEL: "text-embedding-ada-002",
-    });
-    expect(cfg?.model).toBe("text-embedding-3-large");
-  });
-
-  it("honours a per-app embedding model override", () => {
-    const cfg = resolveEmbeddingConfig(
+  it("prefers ASKDB_AI_BASE_URL over provider-native base URLs", () => {
+    const cfg = resolveBaseConfig(
+      "test",
       {
         ASKDB_AI_API_KEY: "k",
-        ASKDB_AI_EMBEDDING_MODEL: "shared-embedding",
-        ASKDB_RAG_EMBEDDER_MODEL: "rag-only",
+        ASKDB_AI_BASE_URL: "https://askdb.example/v1",
+        NATIVE_BASE_URL: "https://native.example/v1",
       },
-      { modelEnvVar: "ASKDB_RAG_EMBEDDER_MODEL" },
+      spec,
+      { usage: "language" },
     );
-    expect(cfg?.model).toBe("rag-only");
+    expect(cfg?.baseURL).toBe("https://askdb.example/v1");
   });
 
-  it("resolves Azure embedding deployments from the configured Azure connection", () => {
-    const cfg = resolveEmbeddingConfig({
-      ASKDB_AI_PROVIDER: "azure",
-      AZURE_OPENAI_API_KEY: "k",
-      ASKDB_AI_AZURE_RESOURCE_NAME: "my-foundry",
-      AZURE_OPENAI_DEPLOYMENT: "chat-deployment",
-      AZURE_OPENAI_EMBEDDING_DEPLOYMENT: "embedding-deployment",
-    });
-    expect(cfg).toEqual({
-      provider: "azure",
-      apiKey: "k",
-      model: "embedding-deployment",
-      resourceName: "my-foundry",
-    });
+  it("throws when no model can be resolved", () => {
+    expect(() =>
+      resolveBaseConfig(
+        "test",
+        { ASKDB_AI_API_KEY: "k" },
+        { apiKeyVars: ["NATIVE_API_KEY"] },
+        { usage: "embedding" },
+      ),
+    ).toThrowError(
+      "test: no embedding model configured. Set ASKDB_AI_MODEL (or the provider's native model variable).",
+    );
   });
 });
 
@@ -261,6 +209,7 @@ describe("createAiRegistry", () => {
     const embeddingModel = { kind: "embedding" };
     const adapter: AiProviderAdapter = {
       provider: "openai",
+      resolveConfig: vi.fn(() => undefined),
       createLanguageModel: vi.fn(() => languageModel as never),
       createEmbeddingModel: vi.fn(() => embeddingModel as never),
     };
@@ -290,10 +239,85 @@ describe("createAiRegistry", () => {
     );
   });
 
+  it("defaults to openai when ASKDB_AI_PROVIDER is unset", () => {
+    const adapter: AiProviderAdapter = {
+      provider: "openai",
+      resolveConfig: vi.fn(() => ({ provider: "openai", apiKey: "k", model: "m" })),
+      createLanguageModel: vi.fn(() => ({}) as never),
+      createEmbeddingModel: vi.fn(() => ({}) as never),
+    };
+
+    const registry = createAiRegistry([adapter]);
+
+    expect(registry.resolveAiConfig({ ASKDB_AI_API_KEY: "k" })).toEqual({
+      provider: "openai",
+      apiKey: "k",
+      model: "m",
+    });
+    expect(adapter.resolveConfig).toHaveBeenCalledWith(
+      { ASKDB_AI_API_KEY: "k" },
+      { usage: "language" },
+    );
+  });
+
+  it("selects adapters by aliases", () => {
+    const adapter: AiProviderAdapter = {
+      provider: "azure",
+      aliases: ["foundry"],
+      resolveConfig: vi.fn(() => ({ provider: "azure", apiKey: "k", model: "m" })),
+      createLanguageModel: vi.fn(() => ({}) as never),
+      createEmbeddingModel: vi.fn(() => ({}) as never),
+    };
+
+    const registry = createAiRegistry([adapter]);
+
+    expect(registry.hasProvider("foundry")).toBe(true);
+    expect(registry.resolveAiConfig({ ASKDB_AI_PROVIDER: "foundry" })?.provider).toBe(
+      "azure",
+    );
+  });
+
+  it("delegates registry resolution with the requested usage", () => {
+    const adapter: AiProviderAdapter = {
+      provider: "openai",
+      resolveConfig: vi.fn(() => ({ provider: "openai", apiKey: "k", model: "m" })),
+      createLanguageModel: vi.fn(() => ({}) as never),
+      createEmbeddingModel: vi.fn(() => ({}) as never),
+    };
+
+    const registry = createAiRegistry([adapter]);
+
+    registry.resolveAiConfig({ OPENAI_API_KEY: "k" }, { modelDefault: "chat" });
+    registry.resolveEmbeddingConfig(
+      { OPENAI_API_KEY: "k" },
+      { modelEnvVar: "ASKDB_RAG_EMBEDDER_MODEL", modelDefault: "embed" },
+    );
+
+    expect(adapter.resolveConfig).toHaveBeenNthCalledWith(
+      1,
+      { OPENAI_API_KEY: "k" },
+      { usage: "language", modelDefault: "chat" },
+    );
+    expect(adapter.resolveConfig).toHaveBeenNthCalledWith(
+      2,
+      { OPENAI_API_KEY: "k" },
+      {
+        usage: "embedding",
+        modelEnvVar: "ASKDB_RAG_EMBEDDER_MODEL",
+        modelDefault: "embed",
+      },
+    );
+  });
+
   it("resolves env config before creating a model", async () => {
     const languageModel = { kind: "language" };
     const adapter: AiProviderAdapter = {
       provider: "openai",
+      resolveConfig: vi.fn(() => ({
+        provider: "openai",
+        apiKey: "k",
+        model: "gpt-4.1",
+      })),
       createLanguageModel: vi.fn(() => languageModel as never),
       createEmbeddingModel: vi.fn(() => ({}) as never),
     };
@@ -314,7 +338,14 @@ describe("createAiRegistry", () => {
   });
 
   it("returns undefined when env config has no key", async () => {
-    const registry = createAiRegistry([]);
+    const adapter: AiProviderAdapter = {
+      provider: "openai",
+      resolveConfig: vi.fn(() => undefined),
+      createLanguageModel: vi.fn(() => ({}) as never),
+      createEmbeddingModel: vi.fn(() => ({}) as never),
+    };
+    const registry = createAiRegistry([adapter]);
+
     await expect(registry.createLanguageModelFromEnv({})).resolves.toBeUndefined();
   });
 
@@ -329,9 +360,26 @@ describe("createAiRegistry", () => {
     ).rejects.toThrow(/Install @askdb\/ai-google/);
   });
 
+  it("lists registered providers when ASKDB_AI_PROVIDER is unknown", () => {
+    const adapter: AiProviderAdapter = {
+      provider: "openai",
+      resolveConfig: vi.fn(() => undefined),
+      createLanguageModel: vi.fn(() => ({}) as never),
+      createEmbeddingModel: vi.fn(() => ({}) as never),
+    };
+    const registry = createAiRegistry([adapter]);
+
+    expect(() =>
+      registry.resolveAiConfig({ ASKDB_AI_PROVIDER: "bedrock" }),
+    ).toThrowError(
+      'Unknown ASKDB_AI_PROVIDER "bedrock". Registered providers: openai.',
+    );
+  });
+
   it("rejects mismatched object-map adapters", () => {
     const adapter: AiProviderAdapter = {
       provider: "openai",
+      resolveConfig: vi.fn(() => undefined),
       createLanguageModel: vi.fn(() => ({}) as never),
       createEmbeddingModel: vi.fn(() => ({}) as never),
     };

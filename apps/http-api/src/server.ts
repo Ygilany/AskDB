@@ -8,7 +8,6 @@ import { getAskDbRuntimeConfig } from "@askdb/config";
 import {
   aiKeyMissingMessage,
   createAiRegistry,
-  resolveAiConfig,
 } from "@askdb/ai";
 import { azureProvider } from "@askdb/ai-azure";
 import { googleProvider } from "@askdb/ai-google";
@@ -248,7 +247,7 @@ export function createAskDbHttpServer(options: AskDbHttpServerOptions = {}) {
       }
 
       const mockSql = rt.dev.mockSql;
-      const aiConfig = mockSql ? undefined : resolveAiConfig(rt.ai.aiEnv);
+      const aiConfig = mockSql ? undefined : ai.resolveAiConfig(rt.ai.aiEnv);
       if (!mockSql && !aiConfig) {
         writeError(res, 500, correlationId, {
           code: "generation_not_configured",
