@@ -243,7 +243,7 @@ export type AiProviderAdapter = {
   createEmbeddingModel(
     config: AiConfig,
     options?: CreateEmbeddingModelOptions,
-  ): Promise<EmbeddingModel<string>> | EmbeddingModel<string>;
+  ): Promise<EmbeddingModel> | EmbeddingModel;
 };
 
 export type AiProviderAdapters =
@@ -256,7 +256,7 @@ export type AiRegistry = {
   createEmbeddingModel(
     config: AiConfig,
     options?: CreateEmbeddingModelOptions,
-  ): Promise<EmbeddingModel<string>>;
+  ): Promise<EmbeddingModel>;
   createLanguageModelFromEnv(
     env: AiEnv,
     options?: ResolveAiConfigOptions,
@@ -264,7 +264,7 @@ export type AiRegistry = {
   createEmbeddingModelFromEnv(
     env: AiEnv,
     options?: ResolveEmbeddingConfigOptions & CreateEmbeddingModelOptions,
-  ): Promise<EmbeddingModel<string> | undefined>;
+  ): Promise<EmbeddingModel | undefined>;
 };
 
 export function createAiRegistry(

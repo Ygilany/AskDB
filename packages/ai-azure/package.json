@@ -45,7 +45,8 @@
   },
   "dependencies": {
     "@ai-sdk/azure": "^3.0.72",
-    "@askdb/ai": "workspace:*"
+    "@askdb/ai": "workspace:*",
+    "ai": "^6.0.200"
   },
   "devDependencies": {
     "typescript": "^5.9.3",

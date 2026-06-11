@@ -63,6 +63,7 @@ export {
 // Embedders
 export {
   createAiSdkEmbedder,
+  type AiSdkProviderOptions,
   type CreateAiSdkEmbedderOptions,
   type AiSdkEmbedderUsage,
 } from "./embedders/ai-sdk.js";

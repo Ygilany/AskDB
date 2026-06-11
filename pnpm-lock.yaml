@@ -295,6 +295,9 @@ importers:
       '@askdb/ai':
         specifier: workspace:*
         version: link:../ai
+      ai:
+        specifier: ^6.0.200
+        version: 6.0.200(zod@4.4.3)
     devDependencies:
       typescript:
         specifier: ^5.9.3
@@ -327,6 +330,9 @@ importers:
       '@askdb/ai':
         specifier: workspace:*
         version: link:../ai
+      ai:
+        specifier: ^6.0.200
+        version: 6.0.200(zod@4.4.3)
     devDependencies:
       typescript:
         specifier: ^5.9.3

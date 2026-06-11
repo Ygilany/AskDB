@@ -44,7 +44,8 @@
   },
   "dependencies": {
     "@ai-sdk/openai": "^3.0.69",
-    "@askdb/ai": "workspace:*"
+    "@askdb/ai": "workspace:*",
+    "ai": "^6.0.200"
   },
   "devDependencies": {
     "typescript": "^5.9.3",

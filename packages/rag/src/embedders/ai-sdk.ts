@@ -1,10 +1,25 @@
 import type { EmbeddingModel } from "ai";
 import type { Embedder } from "../types.js";
 
+export type AiSdkProviderOptionValue =
+  | string
+  | number
+  | boolean
+  | null
+  | AiSdkProviderOptionValue[]
+  | { [key: string]: AiSdkProviderOptionValue };
+
+export type AiSdkProviderOptions = Record<
+  string,
+  Record<string, AiSdkProviderOptionValue>
+>;
+
 export type CreateAiSdkEmbedderOptions = {
-  model: EmbeddingModel<string>;
+  model: EmbeddingModel;
   /** Maximum retries per AI SDK embedding call. Defaults to AI SDK's behavior. */
   maxRetries?: number;
+  /** Provider-specific embedding call options forwarded to the AI SDK. */
+  providerOptions?: AiSdkProviderOptions;
   /** Called with provider-reported token usage for each embedding request when available. */
   onUsage?: (usage: AiSdkEmbedderUsage) => void;
 };
@@ -30,6 +45,7 @@ export function createAiSdkEmbedder(
       model: options.model,
       values: texts,
       maxRetries: options.maxRetries,
+      ...(options.providerOptions ? { providerOptions: options.providerOptions } : {}),
     });
     const usage = normalizeUsage((result as { usage?: unknown }).usage);
     if (usage) options.onUsage?.(usage);

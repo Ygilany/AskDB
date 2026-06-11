@@ -82,7 +82,7 @@ All exports are available from the root `@askdb/rag` import. Sub-path imports ar
 
 | Root import | Sub-path import | Description |
 |---|---|---|
-| `createAiSdkEmbedder` | `@askdb/rag/embedders/ai-sdk` | Generic AI SDK `EmbeddingModel<string>` adapter. Requires `ai`. |
+| `createAiSdkEmbedder` | `@askdb/rag/embedders/ai-sdk` | Generic AI SDK `EmbeddingModel` adapter. Requires `ai`. |
 | `createOpenAiEmbedder` | `@askdb/rag/embedders/openai` | OpenAI convenience helper (`text-embedding-3-small` by default). Requires `ai` and `@ai-sdk/openai`. |
 
 ### Import examples

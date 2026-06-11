@@ -1,5 +1,5 @@
 import type { Embedder } from "../types.js";
-import { createAiSdkEmbedder } from "./ai-sdk.js";
+import { createAiSdkEmbedder, type AiSdkProviderOptions } from "./ai-sdk.js";
 
 export type CreateOpenAiEmbedderOptions = {
   /** Defaults to `text-embedding-3-small`. */
@@ -30,11 +30,16 @@ export function createOpenAiEmbedder(
       ...(options.baseURL ? { baseURL: options.baseURL } : {}),
     });
     const embedder = createAiSdkEmbedder({
-      model: provider.embedding(options.model ?? "text-embedding-3-small", {
-        dimensions: options.dimensions,
-        user: options.user,
-      }),
+      model: provider.embedding(options.model ?? "text-embedding-3-small"),
+      providerOptions: openAiProviderOptions(options),
     });
     return embedder(texts);
   };
+}
+
+function openAiProviderOptions(options: CreateOpenAiEmbedderOptions): AiSdkProviderOptions | undefined {
+  const openai: AiSdkProviderOptions[string] = {};
+  if (options.dimensions !== undefined) openai.dimensions = options.dimensions;
+  if (options.user !== undefined) openai.user = options.user;
+  return Object.keys(openai).length > 0 ? { openai } : undefined;
 }

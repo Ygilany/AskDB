@@ -3,21 +3,32 @@ import { describe, expect, it, vi, beforeEach } from "vitest";
 const mocks = vi.hoisted(() => {
   const openai = vi.fn((model: string) => ({ kind: "language", model }));
   Object.assign(openai, {
-    embedding: vi.fn((model: string, options: unknown) => ({
+    embedding: vi.fn((model: string) => ({
       kind: "embedding",
       model,
-      options,
     })),
   });
 
   return {
     createOpenAI: vi.fn(() => openai),
+    defaultEmbeddingSettingsMiddleware: vi.fn((settings: unknown) => ({
+      kind: "middleware",
+      settings,
+    })),
     openai,
+    wrapEmbeddingModel: vi.fn((options: unknown) => ({
+      kind: "wrapped",
+      options,
+    })),
   };
 });
 
 vi.mock("@ai-sdk/openai", () => ({
   createOpenAI: mocks.createOpenAI,
+}));
+vi.mock("ai", () => ({
+  defaultEmbeddingSettingsMiddleware: mocks.defaultEmbeddingSettingsMiddleware,
+  wrapEmbeddingModel: mocks.wrapEmbeddingModel,
 }));
 
 import { openaiProvider } from "./index";
@@ -25,8 +36,10 @@ import { openaiProvider } from "./index";
 describe("openaiProvider", () => {
   beforeEach(() => {
     mocks.createOpenAI.mockClear();
+    mocks.defaultEmbeddingSettingsMiddleware.mockClear();
     mocks.openai.mockClear();
     mocks.openai.embedding.mockClear();
+    mocks.wrapEmbeddingModel.mockClear();
   });
 
   it("creates language and embedding models from AskDB config", () => {
@@ -49,9 +62,23 @@ describe("openaiProvider", () => {
 
     expect(languageModel).toEqual({ kind: "language", model: "gpt-4o-mini" });
     expect(embeddingModel).toEqual({
-      kind: "embedding",
-      model: "text-embedding-3-small",
-      options: { dimensions: 512, user: "user-1" },
+      kind: "wrapped",
+      options: {
+        model: { kind: "embedding", model: "text-embedding-3-small" },
+        middleware: {
+          kind: "middleware",
+          settings: {
+            settings: {
+              providerOptions: {
+                openai: {
+                  dimensions: 512,
+                  user: "user-1",
+                },
+              },
+            },
+          },
+        },
+      },
     });
     expect(mocks.createOpenAI).toHaveBeenNthCalledWith(1, {
       apiKey: "test-key",
@@ -60,5 +87,6 @@ describe("openaiProvider", () => {
     expect(mocks.createOpenAI).toHaveBeenNthCalledWith(2, {
       apiKey: "test-key",
     });
+    expect(mocks.openai.embedding).toHaveBeenCalledWith("text-embedding-3-small");
   });
 });
