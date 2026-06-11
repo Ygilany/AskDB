@@ -19,6 +19,10 @@ export type CreateOpenAiEmbedderOptions = {
  *
  * `ai` and `@ai-sdk/openai` are optional peers of `@askdb/rag`; this helper
  * lazy-loads them so chunking and non-OpenAI stores remain zero-provider.
+ *
+ * @deprecated Construct the model yourself and use `createAiSdkEmbedder`, or use the
+ * `@askdb/ai` registry (`createAiRegistry([openaiProvider]).createEmbeddingModelFromEnv(env)`)
+ * so env-var conventions stay consistent. This helper will be removed in 1.0.
  */
 export function createOpenAiEmbedder(
   options: CreateOpenAiEmbedderOptions = {},

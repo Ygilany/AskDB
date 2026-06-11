@@ -14,3 +14,4 @@ export {
   type AiRegistry,
   type CreateEmbeddingModelOptions,
 } from "./provider.js";
+export { withEmbeddingProviderOptions } from "./embedding.js";

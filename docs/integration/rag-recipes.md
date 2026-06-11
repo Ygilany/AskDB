@@ -101,15 +101,25 @@ type Embedder = (texts: string[]) => Promise<number[][]>;
 
 Provider examples:
 
-- OpenAI with AI SDK:
+- OpenAI via `@askdb/ai` registry (recommended):
 
 ```ts
+import { createAiRegistry } from "@askdb/ai";
+import { openaiProvider } from "@askdb/ai-openai";
+import { createAiSdkEmbedder } from "@askdb/rag/embedders/ai-sdk";
+
+const registry = createAiRegistry([openaiProvider]);
+const model = await registry.createEmbeddingModelFromEnv(process.env);
+const embedder = createAiSdkEmbedder({ model });
+```
+
+- OpenAI via `createOpenAiEmbedder` (deprecated, removed in 1.0):
+
+```ts
+// Use the registry approach above instead.
 import { createOpenAiEmbedder } from "@askdb/rag/embedders/openai";
 
-const embedder = createOpenAiEmbedder({
-  model: "text-embedding-3-small",
-  baseURL: process.env.OPENAI_BASE_URL,
-});
+const embedder = createOpenAiEmbedder({ model: "text-embedding-3-small" });
 ```
 
 - Any AI SDK embedding model:

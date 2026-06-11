@@ -1,11 +1,10 @@
 import { createOpenAI } from "@ai-sdk/openai";
 import {
   resolveBaseConfig,
+  withEmbeddingProviderOptions,
   type AiProviderAdapter,
-  type CreateEmbeddingModelOptions,
   type ProviderEnvSpec,
 } from "@askdb/ai";
-import { defaultEmbeddingSettingsMiddleware, wrapEmbeddingModel } from "ai";
 
 const ENV_SPEC: ProviderEnvSpec = {
   apiKeyVars: ["OPENAI_API_KEY"],
@@ -35,22 +34,6 @@ export const openaiProvider: AiProviderAdapter = {
       ...(config.baseURL ? { baseURL: config.baseURL } : {}),
     });
     const model = openai.embedding(config.model);
-    const providerOptions = openAiProviderOptions(options);
-    if (!providerOptions) return model;
-    return wrapEmbeddingModel({
-      model,
-      middleware: defaultEmbeddingSettingsMiddleware({
-        settings: { providerOptions },
-      }),
-    });
+    return withEmbeddingProviderOptions(model, "openai", options);
   },
 };
-
-function openAiProviderOptions(
-  options: CreateEmbeddingModelOptions,
-): { openai: { dimensions?: number; user?: string } } | undefined {
-  const openai: { dimensions?: number; user?: string } = {};
-  if (options.dimensions !== undefined) openai.dimensions = options.dimensions;
-  if (options.user !== undefined) openai.user = options.user;
-  return Object.keys(openai).length > 0 ? { openai } : undefined;
-}

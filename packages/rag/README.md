@@ -83,7 +83,7 @@ All exports are available from the root `@askdb/rag` import. Sub-path imports ar
 | Root import | Sub-path import | Description |
 |---|---|---|
 | `createAiSdkEmbedder` | `@askdb/rag/embedders/ai-sdk` | Generic AI SDK `EmbeddingModel` adapter. Requires `ai`. |
-| `createOpenAiEmbedder` | `@askdb/rag/embedders/openai` | OpenAI convenience helper (`text-embedding-3-small` by default). Requires `ai` and `@ai-sdk/openai`. |
+| `createOpenAiEmbedder` | `@askdb/rag/embedders/openai` | **Deprecated.** OpenAI convenience helper. Use `createAiSdkEmbedder` with an `@askdb/ai-openai` model or the `@askdb/ai` registry instead. Removed in 1.0. |
 
 ### Import examples
 
@@ -101,7 +101,8 @@ import { createMemoryStore } from "@askdb/rag/stores/memory";
 import { createFileStore } from "@askdb/rag/stores/file";
 import { createPgvectorStore } from "@askdb/rag/stores/pgvector";
 import { createAiSdkEmbedder } from "@askdb/rag/embedders/ai-sdk";
-import { createOpenAiEmbedder } from "@askdb/rag/embedders/openai";
+// Recommended: bring your own model via @askdb/ai-openai + createAiSdkEmbedder
+// import { createOpenAiEmbedder } from "@askdb/rag/embedders/openai"; // deprecated, removed in 1.0
 ```
 
 ## Sensitive Fields
