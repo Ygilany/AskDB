@@ -22,7 +22,25 @@ const pkgRoot = join(dirname(fileURLToPath(import.meta.url)), "..");
 function linkWorkspacePackage(projectDir: string): void {
   const nmAskdb = join(projectDir, "node_modules", "@askdb");
   mkdirSync(nmAskdb, { recursive: true });
-  symlinkSync(pkgRoot, join(nmAskdb, "config"), "dir");
+  const linkedPackage = join(nmAskdb, "config");
+  mkdirSync(linkedPackage, { recursive: true });
+  symlinkSync(join(pkgRoot, "src"), join(linkedPackage, "src"), "dir");
+  writeFileSync(
+    join(linkedPackage, "package.json"),
+    JSON.stringify(
+      {
+        name: "@askdb/config",
+        type: "module",
+        main: "./src/index.ts",
+        exports: {
+          ".": "./src/index.ts",
+        },
+      },
+      null,
+      2,
+    ),
+    "utf8",
+  );
 }
 
 function minimalConfig(overrides: Partial<AskDbConfig> = {}): AskDbConfig {
