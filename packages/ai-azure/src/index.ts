@@ -1,12 +1,11 @@
 import { createAzure } from "@ai-sdk/azure";
 import {
   resolveBaseConfig,
+  withEmbeddingProviderOptions,
   type AiConfig,
   type AiProviderAdapter,
-  type CreateEmbeddingModelOptions,
   type ProviderEnvSpec,
 } from "@askdb/ai";
-import { defaultEmbeddingSettingsMiddleware, wrapEmbeddingModel } from "ai";
 
 const ENV_SPEC: ProviderEnvSpec = {
   apiKeyVars: ["AZURE_OPENAI_API_KEY", "AZURE_API_KEY"],
@@ -72,14 +71,7 @@ export const azureProvider: AiProviderAdapter = {
       ...(apiVersion ? { apiVersion } : {}),
     });
     const model = azure.embedding(config.model);
-    const providerOptions = azureProviderOptions(options);
-    if (!providerOptions) return model;
-    return wrapEmbeddingModel({
-      model,
-      middleware: defaultEmbeddingSettingsMiddleware({
-        settings: { providerOptions },
-      }),
-    });
+    return withEmbeddingProviderOptions(model, "azure", options);
   },
 };
 
@@ -100,11 +92,3 @@ function readStringOption(
   return typeof value === "string" ? value : undefined;
 }
 
-function azureProviderOptions(
-  options: CreateEmbeddingModelOptions,
-): { azure: { dimensions?: number; user?: string } } | undefined {
-  const azure: { dimensions?: number; user?: string } = {};
-  if (options.dimensions !== undefined) azure.dimensions = options.dimensions;
-  if (options.user !== undefined) azure.user = options.user;
-  return Object.keys(azure).length > 0 ? { azure } : undefined;
-}
