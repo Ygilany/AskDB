@@ -111,7 +111,6 @@ async function runIntrospectCommand(argv: readonly string[]): Promise<number> {
   // When --engine isn't passed, fall back to the configured introspection.provider
   // so `askdb introspect` works flag-free for any configured engine.
   const engine = resolveEngine(opts.engine ?? rt.introspection.provider);
-  const envMap = rt.ai.aiEnv;
   if (engine === "postgres" && !opts.url && !opts.fromExport) {
     if (rt.introspection.postgresDatabaseUrl) {
       opts.url = rt.introspection.postgresDatabaseUrl;
@@ -165,10 +164,7 @@ async function runIntrospectCommand(argv: readonly string[]): Promise<number> {
     throw new Error("Use only one input mode: --url or --from-export.");
   }
   if (!opts.print && !opts.diff && !opts.out) {
-    const fromRt = envMap.ASKDB_INTROSPECT_OUT?.trim();
-    if (fromRt) {
-      opts.out = fromRt;
-    }
+    opts.out = rt.introspection.outputDir;
   }
   if (!opts.print && !opts.diff && !opts.out) {
     throw new Error(
