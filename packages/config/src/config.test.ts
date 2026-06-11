@@ -268,6 +268,33 @@ describe("getAskDbRuntimeConfig — introspection branches", () => {
     expect(rt.introspection.postgresDatabaseUrl).toBe("postgres://flat/host");
   });
 
+  it("resolves outputDir from the flattened runtime snapshot", () => {
+    installRuntime(
+      { provider: "postgres", providerConfig: { postgres: {} } },
+      { ASKDB_INTROSPECT_OUT: "./configured-schema/" },
+    );
+    const rt = getAskDbRuntimeConfig();
+    expect(rt.introspection.outputDir).toBe("./configured-schema/");
+  });
+
+  it("defaults outputDir when config does not provide one", () => {
+    installRuntime(
+      { provider: "postgres", providerConfig: { postgres: {} } },
+      {},
+    );
+    const rt = getAskDbRuntimeConfig();
+    expect(rt.introspection.outputDir).toBe("./askdb/");
+  });
+
+  it("falls back to structured outputDir when tests install runtime without a flat projection", () => {
+    installRuntime(
+      { provider: "postgres", providerConfig: { postgres: {} }, outputDir: "./structured-schema/" },
+      {},
+    );
+    const rt = getAskDbRuntimeConfig();
+    expect(rt.introspection.outputDir).toBe("./structured-schema/");
+  });
+
   it("resolves mysqlDatabaseUrl from the structured branch first", () => {
     installRuntime(
       {
