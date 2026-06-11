@@ -9,7 +9,7 @@ only when you want AskDB's shared provider selection and env-key precedence.
 ## Install
 
 ```bash
-pnpm add @askdb/ai
+pnpm add @askdb/ai ai
 # Plus the AskDB provider adapter you configure:
 pnpm add @askdb/ai-openai
 ```
@@ -46,8 +46,9 @@ const result = await ask({
 ## Exports
 
 - `createAiRegistry`
-- `resolveAiConfig`
-- `resolveEmbeddingConfig`
+- `resolveBaseConfig`
+- registry methods such as `resolveAiConfig`, `resolveEmbeddingConfig`,
+  `createLanguageModelFromEnv`, and `createEmbeddingModelFromEnv`
 - `aiKeyMissingMessage`
 - `aiProviderMissingMessage`
 
