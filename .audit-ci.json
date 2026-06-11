@@ -1,0 +1,9 @@
+{
+  "moderate": true,
+  "package-manager": "pnpm",
+  "report-type": "summary",
+  "show-not-found": false,
+  "allowlist": [
+    "GHSA-48c2-rrv3-qjmp|apps__docs-site>@astrojs/check>@astrojs/language-server>volar-service-yaml>yaml-language-server>yaml"
+  ]
+}

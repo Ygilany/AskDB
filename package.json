@@ -1,12 +1,16 @@
 {
   "name": "askdb-monorepo",
   "private": true,
-  "packageManager": "pnpm@11.5.1",
+  "packageManager": "pnpm@11.5.3",
   "engines": {
     "node": ">=20"
   },
   "scripts": {
+    "audit": "audit-ci --config .audit-ci.json",
     "build": "pnpm exec turbo run build",
+    "check-updates": "ncu --configFileName .check-updates.json",
+    "check-updates:fix": "npm run check-updates -- --upgrade --errorLevel 1",
+    "check-updates:all": "npm run check-updates -- --target latest --errorLevel 1",
     "test": "pnpm exec turbo run test",
     "test:watch": "vitest",
     "lint": "pnpm exec turbo run lint",
@@ -36,10 +40,12 @@
   "devDependencies": {
     "@askdb/config": "workspace:*",
     "@changesets/cli": "^2.31.0",
-    "@types/node": "^22.19.17",
+    "@types/node": "^22.19.21",
     "askdb": "workspace:*",
-    "react-doctor": "^0.4.2",
-    "turbo": "^2.9.16",
+    "audit-ci": "^7.1.0",
+    "npm-check-updates": "^22.2.3",
+    "react-doctor": "^0.5.1",
+    "turbo": "^2.9.18",
     "typescript": "^5.9.3",
     "vitest": "^3.2.6"
   }
