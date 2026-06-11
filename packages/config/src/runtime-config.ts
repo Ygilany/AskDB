@@ -1,5 +1,6 @@
 import type { AskDbDialectId, AskDbIntrospectionProvider } from "./constants.js";
 import type { AskDbConfig } from "./types.js";
+import { DEFAULT_INTROSPECT_OUTPUT_DIR } from "./defaults.js";
 import { flatToAiEnv, getAskDbRuntimeStore } from "./runtime-store.js";
 
 /**
@@ -66,8 +67,8 @@ export type AskDbRuntimeIntrospectionConfig = {
    * `undefined` for non-SQL Server providers.
    */
   sqlserverDatabaseUrl: string | undefined;
-  /** Resolved from `introspection.outputDir`; `undefined` means the package default (`./askdb/`) is used. */
-  outputDir: string | undefined;
+  /** Resolved from `introspection.outputDir`; falls back to the package default (`./askdb/`). */
+  outputDir: string;
 };
 
 export type AskDbRuntimeDevConfig = {
@@ -182,7 +183,10 @@ export function getAskDbRuntimeConfig(): AskDbRuntimeConfig {
       mysqlDatabaseUrl,
       sqliteFile,
       sqlserverDatabaseUrl,
-      outputDir: structured.introspection.outputDir?.trim() || undefined,
+      outputDir:
+        pickFlat(flat, "ASKDB_INTROSPECT_OUT") ??
+        structured.introspection.outputDir?.trim() ??
+        DEFAULT_INTROSPECT_OUTPUT_DIR,
     },
     rag: {
       embedder: {

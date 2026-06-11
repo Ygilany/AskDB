@@ -113,6 +113,13 @@ function loadSchemaFromPath(schemaPath: string): ReturnType<typeof loadSchema> {
   }
 }
 
+function resolveSchemaPathForAsk(
+  optionSchema: string | undefined,
+  runtime: ReturnType<typeof getAskDbRuntimeConfig>,
+): string {
+  return optionSchema ?? runtime.introspection.outputDir;
+}
+
 type SensitiveSqlReference = { table: string; column: string };
 const SENSITIVE_SQL_WARNING_EVENT = "askdb.pipeline.sensitive_sql_warning" as const;
 
@@ -260,7 +267,10 @@ program
 program
   .command("ask")
   .description("Generate SQL from schema + question")
-  .requiredOption("-s, --schema <path>", "Path to AskDB Schema v2 directory, bundled JSON, or schema.json")
+  .option(
+    "-s, --schema <path>",
+    "Path to AskDB Schema v2 directory, bundled JSON, or schema.json (default: configured introspection.outputDir, or ./askdb/)",
+  )
   .requiredOption("-q, --question <text>", "Natural language question")
   .option(
     "--explain",
@@ -287,7 +297,7 @@ program
   )
   .action(
     async (opts: {
-      schema: string;
+      schema?: string;
       question: string;
       explain?: boolean;
       verbose?: boolean;
@@ -337,7 +347,8 @@ program
       );
 
       try {
-        const schema = loadSchemaFromPath(opts.schema);
+        const schemaPath = resolveSchemaPathForAsk(opts.schema, runtime);
+        const schema = loadSchemaFromPath(schemaPath);
         const schemaProvider =
           "provider" in schema && typeof schema.provider === "string"
             ? schema.provider
