@@ -13,6 +13,36 @@ function run(command: string, args: string[], opts: { cwd: string; env?: NodeJS.
 }
 
 describe("cli spawn: rich errors", () => {
+  it("defaults ask --schema to introspection.outputDir from config", () => {
+    const repoRoot = join(import.meta.dirname, "../../..");
+    const cliDir = join(repoRoot, "apps/cli");
+
+    const build = run("pnpm", ["-C", cliDir, "build"], { cwd: repoRoot });
+    expect(build.status).toBe(0);
+
+    const exec = run(
+      "node",
+      [
+        join(cliDir, "dist/cli.js"),
+        "ask",
+        "--question",
+        "Which customers signed up last week?",
+      ],
+      {
+        cwd: repoRoot,
+        env: {
+          ASKDB_MOCK_SQL: "SELECT 1",
+          MY_INTROSPECT_OUTPUT_DIR: "fixtures/schemas/orders-users.schema/",
+        },
+      },
+    );
+
+    expect(exec.status).toBe(0);
+    expect(exec.stderr).not.toContain("required option");
+    expect(exec.stdout).toContain("-- sql --");
+    expect(exec.stdout).toContain("SELECT 1;");
+  });
+
   it("prints schema path + fixture hint when schema file is missing", () => {
     const repoRoot = join(import.meta.dirname, "../../..");
     const cliDir = join(repoRoot, "apps/cli");
