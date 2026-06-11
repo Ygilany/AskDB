@@ -1,6 +1,6 @@
 {
   "name": "@askdb/connectors",
-  "version": "0.1.0-beta.2",
+  "version": "0.1.0-beta.3",
   "description": "AskDB connector provider registry: maps config-driven introspection provider selections to concrete connector packages.",
   "keywords": [
     "askdb",

@@ -1,5 +1,19 @@
 # @askdb/tui
 
+## 0.2.0-beta.14
+
+### Patch Changes
+
+- baf5ad8: Refresh dependency ranges across the workspace.
+- Updated dependencies [baf5ad8]
+- Updated dependencies [baf5ad8]
+  - @askdb/ai@0.1.0-beta.2
+  - @askdb/ai-openai@0.1.0-beta.2
+  - @askdb/ai-azure@0.1.0-beta.2
+  - @askdb/ai-google@0.1.0-beta.2
+  - @askdb/core@1.0.0-beta.26
+  - @askdb/enrich@0.2.0-beta.9
+
 ## 0.2.0-beta.13
 
 ### Patch Changes

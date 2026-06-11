@@ -1,5 +1,24 @@
 # @askdb/studio
 
+## 0.2.0-beta.23
+
+### Patch Changes
+
+- baf5ad8: Restore AI SDK 6 embedding compatibility and preserve RAG embedding options.
+- baf5ad8: Refresh dependency ranges across the workspace.
+- 999ba36: Fix RAG index badge not updating automatically after saving table enrichment, concepts, or tenant policy. The stale/fresh indicator on the nav bar and RAG page now refreshes immediately after any save without requiring a manual refresh click.
+- baf5ad8: Declare the PostgreSQL driver required by Studio query execution.
+- Updated dependencies [baf5ad8]
+- Updated dependencies [baf5ad8]
+  - @askdb/ai@0.1.0-beta.2
+  - @askdb/ai-openai@0.1.0-beta.2
+  - @askdb/ai-azure@0.1.0-beta.2
+  - @askdb/rag@0.2.0-beta.16
+  - @askdb/ai-google@0.1.0-beta.2
+  - @askdb/core@1.0.0-beta.26
+  - @askdb/postgres@0.2.0-beta.12
+  - @askdb/enrich@0.2.0-beta.9
+
 ## 0.2.0-beta.22
 
 ### Patch Changes

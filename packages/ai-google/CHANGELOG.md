@@ -1,5 +1,14 @@
 # @askdb/ai-google
 
+## 0.1.0-beta.2
+
+### Patch Changes
+
+- baf5ad8: Refresh dependency ranges across the workspace.
+- Updated dependencies [baf5ad8]
+- Updated dependencies [baf5ad8]
+  - @askdb/ai@0.1.0-beta.2
+
 ## 0.1.0-beta.1
 
 ### Minor Changes

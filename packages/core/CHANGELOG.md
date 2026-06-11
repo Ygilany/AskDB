@@ -1,5 +1,11 @@
 # @askdb/core
 
+## 1.0.0-beta.26
+
+### Patch Changes
+
+- baf5ad8: Refresh dependency ranges across the workspace.
+
 ## 1.0.0-beta.21
 
 ### Patch Changes

@@ -1,5 +1,14 @@
 # @askdb/rag
 
+## 0.2.0-beta.16
+
+### Patch Changes
+
+- baf5ad8: Restore AI SDK 6 embedding compatibility and preserve RAG embedding options.
+- baf5ad8: Refresh dependency ranges across the workspace.
+- Updated dependencies [baf5ad8]
+  - @askdb/core@1.0.0-beta.26
+
 ## 0.2.0-beta.15
 
 ### Patch Changes
