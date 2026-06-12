@@ -156,6 +156,12 @@ export type AiProviderAdapter = {
   provider: string;
   /** Additional ASKDB_AI_PROVIDER values that select this adapter. */
   aliases?: readonly string[];
+  /**
+   * Short human-readable setup hint shown when no API key is configured.
+   * Used by {@link AiRegistry.keyMissingMessage} to build a composite message.
+   * Example: "For OpenAI, set OPENAI_API_KEY (or ASKDB_AI_API_KEY)."
+   */
+  configHint?: string;
   /** Resolve an AiConfig from env. Return undefined when no API key is configured ("AI disabled"). */
   resolveConfig(env: AiEnv, options: ResolveConfigOptions): AiConfig | undefined;
   createLanguageModel(config: AiConfig): Promise<LanguageModel> | LanguageModel;
@@ -192,6 +198,13 @@ export type AiRegistry = {
     env: AiEnv,
     options?: { modelDefault?: string; modelEnvVar?: string } & CreateEmbeddingModelOptions,
   ): Promise<EmbeddingModel | undefined>;
+  /**
+   * Human-readable message describing how to configure AI for this registry.
+   * Assembles configHint values from registered adapters (deduplicated, stable
+   * registration order). Falls back to the static {@link aiKeyMissingMessage}
+   * body when no adapter has a configHint.
+   */
+  keyMissingMessage(context: string): string;
 };
 
 export function createAiRegistry(
@@ -262,12 +275,32 @@ export function createAiRegistry(
       if (!config) return undefined;
       return adapterFor(config.provider).createEmbeddingModel(config, options);
     },
+    keyMissingMessage(context: string): string {
+      // Collect configHint from unique adapter objects (aliases share the same object).
+      const seen = new Set<AiProviderAdapter>();
+      const hints: string[] = [];
+      for (const adapter of byProvider.values()) {
+        if (!seen.has(adapter)) {
+          seen.add(adapter);
+          if (adapter.configHint) {
+            hints.push(adapter.configHint);
+          }
+        }
+      }
+      if (hints.length === 0) {
+        return aiKeyMissingMessage(context);
+      }
+      return `${context}: no AI API key configured. ${hints.join(" ")}`;
+    },
   };
 }
 
 /**
  * Human-readable message describing how to configure AI, used by callers
  * when no key is configured.
+ *
+ * @deprecated Use {@link AiRegistry.keyMissingMessage}(context) instead.
+ * The registry method assembles hints from registered adapters automatically.
  */
 export function aiKeyMissingMessage(context: string): string {
   return (

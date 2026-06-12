@@ -386,4 +386,58 @@ describe("createAiRegistry", () => {
 
     expect(() => createAiRegistry({ google: adapter })).toThrow(/adapter mismatch/);
   });
+
+  describe("keyMissingMessage", () => {
+    it("assembles hints from all registered adapters in registration order", () => {
+      const adapterA: AiProviderAdapter = {
+        provider: "openai",
+        configHint: "For OpenAI, set OPENAI_API_KEY.",
+        resolveConfig: vi.fn(() => undefined),
+        createLanguageModel: vi.fn(() => ({}) as never),
+        createEmbeddingModel: vi.fn(() => ({}) as never),
+      };
+      const adapterB: AiProviderAdapter = {
+        provider: "google",
+        configHint: "For Google, set GOOGLE_API_KEY.",
+        resolveConfig: vi.fn(() => undefined),
+        createLanguageModel: vi.fn(() => ({}) as never),
+        createEmbeddingModel: vi.fn(() => ({}) as never),
+      };
+      const registry = createAiRegistry([adapterA, adapterB]);
+      const message = registry.keyMissingMessage("test context");
+      expect(message).toContain("test context: no AI API key configured.");
+      expect(message).toContain("For OpenAI, set OPENAI_API_KEY.");
+      expect(message).toContain("For Google, set GOOGLE_API_KEY.");
+    });
+
+    it("deduplicates adapter objects registered under aliases", () => {
+      const adapterWithAlias: AiProviderAdapter = {
+        provider: "azure",
+        aliases: ["foundry"],
+        configHint: "For Azure, set AZURE_OPENAI_API_KEY.",
+        resolveConfig: vi.fn(() => undefined),
+        createLanguageModel: vi.fn(() => ({}) as never),
+        createEmbeddingModel: vi.fn(() => ({}) as never),
+      };
+      const registry = createAiRegistry([adapterWithAlias]);
+      const message = registry.keyMissingMessage("ctx");
+      // The hint should appear exactly once despite two registry entries (azure + foundry)
+      const occurrences = (message.match(/For Azure, set AZURE_OPENAI_API_KEY\./g) ?? []).length;
+      expect(occurrences).toBe(1);
+    });
+
+    it("falls back to static aiKeyMissingMessage when no adapter has a configHint", () => {
+      const adapterNoHint: AiProviderAdapter = {
+        provider: "openai",
+        resolveConfig: vi.fn(() => undefined),
+        createLanguageModel: vi.fn(() => ({}) as never),
+        createEmbeddingModel: vi.fn(() => ({}) as never),
+      };
+      const registry = createAiRegistry([adapterNoHint]);
+      const message = registry.keyMissingMessage("fallback ctx");
+      // The static message includes OpenAI, Azure, and Google wording
+      expect(message).toContain("fallback ctx: no AI API key configured.");
+      expect(message).toContain("OPENAI_API_KEY");
+    });
+  });
 });

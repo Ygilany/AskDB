@@ -218,6 +218,96 @@ describe("flattenAskDbConfig", () => {
     );
     expect(flat.ASKDB_RAG_FILE_BASE_PATH).toBe("./askdb/rag");
   });
+
+  it("flattens anthropic provider branch to correct env keys", () => {
+    const flat = flattenAskDbConfig(
+      minimalConfig({
+        ai: {
+          provider: "anthropic",
+          providerConfig: {
+            anthropic: { apiKey: "ant-key", model: "claude-opus-4-8" },
+          },
+        },
+      }),
+    );
+    expect(flat.ASKDB_AI_PROVIDER).toBe("anthropic");
+    expect(flat.ANTHROPIC_API_KEY).toBe("ant-key");
+    expect(flat.ASKDB_AI_MODEL).toBe("claude-opus-4-8");
+  });
+
+  it("defaults anthropic model to claude-sonnet-4-6 when model omitted", () => {
+    const flat = flattenAskDbConfig(
+      minimalConfig({
+        ai: {
+          provider: "anthropic",
+          providerConfig: {
+            anthropic: { apiKey: "ant-key" },
+          },
+        },
+      }),
+    );
+    expect(flat.ASKDB_AI_MODEL).toBe("claude-sonnet-4-6");
+  });
+
+  it("flattens anthropic baseUrl when provided", () => {
+    const flat = flattenAskDbConfig(
+      minimalConfig({
+        ai: {
+          provider: "anthropic",
+          providerConfig: {
+            anthropic: { apiKey: "ant-key", baseUrl: "https://custom.anthropic.endpoint/v1" },
+          },
+        },
+      }),
+    );
+    expect(flat.ANTHROPIC_BASE_URL).toBe("https://custom.anthropic.endpoint/v1");
+  });
+
+  it("flattens a custom provider string to universal ASKDB_AI_* keys", () => {
+    const flat = flattenAskDbConfig(
+      minimalConfig({
+        ai: {
+          provider: "mistral",
+          providerConfig: {
+            custom: { apiKey: "mistral-key", model: "mistral-large-2", baseUrl: "https://api.mistral.ai/v1" },
+          },
+        },
+      }),
+    );
+    expect(flat.ASKDB_AI_PROVIDER).toBe("mistral");
+    expect(flat.ASKDB_AI_API_KEY).toBe("mistral-key");
+    expect(flat.ASKDB_AI_MODEL).toBe("mistral-large-2");
+    expect(flat.ASKDB_AI_BASE_URL).toBe("https://api.mistral.ai/v1");
+  });
+
+  it("sets ASKDB_AI_PROVIDER for custom provider even when providerConfig is absent", () => {
+    const flat = flattenAskDbConfig(
+      minimalConfig({
+        ai: {
+          provider: "bedrock",
+        },
+      }),
+    );
+    expect(flat.ASKDB_AI_PROVIDER).toBe("bedrock");
+    expect(flat.ASKDB_AI_API_KEY).toBeUndefined();
+  });
+
+  it("known providers are unaffected by the custom-provider branch", () => {
+    const flat = flattenAskDbConfig(
+      minimalConfig({
+        ai: {
+          provider: "openai",
+          providerConfig: {
+            openai: { apiKey: "oai-key", model: "gpt-4o" },
+          },
+        },
+      }),
+    );
+    expect(flat.OPENAI_API_KEY).toBe("oai-key");
+    expect(flat.OPENAI_MODEL).toBe("gpt-4o");
+    // No ASKDB_AI_API_KEY set for openai branch
+    expect(flat.ASKDB_AI_API_KEY).toBeUndefined();
+  });
 });
 
 describe("loadAskDbConfigProjectionSync", () => {

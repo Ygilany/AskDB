@@ -43,8 +43,12 @@ export type FoundryConfig = {
   baseUrl?: string;
 };
 
-/** Placeholder for future providers — not flattened today. */
-export type AnthropicConfig = Record<string, never>;
+export type AnthropicConfig = {
+  apiKey?: string;
+  baseUrl?: string;
+  /** When unset, `flattenAskDbConfig` applies the default Anthropic chat model (see `@askdb/config` defaults). */
+  model?: string;
+};
 
 export type GoogleConfig = {
   apiKey?: string;
@@ -80,25 +84,47 @@ export type FoundryAiConfig = {
   providerConfig: AiProviderConfigs & { foundry: FoundryConfig };
 };
 
-/** Placeholder — not yet supported; `flattenAskDbConfig` throws. */
+/** Discriminated union branch for `ai` when `provider` is `"anthropic"`. */
 export type AnthropicAiConfig = {
   provider: "anthropic";
   providerConfig: AiProviderConfigs & { anthropic: AnthropicConfig };
 };
 
-/** Placeholder — not yet supported; `flattenAskDbConfig` throws. */
+/** Discriminated union branch for `ai` when `provider` is `"google"`. */
 export type GoogleAiConfig = {
   provider: "google";
   providerConfig: AiProviderConfigs & { google: GoogleConfig };
 };
 
-/** Discriminated union of all supported (and placeholder) AI provider branches. */
+/** Generic connection settings for a provider AskDB has no dedicated branch for.
+ *  Flattened to the universal ASKDB_AI_* keys; works end to end only when the
+ *  consuming registry has an adapter registered under this provider name. */
+export type CustomProviderConfig = {
+  apiKey?: string;
+  baseUrl?: string;
+  model?: string;
+};
+
+/** Branch for custom/third-party providers. `(string & {})` preserves literal
+ *  autocomplete for the known providers while accepting any other string. */
+export type CustomAiConfig = {
+  /** Any provider string not covered by a first-party branch. Works end to end
+   *  only when the host registry has an adapter registered under this name.
+   *  See the three-tier model: known literal (zero code) → custom string + registered
+   *  adapter (~40 lines) → BYO `LanguageModel` via `ask({ model })` (no config). */
+  provider: string & {};
+  providerConfig?: { custom?: CustomProviderConfig };
+};
+
+/** Discriminated union of all supported AI provider branches plus the generic
+ *  custom-provider escape hatch for third-party or host-registered adapters. */
 export type AskDbAiConfig =
   | OpenaiAiConfig
   | AzureAiConfig
   | FoundryAiConfig
   | AnthropicAiConfig
-  | GoogleAiConfig;
+  | GoogleAiConfig
+  | CustomAiConfig;
 
 // ---------------------------------------------------------------------------
 // RAG configs

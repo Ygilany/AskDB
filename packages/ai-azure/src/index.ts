@@ -23,6 +23,8 @@ const ENV_SPEC: ProviderEnvSpec = {
 export const azureProvider: AiProviderAdapter = {
   provider: "azure",
   aliases: ["azure-openai", "foundry"],
+  configHint:
+    "For Azure / Microsoft Foundry, set ASKDB_AI_PROVIDER=azure plus AZURE_OPENAI_API_KEY (or ASKDB_AI_API_KEY), ASKDB_AI_AZURE_RESOURCE_NAME (or ASKDB_AI_BASE_URL), and a deployment name via ASKDB_AI_MODEL.",
   resolveConfig(env, options) {
     const config = resolveBaseConfig("azure", env, ENV_SPEC, options);
     if (!config) return undefined;

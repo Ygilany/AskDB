@@ -49,6 +49,7 @@
   },
   "dependencies": {
     "@askdb/ai": "workspace:*",
+    "@askdb/ai-anthropic": "workspace:*",
     "@askdb/ai-azure": "workspace:*",
     "@askdb/ai-google": "workspace:*",
     "@askdb/ai-openai": "workspace:*",

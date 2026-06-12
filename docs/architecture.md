@@ -49,6 +49,14 @@ flowchart TB
     prisma["@askdb/prisma<br/>Prisma schema-file connector"]
   end
 
+  subgraph AI["AI provider adapters"]
+    aiPkg["@askdb/ai<br/>registry, resolveBaseConfig, env contract"]
+    aiOpenai["@askdb/ai-openai"]
+    aiAzure["@askdb/ai-azure"]
+    aiGoogle["@askdb/ai-google"]
+    aiAnthropic["@askdb/ai-anthropic"]
+  end
+
   subgraph Surfaces["First-party surfaces"]
     cli["askdb<br/>askdb binary"]
     http["@askdb/http-api<br/>POST /ask wrapper"]
@@ -62,23 +70,36 @@ flowchart TB
   prisma --> introspect
   enrich --> core
   rag --> core
+  aiOpenai --> aiPkg
+  aiAzure --> aiPkg
+  aiGoogle --> aiPkg
+  aiAnthropic --> aiPkg
   tui --> enrich
+  tui --> aiPkg
   cli --> core
   cli --> introspect
   cli --> postgres
   cli --> prisma
   cli --> tui
   cli --> studio
+  cli --> aiPkg
   http --> core
   http --> postgres
+  http --> aiPkg
   studio --> core
   studio --> enrich
   studio --> postgres
   studio --> rag
+  studio --> aiPkg
 ```
 
 | Package | Purpose and scope | Boundary |
 | --- | --- | --- |
+| `@askdb/ai` | Registry for AI provider adapters, universal env-resolution contract (`resolveBaseConfig`, `ProviderEnvSpec`), and the `createAiRegistry` factory. | No model provider SDK bundled; adapters supply those. |
+| `@askdb/ai-openai` | OpenAI provider adapter for `@askdb/ai`. | Wraps `@ai-sdk/openai`; no NL-to-SQL logic. |
+| `@askdb/ai-azure` | Azure OpenAI / Microsoft Foundry provider adapter for `@askdb/ai`. | Wraps `@ai-sdk/azure`; no NL-to-SQL logic. |
+| `@askdb/ai-google` | Google Generative AI / Gemini provider adapter for `@askdb/ai`. | Wraps `@ai-sdk/google`; no NL-to-SQL logic. |
+| `@askdb/ai-anthropic` | Anthropic Claude provider adapter for `@askdb/ai`. No embeddings API; throws a clear error if `createEmbeddingModel` is called. | Wraps `@ai-sdk/anthropic`; no NL-to-SQL logic. |
 | `@askdb/core` | Dialect-agnostic NL-to-SQL pipeline, Schema v2 loading/parsing, modes, logging, enrichment suggestions, and retriever input. | No database drivers, no generated-SQL execution, no engine-specific connector. |
 | `@askdb/introspect` | Engine-agnostic `Connector<TInput>` contract, introspection orchestrator, and Schema v2 renderer. | No default connector, no engine-specific input union, no standalone binary. |
 | `@askdb/postgres` | Postgres dialect, SQL prompt/validation helpers, live/from-export connector, catalog templates, and optional `pg` catalog runner. | `pg` is optional and only needed for live catalog reads; generated SQL still executes outside AskDB. |
@@ -103,6 +124,11 @@ flowchart BT
   rag["@askdb/rag"]
   postgres["@askdb/postgres"]
   prisma["@askdb/prisma"]
+  ai["@askdb/ai"]
+  aiOpenai["@askdb/ai-openai"]
+  aiAzure["@askdb/ai-azure"]
+  aiGoogle["@askdb/ai-google"]
+  aiAnthropic["@askdb/ai-anthropic"]
   tui["@askdb/tui"]
   studio["@askdb/studio"]
   cli["askdb"]
@@ -113,19 +139,27 @@ flowchart BT
   postgres --> core
   postgres --> introspect
   prisma --> introspect
+  aiOpenai --> ai
+  aiAzure --> ai
+  aiGoogle --> ai
+  aiAnthropic --> ai
   tui --> enrich
+  tui --> ai
   studio --> enrich
   studio --> core
   studio --> postgres
   studio --> rag
+  studio --> ai
   cli --> core
   cli --> introspect
   cli --> postgres
   cli --> prisma
   cli --> tui
   cli --> studio
+  cli --> ai
   http --> core
   http --> postgres
+  http --> ai
 ```
 
 Boundary rules:

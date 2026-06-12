@@ -5,6 +5,7 @@ import {
   ASKDB_RAG_STORES,
 } from "./constants.js";
 import {
+  DEFAULT_ANTHROPIC_CHAT_MODEL,
   DEFAULT_AZURE_OPENAI_DEPLOYMENT,
   DEFAULT_GOOGLE_CHAT_MODEL,
   DEFAULT_INTROSPECT_OUTPUT_DIR,
@@ -16,7 +17,20 @@ import {
   normalizePgvectorIndexStrategy,
   parsePositiveInteger,
 } from "./defaults.js";
-import type { AskDbConfig, AzureConfig, FoundryConfig, GoogleConfig, OpenaiConfig } from "./types.js";
+import type {
+  AnthropicConfig,
+  AnthropicAiConfig,
+  AskDbConfig,
+  AzureAiConfig,
+  AzureConfig,
+  CustomAiConfig,
+  FoundryAiConfig,
+  FoundryConfig,
+  GoogleAiConfig,
+  GoogleConfig,
+  OpenaiAiConfig,
+  OpenaiConfig,
+} from "./types.js";
 
 function isMember<T extends readonly string[]>(value: string, allowed: T): value is T[number] {
   return (allowed as readonly string[]).includes(value);
@@ -35,6 +49,13 @@ function applyOpenAiAi(out: Record<string, string>, cfg: OpenaiConfig): void {
   const model = cfg.model?.trim() || DEFAULT_OPENAI_CHAT_MODEL;
   set(out, "OPENAI_MODEL", model);
   set(out, "ASKDB_MODEL", model);
+}
+
+function applyAnthropicAi(out: Record<string, string>, cfg: AnthropicConfig): void {
+  set(out, "ANTHROPIC_API_KEY", cfg.apiKey);
+  set(out, "ANTHROPIC_BASE_URL", cfg.baseUrl);
+  const model = cfg.model?.trim() || DEFAULT_ANTHROPIC_CHAT_MODEL;
+  set(out, "ASKDB_AI_MODEL", model);
 }
 
 function applyGoogleAi(out: Record<string, string>, cfg: GoogleConfig): void {
@@ -78,21 +99,34 @@ export function flattenAskDbConfig(config: AskDbConfig): Record<string, string> 
   const out: Record<string, string> = {};
 
   // --- AI ---
+  // Use type assertions in each branch because the inclusion of CustomAiConfig (provider: string & {})
+  // in the union prevents TypeScript from narrowing providerConfig to the specific branch shape —
+  // the runtime guard on `provider` still ensures correctness.
   if (config.ai.provider === "openai") {
     set(out, "ASKDB_AI_PROVIDER", "openai");
-    applyOpenAiAi(out, config.ai.providerConfig.openai);
+    applyOpenAiAi(out, (config.ai as OpenaiAiConfig).providerConfig.openai);
   } else if (config.ai.provider === "azure") {
     set(out, "ASKDB_AI_PROVIDER", "azure");
-    applyAzureLikeAi(out, config.ai.providerConfig.azure);
+    applyAzureLikeAi(out, (config.ai as AzureAiConfig).providerConfig.azure);
   } else if (config.ai.provider === "foundry") {
     // `@askdb/core` treats `foundry` like Azure for env parsing.
     set(out, "ASKDB_AI_PROVIDER", "foundry");
-    applyAzureLikeAi(out, config.ai.providerConfig.foundry);
+    applyAzureLikeAi(out, (config.ai as FoundryAiConfig).providerConfig.foundry);
   } else if (config.ai.provider === "google") {
     set(out, "ASKDB_AI_PROVIDER", "google");
-    applyGoogleAi(out, config.ai.providerConfig.google);
+    applyGoogleAi(out, (config.ai as GoogleAiConfig).providerConfig.google);
   } else if (config.ai.provider === "anthropic") {
-    throw new Error("askdb.config: Anthropic AI provider is not supported yet.");
+    set(out, "ASKDB_AI_PROVIDER", "anthropic");
+    applyAnthropicAi(out, (config.ai as AnthropicAiConfig).providerConfig.anthropic);
+  } else {
+    // Custom/third-party provider: flatten to the universal ASKDB_AI_* keys that
+    // @askdb/ai's resolveBaseConfig honors for every registered adapter.
+    // Works end to end only when the host registry contains an adapter with this provider name.
+    set(out, "ASKDB_AI_PROVIDER", config.ai.provider);
+    const custom = (config.ai as CustomAiConfig).providerConfig?.custom;
+    set(out, "ASKDB_AI_API_KEY", custom?.apiKey);
+    set(out, "ASKDB_AI_BASE_URL", custom?.baseUrl);
+    set(out, "ASKDB_AI_MODEL", custom?.model);
   }
 
   // --- Introspection ---

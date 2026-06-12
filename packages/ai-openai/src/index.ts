@@ -18,6 +18,7 @@ const ENV_SPEC: ProviderEnvSpec = {
 
 export const openaiProvider: AiProviderAdapter = {
   provider: "openai",
+  configHint: "For OpenAI, set OPENAI_API_KEY (or ASKDB_AI_API_KEY).",
   resolveConfig(env, options) {
     return resolveBaseConfig("openai", env, ENV_SPEC, options);
   },
