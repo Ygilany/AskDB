@@ -13,7 +13,7 @@ STOP conditions, and update your row when done.
 | 002 | Shared embedding-options wrapper + deprecate RAG's direct OpenAI embedder (A2+A4) | P2 | S | 001 | DONE |
 | 003 | Architecture docs refresh: diagrams/tables for all packages, ADR 0006/0007 statuses, truthful recipe claims (A5+A6) | P2 | S | 001 | TODO |
 | 004 | `@askdb/ai-anthropic` adapter, open config provider union, registry-driven key-missing message, surfaces policy wiring (B3+B4+B5) | P3 | M | 001 (hard), 003 (soft) | DONE |
-| 005 | Docs-site refresh: registry-method API, anthropic + custom-provider config docs, current model ids | P3 | S | 001, 004 (hard), 003 (soft) | TODO |
+| 005 | Docs-site refresh: registry-method API, anthropic + custom-provider config docs, current model ids | P3 | S | 001, 004 (hard), 003 (soft) | DONE |
 
 Status values: TODO | IN PROGRESS | DONE | BLOCKED (with one-line reason) | REJECTED (with one-line rationale)
 

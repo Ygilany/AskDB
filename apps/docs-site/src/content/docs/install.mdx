@@ -49,10 +49,14 @@ AskDB doesn't bundle inference. Bring any provider that speaks the expected inte
 # Example: Vercel AI SDK with OpenAI
 npm install @ai-sdk/openai
 
-# Optional: AskDB config/env model factory and matching provider adapter
-npm install @askdb/ai
-npm install @askdb/ai-openai
+# Optional: AskDB config/env model factory and a provider adapter (pick one)
+npm install @askdb/ai @askdb/ai-openai      # OpenAI
+# npm install @askdb/ai @askdb/ai-anthropic  # Anthropic
+# npm install @askdb/ai @askdb/ai-azure      # Azure OpenAI
+# npm install @askdb/ai @askdb/ai-google     # Google Gemini
 ```
+
+Adapters declare `ai` and `@askdb/ai` as peer dependencies. Add `ai` to your own `package.json` when you want to pin its version.
 
 The full list of supported providers lives in [Bring your own model](/guides/bring-your-own-model/).
 

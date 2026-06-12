@@ -72,8 +72,8 @@ Variable names you control. The variables listed below are the ones the scaffold
 | Variable | Maps to (config path) | Notes |
 | --- | --- | --- |
 | `OPENAI_API_KEY` | `ai.providerConfig.openai.apiKey` | Standard OpenAI key. |
-| `OPENAI_MODEL` | `ai.providerConfig.openai.model` | Optional model override. |
-| `ANTHROPIC_API_KEY` | `ai.providerConfig.anthropic.apiKey` | When `ai.provider = "anthropic"`. |
+| `OPENAI_MODEL` | `ai.providerConfig.openai.model` | Optional model override. Default: `gpt-4o-mini`. |
+| `ANTHROPIC_API_KEY` | `ai.providerConfig.anthropic.apiKey` | When `ai.provider = "anthropic"`. Default model: `claude-sonnet-4-6`. |
 | `AZURE_API_KEY`, `AZURE_RESOURCE_NAME` | `ai.providerConfig.azure.*` | Azure OpenAI. |
 | `ASKDB_INTROSPECT_POSTGRES_URL` | `introspection.providerConfig.postgres.databaseUrl` | Postgres introspection URL. Still falls back to `DATABASE_URL` if unset. |
 | `ASKDB_INTROSPECT_MYSQL_URL` | `introspection.providerConfig.mysql.databaseUrl` | MySQL introspection URL. No `DATABASE_URL` fallback. |
@@ -88,6 +88,34 @@ Variable names you control. The variables listed below are the ones the scaffold
 | `ASKDB_MODE` | `modes.askdbMode` | Default operating mode (`schema_only` / `bounded_results`). |
 
 The complete list of env keys is generated from the config schema and exposed as `ASKDB_ENV_PROJECTION` in `@askdb/config`.
+
+## Custom providers
+
+`ai.provider` accepts any string — not just the first-party literals. When an unknown provider string is used, `flattenAskDbConfig` applies the generic branch: `ai.providerConfig.custom.{apiKey,baseUrl,model}` flatten to the universal `ASKDB_AI_API_KEY` / `ASKDB_AI_BASE_URL` / `ASKDB_AI_MODEL` env keys.
+
+```ts
+import { defineConfig, env } from "@askdb/config";
+
+export default defineConfig({
+  ai: {
+    provider: "mistral",           // any string
+    providerConfig: {
+      custom: {
+        apiKey: env("MISTRAL_API_KEY"),
+        model: "mistral-large-latest",
+      },
+    },
+  },
+  // ...
+});
+```
+
+This works end to end only when the consuming registry has an adapter registered under that provider name. First-party apps (`@askdb/http-api`, the CLI) register `openai`, `azure`, `foundry`, `google`, and `anthropic`. For any other provider you have two options:
+
+1. **Embed AskDB** and register your own adapter via `createAiRegistry` — about 40 lines of code.
+2. **Use the `openai` provider** with a custom `baseUrl` for any OpenAI-compatible endpoint (vLLM, OpenRouter, Together, Ollama, …).
+
+See [Bring your own model](/guides/bring-your-own-model/) for the embedding walkthrough.
 
 ## Reading config at runtime
 
