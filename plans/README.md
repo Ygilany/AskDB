@@ -11,7 +11,7 @@ STOP conditions, and update your row when done.
 |------|-------|----------|--------|------------|--------|
 | 001 | Self-describing AI adapters: open provider string, adapter-owned env resolution, `ai` as peer dep (A1+B1+B2) | P1 | L | — | DONE |
 | 002 | Shared embedding-options wrapper + deprecate RAG's direct OpenAI embedder (A2+A4) | P2 | S | 001 | DONE |
-| 003 | Architecture docs refresh: diagrams/tables for all packages, ADR 0006/0007 statuses, truthful recipe claims (A5+A6) | P2 | S | 001 | TODO |
+| 003 | Architecture docs refresh: diagrams/tables for all packages, ADR 0006/0007 statuses, truthful recipe claims (A5+A6) | P2 | S | 001 | DONE |
 | 004 | `@askdb/ai-anthropic` adapter, open config provider union, registry-driven key-missing message, surfaces policy wiring (B3+B4+B5) | P3 | M | 001 (hard), 003 (soft) | DONE |
 | 005 | Docs-site refresh: registry-method API, anthropic + custom-provider config docs, current model ids | P3 | S | 001, 004 (hard), 003 (soft) | DONE |
 
