@@ -1,0 +1,59 @@
+{
+  "name": "@askdb/ai-anthropic",
+  "version": "0.1.0-beta.0",
+  "description": "AskDB Anthropic Claude provider adapter for @askdb/ai.",
+  "keywords": [
+    "askdb",
+    "ai",
+    "ai-sdk",
+    "anthropic",
+    "claude"
+  ],
+  "homepage": "https://github.com/Ygilany/AskDB#readme",
+  "bugs": {
+    "url": "https://github.com/Ygilany/AskDB/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Ygilany/AskDB.git",
+    "directory": "packages/ai-anthropic"
+  },
+  "license": "Apache-2.0",
+  "author": "Yahya Gilany",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE",
+    "NOTICE"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "lint": "tsc -p tsconfig.build.json --noEmit",
+    "test": "vitest run --config ../../vitest.config.ts"
+  },
+  "dependencies": {
+    "@ai-sdk/anthropic": "^3.0.83"
+  },
+  "peerDependencies": {
+    "@askdb/ai": "workspace:^",
+    "ai": "^6.0.0"
+  },
+  "devDependencies": {
+    "@askdb/ai": "workspace:*",
+    "ai": "^6.0.200",
+    "typescript": "^5.9.3",
+    "vitest": "^3.2.6"
+  }
+}

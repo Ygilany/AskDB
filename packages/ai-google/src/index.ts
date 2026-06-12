@@ -15,6 +15,8 @@ const ENV_SPEC: ProviderEnvSpec = {
 
 export const googleProvider: AiProviderAdapter = {
   provider: "google",
+  configHint:
+    "For Google Gemini, set ai.provider: \"google\" and ai.providerConfig.google.apiKey in askdb.config.*.",
   resolveConfig(env, options) {
     return resolveBaseConfig("google", env, ENV_SPEC, options);
   },

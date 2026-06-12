@@ -20,7 +20,7 @@ pnpm -C "$ROOT" -r build >/dev/null
 
 echo "smoke: packing tarballs…"
 mkdir -p "$WORK/tarballs"
-for pkg in packages/config packages/core packages/ai packages/ai-openai packages/ai-azure packages/ai-google packages/introspect packages/connectors packages/postgres packages/prisma packages/enrich packages/tui packages/mysql packages/sqlite packages/sqlserver apps/cli apps/studio apps/http-api; do
+for pkg in packages/config packages/core packages/ai packages/ai-openai packages/ai-azure packages/ai-google packages/ai-anthropic packages/introspect packages/connectors packages/postgres packages/prisma packages/enrich packages/tui packages/mysql packages/sqlite packages/sqlserver apps/cli apps/studio apps/http-api; do
   (cd "$ROOT/$pkg" && pnpm pack --pack-destination "$WORK/tarballs" >/dev/null)
 done
 for pkg in packages/rag; do
@@ -31,7 +31,7 @@ CONFIG_TARBALL="$(ls "$WORK/tarballs"/askdb-config-*.tgz | head -n1)"
 [ -f "$CONFIG_TARBALL" ] || { echo "smoke: missing config tarball" >&2; exit 1; }
 CORE_TARBALL="$(ls "$WORK/tarballs"/askdb-core-*.tgz | head -n1)"
 [ -f "$CORE_TARBALL" ] || { echo "smoke: missing core tarball" >&2; exit 1; }
-AI_TARBALL="$(ls "$WORK/tarballs"/askdb-ai-*.tgz | grep -Ev 'askdb-ai-(openai|azure|google)-' | head -n1)"
+AI_TARBALL="$(ls "$WORK/tarballs"/askdb-ai-*.tgz | grep -Ev 'askdb-ai-(openai|azure|google|anthropic)-' | head -n1)"
 [ -f "$AI_TARBALL" ] || { echo "smoke: missing ai tarball" >&2; exit 1; }
 AI_OPENAI_TARBALL="$(ls "$WORK/tarballs"/askdb-ai-openai-*.tgz | head -n1)"
 [ -f "$AI_OPENAI_TARBALL" ] || { echo "smoke: missing ai-openai tarball" >&2; exit 1; }
@@ -39,6 +39,8 @@ AI_AZURE_TARBALL="$(ls "$WORK/tarballs"/askdb-ai-azure-*.tgz | head -n1)"
 [ -f "$AI_AZURE_TARBALL" ] || { echo "smoke: missing ai-azure tarball" >&2; exit 1; }
 AI_GOOGLE_TARBALL="$(ls "$WORK/tarballs"/askdb-ai-google-*.tgz | head -n1)"
 [ -f "$AI_GOOGLE_TARBALL" ] || { echo "smoke: missing ai-google tarball" >&2; exit 1; }
+AI_ANTHROPIC_TARBALL="$(ls "$WORK/tarballs"/askdb-ai-anthropic-*.tgz | head -n1)"
+[ -f "$AI_ANTHROPIC_TARBALL" ] || { echo "smoke: missing ai-anthropic tarball" >&2; exit 1; }
 INTROSPECT_TARBALL="$(ls "$WORK/tarballs"/askdb-introspect-*.tgz | head -n1)"
 [ -f "$INTROSPECT_TARBALL" ] || { echo "smoke: missing introspect tarball" >&2; exit 1; }
 CONNECTORS_TARBALL="$(ls "$WORK/tarballs"/askdb-connectors-*.tgz | head -n1)"
@@ -87,7 +89,8 @@ fi
 for provider_package in \
   "@askdb/ai-openai:$AI_OPENAI_TARBALL" \
   "@askdb/ai-azure:$AI_AZURE_TARBALL" \
-  "@askdb/ai-google:$AI_GOOGLE_TARBALL"; do
+  "@askdb/ai-google:$AI_GOOGLE_TARBALL" \
+  "@askdb/ai-anthropic:$AI_ANTHROPIC_TARBALL"; do
   provider_name="${provider_package%%:*}"
   provider_tarball="${provider_package#*:}"
   echo "smoke: validating $provider_name tarball contents…"
@@ -282,6 +285,7 @@ node -e "
       '@askdb/ai-openai': 'file:$AI_OPENAI_TARBALL',
       '@askdb/ai-azure': 'file:$AI_AZURE_TARBALL',
       '@askdb/ai-google': 'file:$AI_GOOGLE_TARBALL',
+      '@askdb/ai-anthropic': 'file:$AI_ANTHROPIC_TARBALL',
       '@askdb/introspect': 'file:$INTROSPECT_TARBALL',
       '@askdb/connectors': 'file:$CONNECTORS_TARBALL',
       '@askdb/postgres': 'file:$POSTGRES_TARBALL',

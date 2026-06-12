@@ -6,12 +6,12 @@ import { fileURLToPath } from "node:url";
 import { generateText as defaultGenerateText } from "ai";
 import { getAskDbRuntimeConfig } from "@askdb/config";
 import {
-  aiKeyMissingMessage,
   createAiRegistry,
   type AiConfig,
   type AiEnv,
   type AiProvider,
 } from "@askdb/ai";
+import { anthropicProvider } from "@askdb/ai-anthropic";
 import { azureProvider } from "@askdb/ai-azure";
 import { googleProvider } from "@askdb/ai-google";
 import { openaiProvider } from "@askdb/ai-openai";
@@ -74,7 +74,7 @@ import type {
   SuggestTenantPolicyResponse,
 } from "./shared/api.js";
 
-const ai = createAiRegistry([openaiProvider, azureProvider, googleProvider]);
+const ai = createAiRegistry([openaiProvider, azureProvider, googleProvider, anthropicProvider]);
 
 const CLIENT_DIR = fileURLToPath(new URL("./client/", import.meta.url));
 
@@ -351,7 +351,7 @@ async function suggestForSource(workspace: Workspace, source: SuggestSource): Pr
   const rt = getAskDbRuntimeConfig();
   const model = await ai.createLanguageModelFromEnv(rt.ai.aiEnv);
   if (!model) {
-    throw new StudioHttpError(400, aiKeyMissingMessage("AI enrichment suggestions"));
+    throw new StudioHttpError(400, ai.keyMissingMessage("AI enrichment suggestions"));
   }
   const candidates = await suggestEnrichment(
     buildSuggestionTarget(workspace, source),
@@ -365,7 +365,7 @@ async function suggestTenantPolicyDraft(state: StudioState): Promise<SuggestTena
   const rt = getAskDbRuntimeConfig();
   const model = await ai.createLanguageModelFromEnv(rt.ai.aiEnv);
   if (!model) {
-    throw new StudioHttpError(400, aiKeyMissingMessage("AI tenant policy suggestion"));
+    throw new StudioHttpError(400, ai.keyMissingMessage("AI tenant policy suggestion"));
   }
 
   // Build a compact DDL-like representation of the schema for the prompt
@@ -474,7 +474,7 @@ async function askSampleQuestion(
   if (!mockSql && !aiConfig) {
     throw new StudioHttpError(
       400,
-      `${aiKeyMissingMessage("Sample NL-to-SQL generation")} Set ASKDB_MOCK_SQL to bypass the live model.`,
+      `${ai.keyMissingMessage("Sample NL-to-SQL generation")} Set ASKDB_MOCK_SQL to bypass the live model.`,
     );
   }
 

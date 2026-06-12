@@ -25,3 +25,5 @@ minimumReleaseAgeExclude:
   - '@turbo/windows-arm64@2.9.18'
   - '@types/node@22.19.21'
   - turbo@2.9.18
+  - '@ai-sdk/anthropic@3.0.83'
+  - '@ai-sdk/provider-utils@4.0.28'

@@ -1,9 +1,9 @@
 #!/usr/bin/env node
 import { bootstrapAskDbEnv, getAskDbRuntimeConfig } from "@askdb/config";
 import {
-  aiKeyMissingMessage,
   createAiRegistry,
 } from "@askdb/ai";
+import { anthropicProvider } from "@askdb/ai-anthropic";
 import { azureProvider } from "@askdb/ai-azure";
 import { googleProvider } from "@askdb/ai-google";
 import { openaiProvider } from "@askdb/ai-openai";
@@ -32,7 +32,7 @@ import { Command } from "commander";
 import { runInitCli } from "./init.js";
 import { runIntrospectCli } from "./introspect.js";
 
-const ai = createAiRegistry([openaiProvider, azureProvider, googleProvider]);
+const ai = createAiRegistry([openaiProvider, azureProvider, googleProvider, anthropicProvider]);
 
 // `askdb init` writes templates and should not require a valid askdb.config.
 if (process.argv[2] !== "init") {
@@ -333,7 +333,7 @@ program
       const mockSql = opts.mockSql ?? runtime.dev.mockSql;
       const aiConfig = mockSql ? undefined : ai.resolveAiConfig(runtime.ai.aiEnv);
       if (!mockSql && !aiConfig) {
-        console.error(aiKeyMissingMessage("NL→SQL generation"));
+        console.error(ai.keyMissingMessage("NL→SQL generation"));
         console.error("Tip: in tests, set ASKDB_MOCK_SQL to bypass live model calls.");
         process.exitCode = 1;
         return;

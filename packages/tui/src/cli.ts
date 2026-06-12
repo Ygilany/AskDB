@@ -1,6 +1,7 @@
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { createAiRegistry } from "@askdb/ai";
+import { anthropicProvider } from "@askdb/ai-anthropic";
 import { azureProvider } from "@askdb/ai-azure";
 import { googleProvider } from "@askdb/ai-google";
 import { openaiProvider } from "@askdb/ai-openai";
@@ -12,7 +13,7 @@ import { App } from "./ui/App.js";
 import { bundleSchemaDirectory, loadWorkspace } from "@askdb/enrich";
 import type { SuggestEnrichmentForTui } from "@askdb/enrich";
 
-const ai = createAiRegistry([openaiProvider, azureProvider, googleProvider]);
+const ai = createAiRegistry([openaiProvider, azureProvider, googleProvider, anthropicProvider]);
 
 type CliOptions = {
   schema?: string;
@@ -147,10 +148,10 @@ function printHelp(stream: NodeJS.WriteStream): void {
       "(Phase 6) or hand-authored. Bundled JSON is read-only and not yet supported",
       "as a TUI input.",
       "",
-      "AI suggestions are enabled when ASKDB_AI_API_KEY (or OPENAI_API_KEY) is set.",
-      "For Microsoft Foundry / Azure OpenAI: set ASKDB_AI_PROVIDER=azure plus",
-      "ASKDB_AI_AZURE_RESOURCE_NAME (or ASKDB_AI_BASE_URL). Override the model",
-      "with ASKDB_AI_MODEL, ASKDB_MODEL, or OPENAI_MODEL.",
+      "AI suggestions are enabled when an AI API key is configured (ASKDB_AI_API_KEY, or a",
+      "provider-native key such as OPENAI_API_KEY / ANTHROPIC_API_KEY). Select the provider",
+      "with ASKDB_AI_PROVIDER (openai, azure, google, anthropic); override the model with",
+      "ASKDB_AI_MODEL.",
       "",
     ].join("\n"),
   );

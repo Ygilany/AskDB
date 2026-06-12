@@ -141,3 +141,76 @@ Generated-SQL execution is no longer part of the AskDB package API:
 - `@askdb/postgres` no longer exports `createPostgresExecutor` or `executeReadOnlySelect`.
 - Live introspection uses `CatalogQueryRunner` via `createPostgresCatalogQueryRunner`.
 - CLI and HTTP surfaces return SQL only; applications run any approved SQL outside AskDB.
+
+---
+
+## AI provider recipes
+
+AskDB's first-party surfaces (CLI, HTTP API, Studio, TUI) support OpenAI, Azure/Foundry, Google Gemini, and Anthropic Claude out of the box. The three-tier model for AI configuration:
+
+1. **Known provider literal** (zero extra code): use a first-party provider name — `openai`, `azure`, `foundry`, `google`, `anthropic`.
+2. **Custom provider string + a host-registered adapter** (~40 lines): use any other string and register an adapter under that name in `createAiRegistry(...)`.
+3. **BYO `LanguageModel` via `ask({ model })** (no config involvement): pass a model instance directly; `askdb.config` and `@askdb/ai` are not involved.
+
+### OpenAI
+
+```bash
+# env only
+ASKDB_AI_PROVIDER=openai   # optional; openai is the default
+OPENAI_API_KEY=sk-...
+ASKDB_AI_MODEL=gpt-4o       # optional; default: gpt-4o-mini
+```
+
+```ts
+// askdb.config.ts
+ai: { provider: "openai", providerConfig: { openai: { apiKey: env("OPENAI_API_KEY"), model: "gpt-4o" } } }
+```
+
+### Azure / Microsoft Foundry
+
+```bash
+ASKDB_AI_PROVIDER=azure
+AZURE_OPENAI_API_KEY=...
+ASKDB_AI_AZURE_RESOURCE_NAME=my-resource  # or ASKDB_AI_BASE_URL
+ASKDB_AI_MODEL=gpt-4o-mini               # deployment name
+```
+
+### Google Gemini
+
+```bash
+ASKDB_AI_PROVIDER=google
+GOOGLE_GENERATIVE_AI_API_KEY=...
+ASKDB_AI_MODEL=gemini-2.0-flash  # optional; default: gemini-2.0-flash
+```
+
+```ts
+ai: { provider: "google", providerConfig: { google: { apiKey: env("GOOGLE_GENERATIVE_AI_API_KEY") } } }
+```
+
+### Anthropic Claude
+
+```bash
+ASKDB_AI_PROVIDER=anthropic
+ANTHROPIC_API_KEY=sk-ant-...
+ASKDB_AI_MODEL=claude-sonnet-4-6  # optional; default: claude-sonnet-4-6
+```
+
+```ts
+ai: { provider: "anthropic", providerConfig: { anthropic: { apiKey: env("ANTHROPIC_API_KEY") } } }
+```
+
+**Note**: Anthropic does not provide an embeddings API. If you need RAG with Anthropic as your chat provider, configure a separate embedding provider via `ASKDB_RAG_EMBEDDER` (e.g. `openai`) alongside your Anthropic chat key.
+
+### Custom provider
+
+For any provider not in the first-party list, use a custom string and register an adapter:
+
+```ts
+// askdb.config.ts
+ai: {
+  provider: "mistral",
+  providerConfig: { custom: { apiKey: env("MISTRAL_API_KEY"), model: "mistral-large-2" } }
+}
+```
+
+The custom branch flattens to the universal `ASKDB_AI_*` env keys that `resolveBaseConfig` honors. This only works end to end when the host registry contains an adapter registered under this provider name — the first-party apps do not include third-party adapters.

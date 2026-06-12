@@ -4,6 +4,7 @@
  */
 export const DEFAULT_OPENAI_CHAT_MODEL = "gpt-4o-mini";
 export const DEFAULT_AZURE_OPENAI_DEPLOYMENT = "gpt-4o-mini";
+export const DEFAULT_ANTHROPIC_CHAT_MODEL = "claude-sonnet-4-6";
 export const DEFAULT_GOOGLE_CHAT_MODEL = "gemini-2.0-flash";
 export const DEFAULT_INTROSPECT_OUTPUT_DIR = "./askdb/";
 export const DEFAULT_LOCAL_POSTGRES_URL = "postgres://postgres:postgres@127.0.0.1:5432/postgres";

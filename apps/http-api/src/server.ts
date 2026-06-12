@@ -6,9 +6,9 @@ import { dirname, isAbsolute, resolve as resolvePath } from "node:path";
 import { fileURLToPath } from "node:url";
 import { getAskDbRuntimeConfig } from "@askdb/config";
 import {
-  aiKeyMissingMessage,
   createAiRegistry,
 } from "@askdb/ai";
+import { anthropicProvider } from "@askdb/ai-anthropic";
 import { azureProvider } from "@askdb/ai-azure";
 import { googleProvider } from "@askdb/ai-google";
 import { openaiProvider } from "@askdb/ai-openai";
@@ -31,7 +31,7 @@ import {
 } from "@askdb/core";
 import type { AskHttpErrorResponse, AskHttpRequest, AskHttpSuccessResponse } from "./types.js";
 
-const ai = createAiRegistry([openaiProvider, azureProvider, googleProvider]);
+const ai = createAiRegistry([openaiProvider, azureProvider, googleProvider, anthropicProvider]);
 
 export type AskDbHttpServerOptions = {
   /** Default: 3000 */
@@ -251,7 +251,7 @@ export function createAskDbHttpServer(options: AskDbHttpServerOptions = {}) {
       if (!mockSql && !aiConfig) {
         writeError(res, 500, correlationId, {
           code: "generation_not_configured",
-          message: `${aiKeyMissingMessage("NL→SQL generation")} (or set ASKDB_MOCK_SQL).`,
+          message: `${ai.keyMissingMessage("NL→SQL generation")} (or set ASKDB_MOCK_SQL).`,
         });
         return;
       }
