@@ -60,7 +60,7 @@ const { sql } = await ask({
 });
 ```
 
-Per-provider model recipes (OpenAI, Anthropic, Bedrock, Ollama, AI Gateway) and introspection recipes live in [`docs/integration/installable-package.md`](docs/integration/installable-package.md).
+Provider setup recipes (OpenAI, Azure OpenAI / Foundry, Google Gemini, and any OpenAI-compatible endpoint such as Ollama or an AI gateway via `ASKDB_AI_BASE_URL`) and introspection recipes live in [`docs/integration/installable-package.md`](docs/integration/installable-package.md).
 
 ## Constitution
 

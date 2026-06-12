@@ -98,7 +98,7 @@ Front-matter is validated by zod (round-trippable through `@askdb/enrich` author
 
 ## AI and integrations
 
-- **BYO chat model** — `ask({ model })` accepts any AI SDK `LanguageModel`. Customers wire OpenAI, Anthropic, Google, Bedrock, AI Gateway, Ollama, etc. without changes inside AskDB. Per-provider recipes in [`docs/integration/installable-package.md`](integration/installable-package.md).
+- **BYO chat model** — `ask({ model })` accepts any AI SDK `LanguageModel`. Customers wire OpenAI, Azure OpenAI / Foundry, Google Gemini, or any OpenAI-compatible endpoint (such as Ollama or an AI gateway via `ASKDB_AI_BASE_URL`) without changes inside AskDB. Provider setup recipes in [`docs/integration/installable-package.md`](integration/installable-package.md).
 - **BYO embedder** (Phase 8) — `@askdb/rag` chunking and retrieval accept any embedder function (AI SDK `embed()` / `embedMany()` shape). Default reference: `text-embedding-3-small`; nothing in `@askdb/core` requires it.
 - **BYO vector store** (Phase 8) — `@askdb/rag` ships an `VectorStore` interface with adapters added one at a time: in-memory (default, zero deps), file-backed (`*.embeddings.bin` checked in next to the schema artifact), pgvector, then others as demand drives. Consumers pick the adapter or implement their own.
 - **No mandatory vendors** — Nothing in the package requires an AskDB-owned account or service. Every external dependency is a seam the integrator chooses.

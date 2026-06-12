@@ -2,7 +2,7 @@
 
 ## Status
 
-Proposed.
+Accepted (2026-06-11).
 
 ## Context
 
@@ -314,8 +314,26 @@ Apps declare the provider packages they intentionally support as direct dependen
   and `pg`. It should not rely on transitive availability of `ai`; any public type or runtime
   helper that uses AI SDK embedding models must continue declaring the relevant peer dependency.
 - Adding a new provider no longer requires changing `@askdb/core`.
-- Adding a new provider is a new `@askdb/ai-*` package plus a config branch when AskDB wants to
-  support it through config/env resolution.
+- Adding a new provider requires a new `@askdb/ai-*` package. A config branch in `askdb.config.*`
+  authoring support is only needed for IDE / config-file completion; env-driven use works without it.
+
+## Amendments
+
+### 2026-06: Implemented and extended (adapter self-description)
+
+Option F was implemented as decided. In a subsequent refactor, the architecture was extended so
+that adapters are fully self-describing:
+
+- `@askdb/ai` no longer hard-codes provider env vars or model-string shapes in a central config
+  branch. Each `@askdb/ai-*` adapter exports `resolveConfig`, `aliases`, and `providerOptions`
+  that carry the provider-specific resolution logic.
+- `AiProvider` is an open string type rather than a closed union, so new adapters are registered
+  without changing `@askdb/ai` itself.
+- `ai` is a peer dependency of both `@askdb/ai` and every `@askdb/ai-*` adapter. Host apps
+  install one copy of the AI SDK and peer-pin it across the tree.
+- The consequence "a new provider requires … plus a config branch" is amended: a config branch
+  in `askdb.config.*` authoring is only needed for IDE/config-file completion; env-driven use
+  works through the adapter's own `resolveConfig` export without a config branch.
 
 ## Related
 
