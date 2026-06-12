@@ -28,8 +28,8 @@ export const anthropicProvider: AiProviderAdapter = {
   },
   createEmbeddingModel() {
     throw new Error(
-      "Anthropic does not provide an embeddings API. Configure a different embedding provider " +
-        "(e.g. ASKDB_RAG_EMBEDDER with OpenAI) while using Anthropic for chat.",
+      "Anthropic does not provide an embeddings API. Configure a separate embedding provider " +
+        "via rag.embedder in askdb.config.* (e.g. OpenAI) while using Anthropic for chat.",
     );
   },
 };
