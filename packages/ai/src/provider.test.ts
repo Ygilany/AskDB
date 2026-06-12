@@ -435,9 +435,8 @@ describe("createAiRegistry", () => {
       };
       const registry = createAiRegistry([adapterNoHint]);
       const message = registry.keyMissingMessage("fallback ctx");
-      // The static message includes OpenAI, Azure, and Google wording
       expect(message).toContain("fallback ctx: no AI API key configured.");
-      expect(message).toContain("OPENAI_API_KEY");
+      expect(message).toContain("ai.providerConfig.openai.apiKey");
     });
   });
 });
