@@ -14,6 +14,7 @@ STOP conditions, and update your row when done.
 | 003 | Architecture docs refresh: diagrams/tables for all packages, ADR 0006/0007 statuses, truthful recipe claims (A5+A6) | P2 | S | 001 | DONE |
 | 004 | `@askdb/ai-anthropic` adapter, open config provider union, registry-driven key-missing message, surfaces policy wiring (B3+B4+B5) | P3 | M | 001 (hard), 003 (soft) | DONE |
 | 005 | Docs-site refresh: registry-method API, anthropic + custom-provider config docs, current model ids | P3 | S | 001, 004 (hard), 003 (soft) | DONE |
+| 006 | Guard known-provider config branches against the `CustomAiConfig` type hole (clear error instead of TypeError) | P2 | S | — | TODO |
 
 Status values: TODO | IN PROGRESS | DONE | BLOCKED (with one-line reason) | REJECTED (with one-line rationale)
 
@@ -30,6 +31,11 @@ Status values: TODO | IN PROGRESS | DONE | BLOCKED (with one-line reason) | REJE
 - 005 hard-requires 001 and 004 because the site pages assert facts those plans create (registry-method
   resolution; `ai.provider = "anthropic"` working; the custom-provider config branch). The docs-site is
   hand-authored Starlight content — it does NOT mirror `docs/*.md`, so plan 003 does not cover it.
+- 006 was found during post-implementation review of 004 (2026-06-12, at `d208feb`): the
+  `CustomAiConfig` branch makes known provider literals assignable without their required
+  `providerConfig` branch, turning a former compile error into a runtime TypeError in
+  `flattenAskDbConfig`. 004's STOP condition flagged this; the executor proceeded with type
+  assertions instead. Fix is runtime guards (type-level exclusion is not expressible in TS).
 
 ## Related tooling
 
