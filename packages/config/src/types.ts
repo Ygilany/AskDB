@@ -106,7 +106,16 @@ export type CustomProviderConfig = {
 };
 
 /** Branch for custom/third-party providers. `(string & {})` preserves literal
- *  autocomplete for the known providers while accepting any other string. */
+ *  autocomplete for the known providers while accepting any other string.
+ *
+ *  **Type-level hole**: TypeScript cannot exclude specific string literals from
+ *  `string & {}`, so every known provider literal (`"openai"`, `"azure"`, …) is
+ *  technically assignable to this branch as well. As a result, a misconfigured
+ *  object like `{ provider: "openai" }` (no `providerConfig`) compiles without
+ *  error. `flattenAskDbConfig` closes this gap at runtime: it calls
+ *  `requireProviderBranch` in each known-provider branch, which throws a clear
+ *  `askdb.config: ai.providerConfig.<provider> is required …` error instead of
+ *  crashing with a raw `TypeError` when the expected branch is absent. */
 export type CustomAiConfig = {
   /** Any provider string not covered by a first-party branch. Works end to end
    *  only when the host registry has an adapter registered under this name.

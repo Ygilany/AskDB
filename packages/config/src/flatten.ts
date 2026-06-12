@@ -78,6 +78,20 @@ function applyAzureLikeAi(out: Record<string, string>, cfg: AzureConfig | Foundr
   set(out, "AZURE_OPENAI_API_VERSION", cfg.apiVersion);
 }
 
+function requireProviderBranch<T>(
+  provider: string,
+  branch: T | undefined,
+): T {
+  if (!branch) {
+    throw new Error(
+      `askdb.config: ai.providerConfig.${provider} is required when ai.provider is "${provider}". ` +
+        `(Did you put the settings under providerConfig.custom? That branch is only for ` +
+        `third-party providers without a first-party package.)`,
+    );
+  }
+  return branch;
+}
+
 function resolveRagEmbeddingDimensions(rag: AskDbConfig["rag"]): number {
   if (rag.embedder === "openai" || rag.embedder === "ai-sdk") {
     const ec = rag.embedderConfig.openai;
@@ -100,24 +114,26 @@ export function flattenAskDbConfig(config: AskDbConfig): Record<string, string> 
 
   // --- AI ---
   // Use type assertions in each branch because the inclusion of CustomAiConfig (provider: string & {})
-  // in the union prevents TypeScript from narrowing providerConfig to the specific branch shape —
-  // the runtime guard on `provider` still ensures correctness.
+  // in the union prevents TypeScript from narrowing providerConfig to the specific branch shape.
+  // requireProviderBranch enforces that the expected providerConfig key is present; without it a
+  // misconfigured object like { provider: "openai" } (no providerConfig) would dereference undefined
+  // and crash with an opaque TypeError at runtime.
   if (config.ai.provider === "openai") {
     set(out, "ASKDB_AI_PROVIDER", "openai");
-    applyOpenAiAi(out, (config.ai as OpenaiAiConfig).providerConfig.openai);
+    applyOpenAiAi(out, requireProviderBranch("openai", (config.ai as OpenaiAiConfig).providerConfig?.openai));
   } else if (config.ai.provider === "azure") {
     set(out, "ASKDB_AI_PROVIDER", "azure");
-    applyAzureLikeAi(out, (config.ai as AzureAiConfig).providerConfig.azure);
+    applyAzureLikeAi(out, requireProviderBranch("azure", (config.ai as AzureAiConfig).providerConfig?.azure));
   } else if (config.ai.provider === "foundry") {
     // `@askdb/core` treats `foundry` like Azure for env parsing.
     set(out, "ASKDB_AI_PROVIDER", "foundry");
-    applyAzureLikeAi(out, (config.ai as FoundryAiConfig).providerConfig.foundry);
+    applyAzureLikeAi(out, requireProviderBranch("foundry", (config.ai as FoundryAiConfig).providerConfig?.foundry));
   } else if (config.ai.provider === "google") {
     set(out, "ASKDB_AI_PROVIDER", "google");
-    applyGoogleAi(out, (config.ai as GoogleAiConfig).providerConfig.google);
+    applyGoogleAi(out, requireProviderBranch("google", (config.ai as GoogleAiConfig).providerConfig?.google));
   } else if (config.ai.provider === "anthropic") {
     set(out, "ASKDB_AI_PROVIDER", "anthropic");
-    applyAnthropicAi(out, (config.ai as AnthropicAiConfig).providerConfig.anthropic);
+    applyAnthropicAi(out, requireProviderBranch("anthropic", (config.ai as AnthropicAiConfig).providerConfig?.anthropic));
   } else {
     // Custom/third-party provider: flatten to the universal ASKDB_AI_* keys that
     // @askdb/ai's resolveBaseConfig honors for every registered adapter.

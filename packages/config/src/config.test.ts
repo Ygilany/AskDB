@@ -292,6 +292,40 @@ describe("flattenAskDbConfig", () => {
     expect(flat.ASKDB_AI_API_KEY).toBeUndefined();
   });
 
+  it("throws a clear error when openai provider has no providerConfig", () => {
+    const cfg: AskDbConfig = {
+      ...minimalConfig(),
+      ai: { provider: "openai" } as unknown as AskDbConfig["ai"],
+    };
+    expect(() => flattenAskDbConfig(cfg)).toThrow(/ai\.providerConfig\.openai is required/);
+  });
+
+  it("throws a clear error when google provider has providerConfig.custom instead of providerConfig.google", () => {
+    expect(() =>
+      flattenAskDbConfig(
+        minimalConfig({
+          ai: {
+            provider: "google",
+            providerConfig: { custom: { apiKey: "k" } },
+          } as unknown as AskDbConfig["ai"],
+        }),
+      ),
+    ).toThrow(/ai\.providerConfig\.google is required/);
+  });
+
+  it("throws a clear error when foundry provider has an empty providerConfig", () => {
+    expect(() =>
+      flattenAskDbConfig(
+        minimalConfig({
+          ai: {
+            provider: "foundry",
+            providerConfig: {},
+          } as unknown as AskDbConfig["ai"],
+        }),
+      ),
+    ).toThrow(/ai\.providerConfig\.foundry is required/);
+  });
+
   it("known providers are unaffected by the custom-provider branch", () => {
     const flat = flattenAskDbConfig(
       minimalConfig({
