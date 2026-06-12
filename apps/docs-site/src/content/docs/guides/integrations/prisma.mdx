@@ -40,7 +40,7 @@ npx askdb introspect --engine prisma --prisma-schema ./prisma --print
 npx askdb introspect --engine prisma --prisma-schema ./prisma --diff my-app.schema
 ```
 
-Set `ASKDB_PRISMA_SCHEMA` in `.env` (or `askdb.config.ts`) to make `--prisma-schema` optional on repeat runs.
+To make `--prisma-schema` optional on repeat runs, set `introspection.providerConfig.prisma.schemaPath` in `askdb.config.ts` — or rely on auto-discovery: with `provider: "prisma"` and no path configured, AskDB finds `prisma/schema.prisma` (or `schema.prisma`) in your project root automatically.
 
 ## Programmatic API
 

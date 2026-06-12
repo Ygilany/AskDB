@@ -11,7 +11,7 @@ description: "Scaffold config, introspect a database, enrich the schema, and ask
 
 - Node 20 or newer.
 - npm, pnpm, or yarn (examples use `npx`).
-- An API key from a model provider — OpenAI, Anthropic, Google, OpenRouter, or any AI-SDK compatible provider. See [Bring your own model](/guides/bring-your-own-model/).
+- An API key from a model provider — OpenAI, Anthropic, Google, Azure, or any OpenAI-compatible endpoint (OpenRouter, vLLM, Ollama, ...). See [Bring your own model](/guides/bring-your-own-model/).
 - A database AskDB can read — Postgres, MySQL, SQLite, or SQL Server — or even a Prisma schema file (no live database required).
 
 ## 1. Scaffold your config
@@ -35,18 +35,32 @@ npx askdb@latest init
 Open `askdb.config.ts` and fill in your settings:
 
 ```ts
-import { defineConfig } from "@askdb/config";
+import { defineConfig, env } from "@askdb/config";
 
 export default defineConfig({
   ai: {
-    provider: "openai",   // "openai" | "azure" | "foundry" | "google" | "anthropic" — or a custom string (see /reference/config/)
-    model: "gpt-4o-mini",
+    provider: "openai",   // "openai" | "azure" | "foundry" | "google" | "anthropic" — or a custom string
+    providerConfig: {
+      openai: {
+        apiKey: env("OPENAI_API_KEY"),
+        model: env("OPENAI_MODEL"),   // optional — defaults to gpt-4o-mini
+      },
+    },
   },
   introspection: {
-    outputDir: "./my-app.schema",  // optional — defaults to ./askdb/
+    provider: "postgres",            // "postgres" | "prisma" | "mysql" | "sqlite" | "sqlserver"
+    providerConfig: {
+      postgres: { databaseUrl: env("DATABASE_URL") },
+    },
+    outputDir: "./my-app.schema",    // optional — defaults to ./askdb/
   },
+  // ... the scaffolded file also includes `rag`, `logging`, `studio`, and
+  // `httpApi` sections — keep them as generated. Every option is documented
+  // in the Configuration reference.
 });
 ```
+
+The snippet above is the part you'll actually edit; the scaffolded template contains the full config. See the [Configuration reference](/reference/config/) for every option.
 
 Once this is configured, most CLI flags below are optional.
 
@@ -79,7 +93,7 @@ The database is only used here — for introspection. To target a different data
 npx askdb introspect --url "$OTHER_DATABASE_URL"
 ```
 
-AskDB picks the right dialect from the connection string. The complete config surface — `outputDir` defaults, per-engine `providerConfig`, env-var bindings — is documented in the [Configuration reference](/reference/config/). For engine-specific install steps see [Switch engines](/guides/switch-engines/).
+The engine comes from `introspection.provider` in your config (or the `--engine` flag — see below); the introspected artifact records it, and `askdb ask` later infers the SQL dialect from the artifact. The complete config surface — `outputDir` defaults, per-engine `providerConfig`, env-var bindings — is documented in the [Configuration reference](/reference/config/). For engine-specific install steps see [Switch engines](/guides/switch-engines/).
 
 ### From a Prisma schema
 

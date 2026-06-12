@@ -9,15 +9,15 @@ description: "How AskDB adapts to your SQL engine and the trust model you choose
 
 ## Dialects
 
-A dialect is an `AskDialect` implementation supplied by an engine package. It tells `@askdb/core` how to:
+A dialect is a `DialectSpec` built into `@askdb/core` — all four ship with the core package. It tells the pipeline how to:
 
 - Construct identifiers and quoting for this engine.
 - Format dialect-specific clauses (LIMIT vs TOP, dollar parameters vs question marks, JSON path syntax).
 - Validate what counts as a read-only `SELECT` on this engine.
 
-Each engine ships its dialect as a first-class package. Pick the one that matches your database.
+The per-engine packages add introspection for their engine and re-export its dialect constant; `ask()` itself needs only the dialect id. The CLI resolves the id automatically: `dialect` in `askdb.config.ts` → the provider recorded in the schema artifact (for Prisma artifacts, the `datasource.provider` from your `.prisma` file) → `postgres`.
 
-| Engine | Package | Status |
+| Engine | Engine package (introspection) | Status |
 | --- | --- | --- |
 | PostgreSQL | `@askdb/postgres` | Reference dialect. |
 | MySQL | `@askdb/mysql` | First-class dialect and introspection. |

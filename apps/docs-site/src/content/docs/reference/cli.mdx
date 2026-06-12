@@ -109,13 +109,15 @@ askdb ask \
 
 | Flag | Description |
 | --- | --- |
-| `--schema <path>` | Path to the schema artifact (required). |
-| `--question <text>` | The natural-language question (required). |
-| `--dialect <id>` | Override dialect: `postgres`, `mysql`, `sqlite`, `sqlserver`. |
+| `-s, --schema <path>` | Path to the schema artifact. Optional — defaults to the configured `introspection.outputDir`, or `./askdb/`. |
+| `-q, --question <text>` | The natural-language question (required). |
 | `--mode <mode>` | Operating mode: `schema_only` (default) or `bounded_results`. |
+| `--explain` | After the SQL, print a JSON block describing the heuristic guardrails satisfied. |
 | `--omit-sensitive-from-prompt` | Exclude sensitive columns from the prompt entirely. |
 | `--log-level <level>` | Log level (default reads from `ASKDB_LOG_LEVEL`). |
 | `-v`, `--verbose` | Show structured log events. |
+
+There is no dialect flag: the dialect resolves from `dialect` in `askdb.config.ts`, falling back to the provider recorded in the schema artifact at introspection time, then to `postgres`.
 
 `askdb ask` returns the validated SQL on stdout. Execution is not part of the CLI.
 

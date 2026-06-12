@@ -98,7 +98,7 @@ npm install @askdb/config
 
 ## Engine adapters
 
-Each engine adapter ships the dialect (SQL generation + validation), the introspection connector (for schema artifacts), and any templates the dialect uses.
+Each engine package ships the introspection connector for its engine, any catalog SQL templates, and a re-export of that engine's dialect constant. The dialect specs themselves (SQL generation + validation rules) live in `@askdb/core` — `ask()` needs only the dialect id, no engine package.
 
 ### `@askdb/postgres`
 
@@ -192,7 +192,8 @@ npm install @askdb/rag
 
 | Symbol | Purpose |
 | --- | --- |
-| `indexSchema({ schema, store, embedder })` | Index a schema artifact's chunks. |
+| `buildSchemaIndex({ schema, store, embedder, ... })` | Chunk + embed + upsert a schema artifact; returns `{ retriever, stats, chunks }`. |
+| `createAiSdkEmbedder({ model })` / `createOpenAiEmbedder(...)` | Wrap an AI SDK embedding model (or raw OpenAI) as the `embedder`. |
 | `createRetriever({ store, embedder })` | Build the retriever passed to `ask()`. |
 | `createPgvectorStore` | The pgvector store factory. |
 

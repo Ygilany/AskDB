@@ -47,18 +47,21 @@ If you are pointing at a different database instance — one that may have a dif
 
 ```bash
 npx askdb introspect \
+  --engine mysql \
   --url "mysql://user:pass@host/dbname" \
   --out my-app.schema \
   --schema-id my-app
 ```
 
-The connection string format follows each engine's convention. The CLI picks the right dialect from the URL scheme.
+The connection string format follows each engine's convention. The engine itself comes from `--engine` (or `introspection.provider` in `askdb.config.ts`) — the CLI does not infer it from the URL. The artifact records which engine produced it, and `askdb ask` infers the dialect from the artifact.
 
 If the logical schema is identical and you are only swapping the adapter package, the existing artifact is already valid — skip this step and go straight to step 3.
 
 ### 3. Update the `dialect` value in `ask()` calls
 
 The schema artifact records which engine it was introspected from. The CLI (`askdb ask`) and `askdb.config.ts` use that information to infer the dialect automatically — no manual update needed for those entry points.
+
+This holds for Prisma-introspected artifacts too: the connector reads the `datasource.provider` from your `.prisma` file (`postgresql` → `postgres`, `mysql`, `sqlite`, `sqlserver`) and records it, so `askdb ask` still knows the dialect without a live database.
 
 When calling `ask()` programmatically, `dialect` is an explicit parameter. Update it to match the new engine:
 
@@ -71,7 +74,7 @@ const { sql } = await ask({
 });
 ```
 
-The dialect adapter packages (`@askdb/mysql`, `@askdb/postgres`, etc.) define the SQL generation rules, parameter syntax, and validator for each engine. Installing the right package is what *enables* the dialect — `ask()` still needs to know which one to activate, which is what this parameter does.
+All four dialect specs ship inside `@askdb/core` — `ask({ dialect: "mysql" })` works without installing anything else. The engine packages (`@askdb/mysql`, `@askdb/postgres`, ...) supply the *introspection* connector for that engine (and re-export its dialect constant for convenience); you need them to introspect, not to generate.
 
 ### 4. Update your driver
 

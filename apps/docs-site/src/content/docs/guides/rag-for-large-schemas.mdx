@@ -89,29 +89,39 @@ Paste the output (CREATE EXTENSION, CREATE TABLE, CREATE INDEX) into Flyway, Liq
 After the store is provisioned, index your schema's chunks:
 
 ```ts
-import { createPgvectorStore, indexSchema } from "@askdb/rag";
-import { loadSchema } from "@askdb/core";
+import {
+  buildSchemaIndex,
+  createAiSdkEmbedder,
+  createPgvectorStore,
+  loadChunkerSourcesFromDir,
+} from "@askdb/rag";
 import { openai } from "@ai-sdk/openai";
-
-const schema = await loadSchema("./my-app.schema");
 
 const store = createPgvectorStore({
   connectionString: process.env.ASKDB_PGVECTOR_URL!,
   dimensions: 1536,
 });
 
-await indexSchema({
-  schema,
+const embedder = createAiSdkEmbedder({
+  model: openai.textEmbeddingModel("text-embedding-3-small"),
+});
+
+const { retriever, stats } = await buildSchemaIndex({
+  schema: loadChunkerSourcesFromDir("./my-app.schema"),
   store,
-  embedder: openai.embedding("text-embedding-3-small"),
+  embedder,
+  embedderId: "openai:text-embedding-3-small", // changes force a full re-embed
+  lockFilePath: "./my-app.schema/schema.lock.json", // skip unchanged chunks
 });
 ```
 
-Re-run this whenever the schema artifact changes — typically as part of the same deploy that ships the artifact.
+`buildSchemaIndex` chunks the artifact, embeds only what changed since the last run (tracked in `schema.lock.json`), and returns a ready-to-use `retriever` plus indexing stats.
 
 ## Wire retrieval into `ask()`
 
 Pass the retriever to `ask()`. AskDB calls it with the question and substitutes the retrieved chunks for the full DDL in the prompt.
+
+If you just ran `buildSchemaIndex` in the same process, pass its returned `retriever` directly. To retrieve in a separate process (the common production shape), rebuild one from the store:
 
 ```ts
 import { ask } from "@askdb/core";
