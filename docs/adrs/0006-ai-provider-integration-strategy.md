@@ -2,7 +2,7 @@
 
 ## Status
 
-Proposed.
+Accepted (2026-06-11).
 
 ## Context
 
@@ -325,3 +325,17 @@ Apps declare the provider packages they intentionally support as direct dependen
 - `packages/ai/src/provider.ts` - shared config resolution and provider registry.
 - AI SDK providers and models: <https://ai-sdk.dev/docs/foundations/providers-and-models>.
 - AI SDK provider management: <https://ai-sdk.dev/docs/ai-sdk-core/provider-management>.
+
+## Amendments
+
+**2026-06 — Implemented, then extended (adapter contract v2):** The architecture
+described here shipped. It was then extended: `@askdb/ai` no longer hard-codes
+provider env vars or defaults — adapters are now self-describing via `resolveConfig`,
+`aliases`, and `providerOptions`. The `AiProvider` type is now an open `string`
+instead of a closed union (so third-party adapters don't require a core change).
+`ai` is a peer dependency of `@askdb/ai` and all first-party adapter packages rather
+than a hard dependency. Standalone `resolveAiConfig` / `resolveEmbeddingConfig`
+functions moved onto `createAiRegistry()` registry instances. The consequence
+"adding a new provider is a new `@askdb/ai-*` package plus a config branch" was
+superseded: a config branch in `askdb.config.*` is now only needed for authoring-time
+type support; env-driven use (`ASKDB_AI_PROVIDER=<name>`) works without it.

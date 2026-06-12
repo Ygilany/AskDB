@@ -47,6 +47,10 @@ flowchart TB
   subgraph Integrations["Integration packages"]
     postgres["@askdb/postgres<br/>Postgres dialect, connector, templates, runner"]
     prisma["@askdb/prisma<br/>Prisma schema-file connector"]
+    connectors["@askdb/connectors<br/>Connector provider registry"]
+    mysql["@askdb/mysql<br/>MySQL / MariaDB dialect, connector, runner"]
+    sqlite["@askdb/sqlite<br/>SQLite dialect, connector, runner"]
+    sqlserver["@askdb/sqlserver<br/>SQL Server dialect, connector, runner"]
   end
 
   subgraph AI["AI provider adapters"]
@@ -65,9 +69,14 @@ flowchart TB
     docsSite["@askdb/docs-site<br/>static documentation site"]
   end
 
+  connectors --> introspect
   postgres --> core
   postgres --> introspect
+  postgres --> connectors
   prisma --> introspect
+  mysql --> connectors
+  sqlite --> connectors
+  sqlserver --> connectors
   enrich --> core
   rag --> core
   aiOpenai --> aiPkg
@@ -80,6 +89,10 @@ flowchart TB
   cli --> introspect
   cli --> postgres
   cli --> prisma
+  cli --> connectors
+  cli --> mysql
+  cli --> sqlite
+  cli --> sqlserver
   cli --> tui
   cli --> studio
   cli --> aiPkg
@@ -100,6 +113,10 @@ flowchart TB
 | `@askdb/ai-azure` | Azure OpenAI / Microsoft Foundry provider adapter for `@askdb/ai`. | Wraps `@ai-sdk/azure`; no NL-to-SQL logic. |
 | `@askdb/ai-google` | Google Generative AI / Gemini provider adapter for `@askdb/ai`. | Wraps `@ai-sdk/google`; no NL-to-SQL logic. |
 | `@askdb/ai-anthropic` | Anthropic Claude provider adapter for `@askdb/ai`. No embeddings API; throws a clear error if `createEmbeddingModel` is called. | Wraps `@ai-sdk/anthropic`; no NL-to-SQL logic. |
+| `@askdb/connectors` | Registry for database connector adapters, config-driven dispatch contract, and `createAskDbConnectorRegistry` factory. | No database drivers; engine packages supply those. |
+| `@askdb/mysql` | MySQL / MariaDB connector adapter for `@askdb/connectors`; includes `MYSQL_DIALECT`, `MARIADB_DIALECT`, live connector, and `createMysqlCatalogQueryRunner`. | Wraps `mysql2` (optional peer); exports `mysqlConnectorProvider`. |
+| `@askdb/sqlite` | SQLite connector adapter for `@askdb/connectors`; includes `SQLITE_DIALECT`, live connector, and `createSqliteCatalogQueryRunner`. | Wraps `better-sqlite3` (optional peer); exports `sqliteConnectorProvider`. |
+| `@askdb/sqlserver` | SQL Server connector adapter for `@askdb/connectors`; includes `SQLSERVER_DIALECT`, live connector, and `createSqlServerCatalogQueryRunner`. | Wraps `mssql` (optional peer); exports `sqlServerConnectorProvider`. |
 | `@askdb/core` | Dialect-agnostic NL-to-SQL pipeline, Schema v2 loading/parsing, modes, logging, enrichment suggestions, and retriever input. | No database drivers, no generated-SQL execution, no engine-specific connector. |
 | `@askdb/introspect` | Engine-agnostic `Connector<TInput>` contract, introspection orchestrator, and Schema v2 renderer. | No default connector, no engine-specific input union, no standalone binary. |
 | `@askdb/postgres` | Postgres dialect, SQL prompt/validation helpers, live/from-export connector, catalog templates, and optional `pg` catalog runner. | `pg` is optional and only needed for live catalog reads; generated SQL still executes outside AskDB. |
@@ -124,6 +141,10 @@ flowchart BT
   rag["@askdb/rag"]
   postgres["@askdb/postgres"]
   prisma["@askdb/prisma"]
+  connectors["@askdb/connectors"]
+  mysql["@askdb/mysql"]
+  sqlite["@askdb/sqlite"]
+  sqlserver["@askdb/sqlserver"]
   ai["@askdb/ai"]
   aiOpenai["@askdb/ai-openai"]
   aiAzure["@askdb/ai-azure"]
@@ -134,11 +155,16 @@ flowchart BT
   cli["askdb"]
   http["@askdb/http-api"]
 
+  connectors --> introspect
   enrich --> core
   rag --> core
   postgres --> core
   postgres --> introspect
+  postgres --> connectors
   prisma --> introspect
+  mysql --> connectors
+  sqlite --> connectors
+  sqlserver --> connectors
   aiOpenai --> ai
   aiAzure --> ai
   aiGoogle --> ai
@@ -154,6 +180,10 @@ flowchart BT
   cli --> introspect
   cli --> postgres
   cli --> prisma
+  cli --> connectors
+  cli --> mysql
+  cli --> sqlite
+  cli --> sqlserver
   cli --> tui
   cli --> studio
   cli --> ai
@@ -170,6 +200,8 @@ Boundary rules:
 - `@askdb/enrich` owns reusable authoring behavior. `@askdb/tui` and `@askdb/studio` depend on it instead of depending on each other.
 - `@askdb/rag` is optional. It can narrow schema context before `ask()`, but it does not replace dialect validation.
 - First-party apps can be batteries-included. Reusable packages should stay small and should not pull optional drivers into unrelated workflows.
+- `@askdb/ai` owns provider dispatch and the universal env precedence; each `@askdb/ai-*` adapter owns its provider's SDK, native env vars, and defaults. Core stays BYO-model: `ask()` takes any AI SDK `LanguageModel` and never depends on `@askdb/ai`.
+- First-party surfaces (`askdb`, `@askdb/http-api`, `@askdb/studio`, `@askdb/tui`) are deliberately batteries-included: they hard-depend on all first-party adapters so env config alone selects a provider. Library packages must not.
 
 ## Schema-to-SQL flow
 
@@ -329,6 +361,7 @@ Connectors and peer packages solve different problems:
 | Catalog runner | Integration-owned helper, currently `@askdb/postgres` | `CatalogQueryRunner` | Use a different live database client while keeping the connector unchanged. |
 | Enrichment authoring | `@askdb/enrich` | `Workspace`, draft builders, save helpers, bundle helpers | Build a custom UI over Schema v2 without depending on TUI or Studio. |
 | Retrieval | `@askdb/rag` and `@askdb/core` | `Embedder`, `VectorStore`, `Retriever` | Use a different embedding provider, vector database, or retrieval policy. |
+| AI provider adapter | `@askdb/ai` contract, implemented by `@askdb/ai-*` packages | `AiProviderAdapter` | Add a model provider that resolves from AskDB env/config; BYO-model via `ask()` needs no adapter. |
 | Product surface | App packages or consumer app | CLI, HTTP, browser UI, MCP, future SDK | Compose the reusable packages into a workflow with host-owned auth, policy, and execution. |
 
 ## Related docs
