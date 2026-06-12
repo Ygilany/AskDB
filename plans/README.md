@@ -15,6 +15,8 @@ STOP conditions, and update your row when done.
 | 004 | `@askdb/ai-anthropic` adapter, open config provider union, registry-driven key-missing message, surfaces policy wiring (B3+B4+B5) | P3 | M | 001 (hard), 003 (soft) | DONE |
 | 005 | Docs-site refresh: registry-method API, anthropic + custom-provider config docs, current model ids | P3 | S | 001, 004 (hard), 003 (soft) | DONE |
 | 006 | Guard known-provider config branches against the `CustomAiConfig` type hole (clear error instead of TypeError) | P2 | S | — | DONE |
+| 007 | Multi-tenancy docs page: real tenant-policy front-matter, per-field reference, correct `TenantScope` examples | P1 | M | — | DONE |
+| 008 | Docs-site accuracy sweep: quickstart config example, dialect/engine story, RAG indexing API, CLI flags, config-reference discovery/precedence | P1 | M | — (run after 007; both touch this index) | DONE |
 
 Status values: TODO | IN PROGRESS | DONE | BLOCKED (with one-line reason) | REJECTED (with one-line rationale)
 
@@ -36,6 +38,16 @@ Status values: TODO | IN PROGRESS | DONE | BLOCKED (with one-line reason) | REJE
   `providerConfig` branch, turning a former compile error into a runtime TypeError in
   `flattenAskDbConfig`. 004's STOP condition flagged this; the executor proceeded with type
   assertions instead. Fix is runtime guards (type-level exclusion is not expressible in TS).
+
+- 007 and 008 come from the 2026-06-12 docs-site correctness review (branch
+  `Ygilany/fix-docs-review-items`, planned at `0f0c481`). They are independent of each other and of
+  001–006, but should run **sequentially (007 then 008)** because both edit docs-site content and this
+  index. 008 deliberately does NOT touch `guides/multi-tenancy.mdx` (007 owns it) or `index.mdx`
+  (carries the already-applied MIT → Apache 2.0 fix as an uncommitted working-tree change).
+- Review findings already fixed in code before planning (do not re-plan): `askdb ask --schema` is now
+  optional with an `introspection.outputDir` fallback; the Anthropic provider is registered in the CLI
+  and supported by `flattenAskDbConfig` (plans 004–006); the homepage license pill was corrected in the
+  working tree.
 
 ## Related tooling
 

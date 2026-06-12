@@ -50,18 +50,12 @@ Use the `env()` helper (rather than `process.env`) so AskDB can capture which en
 
 ## File discovery
 
-`bootstrapAskDbEnv()` looks for config in this order:
+`bootstrapAskDbEnv()` looks for config in the **current working directory only** (no upward walk), trying two locations in order:
 
-1. `askdb.config.ts`
-2. `askdb.config.mts`
-3. `askdb.config.cts`
-4. `askdb.config.js`
-5. `askdb.config.mjs`
-6. `askdb.config.cjs`
-7. `askdb.config.json`
-8. `.config/askdb.*` (any of the above extensions)
+1. `askdb.config.<ext>` — extension precedence `ts → mts → cts → js → mjs → cjs`
+2. `.config/askdb.<ext>` — same extension precedence
 
-The first match wins. Looks in the current working directory, then walks up to find a project root.
+The first match wins. JSON config files are not supported. If nothing is found, `bootstrapAskDbEnv()` throws — run your process from the directory that holds the config (or pass `cwd` in its options).
 
 ## Environment variables
 
@@ -127,8 +121,8 @@ import { bootstrapAskDbEnv, getAskDbRuntimeConfig } from "@askdb/config";
 bootstrapAskDbEnv({ cwd: process.cwd() });
 
 const rt = getAskDbRuntimeConfig();
-const aiEnv = rt.ai.aiEnv;
-const schemaPath = rt.schema.path;
+const aiEnv = rt.ai.aiEnv;                    // provider + key/model env map
+const outputDir = rt.introspection.outputDir; // resolved artifact directory
 ```
 
 AskDB does **not** copy the full config into `process.env`. The runtime snapshot is the source of truth — use `getAskDbRuntimeConfig` rather than `process.env` for anything AskDB-specific.
@@ -137,12 +131,11 @@ AskDB does **not** copy the full config into `process.env`. The runtime snapshot
 
 For any given setting, the precedence (highest wins) is:
 
-1. Function-call arguments (`ask({ mode: "..." })` etc.).
-2. Environment variables.
-3. `askdb.config.*` file.
-4. Built-in defaults.
+1. Per-call arguments — CLI flags (`--mode`, `--schema`, ...) and `ask()` options.
+2. The `askdb.config.*` file — the single source of truth for the runtime snapshot.
+3. Built-in defaults applied for optional fields (e.g. `outputDir` → `./askdb/`).
 
-This lets you ship a config file with sensible defaults and override per-environment via env vars without rebuilding.
+Environment variables don't override the config file from the outside — they flow *through* it: every `env("VAR")` call in the config reads the environment when the file loads. `.env` is loaded first (without overwriting variables already set in the real environment), so the per-environment override story is: system env beats `.env`, and whatever `env()` reads lands in the snapshot. This still lets you ship one config file and vary it per environment — just route each tunable through `env()`.
 
 ## Read next
 
