@@ -112,7 +112,7 @@ describe("anthropicProvider", () => {
     ).toBeUndefined();
   });
 
-  it("has a configHint that mentions ANTHROPIC_API_KEY", () => {
-    expect(anthropicProvider.configHint).toMatch(/ANTHROPIC_API_KEY/);
+  it("has a configHint that references the askdb.config path", () => {
+    expect(anthropicProvider.configHint).toMatch(/providerConfig\.anthropic\.apiKey/);
   });
 });
