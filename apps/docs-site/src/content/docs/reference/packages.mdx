@@ -44,18 +44,23 @@ npm install @askdb/ai
 | Symbol | Purpose |
 | --- | --- |
 | `createAiRegistry` | Register provider adapters and build language or embedding models. |
-| `resolveAiConfig` / `resolveEmbeddingConfig` | Resolve provider config without constructing a model. |
+| `registry.resolveAiConfig(env)` / `registry.resolveEmbeddingConfig(env)` | Resolve provider config from env without constructing a model. These are methods on the registry returned by `createAiRegistry`, not standalone exports. |
+| `resolveBaseConfig` | Low-level helper — resolves a provider's base config object from an env map. Used internally by adapters. |
+| `withEmbeddingProviderOptions` | Wraps embedding provider options; shared across adapters. |
 | `aiKeyMissingMessage` | Shared human-readable missing-key guidance. |
 
 ### Provider adapters
 
-Provider adapters own concrete AI SDK provider dependencies:
+Provider adapters own concrete AI SDK provider dependencies. Each adapter declares `ai` and `@askdb/ai` as peer dependencies — npm/pnpm install them automatically, but your app should depend on `ai` directly when you want to pin the version.
 
 ```bash
 npm install @askdb/ai-openai
 npm install @askdb/ai-azure
 npm install @askdb/ai-google
+npm install @askdb/ai-anthropic
 ```
+
+Any provider that has a Vercel AI SDK package can be added as an adapter. Unknown `ASKDB_AI_PROVIDER` values require a registered adapter — first-party apps register `openai`, `azure`, `foundry`, `google`, and `anthropic`; for anything else, embed AskDB and register your own adapter, or use an OpenAI-compatible endpoint via the `openai` provider and a custom base URL.
 
 ### `@askdb/connectors`
 
@@ -230,7 +235,7 @@ See [the CLI reference](/reference/cli/).
 | `@askdb/prisma` | `@askdb/introspect`, `@askdb/connectors` |
 | `@askdb/connectors` | `@askdb/introspect` |
 | `@askdb/ai` | AI SDK core package (`ai`) |
-| `@askdb/ai-openai`, `@askdb/ai-azure`, `@askdb/ai-google` | `@askdb/ai` + the matching AI SDK provider package |
+| `@askdb/ai-openai`, `@askdb/ai-azure`, `@askdb/ai-google`, `@askdb/ai-anthropic` | `@askdb/ai` + the matching AI SDK provider package |
 | `@askdb/enrich`, `@askdb/rag` | `@askdb/core` |
 | `@askdb/tui`, `@askdb/studio` | `@askdb/enrich` (+ `@askdb/rag` when used) |
 | `@askdb/http-api` | `@askdb/core` (+ engine adapter) |

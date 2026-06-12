@@ -39,7 +39,7 @@ import { defineConfig } from "@askdb/config";
 
 export default defineConfig({
   ai: {
-    provider: "openai",   // or "anthropic", "google", etc.
+    provider: "openai",   // "openai" | "azure" | "foundry" | "google" | "anthropic" — or a custom string (see /reference/config/)
     model: "gpt-4o-mini",
   },
   introspection: {
