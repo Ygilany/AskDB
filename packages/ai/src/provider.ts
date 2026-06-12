@@ -305,13 +305,9 @@ export function createAiRegistry(
 export function aiKeyMissingMessage(context: string): string {
   return (
     `${context}: no AI API key configured. ` +
-    `For OpenAI, set OPENAI_API_KEY (or ASKDB_AI_API_KEY). ` +
-    `For Azure / Microsoft Foundry, set ASKDB_AI_PROVIDER=azure plus ` +
-    `AZURE_OPENAI_API_KEY (or ASKDB_AI_API_KEY), ` +
-    `ASKDB_AI_AZURE_RESOURCE_NAME (or ASKDB_AI_BASE_URL), and a deployment name ` +
-    `via ASKDB_AI_MODEL. ` +
-    `For Google Gemini, set ASKDB_AI_PROVIDER=google plus ` +
-    `GOOGLE_GENERATIVE_AI_API_KEY (or ASKDB_AI_API_KEY).`
+    `For OpenAI, set OPENAI_API_KEY or configure ai.provider: "openai" in askdb.config.*. ` +
+    `For Azure / Microsoft Foundry, set AZURE_OPENAI_API_KEY and your resource name, or configure ai.provider: "azure" in askdb.config.*. ` +
+    `For Google Gemini, set GOOGLE_GENERATIVE_AI_API_KEY or configure ai.provider: "google" in askdb.config.*.`
   );
 }
 

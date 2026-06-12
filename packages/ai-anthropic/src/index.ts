@@ -15,7 +15,7 @@ const ENV_SPEC: ProviderEnvSpec = {
 export const anthropicProvider: AiProviderAdapter = {
   provider: "anthropic",
   configHint:
-    "For Anthropic Claude, set ASKDB_AI_PROVIDER=anthropic plus ANTHROPIC_API_KEY (or ASKDB_AI_API_KEY).",
+    "For Anthropic Claude, set ANTHROPIC_API_KEY or configure ai.provider: \"anthropic\" in askdb.config.*.",
   resolveConfig(env, options) {
     return resolveBaseConfig("anthropic", env, ENV_SPEC, options);
   },
