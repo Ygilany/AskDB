@@ -27,31 +27,107 @@ AskDB doesn't execute queries — but it does rewrite generated SQL to guarantee
 
 The recommended path is Studio's **Tenancy** view, which guides you through declaring tenant roots, scoped tables, and global tables in a form. Studio can also AI-draft a policy from a plain-language description of your tenancy model, for your review.
 
-You can also write `tenant-policy.md` by hand. Example for a simple SaaS schema:
+You can also write `tenant-policy.md` by hand. The front-matter is YAML,
+validated strictly when the schema artifact loads — unknown keys are
+rejected, and every table or column reference uses the **stable IDs** from
+`schema.json` (`table:public.projects`, `table:public.projects#organization_id`),
+never bare names. Example for a simple SaaS schema:
 
 ```yaml
 ---
-tenantRoots:
-  - table: organizations
-    tenantIdColumn: id
+schemaId: my-app
+enforcement: strict
+
+roots:
+  - id: table:public.organizations
+    tenantIdColumn: table:public.organizations#id
+    label: Organization
 
 scopedTables:
-  - table: projects
-    tenantForeignKey: organization_id
-    tenantRoot: organizations
-  - table: documents
-    tenantForeignKey: organization_id
-    tenantRoot: organizations
+  - id: table:public.projects
+    scopeThrough:
+      - root: table:public.organizations
+        column: table:public.projects#organization_id
+  - id: table:public.documents
+    scopeThrough:
+      - root: table:public.organizations
+        column: table:public.documents#organization_id
 
 globalTables:
-  - table: plan_tiers
-  - table: countries
+  - table:public.plan_tiers
+  - table:public.countries
 ---
+
+# Tenant Policy
+
+Organizations are the only tenant level. Projects and documents carry a
+direct `organization_id`; plan tiers and countries are shared lookups.
 ```
+
+The markdown body below the front-matter is free-form business context; the
+`Hierarchy`, `Scope rules`, and `Sensitive interactions` H2 sections are
+recognized and fed into prompt assembly.
+
+## Field reference
+
+Top-level front-matter fields:
+
+| Field | Required | Meaning |
+| --- | --- | --- |
+| `schemaId` | yes | Must match the `schemaId` in the artifact's `schema.json`. Ties the policy to one schema. |
+| `enforcement` | yes | `strict` rejects any query whose tenant filter can't be proven; `warn` returns the SQL with tenant warnings instead. Start with `strict`. |
+| `roots` | yes | The tables that *are* tenants (at least one). Everything else is scoped relative to a root. |
+| `hierarchy` | no | Parent→child edges between roots (agency → sub-agency → client). Must form a cycle-free graph. |
+| `scopedTables` | no | Tables whose rows belong to a tenant, and how to reach the root from them. |
+| `polymorphicTables` | no | Tables that reference different tenant types via a discriminator column pair. |
+| `globalTables` | no | Stable table IDs intentionally exempt from tenant filtering (shared lookups). |
+
+Tables that appear in none of `scopedTables`, `polymorphicTables`, or
+`globalTables` are classified **unknown** — they trigger warnings, and in
+`strict` mode block queries that touch them. Classify everything.
+
+`roots[]` — each entry is one tenant-identifying table:
+
+| Field | Required | Meaning |
+| --- | --- | --- |
+| `id` | yes | Stable table ID (e.g. `table:public.organizations`). |
+| `tenantIdColumn` | yes | Stable column ID of the root's identifier — the value your app passes at runtime. |
+| `label` | yes | Human-readable name used in prompts and named placeholders (`Organization` → `:tenant_organization_ids`). |
+| `parent.root`, `parent.foreignKey` | no | When this root is a child of another root: the parent's table ID and the FK column linking to it. |
+
+`scopedTables[]` — operational tables constrained by a tenant:
+
+| Field | Required | Meaning |
+| --- | --- | --- |
+| `id` | yes | Stable table ID. |
+| `scopeThrough` | yes | One or more paths from this table to a root. Each path has `root` plus **exactly one of** `column` or `join`. |
+| `scopeThrough[].column` | one of | Stable column ID of a direct tenant FK on this table (`table:public.projects#organization_id`). |
+| `scopeThrough[].join` | one of | A list of `{ from, to }` stable-column-ID steps when the table reaches its root through other tables (e.g. `appointments → clients`). |
+
+A table may declare several `scopeThrough` paths (e.g. scoped directly by
+`agency_id` *and* through `client_id` → clients); the validator accepts any
+path that satisfies the caller's scope.
+
+`polymorphicTables[]` — type + id discriminator pairs:
+
+| Field | Required | Meaning |
+| --- | --- | --- |
+| `id` | yes | Stable table ID. |
+| `typeColumn` | yes | Stable column ID of the discriminator (e.g. `table:public.notes#owner_type`). |
+| `idColumn` | yes | Stable column ID of the polymorphic FK (e.g. `table:public.notes#owner_id`). |
+| `mapping` | yes | Maps each literal `typeColumn` value to a tenant root's table ID (`agency: table:public.agencies`). |
+
+The full contract — including hierarchy validation rules and the five
+scoping patterns these fields express — lives in
+[`docs/contracts/tenant-policy.md` on GitHub](https://github.com/Ygilany/AskDB/blob/main/docs/contracts/tenant-policy.md).
 
 ## Asking with a tenant scope
 
-When the policy exists, every `ask()` call must include a `tenantScope`. AskDB validates the scope against the policy and binds it into the generated SQL.
+When the policy exists, every `ask()` call must include a `tenantScope`.
+AskDB validates the scope against the policy and binds it into the
+generated SQL. With `enforcement: strict`, a query whose tenant filter
+can't be proven is rejected; with `enforcement: warn`, the SQL is returned
+together with `tenantWarnings` for your application to act on.
 
 ```ts
 import { ask } from "@askdb/core";
@@ -62,9 +138,11 @@ const { sql, tenantParams } = await ask({
   dialect: "postgres",
   model,
   tenantScope: {
-    access: { kind: "exact" },
-    tenantRoot: "organizations",
-    tenantIds: ["org_abc123"],
+    access: {
+      kind: "ids",
+      tenantRoot: "table:public.organizations",
+      ids: ["org_abc123"],
+    },
   },
   tenantSqlMode: "sql-params",
 });
@@ -72,6 +150,14 @@ const { sql, tenantParams } = await ask({
 // Execute with the tenant parameters bound:
 const result = await pool.query(sql, tenantParams);
 ```
+
+`access.kind` selects the scope shape: `ids` (exact tenant IDs on one root —
+the common case), `subtree` (a root's IDs plus all descendants:
+`{ kind: "subtree", tenantRoot, rootIds, includeDescendants: true }`),
+`multi_root` (IDs across several roots), or `global` (deliberately unscoped,
+with a `reason` string for the audit trail). The optional `context` field
+carries advisory metadata (role, department) into the prompt, and
+`tenantFilters` lets the host pre-resolve polymorphic scope.
 
 ## SQL output modes
 
@@ -88,7 +174,9 @@ Without policy, a question like "how many documents this month?" might generate:
 SELECT COUNT(*) FROM documents WHERE created_at >= NOW() - INTERVAL '1 month';
 ```
 
-With the policy above and a tenant scope of `{ tenantRoot: "organizations", tenantIds: ["org_abc123"] }`, the same question generates:
+With the policy above and an access scope of
+`{ kind: "ids", tenantRoot: "table:public.organizations", ids: ["org_abc123"] }`,
+the same question generates:
 
 ```sql
 SELECT COUNT(*) FROM documents
@@ -107,9 +195,11 @@ Studio's **Ask** panel includes tenant scope controls — provide a scope as JSO
 
 ```json
 {
-  "kind": "exact",
-  "tenantRoot": "organizations",
-  "tenantIds": ["org_abc123"]
+  "access": {
+    "kind": "ids",
+    "tenantRoot": "table:public.organizations",
+    "ids": ["org_abc123"]
+  }
 }
 ```
 
