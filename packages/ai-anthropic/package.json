@@ -1,6 +1,6 @@
 {
   "name": "@askdb/ai-anthropic",
-  "version": "0.1.0-beta.0",
+  "version": "1.0.0-beta.1",
   "description": "AskDB Anthropic Claude provider adapter for @askdb/ai.",
   "keywords": [
     "askdb",

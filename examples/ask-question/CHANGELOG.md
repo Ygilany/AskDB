@@ -1,5 +1,19 @@
 # askdb-ask-question-example
 
+## 0.0.1-beta.13
+
+### Patch Changes
+
+- Updated dependencies [d4a0a1d]
+- Updated dependencies [4dd7a59]
+- Updated dependencies [c0603e1]
+- Updated dependencies [0f0c481]
+- Updated dependencies [96e6963]
+  - @askdb/ai@0.1.0-beta.3
+  - @askdb/config@1.0.0-beta.8
+  - @askdb/ai-openai@1.0.0-beta.3
+  - @askdb/rag@0.2.0-beta.17
+
 ## 0.0.1-beta.12
 
 ### Patch Changes

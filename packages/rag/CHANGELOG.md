@@ -1,5 +1,15 @@
 # @askdb/rag
 
+## 0.2.0-beta.17
+
+### Patch Changes
+
+- 96e6963: Add `withEmbeddingProviderOptions` helper to `@askdb/ai` and use it in the OpenAI and Azure adapters, eliminating the near-identical per-adapter middleware blocks. Deprecates `createOpenAiEmbedder` in `@askdb/rag` — use `createAiSdkEmbedder` with an `@askdb/ai-openai` model or the `@askdb/ai` registry instead; the helper will be removed in 1.0.
+- Updated dependencies [d4a0a1d]
+- Updated dependencies [c0603e1]
+- Updated dependencies [0f0c481]
+  - @askdb/config@1.0.0-beta.8
+
 ## 0.2.0-beta.16
 
 ### Patch Changes
