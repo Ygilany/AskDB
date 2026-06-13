@@ -10,30 +10,7 @@ allowBuilds:
   sharp: true
   unrs-resolver: true
 minimumReleaseAgeExclude:
-  - '@ai-sdk/azure@3.0.72'
-  - '@ai-sdk/deepseek@2.0.36'
-  - yaml@2.8.3
-  - astro@6.4.6
-  - ai@6.0.200
-  - oxlint-plugin-react-doctor@0.5.1
-  - react-doctor@0.5.1
-  - '@turbo/darwin-64@2.9.18'
-  - '@turbo/darwin-arm64@2.9.18'
-  - '@turbo/linux-64@2.9.18'
-  - '@turbo/linux-arm64@2.9.18'
-  - '@turbo/windows-64@2.9.18'
-  - '@turbo/windows-arm64@2.9.18'
-  - '@types/node@22.19.21'
-  - turbo@2.9.18
-  - '@ai-sdk/anthropic@3.0.83'
-  - '@ai-sdk/provider-utils@4.0.28'
-  - '@ai-sdk/anthropic@3.0.84'
-  - '@ai-sdk/azure@3.0.74'
-  - '@ai-sdk/deepseek@2.0.38'
   - '@ai-sdk/gateway@3.0.130'
-  - '@ai-sdk/google@3.0.82'
-  - '@ai-sdk/openai@3.0.71'
-  - '@ai-sdk/provider-utils@4.0.29'
   - '@tailwindcss/node@4.3.1'
   - '@tailwindcss/oxide-android-arm64@4.3.1'
   - '@tailwindcss/oxide-darwin-arm64@4.3.1'
@@ -52,9 +29,7 @@ minimumReleaseAgeExclude:
   - ai@6.0.204
   - deslop-js@0.0.24
   - eslint@10.5.0
-  - lucide-react@1.18.0
+  - ink@7.0.6
   - oxlint-plugin-react-doctor@0.5.2
   - react-doctor@0.5.2
   - tailwindcss@4.3.1
-  - esbuild@0.28.1
-  - ink@7.0.6
