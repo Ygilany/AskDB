@@ -1,11 +1,11 @@
 {
   "extends": "./tsconfig.base.json",
   "compilerOptions": {
-    "baseUrl": ".",
     "paths": {
       "@askdb/config": ["./packages/config/src/index.ts"],
       "@askdb/config/*": ["./packages/config/src/*"]
     }
   },
-  "include": ["*.ts", "*.mts", "*.cts"]
+  "include": ["*.ts", "*.mts", "*.cts"],
+  "exclude": ["askdb.config.ts"]
 }

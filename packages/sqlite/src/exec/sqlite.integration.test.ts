@@ -9,8 +9,22 @@ import { createSqliteConnector } from "../connector/index.js";
 
 type Bs3Namespace = { default: typeof DatabaseCtor };
 
-// SQLite is file-based — no server or env gate required.
-describe("SQLite integration (better-sqlite3 driver)", () => {
+async function isBetterSqlite3Available(): Promise<boolean> {
+  try {
+    const mod = (await import("better-sqlite3")) as unknown as Bs3Namespace;
+    const db = new mod.default(":memory:");
+    db.close();
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+const sqliteAvailable = await isBetterSqlite3Available();
+const sqliteSuite = sqliteAvailable ? describe : describe.skip;
+
+// SQLite is file-based — no server or env gate required when the optional peer is installed.
+sqliteSuite("SQLite integration (better-sqlite3 driver)", () => {
   let dbPath: string;
 
   beforeAll(async () => {
