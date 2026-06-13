@@ -3,6 +3,8 @@ title: "Quickstart"
 description: "Scaffold config, introspect a database, enrich the schema, and ask your first question — in under five minutes."
 ---
 
+import { Aside } from "@astrojs/starlight/components";
+
 <p class="doc-eyebrow">From zero to first query</p>
 
 <p class="doc-lede">Scaffold your config, point AskDB at your database, enrich the schema artifact, and ask your first question. The same packages drop straight into a Node service when you're ready to embed.</p>
@@ -14,23 +16,28 @@ description: "Scaffold config, introspect a database, enrich the schema, and ask
 - An API key from a model provider — OpenAI, Anthropic, Google, Azure, or any OpenAI-compatible endpoint (OpenRouter, vLLM, Ollama, ...). See [Bring your own model](/guides/bring-your-own-model/).
 - A database AskDB can read — Postgres, MySQL, SQLite, or SQL Server — or even a Prisma schema file (no live database required).
 
+## The whole flow, in four commands
+
+```bash
+npx askdb@latest init        # scaffold askdb.config.ts
+npx askdb introspect         # read your database into a schema artifact
+npx askdb studio             # enrich the schema and test questions in your browser
+npx askdb ask --question "Which customers signed up last week?"
+```
+
+Each step is explained below. The loop that makes answers good: **introspect
+once, then enrich and re-ask in Studio until the SQL matches how your team
+thinks about the data.**
+
 ## 1. Scaffold your config
 
 ```bash
 npx askdb@latest init
 ```
 
-`npx` downloads and runs `askdb` on the fly — no separate install step needed. `askdb init` creates `askdb.config.ts` in your project root. The config file is TypeScript-checked and reads values from your environment using the `env()` helper — it loads from a `.env` file at your project root or from the system environment, whichever is set. You choose your own variable names and pass them to `env()`:
+`npx` downloads and runs `askdb` on the fly — no separate install step needed. `askdb init` creates `askdb.config.ts` in your project root. The config file is TypeScript-checked and reads values from your environment using the `env()` helper — it loads from a `.env` file at your project root or from the system environment, whichever is set. You choose your own variable names and pass them to `env()`.
 
-```ts
-{
-  ...
-  apiKey: env("OPENAI_API_KEY"),   // or env("MY_KEY") — you pick the name
-  ...
-}
-```
-
-`askdb.config.ts` is checked in; `.env` is not.
+<Aside type="tip">`askdb.config.ts` is checked in; `.env` (your real keys) is not.</Aside>
 
 Open `askdb.config.ts` and fill in your settings:
 
@@ -148,6 +155,15 @@ For one-off checks and CI smoke tests, ask directly from the terminal:
 
 ```bash
 npx askdb ask --question "Which customers signed up last week?"
+```
+
+You get validated SQL on stdout — for example:
+
+```sql
+SELECT c.id, c.name, c.signed_up_at
+FROM customers AS c
+WHERE c.signed_up_at >= NOW() - INTERVAL '7 days'
+ORDER BY c.signed_up_at DESC;
 ```
 
 In both cases AskDB returns validated SQL. It does **not** run it against your database — your application owns execution.
