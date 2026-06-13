@@ -4,6 +4,7 @@ description: "Scaffold config, introspect a database, enrich the schema, and ask
 ---
 
 import { Aside } from "@astrojs/starlight/components";
+import quickstartLoopUrl from "../../assets/diagrams/askdb-quickstart-loop.svg?url";
 
 <p class="doc-eyebrow">From zero to first query</p>
 
@@ -28,6 +29,8 @@ npx askdb ask --question "Which customers signed up last week?"
 Each step is explained below. The loop that makes answers good: **introspect
 once, then enrich and re-ask in Studio until the SQL matches how your team
 thinks about the data.**
+
+<img src={quickstartLoopUrl} alt="Four-step loop: init scaffolds config, introspect reads the database into a schema artifact, enrich in Studio adds descriptions and tests questions, ask generates validated SQL — with a loop-back from ask to enrich to refine until the SQL is right" class="doc-diagram" />
 
 ## 1. Scaffold your config
 
