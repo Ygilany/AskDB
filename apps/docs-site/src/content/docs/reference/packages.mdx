@@ -3,9 +3,15 @@ title: "Package reference"
 description: "Every @askdb/* package: purpose, when to install, and what it exports."
 ---
 
+import packageDependenciesUrl from "../../../assets/diagrams/askdb-package-dependencies.svg?url";
+
 <p class="doc-eyebrow">Reference · Packages</p>
 
 <p class="doc-lede">AskDB is a workspace of focused packages. Install the ones your use case needs. This page is the index — purpose, install, and key exports for each.</p>
+
+<img src={packageDependenciesUrl} alt="AskDB package dependency graph: core and introspect at the top, engine and enrichment packages in the middle, and surfaces (CLI, Studio, TUI, HTTP API) at the bottom composing them" class="doc-diagram" />
+
+<p class="doc-caption">AI provider adapters (<code>@askdb/ai-openai</code>, <code>@askdb/ai-azure</code>, <code>@askdb/ai-google</code>, <code>@askdb/ai-anthropic</code>) plug into the surfaces shown above via <code>@askdb/ai</code>.</p>
 
 ## Core
 
