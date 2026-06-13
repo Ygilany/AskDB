@@ -160,6 +160,27 @@
   max-width: 100%;
 }
 
+/* doc-diagram: full-width content-column diagram with a light panel so
+   hardcoded-light SVGs remain legible in dark mode. */
+.doc-diagram {
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 0.5rem;
+  display: block;
+  height: auto;
+  margin: 1.25rem 0;
+  max-width: 100%;
+  width: 100%;
+}
+
+.doc-caption {
+  color: var(--sl-color-gray-3);
+  font-size: 0.85rem;
+  line-height: 1.55;
+  margin-top: -0.75rem;
+  margin-bottom: 1.25rem;
+}
+
 figure:has(.askdb-diagram) {
   margin: 1.25rem 0;
 }
