@@ -52,6 +52,7 @@
     "enrich-studio-zero-args-config",
     "fix-ai-sdk-embedding-compat",
     "fix-dark-mode-badge-legibility",
+    "fix-pnpm-supply-chain-policy",
     "fix-postgres-zod-resolution",
     "fix-stale-askdb-ai-api-names",
     "fix-studio-database-url-runtime-config",
