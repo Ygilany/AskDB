@@ -54,6 +54,6 @@
     "@askdb/ai": "workspace:*",
     "ai": "^6.0.204",
     "typescript": "^5.9.3",
-    "vitest": "^3.2.6"
+    "vitest": "^4.1.8"
   }
 }

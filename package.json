@@ -47,6 +47,6 @@
     "react-doctor": "^0.5.2",
     "turbo": "^2.9.18",
     "typescript": "^5.9.3",
-    "vitest": "^3.2.6"
+    "vitest": "^4.1.8"
   }
 }
