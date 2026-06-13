@@ -1,4 +1,5 @@
 import { Box, Text, useInput, useStdout } from "ink";
+import type { JSX } from "react";
 import type { Workspace } from "@askdb/enrich";
 
 type TableListProps = {

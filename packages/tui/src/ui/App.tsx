@@ -1,5 +1,5 @@
 import { Box, Text, useApp, useInput, useStdout } from "ink";
-import { useState } from "react";
+import { useState, type JSX } from "react";
 import {
   buildDefaultTableBody,
   pruneOrphanedColumns,

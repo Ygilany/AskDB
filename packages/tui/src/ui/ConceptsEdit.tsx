@@ -1,5 +1,5 @@
 import { Box, Text, useInput } from "ink";
-import { useState } from "react";
+import { useState, type JSX } from "react";
 import type { V2Concept } from "@askdb/core";
 import { parseListInput } from "@askdb/enrich";
 import { saveConcepts, type Workspace } from "@askdb/enrich";

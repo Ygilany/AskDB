@@ -57,3 +57,4 @@ minimumReleaseAgeExclude:
   - react-doctor@0.5.2
   - tailwindcss@4.3.1
   - esbuild@0.28.1
+  - ink@7.0.6

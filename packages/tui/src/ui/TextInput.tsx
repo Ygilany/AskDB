@@ -1,5 +1,5 @@
 import { Text, useInput } from "ink";
-import { useState } from "react";
+import { useRef, useState, type JSX } from "react";
 
 type TextInputProps = {
   initialValue?: string;
@@ -7,6 +7,11 @@ type TextInputProps = {
   onSubmit: (value: string) => void;
   onCancel?: () => void;
   placeholder?: string;
+};
+
+type EditorState = {
+  value: string;
+  cursor: number;
 };
 
 /**
@@ -31,17 +36,27 @@ export function TextInput({
 }: TextInputProps): JSX.Element {
   const [value, setValue] = useState(initialValue);
   const [cursor, setCursor] = useState(initialValue.length);
+  const stateRef = useRef<EditorState>({ value: initialValue, cursor: initialValue.length });
+  stateRef.current = { value, cursor };
+
+  const updateEditor = (next: EditorState) => {
+    stateRef.current = next;
+    setValue(next.value);
+    setCursor(next.cursor);
+  };
 
   useInput((input, key) => {
+    const { value, cursor } = stateRef.current;
     if (key.escape) {
       onCancel?.();
       return;
     }
     if (key.return) {
       if (multiline) {
-        const next = value.slice(0, cursor) + "\n" + value.slice(cursor);
-        setValue(next);
-        setCursor(cursor + 1);
+        updateEditor({
+          value: value.slice(0, cursor) + "\n" + value.slice(cursor),
+          cursor: cursor + 1,
+        });
       } else {
         onSubmit(value);
       }
@@ -53,24 +68,26 @@ export function TextInput({
     }
     if (key.backspace || key.delete) {
       if (cursor > 0) {
-        const next = value.slice(0, cursor - 1) + value.slice(cursor);
-        setValue(next);
-        setCursor(cursor - 1);
+        updateEditor({
+          value: value.slice(0, cursor - 1) + value.slice(cursor),
+          cursor: cursor - 1,
+        });
       }
       return;
     }
     if (key.leftArrow) {
-      setCursor(Math.max(0, cursor - 1));
+      updateEditor({ value, cursor: Math.max(0, cursor - 1) });
       return;
     }
     if (key.rightArrow) {
-      setCursor(Math.min(value.length, cursor + 1));
+      updateEditor({ value, cursor: Math.min(value.length, cursor + 1) });
       return;
     }
     if (input && !key.ctrl && !key.meta) {
-      const next = value.slice(0, cursor) + input + value.slice(cursor);
-      setValue(next);
-      setCursor(cursor + input.length);
+      updateEditor({
+        value: value.slice(0, cursor) + input + value.slice(cursor),
+        cursor: cursor + input.length,
+      });
     }
   });
 
