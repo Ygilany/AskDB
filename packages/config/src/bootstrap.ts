@@ -4,6 +4,9 @@ import { join } from "node:path";
 import { loadAskDbConfigProjectionSync } from "./load-merge.js";
 import { setAskDbRuntime } from "./runtime-store.js";
 
+/** dotenv v17 logs injected keys by default; keep bootstrap silent like v16. */
+const DOTENV_LOAD_OPTIONS = { quiet: true } as const;
+
 export type BootstrapAskDbEnvOptions = {
   /** Working directory for `.env` default path and config discovery. Defaults to `process.cwd()`. */
   cwd?: string;
@@ -53,7 +56,7 @@ export function bootstrapAskDbEnv(options: BootstrapAskDbEnvOptions = {}): {
     let loaded = false;
     for (const path of options.dotenvCandidatePaths) {
       if (!existsSync(path)) continue;
-      const { error } = dotenv.config({ path });
+      const { error } = dotenv.config({ ...DOTENV_LOAD_OPTIONS, path });
       if (!error) {
         loaded = true;
         dotenvPath = path;
@@ -61,12 +64,12 @@ export function bootstrapAskDbEnv(options: BootstrapAskDbEnvOptions = {}): {
       }
     }
     if (!loaded) {
-      const { error } = dotenv.config();
+      const { error } = dotenv.config(DOTENV_LOAD_OPTIONS);
       if (error) handleDotenvError(error, nonFatal);
     }
   } else {
     const path = join(cwd, ".env");
-    const { error } = dotenv.config({ path });
+    const { error } = dotenv.config({ ...DOTENV_LOAD_OPTIONS, path });
     if (error) {
       const err = error as { code?: unknown; message?: unknown };
       const code = typeof err.code === "string" ? err.code : undefined;

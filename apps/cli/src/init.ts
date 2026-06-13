@@ -7,10 +7,12 @@ import { fileURLToPath } from "node:url";
 const DEFAULT_CONFIG_PATH = "askdb.config.ts";
 
 /** Single template: only `askdb.config.ts` is written (kept in sync with the repo root `askdb.config.ts`). */
-const CONFIG_TEMPLATE = `import "dotenv/config";
+const CONFIG_TEMPLATE = `import dotenv from "dotenv";
 import { defineConfig, env, type AskDbConfig } from "@askdb/config";
 
-// \`dotenv/config\` loads a local \`.env\` when this module runs (missing file is OK).
+dotenv.config({ quiet: true });
+
+// Loads a local \`.env\` when this module runs (missing file is OK).
 // CLIs call \`bootstrapAskDbEnv\`, which loads \`.env\` then evaluates this file and installs the AskDB runtime snapshot.
 // Use \`env("VAR")\` for every value read from the environment; \`flattenAskDbConfig\` applies defaults
 // for optional fields (see \`@askdb/config\` / \`defaults.ts\`).
@@ -147,7 +149,7 @@ export function resolveInitDepSpecs(): InitDepSpecs {
       configSpec = "latest";
     }
   }
-  let dotenvSpec = "^16.6.1";
+  let dotenvSpec = "^17.4.2";
   try {
     const cfgPkgPath = require.resolve("@askdb/config/package.json");
     const cfg = JSON.parse(readFileSync(cfgPkgPath, "utf8")) as { dependencies?: { dotenv?: string } };

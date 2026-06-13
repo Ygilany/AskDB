@@ -308,8 +308,10 @@ echo "smoke: npm install app sandbox…"
 
 echo "smoke: minimal askdb.config.ts for cli bootstrap…"
 cat >"$WORK/apps/askdb.config.ts" <<'SMOKEASKDB'
-import "dotenv/config";
+import dotenv from "dotenv";
 import { defineConfig, type AskDbConfig } from "@askdb/config";
+
+dotenv.config({ quiet: true });
 
 /** Minimal valid config so installable-smoke can run `askdb` (bootstrap requires askdb.config.*). */
 export default defineConfig({
