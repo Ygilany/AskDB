@@ -1,29 +1,130 @@
 ---
 title: "Bring your own model"
-description: "Use OpenAI, Anthropic, Azure OpenAI, a local model — any provider that speaks the Vercel AI SDK interface. Your key, your billing."
+description: "Use OpenAI, Anthropic, Azure OpenAI, Google — any provider that speaks the Vercel AI SDK interface. Your key, your billing."
 ---
+
+import { Tabs, TabItem } from "@astrojs/starlight/components";
 
 <p class="doc-eyebrow">Model providers</p>
 
-<p class="doc-lede">AskDB doesn't host inference. You pass a model in, AskDB calls it, and the model's response goes back through your provider — billed to your account.</p>
+<p class="doc-lede">AskDB doesn't host inference. You wire a model in, AskDB calls it, and the model's response goes back through your provider — billed to your account.</p>
 
-## How AskDB calls the model
+## Two ways to wire a model
 
-`ask()` accepts a `model` parameter typed as the Vercel AI SDK's `LanguageModel`. AskDB calls the model with the assembled prompt and parses the SQL it returns. No proxy. No middleman.
+| | What you do | Best for |
+| --- | --- | --- |
+| **In your config** | Set `ai.provider` in `askdb.config.ts`. The CLI, Studio, and the HTTP API resolve the model for you. No model code. | CLI workflows, Studio, the bundled HTTP service |
+| **In your code** | Pass any Vercel AI SDK `LanguageModel` to `ask()`. Full control. | Embedding `@askdb/core` in your own service |
+
+Same providers, same keys — pick per surface. You can use both in one project (for example: Studio uses your config, your embedding service constructs the model directly).
+
+## In your config (CLI, Studio, HTTP API)
+
+Set `ai.provider` in `askdb.config.ts` and supply the matching env var. The CLI, Studio, and the HTTP service call `createLanguageModelFromEnv` internally.
+
+<Tabs syncKey="ai-provider">
+  <TabItem label="OpenAI">
+
+```ts
+// askdb.config.ts
+export default {
+  ai: {
+    provider: "openai",
+    providerConfig: {
+      openai: {
+        apiKey: env("OPENAI_API_KEY"),
+      },
+    },
+  },
+  // ...
+};
+```
+
+Default model: `gpt-4o-mini`. Override with `ASKDB_AI_MODEL` or `OPENAI_MODEL` in your env.
+
+  </TabItem>
+  <TabItem label="Anthropic">
+
+```ts
+// askdb.config.ts
+export default {
+  ai: {
+    provider: "anthropic",
+    providerConfig: {
+      anthropic: {
+        apiKey: env("ANTHROPIC_API_KEY"),
+      },
+    },
+  },
+  // ...
+};
+```
+
+Default model: `claude-sonnet-4-6`. Override with `ASKDB_AI_MODEL` or `ANTHROPIC_MODEL` in your env.
+
+  </TabItem>
+  <TabItem label="Google">
+
+```ts
+// askdb.config.ts
+export default {
+  ai: {
+    provider: "google",
+    providerConfig: {
+      google: {
+        apiKey: env("GOOGLE_GENERATIVE_AI_API_KEY"),
+      },
+    },
+  },
+  // ...
+};
+```
+
+  </TabItem>
+  <TabItem label="Azure OpenAI">
+
+```ts
+// askdb.config.ts
+export default {
+  ai: {
+    provider: "azure",
+    providerConfig: {
+      azure: {
+        apiKey: env("AZURE_API_KEY"),
+        resourceName: env("AZURE_RESOURCE_NAME"),
+      },
+    },
+  },
+  // ...
+};
+```
+
+Set `AZURE_OPENAI_DEPLOYMENT` (or `ASKDB_AI_MODEL`) to the deployment name you want to use.
+
+  </TabItem>
+</Tabs>
+
+See the [Configuration reference](/reference/config/) for the full env-var table and the custom-provider escape hatch.
+
+## In your code (embedding)
+
+When you embed `@askdb/core` directly, pass any Vercel AI SDK `LanguageModel` to `ask()`. AskDB calls the model with the assembled prompt and parses the SQL it returns. No proxy. No middleman.
 
 ```ts
 import { ask } from "@askdb/core";
-import { openai } from "@ai-sdk/openai";
 
 const { sql } = await ask({
   question,
   schema,
   dialect: "postgres",
-  model: openai("gpt-4o-mini"),
+  model, // any LanguageModel from the Vercel AI SDK
 });
 ```
 
-## OpenAI
+Install the provider package and construct the model:
+
+<Tabs syncKey="ai-provider">
+  <TabItem label="OpenAI">
 
 ```bash
 npm install ai @ai-sdk/openai
@@ -36,7 +137,35 @@ import { openai } from "@ai-sdk/openai";
 const model = openai("gpt-4o-mini");
 ```
 
-## Azure OpenAI
+  </TabItem>
+  <TabItem label="Anthropic">
+
+```bash
+npm install ai @ai-sdk/anthropic
+```
+
+```ts
+import { anthropic } from "@ai-sdk/anthropic";
+
+const model = anthropic("claude-sonnet-4-6");
+```
+
+  </TabItem>
+  <TabItem label="Google">
+
+```bash
+npm install ai @ai-sdk/google
+```
+
+```ts
+import { google } from "@ai-sdk/google";
+
+// Reads GOOGLE_GENERATIVE_AI_API_KEY from the environment
+const model = google("gemini-2.0-flash");
+```
+
+  </TabItem>
+  <TabItem label="Azure OpenAI">
 
 ```bash
 npm install ai @ai-sdk/azure
@@ -53,21 +182,10 @@ const azure = createAzure({
 const model = azure("your-deployment-name");
 ```
 
-## Anthropic
+  </TabItem>
+  <TabItem label="OpenAI-compatible">
 
-```bash
-npm install ai @ai-sdk/anthropic
-```
-
-```ts
-import { anthropic } from "@ai-sdk/anthropic";
-
-const model = anthropic("claude-sonnet-4-6");
-```
-
-## Any OpenAI-compatible endpoint
-
-For self-hosted or alternative providers that expose the OpenAI chat-completions shape (vLLM, llama.cpp server, OpenRouter, Together, LM Studio, Ollama, …) use `@ai-sdk/openai-compatible`:
+For self-hosted or alternative providers that expose the OpenAI chat-completions shape (vLLM, llama.cpp server, OpenRouter, Together, LM Studio, Ollama, …):
 
 ```bash
 npm install ai @ai-sdk/openai-compatible
@@ -84,6 +202,32 @@ const local = createOpenAICompatible({
 
 const model = local("llama3.1");
 ```
+
+  </TabItem>
+</Tabs>
+
+## One config driving both
+
+If you embed `@askdb/core` but want to reuse the same `askdb.config.ts` instead of hardcoding a provider, use the AI registry. This is exactly how the CLI and the bundled HTTP API resolve models internally.
+
+```bash
+npm install @askdb/config @askdb/ai @askdb/ai-openai @askdb/ai-anthropic
+```
+
+```ts
+import { bootstrapAskDbEnv, getAskDbRuntimeConfig } from "@askdb/config";
+import { createAiRegistry } from "@askdb/ai";
+import { openaiProvider } from "@askdb/ai-openai";
+import { anthropicProvider } from "@askdb/ai-anthropic";
+
+bootstrapAskDbEnv({ cwd: process.cwd() });
+const rt = getAskDbRuntimeConfig();
+
+const ai = createAiRegistry([openaiProvider, anthropicProvider]);
+const model = await ai.createLanguageModelFromEnv(rt.ai.aiEnv);
+```
+
+Adapters declare `ai` and `@askdb/ai` as peer dependencies — add `ai` to your own `package.json` when you want to pin its version.
 
 ## Key management
 
