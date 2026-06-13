@@ -51,7 +51,7 @@
     "@askdb/introspect": "workspace:*"
   },
   "peerDependencies": {
-    "better-sqlite3": ">=11"
+    "better-sqlite3": ">=12"
   },
   "peerDependenciesMeta": {
     "better-sqlite3": {
