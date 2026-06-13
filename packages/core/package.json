@@ -46,7 +46,7 @@
     "test": "vitest run --config ../../vitest.config.ts"
   },
   "dependencies": {
-    "ai": "^6.0.200",
+    "ai": "^6.0.204",
     "gray-matter": "^4.0.3",
     "pino": "^9.14.0",
     "zod": "^3.25.76"

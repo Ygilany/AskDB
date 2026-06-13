@@ -44,11 +44,11 @@
     "test": "vitest run --config ../../vitest.config.ts"
   },
   "dependencies": {
-    "@ai-sdk/google": "^3.0.80"
+    "@ai-sdk/google": "^3.0.82"
   },
   "peerDependencies": {
     "@askdb/ai": "workspace:^",
-    "ai": "^6.0.0"
+    "ai": "^6.0.204"
   },
   "devDependencies": {
     "@askdb/ai": "workspace:*",

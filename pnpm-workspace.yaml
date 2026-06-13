@@ -27,3 +27,32 @@ minimumReleaseAgeExclude:
   - turbo@2.9.18
   - '@ai-sdk/anthropic@3.0.83'
   - '@ai-sdk/provider-utils@4.0.28'
+  - '@ai-sdk/anthropic@3.0.84'
+  - '@ai-sdk/azure@3.0.74'
+  - '@ai-sdk/deepseek@2.0.38'
+  - '@ai-sdk/gateway@3.0.130'
+  - '@ai-sdk/google@3.0.82'
+  - '@ai-sdk/openai@3.0.71'
+  - '@ai-sdk/provider-utils@4.0.29'
+  - '@tailwindcss/node@4.3.1'
+  - '@tailwindcss/oxide-android-arm64@4.3.1'
+  - '@tailwindcss/oxide-darwin-arm64@4.3.1'
+  - '@tailwindcss/oxide-darwin-x64@4.3.1'
+  - '@tailwindcss/oxide-freebsd-x64@4.3.1'
+  - '@tailwindcss/oxide-linux-arm-gnueabihf@4.3.1'
+  - '@tailwindcss/oxide-linux-arm64-gnu@4.3.1'
+  - '@tailwindcss/oxide-linux-arm64-musl@4.3.1'
+  - '@tailwindcss/oxide-linux-x64-gnu@4.3.1'
+  - '@tailwindcss/oxide-linux-x64-musl@4.3.1'
+  - '@tailwindcss/oxide-wasm32-wasi@4.3.1'
+  - '@tailwindcss/oxide-win32-arm64-msvc@4.3.1'
+  - '@tailwindcss/oxide-win32-x64-msvc@4.3.1'
+  - '@tailwindcss/oxide@4.3.1'
+  - '@tailwindcss/vite@4.3.1'
+  - ai@6.0.204
+  - deslop-js@0.0.24
+  - eslint@10.5.0
+  - lucide-react@1.18.0
+  - oxlint-plugin-react-doctor@0.5.2
+  - react-doctor@0.5.2
+  - tailwindcss@4.3.1
