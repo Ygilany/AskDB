@@ -3,6 +3,8 @@ title: "Switch engines"
 description: "All four engines — Postgres, MySQL, SQLite, SQL Server — are first-class. Here's what changes when you move between them and what doesn't."
 ---
 
+import { Tabs, TabItem } from "@astrojs/starlight/components";
+
 <p class="doc-eyebrow">Engine migration</p>
 
 <p class="doc-lede">Most of AskDB is engine-agnostic. The dialect adapter is the part that knows your SQL flavor — swap it, and the same schema-author workflow and the same <code>ask()</code> call work against a different engine.</p>
@@ -35,15 +37,56 @@ description: "All four engines — Postgres, MySQL, SQLite, SQL Server — are f
 
 ### 1. Install the new adapter
 
+<Tabs syncKey="engine">
+  <TabItem label="PostgreSQL">
+
 ```bash
-npm install @askdb/mysql            # or @askdb/sqlite, @askdb/sqlserver
+npm install @askdb/postgres
 ```
+
+  </TabItem>
+  <TabItem label="MySQL">
+
+```bash
+npm install @askdb/mysql
+```
+
+  </TabItem>
+  <TabItem label="SQLite">
+
+```bash
+npm install @askdb/sqlite
+```
+
+  </TabItem>
+  <TabItem label="SQL Server">
+
+```bash
+npm install @askdb/sqlserver
+```
+
+  </TabItem>
+</Tabs>
 
 You can keep the old adapter installed during a transition. Each adapter is self-contained.
 
 ### 2. Introspect the new database (if the schema differs)
 
 If you are pointing at a different database instance — one that may have a different set of tables or columns — run introspection against it to regenerate the physical layer of the schema artifact:
+
+<Tabs syncKey="engine">
+  <TabItem label="PostgreSQL">
+
+```bash
+npx askdb introspect \
+  --engine postgres \
+  --url "postgresql://user:pass@host/dbname" \
+  --out my-app.schema \
+  --schema-id my-app
+```
+
+  </TabItem>
+  <TabItem label="MySQL">
 
 ```bash
 npx askdb introspect \
@@ -52,6 +95,42 @@ npx askdb introspect \
   --out my-app.schema \
   --schema-id my-app
 ```
+
+  </TabItem>
+  <TabItem label="SQLite">
+
+For SQLite, set the file path via `introspection.sqliteFile` in `askdb.config.ts`:
+
+```ts
+// askdb.config.ts
+export default {
+  introspection: {
+    provider: "sqlite",
+    sqliteFile: "./my-database.db",
+  },
+  // ...
+};
+```
+
+Then run:
+
+```bash
+npx askdb introspect --out my-app.schema --schema-id my-app
+```
+
+  </TabItem>
+  <TabItem label="SQL Server">
+
+```bash
+npx askdb introspect \
+  --engine sqlserver \
+  --url "sqlserver://user:pass@host/dbname" \
+  --out my-app.schema \
+  --schema-id my-app
+```
+
+  </TabItem>
+</Tabs>
 
 The connection string format follows each engine's convention. The engine itself comes from `--engine` (or `introspection.provider` in `askdb.config.ts`) — the CLI does not infer it from the URL. The artifact records which engine produced it, and `askdb ask` infers the dialect from the artifact.
 
@@ -78,7 +157,25 @@ All four dialect specs ship inside `@askdb/core` — `ask({ dialect: "mysql" })`
 
 ### 4. Update your driver
 
-Swap `pg` for the driver that matches the new engine. The execution layer is yours — AskDB doesn't open the connection — so this is a straight library swap.
+Swap the driver library for the one that matches the new engine. The execution layer is yours — AskDB doesn't open the connection — so this is a straight library swap.
+
+<Tabs syncKey="engine">
+  <TabItem label="PostgreSQL">
+
+```ts
+import { Pool } from "pg";
+
+const pool = new Pool({
+  connectionString: process.env.DATABASE_URL,
+  statement_timeout: 5000,
+  max: 10,
+});
+
+const { rows } = await pool.query(sql);
+```
+
+  </TabItem>
+  <TabItem label="MySQL">
 
 ```ts
 import mysql from "mysql2/promise";
@@ -90,6 +187,32 @@ const pool = mysql.createPool({
 
 const [rows] = await pool.execute(sql);
 ```
+
+  </TabItem>
+  <TabItem label="SQLite">
+
+```ts
+import Database from "better-sqlite3";
+
+const db = new Database(process.env.SQLITE_FILE ?? "./my-database.db");
+
+const rows = db.prepare(sql).all();
+```
+
+  </TabItem>
+  <TabItem label="SQL Server">
+
+```ts
+import mssql from "mssql";
+
+const pool = await mssql.connect(process.env.SQLSERVER_URL);
+
+const result = await pool.request().query(sql);
+const rows = result.recordset;
+```
+
+  </TabItem>
+</Tabs>
 
 ## On dialect parity
 
