@@ -3,6 +3,7 @@
   "workspaces": true,
   "root": true,
   "target": "minor",
+  "cooldown": "1d",
   "dep": [
     "prod",
     "dev",
