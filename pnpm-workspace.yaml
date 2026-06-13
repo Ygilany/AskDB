@@ -56,3 +56,4 @@ minimumReleaseAgeExclude:
   - oxlint-plugin-react-doctor@0.5.2
   - react-doctor@0.5.2
   - tailwindcss@4.3.1
+  - esbuild@0.28.1
