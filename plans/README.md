@@ -26,7 +26,7 @@ fully before starting, honor its STOP conditions, and update your row when done.
 | 009 | Quickstart leads with a four-command fast path, shows example output, retires `editorial-changes.md` into `STYLE.md` | P1 | S | — | DONE |
 | 010 | Synced Tabs on variant-heavy pages; "Bring your own model" restructured around the two wiring paths (config-driven vs direct AI SDK) | P1 | M | 009 (soft) | DONE |
 | 011 | Studio tour page in the Start sidebar with real screenshots (fixture schema + mock SQL) | P1 | M | 009 (hard — both edit quickstart.mdx) | DONE |
-| 012 | Re-home orphaned runtime-boundary/package-dependency SVGs; new quickstart-loop diagram | P2 | M | 009, 011 (both touch quickstart.mdx) | TODO |
+| 012 | Re-home orphaned runtime-boundary/package-dependency SVGs; new quickstart-loop diagram | P2 | M | 009, 011 (both touch quickstart.mdx) | DONE |
 | 013 | Design spike: Studio as the front door — guided setup wizard, fixed Resync, playground "Get the code" | P3 | M | — | TODO |
 
 Status values: TODO | IN PROGRESS | DONE | BLOCKED (with one-line reason) | REJECTED (with one-line rationale)

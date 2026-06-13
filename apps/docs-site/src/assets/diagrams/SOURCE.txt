@@ -1,5 +1,10 @@
 SVG diagrams in this folder are committed build artifacts for the docs site.
-They are imported from architecture.mdx via Vite (?url) so paths respect Astro `base`.
+They are imported via the Vite `?url` suffix and rendered as <img> elements so
+paths respect Astro `base`. Current page importers:
+
+  askdb-runtime-boundary.svg      → src/content/docs/concepts/how-askdb-works.mdx
+  askdb-package-dependencies.svg  → src/content/docs/reference/packages.mdx
+  askdb-quickstart-loop.svg       → src/content/docs/quickstart.mdx
 
 The splash home hero diagram uses two editable vector files (theme toggle in
 `custom.css`): `askdb-hero-visual.svg` (light) and `askdb-hero-visual-dark.svg`
