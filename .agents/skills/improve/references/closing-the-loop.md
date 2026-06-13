@@ -16,7 +16,16 @@ The founding rule survives unchanged: **the advisor never edits source code.** I
 
 ### Dispatch
 
-Spawn **one** `general-purpose` subagent with `isolation: "worktree"`. Executor model: default `sonnet`; use what the user named if they named one (`execute 003 haiku`).
+**Before spawning, check whether you are already inside a git worktree** (as in Conductor or other multi-workspace setups). Run:
+
+```bash
+git rev-parse --git-dir
+```
+
+- Output is `.git` → you are on the **main worktree**. Spawn the executor with `isolation: "worktree"`.
+- Output is any other path (e.g. ends in `.git/worktrees/…`, or is an absolute path to a `.git` dir) → you are **already inside a linked worktree**. Do **not** create another worktree. Spawn the executor **without** `isolation: "worktree"`, and prepend this to the executor prompt: "Before step 1, create and check out the branch named in the plan's Git workflow section: `git checkout -b <branch>`."
+
+Spawn **one** `general-purpose` subagent (with `isolation: "worktree"` only when on the main worktree). Executor model: default `sonnet`; use what the user named if they named one (`execute 003 haiku`).
 
 The subagent prompt must contain:
 
