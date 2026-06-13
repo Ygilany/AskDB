@@ -52,7 +52,7 @@
     "@askdb/introspect": "workspace:*"
   },
   "peerDependencies": {
-    "mssql": ">=10"
+    "mssql": ">=12"
   },
   "peerDependenciesMeta": {
     "mssql": {
@@ -60,8 +60,8 @@
     }
   },
   "devDependencies": {
-    "@types/mssql": "^9.1.11",
-    "mssql": "^11.0.1",
+    "@types/mssql": "^12.3.0",
+    "mssql": "^12.5.5",
     "typescript": "^6.0.3",
     "vitest": "^4.1.8"
   }
