@@ -1,40 +1,36 @@
 import { z } from "zod";
 
-export const v2ColumnFrontmatterSchema = z
-  .object({
-    id: z.string().min(1),
-    aliases: z.array(z.string()).optional(),
-    enum: z.array(z.string()).optional(),
-    description: z.string().optional(),
-    sensitive: z.boolean().optional(),
-  })
-  .strict();
+export const v2ColumnFrontmatterSchema = z.strictObject({
+  id: z.string().min(1),
+  aliases: z.array(z.string()).optional(),
+  enum: z.array(z.string()).optional(),
+  description: z.string().optional(),
+  sensitive: z.boolean().optional(),
+});
 
-const v2TableFrontmatterInputSchema = z
-  .object({
-    id: z.string().min(1),
-    name: z.string().min(1),
-    schemaId: z.string().min(1),
-    primaryEntity: z.string().optional(),
-    aliases: z.array(z.string()).optional(),
-    tags: z.array(z.string()).optional(),
-    sensitive: z.boolean().optional(),
-    /** When false, this table is excluded from LLM prompts and RAG indexing. Defaults to tracked (true). */
-    tracked: z.boolean().optional(),
-    /** Authoring alias for `tracked: false`; normalized away after parsing. */
-    toIgnore: z.boolean().optional(),
-    /** YAML-friendly authoring alias for `tracked: false`; normalized away after parsing. */
-    "to-ignore": z.boolean().optional(),
-    columns: z.array(v2ColumnFrontmatterSchema).optional(),
-  })
-  .strict();
+const v2TableFrontmatterInputSchema = z.strictObject({
+  id: z.string().min(1),
+  name: z.string().min(1),
+  schemaId: z.string().min(1),
+  primaryEntity: z.string().optional(),
+  aliases: z.array(z.string()).optional(),
+  tags: z.array(z.string()).optional(),
+  sensitive: z.boolean().optional(),
+  /** When false, this table is excluded from LLM prompts and RAG indexing. Defaults to tracked (true). */
+  tracked: z.boolean().optional(),
+  /** Authoring alias for `tracked: false`; normalized away after parsing. */
+  toIgnore: z.boolean().optional(),
+  /** YAML-friendly authoring alias for `tracked: false`; normalized away after parsing. */
+  "to-ignore": z.boolean().optional(),
+  columns: z.array(v2ColumnFrontmatterSchema).optional(),
+});
 
 export const v2TableFrontmatterSchema = v2TableFrontmatterInputSchema
   .superRefine((fm, ctx) => {
     const toIgnore = fm["to-ignore"] ?? fm.toIgnore;
     if (fm.tracked !== undefined && toIgnore !== undefined && fm.tracked === toIgnore) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         message: "`tracked` conflicts with `toIgnore`/`to-ignore`",
         path: fm["to-ignore"] !== undefined ? ["to-ignore"] : ["toIgnore"],
       });
@@ -51,21 +47,17 @@ export const v2TableFrontmatterSchema = v2TableFrontmatterInputSchema
 export type V2TableFrontmatter = z.infer<typeof v2TableFrontmatterSchema>;
 export type V2ColumnFrontmatter = z.infer<typeof v2ColumnFrontmatterSchema>;
 
-export const v2ConceptSchema = z
-  .object({
-    id: z.string().min(1),
-    label: z.string().min(1),
-    synonyms: z.array(z.string()).optional(),
-    links: z.array(z.string()).optional(),
-    description: z.string().optional(),
-  })
-  .strict();
+export const v2ConceptSchema = z.strictObject({
+  id: z.string().min(1),
+  label: z.string().min(1),
+  synonyms: z.array(z.string()).optional(),
+  links: z.array(z.string()).optional(),
+  description: z.string().optional(),
+});
 
-export const v2ConceptsFrontmatterSchema = z
-  .object({
-    concepts: z.array(v2ConceptSchema),
-  })
-  .strict();
+export const v2ConceptsFrontmatterSchema = z.strictObject({
+  concepts: z.array(v2ConceptSchema),
+});
 
 export type V2Concept = z.infer<typeof v2ConceptSchema>;
 export type V2ConceptsFrontmatter = z.infer<typeof v2ConceptsFrontmatterSchema>;

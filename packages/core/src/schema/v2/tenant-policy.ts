@@ -4,82 +4,64 @@ import { z } from "zod";
 // Front-matter zod schemas (validated when parsing tenant-policy.md)
 // ---------------------------------------------------------------------------
 
-const tenantRootParentSchema = z
-  .object({
-    root: z.string().min(1),
-    foreignKey: z.string().min(1),
-  })
-  .strict();
+const tenantRootParentSchema = z.strictObject({
+  root: z.string().min(1),
+  foreignKey: z.string().min(1),
+});
 
-export const tenantRootSchema = z
-  .object({
-    id: z.string().min(1),
-    tenantIdColumn: z.string().min(1),
-    label: z.string().min(1),
-    parent: tenantRootParentSchema.optional(),
-  })
-  .strict();
+export const tenantRootSchema = z.strictObject({
+  id: z.string().min(1),
+  tenantIdColumn: z.string().min(1),
+  label: z.string().min(1),
+  parent: tenantRootParentSchema.optional(),
+});
 
-export const hierarchyEdgeSchema = z
-  .object({
-    parent: z.string().min(1),
-    child: z.string().min(1),
-    foreignKey: z.string().min(1),
-  })
-  .strict();
+export const hierarchyEdgeSchema = z.strictObject({
+  parent: z.string().min(1),
+  child: z.string().min(1),
+  foreignKey: z.string().min(1),
+});
 
-const scopeThroughColumnSchema = z
-  .object({
-    root: z.string().min(1),
-    column: z.string().min(1),
-  })
-  .strict();
+const scopeThroughColumnSchema = z.strictObject({
+  root: z.string().min(1),
+  column: z.string().min(1),
+});
 
-const joinStepSchema = z
-  .object({
-    from: z.string().min(1),
-    to: z.string().min(1),
-  })
-  .strict();
+const joinStepSchema = z.strictObject({
+  from: z.string().min(1),
+  to: z.string().min(1),
+});
 
-const scopeThroughJoinSchema = z
-  .object({
-    root: z.string().min(1),
-    join: z.array(joinStepSchema).min(1),
-  })
-  .strict();
+const scopeThroughJoinSchema = z.strictObject({
+  root: z.string().min(1),
+  join: z.array(joinStepSchema).min(1),
+});
 
 const scopeThroughSchema = z.union([scopeThroughColumnSchema, scopeThroughJoinSchema]);
 
-export const scopedTableSchema = z
-  .object({
-    id: z.string().min(1),
-    scopeThrough: z.array(scopeThroughSchema).min(1),
-  })
-  .strict();
+export const scopedTableSchema = z.strictObject({
+  id: z.string().min(1),
+  scopeThrough: z.array(scopeThroughSchema).min(1),
+});
 
-export const polymorphicTableSchema = z
-  .object({
-    id: z.string().min(1),
-    typeColumn: z.string().min(1),
-    idColumn: z.string().min(1),
-    mapping: z.record(z.string(), z.string().min(1)),
-  })
-  .strict();
+export const polymorphicTableSchema = z.strictObject({
+  id: z.string().min(1),
+  typeColumn: z.string().min(1),
+  idColumn: z.string().min(1),
+  mapping: z.record(z.string(), z.string().min(1)),
+});
 
 export const enforcementModeSchema = z.enum(["strict", "warn"]);
 
-export const tenantPolicyFrontmatterSchema = z
-  .object({
-    schemaId: z.string().min(1),
-    enforcement: enforcementModeSchema,
-    roots: z.array(tenantRootSchema).min(1),
-    hierarchy: z.array(hierarchyEdgeSchema).optional(),
-    scopedTables: z.array(scopedTableSchema).optional(),
-    polymorphicTables: z.array(polymorphicTableSchema).optional(),
-    globalTables: z.array(z.string().min(1)).optional(),
-  })
-  .strict();
+export const tenantPolicyFrontmatterSchema = z.strictObject({
+  schemaId: z.string().min(1),
+  enforcement: enforcementModeSchema,
+  roots: z.array(tenantRootSchema).min(1),
+  hierarchy: z.array(hierarchyEdgeSchema).optional(),
+  scopedTables: z.array(scopedTableSchema).optional(),
+  polymorphicTables: z.array(polymorphicTableSchema).optional(),
+  globalTables: z.array(z.string().min(1)).optional(),
+});
 
 // ---------------------------------------------------------------------------
 // Inferred types from zod schemas
@@ -227,16 +209,14 @@ const tenantFilterSchema = z.object({
   conditions: z.array(tenantFilterConditionSchema).min(1),
 });
 
-const tenantScopeContextSchema = z
-  .object({
-    role: z.string().optional(),
-    label: z.string().optional(),
-    department: z.string().optional(),
-    region: z.string().optional(),
-    attributes: z.record(z.string(), z.string()).optional(),
-    description: z.string().optional(),
-  })
-  .strict();
+const tenantScopeContextSchema = z.strictObject({
+  role: z.string().optional(),
+  label: z.string().optional(),
+  department: z.string().optional(),
+  region: z.string().optional(),
+  attributes: z.record(z.string(), z.string()).optional(),
+  description: z.string().optional(),
+});
 
 export const tenantScopeSchema = z.object({
   access: tenantAccessSchema,
