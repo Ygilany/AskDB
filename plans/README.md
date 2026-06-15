@@ -46,6 +46,7 @@ fully before starting, honor its STOP conditions, and update your row when done.
 | 019 | Stop presenting internal `ASKDB_*` env-projection names as the user knob across the docs (incl. `ASKDB_SCHEMA_PATH` → `host.schemaPath`); redirect readers to config fields / chosen `env()` names | P2 | M | — | DONE |
 | 020 | Give the standalone HTTP server `--schema-path` / `--port` / `--host` CLI flags (flag > config > default), so config-or-CLI is a complete surface (code) | P3 | M | — | DONE |
 | 021 | Document that Studio's port/host are configurable via `studio.listen.*` + `--port`/`--host` (docs-only; capability already exists) | P3 | S | — | DONE |
+| 022 | Quickstart: make the Prisma introspection tab config-first (provider+schemaPath in `askdb.config.ts`, bare `npx askdb introspect`), demote `--engine`/`--prisma-schema` to a one-off override — matching the Live database tab | P2 | S | — | DONE |
 
 Status values: TODO | IN PROGRESS | DONE | BLOCKED (with one-line reason) | REJECTED (with one-line rationale)
 
@@ -113,6 +114,14 @@ Status values: TODO | IN PROGRESS | DONE | BLOCKED (with one-line reason) | REJE
     flags `--port`/`--host`, wrapper forwards args; verified at `4b80530`). The plan just surfaces
     that on `studio.mdx` + `cli.mdx` without naming `ASKDB_STUDIO_PORT`. Soft-overlaps 019 on
     `cli.mdx` (different lines).
+
+- 022 (2026-06-15, `improve plan`) is a docs-only follow-up to plan 015, which created the
+  quickstart's engine Tabs but left the Prisma tab CLI-first while the Live database tab is
+  config-first. Verified at `c649d2c` that flag-free Prisma introspection already works —
+  `--engine` falls back to `introspection.provider` (`apps/cli/src/introspect.ts:113`) and
+  `--prisma-schema` to `introspection.providerConfig.prisma.schemaPath` (`:153-159`). The plan
+  flips the tab to config-first; no code change. Touches only `quickstart.mdx` (the Prisma
+  `<TabItem>` body); no overlap with any open plan.
 
 ## Related tooling
 

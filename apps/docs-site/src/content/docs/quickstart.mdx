@@ -109,13 +109,7 @@ The engine comes from `introspection.provider` in your config (or the `--engine`
   </TabItem>
   <TabItem label="Prisma schema file">
 
-If you already have a Prisma schema file, introspect directly from it — no live database required:
-
-```bash
-npx askdb introspect --engine prisma --prisma-schema ./prisma/schema.prisma
-```
-
-You can also set this in `askdb.config.ts` so no flags are needed:
+You can introspect directly from a Prisma schema file — no live database required. Point your config at the schema file under `introspection.provider` and `introspection.providerConfig`, exactly like the live-database path:
 
 ```ts
 introspection: {
@@ -124,6 +118,18 @@ introspection: {
     prisma: { schemaPath: "./prisma/schema.prisma" },
   },
 },
+```
+
+Then the same one command introspects from the schema file — no flags needed:
+
+```bash
+npx askdb introspect
+```
+
+To introspect a different schema file for one run, pass the flags instead:
+
+```bash
+npx askdb introspect --engine prisma --prisma-schema ./other/schema.prisma
 ```
 
   </TabItem>
