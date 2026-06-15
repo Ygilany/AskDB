@@ -7,6 +7,12 @@ import type { AnyNormalizedSchema } from "@askdb/core";
 import { loadSchema, loadSchemaFromJson } from "@askdb/core";
 import type { DialectResolution } from "./client.js";
 import { createAskDb } from "./client.js";
+import {
+  DialectNotSupportedError,
+  ModelNotConfiguredError,
+  SchemaLoadError,
+  SchemaNotConfiguredError,
+} from "./errors.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const fixtureSchemaPath = join(here, "../../../fixtures/schemas/orders-users.schema");
@@ -31,6 +37,23 @@ const postgresProviderV2Json = JSON.stringify({
   version: 2,
   schemaId: "test-postgres",
   provider: "postgres",
+  tables: [
+    {
+      id: "table:public.t",
+      name: "t",
+      schema: "public",
+      sensitive: false,
+      columns: [
+        { id: "table:public.t#id", name: "id", type: "int", nullable: false, primaryKey: true, sensitive: false },
+      ],
+    },
+  ],
+});
+
+const unsupportedProviderV2Json = JSON.stringify({
+  version: 2,
+  schemaId: "test-snowflake",
+  provider: "snowflake",
   tables: [
     {
       id: "table:public.t",
@@ -186,12 +209,42 @@ describe("createAskDb", () => {
       expect(dialectInfo?.source).toBe("default");
       expect(dialectInfo?.dialect).toBe("postgres");
     });
+
+    it("rejects unsupported schema providers by default with the supported dialect list", async () => {
+      const config = makeConfig({ mockSql: "SELECT 1" });
+      const registry = makeRegistry();
+      const schema = loadSchemaFromJson(unsupportedProviderV2Json) as AnyNormalizedSchema;
+      const askdb = createAskDb({ config, registry, schema: { schema } });
+
+      await expect(askdb.ask("q")).rejects.toBeInstanceOf(DialectNotSupportedError);
+      await expect(askdb.ask("q")).rejects.toThrow(/snowflake[\s\S]*Supported:/);
+    });
+
+    it("can fall back to postgres for unsupported schema providers", async () => {
+      const config = makeConfig({ mockSql: "SELECT 1" });
+      const registry = makeRegistry();
+      const schema = loadSchemaFromJson(unsupportedProviderV2Json) as AnyNormalizedSchema;
+      let dialectInfo: DialectResolution | undefined;
+      const askdb = createAskDb({
+        config,
+        registry,
+        schema: { schema },
+        unknownDialect: "fallback-postgres",
+        onResolve: ({ dialect }) => { dialectInfo = dialect; },
+      });
+
+      await askdb.ask("q");
+      expect(dialectInfo?.source).toBe("default");
+      expect(dialectInfo?.dialect).toBe("postgres");
+      expect(dialectInfo?.note).toContain("snowflake");
+    });
   });
 
   it("5. missing schema - rejects with descriptive error", async () => {
     const config = makeConfig();
     const registry = makeRegistry();
     const askdb = createAskDb({ config, registry });
+    await expect(askdb.ask("q")).rejects.toBeInstanceOf(SchemaNotConfiguredError);
     await expect(askdb.ask("q")).rejects.toThrow("No schema configured");
   });
 
@@ -203,7 +256,23 @@ describe("createAskDb", () => {
       keyMissingMessage: vi.fn(() => "NL→SQL generation: no AI API key configured."),
     });
     const askdb = createAskDb({ config, registry, schema: { schema: preloaded } });
+    await expect(askdb.ask("q")).rejects.toBeInstanceOf(ModelNotConfiguredError);
     await expect(askdb.ask("q")).rejects.toThrow("NL→SQL generation: no AI API key configured.");
+  });
+
+  it("rejects schema paths that cannot be loaded with source context", async () => {
+    const missingPath = "/nope/does-not-exist.schema";
+    const config = makeConfig({ mockSql: "SELECT 1" });
+    const registry = makeRegistry();
+    const askdb = createAskDb({ config, registry, schema: { path: missingPath } });
+
+    try {
+      await askdb.ask("q");
+      throw new Error("expected askdb.ask to reject");
+    } catch (e) {
+      expect(e).toBeInstanceOf(SchemaLoadError);
+      expect((e as SchemaLoadError).source).toContain(missingPath);
+    }
   });
 
   it("7. caching - schema loaded once; reload() forces re-resolution", async () => {

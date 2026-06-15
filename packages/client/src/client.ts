@@ -5,6 +5,7 @@ import {
   isBuiltInDialectId,
   loadSchema,
   loadSchemaFromJson,
+  SUPPORTED_DIALECT_IDS,
   type AnyNormalizedSchema,
   type AskDbLanguageModel,
   type AskDialectInput,
@@ -13,6 +14,12 @@ import {
   type AskPipelineResult,
 } from "@askdb/core";
 import type { BuiltInDialectId } from "@askdb/core";
+import {
+  DialectNotSupportedError,
+  ModelNotConfiguredError,
+  SchemaLoadError,
+  SchemaNotConfiguredError,
+} from "./errors.js";
 
 /** Where a schema comes from. A pre-loaded object short-circuits loading. */
 export type SchemaSource =
@@ -46,6 +53,11 @@ export type CreateAskDbOptions = {
   schema?: SchemaSource;
   /** Default dialect override. Falls back to config.dialect → schema.provider → "postgres". */
   dialect?: BuiltInDialectId;
+  /**
+   * What to do when `schema.provider` is not a built-in dialect id and no
+   * config/override dialect is set.
+   */
+  unknownDialect?: "throw" | "fallback-postgres";
   /** Optional hook fired on each ask with how schema/model/dialect resolved (host logging/UX). */
   onResolve?: (info: { dialect: DialectResolution; modelSource: "override" | "registry" | "mock" }) => void;
 };
@@ -61,32 +73,49 @@ export function createAskDb(options: CreateAskDbOptions): AskDbClient {
   let cachedSchema: AnyNormalizedSchema | undefined;
   let cachedModel: AskDbLanguageModel | undefined;
 
-  function loadFromSource(src: SchemaSource | AnyNormalizedSchema): AnyNormalizedSchema {
+  function schemaSourceLabel(src: SchemaSource | AnyNormalizedSchema): string {
+    if ("schemaId" in src) return "schema";
+    if ("schema" in src) return "schema";
+    if ("json" in src) return "json";
+    return `path (${(src as { path: string }).path})`;
+  }
+
+  function loadFromSource(src: SchemaSource | AnyNormalizedSchema, label: string): AnyNormalizedSchema {
     if ("schemaId" in src) return src as AnyNormalizedSchema;
     if ("schema" in src) return (src as { schema: AnyNormalizedSchema }).schema;
-    if ("json" in src) return loadSchemaFromJson((src as { json: string }).json);
-    return loadSchema((src as { path: string }).path);
+    try {
+      if ("json" in src) return loadSchemaFromJson((src as { json: string }).json);
+      return loadSchema((src as { path: string }).path);
+    } catch (e) {
+      throw new SchemaLoadError(label, e);
+    }
   }
 
   function resolveDefaultSchema(): AnyNormalizedSchema {
     if (cachedSchema) return cachedSchema;
     if (options.schema) {
-      cachedSchema = loadFromSource(options.schema);
+      cachedSchema = loadFromSource(options.schema, schemaSourceLabel(options.schema));
       return cachedSchema;
     }
     const host = config.structured.host;
     const env = config.ai.aiEnv;
     const json = (host?.schemaJson?.trim() || env["ASKDB_SCHEMA_JSON"]?.trim()) || undefined;
     if (json) {
-      cachedSchema = loadSchemaFromJson(json);
+      cachedSchema = loadFromSource(
+        { json },
+        host?.schemaJson?.trim() ? "host.schemaJson" : "ASKDB_SCHEMA_JSON",
+      );
       return cachedSchema;
     }
     const path = (host?.schemaPath?.trim() || env["ASKDB_SCHEMA_PATH"]?.trim()) || undefined;
     if (path) {
-      cachedSchema = loadSchema(path);
+      cachedSchema = loadFromSource(
+        { path },
+        host?.schemaPath?.trim() ? `host.schemaPath (${path})` : `ASKDB_SCHEMA_PATH (${path})`,
+      );
       return cachedSchema;
     }
-    throw new Error(
+    throw new SchemaNotConfiguredError(
       "No schema configured. Pass `schema` to createAskDb() or per-call, or set host.schemaPath / host.schemaJson in askdb.config.*.",
     );
   }
@@ -113,8 +142,18 @@ export function createAskDb(options: CreateAskDbOptions): AskDbClient {
     }
     if (provider) {
       if (!isBuiltInDialectId(provider)) {
-        throw new Error(
-          `Schema declares provider '${provider}', but AskDB ships no DialectSpec for it. Set \`dialect\` in askdb.config.* to override.`,
+        if (options.unknownDialect === "fallback-postgres") {
+          return {
+            dialect: "postgres",
+            source: "default",
+            note: `Schema declared provider '${provider}' with no shipped DialectSpec; defaulting to 'postgres'.`,
+          };
+        }
+        throw new DialectNotSupportedError(
+          provider,
+          `Schema declares provider '${provider}', but AskDB does not yet ship a DialectSpec for it.\n` +
+            `Hint: set \`dialect: "postgres"\` (or another supported id) in askdb.config.* to override. ` +
+            `Supported: ${SUPPORTED_DIALECT_IDS.join(", ")}.`,
         );
       }
       return { dialect: provider, source: "schema" };
@@ -140,7 +179,7 @@ export function createAskDb(options: CreateAskDbOptions): AskDbClient {
     }
     if (cachedModel) return { model: cachedModel, source: "registry" };
     const model = await registry.createLanguageModelFromEnv(config.ai.aiEnv);
-    if (!model) throw new Error(registry.keyMissingMessage("NL→SQL generation"));
+    if (!model) throw new ModelNotConfiguredError(registry.keyMissingMessage("NL→SQL generation"));
     cachedModel = model;
     return { model: cachedModel, source: "registry" };
   }
@@ -152,7 +191,7 @@ export function createAskDb(options: CreateAskDbOptions): AskDbClient {
     },
     async ask(question, overrides = {}) {
       const { schema: schemaOverride, model: modelOverride, dialect: dialectOverride, deps, ...rest } = overrides;
-      const schema = schemaOverride ? loadFromSource(schemaOverride) : resolveDefaultSchema();
+      const schema = schemaOverride ? loadFromSource(schemaOverride, "request") : resolveDefaultSchema();
       const dialect = resolveDialect(schema, dialectOverride);
       const resolvedModel = await resolveModel(modelOverride, deps);
       options.onResolve?.({ dialect, modelSource: resolvedModel.source });

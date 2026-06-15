@@ -6,3 +6,9 @@ export {
   type SchemaSource,
   type DialectResolution,
 } from "./client.js";
+export {
+  DialectNotSupportedError,
+  ModelNotConfiguredError,
+  SchemaLoadError,
+  SchemaNotConfiguredError,
+} from "./errors.js";
