@@ -49,6 +49,7 @@
     "@askdb/ai-azure": "workspace:*",
     "@askdb/ai-google": "workspace:*",
     "@askdb/ai-openai": "workspace:*",
+    "@askdb/client": "workspace:*",
     "@askdb/config": "workspace:*",
     "@askdb/connectors": "workspace:*",
     "@askdb/core": "workspace:*",

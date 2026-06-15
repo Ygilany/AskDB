@@ -7,24 +7,20 @@ import { anthropicProvider } from "@askdb/ai-anthropic";
 import { azureProvider } from "@askdb/ai-azure";
 import { googleProvider } from "@askdb/ai-google";
 import { openaiProvider } from "@askdb/ai-openai";
+import { createAskDb, type DialectResolution } from "@askdb/client";
 import { randomUUID } from "node:crypto";
 import {
   AskDbError,
   AskDbLogEvent,
   type AskDbLogLevel,
   type AskDbModeV1,
-  type AskDialectInput,
   type AskGenerateDeps,
-  type BuiltInDialectId,
   SchemaParseError,
-  SUPPORTED_DIALECT_IDS,
   formatAskDbModesV1,
   formatSupportedAskDbLogLevels,
-  isBuiltInDialectId,
   isSupportedAskDbLogLevel,
   parseAskDbModeV1,
   SqlValidationError,
-  ask,
   createAskDbLogger,
   loadSchema,
 } from "@askdb/core";
@@ -156,50 +152,6 @@ function findSensitiveReferencesInSql(
     seen.add(k);
     return true;
   });
-}
-type ResolvedDialect = {
-  dialect: AskDialectInput;
-  source: "config" | "schema" | "default";
-  note?: string;
-};
-
-const DIALECT_ID_LIST = SUPPORTED_DIALECT_IDS.join(", ");
-
-/**
- * Resolve the NL→SQL dialect for an `ask` invocation.
- *
- * Priority: `askdb.config.dialect` → `schema.provider` (set by introspect) → `"postgres"`.
- * When config and schema disagree the config wins; the mismatch surfaces as a note
- * the caller can log/print so users know we ignored the schema's hint.
- *
- * Throws `AskDbError` when the schema persisted a provider id that has no shipped
- * `DialectSpec` (e.g. a Prisma `mysql` schema introspected before MySQL specs ship).
- */
-function resolveAskDbDialect(
-  configDialect: BuiltInDialectId | undefined,
-  schemaProvider: string | undefined,
-): ResolvedDialect {
-  if (configDialect) {
-    if (schemaProvider && schemaProvider !== configDialect) {
-      return {
-        dialect: configDialect,
-        source: "config",
-        note: `Using config.dialect '${configDialect}'; schema.json declared provider '${schemaProvider}'.`,
-      };
-    }
-    return { dialect: configDialect, source: "config" };
-  }
-  if (schemaProvider) {
-    if (!isBuiltInDialectId(schemaProvider)) {
-      throw new AskDbError(
-        `Schema declares provider '${schemaProvider}', but AskDB does not yet ship a DialectSpec for it.\n` +
-          `Hint: set \`dialect: "postgres"\` (or another supported id) in askdb.config.ts to override. ` +
-          `Supported: ${DIALECT_ID_LIST}.`,
-      );
-    }
-    return { dialect: schemaProvider, source: "schema" };
-  }
-  return { dialect: "postgres", source: "default" };
 }
 
 function resolveAskDbLogLevel(opts: {
@@ -349,54 +301,44 @@ program
       try {
         const schemaPath = resolveSchemaPathForAsk(opts.schema, runtime);
         const schema = loadSchemaFromPath(schemaPath);
-        const schemaProvider =
-          "provider" in schema && typeof schema.provider === "string"
-            ? schema.provider
-            : undefined;
-        const resolvedDialect = resolveAskDbDialect(
-          runtime.nlToSql.dialect,
-          schemaProvider,
-        );
-        if (resolvedDialect.note) {
-          logger.info(
-            {
-              event: "askdb.pipeline.dialect_override",
-              configDialect: runtime.nlToSql.dialect,
-              schemaProvider,
-              effectiveDialect: resolvedDialect.dialect,
-            },
-            resolvedDialect.note,
-          );
-          console.error(`Note: ${resolvedDialect.note}`);
-        }
-
-        type AskModel = Parameters<typeof ask>[0]["model"];
-        const model: AskModel = mockSql
-          ? // The model won't be used when `deps.generateText` is overridden.
-            (undefined as unknown as AskModel)
-          : ((await ai.createLanguageModelFromEnv(runtime.ai.aiEnv)) as AskModel);
 
         const omitSensitiveFromPrompt =
           Boolean(opts.omitSensitiveFromPrompt) || runtime.modes.omitSensitiveFromPrompt;
 
-        const out = await ask({
-          question: opts.question,
-          schema,
-          model,
-          dialect: resolvedDialect.dialect,
+        const askdb = createAskDb({
+          config: runtime,
+          registry: ai,
+          onResolve: (info: { dialect: DialectResolution; modelSource: "override" | "registry" | "mock" }) => {
+            if (info.dialect.note) {
+              logger.info(
+                {
+                  event: "askdb.pipeline.dialect_override",
+                  note: info.dialect.note,
+                },
+                info.dialect.note,
+              );
+              console.error(`Note: ${info.dialect.note}`);
+            }
+          },
+        });
+
+        const out = await askdb.ask(opts.question, {
+          schema: { schema },
           logger,
           mode,
           explain: Boolean(opts.explain),
           omitSensitiveIdentifiersFromNlToSqlPrompt: omitSensitiveFromPrompt,
-          deps:
-            mockSql !== undefined
-              ? {
-                  // `ai.generateText` has a rich return type; for test-mode we only need `text`.
-                  generateText: (async () => ({ text: mockSql } as any)) as NonNullable<
+          // When --mock-sql flag is set explicitly (not just from runtime config),
+          // pass it as a per-call deps override so the flag wins over config.
+          ...(opts.mockSql !== undefined
+            ? {
+                deps: {
+                  generateText: (async () => ({ text: opts.mockSql } as any)) as NonNullable<
                     AskGenerateDeps["generateText"]
                   >,
-                }
-              : undefined,
+                },
+              }
+            : {}),
         });
 
         const sensitiveRefs = findSensitiveReferencesInSql(out.sql, schema);
