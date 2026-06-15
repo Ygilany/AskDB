@@ -11,7 +11,7 @@ description: "A local browser UI for enriching your schema and testing questions
 npx askdb studio
 ```
 
-Studio reads `outputDir` from `askdb.config.ts`. Pass `--schema <path>` to override for a single run. By default it serves on `http://127.0.0.1:5556`.
+Studio reads `outputDir` from `askdb.config.ts`. Pass `--schema <path>` to override for a single run. By default it serves on `http://127.0.0.1:5556` — change that with the `--port` and `--host` flags, or set `studio.listen.port` and `studio.listen.host` in `askdb.config.ts` (a CLI flag overrides the config for that run).
 
 ## The loop
 

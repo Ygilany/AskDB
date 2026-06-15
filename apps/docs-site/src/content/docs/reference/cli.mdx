@@ -85,7 +85,8 @@ askdb studio --schema ./my-app.schema
 | Flag | Description |
 | --- | --- |
 | `--schema <path>` | Path to the schema artifact. |
-| `--port <n>` | Override the default port (5556). |
+| `--port <n>` | Override the listen port (default `5556`; or set `studio.listen.port` in config). |
+| `--host <host>` | Override the bind host (default `127.0.0.1`; or set `studio.listen.host` in config). |
 
 Requires `@askdb/studio` to be installed (lazy-imported on first use).
 
