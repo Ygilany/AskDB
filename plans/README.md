@@ -40,7 +40,7 @@ fully before starting, honor its STOP conditions, and update your row when done.
 | 013 | Design spike: Studio as the front door — guided setup wizard, fixed Resync, playground "Get the code" | P3 | M | — | TODO |
 | 014 | Homepage: four-step workflow (init→introspect→enrich→use), dual-path embed Tabs (direct AI SDK vs config-driven `@askdb/ai`), parallel/accurate engine subtitles | P1 | S | — | DONE |
 | 015 | Quickstart: ask-before-enrich loop diagram (trimmed viewBox), Prisma introspection as a synced Tab, "ask in Studio → then embed" framing | P1 | S | — | DONE |
-| 016 | Retire the standalone Install page; fold its use-case grid into the Packages reference; redirect `/install/` (maintainer decision gate) | P2 | S | — | TODO |
+| 016 | Retire the standalone Install page; fold its use-case grid into the Packages reference; redirect `/install/` (maintainer decision gate) | P2 | S | — | DONE (fallback stub; Astro redirect failed base-path check) |
 | 017 | Embed-in-Node: clarify `loadSchema` path is the artifact *directory*, note the DB driver is optional (ORMs pass the SQL themselves), remove the HTTP-route and error-handling sections | P1 | S | — | TODO |
 | 018 | Explain that the physical schema + enrichment are repackaged into a DDL-style model-facing format (schema-artifact concept + author-your-schema guide) | P2 | S | — | TODO |
 | 019 | Stop presenting internal `ASKDB_*` env-projection names as the user knob across the docs (incl. `ASKDB_SCHEMA_PATH` → `host.schemaPath`); redirect readers to config fields / chosen `env()` names | P2 | M | — | TODO |
