@@ -11,7 +11,7 @@ import packageDependenciesUrl from "../../../assets/diagrams/askdb-package-depen
 
 <img src={packageDependenciesUrl} alt="AskDB package dependency graph: core and introspect at the top, engine and enrichment packages in the middle, and surfaces (CLI, Studio, TUI, HTTP API) at the bottom composing them" class="doc-diagram" />
 
-<p class="doc-caption">AI provider adapters (<code>@askdb/ai-openai</code>, <code>@askdb/ai-azure</code>, <code>@askdb/ai-google</code>, <code>@askdb/ai-anthropic</code>) plug into the surfaces shown above via <code>@askdb/ai</code>.</p>
+<p class="doc-caption">AI provider adapters (<code>@askdb/ai-openai</code>, <code>@askdb/ai-azure</code>, <code>@askdb/ai-google</code>, <code>@askdb/ai-anthropic</code>) plug into the surfaces shown above via <code>@askdb/ai</code>. <code>@askdb/client</code> sits above <code>@askdb/core</code> + <code>@askdb/ai</code> as the config-driven entry point.</p>
 
 ## Core
 
@@ -33,6 +33,25 @@ npm install @askdb/core
 | `createAskDbLogger` | Structured logger that emits AskDB log events. |
 | `POSTGRES_DIALECT` and built-in dialect IDs | Dialect inputs accepted by `ask()`. |
 | `AskDbLanguageModel` | AskDB's public name for the AI SDK language model contract. |
+
+### `@askdb/client`
+
+Config-aware facade over `@askdb/core`. `createAskDb()` resolves the schema, model, and
+dialect from your `askdb.config.*` (and a provider registry you supply), so call sites pass
+only a question. Install it when you want the shortest config-driven path; skip it when you
+construct the model and load the schema yourself and call `ask()` directly.
+
+```bash
+npm install @askdb/client @askdb/ai @askdb/ai-openai @askdb/config
+```
+
+**Key exports**
+
+| Symbol | Purpose |
+| --- | --- |
+| `createAskDb(options)` | Build a client bound to a config + AI registry. Returns `{ ask, reload }`. |
+| `client.ask(question, overrides?)` | Resolve schema/model/dialect and run the pipeline. Overrides: `schema`, `model`, `dialect`, plus all `ask()` options. |
+| `AskDbClient` / `CreateAskDbOptions` / `AskOverrides` | Types for the client, constructor options, and per-call overrides. |
 
 ### `@askdb/ai`
 
