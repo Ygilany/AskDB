@@ -66,7 +66,7 @@ npm install @askdb/ai-google
 npm install @askdb/ai-anthropic
 ```
 
-Any provider that has a Vercel AI SDK package can be added as an adapter. Unknown `ASKDB_AI_PROVIDER` values require a registered adapter — first-party apps register `openai`, `azure`, `foundry`, `google`, and `anthropic`; for anything else, embed AskDB and register your own adapter, or use an OpenAI-compatible endpoint via the `openai` provider and a custom base URL.
+Any provider that has a Vercel AI SDK package can be added as an adapter. Unknown `ai.provider` values require a registered adapter — first-party apps register `openai`, `azure`, `foundry`, `google`, and `anthropic`; for anything else, embed AskDB and register your own adapter, or use an OpenAI-compatible endpoint via the `openai` provider and a custom base URL.
 
 ### `@askdb/connectors`
 

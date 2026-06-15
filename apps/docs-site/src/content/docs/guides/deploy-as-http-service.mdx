@@ -28,7 +28,7 @@ const server = createAskDbHttpServer({
 server.listen();
 ```
 
-The server reads its schema and model config from environment variables — set `ASKDB_SCHEMA_PATH` to point at your schema artifact, and the AI provider keys (`OPENAI_API_KEY`, etc.) as you normally would.
+The server reads its schema and model settings from your `askdb.config.ts` (it bootstraps the same config file the CLI and Studio use). Set `host.schemaPath` to point at your schema artifact and configure the AI provider as usual — supply the provider key (`OPENAI_API_KEY`, etc.) in your environment the same way you do for the CLI.
 
 ## Endpoints
 
@@ -80,7 +80,7 @@ import os
 import httpx
 
 resp = httpx.post(
-    f"{os.environ['ASKDB_URL']}/ask",
+    f"{os.environ['SERVER_URL']}/ask",
     json={"question": "How many customers signed up last week?"},
     timeout=30,
 )
@@ -112,7 +112,7 @@ The server does not connect to your database. It generates SQL and returns it. E
 
 ## Custom schema per request
 
-The default is to load `ASKDB_SCHEMA_PATH` once at boot. If you need per-request schema (for example, a multi-product deployment where different consumers send different schemas), supply the bundled JSON as `schemaJson` in the request body:
+The default is to load the schema from `host.schemaPath` once at boot. If you need per-request schema (for example, a multi-product deployment where different consumers send different schemas), supply the bundled JSON as `schemaJson` in the request body:
 
 ```json
 {
