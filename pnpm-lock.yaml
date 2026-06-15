@@ -383,6 +383,27 @@ importers:
         specifier: ^4.1.8
         version: 4.1.8(@opentelemetry/api@1.9.1)(@types/node@24.13.2)(vite@8.0.16(@types/node@24.13.2)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.22.4)(yaml@2.9.0))
 
+  packages/client:
+    devDependencies:
+      '@askdb/ai':
+        specifier: workspace:*
+        version: link:../ai
+      '@askdb/config':
+        specifier: workspace:*
+        version: link:../config
+      '@askdb/core':
+        specifier: workspace:*
+        version: link:../core
+      ai:
+        specifier: ^6.0.205
+        version: 6.0.205(zod@4.4.3)
+      typescript:
+        specifier: ^6.0.3
+        version: 6.0.3
+      vitest:
+        specifier: ^4.1.8
+        version: 4.1.8(@opentelemetry/api@1.9.1)(@types/node@24.13.2)(vite@8.0.16(@types/node@24.13.2)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.22.4)(yaml@2.9.0))
+
   packages/config:
     dependencies:
       dotenv:
