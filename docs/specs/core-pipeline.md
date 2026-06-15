@@ -11,6 +11,8 @@ The core pipeline turns a natural language question and a describable schema int
 
 The `askdb` CLI wraps `ask()` as the first-party surface, handling config bootstrapping, schema loading, and structured logging. SQL execution and tabular display happen at the CLI layer via the dialect's executor, not inside `ask()`.
 
+The `@askdb/client` package provides `createAskDb()`, a config-aware facade that resolves the schema, model, and dialect from `askdb.config.*` (plus a host-supplied AI registry) and then calls `ask()`. It is strictly a consumer of this pipeline — `ask()` keeps its required, fully-explicit arguments and remains the pure BYO-model primitive; the facade adds no behavior to the core contract.
+
 ## Scope
 
 ### In scope

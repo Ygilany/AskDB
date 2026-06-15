@@ -117,6 +117,7 @@ flowchart TB
 | `@askdb/mysql` | MySQL / MariaDB connector adapter for `@askdb/connectors`; includes `MYSQL_DIALECT`, `MARIADB_DIALECT`, live connector, and `createMysqlCatalogQueryRunner`. | Wraps `mysql2` (optional peer); exports `mysqlConnectorProvider`. |
 | `@askdb/sqlite` | SQLite connector adapter for `@askdb/connectors`; includes `SQLITE_DIALECT`, live connector, and `createSqliteCatalogQueryRunner`. | Wraps `better-sqlite3` (optional peer); exports `sqliteConnectorProvider`. |
 | `@askdb/sqlserver` | SQL Server connector adapter for `@askdb/connectors`; includes `SQLSERVER_DIALECT`, live connector, and `createSqlServerCatalogQueryRunner`. | Wraps `mssql` (optional peer); exports `sqlServerConnectorProvider`. |
+| `@askdb/client` | Config-aware facade over `@askdb/core`: `createAskDb()` resolves schema, model, and dialect from config + a provider registry so callers pass only a question. | No provider SDKs bundled; the registry is host-supplied. `@askdb/core` never depends on it. |
 | `@askdb/core` | Dialect-agnostic NL-to-SQL pipeline, Schema v2 loading/parsing, modes, logging, enrichment suggestions, and retriever input. | No database drivers, no generated-SQL execution, no engine-specific connector. |
 | `@askdb/introspect` | Engine-agnostic `Connector<TInput>` contract, introspection orchestrator, and Schema v2 renderer. | No default connector, no engine-specific input union, no standalone binary. |
 | `@askdb/postgres` | Postgres dialect, SQL prompt/validation helpers, live/from-export connector, catalog templates, and optional `pg` catalog runner. | `pg` is optional and only needed for live catalog reads; generated SQL still executes outside AskDB. |
@@ -201,6 +202,7 @@ Boundary rules:
 - `@askdb/rag` is optional. It can narrow schema context before `ask()`, but it does not replace dialect validation.
 - First-party apps can be batteries-included. Reusable packages should stay small and should not pull optional drivers into unrelated workflows.
 - `@askdb/ai` owns provider dispatch and the universal env precedence; each `@askdb/ai-*` adapter owns its provider's SDK, native env vars, and defaults. Core stays BYO-model: `ask()` takes any AI SDK `LanguageModel` and never depends on `@askdb/ai`.
+- `@askdb/client` is a convenience layer **above** `@askdb/core`: it depends on `@askdb/core`, `@askdb/ai`, and `@askdb/config` to resolve a schema/model/dialect, then calls `ask()`. The dependency arrow points one way — `@askdb/core` does not know `@askdb/client` exists, preserving the BYO-model boundary.
 - First-party surfaces (`askdb`, `@askdb/http-api`, `@askdb/studio`, `@askdb/tui`) are deliberately batteries-included: they hard-depend on all first-party adapters so env config alone selects a provider. Library packages must not.
 
 ## Schema-to-SQL flow

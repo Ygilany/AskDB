@@ -58,7 +58,7 @@ fully before starting, honor its STOP conditions, and update your row when done.
 | 024 | Add `@askdb/client`: a config-aware `createAskDb()` facade that resolves schema/model/dialect from config so callers only pass a question (additive new package; `ask()` stays pure) | P1 | M | — | DONE |
 | 025 | Migrate the HTTP API and CLI onto `@askdb/client`, deleting the duplicated schema/model/dialect resolution (behavior-preserving) | P2 | M | 024 | DONE |
 | 026 | Lead the `examples/ask-question` example with the `@askdb/client` fast path, keeping the direct `ask()` BYO path as the advanced variant | P3 | S | 024 | DONE |
-| 027 | Document the `@askdb/client` facade across the docs site (packages ref, bring-your-own-model, embed-in-node, homepage) and internal docs (architecture, core-pipeline spec) | P2 | M | 024 (hard); land after 025/026 | TODO |
+| 027 | Document the `@askdb/client` facade across the docs site (packages ref, bring-your-own-model, embed-in-node, homepage) and internal docs (architecture, core-pipeline spec) | P2 | M | 024 (hard); land after 025/026 | DONE |
 
 Status values: TODO | IN PROGRESS | DONE | BLOCKED (with one-line reason) | REJECTED (with one-line rationale)
 
