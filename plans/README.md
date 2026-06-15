@@ -47,6 +47,7 @@ fully before starting, honor its STOP conditions, and update your row when done.
 | 020 | Give the standalone HTTP server `--schema-path` / `--port` / `--host` CLI flags (flag > config > default), so config-or-CLI is a complete surface (code) | P3 | M | — | DONE |
 | 021 | Document that Studio's port/host are configurable via `studio.listen.*` + `--port`/`--host` (docs-only; capability already exists) | P3 | S | — | DONE |
 | 022 | Quickstart: make the Prisma introspection tab config-first (provider+schemaPath in `askdb.config.ts`, bare `npx askdb introspect`), demote `--engine`/`--prisma-schema` to a one-off override — matching the Live database tab | P2 | S | — | DONE |
+| 023 | Quickstart: align the Prisma tab's block order with the Live database tab (command-first → config "For example" → one-off flag), fixing the layout inconsistency 022 introduced | P2 | S | 022 | DONE |
 
 Status values: TODO | IN PROGRESS | DONE | BLOCKED (with one-line reason) | REJECTED (with one-line rationale)
 
@@ -122,6 +123,12 @@ Status values: TODO | IN PROGRESS | DONE | BLOCKED (with one-line reason) | REJE
   `--prisma-schema` to `introspection.providerConfig.prisma.schemaPath` (`:153-159`). The plan
   flips the tab to config-first; no code change. Touches only `quickstart.mdx` (the Prisma
   `<TabItem>` body); no overlap with any open plan.
+
+- 023 (2026-06-15) is a small follow-up to 022: making the Prisma tab "config-first" left it
+  laid out in the opposite block order from the Live database tab (config snippet first vs
+  command first), which is visible because both share the `syncKey="engine"` Tabs group. 023
+  reorders the Prisma tab to command-first to match Live; substance unchanged, no code change.
+  Touches only `quickstart.mdx` (same Prisma `<TabItem>`); run after 022.
 
 ## Related tooling
 
