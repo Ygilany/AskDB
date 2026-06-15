@@ -2,23 +2,28 @@
 const steps = [
   {
     number: "01",
-    title: "Author your schema",
-    body: "Introspect your database, then enrich the schema with descriptions, aliases, sensitive markers, and tenant policy in Studio. Commit it like code.",
+    title: "Init",
+    body: "Run askdb init to scaffold askdb.config.ts — your provider, database, and model settings, checked in like code.",
   },
   {
     number: "02",
-    title: "Ask in natural language",
-    body: "Call ask() from your app — or POST to the HTTP API. AskDB grounds the question in your schema, generates SQL, and validates every clause.",
+    title: "Introspect",
+    body: "AskDB reads your database (or a Prisma schema file) into a schema artifact: tables, columns, types, and relationships on disk.",
   },
   {
     number: "03",
-    title: "Your app runs the SQL",
-    body: "AskDB returns validated SQL with parameters. Your application logs it, approves it, runs it through your own pool, and shows the result to the user.",
+    title: "Enrich",
+    body: "In Studio, add the descriptions, aliases, business concepts, and sensitive markers that make generation reliable. Test questions as you go.",
+  },
+  {
+    number: "04",
+    title: "Use",
+    body: "Call ask() from your app — or POST to the HTTP API. AskDB returns validated SQL; your application logs it, approves it, and runs it through your own pool.",
   },
 ];
 ---
 
-<ol class="home-workflow" aria-label="The three steps of using AskDB">
+<ol class="home-workflow" aria-label="The four steps of using AskDB">
   {steps.map((step) => (
     <li class="home-workflow-step">
       <span class="home-workflow-number" aria-hidden="true">{step.number}</span>
