@@ -66,6 +66,10 @@ The bundle file is the entire artifact in one JSON. Load it with `loadSchema` th
 
 The schema artifact is source code. Check it into the repo, review changes in PRs, deploy it alongside your app. The artifact is the single source of truth for what the model sees about your database.
 
+## How enrichment reaches the model
+
+Your enrichment doesn't get sent to the model as the markdown you write. When you ask a question, AskDB merges the physical schema and your enrichment into one compact, model-facing schema description — a DDL-style block where descriptions, aliases, and "common query language" become inline annotations on the tables and columns they belong to. That's why enrichment written as plain-language descriptions and the phrases your users actually say is effective: it lands right next to the structure the model is reasoning over. See [The schema artifact](/concepts/the-schema-artifact/) for the full picture of what the model receives.
+
 ## Read next
 
 <div class="home-path-grid">

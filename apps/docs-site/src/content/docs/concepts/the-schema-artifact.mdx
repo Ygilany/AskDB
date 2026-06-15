@@ -85,6 +85,12 @@ Customer purchase orders. One row per submitted order.
 
 This layer survives re-introspection. When your database changes, `askdb introspect` updates `schema.json` and leaves your markdown intact.
 
+## What the model actually receives
+
+The model never sees the directory you author. At generation time AskDB merges the physical layer and the enrichment into a single compact, model-facing text — a DDL-style description where each table is rendered as a block and your enrichment is folded in as inline comments (descriptions, aliases, and "common query language" attached to the table and columns they describe). Sensitive fields are tagged or withheld here according to your mode.
+
+So the two layers you maintain separately on disk — `schema.json` for structure, markdown for meaning — are assembled into one annotated schema description the model reads. That repackaged text, plus the question, is the entire prompt: never your rows, your credentials, or your query results. When a schema is too large to send whole, the same rendering is applied to only the relevant slice retrieved for the question (see [RAG for large schemas](/guides/rag-for-large-schemas/)).
+
 ## Stable IDs
 
 Every table, column, and concept has a stable ID. Renaming a column in the database doesn't break the enrichment that references it — the ID stays the same.
