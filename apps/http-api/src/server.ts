@@ -1,9 +1,6 @@
 import { randomUUID } from "node:crypto";
-import { existsSync } from "node:fs";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { createServer as createNodeServer } from "node:http";
-import { dirname, isAbsolute, resolve as resolvePath } from "node:path";
-import { fileURLToPath } from "node:url";
 import { getAskDbRuntimeConfig } from "@askdb/config";
 import {
   createAiRegistry,
@@ -13,20 +10,21 @@ import { azureProvider } from "@askdb/ai-azure";
 import { googleProvider } from "@askdb/ai-google";
 import { openaiProvider } from "@askdb/ai-openai";
 import {
+  createAskDb,
+  DialectNotSupportedError,
+  ModelNotConfiguredError,
+  SchemaLoadError,
+  SchemaNotConfiguredError,
+} from "@askdb/client";
+import {
   AskDbError,
   AskDbLogEvent,
   type AskDbLogLevel,
   type AskDbModeV1,
-  type AskDialectInput,
-  type BuiltInDialectId,
   DEFAULT_ASKDB_MODE,
-  isBuiltInDialectId,
   SqlGenerationError,
   SqlValidationError,
-  ask,
   createAskDbLogger,
-  loadSchema,
-  loadSchemaFromJson,
   parseAskDbModeV1,
 } from "@askdb/core";
 import type { AskHttpErrorResponse, AskHttpRequest, AskHttpSuccessResponse } from "./types.js";
@@ -118,64 +116,9 @@ function badRequest(correlationId: string, message: string): AskHttpErrorRespons
   return { ok: false, correlationId, error: { code: "bad_request", message } };
 }
 
-function resolveSchemaJsonFromRt(
-  rt: ReturnType<typeof getAskDbRuntimeConfig>,
-  effectiveSchemaPath: string | undefined,
-): {
-  schemaJson?: string;
-  source?: string;
-} {
-  const inline = rt.ai.aiEnv.ASKDB_SCHEMA_JSON;
-  if (typeof inline === "string" && inline.trim() !== "") {
-    return { schemaJson: inline, source: "ASKDB_SCHEMA_JSON" };
-  }
-  const p = effectiveSchemaPath;
-  if (typeof p === "string" && p.trim() !== "") {
-    return { schemaJson: undefined, source: `ASKDB_SCHEMA_PATH (${p})` };
-  }
-  return { schemaJson: undefined, source: undefined };
-}
-
-async function resolveSchemaPathWithFallbacks(schemaPath: string): Promise<{ resolvedPath: string; source: string }> {
-  const trimmed = schemaPath.trim();
-
-  // 1) As provided (absolute or relative to current working directory)
-  if (isAbsolute(trimmed)) {
-    return { resolvedPath: trimmed, source: `ASKDB_SCHEMA_PATH (${trimmed})` };
-  }
-
-  // 2) Relative to CWD — accept both files and directories
-  if (existsSync(trimmed)) {
-    return { resolvedPath: trimmed, source: `ASKDB_SCHEMA_PATH (${trimmed})` };
-  }
-
-  // 3) If relative, also try resolving relative to the repo root (3 levels up from this file).
-  // Works for both `src/` and compiled `dist/` layouts:
-  // - .../apps/http-api/src/server.ts  -> repo root is ../../..
-  // - .../apps/http-api/dist/server.js -> repo root is ../../..
-  const here = dirname(fileURLToPath(import.meta.url));
-  const repoRoot = resolvePath(here, "../../..");
-  const repoRelative = resolvePath(repoRoot, trimmed);
-  return { resolvedPath: repoRelative, source: `ASKDB_SCHEMA_PATH (${trimmed}) resolved from repo root (${repoRelative})` };
-}
-
 function modeFromHeader(v: string | undefined): AskDbModeV1 | undefined {
   if (!v) return undefined;
   return parseAskDbModeV1(v);
-}
-
-/**
- * Resolve the NL→SQL dialect for an HTTP `/ask` invocation. Same priority as
- * the CLI: `config.dialect` → `schema.provider` → `"postgres"`. Mirrors the
- * CLI's behavior so a request hits the same dialect the user authored against.
- */
-function resolveHttpApiDialect(
-  configDialect: BuiltInDialectId | undefined,
-  schemaProvider: string | undefined,
-): AskDialectInput {
-  if (configDialect) return configDialect;
-  if (schemaProvider && isBuiltInDialectId(schemaProvider)) return schemaProvider;
-  return "postgres";
 }
 
 export function createAskDbHttpServer(options: AskDbHttpServerOptions = {}) {
@@ -183,8 +126,12 @@ export function createAskDbHttpServer(options: AskDbHttpServerOptions = {}) {
   const port = options.port ?? 3000;
   const optionSchemaPath = options.schemaPath;
   const maxBodyBytes = options.maxBodyBytes ?? DEFAULT_MAX_BODY_BYTES;
-  let cachedSchema: ReturnType<typeof loadSchema> | undefined;
-  let cachedSchemaSource: string | undefined;
+
+  // The facade is constructed lazily on the first request so it captures the
+  // runtime config that is active at that point. Config is stable for the
+  // process lifetime after bootstrap; the facade's internal cache handles
+  // subsequent requests.
+  let askdb: ReturnType<typeof createAskDb> | undefined;
 
   const server = createNodeServer(async (req, res) => {
     const method = req.method ?? "GET";
@@ -252,14 +199,17 @@ export function createAskDbHttpServer(options: AskDbHttpServerOptions = {}) {
         return;
       }
 
-      const mockSql = rt.dev.mockSql;
-      const aiConfig = mockSql ? undefined : ai.resolveAiConfig(rt.ai.aiEnv);
-      if (!mockSql && !aiConfig) {
-        writeError(res, 500, correlationId, {
-          code: "generation_not_configured",
-          message: `${ai.keyMissingMessage("NL→SQL generation")} (or set ASKDB_MOCK_SQL).`,
+      // Build the facade once per server instance (lazily on first request so
+      // it captures the stable runtime config).
+      if (!askdb) {
+        askdb = createAskDb({
+          config: rt,
+          registry: ai,
+          // When the caller supplied a schemaPath option, it takes precedence
+          // over host.schemaPath / ASKDB_SCHEMA_PATH in config.
+          schema: optionSchemaPath ? { path: optionSchemaPath } : undefined,
+          unknownDialect: "fallback-postgres",
         });
-        return;
       }
 
       logger.info(
@@ -267,68 +217,15 @@ export function createAskDbHttpServer(options: AskDbHttpServerOptions = {}) {
         "askdb http run start",
       );
 
-      let schema;
-      try {
-        // Prefer request override, otherwise use the server-default schema (cached).
-        const requestOverride =
-          typeof body.schemaJson === "string" && body.schemaJson.trim() !== "" ? body.schemaJson : undefined;
-        if (requestOverride) {
-          schema = loadSchemaFromJson(requestOverride);
-        } else {
-          if (!cachedSchema) {
-            const effectiveSchemaPath = optionSchemaPath ?? rt.ai.aiEnv.ASKDB_SCHEMA_PATH;
-            const envSchema = resolveSchemaJsonFromRt(rt, effectiveSchemaPath);
-            cachedSchemaSource = envSchema.source;
-            if (envSchema.schemaJson) {
-              cachedSchema = loadSchemaFromJson(envSchema.schemaJson);
-            } else if (effectiveSchemaPath && effectiveSchemaPath.trim() !== "") {
-              const { resolvedPath, source } = await resolveSchemaPathWithFallbacks(effectiveSchemaPath);
-              cachedSchemaSource = source;
-              cachedSchema = loadSchema(resolvedPath);
-            } else {
-              writeError(res, 400, correlationId, {
-                code: "bad_request",
-                message:
-                  "No schema configured. Provide `schemaJson` in the request body or set ASKDB_SCHEMA_PATH / ASKDB_SCHEMA_JSON on the server.",
-              });
-              return;
-            }
-          }
-          schema = cachedSchema;
-        }
-      } catch (e) {
-        const msg = e instanceof Error ? e.message : String(e);
-        const prefix = cachedSchemaSource ? `schema parse error (${cachedSchemaSource}): ` : "schema parse error: ";
-        writeError(res, 400, correlationId, { code: "schema_parse_error", message: `${prefix}${msg}` });
-        return;
-      }
+      const requestOverride =
+        typeof body.schemaJson === "string" && body.schemaJson.trim() !== "" ? body.schemaJson : undefined;
 
-      type AskModel = Parameters<typeof ask>[0]["model"];
-      const model: AskModel = mockSql
-        ? (undefined as unknown as AskModel)
-        : ((await ai.createLanguageModelFromEnv(rt.ai.aiEnv)) as AskModel);
-
-      const schemaProvider =
-        "provider" in schema && typeof schema.provider === "string"
-          ? schema.provider
-          : undefined;
-      const dialect = resolveHttpApiDialect(rt.nlToSql.dialect, schemaProvider);
-
-      const out = await ask({
-        question: body.question,
-        schema,
-        model,
-        dialect,
+      const out = await askdb.ask(body.question, {
+        schema: requestOverride ? { json: requestOverride } : undefined,
         logger,
         mode: mode ?? DEFAULT_ASKDB_MODE,
         explain: Boolean(body.explain),
         omitSensitiveIdentifiersFromNlToSqlPrompt: Boolean(body.omitSensitiveFromPrompt),
-        deps:
-          mockSql !== undefined
-            ? {
-                generateText: (async () => ({ text: mockSql } as any)) as any,
-              }
-            : undefined,
       });
 
       const payload: AskHttpSuccessResponse = {
@@ -347,6 +244,32 @@ export function createAskDbHttpServer(options: AskDbHttpServerOptions = {}) {
         writeError(res, 400, correlationId, badRequest(correlationId, msg).error);
         return;
       }
+
+      if (e instanceof SchemaNotConfiguredError) {
+        writeError(res, 400, correlationId, {
+          code: "bad_request",
+          message:
+            "No schema configured. Provide `schemaJson` in the request body or set ASKDB_SCHEMA_PATH / ASKDB_SCHEMA_JSON on the server.",
+        });
+        return;
+      }
+
+      if (e instanceof SchemaLoadError) {
+        writeError(res, 400, correlationId, {
+          code: "schema_parse_error",
+          message: `schema parse error (${e.source}): ${e.cause instanceof Error ? e.cause.message : String(e.cause)}`,
+        });
+        return;
+      }
+
+      if (e instanceof ModelNotConfiguredError) {
+        writeError(res, 500, correlationId, {
+          code: "generation_not_configured",
+          message: `${msg} (or set ASKDB_MOCK_SQL).`,
+        });
+        return;
+      }
+
       logger.error({ event: AskDbLogEvent.RunError, errMessage: msg }, "askdb http run error");
 
       if (e instanceof SqlValidationError) {
@@ -359,6 +282,10 @@ export function createAskDbHttpServer(options: AskDbHttpServerOptions = {}) {
       }
       if (e instanceof SqlGenerationError) {
         writeError(res, 502, correlationId, { code: "sql_generation_error", message: e.message });
+        return;
+      }
+      if (e instanceof DialectNotSupportedError) {
+        writeError(res, 400, correlationId, { code: "bad_request", message: msg });
         return;
       }
       if (e instanceof AskDbError) {

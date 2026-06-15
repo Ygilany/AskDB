@@ -17,6 +17,13 @@ were added after the maintainer asked to make config-or-CLI the only surface. Th
 decision gates (016 delete Install page, 019 `ASKDB_SCHEMA_PATH`) were **resolved on 2026-06-14**.
 All are mutually independent (no shared in-scope files except soft `cli.mdx` overlap between
 019 and 021) and can run in any order or in parallel.
+Plans 024–026: generated on 2026-06-15 at commit `d7faa20` via `improve plan`, from the
+`ask()` API/architecture review. They add a config-aware `@askdb/client` facade
+(`createAskDb`) so callers only pass a question — `schema`/`model`/`dialect` become
+optional overrides — while keeping `@askdb/core`'s `ask()` a pure, BYO-model primitive.
+024 builds the package (additive), 025 migrates the CLI + HTTP API onto it (removing the
+duplicated schema/model/dialect resolution), 026 updates the example. This is a code cycle,
+not docs.
 
 Execute in the order below unless dependencies say otherwise. Each executor: read the plan
 fully before starting, honor its STOP conditions, and update your row when done.
@@ -48,6 +55,11 @@ fully before starting, honor its STOP conditions, and update your row when done.
 | 021 | Document that Studio's port/host are configurable via `studio.listen.*` + `--port`/`--host` (docs-only; capability already exists) | P3 | S | — | DONE |
 | 022 | Quickstart: make the Prisma introspection tab config-first (provider+schemaPath in `askdb.config.ts`, bare `npx askdb introspect`), demote `--engine`/`--prisma-schema` to a one-off override — matching the Live database tab | P2 | S | — | DONE |
 | 023 | Quickstart: align the Prisma tab's block order with the Live database tab (command-first → config "For example" → one-off flag), fixing the layout inconsistency 022 introduced | P2 | S | 022 | DONE |
+| 024 | Add `@askdb/client`: a config-aware `createAskDb()` facade that resolves schema/model/dialect from config so callers only pass a question (additive new package; `ask()` stays pure) | P1 | M | — | DONE |
+| 025 | Migrate the HTTP API and CLI onto `@askdb/client`, deleting the duplicated schema/model/dialect resolution (behavior-preserving) | P2 | M | 024 | DONE |
+| 026 | Lead the `examples/ask-question` example with the `@askdb/client` fast path, keeping the direct `ask()` BYO path as the advanced variant | P3 | S | 024 | DONE |
+| 027 | Document the `@askdb/client` facade across the docs site (packages ref, bring-your-own-model, embed-in-node, homepage) and internal docs (architecture, core-pipeline spec) | P2 | M | 024 (hard); land after 025/026 | DONE |
+| 028 | Give `@askdb/client` typed errors + `unknownDialect` option; restore HTTP status-code parity (missing file → 400, exotic provider → postgres) and the CLI's rich unsupported-provider message | P2 | M | 024, 025 (both DONE) | DONE |
 
 Status values: TODO | IN PROGRESS | DONE | BLOCKED (with one-line reason) | REJECTED (with one-line rationale)
 
@@ -129,6 +141,42 @@ Status values: TODO | IN PROGRESS | DONE | BLOCKED (with one-line reason) | REJE
   command first), which is visible because both share the `syncKey="engine"` Tabs group. 023
   reorders the Prisma tab to command-first to match Live; substance unchanged, no code change.
   Touches only `quickstart.mdx` (same Prisma `<TabItem>`); run after 022.
+
+- 024–026 (2026-06-15, `improve plan`) come from the `ask()` API review. The core decision:
+  do **not** make `@askdb/core`'s `ask()` resolve schema/model from config — model resolution
+  fundamentally needs host-registered AI adapters (it cannot self-resolve without bundling
+  every provider or a global mutable registry), and config/fs coupling would break the pure
+  BYO-model / multi-tenant primitive. Instead a thin facade above core owns resolution.
+  - **024 is the foundation** (new `@askdb/client` package; purely additive, no existing files
+    touched) and must land before 025/026. It centralizes the dialect precedence currently
+    duplicated in `apps/cli/src/cli.ts:178-203` (`resolveAskDbDialect`) and
+    `apps/http-api/src/server.ts:167-179` (`resolveHttpApiDialect`), the model resolution +
+    mock-SQL `generateText` shim (cli `:373-396`, http `:306-329`), and the schema loading
+    (http `:270-304`, cli `:96-121`).
+  - **025 requires 024** and is the riskier half — it edits two shipped hosts and must preserve
+    HTTP `/ask` error codes and CLI stderr/notes exactly. The migration is asymmetric: HTTP
+    fully delegates (no per-call schema-object consumer); the CLI keeps loading its own schema
+    object (needed by the sensitive-SQL scan + friendly `AskDbError`s) and delegates only the
+    model/dialect resolution.
+  - **026 requires 024**, independent of 025 — updates `examples/ask-question/main.ts` only.
+  - **028 requires 024 + 025** (both DONE). It is the post-implementation hardening from the
+    review of the 024–027 work: plan 025 swapped the HTTP host's typed error handling for
+    `error.message` substring matching, which diverged three behaviors from pre-migration
+    (`origin/main`) — a missing schema **file** returns 500 instead of 400 (because `loadSchema`
+    calls `statSync` before its try/catch, throwing a raw `ENOENT` that matches no substring
+    branch — `packages/core/src/schema/v2/loader.ts:54-55`), the `schema_parse_error` message
+    lost its source prefix, and an exotic `schema.provider` now throws instead of defaulting to
+    postgres. It also restores the CLI's rich "unsupported provider" message (with the supported-
+    dialect list). Fix: typed errors in `@askdb/client` + an `unknownDialect` opt-in for the HTTP
+    host. The repo-root relative-path fallback removed in 025 is a separate finding, **not** in 028.
+  - **027 requires 024** (hard — the documented API must exist and match) and should land
+    **after 025/026** so the docs describe what the shipped hosts/example actually do. It is
+    docs-only: docs-site pages (`reference/packages.mdx`, `guides/bring-your-own-model.mdx`,
+    `guides/embed-in-node.mdx`, `index.mdx`) + internal docs (`docs/architecture.md`,
+    `docs/specs/core-pipeline.md`). It deliberately leaves the direct `ask()` path documented
+    (BYO escape hatch) and scopes out `quickstart.mdx` / `deploy-as-http-service.mdx` /
+    `rag-for-large-schemas.mdx` / `multi-tenancy.mdx` to keep the PR reviewable — those are
+    listed as follow-up surfaces if the maintainer later wants the facade site-wide.
 
 ## Related tooling
 

@@ -1,15 +1,14 @@
 /**
  * AskDB — "ask a question" example
  *
- * Simulates a downstream consumer importing @askdb/core and @askdb/rag to
- * translate a natural-language question into a SQL query using the schema
- * and configured AI provider.
+ * Shows two ways to call AskDB:
+ *   Fast path — @askdb/client facade: only the question is needed per call.
+ *               Schema, model, and dialect are resolved from config.
+ *   Direct    — @askdb/core ask(): BYO model, full control.
  *
- * Two paths are shown:
- *   A) Basic — full schema is sent to the model on each call.
- *              Works well for schemas up to ~30 chunks (~10–15 tables).
- *   B) With RAG — a vector index narrows the schema context before calling
- *              the model. Better accuracy and lower token cost for large schemas.
+ * Then a third variant shows the direct path combined with RAG:
+ *   With RAG  — a vector index narrows the schema context before calling
+ *               the model. Better accuracy and lower token cost for large schemas.
  *
  * Configuration lives in askdb.config.ts (this directory). Copy .env.example
  * to .env and fill in your API key before running.
@@ -24,6 +23,7 @@ import { fileURLToPath } from "node:url";
 import { bootstrapAskDbEnv, getAskDbRuntimeConfig } from "@askdb/config";
 import { createAiRegistry } from "@askdb/ai";
 import { openaiProvider } from "@askdb/ai-openai";
+import { createAskDb } from "@askdb/client";
 import {
   ask,
   loadSchema,
@@ -52,7 +52,7 @@ const QUESTIONS = [
 ];
 
 async function main(): Promise<void> {
-  // ── 1. Load schema ─────────────────────────────────────────────────────────
+  // ── Load schema ─────────────────────────────────────────────────────────────
   //
   // loadSchema accepts a .schema/ directory, a bundled JSON file, or a bare
   // schema.json path. It merges the physical layer (schema.json) with the
@@ -64,11 +64,36 @@ async function main(): Promise<void> {
     console.log(`  · ${table.schema}.${table.name} — ${table.columns.length} columns`);
   }
 
-  // ── 2. Build the language model from askdb.config.ts settings ─────────────
+  // ── Fast path — createAskDb resolves schema, model, and dialect from config ─
   //
-  // runtimeConfig.ai.aiEnv is the canonical flat env map built from
-  // askdb.config.ts. Passing it to the AI registry keeps all
-  // provider selection, key lookup, and model defaulting in one place.
+  // Schema comes from the `schema` option (or host.schemaPath in askdb.config.ts);
+  // the model comes from the AI registry; the dialect is inferred from config.
+  // You only pass the question per call.
+  console.log(
+    "\n── Fast path (@askdb/client — schema, model, dialect resolved from config) ─",
+  );
+
+  const askdb = createAskDb({
+    config: runtimeConfig,
+    registry: ai,
+    schema: { path: SCHEMA_DIR }, // or set host.schemaPath in askdb.config.ts and omit this
+  });
+
+  try {
+    for (const question of QUESTIONS) {
+      console.log(`\n  Q: ${question}`);
+      const { sql } = await askdb.ask(question);
+      console.log(`  SQL: ${sql}`);
+    }
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error(`\nFast path skipped: ${msg}`);
+  }
+
+  // ── Build the language model from askdb.config.ts settings ─────────────────
+  //
+  // For the advanced paths below, the model is wired explicitly. The fast path
+  // above handles this internally via the AI registry.
   const model = await ai.createLanguageModelFromEnv(runtimeConfig.ai.aiEnv);
 
   if (!model) {
@@ -78,9 +103,14 @@ async function main(): Promise<void> {
     process.exit(1);
   }
 
-  // ── 3. Path A — basic ask() with full schema context ───────────────────────
+  // ── Path A — direct ask() with full schema context (BYO model) ─────────────
+  //
+  // Wire schema, model, and dialect explicitly for full control. Use this when
+  // you need per-call model selection, dialect overrides, or custom pipeline
+  // options unavailable through the facade. For the common case, prefer the
+  // fast path above.
   console.log(
-    "\n── A. Basic (full schema sent to model on every call) ─────────────────",
+    "\n── A. Direct (BYO model — schema, model, dialect wired explicitly) ────────",
   );
 
   for (const question of QUESTIONS) {
@@ -89,7 +119,7 @@ async function main(): Promise<void> {
     console.log(`  SQL: ${result.sql}`);
   }
 
-  // ── 4. Path B — ask() with RAG (semantic retrieval) ───────────────────────
+  // ── Path B — ask() with RAG (semantic retrieval) ───────────────────────────
   //
   // For larger schemas (many tables / columns), build a vector index and pass
   // a retriever so only the relevant schema chunks are sent to the model.

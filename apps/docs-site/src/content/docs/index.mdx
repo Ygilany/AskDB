@@ -71,27 +71,22 @@ const result = await pool.query(sql);
   <TabItem label="Config-driven (@askdb/ai)">
 
 ```ts
-import { ask, loadSchema } from "@askdb/core";
+import { createAskDb } from "@askdb/client";
 import { bootstrapAskDbEnv, getAskDbRuntimeConfig } from "@askdb/config";
 import { createAiRegistry } from "@askdb/ai";
 import { openaiProvider } from "@askdb/ai-openai";
 import { Pool } from "pg";
 
-// Resolve the model from askdb.config.ts — same config the CLI and Studio use.
+// Resolve schema, model, and dialect from askdb.config.ts — same config the CLI and Studio use.
 bootstrapAskDbEnv({ cwd: process.cwd() });
-const rt = getAskDbRuntimeConfig();
-const ai = createAiRegistry([openaiProvider]);
-const model = await ai.createLanguageModelFromEnv(rt.ai.aiEnv);
-
-const schema = await loadSchema("./my-app.schema");
+const askdb = createAskDb({
+  config: getAskDbRuntimeConfig(),
+  registry: createAiRegistry([openaiProvider]),
+  schema: { path: "./my-app.schema" }, // or set host.schemaPath in config and omit
+});
 const pool = new Pool({ connectionString: process.env.DATABASE_URL });
 
-const { sql } = await ask({
-  question: "Which customers signed up last week?",
-  schema,
-  dialect: "postgres",
-  model,
-});
+const { sql } = await askdb.ask("Which customers signed up last week?");
 
 // Log or approve `sql` here, then run it through your own pool.
 const result = await pool.query(sql);

@@ -11,6 +11,7 @@
   "dependencies": {
     "@askdb/ai": "workspace:*",
     "@askdb/ai-openai": "workspace:*",
+    "@askdb/client": "workspace:*",
     "@askdb/config": "workspace:*",
     "@askdb/core": "workspace:*",
     "@askdb/rag": "workspace:*"

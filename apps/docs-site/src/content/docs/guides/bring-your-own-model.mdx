@@ -15,6 +15,7 @@ import { Tabs, TabItem } from "@astrojs/starlight/components";
 | --- | --- | --- |
 | **In your config** | Set `ai.provider` in `askdb.config.ts`. The CLI, Studio, and the HTTP API resolve the model for you. No model code. | CLI workflows, Studio, the bundled HTTP service |
 | **In your code** | Pass any Vercel AI SDK `LanguageModel` to `ask()`. Full control. | Embedding `@askdb/core` in your own service |
+| **With `@askdb/client`** | Call `createAskDb({ config, registry })` then `askdb.ask("question")`. Schema, model, and dialect come from config. | The shortest config-driven embed — one schema, one model |
 
 Same providers, same keys — pick per surface. You can use both in one project (for example: Studio uses your config, your embedding service constructs the model directly).
 
@@ -208,22 +209,41 @@ const model = local("llama3.1");
 
 ## One config driving both
 
-If you embed `@askdb/core` but want to reuse the same `askdb.config.ts` instead of hardcoding a provider, use the AI registry. This is exactly how the CLI and the bundled HTTP API resolve models internally.
+If you embed AskDB but want to reuse the same `askdb.config.ts` instead of hardcoding a provider, use `@askdb/client`. `createAskDb` resolves the schema, model, and dialect from your config and a provider registry — the same resolution the CLI and the bundled HTTP API use.
 
 ```bash
-npm install @askdb/config @askdb/ai @askdb/ai-openai @askdb/ai-anthropic
+npm install @askdb/client @askdb/config @askdb/ai @askdb/ai-openai @askdb/ai-anthropic
 ```
 
 ```ts
+import { createAskDb } from "@askdb/client";
 import { bootstrapAskDbEnv, getAskDbRuntimeConfig } from "@askdb/config";
 import { createAiRegistry } from "@askdb/ai";
 import { openaiProvider } from "@askdb/ai-openai";
 import { anthropicProvider } from "@askdb/ai-anthropic";
 
 bootstrapAskDbEnv({ cwd: process.cwd() });
-const rt = getAskDbRuntimeConfig();
 
-const ai = createAiRegistry([openaiProvider, anthropicProvider]);
+const askdb = createAskDb({
+  config: getAskDbRuntimeConfig(),
+  registry: createAiRegistry([openaiProvider, anthropicProvider]),
+  schema: { path: "./my-app.schema" }, // or set host.schemaPath in config and omit this
+});
+
+// Only the question — schema, model, and dialect come from config.
+const { sql } = await askdb.ask("Which customers signed up last week?");
+```
+
+Need the model object yourself (to pass to `ask()` directly, or to share with other code)? Build it from the same config with the registry:
+
+```ts
+import { bootstrapAskDbEnv, getAskDbRuntimeConfig } from "@askdb/config";
+import { createAiRegistry } from "@askdb/ai";
+import { openaiProvider } from "@askdb/ai-openai";
+
+bootstrapAskDbEnv({ cwd: process.cwd() });
+const rt = getAskDbRuntimeConfig();
+const ai = createAiRegistry([openaiProvider]);
 const model = await ai.createLanguageModelFromEnv(rt.ai.aiEnv);
 ```
 

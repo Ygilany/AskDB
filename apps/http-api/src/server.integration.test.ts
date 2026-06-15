@@ -11,6 +11,23 @@ import { createAskDbHttpServer } from "./server.js";
 
 const schemaPath = new URL("../../../fixtures/schemas/orders-users.schema/", import.meta.url);
 
+const unsupportedProviderSchemaJson = JSON.stringify({
+  version: 2,
+  schemaId: "test-snowflake",
+  provider: "snowflake",
+  tables: [
+    {
+      id: "table:public.users",
+      name: "users",
+      schema: "public",
+      sensitive: false,
+      columns: [
+        { id: "table:public.users#id", name: "id", type: "uuid", nullable: false, primaryKey: true, sensitive: false },
+      ],
+    },
+  ],
+});
+
 const BASE_CONFIG: AskDbConfig = {
   ai: { provider: "openai", providerConfig: { openai: { apiKey: "x", model: "gpt-4o-mini" } } },
   database: { provider: "postgres", providerConfig: { postgres: { databaseUrl: "postgres://localhost/db" } } },
@@ -310,6 +327,91 @@ describe("http-api", () => {
       expect(json.ok).toBe(false);
       expect(json.error?.code).toBe("bad_request");
       expect(String(json.error?.message ?? "")).toContain("No schema configured");
+    } finally {
+      await app.close();
+    }
+  });
+
+  it("missing schema file returns schema_parse_error with source context", async () => {
+    const missingPath = "/nope/does-not-exist-http.schema";
+    installTestRuntime({
+      mockSql: "select 1",
+      logLevel: "silent",
+      host: { schemaPath: missingPath },
+    });
+
+    const app = createAskDbHttpServer({ host: "127.0.0.1", port: 0 });
+    await new Promise<void>((resolve) => app.server.listen(0, "127.0.0.1", resolve));
+    const addr = app.server.address();
+    if (!addr || typeof addr === "string") throw new Error("expected inet address");
+
+    try {
+      const res = await fetch(`http://127.0.0.1:${addr.port}/ask`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ question: "hi" }),
+      });
+      expect(res.status).toBe(400);
+      const json = (await res.json()) as any;
+      expect(json.ok).toBe(false);
+      expect(json.error?.code).toBe("schema_parse_error");
+      expect(String(json.error?.message ?? "")).toContain(`host.schemaPath (${missingPath})`);
+    } finally {
+      await app.close();
+    }
+  });
+
+  it("falls back to postgres for unrecognized schema providers", async () => {
+    installTestRuntime({
+      mockSql: "select 1",
+      logLevel: "silent",
+    });
+
+    const app = createAskDbHttpServer({ host: "127.0.0.1", port: 0 });
+    await new Promise<void>((resolve) => app.server.listen(0, "127.0.0.1", resolve));
+    const addr = app.server.address();
+    if (!addr || typeof addr === "string") throw new Error("expected inet address");
+
+    try {
+      const res = await fetch(`http://127.0.0.1:${addr.port}/ask`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ question: "hi", schemaJson: unsupportedProviderSchemaJson }),
+      });
+      expect(res.status).toBe(200);
+      const json = (await res.json()) as any;
+      expect(json.ok).toBe(true);
+      expect(json.sql).toBe("select 1");
+    } finally {
+      await app.close();
+    }
+  });
+
+  it("missing AI key with no mock returns generation_not_configured", async () => {
+    // apiKey: "" is stripped by flattenAskDbConfig's set() helper, so aiEnv
+    // has no OPENAI_API_KEY and createLanguageModelFromEnv returns undefined.
+    const noKeyConfig: AskDbConfig = {
+      ...BASE_CONFIG,
+      ai: { provider: "openai", providerConfig: { openai: { apiKey: "", model: "gpt-4o-mini" } } },
+      host: { schemaPath: schemaPath.pathname },
+    };
+    setAskDbRuntimeForTests({ structured: noKeyConfig, flat: flattenAskDbConfig(noKeyConfig) });
+
+    const app = createAskDbHttpServer({ host: "127.0.0.1", port: 0 });
+    await new Promise<void>((resolve) => app.server.listen(0, "127.0.0.1", resolve));
+    const addr = app.server.address();
+    if (!addr || typeof addr === "string") throw new Error("expected inet address");
+
+    try {
+      const res = await fetch(`http://127.0.0.1:${addr.port}/ask`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ question: "hi" }),
+      });
+      expect(res.status).toBe(500);
+      const json = (await res.json()) as any;
+      expect(json.ok).toBe(false);
+      expect(json.error?.code).toBe("generation_not_configured");
     } finally {
       await app.close();
     }

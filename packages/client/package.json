@@ -1,0 +1,40 @@
+{
+  "name": "@askdb/client",
+  "version": "0.1.0-beta.0",
+  "description": "Config-aware AskDB facade: resolves schema, model, and dialect from config so callers only pass a question.",
+  "keywords": ["askdb", "nl-to-sql", "facade", "client"],
+  "homepage": "https://github.com/Ygilany/AskDB#readme",
+  "bugs": { "url": "https://github.com/Ygilany/AskDB/issues" },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Ygilany/AskDB.git",
+    "directory": "packages/client"
+  },
+  "license": "Apache-2.0",
+  "author": "Yahya Gilany",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": { ".": { "types": "./dist/index.d.ts", "import": "./dist/index.js" } },
+  "files": ["dist", "README.md", "LICENSE", "NOTICE"],
+  "engines": { "node": ">=20" },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "lint": "tsc -p tsconfig.build.json --noEmit",
+    "test": "vitest run --config ../../vitest.config.ts"
+  },
+  "peerDependencies": {
+    "@askdb/ai": "workspace:^",
+    "@askdb/config": "workspace:^",
+    "@askdb/core": "workspace:^",
+    "ai": "^6.0.205"
+  },
+  "devDependencies": {
+    "@askdb/ai": "workspace:*",
+    "@askdb/config": "workspace:*",
+    "@askdb/core": "workspace:*",
+    "ai": "^6.0.205",
+    "typescript": "^6.0.3",
+    "vitest": "^4.1.8"
+  }
+}
