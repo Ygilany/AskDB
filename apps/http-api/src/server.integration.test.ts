@@ -70,6 +70,59 @@ describe("http-api", () => {
     }
   });
 
+  it("uses schemaPath option as the server-default schema", async () => {
+    installTestRuntime({
+      mockSql: "select 1",
+      logLevel: "silent",
+    });
+
+    const app = createAskDbHttpServer({ host: "127.0.0.1", port: 0, schemaPath: schemaPath.pathname });
+    await new Promise<void>((resolve) => app.server.listen(0, "127.0.0.1", resolve));
+    const addr = app.server.address();
+    if (!addr || typeof addr === "string") throw new Error("expected inet address");
+
+    try {
+      const res = await fetch(`http://127.0.0.1:${addr.port}/ask`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ question: "hi" }),
+      });
+      expect(res.status).toBe(200);
+      const json = (await res.json()) as any;
+      expect(json.ok).toBe(true);
+      expect(json.sql).toBe("select 1");
+    } finally {
+      await app.close();
+    }
+  });
+
+  it("prefers schemaPath option over configured ASKDB_SCHEMA_PATH", async () => {
+    installTestRuntime({
+      mockSql: "select 1",
+      logLevel: "silent",
+      host: { schemaPath: "__missing_http_api_schema__" },
+    });
+
+    const app = createAskDbHttpServer({ host: "127.0.0.1", port: 0, schemaPath: schemaPath.pathname });
+    await new Promise<void>((resolve) => app.server.listen(0, "127.0.0.1", resolve));
+    const addr = app.server.address();
+    if (!addr || typeof addr === "string") throw new Error("expected inet address");
+
+    try {
+      const res = await fetch(`http://127.0.0.1:${addr.port}/ask`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ question: "hi" }),
+      });
+      expect(res.status).toBe(200);
+      const json = (await res.json()) as any;
+      expect(json.ok).toBe(true);
+      expect(json.sql).toBe("select 1");
+    } finally {
+      await app.close();
+    }
+  });
+
   it("POST /ask rejects the old execution header", async () => {
     installTestRuntime({
       mockSql: "select 1",
