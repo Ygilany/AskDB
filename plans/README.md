@@ -38,7 +38,7 @@ fully before starting, honor its STOP conditions, and update your row when done.
 | 011 | Studio tour page in the Start sidebar with real screenshots (fixture schema + mock SQL) | P1 | M | 009 (hard — both edit quickstart.mdx) | DONE |
 | 012 | Re-home orphaned runtime-boundary/package-dependency SVGs; new quickstart-loop diagram | P2 | M | 009, 011 (both touch quickstart.mdx) | DONE |
 | 013 | Design spike: Studio as the front door — guided setup wizard, fixed Resync, playground "Get the code" | P3 | M | — | TODO |
-| 014 | Homepage: four-step workflow (init→introspect→enrich→use), dual-path embed Tabs (direct AI SDK vs config-driven `@askdb/ai`), parallel/accurate engine subtitles | P1 | S | — | TODO |
+| 014 | Homepage: four-step workflow (init→introspect→enrich→use), dual-path embed Tabs (direct AI SDK vs config-driven `@askdb/ai`), parallel/accurate engine subtitles | P1 | S | — | DONE |
 | 015 | Quickstart: ask-before-enrich loop diagram (trimmed viewBox), Prisma introspection as a synced Tab, "ask in Studio → then embed" framing | P1 | S | — | TODO |
 | 016 | Retire the standalone Install page; fold its use-case grid into the Packages reference; redirect `/install/` (maintainer decision gate) | P2 | S | — | TODO |
 | 017 | Embed-in-Node: clarify `loadSchema` path is the artifact *directory*, note the DB driver is optional (ORMs pass the SQL themselves), remove the HTTP-route and error-handling sections | P1 | S | — | TODO |
