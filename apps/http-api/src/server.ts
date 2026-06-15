@@ -38,6 +38,8 @@ export type AskDbHttpServerOptions = {
   port?: number;
   /** Default: 127.0.0.1 */
   host?: string;
+  /** Server-default schema artifact path. Precedence: this option → `host.schemaPath` config → `ASKDB_SCHEMA_PATH` env. */
+  schemaPath?: string;
   /** Default: 1 MiB */
   maxBodyBytes?: number;
 };
@@ -116,7 +118,10 @@ function badRequest(correlationId: string, message: string): AskHttpErrorRespons
   return { ok: false, correlationId, error: { code: "bad_request", message } };
 }
 
-function resolveSchemaJsonFromRt(rt: ReturnType<typeof getAskDbRuntimeConfig>): {
+function resolveSchemaJsonFromRt(
+  rt: ReturnType<typeof getAskDbRuntimeConfig>,
+  effectiveSchemaPath: string | undefined,
+): {
   schemaJson?: string;
   source?: string;
 } {
@@ -124,7 +129,7 @@ function resolveSchemaJsonFromRt(rt: ReturnType<typeof getAskDbRuntimeConfig>): 
   if (typeof inline === "string" && inline.trim() !== "") {
     return { schemaJson: inline, source: "ASKDB_SCHEMA_JSON" };
   }
-  const p = rt.ai.aiEnv.ASKDB_SCHEMA_PATH;
+  const p = effectiveSchemaPath;
   if (typeof p === "string" && p.trim() !== "") {
     return { schemaJson: undefined, source: `ASKDB_SCHEMA_PATH (${p})` };
   }
@@ -176,6 +181,7 @@ function resolveHttpApiDialect(
 export function createAskDbHttpServer(options: AskDbHttpServerOptions = {}) {
   const host = options.host ?? "127.0.0.1";
   const port = options.port ?? 3000;
+  const optionSchemaPath = options.schemaPath;
   const maxBodyBytes = options.maxBodyBytes ?? DEFAULT_MAX_BODY_BYTES;
   let cachedSchema: ReturnType<typeof loadSchema> | undefined;
   let cachedSchemaSource: string | undefined;
@@ -270,12 +276,13 @@ export function createAskDbHttpServer(options: AskDbHttpServerOptions = {}) {
           schema = loadSchemaFromJson(requestOverride);
         } else {
           if (!cachedSchema) {
-            const envSchema = resolveSchemaJsonFromRt(rt);
+            const effectiveSchemaPath = optionSchemaPath ?? rt.ai.aiEnv.ASKDB_SCHEMA_PATH;
+            const envSchema = resolveSchemaJsonFromRt(rt, effectiveSchemaPath);
             cachedSchemaSource = envSchema.source;
             if (envSchema.schemaJson) {
               cachedSchema = loadSchemaFromJson(envSchema.schemaJson);
-            } else if (rt.ai.aiEnv.ASKDB_SCHEMA_PATH && rt.ai.aiEnv.ASKDB_SCHEMA_PATH.trim() !== "") {
-              const { resolvedPath, source } = await resolveSchemaPathWithFallbacks(rt.ai.aiEnv.ASKDB_SCHEMA_PATH);
+            } else if (effectiveSchemaPath && effectiveSchemaPath.trim() !== "") {
+              const { resolvedPath, source } = await resolveSchemaPathWithFallbacks(effectiveSchemaPath);
               cachedSchemaSource = source;
               cachedSchema = loadSchema(resolvedPath);
             } else {
