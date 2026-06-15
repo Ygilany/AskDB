@@ -89,7 +89,6 @@ export default defineConfig({
             { label: "Overview", slug: "index" },
             { label: "Quickstart", slug: "quickstart" },
             { label: "Studio", slug: "studio" },
-            { label: "Install", slug: "install" },
           ],
         },
         {
