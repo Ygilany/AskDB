@@ -9,7 +9,13 @@ import { anthropicProvider } from "@askdb/ai-anthropic";
 import { azureProvider } from "@askdb/ai-azure";
 import { googleProvider } from "@askdb/ai-google";
 import { openaiProvider } from "@askdb/ai-openai";
-import { createAskDb } from "@askdb/client";
+import {
+  createAskDb,
+  DialectNotSupportedError,
+  ModelNotConfiguredError,
+  SchemaLoadError,
+  SchemaNotConfiguredError,
+} from "@askdb/client";
 import {
   AskDbError,
   AskDbLogEvent,
@@ -202,6 +208,7 @@ export function createAskDbHttpServer(options: AskDbHttpServerOptions = {}) {
           // When the caller supplied a schemaPath option, it takes precedence
           // over host.schemaPath / ASKDB_SCHEMA_PATH in config.
           schema: optionSchemaPath ? { path: optionSchemaPath } : undefined,
+          unknownDialect: "fallback-postgres",
         });
       }
 
@@ -238,8 +245,7 @@ export function createAskDbHttpServer(options: AskDbHttpServerOptions = {}) {
         return;
       }
 
-      // Schema not configured: facade throws a plain Error with "No schema configured".
-      if (msg.includes("No schema configured")) {
+      if (e instanceof SchemaNotConfiguredError) {
         writeError(res, 400, correlationId, {
           code: "bad_request",
           message:
@@ -248,14 +254,15 @@ export function createAskDbHttpServer(options: AskDbHttpServerOptions = {}) {
         return;
       }
 
-      // Schema parse errors: facade throws from loadSchema / loadSchemaFromJson.
-      if (msg.includes("schema parse") || msg.includes("Failed to parse") || msg.includes("SchemaParseError")) {
-        writeError(res, 400, correlationId, { code: "schema_parse_error", message: `schema parse error: ${msg}` });
+      if (e instanceof SchemaLoadError) {
+        writeError(res, 400, correlationId, {
+          code: "schema_parse_error",
+          message: `schema parse error (${e.source}): ${e.cause instanceof Error ? e.cause.message : String(e.cause)}`,
+        });
         return;
       }
 
-      // Missing AI key: facade throws registry.keyMissingMessage("NL→SQL generation").
-      if (msg.includes("NL→SQL generation") || msg.includes("No AI provider")) {
+      if (e instanceof ModelNotConfiguredError) {
         writeError(res, 500, correlationId, {
           code: "generation_not_configured",
           message: `${msg} (or set ASKDB_MOCK_SQL).`,
@@ -275,6 +282,10 @@ export function createAskDbHttpServer(options: AskDbHttpServerOptions = {}) {
       }
       if (e instanceof SqlGenerationError) {
         writeError(res, 502, correlationId, { code: "sql_generation_error", message: e.message });
+        return;
+      }
+      if (e instanceof DialectNotSupportedError) {
+        writeError(res, 400, correlationId, { code: "bad_request", message: msg });
         return;
       }
       if (e instanceof AskDbError) {
