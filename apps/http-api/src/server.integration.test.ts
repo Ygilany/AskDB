@@ -314,4 +314,34 @@ describe("http-api", () => {
       await app.close();
     }
   });
+
+  it("missing AI key with no mock returns generation_not_configured", async () => {
+    // apiKey: "" is stripped by flattenAskDbConfig's set() helper, so aiEnv
+    // has no OPENAI_API_KEY and createLanguageModelFromEnv returns undefined.
+    const noKeyConfig: AskDbConfig = {
+      ...BASE_CONFIG,
+      ai: { provider: "openai", providerConfig: { openai: { apiKey: "", model: "gpt-4o-mini" } } },
+      host: { schemaPath: schemaPath.pathname },
+    };
+    setAskDbRuntimeForTests({ structured: noKeyConfig, flat: flattenAskDbConfig(noKeyConfig) });
+
+    const app = createAskDbHttpServer({ host: "127.0.0.1", port: 0 });
+    await new Promise<void>((resolve) => app.server.listen(0, "127.0.0.1", resolve));
+    const addr = app.server.address();
+    if (!addr || typeof addr === "string") throw new Error("expected inet address");
+
+    try {
+      const res = await fetch(`http://127.0.0.1:${addr.port}/ask`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ question: "hi" }),
+      });
+      expect(res.status).toBe(500);
+      const json = (await res.json()) as any;
+      expect(json.ok).toBe(false);
+      expect(json.error?.code).toBe("generation_not_configured");
+    } finally {
+      await app.close();
+    }
+  });
 });
