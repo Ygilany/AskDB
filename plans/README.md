@@ -59,6 +59,7 @@ fully before starting, honor its STOP conditions, and update your row when done.
 | 025 | Migrate the HTTP API and CLI onto `@askdb/client`, deleting the duplicated schema/model/dialect resolution (behavior-preserving) | P2 | M | 024 | DONE |
 | 026 | Lead the `examples/ask-question` example with the `@askdb/client` fast path, keeping the direct `ask()` BYO path as the advanced variant | P3 | S | 024 | DONE |
 | 027 | Document the `@askdb/client` facade across the docs site (packages ref, bring-your-own-model, embed-in-node, homepage) and internal docs (architecture, core-pipeline spec) | P2 | M | 024 (hard); land after 025/026 | DONE |
+| 028 | Give `@askdb/client` typed errors + `unknownDialect` option; restore HTTP status-code parity (missing file → 400, exotic provider → postgres) and the CLI's rich unsupported-provider message | P2 | M | 024, 025 (both DONE) | DONE |
 
 Status values: TODO | IN PROGRESS | DONE | BLOCKED (with one-line reason) | REJECTED (with one-line rationale)
 
@@ -158,6 +159,16 @@ Status values: TODO | IN PROGRESS | DONE | BLOCKED (with one-line reason) | REJE
     object (needed by the sensitive-SQL scan + friendly `AskDbError`s) and delegates only the
     model/dialect resolution.
   - **026 requires 024**, independent of 025 — updates `examples/ask-question/main.ts` only.
+  - **028 requires 024 + 025** (both DONE). It is the post-implementation hardening from the
+    review of the 024–027 work: plan 025 swapped the HTTP host's typed error handling for
+    `error.message` substring matching, which diverged three behaviors from pre-migration
+    (`origin/main`) — a missing schema **file** returns 500 instead of 400 (because `loadSchema`
+    calls `statSync` before its try/catch, throwing a raw `ENOENT` that matches no substring
+    branch — `packages/core/src/schema/v2/loader.ts:54-55`), the `schema_parse_error` message
+    lost its source prefix, and an exotic `schema.provider` now throws instead of defaulting to
+    postgres. It also restores the CLI's rich "unsupported provider" message (with the supported-
+    dialect list). Fix: typed errors in `@askdb/client` + an `unknownDialect` opt-in for the HTTP
+    host. The repo-root relative-path fallback removed in 025 is a separate finding, **not** in 028.
   - **027 requires 024** (hard — the documented API must exist and match) and should land
     **after 025/026** so the docs describe what the shipped hosts/example actually do. It is
     docs-only: docs-site pages (`reference/packages.mdx`, `guides/bring-your-own-model.mdx`,
