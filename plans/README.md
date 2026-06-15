@@ -7,6 +7,16 @@ ease-of-understanding / getting-started review (pre-announcement engagement pass
 was non-interactive; the five plans written are the top findings by leverage, which also
 match the maintainer's stated wishlist (simpler main path, faster quickstart, tabs for
 variant examples, diagrams, studio-first direction).
+Plans 014–021: generated on 2026-06-14 at commit `4b80530` via `improve plan` from the
+maintainer's targeted docs-site issue list (homepage workflow/embed/engines, quickstart
+diagram + Prisma tabs + Studio framing, the Install page's existence, embed-in-Node
+cleanup, prompt-packaging explanation, and hiding internal `ASKDB_*` env-projection names).
+014–019 are follow-up docs refinements on already-landed work from plans 009–013 — fresh
+findings, not duplicates. 020 (code: HTTP server CLI flags) and 021 (docs: Studio port/host)
+were added after the maintainer asked to make config-or-CLI the only surface. The two earlier
+decision gates (016 delete Install page, 019 `ASKDB_SCHEMA_PATH`) were **resolved on 2026-06-14**.
+All are mutually independent (no shared in-scope files except soft `cli.mdx` overlap between
+019 and 021) and can run in any order or in parallel.
 
 Execute in the order below unless dependencies say otherwise. Each executor: read the plan
 fully before starting, honor its STOP conditions, and update your row when done.
@@ -28,6 +38,14 @@ fully before starting, honor its STOP conditions, and update your row when done.
 | 011 | Studio tour page in the Start sidebar with real screenshots (fixture schema + mock SQL) | P1 | M | 009 (hard — both edit quickstart.mdx) | DONE |
 | 012 | Re-home orphaned runtime-boundary/package-dependency SVGs; new quickstart-loop diagram | P2 | M | 009, 011 (both touch quickstart.mdx) | DONE |
 | 013 | Design spike: Studio as the front door — guided setup wizard, fixed Resync, playground "Get the code" | P3 | M | — | TODO |
+| 014 | Homepage: four-step workflow (init→introspect→enrich→use), dual-path embed Tabs (direct AI SDK vs config-driven `@askdb/ai`), parallel/accurate engine subtitles | P1 | S | — | TODO |
+| 015 | Quickstart: ask-before-enrich loop diagram (trimmed viewBox), Prisma introspection as a synced Tab, "ask in Studio → then embed" framing | P1 | S | — | TODO |
+| 016 | Retire the standalone Install page; fold its use-case grid into the Packages reference; redirect `/install/` (maintainer decision gate) | P2 | S | — | TODO |
+| 017 | Embed-in-Node: clarify `loadSchema` path is the artifact *directory*, note the DB driver is optional (ORMs pass the SQL themselves), remove the HTTP-route and error-handling sections | P1 | S | — | TODO |
+| 018 | Explain that the physical schema + enrichment are repackaged into a DDL-style model-facing format (schema-artifact concept + author-your-schema guide) | P2 | S | — | TODO |
+| 019 | Stop presenting internal `ASKDB_*` env-projection names as the user knob across the docs (incl. `ASKDB_SCHEMA_PATH` → `host.schemaPath`); redirect readers to config fields / chosen `env()` names | P2 | M | — | TODO |
+| 020 | Give the standalone HTTP server `--schema-path` / `--port` / `--host` CLI flags (flag > config > default), so config-or-CLI is a complete surface (code) | P3 | M | — | TODO |
+| 021 | Document that Studio's port/host are configurable via `studio.listen.*` + `--port`/`--host` (docs-only; capability already exists) | P3 | S | — | TODO |
 
 Status values: TODO | IN PROGRESS | DONE | BLOCKED (with one-line reason) | REJECTED (with one-line rationale)
 
@@ -68,6 +86,34 @@ Status values: TODO | IN PROGRESS | DONE | BLOCKED (with one-line reason) | REJE
   whether build plans for the Studio wizard / "Get the code" panel get written at all. Plans 009–012
   document the *current* CLI-first flow on purpose — do not block them on 013.
 
+- 014–019 (2026-06-14 cycle) have **no file overlap with each other** and can land independently or
+  in parallel. They do overlap conceptually with 009–013 (already DONE) but refine, not redo:
+  - 014 introduces a new site-wide `syncKey="wiring"` (values "Direct (Vercel AI SDK)" /
+    "Config-driven (@askdb/ai)") for the direct-vs-config-driven embed choice. Reuse it verbatim on
+    any future page that shows the same choice — it sits alongside the existing keys `ai-provider`,
+    `engine`, `pkg` established by plan 010.
+  - 015 reuses the existing `engine` syncKey for the live-DB-vs-Prisma introspection tabs.
+  - 015's ask-before-enrich diagram and 014's "init→introspect→enrich→use" workflow are
+    intentionally different granularities (pipeline vs the ask⇄enrich loop), not a contradiction —
+    see 015's maintenance notes.
+  - 016 (delete Install page) and 019 (`ASKDB_SCHEMA_PATH`) carried maintainer decision gates;
+    **both resolved on 2026-06-14** — 016 proceeds with removal; 019 rewords `ASKDB_SCHEMA_PATH`
+    to the `host.schemaPath` config field (no exceptions kept). The gates are removed from those plans.
+  - 017 sets the canonical wording that the schema path is a directory; if the example path is ever
+    standardized site-wide (`./my-app.schema` vs the config default `./askdb/`), reconcile 014's
+    homepage snippet and config.mdx in the same pass.
+
+- 020–021 came out of the same 2026-06-14 session, follow-ups to 019's "config is the single
+  surface" principle:
+  - **020 is the only code plan in this cycle.** The HTTP server already loads `host.schemaPath`
+    from config, so 019 is honest without it; 020 adds the `--schema-path`/`--port`/`--host` CLI
+    flags so "config file **or** CLI arg" is a complete surface (precedence flag > config > default,
+    env kept as undocumented fallback). Independent of 019; soft-pairs for a later HTTP-docs touch.
+  - **021 is docs-only — Studio port/host are already configurable** (config `studio.listen.*`,
+    flags `--port`/`--host`, wrapper forwards args; verified at `4b80530`). The plan just surfaces
+    that on `studio.mdx` + `cli.mdx` without naming `ASKDB_STUDIO_PORT`. Soft-overlaps 019 on
+    `cli.mdx` (different lines).
+
 ## Related tooling
 
 - `.claude/skills/new-ai-adapter/SKILL.md` — reusable, self-contained skill that scaffolds a new
@@ -107,6 +153,16 @@ From the 2026-06-12 docs-site review:
 - **Per-theme (light/dark) variants for content diagrams**: deferred — one neutral-palette SVG per
   concept keeps maintenance at one file; plan 012 adds a CSS panel fallback if dark-mode legibility
   fails.
+
+From the 2026-06-14 targeted docs-issue pass (no plan needed):
+
+- **"Bring your own model doesn't show using the AI SDK instead of the `@askdb/ai-*` packages"**:
+  not actionable as reported — `guides/bring-your-own-model.mdx` already covers *both* paths today
+  ("In your code (embedding)" passes a Vercel AI SDK `LanguageModel` directly via `@ai-sdk/*`;
+  "One config driving both" shows the `@askdb/ai` registry). The real gap was on the **homepage**,
+  where the embed snippet only showed the AI SDK path — fixed by plan 014's `wiring` Tabs. The
+  reporter was likely viewing the homepage, not the guide. If the guide's dual-path split is still
+  unclear to readers, that's a wording tweak, not a missing capability.
 - **Studio "Resync schema" dead button** (`apps/studio/src/web/views/overview/OverviewPage.tsx:40`,
   `onClick={() => void 0}`): real defect, but deliberately routed into the 013 spike rather than a
   hotfix plan — its fix is the smallest slice of the introspect-from-Studio design and shouldn't be
