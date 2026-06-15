@@ -45,7 +45,7 @@ fully before starting, honor its STOP conditions, and update your row when done.
 | 018 | Explain that the physical schema + enrichment are repackaged into a DDL-style model-facing format (schema-artifact concept + author-your-schema guide) | P2 | S | — | TODO |
 | 019 | Stop presenting internal `ASKDB_*` env-projection names as the user knob across the docs (incl. `ASKDB_SCHEMA_PATH` → `host.schemaPath`); redirect readers to config fields / chosen `env()` names | P2 | M | — | TODO |
 | 020 | Give the standalone HTTP server `--schema-path` / `--port` / `--host` CLI flags (flag > config > default), so config-or-CLI is a complete surface (code) | P3 | M | — | DONE |
-| 021 | Document that Studio's port/host are configurable via `studio.listen.*` + `--port`/`--host` (docs-only; capability already exists) | P3 | S | — | TODO |
+| 021 | Document that Studio's port/host are configurable via `studio.listen.*` + `--port`/`--host` (docs-only; capability already exists) | P3 | S | — | DONE |
 
 Status values: TODO | IN PROGRESS | DONE | BLOCKED (with one-line reason) | REJECTED (with one-line rationale)
 
