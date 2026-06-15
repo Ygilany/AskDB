@@ -43,7 +43,7 @@ fully before starting, honor its STOP conditions, and update your row when done.
 | 016 | Retire the standalone Install page; fold its use-case grid into the Packages reference; redirect `/install/` (maintainer decision gate) | P2 | S | — | DONE (fallback stub; Astro redirect failed base-path check) |
 | 017 | Embed-in-Node: clarify `loadSchema` path is the artifact *directory*, note the DB driver is optional (ORMs pass the SQL themselves), remove the HTTP-route and error-handling sections | P1 | S | — | DONE |
 | 018 | Explain that the physical schema + enrichment are repackaged into a DDL-style model-facing format (schema-artifact concept + author-your-schema guide) | P2 | S | — | DONE (branch: advisor/018-prompt-packaging-explanation) |
-| 019 | Stop presenting internal `ASKDB_*` env-projection names as the user knob across the docs (incl. `ASKDB_SCHEMA_PATH` → `host.schemaPath`); redirect readers to config fields / chosen `env()` names | P2 | M | — | TODO |
+| 019 | Stop presenting internal `ASKDB_*` env-projection names as the user knob across the docs (incl. `ASKDB_SCHEMA_PATH` → `host.schemaPath`); redirect readers to config fields / chosen `env()` names | P2 | M | — | DONE |
 | 020 | Give the standalone HTTP server `--schema-path` / `--port` / `--host` CLI flags (flag > config > default), so config-or-CLI is a complete surface (code) | P3 | M | — | DONE |
 | 021 | Document that Studio's port/host are configurable via `studio.listen.*` + `--port`/`--host` (docs-only; capability already exists) | P3 | S | — | DONE |
 
