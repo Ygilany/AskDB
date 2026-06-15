@@ -20,7 +20,7 @@ pnpm -C "$ROOT" -r build >/dev/null
 
 echo "smoke: packing tarballs…"
 mkdir -p "$WORK/tarballs"
-for pkg in packages/config packages/core packages/ai packages/ai-openai packages/ai-azure packages/ai-google packages/ai-anthropic packages/introspect packages/connectors packages/postgres packages/prisma packages/enrich packages/tui packages/mysql packages/sqlite packages/sqlserver apps/cli apps/studio apps/http-api; do
+for pkg in packages/config packages/core packages/ai packages/ai-openai packages/ai-azure packages/ai-google packages/ai-anthropic packages/client packages/introspect packages/connectors packages/postgres packages/prisma packages/enrich packages/tui packages/mysql packages/sqlite packages/sqlserver apps/cli apps/studio apps/http-api; do
   (cd "$ROOT/$pkg" && pnpm pack --pack-destination "$WORK/tarballs" >/dev/null)
 done
 for pkg in packages/rag; do
@@ -41,6 +41,8 @@ AI_GOOGLE_TARBALL="$(ls "$WORK/tarballs"/askdb-ai-google-*.tgz | head -n1)"
 [ -f "$AI_GOOGLE_TARBALL" ] || { echo "smoke: missing ai-google tarball" >&2; exit 1; }
 AI_ANTHROPIC_TARBALL="$(ls "$WORK/tarballs"/askdb-ai-anthropic-*.tgz | head -n1)"
 [ -f "$AI_ANTHROPIC_TARBALL" ] || { echo "smoke: missing ai-anthropic tarball" >&2; exit 1; }
+CLIENT_TARBALL="$(ls "$WORK/tarballs"/askdb-client-*.tgz | head -n1)"
+[ -f "$CLIENT_TARBALL" ] || { echo "smoke: missing client tarball" >&2; exit 1; }
 INTROSPECT_TARBALL="$(ls "$WORK/tarballs"/askdb-introspect-*.tgz | head -n1)"
 [ -f "$INTROSPECT_TARBALL" ] || { echo "smoke: missing introspect tarball" >&2; exit 1; }
 CONNECTORS_TARBALL="$(ls "$WORK/tarballs"/askdb-connectors-*.tgz | head -n1)"
@@ -103,6 +105,17 @@ for provider_package in \
     exit 1
   fi
 done
+
+echo "smoke: validating @askdb/client tarball contents…"
+CLIENT_TARBALL_FILES="$(tar -tzf "$CLIENT_TARBALL")"
+grep -q '^package/dist/index.js$' <<<"$CLIENT_TARBALL_FILES"
+grep -q '^package/dist/errors.js$' <<<"$CLIENT_TARBALL_FILES"
+grep -q '^package/README.md$' <<<"$CLIENT_TARBALL_FILES"
+grep -q '^package/LICENSE$' <<<"$CLIENT_TARBALL_FILES"
+if grep -Eq '(^package/src/|\.test\.)' <<<"$CLIENT_TARBALL_FILES"; then
+  echo "smoke: FAILED — @askdb/client tarball includes source/tests" >&2
+  exit 1
+fi
 
 echo "smoke: validating @askdb/connectors tarball contents…"
 CONNECTORS_TARBALL_FILES="$(tar -tzf "$CONNECTORS_TARBALL")"
@@ -245,6 +258,7 @@ node -e "
   j.dependencies['@askdb/core'] = 'file:$CORE_TARBALL';
   j.dependencies['@askdb/ai'] = 'file:$AI_TARBALL';
   j.dependencies['@askdb/ai-openai'] = 'file:$AI_OPENAI_TARBALL';
+  j.dependencies['@askdb/client'] = 'file:$CLIENT_TARBALL';
   j.dependencies['@askdb/introspect'] = 'file:$INTROSPECT_TARBALL';
   j.dependencies['@askdb/connectors'] = 'file:$CONNECTORS_TARBALL';
   j.dependencies['@askdb/postgres'] = 'file:$POSTGRES_TARBALL';
@@ -286,6 +300,7 @@ node -e "
       '@askdb/ai-azure': 'file:$AI_AZURE_TARBALL',
       '@askdb/ai-google': 'file:$AI_GOOGLE_TARBALL',
       '@askdb/ai-anthropic': 'file:$AI_ANTHROPIC_TARBALL',
+      '@askdb/client': 'file:$CLIENT_TARBALL',
       '@askdb/introspect': 'file:$INTROSPECT_TARBALL',
       '@askdb/connectors': 'file:$CONNECTORS_TARBALL',
       '@askdb/postgres': 'file:$POSTGRES_TARBALL',
