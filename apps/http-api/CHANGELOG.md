@@ -1,5 +1,11 @@
 # @askdb/http-api
 
+## 1.0.0-beta.28
+
+### Minor Changes
+
+- 24f3632: Add `--schema-path`, `--port`, and `--host` flags to the standalone HTTP server CLI.
+
 ## 1.0.0-beta.27
 
 ### Minor Changes
