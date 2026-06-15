@@ -281,6 +281,9 @@ importers:
       '@askdb/ai-openai':
         specifier: workspace:*
         version: link:../../packages/ai-openai
+      '@askdb/client':
+        specifier: workspace:*
+        version: link:../../packages/client
       '@askdb/config':
         specifier: workspace:*
         version: link:../../packages/config
