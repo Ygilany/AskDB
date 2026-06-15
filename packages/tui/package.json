@@ -63,7 +63,7 @@
     "@askdb/config": "workspace:*",
     "@askdb/core": "workspace:*",
     "@askdb/enrich": "workspace:*",
-    "ai": "^6.0.204",
+    "ai": "^6.0.205",
     "ink": "^7.0.6",
     "react": "^19.2.7"
   },

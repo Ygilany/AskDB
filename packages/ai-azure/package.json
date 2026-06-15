@@ -48,11 +48,11 @@
   },
   "peerDependencies": {
     "@askdb/ai": "workspace:^",
-    "ai": "^6.0.204"
+    "ai": "^6.0.205"
   },
   "devDependencies": {
     "@askdb/ai": "workspace:*",
-    "ai": "^6.0.204",
+    "ai": "^6.0.205",
     "typescript": "^6.0.3",
     "vitest": "^4.1.8"
   }

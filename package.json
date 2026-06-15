@@ -44,7 +44,7 @@
     "askdb": "workspace:*",
     "audit-ci": "^7.1.0",
     "npm-check-updates": "^22.2.3",
-    "react-doctor": "^0.5.2",
+    "react-doctor": "^0.5.5",
     "turbo": "^2.9.18",
     "typescript": "^6.0.3",
     "vitest": "^4.1.8"
