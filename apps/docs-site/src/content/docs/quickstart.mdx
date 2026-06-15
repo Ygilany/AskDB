@@ -3,7 +3,7 @@ title: "Quickstart"
 description: "Scaffold config, introspect a database, enrich the schema, and ask your first question — in under five minutes."
 ---
 
-import { Aside } from "@astrojs/starlight/components";
+import { Aside, Tabs, TabItem } from "@astrojs/starlight/components";
 import quickstartLoopUrl from "../../assets/diagrams/askdb-quickstart-loop.svg?url";
 
 <p class="doc-eyebrow">From zero to first query</p>
@@ -30,7 +30,7 @@ Each step is explained below. The loop that makes answers good: **introspect
 once, then enrich and re-ask in Studio until the SQL matches how your team
 thinks about the data.**
 
-<img src={quickstartLoopUrl} alt="Four-step loop: init scaffolds config, introspect reads the database into a schema artifact, enrich in Studio adds descriptions and tests questions, ask generates validated SQL — with a loop-back from ask to enrich to refine until the SQL is right" class="doc-diagram" />
+<img src={quickstartLoopUrl} alt="Four steps: init scaffolds config, introspect reads the database into a schema artifact, ask generates validated SQL from your first question, enrich in Studio adds descriptions — with a loop-back from enrich to ask to refine until the SQL is right" class="doc-diagram" />
 
 ## 1. Scaffold your config
 
@@ -78,7 +78,8 @@ Once this is configured, most CLI flags below are optional.
 
 Introspection produces an **AskDB schema artifact** — a directory on disk that captures your tables, columns, types, and relationships. Those artifacts' content are the only thing the model ever sees about your database.
 
-### From a live database
+<Tabs syncKey="engine">
+  <TabItem label="Live database">
 
 With your database connection configured in `askdb.config.ts` under `introspection.provider` and `introspection.providerConfig`, one command is enough:
 
@@ -103,9 +104,10 @@ The database is only used here — for introspection. To target a different data
 npx askdb introspect --url "$OTHER_DATABASE_URL"
 ```
 
-The engine comes from `introspection.provider` in your config (or the `--engine` flag — see below); the introspected artifact records it, and `askdb ask` later infers the SQL dialect from the artifact. The complete config surface — `outputDir` defaults, per-engine `providerConfig`, env-var bindings — is documented in the [Configuration reference](/reference/config/). For engine-specific install steps see [Switch engines](/guides/switch-engines/).
+The engine comes from `introspection.provider` in your config (or the `--engine` flag); the introspected artifact records it, and `askdb ask` later infers the SQL dialect from the artifact. The complete config surface is documented in the [Configuration reference](/reference/config/). For engine-specific install steps see [Switch engines](/guides/switch-engines/).
 
-### From a Prisma schema
+  </TabItem>
+  <TabItem label="Prisma schema file">
 
 If you already have a Prisma schema file, introspect directly from it — no live database required:
 
@@ -123,6 +125,9 @@ introspection: {
   },
 },
 ```
+
+  </TabItem>
+</Tabs>
 
 ## 3. Enrich and test in Studio
 
@@ -151,6 +156,8 @@ You have two ways to test that your schema is generating good SQL — pick which
 ### In Studio (recommended)
 
 If Studio is already open from step 3, ask your question there. You'll see the generated SQL alongside the schema; if the answer isn't right, keep enriching descriptions, aliases, or concepts and re-ask in the same session.
+
+Asking in Studio isn't the destination — it's how you dial in the enrichment until the SQL satisfies what your users actually need. Once you're happy with the answers, you embed the **same** schema artifact into your own app or service (see step 5) — Studio was just the place you tuned it.
 
 ### From the CLI
 
