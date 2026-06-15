@@ -65,7 +65,7 @@ Generate SQL from a question.
 | `mode` | no | `schema_only` | One of `schema_only`, `bounded_results`. |
 | `explain` | no | `false` | Return heuristic guardrail metadata. |
 | `omitSensitiveFromPrompt` | no | env-driven | Omit sensitive columns from the prompt. |
-| `schemaJson` | no | env-driven | Inline schema artifact. Preferred: set `ASKDB_SCHEMA_PATH` server-side. |
+| `schemaJson` | no | config-driven | Inline schema artifact. Preferred: set `host.schemaPath` in `askdb.config.ts` server-side. |
 
 **Success response (`200`)**
 

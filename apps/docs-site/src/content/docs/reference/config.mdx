@@ -35,7 +35,7 @@ export default defineConfig({
     embedder: "openai",
     store: "pgvector",
     storeConfig: {
-      pgvector: { databaseUrl: env("ASKDB_PGVECTOR_URL") },
+      pgvector: { databaseUrl: env("PGVECTOR_URL") },
     },
   },
   logging: {
@@ -59,33 +59,21 @@ The first match wins. JSON config files are not supported. If nothing is found, 
 
 ## Environment variables
 
-AskDB reads `.env` next to your process via `dotenv`, then layers explicit env vars on top. The most common keys:
+AskDB reads `.env` next to your process via `dotenv`, then evaluates your `askdb.config.*`. **You choose the variable names** — they're whatever you pass to `env("…")` in your config. The scaffolded config uses these common names; rename any of them in your config and `.env` together:
 
-Variable names you control. The variables listed below are the ones the scaffolded `askdb.config.ts` reads via `env("...")`; rename them in your config and `.env` together if you'd rather use your own scheme.
-
-| Variable | Maps to (config path) | Notes |
+| Variable | Reads into (config field) | Notes |
 | --- | --- | --- |
 | `OPENAI_API_KEY` | `ai.providerConfig.openai.apiKey` | Standard OpenAI key. |
 | `OPENAI_MODEL` | `ai.providerConfig.openai.model` | Optional model override. Default: `gpt-4o-mini`. |
 | `ANTHROPIC_API_KEY` | `ai.providerConfig.anthropic.apiKey` | When `ai.provider = "anthropic"`. Default model: `claude-sonnet-4-6`. |
 | `AZURE_API_KEY`, `AZURE_RESOURCE_NAME` | `ai.providerConfig.azure.*` | Azure OpenAI. |
-| `ASKDB_INTROSPECT_POSTGRES_URL` | `introspection.providerConfig.postgres.databaseUrl` | Postgres introspection URL. Still falls back to `DATABASE_URL` if unset. |
-| `ASKDB_INTROSPECT_MYSQL_URL` | `introspection.providerConfig.mysql.databaseUrl` | MySQL introspection URL. No `DATABASE_URL` fallback. |
-| `ASKDB_INTROSPECT_SQLSERVER_URL` | `introspection.providerConfig.sqlserver.databaseUrl` | SQL Server introspection URL. No `DATABASE_URL` fallback. |
-| `ASKDB_INTROSPECT_SQLITE_FILE` | `introspection.providerConfig.sqlite.file` | SQLite file path. |
-| `ASKDB_INTROSPECT_OUT` | `introspection.outputDir` | Default schema-artifact output directory. |
-| `ASKDB_STUDIO_DATABASE_URL` | `studio.execute.databaseUrl` | Connection for the Studio playground query runner. |
-| `ASKDB_SCHEMA_PATH` | `host.schemaPath` | Schema artifact the HTTP server loads at startup. |
-| `ASKDB_PGVECTOR_URL` | `rag.storeConfig.pgvector.databaseUrl` | Connection string for the pgvector store. |
-| `ASKDB_OMIT_SENSITIVE_FROM_PROMPT` | `modes.omitSensitiveFromPrompt` | When `true`, omit sensitive columns from the prompt. |
-| `ASKDB_LOG_LEVEL` | `logging.level` | One of `trace`, `debug`, `info`, `warn`, `error`, `fatal`, `silent`. |
-| `ASKDB_MODE` | `modes.askdbMode` | Default operating mode (`schema_only` / `bounded_results`). |
+| `DATABASE_URL` | `introspection.providerConfig.postgres.databaseUrl` | Postgres introspection connection. |
 
-The complete list of env keys is generated from the config schema and exposed as `ASKDB_ENV_PROJECTION` in `@askdb/config`.
+Everything else AskDB needs — output directory, mode, log level, Studio query connection, the vector-store URL — is set the same way: a field in `askdb.config.ts`, bound to a name you choose with `env("…")`. You don't set any AskDB-prefixed variables yourself; AskDB derives its internal runtime values from your config.
 
 ## Custom providers
 
-`ai.provider` accepts any string — not just the first-party literals. When an unknown provider string is used, `flattenAskDbConfig` applies the generic branch: `ai.providerConfig.custom.{apiKey,baseUrl,model}` flatten to the universal `ASKDB_AI_API_KEY` / `ASKDB_AI_BASE_URL` / `ASKDB_AI_MODEL` env keys.
+`ai.provider` accepts any string — not just the first-party literals. When an unknown provider string is used, AskDB applies a generic branch: you supply `ai.providerConfig.custom.{apiKey, baseUrl, model}` (each bound to a name you choose with `env("…")`), and AskDB hands them to whatever adapter is registered under that provider name.
 
 ```ts
 import { defineConfig, env } from "@askdb/config";

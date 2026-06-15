@@ -55,7 +55,7 @@ askdb introspect \
 | `--url <connstr>` | Live database connection string. |
 | `--engine <id>` | Engine override: `postgres`, `mysql`, `sqlite`, `sqlserver`, `prisma`. |
 | `--prisma-schema <path>` | `.prisma` file or directory. With `--engine prisma`. |
-| `--out <dir>` | Output directory for the schema artifact. Falls back to `ASKDB_INTROSPECT_OUT`. |
+| `--out <dir>` | Output directory for the schema artifact. Falls back to `introspection.outputDir` in `askdb.config.ts`. |
 | `--schema-id <id>` | Identifier embedded in `schema.json`. |
 | `--print` | Print the introspection result without writing. |
 | `--diff <existing>` | Diff against an existing schema artifact. |
@@ -115,7 +115,7 @@ askdb ask \
 | `--mode <mode>` | Operating mode: `schema_only` (default) or `bounded_results`. |
 | `--explain` | After the SQL, print a JSON block describing the heuristic guardrails satisfied. |
 | `--omit-sensitive-from-prompt` | Exclude sensitive columns from the prompt entirely. |
-| `--log-level <level>` | Log level (default reads from `ASKDB_LOG_LEVEL`). |
+| `--log-level <level>` | Log level (default reads from `logging.level` in `askdb.config.ts`). |
 | `-v`, `--verbose` | Show structured log events. |
 
 There is no dialect flag: the dialect resolves from `dialect` in `askdb.config.ts`, falling back to the provider recorded in the schema artifact at introspection time, then to `postgres`.

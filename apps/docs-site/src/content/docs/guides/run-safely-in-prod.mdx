@@ -30,7 +30,7 @@ Set a statement timeout and a small pool. Generated SQL should be fast — a slo
 import { Pool } from "pg";
 
 const pool = new Pool({
-  connectionString: process.env.ASKDB_DATABASE_URL,
+  connectionString: process.env.DATABASE_URL,
   max: 10,
   statement_timeout: 5000,        // 5s — adjust to your workload
   idle_in_transaction_session_timeout: 5000,
@@ -98,7 +98,7 @@ columns:
 Then choose the prompt-construction behavior per deployment:
 
 - **Default** — sensitive columns appear in the prompt with a sensitivity tag. The model knows to be cautious.
-- **Strict** — set `ASKDB_OMIT_SENSITIVE_FROM_PROMPT=true` to omit sensitive columns from the prompt entirely. The model can't propose them because it doesn't know they exist.
+- **Strict** — set `modes.omitSensitiveFromPrompt: true` in `askdb.config.ts` (or pass `--omit-sensitive-from-prompt`) to omit sensitive columns from the prompt entirely. The model can't propose them because it doesn't know they exist.
 
 See [Privacy model](/concepts/privacy-model/) for what crosses the boundary in each mode.
 

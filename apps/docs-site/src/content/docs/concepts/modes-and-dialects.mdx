@@ -33,7 +33,7 @@ A **mode** declares the trust boundary AskDB enforces for a run: what's allowed 
 Set the mode three ways, highest precedence first:
 
 - `--mode <id>` on any CLI command.
-- `modes.askdbMode` in `askdb.config.ts` (env binding: `ASKDB_MODE`).
+- `modes.askdbMode` in `askdb.config.ts`.
 - The built-in default (`schema_only`).
 
 ### `schema_only` (default)
@@ -63,7 +63,7 @@ The versioned spec — including the contracts an eventual bounded-results imple
 Columns marked `sensitive: true` in the schema artifact can be:
 
 - Included with a sensitivity tag in the prompt (default), so the model knows to handle them carefully and your application can decide whether to display them.
-- Omitted from the prompt entirely with `--omit-sensitive-from-prompt` (or `ASKDB_OMIT_SENSITIVE_FROM_PROMPT=true`), so the model never sees them and therefore never proposes them.
+- Omitted from the prompt entirely with `modes.omitSensitiveFromPrompt: true` in your config (or the `--omit-sensitive-from-prompt` flag), so the model never sees them and therefore never proposes them.
 
 The complete behavior table is in the [sensitive fields contract on GitHub](https://github.com/Ygilany/AskDB/blob/main/docs/contracts/sensitive-fields-and-modes.md).
 

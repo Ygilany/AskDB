@@ -41,7 +41,7 @@ export default {
     store: "pgvector",
     storeConfig: {
       pgvector: {
-        databaseUrl: process.env.ASKDB_PGVECTOR_URL,
+        databaseUrl: process.env.PGVECTOR_URL,
       },
     },
   },
@@ -56,7 +56,7 @@ One idempotent command. All DDL uses `IF NOT EXISTS` so it's safe to re-run on e
 
 ```bash
 askdb-rag setup-store \
-  --pg-url "$ASKDB_PGVECTOR_URL" \
+  --pg-url "$PGVECTOR_URL" \
   --dimensions 1536
 ```
 
@@ -98,7 +98,7 @@ import {
 import { openai } from "@ai-sdk/openai";
 
 const store = createPgvectorStore({
-  connectionString: process.env.ASKDB_PGVECTOR_URL!,
+  connectionString: process.env.PGVECTOR_URL!,
   dimensions: 1536,
 });
 

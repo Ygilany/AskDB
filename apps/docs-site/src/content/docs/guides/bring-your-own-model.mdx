@@ -40,7 +40,7 @@ export default {
 };
 ```
 
-Default model: `gpt-4o-mini`. Override with `ASKDB_AI_MODEL` or `OPENAI_MODEL` in your env.
+Default model: `gpt-4o-mini`. To use a different one, set `model` in `providerConfig.openai` (the scaffolded config reads it from `OPENAI_MODEL`).
 
   </TabItem>
   <TabItem label="Anthropic">
@@ -60,7 +60,7 @@ export default {
 };
 ```
 
-Default model: `claude-sonnet-4-6`. Override with `ASKDB_AI_MODEL` or `ANTHROPIC_MODEL` in your env.
+Default model: `claude-sonnet-4-6`. To use a different one, set `model` in `providerConfig.anthropic` (bind it to `ANTHROPIC_MODEL` in your config).
 
   </TabItem>
   <TabItem label="Google">
@@ -99,7 +99,7 @@ export default {
 };
 ```
 
-Set `AZURE_OPENAI_DEPLOYMENT` (or `ASKDB_AI_MODEL`) to the deployment name you want to use.
+Set `model` in `providerConfig.azure` to your deployment name (the scaffolded config reads it from `AZURE_OPENAI_DEPLOYMENT`).
 
   </TabItem>
 </Tabs>
