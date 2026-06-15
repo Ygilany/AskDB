@@ -10,6 +10,9 @@ import { createAiRegistry } from "@askdb/ai";
 import { openaiProvider } from "@askdb/ai-openai";
 import { createAskDb } from "@askdb/client";
 
+// bootstrapAskDbEnv() reads .env and askdb.config.* into an in-memory snapshot.
+// getAskDbRuntimeConfig() then returns a typed view over that snapshot.
+// Both calls are needed: bootstrap populates the store; getAskDbRuntimeConfig reads it.
 bootstrapAskDbEnv();
 const askdb = createAskDb({
   config: getAskDbRuntimeConfig(),
