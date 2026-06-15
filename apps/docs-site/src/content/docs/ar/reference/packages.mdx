@@ -1,0 +1,268 @@
+---
+title: "مرجع الحزم"
+description: "كل حزمة @askdb/*: الغرض، ومتى تُثبَّت، وما الذي تصدّره."
+---
+
+import packageDependenciesUrl from "../../../../assets/diagrams/askdb-package-dependencies.svg?url";
+
+<p class="doc-eyebrow">المرجع · الحزم</p>
+
+<p class="doc-lede">AskDB هو مساحة عمل من حزم مركّزة. ثبّت ما تحتاجه حالة استخدامك منها. هذه الصفحة هي الفهرس — الغرض، والتثبيت، وأهم الصادرات لكل حزمة.</p>
+
+<img src={packageDependenciesUrl} alt="AskDB package dependency graph: core and introspect at the top, engine and enrichment packages in the middle, and surfaces (CLI, Studio, TUI, HTTP API) at the bottom composing them" class="doc-diagram" />
+
+<p class="doc-caption">تتصل محوّلات مزوّدي الذكاء الاصطناعي (<code>@askdb/ai-openai</code>، <code>@askdb/ai-azure</code>، <code>@askdb/ai-google</code>، <code>@askdb/ai-anthropic</code>) بالواجهات الموضّحة أعلاه عبر <code>@askdb/ai</code>.</p>
+
+## النواة
+
+### `@askdb/core`
+
+مسار معالجة NL-to-SQL المستقلّ عن اللهجة. تحميل المخطّط، وبناء المُحفّز، والتحقّق، ومعالجة نطاق المستأجر تعيش جميعها هنا.
+
+```bash
+npm install @askdb/core
+```
+
+**أهم الصادرات**
+
+| Symbol | الغرض |
+| --- | --- |
+| `ask(options)` | مسار المعالجة الرئيسي. يُرجع SQL مُتحقَّقاً منه. |
+| `loadSchema(path)` | تحميل عنصر مخطّط من دليل، أو حزمة، أو `schema.json`. |
+| `validateTenantScope` / `resolveTenantSql` | أوّليات فرض نطاق المستأجر. |
+| `createAskDbLogger` | مسجّل مهيكل يصدر أحداث سجل AskDB. |
+| `POSTGRES_DIALECT` ومعرّفات اللهجات المدمجة | مدخلات اللهجة التي يقبلها `ask()`. |
+| `AskDbLanguageModel` | الاسم العام في AskDB لعقد نموذج اللغة في AI SDK. |
+
+### `@askdb/ai`
+
+سجلّ اختياري لمزوّدي الذكاء الاصطناعي ومساعدات إعداد مشتركة. ثبّت هذا عندما تريد أن يبني
+AskDB نماذج لغة أو تضمين في AI SDK من `askdb.config.*` / خرائط البيئة. اقرنه بحزمة
+محوّل مزوّد مثل `@askdb/ai-openai`. تخطّاه عندما تبني بالفعل نموذج
+AI SDK الخاص بك وتمرّره إلى `ask()`.
+
+```bash
+npm install @askdb/ai
+```
+
+**أهم الصادرات**
+
+| Symbol | الغرض |
+| --- | --- |
+| `createAiRegistry` | تسجيل محوّلات المزوّدين وبناء نماذج لغة أو تضمين. |
+| `registry.resolveAiConfig(env)` / `registry.resolveEmbeddingConfig(env)` | تحليل إعداد المزوّد من البيئة دون بناء نموذج. هذه طرائق على السجلّ الذي يُرجعه `createAiRegistry`، وليست صادرات مستقلّة. |
+| `resolveBaseConfig` | مساعد منخفض المستوى — يحلّ كائن الإعداد الأساسي للمزوّد من خريطة بيئة. يُستخدم داخلياً من قبل المحوّلات. |
+| `withEmbeddingProviderOptions` | يغلّف خيارات مزوّد التضمين؛ مشترك بين المحوّلات. |
+| `aiKeyMissingMessage` | إرشاد مشترك قابل للقراءة البشرية بشأن المفتاح المفقود. |
+
+### محوّلات المزوّدين
+
+تمتلك محوّلات المزوّدين تبعيات مزوّدي AI SDK الملموسة. يعلن كل محوّل عن `ai` و`@askdb/ai` كتبعيات نظيرة — تثبّتها npm/pnpm تلقائياً، لكن ينبغي أن يعتمد تطبيقك على `ai` مباشرةً عندما تريد تثبيت الإصدار.
+
+```bash
+npm install @askdb/ai-openai
+npm install @askdb/ai-azure
+npm install @askdb/ai-google
+npm install @askdb/ai-anthropic
+```
+
+يمكن إضافة أي مزوّد لديه حزمة Vercel AI SDK كمحوّل. تتطلّب قيم `ai.provider` غير المعروفة محوّلاً مسجَّلاً — تسجّل تطبيقات الطرف الأول `openai`، و`azure`، و`foundry`، و`google`، و`anthropic`؛ لأي شيء آخر، ضمّن AskDB وسجّل محوّلك الخاص، أو استخدم نقطة نهاية متوافقة مع OpenAI عبر المزوّد `openai` وعنوان أساسي مخصّص.
+
+### `@askdb/connectors`
+
+سجلّ مزوّدي الموصّلات — يعكس نمط `@askdb/ai` للفحص. يصدّر كل محوّل محرّك ثابت `ConnectorProviderAdapter`؛ ويربطها `@askdb/connectors` في سجلّ موحّد تستخدمه الـ CLI والتطبيقات. ثبّت مباشرةً فقط عندما تبني سير فحص مخصّص.
+
+```bash
+npm install @askdb/connectors
+```
+
+**أهم الصادرات**
+
+| Symbol | الغرض |
+| --- | --- |
+| `createConnectorRegistry(adapters)` | بناء سجلّ من مجموعة من محوّلات المزوّدين. |
+| `ConnectorRegistry` | نوع السجلّ — `createConnector(provider, config)`، `getTemplates(provider)`. |
+| `ConnectorProviderAdapter` | شكل المحوّل الذي تصدّره كل حزمة محرّك. |
+
+### `@askdb/config`
+
+تهيئة إعدادات اختيارية: اكتشاف `.env` و`askdb.config.*`، و`defineConfig` الآمن للأنواع، ومُلحِق لقطة وقت التشغيل.
+
+```bash
+npm install @askdb/config
+```
+
+**أهم الصادرات**
+
+| Symbol | الغرض |
+| --- | --- |
+| `defineConfig(config)` | باني إعدادات آمن للأنواع. |
+| `bootstrapAskDbEnv(options)` | تحميل `.env` + `askdb.config.*` وتثبيت لقطة وقت التشغيل. |
+| `getAskDbRuntimeConfig()` | قراءة لقطة وقت التشغيل (مفضّلة على `process.env`). |
+| `discoverAskDbConfigPath()` | اكتشاف برمجي لملف الإعدادات. |
+| `env`, `requiredEnv` | مُلحِقات متغيّرات بيئة محدّدة الأنواع. |
+
+## محوّلات المحرّكات
+
+تشحن كل حزمة محرّك موصّل الفحص الخاص بمحرّكها، وأي قوالب SQL للفهرس، وإعادة تصدير ثابت لهجة ذلك المحرّك. أما مواصفات اللهجة نفسها (توليد SQL + قواعد التحقّق) فتعيش في `@askdb/core` — يحتاج `ask()` إلى معرّف اللهجة فقط، دون حزمة محرّك.
+
+### `@askdb/postgres`
+
+```bash
+npm install @askdb/postgres
+```
+
+لهجة PostgreSQL، والموصّل، وقوالب SQL للفهرس، ومشغّل استعلام فهرس اختياري قائم على `pg` للفحص الحيّ. مرّر `dialect: "postgres"` إلى `ask()`.
+
+### `@askdb/mysql`
+
+```bash
+npm install @askdb/mysql
+```
+
+لهجة MySQL والفحص. مرّر `dialect: "mysql"` إلى `ask()`.
+
+### `@askdb/sqlite`
+
+```bash
+npm install @askdb/sqlite
+```
+
+لهجة SQLite والفحص. يعمل مع قواعد البيانات المضمّنة المدعومة بالملفات. مرّر `dialect: "sqlite"` إلى `ask()`.
+
+### `@askdb/sqlserver`
+
+```bash
+npm install @askdb/sqlserver
+```
+
+لهجة SQL Server (T-SQL) والفحص. مرّر `dialect: "sqlserver"` إلى `ask()`.
+
+## الفحص
+
+### `@askdb/introspect`
+
+عقد الفحص المستقلّ عن المحرّك وكاتب دليل المخطّط. استخدمه مباشرةً فقط عندما تستدعي الفحص من شيفرتك الخاصة — تغلّف الـ CLI هذا نيابةً عنك.
+
+```bash
+npm install @askdb/introspect
+```
+
+### `@askdb/prisma`
+
+موصّل قائم على الملفات فقط يقرأ ملفات مخطّط `.prisma` وينتج بيانات AskDB المادية الوصفية — دون الحاجة إلى قاعدة بيانات حيّة. اقرنه بمحوّل محرّك لتوليد SQL في وقت التشغيل.
+
+```bash
+npm install @askdb/prisma @askdb/introspect
+```
+
+راجع [دليل تكامل Prisma](/ar/guides/integrations/prisma/).
+
+## التأليف
+
+### `@askdb/studio`
+
+واجهة تأليف مخطّط قائمة على المتصفح. يستورد أمر الـ CLI ‏`askdb studio` هذه الحزمة بشكل كسول.
+
+```bash
+npm install @askdb/studio
+```
+
+### `@askdb/tui`
+
+واجهة تأليف مخطّط قائمة على الطرفية. يستورد أمر الـ CLI ‏`askdb enrich` هذه الحزمة بشكل كسول.
+
+```bash
+npm install @askdb/tui
+```
+
+### `@askdb/enrich`
+
+مساعدات تأليف مخطّط بلا واجهة، مشتركة بين Studio وTUI. استخدمها مباشرةً عند بناء واجهة تأليف مخصّصة.
+
+```bash
+npm install @askdb/enrich
+```
+
+## الاسترجاع
+
+### `@askdb/rag`
+
+يقسّم عنصر المخطّط إلى أجزاء، ويفهرسه في متجر متجهات، ويسترجع الأجزاء ذات الصلة لكل سؤال. استخدمه مع خيار `retriever` في `ask()` للمخطّطات الكبيرة.
+
+```bash
+npm install @askdb/rag
+```
+
+**أهم الصادرات**
+
+| Symbol | الغرض |
+| --- | --- |
+| `buildSchemaIndex({ schema, store, embedder, ... })` | تقسيم + تضمين + إدراج/تحديث عنصر مخطّط؛ يُرجع `{ retriever, stats, chunks }`. |
+| `createAiSdkEmbedder({ model })` / `createOpenAiEmbedder(...)` | تغليف نموذج تضمين AI SDK (أو OpenAI الخام) كـ `embedder`. |
+| `createRetriever({ store, embedder })` | بناء المُسترجِع المُمرَّر إلى `ask()`. |
+| `createPgvectorStore` | مصنع متجر pgvector. |
+
+يشحن برنامجاً ثنائياً صغيراً للـ CLI ‏`askdb-rag` (لا سيّما `askdb-rag setup-store` لتوفير pgvector). راجع [RAG للمخطّطات الكبيرة](/ar/guides/rag-for-large-schemas/).
+
+## واجهات الخدمة
+
+### `@askdb/http-api`
+
+خادم HTTP بسيط يغلّف `ask()`. نقطتا نهاية (`/health`، `POST /ask`)، مصمَّمتان للعمل خلف بوابتك.
+
+```bash
+npm install @askdb/http-api
+```
+
+**أهم الصادرات**
+
+| Symbol | الغرض |
+| --- | --- |
+| `createAskDbHttpServer(options)` | بناء الخادم. |
+| `AskHttpRequest` / `AskHttpSuccessResponse` / `AskHttpErrorResponse` | أنواع الطلب والاستجابة. |
+
+راجع [مرجع HTTP API](/ar/reference/http-api/) لنقاط النهاية ورموز الأخطاء.
+
+### `askdb` (CLI)
+
+البرنامج الثنائي `askdb`. يُشحن كحزمة npm عادية — ثبّته للتطوير المحلي، والعروض التوضيحية، وCI.
+
+```bash
+npm install askdb
+```
+
+راجع [مرجع CLI](/ar/reference/cli/).
+
+## اتجاه التبعية
+
+| Package | يعتمد على |
+| --- | --- |
+| `@askdb/postgres`, `@askdb/mysql`, `@askdb/sqlite`, `@askdb/sqlserver` | `@askdb/core`, `@askdb/connectors` |
+| `@askdb/prisma` | `@askdb/introspect`, `@askdb/connectors` |
+| `@askdb/connectors` | `@askdb/introspect` |
+| `@askdb/ai` | حزمة نواة AI SDK (`ai`) |
+| `@askdb/ai-openai`, `@askdb/ai-azure`, `@askdb/ai-google`, `@askdb/ai-anthropic` | `@askdb/ai` + حزمة مزوّد AI SDK المطابقة |
+| `@askdb/enrich`, `@askdb/rag` | `@askdb/core` |
+| `@askdb/tui`, `@askdb/studio` | `@askdb/enrich` (+ `@askdb/rag` عند الاستخدام) |
+| `@askdb/http-api` | `@askdb/core` (+ محوّل محرّك) |
+| `askdb` (CLI) | كل ما سبق (يُستورد بشكل كسول لكل أمر) |
+
+تبقى الحزم القابلة لإعادة الاستخدام صغيرة ومُطبّقة طبقياً. وتؤلّفها واجهات الطرف الأول (CLI، Studio، TUI، HTTP API).
+
+## ما الذي تثبّته — حسب حالة الاستخدام
+
+<div class="home-path-grid">
+  <a href="/ar/quickstart/"><strong>مجرّد تجربته</strong><span><code>askdb</code> وحده يكفي للفحص والإثراء والسؤال من الـ CLI.</span></a>
+  <a href="/ar/guides/embed-in-node/"><strong>التضمين في خدمة Node</strong><span><code>@askdb/core</code> + محوّل محرّك واحد + مزوّد نموذج.</span></a>
+  <a href="/ar/guides/deploy-as-http-service/"><strong>إقامة خدمة HTTP</strong><span>أضف <code>@askdb/http-api</code> فوق تثبيت التضمين.</span></a>
+  <a href="/ar/guides/rag-for-large-schemas/"><strong>العمل مع مخطّط كبير</strong><span>أضف <code>@askdb/rag</code> ومتجر متجهات (يُنصح بـ pgvector).</span></a>
+</div>
+
+## اقرأ تالياً
+
+<div class="home-path-grid">
+  <a href="/ar/reference/cli/"><strong>مرجع CLI</strong><span>البرنامج الثنائي askdb بالتفصيل.</span></a>
+  <a href="/ar/reference/http-api/"><strong>مرجع HTTP API</strong><span>نقاط النهاية، وأشكال الطلب والاستجابة.</span></a>
+  <a href="/ar/reference/config/"><strong>مرجع الإعدادات</strong><span>defineConfig ومصفوفة متغيّرات البيئة.</span></a>
+</div>

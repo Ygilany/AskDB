@@ -1,0 +1,133 @@
+---
+title: "مرجع الإعدادات"
+description: "askdb.config.ts، وdefineConfig، ومتغيّرات البيئة، وكيف يحلّ AskDB إعدادات وقت التشغيل."
+---
+
+<p class="doc-eyebrow">المرجع · الإعدادات</p>
+
+<p class="doc-lede">يحلّ AskDB الإعدادات من مصدرين: ملف <code>askdb.config.*</code> (TypeScript أو JavaScript) ومتغيّرات البيئة. يحمّل كليهما <code>@askdb/config</code> عند بدء التشغيل في لقطة وقت تشغيل في الذاكرة.</p>
+
+## `askdb.config.ts`
+
+ينشئ `askdb init` هذا الملف. وهو يستخدم `defineConfig` لأمان الأنواع:
+
+```ts
+import { defineConfig, env } from "@askdb/config";
+
+export default defineConfig({
+  ai: {
+    provider: "openai",
+    providerConfig: {
+      openai: {
+        apiKey: env("OPENAI_API_KEY"),
+        model: env("OPENAI_MODEL"),
+      },
+    },
+  },
+  introspection: {
+    provider: "postgres",
+    providerConfig: {
+      postgres: { databaseUrl: env("DATABASE_URL") },
+    },
+    outputDir: "./my-app.schema",
+  },
+  rag: {
+    embedder: "openai",
+    store: "pgvector",
+    storeConfig: {
+      pgvector: { databaseUrl: env("PGVECTOR_URL") },
+    },
+  },
+  logging: {
+    level: "info",
+  },
+});
+```
+
+استخدم المساعد `env()` (بدلاً من `process.env`) حتى يتمكّن AskDB من التقاط متغيّرات البيئة التي تعتمد عليها إعداداتك وتطبيق تمريرة القيم الافتراضية الخاصة به.
+
+يُرجع `defineConfig` الكائن دون تغيير في وقت التشغيل — فهو موجود فقط لاستنتاج الأنواع. والنوع الكامل هو `AskDbConfig`.
+
+## اكتشاف الملفات
+
+يبحث `bootstrapAskDbEnv()` عن الإعدادات في **دليل العمل الحالي فقط** (دون التنقّل لأعلى)، مجرّباً موقعين بالترتيب:
+
+1. `askdb.config.<ext>` — أسبقية الامتدادات `ts → mts → cts → js → mjs → cjs`
+2. `.config/askdb.<ext>` — نفس أسبقية الامتدادات
+
+تفوز أول مطابقة. ملفات إعدادات JSON غير مدعومة. إذا لم يُعثر على شيء، يُطلق `bootstrapAskDbEnv()` خطأً — شغّل عمليتك من الدليل الذي يحتوي على الإعدادات (أو مرّر `cwd` في خياراته).
+
+## متغيّرات البيئة
+
+يقرأ AskDB ملف `.env` المجاور لعمليتك عبر `dotenv`، ثم يقيّم `askdb.config.*`. **أنت تختار أسماء المتغيّرات** — فهي ما تمرّره إلى `env("…")` في إعداداتك. تستخدم الإعدادات المُنشأة هذه الأسماء الشائعة؛ أعد تسمية أي منها في إعداداتك وفي `.env` معاً:
+
+| Variable | يُقرأ إلى (حقل الإعداد) | ملاحظات |
+| --- | --- | --- |
+| `OPENAI_API_KEY` | `ai.providerConfig.openai.apiKey` | مفتاح OpenAI القياسي. |
+| `OPENAI_MODEL` | `ai.providerConfig.openai.model` | تجاوز اختياري للنموذج. الافتراضي: `gpt-4o-mini`. |
+| `ANTHROPIC_API_KEY` | `ai.providerConfig.anthropic.apiKey` | عند `ai.provider = "anthropic"`. النموذج الافتراضي: `claude-sonnet-4-6`. |
+| `AZURE_API_KEY`, `AZURE_RESOURCE_NAME` | `ai.providerConfig.azure.*` | Azure OpenAI. |
+| `DATABASE_URL` | `introspection.providerConfig.postgres.databaseUrl` | اتصال فحص Postgres. |
+
+كل شيء آخر يحتاجه AskDB — دليل الإخراج، والوضع، ومستوى السجل، واتصال استعلام Studio، وعنوان متجر المتجهات — يُعيَّن بالطريقة نفسها: حقل في `askdb.config.ts`، مربوط باسم تختاره مع `env("…")`. أنت لا تعيّن أي متغيّرات مسبوقة بـ AskDB بنفسك؛ يشتقّ AskDB قيم وقت التشغيل الداخلية الخاصة به من إعداداتك.
+
+## المزوّدون المخصّصون
+
+يقبل `ai.provider` أي سلسلة نصية — وليس فقط القيم الحرفية من الطرف الأول. عند استخدام سلسلة مزوّد غير معروفة، يطبّق AskDB فرعاً عاماً: تزوّد `ai.providerConfig.custom.{apiKey, baseUrl, model}` (كل منها مربوط باسم تختاره مع `env("…")`)، ويمرّرها AskDB إلى أي محوّل مسجَّل تحت اسم ذلك المزوّد.
+
+```ts
+import { defineConfig, env } from "@askdb/config";
+
+export default defineConfig({
+  ai: {
+    provider: "mistral",           // any string
+    providerConfig: {
+      custom: {
+        apiKey: env("MISTRAL_API_KEY"),
+        model: "mistral-large-latest",
+      },
+    },
+  },
+  // ...
+});
+```
+
+يعمل هذا من البداية إلى النهاية فقط عندما يكون لدى السجلّ المستهلك محوّل مسجَّل تحت اسم ذلك المزوّد. تسجّل تطبيقات الطرف الأول (`@askdb/http-api`، والـ CLI) `openai`، و`azure`، و`foundry`، و`google`، و`anthropic`. لأي مزوّد آخر لديك خياران:
+
+1. **ضمّن AskDB** وسجّل محوّلك الخاص عبر `createAiRegistry` — نحو 40 سطراً من الشيفرة.
+2. **استخدم المزوّد `openai`** مع `baseUrl` مخصّص لأي نقطة نهاية متوافقة مع OpenAI (vLLM، OpenRouter، Together، Ollama، …).
+
+راجع [استخدام نموذجك الخاص](/ar/guides/bring-your-own-model/) للاطّلاع على شرح التضمين.
+
+## قراءة الإعدادات في وقت التشغيل
+
+في الشيفرة التي تستخدم مكتبات AskDB مباشرةً، استدعِ `bootstrapAskDbEnv()` عند بدء التشغيل ثم اقرأ الإعدادات عبر `getAskDbRuntimeConfig()`:
+
+```ts
+import { bootstrapAskDbEnv, getAskDbRuntimeConfig } from "@askdb/config";
+
+bootstrapAskDbEnv({ cwd: process.cwd() });
+
+const rt = getAskDbRuntimeConfig();
+const aiEnv = rt.ai.aiEnv;                    // provider + key/model env map
+const outputDir = rt.introspection.outputDir; // resolved artifact directory
+```
+
+لا ينسخ AskDB الإعدادات الكاملة إلى `process.env`. لقطة وقت التشغيل هي مصدر الحقيقة — استخدم `getAskDbRuntimeConfig` بدلاً من `process.env` لأي شيء خاص بـ AskDB.
+
+## أسبقية الإعدادات
+
+لأي إعداد معيّن، الأسبقية (الأعلى يفوز) هي:
+
+1. وسائط لكل استدعاء — خيارات CLI (`--mode`، `--schema`، ...) وخيارات `ask()`.
+2. ملف `askdb.config.*` — مصدر الحقيقة الوحيد للقطة وقت التشغيل.
+3. القيم الافتراضية المدمجة المطبّقة للحقول الاختيارية (مثل `outputDir` → `./askdb/`).
+
+لا تتجاوز متغيّرات البيئة ملف الإعدادات من الخارج — بل تتدفّق *عبره*: كل استدعاء `env("VAR")` في الإعدادات يقرأ البيئة عند تحميل الملف. يُحمَّل `.env` أولاً (دون الكتابة فوق المتغيّرات المعيّنة بالفعل في البيئة الحقيقية)، لذا فإن قصة التجاوز لكل بيئة هي: بيئة النظام تغلب `.env`، وما يقرأه `env()` يستقرّ في اللقطة. لا يزال هذا يتيح لك شحن ملف إعدادات واحد وتنويعه لكل بيئة — فقط مرّر كل قيمة قابلة للضبط عبر `env()`.
+
+## اقرأ تالياً
+
+<div class="home-path-grid">
+  <a href="/ar/reference/cli/"><strong>مرجع CLI</strong><span>كيف يحلّ كل أمر CLI الإعدادات والخيارات.</span></a>
+  <a href="/ar/reference/packages/"><strong>مرجع الحزم</strong><span>واجهة @askdb/config الكاملة.</span></a>
+</div>

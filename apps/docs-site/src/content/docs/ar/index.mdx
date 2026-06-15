@@ -1,0 +1,120 @@
+---
+title: "AskDB"
+description: "AskDB هي مجموعة الأدوات مفتوحة المصدر لتحويل النص إلى SQL التي يثق بها فريق بياناتك. حوّل أسئلة اللغة الطبيعية إلى SQL مُراجَع يشغّله تطبيقك — مخطّطك، نموذجك، قاعدة بياناتك. لا شيء يغادر منظومتك."
+template: "splash"
+hero:
+  title: '<span class="home-hero-title">مجموعة أدوات <span class="home-hero-accent">تحويل النص إلى SQL</span> مفتوحة المصدر<br/>التي يثق بها فريق بياناتك.</span>'
+  tagline: 'اسأل بياناتك. احتفظ بالتحكّم. تحوّل AskDB أسئلة اللغة الطبيعية إلى SQL مُراجَع يشغّله تطبيقك &mdash; مخطّطك، نموذجك، قاعدة بياناتك. تتولّى مجموعة الأدوات أمر SQL كي يتمكّن فريقك من التركيز على سياق العمل، لا على البنية التحتية.'
+  actions:
+    - text: "البدء السريع"
+      link: "/ar/quickstart/"
+      variant: "primary"
+      icon: "right-arrow"
+    - text: "كيف يعمل"
+      link: "/ar/concepts/how-askdb-works/"
+      variant: "secondary"
+      icon: "open-book"
+---
+
+import HomeCliStrip from "../../../components/HomeCliStrip.astro";
+import HomeDifferentiators from "../../../components/HomeDifferentiators.astro";
+import HomeWorkflow from "../../../components/HomeWorkflow.astro";
+import HomeEngines from "../../../components/HomeEngines.astro";
+import HomePrivacyBoundary from "../../../components/HomePrivacyBoundary.astro";
+import { Tabs, TabItem } from "@astrojs/starlight/components";
+
+<div class="home-landing">
+
+<HomeCliStrip />
+
+<div class="home-pill-row" role="list">
+  <span class="home-pill" role="listitem">Postgres · MySQL · SQLite · SQL Server</span>
+  <span class="home-pill" role="listitem">مفتوح المصدر · Apache 2.0</span>
+  <span class="home-pill" role="listitem">لا تغادر أيّ بيانات منظومتك</span>
+</div>
+
+## ما الذي يميّز AskDB
+
+<HomeDifferentiators />
+
+## كيف يعمل
+
+<HomeWorkflow />
+
+## ضمّنه في تطبيقك
+
+<p class="home-terminal-intro">بضعة أسطر من TypeScript: حمّل مخطّطاً، اطرح سؤالاً، شغّل SQL عبر تجمّع الاتصالات الخاص بك.</p>
+
+<Tabs syncKey="wiring">
+  <TabItem label="Direct (Vercel AI SDK)">
+
+```ts
+import { ask, loadSchema } from "@askdb/core";
+import { openai } from "@ai-sdk/openai";
+import { Pool } from "pg";
+
+const schema = await loadSchema("./my-app.schema");
+const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+
+const { sql } = await ask({
+  question: "Which customers signed up last week?",
+  schema,
+  dialect: "postgres",
+  model: openai("gpt-4o-mini"),
+});
+
+// Log or approve `sql` here, then run it through your own pool.
+const result = await pool.query(sql);
+```
+
+  </TabItem>
+  <TabItem label="Config-driven (@askdb/ai)">
+
+```ts
+import { ask, loadSchema } from "@askdb/core";
+import { bootstrapAskDbEnv, getAskDbRuntimeConfig } from "@askdb/config";
+import { createAiRegistry } from "@askdb/ai";
+import { openaiProvider } from "@askdb/ai-openai";
+import { Pool } from "pg";
+
+// Resolve the model from askdb.config.ts — same config the CLI and Studio use.
+bootstrapAskDbEnv({ cwd: process.cwd() });
+const rt = getAskDbRuntimeConfig();
+const ai = createAiRegistry([openaiProvider]);
+const model = await ai.createLanguageModelFromEnv(rt.ai.aiEnv);
+
+const schema = await loadSchema("./my-app.schema");
+const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+
+const { sql } = await ask({
+  question: "Which customers signed up last week?",
+  schema,
+  dialect: "postgres",
+  model,
+});
+
+// Log or approve `sql` here, then run it through your own pool.
+const result = await pool.query(sql);
+```
+
+  </TabItem>
+</Tabs>
+
+## يعمل مع قاعدة البيانات التي تملكها بالفعل
+
+<HomeEngines />
+
+## ما الذي يراه النموذج — وما الذي لا يراه
+
+<HomePrivacyBoundary />
+
+## اقرأ تالياً
+
+<div class="home-path-grid">
+  <a href="/ar/quickstart/"><strong>البدء السريع</strong><span>ثبّت، استبطن، واطرح سؤالك الأول في خمس دقائق.</span></a>
+  <a href="/ar/concepts/how-askdb-works/"><strong>كيف يعمل AskDB</strong><span>المسار الكامل من السؤال إلى SQL المُتحقَّق منه.</span></a>
+  <a href="/ar/guides/embed-in-node/"><strong>ضمّنه في تطبيق Node</strong><span>الشرح الكامل بلغة TypeScript مع تجمّع اتصالات حقيقي.</span></a>
+  <a href="/ar/reference/packages/"><strong>مرجع الحزم</strong><span>كل حزمة <code>@askdb/*</code> وما تفعله.</span></a>
+</div>
+
+</div>

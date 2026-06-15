@@ -1,0 +1,165 @@
+---
+title: "RAG للمخطّطات الكبيرة"
+description: "عندما يكون مخطّطك أكبر من أن يتّسع في مُوجِّه، فهرسه باستخدام @askdb/rag واسترجع الأجزاء ذات الصلة فقط لكل سؤال."
+---
+
+<p class="doc-eyebrow">دليل التوسّع</p>
+
+<p class="doc-lede">قواعد البيانات الكبيرة تحتاج إلى الاسترجاع. يجزّئ <code>@askdb/rag</code> أداة المخطّط نفسها ويفهرسها في مخزن متّجهات. لكل سؤال، يسترجع AskDB الشريحة ذات الصلة بدلًا من حشو كل شيء في كل مُوجِّه.</p>
+
+## متى تحتاجه
+
+قاعدة عامة: إذا كان لأداة مخطّطك أكثر من ~30 جدولًا، أو إذا كان DDL المُصيَّر يتجاوز روتينيًا 8 آلاف رمز، فستوفّر المال وتحسّن جودة التوليد بالاسترجاع بدلًا من الحشو.
+
+مُشغِّل الاسترجاع قابل للضبط. افتراضيًا يستخدم `ask()` الاسترجاع عند توفير مُسترجِع <em>و</em> عندما يتجاوز عدد أجزاء المخطّط 30.
+
+## التثبيت
+
+```bash
+npm install @askdb/rag
+
+# pgvector store (recommended)
+npm install pg
+```
+
+ستحتاج أيضًا إلى مُضمِّن. مزوّدو Vercel AI SDK من [أحضر نموذجك الخاص](/ar/guides/bring-your-own-model/) يعملون كمُضمِّنات أيضًا — تستخدم معظم الفرق تضمينات OpenAI.
+
+## إعداد pgvector
+
+pgvector هو المخزن المُوصى به: يقيم في Postgres جنبًا إلى جنب مع بياناتك الأخرى، وأنت تعرف بالفعل كيفية أخذ نسخة احتياطية منه، ويشحن AskDB جاهزًا بـ DDL مُعدّ مسبقًا.
+
+هناك ثلاثة مسارات للتزويد — اختر الذي يطابق قصة نشرك.
+
+### المسار 1: Studio (التطوير المحلي)
+
+يزوّد Studio مخطّط pgvector تلقائيًا عند أول استخدام. اضبط المخزن في `askdb.config.ts`:
+
+```ts
+export default {
+  rag: {
+    embedder: "openai",
+    store: "pgvector",
+    storeConfig: {
+      pgvector: {
+        databaseUrl: process.env.PGVECTOR_URL,
+      },
+    },
+  },
+};
+```
+
+أطلق Studio (`npx askdb studio --schema ./my-app.schema`) وتنشئ أول عملية RAG الجدول.
+
+### المسار 2: `askdb-rag setup-store` (CI / التجهيز)
+
+أمر واحد متكافئ. يستخدم كل DDL تعبير `IF NOT EXISTS` لذا فإعادة تشغيله آمنة عند كل عملية نشر.
+
+```bash
+askdb-rag setup-store \
+  --pg-url "$PGVECTOR_URL" \
+  --dimensions 1536
+```
+
+أدرجه في خطوة نشر:
+
+```yaml
+- name: Provision pgvector schema
+  run: askdb-rag setup-store --pg-url "${{ secrets.PGVECTOR_URL }}" --dimensions 1536
+```
+
+### المسار 3: ترحيل صريح (الإنتاج)
+
+لفرق الإنتاج التي تريد كل DDL في ملف ترحيل مُصدَّر:
+
+```ts
+import { createPgvectorStore } from "@askdb/rag/stores/pgvector";
+
+const store = createPgvectorStore({
+  connectionString: process.env.DATABASE_URL!,
+  dimensions: 1536,
+});
+
+console.log(store.setupSql());
+```
+
+الصق المُخرَج (CREATE EXTENSION، CREATE TABLE، CREATE INDEX) في Flyway أو Liquibase أو Drizzle أو أي مُشغِّل ترحيل يستخدمه فريقك.
+
+## فهرسة أداة المخطّط
+
+بعد تزويد المخزن، فهرس أجزاء مخطّطك:
+
+```ts
+import {
+  buildSchemaIndex,
+  createAiSdkEmbedder,
+  createPgvectorStore,
+  loadChunkerSourcesFromDir,
+} from "@askdb/rag";
+import { openai } from "@ai-sdk/openai";
+
+const store = createPgvectorStore({
+  connectionString: process.env.PGVECTOR_URL!,
+  dimensions: 1536,
+});
+
+const embedder = createAiSdkEmbedder({
+  model: openai.textEmbeddingModel("text-embedding-3-small"),
+});
+
+const { retriever, stats } = await buildSchemaIndex({
+  schema: loadChunkerSourcesFromDir("./my-app.schema"),
+  store,
+  embedder,
+  embedderId: "openai:text-embedding-3-small", // changes force a full re-embed
+  lockFilePath: "./my-app.schema/schema.lock.json", // skip unchanged chunks
+});
+```
+
+يجزّئ `buildSchemaIndex` الأداة، ويُضمِّن فقط ما تغيّر منذ آخر تشغيل (مُتتبَّع في `schema.lock.json`)، ويعيد `retriever` جاهزًا للاستخدام بالإضافة إلى إحصاءات الفهرسة.
+
+## ربط الاسترجاع بـ `ask()`
+
+مرّر المُسترجِع إلى `ask()`. يستدعيه AskDB بالسؤال ويستبدل الأجزاء المُسترجَعة بـ DDL الكامل في المُوجِّه.
+
+إذا كنت قد شغّلت `buildSchemaIndex` للتو في العملية نفسها، فمرّر `retriever` الذي أعاده مباشرةً. للاسترجاع في عملية منفصلة (شكل الإنتاج الشائع)، أعد بناء واحد من المخزن:
+
+```ts
+import { ask } from "@askdb/core";
+import { createRetriever } from "@askdb/rag";
+
+const retriever = createRetriever({ store, embedder });
+
+const { sql } = await ask({
+  question,
+  schema,
+  dialect: "postgres",
+  model,
+  retriever,
+  retrievalThresholdChunks: 30, // default
+});
+```
+
+## الحقول الحسّاسة والتضمينات
+
+تحمل الأجزاء المُعلَّمة كحسّاسة في أداة المخطّط تلك الراية إلى المخزن. اضبط سياسة الفهرسة لديك لاستبعاد المحتوى الحسّاس من التضمينات إذا تطلّب نموذج الثقة لديك ذلك — راجع [عقد الحقول الحسّاسة على GitHub](https://github.com/Ygilany/AskDB/blob/main/docs/contracts/sensitive-fields-and-modes.md) للقواعد الكاملة.
+
+## جدول أو أبعاد مخصّصة
+
+لعزل عمليات نشر AskDB متعدّدة في قاعدة بيانات Postgres نفسها، مرّر اسم جدول مخصّص وبُعد تضمين مطابق:
+
+```bash
+askdb-rag setup-store \
+  --pg-url "$DATABASE_URL" \
+  --pg-table myapp_rag_chunks \
+  --dimensions 1536
+```
+
+طابق نفس قيمة `table` في `askdb.config.ts` تحت `rag.storeConfig.pgvector.table`.
+
+## اقرأ بعد ذلك
+
+<div class="home-path-grid">
+  <a href="/ar/guides/author-your-schema/"><strong>تأليف المخطّط الخاص بك</strong><span>الإثراء يحسّن جودة الاسترجاع بشكل كبير.</span></a>
+  <a href="/ar/guides/bring-your-own-model/"><strong>أحضر نموذجك الخاص</strong><span>خيارات المُضمِّن وإدارة المفاتيح.</span></a>
+  <a href="/ar/reference/packages/"><strong>مرجع الحزم</strong><span>السطح الكامل لواجهة @askdb/rag البرمجية.</span></a>
+</div>

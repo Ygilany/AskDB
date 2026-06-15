@@ -1,0 +1,196 @@
+---
+title: "البدء السريع"
+description: "هيكلة الإعداد، واستبطان قاعدة بيانات، وإثراء المخطّط، وطرح سؤالك الأول — في أقل من خمس دقائق."
+---
+
+import { Aside, Tabs, TabItem } from "@astrojs/starlight/components";
+import quickstartLoopUrl from "../../../assets/diagrams/askdb-quickstart-loop.svg?url";
+
+<p class="doc-eyebrow">من الصفر إلى أول استعلام</p>
+
+<p class="doc-lede">هيكِل إعدادك، ووجّه AskDB إلى قاعدة بياناتك، وأثرِ مُصنَّع المخطّط، واطرح سؤالك الأول. تندمج الحزم نفسها مباشرةً في خدمة Node عندما تكون مستعدًّا للتضمين.</p>
+
+## المتطلّبات المسبقة
+
+- Node 20 أو أحدث.
+- npm أو pnpm أو yarn (تستخدم الأمثلة `npx`).
+- مفتاح API من مزوّد نموذج — OpenAI أو Anthropic أو Google أو Azure أو أي نقطة نهاية متوافقة مع OpenAI (OpenRouter أو vLLM أو Ollama، ...). راجع [أحضِر نموذجك الخاص](/ar/guides/bring-your-own-model/).
+- قاعدة بيانات يمكن لـ AskDB قراءتها — Postgres أو MySQL أو SQLite أو SQL Server — أو حتى ملف مخطّط Prisma (لا حاجة لقاعدة بيانات حيّة).
+
+## التدفّق بأكمله، في أربعة أوامر
+
+```bash
+npx askdb@latest init        # scaffold askdb.config.ts
+npx askdb introspect         # read your database into a schema artifact
+npx askdb studio             # enrich the schema and test questions in your browser
+npx askdb ask --question "Which customers signed up last week?"
+```
+
+تُشرح كل خطوة أدناه. الحلقة التي تجعل الإجابات جيّدة: **استبطِن مرّة واحدة،
+ثم أثرِ وأعِد السؤال في الاستوديو حتى يطابق الـ SQL طريقة تفكير فريقك في
+البيانات.**
+
+<img src={quickstartLoopUrl} alt="Four steps: init scaffolds config, introspect reads the database into a schema artifact, ask generates validated SQL from your first question, enrich in Studio adds descriptions — with a loop-back from enrich to ask to refine until the SQL is right" class="doc-diagram" />
+
+## 1. هيكِل إعدادك
+
+```bash
+npx askdb@latest init
+```
+
+يُنزّل `npx` ويُشغّل `askdb` على الفور — دون الحاجة إلى خطوة تثبيت منفصلة. يُنشئ `askdb init` ملف `askdb.config.ts` في جذر مشروعك. ملف الإعداد مُتحقَّق منه بـ TypeScript ويقرأ القيم من بيئتك باستخدام المساعد `env()` — فهو يُحمّل من ملف `.env` في جذر مشروعك أو من بيئة النظام، أيّهما مضبوط. تختار أسماء المتغيّرات الخاصة بك وتمرّرها إلى `env()`.
+
+<Aside type="tip">يُدرَج `askdb.config.ts` في نظام التحكّم بالإصدارات؛ أما `.env` (مفاتيحك الحقيقية) فلا.</Aside>
+
+افتح `askdb.config.ts` واملأ إعداداتك:
+
+```ts
+import { defineConfig, env } from "@askdb/config";
+
+export default defineConfig({
+  ai: {
+    provider: "openai",   // "openai" | "azure" | "foundry" | "google" | "anthropic" — or a custom string
+    providerConfig: {
+      openai: {
+        apiKey: env("OPENAI_API_KEY"),
+        model: env("OPENAI_MODEL"),   // optional — defaults to gpt-4o-mini
+      },
+    },
+  },
+  introspection: {
+    provider: "postgres",            // "postgres" | "prisma" | "mysql" | "sqlite" | "sqlserver"
+    providerConfig: {
+      postgres: { databaseUrl: env("DATABASE_URL") },
+    },
+    outputDir: "./my-app.schema",    // optional — defaults to ./askdb/
+  },
+  // ... the scaffolded file also includes `rag`, `logging`, `studio`, and
+  // `httpApi` sections — keep them as generated. Every option is documented
+  // in the Configuration reference.
+});
+```
+
+المقتطف أعلاه هو الجزء الذي ستُحرّره فعليًا؛ يحتوي القالب المُهيكل على الإعداد الكامل. راجع [مرجع الإعداد](/ar/reference/config/) لكل خيار.
+
+بمجرّد ضبط هذا، تصبح معظم رايات الـ CLI أدناه اختيارية.
+
+## 2. استبطِن قاعدة بياناتك
+
+يُنتج الاستبطان **مُصنَّع مخطّط AskDB** — دليلًا على القرص يلتقط جداولك وأعمدتك وأنواعك وعلاقاتك. محتوى تلك المُصنَّعات هو الشيء الوحيد الذي يراه النموذج على الإطلاق عن قاعدة بياناتك.
+
+<Tabs syncKey="engine">
+  <TabItem label="Live database">
+
+مع ضبط اتصال قاعدة بياناتك في `askdb.config.ts` ضمن `introspection.provider` و`introspection.providerConfig`، يكفي أمر واحد:
+
+```bash
+npx askdb introspect
+```
+
+على سبيل المثال، لـ Postgres:
+
+```ts
+introspection: {
+  provider: "postgres",
+  providerConfig: {
+    postgres: { databaseUrl: env("DATABASE_URL") },  // env name is yours to pick
+  },
+},
+```
+
+تُستخدَم قاعدة البيانات هنا فقط — للاستبطان. لاستهداف قاعدة بيانات مختلفة لتشغيل واحد، مرّر `--url`:
+
+```bash
+npx askdb introspect --url "$OTHER_DATABASE_URL"
+```
+
+يأتي المحرّك من `introspection.provider` في إعدادك (أو الراية `--engine`)؛ يسجّله المُصنَّع المُستبطَن، ويستنتج `askdb ask` لاحقًا لهجة الـ SQL من المُصنَّع. سطح الإعداد الكامل موثّق في [مرجع الإعداد](/ar/reference/config/). لخطوات التثبيت الخاصة بكل محرّك راجع [تبديل المحرّكات](/ar/guides/switch-engines/).
+
+  </TabItem>
+  <TabItem label="Prisma schema file">
+
+مع ضبط مخطّط Prisma الخاص بك في `askdb.config.ts` ضمن `introspection.provider` و`introspection.providerConfig`، يكفي أمر واحد — لا حاجة لقاعدة بيانات حيّة:
+
+```bash
+npx askdb introspect
+```
+
+على سبيل المثال:
+
+```ts
+introspection: {
+  provider: "prisma",
+  providerConfig: {
+    prisma: { schemaPath: "./prisma/schema.prisma" },
+  },
+},
+```
+
+لاستبطان ملف مخطّط مختلف لتشغيل واحد، مرّر الرايات بدلًا من ذلك:
+
+```bash
+npx askdb introspect --engine prisma --prisma-schema ./other/schema.prisma
+```
+
+  </TabItem>
+</Tabs>
+
+## 3. أثرِ واختبر في الاستوديو
+
+يلتقط الاستبطان الخام البنية. يضيف الإثراء الأوصاف والأسماء المستعارة ومفاهيم الأعمال وعلامات الحساسية وأسئلة الأمثلة — الطبقة التي تجعل التوليد جيّدًا.
+
+أطلِق **الاستوديو** — سطح التأليف المُوصى به — في متصفّح:
+
+```bash
+npx askdb studio
+```
+
+الاستوديو أيضًا أفضل مكان لـ **اختبار أسئلتك**: اطرح سؤالًا في الجلسة نفسها، وراجع الـ SQL المُولَّد، وواصِل الإثراء إذا لم تكن الإجابة كما توقّعت — كل ذلك دون تبديل الأدوات. راجع [جولة الاستوديو](/ar/studio/) لمعرفة ما تفعله كل طريقة عرض.
+
+تُفضّل الطرفية؟ يغطّي الـ TUI سير العمل نفسه:
+
+```bash
+npx askdb enrich
+```
+
+يقرأ كلا الأمرين `outputDir` من `askdb.config.ts`. تعيش الجولة الكاملة في [تأليف مخطّطك](/ar/guides/author-your-schema/).
+
+## 4. اطرح سؤالك
+
+لديك طريقتان لاختبار أن مخطّطك يُولّد SQL جيّدًا — اختر أيّهما يناسب اللحظة.
+
+### في الاستوديو (مُوصى به)
+
+إذا كان الاستوديو مفتوحًا بالفعل من الخطوة 3، فاطرح سؤالك هناك. سترى الـ SQL المُولَّد جنبًا إلى جنب مع المخطّط؛ إذا لم تكن الإجابة صحيحة، فواصِل إثراء الأوصاف أو الأسماء المستعارة أو المفاهيم وأعِد السؤال في الجلسة نفسها.
+
+السؤال في الاستوديو ليس الوجهة — بل هو كيفية ضبط الإثراء حتى يُرضي الـ SQL ما يحتاجه مستخدموك فعليًا. بمجرّد رضاك عن الإجابات، تُضمّن مُصنَّع المخطّط **نفسه** في تطبيقك أو خدمتك الخاصة (راجع الخطوة 5) — كان الاستوديو مجرّد المكان الذي ضبطته فيه.
+
+### من الـ CLI
+
+للفحوص لمرّة واحدة واختبارات الدخان في CI، اسأل مباشرةً من الطرفية:
+
+```bash
+npx askdb ask --question "Which customers signed up last week?"
+```
+
+تحصل على SQL مُتحقَّق منه على stdout — على سبيل المثال:
+
+```sql
+SELECT c.id, c.name, c.signed_up_at
+FROM customers AS c
+WHERE c.signed_up_at >= NOW() - INTERVAL '7 days'
+ORDER BY c.signed_up_at DESC;
+```
+
+في كلتا الحالتين يُعيد AskDB SQL مُتحقَّقًا منه. وهو **لا** يُشغّله مقابل قاعدة بياناتك — تطبيقك يملك التنفيذ.
+
+## 5. من هنا
+
+الآن وقد عمل الـ CLI، اختر المسار الذي يطابق ما تبنيه:
+
+<div class="home-path-grid">
+  <a href="/ar/guides/embed-in-node/"><strong>التضمين في تطبيق Node</strong><span>أدرِج <code>@askdb/core</code> في خدمة TypeScript وشغّل الـ SQL عبر تجمّعك الخاص.</span></a>
+  <a href="/ar/guides/deploy-as-http-service/"><strong>النشر كخدمة HTTP</strong><span>أقِم <code>@askdb/http-api</code> حتى تتمكّن Python أو المتصفّحات أو الوكلاء من طرح الأسئلة.</span></a>
+  <a href="/ar/guides/author-your-schema/"><strong>تأليف مخطّطك</strong><span>استفِد من الاستوديو إلى أقصى حدّ: الأوصاف، والمفاهيم، وعلامات الحساسية، وسياسة المستأجر.</span></a>
+  <a href="/ar/concepts/how-askdb-works/"><strong>كيف يعمل AskDB</strong><span>التدفّق من البداية إلى النهاية، بكل أجزائه المتحرّكة.</span></a>
+</div>

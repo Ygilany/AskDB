@@ -1,0 +1,214 @@
+---
+title: "تعدّد المستأجرين"
+description: "أعلِن سياسة المستأجر في مُصنَّف المخطّط الخاص بك ويفرضها AskDB على كل استعلام مُولَّد — عبر إعادة الكتابة بمرشّح المستأجر أو الرفض."
+---
+
+<p class="doc-eyebrow">توليد محصور بالمستأجر</p>
+
+<p class="doc-lede">أخبر AskDB كيف يمثّل المخطّط الخاص بك تعدّد المستأجرين. من تلك اللحظة، يتضمّن كل استعلام مُولَّد على جدول محصور مُسنَد المستأجر — أو يُرفَض قبل إرجاعه. يوفّر تطبيقك نطاق المستأجر لكل طلب.</p>
+
+## كيف يعمل
+
+سياسة المستأجر ملف (`tenant-policy.md`) داخل مُصنَّف المخطّط الخاص بك. يُعلِن الجداول التي تنتمي إلى مستأجر، وأي عمود يحمل معرّف المستأجر، وأي الجداول عمومية.
+
+لا ينفّذ AskDB الاستعلامات — لكنه يعيد كتابة SQL المُولَّد لضمان وجود مرشّح المستأجر. يوفّر تطبيقك معرّف المستأجر لكل نداء. ويتولّى AskDB التحقّق منه وربطه.
+
+## مفاهيم سياسة المستأجر
+
+| المفهوم | ما يعنيه |
+| --- | --- |
+| **جذور المستأجر** | الجدول الأساسي المُعرِّف للمستأجر (مثل `organizations`) وعموده `tenantIdColumn`. |
+| **التسلسل الهرمي** | علاقات المفتاح الأجنبي من الأب إلى الابن بين جذور المستأجر (وكالة ← وكالة فرعية ← عميل). |
+| **الجداول المحصورة** | الجداول التي تنتمي إلى مستأجر عبر مفتاح أجنبي. يتضمّن SQL المُولَّد دائمًا الربط أو الشرط. |
+| **الجداول متعدّدة الأشكال** | الجداول التي تشير إلى أنواع كيانات متعدّدة عبر عمود مميِّز (`owner_type` / `owner_id`). |
+| **الجداول العمومية** | جداول بحث محايدة تجاه المستأجر (العملات، الدول). لا تُرشَّح بالمستأجر أبدًا. |
+
+## تأليف السياسة
+
+المسار المُوصى به هو عرض **Tenancy** في Studio، الذي يرشدك خلال إعلان جذور المستأجر والجداول المحصورة والجداول العمومية في نموذج. يستطيع Studio أيضًا صياغة سياسة بالذكاء الاصطناعي من وصف باللغة الطبيعية لنموذج تعدّد المستأجرين لديك، لتراجعها.
+
+يمكنك أيضًا كتابة `tenant-policy.md` يدويًا. المقدّمة بصيغة YAML،
+ويُتحقَّق منها بصرامة عند تحميل مُصنَّف المخطّط — تُرفَض المفاتيح المجهولة،
+وكل إشارة إلى جدول أو عمود تستخدم **المعرّفات المستقرّة** من
+`schema.json` (`table:public.projects`، `table:public.projects#organization_id`)،
+وليس الأسماء المجرّدة أبدًا. مثال لمخطّط SaaS بسيط:
+
+```yaml
+---
+schemaId: my-app
+enforcement: strict
+
+roots:
+  - id: table:public.organizations
+    tenantIdColumn: table:public.organizations#id
+    label: Organization
+
+scopedTables:
+  - id: table:public.projects
+    scopeThrough:
+      - root: table:public.organizations
+        column: table:public.projects#organization_id
+  - id: table:public.documents
+    scopeThrough:
+      - root: table:public.organizations
+        column: table:public.documents#organization_id
+
+globalTables:
+  - table:public.plan_tiers
+  - table:public.countries
+---
+
+# Tenant Policy
+
+Organizations are the only tenant level. Projects and documents carry a
+direct `organization_id`; plan tiers and countries are shared lookups.
+```
+
+نص markdown أسفل المقدّمة هو سياق عمل حرّ الصياغة؛
+وتُتعرَّف أقسام H2 المسمّاة `Hierarchy` و`Scope rules` و`Sensitive interactions`
+وتُغذَّى في تجميع المُحفِّز (prompt).
+
+## مرجع الحقول
+
+حقول المقدّمة عُلوية المستوى:
+
+| الحقل | مطلوب | المعنى |
+| --- | --- | --- |
+| `schemaId` | نعم | يجب أن يطابق `schemaId` في `schema.json` الخاص بالمُصنَّف. يربط السياسة بمخطّط واحد. |
+| `enforcement` | نعم | يرفض `strict` أي استعلام لا يمكن إثبات مرشّح المستأجر فيه؛ ويعيد `warn` SQL مع تحذيرات المستأجر بدلًا من ذلك. ابدأ بـ `strict`. |
+| `roots` | نعم | الجداول التي *هي* مستأجرون (واحد على الأقل). وكل ما عداها محصور نسبةً إلى جذر. |
+| `hierarchy` | لا | حواف من الأب إلى الابن بين الجذور (وكالة ← وكالة فرعية ← عميل). يجب أن تشكّل رسمًا بيانيًا خاليًا من الدورات. |
+| `scopedTables` | لا | الجداول التي تنتمي صفوفها إلى مستأجر، وكيفية الوصول إلى الجذر منها. |
+| `polymorphicTables` | لا | الجداول التي تشير إلى أنواع مستأجرين مختلفة عبر زوج عمود مميِّز. |
+| `globalTables` | لا | معرّفات الجداول المستقرّة المُعفاة عمدًا من ترشيح المستأجر (عمليات بحث مشتركة). |
+
+الجداول التي لا تظهر في أيٍّ من `scopedTables` أو `polymorphicTables` أو
+`globalTables` تُصنَّف **مجهولة** — فتثير تحذيرات، وفي وضع
+`strict` تحجب الاستعلامات التي تمسّها. صنِّف كل شيء.
+
+`roots[]` — كل مدخل جدول واحد مُعرِّف للمستأجر:
+
+| الحقل | مطلوب | المعنى |
+| --- | --- | --- |
+| `id` | نعم | معرّف الجدول المستقرّ (مثل `table:public.organizations`). |
+| `tenantIdColumn` | نعم | معرّف العمود المستقرّ لمُعرِّف الجذر — القيمة التي يمرّرها تطبيقك في وقت التشغيل. |
+| `label` | نعم | اسم مقروء بشريًا يُستخدَم في المُحفِّزات والعناصر النائبة المسمّاة (`Organization` ← `:tenant_organization_ids`). |
+| `parent.root`، `parent.foreignKey` | لا | عندما يكون هذا الجذر ابنًا لجذر آخر: معرّف جدول الأب وعمود المفتاح الأجنبي الرابط به. |
+
+`scopedTables[]` — جداول تشغيلية مقيّدة بمستأجر:
+
+| الحقل | مطلوب | المعنى |
+| --- | --- | --- |
+| `id` | نعم | معرّف الجدول المستقرّ. |
+| `scopeThrough` | نعم | مسار واحد أو أكثر من هذا الجدول إلى جذر. كل مسار له `root` بالإضافة إلى **واحد بالضبط من** `column` أو `join`. |
+| `scopeThrough[].column` | أحدهما | معرّف العمود المستقرّ لمفتاح أجنبي مباشر للمستأجر على هذا الجدول (`table:public.projects#organization_id`). |
+| `scopeThrough[].join` | أحدهما | قائمة من خطوات `{ from, to }` بمعرّفات أعمدة مستقرّة عندما يصل الجدول إلى جذره عبر جداول أخرى (مثل `appointments → clients`). |
+
+قد يُعلِن الجدول عدّة مسارات `scopeThrough` (مثلًا محصور مباشرةً بـ
+`agency_id` *و* عبر `client_id` ← clients)؛ ويقبل المُتحقِّق أي
+مسار يلبّي نطاق المُستدعي.
+
+`polymorphicTables[]` — أزواج مميِّز من النوع + المعرّف:
+
+| الحقل | مطلوب | المعنى |
+| --- | --- | --- |
+| `id` | نعم | معرّف الجدول المستقرّ. |
+| `typeColumn` | نعم | معرّف عمود المميِّز المستقرّ (مثل `table:public.notes#owner_type`). |
+| `idColumn` | نعم | معرّف العمود المستقرّ للمفتاح الأجنبي متعدّد الأشكال (مثل `table:public.notes#owner_id`). |
+| `mapping` | نعم | يربط كل قيمة حرفية لـ `typeColumn` بمعرّف جدول جذر مستأجر (`agency: table:public.agencies`). |
+
+العقد الكامل — بما في ذلك قواعد التحقّق من التسلسل الهرمي وأنماط
+الحصر الخمسة التي تعبّر عنها هذه الحقول — موجود في
+[`docs/contracts/tenant-policy.md` على GitHub](https://github.com/Ygilany/AskDB/blob/main/docs/contracts/tenant-policy.md).
+
+## السؤال مع نطاق مستأجر
+
+عندما تكون السياسة موجودة، يجب أن يتضمّن كل نداء `ask()` حقل `tenantScope`.
+يتحقّق AskDB من النطاق مقابل السياسة ويربطه في
+SQL المُولَّد. مع `enforcement: strict`، يُرفَض أي استعلام لا يمكن إثبات
+مرشّح المستأجر فيه؛ ومع `enforcement: warn`، تُرجَع SQL
+مع `tenantWarnings` لكي يتصرّف تطبيقك بناءً عليها.
+
+```ts
+import { ask } from "@askdb/core";
+
+const { sql, tenantParams } = await ask({
+  question: "How many documents did we create this month?",
+  schema,
+  dialect: "postgres",
+  model,
+  tenantScope: {
+    access: {
+      kind: "ids",
+      tenantRoot: "table:public.organizations",
+      ids: ["org_abc123"],
+    },
+  },
+  tenantSqlMode: "sql-params",
+});
+
+// Execute with the tenant parameters bound:
+const result = await pool.query(sql, tenantParams);
+```
+
+يحدّد `access.kind` شكل النطاق: `ids` (معرّفات مستأجر دقيقة على جذر واحد —
+الحالة الشائعة)، و`subtree` (معرّفات جذر بالإضافة إلى كل المتحدّرين منه:
+`{ kind: "subtree", tenantRoot, rootIds, includeDescendants: true }`)،
+و`multi_root` (معرّفات عبر عدّة جذور)، أو `global` (غير محصور عمدًا،
+مع سلسلة `reason` لأثر التدقيق). يحمل الحقل الاختياري `context`
+بيانات وصفية إرشادية (الدور، القسم) إلى المُحفِّز، ويتيح
+`tenantFilters` للمضيف حلّ النطاق متعدّد الأشكال مسبقًا.
+
+## أوضاع إخراج SQL
+
+| الوضع | متى تستخدمه |
+| --- | --- |
+| `sql-only` | قيم المستأجر مُضمَّنة كقيم حرفية. مفيد للفحص أثناء التطوير أو الاستعلامات الفورية التي تقرأها مباشرةً. |
+| `sql-params` | قيم المستأجر مُستخرَجة كمعاملات موضعية `$N`. استخدم هذا في الإنتاج مع التنفيذ المُعَلَّم بالمعاملات. |
+
+## ما الذي يُعاد كتابته
+
+بدون سياسة، قد يولّد سؤال مثل "كم مستندًا هذا الشهر؟":
+
+```sql
+SELECT COUNT(*) FROM documents WHERE created_at >= NOW() - INTERVAL '1 month';
+```
+
+مع السياسة أعلاه ونطاق وصول قدره
+`{ kind: "ids", tenantRoot: "table:public.organizations", ids: ["org_abc123"] }`،
+يولّد السؤال نفسه:
+
+```sql
+SELECT COUNT(*) FROM documents
+WHERE organization_id = $1 AND created_at >= NOW() - INTERVAL '1 month';
+```
+
+شرط المستأجر موجود في SQL التي يرجعها AskDB — لا يمكن أن ينساه المُستدعي، ولا يمكن إزالته بسؤال مُشوَّه.
+
+## بدون سياسة
+
+إذا كان `tenant-policy.md` غائبًا عن مُصنَّف المخطّط، يولّد AskDB SQL دون أي شروط حصر بالمستأجر. هذا هو الإعداد الافتراضي الصحيح لعمليات النشر أحادية المستأجر. أضِف السياسة عندما (وفقط عندما) تنتقل إلى تعدّد المستأجرين.
+
+## الاختبار في Studio
+
+تتضمّن لوحة **Ask** في Studio عناصر تحكّم بنطاق المستأجر — وفّر نطاقًا بصيغة JSON قبل توليد SQL لترى كيف يعمل حقن الشرط:
+
+```json
+{
+  "access": {
+    "kind": "ids",
+    "tenantRoot": "table:public.organizations",
+    "ids": ["org_abc123"]
+  }
+}
+```
+
+بدّل بين `sql-only` و`sql-params` لمقارنة شكلَي الإخراج.
+
+## اقرأ تاليًا
+
+<div class="home-path-grid">
+  <a href="/ar/guides/run-safely-in-prod/"><strong>التشغيل بأمان في الإنتاج</strong><span>كيف يتلاءم حصر المستأجر مع الأدوار للقراءة فقط والمُهَل وتسجيل التدقيق.</span></a>
+  <a href="/ar/concepts/safety-boundaries/"><strong>حدود الأمان</strong><span>كل ما يتحقّق منه AskDB بالإضافة إلى مرشّحات المستأجر.</span></a>
+  <a href="/ar/guides/author-your-schema/"><strong>تأليف المخطّط الخاص بك</strong><span>استخدم عرض Tenancy في Studio لصياغة السياسة.</span></a>
+</div>

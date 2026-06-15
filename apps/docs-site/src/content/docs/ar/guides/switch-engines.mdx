@@ -1,0 +1,246 @@
+---
+title: "تبديل المحرّكات"
+description: "المحرّكات الأربعة جميعها — Postgres وMySQL وSQLite وSQL Server — من الدرجة الأولى. إليك ما يتغيّر حين تنتقل بينها وما لا يتغيّر."
+---
+
+import { Tabs, TabItem } from "@astrojs/starlight/components";
+
+<p class="doc-eyebrow">ترحيل المحرّك</p>
+
+<p class="doc-lede">معظم AskDB محايد تجاه المحرّك. مُحوِّل اللهجة هو الجزء الذي يعرف نكهة SQL لديك — بدّله، فيعمل سير عمل تأليف المخطّط نفسه ونداء <code>ask()</code> نفسه مقابل محرّك مختلف.</p>
+
+## ما الذي يبقى كما هو
+
+- صيغة مُصنَّف المخطّط. نفس `schema.json`، ونفس `tables/*.md`، ونفس سير عمل الإثراء.
+- واجهة `ask()`. نفس الخيارات، ونفس شكل الإرجاع.
+- دلالات المُتحقِّق: للقراءة فقط، عبارة واحدة، لا مخطّطات نظام، وفرض مرشّح المستأجر.
+- نموذج الخصوصية. يرى النموذج المخطّط، لا الصفوف، بغضّ النظر عن المحرّك.
+
+## ما الذي يتغيّر
+
+- حزمة المحرّك التي تثبّتها.
+- قيمة `dialect` التي تمرّرها إلى `ask()`.
+- ميزات SQL الخاصة بالمحرّك التي يسمح بها المُتحقِّق (LIMIT مقابل TOP، صياغة المعاملات، صياغة مسار JSON).
+- المُشغِّل (driver) الذي يستخدمه تطبيقك للتنفيذ (`pg`، `mysql2`، `better-sqlite3`، `mssql`).
+- كيف تستبطن CLI قاعدة البيانات (تختلف صيغة سلسلة الاتصال واستعلامات الفهرس لكل محرّك).
+
+## المصفوفة
+
+| المحرّك | حزمة المُحوِّل | قيمة `dialect` | المُشغِّل المُقترَح |
+| --- | --- | --- | --- |
+| PostgreSQL | `@askdb/postgres` | `"postgres"` | `pg` |
+| MySQL | `@askdb/mysql` | `"mysql"` | `mysql2` |
+| SQLite | `@askdb/sqlite` | `"sqlite"` | `better-sqlite3` |
+| SQL Server | `@askdb/sqlserver` | `"sqlserver"` | `mssql` |
+
+## خطوة بخطوة
+
+### 1. ثبّت المُحوِّل الجديد
+
+<Tabs syncKey="engine">
+  <TabItem label="PostgreSQL">
+
+```bash
+npm install @askdb/postgres
+```
+
+  </TabItem>
+  <TabItem label="MySQL">
+
+```bash
+npm install @askdb/mysql
+```
+
+  </TabItem>
+  <TabItem label="SQLite">
+
+```bash
+npm install @askdb/sqlite
+```
+
+  </TabItem>
+  <TabItem label="SQL Server">
+
+```bash
+npm install @askdb/sqlserver
+```
+
+  </TabItem>
+</Tabs>
+
+يمكنك إبقاء المُحوِّل القديم مثبّتًا أثناء الانتقال. كل مُحوِّل قائم بذاته.
+
+### 2. استبطن قاعدة البيانات الجديدة (إذا اختلف المخطّط)
+
+إذا كنت تشير إلى نسخة قاعدة بيانات مختلفة — واحدة قد يكون لها مجموعة مختلفة من الجداول أو الأعمدة — فشغّل الاستبطان عليها لإعادة توليد الطبقة الفيزيائية من مُصنَّف المخطّط:
+
+<Tabs syncKey="engine">
+  <TabItem label="PostgreSQL">
+
+```bash
+npx askdb introspect \
+  --engine postgres \
+  --url "postgresql://user:pass@host/dbname" \
+  --out my-app.schema \
+  --schema-id my-app
+```
+
+  </TabItem>
+  <TabItem label="MySQL">
+
+```bash
+npx askdb introspect \
+  --engine mysql \
+  --url "mysql://user:pass@host/dbname" \
+  --out my-app.schema \
+  --schema-id my-app
+```
+
+  </TabItem>
+  <TabItem label="SQLite">
+
+بالنسبة إلى SQLite، عيّن مسار الملف عبر `introspection.sqliteFile` في `askdb.config.ts`:
+
+```ts
+// askdb.config.ts
+export default {
+  introspection: {
+    provider: "sqlite",
+    sqliteFile: "./my-database.db",
+  },
+  // ...
+};
+```
+
+ثم شغّل:
+
+```bash
+npx askdb introspect --out my-app.schema --schema-id my-app
+```
+
+  </TabItem>
+  <TabItem label="SQL Server">
+
+```bash
+npx askdb introspect \
+  --engine sqlserver \
+  --url "sqlserver://user:pass@host/dbname" \
+  --out my-app.schema \
+  --schema-id my-app
+```
+
+  </TabItem>
+</Tabs>
+
+تتبع صيغة سلسلة الاتصال عُرف كل محرّك. يأتي المحرّك نفسه من `--engine` (أو `introspection.provider` في `askdb.config.ts`) — لا تستنتجه CLI من الرابط. يسجّل المُصنَّف أي محرّك أنتجه، ويستنتج `askdb ask` اللهجة من المُصنَّف.
+
+إذا كان المخطّط المنطقي متطابقًا وكنت تبدّل حزمة المُحوِّل فقط، فإن المُصنَّف الموجود صالح بالفعل — تخطَّ هذه الخطوة وانتقل مباشرةً إلى الخطوة 3.
+
+### 3. حدّث قيمة `dialect` في نداءات `ask()`
+
+يسجّل مُصنَّف المخطّط أي محرّك استُبطِن منه. تستخدم CLI (`askdb ask`) و`askdb.config.ts` تلك المعلومة لاستنتاج اللهجة تلقائيًا — لا حاجة إلى تحديث يدوي لتلك المداخل.
+
+ينطبق هذا على المُصنَّفات المستبطنة بـ Prisma أيضًا: يقرأ الموصّل `datasource.provider` من ملف `.prisma` الخاص بك (`postgresql` ← `postgres`، `mysql`، `sqlite`، `sqlserver`) ويسجّله، فيظلّ `askdb ask` يعرف اللهجة دون قاعدة بيانات حيّة.
+
+عند استدعاء `ask()` برمجيًا، يكون `dialect` معاملًا صريحًا. حدّثه ليطابق المحرّك الجديد:
+
+```ts
+const { sql } = await ask({
+  question,
+  schema,
+  dialect: "mysql",      // was "postgres"
+  model,
+});
+```
+
+تُشحَن مواصفات اللهجات الأربع جميعها داخل `@askdb/core` — فيعمل `ask({ dialect: "mysql" })` دون تثبيت أي شيء آخر. توفّر حزم المحرّكات (`@askdb/mysql`، `@askdb/postgres`، ...) موصّل *الاستبطان* لذلك المحرّك (وتعيد تصدير ثابت لهجته للراحة)؛ وأنت بحاجة إليها للاستبطان، لا للتوليد.
+
+### 4. حدّث المُشغِّل
+
+بدّل مكتبة المُشغِّل بتلك التي تطابق المحرّك الجديد. طبقة التنفيذ ملكك — لا يفتح AskDB الاتصال — لذا فهذا تبديل مكتبة مباشر.
+
+<Tabs syncKey="engine">
+  <TabItem label="PostgreSQL">
+
+```ts
+import { Pool } from "pg";
+
+const pool = new Pool({
+  connectionString: process.env.DATABASE_URL,
+  statement_timeout: 5000,
+  max: 10,
+});
+
+const { rows } = await pool.query(sql);
+```
+
+  </TabItem>
+  <TabItem label="MySQL">
+
+```ts
+import mysql from "mysql2/promise";
+
+const pool = mysql.createPool({
+  uri: process.env.MYSQL_URL,
+  connectionLimit: 10,
+});
+
+const [rows] = await pool.execute(sql);
+```
+
+  </TabItem>
+  <TabItem label="SQLite">
+
+```ts
+import Database from "better-sqlite3";
+
+const db = new Database(process.env.SQLITE_FILE ?? "./my-database.db");
+
+const rows = db.prepare(sql).all();
+```
+
+  </TabItem>
+  <TabItem label="SQL Server">
+
+```ts
+import mssql from "mssql";
+
+const pool = await mssql.connect(process.env.SQLSERVER_URL);
+
+const result = await pool.request().query(sql);
+const rows = result.recordset;
+```
+
+  </TabItem>
+</Tabs>
+
+## حول تكافؤ اللهجات
+
+Postgres هي اللهجة المرجعية — تُشحَن الميزات هناك أولًا وتتبعها المحرّكات الأخرى. بالنسبة إلى معظم الأسئلة التحليلية، تولّد اللهجات الأربع SQL متكافئة؛ أما الميزات الخاصة بالمحرّك (مُشغِّلات JSON، صياغة دوال النوافذ، اختلافات التعبيرات النمطية)، فيتبع السلوك ما يدعمه كل محرّك أصلًا.
+
+إذا واجهت اختلاف لهجة يفاجئك، فهذا خلل — أبلِغ عنه على [مشكلات المشروع](https://github.com/Ygilany/AskDB/issues).
+
+## تشغيل محرّكات متعدّدة جنبًا إلى جنب
+
+لا شيء يمنعك من تحميل مُصنَّفَي مخطّط واستدعاء `ask()` مقابل لهجات مختلفة في العملية نفسها. مفيد للتطبيقات متعدّدة قواعد البيانات:
+
+```ts
+const ordersSchema = await loadSchema("./orders.schema");
+const analyticsSchema = await loadSchema("./analytics.schema");
+
+const fromOrders = await ask({
+  question, schema: ordersSchema, dialect: "postgres", model,
+});
+
+const fromAnalytics = await ask({
+  question, schema: analyticsSchema, dialect: "mysql", model,
+});
+```
+
+## اقرأ تاليًا
+
+<div class="home-path-grid">
+  <a href="/ar/concepts/modes-and-dialects/"><strong>الأوضاع واللهجات</strong><span>النموذج المفاهيمي وراء مُحوِّلات اللهجة.</span></a>
+  <a href="/ar/guides/embed-in-node/"><strong>التضمين في تطبيق Node</strong><span>التكامل الأساسي الذي يعدّله تبديل المحرّك.</span></a>
+  <a href="/ar/reference/packages/"><strong>مرجع الحزم</strong><span>السطح الكامل للحزمة لكل محرّك.</span></a>
+</div>

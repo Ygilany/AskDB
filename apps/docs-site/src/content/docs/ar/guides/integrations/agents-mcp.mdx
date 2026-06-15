@@ -1,0 +1,67 @@
+---
+title: "الوكلاء وMCP"
+description: "ما الذي يعمل اليوم لتكامل الوكلاء — CLI، والمكتبة، وواجهة HTTP البرمجية — وحالة خادم Model Context Protocol من الطرف الأول."
+---
+
+<p class="doc-eyebrow">التكامل · الوكلاء</p>
+
+<p class="doc-lede">صُمِّم AskDB ليكون مُدارًا بالآلة. يمكن للوكلاء تأسيس توليد SQL عبر نفس الأسطح التي يستخدمها المُكاملون البشر — CLI، والمكتبة، وواجهة HTTP البرمجية. خادم Model Context Protocol (MCP) من الطرف الأول عمل ضمن خارطة الطريق؛ في الوقت الحالي، غلّف أحد الأسطح الموجودة.</p>
+
+## ما الذي يعمل اليوم
+
+| السطح | متى يُستخدم |
+| --- | --- |
+| **CLI** | رايات مستقرّة وسجلّات مُهيكَلة. جيّد لخطوط الأنابيب المكتوبة وCI. |
+| **المكتبة** | ضمّن `ask()` مباشرةً في وقت تشغيل وكيلك — أسرع مسار لوكلاء Node. راجع [التضمين في تطبيق Node](/ar/guides/embed-in-node/). |
+| **واجهة HTTP البرمجية** | `@askdb/http-api` للوكلاء بأي لغة. راجع [النشر كخدمة HTTP](/ar/guides/deploy-as-http-service/). |
+
+تستخدم الأسطح الثلاثة جميعها نفس خط أنابيب `@askdb/core` وتفرض نفس المُتحقِّق. أيًّا غلّفت، تحصل على نفس ضمانات الأمان.
+
+## حالة MCP
+
+خادم Model Context Protocol من الطرف الأول مُخطَّط له. سيكشف نفس عقد `ask()` عبر بروتوكول MCP بحيث يمكن لأي وكيل مدرك لـ MCP (Claude Desktop، Cursor، تكاملات IDE) استدعاء AskDB كأداة.
+
+حتى يُشحن، النمط المُوصى به هو كتابة مُحوِّل MCP رفيع في مضيفك الخاص يستدعي واجهة HTTP البرمجية أو المكتبة مباشرةً. يفرض مُحوِّلك نفس حدود الثقة — الأوضاع، ومعالجة الحقول الحسّاسة، وأي أداة مخطّط مُحمَّلة — التي سيفرضها خادم MCP من الطرف الأول.
+
+تتبّع خارطة الطريق على [مشروع AskDB على GitHub](https://github.com/Ygilany/AskDB).
+
+## تغليف AskDB كأداة
+
+يبدو تعريف أداة وكيل نموذجي لـ AskDB كالتالي:
+
+```ts
+{
+  name: "ask_database",
+  description: "Translate a natural-language question into SQL " +
+    "against the application database. Returns SQL — execution is " +
+    "the caller's responsibility.",
+  parameters: {
+    type: "object",
+    properties: {
+      question: { type: "string" },
+    },
+    required: ["question"],
+  },
+  async invoke({ question }) {
+    const { sql } = await ask({ question, schema, dialect: "postgres", model });
+    return { sql };
+  },
+}
+```
+
+يعمل هذا في أدوات Vercel AI SDK، واستدعاءات دوال OpenAI، واستخدام أدوات Anthropic، وأي إطار عمل وكلاء آخر يأخذ دالة ومخطّطًا.
+
+## الثقة في حلقة وكيل
+
+أمران يهمّان عندما يجلس AskDB داخل وكيل:
+
+1. **لا ينفّذ الوكيل SQL مباشرةً أبدًا.** يستدعي `ask()` ويستعيد SQL مُتحقَّقًا منه — كود مضيفك يقرّر ما إذا كان سيشغّله وكيف.
+2. **يعمل الوكيل ضمن نطاق مستأجر تقدّمه أنت.** عندما يكون للمخطّط سياسة مستأجر، مرّر `tenantScope` من سياق المصادقة لمضيفك — لا من أي شيء أرسله الوكيل (أو المستخدم).
+
+## اقرأ بعد ذلك
+
+<div class="home-path-grid">
+  <a href="/ar/guides/embed-in-node/"><strong>التضمين في تطبيق Node</strong><span>سطح المكتبة الذي ستغلّفه على الأرجح في أداة وكيل.</span></a>
+  <a href="/ar/guides/deploy-as-http-service/"><strong>النشر كخدمة HTTP</strong><span>سطح HTTP للوكلاء غير العاملين على Node.</span></a>
+  <a href="/ar/concepts/safety-boundaries/"><strong>حدود الأمان</strong><span>ما يفرضه المُتحقِّق — نفس القواعد بغضّ النظر عمّن يسأل.</span></a>
+</div>

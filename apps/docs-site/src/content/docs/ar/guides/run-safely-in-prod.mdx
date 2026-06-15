@@ -1,0 +1,115 @@
+---
+title: "التشغيل بأمان في الإنتاج"
+description: "قائمة المشغّل الخاصة بـ AskDB: أدوار القراءة فقط، ومهل العبارات الزمنية، وحدود الصفوف، وتسجيل التدقيق، وتدفّقات الموافقة."
+---
+
+<p class="doc-eyebrow">قائمة الإنتاج</p>
+
+<p class="doc-lede">يتحقق AskDB من SQL قبل إعادته. يملك تطبيقك كل ما يعتمد على سياق وقت التشغيل. هذه الصفحة هي القائمة لذلك الجانب من الحدود.</p>
+
+## دور قاعدة البيانات
+
+اتصل تحت دور <em>لا يستطيع</em> الكتابة — حتى لو أخفق مُتحقّق AskDB. هذا هو أهم دفاع منفرد.
+
+```sql
+CREATE ROLE askdb_reader LOGIN PASSWORD '…';
+GRANT CONNECT ON DATABASE myapp TO askdb_reader;
+GRANT USAGE ON SCHEMA public TO askdb_reader;
+GRANT SELECT ON ALL TABLES IN SCHEMA public TO askdb_reader;
+-- Restrict access to system schemas and any sensitive tables
+REVOKE ALL ON ALL TABLES IN SCHEMA pg_catalog FROM askdb_reader;
+```
+
+استخدم بيانات اعتماد ذلك الدور في سلسلة الاتصال التي يستخدمها مستهلكو AskDB. لا تعِد استخدام مستخدم المسؤول الخاص بتطبيقك.
+
+## حدود الاتصال
+
+اضبط مهلة زمنية للعبارة وتجمّعًا صغيرًا. ينبغي أن يكون SQL المُولَّد سريعًا — فالاستعلام البطيء عادة ما يكون علامة على سؤال مُشوَّه أو فهرس مفقود، لا تقريرًا حقيقيًا طويل التشغيل.
+
+```ts
+import { Pool } from "pg";
+
+const pool = new Pool({
+  connectionString: process.env.DATABASE_URL,
+  max: 10,
+  statement_timeout: 5000,        // 5s — adjust to your workload
+  idle_in_transaction_session_timeout: 5000,
+});
+```
+
+## حدود الصفوف
+
+غلّف SQL المُولَّد بسقف صارم لعدد الصفوف قبل التنفيذ. يحمي هذا من أسئلة مثل "أرِني كل صف في هذا الجدول ذي الـ100 مليون صف" التي تكون SQL صالحة لكنها بلا فائدة عند العرض.
+
+```ts
+const { sql } = await ask({ question, schema, dialect: "postgres", model });
+const cappedSql = `SELECT * FROM (${sql}) AS askdb_q LIMIT 1000`;
+```
+
+## تسجيل التدقيق
+
+سجّل كل سؤال، وكل سلسلة SQL مُولَّدة، والمستخدم الذي سأل، والنتيجة. احتفظ بها في نظام التسجيل الحالي لديك — لا يسجّل AskDB نيابة عنك.
+
+```ts
+import { ask } from "@askdb/core";
+import { logger } from "./logger.js";
+
+const correlationId = crypto.randomUUID();
+logger.info({ correlationId, userId, question }, "askdb.question");
+
+try {
+  const { sql } = await ask({ question, schema, dialect: "postgres", model });
+  logger.info({ correlationId, sql }, "askdb.generated");
+
+  const rows = await pool.query(sql);
+  logger.info({ correlationId, rowCount: rows.rowCount }, "askdb.executed");
+  return rows;
+} catch (error) {
+  logger.error({ correlationId, error }, "askdb.error");
+  throw error;
+}
+```
+
+يُصدِر المُسجِّل البنيوي الاختياري في `@askdb/core` (`createAskDbLogger`) أحداثًا معيارية يمكنك ربطها بـ Pino.
+
+## تدفّقات الموافقة
+
+بالنسبة للأسئلة عالية المخاطر — أي شيء يمسّ بيانات حساسة، أو يُنفَّذ مقابل قواعد بيانات تقارير الإنتاج — أظهِر SQL لإنسان قبل التنفيذ.
+
+نمط شائع:
+
+1. استدعِ `ask()` وأعِد `{ sql }` (دون تنفيذ).
+2. اعرض SQL في الواجهة مع السؤال للسياق.
+3. عند تأكيد المستخدم، أرسِل SQL عبر POST إلى نقطة نهاية تنفيذ منفصلة تشغّله تحت دور القراءة فقط.
+
+ينجح هذا لأنّ AskDB يعيد SQL مُتحقَّقًا منه كقيمة — يتحكم تطبيقك في متى وإن وكيف يُنفَّذ.
+
+## الأعمدة الحساسة
+
+اعلِم الأعمدة الحساسة في مُصنَّع المخطّط:
+
+```yaml
+columns:
+  - id: table:users#email
+    name: email
+    sensitive: true
+```
+
+ثم اختر سلوك بناء المُوجِّه لكل عملية نشر:
+
+- **الافتراضي** — تظهر الأعمدة الحساسة في المُوجِّه مع وسم حساسية. يعلم النموذج أن يكون حذرًا.
+- **الصارم** — اضبط `modes.omitSensitiveFromPrompt: true` في `askdb.config.ts` (أو مرّر `--omit-sensitive-from-prompt`) لإغفال الأعمدة الحساسة من المُوجِّه كليًا. لا يستطيع النموذج اقتراحها لأنه لا يعلم بوجودها.
+
+راجع [نموذج الخصوصية](/ar/concepts/privacy-model/) لمعرفة ما يعبُر الحدود في كل وضع.
+
+## تعدّد المستأجرين
+
+إذا كان تطبيقك متعدّد المستأجرين، أعلِن عن سياسة المستأجر في مُصنَّع المخطّط ومرّر `tenantScope` إلى كل استدعاء `ask()`. يفرض AskDB مُسنَد المستأجر عند وقت التوليد. راجع [تعدّد المستأجرين](/ar/guides/multi-tenancy/).
+
+## اقرأ بعد ذلك
+
+<div class="home-path-grid">
+  <a href="/ar/concepts/safety-boundaries/"><strong>حدود الأمان</strong><span>ما يفرضه AskDB قبل أن يغادر SQL المُتحقّق.</span></a>
+  <a href="/ar/concepts/privacy-model/"><strong>نموذج الخصوصية</strong><span>ما يعبُر الحدود إلى النموذج.</span></a>
+  <a href="/ar/guides/multi-tenancy/"><strong>تعدّد المستأجرين</strong><span>تقييد نطاق كل استعلام بمستأجر.</span></a>
+</div>

@@ -1,0 +1,136 @@
+---
+title: "نشر AskDB كخدمة HTTP"
+description: "أنشئ @askdb/http-api كي تتمكّن Python والمتصفحات والوكلاء — أي شيء يتحدث HTTP — من طرح الأسئلة."
+---
+
+<p class="doc-eyebrow">دليل الخدمة</p>
+
+<p class="doc-lede"><code>@askdb/http-api</code> تغلّف خطّ معالجة <code>ask()</code> نفسه خلف خادم HTTP بسيط. استخدمها عندما تحتاج عملاء غير Node إلى طرح الأسئلة، أو عندما تريد خدمة AskDB واحدة مُشتركة عبر عدة مستهلكين.</p>
+
+## التثبيت
+
+```bash
+npm install @askdb/http-api @askdb/postgres ai @ai-sdk/openai
+```
+
+## تشغيل الخادم
+
+```ts
+// server.ts
+import { createAskDbHttpServer } from "@askdb/http-api";
+
+const server = createAskDbHttpServer({
+  port: 3000,
+  host: "127.0.0.1",
+  maxBodyBytes: 1024 * 1024, // 1 MiB default
+});
+
+server.listen();
+```
+
+يقرأ الخادم إعدادات مخطّطه ونموذجه من `askdb.config.ts` الخاص بك (فهو يقلع من ملف التهيئة نفسه الذي يستخدمه CLI وStudio). اضبط `host.schemaPath` ليشير إلى مُصنَّع المخطّط الخاص بك وهيّئ مزوّد الـ AI كالمعتاد — وفّر مفتاح المزوّد (`OPENAI_API_KEY` وغيره) في بيئتك بالطريقة نفسها التي تفعلها مع CLI.
+
+## نقاط النهاية
+
+يعرض الخادم نقطتَي نهاية:
+
+### `GET /health`
+
+```bash
+curl http://localhost:3000/health
+# {"ok":true}
+```
+
+### `POST /ask`
+
+الجسم:
+
+```json
+{
+  "question": "Which customers signed up last week?",
+  "mode": "schema_only",
+  "explain": false
+}
+```
+
+الاستجابة (عند النجاح):
+
+```json
+{
+  "ok": true,
+  "correlationId": "01H…",
+  "sql": "SELECT id, name, created_at FROM customers WHERE created_at >= …"
+}
+```
+
+الاستجابة هي SQL فقط — لا يشغّله الخادم. يأخذ عميلك SQL ويقرّر ما يفعله به.
+
+## الاستدعاء من curl
+
+```bash
+curl -X POST http://localhost:3000/ask \
+  -H "content-type: application/json" \
+  -d '{"question": "How many customers signed up last week?"}'
+```
+
+## الاستدعاء من Python
+
+```python
+import os
+import httpx
+
+resp = httpx.post(
+    f"{os.environ['SERVER_URL']}/ask",
+    json={"question": "How many customers signed up last week?"},
+    timeout=30,
+)
+resp.raise_for_status()
+body = resp.json()
+
+if body["ok"]:
+    sql = body["sql"]
+    correlation_id = body["correlationId"]
+    # Run the SQL against your read-only role here.
+else:
+    raise RuntimeError(body["error"]["code"])
+```
+
+## تشغيله خلف بوّابة
+
+`@askdb/http-api` بسيطة عن قصد — فلا توجد مصادقة مدمجة، ولا تحديد للمعدّل، ولا إنهاء لـ TLS. **لا تعرضها مباشرة على الإنترنت العام.** ضعها خلف بوّابة API الحالية لديك أو نقطة الدخول (ingress) أو الوكيل العكسي، وطبّق المصادقة نفسها التي تستخدمها لبقية خدماتك.
+
+شكل إنتاجي نموذجي:
+
+```
+client  ──►  your API gateway  ──►  @askdb/http-api  ──►  model + schema
+                  │                          │
+                  │                          ▼
+                  └────────────────►  read-only DB role  ◄─── (execution happens in your gateway service, not here)
+```
+
+لا يتصل الخادم بقاعدة بياناتك. فهو يولّد SQL ويعيده. التنفيذ هو مهمّة خدمة بوّابتك — فهناك يقيم سياق مصادقتك.
+
+## مخطّط مخصّص لكل طلب
+
+الوضع الافتراضي هو تحميل المخطّط من `host.schemaPath` مرّة واحدة عند الإقلاع. إذا كنت تحتاج مخطّطًا لكل طلب (على سبيل المثال، نشر متعدّد المنتجات حيث يرسل مستهلكون مختلفون مخطّطات مختلفة)، فوفّر الـ JSON المُجمَّع بصفته `schemaJson` في جسم الطلب:
+
+```json
+{
+  "question": "How many users?",
+  "schemaJson": "{\"version\":2,\"schemaId\":\"…\",\"tables\":[…]}"
+}
+```
+
+جمّع المُصنَّع بـ `askdb bundle` وأرسِل الـ JSON الناتج كقيمة.
+
+## مُعرِّفات الارتباط
+
+تتضمّن كل استجابة `correlationId`. يُصدِر الخادم أحداث سجلّ بنيوية موسومة بالمُعرِّف نفسه — كي تتمكّن من ربط طلبات HTTP بـ SQL المُولَّد وأي أخطاء في خطّ التسجيل الخاص بك.
+
+## اقرأ بعد ذلك
+
+<div class="home-path-grid">
+  <a href="/ar/guides/run-safely-in-prod/"><strong>التشغيل بأمان في الإنتاج</strong><span>قائمة جانب التنفيذ التي تحتاجها خدمة بوّابتك.</span></a>
+  <a href="/ar/reference/http-api/"><strong>مرجع واجهة HTTP API</strong><span>كل نقطة نهاية، وشكل طلب، ورمز خطأ.</span></a>
+  <a href="/ar/guides/embed-in-node/"><strong>التضمين في تطبيق Node</strong><span>عندما تريد تجاوز HTTP وربط المكتبة مباشرة.</span></a>
+</div>

@@ -1,0 +1,135 @@
+---
+title: "مرجع HTTP API"
+description: "نقاط النهاية، وأشكال الطلب والاستجابة، ورموز الأخطاء، وإعدادات @askdb/http-api."
+---
+
+<p class="doc-eyebrow">المرجع · HTTP API</p>
+
+<p class="doc-lede"><code>@askdb/http-api</code> هو غلاف HTTP رفيع حول نفس مسار المعالجة <code>ask()</code> الذي تستخدمه المكتبة. نقطتا نهاية، وJSON عبر HTTP، مصمَّمتان للعمل خلف بوابتك الخاصة.</p>
+
+## الخادم
+
+```ts
+import { createAskDbHttpServer } from "@askdb/http-api";
+
+const server = createAskDbHttpServer({
+  port: 3000,
+  host: "127.0.0.1",
+  maxBodyBytes: 1024 * 1024,
+});
+
+server.listen();
+```
+
+| Option | Default | الوصف |
+| --- | --- | --- |
+| `port` | `3000` | المنفذ الذي يُستمع عليه. |
+| `host` | `127.0.0.1` | عنوان الربط. اربط بـ `0.0.0.0` فقط خلف بوابة. |
+| `maxBodyBytes` | `1048576` (1 MiB) | حدّ حجم جسم الطلب. تُرجع الطلبات الأكبر `payload_too_large`. |
+
+يقرأ الخادم إعدادات المخطّط ومزوّد الذكاء الاصطناعي من متغيّرات البيئة عبر `@askdb/config` — راجع [الإعدادات](/ar/reference/config/) لمعرفة قواعد التحليل.
+
+## نقاط النهاية
+
+### `GET /health`
+
+فحص الحيوية.
+
+```bash
+curl http://localhost:3000/health
+```
+
+```json
+{ "ok": true }
+```
+
+### `POST /ask`
+
+توليد SQL من سؤال.
+
+**الطلب**
+
+```json
+{
+  "question": "How many customers signed up last week?",
+  "mode": "schema_only",
+  "explain": false,
+  "omitSensitiveFromPrompt": false,
+  "schemaJson": "{\"version\":2, \"schemaId\":\"...\", \"tables\":[...]}"
+}
+```
+
+| Field | Required | Default | الوصف |
+| --- | --- | --- | --- |
+| `question` | yes | — | السؤال بلغة طبيعية. |
+| `mode` | no | `schema_only` | أحد القيمتين `schema_only`، `bounded_results`. |
+| `explain` | no | `false` | إرجاع بيانات وصفية للضمانات الاستدلالية. |
+| `omitSensitiveFromPrompt` | no | env-driven | حذف الأعمدة الحساسة من المُحفّز. |
+| `schemaJson` | no | config-driven | عنصر مخطّط مضمّن. المفضّل: عيّن `host.schemaPath` في `askdb.config.ts` على جانب الخادم. |
+
+**استجابة النجاح (`200`)**
+
+```json
+{
+  "ok": true,
+  "correlationId": "01H…",
+  "sql": "SELECT count(*) FROM customers WHERE created_at >= …"
+}
+```
+
+**استجابة الخطأ (`4xx` / `5xx`)**
+
+```json
+{
+  "ok": false,
+  "correlationId": "01H…",
+  "error": {
+    "code": "sql_validation_error",
+    "message": "Generated SQL contains a write statement.",
+    "rule": "read_only"
+  }
+}
+```
+
+## رموز الأخطاء
+
+| Code | HTTP | متى |
+| --- | --- | --- |
+| `not_found` | `404` | مسار غير معروف. |
+| `bad_request` | `400` | JSON مشوّه أو حقول مطلوبة مفقودة. |
+| `payload_too_large` | `413` | تجاوز الجسم `maxBodyBytes`. |
+| `schema_parse_error` | `400` | تعذّر تحليل `schemaJson` المضمّن. |
+| `generation_not_configured` | `500` | لم يُعدّ أي مزوّد نموذج على جانب الخادم. |
+| `sql_validation_error` | `400` | فشل ناتج النموذج في المُتحقِّق (للقراءة فقط، عبارة واحدة، النطاق). |
+| `sql_generation_error` | `502` | فشل استدعاء النموذج (خطأ مزوّد، مهلة). |
+| `internal_error` | `500` | أي شيء آخر. |
+
+## معرّفات الارتباط (Correlation IDs)
+
+تتضمّن كل استجابة `correlationId`. يُصدر المعرّف نفسه في أحداث السجل المهيكلة للخادم، بحيث يمكنك ربط طلبات HTTP بـ SQL المُولَّد وأي أخطاء.
+
+لتمرير معرّف ارتباط مزوَّد من بوابتك، أرسل ترويسة `x-correlation-id` على الطلب — يستخدمها الخادم كما هي إن وُجدت، وإلا فإنه يولّد واحداً.
+
+```bash
+curl -X POST http://localhost:3000/ask \
+  -H "content-type: application/json" \
+  -H "x-correlation-id: req_abc123" \
+  -d '{"question":"How many users?"}'
+```
+
+## ما لا يفعله هذا الخادم
+
+- **لا مصادقة.** ضع بوابتك أمامه.
+- **لا إنهاء لـ TLS.** استخدم خادم الدخول (ingress) لديك.
+- **لا تحديد لمعدّل الطلبات.** الأمر نفسه.
+- **لا اتصال بقاعدة البيانات.** يُرجع SQL؛ والتنفيذ مسؤولية المُستدعي لديك.
+
+راجع [النشر كخدمة HTTP](/ar/guides/deploy-as-http-service/) للحصول على نمط النشر الإنتاجي.
+
+## اقرأ تالياً
+
+<div class="home-path-grid">
+  <a href="/ar/guides/deploy-as-http-service/"><strong>النشر كخدمة HTTP</strong><span>دليل النشر الكامل مع أمثلة curl وPython.</span></a>
+  <a href="/ar/guides/run-safely-in-prod/"><strong>التشغيل الآمن في الإنتاج</strong><span>ما الذي يجب أن تفرضه خدمة البوابة لديك.</span></a>
+  <a href="/ar/reference/config/"><strong>الإعدادات</strong><span>متغيّرات البيئة التي يقرأها الخادم عند بدء التشغيل.</span></a>
+</div>

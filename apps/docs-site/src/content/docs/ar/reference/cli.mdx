@@ -1,0 +1,154 @@
+---
+title: "مرجع CLI"
+description: "كل أمر وخيار في askdb — init, introspect, enrich, studio, bundle, ask."
+---
+
+<p class="doc-eyebrow">المرجع · CLI</p>
+
+<p class="doc-lede">يغطّي البرنامج الثنائي <code>askdb</code> سير العمل المحلي بالكامل: إنشاء هيكل المشروع، وفحص قاعدة البيانات، وتأليف عناصر المخطّط، وطرح الأسئلة. تستخدم جميع الأوامر نفس مسار المعالجة <code>@askdb/core</code> الذي تستخدمه المكتبة.</p>
+
+## التثبيت
+
+```bash
+npm install askdb
+npx askdb --help
+```
+
+للتثبيت العام:
+
+```bash
+npm install -g askdb
+askdb --help
+```
+
+## الأوامر
+
+### `askdb init`
+
+ينشئ هيكل <code>askdb.config.ts</code> (ويضيف <code>@askdb/config</code> + <code>dotenv</code> إلى مشروعك) حتى تتمكن بقية الـ CLI من تحليل الإعدادات.
+
+```bash
+npx askdb init
+```
+
+| Flag | الوصف |
+| --- | --- |
+| `--path <file>` | كتابة القالب إلى مسار مخصّص. |
+| `--force` | استبدال ملف `askdb.config.ts` موجود. |
+| `--skip-install` | كتابة الملف فقط دون تثبيت الحزم. |
+
+لا ينشئ `init` ملف `.env` — تعيش المفاتيح النموذجية في التعليقات داخل `askdb.config.ts`. وهو يتخطّى تحميل الإعدادات عمداً حتى لا يمنع إعداد معطّل عملية إنشاء الهيكل.
+
+### `askdb introspect`
+
+يقرأ قاعدة بياناتك (أو ملف مخطّط Prisma) ويكتب عنصر مخطّط AskDB إلى القرص.
+
+```bash
+askdb introspect \
+  --url "$DATABASE_URL" \
+  --out ./my-app.schema \
+  --schema-id my-app
+```
+
+| Flag | الوصف |
+| --- | --- |
+| `--url <connstr>` | سلسلة اتصال قاعدة بيانات حيّة. |
+| `--engine <id>` | تجاوز المحرّك: `postgres`, `mysql`, `sqlite`, `sqlserver`, `prisma`. |
+| `--prisma-schema <path>` | ملف `.prisma` أو دليل. يُستخدم مع `--engine prisma`. |
+| `--out <dir>` | دليل الإخراج لعنصر المخطّط. يعود افتراضياً إلى `introspection.outputDir` في `askdb.config.ts`. |
+| `--schema-id <id>` | معرّف مضمّن داخل `schema.json`. |
+| `--print` | طباعة نتيجة الفحص دون الكتابة. |
+| `--diff <existing>` | مقارنة الفروق مع عنصر مخطّط موجود. |
+
+### `askdb enrich`
+
+يطلق واجهة TUI لتأليف الأوصاف والأسماء البديلة والمفاهيم وعلامات الحساسية لكل جدول.
+
+```bash
+askdb enrich --schema ./my-app.schema
+```
+
+| Flag | الوصف |
+| --- | --- |
+| `--schema <path>` | مسار عنصر المخطّط. |
+
+يتطلّب تثبيت `@askdb/tui` (تستورده الـ CLI بشكل كسول).
+
+### `askdb studio`
+
+يطلق Studio — واجهة التأليف القائمة على المتصفح — موجّهاً نحو عنصر المخطّط الخاص بك.
+
+```bash
+askdb studio --schema ./my-app.schema
+```
+
+| Flag | الوصف |
+| --- | --- |
+| `--schema <path>` | مسار عنصر المخطّط. |
+| `--port <n>` | تجاوز منفذ الاستماع (الافتراضي `5556`؛ أو عيّن `studio.listen.port` في الإعدادات). |
+| `--host <host>` | تجاوز مضيف الربط (الافتراضي `127.0.0.1`؛ أو عيّن `studio.listen.host` في الإعدادات). |
+
+يتطلّب تثبيت `@askdb/studio` (يُستورد بشكل كسول عند أول استخدام).
+
+### `askdb bundle`
+
+يكتب عنصر المخطّط بأكمله (الطبقة المادية + الإثراء + سياسة المستأجر) كملف JSON واحد للتوزيع.
+
+```bash
+askdb bundle ./my-app.schema --out ./my-app.schema.bundle.json
+```
+
+### `askdb ask`
+
+يولّد SQL من سؤال بلغة طبيعية مقابل عنصر مخطّط محمّل.
+
+```bash
+askdb ask \
+  --schema ./my-app.schema \
+  --question "Top 5 customers by lifetime value"
+```
+
+| Flag | الوصف |
+| --- | --- |
+| `-s, --schema <path>` | مسار عنصر المخطّط. اختياري — يعود افتراضياً إلى `introspection.outputDir` المُعدّ، أو `./askdb/`. |
+| `-q, --question <text>` | السؤال بلغة طبيعية (مطلوب). |
+| `--mode <mode>` | وضع التشغيل: `schema_only` (الافتراضي) أو `bounded_results`. |
+| `--explain` | بعد SQL، يطبع كتلة JSON تصف الضمانات الاستدلالية المستوفاة. |
+| `--omit-sensitive-from-prompt` | استبعاد الأعمدة الحساسة من المُحفّز بالكامل. |
+| `--log-level <level>` | مستوى السجل (الافتراضي يُقرأ من `logging.level` في `askdb.config.ts`). |
+| `-v`, `--verbose` | إظهار أحداث السجل المهيكلة. |
+
+لا يوجد خيار للهجة: تُحلَّل اللهجة من `dialect` في `askdb.config.ts`، وتعود افتراضياً إلى المزوّد المسجَّل في عنصر المخطّط وقت الفحص، ثم إلى `postgres`.
+
+يُرجع `askdb ask` SQL المُتحقَّق منه على stdout. التنفيذ ليس جزءاً من الـ CLI.
+
+## `askdb-rag setup-store`
+
+يوفّر مخطّط pgvector لـ `@askdb/rag` بشكل خامل (idempotent). آمن للتشغيل في خطوات CI / النشر.
+
+```bash
+askdb-rag setup-store --pg-url "$DATABASE_URL" --dimensions 1536
+```
+
+| Flag | الوصف |
+| --- | --- |
+| `--pg-url <connstr>` | سلسلة اتصال Postgres (مطلوب). |
+| `--pg-table <name>` | اسم جدول مخصّص. الافتراضي `askdb_rag_chunks`. |
+| `--dimensions <n>` | أبعاد التضمين. الافتراضي `1536`. |
+
+## رموز الخروج
+
+| Code | المعنى |
+| --- | --- |
+| `0` | نجاح. |
+| `1` | خطأ عام (إعدادات، إدخال/إخراج، توليد، تحقّق). |
+| `2` | وسائط CLI غير صالحة. |
+
+تُطبع الأخطاء إلى stderr بصيغة قابلة للقراءة البشرية؛ وتتبع أحداث السجل المهيكلة (مع `-v`) العقد الموصوف في [تسجيل `@askdb/core`](/ar/reference/packages/).
+
+## اقرأ تالياً
+
+<div class="home-path-grid">
+  <a href="/ar/reference/config/"><strong>الإعدادات</strong><span>defineConfig، ومتغيّرات البيئة، وكيف تحلّ الـ CLI الإعدادات.</span></a>
+  <a href="/ar/reference/packages/"><strong>مرجع الحزم</strong><span>ما الذي تضيفه كل حزمة @askdb/* إلى الـ CLI.</span></a>
+</div>

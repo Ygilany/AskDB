@@ -1,0 +1,80 @@
+---
+title: "Prisma"
+description: "استخدم @askdb/prisma لقراءة مخطّطك مباشرةً من ملف .prisma — دون الحاجة إلى قاعدة بيانات حيّة."
+---
+
+<p class="doc-eyebrow">التكامل · Prisma</p>
+
+<p class="doc-lede">إذا كنت تحتفظ بالفعل بملف مخطّط Prisma، فإن <code>@askdb/prisma</code> يقرؤه مباشرةً وينتج أداة مخطّط AskDB. لا اتصال بقاعدة بيانات حيّة أثناء الاستبطان.</p>
+
+## متى تستخدمه
+
+- لديك ملف `schema.prisma` وتريد تخطّي خطوة الاستبطان من قاعدة البيانات الحيّة.
+- تعمل في CI، أو على حاسوب محمول دون وصول إلى قاعدة البيانات، أو في بيئة معزولة عن الشبكة.
+- تقرنه بـ `@askdb/postgres` (أو محرّك آخر) لتحديد لهجة SQL الفعلية وقت التوليد.
+
+## التثبيت
+
+```bash
+npm install @askdb/prisma @askdb/introspect
+# Plus the dialect you want at runtime
+npm install @askdb/core @askdb/postgres @ai-sdk/openai
+```
+
+لا يحزم `@askdb/prisma` لهجة SQL — اقرنه بأي حزمة محرّك تطابق قاعدة بياناتك في وقت التشغيل.
+
+## سير عمل CLI
+
+```bash
+# Introspect a Prisma schema file (or directory of .prisma files)
+npx askdb introspect \
+  --engine prisma \
+  --prisma-schema ./prisma/schema.prisma \
+  --out my-app.schema \
+  --schema-id my-app
+
+# Print the introspection result without writing
+npx askdb introspect --engine prisma --prisma-schema ./prisma --print
+
+# Diff against an existing schema artifact
+npx askdb introspect --engine prisma --prisma-schema ./prisma --diff my-app.schema
+```
+
+لجعل `--prisma-schema` اختياريًا في التشغيلات المتكرّرة، عيّن `introspection.providerConfig.prisma.schemaPath` في `askdb.config.ts` — أو اعتمد على الاكتشاف التلقائي: مع `provider: "prisma"` ودون مسار مضبوط، يعثر AskDB على `prisma/schema.prisma` (أو `schema.prisma`) في جذر مشروعك تلقائيًا.
+
+## واجهة برمجية
+
+```ts
+import { introspect } from "@askdb/introspect";
+import { createPrismaConnector } from "@askdb/prisma";
+
+await introspect(
+  { schemaPath: "./prisma", schemaId: "my-app" },
+  { outDir: "my-app.schema", schemaId: "my-app" },
+  { connector: createPrismaConnector() },
+);
+```
+
+## المزوّدون المدعومون
+
+يدعم `@askdb/prisma` أي مزوّد علائقي في Prisma — وقت التوليد، اقرنه بمُحوِّل محرّك AskDB المطابق:
+
+| مزوّد Prisma | مُحوِّل المحرّك في وقت التشغيل |
+| --- | --- |
+| `postgresql` / `cockroachdb` | `@askdb/postgres` |
+| `mysql` | `@askdb/mysql` |
+| `sqlite` | `@askdb/sqlite` |
+| `sqlserver` | `@askdb/sqlserver` |
+
+MongoDB غير مدعومة — يستهدف AskDB المحرّكات العلائقية.
+
+## ما لا يفعله
+
+`@askdb/prisma` موصِّل قائم على الملفات فقط. لا يتّصل بقاعدة بيانات، ولا ينفّذ SQL المُولَّد، ولا يتضمّن لهجة SQL. لتوليد SQL، قدّم لهجة من إحدى حزم المحرّكات أعلاه.
+
+## اقرأ بعد ذلك
+
+<div class="home-path-grid">
+  <a href="/ar/quickstart/"><strong>البدء السريع</strong><span>التدفّق الكامل من الاستبطان → الإثراء → السؤال.</span></a>
+  <a href="/ar/guides/switch-engines/"><strong>تبديل المحرّكات</strong><span>كيفية اقتران @askdb/prisma بكل محرّك في وقت التشغيل.</span></a>
+</div>

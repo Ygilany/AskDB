@@ -1,0 +1,112 @@
+---
+title: "دمج AskDB في تطبيق Node"
+description: "أضف استعلامات SQL باللغة الطبيعية إلى خدمة TypeScript في عشرين سطرًا: حمّل مخطّطًا، استدعِ ()ask، ثم نفّذ SQL عبر تجمّع الاتصالات الخاص بك."
+---
+
+import { Tabs, TabItem, Aside } from "@astrojs/starlight/components";
+
+<p class="doc-eyebrow">دليل المُدمِج</p>
+
+<p class="doc-lede">أضف <code>@askdb/core</code> إلى خدمة TypeScript. يحمّل AskDB مُصنَّع المخطّط الخاص بك، ويولّد SQL مُتحقَّقًا منه انطلاقًا من سؤال، ثم يعيده إليك. تنفّذه خدمتك عبر تجمّع الاتصالات الخاص بها مقابل دور للقراءة فقط.</p>
+
+## التثبيت
+
+<Tabs syncKey="pkg">
+  <TabItem label="npm">
+
+```bash
+npm install @askdb/core @ai-sdk/openai pg
+```
+
+  </TabItem>
+  <TabItem label="pnpm">
+
+```bash
+pnpm add @askdb/core @ai-sdk/openai pg
+```
+
+  </TabItem>
+  <TabItem label="yarn">
+
+```bash
+yarn add @askdb/core @ai-sdk/openai pg
+```
+
+  </TabItem>
+</Tabs>
+
+| الحزمة | السبب |
+| --- | --- |
+| `@askdb/core` | خط المعالجة — `loadSchema` و`ask` والتحقق. |
+| — | لهجات المحرّكات الأربعة جميعها مدمجة في `@askdb/core`؛ ثبّت `@askdb/postgres` فقط إذا كانت هذه الخدمة تشغّل أيضًا `askdb introspect` برمجيًا. |
+| `@ai-sdk/openai` | مزوّد الـ AI SDK من OpenAI — أحضِر مزوّد النموذج الخاص بك. |
+| `pg` | مشغّل Postgres. لا يفتح AskDB الاتصال؛ تطبيقك هو من يفعل ذلك. |
+
+## حمّل المخطّط مرة واحدة
+
+يُقرأ مُصنَّع المخطّط من القرص. حمّله عند بدء التشغيل واحتفظ به في الذاكرة — لا حاجة لإعادة تحميله مع كل طلب.
+
+```ts
+// schema.ts
+import { loadSchema } from "@askdb/core";
+
+// Point at the artifact directory that `askdb introspect` wrote —
+// your `introspection.outputDir` (e.g. ./my-app.schema or the default ./askdb).
+// loadSchema also accepts a bundled .bundle.json file.
+export const schema = await loadSchema("./my-app.schema");
+```
+
+إنّ `./my-app.schema` هو **مجلّد**، وليس ملفًا — فصيغة `<name>.schema/` هي عُرف AskDB للمُصنَّع المُستبطَن والمُثرَى. تكتشف `loadSchema` تلقائيًا ما إذا كان المُدخَل مجلّدًا أو JSON مُجمَّعًا أو ملف `schema.json` مجرّدًا.
+
+## اربط `ask()` بمُعالِج
+
+```ts
+// ask-handler.ts
+import { ask } from "@askdb/core";
+import { openai } from "@ai-sdk/openai";
+import { Pool } from "pg";
+import { schema } from "./schema.js";
+
+const model = openai("gpt-4o-mini");
+
+const pool = new Pool({
+  connectionString: process.env.DATABASE_URL,
+  // Run under a read-only role for defense in depth.
+  statement_timeout: 5000,
+  max: 10,
+});
+
+export async function askQuestion(question: string) {
+  const { sql } = await ask({
+    question,
+    schema,
+    dialect: "postgres",
+    model,
+  });
+
+  // Audit hook — log every question and generated SQL.
+  console.log({ question, sql });
+
+  const { rows } = await pool.query(sql);
+  return { sql, rows };
+}
+```
+
+<Aside type="note">
+يستخدم هذا المثال `pg` لتنفيذ SQL، لكن اختيار المشغّل عائد إليك — لا يفتح AskDB اتصالًا أبدًا. إذا كنت تستخدم بالفعل ORM أو أداة بناء استعلامات (Prisma أو Drizzle أو Sequelize أو Knex، …)، فتجاوز `pg` كليًا ومرّر سلسلة `sql` المُعادة إلى عميلك الحالي، مثل `prisma.$queryRawUnsafe(sql)` أو `db.execute(sql)`.
+</Aside>
+
+هذا هو خط المعالجة بأكمله. يعيد AskDB استعلام SQL مُتحقَّقًا منه — يسجّله مُعالِجك، ثم ينفّذه، ويعيد النتيجة.
+
+## تبديل المحرّكات
+
+نفس استدعاء `ask()`، مع سلسلة لهجة مختلفة. غيّر `dialect: "postgres"` إلى `"mysql"` أو `"sqlite"` أو `"sqlserver"`. راجع [تبديل المحرّكات](/ar/guides/switch-engines/) للاطلاع على مصفوفة الترحيل الكاملة.
+
+## اقرأ بعد ذلك
+
+<div class="home-path-grid">
+  <a href="/ar/guides/run-safely-in-prod/"><strong>التشغيل بأمان في الإنتاج</strong><span>قائمة المشغّل: الأدوار، والمهل الزمنية، والتدقيق، والموافقة.</span></a>
+  <a href="/ar/guides/deploy-as-http-service/"><strong>النشر كخدمة HTTP</strong><span>استخدم @askdb/http-api بدلًا من بناء واحدة بنفسك.</span></a>
+  <a href="/ar/guides/author-your-schema/"><strong>تأليف المخطّط الخاص بك</strong><span>اجعل التوليد أفضل بإثراء المُصنَّع.</span></a>
+  <a href="/ar/reference/packages/"><strong>مرجع الحزم</strong><span>كامل واجهة الـ API لكل حزمة من حزم @askdb/*.</span></a>
+</div>

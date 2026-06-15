@@ -1,0 +1,269 @@
+---
+title: "أحضر نموذجك الخاص"
+description: "استخدم OpenAI أو Anthropic أو Azure OpenAI أو Google — أي مزوّد يتحدّث واجهة Vercel AI SDK. مفتاحك، وفوترتك."
+---
+
+import { Tabs, TabItem } from "@astrojs/starlight/components";
+
+<p class="doc-eyebrow">مزوّدو النماذج</p>
+
+<p class="doc-lede">لا يستضيف AskDB الاستدلال. تربط نموذجًا، فيستدعيه AskDB، وتعود استجابة النموذج عبر مزوّدك — مفوترةً على حسابك.</p>
+
+## طريقتان لربط نموذج
+
+| | ماذا تفعل | الأفضل لـ |
+| --- | --- | --- |
+| **في إعدادك** | عيّن `ai.provider` في `askdb.config.ts`. تحلّ CLI وStudio وواجهة HTTP البرمجية النموذج نيابةً عنك. لا كود للنموذج. | سير عمل CLI، وStudio، وخدمة HTTP المجمّعة |
+| **في كودك** | مرّر أي `LanguageModel` من Vercel AI SDK إلى `ask()`. تحكّم كامل. | تضمين `@askdb/core` في خدمتك الخاصة |
+
+نفس المزوّدين، ونفس المفاتيح — اختر لكل سطح. يمكنك استخدام كليهما في مشروع واحد (على سبيل المثال: تستخدم Studio إعدادك، بينما تبني خدمة التضمين لديك النموذج مباشرةً).
+
+## في إعدادك (CLI، Studio، واجهة HTTP البرمجية)
+
+عيّن `ai.provider` في `askdb.config.ts` وقدّم متغيّر البيئة المطابق. تستدعي CLI وStudio وخدمة HTTP الدالة `createLanguageModelFromEnv` داخليًا.
+
+<Tabs syncKey="ai-provider">
+  <TabItem label="OpenAI">
+
+```ts
+// askdb.config.ts
+export default {
+  ai: {
+    provider: "openai",
+    providerConfig: {
+      openai: {
+        apiKey: env("OPENAI_API_KEY"),
+      },
+    },
+  },
+  // ...
+};
+```
+
+النموذج الافتراضي: `gpt-4o-mini`. لاستخدام نموذج مختلف، عيّن `model` في `providerConfig.openai` (يقرؤه الإعداد المُهيّأ من `OPENAI_MODEL`).
+
+  </TabItem>
+  <TabItem label="Anthropic">
+
+```ts
+// askdb.config.ts
+export default {
+  ai: {
+    provider: "anthropic",
+    providerConfig: {
+      anthropic: {
+        apiKey: env("ANTHROPIC_API_KEY"),
+      },
+    },
+  },
+  // ...
+};
+```
+
+النموذج الافتراضي: `claude-sonnet-4-6`. لاستخدام نموذج مختلف، عيّن `model` في `providerConfig.anthropic` (اربطه بـ `ANTHROPIC_MODEL` في إعدادك).
+
+  </TabItem>
+  <TabItem label="Google">
+
+```ts
+// askdb.config.ts
+export default {
+  ai: {
+    provider: "google",
+    providerConfig: {
+      google: {
+        apiKey: env("GOOGLE_GENERATIVE_AI_API_KEY"),
+      },
+    },
+  },
+  // ...
+};
+```
+
+  </TabItem>
+  <TabItem label="Azure OpenAI">
+
+```ts
+// askdb.config.ts
+export default {
+  ai: {
+    provider: "azure",
+    providerConfig: {
+      azure: {
+        apiKey: env("AZURE_API_KEY"),
+        resourceName: env("AZURE_RESOURCE_NAME"),
+      },
+    },
+  },
+  // ...
+};
+```
+
+عيّن `model` في `providerConfig.azure` إلى اسم النشر الخاص بك (يقرؤه الإعداد المُهيّأ من `AZURE_OPENAI_DEPLOYMENT`).
+
+  </TabItem>
+</Tabs>
+
+راجع [مرجع الإعدادات](/ar/reference/config/) للجدول الكامل لمتغيّرات البيئة ومنفذ المزوّد المخصّص.
+
+## في كودك (التضمين)
+
+عندما تضمّن `@askdb/core` مباشرةً، مرّر أي `LanguageModel` من Vercel AI SDK إلى `ask()`. يستدعي AskDB النموذج بالمُوجِّه المُجمَّع ويحلّل SQL الذي يعيده. لا وكيل. لا وسيط.
+
+```ts
+import { ask } from "@askdb/core";
+
+const { sql } = await ask({
+  question,
+  schema,
+  dialect: "postgres",
+  model, // any LanguageModel from the Vercel AI SDK
+});
+```
+
+ثبّت حزمة المزوّد وابنِ النموذج:
+
+<Tabs syncKey="ai-provider">
+  <TabItem label="OpenAI">
+
+```bash
+npm install ai @ai-sdk/openai
+```
+
+```ts
+import { openai } from "@ai-sdk/openai";
+
+// Reads OPENAI_API_KEY from the environment
+const model = openai("gpt-4o-mini");
+```
+
+  </TabItem>
+  <TabItem label="Anthropic">
+
+```bash
+npm install ai @ai-sdk/anthropic
+```
+
+```ts
+import { anthropic } from "@ai-sdk/anthropic";
+
+const model = anthropic("claude-sonnet-4-6");
+```
+
+  </TabItem>
+  <TabItem label="Google">
+
+```bash
+npm install ai @ai-sdk/google
+```
+
+```ts
+import { google } from "@ai-sdk/google";
+
+// Reads GOOGLE_GENERATIVE_AI_API_KEY from the environment
+const model = google("gemini-2.0-flash");
+```
+
+  </TabItem>
+  <TabItem label="Azure OpenAI">
+
+```bash
+npm install ai @ai-sdk/azure
+```
+
+```ts
+import { createAzure } from "@ai-sdk/azure";
+
+const azure = createAzure({
+  resourceName: process.env.AZURE_RESOURCE_NAME,
+  apiKey: process.env.AZURE_API_KEY,
+});
+
+const model = azure("your-deployment-name");
+```
+
+  </TabItem>
+  <TabItem label="OpenAI-compatible">
+
+للمزوّدين المُستضافين ذاتيًا أو البدائل التي تكشف شكل إكمالات الدردشة الخاص بـ OpenAI (vLLM، خادم llama.cpp، OpenRouter، Together، LM Studio، Ollama، …):
+
+```bash
+npm install ai @ai-sdk/openai-compatible
+```
+
+```ts
+import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
+
+const local = createOpenAICompatible({
+  name: "local",
+  baseURL: "http://localhost:11434/v1",
+  apiKey: "ignored-by-local-server",
+});
+
+const model = local("llama3.1");
+```
+
+  </TabItem>
+</Tabs>
+
+## إعداد واحد يقود كليهما
+
+إذا كنت تضمّن `@askdb/core` لكنك تريد إعادة استخدام نفس `askdb.config.ts` بدلًا من ترميز مزوّد مباشرةً، فاستخدم سجلّ الذكاء الاصطناعي. هذه هي بالضبط كيفية حلّ CLI وواجهة HTTP البرمجية المجمّعة للنماذج داخليًا.
+
+```bash
+npm install @askdb/config @askdb/ai @askdb/ai-openai @askdb/ai-anthropic
+```
+
+```ts
+import { bootstrapAskDbEnv, getAskDbRuntimeConfig } from "@askdb/config";
+import { createAiRegistry } from "@askdb/ai";
+import { openaiProvider } from "@askdb/ai-openai";
+import { anthropicProvider } from "@askdb/ai-anthropic";
+
+bootstrapAskDbEnv({ cwd: process.cwd() });
+const rt = getAskDbRuntimeConfig();
+
+const ai = createAiRegistry([openaiProvider, anthropicProvider]);
+const model = await ai.createLanguageModelFromEnv(rt.ai.aiEnv);
+```
+
+تعلن المُحوِّلات `ai` و`@askdb/ai` كاعتماديات قرينة — أضف `ai` إلى `package.json` الخاص بك عندما تريد تثبيت إصدارها.
+
+## إدارة المفاتيح
+
+يقيم مفتاح API الخاص بنموذجك في بيئتك، لا في أداة المخطّط ولا في AskDB. تحمّل CLI ملف `.env` للعمل المحلي؛ وفي الإنتاج، قدّم المفتاح بنفس الطريقة التي تقدّم بها عنوان URL لقاعدة البيانات.
+
+لا يملك AskDB واجهة برمجية خاصة به للمصادقة — إنه مكتبة. الاعتمادات الوحيدة التي يمسّها هي تلك التي تمرّرها إلى مزوّد نموذجك عبر AI SDK.
+
+## تبديل النماذج
+
+يمكن تبديل النماذج دون تغيير أي كود آخر في AskDB. نمط شائع: نموذج أرخص للتحليلات منخفضة المخاطر، ونموذج أقوى للاستعلامات المعقّدة متعدّدة الربط.
+
+```ts
+import { openai } from "@ai-sdk/openai";
+
+const cheapModel = openai("gpt-4o-mini");
+const strongModel = openai("gpt-4o");
+
+const model = question.length > 200 ? strongModel : cheapModel;
+
+const { sql } = await ask({ question, schema, dialect: "postgres", model });
+```
+
+## التكلفة
+
+يفوترك مزوّد نموذجك عن كل استدعاء `ask()`. تتناسب التكلفة مع:
+
+- حجم المخطّط (الأدوات الأكبر تعني المزيد من الرموز في المُوجِّه) — استخدم [RAG للمخطّطات الكبيرة](/ar/guides/rag-for-large-schemas/) لإرسال الشريحة ذات الصلة فقط. يتولّى AskDB التجزئة والتضمين والاسترجاع؛ تضبط المخزن وهو يتكفّل بالباقي.
+- طول السؤال.
+- فئة النموذج.
+
+AskDB نفسه مرخّص بموجب Apache 2.0 ومجاني.
+
+## اقرأ بعد ذلك
+
+<div class="home-path-grid">
+  <a href="/ar/guides/embed-in-node/"><strong>التضمين في تطبيق Node</strong><span>الشرح الكامل بـ TypeScript بما في ذلك ربط النموذج.</span></a>
+  <a href="/ar/guides/rag-for-large-schemas/"><strong>RAG للمخطّطات الكبيرة</strong><span>قلّل فاتورة الرموز بإرسال الشريحة ذات الصلة فقط من المخطّط لكل سؤال.</span></a>
+  <a href="/ar/concepts/privacy-model/"><strong>نموذج الخصوصية</strong><span>ما يراه النموذج وما لا يراه.</span></a>
+</div>
