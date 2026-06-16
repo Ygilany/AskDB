@@ -68,6 +68,7 @@ export default defineConfig({
       favicon: "/favicon-light.png",
       customCss: ["./src/styles/custom.css"],
       components: {
+        Header: "./src/components/overrides/Header.astro",
         Hero: "./src/components/overrides/Hero.astro",
         ThemeSelect: "./src/components/ThemeSelect.astro",
         Footer: "./src/components/overrides/Footer.astro",
