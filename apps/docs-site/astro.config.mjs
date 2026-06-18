@@ -4,6 +4,7 @@ import starlight from "@astrojs/starlight";
 
 const base = process.env.ASTRO_BASE ?? "/";
 const normalizedBase = base === "/" ? "" : base.replace(/\/$/, "");
+const site = process.env.ASTRO_SITE ?? "https://askdb.tools";
 
 /**
  * Remark plugin that rewrites root-absolute internal links (e.g. `/quickstart/`)
@@ -42,7 +43,7 @@ const starlightIcon = fileURLToPath(
 );
 
 export default defineConfig({
-  site: `https://ygilany.github.io${normalizedBase}`,
+  site: `${site}${normalizedBase}`,
   base,
   markdown: {
     remarkPlugins: [remarkRebaseLinks],

@@ -9,8 +9,8 @@
     "preview": "astro preview",
     "dev": "astro dev --host 127.0.0.1 --port 4310",
     "lint": "astro check",
-    "test": "ASTRO_BASE=/AskDB pnpm run build && pnpm run test:links",
-    "test:links": "node ./scripts/check-base-links.mjs /AskDB"
+    "test": "ASTRO_BASE=/ pnpm run build && pnpm run test:links",
+    "test:links": "node ./scripts/check-base-links.mjs /"
   },
   "engines": {
     "node": ">=20"
