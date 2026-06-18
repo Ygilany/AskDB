@@ -23,7 +23,8 @@
     "@askdb/ai-google": "0.1.0-beta.0",
     "@askdb/ai-openai": "0.1.0-beta.0",
     "@askdb/connectors": "0.1.0-beta.0",
-    "@askdb/ai-anthropic": "0.1.0-beta.0"
+    "@askdb/ai-anthropic": "0.1.0-beta.0",
+    "@askdb/client": "0.1.0-beta.0"
   },
   "changesets": [
     "2a7d74fa-b695-47f4-80c6-99395b027b2f",
@@ -38,6 +39,7 @@
     "apply-editorial-changes-docs",
     "architecture-docs-refresh",
     "askdb-ask-default-schema",
+    "askdb-client-facade",
     "askdb-config-bootstrap",
     "askdb-studio",
     "config-branches-new-engines",
@@ -49,6 +51,7 @@
     "docs-onboarding-plans",
     "docs-site-ai-refresh",
     "docs-specs-feature-consolidation",
+    "document-askdb-client",
     "embed-in-node-cleanup",
     "enrich-shared-workspace",
     "enrich-studio-zero-args-config",
@@ -60,6 +63,7 @@
     "fix-stale-askdb-ai-api-names",
     "fix-studio-database-url-runtime-config",
     "flat-carpets-wave",
+    "harden-client-errors",
     "hide-internal-env-names-docs",
     "homepage-workflow-embed-tabs",
     "http-api-cli-flags",
@@ -73,6 +77,7 @@
     "local-dependency-checks",
     "long-items-count",
     "mighty-peas-doubt",
+    "migrate-hosts-to-client",
     "mysql-sqlite-sqlserver-connectors",
     "optimize-ci-workflow",
     "pgvector-auto-schema-setup",

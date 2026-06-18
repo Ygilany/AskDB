@@ -1,5 +1,14 @@
 # askdb
 
+## 1.0.0-beta.29
+
+### Patch Changes
+
+- 354c833: Resolve schema, model, and dialect via the new `@askdb/client` facade instead of duplicating the logic in each host. No behavior change: same dialect precedence, mock-SQL path, and error responses.
+- Updated dependencies [354c833]
+- Updated dependencies [354c833]
+  - @askdb/client@0.1.0-beta.1
+
 ## 1.0.0-beta.27
 
 ### Minor Changes
