@@ -46,28 +46,6 @@ import { Tabs, TabItem } from "@astrojs/starlight/components";
 <p class="home-terminal-intro">A few lines of TypeScript: load a schema, ask a question, run the SQL through your own connection pool.</p>
 
 <Tabs syncKey="wiring">
-  <TabItem label="Direct (Vercel AI SDK)">
-
-```ts
-import { ask, loadSchema } from "@askdb/core";
-import { openai } from "@ai-sdk/openai";
-import { Pool } from "pg";
-
-const schema = await loadSchema("./my-app.schema");
-const pool = new Pool({ connectionString: process.env.DATABASE_URL });
-
-const { sql } = await ask({
-  question: "Which customers signed up last week?",
-  schema,
-  dialect: "postgres",
-  model: openai("gpt-4o-mini"),
-});
-
-// Log or approve `sql` here, then run it through your own pool.
-const result = await pool.query(sql);
-```
-
-  </TabItem>
   <TabItem label="Config-driven (@askdb/ai)">
 
 ```ts
@@ -87,6 +65,34 @@ const askdb = createAskDb({
 const pool = new Pool({ connectionString: process.env.DATABASE_URL });
 
 const { sql } = await askdb.ask("Which customers signed up last week?");
+
+// Log or approve `sql` here, then run it through your own pool.
+const result = await pool.query(sql);
+```
+
+  </TabItem>
+  <TabItem label="Direct (Vercel AI SDK)">
+
+```ts
+import { createAskDb } from "@askdb/client";
+import { bootstrapAskDbEnv, getAskDbRuntimeConfig } from "@askdb/config";
+import { createAiRegistry } from "@askdb/ai";
+import { openaiProvider } from "@askdb/ai-openai";
+import { openai } from "@ai-sdk/openai";
+import { Pool } from "pg";
+
+// Schema and dialect come from config; supply your own model per-call.
+bootstrapAskDbEnv({ cwd: process.cwd() });
+const askdb = createAskDb({
+  config: getAskDbRuntimeConfig(),
+  registry: createAiRegistry([openaiProvider]),
+  schema: { path: "./my-app.schema" }, // or set host.schemaPath in config and omit
+});
+const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+
+const { sql } = await askdb.ask("Which customers signed up last week?", {
+  model: openai("gpt-4o-mini"), // any Vercel AI SDK LanguageModel — your key, your billing
+});
 
 // Log or approve `sql` here, then run it through your own pool.
 const result = await pool.query(sql);
