@@ -4,6 +4,7 @@ description: "Add natural-language SQL to a TypeScript service in twenty lines: 
 ---
 
 import { Tabs, TabItem, Aside } from "@astrojs/starlight/components";
+import ExampleLink from "../../../components/ExampleLink.astro";
 
 <p class="doc-eyebrow">Integrator guide</p>
 
@@ -226,7 +227,7 @@ export default defineConfig({
 } satisfies AskDbConfig);
 ```
 
-The full working package (with `package.json`, `tsconfig.json`, and `.env` instructions) lives in [`examples/express-server`](https://github.com/askdb/askdb/tree/main/examples/express-server) in the repo.
+The full working package (with `package.json`, `tsconfig.json`, and `.env` instructions) lives in <ExampleLink path="examples/express-server" /> in the repo.
 
 ## Read next
 

@@ -5,6 +5,7 @@ description: "Scaffold config, introspect a database, enrich the schema, and ask
 
 import { Aside, Tabs, TabItem } from "@astrojs/starlight/components";
 import quickstartLoopUrl from "../../assets/diagrams/askdb-quickstart-loop.svg?url";
+import ExampleLink from "../../components/ExampleLink.astro";
 
 <p class="doc-eyebrow">From zero to first query</p>
 
@@ -194,3 +195,5 @@ Now that the CLI works, pick the path that matches what you're building:
   <a href="/guides/author-your-schema/"><strong>Author your schema</strong><span>Get the most out of Studio: descriptions, concepts, sensitive markers, tenant policy.</span></a>
   <a href="/concepts/how-askdb-works/"><strong>How AskDB works</strong><span>The end-to-end flow, with all the moving parts.</span></a>
 </div>
+
+Want to skip the steps above and explore a runnable script? The <ExampleLink path="examples/ask-question">examples/ask-question</ExampleLink> package in the repo shows the same `createAskDb` and direct `ask()` patterns against a live schema.
