@@ -19,8 +19,13 @@ trim before posting.
 
 **One-liner**
 > AskDB is an open-source developer toolkit that turns natural-language questions
-> into validated, schema-grounded SQL — and hands the SQL back to *your* app to
+> into validated, schema-grounded SQL, then hands the SQL back to *your* app to
 > run. BYO model, BYO database, BYO vector store.
+
+Use this same top-line message on the README, website hero, npm package
+description where space allows, and launch posts. The shorter wording is sharper
+than "natural-language analytics" because it names the concrete artifact
+(`SQL`) and the trust boundary (`your app runs it`).
 
 **The hook (why it's different):** Most "text-to-SQL" tools want to connect to
 your database and run queries for you. AskDB deliberately does **not** execute.
@@ -80,6 +85,129 @@ seconds of a stranger's attention.
       framed honestly, not as attack copy.
 - [ ] A live example / playground or a recorded Studio walkthrough.
 - [ ] Decide beta vs. tagging a clean `v0.x`/release on GitHub with notes.
+
+### Demo video plan
+
+Make one polished **60-90s narrated screencast** first, then cut a **25-35s
+silent captioned MP4/GIF** from the same recording for X, README embeds, and
+Reddit. Do not make the primary asset graphics-only: for developer audiences,
+credibility comes from seeing the real CLI / Studio flow work.
+
+**Recommended format**
+- Primary: narrated screencast with burned-in captions so it also works muted.
+- Social cut: silent, captioned, fast-moving, focused on the payoff and SQL
+  output.
+- First public clip: use the **CLI** for the cold open because it is the fastest
+  to understand visually. Use Node.js and HTTP/curl examples as follow-up clips
+  or docs snippets for deeper integrator proof.
+- Visual rule: every screen should reinforce one of the three pillars:
+  schema-grounded, execution control, or BYO/embeddable.
+
+**Structure: start with the end, then rewind**
+1. **Cold open / payoff (8-12s):** show `askdb ask` returning SQL for a plain
+   English question. Add a clear on-screen callout: "SQL returned for review.
+   Nothing executed by AskDB."
+2. **Rewind / setup (40-55s):** show how that result was made trustworthy:
+   `askdb init`, `askdb introspect`, a quick enrichment moment in Studio or TUI,
+   then the same `askdb ask` flow.
+3. **Close / trust boundary (10-15s):** restate the launch hook: AskDB grounds
+   SQL in your schema, returns it as an artifact, and your app decides what runs
+   under your roles, tenant policy, and audit logging.
+
+This "show the end first" structure is not confusing if the transition is
+explicit: "Now here's how we got there." It helps strangers understand the value
+before they see setup steps.
+
+**Storyboard + proposed script (about 75s)**
+
+**0-5s — Title card / terminal already visible**
+Narration:
+> AskDB turns plain-English questions into validated, schema-grounded SQL.
+
+On-screen text:
+```
+Natural language -> SQL
+Execution stays in your app
+```
+
+**5-14s — Cold open: ask a question**
+Show:
+```bash
+askdb ask \
+  --schema pagila.schema \
+  --question "Which customers rented the most films last month?"
+```
+
+Narration:
+> Here's the end result: ask a question, get SQL back.
+
+On-screen callout:
+```
+AskDB returns SQL. It does not execute it.
+```
+
+**14-22s — SQL output**
+Show the generated SQL in the terminal. Pause long enough for the shape of the
+query to be readable.
+
+Narration:
+> Your product can review, approve, log, parameterize, or reject this before
+> anything touches the database.
+
+**22-26s — Rewind transition**
+On-screen text:
+```
+How we got there
+```
+
+Narration:
+> Now here's what makes that query grounded.
+
+**26-36s — Init + introspection**
+Show:
+```bash
+askdb init
+askdb introspect --url "$DATABASE_URL" --out pagila.schema --schema-id pagila
+```
+
+Narration:
+> First, AskDB creates a schema artifact from your database metadata.
+
+**36-50s — Enrichment**
+Show Studio or TUI briefly: table descriptions, aliases, business concepts,
+common query language, or example questions.
+
+Narration:
+> Then you enrich that artifact with the language your product and users
+> actually use: descriptions, aliases, and business concepts.
+
+**50-62s — Ask again after enrichment**
+Show the `askdb ask` command again, or Studio's sample NL-to-SQL panel if it
+looks clearer.
+
+Narration:
+> That enriched schema becomes the grounding context for natural-language to SQL.
+
+**62-72s — Execution boundary**
+Show SQL output beside a simple callout.
+
+Narration:
+> AskDB still does not run the query. It hands SQL back to your app, where your
+> own roles, tenant policy, approval flow, and audit logs stay in control.
+
+On-screen text:
+```
+Schema-grounded
+SQL returned, not executed
+BYO model, database, embedder, vector store
+```
+
+**72-80s — Close**
+Show repo/site URL.
+
+Narration:
+> AskDB is open source, Apache-2.0, pre-1.0, and built for developers embedding
+> ask-your-data workflows into their own products.
 
 ---
 
