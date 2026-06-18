@@ -43,7 +43,7 @@ jobs:
       - name: Build docs site
         run: pnpm docs:build
         env:
-          ASTRO_BASE: /AskDB
+          ASTRO_BASE: /
 
       - name: Check docs links
         run: pnpm -C apps/docs-site test:links
