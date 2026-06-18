@@ -124,16 +124,13 @@ Pass the retriever to `ask()`. AskDB calls it with the question and substitutes 
 If you just ran `buildSchemaIndex` in the same process, pass its returned `retriever` directly. To retrieve in a separate process (the common production shape), rebuild one from the store:
 
 ```ts
-import { ask } from "@askdb/core";
+import { createAskDb } from "@askdb/client";
 import { createRetriever } from "@askdb/rag";
 
+// askdb initialized at startup — see Embed in a Node app.
 const retriever = createRetriever({ store, embedder });
 
-const { sql } = await ask({
-  question,
-  schema,
-  dialect: "postgres",
-  model,
+const { sql } = await askdb.ask(question, {
   retriever,
   retrievalThresholdChunks: 30, // default
 });

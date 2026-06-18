@@ -130,22 +130,21 @@ can't be proven is rejected; with `enforcement: warn`, the SQL is returned
 together with `tenantWarnings` for your application to act on.
 
 ```ts
-import { ask } from "@askdb/core";
+// askdb initialized at startup with createAskDb() — see Embed in a Node app.
 
-const { sql, tenantParams } = await ask({
-  question: "How many documents did we create this month?",
-  schema,
-  dialect: "postgres",
-  model,
-  tenantScope: {
-    access: {
-      kind: "ids",
-      tenantRoot: "table:public.organizations",
-      ids: ["org_abc123"],
+const { sql, tenantParams } = await askdb.ask(
+  "How many documents did we create this month?",
+  {
+    tenantScope: {
+      access: {
+        kind: "ids",
+        tenantRoot: "table:public.organizations",
+        ids: ["org_abc123"],
+      },
     },
-  },
-  tenantSqlMode: "sql-params",
-});
+    tenantSqlMode: "sql-params",
+  }
+);
 
 // Execute with the tenant parameters bound:
 const result = await pool.query(sql, tenantParams);

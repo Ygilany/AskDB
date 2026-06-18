@@ -142,18 +142,18 @@ The schema artifact records which engine it was introspected from. The CLI (`ask
 
 This holds for Prisma-introspected artifacts too: the connector reads the `datasource.provider` from your `.prisma` file (`postgresql` → `postgres`, `mysql`, `sqlite`, `sqlserver`) and records it, so `askdb ask` still knows the dialect without a live database.
 
-When calling `ask()` programmatically, `dialect` is an explicit parameter. Update it to match the new engine:
+When using `@askdb/client`, the dialect resolves from the schema artifact's recorded provider automatically — the same inference the CLI uses. No code change needed after a dialect switch if the new artifact declares the correct provider.
+
+To force a specific dialect (for example, if the artifact's provider doesn't match your target engine), pass it as a per-call override:
 
 ```ts
-const { sql } = await ask({
-  question,
-  schema,
-  dialect: "mysql",      // was "postgres"
-  model,
+// askdb initialized at startup with createAskDb() — see Embed in a Node app.
+const { sql } = await askdb.ask(question, {
+  dialect: "mysql",      // overrides auto-resolution
 });
 ```
 
-All four dialect specs ship inside `@askdb/core` — `ask({ dialect: "mysql" })` works without installing anything else. The engine packages (`@askdb/mysql`, `@askdb/postgres`, ...) supply the *introspection* connector for that engine (and re-export its dialect constant for convenience); you need them to introspect, not to generate.
+All four dialect specs ship inside `@askdb/core`. The engine packages (`@askdb/mysql`, `@askdb/postgres`, ...) supply the *introspection* connector for that engine (and re-export its dialect constant for convenience); you need them to introspect, not to generate.
 
 ### 4. Update your driver
 
@@ -222,18 +222,19 @@ If you hit a dialect difference that surprises you, that's a bug — file it on 
 
 ## Running multiple engines side by side
 
-Nothing stops you from loading two schema artifacts and calling `ask()` against different dialects in the same process. Useful for multi-database apps:
+Nothing stops you from querying two schema artifacts against different dialects in the same process. With `@askdb/client`, pass the schema and dialect as per-call overrides:
 
 ```ts
-const ordersSchema = await loadSchema("./orders.schema");
-const analyticsSchema = await loadSchema("./analytics.schema");
+// askdb initialized at startup with createAskDb() — see Embed in a Node app.
 
-const fromOrders = await ask({
-  question, schema: ordersSchema, dialect: "postgres", model,
+const fromOrders = await askdb.ask(question, {
+  schema: { path: "./orders.schema" },
+  dialect: "postgres",
 });
 
-const fromAnalytics = await ask({
-  question, schema: analyticsSchema, dialect: "mysql", model,
+const fromAnalytics = await askdb.ask(question, {
+  schema: { path: "./analytics.schema" },
+  dialect: "mysql",
 });
 ```
 

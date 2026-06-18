@@ -30,6 +30,19 @@ Track the roadmap on the [AskDB GitHub project](https://github.com/Ygilany/AskDB
 A typical agent tool definition for AskDB looks like:
 
 ```ts
+import { createAskDb } from "@askdb/client";
+import { bootstrapAskDbEnv, getAskDbRuntimeConfig } from "@askdb/config";
+import { createAiRegistry } from "@askdb/ai";
+import { openaiProvider } from "@askdb/ai-openai";
+
+// Initialize once at startup — schema, model, and dialect resolve from config.
+bootstrapAskDbEnv({ cwd: process.cwd() });
+const askdb = createAskDb({
+  config: getAskDbRuntimeConfig(),
+  registry: createAiRegistry([openaiProvider]),
+  schema: { path: "./my-app.schema" },
+});
+
 {
   name: "ask_database",
   description: "Translate a natural-language question into SQL " +
@@ -43,7 +56,7 @@ A typical agent tool definition for AskDB looks like:
     required: ["question"],
   },
   async invoke({ question }) {
-    const { sql } = await ask({ question, schema, dialect: "postgres", model });
+    const { sql } = await askdb.ask(question);
     return { sql };
   },
 }
