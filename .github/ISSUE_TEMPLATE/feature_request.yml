@@ -1,0 +1,33 @@
+name: 🛠 Accepted work / tracked task
+description: File scoped, agreed-upon work. New ideas should start in Discussions → Ideas.
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Use this only for work that's already scoped or agreed on. To **propose** a new feature, start in [Discussions → Ideas](https://github.com/ygilany/askdb/discussions/categories/ideas) so it can be discussed first.
+  - type: textarea
+    id: task
+    attributes:
+      label: What needs to be done?
+      description: The concrete change, and a link to the originating discussion if there is one.
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance criteria
+      description: How do we know this is done? Note any public API, SQL-safety, or changeset implications.
+  - type: dropdown
+    id: surface
+    attributes:
+      label: Surface(s) affected
+      multiple: true
+      options:
+        - Library (@askdb/core)
+        - CLI
+        - HTTP
+        - Introspection / schema artifact
+        - Dialect package
+        - Docs
+        - Build / CI / release

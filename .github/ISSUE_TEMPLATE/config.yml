@@ -1,0 +1,14 @@
+blank_issues_enabled: false
+contact_links:
+  - name: 🙏 Question / how do I…?
+    url: https://github.com/ygilany/askdb/discussions/categories/q-a
+    about: Usage, config, and schema/SQL questions belong in Discussions.
+  - name: 💡 Idea / feature proposal
+    url: https://github.com/ygilany/askdb/discussions/categories/ideas
+    about: Propose and discuss new features before they become tracked work.
+  - name: 🙌 Show and tell
+    url: https://github.com/ygilany/askdb/discussions/categories/show-and-tell
+    about: Share what you built with AskDB.
+  - name: 🔒 Security issue
+    url: https://github.com/ygilany/askdb/blob/main/SECURITY.md
+    about: Report security problems privately — never in public issues or discussions.
