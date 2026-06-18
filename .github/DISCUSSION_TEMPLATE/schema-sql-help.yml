@@ -1,0 +1,44 @@
+title: "[Schema & SQL] "
+labels: ["schema-sql"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Use this for questions about schema artifacts, introspection, and the SQL AskDB generates or validates.
+
+        **Reproducible incorrect / unsafe SQL** is a bug — please open an [issue](https://github.com/ygilany/askdb/issues/new/choose) so it can be tracked.
+  - type: textarea
+    id: question
+    attributes:
+      label: What's the question?
+      description: What did you ask, and what SQL or validation behavior did you expect vs. get?
+    validations:
+      required: true
+  - type: textarea
+    id: schema
+    attributes:
+      label: Minimal schema fixture
+      description: A trimmed schema artifact (or a snippet) that reproduces the behavior. Strip real table/column names if sensitive.
+      render: json
+  - type: textarea
+    id: question-sql
+    attributes:
+      label: Natural-language question + generated SQL
+      render: sql
+  - type: input
+    id: askdb-version
+    attributes:
+      label: AskDB package versions
+      placeholder: "@askdb/core x.y.z, dialect package x.y.z"
+  - type: input
+    id: model
+    attributes:
+      label: AI provider / model (if relevant)
+      placeholder: "openai gpt-..., anthropic claude-..."
+  - type: checkboxes
+    id: hygiene
+    attributes:
+      label: Before posting
+      options:
+        - label: I removed secrets, API keys, customer data, and production schema/query details.
+          required: true
