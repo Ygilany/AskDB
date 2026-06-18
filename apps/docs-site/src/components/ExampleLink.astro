@@ -1,0 +1,11 @@
+---
+import { repoPath } from "../utils/links";
+
+interface Props {
+  /** Repo-relative path, e.g. "examples/express-server" */
+  path: string;
+}
+
+const { path } = Astro.props;
+---
+<a href={repoPath(path)}><slot>{path}</slot></a>

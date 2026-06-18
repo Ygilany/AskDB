@@ -4,6 +4,7 @@ description: "Add natural-language SQL to a TypeScript service in twenty lines: 
 ---
 
 import { Tabs, TabItem, Aside } from "@astrojs/starlight/components";
+import ExampleLink from "../../../components/ExampleLink.astro";
 
 <p class="doc-eyebrow">Integrator guide</p>
 
@@ -136,6 +137,97 @@ The direct `ask()` path above is still the right choice when you construct the m
 ## Switching engines
 
 Same `ask()` call, different dialect string. Change `dialect: "postgres"` to `"mysql"`, `"sqlite"`, or `"sqlserver"`. See [Switch engines](/guides/switch-engines/) for the full migration matrix.
+
+## Complete example: Express server
+
+The snippet below is a copy-paste-ready Express server. Schema, model, and dialect are fully config-driven — `askdb.config.ts` sets `host.schemaPath` and the AI provider; `server.ts` only handles HTTP.
+
+The `/ask` endpoint accepts an optional `execute` flag: `false` (default) returns just the SQL; `true` also runs it through a `pg.Pool` and returns the rows. This keeps SQL generation and execution decoupled — your service controls both.
+
+```ts
+// server.ts
+import { createAskDb } from "@askdb/client";
+import { bootstrapAskDbEnv, getAskDbRuntimeConfig } from "@askdb/config";
+import { createAiRegistry } from "@askdb/ai";
+import { openaiProvider } from "@askdb/ai-openai";
+import express, { Request, Response } from "express";
+import pg from "pg";
+
+bootstrapAskDbEnv({ cwd: process.cwd() });
+
+const app = express();
+app.use(express.json());
+
+const askdb = createAskDb({
+  config: getAskDbRuntimeConfig(),
+  registry: createAiRegistry([openaiProvider]),
+  // schema resolved from host.schemaPath in askdb.config.ts
+});
+
+const pool = process.env.DATABASE_URL
+  ? new pg.Pool({ connectionString: process.env.DATABASE_URL })
+  : null;
+
+app.post("/ask", async (req: Request, res: Response) => {
+  const { question, execute } = req.body as { question?: string; execute?: boolean };
+
+  if (!question || typeof question !== "string" || question.trim() === "") {
+    res.status(400).json({ error: "question is required and must be a non-empty string" });
+    return;
+  }
+
+  const shouldExecute = execute === true;
+
+  if (shouldExecute && !pool) {
+    res.status(500).json({ error: "DATABASE_URL is not configured" });
+    return;
+  }
+
+  try {
+    const { sql } = await askdb.ask(question.trim());
+
+    console.log({ question, sql, execute: shouldExecute });
+
+    if (!shouldExecute) {
+      res.json({ sql });
+      return;
+    }
+
+    const result = await pool!.query(sql);
+    res.json({ sql, rows: result.rows, rowCount: result.rowCount });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    res.status(500).json({ error: message });
+  }
+});
+
+app.get("/health", (_req: Request, res: Response) => {
+  res.json({ status: "ok" });
+});
+
+app.listen(3000, () => console.log("listening on http://localhost:3000"));
+```
+
+```ts
+// askdb.config.ts
+import { defineConfig, env, type AskDbConfig } from "@askdb/config";
+
+export default defineConfig({
+  ai: {
+    provider: "openai",
+    providerConfig: { openai: { apiKey: env("OPENAI_API_KEY") } },
+  },
+  introspection: {
+    provider: "postgres",
+    providerConfig: { postgres: { databaseUrl: env("DATABASE_URL") } },
+  },
+  host: {
+    schemaPath: env("ASKDB_SCHEMA_PATH"),
+  },
+} satisfies AskDbConfig);
+```
+
+The full working package (with `package.json`, `tsconfig.json`, and `.env` instructions) lives in <ExampleLink path="examples/express-server" /> in the repo.
 
 ## Read next
 
