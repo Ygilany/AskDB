@@ -4,11 +4,11 @@ body:
   - type: markdown
     attributes:
       value: |
-        Thanks for asking! Use this for installation, configuration, and "how do I…" questions about the AskDB library, CLI, or HTTP surfaces.
+        Thanks for asking! Use this for installation, configuration, "how do I…" questions, and help with schema artifacts or the SQL AskDB generates/validates.
 
         Before posting, please skim the [README](https://github.com/ygilany/askdb#readme), the package READMEs, and [`docs/`](https://github.com/ygilany/askdb/tree/main/docs).
 
-        **Found a reproducible bug?** Open an [issue](https://github.com/ygilany/askdb/issues/new/choose) instead. **Security problem?** Follow [`SECURITY.md`](https://github.com/ygilany/askdb/blob/main/SECURITY.md) — do not post it here.
+        **Found a reproducible bug** (including incorrect/unsafe SQL)? Open an [issue](https://github.com/ygilany/askdb/issues/new/choose) instead. **Security problem?** Follow [`SECURITY.md`](https://github.com/ygilany/askdb/blob/main/SECURITY.md) — do not post it here.
   - type: textarea
     id: question
     attributes:
@@ -22,6 +22,17 @@ body:
       label: What have you tried?
       description: Commands run, code, and any output or error messages.
       render: shell
+  - type: textarea
+    id: schema
+    attributes:
+      label: Minimal schema fixture (if relevant)
+      description: For schema/SQL questions, a trimmed schema artifact or snippet that shows the behavior. Strip real table/column names if sensitive.
+      render: json
+  - type: textarea
+    id: question-sql
+    attributes:
+      label: Natural-language question + generated SQL (if relevant)
+      render: sql
   - type: input
     id: askdb-version
     attributes:
@@ -32,6 +43,11 @@ body:
     attributes:
       label: Node / pnpm / OS
       placeholder: "Node 20.x, pnpm 11.x, macOS 14"
+  - type: input
+    id: model
+    attributes:
+      label: AI provider / model (if relevant)
+      placeholder: "openai gpt-..., anthropic claude-..."
   - type: checkboxes
     id: hygiene
     attributes:

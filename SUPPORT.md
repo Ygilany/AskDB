@@ -6,8 +6,7 @@ AskDB is pre-1.0. Public APIs, package boundaries, and CLI behavior may change b
 
 | You have… | Go to |
 | --- | --- |
-| A usage or "how do I…?" question | [Discussions → Q&A](https://github.com/ygilany/askdb/discussions/categories/q-a) |
-| A schema artifact or generated-SQL question | [Discussions → Schema & SQL help](https://github.com/ygilany/askdb/discussions/categories/schema-sql-help) |
+| A usage, config, or schema/SQL question | [Discussions → Q&A](https://github.com/ygilany/askdb/discussions/categories/q-a) |
 | A feature idea to propose | [Discussions → Ideas](https://github.com/ygilany/askdb/discussions/categories/ideas) |
 | Something you built with AskDB | [Discussions → Show and tell](https://github.com/ygilany/askdb/discussions/categories/show-and-tell) |
 | A reproducible bug | [GitHub issue](https://github.com/ygilany/askdb/issues/new/choose) |

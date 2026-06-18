@@ -2,10 +2,7 @@ blank_issues_enabled: false
 contact_links:
   - name: 🙏 Question / how do I…?
     url: https://github.com/ygilany/askdb/discussions/categories/q-a
-    about: Installation, configuration, and usage questions belong in Discussions.
-  - name: 🧩 Schema & SQL help
-    url: https://github.com/ygilany/askdb/discussions/categories/schema-sql-help
-    about: Questions about schema artifacts and generated/validated SQL.
+    about: Usage, config, and schema/SQL questions belong in Discussions.
   - name: 💡 Idea / feature proposal
     url: https://github.com/ygilany/askdb/discussions/categories/ideas
     about: Propose and discuss new features before they become tracked work.
