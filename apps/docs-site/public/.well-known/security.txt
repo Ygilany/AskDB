@@ -1,0 +1,4 @@
+Contact: https://github.com/Ygilany/AskDB/security/advisories/new
+Expires: 2027-06-18T00:00:00.000Z
+Policy: https://github.com/Ygilany/AskDB/blob/main/SECURITY.md
+Preferred-Languages: en
