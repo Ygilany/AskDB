@@ -57,6 +57,16 @@ export default defineConfig({
   },
   integrations: [
     starlight({
+      head: [
+        {
+          tag: "script",
+          attrs: {
+            defer: true,
+            src: "https://static.cloudflareinsights.com/beacon.min.js",
+            "data-cf-beacon": '{"token": "d88bd06a11b7436eafb44804cb2fabbf"}',
+          },
+        },
+      ],
       title: "AskDB",
       description:
         "The open-source Text-to-SQL toolkit your data team trusts. Ask your data. Keep control.",
