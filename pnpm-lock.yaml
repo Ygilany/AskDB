@@ -98,9 +98,6 @@ importers:
       commander:
         specifier: ^15.0.0
         version: 15.0.0
-      pg:
-        specifier: ^8.21.0
-        version: 8.21.0
     devDependencies:
       typescript:
         specifier: ^6.0.3
@@ -214,9 +211,6 @@ importers:
       lucide-react:
         specifier: ^1.18.0
         version: 1.18.0(react@19.2.7)
-      pg:
-        specifier: ^8.21.0
-        version: 8.21.0
       radix-ui:
         specifier: ^1.5.0
         version: 1.5.0(@types/react-dom@19.2.3(@types/react@19.2.17))(@types/react@19.2.17)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
@@ -239,6 +233,9 @@ importers:
       '@tailwindcss/vite':
         specifier: ^4.3.1
         version: 4.3.1(vite@8.0.16(@types/node@24.13.2)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.22.4)(yaml@2.9.0))
+      '@types/pg':
+        specifier: ^8.20.0
+        version: 8.20.0
       '@types/react':
         specifier: ^19.2.17
         version: 19.2.17
@@ -257,6 +254,9 @@ importers:
       eslint-plugin-import:
         specifier: ^2.32.0
         version: 2.32.0(@typescript-eslint/parser@8.61.0(eslint@10.5.0(jiti@2.7.0))(typescript@6.0.3))(eslint-import-resolver-typescript@4.4.5)(eslint@10.5.0(jiti@2.7.0))
+      pg:
+        specifier: ^8.21.0
+        version: 8.21.0
       tailwindcss:
         specifier: ^4.3.1
         version: 4.3.1

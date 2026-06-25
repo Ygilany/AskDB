@@ -47,6 +47,12 @@ Concepts capture cross-table business vocabulary that doesn't map to a single ta
 
 The Query Playground is where you test whether your enrichment is working. Type a question in plain language, choose between **Full schema** (send the entire enriched artifact) or **RAG** (retrieve only the relevant chunks), and click **Generate SQL**. The generated SQL appears alongside the retrieval context so you can see exactly what the model was given. If the SQL is wrong, the enrichment fields that need fixing are usually obvious from the context shown.
 
+Generating SQL in Studio does not require a database driver. The optional execute action that runs generated SQL against Postgres requires `pg` in the project running Studio:
+
+```bash
+pnpm add pg
+```
+
 ## Tenancy
 
 ![The Tenancy view offering Draft with AI or Configure manually options for multi-tenant isolation](../../assets/studio/tenancy.png)

@@ -1,5 +1,8 @@
 import { AskDbError } from "@askdb/core";
 import type { CatalogQueryResult, CatalogQueryRunner } from "@askdb/introspect";
+import { createRequire } from "node:module";
+import { join } from "node:path";
+import { pathToFileURL } from "node:url";
 // `@types/better-sqlite3` ships an `export =` declaration: the default import
 // IS the constructor. `typeof DatabaseCtor` gives us the constructor type;
 // the dynamic `import()` returns a namespace whose `.default` is that ctor.
@@ -16,15 +19,46 @@ type Bs3Namespace = { default: typeof DatabaseCtor };
  */
 let bs3ModulePromise: Promise<Bs3Namespace> | undefined;
 
+function isModuleResolutionFailure(cause: unknown, packageName: string): boolean {
+  if (!(cause instanceof Error)) return false;
+  const nestedCause = (cause as { cause?: unknown }).cause;
+  if (nestedCause && nestedCause !== cause && isModuleResolutionFailure(nestedCause, packageName)) {
+    return true;
+  }
+  const code = (cause as { code?: unknown }).code;
+  if (code !== "ERR_MODULE_NOT_FOUND" && code !== "MODULE_NOT_FOUND") return false;
+  return cause.message.includes(packageName);
+}
+
+async function importOptionalBetterSqlite3(): Promise<Bs3Namespace> {
+  try {
+    return (await import("better-sqlite3")) as unknown as Bs3Namespace;
+  } catch (cause) {
+    if (!isModuleResolutionFailure(cause, "better-sqlite3")) throw cause;
+
+    const projectRequire = createRequire(join(process.cwd(), "package.json"));
+    try {
+      const resolved = projectRequire.resolve("better-sqlite3");
+      return (await import(pathToFileURL(resolved).href)) as Bs3Namespace;
+    } catch (projectCause) {
+      if (!isModuleResolutionFailure(projectCause, "better-sqlite3")) throw projectCause;
+      throw new AggregateError(
+        [cause, projectCause],
+        "Unable to resolve optional `better-sqlite3` peer dependency",
+      );
+    }
+  }
+}
+
 async function loadBetterSqlite3OrThrow(): Promise<Bs3Namespace> {
   if (!bs3ModulePromise) {
-    bs3ModulePromise = (
-      import("better-sqlite3") as unknown as Promise<Bs3Namespace>
-    ).catch((cause) => {
+    bs3ModulePromise = importOptionalBetterSqlite3().catch((cause) => {
       bs3ModulePromise = undefined;
       throw new AskDbError(
         "The built-in SQLite catalog query runner requires the optional `better-sqlite3` peer dependency. " +
-          "Install it (e.g. `pnpm add better-sqlite3`) or pass a custom catalog query runner to the SQLite connector.",
+          "Install it in your project (e.g. `pnpm add better-sqlite3`) or include it in the same one-off command " +
+          "(e.g. `pnpm dlx -p askdb -p better-sqlite3 askdb ...` or `npx -p askdb -p better-sqlite3 askdb ...`). " +
+          "You can also pass a custom catalog query runner to the SQLite connector.",
         cause,
       );
     });

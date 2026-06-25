@@ -23,6 +23,14 @@ It can:
 - draft tenant policy with AI assistance
 - test NL→SQL with tenant scope controls and SQL output modes (`sql-only` vs `sql-params`)
 
+Schema browsing, enrichment, and SQL generation do not require a database
+driver. The optional Playground execute path, which runs generated SQL against
+Postgres, requires `pg` in the project running Studio:
+
+```sh
+pnpm add pg
+```
+
 Studio uses `@askdb/enrich` for the shared non-UI Schema v2 authoring logic:
 workspace loading, editable drafts, markdown/frontmatter preservation, save
 helpers, and suggestion context. It should not depend on `@askdb/tui`, which is

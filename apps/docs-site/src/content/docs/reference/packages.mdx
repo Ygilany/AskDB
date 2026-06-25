@@ -139,7 +139,7 @@ PostgreSQL dialect, connector, catalog SQL templates, and an optional `pg`-based
 npm install @askdb/mysql
 ```
 
-MySQL dialect and introspection. Pass `dialect: "mysql"` to `ask()`.
+MySQL dialect, connector, catalog SQL templates, and an optional `mysql2`-based catalog query runner for live introspection. Pass `dialect: "mysql"` to `ask()`.
 
 ### `@askdb/sqlite`
 
@@ -147,7 +147,7 @@ MySQL dialect and introspection. Pass `dialect: "mysql"` to `ask()`.
 npm install @askdb/sqlite
 ```
 
-SQLite dialect and introspection. Works with embedded file-backed databases. Pass `dialect: "sqlite"` to `ask()`.
+SQLite dialect, connector, catalog SQL templates, and an optional `better-sqlite3`-based catalog query runner for live introspection. Works with embedded file-backed databases. Pass `dialect: "sqlite"` to `ask()`.
 
 ### `@askdb/sqlserver`
 
@@ -155,7 +155,7 @@ SQLite dialect and introspection. Works with embedded file-backed databases. Pas
 npm install @askdb/sqlserver
 ```
 
-SQL Server (T-SQL) dialect and introspection. Pass `dialect: "sqlserver"` to `ask()`.
+SQL Server (T-SQL) dialect, connector, catalog SQL templates, and an optional `mssql`-based catalog query runner for live introspection. Pass `dialect: "sqlserver"` to `ask()`.
 
 ## Introspection
 
@@ -181,7 +181,7 @@ See [the Prisma integration guide](/guides/integrations/prisma/).
 
 ### `@askdb/studio`
 
-Browser-based schema-authoring UI. The CLI's `askdb studio` command lazy-imports this package.
+Browser-based schema-authoring UI. The CLI's `askdb studio` command lazy-imports this package. Schema browsing, enrichment, and SQL generation do not require a database driver; the optional Postgres execute path requires `pg` in the project running Studio.
 
 ```bash
 npm install @askdb/studio

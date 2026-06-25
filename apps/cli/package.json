@@ -62,8 +62,7 @@
     "@askdb/studio": "workspace:*",
     "@askdb/tui": "workspace:*",
     "ai": "^6.0.205",
-    "commander": "^15.0.0",
-    "pg": "^8.21.0"
+    "commander": "^15.0.0"
   },
   "devDependencies": {
     "typescript": "^6.0.3",

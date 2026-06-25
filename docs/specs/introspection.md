@@ -5,9 +5,9 @@
 
 ## Overview
 
-Schema introspection turns a real database into a describable schema physical artifact (`schema.json`). The `@askdb/introspect` package is engine-agnostic: it defines the `Connector<TInput>` interface and the orchestrator. Engine-specific logic — catalog SQL, row shapes, and dialect rules — lives in the integration packages (`@askdb/postgres`, `@askdb/mysql`, `@askdb/sqlite`, `@askdb/sqlserver`, `@askdb/prisma`).
+Schema introspection turns a real database into a describable schema physical artifact (`schema.json`). The `@askdb/introspect` package is engine-agnostic: it defines the `Connector<TInput>` interface and the orchestrator. Engine-specific logic — catalog SQL, row shapes, dialect rules, and optional live database driver loading — lives in the integration packages (`@askdb/postgres`, `@askdb/mysql`, `@askdb/sqlite`, `@askdb/sqlserver`, `@askdb/prisma`).
 
-Two equally-supported front doors produce identical artifacts: **live** (queries run against a real database via a catalog query runner) and **air-gapped** (queries are run offline and their output is bundled; the connector ingests the bundle). This separation lets teams introspect air-gapped or locked-down databases by exporting the catalog queries separately.
+Postgres has two front doors that produce identical artifacts: **live** (queries run against a real database via a catalog query runner) and **air-gapped** (queries are run offline and their output is bundled; the connector ingests the bundle). MySQL, SQLite, and SQL Server currently provide live connectors. Live connectors resolve their database drivers as optional peers from the adapter package graph or the caller project running the CLI.
 
 Re-introspection is ID-anchored: existing stable IDs are preserved, new columns get fresh IDs, orphaned IDs (columns removed from the DB) surface as warnings. The describable layer (`tables/*.md`, `concepts.md`) is never touched by introspection.
 
@@ -20,9 +20,9 @@ Re-introspection is ID-anchored: existing stable IDs are preserved, new columns 
 - `introspect()` orchestrator in `@askdb/introspect` — connector-agnostic, produces `IntrospectionResult` and writes the physical `schema.json`
 - `Connector<TInput>` interface — generic over the integration's input shape; `templates()` is optional
 - **`@askdb/postgres`** — catalog SQL templates (`pg_catalog` + `information_schema`), live mode via `createPostgresCatalogRunner`, air-gapped mode via bundle ingestion; deterministic `ORDER BY` on all queries; `pg_constraint.conkey` order for multi-column FKs; `pg_enum.enumsortorder` for enums; partition leaf filtering (see [ADR 0003](../adrs/0003-postgres-partition-handling.md))
-- **`@askdb/mysql`** — MySQL/MariaDB connector; live and air-gapped modes
-- **`@askdb/sqlite`** — SQLite connector; live and air-gapped modes
-- **`@askdb/sqlserver`** — SQL Server connector; live and air-gapped modes
+- **`@askdb/mysql`** — MySQL/MariaDB connector; live mode
+- **`@askdb/sqlite`** — SQLite connector; live mode
+- **`@askdb/sqlserver`** — SQL Server connector; live mode
 - **`@askdb/prisma`** — Prisma schema file connector; `templates()` not applicable (no catalog SQL)
 - `askdb introspect` CLI subcommand — `--url` (live), `--from-export` (air-gapped), `--diff` (no writes), `--print` (stdout), `templates --engine <engine>` (print SQL)
 - ID-anchored re-introspection merge — preserves existing IDs, emits `IntrospectionWarning` for orphans and new columns
@@ -96,3 +96,4 @@ interface ConnectorConfig {
 - Air-gapped round-trip: export catalog snapshot as CSV bundle; ingest via `--from-export`; result byte-identical to live-mode output from the same data.
 - ID-anchored re-introspection: adding a column preserves existing IDs, adds a fresh ID for the new column, emits one `new_column` warning; `tables/*.md` untouched.
 - Live integration test (CI-gated, requires Postgres): `askdb introspect --url $DATABASE_URL` produces a `schema.json` the schema loader accepts; two runs with no DB change produce no diff.
+- Packaged CLI install smoke verifies that `askdb` does not install `pg` by itself and that a project-installed driver satisfies live Postgres introspection loading.

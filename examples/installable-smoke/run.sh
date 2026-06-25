@@ -321,6 +321,16 @@ node -e "
 echo "smoke: npm install app sandbox…"
 (cd "$WORK/apps" && npm install --silent --no-audit --no-fund --no-package-lock)
 
+echo "smoke: app sandbox package resolution before driver install…"
+(cd "$WORK/apps" && node --input-type=module -e "import { createRequire } from 'node:module'; const require = createRequire(import.meta.url); require.resolve('askdb/package.json'); await import('@askdb/postgres');")
+if (cd "$WORK/apps" && node -e "require.resolve('pg')" >/dev/null 2>&1); then
+  echo "smoke: FAILED — packaged askdb installed 'pg' before the app opted into the driver." >&2
+  exit 1
+fi
+
+echo "smoke: installing app-local pg driver…"
+(cd "$WORK/apps" && npm install --silent --no-audit --no-fund --no-package-lock 'pg@^8.21.0')
+
 echo "smoke: minimal askdb.config.ts for cli bootstrap…"
 cat >"$WORK/apps/askdb.config.ts" <<'SMOKEASKDB'
 import dotenv from "dotenv";
@@ -359,6 +369,23 @@ SMOKEASKDB
 echo "smoke: askdb cli bin…"
 (cd "$WORK/apps" && ./node_modules/.bin/askdb --help | grep -q 'AskDB')
 (cd "$WORK/apps" && ./node_modules/.bin/askdb introspect templates --engine postgres | grep -q '^-- schemas')
+echo "smoke: app-local pg satisfies live postgres introspection driver load…"
+set +e
+POSTGRES_DRIVER_OUTPUT="$(cd "$WORK/apps" && ./node_modules/.bin/askdb introspect --engine postgres --url 'postgres://127.0.0.1:65432/askdb_smoke_placeholder' --print 2>&1)"
+POSTGRES_DRIVER_STATUS=$?
+set -e
+if grep -q 'optional `pg` peer dependency' <<<"$POSTGRES_DRIVER_OUTPUT"; then
+  echo "smoke: FAILED — live postgres introspection did not resolve the app-local pg driver." >&2
+  echo "$POSTGRES_DRIVER_OUTPUT" >&2
+  exit 1
+fi
+if [ "$POSTGRES_DRIVER_STATUS" -ne 0 ] && ! grep -Eq 'ECONNREFUSED|connect|PostgreSQL catalog query failed|timeout' <<<"$POSTGRES_DRIVER_OUTPUT"; then
+  echo "smoke: FAILED — expected a PostgreSQL connection/catalog failure after pg loaded." >&2
+  echo "$POSTGRES_DRIVER_OUTPUT" >&2
+  exit 1
+fi
+# SQL Server's optional-peer cwd fallback is covered by unit tests; installing `mssql`
+# here would materially increase install smoke time for the same driver-load assertion.
 
 echo "smoke: askdb-tui bin…"
 (cd "$WORK/apps" && ./node_modules/.bin/askdb-tui --version >/dev/null)

@@ -1,5 +1,8 @@
 import { AskDbError } from "@askdb/core";
 import type { CatalogQueryResult, CatalogQueryRunner } from "@askdb/introspect";
+import { createRequire } from "node:module";
+import { join } from "node:path";
+import { pathToFileURL } from "node:url";
 
 export type { CatalogQueryResult, CatalogQueryRunner } from "@askdb/introspect";
 
@@ -14,13 +17,43 @@ type MssqlModule = typeof import("mssql");
  */
 let mssqlModulePromise: Promise<MssqlModule> | undefined;
 
+function isModuleResolutionFailure(cause: unknown, packageName: string): boolean {
+  if (!(cause instanceof Error)) return false;
+  const nestedCause = (cause as { cause?: unknown }).cause;
+  if (nestedCause && nestedCause !== cause && isModuleResolutionFailure(nestedCause, packageName)) {
+    return true;
+  }
+  const code = (cause as { code?: unknown }).code;
+  if (code !== "ERR_MODULE_NOT_FOUND" && code !== "MODULE_NOT_FOUND") return false;
+  return cause.message.includes(packageName);
+}
+
+async function importOptionalMssql(): Promise<MssqlModule> {
+  try {
+    return await import("mssql");
+  } catch (cause) {
+    if (!isModuleResolutionFailure(cause, "mssql")) throw cause;
+
+    const projectRequire = createRequire(join(process.cwd(), "package.json"));
+    try {
+      const resolved = projectRequire.resolve("mssql");
+      return (await import(pathToFileURL(resolved).href)) as MssqlModule;
+    } catch (projectCause) {
+      if (!isModuleResolutionFailure(projectCause, "mssql")) throw projectCause;
+      throw new AggregateError([cause, projectCause], "Unable to resolve optional `mssql` peer dependency");
+    }
+  }
+}
+
 async function loadMssqlOrThrow(): Promise<MssqlModule> {
   if (!mssqlModulePromise) {
-    mssqlModulePromise = import("mssql").catch((cause) => {
+    mssqlModulePromise = importOptionalMssql().catch((cause) => {
       mssqlModulePromise = undefined;
       throw new AskDbError(
         "The built-in SQL Server catalog query runner requires the optional `mssql` peer dependency. " +
-          "Install it (e.g. `pnpm add mssql`) or pass a custom catalog query runner to the SQL Server connector.",
+          "Install it in your project (e.g. `pnpm add mssql`) or include it in the same one-off command " +
+          "(e.g. `pnpm dlx -p askdb -p mssql askdb ...` or `npx -p askdb -p mssql askdb ...`). " +
+          "You can also pass a custom catalog query runner to the SQL Server connector.",
         cause,
       );
     });

@@ -1,5 +1,8 @@
 import { AskDbError } from "@askdb/core";
 import type { CatalogQueryResult, CatalogQueryRunner } from "@askdb/introspect";
+import { createRequire } from "node:module";
+import { join } from "node:path";
+import { pathToFileURL } from "node:url";
 
 export type { CatalogQueryResult, CatalogQueryRunner } from "@askdb/introspect";
 
@@ -15,13 +18,43 @@ export type { CatalogQueryResult, CatalogQueryRunner } from "@askdb/introspect";
  */
 let pgModulePromise: Promise<typeof import("pg")> | undefined;
 
+function isModuleResolutionFailure(cause: unknown, packageName: string): boolean {
+  if (!(cause instanceof Error)) return false;
+  const nestedCause = (cause as { cause?: unknown }).cause;
+  if (nestedCause && nestedCause !== cause && isModuleResolutionFailure(nestedCause, packageName)) {
+    return true;
+  }
+  const code = (cause as { code?: unknown }).code;
+  if (code !== "ERR_MODULE_NOT_FOUND" && code !== "MODULE_NOT_FOUND") return false;
+  return cause.message.includes(packageName);
+}
+
+async function importOptionalPg(): Promise<typeof import("pg")> {
+  try {
+    return await import("pg");
+  } catch (cause) {
+    if (!isModuleResolutionFailure(cause, "pg")) throw cause;
+
+    const projectRequire = createRequire(join(process.cwd(), "package.json"));
+    try {
+      const resolved = projectRequire.resolve("pg");
+      return (await import(pathToFileURL(resolved).href)) as typeof import("pg");
+    } catch (projectCause) {
+      if (!isModuleResolutionFailure(projectCause, "pg")) throw projectCause;
+      throw new AggregateError([cause, projectCause], "Unable to resolve optional `pg` peer dependency");
+    }
+  }
+}
+
 async function loadPgOrThrow(): Promise<typeof import("pg")> {
   if (!pgModulePromise) {
-    pgModulePromise = import("pg").catch((cause) => {
+    pgModulePromise = importOptionalPg().catch((cause) => {
       pgModulePromise = undefined;
       throw new AskDbError(
         "The built-in Postgres catalog query runner requires the optional `pg` peer dependency. " +
-          "Install it (e.g. `pnpm add pg`) or pass a custom catalog query runner to the Postgres connector.",
+          "Install it in your project (e.g. `pnpm add pg`) or include it in the same one-off command " +
+          "(e.g. `pnpm dlx -p askdb -p pg askdb ...` or `npx -p askdb -p pg askdb ...`). " +
+          "You can also pass a custom catalog query runner to the Postgres connector.",
         cause,
       );
     });

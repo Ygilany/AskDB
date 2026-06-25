@@ -18,6 +18,13 @@ pnpm add @askdb/core @askdb/introspect @askdb/mysql
 pnpm add mysql2
 ```
 
+For one-off CLI introspection, include the driver in the same ephemeral command:
+
+```bash
+pnpm dlx -p askdb -p mysql2 askdb introspect --engine mysql --url "$MYSQL_URL"
+npx -p askdb -p mysql2 askdb introspect --engine mysql --url "$MYSQL_URL"
+```
+
 ## Usage
 
 ### NL→SQL
