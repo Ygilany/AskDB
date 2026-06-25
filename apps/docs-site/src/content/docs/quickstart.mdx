@@ -39,39 +39,38 @@ thinks about the data.**
 npx askdb@latest init
 ```
 
-`npx` downloads and runs `askdb` on the fly — no separate install step needed. `askdb init` creates `askdb.config.ts` in your project root. The config file is TypeScript-checked and reads values from your environment using the `env()` helper — it loads from a `.env` file at your project root or from the system environment, whichever is set. You choose your own variable names and pass them to `env()`.
+`npx` downloads and runs `askdb` on the fly — no separate install step needed. In a terminal, `askdb init` opens a short wizard that asks which database you use, which AI provider you have a key for, and whether you want the Studio query playground. It then writes only the relevant config branches and installs only the packages your setup needs.
+
+In CI or scripts, skip the wizard:
+
+```bash
+npx askdb@latest init --yes                           # Postgres + OpenAI defaults
+npx askdb@latest init --yes --database sqlserver      # SQL Server instead
+npx askdb@latest init --yes --database sqlite --sqlite-file SQLITE_FILE
+```
 
 <Aside type="tip">`askdb.config.ts` is checked in; `.env` (your real keys) is not.</Aside>
 
-Open `askdb.config.ts` and fill in your settings:
+The generated config is tailored to what you chose — for example, a SQL Server setup:
 
 ```ts
 import { defineConfig, env } from "@askdb/config";
 
 export default defineConfig({
   ai: {
-    provider: "openai",   // "openai" | "azure" | "foundry" | "google" | "anthropic" — or a custom string
-    providerConfig: {
-      openai: {
-        apiKey: env("OPENAI_API_KEY"),
-        model: env("OPENAI_MODEL"),   // optional — defaults to gpt-4o-mini
-      },
-    },
+    provider: "openai",
+    providerConfig: { openai: { apiKey: env("OPENAI_API_KEY"), model: env("OPENAI_MODEL") } },
   },
   introspection: {
-    provider: "postgres",            // "postgres" | "prisma" | "mysql" | "sqlite" | "sqlserver"
-    providerConfig: {
-      postgres: { databaseUrl: env("DATABASE_URL") },
-    },
-    outputDir: "./my-app.schema",    // optional — defaults to ./askdb/
+    provider: "sqlserver",
+    providerConfig: { sqlserver: { databaseUrl: env("SQLSERVER_URL") } },
+    outputDir: "./askdb",
   },
-  // ... the scaffolded file also includes `rag`, `logging`, `studio`, and
-  // `httpApi` sections — keep them as generated. Every option is documented
-  // in the Configuration reference.
-});
+  rag: { embedder: "mock", embedderConfig: {}, store: "file", storeConfig: { file: {} } },
+} satisfies AskDbConfig);
 ```
 
-The snippet above is the part you'll actually edit; the scaffolded template contains the full config. See the [Configuration reference](/reference/config/) for every option.
+See the [Configuration reference](/reference/config/) for every option. See [CLI reference — askdb init](/reference/cli/#askdb-init) for all flags.
 
 Once this is configured, most CLI flags below are optional.
 

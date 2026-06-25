@@ -16,7 +16,7 @@ pnpm dlx askdb --help
 pnpm dlx askdb init
 ```
 
-The CLI delegates live introspection to AskDB connector packages; each connector owns any database driver it needs. `askdb init` installs config support, not database drivers.
+The CLI delegates live introspection to AskDB connector packages; each connector owns any database driver it needs. `askdb init` installs `@askdb/config`, `dotenv`, and the driver for your selected database — only for the path you chose.
 
 ## Live introspection drivers
 
@@ -60,11 +60,17 @@ Run `askdb --help` for the full list.
 ## Init
 
 ```bash
-askdb init
-# writes ./askdb.config.ts only (refuses to overwrite unless --force)
+askdb init                              # TTY wizard
+askdb init --yes                        # non-interactive, Postgres + OpenAI defaults
+askdb init --yes --database sqlserver   # non-interactive, SQL Server
+askdb init --yes --database sqlite --sqlite-file SQLITE_FILE
 ```
 
-Use `--path` to write the template to a different file. Example `.env` keys and notes live in **comments** inside `askdb.config.ts`; create your own `.env` if you use `env("...")` with `dotenv`.
+In a terminal, `askdb init` opens a short wizard: choose your database, AI provider, RAG store, and whether to enable Studio execute. It writes only the relevant config branches and installs only the packages for your chosen path (e.g. `mssql` for SQL Server, `better-sqlite3` for SQLite — not all drivers).
+
+In CI or scripts, pass `--yes` and use flags instead of prompts. See `askdb init --help` for the full flag list.
+
+`askdb.config.ts` is TypeScript-checked and uses `env("VAR_NAME")` for every secret-bearing value — no real keys are written to disk.
 
 ## Enrichment UIs
 

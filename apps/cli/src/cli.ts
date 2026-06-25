@@ -36,7 +36,7 @@ if (process.argv[2] !== "init") {
 }
 
 if (process.argv[2] === "init") {
-  process.exit(runInitCli(process.argv.slice(3)));
+  process.exit(await runInitCli(process.argv.slice(3)));
 }
 
 if (process.argv[2] === "introspect") {
@@ -188,17 +188,53 @@ program.name("askdb").description("AskDB — natural language → PostgreSQL SEL
 program
   .command("init")
   .description(
-    "Create askdb.config.ts, then install @askdb/config + dotenv in the nearest non-workspace package (unless --skip-install)",
+    "Create tailored askdb.config.ts via a wizard (TTY) or flags (CI). Installs selected packages unless --skip-install.",
   )
   .option("-f, --force", "Overwrite an existing file", false)
   .option("--path <path>", "Output path for askdb.config.ts", "askdb.config.ts")
-  .option("--skip-install", "Only write the file; do not install dependencies", false)
-  .action((opts: { force?: boolean; path?: string; skipInstall?: boolean }) => {
+  .option("--skip-install", "Only write the file; do not install packages", false)
+  .option("-y, --yes", "Accept defaults without prompts", false)
+  .option("--interactive", "Force wizard mode; errors if stdin/stdout are not TTYs", false)
+  .option("--no-interactive", "Do not prompt; use defaults or flags")
+  .option("--database <db>", "postgres|mysql|sqlite|sqlserver|prisma")
+  .option("--connection-env <name>", "Env var name for connection URL")
+  .option("--sqlite-file <path>", "SQLite file path or env var name")
+  .option("--prisma-schema <path>", "Path to schema.prisma")
+  .option("--schema-out <dir>", "Schema output directory (default: ./askdb)")
+  .option("--ai-provider <name>", "openai|anthropic|google|azure|foundry")
+  .option("--ai-key-env <name>", "Env var name for AI API key")
+  .option("--ai-model-env <name>", "Env var name for model override")
+  .option("--rag-store <name>", "file|memory|pgvector (default: file)")
+  .option("--pgvector-env <name>", "Env var name for pgvector URL")
+  .option("--studio-execute", "Enable Studio execute")
+  .option("--no-studio-execute", "Disable Studio execute")
+  .action(async (opts: {
+    force?: boolean; path?: string; skipInstall?: boolean; yes?: boolean;
+    interactive?: boolean; noInteractive?: boolean;
+    database?: string; connectionEnv?: string; sqliteFile?: string; prismaSchema?: string;
+    schemaOut?: string; aiProvider?: string; aiKeyEnv?: string; aiModelEnv?: string;
+    ragStore?: string; pgvectorEnv?: string; studioExecute?: boolean;
+  }) => {
     const args: string[] = [];
     if (opts.force) args.push("--force");
     if (opts.skipInstall) args.push("--skip-install");
+    if (opts.yes) args.push("--yes");
+    if (opts.interactive) args.push("--interactive");
+    if (opts.noInteractive) args.push("--no-interactive");
     if (opts.path && opts.path !== "askdb.config.ts") args.push("--path", opts.path);
-    process.exit(runInitCli(args));
+    if (opts.database) args.push("--database", opts.database);
+    if (opts.connectionEnv) args.push("--connection-env", opts.connectionEnv);
+    if (opts.sqliteFile) args.push("--sqlite-file", opts.sqliteFile);
+    if (opts.prismaSchema) args.push("--prisma-schema", opts.prismaSchema);
+    if (opts.schemaOut) args.push("--schema-out", opts.schemaOut);
+    if (opts.aiProvider) args.push("--ai-provider", opts.aiProvider);
+    if (opts.aiKeyEnv) args.push("--ai-key-env", opts.aiKeyEnv);
+    if (opts.aiModelEnv) args.push("--ai-model-env", opts.aiModelEnv);
+    if (opts.ragStore) args.push("--rag-store", opts.ragStore);
+    if (opts.pgvectorEnv) args.push("--pgvector-env", opts.pgvectorEnv);
+    if (opts.studioExecute === true) args.push("--studio-execute");
+    if (opts.studioExecute === false) args.push("--no-studio-execute");
+    process.exit(await runInitCli(args));
   });
 
 program

@@ -25,19 +25,57 @@ askdb --help
 
 ### `askdb init`
 
-Scaffolds `askdb.config.ts` (and adds `@askdb/config` + `dotenv` to your project) so the rest of the CLI can resolve config.
+Scaffolds a tailored `askdb.config.ts` and installs only the packages your setup needs. In a TTY it opens a short wizard; in CI or with `--yes` it runs silently.
 
 ```bash
-npx askdb init
+npx askdb@latest init          # wizard in a terminal
+npx askdb@latest init --yes    # non-interactive, Postgres + OpenAI defaults
 ```
+
+**General flags**
 
 | Flag | Description |
 | --- | --- |
-| `--path <file>` | Write the template to a custom path. |
-| `--force` | Overwrite an existing `askdb.config.ts`. |
+| `-y, --yes` | Accept defaults without prompts. |
+| `--interactive` | Force wizard mode; errors if stdin/stdout are not TTYs. |
+| `--no-interactive` | Never prompt; use defaults or flags. |
+| `--path <file>` | Write the config to a custom path. |
+| `--force` | Overwrite an existing file. |
 | `--skip-install` | Only write the file; don't install packages. |
 
-`init` doesn't create a `.env` — example keys live in comments inside `askdb.config.ts`. It intentionally skips config loading so a broken config can't block scaffolding.
+**Database flags**
+
+| Flag | Description |
+| --- | --- |
+| `--database <db>` | `postgres` \| `mysql` \| `sqlite` \| `sqlserver` \| `prisma` |
+| `--connection-env <name>` | Env var name for the connection URL. |
+| `--sqlite-file <path-or-env>` | SQLite file path or env var name. |
+| `--prisma-schema <path>` | Path to `schema.prisma`. |
+| `--schema-out <dir>` | Schema output directory (default `./askdb`). |
+
+**AI flags**
+
+| Flag | Description |
+| --- | --- |
+| `--ai-provider <name>` | `openai` \| `anthropic` \| `google` \| `azure` \| `foundry` |
+| `--ai-key-env <name>` | Env var name for the API key. |
+| `--ai-model-env <name>` | Env var name for the model override. |
+
+**RAG flags**
+
+| Flag | Description |
+| --- | --- |
+| `--rag-store <name>` | `file` \| `memory` \| `pgvector` (default `file`) |
+| `--pgvector-env <name>` | Env var name for the pgvector connection URL. |
+
+**Studio flags**
+
+| Flag | Description |
+| --- | --- |
+| `--studio-execute` | Enable Studio execute (query playground). |
+| `--no-studio-execute` | Disable Studio execute. |
+
+`init` generates only the config branches you selected — SQL Server users won't see a `pg` import, SQLite users get a `file:` field instead of `DATABASE_URL`, and Prisma users don't get a live DB driver unless they explicitly enable Studio execute. It does not create a `.env` — example variable names live inside `askdb.config.ts`.
 
 ### `askdb introspect`
 
@@ -95,7 +133,7 @@ askdb studio --schema ./my-app.schema
 | `--port <n>` | Override the listen port (default `5556`; or set `studio.listen.port` in config). |
 | `--host <host>` | Override the bind host (default `127.0.0.1`; or set `studio.listen.host` in config). |
 
-Requires `@askdb/studio` to be installed (lazy-imported on first use). Studio schema browsing, enrichment, and SQL generation do not require a database driver; the optional Playground execute path requires `pg` in the project running Studio.
+Requires `@askdb/studio` to be installed (lazy-imported on first use). Studio schema browsing, enrichment, and SQL generation do not require a database driver; the optional Playground execute path requires the matching driver (`pg`, `mysql2`, `better-sqlite3`, or `mssql`). `askdb init --studio-execute` installs the correct driver automatically.
 
 ### `askdb bundle`
 
