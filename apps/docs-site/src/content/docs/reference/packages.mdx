@@ -181,7 +181,20 @@ See [the Prisma integration guide](/guides/integrations/prisma/).
 
 ### `@askdb/studio`
 
-Browser-based schema-authoring UI. The CLI's `askdb studio` command lazy-imports this package. Schema browsing, enrichment, and SQL generation do not require a database driver; the optional Postgres execute path requires `pg` in the project running Studio.
+Browser-based schema-authoring UI. The CLI's `askdb studio` command lazy-imports this package. Schema browsing, enrichment, and SQL generation do not require a database driver. The Query Playground's live execute feature supports Postgres, MySQL, SQLite, and SQL Server — each requires its own optional peer driver package.
+
+| Execute provider | Package |
+|---|---|
+| Postgres | `pg` (optional peer) |
+| MySQL | `mysql2` (optional peer) |
+| SQLite | `better-sqlite3` (optional peer) |
+| SQL Server | `mssql` (optional peer) |
+
+Install only the package for your dialect. The execute provider is inferred from your active introspection provider unless overridden with `studio.execute.provider`.
+
+`@askdb/studio` lists all four packages as dev dependencies for local package development and CI type-checking. This is not a requirement for your application — only install the driver you need at runtime.
+
+See [Studio — driver packages](/studio/#driver-packages) and [Configuration reference — Studio execute](/reference/config/#studio-execute-configuration) for setup details.
 
 ```bash
 npm install @askdb/studio

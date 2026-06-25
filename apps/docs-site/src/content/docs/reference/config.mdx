@@ -71,6 +71,43 @@ AskDB reads `.env` next to your process via `dotenv`, then evaluates your `askdb
 
 Everything else AskDB needs — output directory, mode, log level, Studio query connection, the vector-store URL — is set the same way: a field in `askdb.config.ts`, bound to a name you choose with `env("…")`. You don't set any AskDB-prefixed variables yourself; AskDB derives its internal runtime values from your config.
 
+## Studio execute configuration
+
+The `studio.execute` block configures the Query Playground's live execution feature.
+
+```ts
+export default defineConfig({
+  studio: {
+    execute: {
+      provider: "mysql",           // "postgres" | "mysql" | "sqlite" | "sqlserver"
+      databaseUrl: env("DATABASE_URL"),  // network databases (Postgres, MySQL, SQL Server)
+      // file: env("SQLITE_FILE"),       // SQLite only
+    },
+  },
+});
+```
+
+| Field | Env key | Default |
+|---|---|---|
+| `studio.execute.provider` | `ASKDB_STUDIO_EXECUTE_PROVIDER` | Active introspection provider, or `"postgres"` |
+| `studio.execute.databaseUrl` | `ASKDB_STUDIO_DATABASE_URL` | Introspection URL for the active provider |
+| `studio.execute.file` | `ASKDB_STUDIO_SQLITE_FILE` | Introspection file for SQLite |
+
+**Provider resolution order:**
+
+1. `studio.execute.provider` (structured config or `ASKDB_STUDIO_EXECUTE_PROVIDER` env).
+2. The active `introspection.provider` when it is a live engine (`postgres`, `mysql`, `sqlite`, `sqlserver`).
+3. `"postgres"` for backward compatibility.
+
+**Connection resolution** (per provider):
+
+- **Postgres**: `studio.execute.databaseUrl` → `ASKDB_STUDIO_DATABASE_URL` → introspection Postgres URL.
+- **MySQL**: `studio.execute.databaseUrl` → `ASKDB_STUDIO_DATABASE_URL` → introspection MySQL URL.
+- **SQL Server**: `studio.execute.databaseUrl` → `ASKDB_STUDIO_DATABASE_URL` → introspection SQL Server URL.
+- **SQLite**: `studio.execute.file` → `ASKDB_STUDIO_SQLITE_FILE` → introspection SQLite file.
+
+Each execute provider requires its optional peer driver package (`pg`, `mysql2`, `better-sqlite3`, or `mssql`). See [Studio — driver packages](/studio/#driver-packages) for install instructions.
+
 ## Custom providers
 
 `ai.provider` accepts any string — not just the first-party literals. When an unknown provider string is used, AskDB applies a generic branch: you supply `ai.providerConfig.custom.{apiKey, baseUrl, model}` (each bound to a name you choose with `env("…")`), and AskDB hands them to whatever adapter is registered under that provider name.

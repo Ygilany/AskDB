@@ -47,11 +47,47 @@ Concepts capture cross-table business vocabulary that doesn't map to a single ta
 
 The Query Playground is where you test whether your enrichment is working. Type a question in plain language, choose between **Full schema** (send the entire enriched artifact) or **RAG** (retrieve only the relevant chunks), and click **Generate SQL**. The generated SQL appears alongside the retrieval context so you can see exactly what the model was given. If the SQL is wrong, the enrichment fields that need fixing are usually obvious from the context shown.
 
-Generating SQL in Studio does not require a database driver. The optional execute action that runs generated SQL against Postgres requires `pg` in the project running Studio:
+Generating SQL in Studio does not require a database driver. The optional **Execute Query** action runs the generated SQL against a live database and displays the results in the Playground. Studio supports Postgres, MySQL, SQLite, and SQL Server.
+
+### Execute provider
+
+Studio automatically selects the execute provider from your config. When `studio.execute.provider` is not set, Studio uses the active introspection provider when it is a live engine (Postgres, MySQL, SQLite, or SQL Server). If the introspection provider is Prisma (schema-only), Studio defaults to Postgres for backward compatibility.
+
+You can override the provider explicitly in `askdb.config.ts`:
+
+```ts
+export default defineConfig({
+  studio: {
+    execute: {
+      provider: "mysql",           // "postgres" | "mysql" | "sqlite" | "sqlserver"
+      databaseUrl: "mysql://...",  // for network databases
+      // file: "./local.db",       // for SQLite
+    },
+  },
+});
+```
+
+Or set it via environment variable:
 
 ```bash
-pnpm add pg
+ASKDB_STUDIO_EXECUTE_PROVIDER=mysql
+ASKDB_STUDIO_DATABASE_URL=mysql://user:password@localhost/mydb
 ```
+
+### Driver packages
+
+Each execute provider requires its database driver package. These are optional peer dependencies — you only install the one you need:
+
+| Provider | Package | Install |
+|---|---|---|
+| Postgres | `pg` | `pnpm add pg` |
+| MySQL | `mysql2` | `pnpm add mysql2` |
+| SQLite | `better-sqlite3` | `pnpm add better-sqlite3` |
+| SQL Server | `mssql` | `pnpm add mssql` |
+
+The Query Playground shows the configured provider and driver readiness near the Execute button. If the driver is missing, Studio displays an **Install** button (local Studio only) or the exact manual install command.
+
+Driver packages are optional peers, not hard dependencies. This keeps install size minimal: Postgres users do not pay for MySQL or SQL Server clients and vice versa. The packages are listed as dev dependencies in `@askdb/studio` for local package development and CI type-checking — that does not mean your application must install all of them.
 
 ## Tenancy
 
