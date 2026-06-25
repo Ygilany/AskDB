@@ -1,8 +1,11 @@
 import type {
   AskRequest,
   AskResponse,
+  ExecuteInstallDriverRequest,
+  ExecuteInstallDriverResponse,
   ExecuteRequest,
   ExecuteResponse,
+  ExecuteStatusResponse,
   PlaygroundHistoryDto,
   PlaygroundHistoryEntry,
   RagIndexResponse,
@@ -99,6 +102,17 @@ export async function saveToHistory(
 export async function deleteFromHistory(id: string): Promise<{ ok: boolean }> {
   return api<{ ok: boolean }>(`/api/history/${encodeURIComponent(id)}`, {
     method: "DELETE",
+  });
+}
+
+export async function getExecuteStatus(): Promise<ExecuteStatusResponse> {
+  return api<ExecuteStatusResponse>("/api/execute/status");
+}
+
+export async function installExecuteDriver(req: ExecuteInstallDriverRequest): Promise<ExecuteInstallDriverResponse> {
+  return api<ExecuteInstallDriverResponse>("/api/execute/install-driver", {
+    method: "POST",
+    body: JSON.stringify(req),
   });
 }
 
