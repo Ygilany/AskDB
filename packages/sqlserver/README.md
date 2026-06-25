@@ -18,6 +18,13 @@ pnpm add @askdb/core @askdb/introspect @askdb/sqlserver
 pnpm add mssql
 ```
 
+For one-off CLI introspection, include the driver in the same ephemeral command:
+
+```bash
+pnpm dlx -p askdb -p mssql askdb introspect --engine sqlserver --url "$SQLSERVER_URL"
+npx -p askdb -p mssql askdb introspect --engine sqlserver --url "$SQLSERVER_URL"
+```
+
 ## Usage
 
 ### NL→SQL

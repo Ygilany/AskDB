@@ -4,6 +4,7 @@ import type {
   AskDbModeV1,
   AskDbRagEmbedder,
   AskDbRagStore,
+  AskDbStudioExecuteProvider,
 } from "./constants.js";
 
 /**
@@ -334,8 +335,19 @@ export type AskDbConfig = {
     listen?: { host?: string; port?: number };
     /** Query execution against a live database from the Studio playground. */
     execute?: {
-      /** Connection URL used by `POST /api/execute` (maps to `ASKDB_STUDIO_DATABASE_URL`). */
+      /**
+       * Explicit live-execute provider. When omitted, Studio falls back to the active
+       * introspection provider when it is a live engine, then defaults to `"postgres"`.
+       * Maps to `ASKDB_STUDIO_EXECUTE_PROVIDER`.
+       */
+      provider?: AskDbStudioExecuteProvider;
+      /** Connection URL used by `POST /api/execute` for network databases (maps to `ASKDB_STUDIO_DATABASE_URL`). */
       databaseUrl?: string;
+      /**
+       * SQLite file path used by `POST /api/execute` when `provider === "sqlite"`.
+       * Maps to `ASKDB_STUDIO_SQLITE_FILE`.
+       */
+      file?: string;
     };
   };
 

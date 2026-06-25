@@ -42,6 +42,8 @@ import { Tabs, TabItem } from "@astrojs/starlight/components";
 
 ```bash
 npm install @askdb/postgres
+# if you plan to run live introspection
+npm install pg
 ```
 
   </TabItem>
@@ -49,6 +51,8 @@ npm install @askdb/postgres
 
 ```bash
 npm install @askdb/mysql
+# if you plan to run live introspection
+npm install mysql2
 ```
 
   </TabItem>
@@ -56,6 +60,8 @@ npm install @askdb/mysql
 
 ```bash
 npm install @askdb/sqlite
+# if you plan to run live introspection
+npm install better-sqlite3
 ```
 
   </TabItem>
@@ -63,12 +69,14 @@ npm install @askdb/sqlite
 
 ```bash
 npm install @askdb/sqlserver
+# if you plan to run live introspection
+npm install mssql
 ```
 
   </TabItem>
 </Tabs>
 
-You can keep the old adapter installed during a transition. Each adapter is self-contained.
+You can keep the old adapter installed during a transition. Each adapter is self-contained. Database drivers are optional peers used only by live introspection or by your own execution layer.
 
 ### 2. Introspect the new database (if the schema differs)
 
@@ -78,7 +86,7 @@ If you are pointing at a different database instance — one that may have a dif
   <TabItem label="PostgreSQL">
 
 ```bash
-npx askdb introspect \
+pnpm exec askdb introspect \
   --engine postgres \
   --url "postgresql://user:pass@host/dbname" \
   --out my-app.schema \
@@ -89,7 +97,7 @@ npx askdb introspect \
   <TabItem label="MySQL">
 
 ```bash
-npx askdb introspect \
+pnpm exec askdb introspect \
   --engine mysql \
   --url "mysql://user:pass@host/dbname" \
   --out my-app.schema \
@@ -115,14 +123,14 @@ export default {
 Then run:
 
 ```bash
-npx askdb introspect --out my-app.schema --schema-id my-app
+pnpm exec askdb introspect --out my-app.schema --schema-id my-app
 ```
 
   </TabItem>
   <TabItem label="SQL Server">
 
 ```bash
-npx askdb introspect \
+pnpm exec askdb introspect \
   --engine sqlserver \
   --url "sqlserver://user:pass@host/dbname" \
   --out my-app.schema \
@@ -133,6 +141,13 @@ npx askdb introspect \
 </Tabs>
 
 The connection string format follows each engine's convention. The engine itself comes from `--engine` (or `introspection.provider` in `askdb.config.ts`) — the CLI does not infer it from the URL. The artifact records which engine produced it, and `askdb ask` infers the dialect from the artifact.
+
+For one-off live introspection without installing `askdb` in the project, include the driver in the same ephemeral command:
+
+```bash
+pnpm dlx -p askdb -p mysql2 askdb introspect --engine mysql --url "$MYSQL_URL"
+npx -p askdb -p mssql askdb introspect --engine sqlserver --url "$SQLSERVER_URL"
+```
 
 If the logical schema is identical and you are only swapping the adapter package, the existing artifact is already valid — skip this step and go straight to step 3.
 

@@ -13,7 +13,12 @@ PostgreSQL integration for AskDB. Bundles four pieces:
 pnpm add @askdb/core @askdb/introspect @askdb/postgres pg
 ```
 
-`pg` is an **optional peer dependency**. Install it only if you plan to use live introspection mode.
+`pg` is an **optional peer dependency**. Install it only if you plan to use live introspection mode. The CLI does not bundle `pg`; install it in your project or include it in the same one-off command:
+
+```sh
+pnpm dlx -p askdb -p pg askdb introspect --engine postgres --url "$DATABASE_URL"
+npx -p askdb -p pg askdb introspect --engine postgres --url "$DATABASE_URL"
+```
 
 ## Usage
 

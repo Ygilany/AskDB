@@ -1,5 +1,8 @@
 import { AskDbError } from "@askdb/core";
 import type { CatalogQueryResult, CatalogQueryRunner } from "@askdb/introspect";
+import { createRequire } from "node:module";
+import { join } from "node:path";
+import { pathToFileURL } from "node:url";
 
 export type { CatalogQueryResult, CatalogQueryRunner } from "@askdb/introspect";
 
@@ -10,13 +13,46 @@ export type { CatalogQueryResult, CatalogQueryRunner } from "@askdb/introspect";
  */
 let mysql2ModulePromise: Promise<typeof import("mysql2/promise")> | undefined;
 
+function isModuleResolutionFailure(cause: unknown, packageName: string): boolean {
+  if (!(cause instanceof Error)) return false;
+  const nestedCause = (cause as { cause?: unknown }).cause;
+  if (nestedCause && nestedCause !== cause && isModuleResolutionFailure(nestedCause, packageName)) {
+    return true;
+  }
+  const code = (cause as { code?: unknown }).code;
+  if (code !== "ERR_MODULE_NOT_FOUND" && code !== "MODULE_NOT_FOUND") return false;
+  return cause.message.includes(packageName);
+}
+
+async function importOptionalMysql2(): Promise<typeof import("mysql2/promise")> {
+  try {
+    return await import("mysql2/promise");
+  } catch (cause) {
+    if (!isModuleResolutionFailure(cause, "mysql2")) throw cause;
+
+    const projectRequire = createRequire(join(process.cwd(), "package.json"));
+    try {
+      const resolved = projectRequire.resolve("mysql2/promise");
+      return (await import(pathToFileURL(resolved).href)) as typeof import("mysql2/promise");
+    } catch (projectCause) {
+      if (!isModuleResolutionFailure(projectCause, "mysql2")) throw projectCause;
+      throw new AggregateError(
+        [cause, projectCause],
+        "Unable to resolve optional `mysql2` peer dependency",
+      );
+    }
+  }
+}
+
 async function loadMysql2OrThrow(): Promise<typeof import("mysql2/promise")> {
   if (!mysql2ModulePromise) {
-    mysql2ModulePromise = import("mysql2/promise").catch((cause) => {
+    mysql2ModulePromise = importOptionalMysql2().catch((cause) => {
       mysql2ModulePromise = undefined;
       throw new AskDbError(
         "The built-in MySQL catalog query runner requires the optional `mysql2` peer dependency. " +
-          "Install it (e.g. `pnpm add mysql2`) or pass a custom catalog query runner to the MySQL connector.",
+          "Install it in your project (e.g. `pnpm add mysql2`) or include it in the same one-off command " +
+          "(e.g. `pnpm dlx -p askdb -p mysql2 askdb ...` or `npx -p askdb -p mysql2 askdb ...`). " +
+          "You can also pass a custom catalog query runner to the MySQL connector.",
         cause,
       );
     });

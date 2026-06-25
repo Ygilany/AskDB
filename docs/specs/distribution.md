@@ -29,7 +29,8 @@ Release tooling uses changesets for versioning and changelog generation. Package
 ## Design decisions
 
 - **Dialect adapter as the integration seam** — `@askdb/core` is dialect-agnostic and imports no database driver. Consumers pass a built-in dialect string (`"postgres"`, `"mysql"`, etc.) or a custom `AskDialect` adapter. `pnpm add @askdb/core` pulls in no database dependency. See [ADR 0002](../adrs/0002-integration-package-layout.md).
-- **Database drivers as optional peer dependencies** — each integration package (`@askdb/postgres`, `@askdb/mysql`, etc.) declares its driver as a peer; the lazy-import path throws a clear error if the driver is absent when the live connector is used.
+- **Database drivers as optional peer dependencies** — each integration package (`@askdb/postgres`, `@askdb/mysql`, etc.) declares its driver as an optional peer; the lazy-import path throws a clear error if the driver is absent when the live connector is used.
+- **CLI hosts connector providers, not drivers** — `askdb` includes first-party connector providers so `askdb introspect` can route by engine, but it does not bundle database drivers. Live connector runners first resolve optional peers from their normal package graph, then from the caller's project so ephemeral CLI launches can use drivers installed with the application or supplied in the same `npx`/`pnpm dlx` command.
 - **Pre-1.0 breaking changes without migrators** — before 1.0, breaking changes ship with a changeset entry describing the break. No compatibility shims. The changeset records the full surface diff.
 - **Apps vs packages** — `apps/cli`, `apps/http-api`, `apps/studio` are first-party reference apps (batteries-included). `packages/` contains the published library surface. This boundary is explicit in the monorepo layout.
 
@@ -63,6 +64,7 @@ Published packages and their primary exports:
 - `pnpm build` and `pnpm test` pass from repo root (Turbo pipeline).
 - `pnpm pack` for each publishable package: tarball includes `dist/`, `package.json`, `README.md`, `LICENSE`; excludes `src/`, `tsconfig*`, test files.
 - Consumer install smoke: install from local tarballs in a temp directory; import `ask` from `@askdb/core`; call with a mock `LanguageModel` and fake executor; run `tsc --noEmit` on the consumer code.
-- `@askdb/core` without `pg` installed: importing `ask` and calling it with a custom executor works; calling it with a connection string produces a clear error mentioning the missing peer.
+- `@askdb/core` without a database driver installed: importing `ask` and calling it with a custom executor works.
+- `askdb` without `pg` installed: non-live commands and SQL-template introspection commands work; live Postgres introspection fails with a clear missing-peer error until `pg` is installed in the project or supplied in the same ephemeral command.
 - Changesets present for any PR that changes publishable package source.
 - All existing feature tests remain green after any distribution-related change.

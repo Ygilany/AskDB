@@ -543,6 +543,119 @@ describe("getAskDbRuntimeConfig — introspection branches", () => {
   });
 });
 
+describe("getAskDbRuntimeConfig — studio execute branches", () => {
+  afterEach(() => resetAskDbRuntimeForTests());
+
+  function installStudio(
+    studio: AskDbConfig["studio"],
+    intro: AskDbConfig["introspection"] = { provider: "postgres", providerConfig: { postgres: {} }, outputDir: "./askdb/" },
+    flatExtra: Record<string, string> = {},
+  ): void {
+    const structured = minimalConfig({ introspection: intro, studio });
+    const flat = { ...flattenAskDbConfig(structured), ...flatExtra };
+    setAskDbRuntimeForTests({ structured, flat });
+  }
+
+  it("defaults to postgres when no provider is configured", () => {
+    installStudio(undefined, { provider: "postgres", providerConfig: { postgres: {} }, outputDir: "./askdb/" });
+    const rt = getAskDbRuntimeConfig();
+    expect(rt.studio.execute.provider).toBe("postgres");
+  });
+
+  it("uses explicit studio.execute.provider when set", () => {
+    installStudio(
+      { execute: { provider: "mysql", databaseUrl: "mysql://host/db" } },
+      { provider: "postgres", providerConfig: { postgres: {} }, outputDir: "./askdb/" },
+    );
+    const rt = getAskDbRuntimeConfig();
+    expect(rt.studio.execute.provider).toBe("mysql");
+    expect(rt.studio.execute.databaseUrl).toBe("mysql://host/db");
+  });
+
+  it("falls back to introspection provider when no execute provider is set", () => {
+    installStudio(
+      undefined,
+      { provider: "mysql", providerConfig: { mysql: { databaseUrl: "mysql://intro/db" } }, outputDir: "./askdb/" },
+    );
+    const rt = getAskDbRuntimeConfig();
+    expect(rt.studio.execute.provider).toBe("mysql");
+    expect(rt.studio.execute.databaseUrl).toBe("mysql://intro/db");
+  });
+
+  it("falls back to introspection provider for sqlserver", () => {
+    installStudio(
+      undefined,
+      { provider: "sqlserver", providerConfig: { sqlserver: { databaseUrl: "Server=localhost;Database=app;" } }, outputDir: "./askdb/" },
+    );
+    const rt = getAskDbRuntimeConfig();
+    expect(rt.studio.execute.provider).toBe("sqlserver");
+    expect(rt.studio.execute.databaseUrl).toBe("Server=localhost;Database=app;");
+  });
+
+  it("falls back to postgres when introspection is prisma (schema-only provider)", () => {
+    installStudio(
+      undefined,
+      { provider: "prisma", providerConfig: { prisma: {} }, outputDir: "./askdb/" },
+    );
+    const rt = getAskDbRuntimeConfig();
+    expect(rt.studio.execute.provider).toBe("postgres");
+  });
+
+  it("resolves sqlite file from studio.execute.file", () => {
+    installStudio(
+      { execute: { provider: "sqlite", file: "./local.db" } },
+      { provider: "sqlite", providerConfig: { sqlite: { file: "./introspect.db" } }, outputDir: "./askdb/" },
+    );
+    const rt = getAskDbRuntimeConfig();
+    expect(rt.studio.execute.provider).toBe("sqlite");
+    expect(rt.studio.execute.file).toBe("./local.db");
+    expect(rt.studio.execute.databaseUrl).toBeUndefined();
+  });
+
+  it("falls back to introspection sqlite file when studio.execute.file is absent", () => {
+    installStudio(
+      undefined,
+      { provider: "sqlite", providerConfig: { sqlite: { file: "./data/app.db" } }, outputDir: "./askdb/" },
+    );
+    const rt = getAskDbRuntimeConfig();
+    expect(rt.studio.execute.provider).toBe("sqlite");
+    expect(rt.studio.execute.file).toBe("./data/app.db");
+  });
+
+  it("reads ASKDB_STUDIO_EXECUTE_PROVIDER from env", () => {
+    installStudio(
+      undefined,
+      { provider: "postgres", providerConfig: { postgres: {} }, outputDir: "./askdb/" },
+      { ASKDB_STUDIO_EXECUTE_PROVIDER: "mysql", ASKDB_STUDIO_DATABASE_URL: "mysql://env/db" },
+    );
+    const rt = getAskDbRuntimeConfig();
+    expect(rt.studio.execute.provider).toBe("mysql");
+    expect(rt.studio.execute.databaseUrl).toBe("mysql://env/db");
+  });
+
+  it("reads ASKDB_STUDIO_SQLITE_FILE from env when provider is sqlite", () => {
+    installStudio(
+      undefined,
+      { provider: "sqlite", providerConfig: { sqlite: {} }, outputDir: "./askdb/" },
+      { ASKDB_STUDIO_SQLITE_FILE: "./env-file.db" },
+    );
+    const rt = getAskDbRuntimeConfig();
+    expect(rt.studio.execute.provider).toBe("sqlite");
+    expect(rt.studio.execute.file).toBe("./env-file.db");
+  });
+
+  it("preserves backward-compatible postgres databaseUrl via ASKDB_STUDIO_DATABASE_URL", () => {
+    installStudio(
+      undefined,
+      { provider: "postgres", providerConfig: { postgres: {} }, outputDir: "./askdb/" },
+      { ASKDB_STUDIO_DATABASE_URL: "postgres://legacy/db" },
+    );
+    const rt = getAskDbRuntimeConfig();
+    expect(rt.studio.execute.provider).toBe("postgres");
+    expect(rt.studio.execute.databaseUrl).toBe("postgres://legacy/db");
+  });
+});
+
 describe("bootstrapAskDbEnv", () => {
   let dir: string;
   const prevOpenAi = process.env.OPENAI_API_KEY;

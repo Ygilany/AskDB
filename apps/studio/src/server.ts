@@ -1,7 +1,8 @@
 import { randomUUID } from "node:crypto";
 import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
-import { extname, relative, join, resolve } from "node:path";
+import { extname, relative, join, resolve, dirname } from "node:path";
+import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { generateText as defaultGenerateText } from "ai";
 import { getAskDbRuntimeConfig } from "@askdb/config";
@@ -62,7 +63,10 @@ import {
 } from "@askdb/enrich";
 import type {
   AskResponse,
+  ExecuteInstallDriverRequest,
+  ExecuteInstallDriverResponse,
   ExecuteResponse,
+  ExecuteStatusResponse,
   PlaygroundHistoryEntry,
   RagIndexResponse,
   RagQueryResponse,
@@ -73,6 +77,8 @@ import type {
   SuggestResponse,
   SuggestTenantPolicyResponse,
 } from "./shared/api.js";
+import { EXECUTE_DRIVER_REGISTRY, isDriverInstalled } from "./execute-registry.js";
+import type { StudioExecuteProvider } from "./execute-registry.js";
 
 const ai = createAiRegistry([openaiProvider, azureProvider, googleProvider, anthropicProvider]);
 
@@ -230,6 +236,18 @@ export function createStudioServer(options: StudioOptions): StudioServer {
       if (req.method === "DELETE" && url.pathname.startsWith("/api/history/")) {
         const id = decodeURIComponent(url.pathname.slice("/api/history/".length));
         const result = deletePlaygroundHistoryEntry(state.schemaDir, id);
+        return writeJson(res, 200, result);
+      }
+      if (req.method === "GET" && url.pathname === "/api/execute/status") {
+        const result = await getExecuteStatus();
+        return writeJson(res, 200, result);
+      }
+      if (req.method === "POST" && url.pathname === "/api/execute/install-driver") {
+        if (!isLoopbackRequest(req)) {
+          return writeJson(res, 403, { error: { message: "Driver install is only available from loopback clients." } });
+        }
+        const body = await readJson(req);
+        const result = await installExecuteDriver(body, state.schemaDir);
         return writeJson(res, 200, result);
       }
       if (req.method === "POST" && url.pathname === "/api/execute") {
@@ -1117,68 +1135,201 @@ function parsePlaygroundHistoryEntry(
 }
 
 // ---------------------------------------------------------------------------
-// Execute endpoint helper
+// Execute endpoint helpers
 // ---------------------------------------------------------------------------
 
-async function executeQuery(body: unknown): Promise<ExecuteResponse> {
-  const databaseUrl = getAskDbRuntimeConfig().studio.execute.databaseUrl;
-  if (!databaseUrl) {
-    return { ok: false, error: "ASKDB_STUDIO_DATABASE_URL is not configured" };
+async function getExecuteStatus(): Promise<ExecuteStatusResponse> {
+  const rt = getAskDbRuntimeConfig();
+  const { provider, databaseUrl, file } = rt.studio.execute;
+  const def = EXECUTE_DRIVER_REGISTRY[provider];
+  const installed = await isDriverInstalled(def.packageName);
+  const connectionKind: "url" | "file" = provider === "sqlite" ? "file" : "url";
+  const configured = connectionKind === "file" ? Boolean(file) : Boolean(databaseUrl);
+  return {
+    provider,
+    label: def.label,
+    configured,
+    connectionKind,
+    packageName: def.packageName,
+    installed,
+    installCommand: def.installCommand,
+    canInstallFromStudio: true,
+    manualInstallReason: null,
+  };
+}
+
+async function installExecuteDriver(
+  body: unknown,
+  schemaDir: string,
+): Promise<ExecuteInstallDriverResponse> {
+  const rt = getAskDbRuntimeConfig();
+  const configuredProvider = rt.studio.execute.provider;
+
+  // Accept the configured provider or an explicit allowlisted provider.
+  let provider: StudioExecuteProvider = configuredProvider;
+  if (isRecord(body) && typeof body.provider === "string") {
+    const requested = body.provider as StudioExecuteProvider;
+    if (!(requested in EXECUTE_DRIVER_REGISTRY)) {
+      return {
+        ok: false,
+        provider: configuredProvider,
+        packageName: EXECUTE_DRIVER_REGISTRY[configuredProvider].packageName,
+        command: [],
+        error: `Unknown provider: ${body.provider}`,
+        installed: false,
+      };
+    }
+    provider = requested;
   }
+
+  const def = EXECUTE_DRIVER_REGISTRY[provider];
+  const { packageManager, command, args, manualReason } = detectPackageManager(schemaDir, def.packageName);
+
+  if (manualReason) {
+    return {
+      ok: false,
+      provider,
+      packageName: def.packageName,
+      command: [],
+      error: manualReason,
+      installed: false,
+    };
+  }
+
+  // Run the install.
+  const { stdout, stderr, code } = await spawnCommand(command, args, schemaDir);
+  const installed = await isDriverInstalled(def.packageName);
+
+  return {
+    ok: code === 0,
+    provider,
+    packageName: def.packageName,
+    command: [command, ...args],
+    stdout,
+    stderr,
+    error: code !== 0 ? `${packageManager} exited with code ${code}` : undefined,
+    installed,
+  };
+}
+
+type PackageManagerDetection = {
+  packageManager: string;
+  command: string;
+  args: string[];
+  manualReason: string | null;
+};
+
+function detectPackageManager(cwd: string, packageName: string): PackageManagerDetection {
+  // Walk up from schemaDir to find the project root's lockfile.
+  const projectRoot = findProjectRoot(cwd);
+  if (!projectRoot) {
+    return {
+      packageManager: "",
+      command: "",
+      args: [],
+      manualReason: `Could not locate a package.json above ${cwd}. Run the install manually.`,
+    };
+  }
+
+  if (existsSync(join(projectRoot, "pnpm-lock.yaml"))) {
+    return {
+      packageManager: "pnpm",
+      command: "pnpm",
+      args: ["add", packageName],
+      manualReason: null,
+    };
+  }
+  if (existsSync(join(projectRoot, "package-lock.json"))) {
+    return {
+      packageManager: "npm",
+      command: "npm",
+      args: ["install", packageName],
+      manualReason: null,
+    };
+  }
+  if (existsSync(join(projectRoot, "yarn.lock"))) {
+    return {
+      packageManager: "yarn",
+      command: "yarn",
+      args: ["add", packageName],
+      manualReason: null,
+    };
+  }
+  if (existsSync(join(projectRoot, "bun.lockb")) || existsSync(join(projectRoot, "bun.lock"))) {
+    return {
+      packageManager: "bun",
+      command: "bun",
+      args: ["add", packageName],
+      manualReason: null,
+    };
+  }
+
+  return {
+    packageManager: "",
+    command: "",
+    args: [],
+    manualReason: `No recognized lockfile found in ${projectRoot}. Run: pnpm add ${packageName}`,
+  };
+}
+
+function findProjectRoot(startDir: string): string | null {
+  let current = resolve(startDir);
+  for (let i = 0; i < 20; i++) {
+    if (existsSync(join(current, "package.json"))) return current;
+    const parent = dirname(current);
+    if (parent === current) return null;
+    current = parent;
+  }
+  return null;
+}
+
+function spawnCommand(
+  command: string,
+  args: string[],
+  cwd: string,
+): Promise<{ stdout: string; stderr: string; code: number }> {
+  return new Promise((resolve) => {
+    const proc = spawn(command, args, { cwd, shell: false, stdio: ["ignore", "pipe", "pipe"] });
+    const stdoutChunks: Buffer[] = [];
+    const stderrChunks: Buffer[] = [];
+    proc.stdout.on("data", (chunk: Buffer) => stdoutChunks.push(chunk));
+    proc.stderr.on("data", (chunk: Buffer) => stderrChunks.push(chunk));
+    proc.on("close", (code) => {
+      resolve({
+        stdout: Buffer.concat(stdoutChunks).toString("utf8").slice(0, 4096),
+        stderr: Buffer.concat(stderrChunks).toString("utf8").slice(0, 4096),
+        code: code ?? 1,
+      });
+    });
+    proc.on("error", (err) => {
+      resolve({ stdout: "", stderr: err.message, code: 1 });
+    });
+  });
+}
+
+async function executeQuery(body: unknown): Promise<ExecuteResponse> {
+  const rt = getAskDbRuntimeConfig();
+  const { provider, databaseUrl, file } = rt.studio.execute;
+
   if (!isRecord(body) || typeof body.sql !== "string" || body.sql.trim() === "") {
     return { ok: false, error: "`sql` is required." };
   }
   const sql = body.sql;
   const params = Array.isArray(body.params) ? body.params : [];
 
-  type PgClient = {
-    connect(): Promise<void>;
-    end(): Promise<void>;
-    query(text: string): Promise<unknown>;
-    query(opts: { text: string; values: unknown[] }): Promise<{
-      fields: Array<{ name: string }>;
-      rows: Array<Record<string, unknown>>;
-      rowCount: number | null;
-    }>;
-  };
-  type PgMod = { Client: new (opts: { connectionString: string }) => PgClient };
+  const def = EXECUTE_DRIVER_REGISTRY[provider];
+  return def.execute({ connectionString: databaseUrl, file, sql, params });
+}
 
-  let pgMod: PgMod;
-  try {
-    const mod = await import("pg");
-    pgMod = ((mod as unknown as { default?: PgMod }).default ?? mod) as PgMod;
-  } catch {
-    return { ok: false, error: "The `pg` package is required for query execution. Install it with `pnpm add pg`." };
-  }
-
-  const client = new pgMod.Client({ connectionString: databaseUrl });
-  await client.connect();
-  const startMs = Date.now();
-  try {
-    await client.query("BEGIN READ ONLY");
-    const result = await client.query({ text: sql, values: params });
-    await client.query("COMMIT");
-    const durationMs = Date.now() - startMs;
-    const columns = result.fields.map((f) => f.name);
-    const rows = result.rows.map((r) => columns.map((c) => r[c]));
-    const truncated = rows.length > 500;
-    return {
-      ok: true,
-      columns,
-      rows: rows.slice(0, 500),
-      rowCount: result.rowCount ?? rows.length,
-      durationMs,
-      truncated,
-    };
-  } catch (err) {
-    await (client.query("ROLLBACK") as Promise<unknown>).catch(() => {});
-    return {
-      ok: false,
-      error: err instanceof Error ? err.message : String(err),
-    };
-  } finally {
-    await client.end();
-  }
+function isLoopbackRequest(req: IncomingMessage): boolean {
+  const socket = req.socket;
+  const remoteAddress = socket?.remoteAddress ?? "";
+  return (
+    remoteAddress === "127.0.0.1" ||
+    remoteAddress === "::1" ||
+    remoteAddress === "::ffff:127.0.0.1" ||
+    remoteAddress === "localhost"
+  );
 }
 
 function readOptionalJson(path: string): unknown | undefined {

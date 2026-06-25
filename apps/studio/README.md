@@ -23,6 +23,24 @@ It can:
 - draft tenant policy with AI assistance
 - test NL→SQL with tenant scope controls and SQL output modes (`sql-only` vs `sql-params`)
 
+Schema browsing, enrichment, and SQL generation do not require a database
+driver. The optional Playground execute path runs generated SQL against a live
+database. Studio supports Postgres, MySQL, SQLite, and SQL Server. Each dialect
+requires its own optional peer driver package — install only the one you need:
+
+| Dialect | Package |
+|---|---|
+| Postgres | `pnpm add pg` |
+| MySQL | `pnpm add mysql2` |
+| SQLite | `pnpm add better-sqlite3` |
+| SQL Server | `pnpm add mssql` |
+
+The execute provider is resolved from `studio.execute.provider` in
+`askdb.config.ts`, falling back to the active introspection provider, then
+defaulting to Postgres for backward compatibility. The Playground displays the
+configured provider, connection status, and driver readiness near the Execute
+button. When running locally, Studio can install the missing driver for you.
+
 Studio uses `@askdb/enrich` for the shared non-UI Schema v2 authoring logic:
 workspace loading, editable drafts, markdown/frontmatter preservation, save
 helpers, and suggestion context. It should not depend on `@askdb/tui`, which is

@@ -1,8 +1,8 @@
 import { createContext, useContext, useEffect, useMemo, useReducer } from "react";
 import type { ReactNode } from "react";
 import type { TenantFilterCondition, TenantSqlOutputMode, TenantScope } from "@askdb/core";
-import type { AskResponse, ExecuteResponse, PlaygroundHistoryEntry } from "@/shared/api";
-import { ask, deleteFromHistory, executeQuery, getHistory, saveToHistory } from "../api";
+import type { AskResponse, ExecuteResponse, ExecuteStatusResponse, PlaygroundHistoryEntry } from "@/shared/api";
+import { ask, deleteFromHistory, executeQuery, getExecuteStatus, getHistory, installExecuteDriver, saveToHistory } from "../api";
 import type { StatusMessage } from "./workspace-context";
 import { useWorkspace } from "./workspace-context";
 
@@ -50,6 +50,7 @@ type PlaygroundState = {
   askTenantSqlMode: TenantSqlOutputMode;
   executeResult: ExecuteResponse | null;
   executeMessage: StatusMessage | null;
+  executeStatus: ExecuteStatusResponse | null;
   historyEntries: PlaygroundHistoryEntry[];
   busy: Set<string>;
 };
@@ -62,6 +63,7 @@ type PlaygroundAction =
   | { type: "set_tenant_sql_mode"; mode: TenantSqlOutputMode }
   | { type: "set_execute_result"; result: ExecuteResponse | null }
   | { type: "set_execute_message"; message: StatusMessage | null }
+  | { type: "set_execute_status"; status: ExecuteStatusResponse | null }
   | { type: "set_history_entries"; entries: PlaygroundHistoryEntry[] }
   | { type: "set_busy"; key: string; busy: boolean }
   | { type: "load_history_entry"; entry: PlaygroundHistoryEntry; sqlMode: TenantSqlOutputMode }
@@ -77,6 +79,7 @@ const initialPlaygroundState: PlaygroundState = {
   askTenantSqlMode: "sql-only",
   executeResult: null,
   executeMessage: null,
+  executeStatus: null,
   historyEntries: [],
   busy: new Set(),
 };
@@ -160,12 +163,15 @@ interface PlaygroundContextValue {
   setAskTenantSqlMode: (v: TenantSqlOutputMode) => void;
   executeResult: ExecuteResponse | null;
   executeMessage: StatusMessage | null;
+  executeStatus: ExecuteStatusResponse | null;
   historyEntries: PlaygroundHistoryEntry[];
   busy: Set<string>;
 
   handleAsk: () => Promise<void>;
   handleExecute: () => Promise<void>;
   refreshHistory: () => Promise<void>;
+  refreshExecuteStatus: () => Promise<void>;
+  handleInstallExecuteDriver: () => Promise<void>;
   handleDeleteHistory: (id: string) => Promise<void>;
   loadHistoryEntry: (entry: PlaygroundHistoryEntry) => void;
 }
@@ -245,6 +251,33 @@ export function PlaygroundProvider({ children, ragAvailable }: { children: React
       dispatchPlayground({ type: "set_history_entries", entries: h.entries });
     } catch { /* silent */ }
   }
+
+  async function refreshExecuteStatus() {
+    try {
+      const status = await getExecuteStatus();
+      dispatchPlayground({ type: "set_execute_status", status });
+    } catch { /* silent — status is advisory */ }
+  }
+
+  async function handleInstallExecuteDriver() {
+    await withBusy("install-driver", async () => {
+      try {
+        const result = await installExecuteDriver({});
+        if (result.ok || result.installed) {
+          dispatchPlayground({ type: "set_execute_message", message: { kind: "success", text: `Installed ${result.packageName}. Ready to execute.` } });
+        } else {
+          dispatchPlayground({ type: "set_execute_message", message: { kind: "error", text: result.error ?? `Failed to install ${result.packageName}.` } });
+        }
+        await refreshExecuteStatus();
+      } catch (err) {
+        dispatchPlayground({ type: "set_execute_message", message: { kind: "error", text: err instanceof Error ? err.message : String(err) } });
+      }
+    });
+  }
+
+  useEffect(() => {
+    void refreshExecuteStatus();
+  }, []); // intentionally empty — load once on mount
 
   async function handleAsk() {
     if (!playgroundState.askQuestion.trim()) {
@@ -345,9 +378,10 @@ export function PlaygroundProvider({ children, ragAvailable }: { children: React
     setAskTenantSqlMode: (mode) => dispatchPlayground({ type: "set_tenant_sql_mode", mode }),
     executeResult: playgroundState.executeResult,
     executeMessage: playgroundState.executeMessage,
+    executeStatus: playgroundState.executeStatus,
     historyEntries: playgroundState.historyEntries,
     busy: playgroundState.busy,
-    handleAsk, handleExecute, refreshHistory, handleDeleteHistory, loadHistoryEntry,
+    handleAsk, handleExecute, refreshHistory, refreshExecuteStatus, handleInstallExecuteDriver, handleDeleteHistory, loadHistoryEntry,
   };
 
   return <PlaygroundContext.Provider value={value}>{children}</PlaygroundContext.Provider>;
@@ -385,6 +419,8 @@ function playgroundReducer(state: PlaygroundState, action: PlaygroundAction): Pl
       return { ...state, executeResult: action.result };
     case "set_execute_message":
       return { ...state, executeMessage: action.message };
+    case "set_execute_status":
+      return { ...state, executeStatus: action.status };
     case "set_history_entries":
       return { ...state, historyEntries: action.entries };
     case "set_busy": {

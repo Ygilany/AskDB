@@ -329,6 +329,140 @@ describe("AskDB Studio server", () => {
     expect(retrieved.results.length).toBeGreaterThan(0);
     expect(retrieved.results[0].score).toEqual(expect.any(Number));
   });
+
+  // ---------------------------------------------------------------------------
+  // Execute status and install endpoint tests
+  // ---------------------------------------------------------------------------
+
+  it("GET /api/execute/status returns postgres provider when no execute provider is configured", async () => {
+    installStudioRuntime({ ASKDB_RAG_EMBEDDER: "mock" });
+    const schemaDir = copyFixture();
+    const server = createStudioServer({ schema: schemaDir });
+    servers.push(server);
+    const baseUrl = await listen(server);
+
+    const status = await getJson(`${baseUrl}/api/execute/status`);
+    expect(status.provider).toBe("postgres");
+    expect(status.label).toBe("Postgres");
+    expect(status.packageName).toBe("pg");
+    expect(status.connectionKind).toBe("url");
+    expect(typeof status.installed).toBe("boolean");
+    expect(typeof status.configured).toBe("boolean");
+    expect(status.installCommand).toBe("pnpm add pg");
+    expect(status.canInstallFromStudio).toBe(true);
+  });
+
+  it("GET /api/execute/status reports sqlserver provider when introspection is sqlserver", async () => {
+    const sqlserverConfig: AskDbConfig = {
+      ...STUDIO_TEST_BASE,
+      introspection: {
+        provider: "sqlserver",
+        providerConfig: { sqlserver: { databaseUrl: "Server=localhost;Database=app;" } },
+        outputDir: "./askdb/",
+      },
+    };
+    installStudioRuntime({}, sqlserverConfig);
+    const schemaDir = copyFixture();
+    const server = createStudioServer({ schema: schemaDir });
+    servers.push(server);
+    const baseUrl = await listen(server);
+
+    const status = await getJson(`${baseUrl}/api/execute/status`);
+    expect(status.provider).toBe("sqlserver");
+    expect(status.label).toBe("SQL Server");
+    expect(status.packageName).toBe("mssql");
+    expect(status.connectionKind).toBe("url");
+    expect(status.configured).toBe(true);
+  });
+
+  it("GET /api/execute/status reports sqlite provider with file connection kind", async () => {
+    const sqliteConfig: AskDbConfig = {
+      ...STUDIO_TEST_BASE,
+      introspection: {
+        provider: "sqlite",
+        providerConfig: { sqlite: { file: "./data/app.db" } },
+        outputDir: "./askdb/",
+      },
+    };
+    installStudioRuntime({}, sqliteConfig);
+    const schemaDir = copyFixture();
+    const server = createStudioServer({ schema: schemaDir });
+    servers.push(server);
+    const baseUrl = await listen(server);
+
+    const status = await getJson(`${baseUrl}/api/execute/status`);
+    expect(status.provider).toBe("sqlite");
+    expect(status.label).toBe("SQLite");
+    expect(status.packageName).toBe("better-sqlite3");
+    expect(status.connectionKind).toBe("file");
+    expect(status.configured).toBe(true);
+  });
+
+  it("GET /api/execute/status reports not configured when no connection URL is set", async () => {
+    // postgres provider but no database URL anywhere
+    installStudioRuntime({}, {
+      ...STUDIO_TEST_BASE,
+      introspection: { provider: "postgres", providerConfig: { postgres: {} }, outputDir: "./askdb/" },
+    }, { omitFlatKeys: ["ASKDB_INTROSPECT_POSTGRES_URL", "ASKDB_STUDIO_DATABASE_URL"] });
+    const schemaDir = copyFixture();
+    const server = createStudioServer({ schema: schemaDir });
+    servers.push(server);
+    const baseUrl = await listen(server);
+
+    const status = await getJson(`${baseUrl}/api/execute/status`);
+    expect(status.provider).toBe("postgres");
+    expect(status.configured).toBe(false);
+  });
+
+  it("POST /api/execute/install-driver rejects unknown provider", async () => {
+    installStudioRuntime({});
+    const schemaDir = copyFixture();
+    const server = createStudioServer({ schema: schemaDir });
+    servers.push(server);
+    const baseUrl = await listen(server);
+
+    const result = await postJson(`${baseUrl}/api/execute/install-driver`, { provider: "oracle" });
+    expect(result.ok).toBe(false);
+    expect(result.error).toMatch(/Unknown provider/);
+  });
+
+  it("POST /api/execute returns ok:false when the connection is not configured", async () => {
+    installStudioRuntime({}, {
+      ...STUDIO_TEST_BASE,
+      introspection: { provider: "postgres", providerConfig: { postgres: {} }, outputDir: "./askdb/" },
+    }, { omitFlatKeys: ["ASKDB_INTROSPECT_POSTGRES_URL", "ASKDB_STUDIO_DATABASE_URL"] });
+    const schemaDir = copyFixture();
+    const server = createStudioServer({ schema: schemaDir });
+    servers.push(server);
+    const baseUrl = await listen(server);
+
+    const result = await postJson(`${baseUrl}/api/execute`, { sql: "SELECT 1" });
+    expect(result.ok).toBe(false);
+    expect(result.error).toMatch(/No connection URL/);
+  });
+
+  it("POST /api/execute dispatches to mysql runner when provider is mysql", async () => {
+    const mysqlConfig: AskDbConfig = {
+      ...STUDIO_TEST_BASE,
+      introspection: {
+        provider: "mysql",
+        providerConfig: { mysql: { databaseUrl: "mysql://unreachable-host/db" } },
+        outputDir: "./askdb/",
+      },
+    };
+    installStudioRuntime({}, mysqlConfig);
+    const schemaDir = copyFixture();
+    const server = createStudioServer({ schema: schemaDir });
+    servers.push(server);
+    const baseUrl = await listen(server);
+
+    // mysql2 is installed as a dev dep, so the error will be a connection error, not a missing-driver error
+    const result = await postJson(`${baseUrl}/api/execute`, { sql: "SELECT 1" });
+    expect(result.ok).toBe(false);
+    // The error should come from the mysql runner, not from a missing-pg error
+    expect(result.error).not.toMatch(/pg.*required/);
+    expect(result.error).not.toMatch(/`pg`/);
+  });
 });
 
 function copyFixture(): string {

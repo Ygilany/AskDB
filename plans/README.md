@@ -24,6 +24,19 @@ optional overrides — while keeping `@askdb/core`'s `ask()` a pure, BYO-model p
 024 builds the package (additive), 025 migrates the CLI + HTTP API onto it (removing the
 duplicated schema/model/dialect resolution), 026 updates the example. This is a code cycle,
 not docs.
+Plan 029: generated on 2026-06-25 at commit `f4a508e` via `improve plan`, from the
+optional database-driver architecture review. It removes the CLI's direct `pg`
+dependency and makes all live introspection drivers resolve consistently as optional peers,
+including from the caller's project when `askdb` is launched through `npx`/`dlx`.
+Plan 030: generated on 2026-06-25 at commit `7152dec` via `improve plan`, from the
+Studio execute architecture review. It extends Studio's live query execution from the
+current Postgres-only runner to all supported live dialects, with driver readiness and
+safe local install UX for optional peer database clients.
+Plan 031: generated on 2026-06-25 at commit `7152dec` via `improve plan`, from the
+`askdb init` setup UX review. It turns init from a one-size-fits-all template into a
+TTY wizard/non-interactive flag surface that writes a tailored `askdb.config.ts` and
+installs only the packages needed for the selected database, AI provider, RAG store,
+and optional Studio execute path.
 
 Execute in the order below unless dependencies say otherwise. Each executor: read the plan
 fully before starting, honor its STOP conditions, and update your row when done.
@@ -60,6 +73,9 @@ fully before starting, honor its STOP conditions, and update your row when done.
 | 026 | Lead the `examples/ask-question` example with the `@askdb/client` fast path, keeping the direct `ask()` BYO path as the advanced variant | P3 | S | 024 | DONE |
 | 027 | Document the `@askdb/client` facade across the docs site (packages ref, bring-your-own-model, embed-in-node, homepage) and internal docs (architecture, core-pipeline spec) | P2 | M | 024 (hard); land after 025/026 | DONE |
 | 028 | Give `@askdb/client` typed errors + `unknownDialect` option; restore HTTP status-code parity (missing file → 400, exotic provider → postgres) and the CLI's rich unsupported-provider message | P2 | M | 024, 025 (both DONE) | DONE |
+| 029 | Remove the CLI's bundled Postgres driver and make optional database drivers resolve consistently | P1 | M | — | DONE |
+| 030 | Let Studio execute generated SQL against any supported live dialect | P1 | L | 029 | DONE |
+| 031 | Make `askdb init` a setup wizard that writes a tailored config and installs selected packages | P1 | L | 030 | TODO |
 
 Status values: TODO | IN PROGRESS | DONE | BLOCKED (with one-line reason) | REJECTED (with one-line rationale)
 
@@ -177,6 +193,25 @@ Status values: TODO | IN PROGRESS | DONE | BLOCKED (with one-line reason) | REJE
     (BYO escape hatch) and scopes out `quickstart.mdx` / `deploy-as-http-service.mdx` /
     `rag-for-large-schemas.mdx` / `multi-tenancy.mdx` to keep the PR reviewable — those are
     listed as follow-up surfaces if the maintainer later wants the facade site-wide.
+
+- 029 (2026-06-25, `improve plan`) is a targeted architecture fix for live introspection
+  driver boundaries. The internal distribution spec already says drivers are optional peers
+  owned by engine integration packages, but `apps/cli/package.json` still ships `pg` directly,
+  making Postgres special and masking the same `npx`/`dlx` optional-peer failure seen with SQL
+  Server's `mssql` runner. 029 removes the CLI's `pg` dependency, adds project-aware optional
+  peer resolution for `pg`/`mysql2`/`better-sqlite3`/`mssql`, strengthens packaged install smoke,
+  and updates package READMEs plus docs-site/internal docs. It is independent of 024–028.
+
+- 030 depends on 029 because Studio should reuse the same optional-peer boundary and
+  project-aware driver resolution model instead of introducing a second package-loading story.
+  It deliberately leaves drivers as optional peers, adds Studio's per-dialect execute registry,
+  and layers a local-only install/status UX on top so users can remediate missing `mssql`, `pg`,
+  `mysql2`, or `better-sqlite3` packages from the Query Playground.
+
+- 031 depends on 030 because the init wizard's "enable Studio execute" path needs a real
+  provider-aware Studio execute config and package map. Without 030, the wizard would either
+  have to generate a Postgres-only `studio.execute` block or teach users a UX that Studio cannot
+  honor yet.
 
 ## Related tooling
 

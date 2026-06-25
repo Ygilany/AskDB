@@ -18,6 +18,13 @@ pnpm add @askdb/core @askdb/introspect @askdb/sqlite
 pnpm add better-sqlite3
 ```
 
+For one-off CLI introspection, include the driver in the same ephemeral command:
+
+```bash
+pnpm dlx -p askdb -p better-sqlite3 askdb introspect --engine sqlite --url ./my-database.db
+npx -p askdb -p better-sqlite3 askdb introspect --engine sqlite --url ./my-database.db
+```
+
 ## Usage
 
 ### NL→SQL

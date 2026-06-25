@@ -42,7 +42,7 @@ pnpm add @askdb/postgres
 pnpm add ai @ai-sdk/openai
 ```
 
-`pg` is optional and only needed for live Postgres introspection through `@askdb/postgres`.
+Live introspection drivers are optional peers of the engine packages. Install `pg`, `mysql2`, `better-sqlite3`, or `mssql` only when using the corresponding live connector. The `askdb` CLI does not bundle database drivers; for one-off runs, include the driver in the same command, for example `pnpm dlx -p askdb -p pg askdb introspect --url "$DATABASE_URL"`.
 
 ```ts
 import { ask, loadSchema } from "@askdb/core";
@@ -141,7 +141,7 @@ See [`.env.example`](.env.example) for a copy/paste template. Keep real secrets 
 | `OPENAI_API_KEY` | Required for NL→SQL (BYO; OpenAI-compatible). |
 | `OPENAI_BASE_URL` | Optional custom base URL for OpenAI-compatible APIs. |
 | `ASKDB_MODEL` or `OPENAI_MODEL` | Optional model id (default `gpt-4o-mini`). |
-| `DATABASE_URL` | Optional; commonly passed to `askdb introspect --url` for live Postgres introspection. |
+| `DATABASE_URL` | Optional; commonly passed to `askdb introspect --url` for live Postgres introspection when `pg` is installed in the project or supplied in the same one-off CLI command. |
 | `ASKDB_LOG_LEVEL` | Optional structured log level: `trace` \| `debug` \| `info` \| `warn` \| `error` \| `fatal` \| `silent` (default: `silent` unless `--verbose`, `--log-file`, or `--log-stdout` implies `info`). |
 | `ASKDB_CORRELATION_ID` | Optional; override the correlation id emitted on every JSON log line for the run. |
 | `ASKDB_MODE` | Optional operating mode (`schema_only` \| `bounded_results`); default `schema_only`. Formal contract: [`docs/contracts/modes-v1.md`](docs/contracts/modes-v1.md). |

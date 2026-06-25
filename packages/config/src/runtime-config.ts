@@ -1,4 +1,5 @@
-import type { AskDbDialectId, AskDbIntrospectionProvider } from "./constants.js";
+import type { AskDbDialectId, AskDbIntrospectionProvider, AskDbStudioExecuteProvider } from "./constants.js";
+import { ASKDB_STUDIO_EXECUTE_PROVIDERS } from "./constants.js";
 import type { AskDbConfig } from "./types.js";
 import { DEFAULT_INTROSPECT_OUTPUT_DIR } from "./defaults.js";
 import { flatToAiEnv, getAskDbRuntimeStore } from "./runtime-store.js";
@@ -91,8 +92,16 @@ export type AskDbRuntimeNlToSqlConfig = {
 
 export type AskDbRuntimeStudioConfig = {
   execute: {
-    /** Connection URL used by the Studio playground query runner (`POST /api/execute`). */
+    /**
+     * Resolved execute provider. Falls back to the active introspection provider when it
+     * is a live engine (`postgres`, `mysql`, `sqlite`, `sqlserver`), then defaults to
+     * `"postgres"` for backward compatibility.
+     */
+    provider: AskDbStudioExecuteProvider;
+    /** Connection URL used by the Studio playground query runner for network databases. */
     databaseUrl: string | undefined;
+    /** SQLite file path used when `provider === "sqlite"`. */
+    file: string | undefined;
   };
 };
 
@@ -221,9 +230,72 @@ export function getAskDbRuntimeConfig(): AskDbRuntimeConfig {
       dialect: structured.dialect,
     },
     studio: {
-      execute: {
-        databaseUrl: pickFlat(flat, "ASKDB_STUDIO_DATABASE_URL"),
-      },
+      execute: resolveStudioExecuteConfig(structured, flat),
     },
   };
+}
+
+function resolveStudioExecuteConfig(
+  structured: Readonly<AskDbConfig>,
+  flat: Readonly<Record<string, string>>,
+): AskDbRuntimeStudioConfig["execute"] {
+  // 1. Explicit provider from structured config or env.
+  const providerRaw =
+    structured.studio?.execute?.provider ??
+    pickFlat(flat, "ASKDB_STUDIO_EXECUTE_PROVIDER");
+
+  let provider: AskDbStudioExecuteProvider;
+  if (providerRaw !== undefined && (ASKDB_STUDIO_EXECUTE_PROVIDERS as ReadonlyArray<string>).includes(providerRaw)) {
+    provider = providerRaw as AskDbStudioExecuteProvider;
+  } else {
+    // 2. Fall back to introspection provider when it is a live execute provider.
+    const introspectionProvider = structured.introspection?.provider;
+    if (introspectionProvider !== undefined && (ASKDB_STUDIO_EXECUTE_PROVIDERS as ReadonlyArray<string>).includes(introspectionProvider)) {
+      provider = introspectionProvider as AskDbStudioExecuteProvider;
+    } else {
+      // 3. Default to postgres for backward compatibility.
+      provider = "postgres";
+    }
+  }
+
+  // Connection resolution — each provider draws from its own structured field
+  // first, then the relevant flat env key.
+  let databaseUrl: string | undefined;
+  let file: string | undefined;
+
+  if (provider === "postgres") {
+    databaseUrl =
+      structured.studio?.execute?.databaseUrl?.trim() ||
+      pickFlat(flat, "ASKDB_STUDIO_DATABASE_URL") ||
+      (structured.introspection?.provider === "postgres"
+        ? structured.introspection.providerConfig?.postgres?.databaseUrl?.trim() ||
+          pickFlat(flat, "ASKDB_INTROSPECT_POSTGRES_URL")
+        : undefined);
+  } else if (provider === "mysql") {
+    databaseUrl =
+      structured.studio?.execute?.databaseUrl?.trim() ||
+      pickFlat(flat, "ASKDB_STUDIO_DATABASE_URL") ||
+      (structured.introspection?.provider === "mysql"
+        ? structured.introspection.providerConfig?.mysql?.databaseUrl?.trim() ||
+          pickFlat(flat, "ASKDB_INTROSPECT_MYSQL_URL")
+        : undefined);
+  } else if (provider === "sqlserver") {
+    databaseUrl =
+      structured.studio?.execute?.databaseUrl?.trim() ||
+      pickFlat(flat, "ASKDB_STUDIO_DATABASE_URL") ||
+      (structured.introspection?.provider === "sqlserver"
+        ? structured.introspection.providerConfig?.sqlserver?.databaseUrl?.trim() ||
+          pickFlat(flat, "ASKDB_INTROSPECT_SQLSERVER_URL")
+        : undefined);
+  } else if (provider === "sqlite") {
+    file =
+      structured.studio?.execute?.file?.trim() ||
+      pickFlat(flat, "ASKDB_STUDIO_SQLITE_FILE") ||
+      (structured.introspection?.provider === "sqlite"
+        ? structured.introspection.providerConfig?.sqlite?.file?.trim() ||
+          pickFlat(flat, "ASKDB_INTROSPECT_SQLITE_FILE")
+        : undefined);
+  }
+
+  return { provider, databaseUrl, file };
 }

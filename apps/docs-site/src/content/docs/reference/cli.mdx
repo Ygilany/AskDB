@@ -60,6 +60,13 @@ askdb introspect \
 | `--print` | Print the introspection result without writing. |
 | `--diff <existing>` | Diff against an existing schema artifact. |
 
+Live introspection requires the matching engine driver (`pg`, `mysql2`, `better-sqlite3`, or `mssql`) in the project running `askdb`, or supplied in the same one-off command:
+
+```bash
+pnpm dlx -p askdb -p pg askdb introspect --engine postgres --url "$DATABASE_URL"
+npx -p askdb -p mssql askdb introspect --engine sqlserver --url "$SQLSERVER_URL"
+```
+
 ### `askdb enrich`
 
 Launches the TUI for authoring per-table descriptions, aliases, concepts, and sensitive markers.
@@ -88,7 +95,7 @@ askdb studio --schema ./my-app.schema
 | `--port <n>` | Override the listen port (default `5556`; or set `studio.listen.port` in config). |
 | `--host <host>` | Override the bind host (default `127.0.0.1`; or set `studio.listen.host` in config). |
 
-Requires `@askdb/studio` to be installed (lazy-imported on first use).
+Requires `@askdb/studio` to be installed (lazy-imported on first use). Studio schema browsing, enrichment, and SQL generation do not require a database driver; the optional Playground execute path requires `pg` in the project running Studio.
 
 ### `askdb bundle`
 

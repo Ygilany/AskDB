@@ -34,9 +34,9 @@ export function PlaygroundPage() {
     askTenantFilterRows, setAskTenantFilterRows,
     generatedTenantScopeJson, tenantScopeValidationError,
     askTenantSqlMode, setAskTenantSqlMode,
-    executeResult, executeMessage,
+    executeResult, executeMessage, executeStatus,
     historyEntries, busy,
-    handleAsk, handleExecute, loadHistoryEntry, handleDeleteHistory,
+    handleAsk, handleExecute, loadHistoryEntry, handleDeleteHistory, handleInstallExecuteDriver,
   } = usePlayground();
 
   const onKeyDown = useCallback((e: KeyboardEvent) => {
@@ -520,16 +520,55 @@ export function PlaygroundPage() {
                   </section>
                 )}
 
-                <div style={{ padding: "var(--pad-y) var(--pad-x)", borderBottom: "1px solid var(--border)", display: "flex", alignItems: "center", gap: 12 }}>
-                  <button
-                    className="btn primary"
-                    disabled={busy.has("execute") || !askResult.sql}
-                    onClick={() => void handleExecute()}
-                  >
-                    {busy.has("execute") ? <Loader2 size={14} className="animate-spin" /> : <Play size={14} />}
-                    Execute Query
-                  </button>
-                  {executeMessage && <InlineStatus status={executeMessage} />}
+                <div style={{ padding: "var(--pad-y) var(--pad-x)", borderBottom: "1px solid var(--border)", display: "flex", flexDirection: "column", gap: 8 }}>
+                  {executeStatus && (
+                    <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                      <span className="muted" style={{ fontSize: 11, fontWeight: 600 }}>
+                        {executeStatus.label}
+                      </span>
+                      {executeStatus.configured ? (
+                        <span className="chip" style={{ fontSize: 11 }}>
+                          {executeStatus.connectionKind === "file" ? "file configured" : "URL configured"}
+                        </span>
+                      ) : (
+                        <span className="chip red" style={{ fontSize: 11 }}>
+                          {executeStatus.connectionKind === "file" ? "no file" : "no URL"}
+                        </span>
+                      )}
+                      {executeStatus.installed ? (
+                        <span className="chip" style={{ fontSize: 11 }}>{executeStatus.packageName} ready</span>
+                      ) : (
+                        <>
+                          <span className="chip red" style={{ fontSize: 11 }}>{executeStatus.packageName} missing</span>
+                          {executeStatus.canInstallFromStudio && (
+                            <button
+                              className="btn ghost sm"
+                              disabled={busy.has("install-driver")}
+                              onClick={() => void handleInstallExecuteDriver()}
+                              style={{ fontSize: 11 }}
+                            >
+                              {busy.has("install-driver") ? <Loader2 size={12} className="animate-spin" /> : null}
+                              Install {executeStatus.packageName}
+                            </button>
+                          )}
+                          {!executeStatus.canInstallFromStudio && executeStatus.manualInstallReason && (
+                            <span className="muted" style={{ fontSize: 11 }}>{executeStatus.installCommand}</span>
+                          )}
+                        </>
+                      )}
+                    </div>
+                  )}
+                  <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                    <button
+                      className="btn primary"
+                      disabled={busy.has("execute") || !askResult.sql || (executeStatus !== null && (!executeStatus.configured || !executeStatus.installed))}
+                      onClick={() => void handleExecute()}
+                    >
+                      {busy.has("execute") ? <Loader2 size={14} className="animate-spin" /> : <Play size={14} />}
+                      Execute Query
+                    </button>
+                    {executeMessage && <InlineStatus status={executeMessage} />}
+                  </div>
                 </div>
 
                 {executeResult?.ok === true && (

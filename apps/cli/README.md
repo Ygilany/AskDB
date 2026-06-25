@@ -16,7 +16,26 @@ pnpm dlx askdb --help
 pnpm dlx askdb init
 ```
 
-The CLI delegates live introspection to AskDB connector packages; each connector owns any database driver it needs.
+The CLI delegates live introspection to AskDB connector packages; each connector owns any database driver it needs. `askdb init` installs config support, not database drivers.
+
+## Live introspection drivers
+
+For project-local usage, install the CLI plus the driver for the engine you want to introspect:
+
+```sh
+pnpm add -D askdb
+pnpm add mssql
+pnpm exec askdb introspect --engine sqlserver --url "$SQLSERVER_URL"
+```
+
+For one-off runs, include the driver in the same ephemeral command:
+
+```sh
+pnpm dlx -p askdb -p mssql askdb introspect --engine sqlserver --url "$SQLSERVER_URL"
+npx -p askdb -p mssql askdb introspect --engine sqlserver --url "$SQLSERVER_URL"
+```
+
+Use `pg` for Postgres, `mysql2` for MySQL, `better-sqlite3` for SQLite, and `mssql` for SQL Server.
 
 ## Quickstart
 

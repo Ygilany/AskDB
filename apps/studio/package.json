@@ -62,22 +62,48 @@
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "lucide-react": "^1.18.0",
-    "pg": "^8.21.0",
     "radix-ui": "^1.5.0",
     "react": "^19.2.7",
     "react-dom": "^19.2.7",
     "react-router": "^7.17.0",
     "tailwind-merge": "^3.6.0"
   },
+  "peerDependencies": {
+    "better-sqlite3": ">=9",
+    "mssql": ">=10",
+    "mysql2": ">=3",
+    "pg": ">=8"
+  },
+  "peerDependenciesMeta": {
+    "better-sqlite3": {
+      "optional": true
+    },
+    "mssql": {
+      "optional": true
+    },
+    "mysql2": {
+      "optional": true
+    },
+    "pg": {
+      "optional": true
+    }
+  },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
     "@tailwindcss/vite": "^4.3.1",
+    "@types/better-sqlite3": "^7.6.13",
+    "@types/mssql": "^9.1.5",
+    "@types/pg": "^8.20.0",
     "@types/react": "^19.2.17",
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^6.0.2",
+    "better-sqlite3": "^11.10.0",
     "eslint": "^10.5.0",
     "eslint-import-resolver-typescript": "^4.4.5",
     "eslint-plugin-import": "^2.32.0",
+    "mssql": "^11.0.1",
+    "mysql2": "^3.14.1",
+    "pg": "^8.21.0",
     "tailwindcss": "^4.3.1",
     "typescript": "^6.0.3",
     "typescript-eslint": "^8.61.0",

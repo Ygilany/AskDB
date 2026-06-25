@@ -139,7 +139,7 @@ PostgreSQL dialect, connector, catalog SQL templates, and an optional `pg`-based
 npm install @askdb/mysql
 ```
 
-MySQL dialect and introspection. Pass `dialect: "mysql"` to `ask()`.
+MySQL dialect, connector, catalog SQL templates, and an optional `mysql2`-based catalog query runner for live introspection. Pass `dialect: "mysql"` to `ask()`.
 
 ### `@askdb/sqlite`
 
@@ -147,7 +147,7 @@ MySQL dialect and introspection. Pass `dialect: "mysql"` to `ask()`.
 npm install @askdb/sqlite
 ```
 
-SQLite dialect and introspection. Works with embedded file-backed databases. Pass `dialect: "sqlite"` to `ask()`.
+SQLite dialect, connector, catalog SQL templates, and an optional `better-sqlite3`-based catalog query runner for live introspection. Works with embedded file-backed databases. Pass `dialect: "sqlite"` to `ask()`.
 
 ### `@askdb/sqlserver`
 
@@ -155,7 +155,7 @@ SQLite dialect and introspection. Works with embedded file-backed databases. Pas
 npm install @askdb/sqlserver
 ```
 
-SQL Server (T-SQL) dialect and introspection. Pass `dialect: "sqlserver"` to `ask()`.
+SQL Server (T-SQL) dialect, connector, catalog SQL templates, and an optional `mssql`-based catalog query runner for live introspection. Pass `dialect: "sqlserver"` to `ask()`.
 
 ## Introspection
 
@@ -181,7 +181,20 @@ See [the Prisma integration guide](/guides/integrations/prisma/).
 
 ### `@askdb/studio`
 
-Browser-based schema-authoring UI. The CLI's `askdb studio` command lazy-imports this package.
+Browser-based schema-authoring UI. The CLI's `askdb studio` command lazy-imports this package. Schema browsing, enrichment, and SQL generation do not require a database driver. The Query Playground's live execute feature supports Postgres, MySQL, SQLite, and SQL Server — each requires its own optional peer driver package.
+
+| Execute provider | Package |
+|---|---|
+| Postgres | `pg` (optional peer) |
+| MySQL | `mysql2` (optional peer) |
+| SQLite | `better-sqlite3` (optional peer) |
+| SQL Server | `mssql` (optional peer) |
+
+Install only the package for your dialect. The execute provider is inferred from your active introspection provider unless overridden with `studio.execute.provider`.
+
+`@askdb/studio` lists all four packages as dev dependencies for local package development and CI type-checking. This is not a requirement for your application — only install the driver you need at runtime.
+
+See [Studio — driver packages](/studio/#driver-packages) and [Configuration reference — Studio execute](/reference/config/#studio-execute-configuration) for setup details.
 
 ```bash
 npm install @askdb/studio
