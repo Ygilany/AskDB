@@ -193,6 +193,35 @@ export type PlaygroundHistoryDto = {
   entries: PlaygroundHistoryEntry[];
 };
 
+export type ExecuteProvider = "postgres" | "mysql" | "sqlite" | "sqlserver";
+
+export type ExecuteStatusResponse = {
+  provider: ExecuteProvider;
+  label: string;
+  configured: boolean;
+  connectionKind: "url" | "file";
+  packageName: string;
+  installed: boolean;
+  installCommand: string;
+  canInstallFromStudio: boolean;
+  manualInstallReason: string | null;
+};
+
+export type ExecuteInstallDriverRequest = {
+  provider?: ExecuteProvider;
+};
+
+export type ExecuteInstallDriverResponse = {
+  ok: boolean;
+  provider: ExecuteProvider;
+  packageName: string;
+  command: string[];
+  stdout?: string;
+  stderr?: string;
+  error?: string;
+  installed: boolean;
+};
+
 export type ExecuteRequest = {
   sql: string;
   params?: unknown[];
