@@ -265,7 +265,9 @@ export function flattenAskDbConfig(config: AskDbConfig): Record<string, string> 
   if (config.studio?.listen?.port !== undefined && !Number.isNaN(config.studio.listen.port)) {
     set(out, "ASKDB_STUDIO_PORT", String(config.studio.listen.port));
   }
+  set(out, "ASKDB_STUDIO_EXECUTE_PROVIDER", config.studio?.execute?.provider);
   set(out, "ASKDB_STUDIO_DATABASE_URL", config.studio?.execute?.databaseUrl);
+  set(out, "ASKDB_STUDIO_SQLITE_FILE", config.studio?.execute?.file);
   // --- HTTP API listen (canonical keys on runtime flat map) ---
   const httpListen = config.httpApi?.listen;
   if (httpListen?.port !== undefined && !Number.isNaN(httpListen.port)) {

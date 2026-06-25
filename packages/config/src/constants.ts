@@ -51,3 +51,15 @@ export const ASKDB_DIALECTS = [
   "sqlserver",
 ] as const;
 export type AskDbDialectId = (typeof ASKDB_DIALECTS)[number];
+
+/**
+ * Live execute providers supported by the Studio Query Playground.
+ * Subset of introspection providers — excludes `prisma` which is schema-only.
+ */
+export const ASKDB_STUDIO_EXECUTE_PROVIDERS = [
+  "postgres",
+  "mysql",
+  "sqlite",
+  "sqlserver",
+] as const;
+export type AskDbStudioExecuteProvider = (typeof ASKDB_STUDIO_EXECUTE_PROVIDERS)[number];

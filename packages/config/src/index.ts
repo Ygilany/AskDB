@@ -68,6 +68,7 @@ export {
   ASKDB_AI_PROVIDERS,
   ASKDB_INTROSPECTION_PROVIDERS,
   ASKDB_DIALECTS,
+  ASKDB_STUDIO_EXECUTE_PROVIDERS,
 } from "./constants.js";
 export type {
   AskDbModeV1,
@@ -77,4 +78,5 @@ export type {
   AskDbAiProviderId,
   AskDbIntrospectionProvider,
   AskDbDialectId,
+  AskDbStudioExecuteProvider,
 } from "./constants.js";
