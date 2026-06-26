@@ -75,7 +75,7 @@ fully before starting, honor its STOP conditions, and update your row when done.
 | 028 | Give `@askdb/client` typed errors + `unknownDialect` option; restore HTTP status-code parity (missing file → 400, exotic provider → postgres) and the CLI's rich unsupported-provider message | P2 | M | 024, 025 (both DONE) | DONE |
 | 029 | Remove the CLI's bundled Postgres driver and make optional database drivers resolve consistently | P1 | M | — | DONE |
 | 030 | Let Studio execute generated SQL against any supported live dialect | P1 | L | 029 | DONE |
-| 031 | Make `askdb init` a setup wizard that writes a tailored config and installs selected packages | P1 | L | 030 | TODO |
+| 031 | Make `askdb init` a setup wizard that writes a tailored config and installs selected packages | P1 | L | 030 | DONE |
 
 Status values: TODO | IN PROGRESS | DONE | BLOCKED (with one-line reason) | REJECTED (with one-line rationale)
 
