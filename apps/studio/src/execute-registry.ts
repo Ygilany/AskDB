@@ -10,6 +10,9 @@
  * package only fails when the user actually tries to execute a query.
  */
 
+import { createRequire } from "node:module";
+import { join } from "node:path";
+import { pathToFileURL } from "node:url";
 import type { ExecuteResponse } from "./shared/api.js";
 
 // ---------------------------------------------------------------------------
@@ -23,6 +26,8 @@ export type StudioExecuteInput = {
   file?: string;
   sql: string;
   params: unknown[];
+  /** Absolute path to the user's project root, used for driver resolution. */
+  projectRoot: string;
 };
 
 export type StudioDriverDefinition = {
@@ -32,6 +37,44 @@ export type StudioDriverDefinition = {
   installCommand: string;
   execute(input: StudioExecuteInput): Promise<ExecuteResponse>;
 };
+
+// ---------------------------------------------------------------------------
+// Driver resolution helpers
+// ---------------------------------------------------------------------------
+
+/**
+ * Resolve the absolute entry-point path of a driver package from the user's
+ * project root.  Uses `createRequire` so that packages installed in the
+ * user's own node_modules are found even when Studio is running from the
+ * global npx cache (where bare `import(packageName)` cannot see them).
+ *
+ * The stub filename passed to `createRequire` never needs to exist on disk —
+ * Node only uses its directory as the starting point for resolution.
+ */
+function resolveDriverPath(packageName: string, projectRoot: string): string | null {
+  try {
+    const req = createRequire(join(projectRoot, "__stub__.js"));
+    return req.resolve(packageName);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Import a driver package resolved from the user's project root.
+ * Falls back to a bare import (works when Studio itself has the package)
+ * but the project-root resolution path is tried first.
+ */
+async function importDriver(packageName: string, projectRoot: string): Promise<unknown> {
+  const resolved = resolveDriverPath(packageName, projectRoot);
+  if (resolved) {
+    // Convert the absolute path to a file URL so dynamic import accepts it
+    // on all platforms, including Windows.
+    return import(pathToFileURL(resolved).href);
+  }
+  // Last resort: bare specifier (will work if Studio ships the package itself)
+  return import(packageName);
+}
 
 // ---------------------------------------------------------------------------
 // Normalization helpers
@@ -73,14 +116,14 @@ type PgClient = {
 type PgMod = { Client: new (opts: { connectionString: string }) => PgClient };
 
 async function executePostgres(input: StudioExecuteInput): Promise<ExecuteResponse> {
-  const { connectionString, sql, params } = input;
+  const { connectionString, sql, params, projectRoot } = input;
   if (!connectionString) {
     return { ok: false, error: "No connection URL configured for Postgres execute. Set ASKDB_STUDIO_DATABASE_URL or introspection.providerConfig.postgres.databaseUrl." };
   }
 
   let pgMod: PgMod;
   try {
-    const mod = await import("pg");
+    const mod = await importDriver("pg", projectRoot);
     pgMod = ((mod as unknown as { default?: PgMod }).default ?? mod) as PgMod;
   } catch {
     return { ok: false, error: "The `pg` package is not installed. Install it with `pnpm add pg`." };
@@ -123,14 +166,16 @@ type Mysql2Mod = {
 };
 
 async function executeMySQL(input: StudioExecuteInput): Promise<ExecuteResponse> {
-  const { connectionString, sql, params } = input;
+  const { connectionString, sql, params, projectRoot } = input;
   if (!connectionString) {
     return { ok: false, error: "No connection URL configured for MySQL execute. Set ASKDB_STUDIO_DATABASE_URL or introspection.providerConfig.mysql.databaseUrl." };
   }
 
   let mysql2Mod: Mysql2Mod;
   try {
-    const mod = await import("mysql2/promise");
+    // mysql2/promise resolves through mysql2's exports map; resolve mysql2 first
+    // then let Node follow the exports map from the package root.
+    const mod = await importDriver("mysql2/promise", projectRoot);
     mysql2Mod = ((mod as unknown as { default?: Mysql2Mod }).default ?? mod) as Mysql2Mod;
   } catch {
     return { ok: false, error: "The `mysql2` package is not installed. Install it with `pnpm add mysql2`." };
@@ -177,14 +222,14 @@ type BetterSqlite3Mod = {
 };
 
 async function executeSQLite(input: StudioExecuteInput): Promise<ExecuteResponse> {
-  const { file, sql, params } = input;
+  const { file, sql, params, projectRoot } = input;
   if (!file) {
     return { ok: false, error: "No SQLite file path configured for execute. Set ASKDB_STUDIO_SQLITE_FILE or introspection.providerConfig.sqlite.file." };
   }
 
   let Sqlite3: BetterSqlite3Mod["default"];
   try {
-    const mod = await import("better-sqlite3");
+    const mod = await importDriver("better-sqlite3", projectRoot);
     Sqlite3 = (mod as unknown as BetterSqlite3Mod).default;
   } catch {
     return { ok: false, error: "The `better-sqlite3` package is not installed. Install it with `pnpm add better-sqlite3`." };
@@ -241,14 +286,14 @@ function rewriteSqlServerParams(sql: string, params: unknown[]): { sql: string; 
 }
 
 async function executeSQLServer(input: StudioExecuteInput): Promise<ExecuteResponse> {
-  const { connectionString, sql, params } = input;
+  const { connectionString, sql, params, projectRoot } = input;
   if (!connectionString) {
     return { ok: false, error: "No connection URL configured for SQL Server execute. Set ASKDB_STUDIO_DATABASE_URL or introspection.providerConfig.sqlserver.databaseUrl." };
   }
 
   let mssqlMod: MssqlMod;
   try {
-    const mod = await import("mssql");
+    const mod = await importDriver("mssql", projectRoot);
     mssqlMod = ((mod as unknown as { default?: MssqlMod }).default ?? mod) as MssqlMod;
   } catch {
     return { ok: false, error: "The `mssql` package is not installed. Install it with `pnpm add mssql`." };
@@ -316,15 +361,12 @@ export const EXECUTE_DRIVER_REGISTRY: Record<StudioExecuteProvider, StudioDriver
 };
 
 /**
- * Check whether a driver package is importable at runtime.
- * Returns `true` when the import succeeds (even if the value is empty),
- * `false` when it throws (module not found).
+ * Check whether a driver package is resolvable from the user's project root.
+ *
+ * Uses `createRequire` so that packages installed in the project's own
+ * node_modules are found even when Studio runs from the global npx cache,
+ * where a bare `import(packageName)` would not see them.
  */
-export async function isDriverInstalled(packageName: string): Promise<boolean> {
-  try {
-    await import(packageName);
-    return true;
-  } catch {
-    return false;
-  }
+export function isDriverInstalled(packageName: string, projectRoot: string): boolean {
+  return resolveDriverPath(packageName, projectRoot) !== null;
 }
