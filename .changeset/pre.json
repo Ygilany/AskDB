@@ -120,6 +120,7 @@
     "studio-clear-stale-query-results",
     "studio-concepts-editor",
     "studio-context-provider-loop",
+    "studio-driver-resolution-npx",
     "studio-edit-saved-tenant-policy",
     "studio-guided-tenant-scope",
     "studio-ia-redesign",
