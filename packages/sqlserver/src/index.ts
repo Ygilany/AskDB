@@ -21,8 +21,12 @@ export {
 
 export {
   createSqlServerCatalogQueryRunner,
+  loadMssqlDriver,
+  isMssqlDriverInstalled,
+  resolveConnectionInput,
   type CatalogQueryResult,
   type CatalogQueryRunner,
+  type MssqlConfigInput,
 } from "./exec/sqlserver.js";
 
 export { sqlServerConnectorProvider } from "./connector/provider.js";

@@ -22,6 +22,8 @@ export {
 
 export {
   createMysqlCatalogQueryRunner,
+  loadMysql2Driver,
+  isMysql2DriverInstalled,
   type CatalogQueryResult,
   type CatalogQueryRunner,
 } from "./exec/mysql.js";

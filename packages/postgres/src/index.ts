@@ -35,6 +35,8 @@ export {
 
 export {
   createPostgresCatalogQueryRunner,
+  loadPgDriver,
+  isPgDriverInstalled,
   type CatalogQueryResult,
   type CatalogQueryRunner,
 } from "./exec/postgres.js";
