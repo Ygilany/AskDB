@@ -11,13 +11,11 @@ import type DatabaseCtor from "better-sqlite3";
 export type { CatalogQueryResult, CatalogQueryRunner } from "@askdb/introspect";
 
 type Bs3Namespace = { default: typeof DatabaseCtor };
+export type { Bs3Namespace };
 
-/**
- * Lazily resolve the optional `better-sqlite3` peer dependency. Mirrors the
- * pattern in `@askdb/postgres` / `@askdb/mysql` so consumers with a custom
- * `CatalogQueryRunner` can use `@askdb/sqlite` without installing the driver.
- */
-let bs3ModulePromise: Promise<Bs3Namespace> | undefined;
+type DriverLoadOptions = { resolveFrom?: string };
+
+let bs3ModulePromises = new Map<string | undefined, Promise<Bs3Namespace>>();
 
 function isModuleResolutionFailure(cause: unknown, packageName: string): boolean {
   if (!(cause instanceof Error)) return false;
@@ -30,13 +28,14 @@ function isModuleResolutionFailure(cause: unknown, packageName: string): boolean
   return cause.message.includes(packageName);
 }
 
-async function importOptionalBetterSqlite3(): Promise<Bs3Namespace> {
+async function importOptionalBetterSqlite3(opts?: DriverLoadOptions): Promise<Bs3Namespace> {
   try {
     return (await import("better-sqlite3")) as unknown as Bs3Namespace;
   } catch (cause) {
     if (!isModuleResolutionFailure(cause, "better-sqlite3")) throw cause;
 
-    const projectRequire = createRequire(join(process.cwd(), "package.json"));
+    const fromDir = opts?.resolveFrom ?? process.cwd();
+    const projectRequire = createRequire(join(fromDir, "package.json"));
     try {
       const resolved = projectRequire.resolve("better-sqlite3");
       return (await import(pathToFileURL(resolved).href)) as Bs3Namespace;
@@ -50,10 +49,12 @@ async function importOptionalBetterSqlite3(): Promise<Bs3Namespace> {
   }
 }
 
-async function loadBetterSqlite3OrThrow(): Promise<Bs3Namespace> {
-  if (!bs3ModulePromise) {
-    bs3ModulePromise = importOptionalBetterSqlite3().catch((cause) => {
-      bs3ModulePromise = undefined;
+async function loadBetterSqlite3OrThrow(opts?: DriverLoadOptions): Promise<Bs3Namespace> {
+  const key = opts?.resolveFrom;
+  let promise = bs3ModulePromises.get(key);
+  if (!promise) {
+    promise = importOptionalBetterSqlite3(opts).catch((cause) => {
+      bs3ModulePromises.delete(key);
       throw new AskDbError(
         "The built-in SQLite catalog query runner requires the optional `better-sqlite3` peer dependency. " +
           "Install it in your project (e.g. `pnpm add better-sqlite3`) or include it in the same one-off command " +
@@ -62,21 +63,41 @@ async function loadBetterSqlite3OrThrow(): Promise<Bs3Namespace> {
         cause,
       );
     });
+    bs3ModulePromises.set(key, promise);
   }
-  return bs3ModulePromise;
+  return promise;
 }
 
 /** @internal exposed for tests that need to reset the lazy `better-sqlite3` cache. */
 export function __resetBetterSqlite3ModuleCacheForTests(): void {
-  bs3ModulePromise = undefined;
+  bs3ModulePromises.clear();
+}
+
+/**
+ * Resolve and cache the optional `better-sqlite3` peer driver, with the same
+ * lazy-import + project-root fallback behavior as the catalog runner.
+ */
+export async function loadBetterSqlite3Driver(options?: DriverLoadOptions): Promise<Bs3Namespace> {
+  return loadBetterSqlite3OrThrow(options);
+}
+
+export function isBetterSqlite3DriverInstalled(options?: DriverLoadOptions): boolean {
+  try {
+    const req = createRequire(join(options?.resolveFrom ?? process.cwd(), "package.json"));
+    req.resolve("better-sqlite3");
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 async function runSqliteCatalogQuery(
   filename: string,
   sql: string,
-  params?: ReadonlyArray<unknown>,
+  params: ReadonlyArray<unknown> | undefined,
+  options?: DriverLoadOptions,
 ): Promise<CatalogQueryResult> {
-  const mod = await loadBetterSqlite3OrThrow();
+  const mod = await loadBetterSqlite3OrThrow(options);
   const Database = mod.default;
   const db = new Database(filename, { readonly: true, fileMustExist: true });
   try {
@@ -103,6 +124,9 @@ async function runSqliteCatalogQuery(
  * SQLite introspection. `filename` is a path to a `.db` / `.sqlite` file (or
  * `:memory:` for an empty DB; useful only in tests). The DB is opened readonly.
  */
-export function createSqliteCatalogQueryRunner(filename: string): CatalogQueryRunner {
-  return (sql, params) => runSqliteCatalogQuery(filename, sql, params);
+export function createSqliteCatalogQueryRunner(
+  filename: string,
+  options?: DriverLoadOptions,
+): CatalogQueryRunner {
+  return (sql, params) => runSqliteCatalogQuery(filename, sql, params, options);
 }
