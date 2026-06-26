@@ -1,11 +1,15 @@
 import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
+import { realpathSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 // Mock `pg` so we can simulate "peer dep missing" without uninstalling the workspace dev dep.
 // `vi.hoisted` is required because `vi.mock` is hoisted to the top of the file before imports.
-const pgState = vi.hoisted(() => ({ projectResolvedPath: undefined as string | undefined, shouldFail: false }));
+const pgState = vi.hoisted(() => ({
+  projectResolvedPaths: new Map<string, string>(),
+  shouldFail: false,
+}));
 vi.mock("pg", async () => {
   if (pgState.shouldFail) {
     const err = new Error("Cannot find package 'pg' imported from postgres.lazy.test.ts");
@@ -18,9 +22,18 @@ vi.mock("node:module", async () => {
   const actual = await vi.importActual<typeof import("node:module")>("node:module");
   return {
     ...actual,
-    createRequire: () => ({
+    createRequire: (filename: string) => ({
       resolve(specifier: string) {
-        if (specifier === "pg" && pgState.projectResolvedPath) return pgState.projectResolvedPath;
+        const dir = dirname(filename);
+        let resolved = pgState.projectResolvedPaths.get(dir);
+        if (!resolved) {
+          try {
+            resolved = pgState.projectResolvedPaths.get(realpathSync.native(dir));
+          } catch {
+            /* dir may not exist yet */
+          }
+        }
+        if (specifier === "pg" && resolved) return resolved;
         const err = new Error(`Cannot find module '${specifier}'`);
         (err as { code: string }).code = "MODULE_NOT_FOUND";
         throw err;
@@ -44,7 +57,12 @@ async function addPgFixture(projectDir: string): Promise<void> {
   await mkdir(packageDir, { recursive: true });
   await writeFile(join(projectDir, "package.json"), '{"type":"module","dependencies":{"pg":"1.0.0"}}\n');
   await writeFile(join(packageDir, "package.json"), '{"main":"index.cjs"}\n');
-  pgState.projectResolvedPath = join(packageDir, "index.cjs");
+  pgState.projectResolvedPaths.set(projectDir, join(packageDir, "index.cjs"));
+  try {
+    pgState.projectResolvedPaths.set(realpathSync.native(projectDir), join(packageDir, "index.cjs"));
+  } catch {
+    /* ignore */
+  }
   await writeFile(
     join(packageDir, "index.cjs"),
     `
@@ -70,7 +88,7 @@ module.exports = { Pool };
 describe("exec/postgres — lazy `pg` peer dependency", () => {
   beforeEach(async () => {
     vi.resetModules();
-    pgState.projectResolvedPath = undefined;
+    pgState.projectResolvedPaths.clear();
     pgState.shouldFail = false;
     process.chdir(originalCwd);
     const { __resetPgModuleCacheForTests } = await import("./postgres.js");
@@ -136,5 +154,42 @@ describe("exec/postgres — lazy `pg` peer dependency", () => {
     const runner = createPostgresCatalogQueryRunner("postgres://nowhere");
 
     await expect(runner("SELECT 1")).resolves.toEqual({ columns: ["n"], rows: [[1]] });
+  });
+
+  it("resolveFrom missing-driver path rejects with AskDbError when resolveFrom has no driver", async () => {
+    const { createPostgresCatalogQueryRunner } = await import("./postgres.js");
+    const emptyDir = await createTempProject();
+    pgState.shouldFail = true;
+    const runner = createPostgresCatalogQueryRunner("postgres://nowhere", { resolveFrom: emptyDir });
+
+    const err = await runner("SELECT 1").catch((e: unknown) => e);
+    expect((err as Error).name).toBe("AskDbError");
+    expect((err as Error).message).toMatch(/optional `pg` peer dependency/);
+  });
+
+  it("resolveFrom honored: loads driver from resolveFrom even when cwd lacks it", async () => {
+    const { createPostgresCatalogQueryRunner } = await import("./postgres.js");
+    const projectDir = await createTempProject();
+    await addPgFixture(projectDir);
+    process.chdir(await createTempProject());
+    pgState.shouldFail = true;
+
+    const runner = createPostgresCatalogQueryRunner("postgres://nowhere", { resolveFrom: projectDir });
+    await expect(runner("SELECT 1")).resolves.toEqual({ columns: ["n"], rows: [[1]] });
+  });
+
+  it("resolveFrom cache slots are independent per directory", async () => {
+    const { createPostgresCatalogQueryRunner } = await import("./postgres.js");
+    const dirWithDriver = await createTempProject();
+    await addPgFixture(dirWithDriver);
+    const dirWithoutDriver = await createTempProject();
+    pgState.shouldFail = true;
+
+    const runnerA = createPostgresCatalogQueryRunner("postgres://nowhere", { resolveFrom: dirWithDriver });
+    await expect(runnerA("SELECT 1")).resolves.toEqual({ columns: ["n"], rows: [[1]] });
+
+    const runnerB = createPostgresCatalogQueryRunner("postgres://nowhere", { resolveFrom: dirWithoutDriver });
+    const err = await runnerB("SELECT 1").catch((e: unknown) => e);
+    expect((err as Error).name).toBe("AskDbError");
   });
 });

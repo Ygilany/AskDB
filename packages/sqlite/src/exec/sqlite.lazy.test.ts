@@ -1,10 +1,11 @@
 import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
+import { realpathSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const bs3State = vi.hoisted(() => ({
-  projectResolvedPath: undefined as string | undefined,
+  projectResolvedPaths: new Map<string, string>(),
   shouldFail: false,
 }));
 vi.mock("better-sqlite3", async () => {
@@ -19,10 +20,19 @@ vi.mock("node:module", async () => {
   const actual = await vi.importActual<typeof import("node:module")>("node:module");
   return {
     ...actual,
-    createRequire: () => ({
+    createRequire: (filename: string) => ({
       resolve(specifier: string) {
-        if (specifier === "better-sqlite3" && bs3State.projectResolvedPath) {
-          return bs3State.projectResolvedPath;
+        const dir = dirname(filename);
+        let resolved = bs3State.projectResolvedPaths.get(dir);
+        if (!resolved) {
+          try {
+            resolved = bs3State.projectResolvedPaths.get(realpathSync.native(dir));
+          } catch {
+            /* dir may not exist yet */
+          }
+        }
+        if (specifier === "better-sqlite3" && resolved) {
+          return resolved;
         }
         const err = new Error(`Cannot find module '${specifier}'`);
         (err as { code: string }).code = "MODULE_NOT_FOUND";
@@ -50,7 +60,12 @@ async function addBetterSqlite3Fixture(projectDir: string): Promise<void> {
     '{"type":"module","dependencies":{"better-sqlite3":"1.0.0"}}\n',
   );
   await writeFile(join(packageDir, "package.json"), '{"main":"index.cjs"}\n');
-  bs3State.projectResolvedPath = join(packageDir, "index.cjs");
+  bs3State.projectResolvedPaths.set(projectDir, join(packageDir, "index.cjs"));
+  try {
+    bs3State.projectResolvedPaths.set(realpathSync.native(projectDir), join(packageDir, "index.cjs"));
+  } catch {
+    /* ignore */
+  }
   await writeFile(
     join(packageDir, "index.cjs"),
     `
@@ -75,7 +90,7 @@ module.exports = Database;
 describe("exec/sqlite - lazy `better-sqlite3` peer dependency", () => {
   beforeEach(async () => {
     vi.resetModules();
-    bs3State.projectResolvedPath = undefined;
+    bs3State.projectResolvedPaths.clear();
     bs3State.shouldFail = false;
     process.chdir(originalCwd);
     const { __resetBetterSqlite3ModuleCacheForTests } = await import("./sqlite.js");
@@ -143,5 +158,48 @@ describe("exec/sqlite - lazy `better-sqlite3` peer dependency", () => {
       columns: ["n", "label"],
       rows: [[1, "ok"]],
     });
+  });
+
+  it("resolveFrom missing-driver path rejects with AskDbError when resolveFrom has no driver", async () => {
+    const { createSqliteCatalogQueryRunner } = await import("./sqlite.js");
+    const emptyDir = await createTempProject();
+    bs3State.shouldFail = true;
+    const runner = createSqliteCatalogQueryRunner(":memory:", { resolveFrom: emptyDir });
+
+    const err = await runner("SELECT 1").catch((e: unknown) => e);
+    expect((err as Error).name).toBe("AskDbError");
+    expect((err as Error).message).toMatch(/optional `better-sqlite3` peer dependency/);
+  });
+
+  it("resolveFrom honored: loads driver from resolveFrom even when cwd lacks it", async () => {
+    const { createSqliteCatalogQueryRunner } = await import("./sqlite.js");
+    const projectDir = await createTempProject();
+    await addBetterSqlite3Fixture(projectDir);
+    process.chdir(await createTempProject());
+    bs3State.shouldFail = true;
+
+    const runner = createSqliteCatalogQueryRunner(":memory:", { resolveFrom: projectDir });
+    await expect(runner("SELECT 1")).resolves.toEqual({
+      columns: ["n", "label"],
+      rows: [[1, "ok"]],
+    });
+  });
+
+  it("resolveFrom cache slots are independent per directory", async () => {
+    const { createSqliteCatalogQueryRunner } = await import("./sqlite.js");
+    const dirWithDriver = await createTempProject();
+    await addBetterSqlite3Fixture(dirWithDriver);
+    const dirWithoutDriver = await createTempProject();
+    bs3State.shouldFail = true;
+
+    const runnerA = createSqliteCatalogQueryRunner(":memory:", { resolveFrom: dirWithDriver });
+    await expect(runnerA("SELECT 1")).resolves.toEqual({
+      columns: ["n", "label"],
+      rows: [[1, "ok"]],
+    });
+
+    const runnerB = createSqliteCatalogQueryRunner(":memory:", { resolveFrom: dirWithoutDriver });
+    const err = await runnerB("SELECT 1").catch((e: unknown) => e);
+    expect((err as Error).name).toBe("AskDbError");
   });
 });
