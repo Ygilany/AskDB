@@ -63,6 +63,7 @@
     "fix-dark-mode-badge-legibility",
     "fix-pnpm-supply-chain-policy",
     "fix-postgres-zod-resolution",
+    "fix-sqlserver-url-format-and-ado-net-keys",
     "fix-stale-askdb-ai-api-names",
     "fix-studio-database-url-runtime-config",
     "flat-carpets-wave",
@@ -141,6 +142,7 @@
     "studio-web-primitives",
     "tabs-variant-examples-model-paths",
     "upgrade-github-actions-node24",
-    "workspace-bin-wrappers"
+    "workspace-bin-wrappers",
+    "young-donuts-speak"
   ]
 }

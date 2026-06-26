@@ -1,5 +1,12 @@
 # askdb
 
+## 1.0.0-beta.31
+
+### Patch Changes
+
+- Updated dependencies [e6caf41]
+  - @askdb/sqlserver@0.1.0-beta.13
+
 ## 1.0.0-beta.30
 
 ### Minor Changes
