@@ -132,10 +132,12 @@ pnpm exec askdb introspect --out my-app.schema --schema-id my-app
 ```bash
 pnpm exec askdb introspect \
   --engine sqlserver \
-  --url "sqlserver://user:pass@host/dbname" \
+  --url "mssql://user:pass@host:1433/dbname" \
   --out my-app.schema \
   --schema-id my-app
 ```
+
+SQL Server accepts three URL formats — see [SQL Server connection strings](#sql-server-connection-strings) below.
 
   </TabItem>
 </Tabs>
@@ -228,6 +230,47 @@ const rows = result.recordset;
 
   </TabItem>
 </Tabs>
+
+## SQL Server connection strings
+
+`databaseUrl` in `askdb.config.ts` and `--url` on the CLI accept three formats:
+
+| Format | Example |
+|--------|---------|
+| `mssql://` URL | `mssql://sa:pass@localhost:1433/MyDb` |
+| Prisma `sqlserver://` | `sqlserver://localhost:1433;database=MyDb;user=sa;password=pass` |
+| ADO.NET (`Key=Value;`) | `Server=localhost,1433;Database=MyDb;User Id=sa;Password=pass;` |
+
+### TLS / self-signed certificates
+
+SQL Server enables TLS by default. Local or dev instances typically use a self-signed certificate, which causes this error:
+
+```
+self-signed certificate — try running Node.js with --use-system-ca
+```
+
+**Fix for development:** add the trust option for your format:
+
+```bash
+# mssql:// URL
+mssql://sa:pass@localhost:1433/MyDb?trustServerCertificate=true
+
+# Prisma URL
+sqlserver://localhost:1433;database=MyDb;user=sa;password=pass;trustServerCertificate=true
+
+# ADO.NET — use the camelCase key without spaces
+Server=localhost,1433;Database=MyDb;User Id=sa;Password=pass;Encrypt=True;TrustServerCertificate=True;
+```
+
+> **Note:** If you copy a connection string from VS Code's mssql extension it will contain `Trust Server Certificate=True` (with spaces). AskDB normalises this automatically so it works, but you can also write it without spaces (`TrustServerCertificate=True`) to match what mssql v12 expects natively.
+
+**Fix for production:** install a properly signed certificate or install the server's CA certificate in the Node.js trust store:
+
+```bash
+NODE_EXTRA_CA_CERTS=/path/to/ca.pem npx askdb introspect
+# or (Node ≥ 24.3)
+node --use-system-ca $(which askdb) introspect
+```
 
 ## On dialect parity
 

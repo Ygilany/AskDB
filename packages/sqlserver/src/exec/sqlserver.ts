@@ -66,6 +66,138 @@ export function __resetMssqlModuleCacheForTests(): void {
   mssqlModulePromise = undefined;
 }
 
+type MssqlConfigInput = {
+  server: string;
+  port?: number;
+  database?: string;
+  user?: string;
+  password?: string;
+  options?: { encrypt?: boolean; trustServerCertificate?: boolean };
+};
+
+/**
+ * mssql v12 uses @tediousjs/connection-string v1.x, which has two known gaps:
+ *
+ * 1. URL format (`mssql://…`, `sqlserver://…`) — the library is a pure ADO.NET
+ *    key=value parser and silently produces an empty config, leaving `server`
+ *    undefined.  We detect these schemes and parse them into config objects.
+ *
+ * 2. ADO.NET multi-word keys with spaces — the library schema uses the no-space
+ *    form (`trustservercertificate`) but ADO.NET client tools emit keys with
+ *    spaces (`Trust Server Certificate`).  After lowercasing by the parser these
+ *    never match the schema, so options like TrustServerCertificate are silently
+ *    dropped.  We normalise the affected keys before passing the string to mssql.
+ *
+ * ADO.NET strings are identified as anything that is not a URL (no `://`).
+ */
+export function resolveConnectionInput(connectionString: string): string | MssqlConfigInput {
+  if (connectionString.startsWith("mssql://")) {
+    return parseMssqlSchemeUrl(connectionString);
+  }
+  if (connectionString.startsWith("sqlserver://")) {
+    return parsePrismaSqlServerUrl(connectionString);
+  }
+  // ADO.NET string: normalise multi-word keys that @tediousjs/connection-string
+  // v1.x does not recognise in their spaced form.
+  if (!connectionString.includes("://")) {
+    return normalizeAdoNetString(connectionString);
+  }
+  return connectionString;
+}
+
+/**
+ * @tediousjs/connection-string v1.x schema uses camelCase/no-space forms as
+ * keys, but ADO.NET clients (VS Code mssql, SSMS) emit the space-separated
+ * forms.  Map each affected key to the form the schema actually recognises.
+ */
+const ADO_NET_KEY_NORMALISATIONS: ReadonlyArray<[RegExp, string]> = [
+  [/Trust\s+Server\s+Certificate\s*=/gi, "TrustServerCertificate="],
+  [/Application\s+Intent\s*=/gi, "ApplicationIntent="],
+  [/Multiple\s+Active\s+Result\s+Sets\s*=/gi, "MultipleActiveResultSets="],
+  [/Connect\s+Retry\s+Count\s*=/gi, "ConnectRetryCount="],
+  [/Connect\s+Retry\s+Interval\s*=/gi, "ConnectRetryInterval="],
+  [/Transparent\s+Network\s+IP\s+Resolution\s*=/gi, "TransparentNetworkIpResolution="],
+];
+
+function normalizeAdoNetString(connectionString: string): string {
+  let result = connectionString;
+  for (const [pattern, replacement] of ADO_NET_KEY_NORMALISATIONS) {
+    result = result.replace(pattern, replacement);
+  }
+  return result;
+}
+
+function parseMssqlSchemeUrl(connectionString: string): MssqlConfigInput {
+  const url = new URL(connectionString);
+  const server = url.hostname;
+  if (!server) {
+    throw new AskDbError(
+      "Cannot parse server hostname from SQL Server connection URL. " +
+        "Expected format: mssql://USER:PASSWORD@HOST:PORT/DATABASE",
+    );
+  }
+  const port = url.port ? parseInt(url.port, 10) : undefined;
+  const database = url.pathname.length > 1 ? url.pathname.slice(1) : undefined;
+  const user = url.username ? decodeURIComponent(url.username) : undefined;
+  const password = url.password ? decodeURIComponent(url.password) : undefined;
+  const encrypt = url.searchParams.get("encrypt");
+  const trustCert = url.searchParams.get("trustServerCertificate") ?? url.searchParams.get("TrustServerCertificate");
+  return {
+    server,
+    ...(port !== undefined && !Number.isNaN(port) ? { port } : {}),
+    ...(database ? { database } : {}),
+    ...(user ? { user } : {}),
+    ...(password ? { password } : {}),
+    options: {
+      ...(encrypt !== null ? { encrypt: !["false", "0", "no"].includes(encrypt.toLowerCase()) } : {}),
+      ...(trustCert !== null ? { trustServerCertificate: !["false", "0", "no"].includes(trustCert.toLowerCase()) } : {}),
+    },
+  };
+}
+
+function parsePrismaSqlServerUrl(connectionString: string): MssqlConfigInput {
+  // Prisma format: sqlserver://HOST:PORT;database=DATABASE;user=USER;password=PASSWORD;encrypt=true
+  const withoutScheme = connectionString.slice("sqlserver://".length);
+  const firstSemiIdx = withoutScheme.indexOf(";");
+  const hostPart = firstSemiIdx === -1 ? withoutScheme : withoutScheme.slice(0, firstSemiIdx);
+  const paramsPart = firstSemiIdx === -1 ? "" : withoutScheme.slice(firstSemiIdx + 1);
+
+  const colonIdx = hostPart.lastIndexOf(":");
+  const server = colonIdx === -1 ? hostPart : hostPart.slice(0, colonIdx);
+  const portStr = colonIdx === -1 ? undefined : hostPart.slice(colonIdx + 1);
+  const port = portStr ? parseInt(portStr, 10) : undefined;
+
+  if (!server) {
+    throw new AskDbError(
+      "Cannot parse server hostname from Prisma-style SQL Server URL. " +
+        "Expected: sqlserver://HOST:PORT;database=DATABASE;user=USER;password=PASSWORD",
+    );
+  }
+
+  const params: Record<string, string> = {};
+  for (const part of paramsPart.split(";")) {
+    const eqIdx = part.indexOf("=");
+    if (eqIdx === -1) continue;
+    const key = part.slice(0, eqIdx).trim().toLowerCase();
+    const value = part.slice(eqIdx + 1).trim();
+    if (key && value) params[key] = value;
+  }
+
+  return {
+    server,
+    ...(port !== undefined && !Number.isNaN(port) ? { port } : {}),
+    ...(params["database"] ? { database: params["database"] } : {}),
+    ...(params["user"] ? { user: params["user"] } : {}),
+    ...(params["password"] ? { password: params["password"] } : {}),
+    options: {
+      ...(params["encrypt"] !== undefined ? { encrypt: params["encrypt"].toLowerCase() === "true" } : {}),
+      ...(params["trustservercertificate"] !== undefined
+        ? { trustServerCertificate: params["trustservercertificate"].toLowerCase() === "true" }
+        : {}),
+    },
+  };
+}
+
 async function runSqlServerCatalogQuery(
   connectionString: string,
   sql: string,
@@ -73,7 +205,7 @@ async function runSqlServerCatalogQuery(
 ): Promise<CatalogQueryResult> {
   const mod = await loadMssqlOrThrow();
   const mssql = (mod as unknown as { default?: MssqlModule }).default ?? mod;
-  const pool = new mssql.ConnectionPool(connectionString);
+  const pool = new mssql.ConnectionPool(resolveConnectionInput(connectionString) as never);
   await pool.connect();
   try {
     const request = pool.request();
@@ -100,8 +232,13 @@ async function runSqlServerCatalogQuery(
 
 /**
  * Build the built-in `mssql`-backed catalog query runner used by live SQL
- * Server introspection. `connectionString` follows the standard mssql URI
- * (`mssql://user:pass@host:port/database`) or the Server=...; format.
+ * Server introspection.  `connectionString` may be:
+ * - ADO.NET format:  `Server=host,1433;Database=db;User Id=u;Password=p;`
+ * - `mssql://` URL:  `mssql://user:pass@host:1433/database`
+ * - Prisma format:   `sqlserver://host:1433;database=db;user=u;password=p`
+ *
+ * mssql v12+ only understands ADO.NET strings; URL formats are converted to a
+ * config object automatically.
  */
 export function createSqlServerCatalogQueryRunner(connectionString: string): CatalogQueryRunner {
   return (sql, params) => runSqlServerCatalogQuery(connectionString, sql, params);
