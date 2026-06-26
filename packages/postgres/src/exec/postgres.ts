@@ -16,7 +16,9 @@ export type { CatalogQueryResult, CatalogQueryRunner } from "@askdb/introspect";
  * Result is cached so repeated calls don't re-resolve. On a missing peer we clear the cache so
  * the next call retries (e.g. after the consumer runs `pnpm add pg`).
  */
-let pgModulePromise: Promise<typeof import("pg")> | undefined;
+type DriverLoadOptions = { resolveFrom?: string };
+
+let pgModulePromises = new Map<string | undefined, Promise<typeof import("pg")>>();
 
 function isModuleResolutionFailure(cause: unknown, packageName: string): boolean {
   if (!(cause instanceof Error)) return false;
@@ -29,13 +31,14 @@ function isModuleResolutionFailure(cause: unknown, packageName: string): boolean
   return cause.message.includes(packageName);
 }
 
-async function importOptionalPg(): Promise<typeof import("pg")> {
+async function importOptionalPg(opts?: DriverLoadOptions): Promise<typeof import("pg")> {
   try {
     return await import("pg");
   } catch (cause) {
     if (!isModuleResolutionFailure(cause, "pg")) throw cause;
 
-    const projectRequire = createRequire(join(process.cwd(), "package.json"));
+    const fromDir = opts?.resolveFrom ?? process.cwd();
+    const projectRequire = createRequire(join(fromDir, "package.json"));
     try {
       const resolved = projectRequire.resolve("pg");
       return (await import(pathToFileURL(resolved).href)) as typeof import("pg");
@@ -46,10 +49,12 @@ async function importOptionalPg(): Promise<typeof import("pg")> {
   }
 }
 
-async function loadPgOrThrow(): Promise<typeof import("pg")> {
-  if (!pgModulePromise) {
-    pgModulePromise = importOptionalPg().catch((cause) => {
-      pgModulePromise = undefined;
+async function loadPgOrThrow(opts?: DriverLoadOptions): Promise<typeof import("pg")> {
+  const key = opts?.resolveFrom;
+  let promise = pgModulePromises.get(key);
+  if (!promise) {
+    promise = importOptionalPg(opts).catch((cause) => {
+      pgModulePromises.delete(key);
       throw new AskDbError(
         "The built-in Postgres catalog query runner requires the optional `pg` peer dependency. " +
           "Install it in your project (e.g. `pnpm add pg`) or include it in the same one-off command " +
@@ -58,23 +63,50 @@ async function loadPgOrThrow(): Promise<typeof import("pg")> {
         cause,
       );
     });
+    pgModulePromises.set(key, promise);
   }
-  return pgModulePromise;
+  return promise;
 }
 
 /**
  * @internal exposed for tests that need to reset the lazy `pg` cache between cases.
  */
 export function __resetPgModuleCacheForTests(): void {
-  pgModulePromise = undefined;
+  pgModulePromises.clear();
+}
+
+type PgDriverModule = typeof import("pg");
+
+/**
+ * Resolve and cache the optional `pg` peer driver, with the same lazy-import
+ * + project-root fallback behavior as the catalog runner. Exposed for embedders
+ * (e.g. `@askdb/studio`'s execute registry) that need direct driver access for
+ * UI-layer concerns like timing, truncation, or SQL placeholder rewriting.
+ *
+ * Throws an AskDbError with install hints when the peer is missing.
+ */
+export async function loadPgDriver(options?: DriverLoadOptions): Promise<PgDriverModule> {
+  const mod = await loadPgOrThrow(options);
+  return (mod as unknown as { default?: PgDriverModule }).default ?? mod;
+}
+
+export function isPgDriverInstalled(options?: DriverLoadOptions): boolean {
+  try {
+    const req = createRequire(join(options?.resolveFrom ?? process.cwd(), "package.json"));
+    req.resolve("pg");
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 async function runPostgresCatalogQuery(
   connectionString: string,
   sql: string,
-  params?: ReadonlyArray<unknown>,
+  params: ReadonlyArray<unknown> | undefined,
+  options?: DriverLoadOptions,
 ): Promise<CatalogQueryResult> {
-  const mod = await loadPgOrThrow();
+  const mod = await loadPgOrThrow(options);
   // `pg` is CJS — Node's ESM interop puts the namespace under `.default` at runtime, but the
   // static type doesn't model that. Reach for `default` defensively, then fall back to the
   // top-level namespace for bundlers that hoist the CJS named exports.
@@ -117,6 +149,9 @@ async function runPostgresCatalogQuery(
  * the first time the returned runner is invoked; if `pg` is not installed, the runner
  * rejects with a helpful {@link AskDbError} pointing the consumer at install or BYO recipes.
  */
-export function createPostgresCatalogQueryRunner(connectionString: string): CatalogQueryRunner {
-  return (sql, params) => runPostgresCatalogQuery(connectionString, sql, params);
+export function createPostgresCatalogQueryRunner(
+  connectionString: string,
+  options?: DriverLoadOptions,
+): CatalogQueryRunner {
+  return (sql, params) => runPostgresCatalogQuery(connectionString, sql, params, options);
 }

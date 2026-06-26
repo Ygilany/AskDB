@@ -1,10 +1,11 @@
 import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
+import { realpathSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mssqlState = vi.hoisted(() => ({
-  projectResolvedPath: undefined as string | undefined,
+  projectResolvedPaths: new Map<string, string>(),
   shouldFail: false,
 }));
 vi.mock("mssql", async () => {
@@ -19,9 +20,18 @@ vi.mock("node:module", async () => {
   const actual = await vi.importActual<typeof import("node:module")>("node:module");
   return {
     ...actual,
-    createRequire: () => ({
+    createRequire: (filename: string) => ({
       resolve(specifier: string) {
-        if (specifier === "mssql" && mssqlState.projectResolvedPath) return mssqlState.projectResolvedPath;
+        const dir = dirname(filename);
+        let resolved = mssqlState.projectResolvedPaths.get(dir);
+        if (!resolved) {
+          try {
+            resolved = mssqlState.projectResolvedPaths.get(realpathSync.native(dir));
+          } catch {
+            /* dir may not exist yet */
+          }
+        }
+        if (specifier === "mssql" && resolved) return resolved;
         const err = new Error(`Cannot find module '${specifier}'`);
         (err as { code: string }).code = "MODULE_NOT_FOUND";
         throw err;
@@ -45,7 +55,12 @@ async function addMssqlFixture(projectDir: string): Promise<void> {
   await mkdir(packageDir, { recursive: true });
   await writeFile(join(projectDir, "package.json"), '{"type":"module","dependencies":{"mssql":"1.0.0"}}\n');
   await writeFile(join(packageDir, "package.json"), '{"main":"index.cjs"}\n');
-  mssqlState.projectResolvedPath = join(packageDir, "index.cjs");
+  mssqlState.projectResolvedPaths.set(projectDir, join(packageDir, "index.cjs"));
+  try {
+    mssqlState.projectResolvedPaths.set(realpathSync.native(projectDir), join(packageDir, "index.cjs"));
+  } catch {
+    /* ignore */
+  }
   await writeFile(
     join(packageDir, "index.cjs"),
     `
@@ -71,7 +86,7 @@ module.exports = { ConnectionPool };
 describe("exec/sqlserver - lazy `mssql` peer dependency", () => {
   beforeEach(async () => {
     vi.resetModules();
-    mssqlState.projectResolvedPath = undefined;
+    mssqlState.projectResolvedPaths.clear();
     mssqlState.shouldFail = false;
     process.chdir(originalCwd);
     const { __resetMssqlModuleCacheForTests } = await import("./sqlserver.js");
@@ -139,5 +154,54 @@ describe("exec/sqlserver - lazy `mssql` peer dependency", () => {
       columns: ["n", "label"],
       rows: [[1, "ok"]],
     });
+  });
+
+  it("resolveFrom missing-driver path rejects with AskDbError when resolveFrom has no driver", async () => {
+    const { createSqlServerCatalogQueryRunner } = await import("./sqlserver.js");
+    const emptyDir = await createTempProject();
+    mssqlState.shouldFail = true;
+    const runner = createSqlServerCatalogQueryRunner("mssql://nowhere", { resolveFrom: emptyDir });
+
+    const err = await runner("SELECT 1").catch((e: unknown) => e);
+    expect((err as Error).name).toBe("AskDbError");
+    expect((err as Error).message).toMatch(/optional `mssql` peer dependency/);
+  });
+
+  it("resolveFrom honored: loads driver from resolveFrom even when cwd lacks it", async () => {
+    const { createSqlServerCatalogQueryRunner } = await import("./sqlserver.js");
+    const projectDir = await createTempProject();
+    await addMssqlFixture(projectDir);
+    process.chdir(await createTempProject());
+    mssqlState.shouldFail = true;
+
+    const runner = createSqlServerCatalogQueryRunner("mssql://user:pass@host:1433/db", {
+      resolveFrom: projectDir,
+    });
+    await expect(runner("SELECT 1")).resolves.toEqual({
+      columns: ["n", "label"],
+      rows: [[1, "ok"]],
+    });
+  });
+
+  it("resolveFrom cache slots are independent per directory", async () => {
+    const { createSqlServerCatalogQueryRunner } = await import("./sqlserver.js");
+    const dirWithDriver = await createTempProject();
+    await addMssqlFixture(dirWithDriver);
+    const dirWithoutDriver = await createTempProject();
+    mssqlState.shouldFail = true;
+
+    const runnerA = createSqlServerCatalogQueryRunner("mssql://user:pass@host:1433/db", {
+      resolveFrom: dirWithDriver,
+    });
+    await expect(runnerA("SELECT 1")).resolves.toEqual({
+      columns: ["n", "label"],
+      rows: [[1, "ok"]],
+    });
+
+    const runnerB = createSqlServerCatalogQueryRunner("mssql://user:pass@host:1433/db", {
+      resolveFrom: dirWithoutDriver,
+    });
+    const err = await runnerB("SELECT 1").catch((e: unknown) => e);
+    expect((err as Error).name).toBe("AskDbError");
   });
 });

@@ -21,6 +21,9 @@ export {
 
 export {
   createSqliteCatalogQueryRunner,
+  loadBetterSqlite3Driver,
+  isBetterSqlite3DriverInstalled,
+  type Bs3Namespace,
   type CatalogQueryResult,
   type CatalogQueryRunner,
 } from "./exec/sqlite.js";

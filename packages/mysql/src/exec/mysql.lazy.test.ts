@@ -1,10 +1,11 @@
 import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
+import { realpathSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mysql2State = vi.hoisted(() => ({
-  projectResolvedPath: undefined as string | undefined,
+  projectResolvedPaths: new Map<string, string>(),
   shouldFail: false,
 }));
 vi.mock("mysql2/promise", async () => {
@@ -19,10 +20,19 @@ vi.mock("node:module", async () => {
   const actual = await vi.importActual<typeof import("node:module")>("node:module");
   return {
     ...actual,
-    createRequire: () => ({
+    createRequire: (filename: string) => ({
       resolve(specifier: string) {
-        if (specifier === "mysql2/promise" && mysql2State.projectResolvedPath) {
-          return mysql2State.projectResolvedPath;
+        const dir = dirname(filename);
+        let resolved = mysql2State.projectResolvedPaths.get(dir);
+        if (!resolved) {
+          try {
+            resolved = mysql2State.projectResolvedPaths.get(realpathSync.native(dir));
+          } catch {
+            /* dir may not exist yet */
+          }
+        }
+        if (specifier === "mysql2/promise" && resolved) {
+          return resolved;
         }
         const err = new Error(`Cannot find module '${specifier}'`);
         (err as { code: string }).code = "MODULE_NOT_FOUND";
@@ -47,7 +57,12 @@ async function addMysql2Fixture(projectDir: string): Promise<void> {
   await mkdir(packageDir, { recursive: true });
   await writeFile(join(projectDir, "package.json"), '{"type":"module","dependencies":{"mysql2":"1.0.0"}}\n');
   await writeFile(join(packageDir, "package.json"), '{"main":"index.cjs"}\n');
-  mysql2State.projectResolvedPath = join(packageDir, "promise.js");
+  mysql2State.projectResolvedPaths.set(projectDir, join(packageDir, "promise.js"));
+  try {
+    mysql2State.projectResolvedPaths.set(realpathSync.native(projectDir), join(packageDir, "promise.js"));
+  } catch {
+    /* ignore */
+  }
   await writeFile(
     join(packageDir, "promise.js"),
     `
@@ -68,7 +83,7 @@ module.exports = {
 describe("exec/mysql - lazy `mysql2` peer dependency", () => {
   beforeEach(async () => {
     vi.resetModules();
-    mysql2State.projectResolvedPath = undefined;
+    mysql2State.projectResolvedPaths.clear();
     mysql2State.shouldFail = false;
     process.chdir(originalCwd);
     const { __resetMysql2ModuleCacheForTests } = await import("./mysql.js");
@@ -136,5 +151,48 @@ describe("exec/mysql - lazy `mysql2` peer dependency", () => {
       columns: ["n", "label"],
       rows: [[1, "ok"]],
     });
+  });
+
+  it("resolveFrom missing-driver path rejects with AskDbError when resolveFrom has no driver", async () => {
+    const { createMysqlCatalogQueryRunner } = await import("./mysql.js");
+    const emptyDir = await createTempProject();
+    mysql2State.shouldFail = true;
+    const runner = createMysqlCatalogQueryRunner("mysql://nowhere", { resolveFrom: emptyDir });
+
+    const err = await runner("SELECT 1").catch((e: unknown) => e);
+    expect((err as Error).name).toBe("AskDbError");
+    expect((err as Error).message).toMatch(/optional `mysql2` peer dependency/);
+  });
+
+  it("resolveFrom honored: loads driver from resolveFrom even when cwd lacks it", async () => {
+    const { createMysqlCatalogQueryRunner } = await import("./mysql.js");
+    const projectDir = await createTempProject();
+    await addMysql2Fixture(projectDir);
+    process.chdir(await createTempProject());
+    mysql2State.shouldFail = true;
+
+    const runner = createMysqlCatalogQueryRunner("mysql://nowhere", { resolveFrom: projectDir });
+    await expect(runner("SELECT 1")).resolves.toEqual({
+      columns: ["n", "label"],
+      rows: [[1, "ok"]],
+    });
+  });
+
+  it("resolveFrom cache slots are independent per directory", async () => {
+    const { createMysqlCatalogQueryRunner } = await import("./mysql.js");
+    const dirWithDriver = await createTempProject();
+    await addMysql2Fixture(dirWithDriver);
+    const dirWithoutDriver = await createTempProject();
+    mysql2State.shouldFail = true;
+
+    const runnerA = createMysqlCatalogQueryRunner("mysql://nowhere", { resolveFrom: dirWithDriver });
+    await expect(runnerA("SELECT 1")).resolves.toEqual({
+      columns: ["n", "label"],
+      rows: [[1, "ok"]],
+    });
+
+    const runnerB = createMysqlCatalogQueryRunner("mysql://nowhere", { resolveFrom: dirWithoutDriver });
+    const err = await runnerB("SELECT 1").catch((e: unknown) => e);
+    expect((err as Error).name).toBe("AskDbError");
   });
 });

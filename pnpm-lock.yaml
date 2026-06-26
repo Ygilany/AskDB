@@ -196,12 +196,21 @@ importers:
       '@askdb/enrich':
         specifier: workspace:*
         version: link:../../packages/enrich
+      '@askdb/mysql':
+        specifier: workspace:*
+        version: link:../../packages/mysql
       '@askdb/postgres':
         specifier: workspace:*
         version: link:../../packages/postgres
       '@askdb/rag':
         specifier: workspace:*
         version: link:../../packages/rag
+      '@askdb/sqlite':
+        specifier: workspace:*
+        version: link:../../packages/sqlite
+      '@askdb/sqlserver':
+        specifier: workspace:*
+        version: link:../../packages/sqlserver
       ai:
         specifier: ^6.0.205
         version: 6.0.205(zod@4.4.3)

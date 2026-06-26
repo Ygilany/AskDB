@@ -10,9 +10,15 @@
  * package only fails when the user actually tries to execute a query.
  */
 
-import { createRequire } from "node:module";
-import { join } from "node:path";
-import { pathToFileURL } from "node:url";
+import { loadPgDriver, isPgDriverInstalled } from "@askdb/postgres";
+import { loadMysql2Driver, isMysql2DriverInstalled } from "@askdb/mysql";
+import { loadBetterSqlite3Driver, isBetterSqlite3DriverInstalled } from "@askdb/sqlite";
+import {
+  loadMssqlDriver,
+  isMssqlDriverInstalled,
+  resolveConnectionInput,
+  type MssqlConfigInput,
+} from "@askdb/sqlserver";
 import type { ExecuteResponse } from "./shared/api.js";
 
 // ---------------------------------------------------------------------------
@@ -37,44 +43,6 @@ export type StudioDriverDefinition = {
   installCommand: string;
   execute(input: StudioExecuteInput): Promise<ExecuteResponse>;
 };
-
-// ---------------------------------------------------------------------------
-// Driver resolution helpers
-// ---------------------------------------------------------------------------
-
-/**
- * Resolve the absolute entry-point path of a driver package from the user's
- * project root.  Uses `createRequire` so that packages installed in the
- * user's own node_modules are found even when Studio is running from the
- * global npx cache (where bare `import(packageName)` cannot see them).
- *
- * The stub filename passed to `createRequire` never needs to exist on disk —
- * Node only uses its directory as the starting point for resolution.
- */
-function resolveDriverPath(packageName: string, projectRoot: string): string | null {
-  try {
-    const req = createRequire(join(projectRoot, "__stub__.js"));
-    return req.resolve(packageName);
-  } catch {
-    return null;
-  }
-}
-
-/**
- * Import a driver package resolved from the user's project root.
- * Falls back to a bare import (works when Studio itself has the package)
- * but the project-root resolution path is tried first.
- */
-async function importDriver(packageName: string, projectRoot: string): Promise<unknown> {
-  const resolved = resolveDriverPath(packageName, projectRoot);
-  if (resolved) {
-    // Convert the absolute path to a file URL so dynamic import accepts it
-    // on all platforms, including Windows.
-    return import(pathToFileURL(resolved).href);
-  }
-  // Last resort: bare specifier (will work if Studio ships the package itself)
-  return import(packageName);
-}
 
 // ---------------------------------------------------------------------------
 // Normalization helpers
@@ -123,10 +91,9 @@ async function executePostgres(input: StudioExecuteInput): Promise<ExecuteRespon
 
   let pgMod: PgMod;
   try {
-    const mod = await importDriver("pg", projectRoot);
-    pgMod = ((mod as unknown as { default?: PgMod }).default ?? mod) as PgMod;
-  } catch {
-    return { ok: false, error: "The `pg` package is not installed. Install it with `pnpm add pg`." };
+    pgMod = await loadPgDriver({ resolveFrom: projectRoot }) as unknown as PgMod;
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : String(err) };
   }
 
   const client = new pgMod.Client({ connectionString });
@@ -173,12 +140,9 @@ async function executeMySQL(input: StudioExecuteInput): Promise<ExecuteResponse>
 
   let mysql2Mod: Mysql2Mod;
   try {
-    // mysql2/promise resolves through mysql2's exports map; resolve mysql2 first
-    // then let Node follow the exports map from the package root.
-    const mod = await importDriver("mysql2/promise", projectRoot);
-    mysql2Mod = ((mod as unknown as { default?: Mysql2Mod }).default ?? mod) as Mysql2Mod;
-  } catch {
-    return { ok: false, error: "The `mysql2` package is not installed. Install it with `pnpm add mysql2`." };
+    mysql2Mod = await loadMysql2Driver({ resolveFrom: projectRoot }) as unknown as Mysql2Mod;
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : String(err) };
   }
 
   let conn: Mysql2Connection;
@@ -217,9 +181,7 @@ type BetterSqlite3Database = {
   prepare(sql: string): BetterSqlite3Statement;
   close(): void;
 };
-type BetterSqlite3Mod = {
-  default: new (file: string, opts: { readonly: boolean; fileMustExist: boolean }) => BetterSqlite3Database;
-};
+type BetterSqlite3Ctor = new (file: string, opts: { readonly: boolean; fileMustExist: boolean }) => BetterSqlite3Database;
 
 async function executeSQLite(input: StudioExecuteInput): Promise<ExecuteResponse> {
   const { file, sql, params, projectRoot } = input;
@@ -227,12 +189,12 @@ async function executeSQLite(input: StudioExecuteInput): Promise<ExecuteResponse
     return { ok: false, error: "No SQLite file path configured for execute. Set ASKDB_STUDIO_SQLITE_FILE or introspection.providerConfig.sqlite.file." };
   }
 
-  let Sqlite3: BetterSqlite3Mod["default"];
+  let Sqlite3: BetterSqlite3Ctor;
   try {
-    const mod = await importDriver("better-sqlite3", projectRoot);
-    Sqlite3 = (mod as unknown as BetterSqlite3Mod).default;
-  } catch {
-    return { ok: false, error: "The `better-sqlite3` package is not installed. Install it with `pnpm add better-sqlite3`." };
+    const mod = await loadBetterSqlite3Driver({ resolveFrom: projectRoot });
+    Sqlite3 = mod.default as unknown as BetterSqlite3Ctor;
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : String(err) };
   }
 
   const startMs = Date.now();
@@ -264,7 +226,9 @@ type MssqlPool = {
   close(): Promise<void>;
 };
 type MssqlMod = {
-  ConnectionPool: new (connectionString: string) => MssqlPool & { connect(): Promise<MssqlPool> };
+  ConnectionPool: new (
+    config: string | MssqlConfigInput,
+  ) => MssqlPool & { connect(): Promise<MssqlPool> };
 };
 
 /**
@@ -293,15 +257,14 @@ async function executeSQLServer(input: StudioExecuteInput): Promise<ExecuteRespo
 
   let mssqlMod: MssqlMod;
   try {
-    const mod = await importDriver("mssql", projectRoot);
-    mssqlMod = ((mod as unknown as { default?: MssqlMod }).default ?? mod) as MssqlMod;
-  } catch {
-    return { ok: false, error: "The `mssql` package is not installed. Install it with `pnpm add mssql`." };
+    mssqlMod = await loadMssqlDriver({ resolveFrom: projectRoot }) as unknown as MssqlMod;
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : String(err) };
   }
 
   let pool: MssqlPool;
   try {
-    pool = await new mssqlMod.ConnectionPool(connectionString).connect();
+    pool = await new mssqlMod.ConnectionPool(resolveConnectionInput(connectionString)).connect();
   } catch (err) {
     return { ok: false, error: err instanceof Error ? err.message : String(err) };
   }
@@ -362,11 +325,18 @@ export const EXECUTE_DRIVER_REGISTRY: Record<StudioExecuteProvider, StudioDriver
 
 /**
  * Check whether a driver package is resolvable from the user's project root.
- *
- * Uses `createRequire` so that packages installed in the project's own
- * node_modules are found even when Studio runs from the global npx cache,
- * where a bare `import(packageName)` would not see them.
  */
 export function isDriverInstalled(packageName: string, projectRoot: string): boolean {
-  return resolveDriverPath(packageName, projectRoot) !== null;
+  switch (packageName) {
+    case "pg":
+      return isPgDriverInstalled({ resolveFrom: projectRoot });
+    case "mysql2":
+      return isMysql2DriverInstalled({ resolveFrom: projectRoot });
+    case "better-sqlite3":
+      return isBetterSqlite3DriverInstalled({ resolveFrom: projectRoot });
+    case "mssql":
+      return isMssqlDriverInstalled({ resolveFrom: projectRoot });
+    default:
+      return false;
+  }
 }

@@ -11,7 +11,9 @@ export type { CatalogQueryResult, CatalogQueryRunner } from "@askdb/introspect";
  * `@askdb/postgres` so consumers with a custom `CatalogQueryRunner` can use
  * `@askdb/mysql` without installing `mysql2`.
  */
-let mysql2ModulePromise: Promise<typeof import("mysql2/promise")> | undefined;
+type DriverLoadOptions = { resolveFrom?: string };
+
+let mysql2ModulePromises = new Map<string | undefined, Promise<typeof import("mysql2/promise")>>();
 
 function isModuleResolutionFailure(cause: unknown, packageName: string): boolean {
   if (!(cause instanceof Error)) return false;
@@ -24,13 +26,14 @@ function isModuleResolutionFailure(cause: unknown, packageName: string): boolean
   return cause.message.includes(packageName);
 }
 
-async function importOptionalMysql2(): Promise<typeof import("mysql2/promise")> {
+async function importOptionalMysql2(opts?: DriverLoadOptions): Promise<typeof import("mysql2/promise")> {
   try {
     return await import("mysql2/promise");
   } catch (cause) {
     if (!isModuleResolutionFailure(cause, "mysql2")) throw cause;
 
-    const projectRequire = createRequire(join(process.cwd(), "package.json"));
+    const fromDir = opts?.resolveFrom ?? process.cwd();
+    const projectRequire = createRequire(join(fromDir, "package.json"));
     try {
       const resolved = projectRequire.resolve("mysql2/promise");
       return (await import(pathToFileURL(resolved).href)) as typeof import("mysql2/promise");
@@ -44,10 +47,12 @@ async function importOptionalMysql2(): Promise<typeof import("mysql2/promise")> 
   }
 }
 
-async function loadMysql2OrThrow(): Promise<typeof import("mysql2/promise")> {
-  if (!mysql2ModulePromise) {
-    mysql2ModulePromise = importOptionalMysql2().catch((cause) => {
-      mysql2ModulePromise = undefined;
+async function loadMysql2OrThrow(opts?: DriverLoadOptions): Promise<typeof import("mysql2/promise")> {
+  const key = opts?.resolveFrom;
+  let promise = mysql2ModulePromises.get(key);
+  if (!promise) {
+    promise = importOptionalMysql2(opts).catch((cause) => {
+      mysql2ModulePromises.delete(key);
       throw new AskDbError(
         "The built-in MySQL catalog query runner requires the optional `mysql2` peer dependency. " +
           "Install it in your project (e.g. `pnpm add mysql2`) or include it in the same one-off command " +
@@ -56,21 +61,44 @@ async function loadMysql2OrThrow(): Promise<typeof import("mysql2/promise")> {
         cause,
       );
     });
+    mysql2ModulePromises.set(key, promise);
   }
-  return mysql2ModulePromise;
+  return promise;
 }
 
 /** @internal exposed for tests that need to reset the lazy `mysql2` cache. */
 export function __resetMysql2ModuleCacheForTests(): void {
-  mysql2ModulePromise = undefined;
+  mysql2ModulePromises.clear();
+}
+
+type Mysql2DriverModule = typeof import("mysql2/promise");
+
+/**
+ * Resolve and cache the optional `mysql2` peer driver, with the same lazy-import
+ * + project-root fallback behavior as the catalog runner.
+ */
+export async function loadMysql2Driver(options?: DriverLoadOptions): Promise<Mysql2DriverModule> {
+  const mod = await loadMysql2OrThrow(options);
+  return (mod as unknown as { default?: Mysql2DriverModule }).default ?? mod;
+}
+
+export function isMysql2DriverInstalled(options?: DriverLoadOptions): boolean {
+  try {
+    const req = createRequire(join(options?.resolveFrom ?? process.cwd(), "package.json"));
+    req.resolve("mysql2");
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 async function runMysqlCatalogQuery(
   connectionString: string,
   sql: string,
-  params?: ReadonlyArray<unknown>,
+  params: ReadonlyArray<unknown> | undefined,
+  options?: DriverLoadOptions,
 ): Promise<CatalogQueryResult> {
-  const mod = await loadMysql2OrThrow();
+  const mod = await loadMysql2OrThrow(options);
   const mysql = (mod as unknown as { default?: typeof mod }).default ?? mod;
   const connection = await mysql.createConnection(connectionString);
   try {
@@ -99,6 +127,9 @@ async function runMysqlCatalogQuery(
  * (`mysql://user:pass@host:port/database`); the named database is the target
  * namespace for introspection.
  */
-export function createMysqlCatalogQueryRunner(connectionString: string): CatalogQueryRunner {
-  return (sql, params) => runMysqlCatalogQuery(connectionString, sql, params);
+export function createMysqlCatalogQueryRunner(
+  connectionString: string,
+  options?: DriverLoadOptions,
+): CatalogQueryRunner {
+  return (sql, params) => runMysqlCatalogQuery(connectionString, sql, params, options);
 }

@@ -15,7 +15,9 @@ type MssqlModule = typeof import("mssql");
  * pattern in `@askdb/postgres` / `@askdb/mysql` so consumers with a custom
  * `CatalogQueryRunner` can import `@askdb/sqlserver` without `mssql` installed.
  */
-let mssqlModulePromise: Promise<MssqlModule> | undefined;
+type DriverLoadOptions = { resolveFrom?: string };
+
+let mssqlModulePromises = new Map<string | undefined, Promise<MssqlModule>>();
 
 function isModuleResolutionFailure(cause: unknown, packageName: string): boolean {
   if (!(cause instanceof Error)) return false;
@@ -28,13 +30,14 @@ function isModuleResolutionFailure(cause: unknown, packageName: string): boolean
   return cause.message.includes(packageName);
 }
 
-async function importOptionalMssql(): Promise<MssqlModule> {
+async function importOptionalMssql(opts?: DriverLoadOptions): Promise<MssqlModule> {
   try {
     return await import("mssql");
   } catch (cause) {
     if (!isModuleResolutionFailure(cause, "mssql")) throw cause;
 
-    const projectRequire = createRequire(join(process.cwd(), "package.json"));
+    const fromDir = opts?.resolveFrom ?? process.cwd();
+    const projectRequire = createRequire(join(fromDir, "package.json"));
     try {
       const resolved = projectRequire.resolve("mssql");
       return (await import(pathToFileURL(resolved).href)) as MssqlModule;
@@ -45,10 +48,12 @@ async function importOptionalMssql(): Promise<MssqlModule> {
   }
 }
 
-async function loadMssqlOrThrow(): Promise<MssqlModule> {
-  if (!mssqlModulePromise) {
-    mssqlModulePromise = importOptionalMssql().catch((cause) => {
-      mssqlModulePromise = undefined;
+async function loadMssqlOrThrow(opts?: DriverLoadOptions): Promise<MssqlModule> {
+  const key = opts?.resolveFrom;
+  let promise = mssqlModulePromises.get(key);
+  if (!promise) {
+    promise = importOptionalMssql(opts).catch((cause) => {
+      mssqlModulePromises.delete(key);
       throw new AskDbError(
         "The built-in SQL Server catalog query runner requires the optional `mssql` peer dependency. " +
           "Install it in your project (e.g. `pnpm add mssql`) or include it in the same one-off command " +
@@ -57,16 +62,38 @@ async function loadMssqlOrThrow(): Promise<MssqlModule> {
         cause,
       );
     });
+    mssqlModulePromises.set(key, promise);
   }
-  return mssqlModulePromise;
+  return promise;
 }
 
 /** @internal exposed for tests that need to reset the lazy `mssql` cache. */
 export function __resetMssqlModuleCacheForTests(): void {
-  mssqlModulePromise = undefined;
+  mssqlModulePromises.clear();
 }
 
-type MssqlConfigInput = {
+type MssqlDriverModule = MssqlModule;
+
+/**
+ * Resolve and cache the optional `mssql` peer driver, with the same lazy-import
+ * + project-root fallback behavior as the catalog runner.
+ */
+export async function loadMssqlDriver(options?: DriverLoadOptions): Promise<MssqlDriverModule> {
+  const mod = await loadMssqlOrThrow(options);
+  return (mod as unknown as { default?: MssqlDriverModule }).default ?? mod;
+}
+
+export function isMssqlDriverInstalled(options?: DriverLoadOptions): boolean {
+  try {
+    const req = createRequire(join(options?.resolveFrom ?? process.cwd(), "package.json"));
+    req.resolve("mssql");
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export type MssqlConfigInput = {
   server: string;
   port?: number;
   database?: string;
@@ -201,9 +228,10 @@ function parsePrismaSqlServerUrl(connectionString: string): MssqlConfigInput {
 async function runSqlServerCatalogQuery(
   connectionString: string,
   sql: string,
-  params?: ReadonlyArray<unknown>,
+  params: ReadonlyArray<unknown> | undefined,
+  options?: DriverLoadOptions,
 ): Promise<CatalogQueryResult> {
-  const mod = await loadMssqlOrThrow();
+  const mod = await loadMssqlOrThrow(options);
   const mssql = (mod as unknown as { default?: MssqlModule }).default ?? mod;
   const pool = new mssql.ConnectionPool(resolveConnectionInput(connectionString) as never);
   await pool.connect();
@@ -240,6 +268,9 @@ async function runSqlServerCatalogQuery(
  * mssql v12+ only understands ADO.NET strings; URL formats are converted to a
  * config object automatically.
  */
-export function createSqlServerCatalogQueryRunner(connectionString: string): CatalogQueryRunner {
-  return (sql, params) => runSqlServerCatalogQuery(connectionString, sql, params);
+export function createSqlServerCatalogQueryRunner(
+  connectionString: string,
+  options?: DriverLoadOptions,
+): CatalogQueryRunner {
+  return (sql, params) => runSqlServerCatalogQuery(connectionString, sql, params, options);
 }
