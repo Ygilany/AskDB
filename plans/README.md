@@ -37,6 +37,16 @@ Plan 031: generated on 2026-06-25 at commit `7152dec` via `improve plan`, from t
 TTY wizard/non-interactive flag surface that writes a tailored `askdb.config.ts` and
 installs only the packages needed for the selected database, AI provider, RAG store,
 and optional Studio execute path.
+Plan 032: generated on 2026-06-26 at commit `2865cff` via `improve plan`, from the review
+of the Studio execute pathway vs. the introspect pathway for SQL Server (and the broader
+engine-package vs. consumer boundary). It closes the SQL Server TLS regression (studio's
+`executeSQLServer` was bypassing `@askdb/sqlserver`'s `resolveConnectionInput`) as a
+transitive consequence of the structural fix: adds a `resolveFrom` option to all four
+engine packages' driver loaders, exposes `loadXxxDriver` / `isXxxDriverInstalled` /
+`resolveConnectionInput` from the engine package barrels, and rewires
+`apps/studio/src/execute-registry.ts` to delegate driver loading and connection-string
+normalization to the engine packages. After it lands, the same class of drift cannot
+recur on the other three providers.
 
 Execute in the order below unless dependencies say otherwise. Each executor: read the plan
 fully before starting, honor its STOP conditions, and update your row when done.
@@ -76,6 +86,7 @@ fully before starting, honor its STOP conditions, and update your row when done.
 | 029 | Remove the CLI's bundled Postgres driver and make optional database drivers resolve consistently | P1 | M | — | DONE |
 | 030 | Let Studio execute generated SQL against any supported live dialect | P1 | L | 029 | DONE |
 | 031 | Make `askdb init` a setup wizard that writes a tailored config and installs selected packages | P1 | L | 030 | DONE |
+| 032 | Unify Studio execute with the engine packages so per-provider knowledge has one home (incl. SQL Server TLS fix) | P1 | M | — | DONE |
 
 Status values: TODO | IN PROGRESS | DONE | BLOCKED (with one-line reason) | REJECTED (with one-line rationale)
 
