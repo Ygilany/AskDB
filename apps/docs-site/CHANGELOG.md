@@ -1,5 +1,12 @@
 # @askdb/docs-site
 
+## 0.0.1-beta.3
+
+### Patch Changes
+
+- f4a508e: Add Cloudflare Web Analytics beacon to the docs site so page-view traffic on askdb.tools is tracked via the Cloudflare dashboard.
+- 5d41d74: Add security.txt at /.well-known/security.txt to surface the vulnerability disclosure contact and policy for the askdb.tools domain.
+
 ## 0.0.1-beta.2
 
 ### Patch Changes

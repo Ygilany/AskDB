@@ -1,5 +1,14 @@
 # askdb-ask-question-example
 
+## 0.0.1-beta.15
+
+### Patch Changes
+
+- Updated dependencies [dc380bc]
+  - @askdb/config@1.0.0-beta.9
+  - @askdb/client@1.0.0-beta.2
+  - @askdb/rag@0.2.0-beta.18
+
 ## 0.0.1-beta.14
 
 ### Patch Changes

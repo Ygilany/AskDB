@@ -1,5 +1,12 @@
 # @askdb/rag
 
+## 0.2.0-beta.18
+
+### Patch Changes
+
+- Updated dependencies [dc380bc]
+  - @askdb/config@1.0.0-beta.9
+
 ## 0.2.0-beta.17
 
 ### Patch Changes

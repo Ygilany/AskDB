@@ -1,5 +1,12 @@
 # @askdb/client
 
+## 1.0.0-beta.2
+
+### Patch Changes
+
+- Updated dependencies [dc380bc]
+  - @askdb/config@1.0.0-beta.9
+
 ## 0.1.0-beta.1
 
 ### Minor Changes

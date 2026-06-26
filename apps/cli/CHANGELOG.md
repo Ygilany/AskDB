@@ -1,5 +1,31 @@
 # askdb
 
+## 1.0.0-beta.30
+
+### Minor Changes
+
+- 6b22dcb: feat(cli): `askdb init` is now a setup wizard that writes a tailored config and installs selected packages
+
+  - In a TTY, `askdb init` opens a short interactive wizard (powered by `@inquirer/prompts`, lazy-loaded) that asks which database, AI provider, RAG store, and Studio execute mode you want. It then generates only the relevant config branches and installs only the packages for your chosen path.
+  - In CI and scripts, `askdb init --yes` runs silently with Postgres + OpenAI defaults. All wizard choices are also available as flags (`--database`, `--ai-provider`, `--rag-store`, `--studio-execute`, etc.).
+  - The generated `askdb.config.ts` includes only the selected `introspection.providerConfig` branch, the selected AI `providerConfig` branch, and the selected RAG `storeConfig` branch — no more deleting unused sections.
+  - The install plan is exact: SQL Server setups install `mssql`; SQLite setups install `better-sqlite3`; Prisma-only setups install no live DB driver unless Studio execute is enabled.
+  - `@inquirer/prompts` is added as a runtime dependency but is only imported when entering interactive mode.
+
+### Patch Changes
+
+- dc380bc: Remove direct `pg` runtime dependencies from bundled app surfaces and make live introspection drivers resolve consistently as optional peers from the running project. This fixes `npx`/`dlx` SQL Server, MySQL, SQLite, and Postgres driver resolution when the driver is installed with the application or supplied in the same ephemeral command.
+- Updated dependencies [dc380bc]
+- Updated dependencies [dc380bc]
+  - @askdb/postgres@0.2.0-beta.13
+  - @askdb/mysql@0.1.0-beta.12
+  - @askdb/sqlite@0.1.0-beta.12
+  - @askdb/sqlserver@0.1.0-beta.12
+  - @askdb/studio@0.2.0-beta.25
+  - @askdb/config@1.0.0-beta.9
+  - @askdb/client@1.0.0-beta.2
+  - @askdb/tui@0.2.0-beta.16
+
 ## 1.0.0-beta.29
 
 ### Patch Changes

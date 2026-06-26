@@ -1,6 +1,6 @@
 {
   "name": "@askdb/client",
-  "version": "0.1.0-beta.1",
+  "version": "1.0.0-beta.2",
   "description": "Config-aware AskDB facade: resolves schema, model, and dialect from config so callers only pass a question.",
   "keywords": [
     "askdb",
