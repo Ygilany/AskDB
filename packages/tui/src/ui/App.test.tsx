@@ -261,7 +261,7 @@ describe("App headless author flow", () => {
     stdin.write("g");
     await flush(100);
     stdin.write(KEY_ENTER);
-    await flush();
+    await flush(100); // give React time to batch setDrafts + setReview(null) and re-render
     stdin.write("s");
     await flush();
     saved = readFileSync(join(schemaDir, "tables/orders.md"), "utf8");
