@@ -239,7 +239,7 @@ export function createStudioServer(options: StudioOptions): StudioServer {
         return writeJson(res, 200, result);
       }
       if (req.method === "GET" && url.pathname === "/api/execute/status") {
-        const result = await getExecuteStatus();
+        const result = await getExecuteStatus(state.schemaDir);
         return writeJson(res, 200, result);
       }
       if (req.method === "POST" && url.pathname === "/api/execute/install-driver") {
@@ -252,7 +252,7 @@ export function createStudioServer(options: StudioOptions): StudioServer {
       }
       if (req.method === "POST" && url.pathname === "/api/execute") {
         const body = await readJson(req);
-        const result = await executeQuery(body);
+        const result = await executeQuery(body, state.schemaDir);
         return writeJson(res, 200, result);
       }
       if (req.method === "GET" && !url.pathname.startsWith("/api/")) {
@@ -1138,11 +1138,12 @@ function parsePlaygroundHistoryEntry(
 // Execute endpoint helpers
 // ---------------------------------------------------------------------------
 
-async function getExecuteStatus(): Promise<ExecuteStatusResponse> {
+async function getExecuteStatus(schemaDir: string): Promise<ExecuteStatusResponse> {
   const rt = getAskDbRuntimeConfig();
   const { provider, databaseUrl, file } = rt.studio.execute;
   const def = EXECUTE_DRIVER_REGISTRY[provider];
-  const installed = await isDriverInstalled(def.packageName);
+  const projectRoot = findProjectRoot(schemaDir) ?? schemaDir;
+  const installed = isDriverInstalled(def.packageName, projectRoot);
   const connectionKind: "url" | "file" = provider === "sqlite" ? "file" : "url";
   const configured = connectionKind === "file" ? Boolean(file) : Boolean(databaseUrl);
   return {
@@ -1198,7 +1199,8 @@ async function installExecuteDriver(
 
   // Run the install.
   const { stdout, stderr, code } = await spawnCommand(command, args, schemaDir);
-  const installed = await isDriverInstalled(def.packageName);
+  const projectRoot = findProjectRoot(schemaDir) ?? schemaDir;
+  const installed = isDriverInstalled(def.packageName, projectRoot);
 
   return {
     ok: code === 0,
@@ -1307,7 +1309,7 @@ function spawnCommand(
   });
 }
 
-async function executeQuery(body: unknown): Promise<ExecuteResponse> {
+async function executeQuery(body: unknown, schemaDir: string): Promise<ExecuteResponse> {
   const rt = getAskDbRuntimeConfig();
   const { provider, databaseUrl, file } = rt.studio.execute;
 
@@ -1317,8 +1319,9 @@ async function executeQuery(body: unknown): Promise<ExecuteResponse> {
   const sql = body.sql;
   const params = Array.isArray(body.params) ? body.params : [];
 
+  const projectRoot = findProjectRoot(schemaDir) ?? schemaDir;
   const def = EXECUTE_DRIVER_REGISTRY[provider];
-  return def.execute({ connectionString: databaseUrl, file, sql, params });
+  return def.execute({ connectionString: databaseUrl, file, sql, params, projectRoot });
 }
 
 function isLoopbackRequest(req: IncomingMessage): boolean {
