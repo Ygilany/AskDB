@@ -1,5 +1,16 @@
 # askdb
 
+## 1.0.0-beta.33
+
+### Patch Changes
+
+- Updated dependencies [5affd84]
+  - @askdb/postgres@0.2.0-beta.14
+  - @askdb/mysql@0.1.0-beta.13
+  - @askdb/sqlite@0.1.0-beta.13
+  - @askdb/sqlserver@0.1.0-beta.14
+  - @askdb/studio@0.2.0-beta.27
+
 ## 1.0.0-beta.32
 
 ### Patch Changes

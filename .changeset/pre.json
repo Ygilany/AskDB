@@ -28,6 +28,7 @@
     "askdb-express-server-example": "0.0.1"
   },
   "changesets": [
+    "032-unify-studio-execute",
     "2a7d74fa-b695-47f4-80c6-99395b027b2f",
     "add-anthropic-provider",
     "add-ask-question-example",
