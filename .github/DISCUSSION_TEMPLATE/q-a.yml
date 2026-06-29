@@ -6,9 +6,9 @@ body:
       value: |
         Thanks for asking! Use this for installation, configuration, "how do I…" questions, and help with schema artifacts or the SQL AskDB generates/validates.
 
-        Before posting, please skim the [README](https://github.com/ygilany/askdb#readme), the package READMEs, and [`docs/`](https://github.com/ygilany/askdb/tree/main/docs).
+        Before posting, please skim the [README](https://github.com/Ygilany/AskDB#readme), the package READMEs, and [`docs/`](https://github.com/Ygilany/AskDB/tree/main/docs).
 
-        **Found a reproducible bug** (including incorrect/unsafe SQL)? Open an [issue](https://github.com/ygilany/askdb/issues/new/choose) instead. **Security problem?** Follow [`SECURITY.md`](https://github.com/ygilany/askdb/blob/main/SECURITY.md) — do not post it here.
+        **Found a reproducible bug** (including incorrect/unsafe SQL)? Open an [issue](https://github.com/Ygilany/AskDB/issues/new/choose) instead. **Security problem?** Follow [`SECURITY.md`](https://github.com/Ygilany/AskDB/blob/main/SECURITY.md) — do not post it here.
   - type: textarea
     id: question
     attributes:

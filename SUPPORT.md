@@ -6,10 +6,10 @@ AskDB is pre-1.0. Public APIs, package boundaries, and CLI behavior may change b
 
 | You have… | Go to |
 | --- | --- |
-| A usage, config, or schema/SQL question | [Discussions → Q&A](https://github.com/ygilany/askdb/discussions/categories/q-a) |
-| A feature idea to propose | [Discussions → Ideas](https://github.com/ygilany/askdb/discussions/categories/ideas) |
-| Something you built with AskDB | [Discussions → Show and tell](https://github.com/ygilany/askdb/discussions/categories/show-and-tell) |
-| A reproducible bug | [GitHub issue](https://github.com/ygilany/askdb/issues/new/choose) |
+| A usage, config, or schema/SQL question | [Discussions → Q&A](https://github.com/Ygilany/AskDB/discussions/categories/q-a) |
+| A feature idea to propose | [Discussions → Ideas](https://github.com/Ygilany/AskDB/discussions/categories/ideas) |
+| Something you built with AskDB | [Discussions → Show and tell](https://github.com/Ygilany/AskDB/discussions/categories/show-and-tell) |
+| A reproducible bug | [GitHub issue](https://github.com/Ygilany/AskDB/issues/new/choose) |
 | A security problem | [`SECURITY.md`](SECURITY.md) — privately, never in public |
 
 ## Bugs (GitHub issues)
