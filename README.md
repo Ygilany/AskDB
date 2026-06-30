@@ -14,6 +14,10 @@ AskDB grounds generation in a human-enriched schema artifact, and it keeps datab
 >
 > **Status:** pre-1.0 / beta. AskDB returns SQL for review; it does not execute generated SQL.
 
+## Why AskDB exists
+
+NL-to-SQL isn't a new problem — academic research goes back to LUNAR in 1972, and LLM-based generation has been studied since Codex in 2021. The hard part in production isn't the LLM call. It's everything around it: capturing the business context behind your schema, getting the right enrichment into the prompt, wiring up RAG when the schema is too big to fit, and repeating that work for every new project. AskDB is the toolkit for *that* part.
+
 ## Quickstart
 
 For a new project, use Node **20+**, a database or schema source, and an API key from your model provider.
