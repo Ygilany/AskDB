@@ -69,7 +69,7 @@ export default defineConfig({
       ],
       title: "AskDB",
       description:
-        "The open-source Text-to-SQL toolkit your data team trusts. Ask your data. Keep control.",
+        "Open-source NL-to-SQL toolkit for developers. Your LLM generates schema-grounded SQL; your app runs it.",
       logo: {
         light: "./src/assets/brand/logo.png",
         dark: "./src/assets/brand/logo-dark.png",

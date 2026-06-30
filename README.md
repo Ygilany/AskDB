@@ -6,32 +6,36 @@
 
 # AskDB
 
-**AskDB is a developer toolkit for adding natural-language analytics to your application.** It turns user questions into validated SQL using a human-enriched schema artifact. It gives developers library, CLI, and HTTP surfaces while keeping database execution, permissions, and audit logging inside the host application.
+**AskDB is an open-source NL-to-SQL toolkit for developers: it uses your LLM to generate validated, schema-grounded SQL, then hands it back to your app to review and run.** BYO model, BYO database, BYO vector store.
+
+AskDB grounds generation in a human-enriched schema artifact, and it keeps database execution, permissions, tenant policy, and audit logging inside the host application. Library, CLI, Studio, TUI, and HTTP surfaces share the same core pipeline.
 
 > **Ask your data. Keep control of the query.**
+>
+> **Status:** pre-1.0 / beta. AskDB returns SQL for review; it does not execute generated SQL.
 
 ## Quickstart
 
-For local development, use Node **20+**, pnpm **11**, and Docker if you want the Pagila sample database.
+For a new project, use Node **20+**, a database or schema source, and an API key from your model provider.
 
 ```bash
-pnpm install
-pnpm exec askdb init
-# create .env with keys from askdb.config.ts header comments (optional); adjust env("...") names as needed
-pnpm build
-pnpm exec askdb ask \
-  --schema fixtures/schemas/orders-users.schema \
-  --question "How many orders are there?"
+npx askdb@latest init
+# create .env with the model/database keys referenced by askdb.config.ts
+npx askdb@latest introspect --url "$DATABASE_URL" --out my-app.schema --schema-id my-app
+npx askdb@latest ask --schema my-app.schema --question "Which tables look active?"
 ```
 
-AskDB uses a **schema artifact**: either a directory such as `fixtures/schemas/orders-users.schema/`, a bundled JSON file, or a direct `schema.json`. To create that artifact from a real Postgres database, use the introspection package:
+Use `npx askdb@latest studio --schema my-app.schema` when you want the local
+browser UI for schema enrichment and sample NL-to-SQL checks.
+
+AskDB uses a **schema artifact**: either a directory such as `my-app.schema/`, a bundled JSON file, or a direct `schema.json`. To create that artifact from a real database, use introspection:
 
 ```bash
-pnpm exec askdb introspect --url "$DATABASE_URL" --out my-app.schema --schema-id my-app
-pnpm exec askdb ask --schema my-app.schema --question "Which tables look active?"
+npx askdb@latest introspect --url "$DATABASE_URL" --out my-app.schema --schema-id my-app
+npx askdb@latest ask --schema my-app.schema --question "Which tables look active?"
 ```
 
-The detailed first-run paths live in [`packages/introspect/README.md`](packages/introspect/README.md) and [`docs/integration/installable-package.md`](docs/integration/installable-package.md).
+The detailed first-run paths live in the [docs-site quickstart](apps/docs-site/src/content/docs/quickstart.mdx), [`packages/introspect/README.md`](packages/introspect/README.md), and [`docs/integration/installable-package.md`](docs/integration/installable-package.md).
 
 ## Use as a library
 
@@ -42,7 +46,7 @@ pnpm add @askdb/postgres
 pnpm add ai @ai-sdk/openai
 ```
 
-Live introspection drivers are optional peers of the engine packages. Install `pg`, `mysql2`, `better-sqlite3`, or `mssql` only when using the corresponding live connector. The `askdb` CLI does not bundle database drivers; for one-off runs, include the driver in the same command, for example `pnpm dlx -p askdb -p pg askdb introspect --url "$DATABASE_URL"`.
+`pg` is optional and only needed for live Postgres introspection through `@askdb/postgres`.
 
 ```ts
 import { ask, loadSchema } from "@askdb/core";
@@ -95,7 +99,12 @@ Product direction and technical baseline live in **`docs/`**:
 
 ```bash
 pnpm install
+pnpm exec askdb init
+# create .env with keys from askdb.config.ts header comments (optional); adjust env("...") names as needed
 pnpm build    # turbo run build
+pnpm exec askdb ask \
+  --schema fixtures/schemas/orders-users.schema \
+  --question "How many orders are there?"
 pnpm test     # turbo run test (integration runs when DATABASE_URL is set)
 pnpm lint     # turbo run lint (TypeScript noEmit)
 ```
@@ -141,7 +150,7 @@ See [`.env.example`](.env.example) for a copy/paste template. Keep real secrets 
 | `OPENAI_API_KEY` | Required for NL→SQL (BYO; OpenAI-compatible). |
 | `OPENAI_BASE_URL` | Optional custom base URL for OpenAI-compatible APIs. |
 | `ASKDB_MODEL` or `OPENAI_MODEL` | Optional model id (default `gpt-4o-mini`). |
-| `DATABASE_URL` | Optional; commonly passed to `askdb introspect --url` for live Postgres introspection when `pg` is installed in the project or supplied in the same one-off CLI command. |
+| `DATABASE_URL` | Optional; commonly passed to `askdb introspect --url` for live Postgres introspection. |
 | `ASKDB_LOG_LEVEL` | Optional structured log level: `trace` \| `debug` \| `info` \| `warn` \| `error` \| `fatal` \| `silent` (default: `silent` unless `--verbose`, `--log-file`, or `--log-stdout` implies `info`). |
 | `ASKDB_CORRELATION_ID` | Optional; override the correlation id emitted on every JSON log line for the run. |
 | `ASKDB_MODE` | Optional operating mode (`schema_only` \| `bounded_results`); default `schema_only`. Formal contract: [`docs/contracts/modes-v1.md`](docs/contracts/modes-v1.md). |
@@ -220,10 +229,6 @@ How much of the **schema context** the model sees depends on the chosen mode:
 ## Status
 
 Phases 1–10 are implemented on this branch: core, CLI, HTTP API, installable package seams, schema artifact format, Postgres introspection, TUI enrichment, RAG indexing and retrieval, Studio (React browser UI), and multi-tenancy proof. Later phases are in [`docs/roadmap.md`](docs/roadmap.md).
-
-## Support
-
-[![Buy Me A Coffee](https://img.shields.io/badge/Buy%20Me%20A%20Coffee-ffdd00?style=for-the-badge&logo=buy-me-a-coffee&logoColor=black)](https://www.buymeacoffee.com/ygilany)
 
 ## License
 
