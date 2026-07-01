@@ -67,10 +67,10 @@ export function PlaygroundPage() {
           <div className="main-sub">Generate SQL from natural language and execute it against your database</div>
         </div>
       </div>
-      <div className="main-body" style={{ overflow: "auto" }}>
-        <div style={{ display: "grid", gridTemplateColumns: "2fr 3fr", minHeight: "100%" }}>
+      <div className="main-body" style={{ overflow: "hidden", padding: 0 }}>
+        <div style={{ display: "grid", gridTemplateColumns: "2fr 3fr", height: "100%" }}>
           {/* Left: Question + History */}
-          <div style={{ borderRight: "1px solid var(--border)", display: "flex", flexDirection: "column" }}>
+          <div style={{ borderRight: "1px solid var(--border)", display: "flex", flexDirection: "column", overflow: "auto" }}>
             <div style={{ padding: "var(--pad-y) var(--pad-x)" }}>
               <div style={{ display: "grid", gap: 12 }}>
                 <Field label="Natural language question">
