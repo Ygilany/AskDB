@@ -67,6 +67,7 @@
     "fix-sqlserver-url-format-and-ado-net-keys",
     "fix-stale-askdb-ai-api-names",
     "fix-studio-database-url-runtime-config",
+    "fix-studio-playground-split-view",
     "flat-carpets-wave",
     "harden-client-errors",
     "hide-internal-env-names-docs",
