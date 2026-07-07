@@ -79,24 +79,20 @@ const result = await pool.query(sql);
   <TabItem label="Direct (Vercel AI SDK)">
 
 ```ts
-import { createAskDb } from "@askdb/client";
-import { bootstrapAskDbEnv, getAskDbRuntimeConfig } from "@askdb/config";
-import { createAiRegistry } from "@askdb/ai";
-import { openaiProvider } from "@askdb/ai-openai";
+import { ask, loadSchema } from "@askdb/core";
 import { openai } from "@ai-sdk/openai";
 import { Pool } from "pg";
 
-// Schema and dialect come from config; supply your own model per-call.
-bootstrapAskDbEnv({ cwd: process.cwd() });
-const askdb = createAskDb({
-  config: getAskDbRuntimeConfig(),
-  registry: createAiRegistry([openaiProvider]),
-  schema: { path: "./my-app.schema" }, // or set host.schemaPath in config and omit
-});
+// Load schema once at startup — no config file needed.
+const schema = await loadSchema("./my-app.schema");
+const model = openai("gpt-4o-mini"); // any Vercel AI SDK LanguageModel
 const pool = new Pool({ connectionString: process.env.DATABASE_URL });
 
-const { sql } = await askdb.ask("Which customers signed up last week?", {
-  model: openai("gpt-4o-mini"), // any Vercel AI SDK LanguageModel — your key, your billing
+const { sql } = await ask({
+  question: "Which customers signed up last week?",
+  schema,
+  model,
+  dialect: "postgres",
 });
 
 // Log or approve `sql` here, then run it through your own pool.

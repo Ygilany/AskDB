@@ -99,6 +99,32 @@ This example uses `pg` to run the SQL, but the driver is your choice — AskDB n
 
 That's the whole pipeline. AskDB returns validated SQL — your handler logs it, runs it, and returns the result.
 
+## `ask()` return fields
+
+`ask()` returns `AskPipelineResult`. All fields except `sql` are optional.
+
+| Field | Type | When present |
+| --- | --- | --- |
+| `sql` | `string` | Always. The generated, validated SQL string. |
+| `usage` | `AskUsage \| undefined` | When the model provider reports token counts. Contains `promptTokens`, `completionTokens`, and `totalTokens` (each `number \| null`). Use this for cost tracking or quota enforcement in your application. |
+| `explain` | `unknown \| undefined` | When `explain: true` is passed. Heuristic guardrail metadata — which SELECT/read-only rules fired and why. Useful for debugging or operator dashboards. |
+| `tenantGuardrail` | `TenantGuardrailResult \| undefined` | When a tenant policy is active. Post-generation guardrail result: whether the SQL references tenant-scoped tables correctly. |
+| `tenantParams` | `unknown[] \| undefined` | When `tenantSqlMode: "sql-params"` is set and the query has tenant placeholders. Positional `$N` parameter values to pass alongside the SQL. |
+| `tenantBindings` | `TenantBinding[] \| undefined` | When a tenant policy is active and scope bindings were resolved. Structured binding metadata for audit or observability. |
+
+```ts
+const { sql, usage } = await ask({
+  question,
+  schema,
+  dialect: "postgres",
+  model,
+});
+
+if (usage) {
+  console.log(`Tokens used — prompt: ${usage.promptTokens}, completion: ${usage.completionTokens}, total: ${usage.totalTokens}`);
+}
+```
+
 ## Shorter: let config resolve schema + model
 
 If you already use `askdb.config.ts`, `@askdb/client` removes the manual schema load and model construction. `createAskDb` resolves both from config; you pass only the question.
