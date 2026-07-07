@@ -1,0 +1,37 @@
+---
+/**
+ * Synced npm / pnpm / yarn tabs for a package install command.
+ *
+ * Uses `syncKey="pkg"` so the reader's package-manager choice persists
+ * across every install block on the site (same key as hand-authored
+ * Tabs in guide pages — labels must stay exactly "npm" / "pnpm" / "yarn").
+ *
+ * Usage: <InstallTabs pkgs="@askdb/core @ai-sdk/openai pg" />
+ */
+import { Tabs, TabItem, Code } from "@astrojs/starlight/components";
+
+interface Props {
+  /** Space-separated package list. */
+  pkgs: string;
+  /** Install globally (`-g` / `yarn global add`). */
+  global?: boolean;
+}
+
+const { pkgs, global: isGlobal = false } = Astro.props;
+
+const npm = `npm install ${isGlobal ? "-g " : ""}${pkgs}`;
+const pnpm = `pnpm add ${isGlobal ? "-g " : ""}${pkgs}`;
+const yarn = isGlobal ? `yarn global add ${pkgs}` : `yarn add ${pkgs}`;
+---
+
+<Tabs syncKey="pkg">
+  <TabItem label="npm">
+    <Code code={npm} lang="bash" />
+  </TabItem>
+  <TabItem label="pnpm">
+    <Code code={pnpm} lang="bash" />
+  </TabItem>
+  <TabItem label="yarn">
+    <Code code={yarn} lang="bash" />
+  </TabItem>
+</Tabs>

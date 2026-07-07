@@ -19,6 +19,7 @@ import { TenancyPage } from "./views/tenancy/TenancyPage";
 import { RagIndexPage } from "./views/rag-index/RagIndexPage";
 import { PlaygroundPage } from "./views/playground/PlaygroundPage";
 import { SettingsPage } from "./views/settings/SettingsPage";
+import { SetupPage } from "./views/setup/SetupPage";
 import { Separator } from "./components/ui/separator";
 
 export function App() {
@@ -34,12 +35,21 @@ export function App() {
 }
 
 function AppShell() {
-  const { load, loadState, suggestionDialog, setSuggestionDialog, applySuggestion } = useWorkspace();
+  const { load, loadState, setupStatus, suggestionDialog, setSuggestionDialog, applySuggestion } = useWorkspace();
   const { refreshRagStatus, ragAvailable } = useRag();
 
   useEffect(() => {
     void load().then(() => void refreshRagStatus());
   }, [load, refreshRagStatus]);
+
+  if (loadState.kind === "setup" && setupStatus) {
+    return (
+      <SetupPage
+        status={setupStatus}
+        onComplete={() => void load().then(() => void refreshRagStatus())}
+      />
+    );
+  }
 
   if (loadState.kind === "loading") {
     return (

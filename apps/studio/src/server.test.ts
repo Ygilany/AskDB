@@ -1,4 +1,4 @@
-import { cpSync, existsSync, mkdtempSync, readFileSync } from "node:fs";
+import { cpSync, existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -7,6 +7,7 @@ import type { AskDbConfig } from "@askdb/config";
 import { createMemoryStore } from "@askdb/rag";
 import { afterEach, describe, expect, it } from "vitest";
 import { createStudioServer, setStudioPgvectorStoreFactoryForTests } from "./server.js";
+import { setSetupInstallerForTests } from "./setup.js";
 
 const repoRoot = new URL("../../..", import.meta.url).pathname;
 
@@ -46,6 +47,7 @@ describe("AskDB Studio server", () => {
   afterEach(async () => {
     resetAskDbRuntimeForTests();
     setStudioPgvectorStoreFactoryForTests(undefined);
+    setSetupInstallerForTests(undefined);
     await Promise.all(
       [...servers, ...embeddingServers].map(
         (server) =>
@@ -462,6 +464,123 @@ describe("AskDB Studio server", () => {
     // The error should come from the mysql runner, not from a missing-pg error
     expect(result.error).not.toMatch(/pg.*required/);
     expect(result.error).not.toMatch(/`pg`/);
+  });
+
+  it("GET /api/setup/status reports not needed on a ready workspace", async () => {
+    installStudioRuntime({ ASKDB_RAG_EMBEDDER: "mock" });
+    const schemaDir = copyFixture();
+    const server = createStudioServer({ schema: schemaDir });
+    servers.push(server);
+    const baseUrl = await listen(server);
+
+    const status = await getJson(`${baseUrl}/api/setup/status`);
+    expect(status.needed).toBe(false);
+    expect(status.reason).toBeNull();
+
+    const workspace = await getJson(`${baseUrl}/api/workspace`);
+    expect(workspace.dialect).toBe("postgres");
+    expect(typeof workspace.schemaPathRelative).toBe("string");
+  });
+
+  it("POST /api/introspect resyncs from a prisma source and preserves enrichment files", async () => {
+    const prismaConfig: AskDbConfig = {
+      ...STUDIO_TEST_BASE,
+      introspection: {
+        provider: "prisma",
+        providerConfig: {
+          prisma: { schemaPath: join(repoRoot, "packages/prisma/test-fixtures/simple") },
+        },
+        outputDir: "./askdb/",
+      },
+    };
+    installStudioRuntime({ ASKDB_RAG_EMBEDDER: "mock" }, prismaConfig);
+    const schemaDir = copyFixture();
+    const usersMd = join(schemaDir, "tables", "users.md");
+    expect(existsSync(usersMd)).toBe(true);
+
+    const server = createStudioServer({ schema: schemaDir });
+    servers.push(server);
+    const baseUrl = await listen(server);
+
+    const plan = await getJson(`${baseUrl}/api/introspect/status`);
+    expect(plan.ok).toBe(true);
+    expect(plan.engine).toBe("prisma");
+
+    const result = await postJson(`${baseUrl}/api/introspect`, {});
+    expect(result.ok).toBe(true);
+    expect(result.engine).toBe("prisma");
+    expect(result.tables).toBeGreaterThan(0);
+    expect(result.workspace.tables.length).toBeGreaterThan(0);
+
+    // The physical layer was regenerated; the enrichment markdown survives on disk.
+    expect(existsSync(usersMd)).toBe(true);
+  });
+
+  it("runs the guided setup flow end to end with a prisma source", async () => {
+    const projectDir = mkdtempSync(join(repoRoot, "apps/studio/.tmp-setup-"));
+    const prevCwd = process.cwd();
+    try {
+      cpSync(
+        join(repoRoot, "packages/prisma/test-fixtures/simple/schema.prisma"),
+        join(projectDir, "schema.prisma"),
+      );
+      process.chdir(projectDir);
+      resetAskDbRuntimeForTests();
+      // Never run a real package-manager install from tests.
+      setSetupInstallerForTests(() => true);
+
+      const server = createStudioServer({ schema: "./askdb", setupReason: "no-config" });
+      servers.push(server);
+      const baseUrl = await listen(server);
+
+      const status = await getJson(`${baseUrl}/api/setup/status`);
+      expect(status).toMatchObject({ needed: true, reason: "no-config" });
+
+      // Non-setup endpoints are gated while setup is pending.
+      const gated = await fetch(`${baseUrl}/api/workspace`);
+      expect(gated.status).toBe(409);
+
+      // Secrets are rejected — env var NAMES only.
+      const badKey = await postRaw(`${baseUrl}/api/setup/config`, {
+        database: "prisma",
+        aiProvider: "openai",
+        aiKeyEnv: "sk-this-looks-like-a-secret",
+      });
+      expect(badKey.status).toBe(400);
+
+      const written = await postJson(`${baseUrl}/api/setup/config`, {
+        database: "prisma",
+        prismaSchema: "./schema.prisma",
+        aiProvider: "openai",
+      });
+      expect(written.configPath.endsWith("askdb.config.ts")).toBe(true);
+      expect(written.envVars.map((v: any) => v.name)).toContain("OPENAI_API_KEY");
+      expect(written.status.reason).toBe("no-artifact");
+      expect(existsSync(join(projectDir, "askdb.config.ts"))).toBe(true);
+      expect(existsSync(join(projectDir, ".env.example"))).toBe(true);
+
+      // Re-writing over an existing config is refused.
+      const rewrite = await postRaw(`${baseUrl}/api/setup/config`, {
+        database: "prisma",
+        aiProvider: "openai",
+      });
+      expect(rewrite.status).toBe(409);
+
+      const introspected = await postJson(`${baseUrl}/api/setup/introspect`, {});
+      expect(introspected.ok).toBe(true);
+      expect(introspected.engine).toBe("prisma");
+      expect(introspected.tables).toBeGreaterThan(0);
+      expect(existsSync(join(projectDir, "askdb", "schema.json"))).toBe(true);
+
+      // The server is now fully ready.
+      const workspace = await getJson(`${baseUrl}/api/workspace`);
+      expect(workspace.tables.length).toBeGreaterThan(0);
+      const readyStatus = await getJson(`${baseUrl}/api/setup/status`);
+      expect(readyStatus.needed).toBe(false);
+    } finally {
+      process.chdir(prevCwd);
+      rmSync(projectDir, { recursive: true, force: true });
+    }
   });
 });
 

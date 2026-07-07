@@ -3,23 +3,69 @@ title: "CLI reference"
 description: "Every askdb command and flag — init, introspect, enrich, studio, bundle, ask."
 ---
 
+import { Tabs, TabItem } from "@astrojs/starlight/components";
+
 <p class="doc-eyebrow">Reference · CLI</p>
 
 <p class="doc-lede">The <code>askdb</code> binary covers the full local workflow: scaffolding a project, introspecting a database, authoring schema artifacts, and asking questions. All commands use the same <code>@askdb/core</code> pipeline as the library.</p>
 
 ## Install
 
+<Tabs syncKey="pkg">
+  <TabItem label="npm">
+
 ```bash
 npm install askdb
 npx askdb --help
 ```
 
+  </TabItem>
+  <TabItem label="pnpm">
+
+```bash
+pnpm add askdb
+pnpm exec askdb --help
+```
+
+  </TabItem>
+  <TabItem label="yarn">
+
+```bash
+yarn add askdb
+yarn askdb --help
+```
+
+  </TabItem>
+</Tabs>
+
 For global install:
+
+<Tabs syncKey="pkg">
+  <TabItem label="npm">
 
 ```bash
 npm install -g askdb
 askdb --help
 ```
+
+  </TabItem>
+  <TabItem label="pnpm">
+
+```bash
+pnpm add -g askdb
+askdb --help
+```
+
+  </TabItem>
+  <TabItem label="yarn">
+
+```bash
+yarn global add askdb
+askdb --help
+```
+
+  </TabItem>
+</Tabs>
 
 ## Commands
 
@@ -93,10 +139,16 @@ askdb introspect \
 | `--url <connstr>` | Live database connection string. |
 | `--engine <id>` | Engine override: `postgres`, `mysql`, `sqlite`, `sqlserver`, `prisma`. |
 | `--prisma-schema <path>` | `.prisma` file or directory. With `--engine prisma`. |
+| `--from-export <bundle-dir>` | Introspect from a previously exported bundle directory instead of a live connection. Postgres only. Mutually exclusive with `--url`. |
 | `--out <dir>` | Output directory for the schema artifact. Falls back to `introspection.outputDir` in `askdb.config.ts`. |
 | `--schema-id <id>` | Identifier embedded in `schema.json`. |
+| `--schemas <list>` | Comma-separated database schemas to include (e.g. `public,sales`). |
+| `--exclude-schemas <list>` | Comma-separated database schemas to skip. |
+| `--tables <list>` | Comma-separated tables to include. Repeatable — values accumulate. |
 | `--print` | Print the introspection result without writing. |
 | `--diff <existing>` | Diff against an existing schema artifact. |
+
+`askdb introspect` also accepts the [shared logging flags](#shared-logging-flags).
 
 Live introspection requires the matching engine driver (`pg`, `mysql2`, `better-sqlite3`, or `mssql`) in the project running `askdb`, or supplied in the same one-off command:
 
@@ -115,7 +167,7 @@ askdb enrich --schema ./my-app.schema
 
 | Flag | Description |
 | --- | --- |
-| `--schema <path>` | Path to the schema artifact. |
+| `-s, --schema <path>` | Path to the schema artifact. |
 
 Requires `@askdb/tui` to be installed (the CLI lazy-imports it).
 
@@ -129,11 +181,13 @@ askdb studio --schema ./my-app.schema
 
 | Flag | Description |
 | --- | --- |
-| `--schema <path>` | Path to the schema artifact. |
+| `-s, --schema <path>` | Path to the schema artifact. |
 | `--port <n>` | Override the listen port (default `5556`; or set `studio.listen.port` in config). |
 | `--host <host>` | Override the bind host (default `127.0.0.1`; or set `studio.listen.host` in config). |
 
 Requires `@askdb/studio` to be installed (lazy-imported on first use). Studio schema browsing, enrichment, and SQL generation do not require a database driver; the optional Playground execute path requires the matching driver (`pg`, `mysql2`, `better-sqlite3`, or `mssql`). `askdb init --studio-execute` installs the correct driver automatically.
+
+`askdb studio` is the one command that also works *before* setup: run it with no config (or no schema artifact) and Studio opens a [guided setup wizard](/studio/#guided-setup) in the browser that scaffolds both. An explicit `--schema` pointing at a missing directory is an error, since you asked for a specific artifact.
 
 ### `askdb bundle`
 
@@ -160,14 +214,31 @@ askdb ask \
 | `--mode <mode>` | Operating mode: `schema_only` (default) or `bounded_results`. |
 | `--explain` | After the SQL, print a JSON block describing the heuristic guardrails satisfied. |
 | `--omit-sensitive-from-prompt` | Exclude sensitive columns from the prompt entirely. |
-| `--log-level <level>` | Log level (default reads from `logging.level` in `askdb.config.ts`). |
-| `-v`, `--verbose` | Show structured log events. |
+| `--mock-sql <sql>` | Deterministic output for tests — bypasses the live model call. |
 
-There is no dialect flag: the dialect resolves from `dialect` in `askdb.config.ts`, falling back to the provider recorded in the schema artifact at introspection time, then to `postgres`.
+`askdb ask` also accepts the [shared logging flags](#shared-logging-flags).
+
+You never pass a SQL dialect — it resolves automatically: `dialect` in `askdb.config.ts` when set, otherwise the engine recorded in the schema artifact at introspection time, otherwise `postgres`.
 
 `askdb ask` returns the validated SQL on stdout. Execution is not part of the CLI.
 
-## `askdb-rag setup-store`
+## Shared logging flags
+
+`askdb ask`, `askdb introspect`, and the `askdb-rag` binary all accept the same structured-logging flags:
+
+| Flag | Description |
+| --- | --- |
+| `-v, --verbose` | Emit structured JSON log events (level `info`) to stderr. |
+| `--log-level <level>` | `trace`, `debug`, `info`, `warn`, `error`, `fatal`, or `silent`. Default reads `logging.level` from `askdb.config.ts`. |
+| `--log-file <path>` | Append structured JSON logs to a file. |
+| `--log-stdout` | Mirror structured JSON logs to stdout. |
+| `--correlation-id <id>` | Tag every log event with a correlation ID of your choosing. |
+
+## The `askdb-rag` binary
+
+`@askdb/rag` ships its own small binary with three commands.
+
+### `askdb-rag setup-store`
 
 Provisions the pgvector schema for `@askdb/rag` idempotently. Safe to run in CI / deploy steps.
 
@@ -180,6 +251,38 @@ askdb-rag setup-store --pg-url "$DATABASE_URL" --dimensions 1536
 | `--pg-url <connstr>` | Postgres connection string (required). |
 | `--pg-table <name>` | Custom table name. Default `askdb_rag_chunks`. |
 | `--dimensions <n>` | Embedding dimensions. Default `1536`. |
+
+### `askdb-rag index`
+
+Chunks and embeds a schema artifact into the configured store — the CLI equivalent of `buildSchemaIndex`.
+
+```bash
+askdb-rag index ./my-app.schema --store pgvector --embedder openai
+```
+
+| Flag | Description |
+| --- | --- |
+| `--store <id>` | `memory`, `file` (default — persists next to the artifact), or `pgvector`. |
+| `--embedder <id>` | `mock` (default, deterministic, CI-safe) or `openai` (reads `OPENAI_API_KEY`, or pass `--api-key`). |
+| `--embedder-model <id>` | Embedding model. Default `text-embedding-3-small`. |
+| `--dimensions <n>` | Embedding dimensions, when the model needs them specified. |
+| `--pg-url` / `--pg-table` | pgvector connection when `--store pgvector`. |
+
+### `askdb-rag query`
+
+Runs a similarity query against an indexed store — useful for checking what retrieval would hand the model.
+
+```bash
+askdb-rag query ./my-app.schema --question "customer signups" -k 8
+```
+
+| Flag | Description |
+| --- | --- |
+| `--question <text>` | The query text (required). |
+| `-k <n>` | Top-k chunks to return. Default `8`. |
+| `--types <list>` | Restrict chunk types, e.g. `table,column,cql`. |
+
+All three commands accept the [shared logging flags](#shared-logging-flags).
 
 ## Exit codes
 

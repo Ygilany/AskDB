@@ -3,6 +3,8 @@ title: "Prisma"
 description: "Use @askdb/prisma to read your schema directly from a .prisma file — no live database required."
 ---
 
+import InstallTabs from "../../../../components/InstallTabs.astro";
+
 <p class="doc-eyebrow">Integration · Prisma</p>
 
 <p class="doc-lede">If you already maintain a Prisma schema file, <code>@askdb/prisma</code> reads it directly and produces an AskDB schema artifact. No live database connection during introspection.</p>
@@ -15,11 +17,11 @@ description: "Use @askdb/prisma to read your schema directly from a .prisma file
 
 ## Install
 
-```bash
-npm install @askdb/prisma @askdb/introspect
-# Plus the dialect you want at runtime
-npm install @askdb/core @askdb/postgres @ai-sdk/openai
-```
+<InstallTabs pkgs="@askdb/prisma @askdb/introspect" />
+
+Plus the engine you want at runtime — for example, Postgres:
+
+<InstallTabs pkgs="@askdb/core @askdb/postgres @ai-sdk/openai" />
 
 `@askdb/prisma` doesn't bundle a SQL dialect — pair it with whichever engine package matches your runtime database.
 

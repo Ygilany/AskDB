@@ -23,11 +23,28 @@ server.listen();
 
 | Option | Default | Description |
 | --- | --- | --- |
-| `port` | `3000` | Port to listen on. |
-| `host` | `127.0.0.1` | Bind address. Bind to `0.0.0.0` only behind a gateway. |
+| `port` | `3000` | Port to listen on. Config fallback: `httpApi.listen.port`. |
+| `host` | `127.0.0.1` | Bind address. Bind to `0.0.0.0` only behind a gateway. Config fallback: `httpApi.listen.host`. |
+| `schemaPath` | — | Server-default schema artifact path. Falls back to `host.schemaPath` in `askdb.config.ts`. |
 | `maxBodyBytes` | `1048576` (1 MiB) | Request body size limit. Larger requests return `payload_too_large`. |
 
-The server reads schema and AI provider config from environment variables via `@askdb/config` — see [Configuration](/reference/config/) for the resolution rules.
+The server reads its schema and AI provider settings from `askdb.config.ts` via `@askdb/config` — see [Configuration](/reference/config/) for the resolution rules.
+
+## Standalone binary
+
+The package also ships an `askdb-http` binary, so you can run the service without writing any server code:
+
+```bash
+npx askdb-http --schema-path ./my-app.schema --port 3000 --host 127.0.0.1
+```
+
+| Flag | Description |
+| --- | --- |
+| `--schema-path <path>` | Server-default schema artifact path. |
+| `--port <n>` | Port to listen on. |
+| `--host <host>` | Bind address. |
+
+Every flag is optional. Precedence per setting: CLI flag → `askdb.config.ts` (`host.schemaPath`, `httpApi.listen.port`, `httpApi.listen.host`) → built-in default.
 
 ## Endpoints
 

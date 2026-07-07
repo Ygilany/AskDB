@@ -3,17 +3,27 @@ title: "Deploy AskDB as an HTTP service"
 description: "Stand up @askdb/http-api so Python, browsers, agents — anything that speaks HTTP — can ask questions."
 ---
 
+import InstallTabs from "../../../components/InstallTabs.astro";
+
 <p class="doc-eyebrow">Service guide</p>
 
 <p class="doc-lede"><code>@askdb/http-api</code> wraps the same <code>ask()</code> pipeline behind a minimal HTTP server. Use it when non-Node clients need to ask questions, or when you want one AskDB service shared across multiple consumers.</p>
 
 ## Install
 
-```bash
-npm install @askdb/http-api @askdb/postgres ai @ai-sdk/openai
-```
+<InstallTabs pkgs="@askdb/http-api @askdb/postgres ai @ai-sdk/openai" />
 
 ## Start the server
+
+The package ships an `askdb-http` binary — for most deployments you don't write any server code:
+
+```bash
+npx askdb-http --schema-path ./my-app.schema --port 3000
+```
+
+All flags are optional; each falls back to `askdb.config.ts` (`host.schemaPath`, `httpApi.listen.port`, `httpApi.listen.host`), then to built-in defaults.
+
+To embed the server in your own process instead, use the programmatic API:
 
 ```ts
 // server.ts
@@ -28,7 +38,7 @@ const server = createAskDbHttpServer({
 server.listen();
 ```
 
-The server reads its schema and model settings from your `askdb.config.ts` (it bootstraps the same config file the CLI and Studio use). Set `host.schemaPath` to point at your schema artifact and configure the AI provider as usual — supply the provider key (`OPENAI_API_KEY`, etc.) in your environment the same way you do for the CLI.
+Either way, the server reads its schema and model settings from your `askdb.config.ts` (it bootstraps the same config file the CLI and Studio use). Set `host.schemaPath` to point at your schema artifact and configure the AI provider as usual — supply the provider key (`OPENAI_API_KEY`, etc.) in your environment the same way you do for the CLI.
 
 ## Endpoints
 

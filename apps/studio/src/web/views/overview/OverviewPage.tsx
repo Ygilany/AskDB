@@ -1,15 +1,38 @@
+import { useCallback, useState } from "react";
 import { useNavigate } from "react-router";
-import { Sparkles, Shield, History, Zap, RefreshCw } from "lucide-react";
-import { useWorkspace } from "../../contexts/workspace-context";
+import { Loader2, Sparkles, Shield, History, Zap, RefreshCw } from "lucide-react";
+import { useWorkspace, type StatusMessage } from "../../contexts/workspace-context";
 import { useRag } from "../../contexts/rag-context";
 import { usePlayground } from "../../contexts/playground-context";
+import { InlineStatus } from "../../components/common/StatusBanner";
 import { formatNumber } from "../../lib/format";
+import { resyncSchema } from "../../api";
 
 export function OverviewPage() {
   const navigate = useNavigate();
-  const { workspace, tables } = useWorkspace();
-  const { ragStatus } = useRag();
+  const { workspace, tables, load } = useWorkspace();
+  const { ragStatus, refreshRagStatus } = useRag();
   const { historyEntries } = usePlayground();
+  const [resyncing, setResyncing] = useState(false);
+  const [resyncStatus, setResyncStatus] = useState<StatusMessage | null>(null);
+
+  const handleResync = useCallback(async () => {
+    setResyncing(true);
+    setResyncStatus({ kind: "loading", text: "Re-introspecting…" });
+    try {
+      const result = await resyncSchema();
+      await load();
+      void refreshRagStatus();
+      setResyncStatus({
+        kind: "success",
+        text: `Re-introspected ${result.tables} table${result.tables === 1 ? "" : "s"} from ${result.engine} — enrichment preserved.`,
+      });
+    } catch (error) {
+      setResyncStatus({ kind: "error", text: error instanceof Error ? error.message : String(error) });
+    } finally {
+      setResyncing(false);
+    }
+  }, [load, refreshRagStatus]);
 
   if (!workspace) return null;
 
@@ -36,8 +59,14 @@ export function OverviewPage() {
           <div className="main-sub">{workspace.aiProvider || "postgres"} · {workspace.schemaId}</div>
         </div>
         <div className="main-actions">
-          <button type="button" className="btn" onClick={() => void 0}>
-            <RefreshCw size={14} /> Resync schema
+          <button
+            type="button"
+            className="btn"
+            disabled={resyncing}
+            title="Re-run introspection with the connection from askdb.config.ts. Your enrichment is preserved."
+            onClick={() => void handleResync()}
+          >
+            {resyncing ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />} Resync schema
           </button>
           <button type="button" className="btn primary" onClick={() => navigate("/tables")}>
             <Sparkles size={14} /> Draft enrichment
@@ -46,6 +75,7 @@ export function OverviewPage() {
       </div>
       <div className="main-body">
         <div className="stack">
+          {resyncStatus && <InlineStatus status={resyncStatus} />}
           {/* Stats row */}
           <div className="grid-4">
             <div className="card stat-card">

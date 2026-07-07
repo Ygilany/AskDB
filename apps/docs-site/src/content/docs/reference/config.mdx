@@ -48,6 +48,47 @@ Use the `env()` helper (rather than `process.env`) so AskDB can capture which en
 
 `defineConfig` returns the object unchanged at runtime — it exists only for type inference. The full type is `AskDbConfig`.
 
+## All top-level fields
+
+| Field | Required | What it configures |
+| --- | --- | --- |
+| `ai` | yes | Model provider (`provider` + `providerConfig` branch). See [Bring your own model](/guides/bring-your-own-model/). |
+| `introspection` | yes | Introspection engine (`provider`: `postgres`, `mysql`, `sqlite`, `sqlserver`, `prisma`), its connection (`providerConfig`), and `outputDir` (default `./askdb/`). |
+| `rag` | yes | Embedder (`mock`, `openai`) and vector store (`file`, `memory`, `pgvector`) plus their config branches. |
+| `dialect` | no | Override the NL-to-SQL dialect (`postgres`, `mysql`, `sqlite`, `sqlserver`). When unset, it's inferred from the schema artifact's recorded provider. |
+| `modes` | no | `askdbMode` (`schema_only` default, `bounded_results`) and `omitSensitiveFromPrompt` (default `false`). |
+| `host` | no | `schemaPath` — the default schema artifact for embedding hosts and the HTTP API. `schemaJson` — inline artifact JSON, for environments without a file system path. |
+| `logging` | no | `level`, plus `logFile`, `logStdout`, and `correlationId` defaults for the CLI's structured logs. |
+| `studio` | no | `listen.{host,port}` (defaults `127.0.0.1:5556`) and the `execute` block below. |
+| `httpApi` | no | `listen.{host,port}` for the HTTP API server (defaults `127.0.0.1:3000`). Use `env("PORT")` on platforms that inject a port. |
+| `dev` | no | `mockSql` — deterministic NL-to-SQL output for tests; bypasses the model call. |
+
+### `dialect` — when inference is wrong
+
+The dialect normally resolves from the schema artifact (the engine recorded at introspection time). Set `dialect` only when that inference is wrong — for example, a Prisma schema that declares `provider = "postgresql"` while your runtime target is a different engine:
+
+```ts
+export default defineConfig({
+  // ...
+  dialect: "mysql",
+});
+```
+
+### `modes` and `host`
+
+```ts
+export default defineConfig({
+  // ...
+  modes: {
+    askdbMode: "schema_only",        // default
+    omitSensitiveFromPrompt: true,   // strict sensitive-column handling
+  },
+  host: {
+    schemaPath: "./my-app.schema",   // default artifact for embedding + HTTP API
+  },
+});
+```
+
 ## File discovery
 
 `bootstrapAskDbEnv()` looks for config in the **current working directory only** (no upward walk), trying two locations in order:

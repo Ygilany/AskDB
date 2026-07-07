@@ -9,6 +9,7 @@ import { Textarea } from "../../components/ui/textarea";
 import { CopyButton } from "../../components/common/CopyButton";
 import { InlineStatus } from "../../components/common/StatusBanner";
 import { EmptyText } from "../../components/common/EmptyText";
+import { GetTheCodePanel } from "./GetTheCodePanel";
 
 const selectClassName = "h-9 w-full rounded-md border border-input bg-background px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring";
 const fieldsetResetStyle = { border: 0, padding: 0, margin: 0 };
@@ -570,6 +571,8 @@ export function PlaygroundPage() {
                     {executeMessage && <InlineStatus status={executeMessage} />}
                   </div>
                 </div>
+
+                <GetTheCodePanel />
 
                 {executeResult?.ok === true && (
                   <section style={{ padding: "var(--pad-y) var(--pad-x)" }}>

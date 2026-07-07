@@ -14,11 +14,14 @@ import ExampleLink from "../../components/ExampleLink.astro";
 ## Prerequisites
 
 - Node 20 or newer.
-- npm, pnpm, or yarn (examples use `npx`).
+- npm, pnpm, or yarn — tabbed examples adapt to your choice; standalone snippets use `npx` (substitute `pnpm dlx` or `yarn dlx`).
 - An API key from a model provider — OpenAI, Anthropic, Google, Azure, or any OpenAI-compatible endpoint (OpenRouter, vLLM, Ollama, ...). See [Bring your own model](/guides/bring-your-own-model/).
 - A database AskDB can read — Postgres, MySQL, SQLite, or SQL Server — or even a Prisma schema file (no live database required).
 
 ## The whole flow, in four commands
+
+<Tabs syncKey="pkg">
+  <TabItem label="npm">
 
 ```bash
 npx askdb@latest init        # scaffold askdb.config.ts
@@ -26,6 +29,29 @@ npx askdb introspect         # read your database into a schema artifact
 npx askdb studio             # enrich the schema and test questions in your browser
 npx askdb ask --question "Which customers signed up last week?"
 ```
+
+  </TabItem>
+  <TabItem label="pnpm">
+
+```bash
+pnpm dlx askdb@latest init   # scaffold askdb.config.ts
+pnpm dlx askdb introspect    # read your database into a schema artifact
+pnpm dlx askdb studio        # enrich the schema and test questions in your browser
+pnpm dlx askdb ask --question "Which customers signed up last week?"
+```
+
+  </TabItem>
+  <TabItem label="yarn">
+
+```bash
+yarn dlx askdb@latest init   # scaffold askdb.config.ts
+yarn dlx askdb introspect    # read your database into a schema artifact
+yarn dlx askdb studio        # enrich the schema and test questions in your browser
+yarn dlx askdb ask --question "Which customers signed up last week?"
+```
+
+  </TabItem>
+</Tabs>
 
 Each step is explained below. The loop that makes answers good: **introspect
 once, then enrich and re-ask in Studio until the SQL matches how your team
@@ -39,7 +65,7 @@ thinks about the data.**
 npx askdb@latest init
 ```
 
-`npx` downloads and runs `askdb` on the fly — no separate install step needed. In a terminal, `askdb init` opens a short wizard that asks which database you use, which AI provider you have a key for, and whether you want the Studio query playground. It then writes only the relevant config branches and installs only the packages your setup needs.
+`npx` (like `pnpm dlx` and `yarn dlx`) downloads and runs `askdb` on the fly — no separate install step needed. In a terminal, `askdb init` opens a short wizard that asks which database you use, which AI provider you have a key for, and whether you want the Studio query playground. It then writes only the relevant config branches and installs only the packages your setup needs.
 
 In CI or scripts, skip the wizard:
 
@@ -51,10 +77,12 @@ npx askdb@latest init --yes --database sqlite --sqlite-file SQLITE_FILE
 
 <Aside type="tip">`askdb.config.ts` is checked in; `.env` (your real keys) is not.</Aside>
 
+<Aside type="note">Prefer the browser? Skip `init` and run `npx askdb studio` directly — with no config present, Studio opens a [guided setup wizard](/studio/#guided-setup) that writes the config and runs introspection for you.</Aside>
+
 The generated config is tailored to what you chose — for example, a SQL Server setup:
 
 ```ts
-import { defineConfig, env } from "@askdb/config";
+import { defineConfig, env, type AskDbConfig } from "@askdb/config";
 
 export default defineConfig({
   ai: {
@@ -76,7 +104,7 @@ Once this is configured, most CLI flags below are optional.
 
 ## 2. Introspect your database
 
-Introspection produces an **AskDB schema artifact** — a directory on disk that captures your tables, columns, types, and relationships. Those artifacts' content are the only thing the model ever sees about your database.
+Introspection produces an **AskDB schema artifact** — a directory on disk that captures your tables, columns, types, and relationships. That artifact is the only thing the model ever sees about your database.
 
 <Tabs syncKey="engine">
   <TabItem label="Live database">
@@ -189,7 +217,7 @@ In both cases AskDB returns validated SQL. It does **not** run it against your d
 Now that the CLI works, pick the path that matches what you're building:
 
 <div class="home-path-grid">
-  <a href="/guides/embed-in-node/"><strong>Embed in a Node app</strong><span>Drop <code>@askdb/core</code> into a TypeScript service and run the SQL through your own pool.</span></a>
+  <a href="/guides/embed-in-node/"><strong>Embed in a Node app</strong><span>Drop <code>@askdb/client</code> into a TypeScript service and run the SQL through your own pool.</span></a>
   <a href="/guides/deploy-as-http-service/"><strong>Deploy as HTTP service</strong><span>Stand up <code>@askdb/http-api</code> so Python, browsers, or agents can ask questions.</span></a>
   <a href="/guides/author-your-schema/"><strong>Author your schema</strong><span>Get the most out of Studio: descriptions, concepts, sensitive markers, tenant policy.</span></a>
   <a href="/concepts/how-askdb-works/"><strong>How AskDB works</strong><span>The end-to-end flow, with all the moving parts.</span></a>

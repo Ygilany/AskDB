@@ -31,8 +31,14 @@ import { runIntrospectCli } from "./introspect.js";
 const ai = createAiRegistry([openaiProvider, azureProvider, googleProvider, anthropicProvider]);
 
 // `askdb init` writes templates and should not require a valid askdb.config.
+// `askdb studio` tolerates a missing config too: Studio starts in setup mode
+// and its browser wizard scaffolds the config.
 if (process.argv[2] !== "init") {
-  bootstrapAskDbEnv({ cwd: process.cwd() });
+  try {
+    bootstrapAskDbEnv({ cwd: process.cwd() });
+  } catch (error) {
+    if (process.argv[2] !== "studio") throw error;
+  }
 }
 
 if (process.argv[2] === "init") {

@@ -1,9 +1,10 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useReducer } from "react";
+import { createContext, use, useCallback, useEffect, useEffectEvent, useMemo, useReducer } from "react";
 import type { ReactNode } from "react";
 import type { TenantPolicyFrontmatter, V2Concept } from "@askdb/core";
 import type { ColumnDraft, SuggestSource, TableDraft } from "@askdb/enrich";
-import type { StudioTableDto, StudioWorkspaceDto } from "@/shared/api";
+import type { SetupStatusDto, StudioTableDto, StudioWorkspaceDto } from "@/shared/api";
 import {
+  getSetupStatus,
   getWorkspace,
   saveConcepts,
   saveTable,
@@ -17,13 +18,14 @@ async function handleSuggestTenantPolicy() {
   return suggestTenantPolicy();
 }
 
-type LoadState = { kind: "loading" | "ready" | "error"; message?: string };
+type LoadState = { kind: "loading" | "ready" | "error" | "setup"; message?: string };
 export type StatusMessage = { kind: "neutral" | "loading" | "success" | "error"; text: string };
 type SuggestionDialog = { source: SuggestSource; label: string; candidates: Array<{ text: string }> };
 type SuggestionCache = Record<string, SuggestionDialog>;
 
 interface WorkspaceContextValue {
   loadState: LoadState;
+  setupStatus: SetupStatusDto | null;
   workspace: StudioWorkspaceDto | null;
   tables: StudioTableDto[];
   filteredTables: StudioTableDto[];
@@ -58,13 +60,14 @@ interface WorkspaceContextValue {
 const WorkspaceContext = createContext<WorkspaceContextValue | null>(null);
 
 export function useWorkspace(): WorkspaceContextValue {
-  const ctx = useContext(WorkspaceContext);
+  const ctx = use(WorkspaceContext);
   if (!ctx) throw new Error("useWorkspace must be used within WorkspaceProvider");
   return ctx;
 }
 
 type WorkspaceState = {
   loadState: LoadState;
+  setupStatus: SetupStatusDto | null;
   workspace: StudioWorkspaceDto | null;
   selectedTableId: string | null;
   drafts: Record<string, TableDraft>;
@@ -78,6 +81,7 @@ type WorkspaceState = {
 
 type WorkspaceAction =
   | { type: "set_loadState"; payload: LoadState }
+  | { type: "setup_required"; status: SetupStatusDto }
   | { type: "load_complete"; workspace: StudioWorkspaceDto }
   | { type: "set_workspace"; payload: StudioWorkspaceDto | null }
   | { type: "workspace_and_drafts"; workspace: StudioWorkspaceDto }
@@ -96,6 +100,7 @@ type WorkspaceAction =
 function workspaceReducer(state: WorkspaceState, action: WorkspaceAction): WorkspaceState {
   switch (action.type) {
     case "set_loadState": return { ...state, loadState: action.payload };
+    case "setup_required": return { ...state, setupStatus: action.status, loadState: { kind: "setup" } };
     case "load_complete": {
       const draftMap = makeDraftMap(action.workspace);
       return {
@@ -143,6 +148,7 @@ function workspaceReducer(state: WorkspaceState, action: WorkspaceAction): Works
 
 const initialWorkspaceState: WorkspaceState = {
   loadState: { kind: "loading" },
+  setupStatus: null,
   workspace: null,
   selectedTableId: null,
   drafts: {},
@@ -157,7 +163,7 @@ const initialWorkspaceState: WorkspaceState = {
 export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const [state, dispatch] = useReducer(workspaceReducer, initialWorkspaceState);
   const {
-    loadState, workspace, selectedTableId, drafts, tableSearch,
+    loadState, setupStatus, workspace, selectedTableId, drafts, tableSearch,
     saveStatus, suggestionDialog, suggestionCache, suggestingKey, busy,
   } = state;
 
@@ -188,12 +194,14 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     });
   }, [drafts, tableSearch, tables]);
 
+  const clearSaveStatus = useEffectEvent(() => setSaveStatus(null));
+
   useEffect(() => {
     if (saveStatus?.kind === "success" || saveStatus?.kind === "neutral") {
-      const id = setTimeout(() => setSaveStatus(null), 4000);
+      const id = setTimeout(() => clearSaveStatus(), 4000);
       return () => clearTimeout(id);
     }
-  }, [saveStatus, setSaveStatus]);
+  }, [saveStatus]);
 
   const withBusy = useCallback(async (key: string, task: () => Promise<void>) => {
     dispatch({ type: "busy_add", key });
@@ -208,6 +216,16 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       const nextWorkspace = await getWorkspace();
       dispatch({ type: "load_complete", workspace: nextWorkspace });
     } catch (error) {
+      // A 409 means the server is in setup mode — confirm and open the wizard.
+      try {
+        const status = await getSetupStatus();
+        if (status.needed) {
+          dispatch({ type: "setup_required", status });
+          return;
+        }
+      } catch {
+        // fall through to the original error
+      }
       dispatch({ type: "set_loadState", payload: { kind: "error", message: getErrorMessage(error) } });
     }
   }, []);
@@ -304,7 +322,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   }, [setSaveStatus, withBusy]);
 
   const value = useMemo<WorkspaceContextValue>(() => ({
-    loadState, workspace, tables, filteredTables, selectedTable, selectedTableId, setSelectedTableId,
+    loadState, setupStatus, workspace, tables, filteredTables, selectedTable, selectedTableId, setSelectedTableId,
     drafts, selectedDraft, dirty, tableSearch, setTableSearch, saveStatus, setSaveStatus, busy,
     suggestionDialog, setSuggestionDialog, suggestingKey,
     load, saveSelectedTable, resetSelectedDraft, updateTableDraft, updateColumnDraft,
@@ -315,7 +333,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     handleSaveTenantPolicy, load, loadState, requestSuggestion, resetSelectedDraft,
     saveSelectedTable, saveStatus, selectedDraft, selectedTable, selectedTableId,
     setSaveStatus, setSelectedTableId, setSuggestionDialog, setTableSearch,
-    suggestingKey, suggestionDialog, tableSearch, tables, updateColumnDraft,
+    setupStatus, suggestingKey, suggestionDialog, tableSearch, tables, updateColumnDraft,
     updateTableDraft, withBusy, workspace,
   ]);
 
@@ -327,7 +345,7 @@ function makeDraftMap(workspace: StudioWorkspaceDto): Record<string, TableDraft>
 }
 
 function clone<T>(value: T): T {
-  return JSON.parse(JSON.stringify(value)) as T;
+  return structuredClone(value);
 }
 
 function mergeList(existing: string[] | undefined, incoming: string[]): string[] {

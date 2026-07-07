@@ -22,7 +22,11 @@ export type StudioTableDto = {
 
 export type StudioWorkspaceDto = {
   schemaDir: string;
+  /** Schema artifact path relative to the project root — usable in integration snippets. */
+  schemaPathRelative: string;
   schemaId: string;
+  /** Resolved NL-to-SQL dialect: config `dialect` → artifact provider → `postgres`. */
+  dialect: string;
   warnings: SchemaV2Warning[];
   aiConfigured: boolean;
   model: string;
@@ -225,6 +229,59 @@ export type ExecuteInstallDriverResponse = {
 export type ExecuteRequest = {
   sql: string;
   params?: unknown[];
+};
+
+// ---------------------------------------------------------------------------
+// Setup wizard + server-side introspection (resync)
+// ---------------------------------------------------------------------------
+
+export type SetupReason = "no-config" | "no-artifact";
+
+export type SetupStatusDto = {
+  needed: boolean;
+  reason: SetupReason | null;
+  projectDir: string;
+  configPath: string | null;
+  outputDir: string | null;
+  /** Config exists but couldn't be loaded (e.g. project dependencies missing). */
+  configLoadError: string | null;
+};
+
+export type SetupConfigRequest = {
+  database: "postgres" | "mysql" | "sqlite" | "sqlserver" | "prisma";
+  /** Env var NAME for the connection URL — values never travel through this API. */
+  connectionEnv?: string;
+  sqliteFile?: string;
+  prismaSchema?: string;
+  aiProvider: "openai" | "anthropic" | "google" | "azure";
+  /** Env var NAME for the model API key — values never travel through this API. */
+  aiKeyEnv?: string;
+  schemaOut?: string;
+};
+
+export type SetupConfigResponse = {
+  configPath: string;
+  envExamplePath: string | null;
+  envVars: Array<{ name: string; purpose: string; requiredForIntrospection: boolean }>;
+  /** Packages the wizard installed into the project (null when nothing was needed). */
+  installed: string[] | null;
+  /** Set when automatic install wasn't possible — run this, then introspect. */
+  manualInstallCommand: string | null;
+  packageJsonCreated: boolean;
+  status: SetupStatusDto;
+};
+
+export type IntrospectionPlanDto =
+  | { ok: true; engine: string; sourceLabel: string }
+  | { ok: false; engine: string | null; error: string };
+
+export type IntrospectRunResponse = {
+  ok: true;
+  engine: string;
+  schemaId: string;
+  tables: number;
+  warnings: string[];
+  workspace: StudioWorkspaceDto;
 };
 
 export type ExecuteResponse =

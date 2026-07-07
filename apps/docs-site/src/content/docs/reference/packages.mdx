@@ -3,7 +3,9 @@ title: "Package reference"
 description: "Every @askdb/* package: purpose, when to install, and what it exports."
 ---
 
+import { Tabs, TabItem } from "@astrojs/starlight/components";
 import packageDependenciesUrl from "../../../assets/diagrams/askdb-package-dependencies.svg?url";
+import InstallTabs from "../../../components/InstallTabs.astro";
 
 <p class="doc-eyebrow">Reference · Packages</p>
 
@@ -19,9 +21,7 @@ import packageDependenciesUrl from "../../../assets/diagrams/askdb-package-depen
 
 The dialect-agnostic NL-to-SQL pipeline. Schema loading, prompt construction, validation, and tenant-scope handling all live here.
 
-```bash
-npm install @askdb/core
-```
+<InstallTabs pkgs="@askdb/core" />
 
 **Key exports**
 
@@ -41,17 +41,16 @@ dialect from your `askdb.config.*` (and a provider registry you supply), so call
 only a question. Install it when you want the shortest config-driven path; skip it when you
 construct the model and load the schema yourself and call `ask()` directly.
 
-```bash
-npm install @askdb/client @askdb/ai @askdb/ai-openai @askdb/config
-```
+<InstallTabs pkgs="@askdb/client @askdb/ai @askdb/ai-openai @askdb/config" />
 
 **Key exports**
 
 | Symbol | Purpose |
 | --- | --- |
-| `createAskDb(options)` | Build a client bound to a config + AI registry. Returns `{ ask, reload }`. |
+| `createAskDb(options)` | Build a client bound to a config + AI registry. Returns `{ ask, reload }`. Options include `unknownDialect: "throw" \| "fallback-postgres"` for artifacts recorded by an unrecognized provider. |
 | `client.ask(question, overrides?)` | Resolve schema/model/dialect and run the pipeline. Overrides: `schema`, `model`, `dialect`, plus all `ask()` options. |
 | `AskDbClient` / `CreateAskDbOptions` / `AskOverrides` | Types for the client, constructor options, and per-call overrides. |
+| `SchemaLoadError` / `SchemaNotConfiguredError` / `ModelNotConfiguredError` / `DialectNotSupportedError` | Typed errors for the resolution steps — catch these to map failures to your own error handling. |
 
 ### `@askdb/ai`
 
@@ -60,9 +59,7 @@ construct AI SDK language or embedding models from `askdb.config.*` / env maps. 
 provider adapter package such as `@askdb/ai-openai`. Skip it when you already construct your own
 AI SDK model and pass it to `ask()`.
 
-```bash
-npm install @askdb/ai
-```
+<InstallTabs pkgs="@askdb/ai" />
 
 **Key exports**
 
@@ -78,12 +75,20 @@ npm install @askdb/ai
 
 Provider adapters own concrete AI SDK provider dependencies. Each adapter declares `ai` and `@askdb/ai` as peer dependencies — npm/pnpm install them automatically, but your app should depend on `ai` directly when you want to pin the version.
 
-```bash
-npm install @askdb/ai-openai
-npm install @askdb/ai-azure
-npm install @askdb/ai-google
-npm install @askdb/ai-anthropic
-```
+<Tabs syncKey="ai-provider">
+  <TabItem label="OpenAI">
+    <InstallTabs pkgs="@askdb/ai-openai" />
+  </TabItem>
+  <TabItem label="Anthropic">
+    <InstallTabs pkgs="@askdb/ai-anthropic" />
+  </TabItem>
+  <TabItem label="Google">
+    <InstallTabs pkgs="@askdb/ai-google" />
+  </TabItem>
+  <TabItem label="Azure OpenAI">
+    <InstallTabs pkgs="@askdb/ai-azure" />
+  </TabItem>
+</Tabs>
 
 Any provider that has a Vercel AI SDK package can be added as an adapter. Unknown `ai.provider` values require a registered adapter — first-party apps register `openai`, `azure`, `foundry`, `google`, and `anthropic`; for anything else, embed AskDB and register your own adapter, or use an OpenAI-compatible endpoint via the `openai` provider and a custom base URL.
 
@@ -91,9 +96,7 @@ Any provider that has a Vercel AI SDK package can be added as an adapter. Unknow
 
 Connector provider registry — mirrors the `@askdb/ai` pattern for introspection. Each engine adapter exports a `ConnectorProviderAdapter` constant; `@askdb/connectors` wires them into a unified registry used by the CLI and apps. Install directly only when you are building a custom introspection flow.
 
-```bash
-npm install @askdb/connectors
-```
+<InstallTabs pkgs="@askdb/connectors" />
 
 **Key exports**
 
@@ -107,9 +110,7 @@ npm install @askdb/connectors
 
 Optional config bootstrap: `.env` and `askdb.config.*` discovery, type-safe `defineConfig`, and a runtime snapshot accessor.
 
-```bash
-npm install @askdb/config
-```
+<InstallTabs pkgs="@askdb/config" />
 
 **Key exports**
 
@@ -127,33 +128,25 @@ Each engine package ships the introspection connector for its engine, any catalo
 
 ### `@askdb/postgres`
 
-```bash
-npm install @askdb/postgres
-```
+<InstallTabs pkgs="@askdb/postgres" />
 
 PostgreSQL dialect, connector, catalog SQL templates, and an optional `pg`-based catalog query runner for live introspection. Pass `dialect: "postgres"` to `ask()`.
 
 ### `@askdb/mysql`
 
-```bash
-npm install @askdb/mysql
-```
+<InstallTabs pkgs="@askdb/mysql" />
 
 MySQL dialect, connector, catalog SQL templates, and an optional `mysql2`-based catalog query runner for live introspection. Pass `dialect: "mysql"` to `ask()`.
 
 ### `@askdb/sqlite`
 
-```bash
-npm install @askdb/sqlite
-```
+<InstallTabs pkgs="@askdb/sqlite" />
 
 SQLite dialect, connector, catalog SQL templates, and an optional `better-sqlite3`-based catalog query runner for live introspection. Works with embedded file-backed databases. Pass `dialect: "sqlite"` to `ask()`.
 
 ### `@askdb/sqlserver`
 
-```bash
-npm install @askdb/sqlserver
-```
+<InstallTabs pkgs="@askdb/sqlserver" />
 
 SQL Server (T-SQL) dialect, connector, catalog SQL templates, and an optional `mssql`-based catalog query runner for live introspection. Pass `dialect: "sqlserver"` to `ask()`.
 
@@ -163,17 +156,13 @@ SQL Server (T-SQL) dialect, connector, catalog SQL templates, and an optional `m
 
 The engine-agnostic introspection contract and the schema-directory writer. Use directly only when you're calling introspection from your own code — the CLI wraps this for you.
 
-```bash
-npm install @askdb/introspect
-```
+<InstallTabs pkgs="@askdb/introspect" />
 
 ### `@askdb/prisma`
 
 File-only connector that reads `.prisma` schema files and produces AskDB physical metadata — no live database needed. Pair with an engine adapter for SQL generation at runtime.
 
-```bash
-npm install @askdb/prisma @askdb/introspect
-```
+<InstallTabs pkgs="@askdb/prisma @askdb/introspect" />
 
 See [the Prisma integration guide](/guides/integrations/prisma/).
 
@@ -182,6 +171,8 @@ See [the Prisma integration guide](/guides/integrations/prisma/).
 ### `@askdb/studio`
 
 Browser-based schema-authoring UI. The CLI's `askdb studio` command lazy-imports this package. Schema browsing, enrichment, and SQL generation do not require a database driver. The Query Playground's live execute feature supports Postgres, MySQL, SQLite, and SQL Server — each requires its own optional peer driver package.
+
+<InstallTabs pkgs="@askdb/studio" />
 
 | Execute provider | Package |
 |---|---|
@@ -196,25 +187,17 @@ Install only the package for your dialect. The execute provider is inferred from
 
 See [Studio — driver packages](/studio/#driver-packages) and [Configuration reference — Studio execute](/reference/config/#studio-execute-configuration) for setup details.
 
-```bash
-npm install @askdb/studio
-```
-
 ### `@askdb/tui`
 
 Terminal-based schema-authoring UI. The CLI's `askdb enrich` command lazy-imports this package.
 
-```bash
-npm install @askdb/tui
-```
+<InstallTabs pkgs="@askdb/tui" />
 
 ### `@askdb/enrich`
 
 Headless schema-authoring helpers shared by Studio and TUI. Use directly when building a custom authoring surface.
 
-```bash
-npm install @askdb/enrich
-```
+<InstallTabs pkgs="@askdb/enrich" />
 
 ## Retrieval
 
@@ -222,9 +205,7 @@ npm install @askdb/enrich
 
 Chunks the schema artifact, indexes it in a vector store, and retrieves relevant chunks per question. Use with `ask()`'s `retriever` option for large schemas.
 
-```bash
-npm install @askdb/rag
-```
+<InstallTabs pkgs="@askdb/rag" />
 
 **Key exports**
 
@@ -235,7 +216,7 @@ npm install @askdb/rag
 | `createRetriever({ store, embedder })` | Build the retriever passed to `ask()`. |
 | `createPgvectorStore` | The pgvector store factory. |
 
-Ships a small CLI binary `askdb-rag` (notably `askdb-rag setup-store` for pgvector provisioning). See [RAG for large schemas](/guides/rag-for-large-schemas/).
+Ships a small CLI binary `askdb-rag` with three commands — `index`, `query`, and `setup-store` (pgvector provisioning). See [CLI reference — the askdb-rag binary](/reference/cli/#the-askdb-rag-binary) and [RAG for large schemas](/guides/rag-for-large-schemas/).
 
 ## Service surfaces
 
@@ -243,9 +224,7 @@ Ships a small CLI binary `askdb-rag` (notably `askdb-rag setup-store` for pgvect
 
 Minimal HTTP server wrapping `ask()`. Two endpoints (`/health`, `POST /ask`), designed to sit behind your gateway.
 
-```bash
-npm install @askdb/http-api
-```
+<InstallTabs pkgs="@askdb/http-api" />
 
 **Key exports**
 
@@ -260,9 +239,7 @@ See [the HTTP API reference](/reference/http-api/) for endpoints and error codes
 
 The `askdb` binary. Ships as a normal npm package — install for local development, demos, and CI.
 
-```bash
-npm install askdb
-```
+<InstallTabs pkgs="askdb" />
 
 See [the CLI reference](/reference/cli/).
 
@@ -286,7 +263,7 @@ Reusable packages stay small and layered. First-party surfaces (CLI, Studio, TUI
 
 <div class="home-path-grid">
   <a href="/quickstart/"><strong>Just trying it out</strong><span><code>askdb</code> alone is enough to introspect, enrich, and ask from the CLI.</span></a>
-  <a href="/guides/embed-in-node/"><strong>Embedding in a Node service</strong><span><code>@askdb/core</code> + one engine adapter + a model provider.</span></a>
+  <a href="/guides/embed-in-node/"><strong>Embedding in a Node service</strong><span><code>@askdb/client</code> + <code>@askdb/config</code> + an AI provider adapter.</span></a>
   <a href="/guides/deploy-as-http-service/"><strong>Standing up an HTTP service</strong><span>Add <code>@askdb/http-api</code> on top of the embedding install.</span></a>
   <a href="/guides/rag-for-large-schemas/"><strong>Working with a large schema</strong><span>Add <code>@askdb/rag</code> and a vector store (pgvector recommended).</span></a>
 </div>

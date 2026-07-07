@@ -23,7 +23,7 @@ function ensurePrefix(slug: string): string {
 }
 
 function clone<T>(value: T): T {
-  return JSON.parse(JSON.stringify(value)) as T;
+  return structuredClone(value);
 }
 
 /* ═══════════════ Page ═══════════════ */
