@@ -160,11 +160,9 @@
   max-width: 100%;
 }
 
-/* doc-diagram: full-width content-column diagram with a light panel so
-   hardcoded-light SVGs remain legible in dark mode. */
+/* doc-diagram: full-width content-column diagram; SVGs handle their own dark-mode colors. */
 .doc-diagram {
-  background: #f8fafc;
-  border: 1px solid #e2e8f0;
+  border: 1px solid var(--sl-color-gray-5, #e2e8f0);
   border-radius: 0.5rem;
   display: block;
   height: auto;

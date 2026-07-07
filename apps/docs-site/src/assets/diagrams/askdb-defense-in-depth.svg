@@ -1,0 +1,92 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 556 500" role="img" aria-labelledby="did-title did-desc">
+  <title id="did-title">AskDB defense-in-depth production stack</title>
+  <desc id="did-desc">Vertical flow: question feeds ask() with schema artifact and model, producing validated SQL, which your app logs and optionally shows, then executes via a read-only DB role with a statement-timeout pool, returning a paginated result.</desc>
+  <defs>
+    <style>
+      :root {
+        --bg-neutral: #f8fafc;
+        --border-neutral: #475569;
+        --title-neutral: #0f172a;
+        --sub: #64748b;
+        --bg-root: #fef2f2;
+        --border-root: #a10b2c;
+        --title-root: #5b0719;
+        --bg-surface: #ecfdf5;
+        --border-surface: #047857;
+        --title-surface: #064e3b;
+        --arrow: #475569;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --bg-neutral: #1e293b;
+          --border-neutral: #94a3b8;
+          --title-neutral: #f1f5f9;
+          --sub: #94a3b8;
+          --bg-root: #450a0a;
+          --border-root: #f87171;
+          --title-root: #fecaca;
+          --bg-surface: #052e16;
+          --border-surface: #22c55e;
+          --title-surface: #bbf7d0;
+          --arrow: #94a3b8;
+        }
+      }
+    </style>
+    <marker id="v" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
+      <path d="M0,0 L8,4 L0,8 Z" fill="var(--arrow)"/>
+    </marker>
+    <marker id="h" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
+      <path d="M0,0 L8,4 L0,8 Z" fill="var(--arrow)"/>
+    </marker>
+  </defs>
+
+  <!-- 1: question -->
+  <rect x="40" y="28" width="180" height="46" rx="8" fill="var(--bg-neutral)" stroke="var(--border-neutral)" stroke-width="2"/>
+  <text x="130" y="56" text-anchor="middle" font-family="ui-sans-serif,system-ui,sans-serif" font-size="14" font-weight="600" fill="var(--title-neutral)">question</text>
+
+  <line x1="130" y1="74" x2="130" y2="104" stroke="var(--arrow)" stroke-width="2" marker-end="url(#v)"/>
+
+  <!-- 2: ask() -->
+  <rect x="40" y="108" width="180" height="46" rx="8" fill="var(--bg-root)" stroke="var(--border-root)" stroke-width="2"/>
+  <text x="130" y="126" text-anchor="middle" font-family="ui-sans-serif,system-ui,sans-serif" font-size="15" font-weight="700" fill="var(--title-root)">ask()</text>
+  <text x="130" y="143" text-anchor="middle" font-family="ui-sans-serif,system-ui,sans-serif" font-size="10" fill="var(--sub)">@askdb/core</text>
+
+  <!-- side: schema artifact + model -->
+  <line x1="220" y1="131" x2="264" y2="131" stroke="var(--arrow)" stroke-width="1.5" marker-end="url(#h)"/>
+  <rect x="268" y="115" width="244" height="32" rx="6" fill="var(--bg-neutral)" stroke="var(--border-neutral)" stroke-width="1.5" stroke-dasharray="4,3"/>
+  <text x="390" y="135" text-anchor="middle" font-family="ui-sans-serif,system-ui,sans-serif" font-size="12" fill="var(--title-neutral)">schema artifact + model</text>
+
+  <line x1="130" y1="154" x2="130" y2="184" stroke="var(--arrow)" stroke-width="2" marker-end="url(#v)"/>
+
+  <!-- 3: validated SQL -->
+  <rect x="40" y="188" width="180" height="46" rx="8" fill="var(--bg-neutral)" stroke="var(--border-neutral)" stroke-width="2"/>
+  <text x="130" y="216" text-anchor="middle" font-family="ui-sans-serif,system-ui,sans-serif" font-size="13" font-weight="600" fill="var(--title-neutral)">validated SQL</text>
+
+  <line x1="130" y1="234" x2="130" y2="264" stroke="var(--arrow)" stroke-width="2" marker-end="url(#v)"/>
+
+  <!-- 4: your app -->
+  <rect x="40" y="268" width="180" height="46" rx="8" fill="var(--bg-neutral)" stroke="var(--border-neutral)" stroke-width="2"/>
+  <text x="130" y="296" text-anchor="middle" font-family="ui-sans-serif,system-ui,sans-serif" font-size="13" font-weight="600" fill="var(--title-neutral)">your app</text>
+
+  <!-- side: log it, optionally show it -->
+  <line x1="220" y1="291" x2="264" y2="291" stroke="var(--arrow)" stroke-width="1.5" marker-end="url(#h)"/>
+  <rect x="268" y="275" width="244" height="32" rx="6" fill="var(--bg-neutral)" stroke="var(--border-neutral)" stroke-width="1.5" stroke-dasharray="4,3"/>
+  <text x="390" y="295" text-anchor="middle" font-family="ui-sans-serif,system-ui,sans-serif" font-size="12" fill="var(--title-neutral)">log it, optionally show it</text>
+
+  <line x1="130" y1="314" x2="130" y2="344" stroke="var(--arrow)" stroke-width="2" marker-end="url(#v)"/>
+
+  <!-- 5: read-only DB role -->
+  <rect x="40" y="348" width="180" height="46" rx="8" fill="var(--bg-surface)" stroke="var(--border-surface)" stroke-width="2"/>
+  <text x="130" y="376" text-anchor="middle" font-family="ui-sans-serif,system-ui,sans-serif" font-size="12" font-weight="600" fill="var(--title-surface)">read-only DB role</text>
+
+  <!-- side: pool with statement_timeout -->
+  <line x1="220" y1="371" x2="264" y2="371" stroke="var(--arrow)" stroke-width="1.5" marker-end="url(#h)"/>
+  <rect x="268" y="355" width="244" height="32" rx="6" fill="var(--bg-neutral)" stroke="var(--border-neutral)" stroke-width="1.5" stroke-dasharray="4,3"/>
+  <text x="390" y="375" text-anchor="middle" font-family="ui-sans-serif,system-ui,sans-serif" font-size="12" fill="var(--title-neutral)">pool with statement_timeout</text>
+
+  <line x1="130" y1="394" x2="130" y2="424" stroke="var(--arrow)" stroke-width="2" marker-end="url(#v)"/>
+
+  <!-- 6: paginated result -->
+  <rect x="40" y="428" width="180" height="46" rx="8" fill="var(--bg-neutral)" stroke="var(--border-neutral)" stroke-width="2"/>
+  <text x="130" y="456" text-anchor="middle" font-family="ui-sans-serif,system-ui,sans-serif" font-size="13" font-weight="600" fill="var(--title-neutral)">paginated result</text>
+</svg>

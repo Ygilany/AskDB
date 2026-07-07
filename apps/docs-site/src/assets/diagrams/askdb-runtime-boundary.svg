@@ -2,28 +2,69 @@
   <title id="title">AskDB runtime boundary</title>
   <desc id="desc">Flow from question and schema through ask to validated SQL and host-owned execution.</desc>
   <defs>
+    <style>
+      :root {
+        --bg-neutral: #f8fafc;
+        --border-neutral: #475569;
+        --title-neutral: #0f172a;
+        --sub: #64748b;
+        --bg-root: #fef2f2;
+        --border-root: #a10b2c;
+        --title-root: #5b0719;
+        --bg-surface: #ecfdf5;
+        --border-surface: #047857;
+        --title-surface: #064e3b;
+        --sub-surface: #047857;
+        --arrow: #475569;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --bg-neutral: #1e293b;
+          --border-neutral: #94a3b8;
+          --title-neutral: #f1f5f9;
+          --sub: #94a3b8;
+          --bg-root: #450a0a;
+          --border-root: #f87171;
+          --title-root: #fecaca;
+          --bg-surface: #052e16;
+          --border-surface: #22c55e;
+          --title-surface: #bbf7d0;
+          --sub-surface: #22c55e;
+          --arrow: #94a3b8;
+        }
+      }
+    </style>
     <marker id="arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
-      <path d="M0,0 L8,4 L0,8 Z" fill="#475569"/>
+      <path d="M0,0 L8,4 L0,8 Z" fill="var(--arrow)"/>
     </marker>
   </defs>
-  <rect x="8" y="28" width="150" height="84" rx="8" fill="#f8fafc" stroke="#475569" stroke-width="2"/>
-  <text x="83" y="58" text-anchor="middle" font-family="ui-sans-serif,system-ui,sans-serif" font-size="13" font-weight="600" fill="#0f172a">Question +</text>
-  <text x="83" y="78" text-anchor="middle" font-family="ui-sans-serif,system-ui,sans-serif" font-size="13" font-weight="600" fill="#0f172a">AskDB schema</text>
-  <line x1="158" y1="70" x2="198" y2="70" stroke="#475569" stroke-width="2" marker-end="url(#arrow)"/>
-  <rect x="198" y="28" width="130" height="84" rx="8" fill="#fef2f2" stroke="#a10b2c" stroke-width="2"/>
-  <text x="263" y="78" text-anchor="middle" font-family="ui-sans-serif,system-ui,sans-serif" font-size="14" font-weight="700" fill="#5b0719">ask()</text>
-  <text x="263" y="98" text-anchor="middle" font-family="ui-sans-serif,system-ui,sans-serif" font-size="11" fill="#64748b">@askdb/core</text>
-  <line x1="328" y1="70" x2="368" y2="70" stroke="#475569" stroke-width="2" marker-end="url(#arrow)"/>
-  <rect x="368" y="28" width="170" height="84" rx="8" fill="#f8fafc" stroke="#475569" stroke-width="2"/>
-  <text x="453" y="58" text-anchor="middle" font-family="ui-sans-serif,system-ui,sans-serif" font-size="13" font-weight="600" fill="#0f172a">AskDialect +</text>
-  <text x="453" y="78" text-anchor="middle" font-family="ui-sans-serif,system-ui,sans-serif" font-size="13" font-weight="600" fill="#0f172a">BYO language model</text>
-  <line x1="538" y1="70" x2="578" y2="70" stroke="#475569" stroke-width="2" marker-end="url(#arrow)"/>
-  <rect x="578" y="28" width="150" height="84" rx="8" fill="#f8fafc" stroke="#475569" stroke-width="2"/>
-  <text x="653" y="58" text-anchor="middle" font-family="ui-sans-serif,system-ui,sans-serif" font-size="13" font-weight="600" fill="#0f172a">Validated</text>
-  <text x="653" y="78" text-anchor="middle" font-family="ui-sans-serif,system-ui,sans-serif" font-size="13" font-weight="600" fill="#0f172a">read-only SQL</text>
-  <line x1="728" y1="70" x2="768" y2="70" stroke="#475569" stroke-width="2" marker-end="url(#arrow)"/>
-  <rect x="768" y="28" width="144" height="84" rx="8" fill="#ecfdf5" stroke="#047857" stroke-width="2"/>
-  <text x="840" y="58" text-anchor="middle" font-family="ui-sans-serif,system-ui,sans-serif" font-size="13" font-weight="600" fill="#064e3b">Host-owned</text>
-  <text x="840" y="78" text-anchor="middle" font-family="ui-sans-serif,system-ui,sans-serif" font-size="13" font-weight="600" fill="#064e3b">execution</text>
-  <text x="840" y="98" text-anchor="middle" font-family="ui-sans-serif,system-ui,sans-serif" font-size="11" fill="#047857">approval &#183; roles &#183; audit</text>
+  <!-- Question + AskDB schema -->
+  <rect x="8" y="28" width="150" height="84" rx="8" fill="var(--bg-neutral)" stroke="var(--border-neutral)" stroke-width="2"/>
+  <text x="83" y="58" text-anchor="middle" font-family="ui-sans-serif,system-ui,sans-serif" font-size="13" font-weight="600" fill="var(--title-neutral)">Question +</text>
+  <text x="83" y="78" text-anchor="middle" font-family="ui-sans-serif,system-ui,sans-serif" font-size="13" font-weight="600" fill="var(--title-neutral)">AskDB schema</text>
+  <!-- Arrow 1→2 -->
+  <line x1="158" y1="70" x2="198" y2="70" stroke="var(--arrow)" stroke-width="2" marker-end="url(#arrow)"/>
+  <!-- ask() -->
+  <rect x="198" y="28" width="130" height="84" rx="8" fill="var(--bg-root)" stroke="var(--border-root)" stroke-width="2"/>
+  <text x="263" y="78" text-anchor="middle" font-family="ui-sans-serif,system-ui,sans-serif" font-size="14" font-weight="700" fill="var(--title-root)">ask()</text>
+  <text x="263" y="98" text-anchor="middle" font-family="ui-sans-serif,system-ui,sans-serif" font-size="11" fill="var(--sub)">@askdb/core</text>
+  <!-- Arrow 2→3 -->
+  <line x1="328" y1="70" x2="368" y2="70" stroke="var(--arrow)" stroke-width="2" marker-end="url(#arrow)"/>
+  <!-- AskDialect + BYO language model -->
+  <rect x="368" y="28" width="170" height="84" rx="8" fill="var(--bg-neutral)" stroke="var(--border-neutral)" stroke-width="2"/>
+  <text x="453" y="58" text-anchor="middle" font-family="ui-sans-serif,system-ui,sans-serif" font-size="13" font-weight="600" fill="var(--title-neutral)">AskDialect +</text>
+  <text x="453" y="78" text-anchor="middle" font-family="ui-sans-serif,system-ui,sans-serif" font-size="13" font-weight="600" fill="var(--title-neutral)">BYO language model</text>
+  <!-- Arrow 3→4 -->
+  <line x1="538" y1="70" x2="578" y2="70" stroke="var(--arrow)" stroke-width="2" marker-end="url(#arrow)"/>
+  <!-- Validated read-only SQL -->
+  <rect x="578" y="28" width="150" height="84" rx="8" fill="var(--bg-neutral)" stroke="var(--border-neutral)" stroke-width="2"/>
+  <text x="653" y="58" text-anchor="middle" font-family="ui-sans-serif,system-ui,sans-serif" font-size="13" font-weight="600" fill="var(--title-neutral)">Validated</text>
+  <text x="653" y="78" text-anchor="middle" font-family="ui-sans-serif,system-ui,sans-serif" font-size="13" font-weight="600" fill="var(--title-neutral)">read-only SQL</text>
+  <!-- Arrow 4→5 -->
+  <line x1="728" y1="70" x2="768" y2="70" stroke="var(--arrow)" stroke-width="2" marker-end="url(#arrow)"/>
+  <!-- Host-owned execution -->
+  <rect x="768" y="28" width="144" height="84" rx="8" fill="var(--bg-surface)" stroke="var(--border-surface)" stroke-width="2"/>
+  <text x="840" y="58" text-anchor="middle" font-family="ui-sans-serif,system-ui,sans-serif" font-size="13" font-weight="600" fill="var(--title-surface)">Host-owned</text>
+  <text x="840" y="78" text-anchor="middle" font-family="ui-sans-serif,system-ui,sans-serif" font-size="13" font-weight="600" fill="var(--title-surface)">execution</text>
+  <text x="840" y="98" text-anchor="middle" font-family="ui-sans-serif,system-ui,sans-serif" font-size="11" fill="var(--sub-surface)">approval &#183; roles &#183; audit</text>
 </svg>
