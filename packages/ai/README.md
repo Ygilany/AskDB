@@ -6,6 +6,10 @@ and dispatches to provider adapters such as `@askdb/ai-openai`.
 `@askdb/core` stays BYO-model: it accepts a model and runs the NL-to-SQL pipeline. Use this package
 only when you want AskDB's shared provider selection and env-key precedence.
 
+Most applications never import this package directly: `createAskDb` from `@askdb/client` accepts
+`providers: [openaiProvider]` and builds the registry internally. Import `@askdb/ai` yourself only
+to construct model objects outside the client or to share one registry across several clients.
+
 ## Install
 
 ```bash

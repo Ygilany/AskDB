@@ -6,7 +6,6 @@ Config-aware AskDB facade. Resolves schema, model, and dialect from your runtime
 
 ```ts
 import { bootstrapAskDbEnv, getAskDbRuntimeConfig } from "@askdb/config";
-import { createAiRegistry } from "@askdb/ai";
 import { openaiProvider } from "@askdb/ai-openai";
 import { createAskDb } from "@askdb/client";
 
@@ -16,11 +15,13 @@ import { createAskDb } from "@askdb/client";
 bootstrapAskDbEnv();
 const askdb = createAskDb({
   config: getAskDbRuntimeConfig(),
-  registry: createAiRegistry([openaiProvider]),
+  providers: [openaiProvider], // adapters only — the client builds the AI registry
 });
 
 const { sql } = await askdb.ask("top 10 customers by revenue");
 ```
+
+Pass the adapter(s) for whichever `ai.provider` your config selects. Advanced alternative: build a registry yourself with `createAiRegistry` from `@askdb/ai` and pass it as `registry` instead (e.g. to share one registry across several clients) — exactly one of `providers` or `registry` is required.
 
 ## Per-call overrides
 
@@ -60,7 +61,7 @@ Inspect how schema, model, and dialect resolved on each call — useful for logg
 ```ts
 const askdb = createAskDb({
   config,
-  registry,
+  providers: [openaiProvider],
   onResolve: ({ dialect, modelSource }) => {
     console.log(`dialect=${dialect.dialect} (${dialect.source}), model=${modelSource}`);
   },
