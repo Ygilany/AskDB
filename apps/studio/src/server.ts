@@ -1737,8 +1737,11 @@ function createRequestUsageCollector() {
 
 function normalizeGenerationUsage(value: unknown): StudioTokenUsageInput | undefined {
   if (!isRecord(value)) return undefined;
-  const promptTokens = readFiniteNumber(value.promptTokens);
-  const completionTokens = readFiniteNumber(value.completionTokens);
+  // ai@6 LanguageModelUsage uses inputTokens/outputTokens rather than the
+  // legacy promptTokens/completionTokens names.
+  const promptTokens = readFiniteNumber(value.promptTokens) ?? readFiniteNumber(value.inputTokens);
+  const completionTokens =
+    readFiniteNumber(value.completionTokens) ?? readFiniteNumber(value.outputTokens);
   const totalTokens = readFiniteNumber(value.totalTokens);
   if (promptTokens === undefined && completionTokens === undefined && totalTokens === undefined) {
     return undefined;
