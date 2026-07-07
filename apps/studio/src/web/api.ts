@@ -6,6 +6,8 @@ import type {
   ExecuteRequest,
   ExecuteResponse,
   ExecuteStatusResponse,
+  IntrospectionPlanDto,
+  IntrospectRunResponse,
   PlaygroundHistoryDto,
   PlaygroundHistoryEntry,
   RagIndexResponse,
@@ -14,6 +16,9 @@ import type {
   SaveConceptsRequest,
   SaveTableRequest,
   SaveTenantPolicyRequest,
+  SetupConfigRequest,
+  SetupConfigResponse,
+  SetupStatusDto,
   StudioErrorDto,
   StudioRagStatusDto,
   StudioWorkspaceDto,
@@ -120,6 +125,35 @@ export async function executeQuery(req: ExecuteRequest): Promise<ExecuteResponse
   return api<ExecuteResponse>("/api/execute", {
     method: "POST",
     body: JSON.stringify(req),
+  });
+}
+
+export async function getSetupStatus(): Promise<SetupStatusDto> {
+  return api<SetupStatusDto>("/api/setup/status");
+}
+
+export async function setupWriteConfig(req: SetupConfigRequest): Promise<SetupConfigResponse> {
+  return api<SetupConfigResponse>("/api/setup/config", {
+    method: "POST",
+    body: JSON.stringify(req),
+  });
+}
+
+export async function setupIntrospect(): Promise<IntrospectRunResponse> {
+  return api<IntrospectRunResponse>("/api/setup/introspect", {
+    method: "POST",
+    body: JSON.stringify({}),
+  });
+}
+
+export async function getIntrospectionPlan(): Promise<IntrospectionPlanDto> {
+  return api<IntrospectionPlanDto>("/api/introspect/status");
+}
+
+export async function resyncSchema(): Promise<IntrospectRunResponse> {
+  return api<IntrospectRunResponse>("/api/introspect", {
+    method: "POST",
+    body: JSON.stringify({}),
   });
 }
 
