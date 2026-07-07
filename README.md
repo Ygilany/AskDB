@@ -12,7 +12,9 @@ AskDB grounds generation in a human-enriched schema artifact, and it keeps datab
 
 > **Ask your data. Keep control of the query.**
 >
-> **Status:** pre-1.0 / beta. AskDB returns SQL for review; it does not execute generated SQL.
+> **Status:** 0.x. The core API (`ask()`), schema artifact, and config are stable and documented; Studio and RAG may still change in minor releases before 1.0.
+>
+> AskDB returns SQL for review; it does not execute generated SQL.
 
 ## Why AskDB exists
 
