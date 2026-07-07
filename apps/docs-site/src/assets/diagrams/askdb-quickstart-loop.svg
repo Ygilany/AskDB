@@ -2,40 +2,78 @@
   <title id="qltitle">AskDB quickstart loop</title>
   <desc id="qldesc">Four steps: init creates config, introspect reads the database into a schema artifact, ask generates validated SQL from your first question, and enrich in Studio adds descriptions and tests questions — with a loop-back from enrich to ask to refine until the SQL is right.</desc>
   <defs>
+    <style>
+      :root {
+        --bg-neutral: #f8fafc;
+        --border-neutral: #475569;
+        --title-neutral: #0f172a;
+        --sub: #64748b;
+        --bg-ask: #ecfdf5;
+        --border-ask: #047857;
+        --title-ask: #064e3b;
+        --sub-ask: #064e3b;
+        --bg-enrich: #fef2f2;
+        --border-enrich: #a10b2c;
+        --title-enrich: #5b0719;
+        --sub-enrich: #64748b;
+        --arrow: #475569;
+        --loop-arrow: #a10b2c;
+        --loop-text: #a10b2c;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --bg-neutral: #1e293b;
+          --border-neutral: #94a3b8;
+          --title-neutral: #f1f5f9;
+          --sub: #94a3b8;
+          --bg-ask: #052e16;
+          --border-ask: #22c55e;
+          --title-ask: #bbf7d0;
+          --sub-ask: #86efac;
+          --bg-enrich: #450a0a;
+          --border-enrich: #f87171;
+          --title-enrich: #fecaca;
+          --sub-enrich: #94a3b8;
+          --arrow: #94a3b8;
+          --loop-arrow: #f87171;
+          --loop-text: #f87171;
+        }
+      }
+    </style>
     <marker id="qarrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
-      <path d="M0,0 L8,4 L0,8 Z" fill="#475569"/>
+      <path d="M0,0 L8,4 L0,8 Z" fill="var(--arrow)"/>
     </marker>
     <marker id="qarrow-loop" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
-      <path d="M0,0 L8,4 L0,8 Z" fill="#a10b2c"/>
+      <path d="M0,0 L8,4 L0,8 Z" fill="var(--loop-arrow)"/>
     </marker>
   </defs>
   <!-- Step 1: init -->
-  <rect x="8" y="38" width="158" height="72" rx="8" fill="#f8fafc" stroke="#475569" stroke-width="2"/>
-  <text x="87" y="66" text-anchor="middle" font-family="ui-sans-serif,system-ui,sans-serif" font-size="13" font-weight="700" fill="#0f172a">init</text>
-  <text x="87" y="84" text-anchor="middle" font-family="ui-sans-serif,system-ui,sans-serif" font-size="11" fill="#64748b">scaffold</text>
-  <text x="87" y="100" text-anchor="middle" font-family="ui-sans-serif,system-ui,sans-serif" font-size="11" fill="#64748b">askdb.config.ts</text>
+  <rect x="8" y="38" width="158" height="72" rx="8" fill="var(--bg-neutral)" stroke="var(--border-neutral)" stroke-width="2"/>
+  <text x="87" y="66" text-anchor="middle" font-family="ui-sans-serif,system-ui,sans-serif" font-size="13" font-weight="700" fill="var(--title-neutral)">init</text>
+  <text x="87" y="84" text-anchor="middle" font-family="ui-sans-serif,system-ui,sans-serif" font-size="11" fill="var(--sub)">scaffold</text>
+  <text x="87" y="100" text-anchor="middle" font-family="ui-sans-serif,system-ui,sans-serif" font-size="11" fill="var(--sub)">askdb.config.ts</text>
   <!-- Arrow 1→2 -->
-  <line x1="166" y1="74" x2="205" y2="74" stroke="#475569" stroke-width="2" marker-end="url(#qarrow)"/>
+  <line x1="166" y1="74" x2="205" y2="74" stroke="var(--arrow)" stroke-width="2" marker-end="url(#qarrow)"/>
   <!-- Step 2: introspect -->
-  <rect x="205" y="38" width="158" height="72" rx="8" fill="#f8fafc" stroke="#475569" stroke-width="2"/>
-  <text x="284" y="66" text-anchor="middle" font-family="ui-sans-serif,system-ui,sans-serif" font-size="13" font-weight="700" fill="#0f172a">introspect</text>
-  <text x="284" y="84" text-anchor="middle" font-family="ui-sans-serif,system-ui,sans-serif" font-size="11" fill="#64748b">read database into</text>
-  <text x="284" y="100" text-anchor="middle" font-family="ui-sans-serif,system-ui,sans-serif" font-size="11" fill="#64748b">schema artifact</text>
+  <rect x="205" y="38" width="158" height="72" rx="8" fill="var(--bg-neutral)" stroke="var(--border-neutral)" stroke-width="2"/>
+  <text x="284" y="66" text-anchor="middle" font-family="ui-sans-serif,system-ui,sans-serif" font-size="13" font-weight="700" fill="var(--title-neutral)">introspect</text>
+  <text x="284" y="84" text-anchor="middle" font-family="ui-sans-serif,system-ui,sans-serif" font-size="11" fill="var(--sub)">read database into</text>
+  <text x="284" y="100" text-anchor="middle" font-family="ui-sans-serif,system-ui,sans-serif" font-size="11" fill="var(--sub)">schema artifact</text>
   <!-- Arrow 2→3 -->
-  <line x1="363" y1="74" x2="402" y2="74" stroke="#475569" stroke-width="2" marker-end="url(#qarrow)"/>
+  <line x1="363" y1="74" x2="402" y2="74" stroke="var(--arrow)" stroke-width="2" marker-end="url(#qarrow)"/>
   <!-- Step 3: ask -->
-  <rect x="402" y="38" width="158" height="72" rx="8" fill="#ecfdf5" stroke="#047857" stroke-width="2"/>
-  <text x="481" y="66" text-anchor="middle" font-family="ui-sans-serif,system-ui,sans-serif" font-size="13" font-weight="700" fill="#064e3b">ask</text>
-  <text x="481" y="84" text-anchor="middle" font-family="ui-sans-serif,system-ui,sans-serif" font-size="11" fill="#064e3b">validated SQL from</text>
-  <text x="481" y="100" text-anchor="middle" font-family="ui-sans-serif,system-ui,sans-serif" font-size="11" fill="#064e3b">your first question</text>
+  <rect x="402" y="38" width="158" height="72" rx="8" fill="var(--bg-ask)" stroke="var(--border-ask)" stroke-width="2"/>
+  <text x="481" y="66" text-anchor="middle" font-family="ui-sans-serif,system-ui,sans-serif" font-size="13" font-weight="700" fill="var(--title-ask)">ask</text>
+  <text x="481" y="84" text-anchor="middle" font-family="ui-sans-serif,system-ui,sans-serif" font-size="11" fill="var(--sub-ask)">validated SQL from</text>
+  <text x="481" y="100" text-anchor="middle" font-family="ui-sans-serif,system-ui,sans-serif" font-size="11" fill="var(--sub-ask)">your first question</text>
   <!-- Arrow 3→4 -->
-  <line x1="560" y1="74" x2="599" y2="74" stroke="#475569" stroke-width="2" marker-end="url(#qarrow)"/>
+  <line x1="560" y1="74" x2="599" y2="74" stroke="var(--arrow)" stroke-width="2" marker-end="url(#qarrow)"/>
   <!-- Step 4: enrich (Studio) -->
-  <rect x="599" y="38" width="158" height="72" rx="8" fill="#fef2f2" stroke="#a10b2c" stroke-width="2"/>
-  <text x="678" y="66" text-anchor="middle" font-family="ui-sans-serif,system-ui,sans-serif" font-size="13" font-weight="700" fill="#5b0719">enrich (Studio)</text>
-  <text x="678" y="84" text-anchor="middle" font-family="ui-sans-serif,system-ui,sans-serif" font-size="11" fill="#64748b">add descriptions,</text>
-  <text x="678" y="100" text-anchor="middle" font-family="ui-sans-serif,system-ui,sans-serif" font-size="11" fill="#64748b">improve the answer</text>
+  <rect x="599" y="38" width="158" height="72" rx="8" fill="var(--bg-enrich)" stroke="var(--border-enrich)" stroke-width="2"/>
+  <text x="678" y="66" text-anchor="middle" font-family="ui-sans-serif,system-ui,sans-serif" font-size="13" font-weight="700" fill="var(--title-enrich)">enrich (Studio)</text>
+  <text x="678" y="84" text-anchor="middle" font-family="ui-sans-serif,system-ui,sans-serif" font-size="11" fill="var(--sub-enrich)">add descriptions,</text>
+  <text x="678" y="100" text-anchor="middle" font-family="ui-sans-serif,system-ui,sans-serif" font-size="11" fill="var(--sub-enrich)">improve the answer</text>
   <!-- Loop-back arrow: enrich → ask, drawn below the boxes -->
-  <path d="M678,110 L678,132 L481,132 L481,110" fill="none" stroke="#a10b2c" stroke-width="2" stroke-dasharray="5,3" marker-end="url(#qarrow-loop)"/>
-  <text x="580" y="148" text-anchor="middle" font-family="ui-sans-serif,system-ui,sans-serif" font-size="11" fill="#a10b2c">refine until the SQL is right</text>
+  <path d="M678,110 L678,132 L481,132 L481,110" fill="none" stroke="var(--loop-arrow)" stroke-width="2" stroke-dasharray="5,3" marker-end="url(#qarrow-loop)"/>
+  <text x="580" y="148" text-anchor="middle" font-family="ui-sans-serif,system-ui,sans-serif" font-size="11" fill="var(--loop-text)">refine until the SQL is right</text>
 </svg>
