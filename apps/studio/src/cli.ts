@@ -1,10 +1,17 @@
-import { DEFAULT_INTROSPECT_OUTPUT_DIR, getAskDbRuntimeConfig } from "@askdb/config";
-import { readFileSync } from "node:fs";
+import {
+  DEFAULT_INTROSPECT_OUTPUT_DIR,
+  discoverAskDbConfigPath,
+  getAskDbRuntimeConfig,
+} from "@askdb/config";
+import { existsSync, readFileSync } from "node:fs";
 import { networkInterfaces } from "node:os";
-import { createStudioServer } from "./server.js";
+import { resolve } from "node:path";
+import { createStudioServer, type StudioOptions } from "./server.js";
 
 type CliOptions = {
   schema: string;
+  /** True when --schema was passed explicitly (a missing explicit dir stays an error). */
+  schemaFromFlag: boolean;
   host: string;
   port: number;
   help?: boolean;
@@ -31,16 +38,27 @@ export async function runStudioCli(argv: readonly string[]): Promise<number> {
     return 0;
   }
 
+  const setupReason = resolveSetupReason(opts);
+
   let server;
   try {
     server = createStudioServer({
       schema: opts.schema,
       host: opts.host,
       port: opts.port,
+      setupReason,
     });
   } catch (error) {
     process.stderr.write(`askdb-studio: ${formatError(error)}\n`);
     return 1;
+  }
+
+  if (setupReason) {
+    process.stdout.write(
+      setupReason === "no-config"
+        ? "No askdb.config.* found — Studio will open with the guided setup wizard.\n"
+        : "No schema artifact found — Studio will open with the guided setup wizard.\n",
+    );
   }
 
   await new Promise<void>((resolve, reject) => {
@@ -66,16 +84,25 @@ export async function runStudioCli(argv: readonly string[]): Promise<number> {
 }
 
 function parseOptions(argv: readonly string[]): CliOptions {
-  const rt = getAskDbRuntimeConfig();
-  const listen = rt.structured.studio?.listen;
-  const portFromEnv = rt.ai.aiEnv.ASKDB_STUDIO_PORT;
+  // Without a config the runtime snapshot is uninitialized — fall back to
+  // package defaults so Studio can still start (in setup mode).
+  const rt = (() => {
+    try {
+      return getAskDbRuntimeConfig();
+    } catch {
+      return undefined;
+    }
+  })();
+  const listen = rt?.structured.studio?.listen;
+  const portFromEnv = rt?.ai.aiEnv.ASKDB_STUDIO_PORT;
   const parsedPort =
     listen?.port ??
     (portFromEnv !== undefined && portFromEnv.trim() !== "" ? Number(portFromEnv) : NaN);
-  const introspectOut = rt.flat["ASKDB_INTROSPECT_OUT"] ?? DEFAULT_INTROSPECT_OUTPUT_DIR;
+  const introspectOut = rt?.flat["ASKDB_INTROSPECT_OUT"] ?? DEFAULT_INTROSPECT_OUTPUT_DIR;
   const opts: CliOptions = {
     schema: introspectOut,
-    host: listen?.host ?? rt.ai.aiEnv.ASKDB_STUDIO_HOST ?? "127.0.0.1",
+    schemaFromFlag: false,
+    host: listen?.host ?? rt?.ai.aiEnv.ASKDB_STUDIO_HOST ?? "127.0.0.1",
     port: Number.isFinite(parsedPort) && parsedPort > 0 && parsedPort <= 65535 ? parsedPort : 5556,
   };
 
@@ -85,6 +112,7 @@ function parseOptions(argv: readonly string[]): CliOptions {
       case "--schema":
       case "-s":
         opts.schema = readValue(argv, ++i, arg);
+        opts.schemaFromFlag = true;
         break;
       case "--host":
         opts.host = readValue(argv, ++i, arg);
@@ -112,6 +140,17 @@ function parseOptions(argv: readonly string[]): CliOptions {
   }
 
   return opts;
+}
+
+/**
+ * Decide whether to start in setup mode. An explicitly passed `--schema` that
+ * doesn't exist stays a hard error (the user pointed at a specific artifact);
+ * a missing config or a missing *default* artifact opens the wizard instead.
+ */
+function resolveSetupReason(opts: CliOptions): StudioOptions["setupReason"] {
+  if (!discoverAskDbConfigPath(process.cwd())) return "no-config";
+  if (!opts.schemaFromFlag && !existsSync(resolve(opts.schema))) return "no-artifact";
+  return null;
 }
 
 function readValue(argv: readonly string[], index: number, flag: string): string {

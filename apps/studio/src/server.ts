@@ -1,11 +1,11 @@
 import { randomUUID } from "node:crypto";
 import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
-import { extname, relative, join, resolve, dirname } from "node:path";
+import { extname, relative, join, resolve, dirname, sep } from "node:path";
 import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { generateText as defaultGenerateText } from "ai";
-import { getAskDbRuntimeConfig } from "@askdb/config";
+import { bootstrapAskDbEnv, getAskDbRuntimeConfig } from "@askdb/config";
 import {
   createAiRegistry,
   type AiConfig,
@@ -67,9 +67,14 @@ import type {
   ExecuteInstallDriverResponse,
   ExecuteResponse,
   ExecuteStatusResponse,
+  IntrospectionPlanDto,
+  IntrospectRunResponse,
   PlaygroundHistoryEntry,
   RagIndexResponse,
   RagQueryResponse,
+  SetupConfigResponse,
+  SetupReason,
+  SetupStatusDto,
   StudioRequestUsageDto,
   StudioRagChunkDto,
   StudioRagStatusDto,
@@ -79,6 +84,8 @@ import type {
 } from "./shared/api.js";
 import { EXECUTE_DRIVER_REGISTRY, isDriverInstalled } from "./execute-registry.js";
 import type { StudioExecuteProvider } from "./execute-registry.js";
+import { resolveStudioIntrospectionPlan, runStudioIntrospection } from "./introspection.js";
+import { probeSetupState, writeSetupConfig, SetupError, type SetupConfigInput } from "./setup.js";
 
 const ai = createAiRegistry([openaiProvider, azureProvider, googleProvider, anthropicProvider]);
 
@@ -88,13 +95,21 @@ export type StudioOptions = {
   schema: string;
   host?: string;
   port?: number;
+  /**
+   * Start in setup mode instead of failing: `"no-config"` when no
+   * `askdb.config.*` was found, `"no-artifact"` when the config exists but the
+   * schema artifact hasn't been introspected yet. The browser wizard walks the
+   * user through the missing steps and flips the server to ready.
+   */
+  setupReason?: SetupReason | null;
 };
 
 export type StudioServer = ReturnType<typeof createServer>;
 
 type StudioState = {
   schemaDir: string;
-  workspace: Workspace;
+  workspace: Workspace | null;
+  setupReason: SetupReason | null;
   ragMemoryStore?: ReturnType<typeof createMemoryStore>;
 };
 
@@ -155,13 +170,15 @@ export function setStudioPgvectorStoreFactoryForTests(
 
 export function createStudioServer(options: StudioOptions): StudioServer {
   const schemaDir = resolve(options.schema);
-  if (!existsSync(schemaDir)) {
+  const setupReason = options.setupReason ?? null;
+  if (!setupReason && !existsSync(schemaDir)) {
     throw new Error(`schema directory not found: ${schemaDir}`);
   }
 
   const state: StudioState = {
     schemaDir,
-    workspace: loadWorkspace(schemaDir),
+    workspace: setupReason ? null : loadWorkspace(schemaDir),
+    setupReason,
   };
 
   return createServer(async (req, res) => {
@@ -173,27 +190,63 @@ export function createStudioServer(options: StudioOptions): StudioServer {
       if (req.method === "GET" && url.pathname.startsWith("/assets/")) {
         return serveClientFile(res, decodeURIComponent(url.pathname.slice(1)));
       }
+      if (req.method === "GET" && url.pathname === "/api/setup/status") {
+        return writeJson(res, 200, buildSetupStatus(state));
+      }
+      if (req.method === "POST" && url.pathname === "/api/setup/config") {
+        if (!isLoopbackRequest(req)) {
+          return writeJson(res, 403, { error: { message: "Setup is only available from loopback clients." } });
+        }
+        const body = await readJson(req);
+        const result = handleSetupConfig(state, body);
+        return writeJson(res, 200, result);
+      }
+      if (req.method === "POST" && url.pathname === "/api/setup/introspect") {
+        if (!isLoopbackRequest(req)) {
+          return writeJson(res, 403, { error: { message: "Setup is only available from loopback clients." } });
+        }
+        const result = await handleSetupIntrospect(state);
+        return writeJson(res, 200, result);
+      }
+      // Everything below needs a loaded workspace — route setup-mode clients to the wizard.
+      if (state.setupReason && url.pathname.startsWith("/api/")) {
+        return writeJson(res, 409, {
+          error: { message: "Studio needs setup. Open Studio in the browser to finish the guided setup." },
+          setup: buildSetupStatus(state),
+        });
+      }
       if (req.method === "GET" && url.pathname === "/api/workspace") {
-        return writeJson(res, 200, serializeWorkspace(state.workspace));
+        return writeJson(res, 200, serializeWorkspace(requireWorkspace(state)));
+      }
+      if (req.method === "GET" && url.pathname === "/api/introspect/status") {
+        requireWorkspace(state);
+        return writeJson(res, 200, buildIntrospectionPlanDto());
+      }
+      if (req.method === "POST" && url.pathname === "/api/introspect") {
+        if (!isLoopbackRequest(req)) {
+          return writeJson(res, 403, { error: { message: "Resync is only available from loopback clients." } });
+        }
+        const result = await handleResync(state);
+        return writeJson(res, 200, result);
       }
       if (req.method === "POST" && url.pathname.startsWith("/api/tables/")) {
         const tableId = decodeURIComponent(url.pathname.slice("/api/tables/".length));
         const body = await readJson(req);
         const draft = parseTableDraftBody(body);
         saveDraft(state, tableId, draft);
-        return writeJson(res, 200, serializeWorkspace(state.workspace));
+        return writeJson(res, 200, serializeWorkspace(requireWorkspace(state)));
       }
       if (req.method === "POST" && url.pathname === "/api/concepts") {
         const body = await readJson(req);
         const concepts = parseConceptsBody(body);
         saveConceptsDraft(state, concepts);
-        return writeJson(res, 200, serializeWorkspace(state.workspace));
+        return writeJson(res, 200, serializeWorkspace(requireWorkspace(state)));
       }
       if (req.method === "POST" && url.pathname === "/api/tenant-policy") {
         const body = await readJson(req);
         const { frontmatter, bodyText } = parseTenantPolicyBody(body);
         saveTenantPolicy(state, frontmatter, bodyText);
-        return writeJson(res, 200, serializeWorkspace(state.workspace));
+        return writeJson(res, 200, serializeWorkspace(requireWorkspace(state)));
       }
       if (req.method === "POST" && url.pathname === "/api/suggest-tenant-policy") {
         const draft = await suggestTenantPolicyDraft(state);
@@ -202,7 +255,7 @@ export function createStudioServer(options: StudioOptions): StudioServer {
       if (req.method === "POST" && url.pathname === "/api/suggest") {
         const body = await readJson(req);
         const source = parseSuggestSource(body);
-        const candidates = await suggestForSource(state.workspace, source);
+        const candidates = await suggestForSource(requireWorkspace(state), source);
         return writeJson(res, 200, { candidates });
       }
       if (req.method === "GET" && url.pathname === "/api/rag/status") {
@@ -260,7 +313,8 @@ export function createStudioServer(options: StudioOptions): StudioServer {
       }
       writeJson(res, 404, { error: { message: "Not found" } });
     } catch (error) {
-      const status = error instanceof StudioHttpError ? error.status : 500;
+      const status =
+        error instanceof StudioHttpError || error instanceof SetupError ? error.status : 500;
       writeJson(res, status, {
         error: { message: error instanceof Error ? error.message : String(error) },
       });
@@ -279,9 +333,17 @@ export function serializeWorkspace(workspace: Workspace): StudioWorkspaceDto {
       return undefined;
     }
   })();
+  const schema = loadSchema(workspace.schemaDir);
+  const schemaProvider =
+    "provider" in schema && typeof schema.provider === "string" ? schema.provider : undefined;
+  const dialect =
+    rt.nlToSql.dialect ??
+    (schemaProvider && isBuiltInDialectId(schemaProvider) ? schemaProvider : "postgres");
   return {
     schemaDir: workspace.schemaDir,
+    schemaPathRelative: toRelativeSchemaPath(workspace.schemaDir),
     schemaId: workspace.physical.schemaId,
+    dialect,
     warnings: workspace.warnings,
     aiConfigured: Boolean(aiConfig),
     model: aiConfig?.model ?? "gpt-4o-mini",
@@ -304,15 +366,176 @@ export function serializeWorkspace(workspace: Workspace): StudioWorkspaceDto {
       };
     }),
     concepts: workspace.concepts?.frontmatter.concepts ?? [],
-    tenantPolicy: (() => {
-      const schema = loadSchema(workspace.schemaDir);
-      return schema.tenantPolicy ?? null;
-    })(),
+    tenantPolicy: schema.tenantPolicy ?? null,
+  };
+}
+
+function toRelativeSchemaPath(schemaDir: string): string {
+  const rel = relative(process.cwd(), schemaDir);
+  if (rel === "") return ".";
+  if (rel.startsWith("..") || rel.includes(`..${sep}`)) return schemaDir;
+  return rel.startsWith(".") ? rel : `./${rel}`;
+}
+
+// ---------------------------------------------------------------------------
+// Setup wizard + server-side introspection (resync)
+// ---------------------------------------------------------------------------
+
+function requireWorkspace(state: StudioState): Workspace {
+  if (!state.workspace) {
+    throw new StudioHttpError(409, "Studio is in setup mode — finish the guided setup first.");
+  }
+  return state.workspace;
+}
+
+function buildSetupStatus(state: StudioState): SetupStatusDto {
+  const projectDir = process.cwd();
+  if (!state.setupReason) {
+    return {
+      needed: false,
+      reason: null,
+      projectDir,
+      configPath: null,
+      outputDir: state.schemaDir,
+      configLoadError: null,
+    };
+  }
+  const probe = probeSetupState(projectDir);
+  return {
+    needed: true,
+    reason: probe.hasConfig ? "no-artifact" : "no-config",
+    projectDir,
+    configPath: probe.configPath,
+    outputDir: probe.outputDir,
+    configLoadError: probe.loadError,
+  };
+}
+
+function handleSetupConfig(state: StudioState, body: unknown): SetupConfigResponse {
+  if (!state.setupReason) {
+    throw new StudioHttpError(409, "Studio is already set up — edit askdb.config.ts directly.");
+  }
+  const input = parseSetupConfigBody(body);
+  const result = writeSetupConfig(process.cwd(), input);
+  // Config now exists; the artifact usually doesn't yet.
+  const probe = probeSetupState(process.cwd());
+  if (probe.hasArtifact && probe.outputDir) {
+    state.schemaDir = probe.outputDir;
+    state.workspace = loadWorkspace(probe.outputDir);
+    state.setupReason = null;
+  } else {
+    state.setupReason = "no-artifact";
+  }
+  return {
+    configPath: result.configPath,
+    envExamplePath: result.envExamplePath,
+    envVars: result.envVars,
+    installed: result.installed,
+    manualInstallCommand: result.manualInstallCommand,
+    packageJsonCreated: result.packageJsonCreated,
+    status: buildSetupStatus(state),
+  };
+}
+
+async function handleSetupIntrospect(state: StudioState): Promise<IntrospectRunResponse> {
+  if (!state.setupReason) {
+    throw new StudioHttpError(409, "Studio is already set up — use Resync schema instead.");
+  }
+  // probeSetupState re-bootstraps, picking up any .env created since server start.
+  const probe = probeSetupState(process.cwd());
+  if (!probe.hasConfig) {
+    throw new StudioHttpError(409, "Write askdb.config.ts first (setup step 1).");
+  }
+  if (probe.loadError || !probe.outputDir) {
+    throw new StudioHttpError(
+      409,
+      `askdb.config.ts exists but could not be loaded: ${probe.loadError ?? "unknown error"}. ` +
+        "Install the project dependencies shown in setup step 1, then retry.",
+    );
+  }
+  const outDir = probe.outputDir;
+  const run = await runStudioIntrospection({
+    outDir,
+    hasExistingArtifact: existsSync(join(outDir, "schema.json")),
+  });
+  state.schemaDir = outDir;
+  state.workspace = loadWorkspace(outDir);
+  state.setupReason = null;
+  return {
+    ok: true,
+    engine: run.engine,
+    schemaId: run.schemaId,
+    tables: run.tables,
+    warnings: run.warnings,
+    workspace: serializeWorkspace(state.workspace),
+  };
+}
+
+async function handleResync(state: StudioState): Promise<IntrospectRunResponse> {
+  const workspace = requireWorkspace(state);
+  // Refresh the runtime snapshot so config edits made while Studio runs are honored.
+  try {
+    bootstrapAskDbEnv({ cwd: process.cwd() });
+  } catch {
+    // Keep the snapshot the server started with when the config disappeared mid-session.
+  }
+  const run = await runStudioIntrospection({
+    outDir: state.schemaDir,
+    schemaId: workspace.physical.schemaId,
+    hasExistingArtifact: true,
+  });
+  state.workspace = loadWorkspace(state.schemaDir);
+  return {
+    ok: true,
+    engine: run.engine,
+    schemaId: run.schemaId,
+    tables: run.tables,
+    warnings: run.warnings,
+    workspace: serializeWorkspace(state.workspace),
+  };
+}
+
+function buildIntrospectionPlanDto(): IntrospectionPlanDto {
+  const plan = resolveStudioIntrospectionPlan();
+  return plan.ok
+    ? { ok: true, engine: plan.engine, sourceLabel: plan.sourceLabel }
+    : { ok: false, engine: plan.engine, error: plan.error };
+}
+
+function parseSetupConfigBody(body: unknown): SetupConfigInput {
+  if (!isRecord(body)) {
+    throw new StudioHttpError(400, "Request body must be a JSON object.");
+  }
+  const databases = ["postgres", "mysql", "sqlite", "sqlserver", "prisma"] as const;
+  const aiProviders = ["openai", "anthropic", "google", "azure"] as const;
+  if (typeof body.database !== "string" || !databases.includes(body.database as (typeof databases)[number])) {
+    throw new StudioHttpError(400, `\`database\` must be one of: ${databases.join(", ")}.`);
+  }
+  if (
+    typeof body.aiProvider !== "string" ||
+    !aiProviders.includes(body.aiProvider as (typeof aiProviders)[number])
+  ) {
+    throw new StudioHttpError(400, `\`aiProvider\` must be one of: ${aiProviders.join(", ")}.`);
+  }
+  const optionalString = (key: string): string | undefined => {
+    const value = body[key];
+    if (value === undefined || value === null || value === "") return undefined;
+    if (typeof value !== "string") throw new StudioHttpError(400, `\`${key}\` must be a string.`);
+    return value;
+  };
+  return {
+    database: body.database as SetupConfigInput["database"],
+    aiProvider: body.aiProvider as SetupConfigInput["aiProvider"],
+    connectionEnv: optionalString("connectionEnv"),
+    sqliteFile: optionalString("sqliteFile"),
+    prismaSchema: optionalString("prismaSchema"),
+    aiKeyEnv: optionalString("aiKeyEnv"),
+    schemaOut: optionalString("schemaOut"),
   };
 }
 
 function saveConceptsDraft(state: StudioState, concepts: V2Concept[]): void {
-  saveConcepts(state.workspace, { concepts });
+  saveConcepts(requireWorkspace(state), { concepts });
   state.workspace = loadWorkspace(state.schemaDir);
 }
 
@@ -343,12 +566,13 @@ function parseTenantPolicyBody(body: unknown): {
 }
 
 function saveDraft(state: StudioState, tableId: string, draft: TableDraft): void {
-  const table = state.workspace.tables.find((candidate) => candidate.physical.id === tableId);
+  const workspace = requireWorkspace(state);
+  const table = workspace.tables.find((candidate) => candidate.physical.id === tableId);
   if (!table) throw new StudioHttpError(404, `No such table: ${tableId}`);
 
   const frontmatter = buildFrontmatter(
     table.physical,
-    state.workspace.physical.schemaId,
+    workspace.physical.schemaId,
     draft,
   );
   let body = table.parsed
@@ -361,7 +585,7 @@ function saveDraft(state: StudioState, tableId: string, draft: TableDraft): void
     body = replaceH2Section(body, "Example questions", draft.exampleQuestions);
   }
 
-  saveTable(state.workspace, tableId, frontmatter, body);
+  saveTable(workspace, tableId, frontmatter, body);
   state.workspace = loadWorkspace(state.schemaDir);
 }
 
@@ -387,7 +611,7 @@ async function suggestTenantPolicyDraft(state: StudioState): Promise<SuggestTena
   }
 
   // Build a compact DDL-like representation of the schema for the prompt
-  const workspace = state.workspace;
+  const workspace = requireWorkspace(state);
   const schemaId = workspace.physical.schemaId;
   const schemaDdl = workspace.tables
     .map((t) => {
