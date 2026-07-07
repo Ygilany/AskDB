@@ -1,7 +1,9 @@
 import type { StudioRequestUsageDto } from "@/shared/api";
 
+const numberFormatter = new Intl.NumberFormat();
+
 function formatNumber(n: number): string {
-  return new Intl.NumberFormat().format(n);
+  return numberFormatter.format(n);
 }
 
 function UsageRow({ label, value }: { label: string; value: number | null }) {

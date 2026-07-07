@@ -14,3 +14,4 @@ examples/**/package-lock.json
 output/**
 askdb/
 askdb-*/
+.gstack/
