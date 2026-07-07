@@ -3,6 +3,8 @@ title: "Safety boundaries"
 description: "Every check AskDB runs on generated SQL — and where your application takes over."
 ---
 
+import defenseInDepthUrl from "../../../assets/diagrams/askdb-defense-in-depth.svg?url";
+
 <p class="doc-eyebrow">Guardrails</p>
 
 <p class="doc-lede">AskDB validates every SQL string the model returns before handing it back to your application. Generated SQL that violates the rules your schema artifact declares is rejected, not returned with a warning.</p>
@@ -36,24 +38,7 @@ The point of two layers — AskDB's validation plus your application's execution
 
 A typical production stack looks like:
 
-```
-question
-   │
-   ▼
- ask()  ──►  schema artifact + model
-   │
-   ▼
- validated SQL
-   │
-   ▼
- your app  ──►  log it, optionally show it
-   │
-   ▼
- read-only DB role  ──►  pool with statement_timeout
-   │
-   ▼
- paginated result
-```
+<img src={defenseInDepthUrl} alt="Vertical flow: question → ask() (with schema artifact + model) → validated SQL → your app (logs it, optionally shows it) → read-only DB role (pool with statement_timeout) → paginated result" class="doc-diagram" />
 
 Each layer is doing one thing. None of them is the only thing standing between a question and a misbehaving query.
 
