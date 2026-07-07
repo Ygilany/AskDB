@@ -499,11 +499,6 @@ export function PlaygroundPage() {
                   ) : (
                     <EmptyText text="No SQL generated." />
                   )}
-                  {askResult.usage && (
-                    <div style={{ marginTop: 12 }}>
-                      <UsageSummary title="Token usage" usage={askResult.usage} />
-                    </div>
-                  )}
                 </section>
 
                 {askResult.explain !== null && askResult.explain !== undefined && (
@@ -615,6 +610,12 @@ export function PlaygroundPage() {
                     ) : (
                       <EmptyText text="No results." />
                     )}
+                  </section>
+                )}
+
+                {askResult.usage && (
+                  <section style={{ padding: "var(--pad-y) var(--pad-x)", borderTop: "1px solid var(--border)" }}>
+                    <UsageSummary title="Token usage" usage={askResult.usage} />
                   </section>
                 )}
               </div>
