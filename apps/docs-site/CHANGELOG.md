@@ -1,5 +1,11 @@
 # @askdb/docs-site
 
+## 0.0.1-beta.5
+
+### Patch Changes
+
+- f7b3ca0: Fix bento grid card vertical alignment. Cards in subsequent grid rows were inheriting `margin-top: 1rem` from Starlight's sibling content spacing rule, causing them to appear offset downward. Added `margin-top: 0 !important` to all grid card elements to override this and ensure proper alignment.
+
 ## 0.0.1-beta.4
 
 ### Patch Changes
