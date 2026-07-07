@@ -100,11 +100,12 @@ export default defineConfig({
           items: [
             { label: "Overview", slug: "index" },
             { label: "Quickstart", slug: "quickstart" },
+            { label: "Install", slug: "install" },
             { label: "Studio", slug: "studio" },
           ],
         },
         {
-          label: "Guides",
+          label: "Getting started",
           items: [
             { label: "Embed in a Node app", slug: "guides/embed-in-node" },
             { label: "Author your schema", slug: "guides/author-your-schema" },
@@ -114,6 +115,7 @@ export default defineConfig({
             { label: "Switch engines", slug: "guides/switch-engines" },
             { label: "Bring your own model", slug: "guides/bring-your-own-model" },
             { label: "RAG for large schemas", slug: "guides/rag-for-large-schemas" },
+            { label: "Troubleshooting", slug: "getting-started/troubleshooting" },
             {
               label: "Integrations",
               items: [
@@ -140,6 +142,7 @@ export default defineConfig({
             { label: "HTTP API", slug: "reference/http-api" },
             { label: "Configuration", slug: "reference/config" },
             { label: "Packages", slug: "reference/packages" },
+            { label: "ask() options", slug: "reference/ask-options" },
           ],
         },
       ],

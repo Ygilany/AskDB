@@ -1,5 +1,7 @@
 # Contributing
 
+By participating in this project you agree to abide by the [Code of Conduct](CODE_OF_CONDUCT.md).
+
 AskDB is a pnpm/Turborepo TypeScript monorepo. Keep changes scoped to the package or app you are touching, and add tests for behavior that affects public APIs, package output, SQL safety, or user-facing workflows.
 
 ## Local Setup

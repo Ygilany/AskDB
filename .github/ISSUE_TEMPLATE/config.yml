@@ -1,5 +1,8 @@
 blank_issues_enabled: false
 contact_links:
+  - name: 📜 Code of Conduct
+    url: https://github.com/Ygilany/AskDB/blob/main/CODE_OF_CONDUCT.md
+    about: Please read our Code of Conduct before participating.
   - name: 🙏 Question / how do I…?
     url: https://github.com/Ygilany/AskDB/discussions/categories/q-a
     about: Usage, config, and schema/SQL questions belong in Discussions.
