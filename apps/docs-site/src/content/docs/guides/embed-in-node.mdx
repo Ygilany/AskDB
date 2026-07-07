@@ -3,72 +3,44 @@ title: "Embed AskDB in a Node app"
 description: "Add natural-language SQL to a TypeScript service in twenty lines: load a schema, call ask(), run the SQL through your own pool."
 ---
 
-import { Tabs, TabItem, Aside } from "@astrojs/starlight/components";
+import { Aside } from "@astrojs/starlight/components";
 import ExampleLink from "../../../components/ExampleLink.astro";
+import InstallTabs from "../../../components/InstallTabs.astro";
 
 <p class="doc-eyebrow">Integrator guide</p>
 
-<p class="doc-lede">Drop <code>@askdb/core</code> into a TypeScript service. AskDB loads your schema artifact, generates validated SQL from a question, and hands it back. Your service runs it through its own connection pool against a read-only role.</p>
+<p class="doc-lede">Drop <code>@askdb/client</code> into a TypeScript service. It reads the same <code>askdb.config.ts</code> the CLI and Studio use, generates validated SQL from a question, and hands it back. Your service runs it through its own connection pool against a read-only role.</p>
 
 ## Install
 
-<Tabs syncKey="pkg">
-  <TabItem label="npm">
-
-```bash
-npm install @askdb/core @ai-sdk/openai pg
-```
-
-  </TabItem>
-  <TabItem label="pnpm">
-
-```bash
-pnpm add @askdb/core @ai-sdk/openai pg
-```
-
-  </TabItem>
-  <TabItem label="yarn">
-
-```bash
-yarn add @askdb/core @ai-sdk/openai pg
-```
-
-  </TabItem>
-</Tabs>
+<InstallTabs pkgs="@askdb/client @askdb/ai @askdb/ai-openai @askdb/config pg" />
 
 | Package | Why |
 | --- | --- |
-| `@askdb/core` | The pipeline — `loadSchema`, `ask`, validation. |
-| — | Dialects for all four engines are built into `@askdb/core`; install `@askdb/postgres` only if this service also runs `askdb introspect` programmatically. |
-| `@ai-sdk/openai` | OpenAI's AI SDK provider — bring your own model provider. |
+| `@askdb/client` | `createAskDb()` — resolves the schema, model, and dialect from config. |
+| `@askdb/ai` + `@askdb/ai-openai` | The provider registry and the adapter it builds your model from. Swap `-openai` for `-anthropic`, `-google`, or `-azure`. |
+| `@askdb/config` | Loads `.env` and `askdb.config.ts` at startup. |
 | `pg` | The Postgres driver. AskDB doesn't open the connection; your app does. |
 
-## Load the schema once
+## Wire it into a handler
 
-The schema artifact is read from disk. Load it at startup and keep it in memory — it doesn't need to be reloaded per request.
-
-```ts
-// schema.ts
-import { loadSchema } from "@askdb/core";
-
-// Point at the artifact directory that `askdb introspect` wrote —
-// your `introspection.outputDir` (e.g. ./my-app.schema or the default ./askdb).
-// loadSchema also accepts a bundled .bundle.json file.
-export const schema = await loadSchema("./my-app.schema");
-```
-
-`./my-app.schema` is a **directory**, not a file — `<name>.schema/` is AskDB's convention for the introspected-and-enriched artifact. `loadSchema` autodetects a directory, a bundled JSON, or a bare `schema.json`.
-
-## Wire `ask()` into a handler
+Call `createAskDb` once at startup, then `askdb.ask(question)` per request. Schema, model, and dialect all resolve from `askdb.config.ts` — the same file `askdb init` scaffolded.
 
 ```ts
 // ask-handler.ts
-import { ask } from "@askdb/core";
-import { openai } from "@ai-sdk/openai";
+import { createAskDb } from "@askdb/client";
+import { bootstrapAskDbEnv, getAskDbRuntimeConfig } from "@askdb/config";
+import { createAiRegistry } from "@askdb/ai";
+import { openaiProvider } from "@askdb/ai-openai";
 import { Pool } from "pg";
-import { schema } from "./schema.js";
 
-const model = openai("gpt-4o-mini");
+bootstrapAskDbEnv({ cwd: process.cwd() });
+
+const askdb = createAskDb({
+  config: getAskDbRuntimeConfig(),
+  registry: createAiRegistry([openaiProvider]),
+  schema: { path: "./my-app.schema" },             // or set host.schemaPath in config and omit
+});
 
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
@@ -78,12 +50,7 @@ const pool = new Pool({
 });
 
 export async function askQuestion(question: string) {
-  const { sql } = await ask({
-    question,
-    schema,
-    dialect: "postgres",
-    model,
-  });
+  const { sql } = await askdb.ask(question);
 
   // Audit hook — log every question and generated SQL.
   console.log({ question, sql });
@@ -93,46 +60,49 @@ export async function askQuestion(question: string) {
 }
 ```
 
+`./my-app.schema` is a **directory**, not a file — `<name>.schema/` is AskDB's convention for the introspected-and-enriched artifact. The schema loads once at startup and stays in memory; call `askdb.reload()` if the artifact changes while the process runs.
+
 <Aside type="note">
 This example uses `pg` to run the SQL, but the driver is your choice — AskDB never opens a connection. If you already use an ORM or query builder (Prisma, Drizzle, Sequelize, Knex, …), skip `pg` entirely and pass the returned `sql` string to your existing client, e.g. `prisma.$queryRawUnsafe(sql)` or `db.execute(sql)`.
 </Aside>
 
 That's the whole pipeline. AskDB returns validated SQL — your handler logs it, runs it, and returns the result.
 
-## Shorter: let config resolve schema + model
+## Advanced: call `ask()` directly
 
-If you already use `askdb.config.ts`, `@askdb/client` removes the manual schema load and model construction. `createAskDb` resolves both from config; you pass only the question.
+`createAskDb` is a convenience layer over `@askdb/core`'s pure `ask()` — not a replacement. Drop down to `ask()` when you construct the model yourself, serve multiple schemas from one process, or want zero dependency on `@askdb/config` / `@askdb/ai`.
 
-```bash
-npm install @askdb/client @askdb/ai @askdb/ai-openai @askdb/config pg
-```
+<InstallTabs pkgs="@askdb/core @ai-sdk/openai pg" />
+
+Dialects for all four engines are built into `@askdb/core` — install `@askdb/postgres` only if this service also runs `askdb introspect` programmatically.
 
 ```ts
 // ask-handler.ts
-import { createAskDb } from "@askdb/client";
-import { getAskDbRuntimeConfig } from "@askdb/config";
-import { createAiRegistry } from "@askdb/ai";
-import { openaiProvider } from "@askdb/ai-openai";
+import { ask, loadSchema } from "@askdb/core";
+import { openai } from "@ai-sdk/openai";
 import { Pool } from "pg";
 
-const askdb = createAskDb({
-  config: getAskDbRuntimeConfig(),                 // after bootstrapAskDbEnv() at startup
-  registry: createAiRegistry([openaiProvider]),
-  schema: { path: "./my-app.schema" },             // or set host.schemaPath in config and omit
-});
+// loadSchema is synchronous; it autodetects the artifact directory,
+// a bundled .bundle.json, or a bare schema.json. Load once at startup.
+const schema = loadSchema("./my-app.schema");
+const model = openai("gpt-4o-mini");
 
 const pool = new Pool({ connectionString: process.env.DATABASE_URL });
 
 export async function askQuestion(question: string) {
-  const { sql } = await askdb.ask(question);
+  const { sql } = await ask({
+    question,
+    schema,
+    dialect: "postgres",
+    model,
+  });
+
   const { rows } = await pool.query(sql);
   return { sql, rows };
 }
 ```
 
-<Aside type="note">
-The direct `ask()` path above is still the right choice when you construct the model yourself, serve multiple schemas from one process, or want zero dependency on `@askdb/config` / `@askdb/ai`. `createAskDb` is a convenience layer over the same `ask()` — not a replacement.
-</Aside>
+Every option `ask()` takes — modes, tenant scope, retrieval, sensitive-field handling — is in the [ask() options reference](/reference/ask-options/). The same options work as per-call overrides on `askdb.ask(question, overrides)`.
 
 ## Switching engines
 

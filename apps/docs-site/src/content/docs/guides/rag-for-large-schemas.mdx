@@ -3,6 +3,8 @@ title: "RAG for large schemas"
 description: "When your schema is too big to fit in a prompt, index it with @askdb/rag and retrieve only the relevant chunks per question."
 ---
 
+import InstallTabs from "../../../components/InstallTabs.astro";
+
 <p class="doc-eyebrow">Scale-up guide</p>
 
 <p class="doc-lede">Big databases need retrieval. <code>@askdb/rag</code> chunks the same schema artifact and indexes it in a vector store. Per question, AskDB retrieves the relevant slice instead of stuffing the whole thing into every prompt.</p>
@@ -15,12 +17,11 @@ The retrieval trigger is configurable. By default `ask()` uses retrieval when a 
 
 ## Install
 
-```bash
-npm install @askdb/rag
+<InstallTabs pkgs="@askdb/rag" />
 
-# pgvector store (recommended)
-npm install pg
-```
+For the pgvector store (recommended), add the Postgres driver:
+
+<InstallTabs pkgs="pg" />
 
 You'll also need an embedder. The Vercel AI SDK providers from [Bring your own model](/guides/bring-your-own-model/) work as embedders too — most teams use OpenAI's embeddings.
 

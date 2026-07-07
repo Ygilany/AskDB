@@ -4,6 +4,7 @@ description: "Use OpenAI, Anthropic, Azure OpenAI, Google — any provider that 
 ---
 
 import { Tabs, TabItem } from "@astrojs/starlight/components";
+import InstallTabs from "../../../components/InstallTabs.astro";
 
 <p class="doc-eyebrow">Model providers</p>
 
@@ -127,9 +128,7 @@ Install the provider package and construct the model:
 <Tabs syncKey="ai-provider">
   <TabItem label="OpenAI">
 
-```bash
-npm install ai @ai-sdk/openai
-```
+<InstallTabs pkgs="ai @ai-sdk/openai" />
 
 ```ts
 import { openai } from "@ai-sdk/openai";
@@ -141,9 +140,7 @@ const model = openai("gpt-4o-mini");
   </TabItem>
   <TabItem label="Anthropic">
 
-```bash
-npm install ai @ai-sdk/anthropic
-```
+<InstallTabs pkgs="ai @ai-sdk/anthropic" />
 
 ```ts
 import { anthropic } from "@ai-sdk/anthropic";
@@ -154,9 +151,7 @@ const model = anthropic("claude-sonnet-4-6");
   </TabItem>
   <TabItem label="Google">
 
-```bash
-npm install ai @ai-sdk/google
-```
+<InstallTabs pkgs="ai @ai-sdk/google" />
 
 ```ts
 import { google } from "@ai-sdk/google";
@@ -168,9 +163,7 @@ const model = google("gemini-2.0-flash");
   </TabItem>
   <TabItem label="Azure OpenAI">
 
-```bash
-npm install ai @ai-sdk/azure
-```
+<InstallTabs pkgs="ai @ai-sdk/azure" />
 
 ```ts
 import { createAzure } from "@ai-sdk/azure";
@@ -188,9 +181,7 @@ const model = azure("your-deployment-name");
 
 For self-hosted or alternative providers that expose the OpenAI chat-completions shape (vLLM, llama.cpp server, OpenRouter, Together, LM Studio, Ollama, …):
 
-```bash
-npm install ai @ai-sdk/openai-compatible
-```
+<InstallTabs pkgs="ai @ai-sdk/openai-compatible" />
 
 ```ts
 import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
@@ -211,9 +202,7 @@ const model = local("llama3.1");
 
 If you embed AskDB but want to reuse the same `askdb.config.ts` instead of hardcoding a provider, use `@askdb/client`. `createAskDb` resolves the schema, model, and dialect from your config and a provider registry — the same resolution the CLI and the bundled HTTP API use.
 
-```bash
-npm install @askdb/client @askdb/config @askdb/ai @askdb/ai-openai @askdb/ai-anthropic
-```
+<InstallTabs pkgs="@askdb/client @askdb/config @askdb/ai @askdb/ai-openai @askdb/ai-anthropic" />
 
 ```ts
 import { createAskDb } from "@askdb/client";

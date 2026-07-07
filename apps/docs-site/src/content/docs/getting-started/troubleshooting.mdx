@@ -5,7 +5,7 @@ description: "Common errors and fixes: schema not found, SQL validation failures
 
 import { Aside } from "@astrojs/starlight/components";
 
-<p class="doc-eyebrow">Getting started · Troubleshooting</p>
+<p class="doc-eyebrow">Guides · Troubleshooting</p>
 
 <p class="doc-lede">Errors grouped by where they surface. If you hit something not listed here, open a <a href="https://github.com/Ygilany/AskDB/discussions/categories/q-a">Discussion</a>.</p>
 
@@ -15,11 +15,15 @@ import { Aside } from "@astrojs/starlight/components";
 
 ### `Error: Cannot find config file`
 
-AskDB looks for `askdb.config.ts`, `askdb.config.js`, or `askdb.config.mjs` starting from the current working directory. Run the CLI from your project root, or pass `--config path/to/askdb.config.ts` explicitly.
+AskDB looks for `askdb.config.<ext>` (then `.config/askdb.<ext>`) in the **current working directory only** — in a monorepo it won't find a config in a parent directory. Supported extensions, in precedence order: `ts`, `mts`, `cts`, `js`, `mjs`, `cjs`.
+
+The fix is always the same: run the CLI from the directory that holds the config.
 
 ```bash
-npx askdb ask --config ./apps/api/askdb.config.ts --question "..."
+cd apps/api && npx askdb ask --question "..."
 ```
+
+When embedding the libraries, the equivalent knob is the `cwd` option: `bootstrapAskDbEnv({ cwd: "/path/to/project" })`.
 
 ### `SchemaParseError: Cannot read schema at …`
 
@@ -133,7 +137,7 @@ Check that `studio.execute.databaseUrl` is set in `askdb.config.ts` (or `ASKDB_S
 1. `studio.execute.provider` + `studio.execute.databaseUrl`
 2. The active `introspection.provider` when it's a live engine
 
-See [Configuration — Studio execute](/reference/config/#studio-execute) for the full resolution order.
+See [Configuration — Studio execute](/reference/config/#studio-execute-configuration) for the full resolution order.
 
 ---
 
@@ -176,7 +180,11 @@ const { sql } = await ask({
   model,
   dialect,
   tenantScope: {
-    access: { kind: "single", tenantRootId: "org", tenantId: currentUser.orgId },
+    access: {
+      kind: "ids",
+      tenantRoot: "table:public.organizations",
+      ids: [currentUser.orgId],
+    },
   },
 });
 ```
@@ -185,7 +193,7 @@ See [Multi-tenancy](/guides/multi-tenancy/) for the full scope shape.
 
 ### `TenantScopeError: UNKNOWN_TENANT_ROOT`
 
-The `tenantRootId` in the scope doesn't match any root defined in `tenant-policy.md`. Check the `id:` field of each root in the policy file.
+The `tenantRoot` in the scope doesn't match any root defined in `tenant-policy.md`. Check the `id:` field of each root in the policy file — the scope must use the same stable table ID (e.g. `table:public.organizations`).
 
 ### `TenantGuardrailError`
 
@@ -209,7 +217,7 @@ Two reasons this happens:
    });
    ```
 
-2. **Schema is not v2:** The retriever is silently skipped for pre-v2 schemas. Confirm `loadSchema()` returns an object with a `schemaId` field (v2 indicator). Re-run `askdb introspect` if not.
+2. **Outdated artifact format:** The retriever is silently skipped for schema artifacts created by very old AskDB versions. Confirm `loadSchema()` returns an object with a `schemaId` field; if it doesn't, re-run `askdb introspect` to regenerate the artifact.
 
 ### Retriever returns no chunks
 

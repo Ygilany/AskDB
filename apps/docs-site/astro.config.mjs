@@ -105,7 +105,7 @@ export default defineConfig({
           ],
         },
         {
-          label: "Getting started",
+          label: "Guides",
           items: [
             { label: "Embed in a Node app", slug: "guides/embed-in-node" },
             { label: "Author your schema", slug: "guides/author-your-schema" },

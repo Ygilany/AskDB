@@ -4,6 +4,7 @@ description: "All four engines — Postgres, MySQL, SQLite, SQL Server — are f
 ---
 
 import { Tabs, TabItem } from "@astrojs/starlight/components";
+import InstallTabs from "../../../components/InstallTabs.astro";
 
 <p class="doc-eyebrow">Engine migration</p>
 
@@ -40,38 +41,38 @@ import { Tabs, TabItem } from "@astrojs/starlight/components";
 <Tabs syncKey="engine">
   <TabItem label="PostgreSQL">
 
-```bash
-npm install @askdb/postgres
-# if you plan to run live introspection
-npm install pg
-```
+<InstallTabs pkgs="@askdb/postgres" />
+
+If you plan to run live introspection, also add the driver:
+
+<InstallTabs pkgs="pg" />
 
   </TabItem>
   <TabItem label="MySQL">
 
-```bash
-npm install @askdb/mysql
-# if you plan to run live introspection
-npm install mysql2
-```
+<InstallTabs pkgs="@askdb/mysql" />
+
+If you plan to run live introspection, also add the driver:
+
+<InstallTabs pkgs="mysql2" />
 
   </TabItem>
   <TabItem label="SQLite">
 
-```bash
-npm install @askdb/sqlite
-# if you plan to run live introspection
-npm install better-sqlite3
-```
+<InstallTabs pkgs="@askdb/sqlite" />
+
+If you plan to run live introspection, also add the driver:
+
+<InstallTabs pkgs="better-sqlite3" />
 
   </TabItem>
   <TabItem label="SQL Server">
 
-```bash
-npm install @askdb/sqlserver
-# if you plan to run live introspection
-npm install mssql
-```
+<InstallTabs pkgs="@askdb/sqlserver" />
+
+If you plan to run live introspection, also add the driver:
+
+<InstallTabs pkgs="mssql" />
 
   </TabItem>
 </Tabs>
@@ -86,7 +87,7 @@ If you are pointing at a different database instance — one that may have a dif
   <TabItem label="PostgreSQL">
 
 ```bash
-pnpm exec askdb introspect \
+npx askdb introspect \
   --engine postgres \
   --url "postgresql://user:pass@host/dbname" \
   --out my-app.schema \
@@ -97,7 +98,7 @@ pnpm exec askdb introspect \
   <TabItem label="MySQL">
 
 ```bash
-pnpm exec askdb introspect \
+npx askdb introspect \
   --engine mysql \
   --url "mysql://user:pass@host/dbname" \
   --out my-app.schema \
@@ -107,14 +108,16 @@ pnpm exec askdb introspect \
   </TabItem>
   <TabItem label="SQLite">
 
-For SQLite, set the file path via `introspection.sqliteFile` in `askdb.config.ts`:
+For SQLite, set the file path via `introspection.providerConfig.sqlite.file` in `askdb.config.ts`:
 
 ```ts
 // askdb.config.ts
 export default {
   introspection: {
     provider: "sqlite",
-    sqliteFile: "./my-database.db",
+    providerConfig: {
+      sqlite: { file: "./my-database.db" },
+    },
   },
   // ...
 };
@@ -123,14 +126,14 @@ export default {
 Then run:
 
 ```bash
-pnpm exec askdb introspect --out my-app.schema --schema-id my-app
+npx askdb introspect --out my-app.schema --schema-id my-app
 ```
 
   </TabItem>
   <TabItem label="SQL Server">
 
 ```bash
-pnpm exec askdb introspect \
+npx askdb introspect \
   --engine sqlserver \
   --url "mssql://user:pass@host:1433/dbname" \
   --out my-app.schema \

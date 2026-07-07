@@ -40,7 +40,7 @@ Required when the schema has a `tenant-policy.md`. The pipeline fails closed (th
 
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
-| `tenantScope` | `TenantScope` | — | The access scope for the current user. Carries enforceable access constraints (`single`, `multi`, or `global`) and optional advisory context. |
+| `tenantScope` | `TenantScope` | — | The access scope for the current user. `access.kind` is one of `ids`, `subtree`, `multi_root`, or `global`, plus optional advisory context. |
 | `tenantSqlMode` | `"sql-only" \| "sql-params"` | `"sql-only"` | How tenant placeholder values are inlined. `sql-only` embeds literal values; `sql-params` converts to positional `$N` parameters and returns them in `tenantParams`. |
 
 See [Multi-tenancy](/guides/multi-tenancy/) for the full `TenantScope` shape.
@@ -151,7 +151,11 @@ const { sql, tenantParams } = await ask({
   totalSchemaChunkCount: index.stats.chunksTotal,
   retrievalThresholdChunks: 40,
   tenantScope: {
-    access: { kind: "single", tenantRootId: "org", tenantId: req.user.orgId },
+    access: {
+      kind: "ids",
+      tenantRoot: "table:public.organizations",
+      ids: [req.user.orgId],
+    },
   },
   tenantSqlMode: "sql-params",
 });

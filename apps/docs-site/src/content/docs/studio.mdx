@@ -3,6 +3,9 @@ title: "Studio"
 description: "A local browser UI for enriching your schema and testing questions — the fastest way to see AskDB work."
 ---
 
+import { Tabs, TabItem } from "@astrojs/starlight/components";
+import InstallTabs from "../../components/InstallTabs.astro";
+
 <p class="doc-eyebrow">Visual tour</p>
 
 <p class="doc-lede">Studio is a local web app that reads and writes your schema artifact directly — nothing leaves your machine. Launch it from your project root and your browser opens a seven-view UI for enriching tables, defining concepts, configuring tenant isolation, and testing natural-language questions against the SQL they generate.</p>
@@ -13,6 +16,16 @@ npx askdb studio
 
 Studio reads `outputDir` from `askdb.config.ts`. Pass `--schema <path>` to override for a single run. By default it serves on `http://127.0.0.1:5556` — change that with the `--port` and `--host` flags, or set `studio.listen.port` and `studio.listen.host` in `askdb.config.ts` (a CLI flag overrides the config for that run).
 
+## Guided setup
+
+Studio also works as the *first* command in a brand-new project. Run `npx askdb studio` in a directory with no `askdb.config.ts` (or no schema artifact yet) and Studio opens a setup wizard instead of erroring:
+
+1. **Pick your database engine and AI provider.** The wizard asks for environment variable *names* only — it never accepts secret values. Studio writes `askdb.config.ts` and an `.env.example` for you.
+2. **Add your secrets to `.env` yourself.** The wizard shows exactly which variables to fill in; the values stay on your disk.
+3. **Run introspection from the browser.** Studio reads your schema structure server-side (tables and columns — never rows) and opens the Overview when it's done.
+
+Setup actions (writing the config, running introspection) only work from loopback clients — a Studio exposed on a non-localhost host serves the UI but refuses those writes. Prefer the terminal? `npx askdb init` is the same wizard as a CLI prompt.
+
 ## The loop
 
 The core Studio workflow is **enrich → ask → re-enrich**: add descriptions, aliases, and example questions to a table, then switch to the Playground and ask a question to see the generated SQL. If the answer isn't what you expected, go back, tighten the enrichment, and re-ask — all without leaving the browser tab. Repeating this loop is what makes generation reliable for the vocabulary your team actually uses.
@@ -22,6 +35,8 @@ The core Studio workflow is **enrich → ask → re-enrich**: add descriptions, 
 ![The Overview dashboard showing table count, enrichment progress, RAG index health, and suggested next actions](../../assets/studio/overview.png)
 
 The Overview dashboard shows the health of your schema artifact at a glance: how many tables are enriched, how many are still at the default "none" state, RAG index status (chunk count and model), tenancy configuration, and a prioritised list of suggested next actions. Use it as your starting point to see where enrichment effort will have the most impact.
+
+**Resync schema** re-runs introspection without leaving the browser, using the connection configured in `askdb.config.ts` — the same resolution as a flag-free `askdb introspect`. The physical layer (`schema.json`) is regenerated; your enrichment markdown is preserved, exactly as with the CLI. Like the setup wizard, resync only works from loopback clients.
 
 ## Tables and enrichment
 
@@ -48,6 +63,10 @@ Concepts capture cross-table business vocabulary that doesn't map to a single ta
 The Query Playground is where you test whether your enrichment is working. Type a question in plain language, choose between **Full schema** (send the entire enriched artifact) or **RAG** (retrieve only the relevant chunks), and click **Generate SQL**. The generated SQL appears alongside the retrieval context so you can see exactly what the model was given. If the SQL is wrong, the enrichment fields that need fixing are usually obvious from the context shown.
 
 Generating SQL in Studio does not require a database driver. The optional **Execute Query** action runs the generated SQL against a live database and displays the results in the Playground. Studio supports Postgres, MySQL, SQLite, and SQL Server.
+
+### Get the code
+
+Once the SQL looks right, the **Get the code** panel below it turns the session into an integration snippet: your exact question, schema path, resolved dialect, configured AI provider, and (when enabled) the tenant scope — rendered as ready-to-paste TypeScript. Toggle between the config-driven style (`createAskDb()` from `@askdb/client`, reading the same `askdb.config.ts` Studio uses) and the direct style (`ask()` from `@askdb/core` with an explicit model). Copy it into your service and continue with [Embed in a Node app](/guides/embed-in-node/).
 
 ### Execute provider
 
@@ -78,12 +97,20 @@ ASKDB_STUDIO_DATABASE_URL=mysql://user:password@localhost/mydb
 
 Each execute provider requires its database driver package. These are optional peer dependencies — you only install the one you need:
 
-| Provider | Package | Install |
-|---|---|---|
-| Postgres | `pg` | `pnpm add pg` |
-| MySQL | `mysql2` | `pnpm add mysql2` |
-| SQLite | `better-sqlite3` | `pnpm add better-sqlite3` |
-| SQL Server | `mssql` | `pnpm add mssql` |
+<Tabs syncKey="engine">
+  <TabItem label="PostgreSQL">
+    <InstallTabs pkgs="pg" />
+  </TabItem>
+  <TabItem label="MySQL">
+    <InstallTabs pkgs="mysql2" />
+  </TabItem>
+  <TabItem label="SQLite">
+    <InstallTabs pkgs="better-sqlite3" />
+  </TabItem>
+  <TabItem label="SQL Server">
+    <InstallTabs pkgs="mssql" />
+  </TabItem>
+</Tabs>
 
 The Query Playground shows the configured provider and driver readiness near the Execute button. If the driver is missing, Studio displays an **Install** button (local Studio only) or the exact manual install command.
 
