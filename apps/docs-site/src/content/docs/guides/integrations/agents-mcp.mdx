@@ -32,14 +32,13 @@ A typical agent tool definition for AskDB looks like:
 ```ts
 import { createAskDb } from "@askdb/client";
 import { bootstrapAskDbEnv, getAskDbRuntimeConfig } from "@askdb/config";
-import { createAiRegistry } from "@askdb/ai";
 import { openaiProvider } from "@askdb/ai-openai";
 
 // Initialize once at startup — schema, model, and dialect resolve from config.
 bootstrapAskDbEnv({ cwd: process.cwd() });
 const askdb = createAskDb({
   config: getAskDbRuntimeConfig(),
-  registry: createAiRegistry([openaiProvider]),
+  providers: [openaiProvider],
   schema: { path: "./my-app.schema" },
 });
 

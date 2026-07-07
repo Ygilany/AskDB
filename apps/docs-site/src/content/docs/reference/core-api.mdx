@@ -73,7 +73,7 @@ Populated from the model provider's usage report. Use for cost tracking or quota
 
 ```ts
 import { loadSchema } from "@askdb/core";
-const schema = await loadSchema("./my-app.schema");
+const schema = loadSchema("./my-app.schema"); // synchronous
 ```
 
 Autodetects and loads a v2 schema artifact. Accepts:
@@ -81,9 +81,9 @@ Autodetects and loads a v2 schema artifact. Accepts:
 - A **bundled JSON file** (`*.bundle.json` or any JSON with `bundled: true`) — the output of `askdb bundle`
 - A direct path to a `schema.json` file
 
-Returns `NormalizedSchemaV2`. Throws `SchemaLoadError` on failure.
+Returns `NormalizedSchemaV2`. Throws `SchemaParseError` on failure.
 
-Load once at startup and keep in memory — schema loading is synchronous-style I/O, not a per-request call.
+`loadSchema` is synchronous — load once at startup and keep the result in memory, not per request.
 
 ### `loadSchemaFromJson(raw)`
 
@@ -119,15 +119,15 @@ The engine adapter packages (`@askdb/postgres`, `@askdb/mysql`, etc.) export con
 
 ### `DialectSpec`
 
-Bring your own dialect descriptor. Use when your engine is not in the built-in list but shares SQL semantics with one of the built-ins, or when you need to extend a built-in with extra forbidden keywords or validation.
+Customize how one of the built-in dialects prompts and validates — for example, a PostgreSQL-compatible warehouse that needs extra guidance in the prompt or extra forbidden keywords. `id` must be one of the six built-in ids (the spec describes a variant of that engine family, not a brand-new engine — for that, use [`AskDialect`](#askdialect)).
 
 ```ts
 import { type DialectSpec } from "@askdb/core";
 
-const myDialect: DialectSpec = {
-  id: "redshift",
+const redshiftFlavor: DialectSpec = {
+  id: "postgres", // the built-in family this variant belongs to
   displayName: "Amazon Redshift",
-  promptBrief: "Amazon Redshift SQL. Uses PostgreSQL syntax with some differences: ...",
+  promptBrief: "Amazon Redshift SQL. PostgreSQL syntax with some differences: ...",
   identifierQuote: '"',
   extraForbiddenKeywords: ["COPY", "UNLOAD"],
   extraValidate(sql) {
@@ -138,7 +138,7 @@ const myDialect: DialectSpec = {
 
 | Field | Type | Required | Description |
 | --- | --- | --- | --- |
-| `id` | `string` | yes | Stable identifier. |
+| `id` | `DialectId` | yes | One of the six built-in ids — the engine family this spec belongs to. |
 | `displayName` | `string` | yes | Human-readable name. |
 | `promptBrief` | `string` | yes | One-paragraph guidance for the model about this dialect's syntax. |
 | `identifierQuote` | `'"' \| '`'` | yes | Identifier quoting style. |
@@ -184,7 +184,7 @@ It must return `AskDialectGenerateResult`:
 | Value | Description |
 | --- | --- |
 | `"schema_only"` (default) | Schema-grounding only. The model sees the DDL; no post-execute paths are activated. Use this for all production read-only queries. |
-| `"bounded_results"` | Includes result-count guardrails. Activates model paths that add `LIMIT` clauses or bound `OFFSET`. Use with caution — activates additional model calls. |
+| `"bounded_results"` | Reserved for a future post-execute extension (summarizing bounded tabular results through the model). Today it produces exactly the same SQL as `schema_only` — see [Modes and dialects](/concepts/modes-and-dialects/). |
 
 ```ts
 import { DEFAULT_ASKDB_MODE, parseAskDbModeV1 } from "@askdb/core";
@@ -250,7 +250,11 @@ Passed as `options.tenantScope` to `ask()`. Carries enforceable access plus opti
 ```ts
 // IDs access — user can see records for their specific org ids
 const scope: TenantScope = {
-  access: { kind: "ids", rootId: "organization", ids: ["org-1", "org-2"] },
+  access: {
+    kind: "ids",
+    tenantRoot: "table:public.organizations", // stable table ID from the policy
+    ids: ["org-1", "org-2"],
+  },
   context: { role: "regional_manager", label: "Jane Smith" },
 };
 

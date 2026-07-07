@@ -56,7 +56,7 @@ const { sql } = await ask({
 | `store` | `VectorStore` | yes | Vector store adapter. Use `createPgvectorStore()` or supply a custom adapter. |
 | `embedderId` | `string` | no | Stable identifier for the embedder (e.g. `"openai:text-embedding-3-small"`). Stored in the lock file — changing it triggers a full re-embed. Strongly recommended when using a lock file. |
 | `lockFilePath` | `string` | no | Path to `schema.lock.json`. Enables incremental indexing: unchanged chunks are skipped. Write it inside the schema directory. |
-| `batchSize` | `number` | no | `64` | Number of texts per embedder call. |
+| `batchSize` | `number` | no | Number of texts per embedder call. Default `64`. |
 | `onProgress` | `(e: IndexProgressEvent) => void` | no | Called at `"started"`, `"embedded"`, and `"completed"` stages. |
 | `logger` | `AskDbLogger` | no | Structured logger. |
 | `correlationId` | `string` | no | Correlation id attached to log lines. |
@@ -157,8 +157,8 @@ await store.ensureSchema(); // idempotent — safe to call on every startup
 | `dimensions` | `number` | yes | Embedding vector size. Must match the embedding model. Common values: `1536` (OpenAI `text-embedding-3-small`/`ada-002`), `3072` (`text-embedding-3-large`), `768` (many open-source models). |
 | `connectionString` | `string` | no† | PostgreSQL connection string. The store lazily imports and pools `pg` when this is supplied. |
 | `client` | `PgClient` | no† | Pre-built `pg.Pool` or `pg.Client`. Preferred when your app already manages a pool. The store never closes an externally supplied client. |
-| `table` | `string` | no | `"askdb_rag_chunks"` | Table name. Override when you want to namespace by schema or tenant. |
-| `indexStrategy` | `PgvectorIndexStrategy` | no | `"hnsw"` | Index type: `"hnsw"` (default, better recall), `"ivfflat"` (faster at very large scale), or `"none"` (sequential scan — for small tables or testing). |
+| `table` | `string` | no | Table name. Default `"askdb_rag_chunks"`. Override when you want to namespace by schema or tenant. |
+| `indexStrategy` | `PgvectorIndexStrategy` | no | Index type: `"hnsw"` (default, better recall), `"ivfflat"` (faster at very large scale), or `"none"` (sequential scan — for small tables or testing). |
 
 †Either `connectionString` or `client` is required.
 

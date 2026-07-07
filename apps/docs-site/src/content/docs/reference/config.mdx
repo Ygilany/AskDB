@@ -172,7 +172,7 @@ export default defineConfig({
 
 This works end to end only when the consuming registry has an adapter registered under that provider name. First-party apps (`@askdb/http-api`, the CLI) register `openai`, `azure`, `foundry`, `google`, and `anthropic`. For any other provider you have two options:
 
-1. **Embed AskDB** and register your own adapter via `createAiRegistry` — about 40 lines of code.
+1. **Embed AskDB** and pass your own adapter in `createAskDb({ providers: [myAdapter] })` — about 40 lines of code.
 2. **Use the `openai` provider** with a custom `baseUrl` for any OpenAI-compatible endpoint (vLLM, OpenRouter, Together, Ollama, …).
 
 See [Bring your own model](/guides/bring-your-own-model/) for the embedding walkthrough.

@@ -1,4 +1,4 @@
-import type { AiRegistry } from "@askdb/ai";
+import { createAiRegistry, type AiProviderAdapters, type AiRegistry } from "@askdb/ai";
 import type { AskDbRuntimeConfig } from "@askdb/config";
 import {
   ask,
@@ -47,8 +47,17 @@ export type DialectResolution = {
 export type CreateAskDbOptions = {
   /** Runtime snapshot, e.g. from `getAskDbRuntimeConfig()`. */
   config: AskDbRuntimeConfig;
-  /** AI registry built from host-registered adapters via `createAiRegistry(...)`. */
-  registry: AiRegistry;
+  /**
+   * AI provider adapters (e.g. `[openaiProvider]` from `@askdb/ai-openai`).
+   * The client builds the registry internally — the common path; you never
+   * import from `@askdb/ai`. Pass exactly one of `providers` or `registry`.
+   */
+  providers?: AiProviderAdapters;
+  /**
+   * Prebuilt AI registry from `createAiRegistry(...)` — advanced alternative
+   * to `providers`, e.g. to share one registry across several clients.
+   */
+  registry?: AiRegistry;
   /** Default schema source. Falls back to config `host.schemaJson`/`host.schemaPath`/env. */
   schema?: SchemaSource;
   /** Default dialect override. Falls back to config.dialect → schema.provider → "postgres". */
@@ -68,8 +77,21 @@ export type AskDbClient = {
   reload(): void;
 };
 
+function resolveRegistry(options: CreateAskDbOptions): AiRegistry {
+  if (options.registry && options.providers) {
+    throw new Error("createAskDb: pass either `providers` or `registry`, not both.");
+  }
+  if (options.registry) return options.registry;
+  if (options.providers) return createAiRegistry(options.providers);
+  throw new Error(
+    "createAskDb: pass `providers` with the AI adapters for your configured provider " +
+      '(e.g. `providers: [openaiProvider]` from "@askdb/ai-openai"), or a prebuilt `registry`.',
+  );
+}
+
 export function createAskDb(options: CreateAskDbOptions): AskDbClient {
-  const { config, registry } = options;
+  const { config } = options;
+  const registry = resolveRegistry(options);
   let cachedSchema: AnyNormalizedSchema | undefined;
   let cachedModel: AskDbLanguageModel | undefined;
 

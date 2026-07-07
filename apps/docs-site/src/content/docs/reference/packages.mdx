@@ -40,17 +40,17 @@ See the **[@askdb/core API reference](/reference/core-api/)** for the full optio
 ### `@askdb/client`
 
 Config-aware facade over `@askdb/core`. `createAskDb()` resolves the schema, model, and
-dialect from your `askdb.config.*` (and a provider registry you supply), so call sites pass
+dialect from your `askdb.config.*` and the provider adapters you pass, so call sites pass
 only a question. Install it when you want the shortest config-driven path; skip it when you
 construct the model and load the schema yourself and call `ask()` directly.
 
-<InstallTabs pkgs="@askdb/client @askdb/ai @askdb/ai-openai @askdb/config" />
+<InstallTabs pkgs="@askdb/client @askdb/ai-openai @askdb/config" />
 
 **Key exports**
 
 | Symbol | Purpose |
 | --- | --- |
-| `createAskDb(options)` | Build a client bound to a config + AI registry. Returns `{ ask, reload }`. Options include `unknownDialect: "throw" \| "fallback-postgres"` for artifacts recorded by an unrecognized provider. |
+| `createAskDb(options)` | Build a client bound to a config + provider adapters (`providers: [openaiProvider]`; or a prebuilt `registry`). Returns `{ ask, reload }`. Options include `unknownDialect: "throw" \| "fallback-postgres"` for artifacts recorded by an unrecognized provider. |
 | `client.ask(question, overrides?)` | Resolve schema/model/dialect and run the pipeline. Overrides: `schema`, `model`, `dialect`, plus all `ask()` options. |
 | `AskDbClient` / `CreateAskDbOptions` / `AskOverrides` | Types for the client, constructor options, and per-call overrides. |
 | `SchemaLoadError` / `SchemaNotConfiguredError` / `ModelNotConfiguredError` / `DialectNotSupportedError` | Typed errors for the resolution steps — catch these to map failures to your own error handling. |
@@ -59,10 +59,11 @@ See the **[@askdb/client API reference](/reference/client-api/)** for the full o
 
 ### `@askdb/ai`
 
-Optional AI provider registry and shared config helpers. Install this when you want AskDB to
-construct AI SDK language or embedding models from `askdb.config.*` / env maps. Pair it with a
-provider adapter package such as `@askdb/ai-openai`. Skip it when you already construct your own
-AI SDK model and pass it to `ask()`.
+AI provider registry and shared config helpers. You rarely install or import this directly:
+`@askdb/client` builds the registry for you from `providers`, and the adapter packages pull
+`@askdb/ai` in as a peer dependency. Import it yourself only to build a model object outside
+the client (`createAiRegistry(...).createLanguageModelFromEnv(...)`) or to share one registry
+across several clients.
 
 <InstallTabs pkgs="@askdb/ai" />
 

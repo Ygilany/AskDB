@@ -13,12 +13,12 @@ import InstallTabs from "../../../components/InstallTabs.astro";
 
 ## Install
 
-<InstallTabs pkgs="@askdb/client @askdb/ai @askdb/ai-openai @askdb/config pg" />
+<InstallTabs pkgs="@askdb/client @askdb/ai-openai @askdb/config pg" />
 
 | Package | Why |
 | --- | --- |
 | `@askdb/client` | `createAskDb()` — resolves the schema, model, and dialect from config. |
-| `@askdb/ai` + `@askdb/ai-openai` | The provider registry and the adapter it builds your model from. Swap `-openai` for `-anthropic`, `-google`, or `-azure`. |
+| `@askdb/ai-openai` | The adapter your model is built from. Swap `-openai` for `-anthropic`, `-google`, or `-azure`. |
 | `@askdb/config` | Loads `.env` and `askdb.config.ts` at startup. |
 | `pg` | The Postgres driver. AskDB doesn't open the connection; your app does. |
 
@@ -30,7 +30,6 @@ Call `createAskDb` once at startup, then `askdb.ask(question)` per request. Sche
 // ask-handler.ts
 import { createAskDb } from "@askdb/client";
 import { bootstrapAskDbEnv, getAskDbRuntimeConfig } from "@askdb/config";
-import { createAiRegistry } from "@askdb/ai";
 import { openaiProvider } from "@askdb/ai-openai";
 import { Pool } from "pg";
 
@@ -38,7 +37,7 @@ bootstrapAskDbEnv({ cwd: process.cwd() });
 
 const askdb = createAskDb({
   config: getAskDbRuntimeConfig(),
-  registry: createAiRegistry([openaiProvider]),
+  providers: [openaiProvider],
   schema: { path: "./my-app.schema" },             // or set host.schemaPath in config and omit
 });
 
@@ -141,7 +140,6 @@ The `/ask` endpoint accepts an optional `execute` flag: `false` (default) return
 // server.ts
 import { createAskDb } from "@askdb/client";
 import { bootstrapAskDbEnv, getAskDbRuntimeConfig } from "@askdb/config";
-import { createAiRegistry } from "@askdb/ai";
 import { openaiProvider } from "@askdb/ai-openai";
 import express, { Request, Response } from "express";
 import pg from "pg";
@@ -153,7 +151,7 @@ app.use(express.json());
 
 const askdb = createAskDb({
   config: getAskDbRuntimeConfig(),
-  registry: createAiRegistry([openaiProvider]),
+  providers: [openaiProvider],
   // schema resolved from host.schemaPath in askdb.config.ts
 });
 

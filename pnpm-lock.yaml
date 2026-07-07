@@ -466,10 +466,11 @@ importers:
         version: 4.1.8(@opentelemetry/api@1.9.1)(@types/node@24.13.2)(vite@8.0.16(@types/node@24.13.2)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.22.4)(yaml@2.9.0))
 
   packages/client:
-    devDependencies:
+    dependencies:
       '@askdb/ai':
-        specifier: workspace:*
+        specifier: workspace:^
         version: link:../ai
+    devDependencies:
       '@askdb/config':
         specifier: workspace:*
         version: link:../config

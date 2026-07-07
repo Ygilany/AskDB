@@ -51,12 +51,11 @@ NL-to-SQL isn't a new problem. Academic research goes back to LUNAR in 1972, and
 <p class="home-terminal-intro">A few lines of TypeScript: load a schema, ask a question, run the SQL through your own connection pool.</p>
 
 <Tabs syncKey="wiring">
-  <TabItem label="Config-driven (@askdb/ai)">
+  <TabItem label="Config-driven (@askdb/client)">
 
 ```ts
 import { createAskDb } from "@askdb/client";
 import { bootstrapAskDbEnv, getAskDbRuntimeConfig } from "@askdb/config";
-import { createAiRegistry } from "@askdb/ai";
 import { openaiProvider } from "@askdb/ai-openai";
 import { Pool } from "pg";
 
@@ -64,7 +63,7 @@ import { Pool } from "pg";
 bootstrapAskDbEnv({ cwd: process.cwd() });
 const askdb = createAskDb({
   config: getAskDbRuntimeConfig(),
-  registry: createAiRegistry([openaiProvider]),
+  providers: [openaiProvider],
   schema: { path: "./my-app.schema" }, // or set host.schemaPath in config and omit
 });
 const pool = new Pool({ connectionString: process.env.DATABASE_URL });
@@ -84,7 +83,7 @@ import { openai } from "@ai-sdk/openai";
 import { Pool } from "pg";
 
 // Load schema once at startup — no config file needed.
-const schema = await loadSchema("./my-app.schema");
+const schema = loadSchema("./my-app.schema");
 const model = openai("gpt-4o-mini"); // any Vercel AI SDK LanguageModel
 const pool = new Pool({ connectionString: process.env.DATABASE_URL });
 

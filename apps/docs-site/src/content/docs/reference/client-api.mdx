@@ -14,14 +14,13 @@ Builds a client bound to a config snapshot and AI provider registry. The schema,
 ```ts
 import { createAskDb } from "@askdb/client";
 import { bootstrapAskDbEnv, getAskDbRuntimeConfig } from "@askdb/config";
-import { createAiRegistry } from "@askdb/ai";
 import { openaiProvider } from "@askdb/ai-openai";
 
 bootstrapAskDbEnv({ cwd: process.cwd() });
 
 const askdb = createAskDb({
   config: getAskDbRuntimeConfig(),
-  registry: createAiRegistry([openaiProvider]),
+  providers: [openaiProvider],
   schema: { path: "./my-app.schema" },
 });
 ```
@@ -31,8 +30,9 @@ const askdb = createAskDb({
 | Field | Type | Required | Description |
 | --- | --- | --- | --- |
 | `config` | `AskDbRuntimeConfig` | yes | Runtime config snapshot from `getAskDbRuntimeConfig()`. Call `bootstrapAskDbEnv()` at startup first. |
-| `registry` | `AiRegistry` | yes | AI provider registry from `createAiRegistry([...providers])`. Used to construct the language model from config. |
-| `schema` | `SchemaSource` | no | Default schema source. Falls back to `config.host.schemaJson` → `config.host.schemaPath` → `ASKDB_SCHEMA_JSON` → `ASKDB_SCHEMA_PATH` env. |
+| `providers` | `AiProviderAdapters` | one of | Provider adapters, e.g. `[openaiProvider]` from `@askdb/ai-openai`. The client builds the registry internally — the common path. |
+| `registry` | `AiRegistry` | one of | Prebuilt registry from `createAiRegistry(...)` — advanced alternative to `providers` (e.g. to share one registry across clients). Pass exactly one of the two. |
+| `schema` | `SchemaSource` | no | Default schema source. Falls back to `host.schemaJson`, then `host.schemaPath`, from `askdb.config.ts`. |
 | `dialect` | `BuiltInDialectId` | no | Default dialect override. Falls back to `config.nlToSql.dialect` → `schema.provider` → `"postgres"`. |
 | `unknownDialect` | `"throw" \| "fallback-postgres"` | no | What to do when `schema.provider` is not a recognized built-in dialect id. Default `"throw"`. |
 | `onResolve` | `(info: ResolveInfo) => void` | no | Hook fired on every `ask()` call once resolution completes. Useful for logging which dialect and model were chosen. `ResolveInfo` has `dialect` and `modelSource`. |
