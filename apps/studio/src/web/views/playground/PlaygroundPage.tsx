@@ -1,5 +1,5 @@
 import { useEffect, useCallback, useState } from "react";
-import { ChevronDown, ChevronRight, Loader2, Lock, Play, Plus, Shield, Sparkles, Trash2 } from "lucide-react";
+import { Check, ChevronDown, ChevronRight, Loader2, Lock, Play, Plus, Shield, Sparkles, Trash2 } from "lucide-react";
 import { useWorkspace } from "../../contexts/workspace-context";
 import { useRag } from "../../contexts/rag-context";
 import { usePlayground } from "../../contexts/playground-context";
@@ -631,6 +631,27 @@ function formatUnknown(value: unknown): string {
   return JSON.stringify(value, null, 2);
 }
 
+type GuardrailExplain = {
+  statementKind: string;
+  checksVerified: readonly string[];
+  remediationNote: string;
+};
+
+function isGuardrailExplain(value: unknown): value is GuardrailExplain {
+  if (typeof value !== "object" || value === null) return false;
+  const v = value as Record<string, unknown>;
+  return (
+    typeof v.statementKind === "string" &&
+    Array.isArray(v.checksVerified) &&
+    v.checksVerified.every((c) => typeof c === "string") &&
+    typeof v.remediationNote === "string"
+  );
+}
+
+function formatCheckLabel(check: string): string {
+  return check.replace(/_/g, " ");
+}
+
 function ExplainSection({ explain }: { explain: unknown }) {
   const [open, setOpen] = useState(false);
   return (
@@ -639,7 +660,30 @@ function ExplainSection({ explain }: { explain: unknown }) {
         {open ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
         Explain
       </button>
-      {open && <pre className="plain-block">{formatUnknown(explain)}</pre>}
+      {open && (
+        isGuardrailExplain(explain) ? (
+          <div style={{ display: "grid", gap: 8, fontSize: 12 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+              <span className="muted" style={{ fontWeight: 600 }}>Statement kind</span>
+              <span className="chip">{explain.statementKind}</span>
+            </div>
+            <div style={{ display: "grid", gap: 4 }}>
+              <span className="muted" style={{ fontWeight: 600 }}>Checks verified</span>
+              <ul style={{ listStyle: "none", margin: 0, padding: 0, display: "grid", gap: 4 }}>
+                {explain.checksVerified.map((check) => (
+                  <li key={check} style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                    <Check size={13} style={{ color: "var(--green-500)", flexShrink: 0 }} />
+                    {formatCheckLabel(check)}
+                  </li>
+                ))}
+              </ul>
+            </div>
+            <p className="muted" style={{ margin: 0, fontStyle: "italic" }}>{explain.remediationNote}</p>
+          </div>
+        ) : (
+          <pre className="plain-block">{formatUnknown(explain)}</pre>
+        )
+      )}
     </div>
   );
 }
