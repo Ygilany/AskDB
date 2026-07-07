@@ -20,6 +20,7 @@ export {
   type AskDialect,
   type AskDialectInput,
   type AskDialectGenerateOptions,
+  type AskUsage,
   type AskDialectGenerateResult,
   type AskGenerateDeps,
 } from "./ask.js";
