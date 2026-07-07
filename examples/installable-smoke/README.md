@@ -13,7 +13,7 @@ This is the executable form of Phase 4 Group 4 (`docs/specs/phase-4-publish-npm/
 5. **`@askdb/enrich` is installable** — public workspace helper exports resolve from the packed tarball.
 6. **`@askdb/rag` is installable** — public exports and the `@askdb/rag/stores/memory` subpath resolve, an in-memory index builds, and `ask({ retriever })` completes.
 7. **Catalog runner type resolves** — `@askdb/introspect` exposes `CatalogQueryRunner` for connector-owned catalog reads.
-8. **Package bins are packaged** — `askdb`, `askdb-tui`, `askdb-studio`, and `askdb-rag` run from `node_modules/.bin`.
+8. **Package bins are packaged** — `askdb`, `askdb-studio`, and `askdb-rag` run from `node_modules/.bin`.
 
 The test fails clearly if any of these regress: `private: true` slips back, `dist/` loses files, types break, or package surfaces stop resolving.
 
@@ -36,4 +36,4 @@ The script works in a fresh `mktemp -d` directory, so the repo stays clean (no c
 ## Layout
 
 - `consumer/` — the consumer fixture (`package.json`, `tsconfig.json`, `src/smoke.ts`).
-- `run.sh` — orchestrator: builds the workspace, packs packages, installs `@askdb/core`, `@askdb/introspect`, `@askdb/postgres`, `@askdb/prisma`, `@askdb/enrich`, `@askdb/tui`, and `@askdb/rag` into a copy of the consumer fixture, typechecks, runs the smoke script, and checks package bins.
+- `run.sh` — orchestrator: builds the workspace, packs packages, installs `@askdb/core`, `@askdb/introspect`, `@askdb/postgres`, `@askdb/prisma`, `@askdb/enrich`, and `@askdb/rag` into a copy of the consumer fixture, typechecks, runs the smoke script, and checks package bins.

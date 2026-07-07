@@ -3,7 +3,6 @@
 "askdb": minor
 "@askdb/http-api": minor
 "@askdb/studio": minor
-"@askdb/tui": minor
 ---
 
 Add shared AI provider configuration for the bundled apps.

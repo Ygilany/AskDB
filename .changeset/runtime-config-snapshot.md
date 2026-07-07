@@ -5,7 +5,6 @@
 "@askdb/http-api": patch
 "@askdb/studio": patch
 "@askdb/rag": patch
-"@askdb/tui": patch
 ---
 
 **Breaking (`@askdb/config`):** `bootstrapAskDbEnv` installs a runtime snapshot (`getAskDbRuntimeConfig`) instead of merging AskDB settings into `process.env`. Legacy flat `askdb.config` exports are removed; use `defineConfig` only. `getAskDbRuntimeEnv` is removed—pass `getAskDbRuntimeConfig().ai.aiEnv` into `@askdb/core` env helpers.

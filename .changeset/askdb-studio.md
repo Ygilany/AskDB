@@ -1,7 +1,6 @@
 ---
 "@askdb/studio": minor
 "askdb": minor
-"@askdb/tui": patch
 ---
 
 Add `@askdb/studio`, a local browser UI for Schema v2 enrichment. Studio can browse tables and columns, edit describable metadata, save `tables/*.md`, request AI enrichment suggestions with the configured OpenAI-compatible key, and generate sample NL-to-SQL output against the saved schema enrichment.

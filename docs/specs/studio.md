@@ -5,9 +5,9 @@
 
 ## Overview
 
-AskDB Studio is a local browser-based authoring surface for describable schema artifacts. It is started with `askdb-studio --schema <path>`, which launches a local server and opens the browser app. The UI reads and writes the same `schema.json` + `tables/*.md` artifact as the TUI, using `@askdb/enrich` for all workspace logic.
+AskDB Studio is a local browser-based authoring surface for describable schema artifacts. It is started with `askdb-studio --schema <path>`, which launches a local server and opens the browser app. The UI reads and writes the standard `schema.json` + `tables/*.md` artifact, using `@askdb/enrich` for all workspace logic.
 
-Studio is built with Vite + React + shadcn/ui. The server is a small Express app that serves the compiled React assets and exposes a typed JSON API. All enrichment logic runs through `@askdb/enrich` — Studio does not depend on `@askdb/tui`.
+Studio is built with Vite + React + shadcn/ui. The server is a small Express app that serves the compiled React assets and exposes a typed JSON API. All enrichment logic runs through `@askdb/enrich`.
 
 The product shape follows the Prisma Studio pattern: a CLI command starts a local server, the server opens/serves a browser app, and the UI talks to a small local API. Studio is not a hosted service; it is a local developer tool.
 
@@ -27,12 +27,11 @@ The product shape follows the Prisma Studio pattern: a CLI command starts a loca
 
 - Live SQL execution against a database
 - Multi-user / hosted deployment
-- Terminal UI features — see [`schema-authoring-and-enrichment.md`](./schema-authoring-and-enrichment.md) for `@askdb/tui`
 - Tenant policy authoring UI beyond the sample ask controls — see [`multi-tenancy.md`](./multi-tenancy.md)
 
 ## Design decisions
 
-- **`@askdb/enrich`, not `@askdb/tui`** — Studio shares the headless workspace logic from `@askdb/enrich`. Depending on `@askdb/tui` would have coupled a browser app to a terminal UI package. See [ADR 0004](../adrs/0004-enrichment-package-boundary.md).
+- **Workspace logic lives in `@askdb/enrich`** — Studio shares the headless workspace logic from `@askdb/enrich` rather than owning it, so custom authoring surfaces can build on the same behavior. See [ADR 0004](../adrs/0004-enrichment-package-boundary.md).
 - **Local server + browser app pattern** — follows Prisma Studio: no hosted infrastructure, no auth, no remote data. The server is the trust boundary; it reads/writes the local schema artifact.
 - **Typed DTOs shared between server and client** — `src/shared/api.ts` defines the Studio DTO types used by both the server handlers and the React client. Type-safety at the API boundary prevents silent shape drift.
 - **shadcn/ui primitives** — consistent accessible components without a heavy UI framework dependency.
@@ -60,7 +59,7 @@ askdb-studio --schema <path> --port 3000
 ## Test bar
 
 - `pnpm --filter @askdb/studio build` succeeds; server TypeScript to `dist/`; React client to `dist/client/`.
-- `@askdb/studio` depends on `@askdb/enrich` and does not depend on `@askdb/tui` (package assertion).
+- `@askdb/studio` depends on `@askdb/enrich` for all workspace logic (package assertion).
 - API contract tests: each endpoint returns the documented shape; error responses include typed `code`.
 - Schema editing: `POST /api/tables/:tableId` saves draft and reloads workspace from disk; reloading Studio shows saved values.
 - AI suggestion: `POST /api/suggest` returns candidates; missing AI config returns a typed config error, not a 500.

@@ -6,7 +6,6 @@
 "askdb": minor
 "@askdb/http-api": minor
 "@askdb/studio": minor
-"@askdb/tui": minor
 ---
 
 Make AI provider adapters self-describing. Standalone `resolveAiConfig` and

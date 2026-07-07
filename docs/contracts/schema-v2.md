@@ -31,8 +31,8 @@ my-app.schema/
 | File | Required | Owner | Source of truth for |
 |---|---|---|---|
 | `schema.json` | yes | introspection / human | physical structure (tables, columns, types, FKs, `sensitive`) |
-| `tables/<table>.md` | optional, one per described table | TUI / web catalog / human | descriptions, business context, aliases, common query language, examples |
-| `concepts.md` | optional | TUI / human | cross-table vocabulary (e.g. *customer* → users + leads) |
+| `tables/<table>.md` | optional, one per described table | Studio / web catalog / human | descriptions, business context, aliases, common query language, examples |
+| `concepts.md` | optional | Studio / human | cross-table vocabulary (e.g. *customer* → users + leads) |
 | `schema.lock.json` | optional | `@askdb/rag` | embedding checksums per chunk id |
 
 A v2 directory with `schema.json` and zero `tables/*.md` files is valid — `@askdb/core` loads it with an empty describable layer (no descriptions, no aliases, no concepts). Authoring the describable layer is opt-in per table.
@@ -182,7 +182,7 @@ Front-matter must be **complete enough to validate** — unknown keys are an err
 
 ### Markdown body — recognized H2 sections
 
-The TUI and chunker recognize these H2 headings (case-insensitive). Other H2s are stored as freeform body text:
+Authoring surfaces and the chunker recognize these H2 headings (case-insensitive). Other H2s are stored as freeform body text:
 
 | H2 | Used by chunker as | Notes |
 |---|---|---|
@@ -262,7 +262,7 @@ The `sensitive` flag must flow consistently from the physical layer through prom
 | **Concept chunks** | Concepts that **link to** a sensitive id, or whose description mentions a sensitive column by name, are excluded entirely by default. | Same option as above. |
 | **Logs** | Counts only — `askdb.rag.sensitive_chunks_excluded`, `askdb.rag.sensitive_chunks_included`. Never log identifiers or values. | n/a |
 
-**Authoring rule (TUI):** when a user adds a description that mentions a sensitive column by name, the TUI shows a non-blocking warning explaining the chunk-exclusion behavior. The user can still save; the chunker will exclude the resulting chunk.
+**Authoring rule (authoring surfaces):** when a user adds a description that mentions a sensitive column by name, the authoring surface shows a non-blocking warning explaining the chunk-exclusion behavior. The user can still save; the chunker will exclude the resulting chunk.
 
 **Bundling rule:** the `bundle` step preserves sensitive flags faithfully; the bundled JSON does not mask anything that the directory format does not also mask. Filtering happens at chunk time, not at bundle time.
 
@@ -270,7 +270,7 @@ The `sensitive` flag must flow consistently from the physical layer through prom
 
 ## Versioning
 
-Schema v2 is the only format AskDB reads. Pre-1.0, v2 may evolve **in place** — additive fields can land without a version bump, and breaking field changes require a contract-doc revision (this file) plus a coordinated release across `@askdb/core`, `@askdb/introspect`, `@askdb/enrich`, `@askdb/tui`, and `@askdb/rag`. Post-1.0, any breaking change requires a `version: 3` bump and a new contract document at `docs/contracts/schema-v3.md`.
+Schema v2 is the only format AskDB reads. Pre-1.0, v2 may evolve **in place** — additive fields can land without a version bump, and breaking field changes require a contract-doc revision (this file) plus a coordinated release across `@askdb/core`, `@askdb/introspect`, `@askdb/enrich`, and `@askdb/rag`. Post-1.0, any breaking change requires a `version: 3` bump and a new contract document at `docs/contracts/schema-v3.md`.
 
 Re-introspection and on-disk evolution behavior:
 
@@ -291,7 +291,6 @@ Re-introspection and on-disk evolution behavior:
 | Parser, validator, normalizer, prompt assembly | `@askdb/core` |
 | Schema introspection (catalog → physical layer + stable id assignment) | `@askdb/introspect` |
 | Headless authoring workflow (read/write `tables/*.md`, `concepts.md`, drafts, markdown-section updates, bundling, suggestion target/context helpers) | `@askdb/enrich` |
-| Terminal authoring surface | `@askdb/tui`, built on `@askdb/enrich` |
 | Local browser authoring surface | `@askdb/studio`, built on `@askdb/enrich` |
 | Chunker, sensitive propagation, lock file | `@askdb/rag` |
 

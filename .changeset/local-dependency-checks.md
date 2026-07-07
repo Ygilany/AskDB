@@ -10,7 +10,6 @@
 "@askdb/mysql": patch
 "@askdb/postgres": patch
 "@askdb/rag": patch
-"@askdb/tui": patch
 ---
 
 Refresh dependency ranges across the workspace.

@@ -1,5 +1,4 @@
 ---
-"@askdb/tui": patch
 "@askdb/studio": patch
 ---
 

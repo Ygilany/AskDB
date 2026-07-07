@@ -7,7 +7,6 @@
 "askdb": patch
 "@askdb/http-api": patch
 "@askdb/studio": patch
-"@askdb/tui": patch
 ---
 
 Move AskDB AI provider construction helpers from `@askdb/core` into the new `@askdb/ai` registry and provider adapter packages.

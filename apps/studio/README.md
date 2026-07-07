@@ -43,8 +43,7 @@ button. When running locally, Studio can install the missing driver for you.
 
 Studio uses `@askdb/enrich` for the shared non-UI Schema v2 authoring logic:
 workspace loading, editable drafts, markdown/frontmatter preservation, save
-helpers, and suggestion context. It should not depend on `@askdb/tui`, which is
-the separate terminal authoring surface.
+helpers, and suggestion context.
 
 ## Development
 

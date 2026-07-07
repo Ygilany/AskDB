@@ -28,13 +28,12 @@ AskDB ships as a small set of focused npm packages. Each one has a single respon
 | `askdb` | `askdb` binary; thin wrapper over `@askdb/core`. Already shipped; published alongside core. | Phase 4 (publish) |
 | `@askdb/http-api` | HTTP server surface; thin wrapper over `@askdb/core`. Already shipped (Phase 3). | Phase 4 (publish) |
 | `@askdb/introspect` | Schema introspection: per-engine connector pattern that reads database catalogs (Postgres first) and emits a Schema v2 physical artifact. Live (`CatalogQueryRunner`) and air-gapped (run SQL templates, hand off the export bundle) front doors share one connector. | Phase 6 |
-| `@askdb/enrich` | Headless Schema v2 enrichment workspace helpers: load/save authoring workspaces, build table drafts, preserve markdown sections, validate concept links, bundle split artifacts, and build AI suggestion targets/context. Shared by TUI, Studio, and custom authoring surfaces. | Phase 7 follow-up |
-| `@askdb/tui` | `askdb-tui` (or `askdb enrich`) interactive enrichment surface; reads a Schema v2 physical artifact (typically produced by `@askdb/introspect`), AI-suggests descriptions/aliases, writes the **describable schema artifact** ([`docs/contracts/schema-v2.md`](contracts/schema-v2.md)). | Phase 7 |
+| `@askdb/enrich` | Headless Schema v2 enrichment workspace helpers: load/save authoring workspaces, build table drafts, preserve markdown sections, validate concept links, bundle split artifacts, and build AI suggestion targets/context. Shared by Studio and custom authoring surfaces. | Phase 7 follow-up |
 | `@askdb/rag` | Chunker + retriever; **bring-your-own embedder** (AI SDK `embed()` style) and **bring-your-own vector store** (in-memory default, file-backed, pgvector adapters). Wires into `@askdb/core` `ask()` as an optional retriever. | Phase 8 |
 
 A future **`@askdb/sdk`** + **embeddable UI** package may follow once the headless surfaces stabilize (later phase).
 
-Shared dependencies are layered by concern. `@askdb/core` is the schema/NL-to-SQL contract package. `@askdb/enrich` depends on Core and owns reusable Schema v2 authoring workflow logic. UI surfaces such as `@askdb/tui` and `@askdb/studio` depend on `@askdb/enrich` instead of each other. See [AskDB Architecture](architecture.md) and [ADR 0004 — Enrichment-package boundary](adrs/0004-enrichment-package-boundary.md).
+Shared dependencies are layered by concern. `@askdb/core` is the schema/NL-to-SQL contract package. `@askdb/enrich` depends on Core and owns reusable Schema v2 authoring workflow logic. UI surfaces such as `@askdb/studio` depend on `@askdb/enrich` rather than owning workspace logic themselves. See [AskDB Architecture](architecture.md) and [ADR 0004 — Enrichment-package boundary](adrs/0004-enrichment-package-boundary.md).
 
 ## Runtime and frameworks
 
@@ -63,10 +62,9 @@ After init, add components with `pnpm dlx shadcn@latest add …` as needed.
 - **Optional live database** — When customers want live schema introspection, they can attach **BYO** connection details on their infrastructure. That path is **not** required for schema enrichment, NL→SQL drafting, or export-only workflows.
 - **Enrichment pipeline (headless-first)** — A Schema v2 physical layer (typically produced by `@askdb/introspect` in Phase 6, or hand-authored) is enriched into a **describable schema** through:
   - **`@askdb/enrich`** — shared headless workspace logic for loading, editing, saving, validating, and bundling the markdown + YAML front-matter artifact ([`docs/contracts/schema-v2.md`](contracts/schema-v2.md)).
-  - **`@askdb/tui`** — interactive terminal authoring with AI-suggest + human-confirm, built on `@askdb/enrich`.
-  - **`@askdb/studio`** — local browser authoring, sample NL-to-SQL checks, and RAG-indexed schema exploration, also built on `@askdb/enrich`.
+  - **`@askdb/studio`** — local browser authoring with AI-suggest + human-confirm, sample NL-to-SQL checks, and RAG-indexed schema exploration, built on `@askdb/enrich`.
   - **Web catalog UI** (later phase) — graphical alternative authoring against the **same** Schema v2 artifact.
-  Both surfaces write the same on-disk format; consumers always read it through `@askdb/core`.
+  All surfaces write the same on-disk format; consumers always read it through `@askdb/core`.
 
 ## Schema introspection
 
@@ -76,8 +74,8 @@ After init, add components with `pnpm dlx shadcn@latest add …` as needed.
 - **Two front doors, one connector** — Both modes produce the **same** `IntrospectionResult` and the **same** on-disk artifact:
   - **Live** — pass a `CatalogQueryRunner`; the connector runs documented `pg_catalog` / `information_schema` queries against the live database.
   - **Air-gapped** — run the same SQL templates in `psql`, an IDE, or CI; export the rows as a bundle (CSV/JSON); hand the bundle path to `@askdb/introspect` and get an identical artifact without AskDB ever touching credentials.
-- **Output** — a `<schemaId>.schema/` directory whose `schema.json` is the Schema v2 physical layer ([`docs/contracts/schema-v2.md`](contracts/schema-v2.md)). The describable layer (`tables/*.md`, `concepts.md`) is **never written or rewritten** by introspection; that belongs to `@askdb/enrich`-backed authoring surfaces (`@askdb/tui`, `@askdb/studio`, or custom UIs) or hand-authoring.
-- **ID-anchored re-introspection** — On a second run against an existing artifact, only `schema.json` is rewritten. Stable IDs from the previous run are preserved; new columns appear with new IDs; orphaned IDs (deleted columns) surface as `IntrospectionResult.warnings` for the TUI to act on. The describable layer is preserved verbatim.
+- **Output** — a `<schemaId>.schema/` directory whose `schema.json` is the Schema v2 physical layer ([`docs/contracts/schema-v2.md`](contracts/schema-v2.md)). The describable layer (`tables/*.md`, `concepts.md`) is **never written or rewritten** by introspection; that belongs to `@askdb/enrich`-backed authoring surfaces (`@askdb/studio` or custom UIs) or hand-authoring.
+- **ID-anchored re-introspection** — On a second run against an existing artifact, only `schema.json` is rewritten. Stable IDs from the previous run are preserved; new columns appear with new IDs; orphaned IDs (deleted columns) surface as `IntrospectionResult.warnings` for authoring surfaces to act on. The describable layer is preserved verbatim.
 - **Determinism** — Catalog queries always include explicit `ORDER BY`; multi-column foreign keys preserve the constraint's column ordering, not the table's; enum values preserve their declared sort order. Two runs against an unchanged database produce a byte-identical `schema.json`.
 
 ## Schema description format
@@ -111,7 +109,7 @@ Front-matter is validated by zod (round-trippable through `@askdb/enrich` author
 ## Release and versioning
 
 - `@askdb/core` is published to npm with **semver** discipline. The contract surface (exports from `packages/core/src/index.ts` plus the formal contract docs under `docs/contracts/`) is the boundary that semver applies to.
-- Companion packages (`askdb`, `@askdb/http-api`, `@askdb/introspect`, `@askdb/enrich`, `@askdb/tui`, `@askdb/rag`) are versioned in lockstep where shared types matter; release tooling lives at the repo root (e.g. **changesets** — exact tooling decided in Phase 4).
+- Companion packages (`askdb`, `@askdb/http-api`, `@askdb/introspect`, `@askdb/enrich`, `@askdb/rag`) are versioned in lockstep where shared types matter; release tooling lives at the repo root (e.g. **changesets** — exact tooling decided in Phase 4).
 - Pre-1.0 versions allow contract evolution; once 1.0 ships, breaking changes require a contract doc bump (e.g. `schema-v2` → `schema-v3`) and a major version.
 
 ## Other tooling

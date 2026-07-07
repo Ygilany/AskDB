@@ -1,7 +1,7 @@
 # Feature: Distribution
 
 **Status:** Complete  
-**Packages:** `@askdb/core`, `@askdb/ai`, `@askdb/ai-openai`, `@askdb/ai-azure`, `@askdb/ai-google`, `@askdb/connectors`, `@askdb/postgres`, `@askdb/mysql`, `@askdb/sqlite`, `@askdb/sqlserver`, `@askdb/prisma`, `@askdb/introspect`, `@askdb/rag`, `@askdb/enrich`, `@askdb/tui`, `askdb`
+**Packages:** `@askdb/core`, `@askdb/ai`, `@askdb/ai-openai`, `@askdb/ai-azure`, `@askdb/ai-google`, `@askdb/connectors`, `@askdb/postgres`, `@askdb/mysql`, `@askdb/sqlite`, `@askdb/sqlserver`, `@askdb/prisma`, `@askdb/introspect`, `@askdb/rag`, `@askdb/enrich`, `askdb`
 
 ## Overview
 
@@ -54,7 +54,6 @@ Published packages and their primary exports:
 | `@askdb/introspect` | `introspect()`, `Connector` interface |
 | `@askdb/rag` | `chunkSchema()`, `buildSchemaIndex()`, vector store adapters |
 | `@askdb/enrich` | `Workspace`, draft/save helpers, bundler |
-| `@askdb/tui` | `askdb-tui` binary, terminal enrichment flow |
 | `askdb` | `askdb` binary — CLI entry point |
 
 `semver` contract scope: public `index.ts` exports plus contract docs under `docs/contracts/`.

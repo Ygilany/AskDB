@@ -72,14 +72,13 @@ In CI or scripts, pass `--yes` and use flags instead of prompts. See `askdb init
 
 `askdb.config.ts` is TypeScript-checked and uses `env("VAR_NAME")` for every secret-bearing value — no real keys are written to disk.
 
-## Enrichment UIs
+## Enrichment UI
 
 ```bash
-askdb enrich --schema my-app.schema
 askdb studio --schema my-app.schema
 ```
 
-`askdb enrich` opens the terminal UI. `askdb studio` starts a local browser UI for browsing tables, editing Schema v2 enrichment, requesting AI suggestions, and generating sample NL-to-SQL output before shipping the schema.
+`askdb studio` starts a local browser UI for browsing tables, editing Schema v2 enrichment, requesting AI suggestions, and generating sample NL-to-SQL output before shipping the schema. `askdb enrich` is an alias for the same command.
 
 ## Introspection
 

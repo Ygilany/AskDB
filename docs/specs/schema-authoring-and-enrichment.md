@@ -1,18 +1,15 @@
 # Feature: Schema Authoring and Enrichment
 
 **Status:** Complete  
-**Packages:** `@askdb/enrich`, `@askdb/tui`
+**Packages:** `@askdb/enrich`
 
 ## Overview
 
 Schema enrichment is the process of authoring the describable layer of a schema artifact — writing descriptions, aliases, common query language, and example questions into `tables/*.md` files and `concepts.md`. This turns a bare physical schema (produced by introspection) into a fully grounded artifact that improves NL→SQL quality.
 
-Two packages handle this:
+- **`@askdb/enrich`** — headless, shared workspace logic: loading a describable schema directory as an editable workspace, constructing and saving table drafts, round-tripping `tables/*.md` front-matter, managing `concepts.md`, building AI suggestion targets, and bundling a directory into a single JSON. This package is consumed by Studio and any custom authoring surface.
 
-- **`@askdb/enrich`** — headless, shared workspace logic: loading a describable schema directory as an editable workspace, constructing and saving table drafts, round-tripping `tables/*.md` front-matter, managing `concepts.md`, building AI suggestion targets, and bundling a directory into a single JSON. This package is consumed by both the TUI and Studio.
-- **`@askdb/tui`** — the interactive terminal authoring surface. Walks tables and columns, AI-suggests descriptions and aliases (BYO key), and presents each candidate for human confirm/edit/reject before saving. No auto-save.
-
-The dependency direction: `@askdb/core ← @askdb/enrich ← @askdb/tui` and `@askdb/core ← @askdb/enrich ← @askdb/studio`. Studio does not depend on TUI. See [ADR 0004](../adrs/0004-enrichment-package-boundary.md).
+The dependency direction: `@askdb/core ← @askdb/enrich ← @askdb/studio`. UI surfaces never own workspace logic. See [ADR 0004](../adrs/0004-enrichment-package-boundary.md).
 
 ## Scope
 
@@ -27,15 +24,6 @@ The dependency direction: `@askdb/core ← @askdb/enrich ← @askdb/tui` and `@a
 - AI suggestion source, target, and context helpers (builds the enrichment prompt; caller supplies the model)
 - `bundleSchema(dir) → bundledJson` — compiles a schema directory into a single packed JSON
 
-**`@askdb/tui`:**
-- Interactive terminal app (`askdb-tui` binary)
-- Table list + per-table form: table description, aliases, `primaryEntity`, tags, per-column description/aliases/enum/sensitive override
-- `Common query language` free-form editor, `Example questions` bullet-list editor
-- AI-suggest with confirm-before-save: suggests candidates, user accepts/edits/rejects; batch `--auto-suggest-all` mode
-- Sensitive-column warning when a description mentions a sensitive column name (non-blocking)
-- Re-introspection ingestion: surfaces orphan IDs (offer prune) and new un-described IDs (queue for description)
-- Idempotent: re-opening without edits leaves files byte-identical
-
 ### Out of scope
 
 - Live database execution or introspection — see [`introspection.md`](./introspection.md)
@@ -44,7 +32,7 @@ The dependency direction: `@askdb/core ← @askdb/enrich ← @askdb/tui` and `@a
 
 ## Design decisions
 
-- **Separate enrich package from TUI** — when Studio was added it needed the same headless workspace behavior as the TUI. Keeping that logic in `@askdb/tui` would have made Studio depend on a terminal UI package. `@askdb/enrich` is the clean shared layer. See [ADR 0004](../adrs/0004-enrichment-package-boundary.md).
+- **Enrich is a headless library, not a UI** — authoring surfaces (Studio, custom UIs) depend on `@askdb/enrich`; workspace logic never lives inside a UI package. See [ADR 0004](../adrs/0004-enrichment-package-boundary.md).
 - **Confirm before save** — AI suggestions are never auto-applied. Every suggestion is presented for human review. This is a trust-first principle: the human is the author; the AI is a typing assistant.
 - **Front-matter-only writes** — the writer touches only YAML front-matter. Markdown body (prose, examples) is preserved verbatim. Hand-edited prose is safe.
 - **Idempotency** — opening a workspace, reviewing without editing, and quitting leaves every file byte-identical. No hidden rewrites.
@@ -71,18 +59,17 @@ buildSuggestSource(table: WorkspaceTable): SuggestSource
 buildSuggestContext(workspace: Workspace): SuggestContext
 ```
 
-```ts
-// @askdb/tui binary
-askdb-tui --schema <path>         // open TUI on a schema artifact directory
-askdb-tui bundle <dir> --out <f>  // bundle directory to JSON
+```sh
+# CLI surface
+askdb enrich [--schema <path>]      # opens Studio on the schema artifact
+askdb bundle <dir> --out <f>        # bundle directory to JSON via @askdb/enrich
 ```
 
 ## Test bar
 
 - `pnpm build` and `pnpm test` pass from repo root.
-- `@askdb/enrich`: workspace loading/saving, draft construction, markdown section replacement, concepts persistence, concept link validation, and bundling all covered without Ink/terminal dependencies.
-- `@askdb/tui` and `@askdb/studio` both import shared helpers from `@askdb/enrich`; Studio has no dependency on `@askdb/tui`.
-- TUI headless author flow: mock-prompted walk through a fixture → edit table description → save → file content matches expected front-matter. Round-trip via the describable schema writer.
+- `@askdb/enrich`: workspace loading/saving, draft construction, markdown section replacement, concepts persistence, concept link validation, and bundling all covered without terminal or browser dependencies.
+- `@askdb/studio` imports shared helpers from `@askdb/enrich` and owns no workspace logic of its own.
 - AI-suggest with mock model: suggestion queued; only persists on confirm; no file changes without confirm.
 - Idempotency: opening, viewing, and quitting without edits leaves files byte-identical.
 - Sensitive warning: description mentioning a sensitive column name emits warning without blocking save.

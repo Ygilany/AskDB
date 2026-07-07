@@ -24,7 +24,7 @@ describe("workspace", () => {
   let schemaDir: string;
 
   beforeEach(() => {
-    tmp = mkdtempSync(join(tmpdir(), "askdb-tui-ws-"));
+    tmp = mkdtempSync(join(tmpdir(), "askdb-enrich-ws-"));
     schemaDir = join(tmp, "orders-users.schema");
     cpSync(FIXTURE, schemaDir, { recursive: true });
   });

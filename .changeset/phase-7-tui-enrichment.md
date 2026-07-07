@@ -1,7 +1,6 @@
 ---
 "@askdb/core": minor
 "askdb": minor
-"@askdb/tui": minor
 ---
 
 Add the Phase 7 `@askdb/tui` enrichment package and CLI shims.
