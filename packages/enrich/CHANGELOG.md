@@ -1,5 +1,12 @@
 # @askdb/enrich
 
+## 0.2.0-beta.10
+
+### Patch Changes
+
+- Updated dependencies [7311ac5]
+  - @askdb/core@1.0.0-beta.36
+
 ## 0.2.0-beta.9
 
 ### Patch Changes

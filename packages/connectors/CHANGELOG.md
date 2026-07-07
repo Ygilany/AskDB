@@ -1,5 +1,11 @@
 # @askdb/connectors
 
+## 0.1.0-beta.4
+
+### Patch Changes
+
+- @askdb/introspect@0.3.0-beta.13
+
 ## 0.1.0-beta.3
 
 ### Patch Changes

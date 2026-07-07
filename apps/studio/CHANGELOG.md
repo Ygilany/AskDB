@@ -1,5 +1,54 @@
 # @askdb/studio
 
+## 0.2.0-beta.30
+
+### Patch Changes
+
+- 7311ac5: **@askdb/client**: `createAskDb()` accepts a new `providers` option — pass the adapter(s) for your configured provider and the client builds the AI registry internally:
+
+  ```ts
+  import { createAskDb } from "@askdb/client";
+  import { openaiProvider } from "@askdb/ai-openai";
+
+  const askdb = createAskDb({
+    config: getAskDbRuntimeConfig(),
+    providers: [openaiProvider], // no more createAiRegistry boilerplate
+  });
+  ```
+
+  You no longer import anything from `@askdb/ai` on the config-driven path — it is now a regular dependency of `@askdb/client` (previously a peer), so install commands drop it too. The existing `registry` option remains supported as the advanced alternative (e.g. sharing one registry across several clients); passing both, or neither, throws with a clear message. Non-breaking for existing `registry` callers.
+
+  **@askdb/studio**: the Playground "Get the code" panel emits the new `providers` style in its config-driven snippet.
+
+- fa690a3: Fix the Query Playground's Token Usage panel, which never rendered: `ai@6`'s `generateText` usage object reports `inputTokens`/`outputTokens` rather than the legacy `promptTokens`/`completionTokens` fields, so the studio server's usage collector always produced `null`. The panel also now renders below the query results section instead of above it.
+- b7f70b6: **@askdb/studio**: The Overview page's "Resync schema" status message now shows a loading/check/error icon (previously plain colored text via `InlineStatus`, unlike `StatusBanner`'s matching icon set) and clears itself 4s after success, matching the existing auto-clear behavior for table save and RAG build statuses.
+- 56920c8: Clean up the Query Playground's Explain section: it's now collapsed by default (was always expanded, pushing "Get the code" and "Execute Query" down the page), and the guardrail check output renders as a statement-kind chip plus a checkmark list instead of a raw JSON dump. Unrecognized explain shapes still fall back to the raw JSON view.
+- 7311ac5: Surface token usage through the full AskDB stack and add comprehensive API reference documentation.
+
+  **@askdb/core** — new `AskUsage` type (`promptTokens`, `completionTokens`, `totalTokens`); `generateSelectSql` now captures token usage from the `generateText` result; `AskDialectGenerateResult` and `AskPipelineResult` both include `usage?: AskUsage`; exported from the package index.
+
+  **@askdb/http-api** — `POST /ask` success response now includes `usage: AskUsage | null`.
+
+  **@askdb/studio** — Token usage re-added to the Query Playground (was dropped in the IA redesign migration); `UsageSummary` extracted to a shared component used by both the Playground and RAG Index page; display now correctly shows Prompt, Completion, and Embeddings rows individually.
+
+- Updated dependencies [162c33b]
+- Updated dependencies [7311ac5]
+  - @askdb/ai@0.1.0-beta.4
+  - @askdb/ai-openai@1.0.0-beta.4
+  - @askdb/ai-anthropic@1.0.0-beta.2
+  - @askdb/ai-google@1.0.0-beta.4
+  - @askdb/ai-azure@1.0.0-beta.4
+  - @askdb/core@1.0.0-beta.36
+  - @askdb/enrich@0.2.0-beta.10
+  - @askdb/introspect@0.3.0-beta.13
+  - @askdb/mysql@0.1.0-beta.14
+  - @askdb/postgres@0.2.0-beta.15
+  - @askdb/rag@0.2.0-beta.19
+  - @askdb/sqlite@0.1.0-beta.14
+  - @askdb/sqlserver@0.1.0-beta.15
+  - @askdb/connectors@0.1.0-beta.4
+  - @askdb/prisma@0.2.0-beta.13
+
 ## 0.2.0-beta.29
 
 ### Minor Changes

@@ -1,5 +1,19 @@
 # @askdb/tui
 
+## 0.2.0-beta.17
+
+### Patch Changes
+
+- Updated dependencies [162c33b]
+- Updated dependencies [7311ac5]
+  - @askdb/ai@0.1.0-beta.4
+  - @askdb/ai-openai@1.0.0-beta.4
+  - @askdb/ai-anthropic@1.0.0-beta.2
+  - @askdb/ai-google@1.0.0-beta.4
+  - @askdb/ai-azure@1.0.0-beta.4
+  - @askdb/core@1.0.0-beta.36
+  - @askdb/enrich@0.2.0-beta.10
+
 ## 0.2.0-beta.16
 
 ### Patch Changes

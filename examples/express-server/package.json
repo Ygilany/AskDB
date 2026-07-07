@@ -1,7 +1,7 @@
 {
   "name": "askdb-express-server-example",
   "private": true,
-  "version": "0.0.2-beta.0",
+  "version": "0.0.2-beta.1",
   "type": "module",
   "scripts": {
     "start": "tsx server.ts",

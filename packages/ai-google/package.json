@@ -1,6 +1,6 @@
 {
   "name": "@askdb/ai-google",
-  "version": "1.0.0-beta.3",
+  "version": "1.0.0-beta.4",
   "description": "AskDB Google Generative AI provider adapter for @askdb/ai.",
   "keywords": [
     "askdb",

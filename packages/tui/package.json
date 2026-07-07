@@ -1,6 +1,6 @@
 {
   "name": "@askdb/tui",
-  "version": "0.2.0-beta.16",
+  "version": "0.2.0-beta.17",
   "description": "AskDB TUI: interactive terminal authoring surface that enriches a Schema v2 directory with descriptions, aliases, common query language, and example questions. AI-suggest + human-confirm; BYO LanguageModel.",
   "keywords": [
     "askdb",

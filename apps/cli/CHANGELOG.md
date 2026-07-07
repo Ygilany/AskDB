@@ -1,5 +1,32 @@
 # askdb
 
+## 1.0.0-beta.36
+
+### Patch Changes
+
+- Updated dependencies [7311ac5]
+- Updated dependencies [fa690a3]
+- Updated dependencies [162c33b]
+- Updated dependencies [b7f70b6]
+- Updated dependencies [56920c8]
+- Updated dependencies [7311ac5]
+  - @askdb/client@1.0.0-beta.3
+  - @askdb/studio@0.2.0-beta.30
+  - @askdb/ai@0.1.0-beta.4
+  - @askdb/ai-openai@1.0.0-beta.4
+  - @askdb/ai-anthropic@1.0.0-beta.2
+  - @askdb/ai-google@1.0.0-beta.4
+  - @askdb/ai-azure@1.0.0-beta.4
+  - @askdb/core@1.0.0-beta.36
+  - @askdb/tui@0.2.0-beta.17
+  - @askdb/introspect@0.3.0-beta.13
+  - @askdb/mysql@0.1.0-beta.14
+  - @askdb/postgres@0.2.0-beta.15
+  - @askdb/sqlite@0.1.0-beta.14
+  - @askdb/sqlserver@0.1.0-beta.15
+  - @askdb/connectors@0.1.0-beta.4
+  - @askdb/prisma@0.2.0-beta.13
+
 ## 1.0.0-beta.35
 
 ### Patch Changes

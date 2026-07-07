@@ -1,5 +1,14 @@
 # @askdb/sqlserver
 
+## 0.1.0-beta.15
+
+### Patch Changes
+
+- Updated dependencies [7311ac5]
+  - @askdb/core@1.0.0-beta.36
+  - @askdb/introspect@0.3.0-beta.13
+  - @askdb/connectors@0.1.0-beta.4
+
 ## 0.1.0-beta.14
 
 ### Minor Changes
