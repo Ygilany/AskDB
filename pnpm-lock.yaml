@@ -190,18 +190,27 @@ importers:
       '@askdb/config':
         specifier: workspace:*
         version: link:../../packages/config
+      '@askdb/connectors':
+        specifier: workspace:*
+        version: link:../../packages/connectors
       '@askdb/core':
         specifier: workspace:*
         version: link:../../packages/core
       '@askdb/enrich':
         specifier: workspace:*
         version: link:../../packages/enrich
+      '@askdb/introspect':
+        specifier: workspace:*
+        version: link:../../packages/introspect
       '@askdb/mysql':
         specifier: workspace:*
         version: link:../../packages/mysql
       '@askdb/postgres':
         specifier: workspace:*
         version: link:../../packages/postgres
+      '@askdb/prisma':
+        specifier: workspace:*
+        version: link:../../packages/prisma
       '@askdb/rag':
         specifier: workspace:*
         version: link:../../packages/rag
