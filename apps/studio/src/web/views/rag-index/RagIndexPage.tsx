@@ -7,7 +7,8 @@ import { Input } from "../../components/ui/input";
 import { Textarea } from "../../components/ui/textarea";
 import { InlineStatus } from "../../components/common/StatusBanner";
 import { EmptyText } from "../../components/common/EmptyText";
-import type { StudioRagChunkDto, StudioRequestUsageDto } from "@/shared/api";
+import { UsageSummary } from "../../components/common/UsageSummary";
+import type { StudioRagChunkDto } from "@/shared/api";
 import { formatNumber } from "../../lib/format";
 
 export function RagIndexPage() {
@@ -183,30 +184,3 @@ function ChunkList({ chunks, emptyText }: { chunks: StudioRagChunkDto[]; emptyTe
   );
 }
 
-function UsageSummary({ title, usage }: { title: string; usage: StudioRequestUsageDto | null }) {
-  if (!usage) return null;
-  const promptTokens = usage.promptTokens ?? usage.embeddingTokens;
-  return (
-    <section className="usage-summary" aria-label={title}>
-      <h3>{title}</h3>
-      <dl className="usage-grid">
-        {promptTokens !== null && (
-          <div>
-            <dt>{usage.embeddingTokens === null ? "Prompt" : "Embeddings"}</dt>
-            <dd>{formatNumber(promptTokens!)}</dd>
-          </div>
-        )}
-        {usage.completionTokens !== null && (
-          <div>
-            <dt>Completion</dt>
-            <dd>{formatNumber(usage.completionTokens!)}</dd>
-          </div>
-        )}
-        <div className="usage-total">
-          <dt>Total</dt>
-          <dd>{formatNumber(usage.totalTokens)}</dd>
-        </div>
-      </dl>
-    </section>
-  );
-}

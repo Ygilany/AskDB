@@ -233,6 +233,7 @@ export function createAskDbHttpServer(options: AskDbHttpServerOptions = {}) {
         correlationId,
         sql: out.sql,
         explain: out.explain,
+        usage: out.usage ?? null,
       };
       logger.info({ event: AskDbLogEvent.RunEnd, ok: true }, "askdb http run end");
       writeJson(res, 200, payload);

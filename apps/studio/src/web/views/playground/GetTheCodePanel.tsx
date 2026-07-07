@@ -74,10 +74,9 @@ export function GetTheCodePanel() {
       const overrides = tenant
         ? `, {\n  tenantScope: ${indentBlock(tenant, 2)},\n  tenantSqlMode: ${JSON.stringify(askTenantSqlMode)},\n}`
         : "";
-      return `// npm install @askdb/client @askdb/config @askdb/ai ${wiringDef.adapterPackage}
+      return `// npm install @askdb/client @askdb/config ${wiringDef.adapterPackage}
 import { createAskDb } from "@askdb/client";
 import { bootstrapAskDbEnv, getAskDbRuntimeConfig } from "@askdb/config";
-import { createAiRegistry } from "@askdb/ai";
 import { ${wiringDef.adapterImport} } from "${wiringDef.adapterPackage}";
 
 // Reads the same askdb.config.ts + .env this Studio session uses.
@@ -85,7 +84,7 @@ bootstrapAskDbEnv({ cwd: process.cwd() });
 
 const askdb = createAskDb({
   config: getAskDbRuntimeConfig(),
-  registry: createAiRegistry([${wiringDef.adapterImport}]),
+  providers: [${wiringDef.adapterImport}],
   schema: { path: ${JSON.stringify(schemaPath)} },
 });
 

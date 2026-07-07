@@ -1,7 +1,7 @@
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it, vi } from "vitest";
-import type { AiRegistry } from "@askdb/ai";
+import type { AiProviderAdapter, AiRegistry } from "@askdb/ai";
 import type { AskDbRuntimeConfig } from "@askdb/config";
 import type { AnyNormalizedSchema } from "@askdb/core";
 import { loadSchema, loadSchemaFromJson } from "@askdb/core";
@@ -294,5 +294,52 @@ describe("createAskDb", () => {
     await askdb.ask("q3");
     expect(loadSchemaSpy).toHaveBeenCalledTimes(2);
     loadSchemaSpy.mockRestore();
+  });
+});
+
+describe("createAskDb providers option", () => {
+  const fakeAdapter: AiProviderAdapter = {
+    provider: "openai",
+    configHint: "For FakeAI, set FAKE_API_KEY.",
+    resolveConfig: () => undefined, // no key configured
+    createLanguageModel: () => ({}) as never,
+    createEmbeddingModel: () => ({}) as never,
+  };
+
+  it("builds the registry internally from providers", async () => {
+    const config = makeConfig({ mockSql: "SELECT 42" });
+    const askdb = createAskDb({
+      config,
+      providers: [fakeAdapter],
+      schema: { path: fixtureSchemaPath },
+    });
+    const result = await askdb.ask("how many users?");
+    expect(result.sql).toBe("SELECT 42");
+  });
+
+  it("routes model resolution through the providers-built registry", async () => {
+    const config = makeConfig(); // no mockSql -> registry path
+    const askdb = createAskDb({
+      config,
+      providers: [fakeAdapter],
+      schema: { path: fixtureSchemaPath },
+    });
+    // The adapter reports no API key, so the composite key-missing message
+    // must surface its configHint — proving the internal registry was built
+    // from exactly the adapters we passed.
+    await expect(askdb.ask("q")).rejects.toThrow(ModelNotConfiguredError);
+    await expect(askdb.ask("q")).rejects.toThrow(/FAKE_API_KEY/);
+  });
+
+  it("rejects passing both providers and registry", () => {
+    const config = makeConfig({ mockSql: "SELECT 1" });
+    expect(() =>
+      createAskDb({ config, providers: [fakeAdapter], registry: makeRegistry() }),
+    ).toThrow(/not both/);
+  });
+
+  it("rejects passing neither providers nor registry", () => {
+    const config = makeConfig({ mockSql: "SELECT 1" });
+    expect(() => createAskDb({ config })).toThrow(/providers/);
   });
 });

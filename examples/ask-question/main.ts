@@ -31,6 +31,8 @@ import {
 import { buildSchemaIndex, createMemoryStore, createAiSdkEmbedder } from "@askdb/rag";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
+// Registry built manually only for the advanced direct-ask() path below;
+// the fast path passes `providers` to createAskDb instead.
 const ai = createAiRegistry([openaiProvider]);
 
 // Load .env (if present) and evaluate askdb.config.ts in this directory,
@@ -75,7 +77,7 @@ async function main(): Promise<void> {
 
   const askdb = createAskDb({
     config: runtimeConfig,
-    registry: ai,
+    providers: [openaiProvider], // adapters only — the client builds the registry
     schema: { path: SCHEMA_DIR }, // or set host.schemaPath in askdb.config.ts and omit this
   });
 

@@ -43,17 +43,18 @@
     "test": "vitest run --config ../../vitest.config.ts"
   },
   "peerDependencies": {
-    "@askdb/ai": "workspace:^",
     "@askdb/config": "workspace:^",
     "@askdb/core": "workspace:^",
     "ai": "^6.0.205"
   },
   "devDependencies": {
-    "@askdb/ai": "workspace:*",
     "@askdb/config": "workspace:*",
     "@askdb/core": "workspace:*",
     "ai": "^6.0.205",
     "typescript": "^6.0.3",
     "vitest": "^4.1.8"
+  },
+  "dependencies": {
+    "@askdb/ai": "workspace:^"
   }
 }

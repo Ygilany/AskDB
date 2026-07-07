@@ -1,0 +1,303 @@
+---
+title: "@askdb/rag API reference"
+description: "Full API reference for @askdb/rag: buildSchemaIndex(), createRetriever(), embedders, vector stores, and chunking."
+---
+
+<p class="doc-eyebrow">Reference · @askdb/rag</p>
+
+<p class="doc-lede"><code>@askdb/rag</code> chunks the schema artifact, embeds the chunks, stores them in a vector store, and retrieves relevant chunks per question. Pass the returned <code>retriever</code> to <code>ask()</code> to replace full-DDL prompts with focused context — essential for schemas above 30–50 tables.</p>
+
+See the [RAG for large schemas guide](/guides/rag-for-large-schemas/) for the end-to-end workflow.
+
+## `buildSchemaIndex(options)`
+
+Chunks a schema artifact, embeds every chunk, upserts them into the vector store, and returns a bound retriever. Handles incremental re-indexing: unchanged chunks are reused from the lock file.
+
+```ts
+import { buildSchemaIndex, createAiSdkEmbedder, createPgvectorStore } from "@askdb/rag";
+import { openai } from "@ai-sdk/openai";
+import { loadChunkerSourcesFromDir } from "@askdb/rag";
+
+const store = createPgvectorStore({ connectionString: process.env.DATABASE_URL, dimensions: 1536 });
+await store.ensureSchema();
+
+const embedder = createAiSdkEmbedder({ model: openai.embedding("text-embedding-3-small") });
+
+const { retriever, stats } = await buildSchemaIndex({
+  schema: loadChunkerSourcesFromDir("./my-app.schema"),
+  embedder,
+  store,
+  embedderId: "openai:text-embedding-3-small",
+  lockFilePath: "./my-app.schema/schema.lock.json",
+});
+
+console.log(`Indexed ${stats.chunksIndexed}, reused ${stats.chunksReused}`);
+```
+
+Pass `retriever` to `ask()`:
+
+```ts
+const { sql } = await ask({
+  question,
+  schema,
+  model,
+  dialect: "postgres",
+  retriever,
+  totalSchemaChunkCount: stats.chunksTotal,
+});
+```
+
+### Options — `BuildSchemaIndexOptions`
+
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| `schema` | `ChunkerSources \| NormalizedSchemaV2` | no† | Schema to index. Prefer `loadChunkerSourcesFromDir(path)` — it includes full table markdown, enabling richer chunks. Passing a bare `NormalizedSchemaV2` works but produces text-only chunks without markdown body. |
+| `embedder` | `Embedder` | yes | Text embedding function: `(texts: string[]) => Promise<number[][]>`. Use `createAiSdkEmbedder()` or supply your own. |
+| `store` | `VectorStore` | yes | Vector store adapter. Use `createPgvectorStore()` or supply a custom adapter. |
+| `embedderId` | `string` | no | Stable identifier for the embedder (e.g. `"openai:text-embedding-3-small"`). Stored in the lock file — changing it triggers a full re-embed. Strongly recommended when using a lock file. |
+| `lockFilePath` | `string` | no | Path to `schema.lock.json`. Enables incremental indexing: unchanged chunks are skipped. Write it inside the schema directory. |
+| `batchSize` | `number` | no | Number of texts per embedder call. Default `64`. |
+| `onProgress` | `(e: IndexProgressEvent) => void` | no | Called at `"started"`, `"embedded"`, and `"completed"` stages. |
+| `logger` | `AskDbLogger` | no | Structured logger. |
+| `correlationId` | `string` | no | Correlation id attached to log lines. |
+
+†Either `schema` or the deprecated `sources` alias must be provided.
+
+### Result — `BuildSchemaIndexResult`
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `retriever` | `Retriever` | Bound to the store and embedder. Pass directly to `ask()`. |
+| `stats.chunksTotal` | `number` | Total chunk count after indexing. Pass as `totalSchemaChunkCount` to `ask()`. |
+| `stats.chunksIndexed` | `number` | Chunks newly embedded in this run. |
+| `stats.chunksReused` | `number` | Chunks skipped because they matched the lock file. |
+| `stats.sensitiveExcluded` | `number` | Sensitive chunks excluded from indexing. |
+| `stats.sensitiveIncluded` | `number` | Sensitive chunks included (when `sensitive: true` is set on the table). |
+| `chunks` | `Chunk[]` | Full chunk list sorted by id. Useful for diagnostics. |
+
+### `IndexProgressEvent`
+
+```ts
+type IndexProgressEvent =
+  | { kind: "started"; totalChunks: number; toEmbed: number; reused: number }
+  | { kind: "embedded"; embedded: number; total: number }
+  | { kind: "completed"; embedded: number; reused: number };
+```
+
+---
+
+## `createRetriever(options)`
+
+Builds a retriever from an existing store and embedder **without re-indexing**. Use this in serving processes when the index was built by a separate job.
+
+```ts
+import { createRetriever } from "@askdb/rag";
+
+const retriever = createRetriever({ embedder, store });
+```
+
+| Option | Type | Required | Description |
+| --- | --- | --- | --- |
+| `embedder` | `Embedder` | yes | The same embedder used when the index was built. |
+| `store` | `VectorStore` | yes | The store that holds the indexed chunks. |
+| `logger` | `AskDbLogger` | no | Structured logger. |
+| `correlationId` | `string` | no | Correlation id for log lines. |
+
+---
+
+## Embedders
+
+### `createAiSdkEmbedder(options)`
+
+Wraps any AI SDK `EmbeddingModel` as an `Embedder`.
+
+```ts
+import { createAiSdkEmbedder } from "@askdb/rag";
+import { openai } from "@ai-sdk/openai";
+
+const embedder = createAiSdkEmbedder({
+  model: openai.embedding("text-embedding-3-small"),
+});
+```
+
+| Option | Type | Required | Description |
+| --- | --- | --- | --- |
+| `model` | `EmbeddingModel` | yes | AI SDK text embedding model instance. |
+| `maxRetries` | `number` | no | Max retries per batch call. Defaults to the AI SDK behavior. |
+| `providerOptions` | `object` | no | Provider-specific options forwarded to the AI SDK call. |
+| `onUsage` | `(usage: AiSdkEmbedderUsage) => void` | no | Called after each embedding batch with token counts. `AiSdkEmbedderUsage` has `tokens`, `promptTokens`, and `totalTokens` (each optional). |
+
+### `createOpenAiEmbedder(options?)` *(deprecated)*
+
+A convenience wrapper around the OpenAI embeddings API. **Deprecated** — construct the model with `openai.embedding(...)` and use `createAiSdkEmbedder` instead.
+
+---
+
+## Vector stores
+
+### `createPgvectorStore(options)`
+
+PostgreSQL vector store backed by the `pgvector` extension. The recommended production store for AskDB.
+
+```ts
+import { createPgvectorStore } from "@askdb/rag";
+
+const store = createPgvectorStore({
+  connectionString: process.env.DATABASE_URL,
+  dimensions: 1536,   // must match your embedding model's output dimensions
+  table: "askdb_rag_chunks",
+  indexStrategy: "hnsw",
+});
+
+await store.ensureSchema(); // idempotent — safe to call on every startup
+```
+
+| Option | Type | Required | Description |
+| --- | --- | --- | --- |
+| `dimensions` | `number` | yes | Embedding vector size. Must match the embedding model. Common values: `1536` (OpenAI `text-embedding-3-small`/`ada-002`), `3072` (`text-embedding-3-large`), `768` (many open-source models). |
+| `connectionString` | `string` | no† | PostgreSQL connection string. The store lazily imports and pools `pg` when this is supplied. |
+| `client` | `PgClient` | no† | Pre-built `pg.Pool` or `pg.Client`. Preferred when your app already manages a pool. The store never closes an externally supplied client. |
+| `table` | `string` | no | Table name. Default `"askdb_rag_chunks"`. Override when you want to namespace by schema or tenant. |
+| `indexStrategy` | `PgvectorIndexStrategy` | no | Index type: `"hnsw"` (default, better recall), `"ivfflat"` (faster at very large scale), or `"none"` (sequential scan — for small tables or testing). |
+
+†Either `connectionString` or `client` is required.
+
+**`PgClient`** interface (accepted by `client`):
+```ts
+{ query: (text: string, params?: unknown[]) => Promise<{ rows: unknown[] }> }
+```
+
+Any `pg.Pool` or `pg.Client` satisfies this.
+
+### `PgvectorStore` methods
+
+Beyond the `VectorStore` interface, `createPgvectorStore` returns:
+
+| Method | Description |
+| --- | --- |
+| `setupSql()` | Returns the DDL string that creates the extension, table, and indexes. |
+| `ensureSchema()` | Executes `setupSql()` against the database. Idempotent — safe on every startup. |
+| `close()` | Closes the internal connection pool. No-op when an external client was supplied. |
+| `count(filter?)` | Returns the number of stored chunks matching an optional filter. Useful for diagnostics. |
+
+### `VectorStore` interface
+
+Implement this to use a custom vector store (e.g. Qdrant, Weaviate, Pinecone, in-memory):
+
+```ts
+interface VectorStore {
+  upsert(records: UpsertRecord[]): Promise<void>;
+  query(vector: number[], k: number, filter?: Filter): Promise<QueryResult[]>;
+  delete(ids: string[]): Promise<void>;
+  hashesByPrefix?(prefix: string): Promise<Record<string, string>>; // optional — enables skip-reembed
+}
+```
+
+Implementing `hashesByPrefix` enables the incremental indexing fast-path: unchanged chunks are detected without a separate lookup and skipped automatically.
+
+---
+
+## Chunking
+
+### `loadChunkerSourcesFromDir(dir)`
+
+```ts
+import { loadChunkerSourcesFromDir } from "@askdb/rag";
+
+const sources = loadChunkerSourcesFromDir("./my-app.schema");
+```
+
+Loads a v2 schema directory into `ChunkerSources`, including table markdown files, concepts, and tenant policy. **Prefer this over passing a bare schema object to `buildSchemaIndex`** — the markdown files are the richest source of semantic content for chunking.
+
+The directory layout expected:
+```
+<schemaId>.schema/
+  schema.json
+  tables/
+    <tableId>.md
+  concepts.md          (optional)
+  tenant-policy.md     (optional)
+```
+
+### `loadChunkerSourcesFromBundleJson(raw)`
+
+```ts
+import { loadChunkerSourcesFromBundleJson } from "@askdb/rag";
+
+const sources = loadChunkerSourcesFromBundleJson(bundleJsonString);
+```
+
+Loads a bundled schema JSON (produced by `askdb bundle`) into `ChunkerSources`. Use when markdown files are not available on disk but a bundle is.
+
+---
+
+## Core types
+
+### `Embedder`
+
+```ts
+type Embedder = (texts: string[]) => Promise<number[][]>;
+```
+
+Takes an array of text strings, returns an array of embedding vectors (one per text).
+
+### `Retriever`
+
+```ts
+type Retriever = (params: {
+  question: string;
+  k?: number;
+  filter?: Filter;
+}) => Promise<QueryResult[]>;
+```
+
+### `Filter`
+
+```ts
+type Filter = {
+  schemaId?: string;
+  types?: ChunkType[];
+  refs?: string[];
+};
+```
+
+### `Chunk`
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `id` | `string` | Stable chunk id. Unchanged across re-indexes when source content is unchanged. |
+| `type` | `ChunkType` | Semantic kind of this chunk. |
+| `text` | `string` | The text that gets embedded. |
+| `schemaId` | `string` | The schema this chunk belongs to. |
+| `refs` | `string[]` | Schema v2 ids referenced by this chunk (table ids, column ids, etc.). |
+| `sensitive` | `boolean` | `true` when the chunk's source references a sensitive column. |
+
+### `ChunkType`
+
+`"table"` | `"column"` | `"cql"` | `"question"` | `"concept"` | `"relationship"` | `"tenant-policy"`
+
+### `QueryResult`
+
+```ts
+type QueryResult = {
+  id: string;
+  score: number;       // similarity score (higher = more relevant)
+  payload: {
+    id: string;
+    type: ChunkType;
+    text: string;
+    schemaId: string;
+    refs: string[];
+    sensitive: boolean;
+  };
+};
+```
+
+---
+
+## Read next
+
+<div class="home-path-grid">
+  <a href="/guides/rag-for-large-schemas/"><strong>RAG for large schemas</strong><span>End-to-end guide: when to use RAG, store setup, and retrieval tuning.</span></a>
+  <a href="/reference/core-api/"><strong>@askdb/core API</strong><span><code>ask()</code> options including <code>retriever</code> and retrieval thresholds.</span></a>
+</div>
