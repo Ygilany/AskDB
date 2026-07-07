@@ -67,7 +67,7 @@ fully before starting, honor its STOP conditions, and update your row when done.
 | 010 | Synced Tabs on variant-heavy pages; "Bring your own model" restructured around the two wiring paths (config-driven vs direct AI SDK) | P1 | M | 009 (soft) | DONE |
 | 011 | Studio tour page in the Start sidebar with real screenshots (fixture schema + mock SQL) | P1 | M | 009 (hard — both edit quickstart.mdx) | DONE |
 | 012 | Re-home orphaned runtime-boundary/package-dependency SVGs; new quickstart-loop diagram | P2 | M | 009, 011 (both touch quickstart.mdx) | DONE |
-| 013 | Design spike: Studio as the front door — guided setup wizard, fixed Resync, playground "Get the code" | P3 | M | — | TODO |
+| 013 | Design spike: Studio as the front door — guided setup wizard, fixed Resync, playground "Get the code" | P3 | M | — | DONE (2026-07-07: implemented directly as product work instead of a spike — Studio setup wizard + loopback-gated `/api/setup/*`, working Resync via `/api/introspect`, Playground "Get the code" panel; spec doc skipped since plans 029–032 had already resolved the open design questions) |
 | 014 | Homepage: four-step workflow (init→introspect→enrich→use), dual-path embed Tabs (direct AI SDK vs config-driven `@askdb/ai`), parallel/accurate engine subtitles | P1 | S | — | DONE |
 | 015 | Quickstart: ask-before-enrich loop diagram (trimmed viewBox), Prisma introspection as a synced Tab, "ask in Studio → then embed" framing | P1 | S | — | DONE |
 | 016 | Retire the standalone Install page; fold its use-case grid into the Packages reference; redirect `/install/` (maintainer decision gate) | P2 | S | — | DONE (fallback stub; Astro redirect failed base-path check) |
