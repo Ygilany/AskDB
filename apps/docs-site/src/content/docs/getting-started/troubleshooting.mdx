@@ -1,0 +1,216 @@
+---
+title: "Troubleshooting"
+description: "Common errors and fixes: schema not found, SQL validation failures, missing drivers, TLS issues, tenant scope rejections, and poor SQL quality."
+---
+
+import { Aside } from "@astrojs/starlight/components";
+
+<p class="doc-eyebrow">Getting started · Troubleshooting</p>
+
+<p class="doc-lede">Errors grouped by where they surface. If you hit something not listed here, open a <a href="https://github.com/Ygilany/AskDB/discussions/categories/q-a">Discussion</a>.</p>
+
+---
+
+## Schema and config
+
+### `Error: Cannot find config file`
+
+AskDB looks for `askdb.config.ts`, `askdb.config.js`, or `askdb.config.mjs` starting from the current working directory. Run the CLI from your project root, or pass `--config path/to/askdb.config.ts` explicitly.
+
+```bash
+npx askdb ask --config ./apps/api/askdb.config.ts --question "..."
+```
+
+### `SchemaParseError: Cannot read schema at …`
+
+The path passed to `--schema` (CLI) or `loadSchema()` (library) doesn't exist or isn't a valid schema artifact. Valid inputs are:
+
+- A schema directory (e.g. `my-app.schema/`)
+- A bundled JSON file (e.g. `my-app.schema.json`)
+- A `schema.json` file inside a directory
+
+Run `ls my-app.schema/` to confirm the directory was created by `askdb introspect`. If it's empty, the introspection step didn't complete successfully.
+
+### `SchemaParseError: Missing required field …`
+
+The schema artifact is from an older format. Re-run introspection to regenerate it:
+
+```bash
+npx askdb introspect --url "$DATABASE_URL" --out my-app.schema --schema-id my-app
+```
+
+---
+
+## SQL generation
+
+### `SqlValidationError: SQL_NOT_SELECT_OR_WITH`
+
+AskDB only returns `SELECT` or `WITH … SELECT` statements. The model generated a non-SELECT statement (e.g. `INSERT`, `UPDATE`, `DROP`). This is a guardrail, not a bug.
+
+If you're seeing this on legitimate read questions, the model may be misreading the schema. Check that your table and column descriptions in the schema artifact don't imply write operations.
+
+### `SqlValidationError: SQL_MULTI_STATEMENT`
+
+The model returned more than one SQL statement. AskDB refuses multi-statement output. Rephrase the question to ask for a single result, or break it into two separate `ask()` calls.
+
+### `SqlValidationError: SQL_COMMENT` / `SQL_FORBIDDEN_KEYWORD`
+
+The generated SQL contains a SQL comment or a forbidden keyword (`EXECUTE`, `EXEC`, `xp_`, etc.). These are heuristic guardrails. If this fires on a legitimate query, file an issue with the question and schema excerpt.
+
+### Generated SQL references a column or table that doesn't exist
+
+This is the most common failure mode. The model hallucinated an identifier that isn't in your schema. AskDB's heuristic validator catches *most* of these, but not all.
+
+**Fix:** Enrich the relevant tables in your schema artifact with plain-English descriptions. The more context the model has, the less it invents:
+
+```bash
+npx askdb studio   # open the enrichment UI
+# or
+npx askdb enrich   # headless AI-assisted enrichment
+```
+
+If the column exists in the database but the model keeps getting it wrong, check that `askdb introspect` has been re-run since the column was added, and that its description in the schema artifact isn't ambiguous.
+
+### The SQL is syntactically valid but logically wrong
+
+SQL validation is heuristic — AskDB confirms the statement kind and grounds identifiers, but it can't verify that the query answers your question semantically. The quality of answers depends almost entirely on how well the schema artifact describes your data.
+
+Checklist:
+1. Does the relevant table have a description? (`description:` field in the table's `.md` file)
+2. Do column names match how users phrase questions? Add aliases in the schema artifact.
+3. Is this a complex aggregation or join? Add an example question + expected SQL to the table file.
+4. Try a more capable model — `gpt-4o` vs `gpt-4o-mini` makes a meaningful difference on complex schemas.
+
+---
+
+## Model and API keys
+
+### `Error: API key not found` / `AuthenticationError`
+
+The model provider didn't receive a key. For the CLI, set the environment variable before running:
+
+```bash
+OPENAI_API_KEY=sk-... npx askdb ask --question "..."
+```
+
+For the library, verify the key is passed when constructing the provider:
+
+```ts
+const openai = createOpenAI({ apiKey: process.env.OPENAI_API_KEY });
+```
+
+See [Bring your own model](/guides/bring-your-own-model/) for per-provider configuration.
+
+### `Error: Model not found` / 404 from provider
+
+The model name passed to the provider doesn't exist or isn't available on your account tier. The default CLI model is `gpt-4o-mini` (OpenAI). Override it with `OPENAI_MODEL` in your `askdb.config.ts` or pass a different model instance to `ask()`.
+
+---
+
+## Studio and drivers
+
+### Studio shows "driver not installed" or an Install button
+
+Studio's **Execute Query** feature (running SQL against a live database) requires an optional peer driver package. Install the one matching your engine:
+
+```bash
+npm install pg          # Postgres
+npm install mysql2      # MySQL
+npm install better-sqlite3  # SQLite
+npm install mssql       # SQL Server
+```
+
+After installing, refresh Studio. The driver readiness indicator near the Execute button should clear.
+
+<Aside type="note">
+Generating SQL in Studio does **not** require a driver. Only the Execute Query action does.
+</Aside>
+
+### Studio doesn't connect to my database
+
+Check that `studio.execute.databaseUrl` is set in `askdb.config.ts` (or `ASKDB_STUDIO_DATABASE_URL` env var) and that the URL is reachable from your machine. Studio resolves the execute connection in this order:
+
+1. `studio.execute.provider` + `studio.execute.databaseUrl`
+2. The active `introspection.provider` when it's a live engine
+
+See [Configuration — Studio execute](/reference/config/#studio-execute) for the full resolution order.
+
+---
+
+## SQL Server
+
+### `self-signed certificate` / TLS error on connection
+
+SQL Server enables TLS by default. Local and dev instances typically use a self-signed certificate, which Node.js rejects:
+
+```
+Error: self-signed certificate — try running Node.js with --use-system-ca
+```
+
+Add `trustServerCertificate=true` to the connection URL:
+
+```
+# mssql driver URL format
+mssql://sa:pass@localhost:1433/MyDb?trustServerCertificate=true
+
+# sqlserver introspection URL format
+sqlserver://localhost:1433;database=MyDb;user=sa;password=pass;trustServerCertificate=true
+```
+
+<Aside type="caution">
+Only use `trustServerCertificate=true` in development. In production, configure a valid certificate.
+</Aside>
+
+---
+
+## Tenant scope
+
+### `TenantScopeError: MISSING_SCOPE`
+
+Your schema has a `tenant-policy.md` file, which means AskDB requires a `tenantScope` on every `ask()` call. Pass one:
+
+```ts
+const { sql } = await ask({
+  question,
+  schema,
+  model,
+  dialect,
+  tenantScope: {
+    access: { kind: "single", tenantRootId: "org", tenantId: currentUser.orgId },
+  },
+});
+```
+
+See [Multi-tenancy](/guides/multi-tenancy/) for the full scope shape.
+
+### `TenantScopeError: UNKNOWN_TENANT_ROOT`
+
+The `tenantRootId` in the scope doesn't match any root defined in `tenant-policy.md`. Check the `id:` field of each root in the policy file.
+
+### `TenantGuardrailError`
+
+The generated SQL doesn't include a required tenant predicate on one or more tenant-bound tables. This is a fail-closed guardrail: AskDB refuses to return SQL that could leak cross-tenant data. Re-ask the question with a more specific scope, or inspect the `warnings` array on the error for which table triggered the guardrail.
+
+---
+
+## RAG / large schemas
+
+### Retriever is supplied but AskDB uses the full DDL anyway
+
+Two reasons this happens:
+
+1. **Below threshold:** `totalSchemaChunkCount` is at or below `retrievalThresholdChunks` (default 30). Pass the actual chunk count from `buildSchemaIndex` result:
+   ```ts
+   const index = await buildSchemaIndex({ schema, embedder });
+   const { sql } = await ask({
+     ...
+     retriever: index.retriever,
+     totalSchemaChunkCount: index.stats.chunksTotal,
+   });
+   ```
+
+2. **Schema is not v2:** The retriever is silently skipped for pre-v2 schemas. Confirm `loadSchema()` returns an object with a `schemaId` field (v2 indicator). Re-run `askdb introspect` if not.
+
+### Retriever returns no chunks
+
+The question didn't match any indexed chunks. This usually means the schema artifact descriptions are too sparse for meaningful embedding similarity. Enrich your schema with richer table and column descriptions, then rebuild the index.

@@ -1,0 +1,164 @@
+---
+title: "ask() options"
+description: "Complete reference for the AskPipelineOptions input and AskPipelineResult output of @askdb/core's ask() function."
+---
+
+import { Aside } from "@astrojs/starlight/components";
+
+<p class="doc-eyebrow">Reference · Core API</p>
+
+<p class="doc-lede">Complete options and return type for <code>ask()</code> — the main pipeline entry point in <code>@askdb/core</code>. AskDB validates and returns SQL; your application decides whether to run it.</p>
+
+```ts
+import { ask } from "@askdb/core";
+
+const result = await ask(options); // AskPipelineResult
+```
+
+---
+
+## Input: `AskPipelineOptions`
+
+### Required
+
+| Option | Type | Description |
+|--------|------|-------------|
+| `question` | `string` | The natural-language question to answer with SQL. |
+| `schema` | `AnyNormalizedSchema` | The loaded schema artifact. Use `loadSchema(path)` to load it. |
+| `model` | `AskDbLanguageModel` | Any AI SDK `LanguageModel` instance. Pass one from `@askdb/ai-openai`, `@askdb/ai-anthropic`, `@askdb/ai-google`, or `@askdb/ai-azure`. |
+| `dialect` | `AskDialectInput` | The SQL dialect. Accepts a built-in dialect string, a `DialectSpec` object, or a custom `AskDialect` implementation. See [Dialect](#dialect) below. |
+
+### Mode
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `mode` | `"schema_only" \| "bounded_results"` | `"schema_only"` | Operating mode. `schema_only` is the strictest trust boundary — the model only sees schema, never row data. See [Modes and dialects](/concepts/modes-and-dialects/). |
+
+### Tenant scope
+
+Required when the schema has a `tenant-policy.md`. The pipeline fails closed (throws `TenantScopeError`) if the policy exists but no scope is provided.
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `tenantScope` | `TenantScope` | — | The access scope for the current user. Carries enforceable access constraints (`single`, `multi`, or `global`) and optional advisory context. |
+| `tenantSqlMode` | `"sql-only" \| "sql-params"` | `"sql-only"` | How tenant placeholder values are inlined. `sql-only` embeds literal values; `sql-params` converts to positional `$N` parameters and returns them in `tenantParams`. |
+
+See [Multi-tenancy](/guides/multi-tenancy/) for the full `TenantScope` shape.
+
+### Retrieval (RAG)
+
+Supply these when using `@askdb/rag` for large schemas.
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `retriever` | `Retriever` | — | A retriever function from `buildSchemaIndex` (or any compatible implementation). When supplied and the schema chunk count exceeds `retrievalThresholdChunks`, retrieved chunks replace the full DDL in the prompt. |
+| `retrievalK` | `number` | `8` | Top-k chunks to retrieve. Forwarded to the retriever. |
+| `retrievalThresholdChunks` | `number` | `30` | Chunk-count threshold above which retrieval is preferred over full DDL inlining. If the schema has fewer chunks than this value, the full DDL is used even if a retriever is supplied. |
+| `totalSchemaChunkCount` | `number` | `Infinity` | Total chunk count for the indexed schema. Pass `result.stats.chunksTotal` from `buildSchemaIndex` so the threshold check is meaningful. Defaults to `Infinity`, which means the retriever is always used when supplied. |
+
+See [RAG for large schemas](/guides/rag-for-large-schemas/) for a complete setup example.
+
+### Sensitive fields
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `omitSensitiveIdentifiersFromNlToSqlPrompt` | `boolean` | `false` | When `true`, omit sensitive table and column names from the DDL block sent to the model. Default `false` includes them with `(sensitive)` tags so the model can still ground SQL identifiers without seeing raw data. |
+
+### Observability
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `logger` | `AskDbLogger` | — | A structured logger instance. Use `createAskDbLogger(pinoInstance)` from `@askdb/core` to wrap an existing Pino logger. Emits structured events at each pipeline stage (mode, retrieval, tenant validation). |
+| `explain` | `boolean` | `false` | When `true`, the result includes heuristic guardrail metadata in the `explain` field. Primarily used by the CLI and HTTP API. |
+
+---
+
+## `dialect`
+
+The `dialect` option accepts three forms:
+
+```ts
+// 1. Built-in dialect string (recommended)
+dialect: "postgres"   // | "mysql" | "sqlite" | "sqlserver"
+
+// 2. DialectSpec object — descriptive, uses the centralized generator
+import { postgresDialect } from "@askdb/postgres";
+dialect: postgresDialect
+
+// 3. Custom AskDialect — full escape hatch for agentic flows, tool-calling,
+//    or non-SELECT targets. Implement the generate() interface yourself.
+dialect: {
+  generate: async (question, schema, model, options) => ({ sql: "SELECT ..." }),
+}
+```
+
+For most applications, pass the dialect exported from the engine package (`@askdb/postgres`, `@askdb/mysql`, `@askdb/sqlite`, `@askdb/sqlserver`). See [Switch engines](/guides/switch-engines/) for per-engine setup.
+
+---
+
+## Output: `AskPipelineResult`
+
+`ask()` returns a `Promise<AskPipelineResult>`. The only field guaranteed to be present is `sql`.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `sql` | `string` | The validated SQL string. Run this in your application under your own database role, connection pool, and audit log. AskDB does not execute it. |
+| `explain` | `unknown \| undefined` | Heuristic guardrail metadata. Present when `explain: true` was passed. Shape is dialect-specific and considered internal — do not depend on it in production code. |
+| `tenantGuardrail` | `TenantGuardrailResult \| undefined` | Tenant predicate validation result. Present when tenant policy is active. Throws `TenantGuardrailError` if a required predicate is missing. |
+| `tenantParams` | `unknown[] \| undefined` | Positional parameter values when `tenantSqlMode: "sql-params"`. Pass these as query parameters to your database driver alongside `sql`. |
+| `tenantBindings` | `TenantBinding[] \| undefined` | Named binding pairs (column → value) extracted during tenant placeholder resolution. Primarily for audit logging. |
+
+---
+
+## Minimal example
+
+```ts
+import { ask, loadSchema } from "@askdb/core";
+import { postgresDialect } from "@askdb/postgres";
+import { createOpenAI } from "@ai-sdk/openai";
+
+const schema = loadSchema("./my-app.schema");
+const openai = createOpenAI({ apiKey: process.env.OPENAI_API_KEY });
+
+const { sql } = await ask({
+  question: "How many users signed up last week?",
+  schema,
+  model: openai("gpt-4o-mini"),
+  dialect: postgresDialect,
+});
+
+// sql is a string — your app runs it
+const rows = await pool.query(sql);
+```
+
+## With RAG and tenant scope
+
+```ts
+import { ask, loadSchema } from "@askdb/core";
+import { postgresDialect } from "@askdb/postgres";
+import { buildSchemaIndex } from "@askdb/rag";
+
+const schema = loadSchema("./my-app.schema");
+const index = await buildSchemaIndex({ schema, embedder });
+
+const { sql, tenantParams } = await ask({
+  question: "Show me this org's top 10 active users",
+  schema,
+  model: openai("gpt-4o-mini"),
+  dialect: postgresDialect,
+  mode: "schema_only",
+  retriever: index.retriever,
+  totalSchemaChunkCount: index.stats.chunksTotal,
+  retrievalThresholdChunks: 40,
+  tenantScope: {
+    access: { kind: "single", tenantRootId: "org", tenantId: req.user.orgId },
+  },
+  tenantSqlMode: "sql-params",
+});
+
+const rows = await pool.query(sql, tenantParams);
+```
+
+<Aside type="note">
+For config-driven use (reading model and dialect from `askdb.config.ts`), use `createAskDb()` from `@askdb/client` instead of calling `ask()` directly. It resolves the schema, model, and dialect from config so call sites are minimal.
+</Aside>
