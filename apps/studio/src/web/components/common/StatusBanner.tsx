@@ -13,5 +13,12 @@ export function StatusBanner({ status }: { status: StatusMessage }) {
 }
 
 export function InlineStatus({ status }: { status: StatusMessage }) {
-  return <div className={`inline-status ${status.kind}`}>{status.text}</div>;
+  return (
+    <div className={`inline-status ${status.kind}`}>
+      {status.kind === "loading" && <Loader2 size={12} className="animate-spin" />}
+      {status.kind === "success" && <Check size={12} />}
+      {status.kind === "error" && <AlertCircle size={12} />}
+      <span>{status.text}</span>
+    </div>
+  );
 }
