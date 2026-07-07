@@ -15,7 +15,7 @@ import { createAskDb } from "@askdb/client";
 bootstrapAskDbEnv();
 const askdb = createAskDb({
   config: getAskDbRuntimeConfig(),
-  providers: [openaiProvider], // adapters only — the client builds the AI registry
+  providers: [openaiProvider], // the client builds its AI registry from these adapters
 });
 
 const { sql } = await askdb.ask("top 10 customers by revenue");
