@@ -4,6 +4,12 @@
 
 Accepted.
 
+> **Amendment (2026-07):** `@askdb/tui` has since been retired in favor of
+> Studio; `askdb enrich` opens Studio and `askdb bundle` calls `@askdb/enrich`
+> directly. The boundary this ADR established is unchanged — `@askdb/enrich`
+> remains the shared headless authoring layer consumed by `@askdb/studio` and
+> custom surfaces. TUI references below are preserved as historical context.
+
 ## Context
 
 Phase 7 introduced `@askdb/tui` as the first authoring surface for the Schema v2 describable layer. Its implementation included both terminal UI code and reusable enrichment workspace logic:

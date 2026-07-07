@@ -1,8 +1,9 @@
 import type { V2Table } from "../schema/v2/physical.js";
 
 /**
- * What to suggest for. The TUI builds one of these per active prompt and asks
- * `suggestEnrichment` for 1–3 candidates the user reviews and confirms.
+ * What to suggest for. An authoring surface (Studio) builds one of these per
+ * active prompt and asks `suggestEnrichment` for 1–3 candidates the user
+ * reviews and confirms.
  */
 export type EnrichmentTarget =
   | { kind: "table-description"; table: V2Table }
@@ -14,7 +15,7 @@ export type EnrichmentTarget =
 
 /**
  * One suggestion candidate. For free-text fields, `text` is the value.
- * For list fields (aliases), the TUI splits on `,` after editing.
+ * For list fields (aliases), the authoring surface splits on `,` after editing.
  */
 export type EnrichmentCandidate = {
   /** The suggested text. Whitespace at the ends is stripped. */

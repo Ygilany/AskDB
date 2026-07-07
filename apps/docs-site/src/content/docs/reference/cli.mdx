@@ -159,7 +159,7 @@ npx -p askdb -p mssql askdb introspect --engine sqlserver --url "$SQLSERVER_URL"
 
 ### `askdb enrich`
 
-Launches the TUI for authoring per-table descriptions, aliases, concepts, and sensitive markers.
+Alias of [`askdb studio`](#askdb-studio): opens Studio for authoring per-table descriptions, aliases, concepts, and sensitive markers.
 
 ```bash
 askdb enrich --schema ./my-app.schema
@@ -168,8 +168,6 @@ askdb enrich --schema ./my-app.schema
 | Flag | Description |
 | --- | --- |
 | `-s, --schema <path>` | Path to the schema artifact. |
-
-Requires `@askdb/tui` to be installed (the CLI lazy-imports it).
 
 ### `askdb studio`
 

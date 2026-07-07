@@ -134,11 +134,11 @@ returns `undefined` when no key is configured.
 
 ## Step 4 — Wire into the monorepo
 
-1. **Surfaces (batteries-included policy — all four):** add
+1. **Surfaces (batteries-included policy — all three):** add
    `"@askdb/ai-<provider>": "workspace:*"` to dependencies of `apps/cli`,
-   `apps/http-api`, `apps/studio`, `packages/tui`; import the adapter and append it to
+   `apps/http-api`, `apps/studio`; import the adapter and append it to
    the `createAiRegistry([...])` array in `apps/cli/src/cli.ts`,
-   `apps/http-api/src/server.ts`, `apps/studio/src/server.ts`, `packages/tui/src/cli.ts`.
+   `apps/http-api/src/server.ts`, `apps/studio/src/server.ts`.
 2. **Smoke test:** add `packages/ai-<provider>` to the pack list in
    `examples/installable-smoke/run.sh` (alongside the other `packages/ai-*` entries).
 3. **Config package (optional but expected for first-party providers):** in
@@ -151,7 +151,7 @@ returns `undefined` when no key is configured.
    the changeset.
 
 **Verify**: `pnpm build && pnpm lint && pnpm test` → exit 0;
-`grep -rln "<provider>Provider" apps packages/tui/src` → 4 files.
+`grep -rln "<provider>Provider" apps` → 3 files.
 
 ## Step 5 — Docs
 
@@ -161,8 +161,6 @@ returns `undefined` when no key is configured.
   dependency-boundaries mermaid, and the package table (follow the existing `ai-*` rows).
 - Docs site: `apps/docs-site/src/content/docs/reference/packages.mdx` (adapter install
   list) and `reference/config.mdx` (env-var table) — match surrounding formatting.
-- Mention the provider in the TUI help text provider list (`packages/tui/src/cli.ts`,
-  the `printHelp` block) if it enumerates providers.
 
 **Verify**: `pnpm docs:build` → exit 0.
 

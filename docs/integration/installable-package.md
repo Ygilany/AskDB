@@ -6,11 +6,11 @@ AskDB ships focused library packages:
 2. [`@askdb/introspect`](../../packages/introspect/README.md) — engine-agnostic introspection orchestrator, `CatalogQueryRunner` type, and Schema v2 renderer.
 3. [`@askdb/postgres`](../../packages/postgres/README.md) — Postgres integration: dialect adapter (`postgresDialect`), connector (live + from-export), catalog templates, and a `pg`-backed catalog query runner for live introspection.
 4. [`@askdb/prisma`](../../packages/prisma/README.md) — Prisma integration: schema-file connector that renders Schema v2 from `.prisma` files without a database connection.
-5. [`@askdb/enrich`](../../packages/enrich/README.md) — headless Schema v2 enrichment workspace helpers used by TUI, Studio, and custom authoring surfaces.
+5. [`@askdb/enrich`](../../packages/enrich/README.md) — headless Schema v2 enrichment workspace helpers used by Studio and custom authoring surfaces.
 6. [`@askdb/config`](../../packages/config/README.md) — Prisma-style `askdb.config.*` / `.config/askdb.*` discovery and `bootstrapAskDbEnv()`. **This is the only package that reads `process.env` directly.** All other packages use **`getAskDbRuntimeConfig()`** from here (not raw `process.env`).
 7. [`@askdb/ai`](../../packages/ai/README.md) — optional config/env-to-model registry for AI SDK providers. Pair it with provider adapters such as `@askdb/ai-openai`.
 
-The supported user-facing CLI is the [`askdb`](../../apps/cli/README.md) package (`askdb` binary, `npm i -g askdb`). `@askdb/http-api`, `@askdb/tui`, `@askdb/studio`, and `@askdb/docs-site` are first-party reference apps.
+The supported user-facing CLI is the [`askdb`](../../apps/cli/README.md) package (`askdb` binary, `npm i -g askdb`). `@askdb/http-api`, `@askdb/studio`, and `@askdb/docs-site` are first-party reference apps.
 
 Architecture rationale: [**ADR 0002 — Integration-package layout**](../adrs/0002-integration-package-layout.md).
 
@@ -45,7 +45,7 @@ pnpm add pg
 
 `pg` is an **optional peer dependency** of `@askdb/postgres`. You do not need it when you only use `@askdb/core` to generate SQL.
 
-[`@askdb/config`](../../packages/config/README.md) is the **only** package that reads `process.env` directly. Library packages (`@askdb/rag`, `@askdb/tui`, …) depend on `@askdb/config` and use **`getAskDbRuntimeConfig()`**. Pass `config.ai.aiEnv` into an `@askdb/ai` registry when you want AskDB's env/config model factory. Call `bootstrapAskDbEnv({ cwd: process.cwd() })` at start-up when you want the same `.env` + `askdb.config.*` behavior as the first-party CLI and HTTP API. `env()` is reserved for use **inside** `askdb.config.*` files.
+[`@askdb/config`](../../packages/config/README.md) is the **only** package that reads `process.env` directly. Library packages (`@askdb/rag`, `@askdb/enrich`, …) depend on `@askdb/config` and use **`getAskDbRuntimeConfig()`**. Pass `config.ai.aiEnv` into an `@askdb/ai` registry when you want AskDB's env/config model factory. Call `bootstrapAskDbEnv({ cwd: process.cwd() })` at start-up when you want the same `.env` + `askdb.config.*` behavior as the first-party CLI and HTTP API. `env()` is reserved for use **inside** `askdb.config.*` files.
 
 ---
 
@@ -94,7 +94,7 @@ A directory with only `schema.json` (no `tables/*.md`) is valid — tables fall 
 - build AI suggestion targets and context
 - bundle a split Schema v2 directory into a single JSON artifact
 
-Use `@askdb/tui` or `askdb enrich` when you want the maintained terminal authoring flow. Use `@askdb/studio` when you want the maintained local browser authoring flow. Use `@askdb/enrich` directly when building another authoring UI.
+Use `@askdb/studio` (via `askdb studio`) when you want the maintained local browser authoring flow. Use `@askdb/enrich` directly when building another authoring UI.
 
 ---
 
@@ -146,7 +146,7 @@ Generated-SQL execution is no longer part of the AskDB package API:
 
 ## AI provider recipes
 
-AskDB's first-party surfaces (CLI, HTTP API, Studio, TUI) support OpenAI, Azure/Foundry, Google Gemini, and Anthropic Claude out of the box. The three-tier model for AI configuration:
+AskDB's first-party surfaces (CLI, HTTP API, Studio) support OpenAI, Azure/Foundry, Google Gemini, and Anthropic Claude out of the box. The three-tier model for AI configuration:
 
 1. **Known provider literal** (zero extra code): use a first-party provider name — `openai`, `azure`, `foundry`, `google`, `anthropic`.
 2. **Custom provider string + a host-registered adapter** (~40 lines): use any other string and register an adapter under that name in `createAiRegistry(...)`.

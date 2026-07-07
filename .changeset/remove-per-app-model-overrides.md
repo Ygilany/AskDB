@@ -2,7 +2,6 @@
 "@askdb/config": minor
 "@askdb/core": minor
 "@askdb/studio": minor
-"@askdb/tui": minor
 "askdb": minor
 ---
 

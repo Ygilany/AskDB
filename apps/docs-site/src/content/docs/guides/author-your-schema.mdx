@@ -1,6 +1,6 @@
 ---
 title: "Author your schema"
-description: "Use Studio (or the TUI) to enrich your introspected schema with descriptions, aliases, concepts, sensitive markers, and tenant policy."
+description: "Use Studio to enrich your introspected schema with descriptions, aliases, concepts, sensitive markers, and tenant policy."
 ---
 
 <p class="doc-eyebrow">Schema author guide</p>
@@ -29,16 +29,6 @@ What you can edit (all fields are optional):
 - **Tenant policy.** When your app is multi-tenant, declare tenant roots and scoped tables. See [Multi-tenancy](/guides/multi-tenancy/) for the full walkthrough.
 
 Studio also offers AI-assisted drafts: describe a table or concept in plain language and Studio proposes a draft for your review. Suggestions are always confirmed by a human before they land in the artifact. See the [Studio tour](/studio/) for a view-by-view walkthrough.
-
-## Authoring in the TUI
-
-If you prefer the terminal — or you're authoring over SSH — the TUI covers the same workflow:
-
-```bash
-npx askdb enrich
-```
-
-Pass `--schema <path>` to override the artifact location for this run. The TUI uses the same `@askdb/enrich` package under the hood as Studio and writes the same files. Pick whichever surface fits how you work.
 
 ## Re-introspecting
 

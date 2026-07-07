@@ -2,7 +2,6 @@
 "askdb": patch
 "@askdb/http-api": patch
 "@askdb/studio": patch
-"@askdb/tui": patch
 "@askdb/rag": patch
 ---
 

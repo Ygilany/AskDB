@@ -2,7 +2,7 @@ import type { EmbeddingModel, LanguageModel } from "ai";
 
 /**
  * AI provider selector. AskDB is BYO-LanguageModel at the function level
- * (see `ask()`), but the bundled apps (CLI, HTTP API, Studio, TUI) all need
+ * (see `ask()`), but the bundled apps (CLI, HTTP API, Studio) all need
  * to construct one from environment variables. This package now owns only the
  * universal AskDB precedence rules and registry dispatch. Individual provider
  * adapters own their native env vars, aliases, defaults, and connection

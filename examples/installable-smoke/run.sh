@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Installable smoke test for AskDB packages.
 #
-# Builds the workspace, packs the library packages (including config, enrich, ai, and tui) plus the app
+# Builds the workspace, packs the library packages (including config, enrich, and ai) plus the app
 # packages (cli, studio, http-api), copies the consumer fixture into a fresh tmpdir, installs
 # library tarballs (no workspace; includes @askdb/config for @askdb/rag's dependency), runs `tsc --noEmit`,
 # and executes the smoke script. The app sandbox gets a minimal askdb.config.ts because the CLI
@@ -20,7 +20,7 @@ pnpm -C "$ROOT" -r build >/dev/null
 
 echo "smoke: packing tarballs…"
 mkdir -p "$WORK/tarballs"
-for pkg in packages/config packages/core packages/ai packages/ai-openai packages/ai-azure packages/ai-google packages/ai-anthropic packages/client packages/introspect packages/connectors packages/postgres packages/prisma packages/enrich packages/tui packages/mysql packages/sqlite packages/sqlserver apps/cli apps/studio apps/http-api; do
+for pkg in packages/config packages/core packages/ai packages/ai-openai packages/ai-azure packages/ai-google packages/ai-anthropic packages/client packages/introspect packages/connectors packages/postgres packages/prisma packages/enrich packages/mysql packages/sqlite packages/sqlserver apps/cli apps/studio apps/http-api; do
   (cd "$ROOT/$pkg" && pnpm pack --pack-destination "$WORK/tarballs" >/dev/null)
 done
 for pkg in packages/rag; do
@@ -57,8 +57,6 @@ CLI_TARBALL="$(ls "$WORK/tarballs"/askdb-[0-9]*.tgz | head -n1)"
 [ -f "$CLI_TARBALL" ] || { echo "smoke: missing cli tarball" >&2; exit 1; }
 STUDIO_TARBALL="$(ls "$WORK/tarballs"/askdb-studio-*.tgz | head -n1)"
 [ -f "$STUDIO_TARBALL" ] || { echo "smoke: missing studio tarball" >&2; exit 1; }
-TUI_TARBALL="$(ls "$WORK/tarballs"/askdb-tui-*.tgz | head -n1)"
-[ -f "$TUI_TARBALL" ] || { echo "smoke: missing tui tarball" >&2; exit 1; }
 RAG_TARBALL="$(ls "$WORK/tarballs"/askdb-rag-*.tgz | head -n1)"
 [ -f "$RAG_TARBALL" ] || { echo "smoke: missing rag tarball" >&2; exit 1; }
 MYSQL_TARBALL="$(ls "$WORK/tarballs"/askdb-mysql-*.tgz | head -n1)"
@@ -193,17 +191,6 @@ if grep -Eq '(^package/src/|\.test\.)' <<<"$STUDIO_TARBALL_FILES"; then
   exit 1
 fi
 
-echo "smoke: validating @askdb/tui tarball contents…"
-TUI_TARBALL_FILES="$(tar -tzf "$TUI_TARBALL")"
-grep -q '^package/dist/index.js$' <<<"$TUI_TARBALL_FILES"
-grep -q '^package/dist/bin.js$' <<<"$TUI_TARBALL_FILES"
-grep -q '^package/README.md$' <<<"$TUI_TARBALL_FILES"
-grep -q '^package/LICENSE$' <<<"$TUI_TARBALL_FILES"
-if grep -Eq '(^package/src/|\.test\.)' <<<"$TUI_TARBALL_FILES"; then
-  echo "smoke: FAILED — @askdb/tui tarball includes source/tests" >&2
-  exit 1
-fi
-
 echo "smoke: validating @askdb/rag tarball contents…"
 RAG_TARBALL_FILES="$(tar -tzf "$RAG_TARBALL")"
 grep -q '^package/dist/index.js$' <<<"$RAG_TARBALL_FILES"
@@ -308,7 +295,6 @@ node -e "
       '@askdb/enrich': 'file:$ENRICH_TARBALL',
       askdb: 'file:$CLI_TARBALL',
       '@askdb/studio': 'file:$STUDIO_TARBALL',
-      '@askdb/tui': 'file:$TUI_TARBALL',
       '@askdb/rag': 'file:$RAG_TARBALL',
       '@askdb/mysql': 'file:$MYSQL_TARBALL',
       '@askdb/sqlite': 'file:$SQLITE_TARBALL',
@@ -386,9 +372,6 @@ if [ "$POSTGRES_DRIVER_STATUS" -ne 0 ] && ! grep -Eq 'ECONNREFUSED|connect|Postg
 fi
 # SQL Server's optional-peer cwd fallback is covered by unit tests; installing `mssql`
 # here would materially increase install smoke time for the same driver-load assertion.
-
-echo "smoke: askdb-tui bin…"
-(cd "$WORK/apps" && ./node_modules/.bin/askdb-tui --version >/dev/null)
 
 echo "smoke: askdb-studio bin…"
 (cd "$WORK/apps" && ./node_modules/.bin/askdb-studio --version >/dev/null)

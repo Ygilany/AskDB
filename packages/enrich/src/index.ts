@@ -15,7 +15,6 @@ export {
 export type {
   ColumnSuggestField,
   SuggestEnrichment,
-  SuggestEnrichmentForTui,
   SuggestSource,
   TableSuggestField,
 } from "./suggest.js";

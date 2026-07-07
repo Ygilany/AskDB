@@ -427,7 +427,7 @@ Chunks for tenant-scoped tables carry metadata identifying their required scope 
 - All IDs in the policy reference stable IDs from `schema.json` (table IDs and column IDs).
 - The loader validates cross-references at load time.
 - The policy is optional — Schema v2 directories without it behave identically to pre-Phase-10.
-- The policy is authored alongside `tables/*.md` and `concepts.md` in TUI/Studio.
+- The policy is authored alongside `tables/*.md` and `concepts.md` in Studio.
 - The bundler (`askdb bundle`) includes `tenant-policy.md` content in the bundled JSON.
 - Re-introspection does not modify `tenant-policy.md` — it only updates `schema.json`. The loader reports any resulting cross-reference mismatches.
 
@@ -443,7 +443,7 @@ Chunks for tenant-scoped tables carry metadata identifying their required scope 
 | SQL guardrail validator (parser + heuristic) | `@askdb/core` |
 | SQL output modes (SQL-only, SQL+params) | `@askdb/core` |
 | AI-assisted policy drafting | `@askdb/enrich` |
-| Setup capture UI (per-section confirmation) | `@askdb/tui`, `@askdb/studio` |
+| Setup capture UI (per-section confirmation) | `@askdb/studio` |
 | Body chunking, scope root metadata on table chunks | `@askdb/rag` |
 | Fixture | `fixtures/schemas/` |
 | CLI surface (`--tenant-scope`) | `apps/cli/` |

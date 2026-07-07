@@ -1,7 +1,6 @@
 ---
 "@askdb/enrich": minor
 "@askdb/studio": patch
-"@askdb/tui": patch
 ---
 
 Add `@askdb/enrich` as the shared Schema v2 enrichment workspace package.

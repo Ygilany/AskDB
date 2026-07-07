@@ -95,11 +95,13 @@ Completed: Shipped `@askdb/introspect` with Postgres connector support, live + a
 - **ID-anchored re-introspection** — On a second run, `schema.json` is the only file rewritten. Stable IDs from the previous run are preserved; new columns get fresh IDs; orphaned IDs surface as `IntrospectionResult.warnings`. The describable layer (`tables/*.md`, `concepts.md`) is **never** modified.
 - **CLI surface** — `askdb introspect --url …` and `askdb introspect --from-export …` (also `--print` and `--diff`). Library API mirrors the CLI.
 
-## Phase 7 ✅ — TUI enrichment (`@askdb/tui`)
+## Phase 7 ✅ — TUI enrichment (`@askdb/tui`) — *retired 2026-07*
+
+> **Retired:** the `@askdb/tui` terminal surface was removed in July 2026 in favor of Studio (Phase 9), which is a strict superset for enrichment. `askdb enrich` now opens Studio and `askdb bundle` calls `@askdb/enrich` directly. The shared authoring logic lives on in `@askdb/enrich`.
 
 Completed: Delivered `@askdb/tui` interactive schema enrichment for Schema v2, including AI-assisted table/column description workflows, round-trippable `tables/*.md` writes, and idempotent re-open/re-enrichment flows.
 
-Follow-up: shared non-UI enrichment workspace behavior now lives in `@askdb/enrich`, so `@askdb/tui`, `@askdb/studio`, and future custom authoring surfaces can share the same Schema v2 draft/save/suggestion logic without depending on each other.
+Follow-up: shared non-UI enrichment workspace behavior now lives in `@askdb/enrich`, so authoring surfaces such as `@askdb/studio` and future custom UIs can share the same Schema v2 draft/save/suggestion logic without depending on each other.
 
 **Goal:** Ship the interactive **terminal authoring surface** that turns a Schema v2 physical artifact (typically introspected in Phase 6) into a fully described one with AI-suggest + human-confirm.
 
@@ -175,7 +177,7 @@ This phase is intentionally **Postgres-first**. Tenant boundaries are too centra
   - child entity relationships that inherit tenant scope through foreign keys
   - hierarchy semantics such as agency -> sub-agency -> client/account/store
   - whether access is limited to one tenant, a set of tenants, a subtree, or the entire organization
-- **Authoring surface** — Studio/TUI prompts the integrator to confirm the tenant boundary instead of guessing from names alone. Introspection may suggest likely tenant columns and relationships, but human confirmation is required before enabling tenant-enforced generation.
+- **Authoring surface** — Studio prompts the integrator to confirm the tenant boundary instead of guessing from names alone. Introspection may suggest likely tenant columns and relationships, but human confirmation is required before enabling tenant-enforced generation.
 - **Runtime access scope** — Add a typed input to `ask()` for the current user's allowed tenant scope, e.g. exact tenant ids, allowed agency subtree, allowed sub-agency ids, or an admin/global bypass explicitly marked by the host.
 - **Prompt boundary** — Prompt assembly includes a compact, explicit tenant policy section: the tenant graph, the user's allowed scope, and the rule that generated SQL must constrain every tenant-scoped table to that scope.
 - **SQL guardrails** — Validation checks that generated SQL contains the required tenant predicates or joins for scoped tables. Prompting alone is not enough; unsafe or unscoped SQL must fail closed with a clear error.

@@ -53,6 +53,7 @@
     "@askdb/config": "workspace:*",
     "@askdb/connectors": "workspace:*",
     "@askdb/core": "workspace:*",
+    "@askdb/enrich": "workspace:*",
     "@askdb/introspect": "workspace:*",
     "@askdb/mysql": "workspace:*",
     "@askdb/postgres": "workspace:*",
@@ -60,7 +61,6 @@
     "@askdb/sqlite": "workspace:*",
     "@askdb/sqlserver": "workspace:*",
     "@askdb/studio": "workspace:*",
-    "@askdb/tui": "workspace:*",
     "@inquirer/prompts": "^8.5.2",
     "ai": "^6.0.205",
     "commander": "^15.0.0"

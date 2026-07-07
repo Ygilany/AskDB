@@ -11,7 +11,7 @@ import InstallTabs from "../../../components/InstallTabs.astro";
 
 <p class="doc-lede">AskDB is a workspace of focused packages. Install the ones your use case needs. This page is the index — purpose, install, and key exports for each.</p>
 
-<img src={packageDependenciesUrl} alt="AskDB package dependency graph: core and introspect at the top, engine and enrichment packages in the middle, and surfaces (CLI, Studio, TUI, HTTP API) at the bottom composing them" class="doc-diagram" />
+<img src={packageDependenciesUrl} alt="AskDB package dependency graph: core and introspect at the top, engine and enrichment packages in the middle, and surfaces (CLI, Studio, HTTP API) at the bottom composing them" class="doc-diagram" />
 
 <p class="doc-caption">AI provider adapters (<code>@askdb/ai-openai</code>, <code>@askdb/ai-azure</code>, <code>@askdb/ai-google</code>, <code>@askdb/ai-anthropic</code>) plug into the surfaces shown above via <code>@askdb/ai</code>. <code>@askdb/client</code> sits above <code>@askdb/core</code> + <code>@askdb/ai</code> as the config-driven entry point.</p>
 
@@ -193,15 +193,9 @@ Install only the package for your dialect. The execute provider is inferred from
 
 See [Studio — driver packages](/studio/#driver-packages) and [Configuration reference — Studio execute](/reference/config/#studio-execute-configuration) for setup details.
 
-### `@askdb/tui`
-
-Terminal-based schema-authoring UI. The CLI's `askdb enrich` command lazy-imports this package.
-
-<InstallTabs pkgs="@askdb/tui" />
-
 ### `@askdb/enrich`
 
-Headless schema-authoring helpers shared by Studio and TUI. Use directly when building a custom authoring surface.
+Headless schema-authoring helpers used by Studio. Use directly when building a custom authoring surface.
 
 <InstallTabs pkgs="@askdb/enrich" />
 
@@ -262,11 +256,11 @@ See [the CLI reference](/reference/cli/).
 | `@askdb/ai` | AI SDK core package (`ai`) |
 | `@askdb/ai-openai`, `@askdb/ai-azure`, `@askdb/ai-google`, `@askdb/ai-anthropic` | `@askdb/ai` + the matching AI SDK provider package |
 | `@askdb/enrich`, `@askdb/rag` | `@askdb/core` |
-| `@askdb/tui`, `@askdb/studio` | `@askdb/enrich` (+ `@askdb/rag` when used) |
+| `@askdb/studio` | `@askdb/enrich` (+ `@askdb/rag` when used) |
 | `@askdb/http-api` | `@askdb/core` (+ engine adapter) |
 | `askdb` (CLI) | All of the above (lazy-imported per command) |
 
-Reusable packages stay small and layered. First-party surfaces (CLI, Studio, TUI, HTTP API) compose them.
+Reusable packages stay small and layered. First-party surfaces (CLI, Studio, HTTP API) compose them.
 
 ## What to install — by use case
 

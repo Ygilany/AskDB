@@ -11,8 +11,6 @@ export type SuggestEnrichment = (
   context: EnrichmentContext,
 ) => Promise<EnrichmentCandidate[]>;
 
-export type SuggestEnrichmentForTui = SuggestEnrichment;
-
 export type TableSuggestField =
   | "description"
   | "aliases"

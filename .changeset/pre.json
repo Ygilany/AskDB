@@ -13,7 +13,6 @@
     "@askdb/postgres": "0.1.0",
     "@askdb/prisma": "0.1.0",
     "@askdb/rag": "0.1.0",
-    "@askdb/tui": "0.1.0",
     "@askdb/mysql": "0.1.0-beta.0",
     "@askdb/sqlite": "0.1.0-beta.0",
     "@askdb/sqlserver": "0.1.0-beta.0",

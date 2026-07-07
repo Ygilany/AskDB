@@ -4,7 +4,6 @@
 "@askdb/postgres": minor
 "askdb": minor
 "@askdb/http-api": minor
-"@askdb/tui": patch
 ---
 
 Reshape AskDB around one package per integration surface (Phase 7.5).

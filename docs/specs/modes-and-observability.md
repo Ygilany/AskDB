@@ -5,7 +5,7 @@
 
 ## Overview
 
-This feature establishes the cross-surface contracts that all AskDB surfaces share: operating modes, structured logging, correlation IDs, and sensitive-field handling. Every surface — CLI, HTTP API, TUI, Studio — reuses the same logging factory and respects the same mode semantics.
+This feature establishes the cross-surface contracts that all AskDB surfaces share: operating modes, structured logging, correlation IDs, and sensitive-field handling. Every surface — CLI, HTTP API, Studio — reuses the same logging factory and respects the same mode semantics.
 
 Operating modes define what data may reach the model and what the pipeline is allowed to do. Structured logging provides a stable, parseable event stream for integrators, CI, and debugging. Sensitive-field handling ensures that columns marked sensitive appear in prompts in a controlled way and trigger host-visible warnings when referenced in generated SQL.
 

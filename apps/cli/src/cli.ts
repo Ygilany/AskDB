@@ -32,12 +32,13 @@ const ai = createAiRegistry([openaiProvider, azureProvider, googleProvider, anth
 
 // `askdb init` writes templates and should not require a valid askdb.config.
 // `askdb studio` tolerates a missing config too: Studio starts in setup mode
-// and its browser wizard scaffolds the config.
+// and its browser wizard scaffolds the config. `askdb enrich` is a Studio
+// alias, so it inherits the same tolerance.
 if (process.argv[2] !== "init") {
   try {
     bootstrapAskDbEnv({ cwd: process.cwd() });
   } catch (error) {
-    if (process.argv[2] !== "studio") throw error;
+    if (process.argv[2] !== "studio" && process.argv[2] !== "enrich") throw error;
   }
 }
 
@@ -51,7 +52,7 @@ if (process.argv[2] === "introspect") {
 }
 
 if (process.argv[2] === "enrich") {
-  process.exit(await runTuiCommand(process.argv.slice(3)));
+  process.exit(await runStudioCommand(process.argv.slice(3)));
 }
 
 if (process.argv[2] === "studio") {
@@ -59,7 +60,7 @@ if (process.argv[2] === "studio") {
 }
 
 if (process.argv[2] === "bundle") {
-  process.exit(await runTuiCommand(["bundle", ...process.argv.slice(3)]));
+  process.exit(await runBundleCommand(process.argv.slice(3)));
 }
 
 function printCliError(error: unknown): void {
@@ -81,9 +82,27 @@ function printCliError(error: unknown): void {
   console.error(String(error));
 }
 
-async function runTuiCommand(args: string[]): Promise<number> {
-  const { runTuiCli } = await import("@askdb/tui");
-  return runTuiCli(args);
+async function runBundleCommand(args: string[]): Promise<number> {
+  const schemaDir = args[0];
+  const outFlag = args[1];
+  const outPath = args[2];
+  if (!schemaDir || outFlag !== "--out" || !outPath) {
+    process.stderr.write("Usage: askdb bundle <schema-dir> --out <bundle.json>\n");
+    return 1;
+  }
+  const { bundleSchemaDirectory } = await import("@askdb/enrich");
+  const { writeFileSync } = await import("node:fs");
+  const { resolve } = await import("node:path");
+  try {
+    const bundle = bundleSchemaDirectory(resolve(schemaDir));
+    writeFileSync(resolve(outPath), `${JSON.stringify(bundle, null, 2)}\n`, "utf8");
+    process.stdout.write(`Wrote ${resolve(outPath)}\n`);
+    return 0;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    process.stderr.write(`askdb bundle: ${message}\n`);
+    return 1;
+  }
 }
 
 async function runStudioCommand(args: string[]): Promise<number> {
@@ -245,7 +264,7 @@ program
 
 program
   .command("enrich")
-  .description("Open the terminal UI for Schema v2 enrichment")
+  .description("Open Studio for Schema v2 enrichment (alias of `askdb studio`)")
   .allowUnknownOption(true);
 
 program

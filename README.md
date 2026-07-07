@@ -8,7 +8,7 @@
 
 **AskDB is an open-source NL-to-SQL toolkit for developers: it uses your LLM to generate validated, schema-grounded SQL, then hands it back to your app to review and run.** BYO model, BYO database, BYO vector store.
 
-AskDB grounds generation in a human-enriched schema artifact, and it keeps database execution, permissions, tenant policy, and audit logging inside the host application. Library, CLI, Studio, TUI, and HTTP surfaces share the same core pipeline.
+AskDB grounds generation in a human-enriched schema artifact, and it keeps database execution, permissions, tenant policy, and audit logging inside the host application. Library, CLI, Studio, and HTTP surfaces share the same core pipeline.
 
 > **Ask your data. Keep control of the query.**
 >
@@ -208,7 +208,7 @@ AskDB returns SQL for review; it does not execute generated SQL. Treat generated
 ## What it does
 
 - **Natural language → validated SQL** grounded in your database schema, with SQL validation and guardrails.
-- **Human-reviewed schema enrichment** — introspect your database, then enrich the schema artifact with descriptions, aliases, and business concepts using the TUI or Studio.
+- **Human-reviewed schema enrichment** — introspect your database, then enrich the schema artifact with descriptions, aliases, and business concepts using Studio.
 - **Clear execution boundary** — AskDB returns SQL; it does not execute against your database. Your application decides whether to show it, review it, approve it, run it, log it, or reject it.
 - **Multiple surfaces** — the same schema artifact and generation pipeline across the CLI, a Node library, and an HTTP API.
 - **Multi-tenancy** — define a tenant policy (roots, hierarchy, scoped/polymorphic/global tables) and pass a runtime tenant scope to `ask()`; AskDB injects tenant-filtering predicates into generated SQL automatically.
@@ -234,7 +234,7 @@ How much of the **schema context** the model sees depends on the chosen mode:
 
 ## Status
 
-Phases 1–10 are implemented on this branch: core, CLI, HTTP API, installable package seams, schema artifact format, Postgres introspection, TUI enrichment, RAG indexing and retrieval, Studio (React browser UI), and multi-tenancy proof. Later phases are in [`docs/roadmap.md`](docs/roadmap.md).
+Phases 1–10 are implemented on this branch: core, CLI, HTTP API, installable package seams, schema artifact format, Postgres introspection, schema enrichment, RAG indexing and retrieval, Studio (React browser UI), and multi-tenancy proof. Later phases are in [`docs/roadmap.md`](docs/roadmap.md).
 
 ## License
 
