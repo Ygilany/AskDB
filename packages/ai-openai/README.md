@@ -1,6 +1,6 @@
 # `@askdb/ai-openai`
 
-OpenAI provider adapter for `@askdb/ai`.
+OpenAI provider adapter for AskDB.
 
 Pass the adapter to `createAskDb` and AskDB constructs the OpenAI model from your `askdb.config.*`:
 
