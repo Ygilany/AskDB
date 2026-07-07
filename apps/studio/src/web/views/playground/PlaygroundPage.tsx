@@ -1,5 +1,5 @@
-import { useEffect, useCallback } from "react";
-import { Loader2, Lock, Play, Plus, Shield, Sparkles, Trash2 } from "lucide-react";
+import { useEffect, useCallback, useState } from "react";
+import { ChevronDown, ChevronRight, Loader2, Lock, Play, Plus, Shield, Sparkles, Trash2 } from "lucide-react";
 import { useWorkspace } from "../../contexts/workspace-context";
 import { useRag } from "../../contexts/rag-context";
 import { usePlayground } from "../../contexts/playground-context";
@@ -508,8 +508,7 @@ export function PlaygroundPage() {
 
                 {askResult.explain !== null && askResult.explain !== undefined && (
                   <section style={{ padding: "var(--pad-y) var(--pad-x)", borderBottom: "1px solid var(--border)" }}>
-                    <h3 style={{ fontSize: 13, fontWeight: 600, marginBottom: 8 }}>Explain</h3>
-                    <pre className="plain-block">{formatUnknown(askResult.explain)}</pre>
+                    <ExplainSection explain={askResult.explain} />
                   </section>
                 )}
 
@@ -630,4 +629,17 @@ export function PlaygroundPage() {
 function formatUnknown(value: unknown): string {
   if (typeof value === "string") return value;
   return JSON.stringify(value, null, 2);
+}
+
+function ExplainSection({ explain }: { explain: unknown }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div>
+      <button type="button" className="collapsible-btn" onClick={() => setOpen(!open)}>
+        {open ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+        Explain
+      </button>
+      {open && <pre className="plain-block">{formatUnknown(explain)}</pre>}
+    </div>
+  );
 }
