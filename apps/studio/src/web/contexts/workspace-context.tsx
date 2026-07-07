@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useReducer } from "react";
+import { createContext, use, useCallback, useEffect, useEffectEvent, useMemo, useReducer } from "react";
 import type { ReactNode } from "react";
 import type { TenantPolicyFrontmatter, V2Concept } from "@askdb/core";
 import type { ColumnDraft, SuggestSource, TableDraft } from "@askdb/enrich";
@@ -60,7 +60,7 @@ interface WorkspaceContextValue {
 const WorkspaceContext = createContext<WorkspaceContextValue | null>(null);
 
 export function useWorkspace(): WorkspaceContextValue {
-  const ctx = useContext(WorkspaceContext);
+  const ctx = use(WorkspaceContext);
   if (!ctx) throw new Error("useWorkspace must be used within WorkspaceProvider");
   return ctx;
 }
@@ -194,12 +194,14 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     });
   }, [drafts, tableSearch, tables]);
 
+  const clearSaveStatus = useEffectEvent(() => setSaveStatus(null));
+
   useEffect(() => {
     if (saveStatus?.kind === "success" || saveStatus?.kind === "neutral") {
-      const id = setTimeout(() => setSaveStatus(null), 4000);
+      const id = setTimeout(() => clearSaveStatus(), 4000);
       return () => clearTimeout(id);
     }
-  }, [saveStatus, setSaveStatus]);
+  }, [saveStatus]);
 
   const withBusy = useCallback(async (key: string, task: () => Promise<void>) => {
     dispatch({ type: "busy_add", key });
@@ -343,7 +345,7 @@ function makeDraftMap(workspace: StudioWorkspaceDto): Record<string, TableDraft>
 }
 
 function clone<T>(value: T): T {
-  return JSON.parse(JSON.stringify(value)) as T;
+  return structuredClone(value);
 }
 
 function mergeList(existing: string[] | undefined, incoming: string[]): string[] {

@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useMemo, useReducer } from "react";
+import { createContext, use, useEffect, useMemo, useReducer } from "react";
 import type { ReactNode } from "react";
 import type { TenantFilterCondition, TenantSqlOutputMode, TenantScope } from "@askdb/core";
 import type { AskResponse, ExecuteResponse, ExecuteStatusResponse, PlaygroundHistoryEntry } from "@/shared/api";
@@ -179,7 +179,7 @@ interface PlaygroundContextValue {
 const PlaygroundContext = createContext<PlaygroundContextValue | null>(null);
 
 export function usePlayground(): PlaygroundContextValue {
-  const ctx = useContext(PlaygroundContext);
+  const ctx = use(PlaygroundContext);
   if (!ctx) throw new Error("usePlayground must be used within PlaygroundProvider");
   return ctx;
 }

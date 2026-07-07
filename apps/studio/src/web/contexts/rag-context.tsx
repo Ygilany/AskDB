@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useReducer } from "react";
+import { createContext, use, useCallback, useEffect, useEffectEvent, useMemo, useReducer } from "react";
 import type { ReactNode } from "react";
 import type { ChunkType } from "@askdb/rag";
 import type { RagQueryResponse, StudioRagStatusDto, StudioRequestUsageDto } from "@/shared/api";
@@ -31,7 +31,7 @@ interface RagContextValue {
 const RagContext = createContext<RagContextValue | null>(null);
 
 export function useRag(): RagContextValue {
-  const ctx = useContext(RagContext);
+  const ctx = use(RagContext);
   if (!ctx) throw new Error("useRag must be used within RagProvider");
   return ctx;
 }
@@ -100,12 +100,14 @@ export function RagProvider({ children }: { children: ReactNode }) {
 
   const ragAvailable = Boolean(ragStatus?.hasIndex);
 
+  const clearRagMessage = useEffectEvent(() => setRagMessage(null));
+
   useEffect(() => {
     if (ragMessage?.kind === "success" || ragMessage?.kind === "neutral") {
-      const id = setTimeout(() => setRagMessage(null), 4000);
+      const id = setTimeout(() => clearRagMessage(), 4000);
       return () => clearTimeout(id);
     }
-  }, [ragMessage, setRagMessage]);
+  }, [ragMessage]);
 
   const withBusy = useCallback(async (key: string, task: () => Promise<void>) => {
     dispatch({ type: "busy_add", key });

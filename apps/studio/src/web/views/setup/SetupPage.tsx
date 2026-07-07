@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import { Check, Database, FileKey, Loader2, Sparkles, Wand2 } from "lucide-react";
 import type { SetupConfigResponse, SetupStatusDto } from "@/shared/api";
 import { setupIntrospect, setupWriteConfig } from "../../api";
@@ -46,12 +46,12 @@ export function SetupPage({
 
   const [database, setDatabase] = useState<SetupDatabase>("postgres");
   const [connectionEnv, setConnectionEnv] = useState("DATABASE_URL");
-  const [connectionEnvTouched, setConnectionEnvTouched] = useState(false);
+  const connectionEnvTouched = useRef(false);
   const [sqliteFile, setSqliteFile] = useState("./data.db");
   const [prismaSchema, setPrismaSchema] = useState("");
   const [aiProvider, setAiProvider] = useState<SetupAiProvider>("openai");
   const [aiKeyEnv, setAiKeyEnv] = useState("OPENAI_API_KEY");
-  const [aiKeyEnvTouched, setAiKeyEnvTouched] = useState(false);
+  const aiKeyEnvTouched = useRef(false);
   const [schemaOut, setSchemaOut] = useState("./askdb");
 
   const [configResult, setConfigResult] = useState<SetupConfigResponse | null>(null);
@@ -74,23 +74,17 @@ export function SetupPage({
 
   const envSnippet = envVarsToFill.map((v) => `${v.name}=`).join("\n");
 
-  const pickDatabase = useCallback(
-    (value: SetupDatabase) => {
-      setDatabase(value);
-      if (!connectionEnvTouched) setConnectionEnv(CONNECTION_ENV_DEFAULTS[value] || "DATABASE_URL");
-    },
-    [connectionEnvTouched],
-  );
+  const pickDatabase = useCallback((value: SetupDatabase) => {
+    setDatabase(value);
+    if (!connectionEnvTouched.current) setConnectionEnv(CONNECTION_ENV_DEFAULTS[value] || "DATABASE_URL");
+  }, []);
 
-  const pickAiProvider = useCallback(
-    (value: SetupAiProvider) => {
-      setAiProvider(value);
-      if (!aiKeyEnvTouched) {
-        setAiKeyEnv(AI_PROVIDERS.find((p) => p.value === value)?.keyEnv ?? "OPENAI_API_KEY");
-      }
-    },
-    [aiKeyEnvTouched],
-  );
+  const pickAiProvider = useCallback((value: SetupAiProvider) => {
+    setAiProvider(value);
+    if (!aiKeyEnvTouched.current) {
+      setAiKeyEnv(AI_PROVIDERS.find((p) => p.value === value)?.keyEnv ?? "OPENAI_API_KEY");
+    }
+  }, []);
 
   const handleWriteConfig = useCallback(async () => {
     setBusy("config");
@@ -168,7 +162,7 @@ export function SetupPage({
                   <Input
                     value={connectionEnv}
                     disabled={Boolean(configResult)}
-                    onChange={(e) => { setConnectionEnv(e.target.value.toUpperCase()); setConnectionEnvTouched(true); }}
+                    onChange={(e) => { setConnectionEnv(e.target.value.toUpperCase()); connectionEnvTouched.current = true; }}
                   />
                 </Field>
               )}
@@ -205,7 +199,7 @@ export function SetupPage({
                 <Input
                   value={aiKeyEnv}
                   disabled={Boolean(configResult)}
-                  onChange={(e) => { setAiKeyEnv(e.target.value.toUpperCase()); setAiKeyEnvTouched(true); }}
+                  onChange={(e) => { setAiKeyEnv(e.target.value.toUpperCase()); aiKeyEnvTouched.current = true; }}
                 />
               </Field>
 
@@ -215,7 +209,7 @@ export function SetupPage({
 
               {!configResult && (
                 <div>
-                  <button className="btn primary" disabled={busy === "config"} onClick={() => void handleWriteConfig()}>
+                  <button type="button" className="btn primary" disabled={busy === "config"} onClick={() => void handleWriteConfig()}>
                     {busy === "config" ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} />}
                     Write askdb.config.ts
                   </button>
@@ -284,7 +278,7 @@ export function SetupPage({
                 schema artifact. When it finishes, Studio opens on the Overview.
               </p>
               <div>
-                <button className="btn primary" disabled={busy === "introspect"} onClick={() => void handleIntrospect()}>
+                <button type="button" className="btn primary" disabled={busy === "introspect"} onClick={() => void handleIntrospect()}>
                   {busy === "introspect" ? <Loader2 size={14} className="animate-spin" /> : <Database size={14} />}
                   Run introspection
                 </button>
