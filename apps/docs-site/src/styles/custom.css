@@ -489,7 +489,6 @@ figure:has(.askdb-diagram) figcaption {
 }
 
 .home-bento {
-  align-items: start;
   display: grid;
   gap: 0.85rem;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -542,7 +541,6 @@ figure:has(.askdb-diagram) figcaption {
 }
 
 .home-value-grid {
-  align-items: start;
   display: grid;
   gap: 0.85rem;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -582,7 +580,6 @@ figure:has(.askdb-diagram) figcaption {
 
 .home-path-grid,
 .home-map-grid {
-  align-items: start;
   display: grid;
   gap: 0.75rem;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -687,7 +684,6 @@ figure:has(.askdb-diagram) figcaption {
 
 /* --- Workflow (three numbered steps) --- */
 .home-workflow {
-  align-items: start;
   counter-reset: home-workflow;
   display: grid;
   gap: 0.85rem;
@@ -729,7 +725,6 @@ figure:has(.askdb-diagram) figcaption {
 
 /* --- Engines row (4 cards) --- */
 .home-engines {
-  align-items: start;
   display: grid;
   gap: 0.75rem;
   grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -781,7 +776,6 @@ figure:has(.askdb-diagram) figcaption {
 
 /* --- Privacy boundary (two-column comparison) --- */
 .home-privacy {
-  align-items: start;
   display: grid;
   gap: 0.85rem;
   grid-template-columns: repeat(2, minmax(0, 1fr));
