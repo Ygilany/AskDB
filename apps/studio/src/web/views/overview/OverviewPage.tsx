@@ -1,4 +1,4 @@
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useEffectEvent, useState } from "react";
 import { useNavigate } from "react-router";
 import { Loader2, Sparkles, Shield, History, Zap, RefreshCw } from "lucide-react";
 import { useWorkspace, type StatusMessage } from "../../contexts/workspace-context";
@@ -33,6 +33,15 @@ export function OverviewPage() {
       setResyncing(false);
     }
   }, [load, refreshRagStatus]);
+
+  const clearResyncStatus = useEffectEvent(() => setResyncStatus(null));
+
+  useEffect(() => {
+    if (resyncStatus?.kind === "success") {
+      const id = setTimeout(() => clearResyncStatus(), 4000);
+      return () => clearTimeout(id);
+    }
+  }, [resyncStatus]);
 
   if (!workspace) return null;
 
