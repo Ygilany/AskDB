@@ -27,12 +27,15 @@ The dialect-agnostic NL-to-SQL pipeline. Schema loading, prompt construction, va
 
 | Symbol | Purpose |
 | --- | --- |
-| `ask(options)` | The main pipeline. Returns validated SQL. |
+| `ask(options)` | The main pipeline. Returns validated SQL. See [full API reference](/reference/core-api/). |
 | `loadSchema(path)` | Load a schema artifact from a directory, bundle, or `schema.json`. |
 | `validateTenantScope` / `resolveTenantSql` | Tenant-scope enforcement primitives. |
 | `createAskDbLogger` | Structured logger that emits AskDB log events. |
 | `POSTGRES_DIALECT` and built-in dialect IDs | Dialect inputs accepted by `ask()`. |
 | `AskDbLanguageModel` | AskDB's public name for the AI SDK language model contract. |
+| `AskUsage` | Token usage type returned in `AskPipelineResult`. |
+
+See the **[@askdb/core API reference](/reference/core-api/)** for the full option and return-type documentation.
 
 ### `@askdb/client`
 
@@ -51,6 +54,8 @@ construct the model and load the schema yourself and call `ask()` directly.
 | `client.ask(question, overrides?)` | Resolve schema/model/dialect and run the pipeline. Overrides: `schema`, `model`, `dialect`, plus all `ask()` options. |
 | `AskDbClient` / `CreateAskDbOptions` / `AskOverrides` | Types for the client, constructor options, and per-call overrides. |
 | `SchemaLoadError` / `SchemaNotConfiguredError` / `ModelNotConfiguredError` / `DialectNotSupportedError` | Typed errors for the resolution steps — catch these to map failures to your own error handling. |
+
+See the **[@askdb/client API reference](/reference/client-api/)** for the full option documentation.
 
 ### `@askdb/ai`
 
@@ -215,8 +220,11 @@ Chunks the schema artifact, indexes it in a vector store, and retrieves relevant
 | `createAiSdkEmbedder({ model })` / `createOpenAiEmbedder(...)` | Wrap an AI SDK embedding model (or raw OpenAI) as the `embedder`. |
 | `createRetriever({ store, embedder })` | Build the retriever passed to `ask()`. |
 | `createPgvectorStore` | The pgvector store factory. |
+| `loadChunkerSourcesFromDir(path)` | Load a schema directory into chunker format (includes markdown). |
 
 Ships a small CLI binary `askdb-rag` with three commands — `index`, `query`, and `setup-store` (pgvector provisioning). See [CLI reference — the askdb-rag binary](/reference/cli/#the-askdb-rag-binary) and [RAG for large schemas](/guides/rag-for-large-schemas/).
+
+See the **[@askdb/rag API reference](/reference/rag-api/)** for the full option and type documentation.
 
 ## Service surfaces
 
@@ -271,6 +279,9 @@ Reusable packages stay small and layered. First-party surfaces (CLI, Studio, TUI
 ## Read next
 
 <div class="home-path-grid">
+  <a href="/reference/core-api/"><strong>@askdb/core API</strong><span>Full <code>ask()</code> options, result fields, dialects, modes, and logging.</span></a>
+  <a href="/reference/client-api/"><strong>@askdb/client API</strong><span><code>createAskDb()</code> and per-call overrides.</span></a>
+  <a href="/reference/rag-api/"><strong>@askdb/rag API</strong><span><code>buildSchemaIndex()</code>, embedders, and vector stores.</span></a>
   <a href="/reference/cli/"><strong>CLI reference</strong><span>The askdb binary in detail.</span></a>
   <a href="/reference/http-api/"><strong>HTTP API reference</strong><span>Endpoints, request and response shapes.</span></a>
   <a href="/reference/config/"><strong>Configuration reference</strong><span>defineConfig and the env-var matrix.</span></a>

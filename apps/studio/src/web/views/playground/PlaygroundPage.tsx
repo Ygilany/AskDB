@@ -10,6 +10,7 @@ import { CopyButton } from "../../components/common/CopyButton";
 import { InlineStatus } from "../../components/common/StatusBanner";
 import { EmptyText } from "../../components/common/EmptyText";
 import { GetTheCodePanel } from "./GetTheCodePanel";
+import { UsageSummary } from "../../components/common/UsageSummary";
 
 const selectClassName = "h-9 w-full rounded-md border border-input bg-background px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring";
 const fieldsetResetStyle = { border: 0, padding: 0, margin: 0 };
@@ -497,6 +498,11 @@ export function PlaygroundPage() {
                     <pre className="sql-block">{askResult.sql}</pre>
                   ) : (
                     <EmptyText text="No SQL generated." />
+                  )}
+                  {askResult.usage && (
+                    <div style={{ marginTop: 12 }}>
+                      <UsageSummary title="Token usage" usage={askResult.usage} />
+                    </div>
                   )}
                 </section>
 

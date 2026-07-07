@@ -34,11 +34,19 @@ export type AskDialectGenerateOptions = {
   tenantScope?: TenantScope;
 };
 
+/** Token usage for a single `ask()` call (LLM generation only; excludes RAG embedding tokens). */
+export type AskUsage = {
+  promptTokens: number | null;
+  completionTokens: number | null;
+  totalTokens: number | null;
+};
+
 /** Output of a dialect's generator: validated SQL plus optional dialect-specific explain metadata. */
 export type AskDialectGenerateResult = {
   sql: string;
   explain?: unknown;
   tenantGuardrail?: import("./sql/tenant-guardrail.js").TenantGuardrailResult;
+  usage?: AskUsage;
 };
 
 /**
@@ -142,6 +150,8 @@ export type AskPipelineResult = {
   tenantGuardrail?: import("./sql/tenant-guardrail.js").TenantGuardrailResult;
   tenantParams?: unknown[];
   tenantBindings?: TenantBinding[];
+  /** Token usage for the LLM generation call. Absent when the provider does not report usage. */
+  usage?: AskUsage;
 };
 
 export async function ask(options: AskPipelineOptions): Promise<AskPipelineResult> {
@@ -191,6 +201,7 @@ export async function ask(options: AskPipelineOptions): Promise<AskPipelineResul
   const result: AskPipelineResult = { sql };
   if (explain !== undefined) result.explain = explain;
   if (tenantGuardrail !== undefined) result.tenantGuardrail = tenantGuardrail;
+  if (generated.usage !== undefined) result.usage = generated.usage;
 
   if (tenantPolicy && options.tenantScope) {
     const mode = options.tenantSqlMode ?? "sql-only";

@@ -1,0 +1,280 @@
+---
+title: "@askdb/core API reference"
+description: "Full API reference for @askdb/core: ask(), schema loading, dialects, modes, and logging."
+---
+
+<p class="doc-eyebrow">Reference · @askdb/core</p>
+
+<p class="doc-lede"><code>@askdb/core</code> is the dialect-agnostic NL-to-SQL pipeline. It owns schema loading, prompt construction, SQL validation, and tenant-scope enforcement. Everything else in the AskDB ecosystem composes it.</p>
+
+## `ask(options)`
+
+The main pipeline function. Accepts a natural-language question and a loaded schema; returns validated SQL.
+
+```ts
+import { ask } from "@askdb/core";
+
+const { sql } = await ask({
+  question: "How many users signed up last week?",
+  schema,       // from loadSchema()
+  model,        // AI SDK LanguageModel
+  dialect: "postgres",
+});
+```
+
+### Options
+
+| Field | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `question` | `string` | yes | — | The natural-language question. |
+| `schema` | `AnyNormalizedSchema` | yes | — | Loaded schema from `loadSchema()` or `loadSchemaFromJson()`. |
+| `model` | `AskDbLanguageModel` | yes | — | An AI SDK `LanguageModel` instance (e.g. `openai("gpt-4o-mini")`). |
+| `dialect` | `AskDialectInput` | yes | — | A built-in dialect id, `DialectSpec`, or custom `AskDialect`. See [Dialects](#dialects). |
+| `mode` | `AskDbModeV1` | no | `"schema_only"` | Trust boundary. See [Modes](#modes). |
+| `explain` | `boolean` | no | `false` | When `true`, populates `result.explain` with heuristic guardrail metadata. |
+| `omitSensitiveIdentifiersFromNlToSqlPrompt` | `boolean` | no | `false` | When `true`, strips sensitive table/column names from the NL→SQL DDL entirely. Default (`false`) includes them with a `(sensitive)` tag so the model can still ground queries. |
+| `tenantScope` | `TenantScope` | no | — | Required when the schema has a `tenant-policy.md`. The pipeline fails closed if a policy exists and this is absent. |
+| `tenantSqlMode` | `TenantSqlOutputMode` | no | `"sql-only"` | `"sql-only"` inlines literal tenant values; `"sql-params"` converts them to positional `$N` parameters. |
+| `retriever` | `Retriever` | no | — | RAG retriever from `@askdb/rag`. When supplied and schema chunk count exceeds `retrievalThresholdChunks`, retrieval replaces the full DDL in the prompt. |
+| `retrievalK` | `number` | no | `8` | Top-k passed to the retriever. |
+| `retrievalThresholdChunks` | `number` | no | `30` | Chunk count below which the full DDL is used even if a retriever is supplied. |
+| `totalSchemaChunkCount` | `number` | no | `Infinity` | Total chunk count from `buildSchemaIndex`. Pass `result.stats.chunksTotal` here for the threshold check to be meaningful; omit to always use the retriever when one is supplied. |
+| `logger` | `AskDbLogger` | no | — | Structured logger. Attach one for observability — it emits `AskDbLogEvent` entries at each pipeline stage. |
+| `deps` | `AskGenerateDeps` | no | — | `{ generateText? }` — inject a mock `generateText` for unit tests. |
+
+### Result — `AskPipelineResult`
+
+| Field | Type | When present |
+| --- | --- | --- |
+| `sql` | `string` | Always. The generated, validated SQL string. |
+| `usage` | `AskUsage \| undefined` | When the model provider reports token counts. |
+| `explain` | `unknown \| undefined` | When `explain: true`. Heuristic guardrail metadata — which read-only rules fired and why. |
+| `tenantGuardrail` | `TenantGuardrailResult \| undefined` | When a tenant policy is active. Confirms the generated SQL references tenant-scoped tables correctly. |
+| `tenantParams` | `unknown[] \| undefined` | When `tenantSqlMode: "sql-params"` and the SQL has tenant placeholders. Positional `$N` values to pass alongside the query. |
+| `tenantBindings` | `TenantBinding[] \| undefined` | When a tenant policy is active. Structured binding metadata for audit. |
+
+### `AskUsage`
+
+```ts
+type AskUsage = {
+  promptTokens: number | null;
+  completionTokens: number | null;
+  totalTokens: number | null;
+};
+```
+
+Populated from the model provider's usage report. Use for cost tracking or quota enforcement. All fields are `null` when the provider does not report that counter.
+
+---
+
+## Schema loading
+
+### `loadSchema(path)`
+
+```ts
+import { loadSchema } from "@askdb/core";
+const schema = await loadSchema("./my-app.schema");
+```
+
+Autodetects and loads a v2 schema artifact. Accepts:
+- A **schema directory** (`<name>.schema/`) — the output of `askdb introspect`
+- A **bundled JSON file** (`*.bundle.json` or any JSON with `bundled: true`) — the output of `askdb bundle`
+- A direct path to a `schema.json` file
+
+Returns `NormalizedSchemaV2`. Throws `SchemaLoadError` on failure.
+
+Load once at startup and keep in memory — schema loading is synchronous-style I/O, not a per-request call.
+
+### `loadSchemaFromJson(raw)`
+
+```ts
+import { loadSchemaFromJson } from "@askdb/core";
+const schema = loadSchemaFromJson(bundleJsonString);
+```
+
+Parses a raw JSON string. Accepts the same formats as `loadSchema` (bundled JSON or bare `schema.json` blob). Useful when the schema is passed as a string over a network boundary (e.g., the HTTP API's `schemaJson` request field).
+
+---
+
+## Dialects
+
+The `dialect` option accepts three forms:
+
+### Built-in dialect id
+
+```ts
+dialect: "postgres"  // or "mysql" | "sqlite" | "sqlserver" | "cockroachdb" | "mariadb"
+```
+
+| Id | Engine |
+| --- | --- |
+| `"postgres"` | PostgreSQL — `"` quotes, `ILIKE`, `::type` cast, `NOW()`, `\|\|` concat |
+| `"cockroachdb"` | CockroachDB — PostgreSQL-wire-compatible; reuses the Postgres prompt |
+| `"mysql"` | MySQL — `` ` `` quotes, `CONCAT()`, `LIKE`, `CAST()`, `NOW()` |
+| `"mariadb"` | MariaDB — MySQL-protocol-compatible; reuses the MySQL prompt |
+| `"sqlite"` | SQLite — dynamic typing, `LIKE`, `date('now')`, `\|\|` concat, `LIMIT` |
+| `"sqlserver"` | SQL Server (T-SQL) — `[bracket]` or `"` quotes, `GETDATE()`, `+`/`CONCAT()`, `CAST()`/`CONVERT()` |
+
+The engine adapter packages (`@askdb/postgres`, `@askdb/mysql`, etc.) export convenience dialect constants (`POSTGRES_DIALECT`, `MYSQL_DIALECT`, …), but passing the string id to `ask()` is sufficient — you don't need to install the engine adapter just for SQL generation.
+
+### `DialectSpec`
+
+Bring your own dialect descriptor. Use when your engine is not in the built-in list but shares SQL semantics with one of the built-ins, or when you need to extend a built-in with extra forbidden keywords or validation.
+
+```ts
+import { type DialectSpec } from "@askdb/core";
+
+const myDialect: DialectSpec = {
+  id: "redshift",
+  displayName: "Amazon Redshift",
+  promptBrief: "Amazon Redshift SQL. Uses PostgreSQL syntax with some differences: ...",
+  identifierQuote: '"',
+  extraForbiddenKeywords: ["COPY", "UNLOAD"],
+  extraValidate(sql) {
+    // throw SqlValidationError for dialect-specific rules
+  },
+};
+```
+
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| `id` | `string` | yes | Stable identifier. |
+| `displayName` | `string` | yes | Human-readable name. |
+| `promptBrief` | `string` | yes | One-paragraph guidance for the model about this dialect's syntax. |
+| `identifierQuote` | `'"' \| '`'` | yes | Identifier quoting style. |
+| `extraForbiddenKeywords` | `readonly string[]` | no | Keywords to forbid in addition to the shared read-only denylist. |
+| `extraValidate` | `(sql: string) => void` | no | Dialect-specific SQL validator. Throw `SqlValidationError` for failures. |
+
+### `AskDialect`
+
+Full escape hatch for custom NL→SQL generators — agentic flows, tool-calling, fine-tuned models, non-SELECT targets. 95 % of consumers should use a built-in id or `DialectSpec` instead.
+
+```ts
+import { type AskDialect } from "@askdb/core";
+
+const myDialect: AskDialect = {
+  async generate(question, schema, model, options) {
+    // call your own generation logic
+    return { sql: "SELECT ...", usage: { promptTokens: 100, completionTokens: 20, totalTokens: 120 } };
+  },
+};
+```
+
+The `generate` method receives:
+- `question: string`
+- `schema: AnyNormalizedSchema`
+- `model: AskDbLanguageModel`
+- `options?: AskDialectGenerateOptions` — `{ logger, explain, omitSensitiveIdentifiersFromNlToSqlPrompt, generateText, prebuiltDdl, tenantPolicy, tenantScope }`
+
+It must return `AskDialectGenerateResult`:
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `sql` | `string` | The generated SQL. |
+| `explain` | `unknown \| undefined` | Guardrail metadata when `options.explain` is true. |
+| `tenantGuardrail` | `TenantGuardrailResult \| undefined` | Tenant validation result, if your generator runs it. |
+| `usage` | `AskUsage \| undefined` | Token usage, if your generator has access to it. |
+
+---
+
+## Modes
+
+`AskDbModeV1` controls which post-generation guardrails are active.
+
+| Value | Description |
+| --- | --- |
+| `"schema_only"` (default) | Schema-grounding only. The model sees the DDL; no post-execute paths are activated. Use this for all production read-only queries. |
+| `"bounded_results"` | Includes result-count guardrails. Activates model paths that add `LIMIT` clauses or bound `OFFSET`. Use with caution — activates additional model calls. |
+
+```ts
+import { DEFAULT_ASKDB_MODE, parseAskDbModeV1 } from "@askdb/core";
+
+const mode = parseAskDbModeV1(process.env.ASKDB_MODE); // throws on invalid values
+```
+
+---
+
+## Logging
+
+### `createAskDbLogger(options)`
+
+```ts
+import { createAskDbLogger } from "@askdb/core";
+
+const logger = createAskDbLogger({
+  correlationId: requestId,
+  level: "info",
+  logFile: "./logs/askdb.json",
+});
+```
+
+Returns an `AskDbLogger` that emits structured JSON for each pipeline stage. Pass it to `ask()` via `options.logger`.
+
+| Option | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `correlationId` | `string` | yes | — | Attached to every log line. Pass the request id. |
+| `level` | `AskDbLogLevel` | no | `"silent"` | Pino log level. `"silent"` suppresses all output. |
+| `logFile` | `string` | no | — | Append JSON logs to this path. Parent directories are created automatically. |
+| `logStdout` | `boolean` | no | `false` | Duplicate logs to stdout in addition to stderr/file. |
+
+**`AskDbLogLevel`:** `"fatal"` | `"error"` | `"warn"` | `"info"` | `"debug"` | `"trace"` | `"silent"`
+
+The emitted log events are typed as `AskDbLogEvent` constants (e.g. `PipelineMode`, `PipelineGenerateStart`, `TenantScopeValidated`). Import `AskDbLogEvent` from `@askdb/core` to filter logs by event kind.
+
+---
+
+## Tenant types
+
+These types are needed when your schema has a tenant policy. See the [multi-tenancy guide](/guides/multi-tenancy/) for the full workflow.
+
+### `TenantSqlOutputMode`
+
+- `"sql-only"` — inlines literal tenant values directly in the SQL string
+- `"sql-params"` — converts tenant values to positional `$N` parameters; use with parameterized queries
+
+### `TenantBinding`
+
+```ts
+type TenantBinding = {
+  placeholder: string;  // e.g. ":tenant_org_ids"
+  rootLabel: string;    // domain label (e.g. "organization")
+  rootId: string;       // tenant root id
+  ids: string[];        // resolved id values
+};
+```
+
+### `TenantScope`
+
+Passed as `options.tenantScope` to `ask()`. Carries enforceable access plus optional advisory context.
+
+```ts
+// IDs access — user can see records for their specific org ids
+const scope: TenantScope = {
+  access: { kind: "ids", rootId: "organization", ids: ["org-1", "org-2"] },
+  context: { role: "regional_manager", label: "Jane Smith" },
+};
+
+// Global / super access
+const adminScope: TenantScope = {
+  access: { kind: "global", reason: "support investigation" },
+};
+```
+
+Access kinds:
+| Kind | Description |
+| --- | --- |
+| `"ids"` | User can access specific root-entity ids. |
+| `"subtree"` | User can access a subtree rooted at specific ids. |
+| `"multi_root"` | User has access across multiple tenant roots, each with their own id set. |
+| `"global"` | Super / admin access. Requires a `reason` string for audit. |
+
+---
+
+## Read next
+
+<div class="home-path-grid">
+  <a href="/reference/client-api/"><strong>@askdb/client API</strong><span>Config-driven facade — <code>createAskDb()</code> and per-call overrides.</span></a>
+  <a href="/reference/rag-api/"><strong>@askdb/rag API</strong><span><code>buildSchemaIndex()</code>, embedders, and vector stores.</span></a>
+  <a href="/guides/embed-in-node/"><strong>Embed in a Node app</strong><span>End-to-end code walkthrough using these APIs.</span></a>
+  <a href="/guides/multi-tenancy/"><strong>Multi-tenancy guide</strong><span>Tenant scope, policy authoring, and SQL output modes.</span></a>
+</div>

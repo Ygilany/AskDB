@@ -45,6 +45,8 @@ export type GenerateSelectSqlResult = {
   sql: string;
   explain?: SelectGuardrailExplain;
   tenantGuardrail?: TenantGuardrailResult;
+  /** Token usage for the generation call. Populated when the model provider returns usage data. */
+  usage?: { promptTokens: number | null; completionTokens: number | null; totalTokens: number | null };
 };
 
 /**
@@ -79,6 +81,7 @@ export async function generateSelectSql(
 
   try {
     let text: string;
+    let usage: GenerateSelectSqlResult["usage"];
     try {
       const result = await generateText({
         model,
@@ -97,6 +100,16 @@ export async function generateSelectSql(
         temperature: 0,
       });
       text = result.text;
+      const u = (result as { usage?: { promptTokens?: number; completionTokens?: number; totalTokens?: number } }).usage;
+      if (u) {
+        const fin = (v: number | undefined): number | null =>
+          typeof v === "number" && isFinite(v) ? v : null;
+        usage = {
+          promptTokens: fin(u.promptTokens),
+          completionTokens: fin(u.completionTokens),
+          totalTokens: fin(u.totalTokens),
+        };
+      }
     } catch (e) {
       const message = e instanceof Error ? e.message : String(e);
       throw new SqlGenerationError(`Model call failed: ${message}`, e);
@@ -133,10 +146,11 @@ export async function generateSelectSql(
       },
       "nl-to-sql generate complete",
     );
-    const result: GenerateSelectSqlResult = { sql };
-    if (explain !== undefined) result.explain = explain;
-    if (tenantGuardrail !== undefined) result.tenantGuardrail = tenantGuardrail;
-    return result;
+    const out: GenerateSelectSqlResult = { sql };
+    if (explain !== undefined) out.explain = explain;
+    if (tenantGuardrail !== undefined) out.tenantGuardrail = tenantGuardrail;
+    if (usage !== undefined) out.usage = usage;
+    return out;
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
     logger?.error(

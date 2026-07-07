@@ -90,9 +90,21 @@ Generate SQL from a question.
 {
   "ok": true,
   "correlationId": "01H…",
-  "sql": "SELECT count(*) FROM customers WHERE created_at >= …"
+  "sql": "SELECT count(*) FROM customers WHERE created_at >= …",
+  "explain": null,
+  "usage": {
+    "promptTokens": 1250,
+    "completionTokens": 45,
+    "totalTokens": 1295
+  }
 }
 ```
+
+| Field | Type | Notes |
+| --- | --- | --- |
+| `sql` | `string` | The generated, validated SQL. |
+| `explain` | `object \| null` | Heuristic guardrail metadata. Present (non-null) when `explain: true` was sent in the request. |
+| `usage` | `object \| null` | Token counts for the generation call: `promptTokens`, `completionTokens`, `totalTokens` (each `number \| null`). `null` when the provider does not report usage. |
 
 **Error response (`4xx` / `5xx`)**
 
