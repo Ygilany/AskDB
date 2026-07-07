@@ -1,0 +1,99 @@
+---
+title: "@askdb/client API reference"
+description: "Full API reference for @askdb/client: createAskDb(), AskDbClient, and per-call overrides."
+---
+
+<p class="doc-eyebrow">Reference · @askdb/client</p>
+
+<p class="doc-lede"><code>@askdb/client</code> is a config-driven facade over <code>@askdb/core</code>. <code>createAskDb()</code> resolves the schema, model, and dialect from <code>askdb.config.*</code> once; call sites pass only a question. Use it when you want the shortest path from config to SQL. Use <code>@askdb/core</code> directly when you construct the model yourself, serve multiple schemas, or want zero dependency on <code>@askdb/config</code>.</p>
+
+## `createAskDb(options)`
+
+Builds a client bound to a config snapshot and AI provider registry. The schema, model, and dialect are resolved lazily on the first `ask()` call and cached for the process lifetime. Call `reload()` to clear the cache.
+
+```ts
+import { createAskDb } from "@askdb/client";
+import { bootstrapAskDbEnv, getAskDbRuntimeConfig } from "@askdb/config";
+import { createAiRegistry } from "@askdb/ai";
+import { openaiProvider } from "@askdb/ai-openai";
+
+bootstrapAskDbEnv({ cwd: process.cwd() });
+
+const askdb = createAskDb({
+  config: getAskDbRuntimeConfig(),
+  registry: createAiRegistry([openaiProvider]),
+  schema: { path: "./my-app.schema" },
+});
+```
+
+### Options — `CreateAskDbOptions`
+
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| `config` | `AskDbRuntimeConfig` | yes | Runtime config snapshot from `getAskDbRuntimeConfig()`. Call `bootstrapAskDbEnv()` at startup first. |
+| `registry` | `AiRegistry` | yes | AI provider registry from `createAiRegistry([...providers])`. Used to construct the language model from config. |
+| `schema` | `SchemaSource` | no | Default schema source. Falls back to `config.host.schemaJson` → `config.host.schemaPath` → `ASKDB_SCHEMA_JSON` → `ASKDB_SCHEMA_PATH` env. |
+| `dialect` | `BuiltInDialectId` | no | Default dialect override. Falls back to `config.nlToSql.dialect` → `schema.provider` → `"postgres"`. |
+| `unknownDialect` | `"throw" \| "fallback-postgres"` | no | What to do when `schema.provider` is not a recognized built-in dialect id. Default `"throw"`. |
+| `onResolve` | `(info: ResolveInfo) => void` | no | Hook fired on every `ask()` call once resolution completes. Useful for logging which dialect and model were chosen. `ResolveInfo` has `dialect` and `modelSource`. |
+
+### `SchemaSource`
+
+Accepted forms for the `schema` option and per-call overrides:
+
+```ts
+{ path: string }               // directory, bundle file, or schema.json path
+{ json: string }               // raw JSON string
+{ schema: AnyNormalizedSchema} // pre-loaded schema object
+```
+
+---
+
+## `client.ask(question, overrides?)`
+
+```ts
+const { sql, usage } = await askdb.ask("How many orders shipped last month?");
+```
+
+Runs the same pipeline as `@askdb/core`'s `ask()`. Returns `AskPipelineResult` — see [@askdb/core API → Result](/reference/core-api/#result--askpipelineresult).
+
+### Overrides — `AskOverrides`
+
+All `AskPipelineOptions` fields can be overridden per call. In addition, `schema`, `model`, and `dialect` can be swapped for a single request:
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `schema` | `SchemaSource \| AnyNormalizedSchema` | Override the default schema for this call only. |
+| `model` | `AskDbLanguageModel` | Override the default model for this call only. |
+| `dialect` | `AskDialectInput` | Override the dialect for this call only. |
+| `explain` | `boolean` | Include guardrail metadata in the result. |
+| `omitSensitiveIdentifiersFromNlToSqlPrompt` | `boolean` | Strip sensitive identifiers from the DDL prompt. |
+| `mode` | `AskDbModeV1` | Trust boundary override. |
+| `tenantScope` | `TenantScope` | Required when the schema has a tenant policy. |
+| `tenantSqlMode` | `TenantSqlOutputMode` | `"sql-only"` or `"sql-params"`. |
+| `retriever` | `Retriever` | RAG retriever. |
+| `retrievalK` | `number` | Top-k for the retriever. |
+| `retrievalThresholdChunks` | `number` | Chunk count threshold for triggering retrieval. |
+| `totalSchemaChunkCount` | `number` | Total indexed chunk count; from `buildSchemaIndex` result stats. |
+| `logger` | `AskDbLogger` | Per-call structured logger. |
+| `deps` | `AskGenerateDeps` | `{ generateText? }` for testing. |
+
+---
+
+## `client.reload()`
+
+```ts
+askdb.reload();
+```
+
+Drops the cached schema and model. The next `ask()` call re-resolves them from config. Useful in tests or in processes that hot-reload their config without restarting.
+
+---
+
+## Read next
+
+<div class="home-path-grid">
+  <a href="/reference/core-api/"><strong>@askdb/core API</strong><span><code>ask()</code> options and result types in full.</span></a>
+  <a href="/reference/config/"><strong>Configuration reference</strong><span>All <code>askdb.config.*</code> fields and environment variables.</span></a>
+  <a href="/guides/embed-in-node/"><strong>Embed in a Node app</strong><span>End-to-end walkthrough using both the direct and client paths.</span></a>
+</div>
