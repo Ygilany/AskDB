@@ -1,4 +1,4 @@
-import type { AskDbModeV1 } from "@askdb/core";
+import type { AskDbModeV1, AskUsage } from "@askdb/core";
 
 export type AskHttpRequest = {
   question: string;
@@ -19,6 +19,7 @@ export type AskHttpSuccessResponse = {
   correlationId: string;
   sql: string;
   explain?: unknown;
+  usage: AskUsage | null;
 };
 
 export type AskHttpErrorResponse = {
