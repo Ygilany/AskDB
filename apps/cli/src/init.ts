@@ -614,20 +614,12 @@ function parseOptions(argv: readonly string[]): InitOptions {
 // TTY wizard
 // ---------------------------------------------------------------------------
 
-const ENV_VAR_RE = /^[A-Z_][A-Z0-9_]*$/i;
-
-function validateEnvVar(value: string): true | string {
-  if (!value.trim()) return "Cannot be empty.";
-  if (!ENV_VAR_RE.test(value.trim())) return "Use only letters, digits, and underscores (e.g. DATABASE_URL).";
-  return true;
-}
-
 function validatePath(value: string): true | string {
   if (!value.trim()) return "Cannot be empty.";
   return true;
 }
 
-async function runWizard(prompter: InitPrompter): Promise<InitAnswers | null> {
+export async function runWizard(prompter: InitPrompter): Promise<InitAnswers | null> {
   const database = await prompter.select<InitAnswers["database"]>({
     message: "Database source",
     choices: [
@@ -640,21 +632,23 @@ async function runWizard(prompter: InitPrompter): Promise<InitAnswers | null> {
     default: "postgres",
   });
 
+  // Env var NAMES are not prompted for — we use conventional defaults
+  // (DATABASE_URL, OPENAI_API_KEY, ...) and tell the user afterward that
+  // they can rename any of them by editing the `env("...")` calls in the
+  // generated askdb.config.ts. Only real, undefaultable decisions (file
+  // paths, provider choices) get a prompt.
   let connectionEnv: string | undefined;
   let sqliteFile: string | undefined;
   let prismaSchema: string | undefined;
 
   if (database === "sqlite") {
-    const raw = await prompter.input({
-      message: "SQLite file path or env var name (e.g. ./data/app.db or SQLITE_FILE)",
-      default: "SQLITE_FILE",
-    });
-    const trimmed = raw.trim();
-    if (trimmed.startsWith("./") || trimmed.startsWith("/")) {
-      sqliteFile = trimmed;
-    } else {
-      sqliteFile = trimmed;
-    }
+    sqliteFile = (
+      await prompter.input({
+        message: "SQLite file path",
+        default: "./data.db",
+        validate: validatePath,
+      })
+    ).trim();
   } else if (database === "prisma") {
     prismaSchema = await prompter.input({
       message: "Path to schema.prisma",
@@ -662,12 +656,7 @@ async function runWizard(prompter: InitPrompter): Promise<InitAnswers | null> {
       validate: validatePath,
     });
   } else {
-    const defaultEnv = database === "sqlserver" ? "SQLSERVER_URL" : "DATABASE_URL";
-    connectionEnv = await prompter.input({
-      message: `Env var name for connection URL`,
-      default: defaultEnv,
-      validate: validateEnvVar,
-    });
+    connectionEnv = database === "sqlserver" ? "SQLSERVER_URL" : "DATABASE_URL";
   }
 
   const schemaOut = await prompter.input({
@@ -688,16 +677,8 @@ async function runWizard(prompter: InitPrompter): Promise<InitAnswers | null> {
     default: "openai",
   });
 
-  const aiKeyEnv = await prompter.input({
-    message: `Env var for ${aiProvider} API key`,
-    default: AI_DEFAULTS[aiProvider].keyEnv,
-    validate: validateEnvVar,
-  });
-
-  const aiModelEnv = await prompter.input({
-    message: `Env var for ${aiProvider} model (leave blank to use provider default)`,
-    default: AI_DEFAULTS[aiProvider].modelEnv,
-  });
+  const aiKeyEnv = AI_DEFAULTS[aiProvider].keyEnv;
+  const aiModelEnv = AI_DEFAULTS[aiProvider].modelEnv;
 
   const ragStore = await prompter.select<InitAnswers["ragStore"]>({
     message: "RAG store",
@@ -709,14 +690,7 @@ async function runWizard(prompter: InitPrompter): Promise<InitAnswers | null> {
     default: "file",
   });
 
-  let pgvectorEnv: string | undefined;
-  if (ragStore === "pgvector") {
-    pgvectorEnv = await prompter.input({
-      message: "Env var for pgvector connection URL",
-      default: "ASKDB_PGVECTOR_URL",
-      validate: validateEnvVar,
-    });
-  }
+  const pgvectorEnv = ragStore === "pgvector" ? "ASKDB_PGVECTOR_URL" : undefined;
 
   const studioExecuteDefault = database !== "prisma";
   const enableStudioExecute = await prompter.confirm({
@@ -728,7 +702,7 @@ async function runWizard(prompter: InitPrompter): Promise<InitAnswers | null> {
   if (!enableStudioExecute) {
     studioExecute = { enabled: false };
   } else if (database === "prisma") {
-    // Prisma: need to choose a live provider
+    // Prisma: need to choose a live provider — there's no default to fall back to.
     const execProvider = await prompter.select<"postgres" | "mysql" | "sqlite" | "sqlserver">({
       message: "Studio execute needs a live database provider. Which one?",
       choices: [
@@ -741,8 +715,9 @@ async function runWizard(prompter: InitPrompter): Promise<InitAnswers | null> {
     });
     if (execProvider === "sqlite") {
       const execSqliteFile = await prompter.input({
-        message: "SQLite file path or env var name for Studio execute",
-        default: "SQLITE_FILE",
+        message: "SQLite file path for Studio execute",
+        default: "./data.db",
+        validate: validatePath,
       });
       studioExecute = {
         enabled: true,
@@ -750,16 +725,10 @@ async function runWizard(prompter: InitPrompter): Promise<InitAnswers | null> {
         sqliteFile: execSqliteFile.trim(),
       };
     } else {
-      const execEnv = execProvider === "sqlserver" ? "SQLSERVER_URL" : "DATABASE_URL";
-      const execConnEnv = await prompter.input({
-        message: `Env var for Studio execute connection URL`,
-        default: execEnv,
-        validate: validateEnvVar,
-      });
       studioExecute = {
         enabled: true,
         provider: execProvider,
-        connectionEnv: execConnEnv,
+        connectionEnv: execProvider === "sqlserver" ? "SQLSERVER_URL" : "DATABASE_URL",
       };
     }
   } else {
@@ -787,7 +756,7 @@ async function runWizard(prompter: InitPrompter): Promise<InitAnswers | null> {
     schemaOut,
     aiProvider,
     aiKeyEnv,
-    aiModelEnv: aiModelEnv.trim() || undefined,
+    aiModelEnv,
     ragStore,
     pgvectorEnv,
     studioExecute,
@@ -811,9 +780,36 @@ async function buildInquirerPrompter(): Promise<InitPrompter> {
 // Next steps printer
 // ---------------------------------------------------------------------------
 
+/** Env var NAMES the generated config references — conventional defaults, not values. */
+function collectEnvVarNames(answers: InitAnswers): string[] {
+  const names = new Set<string>();
+  names.add(answers.aiKeyEnv);
+  if (answers.aiModelEnv) names.add(answers.aiModelEnv);
+  const isEnvName = (v: string) => !v.startsWith("./") && !v.startsWith("/");
+  if (answers.database !== "sqlite" && answers.database !== "prisma" && answers.connectionEnv) {
+    names.add(answers.connectionEnv);
+  } else if (answers.database === "sqlite" && answers.sqliteFile && isEnvName(answers.sqliteFile)) {
+    names.add(answers.sqliteFile);
+  }
+  if (answers.ragStore === "pgvector" && answers.pgvectorEnv) names.add(answers.pgvectorEnv);
+  if (answers.studioExecute.enabled) {
+    if (answers.studioExecute.provider === "sqlite") {
+      const f = answers.studioExecute.sqliteFile;
+      if (f && isEnvName(f)) names.add(f);
+    } else if (answers.studioExecute.connectionEnv) {
+      names.add(answers.studioExecute.connectionEnv);
+    }
+  }
+  return Array.from(names);
+}
+
 function printNextSteps(answers: InitAnswers): void {
   const lines = ["\nNext steps:"];
-  lines.push("  1. Set env vars to match the `env(\"...\")` calls in askdb.config.ts.");
+  const envVars = collectEnvVarNames(answers);
+  lines.push(`  1. Fill in .env — needs: ${envVars.join(", ")}`);
+  lines.push(
+    "     (Conventional names — rename any `env(\"...\")` call in askdb.config.ts if you'd like different ones.)",
+  );
   if (answers.database !== "prisma") {
     lines.push("  2. Introspect your database:  askdb introspect");
   } else {
@@ -909,6 +905,8 @@ export async function runInitCli(
     if (!opts.skipInstall) {
       process.stdout.write(`  Packages:      ${plan.labels.join(", ")}\n`);
     }
+    process.stdout.write(`  Env vars:      ${collectEnvVarNames(answers).join(", ")}\n`);
+    process.stdout.write('                 (defaults — rename via `env("...")` in askdb.config.ts if you\'d like)\n');
     process.stdout.write("---------------\n\n");
 
     let confirmed: boolean;
