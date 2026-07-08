@@ -46,6 +46,7 @@
     "client-providers-option",
     "cloudflare-analytics",
     "config-branches-new-engines",
+    "config-dotenv-database-url",
     "config-env-flatten-defaults",
     "config-known-provider-guards",
     "dialect-package-split",
