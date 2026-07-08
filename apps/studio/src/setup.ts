@@ -59,6 +59,13 @@ const EXECUTE_CONNECTION_ENV_DEFAULTS: Record<Exclude<SetupExecuteProvider, "sql
 
 const ENV_NAME_PATTERN = /^[A-Z][A-Z0-9_]*$/;
 
+const DB_URL_PLACEHOLDER: Partial<Record<SetupDatabase | SetupExecuteProvider, string>> = {
+  postgres: "postgresql://<USERNAME>:<PASSWORD>@<DATABASE_HOST>:<DATABASE_PORT>/<DATABASE_NAME>",
+  mysql: "mysql://<USERNAME>:<PASSWORD>@<DATABASE_HOST>:<DATABASE_PORT>/<DATABASE_NAME>",
+  sqlserver:
+    "Data Source=<DATABASE_HOST>,<DATABASE_PORT>;Initial Catalog=<DATABASE_NAME>;User ID=<USERNAME>;Password=<PASSWORD>;Trust Server Certificate=True;Authentication=SqlPassword;",
+};
+
 /** Live-introspection driver per engine — mirrors `DB_DRIVER_PACKAGES` in `apps/cli/src/init.ts`. */
 const DB_DRIVER_PACKAGES: Partial<Record<SetupDatabase, string>> = {
   postgres: "pg",
@@ -67,7 +74,7 @@ const DB_DRIVER_PACKAGES: Partial<Record<SetupDatabase, string>> = {
   sqlserver: "mssql",
 };
 
-type EnvVarEntry = { name: string; purpose: string; requiredForIntrospection: boolean };
+type EnvVarEntry = { name: string; purpose: string; requiredForIntrospection: boolean; exampleValue?: string };
 
 function pushEnvVar(envVars: EnvVarEntry[], entry: EnvVarEntry): void {
   if (envVars.some((v) => v.name === entry.name)) return;
@@ -155,6 +162,7 @@ export function writeSetupConfig(cwd: string, input: SetupConfigInput): SetupCon
         name: connectionEnv,
         purpose: `${input.database} connection URL (introspection only)`,
         requiredForIntrospection: true,
+        exampleValue: DB_URL_PLACEHOLDER[input.database],
       });
       introspectionSection = `  introspection: {
     provider: "${input.database}",
@@ -206,6 +214,7 @@ export function writeSetupConfig(cwd: string, input: SetupConfigInput): SetupCon
       name: pgvectorEnv,
       purpose: "pgvector connection URL",
       requiredForIntrospection: false,
+      exampleValue: "postgresql://<USERNAME>:<PASSWORD>@<DATABASE_HOST>:<DATABASE_PORT>/<DATABASE_NAME>",
     });
   }
   const ragSection = renderRagSection(ragStore, pgvectorEnv);
@@ -235,6 +244,7 @@ export function writeSetupConfig(cwd: string, input: SetupConfigInput): SetupCon
         name: execConnectionEnv,
         purpose: `${studioExecuteProvider} connection URL (Studio execute)`,
         requiredForIntrospection: false,
+        exampleValue: DB_URL_PLACEHOLDER[studioExecuteProvider],
       });
       studioSection = `  studio: {
     execute: {
@@ -273,7 +283,9 @@ ${sections.join("\n")}
     const example = [
       "# AskDB environment — copy to .env and fill in real values.",
       "# .env is read by Studio, the CLI, and the HTTP API; never commit it.",
-      ...envVars.map((v) => `${v.name}= # ${v.purpose}`),
+      ...envVars.map((v) =>
+        v.exampleValue ? `${v.name}=${v.exampleValue}` : `${v.name}= # ${v.purpose}`,
+      ),
       "",
     ].join("\n");
     writeFileSync(envExamplePath, example, "utf8");

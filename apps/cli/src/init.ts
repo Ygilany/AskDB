@@ -766,6 +766,53 @@ async function buildInquirerPrompter(): Promise<InitPrompter> {
 // Next steps printer
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// .env.example generation
+// ---------------------------------------------------------------------------
+
+const DB_URL_PLACEHOLDER: Partial<Record<InitAnswers["database"], string>> = {
+  postgres: "postgresql://<USERNAME>:<PASSWORD>@<DATABASE_HOST>:<DATABASE_PORT>/<DATABASE_NAME>",
+  mysql: "mysql://<USERNAME>:<PASSWORD>@<DATABASE_HOST>:<DATABASE_PORT>/<DATABASE_NAME>",
+  sqlserver:
+    "Data Source=<DATABASE_HOST>,<DATABASE_PORT>;Initial Catalog=<DATABASE_NAME>;User ID=<USERNAME>;Password=<PASSWORD>;Trust Server Certificate=True;Authentication=SqlPassword;",
+};
+
+function buildEnvExample(answers: InitAnswers): string {
+  const lines: string[] = [
+    "# AskDB environment — copy to .env and fill in real values.",
+    "# .env is read by the CLI, Studio, and the HTTP API; never commit it.",
+    "",
+  ];
+
+  const needsConnectionEnv = answers.database !== "sqlite" && answers.database !== "prisma";
+  if (needsConnectionEnv && answers.connectionEnv) {
+    const placeholder = DB_URL_PLACEHOLDER[answers.database];
+    lines.push(placeholder ? `${answers.connectionEnv}=${placeholder}` : `${answers.connectionEnv}=`);
+  }
+
+  if (answers.ragStore === "pgvector" && answers.pgvectorEnv) {
+    lines.push(`${answers.pgvectorEnv}=postgresql://<USERNAME>:<PASSWORD>@<DATABASE_HOST>:<DATABASE_PORT>/<DATABASE_NAME>`);
+  }
+
+  // Only emit a separate execute URL if it differs from the introspection URL
+  if (
+    answers.studioExecute.enabled &&
+    answers.studioExecute.provider !== "sqlite" &&
+    answers.studioExecute.connectionEnv &&
+    answers.studioExecute.connectionEnv !== answers.connectionEnv
+  ) {
+    const placeholder = DB_URL_PLACEHOLDER[answers.studioExecute.provider];
+    lines.push(placeholder
+      ? `${answers.studioExecute.connectionEnv}=${placeholder}`
+      : `${answers.studioExecute.connectionEnv}=`);
+  }
+
+  lines.push(`${answers.aiKeyEnv}=`);
+  if (answers.aiModelEnv) lines.push(`${answers.aiModelEnv}=`);
+  lines.push("");
+  return lines.join("\n");
+}
+
 /** Env var NAMES the generated config references — conventional defaults, not values. */
 function collectEnvVarNames(answers: InitAnswers): string[] {
   const names = new Set<string>();
@@ -791,10 +838,9 @@ function collectEnvVarNames(answers: InitAnswers): string[] {
 
 function printNextSteps(answers: InitAnswers): void {
   const lines = ["\nNext steps:"];
-  const envVars = collectEnvVarNames(answers);
-  lines.push(`  1. Fill in .env — needs: ${envVars.join(", ")}`);
+  lines.push("  1. Copy .env.example → .env and fill in your credentials.");
   lines.push(
-    "     (Conventional names — rename any `env(\"...\")` call in askdb.config.ts if you'd like different ones.)",
+    "     (Rename any `env(\"...\")` call in askdb.config.ts if you prefer different variable names.)",
   );
   if (answers.database !== "prisma") {
     lines.push("  2. Introspect your database:  askdb introspect");
@@ -947,6 +993,16 @@ async function finishInit(
   }
 
   process.stdout.write(`Wrote:\n  - ${configTarget}\n`);
+
+  const envExamplePath = join(dirname(configTarget), ".env.example");
+  if (!existsSync(envExamplePath)) {
+    try {
+      writeFileSync(envExamplePath, buildEnvExample(answers), { encoding: "utf8" });
+      process.stdout.write(`  - ${envExamplePath}\n`);
+    } catch {
+      // non-fatal — config was written successfully
+    }
+  }
 
   if (!opts.skipInstall) {
     const pkgRoot = findNearestPackageJsonDir(process.cwd());
