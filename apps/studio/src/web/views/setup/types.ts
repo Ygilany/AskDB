@@ -34,15 +34,15 @@ export const EXECUTE_PROVIDERS: Array<{ value: SetupExecuteProvider; label: stri
 
 export const CONNECTION_ENV_DEFAULTS: Record<SetupDatabase, string> = {
   postgres: "DATABASE_URL",
-  mysql: "MYSQL_URL",
-  sqlserver: "SQLSERVER_URL",
+  mysql: "DATABASE_URL",
+  sqlserver: "DATABASE_URL",
   sqlite: "",
   prisma: "",
 };
 
 export const EXECUTE_CONNECTION_ENV_DEFAULTS: Record<SetupExecuteProvider, string> = {
   postgres: "DATABASE_URL",
-  mysql: "MYSQL_URL",
-  sqlserver: "SQLSERVER_URL",
+  mysql: "DATABASE_URL",
+  sqlserver: "DATABASE_URL",
   sqlite: "",
 };

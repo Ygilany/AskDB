@@ -120,7 +120,7 @@ function renderIntrospectionSection(answers: InitAnswers): string {
     provider: "sqlserver",
     providerConfig: {
       sqlserver: {
-        databaseUrl: env("${connectionEnv ?? "SQLSERVER_URL"}"),
+        databaseUrl: env("${connectionEnv ?? "DATABASE_URL"}"),
       },
     },${outputDirLine}
   },`;
@@ -189,7 +189,7 @@ function renderStudioSection(answers: InitAnswers): string | null {
   },`;
   }
 
-  const urlEnv = studioExecute.connectionEnv ?? (provider === "sqlserver" ? "SQLSERVER_URL" : "DATABASE_URL");
+  const urlEnv = studioExecute.connectionEnv ?? "DATABASE_URL";
   return `  studio: {
     execute: {
       provider: "${provider}",
@@ -208,10 +208,7 @@ export function renderInitConfig(answers: InitAnswers): string {
   const studio = renderStudioSection(answers);
   if (studio) sections.push(studio);
 
-  return `import dotenv from "dotenv";
-import { defineConfig, env, type AskDbConfig } from "@askdb/config";
-
-dotenv.config({ quiet: true });
+  return `import { defineConfig, env, type AskDbConfig } from "@askdb/config";
 
 export default defineConfig({
 ${sections.join("\n")}
@@ -247,9 +244,7 @@ export function resolveDefaultInitAnswers(overrides: InitAnswerOverrides = {}): 
 
   let connectionEnv = overrides.connectionEnv;
   if (!connectionEnv) {
-    if (database === "sqlserver") connectionEnv = "SQLSERVER_URL";
-    else if (database === "sqlite") connectionEnv = undefined;
-    else connectionEnv = "DATABASE_URL";
+    connectionEnv = database === "sqlite" ? undefined : "DATABASE_URL";
   }
 
   const studioEnabled = overrides.studioExecute ?? false;
@@ -261,7 +256,7 @@ export function resolveDefaultInitAnswers(overrides: InitAnswerOverrides = {}): 
     studioExecute = {
       enabled: true,
       provider: execProvider,
-      connectionEnv: overrides.studioExecuteConnectionEnv ?? (execProvider === "sqlite" ? undefined : (execProvider === "sqlserver" ? "SQLSERVER_URL" : "DATABASE_URL")),
+      connectionEnv: overrides.studioExecuteConnectionEnv ?? (execProvider === "sqlite" ? undefined : "DATABASE_URL"),
       sqliteFile: overrides.studioExecuteSqliteFile ?? (execProvider === "sqlite" ? overrides.sqliteFile : undefined),
     };
   } else {
@@ -300,14 +295,13 @@ const DB_DRIVER_PACKAGES: Record<string, string> = {
   sqlserver: "mssql",
 };
 
-export type InitDepSpecs = { configSpec: string; dotenvSpec: string };
+export type InitDepSpecs = { configSpec: string };
 
 export function buildInitInstallPlan(answers: InitAnswers, specs: InitDepSpecs): InitInstallPlan {
   const packages: string[] = [
     `@askdb/config@${specs.configSpec}`,
-    `dotenv@${specs.dotenvSpec}`,
   ];
-  const labels: string[] = ["@askdb/config", "dotenv"];
+  const labels: string[] = ["@askdb/config"];
 
   const driversNeeded = new Set<string>();
 
@@ -379,7 +373,7 @@ export function detectPackageManager(packageDir: string): PackageManager {
   return "npm";
 }
 
-/** Resolve `@askdb/config` / `dotenv` semver specs for `askdb init` installs (published + monorepo dev). */
+/** Resolve `@askdb/config` semver spec for `askdb init` installs (published + monorepo dev). */
 export function resolveInitDepSpecs(): InitDepSpecs {
   const cliPkgPath = join(dirname(fileURLToPath(import.meta.url)), "..", "package.json");
   const cliPkg = JSON.parse(readFileSync(cliPkgPath, "utf8")) as { dependencies?: Record<string, string> };
@@ -394,15 +388,7 @@ export function resolveInitDepSpecs(): InitDepSpecs {
       configSpec = "latest";
     }
   }
-  let dotenvSpec = "^17.4.2";
-  try {
-    const cfgPkgPath = require.resolve("@askdb/config/package.json");
-    const cfg = JSON.parse(readFileSync(cfgPkgPath, "utf8")) as { dependencies?: { dotenv?: string } };
-    if (cfg.dependencies?.dotenv) dotenvSpec = cfg.dependencies.dotenv;
-  } catch {
-    // keep default
-  }
-  return { configSpec, dotenvSpec };
+  return { configSpec };
 }
 
 // ---------------------------------------------------------------------------
@@ -656,7 +642,7 @@ export async function runWizard(prompter: InitPrompter): Promise<InitAnswers | n
       validate: validatePath,
     });
   } else {
-    connectionEnv = database === "sqlserver" ? "SQLSERVER_URL" : "DATABASE_URL";
+    connectionEnv = "DATABASE_URL";
   }
 
   const schemaOut = await prompter.input({
@@ -728,7 +714,7 @@ export async function runWizard(prompter: InitPrompter): Promise<InitAnswers | n
       studioExecute = {
         enabled: true,
         provider: execProvider,
-        connectionEnv: execProvider === "sqlserver" ? "SQLSERVER_URL" : "DATABASE_URL",
+        connectionEnv: "DATABASE_URL",
       };
     }
   } else {
@@ -780,6 +766,53 @@ async function buildInquirerPrompter(): Promise<InitPrompter> {
 // Next steps printer
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// .env.example generation
+// ---------------------------------------------------------------------------
+
+const DB_URL_PLACEHOLDER: Partial<Record<InitAnswers["database"], string>> = {
+  postgres: "postgresql://<USERNAME>:<PASSWORD>@<DATABASE_HOST>:<DATABASE_PORT>/<DATABASE_NAME>",
+  mysql: "mysql://<USERNAME>:<PASSWORD>@<DATABASE_HOST>:<DATABASE_PORT>/<DATABASE_NAME>",
+  sqlserver:
+    "Data Source=<DATABASE_HOST>,<DATABASE_PORT>;Initial Catalog=<DATABASE_NAME>;User ID=<USERNAME>;Password=<PASSWORD>;Trust Server Certificate=True;Authentication=SqlPassword;",
+};
+
+function buildEnvExample(answers: InitAnswers): string {
+  const lines: string[] = [
+    "# AskDB environment — copy to .env and fill in real values.",
+    "# .env is read by the CLI, Studio, and the HTTP API; never commit it.",
+    "",
+  ];
+
+  const needsConnectionEnv = answers.database !== "sqlite" && answers.database !== "prisma";
+  if (needsConnectionEnv && answers.connectionEnv) {
+    const placeholder = DB_URL_PLACEHOLDER[answers.database];
+    lines.push(placeholder ? `${answers.connectionEnv}=${placeholder}` : `${answers.connectionEnv}=`);
+  }
+
+  if (answers.ragStore === "pgvector" && answers.pgvectorEnv) {
+    lines.push(`${answers.pgvectorEnv}=postgresql://<USERNAME>:<PASSWORD>@<DATABASE_HOST>:<DATABASE_PORT>/<DATABASE_NAME>`);
+  }
+
+  // Only emit a separate execute URL if it differs from the introspection URL
+  if (
+    answers.studioExecute.enabled &&
+    answers.studioExecute.provider !== "sqlite" &&
+    answers.studioExecute.connectionEnv &&
+    answers.studioExecute.connectionEnv !== answers.connectionEnv
+  ) {
+    const placeholder = DB_URL_PLACEHOLDER[answers.studioExecute.provider];
+    lines.push(placeholder
+      ? `${answers.studioExecute.connectionEnv}=${placeholder}`
+      : `${answers.studioExecute.connectionEnv}=`);
+  }
+
+  lines.push(`${answers.aiKeyEnv}=`);
+  if (answers.aiModelEnv) lines.push(`${answers.aiModelEnv}=`);
+  lines.push("");
+  return lines.join("\n");
+}
+
 /** Env var NAMES the generated config references — conventional defaults, not values. */
 function collectEnvVarNames(answers: InitAnswers): string[] {
   const names = new Set<string>();
@@ -805,10 +838,9 @@ function collectEnvVarNames(answers: InitAnswers): string[] {
 
 function printNextSteps(answers: InitAnswers): void {
   const lines = ["\nNext steps:"];
-  const envVars = collectEnvVarNames(answers);
-  lines.push(`  1. Fill in .env — needs: ${envVars.join(", ")}`);
+  lines.push("  1. Copy .env.example → .env and fill in your credentials.");
   lines.push(
-    "     (Conventional names — rename any `env(\"...\")` call in askdb.config.ts if you'd like different ones.)",
+    "     (Rename any `env(\"...\")` call in askdb.config.ts if you prefer different variable names.)",
   );
   if (answers.database !== "prisma") {
     lines.push("  2. Introspect your database:  askdb introspect");
@@ -961,6 +993,16 @@ async function finishInit(
   }
 
   process.stdout.write(`Wrote:\n  - ${configTarget}\n`);
+
+  const envExamplePath = join(dirname(configTarget), ".env.example");
+  if (!existsSync(envExamplePath)) {
+    try {
+      writeFileSync(envExamplePath, buildEnvExample(answers), { encoding: "utf8" });
+      process.stdout.write(`  - ${envExamplePath}\n`);
+    } catch {
+      // non-fatal — config was written successfully
+    }
+  }
 
   if (!opts.skipInstall) {
     const pkgRoot = findNearestPackageJsonDir(process.cwd());

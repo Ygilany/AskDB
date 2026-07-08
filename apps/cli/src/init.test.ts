@@ -35,7 +35,7 @@ function postgresAnswers(overrides: Partial<InitAnswers> = {}): InitAnswers {
   };
 }
 
-const FAKE_SPECS: InitDepSpecs = { configSpec: "1.0.0", dotenvSpec: "17.0.0" };
+const FAKE_SPECS: InitDepSpecs = { configSpec: "1.0.0" };
 
 /** A prompter that always accepts the default (like pressing Enter), recording every message asked. */
 function createRecordingPrompter(): { prompter: InitPrompter; messages: string[] } {
@@ -76,12 +76,11 @@ describe("renderInitConfig", () => {
   it("SQL Server: sqlserver branch + studio.execute.provider when execute enabled", () => {
     const out = renderInitConfig(postgresAnswers({
       database: "sqlserver",
-      connectionEnv: "SQLSERVER_URL",
-      studioExecute: { enabled: true, provider: "sqlserver", connectionEnv: "SQLSERVER_URL" },
+      connectionEnv: "DATABASE_URL",
+      studioExecute: { enabled: true, provider: "sqlserver", connectionEnv: "DATABASE_URL" },
     }));
     expect(out).toContain('provider: "sqlserver"');
-    expect(out).toContain('databaseUrl: env("SQLSERVER_URL")');
-    expect(out).toContain('provider: "sqlserver"');
+    expect(out).toContain('databaseUrl: env("DATABASE_URL")');
     expect(out).toContain("studio:");
     expect(out).not.toContain('"postgres"');
     expect(out).not.toContain('"pg"');
@@ -145,10 +144,10 @@ describe("renderInitConfig", () => {
     expect(out).not.toContain('"postgres"');
   });
 
-  it("satisfies AskDbConfig comment present", () => {
+  it("no dotenv import: bootstrap handles .env loading", () => {
     const out = renderInitConfig(postgresAnswers());
     expect(out).toContain("satisfies AskDbConfig");
-    expect(out).toContain("dotenv.config({ quiet: true })");
+    expect(out).not.toContain("dotenv");
   });
 });
 
@@ -160,7 +159,7 @@ describe("buildInitInstallPlan", () => {
   it("base packages always included", () => {
     const plan = buildInitInstallPlan(postgresAnswers(), FAKE_SPECS);
     expect(plan.packages).toContain("@askdb/config@1.0.0");
-    expect(plan.packages).toContain("dotenv@17.0.0");
+    expect(plan.packages.some((p) => p.startsWith("dotenv"))).toBe(false);
   });
 
   it("includes pg for postgres", () => {
@@ -169,7 +168,7 @@ describe("buildInitInstallPlan", () => {
   });
 
   it("includes mssql for sqlserver", () => {
-    const plan = buildInitInstallPlan(postgresAnswers({ database: "sqlserver", connectionEnv: "SQLSERVER_URL" }), FAKE_SPECS);
+    const plan = buildInitInstallPlan(postgresAnswers({ database: "sqlserver", connectionEnv: "DATABASE_URL" }), FAKE_SPECS);
     expect(plan.packages).toContain("mssql");
     expect(plan.packages).not.toContain("pg");
   });
@@ -196,7 +195,7 @@ describe("buildInitInstallPlan", () => {
     const plan = buildInitInstallPlan(
       postgresAnswers({
         database: "prisma",
-        studioExecute: { enabled: true, provider: "sqlserver", connectionEnv: "SQLSERVER_URL" },
+        studioExecute: { enabled: true, provider: "sqlserver", connectionEnv: "DATABASE_URL" },
       }),
       FAKE_SPECS,
     );
@@ -235,7 +234,7 @@ describe("resolveDefaultInitAnswers", () => {
   it("respects database override", () => {
     const a = resolveDefaultInitAnswers({ database: "sqlserver" });
     expect(a.database).toBe("sqlserver");
-    expect(a.connectionEnv).toBe("SQLSERVER_URL");
+    expect(a.connectionEnv).toBe("DATABASE_URL");
   });
 
   it("respects studioExecute override", () => {
@@ -519,6 +518,5 @@ describe("init helpers", () => {
   it("resolveInitDepSpecs returns non-empty specs", () => {
     const s = resolveInitDepSpecs();
     expect(s.configSpec.length).toBeGreaterThan(0);
-    expect(s.dotenvSpec.length).toBeGreaterThan(0);
   });
 });
