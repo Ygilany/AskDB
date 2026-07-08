@@ -581,6 +581,60 @@ describe("AskDB Studio server", () => {
       rmSync(projectDir, { recursive: true, force: true });
     }
   });
+
+  it("POST /api/setup/config writes model env, pgvector rag store, and Studio execute settings", async () => {
+    const projectDir = mkdtempSync(join(repoRoot, "apps/studio/.tmp-setup-"));
+    const prevCwd = process.cwd();
+    try {
+      cpSync(
+        join(repoRoot, "packages/prisma/test-fixtures/simple/schema.prisma"),
+        join(projectDir, "schema.prisma"),
+      );
+      process.chdir(projectDir);
+      resetAskDbRuntimeForTests();
+      setSetupInstallerForTests(() => true);
+
+      const server = createStudioServer({ schema: "./askdb", setupReason: "no-config" });
+      servers.push(server);
+      const baseUrl = await listen(server);
+
+      // Studio execute needs an explicit provider when the database is "prisma".
+      const missingProvider = await postRaw(`${baseUrl}/api/setup/config`, {
+        database: "prisma",
+        prismaSchema: "./schema.prisma",
+        aiProvider: "foundry",
+        studioExecute: true,
+      });
+      expect(missingProvider.status).toBe(400);
+
+      const written = await postJson(`${baseUrl}/api/setup/config`, {
+        database: "prisma",
+        prismaSchema: "./schema.prisma",
+        aiProvider: "foundry",
+        aiModelEnv: "MY_MODEL",
+        ragStore: "pgvector",
+        pgvectorEnv: "MY_PGVECTOR_URL",
+        studioExecute: true,
+        studioExecuteProvider: "sqlite",
+        studioExecuteSqliteFile: "./studio.db",
+      });
+      const envNames = written.envVars.map((v: any) => v.name);
+      expect(envNames).toContain("AZURE_OPENAI_API_KEY");
+      expect(envNames).toContain("MY_MODEL");
+      expect(envNames).toContain("MY_PGVECTOR_URL");
+
+      const configContent = readFileSync(join(projectDir, "askdb.config.ts"), "utf8");
+      expect(configContent).toContain('provider: "foundry"');
+      expect(configContent).toContain('model: env("MY_MODEL")');
+      expect(configContent).toContain('store: "pgvector"');
+      expect(configContent).toContain('databaseUrl: env("MY_PGVECTOR_URL")');
+      expect(configContent).toContain('provider: "sqlite"');
+      expect(configContent).toContain('file: "./studio.db"');
+    } finally {
+      process.chdir(prevCwd);
+      rmSync(projectDir, { recursive: true, force: true });
+    }
+  });
 });
 
 function copyFixture(): string {

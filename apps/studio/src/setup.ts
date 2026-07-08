@@ -5,7 +5,9 @@ import { basename, dirname, join, resolve, isAbsolute, relative } from "node:pat
 import { bootstrapAskDbEnv, discoverAskDbConfigPath, getAskDbRuntimeConfig } from "@askdb/config";
 
 export type SetupDatabase = "postgres" | "mysql" | "sqlite" | "sqlserver" | "prisma";
-export type SetupAiProvider = "openai" | "anthropic" | "google" | "azure";
+export type SetupAiProvider = "openai" | "anthropic" | "google" | "azure" | "foundry";
+export type SetupRagStore = "file" | "memory" | "pgvector";
+export type SetupExecuteProvider = "postgres" | "mysql" | "sqlite" | "sqlserver";
 
 export type SetupConfigInput = {
   database: SetupDatabase;
@@ -18,8 +20,20 @@ export type SetupConfigInput = {
   aiProvider: SetupAiProvider;
   /** Env var NAME (never a value) for the model API key. */
   aiKeyEnv?: string;
+  /** Env var NAME (never a value) for the model override. Omit to skip. */
+  aiModelEnv?: string;
   /** Schema artifact output directory, relative to the project root. */
   schemaOut?: string;
+  /** Defaults to "file" — no setup required. */
+  ragStore?: SetupRagStore;
+  /** Env var NAME (never a value) for the pgvector connection URL. Only used when ragStore is "pgvector". */
+  pgvectorEnv?: string;
+  /** Enable Studio execute (run queries from the browser playground). */
+  studioExecute?: boolean;
+  /** Required when studioExecute is enabled and database is "prisma" (no live provider to default to). */
+  studioExecuteProvider?: SetupExecuteProvider;
+  studioExecuteConnectionEnv?: string;
+  studioExecuteSqliteFile?: string;
 };
 
 /** Mirrors `AI_DEFAULTS` in `apps/cli/src/init.ts` — keep the two in sync. */
@@ -28,9 +42,16 @@ const AI_DEFAULTS: Record<SetupAiProvider, { keyEnv: string; modelEnv: string }>
   anthropic: { keyEnv: "ANTHROPIC_API_KEY", modelEnv: "ANTHROPIC_MODEL" },
   google: { keyEnv: "GOOGLE_GENERATIVE_AI_API_KEY", modelEnv: "GOOGLE_GENERATIVE_AI_MODEL" },
   azure: { keyEnv: "AZURE_OPENAI_API_KEY", modelEnv: "AZURE_OPENAI_DEPLOYMENT" },
+  foundry: { keyEnv: "AZURE_OPENAI_API_KEY", modelEnv: "AZURE_OPENAI_DEPLOYMENT" },
 };
 
 const CONNECTION_ENV_DEFAULTS: Record<Exclude<SetupDatabase, "sqlite" | "prisma">, string> = {
+  postgres: "DATABASE_URL",
+  mysql: "MYSQL_URL",
+  sqlserver: "SQLSERVER_URL",
+};
+
+const EXECUTE_CONNECTION_ENV_DEFAULTS: Record<Exclude<SetupExecuteProvider, "sqlite">, string> = {
   postgres: "DATABASE_URL",
   mysql: "MYSQL_URL",
   sqlserver: "SQLSERVER_URL",
@@ -45,6 +66,45 @@ const DB_DRIVER_PACKAGES: Partial<Record<SetupDatabase, string>> = {
   sqlite: "better-sqlite3",
   sqlserver: "mssql",
 };
+
+function pushEnvVar(
+  envVars: Array<{ name: string; purpose: string; requiredForIntrospection: boolean }>,
+  entry: { name: string; purpose: string; requiredForIntrospection: boolean },
+): void {
+  if (envVars.some((v) => v.name === entry.name)) return;
+  envVars.push(entry);
+}
+
+/** Mirrors `renderRagSection` in `apps/cli/src/init.ts` — keep the two in sync. */
+function renderRagSection(ragStore: SetupRagStore, pgvectorEnv: string | undefined): string {
+  switch (ragStore) {
+    case "file":
+      return `  rag: {
+    embedder: "mock",
+    embedderConfig: {},
+    store: "file",
+    storeConfig: { file: {} },
+  },`;
+    case "memory":
+      return `  rag: {
+    embedder: "mock",
+    embedderConfig: {},
+    store: "memory",
+    storeConfig: { memory: {} },
+  },`;
+    case "pgvector":
+      return `  rag: {
+    embedder: "mock",
+    embedderConfig: {},
+    store: "pgvector",
+    storeConfig: {
+      pgvector: {
+        databaseUrl: env("${pgvectorEnv ?? "ASKDB_PGVECTOR_URL"}"),
+      },
+    },
+  },`;
+  }
+}
 
 export type SetupConfigResult = {
   configPath: string;
@@ -74,10 +134,14 @@ export function writeSetupConfig(cwd: string, input: SetupConfigInput): SetupCon
   const aiDefaults = AI_DEFAULTS[input.aiProvider];
   if (!aiDefaults) throw new SetupError(400, `Unknown AI provider: ${input.aiProvider}`);
   const aiKeyEnv = validateEnvName(input.aiKeyEnv ?? aiDefaults.keyEnv, "aiKeyEnv");
+  const aiModelEnv = input.aiModelEnv ? validateEnvName(input.aiModelEnv, "aiModelEnv") : undefined;
 
   const envVars: SetupConfigResult["envVars"] = [
     { name: aiKeyEnv, purpose: `${input.aiProvider} API key`, requiredForIntrospection: false },
   ];
+  if (aiModelEnv) {
+    envVars.push({ name: aiModelEnv, purpose: `${input.aiProvider} model override`, requiredForIntrospection: false });
+  }
 
   let introspectionSection: string;
   switch (input.database) {
@@ -135,6 +199,52 @@ export function writeSetupConfig(cwd: string, input: SetupConfigInput): SetupCon
       throw new SetupError(400, `Unknown database: ${String(input.database)}`);
   }
 
+  const ragStore = input.ragStore ?? "file";
+  let pgvectorEnv: string | undefined;
+  if (ragStore === "pgvector") {
+    pgvectorEnv = validateEnvName(input.pgvectorEnv ?? "ASKDB_PGVECTOR_URL", "pgvectorEnv");
+    pushEnvVar(envVars, { name: pgvectorEnv, purpose: "pgvector connection URL", requiredForIntrospection: false });
+  }
+  const ragSection = renderRagSection(ragStore, pgvectorEnv);
+
+  let studioSection: string | null = null;
+  let studioExecuteProvider: SetupExecuteProvider | undefined;
+  if (input.studioExecute) {
+    studioExecuteProvider =
+      input.studioExecuteProvider ?? (input.database !== "prisma" ? input.database : undefined);
+    if (!studioExecuteProvider) {
+      throw new SetupError(400, "`studioExecuteProvider` is required when `studioExecute` is enabled and `database` is \"prisma\".");
+    }
+    if (studioExecuteProvider === "sqlite") {
+      const file = validateRelativePath(input.studioExecuteSqliteFile ?? input.sqliteFile ?? "./data.db", "studioExecuteSqliteFile");
+      studioSection = `  studio: {
+    execute: {
+      provider: "sqlite",
+      file: "${file}",
+    },
+  },`;
+    } else {
+      const execConnectionEnv = validateEnvName(
+        input.studioExecuteConnectionEnv ?? EXECUTE_CONNECTION_ENV_DEFAULTS[studioExecuteProvider],
+        "studioExecuteConnectionEnv",
+      );
+      pushEnvVar(envVars, {
+        name: execConnectionEnv,
+        purpose: `${studioExecuteProvider} connection URL (Studio execute)`,
+        requiredForIntrospection: false,
+      });
+      studioSection = `  studio: {
+    execute: {
+      provider: "${studioExecuteProvider}",
+      databaseUrl: env("${execConnectionEnv}"),
+    },
+  },`;
+    }
+  }
+
+  const modelLine = aiModelEnv ? `\n        model: env("${aiModelEnv}"),` : "";
+  const sections = [introspectionSection, ragSection, studioSection].filter((s): s is string => s !== null);
+
   const config = `import { defineConfig, env, type AskDbConfig } from "@askdb/config";
 
 export default defineConfig({
@@ -142,17 +252,11 @@ export default defineConfig({
     provider: "${input.aiProvider}",
     providerConfig: {
       ${input.aiProvider}: {
-        apiKey: env("${aiKeyEnv}"),
+        apiKey: env("${aiKeyEnv}"),${modelLine}
       },
     },
   },
-${introspectionSection}
-  rag: {
-    embedder: "mock",
-    embedderConfig: {},
-    store: "file",
-    storeConfig: { file: {} },
-  },
+${sections.join("\n")}
 } satisfies AskDbConfig);
 `;
 
@@ -173,14 +277,22 @@ ${introspectionSection}
   }
 
   // The config imports `@askdb/config`, so the project needs it (plus the
-  // live-introspection driver) installed — same as `askdb init` does.
-  const deps = ensureProjectDependencies(cwd, input.database);
+  // live-introspection driver and, if enabled, the Studio execute driver)
+  // installed — same as `askdb init` does.
+  const deps = ensureProjectDependencies(cwd, input.database, studioExecuteProvider);
 
   // Install the runtime snapshot from the file we just wrote so the rest of
   // the server (and the introspection step) sees the new config immediately.
-  // Skipped when dependencies are still missing — probeSetupState retries later.
+  // Skipped when dependencies are still missing, or when the config can't
+  // load yet (e.g. `.env` isn't filled in — pgvector's `databaseUrl` must
+  // resolve at load time, unlike introspection URLs) — probeSetupState
+  // retries later and surfaces the load error.
   if (!deps.manualInstallCommand) {
-    bootstrapAskDbEnv({ cwd });
+    try {
+      bootstrapAskDbEnv({ cwd });
+    } catch {
+      // probeSetupState re-attempts this after the caller fills in `.env`.
+    }
   }
 
   return {
@@ -206,14 +318,23 @@ type EnsureDepsResult = {
  * manual command when the project looks like a workspace root or the install
  * fails — never mutates a monorepo root implicitly.
  */
-function ensureProjectDependencies(cwd: string, database: SetupDatabase): EnsureDepsResult {
+function ensureProjectDependencies(
+  cwd: string,
+  database: SetupDatabase,
+  studioExecuteProvider?: SetupExecuteProvider,
+): EnsureDepsResult {
   const missing: string[] = [];
   if (!canResolveFrom(cwd, "@askdb/config")) {
     missing.push(`@askdb/config@${resolveConfigSpec()}`, `dotenv@${resolveDotenvSpec()}`);
   }
-  const driver = DB_DRIVER_PACKAGES[database];
-  if (driver && !canResolveFrom(cwd, driver)) {
-    missing.push(driver);
+  const driversNeeded = new Set<string>();
+  if (DB_DRIVER_PACKAGES[database]) driversNeeded.add(database);
+  if (studioExecuteProvider && DB_DRIVER_PACKAGES[studioExecuteProvider]) driversNeeded.add(studioExecuteProvider);
+  for (const db of driversNeeded) {
+    const driver = DB_DRIVER_PACKAGES[db as SetupDatabase];
+    if (driver && !canResolveFrom(cwd, driver) && !missing.includes(driver)) {
+      missing.push(driver);
+    }
   }
   if (missing.length === 0) {
     return { installed: null, manualInstallCommand: null, packageJsonCreated: false };
