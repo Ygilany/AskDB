@@ -759,6 +759,29 @@ code, pre, .mono { font-family: var(--font-mono); }
   font-weight: 400;
 }
 
+.env-var-field {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+  height: 36px;
+  padding: 0 12px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  text-align: left;
+  cursor: pointer;
+}
+
+.env-var-field:disabled {
+  cursor: default;
+}
+
+.env-var-field .env-var-field-value {
+  font-size: 13px;
+}
+
 .field input[type="text"],
 .field input[type="number"],
 .field input:not([type]),

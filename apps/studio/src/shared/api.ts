@@ -253,10 +253,20 @@ export type SetupConfigRequest = {
   connectionEnv?: string;
   sqliteFile?: string;
   prismaSchema?: string;
-  aiProvider: "openai" | "anthropic" | "google" | "azure";
+  aiProvider: "openai" | "anthropic" | "google" | "azure" | "foundry";
   /** Env var NAME for the model API key — values never travel through this API. */
   aiKeyEnv?: string;
+  /** Env var NAME for the model override — values never travel through this API. */
+  aiModelEnv?: string;
   schemaOut?: string;
+  ragStore?: "file" | "memory" | "pgvector";
+  /** Env var NAME for the pgvector connection URL. Only used when ragStore is "pgvector". */
+  pgvectorEnv?: string;
+  /** Enable Studio execute (run queries from the browser playground). */
+  studioExecute?: boolean;
+  studioExecuteProvider?: "postgres" | "mysql" | "sqlite" | "sqlserver";
+  studioExecuteConnectionEnv?: string;
+  studioExecuteSqliteFile?: string;
 };
 
 export type SetupConfigResponse = {

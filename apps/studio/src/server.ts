@@ -507,7 +507,9 @@ function parseSetupConfigBody(body: unknown): SetupConfigInput {
     throw new StudioHttpError(400, "Request body must be a JSON object.");
   }
   const databases = ["postgres", "mysql", "sqlite", "sqlserver", "prisma"] as const;
-  const aiProviders = ["openai", "anthropic", "google", "azure"] as const;
+  const aiProviders = ["openai", "anthropic", "google", "azure", "foundry"] as const;
+  const ragStores = ["file", "memory", "pgvector"] as const;
+  const executeProviders = ["postgres", "mysql", "sqlite", "sqlserver"] as const;
   if (typeof body.database !== "string" || !databases.includes(body.database as (typeof databases)[number])) {
     throw new StudioHttpError(400, `\`database\` must be one of: ${databases.join(", ")}.`);
   }
@@ -516,6 +518,18 @@ function parseSetupConfigBody(body: unknown): SetupConfigInput {
     !aiProviders.includes(body.aiProvider as (typeof aiProviders)[number])
   ) {
     throw new StudioHttpError(400, `\`aiProvider\` must be one of: ${aiProviders.join(", ")}.`);
+  }
+  if (body.ragStore !== undefined && !ragStores.includes(body.ragStore as (typeof ragStores)[number])) {
+    throw new StudioHttpError(400, `\`ragStore\` must be one of: ${ragStores.join(", ")}.`);
+  }
+  if (
+    body.studioExecuteProvider !== undefined &&
+    !executeProviders.includes(body.studioExecuteProvider as (typeof executeProviders)[number])
+  ) {
+    throw new StudioHttpError(400, `\`studioExecuteProvider\` must be one of: ${executeProviders.join(", ")}.`);
+  }
+  if (body.studioExecute !== undefined && typeof body.studioExecute !== "boolean") {
+    throw new StudioHttpError(400, "`studioExecute` must be a boolean.");
   }
   const optionalString = (key: string): string | undefined => {
     const value = body[key];
@@ -530,7 +544,14 @@ function parseSetupConfigBody(body: unknown): SetupConfigInput {
     sqliteFile: optionalString("sqliteFile"),
     prismaSchema: optionalString("prismaSchema"),
     aiKeyEnv: optionalString("aiKeyEnv"),
+    aiModelEnv: optionalString("aiModelEnv"),
     schemaOut: optionalString("schemaOut"),
+    ragStore: body.ragStore as SetupConfigInput["ragStore"] | undefined,
+    pgvectorEnv: optionalString("pgvectorEnv"),
+    studioExecute: body.studioExecute as boolean | undefined,
+    studioExecuteProvider: body.studioExecuteProvider as SetupConfigInput["studioExecuteProvider"] | undefined,
+    studioExecuteConnectionEnv: optionalString("studioExecuteConnectionEnv"),
+    studioExecuteSqliteFile: optionalString("studioExecuteSqliteFile"),
   };
 }
 

@@ -1,39 +1,19 @@
 import { useCallback, useMemo, useRef, useState } from "react";
-import { Check, Database, FileKey, Loader2, Sparkles, Wand2 } from "lucide-react";
+import { Wand2 } from "lucide-react";
 import type { SetupConfigResponse, SetupStatusDto } from "@/shared/api";
 import { setupIntrospect, setupWriteConfig } from "../../api";
-import { Field } from "../../components/ui/field";
-import { Input } from "../../components/ui/input";
-import { CopyButton } from "../../components/common/CopyButton";
-
-const selectClassName =
-  "h-9 w-full rounded-md border border-input bg-background px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring";
-
-type SetupDatabase = "postgres" | "mysql" | "sqlite" | "sqlserver" | "prisma";
-type SetupAiProvider = "openai" | "anthropic" | "google" | "azure";
-
-const DATABASES: Array<{ value: SetupDatabase; label: string }> = [
-  { value: "postgres", label: "PostgreSQL" },
-  { value: "mysql", label: "MySQL" },
-  { value: "sqlite", label: "SQLite" },
-  { value: "sqlserver", label: "SQL Server" },
-  { value: "prisma", label: "Prisma schema file (no live database)" },
-];
-
-const AI_PROVIDERS: Array<{ value: SetupAiProvider; label: string; keyEnv: string }> = [
-  { value: "openai", label: "OpenAI", keyEnv: "OPENAI_API_KEY" },
-  { value: "anthropic", label: "Anthropic", keyEnv: "ANTHROPIC_API_KEY" },
-  { value: "google", label: "Google", keyEnv: "GOOGLE_GENERATIVE_AI_API_KEY" },
-  { value: "azure", label: "Azure OpenAI", keyEnv: "AZURE_OPENAI_API_KEY" },
-];
-
-const CONNECTION_ENV_DEFAULTS: Record<SetupDatabase, string> = {
-  postgres: "DATABASE_URL",
-  mysql: "MYSQL_URL",
-  sqlserver: "SQLSERVER_URL",
-  sqlite: "",
-  prisma: "",
-};
+import { DatabaseProviderCard } from "./DatabaseProviderCard";
+import { SecretsCard } from "./SecretsCard";
+import { IntrospectCard } from "./IntrospectCard";
+import {
+  AI_PROVIDERS,
+  CONNECTION_ENV_DEFAULTS,
+  EXECUTE_CONNECTION_ENV_DEFAULTS,
+  type SetupAiProvider,
+  type SetupDatabase,
+  type SetupExecuteProvider,
+  type SetupRagStore,
+} from "./types";
 
 export function SetupPage({
   status,
@@ -52,7 +32,17 @@ export function SetupPage({
   const [aiProvider, setAiProvider] = useState<SetupAiProvider>("openai");
   const [aiKeyEnv, setAiKeyEnv] = useState("OPENAI_API_KEY");
   const aiKeyEnvTouched = useRef(false);
+  const [aiModelEnv, setAiModelEnv] = useState("OPENAI_MODEL");
+  const aiModelEnvTouched = useRef(false);
   const [schemaOut, setSchemaOut] = useState("./askdb");
+  const [ragStore, setRagStore] = useState<SetupRagStore>("file");
+  const [pgvectorEnv, setPgvectorEnv] = useState("ASKDB_PGVECTOR_URL");
+  const [studioExecuteEnabled, setStudioExecuteEnabled] = useState(true);
+  const studioExecuteEnabledTouched = useRef(false);
+  const [studioExecuteProvider, setStudioExecuteProvider] = useState<SetupExecuteProvider>("postgres");
+  const [studioExecuteConnectionEnv, setStudioExecuteConnectionEnv] = useState("DATABASE_URL");
+  const studioExecuteConnectionEnvTouched = useRef(false);
+  const [studioExecuteSqliteFile, setStudioExecuteSqliteFile] = useState("./data.db");
 
   const [configResult, setConfigResult] = useState<SetupConfigResponse | null>(null);
   const [busy, setBusy] = useState<"config" | "introspect" | null>(null);
@@ -63,26 +53,59 @@ export function SetupPage({
 
   const envVarsToFill = useMemo(() => {
     if (configResult) return configResult.envVars;
+    const vars = new Map<string, { name: string; purpose: string; requiredForIntrospection: boolean }>();
+    const add = (v: { name: string; purpose: string; requiredForIntrospection: boolean }) => {
+      if (!v.name || vars.has(v.name)) return;
+      vars.set(v.name, v);
+    };
+    add({ name: aiKeyEnv, purpose: `${aiProvider} API key`, requiredForIntrospection: false });
+    if (aiModelEnv) add({ name: aiModelEnv, purpose: `${aiProvider} model override`, requiredForIntrospection: false });
     if (needsConnectionEnv) {
-      return [
-        { name: connectionEnv, purpose: `${database} connection URL`, requiredForIntrospection: true },
-        { name: aiKeyEnv, purpose: `${aiProvider} API key`, requiredForIntrospection: false },
-      ];
+      add({ name: connectionEnv, purpose: `${database} connection URL`, requiredForIntrospection: true });
     }
-    return [{ name: aiKeyEnv, purpose: `${aiProvider} API key`, requiredForIntrospection: false }];
-  }, [configResult, needsConnectionEnv, connectionEnv, database, aiKeyEnv, aiProvider]);
-
-  const envSnippet = envVarsToFill.map((v) => `${v.name}=`).join("\n");
+    if (ragStore === "pgvector") {
+      add({ name: pgvectorEnv, purpose: "pgvector connection URL", requiredForIntrospection: false });
+    }
+    if (studioExecuteEnabled) {
+      const effectiveProvider = database === "prisma" ? studioExecuteProvider : (database as SetupExecuteProvider);
+      if (effectiveProvider !== "sqlite") {
+        const envName = database === "prisma" ? studioExecuteConnectionEnv : connectionEnv;
+        add({ name: envName, purpose: `${effectiveProvider} connection URL (Studio execute)`, requiredForIntrospection: false });
+      }
+    }
+    return Array.from(vars.values());
+  }, [
+    configResult,
+    aiKeyEnv,
+    aiProvider,
+    aiModelEnv,
+    needsConnectionEnv,
+    connectionEnv,
+    database,
+    ragStore,
+    pgvectorEnv,
+    studioExecuteEnabled,
+    studioExecuteProvider,
+    studioExecuteConnectionEnv,
+  ]);
 
   const pickDatabase = useCallback((value: SetupDatabase) => {
     setDatabase(value);
     if (!connectionEnvTouched.current) setConnectionEnv(CONNECTION_ENV_DEFAULTS[value] || "DATABASE_URL");
+    if (!studioExecuteEnabledTouched.current) setStudioExecuteEnabled(value !== "prisma");
   }, []);
 
   const pickAiProvider = useCallback((value: SetupAiProvider) => {
     setAiProvider(value);
-    if (!aiKeyEnvTouched.current) {
-      setAiKeyEnv(AI_PROVIDERS.find((p) => p.value === value)?.keyEnv ?? "OPENAI_API_KEY");
+    const defaults = AI_PROVIDERS.find((p) => p.value === value);
+    if (!aiKeyEnvTouched.current) setAiKeyEnv(defaults?.keyEnv ?? "OPENAI_API_KEY");
+    if (!aiModelEnvTouched.current) setAiModelEnv(defaults?.modelEnv ?? "");
+  }, []);
+
+  const pickStudioExecuteProvider = useCallback((value: SetupExecuteProvider) => {
+    setStudioExecuteProvider(value);
+    if (!studioExecuteConnectionEnvTouched.current) {
+      setStudioExecuteConnectionEnv(EXECUTE_CONNECTION_ENV_DEFAULTS[value] || "DATABASE_URL");
     }
   }, []);
 
@@ -90,6 +113,7 @@ export function SetupPage({
     setBusy("config");
     setError(null);
     try {
+      const effectiveExecuteProvider = database === "prisma" ? studioExecuteProvider : (database as SetupExecuteProvider);
       const result = await setupWriteConfig({
         database,
         aiProvider,
@@ -97,7 +121,21 @@ export function SetupPage({
         ...(database === "sqlite" && sqliteFile ? { sqliteFile } : {}),
         ...(database === "prisma" && prismaSchema ? { prismaSchema } : {}),
         ...(aiKeyEnv ? { aiKeyEnv } : {}),
+        ...(aiModelEnv ? { aiModelEnv } : {}),
         ...(schemaOut ? { schemaOut } : {}),
+        ragStore,
+        ...(ragStore === "pgvector" && pgvectorEnv ? { pgvectorEnv } : {}),
+        studioExecute: studioExecuteEnabled,
+        ...(studioExecuteEnabled
+          ? {
+              studioExecuteProvider: effectiveExecuteProvider,
+              ...(effectiveExecuteProvider === "sqlite"
+                ? { studioExecuteSqliteFile: database === "prisma" ? studioExecuteSqliteFile : sqliteFile }
+                : {
+                    studioExecuteConnectionEnv: database === "prisma" ? studioExecuteConnectionEnv : connectionEnv,
+                  }),
+            }
+          : {}),
       });
       setConfigResult(result);
     } catch (err) {
@@ -105,7 +143,23 @@ export function SetupPage({
     } finally {
       setBusy(null);
     }
-  }, [database, aiProvider, needsConnectionEnv, connectionEnv, sqliteFile, prismaSchema, aiKeyEnv, schemaOut]);
+  }, [
+    database,
+    aiProvider,
+    needsConnectionEnv,
+    connectionEnv,
+    sqliteFile,
+    prismaSchema,
+    aiKeyEnv,
+    aiModelEnv,
+    schemaOut,
+    ragStore,
+    pgvectorEnv,
+    studioExecuteEnabled,
+    studioExecuteProvider,
+    studioExecuteConnectionEnv,
+    studioExecuteSqliteFile,
+  ]);
 
   const handleIntrospect = useCallback(async () => {
     setBusy("introspect");
@@ -119,6 +173,9 @@ export function SetupPage({
       setBusy(null);
     }
   }, [onComplete]);
+
+  const secretsStep = configAlreadyExists ? 1 : 2;
+  const introspectStep = configAlreadyExists ? 2 : 3;
 
   return (
     <div className="app-shell" style={{ display: "flex", alignItems: "flex-start", justifyContent: "center", overflow: "auto", padding: "48px 16px" }}>
@@ -135,156 +192,47 @@ export function SetupPage({
         </div>
 
         {!configAlreadyExists && (
-          <div className="card">
-            <div className="card-hd">
-              <h3><Database size={14} /> 1 · Database &amp; model provider</h3>
-              {configResult && <span className="chip green"><Check size={11} /> config written</span>}
-            </div>
-            <div className="card-bd" style={{ display: "grid", gap: 12 }}>
-              <Field label="Database engine">
-                <select
-                  className={selectClassName}
-                  value={database}
-                  disabled={Boolean(configResult)}
-                  onChange={(e) => pickDatabase(e.target.value as SetupDatabase)}
-                >
-                  {DATABASES.map((db) => (
-                    <option key={db.value} value={db.value}>{db.label}</option>
-                  ))}
-                </select>
-              </Field>
-
-              {needsConnectionEnv && (
-                <Field
-                  label="Connection URL env var name"
-                  description="The NAME of the environment variable — the actual URL goes in .env, never here."
-                >
-                  <Input
-                    value={connectionEnv}
-                    disabled={Boolean(configResult)}
-                    onChange={(e) => { setConnectionEnv(e.target.value.toUpperCase()); connectionEnvTouched.current = true; }}
-                  />
-                </Field>
-              )}
-
-              {database === "sqlite" && (
-                <Field label="SQLite file path" description="Relative to the project root.">
-                  <Input value={sqliteFile} disabled={Boolean(configResult)} onChange={(e) => setSqliteFile(e.target.value)} />
-                </Field>
-              )}
-
-              {database === "prisma" && (
-                <Field label="Prisma schema path" description="Leave empty to auto-discover prisma/schema.prisma.">
-                  <Input value={prismaSchema} disabled={Boolean(configResult)} onChange={(e) => setPrismaSchema(e.target.value)} placeholder="./prisma/schema.prisma" />
-                </Field>
-              )}
-
-              <Field label="AI provider">
-                <select
-                  className={selectClassName}
-                  value={aiProvider}
-                  disabled={Boolean(configResult)}
-                  onChange={(e) => pickAiProvider(e.target.value as SetupAiProvider)}
-                >
-                  {AI_PROVIDERS.map((p) => (
-                    <option key={p.value} value={p.value}>{p.label}</option>
-                  ))}
-                </select>
-              </Field>
-
-              <Field
-                label="API key env var name"
-                description="The NAME of the environment variable holding your model API key."
-              >
-                <Input
-                  value={aiKeyEnv}
-                  disabled={Boolean(configResult)}
-                  onChange={(e) => { setAiKeyEnv(e.target.value.toUpperCase()); aiKeyEnvTouched.current = true; }}
-                />
-              </Field>
-
-              <Field label="Schema artifact directory" description="Where introspection writes the schema artifact.">
-                <Input value={schemaOut} disabled={Boolean(configResult)} onChange={(e) => setSchemaOut(e.target.value)} />
-              </Field>
-
-              {!configResult && (
-                <div>
-                  <button type="button" className="btn primary" disabled={busy === "config"} onClick={() => void handleWriteConfig()}>
-                    {busy === "config" ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} />}
-                    Write askdb.config.ts
-                  </button>
-                </div>
-              )}
-              {configResult && (
-                <div style={{ display: "grid", gap: 6 }}>
-                  <p className="muted" style={{ fontSize: 12.5 }}>
-                    Wrote <code className="mono">{configResult.configPath}</code>
-                    {configResult.envExamplePath ? <> and <code className="mono">{configResult.envExamplePath}</code></> : null}
-                    {configResult.packageJsonCreated ? <> (plus a minimal <code className="mono">package.json</code>)</> : null}.
-                  </p>
-                  {configResult.installed && configResult.installed.length > 0 && (
-                    <p className="muted" style={{ fontSize: 12.5 }}>
-                      Installed into your project: <code className="mono">{configResult.installed.join(" ")}</code>.
-                    </p>
-                  )}
-                  {configResult.manualInstallCommand && (
-                    <div style={{ display: "grid", gap: 6, border: "1px solid var(--amber-500)", borderRadius: 6, padding: 10 }}>
-                      <span style={{ fontSize: 12.5, fontWeight: 600 }}>One manual step: install the dependencies</span>
-                      <p className="muted" style={{ fontSize: 12 }}>
-                        The wizard couldn't install packages automatically. Run this in your project, then continue below:
-                      </p>
-                      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                        <code className="mono" style={{ flex: 1, fontSize: 12, border: "1px solid var(--border)", borderRadius: 6, padding: "6px 8px", background: "var(--surface-2)" }}>
-                          {configResult.manualInstallCommand}
-                        </code>
-                        <CopyButton value={configResult.manualInstallCommand} />
-                      </div>
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
-          </div>
+          <DatabaseProviderCard
+            stepNumber={1}
+            configResult={configResult}
+            busy={busy}
+            database={database}
+            onDatabaseChange={pickDatabase}
+            needsConnectionEnv={needsConnectionEnv}
+            connectionEnv={connectionEnv}
+            onConnectionEnvChange={(v) => { setConnectionEnv(v); connectionEnvTouched.current = true; }}
+            sqliteFile={sqliteFile}
+            onSqliteFileChange={setSqliteFile}
+            prismaSchema={prismaSchema}
+            onPrismaSchemaChange={setPrismaSchema}
+            aiProvider={aiProvider}
+            onAiProviderChange={pickAiProvider}
+            aiKeyEnv={aiKeyEnv}
+            onAiKeyEnvChange={(v) => { setAiKeyEnv(v); aiKeyEnvTouched.current = true; }}
+            aiModelEnv={aiModelEnv}
+            onAiModelEnvChange={(v) => { setAiModelEnv(v); aiModelEnvTouched.current = true; }}
+            schemaOut={schemaOut}
+            onSchemaOutChange={setSchemaOut}
+            ragStore={ragStore}
+            onRagStoreChange={setRagStore}
+            pgvectorEnv={pgvectorEnv}
+            onPgvectorEnvChange={setPgvectorEnv}
+            studioExecuteEnabled={studioExecuteEnabled}
+            onStudioExecuteEnabledChange={(v) => { setStudioExecuteEnabled(v); studioExecuteEnabledTouched.current = true; }}
+            studioExecuteProvider={studioExecuteProvider}
+            onStudioExecuteProviderChange={pickStudioExecuteProvider}
+            studioExecuteConnectionEnv={studioExecuteConnectionEnv}
+            onStudioExecuteConnectionEnvChange={(v) => { setStudioExecuteConnectionEnv(v); studioExecuteConnectionEnvTouched.current = true; }}
+            studioExecuteSqliteFile={studioExecuteSqliteFile}
+            onStudioExecuteSqliteFileChange={setStudioExecuteSqliteFile}
+            onWriteConfig={() => void handleWriteConfig()}
+          />
         )}
 
-        {configDone && (
-          <div className="card">
-            <div className="card-hd">
-              <h3><FileKey size={14} /> {configAlreadyExists ? "1" : "2"} · Add your secrets to .env</h3>
-            </div>
-            <div className="card-bd" style={{ display: "grid", gap: 10 }}>
-              <p className="muted" style={{ fontSize: 12.5, lineHeight: 1.6 }}>
-                Create a <code className="mono">.env</code> file next to <code className="mono">askdb.config.ts</code> and
-                fill in the values. Studio never asks for secret values — they stay on disk, outside this UI.
-              </p>
-              <div style={{ display: "flex", alignItems: "flex-start", gap: 8 }}>
-                <pre className="mono" style={{ flex: 1, margin: 0, border: "1px solid var(--border)", borderRadius: 6, padding: 10, fontSize: 12, background: "var(--surface-2)" }}>
-                  {envVarsToFill.map((v) => `${v.name}=          # ${v.purpose}`).join("\n")}
-                </pre>
-                <CopyButton value={envSnippet} />
-              </div>
-            </div>
-          </div>
-        )}
+        {configDone && <SecretsCard stepNumber={secretsStep} envVars={envVarsToFill} />}
 
         {configDone && (
-          <div className="card">
-            <div className="card-hd">
-              <h3><Sparkles size={14} /> {configAlreadyExists ? "2" : "3"} · Introspect your database</h3>
-            </div>
-            <div className="card-bd" style={{ display: "grid", gap: 10 }}>
-              <p className="muted" style={{ fontSize: 12.5, lineHeight: 1.6 }}>
-                Reads your schema structure (tables, columns, relationships — never rows) and writes the
-                schema artifact. When it finishes, Studio opens on the Overview.
-              </p>
-              <div>
-                <button type="button" className="btn primary" disabled={busy === "introspect"} onClick={() => void handleIntrospect()}>
-                  {busy === "introspect" ? <Loader2 size={14} className="animate-spin" /> : <Database size={14} />}
-                  Run introspection
-                </button>
-              </div>
-            </div>
-          </div>
+          <IntrospectCard stepNumber={introspectStep} busy={busy} onIntrospect={() => void handleIntrospect()} />
         )}
 
         {error && (

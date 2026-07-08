@@ -11,8 +11,10 @@ import {
   resolveDefaultInitAnswers,
   resolveInitDepSpecs,
   runInitCli,
+  runWizard,
   type InitAnswers,
   type InitDepSpecs,
+  type InitPrompter,
 } from "./init.js";
 
 // ---------------------------------------------------------------------------
@@ -34,6 +36,26 @@ function postgresAnswers(overrides: Partial<InitAnswers> = {}): InitAnswers {
 }
 
 const FAKE_SPECS: InitDepSpecs = { configSpec: "1.0.0", dotenvSpec: "17.0.0" };
+
+/** A prompter that always accepts the default (like pressing Enter), recording every message asked. */
+function createRecordingPrompter(): { prompter: InitPrompter; messages: string[] } {
+  const messages: string[] = [];
+  const prompter: InitPrompter = {
+    async select(opts) {
+      messages.push(opts.message);
+      return (opts.default ?? opts.choices[0]!.value) as never;
+    },
+    async input(opts) {
+      messages.push(opts.message);
+      return opts.default ?? "";
+    },
+    async confirm(opts) {
+      messages.push(opts.message);
+      return opts.default ?? true;
+    },
+  };
+  return { prompter, messages };
+}
 
 // ---------------------------------------------------------------------------
 // renderInitConfig
@@ -230,6 +252,68 @@ describe("resolveDefaultInitAnswers", () => {
     if (a.studioExecute.enabled) {
       expect(a.studioExecute.provider).toBe("sqlserver");
     }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// runWizard — env var NAMES are defaulted, never prompted for
+// ---------------------------------------------------------------------------
+
+describe("runWizard", () => {
+  it("never asks the user to name an env var — uses conventional defaults", async () => {
+    const { prompter, messages } = createRecordingPrompter();
+    const answers = await runWizard(prompter);
+    expect(answers).not.toBeNull();
+    expect(answers!.connectionEnv).toBe("DATABASE_URL");
+    expect(answers!.aiKeyEnv).toBe("OPENAI_API_KEY");
+    expect(answers!.aiModelEnv).toBe("OPENAI_MODEL");
+    for (const message of messages) {
+      expect(message.toLowerCase()).not.toContain("env var");
+    }
+  });
+
+  it("still asks for the decisions that have no safe default", async () => {
+    const { prompter, messages } = createRecordingPrompter();
+    await runWizard(prompter);
+    expect(messages).toEqual(
+      expect.arrayContaining([
+        "Database source",
+        "Schema output directory",
+        "AI provider",
+        "RAG store",
+        "Enable Studio execute (run queries from the browser playground)?",
+      ]),
+    );
+  });
+
+  it("pgvector RAG store still defaults its env var without prompting", async () => {
+    const { prompter, messages } = createRecordingPrompter();
+    prompter.select = (async (opts: Parameters<InitPrompter["select"]>[0]) => {
+      messages.push(opts.message);
+      if (opts.message === "RAG store") return "pgvector" as never;
+      return (opts.default ?? opts.choices[0]!.value) as never;
+    }) as InitPrompter["select"];
+    const answers = await runWizard(prompter);
+    expect(answers!.ragStore).toBe("pgvector");
+    expect(answers!.pgvectorEnv).toBe("ASKDB_PGVECTOR_URL");
+    expect(messages.some((m) => m.toLowerCase().includes("env var"))).toBe(false);
+  });
+
+  it("Prisma + Studio execute still asks which live provider to use (a real decision)", async () => {
+    const { prompter, messages } = createRecordingPrompter();
+    prompter.select = (async (opts: Parameters<InitPrompter["select"]>[0]) => {
+      messages.push(opts.message);
+      if (opts.message === "Database source") return "prisma" as never;
+      return (opts.default ?? opts.choices[0]!.value) as never;
+    }) as InitPrompter["select"];
+    prompter.confirm = async (opts) => {
+      messages.push(opts.message);
+      return true;
+    };
+    const answers = await runWizard(prompter);
+    expect(answers!.database).toBe("prisma");
+    expect(answers!.studioExecute).toEqual({ enabled: true, provider: "postgres", connectionEnv: "DATABASE_URL" });
+    expect(messages).toContain("Studio execute needs a live database provider. Which one?");
   });
 });
 
