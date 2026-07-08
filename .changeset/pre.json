@@ -120,6 +120,7 @@
     "schema-v2-breaking",
     "scrollable-tui-tables-list",
     "security-txt",
+    "setup-wizard-env-var-defaults",
     "seven-candies-shake",
     "shared-embedding-wrapper",
     "silly-otters-sip",
