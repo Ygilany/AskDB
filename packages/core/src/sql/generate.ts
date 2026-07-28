@@ -100,13 +100,23 @@ export async function generateSelectSql(
         temperature: 0,
       });
       text = result.text;
-      const u = (result as { usage?: { promptTokens?: number; completionTokens?: number; totalTokens?: number } }).usage;
+      const u = (result as {
+        usage?: {
+          promptTokens?: number;
+          completionTokens?: number;
+          inputTokens?: number;
+          outputTokens?: number;
+          totalTokens?: number;
+        };
+      }).usage;
       if (u) {
         const fin = (v: number | undefined): number | null =>
           typeof v === "number" && isFinite(v) ? v : null;
         usage = {
-          promptTokens: fin(u.promptTokens),
-          completionTokens: fin(u.completionTokens),
+          // AI SDK 6 calls these inputTokens/outputTokens; preserve the
+          // legacy names for custom generators and older SDK versions.
+          promptTokens: fin(u.promptTokens ?? u.inputTokens),
+          completionTokens: fin(u.completionTokens ?? u.outputTokens),
           totalTokens: fin(u.totalTokens),
         };
       }

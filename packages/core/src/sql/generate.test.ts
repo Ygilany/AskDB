@@ -37,6 +37,23 @@ describe("generateSelectSql (postgres)", () => {
     expect(generateText).toHaveBeenCalledOnce();
   });
 
+  it("normalizes AI SDK 6 input and output token usage", async () => {
+    const generateText = vi.fn(async () => ({
+      text: "```sql\nSELECT id FROM users\n```",
+      usage: { inputTokens: 120, outputTokens: 24, totalTokens: 144 },
+    }));
+
+    const out = await generateSelectSql(POSTGRES_DIALECT, "list users", minimalSchema, fakeModel, {
+      generateText,
+    });
+
+    expect(out.usage).toEqual({
+      promptTokens: 120,
+      completionTokens: 24,
+      totalTokens: 144,
+    });
+  });
+
   it("surfaces SqlValidationError when model returns non-SELECT", async () => {
     const generateText = vi.fn(async () => ({
       text: "```sql\nDELETE FROM users\n```",
