@@ -1,5 +1,14 @@
 # @askdb/mysql
 
+## 0.1.0-beta.15
+
+### Patch Changes
+
+- Updated dependencies [350c03a]
+  - @askdb/core@1.0.0-beta.40
+  - @askdb/introspect@0.3.0-beta.14
+  - @askdb/connectors@0.1.0-beta.5
+
 ## 0.1.0-beta.14
 
 ### Patch Changes

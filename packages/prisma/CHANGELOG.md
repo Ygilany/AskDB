@@ -1,5 +1,12 @@
 # @askdb/prisma
 
+## 0.2.0-beta.14
+
+### Patch Changes
+
+- @askdb/introspect@0.3.0-beta.14
+- @askdb/connectors@0.1.0-beta.5
+
 ## 0.2.0-beta.13
 
 ### Patch Changes

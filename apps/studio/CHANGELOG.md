@@ -1,5 +1,21 @@
 # @askdb/studio
 
+## 0.2.0-beta.33
+
+### Patch Changes
+
+- Updated dependencies [350c03a]
+  - @askdb/core@1.0.0-beta.40
+  - @askdb/enrich@0.2.0-beta.11
+  - @askdb/introspect@0.3.0-beta.14
+  - @askdb/mysql@0.1.0-beta.15
+  - @askdb/postgres@0.2.0-beta.16
+  - @askdb/rag@0.2.0-beta.20
+  - @askdb/sqlite@0.1.0-beta.15
+  - @askdb/sqlserver@0.1.0-beta.16
+  - @askdb/connectors@0.1.0-beta.5
+  - @askdb/prisma@0.2.0-beta.14
+
 ## 0.2.0-beta.32
 
 ### Patch Changes

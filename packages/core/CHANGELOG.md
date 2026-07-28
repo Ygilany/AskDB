@@ -1,5 +1,12 @@
 # @askdb/core
 
+## 1.0.0-beta.40
+
+### Patch Changes
+
+- 350c03a: Normalize AI SDK 6 input and output token usage into the `promptTokens` and
+  `completionTokens` values returned by `ask()`.
+
 ## 1.0.0-beta.36
 
 ### Minor Changes

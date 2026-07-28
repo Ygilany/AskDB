@@ -64,6 +64,7 @@
     "express-server-example",
     "fix-ai-sdk-embedding-compat",
     "fix-bento-grid-alignment",
+    "fix-core-token-usage",
     "fix-dark-mode-badge-legibility",
     "fix-playground-token-usage",
     "fix-pnpm-supply-chain-policy",
