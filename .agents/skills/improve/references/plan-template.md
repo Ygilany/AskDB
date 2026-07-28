@@ -10,6 +10,8 @@ Three properties make a plan executable by a weaker model:
 
 File naming: `plans/NNN-short-slug.md`, numbered in recommended execution order.
 
+Source formatting: generated plan files use soft-wrapped prose. Do not insert hard line breaks in paragraphs, blockquotes, list items, or template text solely to satisfy a column width; keep line breaks only where Markdown structure, tables, or code blocks require them.
+
 ---
 
 ## Template
@@ -17,17 +19,10 @@ File naming: `plans/NNN-short-slug.md`, numbered in recommended execution order.
 ```markdown
 # Plan NNN: <Imperative title — what will be true after this plan>
 
-> **Executor instructions**: Follow this plan step by step. Run every
-> verification command and confirm the expected result before moving to the
-> next step. If anything in the "STOP conditions" section occurs, stop and
-> report — do not improvise. When done, update the status row for this plan
-> in `plans/README.md` — unless a reviewer dispatched you and told you they
-> maintain the index.
+> **Executor instructions**: Follow this plan step by step. Run every verification command and confirm the expected result before moving to the next step. If anything in the "STOP conditions" section occurs, stop and report — do not improvise. When done, update the status row for this plan in `plans/README.md` — unless a reviewer dispatched you and told you they maintain the index.
 >
 > **Drift check (run first)**: `git diff --stat <planned-at SHA>..HEAD -- <in-scope paths>`
-> If any in-scope file changed since this plan was written, compare the
-> "Current state" excerpts against the live code before proceeding; on a
-> mismatch, treat it as a STOP condition.
+> If any in-scope file changed since this plan was written, compare the "Current state" excerpts against the live code before proceeding; on a mismatch, treat it as a STOP condition.
 
 ## Status
 
@@ -41,9 +36,7 @@ File naming: `plans/NNN-short-slug.md`, numbered in recommended execution order.
 
 ## Why this matters
 
-2–5 sentences. The problem, its concrete cost, and what improves when this
-lands. Written so the executor (and a human reviewer) understands the intent —
-intent is what lets a correct judgment call happen when a detail is off.
+2–5 sentences. The problem, its concrete cost, and what improves when this lands. Written so the executor (and a human reviewer) understands the intent — intent is what lets a correct judgment call happen when a detail is off.
 
 ## Current state
 
@@ -51,11 +44,8 @@ The facts the executor needs, inlined — never "as discussed" or "see audit":
 
 - The relevant files, each with one line on its role:
   - `src/orders/api.ts` — order-list endpoint; contains the N+1 (lines 130–160)
-- Excerpts of the code as it exists today (short, with `file:line` markers),
-  enough that the executor can confirm it's looking at the right thing.
-- The repo conventions that apply here, with a pointer to one exemplar file:
-  "Error handling follows the Result pattern — see `src/lib/result.ts` and its
-  use in `src/users/api.ts:40-60`. Match it."
+- Excerpts of the code as it exists today (short, with `file:line` markers), enough that the executor can confirm it's looking at the right thing.
+- The repo conventions that apply here, with a pointer to one exemplar file: "Error handling follows the Result pattern — see `src/lib/result.ts` and its use in `src/users/api.ts:40-60`. Match it."
 
 ## Commands you will need
 
@@ -70,11 +60,9 @@ The facts the executor needs, inlined — never "as discussed" or "see audit":
 
 ## Suggested executor toolkit
 
-(Optional — include only when relevant skills/tools plausibly exist in the
-executor's environment. Skip the section otherwise.)
+(Optional — include only when relevant skills/tools plausibly exist in the executor's environment. Skip the section otherwise.)
 
-- Skills the executor should invoke if available, and for what:
-  "use `vercel-react-best-practices` when writing the memoization in step 3".
+- Skills the executor should invoke if available, and for what: "use `vercel-react-best-practices` when writing the memoization in step 3".
 - Reference docs worth reading before starting, by path or URL.
 
 ## Scope
@@ -84,8 +72,7 @@ executor's environment. Skip the section otherwise.)
 - `src/orders/api.test.ts` (create)
 
 **Out of scope** (do NOT touch, even though they look related):
-- `src/orders/legacy-api.ts` — deprecated path, scheduled for deletion;
-  changing it wastes effort and risks the v1 clients still pinned to it.
+- `src/orders/legacy-api.ts` — deprecated path, scheduled for deletion; changing it wastes effort and risks the v1 clients still pinned to it.
 - Any change to the public response shape — clients depend on it.
 
 ## Git workflow
@@ -100,24 +87,18 @@ executor's environment. Skip the section otherwise.)
 
 ### Step 1: <imperative title>
 
-What to do, precisely. Reference exact files/symbols. Include the target code
-shape when it's load-bearing (the pattern to produce, not necessarily every
-line).
+What to do, precisely. Reference exact files/symbols. Include the target code shape when it's load-bearing (the pattern to produce, not necessarily every line).
 
 **Verify**: `<command>` → <expected output>
 
 ### Step 2: ...
 
-(Each step small enough to verify independently. Order steps so the codebase
-is never broken between steps when possible — e.g. add new path, switch
-callers, then remove old path.)
+(Each step small enough to verify independently. Order steps so the codebase is never broken between steps when possible — e.g. add new path, switch callers, then remove old path.)
 
 ## Test plan
 
-- New tests to write, in which file, covering which cases (list them:
-  happy path, the specific bug/regression this plan fixes, named edge cases).
-- Which existing test to use as the structural pattern:
-  "model after `src/users/api.test.ts`".
+- New tests to write, in which file, covering which cases (list them: happy path, the specific bug/regression this plan fixes, named edge cases).
+- Which existing test to use as the structural pattern: "model after `src/users/api.test.ts`".
 - Verification: `<test command>` → all pass, including N new tests.
 
 ## Done criteria
@@ -134,8 +115,7 @@ Machine-checkable. ALL must hold:
 
 Stop and report back (do not improvise) if:
 
-- The code at the locations in "Current state" doesn't match the excerpts
-  (the codebase has drifted since this plan was written).
+- The code at the locations in "Current state" doesn't match the excerpts (the codebase has drifted since this plan was written).
 - A step's verification fails twice after a reasonable fix attempt.
 - The fix appears to require touching an out-of-scope file.
 - You discover the assumption "<key assumption>" is false.
@@ -144,8 +124,7 @@ Stop and report back (do not improvise) if:
 
 For the human/agent who owns this code after the change lands:
 
-- What future changes will interact with this (e.g. "if pagination is added
-  to this endpoint, the batching in step 2 must be revisited").
+- What future changes will interact with this (e.g. "if pagination is added to this endpoint, the batching in step 2 must be revisited").
 - What a reviewer should scrutinize in the PR.
 - Any follow-up explicitly deferred out of this plan (and why).
 ```
@@ -159,9 +138,7 @@ Written once by the advisor after all plans, updated by executors:
 ```markdown
 # Implementation Plans
 
-Generated by the improve skill on <date>. Execute in the order below unless
-dependencies say otherwise. Each executor: read the plan fully before starting,
-honor its STOP conditions, and update your row when done.
+Generated by the improve skill on <date>. Execute in the order below unless dependencies say otherwise. Each executor: read the plan fully before starting, honor its STOP conditions, and update your row when done.
 
 ## Execution order & status
 
@@ -190,3 +167,4 @@ Status values: TODO | IN PROGRESS | DONE | BLOCKED (with one-line reason) | REJE
 - Would a reviewer reading only "Why this matters" + "Done criteria" understand what they're approving?
 - No secret values anywhere in the file — locations and credential types only.
 - "Planned at" SHA is filled in and the in-scope paths in the drift check match the Scope section.
+- Use soft-wrapped prose: do not insert hard line breaks in paragraphs, blockquotes, list items, or template text solely to satisfy a column width. Keep line breaks only where Markdown structure, tables, or code blocks require them.
