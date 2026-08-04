@@ -61,11 +61,11 @@
     "@askdb/core": "workspace:*",
     "@askdb/postgres": "workspace:*",
     "ai": "^7.0.51",
-    "pg": "^8.21.0"
+    "pg": "^8.22.0"
   },
   "devDependencies": {
-    "tsx": "^4.22.4",
+    "tsx": "^4.23.5",
     "typescript": "^6.0.3",
-    "vitest": "^4.1.8"
+    "vitest": "^4.1.10"
   }
 }

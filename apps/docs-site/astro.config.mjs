@@ -1,4 +1,5 @@
 import { fileURLToPath } from "node:url";
+import { unified } from "@astrojs/markdown-remark";
 import { defineConfig } from "astro/config";
 import starlight from "@astrojs/starlight";
 import starlightLlmsTxt from "starlight-llms-txt";
@@ -47,7 +48,7 @@ export default defineConfig({
   site: `${site}${normalizedBase}`,
   base,
   markdown: {
-    remarkPlugins: [remarkRebaseLinks],
+    processor: unified({ remarkPlugins: [remarkRebaseLinks] }),
   },
   vite: {
     resolve: {

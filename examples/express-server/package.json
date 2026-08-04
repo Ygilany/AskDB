@@ -12,14 +12,14 @@
     "@askdb/ai-openai": "workspace:*",
     "@askdb/client": "workspace:*",
     "@askdb/config": "workspace:*",
-    "express": "^4.21.2",
-    "pg": "^8.14.1"
+    "express": "^4.22.2",
+    "pg": "^8.22.0"
   },
   "devDependencies": {
-    "@types/express": "^5.0.3",
-    "@types/node": "^22.19.21",
-    "@types/pg": "^8.11.11",
-    "tsx": "^4.22.4",
+    "@types/express": "^5.0.6",
+    "@types/node": "^22.20.1",
+    "@types/pg": "^8.20.3",
+    "tsx": "^4.23.5",
     "typescript": "^6.0.3"
   }
 }
