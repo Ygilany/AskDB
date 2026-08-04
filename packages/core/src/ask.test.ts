@@ -36,7 +36,7 @@ const promptForwardingDialect: AskDialect = {
 
     await options?.generateText?.({
       model: fakeModel,
-      system: "test",
+      instructions: "test",
       prompt,
       temperature: 0,
     } as never);

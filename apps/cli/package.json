@@ -36,7 +36,7 @@
     "NOTICE"
   ],
   "engines": {
-    "node": ">=20"
+    "node": ">=22"
   },
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
@@ -62,7 +62,7 @@
     "@askdb/sqlserver": "workspace:*",
     "@askdb/studio": "workspace:*",
     "@inquirer/prompts": "^8.5.2",
-    "ai": "^6.0.205",
+    "ai": "^7.0.51",
     "commander": "^15.0.0"
   },
   "devDependencies": {

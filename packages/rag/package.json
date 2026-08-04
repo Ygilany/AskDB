@@ -62,7 +62,7 @@
     "NOTICE"
   ],
   "engines": {
-    "node": ">=20"
+    "node": ">=22"
   },
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
@@ -74,8 +74,8 @@
     "@askdb/core": "workspace:*"
   },
   "peerDependencies": {
-    "@ai-sdk/openai": "^3.0.71",
-    "ai": "^6.0.205",
+    "@ai-sdk/openai": "^4.0.29",
+    "ai": "^7.0.51",
     "pg": ">=8"
   },
   "peerDependenciesMeta": {
@@ -90,9 +90,9 @@
     }
   },
   "devDependencies": {
-    "@ai-sdk/openai": "^3.0.71",
+    "@ai-sdk/openai": "^4.0.29",
     "@types/pg": "^8.20.0",
-    "ai": "^6.0.205",
+    "ai": "^7.0.51",
     "pg": "^8.21.0",
     "typescript": "^6.0.3",
     "vitest": "^4.1.8"

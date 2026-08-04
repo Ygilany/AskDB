@@ -35,7 +35,7 @@
     "NOTICE"
   ],
   "engines": {
-    "node": ">=20"
+    "node": ">=22"
   },
   "scripts": {
     "build": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\" && pnpm build:client && pnpm build:server",
@@ -64,7 +64,7 @@
     "@askdb/rag": "workspace:*",
     "@askdb/sqlite": "workspace:*",
     "@askdb/sqlserver": "workspace:*",
-    "ai": "^6.0.205",
+    "ai": "^7.0.51",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "lucide-react": "^1.18.0",

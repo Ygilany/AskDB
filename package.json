@@ -3,7 +3,7 @@
   "private": true,
   "packageManager": "pnpm@11.6.0",
   "engines": {
-    "node": ">=20"
+    "node": ">=22"
   },
   "scripts": {
     "audit": "audit-ci --config .audit-ci.json",

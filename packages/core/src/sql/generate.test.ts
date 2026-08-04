@@ -165,37 +165,37 @@ describe("generateSelectSql — prompt parameterization per dialect", () => {
   async function capturedPrompt(
     dialect: typeof POSTGRES_DIALECT,
     sqlForModel: string,
-  ): Promise<{ system: string; prompt: string }> {
+  ): Promise<{ instructions: string; prompt: string }> {
     const generateText = vi.fn(async () => ({ text: `\`\`\`sql\n${sqlForModel}\n\`\`\`` }));
     await generateSelectSql(dialect, "show me users", minimalSchema, fakeModel, {
       generateText,
     });
-    const call = generateText.mock.calls[0]![0] as { system: string; prompt: string };
-    return { system: call.system, prompt: call.prompt };
+    const call = generateText.mock.calls[0]![0] as { instructions: string; prompt: string };
+    return { instructions: call.instructions, prompt: call.prompt };
   }
 
   it("MySQL prompt mentions backticks and CONCAT(), system prompt names MySQL", async () => {
-    const { system, prompt } = await capturedPrompt(MYSQL_DIALECT, "SELECT id FROM users");
-    expect(system).toMatch(/MySQL/);
+    const { instructions, prompt } = await capturedPrompt(MYSQL_DIALECT, "SELECT id FROM users");
+    expect(instructions).toMatch(/MySQL/);
     expect(prompt).toMatch(/MySQL SELECT/);
     expect(prompt).toMatch(/backtick/i);
     expect(prompt).toMatch(/CONCAT/);
   });
 
   it("SQLite prompt mentions strftime() and `||` concat, system prompt names SQLite", async () => {
-    const { system, prompt } = await capturedPrompt(SQLITE_DIALECT, "SELECT id FROM users");
-    expect(system).toMatch(/SQLite/);
+    const { instructions, prompt } = await capturedPrompt(SQLITE_DIALECT, "SELECT id FROM users");
+    expect(instructions).toMatch(/SQLite/);
     expect(prompt).toMatch(/SQLite SELECT/);
     expect(prompt).toMatch(/strftime/);
     expect(prompt).toMatch(/\|\|/);
   });
 
   it("SQL Server prompt mentions TOP and OFFSET .. FETCH NEXT", async () => {
-    const { system, prompt } = await capturedPrompt(
+    const { instructions, prompt } = await capturedPrompt(
       SQLSERVER_DIALECT,
       "SELECT TOP (5) id FROM users",
     );
-    expect(system).toMatch(/SQL Server/);
+    expect(instructions).toMatch(/SQL Server/);
     expect(prompt).toMatch(/SQL Server SELECT/);
     expect(prompt).toMatch(/TOP/);
     expect(prompt).toMatch(/OFFSET .* FETCH NEXT/);
