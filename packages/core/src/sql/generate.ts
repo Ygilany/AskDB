@@ -85,7 +85,7 @@ export async function generateSelectSql(
     try {
       const result = await generateText({
         model,
-        system: buildNlToSqlSystemPrompt(dialect),
+        instructions: buildNlToSqlSystemPrompt(dialect),
         prompt: buildNlToSqlUserPrompt(
           dialect,
           question,

@@ -1,4 +1,4 @@
-import { createGoogleGenerativeAI } from "@ai-sdk/google";
+import { createGoogle } from "@ai-sdk/google";
 import {
   resolveBaseConfig,
   type AiProviderAdapter,
@@ -21,14 +21,14 @@ export const googleProvider: AiProviderAdapter = {
     return resolveBaseConfig("google", env, ENV_SPEC, options);
   },
   createLanguageModel(config) {
-    const google = createGoogleGenerativeAI({
+    const google = createGoogle({
       apiKey: config.apiKey,
       ...(config.baseURL ? { baseURL: config.baseURL } : {}),
     });
     return google(config.model);
   },
   createEmbeddingModel(config) {
-    const google = createGoogleGenerativeAI({
+    const google = createGoogle({
       apiKey: config.apiKey,
       ...(config.baseURL ? { baseURL: config.baseURL } : {}),
     });

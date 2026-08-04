@@ -10,20 +10,20 @@ const mocks = vi.hoisted(() => {
   });
 
   return {
-    createGoogleGenerativeAI: vi.fn(() => google),
+    createGoogle: vi.fn(() => google),
     google,
   };
 });
 
 vi.mock("@ai-sdk/google", () => ({
-  createGoogleGenerativeAI: mocks.createGoogleGenerativeAI,
+  createGoogle: mocks.createGoogle,
 }));
 
 import { googleProvider } from "./index";
 
 describe("googleProvider", () => {
   beforeEach(() => {
-    mocks.createGoogleGenerativeAI.mockClear();
+    mocks.createGoogle.mockClear();
     mocks.google.mockClear();
     mocks.google.textEmbeddingModel.mockClear();
   });
@@ -45,11 +45,11 @@ describe("googleProvider", () => {
 
     expect(languageModel).toEqual({ kind: "language", model: "gemini-1.5-flash" });
     expect(embeddingModel).toEqual({ kind: "embedding", model: "text-embedding-004" });
-    expect(mocks.createGoogleGenerativeAI).toHaveBeenNthCalledWith(1, {
+    expect(mocks.createGoogle).toHaveBeenNthCalledWith(1, {
       apiKey: "test-key",
       baseURL: "https://generativelanguage.googleapis.com",
     });
-    expect(mocks.createGoogleGenerativeAI).toHaveBeenNthCalledWith(2, {
+    expect(mocks.createGoogle).toHaveBeenNthCalledWith(2, {
       apiKey: "test-key",
     });
   });

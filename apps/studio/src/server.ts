@@ -698,7 +698,7 @@ If the schema has no clear multi-tenant pattern, still make your best guess at w
 
   const result = await defaultGenerateText({
     model,
-    system: systemPrompt,
+    instructions: systemPrompt,
     prompt: userPrompt,
   });
 

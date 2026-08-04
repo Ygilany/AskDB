@@ -35,7 +35,7 @@
     "NOTICE"
   ],
   "engines": {
-    "node": ">=20"
+    "node": ">=22"
   },
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
@@ -45,12 +45,12 @@
   "peerDependencies": {
     "@askdb/config": "workspace:^",
     "@askdb/core": "workspace:^",
-    "ai": "^6.0.205"
+    "ai": "^7.0.51"
   },
   "devDependencies": {
     "@askdb/config": "workspace:*",
     "@askdb/core": "workspace:*",
-    "ai": "^6.0.205",
+    "ai": "^7.0.51",
     "typescript": "^6.0.3",
     "vitest": "^4.1.8"
   },

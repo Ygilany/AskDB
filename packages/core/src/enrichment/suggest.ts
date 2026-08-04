@@ -35,7 +35,7 @@ export async function suggestEnrichment(
 
   const result = await generateText({
     model,
-    system: ENRICHMENT_SYSTEM_PROMPT,
+    instructions: ENRICHMENT_SYSTEM_PROMPT,
     prompt: buildEnrichmentUserPrompt(target, context),
     temperature: deps.temperature ?? 0.4,
   });
