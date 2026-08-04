@@ -49,15 +49,20 @@ normalization to the engine packages. After it lands, the same class of drift ca
 recur on the other three providers.
 Plan 033: originally written 2026-07-19 at commit `9f5e600`; **rewritten 2026-08-04 at commit
 `c81bb4e`** after a maintainer design review. The first version tried to make queries reusable
-*without* a model call — a prepared-query artifact, schema/policy/context fingerprints,
-tenant access-shape comparison, and a `client.bind()` rebind path. That premise was wrong:
-every AskDB request always invokes the model. The rewrite keeps the input unchanged (the
-question still goes to the model with its values inline) and changes only the *output* — the
-model additionally returns the SQL in unbound form plus a JSON manifest of the values it
-parameterized, so `ask()` can return bound SQL, unbound SQL, params, and per-parameter metadata
-a host can render a dynamic form from. `bindPreparedQuery()` survives as a pure local utility
-sharing one binder with the tenant placeholder path. Fingerprints, rebind policing, host-declared
-`{{token}}` syntax, and `@askdb/client` source changes are all out of the rewritten scope.
+*without* a model call — a prepared-query artifact, schema/policy/context fingerprints, tenant
+access-shape comparison, and a `client.bind()` rebind path. That premise was wrong: every AskDB
+request always invokes the model. The rewrite keeps the input unchanged (the question still goes
+to the model with its values inline) and changes only the *output* — the model returns the bound
+SQL exactly as today, plus the same statement in unbound form and a JSON manifest of the values
+it parameterized. `ask()` therefore returns today's `sql` verbatim alongside `unboundSql`,
+`params`, and per-parameter metadata a host can render a dynamic form from; if the extra blocks
+are missing or inconsistent they are dropped, so the feature can default to on without any
+caller being able to regress. `bindPreparedQuery()` survives as a pure local utility that
+substitutes escaped literals before execution, sharing one tokenizer, scanner, and escaper with
+the tenant placeholder path. That substitution model makes dialect-aware literal escaping
+security-critical, so the MySQL/MariaDB backslash weakness in `escapeSqlLiteral` moves **into**
+this plan's scope. Fingerprints, rebind policing, host-declared `{{token}}` syntax, and
+`@askdb/client` source changes stay out of scope.
 
 Execute in the order below unless dependencies say otherwise. Each executor: read the plan
 fully before starting, honor its STOP conditions, and update your row when done.
