@@ -439,4 +439,42 @@ describe("createAiRegistry", () => {
       expect(message).toContain("ai.providerConfig.openai.apiKey");
     });
   });
+
+  describe("resolveProviderOptions", () => {
+    it("delegates to the resolved adapter's resolveProviderOptions", () => {
+      const adapter: AiProviderAdapter = {
+        provider: "openai",
+        resolveConfig: vi.fn(() => undefined),
+        createLanguageModel: vi.fn(() => ({}) as never),
+        createEmbeddingModel: vi.fn(() => ({}) as never),
+        resolveProviderOptions: vi.fn(() => ({ openai: { reasoningEffort: "low" } })),
+      };
+      const registry = createAiRegistry([adapter]);
+      const config = { provider: "openai", apiKey: "k", model: "o3-mini" };
+
+      expect(registry.resolveProviderOptions(config, { reasoningEffort: "low" })).toEqual({
+        openai: { reasoningEffort: "low" },
+      });
+      expect(adapter.resolveProviderOptions).toHaveBeenCalledWith(config, {
+        reasoningEffort: "low",
+      });
+    });
+
+    it("returns undefined when the adapter doesn't implement resolveProviderOptions", () => {
+      const adapter: AiProviderAdapter = {
+        provider: "openai",
+        resolveConfig: vi.fn(() => undefined),
+        createLanguageModel: vi.fn(() => ({}) as never),
+        createEmbeddingModel: vi.fn(() => ({}) as never),
+      };
+      const registry = createAiRegistry([adapter]);
+
+      expect(
+        registry.resolveProviderOptions(
+          { provider: "openai", apiKey: "k", model: "gpt-4o-mini" },
+          { reasoningEffort: "low" },
+        ),
+      ).toBeUndefined();
+    });
+  });
 });

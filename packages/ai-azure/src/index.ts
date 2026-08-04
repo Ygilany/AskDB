@@ -20,6 +20,13 @@ const ENV_SPEC: ProviderEnvSpec = {
   defaultEmbeddingModel: "text-embedding-3-small",
 };
 
+/** o-series (o1, o3, o3-mini, o4-mini, …) and gpt-5.x deployments — the model families that accept `reasoningEffort`. */
+const REASONING_MODEL_PATTERN = /^o\d(-|$)|^gpt-5/i;
+
+function isReasoningModel(model: string): boolean {
+  return REASONING_MODEL_PATTERN.test(model);
+}
+
 export const azureProvider: AiProviderAdapter = {
   provider: "azure",
   aliases: ["azure-openai", "foundry"],
@@ -74,6 +81,13 @@ export const azureProvider: AiProviderAdapter = {
     });
     const model = azure.embedding(config.model);
     return withEmbeddingProviderOptions(model, "azure", options);
+  },
+  resolveProviderOptions(config, { reasoningEffort }) {
+    if (!reasoningEffort || !isReasoningModel(config.model)) return undefined;
+    // @ai-sdk/azure delegates chat completions to OpenAIChatLanguageModel,
+    // which only reads `providerOptions.openai` (not `.azure`) — using the
+    // "azure" namespace here would be silently ignored by the AI SDK.
+    return { openai: { reasoningEffort } };
   },
 };
 

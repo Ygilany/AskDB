@@ -115,4 +115,44 @@ describe("anthropicProvider", () => {
   it("has a configHint that references the askdb.config path", () => {
     expect(anthropicProvider.configHint).toMatch(/providerConfig\.anthropic\.apiKey/);
   });
+
+  describe("resolveProviderOptions", () => {
+    const baseConfig = { provider: "anthropic", apiKey: "k" } as const;
+
+    it("maps reasoningEffort to extended thinking for Claude Sonnet 4 models", () => {
+      expect(
+        anthropicProvider.resolveProviderOptions?.(
+          { ...baseConfig, model: "claude-sonnet-4-6" },
+          { reasoningEffort: "medium" },
+        ),
+      ).toEqual({ anthropic: { thinking: { type: "enabled", budgetTokens: 8192 } } });
+    });
+
+    it("maps reasoningEffort to extended thinking for Claude Opus 4 models", () => {
+      expect(
+        anthropicProvider.resolveProviderOptions?.(
+          { ...baseConfig, model: "claude-opus-4-8" },
+          { reasoningEffort: "high" },
+        ),
+      ).toEqual({ anthropic: { thinking: { type: "enabled", budgetTokens: 16384 } } });
+    });
+
+    it("returns undefined when reasoningEffort is unset", () => {
+      expect(
+        anthropicProvider.resolveProviderOptions?.(
+          { ...baseConfig, model: "claude-sonnet-4-6" },
+          {},
+        ),
+      ).toBeUndefined();
+    });
+
+    it("returns undefined for models without extended thinking (e.g. Claude Haiku 4.5)", () => {
+      expect(
+        anthropicProvider.resolveProviderOptions?.(
+          { ...baseConfig, model: "claude-haiku-4-5-20251001" },
+          { reasoningEffort: "high" },
+        ),
+      ).toBeUndefined();
+    });
+  });
 });

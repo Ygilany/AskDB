@@ -342,6 +342,59 @@ describe("flattenAskDbConfig", () => {
     // No ASKDB_AI_API_KEY set for openai branch
     expect(flat.ASKDB_AI_API_KEY).toBeUndefined();
   });
+
+  describe("ai.reasoning", () => {
+    it("emits no reasoning env keys when unset (preserves current behavior)", () => {
+      const flat = flattenAskDbConfig(minimalConfig());
+      expect(flat.ASKDB_AI_REASONING_EFFORT).toBeUndefined();
+      expect(flat.ASKDB_AI_REASONING_EFFORT_NL_TO_SQL).toBeUndefined();
+      expect(flat.ASKDB_AI_REASONING_EFFORT_ENRICHMENT).toBeUndefined();
+    });
+
+    it("flattens the global effort to ASKDB_AI_REASONING_EFFORT", () => {
+      const flat = flattenAskDbConfig(
+        minimalConfig({
+          ai: {
+            provider: "openai",
+            providerConfig: { openai: { apiKey: "k" } },
+            reasoning: { effort: "medium" },
+          },
+        }),
+      );
+      expect(flat.ASKDB_AI_REASONING_EFFORT).toBe("medium");
+      expect(flat.ASKDB_AI_REASONING_EFFORT_NL_TO_SQL).toBeUndefined();
+      expect(flat.ASKDB_AI_REASONING_EFFORT_ENRICHMENT).toBeUndefined();
+    });
+
+    it("flattens per-call-site overrides independently of the global effort", () => {
+      const flat = flattenAskDbConfig(
+        minimalConfig({
+          ai: {
+            provider: "openai",
+            providerConfig: { openai: { apiKey: "k" } },
+            reasoning: { effort: "medium", nlToSql: "high", enrichment: "low" },
+          },
+        }),
+      );
+      expect(flat.ASKDB_AI_REASONING_EFFORT).toBe("medium");
+      expect(flat.ASKDB_AI_REASONING_EFFORT_NL_TO_SQL).toBe("high");
+      expect(flat.ASKDB_AI_REASONING_EFFORT_ENRICHMENT).toBe("low");
+    });
+
+    it("throws a clear error for an invalid reasoning effort value", () => {
+      expect(() =>
+        flattenAskDbConfig(
+          minimalConfig({
+            ai: {
+              provider: "openai",
+              providerConfig: { openai: { apiKey: "k" } },
+              reasoning: { effort: "ultra" as never },
+            },
+          }),
+        ),
+      ).toThrow(/invalid ai\.reasoning value "ultra"/);
+    });
+  });
 });
 
 describe("loadAskDbConfigProjectionSync", () => {

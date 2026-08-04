@@ -29,6 +29,7 @@ export type AskDialectGenerateOptions = {
   explain?: boolean;
   omitSensitiveIdentifiersFromNlToSqlPrompt?: boolean;
   generateText?: typeof defaultGenerateText;
+  providerOptions?: Record<string, unknown>;
   prebuiltDdl?: string;
   tenantPolicy?: import("./schema/v2/tenant-policy.js").NormalizedTenantPolicy;
   tenantScope?: TenantScope;
@@ -78,6 +79,14 @@ export type AskDialectInput = BuiltInDialectId | DialectSpec | AskDialect;
 /** Generic deps the pipeline forwards into the dialect (test-time mock for `generateText`, etc.). */
 export type AskGenerateDeps = {
   generateText?: typeof defaultGenerateText;
+  /**
+   * Forwarded verbatim to the underlying `generateText` call's `providerOptions`.
+   * Resolve provider-portable reasoning/latency effort (e.g. via `@askdb/ai`'s
+   * `resolveProviderOptions`) and pass the result here — core stays BYO-model
+   * and does not interpret or validate this bag. Unset preserves current
+   * `generateText` call shapes exactly.
+   */
+  providerOptions?: Record<string, unknown>;
 };
 
 export type AskPipelineOptions = {
@@ -190,6 +199,7 @@ export async function ask(options: AskPipelineOptions): Promise<AskPipelineResul
       explain: explainRequested,
       omitSensitiveIdentifiersFromNlToSqlPrompt: omitSensitive || undefined,
       generateText: options.deps?.generateText,
+      providerOptions: options.deps?.providerOptions,
       prebuiltDdl,
       tenantPolicy,
       tenantScope: options.tenantScope,

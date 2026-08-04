@@ -339,3 +339,44 @@ functions moved onto `createAiRegistry()` registry instances. The consequence
 "adding a new provider is a new `@askdb/ai-*` package plus a config branch" was
 superseded: a config branch in `askdb.config.*` is now only needed for authoring-time
 type support; env-driven use (`ASKDB_AI_PROVIDER=<name>`) works without it.
+
+**2026-08 — Provider-portable reasoning/latency effort:** Added an AskDB-owned
+config surface for reasoning/latency tuning (`reasoningEffort:
+"minimal" | "low" | "medium" | "high"`, from `@askdb/ai`'s `reasoning.ts`)
+without weakening the BYO-model boundary this ADR establishes.
+
+The key design question was where the portable-to-native `providerOptions`
+mapping should live, given `@askdb/core` never imports concrete provider
+packages and only knows `generateText`'s minimal call shape (§"What core
+actually needs from the AI SDK"). The mapping needs provider-specific
+knowledge (OpenAI/Azure `reasoningEffort`, Google `thinkingConfig.thinkingLevel`
+vs. `thinkingBudget` depending on the Gemini generation, Anthropic `thinking`
+budgets) plus a per-model capability check (never send reasoning options to a
+non-reasoning model), so it cannot live in core.
+
+Resolution, consistent with Option F's adapter-owns-its-provider principle:
+
+- `@askdb/ai-*` adapters implement an optional `resolveProviderOptions(config, { reasoningEffort })`
+  on `AiProviderAdapter`, returning the provider's native `providerOptions` bag
+  or `undefined` (unset effort, or a model that doesn't support reasoning
+  tuning — e.g. `gpt-4o-mini`, `gemini-2.0-flash`).
+- `AiRegistry` exposes `resolveProviderOptions(config, settings)`, dispatching
+  to the resolved adapter.
+- `@askdb/core` gained one new opaque field: `providerOptions?: Record<string, unknown>`
+  on `AskGenerateDeps` / `GenerateSqlDeps` / `SuggestEnrichmentDeps`, forwarded
+  verbatim into the existing `generateText({ ..., providerOptions })` call.
+  Core still does not interpret, validate, or default this bag — it is exactly
+  as BYO as the `model` parameter itself. Omitted (not sent as `{}`) when
+  unset, so existing `generateText` call shapes are byte-for-byte unchanged.
+- `@askdb/config`'s `ai.reasoning` block (`effort` / `nlToSql` / `enrichment`)
+  flattens to `ASKDB_AI_REASONING_EFFORT[_NL_TO_SQL|_ENRICHMENT]` env vars,
+  giving per-call-site defaults without adding a "call purpose" abstraction to
+  `@askdb/core` itself — call-site distinction is a config/env-resolution
+  concern (`@askdb/ai`'s `resolveReasoningEffort(env, purpose, override)`),
+  not a pipeline concern.
+
+Net effect: `ask()`'s public contract for reasoning tuning is "pass me a
+`providerOptions` bag," exactly mirroring "pass me a `LanguageModel`." Hosts
+that want AskDB's portable enum go through `@askdb/ai`; hosts that already
+hand-roll `providerOptions` (existing BYO users) are unaffected and can keep
+doing so directly.

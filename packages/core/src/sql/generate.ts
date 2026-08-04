@@ -38,6 +38,15 @@ export type GenerateSqlDeps = {
   tenantPolicy?: NormalizedTenantPolicy;
   /** Validated tenant scope from the host. Forwarded from ask(). */
   tenantScope?: TenantScope;
+  /**
+   * Forwarded verbatim to the underlying `generateText` call's `providerOptions`.
+   * Resolve provider-portable reasoning/latency effort (e.g. via `@askdb/ai`'s
+   * `resolveProviderOptions`) and pass the result here — core stays BYO-model
+   * and does not interpret or validate this bag. Omitted entirely (not sent
+   * as an empty object) when unset, so existing `generateText` call shapes
+   * are unaffected.
+   */
+  providerOptions?: Record<string, unknown>;
 };
 
 /** Result of NL→SQL generation (always includes `sql`; `explain` when {@link GenerateSqlDeps.explain}). */
@@ -98,6 +107,12 @@ export async function generateSelectSql(
           deps.tenantScope,
         ),
         temperature: 0,
+        // Cast: AskDB's public `providerOptions` type is a plain opaque bag
+        // (`Record<string, unknown>`) so callers don't need AI SDK JSON types.
+        // We don't interpret or validate it — the AI SDK does that.
+        ...(deps.providerOptions
+          ? { providerOptions: deps.providerOptions as Parameters<typeof generateText>[0]["providerOptions"] }
+          : {}),
       });
       text = result.text;
       const u = (result as {

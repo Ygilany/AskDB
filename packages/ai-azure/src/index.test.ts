@@ -161,4 +161,43 @@ describe("azureProvider", () => {
       azureProvider.resolveConfig({ AZURE_OPENAI_API_KEY: "k" }, { usage: "language" }),
     ).toThrowError(/Azure provider requires/);
   });
+
+  describe("resolveProviderOptions", () => {
+    const baseConfig = { provider: "azure", apiKey: "k" } as const;
+
+    it("maps reasoningEffort under the openai namespace (not azure) for o-series deployments", () => {
+      // @ai-sdk/azure only reads providerOptions.openai — see the comment in
+      // src/index.ts for why the "azure" namespace would be silently ignored.
+      expect(
+        azureProvider.resolveProviderOptions?.(
+          { ...baseConfig, model: "o3-mini" },
+          { reasoningEffort: "low" },
+        ),
+      ).toEqual({ openai: { reasoningEffort: "low" } });
+    });
+
+    it("maps reasoningEffort for gpt-5.x deployments", () => {
+      expect(
+        azureProvider.resolveProviderOptions?.(
+          { ...baseConfig, model: "gpt-5-mini" },
+          { reasoningEffort: "high" },
+        ),
+      ).toEqual({ openai: { reasoningEffort: "high" } });
+    });
+
+    it("returns undefined when reasoningEffort is unset", () => {
+      expect(
+        azureProvider.resolveProviderOptions?.({ ...baseConfig, model: "o3-mini" }, {}),
+      ).toBeUndefined();
+    });
+
+    it("returns undefined for non-reasoning deployments (e.g. gpt-4o-mini)", () => {
+      expect(
+        azureProvider.resolveProviderOptions?.(
+          { ...baseConfig, model: "gpt-4o-mini" },
+          { reasoningEffort: "high" },
+        ),
+      ).toBeUndefined();
+    });
+  });
 });

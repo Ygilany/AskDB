@@ -89,4 +89,41 @@ describe("openaiProvider", () => {
     });
     expect(mocks.openai.embedding).toHaveBeenCalledWith("text-embedding-3-small");
   });
+
+  describe("resolveProviderOptions", () => {
+    const baseConfig = { provider: "openai", apiKey: "k" } as const;
+
+    it("maps reasoningEffort to providerOptions.openai.reasoningEffort for o-series models", () => {
+      expect(
+        openaiProvider.resolveProviderOptions?.(
+          { ...baseConfig, model: "o3-mini" },
+          { reasoningEffort: "low" },
+        ),
+      ).toEqual({ openai: { reasoningEffort: "low" } });
+    });
+
+    it("maps reasoningEffort for gpt-5.x models", () => {
+      expect(
+        openaiProvider.resolveProviderOptions?.(
+          { ...baseConfig, model: "gpt-5-mini" },
+          { reasoningEffort: "high" },
+        ),
+      ).toEqual({ openai: { reasoningEffort: "high" } });
+    });
+
+    it("returns undefined when reasoningEffort is unset", () => {
+      expect(
+        openaiProvider.resolveProviderOptions?.({ ...baseConfig, model: "o3-mini" }, {}),
+      ).toBeUndefined();
+    });
+
+    it("returns undefined for non-reasoning models (e.g. gpt-4o-mini)", () => {
+      expect(
+        openaiProvider.resolveProviderOptions?.(
+          { ...baseConfig, model: "gpt-4o-mini" },
+          { reasoningEffort: "high" },
+        ),
+      ).toBeUndefined();
+    });
+  });
 });

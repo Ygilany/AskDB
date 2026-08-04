@@ -4,6 +4,7 @@ import type {
   AskDbModeV1,
   AskDbRagEmbedder,
   AskDbRagStore,
+  AskDbReasoningEffort,
   AskDbStudioExecuteProvider,
 } from "./constants.js";
 
@@ -58,6 +59,26 @@ export type GoogleConfig = {
   model?: string;
 };
 
+/**
+ * Provider-portable reasoning/latency effort for AskDB model calls. Unset
+ * (the default) preserves current behavior: no reasoning `providerOptions`
+ * are sent, so the provider/model's own default applies.
+ */
+export type AskDbAiReasoningConfig = {
+  /** Global default applied to every AskDB model-call site unless overridden below. */
+  effort?: AskDbReasoningEffort;
+  /**
+   * Override for NL→SQL generation calls. This is the accuracy-sensitive
+   * path — leave unset (provider default) or use `"medium"`/`"high"`.
+   */
+  nlToSql?: AskDbReasoningEffort;
+  /**
+   * Override for enrichment/suggestion calls. These are non-critical, so
+   * it's safe to bias toward `"low"`/`"minimal"` for latency/cost.
+   */
+  enrichment?: AskDbReasoningEffort;
+};
+
 /** All provider-specific configs as optional fields — intersected per-branch to require only the active provider's key. */
 export type AiProviderConfigs = {
   openai?: OpenaiConfig;
@@ -71,30 +92,35 @@ export type AiProviderConfigs = {
 export type OpenaiAiConfig = {
   provider: "openai";
   providerConfig: AiProviderConfigs & { openai: OpenaiConfig };
+  reasoning?: AskDbAiReasoningConfig;
 };
 
 /** Discriminated union branch for `ai` when `provider` is `"azure"`. */
 export type AzureAiConfig = {
   provider: "azure";
   providerConfig: AiProviderConfigs & { azure: AzureConfig };
+  reasoning?: AskDbAiReasoningConfig;
 };
 
 /** Discriminated union branch for `ai` when `provider` is `"foundry"`. */
 export type FoundryAiConfig = {
   provider: "foundry";
   providerConfig: AiProviderConfigs & { foundry: FoundryConfig };
+  reasoning?: AskDbAiReasoningConfig;
 };
 
 /** Discriminated union branch for `ai` when `provider` is `"anthropic"`. */
 export type AnthropicAiConfig = {
   provider: "anthropic";
   providerConfig: AiProviderConfigs & { anthropic: AnthropicConfig };
+  reasoning?: AskDbAiReasoningConfig;
 };
 
 /** Discriminated union branch for `ai` when `provider` is `"google"`. */
 export type GoogleAiConfig = {
   provider: "google";
   providerConfig: AiProviderConfigs & { google: GoogleConfig };
+  reasoning?: AskDbAiReasoningConfig;
 };
 
 /** Generic connection settings for a provider AskDB has no dedicated branch for.
@@ -124,6 +150,7 @@ export type CustomAiConfig = {
    *  adapter (~40 lines) → BYO `LanguageModel` via `ask({ model })` (no config). */
   provider: string & {};
   providerConfig?: { custom?: CustomProviderConfig };
+  reasoning?: AskDbAiReasoningConfig;
 };
 
 /** Discriminated union of all supported AI provider branches plus the generic

@@ -15,3 +15,11 @@ export {
   type CreateEmbeddingModelOptions,
 } from "./provider.js";
 export { withEmbeddingProviderOptions } from "./embedding.js";
+export {
+  REASONING_EFFORTS,
+  isReasoningEffort,
+  resolveReasoningEffort,
+  type ReasoningEffort,
+  type AiCallPurpose,
+  type ReasoningSettings,
+} from "./reasoning.js";

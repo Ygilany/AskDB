@@ -28,6 +28,15 @@ export type AskDbRagStore = (typeof ASKDB_RAG_STORES)[number];
 export const ASKDB_AI_PROVIDERS = ["openai", "azure", "foundry", "google"] as const;
 export type AskDbAiProviderId = (typeof ASKDB_AI_PROVIDERS)[number];
 
+/**
+ * Provider-portable reasoning/latency effort for AskDB model calls. Maps to
+ * each provider's native knob by the `@askdb/ai-*` adapter (see `@askdb/ai`'s
+ * `resolveProviderOptions`). Keep aligned with `REASONING_EFFORTS` in
+ * `@askdb/ai` (`packages/ai/src/reasoning.ts`).
+ */
+export const ASKDB_REASONING_EFFORTS = ["minimal", "low", "medium", "high"] as const;
+export type AskDbReasoningEffort = (typeof ASKDB_REASONING_EFFORTS)[number];
+
 export const ASKDB_INTROSPECTION_PROVIDERS = [
   "postgres",
   "prisma",

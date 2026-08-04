@@ -89,6 +89,31 @@ export default defineConfig({
 });
 ```
 
+### `ai.reasoning` — reasoning/latency effort
+
+Optional, provider-portable knob for how much reasoning/thinking effort AskDB's model calls use. Leave it unset to keep the provider/model's own default (AskDB sends no reasoning options at all — this is the default, unchanged behavior).
+
+```ts
+export default defineConfig({
+  ai: {
+    provider: "openai",
+    providerConfig: { openai: { apiKey: env("OPENAI_API_KEY") } },
+    reasoning: {
+      effort: "medium",     // global default for every AskDB model call
+      nlToSql: "high",      // override: accuracy-sensitive NL→SQL generation
+      enrichment: "low",    // override: non-critical enrichment suggestions
+    },
+  },
+  // ...
+});
+```
+
+- `effort` — global default. One of `"minimal" | "low" | "medium" | "high"`.
+- `nlToSql` — overrides `effort` for NL→SQL generation calls (`ask()`). Typically left unset (provider default) or `"medium"`/`"high"` — this path is accuracy-sensitive.
+- `enrichment` — overrides `effort` for enrichment/suggestion calls (`suggestEnrichment()`). Safe to bias toward `"low"`/`"minimal"` for latency and cost — these are non-critical.
+
+AskDB maps the portable value to each provider's native knob via `@askdb/ai`'s `resolveProviderOptions` — OpenAI/Azure `providerOptions.openai.reasoningEffort`, Google Gemini 3.x `providerOptions.google.thinkingConfig.thinkingLevel`, Gemini 2.5 `thinkingConfig.thinkingBudget`, Anthropic extended `thinking`. Models that don't support reasoning tuning (e.g. `gpt-4o-mini`, `gemini-2.0-flash`) never receive these options, even when `reasoning` is set. See [Bring your own model](/guides/bring-your-own-model/) for the programmatic (non-config) API.
+
 ## File discovery
 
 `bootstrapAskDbEnv()` looks for config in the **current working directory only** (no upward walk), trying two locations in order:
