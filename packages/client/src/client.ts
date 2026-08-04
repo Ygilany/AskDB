@@ -1,4 +1,11 @@
-import { createAiRegistry, type AiProviderAdapters, type AiRegistry } from "@askdb/ai";
+import {
+  createAiRegistry,
+  resolveReasoningEffort,
+  type AiConfig,
+  type AiProviderAdapters,
+  type AiRegistry,
+  type ReasoningEffort,
+} from "@askdb/ai";
 import type { AskDbRuntimeConfig } from "@askdb/config";
 import {
   ask,
@@ -35,6 +42,12 @@ export type AskOverrides = Omit<
   schema?: SchemaSource | AnyNormalizedSchema;
   model?: AskDbLanguageModel;
   dialect?: AskDialectInput;
+  /**
+   * Provider-portable reasoning/latency effort for this call, overriding the
+   * client default and `askdb.config.ts`'s `ai.reasoning.nlToSql`/`effort`.
+   * Ignored when `model` or `deps.generateText` is also set (BYO paths).
+   */
+  reasoningEffort?: ReasoningEffort;
 };
 
 export type DialectResolution = {
@@ -69,6 +82,13 @@ export type CreateAskDbOptions = {
   unknownDialect?: "throw" | "fallback-postgres";
   /** Optional hook fired on each ask with how schema/model/dialect resolved (host logging/UX). */
   onResolve?: (info: { dialect: DialectResolution; modelSource: "override" | "registry" | "mock" }) => void;
+  /**
+   * Client-level default reasoning/latency effort for NL→SQL generation
+   * (`ask()`). When set, takes precedence over `askdb.config.ts`'s
+   * `ai.reasoning.nlToSql`/`effort` env resolution; overridden per-call by
+   * `AskOverrides.reasoningEffort`.
+   */
+  reasoningEffort?: ReasoningEffort;
 };
 
 export type AskDbClient = {
@@ -94,6 +114,7 @@ export function createAskDb(options: CreateAskDbOptions): AskDbClient {
   const registry = resolveRegistry(options);
   let cachedSchema: AnyNormalizedSchema | undefined;
   let cachedModel: AskDbLanguageModel | undefined;
+  let cachedAiConfig: AiConfig | undefined;
 
   function schemaSourceLabel(src: SchemaSource | AnyNormalizedSchema): string {
     if ("schemaId" in src) return "schema";
@@ -183,47 +204,87 @@ export function createAskDb(options: CreateAskDbOptions): AskDbClient {
     return { dialect: "postgres", source: "default" };
   }
 
+  type ResolvedModel = {
+    model: AskDbLanguageModel;
+    source: "override" | "registry" | "mock";
+    /** Mock-path deps (`generateText`) — passed through verbatim, bypasses reasoning resolution. */
+    mockDeps?: AskGenerateDeps;
+    /** Computed from `reasoningEffort` resolution — registry path only. */
+    providerOptions?: Record<string, unknown>;
+  };
+
   async function resolveModel(
     override: AskDbLanguageModel | undefined,
     deps: AskGenerateDeps | undefined,
-  ): Promise<{ model: AskDbLanguageModel; deps?: AskGenerateDeps; source: "override" | "registry" | "mock" }> {
+    reasoningEffortOverride: ReasoningEffort | undefined,
+  ): Promise<ResolvedModel> {
     if (override) return { model: override, source: "override" };
     if (deps?.generateText) {
-      return { model: undefined as unknown as AskDbLanguageModel, deps, source: "mock" };
+      return { model: undefined as unknown as AskDbLanguageModel, source: "mock", mockDeps: deps };
     }
     const mockSql = config.dev.mockSql;
     if (mockSql !== undefined) {
       return {
         model: undefined as unknown as AskDbLanguageModel,
-        deps: { generateText: (async () => ({ text: mockSql } as any)) as any },
         source: "mock",
+        mockDeps: { generateText: (async () => ({ text: mockSql } as any)) as any },
       };
     }
-    if (cachedModel) return { model: cachedModel, source: "registry" };
-    const model = await registry.createLanguageModelFromEnv(config.ai.aiEnv);
-    if (!model) throw new ModelNotConfiguredError(registry.keyMissingMessage("NL→SQL generation"));
-    cachedModel = model;
-    return { model: cachedModel, source: "registry" };
+    if (!cachedAiConfig) {
+      cachedAiConfig = registry.resolveAiConfig(config.ai.aiEnv);
+      if (!cachedAiConfig) throw new ModelNotConfiguredError(registry.keyMissingMessage("NL→SQL generation"));
+    }
+    if (!cachedModel) {
+      cachedModel = await registry.createLanguageModel(cachedAiConfig);
+    }
+    const reasoningEffort = resolveReasoningEffort(
+      config.ai.aiEnv,
+      "nlToSql",
+      reasoningEffortOverride ?? options.reasoningEffort,
+    );
+    const providerOptions = reasoningEffort
+      ? registry.resolveProviderOptions(cachedAiConfig, { reasoningEffort })
+      : undefined;
+    return { model: cachedModel, source: "registry", providerOptions };
   }
 
   return {
     reload() {
       cachedSchema = undefined;
       cachedModel = undefined;
+      cachedAiConfig = undefined;
     },
     async ask(question, overrides = {}) {
-      const { schema: schemaOverride, model: modelOverride, dialect: dialectOverride, deps, ...rest } = overrides;
+      const {
+        schema: schemaOverride,
+        model: modelOverride,
+        dialect: dialectOverride,
+        deps,
+        reasoningEffort,
+        ...rest
+      } = overrides;
       const schema = schemaOverride ? loadFromSource(schemaOverride, "request") : resolveDefaultSchema();
       const dialect = resolveDialect(schema, dialectOverride);
-      const resolvedModel = await resolveModel(modelOverride, deps);
+      const resolvedModel = await resolveModel(modelOverride, deps, reasoningEffort);
       options.onResolve?.({ dialect, modelSource: resolvedModel.source });
+
+      // An explicit `deps.providerOptions` from the caller always wins over
+      // the computed one; otherwise merge the resolved reasoning effort in.
+      const finalDeps: AskGenerateDeps | undefined =
+        resolvedModel.mockDeps ??
+        (deps?.providerOptions !== undefined
+          ? deps
+          : resolvedModel.providerOptions !== undefined
+            ? { ...deps, providerOptions: resolvedModel.providerOptions }
+            : deps);
+
       return ask({
         ...rest,
         question,
         schema,
         model: resolvedModel.model,
         dialect: dialect.dialect,
-        ...(resolvedModel.deps ? { deps: resolvedModel.deps } : deps ? { deps } : {}),
+        ...(finalDeps ? { deps: finalDeps } : {}),
       });
     },
   };

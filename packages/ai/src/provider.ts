@@ -1,4 +1,5 @@
 import type { EmbeddingModel, LanguageModel } from "ai";
+import type { ReasoningSettings } from "./reasoning.js";
 
 /**
  * AI provider selector. AskDB is BYO-LanguageModel at the function level
@@ -169,6 +170,20 @@ export type AiProviderAdapter = {
     config: AiConfig,
     options?: CreateEmbeddingModelOptions,
   ): Promise<EmbeddingModel> | EmbeddingModel;
+  /**
+   * Maps a provider-neutral {@link ReasoningSettings} to this provider's
+   * native `generateText` `providerOptions` shape (e.g. OpenAI
+   * `reasoningEffort`, Google `thinkingConfig`, Anthropic `thinking`).
+   *
+   * Returns `undefined` when `reasoningEffort` is unset **or** when
+   * `config.model` doesn't support reasoning tuning — callers must not send
+   * provider options to models that don't understand them. Adapters that
+   * don't implement this (or don't have a reasoning knob) simply omit it.
+   */
+  resolveProviderOptions?(
+    config: AiConfig,
+    settings: ReasoningSettings,
+  ): Record<string, unknown> | undefined;
 };
 
 export type AiProviderAdapters =
@@ -198,6 +213,19 @@ export type AiRegistry = {
     env: AiEnv,
     options?: { modelDefault?: string; modelEnvVar?: string } & CreateEmbeddingModelOptions,
   ): Promise<EmbeddingModel | undefined>;
+  /**
+   * Maps a provider-neutral {@link ReasoningSettings} (e.g. `{ reasoningEffort: "low" }`)
+   * to the `providerOptions` bag for `config.provider`'s `generateText` calls.
+   * Delegates to the resolved adapter's `resolveProviderOptions`; returns
+   * `undefined` when the adapter doesn't implement it, `reasoningEffort` is
+   * unset, or `config.model` doesn't support reasoning tuning.
+   *
+   * Pass the result to `ask({ deps: { providerOptions } })` in `@askdb/core`.
+   */
+  resolveProviderOptions(
+    config: AiConfig,
+    settings: ReasoningSettings,
+  ): Record<string, unknown> | undefined;
   /**
    * Human-readable message describing how to configure AI for this registry.
    * Assembles configHint values from registered adapters (deduplicated, stable
@@ -274,6 +302,9 @@ export function createAiRegistry(
       const config = resolveEmbeddingConfig(env, options);
       if (!config) return undefined;
       return adapterFor(config.provider).createEmbeddingModel(config, options);
+    },
+    resolveProviderOptions(config, settings) {
+      return adapterFor(config.provider).resolveProviderOptions?.(config, settings);
     },
     keyMissingMessage(context: string): string {
       // Collect configHint from unique adapter objects (aliases share the same object).

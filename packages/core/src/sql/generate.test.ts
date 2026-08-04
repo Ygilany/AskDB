@@ -37,6 +37,30 @@ describe("generateSelectSql (postgres)", () => {
     expect(generateText).toHaveBeenCalledOnce();
   });
 
+  it("does not send providerOptions to generateText when unset (preserves current behavior)", async () => {
+    const generateText = vi.fn(async () => ({
+      text: "```sql\nSELECT id FROM users\n```",
+    }));
+    await generateSelectSql(POSTGRES_DIALECT, "list users", minimalSchema, fakeModel, {
+      generateText,
+    });
+    const call = generateText.mock.calls[0]![0] as Record<string, unknown>;
+    expect("providerOptions" in call).toBe(false);
+  });
+
+  it("forwards deps.providerOptions verbatim to generateText when set", async () => {
+    const generateText = vi.fn(async () => ({
+      text: "```sql\nSELECT id FROM users\n```",
+    }));
+    const providerOptions = { openai: { reasoningEffort: "low" } };
+    await generateSelectSql(POSTGRES_DIALECT, "list users", minimalSchema, fakeModel, {
+      generateText,
+      providerOptions,
+    });
+    const call = generateText.mock.calls[0]![0] as Record<string, unknown>;
+    expect(call.providerOptions).toBe(providerOptions);
+  });
+
   it("normalizes AI SDK 6 input and output token usage", async () => {
     const generateText = vi.fn(async () => ({
       text: "```sql\nSELECT id FROM users\n```",

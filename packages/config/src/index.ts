@@ -41,6 +41,7 @@ export { loadAskDbConfigProjection, loadAskDbConfigProjectionSync } from "./load
 export type {
   AskDbConfig,
   AskDbAiConfig,
+  AskDbAiReasoningConfig,
   OpenaiAiConfig,
   AzureAiConfig,
   FoundryAiConfig,
@@ -69,6 +70,7 @@ export {
   ASKDB_INTROSPECTION_PROVIDERS,
   ASKDB_DIALECTS,
   ASKDB_STUDIO_EXECUTE_PROVIDERS,
+  ASKDB_REASONING_EFFORTS,
 } from "./constants.js";
 export type {
   AskDbModeV1,
@@ -79,4 +81,5 @@ export type {
   AskDbIntrospectionProvider,
   AskDbDialectId,
   AskDbStudioExecuteProvider,
+  AskDbReasoningEffort,
 } from "./constants.js";

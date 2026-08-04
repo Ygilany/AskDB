@@ -1,9 +1,9 @@
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it, vi } from "vitest";
-import type { AiProviderAdapter, AiRegistry } from "@askdb/ai";
+import type { AiConfig, AiProviderAdapter, AiRegistry } from "@askdb/ai";
 import type { AskDbRuntimeConfig } from "@askdb/config";
-import type { AnyNormalizedSchema } from "@askdb/core";
+import type { AnyNormalizedSchema, AskDialect } from "@askdb/core";
 import { loadSchema, loadSchemaFromJson } from "@askdb/core";
 import type { DialectResolution } from "./client.js";
 import { createAskDb } from "./client.js";
@@ -76,6 +76,7 @@ function makeRegistry(overrides?: Partial<AiRegistry>): AiRegistry {
     createEmbeddingModel: vi.fn(async () => ({}) as never),
     createLanguageModelFromEnv: vi.fn(async () => undefined),
     createEmbeddingModelFromEnv: vi.fn(async () => undefined),
+    resolveProviderOptions: vi.fn(() => undefined),
     keyMissingMessage: vi.fn((ctx: string) => `${ctx}: no AI API key configured.`),
     ...overrides,
   } as unknown as AiRegistry;
@@ -88,6 +89,7 @@ function makeConfig(overrides?: {
   dialect?: AskDbRuntimeConfig["nlToSql"]["dialect"];
   envSchemaPath?: string;
   envSchemaJson?: string;
+  aiEnv?: Record<string, string | undefined>;
 }): AskDbRuntimeConfig {
   return {
     structured: {
@@ -100,6 +102,7 @@ function makeConfig(overrides?: {
       aiEnv: {
         ASKDB_SCHEMA_PATH: overrides?.envSchemaPath,
         ASKDB_SCHEMA_JSON: overrides?.envSchemaJson,
+        ...overrides?.aiEnv,
       },
     },
     dev: { mockSql: overrides?.mockSql },
@@ -341,5 +344,120 @@ describe("createAskDb providers option", () => {
   it("rejects passing neither providers nor registry", () => {
     const config = makeConfig({ mockSql: "SELECT 1" });
     expect(() => createAskDb({ config })).toThrow(/providers/);
+  });
+});
+
+describe("createAskDb reasoning effort resolution", () => {
+  const preloaded = loadSchemaFromJson(minimalV2Json) as AnyNormalizedSchema;
+  const resolvedAiConfig: AiConfig = { provider: "openai", apiKey: "k", model: "o3-mini" };
+  const sentinelModel = { kind: "sentinel-model" } as never;
+
+  function capturingDialect(): { dialect: AskDialect; seen: () => Record<string, unknown> | undefined } {
+    let seen: Record<string, unknown> | undefined;
+    return {
+      dialect: {
+        async generate(_q, _s, _m, opts) {
+          seen = opts?.providerOptions;
+          return { sql: "SELECT 1" };
+        },
+      },
+      seen: () => seen,
+    };
+  }
+
+  it("resolves ai.reasoning env config into providerOptions and forwards to ask()", async () => {
+    const config = makeConfig({ aiEnv: { ASKDB_AI_REASONING_EFFORT_NL_TO_SQL: "low" } });
+    const registry = makeRegistry({
+      resolveAiConfig: vi.fn(() => resolvedAiConfig),
+      createLanguageModel: vi.fn(async () => sentinelModel),
+      resolveProviderOptions: vi.fn(() => ({ openai: { reasoningEffort: "low" } })),
+    });
+    const { dialect, seen } = capturingDialect();
+    const askdb = createAskDb({ config, registry, schema: { schema: preloaded } });
+
+    const result = await askdb.ask("q", { dialect });
+
+    expect(result.sql).toBe("SELECT 1");
+    expect(registry.resolveProviderOptions).toHaveBeenCalledWith(resolvedAiConfig, {
+      reasoningEffort: "low",
+    });
+    expect(seen()).toEqual({ openai: { reasoningEffort: "low" } });
+  });
+
+  it("per-call reasoningEffort overrides both the client default and env config", async () => {
+    const config = makeConfig({ aiEnv: { ASKDB_AI_REASONING_EFFORT_NL_TO_SQL: "low" } });
+    const registry = makeRegistry({
+      resolveAiConfig: vi.fn(() => resolvedAiConfig),
+      createLanguageModel: vi.fn(async () => sentinelModel),
+      resolveProviderOptions: vi.fn(() => ({ openai: { reasoningEffort: "high" } })),
+    });
+    const { dialect, seen } = capturingDialect();
+    const askdb = createAskDb({
+      config,
+      registry,
+      schema: { schema: preloaded },
+      reasoningEffort: "medium",
+    });
+
+    await askdb.ask("q", { dialect, reasoningEffort: "high" });
+
+    expect(registry.resolveProviderOptions).toHaveBeenCalledWith(resolvedAiConfig, {
+      reasoningEffort: "high",
+    });
+    expect(seen()).toEqual({ openai: { reasoningEffort: "high" } });
+  });
+
+  it("client-level reasoningEffort default applies when no per-call override is set", async () => {
+    const config = makeConfig();
+    const registry = makeRegistry({
+      resolveAiConfig: vi.fn(() => resolvedAiConfig),
+      createLanguageModel: vi.fn(async () => sentinelModel),
+      resolveProviderOptions: vi.fn(() => ({ openai: { reasoningEffort: "medium" } })),
+    });
+    const { dialect, seen } = capturingDialect();
+    const askdb = createAskDb({
+      config,
+      registry,
+      schema: { schema: preloaded },
+      reasoningEffort: "medium",
+    });
+
+    await askdb.ask("q", { dialect });
+
+    expect(registry.resolveProviderOptions).toHaveBeenCalledWith(resolvedAiConfig, {
+      reasoningEffort: "medium",
+    });
+    expect(seen()).toEqual({ openai: { reasoningEffort: "medium" } });
+  });
+
+  it("does not call resolveProviderOptions when no reasoningEffort is configured (preserves current behavior)", async () => {
+    const config = makeConfig();
+    const registry = makeRegistry({
+      resolveAiConfig: vi.fn(() => resolvedAiConfig),
+      createLanguageModel: vi.fn(async () => sentinelModel),
+    });
+    const { dialect, seen } = capturingDialect();
+    const askdb = createAskDb({ config, registry, schema: { schema: preloaded } });
+
+    await askdb.ask("q", { dialect });
+
+    expect(registry.resolveProviderOptions).not.toHaveBeenCalled();
+    expect(seen()).toBeUndefined();
+  });
+
+  it("an explicit deps.providerOptions from the caller wins over the resolved reasoningEffort", async () => {
+    const config = makeConfig({ aiEnv: { ASKDB_AI_REASONING_EFFORT_NL_TO_SQL: "low" } });
+    const registry = makeRegistry({
+      resolveAiConfig: vi.fn(() => resolvedAiConfig),
+      createLanguageModel: vi.fn(async () => sentinelModel),
+      resolveProviderOptions: vi.fn(() => ({ openai: { reasoningEffort: "low" } })),
+    });
+    const { dialect, seen } = capturingDialect();
+    const askdb = createAskDb({ config, registry, schema: { schema: preloaded } });
+    const explicitProviderOptions = { openai: { reasoningEffort: "high" } };
+
+    await askdb.ask("q", { dialect, deps: { providerOptions: explicitProviderOptions } });
+
+    expect(seen()).toBe(explicitProviderOptions);
   });
 });

@@ -136,4 +136,59 @@ describe("googleProvider", () => {
       model: "text-embedding-004",
     });
   });
+
+  describe("resolveProviderOptions", () => {
+    const baseConfig = { provider: "google", apiKey: "k" } as const;
+
+    it("maps reasoningEffort to thinkingConfig.thinkingLevel for Gemini 3 models", () => {
+      expect(
+        googleProvider.resolveProviderOptions?.(
+          { ...baseConfig, model: "gemini-3-pro-preview" },
+          { reasoningEffort: "high" },
+        ),
+      ).toEqual({ google: { thinkingConfig: { thinkingLevel: "high" } } });
+    });
+
+    it("maps reasoningEffort to thinkingConfig.thinkingBudget for Gemini 2.5 Flash", () => {
+      expect(
+        googleProvider.resolveProviderOptions?.(
+          { ...baseConfig, model: "gemini-2.5-flash" },
+          { reasoningEffort: "medium" },
+        ),
+      ).toEqual({ google: { thinkingConfig: { thinkingBudget: 8192 } } });
+    });
+
+    it("allows thinkingBudget: 0 (disable) on Gemini 2.5 Flash for minimal effort", () => {
+      expect(
+        googleProvider.resolveProviderOptions?.(
+          { ...baseConfig, model: "gemini-2.5-flash" },
+          { reasoningEffort: "minimal" },
+        ),
+      ).toEqual({ google: { thinkingConfig: { thinkingBudget: 0 } } });
+    });
+
+    it("uses a nonzero minimum thinkingBudget on Gemini 2.5 Pro (cannot fully disable)", () => {
+      expect(
+        googleProvider.resolveProviderOptions?.(
+          { ...baseConfig, model: "gemini-2.5-pro" },
+          { reasoningEffort: "minimal" },
+        ),
+      ).toEqual({ google: { thinkingConfig: { thinkingBudget: 128 } } });
+    });
+
+    it("returns undefined when reasoningEffort is unset", () => {
+      expect(
+        googleProvider.resolveProviderOptions?.({ ...baseConfig, model: "gemini-2.5-flash" }, {}),
+      ).toBeUndefined();
+    });
+
+    it("returns undefined for models outside the 2.5/3.x thinking families", () => {
+      expect(
+        googleProvider.resolveProviderOptions?.(
+          { ...baseConfig, model: "gemini-2.0-flash" },
+          { reasoningEffort: "high" },
+        ),
+      ).toBeUndefined();
+    });
+  });
 });

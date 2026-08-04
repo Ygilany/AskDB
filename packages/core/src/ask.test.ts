@@ -63,6 +63,48 @@ describe("ask (mode + logging)", () => {
   });
 });
 
+describe("ask — providerOptions passthrough", () => {
+  it("does not forward a providerOptions key to the dialect when deps.providerOptions is unset", async () => {
+    let seen: unknown;
+    const capturingDialect: AskDialect = {
+      async generate(_question, _schema, _model, options) {
+        seen = options;
+        return { sql: "SELECT COUNT(*) AS n FROM users" };
+      },
+    };
+
+    await ask({
+      question: "count users",
+      schema: minimalSchema,
+      model: fakeModel,
+      dialect: capturingDialect,
+    });
+
+    expect((seen as { providerOptions?: unknown })?.providerOptions).toBeUndefined();
+  });
+
+  it("forwards deps.providerOptions to the dialect's generate() options", async () => {
+    let seen: unknown;
+    const capturingDialect: AskDialect = {
+      async generate(_question, _schema, _model, options) {
+        seen = options;
+        return { sql: "SELECT COUNT(*) AS n FROM users" };
+      },
+    };
+    const providerOptions = { openai: { reasoningEffort: "low" } };
+
+    await ask({
+      question: "count users",
+      schema: minimalSchema,
+      model: fakeModel,
+      dialect: capturingDialect,
+      deps: { providerOptions },
+    });
+
+    expect((seen as { providerOptions?: unknown })?.providerOptions).toBe(providerOptions);
+  });
+});
+
 describe("ask — retriever wiring", () => {
   it("uses retrieved chunks to synthesize a focused DDL block for large v2 schemas", async () => {
     const schema = loadSchema(v2Dir);

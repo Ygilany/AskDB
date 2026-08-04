@@ -47,14 +47,39 @@ const result = await ask({
 });
 ```
 
+## Reasoning/latency effort
+
+`resolveProviderOptions` maps a provider-portable reasoning effort
+(`"minimal" | "low" | "medium" | "high"`) to each adapter's native
+`generateText` `providerOptions` — OpenAI/Azure `reasoningEffort`, Google
+`thinkingConfig` (`thinkingLevel` for Gemini 3.x, `thinkingBudget` for Gemini
+2.5), Anthropic extended `thinking`. It returns `undefined` when the effort is
+unset or the model doesn't support reasoning tuning.
+
+```ts
+const config = ai.resolveAiConfig(runtime.ai.aiEnv)!;
+const model = await ai.createLanguageModel(config);
+const providerOptions = ai.resolveProviderOptions(config, { reasoningEffort: "low" });
+
+await ask({ question, schema, dialect: "postgres", model, deps: { providerOptions } });
+```
+
+`resolveReasoningEffort(env, purpose, override)` resolves the effective effort
+from an explicit override, a call-site env var (`ASKDB_AI_REASONING_EFFORT_NL_TO_SQL`
+/ `_ENRICHMENT`), then the global `ASKDB_AI_REASONING_EFFORT` — set from
+`askdb.config.ts`'s `ai.reasoning` block by `@askdb/config`. See the
+[config reference](../../apps/docs-site/src/content/docs/reference/config.mdx#ai-reasoning--reasoninglatency-effort).
+
 ## Exports
 
 - `createAiRegistry`
 - `resolveBaseConfig`
 - registry methods such as `resolveAiConfig`, `resolveEmbeddingConfig`,
-  `createLanguageModelFromEnv`, and `createEmbeddingModelFromEnv`
+  `createLanguageModelFromEnv`, `createEmbeddingModelFromEnv`, and
+  `resolveProviderOptions`
 - `aiKeyMissingMessage`
 - `aiProviderMissingMessage`
+- `resolveReasoningEffort`, `isReasoningEffort`, `REASONING_EFFORTS`
 
 ## License
 

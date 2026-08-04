@@ -16,6 +16,13 @@ export type SuggestEnrichmentDeps = {
   maxCandidates?: number;
   /** Sampling temperature. Default 0.4 — small variety, mostly grounded. */
   temperature?: number;
+  /**
+   * Forwarded verbatim to the underlying `generateText` call's `providerOptions`.
+   * Enrichment suggestions are non-critical, so hosts may resolve a lower
+   * reasoning/latency effort here than for NL→SQL generation (e.g. via
+   * `@askdb/ai`'s `resolveProviderOptions`). Omitted when unset.
+   */
+  providerOptions?: Record<string, unknown>;
 };
 
 /**
@@ -38,6 +45,12 @@ export async function suggestEnrichment(
     instructions: ENRICHMENT_SYSTEM_PROMPT,
     prompt: buildEnrichmentUserPrompt(target, context),
     temperature: deps.temperature ?? 0.4,
+    // Cast: AskDB's public `providerOptions` type is a plain opaque bag
+    // (`Record<string, unknown>`) so callers don't need AI SDK JSON types.
+    // We don't interpret or validate it — the AI SDK does that.
+    ...(deps.providerOptions
+      ? { providerOptions: deps.providerOptions as Parameters<typeof generateText>[0]["providerOptions"] }
+      : {}),
   });
   const text = (result as { text: string }).text;
   return parseCandidates(text, maxCandidates);

@@ -3,6 +3,7 @@ import {
   ASKDB_MODES_V1,
   ASKDB_RAG_EMBEDDERS,
   ASKDB_RAG_STORES,
+  ASKDB_REASONING_EFFORTS,
 } from "./constants.js";
 import {
   DEFAULT_ANTHROPIC_CHAT_MODEL,
@@ -20,6 +21,7 @@ import {
 import type {
   AnthropicConfig,
   AnthropicAiConfig,
+  AskDbAiReasoningConfig,
   AskDbConfig,
   AzureAiConfig,
   AzureConfig,
@@ -76,6 +78,23 @@ function applyAzureLikeAi(out: Record<string, string>, cfg: AzureConfig | Foundr
   set(out, "ASKDB_AI_MODEL", model);
   set(out, "AZURE_OPENAI_BASE_URL", cfg.baseUrl);
   set(out, "AZURE_OPENAI_API_VERSION", cfg.apiVersion);
+  set(out, "ASKDB_AI_AZURE_MODEL_FAMILY", cfg.modelFamily);
+}
+
+function applyReasoningAi(out: Record<string, string>, reasoning: AskDbAiReasoningConfig | undefined): void {
+  if (!reasoning) return;
+  for (const [envKey, value] of [
+    ["ASKDB_AI_REASONING_EFFORT", reasoning.effort],
+    ["ASKDB_AI_REASONING_EFFORT_NL_TO_SQL", reasoning.nlToSql],
+    ["ASKDB_AI_REASONING_EFFORT_ENRICHMENT", reasoning.enrichment],
+  ] as const) {
+    if (value !== undefined && !isMember(value, ASKDB_REASONING_EFFORTS)) {
+      throw new Error(
+        `askdb.config: invalid ai.reasoning value "${value}" (expected one of: ${ASKDB_REASONING_EFFORTS.join(", ")}).`,
+      );
+    }
+    set(out, envKey, value);
+  }
 }
 
 function requireProviderBranch<T>(
@@ -144,6 +163,8 @@ export function flattenAskDbConfig(config: AskDbConfig): Record<string, string> 
     set(out, "ASKDB_AI_BASE_URL", custom?.baseUrl);
     set(out, "ASKDB_AI_MODEL", custom?.model);
   }
+
+  applyReasoningAi(out, config.ai.reasoning);
 
   // --- Introspection ---
   const intro = config.introspection;
