@@ -9,6 +9,7 @@ allowBuilds:
   msgpackr-extract: true
   sharp: true
   unrs-resolver: true
+minimumReleaseAge: 720
 minimumReleaseAgeExclude:
   - '@ai-sdk/gateway@3.0.130'
   - '@tailwindcss/node@4.3.1'
