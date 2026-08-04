@@ -98,12 +98,13 @@ export default defineConfig({
       plugins: [
         starlightLlmsTxt({
           details:
-            "Two ways to give AskDB a model, and when to use each — see /guides/bring-your-own-model/ for the full guide:\n" +
+            "AskDB is an open-source NL-to-SQL toolkit: `ask({ question, schema, model, dialect })` from `@askdb/core` takes a schema artifact and a Vercel AI SDK `LanguageModel`, and returns validated SQL. It never executes SQL — the host application runs it through its own connection. The same pipeline powers the CLI, the `@askdb/client` library, `@askdb/http-api`, and Studio.\n" +
             "\n" +
-            "- **`@askdb/ai-*` provider adapters + `@askdb/client`** — use when you want `ai.provider` in `askdb.config.ts` to drive model selection, so the CLI, Studio, and your app resolve the same provider config without hardcoding a provider in code. Default recommendation when AskDB owns provider config.\n" +
-            "- **A raw Vercel AI SDK `LanguageModel` passed straight to `@askdb/core`'s `ask()`** — use when your app already owns provider/config resolution, or needs to share one model instance between `ask()` and other non-AskDB LLM calls (for example, a separate `generateObject()` call for something unrelated like chart planning). This is not a workaround: `ask({ model })` is the actual primitive both paths funnel into — `@askdb/ai-*` is a convenience layer on top of it.\n" +
+            "The docs site is organized as Start (quickstart, install, Studio), Guides (embedding in Node, HTTP deployment, multi-tenancy, RAG for large schemas, switching engines, bringing your own model, agent/MCP integration), Concepts (how AskDB works, the schema artifact, safety boundaries, privacy model, modes and dialects), and Reference (CLI, HTTP API, configuration, the full package map, API docs). The full per-page index is in the linked documentation sets below.\n" +
             "\n" +
-            'Both paths are first-party and fully supported. Neither is more "correct" than the other; pick based on who owns provider configuration in your app.',
+            "Two things worth knowing before implementing: (1) wiring the AI model is a two-path choice — `@askdb/ai-*` adapters vs. a raw Vercel AI SDK model passed to `ask()` — decided by who owns provider config in the host app; see /guides/bring-your-own-model/. (2) Tenant scope and sensitive-field handling are host-application responsibilities that AskDB enforces but never originates; see /concepts/safety-boundaries/.\n" +
+            "\n" +
+            "For a project-onboarding map written specifically for coding agents implementing AskDB elsewhere, see /AGENTS.md.",
         }),
       ],
       sidebar: [

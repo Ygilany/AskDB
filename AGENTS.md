@@ -60,3 +60,12 @@ elsewhere will get stale guidance.
   docs or examples without a reason tied to who owns provider config.
 - Provider adapters declare `ai` and `@askdb/ai` as peer dependencies — don't hard-pin AI SDK
   versions inside adapters; let the host app's `package.json` pin them.
+- Add tests for behavior that affects public APIs, package output, SQL safety/validation, or
+  user-facing workflows. Integration tests that need a live database run when `DATABASE_URL`
+  is set (see the Pagila fixture in `CONTRIBUTING.md`).
+- Add a changeset (`pnpm changeset`) for any change to a publishable package. AskDB is
+  pre-1.0 — breaking public API changes normally use a minor changeset unless the project is
+  intentionally moving a package to 1.0.
+- Keep `apps/docs-site` accurate as you go, not as a follow-up: don't invent package names,
+  APIs, or file paths there — verify against the actual source or existing docs content
+  before writing a claim.
