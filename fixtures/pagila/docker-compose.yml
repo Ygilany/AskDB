@@ -17,7 +17,7 @@ services:
       context: .
       dockerfile: Dockerfile
       args:
-        PAGILA_GIT_REF: master
+        PAGILA_GIT_REF: 23f7fe7a1e9f5772f85fc14f530583ffa258c6d2
     ports:
       - "5433:5432"
     environment:

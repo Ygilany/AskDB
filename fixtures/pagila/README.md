@@ -14,3 +14,5 @@ pnpm exec askdb introspect --url "$DATABASE_URL" --out pagila.schema --schema-id
 ```
 
 Pin Pagila SQL at build time: `docker compose -f fixtures/pagila/docker-compose.yml build --build-arg PAGILA_GIT_REF=<commit-sha>`.
+
+The default `PAGILA_GIT_REF` (in [`Dockerfile`](./Dockerfile)) is pinned to a specific commit, not `master`: upstream Pagila started adding schema features tied to specific PostgreSQL majors (`uuidv7()`, a pgvector-backed table — both PG18+), which broke this fixture's build against `postgres:16`. See the comments in `Dockerfile` before bumping the pin or the base image.
