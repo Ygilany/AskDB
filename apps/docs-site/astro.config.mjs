@@ -1,6 +1,7 @@
 import { fileURLToPath } from "node:url";
 import { defineConfig } from "astro/config";
 import starlight from "@astrojs/starlight";
+import starlightLlmsTxt from "starlight-llms-txt";
 
 const base = process.env.ASTRO_BASE ?? "/";
 const normalizedBase = base === "/" ? "" : base.replace(/\/$/, "");
@@ -93,6 +94,18 @@ export default defineConfig({
           label: "GitHub",
           href: "https://github.com/Ygilany/AskDB",
         },
+      ],
+      plugins: [
+        starlightLlmsTxt({
+          details:
+            "AskDB is an open-source NL-to-SQL toolkit: `ask({ question, schema, model, dialect })` from `@askdb/core` takes a schema artifact and a Vercel AI SDK `LanguageModel`, and returns validated SQL. It never executes SQL — the host application runs it through its own connection. The same pipeline powers the CLI, the `@askdb/client` library, `@askdb/http-api`, and Studio.\n" +
+            "\n" +
+            "The docs site is organized as Start (quickstart, install, Studio), Guides (embedding in Node, HTTP deployment, multi-tenancy, RAG for large schemas, switching engines, bringing your own model, agent/MCP integration), Concepts (how AskDB works, the schema artifact, safety boundaries, privacy model, modes and dialects), and Reference (CLI, HTTP API, configuration, the full package map, API docs). The full per-page index is in the linked documentation sets below.\n" +
+            "\n" +
+            "Two things worth knowing before implementing: (1) wiring the AI model is a two-path choice — `@askdb/ai-*` adapters vs. a raw Vercel AI SDK model passed to `ask()` — decided by who owns provider config in the host app; see /guides/bring-your-own-model/. (2) Tenant scope and sensitive-field handling are host-application responsibilities that AskDB enforces but never originates; see /concepts/safety-boundaries/.\n" +
+            "\n" +
+            "For a project-onboarding map written specifically for coding agents implementing AskDB elsewhere, see /AGENTS.md.",
+        }),
       ],
       sidebar: [
         {

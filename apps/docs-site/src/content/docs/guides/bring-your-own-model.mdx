@@ -20,6 +20,15 @@ import InstallTabs from "../../../components/InstallTabs.astro";
 
 Same providers, same keys — pick per surface. You can use both in one project (for example: Studio uses your config, your embedding service constructs the model directly).
 
+## Which should I use?
+
+`ask()`'s actual contract is `model: LanguageModel` — a plain Vercel AI SDK model object. Every path below ends up building one of those; `@askdb/ai-*` and `@askdb/client` are a convenience layer on top, not a separate mechanism. Neither path is more "correct." Pick based on who owns provider configuration:
+
+- **Use `@askdb/ai-*` + `@askdb/client`** when you want `askdb.config.ts` to drive provider/model selection — one config file, no provider code, and the CLI/Studio/your app all resolve the same way. This is the right default when you're embedding AskDB as a standalone service and don't already have a provider-config system.
+- **Construct a `LanguageModel` directly with the AI SDK** when your app already owns provider/config resolution (env vars, a secrets manager, feature flags), or when you need to reuse the same model instance for calls AskDB doesn't make — for example, a separate `generateObject()` call for chart planning that sits next to `ask()` in your service. `@askdb/ai`'s registry only resolves models for AskDB's own config shape, so if you need the model object for other LLM calls too, building it with the AI SDK directly is usually less code, not more.
+
+If you're an agent implementing this integration: check whether the host app already constructs AI SDK models elsewhere before reaching for `@askdb/ai-*` — duplicating provider config across two systems is the failure mode to avoid.
+
 ## In your config (CLI, Studio, HTTP API)
 
 Set `ai.provider` in `askdb.config.ts` and supply the matching env var. The CLI, Studio, and the HTTP service call `createLanguageModelFromEnv` internally.

@@ -16,8 +16,9 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-      args:
-        PAGILA_GIT_REF: master
+      # PAGILA_GIT_REF is not overridden here — the pin lives in Dockerfile's ARG default
+      # (single source of truth; see the comment there). Override at build time with
+      # `docker compose build --build-arg PAGILA_GIT_REF=<sha>` when needed.
     ports:
       - "5433:5432"
     environment:
