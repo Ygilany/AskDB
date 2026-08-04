@@ -47,13 +47,17 @@ engine packages' driver loaders, exposes `loadXxxDriver` / `isXxxDriverInstalled
 `apps/studio/src/execute-registry.ts` to delegate driver loading and connection-string
 normalization to the engine packages. After it lands, the same class of drift cannot
 recur on the other three providers.
-Plan 033: generated on 2026-07-19 at commit `9f5e600` via `improve plan`, from the
-maintainer's request to make editable question values reusable without another model call,
-for both ordinary and tenant-scoped questions. It adds an explicit, versioned prepared-query
-artifact plus one dialect-aware local binder shared by business and tenant placeholders;
-`@askdb/client` exposes the no-AI rebind path. Automatic caches, a Studio parameter editor,
-and a stateful HTTP bind protocol are deliberately deferred until the core serialization and
-trust-boundary contract lands.
+Plan 033: originally written 2026-07-19 at commit `9f5e600`; **rewritten 2026-08-04 at commit
+`c81bb4e`** after a maintainer design review. The first version tried to make queries reusable
+*without* a model call — a prepared-query artifact, schema/policy/context fingerprints,
+tenant access-shape comparison, and a `client.bind()` rebind path. That premise was wrong:
+every AskDB request always invokes the model. The rewrite keeps the input unchanged (the
+question still goes to the model with its values inline) and changes only the *output* — the
+model additionally returns the SQL in unbound form plus a JSON manifest of the values it
+parameterized, so `ask()` can return bound SQL, unbound SQL, params, and per-parameter metadata
+a host can render a dynamic form from. `bindPreparedQuery()` survives as a pure local utility
+sharing one binder with the tenant placeholder path. Fingerprints, rebind policing, host-declared
+`{{token}}` syntax, and `@askdb/client` source changes are all out of the rewritten scope.
 
 Execute in the order below unless dependencies say otherwise. Each executor: read the plan
 fully before starting, honor its STOP conditions, and update your row when done.
@@ -94,7 +98,7 @@ fully before starting, honor its STOP conditions, and update your row when done.
 | 030 | Let Studio execute generated SQL against any supported live dialect | P1 | L | 029 | DONE |
 | 031 | Make `askdb init` a setup wizard that writes a tailored config and installs selected packages | P1 | L | 030 | DONE |
 | 032 | Unify Studio execute with the engine packages so per-provider knowledge has one home (incl. SQL Server TLS fix) | P1 | M | — | DONE |
-| 033 | Prepare reusable parameterized queries once and rebind business + tenant values without AI | P1 | L | — | TODO |
+| 033 | Return unbound SQL + a parameter manifest alongside the bound SQL, and share one binder with tenant scoping | P1 | L | — | TODO |
 
 Status values: TODO | IN PROGRESS | DONE | BLOCKED (with one-line reason) | REJECTED (with one-line rationale)
 

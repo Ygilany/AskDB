@@ -1,31 +1,35 @@
-# Plan 033: Prepare reusable parameterized queries once and rebind business + tenant values without AI
+# Plan 033: Return unbound SQL + a parameter manifest alongside the bound SQL, and share one binder with tenant scoping
 
 > **Executor instructions**: Follow this plan step by step. Run every verification command and confirm the expected result before moving to the next step. If anything in the "STOP conditions" section occurs, stop and report — do not improvise. When done, update the status row for this plan in `plans/README.md` — unless a reviewer dispatched you and told you they maintain the index.
 >
-> **Drift check (run first)**: `git diff --stat 9f5e600..HEAD -- packages/core/src packages/core/README.md packages/client/src packages/client/README.md docs/specs/core-pipeline.md docs/specs/multi-tenancy.md docs/contracts/tenant-policy.md apps/docs-site/src/content/docs/reference/core-api.mdx apps/docs-site/src/content/docs/reference/client-api.mdx apps/docs-site/src/content/docs/guides/embed-in-node.mdx apps/docs-site/src/content/docs/guides/multi-tenancy.mdx .changeset`
+> **Drift check (run first)**: `git diff --stat c81bb4e..HEAD -- packages/core/src packages/core/README.md packages/client/src packages/client/README.md docs/specs/core-pipeline.md docs/specs/multi-tenancy.md docs/contracts/tenant-policy.md apps/docs-site/src/content/docs/reference/core-api.mdx apps/docs-site/src/content/docs/reference/client-api.mdx apps/docs-site/src/content/docs/guides/embed-in-node.mdx apps/docs-site/src/content/docs/guides/multi-tenancy.mdx .changeset`
 > If any in-scope file changed since this plan was written, compare the "Current state" excerpts against the live code before proceeding; on a mismatch, treat it as a STOP condition.
 
 ## Status
 
 - **Priority**: P1
 - **Effort**: L
-- **Risk**: HIGH
+- **Risk**: MED
 - **Depends on**: none (builds on the already-landed Phase 10 tenant placeholder layer and `@askdb/client` facade)
-- **Category**: direction + performance + tech-debt
-- **Planned at**: commit `9f5e600`, 2026-07-19
+- **Category**: direction + dx
+- **Planned at**: commit `c81bb4e`, 2026-08-04
 
 ## Why this matters
 
-Today every call to `ask()` invokes the language model, even when only a value inside an otherwise identical question changed (date range, threshold, status, customer id, etc.). This spends tokens, adds latency, and allows the model to produce a structurally different query for what should be the same report. Tenant IDs are already represented as named placeholders during generation, but that mechanism is resolved inside the same `ask()` call and discarded; a caller cannot retain the validated SQL shape and safely bind a new authorized tenant scope without asking the model again.
+Today `ask()` returns one thing: a bound SQL string with the question's values baked in as literals. A host that wants to let a user tweak a value — a date range, a threshold, a status list — has no machine-readable description of which values in that SQL came from the question, so it cannot build a form around the query. Its only option is to send a new question and pay for another model call.
 
-Add one shared two-phase contract:
+This plan changes what comes *back* from the model, not what goes in. The question is still sent exactly as it is today, values inline. The model additionally returns the SQL in unbound form plus a small JSON manifest naming each value it parameterized. AskDB validates that manifest, binds it, and returns **bound SQL (as today), unbound SQL, the ordered params array, and per-parameter metadata**. The host picks which to execute, and can render a dynamic form from the metadata.
 
-1. The existing AI-backed `ask()` call may declare `{{named}}` business parameters. It returns the first bound query **and** a versioned, serializable `PreparedQuery` containing validated named-template SQL and its binding contract. Runtime values are not sent to the model and are not stored in the prepared artifact.
-2. A synchronous `bindPreparedQuery()` function — exposed as `client.bind()` by `@askdb/client` — accepts new business values and, where applicable, a new tenant scope with the same access shape. It validates and binds locally. It never resolves a model, calls `generateText`, retrieves RAG chunks, or mutates the prepared artifact.
+Re-binding after a form edit is the host's business, but AskDB exposes the same pure binder it uses internally as `bindPreparedQuery()` so hosts do not have to re-implement dialect marker rules. That binder is shared with the existing tenant placeholder path, so business values and tenant IDs go through one scanner, one marker allocator, and one occurrence ordering.
 
-The same binder must own both business and tenant placeholders. Do not build a second general-purpose regex replacer beside `tenant-placeholders.ts`. The Phase 10 tenant behavior becomes a compatibility wrapper over the new binder, so combined business + tenant parameters have one deterministic ordering, one dialect-aware marker formatter, one unresolved-placeholder check, and one audit representation.
+**This is not a cache and not a second pipeline.** Every `ask()` still makes exactly one model call. Nothing here lets a caller skip the model.
 
-This is explicitly **not automatic caching**. Core remains stateless. The host chooses whether to retain a `PreparedQuery` in memory, a database, or its own cache, and chooses the cache key/TTL. That keeps invalidation, persistence, and cross-user authorization in the host where they belong.
+## Assumptions this plan makes
+
+Two decisions were made when this plan was written. If either is wrong, that is a STOP condition, not something to reinterpret.
+
+1. **The feature is opt-in via `parameterize: true` and defaults to `false`.** Existing callers must see byte-identical prompts and byte-identical result objects. Flipping the default to `true` is a separate, later decision once the manifest path has real-world mileage.
+2. **The model decides what to parameterize.** There is no `{{token}}` syntax for hosts to declare parameters, and no post-hoc extraction of literals from unchanged model output. Host-declared parameters were considered and deliberately deferred (see "Maintenance notes").
 
 ## Current state
 
@@ -37,35 +41,32 @@ ask(options)
   ├─ optional RAG retrieval using options.question
   ├─ dialect.generate(question, schema, model, ...)
   │    ├─ prompt model
-  │    ├─ extract + validate SELECT
-  │    └─ validate tenant guardrails against named :tenant_* placeholders
+  │    ├─ extract fenced SQL + validateSelectSql
+  │    └─ validateTenantGuardrails against named :tenant_* placeholders
   └─ resolveTenantSql(generated.sql, policy, scope, tenantSqlMode)
-       ├─ sql-only: inline tenant literals
+       ├─ sql-only (default): inline tenant literals
        └─ sql-params: replace with PostgreSQL-style $N + tenantParams
 ```
-
-There is no retained template. Calling `ask()` again with new values repeats the retrieval/model path.
 
 ### Relevant files and their roles
 
 - `packages/core/src/ask.ts` — public pipeline options/result and orchestration.
 - `packages/core/src/sql/generate.ts` — prompt/model/extract/validate boundary.
-- `packages/core/src/sql/prompt.ts` — model-facing NL-to-SQL prompt.
-- `packages/core/src/sql/tenant-prompt.ts` — asks the model for `:tenant_*` placeholders.
-- `packages/core/src/sql/tenant-placeholders.ts` — current tenant-only regex extraction, literal replacement, and `$N` parameter replacement.
-- `packages/core/src/sql/tenant-guardrail.ts` — validates tenant shape before tenant values are substituted.
-- `packages/core/src/sql/dialect-spec.ts` — all built-in dialect IDs; currently does not describe execution-parameter marker style.
-- `packages/core/src/errors.ts` and `packages/core/src/index.ts` — public errors and barrel exports.
-- `packages/core/src/ask.test.ts`, `packages/core/src/sql/generate.test.ts`, `packages/core/src/sql/tenant-placeholders.test.ts`, and `packages/core/src/sql/tenant-consumer-smoke.test.ts` — existing test patterns.
-- `packages/client/src/client.ts` — config-aware facade; `ask()` resolves cached schema/model/dialect, then delegates to core.
-- `packages/client/src/client.test.ts` and `client.smoke.test.ts` — facade and external-consumer test patterns.
-- `docs/specs/core-pipeline.md`, `docs/specs/multi-tenancy.md`, and `docs/contracts/tenant-policy.md` — internal behavioral contracts.
-- `apps/docs-site/src/content/docs/reference/core-api.mdx` and `client-api.mdx` — canonical public API references.
-- `apps/docs-site/src/content/docs/guides/embed-in-node.mdx` and `multi-tenancy.mdx` — host integration examples that must demonstrate reuse.
+- `packages/core/src/sql/extract-sql.ts` — pulls the fenced SQL block out of model text.
+- `packages/core/src/sql/prompt.ts` — model-facing NL→SQL prompt assembly.
+- `packages/core/src/sql/tenant-prompt.ts` — builds the tenant policy prompt block, including `:tenant_*` placeholder instructions.
+- `packages/core/src/sql/tenant-placeholders.ts` — tenant-only regex extraction, literal replacement, and `$N` parameter replacement.
+- `packages/core/src/sql/tenant-guardrail.ts` — validates tenant predicate shape against named-template SQL.
+- `packages/core/src/sql/validate.ts` — read-only SELECT guardrail; contains an existing SQL string-literal stripper.
+- `packages/core/src/sql/dialect-spec.ts` — all built-in dialect specs; currently describes no execution-parameter marker style.
+- `packages/core/src/errors.ts` — typed `AskDbError` subclasses with machine-readable reason unions.
+- `packages/core/src/logging/log-events.ts` — stable structured-log event names.
+- `packages/core/src/index.ts` and `packages/core/src/sql/index.ts` — public barrels.
+- `packages/client/src/client.ts` — config-aware facade. **Requires no source change** (see Step 7).
 
 ### Current public API excerpts
 
-`packages/core/src/ask.ts:83-145` makes the question concrete and tenant parameterization tenant-specific:
+`packages/core/src/ask.ts:83-145` — options; note `tenantSqlMode` is the only output-shape control today:
 
 ```ts
 export type AskPipelineOptions = {
@@ -83,7 +84,7 @@ export type AskPipelineOptions = {
 };
 ```
 
-`packages/core/src/ask.ts:147-155` exposes only tenant-specific values:
+`packages/core/src/ask.ts:147-155` — result exposes only tenant-specific values:
 
 ```ts
 export type AskPipelineResult = {
@@ -96,16 +97,9 @@ export type AskPipelineResult = {
 };
 ```
 
-`packages/core/src/ask.ts:184-213` generates, then immediately destroys the named tenant-template form:
+`packages/core/src/ask.ts:206-214` — tenant binding happens after generation, and `resolveTenantSql` already accepts a start index for marker numbering (`tenant-placeholders.ts:204-241`), which this plan uses to keep business and tenant markers in one sequence:
 
 ```ts
-const generated = await dialect.generate(
-  options.question,
-  options.schema,
-  options.model,
-  { /* prompt inputs */ },
-);
-// ...
 if (tenantPolicy && options.tenantScope) {
   const mode = options.tenantSqlMode ?? "sql-only";
   const resolved = resolveTenantSql(sql, tenantPolicy, options.tenantScope, mode);
@@ -117,306 +111,283 @@ if (tenantPolicy && options.tenantScope) {
 }
 ```
 
-`packages/core/src/sql/prompt.ts:73-103` provides no business-parameter contract to the model:
+`packages/core/src/sql/extract-sql.ts:4-11` — **the language tag is optional**, so with two fenced blocks in the reply this returns whichever block comes first, regardless of language:
 
 ```ts
-const lines = [
-  `You translate natural language questions into a single ${dialect.displayName} SELECT (or WITH ... SELECT).`,
-  "Rules:",
-  // ...
-];
-// tenant policy is appended when present
-lines.push(`Question: ${question}`);
+export function extractSqlFromModelText(raw: string): string {
+  const text = raw.trim();
+  const fence = /```(?:sql)?\s*([\s\S]*?)```/im.exec(text);
+  if (fence?.[1]) {
+    return fence[1].trim();
+  }
+  return text.trim();
+}
 ```
 
-`packages/core/src/sql/tenant-prompt.ts:70-90` already has the right internal idea — a stable named token instead of the concrete IDs — but it does not require a cardinality-stable SQL shape:
-
-```ts
-const placeholder = `:tenant_${rootLabel.toLowerCase().replace(/[^a-z0-9]+/g, "_")}_ids`;
-lines.push(`  Access: ${rootLabel} IDs = ${placeholder}`);
-lines.push(`  Use ${placeholder} as the parameter placeholder for tenant predicates.`);
-```
-
-`packages/core/src/sql/tenant-placeholders.ts:36-48, 141-165` scans/replaces by regex and always emits `$N`, even though AskDB has MySQL, SQLite, and SQL Server dialects:
+`packages/core/src/sql/tenant-placeholders.ts:34-50` — tenant scanning is a bare global regex over the whole string, with no awareness of string literals or quoted identifiers:
 
 ```ts
 const PLACEHOLDER_RE = /:tenant_([a-z0-9_]+)_ids/g;
 
 export function extractTenantPlaceholders(sql: string): string[] {
   const matches = new Set<string>();
-  for (const m of sql.matchAll(PLACEHOLDER_RE)) matches.add(m[0]);
+  for (const m of sql.matchAll(PLACEHOLDER_RE)) {
+    matches.add(m[0]);
+  }
   return [...matches];
-}
-
-export function replacePlaceholdersWithParams(/* ... */) {
-  // ...
-  const paramRef = `$${idx}`;
-  // ...
 }
 ```
 
-It also changes query structure based on runtime list length by rewriting `=` to `IN` (`tenant-placeholders.ts:169-193`). A reusable template must instead have a stable `IN (:placeholder)` shape and only expand the markers inside the parentheses.
-
-`packages/client/src/client.ts:74-78, 214-228` has only `ask()` and `reload()`; every `ask()` resolves a model before delegating:
+`packages/core/src/sql/tenant-placeholders.ts:172-194` — operator-aware replacement rewrites `=` to `IN` when a scope carries multiple IDs. **This behavior must be preserved exactly**; every existing tenant fixture in the repo emits the scalar `= :tenant_agency_ids` form (e.g. `tenant-ask-integration.test.ts:42`, `tenant-consumer-smoke.test.ts:72`, `tenant-guardrail.test.ts:26`):
 
 ```ts
-export type AskDbClient = {
-  ask(question: string, overrides?: AskOverrides): Promise<AskPipelineResult>;
-  reload(): void;
-};
+function replaceOperatorAware(sql, placeholder, replacement, isMultiple) {
+  if (isMultiple) {
+    const eqPattern = new RegExp(`=\\s*${escapeRegex(placeholder)}`, "g");
+    sql = sql.replace(eqPattern, `IN ${replacement}`);
+    const inPattern = new RegExp(`IN\\s*\\(\\s*${escapeRegex(placeholder)}\\s*\\)`, "gi");
+    sql = sql.replace(inPattern, `IN ${replacement}`);
+  }
+  sql = sql.replace(new RegExp(escapeRegex(placeholder), "g"), replacement);
+  return sql;
+}
+```
+
+`packages/core/src/sql/validate.ts:110-153` — there is already a quote-state machine here (`stripSqlStringLiterals`) covering single quotes with doubled-quote escapes, double-quoted identifiers, and PostgreSQL dollar-quoting. It does **not** cover MySQL backticks or SQL Server brackets. Step 3 extends this into one shared span-returning tokenizer rather than adding a second, differently-capable scanner.
+
+`packages/client/src/client.ts:31-38, 214-227` — the facade forwards unknown options and returns the core result verbatim, which is why no client source change is needed:
+
+```ts
+export type AskOverrides = Omit<
+  AskPipelineOptions, "question" | "schema" | "model" | "dialect"
+> & { schema?: SchemaSource | AnyNormalizedSchema; model?: AskDbLanguageModel; dialect?: AskDialectInput };
 
 async ask(question, overrides = {}) {
-  // resolve schema + dialect
-  const resolvedModel = await resolveModel(modelOverride, deps);
-  return ask({ /* ... */ });
+  const { schema: schemaOverride, model: modelOverride, dialect: dialectOverride, deps, ...rest } = overrides;
+  // ...
+  return ask({ ...rest, question, schema, model: resolvedModel.model, dialect: dialect.dialect, ... });
 }
 ```
 
 ### Conventions to match
 
-- Public types live next to the implementation that owns them and are re-exported from package `src/index.ts` barrels. Match `ask.ts` and `tenant-placeholders.ts` rather than adding a global `types.ts` dump.
-- Core uses typed `AskDbError` subclasses with stable machine-readable reason unions (`packages/core/src/errors.ts:1-82`). Parameter failures should follow this pattern.
-- Pure SQL helpers have focused colocated Vitest files under `packages/core/src/sql/`; pipeline integration stays in `ask.test.ts` or a focused `*-integration.test.ts`.
+- Public types live next to the implementation that owns them and are re-exported from the package `src/index.ts` barrel (and `src/sql/index.ts` for SQL helpers). Match `ask.ts` and `tenant-placeholders.ts`; do not add a global `types.ts`.
+- Typed errors are `AskDbError` subclasses carrying a machine-readable reason union — see `packages/core/src/errors.ts:20-58` (`SqlValidationError`, `TenantScopeError`). Match that shape.
+- Pure SQL helpers get focused colocated Vitest files under `packages/core/src/sql/`. Prompt-capture tests use a `vi.fn()` `generateText` spy and assert on `generateText.mock.calls[0][0].prompt` — see `packages/core/src/sql/generate.test.ts:28-70` as the exemplar.
+- Structured log events are added to the `AskDbLogEvent` const object with a JSDoc line (`packages/core/src/logging/log-events.ts:5-38`). Log counts, never values.
 - Package scripts are `build`, `lint` (`tsc --noEmit`), and `test` (Vitest).
-- Public package changes require a Changesets note. Core/client additions are minor releases while pre-1.0.
-- Commit messages in this repo use conventional prefixes, e.g. `feat(core): ...`, `test(core): ...`, `docs: ...`.
+- Public package changes require a Changesets note; core/client additions are minor releases while pre-1.0.
+- Commit messages use conventional prefixes, e.g. `feat(core): ...`, `test(core): ...`, `docs: ...`.
 
 ### Verification baseline
 
-The advisor verified the commands from the root/package manifests but did not complete a test baseline: the first `pnpm --filter ... test` invocation tried to bootstrap the workspace dependency tree, so it was stopped to preserve the read-only planning run. The executor must run `pnpm install --frozen-lockfile` and establish the baseline before editing. A pre-existing failure is a STOP condition, not something to absorb into this feature.
+No test baseline was established when this plan was written (the planning run was read-only). The executor must run `pnpm install --frozen-lockfile` and establish the baseline in Step 1 before editing. A pre-existing failure is a STOP condition, not something to absorb into this feature.
 
 ## Target public contract (do not redesign during implementation)
 
-### Business parameter input
+### Input
 
-Add `queryParameters` and a generic `sqlOutputMode` to `AskPipelineOptions`:
+One new option. Nothing else about the input changes — the question text is **not** rewritten, and values are **not** stripped from it.
 
 ```ts
-export type QueryParameterType =
-  | "string"
-  | "number"
-  | "boolean"
-  | "date"
-  | "datetime";
-
-export type QueryParameterInput = {
-  type: QueryParameterType;
-  cardinality?: "one" | "many"; // default "one"
-  description?: string;
-  value: string | number | boolean | readonly (string | number | boolean)[];
-};
-
-export type SqlOutputMode = "sql-only" | "sql-params";
-
 export type AskPipelineOptions = {
-  // existing fields
-  queryParameters?: Record<string, QueryParameterInput>;
-  sqlOutputMode?: SqlOutputMode;
-  /** @deprecated Use sqlOutputMode. */
-  tenantSqlMode?: TenantSqlOutputMode;
+  // ... all existing fields unchanged ...
+  /**
+   * When true, ask the model to also return the SQL in unbound form plus a
+   * JSON manifest of the values it parameterized. Populates `unboundSql`,
+   * `params`, `parameters`, and `preparedQuery` on the result.
+   * Default false — existing behavior is byte-identical.
+   */
+  parameterize?: boolean;
 };
 ```
 
-Rules:
+### Model output contract
 
-- Parameter names must match `^[a-z][a-z0-9_]*$`; `tenant_` and `askdb_` prefixes are reserved.
-- Every key must appear exactly as a `{{name}}` token in the question; every `{{name}}` token must have one definition. Duplicate uses of the same token are allowed.
-- Canonical SQL placeholders are `:askdb_param_<name>` for business values and the existing `:tenant_<root_slug>_ids` for tenant values.
-- `cardinality: "many"` requires a non-empty array. It may appear in generated SQL only as the sole value inside `IN (...)` or `NOT IN (...)`. `"one"` rejects arrays. Null/undefined, non-finite numbers, `Date` objects, objects, and mixed-type arrays are rejected in v1. Dates/datetimes are ISO strings; core validates shape but leaves database type coercion to the driver.
-- Prompt text receives the canonical placeholder, type, cardinality, and optional description. It never receives `value`. RAG retrieval should use the question with `{{name}}` intact (semantic name remains useful), not the concrete value.
-- When `queryParameters` is present and neither output mode field is supplied, default to `"sql-params"`. Calls without business parameters retain the current tenant-only default (`tenantSqlMode ?? "sql-only"`). If both mode fields are supplied with different values, throw a typed error before the model call.
+When `parameterize` is true, the prompt asks for two fenced blocks: the SQL in unbound named-placeholder form, then a JSON manifest.
 
-Example:
-
-```ts
-const first = await ask({
-  question: "Revenue between {{start_date}} and {{end_date}} for {{statuses}}",
-  queryParameters: {
-    start_date: { type: "date", value: "2026-07-01" },
-    end_date: { type: "date", value: "2026-08-01" },
-    statuses: {
-      type: "string",
-      cardinality: "many",
-      description: "Order statuses to include",
-      value: ["paid", "shipped"],
-    },
-  },
-  schema,
-  model,
-  dialect: "postgres",
-});
+````text
+```sql
+SELECT SUM(total) FROM orders
+WHERE order_date >= :start_date AND order_date < :end_date AND status = ANY(:statuses)
 ```
+```json
+{"parameters":[
+  {"name":"start_date","type":"date","cardinality":"one","description":"Start of the reporting window","value":"2026-07-01"},
+  {"name":"end_date","type":"date","cardinality":"one","description":"End of the reporting window","value":"2026-08-01"},
+  {"name":"statuses","type":"string","cardinality":"many","description":"Order statuses to include","value":["paid","shipped"]}
+]}
+```
+````
 
-The model-facing question must name `:askdb_param_start_date`, `:askdb_param_end_date`, and `:askdb_param_statuses`; it must not include `2026-07-01`, `2026-08-01`, `paid`, or `shipped`.
+Rules the implementation enforces:
 
-### Prepared and bound output
+- Placeholder names match `^[a-z][a-z0-9_]*$`. The `tenant_` and `askdb_` prefixes are reserved and rejected in a manifest.
+- The model emits `:name` placeholders only. **It never emits `$1`, `?`, or `@p0`** — AskDB allocates markers, because the model cannot know that tenant placeholders share the same counter.
+- Types are `"string" | "number" | "boolean" | "date" | "datetime"`. Dates/datetimes are ISO strings; core validates shape and leaves database type coercion to the driver.
+- `cardinality: "many"` requires a non-empty array; `"one"` rejects arrays. Null/undefined, non-finite numbers, `Date` objects, nested objects, and mixed-type arrays are rejected.
+- Tenant placeholders (`:tenant_*`) must **not** appear in the manifest. They are bound from `tenantScope` as they are today.
 
-Add these versioned public types (exact field names are part of the plan):
+### Graceful degradation (this is load-bearing)
+
+Model output is not deterministic, so the four cases are resolved explicitly:
+
+| SQL has `:name` placeholders | JSON manifest present | Outcome |
+| --- | --- | --- |
+| no | no | Plain result — exactly today's shape. No error. |
+| no | yes, and empty `parameters` | Plain result. No error. |
+| yes | yes, valid, consistent | Parameterized result. |
+| yes | no, or invalid, or inconsistent | Throw `QueryParameterError` — the SQL cannot be executed with unresolved placeholders. |
+
+A model that ignores the manifest instruction entirely still produces a working query. A model that half-complies fails loudly rather than returning SQL with live `:placeholders` in it.
+
+### Result
+
+Every new field is optional and absent unless `parameterize` is true **and** the model returned a non-empty manifest.
 
 ```ts
-export type PreparedQueryParameter = {
-  name: string;
-  placeholder: string;
-  type: QueryParameterType;
+export type QueryParameterType = "string" | "number" | "boolean" | "date" | "datetime";
+export type QueryParameterValue = string | number | boolean;
+
+/** One parameter as bound for this call — enough to render a form field. */
+export type QueryParameterBinding = {
+  name: string;                    // "start_date"        → form field id
+  placeholder: string;             // ":start_date"       → position in preparedQuery.namedSql
+  type: QueryParameterType;        // "date"              → form input type
   cardinality: "one" | "many";
-  description?: string;
-  source: "question";
+  description?: string;            // model-supplied      → form label / help text
+  value: QueryParameterValue | QueryParameterValue[];
+  /** Execution markers this parameter filled, in order: ["$1"] | ["?","?"] | ["@p0"]. */
+  markers: string[];
+  /** 0-based indices into `params` this parameter occupies, in order. */
+  indices: number[];
+  source: "question" | "tenant";
 };
 
-export type PreparedTenantBinding = {
-  placeholder: string;
-  rootId: string;
-  rootLabel: string;
-  source: "tenant";
-  cardinality: "many";
-};
-
-export type PreparedTenantContract = {
-  schemaId: string;
-  policyFingerprint: string;
-  accessShape:
-    | { kind: "ids"; tenantRoot: string }
-    | { kind: "subtree"; tenantRoot: string; includeDescendants: true }
-    | { kind: "multi_root"; tenantRoots: string[] }
-    | { kind: "global" };
-  contextFingerprint: string;
-  reusable: boolean;
-  nonReusableReason?: "tenant_filters_present";
-};
-
-export type PreparedQueryV1 = {
+/** Serializable input to bindPreparedQuery(). Contains definitions, never values. */
+export type PreparedQuery = {
   version: 1;
   dialect: BuiltInDialectId;
-  schemaId: string | null;
-  schemaFingerprint: string;
-  templateSql: string;
-  queryParameters: PreparedQueryParameter[];
-  tenantBindings: PreparedTenantBinding[];
-  tenant?: PreparedTenantContract;
-};
-
-export type SqlBinding = {
-  position: number;          // 1-based occurrence order
-  marker: string | null;    // "$1", "?", "@p0"; null in sql-only mode
-  name: string;             // business name or tenant root id
-  source: "question" | "tenant";
-  value: string | number | boolean;
+  /** SQL with `:name` / `:tenant_*` placeholders intact. */
+  namedSql: string;
+  parameters: Array<{
+    name: string;
+    placeholder: string;
+    type: QueryParameterType;
+    cardinality: "one" | "many";
+    description?: string;
+    source: "question" | "tenant";
+  }>;
 };
 
 export type BoundQuery = {
   sql: string;
-  params: Array<string | number | boolean>;
-  bindings: SqlBinding[];
+  params: QueryParameterValue[];
+  bindings: QueryParameterBinding[];
 };
 
 export type AskPipelineResult = {
-  sql: string;
-  params?: Array<string | number | boolean>;
-  bindings?: SqlBinding[];
-  preparedQuery?: PreparedQueryV1;
-  // existing explain/usage/tenant fields remain
+  sql: string;                          // bound — unchanged meaning
+  /** Executable with `params`. Same as `sql` minus the bound values. */
+  unboundSql?: string;
+  params?: QueryParameterValue[];
+  parameters?: QueryParameterBinding[];
+  preparedQuery?: PreparedQuery;
+  // ... all existing fields (explain, tenantGuardrail, tenantParams, tenantBindings, usage) unchanged ...
 };
 ```
 
-`preparedQuery` is present whenever business parameters exist or a non-global tenant scope produced tenant placeholders **and the resolved dialect is a built-in ID/spec**. Existing custom `AskDialect` tenant-only calls keep their legacy bound result without a prepared artifact. A prepared artifact must contain definitions, structural fingerprints, and template SQL only — never raw runtime business values or tenant IDs.
+`parameters[].value` **does** carry the runtime value — the host needs it to pre-fill the form. `preparedQuery` does **not**: it is definitions and template SQL only.
 
-Keep `tenantParams` and `tenantBindings` for compatibility. They remain the tenant-only subsets of generic `params`/`bindings`. Document that callers who opt into `queryParameters` must execute with generic `params`, because `tenantParams` deliberately omits business values. Mark `tenantSqlMode` and `tenantParams` deprecated in JSDoc, but do not remove or silently change them. In `sql-only` mode, `BoundQuery.params` is an empty array and each binding has a null marker; the values remain available in binding metadata for audit.
-
-### Local rebind API
-
-Export the synchronous core function:
+### Local rebind utility
 
 ```ts
 export function bindPreparedQuery(
-  prepared: PreparedQueryV1,
-  input: {
-    schema: AnyNormalizedSchema;
-    queryParameterValues?: Record<string, string | number | boolean | readonly (string | number | boolean)[]>;
-    tenantScope?: TenantScope;
-    sqlOutputMode?: SqlOutputMode; // default "sql-params"
-  },
+  prepared: PreparedQuery,
+  values: Record<string, QueryParameterValue | readonly QueryParameterValue[]>,
 ): BoundQuery;
 ```
 
-Add the facade method:
+Pure and synchronous. **`ask()` calls this exact function** to produce its own first binding — one code path, exercised on every parameterized ask.
 
-```ts
-export type AskDbClient = {
-  ask(question: string, overrides?: AskOverrides): Promise<AskPipelineResult>;
-  bind(
-    prepared: PreparedQueryV1,
-    input: Omit<BindPreparedQueryInput, "schema"> & { schema?: SchemaSource | AnyNormalizedSchema },
-  ): BoundQuery;
-  reload(): void;
-};
-```
+It must **not** take a schema, compute fingerprints, validate a `TenantScope` shape, re-run tenant guardrails, or police reuse. Its guarantees are mechanical only:
 
-`client.bind()` resolves the current/default schema using the existing schema resolution path, then calls core. It must not call `resolveModel`, the AI registry, `generateText`, the retriever, `onResolve`, or a logger pipeline generation event. Add a test proving the registry and model mock call counts do not change across multiple binds.
+- every placeholder in `prepared.namedSql` receives a value, or it throws `MISSING_VALUE`;
+- no placeholder survives in the output, or it throws `UNRESOLVED_PLACEHOLDER`;
+- values are type/cardinality-checked against the declarations;
+- output re-passes `validateSelectSql` for `prepared.dialect`.
+
+Tenant placeholders are bound by name here just like business ones (`":tenant_agency_ids"` takes an array of IDs). **Authorization remains the host's**, exactly as it is today when the host constructs `tenantScope` — document this explicitly (Step 8).
 
 ### Dialect marker rules
 
-The binder emits execution markers from `prepared.dialect`:
+Add one optional field to `DialectSpec`:
 
-| Dialect | SQL marker | `params` behavior |
-| --- | --- | --- |
-| `postgres`, `cockroachdb` | `$1`, `$2`, ... | occurrence order |
-| `mysql`, `mariadb`, `sqlite` | `?` | one value per marker occurrence |
-| `sqlserver` | `@p0`, `@p1`, ... | occurrence order; binding metadata carries the name |
+```ts
+/** How list-valued placeholders bind. Default "expand" when absent. */
+listBinding?: "array" | "expand";
+```
 
-Repeated scalar placeholders may reuse the same value semantically but still allocate one marker/value per occurrence. This uniform rule is necessary for `?` dialects and makes the audit list deterministic. List placeholders expand to comma-separated markers inside the already-existing `IN (...)` parentheses.
+| Dialect | Scalar marker | `listBinding` | List form in SQL |
+| --- | --- | --- | --- |
+| `postgres`, `cockroachdb` | `$1`, `$2`, … | `"array"` | `= ANY($1)` — one marker, one array value; arity-stable |
+| `mysql`, `mariadb`, `sqlite` | `?` | `"expand"` | `IN (?, ?, ?)` — one marker per element |
+| `sqlserver` | `@p0`, `@p1`, … | `"expand"` | `IN (@p3, @p4, @p5)` |
 
-Reusable parameterization is supported only when `dialect` is a built-in ID or a `DialectSpec` whose `id` is built-in. A custom `AskDialect` remains supported for ordinary `ask()` calls. Using it with `queryParameters` must throw before the model call; a legacy custom-dialect tenant-only call continues to bind as today but does not receive a reusable prepared artifact. Do not guess its driver marker convention. Document this restriction on `AskDialect`.
+Only Postgres/CockroachDB have a real array parameter type, so only they get the arity-stable form. Everywhere else the marker count tracks the list length — which is precisely why `bindPreparedQuery()` exists rather than expecting hosts to hand-edit the params array.
 
-### Tenant rebind rules
+Scalar placeholders allocate one marker per **occurrence**, even when repeated, because `?` dialects have no other option and it keeps the audit list deterministic.
 
-Tenant IDs are values; tenant policy/access structure and advisory context are generation inputs. Therefore `bindPreparedQuery()` may change only the ID arrays while preserving the prepared scope shape:
+Note the SQL Server off-by-one: markers are `@p0`-based while `indices` is 0-based and `markers` is per-parameter — hosts map values via `parameters[].markers`, never by computing marker names themselves.
 
-- `ids`: same `tenantRoot`, new non-empty `ids` allowed.
-- `subtree`: same `tenantRoot` and `includeDescendants: true`, new non-empty `rootIds` allowed.
-- `multi_root`: same set of root IDs (sort before comparing), new non-empty ID arrays allowed.
-- `global`: may bind business parameters, but supplied scope must remain global. A global prepared query can never be rebound to scoped access or the reverse.
-- `context`: must deep-equal the originally prepared context by canonical fingerprint. A changed role, region, description, attributes, or label may change query semantics and requires a new AI call.
-- `tenantFilters`: current code does not turn these polymorphic conditions into reusable placeholders. If present during preparation, set `tenant.reusable = false` and `nonReusableReason = "tenant_filters_present"`; every `bindPreparedQuery()` attempt throws a clear "regenerate this query" error, including a business-only rebind. Do not pretend partial rebinding is safe when part of the tenant predicate remains concrete/model-generated.
+Reusable parameterization requires a built-in dialect ID or a `DialectSpec` whose `id` is built-in. `parameterize: true` with a custom `AskDialect` throws `DIALECT_UNSUPPORTED` **before the model call** — do not guess a driver's marker convention. Ordinary (non-parameterized) custom `AskDialect` calls are unaffected.
 
-On every bind, require the current schema, re-run `validateTenantScope`, compare the schema/policy/context fingerprints and access shape, re-run `validateTenantGuardrails` against `templateSql`, and reject any mismatch before substitution. This lets tenant IDs change without a model call while preserving the existing fail-closed boundary.
+### Output-mode interaction
 
-### Template integrity rules
+- Business parameters are always bound as markers. `sql-only` literal inlining is **not** supported for them: it would concatenate model-extracted values into SQL text, and the existing literal escaper (`tenant-placeholders.ts:116-118`) only doubles single quotes, which is insufficient on MySQL/MariaDB where backslash escapes are enabled by default. Do not extend that escaper in this plan.
+- `tenantSqlMode` keeps its current meaning and its `"sql-only"` default. When it is `"sql-only"`, tenant IDs are still inlined as literals exactly as today and contribute no markers.
+- When `tenantSqlMode` is `"sql-params"`, business markers are allocated first (1..N) and tenant markers continue from N+1 via the existing `paramStartIndex` argument of `resolveTenantSql` (`tenant-placeholders.ts:204-241`).
+- `result.params` is the full ordered array. `tenantParams` and `tenantBindings` keep their current tenant-only meaning; document that a caller using `parameterize` must execute with `params`, not `tenantParams`.
 
-Implement a small SQL-aware placeholder scanner, not `String.replace` over the whole query. It must recognize canonical placeholders only outside:
+### Errors
 
-- single-quoted string literals (including doubled quote escapes),
-- double-quoted identifiers,
-- MySQL backtick identifiers,
-- SQL Server bracket identifiers, and
-- PostgreSQL dollar-quoted strings.
+```ts
+export type QueryParameterRejectionReason =
+  | "MANIFEST_MISSING"
+  | "MANIFEST_INVALID"
+  | "INVALID_NAME"
+  | "RESERVED_NAME"
+  | "INVALID_VALUE"
+  | "MISSING_VALUE"
+  | "UNDECLARED_PLACEHOLDER"
+  | "MISSING_PLACEHOLDER"
+  | "INVALID_LIST_CONTEXT"
+  | "UNRESOLVED_PLACEHOLDER"
+  | "DIALECT_UNSUPPORTED";
 
-Comments are already rejected by `validateSelectSql`, so the scanner need not support comment bodies. The scanner must return occurrence offsets and token names so replacement happens from right to left without invalidating offsets.
+export class QueryParameterError extends AskDbError {
+  constructor(message: string, public readonly reason: QueryParameterRejectionReason) {
+    super(message);
+    this.name = "QueryParameterError";
+  }
+}
+```
 
-After generation and again before/after every bind, enforce:
-
-- every declared business parameter appears at least once;
-- no undeclared `:askdb_param_*` placeholder exists;
-- every tenant placeholder maps to exactly one policy root;
-- tenant root labels do not slug to the same placeholder;
-- `many`/tenant placeholders appear only as the sole expression inside `IN (...)` or `NOT IN (...)`;
-- all placeholders are resolved after binding; and
-- the final SQL still passes `validateSelectSql` for the prepared dialect.
-
-Throw a typed `QueryParameterError extends AskDbError` with a reason union such as `INVALID_NAME`, `QUESTION_TOKEN_MISMATCH`, `INVALID_VALUE`, `UNDECLARED_PLACEHOLDER`, `MISSING_PLACEHOLDER`, `INVALID_LIST_CONTEXT`, `UNRESOLVED_PLACEHOLDER`, `SCHEMA_MISMATCH`, `DIALECT_UNSUPPORTED`, and `TENANT_SCOPE_SHAPE_CHANGED`. Keep messages actionable and do not include sensitive values.
+Messages must be actionable and must never include a parameter value.
 
 ## Commands you will need
 
 | Purpose | Command | Expected on success |
 | --- | --- | --- |
 | Install | `pnpm install --frozen-lockfile` | exit 0; lockfile unchanged |
-| Core baseline/focused tests | `pnpm --filter @askdb/core test` | exit 0; all core tests pass |
-| Client baseline/focused tests | `pnpm --filter @askdb/client test` | exit 0; all client tests pass |
+| Core tests | `pnpm --filter @askdb/core test` | exit 0; all core tests pass |
+| Client tests | `pnpm --filter @askdb/client test` | exit 0; all client tests pass |
 | Core typecheck | `pnpm --filter @askdb/core lint` | exit 0; no TypeScript errors |
 | Client typecheck | `pnpm --filter @askdb/client lint` | exit 0; no TypeScript errors |
 | Full test suite | `pnpm test` | exit 0; all workspace tests pass |
-| Full typecheck | `pnpm lint` | exit 0; all workspace typechecks pass |
+| Full typecheck | `pnpm lint` | exit 0 |
 | Docs build | `pnpm docs:build` | exit 0; Astro/Starlight build succeeds |
-| Installable package check | `pnpm smoke:install` | exit 0; packed consumer smoke passes |
+| Installable package check | `pnpm smoke:install` | exit 0 |
 | Release preflight | `pnpm preflight` | exit 0 |
 
 ## Scope
@@ -426,197 +397,176 @@ Throw a typed `QueryParameterError extends AskDbError` with a reason union such 
 - `packages/core/src/ask.ts`
 - `packages/core/src/errors.ts`
 - `packages/core/src/index.ts`
+- `packages/core/src/sql/index.ts`
+- `packages/core/src/sql/bind.ts` (create — shared scanner, marker allocation, `bindPreparedQuery`)
+- `packages/core/src/sql/parameter-manifest.ts` (create — manifest types, parsing, validation)
+- `packages/core/src/sql/dialect-spec.ts`
+- `packages/core/src/sql/extract-sql.ts`
 - `packages/core/src/sql/generate.ts`
 - `packages/core/src/sql/prompt.ts`
-- `packages/core/src/sql/tenant-prompt.ts`
-- `packages/core/src/sql/tenant-placeholders.ts`
-- `packages/core/src/sql/query-parameters.ts` (create; owns public prepared/bind types, scanner, validation, fingerprinting, and binding)
-- focused tests under `packages/core/src/` for the files above (create `packages/core/src/sql/query-parameters.test.ts`; extend existing tests where their current contract is directly affected)
-- `packages/core/README.md`
-- `packages/client/src/client.ts`
-- `packages/client/src/index.ts`
-- `packages/client/src/client.test.ts`
+- `packages/core/src/sql/tenant-placeholders.ts` (reimplement over the shared binder; public signatures and behavior preserved)
+- `packages/core/src/sql/validate.ts` (extract the shared tokenizer only; guardrail behavior unchanged)
+- `packages/core/src/logging/log-events.ts`
+- Focused tests under `packages/core/src/`: create `bind.test.ts` and `parameter-manifest.test.ts`; extend `extract-sql`, `generate.test.ts`, `ask.test.ts` where their contract is directly affected
+- `packages/client/src/client.test.ts` (passthrough assertion only — no `client.ts` change)
 - `packages/client/src/client.smoke.test.ts`
-- `packages/client/README.md`
-- `docs/specs/core-pipeline.md`
-- `docs/specs/multi-tenancy.md`
-- `docs/contracts/tenant-policy.md`
-- `apps/docs-site/src/content/docs/reference/core-api.mdx`
-- `apps/docs-site/src/content/docs/reference/client-api.mdx`
-- `apps/docs-site/src/content/docs/guides/embed-in-node.mdx`
-- `apps/docs-site/src/content/docs/guides/multi-tenancy.mdx`
+- `packages/core/README.md`, `packages/client/README.md`
+- `docs/specs/core-pipeline.md`, `docs/specs/multi-tenancy.md`, `docs/contracts/tenant-policy.md`
+- `apps/docs-site/src/content/docs/reference/core-api.mdx`, `.../reference/client-api.mdx`, `.../guides/embed-in-node.mdx`, `.../guides/multi-tenancy.mdx`
 - one new `.changeset/*.md`
 - `plans/README.md` (status only)
 
 **Out of scope** (do not touch, even though related):
 
-- `apps/studio/**` — a visual parameter editor/re-execute flow is a follow-up after the core artifact contract exists. Existing Studio tests must still pass through compatibility fields.
-- `apps/http-api/**` — do not accept caller-supplied prepared SQL over a network boundary. A future HTTP design needs an opaque server-side prepared-query ID, bounded TTL/LRU storage, and ownership/auth checks; a raw `/bind` endpoint is unsafe.
-- `apps/cli/**` — the one-shot CLI does not benefit from in-process rebinding.
-- Any built-in automatic cache, cache key, TTL, persistence adapter, encryption, or signing mechanism.
-- Reusable `tenantFilters`; v1 must fail closed as specified above.
-- Automatic parameter discovery/extraction by the model. Hosts declare tokens explicitly; do not let the model decide which literals are editable.
-- SQL AST/parser dependencies or broad replacement of the existing heuristic SELECT/tenant guardrails.
-- Database execution. AskDB still returns SQL + params; the host executes.
-- Changes to schema artifact formats or `tenant-policy.md` front-matter.
+- `packages/client/src/client.ts` — the facade already forwards options and returns the core result verbatim. If you believe a change is needed here, that is a STOP condition.
+- `apps/studio/**` — a visual parameter editor is a follow-up once this contract exists. Existing Studio tests must still pass unchanged.
+- `apps/http-api/**` — do not accept caller-supplied prepared SQL over a network boundary.
+- `apps/cli/**` — the one-shot CLI does not benefit from a parameter manifest.
+- `tenant-prompt.ts` tenant placeholder instructions and the `=` → `IN` tolerance in `replaceOperatorAware` — preserving these is what keeps tenant behavior unchanged.
+- The `escapeSqlLiteral` MySQL backslash weakness noted above. Real, pre-existing, separately tracked; widening or "fixing" it here expands the diff and the risk.
+- Any built-in cache, cache key, TTL, persistence, encryption, or signing mechanism.
+- Fingerprints, schema-drift detection, or tenant access-shape comparison at bind time.
+- Host-declared `{{token}}` parameters.
+- SQL AST/parser dependencies.
+- Database execution — AskDB returns SQL + params; the host executes.
 
 ## Git workflow
 
 - Keep the current branch name unless the operator directs otherwise.
-- Make logical commits if asked to commit: suggested sequence is `feat(core): add reusable prepared query binding`, `feat(client): expose local prepared query binding`, then `docs: document reusable query parameters`.
-- Add one changeset covering minor releases for `@askdb/core` and `@askdb/client`. The root Changesets config links core with the CLI/HTTP release train; let Changesets calculate linked version consequences instead of hand-editing package versions/changelogs.
+- Suggested commits: `feat(core): add shared SQL parameter binder`, `feat(core): return unbound SQL and parameter manifest from ask()`, `docs: document parameterized ask output`.
+- Add one changeset with a minor bump for `@askdb/core`. The root Changesets config links core with the CLI/HTTP release train; let Changesets calculate linked consequences rather than hand-editing versions.
 - Do not push or open a PR unless the operator explicitly requests it.
 
 ## Steps
 
-### Step 1: Establish the baseline and lock the contract in tests
+### Step 1: Establish the baseline
 
-Run install, core/client tests, and core/client lint before editing. Record the counts/output in the implementation handoff. Then add failing tests for the target contract before implementation.
+Run `pnpm install --frozen-lockfile`, then `pnpm --filter @askdb/core test`, `pnpm --filter @askdb/client test`, `pnpm --filter @askdb/core lint`, and `pnpm --filter @askdb/client lint`. Record the test counts in your handoff notes — you will compare against them at the end.
 
-Tests must cover:
+**Verify**: all four commands exit 0. If any fails before you have edited anything, STOP and report.
 
-1. Input/token validation before `generateText` is called.
-2. Prompt includes placeholder/type/cardinality/description but excludes every concrete value.
-3. Model SQL with missing, undeclared, unresolved, or incorrectly placed list placeholders is rejected.
-4. `PreparedQueryV1` JSON round-trip preserves bind behavior and contains no supplied values/tenant IDs.
-5. Each built-in dialect emits the marker style in the table above.
-6. Repeated scalar and multi-value parameters preserve occurrence order.
-7. Scanner ignores placeholder-looking text inside every supported quote form.
-8. Empty/mixed arrays, nulls, objects, and non-finite numbers fail before the model/binder.
-9. Existing no-parameter `ask()` result/prompt snapshots remain unchanged.
-10. Existing tenant-only `sql-only` and `sql-params` tests retain their public behavior.
-11. Combined business + tenant values produce one correct `params` array plus correct deprecated tenant-only subsets.
-12. Rebinding new values does not call `generateText` or a retriever.
-13. Tenant scope shape/context/schema/policy mismatches fail closed; changing IDs within the same shape succeeds.
-14. `tenantFilters` follow the explicit non-reusable behavior.
+### Step 2: Add the dialect list-binding capability and harden SQL extraction
 
-**Verify**: `pnpm --filter @askdb/core test` should fail only in the newly added target tests before implementation; all pre-existing tests remain green.
+In `dialect-spec.ts`, add the optional `listBinding?: "array" | "expand"` field to `DialectSpec` with the JSDoc from "Dialect marker rules". Set `"array"` on `POSTGRES_DIALECT` (CockroachDB inherits it by spread) and `"expand"` on `MYSQL_DIALECT`, `SQLITE_DIALECT`, and `SQLSERVER_DIALECT` (MariaDB inherits from MySQL). Absent must be treated as `"expand"` by consumers so third-party specs keep working.
 
-### Step 2: Add the typed parameter/template model and SQL-aware binder
+In `extract-sql.ts`, make the extractor prefer an explicitly `sql`-tagged fence before falling back to an untagged one. The current regex treats the language tag as optional and will return a ```json block if it appears first (`extract-sql.ts:6`). Keep the existing single-block and bare-prose behaviors identical.
 
-Create `packages/core/src/sql/query-parameters.ts` with the public types and pure helpers specified in “Target public contract.” Keep responsibilities separated inside the file (or private submodules only if the file becomes unreviewable):
+Add a sibling `extract-sql.test.ts` case (or extend the existing coverage) proving that a reply containing a ```json block followed by a ```sql block returns the SQL, and that a reply with only an untagged fence still returns its contents.
 
-- question-token/spec validation;
-- canonical placeholder generation;
-- canonical stable serialization + SHA-256 fingerprint helpers;
-- SQL-aware placeholder scanning and context validation;
-- tenant access-shape derivation/comparison;
-- dialect marker formatting;
-- literal formatting for compatibility `sql-only`; and
-- `bindPreparedQuery()` orchestration.
+**Verify**: `pnpm --filter @askdb/core test -- extract-sql dialect-spec` → all pass, including the new cases.
 
-Fingerprint the entire generation-relevant normalized schema (including descriptions/concepts and normalized tenant policy), not just table IDs. Use a canonical recursive key sorter before hashing so equivalent objects do not change fingerprints because of property insertion order. Do not include runtime business values or tenant access ID arrays in the schema/policy fingerprints. The context fingerprint intentionally hashes the exact advisory input so a binder can prove it did not change without storing its raw values in the prepared artifact. Tenant filters make the whole artifact non-reusable in V1 and therefore need no stored fingerprint.
+### Step 3: Build the shared binder and reimplement the tenant path over it
 
-Literal formatting rules for `sql-only` are type-driven: quote/escape string/date/datetime values, allow only finite numbers, emit `TRUE`/`FALSE` for booleans, and expand lists inside `IN (...)`. Never interpolate by calling `String(value)` on an unvalidated value.
+Create `packages/core/src/sql/bind.ts` containing:
 
-Keep `resolveTenantSql`, `extractTenantPlaceholders`, and public tenant types exported. Reimplement/wrap them over the shared scanner/binder primitives where possible without changing current signatures. Delete the operator-aware `=`→`IN` dependency only after `tenant-prompt.ts` and tests require stable `IN (:tenant_..._ids)` syntax.
+1. **A span-returning SQL tokenizer.** Extract the quote-state logic already in `validate.ts:110-153` (`stripSqlStringLiterals`) into a shared function that returns the offsets of code regions vs. quoted regions, and extend it to also recognize MySQL backticks and SQL Server brackets. Have `validateSelectSql` consume the shared function so there is exactly one quote-state machine in the codebase. `validateSelectSql`'s observable behavior must not change.
+2. **A placeholder scanner** that finds `:name` and `:tenant_*_ids` tokens **only outside** quoted regions, returning `{ name, start, end }` occurrences in source order.
+3. **List-context validation** — a `many` placeholder must be the sole expression inside `IN (...)` / `NOT IN (...)` (expand dialects) or the sole argument of `= ANY(...)` (array dialects).
+4. **Marker allocation and substitution**, replacing occurrences right-to-left so offsets stay valid, while emitting `params` in left-to-right occurrence order.
+5. **`bindPreparedQuery(prepared, values)`** with the signature and guarantees from "Local rebind utility".
 
-**Verify**: `pnpm --filter @askdb/core test -- query-parameters` → the new pure binder/scanner test file passes.
+Then reimplement `tenant-placeholders.ts` over these primitives. **Every exported signature and every observable behavior stays the same**, including `resolveTenantSql`'s `paramStartIndex`, the `sql-only` literal path, and the `=` → `IN` rewriting in `replaceOperatorAware`. This step is behavior-preserving refactoring plus new capability; the entire existing `tenant-placeholders.test.ts` suite must pass untouched.
 
-### Step 3: Teach prompt/generation to produce a validated named template
+Create `bind.test.ts` covering the pure binder: scalar and list binding per dialect, repeated scalars, right-to-left substitution correctness, placeholder-looking text inside every supported quote form left untouched, `MISSING_VALUE` / `UNRESOLVED_PLACEHOLDER` / `INVALID_LIST_CONTEXT` rejections, and Postgres `$1` markers surviving `validateSelectSql` re-validation (its dollar-quote branch must not mistake `$1` for a dollar-quoted string).
 
-Thread validated parameter definitions (never their values) through `AskDialectGenerateOptions` / `GenerateSqlDeps` into `buildNlToSqlUserPrompt()`.
+**Verify**: `pnpm --filter @askdb/core test -- bind tenant-placeholders validate` → all pass, and `tenant-placeholders.test.ts` passes with **zero edits to that file**. If you need to edit it, STOP — the refactor changed behavior.
 
-Append a compact “Query parameters” prompt block before the question. It must:
+### Step 4: Add manifest types, parsing, and validation
 
-- map each `{{name}}` token to `:askdb_param_<name>`;
-- list type, cardinality, and optional description;
-- instruct the model never to inline/example the current value;
-- require scalar placeholders in the relevant expression; and
-- require many-valued placeholders as `IN (:placeholder)` or `NOT IN (:placeholder)` with the placeholder as the sole list member.
+Create `packages/core/src/sql/parameter-manifest.ts` with the public parameter types, a Zod schema for the manifest (the repo already uses Zod — see `packages/core/src/schema/v2/tenant-policy.ts`), and a `parseParameterManifest(modelText)` that extracts the ```json fence and validates it.
 
-Update `tenant-prompt.ts` to require the same stable `IN (:tenant_<root>_ids)` shape for every non-global tenant root. Keep the tenant policy block unconditional when a policy exists.
+Cross-validation against the SQL, all before any binding:
 
-After `extractSqlFromModelText()` and `validateSelectSql()`, validate the named template against both declared business specs and tenant policy bindings before tenant guardrails run. Tenant guardrails must continue to inspect the named template, never bound/literal SQL.
+- every manifest parameter appears at least once as a placeholder in the SQL (`MISSING_PLACEHOLDER`);
+- no non-tenant placeholder in the SQL is absent from the manifest (`UNDECLARED_PLACEHOLDER`);
+- names match `^[a-z][a-z0-9_]*$` (`INVALID_NAME`) and use neither the `tenant_` nor `askdb_` prefix (`RESERVED_NAME`);
+- values match their declared type and cardinality (`INVALID_VALUE`);
+- list placeholders sit in valid list context (`INVALID_LIST_CONTEXT`).
 
-When no query parameters exist, the prompt must remain byte-for-byte identical except for the intentional tenant `IN (...)` instruction change. Preserve the existing custom `AskDialect` path for ordinary, non-prepared asks.
+Add `QueryParameterError` and `QueryParameterRejectionReason` to `errors.ts`, matching the `TenantScopeError` shape at `errors.ts:44-58`.
 
-**Verify**: `pnpm --filter @askdb/core test -- generate tenant-prompt tenant-guardrail` → all matching tests pass and prompt assertions prove values are absent.
+Create `parameter-manifest.test.ts` covering: valid manifest; missing manifest with placeholders present → `MANIFEST_MISSING`; malformed JSON → `MANIFEST_INVALID`; each rejection reason above; empty array → treated as "no parameters" rather than an error; and a manifest that tries to declare a `:tenant_*` placeholder → `RESERVED_NAME`.
 
-### Step 4: Integrate preparation + first binding into `ask()` compatibly
+**Verify**: `pnpm --filter @askdb/core test -- parameter-manifest` → all pass.
+
+### Step 5: Teach the prompt and generator the parameterize path
+
+Thread a `parameterize?: boolean` flag through `AskDialectGenerateOptions` (`ask.ts:27-35`) and `GenerateSqlDeps` (`generate.ts:20-41`) into `buildNlToSqlUserPrompt()`.
+
+When it is true, append an output-format block after the existing rules that instructs the model to: emit the SQL with `:name` placeholders substituted for values taken from the question; never emit `$1`/`?`/`@p0`; use `IN (:name)` for multi-value placeholders on expand dialects or `= ANY(:name)` on array dialects (branch on `dialect.listBinding`); leave `:tenant_*` placeholders exactly as the tenant policy block already instructs; and follow the SQL block with a ```json manifest of `{name, type, cardinality, description, value}`. Instruct it to parameterize only values that came from the user's question — not structural constants it chose itself.
+
+**When `parameterize` is false the prompt must be byte-for-byte identical to today.** Assert this with a snapshot-style test comparing the prompt built with the flag absent against the current output.
+
+In `generate.ts`, when the flag is on: extract the SQL, run `validateSelectSql`, parse and cross-validate the manifest, then run `validateTenantGuardrails` **against the named (unbound) SQL** — same as today, since tenant placeholders are still present at that point. Return the named SQL plus the validated manifest on `GenerateSelectSqlResult`; binding happens in `ask()`.
+
+Add `PipelineParameterized: "askdb.pipeline.parameterized"` to `AskDbLogEvent` and emit it with **counts only** (`parameterCount`, `listParameterCount`) — never names or values.
+
+**Verify**: `pnpm --filter @askdb/core test -- generate prompt tenant-guardrail` → all pass; the prompt-identity test proves the no-flag prompt is unchanged, and a parameterize-on test proves the manifest instruction is present.
+
+### Step 6: Integrate binding into `ask()`
 
 In `ask.ts`:
 
-1. Validate question tokens and parameter inputs before retrieval/model work.
-2. Keep retrieval keyed on the tokenized semantic question with no values.
-3. Generate and guardrail-check named template SQL.
-4. Construct `PreparedQueryV1` from the generated template, current normalized schema, dialect, parameter definitions, and tenant contract.
-5. Call the same `bindPreparedQuery()` used by external rebinds with the current values/scope.
-6. Populate `sql`, generic `params`/`bindings`, `preparedQuery`, and existing explain/usage/tenant fields.
+1. Add `parameterize?: boolean` to `AskPipelineOptions` and the new result fields to `AskPipelineResult`.
+2. When `parameterize` is true and the resolved dialect is a custom `AskDialect`, throw `QueryParameterError` with `DIALECT_UNSUPPORTED` **before** any model call.
+3. Forward the flag into `dialect.generate`.
+4. When a validated manifest came back, build the `PreparedQuery` from the named SQL, dialect ID, and parameter definitions, then call `bindPreparedQuery()` with the manifest values to produce the bound SQL, params, and bindings.
+5. Bind tenant placeholders after business ones, passing `businessParams.length + 1` as `resolveTenantSql`'s `paramStartIndex` when `tenantSqlMode` is `"sql-params"`. When it is `"sql-only"` (the default) the tenant path is unchanged and contributes no markers.
+6. Populate `sql`, `unboundSql`, `params`, `parameters`, and `preparedQuery`, leaving every existing field's behavior intact.
+7. Re-run `validateSelectSql` on the final bound SQL.
 
-No-parameter, non-tenant calls should keep the lean existing result (do not add an empty prepared artifact). Preserve tenant-only mode defaults and deprecated field values. Resolve the generic/legacy output-mode precedence exactly as specified; test conflicts before the model call.
+Export `bindPreparedQuery`, `QueryParameterError`, and all new public types from `packages/core/src/sql/index.ts` and `packages/core/src/index.ts`, matching the existing export-block style at `index.ts:8-25`.
 
-Add `QueryParameterError` + reason exports in `errors.ts`/`index.ts`. Export all new public types and `bindPreparedQuery` from core’s barrel.
+Extend `ask.test.ts` with: a no-flag call returning a result object deep-equal to today's; a parameterized call returning all four new fields; a combined business + tenant call in both tenant modes asserting marker ordering and that `tenantParams` still holds only tenant values; and the custom-`AskDialect` rejection firing with `generateText` never called.
 
-**Verify**: `pnpm --filter @askdb/core test && pnpm --filter @askdb/core lint` → exit 0, all core tests/typechecks pass.
+**Verify**: `pnpm --filter @askdb/core test && pnpm --filter @askdb/core lint` → exit 0.
 
-### Step 5: Add `client.bind()` without touching the model path
+### Step 7: Prove the client forwards it without a source change
 
-Extend `AskDbClient` and the returned facade object with `bind()` using the existing `loadFromSource` / default-schema cache. Do not resolve a model or call `onResolve`; dialect is read from the serialized prepared contract and checked against current schema/config resolution only to detect mismatch.
+Do **not** edit `packages/client/src/client.ts`. Add a test to `client.test.ts` that calls `askdb.ask(question, { parameterize: true, deps: { generateText: spy } })` with a spy returning a two-block reply, and asserts the new result fields arrive intact through the facade. Extend `client.smoke.test.ts` so a TypeScript consumer can import `PreparedQuery`, `BoundQuery`, `QueryParameterBinding`, and `bindPreparedQuery` through the documented public barrels and call the binder.
 
-Tests must call `askdb.ask()` once with a `generateText` spy, JSON-round-trip the prepared artifact, call `askdb.bind()` at least twice with new business and tenant values, and assert:
+**Verify**: `pnpm --filter @askdb/client test && pnpm --filter @askdb/client lint` → exit 0, and `git status --short packages/client/src/client.ts` shows no modification.
 
-- SQL template structure is unchanged;
-- params change as requested;
-- generation spy and registry model factory remain at one call;
-- schema mismatch and tenant access-shape change reject; and
-- `reload()` causes schema re-resolution but never model resolution during `bind()`.
+### Step 8: Document the contract and the trust boundary
 
-Update client barrel exports and consumer smoke test so a TypeScript consumer can import/use `PreparedQueryV1` and `BoundQuery` through the documented public packages.
-
-**Verify**: `pnpm --filter @askdb/client test && pnpm --filter @askdb/client lint` → exit 0; all client tests/typechecks pass.
-
-### Step 6: Document the lifecycle and security boundary
-
-Update package READMEs, internal specs, and the four docs-site pages in scope. Use one consistent example:
+Update the package READMEs, the three internal specs, and the four docs-site pages in scope. Use one consistent example:
 
 ```ts
-const first = await askdb.ask(
-  "Revenue between {{start_date}} and {{end_date}}",
-  {
-    queryParameters: {
-      start_date: { type: "date", value: "2026-07-01" },
-      end_date: { type: "date", value: "2026-08-01" },
-    },
-    tenantScope,
-  },
+const result = await askdb.ask(
+  "Total revenue between July 1 2026 and August 1 2026 for paid and shipped orders",
+  { parameterize: true, tenantScope },
 );
 
-await pool.query(first.sql, first.params);
+// Execute either form.
+await pool.query(result.sql);                       // bound
+await pool.query(result.unboundSql!, result.params); // unbound + params
 
-const julyForAnotherAuthorizedTenant = askdb.bind(first.preparedQuery!, {
-  queryParameterValues: {
-    start_date: "2026-07-08",
-    end_date: "2026-07-15",
-  },
-  tenantScope: sameShapeWithNewAuthorizedIds,
+// Render a form from result.parameters, then rebind locally — no model call.
+const rebound = bindPreparedQuery(result.preparedQuery!, {
+  start_date: "2026-07-08",
+  end_date: "2026-07-15",
+  statuses: ["paid"],
+  ":tenant_agency_ids": authorizedAgencyIds,
 });
-
-await pool.query(
-  julyForAnotherAuthorizedTenant.sql,
-  julyForAnotherAuthorizedTenant.params,
-);
+await pool.query(rebound.sql, rebound.params);
 ```
 
-Docs must say plainly:
+Docs must state plainly:
 
-- first `ask()` = one AI call; each `bind()` = zero AI/RAG calls;
-- values are not sent to the model or stored in `PreparedQuery`;
-- the host owns prepared-query caching/invalidation and remains responsible for authorizing tenant IDs before passing scope;
-- changing question meaning, parameter definitions, schema, dialect, tenant access shape, context, or tenant filters requires a fresh `ask()`;
-- use generic `params` for combined business + tenant execution;
-- prepared artifacts are trusted application data, not safe bearer tokens for an unauthenticated HTTP bind endpoint; and
-- driver examples for PostgreSQL/MySQL/SQLite/SQL Server use the marker style actually returned for that dialect.
-
-Update the tenant contract’s named-placeholder/output section so it describes the shared binder and deprecation path instead of a tenant-only `$N` layer.
+- every `ask()` is exactly one model call; `parameterize` does not add or remove one, and nothing here lets a caller skip it;
+- the question is sent to the model unchanged, values included — this is not a redaction feature;
+- the model decides what to parameterize, so a mistake changes the *form*, not the query: the bound SQL is correct either way;
+- a value the model bound to one column may not suit a different value the user types into that field (a code column vs. a name column) — hosts should constrain form inputs using the returned `type` and `description`;
+- `bindPreparedQuery()` is mechanical: it checks names, types, and cardinality, and **does not authorize tenant IDs**. Authorization is the host's responsibility, exactly as it is today when the host builds `tenantScope`;
+- callers using `parameterize` must execute with `params`, not `tenantParams`;
+- list parameters are arity-stable only on PostgreSQL/CockroachDB (`= ANY($n)`); elsewhere a changed list length changes the marker count, so rebind through `bindPreparedQuery()` rather than swapping the array;
+- driver examples for PostgreSQL/MySQL/SQLite/SQL Server use the marker style actually returned, and map values via `parameters[].markers` for SQL Server.
 
 **Verify**: `pnpm docs:build` → exit 0, no broken links or MDX errors.
 
-### Step 7: Add release metadata and run the complete gates
+### Step 9: Release metadata and full gates
 
-Create one Changesets file with minor bumps for `@askdb/core` and `@askdb/client`. Mention the additive prepared/bind API, dialect-correct marker output, tenant compatibility fields/deprecations, and the explicit limitation on custom `AskDialect` + reusable parameters.
-
-Run all release gates. Inspect `git diff --check`, `git status --short`, and the final diff to ensure no out-of-scope surface changed and no runtime values were copied into snapshots/docs.
+Add one changeset with a minor bump for `@askdb/core`, describing the additive `parameterize` option, the new result fields, `bindPreparedQuery`, `DialectSpec.listBinding`, and the unchanged-by-default guarantee. Follow the prose style of `.changeset/032-unify-studio-execute.md`.
 
 **Verify**:
 
@@ -629,76 +579,71 @@ pnpm preflight
 git diff --check
 ```
 
-All commands exit 0. `git status --short` lists only files permitted by Scope (plus `plans/README.md` status if the executor owns it).
+All exit 0. `git status --short` lists only files permitted by Scope (plus `plans/README.md`).
 
 ## Test plan
 
-Use existing tests as structural exemplars:
-
-- `packages/core/src/sql/tenant-placeholders.test.ts` — pure replacement and ask integration style; migrate assertions to shared binder semantics without erasing compatibility coverage.
-- `packages/core/src/sql/generate.test.ts:28-145` — prompt capture with a `generateText` spy and pre-model failure assertions.
-- `packages/core/src/sql/tenant-consumer-smoke.test.ts` — external tenant consumer behavior; add combined parameter/tenant reuse.
-- `packages/core/src/ask.test.ts` — custom dialect and pipeline option forwarding.
-- `packages/client/src/client.test.ts:110+` — config/schema/model resolution matrix and call-count spies.
-- `packages/client/src/client.smoke.test.ts` — package-barrel consumer compile/runtime smoke.
+Structural exemplars: `packages/core/src/sql/generate.test.ts:28-70` for `generateText` spy + prompt capture; `packages/core/src/sql/tenant-placeholders.test.ts` for pure-function coverage; `packages/core/src/sql/tenant-consumer-smoke.test.ts` for external-consumer behavior; `packages/client/src/client.test.ts` for resolution/call-count spies.
 
 Required cases:
 
-- Normal scalar date/number/string/boolean binding.
-- Normal list binding with 1 and N values; zero rejected.
-- Combined normal + single-root tenant scope.
-- Combined normal + multi-root tenant scope.
-- Same template rebound repeatedly with new values and exactly one AI call.
-- Postgres/Cockroach, MySQL/MariaDB, SQLite, and SQL Server markers.
-- Placeholder-like text in all quote styles is untouched.
-- Question/spec mismatch and model-template mismatch fail before returning SQL.
-- Schema/policy/access/context drift fail closed.
-- Tenant filters are explicitly non-reusable.
-- Global tenant scope cannot become scoped during rebind.
-- Deprecated tenant-only fields retain current tenant-only behavior.
-- Custom `AskDialect` ordinary call remains green; reusable-parameter request rejects with `DIALECT_UNSUPPORTED` before a misleading artifact is returned.
+- Scalar binding for each type (string, number, boolean, date, datetime).
+- List binding with 1 and N values; empty list rejected.
+- `$1`, `?`, `@p0` markers emitted for the right dialects; `= ANY($1)` on Postgres and `IN (?, ?)` on MySQL/SQLite.
+- Repeated scalar placeholder allocates one marker per occurrence in source order.
+- Placeholder-looking text inside single quotes, double quotes, backticks, brackets, and dollar-quoted strings is left untouched.
+- All four graceful-degradation rows from the table above.
+- Each `QueryParameterRejectionReason` fires from the condition that should produce it.
+- Combined business + tenant in `tenantSqlMode: "sql-only"` (tenant literals, business markers) and `"sql-params"` (continuous marker sequence).
+- `tenantParams` and `tenantBindings` keep tenant-only contents in both modes.
+- `parameterize: false` (and omitted) produces a result deep-equal to today's and a byte-identical prompt.
+- Custom `AskDialect` + `parameterize: true` throws `DIALECT_UNSUPPORTED` with `generateText` never called; ordinary custom-dialect calls stay green.
+- `bindPreparedQuery()` round-trips a JSON-serialized `PreparedQuery` and calls no model, retriever, or schema loader.
+- The whole existing `tenant-placeholders.test.ts` passes unedited.
 
 ## Done criteria
 
 ALL must hold:
 
-- [ ] A question with explicit `{{name}}` tokens returns bound SQL, generic params/bindings, and a JSON-serializable `PreparedQueryV1` after one AI call.
-- [ ] Rebinding that artifact with new business values makes zero AI and zero RAG calls.
-- [ ] Tenant IDs can be rebound only for the same validated access shape; schema/policy/context/root/kind changes fail closed.
-- [ ] Prepared artifacts contain no business values or tenant IDs.
-- [ ] Scalar/list rules and unresolved/undeclared placeholders are validated both after generation and before/after binding.
-- [ ] Parameter scanning does not replace placeholder-looking text inside SQL literals or quoted identifiers.
-- [ ] Final markers are dialect-correct for all built-in dialects.
-- [ ] `tenantSqlMode`, `tenantParams`, `tenantBindings`, and tenant-only calls remain compatible and are documented as deprecated where specified.
-- [ ] Existing no-parameter prompts/results remain unchanged.
-- [ ] Public core/client barrel imports compile in consumer smoke tests.
-- [ ] Core/client READMEs, internal contracts, and docs-site reference/guides describe the exact implemented API and trust boundary.
-- [ ] A Changesets note covers the core/client public feature.
-- [ ] `pnpm test`, `pnpm lint`, `pnpm docs:build`, `pnpm smoke:install`, `pnpm preflight`, and `git diff --check` all exit 0.
+- [ ] `ask({ parameterize: true })` returns `sql`, `unboundSql`, `params`, `parameters`, and `preparedQuery` after exactly one model call.
+- [ ] `ask()` without `parameterize` returns a result deep-equal to today's, from a byte-identical prompt.
+- [ ] `bindPreparedQuery()` is exported, pure, synchronous, and is the same function `ask()` uses internally.
+- [ ] Business and tenant placeholders bind through one shared scanner and marker allocator; `tenant-placeholders.test.ts` passes with zero edits.
+- [ ] `preparedQuery` contains no runtime values; `parameters[].value` does, by design.
+- [ ] Placeholder scanning ignores placeholder-looking text in all five quote forms, and `validateSelectSql` uses the same tokenizer.
+- [ ] Markers are dialect-correct, with `= ANY($n)` only on Postgres/CockroachDB.
+- [ ] All four graceful-degradation cases behave as tabulated.
+- [ ] `parameterize: true` with a custom `AskDialect` throws before the model call.
+- [ ] `packages/client/src/client.ts` is unmodified and the facade forwards the option and result.
+- [ ] READMEs, specs, and docs-site pages describe the implemented API, the one-model-call rule, and the authorization boundary.
+- [ ] A changeset covers the `@askdb/core` minor.
+- [ ] `pnpm test`, `pnpm lint`, `pnpm docs:build`, `pnpm smoke:install`, `pnpm preflight`, `git diff --check` all exit 0.
 - [ ] No files outside the in-scope list are modified.
-- [ ] `plans/README.md` marks plan 033 DONE (unless maintained by reviewer).
+- [ ] `plans/README.md` marks plan 033 DONE (unless maintained by a reviewer).
 
 ## STOP conditions
 
 Stop and report back; do not improvise if:
 
-- Any in-scope current-state excerpt has materially drifted from commit `9f5e600`, especially the public `ask()`/client types or tenant placeholder semantics.
-- The baseline core/client tests or typechecks fail before feature edits.
-- A correct implementation appears to require editing Studio, HTTP API, CLI, schema artifact formats, or a database adapter package.
-- Supporting reusable parameters for a custom `AskDialect` requires guessing a marker style or changing its required public contract. Keep the documented restriction and report instead.
-- A proposed prepared artifact contains any runtime business value, tenant ID, API key, database credential, or query result.
-- Tenant guardrails can only be made to pass by validating after substitution instead of against named template SQL.
-- Rebinding `tenantFilters` cannot be made structurally safe without expanding scope. Preserve the explicit fail-closed limitation.
-- A many-valued placeholder cannot be proven to be the sole expression inside `IN (...)` / `NOT IN (...)`; reject the model output instead of adding more operator-aware SQL rewriting.
-- The final implementation would accept a schema/dialect/context/access-shape mismatch and “best effort” bind it.
+- Any "Current state" excerpt has materially drifted from commit `c81bb4e`, especially the public `ask()` types or tenant placeholder semantics.
+- Baseline tests or typechecks fail before your first edit.
+- Making `tenant-placeholders.test.ts` pass requires editing it. The refactor must be behavior-preserving.
+- `packages/client/src/client.ts` appears to need a change.
+- Making the no-flag prompt identical to today's proves impossible.
+- Correctness seems to require sending a modified question, stripping values from the question, or rewriting the question with tokens. That is a different design and needs a decision, not an improvisation.
+- Tenant guardrails can only be made to pass by validating bound SQL instead of the named template.
+- A list placeholder cannot be proven to sit in valid list context and the temptation is to add operator-aware rewriting at bind time. Reject the model output instead.
+- Supporting `parameterize` for a custom `AskDialect` requires guessing a marker convention.
+- Any error message or log line would have to contain a parameter value.
 - Any verification step fails twice after a reasonable correction.
 
 ## Maintenance notes
 
-- `PreparedQueryV1.version` is a serialization contract. Add a V2 and migration path for future shape changes; never reinterpret stored V1 artifacts.
-- Host caches must include their own authorization/user boundary and expiry. `schemaFingerprint` detects drift but is not an authorization token or an HMAC signature.
-- If a future HTTP bind surface is added, store prepared artifacts server-side behind opaque, user-owned IDs with bounded TTL/LRU; do not trust a raw artifact posted by a client merely because it passes SELECT validation.
-- A future Studio plan can build a parameter editor from `preparedQuery.queryParameters`, call a local bind route, and execute the returned `sql` + generic `params` without showing another token-usage event.
-- Automatic parameter extraction is deliberately deferred. Explicit tokens are deterministic, auditable, and prevent the model from silently deciding which literals a user may alter.
-- A future reusable `tenantFilters` design must model each column/operator as immutable structure and each filter value as an explicit prepared binding.
-- Reviewers should scrutinize quote-state scanning, list-context validation, fingerprint contents, dialect marker ordering, deprecated tenant subset fields, and every path that could bind a tenant artifact against a different scope shape.
+- `PreparedQuery.version` is a serialization contract. Add a V2 with a migration path for shape changes; never reinterpret stored V1 artifacts.
+- **Deliberately deferred: flipping `parameterize` to default `true`.** Do that only once the manifest path has real-world mileage across providers, and treat it as a minor with its own changeset and prompt-regression testing.
+- **Deliberately deferred: host-declared `{{token}}` parameters.** Model-supplied extraction was chosen because it needs no new host syntax and works on free-text questions. If a host later needs deterministic, auditable parameter names, an explicit declaration mode can be added *alongside* this one — it does not replace it.
+- `escapeSqlLiteral` (`tenant-placeholders.ts:116-118`) doubles single quotes only, which is insufficient on MySQL/MariaDB where backslash escapes are enabled by default. It is deliberately untouched here and reaches only host-supplied tenant IDs today. Fix it in its own plan; do not let business values reach it.
+- `mentionsIdentifier` (`tenant-guardrail.ts:190-193`) wraps patterns in `\b`, so its placeholder checks at `:96` and `:113` never match real SQL (`\b:` requires a word character immediately before the colon). Only the column-name checks are load-bearing today. Out of scope here; worth its own small plan.
+- A future Studio plan can build a parameter editor directly from `result.parameters` and call `bindPreparedQuery()` locally, re-executing without another token-usage event.
+- If an HTTP bind surface is ever added, store prepared queries server-side behind opaque, user-owned IDs with bounded TTL/LRU. Do not trust an artifact posted by a client merely because it passes SELECT validation.
+- Reviewers should scrutinize: quote-state scanning, list-context validation, marker ordering across the business→tenant boundary, the four degradation cases, and every path where a parameter value could reach a log line or an error message.
