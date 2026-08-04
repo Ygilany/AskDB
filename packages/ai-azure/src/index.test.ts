@@ -199,5 +199,40 @@ describe("azureProvider", () => {
         ),
       ).toBeUndefined();
     });
+
+    it("uses providerOptions.modelFamily to detect reasoning support when the deployment name doesn't match", () => {
+      // Deployment named arbitrarily ("askdb-reporting"), but backed by a
+      // reasoning-capable model declared via the modelFamily override.
+      expect(
+        azureProvider.resolveProviderOptions?.(
+          { ...baseConfig, model: "askdb-reporting", providerOptions: { modelFamily: "gpt-5" } },
+          { reasoningEffort: "low" },
+        ),
+      ).toEqual({ openai: { reasoningEffort: "low" } });
+    });
+
+    it("does not send reasoningEffort when modelFamily override names a non-reasoning model", () => {
+      expect(
+        azureProvider.resolveProviderOptions?.(
+          { ...baseConfig, model: "o3-mini", providerOptions: { modelFamily: "gpt-4o-mini" } },
+          { reasoningEffort: "low" },
+        ),
+      ).toBeUndefined();
+    });
+  });
+
+  describe("resolveConfig — modelFamily", () => {
+    it("resolves ASKDB_AI_AZURE_MODEL_FAMILY into providerOptions.modelFamily", () => {
+      const config = azureProvider.resolveConfig(
+        {
+          AZURE_OPENAI_API_KEY: "k",
+          ASKDB_AI_AZURE_RESOURCE_NAME: "my-foundry",
+          AZURE_OPENAI_DEPLOYMENT: "askdb-reporting",
+          ASKDB_AI_AZURE_MODEL_FAMILY: "gpt-5",
+        },
+        { usage: "language" },
+      );
+      expect(config?.providerOptions).toMatchObject({ modelFamily: "gpt-5" });
+    });
   });
 });

@@ -6,6 +6,8 @@
 "@askdb/ai-anthropic": minor
 "@askdb/core": minor
 "@askdb/config": minor
+"@askdb/client": minor
+"@askdb/studio": minor
 ---
 
 Add provider-portable reasoning/latency effort controls for AskDB model calls.
@@ -26,3 +28,16 @@ unchanged.
 `askdb.config.*` gains an `ai.reasoning` block (`effort`, `nlToSql`,
 `enrichment`) for per-call-site defaults, flattened to
 `ASKDB_AI_REASONING_EFFORT[_NL_TO_SQL|_ENRICHMENT]` env vars.
+
+`@askdb/client`'s `createAskDb`/`ask()` now resolve `ai.reasoning` and apply
+it automatically — no manual wiring required for the common client/CLI/HTTP
+API path. `CreateAskDbOptions.reasoningEffort` sets a client-level default;
+`AskOverrides.reasoningEffort` overrides it per call. Studio's sample-question
+and enrichment-suggestion endpoints resolve and forward reasoning effort the
+same way.
+
+Azure/Foundry deployments are identified by an arbitrary deployment name that
+may not match the underlying model id, so reasoning-model detection can't
+always rely on `model` alone. Set `providerConfig.azure.modelFamily` (or
+`ASKDB_AI_AZURE_MODEL_FAMILY`) to the real model id (e.g. `"gpt-5"`) to
+declare it explicitly when the deployment name doesn't already look like one.

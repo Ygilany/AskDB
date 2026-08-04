@@ -112,7 +112,11 @@ export default defineConfig({
 - `nlToSql` — overrides `effort` for NL→SQL generation calls (`ask()`). Typically left unset (provider default) or `"medium"`/`"high"` — this path is accuracy-sensitive.
 - `enrichment` — overrides `effort` for enrichment/suggestion calls (`suggestEnrichment()`). Safe to bias toward `"low"`/`"minimal"` for latency and cost — these are non-critical.
 
-AskDB maps the portable value to each provider's native knob via `@askdb/ai`'s `resolveProviderOptions` — OpenAI/Azure `providerOptions.openai.reasoningEffort`, Google Gemini 3.x `providerOptions.google.thinkingConfig.thinkingLevel`, Gemini 2.5 `thinkingConfig.thinkingBudget`, Anthropic extended `thinking`. Models that don't support reasoning tuning (e.g. `gpt-4o-mini`, `gemini-2.0-flash`) never receive these options, even when `reasoning` is set. See [Bring your own model](/guides/bring-your-own-model/) for the programmatic (non-config) API.
+AskDB maps the portable value to each provider's native knob via `@askdb/ai`'s `resolveProviderOptions` — OpenAI/Azure `providerOptions.openai.reasoningEffort`, Google Gemini 3.x `providerOptions.google.thinkingConfig.thinkingLevel`, Gemini 2.5 `thinkingConfig.thinkingBudget`, Anthropic extended `thinking`. Models that don't support reasoning tuning (e.g. `gpt-4o-mini`, `gemini-2.0-flash`) never receive these options, even when `reasoning` is set.
+
+`@askdb/client`'s `createAskDb` resolves `ai.reasoning` automatically for `ask()` calls — no extra wiring needed. See [Bring your own model](/guides/bring-your-own-model/) for the client and programmatic APIs.
+
+**Azure deployment names**: Azure identifies models by deployment name (e.g. `askdb-reporting`), which may not match the underlying model id AskDB uses to detect reasoning support. Set `providerConfig.azure.modelFamily` (or `ASKDB_AI_AZURE_MODEL_FAMILY`) to the real model id — e.g. `"gpt-5"` or `"o3-mini"` — when your deployment name doesn't already look like one.
 
 ## File discovery
 

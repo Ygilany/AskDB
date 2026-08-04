@@ -35,6 +35,13 @@ export type AzureConfig = {
   /** When unset, `flattenAskDbConfig` applies the default Azure deployment name (see `@askdb/config` defaults). */
   model?: string;
   apiVersion?: string;
+  /**
+   * Underlying model id backing `model` (the deployment name), e.g. `"gpt-5"`
+   * or `"o3-mini"`. Deployment names are arbitrary aliases chosen at deploy
+   * time, so AskDB can't always infer reasoning-model support from `model`
+   * alone — set this when your deployment name doesn't match the model id.
+   */
+  modelFamily?: string;
 };
 
 export type FoundryConfig = {
@@ -43,6 +50,8 @@ export type FoundryConfig = {
   model?: string;
   apiVersion?: string;
   baseUrl?: string;
+  /** See {@link AzureConfig.modelFamily}. */
+  modelFamily?: string;
 };
 
 export type AnthropicConfig = {

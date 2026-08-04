@@ -248,7 +248,23 @@ Adapters declare `ai` and `@askdb/ai` as peer dependencies — add `ai` to your 
 
 ## Reasoning/latency effort
 
-Set `ai.reasoning` in `askdb.config.ts` (see the [config reference](/reference/config/#ai-reasoning--reasoninglatency-effort)) for the config-driven path. Programmatically, resolve the portable effort to provider `providerOptions` with `@askdb/ai`'s registry, then forward it to `ask()`'s `deps.providerOptions` — `@askdb/core` forwards it verbatim to `generateText` and never interprets it:
+Set `ai.reasoning` in `askdb.config.ts` (see the [config reference](/reference/config/#ai-reasoning--reasoninglatency-effort)) for the config-driven path. Skip it and current behavior is unchanged — no `providerOptions` are sent, and the provider/model uses its own default.
+
+**With `@askdb/client`**, `createAskDb` resolves `ai.reasoning.nlToSql`/`effort` automatically — nothing else to wire. Override per call, or set a client-level default:
+
+```ts
+const askdb = createAskDb({
+  config: getAskDbRuntimeConfig(),
+  providers: [openaiProvider],
+  reasoningEffort: "medium", // client-level default, overrides ai.reasoning from config
+});
+
+const { sql } = await askdb.ask("Which customers signed up last week?", {
+  reasoningEffort: "low", // per-call override, overrides the client default
+});
+```
+
+**Programmatically**, resolve the portable effort to provider `providerOptions` with `@askdb/ai`'s registry, then forward it to `ask()`'s `deps.providerOptions` — `@askdb/core` forwards it verbatim to `generateText` and never interprets it:
 
 ```ts
 import { createAiRegistry } from "@askdb/ai";
@@ -271,8 +287,6 @@ const { sql } = await ask({
   deps: { providerOptions },
 });
 ```
-
-Skip `ai.reasoning`/`resolveProviderOptions` entirely and current behavior is unchanged — no `providerOptions` are sent, and the provider/model uses its own default.
 
 ## Key management
 

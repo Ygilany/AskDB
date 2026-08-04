@@ -8,6 +8,7 @@ import { generateText as defaultGenerateText } from "ai";
 import { bootstrapAskDbEnv, getAskDbRuntimeConfig } from "@askdb/config";
 import {
   createAiRegistry,
+  resolveReasoningEffort,
   type AiConfig,
   type AiEnv,
   type AiProvider,
@@ -612,14 +613,20 @@ function saveDraft(state: StudioState, tableId: string, draft: TableDraft): void
 
 async function suggestForSource(workspace: Workspace, source: SuggestSource): Promise<SuggestResponse["candidates"]> {
   const rt = getAskDbRuntimeConfig();
-  const model = await ai.createLanguageModelFromEnv(rt.ai.aiEnv);
-  if (!model) {
+  const aiConfig = ai.resolveAiConfig(rt.ai.aiEnv);
+  if (!aiConfig) {
     throw new StudioHttpError(400, ai.keyMissingMessage("AI enrichment suggestions"));
   }
+  const model = await ai.createLanguageModel(aiConfig);
+  const reasoningEffort = resolveReasoningEffort(rt.ai.aiEnv, "enrichment");
+  const providerOptions = reasoningEffort
+    ? ai.resolveProviderOptions(aiConfig, { reasoningEffort })
+    : undefined;
   const candidates = await suggestEnrichment(
     buildSuggestionTarget(workspace, source),
     buildSuggestionContext(workspace, source.tableId),
     model,
+    providerOptions ? { providerOptions } : undefined,
   );
   return candidates.map((candidate) => ({ text: candidate.text }));
 }
@@ -740,6 +747,9 @@ async function askSampleQuestion(
       `${ai.keyMissingMessage("Sample NL-to-SQL generation")} Set ASKDB_MOCK_SQL to bypass the live model.`,
     );
   }
+  const reasoningEffort = mockSql ? undefined : resolveReasoningEffort(rt.ai.aiEnv, "nlToSql");
+  const providerOptions =
+    aiConfig && reasoningEffort ? ai.resolveProviderOptions(aiConfig, { reasoningEffort }) : undefined;
 
   const schema = loadSchema(state.schemaDir);
   const retrievedChunks: QueryResult[] = [];
@@ -794,6 +804,7 @@ async function askSampleQuestion(
           }
         : {
             generateText: createTrackedGenerateText(usage),
+            ...(providerOptions ? { providerOptions } : {}),
           },
   }).finally(async () => {
     await ragIndex?.dispose();

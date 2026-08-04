@@ -43,6 +43,7 @@ export const azureProvider: AiProviderAdapter = {
       env.AZURE_OPENAI_API_VERSION ||
       env.AZURE_API_VERSION ||
       undefined;
+    const modelFamily = env.ASKDB_AI_AZURE_MODEL_FAMILY || undefined;
 
     if (!config.baseURL && !resourceName) {
       throw new Error(
@@ -54,6 +55,7 @@ export const azureProvider: AiProviderAdapter = {
     const providerOptions = {
       ...(resourceName ? { resourceName } : {}),
       ...(apiVersion ? { apiVersion } : {}),
+      ...(modelFamily ? { modelFamily } : {}),
     };
 
     return {
@@ -83,7 +85,15 @@ export const azureProvider: AiProviderAdapter = {
     return withEmbeddingProviderOptions(model, "azure", options);
   },
   resolveProviderOptions(config, { reasoningEffort }) {
-    if (!reasoningEffort || !isReasoningModel(config.model)) return undefined;
+    if (!reasoningEffort) return undefined;
+    // Azure deployment names are arbitrary aliases chosen at deploy time
+    // (e.g. "askdb-reporting") and don't necessarily match the underlying
+    // model id, so the o-series/gpt-5 regex can't reliably read `config.model`
+    // alone. Callers can set ASKDB_AI_AZURE_MODEL_FAMILY (or
+    // providerConfig.azure.modelFamily in askdb.config.*) to declare the true
+    // backing model explicitly; we fall back to the deployment name otherwise.
+    const modelFamily = readStringOption(config.providerOptions, "modelFamily") ?? config.model;
+    if (!isReasoningModel(modelFamily)) return undefined;
     // @ai-sdk/azure delegates chat completions to OpenAIChatLanguageModel,
     // which only reads `providerOptions.openai` (not `.azure`) — using the
     // "azure" namespace here would be silently ignored by the AI SDK.

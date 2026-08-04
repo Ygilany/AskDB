@@ -249,6 +249,26 @@ describe("flattenAskDbConfig", () => {
     expect(flat.ASKDB_AI_MODEL).toBe("claude-sonnet-4-6");
   });
 
+  it("flattens azure modelFamily override to ASKDB_AI_AZURE_MODEL_FAMILY", () => {
+    const flat = flattenAskDbConfig(
+      minimalConfig({
+        ai: {
+          provider: "azure",
+          providerConfig: {
+            azure: {
+              apiKey: "k",
+              model: "askdb-reporting",
+              modelFamily: "gpt-5",
+              baseUrl: "https://askdb-ai.openai.azure.com",
+            },
+          },
+        },
+      }),
+    );
+    expect(flat.AZURE_OPENAI_DEPLOYMENT).toBe("askdb-reporting");
+    expect(flat.ASKDB_AI_AZURE_MODEL_FAMILY).toBe("gpt-5");
+  });
+
   it("flattens anthropic baseUrl when provided", () => {
     const flat = flattenAskDbConfig(
       minimalConfig({
