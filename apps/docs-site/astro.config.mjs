@@ -1,6 +1,7 @@
 import { fileURLToPath } from "node:url";
 import { defineConfig } from "astro/config";
 import starlight from "@astrojs/starlight";
+import starlightLlmsTxt from "starlight-llms-txt";
 
 const base = process.env.ASTRO_BASE ?? "/";
 const normalizedBase = base === "/" ? "" : base.replace(/\/$/, "");
@@ -93,6 +94,17 @@ export default defineConfig({
           label: "GitHub",
           href: "https://github.com/Ygilany/AskDB",
         },
+      ],
+      plugins: [
+        starlightLlmsTxt({
+          details:
+            "Two ways to give AskDB a model, and when to use each — see /guides/bring-your-own-model/ for the full guide:\n" +
+            "\n" +
+            "- **`@askdb/ai-*` provider adapters + `@askdb/client`** — use when you want `ai.provider` in `askdb.config.ts` to drive model selection, so the CLI, Studio, and your app resolve the same provider config without hardcoding a provider in code. Default recommendation when AskDB owns provider config.\n" +
+            "- **A raw Vercel AI SDK `LanguageModel` passed straight to `@askdb/core`'s `ask()`** — use when your app already owns provider/config resolution, or needs to share one model instance between `ask()` and other non-AskDB LLM calls (for example, a separate `generateObject()` call for something unrelated like chart planning). This is not a workaround: `ask({ model })` is the actual primitive both paths funnel into — `@askdb/ai-*` is a convenience layer on top of it.\n" +
+            "\n" +
+            'Both paths are first-party and fully supported. Neither is more "correct" than the other; pick based on who owns provider configuration in your app.',
+        }),
       ],
       sidebar: [
         {
