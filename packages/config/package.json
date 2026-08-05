@@ -25,7 +25,6 @@
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js",
-      "require": "./dist/index.js",
       "default": "./dist/index.js"
     }
   },
@@ -36,7 +35,7 @@
     "NOTICE"
   ],
   "engines": {
-    "node": ">=20"
+    "node": ">=20.19"
   },
   "scripts": {
     "build": "tsc -p tsconfig.build.json",

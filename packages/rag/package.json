@@ -28,27 +28,33 @@
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
-      "import": "./dist/index.js"
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
     },
     "./stores/memory": {
       "types": "./dist/stores/memory.d.ts",
-      "import": "./dist/stores/memory.js"
+      "import": "./dist/stores/memory.js",
+      "default": "./dist/stores/memory.js"
     },
     "./stores/file": {
       "types": "./dist/stores/file.d.ts",
-      "import": "./dist/stores/file.js"
+      "import": "./dist/stores/file.js",
+      "default": "./dist/stores/file.js"
     },
     "./stores/pgvector": {
       "types": "./dist/stores/pgvector.d.ts",
-      "import": "./dist/stores/pgvector.js"
+      "import": "./dist/stores/pgvector.js",
+      "default": "./dist/stores/pgvector.js"
     },
     "./embedders/openai": {
       "types": "./dist/embedders/openai.d.ts",
-      "import": "./dist/embedders/openai.js"
+      "import": "./dist/embedders/openai.js",
+      "default": "./dist/embedders/openai.js"
     },
     "./embedders/ai-sdk": {
       "types": "./dist/embedders/ai-sdk.d.ts",
-      "import": "./dist/embedders/ai-sdk.js"
+      "import": "./dist/embedders/ai-sdk.js",
+      "default": "./dist/embedders/ai-sdk.js"
     }
   },
   "bin": {
@@ -62,7 +68,7 @@
     "NOTICE"
   ],
   "engines": {
-    "node": ">=22"
+    "node": ">=22.12"
   },
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
