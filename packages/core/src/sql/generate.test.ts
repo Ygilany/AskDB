@@ -245,3 +245,99 @@ describe("generateSelectSql — prompt parameterization per dialect", () => {
     ).rejects.toThrow(SqlValidationError);
   });
 });
+
+describe("generateSelectSql — parameterize prompt + extras", () => {
+  it("keeps the flag-off prompt byte-identical to the pre-parameterize path", async () => {
+    const generateTextOff = vi.fn(async () => ({
+      text: "```sql\nSELECT id FROM users\n```",
+    }));
+    const generateTextDefault = vi.fn(async () => ({
+      text: "```sql\nSELECT id FROM users\n```",
+    }));
+    await generateSelectSql(POSTGRES_DIALECT, "list users", minimalSchema, fakeModel, {
+      generateText: generateTextOff,
+      parameterize: false,
+    });
+    await generateSelectSql(POSTGRES_DIALECT, "list users", minimalSchema, fakeModel, {
+      generateText: generateTextDefault,
+      // parameterize omitted — generate only enables when explicitly true
+    });
+    const off = (generateTextOff.mock.calls[0]![0] as { prompt: string }).prompt;
+    const def = (generateTextDefault.mock.calls[0]![0] as { prompt: string }).prompt;
+    expect(off).toBe(def);
+    expect(off).not.toContain("Parameterized output format");
+  });
+
+  it("appends parameterize instructions when parameterize is true", async () => {
+    const generateText = vi.fn(async () => ({
+      text: "```sql\nSELECT id FROM users\n```",
+    }));
+    await generateSelectSql(POSTGRES_DIALECT, "list users", minimalSchema, fakeModel, {
+      generateText,
+      parameterize: true,
+    });
+    const prompt = (generateText.mock.calls[0]![0] as { prompt: string }).prompt;
+    expect(prompt).toContain("Parameterized output format");
+    expect(prompt).toContain("sql-unbound");
+    expect(prompt).toContain("= ANY(:name)");
+  });
+
+  it("returns unboundNamedSql + manifest when the model complies", async () => {
+    const generateText = vi.fn(async () => ({
+      text: [
+        "```sql",
+        "SELECT count(*) FROM cities WHERE state = 'colorado'",
+        "```",
+        "```sql-unbound",
+        "SELECT count(*) FROM cities WHERE state = :state_name",
+        "```",
+        "```json",
+        '{"parameters":[{"name":"state_name","type":"string","cardinality":"one","value":"colorado"}]}',
+        "```",
+      ].join("\n"),
+    }));
+    const out = await generateSelectSql(POSTGRES_DIALECT, "how many in colorado", minimalSchema, fakeModel, {
+      generateText,
+      parameterize: true,
+    });
+    expect(out.sql).toBe("SELECT count(*) FROM cities WHERE state = 'colorado'");
+    expect(out.unboundNamedSql).toBe("SELECT count(*) FROM cities WHERE state = :state_name");
+    expect(out.parameterManifest?.parameters).toHaveLength(1);
+  });
+
+  it("drops extras when unbound is missing — bound SQL unaffected", async () => {
+    const generateText = vi.fn(async () => ({
+      text: "```sql\nSELECT id FROM users\n```",
+    }));
+    const out = await generateSelectSql(POSTGRES_DIALECT, "list users", minimalSchema, fakeModel, {
+      generateText,
+      parameterize: true,
+    });
+    expect(out.sql).toBe("SELECT id FROM users");
+    expect(out.unboundNamedSql).toBeUndefined();
+    expect(out.parameterManifest).toBeUndefined();
+  });
+
+  it("drops extras when a quoted marker makes the placeholder invisible", async () => {
+    const generateText = vi.fn(async () => ({
+      text: [
+        "```sql",
+        "SELECT count(*) FROM cities WHERE state = 'colorado'",
+        "```",
+        "```sql-unbound",
+        "SELECT count(*) FROM cities WHERE state = ':state_name'",
+        "```",
+        "```json",
+        '{"parameters":[{"name":"state_name","type":"string","cardinality":"one","value":"colorado"}]}',
+        "```",
+      ].join("\n"),
+    }));
+    const out = await generateSelectSql(POSTGRES_DIALECT, "how many in colorado", minimalSchema, fakeModel, {
+      generateText,
+      parameterize: true,
+    });
+    expect(out.sql).toBe("SELECT count(*) FROM cities WHERE state = 'colorado'");
+    expect(out.unboundNamedSql).toBeUndefined();
+    expect(out.parameterManifest).toBeUndefined();
+  });
+});

@@ -39,6 +39,12 @@ export function buildNlToSqlUserPrompt(
   prebuiltDdl?: string,
   tenantPolicy?: NormalizedTenantPolicy,
   tenantScope?: TenantScope,
+  /**
+   * When true, append the unbound-SQL + parameter-manifest output-format
+   * instructions. When false/undefined, the prompt is unchanged from the
+   * pre-parameterize path (byte-identical).
+   */
+  parameterize?: boolean,
 ): string {
   const formatted = isV2(schema)
     ? formatSchemaV2ForNlToSql(schema, nlToSqlSchemaOptions)
@@ -100,6 +106,42 @@ export function buildNlToSqlUserPrompt(
     lines.push("");
   }
   lines.push(`Question: ${question}`);
+
+  if (parameterize === true) {
+    const listBinding = dialect.listBinding ?? "expand";
+    const listForm =
+      listBinding === "array"
+        ? "For multi-value parameters use `= ANY(:name)` (array dialects)."
+        : "For multi-value parameters use `IN (:name)`.";
+    lines.push("");
+    lines.push("Parameterized output format (required):");
+    lines.push(
+      "1. Emit the complete bound SQL (values inlined as literals) in a ```sql fence — exactly as you would without this instruction.",
+    );
+    lines.push(
+      "2. Emit the same statement in a ```sql-unbound fence, replacing values taken from the user's question with `:name` placeholders.",
+    );
+    lines.push(
+      "3. Emit a ```json fence with `{\"parameters\":[{\"name\",\"type\",\"cardinality\",\"description\",\"value\"}, ...]}` describing each placeholder.",
+    );
+    lines.push(
+      "- Placeholder names match `^[a-z][a-z0-9_]*$`. Never quote placeholders (`state = :state_name`, never `state = ':state_name'`).",
+    );
+    lines.push(
+      "- Never write `$1`, `?`, or `@p0` markers — only `:name` placeholders. AskDB derives driver markers.",
+    );
+    lines.push(`- ${listForm}`);
+    lines.push(
+      "- Types are `string` | `number` | `boolean` | `date` | `datetime`. Use `cardinality` `one` or `many`. Dates/datetimes are ISO strings.",
+    );
+    lines.push(
+      "- Keep `:tenant_*` placeholders exactly as the tenant policy block instructs; do not put them in the manifest.",
+    );
+    lines.push(
+      "- Only parameterize values that came from the user's question — not structural constants you chose (e.g. status enums you invented).",
+    );
+  }
+
   return lines.join("\n");
 }
 

@@ -275,3 +275,92 @@ describe("ask — retriever wiring", () => {
     );
   });
 });
+
+describe("ask — parameterize", () => {
+  const threeBlock = [
+    "```sql",
+    "SELECT count(*) FROM cities WHERE state = 'colorado'",
+    "```",
+    "```sql-unbound",
+    "SELECT count(*) FROM cities WHERE state = :state_name",
+    "```",
+    "```json",
+    '{"parameters":[{"name":"state_name","type":"string","cardinality":"one","description":"State","value":"colorado"}]}',
+    "```",
+  ].join("\n");
+
+  it("returns unboundSql, params, parameters, and preparedQuery after one model call", async () => {
+    const generateText = vi.fn(async () => ({ text: threeBlock }));
+    const result = await ask({
+      question: "How many cities does Colorado have?",
+      schema: minimalSchema,
+      model: fakeModel,
+      dialect: "postgres",
+      deps: { generateText },
+    });
+    expect(generateText).toHaveBeenCalledOnce();
+    expect(result.sql).toBe("SELECT count(*) FROM cities WHERE state = 'colorado'");
+    expect(result.unboundSql).toBe("SELECT count(*) FROM cities WHERE state = $1");
+    expect(result.params).toEqual(["colorado"]);
+    expect(result.parameters?.[0]?.name).toBe("state_name");
+    expect(result.parameters?.[0]?.value).toBe("colorado");
+    expect(result.preparedQuery?.namedSql).toContain(":state_name");
+    expect(result.preparedQuery?.parameters[0]).not.toHaveProperty("value");
+  });
+
+  it("drops extras when blocks disagree — result.sql unaffected", async () => {
+    const generateText = vi.fn(async () => ({
+      text: [
+        "```sql",
+        "SELECT count(*) FROM cities WHERE state = 'colorado'",
+        "```",
+        "```sql-unbound",
+        "SELECT count(*) FROM cities WHERE state = :state_name",
+        "```",
+        "```json",
+        '{"parameters":[{"name":"state_name","type":"string","cardinality":"one","value":"utah"}]}',
+        "```",
+      ].join("\n"),
+    }));
+    const result = await ask({
+      question: "how many",
+      schema: minimalSchema,
+      model: fakeModel,
+      dialect: "postgres",
+      deps: { generateText },
+    });
+    expect(result.sql).toBe("SELECT count(*) FROM cities WHERE state = 'colorado'");
+    expect(result.unboundSql).toBeUndefined();
+    expect(result.params).toBeUndefined();
+    expect(result.preparedQuery).toBeUndefined();
+  });
+
+  it("parameterize: false produces today's shape with no extras", async () => {
+    const generateText = vi.fn(async () => ({
+      text: "```sql\nSELECT id FROM users\n```",
+    }));
+    const result = await ask({
+      question: "list users",
+      schema: minimalSchema,
+      model: fakeModel,
+      dialect: "postgres",
+      parameterize: false,
+      deps: { generateText },
+    });
+    expect(result).toEqual({ sql: "SELECT id FROM users" });
+    const prompt = (generateText.mock.calls[0]![0] as { prompt: string }).prompt;
+    expect(prompt).not.toContain("Parameterized output format");
+  });
+
+  it("custom AskDialect is unaffected and returns no extras", async () => {
+    const result = await ask({
+      question: "count",
+      schema: minimalSchema,
+      model: fakeModel,
+      dialect: cannedDialect,
+    });
+    expect(result.sql).toBe("SELECT COUNT(*) AS n FROM users");
+    expect(result.unboundSql).toBeUndefined();
+    expect(result.preparedQuery).toBeUndefined();
+  });
+});

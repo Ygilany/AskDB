@@ -7,7 +7,12 @@ import type { FormatNlToSqlOptions } from "../schema/normalize.js";
 import type { AnyNormalizedSchema } from "../schema/types.js";
 import type { NormalizedTenantPolicy, TenantScope } from "../schema/v2/tenant-policy.js";
 import type { DialectSpec } from "./dialect-spec.js";
-import { extractSqlFromModelText } from "./extract-sql.js";
+import { extractSqlFromModelText, extractUnboundSqlFromModelText } from "./extract-sql.js";
+import {
+  crossValidateManifestAgainstSql,
+  parseParameterManifest,
+  type ParameterManifest,
+} from "./parameter-manifest.js";
 import { buildNlToSqlSystemPrompt, buildNlToSqlUserPrompt } from "./prompt.js";
 import { assertNlToSqlInputs, nlToSqlAmbiguityNotes } from "./schema-question-precheck.js";
 import { validateTenantGuardrails, type TenantGuardrailResult } from "./tenant-guardrail.js";
@@ -47,6 +52,11 @@ export type GenerateSqlDeps = {
    * are unaffected.
    */
   providerOptions?: Record<string, unknown>;
+  /**
+   * When true, ask the model for unbound SQL + parameter manifest and return
+   * them as optional extras when valid. Forwarded from ask(); default decided there.
+   */
+  parameterize?: boolean;
 };
 
 /** Result of NL→SQL generation (always includes `sql`; `explain` when {@link GenerateSqlDeps.explain}). */
@@ -56,6 +66,10 @@ export type GenerateSelectSqlResult = {
   tenantGuardrail?: TenantGuardrailResult;
   /** Token usage for the generation call. Populated when the model provider returns usage data. */
   usage?: { promptTokens: number | null; completionTokens: number | null; totalTokens: number | null };
+  /** Named-placeholder SQL from the ```sql-unbound fence, when parameterize succeeded. */
+  unboundNamedSql?: string;
+  /** Validated parameter manifest, when parameterize succeeded. */
+  parameterManifest?: ParameterManifest;
 };
 
 /**
@@ -78,6 +92,7 @@ export async function generateSelectSql(
     deps.omitSensitiveIdentifiersFromNlToSqlPrompt === true
       ? { omitSensitiveIdentifiersFromPrompt: true }
       : undefined;
+  const parameterize = deps.parameterize === true;
 
   logger?.info(
     {
@@ -105,6 +120,7 @@ export async function generateSelectSql(
           deps.prebuiltDdl,
           deps.tenantPolicy,
           deps.tenantScope,
+          parameterize || undefined,
         ),
         temperature: 0,
         // Cast: AskDB's public `providerOptions` type is a plain opaque bag
@@ -142,10 +158,21 @@ export async function generateSelectSql(
     const extracted = extractSqlFromModelText(text);
     const sql = validateSelectSql(dialect, extracted);
 
-    // Tenant guardrail validation (after base validation, before returning)
+    // Optional parameterized extras — any failure clears them (never throws).
+    let unboundNamedSql: string | undefined;
+    let parameterManifest: ParameterManifest | undefined;
+    if (parameterize) {
+      const extras = tryParseParameterizedExtras(text, dialect, logger);
+      unboundNamedSql = extras.unboundNamedSql;
+      parameterManifest = extras.parameterManifest;
+    }
+
+    // Tenant guardrail validation: prefer unbound (named) SQL when available so
+    // `:tenant_*` placeholders still match today's guardrail behavior.
     let tenantGuardrail: TenantGuardrailResult | undefined;
     if (deps.tenantPolicy && deps.tenantScope) {
-      tenantGuardrail = validateTenantGuardrails(sql, deps.tenantPolicy, deps.tenantScope);
+      const guardrailSql = unboundNamedSql ?? sql;
+      tenantGuardrail = validateTenantGuardrails(guardrailSql, deps.tenantPolicy, deps.tenantScope);
       if (tenantGuardrail.passed) {
         logger?.info(
           { event: AskDbLogEvent.TenantGuardrailPassed },
@@ -175,6 +202,8 @@ export async function generateSelectSql(
     if (explain !== undefined) out.explain = explain;
     if (tenantGuardrail !== undefined) out.tenantGuardrail = tenantGuardrail;
     if (usage !== undefined) out.usage = usage;
+    if (unboundNamedSql !== undefined) out.unboundNamedSql = unboundNamedSql;
+    if (parameterManifest !== undefined) out.parameterManifest = parameterManifest;
     return out;
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
@@ -188,4 +217,79 @@ export async function generateSelectSql(
     );
     throw e;
   }
+}
+
+function tryParseParameterizedExtras(
+  text: string,
+  dialect: DialectSpec,
+  logger: AskDbLogger | undefined,
+): { unboundNamedSql?: string; parameterManifest?: ParameterManifest } {
+  const unbound = extractUnboundSqlFromModelText(text);
+  if (!unbound) {
+    logger?.debug?.(
+      {
+        event: AskDbLogEvent.PipelineParameterized,
+        parameterCount: 0,
+        listParameterCount: 0,
+        reason: "missing_unbound",
+      },
+      "parameterize extras dropped",
+    );
+    return {};
+  }
+
+  let unboundValidated: string;
+  try {
+    unboundValidated = validateSelectSql(dialect, unbound);
+  } catch {
+    logger?.debug?.(
+      {
+        event: AskDbLogEvent.PipelineParameterized,
+        parameterCount: 0,
+        listParameterCount: 0,
+        reason: "unbound_invalid",
+      },
+      "parameterize extras dropped",
+    );
+    return {};
+  }
+
+  const parsed = parseParameterManifest(text);
+  if (!parsed.ok) {
+    logger?.debug?.(
+      {
+        event: AskDbLogEvent.PipelineParameterized,
+        parameterCount: 0,
+        listParameterCount: 0,
+        reason: parsed.reason.toLowerCase(),
+      },
+      "parameterize extras dropped",
+    );
+    return {};
+  }
+
+  const cross = crossValidateManifestAgainstSql(unboundValidated, parsed.manifest, dialect);
+  if (!cross.ok) {
+    logger?.debug?.(
+      {
+        event: AskDbLogEvent.PipelineParameterized,
+        parameterCount: 0,
+        listParameterCount: 0,
+        reason: cross.reason.toLowerCase(),
+      },
+      "parameterize extras dropped",
+    );
+    return {};
+  }
+
+  const listParameterCount = parsed.manifest.parameters.filter((p) => p.cardinality === "many").length;
+  logger?.info(
+    {
+      event: AskDbLogEvent.PipelineParameterized,
+      parameterCount: parsed.manifest.parameters.length,
+      listParameterCount,
+    },
+    "parameterize extras accepted",
+  );
+  return { unboundNamedSql: unboundValidated, parameterManifest: parsed.manifest };
 }

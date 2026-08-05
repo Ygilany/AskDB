@@ -461,3 +461,37 @@ describe("createAskDb reasoning effort resolution", () => {
     expect(seen()).toBe(explicitProviderOptions);
   });
 });
+
+describe("createAskDb — parameterize passthrough", () => {
+  it("forwards parameterized extras from core through the facade", async () => {
+    const threeBlock = [
+      "```sql",
+      "SELECT count(*) FROM cities WHERE state = 'colorado'",
+      "```",
+      "```sql-unbound",
+      "SELECT count(*) FROM cities WHERE state = :state_name",
+      "```",
+      "```json",
+      '{"parameters":[{"name":"state_name","type":"string","cardinality":"one","value":"colorado"}]}',
+      "```",
+    ].join("\n");
+    const generateText = vi.fn(async () => ({ text: threeBlock }));
+    const askdb = createAskDb({
+      config: makeConfig(),
+      registry: makeRegistry({
+        createLanguageModel: vi.fn(async () => ({}) as never),
+        createLanguageModelFromEnv: vi.fn(async () => ({}) as never),
+      }),
+      schema: { path: fixtureSchemaPath },
+    });
+    const result = await askdb.ask("How many cities does Colorado have?", {
+      dialect: "postgres",
+      deps: { generateText },
+    });
+    expect(result.sql).toBe("SELECT count(*) FROM cities WHERE state = 'colorado'");
+    expect(result.unboundSql).toBe("SELECT count(*) FROM cities WHERE state = $1");
+    expect(result.params).toEqual(["colorado"]);
+    expect(result.parameters?.[0]?.name).toBe("state_name");
+    expect(result.preparedQuery?.version).toBe(1);
+  });
+});

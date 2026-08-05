@@ -8,6 +8,12 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import type { AiRegistry } from "@askdb/ai";
 import type { AskDbRuntimeConfig } from "@askdb/config";
+import {
+  bindPreparedQuery,
+  type BoundQuery,
+  type PreparedQuery,
+  type QueryParameterBinding,
+} from "@askdb/core";
 import { createAskDb, type AskDbClient, type CreateAskDbOptions } from "./index.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -82,5 +88,29 @@ describe("@askdb/client smoke test", () => {
     client.reload();
     const result = await client.ask("q2");
     expect(result.sql).toBe("SELECT COUNT(*) FROM users");
+  });
+
+  it("imports PreparedQuery / BoundQuery / bindPreparedQuery from @askdb/core and rebinds", () => {
+    const prepared: PreparedQuery = {
+      version: 1,
+      dialect: "postgres",
+      namedSql: "SELECT count(*) FROM cities WHERE state = :state_name",
+      parameters: [
+        {
+          name: "state_name",
+          placeholder: ":state_name",
+          type: "string",
+          cardinality: "one",
+          source: "question",
+        },
+      ],
+    };
+    const rebound: BoundQuery = bindPreparedQuery(prepared, { state_name: "Utah" });
+    expect(rebound.sql).toBe("SELECT count(*) FROM cities WHERE state = 'Utah'");
+    expect(rebound.unboundSql).toBe("SELECT count(*) FROM cities WHERE state = $1");
+    expect(rebound.params).toEqual(["Utah"]);
+    const binding: QueryParameterBinding = rebound.bindings[0]!;
+    expect(binding.name).toBe("state_name");
+    expect(binding.markers).toEqual(["$1"]);
   });
 });

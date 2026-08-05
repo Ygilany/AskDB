@@ -139,7 +139,16 @@ export {
   type FormatNlToSqlOptions,
   type NlToSqlSchemaFormatStats,
 } from "./schema/normalize.js";
-export { extractSqlFromModelText } from "./sql/extract-sql.js";
+export { extractSqlFromModelText, extractUnboundSqlFromModelText } from "./sql/extract-sql.js";
+export {
+  bindPreparedQuery,
+  escapeSqlLiteral,
+  type QueryParameterType,
+  type QueryParameterValue,
+  type QueryParameterBinding,
+  type PreparedQuery,
+  type BoundQuery,
+} from "./sql/bind.js";
 export {
   type DialectId,
   type DialectSpec,
