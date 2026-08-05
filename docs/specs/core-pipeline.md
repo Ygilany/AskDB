@@ -57,6 +57,12 @@ interface AskPipelineOptions {
   retriever?: Retriever              // optional RAG retriever from @askdb/rag
   tenantScope?: TenantScope          // optional tenant scope from multi-tenancy
   tenantSqlMode?: TenantSqlOutputMode // 'sql-only' | 'sql-params'
+  /**
+   * Ask the model for unbound SQL + a parameter manifest (default true).
+   * Set false to skip the extra output tokens. Still exactly one model call either way.
+   * Inert for custom AskDialect implementations.
+   */
+  parameterize?: boolean
   explain?: boolean
   omitSensitiveIdentifiersFromNlToSqlPrompt?: boolean
   correlationId?: string
@@ -64,12 +70,20 @@ interface AskPipelineOptions {
 }
 
 interface AskPipelineResult {
-  sql: string
+  sql: string                        // model's bound SQL — never overwritten by rebind
+  unboundSql?: string                // driver markers; use with params
+  params?: QueryParameterValue[]     // positional — prefer over tenantParams when present
+  parameters?: QueryParameterBinding[] // named — for form UIs (includes values)
+  preparedQuery?: PreparedQuery      // definitions + template only (no values)
   explain?: unknown
   tenantGuardrail?: TenantGuardrailResult
-  tenantParams?: unknown[]           // populated when tenantSqlMode = 'sql-params'
+  tenantParams?: unknown[]           // tenant-only; populated when tenantSqlMode = 'sql-params'
   tenantBindings?: TenantBinding[]
 }
+
+// Local rebind (no model call). Mechanical: names/types/cardinality only — does not authorize tenant IDs.
+bindPreparedQuery(prepared: PreparedQuery, values: Record<string, QueryParameterValue | QueryParameterValue[]>): BoundQuery
+
 
 // Dialect input — all three forms accepted by ask()
 type AskDialectInput =

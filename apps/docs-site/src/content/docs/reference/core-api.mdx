@@ -35,6 +35,7 @@ const { sql } = await ask({
 | `omitSensitiveIdentifiersFromNlToSqlPrompt` | `boolean` | no | `false` | When `true`, strips sensitive table/column names from the NL→SQL DDL entirely. Default (`false`) includes them with a `(sensitive)` tag so the model can still ground queries. |
 | `tenantScope` | `TenantScope` | no | — | Required when the schema has a `tenant-policy.md`. The pipeline fails closed if a policy exists and this is absent. |
 | `tenantSqlMode` | `TenantSqlOutputMode` | no | `"sql-only"` | `"sql-only"` inlines literal tenant values; `"sql-params"` converts them to positional `$N` parameters. |
+| `parameterize` | `boolean` | no | `true` | Ask the model for unbound SQL + a parameter manifest. Still exactly one model call. Set `false` to save output tokens. Inert for custom `AskDialect` implementations. |
 | `retriever` | `Retriever` | no | — | RAG retriever from `@askdb/rag`. When supplied and schema chunk count exceeds `retrievalThresholdChunks`, retrieval replaces the full DDL in the prompt. |
 | `retrievalK` | `number` | no | `8` | Top-k passed to the retriever. |
 | `retrievalThresholdChunks` | `number` | no | `30` | Chunk count below which the full DDL is used even if a retriever is supplied. |
@@ -46,12 +47,33 @@ const { sql } = await ask({
 
 | Field | Type | When present |
 | --- | --- | --- |
-| `sql` | `string` | Always. The generated, validated SQL string. |
+| `sql` | `string` | Always. The model's bound, validated SQL. Never overwritten by rebind failures. |
+| `unboundSql` | `string \| undefined` | When `parameterize` is on and the model returned a consistent unbound block + manifest. Driver markers (`$N` / `?` / `@pN`). |
+| `params` | `QueryParameterValue[] \| undefined` | Positional values for `unboundSql`. Prefer this over `tenantParams` when present. |
+| `parameters` | `QueryParameterBinding[] \| undefined` | Named bindings for form UIs (includes runtime `value`, `markers`, `indices`). |
+| `preparedQuery` | `PreparedQuery \| undefined` | Definitions + named template only (no runtime values). Input to `bindPreparedQuery()`. |
 | `usage` | `AskUsage \| undefined` | When the model provider reports token counts. |
 | `explain` | `unknown \| undefined` | When `explain: true`. Heuristic guardrail metadata — which read-only rules fired and why. |
 | `tenantGuardrail` | `TenantGuardrailResult \| undefined` | When a tenant policy is active. Confirms the generated SQL references tenant-scoped tables correctly. |
-| `tenantParams` | `unknown[] \| undefined` | When `tenantSqlMode: "sql-params"` and the SQL has tenant placeholders. Positional `$N` values to pass alongside the query. |
+| `tenantParams` | `unknown[] \| undefined` | When `tenantSqlMode: "sql-params"` and the SQL has tenant placeholders. Tenant-only positional values. |
 | `tenantBindings` | `TenantBinding[] \| undefined` | When a tenant policy is active. Structured binding metadata for audit. |
+
+### `bindPreparedQuery(prepared, values)`
+
+Pure, synchronous local rebind — no model call. Returns both a ready-to-run `sql` and `unboundSql` + `params` for driver binding. Checks names, types, and cardinality only; **does not authorize tenant IDs**.
+
+```ts
+import { bindPreparedQuery } from "@askdb/core";
+
+const rebound = bindPreparedQuery(result.preparedQuery!, {
+  state_name: "Utah",
+  ":tenant_agency_ids": authorizedAgencyIds,
+});
+await pool.query(rebound.sql);
+// or: await pool.query(rebound.unboundSql, rebound.params);
+```
+
+List parameters are arity-stable in `unboundSql` only on PostgreSQL/CockroachDB (`= ANY($n)`). Elsewhere a changed list length changes the marker count — rebind rather than swapping the array. Map SQL Server values via `parameters[].markers` (`@p0`-based).
 
 ### `AskUsage`
 

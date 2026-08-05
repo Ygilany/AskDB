@@ -131,8 +131,9 @@ together with `tenantWarnings` for your application to act on.
 
 ```ts
 // askdb initialized at startup with createAskDb() — see Embed in a Node app.
+import { bindPreparedQuery } from "@askdb/core";
 
-const { sql, tenantParams } = await askdb.ask(
+const result = await askdb.ask(
   "How many documents did we create this month?",
   {
     tenantScope: {
@@ -146,8 +147,21 @@ const { sql, tenantParams } = await askdb.ask(
   }
 );
 
-// Execute with the tenant parameters bound:
-const result = await pool.query(sql, tenantParams);
+// Prefer params (full positional array) when parameterized extras are present.
+await pool.query(result.sql);
+if (result.unboundSql && result.params) {
+  await pool.query(result.unboundSql, result.params);
+} else {
+  await pool.query(result.sql, result.tenantParams);
+}
+
+// Local rebind — no model call. Authorization of tenant IDs remains yours.
+if (result.preparedQuery) {
+  const rebound = bindPreparedQuery(result.preparedQuery, {
+    ":tenant_organization_ids": ["org_abc123"],
+  });
+  await pool.query(rebound.sql);
+}
 ```
 
 `access.kind` selects the scope shape: `ids` (exact tenant IDs on one root —
@@ -164,6 +178,8 @@ carries advisory metadata (role, department) into the prompt, and
 | --- | --- |
 | `sql-only` | Tenant values inlined as literals. Useful for development inspection or ad-hoc queries you read directly. |
 | `sql-params` | Tenant values extracted as positional `$N` parameters. Use this in production with parameterized execution. |
+
+When `parameterize` is on (default), business markers are allocated first and tenant markers continue from `N+1` in `sql-params` mode. `tenantParams` stays tenant-only — execute with `params` when using the new fields.
 
 ## What gets rewritten
 

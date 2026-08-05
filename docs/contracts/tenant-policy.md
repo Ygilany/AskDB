@@ -345,6 +345,8 @@ Examples:
 
 The mode is configurable per `ask()` call or per schema configuration.
 
+When `ask({ parameterize: true })` (the default) also returns business-parameter extras, `result.params` is the full ordered array (business first, then tenant when `tenantSqlMode: "sql-params"`). `tenantParams` / `tenantBindings` keep their tenant-only meaning — callers using the new fields must execute with `params`, not `tenantParams`. `bindPreparedQuery()` binds tenant placeholders by name mechanically and **does not authorize** the IDs you pass; authorization remains the host's responsibility when constructing `tenantScope`.
+
 ---
 
 ## Guardrail validation
