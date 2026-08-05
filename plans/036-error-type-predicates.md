@@ -9,14 +9,14 @@
 - **Priority**: P2
 - **Effort**: S
 - **Risk**: LOW
-- **Depends on**: none (higher value after plan 034, which makes duplicate module instances more likely, but independent of it)
+- **Depends on**: none. (An earlier version of this line claimed extra value once plan 034 landed, on the theory that dual-publishing would create duplicate ESM/CJS module instances. That is wrong on two counts: 034 no longer emits a CommonJS build, and `require()` and `import()` of the same package return the *same* namespace object — verified. The justification below stands on its own.)
 - **Category**: dx
 - **Planned at**: commit `cc1193a`, 2026-08-05
 - **Breaking**: No — purely additive exports.
 
 ## Why this matters
 
-`@askdb/core` exposes an error hierarchy but no way to identify its errors except `instanceof`. `instanceof` compares class identity, which silently fails whenever two copies of `@askdb/core` end up in one process — different versions in a monorepo, an ESM copy alongside a CJS copy, a bundled copy alongside a `node_modules` copy.
+`@askdb/core` exposes an error hierarchy but no way to identify its errors except `instanceof`. `instanceof` compares class identity, which silently fails whenever two copies of `@askdb/core` end up in one process — two versions in one dependency tree, a bundled copy alongside a `node_modules` copy, or a vendored copy. (Note: a CommonJS `require()` and an ESM `import()` of the *same* package do **not** produce two copies — Node returns one namespace object either way. That specific scenario is not a motivation here.)
 
 A real consumer hit exactly this. Because they had to load `@askdb/core` lazily, their error-classification function could not simply import the class — it takes the whole loaded module as a parameter just to reach the constructor:
 
@@ -138,8 +138,9 @@ export class AskDbError extends Error {
  * True for any error thrown by AskDB.
  *
  * Prefer this to `instanceof AskDbError` — it keeps working when more than one
- * copy of `@askdb/core` is loaded (mixed ESM/CJS, or two versions in one tree),
- * where `instanceof` silently returns false.
+ * copy of `@askdb/core` is loaded (two versions in one dependency tree, or a
+ * bundled copy alongside one from `node_modules`), where `instanceof` silently
+ * returns false.
  */
 export function isAskDbError(value: unknown): value is AskDbError {
   return (
