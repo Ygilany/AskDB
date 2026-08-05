@@ -1,16 +1,8 @@
 # Plan 004: Add `@askdb/ai-anthropic`, open the config provider union, make the key-missing message registry-driven, and settle the surfaces policy
 
-> **Executor instructions**: Follow this plan step by step. Run every
-> verification command and confirm the expected result before moving to the
-> next step. If anything in the "STOP conditions" section occurs, stop and
-> report — do not improvise. When done, update the status row for this plan
-> in `plans/README.md` — unless a reviewer dispatched you and told you they
-> maintain the index.
+> **Executor instructions**: Follow this plan step by step. Run every verification command and confirm the expected result before moving to the next step. If anything in the "STOP conditions" section occurs, stop and report — do not improvise. When done, update the status row for this plan in `plans/README.md` — unless a reviewer dispatched you and told you they maintain the index.
 >
-> **Drift check (run first)**:
-> `git diff --stat 154b17e..HEAD -- packages/ai packages/ai-openai packages/ai-azure packages/ai-google packages/config apps packages/tui examples/installable-smoke/run.sh docs/integration/installable-package.md`
-> Plans 001–003 intentionally change several of these; this plan is written
-> against the post-001 contract. If plan 001 is not merged, STOP.
+> **Drift check (run first)**: `git diff --stat 154b17e..HEAD -- packages/ai packages/ai-openai packages/ai-azure packages/ai-google packages/config apps packages/tui examples/installable-smoke/run.sh docs/integration/installable-package.md` Plans 001–003 intentionally change several of these; this plan is written against the post-001 contract. If plan 001 is not merged, STOP.
 
 ## Status
 
@@ -159,8 +151,7 @@ Tests in `packages/ai/src/provider.test.ts`: message includes each registered ad
 
 ### Step 5: Open the config provider union for custom adapters
 
-Make `askdb.config.*` accept any provider string while keeping autocomplete and the rich
-branches for first-party providers. In `packages/config/src/types.ts`:
+Make `askdb.config.*` accept any provider string while keeping autocomplete and the rich branches for first-party providers. In `packages/config/src/types.ts`:
 
 - Add a generic branch type:
 
@@ -182,17 +173,9 @@ export type CustomAiConfig = {
 };
 ```
 
-- Append `CustomAiConfig` to the `AskDbAiConfig` union **last** (TypeScript narrows the
-  known literals to their dedicated branches first; only unknown strings fall through).
-  Verify in an editor/test that `provider: "openai"` still requires `providerConfig.openai`
-  — if union ordering does not achieve that, use `Exclude`-style typing
-  (`provider: Exclude<string, KnownAiProvider> & {}` is not expressible; instead keep the
-  known-literal branches and type the custom branch's provider as `string & {}` — the
-  discriminated union resolves exact literals to the specific branches as long as those
-  branches are declared first; see STOP conditions).
+- Append `CustomAiConfig` to the `AskDbAiConfig` union **last** (TypeScript narrows the known literals to their dedicated branches first; only unknown strings fall through). Verify in an editor/test that `provider: "openai"` still requires `providerConfig.openai` — if union ordering does not achieve that, use `Exclude`-style typing (`provider: Exclude<string, KnownAiProvider> & {}` is not expressible; instead keep the known-literal branches and type the custom branch's provider as `string & {}` — the discriminated union resolves exact literals to the specific branches as long as those branches are declared first; see STOP conditions).
 
-In `packages/config/src/flatten.ts`, replace the final `else if`/throw chain tail with a
-generic fallback for any provider string not matched by the known branches:
+In `packages/config/src/flatten.ts`, replace the final `else if`/throw chain tail with a generic fallback for any provider string not matched by the known branches:
 
 ```ts
 } else {
@@ -206,16 +189,9 @@ generic fallback for any provider string not matched by the known branches:
 }
 ```
 
-Add flatten tests: a custom provider string (e.g. `"mistral"`) flattens to
-`ASKDB_AI_PROVIDER=mistral` plus the three universal keys; known providers are unaffected;
-an empty custom `providerConfig` still sets `ASKDB_AI_PROVIDER`. Add a JSDoc note (and a
-line in `docs/integration/installable-package.md` in Step 6) stating the three-tier model:
-known provider literal (zero code) → custom provider string + a host-registered adapter
-(~40 lines) → BYO `LanguageModel` via `ask({ model })` (no config involvement; a model
-instance cannot be serialized through config).
+Add flatten tests: a custom provider string (e.g. `"mistral"`) flattens to `ASKDB_AI_PROVIDER=mistral` plus the three universal keys; known providers are unaffected; an empty custom `providerConfig` still sets `ASKDB_AI_PROVIDER`. Add a JSDoc note (and a line in `docs/integration/installable-package.md` in Step 6) stating the three-tier model: known provider literal (zero code) → custom provider string + a host-registered adapter (~40 lines) → BYO `LanguageModel` via `ask({ model })` (no config involvement; a model instance cannot be serialized through config).
 
-**Verify**: `pnpm --filter @askdb/config test` → pass, including the new custom-provider
-cases; `grep -n "is not supported yet" packages/config/src/flatten.ts` → no matches.
+**Verify**: `pnpm --filter @askdb/config test` → pass, including the new custom-provider cases; `grep -n "is not supported yet" packages/config/src/flatten.ts` → no matches.
 
 ### Step 6: TUI help text and docs (B5 remainder + recipes)
 

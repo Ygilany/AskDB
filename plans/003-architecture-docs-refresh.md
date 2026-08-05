@@ -1,16 +1,8 @@
 # Plan 003: Bring architecture docs and ADR statuses in line with the shipped package layout
 
-> **Executor instructions**: Follow this plan step by step. Run every
-> verification command and confirm the expected result before moving to the
-> next step. If anything in the "STOP conditions" section occurs, stop and
-> report — do not improvise. When done, update the status row for this plan
-> in `plans/README.md` — unless a reviewer dispatched you and told you they
-> maintain the index.
+> **Executor instructions**: Follow this plan step by step. Run every verification command and confirm the expected result before moving to the next step. If anything in the "STOP conditions" section occurs, stop and report — do not improvise. When done, update the status row for this plan in `plans/README.md` — unless a reviewer dispatched you and told you they maintain the index.
 >
-> **Drift check (run first)**:
-> `git diff --stat 154b17e..HEAD -- docs/architecture.md docs/adrs README.md docs/platform.md`
-> Compare the "Current state" excerpts against the live files; line numbers may
-> shift if plans 001/002 touched docs — locate sections by heading, not line.
+> **Drift check (run first)**: `git diff --stat 154b17e..HEAD -- docs/architecture.md docs/adrs README.md docs/platform.md` Compare the "Current state" excerpts against the live files; line numbers may shift if plans 001/002 touched docs — locate sections by heading, not line.
 
 ## Status
 

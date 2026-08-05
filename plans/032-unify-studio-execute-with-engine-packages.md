@@ -2,8 +2,7 @@
 
 > **Executor instructions**: Follow this plan step by step. Run every verification command and confirm the expected result before moving to the next step. If anything in the "STOP conditions" section occurs, stop and report — do not improvise. When done, update the status row for this plan in `plans/README.md` — unless a reviewer dispatched you and told you they maintain the index.
 >
-> **Drift check (run first)**: `git diff --stat 2865cff..HEAD -- packages/postgres/src/exec packages/mysql/src/exec packages/sqlite/src/exec packages/sqlserver/src/exec packages/postgres/src/index.ts packages/mysql/src/index.ts packages/sqlite/src/index.ts packages/sqlserver/src/index.ts apps/studio/src/execute-registry.ts apps/studio/package.json`
-> If any in-scope file changed since this plan was written, compare the "Current state" excerpts against the live code before proceeding; on a mismatch, treat it as a STOP condition.
+> **Drift check (run first)**: `git diff --stat 2865cff..HEAD -- packages/postgres/src/exec packages/mysql/src/exec packages/sqlite/src/exec packages/sqlserver/src/exec packages/postgres/src/index.ts packages/mysql/src/index.ts packages/sqlite/src/index.ts packages/sqlserver/src/index.ts apps/studio/src/execute-registry.ts apps/studio/package.json` If any in-scope file changed since this plan was written, compare the "Current state" excerpts against the live code before proceeding; on a mismatch, treat it as a STOP condition.
 
 ## Status
 
@@ -243,10 +242,7 @@ type ExecuteResponse =
 ## Git workflow
 
 - Branch: `advisor/032-unify-studio-execute-with-engine-packages`.
-- Suggested commit boundary: one per step. Conventional-commits style; e.g.
-  `refactor(engines): add resolveFrom option to driver loaders`
-  `feat(engines): expose loadXxxDriver/isXxxDriverInstalled + sqlserver resolveConnectionInput from barrels`
-  `refactor(studio): delegate driver loading to engine packages; fix SQL Server TLS via resolveConnectionInput`
+- Suggested commit boundary: one per step. Conventional-commits style; e.g. `refactor(engines): add resolveFrom option to driver loaders` `feat(engines): expose loadXxxDriver/isXxxDriverInstalled + sqlserver resolveConnectionInput from barrels` `refactor(studio): delegate driver loading to engine packages; fix SQL Server TLS via resolveConnectionInput`
 - Do NOT push or open a PR unless explicitly instructed.
 
 ## Steps
