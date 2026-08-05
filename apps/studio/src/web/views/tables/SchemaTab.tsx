@@ -20,7 +20,6 @@ export function SchemaTab() {
                 <th>Type</th>
                 <th>Nullable</th>
                 <th>PK</th>
-                <th>Default</th>
                 <th>Sensitive</th>
               </tr>
             </thead>
@@ -31,7 +30,6 @@ export function SchemaTab() {
                   <td><Badge variant="outline">{col.type}</Badge></td>
                   <td>{col.nullable ? "Yes" : "No"}</td>
                   <td>{col.primaryKey ? <Badge variant="secondary">PK</Badge> : "—"}</td>
-                  <td className="muted tiny">{col.default ?? "—"}</td>
                   <td>{col.sensitive ? <Badge variant="danger">sensitive</Badge> : "—"}</td>
                 </tr>
               ))}

@@ -25,10 +25,12 @@ export function UsageSummary({ title, usage }: { title: string; usage: StudioReq
         <UsageRow label="Prompt" value={usage.promptTokens} />
         <UsageRow label="Completion" value={usage.completionTokens} />
         <UsageRow label="Embeddings" value={usage.embeddingTokens} />
-        <div className="usage-total">
-          <dt>Total</dt>
-          <dd>{formatNumber(usage.totalTokens)}</dd>
-        </div>
+        {usage.totalTokens !== null && (
+          <div className="usage-total">
+            <dt>Total</dt>
+            <dd>{formatNumber(usage.totalTokens)}</dd>
+          </div>
+        )}
       </dl>
     </section>
   );

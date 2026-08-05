@@ -95,7 +95,8 @@ type ConceptsAction =
   | { type: "commit_add"; concept: V2Concept; newIndex: number }
   | { type: "open_add_form" }
   | { type: "select_concept"; index: number }
-  | { type: "cancel_add" };
+  | { type: "cancel_add" }
+  | { type: "revert"; concepts: V2Concept[] };
 
 function conceptsReducer(state: ConceptsState, action: ConceptsAction): ConceptsState {
   switch (action.type) {
@@ -123,6 +124,7 @@ function conceptsReducer(state: ConceptsState, action: ConceptsAction): Concepts
     case "open_add_form": return { ...state, addOpen: true, selectedIndex: null };
     case "select_concept": return { ...state, selectedIndex: action.index, addOpen: false };
     case "cancel_add": return { ...state, addOpen: false, addDraft: {} };
+    case "revert": return { ...state, draft: clone(action.concepts), selectedIndex: null, addOpen: false };
   }
 }
 
@@ -199,7 +201,7 @@ function ConceptsEditor({
           <button
             type="button"
             className="btn"
-            onClick={() => { setDraft(clone(concepts)); setSelectedIndex(null); }}
+            onClick={() => dispatch({ type: "revert", concepts })}
             disabled={!dirty || busy.has("save-concepts")}
           >
             <RotateCcw size={14} /> Revert

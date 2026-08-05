@@ -307,7 +307,7 @@ export function PlaygroundProvider({ children, ragAvailable }: { children: React
           tenantParams: result.tenant?.params && result.tenant.params.length > 0
             ? Object.fromEntries(result.tenant.params.map((v, i) => [String(i + 1), v]))
             : undefined,
-          explain: result.explain ?? undefined,
+          explain: typeof result.explain === "string" ? result.explain : undefined,
         }).then(() => void refreshHistory());
       } catch (error) {
         dispatchPlayground({ type: "set_ask_message", message: { kind: "error", text: error instanceof Error ? error.message : String(error) } });

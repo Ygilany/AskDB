@@ -1,4 +1,4 @@
-import importPlugin from "eslint-plugin-import";
+import importPlugin from "eslint-plugin-import-x";
 import tseslint from "typescript-eslint";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -23,7 +23,7 @@ export default tseslint.config(
   ...tseslint.configs.recommended,
   {
     files: studioWebSources,
-    plugins: { import: importPlugin },
+    plugins: { "import-x": importPlugin },
     languageOptions: {
       parser: tseslint.parser,
       parserOptions: {
@@ -32,7 +32,7 @@ export default tseslint.config(
       },
     },
     settings: {
-      "import/resolver": {
+      "import-x/resolver": {
         typescript: {
           project: tsconfigWeb,
           alwaysTryTypes: true,
@@ -41,7 +41,7 @@ export default tseslint.config(
       },
     },
     rules: {
-      "import/no-unresolved": "error",
+      "import-x/no-unresolved": "error",
     },
   },
 );

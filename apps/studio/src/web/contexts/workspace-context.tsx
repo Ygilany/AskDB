@@ -355,13 +355,13 @@ function mergeList(existing: string[] | undefined, incoming: string[]): string[]
 
 function applyTableSuggestion(draft: TableDraft, field: string, text: string): TableDraft {
   if (field === "aliases" || field === "tags")
-    return { ...draft, [field]: mergeList((draft as Record<string, string[]>)[field], parseList(text)) };
+    return { ...draft, [field]: mergeList(draft[field], parseList(text)) };
   return { ...draft, [field]: text };
 }
 
 function applyColumnSuggestion(draft: ColumnDraft, field: string, text: string): ColumnDraft {
   if (field === "aliases" || field === "enum")
-    return { ...draft, [field]: mergeList((draft as Record<string, string[]>)[field], parseList(text)) };
+    return { ...draft, [field]: mergeList(draft[field], parseList(text)) };
   return { ...draft, [field]: text };
 }
 

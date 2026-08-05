@@ -392,7 +392,7 @@ function TenancyCreateForm({
   schemaId: string;
   aiConfigured: boolean;
   busy: Set<string>;
-  onSave: (frontmatter: TenantPolicyFrontmatter, body?: string) => Promise<void>;
+  onSave: (frontmatter: TenantPolicyFrontmatter, body?: string) => Promise<boolean>;
   onSuggest: () => Promise<{ frontmatter: TenantPolicyFrontmatter; body: string }>;
   saveStatus: StatusMessage | null;
 }) {
@@ -752,7 +752,7 @@ function TenancyReviewDraft({
               <div className="card-hd"><h3>Hierarchy Edges ({frontmatter.hierarchy!.length})</h3></div>
               <div className="card-bd">
                 <div style={{ display: "grid", gap: 8 }}>
-                  {frontmatter.hierarchy!.map((edge) => (
+                  {frontmatter.hierarchy!.map((edge, i) => (
                     <div key={`${edge.parent}-${edge.child}`} className="policy-edge-card">
                       <div>
                         <code>{edge.parent}</code>
