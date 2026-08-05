@@ -58,6 +58,25 @@ export class TenantScopeError extends AskDbError {
   }
 }
 
+export type QueryParameterRejectionReason =
+  | "INVALID_NAME"
+  | "RESERVED_NAME"
+  | "INVALID_VALUE"
+  | "MISSING_VALUE"
+  | "UNRESOLVED_PLACEHOLDER"
+  | "INVALID_LIST_CONTEXT"
+  | "DIALECT_UNSUPPORTED";
+
+export class QueryParameterError extends AskDbError {
+  constructor(
+    message: string,
+    public readonly reason: QueryParameterRejectionReason,
+  ) {
+    super(message);
+    this.name = "QueryParameterError";
+  }
+}
+
 export type TenantGuardrailRuleCode =
   | "MISSING_TENANT_PREDICATE"
   | "MISSING_TYPE_DISCRIMINATOR"

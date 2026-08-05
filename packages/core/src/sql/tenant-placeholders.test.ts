@@ -125,6 +125,22 @@ describe("replacePlaceholdersWithLiterals", () => {
     );
   });
 
+  it("escapes a trailing backslash under MySQL dialect", () => {
+    const resolved = [{ placeholder: ":tenant_agency_ids", rootLabel: "Agency", rootId: "r1", ids: ["acme\\"] }];
+    const sql = "SELECT * FROM orders WHERE agency_id = :tenant_agency_ids";
+    expect(replacePlaceholdersWithLiterals(sql, resolved, { backslashEscapes: true })).toBe(
+      "SELECT * FROM orders WHERE agency_id = 'acme\\\\'",
+    );
+  });
+
+  it("keeps quote-doubling-only behavior when no dialect is supplied", () => {
+    const resolved = [{ placeholder: ":tenant_agency_ids", rootLabel: "Agency", rootId: "r1", ids: ["acme\\"] }];
+    const sql = "SELECT * FROM orders WHERE agency_id = :tenant_agency_ids";
+    expect(replacePlaceholdersWithLiterals(sql, resolved)).toBe(
+      "SELECT * FROM orders WHERE agency_id = 'acme\\'",
+    );
+  });
+
   it("handles multiple different placeholders", () => {
     const resolved = [
       { placeholder: ":tenant_agency_ids", rootLabel: "Agency", rootId: "r1", ids: ["42"] },

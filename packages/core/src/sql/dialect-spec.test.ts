@@ -18,12 +18,16 @@ describe("DialectSpec registry", () => {
     expect(POSTGRES_DIALECT.id).toBe("postgres");
     expect(BUILT_IN_DIALECTS.postgres).toBe(POSTGRES_DIALECT);
     expect(getDialectSpec("postgres")).toBe(POSTGRES_DIALECT);
+    expect(POSTGRES_DIALECT.listBinding).toBe("array");
+    expect(POSTGRES_DIALECT.backslashEscapes).toBe(false);
   });
 
   it("ships COCKROACHDB_DIALECT that reuses Postgres syntax", () => {
     expect(COCKROACHDB_DIALECT.id).toBe("cockroachdb");
     expect(COCKROACHDB_DIALECT.promptBrief).toBe(POSTGRES_DIALECT.promptBrief);
     expect(getDialectSpec("cockroachdb")).toBe(COCKROACHDB_DIALECT);
+    expect(COCKROACHDB_DIALECT.listBinding).toBe("array");
+    expect(COCKROACHDB_DIALECT.backslashEscapes).toBe(false);
   });
 
   it("ships MYSQL_DIALECT with backtick quoting and CONCAT()", () => {
@@ -34,6 +38,8 @@ describe("DialectSpec registry", () => {
     // `||` is logical OR in MySQL — the brief should flag this.
     expect(MYSQL_DIALECT.promptBrief).toMatch(/\|\|/);
     expect(getDialectSpec("mysql")).toBe(MYSQL_DIALECT);
+    expect(MYSQL_DIALECT.listBinding).toBe("expand");
+    expect(MYSQL_DIALECT.backslashEscapes).toBe(true);
   });
 
   it("ships MARIADB_DIALECT that reuses MySQL syntax", () => {
@@ -41,6 +47,8 @@ describe("DialectSpec registry", () => {
     expect(MARIADB_DIALECT.promptBrief).toBe(MYSQL_DIALECT.promptBrief);
     expect(MARIADB_DIALECT.identifierQuote).toBe("`");
     expect(getDialectSpec("mariadb")).toBe(MARIADB_DIALECT);
+    expect(MARIADB_DIALECT.listBinding).toBe("expand");
+    expect(MARIADB_DIALECT.backslashEscapes).toBe(true);
   });
 
   it("ships SQLITE_DIALECT with || concat and ATTACH/PRAGMA forbidden", () => {
@@ -51,6 +59,8 @@ describe("DialectSpec registry", () => {
     expect(SQLITE_DIALECT.extraForbiddenKeywords).toEqual(
       expect.arrayContaining(["attach", "detach", "pragma", "reindex"]),
     );
+    expect(SQLITE_DIALECT.listBinding).toBe("expand");
+    expect(SQLITE_DIALECT.backslashEscapes).toBe(false);
   });
 
   it("ships SQLSERVER_DIALECT with TOP/OFFSET FETCH guidance", () => {
@@ -62,6 +72,8 @@ describe("DialectSpec registry", () => {
     expect(SQLSERVER_DIALECT.extraForbiddenKeywords).toEqual(
       expect.arrayContaining(["exec", "execute", "merge"]),
     );
+    expect(SQLSERVER_DIALECT.listBinding).toBe("expand");
+    expect(SQLSERVER_DIALECT.backslashEscapes).toBe(false);
   });
 
   it("BUILT_IN_DIALECTS covers every DialectId (exhaustive)", () => {

@@ -3,6 +3,12 @@ import type {
   TenantScope,
   TenantAccess,
 } from "../schema/v2/tenant-policy.js";
+import type { DialectSpec } from "./dialect-spec.js";
+import {
+  escapeSqlLiteral,
+  escapeSqlLiteralLegacy,
+  scanTenantPlaceholders,
+} from "./bind.js";
 
 // ---------------------------------------------------------------------------
 // Public types
@@ -31,20 +37,18 @@ export type TenantPlaceholderResult =
 // Placeholder naming convention (matches tenant-prompt.ts)
 // ---------------------------------------------------------------------------
 
-const PLACEHOLDER_RE = /:tenant_([a-z0-9_]+)_ids/g;
-
 export function placeholderForRoot(label: string): string {
   return `:tenant_${label.toLowerCase().replace(/[^a-z0-9]+/g, "_")}_ids`;
 }
 
 // ---------------------------------------------------------------------------
-// Extract placeholders found in SQL
+// Extract placeholders found in SQL (quote-aware via shared scanner)
 // ---------------------------------------------------------------------------
 
 export function extractTenantPlaceholders(sql: string): string[] {
   const matches = new Set<string>();
-  for (const m of sql.matchAll(PLACEHOLDER_RE)) {
-    matches.add(m[0]);
+  for (const p of scanTenantPlaceholders(sql)) {
+    matches.add(p.placeholder);
   }
   return [...matches];
 }
@@ -113,21 +117,25 @@ function buildIdsByRoot(access: TenantAccess): Map<string, string[]> {
 // Replace placeholders — SQL-only mode (inline literals)
 // ---------------------------------------------------------------------------
 
-function escapeSqlLiteral(value: string): string {
-  return "'" + value.replace(/'/g, "''") + "'";
+function escapeTenantId(value: string, dialect?: Pick<DialectSpec, "backslashEscapes">): string {
+  if (dialect === undefined) {
+    return escapeSqlLiteralLegacy(value);
+  }
+  return escapeSqlLiteral(value, dialect);
 }
 
 export function replacePlaceholdersWithLiterals(
   sql: string,
   resolved: ResolvedPlaceholder[],
+  dialect?: Pick<DialectSpec, "backslashEscapes">,
 ): string {
   let result = sql;
   for (const r of resolved) {
     if (r.ids.length === 0) continue;
     const literal =
       r.ids.length === 1
-        ? escapeSqlLiteral(r.ids[0]!)
-        : `(${r.ids.map(escapeSqlLiteral).join(", ")})`;
+        ? escapeTenantId(r.ids[0]!, dialect)
+        : `(${r.ids.map((id) => escapeTenantId(id, dialect)).join(", ")})`;
 
     result = replaceOperatorAware(result, r.placeholder, literal, r.ids.length > 1);
   }
@@ -207,6 +215,7 @@ export function resolveTenantSql(
   scope: TenantScope,
   mode: TenantSqlOutputMode = "sql-only",
   paramStartIndex: number = 1,
+  dialect?: Pick<DialectSpec, "backslashEscapes">,
 ): TenantPlaceholderResult {
   if (scope.access.kind === "global") {
     return mode === "sql-only"
@@ -225,7 +234,7 @@ export function resolveTenantSql(
   if (mode === "sql-only") {
     return {
       mode: "sql-only",
-      sql: replacePlaceholdersWithLiterals(sql, resolved),
+      sql: replacePlaceholdersWithLiterals(sql, resolved, dialect),
       bindings,
     };
   }
