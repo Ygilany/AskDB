@@ -18,4 +18,4 @@
 "@askdb/sqlserver": minor
 ---
 
-CommonJS applications can now `require()` AskDB packages, where package resolution previously failed with `ERR_PACKAGE_PATH_NOT_EXPORTED`. The minimum supported Node.js versions are now 20.19 and 22.12, which provide unflagged `require(esm)` support. No runtime behavior or exported symbols changed.
+CommonJS applications can now `require()` AskDB packages, where package resolution previously failed with `ERR_PACKAGE_PATH_NOT_EXPORTED`. The minimum supported Node.js version is now 22.12, which provides unflagged `require(esm)` support. No runtime behavior or exported symbols changed.

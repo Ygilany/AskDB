@@ -49,7 +49,7 @@ pnpm add pg
 
 ## CommonJS
 
-AskDB packages are ESM, but CommonJS applications can require them on Node.js 20.19+ or 22.12+ through Node's `require(esm)` support:
+AskDB packages are ESM, but CommonJS applications can require them on Node.js 22.12+ through Node's `require(esm)` support:
 
 ```js
 const { ask } = require("@askdb/core");
