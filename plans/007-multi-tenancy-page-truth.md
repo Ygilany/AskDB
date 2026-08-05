@@ -1,17 +1,8 @@
 # Plan 007: Make the multi-tenancy docs page match the real tenant-policy schema and `TenantScope` API
 
-> **Executor instructions**: Follow this plan step by step. Run every
-> verification command and confirm the expected result before moving to the
-> next step. If anything in the "STOP conditions" section occurs, stop and
-> report — do not improvise. When done, update the status row for this plan
-> in `plans/README.md` — unless a reviewer dispatched you and told you they
-> maintain the index.
+> **Executor instructions**: Follow this plan step by step. Run every verification command and confirm the expected result before moving to the next step. If anything in the "STOP conditions" section occurs, stop and report — do not improvise. When done, update the status row for this plan in `plans/README.md` — unless a reviewer dispatched you and told you they maintain the index.
 >
-> **Drift check (run first)**:
-> `git diff --stat 0f0c481..HEAD -- apps/docs-site/src/content/docs/guides/multi-tenancy.mdx`
-> If the file changed since this plan was written, compare the "Current state"
-> excerpts against the live file before proceeding; on a mismatch, treat it as
-> a STOP condition.
+> **Drift check (run first)**: `git diff --stat 0f0c481..HEAD -- apps/docs-site/src/content/docs/guides/multi-tenancy.mdx` If the file changed since this plan was written, compare the "Current state" excerpts against the live file before proceeding; on a mismatch, treat it as a STOP condition.
 
 ## Status
 
@@ -24,44 +15,23 @@
 
 ## Why this matters
 
-The public docs page `guides/multi-tenancy.mdx` shows a `tenant-policy.md`
-front-matter format and a `tenantScope` argument shape that do **not exist**
-in the codebase. The real zod schemas are `.strict()`, so a user who
-copy-pastes the documented YAML gets every key rejected, and the documented
-`access: { kind: "exact" }` scope is not one of the four real access kinds.
-Tenancy is a headline safety feature — wrong examples here cost user trust
-disproportionately. The maintainer also asked that this page explain the
-meaning and use of **every** front-matter property, not just show an example.
+The public docs page `guides/multi-tenancy.mdx` shows a `tenant-policy.md` front-matter format and a `tenantScope` argument shape that do **not exist** in the codebase. The real zod schemas are `.strict()`, so a user who copy-pastes the documented YAML gets every key rejected, and the documented `access: { kind: "exact" }` scope is not one of the four real access kinds. Tenancy is a headline safety feature — wrong examples here cost user trust disproportionately. The maintainer also asked that this page explain the meaning and use of **every** front-matter property, not just show an example.
 
 ## Current state
 
 Files (read all of them before editing):
 
-- `apps/docs-site/src/content/docs/guides/multi-tenancy.mdx` — the page to fix
-  (the ONLY file you will modify).
+- `apps/docs-site/src/content/docs/guides/multi-tenancy.mdx` — the page to fix (the ONLY file you will modify).
 - `packages/core/src/schema/v2/tenant-policy.ts` — source of truth:
-  - `tenantPolicyFrontmatterSchema` (lines ~72–83): strict zod object with
-    required `schemaId` (string), `enforcement` (`"strict" | "warn"`),
-    `roots` (min 1); optional `hierarchy`, `scopedTables`,
-    `polymorphicTables`, `globalTables` (array of strings).
-  - Runtime scope types (lines ~120–177): `TenantScope = { access, tenantFilters?, context? }`
-    where `access` is a discriminated union on `kind`:
-    `"ids" { tenantRoot, ids }` · `"subtree" { tenantRoot, rootIds, includeDescendants: true }`
-    · `"multi_root" { scopes: [{ tenantRoot, ids }] }` · `"global" { reason }`.
-- `docs/contracts/tenant-policy.md` — the format contract with a full example
-  and per-field meaning tables. Mirror its field semantics; do not contradict it.
-- `fixtures/schemas/agency-multi-tenant.schema/tenant-policy.md` — a real,
-  loader-validated policy file you can crib syntax from.
-- `packages/core/src/ask.ts` (lines ~129–143, ~195–202) — `tenantScope` and
-  `tenantSqlMode` options: default mode is `"sql-only"` (inlines literal
-  values); `"sql-params"` converts to positional `$N` parameters and the
-  result carries `tenantParams` when parameters exist.
+  - `tenantPolicyFrontmatterSchema` (lines ~72–83): strict zod object with required `schemaId` (string), `enforcement` (`"strict" | "warn"`), `roots` (min 1); optional `hierarchy`, `scopedTables`, `polymorphicTables`, `globalTables` (array of strings).
+  - Runtime scope types (lines ~120–177): `TenantScope = { access, tenantFilters?, context? }` where `access` is a discriminated union on `kind`: `"ids" { tenantRoot, ids }` · `"subtree" { tenantRoot, rootIds, includeDescendants: true }` · `"multi_root" { scopes: [{ tenantRoot, ids }] }` · `"global" { reason }`.
+- `docs/contracts/tenant-policy.md` — the format contract with a full example and per-field meaning tables. Mirror its field semantics; do not contradict it.
+- `fixtures/schemas/agency-multi-tenant.schema/tenant-policy.md` — a real, loader-validated policy file you can crib syntax from.
+- `packages/core/src/ask.ts` (lines ~129–143, ~195–202) — `tenantScope` and `tenantSqlMode` options: default mode is `"sql-only"` (inlines literal values); `"sql-params"` converts to positional `$N` parameters and the result carries `tenantParams` when parameters exist.
 
 ### Wrong content currently on the page (all of it must go)
 
-`multi-tenancy.mdx:32-50` — invalid front-matter (every key below is rejected
-by the strict zod schema; `schemaId` and `enforcement` are missing; entries
-use bare table names instead of stable IDs):
+`multi-tenancy.mdx:32-50` — invalid front-matter (every key below is rejected by the strict zod schema; `schemaId` and `enforcement` are missing; entries use bare table names instead of stable IDs):
 
 ```yaml
 ---
@@ -83,9 +53,7 @@ globalTables:
 ---
 ```
 
-`multi-tenancy.mdx:56-74` — invalid `tenantScope` (kind `"exact"` does not
-exist; `tenantRoot`/`tenantIds` must live *inside* `access`, and the field is
-`ids`, not `tenantIds`):
+`multi-tenancy.mdx:56-74` — invalid `tenantScope` (kind `"exact"` does not exist; `tenantRoot`/`tenantIds` must live *inside* `access`, and the field is `ids`, not `tenantIds`):
 
 ```ts
 const { sql, tenantParams } = await ask({
@@ -102,20 +70,14 @@ const { sql, tenantParams } = await ask({
 });
 ```
 
-`multi-tenancy.mdx:91` — prose repeating the wrong shape:
-`a tenant scope of \`{ tenantRoot: "organizations", tenantIds: ["org_abc123"] }\``
+`multi-tenancy.mdx:91` — prose repeating the wrong shape: `a tenant scope of \`{ tenantRoot: "organizations", tenantIds: ["org_abc123"] }\``
 
-`multi-tenancy.mdx:106-116` — Studio JSON example repeating `"kind": "exact"`
-and the flat (non-nested) shape.
+`multi-tenancy.mdx:106-116` — Studio JSON example repeating `"kind": "exact"` and the flat (non-nested) shape.
 
 ### Repo conventions for this page
 
-- Astro Starlight MDX. Pages open with `<p class="doc-eyebrow">` and
-  `<p class="doc-lede">`, use `##` sections, GitHub-flavored tables, and end
-  with a `<div class="home-path-grid">` "Read next" block. Keep all of that
-  structure; you are correcting content, not redesigning the page.
-- Root-absolute internal links like `/concepts/safety-boundaries/` are correct
-  (a remark plugin rebases them at build time).
+- Astro Starlight MDX. Pages open with `<p class="doc-eyebrow">` and `<p class="doc-lede">`, use `##` sections, GitHub-flavored tables, and end with a `<div class="home-path-grid">` "Read next" block. Keep all of that structure; you are correcting content, not redesigning the page.
+- Root-absolute internal links like `/concepts/safety-boundaries/` are correct (a remark plugin rebases them at build time).
 
 ## Commands you will need
 
@@ -132,31 +94,21 @@ and the flat (non-nested) shape.
 - `plans/README.md` (status row only)
 
 **Out of scope** (do NOT touch):
-- `docs/contracts/tenant-policy.md` and `packages/core/**` — the docs page
-  must follow the code, never the reverse.
+- `docs/contracts/tenant-policy.md` and `packages/core/**` — the docs page must follow the code, never the reverse.
 - `fixtures/**`.
-- Other docs pages that mention tenancy (`run-safely-in-prod.mdx`,
-  `safety-boundaries.mdx`, `author-your-schema.mdx`) — their tenancy mentions
-  are prose-level and correct enough; plan 008 handles unrelated fixes.
+- Other docs pages that mention tenancy (`run-safely-in-prod.mdx`, `safety-boundaries.mdx`, `author-your-schema.mdx`) — their tenancy mentions are prose-level and correct enough; plan 008 handles unrelated fixes.
 
 ## Git workflow
 
-- Work on the current branch `Ygilany/fix-docs-review-items` (this branch
-  exists specifically for docs-review fixes). There is a pre-existing
-  uncommitted change to `apps/docs-site/src/content/docs/index.mdx` (MIT →
-  Apache 2.0); leave it in the working tree untouched — do not revert it, and
-  do not include it in your commit unless the operator says otherwise.
-- Commit message style (from `git log`): conventional commits, e.g.
-  `docs(site): correct multi-tenancy policy format and TenantScope examples`.
+- Work on the current branch `Ygilany/fix-docs-review-items` (this branch exists specifically for docs-review fixes). There is a pre-existing uncommitted change to `apps/docs-site/src/content/docs/index.mdx` (MIT → Apache 2.0); leave it in the working tree untouched — do not revert it, and do not include it in your commit unless the operator says otherwise.
+- Commit message style (from `git log`): conventional commits, e.g. `docs(site): correct multi-tenancy policy format and TenantScope examples`.
 - Do NOT push or open a PR unless the operator instructed it.
 
 ## Steps
 
 ### Step 1: Replace the hand-written policy example
 
-In the "## Authoring the policy" section, replace the YAML block (current
-lines 32-50) with a valid example that keeps the page's existing SaaS
-narrative (organizations / projects / documents). Use exactly this content:
+In the "## Authoring the policy" section, replace the YAML block (current lines 32-50) with a valid example that keeps the page's existing SaaS narrative (organizations / projects / documents). Use exactly this content:
 
 ````markdown
 You can also write `tenant-policy.md` by hand. The front-matter is YAML,
@@ -167,23 +119,16 @@ never bare names. Example for a simple SaaS schema:
 
 ```yaml
 ---
-schemaId: my-app
-enforcement: strict
+schemaId: my-app enforcement: strict
 
 roots:
-  - id: table:public.organizations
-    tenantIdColumn: table:public.organizations#id
-    label: Organization
+  - id: table:public.organizations tenantIdColumn: table:public.organizations#id label: Organization
 
 scopedTables:
-  - id: table:public.projects
-    scopeThrough:
-      - root: table:public.organizations
-        column: table:public.projects#organization_id
-  - id: table:public.documents
-    scopeThrough:
-      - root: table:public.organizations
-        column: table:public.documents#organization_id
+  - id: table:public.projects scopeThrough:
+      - root: table:public.organizations column: table:public.projects#organization_id
+  - id: table:public.documents scopeThrough:
+      - root: table:public.organizations column: table:public.documents#organization_id
 
 globalTables:
   - table:public.plan_tiers
@@ -192,8 +137,7 @@ globalTables:
 
 # Tenant Policy
 
-Organizations are the only tenant level. Projects and documents carry a
-direct `organization_id`; plan tiers and countries are shared lookups.
+Organizations are the only tenant level. Projects and documents carry a direct `organization_id`; plan tiers and countries are shared lookups.
 ```
 
 The markdown body below the front-matter is free-form business context; the
@@ -205,10 +149,7 @@ recognized and fed into prompt assembly.
 
 ### Step 2: Add a "Field reference" section
 
-Immediately after the example from Step 1 (still inside / after the
-"Authoring the policy" section), add a new `## Field reference` section
-explaining every front-matter property. Use this content (it is condensed
-from `docs/contracts/tenant-policy.md` — keep the semantics identical):
+Immediately after the example from Step 1 (still inside / after the "Authoring the policy" section), add a new `## Field reference` section explaining every front-matter property. Use this content (it is condensed from `docs/contracts/tenant-policy.md` — keep the semantics identical):
 
 ````markdown
 ## Field reference
@@ -269,30 +210,15 @@ scoping patterns these fields express — lives in
 
 ### Step 3: Fix the `ask()` scope example
 
-In "## Asking with a tenant scope", replace the code block (current lines
-56-74) with:
+In "## Asking with a tenant scope", replace the code block (current lines 56-74) with:
 
 ````markdown
 ```ts
 import { ask } from "@askdb/core";
 
-const { sql, tenantParams } = await ask({
-  question: "How many documents did we create this month?",
-  schema,
-  dialect: "postgres",
-  model,
-  tenantScope: {
-    access: {
-      kind: "ids",
-      tenantRoot: "table:public.organizations",
-      ids: ["org_abc123"],
-    },
-  },
-  tenantSqlMode: "sql-params",
-});
+const { sql, tenantParams } = await ask({ question: "How many documents did we create this month?", schema, dialect: "postgres", model, tenantScope: { access: { kind: "ids", tenantRoot: "table:public.organizations", ids: ["org_abc123"], }, }, tenantSqlMode: "sql-params", });
 
-// Execute with the tenant parameters bound:
-const result = await pool.query(sql, tenantParams);
+// Execute with the tenant parameters bound: const result = await pool.query(sql, tenantParams);
 ```
 
 `access.kind` selects the scope shape: `ids` (exact tenant IDs on one root —
@@ -308,13 +234,9 @@ carries advisory metadata (role, department) into the prompt, and
 
 ### Step 4: Fix the inline scope mention in "What gets rewritten"
 
-Replace the sentence at current line 91 (`With the policy above and a tenant
-scope of \`{ tenantRoot: "organizations", tenantIds: ["org_abc123"] }\`, …`)
-with:
+Replace the sentence at current line 91 (`With the policy above and a tenant scope of \`{ tenantRoot: "organizations", tenantIds: ["org_abc123"] }\`, …`) with:
 
-> With the policy above and an access scope of
-> `{ kind: "ids", tenantRoot: "table:public.organizations", ids: ["org_abc123"] }`,
-> the same question generates:
+> With the policy above and an access scope of `{ kind: "ids", tenantRoot: "table:public.organizations", ids: ["org_abc123"] }`, the same question generates:
 
 Keep both SQL blocks in that section unchanged.
 
@@ -338,15 +260,9 @@ In "## Testing in Studio", replace the JSON block (current lines 108-114) with:
 
 ### Step 6: Mention enforcement modes where the page over-claims
 
-Current line 54 says "every `ask()` call **must** include a `tenantScope`" —
-that is true, but add the enforcement nuance. Replace the first paragraph of
-"## Asking with a tenant scope" with:
+Current line 54 says "every `ask()` call **must** include a `tenantScope`" — that is true, but add the enforcement nuance. Replace the first paragraph of "## Asking with a tenant scope" with:
 
-> When the policy exists, every `ask()` call must include a `tenantScope`.
-> AskDB validates the scope against the policy and binds it into the
-> generated SQL. With `enforcement: strict`, a query whose tenant filter
-> can't be proven is rejected; with `enforcement: warn`, the SQL is returned
-> together with `tenantWarnings` for your application to act on.
+> When the policy exists, every `ask()` call must include a `tenantScope`. AskDB validates the scope against the policy and binds it into the generated SQL. With `enforcement: strict`, a query whose tenant filter can't be proven is rejected; with `enforcement: warn`, the SQL is returned together with `tenantWarnings` for your application to act on.
 
 **Verify**: `grep -n "tenantWarnings" apps/docs-site/src/content/docs/guides/multi-tenancy.mdx` → exactly 1 match.
 
@@ -354,13 +270,11 @@ that is true, but add the enforcement nuance. Replace the first paragraph of
 
 **Verify**:
 - `pnpm --filter docs-site lint` → exit 0.
-- `pnpm --filter docs-site test` → exit 0 (builds with `ASTRO_BASE=/AskDB`
-  and runs the base-path link checker).
+- `pnpm --filter docs-site test` → exit 0 (builds with `ASTRO_BASE=/AskDB` and runs the base-path link checker).
 
 ## Test plan
 
-This is a docs-only change; the "tests" are the build gates above plus the
-greps in each step. Additionally run one consistency sweep:
+This is a docs-only change; the "tests" are the build gates above plus the greps in each step. Additionally run one consistency sweep:
 
 - `grep -rn "kind: \"exact\"\|tenantRoots\|tenantForeignKey\|tenantIds" apps/docs-site/src/` → no matches anywhere in the site.
 
@@ -379,25 +293,12 @@ ALL must hold:
 
 Stop and report back (do not improvise) if:
 
-- The live `multi-tenancy.mdx` no longer matches the "Current state" excerpts
-  (someone else already fixed it — verify and mark the plan DONE or BLOCKED).
-- `tenantPolicyFrontmatterSchema` in
-  `packages/core/src/schema/v2/tenant-policy.ts` differs from the field list
-  in this plan (e.g. a field was added/renamed after `0f0c481`) — the plan's
-  tables would document a stale schema.
-- `pnpm --filter docs-site test` fails for a reason unrelated to your edits
-  (e.g. network-dependent font fetch); report the error rather than patching
-  build config.
+- The live `multi-tenancy.mdx` no longer matches the "Current state" excerpts (someone else already fixed it — verify and mark the plan DONE or BLOCKED).
+- `tenantPolicyFrontmatterSchema` in `packages/core/src/schema/v2/tenant-policy.ts` differs from the field list in this plan (e.g. a field was added/renamed after `0f0c481`) — the plan's tables would document a stale schema.
+- `pnpm --filter docs-site test` fails for a reason unrelated to your edits (e.g. network-dependent font fetch); report the error rather than patching build config.
 
 ## Maintenance notes
 
-- The Field reference tables duplicate (in condensed form)
-  `docs/contracts/tenant-policy.md`. If the contract gains fields, both must
-  be updated — a reviewer should check the contract file on any future
-  tenancy PR.
-- Reviewers should diff the YAML example against
-  `fixtures/schemas/agency-multi-tenant.schema/tenant-policy.md` syntax (IDs,
-  nesting) rather than re-deriving from memory.
-- Deferred: the page does not document `subtree`/`multi_root` end-to-end
-  examples or named-placeholder output (`:tenant_organization_ids`); the
-  contract doc covers them. Add only if users ask.
+- The Field reference tables duplicate (in condensed form) `docs/contracts/tenant-policy.md`. If the contract gains fields, both must be updated — a reviewer should check the contract file on any future tenancy PR.
+- Reviewers should diff the YAML example against `fixtures/schemas/agency-multi-tenant.schema/tenant-policy.md` syntax (IDs, nesting) rather than re-deriving from memory.
+- Deferred: the page does not document `subtree`/`multi_root` end-to-end examples or named-placeholder output (`:tenant_organization_ids`); the contract doc covers them. Add only if users ask.

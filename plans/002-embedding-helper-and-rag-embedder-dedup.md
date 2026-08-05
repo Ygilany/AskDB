@@ -1,17 +1,8 @@
 # Plan 002: Deduplicate embedding-middleware wrappers and deprecate the RAG OpenAI bypass
 
-> **Executor instructions**: Follow this plan step by step. Run every
-> verification command and confirm the expected result before moving to the
-> next step. If anything in the "STOP conditions" section occurs, stop and
-> report — do not improvise. When done, update the status row for this plan
-> in `plans/README.md` — unless a reviewer dispatched you and told you they
-> maintain the index.
+> **Executor instructions**: Follow this plan step by step. Run every verification command and confirm the expected result before moving to the next step. If anything in the "STOP conditions" section occurs, stop and report — do not improvise. When done, update the status row for this plan in `plans/README.md` — unless a reviewer dispatched you and told you they maintain the index.
 >
-> **Drift check (run first)**:
-> `git diff --stat 154b17e..HEAD -- packages/ai/src packages/ai-openai/src packages/ai-azure/src packages/rag/src/embedders packages/rag/README.md docs/integration/rag-recipes.md`
-> Plan 001 intentionally changes some of these files — compare against the
-> post-001 state described below. If plan 001 has NOT been merged, this plan's
-> premise is wrong: STOP.
+> **Drift check (run first)**: `git diff --stat 154b17e..HEAD -- packages/ai/src packages/ai-openai/src packages/ai-azure/src packages/rag/src/embedders packages/rag/README.md docs/integration/rag-recipes.md` Plan 001 intentionally changes some of these files — compare against the post-001 state described below. If plan 001 has NOT been merged, this plan's premise is wrong: STOP.
 
 ## Status
 

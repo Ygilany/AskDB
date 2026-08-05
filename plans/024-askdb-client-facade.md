@@ -1,17 +1,8 @@
 # Plan 024: Add a config-aware `@askdb/client` facade so `ask()` callers only pass a question
 
-> **Executor instructions**: Follow this plan step by step. Run every
-> verification command and confirm the expected result before moving to the
-> next step. If anything in the "STOP conditions" section occurs, stop and
-> report — do not improvise. When done, update the status row for this plan
-> in `plans/README.md` — unless a reviewer dispatched you and told you they
-> maintain the index.
+> **Executor instructions**: Follow this plan step by step. Run every verification command and confirm the expected result before moving to the next step. If anything in the "STOP conditions" section occurs, stop and report — do not improvise. When done, update the status row for this plan in `plans/README.md` — unless a reviewer dispatched you and told you they maintain the index.
 >
-> **Drift check (run first)**:
-> `git diff --stat d7faa20..HEAD -- packages/core/src/ask.ts packages/ai/src/provider.ts packages/config/src/runtime-config.ts apps/http-api/src/server.ts apps/cli/src/cli.ts`
-> If any listed file changed since this plan was written, compare the
-> "Current state" excerpts against the live code before proceeding; on a
-> mismatch, treat it as a STOP condition.
+> **Drift check (run first)**: `git diff --stat d7faa20..HEAD -- packages/core/src/ask.ts packages/ai/src/provider.ts packages/config/src/runtime-config.ts apps/http-api/src/server.ts apps/cli/src/cli.ts` If any listed file changed since this plan was written, compare the "Current state" excerpts against the live code before proceeding; on a mismatch, treat it as a STOP condition.
 
 ## Status
 
@@ -24,24 +15,11 @@
 
 ## Why this matters
 
-Today every host that calls `ask()` from `@askdb/core` must hand-wire four
-things before it can ask a question: bootstrap config, build a model from the
-AI registry, resolve a schema from disk/JSON, and resolve the SQL dialect. That
-boilerplate is duplicated almost verbatim across `apps/cli/src/cli.ts`,
-`apps/http-api/src/server.ts`, and `examples/ask-question/main.ts`, and it is
-the first thing a new embedder hits. `ask()` itself is a **pure function** and
-must stay that way (it is the BYO-model / multi-tenant primitive — see its doc
-comment), so the fix is **not** to make core read config. Instead this plan adds
-a thin config-aware facade, `@askdb/client`, that resolves schema, model, and
-dialect from a runtime config + a host-provided AI registry, caches them, and
-exposes `askdb.ask("question")`. `schema`, `model`, and `dialect` all become
-optional overrides. This plan only **creates** the package; plan 025 migrates
-the hosts onto it, plan 026 updates the example.
+Today every host that calls `ask()` from `@askdb/core` must hand-wire four things before it can ask a question: bootstrap config, build a model from the AI registry, resolve a schema from disk/JSON, and resolve the SQL dialect. That boilerplate is duplicated almost verbatim across `apps/cli/src/cli.ts`, `apps/http-api/src/server.ts`, and `examples/ask-question/main.ts`, and it is the first thing a new embedder hits. `ask()` itself is a **pure function** and must stay that way (it is the BYO-model / multi-tenant primitive — see its doc comment), so the fix is **not** to make core read config. Instead this plan adds a thin config-aware facade, `@askdb/client`, that resolves schema, model, and dialect from a runtime config + a host-provided AI registry, caches them, and exposes `askdb.ask("question")`. `schema`, `model`, and `dialect` all become optional overrides. This plan only **creates** the package; plan 025 migrates the hosts onto it, plan 026 updates the example.
 
 ## Current state
 
-The facade wraps three existing pieces. Confirm each excerpt matches before
-building against it.
+The facade wraps three existing pieces. Confirm each excerpt matches before building against it.
 
 ### `ask()` — the pure primitive the facade calls (do NOT modify it)
 
@@ -70,16 +48,11 @@ export type AskPipelineOptions = {
 export async function ask(options: AskPipelineOptions): Promise<AskPipelineResult>
 ```
 
-`@askdb/core` re-exports everything the facade needs from
-`packages/core/src/index.ts`: `ask`, `AskPipelineOptions`, `AskPipelineResult`,
-`AskDialectInput`, `AskGenerateDeps`, `loadSchema`, `loadSchemaFromJson`,
-`AnyNormalizedSchema`, `AskDbLanguageModel`, `isBuiltInDialectId`,
-`type BuiltInDialectId` (via `dialect-spec.js`), `type NormalizedSchemaV2`.
+`@askdb/core` re-exports everything the facade needs from `packages/core/src/index.ts`: `ask`, `AskPipelineOptions`, `AskPipelineResult`, `AskDialectInput`, `AskGenerateDeps`, `loadSchema`, `loadSchemaFromJson`, `AnyNormalizedSchema`, `AskDbLanguageModel`, `isBuiltInDialectId`, `type BuiltInDialectId` (via `dialect-spec.js`), `type NormalizedSchemaV2`.
 
 ### The AI registry — how a model is built from config (`@askdb/ai`)
 
-`packages/ai/src/provider.ts:178-208` — the `AiRegistry` type. The facade only
-needs these members:
+`packages/ai/src/provider.ts:178-208` — the `AiRegistry` type. The facade only needs these members:
 
 ```ts
 export type AiRegistry = {
@@ -93,14 +66,11 @@ export type AiRegistry = {
 };
 ```
 
-A registry is constructed by the host via `createAiRegistry([openaiProvider, ...])`.
-**The facade must NOT import any `@askdb/ai-*` adapter** — the host injects the
-registry. This is what preserves BYO-provider and avoids bundling every provider.
+A registry is constructed by the host via `createAiRegistry([openaiProvider, ...])`. **The facade must NOT import any `@askdb/ai-*` adapter** — the host injects the registry. This is what preserves BYO-provider and avoids bundling every provider.
 
 ### The runtime config — where schema path / dialect / mock already live (`@askdb/config`)
 
-`packages/config/src/runtime-config.ts:102-115` — `AskDbRuntimeConfig`. Relevant
-fields the facade reads:
+`packages/config/src/runtime-config.ts:102-115` — `AskDbRuntimeConfig`. Relevant fields the facade reads:
 
 ```ts
 export type AskDbRuntimeConfig = {
@@ -112,11 +82,8 @@ export type AskDbRuntimeConfig = {
 };
 ```
 
-- `structured.host?.schemaPath` and `structured.host?.schemaJson` are the
-  config-level schema source (`packages/config/src/types.ts`, `host?: { schemaPath?: string; schemaJson?: string }`).
-- `ai.aiEnv` also carries `ASKDB_SCHEMA_PATH` / `ASKDB_SCHEMA_JSON` as the
-  flattened env fallback (this is what `apps/http-api/src/server.ts:279-280`
-  reads today).
+- `structured.host?.schemaPath` and `structured.host?.schemaJson` are the config-level schema source (`packages/config/src/types.ts`, `host?: { schemaPath?: string; schemaJson?: string }`).
+- `ai.aiEnv` also carries `ASKDB_SCHEMA_PATH` / `ASKDB_SCHEMA_JSON` as the flattened env fallback (this is what `apps/http-api/src/server.ts:279-280` reads today).
 - `nlToSql.dialect` is `structured.dialect`, the config dialect override.
 - `dev.mockSql` drives the deterministic test path.
 
@@ -124,37 +91,17 @@ export type AskDbRuntimeConfig = {
 
 The facade centralizes what these two sites do today:
 
-- **Dialect** — `apps/cli/src/cli.ts:178-203` (`resolveAskDbDialect`) and
-  `apps/http-api/src/server.ts:172-179` (`resolveHttpApiDialect`). Same priority:
-  `config.dialect` → `schema.provider` (when it is a built-in dialect id) →
-  `"postgres"`. The CLI version additionally throws when `schema.provider` is a
-  non-built-in id and emits a "note" when config and schema disagree.
-- **Model** — `apps/cli/src/cli.ts:373-396` and
-  `apps/http-api/src/server.ts:306-329`: when `dev.mockSql` is set, `model` is
-  `undefined` (cast) and `deps.generateText` returns `{ text: mockSql }`;
-  otherwise `await registry.createLanguageModelFromEnv(rt.ai.aiEnv)`.
-- **Schema** — `apps/http-api/src/server.ts:270-304` (JSON override → cached
-  path/json load) and `apps/cli/src/cli.ts:96-121` (`loadSchemaFromPath` +
-  `resolveSchemaPathForAsk`).
+- **Dialect** — `apps/cli/src/cli.ts:178-203` (`resolveAskDbDialect`) and `apps/http-api/src/server.ts:172-179` (`resolveHttpApiDialect`). Same priority: `config.dialect` → `schema.provider` (when it is a built-in dialect id) → `"postgres"`. The CLI version additionally throws when `schema.provider` is a non-built-in id and emits a "note" when config and schema disagree.
+- **Model** — `apps/cli/src/cli.ts:373-396` and `apps/http-api/src/server.ts:306-329`: when `dev.mockSql` is set, `model` is `undefined` (cast) and `deps.generateText` returns `{ text: mockSql }`; otherwise `await registry.createLanguageModelFromEnv(rt.ai.aiEnv)`.
+- **Schema** — `apps/http-api/src/server.ts:270-304` (JSON override → cached path/json load) and `apps/cli/src/cli.ts:96-121` (`loadSchemaFromPath` + `resolveSchemaPathForAsk`).
 
 ### Repo conventions to match
 
-- **Package layout exemplar**: `packages/ai-anthropic/` — copy its
-  `package.json`, `tsconfig.json`, `tsconfig.build.json` shapes (read all three).
-  Note `"type": "module"`, `main`/`types` → `dist`, the three scripts
-  (`build` / `lint` / `test`), and `peerDependencies` + `devDependencies` both
-  listing workspace deps (`"@askdb/ai": "workspace:*"` in dev, `"workspace:^"` in
-  peers).
-- **TS config**: `tsconfig.json` extends `../../tsconfig.base.json` with
-  `rootDir: src`, `outDir: dist`; `tsconfig.build.json` extends `./tsconfig.json`
-  and excludes test files.
-- **Imports use `.js` extensions** on relative paths (ESM/NodeNext), e.g.
-  `import { createAskDb } from "./client.js";`.
-- **Tests**: Vitest, co-located `*.test.ts`. Pattern exemplar:
-  `packages/ai/src/provider.test.ts` (`describe`/`it`/`expect`, `vi` for mocks).
-- **Changesets**: one markdown file per change in `.changeset/`. Format:
-  front-matter mapping package → semver bump, then a one-line summary. See any
-  `.changeset/add-*.md`.
+- **Package layout exemplar**: `packages/ai-anthropic/` — copy its `package.json`, `tsconfig.json`, `tsconfig.build.json` shapes (read all three). Note `"type": "module"`, `main`/`types` → `dist`, the three scripts (`build` / `lint` / `test`), and `peerDependencies` + `devDependencies` both listing workspace deps (`"@askdb/ai": "workspace:*"` in dev, `"workspace:^"` in peers).
+- **TS config**: `tsconfig.json` extends `../../tsconfig.base.json` with `rootDir: src`, `outDir: dist`; `tsconfig.build.json` extends `./tsconfig.json` and excludes test files.
+- **Imports use `.js` extensions** on relative paths (ESM/NodeNext), e.g. `import { createAskDb } from "./client.js";`.
+- **Tests**: Vitest, co-located `*.test.ts`. Pattern exemplar: `packages/ai/src/provider.test.ts` (`describe`/`it`/`expect`, `vi` for mocks).
+- **Changesets**: one markdown file per change in `.changeset/`. Format: front-matter mapping package → semver bump, then a one-line summary. See any `.changeset/add-*.md`.
 
 ## Commands you will need
 
@@ -187,16 +134,14 @@ The facade centralizes what these two sites do today:
 ## Git workflow
 
 - Branch: `advisor/024-askdb-client-facade`
-- Commit per logical unit; conventional-commits style (e.g.
-  `feat(client): add config-aware createAskDb facade`).
+- Commit per logical unit; conventional-commits style (e.g. `feat(client): add config-aware createAskDb facade`).
 - Do NOT push or open a PR unless the operator instructed it.
 
 ## Steps
 
 ### Step 1: Scaffold the package
 
-Create `packages/client/package.json` modeled on
-`packages/ai-anthropic/package.json`:
+Create `packages/client/package.json` modeled on `packages/ai-anthropic/package.json`:
 
 ```json
 {
@@ -251,8 +196,7 @@ Create `packages/client/tsconfig.json` (copy from `packages/ai/tsconfig.json`):
 }
 ```
 
-Create `packages/client/tsconfig.build.json` (copy from
-`packages/ai/tsconfig.build.json`):
+Create `packages/client/tsconfig.build.json` (copy from `packages/ai/tsconfig.build.json`):
 
 ```json
 {
@@ -261,17 +205,13 @@ Create `packages/client/tsconfig.build.json` (copy from
 }
 ```
 
-Copy `LICENSE` and `NOTICE` from `packages/ai-anthropic/` into
-`packages/client/` (the `files` array references them).
+Copy `LICENSE` and `NOTICE` from `packages/ai-anthropic/` into `packages/client/` (the `files` array references them).
 
-**Verify**: `pnpm install` → exit 0 and `@askdb/client` is linked
-(`ls node_modules/@askdb/client` resolves, or `pnpm ls --filter @askdb/client`
-shows it).
+**Verify**: `pnpm install` → exit 0 and `@askdb/client` is linked (`ls node_modules/@askdb/client` resolves, or `pnpm ls --filter @askdb/client` shows it).
 
 ### Step 2: Implement the facade in `packages/client/src/client.ts`
 
-Implement `createAskDb`. Target shape (adapt types until `lint` passes — do not
-change behavior):
+Implement `createAskDb`. Target shape (adapt types until `lint` passes — do not change behavior):
 
 ```ts
 import type { AiRegistry } from "@askdb/ai";
@@ -445,14 +385,10 @@ export function createAskDb(options: CreateAskDbOptions): AskDbClient {
 ```
 
 Notes for the executor:
-- The `undefined as unknown as AskDbLanguageModel` casts mirror the existing host
-  code (`apps/cli/src/cli.ts:376`, `apps/http-api/src/server.ts:308`) — the model
-  is genuinely unused when `deps.generateText` is supplied. Keep them.
-- If `AskOverrides` spreading collides with `deps` typing, resolve it by typing
-  `rest` explicitly; do not change the runtime behavior described above.
+- The `undefined as unknown as AskDbLanguageModel` casts mirror the existing host code (`apps/cli/src/cli.ts:376`, `apps/http-api/src/server.ts:308`) — the model is genuinely unused when `deps.generateText` is supplied. Keep them.
+- If `AskOverrides` spreading collides with `deps` typing, resolve it by typing `rest` explicitly; do not change the runtime behavior described above.
 
-**Verify**: `pnpm --filter @askdb/core --filter @askdb/ai --filter @askdb/config build`
-then `pnpm --filter @askdb/client lint` → exit 0, no TS errors.
+**Verify**: `pnpm --filter @askdb/core --filter @askdb/ai --filter @askdb/config build` then `pnpm --filter @askdb/client lint` → exit 0, no TS errors.
 
 ### Step 3: Re-export the public API in `packages/client/src/index.ts`
 
@@ -467,54 +403,30 @@ export {
 } from "./client.js";
 ```
 
-**Verify**: `pnpm --filter @askdb/client build` → exit 0 and `dist/index.js`,
-`dist/index.d.ts` exist (`ls packages/client/dist`).
+**Verify**: `pnpm --filter @askdb/client build` → exit 0 and `dist/index.js`, `dist/index.d.ts` exist (`ls packages/client/dist`).
 
 ### Step 4: Write `packages/client/src/client.test.ts`
 
-Model structure on `packages/ai/src/provider.test.ts`. Build a fake
-`AiRegistry` (only `createLanguageModelFromEnv`, `resolveAiConfig`,
-`keyMissingMessage` need real behavior; cast the rest) and a minimal
-`AskDbRuntimeConfig` (cast a partial object `as unknown as AskDbRuntimeConfig`,
-filling only `structured.host`, `structured.dialect`, `ai.aiEnv`, `dev.mockSql`,
-`nlToSql.dialect`). Use the fixture schema dir
-`fixtures/schemas/orders-users.schema` (resolve via `path` + `import.meta.url`)
-for the real-load case, or pass a pre-loaded schema via `{ schema }`.
+Model structure on `packages/ai/src/provider.test.ts`. Build a fake `AiRegistry` (only `createLanguageModelFromEnv`, `resolveAiConfig`, `keyMissingMessage` need real behavior; cast the rest) and a minimal `AskDbRuntimeConfig` (cast a partial object `as unknown as AskDbRuntimeConfig`, filling only `structured.host`, `structured.dialect`, `ai.aiEnv`, `dev.mockSql`, `nlToSql.dialect`). Use the fixture schema dir `fixtures/schemas/orders-users.schema` (resolve via `path` + `import.meta.url`) for the real-load case, or pass a pre-loaded schema via `{ schema }`.
 
 Cover these cases (one `it` each):
-1. **Schema from `createAskDb({ schema: { path } })`** → `ask` receives a schema
-   with the expected `schemaId`; assert via a spy on the registry / a mock
-   `deps.generateText` path so no network is needed (set `dev.mockSql` so model
-   resolution returns the mock and `ask` returns that SQL).
-2. **Mock SQL path**: `config.dev.mockSql = "SELECT 1"` and no model override →
-   `askdb.ask("q")` resolves to `{ sql: "SELECT 1" }` and the registry's
-   `createLanguageModelFromEnv` is **not** called.
-3. **Model override**: passing `overrides.model` (any sentinel object) and a
-   `deps.generateText` returning `{ text: "SELECT 2" }` → returns `SELECT 2`
-   without calling the registry.
-4. **Dialect precedence**: with `dev.mockSql` set so it runs end-to-end, use the
-   `onResolve` hook to capture the `DialectResolution`. Assert:
+1. **Schema from `createAskDb({ schema: { path } })`** → `ask` receives a schema with the expected `schemaId`; assert via a spy on the registry / a mock `deps.generateText` path so no network is needed (set `dev.mockSql` so model resolution returns the mock and `ask` returns that SQL).
+2. **Mock SQL path**: `config.dev.mockSql = "SELECT 1"` and no model override → `askdb.ask("q")` resolves to `{ sql: "SELECT 1" }` and the registry's `createLanguageModelFromEnv` is **not** called.
+3. **Model override**: passing `overrides.model` (any sentinel object) and a `deps.generateText` returning `{ text: "SELECT 2" }` → returns `SELECT 2` without calling the registry.
+4. **Dialect precedence**: with `dev.mockSql` set so it runs end-to-end, use the `onResolve` hook to capture the `DialectResolution`. Assert:
    - override wins (`overrides.dialect = "mysql"` → `source: "override"`).
-   - `config.nlToSql.dialect = "mysql"` + a schema whose `provider` is
-     `"postgres"` → `source: "config"`, `note` is set.
+   - `config.nlToSql.dialect = "mysql"` + a schema whose `provider` is `"postgres"` → `source: "config"`, `note` is set.
    - no config dialect + schema `provider: "postgres"` → `source: "schema"`.
    - neither set → `dialect: "postgres"`, `source: "default"`.
-5. **Missing schema**: no `schema`, no `host.*`, no env → `ask` rejects with a
-   message containing `No schema configured`.
-6. **Missing key**: no mock, registry `createLanguageModelFromEnv` resolves
-   `undefined` → rejects with the `keyMissingMessage` text.
-7. **Caching**: two `ask` calls with a path-based default schema call
-   `loadSchema` only once (spy via `vi.mock("@askdb/core", ...)` partial, OR
-   assert the registry's `createLanguageModelFromEnv` is called once across two
-   asks in the registry case). `reload()` then forces re-resolution.
+5. **Missing schema**: no `schema`, no `host.*`, no env → `ask` rejects with a message containing `No schema configured`.
+6. **Missing key**: no mock, registry `createLanguageModelFromEnv` resolves `undefined` → rejects with the `keyMissingMessage` text.
+7. **Caching**: two `ask` calls with a path-based default schema call `loadSchema` only once (spy via `vi.mock("@askdb/core", ...)` partial, OR assert the registry's `createLanguageModelFromEnv` is called once across two asks in the registry case). `reload()` then forces re-resolution.
 
 **Verify**: `pnpm --filter @askdb/client test` → all pass (≥7 tests).
 
 ### Step 5: README + changeset
 
-Write `packages/client/README.md` (short): what `createAskDb` is, the
-"only pass a question" example, and the override table (`schema` / `model` /
-`dialect` all optional). Show the host wiring once:
+Write `packages/client/README.md` (short): what `createAskDb` is, the "only pass a question" example, and the override table (`schema` / `model` / `dialect` all optional). Show the host wiring once:
 
 ```ts
 import { bootstrapAskDbEnv, getAskDbRuntimeConfig } from "@askdb/config";
@@ -540,15 +452,12 @@ Create `.changeset/askdb-client-facade.md`:
 Add `@askdb/client`: a config-aware `createAskDb()` facade that resolves schema, model, and dialect from the runtime config so callers only pass a question. `schema`, `model`, and `dialect` remain optional per-call overrides. `ask()` in `@askdb/core` is unchanged and remains the pure, BYO-model primitive.
 ```
 
-**Verify**: `pnpm --filter @askdb/client build && pnpm --filter @askdb/client test`
-→ both exit 0.
+**Verify**: `pnpm --filter @askdb/client build && pnpm --filter @askdb/client test` → both exit 0.
 
 ## Test plan
 
-- New file `packages/client/src/client.test.ts`, structured like
-  `packages/ai/src/provider.test.ts`, covering the seven cases in Step 4.
-- No network: every test uses either `dev.mockSql`, a `deps.generateText`
-  override, or asserts on the `onResolve` hook — never a real provider.
+- New file `packages/client/src/client.test.ts`, structured like `packages/ai/src/provider.test.ts`, covering the seven cases in Step 4.
+- No network: every test uses either `dev.mockSql`, a `deps.generateText` override, or asserts on the `onResolve` hook — never a real provider.
 - Verification: `pnpm --filter @askdb/client test` → all pass.
 
 ## Done criteria
@@ -567,27 +476,13 @@ ALL must hold:
 Stop and report back (do not improvise) if:
 
 - The "Current state" excerpts don't match the live code (drift since `d7faa20`).
-- `AskDbRuntimeConfig`, `AiRegistry`, or `AskPipelineOptions` no longer expose
-  the fields/members this plan reads (e.g. `dev.mockSql`, `nlToSql.dialect`,
-  `createLanguageModelFromEnv`, `host.schemaPath`) — the resolution contract
-  would be wrong.
-- Making the package typecheck appears to require modifying `@askdb/core`,
-  `@askdb/config`, or `@askdb/ai` — that means the boundary is different than
-  assumed; report instead of editing those packages.
+- `AskDbRuntimeConfig`, `AiRegistry`, or `AskPipelineOptions` no longer expose the fields/members this plan reads (e.g. `dev.mockSql`, `nlToSql.dialect`, `createLanguageModelFromEnv`, `host.schemaPath`) — the resolution contract would be wrong.
+- Making the package typecheck appears to require modifying `@askdb/core`, `@askdb/config`, or `@askdb/ai` — that means the boundary is different than assumed; report instead of editing those packages.
 - A verification fails twice after a reasonable fix attempt.
 
 ## Maintenance notes
 
-- This package is the home for *all* host-side resolution. When a new resolution
-  rule is added (e.g. a new schema source, a new dialect-inference input), it
-  goes here, and plan 025 keeps the hosts thin.
-- `ask()` in `@askdb/core` must stay pure — if a future change is tempted to make
-  core read config, push it into this facade instead.
-- The mock-SQL `generateText` shim is duplicated from the hosts intentionally so
-  they can delete theirs in plan 025; if the core mock contract changes, update
-  it here too.
-- Reviewer should scrutinize: (a) no `@askdb/ai-*` import sneaks in; (b) the
-  schema/model caches are not shared across tenants in a way that breaks
-  multi-schema servers (the cache is per-client-instance — a multi-tenant host
-  should create one client per tenant or always pass per-call `schema`/`model`
-  overrides; note this in the README).
+- This package is the home for *all* host-side resolution. When a new resolution rule is added (e.g. a new schema source, a new dialect-inference input), it goes here, and plan 025 keeps the hosts thin.
+- `ask()` in `@askdb/core` must stay pure — if a future change is tempted to make core read config, push it into this facade instead.
+- The mock-SQL `generateText` shim is duplicated from the hosts intentionally so they can delete theirs in plan 025; if the core mock contract changes, update it here too.
+- Reviewer should scrutinize: (a) no `@askdb/ai-*` import sneaks in; (b) the schema/model caches are not shared across tenants in a way that breaks multi-schema servers (the cache is per-client-instance — a multi-tenant host should create one client per tenant or always pass per-call `schema`/`model` overrides; note this in the README).

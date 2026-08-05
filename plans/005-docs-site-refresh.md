@@ -1,17 +1,8 @@
 # Plan 005: Update the docs-site to match the post-adapter-contract AI architecture
 
-> **Executor instructions**: Follow this plan step by step. Run every
-> verification command and confirm the expected result before moving to the
-> next step. If anything in the "STOP conditions" section occurs, stop and
-> report — do not improvise. When done, update the status row for this plan
-> in `plans/README.md` — unless a reviewer dispatched you and told you they
-> maintain the index.
+> **Executor instructions**: Follow this plan step by step. Run every verification command and confirm the expected result before moving to the next step. If anything in the "STOP conditions" section occurs, stop and report — do not improvise. When done, update the status row for this plan in `plans/README.md` — unless a reviewer dispatched you and told you they maintain the index.
 >
-> **Drift check (run first)**:
-> `git diff --stat 154b17e..HEAD -- apps/docs-site/src/content/docs apps/docs-site/astro.config.mjs`
-> Locate content by heading/section, not line number — these pages may have
-> drifted. Plans 001–004 are expected to be merged; verify their changes exist
-> (see Prerequisite check in Step 0) before editing prose that describes them.
+> **Drift check (run first)**: `git diff --stat 154b17e..HEAD -- apps/docs-site/src/content/docs apps/docs-site/astro.config.mjs` Locate content by heading/section, not line number — these pages may have drifted. Plans 001–004 are expected to be merged; verify their changes exist (see Prerequisite check in Step 0) before editing prose that describes them.
 
 ## Status
 
@@ -104,8 +95,7 @@ grep -n "is not supported yet" packages/config/src/flatten.ts                  #
 
 ### Step 1: `reference/packages.mdx`
 
-- Replace the `resolveAiConfig` / `resolveEmbeddingConfig` table row: these are now
-  **registry methods** — e.g. `` `registry.resolveAiConfig(env)` / `registry.resolveEmbeddingConfig(env)` | Resolve provider config from env without constructing a model. `` Also confirm the `createAiRegistry` row and any code snippet on the page matches the live `packages/ai/src/index.ts` exports (read the file; add `resolveBaseConfig` / `withEmbeddingProviderOptions` rows only if the page's table aims to be exhaustive — match its existing depth).
+- Replace the `resolveAiConfig` / `resolveEmbeddingConfig` table row: these are now **registry methods** — e.g. `` `registry.resolveAiConfig(env)` / `registry.resolveEmbeddingConfig(env)` | Resolve provider config from env without constructing a model. `` Also confirm the `createAiRegistry` row and any code snippet on the page matches the live `packages/ai/src/index.ts` exports (read the file; add `resolveBaseConfig` / `withEmbeddingProviderOptions` rows only if the page's table aims to be exhaustive — match its existing depth).
 - "Provider adapters" install list: add `npm install @askdb/ai-anthropic`; add one sentence noting adapters declare `ai` and `@askdb/ai` as peer dependencies (installed automatically by npm/pnpm; your app should depend on `ai` directly when it pins the version).
 - Mention the open contract in one line: any provider with an AI SDK package can be added as an adapter; unknown `ASKDB_AI_PROVIDER` values require a registered adapter.
 
@@ -120,9 +110,7 @@ grep -n "is not supported yet" packages/config/src/flatten.ts                  #
 
 ### Step 3: `guides/bring-your-own-model.mdx` and `quickstart.mdx`
 
-- Update the Anthropic snippet's model id to `claude-sonnet-4-6` (verify the id is still
-  current — check the `claude-api` skill or Anthropic docs if available in your
-  environment; do not invent ids).
+- Update the Anthropic snippet's model id to `claude-sonnet-4-6` (verify the id is still current — check the `claude-api` skill or Anthropic docs if available in your environment; do not invent ids).
 - Skim the whole BYO guide for other retired model ids (OpenAI/Google) and update them to the defaults the adapters use (`gpt-4o-mini`, `gemini-2.0-flash`).
 - `quickstart.mdx` line ~42: align the provider comment with reality — known literals `"openai" | "azure" | "foundry" | "google" | "anthropic"` plus custom strings; keep it to a comment-length hint and link to `/reference/config/` for the custom-provider details.
 
