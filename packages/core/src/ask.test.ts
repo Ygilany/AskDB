@@ -8,6 +8,7 @@ import { formatSchemaForNlToSql } from "./schema/normalize.js";
 import type { NormalizedSchema } from "./schema/types.js";
 import { formatSchemaV2ForNlToSql } from "./schema/v2/index.js";
 import { loadSchema } from "./schema/v2/loader.js";
+import type { TenantScope } from "./schema/v2/tenant-policy.js";
 
 const minimalSchema: NormalizedSchema = {
   tables: [{ name: "users", columns: [{ name: "id", type: "integer", nullable: false, primaryKey: true }] }],
@@ -17,7 +18,11 @@ const fakeModel = {} as LanguageModel;
 
 const here = dirname(fileURLToPath(import.meta.url));
 const v2Dir = join(here, "../../../fixtures/schemas/orders-users.schema");
+const multiTenantDir = join(here, "../../../fixtures/schemas/agency-multi-tenant.schema");
 
+const agencyScope: TenantScope = {
+  access: { kind: "ids", tenantRoot: "table:public.agencies", ids: ["42"] },
+};
 const cannedDialect: AskDialect = {
   generate: async () => ({ sql: "SELECT COUNT(*) AS n FROM users" }),
 };
@@ -362,5 +367,69 @@ describe("ask — parameterize", () => {
     expect(result.sql).toBe("SELECT COUNT(*) AS n FROM users");
     expect(result.unboundSql).toBeUndefined();
     expect(result.preparedQuery).toBeUndefined();
+  });
+
+  const businessPlusTenantReply = [
+    "```sql",
+    "SELECT count(*) FROM orders WHERE status = 'paid' AND agency_id = :tenant_agency_ids",
+    "```",
+    "```sql-unbound",
+    "SELECT count(*) FROM orders WHERE status = :status_name AND agency_id = :tenant_agency_ids",
+    "```",
+    "```json",
+    '{"parameters":[{"name":"status_name","type":"string","cardinality":"one","value":"paid"}]}',
+    "```",
+  ].join("\n");
+
+  it("combined business + tenant in tenantSqlMode sql-only", async () => {
+    const schema = loadSchema(multiTenantDir);
+    const generateText = vi.fn(async () => ({ text: businessPlusTenantReply }));
+    const result = await ask({
+      question: "how many paid orders",
+      schema,
+      model: fakeModel,
+      dialect: "postgres",
+      tenantScope: agencyScope,
+      tenantSqlMode: "sql-only",
+      deps: { generateText },
+    });
+
+    expect(result.sql).toBe(
+      "SELECT count(*) FROM orders WHERE status = 'paid' AND agency_id = '42'",
+    );
+    expect(result.unboundSql).toBe(
+      "SELECT count(*) FROM orders WHERE status = $1 AND agency_id = '42'",
+    );
+    expect(result.params).toEqual(["paid"]);
+    expect(result.tenantParams).toBeUndefined();
+    expect(result.tenantBindings).toHaveLength(1);
+    expect(result.tenantBindings![0]!.ids).toEqual(["42"]);
+    expect(result.tenantBindings![0]!.placeholder).toBe(":tenant_agency_ids");
+  });
+
+  it("combined business + tenant in tenantSqlMode sql-params with continuous markers", async () => {
+    const schema = loadSchema(multiTenantDir);
+    const generateText = vi.fn(async () => ({ text: businessPlusTenantReply }));
+    const result = await ask({
+      question: "how many paid orders",
+      schema,
+      model: fakeModel,
+      dialect: "postgres",
+      tenantScope: agencyScope,
+      tenantSqlMode: "sql-params",
+      deps: { generateText },
+    });
+
+    expect(result.sql).toBe(
+      "SELECT count(*) FROM orders WHERE status = 'paid' AND agency_id = $2",
+    );
+    expect(result.unboundSql).toBe(
+      "SELECT count(*) FROM orders WHERE status = $1 AND agency_id = $2",
+    );
+    expect(result.params).toEqual(["paid", "42"]);
+    expect(result.tenantParams).toEqual(["42"]);
+    expect(result.tenantBindings).toHaveLength(1);
+    expect(result.tenantBindings![0]!.ids).toEqual(["42"]);
+    expect(result.tenantBindings![0]!.placeholder).toBe(":tenant_agency_ids");
   });
 });

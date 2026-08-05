@@ -27,6 +27,7 @@ import {
   type PreparedQuery,
   type QueryParameterBinding,
   type QueryParameterValue,
+  type QueryParamSlot,
 } from "./sql/bind.js";
 
 /** Options forwarded to a dialect's generator. Stable across dialects. */
@@ -177,8 +178,8 @@ export type AskPipelineResult = {
   sql: string; // the model's bound SQL — unchanged meaning
   /** Driver markers; executable with `params`. */
   unboundSql?: string;
-  /** Positional values for drivers. */
-  params?: QueryParameterValue[];
+  /** Positional values for drivers (array slots on Postgres/CockroachDB listBinding). */
+  params?: QueryParamSlot[];
   /** Named bindings for form UIs (includes runtime values). */
   parameters?: QueryParameterBinding[];
   /** Definitions + template only — no runtime values. */
@@ -371,7 +372,7 @@ export async function ask(options: AskPipelineOptions): Promise<AskPipelineResul
           result.unboundSql = unboundWithTenant.sql;
           result.params = [
             ...(result.params ?? []),
-            ...(unboundWithTenant.params as QueryParameterValue[]),
+            ...(unboundWithTenant.params as QueryParamSlot[]),
           ];
         }
       }

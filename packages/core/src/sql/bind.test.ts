@@ -212,6 +212,37 @@ describe("bindPreparedQuery — errors", () => {
       expect.objectContaining({ reason: "UNRESOLVED_PLACEHOLDER" }),
     );
   });
+
+  it("throws DIALECT_UNSUPPORTED for a non-built-in dialect id", () => {
+    const p = {
+      ...prepared("postgres", "SELECT * FROM t WHERE s = :s", [
+        { name: "s", placeholder: ":s", type: "string", cardinality: "one", source: "question" },
+      ]),
+      dialect: "oracle" as PreparedQuery["dialect"],
+    };
+    expect(() => bindPreparedQuery(p, { s: "x" })).toThrow(
+      expect.objectContaining({ reason: "DIALECT_UNSUPPORTED" }),
+    );
+  });
+});
+
+describe("bindPreparedQuery — JSON round-trip", () => {
+  it("rebinds a JSON-serialized PreparedQuery with no model involvement", () => {
+    const original = prepared("postgres", "SELECT count(*) FROM cities WHERE state = :state_name", [
+      {
+        name: "state_name",
+        placeholder: ":state_name",
+        type: "string",
+        cardinality: "one",
+        source: "question",
+      },
+    ]);
+    const revived = JSON.parse(JSON.stringify(original)) as PreparedQuery;
+    const bound = bindPreparedQuery(revived, { state_name: "Utah" });
+    expect(bound.sql).toBe("SELECT count(*) FROM cities WHERE state = 'Utah'");
+    expect(bound.unboundSql).toBe("SELECT count(*) FROM cities WHERE state = $1");
+    expect(bound.params).toEqual(["Utah"]);
+  });
 });
 
 describe("bindPreparedQuery — right-to-left substitution", () => {

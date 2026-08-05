@@ -15,6 +15,8 @@ import { validateSelectSql } from "./validate.js";
 
 export type QueryParameterType = "string" | "number" | "boolean" | "date" | "datetime";
 export type QueryParameterValue = string | number | boolean;
+/** One slot in `BoundQuery.params` — a scalar, or an array for Postgres/CockroachDB listBinding. */
+export type QueryParamSlot = QueryParameterValue | QueryParameterValue[];
 
 /** One parameter as bound for this call — enough to render a form field. */
 export type QueryParameterBinding = {
@@ -52,7 +54,7 @@ export type BoundQuery = {
   sql: string;
   /** Same statement with driver markers instead of literals. */
   unboundSql: string;
-  params: QueryParameterValue[];
+  params: QueryParamSlot[];
   bindings: QueryParameterBinding[];
 };
 
@@ -580,7 +582,7 @@ export function bindPreparedQuery(
   }
 
   const edits: Edit[] = [];
-  const params: QueryParameterValue[] = [];
+  const params: QueryParamSlot[] = [];
   const bindings: QueryParameterBinding[] = [];
   const bindingByName = new Map<string, QueryParameterBinding>();
   const counters = { dollar: 1, atp: 0 };
@@ -621,9 +623,7 @@ export function bindPreparedQuery(
         // One array-typed driver param. unboundSql uses = ANY($n); bound sql uses IN (...).
         const marker = nextMarker(style, counters);
         const indices = [params.length];
-        // Drivers receive the array as a single positional value. The public
-        // `params` type is QueryParameterValue[]; cast at the boundary.
-        params.push(list as unknown as QueryParameterValue);
+        params.push(list);
         binding.markers.push(marker);
         binding.indices.push(...indices);
 

@@ -4,6 +4,7 @@ export {
   escapeSqlLiteral,
   type QueryParameterType,
   type QueryParameterValue,
+  type QueryParamSlot,
   type QueryParameterBinding,
   type PreparedQuery,
   type BoundQuery,
