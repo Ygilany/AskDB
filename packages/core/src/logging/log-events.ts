@@ -35,6 +35,12 @@ export const AskDbLogEvent = {
   TenantGuardrailPassed: "askdb.tenant.guardrail_passed",
   /** Tenant SQL guardrail check found issues. Includes `warnings` in warn mode. */
   TenantGuardrailFailed: "askdb.tenant.guardrail_failed",
+  /**
+   * Parameterize path produced extras (or dropped them). Counts only —
+   * `parameterCount`, `listParameterCount`; optional debug `reason` when dropped.
+   * Never log names or values.
+   */
+  PipelineParameterized: "askdb.pipeline.parameterized",
 } as const;
 
 export type AskDbLogEventName = (typeof AskDbLogEvent)[keyof typeof AskDbLogEvent];

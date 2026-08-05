@@ -30,6 +30,7 @@ This is a Postgres-first proof. The tenant enforcement model is designed to gene
 - **SQL guardrail validator** — AST-based Postgres SQL checks: scoped tables must have required predicates; polymorphic tables must include type discriminator; cross-table scope compatibility checked
 - **Enforcement modes** — `strict` (fail closed on unproven queries) and `warn` (return SQL with `tenantWarnings`)
 - **SQL output modes** — `sql-only` (placeholders replaced with literals, complete executable SQL) and `sql-params` (positional parameters `$1, $2`, returns `{ sql, params, tenantBindings }`)
+- **Parameterized ask output** — when `parameterize` is on (default), business values from the question also appear as `unboundSql` / `params` / `parameters` / `preparedQuery`. Tenant placeholders remain named in `preparedQuery.namedSql` and bind via `tenantScope` (or `bindPreparedQuery` on rebind). Prefer `params` over `tenantParams` when using the new fields. `bindPreparedQuery` does not authorize tenant IDs.
 - **RAG propagation** — policy front-matter always injected regardless of RAG retrieval; tenant policy body chunks retrievable; scope metadata attached to scoped table chunks
 - **AI-assisted policy drafting** — `@askdb/enrich` helpers analyze FK relationships and column patterns post-introspection to draft a candidate `tenant-policy.md`; human confirmation required before enforcement is enabled
 - **Schema evolution handling** — new tables from re-introspection default to `unknown`; orphaned table references in policy surface as warnings

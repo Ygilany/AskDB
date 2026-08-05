@@ -1,18 +1,19 @@
+export { extractSqlFromModelText, extractUnboundSqlFromModelText } from "./extract-sql.js";
 export {
-  type DialectId,
-  type DialectSpec,
-  type BuiltInDialectId,
-  POSTGRES_DIALECT,
-  COCKROACHDB_DIALECT,
-  MYSQL_DIALECT,
-  MARIADB_DIALECT,
-  SQLITE_DIALECT,
-  SQLSERVER_DIALECT,
-  BUILT_IN_DIALECTS,
-  SUPPORTED_DIALECT_IDS,
-  isBuiltInDialectId,
-  getDialectSpec,
-} from "./dialect-spec.js";
+  bindPreparedQuery,
+  escapeSqlLiteral,
+  type QueryParameterType,
+  type QueryParameterValue,
+  type QueryParamSlot,
+  type QueryParameterBinding,
+  type PreparedQuery,
+  type BoundQuery,
+} from "./bind.js";
+export {
+  parseParameterManifest,
+  type ParameterManifest,
+  type ManifestParameter,
+} from "./parameter-manifest.js";
 export {
   generateSelectSql,
   type GenerateSelectSqlResult,
@@ -31,4 +32,18 @@ export {
   assertNlToSqlInputs,
   nlToSqlAmbiguityNotes,
 } from "./schema-question-precheck.js";
-export { extractSqlFromModelText } from "./extract-sql.js";
+export {
+  type DialectId,
+  type DialectSpec,
+  type BuiltInDialectId,
+  POSTGRES_DIALECT,
+  COCKROACHDB_DIALECT,
+  MYSQL_DIALECT,
+  MARIADB_DIALECT,
+  SQLITE_DIALECT,
+  SQLSERVER_DIALECT,
+  BUILT_IN_DIALECTS,
+  SUPPORTED_DIALECT_IDS,
+  isBuiltInDialectId,
+  getDialectSpec,
+} from "./dialect-spec.js";

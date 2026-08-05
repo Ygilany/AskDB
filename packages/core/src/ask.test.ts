@@ -8,6 +8,7 @@ import { formatSchemaForNlToSql } from "./schema/normalize.js";
 import type { NormalizedSchema } from "./schema/types.js";
 import { formatSchemaV2ForNlToSql } from "./schema/v2/index.js";
 import { loadSchema } from "./schema/v2/loader.js";
+import type { TenantScope } from "./schema/v2/tenant-policy.js";
 
 const minimalSchema: NormalizedSchema = {
   tables: [{ name: "users", columns: [{ name: "id", type: "integer", nullable: false, primaryKey: true }] }],
@@ -17,7 +18,11 @@ const fakeModel = {} as LanguageModel;
 
 const here = dirname(fileURLToPath(import.meta.url));
 const v2Dir = join(here, "../../../fixtures/schemas/orders-users.schema");
+const multiTenantDir = join(here, "../../../fixtures/schemas/agency-multi-tenant.schema");
 
+const agencyScope: TenantScope = {
+  access: { kind: "ids", tenantRoot: "table:public.agencies", ids: ["42"] },
+};
 const cannedDialect: AskDialect = {
   generate: async () => ({ sql: "SELECT COUNT(*) AS n FROM users" }),
 };
@@ -273,5 +278,158 @@ describe("ask — retriever wiring", () => {
       }),
       expect.any(String),
     );
+  });
+});
+
+describe("ask — parameterize", () => {
+  const threeBlock = [
+    "```sql",
+    "SELECT count(*) FROM cities WHERE state = 'colorado'",
+    "```",
+    "```sql-unbound",
+    "SELECT count(*) FROM cities WHERE state = :state_name",
+    "```",
+    "```json",
+    '{"parameters":[{"name":"state_name","type":"string","cardinality":"one","description":"State","value":"colorado"}]}',
+    "```",
+  ].join("\n");
+
+  it("returns unboundSql, params, parameters, and preparedQuery after one model call", async () => {
+    const generateText = vi.fn(async () => ({ text: threeBlock }));
+    const result = await ask({
+      question: "How many cities does Colorado have?",
+      schema: minimalSchema,
+      model: fakeModel,
+      dialect: "postgres",
+      deps: { generateText },
+    });
+    expect(generateText).toHaveBeenCalledOnce();
+    expect(result.sql).toBe("SELECT count(*) FROM cities WHERE state = 'colorado'");
+    expect(result.unboundSql).toBe("SELECT count(*) FROM cities WHERE state = $1");
+    expect(result.params).toEqual(["colorado"]);
+    expect(result.parameters?.[0]?.name).toBe("state_name");
+    expect(result.parameters?.[0]?.value).toBe("colorado");
+    expect(result.preparedQuery?.namedSql).toContain(":state_name");
+    expect(result.preparedQuery?.parameters[0]).not.toHaveProperty("value");
+  });
+
+  it("drops extras when blocks disagree — result.sql unaffected", async () => {
+    const generateText = vi.fn(async () => ({
+      text: [
+        "```sql",
+        "SELECT count(*) FROM cities WHERE state = 'colorado'",
+        "```",
+        "```sql-unbound",
+        "SELECT count(*) FROM cities WHERE state = :state_name",
+        "```",
+        "```json",
+        '{"parameters":[{"name":"state_name","type":"string","cardinality":"one","value":"utah"}]}',
+        "```",
+      ].join("\n"),
+    }));
+    const result = await ask({
+      question: "how many",
+      schema: minimalSchema,
+      model: fakeModel,
+      dialect: "postgres",
+      deps: { generateText },
+    });
+    expect(result.sql).toBe("SELECT count(*) FROM cities WHERE state = 'colorado'");
+    expect(result.unboundSql).toBeUndefined();
+    expect(result.params).toBeUndefined();
+    expect(result.preparedQuery).toBeUndefined();
+  });
+
+  it("parameterize: false produces today's shape with no extras", async () => {
+    const generateText = vi.fn(async () => ({
+      text: "```sql\nSELECT id FROM users\n```",
+    }));
+    const result = await ask({
+      question: "list users",
+      schema: minimalSchema,
+      model: fakeModel,
+      dialect: "postgres",
+      parameterize: false,
+      deps: { generateText },
+    });
+    expect(result).toEqual({ sql: "SELECT id FROM users" });
+    const prompt = (generateText.mock.calls[0]![0] as { prompt: string }).prompt;
+    expect(prompt).not.toContain("Parameterized output format");
+  });
+
+  it("custom AskDialect is unaffected and returns no extras", async () => {
+    const result = await ask({
+      question: "count",
+      schema: minimalSchema,
+      model: fakeModel,
+      dialect: cannedDialect,
+    });
+    expect(result.sql).toBe("SELECT COUNT(*) AS n FROM users");
+    expect(result.unboundSql).toBeUndefined();
+    expect(result.preparedQuery).toBeUndefined();
+  });
+
+  const businessPlusTenantReply = [
+    "```sql",
+    "SELECT count(*) FROM orders WHERE status = 'paid' AND agency_id = :tenant_agency_ids",
+    "```",
+    "```sql-unbound",
+    "SELECT count(*) FROM orders WHERE status = :status_name AND agency_id = :tenant_agency_ids",
+    "```",
+    "```json",
+    '{"parameters":[{"name":"status_name","type":"string","cardinality":"one","value":"paid"}]}',
+    "```",
+  ].join("\n");
+
+  it("combined business + tenant in tenantSqlMode sql-only", async () => {
+    const schema = loadSchema(multiTenantDir);
+    const generateText = vi.fn(async () => ({ text: businessPlusTenantReply }));
+    const result = await ask({
+      question: "how many paid orders",
+      schema,
+      model: fakeModel,
+      dialect: "postgres",
+      tenantScope: agencyScope,
+      tenantSqlMode: "sql-only",
+      deps: { generateText },
+    });
+
+    expect(result.sql).toBe(
+      "SELECT count(*) FROM orders WHERE status = 'paid' AND agency_id = '42'",
+    );
+    expect(result.unboundSql).toBe(
+      "SELECT count(*) FROM orders WHERE status = $1 AND agency_id = '42'",
+    );
+    expect(result.params).toEqual(["paid"]);
+    expect(result.tenantParams).toBeUndefined();
+    expect(result.tenantBindings).toHaveLength(1);
+    expect(result.tenantBindings![0]!.ids).toEqual(["42"]);
+    expect(result.tenantBindings![0]!.placeholder).toBe(":tenant_agency_ids");
+  });
+
+  it("combined business + tenant in tenantSqlMode sql-params with continuous markers", async () => {
+    const schema = loadSchema(multiTenantDir);
+    const generateText = vi.fn(async () => ({ text: businessPlusTenantReply }));
+    const result = await ask({
+      question: "how many paid orders",
+      schema,
+      model: fakeModel,
+      dialect: "postgres",
+      tenantScope: agencyScope,
+      tenantSqlMode: "sql-params",
+      deps: { generateText },
+    });
+
+    expect(result.sql).toBe(
+      "SELECT count(*) FROM orders WHERE status = 'paid' AND agency_id = $2",
+    );
+    expect(result.unboundSql).toBe(
+      "SELECT count(*) FROM orders WHERE status = $1 AND agency_id = $2",
+    );
+    expect(result.params).toEqual(["paid", "42"]);
+    expect(result.tenantParams).toEqual(["42"]);
+    expect(result.tenantBindings).toHaveLength(1);
+    expect(result.tenantBindings![0]!.ids).toEqual(["42"]);
+    expect(result.tenantBindings![0]!.placeholder).toBe(":tenant_agency_ids");
   });
 });

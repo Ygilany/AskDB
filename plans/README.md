@@ -47,6 +47,22 @@ engine packages' driver loaders, exposes `loadXxxDriver` / `isXxxDriverInstalled
 `apps/studio/src/execute-registry.ts` to delegate driver loading and connection-string
 normalization to the engine packages. After it lands, the same class of drift cannot
 recur on the other three providers.
+Plan 033: originally written 2026-07-19 at commit `9f5e600`; **rewritten 2026-08-04 at commit
+`c81bb4e`** after a maintainer design review. The first version tried to make queries reusable
+*without* a model call — a prepared-query artifact, schema/policy/context fingerprints, tenant
+access-shape comparison, and a `client.bind()` rebind path. That premise was wrong: every AskDB
+request always invokes the model. The rewrite keeps the input unchanged (the question still goes
+to the model with its values inline) and changes only the *output* — the model returns the bound
+SQL exactly as today, plus the same statement in unbound form and a JSON manifest of the values
+it parameterized. `ask()` therefore returns today's `sql` verbatim alongside `unboundSql`,
+`params`, and per-parameter metadata a host can render a dynamic form from; if the extra blocks
+are missing or inconsistent they are dropped, so the feature can default to on without any
+caller being able to regress. `bindPreparedQuery()` survives as a pure local utility that
+substitutes escaped literals before execution, sharing one tokenizer, scanner, and escaper with
+the tenant placeholder path. That substitution model makes dialect-aware literal escaping
+security-critical, so the MySQL/MariaDB backslash weakness in `escapeSqlLiteral` moves **into**
+this plan's scope. Fingerprints, rebind policing, host-declared `{{token}}` syntax, and
+`@askdb/client` source changes stay out of scope.
 
 Execute in the order below unless dependencies say otherwise. Each executor: read the plan
 fully before starting, honor its STOP conditions, and update your row when done.
@@ -87,6 +103,7 @@ fully before starting, honor its STOP conditions, and update your row when done.
 | 030 | Let Studio execute generated SQL against any supported live dialect | P1 | L | 029 | DONE |
 | 031 | Make `askdb init` a setup wizard that writes a tailored config and installs selected packages | P1 | L | 030 | DONE |
 | 032 | Unify Studio execute with the engine packages so per-provider knowledge has one home (incl. SQL Server TLS fix) | P1 | M | — | DONE |
+| 033 | Return unbound SQL + a parameter manifest alongside the bound SQL, and share one binder with tenant scoping | P1 | L | — | DONE |
 
 Status values: TODO | IN PROGRESS | DONE | BLOCKED (with one-line reason) | REJECTED (with one-line rationale)
 
@@ -224,6 +241,15 @@ Status values: TODO | IN PROGRESS | DONE | BLOCKED (with one-line reason) | REJE
   have to generate a Postgres-only `studio.execute` block or teach users a UX that Studio cannot
   honor yet.
 
+- 033 is independent of the earlier execution/UI plans but builds on two already-landed public
+  layers: Phase 10's named `:tenant_*` generation and plan 024's `@askdb/client` facade. The key
+  boundary is explicit prepare/rebind rather than an implicit cache: the first `ask()` returns a
+  serializable, value-free `PreparedQueryV1`; `bindPreparedQuery()` / `client.bind()` applies new
+  business and same-shape authorized tenant IDs without model or RAG calls. It replaces the
+  tenant-only regex/`$N` implementation with a shared SQL-aware, dialect-correct binder while
+  retaining deprecated tenant compatibility fields. Studio, HTTP, CLI, automatic caching, and
+  reusable polymorphic `tenantFilters` are out of scope for this foundation plan.
+
 ## Related tooling
 
 - `.claude/skills/new-ai-adapter/SKILL.md` — reusable, self-contained skill that scaffolds a new
@@ -233,6 +259,23 @@ Status values: TODO | IN PROGRESS | DONE | BLOCKED (with one-line reason) | REJE
   (non-API-key auth; the skill STOPs on that by design).
 
 ## Findings considered and rejected / deferred
+
+- **Automatic cache inside `ask()`** (033): deferred. Core has no safe universal cache key or
+  invalidation policy across schema enrichment, model/dialect changes, RAG indexes, tenant users,
+  and host deployments. The prepared artifact makes caching cheap while leaving ownership/TTL to
+  the host.
+- **Raw stateless HTTP `/bind` accepting a prepared artifact** (033): rejected as unsafe. A client
+  could tamper with trusted SQL/tenant metadata; any future HTTP design should use opaque,
+  user-owned server-side IDs with bounded TTL/LRU (or a separately designed signing scheme).
+- **Studio parameter editor and re-execute UX** (033): deferred until the versioned core artifact
+  contract lands. Studio can then render the prepared definitions and bind locally without
+  inventing a second template format.
+- **Automatic AI extraction of editable values** (033): deferred. Explicit `{{name}}` tokens are
+  deterministic and auditable; model-selected edit points would make the reusable contract vary
+  across generations.
+- **Reusable polymorphic `tenantFilters` in V1** (033): deferred. The current tenant prompt/binder
+  does not represent filter column/operator structure as placeholders, so partial rebinding would
+  be misleading. V1 fails closed and requires regeneration when these filters are present.
 
 - **Bedrock adapter** (`@askdb/ai-bedrock`): deferred, not planned. Bedrock authenticates with AWS
   SigV4 credentials, not an API key, so it forces `AiConfig.apiKey` to become optional and changes the

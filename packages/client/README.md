@@ -40,6 +40,27 @@ const { sql } = await askdb.ask("count active users", {
 });
 ```
 
+## Parameterized output
+
+`askdb.ask()` returns the same `AskPipelineResult` as `@askdb/core`'s `ask()`, including optional `unboundSql`, `params`, `parameters`, and `preparedQuery` when the model complies (default `parameterize: true`). The facade forwards options and returns the core result verbatim — no client-side binding logic.
+
+```ts
+import { bindPreparedQuery } from "@askdb/core";
+
+const result = await askdb.ask("How many cities does Colorado have?", { tenantScope });
+
+await pool.query(result.sql);
+await pool.query(result.unboundSql!, result.params);
+
+const rebound = bindPreparedQuery(result.preparedQuery!, {
+  state_name: "Utah",
+  ":tenant_agency_ids": authorizedAgencyIds,
+});
+await pool.query(rebound.sql);
+```
+
+Every `ask()` is still one model call. Set `{ parameterize: false }` to opt out of the extra output tokens. `bindPreparedQuery` does not authorize tenant IDs — that remains the host's job when building `tenantScope`. Prefer `params` over `tenantParams` when using the new fields.
+
 ## Multi-tenant usage
 
 The schema and model caches are **per-client-instance**. For multi-tenant servers where each tenant has a different schema, either:

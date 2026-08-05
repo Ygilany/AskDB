@@ -61,9 +61,47 @@ const { sql } = await ask({
 });
 ```
 
+## Parameterized output (default on)
+
+By default `ask()` also asks the model for an unbound form of the same SQL plus a small JSON parameter manifest. Every call is still **exactly one model call** — `parameterize` does not add or remove one, and nothing here lets a caller skip the model. The question is sent unchanged (values included); this is not a redaction feature.
+
+```ts
+import { ask, bindPreparedQuery, loadSchema } from "@askdb/core";
+
+const result = await ask({
+  question: "How many cities does Colorado have?",
+  schema,
+  model: openai("gpt-4o"),
+  dialect: "postgres",
+  tenantScope,
+});
+
+// Execute either form.
+await pool.query(result.sql);                       // ready to run
+await pool.query(result.unboundSql!, result.params); // driver binding
+
+// Render a form from result.parameters, then rebind locally — no model call.
+const rebound = bindPreparedQuery(result.preparedQuery!, {
+  state_name: "Utah",
+  ":tenant_agency_ids": authorizedAgencyIds,
+});
+await pool.query(rebound.sql);
+```
+
+Key rules:
+
+- `parameterize` defaults to **true**. Set `parameterize: false` when the extra output tokens are not worth it.
+- If the model's extra blocks are missing or inconsistent, the extras are omitted and `result.sql` is unaffected. No new error reaches a caller who does not call `bindPreparedQuery()`.
+- The model decides what to parameterize, so a mistake changes the *form*, not the query. Constrain form inputs using returned `type` and `description`.
+- `bindPreparedQuery()` is mechanical: it checks names, types, and cardinality, and **does not authorize tenant IDs**. Authorization is the host's, exactly as when building `tenantScope`.
+- Callers using the new fields must execute with `params`, not `tenantParams`.
+- List parameters are arity-stable in `unboundSql` only on PostgreSQL/CockroachDB (`= ANY($n)`); elsewhere a changed list length changes the marker count — rebind through `bindPreparedQuery()` rather than swapping the array.
+- Markers: `$N` (Postgres/CockroachDB), `?` (MySQL/MariaDB/SQLite), `@pN` (SQL Server, 0-based). Map values via `parameters[].markers` for SQL Server.
+
 ## What you get
 
-- `ask({ question, schema, model, dialect })` — generate validated SQL.
+- `ask({ question, schema, model, dialect })` — generate validated SQL (plus optional `unboundSql` / `params` / `parameters` / `preparedQuery`).
+- `bindPreparedQuery(prepared, values)` — pure local rebind of a `PreparedQuery` (no model call).
 - `AskDbLanguageModel` — AskDB's public name for the AI SDK language model contract.
 - `AskDialect` — the dialect adapter contract. `@askdb/postgres` exports a ready-made one.
 - `loadSchema(path)` — load a Schema v2 directory, bundled JSON, or `schema.json` path.

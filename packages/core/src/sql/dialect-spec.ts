@@ -31,6 +31,10 @@ export type DialectSpec = {
   extraForbiddenKeywords?: readonly string[];
   /** Optional engine-specific post-validator. Receives SQL already passing the base shape checks. */
   extraValidate?: (sql: string) => void;
+  /** How list-valued placeholders bind in `unboundSql`. Default "expand" when absent. */
+  listBinding?: "array" | "expand";
+  /** Whether backslash is an escape character inside string literals. Default false. */
+  backslashEscapes?: boolean;
 };
 
 /** PostgreSQL — the original AskDB target. */
@@ -42,6 +46,8 @@ export const POSTGRES_DIALECT: DialectSpec = {
     "Quote identifiers with double quotes when they collide with keywords or contain mixed case. " +
     'Cast with `value::type`. Use NOW(), CURRENT_DATE, date_trunc(). Concatenate with `||`.',
   identifierQuote: '"',
+  listBinding: "array",
+  backslashEscapes: false,
 };
 
 /** CockroachDB — PostgreSQL-wire-compatible; reuses the Postgres prompt brief. */
@@ -62,6 +68,8 @@ export const MYSQL_DIALECT: DialectSpec = {
     "Concatenate with `CONCAT(a, b)` — `||` is logical OR in MySQL, not string concat. " +
     "Limit rows with `LIMIT n` (or `LIMIT offset, n`).",
   identifierQuote: "`",
+  listBinding: "expand",
+  backslashEscapes: true,
 };
 
 /**
@@ -90,6 +98,8 @@ export const SQLITE_DIALECT: DialectSpec = {
   // is maintenance. None belong in a generated read-only SELECT. (`vacuum` is
   // already in the dialect-agnostic base denylist.)
   extraForbiddenKeywords: ["attach", "detach", "pragma", "reindex"],
+  listBinding: "expand",
+  backslashEscapes: false,
 };
 
 /** Microsoft SQL Server (T-SQL). */
@@ -107,6 +117,8 @@ export const SQLSERVER_DIALECT: DialectSpec = {
   // T-SQL keywords that shouldn't appear in read-only analytics SQL. (`call`
   // is already in the base denylist; T-SQL uses EXEC / EXECUTE for procs.)
   extraForbiddenKeywords: ["exec", "execute", "merge", "openrowset", "openquery"],
+  listBinding: "expand",
+  backslashEscapes: false,
 };
 
 /**

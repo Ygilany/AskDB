@@ -18,10 +18,17 @@ import { generateSelectSql } from "./sql/generate.js";
 import {
   resolveTenantSql,
   type TenantSqlOutputMode,
-  type TenantPlaceholderResult,
   type TenantBinding,
 } from "./sql/tenant-placeholders.js";
 import { validateTenantScope } from "./sql/tenant-scope-validate.js";
+import {
+  bindPreparedQuery,
+  sqlStructurallyEqual,
+  type PreparedQuery,
+  type QueryParameterBinding,
+  type QueryParameterValue,
+  type QueryParamSlot,
+} from "./sql/bind.js";
 
 /** Options forwarded to a dialect's generator. Stable across dialects. */
 export type AskDialectGenerateOptions = {
@@ -33,6 +40,11 @@ export type AskDialectGenerateOptions = {
   prebuiltDdl?: string;
   tenantPolicy?: import("./schema/v2/tenant-policy.js").NormalizedTenantPolicy;
   tenantScope?: TenantScope;
+  /**
+   * When true, ask the model for unbound SQL + a parameter manifest.
+   * Inert for custom {@link AskDialect} implementations.
+   */
+  parameterize?: boolean;
 };
 
 /** Token usage for a single `ask()` call (LLM generation only; excludes RAG embedding tokens). */
@@ -48,6 +60,8 @@ export type AskDialectGenerateResult = {
   explain?: unknown;
   tenantGuardrail?: import("./sql/tenant-guardrail.js").TenantGuardrailResult;
   usage?: AskUsage;
+  unboundNamedSql?: string;
+  parameterManifest?: import("./sql/parameter-manifest.js").ParameterManifest;
 };
 
 /**
@@ -151,10 +165,25 @@ export type AskPipelineOptions = {
    * literal values; `"sql-params"` converts to positional `$N` parameters.
    */
   tenantSqlMode?: TenantSqlOutputMode;
+  /**
+   * Ask the model to also return the SQL in unbound form plus a JSON manifest
+   * of the values it parameterized, populating `unboundSql`, `params`,
+   * `parameters`, and `preparedQuery`. Default true. Set false to save the
+   * extra output tokens when the host does not use those fields.
+   */
+  parameterize?: boolean;
 };
 
 export type AskPipelineResult = {
-  sql: string;
+  sql: string; // the model's bound SQL — unchanged meaning
+  /** Driver markers; executable with `params`. */
+  unboundSql?: string;
+  /** Positional values for drivers (array slots on Postgres/CockroachDB listBinding). */
+  params?: QueryParamSlot[];
+  /** Named bindings for form UIs (includes runtime values). */
+  parameters?: QueryParameterBinding[];
+  /** Definitions + template only — no runtime values. */
+  preparedQuery?: PreparedQuery;
   explain?: unknown;
   tenantGuardrail?: import("./sql/tenant-guardrail.js").TenantGuardrailResult;
   tenantParams?: unknown[];
@@ -184,11 +213,13 @@ export async function ask(options: AskPipelineOptions): Promise<AskPipelineResul
 
   const explainRequested = options.explain ?? false;
   const omitSensitive = options.omitSensitiveIdentifiersFromNlToSqlPrompt ?? false;
+  const parameterize = options.parameterize !== false; // default true
   const prebuiltDdl = await maybeRetrieveDdl({
     options,
     logger,
     omitSensitive,
   });
+  const dialectSpec = resolveDialectSpec(options.dialect);
   const dialect = resolveDialect(options.dialect);
   const generated = await dialect.generate(
     options.question,
@@ -203,31 +234,194 @@ export async function ask(options: AskPipelineOptions): Promise<AskPipelineResul
       prebuiltDdl,
       tenantPolicy,
       tenantScope: options.tenantScope,
+      // Custom AskDialect implementations ignore this; built-in path uses it.
+      parameterize: dialectSpec ? parameterize : undefined,
     },
   );
-  let sql = generated.sql;
-  const explain = generated.explain;
-  const tenantGuardrail = generated.tenantGuardrail;
-  const result: AskPipelineResult = { sql };
-  if (explain !== undefined) result.explain = explain;
-  if (tenantGuardrail !== undefined) result.tenantGuardrail = tenantGuardrail;
+  // result.sql is always the model's bound SQL (possibly with tenant literals/
+  // markers applied below). Never overwrite it with a re-bound version.
+  const result: AskPipelineResult = { sql: generated.sql };
+  if (generated.explain !== undefined) result.explain = generated.explain;
+  if (generated.tenantGuardrail !== undefined) result.tenantGuardrail = generated.tenantGuardrail;
   if (generated.usage !== undefined) result.usage = generated.usage;
 
+  // Parameterize extras: build PreparedQuery, consistency-check via bindPreparedQuery,
+  // then populate result fields. Any failure drops extras only.
+  let businessParamCount = 0;
+  if (
+    parameterize &&
+    dialectSpec &&
+    generated.unboundNamedSql &&
+    generated.parameterManifest &&
+    generated.parameterManifest.parameters.length > 0
+  ) {
+    const dialectId = dialectSpec.id as BuiltInDialectId;
+    const businessParams = generated.parameterManifest.parameters.map((p) => ({
+      name: p.name,
+      placeholder: `:${p.name}`,
+      type: p.type,
+      cardinality: p.cardinality,
+      description: p.description,
+      source: "question" as const,
+    }));
+
+    // Tenant placeholders stay in namedSql for the host-facing PreparedQuery, but
+    // bindPreparedQuery requires every placeholder to be declared. For the
+    // consistency check we mask :tenant_* so only business values are substituted.
+    const maskedNamed = maskTenantPlaceholders(generated.unboundNamedSql);
+    const maskedBound = maskTenantPlaceholders(generated.sql);
+    const preparedForBind: PreparedQuery = {
+      version: 1,
+      dialect: dialectId,
+      namedSql: maskedNamed,
+      parameters: businessParams,
+    };
+    const values: Record<string, QueryParameterValue | QueryParameterValue[]> = {};
+    for (const p of generated.parameterManifest.parameters) {
+      values[p.name] = p.value;
+    }
+    try {
+      const bound = bindPreparedQuery(preparedForBind, values);
+      if (!sqlStructurallyEqual(bound.sql, maskedBound)) {
+        logger?.debug?.(
+          {
+            event: AskDbLogEvent.PipelineParameterized,
+            parameterCount: 0,
+            listParameterCount: 0,
+            reason: "consistency_mismatch",
+          },
+          "parameterize extras dropped",
+        );
+      } else {
+        const tenantDecls = scanTenantDecls(generated.unboundNamedSql);
+        const prepared: PreparedQuery = {
+          version: 1,
+          dialect: dialectId,
+          namedSql: generated.unboundNamedSql,
+          parameters: [...businessParams, ...tenantDecls],
+        };
+        result.preparedQuery = prepared;
+        result.parameters = bound.bindings.map((b) => ({
+          ...b,
+          // Restore real placeholder text (masking only affected namedSql).
+        }));
+        result.unboundSql = unmaskTenantPlaceholders(bound.unboundSql);
+        result.params = bound.params;
+        businessParamCount = bound.params.length;
+        logger?.info(
+          {
+            event: AskDbLogEvent.PipelineParameterized,
+            parameterCount: bound.bindings.length,
+            listParameterCount: bound.bindings.filter((b) => b.cardinality === "many").length,
+          },
+          "parameterize extras attached",
+        );
+      }
+    } catch {
+      logger?.debug?.(
+        {
+          event: AskDbLogEvent.PipelineParameterized,
+          parameterCount: 0,
+          listParameterCount: 0,
+          reason: "bind_failed",
+        },
+        "parameterize extras dropped",
+      );
+    }
+  }
+
   if (tenantPolicy && options.tenantScope) {
-    const mode = options.tenantSqlMode ?? "sql-only";
-    const resolved = resolveTenantSql(sql, tenantPolicy, options.tenantScope, mode);
+    const tenantMode = options.tenantSqlMode ?? "sql-only";
+    const paramStartIndex =
+      tenantMode === "sql-params" && result.params ? businessParamCount + 1 : 1;
+    const resolved = resolveTenantSql(
+      result.sql,
+      tenantPolicy,
+      options.tenantScope,
+      tenantMode,
+      paramStartIndex,
+      dialectSpec,
+    );
     result.sql = resolved.sql;
     if (resolved.bindings.length > 0) result.tenantBindings = resolved.bindings;
     if (resolved.mode === "sql-params" && resolved.params.length > 0) {
       result.tenantParams = resolved.params;
+    }
+
+    if (result.preparedQuery && result.unboundSql) {
+      if (tenantMode === "sql-only") {
+        const unboundWithTenant = resolveTenantSql(
+          result.unboundSql,
+          tenantPolicy,
+          options.tenantScope,
+          "sql-only",
+          1,
+          dialectSpec,
+        );
+        result.unboundSql = unboundWithTenant.sql;
+      } else {
+        const unboundWithTenant = resolveTenantSql(
+          result.unboundSql,
+          tenantPolicy,
+          options.tenantScope,
+          "sql-params",
+          paramStartIndex,
+          dialectSpec,
+        );
+        if (unboundWithTenant.mode === "sql-params") {
+          result.unboundSql = unboundWithTenant.sql;
+          result.params = [
+            ...(result.params ?? []),
+            ...(unboundWithTenant.params as QueryParamSlot[]),
+          ];
+        }
+      }
     }
   }
 
   return result;
 }
 
+const TENANT_MASK_RE = /:tenant_([a-z0-9_]+)_ids/g;
+const TENANT_UNMASK_RE = /__askdb_tenant_([a-z0-9_]+)_ids__/g;
+
+function maskTenantPlaceholders(sql: string): string {
+  return sql.replace(TENANT_MASK_RE, "__askdb_tenant_$1_ids__");
+}
+
+function unmaskTenantPlaceholders(sql: string): string {
+  return sql.replace(TENANT_UNMASK_RE, ":tenant_$1_ids");
+}
+
+function scanTenantDecls(namedSql: string): PreparedQuery["parameters"] {
+  const seen = new Set<string>();
+  const out: PreparedQuery["parameters"] = [];
+  for (const m of namedSql.matchAll(/:tenant_([a-z0-9_]+)_ids/g)) {
+    const name = `tenant_${m[1]}_ids`;
+    if (seen.has(name)) continue;
+    seen.add(name);
+    out.push({
+      name,
+      placeholder: `:${name}`,
+      type: "string",
+      cardinality: "many",
+      source: "tenant",
+    });
+  }
+  return out;
+}
+
 function isAskDialect(value: DialectSpec | AskDialect): value is AskDialect {
   return typeof (value as AskDialect).generate === "function";
+}
+
+/** Return the DialectSpec when the input is a built-in id or spec; undefined for custom AskDialect. */
+function resolveDialectSpec(input: AskDialectInput): DialectSpec | undefined {
+  if (typeof input === "string") {
+    return isBuiltInDialectId(input) ? getDialectSpec(input) : undefined;
+  }
+  if (isAskDialect(input)) return undefined;
+  return input;
 }
 
 /**

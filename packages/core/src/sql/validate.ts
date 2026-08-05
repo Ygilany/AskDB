@@ -1,5 +1,6 @@
 import { SqlValidationError, type SqlValidationRuleCode } from "../errors.js";
 import type { DialectSpec } from "./dialect-spec.js";
+import { stripSqlStringLiterals } from "./bind.js";
 
 const BASE_FORBIDDEN: readonly string[] = [
   "insert",
@@ -105,51 +106,6 @@ export function buildSelectGuardrailExplanation(validatedSql: string): SelectGua
     remediationNote:
       "Heuristic Phase-2 checks only—not a full SQL parser or production policy engine. Always review before trusted execution.",
   };
-}
-
-function stripSqlStringLiterals(sql: string): string {
-  let out = "";
-  let i = 0;
-  while (i < sql.length) {
-    const ch = sql[i]!;
-    if (ch === "'") {
-      i++;
-      while (i < sql.length) {
-        if (sql[i] === "'" && sql[i + 1] === "'") {
-          i += 2;
-          continue;
-        }
-        if (sql[i] === "'") {
-          i++;
-          break;
-        }
-        i++;
-      }
-      out += "''";
-      continue;
-    }
-    if (ch === '"') {
-      i++;
-      while (i < sql.length && sql[i] !== '"') {
-        if (sql[i] === "\\") i++;
-        i++;
-      }
-      if (i < sql.length) i++;
-      out += '""';
-      continue;
-    }
-    if (ch === "$" && /^\$\w*\$/.test(sql.slice(i))) {
-      const end = sql.indexOf("$", i + 1);
-      const tagEnd = sql.indexOf("$", end + 1);
-      if (tagEnd === -1) return out + sql.slice(i);
-      i = tagEnd + 1;
-      out += "$$";
-      continue;
-    }
-    out += ch;
-    i++;
-  }
-  return out;
 }
 
 function firstMeaningfulToken(withoutStrings: string): string {

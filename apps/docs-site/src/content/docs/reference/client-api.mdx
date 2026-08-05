@@ -52,10 +52,12 @@ Accepted forms for the `schema` option and per-call overrides:
 ## `client.ask(question, overrides?)`
 
 ```ts
-const { sql, usage } = await askdb.ask("How many orders shipped last month?");
+const { sql, usage, unboundSql, params, preparedQuery } = await askdb.ask(
+  "How many orders shipped last month?",
+);
 ```
 
-Runs the same pipeline as `@askdb/core`'s `ask()`. Returns `AskPipelineResult` — see [@askdb/core API → Result](/reference/core-api/#result--askpipelineresult).
+Runs the same pipeline as `@askdb/core`'s `ask()`. Returns `AskPipelineResult` — see [@askdb/core API → Result](/reference/core-api/#result--askpipelineresult). The facade forwards options and returns the core result verbatim, including optional `unboundSql` / `params` / `parameters` / `preparedQuery` when `parameterize` is on (default). Rebind locally with `bindPreparedQuery` from `@askdb/core` — it does not authorize tenant IDs.
 
 ### Overrides — `AskOverrides`
 
@@ -71,6 +73,7 @@ All `AskPipelineOptions` fields can be overridden per call. In addition, `schema
 | `mode` | `AskDbModeV1` | Trust boundary override. |
 | `tenantScope` | `TenantScope` | Required when the schema has a tenant policy. |
 | `tenantSqlMode` | `TenantSqlOutputMode` | `"sql-only"` or `"sql-params"`. |
+| `parameterize` | `boolean` | Default `true`. Set `false` to skip unbound SQL / parameter manifest output tokens. |
 | `retriever` | `Retriever` | RAG retriever. |
 | `retrievalK` | `number` | Top-k for the retriever. |
 | `retrievalThresholdChunks` | `number` | Chunk count threshold for triggering retrieval. |
