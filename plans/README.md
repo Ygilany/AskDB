@@ -103,7 +103,7 @@ fully before starting, honor its STOP conditions, and update your row when done.
 | 030 | Let Studio execute generated SQL against any supported live dialect | P1 | L | 029 | DONE |
 | 031 | Make `askdb init` a setup wizard that writes a tailored config and installs selected packages | P1 | L | 030 | DONE |
 | 032 | Unify Studio execute with the engine packages so per-provider knowledge has one home (incl. SQL Server TLS fix) | P1 | M | — | DONE |
-| 033 | Return unbound SQL + a parameter manifest alongside the bound SQL, and share one binder with tenant scoping | P1 | L | — | TODO |
+| 033 | Return unbound SQL + a parameter manifest alongside the bound SQL, and share one binder with tenant scoping | P1 | L | — | DONE |
 
 Status values: TODO | IN PROGRESS | DONE | BLOCKED (with one-line reason) | REJECTED (with one-line rationale)
 
