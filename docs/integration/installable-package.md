@@ -47,6 +47,16 @@ pnpm add pg
 
 [`@askdb/config`](../../packages/config/README.md) is the **only** package that reads `process.env` directly. Library packages (`@askdb/rag`, `@askdb/enrich`, …) depend on `@askdb/config` and use **`getAskDbRuntimeConfig()`**. Pass `config.ai.aiEnv` into an `@askdb/ai` registry when you want AskDB's env/config model factory. Call `bootstrapAskDbEnv({ cwd: process.cwd() })` at start-up when you want the same `.env` + `askdb.config.*` behavior as the first-party CLI and HTTP API. `env()` is reserved for use **inside** `askdb.config.*` files.
 
+## CommonJS
+
+AskDB packages are ESM, but CommonJS applications can require them on Node.js 22.12+ through Node's `require(esm)` support:
+
+```js
+const { ask } = require("@askdb/core");
+```
+
+On earlier Node.js versions, use dynamic `import()` instead. No exported symbols or runtime behavior differ between the ESM and CommonJS loading paths.
+
 ---
 
 ## Minimal pipeline

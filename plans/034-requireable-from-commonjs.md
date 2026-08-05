@@ -13,7 +13,9 @@
 - **Depends on**: none
 - **Category**: bug
 - **Planned at**: commit `595182d`, 2026-08-05
-- **Breaking**: No for existing ESM consumers — the `import` condition and the resolved file are unchanged. The `engines.node` floor rises (see Step 3), which is a declaration change rather than a behavior change.
+- **Reconciled**: 2026-08-05 during execution. Step 4 now uses each package's Node self-reference because the repository root only declares `@askdb/config` as a workspace dependency; a root-level `require()` of the other packages tests the monorepo's dependency graph rather than their published export maps.
+- **Execution**: DONE — implemented in `612af7b` and independently verified; PR [#174](https://github.com/Ygilany/AskDB/pull/174) is open against `main`.
+- **Breaking**: No for existing ESM consumers — the `import` condition and the resolved file are unchanged. The `engines.node` floor rises to one Node 22.12 baseline (see Step 3), which is a declaration change rather than a behavior change.
 - **Supersedes**: an earlier version of this plan that proposed dual-publishing a CommonJS build via two `tsc` passes. That was over-scoped — see "Why a CommonJS build is *not* the fix" below.
 
 ## Why this matters
@@ -58,7 +60,7 @@ for (const p of fs.readdirSync('packages')) {
 
 At `595182d` this prints `types,import` for every package except `@askdb/config`, which has `types,import,require,default`. Two packages need special handling: `@askdb/rag` has **6 subpath exports**, each needing the same treatment, and `@askdb/config` is already correct in substance (see Step 2).
 
-`engines.node` is `>=22` for `ai`, `ai-*`, `client`, `core`, `rag`, and `>=20` for the rest.
+`engines.node` originally varied between `>=22` and `>=20`; the implemented policy standardizes every published package on Node `>=22.12`.
 
 ### The reproduction, and the proof that one line fixes it
 
@@ -103,17 +105,20 @@ cd packages/core && node -e "console.log('ai requireable:', Object.keys(require(
 
 ### The two constraints this approach carries
 
-**Node floor.** `require()` of an ESM module is unflagged from **Node 20.19.0** and **22.12.0** onward. Below those it throws. Step 3 raises `engines.node` accordingly.
+**Node floor.** `require()` of an ESM module is unflagged from Node 20.19.0 and 22.12.0 onward. AskDB standardizes on **Node 22.12.0** for every published package, rather than supporting different major lines package-by-package.
 
-**No top-level await.** If any module in a package's ESM graph uses top-level `await`, `require()` of it fails — the evaluation cannot be made synchronous. Verified clean at `595182d`:
+**No top-level await in a requireable module graph.** If an ESM module reached from an `exports` entry uses top-level `await`, `require()` of that entry fails — the evaluation cannot be made synchronous. A package may also ship a CLI executable that is not an export target; that executable is launched with `node`, not loaded through `require()`, so it is outside this constraint. In particular, `@askdb/rag`'s `src/bin.ts` is compiled for the `askdb-rag` executable and has top-level `await`, but no `exports` entry or exported module imports it.
 
 ```bash
 for p in core client ai postgres config rag introspect enrich connectors mysql sqlite sqlserver prisma; do
-  echo "$p: $(grep -rn '^await ' packages/$p/src 2>/dev/null | grep -v '\.test\.' | wc -l | tr -d ' ')"
+  echo "$p exports:" $(node -e "
+    const j=require('./packages/$p/package.json');
+    console.log(Object.values(j.exports ?? {}).every((entry) => entry.default));
+  ")
 done
 ```
 
-Every line must read `0`. Step 5 adds a permanent guard, because this is the one change that would silently break requireability later.
+Every line must read `true`. Step 5 adds the actual permanent guard: it traces from export targets through their relative static imports, because that is the module graph whose top-level `await` would silently break requireability.
 
 ### Why a CommonJS build is *not* the fix
 
@@ -123,7 +128,7 @@ The obvious alternative is emitting a real CJS build (two `tsc` passes, or `tsup
 - A second `tsc` pass forces `module: CommonJS`, which forces `moduleResolution: Node10` (the only valid pairing — `Bundler` requires an ES module target, and `Node16`/`NodeNext` both require a matching `module` *and* would emit ESM anyway, since they derive each file's format from the nearest `package.json` `"type"` relative to the **source**). `Node10` ignores `exports` maps entirely, which is fragile against modern dependencies.
 - `tsup` would avoid that friction but adds a build-system change across every package for a benefit the first bullet already eliminates.
 
-If a future dependency introduces top-level await, or if supporting Node below 20.19 becomes a requirement, revisit — and use `tsup`, not two `tsc` passes.
+If a future dependency introduces top-level await, or if supporting Node below 22.12 becomes a requirement, revisit — and use `tsup`, not two `tsc` passes.
 
 ### Conventions
 
@@ -146,7 +151,7 @@ If a future dependency introduces top-level await, or if supporting Node below 2
 **In scope**:
 - The `exports` map and `engines.node` of every published package under `packages/*/package.json`
 - `examples/installable-smoke/consumer-cjs/**` (create) and `examples/installable-smoke/run.sh`
-- One guard test asserting no top-level await in published sources, and one asserting every published export map has a `default` condition — location per Step 5
+- One guard test asserting no top-level await in any exported module graph, and one asserting every published export map has a `default` condition — location per Step 5
 - `docs/integration/installable-package.md` — a short CommonJS note
 - `.changeset/requireable-from-commonjs.md` (create)
 
@@ -214,16 +219,11 @@ Drop the redundant `require` entry so it matches the shape from Step 1. Keep `de
 
 **Verify**: the Step 1 script still prints `all export maps OK`, and `node -e "console.log(Object.keys(require('./packages/config/package.json').exports['.']).join(','))"` prints `types,import,default`.
 
-### Step 3: Raise the Node floor to a version where `require(esm)` exists
+### Step 3: Standardize the Node floor at Node 22.12
 
-`require()` of ESM is unflagged from Node **20.19.0** and **22.12.0**. Below those it throws, so the current declarations advertise support we do not have.
+`require()` of ESM is unflagged from Node 20.19.0 and 22.12.0. AskDB supports a single Node 22.12 baseline, so every package advertises the same supported version rather than splitting consumers across two major lines.
 
-Raise each package's floor to the next supported version *in its existing major line* — do not jump majors:
-
-- packages currently `">=20"` → `">=20.19"`
-- packages currently `">=22"` → `">=22.12"`
-
-Check the current values with the survey command from "Current state" and change only the `engines.node` field.
+Set every published package's `engines.node` field to `">=22.12"`. Check the current values with the survey command from "Current state" and change only the `engines.node` field.
 
 **Verify**:
 ```bash
@@ -235,7 +235,7 @@ for (const p of fs.readdirSync('packages')) {
   const j=JSON.parse(fs.readFileSync(f,'utf8'));
   if(j.private) continue;
   const e=j.engines?.node??'';
-  if(e==='>=20'||e==='>=22') { console.log('FAIL: '+j.name+' still '+e); process.exit(1); }
+  if(e!=='>=22.12') { console.log('FAIL: '+j.name+' has '+e); process.exit(1); }
 }
 console.log('engines OK');"
 ```
@@ -247,20 +247,27 @@ The `/tmp` experiment proved the mechanism. This proves it for our actual output
 
 ```bash
 pnpm build
-node -e "
-const names=['@askdb/core','@askdb/config','@askdb/client','@askdb/ai','@askdb/postgres'];
-for (const n of names) {
-  try { const m=require(n); console.log(n, 'OK —', Object.keys(m).length, 'exports'); }
-  catch(e) { console.log(n, 'FAILED', e.code); process.exitCode=1; }
-}"
+for entry in \
+  'packages/core:@askdb/core' \
+  'packages/config:@askdb/config' \
+  'packages/client:@askdb/client' \
+  'packages/ai:@askdb/ai' \
+  'packages/postgres:@askdb/postgres'; do
+  dir=${entry%%:*}
+  name=${entry#*:}
+  (
+    cd "$dir"
+    node -e "const m=require('$name'); if (!Object.keys(m).length) process.exit(1); console.log('$name', 'OK —', Object.keys(m).length, 'exports')"
+  ) || exit 1
+done
 ```
 
-Every line must print `OK` with a non-zero export count. Run from the repo root so workspace resolution applies.
+Every line must print `OK` with a non-zero export count. Node resolves a package's own `name` through its `exports` map when the command runs from that package directory. Do **not** run these imports from the repository root: its manifest deliberately links only `@askdb/config`, so `MODULE_NOT_FOUND` for the other packages there says nothing about their published export maps.
 
 Also confirm the named exports a CommonJS consumer would actually reach:
 
 ```bash
-node -e "
+cd packages/core && node -e "
 const core=require('@askdb/core');
 for (const s of ['ask','loadSchema','AskDbError','POSTGRES_DIALECT']) {
   if (core[s]===undefined) { console.log('MISSING', s); process.exitCode=1; }
@@ -278,7 +285,7 @@ Both failures this plan fixes are invisible until a consumer hits them, so they 
 
 **Guard A — every published export map has `default` last.** Reuse the Step 1 script's logic as a vitest assertion, reading the manifests from disk. This catches a new package added without the condition.
 
-**Guard B — no top-level await in published sources.** Scan each published package's `src/` for module-scope `await` and assert none. A simple line-anchored check (`/^await /m`, plus `/^const .* = await /m`) covers the realistic cases; a full parse is overkill. Comment the test with *why* it exists — that top-level await silently breaks `require()` — because otherwise someone will delete it as pointless.
+**Guard B — no top-level await in exported module graphs.** For every `default` export target, map its `./dist/*.js` path to the corresponding `src/*.ts` file. Starting at those files, recursively follow relative static `import` and `export ... from` specifiers (replace the emitted `.js` suffix with `.ts`) and assert none of the reached files contains a module-scope `await`. A line-anchored check (`/^await /m`, plus `/^const .* = await /m`) covers the realistic cases; a full parse is overkill. Do **not** scan all `src/` files indiscriminately: a package CLI such as `packages/rag/src/bin.ts` can legitimately use top-level await because it is started by Node and is not requireable through the export map. Comment the test with *why* it exists — that top-level await in an exported graph silently breaks `require()` — because otherwise someone will delete it as pointless.
 
 **Verify**: `pnpm test` → both new tests pass. Then deliberately break each one (add `await Promise.resolve();` at module scope in a scratch file; remove a `default` from a manifest), confirm the corresponding test fails, and revert. A guard that has never been seen to fail is not a guard.
 
@@ -309,9 +316,9 @@ Wire it into `examples/installable-smoke/run.sh` following the existing consumer
 
 ### Step 7: Document the constraint, and write the changeset
 
-Add a short subsection to `docs/integration/installable-package.md` stating that AskDB packages are ESM and are requireable from CommonJS on Node ≥20.19 / ≥22.12 via Node's `require(esm)` support; that `const { ask } = require("@askdb/core")` works; and that below those versions consumers must use dynamic `import()`. Match the file's existing heading depth and code-fence style.
+Add a short subsection to `docs/integration/installable-package.md` stating that AskDB packages are ESM and are requireable from CommonJS on Node ≥22.12 via Node's `require(esm)` support; that `const { ask } = require("@askdb/core")` works; and that below that version consumers must use dynamic `import()`. Match the file's existing heading depth and code-fence style.
 
-Create `.changeset/requireable-from-commonjs.md` — **minor** for every package whose manifest changed (the `engines` floor is a declaration change worth a minor). The body must state: CommonJS applications can now `require()` these packages, where previously resolution failed with `ERR_PACKAGE_PATH_NOT_EXPORTED`; the minimum Node version is now 20.19 / 22.12; and no runtime behavior or exported symbol changed.
+Create `.changeset/requireable-from-commonjs.md` — **minor** for every package whose manifest changed (the `engines` floor is a declaration change worth a minor). The body must state: CommonJS applications can now `require()` these packages, where previously resolution failed with `ERR_PACKAGE_PATH_NOT_EXPORTED`; the minimum Node version is now 22.12; and no runtime behavior or exported symbol changed.
 
 **Verify**: `pnpm build && pnpm lint && pnpm test && pnpm smoke:install && pnpm docs:build` → all exit 0.
 
@@ -328,7 +335,7 @@ ALL must hold:
 
 - [ ] The Step 1 verification script prints `all export maps OK`
 - [ ] The Step 3 verification script prints `engines OK`
-- [ ] After `pnpm build`, `require()` succeeds from the repo root for `@askdb/core`, `@askdb/config`, `@askdb/client`, `@askdb/ai`, `@askdb/postgres`
+- [ ] After `pnpm build`, each package's Node self-reference successfully `require()`s `@askdb/core`, `@askdb/config`, `@askdb/client`, `@askdb/ai`, and `@askdb/postgres`
 - [ ] `require('@askdb/core')` exposes `ask`, `loadSchema`, `AskDbError`, `POSTGRES_DIALECT`, and `instanceof` holds across the error hierarchy
 - [ ] Guard A and Guard B exist, pass, and were each observed to fail when deliberately broken — stated in your report
 - [ ] `pnpm smoke:install` exits 0 and output contains `smoke(cjs): OK`
@@ -345,7 +352,7 @@ ALL must hold:
 Stop and report back (do not improvise) if:
 
 - The Step 1 or Step 4 `require()` of a real built package still fails after adding `default`. Report the exact error code — if it is `ERR_REQUIRE_ESM` rather than `ERR_PACKAGE_PATH_NOT_EXPORTED`, the local Node is below the floor and you should re-run on 22.12+ before concluding anything.
-- The top-level-await scan finds a match in any published package's `src/`. That package cannot be made requireable without removing it; report which file and leave that package's export map unchanged.
+- The exported-module-graph scan finds a top-level-await match. That export cannot be made requireable without removing it; report the export and source file, and leave that package's export map unchanged. A match in a non-exported CLI entrypoint is expected to be excluded by the guard.
 - `pnpm install` reports engine incompatibilities after Step 3 — that would mean some workspace tool cannot run on the raised floor.
 - Any existing test breaks.
 - You conclude a real CommonJS build is needed after all. Report the specific reason; the rejection reasoning is in "Current state" and reversing it is a maintainer decision, not an executor one.
@@ -354,8 +361,8 @@ Stop and report back (do not improvise) if:
 ## Maintenance notes
 
 - **Every new published package needs `default` in its export map and the raised `engines` floor.** Guard A makes the omission a test failure instead of a support ticket. Keep it.
-- **Top-level await is now a breaking change to packaging**, not just a stylistic choice. Guard B is the tripwire; its comment explains why. If a genuine need for top-level await arises, that package must either drop CommonJS requireability or gain a real CJS build — a deliberate decision, not a side effect.
+- **Top-level await in an exported module graph is now a breaking packaging change**, not just a stylistic choice. Guard B is the tripwire; its comment explains why. A CLI-only entrypoint is not in that graph. If a genuine need for top-level await arises in an exported graph, that package must either drop CommonJS requireability or gain a real CJS build — a deliberate decision, not a side effect.
 - **This does not make the packages CommonJS.** They remain ESM and are *loaded* through `require(esm)`. The practical differences a consumer may notice: the returned value is a module namespace object (frozen, no `__esModule` interop marker), and there is no default export to unwrap. Both are fine for our packages, which export only named symbols.
-- **The Node floor is set by `require(esm)` availability, not by our code.** If the project ever needs to support Node below 20.19, the only route is a real CJS build — and even then `ai` would still gate the model path, so it would only help schema-only consumers.
+- **The Node floor is set by `require(esm)` availability and AskDB's one-line support policy, not by our code.** If the project ever needs to support Node below 22.12, the only route is a real CJS build — and even then `ai` would still gate the model path, so it would only help schema-only consumers.
 - **Related follow-up**: plan 036 (brand-checked error predicates) was originally justified partly by dual-publishing creating duplicate module instances. That reasoning does not apply here — `require()` and `import()` of the same package return the *same* namespace object, verified. Plan 036 still stands on its independent justification (removing the module-handle threading, and surviving two copies of the package at different versions in one tree), but its dependency note has been corrected.
 - **Reviewer focus**: that `default` is last in every condition object (order is load-bearing), that `engines` was raised in the correct major line rather than bumped wholesale, and that both guards were actually observed failing.

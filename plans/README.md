@@ -69,7 +69,7 @@ Execute in the order below unless dependencies say otherwise. Each executor: rea
 | 031 | Make `askdb init` a setup wizard that writes a tailored config and installs selected packages | P1 | L | 030 | DONE |
 | 032 | Unify Studio execute with the engine packages so per-provider knowledge has one home (incl. SQL Server TLS fix) | P1 | M | — | DONE |
 | 033 | Return unbound SQL + a parameter manifest alongside the bound SQL, and share one binder with tenant scoping | P1 | L | — | DONE |
-| 034 | Make the published packages requireable from CommonJS (rewritten 2026-08-05; was "dual-publish CJS + ESM") | P1 | S | — | TODO |
+| 034 | Make the published packages requireable from CommonJS (rewritten 2026-08-05; was "dual-publish CJS + ESM") | P1 | S | — | DONE (verified 2026-08-05; PR #174) |
 | 035 | Make `ai` and the provider SDKs peer dependencies so consumers own their AI SDK version (amends ADR 0006) | P1 | M | — | TODO |
 | 036 | Add brand-checked error predicates so `instanceof` is never required across module boundaries | P2 | S | — | TODO |
 | 037 | Give consumers a supported way to read the guardrail `explain` payload | P2 | S | — | TODO |

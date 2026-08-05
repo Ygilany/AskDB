@@ -1,0 +1,10 @@
+{
+  "name": "askdb-installable-smoke-cjs",
+  "private": true,
+  "version": "0.0.0",
+  "scripts": { "smoke": "node src/smoke.cjs" },
+  "dependencies": {
+    "@askdb/config": "__ASKDB_CONFIG_TARBALL__",
+    "@askdb/core": "__ASKDB_CORE_TARBALL__"
+  }
+}

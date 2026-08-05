@@ -270,6 +270,23 @@ echo "smoke: tsc --noEmit…"
 echo "smoke: tsx src/smoke.ts…"
 (cd "$WORK/consumer" && npx --yes tsx src/smoke.ts)
 
+echo "smoke: staging CommonJS consumer fixture…"
+cp -R "$SCRIPT_DIR/consumer-cjs" "$WORK/consumer-cjs"
+node -e "
+  const fs = require('fs');
+  const p = '$WORK/consumer-cjs/package.json';
+  const j = JSON.parse(fs.readFileSync(p, 'utf8'));
+  j.dependencies['@askdb/config'] = 'file:$CONFIG_TARBALL';
+  j.dependencies['@askdb/core'] = 'file:$CORE_TARBALL';
+  fs.writeFileSync(p, JSON.stringify(j, null, 2) + '\n');
+"
+
+echo "smoke: npm install CommonJS consumer…"
+(cd "$WORK/consumer-cjs" && npm install --silent --no-audit --no-fund --no-package-lock)
+
+echo "smoke: node src/smoke.cjs…"
+(cd "$WORK/consumer-cjs" && npm run smoke)
+
 echo "smoke: staging app sandbox…"
 mkdir -p "$WORK/apps"
 node -e "
