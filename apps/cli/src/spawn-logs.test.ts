@@ -79,9 +79,52 @@ describe("cli spawn: structured logs contract", () => {
 
       // Bonus: we should never crash before generation completes in mock mode.
       expect(events.has(AskDbLogEvent.RunError)).toBe(false);
+
+      // The warning now comes from core's guardrail, logged through the CLI logger.
+      expect(events.has(AskDbLogEvent.PipelineSensitiveSqlWarning)).toBe(true);
+      const warning = records.find(
+        (r) => r.event === AskDbLogEvent.PipelineSensitiveSqlWarning,
+      )!;
+      expect(warning.sensitiveColumnCount).toBe(1);
+      expect(warning.sensitiveColumns).toEqual(["public.users.secret_recovery_token"]);
     } finally {
       rmSync(workDir, { recursive: true, force: true });
     }
+  });
+
+  it("does not warn on a query that never reaches a sensitive column", () => {
+    const repoRoot = join(import.meta.dirname, "../../..");
+    const cliDir = join(repoRoot, "apps/cli");
+
+    const build = run("pnpm", ["-C", cliDir, "build"], { cwd: repoRoot });
+    expect(build.status).toBe(0);
+
+    const schemaPath = join(repoRoot, "fixtures/schemas/orders-users-sensitive.schema");
+
+    const exec = run(
+      "node",
+      [
+        join(cliDir, "dist/cli.js"),
+        "ask",
+        "--schema",
+        schemaPath,
+        "--question",
+        "order totals",
+      ],
+      {
+        cwd: repoRoot,
+        env: {
+          // `id` exists on both orders and the sensitive-column-bearing users table.
+          // The old bare-word matcher would have had to flag this; scope resolution does not.
+          ASKDB_MOCK_SQL: "SELECT o.id, o.total_cents FROM orders o",
+          ASKDB_CORRELATION_ID: "spawn-test-clean",
+        },
+      },
+    );
+
+    expect(exec.status).toBe(0);
+    expect(exec.stderr).not.toContain("Warning: generated SQL references sensitive columns");
+    expect(exec.stdout).toContain("SELECT o.id, o.total_cents FROM orders o;");
   });
 });
 

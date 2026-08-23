@@ -22,6 +22,7 @@ import {
   parseAskDbModeV1,
   SqlValidationError,
   createAskDbLogger,
+  formatSensitiveReference,
   loadSchema,
 } from "@askdb/core";
 import { Command } from "commander";
@@ -139,44 +140,6 @@ function resolveSchemaPathForAsk(
   runtime: ReturnType<typeof getAskDbRuntimeConfig>,
 ): string {
   return optionSchema ?? runtime.introspection.outputDir;
-}
-
-type SensitiveSqlReference = { table: string; column: string };
-const SENSITIVE_SQL_WARNING_EVENT = "askdb.pipeline.sensitive_sql_warning" as const;
-
-function escapeRegExp(s: string): string {
-  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-}
-
-function findSensitiveReferencesInSql(
-  sql: string,
-  schema: Awaited<ReturnType<typeof loadSchemaFromPath>>,
-): SensitiveSqlReference[] {
-  const lower = sql.toLowerCase();
-  const refs: SensitiveSqlReference[] = [];
-
-  for (const t of schema.tables) {
-    for (const c of t.columns) {
-      if (!t.sensitive && !c.sensitive) continue;
-
-      const col = c.name.toLowerCase();
-      const table = t.name.toLowerCase();
-      const qualified = new RegExp(`\\b${escapeRegExp(table)}\\s*\\.\\s*${escapeRegExp(col)}\\b`, "i");
-      const unqualified = new RegExp(`\\b${escapeRegExp(col)}\\b`, "i");
-
-      if (qualified.test(lower) || unqualified.test(lower)) {
-        refs.push({ table: t.name, column: c.name });
-      }
-    }
-  }
-
-  const seen = new Set<string>();
-  return refs.filter((r) => {
-    const k = `${r.table}.${r.column}`.toLowerCase();
-    if (seen.has(k)) return false;
-    seen.add(k);
-    return true;
-  });
 }
 
 function resolveAskDbLogLevel(opts: {
@@ -402,21 +365,19 @@ program
             : {}),
         });
 
-        const sensitiveRefs = findSensitiveReferencesInSql(out.sql, schema);
-        if (sensitiveRefs.length > 0) {
-          const cols = sensitiveRefs.map((r: SensitiveSqlReference) => `${r.table}.${r.column}`);
-          logger.info(
-            {
-              event: SENSITIVE_SQL_WARNING_EVENT,
-              sensitiveColumnCount: cols.length,
-              sensitiveColumns: cols,
-            },
-            "generated SQL references sensitive identifiers",
-          );
+        // `ask()` runs the sensitive-identifier guardrail in warn mode and emits
+        // askdb.pipeline.sensitive_sql_warning through the logger above; the CLI
+        // only renders it for the operator.
+        const sensitive = out.sensitiveGuardrail;
+        if (sensitive && sensitive.references.length > 0) {
+          const cols = sensitive.references.map(formatSensitiveReference);
           console.error(
             `Warning: generated SQL references sensitive columns: ${cols.join(", ")}\n` +
               "Review carefully before sharing or running this SQL outside AskDB.",
           );
+        }
+        if (sensitive?.unresolvedScope) {
+          console.error(`Note: ${sensitive.unresolvedScope.message}`);
         }
 
         console.log("-- sql --");

@@ -22,6 +22,14 @@ import {
 } from "./sql/tenant-placeholders.js";
 import { validateTenantScope } from "./sql/tenant-scope-validate.js";
 import {
+  formatSensitiveReference,
+  schemaHasSensitiveIdentifiers,
+  validateSensitiveReferences,
+  type SensitiveGuardrailMode,
+  type SensitiveGuardrailResult,
+} from "./sql/sensitive-guardrail.js";
+import { SensitiveReferenceError, type SensitiveReference } from "./errors.js";
+import {
   bindPreparedQuery,
   sqlStructurallyEqual,
   type PreparedQuery,
@@ -172,6 +180,16 @@ export type AskPipelineOptions = {
    * extra output tokens when the host does not use those fields.
    */
   parameterize?: boolean;
+  /**
+   * How to treat SQL that references schema identifiers marked `sensitive`.
+   * Default `"warn"` — {@link AskPipelineResult.sensitiveGuardrail} is populated and
+   * `askdb.pipeline.sensitive_sql_warning` is logged, but `ask()` still resolves.
+   * `"strict"` throws {@link SensitiveReferenceError} instead. `"off"` skips the check.
+   *
+   * This only covers SQL produced by *this* call. Hosts that cache or replay SQL
+   * should call `validateSensitiveReferences` on every execution path.
+   */
+  sensitiveGuardrailMode?: SensitiveGuardrailMode | "off";
 };
 
 export type AskPipelineResult = {
@@ -185,6 +203,11 @@ export type AskPipelineResult = {
   /** Definitions + template only — no runtime values. */
   preparedQuery?: PreparedQuery;
   explain?: unknown;
+  /**
+   * Sensitive-identifier guardrail result for `sql`. Present when the schema declares
+   * at least one `sensitive` table/column and `sensitiveGuardrailMode` is not `"off"`.
+   */
+  sensitiveGuardrail?: SensitiveGuardrailResult;
   tenantGuardrail?: import("./sql/tenant-guardrail.js").TenantGuardrailResult;
   tenantParams?: unknown[];
   tenantBindings?: TenantBinding[];
@@ -379,7 +402,50 @@ export async function ask(options: AskPipelineOptions): Promise<AskPipelineResul
     }
   }
 
+  applySensitiveGuardrail(result, options, logger);
+
   return result;
+}
+
+/**
+ * Run the sensitive-identifier guardrail over the SQL the host is about to receive.
+ * Runs after tenant resolution so it sees exactly the statement in `result.sql`.
+ */
+function applySensitiveGuardrail(
+  result: AskPipelineResult,
+  options: AskPipelineOptions,
+  logger: AskDbLogger | undefined,
+): void {
+  const mode = options.sensitiveGuardrailMode ?? "warn";
+  if (mode === "off") return;
+  if (!schemaHasSensitiveIdentifiers(options.schema)) return;
+
+  try {
+    const guardrail = validateSensitiveReferences(result.sql, options.schema, { mode });
+    result.sensitiveGuardrail = guardrail;
+    logSensitiveReferences(logger, guardrail.references);
+  } catch (error) {
+    if (error instanceof SensitiveReferenceError) {
+      logSensitiveReferences(logger, error.references);
+    }
+    throw error;
+  }
+}
+
+function logSensitiveReferences(
+  logger: AskDbLogger | undefined,
+  references: SensitiveReference[],
+): void {
+  if (references.length === 0) return;
+  const sensitiveColumns = references.map(formatSensitiveReference);
+  logger?.info(
+    {
+      event: AskDbLogEvent.PipelineSensitiveSqlWarning,
+      sensitiveColumnCount: sensitiveColumns.length,
+      sensitiveColumns,
+    },
+    "generated SQL references sensitive identifiers",
+  );
 }
 
 const TENANT_MASK_RE = /:tenant_([a-z0-9_]+)_ids/g;

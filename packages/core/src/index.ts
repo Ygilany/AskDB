@@ -6,6 +6,14 @@ export {
   type TenantGuardrailResult,
 } from "./sql/tenant-guardrail.js";
 export {
+  validateSensitiveReferences,
+  schemaHasSensitiveIdentifiers,
+  formatSensitiveReference,
+  type SensitiveGuardrailMode,
+  type SensitiveGuardrailResult,
+  type ValidateSensitiveReferencesOptions,
+} from "./sql/sensitive-guardrail.js";
+export {
   resolveTenantSql,
   extractTenantPlaceholders,
   placeholderForRoot,

@@ -45,6 +45,8 @@ The schema artifact lets you mark columns as `sensitive: true`. That flag change
 
 Either way, the *values* in those columns are never in the prompt — the flag is about the schema metadata, not the data.
 
+Both of those are **prompt-level**: they change what the model sees, not what can execute. SQL that reaches your database by another route — your own SQL cache, a stored or replayed statement, an artifact regenerated with the flags reset — is unaffected. For that, `@askdb/core` exports `validateSensitiveReferences(sql, schema)`, which reports the sensitive tables and columns a given statement references. `ask()` runs it for you and returns the result as `sensitiveGuardrail`; if you cache or replay SQL, call it on every execution path. See [Core API](/reference/core-api/#validatesensitivereferencessql-schema-options).
+
 ## Where logging lives
 
 Audit logging is your application's job, not AskDB's. AskDB doesn't log questions, generated SQL, or model responses. If you want a record of every question that was asked and every SQL string that got generated, log them in the code that wraps `ask()`. That keeps the log inside your stack — same place your user identities and session data already live.

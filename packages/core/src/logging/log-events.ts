@@ -31,6 +31,13 @@ export const AskDbLogEvent = {
   TenantScopeValidated: "askdb.tenant.scope_validated",
   /** Tenant scope validation failed. Includes `reason`. */
   TenantScopeRejected: "askdb.tenant.scope_rejected",
+  /**
+   * Generated (or replayed) SQL was found to reference identifiers marked
+   * `sensitive` in the schema artifact. Emitted by `ask()` in both `warn` and
+   * `strict` guardrail modes. Includes `sensitiveColumnCount` and the matched
+   * `sensitiveColumns` — schema metadata only, never row values.
+   */
+  PipelineSensitiveSqlWarning: "askdb.pipeline.sensitive_sql_warning",
   /** Tenant SQL guardrail check passed. */
   TenantGuardrailPassed: "askdb.tenant.guardrail_passed",
   /** Tenant SQL guardrail check found issues. Includes `warnings` in warn mode. */
