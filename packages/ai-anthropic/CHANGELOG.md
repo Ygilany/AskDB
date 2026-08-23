@@ -1,5 +1,16 @@
 # @askdb/ai-anthropic
 
+## 1.0.0-beta.4
+
+### Minor Changes
+
+- 1131e77: CommonJS applications can now `require()` AskDB packages, where package resolution previously failed with `ERR_PACKAGE_PATH_NOT_EXPORTED`. The minimum supported Node.js version is now 22.12, which provides unflagged `require(esm)` support. No runtime behavior or exported symbols changed.
+
+### Patch Changes
+
+- Updated dependencies [1131e77]
+  - @askdb/ai@0.1.0-beta.6
+
 ## 1.0.0-beta.3
 
 ### Minor Changes

@@ -1,5 +1,22 @@
 # @askdb/http-api
 
+## 1.0.0-beta.42
+
+### Patch Changes
+
+- Updated dependencies [595182d]
+- Updated dependencies [1af6263]
+- Updated dependencies [1131e77]
+  - @askdb/core@1.0.0-beta.42
+  - @askdb/ai@0.1.0-beta.6
+  - @askdb/ai-anthropic@1.0.0-beta.4
+  - @askdb/ai-azure@1.0.0-beta.6
+  - @askdb/ai-google@1.0.0-beta.6
+  - @askdb/ai-openai@1.0.0-beta.6
+  - @askdb/client@1.0.0-beta.5
+  - @askdb/config@1.0.0-beta.11
+  - @askdb/postgres@0.2.0-beta.18
+
 ## 1.0.0-beta.41
 
 ### Minor Changes

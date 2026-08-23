@@ -1,5 +1,18 @@
 # @askdb/introspect
 
+## 0.3.0-beta.16
+
+### Minor Changes
+
+- 1131e77: CommonJS applications can now `require()` AskDB packages, where package resolution previously failed with `ERR_PACKAGE_PATH_NOT_EXPORTED`. The minimum supported Node.js version is now 22.12, which provides unflagged `require(esm)` support. No runtime behavior or exported symbols changed.
+
+### Patch Changes
+
+- Updated dependencies [595182d]
+- Updated dependencies [1af6263]
+- Updated dependencies [1131e77]
+  - @askdb/core@1.0.0-beta.42
+
 ## 0.3.0-beta.15
 
 ### Patch Changes

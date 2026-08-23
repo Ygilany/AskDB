@@ -1,5 +1,39 @@
 # @askdb/studio
 
+## 0.2.0-beta.35
+
+### Patch Changes
+
+- 5781271: Fix several bugs in the Studio web app that were hidden because `tsconfig.web.json` inherited an `exclude` from the root config that silently disabled type-checking for `src/web`:
+
+  - Concepts page "Revert" button was calling state setters left over from a pre-`useReducer` refactor and did nothing.
+  - Removing a tenant policy hierarchy edge removed the wrong row (missing loop index).
+  - Total token count in the request usage summary could throw on a `null` total; it's now hidden like the other usage rows when unavailable.
+  - The playground's saved-history `explain` field could be assigned a non-string value.
+  - Removed the schema table's "Default" column, which never had backing data.
+
+  Internal: swapped `eslint-plugin-import` for `eslint-plugin-import-x`, since the former doesn't support ESLint 10.
+
+- Updated dependencies [595182d]
+- Updated dependencies [1af6263]
+- Updated dependencies [1131e77]
+  - @askdb/core@1.0.0-beta.42
+  - @askdb/ai@0.1.0-beta.6
+  - @askdb/ai-anthropic@1.0.0-beta.4
+  - @askdb/ai-azure@1.0.0-beta.6
+  - @askdb/ai-google@1.0.0-beta.6
+  - @askdb/ai-openai@1.0.0-beta.6
+  - @askdb/config@1.0.0-beta.11
+  - @askdb/connectors@0.1.0-beta.7
+  - @askdb/enrich@0.2.0-beta.13
+  - @askdb/introspect@0.3.0-beta.16
+  - @askdb/mysql@0.1.0-beta.17
+  - @askdb/postgres@0.2.0-beta.18
+  - @askdb/prisma@0.2.0-beta.16
+  - @askdb/rag@0.2.0-beta.22
+  - @askdb/sqlite@0.1.0-beta.17
+  - @askdb/sqlserver@0.1.0-beta.18
+
 ## 0.2.0-beta.34
 
 ### Minor Changes
