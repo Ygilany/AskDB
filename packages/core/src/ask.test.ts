@@ -3,6 +3,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it, vi } from "vitest";
 import { ask, type AskDialect } from "./ask.js";
+import { SensitiveReferenceError } from "./errors.js";
 import { AskDbLogEvent } from "./logging/log-events.js";
 import { formatSchemaForNlToSql } from "./schema/normalize.js";
 import type { NormalizedSchema } from "./schema/types.js";
@@ -431,5 +432,105 @@ describe("ask — parameterize", () => {
     expect(result.tenantBindings).toHaveLength(1);
     expect(result.tenantBindings![0]!.ids).toEqual(["42"]);
     expect(result.tenantBindings![0]!.placeholder).toBe(":tenant_agency_ids");
+  });
+});
+
+describe("ask — sensitive-identifier guardrail", () => {
+  const sensitiveSchema: NormalizedSchema = {
+    tables: [
+      {
+        name: "users",
+        columns: [
+          { name: "id", type: "integer", nullable: false, primaryKey: true },
+          { name: "email", type: "text", nullable: false },
+          { name: "password", type: "text", nullable: false, sensitive: true },
+        ],
+      },
+      {
+        name: "orders",
+        columns: [
+          { name: "id", type: "integer", nullable: false, primaryKey: true },
+          { name: "total_cents", type: "integer", nullable: false },
+        ],
+      },
+    ],
+  };
+
+  const dialectReturning = (sql: string): AskDialect => ({ generate: async () => ({ sql }) });
+
+  it("attaches sensitiveGuardrail and warns by default", async () => {
+    const info = vi.fn();
+    const result = await ask({
+      question: "credentials",
+      schema: sensitiveSchema,
+      model: fakeModel,
+      dialect: dialectReturning("SELECT email, password FROM users"),
+      logger: { info, error: vi.fn() },
+    });
+
+    expect(result.sensitiveGuardrail).toEqual({
+      passed: false,
+      references: [{ table: "users", column: "password", matchKind: "unqualified" }],
+    });
+    const warnings = info.mock.calls.filter(
+      (c) => (c[0] as { event?: string })?.event === AskDbLogEvent.PipelineSensitiveSqlWarning,
+    );
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]![0]).toMatchObject({
+      sensitiveColumnCount: 1,
+      sensitiveColumns: ["users.password"],
+    });
+  });
+
+  it("does not flag a benign query against another table", async () => {
+    const result = await ask({
+      question: "orders",
+      schema: sensitiveSchema,
+      model: fakeModel,
+      dialect: dialectReturning("SELECT id, total_cents FROM orders"),
+    });
+    expect(result.sensitiveGuardrail).toEqual({ passed: true, references: [] });
+  });
+
+  it("strict mode rejects the call with SensitiveReferenceError", async () => {
+    const info = vi.fn();
+    await expect(
+      ask({
+        question: "credentials",
+        schema: sensitiveSchema,
+        model: fakeModel,
+        dialect: dialectReturning("SELECT u.password FROM users u"),
+        sensitiveGuardrailMode: "strict",
+        logger: { info, error: vi.fn() },
+      }),
+    ).rejects.toBeInstanceOf(SensitiveReferenceError);
+
+    // The warning is still logged before the throw so operators see what tripped it.
+    expect(
+      info.mock.calls.filter(
+        (c) => (c[0] as { event?: string })?.event === AskDbLogEvent.PipelineSensitiveSqlWarning,
+      ),
+    ).toHaveLength(1);
+  });
+
+  it("off mode skips the check entirely", async () => {
+    const result = await ask({
+      question: "credentials",
+      schema: sensitiveSchema,
+      model: fakeModel,
+      dialect: dialectReturning("SELECT email, password FROM users"),
+      sensitiveGuardrailMode: "off",
+    });
+    expect(result.sensitiveGuardrail).toBeUndefined();
+  });
+
+  it("is absent when the schema declares no sensitive identifiers", async () => {
+    const result = await ask({
+      question: "count",
+      schema: minimalSchema,
+      model: fakeModel,
+      dialect: cannedDialect,
+    });
+    expect(result.sensitiveGuardrail).toBeUndefined();
   });
 });
