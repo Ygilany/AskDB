@@ -18,7 +18,7 @@ Before `ask()` returns, the generated SQL passes through this sequence:
 3. **Single statement.** Multi-statement queries are rejected.
 4. **Scope.** Queries against system schemas (`pg_catalog`, `information_schema`, MySQL `mysql`, SQL Server `sys`, and so on) are rejected.
 5. **Tenant filter (when declared).** If your schema artifact declares a tenant column on a table, every query that touches that table must include the tenant predicate. AskDB rewrites the query to add the filter or rejects it. See [Multi-tenancy](/guides/multi-tenancy/).
-6. **Sensitive columns (when configured).** Columns marked `sensitive: true` can be omitted from the prompt entirely with `--omit-sensitive-from-prompt` so the model never proposes them.
+6. **Sensitive columns (when configured).** Columns marked `sensitive: true` can be omitted from the prompt entirely with `--omit-sensitive-from-prompt` so the model never proposes them. That is prompt-level. Separately, the returned SQL is checked against the schema's `sensitive` markers and the result is attached as `sensitiveGuardrail` — a warning by default, a rejection with `sensitiveGuardrailMode: "strict"`. Call `validateSensitiveReferences` yourself on any SQL you cache and re-execute.
 
 The full ruleset for what counts as read-only and how dialects vary lives in the [validation contract on GitHub](https://github.com/Ygilany/AskDB/blob/main/docs/contracts/modes-v1.md).
 

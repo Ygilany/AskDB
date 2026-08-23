@@ -36,6 +36,7 @@ const { sql } = await ask({
 | `tenantScope` | `TenantScope` | no | — | Required when the schema has a `tenant-policy.md`. The pipeline fails closed if a policy exists and this is absent. |
 | `tenantSqlMode` | `TenantSqlOutputMode` | no | `"sql-only"` | `"sql-only"` inlines literal tenant values; `"sql-params"` converts them to positional `$N` parameters. |
 | `parameterize` | `boolean` | no | `true` | Ask the model for unbound SQL + a parameter manifest. Still exactly one model call. Set `false` to save output tokens. Inert for custom `AskDialect` implementations. |
+| `sensitiveGuardrailMode` | `"warn" \| "strict" \| "off"` | no | `"warn"` | How to treat SQL that references identifiers marked `sensitive`. `"warn"` populates `result.sensitiveGuardrail` and logs; `"strict"` throws `SensitiveReferenceError`; `"off"` skips the check. See [`validateSensitiveReferences`](#validatesensitivereferencessql-schema-options). |
 | `retriever` | `Retriever` | no | — | RAG retriever from `@askdb/rag`. When supplied and schema chunk count exceeds `retrievalThresholdChunks`, retrieval replaces the full DDL in the prompt. |
 | `retrievalK` | `number` | no | `8` | Top-k passed to the retriever. |
 | `retrievalThresholdChunks` | `number` | no | `30` | Chunk count below which the full DDL is used even if a retriever is supplied. |
@@ -54,6 +55,7 @@ const { sql } = await ask({
 | `preparedQuery` | `PreparedQuery \| undefined` | Definitions + named template only (no runtime values). Input to `bindPreparedQuery()`. |
 | `usage` | `AskUsage \| undefined` | When the model provider reports token counts. |
 | `explain` | `unknown \| undefined` | When `explain: true`. Heuristic guardrail metadata — which read-only rules fired and why. |
+| `sensitiveGuardrail` | `SensitiveGuardrailResult \| undefined` | When the schema declares at least one `sensitive` table/column and `sensitiveGuardrailMode` is not `"off"`. The sensitive identifiers the returned SQL references. |
 | `tenantGuardrail` | `TenantGuardrailResult \| undefined` | When a tenant policy is active. Confirms the generated SQL references tenant-scoped tables correctly. |
 | `tenantParams` | `unknown[] \| undefined` | When `tenantSqlMode: "sql-params"` and the SQL has tenant placeholders. Tenant-only positional values. |
 | `tenantBindings` | `TenantBinding[] \| undefined` | When a tenant policy is active. Structured binding metadata for audit. |
@@ -86,6 +88,91 @@ type AskUsage = {
 ```
 
 Populated from the model provider's usage report. Use for cost tracking or quota enforcement. All fields are `null` when the provider does not report that counter.
+
+---
+
+## Guardrails
+
+### `validateSensitiveReferences(sql, schema, options?)`
+
+Reports the `sensitive` tables and columns a SQL statement references. Pure, synchronous, no model call.
+
+`sensitive: true` otherwise only affects the **prompt** — `formatSchemaForNlToSql` either tags identifiers `(sensitive)` or, with `omitSensitiveIdentifiersFromNlToSqlPrompt`, withholds them. Both act on what the model *sees*. This function is the **enforcement** path: it inspects SQL that is about to execute. Hosts that cache, store, or replay generated SQL should call it on **every execution path**, not just at generation time.
+
+```ts
+import { validateSensitiveReferences } from "@askdb/core";
+
+// Cache-replay path — no model in the loop.
+const { passed, references } = validateSensitiveReferences(cachedSql, schema);
+if (!passed) {
+  throw new Error(`refusing to replay: ${references.map((r) => r.column).join(", ")}`);
+}
+```
+
+`ask()` runs this automatically over the SQL it returns and attaches the result as `result.sensitiveGuardrail`; use the standalone function for statements that did not come from this `ask()` call.
+
+#### Result — `SensitiveGuardrailResult`
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `passed` | `boolean` | `true` only when nothing sensitive was referenced **and** table scope was fully resolved. |
+| `references` | `SensitiveReference[]` | Every sensitive identifier the statement touches. |
+| `unresolvedScope` | `SensitiveScopeReport \| undefined` | Present when the statement's `FROM`/`JOIN` scope could not be resolved with confidence. |
+
+```ts
+type SensitiveReference = {
+  table: string;            // table name as spelled in the schema artifact
+  schema?: string;          // namespace, when the artifact records one
+  column: string;           // column name, or "*" when matchKind is "table"
+  matchKind: "qualified" | "unqualified" | "table";
+};
+```
+
+- **`"qualified"`** — `table.column`, or `alias.column` where the alias binds to the owning table.
+- **`"unqualified"`** — a bare `column`, counted **only because the owning table is in the statement's scope**.
+- **`"table"`** — the sensitive table itself is a `FROM`/`JOIN` target. Catches `SELECT * FROM secrets`, where no column is named.
+
+#### Scope resolution
+
+An unqualified name is not a substring search. `FROM`/`JOIN` targets and their aliases are resolved first — including inside CTEs and derived tables — and bare names are matched only against the columns of tables actually in scope.
+
+This matters most with table-level `sensitive`, which promotes *every* column of that table into the match set. A schema with a `sensitive` audit or changelog table that has an `id` column would otherwise flag `SELECT s.id FROM students s`. It does not:
+
+```ts
+validateSensitiveReferences(
+  "SELECT s.id, s.first_name FROM people.students s",
+  schema,
+); // → { passed: true, references: [] }
+
+validateSensitiveReferences("SELECT email, password FROM identity.users", schema);
+// → references: [{ table: "users", schema: "identity", column: "password", matchKind: "unqualified" }]
+```
+
+#### Modes
+
+`{ mode: "warn" }` (default) returns the references without throwing. `{ mode: "strict" }` throws `SensitiveReferenceError extends AskDbError` whenever `passed` is `false`, carrying `.rule` (`"SENSITIVE_TABLE_REFERENCED"` | `"SENSITIVE_COLUMN_REFERENCED"` | `"UNRESOLVED_TABLE_SCOPE"`), `.references`, and `.unresolvedScope`.
+
+#### Conservative failure
+
+When scope cannot be proven, the check reports rather than silently passing. `unresolvedScope.issues` contains one or more of:
+
+| Issue | Cause | Effect |
+| --- | --- | --- |
+| `NO_TABLE_SOURCE` | No `FROM`/`JOIN` target resolved, so unqualified names cannot be bound. | Unqualified matching widens to every sensitive column. |
+| `UNKNOWN_QUALIFIER` | A `qualifier.column` whose qualifier is not a known table, alias, or CTE. | That column is matched against every sensitive column. |
+| `OPAQUE_TABLE_SOURCE` | A table source that is not a relation name (table function, table-valued expression). | Reported only; no widening — such a source exposes no schema columns. |
+
+`unresolvedScope.widened` says whether matching was widened, and `.message` explains why. `strict` mode treats unresolved scope as a failure, mirroring how `validateTenantGuardrails` handles unprovable scope.
+
+The check is heuristic, not a SQL parser — a review and enforcement aid, not a substitute for database-side column privileges.
+
+### `schemaHasSensitiveIdentifiers(schema)`
+
+`true` when the schema marks at least one table or column `sensitive`. Cheap pre-check for hosts that want to skip the guardrail entirely on schemas with no markers — `ask()` uses it for exactly that, which is why `result.sensitiveGuardrail` is absent on unmarked schemas.
+
+### `formatSensitiveReference(ref)`
+
+Renders a `SensitiveReference` as `schema.table.column` (or `table.column` when the artifact has no namespace). Used for the CLI warning and the `askdb.pipeline.sensitive_sql_warning` log field.
 
 ---
 

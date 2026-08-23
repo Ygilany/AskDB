@@ -251,7 +251,7 @@ Given the same v2 artifact, the chunker must produce the **same chunk ids and th
 
 ## Sensitive propagation
 
-The `sensitive` flag must flow consistently from the physical layer through prompts and chunks. Behavior matches today's [`sensitive-fields-and-modes.md`](./sensitive-fields-and-modes.md) defaults extended for v2:
+The `sensitive` flag must flow consistently from the physical layer through prompts and chunks. Prompt tagging and omission govern only what the model **sees**; SQL that reaches execution by another route (a host SQL cache, a replayed statement, a regenerated artifact) is covered by `validateSensitiveReferences` — see [`sensitive-fields-and-modes.md`](./sensitive-fields-and-modes.md). Behavior matches today's [`sensitive-fields-and-modes.md`](./sensitive-fields-and-modes.md) defaults extended for v2:
 
 | Surface | Default behavior for sensitive table/column | Override |
 |---|---|---|
@@ -260,7 +260,8 @@ The `sensitive` flag must flow consistently from the physical layer through prom
 | **`Common query language` chunk** | If the H2 body **mentions** a sensitive column by name, the chunk is **excluded entirely**. The chunker does not partial-redact prose. | Same option as above. |
 | **Example question / `Business context` chunks** | If the table is sensitive or the source text mentions a sensitive column by name, the affected chunks are excluded entirely. | Same option as above. |
 | **Concept chunks** | Concepts that **link to** a sensitive id, or whose description mentions a sensitive column by name, are excluded entirely by default. | Same option as above. |
-| **Logs** | Counts only — `askdb.rag.sensitive_chunks_excluded`, `askdb.rag.sensitive_chunks_included`. Never log identifiers or values. | n/a |
+| **Generated / replayed SQL** | `ask()` runs `validateSensitiveReferences` over the SQL it returns and attaches `AskPipelineResult.sensitiveGuardrail`. This is the **enforcement** surface — the rows above are prompt-level only. | `AskPipelineOptions.sensitiveGuardrailMode`: `"warn"` (default), `"strict"`, `"off"`. |
+| **Logs** | Counts only — `askdb.rag.sensitive_chunks_excluded`, `askdb.rag.sensitive_chunks_included`. Never log identifiers or values. `askdb.pipeline.sensitive_sql_warning` carries matched identifier names (schema metadata, never row values). | n/a |
 
 **Authoring rule (authoring surfaces):** when a user adds a description that mentions a sensitive column by name, the authoring surface shows a non-blocking warning explaining the chunk-exclusion behavior. The user can still save; the chunker will exclude the resulting chunk.
 

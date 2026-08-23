@@ -16,6 +16,8 @@ This document captures **product and engineering intent** for how **sensitive** 
 
 **Values** from the database are never placed in the NL→SQL prompt; only schema metadata appears there. Execution safety and access control remain separate concerns.
 
+**Tagging and omission are prompt-level only.** Both act on what the model *sees*. Neither constrains SQL that reaches execution by another route — a host's SQL cache, a replayed or stored statement, a schema artifact regenerated with the flags reset, or a model naming a column it was never shown. For that, see the enforcement path below.
+
 ---
 
 ## When users ask about sensitive columns
@@ -26,11 +28,37 @@ With **omission** mode, the model may **not** see withheld identifiers and may i
 
 ---
 
-## Open design: post-generation warnings for sensitive projections
+## Enforcement path: `validateSensitiveReferences`
 
-**Future work:** After SQL is generated (and optionally validated), the pipeline could attach a **host-visible warning** if the query **selects or computes on** columns marked sensitive—regardless of whether names were omitted or listed in the prompt—so operators review before trusted execution.
+`@askdb/core` exports `validateSensitiveReferences(sql, schema, options?)` — the **enforcement** counterpart to the prompt-level flags above. It inspects a SQL string against the schema artifact and reports every `sensitive` table/column it references, regardless of whether the names were tagged, omitted, or never shown to a model at all.
 
-This is **not** implemented in modes v1; it requires explicit contract updates (field names, UX, tests).
+```ts
+import { validateSensitiveReferences } from "@askdb/core";
+
+const { passed, references, unresolvedScope } = validateSensitiveReferences(cachedSql, schema);
+```
+
+**Result shape** (mirrors `TenantGuardrailResult`):
+
+| Field | Meaning |
+| --- | --- |
+| `passed` | `true` only when nothing sensitive was referenced **and** table scope was fully resolved. |
+| `references` | `{ table, schema?, column, matchKind }[]`. `matchKind` is `"qualified"` (`t.col` / `alias.col`), `"unqualified"` (bare `col`), or `"table"` (a `sensitive` table reached as a `FROM`/`JOIN` target; `column` is `"*"`). |
+| `unresolvedScope` | Present when scope could not be proven: `{ issues, widened, message }`. |
+
+**Modes.** `{ mode: "warn" }` (default) returns references without throwing — the behavior the CLI has always had. `{ mode: "strict" }` throws `SensitiveReferenceError extends AskDbError` carrying a `SensitiveReferenceRuleCode` (`SENSITIVE_TABLE_REFERENCED`, `SENSITIVE_COLUMN_REFERENCED`, `UNRESOLVED_TABLE_SCOPE`).
+
+**Scope resolution.** An unqualified column name counts **only when the owning table is actually in the statement's scope**. `FROM`/`JOIN` targets and their aliases (including inside CTEs and derived tables) are resolved first, then unqualified names are matched against the columns of those tables. A bare-word scan would flag `id` on every query the moment any table-level-`sensitive` table has an `id` column; this does not.
+
+**Conservative failure.** When scope cannot be resolved — no resolvable table source (`NO_TABLE_SOURCE`), a qualifier bound to nothing known (`UNKNOWN_QUALIFIER`), or a table source that is not a relation name (`OPAQUE_TABLE_SOURCE`) — the check reports `unresolvedScope` rather than passing silently, and for the first two it widens unqualified matching to every sensitive column. `strict` mode treats unresolved scope as a failure, mirroring how `validateTenantGuardrails` handles unprovable scope.
+
+**In the pipeline.** `ask()` runs the guardrail over the SQL it is about to return and attaches the result as `AskPipelineResult.sensitiveGuardrail`. `AskPipelineOptions.sensitiveGuardrailMode` selects `"warn"` (default), `"strict"`, or `"off"`. The check is skipped entirely when the schema declares no `sensitive` markers, so `sensitiveGuardrail` is absent in that case.
+
+**Hosts that cache or replay SQL must call it on every execution**, not just at generation time. The function is exported standalone precisely for that: it takes SQL and a schema, with no model in the loop.
+
+**Logs:** `askdb.pipeline.sensitive_sql_warning` with `sensitiveColumnCount` and the matched `sensitiveColumns` — schema metadata only, never row values. Emitted in both `warn` and `strict` modes.
+
+**Limits.** The check is heuristic, not a SQL parser. It is a review/enforcement aid, not a substitute for database-side column privileges.
 
 ---
 

@@ -216,6 +216,8 @@ askdb ask \
 
 `askdb ask` also accepts the [shared logging flags](#shared-logging-flags).
 
+If the generated SQL references identifiers your schema marks `sensitive`, `askdb ask` prints a `Warning:` line to stderr listing them and still prints the SQL. The check is [`validateSensitiveReferences`](/reference/core-api/#validatesensitivereferencessql-schema-options) from `@askdb/core`, run by `ask()` in warn mode; embedding hosts can switch it to `strict` or call it directly on cached SQL.
+
 You never pass a SQL dialect — it resolves automatically: `dialect` in `askdb.config.ts` when set, otherwise the engine recorded in the schema artifact at introspection time, otherwise `postgres`.
 
 `askdb ask` returns the validated SQL on stdout. Execution is not part of the CLI.
