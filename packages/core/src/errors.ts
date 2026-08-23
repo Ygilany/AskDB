@@ -100,3 +100,61 @@ export class TenantGuardrailError extends AskDbError {
     this.name = "TenantGuardrailError";
   }
 }
+
+/** How a sensitive identifier was matched inside a statement. */
+export type SensitiveMatchKind =
+  /** `table.column` or `alias.column` where the alias binds to the owning table. */
+  | "qualified"
+  /** Bare `column`, counted only because the owning table is in the statement's scope. */
+  | "unqualified"
+  /** The sensitive table itself appears as a `FROM`/`JOIN` target (`column` is `"*"`). */
+  | "table";
+
+/** A sensitive table/column the statement was found to reference. */
+export type SensitiveReference = {
+  /** Table name exactly as spelled in the schema artifact (never schema-qualified). */
+  table: string;
+  /** Database schema (namespace) the table belongs to, when the artifact records one. */
+  schema?: string;
+  /** Column name, or `"*"` when `matchKind` is `"table"`. */
+  column: string;
+  matchKind: SensitiveMatchKind;
+};
+
+/** Why the statement's table scope could not be resolved with confidence. */
+export type SensitiveScopeIssue =
+  /** No `FROM`/`JOIN` target resolved, so unqualified names cannot be bound to a table. */
+  | "NO_TABLE_SOURCE"
+  /** A `qualifier.column` reference whose qualifier is neither a known table, alias, nor CTE. */
+  | "UNKNOWN_QUALIFIER"
+  /** A table source that is not a relation name (table function, `VALUES`, …). */
+  | "OPAQUE_TABLE_SOURCE";
+
+/** Conservative-failure report attached when scope resolution was incomplete. */
+export type SensitiveScopeReport = {
+  issues: SensitiveScopeIssue[];
+  /**
+   * True when at least one unqualified name was matched against *every* sensitive
+   * column in the schema rather than only the columns of in-scope tables.
+   */
+  widened: boolean;
+  message: string;
+};
+
+/** Machine-readable ids for the sensitive-identifier guardrail (mirrors {@link TenantGuardrailRuleCode}). */
+export type SensitiveReferenceRuleCode =
+  | "SENSITIVE_TABLE_REFERENCED"
+  | "SENSITIVE_COLUMN_REFERENCED"
+  | "UNRESOLVED_TABLE_SCOPE";
+
+export class SensitiveReferenceError extends AskDbError {
+  constructor(
+    message: string,
+    public readonly rule: SensitiveReferenceRuleCode,
+    public readonly references: SensitiveReference[],
+    public readonly unresolvedScope?: SensitiveScopeReport,
+  ) {
+    super(message);
+    this.name = "SensitiveReferenceError";
+  }
+}
