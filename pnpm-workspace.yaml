@@ -13,8 +13,16 @@ publicHoistPattern:
 # export as c12's merger for `prisma.config.ts`, and v8's sole behavioural break for
 # plain objects is deep-merging `Map` values, which config objects do not contain.
 # Drop this once Prisma ships a release depending on deepmerge-ts >= 8.
+#
+# nanoid: reached only through `postcss` (via `vite`, itself via `vitest` and
+# `astro`), so it is devDependency-only and never ships. `postcss@8.5.25` already
+# allows `^3.3.16`; the lockfile was simply pinned at 3.3.17, which is vulnerable to
+# GHSA-2v37-7h3g-55p8 (predictable `nanoid()` output under a non-crypto fallback).
+# `pnpm update` will not move a transitive-only dependency, so pin it here. Drop this
+# once postcss raises its own floor past 3.3.18.
 overrides:
   deepmerge-ts: ^8.0.2
+  nanoid: ^3.3.18
 allowBuilds:
   '@prisma/engines': true
   better-sqlite3: true
