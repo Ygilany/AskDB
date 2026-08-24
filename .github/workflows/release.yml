@@ -1,39 +1,77 @@
 name: Release
 
-# Manual maintainer workflow. Run on `main` after merging a PR that bumps versions
-# (via `pnpm changeset version`). Publishes the current versions to npm.
+# Automated publishing via Changesets.
 #
-# Phase 4 ships this as opt-in; the very first 0.1.0 publish may also be done by hand
-# (`pnpm -r build && pnpm -r publish --access=public`) before this workflow is wired up.
+# Flow:
+#   1. Feature PRs land on `main` carrying a changeset (enforced by changesets.yml).
+#   2. This workflow opens — or updates — a "Version Packages" PR that applies every
+#      pending changeset: version bumps + CHANGELOG entries. It publishes nothing.
+#   3. Merging that PR triggers this workflow again. With no changesets left to apply,
+#      the action runs `pnpm release` instead, which publishes to npm.
+#
+# The human gate is step 3: nothing reaches npm until a maintainer reviews and merges
+# the version PR. That PR is an ordinary PR, so `ci.yml` runs on it — build, the full
+# test matrix, the installable smoke test, and the publish dry-run all gate the release.
+#
+# The repo is in Changesets *prerelease* mode (`.changeset/pre.json`, tag `beta`), so
+# the action titles the PR "Version Packages (beta)" and bumps `1.0.0-beta.N`. In pre
+# mode `changeset version` leaves the `.changeset/*.md` files on disk and records their
+# names in `pre.json` instead of deleting them; the action filters on that, so it still
+# knows when to version versus publish. Leaving prerelease mode is a deliberate
+# `pnpm changeset pre exit` — not something this workflow does. Note that
+# `changeset publish` tags these builds as npm `latest`, which is why `npm i @askdb/core`
+# currently installs a beta; that is existing behaviour, unchanged here.
+
 on:
+  push:
+    branches: [main]
+  # Escape hatch: re-run a publish by hand if a push-triggered run failed partway.
   workflow_dispatch:
 
+# Never let two releases race. Unlike CI, in-progress runs are not cancelled — a
+# cancelled publish can leave npm and the git tags out of sync.
+concurrency:
+  group: release
+  cancel-in-progress: false
+
 permissions:
-  contents: read
-  id-token: write
+  contents: write # push the version branch, commit, and git tags
+  pull-requests: write # open and update the version PR
+  id-token: write # npm provenance attestation
 
 jobs:
-  publish:
+  release:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          # Changesets diffs against the base branch to work out what to version.
+          fetch-depth: 0
 
-      - uses: pnpm/action-setup@v6
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v6
 
-      - uses: actions/setup-node@v6
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
         with:
           node-version: 22
           cache: pnpm
           registry-url: https://registry.npmjs.org
 
-      - run: pnpm install --frozen-lockfile
-      - run: pnpm -r build
-      - run: pnpm test
-      - run: pnpm smoke:install
-      - run: pnpm -r publish --dry-run --no-git-checks --access=public
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
 
-      - name: Publish to npm
-        run: pnpm changeset publish
+      - name: Open version PR, or publish when one has been merged
+        uses: changesets/action@v2.1.1
+        with:
+          version-script: pnpm version-packages
+          publish-script: pnpm release
+          # The publish path already pushes git tags. Creating ~20 GitHub Releases per
+          # publish, one per workspace package, would be new noise — the repo has 300
+          # tags and no Releases today. Flip to `true` if you want them.
+          create-github-releases: false
         env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
           NPM_CONFIG_PROVENANCE: "true"
