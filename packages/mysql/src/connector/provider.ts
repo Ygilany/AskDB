@@ -1,22 +1,19 @@
-import type { Connector } from "@askdb/introspect";
-import type { ConnectorConfig, ConnectorProviderAdapter, ConnectorResult } from "@askdb/connectors";
+import { defineLiveConnectorProvider } from "@askdb/introspect/kit";
 import { createMysqlConnector } from "./index.js";
 import { createMysqlCatalogQueryRunner } from "../exec/mysql.js";
+import { redactConnectionString } from "../redact.js";
 
-export const mysqlConnectorProvider: ConnectorProviderAdapter = {
+export const mysqlConnectorProvider = defineLiveConnectorProvider({
   provider: "mysql",
-  createConnector(config: ConnectorConfig): ConnectorResult {
-    if (!config.url) {
-      throw new Error("MySQL connector requires a connection URL (config.url).");
-    }
-    return {
-      mode: "live",
-      input: {
-        mode: "live",
-        runner: createMysqlCatalogQueryRunner(config.url),
-        filters: config.filters,
-      },
-      connector: createMysqlConnector() as Connector<unknown>,
-    };
+  displayName: "MySQL",
+  runtimeKey: "mysqlDatabaseUrl",
+  connectionNoun: "a connection URL",
+  missingConnection: {
+    cli: "Provide --url <mysql-url> (or set introspection.providerConfig.mysql.databaseUrl / ASKDB_INTROSPECT_MYSQL_URL / DATABASE_URL).",
+    config:
+      "No MySQL connection configured. Set introspection.providerConfig.mysql.databaseUrl in askdb.config.ts (bound to an env var in .env).",
   },
-};
+  createConnector: createMysqlConnector,
+  createRunner: (url) => createMysqlCatalogQueryRunner(url),
+  redactConnectionString,
+});

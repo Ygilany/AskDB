@@ -1,7 +1,7 @@
 # Feature: Distribution
 
 **Status:** Complete  
-**Packages:** `@askdb/core`, `@askdb/ai`, `@askdb/ai-openai`, `@askdb/ai-azure`, `@askdb/ai-google`, `@askdb/connectors`, `@askdb/postgres`, `@askdb/mysql`, `@askdb/sqlite`, `@askdb/sqlserver`, `@askdb/prisma`, `@askdb/introspect`, `@askdb/rag`, `@askdb/enrich`, `askdb`
+**Packages:** `@askdb/core`, `@askdb/ai`, `@askdb/ai-openai`, `@askdb/ai-azure`, `@askdb/ai-google`, `@askdb/connectors` (deprecated shim), `@askdb/postgres`, `@askdb/mysql`, `@askdb/sqlite`, `@askdb/sqlserver`, `@askdb/prisma`, `@askdb/introspect`, `@askdb/rag`, `@askdb/enrich`, `askdb`
 
 ## Overview
 
@@ -45,13 +45,13 @@ Published packages and their primary exports:
 | `@askdb/ai-openai` | OpenAI `AiProviderAdapter` |
 | `@askdb/ai-azure` | Azure OpenAI / Foundry `AiProviderAdapter` |
 | `@askdb/ai-google` | Google Generative AI `AiProviderAdapter` |
-| `@askdb/connectors` | `createConnectorRegistry`, `ConnectorRegistry`, `ConnectorProviderAdapter` types |
+| `@askdb/connectors` | Deprecated: re-exports the registry from `@askdb/introspect` and redaction helpers from `@askdb/introspect/kit` |
 | `@askdb/postgres` | `postgresDialect`, `postgresConnectorProvider`, `postgresConnector`, `createPostgresCatalogRunner` |
 | `@askdb/mysql` | `mysqlConnectorProvider` |
 | `@askdb/sqlite` | `sqliteConnectorProvider` |
-| `@askdb/sqlserver` | `sqlserverConnectorProvider` |
+| `@askdb/sqlserver` | `sqlServerConnectorProvider` |
 | `@askdb/prisma` | Prisma `ConnectorProviderAdapter` |
-| `@askdb/introspect` | `introspect()`, `Connector` interface |
+| `@askdb/introspect` | `introspect()`, `Connector` interface, `createConnectorRegistry` / `ConnectorProviderAdapter`; `@askdb/introspect/kit` engine helpers |
 | `@askdb/rag` | `chunkSchema()`, `buildSchemaIndex()`, vector store adapters |
 | `@askdb/enrich` | `Workspace`, draft/save helpers, bundler |
 | `askdb` | `askdb` binary — CLI entry point |

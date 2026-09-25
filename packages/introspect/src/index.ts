@@ -34,6 +34,23 @@ export {
   type IntrospectResult,
 } from "./introspect.js";
 export {
+  BUILT_IN_CONNECTOR_PROVIDERS,
+  connectorProviderMissingMessage,
+  createConnectorRegistry,
+  runtimeIntrospectionString,
+  type BuiltInConnectorProvider,
+  type ConnectorConfig,
+  type ConnectorConnection,
+  type ConnectorConnectionRequest,
+  type ConnectorConnectionResolution,
+  type ConnectorProviderAdapter,
+  type ConnectorProviderAdapters,
+  type ConnectorProviderId,
+  type ConnectorRegistry,
+  type ConnectorResult,
+  type ConnectorRuntimeConfig,
+} from "./registry.js";
+export {
   renderToSchemaV2,
   renderSchemaV2Body,
   toV2SchemaJson,

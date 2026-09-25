@@ -10,25 +10,29 @@ import {
 } from "@askdb/core";
 import { getAskDbRuntimeConfig } from "@askdb/config";
 import {
+  createConnectorRegistry,
   introspect,
   renderSchemaV2Body,
   type Connector,
+  type ConnectorConfig,
+  type ConnectorProviderId,
+  type ConnectorRegistry,
+  type ConnectorResult,
   type IntrospectResult,
   type IntrospectionFilters,
 } from "@askdb/introspect";
-import {
-  createConnectorRegistry,
-  type ConnectorConfig,
-  type ConnectorProvider,
-  type ConnectorResult,
-} from "@askdb/connectors";
 import { postgresConnectorProvider } from "@askdb/postgres";
 import { mysqlConnectorProvider } from "@askdb/mysql";
 import { sqliteConnectorProvider } from "@askdb/sqlite";
 import { sqlServerConnectorProvider } from "@askdb/sqlserver";
 import { prismaConnectorProvider } from "@askdb/prisma";
 
-const connectorRegistry = createConnectorRegistry([
+/**
+ * The engines `askdb introspect` supports out of the box. Engine-specific
+ * connection resolution (flag vs. config precedence, per-engine validation)
+ * lives in each adapter's `resolveConnection`, not here.
+ */
+export const defaultConnectorRegistry: ConnectorRegistry = createConnectorRegistry([
   postgresConnectorProvider,
   mysqlConnectorProvider,
   sqliteConnectorProvider,
@@ -36,10 +40,10 @@ const connectorRegistry = createConnectorRegistry([
   prismaConnectorProvider,
 ]);
 
-type Engine = ConnectorProvider;
-const LIVE_DRIVER_ENGINES = ["postgres", "mysql", "sqlite", "sqlserver"] as const satisfies ReadonlyArray<
-  Exclude<Engine, "prisma">
->;
+export type RunIntrospectCliOptions = {
+  /** Registry to dispatch `--engine` through. Defaults to the built-in engines. */
+  connectorRegistry?: ConnectorRegistry;
+};
 
 const INTROSPECT_EVENTS = {
   started: "askdb.introspect.started",
@@ -67,7 +71,11 @@ type CliOptions = {
   correlationId?: string;
 };
 
-export async function runIntrospectCli(argv: readonly string[]): Promise<number> {
+export async function runIntrospectCli(
+  argv: readonly string[],
+  options: RunIntrospectCliOptions = {},
+): Promise<number> {
+  const registry = options.connectorRegistry ?? defaultConnectorRegistry;
   try {
     if (argv.includes("--version") || argv.includes("-V")) {
       process.stdout.write(`${readPackageVersion()}\n`);
@@ -78,22 +86,19 @@ export async function runIntrospectCli(argv: readonly string[]): Promise<number>
       return 0;
     }
     if (argv[0] === "templates") {
-      return runTemplatesCommand(argv.slice(1));
+      return runTemplatesCommand(argv.slice(1), registry);
     }
-    return await runIntrospectCommand(argv);
+    return await runIntrospectCommand(argv, registry);
   } catch (error) {
     process.stderr.write(`${formatError(error)}\n`);
     return 1;
   }
 }
 
-function runTemplatesCommand(argv: readonly string[]): number {
+function runTemplatesCommand(argv: readonly string[], registry: ConnectorRegistry): number {
   const opts = parseOptions(argv);
-  const engine = resolveEngine(opts.engine);
-  if (engine === "prisma") {
-    throw new Error("Prisma introspection reads schema files and does not provide SQL templates.");
-  }
-  const bundle = connectorRegistry.getTemplates(engine);
+  const engine = resolveEngine(registry, opts.engine);
+  const bundle = registry.getTemplates(engine);
   if (!bundle) {
     throw new Error(
       `Engine '${engine}' does not provide SQL templates yet. 'askdb introspect templates' is currently supported only for --engine postgres.`,
@@ -106,62 +111,25 @@ function runTemplatesCommand(argv: readonly string[]): number {
   return 0;
 }
 
-async function runIntrospectCommand(argv: readonly string[]): Promise<number> {
+async function runIntrospectCommand(
+  argv: readonly string[],
+  registry: ConnectorRegistry,
+): Promise<number> {
   const opts = parseOptions(argv);
   const rt = getAskDbRuntimeConfig();
   // When --engine isn't passed, fall back to the configured introspection.provider
   // so `askdb introspect` works flag-free for any configured engine.
-  const engine = resolveEngine(opts.engine ?? rt.introspection.provider);
-  if (engine === "postgres" && !opts.url && !opts.fromExport) {
-    if (rt.introspection.postgresDatabaseUrl) {
-      opts.url = rt.introspection.postgresDatabaseUrl;
-    } else {
-      throw new Error("Provide either --url <postgres-url> or --from-export <bundle-dir>.");
-    }
-  }
-  // For the new live-driver engines, prefer the runtime-resolved per-engine
-  // field (structured config -> provider-specific env -> DATABASE_URL fallback
-  // for URL-shaped engines). SQLite has no DATABASE_URL fallback by design.
-  if (engine === "mysql" && !opts.url) {
-    if (rt.introspection.mysqlDatabaseUrl) opts.url = rt.introspection.mysqlDatabaseUrl;
-    else
-      throw new Error(
-        "Provide --url <mysql-url> (or set introspection.providerConfig.mysql.databaseUrl / ASKDB_INTROSPECT_MYSQL_URL / DATABASE_URL).",
-      );
-  }
-  if (engine === "sqlserver" && !opts.url) {
-    if (rt.introspection.sqlserverDatabaseUrl) opts.url = rt.introspection.sqlserverDatabaseUrl;
-    else
-      throw new Error(
-        "Provide --url <sqlserver-url> (or set introspection.providerConfig.sqlserver.databaseUrl / ASKDB_INTROSPECT_SQLSERVER_URL / DATABASE_URL).",
-      );
-  }
-  if (engine === "sqlite" && !opts.url) {
-    if (rt.introspection.sqliteFile) opts.url = rt.introspection.sqliteFile;
-    else
-      throw new Error(
-        "Provide --url <path-to-sqlite-file> (or set introspection.providerConfig.sqlite.file / ASKDB_INTROSPECT_SQLITE_FILE).",
-      );
-  }
-  if ((engine === "mysql" || engine === "sqlite" || engine === "sqlserver") && opts.fromExport) {
-    throw new Error(
-      `--from-export is currently supported only for --engine postgres (got ${engine}).`,
-    );
-  }
-  if (engine === "postgres" && opts.prismaSchema) {
-    throw new Error("Use --prisma-schema only with --engine prisma.");
-  }
-  if (engine === "prisma" && !opts.prismaSchema) {
-    const fromConfig = rt.introspection.prismaSchemaPath;
-    if (fromConfig) {
-      opts.prismaSchema = fromConfig;
-    }
-    // When still unset, @askdb/prisma will auto-discover prisma/schema.prisma or schema.prisma at runtime.
-  }
-  if (engine === "prisma" && (opts.url || opts.fromExport)) {
-    throw new Error("Use --prisma-schema with --engine prisma, not --url or --from-export.");
-  }
-  if (opts.url && opts.fromExport) {
+  const engine = resolveEngine(registry, opts.engine ?? rt.introspection.provider);
+  // The engine's adapter merges flags with askdb.config/env (flags win) and
+  // rejects flags that don't apply to it.
+  const resolved = registry.resolveConnection(engine, {
+    explicit: { url: opts.url, fromExport: opts.fromExport, schemaPath: opts.prismaSchema },
+    runtime: rt,
+    surface: "cli",
+  });
+  if (!resolved.ok) throw new Error(resolved.error);
+  const { url, fromExport, schemaPath } = resolved.connection;
+  if (url && fromExport) {
     throw new Error("Use only one input mode: --url or --from-export.");
   }
   if (!opts.print && !opts.diff && !opts.out) {
@@ -189,13 +157,13 @@ async function runIntrospectCommand(argv: readonly string[]): Promise<number> {
 
   const connectorConfig: ConnectorConfig = {
     provider: engine,
-    url: opts.url,
-    fromExport: opts.fromExport,
-    schemaPath: opts.prismaSchema,
+    url,
+    fromExport,
+    schemaPath,
     filters: buildFilters(opts),
     schemaId,
   };
-  const runConfig = connectorRegistry.createConnector(connectorConfig);
+  const runConfig = registry.createConnector(connectorConfig);
 
   logger.info(
     {
@@ -388,17 +356,9 @@ function parseList(value: string): string[] {
     .filter(Boolean);
 }
 
-function resolveEngine(engine = "postgres"): Engine {
-  if (
-    engine === "postgres" ||
-    engine === "prisma" ||
-    engine === "mysql" ||
-    engine === "sqlite" ||
-    engine === "sqlserver"
-  ) {
-    return engine;
-  }
-  const supported = [...LIVE_DRIVER_ENGINES, "prisma"].join(", ");
+function resolveEngine(registry: ConnectorRegistry, engine = "postgres"): ConnectorProviderId {
+  if (registry.hasProvider(engine)) return engine;
+  const supported = registry.providers().join(", ");
   throw new Error(`Unsupported introspection engine '${engine}' (expected one of: ${supported}).`);
 }
 

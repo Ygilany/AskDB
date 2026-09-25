@@ -98,19 +98,9 @@ Provider adapters own concrete AI SDK provider dependencies. Each adapter declar
 
 Any provider that has a Vercel AI SDK package can be added as an adapter. Unknown `ai.provider` values require a registered adapter — first-party apps register `openai`, `azure`, `foundry`, `google`, and `anthropic`; for anything else, embed AskDB and register your own adapter, or use an OpenAI-compatible endpoint via the `openai` provider and a custom base URL.
 
-### `@askdb/connectors`
+### `@askdb/connectors` (deprecated)
 
-Connector provider registry — mirrors the `@askdb/ai` pattern for introspection. Each engine adapter exports a `ConnectorProviderAdapter` constant; `@askdb/connectors` wires them into a unified registry used by the CLI and apps. Install directly only when you are building a custom introspection flow.
-
-<InstallTabs pkgs="@askdb/connectors" />
-
-**Key exports**
-
-| Symbol | Purpose |
-| --- | --- |
-| `createConnectorRegistry(adapters)` | Build a registry from a set of provider adapters. |
-| `ConnectorRegistry` | Registry type — `createConnector(provider, config)`, `getTemplates(provider)`. |
-| `ConnectorProviderAdapter` | The adapter shape each engine package exports. |
+The connector provider registry moved into [`@askdb/introspect`](#askdbintrospect). `@askdb/connectors` is now a compatibility shim that re-exports `createConnectorRegistry`, the adapter types, and the connection-string redaction helpers. New code should import from `@askdb/introspect` and `@askdb/introspect/kit`, and should not install this package.
 
 ### `@askdb/config`
 
@@ -164,7 +154,16 @@ The engine-agnostic introspection contract and the schema-directory writer. Use 
 
 <InstallTabs pkgs="@askdb/introspect" />
 
-The `@askdb/introspect/kit` subpath holds the shared helpers the engine packages are built on — optional-driver loading (`createOptionalDriverLoader`, `isDriverInstalled`), table-glob filters (`compileTableFilters`, `ambiguousFilterWarnings`), Schema v2 ids (`makeTableId`, `makeColumnId`), catalog-row folding (`rowsToRecords`, `groupBy`, `buildOrderedGroups`, `mapFkAction`), and connection-string redaction (`redactUrlUserinfo`, `redactSecretKeyValues`, `redactConnectionStringGeneric`). Import it when you write a connector for a new engine.
+It also exports the **connector provider registry**, which config-driven hosts use to pick an engine by id. Each engine package exports a `ConnectorProviderAdapter` (`postgresConnectorProvider`, `mysqlConnectorProvider`, `sqliteConnectorProvider`, `sqlServerConnectorProvider`, `prismaConnectorProvider`). Provider ids are open strings, so a third-party engine can register its own id.
+
+| Symbol | Purpose |
+| --- | --- |
+| `introspect(input, renderOptions, { connector })` | Run a connector and write the schema directory. |
+| `createConnectorRegistry(adapters)` | Build a registry from provider adapters. Returns `{ hasProvider, providers, createConnector, getTemplates, resolveConnection, redactConnectionString }`. |
+| `registry.resolveConnection(provider, { explicit?, runtime, surface? })` | Let the engine's adapter merge explicit values (for example `--url`) with AskDB runtime config (`getAskDbRuntimeConfig()`). Returns `{ ok, connection, sourceLabel }` or `{ ok: false, error }`. |
+| `ConnectorProviderAdapter` | The adapter shape: `createConnector`, plus optional `resolveConnection`, `redactConnectionString`, `getTemplates`. |
+
+The `@askdb/introspect/kit` subpath holds the shared helpers the engine packages are built on — optional-driver loading (`createOptionalDriverLoader`, `isDriverInstalled`), the live-catalog adapter builder (`defineLiveConnectorProvider`), table-glob filters (`compileTableFilters`, `ambiguousFilterWarnings`), Schema v2 ids (`makeTableId`, `makeColumnId`), catalog-row folding (`rowsToRecords`, `groupBy`, `buildOrderedGroups`, `mapFkAction`), and connection-string redaction (`redactUrlUserinfo`, `redactSecretKeyValues`, `redactConnectionStringGeneric`). Import it when you write a connector for a new engine.
 
 ### `@askdb/prisma`
 
@@ -252,9 +251,10 @@ See [the CLI reference](/reference/cli/).
 
 | Package | Depends on |
 | --- | --- |
-| `@askdb/postgres`, `@askdb/mysql`, `@askdb/sqlite`, `@askdb/sqlserver` | `@askdb/core`, `@askdb/introspect`, `@askdb/connectors` |
-| `@askdb/prisma` | `@askdb/introspect`, `@askdb/connectors` |
-| `@askdb/connectors` | `@askdb/introspect` |
+| `@askdb/introspect` | `@askdb/core` |
+| `@askdb/postgres`, `@askdb/mysql`, `@askdb/sqlite`, `@askdb/sqlserver` | `@askdb/core`, `@askdb/introspect` |
+| `@askdb/prisma` | `@askdb/introspect` |
+| `@askdb/connectors` (deprecated shim) | `@askdb/introspect` |
 | `@askdb/ai` | AI SDK core package (`ai`) |
 | `@askdb/ai-openai`, `@askdb/ai-azure`, `@askdb/ai-google`, `@askdb/ai-anthropic` | `@askdb/ai` + the matching AI SDK provider package |
 | `@askdb/enrich`, `@askdb/rag` | `@askdb/core` |
