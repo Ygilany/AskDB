@@ -104,11 +104,11 @@ Provider examples:
 - OpenAI via `@askdb/ai` registry (recommended):
 
 ```ts
+// pnpm add @askdb/ai @ai-sdk/openai
 import { createAiRegistry } from "@askdb/ai";
-import { openaiProvider } from "@askdb/ai-openai";
 import { createAiSdkEmbedder } from "@askdb/rag/embedders/ai-sdk";
 
-const registry = createAiRegistry([openaiProvider]);
+const registry = createAiRegistry(["openai"]);
 const model = await registry.createEmbeddingModelFromEnv(process.env);
 const embedder = createAiSdkEmbedder({ model });
 ```

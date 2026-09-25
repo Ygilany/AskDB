@@ -103,7 +103,7 @@ export default defineConfig({
             "\n" +
             "The docs site is organized as Start (quickstart, install, Studio), Guides (embedding in Node, HTTP deployment, multi-tenancy, RAG for large schemas, switching engines, bringing your own model, agent/MCP integration), Concepts (how AskDB works, the schema artifact, safety boundaries, privacy model, modes and dialects), and Reference (CLI, HTTP API, configuration, the full package map, API docs). The full per-page index is in the linked documentation sets below.\n" +
             "\n" +
-            "Two things worth knowing before implementing: (1) wiring the AI model is a two-path choice — `@askdb/ai-*` adapters vs. a raw Vercel AI SDK model passed to `ask()` — decided by who owns provider config in the host app; see /guides/bring-your-own-model/. (2) Tenant scope and sensitive-field handling are host-application responsibilities that AskDB enforces but never originates; see /concepts/safety-boundaries/.\n" +
+            "Two things worth knowing before implementing: (1) wiring the AI model is a two-path choice — config-driven `@askdb/client`/`@askdb/ai` (built-in providers; install the matching `@ai-sdk/*` package) vs. a raw Vercel AI SDK model passed to `ask()` — decided by who owns provider config in the host app; see /guides/bring-your-own-model/. (2) Tenant scope and sensitive-field handling are host-application responsibilities that AskDB enforces but never originates; see /concepts/safety-boundaries/.\n" +
             "\n" +
             "For a project-onboarding map written specifically for coding agents implementing AskDB elsewhere, see /AGENTS.md.",
         }),

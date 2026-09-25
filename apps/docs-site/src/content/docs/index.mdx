@@ -56,14 +56,12 @@ NL-to-SQL isn't a new problem. Academic research goes back to LUNAR in 1972, and
 ```ts
 import { createAskDb } from "@askdb/client";
 import { bootstrapAskDbEnv, getAskDbRuntimeConfig } from "@askdb/config";
-import { openaiProvider } from "@askdb/ai-openai";
 import { Pool } from "pg";
 
 // Resolve schema, model, and dialect from askdb.config.ts — same config the CLI and Studio use.
 bootstrapAskDbEnv({ cwd: process.cwd() });
 const askdb = createAskDb({
-  config: getAskDbRuntimeConfig(),
-  providers: [openaiProvider],
+  config: getAskDbRuntimeConfig(), // ai.provider picks the model (npm i @ai-sdk/openai for OpenAI)
   schema: { path: "./my-app.schema" }, // or set host.schemaPath in config and omit
 });
 const pool = new Pool({ connectionString: process.env.DATABASE_URL });

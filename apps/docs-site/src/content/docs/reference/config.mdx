@@ -136,6 +136,8 @@ AskDB reads `.env` next to your process via `dotenv`, then evaluates your `askdb
 | `OPENAI_API_KEY` | `ai.providerConfig.openai.apiKey` | Standard OpenAI key. |
 | `OPENAI_MODEL` | `ai.providerConfig.openai.model` | Optional model override. Default: `gpt-4o-mini`. |
 | `ANTHROPIC_API_KEY` | `ai.providerConfig.anthropic.apiKey` | When `ai.provider = "anthropic"`. Default model: `claude-sonnet-4-6`. |
+| `GOOGLE_GENERATIVE_AI_API_KEY` | `ai.providerConfig.google.apiKey` | When `ai.provider = "google"`. Default model: `gemini-2.0-flash` (the scaffolded config reads a `model` override from `GOOGLE_AI_MODEL`). |
+| `AI_GATEWAY_API_KEY` | `ai.providerConfig.gateway.apiKey` | When `ai.provider = "gateway"` (Vercel AI Gateway). Set `model` to an `<upstream>/<model>` id. Default: `openai/gpt-4o-mini`. |
 | `AZURE_OPENAI_API_KEY` | `ai.providerConfig.azure.apiKey` | When `ai.provider = "azure"` (use `ai.providerConfig.foundry.*` for `"foundry"`). |
 | `AZURE_OPENAI_DEPLOYMENT` | `ai.providerConfig.azure.model` | Your Azure deployment name. |
 | `AZURE_RESOURCE_NAME` | `ai.providerConfig.azure.resourceName` | The subdomain of `https://<name>.openai.azure.com`. Required unless you set `ai.providerConfig.azure.baseUrl` to a full endpoint URL instead. Also available: `apiVersion`, `modelFamily`, `secondaryApiKey`. |
@@ -201,9 +203,9 @@ export default defineConfig({
 });
 ```
 
-This works end to end only when the consuming registry has an adapter registered under that provider name. First-party apps (`@askdb/http-api`, the CLI) register `openai`, `azure`, `foundry`, `google`, and `anthropic`. For any other provider you have two options:
+This works end to end only when the consuming registry has an adapter registered under that provider name. The built-in providers, registered by the first-party apps (`@askdb/http-api`, the CLI, Studio) and by default in `createAskDb`, are `openai`, `azure` (plus `azure-openai` and `foundry`), `google`, `anthropic`, and `gateway`. For any other provider you have two options:
 
-1. **Embed AskDB** and pass your own adapter in `createAskDb({ providers: [myAdapter] })` — about 40 lines of code.
+1. **Embed AskDB** and pass your own adapter in `createAskDb({ providers: [myAdapter] })`. It takes about 40 lines of code. Add built-in names alongside it (`providers: ["openai", myAdapter]`) if you also want those.
 2. **Use the `openai` provider** with a custom `baseUrl` for any OpenAI-compatible endpoint (vLLM, OpenRouter, Together, Ollama, …).
 
 See [Bring your own model](/guides/bring-your-own-model/) for the embedding walkthrough.
