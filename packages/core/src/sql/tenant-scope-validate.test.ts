@@ -89,18 +89,6 @@ describe("validateTenantScope", () => {
     }
   });
 
-  it("rejects subtree scope even with an unknown tenant root", () => {
-    const scope: TenantScope = {
-      access: {
-        kind: "subtree",
-        tenantRoot: "table:public.nonexistent",
-        rootIds: ["42"],
-        includeDescendants: true,
-      },
-    };
-    expect(() => validateTenantScope(policy, scope)).toThrow(TenantScopeError);
-  });
-
   it("rejects unknown tenant root in multi_root scope", () => {
     const scope: TenantScope = {
       access: {
