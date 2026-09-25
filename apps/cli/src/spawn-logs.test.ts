@@ -18,10 +18,7 @@ describe("cli spawn: structured logs contract", () => {
     const repoRoot = join(import.meta.dirname, "../../..");
     const cliDir = join(repoRoot, "apps/cli");
 
-    // Ensure dist exists and contains current code. (Vitest excludes dist from test discovery, but we can still execute it.)
-    const build = run("pnpm", ["-C", cliDir, "build"], { cwd: repoRoot });
-    expect(build.status).toBe(0);
-
+    // dist/cli.js is produced by turbo: `test` depends on this package's own `build`.
     const workDir = mkdtempSync(join(tmpdir(), "askdb-cli-spawn-"));
     const logDir = join(workDir, "logs");
     mkdirSync(logDir, { recursive: true });
@@ -95,9 +92,6 @@ describe("cli spawn: structured logs contract", () => {
   it("does not warn on a query that never reaches a sensitive column", () => {
     const repoRoot = join(import.meta.dirname, "../../..");
     const cliDir = join(repoRoot, "apps/cli");
-
-    const build = run("pnpm", ["-C", cliDir, "build"], { cwd: repoRoot });
-    expect(build.status).toBe(0);
 
     const schemaPath = join(repoRoot, "fixtures/schemas/orders-users-sensitive.schema");
 
