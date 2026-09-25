@@ -79,8 +79,9 @@ host must still execute with a least-privilege read-only role, enforce tenancy i
 
 ## PR map and merge order
 
-Independent PRs off `main` can merge in any order; stacked PRs must merge bottom-up (retarget the
-next layer to `main` after each merge). Expected conflicts are small: `pnpm-lock.yaml` (re-run
+Independent PRs off `main` can merge in any order. Stacked PRs are GitHub native stacks (`gh stack`):
+#206 = #188→#198, #207 = #185→#194, #208 = #186→#197→#192, #209 = #189→#195→#199 (and #191 is already
+on `main` after #180). Merge bottom-up; GitHub rebases and retargets the layers above automatically. Expected conflicts are small: `pnpm-lock.yaml` (re-run
 `pnpm install`), ADR 0006 amendment tail (#196 vs #198), LICENSE/NOTICE added identically by #182
 and #183, and docs pages touched by #184 plus a feature PR.
 
@@ -92,7 +93,7 @@ and #183, and docs pages touched by #184 plus a feature PR.
 | 2a | #194 | #185 | Studio | Execute opt-in, single-statement read-only, timeouts, row caps |
 | 3 | #186 | main | core | Tenant enforcement fails closed (returned SQL, custom dialects, malformed policy) |
 | 3a | #197 | #186 | core | Tenant binding: dialect markers, fail-closed placeholders, operators, literal-injection; drop `tenantFilters`; reject `subtree` |
-| 3b | #192 | #186 | core | Front-matter sensitivity (Studio) actually takes effect, escalate-only |
+| 3b | #192 | #197 | core | Front-matter sensitivity (Studio) actually takes effect, escalate-only |
 | 4 | #190 | main | core | Dialect-aware lexer; closes read-only and sensitive-column bypasses |
 | 5 | #184 | main | docs | Safety claims made accurate; "run generated SQL safely" guidance; SECURITY.md model |
 | 6 | #181 | main | enrich | Bundles keep `tenant-policy.md` (tenant isolation was silently lost) |
