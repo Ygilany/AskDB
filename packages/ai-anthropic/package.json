@@ -54,7 +54,7 @@
   "devDependencies": {
     "@askdb/ai": "workspace:*",
     "ai": "^7.0.51",
-    "typescript": "^6.0.3",
+    "typescript": "^7.0.2",
     "vitest": "^4.1.10"
   }
 }
