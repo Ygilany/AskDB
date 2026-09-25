@@ -7,6 +7,8 @@ export const DEFAULT_AZURE_OPENAI_DEPLOYMENT = "gpt-4o-mini";
 export const DEFAULT_ANTHROPIC_CHAT_MODEL = "claude-sonnet-4-6";
 export const DEFAULT_GOOGLE_CHAT_MODEL = "gemini-2.0-flash";
 export const DEFAULT_INTROSPECT_OUTPUT_DIR = "./askdb/";
+/** Default model-call timeout for `@askdb/http-api` `POST /ask` (`httpApi.requestTimeoutMs`). */
+export const DEFAULT_HTTP_API_REQUEST_TIMEOUT_MS = 60_000;
 export const DEFAULT_LOCAL_POSTGRES_URL = "postgres://postgres:postgres@127.0.0.1:5432/postgres";
 export const DEFAULT_RAG_EMBEDDING_MODEL = "text-embedding-3-small";
 /** Under the same visible tree as {@link DEFAULT_INTROSPECT_OUTPUT_DIR} (`./askdb/…`). */

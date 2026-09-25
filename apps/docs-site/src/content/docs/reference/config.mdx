@@ -60,7 +60,7 @@ Use the `env()` helper (rather than `process.env`) so AskDB can capture which en
 | `host` | no | `schemaPath` — the default schema artifact for embedding hosts and the HTTP API. `schemaJson` — inline artifact JSON, for environments without a file system path. |
 | `logging` | no | `level`, plus `logFile`, `logStdout`, and `correlationId` defaults for the CLI's structured logs. |
 | `studio` | no | `listen.{host,port}` (defaults `127.0.0.1:5556`) and the `execute` block below. |
-| `httpApi` | no | `listen.{host,port}` for the HTTP API server (defaults `127.0.0.1:3000`). Use `env("PORT")` on platforms that inject a port. |
+| `httpApi` | no | `listen.{host,port}` for the HTTP API server (defaults `127.0.0.1:3000`). Use `env("PORT")` on platforms that inject a port. `allowSchemaOverride` (default `false`) — accept per-request `schemaJson`. `requestTimeoutMs` (default `60000`) — model-call timeout per request. See [HTTP API → Server config](/reference/http-api/#server-config-httpapi). |
 | `dev` | no | `mockSql` — deterministic NL-to-SQL output for tests; bypasses the model call. |
 
 ### `dialect` — when inference is wrong

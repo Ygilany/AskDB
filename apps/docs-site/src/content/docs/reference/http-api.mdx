@@ -30,6 +30,30 @@ server.listen();
 
 The server reads its schema and AI provider settings from `askdb.config.ts` via `@askdb/config` — see [Configuration](/reference/config/) for the resolution rules.
 
+### Server config (`httpApi`)
+
+These keys in `askdb.config.ts` control request handling. They apply to both `createAskDbHttpServer()` and the `askdb-http` binary.
+
+| Key | Default | Description |
+| --- | --- | --- |
+| `httpApi.listen.port` / `httpApi.listen.host` | `3000` / `127.0.0.1` | Listen address when no `port` / `host` option or CLI flag is given. |
+| `httpApi.allowSchemaOverride` | `false` | Accept a per-request `schemaJson` override. When `false`, a request that sends `schemaJson` gets `403 schema_override_disabled`. An override lets any caller put arbitrary schema text into the prompt through your model key, so enable it only for tests or trusted callers. |
+| `httpApi.requestTimeoutMs` | `60000` | Abort the model call after this many milliseconds. A timed-out request returns `502 sql_generation_error`. Must be a positive integer. |
+| `modes.omitSensitiveFromPrompt` | `false` | When `true`, sensitive identifiers are left out of every prompt. A request's `omitSensitiveFromPrompt: false` can't turn this off. |
+| `modes.askdbMode` | `schema_only` | Mode used when the request sends neither `mode` nor `x-askdb-mode`. |
+
+```ts
+// askdb.config.ts
+export default defineConfig({
+  // ...
+  httpApi: {
+    listen: { port: 3000, host: "127.0.0.1" },
+    allowSchemaOverride: false,
+    requestTimeoutMs: 30_000,
+  },
+});
+```
+
 ## Standalone binary
 
 The package also ships an `askdb-http` binary, so you can run the service without writing any server code:
@@ -45,6 +69,8 @@ npx askdb-http --schema-path ./my-app.schema --port 3000 --host 127.0.0.1
 | `--host <host>` | Bind address. |
 
 Every flag is optional. Precedence per setting: CLI flag → `askdb.config.ts` (`host.schemaPath`, `httpApi.listen.port`, `httpApi.listen.host`) → built-in default.
+
+If the server can't bind (for example, the port is already in use), `askdb-http` prints a one-line error and exits with code `1`.
 
 ## Endpoints
 
@@ -79,10 +105,10 @@ Generate SQL from a question.
 | Field | Required | Default | Description |
 | --- | --- | --- | --- |
 | `question` | yes | — | The natural-language question. |
-| `mode` | no | `schema_only` | One of `schema_only`, `bounded_results`. |
+| `mode` | no | `modes.askdbMode`, else `schema_only` | One of `schema_only`, `bounded_results`. Also accepted as the `x-askdb-mode` header (the body wins). An unrecognized value returns `400 bad_request`. |
 | `explain` | no | `false` | Return heuristic guardrail metadata. |
-| `omitSensitiveFromPrompt` | no | env-driven | Omit sensitive columns from the prompt. |
-| `schemaJson` | no | config-driven | Inline schema artifact. Preferred: set `host.schemaPath` in `askdb.config.ts` server-side. |
+| `omitSensitiveFromPrompt` | no | `modes.omitSensitiveFromPrompt` | `true` omits sensitive columns from the prompt for this request. It can only tighten the server setting. When the server sets `modes.omitSensitiveFromPrompt: true`, sending `false` has no effect. |
+| `schemaJson` | no | — | Inline schema artifact that replaces the server schema for this request. Rejected with `403 schema_override_disabled` unless the server sets `httpApi.allowSchemaOverride: true`. Preferred: set `host.schemaPath` in `askdb.config.ts` server-side. |
 
 **Success response (`200`)**
 
@@ -96,6 +122,10 @@ Generate SQL from a question.
     "promptTokens": 1250,
     "completionTokens": 45,
     "totalTokens": 1295
+  },
+  "sensitiveGuardrail": {
+    "passed": true,
+    "references": []
   }
 }
 ```
@@ -105,6 +135,7 @@ Generate SQL from a question.
 | `sql` | `string` | The generated, validated SQL. |
 | `explain` | `object \| null` | Heuristic guardrail metadata. Present (non-null) when `explain: true` was sent in the request. |
 | `usage` | `object \| null` | Token counts for the generation call: `promptTokens`, `completionTokens`, `totalTokens` (each `number \| null`). `null` when the provider does not report usage. |
+| `sensitiveGuardrail` | `object`, only on some responses | Present only when the schema marks at least one table or column `sensitive`. Shows which sensitive identifiers the returned `sql` references: `passed` (`boolean`), `references` (`{ table, schema?, column, matchKind }[]`), and `unresolvedScope` when the table scope couldn't be resolved. `passed: false` is a warning. The SQL is still returned, so check it before you execute. See [`validateSensitiveReferences`](/reference/core-api/#validatesensitivereferencessql-schema-options). |
 
 **Error response (`4xx` / `5xx`)**
 
@@ -125,13 +156,17 @@ Generate SQL from a question.
 | Code | HTTP | When |
 | --- | --- | --- |
 | `not_found` | `404` | Unknown route. |
-| `bad_request` | `400` | Malformed JSON or missing required fields. |
+| `bad_request` | `400` | Malformed JSON, missing `question`, invalid `mode`, non-string `schemaJson`, a retired execution field, or no schema configured server-side. |
 | `payload_too_large` | `413` | Body exceeds `maxBodyBytes`. |
-| `schema_parse_error` | `400` | Inline `schemaJson` couldn't be parsed. |
+| `schema_override_disabled` | `403` | The request sent `schemaJson` but `httpApi.allowSchemaOverride` is not `true`. |
+| `schema_parse_error` | `400` | The schema artifact (inline `schemaJson` or the server's configured schema) couldn't be loaded or parsed. |
+| `sql_validation_error` | `400` | Model output failed the SQL checks (must be a single `SELECT`/`WITH` statement, no comments, no write or DDL keywords, no blocked functions). Includes `rule`. |
+| `guardrail_violation` | `422` | A tenant or sensitive-identifier guardrail rejected the generated SQL. Includes `rule`. |
 | `generation_not_configured` | `500` | No model provider configured server-side. |
-| `sql_validation_error` | `400` | Model output failed the SQL checks (must be a single `SELECT`/`WITH` statement, no comments, no write or DDL keywords). |
-| `sql_generation_error` | `502` | Model call failed (provider error, timeout). |
-| `internal_error` | `500` | Anything else. |
+| `sql_generation_error` | `502` | The model call failed (provider error, or it hit `httpApi.requestTimeoutMs`). The message is generic. The provider's own error text is logged server-side and never returned. |
+| `internal_error` | `500` | Anything else. The message is generic. The full error is logged server-side under the response's `correlationId`. |
+
+The server picks the status code from the error's type, never from its message text. Every non-`2xx` response from `POST /ask` is logged as an `askdb.run.error` event with the status, code, and full error details, under the same `correlationId`.
 
 ## Correlation IDs
 

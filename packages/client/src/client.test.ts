@@ -90,6 +90,7 @@ function makeConfig(overrides?: {
   envSchemaPath?: string;
   envSchemaJson?: string;
   aiEnv?: Record<string, string | undefined>;
+  omitSensitiveFromPrompt?: boolean;
 }): AskDbRuntimeConfig {
   return {
     structured: {
@@ -107,6 +108,7 @@ function makeConfig(overrides?: {
     },
     dev: { mockSql: overrides?.mockSql },
     nlToSql: { dialect: overrides?.dialect },
+    modes: { askdbMode: undefined, omitSensitiveFromPrompt: overrides?.omitSensitiveFromPrompt ?? false },
   } as unknown as AskDbRuntimeConfig;
 }
 
@@ -493,5 +495,121 @@ describe("createAskDb — parameterize passthrough", () => {
     expect(result.params).toEqual(["colorado"]);
     expect(result.parameters?.[0]?.name).toBe("state_name");
     expect(result.preparedQuery?.version).toBe(1);
+  });
+});
+
+describe("createAskDb — omitSensitiveFromPrompt config floor", () => {
+  const preloaded = loadSchemaFromJson(minimalV2Json) as AnyNormalizedSchema;
+
+  function capturingDialect(): { dialect: AskDialect; seen: () => boolean | undefined } {
+    let seen: boolean | undefined;
+    return {
+      dialect: {
+        async generate(_q, _s, _m, opts) {
+          seen = opts?.omitSensitiveIdentifiersFromNlToSqlPrompt;
+          return { sql: "SELECT 1" };
+        },
+      },
+      seen: () => seen,
+    };
+  }
+
+  it("config true + per-call false still omits sensitive identifiers", async () => {
+    const { dialect, seen } = capturingDialect();
+    const askdb = createAskDb({
+      config: makeConfig({ mockSql: "SELECT 1", omitSensitiveFromPrompt: true }),
+      registry: makeRegistry(),
+      schema: { schema: preloaded },
+    });
+    await askdb.ask("q", { dialect, omitSensitiveIdentifiersFromNlToSqlPrompt: false });
+    expect(seen()).toBe(true);
+  });
+
+  it("config true + no per-call value omits sensitive identifiers", async () => {
+    const { dialect, seen } = capturingDialect();
+    const askdb = createAskDb({
+      config: makeConfig({ mockSql: "SELECT 1", omitSensitiveFromPrompt: true }),
+      registry: makeRegistry(),
+      schema: { schema: preloaded },
+    });
+    await askdb.ask("q", { dialect });
+    expect(seen()).toBe(true);
+  });
+
+  it("config false + per-call true tightens for that call only", async () => {
+    const { dialect, seen } = capturingDialect();
+    const askdb = createAskDb({
+      config: makeConfig({ mockSql: "SELECT 1" }),
+      registry: makeRegistry(),
+      schema: { schema: preloaded },
+    });
+    await askdb.ask("q", { dialect, omitSensitiveIdentifiersFromNlToSqlPrompt: true });
+    expect(seen()).toBe(true);
+    await askdb.ask("q", { dialect });
+    expect(seen()).toBeUndefined();
+  });
+});
+
+describe("createAskDb — abortSignal", () => {
+  it("forwards abortSignal into the generateText call", async () => {
+    const preloaded = loadSchemaFromJson(minimalV2Json) as AnyNormalizedSchema;
+    const generateText = vi.fn(async (_args: { abortSignal?: AbortSignal }) => ({
+      text: "```sql\nSELECT 1\n```",
+    }));
+    const askdb = createAskDb({
+      config: makeConfig(),
+      registry: makeRegistry(),
+      schema: { schema: preloaded },
+    });
+    const controller = new AbortController();
+    await askdb.ask("q", {
+      dialect: "postgres",
+      parameterize: false,
+      deps: { generateText: generateText as never },
+      abortSignal: controller.signal,
+    });
+    expect(generateText).toHaveBeenCalledTimes(1);
+    expect(generateText.mock.calls[0]![0].abortSignal).toBe(controller.signal);
+  });
+
+  it("forwards abortSignal to the registry-resolved model call", async () => {
+    const preloaded = loadSchemaFromJson(minimalV2Json) as AnyNormalizedSchema;
+    const doGenerate = vi.fn(async (opts: { abortSignal?: AbortSignal }) => {
+      if (opts.abortSignal?.aborted) throw new Error("aborted");
+      return {
+        content: [{ type: "text", text: "```sql\nSELECT 1\n```" }],
+        finishReason: { unified: "stop", raw: "stop" },
+        usage: {
+          inputTokens: { total: 1, noCache: 1, cacheRead: 0, cacheWrite: 0 },
+          outputTokens: { total: 1, text: 1, reasoning: 0 },
+        },
+        warnings: [],
+      };
+    });
+    const model = {
+      specificationVersion: "v3",
+      provider: "test",
+      modelId: "test",
+      supportedUrls: {},
+      doGenerate,
+      doStream: vi.fn(),
+    };
+    const askdb = createAskDb({
+      config: makeConfig(),
+      registry: makeRegistry({
+        resolveAiConfig: vi.fn(() => ({ provider: "openai", apiKey: "k", model: "m" }) as AiConfig),
+        createLanguageModel: vi.fn(async () => model as never),
+      }),
+      schema: { schema: preloaded },
+    });
+    const controller = new AbortController();
+    const out = await askdb.ask("q", {
+      dialect: "postgres",
+      parameterize: false,
+      abortSignal: controller.signal,
+    });
+    expect(out.sql).toBe("SELECT 1");
+    expect(doGenerate).toHaveBeenCalledTimes(1);
+    expect(doGenerate.mock.calls[0]![0].abortSignal).toBeDefined();
   });
 });

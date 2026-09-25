@@ -7,6 +7,7 @@ import {
   type ReasoningEffort,
 } from "@askdb/ai";
 import type { AskDbRuntimeConfig } from "@askdb/config";
+import { generateText as defaultGenerateText } from "ai";
 import {
   ask,
   isBuiltInDialectId,
@@ -48,6 +49,13 @@ export type AskOverrides = Omit<
    * Ignored when `model` or `deps.generateText` is also set (BYO paths).
    */
   reasoningEffort?: ReasoningEffort;
+  /**
+   * Abort signal forwarded to the NL→SQL model call (`generateText({ abortSignal })`).
+   * Use it to enforce a per-request timeout (e.g. `AbortSignal.timeout(60_000)`); an
+   * aborted call rejects with `SqlGenerationError`. Custom `AskDialect` implementations
+   * receive it only through `deps.generateText`.
+   */
+  abortSignal?: AbortSignal;
 };
 
 export type DialectResolution = {
@@ -261,6 +269,8 @@ export function createAskDb(options: CreateAskDbOptions): AskDbClient {
         dialect: dialectOverride,
         deps,
         reasoningEffort,
+        abortSignal,
+        omitSensitiveIdentifiersFromNlToSqlPrompt,
         ...rest
       } = overrides;
       const schema = schemaOverride ? loadFromSource(schemaOverride, "request") : resolveDefaultSchema();
@@ -270,16 +280,24 @@ export function createAskDb(options: CreateAskDbOptions): AskDbClient {
 
       // An explicit `deps.providerOptions` from the caller always wins over
       // the computed one; otherwise merge the resolved reasoning effort in.
-      const finalDeps: AskGenerateDeps | undefined =
+      const resolvedDeps: AskGenerateDeps | undefined =
         resolvedModel.mockDeps ??
         (deps?.providerOptions !== undefined
           ? deps
           : resolvedModel.providerOptions !== undefined
             ? { ...deps, providerOptions: resolvedModel.providerOptions }
             : deps);
+      const finalDeps = abortSignal ? withAbortSignal(resolvedDeps, abortSignal) : resolvedDeps;
+
+      // Config `modes.omitSensitiveFromPrompt` is a floor: a per-call override can
+      // tighten it (true) but never loosen it (false) when the operator enabled it.
+      const omitSensitive =
+        omitSensitiveIdentifiersFromNlToSqlPrompt === true ||
+        config.modes?.omitSensitiveFromPrompt === true;
 
       return ask({
         ...rest,
+        ...(omitSensitive ? { omitSensitiveIdentifiersFromNlToSqlPrompt: true } : {}),
         question,
         schema,
         model: resolvedModel.model,
@@ -288,4 +306,12 @@ export function createAskDb(options: CreateAskDbOptions): AskDbClient {
       });
     },
   };
+}
+
+/** Wrap `generateText` (the caller's mock or the AI SDK default) so every call carries `signal`. */
+function withAbortSignal(deps: AskGenerateDeps | undefined, signal: AbortSignal): AskGenerateDeps {
+  const inner = deps?.generateText ?? defaultGenerateText;
+  const generateText = ((args: Parameters<typeof defaultGenerateText>[0]) =>
+    inner({ ...args, abortSignal: signal })) as typeof defaultGenerateText;
+  return { ...deps, generateText };
 }

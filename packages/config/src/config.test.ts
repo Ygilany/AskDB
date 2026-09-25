@@ -846,3 +846,34 @@ describe("bootstrapAskDbEnv", () => {
     delete process.env.MY_DB;
   });
 });
+
+describe("getAskDbRuntimeConfig — httpApi", () => {
+  afterEach(() => resetAskDbRuntimeForTests());
+
+  function install(httpApi: AskDbConfig["httpApi"]): void {
+    const structured = minimalConfig(httpApi ? { httpApi } : {});
+    setAskDbRuntimeForTests({ structured, flat: flattenAskDbConfig(structured) });
+  }
+
+  it("defaults allowSchemaOverride to false and requestTimeoutMs to 60000", () => {
+    install(undefined);
+    const rt = getAskDbRuntimeConfig();
+    expect(rt.httpApi.allowSchemaOverride).toBe(false);
+    expect(rt.httpApi.requestTimeoutMs).toBe(60_000);
+  });
+
+  it("reads allowSchemaOverride and requestTimeoutMs from the structured config", () => {
+    install({ allowSchemaOverride: true, requestTimeoutMs: 1500 });
+    const rt = getAskDbRuntimeConfig();
+    expect(rt.httpApi.allowSchemaOverride).toBe(true);
+    expect(rt.httpApi.requestTimeoutMs).toBe(1500);
+    expect(rt.flat["ASKDB_HTTP_ALLOW_SCHEMA_OVERRIDE"]).toBe("true");
+    expect(rt.flat["ASKDB_HTTP_REQUEST_TIMEOUT_MS"]).toBe("1500");
+  });
+
+  it("rejects a non-positive requestTimeoutMs at flatten time", () => {
+    expect(() => flattenAskDbConfig(minimalConfig({ httpApi: { requestTimeoutMs: 0 } }))).toThrow(
+      /httpApi\.requestTimeoutMs/,
+    );
+  });
+});
