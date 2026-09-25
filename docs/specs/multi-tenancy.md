@@ -46,6 +46,8 @@ This is a Postgres-first proof. The tenant enforcement model is designed to gene
 
 - **Policy at setup, scope at runtime** — the tenant model (which tables are scoped, how hierarchy works) is stable and captured once. The current user's allowed scope changes per request. These are separate inputs to `ask()`.
 - **Strict mode fails closed** — when the guardrail validator cannot prove a query is tenant-safe, it rejects. Prompting alone is not sufficient; SQL validation is the second line of defense.
+- **Validate what is returned** — `ask()` runs the guardrail on `result.sql` after tenant placeholder substitution, plus `result.unboundSql` when it is kept. It never validates only the model's `sql-unbound` block: if the bound and unbound blocks disagree, the unbound extras are dropped and the bound SQL alone decides. The check runs for every dialect form, including custom `AskDialect` adapters. A `tenantGuardrail` a custom adapter reports is merged in and cannot replace the check.
+- **A broken policy is a load error** — only a missing `tenant-policy.md` (or, in a bundle, an absent `tenantPolicy` key) means "no tenancy". A present file or bundle value that is empty or fails to read or parse (including malformed YAML) throws `SchemaParseError`. Loading via a `schema.json` path picks up the sibling policy exactly like loading the directory.
 - **Named placeholders in prompt assembly** — `:tenant_<root_label>_ids` placeholders are inserted by the model following prompt instructions, then replaced by the output modes layer. This separates prompt semantics from execution binding.
 - **Host expands polymorphic filters** — for polymorphic tables, the host resolves which specific record IDs the user can access and passes them as `tenantFilters`. AskDB applies the type discriminator and resolved filters; it does not perform identity resolution.
 - **Policy front-matter always injected with RAG** — tenant safety is a security boundary. Retrieving only a subset of schema chunks must not drop the policy context. The full policy front-matter is injected unconditionally when a policy is present.
@@ -101,7 +103,8 @@ enforcement: strict
 
 - `pnpm build` and `pnpm test` pass from repo root.
 - All pre-Phase 10 tests remain green; prompt snapshots for schemas without tenant policy are byte-identical.
-- Policy loading: fixture `tenant-policy.md` loads and normalizes deterministically; unknown table IDs, broken FK paths, and cycles produce clear validation errors.
+- Policy loading: fixture `tenant-policy.md` loads and normalizes deterministically; unknown table IDs, broken FK paths, and cycles produce clear validation errors. Malformed YAML front-matter throws `SchemaParseError`; a missing file loads with no policy; a `schema.json` path loads the sibling policy.
+- SQL guardrail on returned SQL: a model reply whose `sql` block is unscoped but whose `sql-unbound` block is scoped fails in strict mode and reports warnings in warn mode. A custom `AskDialect` returning unscoped SQL under a strict policy is rejected.
 - All five discriminator patterns (P1–P5) covered by fixture tests.
 - `ask()` without scope when a policy is configured fails before model generation.
 - `ask()` with valid agency scope proceeds to prompt assembly; golden prompt snapshot includes policy block, scope, and advisory context.
