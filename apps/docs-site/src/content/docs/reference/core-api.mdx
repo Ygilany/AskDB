@@ -192,6 +192,8 @@ Autodetects and loads a v2 schema artifact. Accepts:
 
 Returns `NormalizedSchemaV2`. Throws `SchemaParseError` on failure. The optional files (`tables/*.md`, `concepts.md`, `tenant-policy.md`) may be absent. If one exists but is empty or cannot be read or parsed, for example because of malformed YAML front-matter, loading throws. Bundles follow the same rule: only an absent `tenantPolicy` key means "no policy". A broken `tenant-policy.md` never silently turns tenant enforcement off.
 
+Each table and column in the result has one effective `sensitive` flag. It is `true` when `schema.json` marks it sensitive, when its `tables/*.md` front-matter sets `sensitive: true` (which is what Studio's Sensitivity tab writes), or, for a column, when its table is sensitive. Front-matter is escalate-only: a front-matter `sensitive: false` never un-marks something that is sensitive anyway. It is ignored and reported in `schema.warnings` as `{ kind: "sensitivity_downgrade_ignored", tableFile, id }`. Prompt formatting, `validateSensitiveReferences`, and `@askdb/rag` chunking all read this effective flag.
+
 `loadSchema` is synchronous — load once at startup and keep the result in memory, not per request.
 
 ### `loadSchemaFromJson(raw)`

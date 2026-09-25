@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { resolve } from "node:path";
-import { readFileSync, writeFileSync, existsSync } from "node:fs";
+import { join, resolve } from "node:path";
+import { cpSync, mkdtempSync, readFileSync, rmSync, writeFileSync, existsSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { chunkSchemaDir, chunkSchema } from "./index.js";
 import { loadChunkerSourcesFromDir } from "./sources.js";
 
@@ -88,6 +89,36 @@ describe("sensitive propagation", () => {
       c.id.startsWith("chunk:table:public.users#biz"),
     );
     expect(userBiz).toBeDefined();
+  });
+});
+
+describe("front-matter sensitivity escalation (core loader)", () => {
+  it("excludes a column that only table front-matter marks sensitive", () => {
+    const root = mkdtempSync(join(tmpdir(), "askdb-rag-sensitivity-"));
+    try {
+      const dir = join(root, "orders-users.schema");
+      cpSync(FIXTURE_DIR, dir, { recursive: true });
+      const ordersMd = join(dir, "tables", "orders.md");
+      writeFileSync(
+        ordersMd,
+        readFileSync(ordersMd, "utf8").replace(
+          "    enum: [pending, paid, shipped, cancelled]\n",
+          "    enum: [pending, paid, shipped, cancelled]\n    sensitive: true\n",
+        ),
+      );
+
+      // Control: schema.json marks orders.status non-sensitive, so it is chunked by default.
+      expect(
+        chunkSchemaDir(FIXTURE_DIR).chunks.find((c) => c.id === "chunk:table:public.orders#status"),
+      ).toBeDefined();
+
+      const { chunks } = chunkSchemaDir(dir);
+      expect(chunks.find((c) => c.id === "chunk:table:public.orders#status")).toBeUndefined();
+      const ordersTable = chunks.find((c) => c.id === "chunk:table:public.orders");
+      expect(ordersTable?.refs).not.toContain("table:public.orders#status");
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
   });
 });
 

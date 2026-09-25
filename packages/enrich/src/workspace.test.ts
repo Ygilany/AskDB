@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { loadSchema, loadSchemaFromJson } from "@askdb/core";
+import { buildFrontmatter, buildTableDraft } from "./draft.js";
 import {
   bundleSchemaDirectory,
   loadWorkspace,
@@ -213,5 +214,40 @@ describe("workspace", () => {
     const fromDir = loadSchema(schemaDir);
     const fromBundle = loadSchemaFromJson(JSON.stringify(bundle));
     expect(fromBundle).toEqual(fromDir);
+  });
+
+  it("sensitivity marked in a draft round-trips through saveTable into the core loader (escalate-only)", () => {
+    const ws = loadWorkspace(schemaDir);
+    const orders = ws.tables.find((t) => t.physical.name === "orders")!;
+    const users = ws.tables.find((t) => t.physical.name === "users")!;
+    const statusId = "table:public.orders#status";
+    const emailId = "table:public.users#email";
+
+    // Studio's Sensitivity tab: mark orders.status Sensitive...
+    const ordersDraft = buildTableDraft(orders.physical, orders.parsed);
+    ordersDraft.columns[statusId] = { ...ordersDraft.columns[statusId], sensitive: true };
+    saveTable(ws, orders.physical.id, buildFrontmatter(orders.physical, "orders-users", ordersDraft), orders.parsed!.body);
+    // ...and try to mark users.email (sensitive in schema.json) Not sensitive.
+    const usersDraft = buildTableDraft(users.physical, users.parsed);
+    usersDraft.columns[emailId] = { ...usersDraft.columns[emailId], sensitive: false };
+    saveTable(ws, users.physical.id, buildFrontmatter(users.physical, "orders-users", usersDraft), users.parsed!.body);
+
+    const reloaded = loadWorkspace(schemaDir);
+    const reloadedOrders = reloaded.tables.find((t) => t.physical.name === "orders")!;
+    expect(buildTableDraft(reloadedOrders.physical, reloadedOrders.parsed).columns[statusId]?.sensitive).toBe(true);
+
+    const schema = loadSchema(schemaDir);
+    const column = (id: string) => schema.tables.flatMap((t) => t.columns).find((c) => c.id === id)!;
+    expect(column(statusId).sensitive).toBe(true);
+    expect(column(emailId).sensitive).toBe(true);
+    expect(schema.warnings).toContainEqual({
+      kind: "sensitivity_downgrade_ignored",
+      tableFile: "tables/users.md",
+      id: emailId,
+    });
+    // Studio surfaces loader warnings through the workspace.
+    expect(reloaded.warnings).toContainEqual(expect.objectContaining({ kind: "sensitivity_downgrade_ignored" }));
+
+    expect(loadSchemaFromJson(JSON.stringify(bundleSchemaDirectory(schemaDir)))).toEqual(schema);
   });
 });
