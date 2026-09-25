@@ -15,7 +15,7 @@ import {
   SQLITE_DIALECT,
   SQLSERVER_DIALECT,
 } from "./dialect-spec.js";
-import { generateSelectSql, generateSelectSqlWithoutTenantGuardrail } from "./generate.js";
+import { generateSelectSql } from "./generate.js";
 
 const minimalSchema: NormalizedSchema = {
   tables: [{ name: "users", columns: [{ name: "id", type: "integer", nullable: false, primaryKey: true }] }],
@@ -361,24 +361,6 @@ describe("generateSelectSql — tenant guardrail checks the returned SQL", () =>
     '{"parameters":[{"name":"status","type":"string","cardinality":"one","value":"open"}]}',
     "```",
   ].join("\n");
-
-  it("accepts the reproduction's extras, so only a check of the bound SQL can catch it", async () => {
-    const schema = loadSchema(multiTenantDir);
-    const out = await generateSelectSqlWithoutTenantGuardrail(
-      POSTGRES_DIALECT,
-      "open orders",
-      schema,
-      fakeModel,
-      {
-        generateText: vi.fn(async () => ({ text: disagreeingReply })) as never,
-        parameterize: true,
-        tenantPolicy: schema.tenantPolicy,
-        tenantScope: agencyScope,
-      },
-    );
-    expect(out.unboundNamedSql).toContain(":tenant_agency_ids");
-    expect(out.sql).not.toContain("agency_id");
-  });
 
   it("strict: throws when the bound SQL is unscoped even though the unbound SQL is scoped", async () => {
     const schema = loadSchema(multiTenantDir);
