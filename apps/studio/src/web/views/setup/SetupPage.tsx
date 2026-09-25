@@ -37,8 +37,8 @@ export function SetupPage({
   const [schemaOut, setSchemaOut] = useState("./askdb");
   const [ragStore, setRagStore] = useState<SetupRagStore>("file");
   const [pgvectorEnv, setPgvectorEnv] = useState("ASKDB_PGVECTOR_URL");
-  const [studioExecuteEnabled, setStudioExecuteEnabled] = useState(true);
-  const studioExecuteEnabledTouched = useRef(false);
+  // Studio execute is opt-in: it runs generated SQL against a live database.
+  const [studioExecuteEnabled, setStudioExecuteEnabled] = useState(false);
   const [studioExecuteProvider, setStudioExecuteProvider] = useState<SetupExecuteProvider>("postgres");
   const [studioExecuteConnectionEnv, setStudioExecuteConnectionEnv] = useState("DATABASE_URL");
   const studioExecuteConnectionEnvTouched = useRef(false);
@@ -92,7 +92,6 @@ export function SetupPage({
   const pickDatabase = useCallback((value: SetupDatabase) => {
     setDatabase(value);
     if (!connectionEnvTouched.current) setConnectionEnv(CONNECTION_ENV_DEFAULTS[value] || "DATABASE_URL");
-    if (!studioExecuteEnabledTouched.current) setStudioExecuteEnabled(value !== "prisma");
   }, []);
 
   const pickAiProvider = useCallback((value: SetupAiProvider) => {
@@ -218,7 +217,7 @@ export function SetupPage({
             pgvectorEnv={pgvectorEnv}
             onPgvectorEnvChange={setPgvectorEnv}
             studioExecuteEnabled={studioExecuteEnabled}
-            onStudioExecuteEnabledChange={(v) => { setStudioExecuteEnabled(v); studioExecuteEnabledTouched.current = true; }}
+            onStudioExecuteEnabledChange={setStudioExecuteEnabled}
             studioExecuteProvider={studioExecuteProvider}
             onStudioExecuteProviderChange={pickStudioExecuteProvider}
             studioExecuteConnectionEnv={studioExecuteConnectionEnv}

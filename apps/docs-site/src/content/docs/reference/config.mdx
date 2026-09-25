@@ -143,15 +143,18 @@ Everything else AskDB needs — output directory, mode, log level, Studio query 
 
 ## Studio execute configuration
 
-The `studio.execute` block configures the Query Playground's live execution feature.
+The `studio.execute` block configures the Query Playground's live execution feature. It is **off by default**: set `enabled: true` and give Studio its own connection, ideally for a read-only database role.
 
 ```ts
 export default defineConfig({
   studio: {
     execute: {
-      provider: "mysql",           // "postgres" | "mysql" | "sqlite" | "sqlserver"
-      databaseUrl: env("DATABASE_URL"),  // network databases (Postgres, MySQL, SQL Server)
-      // file: env("SQLITE_FILE"),       // SQLite only
+      enabled: true,
+      provider: "mysql",                       // "postgres" | "mysql" | "sqlite" | "sqlserver"
+      databaseUrl: env("STUDIO_READONLY_URL"), // network databases (Postgres, MySQL, SQL Server)
+      // file: env("SQLITE_FILE"),             // SQLite only
+      // timeoutMs: 30000,
+      // maxRows: 500,
     },
   },
 });
@@ -159,9 +162,13 @@ export default defineConfig({
 
 | Field | Env key | Default |
 |---|---|---|
+| `studio.execute.enabled` | `ASKDB_STUDIO_EXECUTE_ENABLED` | `false`. While off, `POST /api/execute` returns `403` and the Playground hides Execute. |
 | `studio.execute.provider` | `ASKDB_STUDIO_EXECUTE_PROVIDER` | Active introspection provider, or `"postgres"` |
-| `studio.execute.databaseUrl` | `ASKDB_STUDIO_DATABASE_URL` | Introspection URL for the active provider |
-| `studio.execute.file` | `ASKDB_STUDIO_SQLITE_FILE` | Introspection file for SQLite |
+| `studio.execute.databaseUrl` | `ASKDB_STUDIO_DATABASE_URL` | None (see `useIntrospectionConnection`) |
+| `studio.execute.file` | `ASKDB_STUDIO_SQLITE_FILE` | None (see `useIntrospectionConnection`) |
+| `studio.execute.useIntrospectionConnection` | `ASKDB_STUDIO_EXECUTE_USE_INTROSPECTION_CONNECTION` | `false`. When `true`, reuse the introspection connection if `databaseUrl` / `file` is unset. |
+| `studio.execute.timeoutMs` | `ASKDB_STUDIO_EXECUTE_TIMEOUT_MS` | `30000`. Per-query timeout, positive integer. Not enforced for SQLite. |
+| `studio.execute.maxRows` | `ASKDB_STUDIO_EXECUTE_MAX_ROWS` | `500`. Row cap, positive integer. Results with more rows are truncated. |
 
 **Provider resolution order:**
 
@@ -171,10 +178,10 @@ export default defineConfig({
 
 **Connection resolution** (per provider):
 
-- **Postgres**: `studio.execute.databaseUrl` → `ASKDB_STUDIO_DATABASE_URL` → introspection Postgres URL.
-- **MySQL**: `studio.execute.databaseUrl` → `ASKDB_STUDIO_DATABASE_URL` → introspection MySQL URL.
-- **SQL Server**: `studio.execute.databaseUrl` → `ASKDB_STUDIO_DATABASE_URL` → introspection SQL Server URL.
-- **SQLite**: `studio.execute.file` → `ASKDB_STUDIO_SQLITE_FILE` → introspection SQLite file.
+- **Postgres, MySQL, SQL Server**: `studio.execute.databaseUrl` → `ASKDB_STUDIO_DATABASE_URL` → the introspection URL for the same engine, only when `useIntrospectionConnection: true`.
+- **SQLite**: `studio.execute.file` → `ASKDB_STUDIO_SQLITE_FILE` → the introspection SQLite file, only when `useIntrospectionConnection: true`.
+
+Studio doesn't fall back to your introspection credentials on its own, because those usually belong to a more privileged role than ad-hoc queries should use. [Studio — Security model](/studio/#security-model) describes the read-only transaction, timeout, and row cap applied to every query.
 
 Each execute provider requires its optional peer driver package (`pg`, `mysql2`, `better-sqlite3`, or `mssql`). See [Studio — driver packages](/studio/#driver-packages) for install instructions.
 

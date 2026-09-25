@@ -194,6 +194,7 @@ function renderStudioSection(answers: InitAnswers): string | null {
       : `env(${tsString(studioExecute.sqliteFile ?? "SQLITE_FILE")})`;
     return `  studio: {
     execute: {
+      enabled: true,
       provider: "sqlite",
       file: ${fileExpr},
     },
@@ -203,6 +204,7 @@ function renderStudioSection(answers: InitAnswers): string | null {
   const urlEnv = studioExecute.connectionEnv ?? "DATABASE_URL";
   return `  studio: {
     execute: {
+      enabled: true,
       provider: ${tsString(provider)},
       databaseUrl: env(${tsString(urlEnv)}),
     },
@@ -689,10 +691,11 @@ export async function runWizard(prompter: InitPrompter): Promise<InitAnswers | n
 
   const pgvectorEnv = ragStore === "pgvector" ? "ASKDB_PGVECTOR_URL" : undefined;
 
-  const studioExecuteDefault = database !== "prisma";
+  // Opt-in: Studio execute runs generated SQL against a live database, so it
+  // defaults to off (matching `--studio-execute`'s documented default).
   const enableStudioExecute = await prompter.confirm({
-    message: "Enable Studio execute (run queries from the browser playground)?",
-    default: studioExecuteDefault,
+    message: "Enable Studio execute (run generated SQL read-only from the browser playground)?",
+    default: false,
   });
 
   let studioExecute: InitAnswers["studioExecute"];
