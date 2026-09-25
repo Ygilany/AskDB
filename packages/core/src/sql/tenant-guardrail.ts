@@ -11,10 +11,22 @@ import type {
   ScopedTable,
   PolymorphicTable,
 } from "../schema/v2/tenant-policy.js";
+import { isBuiltInDialectId, type DialectSpec } from "./dialect-spec.js";
 
 export type TenantGuardrailResult = {
   passed: boolean;
   warnings: TenantGuardrailWarning[];
+};
+
+export type ValidateTenantGuardrailsOptions = {
+  /**
+   * The target engine, so string literals and comments are read the way it reads
+   * them: on MySQL/MariaDB `"…"` is a string, `#` starts a comment, and (with
+   * `backslashEscapes`) `\'` does not end a string. `ask()` passes it whenever it
+   * has a `DialectSpec`. Without it the statement must pass under every reading
+   * (see {@link validateTenantGuardrails}).
+   */
+  dialect?: Pick<DialectSpec, "id" | "backslashEscapes">;
 };
 
 /**
@@ -25,7 +37,14 @@ export type TenantGuardrailResult = {
  * when the SQL cannot be proven safe.
  *
  * Identifiers are matched only in code regions: text inside string literals and
- * comments never counts as a table reference or a tenant predicate.
+ * comments never counts as a table reference or a tenant predicate. Regions are
+ * read the way `options.dialect` reads them. Without a dialect (a custom
+ * `AskDialect`, or a direct call without `options.dialect`) the statement is read
+ * both the standard-SQL way and the MySQL way: a table counts as referenced if
+ * either reading sees it, and a tenant predicate counts only if both do. So SQL
+ * whose scoping depends on the dialect (`"agency_id"`, `'it\'s …'`) is flagged,
+ * never passed. A tenant placeholder counts only in its exact lowercase form,
+ * the only form `resolveTenantSql()` substitutes.
  *
  * In `strict` mode, throws `TenantGuardrailError` on failure.
  * In `warn` mode, returns warnings without throwing.
@@ -34,6 +53,7 @@ export function validateTenantGuardrails(
   sql: string,
   policy: NormalizedTenantPolicy,
   scope: TenantScope,
+  options?: ValidateTenantGuardrailsOptions,
 ): TenantGuardrailResult {
   // Global scope bypasses tenant guardrails
   if (scope.access.kind === "global") {
@@ -41,27 +61,27 @@ export function validateTenantGuardrails(
   }
 
   const warnings: TenantGuardrailWarning[] = [];
-  const normalizedSql = normalizeSql(sql);
+  const views = codeViews(sql, options?.dialect);
 
   // Check scoped tables
   for (const st of policy.scopedTables) {
     const tableName = extractTableName(st.id);
-    if (!mentionsTable(normalizedSql, tableName)) continue;
-    checkScopedTable(normalizedSql, st, policy, warnings);
+    if (!mentionsTable(views, tableName)) continue;
+    checkScopedTable(views, st, policy, warnings);
   }
 
   // Check polymorphic tables
   for (const pt of policy.polymorphicTables) {
     const tableName = extractTableName(pt.id);
-    if (!mentionsTable(normalizedSql, tableName)) continue;
-    checkPolymorphicTable(normalizedSql, pt, policy, warnings);
+    if (!mentionsTable(views, tableName)) continue;
+    checkPolymorphicTable(views, pt, policy, warnings);
   }
 
   // Check unknown tables
   for (const entry of policy.coverage) {
     if (entry.classification !== "unknown") continue;
     const tableName = extractTableName(entry.tableId);
-    if (mentionsTable(normalizedSql, tableName)) {
+    if (mentionsTable(views, tableName)) {
       warnings.push(
         warn("UNKNOWN_TABLE_REFERENCED", entry.tableId,
           `Query references unclassified table '${tableName}'. Classify it in tenant-policy.md.`),
@@ -90,6 +110,7 @@ export function validateTenantGuardrails(
  * findings; when the policy is `strict` and anything failed, a single
  * `TenantGuardrailError` is thrown afterwards. `extra` lets a caller fold in a
  * result reported by a custom generator so its findings are never dropped.
+ * `dialect` is the target engine, when known (undefined for a custom `AskDialect`).
  *
  * Internal to `@askdb/core` — `ask()` and `generateSelectSql()` share it so the
  * check always runs on the SQL that is actually returned.
@@ -100,6 +121,7 @@ export function enforceTenantGuardrails(
   scope: TenantScope,
   logger?: AskDbLogger,
   extra?: TenantGuardrailResult,
+  dialect?: ValidateTenantGuardrailsOptions["dialect"],
 ): TenantGuardrailResult {
   const collectPolicy: NormalizedTenantPolicy = { ...policy, enforcement: "warn" };
   const warnings: TenantGuardrailWarning[] = [];
@@ -115,7 +137,7 @@ export function enforceTenantGuardrails(
   for (const sql of sqls) {
     if (sql === undefined || checked.has(sql)) continue;
     checked.add(sql);
-    for (const w of validateTenantGuardrails(sql, collectPolicy, scope).warnings) add(w);
+    for (const w of validateTenantGuardrails(sql, collectPolicy, scope, { dialect }).warnings) add(w);
   }
   for (const w of extra?.warnings ?? []) add(w);
 
@@ -153,7 +175,7 @@ export function enforceTenantGuardrails(
 // ---------------------------------------------------------------------------
 
 function checkScopedTable(
-  sql: string,
+  sql: CodeViews,
   st: ScopedTable,
   policy: NormalizedTenantPolicy,
   warnings: TenantGuardrailWarning[],
@@ -203,7 +225,7 @@ function checkScopedTable(
 }
 
 function checkPolymorphicTable(
-  sql: string,
+  sql: CodeViews,
   pt: PolymorphicTable,
   _policy: NormalizedTenantPolicy,
   warnings: TenantGuardrailWarning[],
@@ -251,65 +273,118 @@ function extractColumnName(columnId: string): string {
 }
 
 /**
- * Lowercase the statement and blank out everything that is not SQL code, so
- * identifier checks only see code regions. String literals (`'…'` with `''`
- * escapes, `$tag$…$tag$` bodies) and comments (`-- …`, `/* … *\/`) become spaces.
- * The output has the same length, so word boundaries at the seams are unchanged.
- *
- * Quoted identifiers (`"…"`, `` `…` ``, `[…]`) keep their contents and only lose
- * their delimiters: `"agency_id"` *is* the identifier `agency_id`, and blanking
- * it would hide `FROM "orders"` from the table check and skip that table.
- *
- * Known gaps (no dialect is threaded here): MySQL's default double-quoted
- * strings read as identifiers, and backslash escapes inside `'…'` are not
- * recognized.
+ * How one engine separates code from strings and comments. `'…'` strings (with
+ * `''` escapes), `--` and `/* *\/` comments, and `` `…` `` / `[…]` identifiers
+ * are common to every reading.
  */
-function normalizeSql(sql: string): string {
-  const lower = sql.toLowerCase();
-  const out = lower.split("");
+type CodeReading = {
+  /** `"…"` is a quoted identifier (standard SQL) or a string literal (MySQL/MariaDB). */
+  doubleQuoted: "identifier" | "string";
+  /** Backslash escapes the next character inside string literals. */
+  backslashEscapes: boolean;
+  /** `#` starts a line comment (MySQL/MariaDB). */
+  hashComments: boolean;
+};
+
+const STANDARD_READING: CodeReading = {
+  doubleQuoted: "identifier",
+  backslashEscapes: false,
+  hashComments: false,
+};
+const MYSQL_READING: CodeReading = {
+  doubleQuoted: "string",
+  backslashEscapes: true,
+  hashComments: true,
+};
+
+/** One same-length view of the statement per reading; see {@link codeView}. */
+type CodeViews = readonly string[];
+
+/**
+ * A known dialect gets its own single reading. An unknown one gets both readings:
+ * the statement is ambiguous exactly where they differ, and the matchers below
+ * resolve that ambiguity toward a warning (tables: any view; predicates: every
+ * view). A MySQL server running with `ANSI_QUOTES` reads `"…"` as an identifier;
+ * the MySQL reading still treats it as a string, so a predicate written only as
+ * `"agency_id"` is flagged there, never passed.
+ */
+function codeViews(
+  sql: string,
+  dialect: ValidateTenantGuardrailsOptions["dialect"] | undefined,
+): CodeViews {
+  if (dialect === undefined || !isBuiltInDialectId(dialect.id)) {
+    return [codeView(sql, STANDARD_READING), codeView(sql, MYSQL_READING)];
+  }
+  const backslashEscapes = dialect.backslashEscapes === true;
+  const base = dialect.id === "mysql" || dialect.id === "mariadb" ? MYSQL_READING : STANDARD_READING;
+  return [codeView(sql, { ...base, backslashEscapes })];
+}
+
+/**
+ * Blank out everything that is not SQL code, so identifier checks only see code
+ * regions. String literals (`'…'`, `$tag$…$tag$` bodies, and `"…"` when the
+ * reading says so) and comments become spaces. The output has the same length
+ * and keeps the original case (placeholders are case-sensitive), so word
+ * boundaries at the seams are unchanged.
+ *
+ * Quoted identifiers keep their contents and only lose their delimiters:
+ * `"agency_id"` *is* the identifier `agency_id` on Postgres, and blanking it
+ * would hide `FROM "orders"` from the table check and skip that table.
+ */
+function codeView(sql: string, reading: CodeReading): string {
+  const out = sql.split("");
   const blank = (from: number, to: number): void => {
     for (let k = from; k < to; k++) if (out[k] !== "\n") out[k] = " ";
   };
-  const dollarTag = /\$(?:[a-z_][a-z0-9_]*)?\$/y;
+  /** End (exclusive) of the string literal opened by `quote` at `open`. */
+  const stringEnd = (open: number, quote: string): number => {
+    let j = open + 1;
+    while (j < sql.length) {
+      const c = sql[j];
+      if (c === "\\" && reading.backslashEscapes) {
+        j += 2;
+        continue;
+      }
+      if (c === quote) {
+        if (sql[j + 1] === quote) {
+          j += 2;
+          continue;
+        }
+        return j + 1;
+      }
+      j++;
+    }
+    return sql.length;
+  };
+  const dollarTag = /\$(?:[A-Za-z_][A-Za-z0-9_]*)?\$/y;
   let i = 0;
-  while (i < lower.length) {
-    const ch = lower[i]!;
-    const next = lower[i + 1];
-    if (ch === "-" && next === "-") {
-      const newline = lower.indexOf("\n", i);
-      const end = newline === -1 ? lower.length : newline;
+  while (i < sql.length) {
+    const ch = sql[i]!;
+    const next = sql[i + 1];
+    if ((ch === "-" && next === "-") || (ch === "#" && reading.hashComments)) {
+      const newline = sql.indexOf("\n", i);
+      const end = newline === -1 ? sql.length : newline;
       blank(i, end);
       i = end;
       continue;
     }
     if (ch === "/" && next === "*") {
-      const close = lower.indexOf("*/", i + 2);
-      const end = close === -1 ? lower.length : close + 2;
+      const close = sql.indexOf("*/", i + 2);
+      const end = close === -1 ? sql.length : close + 2;
       blank(i, end);
       i = end;
       continue;
     }
-    if (ch === "'") {
-      let j = i + 1;
-      while (j < lower.length) {
-        if (lower[j] === "'") {
-          if (lower[j + 1] === "'") {
-            j += 2;
-            continue;
-          }
-          j++;
-          break;
-        }
-        j++;
-      }
-      blank(i, j);
-      i = j;
+    if (ch === "'" || (ch === '"' && reading.doubleQuoted === "string")) {
+      const end = stringEnd(i, ch);
+      blank(i, end);
+      i = end;
       continue;
     }
     if (ch === "$") {
       dollarTag.lastIndex = i;
-      const tag = dollarTag.exec(lower);
-      const close = tag ? lower.indexOf(tag[0], i + tag[0].length) : -1;
+      const tag = dollarTag.exec(sql);
+      const close = tag ? sql.indexOf(tag[0], i + tag[0].length) : -1;
       if (tag && close !== -1) {
         const end = close + tag[0].length;
         blank(i, end);
@@ -320,7 +395,7 @@ function normalizeSql(sql: string): string {
       continue;
     }
     if (ch === '"' || ch === "`" || ch === "[") {
-      const close = lower.indexOf(ch === "[" ? "]" : ch, i + 1);
+      const close = sql.indexOf(ch === "[" ? "]" : ch, i + 1);
       out[i] = " ";
       if (close === -1) break;
       out[close] = " ";
@@ -332,23 +407,27 @@ function normalizeSql(sql: string): string {
   return out.join("");
 }
 
-function mentionsTable(normalizedSql: string, tableName: string): boolean {
-  const pattern = new RegExp(`\\b${escapeRegex(tableName.toLowerCase())}\\b`);
-  return pattern.test(normalizedSql);
+/** A table counts as referenced when any reading sees it. */
+function mentionsTable(views: CodeViews, tableName: string): boolean {
+  const pattern = new RegExp(`\\b${escapeRegex(tableName)}\\b`, "i");
+  return views.some((view) => pattern.test(view));
 }
 
-function mentionsIdentifier(normalizedSql: string, identifier: string): boolean {
-  const pattern = new RegExp(`\\b${escapeRegex(identifier.toLowerCase())}\\b`);
-  return pattern.test(normalizedSql);
+/** A tenant column counts only when every reading sees it in code. */
+function mentionsIdentifier(views: CodeViews, identifier: string): boolean {
+  const pattern = new RegExp(`\\b${escapeRegex(identifier)}\\b`, "i");
+  return views.every((view) => pattern.test(view));
 }
 
 /**
  * `\b` cannot anchor a token that starts with `:` (it needs a word character on
- * one side), so tenant placeholders get their own boundary check.
+ * one side), so tenant placeholders get their own boundary check. The match is
+ * case-sensitive: `resolveTenantSql()` substitutes only the exact lowercase form
+ * and rejects any other casing, so `:TENANT_AGENCY_IDS` is not a predicate.
  */
-function mentionsPlaceholder(normalizedSql: string, placeholder: string): boolean {
-  const pattern = new RegExp(`(?<![\\w:])${escapeRegex(placeholder.toLowerCase())}(?!\\w)`);
-  return pattern.test(normalizedSql);
+function mentionsPlaceholder(views: CodeViews, placeholder: string): boolean {
+  const pattern = new RegExp(`(?<![\\w:])${escapeRegex(placeholder)}(?!\\w)`);
+  return views.every((view) => pattern.test(view));
 }
 
 function escapeRegex(str: string): string {

@@ -304,7 +304,7 @@ It must return `AskDialectGenerateResult`:
 | `tenantGuardrail` | `TenantGuardrailResult \| undefined` | Optional extra tenant findings from your generator. These are merged into `ask()`'s own check and cannot replace it. |
 | `usage` | `AskUsage \| undefined` | Token usage, if your generator has access to it. |
 
-A custom `AskDialect` is responsible for its own read-only validation. `ask()` does not run the SELECT-only validator on its output. If your generator should only emit read-only SQL, call `validateSelectSql(spec, sql)` before returning. Tenant enforcement is different: when the schema has a tenant policy, `ask()` substitutes tenant placeholders in the returned `sql` and runs the tenant guardrail on the final statement, whatever the dialect. Under `strict`, unscoped SQL throws `TenantGuardrailError`.
+A custom `AskDialect` is responsible for its own read-only validation. `ask()` does not run the SELECT-only validator on its output. If your generator should only emit read-only SQL, call `validateSelectSql(spec, sql)` before returning. Tenant enforcement is different: when the schema has a tenant policy, `ask()` substitutes tenant placeholders in the returned `sql` and runs the tenant guardrail on the final statement, whatever the dialect. Under `strict`, unscoped SQL throws `TenantGuardrailError`. A custom `AskDialect` doesn't tell the guardrail how its engine quotes strings, so the statement must pass under both the standard-SQL reading and the MySQL reading (where `"…"` is a string): a tenant column written only as `"agency_id"` doesn't count as a predicate.
 
 Passing an unknown string dialect id throws `UnknownDialectError`, which extends `AskDbError`.
 

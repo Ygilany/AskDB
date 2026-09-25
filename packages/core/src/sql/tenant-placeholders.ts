@@ -11,6 +11,7 @@ import {
   formatMarker,
   markerStyleForDialect,
   scanTenantPlaceholders,
+  tokenizeSqlSpans,
   type MarkerStyle,
   type PlaceholderOccurrence,
 } from "./bind.js";
@@ -166,13 +167,15 @@ type Edit = { start: number; end: number; text: string };
  * is what keeps positional `?` markers aligned with their parameters.
  *
  * Fails closed: an occurrence whose placeholder has no IDs in scope, or matches
- * no tenant root, throws instead of shipping the raw `:tenant_*` text.
+ * no tenant root, throws instead of shipping the raw `:tenant_*` text. So does a
+ * placeholder in any casing other than the exact lowercase form.
  */
 function substituteTenantPlaceholders(
   sql: string,
   resolved: ResolvedPlaceholder[],
   render: (r: ResolvedPlaceholder) => string[],
 ): string {
+  rejectCaseVariantTenantPlaceholders(sql);
   const byPlaceholder = new Map(resolved.map((r) => [r.placeholder, r]));
   const edits: Edit[] = [];
   for (const occ of scanTenantPlaceholders(sql)) {
@@ -195,6 +198,31 @@ function substituteTenantPlaceholders(
     out = out.slice(0, edit.start) + edit.text + out.slice(edit.end);
   }
   return out;
+}
+
+const ANY_CASE_PLACEHOLDER_RE = /:([a-z][a-z0-9_]*)/gi;
+
+/**
+ * Tenant placeholders are case-sensitive: the prompt names the exact lowercase
+ * form, and the substituter (like `bindPreparedQuery()`) only recognizes that
+ * form. Any other casing (`:TENANT_AGENCY_IDS`) would otherwise pass through
+ * unsubstituted, so reject it rather than return SQL with a raw placeholder.
+ * Scans the same code regions as the substituter.
+ */
+function rejectCaseVariantTenantPlaceholders(sql: string): void {
+  for (const span of tokenizeSqlSpans(sql)) {
+    if (span.kind !== "code") continue;
+    for (const m of sql.slice(span.start, span.end).matchAll(ANY_CASE_PLACEHOLDER_RE)) {
+      const name = m[1]!;
+      const lower = name.toLowerCase();
+      if (name === lower || !/^tenant_[a-z0-9_]+_ids$/.test(lower)) continue;
+      throw new TenantScopeError(
+        `Generated SQL references ${m[0]}, but tenant placeholders are case-sensitive and must be ` +
+          `written :${lower}. Refusing to emit SQL with an unsubstituted tenant placeholder.`,
+        "UNRESOLVED_TENANT_PLACEHOLDER",
+      );
+    }
+  }
 }
 
 const IN_LIST_BEFORE = /\bIN\s*\(\s*$/i;

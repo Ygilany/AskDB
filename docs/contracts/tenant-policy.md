@@ -378,6 +378,10 @@ When the parser cannot handle a SQL shape:
 
 Pattern matching runs only over SQL code: string literals (`'…'`, `$tag$…$tag$`) and comments (`--`, `/* */`) are ignored, so a tenant column or table name that appears only inside them does not count. Quoted identifiers (`"agency_id"`, `` `orders` ``, `[orders]`) still count as the identifier they name.
 
+Regions are read the way the target dialect reads them. On MySQL and MariaDB, `"…"` is a string literal, not an identifier, `#` starts a comment, and a backslash escapes the next character inside strings (when the dialect's `backslashEscapes` is set), so `'it\'s agency_id'` is one string. `ask()` passes the dialect whenever it has a `DialectSpec`. For a custom `AskDialect`, or a direct `validateTenantGuardrails()` call without `options.dialect`, the statement must pass under both the standard-SQL and the MySQL reading: a table counts as referenced if either reading sees it, and a tenant predicate counts only if both do. So a predicate written only as `"agency_id"` is flagged there.
+
+A tenant placeholder counts only in its exact lowercase form (`:tenant_agency_ids`). Any other casing (`:TENANT_AGENCY_IDS`) is never substituted: `resolveTenantSql()` and `ask()` reject it with `UNRESOLVED_TENANT_PLACEHOLDER`.
+
 ### Enforcement modes
 
 | Mode | Unproven query | Unknown table | Missing scope predicate |

@@ -464,12 +464,15 @@ export async function ask(options: AskPipelineOptions): Promise<AskPipelineResul
     // placeholder substitution, plus `unboundSql` only when the consistency check
     // kept it. Runs for every dialect (built-in, DialectSpec, or custom AskDialect);
     // the built-in generator skips its own check so this is the single report.
+    // `dialectSpec` is undefined for a custom AskDialect: the guardrail then
+    // requires the statement to pass under both the standard-SQL and MySQL readings.
     result.tenantGuardrail = enforceTenantGuardrails(
       [result.sql, result.unboundSql],
       tenantPolicy,
       options.tenantScope,
       logger,
       generated.tenantGuardrail,
+      dialectSpec,
     );
   }
 

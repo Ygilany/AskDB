@@ -406,6 +406,16 @@ describe("resolveTenantSql — fails closed on unresolved placeholders", () => {
     },
   );
 
+  it.each(["sql-only", "sql-params"] as const)(
+    "%s: a placeholder in non-lowercase form throws instead of passing through unsubstituted",
+    (mode) => {
+      const sql = "SELECT * FROM orders WHERE owner_ref IN (:TENANT_AGENCY_IDS)";
+      expect(reasonOf(() => resolveTenantSql(sql, policy, agencyOne, mode))).toBe(
+        "UNRESOLVED_TENANT_PLACEHOLDER",
+      );
+    },
+  );
+
   it("an empty ID list for a referenced root throws in the low-level replacers", () => {
     const resolved = [{ placeholder: ":tenant_agency_ids", rootLabel: "Agency", rootId: "r1", ids: [] }];
     const sql = "SELECT * FROM orders WHERE agency_id = :tenant_agency_ids";

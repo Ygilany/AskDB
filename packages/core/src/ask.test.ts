@@ -681,6 +681,25 @@ describe("ask — tenant guardrail runs on the SQL actually returned", () => {
     expect(guardrailEvents[0]![0]).toMatchObject({ event: AskDbLogEvent.TenantGuardrailPassed });
   });
 
+  it("reads the SQL with the target dialect: a Postgres double-quoted tenant column counts", async () => {
+    // Without the dialect the guardrail must also accept the MySQL reading, where
+    // "agency_id" is a string, and would reject this.
+    const schema = loadSchema(multiTenantDir);
+    const generateText = vi.fn(async () => ({
+      text: "```sql\nSELECT * FROM orders WHERE \"agency_id\" = '42'\n```",
+    }));
+    const result = await ask({
+      question: "orders",
+      schema,
+      model: fakeModel,
+      dialect: "postgres",
+      tenantScope: agencyScope,
+      parameterize: false,
+      deps: { generateText },
+    });
+    expect(result.tenantGuardrail).toEqual({ passed: true, warnings: [] });
+  });
+
   it("checks the final SQL after tenant placeholder substitution (sql-params mode)", async () => {
     const schema = loadSchema(multiTenantDir);
     const generateText = vi.fn(async () => ({

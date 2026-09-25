@@ -200,7 +200,8 @@ AskDB only substitutes placeholders that sit in SQL code — placeholder text
 inside a string literal is left alone. If the generated SQL references a
 tenant root your scope has no IDs for, `ask()` throws
 (`UNRESOLVED_TENANT_PLACEHOLDER`) instead of returning SQL with a raw
-`:tenant_…` token. With several IDs, `= :p` becomes `IN (…)` and `!= :p`
+`:tenant_…` token. Placeholders are case-sensitive: `:TENANT_ORGANIZATION_IDS`
+isn't substituted, so it throws the same error. With several IDs, `= :p` becomes `IN (…)` and `!= :p`
 becomes `NOT IN (…)`; a comparison like `<= :p` has no list form and throws
 `UNSUPPORTED_TENANT_PREDICATE`.
 

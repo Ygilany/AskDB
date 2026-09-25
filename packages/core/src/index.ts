@@ -4,6 +4,7 @@ export { buildTenantPromptBlock } from "./sql/tenant-prompt.js";
 export {
   validateTenantGuardrails,
   type TenantGuardrailResult,
+  type ValidateTenantGuardrailsOptions,
 } from "./sql/tenant-guardrail.js";
 export {
   validateSensitiveReferences,

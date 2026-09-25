@@ -4,6 +4,7 @@ import { fileURLToPath } from "node:url";
 import { TenantGuardrailError } from "../errors.js";
 import { loadSchema } from "../schema/v2/loader.js";
 import type { TenantScope, NormalizedTenantPolicy } from "../schema/v2/tenant-policy.js";
+import { MYSQL_DIALECT, POSTGRES_DIALECT, type DialectSpec } from "./dialect-spec.js";
 import { validateTenantGuardrails } from "./tenant-guardrail.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -174,8 +175,8 @@ describe("validateTenantGuardrails — unknown tables", () => {
 
 describe("validateTenantGuardrails — matches only in code regions", () => {
   const warnPolicy: NormalizedTenantPolicy = { ...policy, enforcement: "warn" };
-  const rules = (sql: string) =>
-    validateTenantGuardrails(sql, warnPolicy, agencyScope).warnings.map((w) => w.rule);
+  const rules = (sql: string, dialect?: DialectSpec) =>
+    validateTenantGuardrails(sql, warnPolicy, agencyScope, { dialect }).warnings.map((w) => w.rule);
 
   it.each([
     ["a string literal", "SELECT * FROM orders WHERE note = 'agency_id'"],
@@ -202,8 +203,10 @@ describe("validateTenantGuardrails — matches only in code regions", () => {
     expect(rules('SELECT * FROM "orders" WHERE status = \'paid\'')).toEqual([
       "MISSING_TENANT_PREDICATE",
     ]);
-    expect(rules('SELECT * FROM "public"."orders" o WHERE o."agency_id" = \'42\'')).toEqual([]);
-    expect(rules("SELECT * FROM `orders` WHERE `agency_id` = '42'")).toEqual([]);
+    expect(
+      rules('SELECT * FROM "public"."orders" o WHERE o."agency_id" = \'42\'', POSTGRES_DIALECT),
+    ).toEqual([]);
+    expect(rules("SELECT * FROM `orders` WHERE `agency_id` = '42'", MYSQL_DIALECT)).toEqual([]);
     expect(rules("SELECT * FROM [orders] WHERE [agency_id] = '42'")).toEqual([]);
   });
 
@@ -217,6 +220,18 @@ describe("validateTenantGuardrails — matches only in code regions", () => {
     expect(rules("SELECT * FROM orders WHERE owner_ref IN (:tenant_agency_ids_old)")).toEqual([
       "MISSING_TENANT_PREDICATE",
     ]);
+  });
+
+  // Regions are read the way the target engine reads them. Without a dialect the
+  // statement must pass under both the standard-SQL and the MySQL reading.
+  it.each([
+    ["mysql", "a double-quoted string", MYSQL_DIALECT, 'SELECT * FROM orders WHERE status = "agency_id"'],
+    ["mysql", "a backslash-escaped string", MYSQL_DIALECT, "SELECT * FROM orders WHERE status = 'it\\'s agency_id'"],
+    ["mysql", "a # comment", MYSQL_DIALECT, "SELECT * FROM orders # agency_id\nWHERE status = 'paid'"],
+    ["no dialect", "a double-quoted name", undefined, "SELECT * FROM orders WHERE \"agency_id\" = '42'"],
+    ["no dialect", "an upper-case placeholder", undefined, "SELECT * FROM orders WHERE owner_ref IN (:TENANT_AGENCY_IDS)"],
+  ])("%s: tenant scope named only in %s is not a predicate", (_d, _label, dialect, sql) => {
+    expect(rules(sql, dialect)).toEqual(["MISSING_TENANT_PREDICATE"]);
   });
 
   // Known limitations — this is a lint, not a parser. Pinned so a sounder
