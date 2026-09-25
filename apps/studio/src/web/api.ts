@@ -176,14 +176,25 @@ async function api<T>(path: string, init?: RequestInit): Promise<T> {
       "x-askdb-studio-token": sessionToken(),
     },
   });
-  const body = (await response.json()) as T | StudioErrorDto;
   if (!response.ok) {
-    const message = isStudioError(body)
-      ? body.error.message
-      : `Request failed with status ${response.status}`;
-    throw new Error(message);
+    throw new Error(await errorMessage(response));
   }
-  return body as T;
+  return (await response.json()) as T;
+}
+
+/**
+ * Prefer the server's `{ error: { message } }` payload (e.g. the request
+ * guard's "reload Studio" hint); fall back to the status when the error body
+ * isn't that shape — a proxy's HTML page, an empty 502, a crash.
+ */
+async function errorMessage(response: Response): Promise<string> {
+  const fallback = `Request failed with status ${response.status}`;
+  try {
+    const parsed: unknown = JSON.parse(await response.text());
+    return isStudioError(parsed) ? parsed.error.message : fallback;
+  } catch {
+    return fallback;
+  }
 }
 
 function isStudioError(value: unknown): value is StudioErrorDto {
