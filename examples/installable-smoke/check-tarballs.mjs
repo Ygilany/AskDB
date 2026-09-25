@@ -3,6 +3,7 @@
 //   - LICENSE, NOTICE, and README.md ship at the package root (Apache-2.0 §4 redistribution).
 //   - Every path referenced by package.json "main", "module", "types"/"typings", "bin", and
 //     "exports" (including conditional/nested entries) exists in the tarball.
+//   - No tarball ships TypeScript sources (src/) or test files (*.test.*).
 //
 //   - With a workspace root, every non-private package under packages/* and apps/* was packed.
 //
@@ -19,6 +20,7 @@ if (!dir) {
 }
 
 const REQUIRED_FILES = ["LICENSE", "NOTICE", "README.md"];
+const FORBIDDEN_ENTRY = /(^src\/|\.test\.)/;
 
 /** Collect every string target from an "exports" value (string, array, or condition map). */
 function collectExportTargets(value, out) {
@@ -56,6 +58,9 @@ for (const tarball of tarballs) {
 
   for (const required of REQUIRED_FILES) {
     if (!entries.has(required)) problems.push(`missing ${required}`);
+  }
+  for (const entry of entries) {
+    if (FORBIDDEN_ENTRY.test(entry)) problems.push(`ships source/test file "${entry}"`);
   }
 
   const targets = [];
