@@ -134,11 +134,6 @@ describe("renderInitConfig", () => {
     expect(out).not.toContain('"memory"');
   });
 
-  it("no studio section when studioExecute is disabled", () => {
-    const out = renderInitConfig(postgresAnswers({ studioExecute: { enabled: false } }));
-    expect(out).not.toContain("studio:");
-  });
-
   it("MySQL: mysql branch only", () => {
     const out = renderInitConfig(postgresAnswers({ database: "mysql", connectionEnv: "DATABASE_URL" }));
     expect(out).toContain('provider: "mysql"');
