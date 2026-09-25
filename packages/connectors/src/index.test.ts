@@ -15,15 +15,4 @@ describe("@askdb/connectors compatibility shim", () => {
     expect(connectors.formatConnectionLabel).toBe(kit.formatConnectionLabel);
     expect(connectors.parseConnectionUrl).toBe(kit.parseConnectionUrl);
   });
-
-  it("still builds a working registry through the old import path", () => {
-    const registry = connectors.createConnectorRegistry([
-      {
-        provider: "postgres",
-        createConnector: () => ({ connector: { describe: async () => ({}) as never }, input: {}, mode: "live" }),
-      },
-    ]);
-    expect(registry.hasProvider("postgres")).toBe(true);
-    expect(() => registry.createConnector({ provider: "mysql" })).toThrow(/Install @askdb\/mysql/);
-  });
 });

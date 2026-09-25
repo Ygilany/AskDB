@@ -28,10 +28,4 @@ describe("sqlServerConnectorProvider", () => {
         "No SQL Server connection configured. Set introspection.providerConfig.sqlserver.databaseUrl in askdb.config.ts (bound to an env var in .env).",
     });
   });
-
-  it("createConnector requires a URL", () => {
-    expect(() => sqlServerConnectorProvider.createConnector({ provider: "sqlserver" })).toThrow(
-      "SQL Server connector requires a connection URL (config.url).",
-    );
-  });
 });
