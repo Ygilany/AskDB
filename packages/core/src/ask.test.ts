@@ -895,6 +895,33 @@ describe("ask — sensitive-identifier guardrail", () => {
     expect(result.sensitiveGuardrail).toBeUndefined();
   });
 
+  it("lexes the SQL with the call's dialect", async () => {
+    // MySQL reads 'a\' , password' as ONE string literal (backslash escape). Engines
+    // without backslash escapes end the literal at \' and see `password` as code.
+    const sql = "SELECT id FROM users WHERE id = 'a\\' , password'";
+    const generateText = vi.fn(async () => ({ text: "```sql\n" + sql + "\n```" }));
+    const mysql = await ask({
+      question: "ids",
+      schema: sensitiveSchema,
+      model: fakeModel,
+      dialect: "mysql",
+      parameterize: false,
+      deps: { generateText },
+    });
+    expect(mysql.sensitiveGuardrail).toEqual({ passed: true, references: [] });
+
+    // A custom AskDialect has no spec, so every built-in reading is considered.
+    const custom = await ask({
+      question: "ids",
+      schema: sensitiveSchema,
+      model: fakeModel,
+      dialect: dialectReturning(sql),
+    });
+    expect(custom.sensitiveGuardrail?.references).toEqual([
+      expect.objectContaining({ table: "users", column: "password" }),
+    ]);
+  });
+
   it("is absent when the schema declares no sensitive identifiers", async () => {
     const result = await ask({
       question: "count",

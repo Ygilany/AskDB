@@ -50,6 +50,15 @@ export type TenantPlaceholderResult =
  */
 export type TenantSqlDialect = Partial<Pick<DialectSpec, "id" | "backslashEscapes">>;
 
+/** The lexer input for a {@link TenantSqlDialect}: only meaningful when an `id` is known. */
+function lexerDialect(
+  dialect: TenantSqlDialect | undefined,
+): Pick<DialectSpec, "id" | "backslashEscapes"> | undefined {
+  return dialect?.id === undefined
+    ? undefined
+    : { id: dialect.id, backslashEscapes: dialect.backslashEscapes };
+}
+
 // ---------------------------------------------------------------------------
 // Placeholder naming convention (matches tenant-prompt.ts)
 // ---------------------------------------------------------------------------
@@ -62,9 +71,9 @@ export function placeholderForRoot(label: string): string {
 // Extract placeholders found in SQL (quote-aware via shared scanner)
 // ---------------------------------------------------------------------------
 
-export function extractTenantPlaceholders(sql: string): string[] {
+export function extractTenantPlaceholders(sql: string, dialect?: TenantSqlDialect): string[] {
   const matches = new Set<string>();
-  for (const p of scanTenantPlaceholders(sql)) {
+  for (const p of scanTenantPlaceholders(sql, lexerDialect(dialect))) {
     matches.add(p.placeholder);
   }
   return [...matches];
@@ -80,8 +89,9 @@ export function resolvePlaceholders(
   sql: string,
   policy: NormalizedTenantPolicy,
   scope: TenantScope,
+  dialect?: TenantSqlDialect,
 ): ResolvedPlaceholder[] {
-  const placeholders = extractTenantPlaceholders(sql);
+  const placeholders = extractTenantPlaceholders(sql, dialect);
   if (placeholders.length === 0) return [];
 
   const rootsByPlaceholder = new Map<string, { rootId: string; label: string }>();
@@ -157,9 +167,11 @@ type Edit = { start: number; end: number; text: string };
 
 /**
  * Replace every tenant placeholder that sits in a code region of `sql`.
- * Placeholder text inside string literals or quoted identifiers is left alone
- * (the shared scanner never reports it), so a substituted value can never land
- * inside — or close — a surrounding literal.
+ * Placeholder text inside string literals, quoted identifiers, or comments is
+ * left alone (the shared lexer never reports it), so a substituted value can
+ * never land inside — or close — a surrounding literal. With a dialect `id`,
+ * those regions are lexed the way that engine reads them (e.g. MySQL backslash
+ * escapes, where `'it\'s :tenant_x_ids'` is one string literal).
  *
  * `render` runs once per occurrence, in source order, and returns one SQL
  * fragment (literal or driver marker) per tenant ID. Rendering in source order
@@ -172,10 +184,11 @@ function substituteTenantPlaceholders(
   sql: string,
   resolved: ResolvedPlaceholder[],
   render: (r: ResolvedPlaceholder) => string[],
+  dialect?: TenantSqlDialect,
 ): string {
   const byPlaceholder = new Map(resolved.map((r) => [r.placeholder, r]));
   const edits: Edit[] = [];
-  for (const occ of scanTenantPlaceholders(sql)) {
+  for (const occ of scanTenantPlaceholders(sql, lexerDialect(dialect))) {
     const r = byPlaceholder.get(occ.placeholder);
     if (!r || r.ids.length === 0) {
       throw new TenantScopeError(
@@ -284,8 +297,11 @@ export function replacePlaceholdersWithLiterals(
   resolved: ResolvedPlaceholder[],
   dialect?: TenantSqlDialect,
 ): string {
-  return substituteTenantPlaceholders(sql, resolved, (r) =>
-    r.ids.map((id) => escapeTenantId(id, dialect)),
+  return substituteTenantPlaceholders(
+    sql,
+    resolved,
+    (r) => r.ids.map((id) => escapeTenantId(id, dialect)),
+    dialect,
   );
 }
 
@@ -327,11 +343,15 @@ export function replacePlaceholdersWithParams(
   const style = tenantMarkerStyle(dialect);
   const params: unknown[] = [];
   let idx = startIndex;
-  const out = substituteTenantPlaceholders(sql, resolved, (r) =>
-    r.ids.map((id) => {
-      params.push(id);
-      return tenantMarker(style, idx++);
-    }),
+  const out = substituteTenantPlaceholders(
+    sql,
+    resolved,
+    (r) =>
+      r.ids.map((id) => {
+        params.push(id);
+        return tenantMarker(style, idx++);
+      }),
+    dialect,
   );
   return { sql: out, params, nextIndex: idx };
 }
@@ -365,7 +385,7 @@ export function resolveTenantSql(
       : { mode: "sql-params", sql, params: [], bindings: [], paramStartIndex };
   }
 
-  const resolved = resolvePlaceholders(sql, policy, scope);
+  const resolved = resolvePlaceholders(sql, policy, scope, dialect);
   const bindings: TenantBinding[] = resolved.map((r) => ({
     placeholder: r.placeholder,
     rootLabel: r.rootLabel,

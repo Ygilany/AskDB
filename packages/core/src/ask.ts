@@ -473,7 +473,7 @@ export async function ask(options: AskPipelineOptions): Promise<AskPipelineResul
     );
   }
 
-  applySensitiveGuardrail(result, options, logger);
+  applySensitiveGuardrail(result, options, dialectSpec, logger);
 
   return result;
 }
@@ -481,10 +481,13 @@ export async function ask(options: AskPipelineOptions): Promise<AskPipelineResul
 /**
  * Run the sensitive-identifier guardrail over the SQL the host is about to receive.
  * Runs after tenant resolution so it sees exactly the statement in `result.sql`.
+ * With a built-in id or `DialectSpec`, the SQL is lexed the way that engine reads it;
+ * for a custom `AskDialect` (no spec) references are unioned across every built-in reading.
  */
 function applySensitiveGuardrail(
   result: AskPipelineResult,
   options: AskPipelineOptions,
+  dialectSpec: DialectSpec | undefined,
   logger: AskDbLogger | undefined,
 ): void {
   const mode = options.sensitiveGuardrailMode ?? "warn";
@@ -492,7 +495,10 @@ function applySensitiveGuardrail(
   if (!schemaHasSensitiveIdentifiers(options.schema)) return;
 
   try {
-    const guardrail = validateSensitiveReferences(result.sql, options.schema, { mode });
+    const guardrail = validateSensitiveReferences(result.sql, options.schema, {
+      mode,
+      dialect: dialectSpec,
+    });
     result.sensitiveGuardrail = guardrail;
     logSensitiveReferences(logger, guardrail.references);
   } catch (error) {
@@ -570,7 +576,8 @@ function bindTenantIntoUnboundSql(
 
   const idsByPlaceholder = new Map(unbound.bindings.map((b) => [b.placeholder, b.ids]));
   const bindingByName = new Map((result.parameters ?? []).map((b) => [b.name, b]));
-  const occurrences = scanPlaceholders(ctx.namedSql);
+  // Same lexer reading as bindPreparedQuery and the tenant substitution above.
+  const occurrences = scanPlaceholders(ctx.namedSql, ctx.dialectSpec);
   const occurrenceCount = new Map<string, number>();
   for (const occ of occurrences) {
     occurrenceCount.set(occ.name, (occurrenceCount.get(occ.name) ?? 0) + 1);

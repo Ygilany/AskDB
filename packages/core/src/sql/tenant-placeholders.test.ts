@@ -640,4 +640,32 @@ describe("resolveTenantSql — only code regions are substituted", () => {
     const out = resolveTenantSql(sql, policy, hostile, "sql-only", 1, getDialectSpec("mysql"));
     expect(out.sql).toBe("SELECT * FROM orders WHERE agency_id = 'x\\\\'' OR 1=1 -- '");
   });
+
+  it.each(["sql-only", "sql-params"] as const)(
+    "%s on MySQL: a placeholder inside a backslash-escaped string literal is untouched",
+    (mode) => {
+      // MySQL reads 'it\'s :tenant_agency_ids' as ONE string literal. The generic lexer
+      // (no backslash escapes) would end the literal at \' and substitute inside it.
+      const sql =
+        "SELECT * FROM orders WHERE agency_id = :tenant_agency_ids AND note = 'it\\'s :tenant_agency_ids'";
+      const out = resolveTenantSql(sql, policy, agencyOne, mode, 1, getDialectSpec("mysql"));
+      expect(out.sql).toBe(
+        mode === "sql-only"
+          ? "SELECT * FROM orders WHERE agency_id = '42' AND note = 'it\\'s :tenant_agency_ids'"
+          : "SELECT * FROM orders WHERE agency_id = ? AND note = 'it\\'s :tenant_agency_ids'",
+      );
+      if (out.mode === "sql-params") expect(out.params).toEqual(["42"]);
+    },
+  );
+
+  it("placeholders inside comments are not substituted, including MySQL # comments", () => {
+    const pgSql = "SELECT * FROM orders WHERE agency_id = :tenant_agency_ids -- :tenant_agency_ids\n";
+    const pgOut = resolveTenantSql(pgSql, policy, agencyOne, "sql-params", 1, getDialectSpec("postgres"));
+    expect(pgOut.sql).toBe("SELECT * FROM orders WHERE agency_id = $1 -- :tenant_agency_ids\n");
+
+    const mysqlSql = "SELECT * FROM orders WHERE agency_id = :tenant_agency_ids # :tenant_agency_ids\n";
+    const mysqlOut = resolveTenantSql(mysqlSql, policy, agencyOne, "sql-params", 1, getDialectSpec("mysql"));
+    expect(mysqlOut.sql).toBe("SELECT * FROM orders WHERE agency_id = ? # :tenant_agency_ids\n");
+    if (mysqlOut.mode === "sql-params") expect(mysqlOut.params).toEqual(["42"]);
+  });
 });
