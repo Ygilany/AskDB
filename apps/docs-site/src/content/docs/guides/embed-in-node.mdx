@@ -13,12 +13,12 @@ import InstallTabs from "../../../components/InstallTabs.astro";
 
 ## Install
 
-<InstallTabs pkgs="@askdb/client @askdb/ai-openai @askdb/config pg" />
+<InstallTabs pkgs="@askdb/client @askdb/config @ai-sdk/openai pg" />
 
 | Package | Why |
 | --- | --- |
 | `@askdb/client` | `createAskDb()` — resolves the schema, model, and dialect from config. |
-| `@askdb/ai-openai` | The adapter your model is built from. Swap `-openai` for `-anthropic`, `-google`, or `-azure`. |
+| `@ai-sdk/openai` | The AI SDK package for the provider your config selects. Swap it for `@ai-sdk/anthropic`, `@ai-sdk/google`, or `@ai-sdk/azure` (the Vercel AI Gateway needs none). AskDB loads it on first use. |
 | `@askdb/config` | Loads `.env` and `askdb.config.ts` at startup. |
 | `pg` | The Postgres driver. AskDB doesn't open the connection; your app does. |
 
@@ -30,14 +30,12 @@ Call `createAskDb` once at startup, then `askdb.ask(question)` per request. Sche
 // ask-handler.ts
 import { createAskDb } from "@askdb/client";
 import { bootstrapAskDbEnv, getAskDbRuntimeConfig } from "@askdb/config";
-import { openaiProvider } from "@askdb/ai-openai";
 import { Pool } from "pg";
 
 bootstrapAskDbEnv({ cwd: process.cwd() });
 
 const askdb = createAskDb({
-  config: getAskDbRuntimeConfig(),
-  providers: [openaiProvider],
+  config: getAskDbRuntimeConfig(),                 // ai.provider picks the model
   schema: { path: "./my-app.schema" },             // or set host.schemaPath in config and omit
 });
 
@@ -161,7 +159,6 @@ The `/ask` endpoint accepts an optional `execute` flag: `false` (default) return
 // server.ts
 import { createAskDb } from "@askdb/client";
 import { bootstrapAskDbEnv, getAskDbRuntimeConfig } from "@askdb/config";
-import { openaiProvider } from "@askdb/ai-openai";
 import express, { Request, Response } from "express";
 import pg from "pg";
 
@@ -172,7 +169,6 @@ app.use(express.json());
 
 const askdb = createAskDb({
   config: getAskDbRuntimeConfig(),
-  providers: [openaiProvider],
   // schema resolved from host.schemaPath in askdb.config.ts
 });
 

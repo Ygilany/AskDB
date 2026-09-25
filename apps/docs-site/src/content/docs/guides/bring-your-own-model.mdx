@@ -16,18 +16,18 @@ import InstallTabs from "../../../components/InstallTabs.astro";
 | --- | --- | --- |
 | **In your config** | Set `ai.provider` in `askdb.config.ts`. The CLI, Studio, and the HTTP API resolve the model for you. No model code. | CLI workflows, Studio, the bundled HTTP service |
 | **In your code** | Pass any Vercel AI SDK `LanguageModel` to `ask()`. Full control. | Embedding `@askdb/core` in your own service |
-| **With `@askdb/client`** | Call `createAskDb({ config, providers })` then `askdb.ask("question")`. Schema, model, and dialect come from config. | The shortest config-driven embed — one schema, one model |
+| **With `@askdb/client`** | Call `createAskDb({ config })` then `askdb.ask("question")`. Schema, model, and dialect come from config. | The shortest config-driven embed — one schema, one model |
 
 Same providers, same keys — pick per surface. You can use both in one project (for example: Studio uses your config, your embedding service constructs the model directly).
 
 ## Which should I use?
 
-`ask()`'s actual contract is `model: LanguageModel` — a plain Vercel AI SDK model object. Every path below ends up building one of those; `@askdb/ai-*` and `@askdb/client` are a convenience layer on top, not a separate mechanism. Neither path is more "correct." Pick based on who owns provider configuration:
+`ask()`'s actual contract is `model: LanguageModel` — a plain Vercel AI SDK model object. Every path below ends up building one of those; `@askdb/ai` and `@askdb/client` are a convenience layer on top, not a separate mechanism. Neither path is more "correct." Pick based on who owns provider configuration:
 
-- **Use `@askdb/ai-*` + `@askdb/client`** when you want `askdb.config.ts` to drive provider/model selection — one config file, no provider code, and the CLI/Studio/your app all resolve the same way. This is the right default when you're embedding AskDB as a standalone service and don't already have a provider-config system.
+- **Use `@askdb/client` (built on `@askdb/ai`)** when you want `askdb.config.ts` to drive provider/model selection — one config file, no provider code, and the CLI/Studio/your app all resolve the same way. This is the right default when you're embedding AskDB as a standalone service and don't already have a provider-config system.
 - **Construct a `LanguageModel` directly with the AI SDK** when your app already owns provider/config resolution (env vars, a secrets manager, feature flags), or when you need to reuse the same model instance for calls AskDB doesn't make — for example, a separate `generateObject()` call for chart planning that sits next to `ask()` in your service. `@askdb/ai`'s registry only resolves models for AskDB's own config shape, so if you need the model object for other LLM calls too, building it with the AI SDK directly is usually less code, not more.
 
-If you're an agent implementing this integration: check whether the host app already constructs AI SDK models elsewhere before reaching for `@askdb/ai-*` — duplicating provider config across two systems is the failure mode to avoid.
+If you're an agent implementing this integration: check whether the host app already constructs AI SDK models elsewhere before reaching for `@askdb/ai` — duplicating provider config across two systems is the failure mode to avoid.
 
 ## In your config (CLI, Studio, HTTP API)
 
@@ -111,6 +111,27 @@ export default {
 ```
 
 Set `model` in `providerConfig.azure` to your deployment name (the scaffolded config reads it from `AZURE_OPENAI_DEPLOYMENT`).
+
+  </TabItem>
+  <TabItem label="Vercel AI Gateway">
+
+```ts
+// askdb.config.ts
+export default {
+  ai: {
+    provider: "gateway",
+    providerConfig: {
+      gateway: {
+        apiKey: env("AI_GATEWAY_API_KEY"),
+        model: "anthropic/claude-sonnet-4-6",
+      },
+    },
+  },
+  // ...
+};
+```
+
+Gateway model ids are `<upstream>/<model>`. The default is `openai/gpt-4o-mini`. The gateway provider ships with `ai`, so it needs no extra package.
 
   </TabItem>
 </Tabs>
@@ -205,25 +226,34 @@ const model = local("llama3.1");
 ```
 
   </TabItem>
+  <TabItem label="Vercel AI Gateway">
+
+<InstallTabs pkgs="ai" />
+
+```ts
+import { gateway } from "ai";
+
+// Reads AI_GATEWAY_API_KEY from the environment
+const model = gateway("openai/gpt-4o-mini");
+```
+
+  </TabItem>
 </Tabs>
 
 ## One config driving both
 
-If you embed AskDB but want to reuse the same `askdb.config.ts` instead of hardcoding a provider, use `@askdb/client`. `createAskDb` resolves the schema, model, and dialect from your config and the adapters you pass — the same resolution the CLI and the bundled HTTP API use.
+If you embed AskDB but want to reuse the same `askdb.config.ts` instead of hardcoding a provider, use `@askdb/client`. `createAskDb` resolves the schema, model, and dialect from your config — the same resolution the CLI and the bundled HTTP API use. Install the AI SDK package for the provider your config selects (`@ai-sdk/openai`, `@ai-sdk/anthropic`, `@ai-sdk/google`, or `@ai-sdk/azure`; the AI Gateway needs none):
 
-<InstallTabs pkgs="@askdb/client @askdb/config @askdb/ai-openai @askdb/ai-anthropic" />
+<InstallTabs pkgs="@askdb/client @askdb/config @ai-sdk/openai" />
 
 ```ts
 import { createAskDb } from "@askdb/client";
 import { bootstrapAskDbEnv, getAskDbRuntimeConfig } from "@askdb/config";
-import { openaiProvider } from "@askdb/ai-openai";
-import { anthropicProvider } from "@askdb/ai-anthropic";
 
 bootstrapAskDbEnv({ cwd: process.cwd() });
 
 const askdb = createAskDb({
-  config: getAskDbRuntimeConfig(),
-  providers: [openaiProvider, anthropicProvider], // whichever ai.provider the config selects
+  config: getAskDbRuntimeConfig(), // ai.provider picks one of @askdb/ai's built-in providers
   schema: { path: "./my-app.schema" }, // or set host.schemaPath in config and omit this
 });
 
@@ -231,20 +261,23 @@ const askdb = createAskDb({
 const { sql } = await askdb.ask("Which customers signed up last week?");
 ```
 
+Every built-in provider is registered, and each loads its `@ai-sdk/*` package only when it first builds a model. If that package isn't installed, the call fails with `Provider '<name>' requires the optional peer dependency @ai-sdk/<name>. Install it: npm i @ai-sdk/<name>`. To restrict the set, pass `providers: ["openai"]`. To add a provider that isn't built in, pass an `AiProviderAdapter` object in `providers`.
+
+The `@askdb/ai-openai`, `@askdb/ai-anthropic`, `@askdb/ai-google`, and `@askdb/ai-azure` packages are deprecated. They re-export the built-in adapters, so `providers: [openaiProvider]` still works, but new code needs only `@askdb/client` (or `@askdb/ai`) plus the `@ai-sdk/*` package.
+
 Need the model object yourself (to pass to `ask()` directly, or to share with other code)? Build it from the same config with `@askdb/ai`'s registry — the one advanced case where you import `@askdb/ai` directly:
 
 ```ts
 import { bootstrapAskDbEnv, getAskDbRuntimeConfig } from "@askdb/config";
 import { createAiRegistry } from "@askdb/ai";
-import { openaiProvider } from "@askdb/ai-openai";
 
 bootstrapAskDbEnv({ cwd: process.cwd() });
 const rt = getAskDbRuntimeConfig();
-const ai = createAiRegistry([openaiProvider]);
+const ai = createAiRegistry(); // every built-in provider; or createAiRegistry(["openai"])
 const model = await ai.createLanguageModelFromEnv(rt.ai.aiEnv);
 ```
 
-Adapters declare `ai` and `@askdb/ai` as peer dependencies — add `ai` to your own `package.json` when you want to pin its version.
+`@askdb/ai` declares `ai` as a peer dependency and the `@ai-sdk/*` provider packages as optional peers. Add `ai` and the provider package you use to your own `package.json` so you control their versions.
 
 ## Reasoning/latency effort
 
@@ -255,7 +288,6 @@ Set `ai.reasoning` in `askdb.config.ts` (see the [config reference](/reference/c
 ```ts
 const askdb = createAskDb({
   config: getAskDbRuntimeConfig(),
-  providers: [openaiProvider],
   reasoningEffort: "medium", // client-level default, overrides ai.reasoning from config
 });
 
@@ -268,10 +300,9 @@ const { sql } = await askdb.ask("Which customers signed up last week?", {
 
 ```ts
 import { createAiRegistry } from "@askdb/ai";
-import { openaiProvider } from "@askdb/ai-openai";
 import { ask } from "@askdb/core";
 
-const ai = createAiRegistry([openaiProvider]);
+const ai = createAiRegistry(["openai"]);
 const config = ai.resolveAiConfig(rt.ai.aiEnv)!; // e.g. { provider: "openai", model: "o4-mini", ... }
 const model = await ai.createLanguageModel(config);
 
