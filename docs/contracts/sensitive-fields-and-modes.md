@@ -30,7 +30,7 @@ With **omission** mode, the model may **not** see withheld identifiers and may i
 
 ## Enforcement path: `validateSensitiveReferences`
 
-`@askdb/core` exports `validateSensitiveReferences(sql, schema, options?)` — the **enforcement** counterpart to the prompt-level flags above. It inspects a SQL string against the schema artifact and reports every `sensitive` table/column it references, regardless of whether the names were tagged, omitted, or never shown to a model at all.
+`@askdb/core` exports `validateSensitiveReferences(sql, schema, options?)` — the **enforcement** counterpart to the prompt-level flags above. It inspects a SQL string against the schema artifact and reports the `sensitive` tables/columns it can see the statement referencing — sensitive columns named explicitly (qualified or unqualified) and sensitive tables used as a `FROM`/`JOIN` target — regardless of whether the names were tagged, omitted, or never shown to a model at all. It does **not** expand `*`: `SELECT *` (or `t.*`) from a non-sensitive table that contains a sensitive column is not reported.
 
 ```ts
 import { validateSensitiveReferences } from "@askdb/core";
@@ -50,7 +50,7 @@ const { passed, references, unresolvedScope } = validateSensitiveReferences(cach
 
 **Scope resolution.** An unqualified column name counts **only when the owning table is actually in the statement's scope**. `FROM`/`JOIN` targets and their aliases (including inside CTEs and derived tables) are resolved first, then unqualified names are matched against the columns of those tables. A bare-word scan would flag `id` on every query the moment any table-level-`sensitive` table has an `id` column; this does not.
 
-**Conservative failure.** When scope cannot be resolved — no resolvable table source (`NO_TABLE_SOURCE`), a qualifier bound to nothing known (`UNKNOWN_QUALIFIER`), or a table source that is not a relation name (`OPAQUE_TABLE_SOURCE`) — the check reports `unresolvedScope` rather than passing silently, and for the first two it widens unqualified matching to every sensitive column. `strict` mode treats unresolved scope as a failure, mirroring how `validateTenantGuardrails` handles unprovable scope.
+**Conservative failure.** When scope cannot be resolved — no resolvable table source (`NO_TABLE_SOURCE`), a qualifier bound to nothing known (`UNKNOWN_QUALIFIER`), or a table source that is not a relation name (`OPAQUE_TABLE_SOURCE`) — the check reports `unresolvedScope` rather than passing silently, and for the first two it widens unqualified matching to every sensitive column. `strict` mode treats unresolved scope as a failure.
 
 **In the pipeline.** `ask()` runs the guardrail over the SQL it is about to return and attaches the result as `AskPipelineResult.sensitiveGuardrail`. `AskPipelineOptions.sensitiveGuardrailMode` selects `"warn"` (default), `"strict"`, or `"off"`. The check is skipped entirely when the schema declares no `sensitive` markers, so `sensitiveGuardrail` is absent in that case.
 
@@ -58,7 +58,7 @@ const { passed, references, unresolvedScope } = validateSensitiveReferences(cach
 
 **Logs:** `askdb.pipeline.sensitive_sql_warning` with `sensitiveColumnCount` and the matched `sensitiveColumns` — schema metadata only, never row values. Emitted in both `warn` and `strict` modes.
 
-**Limits.** The check is heuristic, not a SQL parser. It is a review/enforcement aid, not a substitute for database-side column privileges.
+**Limits.** The check is heuristic, not a SQL parser, and defaults to `warn`. It does not expand `*` wildcards (see above). It is a review/enforcement aid and defense in depth, not a security boundary and not a substitute for database-side column privileges.
 
 ---
 

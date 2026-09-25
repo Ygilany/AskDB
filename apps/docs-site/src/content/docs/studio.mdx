@@ -64,6 +64,8 @@ The Query Playground is where you test whether your enrichment is working. Type 
 
 Generating SQL in Studio does not require a database driver. The optional **Execute Query** action runs the generated SQL against a live database and displays the results in the Playground. Studio supports Postgres, MySQL, SQLite, and SQL Server.
 
+Execute is a development tool: it runs whatever SQL the Playground sends, using the connection you configure. Postgres and MySQL queries run in a read-only transaction, and SQLite files are opened read-only. SQL Server queries get no read-only wrapper. For every engine, point `studio.execute` at a read-only, least-privilege login and a non-production database.
+
 ### Get the code
 
 Once the SQL looks right, the **Get the code** panel below it turns the session into an integration snippet: your exact question, schema path, resolved dialect, configured AI provider, and (when enabled) the tenant scope — rendered as ready-to-paste TypeScript. Toggle between the config-driven style (`createAskDb()` from `@askdb/client`, reading the same `askdb.config.ts` Studio uses) and the direct style (`ask()` from `@askdb/core` with an explicit model). Copy it into your service and continue with [Embed in a Node app](/guides/embed-in-node/).
@@ -120,7 +122,7 @@ Driver packages are optional peers, not hard dependencies. This keeps install si
 
 ![The Tenancy view offering Draft with AI or Configure manually options for multi-tenant isolation](../../assets/studio/tenancy.png)
 
-The Tenancy view is where you declare tenant isolation for multi-tenant schemas. Choose **Draft with AI** to let Studio analyse your schema and propose a tenant policy for your review, or **Configure manually** to pick the tenant root table and column yourself. Once configured, the Playground enforces tenant scope on every generated query and lets you test with different tenant IDs. See [Multi-tenancy](/guides/multi-tenancy/) for the full walkthrough.
+The Tenancy view is where you declare tenant isolation for multi-tenant schemas. Choose **Draft with AI** to let Studio analyse your schema and propose a tenant policy for your review, or **Configure manually** to pick the tenant root table and column yourself. Once configured, the Playground passes a tenant scope with each generated query, runs the same tenant check as `ask()`, and lets you test with different tenant IDs. See [Multi-tenancy](/guides/multi-tenancy/) for the full walkthrough.
 
 ## Studio and your data
 

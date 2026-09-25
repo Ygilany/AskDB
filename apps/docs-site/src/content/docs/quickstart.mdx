@@ -204,7 +204,9 @@ WHERE c.signed_up_at >= NOW() - INTERVAL '7 days'
 ORDER BY c.signed_up_at DESC;
 ```
 
-In both cases AskDB returns validated SQL. It does **not** run it against your database — your application owns execution.
+In both cases AskDB returns checked SQL. It does **not** run it against your database — your application owns execution.
+
+<Aside type="caution">AskDB's SQL checks are heuristic guardrails, not a security boundary. Before your application runs generated SQL, read [Run generated SQL safely](/concepts/safety-boundaries/#run-generated-sql-safely): use a read-only, least-privilege database role, set timeouts, and enforce tenant isolation in the database.</Aside>
 
 ## 5. From here
 

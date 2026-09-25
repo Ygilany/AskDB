@@ -17,9 +17,9 @@ When you call `ask()` (or the equivalent CLI / HTTP surface), AskDB runs these s
 2. **Retrieve relevant chunks (optional).** For large schemas, AskDB pulls only the slice of the artifact that's relevant to the question, using `@askdb/rag`. Smaller schemas skip this step.
 3. **Build the prompt.** Physical metadata, any table descriptions you authored, and the selected SQL dialect get assembled into the context the model sees.
 4. **Generate.** AskDB calls the model you supplied — any provider compatible with the [Vercel AI SDK](/guides/bring-your-own-model/) — and the model returns SQL. AskDB does not host inference; your key, your billing.
-5. **Validate.** The returned SQL is checked against the guardrails AskDB enforces: single statement, must start with `SELECT` or `WITH`, no DDL/DML keywords, and — when your artifact declares a tenant policy — required tenant predicates. The full list and the exact checks live in [Safety boundaries](/concepts/safety-boundaries/). Invalid SQL is rejected, not returned with a warning.
+5. **Check.** The returned SQL goes through AskDB's heuristic guardrails: single statement, must start with `SELECT` or `WITH`, no comments, no DDL/DML keywords. SQL that fails these is rejected. When your artifact declares a tenant policy or `sensitive` markers, the tenant and sensitive-column checks also run. Depending on their mode, they either reject the SQL or return it with warnings. These checks catch common model mistakes but aren't a security boundary. The exact checks, and what they miss, are in [Safety boundaries](/concepts/safety-boundaries/).
 
-The return value is a string of validated SQL and a parameter list. What happens next is your call.
+The return value is a string of checked SQL and a parameter list. What happens next is your call.
 
 ## The runtime boundary
 
@@ -33,7 +33,7 @@ AskDB stops at validated SQL. Your application — the code that imports `@askdb
 - Whether to show the SQL to the user, log it, queue it for review, or run it immediately.
 - Audit logging and observability.
 
-This split is intentional. AskDB is a code-generation step, not a runtime. That's what makes it safe to wire into existing services without rebuilding your security model.
+This split is intentional. AskDB is a code-generation step, not a runtime, so it slots into existing services and your existing security model: the database role you already trust to run queries is the one that bounds what generated SQL can do.
 
 ## Where the model lives
 

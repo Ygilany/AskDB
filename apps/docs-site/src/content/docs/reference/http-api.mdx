@@ -129,7 +129,7 @@ Generate SQL from a question.
 | `payload_too_large` | `413` | Body exceeds `maxBodyBytes`. |
 | `schema_parse_error` | `400` | Inline `schemaJson` couldn't be parsed. |
 | `generation_not_configured` | `500` | No model provider configured server-side. |
-| `sql_validation_error` | `400` | Model output failed the validator (read-only, single-statement, scope). |
+| `sql_validation_error` | `400` | Model output failed the SQL checks (must be a single `SELECT`/`WITH` statement, no comments, no write or DDL keywords). |
 | `sql_generation_error` | `502` | Model call failed (provider error, timeout). |
 | `internal_error` | `500` | Anything else. |
 

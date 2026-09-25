@@ -14,7 +14,7 @@ import InstallTabs from "../../../components/InstallTabs.astro";
 
 - The schema artifact format. Same `schema.json`, same `tables/*.md`, same enrichment workflow.
 - The `ask()` API. Same options, same return shape.
-- The validator semantics: read-only, single-statement, no system schemas, tenant filter enforcement.
+- The SQL checks: must start with `SELECT` or `WITH`, single statement, no comments, no write or DDL keywords, and the heuristic tenant and sensitive-column checks. A few engines block extra keywords. See [Safety boundaries](/concepts/safety-boundaries/).
 - The privacy model. The model sees schema, not rows, regardless of engine.
 
 ## What changes

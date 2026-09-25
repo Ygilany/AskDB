@@ -59,11 +59,11 @@ The model returned more than one SQL statement. AskDB refuses multi-statement ou
 
 ### `SqlValidationError: SQL_COMMENT` / `SQL_FORBIDDEN_KEYWORD`
 
-The generated SQL contains a SQL comment or a forbidden keyword (`EXECUTE`, `EXEC`, `xp_`, etc.). These are heuristic guardrails. If this fires on a legitimate query, file an issue with the question and schema excerpt.
+The generated SQL contains a SQL comment or a forbidden keyword (for example `DELETE`, `CREATE`, or on SQL Server `EXEC`). These are heuristic guardrails that match whole words outside string literals, so a column or alias named like a keyword (say, `update`) also trips them. If this fires on a legitimate query, file an issue with the question and schema excerpt.
 
 ### Generated SQL references a column or table that doesn't exist
 
-This is the most common failure mode. The model hallucinated an identifier that isn't in your schema. AskDB's heuristic validator catches *most* of these, but not all.
+This is the most common failure mode. The model hallucinated an identifier that isn't in your schema. AskDB doesn't check generated identifiers against the schema, so your database reports these when you run the query.
 
 **Fix:** Enrich the relevant tables in your schema artifact with plain-English descriptions. The more context the model has, the less it invents:
 
@@ -77,7 +77,7 @@ If the column exists in the database but the model keeps getting it wrong, check
 
 ### The SQL is syntactically valid but logically wrong
 
-SQL validation is heuristic — AskDB confirms the statement kind and grounds identifiers, but it can't verify that the query answers your question semantically. The quality of answers depends almost entirely on how well the schema artifact describes your data.
+SQL validation is heuristic — AskDB confirms the statement kind and blocks write keywords, but it doesn't check identifiers and can't verify that the query answers your question semantically. The quality of answers depends almost entirely on how well the schema artifact describes your data.
 
 Checklist:
 1. Does the relevant table have a description? (`description:` field in the table's `.md` file)
@@ -197,7 +197,7 @@ The `tenantRoot` in the scope doesn't match any root defined in `tenant-policy.m
 
 ### `TenantGuardrailError`
 
-The generated SQL doesn't include a required tenant predicate on one or more tenant-bound tables. This is a fail-closed guardrail: AskDB refuses to return SQL that could leak cross-tenant data. Re-ask the question with a more specific scope, or inspect the `warnings` array on the error for which table triggered the guardrail.
+Your tenant policy uses `enforcement: strict`, and the generated SQL names a tenant-scoped table without mentioning its tenant column or placeholder, or names a table the policy leaves unclassified. Inspect the `warnings` array on the error to see which table triggered it, then re-ask or classify the table. The check is heuristic. Passing it doesn't prove the query is tenant-safe, so keep tenant isolation enforced in the database. See [Run generated SQL safely](/concepts/safety-boundaries/#run-generated-sql-safely).
 
 ---
 
