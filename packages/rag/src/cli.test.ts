@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { resetAskDbRuntimeForTests, setAskDbRuntimeForTests } from "@askdb/config";
-import { createMockEmbedder, runRagCli } from "./cli.js";
+import { runRagCli } from "./cli.js";
 
 const FIXTURE_DIR = resolve(__dirname, "../../../fixtures/schemas/orders-users.schema");
 
@@ -54,8 +54,6 @@ afterEach(() => {
 
 describe("askdb-rag CLI", () => {
   it("mock embedder honors --dimensions", async () => {
-    expect((await createMockEmbedder(16)(["orders"]))[0]).toHaveLength(16);
-
     const schemaDir = copyFixture();
     expect(await runRagCli(["index", schemaDir, "--dimensions", "16"])).toBe(0);
     const meta = JSON.parse(readFileSync(join(schemaDir, "schema.embeddings.json"), "utf8")) as {

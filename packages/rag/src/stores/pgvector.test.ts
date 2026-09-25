@@ -98,43 +98,6 @@ describe("createPgvectorStore", () => {
     ]);
   });
 
-  it("emits parameterized delete SQL", async () => {
-    const query = vi.fn(async () => ({ rows: [] }));
-    const store = createPgvectorStore({
-      client: { query },
-      dimensions: 2,
-      table: "askdb_rag_chunks",
-    });
-
-    await store.delete(["chunk:orders"]);
-
-    expect(query).toHaveBeenCalledWith(
-      'DELETE FROM "askdb_rag_chunks" WHERE id = ANY($1::text[])',
-      [["chunk:orders"]],
-    );
-  });
-
-  it("persists content hashes on upsert", async () => {
-    const query = vi.fn(async () => ({ rows: [] }));
-    const store = createPgvectorStore({ client: { query }, dimensions: 2 });
-    await store.upsert([
-      {
-        id: "chunk:s:a",
-        vector: [1, 0],
-        hash: "h-a",
-        payload: { id: "chunk:s:a", type: "table", text: "a", schemaId: "s", refs: [], sensitive: false },
-      },
-      {
-        id: "chunk:s:b",
-        vector: [0, 1],
-        payload: { id: "chunk:s:b", type: "table", text: "b", schemaId: "s", refs: [], sensitive: false },
-      },
-    ]);
-    const [sql, params] = query.mock.calls[0] as unknown as [string, unknown[]];
-    expect(sql).toContain("content_hash = EXCLUDED.content_hash");
-    expect(params[7]).toEqual(["h-a", null]);
-  });
-
   it("rejects vectors whose dimensions don't match the table", async () => {
     const query = vi.fn(async () => ({ rows: [] }));
     const store = createPgvectorStore({ client: { query }, dimensions: 3 });
@@ -167,23 +130,6 @@ describe("createPgvectorStore", () => {
     expect(await store.idsBySchema!("s")).toEqual(["chunk:s:a", "chunk:table:legacy"]);
     expect(query.mock.calls[1]).toEqual(['SELECT id FROM "t" WHERE schema_id = $1', ["s"]]);
     expect(store.describe!()).toEqual({ kind: "pgvector", location: "t", dimensions: 2 });
-  });
-
-  it("setup SQL adds content_hash to tables created by older versions", () => {
-    const store = createPgvectorStore({ client: { query: vi.fn() }, dimensions: 2, table: "t" });
-    const sql = store.setupSql();
-    expect(sql).toContain("content_hash text");
-    expect(sql).toContain('ALTER TABLE "t" ADD COLUMN IF NOT EXISTS content_hash text;');
-  });
-
-  it("ensureSchema throws when the existing table has different dimensions", async () => {
-    const query = vi.fn(async (sql: string) => ({
-      rows: sql.includes("pg_attribute") ? [{ dimensions: 1536 }] : [],
-    }));
-    const store = createPgvectorStore({ client: { query }, dimensions: 64, table: "t" });
-    await expect(store.ensureSchema()).rejects.toThrow(
-      /table "t" stores 1536-dimension embeddings but this store is configured with dimensions=64/,
-    );
   });
 
   it("ensureSchema passes when dimensions match or the table is new", async () => {

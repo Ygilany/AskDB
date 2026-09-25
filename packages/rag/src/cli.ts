@@ -269,7 +269,7 @@ const DEFAULT_MOCK_DIMENSIONS = 64;
  * same text always yields the same vector. Not a real embedder, but useful for
  * local smoke tests because shared terms like "revenue" can rank related chunks.
  */
-export function createMockEmbedder(dim = DEFAULT_MOCK_DIMENSIONS): Embedder {
+function createMockEmbedder(dim = DEFAULT_MOCK_DIMENSIONS): Embedder {
   return async (texts: string[]) => {
     return texts.map((text) => {
       const v = new Array<number>(dim).fill(0);
