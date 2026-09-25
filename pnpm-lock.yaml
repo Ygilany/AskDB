@@ -323,12 +323,12 @@ importers:
 
   examples/ask-question:
     dependencies:
+      '@ai-sdk/openai':
+        specifier: ^4.0.29
+        version: 4.0.29(zod@4.4.3)
       '@askdb/ai':
         specifier: workspace:*
         version: link:../../packages/ai
-      '@askdb/ai-openai':
-        specifier: workspace:*
-        version: link:../../packages/ai-openai
       '@askdb/client':
         specifier: workspace:*
         version: link:../../packages/client
@@ -354,12 +354,9 @@ importers:
 
   examples/express-server:
     dependencies:
-      '@askdb/ai':
-        specifier: workspace:*
-        version: link:../../packages/ai
-      '@askdb/ai-openai':
-        specifier: workspace:*
-        version: link:../../packages/ai-openai
+      '@ai-sdk/openai':
+        specifier: ^4.0.29
+        version: 4.0.29(zod@4.4.3)
       '@askdb/client':
         specifier: workspace:*
         version: link:../../packages/client

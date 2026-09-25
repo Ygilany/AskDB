@@ -8,8 +8,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@askdb/ai": "workspace:*",
-    "@askdb/ai-openai": "workspace:*",
+    "@ai-sdk/openai": "^4.0.29",
     "@askdb/client": "workspace:*",
     "@askdb/config": "workspace:*",
     "express": "^4.22.2",

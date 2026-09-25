@@ -25,7 +25,6 @@
 
 import { createAskDb } from "@askdb/client";
 import { bootstrapAskDbEnv, getAskDbRuntimeConfig } from "@askdb/config";
-import { openaiProvider } from "@askdb/ai-openai";
 import express, { Request, Response } from "express";
 import pg from "pg";
 
@@ -36,7 +35,8 @@ app.use(express.json());
 
 const askdb = createAskDb({
   config: getAskDbRuntimeConfig(),
-  providers: [openaiProvider],
+  // Every built-in provider is registered; ai.provider in askdb.config.ts picks
+  // OpenAI, whose SDK (@ai-sdk/openai) this example installs.
   // schema resolved from host.schemaPath in askdb.config.ts
 });
 
