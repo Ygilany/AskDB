@@ -2,7 +2,8 @@
 # Installable smoke test for AskDB packages.
 #
 # Builds the workspace, packs the library packages (including config, enrich, and ai) plus the app
-# packages (cli, studio, http-api), copies the consumer fixture into a fresh tmpdir, installs
+# packages (cli, studio, http-api), validates every tarball (LICENSE/NOTICE/README.md and all
+# package.json entry paths, via check-tarballs.mjs), copies the consumer fixture into a fresh tmpdir, installs
 # library tarballs (no workspace; includes @askdb/config for @askdb/rag's dependency), runs `tsc --noEmit`,
 # and executes the smoke script. The app sandbox gets a minimal askdb.config.ts because the CLI
 # bootstraps runtime config on startup.
@@ -26,6 +27,9 @@ done
 for pkg in packages/rag; do
   (cd "$ROOT/$pkg" && pnpm pack --pack-destination "$WORK/tarballs" >/dev/null)
 done
+
+echo "smoke: validating every tarball ships LICENSE/NOTICE/README.md and its entry paths…"
+node "$SCRIPT_DIR/check-tarballs.mjs" "$WORK/tarballs" "$ROOT"
 
 CONFIG_TARBALL="$(ls "$WORK/tarballs"/askdb-config-*.tgz | head -n1)"
 [ -f "$CONFIG_TARBALL" ] || { echo "smoke: missing config tarball" >&2; exit 1; }
