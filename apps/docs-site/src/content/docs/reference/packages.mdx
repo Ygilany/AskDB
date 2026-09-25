@@ -13,7 +13,7 @@ import InstallTabs from "../../../components/InstallTabs.astro";
 
 <img src={packageDependenciesUrl} alt="AskDB package dependency graph: core and introspect at the top, engine and enrichment packages in the middle, and surfaces (CLI, Studio, HTTP API) at the bottom composing them" class="doc-diagram" />
 
-<p class="doc-caption">AI provider adapters (<code>@askdb/ai-openai</code>, <code>@askdb/ai-azure</code>, <code>@askdb/ai-google</code>, <code>@askdb/ai-anthropic</code>) plug into the surfaces shown above via <code>@askdb/ai</code>. <code>@askdb/client</code> sits above <code>@askdb/core</code> + <code>@askdb/ai</code> as the config-driven entry point.</p>
+<p class="doc-caption">AI providers are built into <code>@askdb/ai</code>, which loads the matching AI SDK package (<code>@ai-sdk/openai</code>, <code>@ai-sdk/azure</code>, <code>@ai-sdk/google</code>, <code>@ai-sdk/anthropic</code>) on first use. <code>@askdb/client</code> sits above <code>@askdb/core</code> + <code>@askdb/ai</code> as the config-driven entry point.</p>
 
 ## Core
 
@@ -21,7 +21,9 @@ import InstallTabs from "../../../components/InstallTabs.astro";
 
 The dialect-agnostic NL-to-SQL pipeline. Schema loading, prompt construction, validation, and tenant-scope handling all live here.
 
-<InstallTabs pkgs="@askdb/core" />
+<InstallTabs pkgs="@askdb/core ai" />
+
+`ai` (the Vercel AI SDK) is a required **peer dependency** of `@askdb/core`, supported at `^6 || ^7`. Your app owns its version: `ask()` receives a model your app constructs, so core uses your app's `ai` instead of bundling its own — upgrading AskDB never forces an AI SDK upgrade on the rest of your app. Build the model with an AI SDK provider package (for example `@ai-sdk/openai`), or through `@askdb/ai` plus a provider adapter (the config-driven path, which currently requires AI SDK 7).
 
 **Key exports**
 
@@ -29,7 +31,7 @@ The dialect-agnostic NL-to-SQL pipeline. Schema loading, prompt construction, va
 | --- | --- |
 | `ask(options)` | The main pipeline. Returns validated SQL. See [full API reference](/reference/core-api/). |
 | `loadSchema(path)` | Load a schema artifact from a directory, bundle, or `schema.json`. |
-| `validateTenantScope` / `resolveTenantSql` | Tenant-scope enforcement primitives. |
+| `validateTenantScope` / `resolveTenantSql` | Tenant-scope validation and placeholder binding. |
 | `createAskDbLogger` | Structured logger that emits AskDB log events. |
 | `POSTGRES_DIALECT` and built-in dialect IDs | Dialect inputs accepted by `ask()`. |
 | `AskDbLanguageModel` | AskDB's public name for the AI SDK language model contract. |
@@ -40,17 +42,17 @@ See the **[@askdb/core API reference](/reference/core-api/)** for the full optio
 ### `@askdb/client`
 
 Config-aware facade over `@askdb/core`. `createAskDb()` resolves the schema, model, and
-dialect from your `askdb.config.*` and the provider adapters you pass, so call sites pass
-only a question. Install it when you want the shortest config-driven path; skip it when you
+dialect from your `askdb.config.*` (with every `@askdb/ai` built-in provider registered by
+default), so call sites pass only a question. Install it when you want the shortest config-driven path; skip it when you
 construct the model and load the schema yourself and call `ask()` directly.
 
-<InstallTabs pkgs="@askdb/client @askdb/ai-openai @askdb/config" />
+<InstallTabs pkgs="@askdb/client @askdb/config @ai-sdk/openai" />
 
 **Key exports**
 
 | Symbol | Purpose |
 | --- | --- |
-| `createAskDb(options)` | Build a client bound to a config + provider adapters (`providers: [openaiProvider]`; or a prebuilt `registry`). Returns `{ ask, reload }`. Options include `unknownDialect: "throw" \| "fallback-postgres"` for artifacts recorded by an unrecognized provider. |
+| `createAskDb(options)` | Build a client bound to a config. Registers every built-in AI provider by default; `providers: ["openai"]` restricts the set, adapter objects add custom providers, or pass a prebuilt `registry`. Returns `{ ask, reload }`. Options include `unknownDialect: "throw" \| "fallback-postgres"` for artifacts recorded by an unrecognized provider. |
 | `client.ask(question, overrides?)` | Resolve schema/model/dialect and run the pipeline. Overrides: `schema`, `model`, `dialect`, plus all `ask()` options. |
 | `AskDbClient` / `CreateAskDbOptions` / `AskOverrides` | Types for the client, constructor options, and per-call overrides. |
 | `SchemaLoadError` / `SchemaNotConfiguredError` / `ModelNotConfiguredError` / `DialectNotSupportedError` | Typed errors for the resolution steps — catch these to map failures to your own error handling. |
@@ -59,58 +61,55 @@ See the **[@askdb/client API reference](/reference/client-api/)** for the full o
 
 ### `@askdb/ai`
 
-AI provider registry and shared config helpers. You rarely install or import this directly:
-`@askdb/client` builds the registry for you from `providers`, and the adapter packages pull
-`@askdb/ai` in as a peer dependency. Import it yourself only to build a model object outside
-the client (`createAiRegistry(...).createLanguageModelFromEnv(...)`) or to share one registry
-across several clients.
+AI provider registry with built-in providers for OpenAI, Azure OpenAI / Microsoft Foundry,
+Google Gemini, Anthropic, and the Vercel AI Gateway. `@askdb/client` depends on it and builds
+the registry for you. Import it yourself to build a model object outside the client
+(`createAiRegistry().createLanguageModelFromEnv(...)`), to restrict or extend the provider set,
+or to share one registry across several clients.
 
-<InstallTabs pkgs="@askdb/ai" />
+<InstallTabs pkgs="@askdb/ai ai" />
 
 **Key exports**
 
 | Symbol | Purpose |
 | --- | --- |
-| `createAiRegistry` | Register provider adapters and build language or embedding models. |
+| `createAiRegistry(providers?)` | Build a registry and create language or embedding models from it. No argument: every built-in provider. Or pass built-in names (`["openai"]`) and/or `AiProviderAdapter` objects. |
+| `BUILTIN_AI_PROVIDERS` | Table of built-in providers: names, aliases, env vars, default models, and the SDK package each needs. |
+| `openaiProvider`, `azureProvider`, `googleProvider`, `anthropicProvider`, `gatewayProvider` | The built-in adapters, if you want to pass them as objects. |
 | `registry.resolveAiConfig(env)` / `registry.resolveEmbeddingConfig(env)` | Resolve provider config from env without constructing a model. These are methods on the registry returned by `createAiRegistry`, not standalone exports. |
 | `resolveBaseConfig` | Low-level helper — resolves a provider's base config object from an env map. Used internally by adapters. |
 | `withEmbeddingProviderOptions` | Wraps embedding provider options; shared across adapters. |
 | `aiKeyMissingMessage` | Shared human-readable missing-key guidance. |
 
-### Provider adapters
+### Provider SDKs
 
-Provider adapters own concrete AI SDK provider dependencies. Each adapter declares `ai` and `@askdb/ai` as peer dependencies — npm/pnpm install them automatically, but your app should depend on `ai` directly when you want to pin the version.
+Each built-in provider loads its AI SDK package lazily. These packages are optional peer dependencies of `@askdb/ai`, so install the one for the provider your config selects. If it's missing, model creation fails with `Provider '<name>' requires the optional peer dependency @ai-sdk/<name>. Install it: npm i @ai-sdk/<name>`.
 
 <Tabs syncKey="ai-provider">
   <TabItem label="OpenAI">
-    <InstallTabs pkgs="@askdb/ai-openai" />
+    <InstallTabs pkgs="@ai-sdk/openai" />
   </TabItem>
   <TabItem label="Anthropic">
-    <InstallTabs pkgs="@askdb/ai-anthropic" />
+    <InstallTabs pkgs="@ai-sdk/anthropic" />
   </TabItem>
   <TabItem label="Google">
-    <InstallTabs pkgs="@askdb/ai-google" />
+    <InstallTabs pkgs="@ai-sdk/google" />
   </TabItem>
   <TabItem label="Azure OpenAI">
-    <InstallTabs pkgs="@askdb/ai-azure" />
+    <InstallTabs pkgs="@ai-sdk/azure" />
+  </TabItem>
+  <TabItem label="Vercel AI Gateway">
+    Nothing extra: the gateway provider ships with `ai`.
   </TabItem>
 </Tabs>
 
-Any provider that has a Vercel AI SDK package can be added as an adapter. Unknown `ai.provider` values require a registered adapter — first-party apps register `openai`, `azure`, `foundry`, `google`, and `anthropic`; for anything else, embed AskDB and register your own adapter, or use an OpenAI-compatible endpoint via the `openai` provider and a custom base URL.
+The CLI, Studio, and the HTTP API already include all four SDKs. Unknown `ai.provider` values require a registered adapter. The built-ins are `openai`, `azure` (aliases `azure-openai`, `foundry`), `google`, `anthropic`, and `gateway`. For anything else, embed AskDB and pass your own `AiProviderAdapter` to `createAiRegistry()` or `createAskDb({ providers })`, or use an OpenAI-compatible endpoint via the `openai` provider and a custom base URL.
 
-### `@askdb/connectors`
+The `@askdb/ai-openai`, `@askdb/ai-azure`, `@askdb/ai-google`, and `@askdb/ai-anthropic` packages are **deprecated**. They re-export the built-in adapters from `@askdb/ai` and will be removed before 1.0.
 
-Connector provider registry — mirrors the `@askdb/ai` pattern for introspection. Each engine adapter exports a `ConnectorProviderAdapter` constant; `@askdb/connectors` wires them into a unified registry used by the CLI and apps. Install directly only when you are building a custom introspection flow.
+### `@askdb/connectors` (deprecated)
 
-<InstallTabs pkgs="@askdb/connectors" />
-
-**Key exports**
-
-| Symbol | Purpose |
-| --- | --- |
-| `createConnectorRegistry(adapters)` | Build a registry from a set of provider adapters. |
-| `ConnectorRegistry` | Registry type — `createConnector(provider, config)`, `getTemplates(provider)`. |
-| `ConnectorProviderAdapter` | The adapter shape each engine package exports. |
+The connector provider registry moved into [`@askdb/introspect`](#askdbintrospect). `@askdb/connectors` is now a compatibility shim that re-exports `createConnectorRegistry`, the adapter types, and the connection-string redaction helpers. New code should import from `@askdb/introspect` and `@askdb/introspect/kit`, and should not install this package.
 
 ### `@askdb/config`
 
@@ -163,6 +162,17 @@ SQL Server (T-SQL) dialect, connector, catalog SQL templates, and an optional `m
 The engine-agnostic introspection contract and the schema-directory writer. Use directly only when you're calling introspection from your own code — the CLI wraps this for you.
 
 <InstallTabs pkgs="@askdb/introspect" />
+
+It also exports the **connector provider registry**, which config-driven hosts use to pick an engine by id. Each engine package exports a `ConnectorProviderAdapter` (`postgresConnectorProvider`, `mysqlConnectorProvider`, `sqliteConnectorProvider`, `sqlServerConnectorProvider`, `prismaConnectorProvider`). Provider ids are open strings, so a third-party engine can register its own id.
+
+| Symbol | Purpose |
+| --- | --- |
+| `introspect(input, renderOptions, { connector })` | Run a connector and write the schema directory. |
+| `createConnectorRegistry(adapters)` | Build a registry from provider adapters. Returns `{ hasProvider, providers, createConnector, getTemplates, resolveConnection, redactConnectionString }`. |
+| `registry.resolveConnection(provider, { explicit?, runtime, surface? })` | Let the engine's adapter merge explicit values (for example `--url`) with AskDB runtime config (`getAskDbRuntimeConfig()`). Returns `{ ok, connection, sourceLabel }` or `{ ok: false, error }`. |
+| `ConnectorProviderAdapter` | The adapter shape: `createConnector`, plus optional `resolveConnection`, `redactConnectionString`, `getTemplates`. |
+
+The `@askdb/introspect/kit` subpath holds the shared helpers the engine packages are built on — optional-driver loading (`createOptionalDriverLoader`, `isDriverInstalled`), the live-catalog adapter builder (`defineLiveConnectorProvider`), table-glob filters (`compileTableFilters`, `ambiguousFilterWarnings`), Schema v2 ids (`makeTableId`, `makeColumnId`), catalog-row folding (`rowsToRecords`, `groupBy`, `buildOrderedGroups`, `mapFkAction`), and connection-string redaction (`redactUrlUserinfo`, `redactSecretKeyValues`, `redactConnectionStringGeneric`). Import it when you write a connector for a new engine.
 
 ### `@askdb/prisma`
 
@@ -250,11 +260,12 @@ See [the CLI reference](/reference/cli/).
 
 | Package | Depends on |
 | --- | --- |
-| `@askdb/postgres`, `@askdb/mysql`, `@askdb/sqlite`, `@askdb/sqlserver` | `@askdb/core`, `@askdb/connectors` |
-| `@askdb/prisma` | `@askdb/introspect`, `@askdb/connectors` |
-| `@askdb/connectors` | `@askdb/introspect` |
-| `@askdb/ai` | AI SDK core package (`ai`) |
-| `@askdb/ai-openai`, `@askdb/ai-azure`, `@askdb/ai-google`, `@askdb/ai-anthropic` | `@askdb/ai` + the matching AI SDK provider package |
+| `@askdb/introspect` | `@askdb/core` |
+| `@askdb/postgres`, `@askdb/mysql`, `@askdb/sqlite`, `@askdb/sqlserver` | `@askdb/core`, `@askdb/introspect` |
+| `@askdb/prisma` | `@askdb/introspect` |
+| `@askdb/connectors` (deprecated shim) | `@askdb/introspect` |
+| `@askdb/ai` | AI SDK core package (`ai`); `@ai-sdk/*` provider packages as optional peers |
+| `@askdb/ai-openai`, `@askdb/ai-azure`, `@askdb/ai-google`, `@askdb/ai-anthropic` (deprecated) | `@askdb/ai` + the matching AI SDK provider package |
 | `@askdb/enrich`, `@askdb/rag` | `@askdb/core` |
 | `@askdb/studio` | `@askdb/enrich` (+ `@askdb/rag` when used) |
 | `@askdb/http-api` | `@askdb/core` (+ engine adapter) |

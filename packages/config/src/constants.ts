@@ -25,12 +25,18 @@ export type AskDbRagEmbedder = (typeof ASKDB_RAG_EMBEDDERS)[number];
 export const ASKDB_RAG_STORES = ["file", "memory", "pgvector"] as const;
 export type AskDbRagStore = (typeof ASKDB_RAG_STORES)[number];
 
-export const ASKDB_AI_PROVIDERS = ["openai", "azure", "foundry", "google"] as const;
+/**
+ * Provider ids with a dedicated `ai.providerConfig.<id>` branch in `askdb.config.*`.
+ * Mirrors the built-in provider table in `@askdb/ai` (`BUILTIN_AI_PROVIDERS`: every
+ * built-in plus the `foundry` alias). `@askdb/config` must not depend on `@askdb/ai`,
+ * so the list is duplicated here; a test in `@askdb/ai` fails if the two drift.
+ */
+export const ASKDB_AI_PROVIDERS = ["openai", "azure", "foundry", "anthropic", "google", "gateway"] as const;
 export type AskDbAiProviderId = (typeof ASKDB_AI_PROVIDERS)[number];
 
 /**
  * Provider-portable reasoning/latency effort for AskDB model calls. Maps to
- * each provider's native knob by the `@askdb/ai-*` adapter (see `@askdb/ai`'s
+ * each provider's native knob by the provider adapter (see `@askdb/ai`'s
  * `resolveProviderOptions`). Keep aligned with `REASONING_EFFORTS` in
  * `@askdb/ai` (`packages/ai/src/reasoning.ts`).
  */

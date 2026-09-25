@@ -5,7 +5,7 @@ description: "The operator checklist for AskDB: read-only roles, statement timeo
 
 <p class="doc-eyebrow">Production checklist</p>
 
-<p class="doc-lede">AskDB validates SQL before it's returned. Your application owns everything that depends on runtime context. This page is the checklist for that side of the boundary.</p>
+<p class="doc-lede">AskDB runs heuristic checks on SQL before it's returned. Those checks catch common model mistakes, but they aren't a security boundary. Your application and database own everything that depends on runtime context. This page is the checklist for that side of the boundary. For what AskDB does and doesn't check, see <a href="/concepts/safety-boundaries/">Safety boundaries</a>.</p>
 
 ## Database role
 
@@ -87,14 +87,15 @@ This works because AskDB returns validated SQL as a value — your application c
 
 ## Sensitive columns
 
-Mark sensitive columns in the schema artifact:
+Mark sensitive columns in the schema artifact, either in Studio's Sensitivity tab or directly in the table's markdown front-matter:
 
 ```yaml
 columns:
-  - id: table:users#email
-    name: email
+  - id: table:public.users#email
     sensitive: true
 ```
+
+Front-matter sensitivity is escalate-only. It can mark a column sensitive (or a whole table, with a table-level `sensitive: true`) on top of `schema.json`, but `sensitive: false` never un-marks something `schema.json` marks sensitive.
 
 Then choose the prompt-construction behavior per deployment:
 
@@ -105,12 +106,12 @@ See [Privacy model](/concepts/privacy-model/) for what crosses the boundary in e
 
 ## Multi-tenancy
 
-If your app is multi-tenant, declare tenant policy in the schema artifact and pass a `tenantScope` to every `ask()` call. AskDB enforces the tenant predicate at generation time. See [Multi-tenancy](/guides/multi-tenancy/).
+If your app is multi-tenant, declare tenant policy in the schema artifact and pass a `tenantScope` to every `ask()` call. AskDB prompts the model to filter by tenant, binds your tenant IDs, and runs a heuristic check that the tenant column appears in the SQL. That check doesn't prove the query is scoped correctly, so enforce tenant isolation in the database too, for example with Postgres row-level security keyed on a per-request setting. See [Multi-tenancy](/guides/multi-tenancy/).
 
 ## Read next
 
 <div class="home-path-grid">
-  <a href="/concepts/safety-boundaries/"><strong>Safety boundaries</strong><span>What AskDB enforces before SQL leaves the validator.</span></a>
+  <a href="/concepts/safety-boundaries/"><strong>Safety boundaries</strong><span>What AskDB checks before SQL is returned, and what it doesn't.</span></a>
   <a href="/concepts/privacy-model/"><strong>Privacy model</strong><span>What crosses the boundary to the model.</span></a>
   <a href="/guides/multi-tenancy/"><strong>Multi-tenancy</strong><span>Scoping every query to a tenant.</span></a>
 </div>

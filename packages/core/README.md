@@ -2,28 +2,32 @@
 
 Dialect-agnostic NL→SQL pipeline for AskDB. Provides `ask()` orchestration, schema/IR types, modes, logging, and retrieval input. Bring your own dialect adapter (e.g. `@askdb/postgres`) and your own model.
 
-> **Status:** pre-1.0. `0.3.0` moved the Postgres dialect and `@askdb/core/postgres` to `@askdb/postgres`. Runtime AI provider construction lives in `@askdb/ai`; core remains BYO-model and does not read `process.env`. See [`docs/adrs/0002-integration-package-layout.md`](../../docs/adrs/0002-integration-package-layout.md), [`docs/adrs/0005-askdb-config-and-env-bootstrap.md`](../../docs/adrs/0005-askdb-config-and-env-bootstrap.md), and [`docs/adrs/0006-ai-provider-integration-strategy.md`](../../docs/adrs/0006-ai-provider-integration-strategy.md).
+> **Status:** pre-release beta (`1.0.0-beta.x`); public APIs may still change before 1.0. `0.3.0` moved the Postgres dialect and `@askdb/core/postgres` to `@askdb/postgres`. Runtime AI provider construction lives in `@askdb/ai`; core remains BYO-model and does not read `process.env`. See [`docs/adrs/0002-integration-package-layout.md`](https://github.com/Ygilany/AskDB/blob/main/docs/adrs/0002-integration-package-layout.md), [`docs/adrs/0005-askdb-config-and-env-bootstrap.md`](https://github.com/Ygilany/AskDB/blob/main/docs/adrs/0005-askdb-config-and-env-bootstrap.md), and [`docs/adrs/0006-ai-provider-integration-strategy.md`](https://github.com/Ygilany/AskDB/blob/main/docs/adrs/0006-ai-provider-integration-strategy.md).
+
+> **Security model:** `ask()` returns SQL and never executes it. Its SQL checks (single `SELECT`/`WITH` statement, no comments, no write/DDL keywords, and the tenant and sensitive-column checks) are heuristic defense in depth that catch common model mistakes. They are not a SQL parser and not a security boundary. Run generated SQL under a read-only, least-privilege database role and enforce tenant isolation in the database. See [Safety boundaries](https://askdb.tools/concepts/safety-boundaries/).
 
 ## Install
 
 ```bash
-pnpm add @askdb/core
+# `ai` (Vercel AI SDK) is a required peer dependency — your app owns its version
+pnpm add @askdb/core ai
 # Plus a dialect adapter for the engine you target:
 pnpm add @askdb/postgres
-# Plus a model provider, for example:
+# Plus a model — either construct one directly with an AI SDK provider:
 pnpm add @ai-sdk/openai
-# Optional AskDB config/env model factory:
+# …or use AskDB's config/env model factory (uses the @ai-sdk/* package above):
 pnpm add @askdb/ai
-pnpm add @askdb/ai-openai
 ```
+
+`ai` is a **peer dependency** (`^6 || ^7`), not a bundled dependency: `ask()` receives a `LanguageModel` your app constructs, so core must use the same `ai` instance your app does. Hosts on AI SDK 6 (e.g. `@ai-sdk/openai@3`) and AI SDK 7 (`@ai-sdk/openai@4`) are both supported. The config-driven `@askdb/ai` / `@askdb/client` path currently requires AI SDK 7.
 
 `@askdb/core` itself does not depend on `pg`. The optional `pg` peer lives on `@askdb/postgres` for live Postgres introspection.
 
-Runtime AI configuration helpers live in `@askdb/ai` and provider adapters such as `@askdb/ai-openai`. If you use [`@askdb/config`](../../packages/config/README.md), call `bootstrapAskDbEnv()`, create an AI registry, then pass **`getAskDbRuntimeConfig().ai.aiEnv`** to `registry.createLanguageModelFromEnv(...)`.
+Runtime AI configuration helpers live in `@askdb/ai`, which has built-in providers for OpenAI, Azure/Foundry, Google, Anthropic, and the Vercel AI Gateway (install the matching `@ai-sdk/*` package). If you use [`@askdb/config`](https://github.com/Ygilany/AskDB/blob/main/packages/config/README.md), call `bootstrapAskDbEnv()`, create an AI registry, then pass **`getAskDbRuntimeConfig().ai.aiEnv`** to `registry.createLanguageModelFromEnv(...)`.
 
 ## Schema format
 
-`@askdb/core` uses **Schema v2** — a split artifact designed for business-context enrichment and RAG chunking. See [`docs/contracts/schema-v2.md`](../../docs/contracts/schema-v2.md) for the full contract.
+`@askdb/core` uses **Schema v2** — a split artifact designed for business-context enrichment and RAG chunking. See [`docs/contracts/schema-v2.md`](https://github.com/Ygilany/AskDB/blob/main/docs/contracts/schema-v2.md) for the full contract.
 
 ### Directory layout
 

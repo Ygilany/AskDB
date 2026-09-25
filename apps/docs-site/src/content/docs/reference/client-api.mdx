@@ -14,24 +14,24 @@ Builds a client bound to a config snapshot and AI provider registry. The schema,
 ```ts
 import { createAskDb } from "@askdb/client";
 import { bootstrapAskDbEnv, getAskDbRuntimeConfig } from "@askdb/config";
-import { openaiProvider } from "@askdb/ai-openai";
 
 bootstrapAskDbEnv({ cwd: process.cwd() });
 
 const askdb = createAskDb({
-  config: getAskDbRuntimeConfig(),
-  providers: [openaiProvider],
+  config: getAskDbRuntimeConfig(), // ai.provider picks one of @askdb/ai's built-in providers
   schema: { path: "./my-app.schema" },
 });
 ```
+
+Install the AI SDK package for the provider your config selects, for example `@ai-sdk/openai`. It's an optional peer of `@askdb/ai` and is loaded the first time the client builds a model.
 
 ### Options — `CreateAskDbOptions`
 
 | Field | Type | Required | Description |
 | --- | --- | --- | --- |
 | `config` | `AskDbRuntimeConfig` | yes | Runtime config snapshot from `getAskDbRuntimeConfig()`. Call `bootstrapAskDbEnv()` at startup first. |
-| `providers` | `AiProviderAdapters` | one of | Provider adapters, e.g. `[openaiProvider]` from `@askdb/ai-openai`. The client builds the registry internally — the common path. |
-| `registry` | `AiRegistry` | one of | Prebuilt registry from `createAiRegistry(...)` — advanced alternative to `providers` (e.g. to share one registry across clients). Pass exactly one of the two. |
+| `providers` | `AiProviderAdapters` | no | Which providers the client can build models for. Default: every provider built into `@askdb/ai` (`openai`, `anthropic`, `google`, `azure`/`foundry`, `gateway`). Pass built-in names to restrict the set (`["openai"]`) or `AiProviderAdapter` objects to add custom providers; both can be mixed. |
+| `registry` | `AiRegistry` | no | Prebuilt registry from `createAiRegistry(...)` — advanced alternative to `providers` (e.g. to share one registry across clients). Pass at most one of `providers` or `registry`. |
 | `schema` | `SchemaSource` | no | Default schema source. Falls back to `host.schemaJson`, then `host.schemaPath`, from `askdb.config.ts`. |
 | `dialect` | `BuiltInDialectId` | no | Default dialect override. Falls back to `config.nlToSql.dialect` → `schema.provider` → `"postgres"`. |
 | `unknownDialect` | `"throw" \| "fallback-postgres"` | no | What to do when `schema.provider` is not a recognized built-in dialect id. Default `"throw"`. |
@@ -69,7 +69,8 @@ All `AskPipelineOptions` fields can be overridden per call. In addition, `schema
 | `model` | `AskDbLanguageModel` | Override the default model for this call only. |
 | `dialect` | `AskDialectInput` | Override the dialect for this call only. |
 | `explain` | `boolean` | Include guardrail metadata in the result. |
-| `omitSensitiveIdentifiersFromNlToSqlPrompt` | `boolean` | Strip sensitive identifiers from the DDL prompt. |
+| `omitSensitiveIdentifiersFromNlToSqlPrompt` | `boolean` | Strip sensitive identifiers from the DDL prompt. Config `modes.omitSensitiveFromPrompt: true` is a floor: `true` here tightens a single call, but `false` can't loosen the config setting. |
+| `abortSignal` | `AbortSignal` | Passed through to the model call (`generateText({ abortSignal })`). Use `AbortSignal.timeout(ms)` to enforce a timeout. An aborted call rejects with `SqlGenerationError`. |
 | `mode` | `AskDbModeV1` | Trust boundary override. |
 | `tenantScope` | `TenantScope` | Required when the schema has a tenant policy. |
 | `tenantSqlMode` | `TenantSqlOutputMode` | `"sql-only"` or `"sql-params"`. |

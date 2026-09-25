@@ -35,6 +35,15 @@ requires its own optional peer driver package — install only the one you need:
 | SQLite | `pnpm add better-sqlite3` |
 | SQL Server | `pnpm add mssql` |
 
+Execute is off by default. Enable it with `studio.execute.enabled: true`
+plus an execute connection (`studio.execute.databaseUrl`, or `file` for
+SQLite), ideally a read-only database role. Studio only reuses the
+introspection connection when `studio.execute.useIntrospectionConnection` is
+`true`. Each query is validated as a single read-only SELECT and runs in a
+read-only (SQL Server: always-rolled-back) transaction with a timeout
+(`studio.execute.timeoutMs`, default 30 s) and a row cap
+(`studio.execute.maxRows`, default 500).
+
 The execute provider is resolved from `studio.execute.provider` in
 `askdb.config.ts`, falling back to the active introspection provider, then
 defaulting to Postgres for backward compatibility. The Playground displays the
@@ -75,6 +84,15 @@ Environment variables:
 | `ASKDB_RAG_EMBEDDER` | Set to `mock`, `openai`, or `ai-sdk` for Studio RAG indexing. Defaults to the mock lexical embedder unless an AI key is configured. |
 | `ASKDB_RAG_EMBEDDER_MODEL` | Embedding model override for Studio RAG. |
 | `ASKDB_RAG_EMBEDDER_DIMENSIONS` | Optional embedding dimension override. |
+
+Security: every `/api/*` request must carry the per-launch session token that
+Studio injects into the page it serves (`x-askdb-studio-token` header), come
+with an allowed `Host` (`localhost`, `127.0.0.1`, `[::1]`, or the bound host),
+and, for writes, be same-origin JSON. Programmatic callers of
+`createStudioServer()` can read the token from `server.sessionToken`. Binding
+to a non-loopback host exposes query execution and schema writes to anyone on
+that network who can load the page. Only do that on a trusted network. See
+[Studio → Security model](https://askdb.tools/studio/#security-model).
 
 Studio uses the active `rag.store` branch from `askdb.config.*`. For `pgvector`,
 make sure the configured table/extension already exist and `ASKDB_PGVECTOR_URL`

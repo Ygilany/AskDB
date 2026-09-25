@@ -28,11 +28,15 @@ Dev watch (runs with `apps/http-api` as the working directory):
 pnpm -C apps/http-api dev:watch
 ```
 
-Set `ASKDB_SCHEMA_PATH` in the repo-root `.env` (recommended). The binary also loads `askdb.config.*` / `.config/askdb.*` from the current working directory via [`@askdb/config`](https://www.npmjs.com/package/@askdb/config) after resolving `.env` candidates (repo root, cwd, package dir).
+Point the server at a schema with `--schema-path` or `host.schemaPath` in `askdb.config.ts`. The binary loads `askdb.config.*` / `.config/askdb.*` from the current working directory via [`@askdb/config`](https://www.npmjs.com/package/@askdb/config) after resolving `.env` candidates (repo root, cwd, package dir). Shell / `.env` variables only take effect when the config maps them with `env(...)`:
+
+```ts
+// askdb.config.ts
+host: { schemaPath: env("ASKDB_SCHEMA_PATH") },
+```
 
 ```bash
-# in ../../.env (repo root):
-# ASKDB_SCHEMA_PATH=fixtures/schemas/orders-users.schema.json
+node apps/http-api/dist/bin.js --schema-path fixtures/schemas/orders-users.schema
 ```
 
 Health check:
@@ -60,8 +64,10 @@ Notes:
 - **Correlation**: if you omit `x-correlation-id`, the server generates one and returns it.
 - **Mode**: optional `x-askdb-mode` header (body `mode` wins if present).
 - **Execution**: not supported. Retired execution controls return `400`; review generated SQL and run any approved query outside AskDB under your own database roles, read-only controls, tenant policy, and audit logging.
-- **Generation config**: set `OPENAI_API_KEY` (or for tests/dev, set `ASKDB_MOCK_SQL` to bypass live model calls).
-- **Schema config (recommended)**: set `ASKDB_SCHEMA_PATH` to an AskDB Schema v2 directory, bundled JSON file, or `schema.json`. You *can* also send `schemaJson` per request as an override, but it doesn’t scale.
+- **Generation config**: set `ai.provider` / `ai.providerConfig` in `askdb.config.ts` (for tests/dev, set `dev.mockSql` to bypass live model calls). The server does not read `ASKDB_MOCK_SQL` from the shell; map it in the config with `dev: { mockSql: env("ASKDB_MOCK_SQL") }` if you want that.
+- **Schema config (recommended)**: set `host.schemaPath` in `askdb.config.ts` (or pass `--schema-path`) to an AskDB Schema v2 directory, bundled JSON file, or `schema.json`. Per-request `schemaJson` overrides are rejected with `403 schema_override_disabled` unless you set `httpApi.allowSchemaOverride: true`.
+- **Timeouts**: the model call is aborted after `httpApi.requestTimeoutMs` (default `60000`) and the request returns `502 sql_generation_error`.
+- **Errors**: status codes come from the error type. Model-provider failures return a generic `502`, and unexpected failures return a generic `500`. The full error is logged server-side under the response's `correlationId`.
 
 ## Ask (Node)
 

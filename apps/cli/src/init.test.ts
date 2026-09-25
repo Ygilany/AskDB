@@ -82,6 +82,7 @@ describe("renderInitConfig", () => {
     expect(out).toContain('provider: "sqlserver"');
     expect(out).toContain('databaseUrl: env("DATABASE_URL")');
     expect(out).toContain("studio:");
+    expect(out).toContain("enabled: true");
     expect(out).not.toContain('"postgres"');
     expect(out).not.toContain('"pg"');
   });
@@ -122,6 +123,29 @@ describe("renderInitConfig", () => {
     expect(out).not.toContain('"openai"');
   });
 
+  it.each(["azure", "foundry"] as const)(
+    "%s AI provider: scaffolds resourceName so the adapter can build an endpoint",
+    (aiProvider) => {
+      const out = renderInitConfig(postgresAnswers({
+        aiProvider,
+        aiKeyEnv: "AZURE_OPENAI_API_KEY",
+        aiModelEnv: "AZURE_OPENAI_DEPLOYMENT",
+      }));
+      expect(out).toContain(`provider: "${aiProvider}"`);
+      expect(out).toContain(`      ${aiProvider}: {`);
+      expect(out).toContain('apiKey: env("AZURE_OPENAI_API_KEY")');
+      expect(out).toContain('model: env("AZURE_OPENAI_DEPLOYMENT")');
+      expect(out).toContain('resourceName: env("AZURE_RESOURCE_NAME")');
+    },
+  );
+
+  it("non-Azure AI providers: no resourceName line", () => {
+    for (const aiProvider of ["openai", "anthropic", "google"] as const) {
+      const out = renderInitConfig(postgresAnswers({ aiProvider }));
+      expect(out).not.toContain("resourceName");
+    }
+  });
+
   it("pgvector RAG: only pgvector store branch", () => {
     const out = renderInitConfig(postgresAnswers({
       ragStore: "pgvector",
@@ -131,11 +155,6 @@ describe("renderInitConfig", () => {
     expect(out).toContain('databaseUrl: env("ASKDB_PGVECTOR_URL")');
     expect(out).not.toContain('"file"');
     expect(out).not.toContain('"memory"');
-  });
-
-  it("no studio section when studioExecute is disabled", () => {
-    const out = renderInitConfig(postgresAnswers({ studioExecute: { enabled: false } }));
-    expect(out).not.toContain("studio:");
   });
 
   it("MySQL: mysql branch only", () => {
@@ -149,7 +168,47 @@ describe("renderInitConfig", () => {
     expect(out).toContain("satisfies AskDbConfig");
     expect(out).not.toContain("dotenv");
   });
+
+  it("escapes quotes, backslashes, and newlines in interpolated values (no code injection)", () => {
+    const hostile = 'x", injected: (() => { throw new Error("pwned"); })(), y: "\\\n';
+    const config = evaluateRenderedConfig(
+      renderInitConfig(
+        postgresAnswers({
+          database: "prisma",
+          connectionEnv: undefined,
+          prismaSchema: `./prisma/${hostile}`,
+          schemaOut: `./out/${hostile}`,
+          aiKeyEnv: `KEY${hostile}`,
+          ragStore: "pgvector",
+          pgvectorEnv: `PGV${hostile}`,
+          studioExecute: { enabled: true, provider: "sqlite", sqliteFile: `./db/${hostile}` },
+        }),
+      ),
+    ) as any;
+    expect(config.introspection.providerConfig.prisma.schemaPath).toBe(`./prisma/${hostile}`);
+    expect(config.introspection.outputDir).toBe(`./out/${hostile}`);
+    expect(config.ai.providerConfig.openai.apiKey).toEqual({ env: `KEY${hostile}` });
+    expect(config.rag.storeConfig.pgvector.databaseUrl).toEqual({ env: `PGV${hostile}` });
+    expect(config.studio.execute.file).toBe(`./db/${hostile}`);
+    expect(Object.keys(config).sort()).toEqual(["ai", "introspection", "rag", "studio"]);
+    expect(Object.keys(config.introspection).sort()).toEqual(["outputDir", "provider", "providerConfig"]);
+  });
 });
+
+/**
+ * Evaluate a rendered `askdb.config.ts` with stubbed `defineConfig` / `env`,
+ * so tests can assert on the object the config actually produces.
+ */
+function evaluateRenderedConfig(source: string): unknown {
+  const body = source
+    .replace(/^import .*$/m, "")
+    .replace("export default defineConfig(", "return defineConfig(")
+    .replace(/\}\s*satisfies AskDbConfig\);\s*$/, "});");
+  return new Function("defineConfig", "env", body)(
+    (config: unknown) => config,
+    (name: string) => ({ env: name }),
+  );
+}
 
 // ---------------------------------------------------------------------------
 // buildInitInstallPlan
@@ -231,6 +290,15 @@ describe("resolveDefaultInitAnswers", () => {
     expect(a.schemaOut).toBe("./askdb");
   });
 
+  it("scaffolds gateway with the env vars from @askdb/ai's provider table", () => {
+    const a = resolveDefaultInitAnswers({ aiProvider: "gateway" });
+    expect(a.aiKeyEnv).toBe("AI_GATEWAY_API_KEY");
+    expect(a.aiModelEnv).toBe("ASKDB_AI_MODEL");
+    const out = renderInitConfig(a);
+    expect(out).toContain('provider: "gateway"');
+    expect(out).toContain('apiKey: env("AI_GATEWAY_API_KEY")');
+  });
+
   it("respects database override", () => {
     const a = resolveDefaultInitAnswers({ database: "sqlserver" });
     expect(a.database).toBe("sqlserver");
@@ -280,7 +348,7 @@ describe("runWizard", () => {
         "Schema output directory",
         "AI provider",
         "RAG store",
-        "Enable Studio execute (run queries from the browser playground)?",
+        "Enable Studio execute (run generated SQL read-only from the browser playground)?",
       ]),
     );
   });
@@ -296,6 +364,13 @@ describe("runWizard", () => {
     expect(answers!.ragStore).toBe("pgvector");
     expect(answers!.pgvectorEnv).toBe("ASKDB_PGVECTOR_URL");
     expect(messages.some((m) => m.toLowerCase().includes("env var"))).toBe(false);
+  });
+
+  it("defaults Studio execute to off when the user accepts every default", async () => {
+    const { prompter } = createRecordingPrompter();
+    const answers = await runWizard(prompter);
+    expect(answers!.studioExecute).toEqual({ enabled: false });
+    expect(renderInitConfig(answers!)).not.toContain("studio:");
   });
 
   it("Prisma + Studio execute still asks which live provider to use (a real decision)", async () => {
@@ -412,6 +487,25 @@ describe("runInitCli --yes --skip-install", () => {
     }
   });
 
+  it("--ai-provider azure: config and .env.example include the resource name", async () => {
+    const tmp = mkdtempSync(join(tmpdir(), "askdb-init-test-"));
+    try {
+      const outPath = join(tmp, "askdb.config.ts");
+      const code = await runInitCli([
+        "--yes", "--skip-install", "--path", outPath, "--ai-provider", "azure",
+      ]);
+      expect(code).toBe(0);
+      const content = readFileSync(outPath, "utf8");
+      expect(content).toContain('provider: "azure"');
+      expect(content).toContain('resourceName: env("AZURE_RESOURCE_NAME")');
+      const envExample = readFileSync(join(tmp, ".env.example"), "utf8");
+      expect(envExample).toMatch(/^AZURE_OPENAI_API_KEY=$/m);
+      expect(envExample).toMatch(/^AZURE_RESOURCE_NAME=$/m);
+    } finally {
+      rmSync(tmp, { recursive: true, force: true });
+    }
+  });
+
   it("refuses to overwrite without --force", async () => {
     const tmp = mkdtempSync(join(tmpdir(), "askdb-init-test-"));
     try {
@@ -438,6 +532,8 @@ describe("runInitCli --yes --skip-install", () => {
       const content = readFileSync(outPath, "utf8");
       expect(content).toContain("studio:");
       expect(content).toContain("execute:");
+      // Execute is opt-in at runtime — choosing it must write `enabled: true`.
+      expect(content).toContain("enabled: true");
     } finally {
       rmSync(tmp, { recursive: true, force: true });
     }

@@ -15,7 +15,7 @@
     "llm",
     "sql"
   ],
-  "homepage": "https://github.com/Ygilany/AskDB#readme",
+  "homepage": "https://askdb.tools/reference/http-api/",
   "bugs": {
     "url": "https://github.com/Ygilany/AskDB/issues"
   },
@@ -29,6 +29,13 @@
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
+    }
+  },
   "bin": {
     "askdb-http": "./bin/askdb-http.js"
   },
@@ -40,7 +47,7 @@
     "NOTICE"
   ],
   "engines": {
-    "node": ">=22"
+    "node": ">=22.12"
   },
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
@@ -51,17 +58,15 @@
     "test": "vitest run --config ../../vitest.config.ts"
   },
   "dependencies": {
+    "@ai-sdk/anthropic": "^4.0.29",
+    "@ai-sdk/azure": "^4.0.30",
+    "@ai-sdk/google": "^4.0.33",
+    "@ai-sdk/openai": "^4.0.29",
     "@askdb/ai": "workspace:*",
-    "@askdb/ai-anthropic": "workspace:*",
-    "@askdb/ai-azure": "workspace:*",
-    "@askdb/ai-google": "workspace:*",
-    "@askdb/ai-openai": "workspace:*",
     "@askdb/client": "workspace:*",
     "@askdb/config": "workspace:*",
     "@askdb/core": "workspace:*",
-    "@askdb/postgres": "workspace:*",
-    "ai": "^7.0.51",
-    "pg": "^8.22.0"
+    "ai": "^7.0.51"
   },
   "devDependencies": {
     "tsx": "^4.23.5",

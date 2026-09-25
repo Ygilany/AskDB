@@ -33,7 +33,6 @@ export function PlaygroundPage() {
     askTenantGlobalReason, setAskTenantGlobalReason,
     askTenantContext, setAskTenantContext,
     askTenantContextAttributes, setAskTenantContextAttributes,
-    askTenantFilterRows, setAskTenantFilterRows,
     generatedTenantScopeJson, tenantScopeValidationError,
     askTenantSqlMode, setAskTenantSqlMode,
     executeResult, executeMessage, executeStatus,
@@ -57,9 +56,7 @@ export function PlaygroundPage() {
 
   const hasTenantPolicy = Boolean(workspace.tenantPolicy);
   const tenantRoots = workspace.tenantPolicy?.roots ?? [];
-  const polymorphicTables = workspace.tenantPolicy?.polymorphicTables ?? [];
   const firstTenantRoot = tenantRoots[0]?.id ?? "";
-  const firstPolymorphicTable = polymorphicTables[0];
 
   return (
     <main className="main-pane">
@@ -124,9 +121,6 @@ export function PlaygroundPage() {
                             <legend className="sr-only">Tenant scope access kind</legend>
                             <button className={askTenantAccessKind === "ids" ? "active" : ""} onClick={() => setAskTenantAccessKind("ids")}>
                               IDs
-                            </button>
-                            <button className={askTenantAccessKind === "subtree" ? "active" : ""} onClick={() => setAskTenantAccessKind("subtree")}>
-                              Subtree
                             </button>
                             <button className={askTenantAccessKind === "multi_root" ? "active" : ""} onClick={() => setAskTenantAccessKind("multi_root")}>
                               Multi-root
@@ -299,99 +293,6 @@ export function PlaygroundPage() {
                           </div>
                         </details>
 
-                        {polymorphicTables.length > 0 && (
-                          <details>
-                            <summary className="muted" style={{ cursor: "pointer", fontSize: 11, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.04em" }}>
-                              Tenant filters
-                            </summary>
-                            <div style={{ display: "grid", gap: 8, marginTop: 8 }}>
-                              {askTenantFilterRows.map((row, index) => (
-                                <div key={row.id} style={{ display: "grid", gridTemplateColumns: "minmax(0, 1.2fr) minmax(0, 1fr) 88px minmax(0, 1fr) auto", gap: 8, alignItems: "end" }}>
-                                  <Field label="Table" className="min-w-0">
-                                    <select
-                                      className={selectClassName}
-                                      value={row.tableId}
-                                      onChange={(e) => {
-                                        const selected = polymorphicTables.find((table) => table.id === e.target.value);
-                                        const next = [...askTenantFilterRows];
-                                        next[index] = { ...row, tableId: e.target.value, column: row.column || selected?.typeColumn || "" };
-                                        setAskTenantFilterRows(next);
-                                      }}
-                                    >
-                                      {polymorphicTables.map((table) => (
-                                        <option key={table.id} value={table.id}>{table.id}</option>
-                                      ))}
-                                    </select>
-                                  </Field>
-                                  <Field label="Column" className="min-w-0">
-                                    <Input
-                                      value={row.column}
-                                      onChange={(e) => {
-                                        const next = [...askTenantFilterRows];
-                                        next[index] = { ...row, column: e.target.value };
-                                        setAskTenantFilterRows(next);
-                                      }}
-                                      placeholder="owner_type"
-                                    />
-                                  </Field>
-                                  <Field label="Operator" className="min-w-0">
-                                    <select
-                                      className={selectClassName}
-                                      value={row.operator}
-                                      onChange={(e) => {
-                                        const next = [...askTenantFilterRows];
-                                        next[index] = { ...row, operator: e.target.value as typeof row.operator };
-                                        setAskTenantFilterRows(next);
-                                      }}
-                                    >
-                                      <option value="=">=</option>
-                                      <option value="IN">IN</option>
-                                      <option value="!=">!=</option>
-                                      <option value="NOT IN">NOT IN</option>
-                                    </select>
-                                  </Field>
-                                  <Field label="Value" className="min-w-0">
-                                    <Input
-                                      value={row.valueText}
-                                      onChange={(e) => {
-                                        const next = [...askTenantFilterRows];
-                                        next[index] = { ...row, valueText: e.target.value };
-                                        setAskTenantFilterRows(next);
-                                      }}
-                                      placeholder={row.operator === "IN" || row.operator === "NOT IN" ? "client, agency" : "client"}
-                                    />
-                                  </Field>
-                                  <button
-                                    className="btn ghost sm"
-                                    onClick={() => setAskTenantFilterRows(askTenantFilterRows.filter((_, i) => i !== index))}
-                                    title="Remove condition"
-                                  >
-                                    <Trash2 size={14} />
-                                  </button>
-                                </div>
-                              ))}
-                              <div>
-                                <button
-                                  className="btn ghost sm"
-                                  onClick={() => setAskTenantFilterRows([
-                                    ...askTenantFilterRows,
-                                    {
-                                      id: makeDraftRowId("tenant-filter"),
-                                      tableId: firstPolymorphicTable!.id,
-                                      column: firstPolymorphicTable!.typeColumn,
-                                      operator: "=",
-                                      valueText: "",
-                                    },
-                                  ])}
-                                >
-                                  <Plus size={14} />
-                                  Add condition
-                                </button>
-                              </div>
-                            </div>
-                          </details>
-                        )}
-
                         <div style={{ display: "grid", gap: 6 }}>
                           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
                             <span className="muted" style={{ fontSize: 11, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.04em" }}>tenantScope JSON preview</span>
@@ -522,7 +423,12 @@ export function PlaygroundPage() {
                 )}
 
                 <div style={{ padding: "var(--pad-y) var(--pad-x)", borderBottom: "1px solid var(--border)", display: "flex", flexDirection: "column", gap: 8 }}>
-                  {executeStatus && (
+                  {executeStatus && !executeStatus.enabled && (
+                    <p className="muted" style={{ fontSize: 12, margin: 0 }}>
+                      {executeStatus.disabledReason}
+                    </p>
+                  )}
+                  {executeStatus?.enabled && (
                     <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
                       <span className="muted" style={{ fontSize: 11, fontWeight: 600 }}>
                         {executeStatus.label}
@@ -559,17 +465,25 @@ export function PlaygroundPage() {
                       )}
                     </div>
                   )}
-                  <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-                    <button
-                      className="btn primary"
-                      disabled={busy.has("execute") || !askResult.sql || (executeStatus !== null && (!executeStatus.configured || !executeStatus.installed))}
-                      onClick={() => void handleExecute()}
-                    >
-                      {busy.has("execute") ? <Loader2 size={14} className="animate-spin" /> : <Play size={14} />}
-                      Execute Query
-                    </button>
-                    {executeMessage && <InlineStatus status={executeMessage} />}
-                  </div>
+                  {executeStatus?.enabled && executeStatus.disabledReason && (
+                    <p className="muted" style={{ fontSize: 12, margin: 0 }}>
+                      {executeStatus.disabledReason}
+                    </p>
+                  )}
+                  {executeStatus?.enabled && (
+                    <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                      <button
+                        className="btn primary"
+                        disabled={busy.has("execute") || !askResult.sql || !executeStatus.configured || !executeStatus.installed}
+                        onClick={() => void handleExecute()}
+                        title={`Runs read-only · ${Math.round(executeStatus.timeoutMs / 1000)}s timeout · first ${executeStatus.maxRows} rows`}
+                      >
+                        {busy.has("execute") ? <Loader2 size={14} className="animate-spin" /> : <Play size={14} />}
+                        Execute Query
+                      </button>
+                      {executeMessage && <InlineStatus status={executeMessage} />}
+                    </div>
+                  )}
                 </div>
 
                 <GetTheCodePanel />
@@ -579,7 +493,7 @@ export function PlaygroundPage() {
                     <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
                       <h3 style={{ fontSize: 13, fontWeight: 600 }}>Results</h3>
                       {executeResult.truncated && (
-                        <span className="chip amber">Showing first 500 rows</span>
+                        <span className="chip amber">Showing first {executeResult.rowLimit} rows</span>
                       )}
                     </div>
                     {executeResult.columns && executeResult.rows ? (

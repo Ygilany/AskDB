@@ -122,7 +122,13 @@ The server does not connect to your database. It generates SQL and returns it. E
 
 ## Custom schema per request
 
-The default is to load the schema from `host.schemaPath` once at boot. If you need per-request schema (for example, a multi-product deployment where different consumers send different schemas), supply the bundled JSON as `schemaJson` in the request body:
+The default is to load the schema from `host.schemaPath` once at boot. Per-request schemas are **off by default**: a request that sends `schemaJson` gets `403 schema_override_disabled`. An override puts caller-supplied text into the prompt through your model key, so only enable it for tests or callers you trust. For a multi-product deployment where different consumers send different schemas, turn it on in `askdb.config.ts`:
+
+```ts
+httpApi: { allowSchemaOverride: true },
+```
+
+Then supply the bundled JSON as `schemaJson` in the request body:
 
 ```json
 {

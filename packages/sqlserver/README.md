@@ -9,8 +9,10 @@ Microsoft SQL Server integration for AskDB. Bundles three pieces:
 ## Install
 
 ```bash
-pnpm add @askdb/core @askdb/introspect @askdb/sqlserver
+pnpm add @askdb/core @askdb/introspect @askdb/sqlserver ai
 ```
+
+`ai` (Vercel AI SDK 6 or 7) is a required peer dependency of `@askdb/core`; your app owns its version.
 
 `mssql` is an **optional peer dependency** — install it only when using live introspection mode:
 
@@ -90,9 +92,19 @@ SQL Server uses TLS by default. If you connect to a local or dev instance with a
 
 > **Never set `TrustServerCertificate=True` in production** unless you have verified the server's certificate through another means. Use a properly signed certificate, or install the CA cert in the system trust store (`NODE_EXTRA_CA_CERTS` / `--use-system-ca`).
 
+**Redacting for display**
+
+`redactConnectionString(input)` masks credentials in all three formats — `mssql://sa:****@host/db`, `sqlserver://host;…;password=****`, and ADO.NET `Password=****;` / `Pwd=****;` (quoted and `{braced}` values included):
+
+```ts
+import { redactConnectionString } from "@askdb/sqlserver";
+
+redactConnectionString("Server=localhost,1433;User Id=sa;Password=pass;"); // "Server=localhost,1433;User Id=sa;Password=****;"
+```
+
 ## Captured metadata
 
-Tables, views, columns (SQL Server native type strings), primary keys, unique constraints, foreign keys (with referential actions), and indexes.
+Tables, views, columns (SQL Server native type strings), primary keys, unique constraints, foreign keys (with referential actions), and indexes. Objects shipped by SQL Server itself (`is_ms_shipped = 1`, e.g. replication `MS*` tables) are excluded.
 
 ## License
 

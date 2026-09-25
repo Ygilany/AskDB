@@ -6,6 +6,7 @@ import {
 import { existsSync, readFileSync } from "node:fs";
 import { networkInterfaces } from "node:os";
 import { resolve } from "node:path";
+import { isLoopbackHost } from "./request-guard.js";
 import { createStudioServer, type StudioOptions } from "./server.js";
 
 type CliOptions = {
@@ -73,6 +74,9 @@ export async function runStudioCli(argv: readonly string[]): Promise<number> {
   if (!address || typeof address === "string") return 1;
   const shownHost = opts.host === "0.0.0.0" ? firstPrivateAddress() ?? "127.0.0.1" : opts.host;
   process.stdout.write(`AskDB Studio is running at http://${shownHost}:${address.port}\n`);
+  if (!isLoopbackHost(opts.host)) {
+    process.stderr.write(formatNetworkExposureWarning(opts.host));
+  }
   process.stdout.write("Press Ctrl+C to stop.\n");
   return await new Promise<number>((resolve) => {
     const stop = () => {
@@ -182,6 +186,19 @@ function printHelp(stream: NodeJS.WriteStream): void {
       "",
     ].join("\n"),
   );
+}
+
+function formatNetworkExposureWarning(host: string): string {
+  return [
+    "",
+    `WARNING: Studio is bound to ${host}, which other machines on your network can reach.`,
+    "Studio can execute SQL against your configured database and write schema files.",
+    "Anyone who can load the Studio page from this address gets its session token and",
+    "can use those features (setup, resync, and driver install stay loopback-only).",
+    "Only do this on a network you trust; the default 127.0.0.1 keeps Studio local.",
+    "",
+    "",
+  ].join("\n");
 }
 
 function firstPrivateAddress(): string | undefined {

@@ -9,8 +9,10 @@ SQLite integration for AskDB. Bundles three pieces:
 ## Install
 
 ```bash
-pnpm add @askdb/core @askdb/introspect @askdb/sqlite
+pnpm add @askdb/core @askdb/introspect @askdb/sqlite ai
 ```
+
+`ai` (Vercel AI SDK 6 or 7) is a required peer dependency of `@askdb/core`; your app owns its version.
 
 `better-sqlite3` is an **optional peer dependency** — install it only when using live introspection mode:
 
@@ -58,7 +60,9 @@ const result = await introspect(
 
 ## Captured metadata
 
-Tables, views, columns (SQLite affinity type strings), primary keys, unique constraints, foreign keys, and indexes. Requires SQLite ≥ 3.16 for `pragma_*` table-valued functions.
+Tables, views, columns (SQLite affinity type strings), primary keys, unique constraints, foreign keys, and indexes. Requires SQLite ≥ 3.16 for `pragma_*` table-valued functions. A foreign key declared without a column list (`REFERENCES authors`) resolves to the parent table's primary key. Internal `sqlite_*` objects are skipped.
+
+`redactConnectionString(input)` is exported for parity with the other engine packages; SQLite paths carry no credentials, so it returns its input unchanged.
 
 ## License
 

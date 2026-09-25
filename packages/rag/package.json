@@ -11,7 +11,7 @@
     "pgvector",
     "ai"
   ],
-  "homepage": "https://github.com/Ygilany/AskDB#readme",
+  "homepage": "https://askdb.tools/reference/rag-api/",
   "bugs": {
     "url": "https://github.com/Ygilany/AskDB/issues"
   },
@@ -23,6 +23,10 @@
   "license": "Apache-2.0",
   "author": "Yahya Gilany",
   "type": "module",
+  "sideEffects": [
+    "./bin/askdb-rag.js",
+    "./dist/bin.js"
+  ],
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {
@@ -80,8 +84,8 @@
     "@askdb/core": "workspace:*"
   },
   "peerDependencies": {
-    "@ai-sdk/openai": "^4.0.29",
-    "ai": "^7.0.51",
+    "@ai-sdk/openai": "^3.0.0 || ^4.0.29",
+    "ai": "^6.0.0 || ^7.0.0",
     "pg": ">=8"
   },
   "peerDependenciesMeta": {

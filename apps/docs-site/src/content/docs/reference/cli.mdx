@@ -103,7 +103,7 @@ npx askdb@latest init --yes    # non-interactive, Postgres + OpenAI defaults
 
 | Flag | Description |
 | --- | --- |
-| `--ai-provider <name>` | `openai` \| `anthropic` \| `google` \| `azure` \| `foundry` |
+| `--ai-provider <name>` | `openai` \| `anthropic` \| `google` \| `azure` \| `foundry` \| `gateway` |
 | `--ai-key-env <name>` | Env var name for the API key. |
 | `--ai-model-env <name>` | Env var name for the model override. |
 
@@ -118,8 +118,8 @@ npx askdb@latest init --yes    # non-interactive, Postgres + OpenAI defaults
 
 | Flag | Description |
 | --- | --- |
-| `--studio-execute` | Enable Studio execute (query playground). |
-| `--no-studio-execute` | Disable Studio execute. |
+| `--studio-execute` | Enable Studio execute (query playground): writes a `studio.execute` block with `enabled: true`. Off by default. |
+| `--no-studio-execute` | Disable Studio execute (default). |
 
 `init` generates only the config branches you selected — SQL Server users won't see a `pg` import, SQLite users get a `file:` field instead of `DATABASE_URL`, and Prisma users don't get a live DB driver unless they explicitly enable Studio execute. It does not create a `.env` — example variable names live inside `askdb.config.ts`.
 
@@ -243,14 +243,17 @@ You never pass a SQL dialect — it resolves automatically: `dialect` in `askdb.
 Provisions the pgvector schema for `@askdb/rag` idempotently. Safe to run in CI / deploy steps.
 
 ```bash
-askdb-rag setup-store --pg-url "$DATABASE_URL" --dimensions 1536
+askdb-rag setup-store --pg-url "$DATABASE_URL" --embedder openai
 ```
 
 | Flag | Description |
 | --- | --- |
 | `--pg-url <connstr>` | Postgres connection string (required). |
 | `--pg-table <name>` | Custom table name. Default `askdb_rag_chunks`. |
-| `--dimensions <n>` | Embedding dimensions. Default `1536`. |
+| `--embedder <id>` / `--embedder-model <id>` | Used to pick the default dimensions, the same way `index` does. |
+| `--dimensions <n>` | Embedding dimensions. Defaults to the embedder's: `64` for the default `mock` embedder, `1536` for `--embedder openai` (`text-embedding-3-small`), `3072` for `text-embedding-3-large`. |
+
+If the table already exists with a different `vector(n)` dimension, the command fails with an error rather than keeping the old dimension silently.
 
 ### `askdb-rag index`
 
@@ -265,8 +268,11 @@ askdb-rag index ./my-app.schema --store pgvector --embedder openai
 | `--store <id>` | `memory`, `file` (default — persists next to the artifact), or `pgvector`. |
 | `--embedder <id>` | `mock` (default, deterministic, CI-safe) or `openai` (reads `OPENAI_API_KEY`, or pass `--api-key`). |
 | `--embedder-model <id>` | Embedding model. Default `text-embedding-3-small`. |
-| `--dimensions <n>` | Embedding dimensions, when the model needs them specified. |
-| `--pg-url` / `--pg-table` | pgvector connection when `--store pgvector`. |
+| `--dimensions <n>` | Embedding dimensions. Also sets the `mock` embedder's vector size (default `64`). |
+| `--pg-url` / `--pg-table` | pgvector connection when `--store pgvector`. The table is provisioned (idempotently) and its dimensions checked before indexing. |
+| `--force` | Re-embed every chunk, even ones the store already holds. |
+
+Only chunks the store doesn't already hold (same id and content hash) are embedded. `schema.lock.json` records the embedder id, store, and dimensions; if any of them changed, everything is re-embedded.
 
 ### `askdb-rag query`
 
@@ -281,6 +287,7 @@ askdb-rag query ./my-app.schema --question "customer signups" -k 8
 | `--question <text>` | The query text (required). |
 | `-k <n>` | Top-k chunks to return. Default `8`. |
 | `--types <list>` | Restrict chunk types, e.g. `table,column,cql`. |
+| `--store`, `--embedder`, `--embedder-model`, `--dimensions`, `--pg-url`, `--pg-table`, `--file-path` | Must match the `index` run. `query` fails if the embedder id or dimensions differ from `schema.lock.json`. `--store memory` isn't supported: a memory store only lives inside one process. |
 
 All three commands accept the [shared logging flags](#shared-logging-flags).
 

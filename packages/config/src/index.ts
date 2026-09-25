@@ -25,7 +25,11 @@ export {
   setAskDbRuntimeForTests,
 } from "./runtime-store.js";
 export {
+  DEFAULT_ANTHROPIC_CHAT_MODEL,
   DEFAULT_AZURE_OPENAI_DEPLOYMENT,
+  DEFAULT_GATEWAY_CHAT_MODEL,
+  DEFAULT_GOOGLE_CHAT_MODEL,
+  DEFAULT_HTTP_API_REQUEST_TIMEOUT_MS,
   DEFAULT_INTROSPECT_OUTPUT_DIR,
   DEFAULT_LOCAL_POSTGRES_URL,
   DEFAULT_MOCK_RAG_EMBEDDING_DIMENSIONS,
@@ -33,6 +37,8 @@ export {
   DEFAULT_PGVECTOR_INDEX_STRATEGY,
   DEFAULT_RAG_EMBEDDING_MODEL,
   DEFAULT_RAG_FILE_BASE_PATH,
+  DEFAULT_STUDIO_EXECUTE_MAX_ROWS,
+  DEFAULT_STUDIO_EXECUTE_TIMEOUT_MS,
   defaultRagEmbeddingDimensions,
 } from "./defaults.js";
 export { defineConfig, isAskDbEnvProjection, ASKDB_ENV_PROJECTION } from "./projection.js";
@@ -47,11 +53,13 @@ export type {
   FoundryAiConfig,
   AnthropicAiConfig,
   GoogleAiConfig,
+  GatewayAiConfig,
   OpenaiConfig,
   AzureConfig,
   FoundryConfig,
   AnthropicConfig,
   GoogleConfig,
+  GatewayConfig,
   AskDbIntrospectionConfig,
   PostgresIntrospectionConfig,
   PrismaIntrospectionConfig,

@@ -1,7 +1,8 @@
+import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { loadSchema } from "./loader.js";
+import { loadSchema, loadSchemaFromJson } from "./loader.js";
 import { formatSchemaV2ForNlToSql } from "./format.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -56,7 +57,7 @@ describe("formatSchemaV2ForNlToSql — enriched fixture", () => {
 
 describe("formatSchemaV2ForNlToSql — schema.json only (bare baseline)", () => {
   it("produces DDL without any aliases or descriptions (bare baseline)", () => {
-    const schema = loadSchema(v2SchemaJson);
+    const schema = loadSchemaFromJson(readFileSync(v2SchemaJson, "utf8"));
     const { ddl } = formatSchemaV2ForNlToSql(schema);
     // No aliases annotation on TABLE line — just schema-qualified name
     expect(ddl).toContain("TABLE public.orders\n");
@@ -65,7 +66,7 @@ describe("formatSchemaV2ForNlToSql — schema.json only (bare baseline)", () => 
   });
 
   it("still lists tables and columns with qualified names", () => {
-    const schema = loadSchema(v2SchemaJson);
+    const schema = loadSchemaFromJson(readFileSync(v2SchemaJson, "utf8"));
     const { ddl } = formatSchemaV2ForNlToSql(schema);
     expect(ddl).toContain("TABLE public.users");
     expect(ddl).toContain("TABLE public.orders");
@@ -82,6 +83,32 @@ describe("formatSchemaV2ForNlToSql — omitSensitiveIdentifiersFromPrompt", () =
     expect(ddl).not.toContain("email");
     expect(stats.redactedColumnCount).toBe(1);
     expect(stats.listedSensitiveColumnCount).toBe(0);
+  });
+
+  it("stubs a schema.json-sensitive table: keeps its name, withholds columns and prose", () => {
+    const physical = JSON.parse(readFileSync(v2SchemaJson, "utf8")) as {
+      tables: Array<{ id: string; sensitive: boolean }>;
+    };
+    physical.tables.find((t) => t.id === "table:public.orders")!.sensitive = true;
+    const schema = loadSchemaFromJson(
+      JSON.stringify({
+        bundled: true,
+        physical,
+        tables: { "orders.md": readFileSync(join(v2Dir, "tables", "orders.md"), "utf8") },
+      }),
+    );
+    const { ddl, stats } = formatSchemaV2ForNlToSql(schema, {
+      omitSensitiveIdentifiersFromPrompt: true,
+    });
+    expect(ddl).toContain(
+      "TABLE public.orders\n  (sensitive table — column definitions withheld from model context)",
+    );
+    expect(ddl).not.toContain("total_amount");
+    expect(ddl).not.toContain("purchases");
+    expect(ddl).not.toContain("Customer purchase orders");
+    expect(stats.sensitiveTableStubCount).toBe(1);
+    // users.email plus all four orders columns.
+    expect(stats.redactedColumnCount).toBe(5);
   });
 });
 

@@ -3,6 +3,8 @@ import {
   type TenantGuardrailWarning,
   type TenantGuardrailRuleCode,
 } from "../errors.js";
+import type { AskDbLogger } from "../logging/askdb-logger.js";
+import { AskDbLogEvent } from "../logging/log-events.js";
 import type {
   NormalizedTenantPolicy,
   TenantScope,
@@ -16,14 +18,26 @@ export type TenantGuardrailResult = {
 };
 
 /**
- * Validate generated SQL against the tenant policy and runtime scope.
+ * Best-effort lint of generated SQL against the tenant policy and runtime scope.
  *
- * Uses heuristic pattern matching to verify that tenant-scoped tables
- * have the required predicates. Falls back to conservative rejection
- * when the SQL cannot be proven safe.
+ * **This is not a security boundary.** It does not parse SQL. It lowercases the
+ * statement and checks, with whole-word matching, that the identifiers a policy
+ * expects (tenant column, join-path columns, or the `:tenant_*_ids` placeholder)
+ * are *present* for each tenant-scoped table named in the SQL. It cannot tell a
+ * `SELECT` list from a `WHERE` clause, and it cannot detect `OR`-widened,
+ * negated, or subquery-scoped predicates: `SELECT tenant_id FROM t` and
+ * `... WHERE tenant_id = :tenant_x_ids OR 1=1` both pass.
  *
- * In `strict` mode, throws `TenantGuardrailError` on failure.
- * In `warn` mode, returns warnings without throwing.
+ * Identifiers are matched only in code regions: text inside string literals and
+ * comments never counts as a table reference or a tenant predicate.
+ *
+ * Its purpose is to catch obvious model mistakes (a forgotten tenant filter,
+ * an unclassified table) early and cheaply. Real tenant isolation must come
+ * from the database (for example row-level security) or from the host applying
+ * the tenant predicate itself.
+ *
+ * `global` scope skips the check. In `strict` mode, throws `TenantGuardrailError`
+ * when the check finds a problem. In `warn` mode, returns warnings without throwing.
  */
 export function validateTenantGuardrails(
   sql: string,
@@ -76,6 +90,73 @@ export function validateTenantGuardrails(
   return { passed, warnings };
 }
 
+/**
+ * Run {@link validateTenantGuardrails} over every SQL form the caller is about to
+ * hand out (e.g. the bound `sql` and, when present, the `unboundSql`), merge the
+ * findings into one result, and log a single pass/fail event.
+ *
+ * Every form is checked in `warn` mode first so the merged result lists all
+ * findings; when the policy is `strict` and anything failed, a single
+ * `TenantGuardrailError` is thrown afterwards. `extra` lets a caller fold in a
+ * result reported by a custom generator so its findings are never dropped.
+ *
+ * Internal to `@askdb/core` — `ask()` and `generateSelectSql()` share it so the
+ * check always runs on the SQL that is actually returned.
+ */
+export function enforceTenantGuardrails(
+  sqls: ReadonlyArray<string | undefined>,
+  policy: NormalizedTenantPolicy,
+  scope: TenantScope,
+  logger?: AskDbLogger,
+  extra?: TenantGuardrailResult,
+): TenantGuardrailResult {
+  const collectPolicy: NormalizedTenantPolicy = { ...policy, enforcement: "warn" };
+  const warnings: TenantGuardrailWarning[] = [];
+  const seen = new Set<string>();
+  const add = (w: TenantGuardrailWarning): void => {
+    const key = `${w.rule}\u0000${w.tableId}\u0000${w.message}`;
+    if (seen.has(key)) return;
+    seen.add(key);
+    warnings.push(w);
+  };
+
+  const checked = new Set<string>();
+  for (const sql of sqls) {
+    if (sql === undefined || checked.has(sql)) continue;
+    checked.add(sql);
+    for (const w of validateTenantGuardrails(sql, collectPolicy, scope).warnings) add(w);
+  }
+  for (const w of extra?.warnings ?? []) add(w);
+
+  const passed = warnings.length === 0 && extra?.passed !== false;
+
+  if (passed) {
+    logger?.info({ event: AskDbLogEvent.TenantGuardrailPassed }, "tenant guardrail validation passed");
+  } else {
+    logger?.info(
+      {
+        event: AskDbLogEvent.TenantGuardrailFailed,
+        warningCount: warnings.length,
+        enforcement: policy.enforcement,
+      },
+      "tenant guardrail validation found issues",
+    );
+  }
+
+  if (!passed && policy.enforcement === "strict") {
+    const detail =
+      warnings.length > 0
+        ? warnings.map((w) => w.message).join("; ")
+        : "the SQL generator reported a failed tenant guardrail";
+    throw new TenantGuardrailError(
+      `Tenant guardrail validation failed (strict mode): ${detail}`,
+      warnings,
+    );
+  }
+
+  return { passed, warnings };
+}
+
 // ---------------------------------------------------------------------------
 // Per-table checks
 // ---------------------------------------------------------------------------
@@ -93,7 +174,7 @@ function checkScopedTable(
       const placeholder = `:tenant_${rootLabel.toLowerCase().replace(/[^a-z0-9]+/g, "_")}_ids`;
 
       // Check if the tenant column or placeholder appears in the SQL
-      if (mentionsIdentifier(sql, colName) || mentionsIdentifier(sql, placeholder)) {
+      if (mentionsIdentifier(sql, colName) || mentionsPlaceholder(sql, placeholder)) {
         return; // At least one scope path is satisfied
       }
     } else {
@@ -110,7 +191,7 @@ function checkScopedTable(
           const rootColName = extractColumnName(rootTenantCol.tenantIdColumn);
           const rootLabel = rootTenantCol.label;
           const placeholder = `:tenant_${rootLabel.toLowerCase().replace(/[^a-z0-9]+/g, "_")}_ids`;
-          if (mentionsIdentifier(sql, rootColName) || mentionsIdentifier(sql, placeholder)) {
+          if (mentionsIdentifier(sql, rootColName) || mentionsPlaceholder(sql, placeholder)) {
             return; // Join path + root filter present
           }
         }
@@ -178,8 +259,86 @@ function extractColumnName(columnId: string): string {
   return hash !== -1 ? columnId.slice(hash + 1) : columnId;
 }
 
+/**
+ * Lowercase the statement and blank out everything that is not SQL code, so
+ * identifier checks only see code regions. String literals (`'…'` with `''`
+ * escapes, `$tag$…$tag$` bodies) and comments (`-- …`, `/* … *\/`) become spaces.
+ * The output has the same length, so word boundaries at the seams are unchanged.
+ *
+ * Quoted identifiers (`"…"`, `` `…` ``, `[…]`) keep their contents and only lose
+ * their delimiters: `"agency_id"` *is* the identifier `agency_id`, and blanking
+ * it would hide `FROM "orders"` from the table check and skip that table.
+ *
+ * Known gaps (no dialect is threaded here): MySQL's default double-quoted
+ * strings read as identifiers, and backslash escapes inside `'…'` are not
+ * recognized.
+ */
 function normalizeSql(sql: string): string {
-  return sql.toLowerCase();
+  const lower = sql.toLowerCase();
+  const out = lower.split("");
+  const blank = (from: number, to: number): void => {
+    for (let k = from; k < to; k++) if (out[k] !== "\n") out[k] = " ";
+  };
+  const dollarTag = /\$(?:[a-z_][a-z0-9_]*)?\$/y;
+  let i = 0;
+  while (i < lower.length) {
+    const ch = lower[i]!;
+    const next = lower[i + 1];
+    if (ch === "-" && next === "-") {
+      const newline = lower.indexOf("\n", i);
+      const end = newline === -1 ? lower.length : newline;
+      blank(i, end);
+      i = end;
+      continue;
+    }
+    if (ch === "/" && next === "*") {
+      const close = lower.indexOf("*/", i + 2);
+      const end = close === -1 ? lower.length : close + 2;
+      blank(i, end);
+      i = end;
+      continue;
+    }
+    if (ch === "'") {
+      let j = i + 1;
+      while (j < lower.length) {
+        if (lower[j] === "'") {
+          if (lower[j + 1] === "'") {
+            j += 2;
+            continue;
+          }
+          j++;
+          break;
+        }
+        j++;
+      }
+      blank(i, j);
+      i = j;
+      continue;
+    }
+    if (ch === "$") {
+      dollarTag.lastIndex = i;
+      const tag = dollarTag.exec(lower);
+      const close = tag ? lower.indexOf(tag[0], i + tag[0].length) : -1;
+      if (tag && close !== -1) {
+        const end = close + tag[0].length;
+        blank(i, end);
+        i = end;
+        continue;
+      }
+      i++;
+      continue;
+    }
+    if (ch === '"' || ch === "`" || ch === "[") {
+      const close = lower.indexOf(ch === "[" ? "]" : ch, i + 1);
+      out[i] = " ";
+      if (close === -1) break;
+      out[close] = " ";
+      i = close + 1;
+      continue;
+    }
+    i++;
+  }
+  return out.join("");
 }
 
 function mentionsTable(normalizedSql: string, tableName: string): boolean {
@@ -189,6 +348,15 @@ function mentionsTable(normalizedSql: string, tableName: string): boolean {
 
 function mentionsIdentifier(normalizedSql: string, identifier: string): boolean {
   const pattern = new RegExp(`\\b${escapeRegex(identifier.toLowerCase())}\\b`);
+  return pattern.test(normalizedSql);
+}
+
+/**
+ * `\b` cannot anchor a token that starts with `:` (it needs a word character on
+ * one side), so tenant placeholders get their own boundary check.
+ */
+function mentionsPlaceholder(normalizedSql: string, placeholder: string): boolean {
+  const pattern = new RegExp(`(?<![\\w:])${escapeRegex(placeholder.toLowerCase())}(?!\\w)`);
   return pattern.test(normalizedSql);
 }
 

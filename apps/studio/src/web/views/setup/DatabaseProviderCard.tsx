@@ -201,6 +201,10 @@ export function DatabaseProviderCard({
           />
           <span style={{ fontSize: 13 }}>Enable Studio execute (run queries from the browser playground)</span>
         </label>
+        <p className="muted" style={{ fontSize: 12, margin: 0 }}>
+          Off by default. When on, Studio runs generated SELECTs read-only with a timeout and row cap. Point it at a
+          read-only database role.
+        </p>
 
         {studioExecuteEnabled && database === "prisma" && (
           <>

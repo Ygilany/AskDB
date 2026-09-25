@@ -263,4 +263,13 @@ describe("describeSqlServer", () => {
     expect(result.schema.schemas).toEqual([]);
     expect(result.provider).toBe("sqlserver");
   });
+
+  it("excludes SQL Server-shipped objects (is_ms_shipped = 1) at the catalog source", () => {
+    // Shipped objects often live in `dbo` (e.g. replication MS* tables), so the
+    // system-schema list can't catch them — the catalog SQL must.
+    expect(SQLSERVER_CATALOG_SQL.tables).toMatch(/FROM sys\.tables\b[\s\S]*?\bis_ms_shipped = 0[\s\S]*?UNION ALL/);
+    expect(SQLSERVER_CATALOG_SQL.tables).toMatch(/FROM sys\.views\b[\s\S]*?\bis_ms_shipped = 0/);
+    expect(SQLSERVER_CATALOG_SQL.views).toMatch(/\bis_ms_shipped = 0/);
+    expect(SQLSERVER_CATALOG_SQL.columns).toMatch(/\bis_ms_shipped = 0/);
+  });
 });

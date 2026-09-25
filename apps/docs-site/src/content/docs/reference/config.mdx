@@ -60,7 +60,7 @@ Use the `env()` helper (rather than `process.env`) so AskDB can capture which en
 | `host` | no | `schemaPath` — the default schema artifact for embedding hosts and the HTTP API. `schemaJson` — inline artifact JSON, for environments without a file system path. |
 | `logging` | no | `level`, plus `logFile`, `logStdout`, and `correlationId` defaults for the CLI's structured logs. |
 | `studio` | no | `listen.{host,port}` (defaults `127.0.0.1:5556`) and the `execute` block below. |
-| `httpApi` | no | `listen.{host,port}` for the HTTP API server (defaults `127.0.0.1:3000`). Use `env("PORT")` on platforms that inject a port. |
+| `httpApi` | no | `listen.{host,port}` for the HTTP API server (defaults `127.0.0.1:3000`). Use `env("PORT")` on platforms that inject a port. `allowSchemaOverride` (default `false`) — accept per-request `schemaJson`. `requestTimeoutMs` (default `60000`) — model-call timeout per request. See [HTTP API → Server config](/reference/http-api/#server-config-httpapi). |
 | `dev` | no | `mockSql` — deterministic NL-to-SQL output for tests; bypasses the model call. |
 
 ### `dialect` — when inference is wrong
@@ -112,7 +112,7 @@ export default defineConfig({
 - `nlToSql` — overrides `effort` for NL→SQL generation calls (`ask()`). Typically left unset (provider default) or `"medium"`/`"high"` — this path is accuracy-sensitive.
 - `enrichment` — overrides `effort` for enrichment/suggestion calls (`suggestEnrichment()`). Safe to bias toward `"low"`/`"minimal"` for latency and cost — these are non-critical.
 
-AskDB maps the portable value to each provider's native knob via `@askdb/ai`'s `resolveProviderOptions` — OpenAI/Azure `providerOptions.openai.reasoningEffort`, Google Gemini 3.x `providerOptions.google.thinkingConfig.thinkingLevel`, Gemini 2.5 `thinkingConfig.thinkingBudget`, Anthropic extended `thinking`. Models that don't support reasoning tuning (e.g. `gpt-4o-mini`, `gemini-2.0-flash`) never receive these options, even when `reasoning` is set.
+AskDB maps the portable value to each provider's native knob via `@askdb/ai`'s `resolveProviderOptions` — OpenAI/Azure `providerOptions.openai.reasoningEffort`, Google Gemini 3.x `providerOptions.google.thinkingConfig.thinkingLevel`, Gemini 2.5 `thinkingConfig.thinkingBudget`, Anthropic `thinking` (adaptive thinking plus `effort` on Claude Sonnet 4.6, Opus 4.6 and newer, and the 5.x models; a `budgetTokens` budget on Claude 3.7 Sonnet and the 4.0–4.5 models). Models that don't support reasoning tuning (e.g. `gpt-4o-mini`, `gpt-5-chat-latest`, `gemini-2.0-flash`, `claude-3-5-haiku`) never receive these options, even when `reasoning` is set.
 
 `@askdb/client`'s `createAskDb` resolves `ai.reasoning` automatically for `ask()` calls — no extra wiring needed. See [Bring your own model](/guides/bring-your-own-model/) for the client and programmatic APIs.
 
@@ -136,22 +136,29 @@ AskDB reads `.env` next to your process via `dotenv`, then evaluates your `askdb
 | `OPENAI_API_KEY` | `ai.providerConfig.openai.apiKey` | Standard OpenAI key. |
 | `OPENAI_MODEL` | `ai.providerConfig.openai.model` | Optional model override. Default: `gpt-4o-mini`. |
 | `ANTHROPIC_API_KEY` | `ai.providerConfig.anthropic.apiKey` | When `ai.provider = "anthropic"`. Default model: `claude-sonnet-4-6`. |
-| `AZURE_API_KEY`, `AZURE_RESOURCE_NAME` | `ai.providerConfig.azure.*` | Azure OpenAI. |
+| `GOOGLE_GENERATIVE_AI_API_KEY` | `ai.providerConfig.google.apiKey` | When `ai.provider = "google"`. Default model: `gemini-2.0-flash` (the scaffolded config reads a `model` override from `GOOGLE_AI_MODEL`). |
+| `AI_GATEWAY_API_KEY` | `ai.providerConfig.gateway.apiKey` | When `ai.provider = "gateway"` (Vercel AI Gateway). Set `model` to an `<upstream>/<model>` id. Default: `openai/gpt-4o-mini`. |
+| `AZURE_OPENAI_API_KEY` | `ai.providerConfig.azure.apiKey` | When `ai.provider = "azure"` (use `ai.providerConfig.foundry.*` for `"foundry"`). |
+| `AZURE_OPENAI_DEPLOYMENT` | `ai.providerConfig.azure.model` | Your Azure deployment name. |
+| `AZURE_RESOURCE_NAME` | `ai.providerConfig.azure.resourceName` | The subdomain of `https://<name>.openai.azure.com`. Required unless you set `ai.providerConfig.azure.baseUrl` to a full endpoint URL instead. Also available: `apiVersion`, `modelFamily`, `secondaryApiKey`. |
 | `DATABASE_URL` | `introspection.providerConfig.postgres.databaseUrl` | Postgres introspection connection. |
 
 Everything else AskDB needs — output directory, mode, log level, Studio query connection, the vector-store URL — is set the same way: a field in `askdb.config.ts`, bound to a name you choose with `env("…")`. You don't set any AskDB-prefixed variables yourself; AskDB derives its internal runtime values from your config.
 
 ## Studio execute configuration
 
-The `studio.execute` block configures the Query Playground's live execution feature.
+The `studio.execute` block configures the Query Playground's live execution feature. It is **off by default**: set `enabled: true` and give Studio its own connection, ideally for a read-only database role.
 
 ```ts
 export default defineConfig({
   studio: {
     execute: {
-      provider: "mysql",           // "postgres" | "mysql" | "sqlite" | "sqlserver"
-      databaseUrl: env("DATABASE_URL"),  // network databases (Postgres, MySQL, SQL Server)
-      // file: env("SQLITE_FILE"),       // SQLite only
+      enabled: true,
+      provider: "mysql",                       // "postgres" | "mysql" | "sqlite" | "sqlserver"
+      databaseUrl: env("STUDIO_READONLY_URL"), // network databases (Postgres, MySQL, SQL Server)
+      // file: env("SQLITE_FILE"),             // SQLite only
+      // timeoutMs: 30000,
+      // maxRows: 500,
     },
   },
 });
@@ -159,9 +166,13 @@ export default defineConfig({
 
 | Field | Env key | Default |
 |---|---|---|
+| `studio.execute.enabled` | `ASKDB_STUDIO_EXECUTE_ENABLED` | `false`. While off, `POST /api/execute` returns `403` and the Playground hides Execute. |
 | `studio.execute.provider` | `ASKDB_STUDIO_EXECUTE_PROVIDER` | Active introspection provider, or `"postgres"` |
-| `studio.execute.databaseUrl` | `ASKDB_STUDIO_DATABASE_URL` | Introspection URL for the active provider |
-| `studio.execute.file` | `ASKDB_STUDIO_SQLITE_FILE` | Introspection file for SQLite |
+| `studio.execute.databaseUrl` | `ASKDB_STUDIO_DATABASE_URL` | None (see `useIntrospectionConnection`) |
+| `studio.execute.file` | `ASKDB_STUDIO_SQLITE_FILE` | None (see `useIntrospectionConnection`) |
+| `studio.execute.useIntrospectionConnection` | `ASKDB_STUDIO_EXECUTE_USE_INTROSPECTION_CONNECTION` | `false`. When `true`, reuse the introspection connection if `databaseUrl` / `file` is unset. |
+| `studio.execute.timeoutMs` | `ASKDB_STUDIO_EXECUTE_TIMEOUT_MS` | `30000`. Per-query timeout, positive integer. Not enforced for SQLite. |
+| `studio.execute.maxRows` | `ASKDB_STUDIO_EXECUTE_MAX_ROWS` | `500`. Row cap, positive integer. Results with more rows are truncated. |
 
 **Provider resolution order:**
 
@@ -171,10 +182,10 @@ export default defineConfig({
 
 **Connection resolution** (per provider):
 
-- **Postgres**: `studio.execute.databaseUrl` → `ASKDB_STUDIO_DATABASE_URL` → introspection Postgres URL.
-- **MySQL**: `studio.execute.databaseUrl` → `ASKDB_STUDIO_DATABASE_URL` → introspection MySQL URL.
-- **SQL Server**: `studio.execute.databaseUrl` → `ASKDB_STUDIO_DATABASE_URL` → introspection SQL Server URL.
-- **SQLite**: `studio.execute.file` → `ASKDB_STUDIO_SQLITE_FILE` → introspection SQLite file.
+- **Postgres, MySQL, SQL Server**: `studio.execute.databaseUrl` → `ASKDB_STUDIO_DATABASE_URL` → the introspection URL for the same engine, only when `useIntrospectionConnection: true`.
+- **SQLite**: `studio.execute.file` → `ASKDB_STUDIO_SQLITE_FILE` → the introspection SQLite file, only when `useIntrospectionConnection: true`.
+
+Studio doesn't fall back to your introspection credentials on its own, because those usually belong to a more privileged role than ad-hoc queries should use. [Studio — Security model](/studio/#security-model) describes the read-only transaction, timeout, and row cap applied to every query.
 
 Each execute provider requires its optional peer driver package (`pg`, `mysql2`, `better-sqlite3`, or `mssql`). See [Studio — driver packages](/studio/#driver-packages) for install instructions.
 
@@ -199,9 +210,9 @@ export default defineConfig({
 });
 ```
 
-This works end to end only when the consuming registry has an adapter registered under that provider name. First-party apps (`@askdb/http-api`, the CLI) register `openai`, `azure`, `foundry`, `google`, and `anthropic`. For any other provider you have two options:
+This works end to end only when the consuming registry has an adapter registered under that provider name. The built-in providers, registered by the first-party apps (`@askdb/http-api`, the CLI, Studio) and by default in `createAskDb`, are `openai`, `azure` (plus `azure-openai` and `foundry`), `google`, `anthropic`, and `gateway`. For any other provider you have two options:
 
-1. **Embed AskDB** and pass your own adapter in `createAskDb({ providers: [myAdapter] })` — about 40 lines of code.
+1. **Embed AskDB** and pass your own adapter in `createAskDb({ providers: [myAdapter] })`. It takes about 40 lines of code. Add built-in names alongside it (`providers: ["openai", myAdapter]`) if you also want those.
 2. **Use the `openai` provider** with a custom `baseUrl` for any OpenAI-compatible endpoint (vLLM, OpenRouter, Together, Ollama, …).
 
 See [Bring your own model](/guides/bring-your-own-model/) for the embedding walkthrough.

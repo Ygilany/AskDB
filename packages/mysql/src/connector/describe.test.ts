@@ -10,6 +10,7 @@ type RowMap = Record<string, ReadonlyArray<Record<string, unknown>>>;
  */
 function fakeRunner(rows: RowMap): CatalogQueryRunner {
   const bySql = new Map<string, ReadonlyArray<Record<string, unknown>>>();
+  bySql.set(MYSQL_CATALOG_SQL.current_database, rows.current_database ?? [{ database_name: "app" }]);
   bySql.set(MYSQL_CATALOG_SQL.tables, rows.tables ?? []);
   bySql.set(MYSQL_CATALOG_SQL.columns, rows.columns ?? []);
   bySql.set(MYSQL_CATALOG_SQL.constraints, rows.constraints ?? []);
@@ -268,5 +269,84 @@ describe("describeMysql", () => {
 
     expect(result.schema.schemas[0]!.tables.map((t) => t.name)).toEqual(["users"]);
     expect(result.warnings).toEqual([{ code: "ambiguous_filter", filter: "public.missing_*" }]);
+  });
+
+  it("throws a clear error when the connection has no default database (DATABASE() is NULL)", async () => {
+    const runner = fakeRunner({ current_database: [{ database_name: null }] });
+    await expect(describeMysql({ runner })).rejects.toThrow(
+      /no(ne)? selected \(DATABASE\(\) is NULL\).*mysql:\/\/user:password@host:3306\/<database>/s,
+    );
+  });
+
+  it("skips cross-database foreign keys with a cross_database_fk warning", async () => {
+    const intCol = (table: string, column: string, pos: number, key = "") => ({
+      table_name: table,
+      column_name: column,
+      ordinal_position: pos,
+      column_default: null,
+      is_nullable: "NO",
+      data_type: "int",
+      column_type: "int",
+      column_key: key,
+      extra: "",
+      column_comment: "",
+    });
+    const runner = fakeRunner({
+      tables: [
+        { table_name: "orders", table_type: "BASE TABLE", table_comment: "" },
+        { table_name: "users", table_type: "BASE TABLE", table_comment: "" },
+      ],
+      columns: [
+        intCol("orders", "id", 1, "PRI"),
+        intCol("orders", "user_id", 2, "MUL"),
+        intCol("orders", "tenant_id", 3, "MUL"),
+        intCol("users", "id", 1, "PRI"),
+      ],
+      foreign_keys: [
+        {
+          constraint_name: "orders_tenant_fk",
+          table_name: "orders",
+          column_name: "tenant_id",
+          table_schema: "app",
+          referenced_table_schema: "billing",
+          referenced_table_name: "users",
+          referenced_column_name: "id",
+          ordinal_position: 1,
+          update_rule: "NO ACTION",
+          delete_rule: "NO ACTION",
+        },
+        {
+          constraint_name: "orders_user_fk",
+          table_name: "orders",
+          column_name: "user_id",
+          table_schema: "app",
+          referenced_table_schema: "app",
+          referenced_table_name: "users",
+          referenced_column_name: "id",
+          ordinal_position: 1,
+          update_rule: "NO ACTION",
+          delete_rule: "CASCADE",
+        },
+      ],
+    });
+
+    const result = await describeMysql({ runner });
+    const orders = result.schema.schemas[0]!.tables.find((t) => t.name === "orders")!;
+    // `billing.users` must not be rendered as the local `public.users`.
+    expect(orders.foreignKeys.map((fk) => fk.name)).toEqual(["orders_user_fk"]);
+    expect(orders.foreignKeys[0]!.references).toEqual({
+      schema: "public",
+      table: "users",
+      columns: ["id"],
+    });
+    expect(result.warnings).toEqual([
+      {
+        code: "cross_database_fk",
+        table: "table:public.orders",
+        constraint: "orders_tenant_fk",
+        referencedDatabase: "billing",
+        referencedTable: "users",
+      },
+    ]);
   });
 });

@@ -39,7 +39,7 @@ describe("createPgvectorStore", () => {
       },
     ]);
 
-    const [sql, params] = query.mock.calls[0] as [string, unknown[]];
+    const [sql, params] = query.mock.calls[0] as unknown as [string, unknown[]];
     expect(sql).toContain('INSERT INTO "askdb_rag_chunks"');
     expect(sql).toContain("ON CONFLICT (id) DO UPDATE");
     expect(params[0]).toEqual(["chunk:orders"]);
@@ -98,19 +98,47 @@ describe("createPgvectorStore", () => {
     ]);
   });
 
-  it("emits parameterized delete SQL", async () => {
+  it("rejects vectors whose dimensions don't match the table", async () => {
     const query = vi.fn(async () => ({ rows: [] }));
-    const store = createPgvectorStore({
-      client: { query },
-      dimensions: 2,
-      table: "askdb_rag_chunks",
-    });
+    const store = createPgvectorStore({ client: { query }, dimensions: 3 });
+    await expect(
+      store.upsert([
+        {
+          id: "x",
+          vector: [1, 0],
+          payload: { id: "x", type: "table", text: "x", schemaId: "s", refs: [], sensitive: false },
+        },
+      ]),
+    ).rejects.toThrow(/expects 3-dimension vectors; got 2/);
+    expect(query).not.toHaveBeenCalled();
+  });
 
-    await store.delete(["chunk:orders"]);
+  it("reports stored hashes by id prefix and ids by schema", async () => {
+    const query = vi.fn(async (sql: string) => ({
+      rows: sql.includes("content_hash")
+        ? [{ id: "chunk:s:a", content_hash: "h-a" }]
+        : [{ id: "chunk:s:a" }, { id: "chunk:table:legacy" }],
+    }));
+    const store = createPgvectorStore({ client: { query }, dimensions: 2, table: "t" });
 
-    expect(query).toHaveBeenCalledWith(
-      'DELETE FROM "askdb_rag_chunks" WHERE id = ANY($1::text[])',
-      [["chunk:orders"]],
-    );
+    expect(await store.hashesByPrefix!("chunk:s:")).toEqual({ "chunk:s:a": "h-a" });
+    const [hashSql, hashParams] = query.mock.calls[0] as unknown as [string, unknown[]];
+    expect(hashSql).toContain("left(id, char_length($1::text)) = $1::text");
+    expect(hashSql).toContain("content_hash IS NOT NULL");
+    expect(hashParams).toEqual(["chunk:s:"]);
+
+    expect(await store.idsBySchema!("s")).toEqual(["chunk:s:a", "chunk:table:legacy"]);
+    expect(query.mock.calls[1]).toEqual(['SELECT id FROM "t" WHERE schema_id = $1', ["s"]]);
+    expect(store.describe!()).toEqual({ kind: "pgvector", location: "t", dimensions: 2 });
+  });
+
+  it("ensureSchema passes when dimensions match or the table is new", async () => {
+    for (const rows of [[{ dimensions: 64 }], []]) {
+      const query = vi.fn(async (sql: string) => ({
+        rows: sql.includes("pg_attribute") ? rows : [],
+      }));
+      const store = createPgvectorStore({ client: { query }, dimensions: 64, table: "t" });
+      await expect(store.ensureSchema()).resolves.toBeUndefined();
+    }
   });
 });

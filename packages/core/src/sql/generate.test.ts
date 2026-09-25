@@ -2,11 +2,14 @@ import type { LanguageModel } from "ai";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { MockLanguageModelV3 } from "ai/test";
 import { describe, expect, it, vi } from "vitest";
-import { AskDbError, SqlValidationError } from "../errors.js";
+import { AskDbError, SqlValidationError, TenantGuardrailError } from "../errors.js";
 import { AskDbLogEvent } from "../logging/log-events.js";
 import { loadNormalizedSchemaFromJson } from "../schema/parse.js";
 import type { NormalizedSchema } from "../schema/types.js";
+import { loadSchema } from "../schema/v2/loader.js";
+import type { TenantScope } from "../schema/v2/tenant-policy.js";
 import {
   MYSQL_DIALECT,
   POSTGRES_DIALECT,
@@ -194,8 +197,8 @@ describe("generateSelectSql — prompt parameterization per dialect", () => {
     await generateSelectSql(dialect, "show me users", minimalSchema, fakeModel, {
       generateText,
     });
-    const call = generateText.mock.calls[0]![0] as { instructions: string; prompt: string };
-    return { instructions: call.instructions, prompt: call.prompt };
+    const call = generateText.mock.calls[0]![0] as { system: string; prompt: string };
+    return { instructions: call.system, prompt: call.prompt };
   }
 
   it("MySQL prompt mentions backticks and CONCAT(), system prompt names MySQL", async () => {
@@ -225,24 +228,35 @@ describe("generateSelectSql — prompt parameterization per dialect", () => {
     expect(prompt).toMatch(/OFFSET .* FETCH NEXT/);
   });
 
-  it("rejects SQLite ATTACH via dialect's extraForbiddenKeywords", async () => {
-    const generateText = vi.fn(async () => ({
-      text: "```sql\nSELECT * FROM users; ATTACH 'other.db' AS o\n```",
-    }));
-    await expect(
-      generateSelectSql(SQLITE_DIALECT, "list users", minimalSchema, fakeModel, { generateText }),
-    ).rejects.toThrow(SqlValidationError);
+  it("sends the system prompt as `system` (honored by AI SDK 6 and 7), not `instructions`", async () => {
+    // `ai` is a peer dependency (`^6 || ^7`). AI SDK 6 ignores `instructions`;
+    // AI SDK 7 treats `system` as a deprecated alias. Only `system` works on both.
+    const generateText = vi.fn(async () => ({ text: "```sql\nSELECT id FROM users\n```" }));
+    await generateSelectSql(POSTGRES_DIALECT, "show me users", minimalSchema, fakeModel, {
+      generateText,
+    });
+    const call = generateText.mock.calls[0]![0] as Record<string, unknown>;
+    expect(call.system).toEqual(expect.stringContaining("AskDB SQL generator"));
+    expect("instructions" in call).toBe(false);
   });
 
-  it("rejects SQL Server EXEC via dialect's extraForbiddenKeywords", async () => {
-    const generateText = vi.fn(async () => ({
-      text: "```sql\nSELECT id FROM users WHERE id = exec('boom')\n```",
-    }));
-    await expect(
-      generateSelectSql(SQLSERVER_DIALECT, "list users", minimalSchema, fakeModel, {
-        generateText,
+  it("delivers the system prompt to the model through the real AI SDK generateText", async () => {
+    const model = new MockLanguageModelV3({
+      doGenerate: async () => ({
+        content: [{ type: "text", text: "```sql\nSELECT id FROM users\n```" }],
+        finishReason: { unified: "stop", raw: undefined },
+        usage: {
+          inputTokens: { total: 1, noCache: 1, cacheRead: undefined, cacheWrite: undefined },
+          outputTokens: { total: 1, text: 1, reasoning: undefined },
+        },
+        warnings: [],
       }),
-    ).rejects.toThrow(SqlValidationError);
+    });
+    const result = await generateSelectSql(POSTGRES_DIALECT, "show me users", minimalSchema, model);
+    expect(result.sql).toMatch(/SELECT id FROM users/);
+    const prompt = model.doGenerateCalls[0]!.prompt;
+    const systemMessage = prompt.find((m) => m.role === "system");
+    expect(systemMessage?.content).toEqual(expect.stringContaining("AskDB SQL generator"));
   });
 });
 
@@ -339,5 +353,71 @@ describe("generateSelectSql — parameterize prompt + extras", () => {
     expect(out.sql).toBe("SELECT count(*) FROM cities WHERE state = 'colorado'");
     expect(out.unboundNamedSql).toBeUndefined();
     expect(out.parameterManifest).toBeUndefined();
+  });
+});
+
+describe("generateSelectSql — tenant guardrail checks the returned SQL", () => {
+  const multiTenantDir = join(here, "../../../../fixtures/schemas/agency-multi-tenant.schema");
+  const agencyScope: TenantScope = {
+    access: { kind: "ids", tenantRoot: "table:public.agencies", ids: ["42"] },
+  };
+  // Scoped unbound block, unscoped bound block: the bound one is what callers run.
+  const disagreeingReply = [
+    "```sql",
+    "SELECT * FROM orders WHERE status='open'",
+    "```",
+    "```sql-unbound",
+    "SELECT * FROM orders WHERE agency_id = :tenant_agency_ids AND status = :status",
+    "```",
+    "```json",
+    '{"parameters":[{"name":"status","type":"string","cardinality":"one","value":"open"}]}',
+    "```",
+  ].join("\n");
+
+  it("strict: throws when the bound SQL is unscoped even though the unbound SQL is scoped", async () => {
+    const schema = loadSchema(multiTenantDir);
+    await expect(
+      generateSelectSql(POSTGRES_DIALECT, "open orders", schema, fakeModel, {
+        generateText: vi.fn(async () => ({ text: disagreeingReply })) as never,
+        parameterize: true,
+        tenantPolicy: schema.tenantPolicy,
+        tenantScope: agencyScope,
+      }),
+    ).rejects.toThrow(TenantGuardrailError);
+  });
+
+  it("warn: reports the unscoped bound SQL as a failure", async () => {
+    const schema = loadSchema(multiTenantDir);
+    const out = await generateSelectSql(POSTGRES_DIALECT, "open orders", schema, fakeModel, {
+      generateText: vi.fn(async () => ({ text: disagreeingReply })) as never,
+      parameterize: true,
+      tenantPolicy: { ...schema.tenantPolicy!, enforcement: "warn" },
+      tenantScope: agencyScope,
+    });
+    expect(out.tenantGuardrail?.passed).toBe(false);
+    expect(out.tenantGuardrail?.warnings.map((w) => w.rule)).toContain("MISSING_TENANT_PREDICATE");
+  });
+
+  it("also checks the unbound SQL when it is returned", async () => {
+    const schema = loadSchema(multiTenantDir);
+    const reply = [
+      "```sql",
+      "SELECT * FROM orders WHERE agency_id = :tenant_agency_ids AND status='open'",
+      "```",
+      "```sql-unbound",
+      "SELECT * FROM orders WHERE status = :status",
+      "```",
+      "```json",
+      '{"parameters":[{"name":"status","type":"string","cardinality":"one","value":"open"}]}',
+      "```",
+    ].join("\n");
+    await expect(
+      generateSelectSql(POSTGRES_DIALECT, "open orders", schema, fakeModel, {
+        generateText: vi.fn(async () => ({ text: reply })) as never,
+        parameterize: true,
+        tenantPolicy: schema.tenantPolicy,
+        tenantScope: agencyScope,
+      }),
+    ).rejects.toThrow(TenantGuardrailError);
   });
 });

@@ -31,6 +31,13 @@ export type OpenaiConfig = {
 export type AzureConfig = {
   apiKey?: string;
   secondaryApiKey?: string;
+  /**
+   * Azure resource name — the subdomain of your endpoint, e.g. `"my-foundry"`
+   * for `https://my-foundry.openai.azure.com`. One of `resourceName` or
+   * `baseUrl` is required.
+   */
+  resourceName?: string;
+  /** Full endpoint URL. Overrides `resourceName` when both are set. */
   baseUrl?: string;
   /** When unset, `flattenAskDbConfig` applies the default Azure deployment name (see `@askdb/config` defaults). */
   model?: string;
@@ -49,6 +56,9 @@ export type FoundryConfig = {
   secondaryApiKey?: string;
   model?: string;
   apiVersion?: string;
+  /** See {@link AzureConfig.resourceName}. */
+  resourceName?: string;
+  /** See {@link AzureConfig.baseUrl}. */
   baseUrl?: string;
   /** See {@link AzureConfig.modelFamily}. */
   modelFamily?: string;
@@ -65,6 +75,18 @@ export type GoogleConfig = {
   apiKey?: string;
   baseUrl?: string;
   /** When unset, `flattenAskDbConfig` applies the default Gemini chat model (see `@askdb/config` defaults). */
+  model?: string;
+};
+
+/** Vercel AI Gateway (`ai.provider: "gateway"`), built into `ai` — no extra provider package. */
+export type GatewayConfig = {
+  /** AI Gateway API key. Flattened to `AI_GATEWAY_API_KEY`. */
+  apiKey?: string;
+  baseUrl?: string;
+  /**
+   * Gateway model id in `<upstream>/<model>` form, e.g. `"anthropic/claude-sonnet-4-6"`.
+   * When unset, `flattenAskDbConfig` applies the default gateway model (see `@askdb/config` defaults).
+   */
   model?: string;
 };
 
@@ -95,6 +117,7 @@ export type AiProviderConfigs = {
   foundry?: FoundryConfig;
   anthropic?: AnthropicConfig;
   google?: GoogleConfig;
+  gateway?: GatewayConfig;
 };
 
 /** Discriminated union branch for `ai` when `provider` is `"openai"`. */
@@ -129,6 +152,13 @@ export type AnthropicAiConfig = {
 export type GoogleAiConfig = {
   provider: "google";
   providerConfig: AiProviderConfigs & { google: GoogleConfig };
+  reasoning?: AskDbAiReasoningConfig;
+};
+
+/** Discriminated union branch for `ai` when `provider` is `"gateway"` (Vercel AI Gateway). */
+export type GatewayAiConfig = {
+  provider: "gateway";
+  providerConfig: AiProviderConfigs & { gateway: GatewayConfig };
   reasoning?: AskDbAiReasoningConfig;
 };
 
@@ -170,6 +200,7 @@ export type AskDbAiConfig =
   | FoundryAiConfig
   | AnthropicAiConfig
   | GoogleAiConfig
+  | GatewayAiConfig
   | CustomAiConfig;
 
 // ---------------------------------------------------------------------------
@@ -369,8 +400,37 @@ export type AskDbConfig = {
   /** Studio browser server listen and query-execution defaults. */
   studio?: {
     listen?: { host?: string; port?: number };
-    /** Query execution against a live database from the Studio playground. */
+    /**
+     * Query execution against a live database from the Studio playground.
+     * Off by default — set `enabled: true` and give Studio its own connection
+     * (ideally a read-only database role).
+     */
     execute?: {
+      /**
+       * Turn on `POST /api/execute` and the Playground's **Execute Query** button.
+       * Default `false`: Studio generates SQL but never runs it.
+       * Maps to `ASKDB_STUDIO_EXECUTE_ENABLED`.
+       */
+      enabled?: boolean;
+      /**
+       * Reuse the introspection connection (`introspection.providerConfig.<engine>`)
+       * when `databaseUrl` / `file` is not set. Default `false` — Studio execute needs
+       * its own explicit connection so introspection credentials are never used to run
+       * ad-hoc SQL by accident. Maps to `ASKDB_STUDIO_EXECUTE_USE_INTROSPECTION_CONNECTION`.
+       */
+      useIntrospectionConnection?: boolean;
+      /**
+       * Per-query timeout in milliseconds (positive integer). Default `30000`.
+       * Enforced server-side on Postgres, MySQL/MariaDB, and SQL Server; not enforced
+       * for SQLite. Maps to `ASKDB_STUDIO_EXECUTE_TIMEOUT_MS`.
+       */
+      timeoutMs?: number;
+      /**
+       * Maximum rows returned per query (positive integer). Default `500`. Studio fetches
+       * at most `maxRows + 1` rows and reports `truncated: true` when more exist.
+       * Maps to `ASKDB_STUDIO_EXECUTE_MAX_ROWS`.
+       */
+      maxRows?: number;
       /**
        * Explicit live-execute provider. When omitted, Studio falls back to the active
        * introspection provider when it is a live engine, then defaults to `"postgres"`.
@@ -394,5 +454,17 @@ export type AskDbConfig = {
       port?: number;
       host?: string;
     };
+    /**
+     * Accept a per-request `schemaJson` override on `POST /ask`. Default `false`: an override
+     * lets any caller send arbitrary schema/prompt content through the server's model key, so
+     * enable it only for tests or trusted multi-schema deployments.
+     * Maps to `ASKDB_HTTP_ALLOW_SCHEMA_OVERRIDE`.
+     */
+    allowSchemaOverride?: boolean;
+    /**
+     * Abort the model call for a `POST /ask` request after this many milliseconds (positive
+     * integer). Default `60000`. Maps to `ASKDB_HTTP_REQUEST_TIMEOUT_MS`.
+     */
+    requestTimeoutMs?: number;
   };
 };

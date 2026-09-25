@@ -3,6 +3,8 @@ import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { getBuiltinAiProviderSetup, listBuiltinAiProviderSetups } from "@askdb/ai";
+import { ASKDB_AI_PROVIDERS, type AskDbAiProviderId } from "@askdb/config";
 
 const DEFAULT_CONFIG_PATH = "askdb.config.ts";
 
@@ -16,7 +18,7 @@ export type InitAnswers = {
   sqliteFile?: string;
   prismaSchema?: string;
   schemaOut: string;
-  aiProvider: "openai" | "anthropic" | "google" | "azure" | "foundry";
+  aiProvider: AskDbAiProviderId;
   aiKeyEnv: string;
   aiModelEnv?: string;
   ragStore: "file" | "memory" | "pgvector";
@@ -52,26 +54,53 @@ export type InitPrompter = {
 // Config rendering
 // ---------------------------------------------------------------------------
 
-/** AI provider defaults for key/model env vars */
-const AI_DEFAULTS: Record<
-  InitAnswers["aiProvider"],
-  { keyEnv: string; modelEnv: string; modelField: string }
-> = {
-  openai: { keyEnv: "OPENAI_API_KEY", modelEnv: "OPENAI_MODEL", modelField: "model" },
-  anthropic: { keyEnv: "ANTHROPIC_API_KEY", modelEnv: "ANTHROPIC_MODEL", modelField: "model" },
-  google: { keyEnv: "GOOGLE_GENERATIVE_AI_API_KEY", modelEnv: "GOOGLE_GENERATIVE_AI_MODEL", modelField: "model" },
-  azure: { keyEnv: "AZURE_OPENAI_API_KEY", modelEnv: "AZURE_OPENAI_DEPLOYMENT", modelField: "model" },
-  foundry: { keyEnv: "AZURE_OPENAI_API_KEY", modelEnv: "AZURE_OPENAI_DEPLOYMENT", modelField: "model" },
-};
+/**
+ * Selectable AI providers, in `@askdb/ai`'s built-in table order: every id that has an
+ * `askdb.config.*` branch (`ASKDB_AI_PROVIDERS`), with the key/model env var names to
+ * scaffold. Derived from `@askdb/ai`'s `BUILTIN_AI_PROVIDERS` so it cannot drift.
+ */
+const AI_PROVIDER_SETUPS = listBuiltinAiProviderSetups(ASKDB_AI_PROVIDERS);
+const VALID_AI_PROVIDERS = AI_PROVIDER_SETUPS.map((setup) => setup.id as AskDbAiProviderId);
+
+function aiDefaults(provider: AskDbAiProviderId): { keyEnv: string; modelEnv: string } {
+  const setup = getBuiltinAiProviderSetup(provider);
+  if (!setup) throw new Error(`askdb init: "${provider}" is not a built-in AI provider.`);
+  return setup;
+}
+
+/**
+ * Render a value as a TypeScript string literal for the generated config.
+ * Every interpolated value goes through this — the file is later executed
+ * (via jiti), so a raw `"${value}"` would let a quote in a path inject code.
+ * Mirrors `tsString` in `apps/studio/src/setup.ts`.
+ */
+function tsString(value: string): string {
+  return JSON.stringify(value);
+}
+
+/**
+ * Azure / Foundry also need the resource name (or a full endpoint URL) — the
+ * adapter refuses to start without one. Scaffold the resource-name form; users
+ * can swap it for `baseUrl` if they use a custom endpoint.
+ */
+const AZURE_RESOURCE_NAME_ENV = "AZURE_RESOURCE_NAME";
+
+function azureResourceEnv(answers: InitAnswers): string | undefined {
+  return answers.aiProvider === "azure" || answers.aiProvider === "foundry"
+    ? AZURE_RESOURCE_NAME_ENV
+    : undefined;
+}
 
 function renderAiSection(answers: InitAnswers): string {
   const { aiProvider, aiKeyEnv, aiModelEnv } = answers;
-  const modelLine = aiModelEnv ? `\n        ${AI_DEFAULTS[aiProvider].modelField}: env("${aiModelEnv}"),` : "";
+  const modelLine = aiModelEnv ? `\n        model: env(${tsString(aiModelEnv)}),` : "";
+  const resourceEnv = azureResourceEnv(answers);
+  const resourceLine = resourceEnv ? `\n        resourceName: env(${tsString(resourceEnv)}),` : "";
   return `  ai: {
-    provider: "${aiProvider}",
+    provider: ${tsString(aiProvider)},
     providerConfig: {
       ${aiProvider}: {
-        apiKey: env("${aiKeyEnv}"),${modelLine}
+        apiKey: env(${tsString(aiKeyEnv)}),${modelLine}${resourceLine}
       },
     },
   },`;
@@ -79,14 +108,15 @@ function renderAiSection(answers: InitAnswers): string {
 
 function renderIntrospectionSection(answers: InitAnswers): string {
   const { database, connectionEnv, sqliteFile, prismaSchema, schemaOut } = answers;
-  const outputDirLine = `\n    outputDir: "${schemaOut}",`;
+  const outputDirLine = `\n    outputDir: ${tsString(schemaOut)},`;
+  const connectionEnvExpr = `env(${tsString(connectionEnv ?? "DATABASE_URL")})`;
   switch (database) {
     case "postgres":
       return `  introspection: {
     provider: "postgres",
     providerConfig: {
       postgres: {
-        databaseUrl: env("${connectionEnv ?? "DATABASE_URL"}"),
+        databaseUrl: ${connectionEnvExpr},
       },
     },${outputDirLine}
   },`;
@@ -95,16 +125,16 @@ function renderIntrospectionSection(answers: InitAnswers): string {
     provider: "mysql",
     providerConfig: {
       mysql: {
-        databaseUrl: env("${connectionEnv ?? "DATABASE_URL"}"),
+        databaseUrl: ${connectionEnvExpr},
       },
     },${outputDirLine}
   },`;
     case "sqlite": {
       const fileExpr = sqliteFile && !sqliteFile.startsWith("./") && !sqliteFile.startsWith("/")
-        ? `env("${sqliteFile}")`
+        ? `env(${tsString(sqliteFile)})`
         : `env("SQLITE_FILE")`;
       const resolvedFile = sqliteFile && (sqliteFile.startsWith("./") || sqliteFile.startsWith("/"))
-        ? `"${sqliteFile}"`
+        ? tsString(sqliteFile)
         : fileExpr;
       return `  introspection: {
     provider: "sqlite",
@@ -120,12 +150,12 @@ function renderIntrospectionSection(answers: InitAnswers): string {
     provider: "sqlserver",
     providerConfig: {
       sqlserver: {
-        databaseUrl: env("${connectionEnv ?? "DATABASE_URL"}"),
+        databaseUrl: ${connectionEnvExpr},
       },
     },${outputDirLine}
   },`;
     case "prisma": {
-      const schemaLine = prismaSchema ? `\n        schemaPath: "${prismaSchema}",` : "";
+      const schemaLine = prismaSchema ? `\n        schemaPath: ${tsString(prismaSchema)},` : "";
       return `  introspection: {
     provider: "prisma",
     providerConfig: {
@@ -165,7 +195,7 @@ function renderRagSection(answers: InitAnswers): string {
     store: "pgvector",
     storeConfig: {
       pgvector: {
-        databaseUrl: env("${pgvectorEnv ?? "ASKDB_PGVECTOR_URL"}"),
+        databaseUrl: env(${tsString(pgvectorEnv ?? "ASKDB_PGVECTOR_URL")}),
       },
     },
   },`;
@@ -179,10 +209,11 @@ function renderStudioSection(answers: InitAnswers): string | null {
   const { provider } = studioExecute;
   if (provider === "sqlite") {
     const fileExpr = studioExecute.sqliteFile && (studioExecute.sqliteFile.startsWith("./") || studioExecute.sqliteFile.startsWith("/"))
-      ? `"${studioExecute.sqliteFile}"`
-      : `env("${studioExecute.sqliteFile ?? "SQLITE_FILE"}")`;
+      ? tsString(studioExecute.sqliteFile)
+      : `env(${tsString(studioExecute.sqliteFile ?? "SQLITE_FILE")})`;
     return `  studio: {
     execute: {
+      enabled: true,
       provider: "sqlite",
       file: ${fileExpr},
     },
@@ -192,8 +223,9 @@ function renderStudioSection(answers: InitAnswers): string | null {
   const urlEnv = studioExecute.connectionEnv ?? "DATABASE_URL";
   return `  studio: {
     execute: {
-      provider: "${provider}",
-      databaseUrl: env("${urlEnv}"),
+      enabled: true,
+      provider: ${tsString(provider)},
+      databaseUrl: env(${tsString(urlEnv)}),
     },
   },`;
 }
@@ -240,7 +272,7 @@ type InitAnswerOverrides = Partial<{
 export function resolveDefaultInitAnswers(overrides: InitAnswerOverrides = {}): InitAnswers {
   const database = overrides.database ?? "postgres";
   const aiProvider = overrides.aiProvider ?? "openai";
-  const aiDefaults = AI_DEFAULTS[aiProvider];
+  const providerDefaults = aiDefaults(aiProvider);
 
   let connectionEnv = overrides.connectionEnv;
   if (!connectionEnv) {
@@ -270,8 +302,8 @@ export function resolveDefaultInitAnswers(overrides: InitAnswerOverrides = {}): 
     prismaSchema: overrides.prismaSchema,
     schemaOut: overrides.schemaOut ?? "./askdb",
     aiProvider,
-    aiKeyEnv: overrides.aiKeyEnv ?? aiDefaults.keyEnv,
-    aiModelEnv: overrides.aiModelEnv ?? aiDefaults.modelEnv,
+    aiKeyEnv: overrides.aiKeyEnv ?? providerDefaults.keyEnv,
+    aiModelEnv: overrides.aiModelEnv ?? providerDefaults.modelEnv,
     ragStore: overrides.ragStore ?? "file",
     pgvectorEnv: overrides.pgvectorEnv,
     studioExecute,
@@ -463,7 +495,6 @@ type InitOptions = {
 };
 
 const VALID_DATABASES = ["postgres", "mysql", "sqlite", "sqlserver", "prisma"] as const;
-const VALID_AI_PROVIDERS = ["openai", "anthropic", "google", "azure", "foundry"] as const;
 const VALID_RAG_STORES = ["file", "memory", "pgvector"] as const;
 
 function parseOptions(argv: readonly string[]): InitOptions {
@@ -653,18 +684,14 @@ export async function runWizard(prompter: InitPrompter): Promise<InitAnswers | n
 
   const aiProvider = await prompter.select<InitAnswers["aiProvider"]>({
     message: "AI provider",
-    choices: [
-      { name: "OpenAI", value: "openai" },
-      { name: "Anthropic", value: "anthropic" },
-      { name: "Google (Gemini)", value: "google" },
-      { name: "Azure OpenAI", value: "azure" },
-      { name: "Azure AI Foundry", value: "foundry" },
-    ],
+    choices: AI_PROVIDER_SETUPS.map((setup) => ({
+      name: setup.label,
+      value: setup.id as AskDbAiProviderId,
+    })),
     default: "openai",
   });
 
-  const aiKeyEnv = AI_DEFAULTS[aiProvider].keyEnv;
-  const aiModelEnv = AI_DEFAULTS[aiProvider].modelEnv;
+  const { keyEnv: aiKeyEnv, modelEnv: aiModelEnv } = aiDefaults(aiProvider);
 
   const ragStore = await prompter.select<InitAnswers["ragStore"]>({
     message: "RAG store",
@@ -678,10 +705,11 @@ export async function runWizard(prompter: InitPrompter): Promise<InitAnswers | n
 
   const pgvectorEnv = ragStore === "pgvector" ? "ASKDB_PGVECTOR_URL" : undefined;
 
-  const studioExecuteDefault = database !== "prisma";
+  // Opt-in: Studio execute runs generated SQL against a live database, so it
+  // defaults to off (matching `--studio-execute`'s documented default).
   const enableStudioExecute = await prompter.confirm({
-    message: "Enable Studio execute (run queries from the browser playground)?",
-    default: studioExecuteDefault,
+    message: "Enable Studio execute (run generated SQL read-only from the browser playground)?",
+    default: false,
   });
 
   let studioExecute: InitAnswers["studioExecute"];
@@ -809,6 +837,11 @@ function buildEnvExample(answers: InitAnswers): string {
 
   lines.push(`${answers.aiKeyEnv}=`);
   if (answers.aiModelEnv) lines.push(`${answers.aiModelEnv}=`);
+  const resourceEnv = azureResourceEnv(answers);
+  if (resourceEnv) {
+    lines.push(`# Subdomain of your endpoint, e.g. "my-resource" for https://my-resource.openai.azure.com`);
+    lines.push(`${resourceEnv}=`);
+  }
   lines.push("");
   return lines.join("\n");
 }
@@ -818,6 +851,8 @@ function collectEnvVarNames(answers: InitAnswers): string[] {
   const names = new Set<string>();
   names.add(answers.aiKeyEnv);
   if (answers.aiModelEnv) names.add(answers.aiModelEnv);
+  const resourceEnv = azureResourceEnv(answers);
+  if (resourceEnv) names.add(resourceEnv);
   const isEnvName = (v: string) => !v.startsWith("./") && !v.startsWith("/");
   if (answers.database !== "sqlite" && answers.database !== "prisma" && answers.connectionEnv) {
     names.add(answers.connectionEnv);
@@ -1062,7 +1097,7 @@ function printHelp(): void {
       "  --schema-out <dir>            Schema output directory (default: ./askdb)",
       "",
       "AI options:",
-      "  --ai-provider <name>          openai|anthropic|google|azure|foundry (default: openai)",
+      `  --ai-provider <name>          ${VALID_AI_PROVIDERS.join("|")} (default: openai)`,
       "  --ai-key-env <name>           Env var name for API key",
       "  --ai-model-env <name>         Env var name for model override",
       "",

@@ -1,7 +1,7 @@
 # Feature: Schema Introspection
 
 **Status:** Complete  
-**Packages:** `@askdb/introspect`, `@askdb/connectors`, `@askdb/postgres`, `@askdb/mysql`, `@askdb/sqlite`, `@askdb/sqlserver`, `@askdb/prisma`
+**Packages:** `@askdb/introspect`, `@askdb/postgres`, `@askdb/mysql`, `@askdb/sqlite`, `@askdb/sqlserver`, `@askdb/prisma`
 
 ## Overview
 
@@ -11,7 +11,7 @@ Postgres has two front doors that produce identical artifacts: **live** (queries
 
 Re-introspection is ID-anchored: existing stable IDs are preserved, new columns get fresh IDs, orphaned IDs (columns removed from the DB) surface as warnings. The describable layer (`tables/*.md`, `concepts.md`) is never touched by introspection.
 
-`@askdb/connectors` provides a provider registry that mirrors the `@askdb/ai` pattern: each integration package exports a `ConnectorProviderAdapter` constant (e.g. `postgresConnectorProvider`), and `createConnectorRegistry` from `@askdb/connectors` wires them together. The CLI and apps use the registry rather than importing concrete packages directly. See [ADR 0007](../adrs/0007-connector-registry.md).
+`@askdb/introspect` also exports the connector provider registry, which mirrors the `@askdb/ai` pattern. Each integration package exports a `ConnectorProviderAdapter` constant (e.g. `postgresConnectorProvider`), and `createConnectorRegistry` wires them together. Provider ids are open strings, so third-party engines can register. Each adapter's optional `resolveConnection` hook turns CLI flags + AskDB runtime config into the engine's connection, so the CLI and Studio contain no per-engine switches. Shared engine helpers live in `@askdb/introspect/kit`. `@askdb/connectors` is a deprecated re-export shim. See [ADR 0007](../adrs/0007-connector-registry.md) and [ADR 0008](../adrs/0008-engine-packages-and-connector-registry.md).
 
 ## Scope
 
@@ -24,7 +24,7 @@ Re-introspection is ID-anchored: existing stable IDs are preserved, new columns 
 - **`@askdb/sqlite`** — SQLite connector; live mode
 - **`@askdb/sqlserver`** — SQL Server connector; live mode
 - **`@askdb/prisma`** — Prisma schema file connector; `templates()` not applicable (no catalog SQL)
-- `askdb introspect` CLI subcommand — `--url` (live), `--from-export` (air-gapped), `--diff` (no writes), `--print` (stdout), `templates --engine <engine>` (print SQL)
+- `askdb introspect` CLI subcommand — `--url` (live), `--from-export` (air-gapped), `--diff` (no writes; renders exactly what `--out` would write — same `provider`, same merge with the existing artifact's `sensitive` flags — and reports whether it differs), `--print` (stdout), `templates --engine <engine>` (print SQL)
 - ID-anchored re-introspection merge — preserves existing IDs, emits `IntrospectionWarning` for orphans and new columns
 - Structured logging reusing modes/observability conventions — events under `askdb.introspect.*`
 
@@ -58,19 +58,21 @@ interface IntrospectionResult {
   warnings: IntrospectionWarning[]
 }
 
-// @askdb/connectors — registry (mirrors @askdb/ai pattern)
-import { createConnectorRegistry } from '@askdb/connectors'
-import type { ConnectorRegistry, ConnectorProviderAdapter } from '@askdb/connectors'
+// @askdb/introspect — registry (mirrors @askdb/ai pattern)
+import { createConnectorRegistry } from '@askdb/introspect'
+import type { ConnectorRegistry, ConnectorProviderAdapter } from '@askdb/introspect'
 
-const registry: ConnectorRegistry = createConnectorRegistry({ postgres, mysql, ... })
-registry.createConnector(provider, config)   // returns { mode, input, connector }
-registry.getTemplates(provider)              // returns SQL template strings
+const registry: ConnectorRegistry = createConnectorRegistry([postgresConnectorProvider, mysqlConnectorProvider, ...])
+registry.resolveConnection(provider, { explicit, runtime, surface }) // adapter merges flags + config → { ok, connection, sourceLabel }
+registry.createConnector({ provider, ...connection, filters, schemaId }) // returns { mode, input, connector }
+registry.getTemplates(provider)              // returns the SQL template bundle, if any
+registry.redactConnectionString(provider, s) // credential-free display string
 
 // Each integration package exports its adapter constant:
 // @askdb/postgres → postgresConnectorProvider: ConnectorProviderAdapter
 // @askdb/mysql    → mysqlConnectorProvider
 // @askdb/sqlite   → sqliteConnectorProvider
-// @askdb/sqlserver → sqlserverConnectorProvider
+// @askdb/sqlserver → sqlServerConnectorProvider
 // @askdb/prisma   → prismaConnectorProvider
 ```
 
@@ -83,7 +85,7 @@ interface ConnectorConfig {
 }
 ```
 
-`IntrospectionWarning` codes: `orphan_id`, `new_column`, `bundle_missing_file`, `bundle_unknown_engine`
+`IntrospectionWarning` codes: `orphan_id`, `new_column`, `unsupported_type`, `view_with_array_columns`, `ambiguous_filter`, `cross_database_fk` (bundle problems in `--from-export` mode throw instead of warning)
 
 ## Test bar
 

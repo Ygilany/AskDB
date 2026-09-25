@@ -26,7 +26,7 @@ table (purpose, install command, key exports) lives at `/reference/packages/`. A
 
 - **`@askdb/core`** — the dialect-agnostic pipeline (`ask()`, `loadSchema()`). Everything else builds on this.
 - **`@askdb/client`** — config-driven facade (`createAskDb()`); resolves schema, model, and dialect from `askdb.config.ts`.
-- **`@askdb/ai` + `@askdb/ai-openai` / `-anthropic` / `-google` / `-azure`** — AI provider adapters used by `@askdb/client` and the first-party surfaces.
+- **`@askdb/ai`** — config-driven AI provider registry used by `@askdb/client` and the first-party surfaces. OpenAI, Anthropic, Google, Azure/Foundry, and Vercel AI Gateway providers are built in; install the matching `@ai-sdk/*` package (an optional peer, e.g. `@ai-sdk/openai`). The old `@askdb/ai-openai` / `-anthropic` / `-google` / `-azure` packages are deprecated shims — don't add them to new code.
 - **`@askdb/postgres` / `-mysql` / `-sqlite` / `-sqlserver`** — engine adapters: introspection connector, catalog templates, and a re-export of that engine's dialect (the dialect specs themselves ship inside `@askdb/core`).
 - **`@askdb/rag`** — schema chunking, indexing, and retrieval for large schemas.
 - **`@askdb/http-api`** — minimal HTTP wrapper over `ask()` (`POST /ask`, `GET /health`).
@@ -36,7 +36,7 @@ table (purpose, install command, key exports) lives at `/reference/packages/`. A
 ## Decision points for common scenarios
 
 - **Just trying it out** → the `askdb` CLI alone (`npx askdb@latest init`), no code needed. See `/quickstart/`.
-- **Embedding in a Node service** → `@askdb/client` + `@askdb/config` + one AI provider adapter (or `@askdb/core` directly if you construct the model yourself). See `/guides/embed-in-node/`.
+- **Embedding in a Node service** → `@askdb/client` + `@askdb/config` + the AI SDK package for your provider, e.g. `@ai-sdk/openai` (or `@askdb/core` directly if you construct the model yourself). See `/guides/embed-in-node/`.
 - **Need an HTTP boundary** (non-Node clients, or one AskDB service shared across consumers) → `@askdb/http-api` behind your own gateway/auth — it has no built-in auth of its own. See `/guides/deploy-as-http-service/`.
 - **Schema too big for one prompt** (rule of thumb: more than ~30 tables, or rendered DDL over ~8K tokens) → add `@askdb/rag` with a retriever. See `/guides/rag-for-large-schemas/`.
 - **Multi-tenant app** → declare a `tenant-policy.md` in the schema artifact and pass `tenantScope` on every `ask()` call, sourced from your host's auth context. See `/guides/multi-tenancy/`.
@@ -46,13 +46,17 @@ table (purpose, install command, key exports) lives at `/reference/packages/`. A
 ## Wiring the AI model
 
 `ask()`'s contract is `model: LanguageModel` — a plain Vercel AI SDK model object. You can
-produce one via `@askdb/ai-*` adapters + `@askdb/client` (config-driven; the right default
+produce one via `@askdb/client` / `@askdb/ai` (config-driven; the right default
 when AskDB should own provider config) or by constructing a raw AI SDK model and passing it to
 `ask()` directly (better when the host app already resolves provider config elsewhere, or
 needs to reuse one model instance for LLM calls AskDB doesn't make). Check whether the host
 codebase already constructs AI SDK models before picking — don't introduce a second, parallel
 provider-config system for one call site. Full decision rule and per-provider recipes:
 `/guides/bring-your-own-model/`.
+
+`ai` is a **peer dependency** of `@askdb/core` (`^6 || ^7`): add `ai` to the host app's own
+`package.json` next to `@askdb/core` and reuse the host's existing AI SDK version — never install a
+second copy. The `@askdb/ai` / `@askdb/client` config-driven path currently requires `ai@7`.
 
 ## Safety and trust boundaries
 

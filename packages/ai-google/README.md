@@ -1,24 +1,31 @@
-# `@askdb/ai-google`
+# `@askdb/ai-google` (deprecated)
 
-Google Generative AI / Gemini provider adapter for `@askdb/ai`.
+> **Deprecated.** The Google Gemini provider is now built into [`@askdb/ai`](https://github.com/Ygilany/AskDB/tree/main/packages/ai). This package
+> only re-exports `googleProvider` from `@askdb/ai` so existing imports keep working. It will be
+> removed before AskDB 1.0.
 
-Pass the adapter to `createAskDb` and AskDB constructs the Google model from your `askdb.config.*`:
+## Migrate
+
+```bash
+npm uninstall @askdb/ai-google
+npm install @askdb/ai @ai-sdk/google
+```
 
 ```ts
-import { createAskDb } from "@askdb/client";
+// Before
 import { googleProvider } from "@askdb/ai-google";
-
 const askdb = createAskDb({ config, providers: [googleProvider] });
-```
 
-Advanced: build a standalone registry to construct a model object outside the client:
+// After: every built-in provider is registered by default; ai.provider in
+// askdb.config.* picks one, and @ai-sdk/google is loaded on first use.
+const askdb = createAskDb({ config });
 
-```ts
+// Or, restricted to Google, from a standalone registry:
 import { createAiRegistry } from "@askdb/ai";
-import { googleProvider } from "@askdb/ai-google";
-
-const ai = createAiRegistry([googleProvider]);
+const ai = createAiRegistry(["google"]);
 ```
+
+`googleProvider` is still exported from `@askdb/ai` if you want to pass the adapter object.
 
 ## License
 

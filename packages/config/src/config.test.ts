@@ -4,6 +4,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it } from "vitest";
 import {
+  ASKDB_AI_PROVIDERS,
   bootstrapAskDbEnv,
   defineConfig,
   discoverAskDbConfigPath,
@@ -85,6 +86,14 @@ describe("discoverAskDbConfigPath", () => {
     writeFileSync(join(dir, ".config", "askdb.ts"), "export default {}", "utf8");
     writeFileSync(join(dir, "askdb.config.js"), "export default {}", "utf8");
     expect(discoverAskDbConfigPath(dir)).toBe(join(dir, "askdb.config.js"));
+  });
+});
+
+describe("ASKDB_AI_PROVIDERS", () => {
+  it("lists every first-party provider id flattenAskDbConfig handles, including anthropic and gateway", () => {
+    expect([...ASKDB_AI_PROVIDERS].sort()).toEqual(
+      ["anthropic", "azure", "foundry", "gateway", "google", "openai"].sort(),
+    );
   });
 });
 
@@ -235,6 +244,39 @@ describe("flattenAskDbConfig", () => {
     expect(flat.ASKDB_AI_MODEL).toBe("claude-opus-4-8");
   });
 
+  it("flattens gateway provider branch to AI_GATEWAY_API_KEY and the universal model/base URL keys", () => {
+    const flat = flattenAskDbConfig(
+      minimalConfig({
+        ai: {
+          provider: "gateway",
+          providerConfig: {
+            gateway: {
+              apiKey: "gw-key",
+              model: "anthropic/claude-sonnet-4-6",
+              baseUrl: "https://gateway.example/v3/ai",
+            },
+          },
+        },
+      }),
+    );
+    expect(flat.ASKDB_AI_PROVIDER).toBe("gateway");
+    expect(flat.AI_GATEWAY_API_KEY).toBe("gw-key");
+    expect(flat.ASKDB_AI_MODEL).toBe("anthropic/claude-sonnet-4-6");
+    expect(flat.ASKDB_AI_BASE_URL).toBe("https://gateway.example/v3/ai");
+  });
+
+  it("defaults the gateway model to openai/gpt-4o-mini and requires its branch", () => {
+    const flat = flattenAskDbConfig(
+      minimalConfig({
+        ai: { provider: "gateway", providerConfig: { gateway: { apiKey: "gw-key" } } },
+      }),
+    );
+    expect(flat.ASKDB_AI_MODEL).toBe("openai/gpt-4o-mini");
+    expect(() =>
+      flattenAskDbConfig(minimalConfig({ ai: { provider: "gateway" } as never })),
+    ).toThrow(/ai\.providerConfig\.gateway is required/);
+  });
+
   it("defaults anthropic model to claude-sonnet-4-6 when model omitted", () => {
     const flat = flattenAskDbConfig(
       minimalConfig({
@@ -267,6 +309,44 @@ describe("flattenAskDbConfig", () => {
     );
     expect(flat.AZURE_OPENAI_DEPLOYMENT).toBe("askdb-reporting");
     expect(flat.ASKDB_AI_AZURE_MODEL_FAMILY).toBe("gpt-5");
+  });
+
+  it.each(["azure", "foundry"] as const)(
+    "flattens %s resourceName/baseUrl/apiVersion to the env keys the Azure adapter reads",
+    (provider) => {
+      const flat = flattenAskDbConfig(
+        minimalConfig({
+          ai: {
+            provider,
+            providerConfig: {
+              [provider]: {
+                apiKey: "k",
+                model: "gpt-4o-mini",
+                resourceName: "my-foundry",
+                baseUrl: "https://my-foundry.openai.azure.com/openai",
+                apiVersion: "2025-04-01-preview",
+              },
+            },
+          } as AskDbConfig["ai"],
+        }),
+      );
+      expect(flat.ASKDB_AI_PROVIDER).toBe(provider);
+      expect(flat.ASKDB_AI_AZURE_RESOURCE_NAME).toBe("my-foundry");
+      expect(flat.AZURE_OPENAI_BASE_URL).toBe("https://my-foundry.openai.azure.com/openai");
+      expect(flat.AZURE_OPENAI_API_VERSION).toBe("2025-04-01-preview");
+    },
+  );
+
+  it("omits ASKDB_AI_AZURE_RESOURCE_NAME when azure resourceName is unset", () => {
+    const flat = flattenAskDbConfig(
+      minimalConfig({
+        ai: {
+          provider: "azure",
+          providerConfig: { azure: { apiKey: "k", baseUrl: "https://x.openai.azure.com" } },
+        },
+      }),
+    );
+    expect(flat).not.toHaveProperty("ASKDB_AI_AZURE_RESOURCE_NAME");
   });
 
   it("flattens anthropic baseUrl when provided", () => {
@@ -647,7 +727,7 @@ describe("getAskDbRuntimeConfig — studio execute branches", () => {
 
   it("falls back to introspection provider when no execute provider is set", () => {
     installStudio(
-      undefined,
+      { execute: { useIntrospectionConnection: true } },
       { provider: "mysql", providerConfig: { mysql: { databaseUrl: "mysql://intro/db" } }, outputDir: "./askdb/" },
     );
     const rt = getAskDbRuntimeConfig();
@@ -657,7 +737,7 @@ describe("getAskDbRuntimeConfig — studio execute branches", () => {
 
   it("falls back to introspection provider for sqlserver", () => {
     installStudio(
-      undefined,
+      { execute: { useIntrospectionConnection: true } },
       { provider: "sqlserver", providerConfig: { sqlserver: { databaseUrl: "Server=localhost;Database=app;" } }, outputDir: "./askdb/" },
     );
     const rt = getAskDbRuntimeConfig();
@@ -687,7 +767,7 @@ describe("getAskDbRuntimeConfig — studio execute branches", () => {
 
   it("falls back to introspection sqlite file when studio.execute.file is absent", () => {
     installStudio(
-      undefined,
+      { execute: { useIntrospectionConnection: true } },
       { provider: "sqlite", providerConfig: { sqlite: { file: "./data/app.db" } }, outputDir: "./askdb/" },
     );
     const rt = getAskDbRuntimeConfig();
@@ -726,6 +806,82 @@ describe("getAskDbRuntimeConfig — studio execute branches", () => {
     const rt = getAskDbRuntimeConfig();
     expect(rt.studio.execute.provider).toBe("postgres");
     expect(rt.studio.execute.databaseUrl).toBe("postgres://legacy/db");
+  });
+});
+
+describe("getAskDbRuntimeConfig — studio execute safety defaults", () => {
+  afterEach(() => resetAskDbRuntimeForTests());
+
+  function install(studio: AskDbConfig["studio"], flatExtra: Record<string, string> = {}): void {
+    const structured = minimalConfig({
+      introspection: {
+        provider: "postgres",
+        providerConfig: { postgres: { databaseUrl: "postgres://introspect/db" } },
+        outputDir: "./askdb/",
+      },
+      studio,
+    });
+    setAskDbRuntimeForTests({ structured, flat: { ...flattenAskDbConfig(structured), ...flatExtra } });
+  }
+
+  it("is disabled by default with 30s timeout and 500-row cap", () => {
+    install(undefined);
+    const exec = getAskDbRuntimeConfig().studio.execute;
+    expect(exec.enabled).toBe(false);
+    expect(exec.useIntrospectionConnection).toBe(false);
+    expect(exec.timeoutMs).toBe(30_000);
+    expect(exec.maxRows).toBe(500);
+  });
+
+  it("does not reuse introspection credentials unless useIntrospectionConnection is on", () => {
+    install({ execute: { enabled: true } });
+    const exec = getAskDbRuntimeConfig().studio.execute;
+    expect(exec.enabled).toBe(true);
+    expect(exec.databaseUrl).toBeUndefined();
+    expect(exec.introspectionConnectionAvailable).toBe(true);
+
+    install({ execute: { enabled: true, useIntrospectionConnection: true } });
+    const reused = getAskDbRuntimeConfig().studio.execute;
+    expect(reused.databaseUrl).toBe("postgres://introspect/db");
+    expect(reused.introspectionConnectionAvailable).toBe(false);
+  });
+
+  it("prefers an explicit execute connection over the introspection one", () => {
+    install({ execute: { enabled: true, useIntrospectionConnection: true, databaseUrl: "postgres://readonly/db" } });
+    expect(getAskDbRuntimeConfig().studio.execute.databaseUrl).toBe("postgres://readonly/db");
+  });
+
+  it("flattens enabled, timeoutMs, and maxRows to canonical keys", () => {
+    const flat = flattenAskDbConfig(
+      minimalConfig({
+        studio: { execute: { enabled: true, useIntrospectionConnection: false, timeoutMs: 5000, maxRows: 25 } },
+      }),
+    );
+    expect(flat.ASKDB_STUDIO_EXECUTE_ENABLED).toBe("true");
+    expect(flat.ASKDB_STUDIO_EXECUTE_USE_INTROSPECTION_CONNECTION).toBe("false");
+    expect(flat.ASKDB_STUDIO_EXECUTE_TIMEOUT_MS).toBe("5000");
+    expect(flat.ASKDB_STUDIO_EXECUTE_MAX_ROWS).toBe("25");
+  });
+
+  it("reads the canonical flat keys", () => {
+    install(undefined, {
+      ASKDB_STUDIO_EXECUTE_ENABLED: "true",
+      ASKDB_STUDIO_EXECUTE_TIMEOUT_MS: "1000",
+      ASKDB_STUDIO_EXECUTE_MAX_ROWS: "10",
+    });
+    const exec = getAskDbRuntimeConfig().studio.execute;
+    expect(exec.enabled).toBe(true);
+    expect(exec.timeoutMs).toBe(1000);
+    expect(exec.maxRows).toBe(10);
+  });
+
+  it("rejects non-positive-integer timeoutMs / maxRows", () => {
+    expect(() =>
+      flattenAskDbConfig(minimalConfig({ studio: { execute: { timeoutMs: 0 } } })),
+    ).toThrow(/studio\.execute\.timeoutMs/);
+    expect(() =>
+      flattenAskDbConfig(minimalConfig({ studio: { execute: { maxRows: 1.5 } } })),
+    ).toThrow(/studio\.execute\.maxRows/);
   });
 });
 
@@ -768,5 +924,36 @@ describe("bootstrapAskDbEnv", () => {
     expect(rt.ai.aiEnv.ASKDB_INTROSPECT_POSTGRES_URL).toBe("postgres://localhost/db");
     delete process.env.MY_AI;
     delete process.env.MY_DB;
+  });
+});
+
+describe("getAskDbRuntimeConfig — httpApi", () => {
+  afterEach(() => resetAskDbRuntimeForTests());
+
+  function install(httpApi: AskDbConfig["httpApi"]): void {
+    const structured = minimalConfig(httpApi ? { httpApi } : {});
+    setAskDbRuntimeForTests({ structured, flat: flattenAskDbConfig(structured) });
+  }
+
+  it("defaults allowSchemaOverride to false and requestTimeoutMs to 60000", () => {
+    install(undefined);
+    const rt = getAskDbRuntimeConfig();
+    expect(rt.httpApi.allowSchemaOverride).toBe(false);
+    expect(rt.httpApi.requestTimeoutMs).toBe(60_000);
+  });
+
+  it("reads allowSchemaOverride and requestTimeoutMs from the structured config", () => {
+    install({ allowSchemaOverride: true, requestTimeoutMs: 1500 });
+    const rt = getAskDbRuntimeConfig();
+    expect(rt.httpApi.allowSchemaOverride).toBe(true);
+    expect(rt.httpApi.requestTimeoutMs).toBe(1500);
+    expect(rt.flat["ASKDB_HTTP_ALLOW_SCHEMA_OVERRIDE"]).toBe("true");
+    expect(rt.flat["ASKDB_HTTP_REQUEST_TIMEOUT_MS"]).toBe("1500");
+  });
+
+  it("rejects a non-positive requestTimeoutMs at flatten time", () => {
+    expect(() => flattenAskDbConfig(minimalConfig({ httpApi: { requestTimeoutMs: 0 } }))).toThrow(
+      /httpApi\.requestTimeoutMs/,
+    );
   });
 });

@@ -6,13 +6,20 @@ export const DEFAULT_OPENAI_CHAT_MODEL = "gpt-4o-mini";
 export const DEFAULT_AZURE_OPENAI_DEPLOYMENT = "gpt-4o-mini";
 export const DEFAULT_ANTHROPIC_CHAT_MODEL = "claude-sonnet-4-6";
 export const DEFAULT_GOOGLE_CHAT_MODEL = "gemini-2.0-flash";
+export const DEFAULT_GATEWAY_CHAT_MODEL = "openai/gpt-4o-mini";
 export const DEFAULT_INTROSPECT_OUTPUT_DIR = "./askdb/";
+/** Default model-call timeout for `@askdb/http-api` `POST /ask` (`httpApi.requestTimeoutMs`). */
+export const DEFAULT_HTTP_API_REQUEST_TIMEOUT_MS = 60_000;
 export const DEFAULT_LOCAL_POSTGRES_URL = "postgres://postgres:postgres@127.0.0.1:5432/postgres";
 export const DEFAULT_RAG_EMBEDDING_MODEL = "text-embedding-3-small";
 /** Under the same visible tree as {@link DEFAULT_INTROSPECT_OUTPUT_DIR} (`./askdb/…`). */
 export const DEFAULT_RAG_FILE_BASE_PATH = "./askdb/rag";
 export const DEFAULT_MOCK_RAG_EMBEDDING_DIMENSIONS = 64;
 export const DEFAULT_PGVECTOR_INDEX_STRATEGY = "hnsw" as const;
+/** Default per-query statement timeout for Studio execute (`studio.execute.timeoutMs`). */
+export const DEFAULT_STUDIO_EXECUTE_TIMEOUT_MS = 30_000;
+/** Default row cap for Studio execute results (`studio.execute.maxRows`). */
+export const DEFAULT_STUDIO_EXECUTE_MAX_ROWS = 500;
 
 export const PGVECTOR_INDEX_STRATEGIES = ["ivfflat", "hnsw", "none"] as const;
 export type PgvectorIndexStrategyId = (typeof PGVECTOR_INDEX_STRATEGIES)[number];

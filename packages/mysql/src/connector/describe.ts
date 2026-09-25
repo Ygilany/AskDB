@@ -5,7 +5,6 @@ import type {
   IntrospectionWarning,
   SqlColumn,
   SqlForeignKey,
-  SqlForeignKeyAction,
   SqlIndex,
   SqlNamespace,
   SqlSchema,
@@ -13,8 +12,18 @@ import type {
   SqlUnique,
   SqlView,
 } from "@askdb/introspect";
-import { compileTableFilters } from "./glob.js";
-import { makeColumnId, makeTableId } from "./ids.js";
+import { AskDbError } from "@askdb/core";
+import {
+  ambiguousFilterWarnings,
+  buildOrderedGroups,
+  byName,
+  compileTableFilters,
+  groupBy,
+  makeColumnId,
+  makeTableId,
+  mapFkAction,
+  rowsToRecords,
+} from "@askdb/introspect/kit";
 
 /**
  * MySQL doesn't have Postgres-style schemas (each "schema" is a database).
@@ -33,7 +42,12 @@ export type DescribeMysqlInput = {
 
 // information_schema is well-documented; pinning the SQL inside the package
 // keeps the surface stable. Each query restricts to `DATABASE()` so the runner's
-// connection-bound database is the implicit filter.
+// connection-bound database is the implicit filter. `DATABASE()` is NULL when
+// the connection has no default database (e.g. `mysql://host:3306` with no
+// path) — every catalog query would then silently match nothing, so we check it
+// up front and fail loudly instead of emitting an empty schema.
+const SQL_CURRENT_DATABASE = `SELECT DATABASE() AS database_name`;
+
 const SQL_TABLES = `SELECT
   table_name AS table_name,
   table_type AS table_type,
@@ -77,6 +91,8 @@ const SQL_FOREIGN_KEYS = `SELECT
   kcu.constraint_name AS constraint_name,
   kcu.table_name AS table_name,
   kcu.column_name AS column_name,
+  kcu.table_schema AS table_schema,
+  kcu.referenced_table_schema AS referenced_table_schema,
   kcu.referenced_table_name AS referenced_table_name,
   kcu.referenced_column_name AS referenced_column_name,
   kcu.ordinal_position AS ordinal_position,
@@ -111,6 +127,7 @@ ORDER BY table_name`;
 
 /** Internal: the catalog SQL strings, exposed for snapshot-based tests. */
 export const MYSQL_CATALOG_SQL = {
+  current_database: SQL_CURRENT_DATABASE,
   tables: SQL_TABLES,
   columns: SQL_COLUMNS,
   constraints: SQL_CONSTRAINTS,
@@ -147,6 +164,10 @@ type ForeignKeyRow = {
   constraint_name: string;
   table_name: string;
   column_name: string;
+  /** Database owning the FK. Optional so older row snapshots still fold. */
+  table_schema?: string | null;
+  /** Database owning the referenced table — differs for cross-database FKs. */
+  referenced_table_schema?: string | null;
   referenced_table_name: string;
   referenced_column_name: string;
   ordinal_position: number;
@@ -170,17 +191,16 @@ export async function describeMysql(input: DescribeMysqlInput): Promise<Introspe
   const runner = input.runner;
   const tableFilter = compileTableFilters(input.filters?.tables);
 
-  const run = async <T>(sql: string): Promise<T[]> => {
-    const result = await runner(sql);
-    if (result.rows.length === 0) return [];
-    const idx = new Map<string, number>();
-    for (let i = 0; i < result.columns.length; i++) idx.set(result.columns[i]!, i);
-    return result.rows.map((row) => {
-      const record: Record<string, unknown> = {};
-      for (const [name, i] of idx) record[name] = row[i];
-      return record as T;
-    });
-  };
+  const run = async <T>(sql: string): Promise<T[]> => rowsToRecords<T>(await runner(sql));
+
+  const [current] = await run<{ database_name: string | null }>(SQL_CURRENT_DATABASE);
+  if (!current?.database_name) {
+    throw new AskDbError(
+      "MySQL introspection needs a target database, but the connection has none selected " +
+        "(DATABASE() is NULL). Put the database name in the connection URL path, e.g. " +
+        "mysql://user:password@host:3306/<database>.",
+    );
+  }
 
   const [tableRows, columnRows, constraintRows, fkRows, indexRows, viewRows] = await Promise.all([
     run<TableRow>(SQL_TABLES),
@@ -269,7 +289,7 @@ export function foldMysqlResult(input: FoldInput): IntrospectionResult {
       comment: t.table_comment ?? undefined,
       columns,
       primaryKey: pkColumns.length > 0 ? { columns: pkColumns } : undefined,
-      foreignKeys: buildForeignKeys(fksByTable.get(t.table_name) ?? []),
+      foreignKeys: buildForeignKeys(fksByTable.get(t.table_name) ?? [], warnings),
       uniqueConstraints: buildUniques(constraints),
       indexes: buildIndexes(indexesByTable.get(t.table_name) ?? []),
       checkConstraints: [],
@@ -289,12 +309,12 @@ export function foldMysqlResult(input: FoldInput): IntrospectionResult {
   };
 
   const isEmpty = tables.length === 0 && views.length === 0;
-  for (const pattern of input.declaredFilters) {
-    const matched =
-      tables.some((t) => compileTableFilters([pattern])(`${NAMESPACE}.${t.name}`)) ||
-      views.some((v) => compileTableFilters([pattern])(`${NAMESPACE}.${v.name}`));
-    if (!matched) warnings.push({ code: "ambiguous_filter", filter: pattern });
-  }
+  warnings.push(
+    ...ambiguousFilterWarnings(
+      input.declaredFilters,
+      [...tables, ...views].map((t) => `${NAMESPACE}.${t.name}`),
+    ),
+  );
 
   const schema: SqlSchema = {
     schemaId: input.schemaId,
@@ -322,89 +342,70 @@ function buildColumn(table: string, c: ColumnRow, pkSet: Set<string>): SqlColumn
 }
 
 function buildUniques(constraints: ConstraintRow[]): SqlUnique[] {
-  const byName = new Map<string, ConstraintRow[]>();
-  for (const c of constraints) {
-    if (c.constraint_type !== "UNIQUE") continue;
-    const list = byName.get(c.constraint_name) ?? [];
-    list.push(c);
-    byName.set(c.constraint_name, list);
-  }
-  return Array.from(byName, ([name, list]) => ({
-    name,
-    columns: list
-      .slice()
-      .sort((a, b) => a.ordinal_position - b.ordinal_position)
-      .map((r) => r.column_name),
-  })).sort((a, b) => a.name.localeCompare(b.name));
+  return buildOrderedGroups(
+    constraints.filter((c) => c.constraint_type === "UNIQUE"),
+    (c) => c.constraint_name,
+    (c) => c.ordinal_position,
+    (name, ordered) => ({ name, columns: ordered.map((r) => r.column_name) }),
+  );
 }
 
-function buildForeignKeys(rows: ForeignKeyRow[]): SqlForeignKey[] {
-  const byName = new Map<string, ForeignKeyRow[]>();
-  for (const r of rows) {
-    const list = byName.get(r.constraint_name) ?? [];
-    list.push(r);
-    byName.set(r.constraint_name, list);
-  }
-  const fks: SqlForeignKey[] = [];
-  for (const [name, list] of byName) {
-    const ordered = list.slice().sort((a, b) => a.ordinal_position - b.ordinal_position);
-    const sample = ordered[0]!;
-    fks.push({
-      name,
-      columns: ordered.map((r) => r.column_name),
-      references: {
-        schema: NAMESPACE,
-        table: sample.referenced_table_name,
-        columns: ordered.map((r) => r.referenced_column_name),
-      },
-      onDelete: mapAction(sample.delete_rule),
-      onUpdate: mapAction(sample.update_rule),
-    });
-  }
-  return fks.sort((a, b) => a.name.localeCompare(b.name));
-}
-
-function mapAction(rule: string | null): SqlForeignKeyAction | undefined {
-  if (!rule) return undefined;
-  const r = rule.toLowerCase();
-  if (r === "cascade") return "cascade";
-  if (r === "restrict") return "restrict";
-  if (r === "set null") return "set null";
-  if (r === "set default") return "set default";
-  if (r === "no action") return "no action";
-  return undefined;
+function buildForeignKeys(
+  rows: ForeignKeyRow[],
+  warnings: IntrospectionWarning[],
+): SqlForeignKey[] {
+  return buildOrderedGroups(
+    rows,
+    (r) => r.constraint_name,
+    (r) => r.ordinal_position,
+    (name, ordered): SqlForeignKey | undefined => {
+      const sample = ordered[0]!;
+      // Only the connection's database is introspected (as the single `public`
+      // namespace), so a FK into another database has no target in the artifact.
+      // Rendering it as `public.<table>` would point at the wrong (or a missing)
+      // local table — skip it and say so.
+      if (
+        sample.table_schema &&
+        sample.referenced_table_schema &&
+        sample.referenced_table_schema !== sample.table_schema
+      ) {
+        warnings.push({
+          code: "cross_database_fk",
+          table: makeTableId(NAMESPACE, sample.table_name),
+          constraint: name,
+          referencedDatabase: sample.referenced_table_schema,
+          referencedTable: sample.referenced_table_name,
+        });
+        return undefined;
+      }
+      return {
+        name,
+        columns: ordered.map((r) => r.column_name),
+        references: {
+          schema: NAMESPACE,
+          table: sample.referenced_table_name,
+          columns: ordered.map((r) => r.referenced_column_name),
+        },
+        onDelete: mapFkAction(sample.delete_rule),
+        onUpdate: mapFkAction(sample.update_rule),
+      };
+    },
+  );
 }
 
 function buildIndexes(rows: IndexRow[]): SqlIndex[] {
-  const byName = new Map<string, IndexRow[]>();
-  for (const r of rows) {
-    const list = byName.get(r.index_name) ?? [];
-    list.push(r);
-    byName.set(r.index_name, list);
-  }
-  return Array.from(byName, ([name, list]) => {
-    const ordered = list.slice().sort((a, b) => a.seq_in_index - b.seq_in_index);
-    const sample = ordered[0]!;
-    return {
-      name,
-      columns: ordered.map((r) => r.column_name ?? ""),
-      unique: sample.non_unique === 0,
-      method: sample.index_type,
-    } satisfies SqlIndex;
-  }).sort((a, b) => a.name.localeCompare(b.name));
-}
-
-function groupBy<T, K>(rows: T[], key: (row: T) => K): Map<K, T[]> {
-  const out = new Map<K, T[]>();
-  for (const row of rows) {
-    const k = key(row);
-    const list = out.get(k) ?? [];
-    list.push(row);
-    out.set(k, list);
-  }
-  return out;
-}
-
-function byName<T extends { name: string }>(a: T, b: T): number {
-  return a.name.localeCompare(b.name);
+  return buildOrderedGroups(
+    rows,
+    (r) => r.index_name,
+    (r) => r.seq_in_index,
+    (name, ordered) => {
+      const sample = ordered[0]!;
+      return {
+        name,
+        columns: ordered.map((r) => r.column_name ?? ""),
+        unique: sample.non_unique === 0,
+        method: sample.index_type,
+      } satisfies SqlIndex;
+    },
+  );
 }

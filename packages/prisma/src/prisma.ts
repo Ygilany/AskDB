@@ -1,6 +1,14 @@
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join, resolve } from "node:path";
-import prismaInternals from "@prisma/internals";
+import {
+  ambiguousFilterWarnings,
+  byName,
+  compileTableFilters,
+  makeColumnId,
+  makeTableId,
+  mapFkAction,
+  sortedUnique,
+} from "@askdb/introspect/kit";
 import type {
   Connector,
   IntrospectionFilters,
@@ -107,7 +115,21 @@ const SUPPORTED_PROVIDERS = new Set<string>([
 ]);
 
 const DEFAULT_SCHEMA = "public";
-const { getConfig, getDMMF } = prismaInternals;
+type PrismaInternals = typeof import("@prisma/internals");
+let prismaInternalsPromise: Promise<PrismaInternals> | undefined;
+
+/**
+ * `@prisma/internals` is large and slow to load, so it is imported on the first
+ * describe rather than when `@askdb/prisma` is imported. Registering
+ * `prismaConnectorProvider` (as the `askdb` CLI and Studio do) costs nothing
+ * until a Prisma schema is actually introspected.
+ */
+function loadPrismaInternals(): Promise<PrismaInternals> {
+  prismaInternalsPromise ??= import("@prisma/internals").then(
+    (mod) => ((mod as { default?: PrismaInternals }).default ?? mod) as PrismaInternals,
+  );
+  return prismaInternalsPromise;
+}
 
 export function createPrismaConnector(): Connector<PrismaIntrospectionInput> {
   return {
@@ -152,6 +174,7 @@ export async function describePrismaSchema(
 ): Promise<IntrospectionResult> {
   const schemaPath = input.schemaPath ?? discoverPrismaSchemaPath();
   const datamodel = stripDatasourceConnectionUrls(readPrismaSchema(schemaPath));
+  const { getConfig, getDMMF } = await loadPrismaInternals();
   const config = await getConfig({ datamodel });
   const provider = config.datasources[0]?.provider;
   assertSupportedProvider(provider);
@@ -257,7 +280,7 @@ function foldPrismaDmmf(input: {
   const excludeSchemas = new Set(input.filters?.excludeSchemas ?? []);
   const modelsByName = new Map(input.dmmf.datamodel.models.map((m) => [m.name, m]));
   const tablesBySchema = new Map<string, SqlTable[]>();
-  const matchedFilters = new Set<string>();
+  const emittedTables: string[] = [];
 
   for (const model of input.dmmf.datamodel.models) {
     const schemaName = model.schema ?? DEFAULT_SCHEMA;
@@ -267,7 +290,7 @@ function foldPrismaDmmf(input: {
     const tableName = dbName(model);
     const qualified = `${schemaName}.${tableName}`;
     if (!tableFilter(qualified)) continue;
-    markMatchedFilters(qualified, input.filters?.tables, matchedFilters);
+    emittedTables.push(qualified);
 
     const table = buildTable({
       model,
@@ -283,11 +306,7 @@ function foldPrismaDmmf(input: {
     tablesBySchema.set(schemaName, list);
   }
 
-  for (const pattern of input.filters?.tables ?? []) {
-    if (!matchedFilters.has(pattern)) {
-      input.warnings.push({ code: "ambiguous_filter", filter: pattern });
-    }
-  }
+  input.warnings.push(...ambiguousFilterWarnings(input.filters?.tables, emittedTables));
 
   const enumsBySchema = new Map<string, SqlEnum[]>();
   const enumSchema = DEFAULT_SCHEMA;
@@ -510,23 +529,8 @@ function renderDefault(field: PrismaField): string | undefined {
 function mapReferentialAction(
   action: string | undefined,
 ): SqlForeignKeyAction | undefined {
-  switch (action?.toLowerCase()) {
-    case "cascade":
-      return "cascade";
-    case "restrict":
-      return "restrict";
-    case "setnull":
-    case "set null":
-      return "set null";
-    case "setdefault":
-    case "set default":
-      return "set default";
-    case "noaction":
-    case "no action":
-      return "no action";
-    default:
-      return undefined;
-  }
+  // Prisma spells multi-word actions without a space (`SetNull`, `NoAction`).
+  return mapFkAction(action?.toLowerCase().replace(/^(set|no)(null|default|action)$/, "$1 $2"));
 }
 
 function dbName(value: { name: string; dbName?: string | null }): string {
@@ -615,55 +619,6 @@ function stripDatasourceConnectionUrlsFromText(content: string): string {
     .join("\n");
 }
 
-function makeTableId(schemaName: string, tableName: string): string {
-  return `table:${schemaName}.${tableName}`;
-}
-
-function makeColumnId(
-  schemaName: string,
-  tableName: string,
-  columnName: string,
-): string {
-  return `table:${schemaName}.${tableName}#${columnName}`;
-}
-
-function sortedUnique(values: Iterable<string>): string[] {
-  return Array.from(new Set(values)).sort((a, b) => a.localeCompare(b));
-}
-
-function byName<T extends { name: string }>(a: T, b: T): number {
-  return a.name.localeCompare(b.name);
-}
-
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-function markMatchedFilters(
-  qualified: string,
-  patterns: ReadonlyArray<string> | undefined,
-  matched: Set<string>,
-): void {
-  for (const pattern of patterns ?? []) {
-    if (compileGlob(pattern).test(qualified)) matched.add(pattern);
-  }
-}
-
-function compileTableFilters(
-  patterns: ReadonlyArray<string> | undefined,
-): (qualifiedName: string) => boolean {
-  if (!patterns || patterns.length === 0) return () => true;
-  const compiled = patterns.map(compileGlob);
-  return (qualifiedName) => compiled.some((re) => re.test(qualifiedName));
-}
-
-function compileGlob(pattern: string): RegExp {
-  let out = "^";
-  for (const ch of pattern) {
-    if (ch === "*") out += ".*";
-    else if (ch === "?") out += ".";
-    else if (/[.+^${}()|[\]\\]/.test(ch)) out += `\\${ch}`;
-    else out += ch;
-  }
-  return new RegExp(`${out}$`);
 }

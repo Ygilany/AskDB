@@ -29,7 +29,9 @@ my-app.schema/
 
 The file is optional. A Schema v2 directory without `tenant-policy.md` has no tenant enforcement — all queries are unrestricted and `ask()` does not require a `tenantScope` input.
 
-When present, the file enables tenant enforcement: `ask()` requires a valid `tenantScope`, prompts include the policy, and generated SQL is validated against scope.
+When present, the file enables tenant handling: `ask()` requires a valid `tenantScope`, prompts include the policy, generated SQL goes through the heuristic tenant guardrail (see [Guardrail validation](#guardrail-validation)), and tenant placeholders are bound from the scope. The guardrail is defense in depth, not a security boundary — enforce tenant isolation in the database as well.
+
+Only a **missing** file means "no tenant policy". In a bundle, that means only an absent `tenantPolicy` key. A `tenant-policy.md` that exists but is empty or cannot be read or parsed (for example, malformed YAML front-matter) makes `loadSchema()` throw `SchemaParseError` naming the file. The same applies to an empty or non-string bundle `tenantPolicy`. A broken policy never silently turns tenant enforcement off. `loadSchema("<dir>/schema.json")` loads the sibling `tenant-policy.md` the same way `loadSchema("<dir>")` does.
 
 ---
 
@@ -107,7 +109,7 @@ globalTables:
 | Field | Type | Required | Meaning |
 |---|---|---|---|
 | `schemaId` | string | yes | Must match the parent `schema.json`'s `schemaId`. |
-| `enforcement` | `"strict"` \| `"warn"` | yes | Guardrail mode. `strict` rejects unproven queries; `warn` returns SQL with `tenantWarnings`. |
+| `enforcement` | `"strict"` \| `"warn"` | yes | Guardrail mode. When the heuristic tenant check finds a problem, `strict` throws `TenantGuardrailError`; `warn` returns SQL with `tenantGuardrail.warnings`. |
 | `roots` | array | yes | Tenant root definitions (see below). At least one root required. |
 | `hierarchy` | array | no | Explicit hierarchy edges between roots. Required when roots have parent/child relationships. |
 | `scopedTables` | array | no | Tables whose rows are constrained by tenant roots. |
@@ -166,7 +168,7 @@ Tables that use a type discriminator + id column pair, where the id references d
 | `idColumn` | string | yes | Stable column ID of the polymorphic FK (e.g., `table:public.notes#owner_id`). |
 | `mapping` | Record<string, string> | yes | Maps type discriminator values to stable table IDs of tenant roots. Keys are the literal values stored in `typeColumn`. |
 
-**Runtime:** The host is responsible for resolving polymorphic scope at runtime via `tenantFilters`. The validator checks that generated SQL includes the type discriminator column in its WHERE clause.
+**Runtime:** Polymorphic tables are declared in the policy and surfaced to the model through the prompt. There is no runtime pre-resolution of polymorphic scope (an earlier `tenantFilters` scope field was never read and has been removed). The validator checks that generated SQL mentions the type discriminator and id columns.
 
 #### `globalTables` — unscoped reference tables
 
@@ -266,8 +268,6 @@ interface TenantScope {
         reason: string;
       };
 
-  tenantFilters?: Record<string, TenantFilter>;
-
   context?: {
     role?: string;
     label?: string;
@@ -277,22 +277,16 @@ interface TenantScope {
     description?: string;
   };
 }
-
-interface TenantFilter {
-  conditions: Array<{
-    column: string;
-    operator: "=" | "IN" | "!=" | "NOT IN";
-    value: string | string[];
-  }>;
-}
 ```
+
+`TenantScope` previously declared a `tenantFilters` field for host-resolved polymorphic scope. Nothing ever read it, so it has been removed; a stray `tenantFilters` key on a scope object is ignored by validation.
 
 ### Access kinds
 
 | Kind | Meaning | When to use |
 |---|---|---|
 | `ids` | User can see rows matching specific tenant IDs at one root level. | Most common. Host has resolved the user's access to a flat ID list. |
-| `subtree` | User can see a root and all its descendants in the hierarchy. | Phase 10 accepts this but the proof expects the host to expand IDs. Full CTE generation may follow. |
+| `subtree` | User can see a root and all its descendants in the hierarchy. | **Not supported yet — rejected.** Descendant expansion is not implemented, so `validateTenantScope()`, `buildTenantPromptBlock()`, and `ask()` throw `TenantScopeError` (`UNSUPPORTED_ACCESS_KIND`) instead of silently scoping to `rootIds` only. Resolve the subtree in the host and pass explicit IDs with `ids` (or `multi_root`). |
 | `multi_root` | User has different scopes at different hierarchy levels. | Edge case: user is admin at one agency but also has direct client-level access elsewhere. |
 | `global` | User can see all data across all tenants. | Admin/superuser. Requires an explicit `reason` string for audit. |
 
@@ -316,7 +310,9 @@ Advisory context is included in prompts to help the LLM generate more relevant q
 | Tenant policy exists, no `tenantScope` passed | Fail closed. Query rejected before prompt generation. |
 | `tenantScope.access` references unknown tenant root | Rejected. |
 | `global` scope without `reason` | Rejected. |
-| `tenantFilters` references non-polymorphic table | Warning (does not block). |
+| `subtree` scope | Rejected (`UNSUPPORTED_ACCESS_KIND`) — not implemented yet. |
+| Generated SQL references a `:tenant_*` placeholder the scope has no IDs for (or that matches no root) | Rejected (`UNRESOLVED_TENANT_PLACEHOLDER`). SQL with an unsubstituted placeholder is never returned. |
+| Several IDs meet a tenant predicate with no list form (`<`, `>`, `<=`, `>=`, or a non-comparison position) | Rejected (`UNSUPPORTED_TENANT_PREDICATE`). |
 | Advisory `context` with unknown keys in `attributes` | Accepted (freeform). |
 
 ---
@@ -340,43 +336,50 @@ Examples:
 
 | Mode | Output shape | Placeholder handling |
 |---|---|---|
-| **SQL-only** (default) | `string` | Named placeholders replaced with literal values. SQL is complete and executable. |
-| **SQL+params** | `{ sql: string, params: unknown[], tenantBindings: Record<string, unknown> }` | Named placeholders converted to positional parameters (`$1`, `$2`). Values in `params` array. |
+| **SQL-only** (default) | `sql` | Named placeholders replaced with escaped literal values. SQL is complete and executable. |
+| **SQL+params** | `sql` + `tenantParams` | Named placeholders replaced with the dialect's driver markers — `$1, $2` (Postgres, CockroachDB, and custom `AskDialect`s), `?` (MySQL, MariaDB, SQLite), `@p0, @p1` (SQL Server). `tenantParams` holds the IDs in marker order. |
 
-The mode is configurable per `ask()` call or per schema configuration.
+The mode is configurable per `ask()` call (`tenantSqlMode`).
 
-When `ask({ parameterize: true })` (the default) also returns business-parameter extras, `result.params` is the full ordered array (business first, then tenant when `tenantSqlMode: "sql-params"`). `tenantParams` / `tenantBindings` keep their tenant-only meaning — callers using the new fields must execute with `params`, not `tenantParams`. `bindPreparedQuery()` binds tenant placeholders by name mechanically and **does not authorize** the IDs you pass; authorization remains the host's responsibility when constructing `tenantScope`.
+**Substitution rules.** Only placeholders in SQL code are substituted — placeholder text inside string literals or quoted identifiers is left untouched, so a tenant ID can never land inside (or close) a surrounding literal. With several IDs, `= :p` becomes `IN (…)`, `!= :p` / `<> :p` become `NOT IN (…)`, `IN (:p)` / `NOT IN (:p)` are expanded in place, and `= ANY(:p)` / `<> ALL(:p)` become `IN (…)` / `NOT IN (…)`. Any other operator or position with several IDs is rejected rather than rewritten.
+
+**Executable pairs.** Each SQL form `ask()` returns runs with exactly one params array — never concatenate them:
+
+| SQL | Run with | Contents |
+| --- | --- | --- |
+| `result.sql` | `result.tenantParams` (`sql-params` mode; nothing in `sql-only`) | Business values inlined as literals; tenant markers numbered from the first slot. |
+| `result.unboundSql` | `result.params` | All values as markers. In `sql-params` mode `params` already includes the tenant IDs: after the business values for numbered markers (`$N`, `@pN`), interleaved in source order for `?` dialects. `parameters[].indices` point into this array. In `sql-only` mode tenant IDs are inlined literals in `unboundSql` and `params` holds business values only. |
+
+`tenantBindings` keeps its tenant-only meaning for audit. `bindPreparedQuery()` binds tenant placeholders by name mechanically and **does not authorize** the IDs you pass; authorization remains the host's responsibility when constructing `tenantScope`.
 
 ---
 
 ## Guardrail validation
 
-The validator runs after SQL generation, before placeholder replacement.
+In `ask()`, the validator (`validateTenantGuardrails`) runs on the SQL returned to the caller: `result.sql` after tenant placeholder replacement, plus `result.unboundSql` when the parameterized extras pass their consistency check. It runs for every dialect form, including custom `AskDialect` adapters, and is skipped for `global` scope. `generateSelectSql()` called directly validates the SQL it returns (placeholders still named).
 
-### Parser-based validation (primary)
+**It is a heuristic lint, not a security boundary.** It does not parse SQL. It lowercases the statement and checks, with whole-word matching, whether expected identifiers appear anywhere in it. It cannot tell a `SELECT` list from a `WHERE` clause, and cannot see `OR`-widened, negated, or subquery-scoped predicates. `SELECT tenant_id FROM orders` and `... WHERE tenant_id = :tenant_x_ids OR 1=1` both pass. Enforcement must come from the database (for example row-level security) or from the host applying its own predicate.
 
-Uses `node-sql-parser` (or equivalent) to parse the SQL into an AST:
+### What is checked today
 
-1. Identify all referenced tables and their aliases.
-2. For each tenant-scoped table: verify the required tenant predicate (`column = :placeholder` or `column = ANY(:placeholder)`) or validated inherited join path exists.
-3. For each polymorphic table: verify the type discriminator column appears in the WHERE clause.
-4. For JOINs between tenant-scoped tables: verify scope compatibility (both tables scoped to the same tenant root/IDs).
-5. For aggregation across tenant boundaries: verify the user's scope covers the aggregated set, or reject if `global` scope is required.
-6. For unknown tables: reject (strict) or flag (warn).
+1. For each scoped table whose name appears in the SQL: at least one `scopeThrough` path must be satisfied — for a `column` path, the column name or the root's `:tenant_<label>_ids` placeholder appears; for a `join` path, every step's `from`/`to` column names appear *and* the root's tenant column or placeholder appears. Otherwise: `MISSING_TENANT_PREDICATE`.
+2. For each polymorphic table whose name appears: the type column name must appear (`MISSING_TYPE_DISCRIMINATOR`) and the id column name must appear (`MISSING_TENANT_PREDICATE`).
+3. For each table classified `unknown` whose name appears: `UNKNOWN_TABLE_REFERENCED`.
 
-### Heuristic fallback
+### Not implemented
 
-When the parser cannot handle a SQL shape:
+The original design called for parser-based validation (AST table/alias resolution, predicate-shape checks, JOIN scope compatibility, aggregation checks) with a conservative heuristic fallback. None of the parser-based checks exist; the heuristic above is the only check. Any future parser-based work must update this section before the "not a security boundary" language is relaxed.
 
-1. Apply conservative pattern matching (table name detection, predicate presence).
-2. If heuristics cannot prove scope safety: reject (strict) or flag with `tenantWarnings` (warn).
+Pattern matching runs only over SQL code: string literals (`'…'`, `$tag$…$tag$`) and comments (`--`, `/* */`) are ignored, so a tenant column or table name that appears only inside them does not count. Quoted identifiers (`"agency_id"`, `` `orders` ``, `[orders]`) still count as the identifier they name.
 
 ### Enforcement modes
 
-| Mode | Unproven query | Unknown table | Missing scope predicate |
-|---|---|---|---|
-| `strict` | Rejected with policy error. | Rejected. | Rejected. |
-| `warn` | Returned with `tenantWarnings`. | Returned with warning. | Returned with warning. |
+| Mode | Check finds a problem (missing predicate, missing discriminator, unknown table) |
+|---|---|
+| `strict` | Throws `TenantGuardrailError` carrying the warnings. |
+| `warn` | SQL returned; findings in `tenantGuardrail.warnings`. |
+
+In both modes, a passing check does not prove the query is tenant-safe.
 
 Policy errors include: the table ID(s) involved, the expected scope path, and what was missing.
 
@@ -388,7 +391,7 @@ Policy errors include: the table ID(s) involved, the expected scope path, and wh
 
 ### Always injected (not chunked)
 
-The front-matter (structural policy data) is always included in every prompt when a tenant policy exists. This is a security boundary and must never be lost through RAG retrieval gaps.
+The front-matter (structural policy data) is always included in every prompt when a tenant policy exists. Tenant scoping in generated SQL depends on the model seeing the policy, so it must never be lost through RAG retrieval gaps.
 
 ### Chunked for RAG retrieval
 
@@ -396,10 +399,10 @@ The markdown body (business context prose) is chunked following the `concepts.md
 
 | Chunk type | ID | Content |
 |---|---|---|
-| **Hierarchy** | `chunk:tenant-policy#hierarchy` | The `## Hierarchy` body, prefixed with schema ID. |
-| **Scope rules** | `chunk:tenant-policy#scope-rules` | The `## Scope rules` body, prefixed with schema ID. |
-| **Sensitive interactions** | `chunk:tenant-policy#sensitive` | The `## Sensitive interactions` body, prefixed with schema ID. |
-| **Other sections** | `chunk:tenant-policy#section:<slug>` | Other H2 bodies, prefixed with schema ID. |
+| **Hierarchy** | `chunk:<schemaId>:tenant-policy#hierarchy` | The `## Hierarchy` body, prefixed with `# Tenant policy — Hierarchy`. |
+| **Scope rules** | `chunk:<schemaId>:tenant-policy#scope-rules` | The `## Scope rules` body, prefixed with `# Tenant policy — Scope rules`. |
+| **Sensitive interactions** | `chunk:<schemaId>:tenant-policy#sensitive-interactions` | The `## Sensitive interactions` body, prefixed with its heading. |
+| **Other sections** | `chunk:<schemaId>:tenant-policy#<slug>` | Other H2 bodies (slug = lower-cased heading, non-alphanumerics → `-`), prefixed with their heading. |
 
 Long sections use `#bc:<n>` suffixes following the existing chunking convention.
 

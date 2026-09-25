@@ -1,9 +1,13 @@
 import type { NormalizedTenantPolicy } from "../schema/v2/tenant-policy.js";
 import type { TenantScope } from "../schema/v2/tenant-policy.js";
+import { subtreeUnsupportedError } from "./tenant-placeholders.js";
 
 /**
  * Build the tenant policy + runtime scope block for NL→SQL prompts.
  * This block is always injected when a tenant policy exists (security boundary).
+ *
+ * @throws TenantScopeError (`UNSUPPORTED_ACCESS_KIND`) for `subtree` access, like
+ *   `validateTenantScope()`.
  */
 export function buildTenantPromptBlock(
   policy: NormalizedTenantPolicy,
@@ -74,13 +78,10 @@ export function buildTenantPromptBlock(
       lines.push(`  Use ${placeholder} as the parameter placeholder for tenant predicates.`);
       break;
     }
-    case "subtree": {
-      const rootLabel = policy.roots.find((r) => r.id === access.tenantRoot)?.label ?? access.tenantRoot;
-      const placeholder = `:tenant_${rootLabel.toLowerCase().replace(/[^a-z0-9]+/g, "_")}_ids`;
-      lines.push(`  Access: ${rootLabel} subtree from IDs = ${placeholder} (include all descendants)`);
-      lines.push(`  Use ${placeholder} as the parameter placeholder for tenant predicates.`);
-      break;
-    }
+    case "subtree":
+      // Descendants are never expanded, so telling the model to "include all
+      // descendants" would promise a scope the binder cannot deliver.
+      throw subtreeUnsupportedError();
     case "multi_root": {
       lines.push("  Access: multiple roots —");
       for (const s of access.scopes) {

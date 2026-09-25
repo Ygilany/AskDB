@@ -1,3 +1,6 @@
+import { createRequire } from "node:module";
+import { join } from "node:path";
+import { pathToFileURL } from "node:url";
 import type {
   ChunkPayload,
   ChunkType,
@@ -31,12 +34,23 @@ export type CreatePgvectorStoreOptions = {
   dimensions: number;
   /** Index strategy hint, surfaced via the documented DDL helper. Default `"hnsw"`. */
   indexStrategy?: PgvectorIndexStrategy;
+  /**
+   * Directory to resolve the optional `pg` peer from when it isn't resolvable
+   * from `@askdb/rag` itself (e.g. running from an npx cache). Default
+   * `process.cwd()`. Only used with `connectionString`.
+   */
+  resolveFrom?: string;
 };
 
 export type PgvectorStore = VectorStore & {
   /** Returns the DDL needed to provision the extension, table, and indexes. */
   setupSql(): string;
-  /** Executes setupSql() against the configured database. Idempotent — safe to call on every start. */
+  /**
+   * Executes setupSql() against the configured database. Idempotent — safe to
+   * call on every start. Migrates tables created by older versions (adds the
+   * `content_hash` column) and throws when an existing table's `embedding`
+   * column has different dimensions than this store was configured with.
+   */
   ensureSchema(): Promise<void>;
   /** Close any pool the adapter built internally. No-op when an external client was supplied. */
   close(): Promise<void>;
@@ -75,9 +89,7 @@ export function createPgvectorStore(
       );
     }
     // Lazy-load `pg` so the package stays usable without it for the other stores.
-    const pgMod: { Pool: new (cfg: { connectionString: string }) => unknown } =
-      // eslint-disable-next-line @typescript-eslint/no-require-imports
-      (await import("pg")) as { Pool: new (cfg: { connectionString: string }) => unknown };
+    const pgMod = await loadPg(options.resolveFrom);
     const pool = new pgMod.Pool({ connectionString: options.connectionString }) as PgClient & {
       end: () => Promise<void>;
     };
@@ -96,10 +108,18 @@ export function createPgvectorStore(
     const schemaIds = records.map((r) => r.payload.schemaId);
     const refs = records.map((r) => JSON.stringify(r.payload.refs));
     const sensitives = records.map((r) => r.payload.sensitive);
-    const vectors = records.map((r) => formatVector(r.vector));
+    const vectors = records.map((r) => {
+      if (r.vector.length !== dimensions) {
+        throw new Error(
+          `pgvector store "${table}" expects ${dimensions}-dimension vectors; got ${r.vector.length} for id="${r.id}".`,
+        );
+      }
+      return formatVector(r.vector);
+    });
+    const hashes = records.map((r) => r.hash ?? null);
 
     const sql = `
-      INSERT INTO ${quoteIdent(table)} (id, type, text, schema_id, refs, sensitive, embedding)
+      INSERT INTO ${quoteIdent(table)} (id, type, text, schema_id, refs, sensitive, embedding, content_hash)
       SELECT
         UNNEST($1::text[]),
         UNNEST($2::text[]),
@@ -107,16 +127,18 @@ export function createPgvectorStore(
         UNNEST($4::text[]),
         UNNEST($5::jsonb[]),
         UNNEST($6::boolean[]),
-        UNNEST($7::vector[])
+        UNNEST($7::vector[]),
+        UNNEST($8::text[])
       ON CONFLICT (id) DO UPDATE SET
         type = EXCLUDED.type,
         text = EXCLUDED.text,
         schema_id = EXCLUDED.schema_id,
         refs = EXCLUDED.refs,
         sensitive = EXCLUDED.sensitive,
-        embedding = EXCLUDED.embedding
+        embedding = EXCLUDED.embedding,
+        content_hash = EXCLUDED.content_hash
     `;
-    await c.query(sql, [ids, types, texts, schemaIds, refs, sensitives, vectors]);
+    await c.query(sql, [ids, types, texts, schemaIds, refs, sensitives, vectors, hashes]);
   };
 
   const query = async (
@@ -229,8 +251,11 @@ export function createPgvectorStore(
       `  schema_id text NOT NULL,`,
       `  refs jsonb NOT NULL DEFAULT '[]'::jsonb,`,
       `  sensitive boolean NOT NULL DEFAULT false,`,
-      `  embedding vector(${dimensions}) NOT NULL`,
+      `  embedding vector(${dimensions}) NOT NULL,`,
+      `  content_hash text`,
       `);`,
+      // Tables created before content hashes were persisted.
+      `ALTER TABLE ${quoteIdent(table)} ADD COLUMN IF NOT EXISTS content_hash text;`,
       `CREATE INDEX IF NOT EXISTS ${quoteIdent(`${table}_schema_id`)} ON ${quoteIdent(table)} (schema_id);`,
       `CREATE INDEX IF NOT EXISTS ${quoteIdent(`${table}_type`)} ON ${quoteIdent(table)} (type);`,
       `CREATE INDEX IF NOT EXISTS ${quoteIdent(`${table}_refs`)} ON ${quoteIdent(table)} USING gin (refs);`,
@@ -243,6 +268,25 @@ export function createPgvectorStore(
   const ensureSchema = async (): Promise<void> => {
     const c = await getClient();
     await c.query(setupSql());
+    // `CREATE TABLE IF NOT EXISTS` keeps an existing table as-is, including
+    // its `vector(n)` dimension — surface a mismatch instead of failing later.
+    const result = await c.query(
+      `SELECT a.atttypmod AS dimensions
+         FROM pg_attribute a
+        WHERE a.attrelid = to_regclass($1::text)
+          AND a.attname = 'embedding'
+          AND NOT a.attisdropped`,
+      [quoteIdent(table)],
+    );
+    const row = result.rows[0] as { dimensions?: number | string | null } | undefined;
+    const existing = row?.dimensions == null ? undefined : Number(row.dimensions);
+    if (existing !== undefined && existing > 0 && existing !== dimensions) {
+      throw new Error(
+        `pgvector table "${table}" stores ${existing}-dimension embeddings but this store is configured ` +
+          `with dimensions=${dimensions}. Use a different table (e.g. --pg-table / \`table\`), drop and ` +
+          `recreate "${table}", or configure dimensions=${existing} with a matching embedder.`,
+      );
+    }
   };
 
   const close = async (): Promise<void> => {
@@ -253,11 +297,28 @@ export function createPgvectorStore(
   };
 
   const hashesByPrefix = async (prefix: string): Promise<Record<string, string>> => {
-    // pgvector store doesn't persist hashes itself — the indexer relies on
-    // `schema.lock.json`. Returning empty here means the indexer falls back
-    // to its file-based hash bookkeeping, which is the intended path.
-    void prefix;
-    return {};
+    const c = await getClient();
+    // `left(...) = prefix` avoids LIKE-escaping `%` / `_` in schema ids.
+    const result = await c.query(
+      `SELECT id, content_hash FROM ${quoteIdent(table)}
+        WHERE left(id, char_length($1::text)) = $1::text
+          AND content_hash IS NOT NULL`,
+      [prefix],
+    );
+    const out: Record<string, string> = {};
+    for (const row of result.rows as { id: string; content_hash: string }[]) {
+      out[row.id] = row.content_hash;
+    }
+    return out;
+  };
+
+  const idsBySchema = async (schemaId: string): Promise<string[]> => {
+    const c = await getClient();
+    const result = await c.query(
+      `SELECT id FROM ${quoteIdent(table)} WHERE schema_id = $1`,
+      [schemaId],
+    );
+    return (result.rows as { id: string }[]).map((row) => row.id);
   };
 
   return {
@@ -266,10 +327,42 @@ export function createPgvectorStore(
     delete: del,
     count,
     hashesByPrefix,
+    idsBySchema,
+    describe: () => ({ kind: "pgvector", location: table, dimensions }),
     setupSql,
     ensureSchema,
     close,
   };
+}
+
+type PgModule = { Pool: new (cfg: { connectionString: string }) => unknown };
+
+/**
+ * Resolve the optional `pg` peer: first from `@askdb/rag` itself, then from
+ * `resolveFrom` (default `process.cwd()`) — the same fallback
+ * `@askdb/postgres`'s `loadPgDriver` uses, without depending on it. Handles
+ * the CJS `default` interop so `Pool` is found under plain Node ESM.
+ */
+async function loadPg(resolveFrom?: string): Promise<PgModule> {
+  const pick = (mod: unknown): PgModule => {
+    const m = mod as Partial<PgModule> & { default?: PgModule };
+    return typeof m.Pool === "function" ? (m as PgModule) : (m.default ?? (m as PgModule));
+  };
+  try {
+    return pick(await import("pg"));
+  } catch (cause) {
+    try {
+      const projectRequire = createRequire(join(resolveFrom ?? process.cwd(), "package.json"));
+      const resolved = projectRequire.resolve("pg");
+      return pick(await import(pathToFileURL(resolved).href));
+    } catch {
+      throw new Error(
+        "createPgvectorStore: `connectionString` requires the optional `pg` peer dependency. " +
+          "Install it in your project (e.g. `pnpm add pg`) or pass a pre-built `client`.",
+        { cause },
+      );
+    }
+  }
 }
 
 function quoteIdent(name: string): string {

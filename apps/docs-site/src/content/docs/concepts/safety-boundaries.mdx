@@ -1,46 +1,70 @@
 ---
 title: "Safety boundaries"
-description: "Every check AskDB runs on generated SQL — and where your application takes over."
+description: "Every check AskDB runs on generated SQL, what those checks do not cover, and how to run generated SQL safely."
 ---
 
+import { Aside } from "@astrojs/starlight/components";
 import defenseInDepthUrl from "../../../assets/diagrams/askdb-defense-in-depth.svg?url";
 
 <p class="doc-eyebrow">Guardrails</p>
 
-<p class="doc-lede">AskDB validates every SQL string the model returns before handing it back to your application. Generated SQL that violates the rules your schema artifact declares is rejected, not returned with a warning.</p>
+<p class="doc-lede">AskDB checks every SQL string the model returns before handing it back to your application. Those checks are heuristic guardrails that catch common model mistakes. They are defense in depth, not a security boundary. The database role your application uses to run the SQL is the boundary.</p>
 
-## What AskDB enforces
+<Aside type="caution" title="Generated SQL is untrusted input">
+AskDB does not parse SQL. Its checks are pattern-based and can be bypassed by unusual or adversarial SQL. Before you execute anything AskDB returns, follow [Run generated SQL safely](#run-generated-sql-safely) below.
+</Aside>
 
-Before `ask()` returns, the generated SQL passes through this sequence:
+## What AskDB checks
 
-1. **Parse.** The SQL is parsed for the selected dialect. If it doesn't parse, it's rejected.
-2. **Read-only.** Only `SELECT` (and dialect-specific read variants like `WITH … SELECT`) is allowed. `INSERT`, `UPDATE`, `DELETE`, `DROP`, `CREATE`, anything that writes — rejected.
-3. **Single statement.** Multi-statement queries are rejected.
-4. **Scope.** Queries against system schemas (`pg_catalog`, `information_schema`, MySQL `mysql`, SQL Server `sys`, and so on) are rejected.
-5. **Tenant filter (when declared).** If your schema artifact declares a tenant column on a table, every query that touches that table must include the tenant predicate. AskDB rewrites the query to add the filter or rejects it. See [Multi-tenancy](/guides/multi-tenancy/).
-6. **Sensitive columns (when configured).** Columns marked `sensitive: true` can be omitted from the prompt entirely with `--omit-sensitive-from-prompt` so the model never proposes them. That is prompt-level. Separately, the returned SQL is checked against the schema's `sensitive` markers and the result is attached as `sensitiveGuardrail` — a warning by default, a rejection with `sensitiveGuardrailMode: "strict"`. Call `validateSensitiveReferences` yourself on any SQL you cache and re-execute.
+Before `ask()` returns, the generated SQL goes through these checks. The first six run for every built-in dialect and always reject (throw `SqlValidationError`). They run over the output of a dialect-aware lexer that knows where each engine's strings, quoted identifiers, and comments begin and end (Postgres `E'…'` and `$tag$…$tag$`, MySQL backslash escapes and `#` comments, SQL Server `[…]`, and so on). The lexer only splits the SQL into tokens; it is not a parser.
 
-The full ruleset for what counts as read-only and how dialects vary lives in the [validation contract on GitHub](https://github.com/Ygilany/AskDB/blob/main/docs/contracts/modes-v1.md).
+1. **Starts with `SELECT` or `WITH`.** The first keyword must be `SELECT` or `WITH`. Anything else is rejected.
+2. **Single statement.** A `;` that separates a second statement is rejected. A single trailing `;` is removed.
+3. **No comments.** `--`, `/* … */`, and MySQL `#` comments are rejected.
+4. **No unterminated tokens.** A string, quoted identifier, dollar-quoted string, or block comment that never closes is rejected (`SQL_UNTERMINATED`), because where the statement ends would be ambiguous.
+5. **No write or DDL keywords.** The SQL is rejected if any of these appear as an unquoted keyword: `INSERT`, `UPDATE`, `DELETE`, `DROP`, `TRUNCATE`, `ALTER`, `CREATE`, `GRANT`, `REVOKE`, `VACUUM`, `ANALYZE`, `COPY`, `CALL`, `MERGE`, `INTO`. MySQL also blocks `OUTFILE` and `DUMPFILE`. SQLite also blocks `ATTACH`, `DETACH`, `PRAGMA`, and `REINDEX`. SQL Server also blocks `EXEC`, `EXECUTE`, `OPENROWSET`, `OPENQUERY`, `OPENDATASOURCE`, and statement verbs that run without a semicolon, such as `SHUTDOWN`, `WAITFOR`, `KILL`, `BACKUP`, `USE`, and `SET`.
+6. **No blocked functions.** Calls to a per-dialect list of side-effecting functions are rejected (`SQL_FORBIDDEN_FUNCTION`), for example Postgres `pg_sleep`, `set_config`, and `pg_read_file`, MySQL `SLEEP`, `BENCHMARK`, and `LOAD_FILE`, and SQLite `load_extension`.
+7. **Tenant check (when your artifact has a tenant policy).** `ask()` refuses to run without a `tenantScope`. After generation, for each tenant-scoped table named in the SQL, AskDB checks that the expected tenant column name (or the join columns on the declared path, or the matching `:tenant_*_ids` placeholder) appears somewhere in the statement's code. Text inside string literals and comments doesn't count. Tables your policy leaves unclassified are flagged too. It doesn't check where the column appears or what the predicate does, so `WHERE org_id = … OR 1=1` passes. Your policy's `enforcement` setting decides what happens on a miss: `strict` throws `TenantGuardrailError`, and `warn` returns the SQL with the findings in `tenantGuardrail.warnings`. A `:tenant_*_ids` placeholder your scope has no IDs for throws `TenantScopeError` rather than being returned. AskDB does not add a missing tenant filter. See [Multi-tenancy](/guides/multi-tenancy/).
+8. **Sensitive columns (when your schema marks any).** The returned SQL is checked for tables and columns marked `sensitive: true` (in `schema.json` or in a table's front-matter), and the result is attached as `sensitiveGuardrail`. The default mode is `"warn"`, which returns the SQL with the findings attached. Set `sensitiveGuardrailMode: "strict"` to throw `SensitiveReferenceError` instead. The check catches sensitive columns named in the SQL, and `SELECT *`, `alias.*`, or whole-row references such as `row_to_json(u)` on a table that has sensitive columns. It doesn't catch a sensitive value reached through a view or a function. Separately, `--omit-sensitive-from-prompt` keeps sensitive columns out of the prompt entirely, which only affects what the model sees. Call `validateSensitiveReferences` yourself on any SQL you cache and re-execute.
+
+### What these checks don't do
+
+- **No SQL parsing.** AskDB doesn't build a syntax tree, so it can't tell whether the SQL is valid for your engine. Your database reports syntax errors when you run the query.
+- **No system-schema filtering.** Queries against `pg_catalog`, `information_schema`, MySQL's `mysql` schema, SQL Server's `sys`, and so on are not rejected. Restrict them with database privileges.
+- **No query rewriting.** AskDB never adds a tenant filter, a row limit, or a timeout to the SQL. The only substitution it makes is replacing the `:tenant_*_ids` placeholders the model wrote with your scope's IDs (inline literals or your driver's parameter markers).
+- **No side-effect analysis.** A `SELECT` can still have side effects or cost. Only the fixed keyword and function lists above are blocked: a side-effecting function that isn't on the list, and very expensive joins, pass the checks.
+
+Guardrail bypasses are bugs and we fix them. Still, plan for the checks to miss things.
+
+## Run generated SQL safely
+
+AskDB returns SQL. It does not run it. If your application executes that SQL, these controls are the actual boundary:
+
+- **Use a least-privilege, read-only database role.** Grant `SELECT` only on the tables AskDB is meant to query, and nothing on system catalogs or sensitive tables you can exclude. Then a query that gets past AskDB's checks still can't write, and can't read what the role can't see. See [Run safely in production](/guides/run-safely-in-prod/#database-role) for an example.
+- **Enforce tenancy in the database.** For multi-tenant data, make the database the tenant boundary: Postgres row-level security (RLS) keyed on a per-request setting, per-tenant views, or per-tenant roles. AskDB's tenant check catches a model that forgot the filter. It does not stop a query that includes the filter and then widens it.
+- **Set timeouts and row limits.** Configure `statement_timeout` (or your engine's equivalent) on the connection, and cap the rows you fetch.
+- **Treat inputs to the prompt as untrusted.** The question text and your schema enrichment (descriptions, concepts, tenant-policy prose) all go into the prompt. Someone who controls either one can try to steer the model toward a different query. The database controls above still apply when that happens.
+- **Review before running when it matters.** For high-stakes questions, show the SQL to a person before running it, and log every question, generated SQL string, and outcome.
 
 ## What stays in your application
 
-AskDB returns validated SQL — it does not run it. The execution layer is yours, which means **your application** owns the boundaries that depend on runtime context:
+AskDB returns SQL. It does not run it. The execution layer is yours, which means **your application** owns the boundaries that depend on runtime context:
 
-- **Connection roles.** Connect to your database with a read-only user. Defense in depth: AskDB's validator says the SQL is read-only; your database role makes it impossible for it not to be.
+- **Connection roles.** Connect with a read-only, least-privilege user. That's what actually prevents writes. AskDB's keyword checks are a first filter.
 - **Query timeouts and row limits.** Set `statement_timeout` (or equivalent) on the connection. Wrap results in pagination.
 - **Approval flows.** When the question is high-stakes, show the SQL to a human before executing.
 - **Audit logging.** Log every question, every generated SQL, every execution outcome.
-- **User identity.** AskDB doesn't know who's asking. Your application enforces that user A can only see tenant A's data — AskDB just enforces the tenant predicate is present.
+- **User identity and tenant isolation.** AskDB doesn't know who's asking. Your application decides which tenant IDs go into `tenantScope`, and your database should enforce that user A can only read tenant A's rows. AskDB's tenant check only confirms the tenant column appears in the SQL.
 
 ## Defense in depth
 
-The point of two layers — AskDB's validation plus your application's execution boundary — is that neither has to be perfect. The model proposes; the validator narrows; your runtime role makes the proposed shape impossible to misuse.
+AskDB's checks and your execution boundary are separate layers. AskDB's checks catch the common ways a model gets it wrong: a write statement, a stacked second statement, a forgotten tenant filter, a sensitive column. The database role, RLS policies, and timeouts in your runtime hold even when a query gets past those checks.
 
 A typical production stack looks like:
 
-<img src={defenseInDepthUrl} alt="Vertical flow: question → ask() (with schema artifact + model) → validated SQL → your app (logs it, optionally shows it) → read-only DB role (pool with statement_timeout) → paginated result" class="doc-diagram" />
+<img src={defenseInDepthUrl} alt="Vertical flow: question → ask() (with schema artifact + model) → checked SQL → your app (logs it, optionally shows it) → read-only DB role (pool with statement_timeout) → paginated result" class="doc-diagram" />
 
-Each layer is doing one thing. None of them is the only thing standing between a question and a misbehaving query.
+Each layer does one job, and no single layer is the only protection.
 
 ## Read next
 

@@ -21,7 +21,11 @@ export type SqlValidationRuleCode =
   | "SQL_MULTI_STATEMENT"
   | "SQL_COMMENT"
   | "SQL_NOT_SELECT_OR_WITH"
-  | "SQL_FORBIDDEN_KEYWORD";
+  | "SQL_FORBIDDEN_KEYWORD"
+  /** A call to a function in the dialect's `blockedFunctions` (e.g. `pg_sleep(`, `LOAD_FILE(`). */
+  | "SQL_FORBIDDEN_FUNCTION"
+  /** A string, quoted identifier, dollar-quoted string, or block comment never closes. */
+  | "SQL_UNTERMINATED";
 
 export class SqlValidationError extends AskDbError {
   constructor(
@@ -42,11 +46,28 @@ export class SqlGenerationError extends AskDbError {
   }
 }
 
+/** A string `dialect` passed to `ask()` that is not a built-in dialect id. */
+export class UnknownDialectError extends AskDbError {
+  constructor(
+    message: string,
+    public readonly dialectId: string,
+  ) {
+    super(message);
+    this.name = "UnknownDialectError";
+  }
+}
+
 export type TenantScopeRejectionReason =
   | "MISSING_SCOPE"
   | "UNKNOWN_TENANT_ROOT"
   | "GLOBAL_WITHOUT_REASON"
-  | "INVALID_SCOPE_SHAPE";
+  | "INVALID_SCOPE_SHAPE"
+  /** `access.kind` is declared but not implemented (currently `"subtree"`). */
+  | "UNSUPPORTED_ACCESS_KIND"
+  /** Generated SQL references a `:tenant_*` placeholder the scope has no IDs for. */
+  | "UNRESOLVED_TENANT_PLACEHOLDER"
+  /** A multi-ID scope met a tenant predicate with no list form (e.g. `<=`). */
+  | "UNSUPPORTED_TENANT_PREDICATE";
 
 export class TenantScopeError extends AskDbError {
   constructor(
@@ -103,9 +124,16 @@ export class TenantGuardrailError extends AskDbError {
 
 /** How a sensitive identifier was matched inside a statement. */
 export type SensitiveMatchKind =
-  /** `table.column` or `alias.column` where the alias binds to the owning table. */
+  /**
+   * `table.column` or `alias.column` where the alias binds to the owning table. Also
+   * `alias.*` and whole-row references such as `row_to_json(alias)`, which reach every
+   * sensitive column of the table.
+   */
   | "qualified"
-  /** Bare `column`, counted only because the owning table is in the statement's scope. */
+  /**
+   * Bare `column`, counted only because the owning table is in the statement's scope.
+   * Also a bare `SELECT *`, which reaches every sensitive column of the in-scope tables.
+   */
   | "unqualified"
   /** The sensitive table itself appears as a `FROM`/`JOIN` target (`column` is `"*"`). */
   | "table";
@@ -128,7 +156,9 @@ export type SensitiveScopeIssue =
   /** A `qualifier.column` reference whose qualifier is neither a known table, alias, nor CTE. */
   | "UNKNOWN_QUALIFIER"
   /** A table source that is not a relation name (table function, `VALUES`, …). */
-  | "OPAQUE_TABLE_SOURCE";
+  | "OPAQUE_TABLE_SOURCE"
+  /** A string, quoted identifier, or comment never closes, so the rest of the statement could not be scanned. */
+  | "UNTERMINATED_TOKEN";
 
 /** Conservative-failure report attached when scope resolution was incomplete. */
 export type SensitiveScopeReport = {

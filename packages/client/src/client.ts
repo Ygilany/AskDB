@@ -7,6 +7,7 @@ import {
   type ReasoningEffort,
 } from "@askdb/ai";
 import type { AskDbRuntimeConfig } from "@askdb/config";
+import { generateText as defaultGenerateText } from "ai";
 import {
   ask,
   isBuiltInDialectId,
@@ -48,6 +49,13 @@ export type AskOverrides = Omit<
    * Ignored when `model` or `deps.generateText` is also set (BYO paths).
    */
   reasoningEffort?: ReasoningEffort;
+  /**
+   * Abort signal forwarded to the NL→SQL model call (`generateText({ abortSignal })`).
+   * Use it to enforce a per-request timeout (e.g. `AbortSignal.timeout(60_000)`); an
+   * aborted call rejects with `SqlGenerationError`. Custom `AskDialect` implementations
+   * receive it only through `deps.generateText`.
+   */
+  abortSignal?: AbortSignal;
 };
 
 export type DialectResolution = {
@@ -61,9 +69,14 @@ export type CreateAskDbOptions = {
   /** Runtime snapshot, e.g. from `getAskDbRuntimeConfig()`. */
   config: AskDbRuntimeConfig;
   /**
-   * AI provider adapters (e.g. `[openaiProvider]` from `@askdb/ai-openai`).
-   * The client builds the registry internally — the common path; you never
-   * import from `@askdb/ai`. Pass exactly one of `providers` or `registry`.
+   * Which AI providers the client can build models for. Optional: when neither
+   * `providers` nor `registry` is passed, every provider built into `@askdb/ai`
+   * is registered and `ai.provider` in your config picks one — install the
+   * matching SDK (e.g. `@ai-sdk/openai`), which is loaded on first use.
+   *
+   * Pass built-in names to restrict the set (`providers: ["openai"]`), or
+   * `AiProviderAdapter` objects for custom providers (mixable with names).
+   * Pass at most one of `providers` or `registry`.
    */
   providers?: AiProviderAdapters;
   /**
@@ -102,11 +115,9 @@ function resolveRegistry(options: CreateAskDbOptions): AiRegistry {
     throw new Error("createAskDb: pass either `providers` or `registry`, not both.");
   }
   if (options.registry) return options.registry;
-  if (options.providers) return createAiRegistry(options.providers);
-  throw new Error(
-    "createAskDb: pass `providers` with the AI adapters for your configured provider " +
-      '(e.g. `providers: [openaiProvider]` from "@askdb/ai-openai"), or a prebuilt `registry`.',
-  );
+  // No providers/registry: register every built-in provider (each loads its
+  // @ai-sdk/* package lazily), so `createAskDb({ config })` is enough.
+  return createAiRegistry(options.providers);
 }
 
 export function createAskDb(options: CreateAskDbOptions): AskDbClient {
@@ -261,6 +272,8 @@ export function createAskDb(options: CreateAskDbOptions): AskDbClient {
         dialect: dialectOverride,
         deps,
         reasoningEffort,
+        abortSignal,
+        omitSensitiveIdentifiersFromNlToSqlPrompt,
         ...rest
       } = overrides;
       const schema = schemaOverride ? loadFromSource(schemaOverride, "request") : resolveDefaultSchema();
@@ -270,16 +283,24 @@ export function createAskDb(options: CreateAskDbOptions): AskDbClient {
 
       // An explicit `deps.providerOptions` from the caller always wins over
       // the computed one; otherwise merge the resolved reasoning effort in.
-      const finalDeps: AskGenerateDeps | undefined =
+      const resolvedDeps: AskGenerateDeps | undefined =
         resolvedModel.mockDeps ??
         (deps?.providerOptions !== undefined
           ? deps
           : resolvedModel.providerOptions !== undefined
             ? { ...deps, providerOptions: resolvedModel.providerOptions }
             : deps);
+      const finalDeps = abortSignal ? withAbortSignal(resolvedDeps, abortSignal) : resolvedDeps;
+
+      // Config `modes.omitSensitiveFromPrompt` is a floor: a per-call override can
+      // tighten it (true) but never loosen it (false) when the operator enabled it.
+      const omitSensitive =
+        omitSensitiveIdentifiersFromNlToSqlPrompt === true ||
+        config.modes?.omitSensitiveFromPrompt === true;
 
       return ask({
         ...rest,
+        ...(omitSensitive ? { omitSensitiveIdentifiersFromNlToSqlPrompt: true } : {}),
         question,
         schema,
         model: resolvedModel.model,
@@ -288,4 +309,12 @@ export function createAskDb(options: CreateAskDbOptions): AskDbClient {
       });
     },
   };
+}
+
+/** Wrap `generateText` (the caller's mock or the AI SDK default) so every call carries `signal`. */
+function withAbortSignal(deps: AskGenerateDeps | undefined, signal: AbortSignal): AskGenerateDeps {
+  const inner = deps?.generateText ?? defaultGenerateText;
+  const generateText = ((args: Parameters<typeof defaultGenerateText>[0]) =>
+    inner({ ...args, abortSignal: signal })) as typeof defaultGenerateText;
+  return { ...deps, generateText };
 }

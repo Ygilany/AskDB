@@ -1,5 +1,5 @@
 import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
 import {
   parseConceptsMarkdown,
   parseTableMarkdown,
@@ -38,11 +38,24 @@ export type Workspace = {
   warnings: SchemaV2Warning[];
 };
 
+/**
+ * Single-file distribution of a Schema v2 directory, as produced by
+ * `askdb bundle` and read by `@askdb/core`'s `loadSchema` / `loadSchemaFromJson`.
+ * Carries every file the core directory loader reads: `schema.json`,
+ * `tables/*.md`, `concepts.md`, and `tenant-policy.md`.
+ */
 export type BundledSchemaV2 = {
   bundled: true;
   physical: V2SchemaJson;
+  /** `tables/` filename → raw markdown content. */
   tables: Record<string, string>;
+  /** Raw `concepts.md` content, when the file exists. */
   concepts?: string;
+  /**
+   * Raw `tenant-policy.md` content, when the file exists. Dropping it would
+   * silently disable tenant-scope enforcement in `ask()` for bundled deployments.
+   */
+  tenantPolicy?: string;
 };
 
 /**
@@ -67,16 +80,31 @@ export function loadWorkspace(schemaDir: string): Workspace {
     }
   }
 
-  // Pair physical tables with their .md (if any). New physical tables get a
-  // default filename derived from the table name.
-  const tables: WorkspaceTable[] = physical.tables.map((physTable) => {
+  // Pair physical tables with their .md (if any), matched by front-matter id —
+  // existing files keep their filename whatever it is. Physical tables without
+  // a .md get a safe, collision-free default filename.
+  const matchedByTableId = new Map<string, [string, ParsedTableMarkdown]>();
+  for (const physTable of physical.tables) {
     const matched = [...parsedByFile.entries()].find(
       ([, p]) => p.frontmatter.id === physTable.id,
     );
+    if (matched) matchedByTableId.set(physTable.id, matched);
+  }
+  const defaultFilenames = assignDefaultTableFilenames(
+    physical.tables.filter((t) => !matchedByTableId.has(t.id)),
+    physical.tables,
+    [...parsedByFile.keys()],
+  );
+  const tables: WorkspaceTable[] = physical.tables.map((physTable) => {
+    const matched = matchedByTableId.get(physTable.id);
     if (matched) {
       return { physical: physTable, filename: matched[0], parsed: matched[1] };
     }
-    return { physical: physTable, filename: `${physTable.name}.md`, parsed: undefined };
+    return {
+      physical: physTable,
+      filename: defaultFilenames.get(physTable.id)!,
+      parsed: undefined,
+    };
   });
 
   let concepts: ParsedConceptsMarkdown | undefined;
@@ -107,8 +135,8 @@ export function saveTable(
   const wt = workspace.tables.find((t) => t.physical.id === tableId);
   if (!wt) throw new Error(`No such table: ${tableId}`);
   const tablesDir = join(workspace.schemaDir, "tables");
+  const filePath = resolveTableFilePath(tablesDir, wt.filename);
   mkdirSync(tablesDir, { recursive: true });
-  const filePath = join(tablesDir, wt.filename);
   const md = writeTableMarkdown(frontmatter, body);
   writeFileSync(filePath, md, "utf8");
   // Update in-memory parse so subsequent edits see the saved state.
@@ -219,16 +247,93 @@ export function bundleSchemaDirectory(schemaDir: string): BundledSchemaV2 {
       tables[entry] = readFileSync(join(tableDir, entry), "utf8");
     }
   }
-  const conceptsPath = join(schemaDir, "concepts.md");
-  const concepts = existsSync(conceptsPath)
-    ? readFileSync(conceptsPath, "utf8")
-    : undefined;
+  const concepts = readOptionalFile(join(schemaDir, "concepts.md"));
+  const tenantPolicy = readOptionalFile(join(schemaDir, "tenant-policy.md"));
   return {
     bundled: true,
     physical,
     tables,
     ...(concepts !== undefined ? { concepts } : {}),
+    ...(tenantPolicy !== undefined ? { tenantPolicy } : {}),
   };
+}
+
+function readOptionalFile(filePath: string): string | undefined {
+  return existsSync(filePath) ? readFileSync(filePath, "utf8") : undefined;
+}
+
+/**
+ * Turn a database identifier into a filename-safe slug. Path separators, NUL,
+ * control characters, and characters reserved on Windows become `_`; names
+ * that would be hidden files (including `.` / `..`) or Windows device names
+ * get a `_` prefix; trailing dots and spaces (which Windows strips) become `_`.
+ * Everything else, including non-ASCII letters, is kept so ordinary names
+ * stay readable.
+ */
+function toSafeFilenameSlug(identifier: string): string {
+  let slug = identifier.replace(/[\u0000-\u001f\u007f/\\<>:"|?*]/g, "_");
+  slug = slug.replace(/[. ]+$/, (m) => "_".repeat(m.length));
+  if (slug === "") return "_";
+  if (slug.startsWith(".")) slug = `_${slug}`;
+  if (/^(con|prn|aux|nul|com[0-9]|lpt[0-9])(\.|$)/i.test(slug)) slug = `_${slug}`;
+  return slug;
+}
+
+/**
+ * Pick default `tables/` filenames for tables that do not have a markdown file
+ * yet. Uses `<name>.md` when the bare name is unique across the physical layer
+ * (compared case-insensitively, for case-insensitive filesystems), otherwise
+ * the schema-qualified `<schema>.<name>.md`. Never reuses a filename already on
+ * disk or already assigned; falls back to a numeric suffix if needed.
+ */
+function assignDefaultTableFilenames(
+  unassigned: V2Table[],
+  allTables: V2Table[],
+  existingFilenames: string[],
+): Map<string, string> {
+  const bareNameCounts = new Map<string, number>();
+  for (const t of allTables) {
+    const key = toSafeFilenameSlug(t.name).toLowerCase();
+    bareNameCounts.set(key, (bareNameCounts.get(key) ?? 0) + 1);
+  }
+  const taken = new Set(existingFilenames.map((f) => f.toLowerCase()));
+  const assigned = new Map<string, string>();
+  for (const t of unassigned) {
+    const bare = toSafeFilenameSlug(t.name);
+    const qualified = toSafeFilenameSlug(`${t.schema}.${t.name}`);
+    const nameCollides = (bareNameCounts.get(bare.toLowerCase()) ?? 0) > 1;
+    let filename = `${nameCollides ? qualified : bare}.md`;
+    if (taken.has(filename.toLowerCase())) filename = `${qualified}.md`;
+    for (let n = 2; taken.has(filename.toLowerCase()); n += 1) {
+      filename = `${qualified}-${n}.md`;
+    }
+    taken.add(filename.toLowerCase());
+    assigned.set(t.id, filename);
+  }
+  return assigned;
+}
+
+/**
+ * Resolve a workspace table filename to an absolute path, refusing anything
+ * that would land outside `tablesDir` (path separators, `..`, absolute paths,
+ * NUL bytes) or is not a `.md` file.
+ */
+function resolveTableFilePath(tablesDir: string, filename: string): string {
+  const root = resolve(tablesDir);
+  const filePath = resolve(root, filename);
+  if (
+    filename.includes("\0") ||
+    filename.includes("/") ||
+    filename.includes("\\") ||
+    basename(filePath) !== filename ||
+    dirname(filePath) !== root ||
+    !filename.endsWith(".md")
+  ) {
+    throw new Error(
+      `Refusing to write table markdown outside tables/: ${JSON.stringify(filename)}`,
+    );
+  }
+  return filePath;
 }
 
 /**

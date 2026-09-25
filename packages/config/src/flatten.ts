@@ -8,6 +8,7 @@ import {
 import {
   DEFAULT_ANTHROPIC_CHAT_MODEL,
   DEFAULT_AZURE_OPENAI_DEPLOYMENT,
+  DEFAULT_GATEWAY_CHAT_MODEL,
   DEFAULT_GOOGLE_CHAT_MODEL,
   DEFAULT_INTROSPECT_OUTPUT_DIR,
   DEFAULT_MOCK_RAG_EMBEDDING_DIMENSIONS,
@@ -28,6 +29,8 @@ import type {
   CustomAiConfig,
   FoundryAiConfig,
   FoundryConfig,
+  GatewayAiConfig,
+  GatewayConfig,
   GoogleAiConfig,
   GoogleConfig,
   OpenaiAiConfig,
@@ -67,6 +70,13 @@ function applyGoogleAi(out: Record<string, string>, cfg: GoogleConfig): void {
   set(out, "ASKDB_AI_MODEL", model);
 }
 
+function applyGatewayAi(out: Record<string, string>, cfg: GatewayConfig): void {
+  set(out, "AI_GATEWAY_API_KEY", cfg.apiKey);
+  set(out, "ASKDB_AI_BASE_URL", cfg.baseUrl);
+  const model = cfg.model?.trim() || DEFAULT_GATEWAY_CHAT_MODEL;
+  set(out, "ASKDB_AI_MODEL", model);
+}
+
 function applyAzureLikeAi(out: Record<string, string>, cfg: AzureConfig | FoundryConfig): void {
   set(out, "AZURE_OPENAI_API_KEY", cfg.apiKey);
   if (cfg.secondaryApiKey) {
@@ -76,6 +86,7 @@ function applyAzureLikeAi(out: Record<string, string>, cfg: AzureConfig | Foundr
   set(out, "AZURE_OPENAI_DEPLOYMENT", model);
   set(out, "AZURE_DEPLOYMENT_NAME", model);
   set(out, "ASKDB_AI_MODEL", model);
+  set(out, "ASKDB_AI_AZURE_RESOURCE_NAME", cfg.resourceName);
   set(out, "AZURE_OPENAI_BASE_URL", cfg.baseUrl);
   set(out, "AZURE_OPENAI_API_VERSION", cfg.apiVersion);
   set(out, "ASKDB_AI_AZURE_MODEL_FAMILY", cfg.modelFamily);
@@ -153,6 +164,9 @@ export function flattenAskDbConfig(config: AskDbConfig): Record<string, string> 
   } else if (config.ai.provider === "anthropic") {
     set(out, "ASKDB_AI_PROVIDER", "anthropic");
     applyAnthropicAi(out, requireProviderBranch("anthropic", (config.ai as AnthropicAiConfig).providerConfig?.anthropic));
+  } else if (config.ai.provider === "gateway") {
+    set(out, "ASKDB_AI_PROVIDER", "gateway");
+    applyGatewayAi(out, requireProviderBranch("gateway", (config.ai as GatewayAiConfig).providerConfig?.gateway));
   } else {
     // Custom/third-party provider: flatten to the universal ASKDB_AI_* keys that
     // @askdb/ai's resolveBaseConfig honors for every registered adapter.
@@ -289,6 +303,37 @@ export function flattenAskDbConfig(config: AskDbConfig): Record<string, string> 
   set(out, "ASKDB_STUDIO_EXECUTE_PROVIDER", config.studio?.execute?.provider);
   set(out, "ASKDB_STUDIO_DATABASE_URL", config.studio?.execute?.databaseUrl);
   set(out, "ASKDB_STUDIO_SQLITE_FILE", config.studio?.execute?.file);
+  const studioExecute = config.studio?.execute;
+  if (studioExecute?.enabled !== undefined) {
+    if (typeof studioExecute.enabled !== "boolean") {
+      throw new Error("askdb.config: studio.execute.enabled must be a boolean.");
+    }
+    set(out, "ASKDB_STUDIO_EXECUTE_ENABLED", String(studioExecute.enabled));
+  }
+  if (studioExecute?.useIntrospectionConnection !== undefined) {
+    if (typeof studioExecute.useIntrospectionConnection !== "boolean") {
+      throw new Error("askdb.config: studio.execute.useIntrospectionConnection must be a boolean.");
+    }
+    set(
+      out,
+      "ASKDB_STUDIO_EXECUTE_USE_INTROSPECTION_CONNECTION",
+      String(studioExecute.useIntrospectionConnection),
+    );
+  }
+  for (const [field, key] of [
+    ["timeoutMs", "ASKDB_STUDIO_EXECUTE_TIMEOUT_MS"],
+    ["maxRows", "ASKDB_STUDIO_EXECUTE_MAX_ROWS"],
+  ] as const) {
+    const raw = studioExecute?.[field];
+    if (raw === undefined) continue;
+    const n = parsePositiveInteger(raw);
+    if (n === undefined) {
+      throw new Error(
+        `askdb.config: studio.execute.${field} must be a positive integer (got ${JSON.stringify(raw)}).`,
+      );
+    }
+    set(out, key, String(n));
+  }
   // --- HTTP API listen (canonical keys on runtime flat map) ---
   const httpListen = config.httpApi?.listen;
   if (httpListen?.port !== undefined && !Number.isNaN(httpListen.port)) {
@@ -296,6 +341,18 @@ export function flattenAskDbConfig(config: AskDbConfig): Record<string, string> 
   }
   if (httpListen?.host) {
     set(out, "HOST", httpListen.host);
+  }
+  if (config.httpApi?.allowSchemaOverride === true) {
+    set(out, "ASKDB_HTTP_ALLOW_SCHEMA_OVERRIDE", "true");
+  }
+  if (config.httpApi?.requestTimeoutMs !== undefined) {
+    const timeoutMs = parsePositiveInteger(config.httpApi.requestTimeoutMs);
+    if (timeoutMs === undefined) {
+      throw new Error(
+        `askdb.config: invalid httpApi.requestTimeoutMs ${JSON.stringify(config.httpApi.requestTimeoutMs)} (expected a positive integer number of milliseconds).`,
+      );
+    }
+    set(out, "ASKDB_HTTP_REQUEST_TIMEOUT_MS", String(timeoutMs));
   }
 
   return out;

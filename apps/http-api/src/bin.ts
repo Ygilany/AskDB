@@ -38,10 +38,15 @@ if (cliOptions.help) {
 
   // Prefer repo root `.env`, but be resilient to different working directories.
   const candidates = [repoRootEnv, cwdEnv, pkgEnv].filter((p) => existsSync(p));
-  bootstrapAskDbEnv({
-    cwd: process.cwd(),
-    dotenvCandidatePaths: candidates.length > 0 ? candidates : undefined,
-  });
+  try {
+    bootstrapAskDbEnv({
+      cwd: process.cwd(),
+      dotenvCandidatePaths: candidates.length > 0 ? candidates : undefined,
+    });
+  } catch (error) {
+    process.stderr.write(`askdb-http: ${formatError(error)}\n`);
+    process.exit(1);
+  }
 }
 
 const { httpApi } = getAskDbRuntimeConfig();
@@ -50,8 +55,27 @@ const app = createAskDbHttpServer({
   host: cliOptions.host ?? httpApi.listen.host,
   schemaPath: cliOptions.schemaPath,
 });
-await app.listen();
+try {
+  await app.listen();
+} catch (error) {
+  process.stderr.write(`askdb-http: ${formatListenError(error, app.host, app.port)}\n`);
+  process.exit(1);
+}
 console.log(`AskDB HTTP API listening on http://${app.host}:${app.port}`);
+
+function formatListenError(error: unknown, host: string, port: number): string {
+  const code = (error as { code?: unknown } | undefined)?.code;
+  if (code === "EADDRINUSE") {
+    return `cannot listen on ${host}:${port} — address already in use. Pick another port with --port or httpApi.listen.port.`;
+  }
+  if (code === "EACCES") {
+    return `cannot listen on ${host}:${port} — permission denied. Use a port above 1023 or run with the required privileges.`;
+  }
+  if (code === "EADDRNOTAVAIL") {
+    return `cannot listen on ${host}:${port} — address not available on this machine. Check --host or httpApi.listen.host.`;
+  }
+  return `cannot listen on ${host}:${port} — ${formatError(error)}`;
+}
 
 function parseOptions(argv: readonly string[]): CliOptions {
   const opts: CliOptions = {};

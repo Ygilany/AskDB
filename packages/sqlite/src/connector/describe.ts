@@ -5,7 +5,6 @@ import type {
   IntrospectionWarning,
   SqlColumn,
   SqlForeignKey,
-  SqlForeignKeyAction,
   SqlIndex,
   SqlNamespace,
   SqlSchema,
@@ -13,8 +12,17 @@ import type {
   SqlUnique,
   SqlView,
 } from "@askdb/introspect";
-import { compileTableFilters } from "./glob.js";
-import { makeColumnId, makeTableId } from "./ids.js";
+import {
+  ambiguousFilterWarnings,
+  buildOrderedGroups,
+  byName,
+  compileTableFilters,
+  groupBy,
+  makeColumnId,
+  makeTableId,
+  mapFkAction,
+  rowsToRecords,
+} from "@askdb/introspect/kit";
 
 /**
  * SQLite has a single namespace per database file. We emit it as `"public"`
@@ -31,15 +39,21 @@ export type DescribeSqliteInput = {
 
 // SQLite catalog SQL — relies on the table-valued PRAGMA functions
 // (`pragma_table_info`, `pragma_foreign_key_list`, `pragma_index_list`,
-// `pragma_index_info`) available since SQLite 3.16. The `sqlite_%` prefix
-// covers internal objects (`sqlite_sequence`, FTS shadow tables, etc.).
+// `pragma_index_info`) available since SQLite 3.16.
+//
+// Internal objects (`sqlite_sequence`, `sqlite_stat1`, `sqlite_autoindex_*`)
+// all start with the literal, lowercase prefix `sqlite_`. We match it with
+// `substr(name, 1, 7) <> 'sqlite_'` rather than `NOT LIKE 'sqlite_%'`: in LIKE
+// the `_` is a single-char wildcard and matching is ASCII case-insensitive, so
+// `NOT LIKE 'sqlite_%'` silently drops user tables such as `SqliteUsers`.
+const NOT_INTERNAL = (col: string) => `substr(${col}, 1, 7) <> 'sqlite_'`;
 
 const SQL_OBJECTS = `SELECT
   name AS name,
   type AS type,
   sql AS sql
 FROM sqlite_master
-WHERE type IN ('table', 'view') AND name NOT LIKE 'sqlite_%'
+WHERE type IN ('table', 'view') AND ${NOT_INTERNAL("name")}
 ORDER BY name`;
 
 const SQL_COLUMNS = `SELECT
@@ -51,7 +65,7 @@ const SQL_COLUMNS = `SELECT
   p.dflt_value AS dflt_value,
   p.pk AS pk
 FROM sqlite_master m, pragma_table_info(m.name) p
-WHERE m.type IN ('table', 'view') AND m.name NOT LIKE 'sqlite_%'
+WHERE m.type IN ('table', 'view') AND ${NOT_INTERNAL("m.name")}
 ORDER BY m.name, p.cid`;
 
 const SQL_FOREIGN_KEYS = `SELECT
@@ -64,7 +78,7 @@ const SQL_FOREIGN_KEYS = `SELECT
   fk.on_update AS on_update,
   fk.on_delete AS on_delete
 FROM sqlite_master m, pragma_foreign_key_list(m.name) fk
-WHERE m.type = 'table' AND m.name NOT LIKE 'sqlite_%'
+WHERE m.type = 'table' AND ${NOT_INTERNAL("m.name")}
 ORDER BY m.name, fk.id, fk.seq`;
 
 const SQL_INDEX_LIST = `SELECT
@@ -73,7 +87,7 @@ const SQL_INDEX_LIST = `SELECT
   il."unique" AS is_unique,
   il.origin AS origin
 FROM sqlite_master m, pragma_index_list(m.name) il
-WHERE m.type = 'table' AND m.name NOT LIKE 'sqlite_%'
+WHERE m.type = 'table' AND ${NOT_INTERNAL("m.name")}
 ORDER BY m.name, il.seq`;
 
 const SQL_INDEX_INFO = `SELECT
@@ -83,7 +97,7 @@ const SQL_INDEX_INFO = `SELECT
   ii.cid AS cid,
   ii.name AS column_name
 FROM sqlite_master m, pragma_index_list(m.name) il, pragma_index_info(il.name) ii
-WHERE m.type = 'table' AND m.name NOT LIKE 'sqlite_%'
+WHERE m.type = 'table' AND ${NOT_INTERNAL("m.name")}
 ORDER BY m.name, il.name, ii.seqno`;
 
 /** Internal: the catalog SQL strings, exposed for snapshot-based tests. */
@@ -119,7 +133,8 @@ type IndexListRow = {
   table_name: string;
   index_name: string;
   is_unique: 0 | 1 | number;
-  // 'c' = auto-created (e.g. UNIQUE col), 'u' = explicit CREATE INDEX, 'pk' = PK index
+  // 'c' = explicit CREATE INDEX, 'u' = auto-index backing a UNIQUE constraint,
+  // 'pk' = auto-index backing a PRIMARY KEY (per PRAGMA index_list docs)
   origin: "c" | "u" | "pk" | string;
 };
 type IndexInfoRow = {
@@ -134,17 +149,7 @@ export async function describeSqlite(input: DescribeSqliteInput): Promise<Intros
   const runner = input.runner;
   const tableFilter = compileTableFilters(input.filters?.tables);
 
-  const run = async <T>(sql: string): Promise<T[]> => {
-    const result = await runner(sql);
-    if (result.rows.length === 0) return [];
-    const idx = new Map<string, number>();
-    for (let i = 0; i < result.columns.length; i++) idx.set(result.columns[i]!, i);
-    return result.rows.map((row) => {
-      const record: Record<string, unknown> = {};
-      for (const [name, i] of idx) record[name] = row[i];
-      return record as T;
-    });
-  };
+  const run = async <T>(sql: string): Promise<T[]> => rowsToRecords<T>(await runner(sql));
 
   const [objectRows, columnRows, fkRows, indexListRows, indexInfoRows] = await Promise.all([
     run<ObjectRow>(SQL_OBJECTS),
@@ -184,13 +189,9 @@ export function foldSqliteResult(input: FoldInput): IntrospectionResult {
   const fksByTable = groupBy(input.fkRows, (r) => r.table_name);
   const indexListByTable = groupBy(input.indexListRows, (r) => r.table_name);
   // index info is keyed by `(table_name, index_name)` so we group per index.
-  const indexInfoByIndex = new Map<string, IndexInfoRow[]>();
-  for (const r of input.indexInfoRows) {
-    const key = `${r.table_name}::${r.index_name}`;
-    const list = indexInfoByIndex.get(key) ?? [];
-    list.push(r);
-    indexInfoByIndex.set(key, list);
-  }
+  const indexInfoByIndex = groupBy(input.indexInfoRows, (r) => `${r.table_name}::${r.index_name}`);
+
+  const tableRefs = buildTableRefIndex(input.objectRows, columnsByTable);
 
   const tables: SqlTable[] = [];
   const views: SqlView[] = [];
@@ -240,7 +241,7 @@ export function foldSqliteResult(input: FoldInput): IntrospectionResult {
       comment: undefined,
       columns,
       primaryKey: pkColumns.length > 0 ? { columns: pkColumns } : undefined,
-      foreignKeys: buildForeignKeys(fksByTable.get(obj.name) ?? []),
+      foreignKeys: buildForeignKeys(fksByTable.get(obj.name) ?? [], tableRefs),
       uniqueConstraints,
       indexes,
       checkConstraints: [],
@@ -259,12 +260,12 @@ export function foldSqliteResult(input: FoldInput): IntrospectionResult {
   };
 
   const isEmpty = tables.length === 0 && views.length === 0;
-  for (const pattern of input.declaredFilters) {
-    const matched =
-      tables.some((t) => compileTableFilters([pattern])(`${NAMESPACE}.${t.name}`)) ||
-      views.some((v) => compileTableFilters([pattern])(`${NAMESPACE}.${v.name}`));
-    if (!matched) warnings.push({ code: "ambiguous_filter", filter: pattern });
-  }
+  warnings.push(
+    ...ambiguousFilterWarnings(
+      input.declaredFilters,
+      [...tables, ...views].map((t) => `${NAMESPACE}.${t.name}`),
+    ),
+  );
 
   const schema: SqlSchema = {
     schemaId: input.schemaId,
@@ -289,36 +290,63 @@ function buildColumn(table: string, c: ColumnRow, pkSet: Set<string>): SqlColumn
   };
 }
 
-function buildForeignKeys(rows: ForeignKeyRow[]): SqlForeignKey[] {
+type TableRef = { name: string; pkColumns: string[] };
+
+/**
+ * Case-insensitive index of every table's canonical name and ordered PK
+ * columns. SQLite identifiers are case-insensitive, so `REFERENCES Authors`
+ * resolves to a table created as `authors`.
+ */
+function buildTableRefIndex(
+  objectRows: ObjectRow[],
+  columnsByTable: Map<string, ColumnRow[]>,
+): Map<string, TableRef> {
+  const refs = new Map<string, TableRef>();
+  for (const obj of objectRows) {
+    if (obj.type !== "table") continue;
+    const pkColumns = (columnsByTable.get(obj.name) ?? [])
+      .filter((c) => c.pk > 0)
+      .sort((a, b) => a.pk - b.pk)
+      .map((c) => c.column_name);
+    refs.set(obj.name.toLowerCase(), { name: obj.name, pkColumns });
+  }
+  return refs;
+}
+
+function buildForeignKeys(
+  rows: ForeignKeyRow[],
+  tableRefs: Map<string, TableRef>,
+): SqlForeignKey[] {
   // `fk_id` is unique per table; rows with the same id form one multi-column FK.
-  const byFk = new Map<number, ForeignKeyRow[]>();
-  for (const r of rows) {
-    const list = byFk.get(r.fk_id) ?? [];
-    list.push(r);
-    byFk.set(r.fk_id, list);
-  }
-  const fks: SqlForeignKey[] = [];
-  for (const [, list] of byFk) {
-    const ordered = list.slice().sort((a, b) => a.seq - b.seq);
-    const sample = ordered[0]!;
-    // SQLite doesn't name foreign keys; synthesize a stable name.
-    const name = `${sample.table_name}_${ordered.map((r) => r.column_name).join("_")}_fkey`;
-    fks.push({
-      name,
-      columns: ordered.map((r) => r.column_name),
-      references: {
-        schema: NAMESPACE,
-        table: sample.referenced_table,
-        // SQLite returns NULL `to` columns when the FK references the PK by
-        // position — fall back to the source column name in that case (the
-        // model is approximate either way for grounding NL→SQL).
-        columns: ordered.map((r) => r.referenced_column ?? r.column_name),
-      },
-      onDelete: mapAction(sample.on_delete),
-      onUpdate: mapAction(sample.on_update),
-    });
-  }
-  return fks.sort((a, b) => a.name.localeCompare(b.name));
+  return buildOrderedGroups(
+    rows,
+    (r) => r.fk_id,
+    (r) => r.seq,
+    (_fkId, ordered): SqlForeignKey => {
+      const sample = ordered[0]!;
+      const target = tableRefs.get(sample.referenced_table.toLowerCase());
+      // SQLite doesn't name foreign keys; synthesize a stable name.
+      const name = `${sample.table_name}_${ordered.map((r) => r.column_name).join("_")}_fkey`;
+      return {
+        name,
+        columns: ordered.map((r) => r.column_name),
+        references: {
+          schema: NAMESPACE,
+          table: target?.name ?? sample.referenced_table,
+          // `REFERENCES parent` without a column list targets the parent's
+          // PRIMARY KEY; pragma_foreign_key_list reports `to` as NULL then.
+          // Resolve it to the parent's PK column at the same position (PK
+          // ordinal order). Only when the parent's PK is unknown (e.g. a
+          // dangling reference) do we fall back to the child column name.
+          columns: ordered.map(
+            (r, i) => r.referenced_column ?? target?.pkColumns[i] ?? r.column_name,
+          ),
+        },
+        onDelete: mapFkAction(sample.on_delete),
+        onUpdate: mapFkAction(sample.on_update),
+      };
+    },
+  );
 }
 
 function buildIndexesAndUniques(
@@ -348,33 +376,7 @@ function buildIndexesAndUniques(
     });
   }
 
-  uniqueConstraints.sort((a, b) => a.name.localeCompare(b.name));
-  indexes.sort((a, b) => a.name.localeCompare(b.name));
+  uniqueConstraints.sort(byName);
+  indexes.sort(byName);
   return { uniqueConstraints, indexes };
-}
-
-function mapAction(rule: string | null): SqlForeignKeyAction | undefined {
-  if (!rule) return undefined;
-  const r = rule.toLowerCase();
-  if (r === "cascade") return "cascade";
-  if (r === "restrict") return "restrict";
-  if (r === "set null") return "set null";
-  if (r === "set default") return "set default";
-  if (r === "no action") return "no action";
-  return undefined;
-}
-
-function groupBy<T, K>(rows: T[], key: (row: T) => K): Map<K, T[]> {
-  const out = new Map<K, T[]>();
-  for (const row of rows) {
-    const k = key(row);
-    const list = out.get(k) ?? [];
-    list.push(row);
-    out.set(k, list);
-  }
-  return out;
-}
-
-function byName<T extends { name: string }>(a: T, b: T): number {
-  return a.name.localeCompare(b.name);
 }

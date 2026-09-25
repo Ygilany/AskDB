@@ -1,4 +1,6 @@
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { createHash, randomBytes } from "node:crypto";
+import { existsSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { resolve } from "node:path";
 import type {
   ChunkPayload,
   Filter,
@@ -30,10 +32,16 @@ import { createMemoryStore, type MemoryStore } from "./memory.js";
  * Format (json):
  *   {
  *     "version": 1,
- *     "schemaId"?: string,
  *     "dimensions": number,
+ *     "binSha256"?: string,                 // SHA-256 of the .bin it was written with
  *     "records": [{ id, payload, hash? }]   // same order as binary vectors
  *   }
+ *
+ * Writes are crash-safe per file: each file is written to a temp path and
+ * renamed into place (the `.bin` first, the `.json` last). The `.json` records
+ * the SHA-256 of the `.bin` it belongs to, so a crash between the two renames
+ * is detected on the next load instead of silently pairing vectors with the
+ * wrong payloads.
  */
 export type FileStoreOptions = {
   /** Path prefix; the store will write `<prefix>.embeddings.bin` and `<prefix>.embeddings.json`. */
@@ -63,8 +71,20 @@ export function createFileStore(options: FileStoreOptions): FileStore {
 
   const flush = (): void => {
     const snap = memory.snapshot();
-    writeBinary(binPath, snap.records.map((r) => r.vector), snap.dimensions ?? 0);
-    writeMeta(metaPath, snap);
+    const bin = encodeBinary(snap.records.map((r) => r.vector), snap.dimensions ?? 0);
+    const meta = encodeMeta(snap, sha256(bin));
+    const suffix = `.tmp-${process.pid}-${randomBytes(4).toString("hex")}`;
+    const binTmp = `${binPath}${suffix}`;
+    const metaTmp = `${metaPath}${suffix}`;
+    try {
+      writeFileSync(binTmp, bin);
+      writeFileSync(metaTmp, meta, "utf8");
+      renameSync(binTmp, binPath);
+      renameSync(metaTmp, metaPath);
+    } finally {
+      rmSync(binTmp, { force: true });
+      rmSync(metaTmp, { force: true });
+    }
   };
 
   return {
@@ -82,6 +102,17 @@ export function createFileStore(options: FileStoreOptions): FileStore {
     async hashesByPrefix(prefix: string): Promise<Record<string, string>> {
       return (await memory.hashesByPrefix?.(prefix)) ?? {};
     },
+    async idsBySchema(schemaId: string): Promise<string[]> {
+      return (await memory.idsBySchema?.(schemaId)) ?? [];
+    },
+    describe() {
+      const { dimensions } = memory.describe?.() ?? {};
+      return {
+        kind: "file",
+        location: resolve(basePath),
+        ...(dimensions !== undefined ? { dimensions } : {}),
+      };
+    },
     flush,
     size() {
       return memory.size();
@@ -89,11 +120,23 @@ export function createFileStore(options: FileStoreOptions): FileStore {
   };
 }
 
+const REINDEX_HINT =
+  "The embeddings files are out of sync (likely an interrupted write). " +
+  "Delete both files and rebuild the index (e.g. `askdb-rag index <schema-dir>`, or `buildSchemaIndex` with `force: true`).";
+
 function hydrate(memory: MemoryStore, binPath: string, metaPath: string): void {
-  if (!existsSync(binPath) || !existsSync(metaPath)) return;
+  const hasBin = existsSync(binPath);
+  const hasMeta = existsSync(metaPath);
+  if (!hasBin && !hasMeta) return;
+  if (hasBin !== hasMeta) {
+    throw new Error(
+      `File-store incomplete: found ${hasBin ? binPath : metaPath} but not ${hasBin ? metaPath : binPath}. ${REINDEX_HINT}`,
+    );
+  }
   const meta = JSON.parse(readFileSync(metaPath, "utf8")) as {
     version: number;
     dimensions: number;
+    binSha256?: string;
     records: { id: string; payload: ChunkPayload; hash?: string }[];
   };
   if (meta.version !== FORMAT_VERSION) {
@@ -102,15 +145,20 @@ function hydrate(memory: MemoryStore, binPath: string, metaPath: string): void {
     );
   }
   const buf = readFileSync(binPath);
+  if (meta.binSha256 !== undefined && meta.binSha256 !== sha256(buf)) {
+    throw new Error(
+      `File-store mismatch: ${binPath} does not match the checksum recorded in ${metaPath}. ${REINDEX_HINT}`,
+    );
+  }
   const { dimensions, count, vectors } = readBinary(buf);
   if (count !== meta.records.length) {
     throw new Error(
-      `File-store mismatch: ${binPath} has ${count} vectors but ${metaPath} has ${meta.records.length} records.`,
+      `File-store mismatch: ${binPath} has ${count} vectors but ${metaPath} has ${meta.records.length} records. ${REINDEX_HINT}`,
     );
   }
   if (dimensions !== meta.dimensions) {
     throw new Error(
-      `File-store dimension mismatch: bin=${dimensions} json=${meta.dimensions}.`,
+      `File-store dimension mismatch: bin=${dimensions} json=${meta.dimensions}. ${REINDEX_HINT}`,
     );
   }
   memory.restore({
@@ -124,7 +172,7 @@ function hydrate(memory: MemoryStore, binPath: string, metaPath: string): void {
   });
 }
 
-function writeBinary(path: string, vectors: Float32Array[], dims: number): void {
+function encodeBinary(vectors: Float32Array[], dims: number): Buffer {
   const count = vectors.length;
   const headerSize = 16; // magic(4) + version(4) + dims(4) + count(4)
   const totalSize = headerSize + count * dims * 4;
@@ -148,7 +196,7 @@ function writeBinary(path: string, vectors: Float32Array[], dims: number): void 
     }
   }
 
-  writeFileSync(path, buf);
+  return buf;
 }
 
 function readBinary(buf: Buffer): {
@@ -189,18 +237,23 @@ function readBinary(buf: Buffer): {
   return { dimensions, count, vectors };
 }
 
-function writeMeta(
-  path: string,
+function encodeMeta(
   snap: ReturnType<MemoryStore["snapshot"]>,
-): void {
+  binSha256: string,
+): string {
   const meta = {
     version: FORMAT_VERSION,
     dimensions: snap.dimensions ?? 0,
+    binSha256,
     records: snap.records.map((r) => ({
       id: r.id,
       payload: r.payload,
       hash: r.hash,
     })),
   };
-  writeFileSync(path, JSON.stringify(meta, null, 2) + "\n", "utf8");
+  return JSON.stringify(meta, null, 2) + "\n";
+}
+
+function sha256(buf: Buffer): string {
+  return createHash("sha256").update(buf).digest("hex");
 }

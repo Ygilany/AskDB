@@ -10,6 +10,7 @@ This document captures **product and engineering intent** for how **sensitive** 
 ## Current behavior (Phase 2 plumbing)
 
 - Schema JSON may mark tables/columns **`sensitive`** (additive optional fields).
+- Table markdown front-matter (`tables/<table>.md`, written by Studio's Sensitivity controls via `@askdb/enrich`) may **escalate** sensitivity: table-level `sensitive: true` or `columns[].sensitive: true` marks the table/column sensitive on top of `schema.json`. Front-matter is **escalate-only** — `sensitive: false` never un-marks a table or column that `schema.json` (or a sensitive parent table) marks sensitive; the loader ignores it and emits a `sensitivity_downgrade_ignored` warning. Every surface below (prompt DDL, RAG chunks, `validateSensitiveReferences`) reads the resulting effective flag from the normalized schema. See [`schema-v2.md` → Sensitive propagation](./schema-v2.md#sensitive-propagation).
 - **Default NL→SQL prompt DDL** **includes** sensitive **identifiers** (column names, types, nullability) so the model can **ground** SQL and avoid inventing non-existent columns. Sensitive columns are tagged **`(sensitive)`** on each line so the model and operators can treat them as high-risk metadata—not secret values.
 - **Optional stricter policy:** hosts or CLI may **omit** sensitive identifiers from the DDL entirely (`omitSensitiveIdentifiersFromNlToSqlPrompt` / `--omit-sensitive-from-prompt` / `ASKDB_OMIT_SENSITIVE_FROM_PROMPT`). That reduces name exposure to the first LLM call but increases the risk of **hallucinated** column names when users ask about those fields.
 - **Debug logs:** counts only — `askdb.prompt.sensitive_identifiers_listed` when names are included (default), or `askdb.prompt.sensitive_redacted` when omission mode is active.
@@ -30,7 +31,7 @@ With **omission** mode, the model may **not** see withheld identifiers and may i
 
 ## Enforcement path: `validateSensitiveReferences`
 
-`@askdb/core` exports `validateSensitiveReferences(sql, schema, options?)` — the **enforcement** counterpart to the prompt-level flags above. It inspects a SQL string against the schema artifact and reports every `sensitive` table/column it references, regardless of whether the names were tagged, omitted, or never shown to a model at all.
+`@askdb/core` exports `validateSensitiveReferences(sql, schema, options?)` — the **enforcement** counterpart to the prompt-level flags above. It inspects a SQL string against the schema artifact and reports the `sensitive` tables/columns it can see the statement referencing — sensitive columns named explicitly (qualified or unqualified), sensitive columns reached through `SELECT *`, `alias.*`, or a whole-row reference (see **Wildcards and whole rows** below), and sensitive tables used as a `FROM`/`JOIN` target — regardless of whether the names were tagged, omitted, or never shown to a model at all.
 
 ```ts
 import { validateSensitiveReferences } from "@askdb/core";
@@ -43,14 +44,18 @@ const { passed, references, unresolvedScope } = validateSensitiveReferences(cach
 | Field | Meaning |
 | --- | --- |
 | `passed` | `true` only when nothing sensitive was referenced **and** table scope was fully resolved. |
-| `references` | `{ table, schema?, column, matchKind }[]`. `matchKind` is `"qualified"` (`t.col` / `alias.col`), `"unqualified"` (bare `col`), or `"table"` (a `sensitive` table reached as a `FROM`/`JOIN` target; `column` is `"*"`). |
+| `references` | `{ table, schema?, column, matchKind }[]`. `matchKind` is `"qualified"` (`t.col` / `alias.col`, `alias.*`, or a whole-row reference like `row_to_json(alias)`), `"unqualified"` (bare `col`, or a bare `SELECT *` over an in-scope table), or `"table"` (a `sensitive` table reached as a `FROM`/`JOIN` target; `column` is `"*"`). |
 | `unresolvedScope` | Present when scope could not be proven: `{ issues, widened, message }`. |
 
 **Modes.** `{ mode: "warn" }` (default) returns references without throwing — the behavior the CLI has always had. `{ mode: "strict" }` throws `SensitiveReferenceError extends AskDbError` carrying a `SensitiveReferenceRuleCode` (`SENSITIVE_TABLE_REFERENCED`, `SENSITIVE_COLUMN_REFERENCED`, `UNRESOLVED_TABLE_SCOPE`).
 
 **Scope resolution.** An unqualified column name counts **only when the owning table is actually in the statement's scope**. `FROM`/`JOIN` targets and their aliases (including inside CTEs and derived tables) are resolved first, then unqualified names are matched against the columns of those tables. A bare-word scan would flag `id` on every query the moment any table-level-`sensitive` table has an `id` column; this does not.
 
-**Conservative failure.** When scope cannot be resolved — no resolvable table source (`NO_TABLE_SOURCE`), a qualifier bound to nothing known (`UNKNOWN_QUALIFIER`), or a table source that is not a relation name (`OPAQUE_TABLE_SOURCE`) — the check reports `unresolvedScope` rather than passing silently, and for the first two it widens unqualified matching to every sensitive column. `strict` mode treats unresolved scope as a failure, mirroring how `validateTenantGuardrails` handles unprovable scope.
+**Wildcards and whole rows.** `SELECT *`, `alias.*`, and a table name or alias used as a value (`row_to_json(u)`, `to_jsonb(u)`, `json_agg(u)`, Postgres `SELECT u FROM users u`) reach every column of that table, so they are reported as referencing each of its sensitive columns. `count(*)`, multiplication, and `EXISTS (SELECT * …)` are not wildcards.
+
+**Lexing.** The statement is split by the same dialect-aware lexer as `validateSelectSql`, so a column cannot hide behind an engine-specific quote rule (Postgres `E'\''`, MySQL `'\''`, Postgres `ARRAY['a]']`). Pass `{ dialect }` (a `DialectSpec` or `{ id }`) for an exact reading. Without it, table scope is resolved under a dialect-neutral reading and references are unioned across every built-in engine's reading that lexes cleanly — conservative, so it can over-report in rare cases.
+
+**Conservative failure.** When scope cannot be resolved — no resolvable table source (`NO_TABLE_SOURCE`), a qualifier bound to nothing known (`UNKNOWN_QUALIFIER`), a table source that is not a relation name (`OPAQUE_TABLE_SOURCE`), or a string/quoted identifier/comment that never closes (`UNTERMINATED_TOKEN`) — the check reports `unresolvedScope` rather than passing silently, and for the first two it widens unqualified matching to every sensitive column. `strict` mode treats unresolved scope as a failure, mirroring how `validateTenantGuardrails` handles unprovable scope.
 
 **In the pipeline.** `ask()` runs the guardrail over the SQL it is about to return and attaches the result as `AskPipelineResult.sensitiveGuardrail`. `AskPipelineOptions.sensitiveGuardrailMode` selects `"warn"` (default), `"strict"`, or `"off"`. The check is skipped entirely when the schema declares no `sensitive` markers, so `sensitiveGuardrail` is absent in that case.
 
@@ -58,7 +63,7 @@ const { passed, references, unresolvedScope } = validateSensitiveReferences(cach
 
 **Logs:** `askdb.pipeline.sensitive_sql_warning` with `sensitiveColumnCount` and the matched `sensitiveColumns` — schema metadata only, never row values. Emitted in both `warn` and `strict` modes.
 
-**Limits.** The check is heuristic, not a SQL parser. It is a review/enforcement aid, not a substitute for database-side column privileges.
+**Limits.** The check is heuristic, not a SQL parser, and defaults to `warn`. It sees only what the statement names: a sensitive value reached through a view, a function, or dynamic SQL is not reported. It is a review/enforcement aid and defense in depth, not a security boundary and not a substitute for database-side column privileges.
 
 ---
 
@@ -82,3 +87,4 @@ Validation and tests for this belong in the milestone that ships real post-execu
 - [`docs/specs/modes-and-observability.md`](../specs/modes-and-observability.md)
 - [`docs/integration/reuse-core-phase-3.md`](../integration/reuse-core-phase-3.md) — avoid duplicating prompt/validation policy in wrappers
 - [`fixtures/schemas/README.md`](../../fixtures/schemas/README.md) — `sensitive` in schema JSON
+- [`docs/contracts/schema-v2.md`](./schema-v2.md#sensitive-propagation) — effective sensitivity (escalate-only front-matter overrides)

@@ -1,15 +1,14 @@
 import { basename } from "node:path";
 import { getAskDbRuntimeConfig } from "@askdb/config";
 import {
+  createConnectorRegistry,
   introspect,
   type Connector,
+  type ConnectorConfig,
+  type ConnectorConnectionResolution,
+  type ConnectorProviderId,
   type IntrospectResult,
 } from "@askdb/introspect";
-import {
-  createConnectorRegistry,
-  type ConnectorConfig,
-  type ConnectorProvider,
-} from "@askdb/connectors";
 import { postgresConnectorProvider } from "@askdb/postgres";
 import { mysqlConnectorProvider } from "@askdb/mysql";
 import { sqliteConnectorProvider } from "@askdb/sqlite";
@@ -25,8 +24,8 @@ const connectorRegistry = createConnectorRegistry([
 ]);
 
 export type StudioIntrospectionPlan =
-  | { ok: true; engine: ConnectorProvider; sourceLabel: string }
-  | { ok: false; engine: ConnectorProvider | null; error: string };
+  | { ok: true; engine: ConnectorProviderId; sourceLabel: string }
+  | { ok: false; engine: ConnectorProviderId | null; error: string };
 
 /**
  * Resolve what a server-side introspection run would do, from the runtime
@@ -36,7 +35,7 @@ export type StudioIntrospectionPlan =
  */
 export function resolveStudioIntrospectionPlan(): StudioIntrospectionPlan {
   const rt = getAskDbRuntimeConfig();
-  const engine = rt.introspection.provider as ConnectorProvider;
+  const engine: ConnectorProviderId = rt.introspection.provider;
   if (!connectorRegistry.hasProvider(engine)) {
     return { ok: false, engine: null, error: `Unsupported introspection provider: ${engine}` };
   }
@@ -45,82 +44,19 @@ export function resolveStudioIntrospectionPlan(): StudioIntrospectionPlan {
   return { ok: true, engine, sourceLabel: connection.sourceLabel };
 }
 
-type ConnectionResolution =
-  | { ok: true; url?: string; schemaPath?: string; sourceLabel: string }
-  | { ok: false; error: string };
-
-function resolveConnection(engine: ConnectorProvider): ConnectionResolution {
-  const rt = getAskDbRuntimeConfig();
-  switch (engine) {
-    case "postgres": {
-      const url = rt.introspection.postgresDatabaseUrl;
-      if (!url) {
-        return {
-          ok: false,
-          error:
-            "No Postgres connection configured. Set introspection.providerConfig.postgres.databaseUrl in askdb.config.ts (bound to an env var in .env).",
-        };
-      }
-      return { ok: true, url, sourceLabel: redactUrl(url) };
-    }
-    case "mysql": {
-      const url = rt.introspection.mysqlDatabaseUrl;
-      if (!url) {
-        return {
-          ok: false,
-          error:
-            "No MySQL connection configured. Set introspection.providerConfig.mysql.databaseUrl in askdb.config.ts (bound to an env var in .env).",
-        };
-      }
-      return { ok: true, url, sourceLabel: redactUrl(url) };
-    }
-    case "sqlserver": {
-      const url = rt.introspection.sqlserverDatabaseUrl;
-      if (!url) {
-        return {
-          ok: false,
-          error:
-            "No SQL Server connection configured. Set introspection.providerConfig.sqlserver.databaseUrl in askdb.config.ts (bound to an env var in .env).",
-        };
-      }
-      return { ok: true, url, sourceLabel: redactUrl(url) };
-    }
-    case "sqlite": {
-      const file = rt.introspection.sqliteFile;
-      if (!file) {
-        return {
-          ok: false,
-          error:
-            "No SQLite file configured. Set introspection.providerConfig.sqlite.file in askdb.config.ts.",
-        };
-      }
-      return { ok: true, url: file, sourceLabel: file };
-    }
-    case "prisma": {
-      // When unset, @askdb/prisma auto-discovers prisma/schema.prisma in the project root.
-      const schemaPath = rt.introspection.prismaSchemaPath;
-      return {
-        ok: true,
-        schemaPath,
-        sourceLabel: schemaPath ?? "auto-discovered prisma/schema.prisma",
-      };
-    }
-  }
-}
-
-/** Strip credentials from a connection string for display (never shown raw in the UI). */
-function redactUrl(raw: string): string {
-  try {
-    const url = new URL(raw);
-    return `${url.protocol}//${url.host}${url.pathname}`;
-  } catch {
-    // ADO.NET-style or otherwise unparseable — show only that it is configured.
-    return "configured connection";
-  }
+/**
+ * The engine's adapter resolves its connection from askdb.config/env (the same
+ * hook the CLI uses) and phrases missing-config errors in terms of config keys.
+ */
+function resolveConnection(engine: ConnectorProviderId): ConnectorConnectionResolution {
+  return connectorRegistry.resolveConnection(engine, {
+    runtime: getAskDbRuntimeConfig(),
+    surface: "studio",
+  });
 }
 
 export type StudioIntrospectionRun = {
-  engine: ConnectorProvider;
+  engine: ConnectorProviderId;
   schemaId: string;
   tables: number;
   warnings: string[];
@@ -145,8 +81,7 @@ export async function runStudioIntrospection(options: {
   const schemaId = options.schemaId ?? inferSchemaId(options.outDir);
   const connectorConfig: ConnectorConfig = {
     provider: plan.engine,
-    url: connection.url,
-    schemaPath: connection.schemaPath,
+    ...connection.connection,
     schemaId,
   };
   const runConfig = connectorRegistry.createConnector(connectorConfig);

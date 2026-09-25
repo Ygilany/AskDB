@@ -18,11 +18,11 @@ The dependency direction: `@askdb/core ← @askdb/enrich ← @askdb/studio`. UI 
 **`@askdb/enrich`:**
 - `Workspace` and `WorkspaceTable` — load a describable schema directory, expose tables as editable drafts
 - Table draft construction from `tables/*.md` parsed front-matter
-- `saveTable()` — round-trippable write through the Phase 5 writer
+- `saveTable()` — round-trippable write through the Phase 5 writer. New table files get a filename-safe `<table>.md`, or `<schema>.<table>.md` when bare names collide; existing files keep their names (matched by front-matter `id`); writes outside `tables/` are refused. See [schema-v2 contract](../contracts/schema-v2.md#describable-layer--tablestablemd).
 - Markdown body section update helpers (replace H2 sections without touching the rest)
 - `concepts.md` loading, saving, and link validation
 - AI suggestion source, target, and context helpers (builds the enrichment prompt; caller supplies the model)
-- `bundleSchema(dir) → bundledJson` — compiles a schema directory into a single packed JSON
+- `bundleSchemaDirectory(dir) → BundledSchemaV2` — compiles a schema directory (`schema.json`, `tables/*.md`, `concepts.md`, `tenant-policy.md`) into a single packed JSON
 
 ### Out of scope
 
@@ -36,6 +36,7 @@ The dependency direction: `@askdb/core ← @askdb/enrich ← @askdb/studio`. UI 
 - **Confirm before save** — AI suggestions are never auto-applied. Every suggestion is presented for human review. This is a trust-first principle: the human is the author; the AI is a typing assistant.
 - **Front-matter-only writes** — the writer touches only YAML front-matter. Markdown body (prose, examples) is preserved verbatim. Hand-edited prose is safe.
 - **Idempotency** — opening a workspace, reviewing without editing, and quitting leaves every file byte-identical. No hidden rewrites.
+- **Sensitivity overrides are escalate-only** — a draft's table-level or column-level `sensitive` is written to front-matter, and the core loader honors `sensitive: true` on top of `schema.json`. `sensitive: false` cannot un-mark a table or column `schema.json` marks sensitive; the loader ignores it and emits a `sensitivity_downgrade_ignored` warning (surfaced in `Workspace.warnings`). Authoring surfaces must compute "effective" sensitivity the same way. See [`schema-v2.md` → Sensitive propagation](../contracts/schema-v2.md#sensitive-propagation).
 
 ## Contracts and API surface
 
@@ -73,5 +74,7 @@ askdb bundle <dir> --out <f>        # bundle directory to JSON via @askdb/enrich
 - AI-suggest with mock model: suggestion queued; only persists on confirm; no file changes without confirm.
 - Idempotency: opening, viewing, and quitting without edits leaves files byte-identical.
 - Sensitive warning: description mentioning a sensitive column name emits warning without blocking save.
+- Sensitivity round-trip: a draft sensitivity override saved via `saveTable()` is honored by `loadSchema()` (escalate-only), in both directory and bundle form.
 - Re-introspection ingestion: new un-described column IDs queued for description; orphan IDs offered for pruning.
-- Bundle round-trip: `loadSchema(bundle.json)` produces the same normalized representation as `loadSchema(directory)`.
+- Bundle round-trip: `loadSchema(bundle.json)` produces the same normalized representation as `loadSchema(directory)`, including the tenant policy for multi-tenant schemas.
+- Table filenames: colliding bare names get schema-qualified files; identifiers with path separators or `..` cannot write outside `tables/`; existing filenames are never renamed.
