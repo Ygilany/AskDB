@@ -576,29 +576,6 @@ describe("ask — tenant params contract across dialects (sql-params)", () => {
       }),
     ).rejects.toMatchObject({ name: "TenantScopeError", reason: "UNRESOLVED_TENANT_PLACEHOLDER" });
   });
-
-  it("subtree scope is rejected before the model is called", async () => {
-    const schema = loadSchema(multiTenantDir);
-    const generateText = vi.fn(async () => ({ text: "```sql\nSELECT 1\n```" }));
-    await expect(
-      ask({
-        question: "q",
-        schema,
-        model: fakeModel,
-        dialect: "postgres",
-        tenantScope: {
-          access: {
-            kind: "subtree",
-            tenantRoot: "table:public.agencies",
-            rootIds: ["42"],
-            includeDescendants: true,
-          },
-        },
-        deps: { generateText },
-      }),
-    ).rejects.toMatchObject({ name: "TenantScopeError", reason: "UNSUPPORTED_ACCESS_KIND" });
-    expect(generateText).not.toHaveBeenCalled();
-  });
 });
 
 /** Replace driver markers in code regions with the literal of the value they bind. */

@@ -286,7 +286,7 @@ interface TenantScope {
 | Kind | Meaning | When to use |
 |---|---|---|
 | `ids` | User can see rows matching specific tenant IDs at one root level. | Most common. Host has resolved the user's access to a flat ID list. |
-| `subtree` | User can see a root and all its descendants in the hierarchy. | **Not supported yet — rejected.** Descendant expansion is not implemented, so `validateTenantScope()` / `ask()` throw `TenantScopeError` (`UNSUPPORTED_ACCESS_KIND`) instead of silently scoping to `rootIds` only. Resolve the subtree in the host and pass explicit IDs with `ids` (or `multi_root`). |
+| `subtree` | User can see a root and all its descendants in the hierarchy. | **Not supported yet — rejected.** Descendant expansion is not implemented, so `validateTenantScope()`, `buildTenantPromptBlock()`, and `ask()` throw `TenantScopeError` (`UNSUPPORTED_ACCESS_KIND`) instead of silently scoping to `rootIds` only. Resolve the subtree in the host and pass explicit IDs with `ids` (or `multi_root`). |
 | `multi_root` | User has different scopes at different hierarchy levels. | Edge case: user is admin at one agency but also has direct client-level access elsewhere. |
 | `global` | User can see all data across all tenants. | Admin/superuser. Requires an explicit `reason` string for audit. |
 
