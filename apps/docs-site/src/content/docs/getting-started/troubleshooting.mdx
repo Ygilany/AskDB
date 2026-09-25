@@ -57,9 +57,13 @@ If you're seeing this on legitimate read questions, the model may be misreading 
 
 The model returned more than one SQL statement. AskDB refuses multi-statement output. Rephrase the question to ask for a single result, or break it into two separate `ask()` calls.
 
-### `SqlValidationError: SQL_COMMENT` / `SQL_FORBIDDEN_KEYWORD`
+### `SqlValidationError: SQL_COMMENT` / `SQL_FORBIDDEN_KEYWORD` / `SQL_FORBIDDEN_FUNCTION`
 
-The generated SQL contains a SQL comment or a forbidden keyword (`EXECUTE`, `EXEC`, `xp_`, etc.). These are heuristic guardrails. If this fires on a legitimate query, file an issue with the question and schema excerpt.
+The generated SQL contains a SQL comment (including `#` on MySQL), a forbidden keyword (`INTO`, `DELETE`, `EXEC`, `WAITFOR`, etc.), or a call to a blocked side-effecting function (`pg_sleep`, `set_config`, `LOAD_FILE`, `SLEEP`, etc.). Keywords are matched as whole, unquoted tokens, so a column like `deleted_at` or `"delete"` is fine. These are heuristic, defense-in-depth guardrails. If one fires on a legitimate query, file an issue with the question and schema excerpt.
+
+### `SqlValidationError: SQL_UNTERMINATED`
+
+A string literal, quoted identifier, dollar-quoted string, or block comment in the generated SQL never closes, so the validator cannot tell where the statement ends and rejects it. On MySQL, check that the dialect's `backslashEscapes` setting matches the server (`NO_BACKSLASH_ESCAPES`).
 
 ### Generated SQL references a column or table that doesn't exist
 

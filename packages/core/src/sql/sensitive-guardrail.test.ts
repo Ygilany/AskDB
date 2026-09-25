@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { SensitiveReferenceError } from "../errors.js";
 import type { NormalizedSchema } from "../schema/types.js";
 import type { NormalizedSchemaV2, NormalizedV2Table } from "../schema/v2/normalized.js";
+import { MYSQL_DIALECT, POSTGRES_DIALECT } from "./dialect-spec.js";
 import { validateSensitiveReferences, schemaHasSensitiveIdentifiers } from "./sensitive-guardrail.js";
 
 // ---------------------------------------------------------------------------
@@ -474,5 +475,115 @@ describe("schemaHasSensitiveIdentifiers", () => {
       mode: "strict",
     });
     expect(result).toEqual({ passed: true, references: [] });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Wildcards, whole-row references, and dialect-aware lexing
+// ---------------------------------------------------------------------------
+
+const ssnSchema: NormalizedSchema = {
+  tables: [
+    {
+      name: "users",
+      columns: [
+        { name: "id", type: "integer", nullable: false, primaryKey: true },
+        { name: "name", type: "text", nullable: false },
+        { name: "ssn", type: "text", nullable: true, sensitive: true },
+      ],
+    },
+    {
+      name: "orders",
+      columns: [
+        { name: "id", type: "integer", nullable: false, primaryKey: true },
+        { name: "user_id", type: "integer", nullable: false },
+        { name: "total", type: "integer", nullable: false },
+      ],
+    },
+  ],
+};
+
+const ssnRef = (matchKind: "qualified" | "unqualified") => ({
+  table: "users",
+  column: "ssn",
+  matchKind,
+});
+
+describe("validateSensitiveReferences — wildcards and whole-row references", () => {
+  it.each([
+    ["SELECT * FROM users", "unqualified"],
+    ["SELECT DISTINCT * FROM users", "unqualified"],
+    ["SELECT o.id, * FROM orders o JOIN users u ON u.id = o.user_id", "unqualified"],
+    ["SELECT TOP 5 * FROM users", "unqualified"],
+    ["SELECT u.* FROM users u", "qualified"],
+    ["SELECT users.* FROM users", "qualified"],
+    ["SELECT row_to_json(u) FROM users u", "qualified"],
+    ["SELECT to_jsonb(u) FROM users AS u", "qualified"],
+    ["SELECT json_agg(u) FROM users u", "qualified"],
+    ["SELECT u FROM users u", "qualified"],
+  ] as const)("%s flags users.ssn", (sql, kind) => {
+    const result = validateSensitiveReferences(sql, ssnSchema);
+    expect(result.references).toEqual([ssnRef(kind)]);
+    expect(result.passed).toBe(false);
+  });
+
+  it.each([
+    ["SELECT id FROM users"],
+    ["SELECT count(*) FROM users"],
+    ["SELECT id, total * 2 FROM orders"],
+    ["SELECT o.* FROM orders o JOIN users u ON u.id = o.user_id"],
+    ["SELECT id FROM orders o WHERE EXISTS (SELECT * FROM users u WHERE u.id = o.user_id)"],
+    ["SELECT row_to_json(o) FROM orders o"],
+  ])("%s does not flag users.ssn", (sql) => {
+    const result = validateSensitiveReferences(sql, ssnSchema);
+    expect(result.references).toEqual([]);
+    expect(result.passed).toBe(true);
+  });
+});
+
+describe("validateSensitiveReferences — dialect-aware lexing", () => {
+  it("sees a column after a Postgres E'' string with an escaped quote", () => {
+    const sql = "SELECT E'\\'', ssn, '' FROM users";
+    expect(
+      validateSensitiveReferences(sql, ssnSchema, { dialect: POSTGRES_DIALECT }).references,
+    ).toEqual([ssnRef("unqualified")]);
+    expect(validateSensitiveReferences(sql, ssnSchema).references).toEqual([ssnRef("unqualified")]);
+  });
+
+  it("sees a column after a MySQL backslash-escaped quote", () => {
+    const sql = "SELECT '\\'', ssn, '\\'' FROM users";
+    expect(
+      validateSensitiveReferences(sql, ssnSchema, { dialect: MYSQL_DIALECT }).references,
+    ).toEqual([ssnRef("unqualified")]);
+    // Without a dialect, every engine's reading is scanned.
+    expect(validateSensitiveReferences(sql, ssnSchema).references).toEqual([ssnRef("unqualified")]);
+  });
+
+  it("does not treat Postgres [ as a bracket identifier", () => {
+    const sql = "SELECT (ARRAY['a]'])[1], ssn, ']' FROM users";
+    expect(
+      validateSensitiveReferences(sql, ssnSchema, { dialect: POSTGRES_DIALECT }).references,
+    ).toEqual([ssnRef("unqualified")]);
+  });
+
+  it("does not let # hide a Postgres JSON operand, but treats it as a comment in MySQL", () => {
+    const pg = "SELECT profile #>> '{a}', ssn FROM users";
+    expect(
+      validateSensitiveReferences(pg, ssnSchema, { dialect: POSTGRES_DIALECT }).references,
+    ).toEqual([ssnRef("unqualified")]);
+    const my = "SELECT id # ssn\nFROM users";
+    const result = validateSensitiveReferences(my, ssnSchema, { dialect: MYSQL_DIALECT });
+    expect(result.references).toEqual([]);
+    expect(result.passed).toBe(true);
+  });
+
+  it("fails closed on an unterminated token", () => {
+    const result = validateSensitiveReferences(
+      "SELECT id FROM users WHERE name = 'x",
+      ssnSchema,
+      { dialect: POSTGRES_DIALECT },
+    );
+    expect(result.passed).toBe(false);
+    expect(result.unresolvedScope?.issues).toContain("UNTERMINATED_TOKEN");
   });
 });
