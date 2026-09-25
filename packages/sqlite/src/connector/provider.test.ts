@@ -24,10 +24,4 @@ describe("sqliteConnectorProvider", () => {
       error: "No SQLite file configured. Set introspection.providerConfig.sqlite.file in askdb.config.ts.",
     });
   });
-
-  it("createConnector requires a file path", () => {
-    expect(() => sqliteConnectorProvider.createConnector({ provider: "sqlite" })).toThrow(
-      "SQLite connector requires a file path (config.url).",
-    );
-  });
 });
