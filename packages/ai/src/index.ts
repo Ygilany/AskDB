@@ -17,6 +17,8 @@ export {
   BUILTIN_AI_PROVIDERS,
   BUILTIN_AI_PROVIDER_NAMES,
   findBuiltinAiProvider,
+  getBuiltinAiProviderSetup,
+  listBuiltinAiProviderSetups,
   optionalPeerMissingMessage,
   openaiProvider,
   azureProvider,
@@ -24,6 +26,7 @@ export {
   anthropicProvider,
   gatewayProvider,
   type BuiltinAiProvider,
+  type BuiltinAiProviderSetup,
   type BuiltinProviderEnvSpec,
 } from "./providers/index.js";
 export { withEmbeddingProviderOptions } from "./embedding.js";
