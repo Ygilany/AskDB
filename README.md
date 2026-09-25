@@ -12,7 +12,7 @@ AskDB grounds generation in a human-enriched schema artifact, and it keeps datab
 
 > **Ask your data. Keep control of the query.**
 >
-> **Status:** 0.x. The core API (`ask()`), schema artifact, and config are stable and documented; Studio and RAG may still change in minor releases before 1.0.
+> **Status:** pre-release beta (`1.0.0-beta.x` on npm). The core API (`ask()`), schema artifact, and config are documented, but public APIs may still change before 1.0 — Studio and RAG are the most likely to move.
 >
 > AskDB returns SQL for review; it does not execute generated SQL.
 
@@ -41,7 +41,7 @@ npx askdb@latest introspect --url "$DATABASE_URL" --out my-app.schema --schema-i
 npx askdb@latest ask --schema my-app.schema --question "Which tables look active?"
 ```
 
-The detailed first-run paths live in the [docs-site quickstart](apps/docs-site/src/content/docs/quickstart.mdx), [`packages/introspect/README.md`](packages/introspect/README.md), and [`docs/integration/installable-package.md`](docs/integration/installable-package.md).
+The detailed first-run paths live in the [docs-site quickstart](https://askdb.tools/quickstart/), [`packages/introspect/README.md`](packages/introspect/README.md), and [`docs/integration/installable-package.md`](docs/integration/installable-package.md).
 
 ## Use as a library
 
@@ -80,13 +80,13 @@ Product direction and technical baseline live in **`docs/`**:
 - [`docs/architecture.md`](docs/architecture.md) — package boundaries, diagrams, install profiles, connectors vs. optional peers
 - [`docs/platform.md`](docs/platform.md) — languages, monorepo shape, Postgres-first  
 - [`docs/roadmap.md`](docs/roadmap.md) — phased implementation order  
-- [`docs/specs/phase-2-hardening-modes/README.md`](docs/specs/phase-2-hardening-modes/README.md) — **Phase 2** spec hub (links plan, requirements, validation merge bar)  
+- [`docs/specs/`](docs/specs) — per-feature specs with status (core pipeline, schema format, modes and observability, introspection, RAG, Studio, HTTP API, multi-tenancy, distribution)  
 - [`docs/contracts/modes-v1.md`](docs/contracts/modes-v1.md) — operating modes (`schema_only`, `bounded_results`)  
 - [`docs/contracts/sensitive-fields-and-modes.md`](docs/contracts/sensitive-fields-and-modes.md) — sensitive schema markers vs. models, bounded summaries  
 - [`docs/integration/reuse-core-phase-3.md`](docs/integration/reuse-core-phase-3.md) — stable `@askdb/core` entrypoints for wrappers (MCP/HTTP)  
 - [`docs/integration/installable-package.md`](docs/integration/installable-package.md) — install + BYO model + introspection workflow recipes
-- [`docs/specs/phase-6-introspection/README.md`](docs/specs/phase-6-introspection/README.md) — **Phase 6** introspection spec hub  
-- [`docs/specs/phase-1-schema-sql-cli/requirements.md`](docs/specs/phase-1-schema-sql-cli/requirements.md) — Phase 1 scope (implemented in this repo)  
+- [`docs/specs/introspection.md`](docs/specs/introspection.md) — schema introspection spec  
+- [`docs/specs/core-pipeline.md`](docs/specs/core-pipeline.md) — core NL→SQL pipeline and CLI spec  
 - Structured logging rationale: [`docs/adrs/0001-structured-logging-pino.md`](docs/adrs/0001-structured-logging-pino.md)  
 - Env / `askdb.config` bootstrap: [`docs/adrs/0005-askdb-config-and-env-bootstrap.md`](docs/adrs/0005-askdb-config-and-env-bootstrap.md)  
 
@@ -94,20 +94,32 @@ Product direction and technical baseline live in **`docs/`**:
 
 **Stack:** pnpm workspace + **Turborepo**, TypeScript, and focused packages/apps:
 
-- [`packages/core`](packages/core) — NL→SQL library and schema artifact loader.
-- [`packages/introspect`](packages/introspect) — Postgres-first schema introspection.
-- [`packages/postgres`](packages/postgres) — Postgres dialect, connector, templates, and catalog runner.
-- [`packages/rag`](packages/rag) — schema artifact chunking, indexing, and retrieval helpers.
-- [`packages/enrich`](packages/enrich) — shared schema artifact enrichment workspace helpers.
-- [`apps/cli`](apps/cli) — binary `askdb`, including the `askdb introspect` shim.
+- [`packages/core`](packages/core) (`@askdb/core`) — dialect-agnostic NL→SQL pipeline (`ask()`) and schema artifact loader.
+- [`packages/ai`](packages/ai) (`@askdb/ai`) — AI provider registry and shared config helpers for AI SDK language and embedding models.
+- [`packages/ai-openai`](packages/ai-openai) (`@askdb/ai-openai`) — OpenAI provider adapter for `@askdb/ai`.
+- [`packages/ai-azure`](packages/ai-azure) (`@askdb/ai-azure`) — Azure OpenAI / Foundry provider adapter for `@askdb/ai`.
+- [`packages/ai-google`](packages/ai-google) (`@askdb/ai-google`) — Google Gemini provider adapter for `@askdb/ai`.
+- [`packages/ai-anthropic`](packages/ai-anthropic) (`@askdb/ai-anthropic`) — Anthropic Claude provider adapter for `@askdb/ai`.
+- [`packages/client`](packages/client) (`@askdb/client`) — config-aware facade (`createAskDb`) that resolves schema, model, and dialect from config.
+- [`packages/config`](packages/config) (`@askdb/config`) — `defineConfig`, `env()`, and `askdb.config.*` discovery/bootstrap.
+- [`packages/connectors`](packages/connectors) (`@askdb/connectors`) — maps config-driven introspection provider selections to connector packages.
+- [`packages/introspect`](packages/introspect) (`@askdb/introspect`) — engine-agnostic introspection orchestrator and Schema v2 renderer.
+- [`packages/postgres`](packages/postgres) (`@askdb/postgres`) — Postgres dialect, introspection connector, catalog templates, and `pg`-backed runner.
+- [`packages/mysql`](packages/mysql) (`@askdb/mysql`) — MySQL introspection connector and `mysql2`-backed catalog runner.
+- [`packages/sqlite`](packages/sqlite) (`@askdb/sqlite`) — SQLite introspection connector and `better-sqlite3`-backed catalog runner.
+- [`packages/sqlserver`](packages/sqlserver) (`@askdb/sqlserver`) — SQL Server introspection connector and `mssql`-backed catalog runner.
+- [`packages/prisma`](packages/prisma) (`@askdb/prisma`) — schema-file introspection connector for Prisma schemas.
+- [`packages/rag`](packages/rag) (`@askdb/rag`) — schema artifact chunking, BYO embedder + vector store, and retrieval for `ask()`.
+- [`packages/enrich`](packages/enrich) (`@askdb/enrich`) — schema artifact enrichment workspace helpers used by Studio.
+- [`apps/cli`](apps/cli) (`askdb`) — binary `askdb`: `init`, `introspect`, `ask`, `studio`, `bundle`.
 - [`apps/http-api`](apps/http-api) — HTTP wrapper over core.
 - [`apps/studio`](apps/studio) — local browser UI for enrichment and sample NL-to-SQL checks.
 
 ```bash
 pnpm install
-pnpm exec askdb init
-# create .env with keys from askdb.config.ts header comments (optional); adjust env("...") names as needed
-pnpm build    # turbo run build
+pnpm build    # turbo run build — builds the `askdb` binary used below
+# The repo root already ships askdb.config.ts. Optionally create .env with the keys it references
+# (e.g. OPENAI_API_KEY), or set ASKDB_MOCK_SQL to skip live model calls.
 pnpm exec askdb ask \
   --schema fixtures/schemas/orders-users.schema \
   --question "How many orders are there?"
@@ -201,7 +213,7 @@ AskDB returns SQL for review; it does not execute generated SQL. Treat generated
 
 **Engines:** PostgreSQL, MySQL, SQLite, and SQL Server are all first-class — install the matching `@askdb/postgres`, `@askdb/mysql`, `@askdb/sqlite`, or `@askdb/sqlserver` adapter and pass the dialect to `ask()`. Postgres is the reference dialect; the others ship dialect and introspection with parity tracked on the roadmap.
 
-**Current limitations (pre-1.0 / dev):** AskDB returns SQL only (execution stays in your app); SQL guardrails are heuristic (not a full SQL parser); a first-party MCP server, richer report generation, and a hosted dashboard are roadmap work. Merge bars: **[Phase 1](docs/specs/phase-1-schema-sql-cli/validation.md)** · **[Phase 2](docs/specs/phase-2-hardening-modes/validation.md)**.
+**Current limitations (pre-1.0 / dev):** AskDB returns SQL only (execution stays in your app); SQL guardrails are heuristic (not a full SQL parser); a first-party MCP server, richer report generation, and a hosted dashboard are roadmap work. Per-feature scope and status: [`docs/specs/`](docs/specs).
 
 **CI:** [`.github/workflows/ci.yml`](.github/workflows/ci.yml) runs `pnpm install --frozen-lockfile`, `pnpm build`, starts the Pagila introspection fixture, runs `pnpm test`, runs the installable smoke test, and validates publish with a dry run.
 
