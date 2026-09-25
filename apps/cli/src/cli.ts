@@ -1,10 +1,11 @@
 #!/usr/bin/env node
-import { bootstrapAskDbEnv, getAskDbRuntimeConfig } from "@askdb/config";
+import { bootstrapAskDbEnv, discoverAskDbConfigPath, getAskDbRuntimeConfig } from "@askdb/config";
 import {
   createAiRegistry,
 } from "@askdb/ai";
 import { createAskDb, type DialectResolution } from "@askdb/client";
 import { randomUUID } from "node:crypto";
+import { readFileSync } from "node:fs";
 import {
   AskDbError,
   AskDbLogEvent,
@@ -30,40 +31,49 @@ import { runIntrospectCli } from "./introspect.js";
 // selects the provider.
 const ai = createAiRegistry();
 
-// `askdb init` writes templates and should not require a valid askdb.config.
-// `askdb studio` tolerates a missing config too: Studio starts in setup mode
-// and its browser wizard scaffolds the config. `askdb enrich` is a Studio
-// alias, so it inherits the same tolerance.
-if (process.argv[2] !== "init") {
-  try {
-    bootstrapAskDbEnv({ cwd: process.cwd() });
-  } catch (error) {
-    if (process.argv[2] !== "studio" && process.argv[2] !== "enrich") throw error;
+/** Thrown when a command needs `askdb.config.*` and none exists in the working directory. */
+class MissingAskDbConfigError extends AskDbError {
+  constructor(cwd: string) {
+    super(`No askdb.config.* found in ${cwd}. Run \`npx askdb init\` to create one.`);
+    this.name = "MissingAskDbConfigError";
   }
 }
 
-if (process.argv[2] === "init") {
-  process.exit(await runInitCli(process.argv.slice(3)));
+/**
+ * Loads `.env` + `askdb.config.*` and installs the runtime snapshot. Config is loaded lazily,
+ * only by commands that read it, so `--help`, `--version`, `init`, and `bundle` work in a
+ * directory without a config.
+ */
+function requireAskDbConfig(): void {
+  const cwd = process.cwd();
+  if (!discoverAskDbConfigPath(cwd)) throw new MissingAskDbConfigError(cwd);
+  bootstrapAskDbEnv({ cwd });
 }
 
-if (process.argv[2] === "introspect") {
-  const exitCode = await runIntrospectCli(process.argv.slice(3));
-  process.exit(exitCode);
+/**
+ * `askdb studio` tolerates a missing (or broken) config: Studio starts in setup mode and its
+ * browser wizard scaffolds the config. `askdb enrich` is a Studio alias, so it inherits this.
+ */
+function tryLoadAskDbConfig(): void {
+  try {
+    bootstrapAskDbEnv({ cwd: process.cwd() });
+  } catch {
+    // Studio handles a missing config itself.
+  }
 }
 
-if (process.argv[2] === "enrich") {
-  process.exit(await runStudioCommand(process.argv.slice(3)));
-}
-
-if (process.argv[2] === "studio") {
-  process.exit(await runStudioCommand(process.argv.slice(3)));
-}
-
-if (process.argv[2] === "bundle") {
-  process.exit(await runBundleCommand(process.argv.slice(3)));
+function readCliVersion(): string {
+  const parsed = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8")) as {
+    version?: unknown;
+  };
+  return typeof parsed.version === "string" ? parsed.version : "0.0.0";
 }
 
 function printCliError(error: unknown): void {
+  if (error instanceof MissingAskDbConfigError) {
+    console.error(error.message);
+    return;
+  }
   if (error instanceof SqlValidationError) {
     console.error(`${error.name} [${error.rule}]: ${error.message}`);
     if (error.hint) {
@@ -170,7 +180,10 @@ function resolveAskDbLogLevel(opts: {
 }
 
 const program = new Command();
-program.name("askdb").description("AskDB — natural language → PostgreSQL SELECT");
+program
+  .name("askdb")
+  .description("AskDB — natural language → validated SQL for your database")
+  .version(readCliVersion(), "-V, --version", "Print the askdb version");
 
 program
   .command("init")
@@ -240,8 +253,16 @@ program
   .allowUnknownOption(true);
 
 program
+  .command("introspect")
+  .description("Introspect a database into Schema v2 files (see `askdb introspect --help`)")
+  .allowUnknownOption(true);
+
+program
   .command("ask")
   .description("Generate SQL from schema + question")
+  .hook("preAction", () => {
+    requireAskDbConfig();
+  })
   .option(
     "-s, --schema <path>",
     "Path to AskDB Schema v2 directory, bundled JSON, or schema.json (default: configured introspection.outputDir, or ./askdb/)",
@@ -396,4 +417,42 @@ program
     },
   );
 
-await program.parseAsync(process.argv);
+const HELP_OR_VERSION_FLAGS = new Set(["--help", "-h", "--version", "-V"]);
+
+async function main(argv: string[]): Promise<number | undefined> {
+  const [command, ...rest] = argv.slice(2);
+  switch (command) {
+    case "init":
+      return runInitCli(rest);
+    case "introspect":
+      // `--help`, `--version`, and `templates` don't read askdb.config; everything else does.
+      if (rest[0] !== "templates" && !rest.some((arg) => HELP_OR_VERSION_FLAGS.has(arg))) {
+        requireAskDbConfig();
+      }
+      return runIntrospectCli(rest);
+    case "enrich":
+    case "studio":
+      tryLoadAskDbConfig();
+      return runStudioCommand(rest);
+    case "bundle":
+      return runBundleCommand(rest);
+    default:
+      // Commander handles `--help`, `--version`, `help`, and no-args without loading config;
+      // commands that need config load it lazily in a preAction hook.
+      await program.parseAsync(argv);
+      return undefined;
+  }
+}
+
+try {
+  const exitCode = await main(process.argv);
+  if (exitCode !== undefined) process.exit(exitCode);
+} catch (error) {
+  printCliError(error);
+  if (process.env.DEBUG && error instanceof Error && error.stack) {
+    console.error(error.stack);
+  } else if (!(error instanceof AskDbError)) {
+    console.error("Set DEBUG=1 to print the stack trace.");
+  }
+  process.exit(1);
+}

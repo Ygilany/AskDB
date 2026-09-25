@@ -2,7 +2,7 @@
 
 This document fixes **trust boundaries** for headless pipelines (CLI today; MCP/HTTP later): what may enter **model context** beyond the AskDB schema and natural-language question.
 
-**Execution:** `ask()` returns SQL and never executes it; the CLI and HTTP API do not execute generated SQL either. Hosts own execution (see [`docs/mission.md`](../mission.md)). Studio's optional Playground execute runs Postgres SQL in a `BEGIN READ ONLY` transaction (`apps/studio/src/execute-registry.ts`); `@askdb/postgres`'s catalog query runner (`packages/postgres/src/exec/postgres.ts`) likewise wraps connector-owned introspection SQL in `BEGIN READ ONLY` and is never used for generated SQL.
+**Execution:** `ask()` returns SQL and never executes it; the CLI and HTTP API do not execute generated SQL either. Hosts that run generated SQL own the read-only role, transaction, and audit controls (see [`docs/mission.md`](../mission.md)). Studio's optional Playground execute is off by default; when enabled it validates each query as a single read-only SELECT and runs it in a read-only transaction (SQL Server: an always-rolled-back transaction) with a timeout and row cap (`apps/studio/src/execute-registry.ts`). `@askdb/postgres`'s catalog query runner (`packages/postgres/src/exec/postgres.ts`) wraps connector-owned introspection SQL in `BEGIN READ ONLY` and is never used for generated SQL.
 
 ---
 
@@ -21,7 +21,7 @@ This document fixes **trust boundaries** for headless pipelines (CLI today; MCP/
 
 ## Out of scope for v1 (reserved names / roadmap)
 
-Product copy in [`README.md`](../README.md) describes additional modes (**report shape**, **full AI-assisted reporting**). Those are **not selectable** in the CLI/engine v1 contract; behaviour is unspecified until later phases.
+Product copy in [`README.md`](../../README.md) describes additional modes (**report shape**, **full AI-assisted reporting**). Those are **not selectable** in the CLI/engine v1 contract; behaviour is unspecified until later phases.
 
 ---
 
@@ -36,7 +36,7 @@ Product copy in [`README.md`](../README.md) describes additional modes (**report
 
 Hosts pass **`AskDbModeV1`** (see `@askdb/core` exports):
 
-- CLI: `--mode <schema_only|bounded_results>` or env **`ASKDB_MODE`** (see [`README.md`](../README.md)).
+- CLI: `--mode <schema_only|bounded_results>` or env **`ASKDB_MODE`** (see [`README.md`](../../README.md)).
 - Library: **`ask({ ..., mode })`**.
 
 Structured logs emit **`askdb.pipeline.mode`** at pipeline start and **`askdb.pipeline.post_execute`** after execute when rows were produced.
