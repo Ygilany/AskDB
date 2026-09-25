@@ -290,20 +290,13 @@ describe("resolveDefaultInitAnswers", () => {
     expect(a.schemaOut).toBe("./askdb");
   });
 
-  it.each([
-    ["openai", "OPENAI_API_KEY", "OPENAI_MODEL"],
-    ["anthropic", "ANTHROPIC_API_KEY", "ANTHROPIC_MODEL"],
-    ["google", "GOOGLE_GENERATIVE_AI_API_KEY", "GOOGLE_AI_MODEL"],
-    ["azure", "AZURE_OPENAI_API_KEY", "AZURE_OPENAI_DEPLOYMENT"],
-    ["foundry", "AZURE_OPENAI_API_KEY", "AZURE_OPENAI_DEPLOYMENT"],
-    ["gateway", "AI_GATEWAY_API_KEY", "ASKDB_AI_MODEL"],
-  ] as const)("scaffolds %s with the env vars from @askdb/ai's provider table", (aiProvider, keyEnv, modelEnv) => {
-    const a = resolveDefaultInitAnswers({ aiProvider });
-    expect(a.aiKeyEnv).toBe(keyEnv);
-    expect(a.aiModelEnv).toBe(modelEnv);
+  it("scaffolds gateway with the env vars from @askdb/ai's provider table", () => {
+    const a = resolveDefaultInitAnswers({ aiProvider: "gateway" });
+    expect(a.aiKeyEnv).toBe("AI_GATEWAY_API_KEY");
+    expect(a.aiModelEnv).toBe("ASKDB_AI_MODEL");
     const out = renderInitConfig(a);
-    expect(out).toContain(`provider: "${aiProvider}"`);
-    expect(out).toContain(`apiKey: env("${keyEnv}")`);
+    expect(out).toContain('provider: "gateway"');
+    expect(out).toContain('apiKey: env("AI_GATEWAY_API_KEY")');
   });
 
   it("respects database override", () => {

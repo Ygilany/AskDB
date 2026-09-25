@@ -37,9 +37,10 @@ function embeddingResponse(): Response {
 async function captureGenerate(
   model: string,
   reasoningEffort?: "minimal" | "low" | "medium" | "high",
+  baseURL?: string,
 ): Promise<CapturedRequest> {
   const requests = captureFetch();
-  const config = { provider: "google", apiKey: "test-key", model };
+  const config = { provider: "google", apiKey: "test-key", model, ...(baseURL ? { baseURL } : {}) };
   const providerOptions = googleProvider.resolveProviderOptions?.(config, { reasoningEffort });
   await expect(
     generateText({
@@ -71,6 +72,11 @@ describe("googleProvider — real @ai-sdk/google contract", () => {
       "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent",
     );
     expect(thinkingConfigOf(request)).toBeUndefined();
+  });
+
+  it("sends requests to the configured baseURL", async () => {
+    const request = await captureGenerate("gemini-2.0-flash", undefined, "https://proxy.example/g");
+    expect(request.url).toBe("https://proxy.example/g/models/gemini-2.0-flash:generateContent");
   });
 
   it("sends thinkingConfig.thinkingBudget for Gemini 2.5 models", async () => {
