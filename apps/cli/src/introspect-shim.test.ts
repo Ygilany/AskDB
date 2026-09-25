@@ -2,27 +2,18 @@ import { spawnSync } from "node:child_process";
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { beforeAll, describe, expect, it } from "vitest";
+import { describe, expect, it } from "vitest";
 
 const repoRoot = join(import.meta.dirname, "../../..");
 const cliDir = join(repoRoot, "apps/cli");
-const corePkgDir = join(repoRoot, "packages/core");
 const configDir = join(repoRoot, "packages/config");
-const introspectDir = join(repoRoot, "packages/introspect");
-const postgresDir = join(repoRoot, "packages/postgres");
 const prismaDir = join(repoRoot, "packages/prisma");
 const prismaFixture = join(prismaDir, "test-fixtures/simple/schema.prisma");
 
+// dist/cli.js and the workspace packages it loads are built by turbo before this runs
+// (`test` depends on `build` and `^build`); rebuilding them in-test raced with other
+// test files executing the same dist output.
 describe("cli spawn: introspect subcommand", () => {
-  beforeAll(() => {
-    expect(run("pnpm", ["-C", configDir, "build"]).status).toBe(0);
-    expect(run("pnpm", ["-C", corePkgDir, "build"]).status).toBe(0);
-    expect(run("pnpm", ["-C", introspectDir, "build"]).status).toBe(0);
-    expect(run("pnpm", ["-C", postgresDir, "build"]).status).toBe(0);
-    expect(run("pnpm", ["-C", prismaDir, "build"]).status).toBe(0);
-    expect(run("pnpm", ["-C", cliDir, "build"]).status).toBe(0);
-  });
-
   it("runs `askdb introspect templates` via the in-tree Postgres connector", () => {
     const exec = run("node", [
       join(cliDir, "dist/cli.js"),

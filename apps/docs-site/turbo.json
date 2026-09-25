@@ -1,0 +1,11 @@
+{
+  "$schema": "https://turbo.build/schema.json",
+  "extends": ["//"],
+  "tasks": {
+    // The docs `test` script runs its own `astro build` (with ASTRO_BASE=/), so unlike the
+    // root `test` task it does not also depend on this package's `build`.
+    "test": {
+      "dependsOn": ["^build"]
+    }
+  }
+}
