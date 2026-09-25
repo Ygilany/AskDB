@@ -6,7 +6,7 @@
  */
 import { embed, generateText } from "ai";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { openaiProvider } from "./index";
+import { openaiProvider } from "./openai.js";
 
 type CapturedRequest = { url: string; body: Record<string, unknown> };
 
@@ -48,7 +48,7 @@ async function captureGenerate(
   const providerOptions = openaiProvider.resolveProviderOptions?.(config, { reasoningEffort });
   await expect(
     generateText({
-      model: openaiProvider.createLanguageModel(config),
+      model: await openaiProvider.createLanguageModel(config),
       prompt: "How many customers?",
       temperature: 0,
       maxRetries: 0,
@@ -104,7 +104,7 @@ describe("openaiProvider — real @ai-sdk/openai contract", () => {
 
   it("forwards embedding dimensions and user to the request body", async () => {
     const requests = captureFetch(embeddingResponse);
-    const model = openaiProvider.createEmbeddingModel(
+    const model = await openaiProvider.createEmbeddingModel(
       { provider: "openai", apiKey: "test-key", model: "text-embedding-3-small" },
       { dimensions: 256, user: "user-1" },
     );

@@ -6,7 +6,7 @@
  */
 import { embed, generateText } from "ai";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { googleProvider } from "./index";
+import { googleProvider } from "./google.js";
 
 type CapturedRequest = { url: string; body: Record<string, unknown> };
 
@@ -43,7 +43,7 @@ async function captureGenerate(
   const providerOptions = googleProvider.resolveProviderOptions?.(config, { reasoningEffort });
   await expect(
     generateText({
-      model: googleProvider.createLanguageModel(config),
+      model: await googleProvider.createLanguageModel(config),
       prompt: "How many customers?",
       temperature: 0,
       maxRetries: 0,
@@ -87,7 +87,7 @@ describe("googleProvider — real @ai-sdk/google contract", () => {
 
   it("maps embedding dimensions to outputDimensionality in the request body", async () => {
     const requests = captureFetch(embeddingResponse);
-    const model = googleProvider.createEmbeddingModel(
+    const model = await googleProvider.createEmbeddingModel(
       { provider: "google", apiKey: "test-key", model: "gemini-embedding-001" },
       { dimensions: 768, user: "user-1" },
     );
@@ -108,7 +108,7 @@ describe("googleProvider — real @ai-sdk/google contract", () => {
 
   it("omits outputDimensionality when no dimensions are requested", async () => {
     const requests = captureFetch(embeddingResponse);
-    const model = googleProvider.createEmbeddingModel({
+    const model = await googleProvider.createEmbeddingModel({
       provider: "google",
       apiKey: "test-key",
       model: "gemini-embedding-001",

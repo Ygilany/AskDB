@@ -5,10 +5,10 @@
  * (e.g. embedding `dimensions` under an "azure" key, which
  * `OpenAIEmbeddingModel` never reads), which mocked-SDK unit tests can't.
  */
-import type { AiConfig } from "@askdb/ai";
+import type { AiConfig } from "../provider.js";
 import { embed, generateText } from "ai";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { azureProvider } from "./index";
+import { azureProvider } from "./azure.js";
 
 type CapturedRequest = { url: string; body: Record<string, unknown> };
 
@@ -49,7 +49,7 @@ async function captureGenerate(
   const providerOptions = azureProvider.resolveProviderOptions?.(config, { reasoningEffort });
   await expect(
     generateText({
-      model: azureProvider.createLanguageModel(config),
+      model: await azureProvider.createLanguageModel(config),
       prompt: "How many customers?",
       temperature: 0,
       maxRetries: 0,
@@ -131,7 +131,7 @@ describe("azureProvider — real @ai-sdk/azure contract", () => {
 
   it("forwards embedding dimensions and user to the request body", async () => {
     const requests = captureFetch(embeddingResponse);
-    const model = azureProvider.createEmbeddingModel(
+    const model = await azureProvider.createEmbeddingModel(
       { ...baseConfig, model: "text-embedding-3-small" },
       { dimensions: 256, user: "user-1" },
     );
