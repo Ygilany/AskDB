@@ -7,7 +7,23 @@
       "outputs": ["dist/**"]
     },
     "test": {
-      "dependsOn": ["^build", "^test"],
+      "dependsOn": ["build", "^build"],
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        "$TURBO_ROOT$/vitest.config.ts",
+        "$TURBO_ROOT$/scripts/test-utils/**",
+        "$TURBO_ROOT$/fixtures/**"
+      ],
+      "env": [
+        "ASKDB_REQUIRE_INTEGRATION",
+        "DATABASE_URL",
+        "PAGILA_DATABASE_URL",
+        "MYSQL_DATABASE_URL",
+        "MSSQL_DATABASE_URL",
+        "ASKDB_PGVECTOR_URL",
+        "PGVECTOR_URL",
+        "UPDATE_RAG_GOLDEN"
+      ],
       "outputs": []
     },
     "lint": {
