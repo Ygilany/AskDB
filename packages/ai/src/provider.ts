@@ -338,14 +338,37 @@ export function aiKeyMissingMessage(context: string): string {
     `${context}: no AI API key configured. ` +
     `For OpenAI, set ai.provider: "openai" and ai.providerConfig.openai.apiKey in askdb.config.*. ` +
     `For Azure / Microsoft Foundry, set ai.provider: "azure" and ai.providerConfig.azure.apiKey in askdb.config.*. ` +
+    `For Anthropic Claude, set ai.provider: "anthropic" and ai.providerConfig.anthropic.apiKey in askdb.config.*. ` +
     `For Google Gemini, set ai.provider: "google" and ai.providerConfig.google.apiKey in askdb.config.*.`
   );
 }
 
+/**
+ * First-party adapter packages, keyed by every provider id/alias they
+ * register. Aliases (e.g. `foundry`) map to the package that owns them.
+ */
+const FIRST_PARTY_ADAPTER_PACKAGES: Record<string, { pkg: string; exportName: string }> = {
+  openai: { pkg: "@askdb/ai-openai", exportName: "openaiProvider" },
+  azure: { pkg: "@askdb/ai-azure", exportName: "azureProvider" },
+  "azure-openai": { pkg: "@askdb/ai-azure", exportName: "azureProvider" },
+  foundry: { pkg: "@askdb/ai-azure", exportName: "azureProvider" },
+  anthropic: { pkg: "@askdb/ai-anthropic", exportName: "anthropicProvider" },
+  google: { pkg: "@askdb/ai-google", exportName: "googleProvider" },
+};
+
 export function aiProviderMissingMessage(provider: AiProvider): string {
+  const firstParty = FIRST_PARTY_ADAPTER_PACKAGES[normalizeProvider(provider)];
+  if (firstParty) {
+    return (
+      `AI provider "${provider}" is not registered. ` +
+      `Install ${firstParty.pkg} and pass its \`${firstParty.exportName}\` adapter to createAiRegistry().`
+    );
+  }
   return (
     `AI provider "${provider}" is not registered. ` +
-    `Install @askdb/ai-${provider} and pass its provider adapter to createAiRegistry().`
+    `There is no first-party AskDB adapter for it: pass an AiProviderAdapter whose ` +
+    `\`provider\` (or one of its \`aliases\`) is "${provider}" to createAiRegistry(), ` +
+    `or pass an AI SDK LanguageModel to ask() directly.`
   );
 }
 

@@ -3,7 +3,7 @@ import { describe, expect, it, vi, beforeEach } from "vitest";
 const mocks = vi.hoisted(() => {
   const google = vi.fn((model: string) => ({ kind: "language", model }));
   Object.assign(google, {
-    textEmbeddingModel: vi.fn((model: string) => ({
+    embedding: vi.fn((model: string) => ({
       kind: "embedding",
       model,
     })),
@@ -25,7 +25,7 @@ describe("googleProvider", () => {
   beforeEach(() => {
     mocks.createGoogle.mockClear();
     mocks.google.mockClear();
-    mocks.google.textEmbeddingModel.mockClear();
+    mocks.google.embedding.mockClear();
   });
 
   it("creates language and embedding models from AskDB config", () => {
@@ -49,6 +49,7 @@ describe("googleProvider", () => {
       apiKey: "test-key",
       baseURL: "https://generativelanguage.googleapis.com",
     });
+    expect(mocks.google.embedding).toHaveBeenCalledWith("text-embedding-004");
     expect(mocks.createGoogle).toHaveBeenNthCalledWith(2, {
       apiKey: "test-key",
     });

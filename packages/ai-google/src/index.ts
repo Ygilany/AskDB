@@ -1,4 +1,5 @@
 import { createGoogle } from "@ai-sdk/google";
+import { defaultEmbeddingSettingsMiddleware, wrapEmbeddingModel } from "ai";
 import {
   resolveBaseConfig,
   type AiProviderAdapter,
@@ -51,12 +52,24 @@ export const googleProvider: AiProviderAdapter = {
     });
     return google(config.model);
   },
-  createEmbeddingModel(config) {
+  createEmbeddingModel(config, options = {}) {
     const google = createGoogle({
       apiKey: config.apiKey,
       ...(config.baseURL ? { baseURL: config.baseURL } : {}),
     });
-    return google.textEmbeddingModel(config.model);
+    const model = google.embedding(config.model);
+    // Gemini's embedding API calls the output size `outputDimensionality`
+    // (read from `providerOptions.google`). It has no per-end-user field, so
+    // `options.user` is intentionally not forwarded.
+    if (options.dimensions === undefined) return model;
+    return wrapEmbeddingModel({
+      model,
+      middleware: defaultEmbeddingSettingsMiddleware({
+        settings: {
+          providerOptions: { google: { outputDimensionality: options.dimensions } },
+        },
+      }),
+    });
   },
   resolveProviderOptions(config, { reasoningEffort }) {
     if (!reasoningEffort) return undefined;

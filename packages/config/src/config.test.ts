@@ -4,6 +4,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it } from "vitest";
 import {
+  ASKDB_AI_PROVIDERS,
   bootstrapAskDbEnv,
   defineConfig,
   discoverAskDbConfigPath,
@@ -85,6 +86,14 @@ describe("discoverAskDbConfigPath", () => {
     writeFileSync(join(dir, ".config", "askdb.ts"), "export default {}", "utf8");
     writeFileSync(join(dir, "askdb.config.js"), "export default {}", "utf8");
     expect(discoverAskDbConfigPath(dir)).toBe(join(dir, "askdb.config.js"));
+  });
+});
+
+describe("ASKDB_AI_PROVIDERS", () => {
+  it("lists every first-party provider id flattenAskDbConfig handles, including anthropic", () => {
+    expect([...ASKDB_AI_PROVIDERS].sort()).toEqual(
+      ["anthropic", "azure", "foundry", "google", "openai"].sort(),
+    );
   });
 });
 
@@ -267,6 +276,44 @@ describe("flattenAskDbConfig", () => {
     );
     expect(flat.AZURE_OPENAI_DEPLOYMENT).toBe("askdb-reporting");
     expect(flat.ASKDB_AI_AZURE_MODEL_FAMILY).toBe("gpt-5");
+  });
+
+  it.each(["azure", "foundry"] as const)(
+    "flattens %s resourceName/baseUrl/apiVersion to the env keys the Azure adapter reads",
+    (provider) => {
+      const flat = flattenAskDbConfig(
+        minimalConfig({
+          ai: {
+            provider,
+            providerConfig: {
+              [provider]: {
+                apiKey: "k",
+                model: "gpt-4o-mini",
+                resourceName: "my-foundry",
+                baseUrl: "https://my-foundry.openai.azure.com/openai",
+                apiVersion: "2025-04-01-preview",
+              },
+            },
+          } as AskDbConfig["ai"],
+        }),
+      );
+      expect(flat.ASKDB_AI_PROVIDER).toBe(provider);
+      expect(flat.ASKDB_AI_AZURE_RESOURCE_NAME).toBe("my-foundry");
+      expect(flat.AZURE_OPENAI_BASE_URL).toBe("https://my-foundry.openai.azure.com/openai");
+      expect(flat.AZURE_OPENAI_API_VERSION).toBe("2025-04-01-preview");
+    },
+  );
+
+  it("omits ASKDB_AI_AZURE_RESOURCE_NAME when azure resourceName is unset", () => {
+    const flat = flattenAskDbConfig(
+      minimalConfig({
+        ai: {
+          provider: "azure",
+          providerConfig: { azure: { apiKey: "k", baseUrl: "https://x.openai.azure.com" } },
+        },
+      }),
+    );
+    expect(flat).not.toHaveProperty("ASKDB_AI_AZURE_RESOURCE_NAME");
   });
 
   it("flattens anthropic baseUrl when provided", () => {

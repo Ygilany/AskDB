@@ -31,6 +31,13 @@ export type OpenaiConfig = {
 export type AzureConfig = {
   apiKey?: string;
   secondaryApiKey?: string;
+  /**
+   * Azure resource name — the subdomain of your endpoint, e.g. `"my-foundry"`
+   * for `https://my-foundry.openai.azure.com`. One of `resourceName` or
+   * `baseUrl` is required.
+   */
+  resourceName?: string;
+  /** Full endpoint URL. Overrides `resourceName` when both are set. */
   baseUrl?: string;
   /** When unset, `flattenAskDbConfig` applies the default Azure deployment name (see `@askdb/config` defaults). */
   model?: string;
@@ -49,6 +56,9 @@ export type FoundryConfig = {
   secondaryApiKey?: string;
   model?: string;
   apiVersion?: string;
+  /** See {@link AzureConfig.resourceName}. */
+  resourceName?: string;
+  /** See {@link AzureConfig.baseUrl}. */
   baseUrl?: string;
   /** See {@link AzureConfig.modelFamily}. */
   modelFamily?: string;
