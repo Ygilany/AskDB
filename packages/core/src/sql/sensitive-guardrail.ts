@@ -7,6 +7,15 @@ import {
   type SensitiveScopeReport,
 } from "../errors.js";
 import type { AnyNormalizedSchema } from "../schema/types.js";
+import type { DialectSpec } from "./dialect-spec.js";
+import {
+  ENGINE_LEXER_PROFILES,
+  GENERIC_LEXER,
+  hasUnterminatedToken,
+  lexSql,
+  lexerProfileFor,
+  type SqlToken,
+} from "./lexer.js";
 
 export type SensitiveGuardrailMode = "warn" | "strict";
 
@@ -17,6 +26,13 @@ export type ValidateSensitiveReferencesOptions = {
    * proven clean (references found, or scope could not be resolved).
    */
   mode?: SensitiveGuardrailMode;
+  /**
+   * The engine the SQL targets, so strings, quoted identifiers, and comments are lexed
+   * the way that engine reads them (e.g. MySQL backslash escapes, Postgres `E'…'`).
+   * When omitted, references are collected under every built-in engine's reading, which
+   * is conservative and can over-report in rare cases.
+   */
+  dialect?: Pick<DialectSpec, "id" | "backslashEscapes">;
 };
 
 export type SensitiveGuardrailResult = {
@@ -42,10 +58,14 @@ export type SensitiveGuardrailResult = {
  * are resolved first. When scope cannot be resolved (no resolvable table source, or a
  * qualifier that binds to nothing known), the check fails conservatively — it widens
  * matching and reports why in {@link SensitiveGuardrailResult.unresolvedScope} — rather
- * than passing silently.
+ * than passing silently. A string, quoted identifier, or comment that never closes is
+ * reported the same way (`UNTERMINATED_TOKEN`).
  *
- * Heuristic, not a SQL parser. It is a review/enforcement aid, not a substitute for
- * database-side column privileges.
+ * `SELECT *`, `alias.*`, and whole-row references such as `row_to_json(alias)` count as
+ * referencing every sensitive column of the table they reach.
+ *
+ * Heuristic, not a SQL parser, and not a security boundary. It is defense in depth for
+ * review and enforcement; database-side column privileges are the real control.
  */
 export function validateSensitiveReferences(
   sql: string,
@@ -56,7 +76,7 @@ export function validateSensitiveReferences(
   const index = indexSchema(schema);
 
   const result: SensitiveGuardrailResult = index.hasSensitive
-    ? scan(sql, index)
+    ? scanSql(sql, index, options?.dialect)
     : { passed: true, references: [] };
 
   if (mode === "strict" && !result.passed) {
@@ -179,133 +199,47 @@ function indexSchema(schema: AnyNormalizedSchema): SchemaIndex {
 }
 
 // ---------------------------------------------------------------------------
-// Tokenizer
+// Tokens — adapted from the shared dialect-aware lexer
 // ---------------------------------------------------------------------------
 
 type TokKind = "word" | "punct" | "literal" | "placeholder" | "number";
 type Tok = { kind: TokKind; value: string; lower: string; quoted: boolean };
 
-const WORD_START = /[A-Za-z_\u0080-\uFFFF]/;
-const WORD_CHAR = /[A-Za-z0-9_$\u0080-\uFFFF]/;
-
-function tokenize(sql: string): Tok[] {
+/**
+ * Map lexer tokens onto the scanner's simpler vocabulary. Comments are dropped (MySQL
+ * `/*! … *\/` bodies are already lexed as code). A MySQL `"…"` string is treated as a
+ * quoted identifier: under `ANSI_QUOTES` it is one, and over-reporting is the safe side.
+ */
+function toToks(tokens: readonly SqlToken[]): Tok[] {
   const out: Tok[] = [];
-  const push = (kind: TokKind, value: string, quoted = false): void => {
-    out.push({ kind, value, lower: value.toLowerCase(), quoted });
-  };
-  let i = 0;
-  while (i < sql.length) {
-    const ch = sql[i]!;
-    if (/\s/.test(ch)) {
-      i++;
-      continue;
-    }
-    if (ch === "-" && sql[i + 1] === "-") {
-      while (i < sql.length && sql[i] !== "\n") i++;
-      continue;
-    }
-    if (ch === "/" && sql[i + 1] === "*") {
-      i += 2;
-      while (i < sql.length && !(sql[i] === "*" && sql[i + 1] === "/")) i++;
-      i = Math.min(i + 2, sql.length);
-      continue;
-    }
-    if (ch === "'") {
-      i++;
-      while (i < sql.length) {
-        if (sql[i] === "'" && sql[i + 1] === "'") {
-          i += 2;
-          continue;
+  for (const t of tokens) {
+    switch (t.kind) {
+      case "comment":
+        break;
+      case "word":
+        out.push({ kind: "word", value: t.value, lower: t.lower, quoted: false });
+        break;
+      case "quoted_identifier":
+        out.push({ kind: "word", value: t.value, lower: t.lower, quoted: true });
+        break;
+      case "string":
+        if (t.quote === '"') {
+          const inner = t.text.slice(1, t.unterminated ? undefined : -1);
+          out.push({ kind: "word", value: inner, lower: inner.toLowerCase(), quoted: true });
+        } else {
+          out.push({ kind: "literal", value: "'", lower: "'", quoted: false });
         }
-        if (sql[i] === "'") {
-          i++;
-          break;
-        }
-        i++;
-      }
-      push("literal", "'");
-      continue;
+        break;
+      case "number":
+        out.push({ kind: "number", value: t.text, lower: t.lower, quoted: false });
+        break;
+      case "parameter":
+        out.push({ kind: "placeholder", value: t.text, lower: t.lower, quoted: false });
+        break;
+      case "punct":
+        out.push({ kind: "punct", value: t.text, lower: t.text, quoted: false });
+        break;
     }
-    if (ch === "$") {
-      const dollarQuote = /^\$(\w*)\$/.exec(sql.slice(i));
-      if (dollarQuote) {
-        const opener = dollarQuote[0]!;
-        const close = sql.indexOf(opener, i + opener.length);
-        i = close === -1 ? sql.length : close + opener.length;
-        push("literal", "$$");
-        continue;
-      }
-      if (/[0-9]/.test(sql[i + 1] ?? "")) {
-        let j = i + 1;
-        while (j < sql.length && /[0-9]/.test(sql[j]!)) j++;
-        push("placeholder", sql.slice(i, j));
-        i = j;
-        continue;
-      }
-    }
-    if (ch === '"' || ch === "`") {
-      const close = ch;
-      i++;
-      let buf = "";
-      while (i < sql.length) {
-        if (sql[i] === close && sql[i + 1] === close) {
-          buf += close;
-          i += 2;
-          continue;
-        }
-        if (sql[i] === close) {
-          i++;
-          break;
-        }
-        buf += sql[i];
-        i++;
-      }
-      push("word", buf, true);
-      continue;
-    }
-    if (ch === "[") {
-      i++;
-      let buf = "";
-      while (i < sql.length && sql[i] !== "]") {
-        buf += sql[i];
-        i++;
-      }
-      if (i < sql.length) i++;
-      push("word", buf, true);
-      continue;
-    }
-    if (ch === ":" && sql[i + 1] === ":") {
-      push("punct", "::");
-      i += 2;
-      continue;
-    }
-    if ((ch === ":" || ch === "@") && WORD_START.test(sql[i + 1] ?? "")) {
-      let j = i + 1;
-      while (j < sql.length && WORD_CHAR.test(sql[j]!)) j++;
-      push("placeholder", sql.slice(i, j));
-      i = j;
-      continue;
-    }
-    if (/[0-9]/.test(ch)) {
-      let j = i;
-      while (j < sql.length && /[0-9]/.test(sql[j]!)) j++;
-      if (sql[j] === "." && /[0-9]/.test(sql[j + 1] ?? "")) {
-        j++;
-        while (j < sql.length && /[0-9]/.test(sql[j]!)) j++;
-      }
-      push("number", sql.slice(i, j));
-      i = j;
-      continue;
-    }
-    if (WORD_START.test(ch)) {
-      let j = i;
-      while (j < sql.length && WORD_CHAR.test(sql[j]!)) j++;
-      push("word", sql.slice(i, j));
-      i = j;
-      continue;
-    }
-    push("punct", ch);
-    i++;
   }
   return out;
 }
@@ -352,9 +286,65 @@ const JOIN_MODIFIER = new Set([
 // ---------------------------------------------------------------------------
 
 type QualifiedRef = { qualifier: string; qualifierSchema?: string; column: string };
+type StarRef = { qualifier: string; qualifierSchema?: string };
 
-function scan(sql: string, index: SchemaIndex): SensitiveGuardrailResult {
-  const tokens = tokenize(sql);
+type Found = SensitiveReference & { tableOrder: number; columnOrder: number };
+
+type ScanOutcome = {
+  found: Map<string, Found>;
+  issues: Set<SensitiveScopeIssue>;
+  widened: boolean;
+};
+
+/**
+ * Lex and scan. With a known dialect the statement is lexed once, the way that engine
+ * reads it. Without one (or for an unrecognized id) the generic reading decides scope
+ * issues, and references are unioned across every engine's reading that lexes cleanly —
+ * so a column hidden from one reading by an engine-specific quote or comment rule (for
+ * example MySQL `'\''` or Postgres `E'\''`) is still reported. Readings with an
+ * unterminated token are skipped: the engine would reject that SQL outright.
+ */
+function scanSql(
+  sql: string,
+  index: SchemaIndex,
+  dialect: Pick<DialectSpec, "id" | "backslashEscapes"> | undefined,
+): SensitiveGuardrailResult {
+  const profile = dialect ? lexerProfileFor(dialect) : undefined;
+  if (profile) return finalize(scanTokens(lexSql(sql, profile), index));
+
+  const primary = scanTokens(lexSql(sql, GENERIC_LEXER), index);
+  for (const p of ENGINE_LEXER_PROFILES) {
+    const tokens = lexSql(sql, p);
+    if (hasUnterminatedToken(tokens)) continue;
+    for (const [key, ref] of scanTokens(tokens, index).found) {
+      const existing = primary.found.get(key);
+      if (!existing) primary.found.set(key, ref);
+      else if (ref.matchKind === "qualified") existing.matchKind = "qualified";
+    }
+  }
+  return finalize(primary);
+}
+
+function finalize(outcome: ScanOutcome): SensitiveGuardrailResult {
+  const references = [...outcome.found.values()]
+    .sort((a, b) => a.tableOrder - b.tableOrder || a.columnOrder - b.columnOrder)
+    .map(({ tableOrder: _tableOrder, columnOrder: _columnOrder, ...ref }) => ref);
+
+  const unresolvedScope =
+    outcome.issues.size > 0 ? buildScopeReport([...outcome.issues], outcome.widened) : undefined;
+
+  return {
+    passed: references.length === 0 && unresolvedScope === undefined,
+    references,
+    ...(unresolvedScope ? { unresolvedScope } : {}),
+  };
+}
+
+/** Words after which a `*` is a select-list wildcard rather than multiplication. */
+const STAR_LEADS = new Set(["select", "distinct", "all", "percent", "ties"]);
+
+function scanTokens(lexed: readonly SqlToken[], index: SchemaIndex): ScanOutcome {
+  const tokens = toToks(lexed);
   const isWord = (t: Tok | undefined): boolean => t?.kind === "word";
   const isPunct = (t: Tok | undefined, v: string): boolean => t?.kind === "punct" && t.value === v;
   const canAlias = (t: Tok | undefined): boolean =>
@@ -390,6 +380,31 @@ function scan(sql: string, index: SchemaIndex): SensitiveGuardrailResult {
       }
     }
     return -1;
+  };
+
+  /**
+   * True when the `*` at `i` is a select-list wildcard: `SELECT *`, `SELECT a, *`,
+   * `SELECT DISTINCT *`, `SELECT DISTINCT ON (x) *`, `SELECT TOP 5 *`, `TOP (5) *`.
+   * Not `count(*)` or multiplication. `EXISTS (SELECT * …)` returns no columns, so it
+   * does not count.
+   */
+  const isSelectListStar = (i: number): boolean => {
+    const prev = tokens[i - 1];
+    if (!prev) return false;
+    if (isPunct(prev, ",")) return true;
+    if (isWord(prev) && !prev.quoted && STAR_LEADS.has(prev.lower)) {
+      if (prev.lower !== "select") return true;
+      return !(isPunct(tokens[i - 2], "(") && isWord(tokens[i - 3]) && tokens[i - 3]!.lower === "exists");
+    }
+    if (prev.kind === "number") return isWord(tokens[i - 2]) && tokens[i - 2]!.lower === "top";
+    if (isPunct(prev, ")")) {
+      const open = openParenBefore(i - 1);
+      const lead = tokens[open - 1];
+      if (!isWord(lead)) return false;
+      if (lead!.lower === "top") return true;
+      return lead!.lower === "on" && isWord(tokens[open - 2]) && tokens[open - 2]!.lower === "distinct";
+    }
+    return false;
   };
 
   /** Consume an optional `AS alias` / bare `alias`; returns the index after it. */
@@ -496,9 +511,15 @@ function scan(sql: string, index: SchemaIndex): SensitiveGuardrailResult {
 
   // Pass B — collect the column references the statement actually makes.
   const qualifiedRefs: QualifiedRef[] = [];
+  const starRefs: StarRef[] = [];
   const bare = new Set<string>();
+  let bareStar = false;
   for (let i = 0; i < tokens.length; i++) {
     const t = tokens[i]!;
+    if (isPunct(t, "*") && isSelectListStar(i)) {
+      bareStar = true;
+      continue;
+    }
     if (t.kind !== "word") continue;
     if (isPunct(tokens[i - 1], ".")) continue; // tail of a path, handled at its head
     if (isPunct(tokens[i - 1], "::")) continue; // cast target type
@@ -519,7 +540,13 @@ function scan(sql: string, index: SchemaIndex): SensitiveGuardrailResult {
         path.push(tokens[k]!.lower);
         k++;
       }
-      if (!star && path.length >= 2 && !consumed.has(i)) {
+      if (star && !consumed.has(i)) {
+        // `alias.*` / `schema.table.*` — every column of the qualifier's table.
+        starRefs.push({
+          qualifier: path[path.length - 1]!,
+          ...(path.length >= 2 ? { qualifierSchema: path[path.length - 2]! } : {}),
+        });
+      } else if (!star && path.length >= 2 && !consumed.has(i)) {
         qualifiedRefs.push({
           column: path[path.length - 1]!,
           qualifier: path[path.length - 2]!,
@@ -563,7 +590,6 @@ function scan(sql: string, index: SchemaIndex): SensitiveGuardrailResult {
   for (const decl of aliasDecls) bindQualifier(decl.alias, resolve(decl.path));
 
   // Collect findings.
-  type Found = SensitiveReference & { tableOrder: number; columnOrder: number };
   const found = new Map<string, Found>();
   const record = (
     table: TableEntry,
@@ -638,20 +664,39 @@ function scan(sql: string, index: SchemaIndex): SensitiveGuardrailResult {
     }
   }
 
-  const references = [...found.values()]
-    .sort((a, b) => a.tableOrder - b.tableOrder || a.columnOrder - b.columnOrder)
-    .map(({ tableOrder: _tableOrder, columnOrder: _columnOrder, ...ref }) => ref);
-
-  const unresolvedScope =
-    issues.size > 0
-      ? buildScopeReport([...issues], noTableSource || unknownQualifierColumns.size > 0)
-      : undefined;
-
-  return {
-    passed: references.length === 0 && unresolvedScope === undefined,
-    references,
-    ...(unresolvedScope ? { unresolvedScope } : {}),
+  // Wildcards and whole-row references reach every column of the table, so they reach
+  // its sensitive columns. (Table-level-sensitive tables are already reported as "*".)
+  const recordAllSensitive = (table: TableEntry, matchKind: SensitiveMatchKind): void => {
+    if (table.sensitive) return;
+    for (const column of table.columns) {
+      if (column.sensitive) record(table, column.name, column.order, matchKind);
+    }
   };
+  // Bare `SELECT *` — every in-scope table.
+  if (bareStar) {
+    for (const table of inScope) recordAllSensitive(table, "unqualified");
+  }
+  // `alias.*`
+  for (const ref of starRefs) {
+    const bound = qualifiers.get(ref.qualifier);
+    if (!bound) {
+      if (!derived.has(ref.qualifier)) issues.add("UNKNOWN_QUALIFIER");
+      continue;
+    }
+    const scoped = ref.qualifierSchema
+      ? bound.filter((e) => e.schemaLower === undefined || e.schemaLower === ref.qualifierSchema)
+      : bound;
+    for (const table of scoped) recordAllSensitive(table, "qualified");
+  }
+  // A table name or alias used as a value — `row_to_json(u)`, `to_jsonb(u)`,
+  // `json_agg(u)`, Postgres `SELECT u FROM users u` — is the whole row.
+  for (const word of bare) {
+    for (const table of qualifiers.get(word) ?? []) recordAllSensitive(table, "qualified");
+  }
+
+  if (lexed.some((t) => t.unterminated)) issues.add("UNTERMINATED_TOKEN");
+
+  return { found, issues, widened: noTableSource || unknownQualifierColumns.size > 0 };
 }
 
 const SCOPE_ISSUE_TEXT: Record<SensitiveScopeIssue, string> = {
@@ -661,6 +706,8 @@ const SCOPE_ISSUE_TEXT: Record<SensitiveScopeIssue, string> = {
     "a qualified reference used a qualifier that is not a known table, alias, or CTE",
   OPAQUE_TABLE_SOURCE:
     "a table source is not a relation name (table function or table-valued expression)",
+  UNTERMINATED_TOKEN:
+    "a string, quoted identifier, or comment never closes, so the rest of the statement could not be scanned",
 };
 
 function buildScopeReport(issues: SensitiveScopeIssue[], widened: boolean): SensitiveScopeReport {

@@ -4,34 +4,77 @@ import {
   bindPreparedQuery,
   escapeSqlLiteral,
   scanPlaceholders,
-  stripSqlStringLiterals,
   tokenizeSqlSpans,
   type PreparedQuery,
 } from "./bind.js";
 import { validateSelectSql } from "./validate.js";
 import { MYSQL_DIALECT, POSTGRES_DIALECT, SQLITE_DIALECT, SQLSERVER_DIALECT } from "./dialect-spec.js";
 
-describe("tokenizeSqlSpans / stripSqlStringLiterals", () => {
+/** Render spans as `kind:text` pairs for compact assertions. */
+function spansOf(sql: string, dialect?: Parameters<typeof tokenizeSqlSpans>[1]): string[] {
+  return tokenizeSqlSpans(sql, dialect).map((s) => `${s.kind}:${sql.slice(s.start, s.end)}`);
+}
+
+describe("tokenizeSqlSpans", () => {
   it("leaves code outside quotes intact", () => {
-    expect(stripSqlStringLiterals("SELECT id FROM users")).toBe("SELECT id FROM users");
+    expect(spansOf("SELECT id FROM users")).toEqual(["code:SELECT id FROM users"]);
   });
 
-  it("strips single-quoted strings", () => {
-    expect(stripSqlStringLiterals("SELECT 'a''b' FROM t")).toBe("SELECT '' FROM t");
+  it("marks single-quoted strings with doubled-quote escapes", () => {
+    expect(spansOf("SELECT 'a''b' FROM t")).toEqual(["code:SELECT ", "quoted:'a''b'", "code: FROM t"]);
   });
 
-  it("strips double-quoted identifiers", () => {
-    expect(stripSqlStringLiterals('SELECT "Weird Name" FROM t')).toBe("SELECT \"\" FROM t");
+  it("marks double-quoted identifiers", () => {
+    expect(spansOf('SELECT "Weird Name" FROM t')).toEqual([
+      "code:SELECT ",
+      'quoted:"Weird Name"',
+      "code: FROM t",
+    ]);
   });
 
-  it("strips backticks and brackets", () => {
-    expect(stripSqlStringLiterals("SELECT `col` FROM [tbl]")).toBe("SELECT `` FROM []");
+  it("marks backticks and brackets without a dialect", () => {
+    expect(spansOf("SELECT `col` FROM [tbl]")).toEqual([
+      "code:SELECT ",
+      "quoted:`col`",
+      "code: FROM ",
+      "quoted:[tbl]",
+    ]);
   });
 
   it("does not treat $1 as a dollar-quoted string", () => {
     const sql = "SELECT id FROM users WHERE id = $1";
-    expect(stripSqlStringLiterals(sql)).toBe(sql);
+    expect(spansOf(sql)).toEqual([`code:${sql}`]);
     expect(validateSelectSql(POSTGRES_DIALECT, sql)).toBe(sql);
+  });
+
+  it("closes a dollar-quoted string only on the exact opening tag", () => {
+    expect(spansOf("SELECT $$ $ $$, $a$ $b$ $a$ x", POSTGRES_DIALECT)).toEqual([
+      "code:SELECT ",
+      "quoted:$$ $ $$",
+      "code:, ",
+      "quoted:$a$ $b$ $a$",
+      "code: x",
+    ]);
+  });
+
+  it("follows the dialect's escape rules", () => {
+    // Postgres: E'' strings honour backslash; "…" identifiers do not.
+    expect(spansOf(`SELECT E'\\'' x, "a\\" y`, POSTGRES_DIALECT)).toEqual([
+      "code:SELECT ",
+      "quoted:E'\\''",
+      "code: x, ",
+      'quoted:"a\\"',
+      "code: y",
+    ]);
+    // MySQL: backslash escapes in '…'; # starts a comment.
+    expect(spansOf("SELECT '\\'' x # c", MYSQL_DIALECT)).toEqual([
+      "code:SELECT ",
+      "quoted:'\\''",
+      "code: x ",
+      "comment:# c",
+    ]);
+    // Postgres: [ is an array subscript, not a bracket identifier.
+    expect(spansOf("SELECT a[1]", POSTGRES_DIALECT)).toEqual(["code:SELECT a[1]"]);
   });
 });
 
@@ -49,6 +92,16 @@ describe("scanPlaceholders", () => {
   it("leaves placeholder-looking text inside every quote form untouched", () => {
     const sql =
       "SELECT ':a', \":b\", `:c`, [:d], $tag$ :e $tag$ FROM t WHERE x = :real";
+    expect(scanPlaceholders(sql).map((p) => p.name)).toEqual(["real"]);
+  });
+
+  it("does not read the type in a ::cast as a placeholder", () => {
+    const sql = "SELECT created_at::date FROM t WHERE d = :day";
+    expect(scanPlaceholders(sql).map((p) => p.name)).toEqual(["day"]);
+  });
+
+  it("ignores placeholders inside comments", () => {
+    const sql = "SELECT * FROM t WHERE a = :real -- :ghost";
     expect(scanPlaceholders(sql).map((p) => p.name)).toEqual(["real"]);
   });
 });

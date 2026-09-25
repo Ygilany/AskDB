@@ -128,9 +128,16 @@ type SensitiveReference = {
 };
 ```
 
-- **`"qualified"`** — `table.column`, or `alias.column` where the alias binds to the owning table.
-- **`"unqualified"`** — a bare `column`, counted **only because the owning table is in the statement's scope**.
+- **`"qualified"`** — `table.column`, or `alias.column` where the alias binds to the owning table. Also `alias.*` and whole-row references such as `row_to_json(alias)` or `to_jsonb(alias)`, which reach every sensitive column of that table.
+- **`"unqualified"`** — a bare `column`, counted **only because the owning table is in the statement's scope**. Also a bare `SELECT *`, which reaches every sensitive column of the in-scope tables.
 - **`"table"`** — the sensitive table itself is a `FROM`/`JOIN` target. Catches `SELECT * FROM secrets`, where no column is named.
+
+#### Options
+
+| Option | Type | Default | Meaning |
+| --- | --- | --- | --- |
+| `mode` | `"warn" \| "strict"` | `"warn"` | See [Modes](#modes). |
+| `dialect` | `DialectSpec` (or `{ id }`) | — | Lex the SQL the way that engine does (MySQL backslash escapes and `#` comments, Postgres `E'…'` and `$tag$…$tag$`, SQL Server `[…]`). Without it, references are collected under every built-in engine's reading, which is conservative and can over-report in rare cases. |
 
 #### Scope resolution
 
@@ -161,6 +168,7 @@ When scope cannot be proven, the check reports rather than silently passing. `un
 | `NO_TABLE_SOURCE` | No `FROM`/`JOIN` target resolved, so unqualified names cannot be bound. | Unqualified matching widens to every sensitive column. |
 | `UNKNOWN_QUALIFIER` | A `qualifier.column` whose qualifier is not a known table, alias, or CTE. | That column is matched against every sensitive column. |
 | `OPAQUE_TABLE_SOURCE` | A table source that is not a relation name (table function, table-valued expression). | Reported only; no widening — such a source exposes no schema columns. |
+| `UNTERMINATED_TOKEN` | A string, quoted identifier, or comment never closes. | Reported only; the rest of the statement could not be scanned. |
 
 `unresolvedScope.widened` says whether matching was widened, and `.message` explains why. `strict` mode treats unresolved scope as a failure, mirroring how `validateTenantGuardrails` handles unprovable scope.
 
@@ -252,7 +260,10 @@ const redshiftFlavor: DialectSpec = {
 | `promptBrief` | `string` | yes | One-paragraph guidance for the model about this dialect's syntax. |
 | `identifierQuote` | `'"' \| '`'` | yes | Identifier quoting style. |
 | `extraForbiddenKeywords` | `readonly string[]` | no | Keywords to forbid in addition to the shared read-only denylist. |
+| `blockedFunctions` | `readonly string[]` | no | Functions `validateSelectSql` rejects when called (`name(`), such as `pg_sleep` or `load_file`. |
 | `extraValidate` | `(sql: string) => void` | no | Dialect-specific SQL validator. Throw `SqlValidationError` for failures. |
+
+`id` also selects how the validator lexes strings, quoted identifiers, and comments. The built-in specs ship their own `extraForbiddenKeywords` and `blockedFunctions`; spread one (`{ ...POSTGRES_DIALECT, … }`) to keep them, since setting either field replaces the built-in list. These checks are defense in depth — run generated SQL under a read-only database role.
 
 ### `AskDialect`
 

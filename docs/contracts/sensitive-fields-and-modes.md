@@ -43,14 +43,18 @@ const { passed, references, unresolvedScope } = validateSensitiveReferences(cach
 | Field | Meaning |
 | --- | --- |
 | `passed` | `true` only when nothing sensitive was referenced **and** table scope was fully resolved. |
-| `references` | `{ table, schema?, column, matchKind }[]`. `matchKind` is `"qualified"` (`t.col` / `alias.col`), `"unqualified"` (bare `col`), or `"table"` (a `sensitive` table reached as a `FROM`/`JOIN` target; `column` is `"*"`). |
+| `references` | `{ table, schema?, column, matchKind }[]`. `matchKind` is `"qualified"` (`t.col` / `alias.col`, `alias.*`, or a whole-row reference like `row_to_json(alias)`), `"unqualified"` (bare `col`, or a bare `SELECT *` over an in-scope table), or `"table"` (a `sensitive` table reached as a `FROM`/`JOIN` target; `column` is `"*"`). |
 | `unresolvedScope` | Present when scope could not be proven: `{ issues, widened, message }`. |
 
 **Modes.** `{ mode: "warn" }` (default) returns references without throwing — the behavior the CLI has always had. `{ mode: "strict" }` throws `SensitiveReferenceError extends AskDbError` carrying a `SensitiveReferenceRuleCode` (`SENSITIVE_TABLE_REFERENCED`, `SENSITIVE_COLUMN_REFERENCED`, `UNRESOLVED_TABLE_SCOPE`).
 
 **Scope resolution.** An unqualified column name counts **only when the owning table is actually in the statement's scope**. `FROM`/`JOIN` targets and their aliases (including inside CTEs and derived tables) are resolved first, then unqualified names are matched against the columns of those tables. A bare-word scan would flag `id` on every query the moment any table-level-`sensitive` table has an `id` column; this does not.
 
-**Conservative failure.** When scope cannot be resolved — no resolvable table source (`NO_TABLE_SOURCE`), a qualifier bound to nothing known (`UNKNOWN_QUALIFIER`), or a table source that is not a relation name (`OPAQUE_TABLE_SOURCE`) — the check reports `unresolvedScope` rather than passing silently, and for the first two it widens unqualified matching to every sensitive column. `strict` mode treats unresolved scope as a failure, mirroring how `validateTenantGuardrails` handles unprovable scope.
+**Wildcards and whole rows.** `SELECT *`, `alias.*`, and a table name or alias used as a value (`row_to_json(u)`, `to_jsonb(u)`, `json_agg(u)`, Postgres `SELECT u FROM users u`) reach every column of that table, so they are reported as referencing each of its sensitive columns. `count(*)`, multiplication, and `EXISTS (SELECT * …)` are not wildcards.
+
+**Lexing.** The statement is split by the same dialect-aware lexer as `validateSelectSql`, so a column cannot hide behind an engine-specific quote rule (Postgres `E'\''`, MySQL `'\''`, Postgres `ARRAY['a]']`). Pass `{ dialect }` (a `DialectSpec` or `{ id }`) for an exact reading. Without it, table scope is resolved under a dialect-neutral reading and references are unioned across every built-in engine's reading that lexes cleanly — conservative, so it can over-report in rare cases.
+
+**Conservative failure.** When scope cannot be resolved — no resolvable table source (`NO_TABLE_SOURCE`), a qualifier bound to nothing known (`UNKNOWN_QUALIFIER`), a table source that is not a relation name (`OPAQUE_TABLE_SOURCE`), or a string/quoted identifier/comment that never closes (`UNTERMINATED_TOKEN`) — the check reports `unresolvedScope` rather than passing silently, and for the first two it widens unqualified matching to every sensitive column. `strict` mode treats unresolved scope as a failure, mirroring how `validateTenantGuardrails` handles unprovable scope.
 
 **In the pipeline.** `ask()` runs the guardrail over the SQL it is about to return and attaches the result as `AskPipelineResult.sensitiveGuardrail`. `AskPipelineOptions.sensitiveGuardrailMode` selects `"warn"` (default), `"strict"`, or `"off"`. The check is skipped entirely when the schema declares no `sensitive` markers, so `sensitiveGuardrail` is absent in that case.
 
