@@ -341,9 +341,25 @@ describe("createAskDb providers option", () => {
     ).toThrow(/not both/);
   });
 
-  it("rejects passing neither providers nor registry", () => {
-    const config = makeConfig({ mockSql: "SELECT 1" });
-    expect(() => createAskDb({ config })).toThrow(/providers/);
+  it("registers every built-in provider when neither providers nor registry is passed", async () => {
+    const config = makeConfig(); // no mockSql and no key -> registry path
+    const askdb = createAskDb({ config, schema: { path: fixtureSchemaPath } });
+    // No API key configured: the key-missing message lists every built-in
+    // provider's setup hint, proving the default registry holds the built-ins.
+    const error = await askdb.ask("q").catch((e: unknown) => e as Error);
+    expect(error).toBeInstanceOf(ModelNotConfiguredError);
+    for (const provider of ["openai", "azure", "anthropic", "google", "gateway"]) {
+      expect(error.message).toContain(`ai.providerConfig.${provider}.apiKey`);
+    }
+  });
+
+  it("accepts built-in provider names and registers only those", async () => {
+    const config = makeConfig({ aiEnv: { ASKDB_AI_PROVIDER: "anthropic" } });
+    const askdb = createAskDb({ config, providers: ["anthropic"], schema: { path: fixtureSchemaPath } });
+    const error = await askdb.ask("q").catch((e: unknown) => e as Error);
+    expect(error).toBeInstanceOf(ModelNotConfiguredError);
+    expect(error.message).toContain("ai.providerConfig.anthropic.apiKey");
+    expect(error.message).not.toContain("ai.providerConfig.openai.apiKey");
   });
 });
 
