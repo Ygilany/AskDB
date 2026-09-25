@@ -12,13 +12,13 @@ function run(command: string, args: string[], opts: { cwd: string; env?: NodeJS.
   });
 }
 
+// These tests execute dist/cli.js; turbo's `test` task depends on this package's own
+// `build` (and `^build`), so dist is current without rebuilding inside the tests —
+// in-test rebuilds raced with parallel test files reading dist.
 describe("cli spawn: rich errors", () => {
   it("defaults ask --schema to introspection.outputDir from config", () => {
     const repoRoot = join(import.meta.dirname, "../../..");
     const cliDir = join(repoRoot, "apps/cli");
-
-    const build = run("pnpm", ["-C", cliDir, "build"], { cwd: repoRoot });
-    expect(build.status).toBe(0);
 
     const exec = run(
       "node",
@@ -47,9 +47,6 @@ describe("cli spawn: rich errors", () => {
     const repoRoot = join(import.meta.dirname, "../../..");
     const cliDir = join(repoRoot, "apps/cli");
 
-    const build = run("pnpm", ["-C", cliDir, "build"], { cwd: repoRoot });
-    expect(build.status).toBe(0);
-
     const exec = run(
       "node",
       [
@@ -77,9 +74,6 @@ describe("cli spawn: rich errors", () => {
   it("prints schema path + details when schema JSON is invalid", () => {
     const repoRoot = join(import.meta.dirname, "../../..");
     const cliDir = join(repoRoot, "apps/cli");
-
-    const build = run("pnpm", ["-C", cliDir, "build"], { cwd: repoRoot });
-    expect(build.status).toBe(0);
 
     const workDir = mkdtempSync(join(tmpdir(), "askdb-cli-schema-"));
     const schemaFile = join(workDir, "bad.schema.json");
@@ -116,9 +110,6 @@ describe("cli spawn: rich errors", () => {
   it("rejects the removed --execute option", () => {
     const repoRoot = join(import.meta.dirname, "../../..");
     const cliDir = join(repoRoot, "apps/cli");
-
-    const build = run("pnpm", ["-C", cliDir, "build"], { cwd: repoRoot });
-    expect(build.status).toBe(0);
 
     const exec = run(
       "node",
