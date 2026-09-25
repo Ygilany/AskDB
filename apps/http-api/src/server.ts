@@ -17,13 +17,15 @@ import {
   SchemaNotConfiguredError,
 } from "@askdb/client";
 import {
-  AskDbError,
+  ASKDB_MODES_V1,
   AskDbLogEvent,
   type AskDbLogLevel,
   type AskDbModeV1,
   DEFAULT_ASKDB_MODE,
+  SensitiveReferenceError,
   SqlGenerationError,
   SqlValidationError,
+  TenantGuardrailError,
   createAskDbLogger,
   parseAskDbModeV1,
 } from "@askdb/core";
@@ -116,9 +118,106 @@ function badRequest(correlationId: string, message: string): AskHttpErrorRespons
   return { ok: false, correlationId, error: { code: "bad_request", message } };
 }
 
-function modeFromHeader(v: string | undefined): AskDbModeV1 | undefined {
-  if (!v) return undefined;
-  return parseAskDbModeV1(v);
+/**
+ * Resolve the caller-requested mode. Precedence: body `mode` → `x-askdb-mode` header.
+ * Returns `undefined` when the caller did not ask for one (the server then uses config
+ * `modes.askdbMode`, else {@link DEFAULT_ASKDB_MODE}). Throws on an invalid value (→ `400`).
+ */
+function resolveRequestMode(bodyMode: unknown, headerMode: string | undefined): AskDbModeV1 | undefined {
+  if (bodyMode !== undefined && bodyMode !== null) {
+    if (typeof bodyMode !== "string" || bodyMode.trim() === "") {
+      throw new Error(`Invalid mode: ${JSON.stringify(bodyMode)}. Expected one of: ${ASKDB_MODES_V1.join(", ")}.`);
+    }
+    return parseAskDbModeV1(bodyMode);
+  }
+  if (headerMode !== undefined && headerMode.trim() !== "") {
+    return parseAskDbModeV1(headerMode);
+  }
+  return undefined;
+}
+
+type MappedError = { status: number; error: AskHttpErrorResponse["error"] };
+
+/** `instanceof` with a `name` fallback, so duplicated package copies still classify correctly. */
+function isErrorOf<T extends Error>(e: unknown, ctor: abstract new (...args: never[]) => T): e is T {
+  return e instanceof ctor || (e instanceof Error && e.name === ctor.name);
+}
+
+function causeMessage(e: unknown): string | undefined {
+  const cause = e instanceof Error ? (e as { cause?: unknown }).cause : undefined;
+  if (cause === undefined) return undefined;
+  return cause instanceof Error ? cause.message : String(cause);
+}
+
+/**
+ * Map an error from `askdb.ask()` to an HTTP status + client-safe body. Classification is by
+ * error type only. Messages from the model provider are never returned to the client (they
+ * can echo request details or credential fragments); unknown errors get a generic message.
+ */
+function mapAskError(e: unknown, ctx: { timedOut: boolean; timeoutMs: number }): MappedError {
+  if (isErrorOf(e, SqlGenerationError)) {
+    return {
+      status: 502,
+      error: {
+        code: "sql_generation_error",
+        message: ctx.timedOut
+          ? `Model provider request timed out after ${ctx.timeoutMs} ms.`
+          : "Model provider request failed. See server logs for this correlationId.",
+      },
+    };
+  }
+  if (isErrorOf(e, SqlValidationError)) {
+    return { status: 400, error: { code: "sql_validation_error", message: e.message, rule: e.rule } };
+  }
+  if (isErrorOf(e, SensitiveReferenceError)) {
+    return { status: 422, error: { code: "guardrail_violation", message: e.message, rule: e.rule } };
+  }
+  if (isErrorOf(e, TenantGuardrailError)) {
+    return {
+      status: 422,
+      error: {
+        code: "guardrail_violation",
+        message: e.message,
+        ...(e.warnings[0] ? { rule: e.warnings[0].rule } : {}),
+      },
+    };
+  }
+  if (isErrorOf(e, SchemaNotConfiguredError)) {
+    return {
+      status: 400,
+      error: {
+        code: "bad_request",
+        message:
+          "No schema configured. Set host.schemaPath / host.schemaJson in askdb.config.* (or start askdb-http with --schema-path).",
+      },
+    };
+  }
+  if (isErrorOf(e, SchemaLoadError)) {
+    return {
+      status: 400,
+      error: {
+        code: "schema_parse_error",
+        message: `schema parse error (${e.source}): ${e.cause instanceof Error ? e.cause.message : String(e.cause)}`,
+      },
+    };
+  }
+  if (isErrorOf(e, ModelNotConfiguredError)) {
+    return {
+      status: 500,
+      error: {
+        code: "generation_not_configured",
+        message:
+          "No AI model is configured on the server. Set ai.provider / ai.providerConfig in askdb.config.* (or dev.mockSql for tests).",
+      },
+    };
+  }
+  if (isErrorOf(e, DialectNotSupportedError)) {
+    return { status: 400, error: { code: "bad_request", message: e.message } };
+  }
+  return {
+    status: 500,
+    error: { code: "internal_error", message: "Internal server error. See server logs for this correlationId." },
+  };
 }
 
 export function createAskDbHttpServer(options: AskDbHttpServerOptions = {}) {
@@ -133,10 +232,28 @@ export function createAskDbHttpServer(options: AskDbHttpServerOptions = {}) {
   // subsequent requests.
   let askdb: ReturnType<typeof createAskDb> | undefined;
 
-  const server = createNodeServer(async (req, res) => {
+  const server = createNodeServer((req, res) => {
+    const correlationId = getCorrelationId(req);
+    handleRequest(req, res, correlationId).catch((e: unknown) => {
+      // Last-resort guard: anything that escapes the handler becomes a generic 500
+      // instead of an unhandled rejection that would take the process down.
+      process.stderr.write(
+        `askdb-http: unhandled error (correlationId=${correlationId}): ${e instanceof Error ? (e.stack ?? e.message) : String(e)}\n`,
+      );
+      if (!res.headersSent) {
+        writeError(res, 500, correlationId, {
+          code: "internal_error",
+          message: "Internal server error. See server logs for this correlationId.",
+        });
+      } else {
+        res.end();
+      }
+    });
+  });
+
+  async function handleRequest(req: IncomingMessage, res: ServerResponse, correlationId: string): Promise<void> {
     const method = req.method ?? "GET";
     const url = req.url ?? "/";
-    const correlationId = getCorrelationId(req);
 
     if (method === "GET" && url === "/health") {
       writeJson(res, 200, { ok: true });
@@ -185,47 +302,80 @@ export function createAskDbHttpServer(options: AskDbHttpServerOptions = {}) {
       return;
     }
 
-    try {
-      // Mode may be supplied by request JSON or header; JSON wins.
-      const headerMode = getHeader(req, "x-askdb-mode");
-      const effectiveMode = body.mode ?? (headerMode ? modeFromHeader(headerMode) : undefined);
-      const mode: AskDbModeV1 = effectiveMode ?? parseAskDbModeV1(rt.modes.askdbMode);
+    if ("execute" in body || getHeader(req, "x-askdb-execute") !== undefined) {
+      writeError(res, 400, correlationId, {
+        code: "bad_request",
+        message: "Execution is not supported. This endpoint returns generated SQL only.",
+      });
+      return;
+    }
 
-      if ("execute" in body || getHeader(req, "x-askdb-execute") !== undefined) {
+    // Validate caller-controlled inputs up front so parser failures are the only
+    // thing that can become a 400 here — never a substring match on a downstream error.
+    let requestedMode: AskDbModeV1 | undefined;
+    try {
+      requestedMode = resolveRequestMode(body.mode, getHeader(req, "x-askdb-mode"));
+    } catch (e) {
+      writeError(res, 400, correlationId, {
+        code: "bad_request",
+        message: e instanceof Error ? e.message : String(e),
+      });
+      return;
+    }
+
+    // Config mode was validated when askdb.config.* was flattened.
+    const mode: AskDbModeV1 = requestedMode ?? parseAskDbModeV1(rt.modes.askdbMode);
+
+    let requestOverride: string | undefined;
+    if (body.schemaJson !== undefined && body.schemaJson !== null) {
+      if (typeof body.schemaJson !== "string") {
         writeError(res, 400, correlationId, {
           code: "bad_request",
-          message: "Execution is not supported. This endpoint returns generated SQL only.",
+          message: "`schemaJson` must be a string containing a bundled AskDB schema artifact.",
         });
         return;
       }
-
-      // Build the facade once per server instance (lazily on first request so
-      // it captures the stable runtime config).
-      if (!askdb) {
-        askdb = createAskDb({
-          config: rt,
-          registry: ai,
-          // When the caller supplied a schemaPath option, it takes precedence
-          // over host.schemaPath / ASKDB_SCHEMA_PATH in config.
-          schema: optionSchemaPath ? { path: optionSchemaPath } : undefined,
-          unknownDialect: "fallback-postgres",
-        });
+      if (body.schemaJson.trim() !== "") {
+        if (!rt.httpApi.allowSchemaOverride) {
+          writeError(res, 403, correlationId, {
+            code: "schema_override_disabled",
+            message:
+              "Per-request `schemaJson` overrides are disabled on this server. Omit `schemaJson` to use the server-configured schema.",
+          });
+          return;
+        }
+        requestOverride = body.schemaJson;
       }
+    }
 
-      logger.info(
-        { event: AskDbLogEvent.RunStart, mode },
-        "askdb http run start",
-      );
+    // Build the facade once per server instance (lazily on first request so
+    // it captures the stable runtime config).
+    if (!askdb) {
+      askdb = createAskDb({
+        config: rt,
+        registry: ai,
+        // When the caller supplied a schemaPath option, it takes precedence
+        // over host.schemaPath / ASKDB_SCHEMA_PATH in config.
+        schema: optionSchemaPath ? { path: optionSchemaPath } : undefined,
+        unknownDialect: "fallback-postgres",
+      });
+    }
 
-      const requestOverride =
-        typeof body.schemaJson === "string" && body.schemaJson.trim() !== "" ? body.schemaJson : undefined;
+    logger.info({ event: AskDbLogEvent.RunStart, mode }, "askdb http run start");
 
+    const timeoutMs = rt.httpApi.requestTimeoutMs;
+    const abortSignal = AbortSignal.timeout(timeoutMs);
+
+    try {
       const out = await askdb.ask(body.question, {
         schema: requestOverride ? { json: requestOverride } : undefined,
         logger,
-        mode: mode ?? DEFAULT_ASKDB_MODE,
+        mode,
         explain: Boolean(body.explain),
-        omitSensitiveIdentifiersFromNlToSqlPrompt: Boolean(body.omitSensitiveFromPrompt),
+        // The facade treats config `modes.omitSensitiveFromPrompt` as a floor:
+        // a request can tighten it but never loosen it.
+        omitSensitiveIdentifiersFromNlToSqlPrompt: body.omitSensitiveFromPrompt === true,
+        abortSignal,
       });
 
       const payload: AskHttpSuccessResponse = {
@@ -234,71 +384,30 @@ export function createAskDbHttpServer(options: AskDbHttpServerOptions = {}) {
         sql: out.sql,
         explain: out.explain,
         usage: out.usage ?? null,
+        ...(out.sensitiveGuardrail ? { sensitiveGuardrail: out.sensitiveGuardrail } : {}),
       };
       logger.info({ event: AskDbLogEvent.RunEnd, ok: true }, "askdb http run end");
       writeJson(res, 200, payload);
       return;
     } catch (e) {
-      // parseAskDbModeV1 throws on invalid ids; treat as caller error if it looks like a mode issue.
-      const msg = e instanceof Error ? e.message : String(e);
-      if (msg.toLowerCase().includes("mode")) {
-        writeError(res, 400, correlationId, badRequest(correlationId, msg).error);
-        return;
-      }
-
-      if (e instanceof SchemaNotConfiguredError) {
-        writeError(res, 400, correlationId, {
-          code: "bad_request",
-          message:
-            "No schema configured. Provide `schemaJson` in the request body or set ASKDB_SCHEMA_PATH / ASKDB_SCHEMA_JSON on the server.",
-        });
-        return;
-      }
-
-      if (e instanceof SchemaLoadError) {
-        writeError(res, 400, correlationId, {
-          code: "schema_parse_error",
-          message: `schema parse error (${e.source}): ${e.cause instanceof Error ? e.cause.message : String(e.cause)}`,
-        });
-        return;
-      }
-
-      if (e instanceof ModelNotConfiguredError) {
-        writeError(res, 500, correlationId, {
-          code: "generation_not_configured",
-          message: `${msg} (or set ASKDB_MOCK_SQL).`,
-        });
-        return;
-      }
-
-      logger.error({ event: AskDbLogEvent.RunError, errMessage: msg }, "askdb http run error");
-
-      if (e instanceof SqlValidationError) {
-        writeError(res, 400, correlationId, {
-          code: "sql_validation_error",
-          message: e.message,
-          rule: e.rule,
-        });
-        return;
-      }
-      if (e instanceof SqlGenerationError) {
-        writeError(res, 502, correlationId, { code: "sql_generation_error", message: e.message });
-        return;
-      }
-      if (e instanceof DialectNotSupportedError) {
-        writeError(res, 400, correlationId, { code: "bad_request", message: msg });
-        return;
-      }
-      if (e instanceof AskDbError) {
-        // Default mapping for other core errors.
-        writeError(res, 500, correlationId, { code: "internal_error", message: e.message });
-        return;
-      }
-
-      writeError(res, 500, correlationId, { code: "internal_error", message: msg });
+      const mapped = mapAskError(e, { timedOut: abortSignal.aborted, timeoutMs });
+      // Always log the full error server-side; the client only sees `mapped.error`.
+      logger.error(
+        {
+          event: AskDbLogEvent.RunError,
+          status: mapped.status,
+          code: mapped.error.code,
+          errName: e instanceof Error ? e.name : typeof e,
+          errMessage: e instanceof Error ? e.message : String(e),
+          ...(causeMessage(e) !== undefined ? { causeMessage: causeMessage(e) } : {}),
+          ...(mapped.status >= 500 && e instanceof Error && e.stack ? { errStack: e.stack } : {}),
+        },
+        "askdb http run error",
+      );
+      writeError(res, mapped.status, correlationId, mapped.error);
       return;
     }
-  });
+  }
 
   return {
     host,

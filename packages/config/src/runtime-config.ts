@@ -1,7 +1,11 @@
 import type { AskDbDialectId, AskDbIntrospectionProvider, AskDbStudioExecuteProvider } from "./constants.js";
 import { ASKDB_STUDIO_EXECUTE_PROVIDERS } from "./constants.js";
 import type { AskDbConfig } from "./types.js";
-import { DEFAULT_INTROSPECT_OUTPUT_DIR } from "./defaults.js";
+import {
+  DEFAULT_HTTP_API_REQUEST_TIMEOUT_MS,
+  DEFAULT_INTROSPECT_OUTPUT_DIR,
+  parsePositiveInteger,
+} from "./defaults.js";
 import { flatToAiEnv, getAskDbRuntimeStore } from "./runtime-store.js";
 
 /**
@@ -38,6 +42,10 @@ export type AskDbRuntimeHttpApiConfig = {
     port: number;
     host: string;
   };
+  /** Whether `POST /ask` accepts a per-request `schemaJson` override. Default `false`. */
+  allowSchemaOverride: boolean;
+  /** Model-call timeout per `POST /ask` request, in milliseconds. Default `60000`. */
+  requestTimeoutMs: number;
 };
 
 export type AskDbRuntimeIntrospectionConfig = {
@@ -122,6 +130,10 @@ export type AskDbRuntimeConfig = {
   nlToSql: AskDbRuntimeNlToSqlConfig;
   studio: AskDbRuntimeStudioConfig;
 };
+
+function isTruthyFlag(raw: string | undefined): boolean {
+  return raw !== undefined && ["1", "true", "yes"].includes(raw.toLowerCase());
+}
 
 function pickFlat(flat: Readonly<Record<string, string>>, key: string): string | undefined {
   const v = flat[key];
@@ -218,6 +230,13 @@ export function getAskDbRuntimeConfig(): AskDbRuntimeConfig {
     },
     httpApi: {
       listen: { port, host },
+      allowSchemaOverride:
+        structured.httpApi?.allowSchemaOverride ??
+        isTruthyFlag(pickFlat(flat, "ASKDB_HTTP_ALLOW_SCHEMA_OVERRIDE")),
+      requestTimeoutMs:
+        parsePositiveInteger(structured.httpApi?.requestTimeoutMs) ??
+        parsePositiveInteger(pickFlat(flat, "ASKDB_HTTP_REQUEST_TIMEOUT_MS")) ??
+        DEFAULT_HTTP_API_REQUEST_TIMEOUT_MS,
     },
     dev: {
       mockSql: structured.dev?.mockSql ?? pickFlat(flat, "ASKDB_MOCK_SQL"),
