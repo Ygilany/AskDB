@@ -1,8 +1,9 @@
-import { describe, expect, it } from "vitest";
+import { expect, it } from "vitest";
 import { createPostgresCatalogQueryRunner } from "./postgres.js";
+import { integrationSuite } from "../../../../scripts/test-utils/integration.mjs";
 
 const url = process.env.DATABASE_URL;
-const postgresSuite = url ? describe : describe.skip;
+const postgresSuite = integrationSuite({ env: ["DATABASE_URL"] });
 
 postgresSuite("createPostgresCatalogQueryRunner (PostgreSQL)", () => {
   it("returns columns and rows for a simple catalog-style SELECT", async () => {
