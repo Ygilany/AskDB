@@ -140,51 +140,12 @@ describe("http-api", () => {
       logLevel: "silent",
       host: { schemaPath: schemaPath.pathname },
     });
-
-    const app = createAskDbHttpServer({ host: "127.0.0.1", port: 0 });
-    await new Promise<void>((resolve) => app.server.listen(0, "127.0.0.1", resolve));
-    const addr = app.server.address();
-    if (!addr || typeof addr === "string") throw new Error("expected inet address");
-
+    const app = await startApp();
     try {
-      const res = await fetch(`http://127.0.0.1:${addr.port}/ask`, {
-        method: "POST",
-        headers: {
-          "content-type": "application/json",
-          "x-correlation-id": "cid-123",
-        },
-        body: JSON.stringify({ question: "hi" }),
-      });
-      expect(res.status).toBe(200);
-      const json = (await res.json()) as any;
+      const { status, json } = await postAsk(app.url, { question: "hi" }, { "x-correlation-id": "cid-123" });
+      expect(status).toBe(200);
       expect(json.ok).toBe(true);
       expect(json.correlationId).toBe("cid-123");
-      expect(json.sql).toBe("select 1");
-    } finally {
-      await app.close();
-    }
-  });
-
-  it("uses schemaPath option as the server-default schema", async () => {
-    installTestRuntime({
-      mockSql: "select 1",
-      logLevel: "silent",
-    });
-
-    const app = createAskDbHttpServer({ host: "127.0.0.1", port: 0, schemaPath: schemaPath.pathname });
-    await new Promise<void>((resolve) => app.server.listen(0, "127.0.0.1", resolve));
-    const addr = app.server.address();
-    if (!addr || typeof addr === "string") throw new Error("expected inet address");
-
-    try {
-      const res = await fetch(`http://127.0.0.1:${addr.port}/ask`, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ question: "hi" }),
-      });
-      expect(res.status).toBe(200);
-      const json = (await res.json()) as any;
-      expect(json.ok).toBe(true);
       expect(json.sql).toBe("select 1");
     } finally {
       await app.close();
@@ -197,20 +158,10 @@ describe("http-api", () => {
       logLevel: "silent",
       host: { schemaPath: "__missing_http_api_schema__" },
     });
-
-    const app = createAskDbHttpServer({ host: "127.0.0.1", port: 0, schemaPath: schemaPath.pathname });
-    await new Promise<void>((resolve) => app.server.listen(0, "127.0.0.1", resolve));
-    const addr = app.server.address();
-    if (!addr || typeof addr === "string") throw new Error("expected inet address");
-
+    const app = await startApp({ schemaPath: schemaPath.pathname });
     try {
-      const res = await fetch(`http://127.0.0.1:${addr.port}/ask`, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ question: "hi" }),
-      });
-      expect(res.status).toBe(200);
-      const json = (await res.json()) as any;
+      const { status, json } = await postAsk(app.url, { question: "hi" });
+      expect(status).toBe(200);
       expect(json.ok).toBe(true);
       expect(json.sql).toBe("select 1");
     } finally {
@@ -224,20 +175,10 @@ describe("http-api", () => {
       logLevel: "silent",
       host: { schemaPath: schemaPath.pathname },
     });
-
-    const app = createAskDbHttpServer({ host: "127.0.0.1", port: 0 });
-    await new Promise<void>((resolve) => app.server.listen(0, "127.0.0.1", resolve));
-    const addr = app.server.address();
-    if (!addr || typeof addr === "string") throw new Error("expected inet address");
-
+    const app = await startApp();
     try {
-      const res = await fetch(`http://127.0.0.1:${addr.port}/ask`, {
-        method: "POST",
-        headers: { "content-type": "application/json", "x-askdb-execute": "true" },
-        body: JSON.stringify({ question: "hi" }),
-      });
-      expect(res.status).toBe(400);
-      const json = (await res.json()) as any;
+      const { status, json } = await postAsk(app.url, { question: "hi" }, { "x-askdb-execute": "true" });
+      expect(status).toBe(400);
       expect(json.ok).toBe(false);
       expect(json.error?.code).toBe("bad_request");
       expect(json.error?.message).toContain("Execution is not supported");
@@ -248,13 +189,9 @@ describe("http-api", () => {
 
   it("GET /health ok", async () => {
     installTestRuntime({ logLevel: "silent" });
-    const app = createAskDbHttpServer({ host: "127.0.0.1", port: 0 });
-    await new Promise<void>((resolve) => app.server.listen(0, "127.0.0.1", resolve));
-    const addr = app.server.address();
-    if (!addr || typeof addr === "string") throw new Error("expected inet address");
-
+    const app = await startApp();
     try {
-      const res = await fetch(`http://127.0.0.1:${addr.port}/health`);
+      const res = await fetch(`${app.url}/health`);
       expect(res.status).toBe(200);
       const json = (await res.json()) as any;
       expect(json.ok).toBe(true);
@@ -265,13 +202,9 @@ describe("http-api", () => {
 
   it("unknown routes return not_found", async () => {
     installTestRuntime({ logLevel: "silent" });
-    const app = createAskDbHttpServer({ host: "127.0.0.1", port: 0 });
-    await new Promise<void>((resolve) => app.server.listen(0, "127.0.0.1", resolve));
-    const addr = app.server.address();
-    if (!addr || typeof addr === "string") throw new Error("expected inet address");
-
+    const app = await startApp();
     try {
-      const res = await fetch(`http://127.0.0.1:${addr.port}/nope`);
+      const res = await fetch(`${app.url}/nope`);
       expect(res.status).toBe(404);
       const json = (await res.json()) as any;
       expect(json.ok).toBe(false);
@@ -285,13 +218,9 @@ describe("http-api", () => {
 
   it("bad JSON returns bad_request", async () => {
     installTestRuntime({ logLevel: "silent" });
-    const app = createAskDbHttpServer({ host: "127.0.0.1", port: 0 });
-    await new Promise<void>((resolve) => app.server.listen(0, "127.0.0.1", resolve));
-    const addr = app.server.address();
-    if (!addr || typeof addr === "string") throw new Error("expected inet address");
-
+    const app = await startApp();
     try {
-      const res = await fetch(`http://127.0.0.1:${addr.port}/ask`, {
+      const res = await fetch(`${app.url}/ask`, {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: "{not json",
@@ -307,19 +236,10 @@ describe("http-api", () => {
 
   it("oversized JSON returns payload_too_large", async () => {
     installTestRuntime({ logLevel: "silent" });
-    const app = createAskDbHttpServer({ host: "127.0.0.1", port: 0, maxBodyBytes: 32 });
-    await new Promise<void>((resolve) => app.server.listen(0, "127.0.0.1", resolve));
-    const addr = app.server.address();
-    if (!addr || typeof addr === "string") throw new Error("expected inet address");
-
+    const app = await startApp({ maxBodyBytes: 32 });
     try {
-      const res = await fetch(`http://127.0.0.1:${addr.port}/ask`, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ question: "x".repeat(64) }),
-      });
-      expect(res.status).toBe(413);
-      const json = (await res.json()) as any;
+      const { status, json } = await postAsk(app.url, { question: "x".repeat(64) });
+      expect(status).toBe(413);
       expect(json.ok).toBe(false);
       expect(json.error?.code).toBe("payload_too_large");
     } finally {
@@ -334,20 +254,10 @@ describe("http-api", () => {
       host: { schemaPath: schemaPath.pathname },
       modes: { askdbMode: "schema_only" },
     });
-
-    const app = createAskDbHttpServer({ host: "127.0.0.1", port: 0 });
-    await new Promise<void>((resolve) => app.server.listen(0, "127.0.0.1", resolve));
-    const addr = app.server.address();
-    if (!addr || typeof addr === "string") throw new Error("expected inet address");
-
+    const app = await startApp();
     try {
-      const res = await fetch(`http://127.0.0.1:${addr.port}/ask`, {
-        method: "POST",
-        headers: { "content-type": "application/json", "x-askdb-mode": "nope" },
-        body: JSON.stringify({ question: "hi" }),
-      });
-      expect(res.status).toBe(400);
-      const json = (await res.json()) as any;
+      const { status, json } = await postAsk(app.url, { question: "hi" }, { "x-askdb-mode": "nope" });
+      expect(status).toBe(400);
       expect(json.ok).toBe(false);
       expect(json.error?.code).toBe("bad_request");
     } finally {
@@ -361,20 +271,10 @@ describe("http-api", () => {
       logLevel: "silent",
       host: { schemaPath: schemaPath.pathname },
     });
-
-    const app = createAskDbHttpServer({ host: "127.0.0.1", port: 0 });
-    await new Promise<void>((resolve) => app.server.listen(0, "127.0.0.1", resolve));
-    const addr = app.server.address();
-    if (!addr || typeof addr === "string") throw new Error("expected inet address");
-
+    const app = await startApp();
     try {
-      const res = await fetch(`http://127.0.0.1:${addr.port}/ask`, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ question: "hi" }),
-      });
-      expect(res.status).toBe(400);
-      const json = (await res.json()) as any;
+      const { status, json } = await postAsk(app.url, { question: "hi" });
+      expect(status).toBe(400);
       expect(json.ok).toBe(false);
       expect(json.error?.code).toBe("sql_validation_error");
       expect(json.error?.rule).toBeTruthy();
@@ -388,20 +288,10 @@ describe("http-api", () => {
       mockSql: "select 1",
       logLevel: "silent",
     });
-
-    const app = createAskDbHttpServer({ host: "127.0.0.1", port: 0 });
-    await new Promise<void>((resolve) => app.server.listen(0, "127.0.0.1", resolve));
-    const addr = app.server.address();
-    if (!addr || typeof addr === "string") throw new Error("expected inet address");
-
+    const app = await startApp();
     try {
-      const res = await fetch(`http://127.0.0.1:${addr.port}/ask`, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ question: "hi" }),
-      });
-      expect(res.status).toBe(400);
-      const json = (await res.json()) as any;
+      const { status, json } = await postAsk(app.url, { question: "hi" });
+      expect(status).toBe(400);
       expect(json.ok).toBe(false);
       expect(json.error?.code).toBe("bad_request");
       expect(String(json.error?.message ?? "")).toContain("No schema configured");
@@ -417,20 +307,10 @@ describe("http-api", () => {
       logLevel: "silent",
       host: { schemaPath: missingPath },
     });
-
-    const app = createAskDbHttpServer({ host: "127.0.0.1", port: 0 });
-    await new Promise<void>((resolve) => app.server.listen(0, "127.0.0.1", resolve));
-    const addr = app.server.address();
-    if (!addr || typeof addr === "string") throw new Error("expected inet address");
-
+    const app = await startApp();
     try {
-      const res = await fetch(`http://127.0.0.1:${addr.port}/ask`, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ question: "hi" }),
-      });
-      expect(res.status).toBe(400);
-      const json = (await res.json()) as any;
+      const { status, json } = await postAsk(app.url, { question: "hi" });
+      expect(status).toBe(400);
       expect(json.ok).toBe(false);
       expect(json.error?.code).toBe("schema_parse_error");
       expect(String(json.error?.message ?? "")).toContain(`host.schemaPath (${missingPath})`);
@@ -439,26 +319,16 @@ describe("http-api", () => {
     }
   });
 
-  it("falls back to postgres for unrecognized schema providers", async () => {
+  it("accepts schemaJson override when allowed; unknown provider falls back to postgres", async () => {
     installTestRuntime({
       mockSql: "select 1",
       logLevel: "silent",
       httpApi: { allowSchemaOverride: true },
     });
-
-    const app = createAskDbHttpServer({ host: "127.0.0.1", port: 0 });
-    await new Promise<void>((resolve) => app.server.listen(0, "127.0.0.1", resolve));
-    const addr = app.server.address();
-    if (!addr || typeof addr === "string") throw new Error("expected inet address");
-
+    const app = await startApp();
     try {
-      const res = await fetch(`http://127.0.0.1:${addr.port}/ask`, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ question: "hi", schemaJson: unsupportedProviderSchemaJson }),
-      });
-      expect(res.status).toBe(200);
-      const json = (await res.json()) as any;
+      const { status, json } = await postAsk(app.url, { question: "hi", schemaJson: unsupportedProviderSchemaJson });
+      expect(status).toBe(200);
       expect(json.ok).toBe(true);
       expect(json.sql).toBe("select 1");
     } finally {
@@ -475,20 +345,10 @@ describe("http-api", () => {
       host: { schemaPath: schemaPath.pathname },
     };
     setAskDbRuntimeForTests({ structured: noKeyConfig, flat: flattenAskDbConfig(noKeyConfig) });
-
-    const app = createAskDbHttpServer({ host: "127.0.0.1", port: 0 });
-    await new Promise<void>((resolve) => app.server.listen(0, "127.0.0.1", resolve));
-    const addr = app.server.address();
-    if (!addr || typeof addr === "string") throw new Error("expected inet address");
-
+    const app = await startApp();
     try {
-      const res = await fetch(`http://127.0.0.1:${addr.port}/ask`, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ question: "hi" }),
-      });
-      expect(res.status).toBe(500);
-      const json = (await res.json()) as any;
+      const { status, json } = await postAsk(app.url, { question: "hi" });
+      expect(status).toBe(500);
       expect(json.ok).toBe(false);
       expect(json.error?.code).toBe("generation_not_configured");
     } finally {
@@ -663,18 +523,6 @@ describe("http-api", () => {
       const nonString = await postAsk(app.url, { question: "hi", schemaJson: { tables: [] } });
       expect(nonString.status).toBe(400);
       expect(nonString.json.error.code).toBe("bad_request");
-    } finally {
-      await app.close();
-    }
-  });
-
-  it("accepts per-request schemaJson overrides when httpApi.allowSchemaOverride is true", async () => {
-    installTestRuntime({ mockSql: "select 1", logLevel: "silent", httpApi: { allowSchemaOverride: true } });
-    const app = await startApp();
-    try {
-      const { status, json } = await postAsk(app.url, { question: "hi", schemaJson: unsupportedProviderSchemaJson });
-      expect(status).toBe(200);
-      expect(json.sql).toBe("select 1");
     } finally {
       await app.close();
     }
