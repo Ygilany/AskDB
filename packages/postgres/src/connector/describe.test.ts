@@ -273,6 +273,20 @@ describe("describePostgres — declarative partitions (ADR 0003)", () => {
     expect(tablesTpl.sql).toMatch(/pg_catalog\.pg_inherits/);
     expect(tablesTpl.sql).toMatch(/p\.relkind\s*=\s*'p'/);
   });
+
+  it("foreign_keys template drops per-partition cloned FKs on both sides of the constraint", () => {
+    const connector = createPostgresConnector();
+    const bundle = connector.templates!();
+    const fkTpl = bundle.templates.find((t) => t.name === "foreign_keys")!;
+    // Cloned constraints (conparentid <> 0) always have a declarative-partition
+    // leaf on the referencing (PG11+) or referenced (PG12+) side.
+    expect(fkTpl.sql).toMatch(/NOT EXISTS/);
+    expect(fkTpl.sql).toMatch(/pg_catalog\.pg_inherits/);
+    expect(fkTpl.sql).toMatch(/inh\.inhrelid IN \(con\.conrelid, con\.confrelid\)/);
+    expect(fkTpl.sql).toMatch(/p\.relkind\s*=\s*'p'/);
+    // Must stay PG10-compatible: no direct reference to conparentid (PG11+).
+    expect(fkTpl.sql).not.toMatch(/conparentid/);
+  });
 });
 
 describe("createPostgresConnector wiring", () => {

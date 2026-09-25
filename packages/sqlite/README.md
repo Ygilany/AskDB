@@ -58,7 +58,9 @@ const result = await introspect(
 
 ## Captured metadata
 
-Tables, views, columns (SQLite affinity type strings), primary keys, unique constraints, foreign keys, and indexes. Requires SQLite ≥ 3.16 for `pragma_*` table-valued functions.
+Tables, views, columns (SQLite affinity type strings), primary keys, unique constraints, foreign keys, and indexes. Requires SQLite ≥ 3.16 for `pragma_*` table-valued functions. A foreign key declared without a column list (`REFERENCES authors`) resolves to the parent table's primary key. Internal `sqlite_*` objects are skipped.
+
+`redactConnectionString(input)` is exported for parity with the other engine packages; SQLite paths carry no credentials, so it returns its input unchanged.
 
 ## License
 

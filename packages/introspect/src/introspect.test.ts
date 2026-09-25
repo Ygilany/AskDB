@@ -1,8 +1,9 @@
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { introspect } from "./introspect.js";
+import { renderSchemaV2Body } from "./render/render.js";
 import type { Connector, IntrospectionResult, SqlSchema } from "./types.js";
 
 let workDir: string;
@@ -112,5 +113,49 @@ describe("introspect() — engine-agnostic orchestrator", () => {
     expect(result.warnings).toEqual([
       { code: "ambiguous_filter", filter: "public.missing" },
     ]);
+  });
+});
+
+describe("renderSchemaV2Body() — shared by --out, --print and --diff", () => {
+  it("returns byte-identical output to what renderToSchemaV2 writes, including provider", async () => {
+    const connector: Connector<FakeInput> = {
+      async describe() {
+        return {
+          schema: fakeSchema,
+          warnings: [],
+          isEmpty: false,
+          viewDefinitions: {},
+          provider: "postgres",
+        };
+      },
+    };
+    const outDir = join(workDir, "fake.schema");
+    await introspect<FakeInput>({ tag: "out" }, { outDir, schemaId: "fake" }, { connector });
+    const written = readFileSync(join(outDir, "schema.json"), "utf8");
+
+    const rendered = renderSchemaV2Body(fakeSchema, { schemaId: "fake", provider: "postgres" });
+    expect(rendered.body).toBe(written);
+    expect(rendered.json.provider).toBe("postgres");
+  });
+
+  it("preserves human-set sensitive flags from an existing artifact", () => {
+    const existingDir = join(workDir, "existing.schema");
+    const first = renderSchemaV2Body(fakeSchema, { schemaId: "fake" });
+    const edited = JSON.parse(first.body) as {
+      tables: Array<{ sensitive: boolean; columns: Array<{ sensitive: boolean }> }>;
+    };
+    edited.tables[0]!.sensitive = true;
+    edited.tables[0]!.columns[0]!.sensitive = true;
+    const editedBody = JSON.stringify(edited, null, 2) + "\n";
+    rmSync(existingDir, { recursive: true, force: true });
+    mkdirSync(existingDir, { recursive: true });
+    writeFileSync(join(existingDir, "schema.json"), editedBody, "utf8");
+
+    const merged = renderSchemaV2Body(fakeSchema, {
+      schemaId: "fake",
+      existingArtifactDir: existingDir,
+    });
+    expect(merged.body).toBe(editedBody);
+    expect(merged.warnings).toEqual([]);
   });
 });

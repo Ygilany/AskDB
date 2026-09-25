@@ -58,9 +58,13 @@ const result = await introspect(
 );
 ```
 
+The connection string must name a database (`mysql://user:pass@host:3306/<database>`); introspection throws a clear error when the connection has no default database instead of returning an empty schema.
+
+`redactConnectionString(input)` masks credentials for display or logs (`mysql://root:****@host/db`, `?password=****`).
+
 ## Captured metadata
 
-Tables, views, columns (MySQL-native type strings), primary keys, unique constraints, foreign keys (with referential actions), and indexes.
+Tables, views, columns (MySQL-native type strings), primary keys, unique constraints, foreign keys (with referential actions), and indexes. Only the connection's database is introspected: foreign keys that reference a table in another database are omitted and reported as a `cross_database_fk` warning.
 
 ## License
 

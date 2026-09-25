@@ -31,15 +31,21 @@ export type DescribeSqliteInput = {
 
 // SQLite catalog SQL — relies on the table-valued PRAGMA functions
 // (`pragma_table_info`, `pragma_foreign_key_list`, `pragma_index_list`,
-// `pragma_index_info`) available since SQLite 3.16. The `sqlite_%` prefix
-// covers internal objects (`sqlite_sequence`, FTS shadow tables, etc.).
+// `pragma_index_info`) available since SQLite 3.16.
+//
+// Internal objects (`sqlite_sequence`, `sqlite_stat1`, `sqlite_autoindex_*`)
+// all start with the literal, lowercase prefix `sqlite_`. We match it with
+// `substr(name, 1, 7) <> 'sqlite_'` rather than `NOT LIKE 'sqlite_%'`: in LIKE
+// the `_` is a single-char wildcard and matching is ASCII case-insensitive, so
+// `NOT LIKE 'sqlite_%'` silently drops user tables such as `SqliteUsers`.
+const NOT_INTERNAL = (col: string) => `substr(${col}, 1, 7) <> 'sqlite_'`;
 
 const SQL_OBJECTS = `SELECT
   name AS name,
   type AS type,
   sql AS sql
 FROM sqlite_master
-WHERE type IN ('table', 'view') AND name NOT LIKE 'sqlite_%'
+WHERE type IN ('table', 'view') AND ${NOT_INTERNAL("name")}
 ORDER BY name`;
 
 const SQL_COLUMNS = `SELECT
@@ -51,7 +57,7 @@ const SQL_COLUMNS = `SELECT
   p.dflt_value AS dflt_value,
   p.pk AS pk
 FROM sqlite_master m, pragma_table_info(m.name) p
-WHERE m.type IN ('table', 'view') AND m.name NOT LIKE 'sqlite_%'
+WHERE m.type IN ('table', 'view') AND ${NOT_INTERNAL("m.name")}
 ORDER BY m.name, p.cid`;
 
 const SQL_FOREIGN_KEYS = `SELECT
@@ -64,7 +70,7 @@ const SQL_FOREIGN_KEYS = `SELECT
   fk.on_update AS on_update,
   fk.on_delete AS on_delete
 FROM sqlite_master m, pragma_foreign_key_list(m.name) fk
-WHERE m.type = 'table' AND m.name NOT LIKE 'sqlite_%'
+WHERE m.type = 'table' AND ${NOT_INTERNAL("m.name")}
 ORDER BY m.name, fk.id, fk.seq`;
 
 const SQL_INDEX_LIST = `SELECT
@@ -73,7 +79,7 @@ const SQL_INDEX_LIST = `SELECT
   il."unique" AS is_unique,
   il.origin AS origin
 FROM sqlite_master m, pragma_index_list(m.name) il
-WHERE m.type = 'table' AND m.name NOT LIKE 'sqlite_%'
+WHERE m.type = 'table' AND ${NOT_INTERNAL("m.name")}
 ORDER BY m.name, il.seq`;
 
 const SQL_INDEX_INFO = `SELECT
@@ -83,7 +89,7 @@ const SQL_INDEX_INFO = `SELECT
   ii.cid AS cid,
   ii.name AS column_name
 FROM sqlite_master m, pragma_index_list(m.name) il, pragma_index_info(il.name) ii
-WHERE m.type = 'table' AND m.name NOT LIKE 'sqlite_%'
+WHERE m.type = 'table' AND ${NOT_INTERNAL("m.name")}
 ORDER BY m.name, il.name, ii.seqno`;
 
 /** Internal: the catalog SQL strings, exposed for snapshot-based tests. */
@@ -119,7 +125,8 @@ type IndexListRow = {
   table_name: string;
   index_name: string;
   is_unique: 0 | 1 | number;
-  // 'c' = auto-created (e.g. UNIQUE col), 'u' = explicit CREATE INDEX, 'pk' = PK index
+  // 'c' = explicit CREATE INDEX, 'u' = auto-index backing a UNIQUE constraint,
+  // 'pk' = auto-index backing a PRIMARY KEY (per PRAGMA index_list docs)
   origin: "c" | "u" | "pk" | string;
 };
 type IndexInfoRow = {
@@ -192,6 +199,8 @@ export function foldSqliteResult(input: FoldInput): IntrospectionResult {
     indexInfoByIndex.set(key, list);
   }
 
+  const tableRefs = buildTableRefIndex(input.objectRows, columnsByTable);
+
   const tables: SqlTable[] = [];
   const views: SqlView[] = [];
   const viewDefinitions: Record<string, string> = {};
@@ -240,7 +249,7 @@ export function foldSqliteResult(input: FoldInput): IntrospectionResult {
       comment: undefined,
       columns,
       primaryKey: pkColumns.length > 0 ? { columns: pkColumns } : undefined,
-      foreignKeys: buildForeignKeys(fksByTable.get(obj.name) ?? []),
+      foreignKeys: buildForeignKeys(fksByTable.get(obj.name) ?? [], tableRefs),
       uniqueConstraints,
       indexes,
       checkConstraints: [],
@@ -289,7 +298,33 @@ function buildColumn(table: string, c: ColumnRow, pkSet: Set<string>): SqlColumn
   };
 }
 
-function buildForeignKeys(rows: ForeignKeyRow[]): SqlForeignKey[] {
+type TableRef = { name: string; pkColumns: string[] };
+
+/**
+ * Case-insensitive index of every table's canonical name and ordered PK
+ * columns. SQLite identifiers are case-insensitive, so `REFERENCES Authors`
+ * resolves to a table created as `authors`.
+ */
+function buildTableRefIndex(
+  objectRows: ObjectRow[],
+  columnsByTable: Map<string, ColumnRow[]>,
+): Map<string, TableRef> {
+  const refs = new Map<string, TableRef>();
+  for (const obj of objectRows) {
+    if (obj.type !== "table") continue;
+    const pkColumns = (columnsByTable.get(obj.name) ?? [])
+      .filter((c) => c.pk > 0)
+      .sort((a, b) => a.pk - b.pk)
+      .map((c) => c.column_name);
+    refs.set(obj.name.toLowerCase(), { name: obj.name, pkColumns });
+  }
+  return refs;
+}
+
+function buildForeignKeys(
+  rows: ForeignKeyRow[],
+  tableRefs: Map<string, TableRef>,
+): SqlForeignKey[] {
   // `fk_id` is unique per table; rows with the same id form one multi-column FK.
   const byFk = new Map<number, ForeignKeyRow[]>();
   for (const r of rows) {
@@ -301,6 +336,7 @@ function buildForeignKeys(rows: ForeignKeyRow[]): SqlForeignKey[] {
   for (const [, list] of byFk) {
     const ordered = list.slice().sort((a, b) => a.seq - b.seq);
     const sample = ordered[0]!;
+    const target = tableRefs.get(sample.referenced_table.toLowerCase());
     // SQLite doesn't name foreign keys; synthesize a stable name.
     const name = `${sample.table_name}_${ordered.map((r) => r.column_name).join("_")}_fkey`;
     fks.push({
@@ -308,11 +344,15 @@ function buildForeignKeys(rows: ForeignKeyRow[]): SqlForeignKey[] {
       columns: ordered.map((r) => r.column_name),
       references: {
         schema: NAMESPACE,
-        table: sample.referenced_table,
-        // SQLite returns NULL `to` columns when the FK references the PK by
-        // position — fall back to the source column name in that case (the
-        // model is approximate either way for grounding NL→SQL).
-        columns: ordered.map((r) => r.referenced_column ?? r.column_name),
+        table: target?.name ?? sample.referenced_table,
+        // `REFERENCES parent` without a column list targets the parent's
+        // PRIMARY KEY; pragma_foreign_key_list reports `to` as NULL then.
+        // Resolve it to the parent's PK column at the same position (PK
+        // ordinal order). Only when the parent's PK is unknown (e.g. a
+        // dangling reference) do we fall back to the child column name.
+        columns: ordered.map(
+          (r, i) => r.referenced_column ?? target?.pkColumns[i] ?? r.column_name,
+        ),
       },
       onDelete: mapAction(sample.on_delete),
       onUpdate: mapAction(sample.on_update),

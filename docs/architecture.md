@@ -110,7 +110,7 @@ flowchart TB
 | `@askdb/ai-azure` | Azure OpenAI / Microsoft Foundry provider adapter for `@askdb/ai`. | Wraps `@ai-sdk/azure`; no NL-to-SQL logic. |
 | `@askdb/ai-google` | Google Generative AI / Gemini provider adapter for `@askdb/ai`. | Wraps `@ai-sdk/google`; no NL-to-SQL logic. |
 | `@askdb/ai-anthropic` | Anthropic Claude provider adapter for `@askdb/ai`. No embeddings API; throws a clear error if `createEmbeddingModel` is called. | Wraps `@ai-sdk/anthropic`; no NL-to-SQL logic. |
-| `@askdb/connectors` | Registry for database connector adapters, config-driven dispatch contract, and `createAskDbConnectorRegistry` factory. | No database drivers; engine packages supply those. |
+| `@askdb/connectors` | Registry for database connector adapters, config-driven dispatch contract, and `createConnectorRegistry` factory. | No database drivers; engine packages supply those. |
 | `@askdb/mysql` | MySQL / MariaDB connector adapter for `@askdb/connectors`; includes `MYSQL_DIALECT`, `MARIADB_DIALECT`, live connector, and `createMysqlCatalogQueryRunner`. | Wraps `mysql2` (optional peer); exports `mysqlConnectorProvider`. |
 | `@askdb/sqlite` | SQLite connector adapter for `@askdb/connectors`; includes `SQLITE_DIALECT`, live connector, and `createSqliteCatalogQueryRunner`. | Wraps `better-sqlite3` (optional peer); exports `sqliteConnectorProvider`. |
 | `@askdb/sqlserver` | SQL Server connector adapter for `@askdb/connectors`; includes `SQLSERVER_DIALECT`, live connector, and `createSqlServerCatalogQueryRunner`. | Wraps `mssql` (optional peer); exports `sqlServerConnectorProvider`. |

@@ -15,12 +15,12 @@ Install only the concrete connector packages your introspection config requires.
 ## Usage
 
 ```ts
-import { createAskDbConnectorRegistry, type AskDbConnectorConfig } from "@askdb/connectors";
+import { createConnectorRegistry, type ConnectorConfig } from "@askdb/connectors";
 import { postgresConnectorProvider } from "@askdb/postgres";
 import { mysqlConnectorProvider } from "@askdb/mysql";
 import { introspect } from "@askdb/introspect";
 
-const registry = createAskDbConnectorRegistry([
+const registry = createConnectorRegistry([
   postgresConnectorProvider,
   mysqlConnectorProvider,
 ]);
@@ -35,13 +35,28 @@ const result = await introspect(input, { outDir: "./askdb", schemaId: "mydb" }, 
 
 ## Exports
 
-- `createAskDbConnectorRegistry` — registry factory
-- `ASKDB_CONNECTOR_PROVIDERS` — constant array of all provider ids
-- `AskDbConnectorProvider` — `"postgres" | "prisma" | "mysql" | "sqlite" | "sqlserver"`
-- `AskDbConnectorConfig` — unified per-call config shape
-- `AskDbConnectorResult` — `{ connector, input, mode }` pair consumed by `introspect()`
-- `AskDbConnectorProviderAdapter` — interface implemented by each concrete package
-- `askDbConnectorProviderMissingMessage` — actionable error helper
+- `createConnectorRegistry` — registry factory
+- `CONNECTOR_PROVIDERS` — constant array of all provider ids
+- `ConnectorProvider` — `"postgres" | "prisma" | "mysql" | "sqlite" | "sqlserver"`
+- `ConnectorConfig` — unified per-call config shape
+- `ConnectorResult` — `{ connector, input, mode }` pair consumed by `introspect()`
+- `ConnectorProviderAdapter` — interface implemented by each concrete package
+- `ConnectorRegistry` — `{ hasProvider, createConnector, getTemplates }`
+- `connectorProviderMissingMessage` — actionable error helper
+
+### Connection-string redaction
+
+Display/logging helpers the engine packages build their `redactConnectionString()` on
+(`@askdb/postgres`, `@askdb/mysql`, `@askdb/sqlserver`, `@askdb/sqlite` each export one that
+knows its own formats). Output is for humans only — never pass it back to a driver.
+
+- `redactConnectionStringGeneric(input)` — masks URL userinfo passwords and secret `key=value`
+  pairs (`?password=`, JDBC-style `;password=`, ADO.NET `Password=` / `Pwd=`); the fallback for
+  providers without a dedicated redactor
+- `redactUrlUserinfo(input)` — `scheme://user:secret@host` → `scheme://user:****@host`
+- `redactSecretKeyValues(input, { separators?, whitespaceSeparated? })` — masks secret
+  `key=value` pairs; quote- and `{brace}`-aware
+- `isSecretConnectionKey(key)`, `hasUrlScheme(input)`, `REDACTED_SECRET`
 
 ## License
 
