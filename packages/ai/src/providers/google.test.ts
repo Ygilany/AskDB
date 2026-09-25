@@ -1,60 +1,7 @@
-import { describe, expect, it, vi, beforeEach } from "vitest";
-
-const mocks = vi.hoisted(() => {
-  const google = vi.fn((model: string) => ({ kind: "language", model }));
-  Object.assign(google, {
-    embedding: vi.fn((model: string) => ({
-      kind: "embedding",
-      model,
-    })),
-  });
-
-  return {
-    createGoogle: vi.fn(() => google),
-    google,
-  };
-});
-
-vi.mock("@ai-sdk/google", () => ({
-  createGoogle: mocks.createGoogle,
-}));
-
-import { googleProvider } from "./index";
+import { describe, expect, it } from "vitest";
+import { googleProvider } from "./google.js";
 
 describe("googleProvider", () => {
-  beforeEach(() => {
-    mocks.createGoogle.mockClear();
-    mocks.google.mockClear();
-    mocks.google.embedding.mockClear();
-  });
-
-  it("creates language and embedding models from AskDB config", () => {
-    expect(googleProvider.provider).toBe("google");
-
-    const languageModel = googleProvider.createLanguageModel({
-      provider: "google",
-      apiKey: "test-key",
-      baseURL: "https://generativelanguage.googleapis.com",
-      model: "gemini-1.5-flash",
-    });
-    const embeddingModel = googleProvider.createEmbeddingModel({
-      provider: "google",
-      apiKey: "test-key",
-      model: "text-embedding-004",
-    });
-
-    expect(languageModel).toEqual({ kind: "language", model: "gemini-1.5-flash" });
-    expect(embeddingModel).toEqual({ kind: "embedding", model: "text-embedding-004" });
-    expect(mocks.createGoogle).toHaveBeenNthCalledWith(1, {
-      apiKey: "test-key",
-      baseURL: "https://generativelanguage.googleapis.com",
-    });
-    expect(mocks.google.embedding).toHaveBeenCalledWith("text-embedding-004");
-    expect(mocks.createGoogle).toHaveBeenNthCalledWith(2, {
-      apiKey: "test-key",
-    });
-  });
-
   it("resolves Google config with the Gemini language default", () => {
     expect(
       googleProvider.resolveConfig(

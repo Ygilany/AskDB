@@ -254,6 +254,15 @@ describe("resolveDefaultInitAnswers", () => {
     expect(a.schemaOut).toBe("./askdb");
   });
 
+  it("scaffolds gateway with the env vars from @askdb/ai's provider table", () => {
+    const a = resolveDefaultInitAnswers({ aiProvider: "gateway" });
+    expect(a.aiKeyEnv).toBe("AI_GATEWAY_API_KEY");
+    expect(a.aiModelEnv).toBe("ASKDB_AI_MODEL");
+    const out = renderInitConfig(a);
+    expect(out).toContain('provider: "gateway"');
+    expect(out).toContain('apiKey: env("AI_GATEWAY_API_KEY")');
+  });
+
   it("respects database override", () => {
     const a = resolveDefaultInitAnswers({ database: "sqlserver" });
     expect(a.database).toBe("sqlserver");

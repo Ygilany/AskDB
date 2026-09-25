@@ -2,10 +2,18 @@ import { spawnSync } from "node:child_process";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { basename, dirname, join, resolve, isAbsolute, relative } from "node:path";
-import { bootstrapAskDbEnv, discoverAskDbConfigPath, getAskDbRuntimeConfig } from "@askdb/config";
+import { getBuiltinAiProviderSetup } from "@askdb/ai";
+import {
+  ASKDB_AI_PROVIDERS,
+  bootstrapAskDbEnv,
+  discoverAskDbConfigPath,
+  getAskDbRuntimeConfig,
+  type AskDbAiProviderId,
+} from "@askdb/config";
 
 export type SetupDatabase = "postgres" | "mysql" | "sqlite" | "sqlserver" | "prisma";
-export type SetupAiProvider = "openai" | "anthropic" | "google" | "azure" | "foundry";
+/** Any provider id with an `askdb.config.*` branch (`ASKDB_AI_PROVIDERS` in `@askdb/config`). */
+export type SetupAiProvider = AskDbAiProviderId;
 export type SetupRagStore = "file" | "memory" | "pgvector";
 export type SetupExecuteProvider = "postgres" | "mysql" | "sqlite" | "sqlserver";
 
@@ -36,14 +44,14 @@ export type SetupConfigInput = {
   studioExecuteSqliteFile?: string;
 };
 
-/** Mirrors `AI_DEFAULTS` in `apps/cli/src/init.ts` — keep the two in sync. */
-const AI_DEFAULTS: Record<SetupAiProvider, { keyEnv: string; modelEnv: string }> = {
-  openai: { keyEnv: "OPENAI_API_KEY", modelEnv: "OPENAI_MODEL" },
-  anthropic: { keyEnv: "ANTHROPIC_API_KEY", modelEnv: "ANTHROPIC_MODEL" },
-  google: { keyEnv: "GOOGLE_GENERATIVE_AI_API_KEY", modelEnv: "GOOGLE_GENERATIVE_AI_MODEL" },
-  azure: { keyEnv: "AZURE_OPENAI_API_KEY", modelEnv: "AZURE_OPENAI_DEPLOYMENT" },
-  foundry: { keyEnv: "AZURE_OPENAI_API_KEY", modelEnv: "AZURE_OPENAI_DEPLOYMENT" },
-};
+/**
+ * Key/model env var names to scaffold for a provider, from `@askdb/ai`'s built-in
+ * provider table — the same source `askdb init` uses, so the two cannot drift.
+ */
+function aiDefaults(provider: string): { keyEnv: string; modelEnv: string } | undefined {
+  if (!(ASKDB_AI_PROVIDERS as readonly string[]).includes(provider)) return undefined;
+  return getBuiltinAiProviderSetup(provider);
+}
 
 const CONNECTION_ENV_DEFAULTS: Record<Exclude<SetupDatabase, "sqlite" | "prisma">, string> = {
   postgres: "DATABASE_URL",
@@ -137,9 +145,9 @@ export function writeSetupConfig(cwd: string, input: SetupConfigInput): SetupCon
   }
 
   const schemaOut = validateRelativePath(input.schemaOut ?? "./askdb", "schemaOut");
-  const aiDefaults = AI_DEFAULTS[input.aiProvider];
-  if (!aiDefaults) throw new SetupError(400, `Unknown AI provider: ${input.aiProvider}`);
-  const aiKeyEnv = validateEnvName(input.aiKeyEnv ?? aiDefaults.keyEnv, "aiKeyEnv");
+  const providerDefaults = aiDefaults(input.aiProvider);
+  if (!providerDefaults) throw new SetupError(400, `Unknown AI provider: ${input.aiProvider}`);
+  const aiKeyEnv = validateEnvName(input.aiKeyEnv ?? providerDefaults.keyEnv, "aiKeyEnv");
   const aiModelEnv = input.aiModelEnv ? validateEnvName(input.aiModelEnv, "aiModelEnv") : undefined;
 
   const envVars: SetupConfigResult["envVars"] = [

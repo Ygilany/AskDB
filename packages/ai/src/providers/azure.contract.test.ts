@@ -5,10 +5,10 @@
  * (e.g. embedding `dimensions` under an "azure" key, which
  * `OpenAIEmbeddingModel` never reads), which mocked-SDK unit tests can't.
  */
-import type { AiConfig } from "@askdb/ai";
+import type { AiConfig } from "../provider.js";
 import { embed, generateText } from "ai";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { azureProvider } from "./index";
+import { azureProvider } from "./azure.js";
 
 type CapturedRequest = { url: string; body: Record<string, unknown> };
 
@@ -49,7 +49,7 @@ async function captureGenerate(
   const providerOptions = azureProvider.resolveProviderOptions?.(config, { reasoningEffort });
   await expect(
     generateText({
-      model: azureProvider.createLanguageModel(config),
+      model: await azureProvider.createLanguageModel(config),
       prompt: "How many customers?",
       temperature: 0,
       maxRetries: 0,
@@ -82,6 +82,26 @@ describe("azureProvider — real @ai-sdk/azure contract", () => {
     expect(request.body).not.toHaveProperty("reasoning");
   });
 
+  it("sends requests to the configured baseURL instead of the resource endpoint", async () => {
+    const request = await captureGenerate({
+      ...baseConfig,
+      baseURL: "https://proxy.example/openai",
+      model: "gpt-4o-mini",
+    });
+    expect(request.url).toBe("https://proxy.example/openai/responses");
+  });
+
+  it("sends the configured apiVersion as the api-version query parameter", async () => {
+    const request = await captureGenerate({
+      ...baseConfig,
+      model: "gpt-4o-mini",
+      providerOptions: { ...baseConfig.providerOptions, apiVersion: "2024-10-21" },
+    });
+    expect(request.url).toBe(
+      "https://my-foundry.openai.azure.com/openai/v1/responses?api-version=2024-10-21",
+    );
+  });
+
   it("sends reasoning.effort for reasoning-model deployments", async () => {
     const request = await captureGenerate({ ...baseConfig, model: "o4-mini" }, "low");
     expect(request.body.model).toBe("o4-mini");
@@ -105,7 +125,7 @@ describe("azureProvider — real @ai-sdk/azure contract", () => {
 
   it("forwards embedding dimensions and user to the request body", async () => {
     const requests = captureFetch(embeddingResponse);
-    const model = azureProvider.createEmbeddingModel(
+    const model = await azureProvider.createEmbeddingModel(
       { ...baseConfig, model: "text-embedding-3-small" },
       { dimensions: 256, user: "user-1" },
     );

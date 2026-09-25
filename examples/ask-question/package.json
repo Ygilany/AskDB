@@ -9,8 +9,8 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@ai-sdk/openai": "^4.0.29",
     "@askdb/ai": "workspace:*",
-    "@askdb/ai-openai": "workspace:*",
     "@askdb/client": "workspace:*",
     "@askdb/config": "workspace:*",
     "@askdb/core": "workspace:*",

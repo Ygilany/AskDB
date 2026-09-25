@@ -47,21 +47,21 @@ importers:
 
   apps/cli:
     dependencies:
+      '@ai-sdk/anthropic':
+        specifier: ^4.0.29
+        version: 4.0.29(zod@4.4.3)
+      '@ai-sdk/azure':
+        specifier: ^4.0.30
+        version: 4.0.30(zod@4.4.3)
+      '@ai-sdk/google':
+        specifier: ^4.0.33
+        version: 4.0.33(zod@4.4.3)
+      '@ai-sdk/openai':
+        specifier: ^4.0.29
+        version: 4.0.29(zod@4.4.3)
       '@askdb/ai':
         specifier: workspace:*
         version: link:../../packages/ai
-      '@askdb/ai-anthropic':
-        specifier: workspace:*
-        version: link:../../packages/ai-anthropic
-      '@askdb/ai-azure':
-        specifier: workspace:*
-        version: link:../../packages/ai-azure
-      '@askdb/ai-google':
-        specifier: workspace:*
-        version: link:../../packages/ai-google
-      '@askdb/ai-openai':
-        specifier: workspace:*
-        version: link:../../packages/ai-openai
       '@askdb/client':
         specifier: workspace:*
         version: link:../../packages/client
@@ -138,21 +138,21 @@ importers:
 
   apps/http-api:
     dependencies:
+      '@ai-sdk/anthropic':
+        specifier: ^4.0.29
+        version: 4.0.29(zod@4.4.3)
+      '@ai-sdk/azure':
+        specifier: ^4.0.30
+        version: 4.0.30(zod@4.4.3)
+      '@ai-sdk/google':
+        specifier: ^4.0.33
+        version: 4.0.33(zod@4.4.3)
+      '@ai-sdk/openai':
+        specifier: ^4.0.29
+        version: 4.0.29(zod@4.4.3)
       '@askdb/ai':
         specifier: workspace:*
         version: link:../../packages/ai
-      '@askdb/ai-anthropic':
-        specifier: workspace:*
-        version: link:../../packages/ai-anthropic
-      '@askdb/ai-azure':
-        specifier: workspace:*
-        version: link:../../packages/ai-azure
-      '@askdb/ai-google':
-        specifier: workspace:*
-        version: link:../../packages/ai-google
-      '@askdb/ai-openai':
-        specifier: workspace:*
-        version: link:../../packages/ai-openai
       '@askdb/client':
         specifier: workspace:*
         version: link:../../packages/client
@@ -184,21 +184,21 @@ importers:
 
   apps/studio:
     dependencies:
+      '@ai-sdk/anthropic':
+        specifier: ^4.0.29
+        version: 4.0.29(zod@4.4.3)
+      '@ai-sdk/azure':
+        specifier: ^4.0.30
+        version: 4.0.30(zod@4.4.3)
+      '@ai-sdk/google':
+        specifier: ^4.0.33
+        version: 4.0.33(zod@4.4.3)
+      '@ai-sdk/openai':
+        specifier: ^4.0.29
+        version: 4.0.29(zod@4.4.3)
       '@askdb/ai':
         specifier: workspace:*
         version: link:../../packages/ai
-      '@askdb/ai-anthropic':
-        specifier: workspace:*
-        version: link:../../packages/ai-anthropic
-      '@askdb/ai-azure':
-        specifier: workspace:*
-        version: link:../../packages/ai-azure
-      '@askdb/ai-google':
-        specifier: workspace:*
-        version: link:../../packages/ai-google
-      '@askdb/ai-openai':
-        specifier: workspace:*
-        version: link:../../packages/ai-openai
       '@askdb/config':
         specifier: workspace:*
         version: link:../../packages/config
@@ -323,12 +323,12 @@ importers:
 
   examples/ask-question:
     dependencies:
+      '@ai-sdk/openai':
+        specifier: ^4.0.29
+        version: 4.0.29(zod@4.4.3)
       '@askdb/ai':
         specifier: workspace:*
         version: link:../../packages/ai
-      '@askdb/ai-openai':
-        specifier: workspace:*
-        version: link:../../packages/ai-openai
       '@askdb/client':
         specifier: workspace:*
         version: link:../../packages/client
@@ -354,12 +354,9 @@ importers:
 
   examples/express-server:
     dependencies:
-      '@askdb/ai':
-        specifier: workspace:*
-        version: link:../../packages/ai
-      '@askdb/ai-openai':
-        specifier: workspace:*
-        version: link:../../packages/ai-openai
+      '@ai-sdk/openai':
+        specifier: ^4.0.29
+        version: 4.0.29(zod@4.4.3)
       '@askdb/client':
         specifier: workspace:*
         version: link:../../packages/client
@@ -391,6 +388,21 @@ importers:
 
   packages/ai:
     devDependencies:
+      '@ai-sdk/anthropic':
+        specifier: ^4.0.29
+        version: 4.0.29(zod@4.4.3)
+      '@ai-sdk/azure':
+        specifier: ^4.0.30
+        version: 4.0.30(zod@4.4.3)
+      '@ai-sdk/google':
+        specifier: ^4.0.33
+        version: 4.0.33(zod@4.4.3)
+      '@ai-sdk/openai':
+        specifier: ^4.0.29
+        version: 4.0.29(zod@4.4.3)
+      '@askdb/config':
+        specifier: workspace:*
+        version: link:../config
       ai:
         specifier: ^7.0.51
         version: 7.0.51(zod@4.4.3)
@@ -406,10 +418,10 @@ importers:
       '@ai-sdk/anthropic':
         specifier: ^4.0.29
         version: 4.0.29(zod@4.4.3)
-    devDependencies:
       '@askdb/ai':
-        specifier: workspace:*
+        specifier: workspace:^
         version: link:../ai
+    devDependencies:
       ai:
         specifier: ^7.0.51
         version: 7.0.51(zod@4.4.3)
@@ -425,10 +437,10 @@ importers:
       '@ai-sdk/azure':
         specifier: ^4.0.30
         version: 4.0.30(zod@4.4.3)
-    devDependencies:
       '@askdb/ai':
-        specifier: workspace:*
+        specifier: workspace:^
         version: link:../ai
+    devDependencies:
       ai:
         specifier: ^7.0.51
         version: 7.0.51(zod@4.4.3)
@@ -444,10 +456,10 @@ importers:
       '@ai-sdk/google':
         specifier: ^4.0.33
         version: 4.0.33(zod@4.4.3)
-    devDependencies:
       '@askdb/ai':
-        specifier: workspace:*
+        specifier: workspace:^
         version: link:../ai
+    devDependencies:
       ai:
         specifier: ^7.0.51
         version: 7.0.51(zod@4.4.3)
@@ -463,10 +475,10 @@ importers:
       '@ai-sdk/openai':
         specifier: ^4.0.29
         version: 4.0.29(zod@4.4.3)
-    devDependencies:
       '@askdb/ai':
-        specifier: workspace:*
+        specifier: workspace:^
         version: link:../ai
+    devDependencies:
       ai:
         specifier: ^7.0.51
         version: 7.0.51(zod@4.4.3)

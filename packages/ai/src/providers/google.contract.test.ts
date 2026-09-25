@@ -6,7 +6,7 @@
  */
 import { embed, generateText } from "ai";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { googleProvider } from "./index";
+import { googleProvider } from "./google.js";
 
 type CapturedRequest = { url: string; body: Record<string, unknown> };
 
@@ -37,13 +37,14 @@ function embeddingResponse(): Response {
 async function captureGenerate(
   model: string,
   reasoningEffort?: "minimal" | "low" | "medium" | "high",
+  baseURL?: string,
 ): Promise<CapturedRequest> {
   const requests = captureFetch();
-  const config = { provider: "google", apiKey: "test-key", model };
+  const config = { provider: "google", apiKey: "test-key", model, ...(baseURL ? { baseURL } : {}) };
   const providerOptions = googleProvider.resolveProviderOptions?.(config, { reasoningEffort });
   await expect(
     generateText({
-      model: googleProvider.createLanguageModel(config),
+      model: await googleProvider.createLanguageModel(config),
       prompt: "How many customers?",
       temperature: 0,
       maxRetries: 0,
@@ -73,6 +74,11 @@ describe("googleProvider — real @ai-sdk/google contract", () => {
     expect(thinkingConfigOf(request)).toBeUndefined();
   });
 
+  it("sends requests to the configured baseURL", async () => {
+    const request = await captureGenerate("gemini-2.0-flash", undefined, "https://proxy.example/g");
+    expect(request.url).toBe("https://proxy.example/g/models/gemini-2.0-flash:generateContent");
+  });
+
   it("sends thinkingConfig.thinkingBudget for Gemini 2.5 models", async () => {
     const request = await captureGenerate("gemini-2.5-flash", "low");
     expect(request.url).toContain("/models/gemini-2.5-flash:generateContent");
@@ -87,7 +93,7 @@ describe("googleProvider — real @ai-sdk/google contract", () => {
 
   it("maps embedding dimensions to outputDimensionality in the request body", async () => {
     const requests = captureFetch(embeddingResponse);
-    const model = googleProvider.createEmbeddingModel(
+    const model = await googleProvider.createEmbeddingModel(
       { provider: "google", apiKey: "test-key", model: "gemini-embedding-001" },
       { dimensions: 768, user: "user-1" },
     );
@@ -108,7 +114,7 @@ describe("googleProvider — real @ai-sdk/google contract", () => {
 
   it("omits outputDimensionality when no dimensions are requested", async () => {
     const requests = captureFetch(embeddingResponse);
-    const model = googleProvider.createEmbeddingModel({
+    const model = await googleProvider.createEmbeddingModel({
       provider: "google",
       apiKey: "test-key",
       model: "gemini-embedding-001",

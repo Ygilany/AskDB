@@ -6,7 +6,7 @@
  */
 import { embed, generateText } from "ai";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { openaiProvider } from "./index";
+import { openaiProvider } from "./openai.js";
 
 type CapturedRequest = { url: string; body: Record<string, unknown> };
 
@@ -42,13 +42,14 @@ function embeddingResponse(): Response {
 async function captureGenerate(
   model: string,
   reasoningEffort?: "minimal" | "low" | "medium" | "high",
+  baseURL?: string,
 ): Promise<CapturedRequest> {
   const requests = captureFetch();
-  const config = { provider: "openai", apiKey: "test-key", model };
+  const config = { provider: "openai", apiKey: "test-key", model, ...(baseURL ? { baseURL } : {}) };
   const providerOptions = openaiProvider.resolveProviderOptions?.(config, { reasoningEffort });
   await expect(
     generateText({
-      model: openaiProvider.createLanguageModel(config),
+      model: await openaiProvider.createLanguageModel(config),
       prompt: "How many customers?",
       temperature: 0,
       maxRetries: 0,
@@ -73,6 +74,11 @@ describe("openaiProvider — real @ai-sdk/openai contract", () => {
     expect(request.body).not.toHaveProperty("reasoning");
   });
 
+  it("sends requests to the configured baseURL", async () => {
+    const request = await captureGenerate("gpt-4o-mini", undefined, "https://proxy.example/v1");
+    expect(request.url).toBe("https://proxy.example/v1/responses");
+  });
+
   it("sends reasoning.effort for reasoning models when reasoningEffort is set", async () => {
     const request = await captureGenerate("gpt-5-mini", "low");
     expect(request.body.model).toBe("gpt-5-mini");
@@ -92,7 +98,7 @@ describe("openaiProvider — real @ai-sdk/openai contract", () => {
 
   it("forwards embedding dimensions and user to the request body", async () => {
     const requests = captureFetch(embeddingResponse);
-    const model = openaiProvider.createEmbeddingModel(
+    const model = await openaiProvider.createEmbeddingModel(
       { provider: "openai", apiKey: "test-key", model: "text-embedding-3-small" },
       { dimensions: 256, user: "user-1" },
     );
@@ -107,5 +113,32 @@ describe("openaiProvider — real @ai-sdk/openai contract", () => {
       dimensions: 256,
       user: "user-1",
     });
+  });
+
+  it("sends no dimensions or user when no embedding options are set", async () => {
+    const requests = captureFetch(embeddingResponse);
+    const model = await openaiProvider.createEmbeddingModel({
+      provider: "openai",
+      apiKey: "test-key",
+      model: "text-embedding-3-small",
+    });
+    await embed({ model, value: "customers", maxRetries: 0 });
+
+    expect(requests).toHaveLength(1);
+    expect(requests[0]!.body).not.toHaveProperty("dimensions");
+    expect(requests[0]!.body).not.toHaveProperty("user");
+  });
+
+  it("forwards embedding dimensions alone without a user field", async () => {
+    const requests = captureFetch(embeddingResponse);
+    const model = await openaiProvider.createEmbeddingModel(
+      { provider: "openai", apiKey: "test-key", model: "text-embedding-3-small" },
+      { dimensions: 512 },
+    );
+    await embed({ model, value: "customers", maxRetries: 0 });
+
+    expect(requests).toHaveLength(1);
+    expect(requests[0]!.body.dimensions).toBe(512);
+    expect(requests[0]!.body).not.toHaveProperty("user");
   });
 });

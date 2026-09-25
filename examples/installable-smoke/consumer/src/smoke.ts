@@ -16,8 +16,13 @@ import {
   type AskDbSchemaFile,
   type AskDialect,
 } from "@askdb/core";
-import { createAiRegistry, type AiRegistry } from "@askdb/ai";
-import { openaiProvider } from "@askdb/ai-openai";
+import {
+  createAiRegistry,
+  openaiProvider,
+  optionalPeerMissingMessage,
+  type AiRegistry,
+} from "@askdb/ai";
+import { openaiProvider as deprecatedShimOpenaiProvider } from "@askdb/ai-openai";
 import { buildSchemaIndex, createMemoryStore, type Embedder } from "@askdb/rag";
 import { createFileStore } from "@askdb/rag/stores/file";
 import { buildDefaultTableBody, replaceH2Section } from "@askdb/enrich";
@@ -173,16 +178,47 @@ async function main(): Promise<void> {
     throw new Error("smoke: ask({ retriever }) did not complete");
   }
 
-  // Verify @askdb/ai exports the canonical (non-prefixed) names.
-  const aiRegistry: AiRegistry = createAiRegistry([openaiProvider]);
+  // Verify @askdb/ai exports the canonical (non-prefixed) names. "openai" is a
+  // built-in provider; this consumer installs its optional peer @ai-sdk/openai.
+  const aiRegistry: AiRegistry = createAiRegistry(["openai"]);
   if (typeof aiRegistry.createLanguageModelFromEnv !== "function") {
     throw new Error("smoke: @askdb/ai createAiRegistry did not return a registry with createLanguageModelFromEnv");
   }
   if (typeof aiRegistry.createEmbeddingModelFromEnv !== "function") {
     throw new Error("smoke: @askdb/ai createAiRegistry did not return a registry with createEmbeddingModelFromEnv");
   }
-  if (typeof openaiProvider.provider !== "string" || openaiProvider.provider.length === 0) {
-    throw new Error("smoke: @askdb/ai-openai openaiProvider.provider is missing");
+  const openaiModel = await aiRegistry.createLanguageModel({
+    provider: "openai",
+    apiKey: "smoke-key",
+    model: "gpt-4o-mini",
+  });
+  if (typeof openaiModel !== "object" || openaiModel === null) {
+    throw new Error("smoke: @askdb/ai did not lazily load the installed @ai-sdk/openai peer");
+  }
+
+  // @ai-sdk/google is NOT installed here: the built-in google provider must fail
+  // at model-creation time with an actionable install message, not a raw
+  // module-resolution error (and registering it must cost nothing).
+  const allBuiltins = createAiRegistry();
+  if (!allBuiltins.hasProvider("google") || !allBuiltins.hasProvider("foundry")) {
+    throw new Error("smoke: createAiRegistry() did not register the built-in providers");
+  }
+  const missingPeerError = await allBuiltins
+    .createLanguageModel({ provider: "google", apiKey: "smoke-key", model: "gemini-2.0-flash" })
+    .then(
+      () => undefined,
+      (e: unknown) => e,
+    );
+  const expectedMissingPeer = optionalPeerMissingMessage("google", "@ai-sdk/google");
+  if (!(missingPeerError instanceof Error) || missingPeerError.message !== expectedMissingPeer) {
+    throw new Error(
+      `smoke: expected "${expectedMissingPeer}" for a missing optional peer, got: ${String(missingPeerError)}`,
+    );
+  }
+
+  // The deprecated @askdb/ai-openai shim must keep re-exporting the adapter.
+  if (deprecatedShimOpenaiProvider !== openaiProvider) {
+    throw new Error("smoke: @askdb/ai-openai shim does not re-export @askdb/ai's openaiProvider");
   }
 
   console.log("smoke: ok - core, introspect, postgres, prisma, enrich, rag, and ai package surfaces loaded");

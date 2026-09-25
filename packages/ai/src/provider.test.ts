@@ -1,12 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
-import {
-  aiKeyMissingMessage,
-  aiProviderMissingMessage,
-  createAiRegistry,
-  resolveBaseConfig,
-  type AiProviderAdapter,
-  type ProviderEnvSpec,
-} from "./provider.js";
+import { resolveBaseConfig, type AiProviderAdapter, type ProviderEnvSpec } from "./provider.js";
+import { aiKeyMissingMessage, aiProviderMissingMessage, createAiRegistry } from "./registry.js";
 
 const spec: ProviderEnvSpec = {
   apiKeyVars: ["NATIVE_API_KEY"],
@@ -359,30 +353,38 @@ describe("createAiRegistry", () => {
         apiKey: "k",
         model: "gemini-2.0-flash",
       }),
-    ).rejects.toThrow(/Install @askdb\/ai-google/);
+    ).rejects.toThrow(/pass "google" to createAiRegistry\(\).*npm i @ai-sdk\/google/);
   });
 
   describe("aiProviderMissingMessage", () => {
     it.each([
-      ["openai", "@askdb/ai-openai", "openaiProvider"],
-      ["azure", "@askdb/ai-azure", "azureProvider"],
-      ["foundry", "@askdb/ai-azure", "azureProvider"],
-      ["azure-openai", "@askdb/ai-azure", "azureProvider"],
-      ["Foundry", "@askdb/ai-azure", "azureProvider"],
-      ["anthropic", "@askdb/ai-anthropic", "anthropicProvider"],
-      ["google", "@askdb/ai-google", "googleProvider"],
-    ])("points %s at the package that owns it (%s)", (provider, pkg, exportName) => {
+      ["openai", "openai", "@ai-sdk/openai"],
+      ["azure", "azure", "@ai-sdk/azure"],
+      ["foundry", "azure", "@ai-sdk/azure"],
+      ["azure-openai", "azure", "@ai-sdk/azure"],
+      ["Foundry", "azure", "@ai-sdk/azure"],
+      ["anthropic", "anthropic", "@ai-sdk/anthropic"],
+      ["google", "google", "@ai-sdk/google"],
+    ])("tells %s to register built-in %s and install %s", (provider, builtin, pkg) => {
       const message = aiProviderMissingMessage(provider);
       expect(message).toContain(`AI provider "${provider}" is not registered.`);
-      expect(message).toContain(`Install ${pkg} `);
-      expect(message).toContain(exportName);
+      expect(message).toContain(`pass "${builtin}" to createAiRegistry()`);
+      expect(message).toContain(`npm i ${pkg}.`);
+      expect(message).not.toContain("@askdb/ai-");
+    });
+
+    it("does not ask to install a package for the gateway, which ships with ai", () => {
+      const message = aiProviderMissingMessage("gateway");
+      expect(message).toContain('pass "gateway" to createAiRegistry()');
+      expect(message).not.toContain("npm i");
     });
 
     it("does not invent a package name for custom providers", () => {
       const message = aiProviderMissingMessage("mistral");
       expect(message).toContain('AI provider "mistral" is not registered.');
       expect(message).not.toContain("@askdb/ai-mistral");
-      expect(message).toMatch(/no first-party AskDB adapter/);
+      expect(message).not.toContain("@ai-sdk/mistral");
+      expect(message).toMatch(/not built into @askdb\/ai \(built-in providers: openai, anthropic, google, azure, gateway\)/);
       expect(message).toMatch(/createAiRegistry\(\)/);
     });
 
@@ -390,15 +392,15 @@ describe("createAiRegistry", () => {
       const registry = createAiRegistry([]);
       await expect(
         registry.createLanguageModel({ provider: "foundry", apiKey: "k", model: "m" }),
-      ).rejects.toThrow(/Install @askdb\/ai-azure/);
+      ).rejects.toThrow(/pass "azure" to createAiRegistry\(\).*npm i @ai-sdk\/azure/);
     });
   });
 
   describe("aiKeyMissingMessage", () => {
-    it("names every first-party provider, including Anthropic", () => {
+    it("names every built-in provider, including Anthropic and the gateway", () => {
       const message = aiKeyMissingMessage("ctx");
       expect(message).toContain("ctx: no AI API key configured.");
-      for (const provider of ["openai", "azure", "anthropic", "google"]) {
+      for (const provider of ["openai", "azure", "anthropic", "google", "gateway"]) {
         expect(message).toContain(`ai.providerConfig.${provider}.apiKey`);
       }
     });

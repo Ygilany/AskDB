@@ -48,11 +48,11 @@
     "doctor": "npx react-doctor@latest"
   },
   "dependencies": {
+    "@ai-sdk/anthropic": "^4.0.29",
+    "@ai-sdk/azure": "^4.0.30",
+    "@ai-sdk/google": "^4.0.33",
+    "@ai-sdk/openai": "^4.0.29",
     "@askdb/ai": "workspace:*",
-    "@askdb/ai-anthropic": "workspace:*",
-    "@askdb/ai-azure": "workspace:*",
-    "@askdb/ai-google": "workspace:*",
-    "@askdb/ai-openai": "workspace:*",
     "@askdb/config": "workspace:*",
     "@askdb/connectors": "workspace:*",
     "@askdb/core": "workspace:*",

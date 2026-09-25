@@ -90,9 +90,9 @@ describe("discoverAskDbConfigPath", () => {
 });
 
 describe("ASKDB_AI_PROVIDERS", () => {
-  it("lists every first-party provider id flattenAskDbConfig handles, including anthropic", () => {
+  it("lists every first-party provider id flattenAskDbConfig handles, including anthropic and gateway", () => {
     expect([...ASKDB_AI_PROVIDERS].sort()).toEqual(
-      ["anthropic", "azure", "foundry", "google", "openai"].sort(),
+      ["anthropic", "azure", "foundry", "gateway", "google", "openai"].sort(),
     );
   });
 });
@@ -242,6 +242,39 @@ describe("flattenAskDbConfig", () => {
     expect(flat.ASKDB_AI_PROVIDER).toBe("anthropic");
     expect(flat.ANTHROPIC_API_KEY).toBe("ant-key");
     expect(flat.ASKDB_AI_MODEL).toBe("claude-opus-4-8");
+  });
+
+  it("flattens gateway provider branch to AI_GATEWAY_API_KEY and the universal model/base URL keys", () => {
+    const flat = flattenAskDbConfig(
+      minimalConfig({
+        ai: {
+          provider: "gateway",
+          providerConfig: {
+            gateway: {
+              apiKey: "gw-key",
+              model: "anthropic/claude-sonnet-4-6",
+              baseUrl: "https://gateway.example/v3/ai",
+            },
+          },
+        },
+      }),
+    );
+    expect(flat.ASKDB_AI_PROVIDER).toBe("gateway");
+    expect(flat.AI_GATEWAY_API_KEY).toBe("gw-key");
+    expect(flat.ASKDB_AI_MODEL).toBe("anthropic/claude-sonnet-4-6");
+    expect(flat.ASKDB_AI_BASE_URL).toBe("https://gateway.example/v3/ai");
+  });
+
+  it("defaults the gateway model to openai/gpt-4o-mini and requires its branch", () => {
+    const flat = flattenAskDbConfig(
+      minimalConfig({
+        ai: { provider: "gateway", providerConfig: { gateway: { apiKey: "gw-key" } } },
+      }),
+    );
+    expect(flat.ASKDB_AI_MODEL).toBe("openai/gpt-4o-mini");
+    expect(() =>
+      flattenAskDbConfig(minimalConfig({ ai: { provider: "gateway" } as never })),
+    ).toThrow(/ai\.providerConfig\.gateway is required/);
   });
 
   it("defaults anthropic model to claude-sonnet-4-6 when model omitted", () => {

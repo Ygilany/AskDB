@@ -1,7 +1,7 @@
 {
   "name": "@askdb/ai-openai",
   "version": "1.0.0-beta.6",
-  "description": "AskDB OpenAI provider adapter for @askdb/ai.",
+  "description": "[Deprecated] Re-exports the OpenAI provider now built into @askdb/ai. Install @askdb/ai + @ai-sdk/openai instead; removed before 1.0.",
   "keywords": [
     "askdb",
     "ai",
@@ -40,18 +40,16 @@
   },
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
-    "lint": "tsc -p tsconfig.build.json --noEmit",
-    "test": "vitest run --config ../../vitest.config.ts"
+    "lint": "tsc -p tsconfig.build.json --noEmit"
   },
   "dependencies": {
-    "@ai-sdk/openai": "^4.0.29"
+    "@ai-sdk/openai": "^4.0.29",
+    "@askdb/ai": "workspace:^"
   },
   "peerDependencies": {
-    "@askdb/ai": "workspace:^",
     "ai": "^7.0.51"
   },
   "devDependencies": {
-    "@askdb/ai": "workspace:*",
     "ai": "^7.0.51",
     "typescript": "^6.0.3",
     "vitest": "^4.1.10"

@@ -380,3 +380,64 @@ Net effect: `ask()`'s public contract for reasoning tuning is "pass me a
 that want AskDB's portable enum go through `@askdb/ai`; hosts that already
 hand-roll `providerOptions` (existing BYO users) are unaffected and can keep
 doing so directly.
+
+**2026-09 — Moved from Option F to Option E (single `@askdb/ai`, lazily loaded built-in providers):**
+This amends the 2026-06-11 decision above. The four `@askdb/ai-*` packages
+(`@askdb/ai-openai`, `@askdb/ai-azure`, `@askdb/ai-google`, `@askdb/ai-anthropic`) are folded
+into `@askdb/ai` as built-in providers under `packages/ai/src/providers/`. The concrete AI SDK
+provider packages (`@ai-sdk/openai`, `@ai-sdk/azure`, `@ai-sdk/google`, `@ai-sdk/anthropic`)
+become **optional peer dependencies** of `@askdb/ai`. Each built-in provider loads its SDK with a
+dynamic `import()` the first time it builds a model. If the SDK is not installed, model creation
+fails with an error naming the package to install. `ai@7`'s built-in Vercel AI Gateway
+provider is also registered as a built-in (`gateway`). It needs no extra package because
+`createGateway` ships with `ai`.
+
+What stays the same:
+
+- `@askdb/core` remains BYO-model and never depends on `@askdb/ai`. Passing an AI SDK
+  `LanguageModel` straight to `ask()` is still a first-class path that needs no AskDB AI
+  package at all.
+- `AiProviderAdapter` is unchanged and remains the public extension point. Third-party adapters
+  keep working unmodified: `createAiRegistry()` still accepts adapter objects, now alongside
+  built-in provider names (`createAiRegistry(["openai"])`). Called with no arguments, it
+  registers every built-in provider.
+- Provider SDKs remain opt-in for library users. They are now optional peers of `@askdb/ai`
+  instead of hard dependencies of separate packages.
+
+What changes:
+
+- The four `@askdb/ai-*` packages become deprecated re-export shims over `@askdb/ai` and will be
+  removed before 1.0.
+- Provider metadata (names, aliases, default models, native env vars, the SDK package, the setup
+  hint) lives in one table exported from `@askdb/ai` (`BUILTIN_AI_PROVIDERS`). First-party
+  surfaces derive their provider lists from it. `@askdb/config` keeps its own list because it
+  must not depend on `@askdb/ai`, and a test in `@askdb/ai` asserts the two agree.
+- The batteries-included surfaces (`askdb`, `@askdb/http-api`, `@askdb/studio`) depend on
+  `@askdb/ai` plus the four `@ai-sdk/*` packages directly and call `createAiRegistry()`.
+- The consequence "adding a new provider is a new `@askdb/ai-*` package" is superseded. Adding a
+  provider now means adding one file under `packages/ai/src/providers/`, one table row, and one
+  optional peer.
+
+Why:
+
+- **The split saved nothing at the surfaces.** All three first-party surfaces registered all four
+  adapters eagerly at module scope, so the `askdb` CLI loaded every provider SDK regardless of
+  which one was configured. The per-provider install savings Option F promised only reached
+  library users, and they still had to install two packages and import two symbols to say "use
+  OpenAI."
+- **The provider list drifted.** Providers were listed in nine or more places: each adapter,
+  `@askdb/config`'s types, flatten logic, `ASKDB_AI_PROVIDERS`, and defaults, the CLI's `askdb init`
+  lists, Studio's setup lists, and `aiKeyMissingMessage` / `aiProviderMissingMessage`. These lists
+  had already disagreed. `ASKDB_AI_PROVIDERS` shipped without `anthropic`,
+  `aiKeyMissingMessage` omitted Anthropic, and `askdb init` and Studio setup scaffolded
+  `GOOGLE_GENERATIVE_AI_MODEL` while the Google adapter reads `GOOGLE_AI_MODEL`.
+- **Version churn.** Each adapter declared `@askdb/ai` as a peer dependency, and changesets bumps
+  peer dependents to a new *major* whenever the peer takes a minor bump. As a result, the
+  adapters jumped from `0.1.0-beta.2` to `1.0.0-beta.3` without any breaking change. Four
+  extra release units in near-lockstep added changelog and publishing noise without adding
+  independence.
+
+This ADR's Option E analysis above already recorded the benefits now being adopted. The costs of
+Option F that were not visible when the decision was made, listed above, tipped the balance.
+Deferred: making `ai` a peer of `@askdb/core` (plan 035), adopting `ai@7`'s portable top-level
+`reasoning` call option in place of per-provider `providerOptions` mapping, and deleting the shims.

@@ -1,13 +1,20 @@
 {
   "name": "@askdb/ai",
   "version": "0.1.0-beta.6",
-  "description": "AskDB AI provider registry and shared config helpers for AI SDK language and embedding models.",
+  "description": "AskDB AI provider registry: resolves AskDB config/env into AI SDK language and embedding models, with built-in OpenAI, Azure OpenAI, Google Gemini, Anthropic, and Vercel AI Gateway providers.",
   "keywords": [
     "askdb",
     "ai",
     "llm",
     "ai-sdk",
-    "provider-registry"
+    "provider-registry",
+    "openai",
+    "azure",
+    "foundry",
+    "google",
+    "gemini",
+    "anthropic",
+    "ai-gateway"
   ],
   "homepage": "https://github.com/Ygilany/AskDB#readme",
   "bugs": {
@@ -45,9 +52,32 @@
     "test": "vitest run --config ../../vitest.config.ts"
   },
   "peerDependencies": {
+    "@ai-sdk/anthropic": "^4.0.29",
+    "@ai-sdk/azure": "^4.0.30",
+    "@ai-sdk/google": "^4.0.33",
+    "@ai-sdk/openai": "^4.0.29",
     "ai": "^7.0.51"
   },
+  "peerDependenciesMeta": {
+    "@ai-sdk/anthropic": {
+      "optional": true
+    },
+    "@ai-sdk/azure": {
+      "optional": true
+    },
+    "@ai-sdk/google": {
+      "optional": true
+    },
+    "@ai-sdk/openai": {
+      "optional": true
+    }
+  },
   "devDependencies": {
+    "@ai-sdk/anthropic": "^4.0.29",
+    "@ai-sdk/azure": "^4.0.30",
+    "@ai-sdk/google": "^4.0.33",
+    "@ai-sdk/openai": "^4.0.29",
+    "@askdb/config": "workspace:*",
     "ai": "^7.0.51",
     "typescript": "^6.0.3",
     "vitest": "^4.1.10"

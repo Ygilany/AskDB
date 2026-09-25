@@ -5,10 +5,6 @@ import { getAskDbRuntimeConfig } from "@askdb/config";
 import {
   createAiRegistry,
 } from "@askdb/ai";
-import { anthropicProvider } from "@askdb/ai-anthropic";
-import { azureProvider } from "@askdb/ai-azure";
-import { googleProvider } from "@askdb/ai-google";
-import { openaiProvider } from "@askdb/ai-openai";
 import {
   createAskDb,
   DialectNotSupportedError,
@@ -29,7 +25,10 @@ import {
 } from "@askdb/core";
 import type { AskHttpErrorResponse, AskHttpRequest, AskHttpSuccessResponse } from "./types.js";
 
-const ai = createAiRegistry([openaiProvider, azureProvider, googleProvider, anthropicProvider]);
+// Batteries-included surface: every built-in provider is registered, and each
+// loads its @ai-sdk/* package only when first used, so env config alone
+// selects the provider.
+const ai = createAiRegistry();
 
 export type AskDbHttpServerOptions = {
   /** Default: 3000 */
