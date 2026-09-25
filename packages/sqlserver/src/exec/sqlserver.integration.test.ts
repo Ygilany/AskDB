@@ -1,11 +1,12 @@
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, expect, it } from "vitest";
 import { createSqlServerCatalogQueryRunner } from "./sqlserver.js";
 import { createSqlServerConnector } from "../connector/index.js";
+import { integrationSuite } from "../../../../scripts/test-utils/integration.mjs";
 
 type MssqlModule = typeof import("mssql");
 
 const url = process.env.MSSQL_DATABASE_URL;
-const mssqlSuite = url ? describe : describe.skip;
+const mssqlSuite = integrationSuite({ env: ["MSSQL_DATABASE_URL"] });
 
 mssqlSuite("SQL Server integration (mssql driver)", () => {
   beforeAll(async () => {
