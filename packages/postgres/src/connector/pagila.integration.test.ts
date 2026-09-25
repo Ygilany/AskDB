@@ -126,7 +126,30 @@ pagilaSuite("introspect() against Pagila (live Postgres)", () => {
     expect(leaves).toEqual([]);
   });
 
-  it("default include filter ['public'] excludes system schemas", async () => {
+  it("renders no relationships to or from payment partition leaves (ADR 0003)", async () => {
+    const outDir = join(workDir, "pagila.schema");
+    await introspect(
+      { mode: "live", runner: createPostgresCatalogQueryRunner(url!) },
+      { outDir, schemaId: "pagila" },
+      { connector: createPostgresConnector() },
+    );
+    const raw = JSON.parse(readFileSync(join(outDir, "schema.json"), "utf8")) as {
+      tables: Array<{ id: string; relationships?: Array<{ from: string; to: string }> }>;
+    };
+    const rels = raw.tables.flatMap((t) => t.relationships ?? []);
+    const touchesLeaf = rels.filter((r) =>
+      /payment_p\d{4}_\d{2}/.test(r.from) || /payment_p\d{4}_\d{2}/.test(r.to),
+    );
+    expect(touchesLeaf).toEqual([]);
+
+    // The FKs declared on the partitioned parent still render exactly once each.
+    const payment = raw.tables.find((t) => t.id === "table:public.payment")!;
+    const paymentRels = (payment.relationships ?? []).map((r) => `${r.from}->${r.to}`);
+    expect(new Set(paymentRels).size).toBe(paymentRels.length);
+    expect(paymentRels).toContain("table:public.payment#customer_id->table:public.customer#customer_id");
+  });
+
+  it("with no include filter, keeps public and excludes system schemas", async () => {
     const outDir = join(workDir, "pagila.schema");
     const result = await introspect(
       { mode: "live", runner: createPostgresCatalogQueryRunner(url!) },

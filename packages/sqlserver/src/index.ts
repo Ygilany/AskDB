@@ -30,3 +30,5 @@ export {
 } from "./exec/sqlserver.js";
 
 export { sqlServerConnectorProvider } from "./connector/provider.js";
+
+export { redactConnectionString } from "./redact.js";
