@@ -1,26 +1,32 @@
-# `@askdb/ai-anthropic`
+# `@askdb/ai-anthropic` (deprecated)
 
-Anthropic Claude provider adapter for `@askdb/ai`.
+> **Deprecated.** The Anthropic provider is now built into [`@askdb/ai`](../ai). This package
+> only re-exports `anthropicProvider` from `@askdb/ai` so existing imports keep working. It will
+> be removed before AskDB 1.0.
 
-Pass the adapter to `createAskDb` and AskDB constructs the Anthropic model from your `askdb.config.*`:
+## Migrate
+
+```bash
+npm uninstall @askdb/ai-anthropic
+npm install @askdb/ai @ai-sdk/anthropic
+```
 
 ```ts
-import { createAskDb } from "@askdb/client";
+// Before
 import { anthropicProvider } from "@askdb/ai-anthropic";
-
 const askdb = createAskDb({ config, providers: [anthropicProvider] });
-```
 
-Advanced: build a standalone registry to construct a model object outside the client:
+// After: every built-in provider is registered by default; ai.provider in
+// askdb.config.* picks one, and @ai-sdk/anthropic is loaded on first use.
+const askdb = createAskDb({ config });
 
-```ts
+// Or, restricted to Anthropic, from a standalone registry:
 import { createAiRegistry } from "@askdb/ai";
-import { anthropicProvider } from "@askdb/ai-anthropic";
-
-const ai = createAiRegistry([anthropicProvider]);
+const ai = createAiRegistry(["anthropic"]);
 ```
 
-**Note**: Anthropic does not provide an embeddings API. Configure a separate embedding provider (e.g. OpenAI) when using RAG with Anthropic for chat.
+`anthropicProvider` is still exported from `@askdb/ai` if you want to pass the adapter object.
+Anthropic has no embeddings API; configure a separate embedding provider (e.g. OpenAI) for RAG.
 
 ## License
 
