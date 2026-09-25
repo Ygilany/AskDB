@@ -131,6 +131,8 @@ Package names for `--filter`: `@askdb/sqlite`, `@askdb/postgres`, `@askdb/core`,
 
 ### Step 9: known leftover (not one of the seven)
 
+Also check the optional #190 × #197 tweak added after #201 was built (#197 commit `886670c`): `git grep -n 'rejectCaseVariantTenantPlaceholders(sql, dialect)' -- packages/core/src/sql/tenant-placeholders.ts`. If it has no match, don't fix it here — plan 055 (item 3 of its "Update after #197 `886670c`" section) owns it.
+
 #201 intentionally left root `AGENTS.md` unchanged: its Conventions still say "`@askdb/ai-*` adapters and raw Vercel AI SDK `LanguageModel` objects are both first-party…" and "Provider adapters declare `ai` and `@askdb/ai` as peer dependencies…", which are stale after #198 folded the adapters into `@askdb/ai`. Check: `git grep -n "@askdb/ai-\*" -- AGENTS.md`. If present, draft the replacement wording (built-in providers in `@askdb/ai`; third-party `AiProviderAdapter`) in the PR description for the maintainer to apply — AGENTS.md is agent-instruction policy, so a human approves the text.
 
 ### Step 10 [HUMAN]: retire #201

@@ -9,19 +9,40 @@
 > gh pr view 197 --repo Ygilany/AskDB --json state -q .state   # → MERGED (local normalizeSql)
 > git grep -n 'export function lexSql' -- packages/core/src/sql/lexer.ts                         # → 1 match
 > git grep -n 'scanTenantPlaceholders(sql, lexerDialect(dialect))' -- packages/core/src/sql/tenant-placeholders.ts  # → matches (#201 composition fix 4 landed)
-> git grep -n 'function normalizeSql' -- packages/core/src/sql/tenant-guardrail.ts               # → 1 match (problem still present)
+> git grep -n 'function codeView' -- packages/core/src/sql/tenant-guardrail.ts                   # → 1 match (hand-written scanner still present = problem still present)
+git grep -n 'rejectCaseVariantTenantPlaceholders' -- packages/core/src/sql/tenant-placeholders.ts  # → matches (#197 fix 886670c landed)
 > git grep -n 'tenant_${rootLabel.toLowerCase()' -- packages/core/src/sql/tenant-guardrail.ts packages/core/src/sql/tenant-prompt.ts  # → 4 matches
 > ```
 
 ## Status
 
-- **Priority**: P1. Two reachable fail-opens in `ask()` on MySQL, shown below.
+- **Priority**: P1. The two MySQL fail-opens and the uppercase-placeholder bug below were fixed inside #197 (commit `886670c`) before merge; at least one reachable fail-open remains (Postgres `E'…'` strings — see "Update after #197 `886670c`").
 - **Effort**: M
 - **Risk**: MED. The guardrail's verdicts change for MySQL, and for any SQL whose strings or comments the old scanner misread.
-- **Depends on**: #190, #197, and #201's composition fix 4 (dialect threading) applied during the real merges.
+- **Depends on**: #190, #197 (including commit `886670c`), and #201's composition fix 4 (dialect threading) applied during the real merges.
 - **Category**: security
 - **Planned at**: `review/integration-check @ c7404d4, 2026-09-25`
 - **Breaking**: No public type removal. `validateTenantGuardrails` gains an optional 4th `options` argument. Verdicts get stricter for dialect-specific strings and for case-variant placeholders. Ship as a **patch** changeset for `@askdb/core`.
+
+## Update after #197 `886670c` (2026-09-25) — read before the steps
+
+The reviewer fixed three bugs directly in #197 before merge (commit `886670c` on `review/core-tenant-binding`), so parts of this plan are already done. What changed on #197:
+
+- `validateTenantGuardrails(sql, policy, scope, options?)` takes `{ dialect }` (exported type `ValidateTenantGuardrailsOptions`); `ask()` passes `dialectSpec`, `generateSelectSql` passes `dialect`. The old `normalizeSql` became a hand-written, dialect-aware `codeViews`/`codeView` scanner in `tenant-guardrail.ts`. For MySQL/MariaDB, `"…"` is a string, backticks are identifiers, `#` is a comment, backslash escapes apply. For an unknown/custom dialect the SQL is read both the standard way and the MySQL way: a table counts as referenced if **either** reading sees it; a predicate counts only if **both** do (fail closed).
+- Placeholders are case-sensitive: the guardrail's placeholder match is case-sensitive, and `substituteTenantPlaceholders` throws `TenantScopeError` (`UNRESOLVED_TENANT_PLACEHOLDER`) for any non-lowercase `:tenant_*_ids` via `rejectCaseVariantTenantPlaceholders(sql)`.
+- Regression tests for all three live in `tenant-guardrail.test.ts`, `tenant-placeholders.test.ts`, `ask.test.ts`, `generate.test.ts`.
+
+So **Step 3 (thread the dialect) and Step 4 (fail closed on case-variant placeholders) are done** — only verify them. The remaining work:
+
+1. **Step 1** as written (one source of placeholder names — the four inline `:tenant_${rootLabel.toLowerCase()…}_ids` sites are still there).
+2. **Step 2, re-aimed:** replace the hand-written `codeViews`/`codeView` scanner with a view built from `lexer.ts` (`lexSql`/`tokenizeSqlSpans` with `lexerDialect(dialect)`), keeping `886670c`'s two-reading fail-closed rule for unknown dialects (run the lexer under each built-in profile). Remaining fail-opens in the hand-written scanner that the lexer already handles — each needs a regression test that fails before this step:
+   - **Postgres `E'it\'s agency_id'`** — confirmed on the composed build: returns unscoped SQL with `passed: true`.
+   - MySQL `/*! … */` executable comments are skipped as comments (MySQL runs their contents). Reasoned from code, not reproduced — reproduce first.
+   - MySQL `--` is treated as a comment without the required following whitespace (`1--1`). Reasoned, not reproduced.
+   - `$tag$` dollar-quoting is applied to MySQL, which has none. Reasoned, not reproduced.
+3. **Composition tweak** (recommended when #190 and #197 meet; not required for green): make `rejectCaseVariantTenantPlaceholders(sql, dialect)` call `tokenizeSqlSpans(sql, lexerDialect(dialect))`, and use `ANY_CASE_PLACEHOLDER_RE = /(?<!:):([a-z][a-z0-9_]*)/gi` so `::type` casts aren't read as placeholders — the same regions and guard the substituter uses. Check whether it already landed during the merges (plan 071 lists it); if not, do it here.
+
+Where the sections below still describe the pre-`886670c` bugs as present, treat them as history.
 
 ## Why this matters
 
