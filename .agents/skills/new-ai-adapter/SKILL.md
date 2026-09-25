@@ -1,25 +1,31 @@
 ---
 name: new-ai-adapter
-description: Scaffold a new @askdb/ai-<provider> adapter package from any Vercel AI SDK provider and wire it into the AskDB monorepo (surfaces, config, smoke test, docs, changeset). Use when asked to add an AI provider such as Mistral, Cohere, xAI, DeepSeek, or another @ai-sdk/* package.
+description: Add a new built-in AI provider to @askdb/ai from any Vercel AI SDK provider package (one provider file, one table row, one optional peer, tests, config branch, docs, changeset). Use when asked to add an AI provider such as Mistral, Cohere, xAI, DeepSeek, or another @ai-sdk/* package.
 ---
 
-# New AskDB AI provider adapter
+# New AskDB built-in AI provider
 
-You are scaffolding `@askdb/ai-<provider>` in the AskDB pnpm monorepo. This skill is
-self-contained: follow it top to bottom, run every verification command, and stop at any
-STOP condition instead of improvising.
+You are adding a built-in provider to `@askdb/ai` in the AskDB pnpm monorepo. Since the ADR 0006
+amendment (Option E), providers are **not** separate packages: each is one file in
+`packages/ai/src/providers/`, one row in the built-in table, and one **optional peer
+dependency** that is loaded lazily. Do **not** create a `packages/ai-<provider>` package — the
+four `@askdb/ai-*` packages that still exist are deprecated re-export shims scheduled for removal.
+
+This skill is self-contained: follow it top to bottom, run every verification command, and stop
+at any STOP condition instead of improvising.
 
 ## Inputs (resolve these first)
 
 From the user's request, determine — ask only for what cannot be inferred:
 
-1. **`<provider>`** — lowercase id, becomes the package suffix, the `ASKDB_AI_PROVIDER`
-   value, and `adapter.provider` (e.g. `mistral`, `cohere`, `xai`).
+1. **`<provider>`** — lowercase id: the `ASKDB_AI_PROVIDER` / `ai.provider` value and
+   `adapter.provider` (e.g. `mistral`, `cohere`, `xai`).
 2. **`<sdk>`** — the AI SDK package, normally `@ai-sdk/<provider>`. Confirm it exists:
    `npm view @ai-sdk/<provider> version`. Confirm its factory API:
    `npm view @ai-sdk/<provider> readme | head -100` — you need the `create<X>` factory
-   name (e.g. `createMistral`) and whether it exposes `.textEmbeddingModel()` /
-   `.embedding()` or has no embeddings at all.
+   name (e.g. `createMistral`) and whether it exposes `.embedding()` / `.embeddingModel()` or
+   has no embeddings at all. If the factory ships inside `ai` itself (as `createGateway` does),
+   there is no peer package: see `providers/gateway.ts`.
 3. **Native env vars** — the provider's conventional key/model/baseURL variables (e.g.
    `MISTRAL_API_KEY`). Use the names the SDK's own docs use; never invent new ones.
 4. **`<defaultModel>`** — a current, real chat model id for the provider. Verify against
@@ -27,53 +33,39 @@ From the user's request, determine — ask only for what cannot be inferred:
    ids. For Anthropic specifically, consult the `claude-api` skill if available.
 5. **Aliases** — alternative `ASKDB_AI_PROVIDER` spellings users may try (often none).
 
-## Prerequisites — verify before scaffolding
-
-This skill targets the post-adapter-contract-v2 architecture (plans 001/004 in `plans/`):
+## Prerequisites — verify before starting
 
 ```bash
-grep -n "resolveBaseConfig" packages/ai/src/provider.ts   # must match
-grep -n "configHint" packages/ai/src/provider.ts          # must match
+grep -n "BUILTIN_AI_PROVIDERS" packages/ai/src/providers/index.ts   # must match
+grep -n "importOptionalPeer" packages/ai/src/providers/optional-peer.ts   # must match
 ```
 
-**STOP if either grep is empty** — the open adapter contract is not merged yet; report
-that plans/001 (and 004 for `configHint`) must land first.
+**STOP if either grep is empty** — the codebase predates the built-in provider table (ADR 0006
+amendment, 2026-09); report that instead of scaffolding a package.
 
 Repo facts you can rely on:
 
-- pnpm workspace; build/lint/test per package via `tsc` and vitest
-  (`"test": "vitest run --config ../../vitest.config.ts"`). Root gates: `pnpm build`,
+- pnpm workspace; build/lint/test per package via `tsc` and vitest. Root gates: `pnpm build`,
   `pnpm lint`, `pnpm test`, `pnpm smoke:install`, `pnpm docs:build`.
-- Releases use changesets: create a `.changeset/<slug>.md` file by hand (copy the format
-  of any existing file there).
+- Releases use changesets: create a `.changeset/<slug>.md` file by hand (copy the format of any
+  existing file there).
 - Conventional commits (`feat(ai): …`).
-- Reference adapter to copy: `packages/ai-anthropic` if it exists, else
-  `packages/ai-google`. Copy its `package.json` metadata shape (description, keywords,
-  `repository.directory`, license Apache-2.0, `type: module`, dist exports, `files`,
-  engines, scripts), `tsconfig.json`, `tsconfig.build.json`, and README structure.
+- Reference providers to diff against: `packages/ai/src/providers/anthropic.ts` (no
+  embeddings) and `packages/ai/src/providers/google.ts` (embeddings + reasoning mapping).
 
-## Step 1 — Package scaffold
+## Step 1 — Provider file
 
-Create `packages/ai-<provider>/` with `package.json` (name `@askdb/ai-<provider>`,
-version `0.1.0-beta.0`), tsconfigs, and README copied from the reference adapter,
-adjusting names/keywords/directory. Dependencies:
-
-- `dependencies`: `{ "<sdk>": "^<latest major from npm view>" }`
-- `peerDependencies`: `{ "ai": "^6.0.0", "@askdb/ai": "workspace:^" }`
-  (match the exact ranges the reference adapter uses — read, don't assume)
-- `devDependencies`: `ai`, `"@askdb/ai": "workspace:*"`, `typescript`, `vitest`
-  (versions copied from the reference adapter)
-
-## Step 2 — Adapter implementation
-
-`packages/ai-<provider>/src/index.ts`, following this template (the anthropic/google
-adapters are live exemplars — diff against them):
+Create `packages/ai/src/providers/<provider>.ts`, following this template:
 
 ```ts
-import { create<X> } from "<sdk>";
-import { resolveBaseConfig, type AiProviderAdapter, type ProviderEnvSpec } from "@askdb/ai";
+import { withEmbeddingProviderOptions } from "../embedding.js";
+import { resolveBaseConfig, type AiConfig, type AiProviderAdapter } from "../provider.js";
+import { importOptionalPeer } from "./optional-peer.js";
+import type { BuiltinAiProvider, BuiltinProviderEnvSpec } from "./types.js";
 
-const ENV_SPEC: ProviderEnvSpec = {
+const PEER_PACKAGE = "<sdk>";
+
+const ENV_SPEC: BuiltinProviderEnvSpec = {
   apiKeyVars: ["<PROVIDER>_API_KEY"],
   modelVars: ["<PROVIDER>_MODEL"],          // only if a native convention exists
   embeddingModelVars: ["<PROVIDER>_EMBEDDING_MODEL"], // only if embeddings exist
@@ -82,94 +74,134 @@ const ENV_SPEC: ProviderEnvSpec = {
   // defaultEmbeddingModel only when the provider has a sensible default
 };
 
+const CONFIG_HINT =
+  "For <ProviderName>, set ai.provider: \"<provider>\" and ai.providerConfig.<provider>.apiKey in askdb.config.*.";
+
+async function createProvider(config: AiConfig) {
+  // Literal specifier inside the function: lazy, bundler-visible, and no top-level await
+  // (a top-level await would break require('@askdb/ai') from CommonJS).
+  const { create<X> } = await importOptionalPeer("<provider>", PEER_PACKAGE, () => import("<sdk>"));
+  return create<X>({
+    apiKey: config.apiKey,
+    ...(config.baseURL ? { baseURL: config.baseURL } : {}),
+  });
+}
+
 export const <provider>Provider: AiProviderAdapter = {
   provider: "<provider>",
   // aliases: ["..."],  // only if real alternative spellings exist
-  configHint:
-    "For <ProviderName>, set ASKDB_AI_PROVIDER=<provider> plus <PROVIDER>_API_KEY (or ASKDB_AI_API_KEY).",
+  configHint: CONFIG_HINT,
   resolveConfig(env, options) {
     return resolveBaseConfig("<provider>", env, ENV_SPEC, options);
   },
-  createLanguageModel(config) {
-    const p = create<X>({
-      apiKey: config.apiKey,
-      ...(config.baseURL ? { baseURL: config.baseURL } : {}),
-    });
-    return p(config.model);
+  async createLanguageModel(config) {
+    return (await createProvider(config))(config.model);
   },
-  createEmbeddingModel(config, options = {}) {
-    // If the SDK has embeddings: build the model, then forward options via the
-    // shared helper: return withEmbeddingProviderOptions(model, "<provider>", options);
-    // (import withEmbeddingProviderOptions from "@askdb/ai")
-    // If the provider has NO embeddings API, throw instead:
+  async createEmbeddingModel(config, options = {}) {
+    // If the SDK has embeddings: build the model, then forward options under the key the
+    // SDK actually reads (verify it in the SDK source — see the contract tests):
+    // const model = (await createProvider(config)).embedding(config.model);
+    // return withEmbeddingProviderOptions(model, "<provider>", options);
+    // If the provider has NO embeddings API, make this a plain (non-async) method that throws:
     throw new Error(
       "<ProviderName> does not provide an embeddings API. Configure a different " +
         "embedding provider while using <ProviderName> for chat.",
     );
   },
+  // resolveProviderOptions(config, { reasoningEffort }) — only if the provider has a
+  // reasoning knob; return undefined for models that don't support it.
+};
+
+export const <provider>Builtin: BuiltinAiProvider = {
+  provider: "<provider>",
+  label: "<ProviderName>",
+  aliases: [],
+  peerPackage: PEER_PACKAGE,
+  env: ENV_SPEC,
+  embeddings: false, // true if createEmbeddingModel builds a model
+  configHint: CONFIG_HINT,
+  adapter: <provider>Provider,
 };
 ```
 
 Rules:
 
-- Provider-specific connection settings beyond apiKey/baseURL/model (an Azure-style
-  resource name, region, project id) go into `config.providerOptions` inside a custom
-  `resolveConfig` wrapper around `resolveBaseConfig`, never as new `AiConfig` fields —
-  see `packages/ai-azure/src/index.ts` for the pattern, including validation that throws
-  a clear message when a required setting is missing.
+- Provider-specific connection settings beyond apiKey/baseURL/model (an Azure-style resource
+  name, region, project id) go into `config.providerOptions` inside a custom `resolveConfig`
+  wrapper around `resolveBaseConfig`, never as new `AiConfig` fields — see
+  `packages/ai/src/providers/azure.ts`, including validation that throws a clear message when a
+  required setting is missing.
 - Auth that is not an API key (OAuth, SigV4/AWS credentials): **STOP and report** —
-  `AiConfig.apiKey` is required by contract and the no-key-means-disabled rule; that
-  contract change needs its own design pass.
+  `AiConfig.apiKey` is required by contract and the no-key-means-disabled rule; that contract
+  change needs its own design pass.
+
+## Step 2 — Register it
+
+1. Add `<provider>Builtin` to `BUILTIN_AI_PROVIDERS` in `packages/ai/src/providers/index.ts`
+   (display order: append unless told otherwise) and re-export `<provider>Provider` there and
+   from `packages/ai/src/index.ts`.
+2. In `packages/ai/package.json`, add `<sdk>` to `peerDependencies` **and**
+   `peerDependenciesMeta` (`{ "optional": true }`) and to `devDependencies`, using the same
+   major range style as the other `@ai-sdk/*` entries.
+3. Add `<sdk>` to `dependencies` of the batteries-included surfaces: `apps/cli`,
+   `apps/http-api`, `apps/studio`. No code changes there — they call `createAiRegistry()`,
+   which registers every built-in.
 
 ## Step 3 — Tests
 
-`packages/ai-<provider>/src/index.test.ts`, modeled on
-`packages/ai-openai/src/index.test.ts` (`vi.hoisted` + `vi.mock` of the SDK). Required
-cases: provider id; language-model construction passes apiKey and baseURL; embeddings
-(construction with forwarded options, or the throw with a message containing
-"embeddings"); `resolveConfig` resolves the native key var; default model applied;
-returns `undefined` when no key is configured.
+- `packages/ai/src/providers/<provider>.test.ts`, modeled on `anthropic.test.ts`
+  (`vi.hoisted` + `vi.mock("<sdk>")`; the mock also intercepts the dynamic import). Required
+  cases: provider id; language-model construction passes apiKey and baseURL (remember to
+  `await` the factory); embeddings (construction with forwarded options, or the throw with a
+  message containing "embeddings"); `resolveConfig` resolves the native key var; default model
+  applied; returns `undefined` when no key is configured.
+- `packages/ai/src/providers/<provider>.contract.test.ts`, modeled on
+  `openai.contract.test.ts`: the **real** SDK with `vi.stubGlobal("fetch")`, asserting the
+  HTTP body carries the model id and any provider options you emit.
+- Update the expectations in `packages/ai/src/registry.test.ts` (built-in names/order, peer
+  table, setup helpers) and `packages/ai/src/provider.test.ts` (`aiKeyMissingMessage`).
 
-**Verify**: `pnpm install && pnpm --filter @askdb/ai-<provider> build && pnpm --filter @askdb/ai-<provider> test` → exit 0.
+**Verify**: `pnpm install && pnpm --filter @askdb/ai build && pnpm --filter @askdb/ai test` → exit 0.
 
-## Step 4 — Wire into the monorepo
+## Step 4 — Config branch (required for built-ins)
 
-1. **Surfaces (batteries-included policy — all three):** add
-   `"@askdb/ai-<provider>": "workspace:*"` to dependencies of `apps/cli`,
-   `apps/http-api`, `apps/studio`; import the adapter and append it to
-   the `createAiRegistry([...])` array in `apps/cli/src/cli.ts`,
-   `apps/http-api/src/server.ts`, `apps/studio/src/server.ts`.
-2. **Smoke test:** add `packages/ai-<provider>` to the pack list in
-   `examples/installable-smoke/run.sh` (alongside the other `packages/ai-*` entries).
-3. **Config package (optional but expected for first-party providers):** in
-   `packages/config` add a dedicated branch mirroring the anthropic one — a
-   `<Provider>Config` type in `src/types.ts`, an `apply<Provider>Ai()` in
-   `src/flatten.ts` writing the native env keys plus `ASKDB_AI_MODEL`, a
-   `DEFAULT_<PROVIDER>_CHAT_MODEL` in `src/defaults.ts`, and flatten tests. If you skip
-   this, the provider is still usable via the generic custom-provider branch
-   (`provider: "<provider>"` flattens to the universal `ASKDB_AI_*` keys) — say so in
-   the changeset.
+`packages/ai/src/providers/config-drift.test.ts` fails until `@askdb/config` knows the provider.
+`@askdb/config` must not depend on `@askdb/ai`, so mirror it there:
 
-**Verify**: `pnpm build && pnpm lint && pnpm test` → exit 0;
-`grep -rln "<provider>Provider" apps` → 3 files.
+- `src/constants.ts`: append `<provider>` to `ASKDB_AI_PROVIDERS`.
+- `src/defaults.ts` (+ export from `src/index.ts`): `DEFAULT_<PROVIDER>_CHAT_MODEL`, equal to
+  `ENV_SPEC.defaultModel`; add it to the drift test's defaults map.
+- `src/types.ts`: a `<Provider>Config` type, add it to `AiProviderConfigs`, a
+  `<Provider>AiConfig` branch, and the `AskDbAiConfig` union (export both from `src/index.ts`).
+- `src/flatten.ts`: an `apply<Provider>Ai()` writing the native env keys plus `ASKDB_AI_MODEL`,
+  and a branch using `requireProviderBranch`.
+- `src/config.test.ts`: flatten tests for the new branch; update the `ASKDB_AI_PROVIDERS` list
+  test.
+
+Also add the provider to Studio's browser-side list in
+`apps/studio/src/web/views/setup/types.ts` (`AI_PROVIDERS`, `SetupAiProvider`) and to
+`PROVIDER_WIRING` in `apps/studio/src/web/views/playground/GetTheCodePanel.tsx`;
+`apps/studio/src/setup-providers.test.ts` fails until the setup list matches. `askdb init`
+derives its choices from the table and needs no change.
+
+**Verify**: `pnpm build && pnpm lint && pnpm test` → exit 0.
 
 ## Step 5 — Docs
 
 - `docs/integration/installable-package.md`: add a provider recipe section (env form +
   `askdb.config.ts` form), formatted like the existing provider sections.
-- `docs/architecture.md`: add the package to the package-map mermaid, the
-  dependency-boundaries mermaid, and the package table (follow the existing `ai-*` rows).
-- Docs site: `apps/docs-site/src/content/docs/reference/packages.mdx` (adapter install
-  list) and `reference/config.mdx` (env-var table) — match surrounding formatting.
+- `packages/ai/README.md`: add the provider to the built-in provider table.
+- Docs site: `apps/docs-site/src/content/docs/reference/packages.mdx` (provider install tabs)
+  and `reference/config.mdx` (env-var table) — match surrounding formatting.
 
 **Verify**: `pnpm docs:build` → exit 0.
 
 ## Step 6 — Changeset and final gate
 
-Create `.changeset/add-<provider>-provider.md`: minor bump for `@askdb/ai-<provider>`
-(new) and every app/package whose dependencies changed; body modeled on
-`.changeset/add-google-gemini-provider.md` (state the env vars, the default model, and
-the config branch or its absence).
+Create `.changeset/add-<provider>-provider.md`: minor for `@askdb/ai` and `@askdb/config`,
+patch for `askdb`, `@askdb/http-api`, `@askdb/studio` (new dependency). State the env vars, the
+default model, the peer package to install, and the config branch. Run
+`pnpm changeset status` and confirm no package is planned for a major bump.
 
 **Final gate (all must pass):**
 
@@ -185,6 +217,6 @@ git status   # only intended files changed
 - `@ai-sdk/<provider>` doesn't exist, is unmaintained, or its major version differs from
   the `@ai-sdk/*` majors already in the repo — report options instead of pinning blind.
 - The SDK factory doesn't follow the `create<X>(settings)(modelId)` shape.
-- Auth is not API-key based (see Step 2).
-- The prerequisite greps fail (pre-contract-v2 codebase).
+- Auth is not API-key based (see Step 1).
+- The prerequisite greps fail.
 - Any final-gate command fails twice after a reasonable fix attempt.
