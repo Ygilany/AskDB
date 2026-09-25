@@ -302,10 +302,6 @@ node -e "
       '@askdb/config': 'file:$CONFIG_TARBALL',
       '@askdb/core': 'file:$CORE_TARBALL',
       '@askdb/ai': 'file:$AI_TARBALL',
-      '@askdb/ai-openai': 'file:$AI_OPENAI_TARBALL',
-      '@askdb/ai-azure': 'file:$AI_AZURE_TARBALL',
-      '@askdb/ai-google': 'file:$AI_GOOGLE_TARBALL',
-      '@askdb/ai-anthropic': 'file:$AI_ANTHROPIC_TARBALL',
       '@askdb/client': 'file:$CLIENT_TARBALL',
       '@askdb/introspect': 'file:$INTROSPECT_TARBALL',
       '@askdb/connectors': 'file:$CONNECTORS_TARBALL',
@@ -370,6 +366,17 @@ export default defineConfig({
   },
 } satisfies AskDbConfig);
 SMOKEASKDB
+
+echo "smoke: batteries-included surfaces resolve every built-in provider SDK…"
+# The apps depend on @askdb/ai plus all four @ai-sdk/* packages (no @askdb/ai-*
+# adapters), so every built-in provider must lazily load its SDK here.
+(cd "$WORK/apps" && node --input-type=module -e "
+  const { createAiRegistry } = await import('@askdb/ai');
+  const ai = createAiRegistry();
+  for (const provider of ['openai', 'azure', 'google', 'anthropic', 'gateway']) {
+    await ai.createLanguageModel({ provider, apiKey: 'smoke-key', model: 'm', providerOptions: { resourceName: 'smoke' } });
+  }
+")
 
 echo "smoke: askdb cli bin…"
 (cd "$WORK/apps" && ./node_modules/.bin/askdb --help | grep -q 'AskDB')

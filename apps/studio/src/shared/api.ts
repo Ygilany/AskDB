@@ -264,7 +264,7 @@ export type SetupConfigRequest = {
   connectionEnv?: string;
   sqliteFile?: string;
   prismaSchema?: string;
-  aiProvider: "openai" | "anthropic" | "google" | "azure" | "foundry";
+  aiProvider: "openai" | "anthropic" | "google" | "azure" | "foundry" | "gateway";
   /** Env var NAME for the model API key — values never travel through this API. */
   aiKeyEnv?: string;
   /** Env var NAME for the model override — values never travel through this API. */

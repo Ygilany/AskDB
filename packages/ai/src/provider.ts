@@ -4,10 +4,10 @@ import type { ReasoningSettings } from "./reasoning.js";
 /**
  * AI provider selector. AskDB is BYO-LanguageModel at the function level
  * (see `ask()`), but the bundled apps (CLI, HTTP API, Studio) all need
- * to construct one from environment variables. This package now owns only the
- * universal AskDB precedence rules and registry dispatch. Individual provider
- * adapters own their native env vars, aliases, defaults, and connection
- * options.
+ * to construct one from environment variables. This module owns the adapter
+ * contract and the universal AskDB precedence rules; each provider adapter
+ * (built in under `./providers/`, or supplied by the host) owns its native env
+ * vars, aliases, defaults, and connection options.
  */
 export type AiProvider = string;
 
@@ -186,8 +186,20 @@ export type AiProviderAdapter = {
   ): Record<string, unknown> | undefined;
 };
 
+/**
+ * One entry passed to `createAiRegistry()`: either the name (or alias) of a
+ * provider built into `@askdb/ai` (e.g. `"openai"`, `"foundry"`), or an
+ * {@link AiProviderAdapter} object for a custom / third-party provider.
+ */
+export type AiProviderSelector = AiProvider | AiProviderAdapter;
+
+/**
+ * What `createAiRegistry()` accepts: a list of built-in provider names and/or
+ * adapter objects, or a record keyed by provider name. Omit it entirely to
+ * register every built-in provider.
+ */
 export type AiProviderAdapters =
-  | readonly AiProviderAdapter[]
+  | readonly AiProviderSelector[]
   | Partial<Record<AiProvider, AiProviderAdapter>>;
 
 export type AiRegistry = {
@@ -234,170 +246,3 @@ export type AiRegistry = {
    */
   keyMissingMessage(context: string): string;
 };
-
-export function createAiRegistry(
-  adapters: AiProviderAdapters,
-): AiRegistry {
-  const byProvider = normalizeAdapters(adapters);
-
-  function adapterFor(provider: AiProvider): AiProviderAdapter {
-    const adapter = byProvider.get(normalizeProvider(provider));
-    if (!adapter) {
-      throw new Error(aiProviderMissingMessage(provider));
-    }
-    return adapter;
-  }
-
-  function selectAdapter(env: AiEnv): AiProviderAdapter {
-    const raw = normalizeProvider(env.ASKDB_AI_PROVIDER ?? "");
-    const provider = raw || "openai";
-    const adapter = byProvider.get(provider);
-    if (!adapter) {
-      if (raw) {
-        throw new Error(
-          `Unknown ASKDB_AI_PROVIDER "${env.ASKDB_AI_PROVIDER}". Registered providers: ${[
-            ...byProvider.keys(),
-          ].join(", ")}.`,
-        );
-      }
-      throw new Error(aiProviderMissingMessage(provider));
-    }
-    return adapter;
-  }
-
-  function resolveAiConfig(
-    env: AiEnv,
-    options: { modelDefault?: string } = {},
-  ): AiConfig | undefined {
-    const adapter = selectAdapter(env);
-    return adapter.resolveConfig(env, { usage: "language", ...options });
-  }
-
-  function resolveEmbeddingConfig(
-    env: AiEnv,
-    options: { modelDefault?: string; modelEnvVar?: string } = {},
-  ): AiConfig | undefined {
-    const adapter = selectAdapter(env);
-    return adapter.resolveConfig(env, { usage: "embedding", ...options });
-  }
-
-  return {
-    hasProvider(provider) {
-      return byProvider.has(normalizeProvider(provider));
-    },
-    resolveAiConfig,
-    resolveEmbeddingConfig,
-    async createLanguageModel(config) {
-      return adapterFor(config.provider).createLanguageModel(config);
-    },
-    async createEmbeddingModel(config, options = {}) {
-      return adapterFor(config.provider).createEmbeddingModel(config, options);
-    },
-    async createLanguageModelFromEnv(env, options = {}) {
-      const config = resolveAiConfig(env, options);
-      if (!config) return undefined;
-      return adapterFor(config.provider).createLanguageModel(config);
-    },
-    async createEmbeddingModelFromEnv(env, options = {}) {
-      const config = resolveEmbeddingConfig(env, options);
-      if (!config) return undefined;
-      return adapterFor(config.provider).createEmbeddingModel(config, options);
-    },
-    resolveProviderOptions(config, settings) {
-      return adapterFor(config.provider).resolveProviderOptions?.(config, settings);
-    },
-    keyMissingMessage(context: string): string {
-      // Collect configHint from unique adapter objects (aliases share the same object).
-      const seen = new Set<AiProviderAdapter>();
-      const hints: string[] = [];
-      for (const adapter of byProvider.values()) {
-        if (!seen.has(adapter)) {
-          seen.add(adapter);
-          if (adapter.configHint) {
-            hints.push(adapter.configHint);
-          }
-        }
-      }
-      if (hints.length === 0) {
-        return aiKeyMissingMessage(context);
-      }
-      return `${context}: no AI API key configured. ${hints.join(" ")}`;
-    },
-  };
-}
-
-/**
- * Human-readable message describing how to configure AI, used by callers
- * when no key is configured.
- *
- * @deprecated Use {@link AiRegistry.keyMissingMessage}(context) instead.
- * The registry method assembles hints from registered adapters automatically.
- */
-export function aiKeyMissingMessage(context: string): string {
-  return (
-    `${context}: no AI API key configured. ` +
-    `For OpenAI, set ai.provider: "openai" and ai.providerConfig.openai.apiKey in askdb.config.*. ` +
-    `For Azure / Microsoft Foundry, set ai.provider: "azure" and ai.providerConfig.azure.apiKey in askdb.config.*. ` +
-    `For Anthropic Claude, set ai.provider: "anthropic" and ai.providerConfig.anthropic.apiKey in askdb.config.*. ` +
-    `For Google Gemini, set ai.provider: "google" and ai.providerConfig.google.apiKey in askdb.config.*.`
-  );
-}
-
-/**
- * First-party adapter packages, keyed by every provider id/alias they
- * register. Aliases (e.g. `foundry`) map to the package that owns them.
- */
-const FIRST_PARTY_ADAPTER_PACKAGES: Record<string, { pkg: string; exportName: string }> = {
-  openai: { pkg: "@askdb/ai-openai", exportName: "openaiProvider" },
-  azure: { pkg: "@askdb/ai-azure", exportName: "azureProvider" },
-  "azure-openai": { pkg: "@askdb/ai-azure", exportName: "azureProvider" },
-  foundry: { pkg: "@askdb/ai-azure", exportName: "azureProvider" },
-  anthropic: { pkg: "@askdb/ai-anthropic", exportName: "anthropicProvider" },
-  google: { pkg: "@askdb/ai-google", exportName: "googleProvider" },
-};
-
-export function aiProviderMissingMessage(provider: AiProvider): string {
-  const firstParty = FIRST_PARTY_ADAPTER_PACKAGES[normalizeProvider(provider)];
-  if (firstParty) {
-    return (
-      `AI provider "${provider}" is not registered. ` +
-      `Install ${firstParty.pkg} and pass its \`${firstParty.exportName}\` adapter to createAiRegistry().`
-    );
-  }
-  return (
-    `AI provider "${provider}" is not registered. ` +
-    `There is no first-party AskDB adapter for it: pass an AiProviderAdapter whose ` +
-    `\`provider\` (or one of its \`aliases\`) is "${provider}" to createAiRegistry(), ` +
-    `or pass an AI SDK LanguageModel to ask() directly.`
-  );
-}
-
-function normalizeAdapters(
-  adapters: AiProviderAdapters,
-): Map<AiProvider, AiProviderAdapter> {
-  const entries = Array.isArray(adapters)
-    ? adapters.map((adapter) => [adapter.provider, adapter] as const)
-    : Object.entries(adapters).filter(isAdapterEntry);
-  const byProvider = new Map<AiProvider, AiProviderAdapter>();
-  for (const [provider, adapter] of entries) {
-    if (adapter.provider !== provider) {
-      throw new Error(
-        `AI provider adapter mismatch: registry key "${provider}" points to adapter "${adapter.provider}".`,
-      );
-    }
-    for (const name of [adapter.provider, ...(adapter.aliases ?? [])]) {
-      byProvider.set(normalizeProvider(name), adapter);
-    }
-  }
-  return byProvider;
-}
-
-function normalizeProvider(provider: string): string {
-  return provider.toLowerCase().trim();
-}
-
-function isAdapterEntry(
-  entry: [string, AiProviderAdapter | undefined],
-): entry is [AiProvider, AiProviderAdapter] {
-  return entry[1] !== undefined;
-}

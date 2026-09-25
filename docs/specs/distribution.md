@@ -1,7 +1,7 @@
 # Feature: Distribution
 
 **Status:** Complete  
-**Packages:** `@askdb/core`, `@askdb/ai`, `@askdb/ai-openai`, `@askdb/ai-azure`, `@askdb/ai-google`, `@askdb/connectors` (deprecated shim), `@askdb/postgres`, `@askdb/mysql`, `@askdb/sqlite`, `@askdb/sqlserver`, `@askdb/prisma`, `@askdb/introspect`, `@askdb/rag`, `@askdb/enrich`, `askdb`
+**Packages:** `@askdb/core`, `@askdb/ai`, `@askdb/ai-openai`, `@askdb/ai-azure`, `@askdb/ai-google`, `@askdb/ai-anthropic` (the four `@askdb/ai-*` packages are deprecated shims), `@askdb/connectors` (deprecated shim), `@askdb/postgres`, `@askdb/mysql`, `@askdb/sqlite`, `@askdb/sqlserver`, `@askdb/prisma`, `@askdb/introspect`, `@askdb/rag`, `@askdb/enrich`, `askdb`
 
 ## Overview
 
@@ -41,10 +41,8 @@ Published packages and their primary exports:
 | Package | Primary export |
 |---|---|
 | `@askdb/core` | `ask()`, `AskDbLanguageModel`, schema loader, types, logging factory |
-| `@askdb/ai` | `resolveAiConfig`, `createAiRegistry`, `AiRegistry`, provider adapter types |
-| `@askdb/ai-openai` | OpenAI `AiProviderAdapter` |
-| `@askdb/ai-azure` | Azure OpenAI / Foundry `AiProviderAdapter` |
-| `@askdb/ai-google` | Google Generative AI `AiProviderAdapter` |
+| `@askdb/ai` | `createAiRegistry`, `AiRegistry`, provider adapter types, `BUILTIN_AI_PROVIDERS`, and the built-in adapters (`openaiProvider`, `azureProvider`, `googleProvider`, `anthropicProvider`, `gatewayProvider`); `@ai-sdk/*` SDKs are optional peers |
+| `@askdb/ai-openai`, `@askdb/ai-azure`, `@askdb/ai-google`, `@askdb/ai-anthropic` | Deprecated: re-export the matching adapter from `@askdb/ai` |
 | `@askdb/connectors` | Deprecated: re-exports the registry from `@askdb/introspect` and redaction helpers from `@askdb/introspect/kit` |
 | `@askdb/postgres` | `postgresDialect`, `postgresConnectorProvider`, `postgresConnector`, `createPostgresCatalogRunner` |
 | `@askdb/mysql` | `mysqlConnectorProvider` |

@@ -69,9 +69,14 @@ export type CreateAskDbOptions = {
   /** Runtime snapshot, e.g. from `getAskDbRuntimeConfig()`. */
   config: AskDbRuntimeConfig;
   /**
-   * AI provider adapters (e.g. `[openaiProvider]` from `@askdb/ai-openai`).
-   * The client builds the registry internally — the common path; you never
-   * import from `@askdb/ai`. Pass exactly one of `providers` or `registry`.
+   * Which AI providers the client can build models for. Optional: when neither
+   * `providers` nor `registry` is passed, every provider built into `@askdb/ai`
+   * is registered and `ai.provider` in your config picks one — install the
+   * matching SDK (e.g. `@ai-sdk/openai`), which is loaded on first use.
+   *
+   * Pass built-in names to restrict the set (`providers: ["openai"]`), or
+   * `AiProviderAdapter` objects for custom providers (mixable with names).
+   * Pass at most one of `providers` or `registry`.
    */
   providers?: AiProviderAdapters;
   /**
@@ -110,11 +115,9 @@ function resolveRegistry(options: CreateAskDbOptions): AiRegistry {
     throw new Error("createAskDb: pass either `providers` or `registry`, not both.");
   }
   if (options.registry) return options.registry;
-  if (options.providers) return createAiRegistry(options.providers);
-  throw new Error(
-    "createAskDb: pass `providers` with the AI adapters for your configured provider " +
-      '(e.g. `providers: [openaiProvider]` from "@askdb/ai-openai"), or a prebuilt `registry`.',
-  );
+  // No providers/registry: register every built-in provider (each loads its
+  // @ai-sdk/* package lazily), so `createAskDb({ config })` is enough.
+  return createAiRegistry(options.providers);
 }
 
 export function createAskDb(options: CreateAskDbOptions): AskDbClient {
