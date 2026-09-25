@@ -3,6 +3,8 @@ import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { getBuiltinAiProviderSetup, listBuiltinAiProviderSetups } from "@askdb/ai";
+import { ASKDB_AI_PROVIDERS, type AskDbAiProviderId } from "@askdb/config";
 
 const DEFAULT_CONFIG_PATH = "askdb.config.ts";
 
@@ -16,7 +18,7 @@ export type InitAnswers = {
   sqliteFile?: string;
   prismaSchema?: string;
   schemaOut: string;
-  aiProvider: "openai" | "anthropic" | "google" | "azure" | "foundry";
+  aiProvider: AskDbAiProviderId;
   aiKeyEnv: string;
   aiModelEnv?: string;
   ragStore: "file" | "memory" | "pgvector";
@@ -52,17 +54,19 @@ export type InitPrompter = {
 // Config rendering
 // ---------------------------------------------------------------------------
 
-/** AI provider defaults for key/model env vars */
-const AI_DEFAULTS: Record<
-  InitAnswers["aiProvider"],
-  { keyEnv: string; modelEnv: string; modelField: string }
-> = {
-  openai: { keyEnv: "OPENAI_API_KEY", modelEnv: "OPENAI_MODEL", modelField: "model" },
-  anthropic: { keyEnv: "ANTHROPIC_API_KEY", modelEnv: "ANTHROPIC_MODEL", modelField: "model" },
-  google: { keyEnv: "GOOGLE_GENERATIVE_AI_API_KEY", modelEnv: "GOOGLE_GENERATIVE_AI_MODEL", modelField: "model" },
-  azure: { keyEnv: "AZURE_OPENAI_API_KEY", modelEnv: "AZURE_OPENAI_DEPLOYMENT", modelField: "model" },
-  foundry: { keyEnv: "AZURE_OPENAI_API_KEY", modelEnv: "AZURE_OPENAI_DEPLOYMENT", modelField: "model" },
-};
+/**
+ * Selectable AI providers, in `@askdb/ai`'s built-in table order: every id that has an
+ * `askdb.config.*` branch (`ASKDB_AI_PROVIDERS`), with the key/model env var names to
+ * scaffold. Derived from `@askdb/ai`'s `BUILTIN_AI_PROVIDERS` so it cannot drift.
+ */
+const AI_PROVIDER_SETUPS = listBuiltinAiProviderSetups(ASKDB_AI_PROVIDERS);
+const VALID_AI_PROVIDERS = AI_PROVIDER_SETUPS.map((setup) => setup.id as AskDbAiProviderId);
+
+function aiDefaults(provider: AskDbAiProviderId): { keyEnv: string; modelEnv: string } {
+  const setup = getBuiltinAiProviderSetup(provider);
+  if (!setup) throw new Error(`askdb init: "${provider}" is not a built-in AI provider.`);
+  return setup;
+}
 
 /**
  * Azure / Foundry also need the resource name (or a full endpoint URL) — the
@@ -79,7 +83,7 @@ function azureResourceEnv(answers: InitAnswers): string | undefined {
 
 function renderAiSection(answers: InitAnswers): string {
   const { aiProvider, aiKeyEnv, aiModelEnv } = answers;
-  const modelLine = aiModelEnv ? `\n        ${AI_DEFAULTS[aiProvider].modelField}: env("${aiModelEnv}"),` : "";
+  const modelLine = aiModelEnv ? `\n        model: env("${aiModelEnv}"),` : "";
   const resourceEnv = azureResourceEnv(answers);
   const resourceLine = resourceEnv ? `\n        resourceName: env("${resourceEnv}"),` : "";
   return `  ai: {
@@ -255,7 +259,7 @@ type InitAnswerOverrides = Partial<{
 export function resolveDefaultInitAnswers(overrides: InitAnswerOverrides = {}): InitAnswers {
   const database = overrides.database ?? "postgres";
   const aiProvider = overrides.aiProvider ?? "openai";
-  const aiDefaults = AI_DEFAULTS[aiProvider];
+  const providerDefaults = aiDefaults(aiProvider);
 
   let connectionEnv = overrides.connectionEnv;
   if (!connectionEnv) {
@@ -285,8 +289,8 @@ export function resolveDefaultInitAnswers(overrides: InitAnswerOverrides = {}): 
     prismaSchema: overrides.prismaSchema,
     schemaOut: overrides.schemaOut ?? "./askdb",
     aiProvider,
-    aiKeyEnv: overrides.aiKeyEnv ?? aiDefaults.keyEnv,
-    aiModelEnv: overrides.aiModelEnv ?? aiDefaults.modelEnv,
+    aiKeyEnv: overrides.aiKeyEnv ?? providerDefaults.keyEnv,
+    aiModelEnv: overrides.aiModelEnv ?? providerDefaults.modelEnv,
     ragStore: overrides.ragStore ?? "file",
     pgvectorEnv: overrides.pgvectorEnv,
     studioExecute,
@@ -478,7 +482,6 @@ type InitOptions = {
 };
 
 const VALID_DATABASES = ["postgres", "mysql", "sqlite", "sqlserver", "prisma"] as const;
-const VALID_AI_PROVIDERS = ["openai", "anthropic", "google", "azure", "foundry"] as const;
 const VALID_RAG_STORES = ["file", "memory", "pgvector"] as const;
 
 function parseOptions(argv: readonly string[]): InitOptions {
@@ -668,18 +671,14 @@ export async function runWizard(prompter: InitPrompter): Promise<InitAnswers | n
 
   const aiProvider = await prompter.select<InitAnswers["aiProvider"]>({
     message: "AI provider",
-    choices: [
-      { name: "OpenAI", value: "openai" },
-      { name: "Anthropic", value: "anthropic" },
-      { name: "Google (Gemini)", value: "google" },
-      { name: "Azure OpenAI", value: "azure" },
-      { name: "Azure AI Foundry", value: "foundry" },
-    ],
+    choices: AI_PROVIDER_SETUPS.map((setup) => ({
+      name: setup.label,
+      value: setup.id as AskDbAiProviderId,
+    })),
     default: "openai",
   });
 
-  const aiKeyEnv = AI_DEFAULTS[aiProvider].keyEnv;
-  const aiModelEnv = AI_DEFAULTS[aiProvider].modelEnv;
+  const { keyEnv: aiKeyEnv, modelEnv: aiModelEnv } = aiDefaults(aiProvider);
 
   const ragStore = await prompter.select<InitAnswers["ragStore"]>({
     message: "RAG store",
@@ -1084,7 +1083,7 @@ function printHelp(): void {
       "  --schema-out <dir>            Schema output directory (default: ./askdb)",
       "",
       "AI options:",
-      "  --ai-provider <name>          openai|anthropic|google|azure|foundry (default: openai)",
+      `  --ai-provider <name>          ${VALID_AI_PROVIDERS.join("|")} (default: openai)`,
       "  --ai-key-env <name>           Env var name for API key",
       "  --ai-model-env <name>         Env var name for model override",
       "",

@@ -3,10 +3,6 @@ import { bootstrapAskDbEnv, getAskDbRuntimeConfig } from "@askdb/config";
 import {
   createAiRegistry,
 } from "@askdb/ai";
-import { anthropicProvider } from "@askdb/ai-anthropic";
-import { azureProvider } from "@askdb/ai-azure";
-import { googleProvider } from "@askdb/ai-google";
-import { openaiProvider } from "@askdb/ai-openai";
 import { createAskDb, type DialectResolution } from "@askdb/client";
 import { randomUUID } from "node:crypto";
 import {
@@ -29,7 +25,10 @@ import { Command } from "commander";
 import { runInitCli } from "./init.js";
 import { runIntrospectCli } from "./introspect.js";
 
-const ai = createAiRegistry([openaiProvider, azureProvider, googleProvider, anthropicProvider]);
+// Batteries-included surface: every built-in provider is registered, and each
+// loads its @ai-sdk/* package only when first used, so env config alone
+// selects the provider.
+const ai = createAiRegistry();
 
 // `askdb init` writes templates and should not require a valid askdb.config.
 // `askdb studio` tolerates a missing config too: Studio starts in setup mode
