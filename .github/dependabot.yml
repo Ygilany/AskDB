@@ -1,0 +1,30 @@
+version: 2
+
+updates:
+  # Workflow actions are pinned to full commit SHAs with a `# vX.Y.Z` comment;
+  # Dependabot bumps both the SHA and the comment.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      github-actions:
+        patterns: ["*"]
+    open-pull-requests-limit: 5
+
+  # pnpm workspace: the root directory covers every workspace package via
+  # pnpm-workspace.yaml + pnpm-lock.yaml. All non-major bumps land as one PR;
+  # majors come as individual PRs so each gets its own review.
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+    # pnpm-workspace.yaml sets `minimumReleaseAge: 720` (12h) and pnpm refuses a
+    # lockfile that resolves anything younger, so don't propose brand-new releases.
+    cooldown:
+      default-days: 1
+    groups:
+      npm-minor-patch:
+        patterns: ["*"]
+        update-types: [minor, patch]
+    open-pull-requests-limit: 5
