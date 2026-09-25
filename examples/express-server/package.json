@@ -12,7 +12,7 @@
     "@askdb/ai-openai": "workspace:*",
     "@askdb/client": "workspace:*",
     "@askdb/config": "workspace:*",
-    "express": "^4.22.2",
+    "express": "^5.2.1",
     "pg": "^8.22.0"
   },
   "devDependencies": {
