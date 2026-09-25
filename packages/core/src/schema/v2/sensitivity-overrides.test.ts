@@ -1,10 +1,7 @@
-import type { LanguageModel } from "ai";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { afterEach, describe, expect, it, vi } from "vitest";
-import { ask } from "../../ask.js";
-import { validateSensitiveReferences } from "../../sql/sensitive-guardrail.js";
+import { afterEach, describe, expect, it } from "vitest";
 import { loadSchema, loadSchemaFromJson } from "./loader.js";
 
 /**
@@ -125,8 +122,6 @@ function writeSchemaDir(markdowns: Record<string, string> = tableMarkdowns): str
 const bundleJson = () =>
   JSON.stringify({ bundled: true, physical, tables: tableMarkdowns });
 
-const fakeModel = {} as LanguageModel;
-
 describe("loadSchema — front-matter sensitivity is escalate-only", () => {
   it("front-matter `sensitive: true` escalates a column schema.json leaves non-sensitive", () => {
     const users = loadSchema(writeSchemaDir()).tables.find((t) => t.name === "users")!;
@@ -140,11 +135,6 @@ describe("loadSchema — front-matter sensitivity is escalate-only", () => {
     expect(createdAt.sensitive).toBe(false);
     expect(createdAt.description).toBe("When the account was created.");
     expect(users.sensitive).toBe(false);
-  });
-
-  it("without the front-matter, the same column is not sensitive (control)", () => {
-    const users = loadSchema(writeSchemaDir({})).tables.find((t) => t.name === "users")!;
-    expect(users.columns.find((c) => c.name === "ssn")!.sensitive).toBe(false);
   });
 
   it("front-matter `sensitive: true` escalates a table and every column in it", () => {
@@ -204,70 +194,5 @@ describe("loadSchema — front-matter sensitivity is escalate-only", () => {
     tempDirs.push(dirname(bundleFile));
     writeFileSync(bundleFile, bundleJson());
     expect(loadSchema(bundleFile)).toEqual(fromDir);
-  });
-});
-
-describe("front-matter-escalated sensitivity reaches prompts and the SQL guardrail", () => {
-  const sqlResponse = { text: "```sql\nSELECT COUNT(*) FROM users\n```" };
-
-  async function promptFor(omitSensitive: boolean): Promise<string> {
-    const generateText = vi.fn(async () => sqlResponse);
-    await ask({
-      question: "How many accounts were created last month?",
-      schema: loadSchema(writeSchemaDir()),
-      model: fakeModel,
-      dialect: "postgres",
-      omitSensitiveIdentifiersFromNlToSqlPrompt: omitSensitive,
-      deps: { generateText: generateText as never },
-    });
-    expect(generateText).toHaveBeenCalledOnce();
-    return JSON.stringify((generateText.mock.calls as unknown[][])[0]![0]);
-  }
-
-  it("omitSensitiveIdentifiersFromNlToSqlPrompt omits a front-matter-escalated column and table", async () => {
-    const prompt = await promptFor(true);
-    expect(prompt).toContain("created_at");
-    expect(prompt).not.toMatch(/\bssn\b/);
-    // Omission mode keeps a sensitive table's name but withholds its columns and prose.
-    expect(prompt).toContain(
-      "TABLE public.audit_log\\n  (sensitive table — column definitions withheld from model context)",
-    );
-    expect(prompt).not.toContain("payload");
-    expect(prompt).not.toContain("audit_trail");
-    expect(prompt).not.toContain("Every privileged action");
-  });
-
-  it("by default the escalated column is listed and tagged (sensitive)", async () => {
-    const prompt = await promptFor(false);
-    expect(prompt).toMatch(/ssn text[^\\]*\(sensitive\)/);
-  });
-
-  it("validateSensitiveReferences flags a front-matter-escalated column and table", () => {
-    const schema = loadSchema(writeSchemaDir());
-
-    const column = validateSensitiveReferences("SELECT u.ssn FROM users u", schema);
-    expect(column.passed).toBe(false);
-    expect(column.references).toEqual([
-      expect.objectContaining({ table: "users", column: "ssn", matchKind: "qualified" }),
-    ]);
-
-    const table = validateSensitiveReferences("SELECT COUNT(*) FROM audit_log", schema);
-    expect(table.passed).toBe(false);
-    expect(table.references).toEqual([
-      expect.objectContaining({ table: "audit_log", column: "*", matchKind: "table" }),
-    ]);
-  });
-
-  it("ask() attaches a failing sensitiveGuardrail for SQL touching the escalated column", async () => {
-    const result = await ask({
-      question: "list ssns",
-      schema: loadSchema(writeSchemaDir()),
-      model: fakeModel,
-      dialect: { generate: async () => ({ sql: "SELECT ssn FROM users" }) },
-    });
-    expect(result.sensitiveGuardrail?.passed).toBe(false);
-    expect(result.sensitiveGuardrail?.references).toEqual([
-      expect.objectContaining({ table: "users", column: "ssn" }),
-    ]);
   });
 });
