@@ -19,7 +19,7 @@ import type {
   IntrospectionResult,
   SqlTemplate,
 } from "@askdb/introspect";
-import { compileTableFilters } from "./glob.js";
+import { compileTableFilters } from "@askdb/introspect/kit";
 import { foldIntrospectionResult } from "./describe.js";
 import {
   POSTGRES_TEMPLATE_VERSION,

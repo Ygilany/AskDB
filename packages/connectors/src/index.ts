@@ -10,6 +10,7 @@ export {
   type ConnectorRegistry,
 } from "./registry.js";
 
+// Moved to `@askdb/introspect/kit`; re-exported here for compatibility.
 export {
   REDACTED_SECRET,
   hasUrlScheme,
@@ -18,4 +19,4 @@ export {
   redactSecretKeyValues,
   redactUrlUserinfo,
   type RedactKeyValueOptions,
-} from "./redact.js";
+} from "@askdb/introspect/kit";
