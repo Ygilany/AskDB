@@ -24,6 +24,9 @@ export type TenantGuardrailResult = {
  * have the required predicates. Falls back to conservative rejection
  * when the SQL cannot be proven safe.
  *
+ * Identifiers are matched only in code regions: text inside string literals and
+ * comments never counts as a table reference or a tenant predicate.
+ *
  * In `strict` mode, throws `TenantGuardrailError` on failure.
  * In `warn` mode, returns warnings without throwing.
  */
@@ -162,7 +165,7 @@ function checkScopedTable(
       const placeholder = `:tenant_${rootLabel.toLowerCase().replace(/[^a-z0-9]+/g, "_")}_ids`;
 
       // Check if the tenant column or placeholder appears in the SQL
-      if (mentionsIdentifier(sql, colName) || mentionsIdentifier(sql, placeholder)) {
+      if (mentionsIdentifier(sql, colName) || mentionsPlaceholder(sql, placeholder)) {
         return; // At least one scope path is satisfied
       }
     } else {
@@ -179,7 +182,7 @@ function checkScopedTable(
           const rootColName = extractColumnName(rootTenantCol.tenantIdColumn);
           const rootLabel = rootTenantCol.label;
           const placeholder = `:tenant_${rootLabel.toLowerCase().replace(/[^a-z0-9]+/g, "_")}_ids`;
-          if (mentionsIdentifier(sql, rootColName) || mentionsIdentifier(sql, placeholder)) {
+          if (mentionsIdentifier(sql, rootColName) || mentionsPlaceholder(sql, placeholder)) {
             return; // Join path + root filter present
           }
         }
@@ -247,8 +250,86 @@ function extractColumnName(columnId: string): string {
   return hash !== -1 ? columnId.slice(hash + 1) : columnId;
 }
 
+/**
+ * Lowercase the statement and blank out everything that is not SQL code, so
+ * identifier checks only see code regions. String literals (`'…'` with `''`
+ * escapes, `$tag$…$tag$` bodies) and comments (`-- …`, `/* … *\/`) become spaces.
+ * The output has the same length, so word boundaries at the seams are unchanged.
+ *
+ * Quoted identifiers (`"…"`, `` `…` ``, `[…]`) keep their contents and only lose
+ * their delimiters: `"agency_id"` *is* the identifier `agency_id`, and blanking
+ * it would hide `FROM "orders"` from the table check and skip that table.
+ *
+ * Known gaps (no dialect is threaded here): MySQL's default double-quoted
+ * strings read as identifiers, and backslash escapes inside `'…'` are not
+ * recognized.
+ */
 function normalizeSql(sql: string): string {
-  return sql.toLowerCase();
+  const lower = sql.toLowerCase();
+  const out = lower.split("");
+  const blank = (from: number, to: number): void => {
+    for (let k = from; k < to; k++) if (out[k] !== "\n") out[k] = " ";
+  };
+  const dollarTag = /\$(?:[a-z_][a-z0-9_]*)?\$/y;
+  let i = 0;
+  while (i < lower.length) {
+    const ch = lower[i]!;
+    const next = lower[i + 1];
+    if (ch === "-" && next === "-") {
+      const newline = lower.indexOf("\n", i);
+      const end = newline === -1 ? lower.length : newline;
+      blank(i, end);
+      i = end;
+      continue;
+    }
+    if (ch === "/" && next === "*") {
+      const close = lower.indexOf("*/", i + 2);
+      const end = close === -1 ? lower.length : close + 2;
+      blank(i, end);
+      i = end;
+      continue;
+    }
+    if (ch === "'") {
+      let j = i + 1;
+      while (j < lower.length) {
+        if (lower[j] === "'") {
+          if (lower[j + 1] === "'") {
+            j += 2;
+            continue;
+          }
+          j++;
+          break;
+        }
+        j++;
+      }
+      blank(i, j);
+      i = j;
+      continue;
+    }
+    if (ch === "$") {
+      dollarTag.lastIndex = i;
+      const tag = dollarTag.exec(lower);
+      const close = tag ? lower.indexOf(tag[0], i + tag[0].length) : -1;
+      if (tag && close !== -1) {
+        const end = close + tag[0].length;
+        blank(i, end);
+        i = end;
+        continue;
+      }
+      i++;
+      continue;
+    }
+    if (ch === '"' || ch === "`" || ch === "[") {
+      const close = lower.indexOf(ch === "[" ? "]" : ch, i + 1);
+      out[i] = " ";
+      if (close === -1) break;
+      out[close] = " ";
+      i = close + 1;
+      continue;
+    }
+    i++;
+  }
+  return out.join("");
 }
 
 function mentionsTable(normalizedSql: string, tableName: string): boolean {
@@ -258,6 +339,15 @@ function mentionsTable(normalizedSql: string, tableName: string): boolean {
 
 function mentionsIdentifier(normalizedSql: string, identifier: string): boolean {
   const pattern = new RegExp(`\\b${escapeRegex(identifier.toLowerCase())}\\b`);
+  return pattern.test(normalizedSql);
+}
+
+/**
+ * `\b` cannot anchor a token that starts with `:` (it needs a word character on
+ * one side), so tenant placeholders get their own boundary check.
+ */
+function mentionsPlaceholder(normalizedSql: string, placeholder: string): boolean {
+  const pattern = new RegExp(`(?<![\\w:])${escapeRegex(placeholder.toLowerCase())}(?!\\w)`);
   return pattern.test(normalizedSql);
 }
 
