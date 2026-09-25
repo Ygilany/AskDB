@@ -3,10 +3,6 @@ import { getAskDbRuntimeConfig, isAskDbDebugEnabled } from "@askdb/config";
 import {
   createAiRegistry,
 } from "@askdb/ai";
-import { anthropicProvider } from "@askdb/ai-anthropic";
-import { azureProvider } from "@askdb/ai-azure";
-import { googleProvider } from "@askdb/ai-google";
-import { openaiProvider } from "@askdb/ai-openai";
 import { createAskDb, type DialectResolution } from "@askdb/client";
 import { randomUUID } from "node:crypto";
 import {
@@ -31,7 +27,10 @@ import { runIntrospectCli } from "./introspect.js";
 import { MissingAskDbConfigError, requireAskDbConfig } from "./project-config.js";
 import { readCliVersion } from "./version.js";
 
-const ai = createAiRegistry([openaiProvider, azureProvider, googleProvider, anthropicProvider]);
+// Batteries-included surface: every built-in provider is registered, and each
+// loads its @ai-sdk/* package only when first used, so env config alone
+// selects the provider.
+const ai = createAiRegistry();
 
 function printCliError(error: unknown): void {
   if (error instanceof MissingAskDbConfigError) {
