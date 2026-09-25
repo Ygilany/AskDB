@@ -10,8 +10,10 @@ PostgreSQL integration for AskDB. Bundles four pieces:
 ## Install
 
 ```bash
-pnpm add @askdb/core @askdb/introspect @askdb/postgres pg
+pnpm add @askdb/core @askdb/introspect @askdb/postgres ai pg
 ```
+
+`ai` (Vercel AI SDK 6 or 7) is a required peer dependency of `@askdb/core`; your app owns its version.
 
 `pg` is an **optional peer dependency**. Install it only if you plan to use live introspection mode. The CLI does not bundle `pg`; install it in your project or include it in the same one-off command:
 

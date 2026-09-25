@@ -21,7 +21,9 @@ import InstallTabs from "../../../components/InstallTabs.astro";
 
 The dialect-agnostic NL-to-SQL pipeline. Schema loading, prompt construction, validation, and tenant-scope handling all live here.
 
-<InstallTabs pkgs="@askdb/core" />
+<InstallTabs pkgs="@askdb/core ai" />
+
+`ai` (the Vercel AI SDK) is a required **peer dependency** of `@askdb/core`, supported at `^6 || ^7`. Your app owns its version: `ask()` receives a model your app constructs, so core uses your app's `ai` instead of bundling its own — upgrading AskDB never forces an AI SDK upgrade on the rest of your app. Build the model with an AI SDK provider package (for example `@ai-sdk/openai`), or through `@askdb/ai` plus a provider adapter (the config-driven path, which currently requires AI SDK 7).
 
 **Key exports**
 

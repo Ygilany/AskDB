@@ -54,6 +54,10 @@ codebase already constructs AI SDK models before picking — don't introduce a s
 provider-config system for one call site. Full decision rule and per-provider recipes:
 `/guides/bring-your-own-model/`.
 
+`ai` is a **peer dependency** of `@askdb/core` (`^6 || ^7`): add `ai` to the host app's own
+`package.json` next to `@askdb/core` and reuse the host's existing AI SDK version — never install a
+second copy. The `@askdb/ai-*` / `@askdb/client` config-driven path currently requires `ai@7`.
+
 ## Safety and trust boundaries
 
 - AskDB returns SQL; it never executes it. Don't wire generated SQL to a database call without

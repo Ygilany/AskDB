@@ -9,8 +9,10 @@ SQLite integration for AskDB. Bundles three pieces:
 ## Install
 
 ```bash
-pnpm add @askdb/core @askdb/introspect @askdb/sqlite
+pnpm add @askdb/core @askdb/introspect @askdb/sqlite ai
 ```
+
+`ai` (Vercel AI SDK 6 or 7) is a required peer dependency of `@askdb/core`; your app owns its version.
 
 `better-sqlite3` is an **optional peer dependency** — install it only when using live introspection mode:
 
