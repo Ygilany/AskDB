@@ -332,14 +332,13 @@ function tenantMarker(style: MarkerStyle, ordinal: number): string {
  *
  * `startIndex` is the 1-based position of the first tenant value in the params
  * array the SQL will run with (`1` when tenant values are the only params).
- * `nextIndex` is `startIndex + params.length`.
  */
 export function replacePlaceholdersWithParams(
   sql: string,
   resolved: ResolvedPlaceholder[],
   startIndex: number = 1,
   dialect?: TenantSqlDialect,
-): { sql: string; params: unknown[]; nextIndex: number } {
+): { sql: string; params: unknown[] } {
   const style = tenantMarkerStyle(dialect);
   const params: unknown[] = [];
   let idx = startIndex;
@@ -353,7 +352,7 @@ export function replacePlaceholdersWithParams(
       }),
     dialect,
   );
-  return { sql: out, params, nextIndex: idx };
+  return { sql: out, params };
 }
 
 // ---------------------------------------------------------------------------
