@@ -2,7 +2,7 @@ import {
   hasUrlScheme,
   redactSecretKeyValues,
   redactUrlUserinfo,
-} from "@askdb/connectors";
+} from "@askdb/introspect/kit";
 
 /**
  * Mask secrets in a Postgres connection string for display or logging.

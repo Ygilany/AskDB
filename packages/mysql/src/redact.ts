@@ -3,7 +3,7 @@ import {
   redactConnectionStringGeneric,
   redactSecretKeyValues,
   redactUrlUserinfo,
-} from "@askdb/connectors";
+} from "@askdb/introspect/kit";
 
 /**
  * Mask secrets in a MySQL connection string for display or logging.

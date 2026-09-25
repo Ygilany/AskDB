@@ -50,6 +50,9 @@ Display/logging helpers the engine packages build their `redactConnectionString(
 (`@askdb/postgres`, `@askdb/mysql`, `@askdb/sqlserver`, `@askdb/sqlite` each export one that
 knows its own formats). Output is for humans only — never pass it back to a driver.
 
+These now live in `@askdb/introspect/kit` and are re-exported here unchanged for compatibility;
+new code should import them from `@askdb/introspect/kit`.
+
 - `redactConnectionStringGeneric(input)` — masks URL userinfo passwords and secret `key=value`
   pairs (`?password=`, JDBC-style `;password=`, ADO.NET `Password=` / `Pwd=`); the fallback for
   providers without a dedicated redactor
