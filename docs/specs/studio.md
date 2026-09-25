@@ -66,6 +66,7 @@ Studio is a local dev tool whose API can execute SQL against the configured data
 - **Origin / content type:** non-GET/HEAD/OPTIONS `/api/*` requests with an `Origin` header must be same-origin with the request's `Host` (`403` otherwise); requests with a body must be `Content-Type: application/json` (`415` otherwise), which forces a CORS preflight that Studio never answers.
 - **Defense in depth:** setup (`/api/setup/*`), resync (`POST /api/introspect`), and driver install stay loopback-client-only. `index.html` is served with `X-Frame-Options: DENY`.
 - **Known limit:** on a non-loopback bind, anyone who can load the page from an allowed address gets the token. The token protects against cross-site browser attacks, not against untrusted networks.
+- **Design record:** why this is an in-page per-launch token rather than a Jupyter-style login token, the accepted limits, and the triggers for revisiting are in [ADR 0009](../adrs/0009-studio-local-api-protection.md).
 - **Setup config writer:** every value interpolated into the generated `askdb.config.ts` is emitted with `JSON.stringify` (the file is later executed via jiti); env names must match `^[A-Z][A-Z0-9_]*$`, and paths reject control characters. `askdb init` uses the same escaping.
 
 ## Test bar
