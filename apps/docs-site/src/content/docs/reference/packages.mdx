@@ -164,6 +164,8 @@ The engine-agnostic introspection contract and the schema-directory writer. Use 
 
 <InstallTabs pkgs="@askdb/introspect" />
 
+The `@askdb/introspect/kit` subpath holds the shared helpers the engine packages are built on — optional-driver loading (`createOptionalDriverLoader`, `isDriverInstalled`), table-glob filters (`compileTableFilters`, `ambiguousFilterWarnings`), Schema v2 ids (`makeTableId`, `makeColumnId`), catalog-row folding (`rowsToRecords`, `groupBy`, `buildOrderedGroups`, `mapFkAction`), and connection-string redaction (`redactUrlUserinfo`, `redactSecretKeyValues`, `redactConnectionStringGeneric`). Import it when you write a connector for a new engine.
+
 ### `@askdb/prisma`
 
 File-only connector that reads `.prisma` schema files and produces AskDB physical metadata — no live database needed. Pair with an engine adapter for SQL generation at runtime.
@@ -250,7 +252,7 @@ See [the CLI reference](/reference/cli/).
 
 | Package | Depends on |
 | --- | --- |
-| `@askdb/postgres`, `@askdb/mysql`, `@askdb/sqlite`, `@askdb/sqlserver` | `@askdb/core`, `@askdb/connectors` |
+| `@askdb/postgres`, `@askdb/mysql`, `@askdb/sqlite`, `@askdb/sqlserver` | `@askdb/core`, `@askdb/introspect`, `@askdb/connectors` |
 | `@askdb/prisma` | `@askdb/introspect`, `@askdb/connectors` |
 | `@askdb/connectors` | `@askdb/introspect` |
 | `@askdb/ai` | AI SDK core package (`ai`) |

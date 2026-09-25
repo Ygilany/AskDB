@@ -22,6 +22,7 @@ import { buildSchemaIndex, createMemoryStore, type Embedder } from "@askdb/rag";
 import { createFileStore } from "@askdb/rag/stores/file";
 import { buildDefaultTableBody, replaceH2Section } from "@askdb/enrich";
 import { introspect, renderToSchemaV2, type CatalogQueryRunner } from "@askdb/introspect";
+import { compileTableFilters, createOptionalDriverLoader, makeTableId } from "@askdb/introspect/kit";
 import {
   createPostgresConnector,
   postgresDialect,
@@ -133,6 +134,14 @@ async function main(): Promise<void> {
   // Verify @askdb/introspect public functions are reachable.
   if (typeof introspect !== "function" || typeof renderToSchemaV2 !== "function") {
     throw new Error("smoke: @askdb/introspect public functions did not load");
+  }
+  // Verify the @askdb/introspect/kit subpath resolves from an ESM consumer.
+  if (
+    makeTableId("public", "users") !== "table:public.users" ||
+    !compileTableFilters(["public.*"])("public.users") ||
+    typeof createOptionalDriverLoader !== "function"
+  ) {
+    throw new Error("smoke: @askdb/introspect/kit did not load");
   }
 
   const tableBody = replaceH2Section(

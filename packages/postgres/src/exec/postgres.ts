@@ -1,8 +1,11 @@
 import { AskDbError } from "@askdb/core";
 import type { CatalogQueryResult, CatalogQueryRunner } from "@askdb/introspect";
-import { createRequire } from "node:module";
-import { join } from "node:path";
-import { pathToFileURL } from "node:url";
+import {
+  createOptionalDriverLoader,
+  isDriverInstalled,
+  missingDriverMessage,
+  type DriverLoadOptions,
+} from "@askdb/introspect/kit";
 
 export type { CatalogQueryResult, CatalogQueryRunner } from "@askdb/introspect";
 
@@ -16,63 +19,17 @@ export type { CatalogQueryResult, CatalogQueryRunner } from "@askdb/introspect";
  * Result is cached so repeated calls don't re-resolve. On a missing peer we clear the cache so
  * the next call retries (e.g. after the consumer runs `pnpm add pg`).
  */
-type DriverLoadOptions = { resolveFrom?: string };
-
-let pgModulePromises = new Map<string | undefined, Promise<typeof import("pg")>>();
-
-function isModuleResolutionFailure(cause: unknown, packageName: string): boolean {
-  if (!(cause instanceof Error)) return false;
-  const nestedCause = (cause as { cause?: unknown }).cause;
-  if (nestedCause && nestedCause !== cause && isModuleResolutionFailure(nestedCause, packageName)) {
-    return true;
-  }
-  const code = (cause as { code?: unknown }).code;
-  if (code !== "ERR_MODULE_NOT_FOUND" && code !== "MODULE_NOT_FOUND") return false;
-  return cause.message.includes(packageName);
-}
-
-async function importOptionalPg(opts?: DriverLoadOptions): Promise<typeof import("pg")> {
-  try {
-    return await import("pg");
-  } catch (cause) {
-    if (!isModuleResolutionFailure(cause, "pg")) throw cause;
-
-    const fromDir = opts?.resolveFrom ?? process.cwd();
-    const projectRequire = createRequire(join(fromDir, "package.json"));
-    try {
-      const resolved = projectRequire.resolve("pg");
-      return (await import(pathToFileURL(resolved).href)) as typeof import("pg");
-    } catch (projectCause) {
-      if (!isModuleResolutionFailure(projectCause, "pg")) throw projectCause;
-      throw new AggregateError([cause, projectCause], "Unable to resolve optional `pg` peer dependency");
-    }
-  }
-}
-
-async function loadPgOrThrow(opts?: DriverLoadOptions): Promise<typeof import("pg")> {
-  const key = opts?.resolveFrom;
-  let promise = pgModulePromises.get(key);
-  if (!promise) {
-    promise = importOptionalPg(opts).catch((cause) => {
-      pgModulePromises.delete(key);
-      throw new AskDbError(
-        "The built-in Postgres catalog query runner requires the optional `pg` peer dependency. " +
-          "Install it in your project (e.g. `pnpm add pg`) or include it in the same one-off command " +
-          "(e.g. `pnpm dlx -p askdb -p pg askdb ...` or `npx -p askdb -p pg askdb ...`). " +
-          "You can also pass a custom catalog query runner to the Postgres connector.",
-        cause,
-      );
-    });
-    pgModulePromises.set(key, promise);
-  }
-  return promise;
-}
+const pgLoader = createOptionalDriverLoader<typeof import("pg")>({
+  packageName: "pg",
+  importDriver: () => import("pg"),
+  missingMessage: missingDriverMessage({ engine: "Postgres", packageName: "pg" }),
+});
 
 /**
  * @internal exposed for tests that need to reset the lazy `pg` cache between cases.
  */
 export function __resetPgModuleCacheForTests(): void {
-  pgModulePromises.clear();
+  pgLoader.reset();
 }
 
 type PgDriverModule = typeof import("pg");
@@ -86,18 +43,12 @@ type PgDriverModule = typeof import("pg");
  * Throws an AskDbError with install hints when the peer is missing.
  */
 export async function loadPgDriver(options?: DriverLoadOptions): Promise<PgDriverModule> {
-  const mod = await loadPgOrThrow(options);
+  const mod = await pgLoader.load(options);
   return (mod as unknown as { default?: PgDriverModule }).default ?? mod;
 }
 
 export function isPgDriverInstalled(options?: DriverLoadOptions): boolean {
-  try {
-    const req = createRequire(join(options?.resolveFrom ?? process.cwd(), "package.json"));
-    req.resolve("pg");
-    return true;
-  } catch {
-    return false;
-  }
+  return isDriverInstalled("pg", options);
 }
 
 async function runPostgresCatalogQuery(
@@ -106,7 +57,7 @@ async function runPostgresCatalogQuery(
   params: ReadonlyArray<unknown> | undefined,
   options?: DriverLoadOptions,
 ): Promise<CatalogQueryResult> {
-  const mod = await loadPgOrThrow(options);
+  const mod = await pgLoader.load(options);
   // `pg` is CJS — Node's ESM interop puts the namespace under `.default` at runtime, but the
   // static type doesn't model that. Reach for `default` defensively, then fall back to the
   // top-level namespace for bundlers that hoist the CJS named exports.
