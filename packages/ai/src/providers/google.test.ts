@@ -19,7 +19,7 @@ vi.mock("@ai-sdk/google", () => ({
   createGoogle: mocks.createGoogle,
 }));
 
-import { googleProvider } from "./index";
+import { googleProvider } from "./google.js";
 
 describe("googleProvider", () => {
   beforeEach(() => {
@@ -28,16 +28,16 @@ describe("googleProvider", () => {
     mocks.google.embedding.mockClear();
   });
 
-  it("creates language and embedding models from AskDB config", () => {
+  it("creates language and embedding models from AskDB config", async () => {
     expect(googleProvider.provider).toBe("google");
 
-    const languageModel = googleProvider.createLanguageModel({
+    const languageModel = await googleProvider.createLanguageModel({
       provider: "google",
       apiKey: "test-key",
       baseURL: "https://generativelanguage.googleapis.com",
       model: "gemini-1.5-flash",
     });
-    const embeddingModel = googleProvider.createEmbeddingModel({
+    const embeddingModel = await googleProvider.createEmbeddingModel({
       provider: "google",
       apiKey: "test-key",
       model: "text-embedding-004",

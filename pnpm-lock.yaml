@@ -420,6 +420,21 @@ importers:
 
   packages/ai:
     devDependencies:
+      '@ai-sdk/anthropic':
+        specifier: ^4.0.62
+        version: 4.0.62(zod@4.6.5)
+      '@ai-sdk/azure':
+        specifier: ^4.0.78
+        version: 4.0.78(zod@4.6.5)
+      '@ai-sdk/google':
+        specifier: ^4.0.79
+        version: 4.0.79(zod@4.6.5)
+      '@ai-sdk/openai':
+        specifier: ^4.0.74
+        version: 4.0.74(zod@4.6.5)
+      '@askdb/config':
+        specifier: workspace:*
+        version: link:../config
       ai:
         specifier: ^7.0.51
         version: 7.0.123(zod@4.6.5)
