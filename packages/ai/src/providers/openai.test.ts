@@ -31,7 +31,7 @@ vi.mock("ai", () => ({
   wrapEmbeddingModel: mocks.wrapEmbeddingModel,
 }));
 
-import { openaiProvider } from "./index";
+import { openaiProvider } from "./openai.js";
 
 describe("openaiProvider", () => {
   beforeEach(() => {
@@ -42,16 +42,16 @@ describe("openaiProvider", () => {
     mocks.wrapEmbeddingModel.mockClear();
   });
 
-  it("creates language and embedding models from AskDB config", () => {
+  it("creates language and embedding models from AskDB config", async () => {
     expect(openaiProvider.provider).toBe("openai");
 
-    const languageModel = openaiProvider.createLanguageModel({
+    const languageModel = await openaiProvider.createLanguageModel({
       provider: "openai",
       apiKey: "test-key",
       baseURL: "https://example.test/v1",
       model: "gpt-4o-mini",
     });
-    const embeddingModel = openaiProvider.createEmbeddingModel(
+    const embeddingModel = await openaiProvider.createEmbeddingModel(
       {
         provider: "openai",
         apiKey: "test-key",

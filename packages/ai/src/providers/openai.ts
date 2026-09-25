@@ -1,12 +1,11 @@
-import { createOpenAI } from "@ai-sdk/openai";
-import {
-  resolveBaseConfig,
-  withEmbeddingProviderOptions,
-  type AiProviderAdapter,
-  type ProviderEnvSpec,
-} from "@askdb/ai";
+import { withEmbeddingProviderOptions } from "../embedding.js";
+import { resolveBaseConfig, type AiConfig, type AiProviderAdapter } from "../provider.js";
+import { importOptionalPeer } from "./optional-peer.js";
+import type { BuiltinAiProvider, BuiltinProviderEnvSpec } from "./types.js";
 
-const ENV_SPEC: ProviderEnvSpec = {
+const PEER_PACKAGE = "@ai-sdk/openai";
+
+const ENV_SPEC: BuiltinProviderEnvSpec = {
   apiKeyVars: ["OPENAI_API_KEY"],
   apiKeySecondaryVars: ["OPENAI_API_KEY_SECONDARY"],
   modelVars: ["OPENAI_MODEL"],
@@ -38,24 +37,29 @@ function isReasoningModel(model: string): boolean {
   return !(gpt[2]?.toLowerCase().startsWith("chat") ?? false);
 }
 
+const CONFIG_HINT =
+  "For OpenAI, set ai.provider: \"openai\" and ai.providerConfig.openai.apiKey in askdb.config.*.";
+
+async function createProvider(config: AiConfig) {
+  const { createOpenAI } = await importOptionalPeer("openai", PEER_PACKAGE, () => import("@ai-sdk/openai"));
+  return createOpenAI({
+    apiKey: config.apiKey,
+    ...(config.baseURL ? { baseURL: config.baseURL } : {}),
+  });
+}
+
 export const openaiProvider: AiProviderAdapter = {
   provider: "openai",
-  configHint: "For OpenAI, set ai.provider: \"openai\" and ai.providerConfig.openai.apiKey in askdb.config.*.",
+  configHint: CONFIG_HINT,
   resolveConfig(env, options) {
     return resolveBaseConfig("openai", env, ENV_SPEC, options);
   },
-  createLanguageModel(config) {
-    const openai = createOpenAI({
-      apiKey: config.apiKey,
-      ...(config.baseURL ? { baseURL: config.baseURL } : {}),
-    });
+  async createLanguageModel(config) {
+    const openai = await createProvider(config);
     return openai(config.model);
   },
-  createEmbeddingModel(config, options = {}) {
-    const openai = createOpenAI({
-      apiKey: config.apiKey,
-      ...(config.baseURL ? { baseURL: config.baseURL } : {}),
-    });
+  async createEmbeddingModel(config, options = {}) {
+    const openai = await createProvider(config);
     const model = openai.embedding(config.model);
     return withEmbeddingProviderOptions(model, "openai", options);
   },
@@ -63,4 +67,15 @@ export const openaiProvider: AiProviderAdapter = {
     if (!reasoningEffort || !isReasoningModel(config.model)) return undefined;
     return { openai: { reasoningEffort } };
   },
+};
+
+export const openaiBuiltin: BuiltinAiProvider = {
+  provider: "openai",
+  label: "OpenAI",
+  aliases: [],
+  peerPackage: PEER_PACKAGE,
+  env: ENV_SPEC,
+  embeddings: true,
+  configHint: CONFIG_HINT,
+  adapter: openaiProvider,
 };

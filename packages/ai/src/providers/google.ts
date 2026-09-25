@@ -1,13 +1,12 @@
-import { createGoogle } from "@ai-sdk/google";
 import { defaultEmbeddingSettingsMiddleware, wrapEmbeddingModel } from "ai";
-import {
-  resolveBaseConfig,
-  type AiProviderAdapter,
-  type ProviderEnvSpec,
-  type ReasoningEffort,
-} from "@askdb/ai";
+import { resolveBaseConfig, type AiConfig, type AiProviderAdapter } from "../provider.js";
+import type { ReasoningEffort } from "../reasoning.js";
+import { importOptionalPeer } from "./optional-peer.js";
+import type { BuiltinAiProvider, BuiltinProviderEnvSpec } from "./types.js";
 
-const ENV_SPEC: ProviderEnvSpec = {
+const PEER_PACKAGE = "@ai-sdk/google";
+
+const ENV_SPEC: BuiltinProviderEnvSpec = {
   apiKeyVars: ["GOOGLE_GENERATIVE_AI_API_KEY", "GOOGLE_AI_API_KEY"],
   modelVars: ["GOOGLE_AI_MODEL"],
   embeddingModelVars: ["GOOGLE_AI_EMBEDDING_MODEL"],
@@ -38,25 +37,29 @@ function resolveGemini25ThinkingBudget(model: string, effort: ReasoningEffort): 
   return budget;
 }
 
+const CONFIG_HINT =
+  "For Google Gemini, set ai.provider: \"google\" and ai.providerConfig.google.apiKey in askdb.config.*.";
+
+async function createProvider(config: AiConfig) {
+  const { createGoogle } = await importOptionalPeer("google", PEER_PACKAGE, () => import("@ai-sdk/google"));
+  return createGoogle({
+    apiKey: config.apiKey,
+    ...(config.baseURL ? { baseURL: config.baseURL } : {}),
+  });
+}
+
 export const googleProvider: AiProviderAdapter = {
   provider: "google",
-  configHint:
-    "For Google Gemini, set ai.provider: \"google\" and ai.providerConfig.google.apiKey in askdb.config.*.",
+  configHint: CONFIG_HINT,
   resolveConfig(env, options) {
     return resolveBaseConfig("google", env, ENV_SPEC, options);
   },
-  createLanguageModel(config) {
-    const google = createGoogle({
-      apiKey: config.apiKey,
-      ...(config.baseURL ? { baseURL: config.baseURL } : {}),
-    });
+  async createLanguageModel(config) {
+    const google = await createProvider(config);
     return google(config.model);
   },
-  createEmbeddingModel(config, options = {}) {
-    const google = createGoogle({
-      apiKey: config.apiKey,
-      ...(config.baseURL ? { baseURL: config.baseURL } : {}),
-    });
+  async createEmbeddingModel(config, options = {}) {
+    const google = await createProvider(config);
     const model = google.embedding(config.model);
     // Gemini's embedding API calls the output size `outputDimensionality`
     // (read from `providerOptions.google`). It has no per-end-user field, so
@@ -87,4 +90,15 @@ export const googleProvider: AiProviderAdapter = {
     }
     return undefined;
   },
+};
+
+export const googleBuiltin: BuiltinAiProvider = {
+  provider: "google",
+  label: "Google (Gemini)",
+  aliases: [],
+  peerPackage: PEER_PACKAGE,
+  env: ENV_SPEC,
+  embeddings: true,
+  configHint: CONFIG_HINT,
+  adapter: googleProvider,
 };

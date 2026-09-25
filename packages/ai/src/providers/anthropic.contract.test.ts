@@ -6,7 +6,7 @@
  */
 import { generateText } from "ai";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { anthropicProvider } from "./index";
+import { anthropicProvider } from "./anthropic.js";
 
 type CapturedRequest = { url: string; body: Record<string, unknown> };
 
@@ -32,7 +32,7 @@ async function captureGenerate(
   const providerOptions = anthropicProvider.resolveProviderOptions?.(config, { reasoningEffort });
   await expect(
     generateText({
-      model: anthropicProvider.createLanguageModel(config),
+      model: await anthropicProvider.createLanguageModel(config),
       prompt: "How many customers?",
       temperature: 0,
       maxRetries: 0,

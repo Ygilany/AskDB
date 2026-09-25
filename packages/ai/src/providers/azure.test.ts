@@ -31,7 +31,7 @@ vi.mock("ai", () => ({
   wrapEmbeddingModel: mocks.wrapEmbeddingModel,
 }));
 
-import { azureProvider } from "./index";
+import { azureProvider } from "./azure.js";
 
 describe("azureProvider", () => {
   beforeEach(() => {
@@ -42,10 +42,10 @@ describe("azureProvider", () => {
     mocks.wrapEmbeddingModel.mockClear();
   });
 
-  it("creates language and embedding models from AskDB config", () => {
+  it("creates language and embedding models from AskDB config", async () => {
     expect(azureProvider.provider).toBe("azure");
 
-    const languageModel = azureProvider.createLanguageModel({
+    const languageModel = await azureProvider.createLanguageModel({
       provider: "azure",
       apiKey: "test-key",
       baseURL: "https://askdb-ai.openai.azure.com",
@@ -55,7 +55,7 @@ describe("azureProvider", () => {
         apiVersion: "2024-10-21",
       },
     });
-    const embeddingModel = azureProvider.createEmbeddingModel(
+    const embeddingModel = await azureProvider.createEmbeddingModel(
       {
         provider: "azure",
         apiKey: "test-key",

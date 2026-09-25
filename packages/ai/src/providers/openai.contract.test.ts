@@ -1,14 +1,12 @@
 /**
- * Contract tests against the REAL `@ai-sdk/azure` provider (no module mocks).
+ * Contract tests against the REAL `@ai-sdk/openai` provider (no module mocks).
  * `fetch` is stubbed so we can assert the exact HTTP request body the SDK
- * sends — this catches provider-option keys/shapes the SDK silently ignores
- * (e.g. embedding `dimensions` under an "azure" key, which
- * `OpenAIEmbeddingModel` never reads), which mocked-SDK unit tests can't.
+ * sends — this catches provider-option keys/shapes the SDK silently ignores,
+ * which mocked-SDK unit tests can't.
  */
-import type { AiConfig } from "@askdb/ai";
 import { embed, generateText } from "ai";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { azureProvider } from "./index";
+import { openaiProvider } from "./openai.js";
 
 type CapturedRequest = { url: string; body: Record<string, unknown> };
 
@@ -42,14 +40,15 @@ function embeddingResponse(): Response {
 }
 
 async function captureGenerate(
-  config: AiConfig,
+  model: string,
   reasoningEffort?: "minimal" | "low" | "medium" | "high",
 ): Promise<CapturedRequest> {
   const requests = captureFetch();
-  const providerOptions = azureProvider.resolveProviderOptions?.(config, { reasoningEffort });
+  const config = { provider: "openai", apiKey: "test-key", model };
+  const providerOptions = openaiProvider.resolveProviderOptions?.(config, { reasoningEffort });
   await expect(
     generateText({
-      model: azureProvider.createLanguageModel(config),
+      model: await openaiProvider.createLanguageModel(config),
       prompt: "How many customers?",
       temperature: 0,
       maxRetries: 0,
@@ -62,60 +61,46 @@ async function captureGenerate(
   return requests[0]!;
 }
 
-const baseConfig = {
-  provider: "azure",
-  apiKey: "test-key",
-  providerOptions: { resourceName: "my-foundry" },
-} as const;
-
-describe("azureProvider — real @ai-sdk/azure contract", () => {
+describe("openaiProvider — real @ai-sdk/openai contract", () => {
   afterEach(() => {
     vi.unstubAllGlobals();
   });
 
-  it("targets the resource's Responses endpoint with the deployment name as model", async () => {
-    const request = await captureGenerate({ ...baseConfig, model: "gpt-4o-mini" }, "high");
-    expect(request.url).toBe(
-      "https://my-foundry.openai.azure.com/openai/v1/responses?api-version=v1",
-    );
+  it("sends the model id and no reasoning block for non-reasoning models", async () => {
+    const request = await captureGenerate("gpt-4o-mini", "high");
+    expect(request.url).toBe("https://api.openai.com/v1/responses");
     expect(request.body.model).toBe("gpt-4o-mini");
     expect(request.body).not.toHaveProperty("reasoning");
   });
 
-  it("sends reasoning.effort for reasoning-model deployments", async () => {
-    const request = await captureGenerate({ ...baseConfig, model: "o4-mini" }, "low");
-    expect(request.body.model).toBe("o4-mini");
+  it("sends reasoning.effort for reasoning models when reasoningEffort is set", async () => {
+    const request = await captureGenerate("gpt-5-mini", "low");
+    expect(request.body.model).toBe("gpt-5-mini");
     expect(request.body.reasoning).toMatchObject({ effort: "low" });
   });
 
-  it("sends reasoning.effort for arbitrarily-named deployments declared via modelFamily", async () => {
-    // Without forceReasoning the SDK infers capabilities from the deployment
-    // name ("askdb-reporting") and silently drops reasoningEffort.
-    const request = await captureGenerate(
-      {
-        ...baseConfig,
-        model: "askdb-reporting",
-        providerOptions: { ...baseConfig.providerOptions, modelFamily: "gpt-5" },
-      },
-      "medium",
-    );
-    expect(request.body.model).toBe("askdb-reporting");
-    expect(request.body.reasoning).toMatchObject({ effort: "medium" });
+  it("sends reasoning.effort for o-series models", async () => {
+    const request = await captureGenerate("o4-mini", "high");
+    expect(request.body.reasoning).toMatchObject({ effort: "high" });
+  });
+
+  it("does not send reasoning for gpt-5 -chat variants", async () => {
+    const request = await captureGenerate("gpt-5-chat-latest", "high");
+    expect(request.body.model).toBe("gpt-5-chat-latest");
+    expect(request.body).not.toHaveProperty("reasoning");
   });
 
   it("forwards embedding dimensions and user to the request body", async () => {
     const requests = captureFetch(embeddingResponse);
-    const model = azureProvider.createEmbeddingModel(
-      { ...baseConfig, model: "text-embedding-3-small" },
+    const model = await openaiProvider.createEmbeddingModel(
+      { provider: "openai", apiKey: "test-key", model: "text-embedding-3-small" },
       { dimensions: 256, user: "user-1" },
     );
     const result = await embed({ model, value: "customers", maxRetries: 0 });
 
     expect(result.embedding).toEqual([0.1, 0.2, 0.3]);
     expect(requests).toHaveLength(1);
-    expect(requests[0]!.url).toBe(
-      "https://my-foundry.openai.azure.com/openai/v1/embeddings?api-version=v1",
-    );
+    expect(requests[0]!.url).toBe("https://api.openai.com/v1/embeddings");
     expect(requests[0]!.body).toMatchObject({
       model: "text-embedding-3-small",
       input: ["customers"],

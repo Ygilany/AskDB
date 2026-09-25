@@ -1,12 +1,11 @@
-import { createAnthropic } from "@ai-sdk/anthropic";
-import {
-  resolveBaseConfig,
-  type AiProviderAdapter,
-  type ProviderEnvSpec,
-  type ReasoningEffort,
-} from "@askdb/ai";
+import { resolveBaseConfig, type AiProviderAdapter } from "../provider.js";
+import type { ReasoningEffort } from "../reasoning.js";
+import { importOptionalPeer } from "./optional-peer.js";
+import type { BuiltinAiProvider, BuiltinProviderEnvSpec } from "./types.js";
 
-const ENV_SPEC: ProviderEnvSpec = {
+const PEER_PACKAGE = "@ai-sdk/anthropic";
+
+const ENV_SPEC: BuiltinProviderEnvSpec = {
   apiKeyVars: ["ANTHROPIC_API_KEY"],
   modelVars: ["ANTHROPIC_MODEL"],
   baseURLVars: ["ANTHROPIC_BASE_URL"],
@@ -58,14 +57,19 @@ const ADAPTIVE_EFFORTS: Record<ReasoningEffort, "low" | "medium" | "high"> = {
   high: "high",
 };
 
+const CONFIG_HINT =
+  "For Anthropic Claude, set ai.provider: \"anthropic\" and ai.providerConfig.anthropic.apiKey in askdb.config.*.";
+
 export const anthropicProvider: AiProviderAdapter = {
   provider: "anthropic",
-  configHint:
-    "For Anthropic Claude, set ai.provider: \"anthropic\" and ai.providerConfig.anthropic.apiKey in askdb.config.*.",
+  configHint: CONFIG_HINT,
   resolveConfig(env, options) {
     return resolveBaseConfig("anthropic", env, ENV_SPEC, options);
   },
-  createLanguageModel(config) {
+  async createLanguageModel(config) {
+    const { createAnthropic } = await importOptionalPeer("anthropic", PEER_PACKAGE, () =>
+      import("@ai-sdk/anthropic"),
+    );
     const anthropic = createAnthropic({
       apiKey: config.apiKey,
       ...(config.baseURL ? { baseURL: config.baseURL } : {}),
@@ -98,4 +102,15 @@ export const anthropicProvider: AiProviderAdapter = {
     }
     return undefined;
   },
+};
+
+export const anthropicBuiltin: BuiltinAiProvider = {
+  provider: "anthropic",
+  label: "Anthropic",
+  aliases: [],
+  peerPackage: PEER_PACKAGE,
+  env: ENV_SPEC,
+  embeddings: false,
+  configHint: CONFIG_HINT,
+  adapter: anthropicProvider,
 };

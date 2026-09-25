@@ -13,7 +13,7 @@ vi.mock("@ai-sdk/anthropic", () => ({
   createAnthropic: mocks.createAnthropic,
 }));
 
-import { anthropicProvider } from "./index";
+import { anthropicProvider } from "./anthropic.js";
 
 describe("anthropicProvider", () => {
   beforeEach(() => {
@@ -25,8 +25,8 @@ describe("anthropicProvider", () => {
     expect(anthropicProvider.provider).toBe("anthropic");
   });
 
-  it("creates a language model from AskDB config", () => {
-    const languageModel = anthropicProvider.createLanguageModel({
+  it("creates a language model from AskDB config", async () => {
+    const languageModel = await anthropicProvider.createLanguageModel({
       provider: "anthropic",
       apiKey: "test-key",
       model: "claude-sonnet-4-6",
@@ -37,8 +37,8 @@ describe("anthropicProvider", () => {
     expect(mocks.anthropic).toHaveBeenCalledWith("claude-sonnet-4-6");
   });
 
-  it("forwards baseURL when provided", () => {
-    anthropicProvider.createLanguageModel({
+  it("forwards baseURL when provided", async () => {
+    await anthropicProvider.createLanguageModel({
       provider: "anthropic",
       apiKey: "test-key",
       baseURL: "https://custom.anthropic.endpoint/v1",

@@ -1,13 +1,11 @@
-import { createAzure } from "@ai-sdk/azure";
-import {
-  resolveBaseConfig,
-  withEmbeddingProviderOptions,
-  type AiConfig,
-  type AiProviderAdapter,
-  type ProviderEnvSpec,
-} from "@askdb/ai";
+import { withEmbeddingProviderOptions } from "../embedding.js";
+import { resolveBaseConfig, type AiConfig, type AiProviderAdapter } from "../provider.js";
+import { importOptionalPeer } from "./optional-peer.js";
+import type { BuiltinAiProvider, BuiltinProviderEnvSpec } from "./types.js";
 
-const ENV_SPEC: ProviderEnvSpec = {
+const PEER_PACKAGE = "@ai-sdk/azure";
+
+const ENV_SPEC: BuiltinProviderEnvSpec = {
   apiKeyVars: ["AZURE_OPENAI_API_KEY", "AZURE_API_KEY"],
   apiKeySecondaryVars: ["AZURE_OPENAI_API_KEY_SECONDARY", "AZURE_API_KEY_SECONDARY"],
   modelVars: ["AZURE_OPENAI_DEPLOYMENT", "AZURE_DEPLOYMENT_NAME"],
@@ -42,11 +40,15 @@ function isReasoningModel(model: string): boolean {
   return !(gpt[2]?.toLowerCase().startsWith("chat") ?? false);
 }
 
+const ALIASES = ["azure-openai", "foundry"];
+
+const CONFIG_HINT =
+  "For Azure / Microsoft Foundry, set ai.provider: \"azure\" and ai.providerConfig.azure.apiKey in askdb.config.*.";
+
 export const azureProvider: AiProviderAdapter = {
   provider: "azure",
-  aliases: ["azure-openai", "foundry"],
-  configHint:
-    "For Azure / Microsoft Foundry, set ai.provider: \"azure\" and ai.providerConfig.azure.apiKey in askdb.config.*.",
+  aliases: ALIASES,
+  configHint: CONFIG_HINT,
   resolveConfig(env, options) {
     const config = resolveBaseConfig("azure", env, ENV_SPEC, options);
     if (!config) return undefined;
@@ -82,24 +84,12 @@ export const azureProvider: AiProviderAdapter = {
       ...(Object.keys(providerOptions).length > 0 ? { providerOptions } : {}),
     };
   },
-  createLanguageModel(config) {
-    const { resourceName, apiVersion } = azureConnectionOptions(config);
-    const azure = createAzure({
-      apiKey: config.apiKey,
-      ...(resourceName ? { resourceName } : {}),
-      ...(config.baseURL ? { baseURL: config.baseURL } : {}),
-      ...(apiVersion ? { apiVersion } : {}),
-    });
+  async createLanguageModel(config) {
+    const azure = await createProvider(config);
     return azure(config.model);
   },
-  createEmbeddingModel(config, options = {}) {
-    const { resourceName, apiVersion } = azureConnectionOptions(config);
-    const azure = createAzure({
-      apiKey: config.apiKey,
-      ...(resourceName ? { resourceName } : {}),
-      ...(config.baseURL ? { baseURL: config.baseURL } : {}),
-      ...(apiVersion ? { apiVersion } : {}),
-    });
+  async createEmbeddingModel(config, options = {}) {
+    const azure = await createProvider(config);
     const model = azure.embedding(config.model);
     // @ai-sdk/azure builds embeddings with OpenAIEmbeddingModel, which reads
     // only `providerOptions.openai` — an "azure" key would silently drop
@@ -132,6 +122,17 @@ export const azureProvider: AiProviderAdapter = {
   },
 };
 
+async function createProvider(config: AiConfig) {
+  const { createAzure } = await importOptionalPeer("azure", PEER_PACKAGE, () => import("@ai-sdk/azure"));
+  const { resourceName, apiVersion } = azureConnectionOptions(config);
+  return createAzure({
+    apiKey: config.apiKey,
+    ...(resourceName ? { resourceName } : {}),
+    ...(config.baseURL ? { baseURL: config.baseURL } : {}),
+    ...(apiVersion ? { apiVersion } : {}),
+  });
+}
+
 function azureConnectionOptions(
   config: AiConfig,
 ): { resourceName?: string; apiVersion?: string } {
@@ -149,3 +150,13 @@ function readStringOption(
   return typeof value === "string" ? value : undefined;
 }
 
+export const azureBuiltin: BuiltinAiProvider = {
+  provider: "azure",
+  label: "Azure OpenAI",
+  aliases: ALIASES,
+  peerPackage: PEER_PACKAGE,
+  env: ENV_SPEC,
+  embeddings: true,
+  configHint: CONFIG_HINT,
+  adapter: azureProvider,
+};
