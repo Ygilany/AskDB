@@ -25,12 +25,13 @@ This is a Postgres-first proof. The tenant enforcement model is designed to gene
   - P3 — inherited scope via JOINs (`appointments → clients → agency`)
   - P4 — multi-level hierarchy traversal (agency → sub_agency → client)
   - P5 — polymorphic association (`notes.owner_type` + `notes.owner_id`)
-- **Unified `TenantScope` input to `ask()`** — `access` (ids, subtree, multi_root, global), `tenantFilters` (polymorphic overrides, host-resolved), `context` (advisory: role, region, department)
+- **Unified `TenantScope` input to `ask()`** — `access` (ids, multi_root, global; `subtree` is declared but rejected until descendant expansion exists), `context` (advisory: role, region, department)
 - **Prompt assembly boundary** — policy front-matter, runtime scope, and advisory context injected into every generation prompt; named placeholder convention `:tenant_<root_label>_ids`
 - **SQL guardrail validator** — AST-based Postgres SQL checks: scoped tables must have required predicates; polymorphic tables must include type discriminator; cross-table scope compatibility checked
 - **Enforcement modes** — `strict` (fail closed on unproven queries) and `warn` (return SQL with `tenantWarnings`)
-- **SQL output modes** — `sql-only` (placeholders replaced with literals, complete executable SQL) and `sql-params` (positional parameters `$1, $2`, returns `{ sql, params, tenantBindings }`)
-- **Parameterized ask output** — when `parameterize` is on (default), business values from the question also appear as `unboundSql` / `params` / `parameters` / `preparedQuery`. Tenant placeholders remain named in `preparedQuery.namedSql` and bind via `tenantScope` (or `bindPreparedQuery` on rebind). Prefer `params` over `tenantParams` when using the new fields. `bindPreparedQuery` does not authorize tenant IDs.
+- **SQL output modes** — `sql-only` (placeholders replaced with escaped literals, complete executable SQL) and `sql-params` (placeholders replaced with the dialect's driver markers — `$N`, `?`, or `@pN` — and the IDs returned as `tenantParams`)
+- **Parameterized ask output** — when `parameterize` is on (default), business values from the question also appear as `unboundSql` / `params` / `parameters` / `preparedQuery`. Tenant placeholders remain named in `preparedQuery.namedSql` and bind via `tenantScope` (or `bindPreparedQuery` on rebind). Two executable pairs, never mixed: `sql` + `tenantParams` (business values inlined, tenant markers from the first slot) and `unboundSql` + `params` (all values bound; `params` already includes tenant IDs in marker order in `sql-params` mode). `bindPreparedQuery` does not authorize tenant IDs.
+- **Fail-closed substitution** — only placeholders in SQL code are substituted (never inside string literals or quoted identifiers). A placeholder the scope has no IDs for throws `UNRESOLVED_TENANT_PLACEHOLDER`; a multi-ID scope meeting `<`, `>`, `<=`, `>=` (or another non-list position) throws `UNSUPPORTED_TENANT_PREDICATE`; `!=` / `<>` become `NOT IN`.
 - **RAG propagation** — policy front-matter always injected regardless of RAG retrieval; tenant policy body chunks retrievable; scope metadata attached to scoped table chunks
 - **AI-assisted policy drafting** — `@askdb/enrich` helpers analyze FK relationships and column patterns post-introspection to draft a candidate `tenant-policy.md`; human confirmation required before enforcement is enabled
 - **Schema evolution handling** — new tables from re-introspection default to `unknown`; orphaned table references in policy surface as warnings
@@ -40,7 +41,8 @@ This is a Postgres-first proof. The tenant enforcement model is designed to gene
 - User authentication — AskDB receives authorized scope from the host; it does not authenticate users
 - Multi-engine tenant proof beyond Postgres — Phase 13
 - Row-level security (RLS) DDL generation — tenant predicates are SQL WHERE clauses; RLS is still recommended as a defense-in-depth layer
-- Subtree expansion — `subtree` scope kind is accepted but host must expand to explicit IDs in practice
+- Subtree expansion — the `subtree` scope kind is rejected with `TenantScopeError` (`UNSUPPORTED_ACCESS_KIND`) because descendants are never expanded; the host resolves the subtree and passes explicit IDs with `ids` / `multi_root`
+- Runtime pre-resolution of polymorphic scope — polymorphic tables are declared in the policy and surfaced to the model via the prompt; there is no scope field for host-resolved polymorphic filters
 
 ## Design decisions
 
@@ -49,7 +51,8 @@ This is a Postgres-first proof. The tenant enforcement model is designed to gene
 - **Validate what is returned** — `ask()` runs the guardrail on `result.sql` after tenant placeholder substitution, plus `result.unboundSql` when it is kept. It never validates only the model's `sql-unbound` block: if the bound and unbound blocks disagree, the unbound extras are dropped and the bound SQL alone decides. The check runs for every dialect form, including custom `AskDialect` adapters. A `tenantGuardrail` a custom adapter reports is merged in and cannot replace the check.
 - **A broken policy is a load error** — only a missing `tenant-policy.md` (or, in a bundle, an absent `tenantPolicy` key) means "no tenancy". A present file or bundle value that is empty or fails to read or parse (including malformed YAML) throws `SchemaParseError`. Loading via a `schema.json` path picks up the sibling policy exactly like loading the directory.
 - **Named placeholders in prompt assembly** — `:tenant_<root_label>_ids` placeholders are inserted by the model following prompt instructions, then replaced by the output modes layer. This separates prompt semantics from execution binding.
-- **Host expands polymorphic filters** — for polymorphic tables, the host resolves which specific record IDs the user can access and passes them as `tenantFilters`. AskDB applies the type discriminator and resolved filters; it does not perform identity resolution.
+- **No silently ignored scope input** — `TenantScope.tenantFilters` (host-resolved polymorphic filters) was declared but never read, so it was removed rather than left as a field that looks like protection. `subtree` is rejected for the same reason: accepting it would under-return without any signal.
+- **Unresolvable binding fails closed** — a tenant placeholder with no IDs in scope, or a multi-ID predicate with no list form, throws instead of emitting SQL with a raw `:tenant_*` token or a rewritten operator that means something else.
 - **Policy front-matter always injected with RAG** — tenant safety is a security boundary. Retrieving only a subset of schema chunks must not drop the policy context. The full policy front-matter is injected unconditionally when a policy is present.
 
 ## Contracts and API surface
@@ -63,21 +66,22 @@ interface AskOptions {
 }
 
 interface TenantScope {
-  access: TenantAccess              // ids | subtree | multi_root | global
-  tenantFilters?: TenantFilter[]    // polymorphic overrides (host-resolved)
+  access: TenantAccess              // ids | multi_root | global (subtree: rejected for now)
   context?: TenantContext           // advisory: role, region, department, etc.
 }
 
 // SQL output modes
 interface AskOptions {
-  sqlOutputMode?: 'sql-only' | 'sql-params'
+  tenantSqlMode?: 'sql-only' | 'sql-params'
 }
 
 interface AskResult {
-  sql: string                       // sql-only: complete executable SQL
-  params?: SqlParams                // sql-params: positional params
-  tenantBindings?: TenantBindings
-  tenantWarnings?: TenantWarning[]  // warn mode: scope issues found
+  sql: string                       // sql-only: complete executable SQL; sql-params: run with tenantParams
+  tenantParams?: unknown[]          // sql-params: tenant IDs in `sql` marker order
+  unboundSql?: string               // parameterize extras: run with params
+  params?: QueryParamSlot[]         // all values for unboundSql (tenant IDs included in sql-params)
+  tenantBindings?: TenantBinding[]
+  tenantGuardrail?: TenantGuardrailResult  // warn mode: scope issues found
 }
 ```
 
@@ -109,6 +113,7 @@ enforcement: strict
 - `ask()` without scope when a policy is configured fails before model generation.
 - `ask()` with valid agency scope proceeds to prompt assembly; golden prompt snapshot includes policy block, scope, and advisory context.
 - SQL guardrail: missing `agency_id` predicate fails closed in strict mode; correctly scoped SQL passes; polymorphic table without type discriminator fails; cross-tenant JOIN fails.
-- `sql-only` mode returns complete executable SQL; `sql-params` returns `{ sql, params }` with positional parameters; both pass the guardrail validator.
+- `sql-only` mode returns complete executable SQL; `sql-params` returns `{ sql, tenantParams }` with dialect-correct markers; both pass the guardrail validator.
+- Tenant binding executes: for Postgres, MySQL, SQLite, and SQL Server output, `sql` + `tenantParams` and `unboundSql` + `params` both run on SQLite (better-sqlite3) and return the scoped rows; zero-ID placeholders, multi-ID `<=`, and `subtree` scope throw; placeholder text inside string literals is untouched and a crafted tenant ID cannot leave its literal.
 - RAG-backed prompts: full tenant policy front-matter present regardless of retrieved chunks; body chunks retrieved when relevant; generated SQL validated against scope.
 - Studio: sample ask with mock scope input returns scoped SQL; removing scope returns a policy error; enforcement mode toggle is reflected in the response.

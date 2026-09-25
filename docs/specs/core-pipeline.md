@@ -72,12 +72,12 @@ interface AskPipelineOptions {
 interface AskPipelineResult {
   sql: string                        // model's bound SQL — never overwritten by rebind
   unboundSql?: string                // driver markers; use with params
-  params?: QueryParameterValue[]     // positional — prefer over tenantParams when present
+  params?: QueryParamSlot[]          // values for unboundSql in marker order; includes tenant IDs in 'sql-params'
   parameters?: QueryParameterBinding[] // named — for form UIs (includes values)
   preparedQuery?: PreparedQuery      // definitions + template only (no values)
   explain?: unknown
   tenantGuardrail?: TenantGuardrailResult // checked on the returned sql (+ unboundSql); every dialect form
-  tenantParams?: unknown[]           // tenant-only; populated when tenantSqlMode = 'sql-params'
+  tenantParams?: unknown[]           // 'sql-params' only: tenant IDs for the markers in `sql` (run sql with these; never concat with params)
   tenantBindings?: TenantBinding[]
 }
 
