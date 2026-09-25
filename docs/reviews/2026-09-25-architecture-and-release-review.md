@@ -107,6 +107,12 @@ and #183, and docs pages touched by #184 plus a feature PR.
 | 12 | #183 | main | release | LICENSE/NOTICE in every tarball + smoke assertion, Node ≥22.12, trimmed install footprint |
 | 13 | #182 | main | cli | `--help`/`--version` without config; README accuracy |
 
+**Composition verified:** draft PR #201 merges all of the above onto #191 and is green in CI with
+the real Postgres/Pagila, MySQL, SQL Server, SQLite and pgvector suites. Its description has the
+per-file conflict resolutions and five small composition fixes (e.g. #192's chunk-id test vs #193's
+new id format; passing the dialect through `ask()`'s guardrails once #190 lands; #183's lazy Prisma
+import vs #199's registry) to apply while merging. Do not merge #201 itself.
+
 Merge #180 early: once it is in, every later PR's CI run exercises the real databases. PRs opened
 before it (notably #189's partition-FK and #193's pgvector tests) should be re-run after rebasing.
 
