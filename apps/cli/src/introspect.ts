@@ -31,6 +31,9 @@ import { prismaConnectorProvider } from "@askdb/prisma";
  * The engines `askdb introspect` supports out of the box. Engine-specific
  * connection resolution (flag vs. config precedence, per-engine validation)
  * lives in each adapter's `resolveConnection`, not here.
+ *
+ * `@askdb/prisma` is cheap to import: it loads the heavy `@prisma/internals` only
+ * when a Prisma schema is actually described, so other CLI invocations don't pay for it.
  */
 export const defaultConnectorRegistry: ConnectorRegistry = createConnectorRegistry([
   postgresConnectorProvider,

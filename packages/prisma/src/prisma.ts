@@ -1,6 +1,5 @@
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join, resolve } from "node:path";
-import prismaInternals from "@prisma/internals";
 import {
   ambiguousFilterWarnings,
   byName,
@@ -116,7 +115,21 @@ const SUPPORTED_PROVIDERS = new Set<string>([
 ]);
 
 const DEFAULT_SCHEMA = "public";
-const { getConfig, getDMMF } = prismaInternals;
+type PrismaInternals = typeof import("@prisma/internals");
+let prismaInternalsPromise: Promise<PrismaInternals> | undefined;
+
+/**
+ * `@prisma/internals` is large and slow to load, so it is imported on the first
+ * describe rather than when `@askdb/prisma` is imported. Registering
+ * `prismaConnectorProvider` (as the `askdb` CLI and Studio do) costs nothing
+ * until a Prisma schema is actually introspected.
+ */
+function loadPrismaInternals(): Promise<PrismaInternals> {
+  prismaInternalsPromise ??= import("@prisma/internals").then(
+    (mod) => ((mod as { default?: PrismaInternals }).default ?? mod) as PrismaInternals,
+  );
+  return prismaInternalsPromise;
+}
 
 export function createPrismaConnector(): Connector<PrismaIntrospectionInput> {
   return {
@@ -161,6 +174,7 @@ export async function describePrismaSchema(
 ): Promise<IntrospectionResult> {
   const schemaPath = input.schemaPath ?? discoverPrismaSchemaPath();
   const datamodel = stripDatasourceConnectionUrls(readPrismaSchema(schemaPath));
+  const { getConfig, getDMMF } = await loadPrismaInternals();
   const config = await getConfig({ datamodel });
   const provider = config.datasources[0]?.provider;
   assertSupportedProvider(provider);

@@ -16,7 +16,7 @@
     "anthropic",
     "ai-gateway"
   ],
-  "homepage": "https://github.com/Ygilany/AskDB#readme",
+  "homepage": "https://askdb.tools/guides/bring-your-own-model/",
   "bugs": {
     "url": "https://github.com/Ygilany/AskDB/issues"
   },
@@ -28,6 +28,7 @@
   "license": "Apache-2.0",
   "author": "Yahya Gilany",
   "type": "module",
+  "sideEffects": false,
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {

@@ -6,7 +6,7 @@ If you're an agent implementing AskDB *into a different project*, use the docs s
 
 ## Stack
 
-pnpm workspace + Turborepo, TypeScript. Node 20+.
+pnpm workspace + Turborepo, TypeScript. Node 22.12+.
 
 - `packages/core` — the NL-to-SQL pipeline (`ask()`), schema artifact loader.
 - `packages/ai`, `packages/ai-*` — AI provider registry and adapters (openai/anthropic/google/azure).
