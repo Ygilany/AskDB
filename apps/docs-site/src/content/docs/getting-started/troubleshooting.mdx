@@ -132,10 +132,12 @@ Generating SQL in Studio does **not** require a driver. Only the Execute Query a
 
 ### Studio doesn't connect to my database
 
-Check that `studio.execute.databaseUrl` is set in `askdb.config.ts` (or `ASKDB_STUDIO_DATABASE_URL` env var) and that the URL is reachable from your machine. Studio resolves the execute connection in this order:
+Studio execute is off by default. Check that `studio.execute.enabled: true` is set in `askdb.config.ts`, that `studio.execute.databaseUrl` (or `studio.execute.file` for SQLite) is set, and that the database is reachable from your machine. Restart Studio after editing the config. Studio resolves the execute connection in this order:
 
-1. `studio.execute.provider` + `studio.execute.databaseUrl`
-2. The active `introspection.provider` when it's a live engine
+1. `studio.execute.databaseUrl` / `studio.execute.file`
+2. The introspection connection for the same engine, only when `studio.execute.useIntrospectionConnection: true`
+
+The provider comes from `studio.execute.provider`, or the active `introspection.provider` when it's a live engine.
 
 See [Configuration — Studio execute](/reference/config/#studio-execute-configuration) for the full resolution order.
 

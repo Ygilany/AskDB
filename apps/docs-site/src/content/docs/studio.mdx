@@ -64,6 +64,23 @@ The Query Playground is where you test whether your enrichment is working. Type 
 
 Generating SQL in Studio does not require a database driver. The optional **Execute Query** action runs the generated SQL against a live database and displays the results in the Playground. Studio supports Postgres, MySQL, SQLite, and SQL Server.
 
+Execute is **off by default**. Until you turn it on, the Playground hides the Execute button and explains how to enable it, and `POST /api/execute` returns `403`. To turn it on, set `studio.execute.enabled: true` and give Studio its own connection, ideally a read-only database role, then restart Studio:
+
+```ts
+export default defineConfig({
+  studio: {
+    execute: {
+      enabled: true,
+      databaseUrl: env("STUDIO_READONLY_DATABASE_URL"), // or `file: "./data.db"` for SQLite
+      // timeoutMs: 30000, // per-query timeout (default 30 s)
+      // maxRows: 500,     // row cap (default 500)
+    },
+  },
+});
+```
+
+Studio doesn't reuse your introspection connection unless you set `studio.execute.useIntrospectionConnection: true`. Choosing **Studio execute** in `askdb init` or the setup wizard writes `enabled: true` for you.
+
 ### Get the code
 
 Once the SQL looks right, the **Get the code** panel below it turns the session into an integration snippet: your exact question, schema path, resolved dialect, configured AI provider, and (when enabled) the tenant scope — rendered as ready-to-paste TypeScript. Toggle between the config-driven style (`createAskDb()` from `@askdb/client`, reading the same `askdb.config.ts` Studio uses) and the direct style (`ask()` from `@askdb/core` with an explicit model). Copy it into your service and continue with [Embed in a Node app](/guides/embed-in-node/).
@@ -78,20 +95,16 @@ You can override the provider explicitly in `askdb.config.ts`:
 export default defineConfig({
   studio: {
     execute: {
-      provider: "mysql",           // "postgres" | "mysql" | "sqlite" | "sqlserver"
-      databaseUrl: "mysql://...",  // for network databases
-      // file: "./local.db",       // for SQLite
+      enabled: true,
+      provider: "mysql",                   // "postgres" | "mysql" | "sqlite" | "sqlserver"
+      databaseUrl: env("MYSQL_READONLY_URL"), // for network databases
+      // file: "./local.db",               // for SQLite
     },
   },
 });
 ```
 
-Or set it via environment variable:
-
-```bash
-ASKDB_STUDIO_EXECUTE_PROVIDER=mysql
-ASKDB_STUDIO_DATABASE_URL=mysql://user:password@localhost/mydb
-```
+See [Configuration — Studio execute](/reference/config/#studio-execute-configuration) for every field.
 
 ### Driver packages
 
@@ -112,7 +125,7 @@ Each execute provider requires its database driver package. These are optional p
   </TabItem>
 </Tabs>
 
-The Query Playground shows the configured provider and driver readiness near the Execute button. If the driver is missing, Studio displays an **Install** button (local Studio only) or the exact manual install command.
+When execute is enabled, the Query Playground shows the configured provider and driver readiness near the Execute button. If the driver is missing, Studio displays an **Install** button (local Studio only) or the exact manual install command.
 
 Driver packages are optional peers, not hard dependencies. This keeps install size minimal: Postgres users do not pay for MySQL or SQL Server clients and vice versa. The packages are listed as dev dependencies in `@askdb/studio` for local package development and CI type-checking — that does not mean your application must install all of them.
 
@@ -133,6 +146,21 @@ Studio is a local developer tool, not a hosted service. Its API can run SQL agai
 - **Per-launch session token.** Each Studio launch generates a random token and injects it into the page it serves. The browser app sends it back as an `x-askdb-studio-token` header on every `/api/*` call; requests without the right token get `403`. Other websites can't read Studio's page, so they can't get the token. Restarting Studio issues a new token, so reload any open Studio tabs after a restart.
 - **Host check.** Studio accepts only a `Host` header of `localhost`, `127.0.0.1`, `[::1]`, or the host you bound with `--host`, and only on its own port. If you bound to `0.0.0.0`, it also accepts this machine's own IP addresses. This check applies to every request, including the page itself, and blocks DNS-rebinding attacks.
 - **Origin and content-type checks.** Studio rejects state-changing API requests whose `Origin` header points at another site, and API requests whose body isn't `Content-Type: application/json`. So a web page can't reach Studio with a simple cross-site form post or `no-cors` fetch.
+
+- **Request size.** API request bodies over 1 MiB get `413`. Playground history keeps only known fields with length limits. Studio saves it to `playground-history.json` in the schema directory and adds that file to the directory's `.gitignore` so it isn't committed. If Studio creates the `.gitignore`, it also ignores `.env` files there.
+
+Execute is off until you set `studio.execute.enabled: true` (see [Playground](#playground)). When it's on, every query gets these guards:
+
+- **Validated first.** Studio runs the same read-only SELECT check `ask()` uses (`validateSelectSql`, for the execute engine's dialect) before anything reaches the driver. Multiple statements, comments, and write or DDL keywords are rejected with `400`. If the query reads a column marked `sensitive`, the result shows a warning but still runs.
+- **One read-only statement.**
+  - Postgres runs the query as a single statement (extended query protocol) inside `BEGIN READ ONLY`, with `default_transaction_read_only` on.
+  - MySQL and MariaDB use a prepared statement inside `START TRANSACTION READ ONLY`.
+  - SQLite opens the file read-only, and the driver rejects multi-statement strings.
+  - SQL Server has no read-only transaction mode. Studio runs the query inside a transaction that it always rolls back, with `SET XACT_ABORT ON`.
+- **Timeout.** `studio.execute.timeoutMs` (default 30 s) is enforced with `statement_timeout` on Postgres, `MAX_EXECUTION_TIME` on MySQL (`max_statement_time` on MariaDB), and request cancellation on SQL Server. SQLite queries can't be interrupted, so the timeout doesn't apply to them.
+- **Row cap.** Studio fetches at most `studio.execute.maxRows + 1` rows (default 500) and marks the result truncated when more exist. Postgres and MySQL wrap the query as `SELECT * FROM (…) AS askdb_q LIMIT n`, so a MySQL query that returns two columns with the same name needs aliases. SQL Server uses `SET ROWCOUNT`. SQLite stops reading at the cap.
+
+These checks reduce risk, but they aren't a sandbox. The SELECT check is heuristic, and a SELECT can still call functions with side effects. Point `studio.execute` at a **read-only database role**. On SQL Server, a read-only login is the only real guarantee.
 
 Binding to a non-loopback host (`--host 0.0.0.0` or a LAN address) prints a warning at startup. Anyone who can load Studio from that address gets the session token from the page, so on that network they can edit your schema and execute queries. Setup, **Resync schema**, and the driver **Install** button still only work from loopback clients. Keep the default `127.0.0.1` unless you're on a network you trust. Studio also expects to be reached directly: a reverse proxy that rewrites the `Host` header gets `403`.
 

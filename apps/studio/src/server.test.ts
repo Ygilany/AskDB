@@ -1,5 +1,6 @@
 import { cpSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createServer, request as httpRequest, type IncomingMessage, type ServerResponse } from "node:http";
+import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { flattenAskDbConfig, resetAskDbRuntimeForTests, setAskDbRuntimeForTests } from "@askdb/config";
@@ -14,6 +15,7 @@ import {
 import { setSetupInstallerForTests } from "./setup.js";
 
 const repoRoot = new URL("../../..", import.meta.url).pathname;
+const BetterSqlite3 = createRequire(import.meta.url)("better-sqlite3") as typeof import("better-sqlite3");
 
 const STUDIO_TEST_BASE: AskDbConfig = {
   ai: {
@@ -510,7 +512,12 @@ describe("AskDB Studio server", () => {
     expect(typeof status.installed).toBe("boolean");
     expect(typeof status.configured).toBe("boolean");
     expect(status.installCommand).toBe("pnpm add pg");
-    expect(status.canInstallFromStudio).toBe(true);
+    // Execute is opt-in: disabled by default, with an explanation for the UI.
+    expect(status.enabled).toBe(false);
+    expect(status.disabledReason).toContain("studio.execute.enabled");
+    expect(status.canInstallFromStudio).toBe(false);
+    expect(status.timeoutMs).toBe(30_000);
+    expect(status.maxRows).toBe(500);
   });
 
   it("GET /api/execute/status reports sqlserver provider when introspection is sqlserver", async () => {
@@ -521,6 +528,7 @@ describe("AskDB Studio server", () => {
         providerConfig: { sqlserver: { databaseUrl: "Server=localhost;Database=app;" } },
         outputDir: "./askdb/",
       },
+      studio: { execute: { enabled: true, useIntrospectionConnection: true } },
     };
     installStudioRuntime({}, sqlserverConfig);
     const schemaDir = copyFixture();
@@ -544,6 +552,7 @@ describe("AskDB Studio server", () => {
         providerConfig: { sqlite: { file: "./data/app.db" } },
         outputDir: "./askdb/",
       },
+      studio: { execute: { enabled: true, useIntrospectionConnection: true } },
     };
     installStudioRuntime({}, sqliteConfig);
     const schemaDir = copyFixture();
@@ -575,22 +584,71 @@ describe("AskDB Studio server", () => {
     expect(status.configured).toBe(false);
   });
 
-  it("POST /api/execute/install-driver rejects unknown provider", async () => {
+  it("POST /api/execute/install-driver rejects unknown and inherited provider keys with 400", async () => {
+    installStudioRuntime({}, { ...STUDIO_TEST_BASE, studio: { execute: { enabled: true } } });
+    const schemaDir = copyFixture();
+    const server = createStudioServer({ schema: schemaDir });
+    servers.push(server);
+    const baseUrl = await listen(server);
+
+    for (const provider of ["oracle", "constructor", "__proto__", "toString"]) {
+      const res = await postRaw(`${baseUrl}/api/execute/install-driver`, { provider });
+      expect(res.status, provider).toBe(400);
+      expect((await res.json()).error.message).toMatch(/Unknown provider/);
+    }
+  });
+
+  it("POST /api/execute/install-driver is refused while execute is disabled", async () => {
     installStudioRuntime({});
     const schemaDir = copyFixture();
     const server = createStudioServer({ schema: schemaDir });
     servers.push(server);
     const baseUrl = await listen(server);
 
-    const result = await postJson(`${baseUrl}/api/execute/install-driver`, { provider: "oracle" });
+    const res = await postRaw(`${baseUrl}/api/execute/install-driver`, {});
+    expect(res.status).toBe(403);
+  });
+
+  it("POST /api/execute returns 403 while execute is disabled (the default)", async () => {
+    installStudioRuntime({});
+    const schemaDir = copyFixture();
+    const server = createStudioServer({ schema: schemaDir });
+    servers.push(server);
+    const baseUrl = await listen(server);
+
+    const res = await postRaw(`${baseUrl}/api/execute`, { sql: "SELECT 1" });
+    expect(res.status).toBe(403);
+    const body = await res.json();
+    expect(body.error.message).toContain("Studio execute is off");
+    expect(body.error.message).toContain("studio.execute.enabled: true");
+  });
+
+  it("POST /api/execute does not silently reuse the introspection connection", async () => {
+    // STUDIO_TEST_BASE's flat map carries an introspection Postgres URL.
+    installStudioRuntime(
+      { ASKDB_INTROSPECT_POSTGRES_URL: "postgres://introspect-only/db" },
+      { ...STUDIO_TEST_BASE, studio: { execute: { enabled: true } } },
+    );
+    const schemaDir = copyFixture();
+    const server = createStudioServer({ schema: schemaDir });
+    servers.push(server);
+    const baseUrl = await listen(server);
+
+    const status = await getJson(`${baseUrl}/api/execute/status`);
+    expect(status.enabled).toBe(true);
+    expect(status.configured).toBe(false);
+    expect(status.disabledReason).toContain("useIntrospectionConnection");
+
+    const result = await postJson(`${baseUrl}/api/execute`, { sql: "SELECT 1" });
     expect(result.ok).toBe(false);
-    expect(result.error).toMatch(/Unknown provider/);
+    expect(result.error).toContain("useIntrospectionConnection");
   });
 
   it("POST /api/execute returns ok:false when the connection is not configured", async () => {
     installStudioRuntime({}, {
       ...STUDIO_TEST_BASE,
       introspection: { provider: "postgres", providerConfig: { postgres: {} }, outputDir: "./askdb/" },
+      studio: { execute: { enabled: true } },
     }, { omitFlatKeys: ["ASKDB_INTROSPECT_POSTGRES_URL", "ASKDB_STUDIO_DATABASE_URL"] });
     const schemaDir = copyFixture();
     const server = createStudioServer({ schema: schemaDir });
@@ -599,7 +657,7 @@ describe("AskDB Studio server", () => {
 
     const result = await postJson(`${baseUrl}/api/execute`, { sql: "SELECT 1" });
     expect(result.ok).toBe(false);
-    expect(result.error).toMatch(/No connection URL/);
+    expect(result.error).toMatch(/No execute connection configured/);
   });
 
   it("POST /api/execute dispatches to mysql runner when provider is mysql", async () => {
@@ -610,6 +668,7 @@ describe("AskDB Studio server", () => {
         providerConfig: { mysql: { databaseUrl: "mysql://unreachable-host/db" } },
         outputDir: "./askdb/",
       },
+      studio: { execute: { enabled: true, useIntrospectionConnection: true } },
     };
     installStudioRuntime({}, mysqlConfig);
     const schemaDir = copyFixture();
@@ -623,6 +682,168 @@ describe("AskDB Studio server", () => {
     // The error should come from the mysql runner, not from a missing-pg error
     expect(result.error).not.toMatch(/pg.*required/);
     expect(result.error).not.toMatch(/`pg`/);
+  });
+
+  describe("execute against a real SQLite database", () => {
+    function createSqliteDb(rows: number): string {
+      const dir = mkdtempSync(join(tmpdir(), "askdb-studio-exec-"));
+      const file = join(dir, "app.db");
+      const db = new BetterSqlite3(file);
+      db.exec("CREATE TABLE users (id INTEGER PRIMARY KEY, email TEXT NOT NULL)");
+      const insert = db.prepare("INSERT INTO users (email) VALUES (?)");
+      for (let i = 0; i < rows; i += 1) insert.run(`user${i}@example.com`);
+      db.close();
+      return file;
+    }
+
+    async function startSqliteServer(file: string, execute: { maxRows?: number } = {}) {
+      installStudioRuntime({}, {
+        ...STUDIO_TEST_BASE,
+        introspection: { provider: "sqlite", providerConfig: { sqlite: {} }, outputDir: "./askdb/" },
+        studio: { execute: { enabled: true, provider: "sqlite", file, ...execute } },
+      });
+      const server = createStudioServer({ schema: copyFixture() });
+      servers.push(server);
+      return listen(server);
+    }
+
+    it("runs a validated SELECT when execute is enabled", async () => {
+      const baseUrl = await startSqliteServer(createSqliteDb(3));
+      const result = await postJson(`${baseUrl}/api/execute`, { sql: "SELECT id FROM users ORDER BY id;" });
+      expect(result).toMatchObject({
+        ok: true,
+        columns: ["id"],
+        rows: [[1], [2], [3]],
+        rowCount: 3,
+        truncated: false,
+        rowLimit: 500,
+      });
+      expect(result.warnings).toBeUndefined();
+    });
+
+    it("caps rows at studio.execute.maxRows and reports truncated", async () => {
+      const baseUrl = await startSqliteServer(createSqliteDb(30), { maxRows: 10 });
+      const result = await postJson(`${baseUrl}/api/execute`, { sql: "SELECT id FROM users ORDER BY id" });
+      expect(result.ok).toBe(true);
+      expect(result.truncated).toBe(true);
+      expect(result.rowLimit).toBe(10);
+      expect(result.rows).toHaveLength(10);
+      expect(result.rowCount).toBe(10);
+      expect(result.rows[9]).toEqual([10]);
+
+      const exact = await postJson(`${baseUrl}/api/execute`, { sql: "SELECT id FROM users LIMIT 10" });
+      expect(exact.truncated).toBe(false);
+      expect(exact.rows).toHaveLength(10);
+    });
+
+    it("rejects multi-statement and write SQL with 400 before it reaches the driver", async () => {
+      const file = createSqliteDb(2);
+      const baseUrl = await startSqliteServer(file);
+      for (const sql of ["SELECT 1; DROP TABLE users", "DROP TABLE users", "SELECT 1 -- x"]) {
+        const res = await postRaw(`${baseUrl}/api/execute`, { sql });
+        expect(res.status, sql).toBe(400);
+        expect((await res.json()).error.message).toContain("read-only guardrail");
+      }
+      // The driver's own multi-statement error would have been a 200 with ok:false.
+      const db = new BetterSqlite3(file, { readonly: true });
+      expect(db.prepare("SELECT count(*) AS n FROM users").get()).toEqual({ n: 2 });
+      db.close();
+    });
+
+    it("warns (without blocking) when the SQL reads a column marked sensitive", async () => {
+      const baseUrl = await startSqliteServer(createSqliteDb(1));
+      const result = await postJson(`${baseUrl}/api/execute`, { sql: "SELECT email FROM users" });
+      expect(result.ok).toBe(true);
+      expect(result.warnings).toEqual([expect.stringContaining("users.email")]);
+    });
+  });
+
+  it("rejects request bodies over 1 MiB with 413", async () => {
+    installStudioRuntime({ ASKDB_RAG_EMBEDDER: "mock" });
+    const server = createStudioServer({ schema: copyFixture() });
+    servers.push(server);
+    const baseUrl = await listen(server);
+    const big = { question: "x".repeat(1024 * 1024 + 10), mode: "full", sqlMode: "sql-only", sql: "SELECT 1" };
+
+    const declared = await postRaw(`${baseUrl}/api/history`, big);
+    expect(declared.status).toBe(413);
+    expect((await declared.json()).error.message).toContain("too large");
+
+    // Chunked (no Content-Length) bodies are counted as they stream in.
+    const port = new URL(baseUrl).port;
+    const chunked = await rawRequest(baseUrl, {
+      method: "POST",
+      path: "/api/history",
+      headers: {
+        host: `127.0.0.1:${port}`,
+        "content-type": "application/json",
+        "transfer-encoding": "chunked",
+        ...authHeaders(baseUrl),
+      },
+      body: JSON.stringify(big),
+    });
+    expect(chunked.status).toBe(413);
+  });
+
+  it("persists only whitelisted, bounded history fields and git-ignores the history file", async () => {
+    installStudioRuntime({ ASKDB_RAG_EMBEDDER: "mock" });
+    const schemaDir = copyFixture();
+    const server = createStudioServer({ schema: schemaDir });
+    servers.push(server);
+    const baseUrl = await listen(server);
+
+    await postJson(`${baseUrl}/api/history`, {
+      question: "How many users?",
+      mode: "full",
+      sqlMode: "sql-only",
+      sql: "SELECT count(*) FROM users",
+      explain: "Counts users.",
+      tenantParams: { "1": "t-1" },
+      executionResult: { rowCount: 1, durationMs: 3, truncated: false, extra: "dropped" },
+      id: "attacker-chosen",
+      timestamp: "1999-01-01",
+      injected: "x".repeat(10_000),
+      __proto__: { polluted: true },
+    });
+    const stored = JSON.parse(readFileSync(join(schemaDir, "playground-history.json"), "utf8"));
+    expect(stored).toHaveLength(1);
+    expect(Object.keys(stored[0]).sort()).toEqual(
+      ["executionResult", "explain", "id", "mode", "question", "sql", "sqlMode", "tenantParams", "timestamp"].sort(),
+    );
+    expect(stored[0].id).not.toBe("attacker-chosen");
+    expect(stored[0].executionResult).toEqual({ rowCount: 1, durationMs: 3, truncated: false });
+
+    const gitignore = readFileSync(join(schemaDir, ".gitignore"), "utf8");
+    expect(gitignore.split("\n")).toEqual(expect.arrayContaining(["playground-history.json", ".env", ".env.*", "!.env.example"]));
+
+    for (const bad of [
+      { mode: "full", sqlMode: "sql-only", sql: "SELECT 1" },
+      { question: "q", mode: "full", sqlMode: "anything", sql: "SELECT 1" },
+      { question: "q", mode: "full", sqlMode: "sql-only", sql: 42 },
+      { question: "q".repeat(5000), mode: "full", sqlMode: "sql-only", sql: "SELECT 1" },
+      { question: "q", mode: "full", sqlMode: "sql-only", sql: "SELECT 1", tenantScope: "not-an-object" },
+      { question: "q", mode: "full", sqlMode: "sql-only", sql: "SELECT 1", executionResult: { rowCount: "1" } },
+    ]) {
+      const res = await postRaw(`${baseUrl}/api/history`, bad);
+      expect(res.status, JSON.stringify(bad).slice(0, 80)).toBe(400);
+    }
+  });
+
+  it("appends the history entry to an existing .gitignore without rewriting it", async () => {
+    installStudioRuntime({ ASKDB_RAG_EMBEDDER: "mock" });
+    const schemaDir = copyFixture();
+    writeFileSync(join(schemaDir, ".gitignore"), "# mine\nsecrets.txt");
+    const server = createStudioServer({ schema: schemaDir });
+    servers.push(server);
+    const baseUrl = await listen(server);
+
+    const entry = { question: "q", mode: "full", sqlMode: "sql-only", sql: "SELECT 1" };
+    await postJson(`${baseUrl}/api/history`, entry);
+    await postJson(`${baseUrl}/api/history`, entry);
+    const gitignore = readFileSync(join(schemaDir, ".gitignore"), "utf8");
+    expect(gitignore.startsWith("# mine\nsecrets.txt\n")).toBe(true);
+    expect(gitignore.match(/^playground-history\.json$/gm)).toHaveLength(1);
+    expect(gitignore).not.toContain(".env");
   });
 
   it("GET /api/setup/status reports not needed on a ready workspace", async () => {
@@ -790,6 +1011,7 @@ describe("AskDB Studio server", () => {
       expect(configContent).toContain('databaseUrl: env("MY_PGVECTOR_URL")');
       expect(configContent).toContain('provider: "sqlite"');
       expect(configContent).toContain('file: "./studio.db"');
+      expect(configContent).toContain("enabled: true");
     } finally {
       process.chdir(prevCwd);
       rmSync(projectDir, { recursive: true, force: true });

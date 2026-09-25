@@ -35,6 +35,15 @@ requires its own optional peer driver package — install only the one you need:
 | SQLite | `pnpm add better-sqlite3` |
 | SQL Server | `pnpm add mssql` |
 
+Execute is off by default. Enable it with `studio.execute.enabled: true`
+plus an execute connection (`studio.execute.databaseUrl`, or `file` for
+SQLite), ideally a read-only database role. Studio only reuses the
+introspection connection when `studio.execute.useIntrospectionConnection` is
+`true`. Each query is validated as a single read-only SELECT and runs in a
+read-only (SQL Server: always-rolled-back) transaction with a timeout
+(`studio.execute.timeoutMs`, default 30 s) and a row cap
+(`studio.execute.maxRows`, default 500).
+
 The execute provider is resolved from `studio.execute.provider` in
 `askdb.config.ts`, falling back to the active introspection provider, then
 defaulting to Postgres for backward compatibility. The Playground displays the

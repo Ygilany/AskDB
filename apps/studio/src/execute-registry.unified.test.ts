@@ -10,6 +10,12 @@ const captured = {
   isMysql2: { calledWith: undefined as unknown },
   isSqlite: { calledWith: undefined as unknown },
   isMssql: { calledWith: undefined as unknown },
+  pgClientOpts: undefined as unknown,
+  pgQueries: [] as unknown[],
+  pgRows: [[1]] as unknown[][],
+  mysqlQueries: [] as unknown[],
+  mysqlExecute: [] as unknown[],
+  mssqlQueries: [] as string[],
 };
 
 vi.mock("@askdb/postgres", async (importOriginal) => {
@@ -19,15 +25,17 @@ vi.mock("@askdb/postgres", async (importOriginal) => {
     loadPgDriver: vi.fn(async (opts?: { resolveFrom?: string }) => {
       captured.pg.calledWith = opts;
       class Client {
-        constructor() {}
+        constructor(opts: unknown) {
+          captured.pgClientOpts = opts;
+        }
         async connect() {}
         async end() {}
         async query(arg: string | { text: string; values: unknown[] }) {
+          captured.pgQueries.push(arg);
           if (typeof arg === "string") return {};
           return {
             fields: [{ name: "n" }],
-            rows: [{ n: 1 }],
-            rowCount: 1,
+            rows: captured.pgRows,
           };
         }
       }
@@ -49,9 +57,12 @@ vi.mock("@askdb/mysql", async (importOriginal) => {
       return {
         async createConnection() {
           return {
-            async query() {},
-            async execute() {
-              return [[{ n: 1 }], [{ name: "n" }]];
+            async query(sql: string) {
+              captured.mysqlQueries.push(sql);
+            },
+            async execute(opts: unknown) {
+              captured.mysqlExecute.push(opts);
+              return [[[1]], [{ name: "n" }]];
             },
             async end() {},
           };
@@ -74,10 +85,15 @@ vi.mock("@askdb/sqlite", async (importOriginal) => {
       class Database {
         constructor() {}
         prepare() {
-          return {
+          const stmt = {
+            reader: true,
+            raw: () => stmt,
             columns: () => [{ name: "n" }],
-            all: () => [{ n: 1 }],
+            *iterate() {
+              yield [1];
+            },
           };
+          return stmt;
         }
         close() {}
       }
@@ -108,7 +124,8 @@ vi.mock("@askdb/sqlserver", async (importOriginal) => {
             input() {
               return this;
             },
-            async query() {
+            async query(sql: string) {
+              captured.mssqlQueries.push(sql);
               return { recordset: [] };
             },
           };
@@ -126,7 +143,14 @@ vi.mock("@askdb/sqlserver", async (importOriginal) => {
   };
 });
 
-import { EXECUTE_DRIVER_REGISTRY, isDriverInstalled } from "./execute-registry.js";
+import {
+  EXECUTE_DRIVER_REGISTRY,
+  executeDialectFor,
+  isDriverInstalled,
+  isStudioExecuteProvider,
+  validateExecuteSql,
+} from "./execute-registry.js";
+import { packageManagerSpawnSpec } from "./package-manager.js";
 
 const projectRoot = "/test/project";
 
@@ -253,5 +277,141 @@ describe("studio sqlserver execute applies resolveConnectionInput", () => {
       projectRoot,
     });
     expect(captured.mssqlPoolConfig).toBe(cs);
+  });
+});
+
+describe("studio execute safety", () => {
+  beforeEach(() => {
+    captured.pgClientOpts = undefined;
+    captured.pgQueries = [];
+    captured.pgRows = [[1]];
+    captured.mysqlQueries = [];
+    captured.mysqlExecute = [];
+    captured.mssqlQueries = [];
+    vi.clearAllMocks();
+  });
+
+  it("postgres runs one statement via the extended protocol inside a read-only transaction", async () => {
+    const result = await EXECUTE_DRIVER_REGISTRY.postgres.execute({
+      connectionString: "postgres://localhost/db",
+      sql: "SELECT 1",
+      params: [],
+      projectRoot,
+    });
+    expect(result.ok).toBe(true);
+    const strings = captured.pgQueries.filter((q): q is string => typeof q === "string");
+    expect(strings).toEqual([
+      "SET default_transaction_read_only = on",
+      "BEGIN READ ONLY",
+      "SET LOCAL statement_timeout = 30000",
+      "ROLLBACK",
+    ]);
+    const configs = captured.pgQueries.filter((q) => typeof q === "object") as Array<Record<string, unknown>>;
+    expect(configs).toHaveLength(1);
+    // Empty params would otherwise use the simple protocol, which runs `SELECT 1; COMMIT; DROP ...`.
+    expect(configs[0]).toMatchObject({ queryMode: "extended", rowMode: "array", values: [] });
+    expect(configs[0]!.name).toEqual(expect.any(String));
+    expect(configs[0]!.text).toBe("SELECT * FROM (\nSELECT 1\n) AS askdb_q LIMIT 501");
+    expect(captured.pgClientOpts).toMatchObject({ query_timeout: expect.any(Number) });
+  });
+
+  it("postgres honors timeoutMs / maxRows and reports truncation", async () => {
+    captured.pgRows = [[1], [2], [3]];
+    const result = await EXECUTE_DRIVER_REGISTRY.postgres.execute({
+      connectionString: "postgres://localhost/db",
+      sql: "SELECT n FROM t",
+      params: [],
+      projectRoot,
+      timeoutMs: 1234,
+      maxRows: 2,
+    });
+    expect(captured.pgQueries).toContain("SET LOCAL statement_timeout = 1234");
+    const config = captured.pgQueries.find((q) => typeof q === "object") as { text: string };
+    expect(config.text).toMatch(/LIMIT 3$/);
+    expect(result).toMatchObject({ ok: true, truncated: true, rowCount: 2, rowLimit: 2, rows: [[1], [2]] });
+  });
+
+  it("sqlserver wraps the statement in an always-rolled-back transaction with a row cap", async () => {
+    await EXECUTE_DRIVER_REGISTRY.sqlserver.execute({
+      connectionString: "Server=localhost;Database=db;",
+      sql: "SELECT name FROM sys.tables",
+      params: [],
+      projectRoot,
+      maxRows: 10,
+    });
+    expect(captured.mssqlQueries).toHaveLength(1);
+    const batch = captured.mssqlQueries[0]!;
+    const lines = batch.split("\n");
+    expect(lines.slice(0, 3)).toEqual(["SET XACT_ABORT ON;", "SET ROWCOUNT 11;", "BEGIN TRANSACTION;"]);
+    expect(lines).toContain("SELECT name FROM sys.tables");
+    expect(batch.indexOf("BEGIN TRANSACTION")).toBeLessThan(batch.indexOf("SELECT name"));
+    expect(batch.indexOf("SELECT name")).toBeLessThan(batch.indexOf("ROLLBACK TRANSACTION"));
+    expect(batch).not.toMatch(/COMMIT/i);
+  });
+
+  it("mysql uses a read-only transaction, a server-side timeout, and a prepared single statement", async () => {
+    await EXECUTE_DRIVER_REGISTRY.mysql.execute({
+      connectionString: "mysql://localhost/db",
+      sql: "SELECT 1",
+      params: [],
+      projectRoot,
+    });
+    expect(captured.mysqlQueries).toEqual([
+      "SET SESSION MAX_EXECUTION_TIME = 30000",
+      "SET SESSION TRANSACTION READ ONLY",
+      "START TRANSACTION READ ONLY",
+      "ROLLBACK",
+    ]);
+    expect(captured.mysqlExecute).toEqual([
+      { sql: "SELECT * FROM (\nSELECT 1\n) AS askdb_q LIMIT 501", values: [], rowsAsArray: true },
+    ]);
+  });
+
+  it("validateExecuteSql rejects multi-statement and write SQL for every provider", () => {
+    for (const provider of ["postgres", "mysql", "sqlite", "sqlserver"] as const) {
+      expect(() => validateExecuteSql(provider, "SELECT 1; DROP TABLE t")).toThrow(/Multiple SQL statements/);
+      expect(() => validateExecuteSql(provider, "SELECT 1; COMMIT")).toThrow(/Multiple SQL statements/);
+      expect(() => validateExecuteSql(provider, "DELETE FROM t")).toThrow();
+      expect(validateExecuteSql(provider, "SELECT 1;")).toBe("SELECT 1");
+    }
+    expect(() => validateExecuteSql("sqlserver", "SELECT 1 EXEC sp_who")).toThrow(/EXEC/);
+  });
+
+  it("executeDialectFor honors a same-family dialect override only", () => {
+    expect(executeDialectFor("mysql", "mariadb").id).toBe("mariadb");
+    expect(executeDialectFor("postgres", "cockroachdb").id).toBe("cockroachdb");
+    expect(executeDialectFor("postgres", "sqlserver").id).toBe("postgres");
+    expect(executeDialectFor("sqlite").id).toBe("sqlite");
+  });
+
+  it("isStudioExecuteProvider rejects inherited object keys", () => {
+    expect(isStudioExecuteProvider("postgres")).toBe(true);
+    for (const key of ["constructor", "__proto__", "toString", "hasOwnProperty", "oracle", 1, null]) {
+      expect(isStudioExecuteProvider(key)).toBe(false);
+    }
+  });
+});
+
+describe("packageManagerSpawnSpec", () => {
+  it("spawns the bare command without a shell on POSIX", () => {
+    expect(packageManagerSpawnSpec("pnpm", ["add", "pg"], "linux")).toEqual({
+      command: "pnpm",
+      args: ["add", "pg"],
+      shell: false,
+    });
+  });
+
+  it("uses a shell on Windows so .cmd shims can run", () => {
+    expect(packageManagerSpawnSpec("npm", ["install", "--save", "@askdb/config@1.0.0-beta.3"], "win32")).toEqual({
+      command: "npm",
+      args: ["install", "--save", "@askdb/config@1.0.0-beta.3"],
+      shell: true,
+    });
+  });
+
+  it("refuses arguments a shell could interpret", () => {
+    for (const bad of ["pg && calc", "pg;rm", "$(x)", "pg|x", "a b", "`x`"]) {
+      expect(() => packageManagerSpawnSpec("pnpm", ["add", bad], "win32")).toThrow(/unsafe argument/);
+    }
   });
 });

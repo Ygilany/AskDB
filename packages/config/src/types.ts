@@ -369,8 +369,37 @@ export type AskDbConfig = {
   /** Studio browser server listen and query-execution defaults. */
   studio?: {
     listen?: { host?: string; port?: number };
-    /** Query execution against a live database from the Studio playground. */
+    /**
+     * Query execution against a live database from the Studio playground.
+     * Off by default — set `enabled: true` and give Studio its own connection
+     * (ideally a read-only database role).
+     */
     execute?: {
+      /**
+       * Turn on `POST /api/execute` and the Playground's **Execute Query** button.
+       * Default `false`: Studio generates SQL but never runs it.
+       * Maps to `ASKDB_STUDIO_EXECUTE_ENABLED`.
+       */
+      enabled?: boolean;
+      /**
+       * Reuse the introspection connection (`introspection.providerConfig.<engine>`)
+       * when `databaseUrl` / `file` is not set. Default `false` — Studio execute needs
+       * its own explicit connection so introspection credentials are never used to run
+       * ad-hoc SQL by accident. Maps to `ASKDB_STUDIO_EXECUTE_USE_INTROSPECTION_CONNECTION`.
+       */
+      useIntrospectionConnection?: boolean;
+      /**
+       * Per-query timeout in milliseconds (positive integer). Default `30000`.
+       * Enforced server-side on Postgres, MySQL/MariaDB, and SQL Server; not enforced
+       * for SQLite. Maps to `ASKDB_STUDIO_EXECUTE_TIMEOUT_MS`.
+       */
+      timeoutMs?: number;
+      /**
+       * Maximum rows returned per query (positive integer). Default `500`. Studio fetches
+       * at most `maxRows + 1` rows and reports `truncated: true` when more exist.
+       * Maps to `ASKDB_STUDIO_EXECUTE_MAX_ROWS`.
+       */
+      maxRows?: number;
       /**
        * Explicit live-execute provider. When omitted, Studio falls back to the active
        * introspection provider when it is a live engine, then defaults to `"postgres"`.
