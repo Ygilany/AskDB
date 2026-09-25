@@ -38,7 +38,7 @@ The model provider sees what's in the prompt and bills you for the tokens. AskDB
 
 ## Sensitive columns
 
-The schema artifact lets you mark columns as `sensitive: true`. That flag changes how AskDB constructs the prompt:
+The schema artifact lets you mark tables and columns as `sensitive: true`, either in `schema.json` or in a table's markdown front-matter (which is what Studio's Sensitivity tab writes). Front-matter can only **add** sensitivity. It never un-marks something `schema.json` marks sensitive. The effective flag changes how AskDB constructs the prompt:
 
 - **Tagged in prompt (default).** The model sees the column name with a sensitivity tag. Useful when you want the model to acknowledge the column but generate carefully.
 - **Omitted entirely.** With `--omit-sensitive-from-prompt`, sensitive columns are removed from the prompt. The model can't propose them because it doesn't know they exist.
