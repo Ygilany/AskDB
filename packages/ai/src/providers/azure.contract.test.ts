@@ -82,6 +82,26 @@ describe("azureProvider — real @ai-sdk/azure contract", () => {
     expect(request.body).not.toHaveProperty("reasoning");
   });
 
+  it("sends requests to the configured baseURL instead of the resource endpoint", async () => {
+    const request = await captureGenerate({
+      ...baseConfig,
+      baseURL: "https://proxy.example/openai",
+      model: "gpt-4o-mini",
+    });
+    expect(request.url).toBe("https://proxy.example/openai/responses");
+  });
+
+  it("sends the configured apiVersion as the api-version query parameter", async () => {
+    const request = await captureGenerate({
+      ...baseConfig,
+      model: "gpt-4o-mini",
+      providerOptions: { ...baseConfig.providerOptions, apiVersion: "2024-10-21" },
+    });
+    expect(request.url).toBe(
+      "https://my-foundry.openai.azure.com/openai/v1/responses?api-version=2024-10-21",
+    );
+  });
+
   it("sends reasoning.effort for reasoning-model deployments", async () => {
     const request = await captureGenerate({ ...baseConfig, model: "o4-mini" }, "low");
     expect(request.body.model).toBe("o4-mini");

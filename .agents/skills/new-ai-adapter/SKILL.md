@@ -149,15 +149,16 @@ Rules:
 
 ## Step 3 — Tests
 
-- `packages/ai/src/providers/<provider>.test.ts`, modeled on `anthropic.test.ts`
-  (`vi.hoisted` + `vi.mock("<sdk>")`; the mock also intercepts the dynamic import). Required
-  cases: provider id; language-model construction passes apiKey and baseURL (remember to
-  `await` the factory); embeddings (construction with forwarded options, or the throw with a
-  message containing "embeddings"); `resolveConfig` resolves the native key var; default model
-  applied; returns `undefined` when no key is configured.
+- `packages/ai/src/providers/<provider>.test.ts`, modeled on `anthropic.test.ts` (pure
+  functions, no SDK mocks). Required cases: `resolveConfig` resolves the native key var;
+  default model applied; returns `undefined` when no key is configured; any
+  `resolveProviderOptions` mapping.
 - `packages/ai/src/providers/<provider>.contract.test.ts`, modeled on
   `openai.contract.test.ts`: the **real** SDK with `vi.stubGlobal("fetch")`, asserting the
-  HTTP body carries the model id and any provider options you emit.
+  request URL and HTTP body carry the model id, a configured `baseURL`, any provider options
+  you emit, and embedding options (or the throw with a message containing "embeddings").
+  Don't mock the `@ai-sdk/*` package — a mock echoes its input and can't see what the SDK
+  actually sends.
 - Update the expectations in `packages/ai/src/registry.test.ts` (built-in names/order, peer
   table, setup helpers) and `packages/ai/src/provider.test.ts` (`aiKeyMissingMessage`).
 

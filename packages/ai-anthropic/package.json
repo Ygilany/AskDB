@@ -41,8 +41,7 @@
   },
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
-    "lint": "tsc -p tsconfig.build.json --noEmit",
-    "test": "vitest run --config ../../vitest.config.ts"
+    "lint": "tsc -p tsconfig.build.json --noEmit"
   },
   "dependencies": {
     "@ai-sdk/anthropic": "^4.0.29",

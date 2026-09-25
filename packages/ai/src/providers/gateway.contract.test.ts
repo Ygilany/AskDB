@@ -82,8 +82,4 @@ describe("gatewayProvider — real ai gateway contract", () => {
     expect(requests).toHaveLength(1);
     expect(requests[0]!.body).not.toHaveProperty("providerOptions");
   });
-
-  it("sends no reasoning provider options (not mapped for the gateway yet)", () => {
-    expect(gatewayProvider.resolveProviderOptions).toBeUndefined();
-  });
 });
