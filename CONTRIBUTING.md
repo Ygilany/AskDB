@@ -14,7 +14,7 @@ pnpm test
 
 If `pnpm build` fails with **Cannot find module `.../node_modules/turbo/bin/turbo`**, your `node_modules` tree is out of sync (common after interrupted installs or worktree sync). Run **`rm -rf node_modules && pnpm install`**, then try again. The repo’s **`.npmrc`** hoists `turbo` to reduce broken bin shims; root scripts use **`pnpm exec turbo`** so the CLI is resolved through pnpm.
 
-Use Node 20 or newer and pnpm 11. Optional Postgres fixtures live under `fixtures/` for integration checks.
+Use Node 22.13 or newer (pnpm 11's own floor) and pnpm 11. The published libraries support Node `>=22.12`; CI builds and runs the unit suites on Node 22.12.0 and 24. Optional Postgres fixtures live under `fixtures/` for integration checks.
 
 `pnpm test` runs each package's `test` task through Turbo, which first builds that package and its workspace dependencies (`test` depends on `build` and `^build`). Tests that spawn `apps/cli/dist/cli.js` rely on that; if you run `vitest` directly inside a package, run `pnpm build` first.
 
@@ -39,6 +39,20 @@ Turbo runs tasks in strict env mode: only variables listed in the `test` task's 
 ### Repo-root `askdb.config.ts` and your IDE
 
 The workspace root lists `@askdb/config` as a dev dependency so Node can resolve the package. For the editor, **root `tsconfig.json`** (only top-level `*.ts`) adds `compilerOptions.paths` so `@askdb/config` maps to **`packages/config/src`** (Cmd+click and type errors use source, not only `dist`). Shared compiler defaults live in **`tsconfig.base.json`**; packages extend that file so they do not inherit the root-only `paths` mapping. After dependency changes, run `pnpm install`, then **TypeScript: Restart TS Server** in the IDE if needed.
+
+## Dependency Audit
+
+CI's `audit` job (and `pnpm preflight`) runs `pnpm run audit` — [`audit-ci`](https://github.com/IBM/audit-ci) over `pnpm audit`, failing on any advisory of **moderate** severity or higher, in any dependency (dev-only ones included). Configuration lives in [`.audit-ci.json`](.audit-ci.json).
+
+When it fails, prefer fixing over allowlisting:
+
+1. If the patched version is inside the existing semver range, refresh the lockfile without touching `package.json`: `pnpm update -r --no-save <pkg>...` (this also moves transitive dependencies).
+2. If an intermediate package pins a vulnerable range, bump that parent, or add a documented `overrides` entry in [`pnpm-workspace.yaml`](pnpm-workspace.yaml) (see the existing ones for the expected rationale).
+3. Allowlist only an advisory that is clearly not exploitable in how AskDB uses the package. JSON has no comments, so every `allowlist` entry must have a row in the table below, and should be scoped to its path (`GHSA-xxxx|path>to>pkg`) where possible. `show-not-found` is on, so stale entries are reported — delete them once the advisory no longer matches.
+
+| Advisory | Package / path | Why it is not exploitable here | Remove when |
+| --- | --- | --- | --- |
+| _none_ | | | |
 
 ## Before Opening a PR
 
