@@ -1,65 +1,26 @@
-# `@askdb/connectors`
+# `@askdb/connectors` (deprecated)
 
-AskDB connector provider registry for app/bootstrap wiring. Maps config-driven introspection provider selections to concrete connector packages (`@askdb/postgres`, `@askdb/mysql`, etc.), following the same registry pattern as `@askdb/ai`.
+> **Deprecated.** The connector provider registry now lives in [`@askdb/introspect`](../introspect/README.md), and the connection-string redaction helpers live in `@askdb/introspect/kit`. See [ADR 0008](../../docs/adrs/0008-engine-packages-and-connector-registry.md). This package only re-exports them so existing imports keep working. The engine packages and the first-party apps no longer depend on it.
 
-## Install
+## Migrating
 
-```bash
-pnpm add @askdb/connectors
-# Plus the connector provider packages your runtime uses:
-pnpm add @askdb/postgres @askdb/mysql @askdb/sqlite @askdb/sqlserver @askdb/prisma
+```diff
+- import { createConnectorRegistry, type ConnectorConfig } from "@askdb/connectors";
++ import { createConnectorRegistry, type ConnectorConfig } from "@askdb/introspect";
+
+- import { redactConnectionStringGeneric } from "@askdb/connectors";
++ import { redactConnectionStringGeneric } from "@askdb/introspect/kit";
 ```
 
-Install only the concrete connector packages your introspection config requires.
+| `@askdb/connectors` export | Replacement |
+| --- | --- |
+| `createConnectorRegistry`, `connectorProviderMissingMessage` | the same names from `@askdb/introspect` |
+| `ConnectorConfig`, `ConnectorResult`, `ConnectorProviderAdapter`, `ConnectorProviderAdapters`, `ConnectorRegistry` | the same names from `@askdb/introspect` |
+| `CONNECTOR_PROVIDERS` | `BUILT_IN_CONNECTOR_PROVIDERS` from `@askdb/introspect` |
+| `ConnectorProvider` (was a closed union) | `ConnectorProviderId` from `@askdb/introspect`: an open string type (`BuiltInConnectorProvider \| (string & {})`), so third-party engines can register their own ids |
+| `redactConnectionStringGeneric`, `redactUrlUserinfo`, `redactSecretKeyValues`, `isSecretConnectionKey`, `hasUrlScheme`, `REDACTED_SECRET` | the same names from `@askdb/introspect/kit` |
 
-## Usage
-
-```ts
-import { createConnectorRegistry, type ConnectorConfig } from "@askdb/connectors";
-import { postgresConnectorProvider } from "@askdb/postgres";
-import { mysqlConnectorProvider } from "@askdb/mysql";
-import { introspect } from "@askdb/introspect";
-
-const registry = createConnectorRegistry([
-  postgresConnectorProvider,
-  mysqlConnectorProvider,
-]);
-
-const { connector, input } = registry.createConnector({
-  provider: "postgres",
-  url: "postgres://localhost/mydb",
-});
-
-const result = await introspect(input, { outDir: "./askdb", schemaId: "mydb" }, { connector });
-```
-
-## Exports
-
-- `createConnectorRegistry` — registry factory
-- `CONNECTOR_PROVIDERS` — constant array of all provider ids
-- `ConnectorProvider` — `"postgres" | "prisma" | "mysql" | "sqlite" | "sqlserver"`
-- `ConnectorConfig` — unified per-call config shape
-- `ConnectorResult` — `{ connector, input, mode }` pair consumed by `introspect()`
-- `ConnectorProviderAdapter` — interface implemented by each concrete package
-- `ConnectorRegistry` — `{ hasProvider, createConnector, getTemplates }`
-- `connectorProviderMissingMessage` — actionable error helper
-
-### Connection-string redaction
-
-Display/logging helpers the engine packages build their `redactConnectionString()` on
-(`@askdb/postgres`, `@askdb/mysql`, `@askdb/sqlserver`, `@askdb/sqlite` each export one that
-knows its own formats). Output is for humans only — never pass it back to a driver.
-
-These now live in `@askdb/introspect/kit` and are re-exported here unchanged for compatibility;
-new code should import them from `@askdb/introspect/kit`.
-
-- `redactConnectionStringGeneric(input)` — masks URL userinfo passwords and secret `key=value`
-  pairs (`?password=`, JDBC-style `;password=`, ADO.NET `Password=` / `Pwd=`); the fallback for
-  providers without a dedicated redactor
-- `redactUrlUserinfo(input)` — `scheme://user:secret@host` → `scheme://user:****@host`
-- `redactSecretKeyValues(input, { separators?, whitespaceSeparated? })` — masks secret
-  `key=value` pairs; quote- and `{brace}`-aware
-- `isSecretConnectionKey(key)`, `hasUrlScheme(input)`, `REDACTED_SECRET`
+The registry in `@askdb/introspect` also adds `registry.providers()`, `registry.resolveConnection(provider, request)`, `registry.redactConnectionString(provider, input)`, and the optional `resolveConnection` / `redactConnectionString` adapter hooks.
 
 ## License
 

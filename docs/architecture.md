@@ -39,7 +39,7 @@ AskDB is a pnpm monorepo with reusable packages under `packages/*` and first-par
 flowchart TB
   subgraph Contracts["Reusable contracts and libraries"]
     core["@askdb/core<br/>Schema v2, ask(), modes, logging, retrieval input"]
-    introspect["@askdb/introspect<br/>Connector contract and Schema v2 renderer"]
+    introspect["@askdb/introspect<br/>Connector contract, connector registry,<br/>engine kit, Schema v2 renderer"]
     enrich["@askdb/enrich<br/>Headless enrichment workspace helpers"]
     rag["@askdb/rag<br/>Chunking, indexing, retriever wiring"]
   end
@@ -47,7 +47,7 @@ flowchart TB
   subgraph Integrations["Integration packages"]
     postgres["@askdb/postgres<br/>Postgres dialect, connector, templates, runner"]
     prisma["@askdb/prisma<br/>Prisma schema-file connector"]
-    connectors["@askdb/connectors<br/>Connector provider registry"]
+    connectors["@askdb/connectors<br/>Deprecated re-export shim"]
     mysql["@askdb/mysql<br/>MySQL / MariaDB dialect, connector, runner"]
     sqlite["@askdb/sqlite<br/>SQLite dialect, connector, runner"]
     sqlserver["@askdb/sqlserver<br/>SQL Server dialect, connector, runner"]
@@ -69,13 +69,16 @@ flowchart TB
   end
 
   connectors --> introspect
+  introspect --> core
   postgres --> core
   postgres --> introspect
-  postgres --> connectors
   prisma --> introspect
-  mysql --> connectors
-  sqlite --> connectors
-  sqlserver --> connectors
+  mysql --> core
+  mysql --> introspect
+  sqlite --> core
+  sqlite --> introspect
+  sqlserver --> core
+  sqlserver --> introspect
   enrich --> core
   rag --> core
   aiOpenai --> aiPkg
@@ -86,7 +89,6 @@ flowchart TB
   cli --> introspect
   cli --> postgres
   cli --> prisma
-  cli --> connectors
   cli --> mysql
   cli --> sqlite
   cli --> sqlserver
@@ -97,8 +99,13 @@ flowchart TB
   http --> postgres
   http --> aiPkg
   studio --> core
+  studio --> introspect
   studio --> enrich
   studio --> postgres
+  studio --> mysql
+  studio --> sqlite
+  studio --> sqlserver
+  studio --> prisma
   studio --> rag
   studio --> aiPkg
 ```
@@ -110,14 +117,14 @@ flowchart TB
 | `@askdb/ai-azure` | Azure OpenAI / Microsoft Foundry provider adapter for `@askdb/ai`. | Wraps `@ai-sdk/azure`; no NL-to-SQL logic. |
 | `@askdb/ai-google` | Google Generative AI / Gemini provider adapter for `@askdb/ai`. | Wraps `@ai-sdk/google`; no NL-to-SQL logic. |
 | `@askdb/ai-anthropic` | Anthropic Claude provider adapter for `@askdb/ai`. No embeddings API; throws a clear error if `createEmbeddingModel` is called. | Wraps `@ai-sdk/anthropic`; no NL-to-SQL logic. |
-| `@askdb/connectors` | Registry for database connector adapters, config-driven dispatch contract, and `createConnectorRegistry` factory. | No database drivers; engine packages supply those. |
-| `@askdb/mysql` | MySQL / MariaDB connector adapter for `@askdb/connectors`; includes `MYSQL_DIALECT`, `MARIADB_DIALECT`, live connector, and `createMysqlCatalogQueryRunner`. | Wraps `mysql2` (optional peer); exports `mysqlConnectorProvider`. |
-| `@askdb/sqlite` | SQLite connector adapter for `@askdb/connectors`; includes `SQLITE_DIALECT`, live connector, and `createSqliteCatalogQueryRunner`. | Wraps `better-sqlite3` (optional peer); exports `sqliteConnectorProvider`. |
-| `@askdb/sqlserver` | SQL Server connector adapter for `@askdb/connectors`; includes `SQLSERVER_DIALECT`, live connector, and `createSqlServerCatalogQueryRunner`. | Wraps `mssql` (optional peer); exports `sqlServerConnectorProvider`. |
+| `@askdb/connectors` | **Deprecated** ([ADR 0008](adrs/0008-engine-packages-and-connector-registry.md)). Re-exports the connector registry from `@askdb/introspect` and the redaction helpers from `@askdb/introspect/kit` for existing imports. | No logic of its own; nothing first-party depends on it. |
+| `@askdb/mysql` | MySQL / MariaDB engine package: live connector, `createMysqlCatalogQueryRunner`, `redactConnectionString`, and the `mysqlConnectorProvider` registry adapter; re-exports `MYSQL_DIALECT` / `MARIADB_DIALECT` from core. | Wraps `mysql2` (optional peer). |
+| `@askdb/sqlite` | SQLite engine package: live connector, `createSqliteCatalogQueryRunner`, `redactConnectionString`, and the `sqliteConnectorProvider` registry adapter; re-exports `SQLITE_DIALECT` from core. | Wraps `better-sqlite3` (optional peer). |
+| `@askdb/sqlserver` | SQL Server engine package: live connector, `createSqlServerCatalogQueryRunner`, `redactConnectionString`, and the `sqlServerConnectorProvider` registry adapter; re-exports `SQLSERVER_DIALECT` from core. | Wraps `mssql` (optional peer). |
 | `@askdb/client` | Config-aware facade over `@askdb/core`: `createAskDb()` resolves schema, model, and dialect from config + a provider registry so callers pass only a question. | No provider SDKs bundled; the registry is host-supplied. `@askdb/core` never depends on it. |
 | `@askdb/core` | Dialect-agnostic NL-to-SQL pipeline, Schema v2 loading/parsing, modes, logging, enrichment suggestions, and retriever input. | No database drivers, no generated-SQL execution, no engine-specific connector. |
-| `@askdb/introspect` | Engine-agnostic `Connector<TInput>` contract, introspection orchestrator, and Schema v2 renderer. | No default connector, no engine-specific input union, no standalone binary. |
-| `@askdb/postgres` | Postgres dialect, SQL prompt/validation helpers, live/from-export connector, catalog templates, and optional `pg` catalog runner. | `pg` is optional and only needed for live catalog reads; generated SQL still executes outside AskDB. |
+| `@askdb/introspect` | Engine-agnostic `Connector<TInput>` contract, introspection orchestrator, Schema v2 renderer, the connector registry (`createConnectorRegistry`, `ConnectorProviderAdapter`, open provider ids), and the `@askdb/introspect/kit` engine helpers (driver loading, filters, ids, row folding, redaction). | No default connector, no engine-specific input union, no driver dependency, no standalone binary. |
+| `@askdb/postgres` | Postgres engine package: live/from-export connector, catalog templates, optional `pg` catalog runner, `redactConnectionString`, and the `postgresConnectorProvider` registry adapter; re-exports `POSTGRES_DIALECT` (as `postgresDialect`) from core. | `pg` is optional and only needed for live catalog reads; generated SQL still executes outside AskDB. |
 | `@askdb/prisma` | Offline Prisma schema-file connector that renders Schema v2 physical metadata. | No live database connection and no SQL dialect. Pair output with a dialect such as `postgresDialect` when generating SQL. |
 | `@askdb/enrich` | Headless Schema v2 authoring helpers: load/save workspace, table drafts, concepts, markdown preservation, suggestions, and bundling. | No terminal or browser UI. |
 | `@askdb/studio` | Maintained local browser UI for enrichment, sample NL-to-SQL checks, and local RAG exploration. | Authoring surface over Schema v2, not a connector package. |
@@ -152,29 +159,36 @@ flowchart BT
   http["@askdb/http-api"]
 
   connectors --> introspect
+  introspect --> core
   enrich --> core
   rag --> core
   postgres --> core
   postgres --> introspect
-  postgres --> connectors
   prisma --> introspect
-  mysql --> connectors
-  sqlite --> connectors
-  sqlserver --> connectors
+  mysql --> core
+  mysql --> introspect
+  sqlite --> core
+  sqlite --> introspect
+  sqlserver --> core
+  sqlserver --> introspect
   aiOpenai --> ai
   aiAzure --> ai
   aiGoogle --> ai
   aiAnthropic --> ai
   studio --> enrich
   studio --> core
+  studio --> introspect
   studio --> postgres
+  studio --> mysql
+  studio --> sqlite
+  studio --> sqlserver
+  studio --> prisma
   studio --> rag
   studio --> ai
   cli --> core
   cli --> introspect
   cli --> postgres
   cli --> prisma
-  cli --> connectors
   cli --> mysql
   cli --> sqlite
   cli --> sqlserver
@@ -191,6 +205,7 @@ Boundary rules:
 - `@askdb/core` remains the schema and NL-to-SQL contract package. It receives a dialect, a model, an optional retriever, and a schema; it returns SQL.
 - Integration packages own engine-specific knowledge. `@askdb/postgres` owns Postgres dialect behavior and Postgres catalog introspection. `@askdb/prisma` owns Prisma schema-file introspection.
 - `@askdb/introspect` does not know whether an integration reads a live database, an export bundle, a file, or a future API. The connector input shape belongs to the connector package.
+- Engine packages own connection resolution. Each exports a `ConnectorProviderAdapter` whose `resolveConnection` hook merges explicit values (CLI flags) with AskDB runtime config and whose `redactConnectionString` masks that engine's DSN formats. First-party surfaces dispatch through `createConnectorRegistry(...)` and do not switch on engine names ([ADR 0008](adrs/0008-engine-packages-and-connector-registry.md)).
 - `@askdb/enrich` owns reusable authoring behavior. `@askdb/studio` (and any custom authoring surface) depends on it rather than duplicating workspace logic.
 - `@askdb/rag` is optional. It can narrow schema context before `ask()`, but it does not replace dialect validation.
 - First-party apps can be batteries-included. Reusable packages should stay small and should not pull optional drivers into unrelated workflows.
@@ -230,6 +245,16 @@ The generated SQL is an output artifact. Running it is outside the AskDB package
 ## Introspection connector architecture
 
 `@askdb/introspect` defines the connector contract and rendering flow. Connector packages supply the engine-specific source reader and input type.
+
+Hosts that pick the engine from config (the CLI, Studio, or your own bootstrap) go through the connector registry in `@askdb/introspect`:
+
+```ts
+const registry = createConnectorRegistry([postgresConnectorProvider, mysqlConnectorProvider /* , acmeConnectorProvider */]);
+const resolved = registry.resolveConnection(engine, { explicit: { url }, runtime: getAskDbRuntimeConfig(), surface: "cli" });
+if (!resolved.ok) throw new Error(resolved.error);
+const { connector, input } = registry.createConnector({ provider: engine, ...resolved.connection, filters, schemaId });
+await introspect(input, { outDir, schemaId }, { connector });
+```
 
 ```mermaid
 flowchart TB
@@ -352,6 +377,8 @@ Connectors and peer packages solve different problems:
 | --- | --- | --- | --- |
 | SQL dialect | `@askdb/core` consumer API, implemented by integrations | `AskDialect` | Add a database dialect or a different SQL-generation/validation policy. |
 | Introspection connector | `@askdb/introspect` contract, implemented by integrations | `Connector<TInput>` | Add a new schema metadata source such as another database engine, export format, or schema file type. |
+| Connector provider adapter | `@askdb/introspect` registry, implemented by engine packages | `ConnectorProviderAdapter` (`createConnector`, optional `resolveConnection`, `redactConnectionString`, `getTemplates`); any string provider id | Make an engine selectable by id from config-driven hosts (`createConnectorRegistry`, `runIntrospectCli(argv, { connectorRegistry })`). |
+| Engine kit | `@askdb/introspect/kit` | `createOptionalDriverLoader`, `compileTableFilters`, `makeTableId`, `rowsToRecords`, `defineLiveConnectorProvider`, redaction helpers | Build a new engine package without re-implementing driver loading, filters, ids, row folding, or the live-catalog adapter. |
 | Catalog runner | Integration-owned helper, currently `@askdb/postgres` | `CatalogQueryRunner` | Use a different live database client while keeping the connector unchanged. |
 | Enrichment authoring | `@askdb/enrich` | `Workspace`, draft builders, save helpers, bundle helpers | Build a custom UI over Schema v2 without depending on Studio. |
 | Retrieval | `@askdb/rag` and `@askdb/core` | `Embedder`, `VectorStore`, `Retriever` | Use a different embedding provider, vector database, or retrieval policy. |
@@ -366,3 +393,4 @@ Connectors and peer packages solve different problems:
 - [Modes and sensitive fields](contracts/sensitive-fields-and-modes.md)
 - [ADR 0002: Integration-package layout](adrs/0002-integration-package-layout.md)
 - [ADR 0004: Enrichment-package boundary](adrs/0004-enrichment-package-boundary.md)
+- [ADR 0008: Engine packages, engine kit, and the connector registry](adrs/0008-engine-packages-and-connector-registry.md)

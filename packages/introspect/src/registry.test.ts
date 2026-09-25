@@ -1,8 +1,11 @@
 import { describe, expect, it, vi } from "vitest";
 import {
   createConnectorRegistry,
+  runtimeIntrospectionString,
   type ConnectorProviderAdapter,
   type ConnectorConfig,
+  type ConnectorConnectionRequest,
+  type ConnectorConnectionResolution,
 } from "./registry.js";
 
 const makeAdapter = (provider: ConnectorProviderAdapter["provider"]): ConnectorProviderAdapter => ({
@@ -114,5 +117,85 @@ describe("createConnectorRegistry", () => {
   it("getTemplates returns undefined for providers that are not registered", () => {
     const registry = createConnectorRegistry([]);
     expect(registry.getTemplates("postgres")).toBeUndefined();
+  });
+});
+
+describe("createConnectorRegistry — open provider ids (third-party engines)", () => {
+  const runtime = { introspection: { provider: "acme", acmeUrl: "acme://configured" } };
+
+  it("accepts and dispatches a custom provider id", () => {
+    const acme = makeAdapter("acme");
+    const registry = createConnectorRegistry([makeAdapter("postgres"), acme]);
+
+    expect(registry.hasProvider("acme")).toBe(true);
+    expect(registry.providers()).toEqual(["postgres", "acme"]);
+    registry.createConnector({ provider: "acme", url: "acme://db" });
+    expect(acme.createConnector).toHaveBeenCalledWith({ provider: "acme", url: "acme://db" });
+  });
+
+  it("accepts a custom provider id in the object-map form", () => {
+    const registry = createConnectorRegistry({ acme: makeAdapter("acme") });
+    expect(registry.hasProvider("acme")).toBe(true);
+  });
+
+  it("points unregistered custom providers at their own package", () => {
+    const registry = createConnectorRegistry([]);
+    expect(() => registry.createConnector({ provider: "acme" })).toThrow(
+      'Connector provider "acme" is not registered. Install the package that provides it',
+    );
+  });
+
+  it("resolveConnection delegates to the adapter hook with the full request", () => {
+    const resolveConnection = vi.fn(
+      (request: ConnectorConnectionRequest): ConnectorConnectionResolution => ({
+        ok: true,
+        connection: { url: request.explicit?.url ?? (request.runtime.introspection.acmeUrl as string) },
+        sourceLabel: "acme",
+      }),
+    );
+    const registry = createConnectorRegistry([{ ...makeAdapter("acme"), resolveConnection }]);
+
+    const resolved = registry.resolveConnection("acme", { runtime, surface: "cli" });
+
+    expect(resolveConnection).toHaveBeenCalledWith({ runtime, surface: "cli" });
+    expect(resolved).toEqual({ ok: true, connection: { url: "acme://configured" }, sourceLabel: "acme" });
+  });
+
+  it("resolveConnection passes explicit values through when the adapter has no hook", () => {
+    const registry = createConnectorRegistry([makeAdapter("acme")]);
+    expect(
+      registry.resolveConnection("acme", { explicit: { url: "acme://u:S3cret@h/db" }, runtime }),
+    ).toEqual({ ok: true, connection: { url: "acme://u:S3cret@h/db" }, sourceLabel: "acme://u:****@h/db" });
+    expect(registry.resolveConnection("acme", { runtime })).toEqual({
+      ok: true,
+      connection: {},
+      sourceLabel: "acme",
+    });
+  });
+
+  it("resolveConnection throws for unregistered providers", () => {
+    expect(() => createConnectorRegistry([]).resolveConnection("acme", { runtime })).toThrow(/not registered/);
+  });
+
+  it("redactConnectionString uses the adapter's redactor, else generic redaction", () => {
+    const registry = createConnectorRegistry([
+      { ...makeAdapter("acme"), redactConnectionString: () => "custom" },
+      makeAdapter("plain"),
+    ]);
+    expect(registry.redactConnectionString("acme", "acme://u:p@h")).toBe("custom");
+    expect(registry.redactConnectionString("plain", "x://u:S3cret@h")).toBe("x://u:****@h");
+    expect(registry.redactConnectionString("unknown", "Server=h;Password=S3cret;")).toBe(
+      "Server=h;Password=****;",
+    );
+  });
+});
+
+describe("runtimeIntrospectionString", () => {
+  it("returns non-empty strings only", () => {
+    const runtime = { introspection: { a: "x", b: "", c: 3 } };
+    expect(runtimeIntrospectionString(runtime, "a")).toBe("x");
+    expect(runtimeIntrospectionString(runtime, "b")).toBeUndefined();
+    expect(runtimeIntrospectionString(runtime, "c")).toBeUndefined();
+    expect(runtimeIntrospectionString(runtime, "missing")).toBeUndefined();
   });
 });
