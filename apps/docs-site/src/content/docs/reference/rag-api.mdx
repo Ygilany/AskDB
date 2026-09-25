@@ -11,7 +11,7 @@ See the [RAG for large schemas guide](/guides/rag-for-large-schemas/) for the en
 
 ## `buildSchemaIndex(options)`
 
-Chunks a schema artifact, embeds every chunk, upserts them into the vector store, and returns a bound retriever. Handles incremental re-indexing: unchanged chunks are reused from the lock file.
+Chunks a schema artifact, embeds the chunks, upserts them into the vector store, and returns a bound retriever. Re-indexing is incremental: a chunk is skipped only when the store already holds the same content hash for its id. Built-in stores report their hashes, so a lock file can't make the indexer skip chunks a fresh or different store doesn't have.
 
 ```ts
 import { buildSchemaIndex, createAiSdkEmbedder, createPgvectorStore } from "@askdb/rag";
@@ -54,8 +54,10 @@ const { sql } = await ask({
 | `schema` | `ChunkerSources \| NormalizedSchemaV2` | no† | Schema to index. Prefer `loadChunkerSourcesFromDir(path)` — it includes full table markdown, enabling richer chunks. Passing a bare `NormalizedSchemaV2` works but produces text-only chunks without markdown body. |
 | `embedder` | `Embedder` | yes | Text embedding function: `(texts: string[]) => Promise<number[][]>`. Use `createAiSdkEmbedder()` or supply your own. |
 | `store` | `VectorStore` | yes | Vector store adapter. Use `createPgvectorStore()` or supply a custom adapter. |
-| `embedderId` | `string` | no | Stable identifier for the embedder (e.g. `"openai:text-embedding-3-small"`). Stored in the lock file — changing it triggers a full re-embed. Strongly recommended when using a lock file. |
-| `lockFilePath` | `string` | no | Path to `schema.lock.json`. Enables incremental indexing: unchanged chunks are skipped. Write it inside the schema directory. |
+| `embedderId` | `string` | no | Stable identifier for the embedder (e.g. `"openai:text-embedding-3-small"`). Stored in the lock file. Changing it, including going from unset to set, triggers a full re-embed. Strongly recommended when using a lock file. |
+| `lockFilePath` | `string` | no | Path to `schema.lock.json`. Records the embedder id, store identity, dimensions, and chunk hashes. A missing lock, or one written by an older `@askdb/rag`, triggers a full re-embed. Write it inside the schema directory. |
+| `force` | `boolean` | no | Re-embed every chunk regardless of the lock file or stored hashes. |
+| `chunkOptions` | `ChunkOptions` | no | `includeSensitiveDescribable` (default `false`), `emitRelationships` (default `false`), `chunkSizeMaxChars` (default `1000`). |
 | `batchSize` | `number` | no | Number of texts per embedder call. Default `64`. |
 | `onProgress` | `(e: IndexProgressEvent) => void` | no | Called at `"started"`, `"embedded"`, and `"completed"` stages. |
 | `logger` | `AskDbLogger` | no | Structured logger. |
@@ -70,9 +72,9 @@ const { sql } = await ask({
 | `retriever` | `Retriever` | Bound to the store and embedder. Pass directly to `ask()`. |
 | `stats.chunksTotal` | `number` | Total chunk count after indexing. Pass as `totalSchemaChunkCount` to `ask()`. |
 | `stats.chunksIndexed` | `number` | Chunks newly embedded in this run. |
-| `stats.chunksReused` | `number` | Chunks skipped because they matched the lock file. |
-| `stats.sensitiveExcluded` | `number` | Sensitive chunks excluded from indexing. |
-| `stats.sensitiveIncluded` | `number` | Sensitive chunks included (when `sensitive: true` is set on the table). |
+| `stats.chunksReused` | `number` | Chunks skipped because the store already held them with the same content hash. |
+| `stats.sensitiveExcluded` | `number` | Chunks, or chunks' describable text, left out because they belong to or mention a sensitive table/column. Exclusion is the default. |
+| `stats.sensitiveIncluded` | `number` | Chunks whose sensitive describable content was embedded only because `chunkOptions.includeSensitiveDescribable: true` was set. Always `0` by default. |
 | `chunks` | `Chunk[]` | Full chunk list sorted by id. Useful for diagnostics. |
 
 ### `IndexProgressEvent`
@@ -157,8 +159,9 @@ await store.ensureSchema(); // idempotent — safe to call on every startup
 | `dimensions` | `number` | yes | Embedding vector size. Must match the embedding model. Common values: `1536` (OpenAI `text-embedding-3-small`/`ada-002`), `3072` (`text-embedding-3-large`), `768` (many open-source models). |
 | `connectionString` | `string` | no† | PostgreSQL connection string. The store lazily imports and pools `pg` when this is supplied. |
 | `client` | `PgClient` | no† | Pre-built `pg.Pool` or `pg.Client`. Preferred when your app already manages a pool. The store never closes an externally supplied client. |
-| `table` | `string` | no | Table name. Default `"askdb_rag_chunks"`. Override when you want to namespace by schema or tenant. |
+| `table` | `string` | no | Table name. Default `"askdb_rag_chunks"`. Several schemas can share one table (chunk ids are schema-scoped); use separate tables for different embedding dimensions. |
 | `indexStrategy` | `PgvectorIndexStrategy` | no | Index type: `"hnsw"` (default, better recall), `"ivfflat"` (faster at very large scale), or `"none"` (sequential scan — for small tables or testing). |
+| `resolveFrom` | `string` | no | Directory to resolve the optional `pg` peer from when it isn't resolvable from `@askdb/rag` (e.g. running from an npx cache). Default `process.cwd()`. |
 
 †Either `connectionString` or `client` is required.
 
@@ -175,8 +178,8 @@ Beyond the `VectorStore` interface, `createPgvectorStore` returns:
 
 | Method | Description |
 | --- | --- |
-| `setupSql()` | Returns the DDL string that creates the extension, table, and indexes. |
-| `ensureSchema()` | Executes `setupSql()` against the database. Idempotent — safe on every startup. |
+| `setupSql()` | Returns the DDL string that creates the extension, table (including the `content_hash` column), and indexes, and adds `content_hash` to tables created by older versions. |
+| `ensureSchema()` | Executes `setupSql()` against the database. Idempotent — safe on every startup. Throws if the existing table's `embedding` column has different dimensions than `dimensions`. |
 | `close()` | Closes the internal connection pool. No-op when an external client was supplied. |
 | `count(filter?)` | Returns the number of stored chunks matching an optional filter. Useful for diagnostics. |
 
@@ -189,11 +192,16 @@ interface VectorStore {
   upsert(records: UpsertRecord[]): Promise<void>;
   query(vector: number[], k: number, filter?: Filter): Promise<QueryResult[]>;
   delete(ids: string[]): Promise<void>;
-  hashesByPrefix?(prefix: string): Promise<Record<string, string>>; // optional — enables skip-reembed
+  // Optional — stored content hashes for ids starting with `prefix`.
+  hashesByPrefix?(prefix: string): Promise<Record<string, string>>;
+  // Optional — every stored id for one schema (orphan pruning).
+  idsBySchema?(schemaId: string): Promise<string[]>;
+  // Optional — identity recorded in schema.lock.json.
+  describe?(): { kind: string; location?: string; dimensions?: number };
 }
 ```
 
-Implementing `hashesByPrefix` enables the incremental indexing fast-path: unchanged chunks are detected without a separate lookup and skipped automatically.
+Persist `UpsertRecord.hash` and implement `hashesByPrefix` so the indexer can verify what your store holds. It then skips only chunks stored with the same content hash. Without it, the indexer falls back to the hashes in `schema.lock.json`, and only trusts them when `describe()` reports the same store and dimensions as the lock. Implement `idsBySchema` so chunks removed from the schema are pruned from your store without touching other schemas.
 
 ---
 
@@ -265,12 +273,12 @@ type Filter = {
 
 | Field | Type | Description |
 | --- | --- | --- |
-| `id` | `string` | Stable chunk id. Unchanged across re-indexes when source content is unchanged. |
+| `id` | `string` | Stable, schema-scoped chunk id: `chunk:<schemaId>:<local-id>`, e.g. `chunk:my-app:table:public.orders#cql`. Unchanged across re-indexes. Use `chunkIdPrefix(schemaId)` to get the prefix. |
 | `type` | `ChunkType` | Semantic kind of this chunk. |
 | `text` | `string` | The text that gets embedded. |
 | `schemaId` | `string` | The schema this chunk belongs to. |
 | `refs` | `string[]` | Schema v2 ids referenced by this chunk (table ids, column ids, etc.). |
-| `sensitive` | `boolean` | `true` when the chunk's source references a sensitive column. |
+| `sensitive` | `boolean` | `true` when the chunk carries content that belongs to or mentions a sensitive table/column. That content is only emitted with `includeSensitiveDescribable: true`. |
 
 ### `ChunkType`
 
