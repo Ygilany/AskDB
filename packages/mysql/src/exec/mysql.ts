@@ -21,11 +21,6 @@ const mysql2Loader = createOptionalDriverLoader<typeof import("mysql2/promise")>
   missingMessage: missingDriverMessage({ engine: "MySQL", packageName: "mysql2" }),
 });
 
-/** @internal exposed for tests that need to reset the lazy `mysql2` cache. */
-export function __resetMysql2ModuleCacheForTests(): void {
-  mysql2Loader.reset();
-}
-
 type Mysql2DriverModule = typeof import("mysql2/promise");
 
 /**

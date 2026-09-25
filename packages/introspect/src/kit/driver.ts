@@ -37,8 +37,6 @@ export type OptionalDriverLoader<T> = {
    * carrying `missingMessage` when the peer is missing everywhere.
    */
   load(options?: DriverLoadOptions): Promise<T>;
-  /** Drop every cached load (tests). */
-  reset(): void;
 };
 
 /**
@@ -99,9 +97,6 @@ export function createOptionalDriverLoader<T>(spec: OptionalDriverSpec<T>): Opti
         cache.set(key, promise);
       }
       return promise;
-    },
-    reset() {
-      cache.clear();
     },
   };
 }

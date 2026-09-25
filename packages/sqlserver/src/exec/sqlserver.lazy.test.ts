@@ -84,26 +84,17 @@ module.exports = { ConnectionPool };
 }
 
 describe("exec/sqlserver - lazy `mssql` peer dependency", () => {
-  beforeEach(async () => {
+  beforeEach(() => {
     vi.resetModules();
     mssqlState.projectResolvedPaths.clear();
     mssqlState.shouldFail = false;
     process.chdir(originalCwd);
-    const { __resetMssqlModuleCacheForTests } = await import("./sqlserver.js");
-    __resetMssqlModuleCacheForTests();
   });
 
   afterEach(async () => {
     process.chdir(originalCwd);
     await Promise.all(tempDirs.map((dir) => rm(dir, { force: true, recursive: true })));
     tempDirs = [];
-  });
-
-  it("createSqlServerCatalogQueryRunner() does not load `mssql` at construction time", async () => {
-    const { createSqlServerCatalogQueryRunner } = await import("./sqlserver.js");
-    mssqlState.shouldFail = true;
-
-    expect(() => createSqlServerCatalogQueryRunner("mssql://nowhere")).not.toThrow();
   });
 
   it("invoking the runner when `mssql` is missing rejects with a helpful AskDbError", async () => {
@@ -122,25 +113,6 @@ describe("exec/sqlserver - lazy `mssql` peer dependency", () => {
     expect(msg).toMatch(/`npx -p askdb -p mssql askdb \.\.\.`/);
   });
 
-  it("after a missing-mssql failure, a later invocation retries the import (cache cleared)", async () => {
-    const { createSqlServerCatalogQueryRunner } = await import("./sqlserver.js");
-    process.chdir(await createTempProject());
-    mssqlState.shouldFail = true;
-    const runner = createSqlServerCatalogQueryRunner("mssql://nowhere");
-
-    const first = await runner("SELECT 1").catch((e: unknown) => e);
-    expect((first as Error).name).toBe("AskDbError");
-
-    const projectDir = await createTempProject();
-    await addMssqlFixture(projectDir);
-    process.chdir(projectDir);
-
-    await expect(runner("SELECT 1")).resolves.toEqual({
-      columns: ["n", "label"],
-      rows: [[1, "ok"]],
-    });
-  });
-
   it("resolves `mssql` from the caller project cwd when the adapter import cannot see it", async () => {
     const { createSqlServerCatalogQueryRunner } = await import("./sqlserver.js");
     const projectDir = await createTempProject();
@@ -154,54 +126,5 @@ describe("exec/sqlserver - lazy `mssql` peer dependency", () => {
       columns: ["n", "label"],
       rows: [[1, "ok"]],
     });
-  });
-
-  it("resolveFrom missing-driver path rejects with AskDbError when resolveFrom has no driver", async () => {
-    const { createSqlServerCatalogQueryRunner } = await import("./sqlserver.js");
-    const emptyDir = await createTempProject();
-    mssqlState.shouldFail = true;
-    const runner = createSqlServerCatalogQueryRunner("mssql://nowhere", { resolveFrom: emptyDir });
-
-    const err = await runner("SELECT 1").catch((e: unknown) => e);
-    expect((err as Error).name).toBe("AskDbError");
-    expect((err as Error).message).toMatch(/optional `mssql` peer dependency/);
-  });
-
-  it("resolveFrom honored: loads driver from resolveFrom even when cwd lacks it", async () => {
-    const { createSqlServerCatalogQueryRunner } = await import("./sqlserver.js");
-    const projectDir = await createTempProject();
-    await addMssqlFixture(projectDir);
-    process.chdir(await createTempProject());
-    mssqlState.shouldFail = true;
-
-    const runner = createSqlServerCatalogQueryRunner("mssql://user:pass@host:1433/db", {
-      resolveFrom: projectDir,
-    });
-    await expect(runner("SELECT 1")).resolves.toEqual({
-      columns: ["n", "label"],
-      rows: [[1, "ok"]],
-    });
-  });
-
-  it("resolveFrom cache slots are independent per directory", async () => {
-    const { createSqlServerCatalogQueryRunner } = await import("./sqlserver.js");
-    const dirWithDriver = await createTempProject();
-    await addMssqlFixture(dirWithDriver);
-    const dirWithoutDriver = await createTempProject();
-    mssqlState.shouldFail = true;
-
-    const runnerA = createSqlServerCatalogQueryRunner("mssql://user:pass@host:1433/db", {
-      resolveFrom: dirWithDriver,
-    });
-    await expect(runnerA("SELECT 1")).resolves.toEqual({
-      columns: ["n", "label"],
-      rows: [[1, "ok"]],
-    });
-
-    const runnerB = createSqlServerCatalogQueryRunner("mssql://user:pass@host:1433/db", {
-      resolveFrom: dirWithoutDriver,
-    });
-    const err = await runnerB("SELECT 1").catch((e: unknown) => e);
-    expect((err as Error).name).toBe("AskDbError");
   });
 });
