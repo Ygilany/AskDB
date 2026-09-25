@@ -1,6 +1,6 @@
 import { createContext, use, useEffect, useMemo, useReducer } from "react";
 import type { ReactNode } from "react";
-import type { TenantFilterCondition, TenantSqlOutputMode, TenantScope } from "@askdb/core";
+import type { TenantSqlOutputMode, TenantScope } from "@askdb/core";
 import type { AskResponse, ExecuteResponse, ExecuteStatusResponse, PlaygroundHistoryEntry } from "@/shared/api";
 import { ask, deleteFromHistory, executeQuery, getExecuteStatus, getHistory, installExecuteDriver, saveToHistory } from "../api";
 import type { StatusMessage } from "./workspace-context";
@@ -26,14 +26,6 @@ export type TenantMultiRootScopeDraft = {
   id: string;
   tenantRoot: string;
   idsText: string;
-};
-
-export type TenantFilterConditionDraft = {
-  id: string;
-  tableId: string;
-  column: string;
-  operator: TenantFilterCondition["operator"];
-  valueText: string;
 };
 
 type GeneratedTenantScope = {
@@ -93,7 +85,6 @@ type TenantScopeDraftState = {
   globalReason: string;
   context: TenantScopeContextDraft;
   contextAttributes: TenantContextAttributeDraft[];
-  filterRows: TenantFilterConditionDraft[];
 };
 
 type TenantScopeDraftAction =
@@ -105,8 +96,7 @@ type TenantScopeDraftAction =
   | { type: "set_global_reason"; globalReason: string }
   | { type: "set_context"; context: TenantScopeContextDraft }
   | { type: "set_context_attributes"; attributes: TenantContextAttributeDraft[] }
-  | { type: "set_filter_rows"; rows: TenantFilterConditionDraft[] }
-  | { type: "sync_policy"; firstRoot: string; rootIds: Set<string>; polymorphicIds: Set<string> }
+  | { type: "sync_policy"; firstRoot: string; rootIds: Set<string> }
   | { type: "disable" }
   | { type: "apply_scope"; scope: TenantScope };
 
@@ -127,7 +117,6 @@ const initialTenantScopeDraft: TenantScopeDraftState = {
   globalReason: "superuser access",
   context: emptyTenantContext,
   contextAttributes: [],
-  filterRows: [],
 };
 
 interface PlaygroundContextValue {
@@ -154,8 +143,6 @@ interface PlaygroundContextValue {
   setAskTenantContext: (v: TenantScopeContextDraft) => void;
   askTenantContextAttributes: TenantContextAttributeDraft[];
   setAskTenantContextAttributes: (v: TenantContextAttributeDraft[]) => void;
-  askTenantFilterRows: TenantFilterConditionDraft[];
-  setAskTenantFilterRows: (v: TenantFilterConditionDraft[]) => void;
   generatedTenantScope: TenantScope | undefined;
   generatedTenantScopeJson: string;
   tenantScopeValidationError: string | undefined;
@@ -190,7 +177,6 @@ export function PlaygroundProvider({ children, ragAvailable }: { children: React
   const [tenantDraft, dispatchTenantDraft] = useReducer(tenantScopeDraftReducer, initialTenantScopeDraft);
   const tenantPolicy = workspace?.tenantPolicy ?? null;
   const tenantRootSignature = tenantPolicy?.roots.map((root) => root.id).join("|") ?? "";
-  const polymorphicTableSignature = tenantPolicy?.polymorphicTables.map((table) => table.id).join("|") ?? "";
   const effectiveAskMode = ragAvailable ? playgroundState.askMode : "full";
 
   useEffect(() => {
@@ -208,10 +194,9 @@ export function PlaygroundProvider({ children, ragAvailable }: { children: React
 
     const firstRoot = tenantPolicy.roots[0]?.id ?? "";
     const rootIds = new Set(tenantPolicy.roots.map((root) => root.id));
-    const polymorphicIds = new Set(tenantPolicy.polymorphicTables.map((table) => table.id));
 
-    dispatchTenantDraft({ type: "sync_policy", firstRoot, rootIds, polymorphicIds });
-  }, [tenantPolicy, tenantRootSignature, polymorphicTableSignature]);
+    dispatchTenantDraft({ type: "sync_policy", firstRoot, rootIds });
+  }, [tenantPolicy, tenantRootSignature]);
 
   const generatedTenantScopeState = useMemo<GeneratedTenantScope>(() => {
     if (!tenantDraft.enabled || !tenantPolicy) {
@@ -226,7 +211,6 @@ export function PlaygroundProvider({ children, ragAvailable }: { children: React
       globalReason: tenantDraft.globalReason,
       context: tenantDraft.context,
       contextAttributes: tenantDraft.contextAttributes,
-      filterRows: tenantDraft.filterRows,
     });
 
     return {
@@ -375,8 +359,6 @@ export function PlaygroundProvider({ children, ragAvailable }: { children: React
     setAskTenantContext: (context) => dispatchTenantDraft({ type: "set_context", context }),
     askTenantContextAttributes: tenantDraft.contextAttributes,
     setAskTenantContextAttributes: (attributes) => dispatchTenantDraft({ type: "set_context_attributes", attributes }),
-    askTenantFilterRows: tenantDraft.filterRows,
-    setAskTenantFilterRows: (rows) => dispatchTenantDraft({ type: "set_filter_rows", rows }),
     generatedTenantScope: generatedTenantScopeState.scope,
     generatedTenantScopeJson: generatedTenantScopeState.json,
     tenantScopeValidationError: generatedTenantScopeState.error,
@@ -484,8 +466,6 @@ function tenantScopeDraftReducer(
       return { ...state, context: action.context };
     case "set_context_attributes":
       return { ...state, contextAttributes: action.attributes };
-    case "set_filter_rows":
-      return { ...state, filterRows: action.rows };
     case "disable":
       return { ...state, enabled: false };
     case "sync_policy": {
@@ -501,7 +481,6 @@ function tenantScopeDraftReducer(
         enabled: true,
         tenantRoot: action.rootIds.has(state.tenantRoot) ? state.tenantRoot : action.firstRoot,
         multiRootRows,
-        filterRows: state.filterRows.filter((row) => action.polymorphicIds.has(row.tableId)),
       };
     }
     case "apply_scope": {
@@ -521,15 +500,6 @@ function tenantScopeDraftReducer(
           key,
           value,
         })),
-        filterRows: Object.entries(scope.tenantFilters ?? {}).flatMap(([tableId, filter]) => (
-          filter.conditions.map((condition) => ({
-            id: makeDraftId("tenant-filter"),
-            tableId,
-            column: condition.column,
-            operator: condition.operator,
-            valueText: Array.isArray(condition.value) ? condition.value.join(", ") : condition.value,
-          }))
-        )),
       };
 
       switch (scope.access.kind) {
@@ -583,7 +553,6 @@ function buildTenantScope({
   globalReason,
   context,
   contextAttributes,
-  filterRows,
 }: {
   accessKind: TenantScopeAccessKind;
   tenantRoot: string;
@@ -592,7 +561,6 @@ function buildTenantScope({
   globalReason: string;
   context: TenantScopeContextDraft;
   contextAttributes: TenantContextAttributeDraft[];
-  filterRows: TenantFilterConditionDraft[];
 }): Pick<GeneratedTenantScope, "scope" | "error"> {
   const trimmedRoot = tenantRoot.trim();
   const ids = parseList(idsText);
@@ -603,9 +571,10 @@ function buildTenantScope({
     if (ids.length === 0) return { error: "Enter at least one tenant ID." };
     access = { kind: "ids", tenantRoot: trimmedRoot, ids };
   } else if (accessKind === "subtree") {
-    if (!trimmedRoot) return { error: "Choose a tenant root for the subtree scope." };
-    if (ids.length === 0) return { error: "Enter at least one subtree root ID." };
-    access = { kind: "subtree", tenantRoot: trimmedRoot, rootIds: ids, includeDescendants: true };
+    // Only reachable from a saved history entry; the switcher no longer offers it.
+    return {
+      error: "Subtree scope isn't supported yet — resolve the subtree to explicit IDs and use the IDs scope.",
+    };
   } else if (accessKind === "multi_root") {
     const scopes = multiRootRows.flatMap((row) => {
       const scope = { tenantRoot: row.tenantRoot.trim(), ids: parseList(row.idsText) };
@@ -636,10 +605,6 @@ function buildTenantScope({
   const contextValue = buildContext(context, contextAttributes);
   if (contextValue) tenantScope.context = contextValue;
 
-  const tenantFilters = buildTenantFilters(filterRows);
-  if ("error" in tenantFilters) return { error: tenantFilters.error };
-  if (tenantFilters.value) tenantScope.tenantFilters = tenantFilters.value;
-
   return { scope: tenantScope };
 }
 
@@ -664,40 +629,4 @@ function buildContext(
   }
 
   return Object.keys(output).length > 0 ? output : undefined;
-}
-
-function buildTenantFilters(
-  rows: TenantFilterConditionDraft[],
-): { value?: NonNullable<TenantScope["tenantFilters"]> } | { error: string } {
-  const tenantFilters: NonNullable<TenantScope["tenantFilters"]> = {};
-  let hasActiveRows = false;
-
-  for (const row of rows) {
-    const tableId = row.tableId.trim();
-    const column = row.column.trim();
-    const valueText = row.valueText.trim();
-
-    if (!tableId && !column && !valueText) continue;
-    hasActiveRows = true;
-
-    if (!tableId || !column || !valueText) {
-      return { error: "Each tenant filter condition needs a table, column, operator, and value." };
-    }
-
-    const condition: TenantFilterCondition = {
-      column,
-      operator: row.operator,
-      value: row.operator === "IN" || row.operator === "NOT IN"
-        ? parseList(valueText)
-        : valueText,
-    };
-    if (Array.isArray(condition.value) && condition.value.length === 0) {
-      return { error: "Tenant filter IN conditions need at least one value." };
-    }
-
-    tenantFilters[tableId] ??= { conditions: [] };
-    tenantFilters[tableId].conditions.push(condition);
-  }
-
-  return hasActiveRows ? { value: tenantFilters } : {};
 }
