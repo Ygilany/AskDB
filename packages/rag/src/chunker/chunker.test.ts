@@ -109,12 +109,12 @@ describe("front-matter sensitivity escalation (core loader)", () => {
 
       // Control: schema.json marks orders.status non-sensitive, so it is chunked by default.
       expect(
-        chunkSchemaDir(FIXTURE_DIR).chunks.find((c) => c.id === "chunk:table:public.orders#status"),
+        chunkSchemaDir(FIXTURE_DIR).chunks.find((c) => c.id === "chunk:orders-users:table:public.orders#status"),
       ).toBeDefined();
 
       const { chunks } = chunkSchemaDir(dir);
-      expect(chunks.find((c) => c.id === "chunk:table:public.orders#status")).toBeUndefined();
-      const ordersTable = chunks.find((c) => c.id === "chunk:table:public.orders");
+      expect(chunks.find((c) => c.id === "chunk:orders-users:table:public.orders#status")).toBeUndefined();
+      const ordersTable = chunks.find((c) => c.id === "chunk:orders-users:table:public.orders");
       expect(ordersTable?.refs).not.toContain("table:public.orders#status");
     } finally {
       rmSync(root, { recursive: true, force: true });
