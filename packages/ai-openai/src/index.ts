@@ -16,11 +16,26 @@ const ENV_SPEC: ProviderEnvSpec = {
   defaultEmbeddingModel: "text-embedding-3-small",
 };
 
-/** o-series (o1, o3, o3-mini, o4-mini, …) and gpt-5.x — the OpenAI model families that accept `reasoningEffort`. */
-const REASONING_MODEL_PATTERN = /^o\d(-|$)|^gpt-5/i;
+/** o-series: `o1`, `o3`, `o3-mini`, `o4-mini`, … */
+const O_SERIES_PATTERN = /^o\d+(?:-|$)/i;
+/** `gpt-<major>[.<minor>][-<variant>]`, e.g. `gpt-5`, `gpt-5.1`, `gpt-5-mini`, `gpt-5-chat-latest`. */
+const GPT_VERSION_PATTERN = /^gpt-(\d+)(?:\.\d+)?(?:-(.+))?$/i;
 
+/**
+ * Whether a model id belongs to a family that accepts `reasoningEffort`:
+ * the o-series and gpt-5+ — except the `-chat` variants
+ * (e.g. `gpt-5-chat-latest`), which are non-reasoning chat models. Mirrors
+ * `getOpenAILanguageModelCapabilities` in `@ai-sdk/openai`, but conservatively
+ * excludes every `-chat` variant (including minor versions such as
+ * `gpt-5.1-chat-latest`) so AskDB never sends a reasoning knob a chat model
+ * might reject.
+ */
 function isReasoningModel(model: string): boolean {
-  return REASONING_MODEL_PATTERN.test(model);
+  if (O_SERIES_PATTERN.test(model)) return true;
+  const gpt = GPT_VERSION_PATTERN.exec(model);
+  if (!gpt) return false;
+  if (Number(gpt[1]) < 5) return false;
+  return !(gpt[2]?.toLowerCase().startsWith("chat") ?? false);
 }
 
 export const openaiProvider: AiProviderAdapter = {
