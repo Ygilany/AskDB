@@ -3,7 +3,12 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it, vi } from "vitest";
 import { ask, type AskDialect } from "./ask.js";
-import { SensitiveReferenceError } from "./errors.js";
+import {
+  AskDbError,
+  SensitiveReferenceError,
+  TenantGuardrailError,
+  UnknownDialectError,
+} from "./errors.js";
 import { AskDbLogEvent } from "./logging/log-events.js";
 import { formatSchemaForNlToSql } from "./schema/normalize.js";
 import type { NormalizedSchema } from "./schema/types.js";
@@ -432,6 +437,199 @@ describe("ask — parameterize", () => {
     expect(result.tenantBindings).toHaveLength(1);
     expect(result.tenantBindings![0]!.ids).toEqual(["42"]);
     expect(result.tenantBindings![0]!.placeholder).toBe(":tenant_agency_ids");
+  });
+});
+
+describe("ask — tenant guardrail runs on the SQL actually returned", () => {
+  // The model's bound ```sql block is unscoped while its ```sql-unbound block is
+  // scoped. The consistency check drops the unbound extras, so result.sql is the
+  // unscoped statement — the guardrail must judge that, not the unbound form.
+  const disagreeingReply = [
+    "```sql",
+    "SELECT * FROM orders WHERE status='open'",
+    "```",
+    "```sql-unbound",
+    "SELECT * FROM orders WHERE agency_id = :tenant_agency_ids AND status = :status",
+    "```",
+    "```json",
+    '{"parameters":[{"name":"status","type":"string","cardinality":"one","value":"open"}]}',
+    "```",
+  ].join("\n");
+
+  function warnSchema() {
+    const schema = loadSchema(multiTenantDir);
+    return { ...schema, tenantPolicy: { ...schema.tenantPolicy!, enforcement: "warn" as const } };
+  }
+
+  it("strict: throws TenantGuardrailError when sql and sql-unbound disagree on tenant scope", async () => {
+    const schema = loadSchema(multiTenantDir);
+    const generateText = vi.fn(async () => ({ text: disagreeingReply }));
+    await expect(
+      ask({
+        question: "open orders",
+        schema,
+        model: fakeModel,
+        dialect: "postgres",
+        tenantScope: agencyScope,
+        deps: { generateText },
+      }),
+    ).rejects.toThrow(TenantGuardrailError);
+  });
+
+  it("warn: returns the unscoped SQL with a failed guardrail and warnings", async () => {
+    const generateText = vi.fn(async () => ({ text: disagreeingReply }));
+    const result = await ask({
+      question: "open orders",
+      schema: warnSchema(),
+      model: fakeModel,
+      dialect: "postgres",
+      tenantScope: agencyScope,
+      deps: { generateText },
+    });
+    expect(result.sql).toBe("SELECT * FROM orders WHERE status='open'");
+    expect(result.unboundSql).toBeUndefined();
+    expect(result.tenantGuardrail?.passed).toBe(false);
+    expect(result.tenantGuardrail?.warnings.map((w) => w.rule)).toContain(
+      "MISSING_TENANT_PREDICATE",
+    );
+  });
+
+  it("consistent sql / sql-unbound with a tenant predicate still passes, reported once", async () => {
+    const schema = loadSchema(multiTenantDir);
+    const generateText = vi.fn(async () => ({
+      text: [
+        "```sql",
+        "SELECT * FROM orders WHERE agency_id = :tenant_agency_ids AND status = 'open'",
+        "```",
+        "```sql-unbound",
+        "SELECT * FROM orders WHERE agency_id = :tenant_agency_ids AND status = :status",
+        "```",
+        "```json",
+        '{"parameters":[{"name":"status","type":"string","cardinality":"one","value":"open"}]}',
+        "```",
+      ].join("\n"),
+    }));
+    const info = vi.fn();
+    const result = await ask({
+      question: "open orders",
+      schema,
+      model: fakeModel,
+      dialect: "postgres",
+      tenantScope: agencyScope,
+      logger: { info, error: vi.fn() },
+      deps: { generateText },
+    });
+    expect(result.sql).toBe("SELECT * FROM orders WHERE agency_id = '42' AND status = 'open'");
+    expect(result.unboundSql).toBe("SELECT * FROM orders WHERE agency_id = '42' AND status = $1");
+    expect(result.tenantGuardrail).toEqual({ passed: true, warnings: [] });
+    const guardrailEvents = info.mock.calls.filter((c) =>
+      [AskDbLogEvent.TenantGuardrailPassed, AskDbLogEvent.TenantGuardrailFailed].includes(
+        (c[0] as { event?: string }).event as never,
+      ),
+    );
+    expect(guardrailEvents).toHaveLength(1);
+    expect(guardrailEvents[0]![0]).toMatchObject({ event: AskDbLogEvent.TenantGuardrailPassed });
+  });
+
+  it("checks the final SQL after tenant placeholder substitution (sql-params mode)", async () => {
+    const schema = loadSchema(multiTenantDir);
+    const generateText = vi.fn(async () => ({
+      text: "```sql\nSELECT count(*) FROM orders WHERE agency_id = :tenant_agency_ids\n```",
+    }));
+    const result = await ask({
+      question: "count orders",
+      schema,
+      model: fakeModel,
+      dialect: "postgres",
+      tenantScope: agencyScope,
+      tenantSqlMode: "sql-params",
+      parameterize: false,
+      deps: { generateText },
+    });
+    expect(result.sql).toBe("SELECT count(*) FROM orders WHERE agency_id = $1");
+    expect(result.tenantGuardrail?.passed).toBe(true);
+  });
+});
+
+describe("ask — tenant guardrail covers custom AskDialect implementations", () => {
+  it("strict: rejects unscoped SQL from a custom dialect", async () => {
+    const schema = loadSchema(multiTenantDir);
+    const dialect: AskDialect = { generate: async () => ({ sql: "DELETE FROM orders" }) };
+    await expect(
+      ask({ question: "q", schema, model: fakeModel, dialect, tenantScope: agencyScope }),
+    ).rejects.toThrow(TenantGuardrailError);
+  });
+
+  it("strict: rejects an unscoped SELECT from a custom dialect", async () => {
+    const schema = loadSchema(multiTenantDir);
+    const dialect: AskDialect = { generate: async () => ({ sql: "SELECT * FROM orders" }) };
+    await expect(
+      ask({ question: "q", schema, model: fakeModel, dialect, tenantScope: agencyScope }),
+    ).rejects.toThrow(TenantGuardrailError);
+  });
+
+  it("does not trust a custom dialect's self-reported passing guardrail", async () => {
+    const schema = loadSchema(multiTenantDir);
+    const dialect: AskDialect = {
+      generate: async () => ({
+        sql: "SELECT * FROM orders",
+        tenantGuardrail: { passed: true, warnings: [] },
+      }),
+    };
+    await expect(
+      ask({ question: "q", schema, model: fakeModel, dialect, tenantScope: agencyScope }),
+    ).rejects.toThrow(TenantGuardrailError);
+  });
+
+  it("merges a custom dialect's reported failures into the result (warn)", async () => {
+    const base = loadSchema(multiTenantDir);
+    const schema = { ...base, tenantPolicy: { ...base.tenantPolicy!, enforcement: "warn" as const } };
+    const dialect: AskDialect = {
+      generate: async () => ({
+        sql: "SELECT count(*) FROM orders WHERE agency_id = :tenant_agency_ids",
+        tenantGuardrail: {
+          passed: false,
+          warnings: [{ rule: "UNPROVABLE_SCOPE", tableId: "table:public.orders", message: "custom" }],
+        },
+      }),
+    };
+    const result = await ask({ question: "q", schema, model: fakeModel, dialect, tenantScope: agencyScope });
+    expect(result.sql).toBe("SELECT count(*) FROM orders WHERE agency_id = '42'");
+    expect(result.tenantGuardrail?.passed).toBe(false);
+    expect(result.tenantGuardrail?.warnings).toEqual([
+      { rule: "UNPROVABLE_SCOPE", tableId: "table:public.orders", message: "custom" },
+    ]);
+  });
+
+  it("scoped SQL from a custom dialect passes and gets a tenantGuardrail result", async () => {
+    const schema = loadSchema(multiTenantDir);
+    const dialect: AskDialect = {
+      generate: async () => ({
+        sql: "SELECT count(*) FROM orders WHERE agency_id = :tenant_agency_ids",
+      }),
+    };
+    const result = await ask({ question: "q", schema, model: fakeModel, dialect, tenantScope: agencyScope });
+    expect(result.tenantGuardrail).toEqual({ passed: true, warnings: [] });
+  });
+
+  it("without a tenant policy, custom dialect output is unchanged", async () => {
+    const dialect: AskDialect = { generate: async () => ({ sql: "DELETE FROM orders" }) };
+    const result = await ask({ question: "q", schema: minimalSchema, model: fakeModel, dialect });
+    expect(result).toEqual({ sql: "DELETE FROM orders" });
+  });
+});
+
+describe("ask — unknown dialect id", () => {
+  it("throws a typed UnknownDialectError", async () => {
+    const run = ask({
+      question: "q",
+      schema: minimalSchema,
+      model: fakeModel,
+      dialect: "oracle" as never,
+    });
+    await expect(run).rejects.toBeInstanceOf(UnknownDialectError);
+    await expect(run).rejects.toBeInstanceOf(AskDbError);
+    await expect(run).rejects.toMatchObject({ dialectId: "oracle" });
   });
 });
 

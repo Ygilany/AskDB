@@ -188,9 +188,9 @@ const schema = loadSchema("./my-app.schema"); // synchronous
 Autodetects and loads a v2 schema artifact. Accepts:
 - A **schema directory** (`<name>.schema/`) — the output of `askdb introspect`
 - A **bundled JSON file** (`*.bundle.json` or any JSON with `bundled: true`) — the output of `askdb bundle`
-- A direct path to a `schema.json` file
+- A direct path to a `schema.json` file. This loads the enclosing directory, so sibling `tables/*.md`, `concepts.md`, and `tenant-policy.md` apply just as they do for the directory path.
 
-Returns `NormalizedSchemaV2`. Throws `SchemaParseError` on failure.
+Returns `NormalizedSchemaV2`. Throws `SchemaParseError` on failure. The optional files (`tables/*.md`, `concepts.md`, `tenant-policy.md`) may be absent. If one exists but is empty or cannot be read or parsed, for example because of malformed YAML front-matter, loading throws. Bundles follow the same rule: only an absent `tenantPolicy` key means "no policy". A broken `tenant-policy.md` never silently turns tenant enforcement off.
 
 `loadSchema` is synchronous — load once at startup and keep the result in memory, not per request.
 
@@ -281,8 +281,12 @@ It must return `AskDialectGenerateResult`:
 | --- | --- | --- |
 | `sql` | `string` | The generated SQL. |
 | `explain` | `unknown \| undefined` | Guardrail metadata when `options.explain` is true. |
-| `tenantGuardrail` | `TenantGuardrailResult \| undefined` | Tenant validation result, if your generator runs it. |
+| `tenantGuardrail` | `TenantGuardrailResult \| undefined` | Optional extra tenant findings from your generator. These are merged into `ask()`'s own check and cannot replace it. |
 | `usage` | `AskUsage \| undefined` | Token usage, if your generator has access to it. |
+
+A custom `AskDialect` is responsible for its own read-only validation. `ask()` does not run the SELECT-only validator on its output. If your generator should only emit read-only SQL, call `validateSelectSql(spec, sql)` before returning. Tenant enforcement is different: when the schema has a tenant policy, `ask()` substitutes tenant placeholders in the returned `sql` and runs the tenant guardrail on the final statement, whatever the dialect. Under `strict`, unscoped SQL throws `TenantGuardrailError`.
+
+Passing an unknown string dialect id throws `UnknownDialectError`, which extends `AskDbError`.
 
 ---
 

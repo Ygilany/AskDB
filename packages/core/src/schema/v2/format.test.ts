@@ -1,7 +1,8 @@
+import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { loadSchema } from "./loader.js";
+import { loadSchema, loadSchemaFromJson } from "./loader.js";
 import { formatSchemaV2ForNlToSql } from "./format.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -56,7 +57,7 @@ describe("formatSchemaV2ForNlToSql — enriched fixture", () => {
 
 describe("formatSchemaV2ForNlToSql — schema.json only (bare baseline)", () => {
   it("produces DDL without any aliases or descriptions (bare baseline)", () => {
-    const schema = loadSchema(v2SchemaJson);
+    const schema = loadSchemaFromJson(readFileSync(v2SchemaJson, "utf8"));
     const { ddl } = formatSchemaV2ForNlToSql(schema);
     // No aliases annotation on TABLE line — just schema-qualified name
     expect(ddl).toContain("TABLE public.orders\n");
@@ -65,7 +66,7 @@ describe("formatSchemaV2ForNlToSql — schema.json only (bare baseline)", () => 
   });
 
   it("still lists tables and columns with qualified names", () => {
-    const schema = loadSchema(v2SchemaJson);
+    const schema = loadSchemaFromJson(readFileSync(v2SchemaJson, "utf8"));
     const { ddl } = formatSchemaV2ForNlToSql(schema);
     expect(ddl).toContain("TABLE public.users");
     expect(ddl).toContain("TABLE public.orders");
