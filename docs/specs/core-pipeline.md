@@ -18,16 +18,16 @@ The `@askdb/client` package provides `createAskDb()`, a config-aware facade that
 ### In scope
 
 - `ask(options) → AskPipelineResult` — NL→SQL orchestration: prompt assembly, model call, SQL extraction, validation, guardrails
-- SQL validation and dialect-aware guardrails (syntax checks, safety allow/deny lists appropriate for read-only use)
+- SQL validation and dialect-aware guardrails — heuristic checks over a dialect-aware lexer, not a parser: must start with `SELECT`/`WITH`, single statement, no comments, no unterminated tokens, no write/DDL keywords (base denylist plus per-dialect extras), no calls to the dialect's blocked side-effecting functions. Defense in depth, not a security boundary
 - Schema-grounded prompt assembly — DDL block construction from the loaded schema, including describable fields (descriptions, aliases, common query language) when present
 - BYO model via `AskDbLanguageModel` — `@askdb/core`'s public alias for the AI SDK `LanguageModel`; no hardcoded provider in core
 - Built-in dialect specs for all supported engines — `"postgres"`, `"mysql"`, `"mariadb"`, `"sqlite"`, `"sqlserver"`, `"cockroachdb"` — all in `@askdb/core`; consumers pass a plain string
 - `askdb` CLI — `ask` subcommand, `init` template generator, `introspect` shim, structured logging surface
-- Schema precheck — early rejection when the question references unknown tables or columns
+- Schema precheck — rejects an empty schema (no tables) or a blank question. It does not reject unknown tables or columns; when the question names a table (`from X` / `join X`) that isn't in the schema, it adds an ambiguity note to the prompt instead
 
 ### Out of scope
 
-- SQL execution — `ask()` returns SQL only; execution is a CLI/host concern via the dialect's executor
+- SQL execution — `ask()` returns SQL only; execution is a host concern (the CLI does not execute generated SQL)
 - Tabular result display — CLI-layer concern, not part of `ask()` or `@askdb/core`
 - Schema introspection — see [`introspection.md`](./introspection.md)
 - Schema enrichment authoring — see [`schema-authoring-and-enrichment.md`](./schema-authoring-and-enrichment.md)
@@ -131,7 +131,7 @@ Key events emitted (stable field names, present on every log record):
 
 - `pnpm build` and `pnpm test` pass from repo root.
 - `ask()` with a mocked `LanguageModel` returns validated SQL without a live provider.
-- Schema precheck fails with a structured error for questions referencing unknown tables/columns.
+- Schema precheck fails with an `AskDbError` for an empty schema or blank question, and adds prompt notes for question-mentioned tables that aren't in the schema.
 - SQL validation correctly rejects unsafe patterns (non-SELECT, dangerous keywords, side-effecting functions, unterminated tokens) per dialect lexing rules, with a regression test per known bypass in `packages/core/src/sql/validate.test.ts`.
 - Prompt assembly with a describable schema fixture includes table descriptions, aliases, and common query language sections.
 - A schema directory with only `schema.json` (no `tables/*.md`) produces DDL equivalent to the bare baseline.

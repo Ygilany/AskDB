@@ -29,7 +29,7 @@ my-app.schema/
 
 The file is optional. A Schema v2 directory without `tenant-policy.md` has no tenant enforcement — all queries are unrestricted and `ask()` does not require a `tenantScope` input.
 
-When present, the file enables tenant enforcement: `ask()` requires a valid `tenantScope`, prompts include the policy, and generated SQL is validated against scope.
+When present, the file enables tenant handling: `ask()` requires a valid `tenantScope`, prompts include the policy, generated SQL goes through the heuristic tenant guardrail (see [Guardrail validation](#guardrail-validation)), and tenant placeholders are bound from the scope. The guardrail is defense in depth, not a security boundary — enforce tenant isolation in the database as well.
 
 Only a **missing** file means "no tenant policy". In a bundle, that means only an absent `tenantPolicy` key. A `tenant-policy.md` that exists but is empty or cannot be read or parsed (for example, malformed YAML front-matter) makes `loadSchema()` throw `SchemaParseError` naming the file. The same applies to an empty or non-string bundle `tenantPolicy`. A broken policy never silently turns tenant enforcement off. `loadSchema("<dir>/schema.json")` loads the sibling `tenant-policy.md` the same way `loadSchema("<dir>")` does.
 
@@ -109,7 +109,7 @@ globalTables:
 | Field | Type | Required | Meaning |
 |---|---|---|---|
 | `schemaId` | string | yes | Must match the parent `schema.json`'s `schemaId`. |
-| `enforcement` | `"strict"` \| `"warn"` | yes | Guardrail mode. `strict` rejects unproven queries; `warn` returns SQL with `tenantWarnings`. |
+| `enforcement` | `"strict"` \| `"warn"` | yes | Guardrail mode. When the heuristic tenant check finds a problem, `strict` throws `TenantGuardrailError`; `warn` returns SQL with `tenantGuardrail.warnings`. |
 | `roots` | array | yes | Tenant root definitions (see below). At least one root required. |
 | `hierarchy` | array | no | Explicit hierarchy edges between roots. Required when roots have parent/child relationships. |
 | `scopedTables` | array | no | Tables whose rows are constrained by tenant roots. |
@@ -356,34 +356,30 @@ The mode is configurable per `ask()` call (`tenantSqlMode`).
 
 ## Guardrail validation
 
-In `ask()`, the validator runs on the SQL returned to the caller: `result.sql` after tenant placeholder replacement, plus `result.unboundSql` when the parameterized extras pass their consistency check. It runs for every dialect form, including custom `AskDialect` adapters. `generateSelectSql()` called directly validates the SQL it returns (placeholders still named).
+In `ask()`, the validator (`validateTenantGuardrails`) runs on the SQL returned to the caller: `result.sql` after tenant placeholder replacement, plus `result.unboundSql` when the parameterized extras pass their consistency check. It runs for every dialect form, including custom `AskDialect` adapters, and is skipped for `global` scope. `generateSelectSql()` called directly validates the SQL it returns (placeholders still named).
 
-### Parser-based validation (primary)
+**It is a heuristic lint, not a security boundary.** It does not parse SQL. It lowercases the statement and checks, with whole-word matching, whether expected identifiers appear anywhere in it. It cannot tell a `SELECT` list from a `WHERE` clause, and cannot see `OR`-widened, negated, or subquery-scoped predicates. `SELECT tenant_id FROM orders` and `... WHERE tenant_id = :tenant_x_ids OR 1=1` both pass. Enforcement must come from the database (for example row-level security) or from the host applying its own predicate.
 
-Uses `node-sql-parser` (or equivalent) to parse the SQL into an AST:
+### What is checked today
 
-1. Identify all referenced tables and their aliases.
-2. For each tenant-scoped table: verify the required tenant predicate (`column = :placeholder` or `column = ANY(:placeholder)`) or validated inherited join path exists.
-3. For each polymorphic table: verify the type discriminator column appears in the WHERE clause.
-4. For JOINs between tenant-scoped tables: verify scope compatibility (both tables scoped to the same tenant root/IDs).
-5. For aggregation across tenant boundaries: verify the user's scope covers the aggregated set, or reject if `global` scope is required.
-6. For unknown tables: reject (strict) or flag (warn).
+1. For each scoped table whose name appears in the SQL: at least one `scopeThrough` path must be satisfied — for a `column` path, the column name or the root's `:tenant_<label>_ids` placeholder appears; for a `join` path, every step's `from`/`to` column names appear *and* the root's tenant column or placeholder appears. Otherwise: `MISSING_TENANT_PREDICATE`.
+2. For each polymorphic table whose name appears: the type column name must appear (`MISSING_TYPE_DISCRIMINATOR`) and the id column name must appear (`MISSING_TENANT_PREDICATE`).
+3. For each table classified `unknown` whose name appears: `UNKNOWN_TABLE_REFERENCED`.
 
-### Heuristic fallback
+### Not implemented
 
-When the parser cannot handle a SQL shape:
-
-1. Apply conservative pattern matching (table name detection, predicate presence).
-2. If heuristics cannot prove scope safety: reject (strict) or flag with `tenantWarnings` (warn).
+The original design called for parser-based validation (AST table/alias resolution, predicate-shape checks, JOIN scope compatibility, aggregation checks) with a conservative heuristic fallback. None of the parser-based checks exist; the heuristic above is the only check. Any future parser-based work must update this section before the "not a security boundary" language is relaxed.
 
 Pattern matching runs only over SQL code: string literals (`'…'`, `$tag$…$tag$`) and comments (`--`, `/* */`) are ignored, so a tenant column or table name that appears only inside them does not count. Quoted identifiers (`"agency_id"`, `` `orders` ``, `[orders]`) still count as the identifier they name.
 
 ### Enforcement modes
 
-| Mode | Unproven query | Unknown table | Missing scope predicate |
-|---|---|---|---|
-| `strict` | Rejected with policy error. | Rejected. | Rejected. |
-| `warn` | Returned with `tenantWarnings`. | Returned with warning. | Returned with warning. |
+| Mode | Check finds a problem (missing predicate, missing discriminator, unknown table) |
+|---|---|
+| `strict` | Throws `TenantGuardrailError` carrying the warnings. |
+| `warn` | SQL returned; findings in `tenantGuardrail.warnings`. |
+
+In both modes, a passing check does not prove the query is tenant-safe.
 
 Policy errors include: the table ID(s) involved, the expected scope path, and what was missing.
 
@@ -395,7 +391,7 @@ Policy errors include: the table ID(s) involved, the expected scope path, and wh
 
 ### Always injected (not chunked)
 
-The front-matter (structural policy data) is always included in every prompt when a tenant policy exists. This is a security boundary and must never be lost through RAG retrieval gaps.
+The front-matter (structural policy data) is always included in every prompt when a tenant policy exists. Tenant scoping in generated SQL depends on the model seeing the policy, so it must never be lost through RAG retrieval gaps.
 
 ### Chunked for RAG retrieval
 

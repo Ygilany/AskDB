@@ -18,17 +18,26 @@ export type TenantGuardrailResult = {
 };
 
 /**
- * Validate generated SQL against the tenant policy and runtime scope.
+ * Best-effort lint of generated SQL against the tenant policy and runtime scope.
  *
- * Uses heuristic pattern matching to verify that tenant-scoped tables
- * have the required predicates. Falls back to conservative rejection
- * when the SQL cannot be proven safe.
+ * **This is not a security boundary.** It does not parse SQL. It lowercases the
+ * statement and checks, with whole-word matching, that the identifiers a policy
+ * expects (tenant column, join-path columns, or the `:tenant_*_ids` placeholder)
+ * are *present* for each tenant-scoped table named in the SQL. It cannot tell a
+ * `SELECT` list from a `WHERE` clause, and it cannot detect `OR`-widened,
+ * negated, or subquery-scoped predicates: `SELECT tenant_id FROM t` and
+ * `... WHERE tenant_id = :tenant_x_ids OR 1=1` both pass.
  *
  * Identifiers are matched only in code regions: text inside string literals and
  * comments never counts as a table reference or a tenant predicate.
  *
- * In `strict` mode, throws `TenantGuardrailError` on failure.
- * In `warn` mode, returns warnings without throwing.
+ * Its purpose is to catch obvious model mistakes (a forgotten tenant filter,
+ * an unclassified table) early and cheaply. Real tenant isolation must come
+ * from the database (for example row-level security) or from the host applying
+ * the tenant predicate itself.
+ *
+ * `global` scope skips the check. In `strict` mode, throws `TenantGuardrailError`
+ * when the check finds a problem. In `warn` mode, returns warnings without throwing.
  */
 export function validateTenantGuardrails(
   sql: string,

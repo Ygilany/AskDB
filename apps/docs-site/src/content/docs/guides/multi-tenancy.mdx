@@ -1,17 +1,29 @@
 ---
 title: "Multi-tenancy"
-description: "Declare tenant policy in your schema artifact and AskDB enforces it on every generated query — rewriting with the tenant filter or rejecting."
+description: "Declare tenant policy in your schema artifact so AskDB prompts for tenant filters, binds your tenant IDs, and flags generated queries that look unscoped."
 ---
+
+import { Aside } from "@astrojs/starlight/components";
 
 <p class="doc-eyebrow">Tenant-scoped generation</p>
 
-<p class="doc-lede">Tell AskDB how your schema represents tenancy. From then on, every generated query against a scoped table includes the tenant predicate — or it's rejected before being returned. Your app supplies the tenant scope per request.</p>
+<p class="doc-lede">Tell AskDB how your schema represents tenancy. From then on, the model is instructed to filter every scoped table by tenant, AskDB binds your tenant IDs into the SQL, and a heuristic check flags queries that look unscoped. Your app supplies the tenant scope per request.</p>
 
 ## How it works
 
 Tenant policy is a file (`tenant-policy.md`) in your schema artifact. It declares the tables that belong to a tenant, which column carries the tenant ID, and which tables are global.
 
-AskDB doesn't execute queries — but it does rewrite generated SQL to guarantee the tenant filter is present. Your application supplies the tenant ID per call. AskDB validates and binds it.
+AskDB doesn't execute queries, and it doesn't rewrite them to add a tenant filter. It works in three steps:
+
+1. **Prompt.** The policy and the caller's scope go into the prompt. The model is told to filter every scoped table with a named placeholder such as `:tenant_organization_ids`.
+2. **Check.** After generation, AskDB checks that each tenant-scoped table named in the SQL comes with its tenant column (or the placeholder) somewhere in the statement.
+3. **Bind.** AskDB replaces the placeholders with the IDs from your `tenantScope`, as inline literals or positional parameters.
+
+Your application supplies the tenant scope per call and is responsible for authorizing it.
+
+<Aside type="caution" title="Enforce tenancy in your database">
+The tenant check is heuristic and does not parse SQL. It confirms the tenant column name appears in the query, not that it filters correctly. `WHERE organization_id = :tenant_organization_ids OR 1=1` passes, and so does `SELECT organization_id FROM documents`. In production, enforce tenant isolation in the database, for example with Postgres row-level security or per-tenant views, and treat AskDB's check as an early warning. See [Run generated SQL safely](/concepts/safety-boundaries/#run-generated-sql-safely).
+</Aside>
 
 ## Tenant policy concepts
 
@@ -19,7 +31,7 @@ AskDB doesn't execute queries — but it does rewrite generated SQL to guarantee
 | --- | --- |
 | **Tenant roots** | The primary tenant-identifying table (e.g. `organizations`) and its `tenantIdColumn`. |
 | **Hierarchy** | Parent→child foreign-key relationships between tenant roots (agency → sub-agency → client). |
-| **Scoped tables** | Tables that belong to a tenant via foreign key. Generated SQL always includes the join or predicate. |
+| **Scoped tables** | Tables that belong to a tenant via foreign key. The model is told to include the join or predicate, and the tenant check flags SQL that doesn't mention it. |
 | **Polymorphic tables** | Tables that reference multiple entity types via a discriminator column (`owner_type` / `owner_id`). |
 | **Global tables** | Tenant-agnostic lookup tables (currencies, countries). Never tenant-filtered. |
 
@@ -75,7 +87,7 @@ Top-level front-matter fields:
 | Field | Required | Meaning |
 | --- | --- | --- |
 | `schemaId` | yes | Must match the `schemaId` in the artifact's `schema.json`. Ties the policy to one schema. |
-| `enforcement` | yes | `strict` rejects any query whose tenant filter can't be proven; `warn` returns the SQL with tenant warnings instead. Start with `strict`. |
+| `enforcement` | yes | What happens when the heuristic tenant check finds a problem. `strict` throws `TenantGuardrailError`; `warn` returns the SQL with the findings in `tenantGuardrail.warnings`. Start with `strict`. Neither mode proves the query is correctly scoped. |
 | `roots` | yes | The tables that *are* tenants (at least one). Everything else is scoped relative to a root. |
 | `hierarchy` | no | Parent→child edges between roots (agency → sub-agency → client). Must form a cycle-free graph. |
 | `scopedTables` | no | Tables whose rows belong to a tenant, and how to reach the root from them. |
@@ -83,8 +95,8 @@ Top-level front-matter fields:
 | `globalTables` | no | Stable table IDs intentionally exempt from tenant filtering (shared lookups). |
 
 Tables that appear in none of `scopedTables`, `polymorphicTables`, or
-`globalTables` are classified **unknown** — they trigger warnings, and in
-`strict` mode block queries that touch them. Classify everything.
+`globalTables` are classified **unknown** — a query that names one triggers a
+warning, and in `strict` mode an error. Classify everything.
 
 `roots[]` — each entry is one tenant-identifying table:
 
@@ -105,8 +117,8 @@ Tables that appear in none of `scopedTables`, `polymorphicTables`, or
 | `scopeThrough[].join` | one of | A list of `{ from, to }` stable-column-ID steps when the table reaches its root through other tables (e.g. `appointments → clients`). |
 
 A table may declare several `scopeThrough` paths (e.g. scoped directly by
-`agency_id` *and* through `client_id` → clients); the validator accepts any
-path that satisfies the caller's scope.
+`agency_id` *and* through `client_id` → clients); the check passes if the
+columns for any one path appear in the SQL.
 
 `polymorphicTables[]` — type + id discriminator pairs:
 
@@ -123,11 +135,13 @@ scoping patterns these fields express — lives in
 
 ## Asking with a tenant scope
 
-When the policy exists, every `ask()` call must include a `tenantScope`.
-AskDB validates the scope against the policy and binds it into the
-generated SQL. With `enforcement: strict`, a query whose tenant filter
-can't be proven is rejected; with `enforcement: warn`, the SQL is returned
-together with `tenantWarnings` for your application to act on.
+When the policy exists, every `ask()` call must include a `tenantScope`;
+without one, `ask()` throws `TenantScopeError` before calling the model.
+AskDB validates the scope's shape against the policy and binds its IDs into the
+placeholders the model wrote. When the tenant check finds a problem,
+`enforcement: strict` throws `TenantGuardrailError`, and `enforcement: warn`
+returns the SQL with the findings in `result.tenantGuardrail.warnings` for your
+application to act on.
 
 ```ts
 // askdb initialized at startup with createAskDb() — see Embed in a Node app.
@@ -169,7 +183,7 @@ if (result.preparedQuery) {
 the common case), `multi_root` (IDs across several roots), or `global`
 (deliberately unscoped, with a `reason` string for the audit trail). The
 optional `context` field carries advisory metadata (role, department) into
-the prompt.
+the prompt. It isn't enforced.
 
 `subtree` (a root plus all its descendants) is declared in the type but
 **not supported yet**: AskDB doesn't expand descendants, so `ask()` rejects
@@ -204,7 +218,7 @@ tenant root your scope has no IDs for, `ask()` throws
 becomes `NOT IN (…)`; a comparison like `<= :p` has no list form and throws
 `UNSUPPORTED_TENANT_PREDICATE`.
 
-## What gets rewritten
+## What changes in the SQL
 
 Without policy, a question like "how many documents this month?" might generate:
 
@@ -214,14 +228,14 @@ SELECT COUNT(*) FROM documents WHERE created_at >= NOW() - INTERVAL '1 month';
 
 With the policy above and an access scope of
 `{ kind: "ids", tenantRoot: "table:public.organizations", ids: ["org_abc123"] }`,
-the same question generates:
+the model is prompted to write the tenant predicate with a placeholder, and AskDB binds your IDs into it. In `sql-params` mode the result looks like:
 
 ```sql
 SELECT COUNT(*) FROM documents
 WHERE organization_id = $1 AND created_at >= NOW() - INTERVAL '1 month';
 ```
 
-The tenant predicate is present in the SQL AskDB returns — it can't be forgotten by the caller, and it can't be removed by a malformed question.
+The tenant predicate comes from the model, not from AskDB. AskDB checks that the tenant column appears and binds the values, but a model steered by an unusual question can still write a predicate that doesn't restrict rows. That's why the database should be the tenant boundary.
 
 ## Without a policy
 
@@ -229,7 +243,7 @@ If `tenant-policy.md` is absent from the schema artifact, AskDB generates SQL wi
 
 ## Testing in Studio
 
-Studio's **Ask** panel includes tenant scope controls — provide a scope as JSON before generating SQL to see how predicate injection works:
+Studio's **Ask** panel includes tenant scope controls — provide a scope as JSON before generating SQL to see how tenant placeholders are bound:
 
 ```json
 {

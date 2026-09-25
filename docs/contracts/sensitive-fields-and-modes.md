@@ -31,7 +31,7 @@ With **omission** mode, the model may **not** see withheld identifiers and may i
 
 ## Enforcement path: `validateSensitiveReferences`
 
-`@askdb/core` exports `validateSensitiveReferences(sql, schema, options?)` — the **enforcement** counterpart to the prompt-level flags above. It inspects a SQL string against the schema artifact and reports every `sensitive` table/column it references, regardless of whether the names were tagged, omitted, or never shown to a model at all.
+`@askdb/core` exports `validateSensitiveReferences(sql, schema, options?)` — the **enforcement** counterpart to the prompt-level flags above. It inspects a SQL string against the schema artifact and reports the `sensitive` tables/columns it can see the statement referencing — sensitive columns named explicitly (qualified or unqualified), sensitive columns reached through `SELECT *`, `alias.*`, or a whole-row reference (see **Wildcards and whole rows** below), and sensitive tables used as a `FROM`/`JOIN` target — regardless of whether the names were tagged, omitted, or never shown to a model at all.
 
 ```ts
 import { validateSensitiveReferences } from "@askdb/core";
@@ -63,7 +63,7 @@ const { passed, references, unresolvedScope } = validateSensitiveReferences(cach
 
 **Logs:** `askdb.pipeline.sensitive_sql_warning` with `sensitiveColumnCount` and the matched `sensitiveColumns` — schema metadata only, never row values. Emitted in both `warn` and `strict` modes.
 
-**Limits.** The check is heuristic, not a SQL parser. It is a review/enforcement aid, not a substitute for database-side column privileges.
+**Limits.** The check is heuristic, not a SQL parser, and defaults to `warn`. It sees only what the statement names: a sensitive value reached through a view, a function, or dynamic SQL is not reported. It is a review/enforcement aid and defense in depth, not a security boundary and not a substitute for database-side column privileges.
 
 ---
 

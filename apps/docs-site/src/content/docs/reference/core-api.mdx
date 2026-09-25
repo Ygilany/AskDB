@@ -5,7 +5,7 @@ description: "Full API reference for @askdb/core: ask(), schema loading, dialect
 
 <p class="doc-eyebrow">Reference · @askdb/core</p>
 
-<p class="doc-lede"><code>@askdb/core</code> is the dialect-agnostic NL-to-SQL pipeline. It owns schema loading, prompt construction, SQL validation, and tenant-scope enforcement. Everything else in the AskDB ecosystem composes it.</p>
+<p class="doc-lede"><code>@askdb/core</code> is the dialect-agnostic NL-to-SQL pipeline. It owns schema loading, prompt construction, heuristic SQL checks, and tenant-scope validation and binding. Everything else in the AskDB ecosystem composes it.</p>
 
 ## `ask(options)`
 
@@ -56,7 +56,7 @@ const { sql } = await ask({
 | `usage` | `AskUsage \| undefined` | When the model provider reports token counts. |
 | `explain` | `unknown \| undefined` | When `explain: true`. Heuristic guardrail metadata — which read-only rules fired and why. |
 | `sensitiveGuardrail` | `SensitiveGuardrailResult \| undefined` | When the schema declares at least one `sensitive` table/column and `sensitiveGuardrailMode` is not `"off"`. The sensitive identifiers the returned SQL references. |
-| `tenantGuardrail` | `TenantGuardrailResult \| undefined` | When a tenant policy is active. Confirms the generated SQL references tenant-scoped tables correctly. |
+| `tenantGuardrail` | `TenantGuardrailResult \| undefined` | When a tenant policy is active. `{ passed, warnings }` from the heuristic tenant check on the returned SQL, which confirms each tenant-scoped table named in the SQL has its tenant column or placeholder somewhere in the statement. It does not prove the predicate is correct. With `enforcement: strict`, a failure throws `TenantGuardrailError` instead. |
 | `tenantParams` | `unknown[] \| undefined` | When `tenantSqlMode: "sql-params"` and the SQL has tenant placeholders. The tenant IDs for the markers in `sql`, in marker order. |
 | `tenantBindings` | `TenantBinding[] \| undefined` | When a tenant policy is active. Structured binding metadata for audit. |
 
