@@ -21,9 +21,8 @@ function run(args: string[], cwd: string) {
 describe("cli spawn: first run outside a project (no askdb.config)", () => {
   let emptyDir: string;
 
+  // dist/cli.js is produced by turbo: `test` depends on this package's own `build`.
   beforeAll(() => {
-    const build = spawnSync("pnpm", ["-C", cliDir, "build"], { cwd: repoRoot, encoding: "utf8" });
-    expect(build.status).toBe(0);
     emptyDir = mkdtempSync(join(tmpdir(), "askdb-cli-empty-"));
   });
 
