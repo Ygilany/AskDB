@@ -56,6 +56,8 @@ registry.connectionLabel("postgres", { url: "postgres://app:S3cret@db:5432/app" 
 
 The helpers adapters use (built-in engines take their parts from their driver's own parser; `parseConnectionUrl` is for engines whose driver has none):
 
+These now live in `@askdb/introspect/kit` and are re-exported here unchanged for compatibility; new code should import them from `@askdb/introspect/kit`.
+
 - `formatConnectionLabel(engine, parts)` — `<engine>://host[:port][/database]` for `{ host?, port?, database? }`, the path for `{ file }`; `configured <engine> connection` when `parts` is `undefined` or any part fails its allowlist
 - `parseConnectionUrl(input, schemes)` — parses a standard `scheme://[userinfo@]host[:port][/database][?query]` URL into `{ host, port, database }` (userinfo and query are never returned); `undefined` for another scheme, whitespace, a `#`, an `@` after the authority, or a multi-segment path
 - `ConnectionLabelParts`

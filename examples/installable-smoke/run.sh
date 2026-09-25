@@ -113,6 +113,7 @@ node -e "
   const j = JSON.parse(fs.readFileSync(p, 'utf8'));
   j.dependencies['@askdb/config'] = 'file:$CONFIG_TARBALL';
   j.dependencies['@askdb/core'] = 'file:$CORE_TARBALL';
+  j.dependencies['@askdb/introspect'] = 'file:$INTROSPECT_TARBALL';
   fs.writeFileSync(p, JSON.stringify(j, null, 2) + '\n');
 "
 

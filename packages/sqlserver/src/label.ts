@@ -1,4 +1,4 @@
-import type { ConnectionLabelParts } from "@askdb/connectors";
+import type { ConnectionLabelParts } from "@askdb/introspect/kit";
 import { MSSQL_SCHEMA, parse } from "@tediousjs/connection-string";
 import { isPrismaSqlServerUrlAmbiguous, resolveConnectionInput } from "./exec/sqlserver.js";
 

@@ -1,5 +1,5 @@
 import type { Connector, IntrospectionFilters, SqlTemplateBundle } from "@askdb/introspect";
-import { formatConnectionLabel, type ConnectionLabelParts } from "./label.js";
+import { formatConnectionLabel, type ConnectionLabelParts } from "@askdb/introspect/kit";
 
 export const CONNECTOR_PROVIDERS = [
   "postgres",

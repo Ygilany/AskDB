@@ -1,4 +1,4 @@
-import type { ConnectionLabelParts } from "@askdb/connectors";
+import type { ConnectionLabelParts } from "@askdb/introspect/kit";
 
 /**
  * The display-safe parts of a MySQL connection string, read the way `mysql2`

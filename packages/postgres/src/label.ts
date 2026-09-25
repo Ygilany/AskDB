@@ -1,4 +1,4 @@
-import type { ConnectionLabelParts } from "@askdb/connectors";
+import type { ConnectionLabelParts } from "@askdb/introspect/kit";
 import { parse } from "pg-connection-string";
 
 /**
