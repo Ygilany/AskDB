@@ -1,9 +1,18 @@
-import { mkdtempSync, readFileSync, rmSync, cpSync, writeFileSync } from "node:fs";
+import {
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  readdirSync,
+  rmSync,
+  cpSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { loadSchema, loadSchemaFromJson } from "@askdb/core";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { TenantScopeError, ask, loadSchema, loadSchemaFromJson } from "@askdb/core";
 import {
+  buildDefaultTableBody,
   bundleSchemaDirectory,
   loadWorkspace,
   replaceH2Section,
@@ -16,6 +25,11 @@ import {
 
 const FIXTURE = new URL(
   "../../../fixtures/schemas/orders-users.schema",
+  import.meta.url,
+).pathname;
+
+const MULTI_TENANT_FIXTURE = new URL(
+  "../../../fixtures/schemas/agency-multi-tenant.schema",
   import.meta.url,
 ).pathname;
 
@@ -213,5 +227,210 @@ describe("workspace", () => {
     const fromDir = loadSchema(schemaDir);
     const fromBundle = loadSchemaFromJson(JSON.stringify(bundle));
     expect(fromBundle).toEqual(fromDir);
+    expect(bundle).not.toHaveProperty("tenantPolicy");
+  });
+});
+
+describe("bundleSchemaDirectory with a tenant policy", () => {
+  let tmp: string;
+  let schemaDir: string;
+
+  beforeEach(() => {
+    tmp = mkdtempSync(join(tmpdir(), "askdb-enrich-bundle-"));
+    schemaDir = join(tmp, "agency-multi-tenant.schema");
+    cpSync(MULTI_TENANT_FIXTURE, schemaDir, { recursive: true });
+  });
+
+  afterEach(() => {
+    rmSync(tmp, { recursive: true, force: true });
+  });
+
+  it("includes raw tenant-policy.md and round-trips to the same normalized schema", () => {
+    const bundle = bundleSchemaDirectory(schemaDir);
+    expect(bundle.tenantPolicy).toBe(readFileSync(join(schemaDir, "tenant-policy.md"), "utf8"));
+
+    const fromDir = loadSchema(schemaDir);
+    expect(fromDir.tenantPolicy).toBeDefined();
+
+    expect(loadSchemaFromJson(JSON.stringify(bundle))).toEqual(fromDir);
+
+    // Same path `askdb bundle` takes: write to disk, load the file.
+    const bundlePath = join(tmp, "agency.schema.bundle.json");
+    writeFileSync(bundlePath, `${JSON.stringify(bundle, null, 2)}\n`, "utf8");
+    const fromFile = loadSchema(bundlePath);
+    expect(fromFile).toEqual(fromDir);
+    expect(fromFile.tenantPolicy).toEqual(fromDir.tenantPolicy);
+  });
+
+  it("ask() still requires a tenant scope when the schema comes from a bundle", async () => {
+    const schema = loadSchemaFromJson(JSON.stringify(bundleSchemaDirectory(schemaDir)));
+    const generateText = vi.fn(async () => ({ text: "SELECT 1" }));
+    await expect(
+      ask({
+        question: "how many orders",
+        schema,
+        model: {} as Parameters<typeof ask>[0]["model"],
+        dialect: "postgres",
+        deps: { generateText },
+      }),
+    ).rejects.toBeInstanceOf(TenantScopeError);
+    expect(generateText).not.toHaveBeenCalled();
+  });
+});
+
+describe("workspace table filenames", () => {
+  let tmp: string;
+  let schemaDir: string;
+
+  const table = (schema: string, name: string) => ({
+    id: `table:${schema}.${name}`,
+    name,
+    schema,
+    sensitive: false,
+    columns: [
+      {
+        id: `table:${schema}.${name}#id`,
+        name: "id",
+        type: "integer",
+        nullable: false,
+        primaryKey: true,
+        sensitive: false,
+      },
+    ],
+  });
+
+  const writeSchema = (tables: ReturnType<typeof table>[]) => {
+    mkdirSync(join(schemaDir, "tables"), { recursive: true });
+    writeFileSync(
+      join(schemaDir, "schema.json"),
+      `${JSON.stringify({ version: 2, schemaId: "fname", tables }, null, 2)}\n`,
+      "utf8",
+    );
+  };
+
+  const tableMd = (schema: string, name: string, description: string) =>
+    `---\nid: table:${schema}.${name}\nname: ${name}\nschemaId: fname\n---\n\n# Table: ${name}\n\n${description}\n`;
+
+  const filenameOf = (ws: ReturnType<typeof loadWorkspace>, id: string) =>
+    ws.tables.find((t) => t.physical.id === id)?.filename;
+
+  beforeEach(() => {
+    tmp = mkdtempSync(join(tmpdir(), "askdb-enrich-fname-"));
+    schemaDir = join(tmp, "fname.schema");
+    mkdirSync(schemaDir);
+  });
+
+  afterEach(() => {
+    rmSync(tmp, { recursive: true, force: true });
+  });
+
+  it("uses schema-qualified filenames when bare table names collide", () => {
+    writeSchema([table("public", "orders"), table("archive", "orders"), table("public", "users")]);
+    const ws = loadWorkspace(schemaDir);
+    expect(filenameOf(ws, "table:public.orders")).toBe("public.orders.md");
+    expect(filenameOf(ws, "table:archive.orders")).toBe("archive.orders.md");
+    expect(filenameOf(ws, "table:public.users")).toBe("users.md");
+
+    for (const t of ws.tables) {
+      saveTable(
+        ws,
+        t.physical.id,
+        { id: t.physical.id, name: t.physical.name, schemaId: "fname" },
+        buildDefaultTableBody(t.physical.name, `About ${t.physical.id}.`),
+      );
+    }
+    expect(readdirSync(join(schemaDir, "tables")).sort()).toEqual([
+      "archive.orders.md",
+      "public.orders.md",
+      "users.md",
+    ]);
+    const loaded = loadSchema(schemaDir);
+    for (const t of loaded.tables) expect(t.description).toBe(`About ${t.id}.`);
+  });
+
+  it("treats names differing only by case as colliding", () => {
+    writeSchema([table("public", "Orders"), table("public", "orders")]);
+    const ws = loadWorkspace(schemaDir);
+    const names = ws.tables.map((t) => t.filename.toLowerCase());
+    expect(new Set(names).size).toBe(2);
+  });
+
+  it("keeps existing filenames stable and does not overwrite them", () => {
+    writeSchema([table("public", "orders"), table("archive", "orders")]);
+    const existing = tableMd("public", "orders", "Live orders.");
+    writeFileSync(join(schemaDir, "tables/orders.md"), existing, "utf8");
+    writeFileSync(
+      join(schemaDir, "tables/Custom Name.md"),
+      tableMd("archive", "orders", "Archived orders."),
+      "utf8",
+    );
+
+    const ws = loadWorkspace(schemaDir);
+    expect(filenameOf(ws, "table:public.orders")).toBe("orders.md");
+    expect(filenameOf(ws, "table:archive.orders")).toBe("Custom Name.md");
+  });
+
+  it("does not reuse a filename already on disk for a new table", () => {
+    writeSchema([table("public", "orders"), table("archive", "orders")]);
+    const existing = tableMd("public", "orders", "Live orders.");
+    writeFileSync(join(schemaDir, "tables/orders.md"), existing, "utf8");
+
+    const ws = loadWorkspace(schemaDir);
+    expect(filenameOf(ws, "table:public.orders")).toBe("orders.md");
+    expect(filenameOf(ws, "table:archive.orders")).toBe("archive.orders.md");
+
+    saveTable(
+      ws,
+      "table:archive.orders",
+      { id: "table:archive.orders", name: "orders", schemaId: "fname" },
+      buildDefaultTableBody("orders", "Archived orders."),
+    );
+    expect(readFileSync(join(schemaDir, "tables/orders.md"), "utf8")).toBe(existing);
+    expect(readFileSync(join(schemaDir, "tables/archive.orders.md"), "utf8")).toContain(
+      "Archived orders.",
+    );
+
+    // An orphaned file (id not in schema.json) also blocks its name.
+    writeSchema([table("public", "orders"), table("public", "legacy")]);
+    const orphan = tableMd("public", "gone", "Orphan.");
+    writeFileSync(join(schemaDir, "tables/legacy.md"), orphan, "utf8");
+    const ws2 = loadWorkspace(schemaDir);
+    expect(filenameOf(ws2, "table:public.legacy")).toBe("public.legacy.md");
+  });
+
+  it("sanitizes identifiers so default filenames stay inside tables/", () => {
+    writeSchema([
+      table("public", "../../escape"),
+      table("public", ".."),
+      table("public", "a\\b\u0000c"),
+      table("public", ".hidden"),
+    ]);
+    const ws = loadWorkspace(schemaDir);
+    for (const t of ws.tables) {
+      expect(t.filename).not.toMatch(/[/\\\u0000]/);
+      expect(t.filename.startsWith(".")).toBe(false);
+      saveTable(
+        ws,
+        t.physical.id,
+        { id: t.physical.id, name: t.physical.name, schemaId: "fname" },
+        buildDefaultTableBody("x", "Described."),
+      );
+    }
+    expect(readdirSync(join(schemaDir, "tables"))).toHaveLength(4);
+    expect(readdirSync(tmp)).toEqual(["fname.schema"]);
+    expect(readdirSync(schemaDir).sort()).toEqual(["schema.json", "tables"]);
+  });
+
+  it("saveTable refuses a filename that resolves outside tables/", () => {
+    writeSchema([table("public", "orders")]);
+    const ws = loadWorkspace(schemaDir);
+    const fm = { id: "table:public.orders", name: "orders", schemaId: "fname" };
+    for (const bad of ["../escape.md", "sub/orders.md", "..", "/tmp/abs.md", "orders.txt"]) {
+      ws.tables[0]!.filename = bad;
+      expect(() => saveTable(ws, "table:public.orders", fm, "# Table: orders\n")).toThrow(
+        /outside tables\//,
+      );
+    }
+    expect(readdirSync(tmp)).toEqual(["fname.schema"]);
   });
 });

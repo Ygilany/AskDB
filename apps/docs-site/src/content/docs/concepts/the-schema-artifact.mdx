@@ -18,16 +18,21 @@ my-app.schema/
     users.md            # optional — per-table descriptions, aliases, concepts
     orders.md
   concepts.md           # optional — cross-table business concepts
+  tenant-policy.md      # optional — multi-tenant scoping rules
   schema.lock.json      # optional — bundle integrity
 ```
 
 Only `schema.json` is required. An artifact with no markdown is valid; you can add enrichment incrementally.
+
+Table markdown files are matched to tables by the `id` in their front-matter, not by filename. When AskDB creates one for you it uses `<table>.md`, or `<schema>.<table>.md` if two tables share a name (for example `public.orders` and `archive.orders`).
 
 When you need one portable file (for distributing to a service, an agent, or a build artifact), bundle the directory:
 
 ```bash
 npx askdb bundle my-app.schema --out my-app.schema.bundle.json
 ```
+
+The bundle carries `schema.json`, every `tables/*.md`, `concepts.md`, and `tenant-policy.md`, so loading it gives the same result as loading the directory.
 
 ## The physical layer
 
