@@ -26,9 +26,10 @@ function captureFetch(): CapturedRequest[] {
 async function captureGenerate(
   model: string,
   reasoningEffort?: "minimal" | "low" | "medium" | "high",
+  baseURL?: string,
 ): Promise<CapturedRequest> {
   const requests = captureFetch();
-  const config = { provider: "anthropic", apiKey: "test-key", model };
+  const config = { provider: "anthropic", apiKey: "test-key", model, ...(baseURL ? { baseURL } : {}) };
   const providerOptions = anthropicProvider.resolveProviderOptions?.(config, { reasoningEffort });
   await expect(
     generateText({
@@ -56,6 +57,11 @@ describe("anthropicProvider — real @ai-sdk/anthropic contract", () => {
     expect(request.body.model).toBe("claude-sonnet-4-6");
     expect(request.body).not.toHaveProperty("thinking");
     expect(request.body.temperature).toBe(0);
+  });
+
+  it("sends requests to the configured baseURL", async () => {
+    const request = await captureGenerate("claude-sonnet-4-6", undefined, "https://proxy.example/a");
+    expect(request.url).toBe("https://proxy.example/a/messages");
   });
 
   it("sends adaptive thinking + output_config.effort for adaptive-thinking models", async () => {
