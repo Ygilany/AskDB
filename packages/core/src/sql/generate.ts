@@ -141,7 +141,12 @@ async function runGenerateSelectSql(
     try {
       const result = await generateText({
         model,
-        instructions: buildNlToSqlSystemPrompt(dialect),
+        // `system` (not `instructions`) on purpose: `ai` is a peer dependency
+        // (`^6 || ^7`). AI SDK 6 only reads `system`; AI SDK 7 renamed it to
+        // `instructions` but still honors `system` as a deprecated alias
+        // (`instructions = system` in its prompt standardization). Passing
+        // `instructions` would be silently dropped on AI SDK 6.
+        system: buildNlToSqlSystemPrompt(dialect),
         prompt: buildNlToSqlUserPrompt(
           dialect,
           question,

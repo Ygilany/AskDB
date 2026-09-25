@@ -99,7 +99,7 @@ const { sql${tenant && askTenantSqlMode === "sql-params" ? ", tenantParams" : ""
     const tenantOptions = tenant
       ? `\n  tenantScope: ${indentBlock(tenant, 2)},\n  tenantSqlMode: ${JSON.stringify(askTenantSqlMode)},`
       : "";
-    return `// npm install @askdb/core ${wiringDef.sdkPackage}
+    return `// npm install @askdb/core ai ${wiringDef.sdkPackage}
 import { ask, loadSchema } from "@askdb/core";
 import { ${wiringDef.sdkImport} } from "${wiringDef.sdkPackage}";
 

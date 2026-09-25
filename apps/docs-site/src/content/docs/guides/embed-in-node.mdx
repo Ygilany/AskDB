@@ -113,7 +113,9 @@ The full result and option types are in the [@askdb/core API reference](/referen
 
 `createAskDb` is a convenience layer over `@askdb/core`'s pure `ask()` — not a replacement. Drop down to `ask()` when you construct the model yourself, serve multiple schemas from one process, or want zero dependency on `@askdb/config` / `@askdb/ai`.
 
-<InstallTabs pkgs="@askdb/core @ai-sdk/openai pg" />
+<InstallTabs pkgs="@askdb/core ai @ai-sdk/openai pg" />
+
+`ai` is a required peer dependency of `@askdb/core` (AI SDK 6 or 7) — your app owns its version.
 
 Dialects for all four engines are built into `@askdb/core` — install `@askdb/postgres` only if this service also runs `askdb introspect` programmatically.
 

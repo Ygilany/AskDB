@@ -441,3 +441,44 @@ This ADR's Option E analysis above already recorded the benefits now being adopt
 Option F that were not visible when the decision was made, listed above, tipped the balance.
 Deferred: making `ai` a peer of `@askdb/core` (plan 035), adopting `ai@7`'s portable top-level
 `reasoning` call option in place of per-provider `providerOptions` mapping, and deleting the shims.
+**2026-09 — `ai` becomes a peer dependency of `@askdb/core` (`^6 || ^7`):** This amends the
+2026-06-11 decision "Retain `ai` as a runtime dependency while core calls `generateText`" (and the
+matching Consequences bullet). `ai` moves from `@askdb/core`'s `dependencies` to a required
+`peerDependencies` entry with the range `^6.0.0 || ^7.0.0`; it stays in `devDependencies` (at
+`^7`) for building and testing core.
+
+Why the original reasoning no longer holds: calling `generateText` is a reason to *import* `ai`,
+not to *pin* it. Because `ask()` accepts a caller-constructed `LanguageModel`, the caller and core
+must agree on one `ai` instance; a hard dependency actively prevents that agreement across majors.
+The concrete evidence: a real integration runs `ai@^6` with `@ai-sdk/openai@^3` and is stuck on
+`@askdb/core@1.0.0-beta.40`, because `beta.41` moved core's dependency to `ai@^7`. Upgrading AskDB
+would force that host to migrate its whole AI stack — including AI features unrelated to AskDB —
+or to install two copies of `ai` whose `LanguageModel` / `generateText` types disagree. A peer
+dependency hands the version choice back to the host, which is where it belongs for a BYO-model
+library.
+
+Why the range spans two majors rather than just `^7`: a `^7`-only peer would turn the AI SDK 6
+host's silent duplicate into a hard `ERESOLVE`, which is worse. Core's AI SDK surface is small
+enough to support both:
+
+- Core calls `generateText` with `system` rather than AI SDK 7's `instructions`. AI SDK 6 only
+  reads `system` (it silently ignores `instructions`, so the NL→SQL system prompt was being
+  dropped); AI SDK 7 still honors `system` as a deprecated alias (`instructions = system` in its
+  prompt standardization). No dual-key or runtime version sniffing is needed.
+- Usage parsing already tolerates both naming conventions (`promptTokens ?? inputTokens`).
+- The published declarations only reference `LanguageModel` and `generateText` from `ai`, which
+  exist in both majors; they resolve against the host's installed `ai`, which is the desired
+  behavior (`AskDbLanguageModel` is exactly the host's `LanguageModel`).
+- `examples/installable-smoke/consumer-ai6` installs the packed core tarball next to `ai@6` and
+  `@ai-sdk/openai@3` and runs `ask()` through AI SDK 6 end to end.
+
+`@askdb/rag`'s optional `ai` / `@ai-sdk/openai` peers were widened to the same majors for the
+same reason (its AI SDK embedder only needs `embedMany` and the `EmbeddingModel` type). `@askdb/ai`,
+the `@askdb/ai-*` adapters, and `@askdb/client` already declared `ai` as a peer and keep `^7`;
+first-party apps (`askdb`, `@askdb/http-api`, `@askdb/studio`) keep `ai` as a direct dependency
+because they are batteries-included products, not libraries.
+
+What is unchanged: core stays BYO-model, still exports `AskDbLanguageModel`, and still calls
+`generateText`. The rule going forward: anything a host could reasonably already have installed
+(`ai`, `@ai-sdk/*`, database drivers) is a peer of a library package, never a bundled dependency.
+When AI SDK 8 ships, widening the peer range (after verifying the call shape) is the whole upgrade.
