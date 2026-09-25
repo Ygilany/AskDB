@@ -1,13 +1,18 @@
+import { TenantScopeError } from "../errors.js";
 import type {
   NormalizedTenantPolicy,
   TenantScope,
   TenantAccess,
 } from "../schema/v2/tenant-policy.js";
-import type { DialectSpec } from "./dialect-spec.js";
+import { isBuiltInDialectId, type DialectSpec } from "./dialect-spec.js";
 import {
   escapeSqlLiteral,
   escapeSqlLiteralLegacy,
+  formatMarker,
+  markerStyleForDialect,
   scanTenantPlaceholders,
+  type MarkerStyle,
+  type PlaceholderOccurrence,
 } from "./bind.js";
 
 // ---------------------------------------------------------------------------
@@ -28,10 +33,22 @@ export type TenantPlaceholderResult =
   | {
       mode: "sql-params";
       sql: string;
+      /**
+       * Tenant values in driver-marker order: `params[i]` fills the marker for
+       * 1-based position `paramStartIndex + i` (`$N`, or `@p{N-1}` on SQL Server),
+       * or the i-th tenant `?` in source order.
+       */
       params: unknown[];
       bindings: TenantBinding[];
       paramStartIndex: number;
     };
+
+/**
+ * The parts of a dialect the tenant substituter reads: `id` picks the driver
+ * marker style (`$N` / `?` / `@pN`); `backslashEscapes` drives literal escaping.
+ * Omit it entirely for Postgres-style `$N` markers and quote-doubling only.
+ */
+export type TenantSqlDialect = Partial<Pick<DialectSpec, "id" | "backslashEscapes">>;
 
 // ---------------------------------------------------------------------------
 // Placeholder naming convention (matches tenant-prompt.ts)
@@ -99,8 +116,9 @@ function buildIdsByRoot(access: TenantAccess): Map<string, string[]> {
       m.set(access.tenantRoot, access.ids);
       break;
     case "subtree":
-      m.set(access.tenantRoot, access.rootIds);
-      break;
+      // Descendants are never expanded, so binding only `rootIds` would silently
+      // under-return. validateTenantScope() already rejects this inside ask().
+      throw subtreeUnsupportedError();
     case "multi_root":
       for (const s of access.scopes) {
         const existing = m.get(s.tenantRoot) ?? [];
@@ -113,8 +131,19 @@ function buildIdsByRoot(access: TenantAccess): Map<string, string[]> {
   return m;
 }
 
+/** The error for `access.kind: "subtree"` — shared by scope validation and placeholder resolution. */
+export function subtreeUnsupportedError(): TenantScopeError {
+  return new TenantScopeError(
+    'tenantScope.access.kind "subtree" is not supported yet: AskDB does not expand a root\'s ' +
+      "descendants, so the query would silently cover only the listed rootIds. Resolve the " +
+      'subtree in your application and pass the explicit IDs with { kind: "ids" } ' +
+      '(or { kind: "multi_root" } across hierarchy levels).',
+    "UNSUPPORTED_ACCESS_KIND",
+  );
+}
+
 // ---------------------------------------------------------------------------
-// Replace placeholders — SQL-only mode (inline literals)
+// Substitution — token-aware, one edit per code-region occurrence
 // ---------------------------------------------------------------------------
 
 function escapeTenantId(value: string, dialect?: Pick<DialectSpec, "backslashEscapes">): string {
@@ -124,98 +153,211 @@ function escapeTenantId(value: string, dialect?: Pick<DialectSpec, "backslashEsc
   return escapeSqlLiteral(value, dialect);
 }
 
-export function replacePlaceholdersWithLiterals(
+type Edit = { start: number; end: number; text: string };
+
+/**
+ * Replace every tenant placeholder that sits in a code region of `sql`.
+ * Placeholder text inside string literals or quoted identifiers is left alone
+ * (the shared scanner never reports it), so a substituted value can never land
+ * inside — or close — a surrounding literal.
+ *
+ * `render` runs once per occurrence, in source order, and returns one SQL
+ * fragment (literal or driver marker) per tenant ID. Rendering in source order
+ * is what keeps positional `?` markers aligned with their parameters.
+ *
+ * Fails closed: an occurrence whose placeholder has no IDs in scope, or matches
+ * no tenant root, throws instead of shipping the raw `:tenant_*` text.
+ */
+function substituteTenantPlaceholders(
   sql: string,
   resolved: ResolvedPlaceholder[],
-  dialect?: Pick<DialectSpec, "backslashEscapes">,
+  render: (r: ResolvedPlaceholder) => string[],
 ): string {
-  let result = sql;
-  for (const r of resolved) {
-    if (r.ids.length === 0) continue;
-    const literal =
-      r.ids.length === 1
-        ? escapeTenantId(r.ids[0]!, dialect)
-        : `(${r.ids.map((id) => escapeTenantId(id, dialect)).join(", ")})`;
-
-    result = replaceOperatorAware(result, r.placeholder, literal, r.ids.length > 1);
+  const byPlaceholder = new Map(resolved.map((r) => [r.placeholder, r]));
+  const edits: Edit[] = [];
+  for (const occ of scanTenantPlaceholders(sql)) {
+    const r = byPlaceholder.get(occ.placeholder);
+    if (!r || r.ids.length === 0) {
+      throw new TenantScopeError(
+        r
+          ? `Generated SQL references ${occ.placeholder} but the current scope provides no IDs ` +
+              `for tenant root '${r.rootId}'. Refusing to emit SQL with an unsubstituted tenant placeholder.`
+          : `Generated SQL references ${occ.placeholder}, which matches no tenant root in the policy. ` +
+              `Refusing to emit SQL with an unsubstituted tenant placeholder.`,
+        "UNRESOLVED_TENANT_PLACEHOLDER",
+      );
+    }
+    edits.push(planEdit(sql, occ, render(r)));
   }
-  return result;
+
+  let out = sql;
+  for (const edit of edits.sort((a, b) => b.start - a.start)) {
+    out = out.slice(0, edit.start) + edit.text + out.slice(edit.end);
+  }
+  return out;
+}
+
+const IN_LIST_BEFORE = /\bIN\s*\(\s*$/i;
+const CLOSE_PAREN_AFTER = /^\s*\)/;
+const QUANTIFIED_BEFORE = /(?<![<>!=])(==|=|<>|!=)\s*(ANY|SOME|ALL)\s*\(\s*$/i;
+const COMPARISON_BEFORE = /(?<![<>!=])(<>|!=|<=|>=|==|=|<|>)\s*$/;
+
+/**
+ * Decide how one occurrence is rewritten, from the operator in front of it.
+ *
+ * - Sole element of `IN (…)` / `NOT IN (…)`: the placeholder becomes the list.
+ * - `= ANY(…)` / `= SOME(…)` → `IN (…)`; `<> ALL(…)` / `!= ALL(…)` → `NOT IN (…)`.
+ * - `=` with several IDs → `IN (…)`; `!=` / `<>` with several IDs → `NOT IN (…)`.
+ *   With one ID the operator is kept and only the placeholder is replaced.
+ * - `<`, `>`, `<=`, `>=`, or any other position, with several IDs has no list
+ *   meaning, so it throws rather than emit SQL that means something else.
+ */
+function planEdit(sql: string, occ: PlaceholderOccurrence, items: string[]): Edit {
+  const before = sql.slice(0, occ.start);
+  const after = sql.slice(occ.end);
+  const list = items.join(", ");
+  const close = CLOSE_PAREN_AFTER.exec(after);
+
+  if (close && IN_LIST_BEFORE.test(before)) {
+    return { start: occ.start, end: occ.end, text: list };
+  }
+
+  const quantified = close ? QUANTIFIED_BEFORE.exec(before) : null;
+  if (quantified && close) {
+    const op = quantified[1]!;
+    const quantifier = quantified[2]!.toUpperCase();
+    const positive = (op === "=" || op === "==") && quantifier !== "ALL";
+    const negative = (op === "<>" || op === "!=") && quantifier === "ALL";
+    if (!positive && !negative) {
+      throw unsupportedPredicate(occ, `${op} ${quantifier}(…)`);
+    }
+    const start = occ.start - quantified[0]!.length;
+    return {
+      start,
+      end: occ.end + close[0]!.length,
+      text: spaced(sql, start, `${negative ? "NOT IN" : "IN"} (${list})`),
+    };
+  }
+
+  if (items.length === 1) {
+    return { start: occ.start, end: occ.end, text: items[0]! };
+  }
+
+  const comparison = COMPARISON_BEFORE.exec(before);
+  if (comparison) {
+    const op = comparison[1]!;
+    const start = occ.start - comparison[0]!.length;
+    if (op === "=" || op === "==") {
+      return { start, end: occ.end, text: spaced(sql, start, `IN (${list})`) };
+    }
+    if (op === "!=" || op === "<>") {
+      return { start, end: occ.end, text: spaced(sql, start, `NOT IN (${list})`) };
+    }
+    throw unsupportedPredicate(occ, op);
+  }
+
+  throw unsupportedPredicate(occ, undefined);
+}
+
+/** Prefix a space when the rewritten fragment would otherwise touch the preceding token. */
+function spaced(sql: string, start: number, text: string): string {
+  return start > 0 && !/\s/.test(sql[start - 1]!) ? ` ${text}` : text;
+}
+
+function unsupportedPredicate(occ: PlaceholderOccurrence, op: string | undefined): TenantScopeError {
+  const where =
+    op === undefined ? "outside a comparison or IN list" : `with operator '${op}'`;
+  return new TenantScopeError(
+    `Generated SQL uses ${occ.placeholder} ${where}, but the current scope has several tenant IDs ` +
+      `and that predicate has no list form. Only =, !=, <>, IN (…), NOT IN (…), = ANY(…) and ` +
+      `<> ALL(…) can bind multiple IDs. Refusing to emit SQL.`,
+    "UNSUPPORTED_TENANT_PREDICATE",
+  );
 }
 
 // ---------------------------------------------------------------------------
-// Replace placeholders — SQL+params mode (positional $N)
+// Replace placeholders — SQL-only mode (inline literals)
 // ---------------------------------------------------------------------------
 
+export function replacePlaceholdersWithLiterals(
+  sql: string,
+  resolved: ResolvedPlaceholder[],
+  dialect?: TenantSqlDialect,
+): string {
+  return substituteTenantPlaceholders(sql, resolved, (r) =>
+    r.ids.map((id) => escapeTenantId(id, dialect)),
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Replace placeholders — SQL+params mode (dialect driver markers)
+// ---------------------------------------------------------------------------
+
+function tenantMarkerStyle(dialect: TenantSqlDialect | undefined): MarkerStyle {
+  const id = dialect?.id;
+  return id !== undefined && isBuiltInDialectId(id) ? markerStyleForDialect(id) : "dollar";
+}
+
+/**
+ * Marker for the value at 1-based position `ordinal` of the params array the SQL
+ * runs with. `$N` is 1-based and `@pN` 0-based (as in `bindPreparedQuery`);
+ * `?` is positional by occurrence.
+ */
+function tenantMarker(style: MarkerStyle, ordinal: number): string {
+  return style === "atp" ? formatMarker("atp", ordinal - 1) : formatMarker(style, ordinal);
+}
+
+/**
+ * Replace tenant placeholders with dialect driver markers: `$N` for
+ * Postgres/CockroachDB (and when no dialect id is given), `?` for
+ * MySQL/MariaDB/SQLite, `@pN` for SQL Server. Each occurrence gets its own
+ * markers, allocated in source order, and `params` lists the IDs in that same
+ * order — so for `?` dialects `params` lines up with the markers left to right.
+ *
+ * `startIndex` is the 1-based position of the first tenant value in the params
+ * array the SQL will run with (`1` when tenant values are the only params).
+ * `nextIndex` is `startIndex + params.length`.
+ */
 export function replacePlaceholdersWithParams(
   sql: string,
   resolved: ResolvedPlaceholder[],
   startIndex: number = 1,
+  dialect?: TenantSqlDialect,
 ): { sql: string; params: unknown[]; nextIndex: number } {
-  let result = sql;
+  const style = tenantMarkerStyle(dialect);
   const params: unknown[] = [];
   let idx = startIndex;
-
-  for (const r of resolved) {
-    if (r.ids.length === 0) continue;
-
-    if (r.ids.length === 1) {
-      const paramRef = `$${idx}`;
-      result = replaceOperatorAware(result, r.placeholder, paramRef, false);
-      params.push(r.ids[0]!);
-      idx++;
-    } else {
-      const paramRefs = r.ids.map(() => `$${idx++}`);
-      const paramList = `(${paramRefs.join(", ")})`;
-      result = replaceOperatorAware(result, r.placeholder, paramList, true);
-      params.push(...r.ids);
-    }
-  }
-  return { sql: result, params, nextIndex: idx };
-}
-
-// ---------------------------------------------------------------------------
-// Operator-aware replacement: = → IN when multiple values
-// ---------------------------------------------------------------------------
-
-function replaceOperatorAware(
-  sql: string,
-  placeholder: string,
-  replacement: string,
-  isMultiple: boolean,
-): string {
-  if (isMultiple) {
-    const eqPattern = new RegExp(
-      `=\\s*${escapeRegex(placeholder)}`,
-      "g",
-    );
-    sql = sql.replace(eqPattern, `IN ${replacement}`);
-
-    const inPattern = new RegExp(
-      `IN\\s*\\(\\s*${escapeRegex(placeholder)}\\s*\\)`,
-      "gi",
-    );
-    sql = sql.replace(inPattern, `IN ${replacement}`);
-  }
-
-  sql = sql.replace(new RegExp(escapeRegex(placeholder), "g"), replacement);
-  return sql;
-}
-
-function escapeRegex(s: string): string {
-  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const out = substituteTenantPlaceholders(sql, resolved, (r) =>
+    r.ids.map((id) => {
+      params.push(id);
+      return tenantMarker(style, idx++);
+    }),
+  );
+  return { sql: out, params, nextIndex: idx };
 }
 
 // ---------------------------------------------------------------------------
 // High-level entry point
 // ---------------------------------------------------------------------------
 
+/**
+ * Substitute the `:tenant_<root>_ids` placeholders in `sql` with the IDs from
+ * `scope` — as escaped literals (`"sql-only"`), or as dialect driver markers plus
+ * a `params` array (`"sql-params"`). Only placeholders in code regions are
+ * touched; text inside string literals and quoted identifiers is left as-is.
+ *
+ * Throws `TenantScopeError` when a placeholder cannot be resolved
+ * (`UNRESOLVED_TENANT_PLACEHOLDER`), when a multi-ID scope meets a predicate with
+ * no list form (`UNSUPPORTED_TENANT_PREDICATE`), or for `subtree` access
+ * (`UNSUPPORTED_ACCESS_KIND`). `global` scope returns `sql` unchanged.
+ */
 export function resolveTenantSql(
   sql: string,
   policy: NormalizedTenantPolicy,
   scope: TenantScope,
   mode: TenantSqlOutputMode = "sql-only",
   paramStartIndex: number = 1,
-  dialect?: Pick<DialectSpec, "backslashEscapes">,
+  dialect?: TenantSqlDialect,
 ): TenantPlaceholderResult {
   if (scope.access.kind === "global") {
     return mode === "sql-only"
@@ -239,7 +381,7 @@ export function resolveTenantSql(
     };
   }
 
-  const paramResult = replacePlaceholdersWithParams(sql, resolved, paramStartIndex);
+  const paramResult = replacePlaceholdersWithParams(sql, resolved, paramStartIndex, dialect);
   return {
     mode: "sql-params",
     sql: paramResult.sql,

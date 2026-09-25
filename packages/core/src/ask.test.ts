@@ -413,7 +413,7 @@ describe("ask — parameterize", () => {
     expect(result.tenantBindings![0]!.placeholder).toBe(":tenant_agency_ids");
   });
 
-  it("combined business + tenant in tenantSqlMode sql-params with continuous markers", async () => {
+  it("combined business + tenant in tenantSqlMode sql-params: sql runs with tenantParams, unboundSql with params", async () => {
     const schema = loadSchema(multiTenantDir);
     const generateText = vi.fn(async () => ({ text: businessPlusTenantReply }));
     const result = await ask({
@@ -426,19 +426,192 @@ describe("ask — parameterize", () => {
       deps: { generateText },
     });
 
+    // Business values are literals in `sql`, so its tenant markers start at $1
+    // and line up with tenantParams (previously $2 with a one-element array).
     expect(result.sql).toBe(
-      "SELECT count(*) FROM orders WHERE status = 'paid' AND agency_id = $2",
+      "SELECT count(*) FROM orders WHERE status = 'paid' AND agency_id = $1",
     );
+    expect(result.tenantParams).toEqual(["42"]);
     expect(result.unboundSql).toBe(
       "SELECT count(*) FROM orders WHERE status = $1 AND agency_id = $2",
     );
     expect(result.params).toEqual(["paid", "42"]);
-    expect(result.tenantParams).toEqual(["42"]);
     expect(result.tenantBindings).toHaveLength(1);
     expect(result.tenantBindings![0]!.ids).toEqual(["42"]);
     expect(result.tenantBindings![0]!.placeholder).toBe(":tenant_agency_ids");
   });
 });
+
+describe("ask — tenant params contract across dialects (sql-params)", () => {
+  // Tenant placeholder BEFORE the business placeholders, so `?` dialects must
+  // interleave tenant and business values in source order.
+  const reply = [
+    "```sql",
+    "SELECT count(*) FROM orders WHERE agency_id IN (:tenant_agency_ids) AND status = 'paid' AND total > 10",
+    "```",
+    "```sql-unbound",
+    "SELECT count(*) FROM orders WHERE agency_id IN (:tenant_agency_ids) AND status = :status_name AND total > :min_total",
+    "```",
+    "```json",
+    '{"parameters":[{"name":"status_name","type":"string","cardinality":"one","value":"paid"},' +
+      '{"name":"min_total","type":"number","cardinality":"one","value":10}]}',
+    "```",
+  ].join("\n");
+  const twoAgencies: TenantScope = {
+    access: { kind: "ids", tenantRoot: "table:public.agencies", ids: ["42", "99"] },
+  };
+  const literalSql =
+    "SELECT count(*) FROM orders WHERE agency_id IN ('42', '99') AND status = 'paid' AND total > 10";
+
+  const cases = [
+    {
+      dialect: "postgres" as const,
+      sql: "agency_id IN ($1, $2) AND status = 'paid' AND total > 10",
+      unbound: "agency_id IN ($3, $4) AND status = $1 AND total > $2",
+      params: ["paid", 10, "42", "99"],
+      indices: { status_name: [0], min_total: [1] },
+    },
+    {
+      dialect: "mysql" as const,
+      sql: "agency_id IN (?, ?) AND status = 'paid' AND total > 10",
+      unbound: "agency_id IN (?, ?) AND status = ? AND total > ?",
+      params: ["42", "99", "paid", 10],
+      indices: { status_name: [2], min_total: [3] },
+    },
+    {
+      dialect: "sqlite" as const,
+      sql: "agency_id IN (?, ?) AND status = 'paid' AND total > 10",
+      unbound: "agency_id IN (?, ?) AND status = ? AND total > ?",
+      params: ["42", "99", "paid", 10],
+      indices: { status_name: [2], min_total: [3] },
+    },
+    {
+      dialect: "sqlserver" as const,
+      sql: "agency_id IN (@p0, @p1) AND status = 'paid' AND total > 10",
+      unbound: "agency_id IN (@p2, @p3) AND status = @p0 AND total > @p1",
+      params: ["paid", 10, "42", "99"],
+      indices: { status_name: [0], min_total: [1] },
+    },
+  ];
+
+  it.each(cases)("$dialect: markers, params, and parameter indices line up", async (c) => {
+    const schema = loadSchema(multiTenantDir);
+    const result = await ask({
+      question: "how many paid orders over 10",
+      schema,
+      model: fakeModel,
+      dialect: c.dialect,
+      tenantScope: twoAgencies,
+      tenantSqlMode: "sql-params",
+      deps: { generateText: vi.fn(async () => ({ text: reply })) },
+    });
+
+    const prefix = "SELECT count(*) FROM orders WHERE ";
+    expect(result.sql).toBe(prefix + c.sql);
+    expect(result.tenantParams).toEqual(["42", "99"]);
+    expect(result.unboundSql).toBe(prefix + c.unbound);
+    expect(result.params).toEqual(c.params);
+    expect(
+      Object.fromEntries(result.parameters!.map((p) => [p.name, p.indices])),
+    ).toEqual(c.indices);
+    // No foreign marker style leaks into the statement.
+    const foreign = { postgres: /\?|@p\d/, mysql: /\$\d|@p\d/, sqlite: /\$\d|@p\d/, sqlserver: /\$\d|\?/ };
+    expect(result.sql).not.toMatch(foreign[c.dialect]);
+    expect(result.unboundSql).not.toMatch(foreign[c.dialect]);
+
+    // Executable pairs: inlining params into markers reproduces the literal SQL.
+    expect(inlineMarkers(result.sql, result.tenantParams!)).toBe(literalSql);
+    expect(inlineMarkers(result.unboundSql!, result.params!)).toBe(literalSql);
+    for (const p of result.parameters!) {
+      for (const i of p.indices) expect(result.params![i]).toEqual(p.value);
+    }
+  });
+
+  it("MySQL: a business marker before the tenant list keeps source order", async () => {
+    const schema = loadSchema(multiTenantDir);
+    const before = [
+      "```sql",
+      "SELECT count(*) FROM orders WHERE status = 'paid' AND agency_id = :tenant_agency_ids",
+      "```",
+      "```sql-unbound",
+      "SELECT count(*) FROM orders WHERE status = :status_name AND agency_id = :tenant_agency_ids",
+      "```",
+      "```json",
+      '{"parameters":[{"name":"status_name","type":"string","cardinality":"one","value":"paid"}]}',
+      "```",
+    ].join("\n");
+    const result = await ask({
+      question: "q",
+      schema,
+      model: fakeModel,
+      dialect: "mysql",
+      tenantScope: twoAgencies,
+      tenantSqlMode: "sql-params",
+      deps: { generateText: vi.fn(async () => ({ text: before })) },
+    });
+    expect(result.unboundSql).toBe(
+      "SELECT count(*) FROM orders WHERE status = ? AND agency_id IN (?, ?)",
+    );
+    expect(result.params).toEqual(["paid", "42", "99"]);
+    expect(result.sql).toBe("SELECT count(*) FROM orders WHERE status = 'paid' AND agency_id IN (?, ?)");
+    expect(result.sql).not.toMatch(/\$\d/);
+  });
+
+  it("zero IDs for a referenced root throws instead of returning SQL", async () => {
+    const schema = loadSchema(multiTenantDir);
+    const clientOnly = [
+      "```sql",
+      "SELECT count(*) FROM orders WHERE agency_id IN (:tenant_agency_ids) AND client_id IN (:tenant_client_ids)",
+      "```",
+    ].join("\n");
+    await expect(
+      ask({
+        question: "q",
+        schema,
+        model: fakeModel,
+        dialect: "postgres",
+        tenantScope: twoAgencies,
+        parameterize: false,
+        deps: { generateText: vi.fn(async () => ({ text: clientOnly })) },
+      }),
+    ).rejects.toMatchObject({ name: "TenantScopeError", reason: "UNRESOLVED_TENANT_PLACEHOLDER" });
+  });
+
+  it("subtree scope is rejected before the model is called", async () => {
+    const schema = loadSchema(multiTenantDir);
+    const generateText = vi.fn(async () => ({ text: "```sql\nSELECT 1\n```" }));
+    await expect(
+      ask({
+        question: "q",
+        schema,
+        model: fakeModel,
+        dialect: "postgres",
+        tenantScope: {
+          access: {
+            kind: "subtree",
+            tenantRoot: "table:public.agencies",
+            rootIds: ["42"],
+            includeDescendants: true,
+          },
+        },
+        deps: { generateText },
+      }),
+    ).rejects.toMatchObject({ name: "TenantScopeError", reason: "UNSUPPORTED_ACCESS_KIND" });
+    expect(generateText).not.toHaveBeenCalled();
+  });
+});
+
+/** Replace driver markers in code regions with the literal of the value they bind. */
+function inlineMarkers(sql: string, params: readonly unknown[]): string {
+  const lit = (v: unknown) => (typeof v === "string" ? `'${v.replace(/'/g, "''")}'` : String(v));
+  let q = 0;
+  return sql.replace(/'(?:[^']|'')*'|\$(\d+)|@p(\d+)|\?/g, (m, dollar?: string, atp?: string) => {
+    if (m.startsWith("'")) return m;
+    if (dollar !== undefined) return lit(params[Number(dollar) - 1]);
+    if (atp !== undefined) return lit(params[Number(atp)]);
+    return lit(params[q++]);
+  });
+}
 
 describe("ask — tenant guardrail runs on the SQL actually returned", () => {
   // The model's bound ```sql block is unscoped while its ```sql-unbound block is

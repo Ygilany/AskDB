@@ -21,7 +21,7 @@ describe("validateTenantScope", () => {
     expect(() => validateTenantScope(policy, scope)).not.toThrow();
   });
 
-  it("passes with valid subtree scope", () => {
+  it("rejects subtree scope as not yet supported (fails closed instead of under-returning)", () => {
     const scope: TenantScope = {
       access: {
         kind: "subtree",
@@ -30,7 +30,14 @@ describe("validateTenantScope", () => {
         includeDescendants: true,
       },
     };
-    expect(() => validateTenantScope(policy, scope)).not.toThrow();
+    expect(() => validateTenantScope(policy, scope)).toThrow(TenantScopeError);
+    try {
+      validateTenantScope(policy, scope);
+    } catch (e) {
+      expect((e as TenantScopeError).reason).toBe("UNSUPPORTED_ACCESS_KIND");
+      expect((e as Error).message).toMatch(/not supported yet/);
+      expect((e as Error).message).toMatch(/kind: "ids"/);
+    }
   });
 
   it("passes with valid multi_root scope", () => {
@@ -82,7 +89,7 @@ describe("validateTenantScope", () => {
     }
   });
 
-  it("rejects unknown tenant root in subtree scope", () => {
+  it("rejects subtree scope even with an unknown tenant root", () => {
     const scope: TenantScope = {
       access: {
         kind: "subtree",
