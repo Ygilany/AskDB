@@ -157,12 +157,23 @@ export async function resyncSchema(): Promise<IntrospectRunResponse> {
   });
 }
 
+/**
+ * Per-launch session token the server injects into `index.html` as
+ * `<meta name="askdb-studio-token">`. Every `/api/*` call must echo it in the
+ * `x-askdb-studio-token` header — see `src/request-guard.ts`.
+ */
+function sessionToken(): string {
+  return document.querySelector<HTMLMetaElement>('meta[name="askdb-studio-token"]')?.content ?? "";
+}
+
+/** The only place the web app talks to the Studio server — keep every API call routed through here. */
 async function api<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(path, {
     ...init,
     headers: {
       "content-type": "application/json",
       ...init?.headers,
+      "x-askdb-studio-token": sessionToken(),
     },
   });
   const body = (await response.json()) as T | StudioErrorDto;
