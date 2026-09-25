@@ -13,7 +13,7 @@ export const DATABASES: Array<{ value: SetupDatabase; label: string }> = [
 
 /**
  * Mirrors `listBuiltinAiProviderSetups(ASKDB_AI_PROVIDERS)` from `@askdb/ai` (the browser bundle
- * can't import it). `server.test.ts` fails if the two drift.
+ * can't import it). `setup-providers.test.ts` fails if the two drift.
  */
 export const AI_PROVIDERS: Array<{ value: SetupAiProvider; label: string; keyEnv: string; modelEnv: string }> = [
   { value: "openai", label: "OpenAI", keyEnv: "OPENAI_API_KEY", modelEnv: "OPENAI_MODEL" },
