@@ -157,3 +157,132 @@ Each item below is now an executable plan — see plans 053–071 and the post-r
 - Renderer: composite FKs, enum labels, comments (Schema v2 minor).
 - Deeper MySQL/SQL Server/SQLite integration fixtures (views, composite FKs, multi-schema).
 - The HTTP API cannot serve tenant-scoped schemas (no way to pass a scope).
+
+## Findings register
+
+Every finding from the six review lanes, with a stable ID. PR descriptions cite the lane-local ID
+(for example **C1** in #185, **F2** in #186); the prefixed form below is the unambiguous one,
+because each lane numbered its findings independently (security **C1** ≠ RAG **C1**).
+Severity letter: **C** critical, **H** high, **M** medium, **L** low; the release lane uses
+**B** blocker, **S** should-fix; the core lane numbered its findings **F1–F12**.
+
+Status: a PR number means fixed by that PR; `plan NNN` means captured as an executable plan;
+**Open** means not addressed and not yet planned.
+
+### SEC — product surfaces security (Studio, HTTP API, CLI)
+
+| ID | Finding | Status |
+|---|---|---|
+| SEC-C1 | Studio API had no Host / Origin / CSRF check; any web page (or DNS rebinding) could call `/api/execute` or rewrite schema files | #185 (ADR 0009) |
+| SEC-C2 | Setup wizard wrote unescaped values into `askdb.config.ts`, which Studio then executes → code injection | #185 |
+| SEC-H1 | Studio "read-only" execute bypassable (pg simple-protocol multi-statement, no SQL Server guard, no `validateSelectSql`) | #194 |
+| SEC-H2 | Studio execute always on and silently reused introspection credentials | #194 |
+| SEC-H3 | Most mutating Studio endpoints skipped the loopback gate | #185 (token on every `/api/*`) |
+| SEC-M1 | HTTP API ignored config `modes.omitSensitiveFromPrompt` | #187 |
+| SEC-M2 | HTTP API classified errors by substring (`"mode"` matched "Model"), so 502 was dead code | #187 |
+| SEC-M3 | Studio execute had no statement timeout or real row cap | #194 |
+| SEC-M4 | Unbounded Studio request bodies; Playground history persisted arbitrary input | #194 |
+| SEC-M5 | HTTP API always accepted per-request `schemaJson`; no LLM timeout | #187 |
+| SEC-L1 | Studio install-driver: `"constructor"` accepted; `spawn("pnpm")` broken on Windows | #194 |
+| SEC-L2 | `askdb init` wrote unvalidated values into TypeScript; renderer duplicated with Studio | #185 (escaping); plan 066 (single renderer) |
+| SEC-L3 | HTTP API printed a raw stack on startup errors | #187 |
+| SEC-L4 | Security docs inaccurate (SECURITY.md, architecture, Studio page) | #184, #185 |
+
+### CORE — core pipeline and SQL safety
+
+| ID | Finding | Status |
+|---|---|---|
+| CORE-F1 | Read-only validator bypassable: quote stripper disagreed with the databases (E-strings, `$tag$`, backslashes, `#`) | #190 |
+| CORE-F2 | Strict tenant check ran on the unbound SQL, not the SQL returned | #186 |
+| CORE-F3 | Malformed `tenant-policy.md` silently disabled tenancy; `schema.json` path skipped the policy | #186 |
+| CORE-F4 | Tenant check is a presence test (`… OR 1=1` passes) | #184 (docs); #197 + plan 055 (lexing); plan 050 (rewriting spike) |
+| CORE-F5 | Custom `AskDialect` skipped tenant enforcement | #186 |
+| CORE-F6 | Denylist gaps: `SELECT INTO`, `OUTFILE`, `set_config`, `dblink_exec`, T-SQL batch verbs | #190 |
+| CORE-F7 | Sensitive check missed `*`, `t.*`, whole-row functions | #190 |
+| CORE-F8 | Tenant binding: wrong markers, fail-open placeholders, `!=` corruption, literal injection | #197 |
+| CORE-F9 | `subtree` scope never expanded descendants | #197 (rejects, fail-closed); plan 054 (implement) |
+| CORE-F10 | `tenantFilters` documented but never read | #197 (removed) |
+| CORE-F11 | Parameterize consistency check lowercases literals, so `params` can drift from `sql` | **Open** |
+| CORE-F12 | Custom dialects escape tenant IDs without backslash handling | **Open** (fold into plan 055) |
+| CORE-F13 | Tenant guardrail fail-opens on MySQL strings and uppercase placeholders (found while writing plan 055) | #197 (`886670c`); Postgres `E'…'` remainder in plan 055 |
+
+### DB — database integration layer
+
+| ID | Finding | Status |
+|---|---|---|
+| DB-C1 | Studio `/api/execute` ran any SQL from any requester | #185 + #194 |
+| DB-H1 | `validateSelectSql` bypasses (dialect lexing, denylists) | #190 |
+| DB-H2 | `askdb introspect --diff` almost always reported "changed" | #189 |
+| DB-M1 | Renderer drops composite FKs, enum labels, comments | plan 062 |
+| DB-M2 | Postgres FKs cloned onto partitions rendered to leaves | #189; plan 064 (lift to parent) |
+| DB-M3 | SQLite FK without target column pointed at the source column | #189 |
+| DB-M4 | Catalog runners open a connection per query; no snapshot or timeout; pool leak on connect failure | plan 061 |
+| DB-M5 | Studio showed SQL Server passwords in connection labels | #189 |
+| DB-M6 | Engine filter inconsistencies; MySQL URL without a database returned an empty schema | #189 (MySQL error); filter warnings **Open** |
+| DB-L1 | SQLite `NOT LIKE 'sqlite_%'` dropped user tables | #189 |
+| DB-L2 | SQLite index-origin comment inverted | #189 |
+| DB-L3 | Catalog coverage: MySQL cross-database FKs, SQL Server `is_ms_shipped`, Postgres extension schemas | #189 (first two); extension schemas **Open** |
+| DB-L4 | Package hygiene: unused http-api deps, Studio driver peer ranges, eager Prisma | #189, #183, #199 |
+| DB-L5 | Docs drift in ADR 0007, architecture, connectors guide | #189, #199 |
+| DB-A1 | Architecture: ~600 duplicated engine lines; closed connector registry | #195, #199 (ADR 0008) |
+
+### AI — AI provider layer and config
+
+| ID | Finding | Status |
+|---|---|---|
+| AI-H1 | HTTP API returned model failures as 400 with raw provider text (same root cause as SEC-M2) | #187 |
+| AI-H2 | Azure embeddings silently dropped `dimensions` / `user` | #188 |
+| AI-H3 | Reasoning-model detection stale / duplicated AI SDK 7 | #188 (tables); plan 057 (native `reasoning`) |
+| AI-M4 | Config-driven Azure failed: no `resourceName` in config | #188 |
+| AI-M5 | Provider error text returned to HTTP clients | #187 |
+| AI-M6 | Google embeddings ignored `dimensions`; deprecated method | #188 |
+| AI-M7 | RAG `ai-sdk` embedder effectively OpenAI-only; OpenAI key sent to the selected provider | plan 058 (P1) |
+| AI-M8 | Provider list enumerated in 9+ places and drifted | #188, #198 |
+| AI-M9 | `ai` was a hard dependency of core | #196 |
+| AI-L10 | Wrong install hint for aliases / custom providers | #188, #198 |
+| AI-L11 | `as unknown as` / `as any` type holes in client and Studio | **Open** |
+| AI-L12 | ADR 0005's env-override allowlist never implemented; messages say "set ASKDB_MOCK_SQL" | #187 (http-api message); CLI/Studio messages **Open** |
+| AI-L13 | Docs miss AI Gateway strings and `createProviderRegistry` | plan 042 (rescoped) |
+| AI-L14 | Studio duplicates client model/reasoning resolution; tenant suggestion ignores reasoning effort | **Open** (candidate for plan 066) |
+| AI-A1 | Architecture: four `@askdb/ai-*` packages for provider data | #198 (ADR 0006 amendment); plan 060 (remove shims) |
+
+### REL — public release readiness
+
+| ID | Finding | Status |
+|---|---|---|
+| REL-B1 | Safety and tenancy docs overclaimed | #184 |
+| REL-B2 | Eight packages shipped without LICENSE/NOTICE | #183, #182 |
+| REL-B3 | Node engine range inconsistent (20 vs 22 vs 22.12) | #183, #191 |
+| REL-B4 | `askdb --help` / `--version` crashed outside a project; root config imported `dotenv` | #182 |
+| REL-B5 | npm dist-tags wrong (`beta` stale, `latest` on prereleases) | plan 067 / 068 (human) |
+| REL-S1 | Release workflow: long-lived token, no environment, no branch guard | plan 067 |
+| REL-S2 | PR #179: version PR opened with `GITHUB_TOKEN` never triggers CI | plan 067 |
+| REL-S3 | CI gaps: no lint/audit jobs, missing permissions, unpinned actions | #191 |
+| REL-S4 | Changesets config causes surprise major bumps | #198 (peer option); plan 067 |
+| REL-S5 | Large install footprint (Studio UI deps, eager Prisma) | #183 |
+| REL-S6 | Leaked key still reachable from stale branches and tags | plan 068 (human) |
+| REL-S7 | README inaccurate (status, links, package list) | #182 |
+| REL-S8 | Internal files at repo root (`plans/`, `thunder-tests/`, `.claude/settings.local.json`) | **Open** (maintainer decision) |
+
+### RAG — RAG, enrich, and test quality
+
+| ID | Finding | Status |
+|---|---|---|
+| RAG-C1 | CI never ran the database integration suites (Turbo strict env) | #180 |
+| RAG-C2 | `askdb bundle` dropped `tenant-policy.md` | #181 |
+| RAG-H1 | Studio sensitivity overrides had no effect | #192 |
+| RAG-H2 | Indexer trusted the lock file over the store | #193 |
+| RAG-H3 | Chunk IDs not schema-scoped; cross-schema orphan deletion | #193 |
+| RAG-M1 | Sensitive prose checks case-sensitive and incomplete | #193 |
+| RAG-M2 | Enrich table filenames collide / can escape `tables/` | #181 |
+| RAG-M3 | RAG CLI dimension handling inconsistent | #193 |
+| RAG-M4 | `@askdb/rag` depends on `@askdb/config` only for its CLI | plan 059 |
+| RAG-M5 | Malformed `concepts.md` silently ignored | #186 |
+| RAG-M6 | File store writes not atomic | #193 |
+| RAG-M7 | Studio skips sensitive-mention warnings and orphan pruning | **Open** |
+| RAG-M8 | CLI tests raced on the build output | #180 |
+| RAG-L1 | pgvector setup: silent dimension mismatch, `ensureSchema` on every status call | #193 (mismatch); status-call cost **Open** |
+| RAG-L2 | pgvector loaded `pg` with a bare import | #193 |
+| RAG-L3 | RAG docs drift | #193 |
+| RAG-L4 | Test files never typechecked by `lint` | **Open** |
+| RAG-L5 | `test` depended on `^test`, serializing runs | #180 |
