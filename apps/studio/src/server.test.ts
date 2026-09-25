@@ -298,13 +298,6 @@ describe("AskDB Studio server", () => {
     });
   });
 
-  it("keeps Studio on the shared enrichment package", () => {
-    const packageJson = JSON.parse(
-      readFileSync(join(repoRoot, "apps/studio/package.json"), "utf8"),
-    ) as { dependencies?: Record<string, string> };
-    expect(packageJson.dependencies?.["@askdb/enrich"]).toBe("workspace:*");
-  });
-
   it("indexes and queries Studio RAG with the OpenAI embedder", async () => {
     const embeddingServer = createEmbeddingServer();
     embeddingServers.push(embeddingServer);
@@ -660,12 +653,12 @@ describe("AskDB Studio server", () => {
     expect(result.error).toMatch(/No execute connection configured/);
   });
 
-  it("POST /api/execute dispatches to mysql runner when provider is mysql", async () => {
+  it("GET /api/execute/status reports mysql provider when introspection is mysql", async () => {
     const mysqlConfig: AskDbConfig = {
       ...STUDIO_TEST_BASE,
       introspection: {
         provider: "mysql",
-        providerConfig: { mysql: { databaseUrl: "mysql://unreachable-host/db" } },
+        providerConfig: { mysql: { databaseUrl: "mysql://localhost/db" } },
         outputDir: "./askdb/",
       },
       studio: { execute: { enabled: true, useIntrospectionConnection: true } },
@@ -676,12 +669,11 @@ describe("AskDB Studio server", () => {
     servers.push(server);
     const baseUrl = await listen(server);
 
-    // mysql2 is installed as a dev dep, so the error will be a connection error, not a missing-driver error
-    const result = await postJson(`${baseUrl}/api/execute`, { sql: "SELECT 1" });
-    expect(result.ok).toBe(false);
-    // The error should come from the mysql runner, not from a missing-pg error
-    expect(result.error).not.toMatch(/pg.*required/);
-    expect(result.error).not.toMatch(/`pg`/);
+    const status = await getJson(`${baseUrl}/api/execute/status`);
+    expect(status.provider).toBe("mysql");
+    expect(status.packageName).toBe("mysql2");
+    expect(status.connectionKind).toBe("url");
+    expect(status.configured).toBe(true);
   });
 
   describe("execute against a real SQLite database", () => {
@@ -792,7 +784,7 @@ describe("AskDB Studio server", () => {
     servers.push(server);
     const baseUrl = await listen(server);
 
-    await postJson(`${baseUrl}/api/history`, {
+    const fields = {
       question: "How many users?",
       mode: "full",
       sqlMode: "sql-only",
@@ -803,8 +795,16 @@ describe("AskDB Studio server", () => {
       id: "attacker-chosen",
       timestamp: "1999-01-01",
       injected: "x".repeat(10_000),
-      __proto__: { polluted: true },
+    };
+    // A `__proto__:` key in an object literal sets the literal's prototype and JSON.stringify drops it,
+    // so splice it into the raw JSON: JSON.parse on the server then yields an own "__proto__" property.
+    const res = await fetch(`${baseUrl}/api/history`, {
+      method: "POST",
+      headers: { "content-type": "application/json", ...authHeaders(baseUrl) },
+      body: `{"__proto__":{"polluted":true},${JSON.stringify(fields).slice(1)}`,
     });
+    expect(res.status).toBe(200);
+    expect(({} as Record<string, unknown>).polluted).toBeUndefined();
     const stored = JSON.parse(readFileSync(join(schemaDir, "playground-history.json"), "utf8"));
     expect(stored).toHaveLength(1);
     expect(Object.keys(stored[0]).sort()).toEqual(

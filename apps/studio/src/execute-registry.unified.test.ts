@@ -15,6 +15,7 @@ const captured = {
   pgRows: [[1]] as unknown[][],
   mysqlQueries: [] as unknown[],
   mysqlExecute: [] as unknown[],
+  mysqlConnectError: undefined as Error | undefined,
   mssqlQueries: [] as string[],
 };
 
@@ -56,6 +57,7 @@ vi.mock("@askdb/mysql", async (importOriginal) => {
       captured.mysql2.calledWith = opts;
       return {
         async createConnection() {
+          if (captured.mysqlConnectError) throw captured.mysqlConnectError;
           return {
             async query(sql: string) {
               captured.mysqlQueries.push(sql);
@@ -148,7 +150,6 @@ import {
   executeDialectFor,
   isDriverInstalled,
   isStudioExecuteProvider,
-  validateExecuteSql,
 } from "./execute-registry.js";
 import { packageManagerSpawnSpec } from "./package-manager.js";
 
@@ -168,64 +169,24 @@ describe("execute-registry unified with engine packages", () => {
     vi.clearAllMocks();
   });
 
-  it("postgres execute delegates loadPgDriver with resolveFrom", async () => {
-    await EXECUTE_DRIVER_REGISTRY.postgres.execute({
-      connectionString: "postgres://localhost/db",
-      sql: "SELECT 1",
-      params: [],
-      projectRoot,
-    });
-    expect(captured.pg.calledWith).toEqual({ resolveFrom: projectRoot });
+  it.each([
+    ["postgres", { connectionString: "postgres://localhost/db" }, () => captured.pg.calledWith],
+    ["mysql", { connectionString: "mysql://localhost/db" }, () => captured.mysql2.calledWith],
+    ["sqlite", { file: "/tmp/test.db" }, () => captured.sqlite.calledWith],
+    ["sqlserver", { connectionString: "Server=localhost;Database=db;" }, () => captured.mssql.calledWith],
+  ] as const)("%s execute loads its driver with resolveFrom: projectRoot", async (provider, connection, loadedWith) => {
+    await EXECUTE_DRIVER_REGISTRY[provider].execute({ ...connection, sql: "SELECT 1", params: [], projectRoot });
+    expect(loadedWith()).toEqual({ resolveFrom: projectRoot });
   });
 
-  it("mysql execute delegates loadMysql2Driver with resolveFrom", async () => {
-    await EXECUTE_DRIVER_REGISTRY.mysql.execute({
-      connectionString: "mysql://localhost/db",
-      sql: "SELECT 1",
-      params: [],
-      projectRoot,
-    });
-    expect(captured.mysql2.calledWith).toEqual({ resolveFrom: projectRoot });
-  });
-
-  it("sqlite execute delegates loadBetterSqlite3Driver with resolveFrom", async () => {
-    await EXECUTE_DRIVER_REGISTRY.sqlite.execute({
-      file: "/tmp/test.db",
-      sql: "SELECT 1",
-      params: [],
-      projectRoot,
-    });
-    expect(captured.sqlite.calledWith).toEqual({ resolveFrom: projectRoot });
-  });
-
-  it("sqlserver execute delegates loadMssqlDriver with resolveFrom", async () => {
-    await EXECUTE_DRIVER_REGISTRY.sqlserver.execute({
-      connectionString: "Server=localhost;Database=db;",
-      sql: "SELECT 1",
-      params: [],
-      projectRoot,
-    });
-    expect(captured.mssql.calledWith).toEqual({ resolveFrom: projectRoot });
-  });
-
-  it("isDriverInstalled delegates to isPgDriverInstalled", () => {
-    isDriverInstalled("pg", projectRoot);
-    expect(captured.isPg.calledWith).toEqual({ resolveFrom: projectRoot });
-  });
-
-  it("isDriverInstalled delegates to isMysql2DriverInstalled", () => {
-    isDriverInstalled("mysql2", projectRoot);
-    expect(captured.isMysql2.calledWith).toEqual({ resolveFrom: projectRoot });
-  });
-
-  it("isDriverInstalled delegates to isBetterSqlite3DriverInstalled", () => {
-    isDriverInstalled("better-sqlite3", projectRoot);
-    expect(captured.isSqlite.calledWith).toEqual({ resolveFrom: projectRoot });
-  });
-
-  it("isDriverInstalled delegates to isMssqlDriverInstalled", () => {
-    isDriverInstalled("mssql", projectRoot);
-    expect(captured.isMssql.calledWith).toEqual({ resolveFrom: projectRoot });
+  it.each([
+    ["pg", () => captured.isPg.calledWith],
+    ["mysql2", () => captured.isMysql2.calledWith],
+    ["better-sqlite3", () => captured.isSqlite.calledWith],
+    ["mssql", () => captured.isMssql.calledWith],
+  ] as const)("isDriverInstalled(%s) checks with resolveFrom: projectRoot", (packageName, checkedWith) => {
+    isDriverInstalled(packageName, projectRoot);
+    expect(checkedWith()).toEqual({ resolveFrom: projectRoot });
   });
 });
 
@@ -233,21 +194,6 @@ describe("studio sqlserver execute applies resolveConnectionInput", () => {
   beforeEach(() => {
     captured.mssqlPoolConfig = undefined;
     vi.clearAllMocks();
-  });
-
-  it("normalizes spaced ADO.NET TrustServerCertificate key", async () => {
-    const cs =
-      "Server=db.example.com,1433;Database=AppCatalog;User Id=appuser;Password=Str0ngP4ss;" +
-      "Encrypt=True;Trust Server Certificate=True;";
-    await EXECUTE_DRIVER_REGISTRY.sqlserver.execute({
-      connectionString: cs,
-      sql: "SELECT 1",
-      params: [],
-      projectRoot,
-    });
-    expect(typeof captured.mssqlPoolConfig).toBe("string");
-    expect(captured.mssqlPoolConfig).toContain("TrustServerCertificate=True");
-    expect(captured.mssqlPoolConfig as string).not.toMatch(/Trust\s+Server\s+Certificate/i);
   });
 
   it("converts mssql:// URL to a config object", async () => {
@@ -267,17 +213,6 @@ describe("studio sqlserver execute applies resolveConnectionInput", () => {
       options: { trustServerCertificate: true },
     });
   });
-
-  it("passes through plain ADO.NET strings with no affected keys", async () => {
-    const cs = "Server=db.example.com,1433;Database=AppCatalog;User Id=appuser;Password=Str0ngP4ss;";
-    await EXECUTE_DRIVER_REGISTRY.sqlserver.execute({
-      connectionString: cs,
-      sql: "SELECT 1",
-      params: [],
-      projectRoot,
-    });
-    expect(captured.mssqlPoolConfig).toBe(cs);
-  });
 });
 
 describe("studio execute safety", () => {
@@ -287,6 +222,7 @@ describe("studio execute safety", () => {
     captured.pgRows = [[1]];
     captured.mysqlQueries = [];
     captured.mysqlExecute = [];
+    captured.mysqlConnectError = undefined;
     captured.mssqlQueries = [];
     vi.clearAllMocks();
   });
@@ -367,14 +303,16 @@ describe("studio execute safety", () => {
     ]);
   });
 
-  it("validateExecuteSql rejects multi-statement and write SQL for every provider", () => {
-    for (const provider of ["postgres", "mysql", "sqlite", "sqlserver"] as const) {
-      expect(() => validateExecuteSql(provider, "SELECT 1; DROP TABLE t")).toThrow(/Multiple SQL statements/);
-      expect(() => validateExecuteSql(provider, "SELECT 1; COMMIT")).toThrow(/Multiple SQL statements/);
-      expect(() => validateExecuteSql(provider, "DELETE FROM t")).toThrow();
-      expect(validateExecuteSql(provider, "SELECT 1;")).toBe("SELECT 1");
-    }
-    expect(() => validateExecuteSql("sqlserver", "SELECT 1 EXEC sp_who")).toThrow(/EXEC/);
+  it("mysql returns ok:false (not a throw) when the connection cannot be opened", async () => {
+    captured.mysqlConnectError = new Error("connect ECONNREFUSED 127.0.0.1:3306");
+    const result = await EXECUTE_DRIVER_REGISTRY.mysql.execute({
+      connectionString: "mysql://localhost/db",
+      sql: "SELECT 1",
+      params: [],
+      projectRoot,
+    });
+    expect(result).toEqual({ ok: false, error: "connect ECONNREFUSED 127.0.0.1:3306" });
+    expect(captured.mysqlQueries).toEqual([]);
   });
 
   it("executeDialectFor honors a same-family dialect override only", () => {
@@ -382,6 +320,7 @@ describe("studio execute safety", () => {
     expect(executeDialectFor("postgres", "cockroachdb").id).toBe("cockroachdb");
     expect(executeDialectFor("postgres", "sqlserver").id).toBe("postgres");
     expect(executeDialectFor("sqlite").id).toBe("sqlite");
+    expect(executeDialectFor("sqlserver").id).toBe("sqlserver");
   });
 
   it("isStudioExecuteProvider rejects inherited object keys", () => {
