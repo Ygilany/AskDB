@@ -8,7 +8,7 @@ import {
   type PreparedQuery,
 } from "./bind.js";
 import { validateSelectSql } from "./validate.js";
-import { MYSQL_DIALECT, POSTGRES_DIALECT, SQLITE_DIALECT, SQLSERVER_DIALECT } from "./dialect-spec.js";
+import { MYSQL_DIALECT, POSTGRES_DIALECT } from "./dialect-spec.js";
 
 /** Render spans as `kind:text` pairs for compact assertions. */
 function spansOf(sql: string, dialect?: Parameters<typeof tokenizeSqlSpans>[1]): string[] {
@@ -318,24 +318,5 @@ describe("bindPreparedQuery — escaping matrix for business values", () => {
     expect(my.sql).toBe("SELECT * FROM t WHERE s = '\\\\'");
     const pg = bindPreparedQuery(prepared("postgres", "SELECT * FROM t WHERE s = :s", params), { s: "\\" });
     expect(pg.sql).toBe("SELECT * FROM t WHERE s = '\\'");
-  });
-});
-
-describe("validateSelectSql still works after tokenizer extraction", () => {
-  it("rejects multi-statement and accepts WITH", () => {
-    expect(() => validateSelectSql(SQLITE_DIALECT, "SELECT 1; SELECT 2")).toThrow();
-    expect(validateSelectSql(SQLSERVER_DIALECT, "WITH c AS (SELECT 1 AS n) SELECT n FROM c")).toContain("WITH");
-  });
-
-  it("ignores keywords inside strings", () => {
-    expect(validateSelectSql(POSTGRES_DIALECT, "SELECT 'delete' AS x")).toBe("SELECT 'delete' AS x");
-  });
-});
-
-describe("tokenizeSqlSpans coverage", () => {
-  it("returns code and quoted spans", () => {
-    const spans = tokenizeSqlSpans("SELECT 'x' FROM t");
-    expect(spans.some((s) => s.kind === "quoted")).toBe(true);
-    expect(spans.some((s) => s.kind === "code")).toBe(true);
   });
 });

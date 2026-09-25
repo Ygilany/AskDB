@@ -179,6 +179,13 @@ describe("validateSelectSql — sqlite", () => {
   ])("rejects %s", (sql) => {
     expectRejected(sql, SQLITE_DIALECT);
   });
+
+  it.each([
+    [`SELECT 1 ATTACH 'x' AS o`],
+    [`SELECT 1 PRAGMA table_info(t)`],
+  ])("rejects %s as a sqlite forbidden keyword", (sql) => {
+    expectRule(sql, "SQL_FORBIDDEN_KEYWORD", SQLITE_DIALECT);
+  });
 });
 
 describe("validateSelectSql — unterminated tokens fail closed", () => {
