@@ -154,6 +154,7 @@ export const azureBuiltin: BuiltinAiProvider = {
   provider: "azure",
   label: "Azure OpenAI",
   aliases: ALIASES,
+  aliasLabels: { foundry: "Azure AI Foundry" },
   peerPackage: PEER_PACKAGE,
   env: ENV_SPEC,
   embeddings: true,

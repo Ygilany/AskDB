@@ -7,6 +7,8 @@ import {
   azureProvider,
   findBuiltinAiProvider,
   gatewayProvider,
+  getBuiltinAiProviderSetup,
+  listBuiltinAiProviderSetups,
   googleProvider,
   openaiProvider,
 } from "./providers/index.js";
@@ -55,6 +57,20 @@ describe("built-in provider table", () => {
     expect(findBuiltinAiProvider(" foundry ")?.adapter).toBe(azureProvider);
     expect(findBuiltinAiProvider("azure-openai")?.adapter).toBe(azureProvider);
     expect(findBuiltinAiProvider("mistral")).toBeUndefined();
+  });
+
+  it("derives setup-wizard defaults from the table, in table order", () => {
+    expect(
+      listBuiltinAiProviderSetups(["gateway", "foundry", "azure", "google", "anthropic", "openai", "nope"]),
+    ).toEqual([
+      { id: "openai", label: "OpenAI", keyEnv: "OPENAI_API_KEY", modelEnv: "OPENAI_MODEL", peerPackage: "@ai-sdk/openai" },
+      { id: "anthropic", label: "Anthropic", keyEnv: "ANTHROPIC_API_KEY", modelEnv: "ANTHROPIC_MODEL", peerPackage: "@ai-sdk/anthropic" },
+      { id: "google", label: "Google (Gemini)", keyEnv: "GOOGLE_GENERATIVE_AI_API_KEY", modelEnv: "GOOGLE_AI_MODEL", peerPackage: "@ai-sdk/google" },
+      { id: "azure", label: "Azure OpenAI", keyEnv: "AZURE_OPENAI_API_KEY", modelEnv: "AZURE_OPENAI_DEPLOYMENT", peerPackage: "@ai-sdk/azure" },
+      { id: "foundry", label: "Azure AI Foundry", keyEnv: "AZURE_OPENAI_API_KEY", modelEnv: "AZURE_OPENAI_DEPLOYMENT", peerPackage: "@ai-sdk/azure" },
+      { id: "gateway", label: "Vercel AI Gateway", keyEnv: "AI_GATEWAY_API_KEY", modelEnv: "ASKDB_AI_MODEL", peerPackage: undefined },
+    ]);
+    expect(getBuiltinAiProviderSetup("mistral")).toBeUndefined();
   });
 });
 

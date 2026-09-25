@@ -17,6 +17,8 @@ export type BuiltinAiProvider = {
   label: string;
   /** Additional `ASKDB_AI_PROVIDER` values that select this provider. */
   aliases: readonly string[];
+  /** Display names for aliases that users pick as a distinct product (e.g. `foundry`). */
+  aliasLabels?: Readonly<Record<string, string>>;
   /**
    * The AI SDK package this provider loads lazily — an optional peer
    * dependency of `@askdb/ai` the host app must install. `undefined` when the
