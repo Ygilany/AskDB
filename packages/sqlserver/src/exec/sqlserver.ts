@@ -24,11 +24,6 @@ const mssqlLoader = createOptionalDriverLoader<MssqlModule>({
   missingMessage: missingDriverMessage({ engine: "SQL Server", packageName: "mssql" }),
 });
 
-/** @internal exposed for tests that need to reset the lazy `mssql` cache. */
-export function __resetMssqlModuleCacheForTests(): void {
-  mssqlLoader.reset();
-}
-
 type MssqlDriverModule = MssqlModule;
 
 /**
