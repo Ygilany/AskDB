@@ -1,28 +1,34 @@
 /**
  * describeSqlite against a real in-memory SQLite database (better-sqlite3), so
  * the catalog SQL and PRAGMA semantics are exercised end to end — not just the
- * fold over hand-written rows. Skipped when the optional driver is missing.
+ * fold over hand-written rows. Skipped when the optional driver is missing,
+ * except under ASKDB_REQUIRE_INTEGRATION=1, where a missing driver fails.
  */
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, expect, it } from "vitest";
 import type DatabaseCtor from "better-sqlite3";
 import type { CatalogQueryRunner, SqlTable } from "@askdb/introspect";
 import { describeSqlite } from "./describe.js";
+import { integrationSuite } from "../../../../scripts/test-utils/integration.mjs";
 
 type Bs3Namespace = { default: typeof DatabaseCtor };
 type Db = InstanceType<typeof DatabaseCtor>;
 
-async function loadDriver(): Promise<Bs3Namespace | undefined> {
+/** Loads better-sqlite3 and opens a DB, or returns why it can't be used here. */
+async function loadDriver(): Promise<{ driver?: Bs3Namespace; unavailable: string | null }> {
   try {
     const mod = (await import("better-sqlite3")) as unknown as Bs3Namespace;
     new mod.default(":memory:").close();
-    return mod;
-  } catch {
-    return undefined;
+    return { driver: mod, unavailable: null };
+  } catch (err) {
+    return {
+      unavailable: `better-sqlite3 could not be loaded (${err instanceof Error ? err.message : String(err)})`,
+    };
   }
 }
 
-const driver = await loadDriver();
-const suite = driver ? describe : describe.skip;
+const { driver, unavailable } = await loadDriver();
+// Under ASKDB_REQUIRE_INTEGRATION=1 a driver that fails to load fails the suite instead of skipping.
+const suite = integrationSuite({ unavailable });
 
 function runnerFor(db: Db): CatalogQueryRunner {
   return async (sql) => {
