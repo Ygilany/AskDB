@@ -74,7 +74,7 @@ await introspect(
 
 With the `askdb` CLI, set `introspection.schemas` in `askdb.config.ts`, or pass `--schemas app,sales`.
 
-`mysqlConnectorProvider` parses a connection into display-safe parts, so a connector registry's `connectionLabel()` shows only the host, port and database of a `mysql://` URL, read the way `mysql2` reads it (WHATWG `URL`; `mysql://root:S3cret@db:3306/shop` → `mysql://db:3306/shop`). Anything else becomes `configured mysql connection`.
+`mysqlConnectorProvider` parses a connection into display-safe parts, so a connector registry's `connectionLabel()` (and the `sourceLabel` from `resolveConnection()`) shows only the host, port and database of a `mysql://` URL, read the way `mysql2` reads it (WHATWG `URL`; `mysql://root:S3cret@db:3306/shop` → `mysql://db:3306/shop`). Anything else becomes `configured mysql connection`.
 
 ## Captured metadata
 
