@@ -249,19 +249,22 @@ Concepts produce their own chunks at retrieval time (see [Chunking rules](#chunk
 
 `@askdb/rag` derives chunks deterministically from the v2 artifact. Each chunk has a stable `id` and a derived **chunk text** that is what gets embedded.
 
-| Chunk type | `id` | Chunk text contains |
+Every chunk id is scoped to the schema: `chunk:<schemaId>:<local-id>` (e.g. `chunk:orders-users:table:public.orders#cql`), so several schemas can share one vector store without overwriting or pruning each other's chunks. The table below lists the `<local-id>` part.
+
+| Chunk type | `<local-id>` | Chunk text contains |
 |---|---|---|
-| **Table** | `chunk:<table-id>` | `# <schema>.<name>` + first paragraph + aliases + primary entity + relationship IDs + column **headlines** (`name type (flags) — description`). |
-| **Column** | `chunk:<column-id>` | qualified column name + type + flags + physical id + description + aliases + enum values + any matching `Column notes` line. |
-| **Common query language** | `chunk:<table-id>#cql` | the H2 body verbatim, prefixed with the table name + aliases so retrieval has table context. Long CQL bodies use `#bc:<n>` suffixes. |
-| **Example question** | `chunk:<table-id>#q:<n>` | one bullet from `Example questions`, prefixed with the table name + primary entity. |
-| **Business context** | `chunk:<table-id>#biz` | the `Business context` H2 body, prefixed with the table name. Long bodies use `#bc:<n>` suffixes, e.g. `chunk:table:public.orders#biz#bc:1`. |
-| **Concept** | `chunk:<concept-id>` | label + synonyms + link IDs + description when the concept is included. |
-| **Relationship** (optional) | `chunk:<from-id>-><to-id>` | natural-language summary: `Relationship: <from-table>.<from-col> references <to-table>.<to-col>`. |
+| **Table** | `<table-id>` | `# <schema>.<name>` + first paragraph + aliases + primary entity + relationship IDs + column **headlines** (`name type (flags) — description`). |
+| **Column** | `<column-id>` | qualified column name + type + flags + physical id + description + aliases + enum values + any matching `Column notes` line. |
+| **Common query language** | `<table-id>#cql` | the H2 body verbatim, prefixed with the table name + aliases so retrieval has table context. Long CQL bodies use `#bc:<n>` suffixes. |
+| **Example question** | `<table-id>#q:<n>` | one bullet from `Example questions`, prefixed with the table name + primary entity. |
+| **Business context** | `<table-id>#biz` | the `Business context` H2 body, prefixed with the table name. Long bodies use `#bc:<n>` suffixes, e.g. `chunk:orders-users:table:public.orders#biz#bc:1`. |
+| **Concept** | `<concept-id>` | label + synonyms + link IDs + description when the concept is included. |
+| **Tenant policy** | `tenant-policy#<section-slug>` | one H2 section of `tenant-policy.md` (see [`tenant-policy.md`](./tenant-policy.md)). |
+| **Relationship** (optional) | `<from-id>-><to-id>` | natural-language summary: `Relationship: <from-table>.<from-col> references <to-table>.<to-col>`. |
 
 ### Determinism
 
-Given the same v2 artifact, the chunker must produce the **same chunk ids and the same chunk texts** on every run. Re-embedding only happens when chunk text changes (tracked via `schema.lock.json`).
+Given the same v2 artifact, the chunker must produce the **same chunk ids and the same chunk texts** on every run. Re-embedding only happens when chunk text changes: the indexer skips a chunk only when the vector store already holds the same content hash for its id (stores that cannot report hashes fall back to `schema.lock.json`). A changed embedder id, store, or vector dimension re-embeds everything.
 
 ### Size guidance
 
@@ -287,12 +290,15 @@ Describable-layer fields (description, aliases, enum, `Common query language`) o
 | Surface | Default behavior for sensitive table/column | Override |
 |---|---|---|
 | **NL→SQL DDL** (in core prompt) | Identifier listed, tagged `(sensitive)` — model can ground SQL. | `omitSensitiveIdentifiersFromNlToSqlPrompt` strips identifiers entirely (existing flag). |
-| **Describable layer chunks (table/column)** | Sensitive table chunks and sensitive column chunks are excluded entirely. Non-sensitive table chunks omit sensitive columns from their column headline list and refs. | `@askdb/rag` option `includeSensitiveDescribable: true` (off by default). |
+| **Describable layer chunks (table/column)** | Sensitive table chunks and sensitive column chunks are excluded entirely. Non-sensitive table chunks omit sensitive columns from their column headline list and refs, and drop any description, alias, primary entity, or column-headline description that mentions a sensitive column of that table. A non-sensitive column whose description / aliases / enum values / `Column notes` line mention a sensitive column keeps only its identifier + type. | `@askdb/rag` option `includeSensitiveDescribable: true` (off by default). |
 | **`Common query language` chunk** | If the H2 body **mentions** a sensitive column by name, the chunk is **excluded entirely**. The chunker does not partial-redact prose. | Same option as above. |
 | **Example question / `Business context` chunks** | If the table is sensitive or the source text mentions a sensitive column by name, the affected chunks are excluded entirely. | Same option as above. |
-| **Concept chunks** | Concepts that **link to** a sensitive id, or whose description mentions a sensitive column by name, are excluded entirely by default. | Same option as above. |
+| **Concept chunks** | Concepts that **link to** a sensitive id, or whose label, synonyms, or description mention a sensitive column by name, are excluded entirely by default. | Same option as above. |
+| **Relationship chunks** (optional) | Excluded when either side's table **or column** is sensitive. | Same option as above. |
 | **Generated / replayed SQL** | `ask()` runs `validateSensitiveReferences` over the SQL it returns and attaches `AskPipelineResult.sensitiveGuardrail`. This is the **enforcement** surface — the rows above are prompt-level only. | `AskPipelineOptions.sensitiveGuardrailMode`: `"warn"` (default), `"strict"`, `"off"`. |
 | **Logs** | Counts only — `askdb.rag.sensitive_chunks_excluded`, `askdb.rag.sensitive_chunks_included`. Never log identifiers or values. `askdb.pipeline.sensitive_sql_warning` carries matched identifier names (schema metadata, never row values). | n/a |
+
+"Mentions a sensitive column by name" is a whole-word, **case-insensitive** match (`SSN` mentions the `ssn` column), the same rule the authoring surfaces use for their warning.
 
 **Authoring rule (authoring surfaces):** when a user adds a description that mentions a sensitive column by name, the authoring surface shows a non-blocking warning explaining the chunk-exclusion behavior. The user can still save; the chunker will exclude the resulting chunk.
 

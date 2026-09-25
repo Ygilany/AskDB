@@ -12,6 +12,7 @@ import {
   type ChunkOptions,
 } from "./options.js";
 import type { ChunkerSources } from "./sources.js";
+import { chunkId } from "./ids.js";
 
 /**
  * Statistics returned alongside the chunks. Counts only — never identifiers.
@@ -85,24 +86,60 @@ export function chunkSchema(
     if (table.sensitive && !includeSensitive) {
       stats.sensitiveExcluded++;
     } else {
-      chunks.push(buildTableChunk(table, schema.schemaId, includeSensitive, schema));
+      const tableChunk = buildTableChunk(
+        table,
+        schema.schemaId,
+        includeSensitive,
+        schema,
+        sensitiveColumnNames,
+      );
+      // A non-sensitive table whose description/aliases/column headlines
+      // mention a sensitive column is only embedded verbatim in opt-in mode.
+      if (tableChunk.sensitive && !table.sensitive) stats.sensitiveIncluded++;
+      chunks.push(tableChunk);
     }
 
     // Column chunks — one per column. Identifier + type always; describable
-    // fields only when not sensitive (or when opted in).
+    // fields only when not sensitive (or when opted in). A non-sensitive
+    // column whose describable fields name a sensitive column of the same
+    // table is treated like a sensitive column's describable layer.
     for (const col of table.columns) {
       const colNote = readColumnNote(md, col.name);
       const colSensitive = col.sensitive || table.sensitive;
       if (colSensitive && !includeSensitive) {
         stats.sensitiveExcluded++;
         continue;
-      } else if (colSensitive && includeSensitive) {
-        if (col.description || (col.aliases && col.aliases.length) || (col.enum && col.enum.length) || colNote) {
-          stats.sensitiveIncluded++;
-        }
       }
+      const describable = columnDescribableTexts(col, colNote);
+      if (colSensitive) {
+        // Opt-in mode.
+        if (describable.length > 0) stats.sensitiveIncluded++;
+        chunks.push(
+          buildColumnChunk(table, col, schema.schemaId, colNote, true, true),
+        );
+        continue;
+      }
+      const describableMentionsSensitive = describable.some((text) =>
+        mentionsAnyName(text, sensitiveColumnNames),
+      );
+      if (describableMentionsSensitive && !includeSensitive) {
+        // Keep the identifier + type; drop the whole describable layer.
+        stats.sensitiveExcluded++;
+        chunks.push(
+          buildColumnChunk(table, col, schema.schemaId, colNote, false, false),
+        );
+        continue;
+      }
+      if (describableMentionsSensitive) stats.sensitiveIncluded++;
       chunks.push(
-        buildColumnChunk(table, col, schema.schemaId, colNote, includeSensitive),
+        buildColumnChunk(
+          table,
+          col,
+          schema.schemaId,
+          colNote,
+          true,
+          describableMentionsSensitive,
+        ),
       );
     }
 
@@ -216,8 +253,9 @@ export function chunkSchema(
     }
   }
 
-  // Concept chunks. Concepts that link to sensitive columns include link
-  // metadata but their description is filtered if it names a sensitive col.
+  // Concept chunks. A concept that links to a sensitive column/table, or
+  // whose label/synonyms/description names a sensitive column (matched
+  // case-insensitively, like @askdb/enrich), is excluded by default.
   if (concepts?.frontmatter.concepts) {
     const allSensitiveColumnNames = collectSensitiveColumnNames(schema);
     for (const concept of concepts.frontmatter.concepts) {
@@ -226,18 +264,13 @@ export function chunkSchema(
         schema.schemaId,
         schema,
         allSensitiveColumnNames,
-        includeSensitive,
       );
-      if (conceptResult.excluded) {
+      if (conceptResult.sensitive && !includeSensitive) {
         stats.sensitiveExcluded++;
-        if (includeSensitive) {
-          stats.sensitiveIncluded++;
-          chunks.push(conceptResult.chunk);
-        }
-      } else {
-        if (conceptResult.sensitive) stats.sensitiveIncluded++;
-        chunks.push(conceptResult.chunk);
+        continue;
       }
+      if (conceptResult.sensitive) stats.sensitiveIncluded++;
+      chunks.push(conceptResult.chunk);
     }
   }
 
@@ -268,14 +301,26 @@ function buildTableChunk(
   schemaId: string,
   includeSensitive: boolean,
   schema: NormalizedSchemaV2,
+  sensitiveColumnNames: string[],
 ): Chunk {
   const lines: string[] = [];
   const qualified = `${table.schema}.${table.name}`;
+  // Describable text that names a sensitive column is dropped by default and
+  // flags the chunk as sensitive when kept in opt-in mode.
+  let includedSensitiveMention = false;
+  const allow = (text: string | undefined): boolean => {
+    if (!text) return false;
+    if (!mentionsAnyName(text, sensitiveColumnNames)) return true;
+    if (!includeSensitive) return false;
+    includedSensitiveMention = true;
+    return true;
+  };
   lines.push(`# ${qualified}`);
   if (!table.sensitive) {
-    if (table.description) lines.push(table.description);
-    if (table.aliases?.length) lines.push(`Aliases: ${table.aliases.join(", ")}`);
-    if (table.primaryEntity) lines.push(`Primary entity: ${table.primaryEntity}`);
+    if (allow(table.description)) lines.push(table.description!);
+    const aliases = (table.aliases ?? []).filter((a) => allow(a));
+    if (aliases.length) lines.push(`Aliases: ${aliases.join(", ")}`);
+    if (allow(table.primaryEntity)) lines.push(`Primary entity: ${table.primaryEntity}`);
   }
   if (table.relationships?.length) {
     lines.push("Relationships:");
@@ -299,50 +344,68 @@ function buildTableChunk(
     flags.push(c.nullable ? "NULL" : "NOT NULL");
     const tag = c.sensitive || table.sensitive ? " (sensitive)" : "";
     const desc =
-      !table.sensitive && !c.sensitive && c.description
+      !table.sensitive && !c.sensitive && allow(c.description)
         ? ` — ${c.description}`
         : "";
     lines.push(`- ${c.name} ${c.type} (${flags.join(" ")})${tag}${desc}`);
   }
   return {
-    id: `chunk:${table.id}`,
+    id: chunkId(schemaId, table.id),
     type: "table",
     text: lines.join("\n").trim(),
     schemaId,
     refs: [table.id, ...referencedColumns],
-    sensitive: table.sensitive,
+    sensitive: table.sensitive || includedSensitiveMention,
   };
 }
 
+/**
+ * @param includeDescribable emit description / aliases / enum values / note.
+ * @param describableSensitive the emitted describable layer references
+ *   sensitive content (opt-in mode only); sets `chunk.sensitive`.
+ */
 function buildColumnChunk(
   table: NormalizedV2Table,
   col: NormalizedV2Column,
   schemaId: string,
   columnNote: string | undefined,
-  includeSensitive: boolean,
+  includeDescribable: boolean,
+  describableSensitive: boolean,
 ): Chunk {
-  const sensitive = col.sensitive || table.sensitive;
+  const columnSensitive = col.sensitive || table.sensitive;
   const flags: string[] = [];
   if (col.primaryKey) flags.push("PK");
   flags.push(col.nullable ? "NULL" : "NOT NULL");
   const lines: string[] = [];
   const qualified = `${table.schema}.${table.name}.${col.name}`;
-  lines.push(`Column: ${qualified} ${col.type} (${flags.join(" ")})${sensitive ? " (sensitive)" : ""}`);
+  lines.push(`Column: ${qualified} ${col.type} (${flags.join(" ")})${columnSensitive ? " (sensitive)" : ""}`);
   lines.push(`Id: ${col.id}`);
-  if (!sensitive || includeSensitive) {
+  if (includeDescribable) {
     if (col.description) lines.push(col.description);
     if (col.aliases?.length) lines.push(`Aliases: ${col.aliases.join(", ")}`);
     if (col.enum?.length) lines.push(`Values: ${col.enum.join(", ")}`);
     if (columnNote) lines.push(`Note: ${columnNote}`);
   }
   return {
-    id: `chunk:${col.id}`,
+    id: chunkId(schemaId, col.id),
     type: "column",
     text: lines.join("\n").trim(),
     schemaId,
     refs: [table.id, col.id],
-    sensitive,
+    sensitive: columnSensitive || (includeDescribable && describableSensitive),
   };
+}
+
+function columnDescribableTexts(
+  col: NormalizedV2Column,
+  columnNote: string | undefined,
+): string[] {
+  const out: string[] = [];
+  if (col.description) out.push(col.description);
+  if (col.aliases?.length) out.push(...col.aliases);
+  if (col.enum?.length) out.push(...col.enum.map(String));
+  if (columnNote) out.push(columnNote);
+  return out;
 }
 
 function buildCqlChunk(
@@ -356,7 +419,7 @@ function buildCqlChunk(
     ? ` (also: ${table.aliases.join(", ")})`
     : "";
   const text = `# ${table.schema}.${table.name}${aliasNote} — common query language\n${body.trim()}`;
-  const id = `chunk:${table.id}#cql${suffix}`;
+  const id = chunkId(schemaId, `${table.id}#cql${suffix}`);
   return {
     id,
     type: "cql",
@@ -377,7 +440,7 @@ function buildQuestionChunk(
   const entity = table.primaryEntity ? ` [${table.primaryEntity}]` : "";
   const text = `# ${table.schema}.${table.name}${entity} — example question\n${question.trim()}`;
   return {
-    id: `chunk:${table.id}#q:${index}`,
+    id: chunkId(schemaId, `${table.id}#q:${index}`),
     type: "question",
     text,
     schemaId,
@@ -395,7 +458,7 @@ function buildBusinessContextChunk(
 ): Chunk {
   const text = `# ${table.schema}.${table.name} — business context\n${body.trim()}`;
   return {
-    id: `chunk:${table.id}#biz${suffix}`,
+    id: chunkId(schemaId, `${table.id}#biz${suffix}`),
     type: "table",
     text,
     schemaId,
@@ -417,9 +480,14 @@ function buildRelationshipChunk(
   const fromName = fromTable ? `${fromTable.schema}.${fromTable.name}` : fromCol.tableId;
   const toName = toTable ? `${toTable.schema}.${toTable.name}` : toCol.tableId;
   const text = `Relationship: ${fromName}.${fromCol.column} references ${toName}.${toCol.column}`;
-  const sensitive = (fromTable?.sensitive ?? false) || (toTable?.sensitive ?? false);
+  // Sensitive when either side's table *or column* is sensitive.
+  const sensitive =
+    (fromTable?.sensitive ?? false) ||
+    (toTable?.sensitive ?? false) ||
+    isSensitiveId(rel.from, schema) ||
+    isSensitiveId(rel.to, schema);
   return {
-    id: `chunk:${rel.from}->${rel.to}`,
+    id: chunkId(schemaId, `${rel.from}->${rel.to}`),
     type: "relationship",
     text,
     schemaId,
@@ -433,37 +501,33 @@ function buildConceptChunk(
   schemaId: string,
   schema: NormalizedSchemaV2,
   allSensitiveColumnNames: string[],
-  includeSensitive: boolean,
-): { chunk: Chunk; sensitive: boolean; excluded: boolean } {
+): { chunk: Chunk; sensitive: boolean } {
   const links = (concept.links ?? []).filter((id) => !isUntrackedId(id, schema));
   const linkedSensitive = links.some((id) => isSensitiveId(id, schema));
-  const descriptionMentionsSensitive = concept.description
-    ? mentionsAnyName(concept.description, allSensitiveColumnNames)
-    : false;
+  const textMentionsSensitive = [
+    concept.label,
+    ...(concept.synonyms ?? []),
+    concept.description ?? "",
+  ].some((text) => mentionsAnyName(text, allSensitiveColumnNames));
+  const sensitive = linkedSensitive || textMentionsSensitive;
 
   const lines: string[] = [];
   lines.push(`# Concept: ${concept.label}`);
   lines.push(`Id: ${concept.id}`);
   if (concept.synonyms?.length) lines.push(`Synonyms: ${concept.synonyms.join(", ")}`);
   if (links.length) lines.push(`Links: ${links.join(", ")}`);
-
-  const excludeForSensitive = (linkedSensitive || descriptionMentionsSensitive) && !includeSensitive;
-
-  if (concept.description && (!descriptionMentionsSensitive || includeSensitive)) {
-    lines.push(concept.description);
-  }
+  if (concept.description) lines.push(concept.description);
 
   return {
     chunk: {
-      id: `chunk:${concept.id}`,
+      id: chunkId(schemaId, concept.id),
       type: "concept",
       text: lines.join("\n").trim(),
       schemaId,
       refs: [concept.id, ...links],
-      sensitive: linkedSensitive || descriptionMentionsSensitive,
+      sensitive,
     },
-    sensitive: linkedSensitive || descriptionMentionsSensitive,
-    excluded: excludeForSensitive,
+    sensitive,
   };
 }
 
@@ -480,7 +544,7 @@ function buildTenantPolicyChunks(
     const slug = sectionName.toLowerCase().replace(/[^a-z0-9]+/g, "-");
     for (const part of splitLong(sectionBody.trim(), maxChars)) {
       chunks.push({
-        id: `chunk:tenant-policy#${slug}${part.suffix}`,
+        id: chunkId(schemaId, `tenant-policy#${slug}${part.suffix}`),
         type: "tenant-policy",
         text: `# Tenant policy — ${sectionName}\n${part.text}`,
         schemaId,
@@ -493,7 +557,7 @@ function buildTenantPolicyChunks(
   if (chunks.length === 0 && tenantPolicy.body.trim()) {
     for (const part of splitLong(tenantPolicy.body.trim(), maxChars)) {
       chunks.push({
-        id: `chunk:tenant-policy#body${part.suffix}`,
+        id: chunkId(schemaId, `tenant-policy#body${part.suffix}`),
         type: "tenant-policy",
         text: `# Tenant policy\n${part.text}`,
         schemaId,
@@ -540,11 +604,19 @@ function extractExampleQuestions(md: ParsedTableMarkdown): string[] {
   return out;
 }
 
+/**
+ * True when `text` names any of `names` as a whole word. Case-insensitive to
+ * match `@askdb/enrich`'s sensitive-mention check ("filter by SSN" names the
+ * sensitive `ssn` column).
+ */
 function mentionsAnyName(text: string, names: string[]): boolean {
   if (!text || names.length === 0) return false;
   for (const name of names) {
     // Word-boundary match (also matches when wrapped in backticks).
-    const pattern = new RegExp(`(^|[^a-zA-Z0-9_])${escapeRegex(name)}([^a-zA-Z0-9_]|$)`);
+    const pattern = new RegExp(
+      `(^|[^a-zA-Z0-9_])${escapeRegex(name)}([^a-zA-Z0-9_]|$)`,
+      "i",
+    );
     if (pattern.test(text)) return true;
   }
   return false;

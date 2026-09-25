@@ -399,10 +399,10 @@ The markdown body (business context prose) is chunked following the `concepts.md
 
 | Chunk type | ID | Content |
 |---|---|---|
-| **Hierarchy** | `chunk:tenant-policy#hierarchy` | The `## Hierarchy` body, prefixed with schema ID. |
-| **Scope rules** | `chunk:tenant-policy#scope-rules` | The `## Scope rules` body, prefixed with schema ID. |
-| **Sensitive interactions** | `chunk:tenant-policy#sensitive` | The `## Sensitive interactions` body, prefixed with schema ID. |
-| **Other sections** | `chunk:tenant-policy#section:<slug>` | Other H2 bodies, prefixed with schema ID. |
+| **Hierarchy** | `chunk:<schemaId>:tenant-policy#hierarchy` | The `## Hierarchy` body, prefixed with `# Tenant policy — Hierarchy`. |
+| **Scope rules** | `chunk:<schemaId>:tenant-policy#scope-rules` | The `## Scope rules` body, prefixed with `# Tenant policy — Scope rules`. |
+| **Sensitive interactions** | `chunk:<schemaId>:tenant-policy#sensitive-interactions` | The `## Sensitive interactions` body, prefixed with its heading. |
+| **Other sections** | `chunk:<schemaId>:tenant-policy#<slug>` | Other H2 bodies (slug = lower-cased heading, non-alphanumerics → `-`), prefixed with their heading. |
 
 Long sections use `#bc:<n>` suffixes following the existing chunking convention.
 
