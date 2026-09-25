@@ -123,6 +123,29 @@ describe("renderInitConfig", () => {
     expect(out).not.toContain('"openai"');
   });
 
+  it.each(["azure", "foundry"] as const)(
+    "%s AI provider: scaffolds resourceName so the adapter can build an endpoint",
+    (aiProvider) => {
+      const out = renderInitConfig(postgresAnswers({
+        aiProvider,
+        aiKeyEnv: "AZURE_OPENAI_API_KEY",
+        aiModelEnv: "AZURE_OPENAI_DEPLOYMENT",
+      }));
+      expect(out).toContain(`provider: "${aiProvider}"`);
+      expect(out).toContain(`      ${aiProvider}: {`);
+      expect(out).toContain('apiKey: env("AZURE_OPENAI_API_KEY")');
+      expect(out).toContain('model: env("AZURE_OPENAI_DEPLOYMENT")');
+      expect(out).toContain('resourceName: env("AZURE_RESOURCE_NAME")');
+    },
+  );
+
+  it("non-Azure AI providers: no resourceName line", () => {
+    for (const aiProvider of ["openai", "anthropic", "google"] as const) {
+      const out = renderInitConfig(postgresAnswers({ aiProvider }));
+      expect(out).not.toContain("resourceName");
+    }
+  });
+
   it("pgvector RAG: only pgvector store branch", () => {
     const out = renderInitConfig(postgresAnswers({
       ragStore: "pgvector",
@@ -455,6 +478,25 @@ describe("runInitCli --yes --skip-install", () => {
       const content = readFileSync(outPath, "utf8");
       expect(content).toContain('provider: "sqlserver"');
       expect(content).not.toContain('"postgres"');
+    } finally {
+      rmSync(tmp, { recursive: true, force: true });
+    }
+  });
+
+  it("--ai-provider azure: config and .env.example include the resource name", async () => {
+    const tmp = mkdtempSync(join(tmpdir(), "askdb-init-test-"));
+    try {
+      const outPath = join(tmp, "askdb.config.ts");
+      const code = await runInitCli([
+        "--yes", "--skip-install", "--path", outPath, "--ai-provider", "azure",
+      ]);
+      expect(code).toBe(0);
+      const content = readFileSync(outPath, "utf8");
+      expect(content).toContain('provider: "azure"');
+      expect(content).toContain('resourceName: env("AZURE_RESOURCE_NAME")');
+      const envExample = readFileSync(join(tmp, ".env.example"), "utf8");
+      expect(envExample).toMatch(/^AZURE_OPENAI_API_KEY=$/m);
+      expect(envExample).toMatch(/^AZURE_RESOURCE_NAME=$/m);
     } finally {
       rmSync(tmp, { recursive: true, force: true });
     }
