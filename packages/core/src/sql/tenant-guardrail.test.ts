@@ -171,3 +171,61 @@ describe("validateTenantGuardrails — unknown tables", () => {
     expect(result.warnings.some((w) => w.rule === "UNKNOWN_TABLE_REFERENCED")).toBe(true);
   });
 });
+
+describe("validateTenantGuardrails — matches only in code regions", () => {
+  const warnPolicy: NormalizedTenantPolicy = { ...policy, enforcement: "warn" };
+  const rules = (sql: string) =>
+    validateTenantGuardrails(sql, warnPolicy, agencyScope).warnings.map((w) => w.rule);
+
+  it.each([
+    ["a string literal", "SELECT * FROM orders WHERE note = 'agency_id'"],
+    ["a string literal with doubled quotes", "SELECT * FROM orders WHERE note = 'it''s agency_id'"],
+    ["a dollar-quoted body", "SELECT * FROM orders WHERE note = $q$agency_id$q$"],
+    ["a line comment", "SELECT * FROM orders -- filter by agency_id\nWHERE status = 'paid'"],
+    ["a block comment", "SELECT * FROM orders /* agency_id */ WHERE status = 'paid'"],
+    ["a quoted placeholder", "SELECT * FROM orders WHERE note = ':tenant_agency_ids'"],
+  ])("a tenant column named only inside %s is not a predicate", (_label, sql) => {
+    expect(rules(sql)).toEqual(["MISSING_TENANT_PREDICATE"]);
+  });
+
+  it("a real predicate next to a literal mentioning the column still passes", () => {
+    expect(rules("SELECT * FROM orders WHERE agency_id IN ('42') AND note = 'agency_id'")).toEqual([]);
+  });
+
+  it("an apostrophe inside a comment does not hide the rest of the statement", () => {
+    expect(rules("-- don't forget\nSELECT * FROM orders WHERE status = 'paid'")).toEqual([
+      "MISSING_TENANT_PREDICATE",
+    ]);
+  });
+
+  it("quoted identifiers still count: the table is checked and the column matches", () => {
+    expect(rules('SELECT * FROM "orders" WHERE status = \'paid\'')).toEqual([
+      "MISSING_TENANT_PREDICATE",
+    ]);
+    expect(rules('SELECT * FROM "public"."orders" o WHERE o."agency_id" = \'42\'')).toEqual([]);
+    expect(rules("SELECT * FROM `orders` WHERE `agency_id` = '42'")).toEqual([]);
+    expect(rules("SELECT * FROM [orders] WHERE [agency_id] = '42'")).toEqual([]);
+  });
+
+  it("a table name that only appears inside a literal is not a table reference", () => {
+    expect(rules("SELECT 'orders' AS label FROM lookup_states")).toEqual([]);
+  });
+
+  it("the placeholder path is live: a tenant placeholder satisfies a scoped table", () => {
+    // Before, `\b:tenant_…` could never match, so only the column name counted.
+    expect(rules("SELECT * FROM orders WHERE owner_ref IN (:tenant_agency_ids)")).toEqual([]);
+    expect(rules("SELECT * FROM orders WHERE owner_ref IN (:tenant_agency_ids_old)")).toEqual([
+      "MISSING_TENANT_PREDICATE",
+    ]);
+  });
+
+  // Known limitations — this is a lint, not a parser. Pinned so a sounder
+  // implementation (plan 050) visibly changes them.
+  it("known limitation: a selected (not filtered) tenant column still passes", () => {
+    expect(rules("SELECT agency_id FROM orders")).toEqual([]);
+  });
+
+  it("known limitation: an OR-widened predicate still passes", () => {
+    expect(rules("SELECT * FROM orders WHERE agency_id IN ('42') OR 1=1")).toEqual([]);
+  });
+});
