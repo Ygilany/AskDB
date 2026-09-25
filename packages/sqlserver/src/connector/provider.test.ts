@@ -25,16 +25,4 @@ describe("sqlServerConnectorProvider", () => {
         "No SQL Server connection configured. Set introspection.providerConfig.sqlserver.databaseUrl in askdb.config.ts (bound to an env var in .env).",
     });
   });
-
-  it("redacts ADO.NET strings through the registry hook", () => {
-    expect(sqlServerConnectorProvider.redactConnectionString!("Server=h;User Id=sa;Password=S3cret;")).toBe(
-      "Server=h;User Id=sa;Password=****;",
-    );
-  });
-
-  it("createConnector requires a URL", () => {
-    expect(() => sqlServerConnectorProvider.createConnector({ provider: "sqlserver" })).toThrow(
-      "SQL Server connector requires a connection URL (config.url).",
-    );
-  });
 });

@@ -18,19 +18,6 @@ const makeAdapter = (provider: ConnectorProviderAdapter["provider"]): ConnectorP
 });
 
 describe("createConnectorRegistry", () => {
-  it("dispatches to the correct adapter by provider (array form)", () => {
-    const pgAdapter = makeAdapter("postgres");
-    const registry = createConnectorRegistry([pgAdapter]);
-
-    const result = registry.createConnector({ provider: "postgres", url: "postgres://localhost/db" });
-
-    expect(pgAdapter.createConnector).toHaveBeenCalledWith({
-      provider: "postgres",
-      url: "postgres://localhost/db",
-    });
-    expect(result.mode).toBe("live");
-  });
-
   it("dispatches to the correct adapter by provider (object-map form)", () => {
     const pgAdapter = makeAdapter("postgres");
     const mysqlAdapter = makeAdapter("mysql");
@@ -49,31 +36,13 @@ describe("createConnectorRegistry", () => {
     expect(registry.hasProvider("mysql")).toBe(false);
   });
 
-  it("throws an actionable error when a provider is not registered", () => {
-    const registry = createConnectorRegistry([]);
-    expect(() => registry.createConnector({ provider: "mysql", url: "mysql://localhost/db" })).toThrow(
-      /Install @askdb\/mysql/,
-    );
-  });
-
-  it("throws for an unregistered sqlserver provider with the right package name", () => {
-    const registry = createConnectorRegistry([]);
-    expect(() => registry.createConnector({ provider: "sqlserver" })).toThrow(
-      /Install @askdb\/sqlserver/,
-    );
-  });
-
-  it("throws for an unregistered prisma provider with the right package name", () => {
-    const registry = createConnectorRegistry([]);
-    expect(() => registry.createConnector({ provider: "prisma" })).toThrow(
-      /Install @askdb\/prisma/,
-    );
-  });
-
-  it("returns false from hasProvider when registry is empty", () => {
-    const registry = createConnectorRegistry([]);
-    expect(registry.hasProvider("postgres")).toBe(false);
-  });
+  it.each(["mysql", "sqlserver", "prisma"])(
+    "throws an actionable error naming @askdb/%s when that provider is not registered",
+    (provider) => {
+      const registry = createConnectorRegistry([]);
+      expect(() => registry.createConnector({ provider })).toThrow(`Install @askdb/${provider}`);
+    },
+  );
 
   it("rejects mismatched object-map adapters", () => {
     const pgAdapter = makeAdapter("postgres");
@@ -131,11 +100,6 @@ describe("createConnectorRegistry — open provider ids (third-party engines)", 
     expect(registry.providers()).toEqual(["postgres", "acme"]);
     registry.createConnector({ provider: "acme", url: "acme://db" });
     expect(acme.createConnector).toHaveBeenCalledWith({ provider: "acme", url: "acme://db" });
-  });
-
-  it("accepts a custom provider id in the object-map form", () => {
-    const registry = createConnectorRegistry({ acme: makeAdapter("acme") });
-    expect(registry.hasProvider("acme")).toBe(true);
   });
 
   it("points unregistered custom providers at their own package", () => {

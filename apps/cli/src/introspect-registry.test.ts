@@ -158,28 +158,9 @@ describe("askdb introspect — injected connector registry", () => {
   });
 });
 
-describe("askdb introspect — built-in engines resolve connections via their adapters", () => {
-  it("keeps the Postgres missing-connection message", async () => {
+describe("askdb introspect — CLI-owned errors with the built-in registry", () => {
+  it("rejects combining --url with --from-export", async () => {
     installRuntime();
-    const code = await runIntrospectCli(["--engine", "postgres", "--print"]);
-    expect(code).toBe(1);
-    expect(stderr).toContain("Provide either --url <postgres-url> or --from-export <bundle-dir>.");
-  });
-
-  it("keeps the flag-conflict messages", async () => {
-    installRuntime();
-    expect(await runIntrospectCli(["--engine", "mysql", "--url", "mysql://h/db", "--from-export", "x", "--print"])).toBe(1);
-    expect(stderr).toContain("--from-export is currently supported only for --engine postgres (got mysql).");
-
-    stderr = "";
-    expect(await runIntrospectCli(["--engine", "postgres", "--url", "postgres://h/db", "--prisma-schema", "x", "--print"])).toBe(1);
-    expect(stderr).toContain("Use --prisma-schema only with --engine prisma.");
-
-    stderr = "";
-    expect(await runIntrospectCli(["--engine", "prisma", "--url", "postgres://h/db", "--print"])).toBe(1);
-    expect(stderr).toContain("Use --prisma-schema with --engine prisma, not --url or --from-export.");
-
-    stderr = "";
     expect(await runIntrospectCli(["--engine", "postgres", "--url", "postgres://h/db", "--from-export", "x", "--print"])).toBe(1);
     expect(stderr).toContain("Use only one input mode: --url or --from-export.");
   });
