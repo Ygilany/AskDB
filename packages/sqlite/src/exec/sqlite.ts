@@ -22,11 +22,6 @@ const bs3Loader = createOptionalDriverLoader<Bs3Namespace>({
   missingMessage: missingDriverMessage({ engine: "SQLite", packageName: "better-sqlite3" }),
 });
 
-/** @internal exposed for tests that need to reset the lazy `better-sqlite3` cache. */
-export function __resetBetterSqlite3ModuleCacheForTests(): void {
-  bs3Loader.reset();
-}
-
 /**
  * Resolve and cache the optional `better-sqlite3` peer driver, with the same
  * lazy-import + project-root fallback behavior as the catalog runner.

@@ -25,13 +25,6 @@ const pgLoader = createOptionalDriverLoader<typeof import("pg")>({
   missingMessage: missingDriverMessage({ engine: "Postgres", packageName: "pg" }),
 });
 
-/**
- * @internal exposed for tests that need to reset the lazy `pg` cache between cases.
- */
-export function __resetPgModuleCacheForTests(): void {
-  pgLoader.reset();
-}
-
 type PgDriverModule = typeof import("pg");
 
 /**

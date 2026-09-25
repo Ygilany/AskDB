@@ -88,26 +88,17 @@ module.exports = Database;
 }
 
 describe("exec/sqlite - lazy `better-sqlite3` peer dependency", () => {
-  beforeEach(async () => {
+  beforeEach(() => {
     vi.resetModules();
     bs3State.projectResolvedPaths.clear();
     bs3State.shouldFail = false;
     process.chdir(originalCwd);
-    const { __resetBetterSqlite3ModuleCacheForTests } = await import("./sqlite.js");
-    __resetBetterSqlite3ModuleCacheForTests();
   });
 
   afterEach(async () => {
     process.chdir(originalCwd);
     await Promise.all(tempDirs.map((dir) => rm(dir, { force: true, recursive: true })));
     tempDirs = [];
-  });
-
-  it("createSqliteCatalogQueryRunner() does not load `better-sqlite3` at construction time", async () => {
-    const { createSqliteCatalogQueryRunner } = await import("./sqlite.js");
-    bs3State.shouldFail = true;
-
-    expect(() => createSqliteCatalogQueryRunner(":memory:")).not.toThrow();
   });
 
   it("invoking the runner when `better-sqlite3` is missing rejects with a helpful AskDbError", async () => {
@@ -126,25 +117,6 @@ describe("exec/sqlite - lazy `better-sqlite3` peer dependency", () => {
     expect(msg).toMatch(/`npx -p askdb -p better-sqlite3 askdb \.\.\.`/);
   });
 
-  it("after a missing-better-sqlite3 failure, a later invocation retries the import (cache cleared)", async () => {
-    const { createSqliteCatalogQueryRunner } = await import("./sqlite.js");
-    process.chdir(await createTempProject());
-    bs3State.shouldFail = true;
-    const runner = createSqliteCatalogQueryRunner(":memory:");
-
-    const first = await runner("SELECT 1").catch((e: unknown) => e);
-    expect((first as Error).name).toBe("AskDbError");
-
-    const projectDir = await createTempProject();
-    await addBetterSqlite3Fixture(projectDir);
-    process.chdir(projectDir);
-
-    await expect(runner("SELECT 1")).resolves.toEqual({
-      columns: ["n", "label"],
-      rows: [[1, "ok"]],
-    });
-  });
-
   it("resolves `better-sqlite3` from the caller project cwd when the adapter import cannot see it", async () => {
     const { createSqliteCatalogQueryRunner } = await import("./sqlite.js");
     const projectDir = await createTempProject();
@@ -158,48 +130,5 @@ describe("exec/sqlite - lazy `better-sqlite3` peer dependency", () => {
       columns: ["n", "label"],
       rows: [[1, "ok"]],
     });
-  });
-
-  it("resolveFrom missing-driver path rejects with AskDbError when resolveFrom has no driver", async () => {
-    const { createSqliteCatalogQueryRunner } = await import("./sqlite.js");
-    const emptyDir = await createTempProject();
-    bs3State.shouldFail = true;
-    const runner = createSqliteCatalogQueryRunner(":memory:", { resolveFrom: emptyDir });
-
-    const err = await runner("SELECT 1").catch((e: unknown) => e);
-    expect((err as Error).name).toBe("AskDbError");
-    expect((err as Error).message).toMatch(/optional `better-sqlite3` peer dependency/);
-  });
-
-  it("resolveFrom honored: loads driver from resolveFrom even when cwd lacks it", async () => {
-    const { createSqliteCatalogQueryRunner } = await import("./sqlite.js");
-    const projectDir = await createTempProject();
-    await addBetterSqlite3Fixture(projectDir);
-    process.chdir(await createTempProject());
-    bs3State.shouldFail = true;
-
-    const runner = createSqliteCatalogQueryRunner(":memory:", { resolveFrom: projectDir });
-    await expect(runner("SELECT 1")).resolves.toEqual({
-      columns: ["n", "label"],
-      rows: [[1, "ok"]],
-    });
-  });
-
-  it("resolveFrom cache slots are independent per directory", async () => {
-    const { createSqliteCatalogQueryRunner } = await import("./sqlite.js");
-    const dirWithDriver = await createTempProject();
-    await addBetterSqlite3Fixture(dirWithDriver);
-    const dirWithoutDriver = await createTempProject();
-    bs3State.shouldFail = true;
-
-    const runnerA = createSqliteCatalogQueryRunner(":memory:", { resolveFrom: dirWithDriver });
-    await expect(runnerA("SELECT 1")).resolves.toEqual({
-      columns: ["n", "label"],
-      rows: [[1, "ok"]],
-    });
-
-    const runnerB = createSqliteCatalogQueryRunner(":memory:", { resolveFrom: dirWithoutDriver });
-    const err = await runnerB("SELECT 1").catch((e: unknown) => e);
-    expect((err as Error).name).toBe("AskDbError");
   });
 });

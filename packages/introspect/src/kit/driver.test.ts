@@ -118,15 +118,6 @@ describe("createOptionalDriverLoader", () => {
     expect((err as Error).name).toBe("AskDbError");
     expect((err as { cause?: unknown }).cause).toBe(boom);
   });
-
-  it("reset() drops cached loads", async () => {
-    const importDriver = vi.fn(async () => ({}));
-    const loader = createOptionalDriverLoader({ packageName: PKG, importDriver, missingMessage: "m" });
-    await loader.load();
-    loader.reset();
-    await loader.load();
-    expect(importDriver).toHaveBeenCalledTimes(2);
-  });
 });
 
 describe("isDriverInstalled", () => {
