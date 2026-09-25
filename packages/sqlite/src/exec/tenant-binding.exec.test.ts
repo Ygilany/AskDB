@@ -7,11 +7,12 @@
  * "marker N reads params[N-1]" — and `?` (MySQL / SQLite) runs as-is, which
  * checks that positional order matches source order.
  */
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, expect, it } from "vitest";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import type DatabaseCtor from "better-sqlite3";
 import { ask, loadSchema, type TenantScope } from "@askdb/core";
+import { integrationSuite } from "../../../../scripts/test-utils/integration.mjs";
 
 type Bs3Namespace = { default: typeof DatabaseCtor };
 type Db = InstanceType<typeof DatabaseCtor>;
@@ -31,7 +32,10 @@ const fakeModel = {} as Parameters<typeof ask>[0]["model"];
 
 const probe = await openMemoryDb();
 probe?.close();
-const suite = probe ? describe : describe.skip;
+// Under ASKDB_REQUIRE_INTEGRATION=1 a driver that fails to load fails the suite instead of skipping.
+const suite = integrationSuite({
+  unavailable: probe ? null : "better-sqlite3 could not be loaded",
+});
 
 /**
  * Prepare `sql` + positional `params` for better-sqlite3. Numbered markers

@@ -9,12 +9,13 @@
  */
 import { randomUUID } from "node:crypto";
 import { introspect } from "@askdb/introspect";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, expect, it } from "vitest";
 import { createPostgresCatalogQueryRunner } from "../exec/postgres.js";
 import { createPostgresConnector } from "./index.js";
+import { integrationSuite } from "../../../../scripts/test-utils/integration.mjs";
 
 const url = process.env.DATABASE_URL;
-const suite = url ? describe : describe.skip;
+const suite = integrationSuite({ env: ["DATABASE_URL"] });
 const schemaName = `askdb_partfk_${randomUUID().replace(/-/g, "").slice(0, 12)}`;
 
 async function exec(sql: string): Promise<void> {
