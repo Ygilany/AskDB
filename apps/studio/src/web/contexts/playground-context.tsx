@@ -326,7 +326,13 @@ export function PlaygroundProvider({ children, ragAvailable }: { children: React
           type: "execute_completed",
           result,
           message: result.ok
-            ? { kind: "success", text: `${result.rowCount ?? 0} rows${result.truncated ? " (truncated to 500)" : ""} · ${result.durationMs ?? 0}ms` }
+            ? {
+                kind: "success",
+                text: [
+                  `${result.rowCount ?? 0} rows${result.truncated ? ` (capped at ${result.rowLimit})` : ""} · ${result.durationMs ?? 0}ms`,
+                  ...(result.warnings ?? []),
+                ].join(" · "),
+              }
             : { kind: "error", text: result.error ?? "Unknown error" },
         });
       } catch (err) {
