@@ -7,7 +7,7 @@
 
 The core pipeline turns a natural language question and a describable schema into checked SQL. The entry point is `ask()`, which accepts a question, a loaded schema, an `AskDbLanguageModel` (BYO), a dialect identifier or adapter, and optional runtime options (mode, tenant scope, retriever). It returns checked SQL and structured metadata — it does not execute queries.
 
-`AskDbLanguageModel` is `@askdb/core`'s public alias for the AI SDK `LanguageModel` type (from `"ai"`). Provider construction helpers — resolving config from env, instantiating OpenAI/Azure/Google models — live in `@askdb/ai` and the per-provider adapter packages (`@askdb/ai-openai`, `@askdb/ai-azure`, `@askdb/ai-google`), not in core.
+`AskDbLanguageModel` is `@askdb/core`'s public alias for the AI SDK `LanguageModel` type (from `"ai"`). Provider construction helpers — resolving config from env, instantiating OpenAI/Azure/Google models — live in `@askdb/ai` (built-in providers whose `@ai-sdk/*` SDKs are optional peers), not in core.
 
 The `askdb` CLI wraps `ask()` as the first-party surface, handling config bootstrapping, schema loading, and structured logging. The CLI prints the generated SQL and does not execute it. Execution belongs to the host application (or, for local development, Studio's opt-in Playground **Execute**), never to `ask()`.
 
@@ -37,7 +37,7 @@ The `@askdb/client` package provides `createAskDb()`, a config-aware facade that
 
 ## Design decisions
 
-- **BYO model** — `ask()` accepts `AskDbLanguageModel` (`@askdb/core`'s alias for the AI SDK `LanguageModel`); no provider is bundled into core. Consumers supply their own model instance. Provider construction helpers (`resolveAiConfig`, `createAiRegistry`) live in `@askdb/ai`; concrete adapters in `@askdb/ai-openai`, `@askdb/ai-azure`, `@askdb/ai-google`. See [ADR 0006](../adrs/0006-ai-provider-integration-strategy.md).
+- **BYO model** — `ask()` accepts `AskDbLanguageModel` (`@askdb/core`'s alias for the AI SDK `LanguageModel`); no provider is bundled into core. Consumers supply their own model instance. Provider construction helpers (`createAiRegistry` and its `resolveAiConfig`) and the built-in provider adapters live in `@askdb/ai`. See [ADR 0006](../adrs/0006-ai-provider-integration-strategy.md) and its Option E amendment.
 - **Dialect as a string, spec, or adapter** — `dialect` accepts a built-in string ID (`"postgres"`, `"mysql"`, etc.), a `DialectSpec` descriptor object, or a full custom `AskDialect` adapter. The string path is the normal case; `@askdb/postgres` is for introspection connectors, not needed for `ask()`. See [ADR 0002](../adrs/0002-integration-package-layout.md).
 - **SQL-only output** — `ask()` returns checked SQL; execution belongs to the host application. `@askdb/core` does not manage database connections.
 - **Schema precheck** — before calling the model, `assertNlToSqlInputs` rejects an empty schema or a blank question with a structured error. It doesn't reject unknown tables or columns: a table the question names (`from X` / `join X`) that isn't in the schema becomes an ambiguity note in the prompt.
