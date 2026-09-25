@@ -46,7 +46,7 @@ The Tables view lists every physical table in your schema. Select a table to ope
 
 - **Enrichment** — write a description, set aliases (the names users actually use when asking questions), declare a primary entity, add comma-separated tags, capture business vocabulary in the Common Query Language field, and add example questions.
 - **Schema** — view the raw column list with types and nullability.
-- **Sensitivity** — mark columns like `email`, `ssn`, or `internal_notes` as sensitive so the prompt layer can tag or omit them.
+- **Sensitivity** — mark tables, or columns like `email`, `ssn`, or `internal_notes`, as sensitive so the prompt layer can tag or omit them and `validateSensitiveReferences` flags SQL that touches them. Overrides are escalate-only: they can make something sensitive on top of the physical metadata, never less sensitive. The **Effective** column shows what AskDB will actually use.
 
 Each field has a **Suggest** button: provide a model key and Studio drafts a proposal for your review. Suggestions are never applied automatically — a human confirms every change before it lands in the artifact.
 

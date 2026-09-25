@@ -54,4 +54,10 @@ export type SchemaV2Warning =
   | { kind: "orphaned_table_id"; tableFile: string; id: string }
   | { kind: "orphaned_column_id"; tableFile: string; id: string }
   | { kind: "missing_table_md"; tableId: string }
-  | { kind: "missing_column_md"; tableId: string; columnId: string };
+  | { kind: "missing_column_md"; tableId: string; columnId: string }
+  /**
+   * Table markdown front-matter set `sensitive: false` on a table or column that is
+   * sensitive anyway (via `schema.json`, or — for a column — via its sensitive table).
+   * Front-matter sensitivity is escalate-only, so the override was ignored.
+   */
+  | { kind: "sensitivity_downgrade_ignored"; tableFile: string; id: string };

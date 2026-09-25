@@ -10,6 +10,7 @@ This document captures **product and engineering intent** for how **sensitive** 
 ## Current behavior (Phase 2 plumbing)
 
 - Schema JSON may mark tables/columns **`sensitive`** (additive optional fields).
+- Table markdown front-matter (`tables/<table>.md`, written by Studio's Sensitivity controls via `@askdb/enrich`) may **escalate** sensitivity: table-level `sensitive: true` or `columns[].sensitive: true` marks the table/column sensitive on top of `schema.json`. Front-matter is **escalate-only** — `sensitive: false` never un-marks a table or column that `schema.json` (or a sensitive parent table) marks sensitive; the loader ignores it and emits a `sensitivity_downgrade_ignored` warning. Every surface below (prompt DDL, RAG chunks, `validateSensitiveReferences`) reads the resulting effective flag from the normalized schema. See [`schema-v2.md` → Sensitive propagation](./schema-v2.md#sensitive-propagation).
 - **Default NL→SQL prompt DDL** **includes** sensitive **identifiers** (column names, types, nullability) so the model can **ground** SQL and avoid inventing non-existent columns. Sensitive columns are tagged **`(sensitive)`** on each line so the model and operators can treat them as high-risk metadata—not secret values.
 - **Optional stricter policy:** hosts or CLI may **omit** sensitive identifiers from the DDL entirely (`omitSensitiveIdentifiersFromNlToSqlPrompt` / `--omit-sensitive-from-prompt` / `ASKDB_OMIT_SENSITIVE_FROM_PROMPT`). That reduces name exposure to the first LLM call but increases the risk of **hallucinated** column names when users ask about those fields.
 - **Debug logs:** counts only — `askdb.prompt.sensitive_identifiers_listed` when names are included (default), or `askdb.prompt.sensitive_redacted` when omission mode is active.
@@ -82,3 +83,4 @@ Validation and tests for this belong in the milestone that ships real post-execu
 - [`docs/specs/modes-and-observability.md`](../specs/modes-and-observability.md)
 - [`docs/integration/reuse-core-phase-3.md`](../integration/reuse-core-phase-3.md) — avoid duplicating prompt/validation policy in wrappers
 - [`fixtures/schemas/README.md`](../../fixtures/schemas/README.md) — `sensitive` in schema JSON
+- [`docs/contracts/schema-v2.md`](./schema-v2.md#sensitive-propagation) — effective sensitivity (escalate-only front-matter overrides)

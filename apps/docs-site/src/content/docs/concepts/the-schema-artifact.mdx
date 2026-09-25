@@ -85,6 +85,8 @@ Customer purchase orders. One row per submitted order.
 
 This layer survives re-introspection. When your database changes, `askdb introspect` updates `schema.json` and leaves your markdown intact.
 
+Front-matter can also mark a table or column sensitive. This is what Studio's Sensitivity tab writes: a table-level `sensitive: true`, or `sensitive: true` on a `columns` entry. Sensitivity is **escalate-only**. Front-matter can make a table or column sensitive on top of `schema.json`, but a front-matter `sensitive: false` never un-marks something `schema.json` marks sensitive. AskDB ignores it and reports a `sensitivity_downgrade_ignored` warning. A sensitive table makes all of its columns sensitive. To un-mark a column, edit `schema.json`.
+
 ## What the model actually receives
 
 The model never sees the directory you author. At generation time AskDB merges the physical layer and the enrichment into a single compact, model-facing text — a DDL-style description where each table is rendered as a block and your enrichment is folded in as inline comments (descriptions, aliases, and "common query language" attached to the table and columns they describe). Sensitive fields are tagged or withheld here according to your mode.
