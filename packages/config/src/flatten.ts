@@ -76,6 +76,7 @@ function applyAzureLikeAi(out: Record<string, string>, cfg: AzureConfig | Foundr
   set(out, "AZURE_OPENAI_DEPLOYMENT", model);
   set(out, "AZURE_DEPLOYMENT_NAME", model);
   set(out, "ASKDB_AI_MODEL", model);
+  set(out, "ASKDB_AI_AZURE_RESOURCE_NAME", cfg.resourceName);
   set(out, "AZURE_OPENAI_BASE_URL", cfg.baseUrl);
   set(out, "AZURE_OPENAI_API_VERSION", cfg.apiVersion);
   set(out, "ASKDB_AI_AZURE_MODEL_FAMILY", cfg.modelFamily);
