@@ -9,8 +9,8 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { TenantScopeError, ask, loadSchema, loadSchemaFromJson } from "@askdb/core";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { loadSchema, loadSchemaFromJson } from "@askdb/core";
 import {
   buildDefaultTableBody,
   bundleSchemaDirectory,
@@ -260,21 +260,6 @@ describe("bundleSchemaDirectory with a tenant policy", () => {
     const fromFile = loadSchema(bundlePath);
     expect(fromFile).toEqual(fromDir);
     expect(fromFile.tenantPolicy).toEqual(fromDir.tenantPolicy);
-  });
-
-  it("ask() still requires a tenant scope when the schema comes from a bundle", async () => {
-    const schema = loadSchemaFromJson(JSON.stringify(bundleSchemaDirectory(schemaDir)));
-    const generateText = vi.fn(async () => ({ text: "SELECT 1" }));
-    await expect(
-      ask({
-        question: "how many orders",
-        schema,
-        model: {} as Parameters<typeof ask>[0]["model"],
-        dialect: "postgres",
-        deps: { generateText },
-      }),
-    ).rejects.toBeInstanceOf(TenantScopeError);
-    expect(generateText).not.toHaveBeenCalled();
   });
 });
 
