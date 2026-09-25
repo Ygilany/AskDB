@@ -52,8 +52,6 @@ export type {
   TenantAccessSubtree,
   TenantAccessMultiRoot,
   TenantAccessGlobal,
-  TenantFilter,
-  TenantFilterCondition,
   TenantScopeContext,
   ParsedTenantPolicyMarkdown,
   NormalizedTenantPolicy,
