@@ -55,18 +55,6 @@ function resolveConnection(engine: ConnectorProviderId): ConnectorConnectionReso
   });
 }
 
-/**
- * Strip credentials from a connection string for display (never shown raw in
- * the UI). Dispatches to the engine adapter's `redactConnectionString()`, which
- * knows that engine's formats (URL userinfo, `?password=`, ADO.NET
- * `Password=`/`Pwd=`, JDBC-style `;password=`, libpq `password=`). Unknown
- * providers fall back to generic redaction of URL userinfo and secret
- * `key=value` pairs. Exported for tests.
- */
-export function redactUrl(provider: ConnectorProviderId, raw: string): string {
-  return connectorRegistry.redactConnectionString(provider, raw);
-}
-
 export type StudioIntrospectionRun = {
   engine: ConnectorProviderId;
   schemaId: string;

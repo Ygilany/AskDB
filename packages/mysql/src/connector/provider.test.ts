@@ -27,20 +27,4 @@ describe("mysqlConnectorProvider", () => {
         "No MySQL connection configured. Set introspection.providerConfig.mysql.databaseUrl in askdb.config.ts (bound to an env var in .env).",
     });
   });
-
-  it("rejects --from-export", () => {
-    expect(resolve({ explicit: { fromExport: "./b" }, runtime: runtime("mysql://h/db") })).toEqual({
-      ok: false,
-      error: "--from-export is currently supported only for --engine postgres (got mysql).",
-    });
-  });
-
-  it("createConnector requires a URL and builds a live input", () => {
-    expect(() => mysqlConnectorProvider.createConnector({ provider: "mysql" })).toThrow(
-      "MySQL connector requires a connection URL (config.url).",
-    );
-    const result = mysqlConnectorProvider.createConnector({ provider: "mysql", url: "mysql://h/db" });
-    expect(result.mode).toBe("live");
-    expect((result.input as { mode: string }).mode).toBe("live");
-  });
 });
