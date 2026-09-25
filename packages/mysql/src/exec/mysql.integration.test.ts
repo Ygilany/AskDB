@@ -1,9 +1,10 @@
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, expect, it } from "vitest";
 import { createMysqlCatalogQueryRunner } from "./mysql.js";
 import { createMysqlConnector } from "../connector/index.js";
+import { integrationSuite } from "../../../../scripts/test-utils/integration.mjs";
 
 const url = process.env.MYSQL_DATABASE_URL;
-const mysqlSuite = url ? describe : describe.skip;
+const mysqlSuite = integrationSuite({ env: ["MYSQL_DATABASE_URL"] });
 
 mysqlSuite("MySQL integration (mysql2 driver)", () => {
   beforeAll(async () => {

@@ -21,8 +21,14 @@ step() {
 step "install (frozen lockfile)"
 pnpm install --frozen-lockfile
 
+step "dependency audit"
+pnpm run audit
+
 step "build"
 pnpm -r build
+
+step "lint + typecheck"
+pnpm lint
 
 step "test"
 pnpm test

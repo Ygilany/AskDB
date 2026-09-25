@@ -2,22 +2,23 @@
  * Live-database integration test against the Pagila fixture
  * (`fixtures/pagila/docker-compose.yml`).
  *
- * Skipped unless `PAGILA_DATABASE_URL` is set so local `pnpm test` and
- * non-Pagila CI jobs stay green. CI runs this file with the env var
- * exported after the docker-compose service is healthy; see
- * `.github/workflows/ci.yml`.
+ * Skipped unless `PAGILA_DATABASE_URL` is set so local `pnpm test` stays
+ * green. CI runs this file with the env var exported after the
+ * docker-compose service is healthy and `ASKDB_REQUIRE_INTEGRATION=1`, so a
+ * missing URL fails instead of skipping; see `.github/workflows/ci.yml`.
  */
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { loadSchema } from "@askdb/core";
 import { introspect } from "@askdb/introspect";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, expect, it } from "vitest";
 import { createPostgresCatalogQueryRunner } from "../exec/postgres.js";
 import { createPostgresConnector } from "./index.js";
+import { integrationSuite } from "../../../../scripts/test-utils/integration.mjs";
 
 const url = process.env.PAGILA_DATABASE_URL;
-const pagilaSuite = url ? describe : describe.skip;
+const pagilaSuite = integrationSuite({ env: ["PAGILA_DATABASE_URL"] });
 
 let workDir: string;
 beforeEach(() => {
