@@ -1,8 +1,9 @@
-import { describe, expect, it } from "vitest";
+import { expect, it } from "vitest";
 import { createPgvectorStore } from "./pgvector.js";
+import { integrationSuite } from "../../../../scripts/test-utils/integration.mjs";
 
 const connectionString = process.env.ASKDB_PGVECTOR_URL ?? process.env.PGVECTOR_URL;
-const run = connectionString ? describe : describe.skip;
+const run = integrationSuite({ env: [["ASKDB_PGVECTOR_URL", "PGVECTOR_URL"]] });
 
 run("createPgvectorStore integration", () => {
   it("upserts, queries, and deletes against a live pgvector table", async () => {
