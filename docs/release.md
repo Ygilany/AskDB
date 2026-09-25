@@ -6,7 +6,9 @@ Use this checklist before making AskDB packages public or publishing a new publi
 
 ```bash
 pnpm install --frozen-lockfile
+pnpm run audit
 pnpm build
+pnpm lint
 pnpm test
 pnpm smoke:install
 pnpm -r publish --dry-run --no-git-checks --access=public
