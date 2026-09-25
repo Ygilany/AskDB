@@ -66,6 +66,16 @@ pagilaSuite("introspect() against Pagila (live Postgres)", () => {
     ]) {
       expect(names.has(expected)).toBe(true);
     }
+
+    // Ordinary (non-partition) FKs render as relationships. Partition FK
+    // behavior (ADR 0003) is owned by partition-fk.integration.test.ts.
+    const raw = JSON.parse(readFileSync(join(outDir, "schema.json"), "utf8")) as {
+      tables: Array<{ relationships?: Array<{ from: string; to: string }> }>;
+    };
+    const rels = raw.tables.flatMap((t) => t.relationships ?? []);
+    expect(rels.map((r) => `${r.from}->${r.to}`)).toContain(
+      "table:public.rental#customer_id->table:public.customer#customer_id",
+    );
   });
 
   it("preserves composite primary-key column order on film_actor", async () => {
@@ -124,35 +134,6 @@ pagilaSuite("introspect() against Pagila (live Postgres)", () => {
     // appear in the introspected schema.
     const leaves = names.filter((n) => /^payment_p\d{4}_\d{2}$/.test(n));
     expect(leaves).toEqual([]);
-  });
-
-  it("renders no relationships to or from payment partition leaves (ADR 0003)", async () => {
-    const outDir = join(workDir, "pagila.schema");
-    await introspect(
-      { mode: "live", runner: createPostgresCatalogQueryRunner(url!) },
-      { outDir, schemaId: "pagila" },
-      { connector: createPostgresConnector() },
-    );
-    const raw = JSON.parse(readFileSync(join(outDir, "schema.json"), "utf8")) as {
-      tables: Array<{ id: string; relationships?: Array<{ from: string; to: string }> }>;
-    };
-    const rels = raw.tables.flatMap((t) => t.relationships ?? []);
-    const touchesLeaf = rels.filter((r) =>
-      /payment_p\d{4}_\d{2}/.test(r.from) || /payment_p\d{4}_\d{2}/.test(r.to),
-    );
-    expect(touchesLeaf).toEqual([]);
-
-    // Pagila declares payment's FKs on each monthly leaf (payment_p2022_01_customer_id_fkey, …),
-    // not on the partitioned parent, so the folded parent renders none of them. FKs declared on a
-    // partitioned parent are covered by partition-fk.integration.test.ts.
-    const payment = raw.tables.find((t) => t.id === "table:public.payment")!;
-    const paymentRels = (payment.relationships ?? []).map((r) => `${r.from}->${r.to}`);
-    expect(new Set(paymentRels).size).toBe(paymentRels.length);
-
-    // Ordinary (non-partition) FKs still render.
-    expect(rels.map((r) => `${r.from}->${r.to}`)).toContain(
-      "table:public.rental#customer_id->table:public.customer#customer_id",
-    );
   });
 
   it("with no include filter, keeps public and excludes system schemas", async () => {
