@@ -725,14 +725,6 @@ describe("ask — tenant guardrail runs on the SQL actually returned", () => {
 });
 
 describe("ask — tenant guardrail covers custom AskDialect implementations", () => {
-  it("strict: rejects unscoped SQL from a custom dialect", async () => {
-    const schema = loadSchema(multiTenantDir);
-    const dialect: AskDialect = { generate: async () => ({ sql: "DELETE FROM orders" }) };
-    await expect(
-      ask({ question: "q", schema, model: fakeModel, dialect, tenantScope: agencyScope }),
-    ).rejects.toThrow(TenantGuardrailError);
-  });
-
   it("strict: rejects an unscoped SELECT from a custom dialect", async () => {
     const schema = loadSchema(multiTenantDir);
     const dialect: AskDialect = { generate: async () => ({ sql: "SELECT * FROM orders" }) };

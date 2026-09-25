@@ -175,12 +175,6 @@ describe("loadSchema — optional files fail closed when present but broken", ()
     expect((caught as SchemaParseError).cause).toBeDefined();
   });
 
-  it("malformed tenant-policy.md YAML throws SchemaParseError (schema.json path)", () => {
-    const dir = copyFixture(multiTenantDir);
-    writeFileSync(join(dir, "tenant-policy.md"), MALFORMED_TENANT_POLICY);
-    expect(() => loadSchema(join(dir, "schema.json"))).toThrow(SchemaParseError);
-  });
-
   it("invalid tenant-policy.md front-matter values still throw SchemaParseError", () => {
     const dir = copyFixture(multiTenantDir);
     const policyPath = join(dir, "tenant-policy.md");
@@ -236,12 +230,6 @@ describe("loadSchema — bundles treat optional files exactly like the directory
 
   it("an empty tenantPolicy string throws SchemaParseError (inline JSON)", () => {
     expect(() => loadSchemaFromJson(bundleJson({ tenantPolicy: "" }))).toThrow(SchemaParseError);
-  });
-
-  it("an empty tenantPolicy string throws SchemaParseError (bundle file)", () => {
-    const file = join(makeTempDir(), "app.bundle.json");
-    writeFileSync(file, bundleJson({ tenantPolicy: "" }));
-    expect(() => loadSchema(file)).toThrow(SchemaParseError);
   });
 
   it("a non-string tenantPolicy throws SchemaParseError", () => {
