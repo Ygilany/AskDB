@@ -143,11 +143,17 @@ pagilaSuite("introspect() against Pagila (live Postgres)", () => {
     );
     expect(touchesLeaf).toEqual([]);
 
-    // The FKs declared on the partitioned parent still render exactly once each.
+    // Pagila declares payment's FKs on each monthly leaf (payment_p2022_01_customer_id_fkey, …),
+    // not on the partitioned parent, so the folded parent renders none of them. FKs declared on a
+    // partitioned parent are covered by partition-fk.integration.test.ts.
     const payment = raw.tables.find((t) => t.id === "table:public.payment")!;
     const paymentRels = (payment.relationships ?? []).map((r) => `${r.from}->${r.to}`);
     expect(new Set(paymentRels).size).toBe(paymentRels.length);
-    expect(paymentRels).toContain("table:public.payment#customer_id->table:public.customer#customer_id");
+
+    // Ordinary (non-partition) FKs still render.
+    expect(rels.map((r) => `${r.from}->${r.to}`)).toContain(
+      "table:public.rental#customer_id->table:public.customer#customer_id",
+    );
   });
 
   it("with no include filter, keeps public and excludes system schemas", async () => {
