@@ -62,8 +62,8 @@
     }
   },
   "devDependencies": {
-    "@types/pg": "^8.20.3",
-    "pg": "^8.21.0",
+    "@types/pg": "^8.23.1",
+    "pg": "^8.23.0",
     "typescript": "^6.0.3",
     "vitest": "^4.1.10"
   }
