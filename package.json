@@ -38,7 +38,7 @@
     "@types/node": "^22.20.1",
     "askdb": "workspace:*",
     "audit-ci": "^7.1.0",
-    "npm-check-updates": "^22.2.9",
+    "npm-check-updates": "^23.1.0",
     "react-doctor": "^0.9.3",
     "turbo": "^2.10.8",
     "typescript": "^6.0.3",
