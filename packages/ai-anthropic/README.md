@@ -1,6 +1,6 @@
 # `@askdb/ai-anthropic` (deprecated)
 
-> **Deprecated.** The Anthropic provider is now built into [`@askdb/ai`](../ai). This package
+> **Deprecated.** The Anthropic provider is now built into [`@askdb/ai`](https://github.com/Ygilany/AskDB/tree/main/packages/ai). This package
 > only re-exports `anthropicProvider` from `@askdb/ai` so existing imports keep working. It will
 > be removed before AskDB 1.0.
 

@@ -1,6 +1,6 @@
 # `@askdb/ai-openai` (deprecated)
 
-> **Deprecated.** The OpenAI provider is now built into [`@askdb/ai`](../ai). This package only
+> **Deprecated.** The OpenAI provider is now built into [`@askdb/ai`](https://github.com/Ygilany/AskDB/tree/main/packages/ai). This package only
 > re-exports `openaiProvider` from `@askdb/ai` so existing imports keep working. It will be
 > removed before AskDB 1.0.
 

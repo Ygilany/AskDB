@@ -1,7 +1,7 @@
 # `@askdb/ai-azure` (deprecated)
 
 > **Deprecated.** The Azure OpenAI / Microsoft Foundry provider is now built into
-> [`@askdb/ai`](../ai). This package only re-exports `azureProvider` from `@askdb/ai` so existing
+> [`@askdb/ai`](https://github.com/Ygilany/AskDB/tree/main/packages/ai). This package only re-exports `azureProvider` from `@askdb/ai` so existing
 > imports keep working. It will be removed before AskDB 1.0.
 
 ## Migrate

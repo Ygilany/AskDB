@@ -1,6 +1,6 @@
 # `@askdb/connectors` (deprecated)
 
-> **Deprecated.** The connector provider registry now lives in [`@askdb/introspect`](../introspect/README.md), and the connection-string redaction helpers live in `@askdb/introspect/kit`. See [ADR 0008](../../docs/adrs/0008-engine-packages-and-connector-registry.md). This package only re-exports them so existing imports keep working. The engine packages and the first-party apps no longer depend on it.
+> **Deprecated.** The connector provider registry now lives in [`@askdb/introspect`](https://github.com/Ygilany/AskDB/blob/main/packages/introspect/README.md), and the connection-string redaction helpers live in `@askdb/introspect/kit`. See [ADR 0008](https://github.com/Ygilany/AskDB/blob/main/docs/adrs/0008-engine-packages-and-connector-registry.md). This package only re-exports them so existing imports keep working. The engine packages and the first-party apps no longer depend on it.
 
 ## Migrating
 

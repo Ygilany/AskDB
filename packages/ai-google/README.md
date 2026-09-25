@@ -1,6 +1,6 @@
 # `@askdb/ai-google` (deprecated)
 
-> **Deprecated.** The Google Gemini provider is now built into [`@askdb/ai`](../ai). This package
+> **Deprecated.** The Google Gemini provider is now built into [`@askdb/ai`](https://github.com/Ygilany/AskDB/tree/main/packages/ai). This package
 > only re-exports `googleProvider` from `@askdb/ai` so existing imports keep working. It will be
 > removed before AskDB 1.0.
 

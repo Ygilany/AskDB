@@ -79,7 +79,7 @@ const { connector, input } = registry.createConnector({ provider: "mysql", ...re
 await introspect(input, { outDir: "./askdb", schemaId: "shop" }, { connector });
 ```
 
-`ConnectorProviderAdapter` is `{ provider, createConnector(config), getTemplates?(), resolveConnection?(request), redactConnectionString?(input) }`. `registry.redactConnectionString(provider, input)` falls back to generic redaction for adapters without a redactor and for unknown providers. See [Connector authoring](../../docs/integration/connectors.md#registering-with-askdb-hosts) for writing an adapter.
+`ConnectorProviderAdapter` is `{ provider, createConnector(config), getTemplates?(), resolveConnection?(request), redactConnectionString?(input) }`. `registry.redactConnectionString(provider, input)` falls back to generic redaction for adapters without a redactor and for unknown providers. See [Connector authoring](https://github.com/Ygilany/AskDB/blob/main/docs/integration/connectors.md#registering-with-askdb-hosts) for writing an adapter.
 
 ### Engine kit (`@askdb/introspect/kit`)
 

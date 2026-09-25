@@ -53,7 +53,7 @@ const result = await introspect(
 
 The connector input shape (`PostgresIntrospectionInput`) lives in this package — `@askdb/introspect` is engine-agnostic and does not know about live vs. from-export modes.
 
-Declarative partitions are folded into their partitioned parent ([ADR 0003](../../docs/adrs/0003-postgres-partition-handling.md)): partition leaves are not listed as tables, and per-partition clones of foreign keys (on either side of the constraint) are not rendered as relationships.
+Declarative partitions are folded into their partitioned parent ([ADR 0003](https://github.com/Ygilany/AskDB/blob/main/docs/adrs/0003-postgres-partition-handling.md)): partition leaves are not listed as tables, and per-partition clones of foreign keys (on either side of the constraint) are not rendered as relationships.
 
 ### Redacting connection strings
 
