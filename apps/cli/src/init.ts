@@ -64,14 +64,29 @@ const AI_DEFAULTS: Record<
   foundry: { keyEnv: "AZURE_OPENAI_API_KEY", modelEnv: "AZURE_OPENAI_DEPLOYMENT", modelField: "model" },
 };
 
+/**
+ * Azure / Foundry also need the resource name (or a full endpoint URL) — the
+ * adapter refuses to start without one. Scaffold the resource-name form; users
+ * can swap it for `baseUrl` if they use a custom endpoint.
+ */
+const AZURE_RESOURCE_NAME_ENV = "AZURE_RESOURCE_NAME";
+
+function azureResourceEnv(answers: InitAnswers): string | undefined {
+  return answers.aiProvider === "azure" || answers.aiProvider === "foundry"
+    ? AZURE_RESOURCE_NAME_ENV
+    : undefined;
+}
+
 function renderAiSection(answers: InitAnswers): string {
   const { aiProvider, aiKeyEnv, aiModelEnv } = answers;
   const modelLine = aiModelEnv ? `\n        ${AI_DEFAULTS[aiProvider].modelField}: env("${aiModelEnv}"),` : "";
+  const resourceEnv = azureResourceEnv(answers);
+  const resourceLine = resourceEnv ? `\n        resourceName: env("${resourceEnv}"),` : "";
   return `  ai: {
     provider: "${aiProvider}",
     providerConfig: {
       ${aiProvider}: {
-        apiKey: env("${aiKeyEnv}"),${modelLine}
+        apiKey: env("${aiKeyEnv}"),${modelLine}${resourceLine}
       },
     },
   },`;
@@ -809,6 +824,11 @@ function buildEnvExample(answers: InitAnswers): string {
 
   lines.push(`${answers.aiKeyEnv}=`);
   if (answers.aiModelEnv) lines.push(`${answers.aiModelEnv}=`);
+  const resourceEnv = azureResourceEnv(answers);
+  if (resourceEnv) {
+    lines.push(`# Subdomain of your endpoint, e.g. "my-resource" for https://my-resource.openai.azure.com`);
+    lines.push(`${resourceEnv}=`);
+  }
   lines.push("");
   return lines.join("\n");
 }
@@ -818,6 +838,8 @@ function collectEnvVarNames(answers: InitAnswers): string[] {
   const names = new Set<string>();
   names.add(answers.aiKeyEnv);
   if (answers.aiModelEnv) names.add(answers.aiModelEnv);
+  const resourceEnv = azureResourceEnv(answers);
+  if (resourceEnv) names.add(resourceEnv);
   const isEnvName = (v: string) => !v.startsWith("./") && !v.startsWith("/");
   if (answers.database !== "sqlite" && answers.database !== "prisma" && answers.connectionEnv) {
     names.add(answers.connectionEnv);

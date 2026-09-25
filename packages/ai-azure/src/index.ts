@@ -20,11 +20,26 @@ const ENV_SPEC: ProviderEnvSpec = {
   defaultEmbeddingModel: "text-embedding-3-small",
 };
 
-/** o-series (o1, o3, o3-mini, o4-mini, …) and gpt-5.x deployments — the model families that accept `reasoningEffort`. */
-const REASONING_MODEL_PATTERN = /^o\d(-|$)|^gpt-5/i;
+/** o-series: `o1`, `o3`, `o3-mini`, `o4-mini`, … */
+const O_SERIES_PATTERN = /^o\d+(?:-|$)/i;
+/** `gpt-<major>[.<minor>][-<variant>]`, e.g. `gpt-5`, `gpt-5.1`, `gpt-5-mini`, `gpt-5-chat-latest`. */
+const GPT_VERSION_PATTERN = /^gpt-(\d+)(?:\.\d+)?(?:-(.+))?$/i;
 
+/**
+ * Whether a model id belongs to a family that accepts `reasoningEffort`:
+ * the o-series and gpt-5+ — except the `-chat` variants
+ * (e.g. `gpt-5-chat-latest`), which are non-reasoning chat models. Mirrors
+ * `getOpenAILanguageModelCapabilities` in `@ai-sdk/openai`, but conservatively
+ * excludes every `-chat` variant (including minor versions such as
+ * `gpt-5.1-chat-latest`) so AskDB never sends a reasoning knob a chat model
+ * might reject.
+ */
 function isReasoningModel(model: string): boolean {
-  return REASONING_MODEL_PATTERN.test(model);
+  if (O_SERIES_PATTERN.test(model)) return true;
+  const gpt = GPT_VERSION_PATTERN.exec(model);
+  if (!gpt) return false;
+  if (Number(gpt[1]) < 5) return false;
+  return !(gpt[2]?.toLowerCase().startsWith("chat") ?? false);
 }
 
 export const azureProvider: AiProviderAdapter = {
@@ -47,8 +62,12 @@ export const azureProvider: AiProviderAdapter = {
 
     if (!config.baseURL && !resourceName) {
       throw new Error(
-        "Azure provider requires ASKDB_AI_AZURE_RESOURCE_NAME (e.g. 'my-foundry') " +
-          "or ASKDB_AI_BASE_URL pointing at the full endpoint.",
+        "Azure provider requires a resource name or endpoint URL. In askdb.config.*, set " +
+          "ai.providerConfig.azure.resourceName (e.g. 'my-foundry' for " +
+          "https://my-foundry.openai.azure.com) or ai.providerConfig.azure.baseUrl " +
+          "(use providerConfig.foundry.* when ai.provider is \"foundry\"). " +
+          "Without a config file, set the AZURE_RESOURCE_NAME or AZURE_OPENAI_BASE_URL " +
+          "environment variable instead.",
       );
     }
 
@@ -82,7 +101,10 @@ export const azureProvider: AiProviderAdapter = {
       ...(apiVersion ? { apiVersion } : {}),
     });
     const model = azure.embedding(config.model);
-    return withEmbeddingProviderOptions(model, "azure", options);
+    // @ai-sdk/azure builds embeddings with OpenAIEmbeddingModel, which reads
+    // only `providerOptions.openai` — an "azure" key would silently drop
+    // `dimensions`/`user` (see the real-SDK contract test in contract.test.ts).
+    return withEmbeddingProviderOptions(model, "openai", options);
   },
   resolveProviderOptions(config, { reasoningEffort }) {
     if (!reasoningEffort) return undefined;
@@ -94,10 +116,19 @@ export const azureProvider: AiProviderAdapter = {
     // backing model explicitly; we fall back to the deployment name otherwise.
     const modelFamily = readStringOption(config.providerOptions, "modelFamily") ?? config.model;
     if (!isReasoningModel(modelFamily)) return undefined;
-    // @ai-sdk/azure delegates chat completions to OpenAIChatLanguageModel,
-    // which only reads `providerOptions.openai` (not `.azure`) — using the
-    // "azure" namespace here would be silently ignored by the AI SDK.
-    return { openai: { reasoningEffort } };
+    // `azure(model)` builds an OpenAIResponsesLanguageModel, which reads
+    // `providerOptions.azure` and falls back to `providerOptions.openai` only
+    // when no "azure" entry exists; `azure.chat(model)` (OpenAIChatLanguageModel)
+    // reads only `providerOptions.openai`. Emitting the "openai" namespace
+    // therefore works for both model kinds.
+    //
+    // `forceReasoning` is required because the AI SDK decides whether to send
+    // `reasoning` from the model id it was constructed with — the Azure
+    // deployment name — and silently drops `reasoningEffort` (with only a
+    // warning) when that name doesn't look like a reasoning model. We have
+    // already established reasoning support above (via modelFamily or the
+    // deployment name), so tell the SDK explicitly.
+    return { openai: { reasoningEffort, forceReasoning: true } };
   },
 };
 

@@ -1,5 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import {
+  aiKeyMissingMessage,
+  aiProviderMissingMessage,
   createAiRegistry,
   resolveBaseConfig,
   type AiProviderAdapter,
@@ -358,6 +360,48 @@ describe("createAiRegistry", () => {
         model: "gemini-2.0-flash",
       }),
     ).rejects.toThrow(/Install @askdb\/ai-google/);
+  });
+
+  describe("aiProviderMissingMessage", () => {
+    it.each([
+      ["openai", "@askdb/ai-openai", "openaiProvider"],
+      ["azure", "@askdb/ai-azure", "azureProvider"],
+      ["foundry", "@askdb/ai-azure", "azureProvider"],
+      ["azure-openai", "@askdb/ai-azure", "azureProvider"],
+      ["Foundry", "@askdb/ai-azure", "azureProvider"],
+      ["anthropic", "@askdb/ai-anthropic", "anthropicProvider"],
+      ["google", "@askdb/ai-google", "googleProvider"],
+    ])("points %s at the package that owns it (%s)", (provider, pkg, exportName) => {
+      const message = aiProviderMissingMessage(provider);
+      expect(message).toContain(`AI provider "${provider}" is not registered.`);
+      expect(message).toContain(`Install ${pkg} `);
+      expect(message).toContain(exportName);
+    });
+
+    it("does not invent a package name for custom providers", () => {
+      const message = aiProviderMissingMessage("mistral");
+      expect(message).toContain('AI provider "mistral" is not registered.');
+      expect(message).not.toContain("@askdb/ai-mistral");
+      expect(message).toMatch(/no first-party AskDB adapter/);
+      expect(message).toMatch(/createAiRegistry\(\)/);
+    });
+
+    it("maps an alias to its owning package when surfaced through the registry", async () => {
+      const registry = createAiRegistry([]);
+      await expect(
+        registry.createLanguageModel({ provider: "foundry", apiKey: "k", model: "m" }),
+      ).rejects.toThrow(/Install @askdb\/ai-azure/);
+    });
+  });
+
+  describe("aiKeyMissingMessage", () => {
+    it("names every first-party provider, including Anthropic", () => {
+      const message = aiKeyMissingMessage("ctx");
+      expect(message).toContain("ctx: no AI API key configured.");
+      for (const provider of ["openai", "azure", "anthropic", "google"]) {
+        expect(message).toContain(`ai.providerConfig.${provider}.apiKey`);
+      }
+    });
   });
 
   it("lists registered providers when ASKDB_AI_PROVIDER is unknown", () => {
