@@ -1,16 +1,17 @@
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { describe, expect, it } from "vitest";
+import { expect, it } from "vitest";
 import { loadChunkerSourcesFromDir } from "../chunker/index.js";
 import { buildSchemaIndex } from "../indexer/index.js";
 import type { Embedder } from "../types.js";
 import { createPgvectorStore } from "./pgvector.js";
+import { integrationSuite } from "../../../../scripts/test-utils/integration.mjs";
 
 // Runs only with a live pgvector database: `pnpm pgvector:up && pnpm pgvector:test`
 // (sets ASKDB_PGVECTOR_URL).
 const connectionString = process.env.ASKDB_PGVECTOR_URL ?? process.env.PGVECTOR_URL;
-const run = connectionString ? describe : describe.skip;
+const run = integrationSuite({ env: [["ASKDB_PGVECTOR_URL", "PGVECTOR_URL"]] });
 
 const FIXTURE_DIR = resolve(__dirname, "../../../../fixtures/schemas/orders-users.schema");
 

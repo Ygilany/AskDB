@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, expect, it } from "vitest";
 import { unlink } from "fs/promises";
 import { randomBytes } from "crypto";
 import { tmpdir } from "os";
@@ -6,24 +6,25 @@ import { join } from "path";
 import type DatabaseCtor from "better-sqlite3";
 import { createSqliteCatalogQueryRunner } from "./sqlite.js";
 import { createSqliteConnector } from "../connector/index.js";
+import { integrationSuite } from "../../../../scripts/test-utils/integration.mjs";
 
 type Bs3Namespace = { default: typeof DatabaseCtor };
 
-async function isBetterSqlite3Available(): Promise<boolean> {
+/** Returns why better-sqlite3 cannot be used here, or `null` when it loads and opens a DB. */
+async function betterSqlite3Unavailable(): Promise<string | null> {
   try {
     const mod = (await import("better-sqlite3")) as unknown as Bs3Namespace;
     const db = new mod.default(":memory:");
     db.close();
-    return true;
-  } catch {
-    return false;
+    return null;
+  } catch (err) {
+    return `better-sqlite3 could not be loaded (${err instanceof Error ? err.message : String(err)})`;
   }
 }
 
-const sqliteAvailable = await isBetterSqlite3Available();
-const sqliteSuite = sqliteAvailable ? describe : describe.skip;
-
-// SQLite is file-based — no server or env gate required when the optional peer is installed.
+// SQLite is file-based — no server or env gate, only the optional native peer. Under
+// ASKDB_REQUIRE_INTEGRATION=1 a driver that fails to load fails the suite instead of skipping.
+const sqliteSuite = integrationSuite({ unavailable: await betterSqlite3Unavailable() });
 sqliteSuite("SQLite integration (better-sqlite3 driver)", () => {
   let dbPath: string;
 
