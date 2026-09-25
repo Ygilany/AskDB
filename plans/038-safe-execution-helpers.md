@@ -9,7 +9,7 @@
 - **Priority**: P2
 - **Effort**: M
 - **Risk**: LOW
-- **Depends on**: none
+- **Depends on**: #194 (for the Studio migration step added in the post-review delta; the core helper itself has no dependency)
 - **Category**: dx
 - **Planned at**: commit `cc1193a`, 2026-08-05
 - **Breaking**: No — new exports plus documentation.
@@ -266,3 +266,22 @@ Stop and report back (do not improvise) if:
 - **The deliberate follow-up**: move the row-limit strategy onto `DialectSpec` as an optional field, so third-party dialects can supply their own instead of falling into the `LIMIT` default. Deferred here because it changes a public type implemented by every integration package.
 - `apps/studio/src/execute-registry.ts` executes SQL today with its own capping logic. Migrating it onto these helpers would give the new code real usage and remove a duplicate — a good follow-up.
 - **Reviewer focus**: the off-by-one. `fetchLimit` must be `limit + 1` and `applyRowLimit` must return at most `limit` rows. Confirm the SQL Server branch was actually tested rather than assumed.
+
+## Post-review delta (2026-09-25)
+
+Checked against `review/integration-check @ c7404d4` (main plus review PRs #180–#205). The plan is still TODO and still worth doing. Studio shipped its own row cap in the meantime, and that work showed the SQL Server design here is wrong. Apply these changes before executing.
+
+**What landed (#194, Studio execute hardening):**
+- `apps/studio/src/execute-registry.ts` now has its own exported `wrapWithRowLimit(sql: string, fetchLimit: number)`, which returns ``SELECT * FROM (\n${sql}\n) AS askdb_q LIMIT ${fetchLimit}``, plus a private `ROW_LIMIT_ALIAS = "askdb_q"`. It's used for Postgres and MySQL. Runners fetch `maxRows + 1` and report `truncated` / `rowLimit` (`buildOkResponse`). #194's PR notes say it was written as a stand-in for this plan's core helper.
+- **SQL Server doesn't use a derived-table wrap.** `buildSqlServerBatch(sql, fetchLimit)` uses `SET ROWCOUNT n` inside an always-rolled-back transaction, because wrapping in a derived table rejects unnamed columns such as `COUNT(*)` (every derived-table column needs a name). Step 1's `SELECT TOP (n) * FROM (<sql>) AS askdb_result` has the same flaw. **Don't ship it as-is.** Either (a) return a strategy result for `sqlserver` (e.g. `{ kind: "rowcount", prefix: "SET ROWCOUNT n;", suffix: "SET ROWCOUNT 0;" }` or equivalent) instead of a single wrapped string, or (b) document that the SQL Server wrap requires named columns and make the helper refuse unnamed ones. You can't detect unnamed columns reliably without a parser, so prefer (a). Record the choice in the PR.
+- SQLite in Studio doesn't wrap at all. It stops `.iterate()` at the cap.
+- **MySQL duplicate column names.** The `SELECT * FROM (…) AS alias` wrap fails on MySQL when the inner query returns two columns with the same name (e.g. `SELECT a.id, b.id …`), because MySQL rejects duplicate column names in a derived table. Studio documents this (`apps/docs-site/src/content/docs/studio.mdx`, "Row cap" bullet: "a MySQL query that returns two columns with the same name needs aliases"). The core helper's JSDoc and docs must say the same for `mysql`/`mariadb`, and a test should pin the documented shape rather than pretend it works.
+- Alias: Studio uses `askdb_q`, and so does the public docs snippet in `apps/docs-site/src/content/docs/guides/run-safely-in-prod.mdx` ("Row limits": ``const cappedSql = `SELECT * FROM (${sql}) AS askdb_q LIMIT 1000`;``). Use `askdb_q` for `ROW_LIMIT_SUBQUERY_ALIAS` instead of `askdb_result` so the shipped shapes don't churn.
+
+**Docs moved (#184):** `apps/docs-site/src/content/docs/concepts/safety-boundaries.mdx` now has a "Run generated SQL safely" section, and `guides/run-safely-in-prod.mdx` has "Database role", "Connection limits" and "Row limits" sections. Step 4's recipe should update those public pages: replace the hand-written wrap in "Row limits" with the helper. Keep `docs/integration/executing-generated-sql.md` only if it adds something beyond them. `docs/specs/studio.md` has a verified per-engine table (read-only transaction, timeout, and row-cap mechanism for Postgres/MySQL/SQL Server/SQLite). Reuse it for Step 4's per-engine notes instead of re-deriving syntax.
+
+**Stale references:** the `remediationNote` wording (Step 4 item 5) now reads "Heuristic, lexer-based defense-in-depth checks only—not a SQL parser and not a security boundary. Execute generated SQL under a read-only database role, and review it before trusted execution." (`packages/core/src/sql/validate.ts`, `buildSelectGuardrailExplanation`). `DialectSpec` has since gained `blockedFunctions`, `listBinding`, and `backslashEscapes`, but the "don't add `rowLimitStrategy`" out-of-scope note still applies.
+
+**New step after Step 3 (the Studio migration is now in scope):** switch `apps/studio/src/execute-registry.ts` to the core helper. Delete Studio's `wrapWithRowLimit` and `ROW_LIMIT_ALIAS`, call the core export for Postgres and MySQL, and route SQL Server through the core strategy if (a) was chosen (otherwise keep `buildSqlServerBatch`). Update the two exact-string assertions in `apps/studio/src/execute-registry.unified.test.ts` (`"SELECT * FROM (\nSELECT 1\n) AS askdb_q LIMIT 501"`) only if the shape changes, and keep them asserting the exact SQL. Add `apps/studio/src/execute-registry.ts`, its unified test, and a `@askdb/studio` patch changeset to the in-scope list. Apply the test-audit authoring gate (`.agents/skills/test-audit/SKILL.md`) to all new tests: `packages/core/src/sql/row-limit.test.ts` is the primary owner of the wrap shapes, and Studio's tests only keep asserting that the runners use it.
+
+**Readiness check (replaces the drift check):** `gh pr view 194 --repo Ygilany/AskDB --json state -q .state` → `MERGED`; `git grep -n 'export function wrapWithRowLimit' -- apps/studio/src/execute-registry.ts` → 1 match; `git grep -n 'wrapWithRowLimit' -- packages/core/src` → no matches (still not done).

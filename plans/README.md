@@ -84,12 +84,31 @@ Execute in the order below unless dependencies say otherwise. Each executor: rea
 | 044 | Typecheck the Studio web UI, and fix the crash it has been hiding | P1 | M | — | DONE (landed in `26ca2bf`; verified 2026-09-25) |
 | 045 | Describe the tenant guardrail honestly, and stop it matching inside string literals | P1 | S | — | IN REVIEW — step 2 in #197; steps 1/3 (docs honesty) in #184 |
 | 046 | Fix tenant parameter binding — dialect markers, fail-closed placeholders, operator corruption | P1 | M | — | IN REVIEW — steps 1–4 in #197; step 5 (default flip) not started |
-| 047 | Make `subtree` tenant access actually include descendants | P1 | L | 046 (soft) | TODO |
+| 047 | Make `subtree` tenant access actually include descendants | P1 | L | 046 (soft) | SUPERSEDED by 054 (047's design would compare descendant IDs against the parent root's column — see 047's post-review delta) |
 | 048 | Remove `tenantFilters` — a documented, UI-backed field that nothing reads | P2 | S | 044 (soft) | IN REVIEW — #197 |
 | 049 | Document database-level tenant enforcement (Postgres RLS) as the primary path | P1 | M | 045 (soft) | TODO |
 | 050 | Design spike: deterministic tenant predicate rewriting | P2 | M | 045 (soft) | TODO |
 | 051 | Let Studio actually author a tenant policy — add and edit, not just delete | P1 | L | 044 (hard) | TODO |
 | 052 | Make a tenant policy comprehensible in Studio — coverage, hierarchy tree, scope preview | P2 | M | 044 (hard), 051 (soft) | TODO |
+| 053 | Default `tenantSqlMode` to `"sql-params"` (046 Step 5) | P2 | S | #186, #197 | TODO |
+| 054 | Implement `subtree` tenant scope — per-root descendant expansion via a host resolver (supersedes 047) | P2 | L | #186, #197; 053 (soft) | TODO |
+| 055 | Rebuild the tenant guardrail scanner on the shared dialect-aware lexer; one source for placeholder names (fixes two MySQL fail-opens + uppercase-placeholder pass) | P1 | M | #190, #197, #201 fix 4 | TODO |
+| 056 | Serve tenant-scoped schemas over the HTTP API with a server-side `resolveTenantScope` hook | P2 | M | #186, #187, #197; 053 (soft) | TODO |
+| 057 | Send reasoning effort through AI SDK 7's native `reasoning` option (keep per-model support checks; ai@6 fallback) | P2 | M | #188, #196, #198 | TODO |
+| 058 | Provider-neutral RAG embedder config (Studio currently sends the OpenAI RAG key to the selected provider) | P1 | M | #193, #198; 040 (related) | TODO |
+| 059 | Move `askdb-rag` into `askdb rag …`; drop `@askdb/rag` → `@askdb/config` | P2 | M | #193, #198; 058 (soft) | TODO |
+| 060 | Remove the deprecated `@askdb/ai-*` and `@askdb/connectors` shims before 1.0 | P2 | M | #198, #199, a published release shipping the deprecations | TODO |
+| 061 | Session-scoped catalog runner — one connection, snapshot where supported, statement timeout, leak-free cleanup | P2 | M | #189, #195, #199; 063 (soft, first) | TODO |
+| 062 | Renderer fidelity — composite FKs, enum labels, DB comments into `schema.json` and the prompt | P2 | L | #189, #195; sequential with 061/064 | TODO |
+| 063 | Deeper live integration fixtures for MySQL, MariaDB, SQL Server, SQLite (shared golden) | P2 | M | #180, #191, #189 | TODO |
+| 064 | Lift partition-leaf FKs to the partitioned parent when all declaring partitions agree | P3 | M | #189; sequential with 061/062 | TODO |
+| 065 | Studio execute: `studio.execute.sensitiveGuardrailMode: "strict"` blocks sensitive reads | P2 | S | #194, #190 | TODO |
+| 066 | Decompose Studio `server.ts` and CLI `init.ts`; one shared escaped config renderer (`@askdb/config/scaffold`) — six PRs | P3 | L | #182, #185, #194, #198; 065, 043 (soft) | TODO |
+| 067 | Release pipeline and versioning for going public (1.0 RC line; OIDC publishing; fixed version group) — has **[HUMAN]** steps | P1 | M | #180, #183, #191, #179 decision; 060 before GA | TODO |
+| 068 | Maintainer ops checklist — leaked key, stale branches/tags, rulesets, required checks, private vulnerability reporting (**human-only**) | P1 | S | #191 (Part B) | TODO |
+| 069 | Delete internal dead code; deprecate unused public exports | P3 | S | #185, #192, #194, #197, #198 | TODO |
+| 070 | Test-audit follow-ups — config flatten table, barrel test via smoke consumer, repo-level requireability test, targeted Studio tenancy tests | P3 | S (+M) | #180, #203, #204 | TODO |
+| 071 | Verify the #201 composition fixes landed on `main`, then retire draft #201 | P1 | S | all of #180–#205 merged | TODO |
 
 Status values: TODO | IN PROGRESS | DONE | BLOCKED (with one-line reason) | REJECTED (with one-line rationale)
 
@@ -118,6 +137,8 @@ Status values: TODO | IN PROGRESS | DONE | BLOCKED (with one-line reason) | REJE
 - 020–021 came out of the same 2026-06-14 session, follow-ups to 019's "config is the single surface" principle:
   - **020 is the only code plan in this cycle.** The HTTP server already loads `host.schemaPath` from config, so 019 is honest without it; 020 adds the `--schema-path`/`--port`/`--host` CLI flags so "config file **or** CLI arg" is a complete surface (precedence flag > config > default, env kept as undocumented fallback). Independent of 019; soft-pairs for a later HTTP-docs touch.
   - **021 is docs-only — Studio port/host are already configurable** (config `studio.listen.*`, flags `--port`/`--host`, wrapper forwards args; verified at `4b80530`). The plan just surfaces that on `studio.mdx` + `cli.mdx` without naming `ASKDB_STUDIO_PORT`. Soft-overlaps 019 on `cli.mdx` (different lines).
+
+- 053–071 (2026-09-25, planned at `review/integration-check @ c7404d4`, i.e. `main` + review PRs #180–#205) capture the follow-ups from the architecture/release review and the test audit. Each starts with a **Readiness check** (prerequisite PRs merged + the problem still present) instead of a commit drift check. Run **071 first** once the review PRs have merged. P1s: 055 (tenant guardrail fail-opens), 058 (RAG key sent to the wrong provider), 067/068 (release + ops), 071. Plans 038, 039, 042, 043, 047, 049, 050 got appended `## Post-review delta (2026-09-25)` sections; 047 is superseded by 054, 042 is rescoped to docs only. Conflict note: 061, 062 and 064 all edit `packages/postgres/src/connector/describe.ts` — run them sequentially (063 → 061 → 062 → 064).
 
 - 022 (2026-06-15, `improve plan`) is a docs-only follow-up to plan 015, which created the quickstart's engine Tabs but left the Prisma tab CLI-first while the Live database tab is config-first. Verified at `c649d2c` that flag-free Prisma introspection already works — `--engine` falls back to `introspection.provider` (`apps/cli/src/introspect.ts:113`) and `--prisma-schema` to `introspection.providerConfig.prisma.schemaPath` (`:153-159`). The plan flips the tab to config-first; no code change. Touches only `quickstart.mdx` (the Prisma `<TabItem>` body); no overlap with any open plan.
 

@@ -375,3 +375,14 @@ Stop and report back (do not improvise) if:
 - **`includeDescendants: true` is now redundant.** It was always a literal type with one possible value. Once the resolver path is established, consider removing it from `TenantAccessSubtree` in a follow-up — deferred here because it is a separate breaking type change and this plan is already behavioral.
 - **If Step 5 lands, every new dialect added to `DialectId` needs a recursive-CTE decision.** Make the unsupported-dialect throw the default so a new dialect fails loudly rather than silently under-scoping.
 - **Reviewer focus**: confirm the seeds-union happens inside `ask()` and is not merely documented as the resolver's responsibility, and confirm the cycle guard is a visited set rather than a depth limit.
+
+## Post-review delta (2026-09-25)
+
+**Superseded by plan 054 (`plans/054-implement-subtree-tenant-scope.md`). Don't execute this plan.** Its analysis still holds: `subtree` was silently under-scoped, the hierarchy data is collected but not read at query time, the fix must be fail-closed, and a host resolver fits AskDB's "never executes SQL" boundary. 054 reuses all of that.
+
+What changed since this plan was written (checked against `review/integration-check @ c7404d4`):
+
+- **#197 rejects `subtree` everywhere.** `validateTenantScope` (`packages/core/src/sql/tenant-scope-validate.ts`), `buildIdsByRoot` / `resolveTenantSql` (`tenant-placeholders.ts`) and `buildTenantPromptBlock` (`tenant-prompt.ts`) all throw `subtreeUnsupportedError()`, which is `TenantScopeError` with the new reason `UNSUPPORTED_ACCESS_KIND`. Studio's Subtree button was removed. The silent under-scope this plan set out to kill is already gone, so what's left is a missing feature, not a leak.
+- **#197 also landed plan 046 Steps 1–4.** Substitution is dialect-correct, token-aware and fail-closed (`UNRESOLVED_TENANT_PLACEHOLDER`, `UNSUPPORTED_TENANT_PREDICATE`). This plan's line references to `tenant-placeholders.ts` (`buildIdsByRoot` at 91-110, `ask.ts:333-345`) are stale.
+- **Design correction.** Steps 2–3 here had the resolver return one flat list and rewrote the scope to `{ kind: "ids", tenantRoot, ids: expanded }`. Under the tenant-policy contract, descendants are rows of **other root tables** (agencies → sub_agencies → clients), each with its own ID space and placeholder. Folding child IDs into the parent root's placeholder would compare, e.g., client IDs against `orders.agency_id`, which leaks across tenants on any ID collision. Plan 054 expands a subtree into per-root ID sets (a `multi_root` scope), gives the host resolver a traversal plan (levels in dependency order, with their foreign keys), and expands **before** prompt generation so the model sees every level's placeholder.
+- **Step 5 (built-in recursive CTE)** stays deferred in 054 and should be revisited with plan 050's rewriting spike.

@@ -9,7 +9,7 @@
 - **Priority**: P2
 - **Effort**: M
 - **Risk**: LOW
-- **Depends on**: plan 041 — soft. If 041 has landed, use the `createAiRegistry(["openai"])` string form in all new examples. If it has not, use the current `createAiRegistry([openaiProvider])` form. Check first (see Step 0) and be consistent.
+- **Depends on**: #198 (implements plan 041; must be merged) — hard for the rescoped version in "Post-review delta (2026-09-25)" below. Plan 057 (native `reasoning`) is soft: if it has landed, describe reasoning via `resolveReasoning`, not `resolveProviderOptions`.
 - **Category**: docs
 - **Planned at**: commit `cc1193a`, 2026-08-05
 - **Breaking**: No — documentation, one README rewrite, and one small additive export.
@@ -272,3 +272,38 @@ Stop and report back (do not improvise) if:
 - **The positioning is the deliverable.** If a future change makes `@askdb/ai` AskDB-specific again — for example by returning a wrapped model instead of a plain AI SDK `LanguageModel` — this plan's premise breaks. Returning the plain SDK type is load-bearing; keep it.
 - Any new provider added after this lands needs its reasoning-effort mapping mentioned in the `packages/ai/README.md` portable-effort section, or that section quietly becomes wrong.
 - **Reviewer focus**: confirm every snippet was compile-checked, and that the README's original direct BYO-model example still exists unchanged — the point is to add a path, not replace one.
+
+## Post-review delta (2026-09-25)
+
+The 2026-09-25 architecture review (`docs/reviews/2026-09-25-architecture-and-release-review.md`, section "One package per LLM provider — no") **disagreed with this plan's premise**. The plan is rescoped to a small docs change. Everything above is kept as history. **Execute this section, not the Steps above.** Facts were verified on `review/integration-check @ c7404d4` (main plus review PRs #180–#205).
+
+### What changed since this plan was written
+
+- **#198 implements plan 041.** The four adapters are built into `@askdb/ai`, which now has one `BUILTIN_AI_PROVIDERS` table plus a `gateway` provider (Vercel AI Gateway, bundled with `ai`). `createAiRegistry()` with no argument registers every built-in, and the string form `createAiRegistry(["openai"])` exists. The `@askdb/ai-*` packages are deprecated shims (removal: plan 060). **Step 0 is obsolete**: always use the string form or no argument.
+- **#196** makes `ai` a peer of `@askdb/core` at `^6 || ^7`. `@askdb/ai` and `@askdb/client` still peer on `ai@^7.0.51` only (`packages/ai/package.json`). `reference/packages.mdx` already says the config-driven path "currently requires AI SDK 7".
+
+### Why the premise is rejected
+
+1. **`@askdb/ai` is key-centric.** `AiConfig` is `{ provider, apiKey, model, baseURL?, providerOptions? }`, and `resolveBaseConfig` (`packages/ai/src/provider.ts`) returns `undefined` ("AI disabled") when no API key resolves. It can't express AWS IAM, Google ADC, Azure Entra ID, or keyless local models. Pitching it as the app-wide model factory would push hosts with a real AI stack onto a weaker auth model.
+2. **"Portable reasoning is unavailable from `ai`" is false as of `ai@7`.** `LanguageModelCallOptions.reasoning` (`'provider-default' | 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh'`) is mapped natively by each provider. Migrating AskDB onto it is plan 057. Delete the "Portable reasoning effort" section from Step 1.
+3. **Step 5's `createLanguageModelForApp` duplicates `AiRegistry.createLanguageModelFromEnv(env, { modelDefault })`**, which already returns `LanguageModel | undefined`. **Drop Step 5**, and with it `packages/ai/src/app-model.test.ts` and the `minor` changeset.
+
+### Rescoped work (docs only)
+
+1. **Fix the inaccurate sentence** in `apps/docs-site/src/content/docs/guides/bring-your-own-model.mdx`, under "Which should I use?". The current text on c7404d4 is: "`@askdb/ai`'s registry only resolves models for AskDB's own config shape, so if you need the model object for other LLM calls too, building it with the AI SDK directly is usually less code, not more." It is wrong: the registry returns a plain `LanguageModel` that can be reused anywhere. The real limit is auth. Replace it with something like: "`@askdb/ai` resolves an API key, model id, and optional base URL from `askdb.config.*`. It returns a plain `LanguageModel`, but it can't express IAM roles, Google ADC, Entra ID, or keyless local models. If your app already owns provider configuration, keep it there: pass `ask()` a model you build, an AI Gateway model id string, or a model from your own `createProviderRegistry()`."
+2. **Document the two BYO options the review recommends** in the same guide's direct-AI-SDK section:
+   - **AI Gateway model id strings.** `ask({ model: "openai/gpt-4o-mini", … })` works because `ai`'s `LanguageModel` type includes `GlobalProviderModelId`. Verified in both `ai@7.0.51` (`type LanguageModel = GlobalProviderModelId | LanguageModelV4 | LanguageModelV3 | LanguageModelV2`) and `ai@6.0.291`. `ai`'s default global provider (the gateway) resolves the id and reads `AI_GATEWAY_API_KEY` itself. Check that behavior against the `ai` docs before writing it.
+   - **`createProviderRegistry` from `ai`** (exported in `ai@7`) for hosts with several AI features. Build one registry, then pass `registry.languageModel("openai:gpt-4o-mini")` to `ask()` and to the host's own `generateText`/`generateObject` calls.
+
+   Put these as an extra `<TabItem>` in an existing Tabs group, reusing an existing `syncKey` (`ai-provider` is used on this page). Don't invent a new key. Compile-check each snippet in a scratch file under `examples/ask-question/`, then delete it.
+3. **`packages/ai/README.md`**: keep the current narrow positioning ("Use this package when you want `askdb.config.*` / env to pick the provider and model"). Add one "When not to use this package" paragraph with the same auth limits and the two alternatives. Don't add a "use it for every other model call" section. The bundler note at the "Custom providers" section already exists; keep it.
+4. **`docs/integration/installable-package.md` entry 7**: it now reads "optional config/env-to-model registry with built-in OpenAI, Azure/Foundry, Google Gemini, Anthropic, and Vercel AI Gateway providers …". It is accurate, so leave it. Don't apply the old Step 3 rewrite.
+5. **Leave the root `README.md` "Use as a library" section** (now `pnpm add @askdb/core ai` + `@ai-sdk/openai`, lines ~46–72) and **`docs/architecture.md`'s `@askdb/ai` bullet** (the "`@askdb/ai` owns provider dispatch …" paragraph) alone, except for one sentence in the architecture bullet noting the key-centric auth limit.
+
+**Changeset**: `@askdb/ai` patch, because its `README.md` ships in the tarball. No code changes.
+
+**Verify**: `pnpm docs:build` → exit 0. Run `grep -n "only resolves models for AskDB's own config shape" apps/docs-site/src/content/docs/guides/bring-your-own-model.mdx` → no match. Run `git grep -n "createLanguageModelForApp"` → no match.
+
+**Updated done criteria (replace the list above)**: the three docs surfaces are updated, every new snippet is compile-checked, no new `syncKey` value is introduced, there are no package source changes, a patch changeset exists for `@askdb/ai`, and `pnpm docs:build` passes.
+
+**STOP** if the AI Gateway string-id behavior (item 2) can't be confirmed from the `ai` package docs or source at the installed version. Document only `createProviderRegistry` in that case.

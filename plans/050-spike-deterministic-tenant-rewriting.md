@@ -9,7 +9,7 @@
 - **Priority**: P2
 - **Effort**: M (research and writing; no implementation)
 - **Risk**: LOW — produces a document. The *decisions* it recommends are high-risk, which is exactly why they get written down and reviewed before anyone writes code.
-- **Depends on**: plan 045 (soft) — 045 establishes the honest baseline description of what the guardrail does and does not do. This spike proposes what would replace it.
+- **Depends on**: #190 and #197 merged; plan 055 (soft, the guardrail on the shared lexer). See the post-review delta at the end. Originally: plan 045 (soft) — 045 establishes the honest baseline description of what the guardrail does and does not do. This spike proposes what would replace it.
 - **Category**: direction
 - **Planned at**: commit `595182d`, 2026-08-05
 - **Breaking**: No — no code changes.
@@ -250,3 +250,30 @@ Stop and report back (do not improvise) if:
 - **The `sqlStructurallyEqual` helper in `bind.ts:716` may be relevant** to a rewriting design — comparing SQL modulo literal values is exactly the primitive needed to assert a rewrite preserved query shape. Worth evaluating in Step 2.
 - **Keep the spec honest about the lexer/parser distinction.** #168 shipped a lexer. Repeated informally, "we have a SQL parser now" would justify decisions the code does not support. The spec is the right place to nail that down.
 - **Reviewer focus**: whether the refusal path is specified concretely enough to implement, and whether the "do not build this" section is a real argument or a formality.
+
+## Post-review delta (2026-09-25)
+
+Checked against `review/integration-check @ c7404d4` (main plus review PRs #180–#205). The spike is still TODO and still needed. Its baseline has moved, so design against the state below, not the "Current state" section above.
+
+**The tenant check is still a presence test.** After #197 and #190 it only looks at code regions (#197 blanks string literals and comments), but it still only checks that identifiers are present. Two tests in `packages/core/src/sql/tenant-guardrail.test.ts` (`describe("validateTenantGuardrails — matches only in code regions")`) pin this on purpose, as tripwires for this spike:
+- `"known limitation: a selected (not filtered) tenant column still passes"`: `SELECT agency_id FROM orders` → no warnings.
+- `"known limitation: an OR-widened predicate still passes"`: `SELECT * FROM orders WHERE agency_id IN ('42') OR 1=1` → no warnings.
+
+Any design this spike recommends must flip these to failing (or refused) cases. Say which increment does it.
+
+**Stale "Current state" references:**
+- `normalizeSql` is no longer `sql.toLowerCase()`. #197 made it a local, length-preserving scanner that blanks `'…'`, `$tag$…$tag$`, `--` and `/* */`. Plan 055 replaces it with the shared lexer and threads the dialect. Design against 055's state (land 055 first, or note which state you assumed).
+- The lexer is no longer `bind.ts`'s `tokenizeSqlSpans`. #190 added `packages/core/src/sql/lexer.ts` (`lexSql(sql, profile)`, `lexerProfileFor(dialect)`, `GENERIC_LEXER`, `ENGINE_LEXER_PROFILES`). It has per-dialect rules for strings, quoted identifiers, `#`/`--`/nested block comments and MySQL executable comments, and it flags `unterminated` tokens. `tokenizeSqlSpans` is now a thin code/quoted/comment view over it. **This lexer is the natural base for any clause scanner or rewriter.** It's still a lexer and not a parser. Keep the spec strict about that distinction, as the maintenance notes already ask.
+- `stripSqlStringLiterals` no longer exists. `source: "question" | "tenant"` is still on the parameter manifest (`bind.ts`, `PreparedQuery.parameters[]`), and `sqlStructurallyEqual` still exists in `bind.ts`.
+
+**New in-repo prior art for Steps 2–3:** #176 and #190 gave the sensitive guardrail (`packages/core/src/sql/sensitive-guardrail.ts`, `scanTokens`) a token-level resolver. It finds `FROM`/`JOIN` targets and their aliases, including inside CTEs and derived tables, over `lexSql` output. When scope can't be proven it fails conservatively and reports why (`unresolvedScope`). That's close to the "minimal FROM/JOIN clause scanner" option in Step 3 and the alias/CTE/subquery cases in Step 2. Evaluate extracting and sharing it. Count which of Step 2's eight cases it already resolves, and use its `unresolvedScope` behavior as a model for the refusal path.
+
+**The input is narrower now.** `validateSelectSql` (#190) accepts only a single `SELECT`/`WITH` statement with no comments, no unterminated tokens, and no denylisted keywords or functions (per-dialect `blockedFunctions`, incl. `set_config`). Use this when quantifying Step 3's "restrict the subset" option.
+
+**Related plans have changed:**
+- 045 is done via #184 (docs honesty) and #197 (code regions).
+- 046 Steps 1–4 are done via #197. Tenant substitution is token-aware, dialect-marker-correct and fail-closed. Any rewriter must emit markers consistent with #197's executable-pairs contract (`sql` + `tenantParams`; `unboundSql` + `params`, where `?` dialects interleave in source order; see `bindTenantIntoUnboundSql` in `packages/core/src/ask.ts`). Plan 053 makes `sql-params` the default.
+- 047 is superseded by plan 054. `subtree` expands to per-root ID sets, i.e. a `multi_root` scope, so the rewriter's input is always `ids` / `multi_root` / `global`.
+- 049's framing landed via #184. RLS is documented as the primary boundary, so this spike is specifically about deployments that can't use it.
+
+**Readiness check (replaces the drift check):** `gh pr view 190 --repo Ygilany/AskDB --json state -q .state` and `gh pr view 197 …` → `MERGED`; `git grep -n 'known limitation: an OR-widened predicate still passes' -- packages/core/src/sql/tenant-guardrail.test.ts` → 1 match (problem still present).

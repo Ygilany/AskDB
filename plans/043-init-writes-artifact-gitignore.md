@@ -9,7 +9,7 @@
 - **Priority**: P3
 - **Effort**: S
 - **Risk**: LOW
-- **Depends on**: none
+- **Depends on**: PR #194 merged (Studio's `ensureSchemaDirGitignore` — the logic to share). Soft: plan 066a (creates `@askdb/config/scaffold`, the recommended home for the shared helper — see Post-review delta).
 - **Category**: security
 - **Planned at**: commit `cc1193a`, 2026-08-05
 - **Breaking**: No — one additional file written by `askdb init`, and only when it does not already exist.
@@ -199,3 +199,52 @@ Stop and report back (do not improvise) if:
 - If the default `outputDir` ever changes, this code follows `answers.schemaOut` automatically — but the skip-if-same-as-config-dir guard in Step 1 should be re-checked.
 - This is a defense-in-depth measure, not a guarantee. It does nothing for a repository whose secrets are already committed. Anyone reviewing this change should keep secret scanning in CI on the roadmap as the actual control.
 - **Reviewer focus**: confirm the existing-file check happens before the write, and that a write failure cannot change init's exit code.
+
+## Post-review delta (2026-09-25)
+
+Re-checked against `review/integration-check @ c7404d4` (origin/main + review PRs #180–#205). The body above was written at `cc1193a`; its line numbers and one excerpt are stale.
+
+### What landed since this plan was written
+
+- **PR #194 (Studio execute hardening) made Studio write a schema-dir `.gitignore`** — but only when Playground history is first saved. `apps/studio/src/server.ts`, `appendPlaygroundHistory()` calls `ensureSchemaDirGitignore(schemaDir)` before writing `playground-history.json`. Its behavior:
+  - No `.gitignore` yet → writes `# Written by AskDB Studio.` + a comment + `playground-history.json`, and **this plan's `.env` rules** (`.env`, `.env.*`, `!.env.example`, with a "Credentials: …" comment) — **unless** `isProjectRootDir(schemaDir)` (the dir contains `package.json` or an `askdb.config.*` file), where ignoring `.env` is "the project's call, not Studio's".
+  - Existing `.gitignore` without the entry → **appends** `# AskDB Studio Playground history (local only)` + `playground-history.json`; never rewrites, never adds `.env` rules to a user's file.
+  - Any failure is swallowed (non-fatal), like this plan's Step 1.
+  - Tests: `apps/studio/src/server.test.ts` asserts the new file contains `playground-history.json`, `.env`, `.env.*`, `!.env.example`, and `it("appends the history entry to an existing .gitignore without rewriting it")`.
+  - The docs site already describes it (`apps/docs-site/src/content/docs/studio.mdx`, security model: "…adds that file to the directory's `.gitignore`… If Studio creates the `.gitignore`, it also ignores `.env` files there.").
+- **PR #185** changed `renderIntrospectionSection` to emit `outputDir: ${tsString(schemaOut)}` (JSON-escaped), not the `"${schemaOut}"` quoted in "Current state" above. Irrelevant to this plan's logic, but the excerpt no longer matches — **don't treat that as a drift STOP**.
+- `finishInit` moved (≈`apps/cli/src/init.ts:1014` at c7404d4) but its `.env.example` block — the pattern Step 1 copies — is unchanged. `mkdirSync` is still not imported in `init.ts`.
+
+### What is still left
+
+1. **`askdb init` still writes no `.gitignore`** (`git grep -n "gitignore" -- apps/cli/src` → none). A user who runs `init` → `introspect` and never saves Playground history has no protection — the original problem stands.
+2. **`askdb introspect --out <dir>` still writes none** (`apps/cli/src/introspect.ts`: `const outDir = opts.out!; return introspect(input, { outDir, schemaId, existingArtifactDir: … }, { connector });`). Previously a Maintenance-notes follow-up; now it should be in scope because a shared helper makes it one call.
+3. **Studio's guided setup** (`writeSetupConfig` + `handleSetupIntrospect`) also creates the artifact dir without a `.gitignore` until history is saved. Optional here; one extra call.
+
+### Revised approach: one shared helper, used by all three writers
+
+Do **not** copy Studio's logic into `init.ts`. Extract it into one helper with two modes:
+
+```ts
+/** Create `<dir>/.gitignore` with AskDB's artifact rules if missing; optionally append required entries to an existing one. Never throws. */
+export function ensureArtifactGitignore(dir: string, options?: { appendIfMissing?: string[] }): void
+```
+- Missing file → write the union content: header, `playground-history.json`, and the `.env` / `.env.*` / `!.env.example` block unless `isProjectRootDir(dir)` (reuse Studio's check; it supersedes this plan's "skip if `schemaOut` resolves to the config directory" rule and covers it).
+- Existing file → if `appendIfMissing` given, append only those missing entries (Studio passes `["playground-history.json"]`); otherwise leave it untouched (init/introspect never modify a user's file — this plan's "never overwrite" rule).
+- Creates `dir` with `mkdirSync(dir, { recursive: true })` only when called from `init` (the artifact dir doesn't exist yet); introspect's render already creates it (`packages/introspect/src/render/render.ts` `mkdirSync(options.outDir, { recursive: true })`) — call the helper **after** `introspect()` returns.
+
+**Where it lives:** if plan 066a has landed, in `@askdb/config/scaffold` (`packages/config/src/scaffold/gitignore.ts`) — both the CLI and Studio's server already depend on `@askdb/config`, and both apps are compiled with plain `tsc` (no bundler), so shared runtime code must live in a published package they both depend on. If 066a has not landed, either land it first or put the helper in `@askdb/config/scaffold` as the first file of that subpath (following 066a Step 1–2 for the `exports` entry), and switch Studio's `ensureSchemaDirGitignore` to call it. Do **not** put it in `@askdb/introspect`: the library's `introspect()` is used programmatically, and writing a `.gitignore` there would be a behavior change for library users.
+
+### Updated steps (replace Steps 1–2 above)
+
+1. Add `ensureArtifactGitignore` (+ `isProjectRootDir`) to the shared module; move Studio's tests of the create/append behavior to the helper's own test file only if they can be expressed without the HTTP server — otherwise keep the two Studio HTTP tests as the owner and add helper tests just for the init/introspect-specific mode (existing file left untouched when `appendIfMissing` is absent). Apply the test-audit authoring gate (`.agents/skills/test-audit/SKILL.md`).
+2. Studio: `ensureSchemaDirGitignore(schemaDir)` → `ensureArtifactGitignore(schemaDir, { appendIfMissing: ["playground-history.json"] })`. Studio tests must pass unchanged.
+3. `askdb init` (`finishInit`, after the `.env.example` block): `ensureArtifactGitignore(resolve(dirname(configTarget), answers.schemaOut))` with `mkdirSync` first; echo `  - <path>/.gitignore` only if it was created (have the helper return `"created" | "appended" | "unchanged"` so callers can print).
+4. `askdb introspect --out`: after `introspect()` resolves, `ensureArtifactGitignore(outDir)` (not for `--print` / `--diff`).
+5. Tests in `apps/cli/src/init.test.ts` (`describe("runInitCli --yes --skip-install")`, next to `it("writes config with default Postgres branch")`): this plan's original cases 1, 3 and 5 at the CLI boundary (created with `.env` rules; existing file byte-identical; write failure doesn't change exit code). Case 2 (dir created) folds into case 1; case 4 (project-root guard) is owned by the helper test. One introspect test that `--out` into a temp dir produces the file.
+6. Docs: `apps/docs-site/src/content/docs/reference/cli.mdx` (init and introspect sections: one sentence each) and keep `studio.mdx`'s sentence accurate. Changeset: `askdb` patch, `@askdb/studio` patch, plus whatever the helper's package needs (`@askdb/config` minor if it adds the `./scaffold` export here).
+
+### Updated STOP conditions
+
+- `ensureSchemaDirGitignore` no longer exists in Studio or behaves differently from the description above — re-read it and report before extracting.
+- Moving the helper changes any Studio `.gitignore` test outcome.

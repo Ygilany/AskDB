@@ -9,7 +9,7 @@
 - **Priority**: P2
 - **Effort**: S
 - **Risk**: LOW
-- **Depends on**: none
+- **Depends on**: PRs #189 (`--diff` correctness via `renderSchemaV2Body`) and #199 (registry-based engine dispatch) merged — see "Post-review delta (2026-09-25)" at the end of this file
 - **Category**: dx
 - **Planned at**: commit `cc1193a`, 2026-08-05
 - **Breaking**: No — a new flag. `--diff`'s current behavior is preserved exactly.
@@ -250,3 +250,50 @@ Stop and report back (do not improvise) if:
 - The determinism of `toV2SchemaJson` output is what makes `--check` meaningful. If a future change introduces any non-deterministic field (a timestamp, a generation id, an unsorted map), `--check` will report drift on every run and teams will disable it. Guard that with a test that introspects the same export twice and asserts identical output.
 - **Natural follow-up**: `--check` currently answers yes/no. A summary of *what* changed (tables added/removed/altered) would make the CI failure actionable. Deliberately deferred — it needs a schema-diff algorithm, which is much larger than this plan.
 - **Reviewer focus**: confirm case 2 exists and passes — that `--diff` without `--check` still exits 0 — since that is the entire backwards-compatibility guarantee.
+
+## Post-review delta (2026-09-25)
+
+Verified against `review/integration-check @ c7404d4` (origin/main plus review PRs #180–#205). **Read this section before the body.** Where the two disagree, this section wins. The goal, the exit-code contract (`0` up to date, `1` error, `2` drift), and the rule that `--check` is a modifier on `--diff` (not a fourth output mode) are unchanged.
+
+### Why the plan was stale, and what changed
+
+- **#189 fixed `--diff` itself.** Before it, `--diff` compared against `toV2SchemaJson(result.schema, schemaId)`, which dropped the `provider` field that `--out` writes and skipped the ID-anchored merge. So `--diff` reported `changed: true` against almost any artifact, and a `--check` built on it would have failed every CI run. That is the STOP condition "`changed: true` for a freshly generated, unmodified artifact", and it was real. #189 added `renderSchemaV2Body(schema, { schemaId, provider?, existingArtifactDir? })` in `packages/introspect/src/render/render.ts`. It is the one pure function that `--out`, `--print` and `--diff` all use. `--diff` now merges with the existing artifact (so human-set `sensitive` flags are not drift) and compares ignoring key order. **This plan now depends on #189**, and that STOP condition is resolved. Keep it as a regression guard only.
+- **#199 moved engine dispatch into the connector registry.** `apps/cli/src/introspect.ts` has no per-engine `if (engine === …)` block any more. `runIntrospectCommand` calls `resolveEngine(registry, …)`, then `registry.resolveConnection(engine, { explicit, runtime: rt, surface: "cli" })`, then `registry.createConnector(connectorConfig)`. `runIntrospectCli(argv, { connectorRegistry })` accepts an injected registry (default `defaultConnectorRegistry`). This does not change what `--check` must do, but it gives Step 5 a much better test harness (below).
+
+### Updated "Current state" references (c7404d4, `apps/cli/src/introspect.ts`)
+
+- `CliOptions` declares `diff?: string;` (around line 64). Add `check?: boolean;` next to it.
+- The parser `case "--diff": opts.diff = readValue(argv, ++i, arg); break;` is in `parseOptions` (around lines 306–308).
+- Output-mode handling is now at lines 138–148, and there is a **new first block**: `if (!opts.print && !opts.diff && !opts.out) { opts.out = rt.introspection.outputDir; }`. So a bare `askdb introspect --check` (no `--diff`) would otherwise be defaulted into `--out` mode, or would fail with the generic "Provide one output mode" error when no `outputDir` is configured. Put the `--check requires --diff <existing-dir>.` validation **before** that defaulting block, so the user always gets the specific message.
+- `runWithOutput(runConfig, opts, schemaId)` (lines 209–257) still has exactly three return sites: `--print` (217–225), `--diff` (227–245), `--out` fall-through (247–256). There is one call site, `const result = await runWithOutput(runConfig, opts, schemaId);` (line 183). Step 2's "three return sites + one call site" budget still holds.
+- The `--diff` branch now reads:
+  ```ts
+  const rendered = renderSchemaV2Body(result.schema, {
+    schemaId,
+    provider: result.provider,
+    existingArtifactDir: hasExisting && isV2SchemaFile(existingPath) ? opts.diff : undefined,
+  });
+  const existing = hasExisting ? readFileSync(existingPath, "utf8") : "";
+  const changed = rendered.body !== existing && !sameJson(existing, rendered.json);
+  process.stdout.write(`${JSON.stringify({ changed, schemaJsonPath: existingPath }, null, 2)}\n`);
+  ```
+  Thread **this** `changed` value out. Do not recompute it. The stdout JSON shape `{ changed, schemaJsonPath }` must stay byte-identical. A missing `schema.json` yields `changed: true`, which `--check` should report as drift (exit 2) with a message that says the artifact does not exist.
+- The unconditional `return 0` after the `completed` log is now around line 199. The warnings loop is at 184–189, and `result.warnings` now includes the render warnings (`new_column`, `orphan_id`) because both `--print` and `--diff` append `rendered.warnings`.
+- `printHelp()` is at lines 396–434. The `--diff` usage lines are `askdb introspect --engine prisma --prisma-schema <…> --diff <existing-dir>` and `askdb introspect --from-export <bundle-dir> --diff <existing-dir>`.
+
+### Step changes
+
+- **Steps 1–4**: still valid, with the line references above and the ordering fix for the `--check requires --diff` validation in Step 1.
+- **Step 5 (tests)**: prefer in-process tests through the injected registry over spawning the CLI with `--from-export`. `apps/cli/src/introspect-registry.test.ts` already shows the pattern: `setAskDbRuntimeForTests(…)`, a fake `ConnectorProviderAdapter` (`acmeAdapter()`) whose connector returns a fixed `IntrospectionResult`, and `runIntrospectCli([...], { connectorRegistry: createConnectorRegistry([adapter]) })`. Write the "matching" artifact with a first `--out <tmp>` run, then run `--diff <tmp> [--check]`. Make it "stale" by changing the fake result, for example adding a column. The five cases are unchanged. Add a **sixth**: after `--out`, flip a `sensitive` flag in the written `schema.json`, then `--diff --check` → exit 0 (the #189 merge must keep sensitivity edits from counting as drift). For one end-to-end spawn case, reuse the Prisma pattern in `apps/cli/src/introspect-shim.test.ts` ("--diff reports unchanged against an artifact written by --out from the same source"), which needs no database. Apply the test-audit authoring gate (`.agents/skills/test-audit/SKILL.md`). The owner boundary is `runIntrospectCli`'s exit code, and the regressions caught are drift not failing CI, and `--diff` alone starting to fail CI.
+- **Step 6 (docs)**: besides `docs/integration/installable-package.md` (its `## Introspection` section, around line 112, is the place), AGENTS.md requires the docs site to stay accurate. Add `--check` to the flag table in `apps/docs-site/src/content/docs/reference/cli.mdx` (`### askdb introspect`; the table currently ends with ``| `--diff <existing>` | Diff against an existing schema artifact. |``), and put the exit codes and a one-line CI example under it. Also update the `--diff` bullet in `docs/specs/introspection.md` "In scope".
+- **Changeset**: still `askdb` minor. `askdb` is in a `linked` group with `@askdb/core` and `@askdb/http-api` (`.changeset/config.json`). Run `pnpm changeset status` and confirm nothing else moves unexpectedly.
+
+### Commands (current repo)
+
+Use `pnpm --filter askdb exec vitest run --config ../../vitest.config.ts src/introspect-registry.test.ts` for the fast loop. Before the PR, run `pnpm build && pnpm lint && pnpm test && pnpm docs:build && pnpm smoke:install && pnpm preflight`. The CLI tests execute `dist/cli.js`, which Turbo builds before `test` (#180 removed the in-test builds), so run `pnpm build` first when using vitest directly.
+
+### Interactions with newer plans
+
+- **Plan 062** (renderer fidelity) adds `comment`/`enum`/`relationships[].constraint` to `schema.json`. The first `--diff --check` after upgrading will report drift for databases with comments, enums or composite FKs. That is correct behavior (the artifact really is out of date), but mention it in the CLI docs' CI example.
+- **Plan 064** adds `partition_fk_partial` / `partition_fk_conflict` warnings. In check mode they are printed to stderr like other warnings (Step 3) and do **not** affect the exit code. Only `changed` does.
+- Branch name per the current convention: `plan/039-introspect-check-exit-code`.

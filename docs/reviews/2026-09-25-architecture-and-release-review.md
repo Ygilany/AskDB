@@ -139,6 +139,8 @@ before it (notably #189's partition-FK and #193's pgvector tests) should be re-r
 
 ## Deferred (recommended next)
 
+Each item below is now an executable plan — see plans 053–071 and the post-review deltas on 038, 039, 042, 043, 047, 049, 050 in [`plans/README.md`](../../plans/README.md). Start with plan 071 once the review PRs have merged.
+
 - Plan 046 step 5: default `tenantSqlMode` to `sql-params`.
 - Plan 047: real `subtree` descendant expansion (currently rejected, fail-closed).
 - Plan 049: document database-level tenant enforcement (RLS) as the primary path — note that
