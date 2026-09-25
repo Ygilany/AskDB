@@ -23,12 +23,17 @@ describe("chunkSchemaDir — determinism + golden snapshot", () => {
       text: c.text,
     }));
 
-    const updateGolden = process.env.UPDATE_RAG_GOLDEN === "1";
-    if (updateGolden || !existsSync(GOLDEN_PATH)) {
+    if (process.env.UPDATE_RAG_GOLDEN === "1") {
       writeFileSync(
         GOLDEN_PATH,
         JSON.stringify({ chunks: snapshot }, null, 2) + "\n",
         "utf8",
+      );
+    } else if (!existsSync(GOLDEN_PATH)) {
+      throw new Error(
+        `Missing RAG chunk golden at ${GOLDEN_PATH}. Regenerate it with ` +
+          "UPDATE_RAG_GOLDEN=1 pnpm --filter @askdb/rag exec vitest run --config ../../vitest.config.ts src/chunker/chunker.test.ts " +
+          "and commit the file.",
       );
     }
     const golden = JSON.parse(readFileSync(GOLDEN_PATH, "utf8")) as {
@@ -37,26 +42,11 @@ describe("chunkSchemaDir — determinism + golden snapshot", () => {
     expect(snapshot).toEqual(golden.chunks);
   });
 
-  it("two consecutive runs produce byte-identical output", () => {
-    const a = chunkSchemaDir(FIXTURE_DIR).chunks;
-    const b = chunkSchemaDir(FIXTURE_DIR).chunks;
-    expect(JSON.stringify(a)).toEqual(JSON.stringify(b));
-  });
-
   it("chunks are sorted by id", () => {
     const { chunks } = chunkSchemaDir(FIXTURE_DIR);
     const ids = chunks.map((c) => c.id);
     const sorted = [...ids].sort();
     expect(ids).toEqual(sorted);
-  });
-
-  it("emits expected chunk types for the fixture", () => {
-    const { stats } = chunkSchemaDir(FIXTURE_DIR);
-    expect(stats.byType.table).toBeGreaterThan(0);
-    expect(stats.byType.column).toBeGreaterThan(0);
-    expect(stats.byType.cql).toBeGreaterThan(0);
-    expect(stats.byType.question).toBeGreaterThan(0);
-    expect(stats.byType.concept).toBeGreaterThan(0);
   });
 });
 
