@@ -76,6 +76,15 @@ Environment variables:
 | `ASKDB_RAG_EMBEDDER_MODEL` | Embedding model override for Studio RAG. |
 | `ASKDB_RAG_EMBEDDER_DIMENSIONS` | Optional embedding dimension override. |
 
+Security: every `/api/*` request must carry the per-launch session token that
+Studio injects into the page it serves (`x-askdb-studio-token` header), come
+with an allowed `Host` (`localhost`, `127.0.0.1`, `[::1]`, or the bound host),
+and, for writes, be same-origin JSON. Programmatic callers of
+`createStudioServer()` can read the token from `server.sessionToken`. Binding
+to a non-loopback host exposes query execution and schema writes to anyone on
+that network who can load the page. Only do that on a trusted network. See
+[Studio → Security model](https://askdb.tools/studio/#security-model).
+
 Studio uses the active `rag.store` branch from `askdb.config.*`. For `pgvector`,
 make sure the configured table/extension already exist and `ASKDB_PGVECTOR_URL`
 resolves correctly.

@@ -157,22 +157,44 @@ export async function resyncSchema(): Promise<IntrospectRunResponse> {
   });
 }
 
+/**
+ * Per-launch session token the server injects into `index.html` as
+ * `<meta name="askdb-studio-token">`. Every `/api/*` call must echo it in the
+ * `x-askdb-studio-token` header — see `src/request-guard.ts`.
+ */
+function sessionToken(): string {
+  return document.querySelector<HTMLMetaElement>('meta[name="askdb-studio-token"]')?.content ?? "";
+}
+
+/** The only place the web app talks to the Studio server — keep every API call routed through here. */
 async function api<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(path, {
     ...init,
     headers: {
       "content-type": "application/json",
       ...init?.headers,
+      "x-askdb-studio-token": sessionToken(),
     },
   });
-  const body = (await response.json()) as T | StudioErrorDto;
   if (!response.ok) {
-    const message = isStudioError(body)
-      ? body.error.message
-      : `Request failed with status ${response.status}`;
-    throw new Error(message);
+    throw new Error(await errorMessage(response));
   }
-  return body as T;
+  return (await response.json()) as T;
+}
+
+/**
+ * Prefer the server's `{ error: { message } }` payload (e.g. the request
+ * guard's "reload Studio" hint); fall back to the status when the error body
+ * isn't that shape — a proxy's HTML page, an empty 502, a crash.
+ */
+async function errorMessage(response: Response): Promise<string> {
+  const fallback = `Request failed with status ${response.status}`;
+  try {
+    const parsed: unknown = JSON.parse(await response.text());
+    return isStudioError(parsed) ? parsed.error.message : fallback;
+  } catch {
+    return fallback;
+  }
 }
 
 function isStudioError(value: unknown): value is StudioErrorDto {
