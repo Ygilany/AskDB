@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
+import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { extname, relative, join, resolve, dirname, sep } from "node:path";
 import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
@@ -87,10 +87,26 @@ import { EXECUTE_DRIVER_REGISTRY, isDriverInstalled } from "./execute-registry.j
 import type { StudioExecuteProvider } from "./execute-registry.js";
 import { resolveStudioIntrospectionPlan, runStudioIntrospection } from "./introspection.js";
 import { probeSetupState, writeSetupConfig, SetupError, type SetupConfigInput } from "./setup.js";
+import {
+  checkApiRequest,
+  checkHost,
+  createStudioSessionToken,
+  injectSessionToken,
+} from "./request-guard.js";
 
 const ai = createAiRegistry([openaiProvider, azureProvider, googleProvider, anthropicProvider]);
 
-const CLIENT_DIR = fileURLToPath(new URL("./client/", import.meta.url));
+const DEFAULT_CLIENT_DIR = fileURLToPath(new URL("./client/", import.meta.url));
+let clientDirForTests: string | undefined;
+
+/** @internal Tests only — serve client assets from another directory. */
+export function setStudioClientDirForTests(dir: string | undefined): void {
+  clientDirForTests = dir;
+}
+
+function clientDir(): string {
+  return clientDirForTests ?? DEFAULT_CLIENT_DIR;
+}
 
 export type StudioOptions = {
   schema: string;
@@ -105,7 +121,14 @@ export type StudioOptions = {
   setupReason?: SetupReason | null;
 };
 
-export type StudioServer = ReturnType<typeof createServer>;
+export type StudioServer = Server & {
+  /**
+   * Per-launch session token. Every `/api/*` request must send it as the
+   * `x-askdb-studio-token` header; the browser app reads it from a `<meta>`
+   * tag injected into the served `index.html`.
+   */
+  readonly sessionToken: string;
+};
 
 type StudioState = {
   schemaDir: string;
@@ -182,11 +205,25 @@ export function createStudioServer(options: StudioOptions): StudioServer {
     setupReason,
   };
 
-  return createServer(async (req, res) => {
+  const sessionToken = createStudioSessionToken();
+
+  const server = createServer(async (req, res) => {
     try {
+      // Host allowlist on every request (static assets included) — defeats DNS rebinding.
+      const hostFailure = checkHost(req, options.host);
+      if (hostFailure) {
+        return writeJson(res, hostFailure.status, { error: { message: hostFailure.message } });
+      }
       const url = new URL(req.url ?? "/", `http://${req.headers.host ?? "localhost"}`);
+      // Origin, session token, and content-type checks on every API call.
+      if (url.pathname.startsWith("/api/")) {
+        const apiFailure = checkApiRequest(req, sessionToken);
+        if (apiFailure) {
+          return writeJson(res, apiFailure.status, { error: { message: apiFailure.message } });
+        }
+      }
       if (req.method === "GET" && url.pathname === "/") {
-        return serveClientFile(res, "index.html");
+        return serveIndexHtml(res, sessionToken);
       }
       if (req.method === "GET" && url.pathname.startsWith("/assets/")) {
         return serveClientFile(res, decodeURIComponent(url.pathname.slice(1)));
@@ -310,7 +347,7 @@ export function createStudioServer(options: StudioOptions): StudioServer {
         return writeJson(res, 200, result);
       }
       if (req.method === "GET" && !url.pathname.startsWith("/api/")) {
-        return serveClientFile(res, "index.html");
+        return serveIndexHtml(res, sessionToken);
       }
       writeJson(res, 404, { error: { message: "Not found" } });
     } catch (error) {
@@ -321,6 +358,7 @@ export function createStudioServer(options: StudioOptions): StudioServer {
       });
     }
   });
+  return Object.assign(server, { sessionToken });
 }
 
 export function serializeWorkspace(workspace: Workspace): StudioWorkspaceDto {
@@ -1832,25 +1870,49 @@ function writeText(res: ServerResponse, status: number, contentType: string, bod
   res.end(body);
 }
 
-function serveClientFile(res: ServerResponse, relativePath: string): void {
-  const filePath = resolve(CLIENT_DIR, relativePath);
-  const fileRelativeToClientDir = relative(CLIENT_DIR, filePath);
+function resolveClientFile(res: ServerResponse, relativePath: string): string | null {
+  const root = clientDir();
+  const filePath = resolve(root, relativePath);
+  const fileRelativeToClientDir = relative(root, filePath);
   if (fileRelativeToClientDir.startsWith("..") || fileRelativeToClientDir === "") {
-    return writeJson(res, 404, { error: { message: "Not found" } });
+    writeJson(res, 404, { error: { message: "Not found" } });
+    return null;
   }
   if (!existsSync(filePath)) {
-    return writeJson(res, 500, {
+    writeJson(res, 500, {
       error: {
         message:
           "Studio client assets are missing. Run `pnpm --filter @askdb/studio build` before starting Studio.",
       },
     });
+    return null;
   }
+  return filePath;
+}
+
+function serveClientFile(res: ServerResponse, relativePath: string): void {
+  const filePath = resolveClientFile(res, relativePath);
+  if (!filePath) return;
   res.writeHead(200, {
     "content-type": contentTypeFor(filePath),
     "cache-control": "no-store",
   });
   res.end(readFileSync(filePath));
+}
+
+/** Serve the SPA shell with this launch's session token injected. */
+function serveIndexHtml(res: ServerResponse, sessionToken: string): void {
+  const filePath = resolveClientFile(res, "index.html");
+  if (!filePath) return;
+  res.writeHead(200, {
+    "content-type": "text/html; charset=utf-8",
+    "cache-control": "no-store",
+    // The page carries the session token and drives SQL execution — never let
+    // another site frame it (clickjacking).
+    "x-frame-options": "DENY",
+    "content-security-policy": "frame-ancestors 'none'",
+  });
+  res.end(injectSessionToken(readFileSync(filePath, "utf8"), sessionToken));
 }
 
 function contentTypeFor(path: string): string {
