@@ -389,6 +389,37 @@ importers:
         specifier: ^6.0.3
         version: 6.0.3
 
+  fixtures/multi-engine:
+    dependencies:
+      better-sqlite3:
+        specifier: ^12.10.0
+        version: 12.11.1
+      mssql:
+        specifier: ^12.5.5
+        version: 12.7.0(supports-color@10.2.2)
+      mysql2:
+        specifier: ^3.22.5
+        version: 3.23.2(@types/node@22.20.1)
+      pg:
+        specifier: ^8.21.0
+        version: 8.22.0
+    devDependencies:
+      '@types/better-sqlite3':
+        specifier: ^7.6.13
+        version: 7.6.13
+      '@types/mssql':
+        specifier: ^12.3.0
+        version: 12.3.0(supports-color@10.2.2)
+      '@types/node':
+        specifier: ^22.20.1
+        version: 22.20.1
+      '@types/pg':
+        specifier: ^8.20.3
+        version: 8.20.3
+      tsx:
+        specifier: ^4.23.5
+        version: 4.23.5
+
   packages/ai:
     devDependencies:
       ai:

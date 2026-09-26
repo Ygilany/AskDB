@@ -1,5 +1,5 @@
--- AskDB consumer lab: SQL Server 2022 DDL. Implements dataset/schema.logical.json.
--- The seeder recreates database askdb_lab, then runs this file inside it,
+-- AskDB multi-engine fixture: SQL Server 2022 DDL. Implements dataset/schema.logical.json.
+-- The seeder recreates database askdb_fixture, then runs this file inside it,
 -- batch by batch (batches are separated by lines containing only GO).
 
 CREATE SCHEMA org;
@@ -10,19 +10,21 @@ CREATE SCHEMA billing;
 GO
 CREATE SCHEMA ref;
 GO
-CREATE SCHEMA lab;
+CREATE SCHEMA fixture;
 GO
 
-CREATE TABLE lab.lab_meta (
+CREATE TABLE fixture.fixture_meta (
   dataset_hash VARCHAR(64)  NOT NULL,
   seeded_at    DATETIME2(0) NOT NULL
 );
 
 CREATE TABLE org.agency (
-  agency_id  INT           NOT NULL PRIMARY KEY,
-  name       NVARCHAR(100) NOT NULL,
-  founded_on DATE          NOT NULL,
-  created_at DATETIME2(0)  NOT NULL
+  agency_id        INT           NOT NULL PRIMARY KEY,
+  parent_agency_id INT           NULL,
+  name             NVARCHAR(100) NOT NULL,
+  founded_on       DATE          NOT NULL,
+  created_at       DATETIME2(0)  NOT NULL,
+  CONSTRAINT fk_agency_parent FOREIGN KEY (parent_agency_id) REFERENCES org.agency (agency_id)
 );
 
 CREATE TABLE org.program (
@@ -89,6 +91,18 @@ CREATE TABLE billing.order_line (
   CONSTRAINT pk_order_line PRIMARY KEY (order_id, line_no),
   CONSTRAINT fk_order_line_order FOREIGN KEY (order_id) REFERENCES billing.[order] (order_id)
 );
+
+CREATE TABLE billing.payment (
+  payment_id INT            NOT NULL,
+  paid_on    DATE           NOT NULL,
+  order_id   INT            NOT NULL,
+  agency_id  INT            NOT NULL,
+  amount     DECIMAL(10, 2) NOT NULL,
+  method     NVARCHAR(20)   NOT NULL,
+  CONSTRAINT pk_payment PRIMARY KEY (payment_id, paid_on),
+  CONSTRAINT fk_payment_order FOREIGN KEY (order_id) REFERENCES billing.[order] (order_id),
+  CONSTRAINT fk_payment_agency FOREIGN KEY (agency_id) REFERENCES org.agency (agency_id)
+);
 GO
 
 CREATE VIEW billing.agency_revenue AS
@@ -99,12 +113,12 @@ FROM billing.[order] o
 GROUP BY o.agency_id;
 GO
 
--- Read-only login used by the host to execute generated SQL and to introspect.
+-- Read-only login used by hosts to execute generated SQL and to introspect.
 -- The login is server-level and survives database recreation; the user is per database.
-IF NOT EXISTS (SELECT 1 FROM sys.server_principals WHERE name = 'lab_reader')
-  CREATE LOGIN lab_reader WITH PASSWORD = 'Lab.Reader.2026', CHECK_POLICY = OFF;
+IF NOT EXISTS (SELECT 1 FROM sys.server_principals WHERE name = 'fixture_reader')
+  CREATE LOGIN fixture_reader WITH PASSWORD = 'Fixture.Reader.2026', CHECK_POLICY = OFF;
 GO
-CREATE USER lab_reader FOR LOGIN lab_reader;
-ALTER ROLE db_datareader ADD MEMBER lab_reader;
-DENY INSERT, UPDATE, DELETE, EXECUTE, ALTER, CREATE TABLE, CREATE VIEW, CREATE PROCEDURE ON DATABASE::askdb_lab TO lab_reader;
+CREATE USER fixture_reader FOR LOGIN fixture_reader;
+ALTER ROLE db_datareader ADD MEMBER fixture_reader;
+DENY INSERT, UPDATE, DELETE, EXECUTE, ALTER, CREATE TABLE, CREATE VIEW, CREATE PROCEDURE ON DATABASE::askdb_fixture TO fixture_reader;
 GO

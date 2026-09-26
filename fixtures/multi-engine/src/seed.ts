@@ -1,9 +1,9 @@
 /**
- * Seeds every lab database from the canonical dataset (dataset/data/*.json) using
- * each dialect's hand-written DDL (dataset/ddl/<dialect>.sql).
+ * Seeds every fixture database from the canonical dataset (dataset/data/*.json)
+ * using each engine's hand-written DDL (dataset/ddl/<dialect>.sql).
  *
- * Idempotent: a dialect whose stored dataset hash matches the current dataset is
- * left alone; otherwise its lab objects are dropped and recreated.
+ * Idempotent: an engine whose stored dataset hash matches the current dataset is
+ * left alone; otherwise its fixture objects are dropped and recreated.
  *
  *   tsx src/seed.ts                 # every dialect
  *   tsx src/seed.ts sqlite mysql    # only these
@@ -12,8 +12,8 @@
 import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { datasetHash, loadLogicalSchema, loadRows, logicalTypeOf, metaTable, physicalName, quoteIdent } from "./dataset.js";
-import { openDb, placeholder, type LabDb } from "./host/db.js";
-import { DATASET_DIR, DIALECTS, SQLITE_FILE, type Dialect } from "./lab-env.js";
+import { openDb, placeholder, type FixtureDb } from "./db.js";
+import { DATASET_DIR, DIALECTS, SQLITE_FILE, type Dialect } from "./env.js";
 
 const SQLITE_HASH_FILE = `${SQLITE_FILE}.hash`;
 
@@ -21,13 +21,13 @@ async function storedHash(dialect: Dialect): Promise<string | undefined> {
   if (dialect === "sqlite") {
     return existsSync(SQLITE_FILE) && existsSync(SQLITE_HASH_FILE) ? readFileSync(SQLITE_HASH_FILE, "utf8").trim() : undefined;
   }
-  let db: LabDb | undefined;
+  let db: FixtureDb | undefined;
   try {
-    // SQL Server: read through master so a missing askdb_lab database is just "no hash".
-    // MySQL/MariaDB: the hash lives in its own `lab` database, so connect without one.
+    // SQL Server: read through master so a missing askdb_fixture database is just "no hash".
+    // MySQL/MariaDB: the hash lives in its own `fixture` database, so connect without one.
     const database = dialect === "sqlserver" ? "master" : dialect === "postgres" ? undefined : null;
     db = await openDb(dialect, "owner", { database });
-    const table = dialect === "sqlserver" ? `askdb_lab.${metaTable(dialect)}` : metaTable(dialect);
+    const table = dialect === "sqlserver" ? `askdb_fixture.${metaTable(dialect)}` : metaTable(dialect);
     const rows = await db.query(`SELECT dataset_hash FROM ${table}`);
     return rows[0]?.dataset_hash as string | undefined;
   } catch {
@@ -48,13 +48,13 @@ async function recreateContainer(dialect: Dialect): Promise<void> {
     const master = await openDb("sqlserver", "owner", { database: "master" });
     try {
       await master.exec(`
-        IF DB_ID('askdb_lab') IS NOT NULL
+        IF DB_ID('askdb_fixture') IS NOT NULL
         BEGIN
-          ALTER DATABASE askdb_lab SET SINGLE_USER WITH ROLLBACK IMMEDIATE;
-          DROP DATABASE askdb_lab;
+          ALTER DATABASE askdb_fixture SET SINGLE_USER WITH ROLLBACK IMMEDIATE;
+          DROP DATABASE askdb_fixture;
         END
         GO
-        CREATE DATABASE askdb_lab;
+        CREATE DATABASE askdb_fixture;
       `);
     } finally {
       await master.close();

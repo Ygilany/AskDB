@@ -1,7 +1,7 @@
 /**
- * Minimal per-dialect database access for the lab host. Uses the engine drivers
- * directly (pg, mysql2, mssql, better-sqlite3) and never AskDB, so the lab can
- * judge any AskDB version without depending on it.
+ * Minimal per-engine database access for seeding and for reading the fixture back.
+ * Uses the engine drivers directly (pg, mysql2, mssql, better-sqlite3) and never
+ * AskDB, so the fixture can judge any AskDB version without depending on it.
  */
 import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
@@ -9,11 +9,11 @@ import pg from "pg";
 import mysql from "mysql2/promise";
 import mssql from "mssql";
 import Database from "better-sqlite3";
-import { connectionUrl, SQLITE_FILE, type Dialect, type Role } from "../lab-env.js";
+import { connectionUrl, SQLITE_FILE, type Dialect, type Role } from "./env.js";
 
 export type Row = Record<string, unknown>;
 
-export interface LabDb {
+export interface FixtureDb {
   readonly dialect: Dialect;
   /** Run one statement and return its rows. Parameter markers: see {@link placeholder}. */
   query(sql: string, params?: readonly unknown[]): Promise<Row[]>;
@@ -34,7 +34,7 @@ export interface OpenOptions {
   database?: string | null;
 }
 
-export async function openDb(dialect: Dialect, role: Role, opts: OpenOptions = {}): Promise<LabDb> {
+export async function openDb(dialect: Dialect, role: Role, opts: OpenOptions = {}): Promise<FixtureDb> {
   switch (dialect) {
     case "postgres":
       return openPostgres(role, opts);
@@ -52,7 +52,7 @@ export async function openDb(dialect: Dialect, role: Role, opts: OpenOptions = {
 // timezone conversion. The dataset's timestamps are naive UTC.
 const PG_RAW_TYPES = new Set([1082 /* date */, 1114 /* timestamp */, 1184 /* timestamptz */]);
 
-async function openPostgres(role: Role, opts: OpenOptions): Promise<LabDb> {
+async function openPostgres(role: Role, opts: OpenOptions): Promise<FixtureDb> {
   const client = new pg.Client({
     connectionString: connectionUrl("postgres", role, opts),
     types: {
@@ -75,7 +75,7 @@ async function openPostgres(role: Role, opts: OpenOptions): Promise<LabDb> {
   };
 }
 
-async function openMysql(dialect: "mysql" | "mariadb", role: Role, opts: OpenOptions): Promise<LabDb> {
+async function openMysql(dialect: "mysql" | "mariadb", role: Role, opts: OpenOptions): Promise<FixtureDb> {
   const conn = await mysql.createConnection({
     uri: connectionUrl(dialect, role, opts),
     dateStrings: true,
@@ -99,7 +99,7 @@ async function openMysql(dialect: "mysql" | "mariadb", role: Role, opts: OpenOpt
   };
 }
 
-async function openSqlServer(role: Role, opts: OpenOptions): Promise<LabDb> {
+async function openSqlServer(role: Role, opts: OpenOptions): Promise<FixtureDb> {
   const pool = new mssql.ConnectionPool(connectionUrl("sqlserver", role, opts));
   await pool.connect();
   return {
@@ -125,7 +125,7 @@ async function openSqlServer(role: Role, opts: OpenOptions): Promise<LabDb> {
   };
 }
 
-async function openSqlite(role: Role): Promise<LabDb> {
+async function openSqlite(role: Role): Promise<FixtureDb> {
   if (role === "owner") mkdirSync(dirname(SQLITE_FILE), { recursive: true });
   const db = new Database(SQLITE_FILE, { readonly: role === "reader", fileMustExist: role === "reader" });
   if (role === "reader") db.pragma("query_only = ON");
