@@ -225,7 +225,7 @@ The callback's contract:
 - **Seeds are always kept.** `ask()` unions `rootIds` into whatever you return, so
   returning only the strict descendants doesn't drop the ancestor's own rows.
 - **It fails closed.** If `resolveTenantDescendants` is missing, returns an empty
-  array, or returns something that isn't an array of strings, `ask()` throws
+  array, or returns something that isn't an array of non-empty strings, `ask()` throws
   `TenantScopeError` with reason `SUBTREE_NOT_RESOLVABLE` before calling the
   model. It never falls back to the seed IDs alone.
 - **Authorization and caching are yours.** AskDB trusts the returned IDs, so

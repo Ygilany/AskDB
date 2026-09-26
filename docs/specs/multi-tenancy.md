@@ -41,7 +41,7 @@ This is a Postgres-first proof. The tenant enforcement model is designed to gene
 - User authentication — AskDB receives authorized scope from the host; it does not authenticate users
 - Multi-engine tenant proof beyond Postgres — Phase 13
 - Row-level security (RLS) DDL generation — tenant predicates are SQL WHERE clauses; RLS is still recommended as a defense-in-depth layer
-- Built-in subtree expansion. AskDB does not generate a recursive CTE for `subtree` scopes; the host supplies `resolveTenantDescendants`. An in-database recursive-CTE strategy is a possible follow-up (#232, approach B).
+- Built-in subtree expansion. AskDB does not generate a recursive CTE for `subtree` scopes; the host supplies `resolveTenantDescendants`. An in-database recursive-CTE strategy is a possible follow-up (#268).
 
 ## Design decisions
 

@@ -315,12 +315,12 @@ Contract:
 - The resolver returns IDs **of the same tenant root**, which replace that root's `:tenant_<label>_ids` placeholder. A self-referencing hierarchy (e.g. `agencies.parent_agency_id`) is expanded by the host the same way as any other.
 - `ask()` unions the seed IDs into the result (deduplicated), so an ancestor never loses its own rows when a resolver returns strict descendants only.
 - The expanded scope is treated as `{ kind: "ids", tenantRoot, ids }` for the prompt, the tenant guardrail, and placeholder substitution. Advisory `context` and `tenantFilters` are unchanged.
-- **Fail closed.** A `subtree` scope with no resolver, or a resolver returning an empty array or anything other than an array of strings, throws `TenantScopeError` with reason `SUBTREE_NOT_RESOLVABLE`. AskDB never falls back to the seed IDs alone.
+- **Fail closed.** A `subtree` scope with no resolver, or a resolver returning an empty array or anything other than an array of non-empty strings, throws `TenantScopeError` with reason `SUBTREE_NOT_RESOLVABLE`. AskDB never falls back to the seed IDs alone.
 - The host owns authorization and caching of the closure. AskDB trusts the returned IDs.
 
 `resolveTenantSql()` (exported) does not walk the hierarchy. A direct caller must pass an already-expanded `ids` access, because an unexpanded `subtree` substitutes the seed IDs only.
 
-`@askdb/core` also exports two helpers: `expandClosure(seedIds, childrenOf)` (breadth-first, cycle-safe walk over an in-memory hierarchy) and `parentLinkageFor(policy, rootId)`, which returns a root's `{ parentRoot, foreignKey }` from `roots[].parent` and `hierarchy` edges. When both sources declare the linkage they must agree; a conflict throws instead of choosing one.
+`@askdb/core` also exports `expandClosure(seedIds, childrenOf)`, a breadth-first, cycle-safe walk over an in-memory hierarchy, for use inside a resolver.
 
 ### Advisory context
 
