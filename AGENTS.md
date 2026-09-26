@@ -37,6 +37,20 @@ pnpm smoke:install
 pnpm preflight
 ```
 
+## Agent skills
+
+### Issue tracker
+
+GitHub Issues on `Ygilany/AskDB`, via `gh`. Unimplemented plans (label `plan`), specs and doc/behavior discrepancies (label `discrepancy`) live there, not as new files in the repo. See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+The five default roles (`needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, `wontfix`), with label strings matching the role names. See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Single-context: a root `CONTEXT.md` (created lazily) plus ADRs in `docs/adrs/`. See `docs/agents/domain.md`.
+
 ## Where product/architecture decisions live
 
 `docs/` is the constitution — check it before assuming behavior, not just the code:
