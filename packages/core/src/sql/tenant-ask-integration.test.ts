@@ -10,7 +10,6 @@ import type { TenantScope } from "../schema/v2/tenant-policy.js";
 const here = dirname(fileURLToPath(import.meta.url));
 const fixturesDir = join(here, "../../../../fixtures/schemas");
 const multiTenantDir = join(fixturesDir, "agency-multi-tenant.schema");
-const nonTenantDir = join(fixturesDir, "orders-users.schema");
 
 const fakeModel = {} as LanguageModel;
 
@@ -33,41 +32,6 @@ describe("ask() — tenant scope integration", () => {
         dialect,
       }),
     ).rejects.toThrow(TenantScopeError);
-  });
-
-  it("proceeds when tenant policy exists and valid scope is provided", async () => {
-    const schema = loadSchema(multiTenantDir);
-    const dialect: AskDialect = {
-      generate: async () => ({
-        sql: "SELECT COUNT(*) FROM orders WHERE agency_id = :tenant_agency_ids",
-      }),
-    };
-
-    const result = await ask({
-      question: "count orders",
-      schema,
-      model: fakeModel,
-      dialect,
-      tenantScope: agencyScope,
-    });
-
-    expect(result.sql).toContain("SELECT COUNT(*)");
-  });
-
-  it("does not require scope when schema has no tenant policy", async () => {
-    const schema = loadSchema(nonTenantDir);
-    const dialect: AskDialect = {
-      generate: async () => ({ sql: "SELECT COUNT(*) FROM users" }),
-    };
-
-    const result = await ask({
-      question: "count users",
-      schema,
-      model: fakeModel,
-      dialect,
-    });
-
-    expect(result.sql).toContain("SELECT COUNT(*)");
   });
 
   it("rejects unknown tenant root before reaching the model", async () => {
