@@ -61,8 +61,9 @@ elsewhere will get stale guidance.
 - Provider adapters declare `ai` and `@askdb/ai` as peer dependencies — don't hard-pin AI SDK
   versions inside adapters; let the host app's `package.json` pin them.
 - Add tests for behavior that affects public APIs, package output, SQL safety/validation, or
-  user-facing workflows. Integration tests that need a live database run when `DATABASE_URL`
-  is set (see the Pagila fixture in `CONTRIBUTING.md`).
+  user-facing workflows. Integration tests that need a live database run when their env var
+  is set. Tests that need a real schema in every engine use the multi-engine fixture
+  (`pnpm fixture:up`, `ASKDB_FIXTURE_HOST`; see `CONTRIBUTING.md`).
 - Add a changeset (`pnpm changeset`) for any change to a publishable package. AskDB is
   pre-1.0 — breaking public API changes normally use a minor changeset unless the project is
   intentionally moving a package to 1.0.
