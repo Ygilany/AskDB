@@ -19,6 +19,8 @@ pnpm lab ask --db mysql "How many active programs does each agency run?"
 pnpm lab ask --db sqlserver --via client "Which three agencies have the highest paid order total?"
 pnpm lab ask --db postgres --sql "SELECT agency_id, name FROM org.agency"
 pnpm lab:test                  # the lab's own suite (needs the fixture and an installed lab)
+pnpm lab:matrix                # lab:up, then the suite as a scenario × dialect table
+pnpm lab:matrix -t '\[mysql\]'  # vitest flags pass through: one dialect, one file, …
 pnpm lab:use --restore         # put the committed baseline back
 ```
 
@@ -83,6 +85,20 @@ The replay server serves:
 - `GET /__lab/requests`, every request received, with its prompt text and the question it matched, for suites that assert on prompts.
 
 The dialect comes from the base URL: `http://127.0.0.1:<port>/<dialect>/v1`. The server uses Node built-ins only and never imports AskDB.
+
+## The matrix
+
+`pnpm lab:matrix` runs `lab:up` (idempotent: it installs only if the lab never was, so it tests whatever `lab:use` last installed), then the whole suite with `src/matrix-reporter.ts`. The reporter prints a `scenario × dialect` table and writes it to `.lab/matrix.json` (and to `$GITHUB_STEP_SUMMARY` when that is set). It builds the table from test results, never from a hand-kept list:
+
+- A test's full name starts with `[<dialect>] <scenario-id>`, usually as `describe("[mysql]")` around `it("introspect-golden: …")`. Tests that share a scenario and dialect share a cell.
+- `pass`: every test in the cell passed. `FAIL`: one failed, or its suite's hook did.
+- `known (#N)`: an `it.fails` test that names its `discrepancy` issue, for example `it.fails("… (#239)")`, failed as expected. Once the bug is fixed the test passes, `it.fails` turns that into a failure, and the cell shows `FAIL` until the marker is removed.
+- `n/a (reason)`: the test called `ctx.skip("reason")`. The `unique-constraints` and `view-marker` rows use this for facts Schema v2 can't express.
+- `-`: no test ran for that dialect (none exists yet, or a `-t` filter excluded it).
+
+## Introspection
+
+`test/introspection.test.ts` introspects every fixture database with the installed `askdb introspect`, as the docs site describes for each engine: `--engine`, `--url` (the read-only role) and `--schemas org,people,billing,ref` for Postgres, SQL Server, MySQL and MariaDB (`--engine mysql`), and `introspection.providerConfig.sqlite.file` in an `askdb.config.ts` for SQLite. That config is written to `.lab/projects/sqlite/`, so its `@askdb/config` import resolves from the lab's `node_modules`. Each artifact is compared with the fixture's golden schema, loaded with `loadSchema`, and bundled with `askdb bundle`. The drivers the CLI needs (`pg`, `mysql2`, `mssql`, `better-sqlite3`) are the lab's own dependencies, as the CLI reference asks of a consumer project.
 
 ## How `lab:use` pins the target
 

@@ -31,7 +31,7 @@ function labAsk(sql: string) {
   return { status: run.status, out: `${run.stdout}\n${run.stderr}` };
 }
 
-describe("[postgres] lab ask --sql", () => {
+describe("[postgres] lab-ask --sql", () => {
   it("prints the SQL, `validation: ok` and the rows the read-only role reads", () => {
     const { status, out } = labAsk("SELECT agency_id, name FROM org.agency ORDER BY agency_id");
 

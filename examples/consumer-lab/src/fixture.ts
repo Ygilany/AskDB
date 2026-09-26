@@ -13,3 +13,10 @@ export {
   physicalName,
   type Dialect,
 } from "../../../fixtures/multi-engine/src/index.js";
+// The golden-schema comparison (`dataset/NORMALIZATION.md`, "Schema-comparison rules").
+export {
+  SQLITE_FILE,
+  compareToLogicalSchema,
+  loadLogicalSchema,
+  type SchemaJson,
+} from "../../../fixtures/multi-engine/src/index.js";

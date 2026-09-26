@@ -24,6 +24,7 @@
     "lab:use": "node examples/consumer-lab/src/use.mjs",
     "lab:up": "pnpm fixture:up && node examples/consumer-lab/src/use.mjs --if-needed .",
     "lab:test": "pnpm -C examples/consumer-lab test",
+    "lab:matrix": "pnpm lab:up && pnpm -C examples/consumer-lab --silent run matrix",
     "pgvector:up": "docker compose -f fixtures/pgvector/docker-compose.yml up -d",
     "pgvector:down": "docker compose -f fixtures/pgvector/docker-compose.yml down",
     "pgvector:logs": "docker compose -f fixtures/pgvector/docker-compose.yml logs -f",

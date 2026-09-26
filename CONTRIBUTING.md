@@ -60,10 +60,15 @@ pnpm lab ask --db mysql "How many active programs does each agency run?"   # rep
 pnpm lab ask --db sqlite --via client "…"          # same question through createAskDb + @askdb/ai-openai
 pnpm lab ask --db postgres --sql "SELECT 1"       # skip the model: SQL, validation outcome, rows
 pnpm lab:test
+pnpm lab:matrix                                   # the suite as a scenario × dialect table (.lab/matrix.json)
 pnpm lab:use --restore                            # before committing: restore the lab's manifests
 ```
 
-`lab ask` answers only questions in the lab's catalog, from hand-written replies per dialect; adding a question means adding its replies (see the lab README). `lab:use` rewrites the lab's `package.json`, `pnpm-workspace.yaml` and `pnpm-lock.yaml` to point at `.lab/tarballs/`; don't commit them in that state. Unlike the package suites above, lab tests don't use `integrationSuite()`: the lab exists to run against real databases, so a missing fixture or install fails the suite instead of skipping it.
+`lab ask` answers only questions in the lab's catalog, from hand-written replies per dialect; adding a question means adding its replies (see the lab README).
+
+Lab test names start with `[<dialect>] <scenario-id>` (usually a `describe("[mysql]")` around `it("introspect-golden: …")`); that is how `lab:matrix` places each result. A lab test for an open product bug is an `it.fails` naming its `discrepancy` issue, such as `(#239)`, and shows as `known (#239)`. `ctx.skip("reason")` shows as `n/a (reason)`.
+
+`lab:use` rewrites the lab's `package.json`, `pnpm-workspace.yaml` and `pnpm-lock.yaml` to point at `.lab/tarballs/`; don't commit them in that state. Unlike the package suites above, lab tests don't use `integrationSuite()`: the lab exists to run against real databases, so a missing fixture or install fails the suite instead of skipping it.
 
 ### Repo-root `askdb.config.ts` and your IDE
 
