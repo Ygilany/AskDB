@@ -1,25 +1,26 @@
--- AskDB consumer lab: PostgreSQL DDL. Implements dataset/schema.logical.json.
--- Run by the seeder as the owner (superuser) against database askdb_lab.
--- Idempotent: drops and recreates every lab object.
+-- AskDB multi-engine fixture: PostgreSQL DDL. Implements dataset/schema.logical.json.
+-- Run by the seeder as the owner (superuser) against database askdb_fixture.
+-- Idempotent: drops and recreates every fixture object.
 
-DROP SCHEMA IF EXISTS billing, people, org, ref, lab CASCADE;
+DROP SCHEMA IF EXISTS billing, people, org, ref, fixture CASCADE;
 
 CREATE SCHEMA org;
 CREATE SCHEMA people;
 CREATE SCHEMA billing;
 CREATE SCHEMA ref;
-CREATE SCHEMA lab;
+CREATE SCHEMA fixture;
 
-CREATE TABLE lab.lab_meta (
+CREATE TABLE fixture.fixture_meta (
   dataset_hash varchar(64) NOT NULL,
   seeded_at    timestamp   NOT NULL
 );
 
 CREATE TABLE org.agency (
-  agency_id  integer      NOT NULL PRIMARY KEY,
-  name       varchar(100) NOT NULL,
-  founded_on date         NOT NULL,
-  created_at timestamp    NOT NULL
+  agency_id        integer      NOT NULL PRIMARY KEY,
+  parent_agency_id integer      NULL REFERENCES org.agency (agency_id),
+  name             varchar(100) NOT NULL,
+  founded_on       date         NOT NULL,
+  created_at       timestamp    NOT NULL
 );
 
 CREATE TABLE org.program (
@@ -79,6 +80,21 @@ CREATE TABLE billing.order_line (
   PRIMARY KEY (order_id, line_no)
 );
 
+-- Declaratively partitioned (ADR 0003): introspection must render billing.payment
+-- only, never its partition leaves.
+CREATE TABLE billing.payment (
+  payment_id integer        NOT NULL,
+  paid_on    date           NOT NULL,
+  order_id   integer        NOT NULL REFERENCES billing."order" (order_id),
+  agency_id  integer        NOT NULL REFERENCES org.agency (agency_id),
+  amount     numeric(10, 2) NOT NULL,
+  method     varchar(20)    NOT NULL,
+  PRIMARY KEY (payment_id, paid_on)
+) PARTITION BY RANGE (paid_on);
+CREATE TABLE billing.payment_2024 PARTITION OF billing.payment FOR VALUES FROM ('2024-01-01') TO ('2025-01-01');
+CREATE TABLE billing.payment_2025 PARTITION OF billing.payment FOR VALUES FROM ('2025-01-01') TO ('2026-01-01');
+CREATE TABLE billing.payment_default PARTITION OF billing.payment DEFAULT;
+
 CREATE VIEW billing.agency_revenue AS
 SELECT o.agency_id,
        COUNT(*) AS order_count,
@@ -86,15 +102,15 @@ SELECT o.agency_id,
 FROM billing."order" o
 GROUP BY o.agency_id;
 
--- Read-only role used by the host to execute generated SQL and to introspect.
+-- Read-only role used by hosts to execute generated SQL and to introspect.
 DO $$
 BEGIN
-  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'lab_reader') THEN
-    CREATE ROLE lab_reader LOGIN PASSWORD 'lab_reader';
+  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'fixture_reader') THEN
+    CREATE ROLE fixture_reader LOGIN PASSWORD 'fixture_reader';
   END IF;
 END
 $$;
-ALTER ROLE lab_reader SET default_transaction_read_only = on;
-GRANT CONNECT ON DATABASE askdb_lab TO lab_reader;
-GRANT USAGE ON SCHEMA org, people, billing, ref, lab TO lab_reader;
-GRANT SELECT ON ALL TABLES IN SCHEMA org, people, billing, ref, lab TO lab_reader;
+ALTER ROLE fixture_reader SET default_transaction_read_only = on;
+GRANT CONNECT ON DATABASE askdb_fixture TO fixture_reader;
+GRANT USAGE ON SCHEMA org, people, billing, ref, fixture TO fixture_reader;
+GRANT SELECT ON ALL TABLES IN SCHEMA org, people, billing, ref, fixture TO fixture_reader;

@@ -1,13 +1,13 @@
 /**
  * The canonical dataset: dataset/schema.logical.json (the golden logical schema)
- * and dataset/data/<schema>.<table>.json (the rows). Everything else in the lab
- * (the DDL, the seeder, the oracle, the comparisons) is checked against these.
+ * and dataset/data/<schema>.<table>.json (the rows). Everything else (the DDL,
+ * the seeder, oracles, schema comparisons) is checked against these.
  */
 import { createHash } from "node:crypto";
 import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
-import { DATASET_DIR, LAB_ROOT, type Dialect } from "./lab-env.js";
-import type { LogicalType } from "./host/normalize.js";
+import { DATASET_DIR, FIXTURE_ROOT, type Dialect } from "./env.js";
+import type { LogicalType } from "./normalize.js";
 
 export interface LogicalColumn {
   name: string;
@@ -29,7 +29,8 @@ export interface LogicalTable {
   primaryKey: string[];
   unique: string[][];
   foreignKeys: LogicalForeignKey[];
-  tenantRoot?: boolean;
+  /** Present on the tenant root. `parentColumn` makes it a self-referencing tree. */
+  tenantRoot?: { parentColumn?: string };
   tenantColumn?: string;
   global?: boolean;
   reservedWord?: boolean;
@@ -79,33 +80,32 @@ export function quoteIdent(dialect: Dialect, name: string): string {
 /**
  * The physical, fully quoted name of a logical table or view.
  *
- * Postgres and SQL Server have real schemas. SQLite has one namespace, and
- * MySQL/MariaDB keep every table in one database (`askdb_lab`), because AskDB's
- * MySQL connector introspects only the connection's database. Logical table
- * names are unique across logical schemas precisely so this flattening works.
+ * Postgres and SQL Server have real schemas and MySQL/MariaDB have one database
+ * per logical schema, so the logical schema qualifies the name. SQLite has one
+ * namespace; logical table names are unique across logical schemas so that
+ * flattening works.
  */
 export function physicalName(dialect: Dialect, table: { schema: string; name: string }): string {
   if (dialect === "sqlite") return quoteIdent(dialect, table.name);
-  if (dialect === "mysql" || dialect === "mariadb") return `${quoteIdent(dialect, "askdb_lab")}.${quoteIdent(dialect, table.name)}`;
   return `${quoteIdent(dialect, table.schema)}.${quoteIdent(dialect, table.name)}`;
 }
 
 /**
- * Physical name of the seeder's bookkeeping table: a `lab` schema (Postgres, SQL
- * Server) or database (MySQL/MariaDB) outside the introspected namespace.
- * SQLite keeps its hash in a sidecar file instead.
+ * Physical name of the seeder's bookkeeping table: a `fixture` schema (Postgres,
+ * SQL Server) or database (MySQL/MariaDB) outside the logical schemas, so a
+ * filtered introspection never sees it. SQLite keeps its hash in a sidecar file.
  */
 export function metaTable(dialect: Exclude<Dialect, "sqlite">): string {
-  return `${quoteIdent(dialect, "lab")}.${quoteIdent(dialect, "lab_meta")}`;
+  return `${quoteIdent(dialect, "fixture")}.${quoteIdent(dialect, "fixture_meta")}`;
 }
 
-/** Lab source files that decide how rows are loaded; a change to any of them forces a reseed. */
-const SEEDER_SOURCES = ["src/seed.ts", "src/dataset.ts", "src/host/db.ts"];
+/** Source files that decide how rows are loaded; a change to any of them forces a reseed. */
+const SEEDER_SOURCES = ["src/seed.ts", "src/dataset.ts", "src/db.ts"];
 
 /** Hash of everything that determines a dialect's seeded contents. */
 export function datasetHash(dialect: Dialect): string {
   const hash = createHash("sha256");
-  for (const file of SEEDER_SOURCES) hash.update(readFileSync(join(LAB_ROOT, file)));
+  for (const file of SEEDER_SOURCES) hash.update(readFileSync(join(FIXTURE_ROOT, file)));
   hash.update(readFileSync(join(DATASET_DIR, "schema.logical.json")));
   hash.update(readFileSync(join(DATASET_DIR, "ddl", `${dialect}.sql`)));
   for (const file of readdirSync(join(DATASET_DIR, "data")).sort()) {

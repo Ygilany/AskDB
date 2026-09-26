@@ -70,5 +70,50 @@
     "is_active": false,
     "starts_on": "2022-01-01",
     "ends_on": "2024-06-30"
+  },
+  {
+    "agency_id": 4,
+    "program_code": "FOOD",
+    "name": "Food Assistance",
+    "budget": "41000.00",
+    "is_active": true,
+    "starts_on": "2021-02-01",
+    "ends_on": null
+  },
+  {
+    "agency_id": 4,
+    "program_code": "JOBS",
+    "name": "Job Training",
+    "budget": "38000.10",
+    "is_active": true,
+    "starts_on": "2021-05-01",
+    "ends_on": null
+  },
+  {
+    "agency_id": 5,
+    "program_code": "HOUS",
+    "name": "Housing Support",
+    "budget": "52000.00",
+    "is_active": true,
+    "starts_on": "2021-01-01",
+    "ends_on": null
+  },
+  {
+    "agency_id": 6,
+    "program_code": "FOOD",
+    "name": "Food Assistance",
+    "budget": "18500.00",
+    "is_active": true,
+    "starts_on": "2022-03-01",
+    "ends_on": null
+  },
+  {
+    "agency_id": 7,
+    "program_code": "JOBS",
+    "name": "Arbeitsintegration",
+    "budget": "64000.00",
+    "is_active": true,
+    "starts_on": "2022-01-01",
+    "ends_on": null
   }
 ]

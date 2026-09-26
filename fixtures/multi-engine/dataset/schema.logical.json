@@ -1,5 +1,5 @@
 {
-  "$comment": "Golden logical schema for the AskDB consumer lab. Hand-maintained. The DDL in ddl/*.sql must implement exactly this; data/<schema>.<table>.json holds the rows. Types are logical (see NORMALIZATION.md).",
+  "$comment": "Golden logical schema for the AskDB multi-engine fixture. Hand-maintained. The DDL in ddl/*.sql must implement exactly this; data/<schema>.<table>.json holds the rows. Types are logical (see NORMALIZATION.md).",
   "schemas": [
     "org",
     "people",
@@ -10,12 +10,16 @@
     {
       "schema": "org",
       "name": "agency",
-      "tenantRoot": true,
       "columns": [
         {
           "name": "agency_id",
           "type": "int",
           "nullable": false
+        },
+        {
+          "name": "parent_agency_id",
+          "type": "int",
+          "nullable": true
         },
         {
           "name": "name",
@@ -37,7 +41,24 @@
         "agency_id"
       ],
       "unique": [],
-      "foreignKeys": []
+      "foreignKeys": [
+        {
+          "columns": [
+            "parent_agency_id"
+          ],
+          "references": {
+            "schema": "org",
+            "table": "agency",
+            "columns": [
+              "agency_id"
+            ]
+          }
+        }
+      ],
+      "tenantRoot": {
+        "parentColumn": "parent_agency_id",
+        "$comment": "Self-referencing org tree. A scope for agency X sees X and all its descendants, never its ancestors or anything outside its tree."
+      }
     },
     {
       "schema": "org",
@@ -402,6 +423,75 @@
             "table": "order",
             "columns": [
               "order_id"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "schema": "billing",
+      "name": "payment",
+      "tenantColumn": "agency_id",
+      "$comment": "Postgres implements this as a declaratively partitioned table (by paid_on); introspection must render only the parent (ADR 0003). The partition key is part of the primary key because Postgres requires it.",
+      "columns": [
+        {
+          "name": "payment_id",
+          "type": "int",
+          "nullable": false
+        },
+        {
+          "name": "paid_on",
+          "type": "date",
+          "nullable": false
+        },
+        {
+          "name": "order_id",
+          "type": "int",
+          "nullable": false
+        },
+        {
+          "name": "agency_id",
+          "type": "int",
+          "nullable": false
+        },
+        {
+          "name": "amount",
+          "type": "decimal(10,2)",
+          "nullable": false
+        },
+        {
+          "name": "method",
+          "type": "text(20)",
+          "nullable": false
+        }
+      ],
+      "primaryKey": [
+        "payment_id",
+        "paid_on"
+      ],
+      "unique": [],
+      "foreignKeys": [
+        {
+          "columns": [
+            "order_id"
+          ],
+          "references": {
+            "schema": "billing",
+            "table": "order",
+            "columns": [
+              "order_id"
+            ]
+          }
+        },
+        {
+          "columns": [
+            "agency_id"
+          ],
+          "references": {
+            "schema": "org",
+            "table": "agency",
+            "columns": [
+              "agency_id"
             ]
           }
         }

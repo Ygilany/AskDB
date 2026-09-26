@@ -1,0 +1,474 @@
+[
+  {
+    "payment_id": 1,
+    "paid_on": "2024-02-29",
+    "order_id": 1,
+    "agency_id": 1,
+    "amount": "118.05",
+    "method": "cash"
+  },
+  {
+    "payment_id": 2,
+    "paid_on": "2025-07-22",
+    "order_id": 2,
+    "agency_id": 1,
+    "amount": "2042.98",
+    "method": "transfer"
+  },
+  {
+    "payment_id": 3,
+    "paid_on": "2025-07-22",
+    "order_id": 2,
+    "agency_id": 1,
+    "amount": "2042.98",
+    "method": "card"
+  },
+  {
+    "payment_id": 4,
+    "paid_on": "2024-09-08",
+    "order_id": 3,
+    "agency_id": 1,
+    "amount": "91.88",
+    "method": "cash"
+  },
+  {
+    "payment_id": 5,
+    "paid_on": "2024-09-08",
+    "order_id": 3,
+    "agency_id": 1,
+    "amount": "91.87",
+    "method": "transfer"
+  },
+  {
+    "payment_id": 6,
+    "paid_on": "2024-12-17",
+    "order_id": 5,
+    "agency_id": 1,
+    "amount": "79.80",
+    "method": "card"
+  },
+  {
+    "payment_id": 7,
+    "paid_on": "2025-10-01",
+    "order_id": 6,
+    "agency_id": 2,
+    "amount": "60.00",
+    "method": "card"
+  },
+  {
+    "payment_id": 8,
+    "paid_on": "2025-07-19",
+    "order_id": 7,
+    "agency_id": 2,
+    "amount": "62.75",
+    "method": "card"
+  },
+  {
+    "payment_id": 9,
+    "paid_on": "2024-11-26",
+    "order_id": 8,
+    "agency_id": 2,
+    "amount": "24.50",
+    "method": "transfer"
+  },
+  {
+    "payment_id": 10,
+    "paid_on": "2025-06-13",
+    "order_id": 11,
+    "agency_id": 3,
+    "amount": "160.75",
+    "method": "cash"
+  },
+  {
+    "payment_id": 11,
+    "paid_on": "2025-02-07",
+    "order_id": 13,
+    "agency_id": 3,
+    "amount": "120.00",
+    "method": "cash"
+  },
+  {
+    "payment_id": 12,
+    "paid_on": "2025-02-07",
+    "order_id": 13,
+    "agency_id": 3,
+    "amount": "120.00",
+    "method": "cash"
+  },
+  {
+    "payment_id": 13,
+    "paid_on": "2025-03-21",
+    "order_id": 14,
+    "agency_id": 3,
+    "amount": "2099.85",
+    "method": "cash"
+  },
+  {
+    "payment_id": 14,
+    "paid_on": "2025-04-27",
+    "order_id": 15,
+    "agency_id": 4,
+    "amount": "79.80",
+    "method": "cash"
+  },
+  {
+    "payment_id": 15,
+    "paid_on": "2024-07-11",
+    "order_id": 16,
+    "agency_id": 4,
+    "amount": "1042.48",
+    "method": "transfer"
+  },
+  {
+    "payment_id": 16,
+    "paid_on": "2024-07-11",
+    "order_id": 16,
+    "agency_id": 4,
+    "amount": "1042.47",
+    "method": "card"
+  },
+  {
+    "payment_id": 17,
+    "paid_on": "2025-08-04",
+    "order_id": 17,
+    "agency_id": 4,
+    "amount": "1148.46",
+    "method": "cash"
+  },
+  {
+    "payment_id": 18,
+    "paid_on": "2025-08-04",
+    "order_id": 17,
+    "agency_id": 4,
+    "amount": "1148.46",
+    "method": "cash"
+  },
+  {
+    "payment_id": 19,
+    "paid_on": "2025-05-15",
+    "order_id": 18,
+    "agency_id": 5,
+    "amount": "2250.00",
+    "method": "transfer"
+  },
+  {
+    "payment_id": 20,
+    "paid_on": "2024-04-14",
+    "order_id": 21,
+    "agency_id": 6,
+    "amount": "49.00",
+    "method": "transfer"
+  },
+  {
+    "payment_id": 21,
+    "paid_on": "2025-01-23",
+    "order_id": 24,
+    "agency_id": 7,
+    "amount": "1892.55",
+    "method": "card"
+  },
+  {
+    "payment_id": 22,
+    "paid_on": "2025-12-16",
+    "order_id": 27,
+    "agency_id": 4,
+    "amount": "35.96",
+    "method": "cash"
+  },
+  {
+    "payment_id": 23,
+    "paid_on": "2024-09-21",
+    "order_id": 28,
+    "agency_id": 6,
+    "amount": "55.42",
+    "method": "card"
+  },
+  {
+    "payment_id": 24,
+    "paid_on": "2024-09-21",
+    "order_id": 28,
+    "agency_id": 6,
+    "amount": "55.43",
+    "method": "cash"
+  },
+  {
+    "payment_id": 25,
+    "paid_on": "2024-02-03",
+    "order_id": 30,
+    "agency_id": 3,
+    "amount": "106.38",
+    "method": "transfer"
+  },
+  {
+    "payment_id": 26,
+    "paid_on": "2024-02-03",
+    "order_id": 30,
+    "agency_id": 3,
+    "amount": "106.37",
+    "method": "cash"
+  },
+  {
+    "payment_id": 27,
+    "paid_on": "2025-02-17",
+    "order_id": 31,
+    "agency_id": 5,
+    "amount": "912.25",
+    "method": "transfer"
+  },
+  {
+    "payment_id": 28,
+    "paid_on": "2025-02-17",
+    "order_id": 31,
+    "agency_id": 5,
+    "amount": "912.25",
+    "method": "transfer"
+  },
+  {
+    "payment_id": 29,
+    "paid_on": "2024-11-16",
+    "order_id": 32,
+    "agency_id": 7,
+    "amount": "137.90",
+    "method": "transfer"
+  },
+  {
+    "payment_id": 30,
+    "paid_on": "2025-02-10",
+    "order_id": 33,
+    "agency_id": 2,
+    "amount": "79.80",
+    "method": "cash"
+  },
+  {
+    "payment_id": 31,
+    "paid_on": "2024-10-01",
+    "order_id": 34,
+    "agency_id": 3,
+    "amount": "450.00",
+    "method": "card"
+  },
+  {
+    "payment_id": 32,
+    "paid_on": "2024-10-01",
+    "order_id": 34,
+    "agency_id": 3,
+    "amount": "450.00",
+    "method": "cash"
+  },
+  {
+    "payment_id": 33,
+    "paid_on": "2024-08-13",
+    "order_id": 35,
+    "agency_id": 6,
+    "amount": "53.62",
+    "method": "card"
+  },
+  {
+    "payment_id": 34,
+    "paid_on": "2024-08-13",
+    "order_id": 35,
+    "agency_id": 6,
+    "amount": "53.61",
+    "method": "card"
+  },
+  {
+    "payment_id": 35,
+    "paid_on": "2025-05-23",
+    "order_id": 37,
+    "agency_id": 3,
+    "amount": "306.38",
+    "method": "cash"
+  },
+  {
+    "payment_id": 36,
+    "paid_on": "2025-05-23",
+    "order_id": 37,
+    "agency_id": 3,
+    "amount": "306.37",
+    "method": "cash"
+  },
+  {
+    "payment_id": 37,
+    "paid_on": "2025-03-09",
+    "order_id": 38,
+    "agency_id": 4,
+    "amount": "24.50",
+    "method": "transfer"
+  },
+  {
+    "payment_id": 38,
+    "paid_on": "2024-12-10",
+    "order_id": 39,
+    "agency_id": 7,
+    "amount": "63.75",
+    "method": "card"
+  },
+  {
+    "payment_id": 39,
+    "paid_on": "2025-06-03",
+    "order_id": 40,
+    "agency_id": 2,
+    "amount": "2700.00",
+    "method": "card"
+  },
+  {
+    "payment_id": 40,
+    "paid_on": "2024-03-12",
+    "order_id": 42,
+    "agency_id": 5,
+    "amount": "38.25",
+    "method": "card"
+  },
+  {
+    "payment_id": 41,
+    "paid_on": "2025-09-24",
+    "order_id": 43,
+    "agency_id": 1,
+    "amount": "71.48",
+    "method": "card"
+  },
+  {
+    "payment_id": 42,
+    "paid_on": "2025-09-24",
+    "order_id": 43,
+    "agency_id": 1,
+    "amount": "71.47",
+    "method": "card"
+  },
+  {
+    "payment_id": 43,
+    "paid_on": "2025-11-20",
+    "order_id": 44,
+    "agency_id": 2,
+    "amount": "675.00",
+    "method": "cash"
+  },
+  {
+    "payment_id": 44,
+    "paid_on": "2025-11-20",
+    "order_id": 44,
+    "agency_id": 2,
+    "amount": "675.00",
+    "method": "card"
+  },
+  {
+    "payment_id": 45,
+    "paid_on": "2024-05-09",
+    "order_id": 45,
+    "agency_id": 4,
+    "amount": "68.91",
+    "method": "transfer"
+  },
+  {
+    "payment_id": 46,
+    "paid_on": "2024-05-09",
+    "order_id": 45,
+    "agency_id": 4,
+    "amount": "68.91",
+    "method": "transfer"
+  },
+  {
+    "payment_id": 47,
+    "paid_on": "2024-08-02",
+    "order_id": 46,
+    "agency_id": 7,
+    "amount": "119.70",
+    "method": "cash"
+  },
+  {
+    "payment_id": 48,
+    "paid_on": "2025-04-24",
+    "order_id": 47,
+    "agency_id": 1,
+    "amount": "1819.95",
+    "method": "cash"
+  },
+  {
+    "payment_id": 49,
+    "paid_on": "2025-07-27",
+    "order_id": 49,
+    "agency_id": 5,
+    "amount": "184.40",
+    "method": "transfer"
+  },
+  {
+    "payment_id": 50,
+    "paid_on": "2025-07-27",
+    "order_id": 49,
+    "agency_id": 5,
+    "amount": "184.40",
+    "method": "cash"
+  },
+  {
+    "payment_id": 51,
+    "paid_on": "2024-04-15",
+    "order_id": 50,
+    "agency_id": 1,
+    "amount": "113.50",
+    "method": "card"
+  },
+  {
+    "payment_id": 52,
+    "paid_on": "2024-04-15",
+    "order_id": 50,
+    "agency_id": 1,
+    "amount": "113.49",
+    "method": "transfer"
+  },
+  {
+    "payment_id": 53,
+    "paid_on": "2025-04-15",
+    "order_id": 51,
+    "agency_id": 2,
+    "amount": "532.48",
+    "method": "cash"
+  },
+  {
+    "payment_id": 54,
+    "paid_on": "2025-04-15",
+    "order_id": 51,
+    "agency_id": 2,
+    "amount": "532.47",
+    "method": "card"
+  },
+  {
+    "payment_id": 55,
+    "paid_on": "2025-03-15",
+    "order_id": 52,
+    "agency_id": 4,
+    "amount": "52.65",
+    "method": "cash"
+  },
+  {
+    "payment_id": 56,
+    "paid_on": "2025-11-26",
+    "order_id": 53,
+    "agency_id": 6,
+    "amount": "177.72",
+    "method": "cash"
+  },
+  {
+    "payment_id": 57,
+    "paid_on": "2024-06-01",
+    "order_id": 54,
+    "agency_id": 1,
+    "amount": "98.00",
+    "method": "card"
+  },
+  {
+    "payment_id": 58,
+    "paid_on": "2025-03-27",
+    "order_id": 55,
+    "agency_id": 3,
+    "amount": "98.89",
+    "method": "cash"
+  },
+  {
+    "payment_id": 59,
+    "paid_on": "2025-10-22",
+    "order_id": 56,
+    "agency_id": 5,
+    "amount": "119.85",
+    "method": "card"
+  }
+]

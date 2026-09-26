@@ -2,8 +2,8 @@ packages:
   - "packages/*"
   - "apps/*"
   - "examples/*"
-  # The consumer lab is its own pnpm root with its own lockfile; see docs/specs/consumer-lab.md.
-  - "!examples/consumer-lab"
+  # Shared multi-engine test fixture (replaces Pagila); see fixtures/multi-engine/README.md.
+  - "fixtures/multi-engine"
 publicHoistPattern:
   - "*turbo*"
 # Transitive-dependency pins we carry ahead of upstream.
