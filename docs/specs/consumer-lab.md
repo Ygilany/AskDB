@@ -135,9 +135,9 @@ Deep imports are impossible because of the packages' `exports` maps. Code review
 
 ### Install modes
 
-One command switches the mode: `pnpm lab:use <target>`. It writes the `@askdb/*` specs into the app's `package.json`, writes a matching `pnpm.overrides` block, runs `pnpm install` in the app, and prints a resolved-version table.
+One command switches the mode: `pnpm lab:use <target>`. It writes the `@askdb/*` specs into the app's `package.json`, writes a matching `overrides` block into the app's `pnpm-workspace.yaml` (pnpm 11 reads overrides there), runs `pnpm install` in the app, and prints a resolved-version table built from the lockfile.
 
-**Why overrides:** without them, a tarball of `@askdb/client` depends on `@askdb/core@<range>`, and that transitive dependency would resolve from the npm registry instead of from the checkout under test. After every switch, `lab:use` checks that each installed `@askdb/*` package resolves to the target.
+**Why overrides:** without them, a tarball of `@askdb/client` depends on `@askdb/core@<version>`, and that transitive dependency resolves from the npm registry instead of from the checkout under test. The checkout usually carries the **same version number** as the last release, so a version check can't tell them apart. After every switch, `lab:use` checks each `@askdb/*` package's resolution *source* in the lockfile and fails if any isn't a target tarball. (Verified in #242: with the overrides removed, all 19 transitive packages resolved from npm.) `pnpm lab:use --restore` puts the committed manifests back.
 
 | Target | Meaning |
 |---|---|

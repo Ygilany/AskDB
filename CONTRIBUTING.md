@@ -49,7 +49,19 @@ pnpm fixture:down                                 # stop (data kept); pnpm fixtu
 
 It uses ports 15432, 13306, 13307 and 11433, so it runs alongside the fixtures above. A new engine-level test that needs a real schema should use it: import the helpers from `fixtures/multi-engine/src/index.ts` by relative path and gate the suite with `integrationSuite({ env: ["ASKDB_FIXTURE_HOST"] })`.
 
-The [consumer lab](docs/specs/consumer-lab.md) (in progress) reuses this fixture to test AskDB as a black box from packed tarballs or npm.
+### Consumer lab
+
+[`examples/consumer-lab`](examples/consumer-lab/README.md) tests AskDB as a black box. It installs packed tarballs into an app outside the workspace (its own pnpm root and lockfile), then executes the SQL AskDB returns on the fixture above. Design: [`docs/specs/consumer-lab.md`](docs/specs/consumer-lab.md); remaining work: #241.
+
+```bash
+pnpm lab:up                                       # fixture up + install the lab (first time)
+pnpm lab:use .                                    # repack this checkout and reinstall
+pnpm lab ask --db postgres --sql "SELECT 1"       # SQL, validation outcome, rows
+pnpm lab:test
+pnpm lab:use --restore                            # before committing: restore the lab's manifests
+```
+
+`lab:use` rewrites the lab's `package.json`, `pnpm-workspace.yaml` and `pnpm-lock.yaml` to point at `.lab/tarballs/`; don't commit them in that state.
 
 ### Repo-root `askdb.config.ts` and your IDE
 

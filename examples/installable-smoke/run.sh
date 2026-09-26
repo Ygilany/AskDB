@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Installable smoke test for AskDB packages.
 #
-# Builds the workspace, packs the library packages (including config, enrich, and ai) plus the app
-# packages (cli, studio, http-api), copies the consumer fixture into a fresh tmpdir, installs
+# Builds and packs every publishable package (scripts/pack-tarballs.sh, shared with the consumer
+# lab), copies the consumer fixture into a fresh tmpdir, installs
 # library tarballs (no workspace; includes @askdb/config for @askdb/rag's dependency), runs `tsc --noEmit`,
 # and executes the smoke script. The app sandbox gets a minimal askdb.config.ts because the CLI
 # bootstraps runtime config on startup.
@@ -15,17 +15,8 @@ trap 'rm -rf "$WORK"' EXIT
 
 echo "smoke: workdir = $WORK"
 
-echo "smoke: building workspace…"
-pnpm -C "$ROOT" -r build >/dev/null
-
-echo "smoke: packing tarballs…"
-mkdir -p "$WORK/tarballs"
-for pkg in packages/config packages/core packages/ai packages/ai-openai packages/ai-azure packages/ai-google packages/ai-anthropic packages/client packages/introspect packages/connectors packages/postgres packages/prisma packages/enrich packages/mysql packages/sqlite packages/sqlserver apps/cli apps/studio apps/http-api; do
-  (cd "$ROOT/$pkg" && pnpm pack --pack-destination "$WORK/tarballs" >/dev/null)
-done
-for pkg in packages/rag; do
-  (cd "$ROOT/$pkg" && pnpm pack --pack-destination "$WORK/tarballs" >/dev/null)
-done
+echo "smoke: building and packing every publishable package…"
+bash "$ROOT/scripts/pack-tarballs.sh" "$WORK/tarballs"
 
 CONFIG_TARBALL="$(ls "$WORK/tarballs"/askdb-config-*.tgz | head -n1)"
 [ -f "$CONFIG_TARBALL" ] || { echo "smoke: missing config tarball" >&2; exit 1; }
@@ -57,6 +48,8 @@ CLI_TARBALL="$(ls "$WORK/tarballs"/askdb-[0-9]*.tgz | head -n1)"
 [ -f "$CLI_TARBALL" ] || { echo "smoke: missing cli tarball" >&2; exit 1; }
 STUDIO_TARBALL="$(ls "$WORK/tarballs"/askdb-studio-*.tgz | head -n1)"
 [ -f "$STUDIO_TARBALL" ] || { echo "smoke: missing studio tarball" >&2; exit 1; }
+HTTP_API_TARBALL="$(ls "$WORK/tarballs"/askdb-http-api-*.tgz | head -n1)"
+[ -f "$HTTP_API_TARBALL" ] || { echo "smoke: missing http-api tarball" >&2; exit 1; }
 RAG_TARBALL="$(ls "$WORK/tarballs"/askdb-rag-*.tgz | head -n1)"
 [ -f "$RAG_TARBALL" ] || { echo "smoke: missing rag tarball" >&2; exit 1; }
 MYSQL_TARBALL="$(ls "$WORK/tarballs"/askdb-mysql-*.tgz | head -n1)"
@@ -191,6 +184,18 @@ if grep -Eq '(^package/src/|\.test\.)' <<<"$STUDIO_TARBALL_FILES"; then
   exit 1
 fi
 
+echo "smoke: validating @askdb/http-api tarball contents…"
+HTTP_API_TARBALL_FILES="$(tar -tzf "$HTTP_API_TARBALL")"
+grep -q '^package/dist/index.js$' <<<"$HTTP_API_TARBALL_FILES"
+grep -q '^package/dist/bin.js$' <<<"$HTTP_API_TARBALL_FILES"
+grep -q '^package/bin/askdb-http.js$' <<<"$HTTP_API_TARBALL_FILES"
+grep -q '^package/README.md$' <<<"$HTTP_API_TARBALL_FILES"
+grep -q '^package/LICENSE$' <<<"$HTTP_API_TARBALL_FILES"
+if grep -Eq '(^package/src/|\.test\.)' <<<"$HTTP_API_TARBALL_FILES"; then
+  echo "smoke: FAILED — @askdb/http-api tarball includes source/tests" >&2
+  exit 1
+fi
+
 echo "smoke: validating @askdb/rag tarball contents…"
 RAG_TARBALL_FILES="$(tar -tzf "$RAG_TARBALL")"
 grep -q '^package/dist/index.js$' <<<"$RAG_TARBALL_FILES"
@@ -312,6 +317,7 @@ node -e "
       '@askdb/enrich': 'file:$ENRICH_TARBALL',
       askdb: 'file:$CLI_TARBALL',
       '@askdb/studio': 'file:$STUDIO_TARBALL',
+      '@askdb/http-api': 'file:$HTTP_API_TARBALL',
       '@askdb/rag': 'file:$RAG_TARBALL',
       '@askdb/mysql': 'file:$MYSQL_TARBALL',
       '@askdb/sqlite': 'file:$SQLITE_TARBALL',
@@ -393,6 +399,9 @@ fi
 echo "smoke: askdb-studio bin…"
 (cd "$WORK/apps" && ./node_modules/.bin/askdb-studio --version >/dev/null)
 (cd "$WORK/apps" && ./node_modules/.bin/askdb studio --help | grep -q 'askdb-studio')
+
+echo "smoke: askdb-http bin…"
+(cd "$WORK/apps" && ./node_modules/.bin/askdb-http --help | grep -q 'askdb-http')
 
 echo "smoke: askdb-rag bin…"
 (cd "$WORK/apps" && ./node_modules/.bin/askdb-rag --version >/dev/null)
