@@ -29,7 +29,7 @@ The dialect-agnostic NL-to-SQL pipeline. Schema loading, prompt construction, va
 | --- | --- |
 | `ask(options)` | The main pipeline. Returns validated SQL. See [full API reference](/reference/core-api/). |
 | `loadSchema(path)` | Load a schema artifact from a directory, bundle, or `schema.json`. |
-| `validateTenantScope` / `resolveTenantSql` | Tenant-scope enforcement primitives. |
+| `validateTenantScope` / `resolveTenantSql` | Tenant-scope validation and placeholder binding. |
 | `createAskDbLogger` | Structured logger that emits AskDB log events. |
 | `POSTGRES_DIALECT` and built-in dialect IDs | Dialect inputs accepted by `ask()`. |
 | `AskDbLanguageModel` | AskDB's public name for the AI SDK language model contract. |
