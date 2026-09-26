@@ -33,6 +33,8 @@ export {
   DEFAULT_PGVECTOR_INDEX_STRATEGY,
   DEFAULT_RAG_EMBEDDING_MODEL,
   DEFAULT_RAG_FILE_BASE_PATH,
+  DEFAULT_STUDIO_EXECUTE_MAX_ROWS,
+  DEFAULT_STUDIO_EXECUTE_TIMEOUT_MS,
   defaultRagEmbeddingDimensions,
 } from "./defaults.js";
 export { defineConfig, isAskDbEnvProjection, ASKDB_ENV_PROJECTION } from "./projection.js";

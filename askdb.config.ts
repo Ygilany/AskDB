@@ -68,6 +68,8 @@ export default defineConfig({
       ...(env("ASKDB_STUDIO_PORT") ? { port: Number(env("ASKDB_STUDIO_PORT")) } : {}),
     },
     execute: {
+      // Studio execute is opt-in; this repo's dev setup turns it on.
+      enabled: true,
       // Connection URL for the Studio playground query runner (maps to ASKDB_STUDIO_DATABASE_URL)
       databaseUrl: env("DATABASE_URL"),
     },

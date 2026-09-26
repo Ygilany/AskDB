@@ -289,6 +289,37 @@ export function flattenAskDbConfig(config: AskDbConfig): Record<string, string> 
   set(out, "ASKDB_STUDIO_EXECUTE_PROVIDER", config.studio?.execute?.provider);
   set(out, "ASKDB_STUDIO_DATABASE_URL", config.studio?.execute?.databaseUrl);
   set(out, "ASKDB_STUDIO_SQLITE_FILE", config.studio?.execute?.file);
+  const studioExecute = config.studio?.execute;
+  if (studioExecute?.enabled !== undefined) {
+    if (typeof studioExecute.enabled !== "boolean") {
+      throw new Error("askdb.config: studio.execute.enabled must be a boolean.");
+    }
+    set(out, "ASKDB_STUDIO_EXECUTE_ENABLED", String(studioExecute.enabled));
+  }
+  if (studioExecute?.useIntrospectionConnection !== undefined) {
+    if (typeof studioExecute.useIntrospectionConnection !== "boolean") {
+      throw new Error("askdb.config: studio.execute.useIntrospectionConnection must be a boolean.");
+    }
+    set(
+      out,
+      "ASKDB_STUDIO_EXECUTE_USE_INTROSPECTION_CONNECTION",
+      String(studioExecute.useIntrospectionConnection),
+    );
+  }
+  for (const [field, key] of [
+    ["timeoutMs", "ASKDB_STUDIO_EXECUTE_TIMEOUT_MS"],
+    ["maxRows", "ASKDB_STUDIO_EXECUTE_MAX_ROWS"],
+  ] as const) {
+    const raw = studioExecute?.[field];
+    if (raw === undefined) continue;
+    const n = parsePositiveInteger(raw);
+    if (n === undefined) {
+      throw new Error(
+        `askdb.config: studio.execute.${field} must be a positive integer (got ${JSON.stringify(raw)}).`,
+      );
+    }
+    set(out, key, String(n));
+  }
   // --- HTTP API listen (canonical keys on runtime flat map) ---
   const httpListen = config.httpApi?.listen;
   if (httpListen?.port !== undefined && !Number.isNaN(httpListen.port)) {

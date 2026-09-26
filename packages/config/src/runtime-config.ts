@@ -1,7 +1,12 @@
 import type { AskDbDialectId, AskDbIntrospectionProvider, AskDbStudioExecuteProvider } from "./constants.js";
 import { ASKDB_STUDIO_EXECUTE_PROVIDERS } from "./constants.js";
 import type { AskDbConfig } from "./types.js";
-import { DEFAULT_INTROSPECT_OUTPUT_DIR } from "./defaults.js";
+import {
+  DEFAULT_INTROSPECT_OUTPUT_DIR,
+  DEFAULT_STUDIO_EXECUTE_MAX_ROWS,
+  DEFAULT_STUDIO_EXECUTE_TIMEOUT_MS,
+  parsePositiveInteger,
+} from "./defaults.js";
 import { flatToAiEnv, getAskDbRuntimeStore } from "./runtime-store.js";
 
 /**
@@ -102,6 +107,23 @@ export type AskDbRuntimeStudioConfig = {
     databaseUrl: string | undefined;
     /** SQLite file path used when `provider === "sqlite"`. */
     file: string | undefined;
+    /** Whether `POST /api/execute` is allowed. Default `false` (opt-in). */
+    enabled: boolean;
+    /**
+     * Whether `databaseUrl` / `file` may fall back to the active introspection
+     * connection. Default `false`.
+     */
+    useIntrospectionConnection: boolean;
+    /**
+     * True when the introspection config has a connection for this provider that
+     * Studio did not use because `useIntrospectionConnection` is off. Lets hosts
+     * explain why execute reports "not configured".
+     */
+    introspectionConnectionAvailable: boolean;
+    /** Per-query timeout in milliseconds. Default `30000`. */
+    timeoutMs: number;
+    /** Maximum rows returned per query. Default `500`. */
+    maxRows: number;
   };
 };
 
@@ -258,44 +280,79 @@ function resolveStudioExecuteConfig(
     }
   }
 
+  const execute = structured.studio?.execute;
+  const enabled =
+    (typeof execute?.enabled === "boolean" ? execute.enabled : undefined) ??
+    parseFlatBoolean(pickFlat(flat, "ASKDB_STUDIO_EXECUTE_ENABLED")) ??
+    false;
+  const useIntrospectionConnection =
+    (typeof execute?.useIntrospectionConnection === "boolean" ? execute.useIntrospectionConnection : undefined) ??
+    parseFlatBoolean(pickFlat(flat, "ASKDB_STUDIO_EXECUTE_USE_INTROSPECTION_CONNECTION")) ??
+    false;
+  const timeoutMs =
+    parsePositiveInteger(execute?.timeoutMs) ??
+    parsePositiveInteger(pickFlat(flat, "ASKDB_STUDIO_EXECUTE_TIMEOUT_MS")) ??
+    DEFAULT_STUDIO_EXECUTE_TIMEOUT_MS;
+  const maxRows =
+    parsePositiveInteger(execute?.maxRows) ??
+    parsePositiveInteger(pickFlat(flat, "ASKDB_STUDIO_EXECUTE_MAX_ROWS")) ??
+    DEFAULT_STUDIO_EXECUTE_MAX_ROWS;
+
   // Connection resolution — each provider draws from its own structured field
-  // first, then the relevant flat env key.
+  // first, then the relevant flat env key. The introspection connection is only
+  // reused when `useIntrospectionConnection` is explicitly on, so turning execute
+  // on never silently runs ad-hoc SQL with introspection credentials.
+  const introspectionConnection = introspectionConnectionFor(provider, structured, flat);
   let databaseUrl: string | undefined;
   let file: string | undefined;
 
-  if (provider === "postgres") {
-    databaseUrl =
-      structured.studio?.execute?.databaseUrl?.trim() ||
-      pickFlat(flat, "ASKDB_STUDIO_DATABASE_URL") ||
-      (structured.introspection?.provider === "postgres"
-        ? structured.introspection.providerConfig?.postgres?.databaseUrl?.trim() ||
-          pickFlat(flat, "ASKDB_INTROSPECT_POSTGRES_URL")
-        : undefined);
-  } else if (provider === "mysql") {
-    databaseUrl =
-      structured.studio?.execute?.databaseUrl?.trim() ||
-      pickFlat(flat, "ASKDB_STUDIO_DATABASE_URL") ||
-      (structured.introspection?.provider === "mysql"
-        ? structured.introspection.providerConfig?.mysql?.databaseUrl?.trim() ||
-          pickFlat(flat, "ASKDB_INTROSPECT_MYSQL_URL")
-        : undefined);
-  } else if (provider === "sqlserver") {
-    databaseUrl =
-      structured.studio?.execute?.databaseUrl?.trim() ||
-      pickFlat(flat, "ASKDB_STUDIO_DATABASE_URL") ||
-      (structured.introspection?.provider === "sqlserver"
-        ? structured.introspection.providerConfig?.sqlserver?.databaseUrl?.trim() ||
-          pickFlat(flat, "ASKDB_INTROSPECT_SQLSERVER_URL")
-        : undefined);
-  } else if (provider === "sqlite") {
-    file =
-      structured.studio?.execute?.file?.trim() ||
-      pickFlat(flat, "ASKDB_STUDIO_SQLITE_FILE") ||
-      (structured.introspection?.provider === "sqlite"
-        ? structured.introspection.providerConfig?.sqlite?.file?.trim() ||
-          pickFlat(flat, "ASKDB_INTROSPECT_SQLITE_FILE")
-        : undefined);
+  if (provider === "sqlite") {
+    file = execute?.file?.trim() || pickFlat(flat, "ASKDB_STUDIO_SQLITE_FILE");
+  } else {
+    databaseUrl = execute?.databaseUrl?.trim() || pickFlat(flat, "ASKDB_STUDIO_DATABASE_URL");
+  }
+  const explicit = provider === "sqlite" ? file : databaseUrl;
+  if (!explicit && useIntrospectionConnection && introspectionConnection) {
+    if (provider === "sqlite") file = introspectionConnection;
+    else databaseUrl = introspectionConnection;
   }
 
-  return { provider, databaseUrl, file };
+  return {
+    provider,
+    databaseUrl,
+    file,
+    enabled,
+    useIntrospectionConnection,
+    introspectionConnectionAvailable:
+      !explicit && !useIntrospectionConnection && introspectionConnection !== undefined,
+    timeoutMs,
+    maxRows,
+  };
+}
+
+function introspectionConnectionFor(
+  provider: AskDbStudioExecuteProvider,
+  structured: Readonly<AskDbConfig>,
+  flat: Readonly<Record<string, string>>,
+): string | undefined {
+  const intro = structured.introspection;
+  if (intro?.provider !== provider) return undefined;
+  switch (provider) {
+    case "postgres":
+      return intro.providerConfig?.postgres?.databaseUrl?.trim() || pickFlat(flat, "ASKDB_INTROSPECT_POSTGRES_URL");
+    case "mysql":
+      return intro.providerConfig?.mysql?.databaseUrl?.trim() || pickFlat(flat, "ASKDB_INTROSPECT_MYSQL_URL");
+    case "sqlserver":
+      return intro.providerConfig?.sqlserver?.databaseUrl?.trim() || pickFlat(flat, "ASKDB_INTROSPECT_SQLSERVER_URL");
+    case "sqlite":
+      return intro.providerConfig?.sqlite?.file?.trim() || pickFlat(flat, "ASKDB_INTROSPECT_SQLITE_FILE");
+  }
+}
+
+function parseFlatBoolean(raw: string | undefined): boolean | undefined {
+  if (raw === undefined) return undefined;
+  const v = raw.toLowerCase();
+  if (["1", "true", "yes", "on"].includes(v)) return true;
+  if (["0", "false", "no", "off"].includes(v)) return false;
+  return undefined;
 }
