@@ -8,9 +8,10 @@
  * read-only role and prints the rows. Rejected SQL is never executed.
  */
 import { parseArgs } from "node:util";
-import { ask, loadSchema } from "@askdb/core";
-import { ensureArtifact, installTarget } from "./artifacts.js";
-import { DIALECTS, type Dialect } from "./fixture.js";
+import { AskDbError, ask, loadSchema, type AskGenerateDeps } from "@askdb/core";
+import { ensureArtifact, requireInstallTarget } from "./artifacts.js";
+import { isSupportedDialect } from "./dialects.js";
+import { DIALECTS } from "./fixture.js";
 import { executeReadOnly, type ExecuteResult } from "./host/execute.js";
 
 const USAGE = `usage: pnpm lab ask --db <${DIALECTS.join("|")}> --sql "<sql>" ["question"]`;
@@ -19,8 +20,9 @@ const USAGE = `usage: pnpm lab ask --db <${DIALECTS.join("|")}> --sql "<sql>" ["
  * The documented `deps.generateText` seam: a "model" that always answers with this SQL,
  * fenced the way a model reply is.
  */
-function fixedSqlReply(sql: string) {
-  return (async () => ({ text: `\`\`\`sql\n${sql}\n\`\`\`` })) as never;
+function fixedSqlReply(sql: string): NonNullable<AskGenerateDeps["generateText"]> {
+  // Only `text` is read from a generateText result on this path.
+  return (async () => ({ text: `\`\`\`sql\n${sql}\n\`\`\`` })) as unknown as NonNullable<AskGenerateDeps["generateText"]>;
 }
 
 function formatRows(result: ExecuteResult): string {
@@ -28,7 +30,8 @@ function formatRows(result: ExecuteResult): string {
   const widths = result.columns.map((_, i) => Math.max(...cells.map((r) => (r[i] as string).length)));
   const line = (r: string[]) => r.map((c, i) => c.padEnd(widths[i]!)).join("  ").trimEnd();
   const header = line(cells[0] as string[]);
-  const count = `${result.total} ${result.total === 1 ? "row" : "rows"}${result.truncated ? ` (showing ${result.rows.length})` : ""}`;
+  const n = result.rows.length;
+  const count = result.truncated ? `more than ${n} rows (showing ${n})` : `${n} ${n === 1 ? "row" : "rows"}`;
   return [header, "-".repeat(header.length), ...cells.slice(1).map((r) => line(r as string[])), "", count].join("\n");
 }
 
@@ -38,9 +41,13 @@ async function askCommand(argv: string[]): Promise<number> {
     options: { db: { type: "string" }, sql: { type: "string" } },
     allowPositionals: true,
   });
-  const dialect = values.db as Dialect | undefined;
+  const dialect = values.db;
   if (!dialect || !(DIALECTS as readonly string[]).includes(dialect)) {
     console.error(USAGE);
+    return 2;
+  }
+  if (!isSupportedDialect(dialect)) {
+    console.error(`lab ask: ${dialect} isn't supported yet; the replay model adds the other dialects (#243).`);
     return 2;
   }
   if (!values.sql) {
@@ -49,18 +56,22 @@ async function askCommand(argv: string[]): Promise<number> {
   }
   const question = positionals.join(" ") || "Run the SQL supplied with --sql.";
 
-  console.log(`target:     ${installTarget().label}`);
+  console.log(`target:     ${requireInstallTarget().label}`);
   console.log(`dialect:    ${dialect}`);
   const schema = loadSchema(ensureArtifact(dialect));
 
   let result: Awaited<ReturnType<typeof ask>>;
   try {
-    result = await ask({ question, schema, model: {} as never, dialect, deps: { generateText: fixedSqlReply(values.sql) } });
+    // `model` is required; with `deps.generateText` supplied it is never called.
+    result = await ask({ question, schema, model: {} as Parameters<typeof ask>[0]["model"], dialect, deps: { generateText: fixedSqlReply(values.sql) } });
   } catch (error) {
-    const err = error as Error & { rule?: string };
+    // Only AskDB's documented errors (SqlValidationError, SensitiveReferenceError, tenant
+    // errors, …, all AskDbError subclasses) are outcomes to report; anything else is a bug.
+    if (!(error instanceof AskDbError)) throw error;
+    const rule = "rule" in error ? ` ${String(error.rule)}` : "";
     console.log(`sql:        ${values.sql}`);
-    console.log(`validation: rejected — ${err.constructor.name}${err.rule ? ` ${err.rule}` : ""}`);
-    console.log(`            ${err.message}`);
+    console.log(`validation: rejected — ${error.name}${rule}`);
+    console.log(`            ${error.message}`);
     return 1;
   }
 

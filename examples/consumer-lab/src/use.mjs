@@ -26,7 +26,7 @@ const TARBALLS = join(STATE, "tarballs");
 const TARGET_FILE = join(STATE, "target.json");
 
 /** The AskDB packages the lab imports or runs directly. Everything else arrives transitively. */
-const DIRECT = ["@askdb/core", "@askdb/client", "@askdb/config", "askdb"];
+const DIRECT = ["@askdb/core", "@askdb/config", "askdb"];
 
 const MANAGED = ["package.json", "pnpm-workspace.yaml", "pnpm-lock.yaml"];
 const BLOCK_BEGIN = "# lab:use overrides begin";
@@ -49,8 +49,13 @@ function restore() {
 }
 
 /** Pack a checkout with this repo's pack script (older checkouts may not have one). */
+function requireCheckout(root) {
+  if (!existsSync(join(root, "pnpm-workspace.yaml")) || !existsSync(join(root, "packages", "core"))) {
+    fail(`${root} is not an AskDB checkout`);
+  }
+}
+
 function packCheckout(root) {
-  if (!existsSync(join(root, "pnpm-workspace.yaml"))) fail(`${root} is not an AskDB checkout`);
   run("bash", [join(REPO, "scripts", "pack-tarballs.sh"), TARBALLS, "--root", root]);
   return JSON.parse(readFileSync(join(TARBALLS, "manifest.json"), "utf8"));
 }
@@ -91,7 +96,10 @@ function pinTo(manifest) {
  */
 function resolvedAskDbPackages() {
   const lock = readFileSync(join(LAB, "pnpm-lock.yaml"), "utf8");
-  const section = lock.slice(lock.indexOf("\npackages:\n"), lock.indexOf("\nsnapshots:\n"));
+  const start = lock.indexOf("\npackages:\n");
+  if (start < 0) return [];
+  const end = lock.indexOf("\nsnapshots:\n", start);
+  const section = lock.slice(start, end < 0 ? undefined : end);
   const found = new Map();
   for (const match of section.matchAll(/^ {2}'?((?:@askdb\/[\w.-]+)|askdb)@([^':\n]+(?::[^':\n]+)?)'?:\n((?: {4}.*\n)*)/gm)) {
     const [, name, spec, body] = match;
@@ -132,6 +140,7 @@ function main() {
   }
 
   const root = resolve(target === "." ? REPO : target);
+  requireCheckout(root);
   const label = `checkout ${root} @ ${describeCheckout(root)}`;
   console.log(`lab:use: target = ${label}`);
   mkdirSync(STATE, { recursive: true });

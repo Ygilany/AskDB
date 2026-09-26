@@ -5,10 +5,11 @@
  * Drivers are used directly; AskDB never executes SQL.
  */
 import pg from "pg";
-import { connectionUrl, type Dialect } from "../fixture.js";
+import { connectionUrl } from "../fixture.js";
+import type { SupportedDialect } from "../dialects.js";
 
 export interface ExecuteOptions {
-  /** Rows returned to the caller; the full count is still reported. */
+  /** Rows returned to the caller; the statement is wrapped in a LIMIT of rowCap + 1. */
   rowCap?: number;
   statementTimeoutMs?: number;
   params?: readonly unknown[];
@@ -16,20 +17,20 @@ export interface ExecuteOptions {
 
 export interface ExecuteResult {
   columns: string[];
+  /** At most `rowCap` rows. */
   rows: unknown[][];
-  /** Rows the statement produced, before the cap. */
-  total: number;
+  /** True when the statement produced more than `rowCap` rows. */
   truncated: boolean;
 }
 
 // Return date/time values as the server renders them; the fixture's timestamps are naive UTC.
 const PG_RAW_TYPES = new Set([1082 /* date */, 1114 /* timestamp */, 1184 /* timestamptz */]);
 
-export async function executeReadOnly(dialect: Dialect, sql: string, opts: ExecuteOptions = {}): Promise<ExecuteResult> {
-  if (dialect !== "postgres") {
-    throw new Error(`Executing on ${dialect} isn't supported yet (see #243).`);
-  }
+export async function executeReadOnly(_dialect: SupportedDialect, sql: string, opts: ExecuteOptions = {}): Promise<ExecuteResult> {
   const rowCap = opts.rowCap ?? 100;
+  // The checklist's hard row cap: wrap the statement before executing it. One extra row
+  // is fetched only to tell whether the cap truncated the result.
+  const capped = `SELECT * FROM (${sql}) AS askdb_q LIMIT ${rowCap + 1}`;
   const client = new pg.Client({
     connectionString: connectionUrl("postgres", "reader"),
     types: {
@@ -41,12 +42,11 @@ export async function executeReadOnly(dialect: Dialect, sql: string, opts: Execu
   try {
     await client.query("BEGIN READ ONLY");
     await client.query(`SET LOCAL statement_timeout = ${Math.trunc(opts.statementTimeoutMs ?? 5000)}`);
-    const result = await client.query({ text: sql, values: opts.params ? [...opts.params] : [], rowMode: "array" });
+    const result = await client.query({ text: capped, values: opts.params ? [...opts.params] : [], rowMode: "array" });
     const rows = result.rows as unknown[][];
     return {
       columns: result.fields.map((f) => f.name),
       rows: rows.slice(0, rowCap),
-      total: rows.length,
       truncated: rows.length > rowCap,
     };
   } finally {

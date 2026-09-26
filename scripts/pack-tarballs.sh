@@ -20,7 +20,8 @@ DEST=""
 BUILD=1
 while [ $# -gt 0 ]; do
   case "$1" in
-    --root) ROOT="$(cd "$2" && pwd)"; shift 2 ;;
+    --root) [ $# -ge 2 ] || { echo "pack-tarballs: --root needs a directory" >&2; exit 2; }
+            ROOT="$(cd "$2" && pwd)"; shift 2 ;;
     --no-build) BUILD=0; shift ;;
     -*) echo "pack-tarballs: unknown flag $1" >&2; exit 2 ;;
     *) DEST="$1"; shift ;;
@@ -28,6 +29,11 @@ while [ $# -gt 0 ]; do
 done
 [ -n "$DEST" ] || { echo "usage: scripts/pack-tarballs.sh <dest-dir> [--root <checkout>] [--no-build]" >&2; exit 2; }
 
+# DEST is emptied, so refuse anything that isn't a previous pack-tarballs output.
+if [ -d "$DEST" ] && [ -n "$(ls -A "$DEST")" ] && [ ! -f "$DEST/manifest.json" ]; then
+  echo "pack-tarballs: $DEST is not empty and has no manifest.json; refusing to delete it" >&2
+  exit 2
+fi
 rm -rf "$DEST"
 mkdir -p "$DEST"
 DEST="$(cd "$DEST" && pwd)"

@@ -61,7 +61,7 @@ pnpm lab:test
 pnpm lab:use --restore                            # before committing: restore the lab's manifests
 ```
 
-`lab:use` rewrites the lab's `package.json`, `pnpm-workspace.yaml` and `pnpm-lock.yaml` to point at `.lab/tarballs/`; don't commit them in that state.
+`lab:use` rewrites the lab's `package.json`, `pnpm-workspace.yaml` and `pnpm-lock.yaml` to point at `.lab/tarballs/`; don't commit them in that state. Unlike the package suites above, lab tests don't use `integrationSuite()`: the lab exists to run against real databases, so a missing fixture or install fails the suite instead of skipping it.
 
 ### Repo-root `askdb.config.ts` and your IDE
 

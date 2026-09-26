@@ -317,7 +317,6 @@ node -e "
       '@askdb/enrich': 'file:$ENRICH_TARBALL',
       askdb: 'file:$CLI_TARBALL',
       '@askdb/studio': 'file:$STUDIO_TARBALL',
-      '@askdb/http-api': 'file:$HTTP_API_TARBALL',
       '@askdb/rag': 'file:$RAG_TARBALL',
       '@askdb/mysql': 'file:$MYSQL_TARBALL',
       '@askdb/sqlite': 'file:$SQLITE_TARBALL',
@@ -339,6 +338,11 @@ fi
 
 echo "smoke: installing app-local pg driver…"
 (cd "$WORK/apps" && npm install --silent --no-audit --no-fund --no-package-lock 'pg@^8.21.0')
+
+# @askdb/http-api still hard-depends on pg (#260), so it joins the sandbox only after the app
+# has opted into the driver. Move it into the no-pg install above once #260 is fixed.
+echo "smoke: installing @askdb/http-api…"
+(cd "$WORK/apps" && npm install --silent --no-audit --no-fund --no-package-lock "$HTTP_API_TARBALL" 'pg@^8.21.0')
 
 echo "smoke: minimal askdb.config.ts for cli bootstrap…"
 cat >"$WORK/apps/askdb.config.ts" <<'SMOKEASKDB'
