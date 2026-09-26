@@ -7,6 +7,7 @@ import {
   type BuiltInDialectId,
   type DialectSpec,
 } from "./dialect-spec.js";
+import { GENERIC_LEXER, lexSql, lexerProfileFor } from "./lexer.js";
 import { validateSelectSql } from "./validate.js";
 
 // ---------------------------------------------------------------------------
@@ -59,10 +60,10 @@ export type BoundQuery = {
 };
 
 // ---------------------------------------------------------------------------
-// Tokenizer — span-returning quote-state machine
+// Spans — code / quoted / comment regions, from the shared lexer
 // ---------------------------------------------------------------------------
 
-export type SqlSpanKind = "code" | "quoted";
+export type SqlSpanKind = "code" | "quoted" | "comment";
 
 export type SqlSpan = {
   kind: SqlSpanKind;
@@ -71,178 +72,36 @@ export type SqlSpan = {
 };
 
 /**
- * Tokenize SQL into contiguous code vs quoted regions.
- * Recognizes single-quoted strings (doubled-quote escapes), double-quoted
- * identifiers, PostgreSQL dollar-quoting, MySQL backticks, and SQL Server brackets.
+ * Split SQL into contiguous code / quoted / comment regions using the shared lexer
+ * (`lexer.ts`). With a dialect, strings, quoted identifiers, and comments follow that
+ * engine's rules (Postgres `E'…'` and exact-tag `$tag$…$tag$`, MySQL backslash escapes
+ * and `#` comments, SQL Server `[…]`, …). Without one, the generic profile recognizes
+ * the union of quoting forms. An unterminated quote or comment runs to the end.
  */
-export function tokenizeSqlSpans(sql: string): SqlSpan[] {
+export function tokenizeSqlSpans(
+  sql: string,
+  dialect?: Pick<DialectSpec, "id" | "backslashEscapes">,
+): SqlSpan[] {
+  const profile = (dialect && lexerProfileFor(dialect)) ?? GENERIC_LEXER;
   const spans: SqlSpan[] = [];
-  let i = 0;
   let codeStart = 0;
-
-  const pushCode = (end: number) => {
+  const pushCode = (end: number): void => {
     if (end > codeStart) spans.push({ kind: "code", start: codeStart, end });
   };
-
-  while (i < sql.length) {
-    const ch = sql[i]!;
-
-    if (ch === "'") {
-      pushCode(i);
-      const start = i;
-      i++;
-      while (i < sql.length) {
-        if (sql[i] === "'" && sql[i + 1] === "'") {
-          i += 2;
-          continue;
-        }
-        if (sql[i] === "'") {
-          i++;
-          break;
-        }
-        i++;
-      }
-      spans.push({ kind: "quoted", start, end: i });
-      codeStart = i;
-      continue;
-    }
-
-    if (ch === '"') {
-      pushCode(i);
-      const start = i;
-      i++;
-      while (i < sql.length && sql[i] !== '"') {
-        if (sql[i] === "\\") i++;
-        i++;
-      }
-      if (i < sql.length) i++;
-      spans.push({ kind: "quoted", start, end: i });
-      codeStart = i;
-      continue;
-    }
-
-    if (ch === "`") {
-      pushCode(i);
-      const start = i;
-      i++;
-      while (i < sql.length && sql[i] !== "`") {
-        if (sql[i] === "\\") i++;
-        i++;
-      }
-      if (i < sql.length) i++;
-      spans.push({ kind: "quoted", start, end: i });
-      codeStart = i;
-      continue;
-    }
-
-    if (ch === "[") {
-      pushCode(i);
-      const start = i;
-      i++;
-      while (i < sql.length && sql[i] !== "]") {
-        i++;
-      }
-      if (i < sql.length) i++;
-      spans.push({ kind: "quoted", start, end: i });
-      codeStart = i;
-      continue;
-    }
-
-    // Dollar-quoting: $tag$ … $tag$. Do not treat $1 as a dollar quote.
-    if (ch === "$" && /^\$\w*\$/.test(sql.slice(i))) {
-      const tagMatch = /^\$(\w*)\$/.exec(sql.slice(i))!;
-      const opener = tagMatch[0]!;
-      const closerAt = sql.indexOf(opener, i + opener.length);
-      if (closerAt === -1) {
-        // Unterminated — treat remainder as code (matches prior fail-open).
-        break;
-      }
-      pushCode(i);
-      const end = closerAt + opener.length;
-      spans.push({ kind: "quoted", start: i, end });
-      i = end;
-      codeStart = i;
-      continue;
-    }
-
-    i++;
+  for (const token of lexSql(sql, profile)) {
+    const kind: SqlSpanKind | undefined =
+      token.kind === "string" || token.kind === "quoted_identifier"
+        ? "quoted"
+        : token.kind === "comment"
+          ? "comment"
+          : undefined;
+    if (!kind) continue;
+    pushCode(token.start);
+    spans.push({ kind, start: token.start, end: token.end });
+    codeStart = token.end;
   }
-
   pushCode(sql.length);
   return spans;
-}
-
-/**
- * Strip quoted regions for keyword / multi-statement checks.
- * Preserves historical replacement markers for quotes the old stripper knew
- * about (`''`, `""`, `$$`); new quote forms (backticks, brackets) become spaces.
- */
-export function stripSqlStringLiterals(sql: string): string {
-  // Walk with the same control flow as the historical stripper for ', ", and $$,
-  // then additionally skip backticks and brackets — producing equivalent output
-  // for previously-supported forms.
-  let out = "";
-  let i = 0;
-  while (i < sql.length) {
-    const ch = sql[i]!;
-    if (ch === "'") {
-      i++;
-      while (i < sql.length) {
-        if (sql[i] === "'" && sql[i + 1] === "'") {
-          i += 2;
-          continue;
-        }
-        if (sql[i] === "'") {
-          i++;
-          break;
-        }
-        i++;
-      }
-      out += "''";
-      continue;
-    }
-    if (ch === '"') {
-      i++;
-      while (i < sql.length && sql[i] !== '"') {
-        if (sql[i] === "\\") i++;
-        i++;
-      }
-      if (i < sql.length) i++;
-      out += '""';
-      continue;
-    }
-    if (ch === "`") {
-      i++;
-      while (i < sql.length && sql[i] !== "`") {
-        if (sql[i] === "\\") i++;
-        i++;
-      }
-      if (i < sql.length) i++;
-      out += "``";
-      continue;
-    }
-    if (ch === "[") {
-      i++;
-      while (i < sql.length && sql[i] !== "]") {
-        i++;
-      }
-      if (i < sql.length) i++;
-      out += "[]";
-      continue;
-    }
-    if (ch === "$" && /^\$\w*\$/.test(sql.slice(i))) {
-      // Match historical indexOf-based closer scan for observable parity.
-      const end = sql.indexOf("$", i + 1);
-      const tagEnd = sql.indexOf("$", end + 1);
-      if (tagEnd === -1) return out + sql.slice(i);
-      i = tagEnd + 1;
-      out += "$$";
-      continue;
-    }
-    out += ch;
-    i++;
-  }
-  return out;
 }
 
 // ---------------------------------------------------------------------------
@@ -258,14 +117,18 @@ export type PlaceholderOccurrence = {
   end: number;
 };
 
-const PLACEHOLDER_TOKEN_RE = /:([a-z][a-z0-9_]*)/g;
+// `(?<!:)` keeps the type in a `value::type` cast from reading as a `:type` placeholder.
+const PLACEHOLDER_TOKEN_RE = /(?<!:):([a-z][a-z0-9_]*)/g;
 
 /**
- * Find `:name` placeholders only outside quoted regions, in source order.
- * A quoted `':name'` is invisible by construction.
+ * Find `:name` placeholders only in code regions, in source order.
+ * A quoted `':name'` or a commented-out `-- :name` is invisible by construction.
  */
-export function scanPlaceholders(sql: string): PlaceholderOccurrence[] {
-  const spans = tokenizeSqlSpans(sql);
+export function scanPlaceholders(
+  sql: string,
+  dialect?: Pick<DialectSpec, "id" | "backslashEscapes">,
+): PlaceholderOccurrence[] {
+  const spans = tokenizeSqlSpans(sql, dialect);
   const out: PlaceholderOccurrence[] = [];
   for (const span of spans) {
     if (span.kind !== "code") continue;
@@ -540,7 +403,7 @@ export function bindPreparedQuery(
   const style = markerStyleForDialect(prepared.dialect);
   const namedSql = prepared.namedSql;
 
-  const occurrences = scanPlaceholders(namedSql);
+  const occurrences = scanPlaceholders(namedSql, spec);
   const declByName = new Map(prepared.parameters.map((p) => [p.name, p]));
 
   for (const p of prepared.parameters) {
@@ -700,7 +563,7 @@ export function bindPreparedQuery(
     unboundSql = unboundSql.slice(0, edit.start) + edit.marker + unboundSql.slice(edit.end);
   }
 
-  if (scanPlaceholders(sql).length > 0 || scanPlaceholders(unboundSql).length > 0) {
+  if (scanPlaceholders(sql, spec).length > 0 || scanPlaceholders(unboundSql, spec).length > 0) {
     throw paramError("UNRESOLVED_PLACEHOLDER", "One or more placeholders remain after binding.");
   }
 
