@@ -2,6 +2,7 @@ import type { LanguageModel } from "ai";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { MockLanguageModelV3 } from "ai/test";
 import { describe, expect, it, vi } from "vitest";
 import { AskDbError, SqlValidationError } from "../errors.js";
 import { AskDbLogEvent } from "../logging/log-events.js";
@@ -194,8 +195,8 @@ describe("generateSelectSql — prompt parameterization per dialect", () => {
     await generateSelectSql(dialect, "show me users", minimalSchema, fakeModel, {
       generateText,
     });
-    const call = generateText.mock.calls[0]![0] as { instructions: string; prompt: string };
-    return { instructions: call.instructions, prompt: call.prompt };
+    const call = generateText.mock.calls[0]![0] as { system: string; prompt: string };
+    return { instructions: call.system, prompt: call.prompt };
   }
 
   it("MySQL prompt mentions backticks and CONCAT(), system prompt names MySQL", async () => {
@@ -223,6 +224,37 @@ describe("generateSelectSql — prompt parameterization per dialect", () => {
     expect(prompt).toMatch(/SQL Server SELECT/);
     expect(prompt).toMatch(/TOP/);
     expect(prompt).toMatch(/OFFSET .* FETCH NEXT/);
+  });
+
+  it("sends the system prompt as `system` (honored by AI SDK 6 and 7), not `instructions`", async () => {
+    // `ai` is a peer dependency (`^6 || ^7`). AI SDK 6 ignores `instructions`;
+    // AI SDK 7 treats `system` as a deprecated alias. Only `system` works on both.
+    const generateText = vi.fn(async () => ({ text: "```sql\nSELECT id FROM users\n```" }));
+    await generateSelectSql(POSTGRES_DIALECT, "show me users", minimalSchema, fakeModel, {
+      generateText,
+    });
+    const call = generateText.mock.calls[0]![0] as Record<string, unknown>;
+    expect(call.system).toEqual(expect.stringContaining("AskDB SQL generator"));
+    expect("instructions" in call).toBe(false);
+  });
+
+  it("delivers the system prompt to the model through the real AI SDK generateText", async () => {
+    const model = new MockLanguageModelV3({
+      doGenerate: async () => ({
+        content: [{ type: "text", text: "```sql\nSELECT id FROM users\n```" }],
+        finishReason: { unified: "stop", raw: undefined },
+        usage: {
+          inputTokens: { total: 1, noCache: 1, cacheRead: undefined, cacheWrite: undefined },
+          outputTokens: { total: 1, text: 1, reasoning: undefined },
+        },
+        warnings: [],
+      }),
+    });
+    const result = await generateSelectSql(POSTGRES_DIALECT, "show me users", minimalSchema, model);
+    expect(result.sql).toMatch(/SELECT id FROM users/);
+    const prompt = model.doGenerateCalls[0]!.prompt;
+    const systemMessage = prompt.find((m) => m.role === "system");
+    expect(systemMessage?.content).toEqual(expect.stringContaining("AskDB SQL generator"));
   });
 
   it("rejects SQLite ATTACH via dialect's extraForbiddenKeywords", async () => {

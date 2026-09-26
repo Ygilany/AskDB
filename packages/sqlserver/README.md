@@ -9,8 +9,10 @@ Microsoft SQL Server integration for AskDB. Bundles three pieces:
 ## Install
 
 ```bash
-pnpm add @askdb/core @askdb/introspect @askdb/sqlserver
+pnpm add @askdb/core @askdb/introspect @askdb/sqlserver ai
 ```
+
+`ai` (Vercel AI SDK 6 or 7) is a required peer dependency of `@askdb/core`; your app owns its version.
 
 `mssql` is an **optional peer dependency** — install it only when using live introspection mode:
 

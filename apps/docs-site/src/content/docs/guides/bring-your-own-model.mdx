@@ -132,7 +132,7 @@ const { sql } = await ask({
 });
 ```
 
-Install the provider package and construct the model:
+Install the provider package and construct the model. `ai` is a peer dependency of `@askdb/core` (AI SDK 6 or 7 are both supported), so it is installed alongside the provider package and AskDB uses whichever version your app pins:
 
 <Tabs syncKey="ai-provider">
   <TabItem label="OpenAI">

@@ -7,15 +7,17 @@ Dialect-agnostic NL→SQL pipeline for AskDB. Provides `ask()` orchestration, sc
 ## Install
 
 ```bash
-pnpm add @askdb/core
+# `ai` (Vercel AI SDK) is a required peer dependency — your app owns its version
+pnpm add @askdb/core ai
 # Plus a dialect adapter for the engine you target:
 pnpm add @askdb/postgres
-# Plus a model provider, for example:
+# Plus a model — either construct one directly with an AI SDK provider:
 pnpm add @ai-sdk/openai
-# Optional AskDB config/env model factory:
-pnpm add @askdb/ai
-pnpm add @askdb/ai-openai
+# …or use AskDB's config/env model factory and a provider adapter:
+pnpm add @askdb/ai @askdb/ai-openai
 ```
+
+`ai` is a **peer dependency** (`^6 || ^7`), not a bundled dependency: `ask()` receives a `LanguageModel` your app constructs, so core must use the same `ai` instance your app does. Hosts on AI SDK 6 (e.g. `@ai-sdk/openai@3`) and AI SDK 7 (`@ai-sdk/openai@4`) are both supported. The config-driven `@askdb/ai` / `@askdb/ai-*` / `@askdb/client` path currently requires AI SDK 7.
 
 `@askdb/core` itself does not depend on `pg`. The optional `pg` peer lives on `@askdb/postgres` for live Postgres introspection.
 
