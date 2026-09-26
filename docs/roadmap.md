@@ -147,7 +147,7 @@ Completed: Shipped `@askdb/rag` with deterministic schema chunking, BYO embedder
 - **`ask({ retriever })`** — Optional retriever wired into prompt assembly: when supplied, top-k chunks replace the full DDL block; when omitted, the current behavior is preserved.
 - **Sensitive propagation** — Chunker honors v2 sensitive flags per the contract: descriptions/aliases/enum/`Common query language` chunks excluded by default when they reference sensitive columns; logs counts only.
 
-> **Old Phase 7 — superseded.** The earlier "user-run introspection (Postgres → Schema v1 physical)" phase has been replaced by Phase 6 above. The reference SQL queries it documented are still valid and live at [`docs/specs/postgres-introspection-for-askdb-schema-v1.md`](specs/postgres-introspection-for-askdb-schema-v1.md) (now flagged superseded); the new Phase 6 spec cites them.
+> **Old Phase 7 — superseded.** The earlier "user-run introspection (Postgres → Schema v1 physical)" phase has been replaced by Phase 6 above. The reference catalog SQL now ships as templates in `@askdb/postgres` (`askdb introspect templates`); see the introspection spec at [`docs/specs/introspection.md`](specs/introspection.md).
 
 ---
 

@@ -2,7 +2,7 @@
 
 This document fixes **trust boundaries** for headless pipelines (CLI today; MCP/HTTP later): what may enter **model context** beyond the AskDB schema and natural-language question.
 
-**Postgres:** Execution remains **read-only `SELECT`** in a **`BEGIN READ ONLY`** transaction ([`packages/core/src/exec/postgres.ts`](../../packages/core/src/exec/postgres.ts)) — unchanged from Phase 1.
+**Execution:** AskDB returns SQL and does not execute it. Hosts that run generated SQL own the read-only role, transaction, and audit controls.
 
 ---
 
@@ -21,7 +21,7 @@ This document fixes **trust boundaries** for headless pipelines (CLI today; MCP/
 
 ## Out of scope for v1 (reserved names / roadmap)
 
-Product copy in [`README.md`](../README.md) describes additional modes (**report shape**, **full AI-assisted reporting**). Those are **not selectable** in the CLI/engine v1 contract; behaviour is unspecified until later phases.
+Product copy in [`README.md`](../../README.md) describes additional modes (**report shape**, **full AI-assisted reporting**). Those are **not selectable** in the CLI/engine v1 contract; behaviour is unspecified until later phases.
 
 ---
 
@@ -36,7 +36,7 @@ Product copy in [`README.md`](../README.md) describes additional modes (**report
 
 Hosts pass **`AskDbModeV1`** (see `@askdb/core` exports):
 
-- CLI: `--mode <schema_only|bounded_results>` or env **`ASKDB_MODE`** (see [`README.md`](../README.md)).
+- CLI: `--mode <schema_only|bounded_results>` or env **`ASKDB_MODE`** (see [`README.md`](../../README.md)).
 - Library: **`ask({ ..., mode })`**.
 
 Structured logs emit **`askdb.pipeline.mode`** at pipeline start and **`askdb.pipeline.post_execute`** after execute when rows were produced.
