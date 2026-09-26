@@ -18,6 +18,7 @@
  * Prints the SQL and the validation outcome, then executes accepted SQL on the fixture
  * as the read-only role and prints the rows. Rejected SQL is never executed.
  */
+import { createHash } from "node:crypto";
 import { parseArgs } from "node:util";
 import { createOpenAI } from "@ai-sdk/openai";
 import { openaiProvider } from "@askdb/ai-openai";
@@ -117,6 +118,11 @@ async function askCommand(argv: string[]): Promise<number> {
   const schemaDir = ensureArtifact(dialect);
 
   let replay: ReplayServer | undefined;
+  // What the model was sent, as a digest: equal digests mean the two paths built the same prompt.
+  const showPrompt = () => {
+    const prompt = replay?.requests().at(-1)?.prompt;
+    if (prompt) console.log(`prompt:     ${prompt.length} chars, sha256 ${createHash("sha256").update(prompt).digest("hex").slice(0, 16)}`);
+  };
   let result: AskResult;
   try {
     if (values.sql) {
@@ -130,8 +136,10 @@ async function askCommand(argv: string[]): Promise<number> {
       const baseURL = replay.baseURL(dialect);
       console.log(`model:      replay at ${baseURL}, via ${via === "raw" ? "createOpenAI() → ask()" : "createAskDb() + @askdb/ai-openai"}`);
       result = await (via === "raw" ? askRaw : askClient)(dialect, question, schemaDir, baseURL);
+      showPrompt();
     }
   } catch (error) {
+    showPrompt();
     // A request the replay server refused: say what's missing, not AskDB's wrapping of it.
     const refused = replay?.requests().find((r) => r.error);
     if (refused) {

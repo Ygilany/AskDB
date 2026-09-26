@@ -6,12 +6,14 @@
  * AskDB (prompt, model call, extraction, validation) to rows executed on the fixture, on
  * all five dialects. The raw-model path (a `createOpenAI({ baseURL })` model passed to
  * `ask()`) and the adapter path (`createAskDb` with `@askdb/ai-openai`, configured by
- * `providerConfig.openai.baseUrl`) return the same SQL, which is the cassette's. A
+ * `providerConfig.openai.baseUrl`) send the model the same prompt, and return the same
+ * SQL, which is the cassette's. A
  * question with no reply fails loudly, saying how to add one.
  * Catches: a packed `@askdb/core` that rejects valid dialect syntax (backticks, brackets,
  * `TOP`, the quoted reserved-word table `order`), extraction that mangles a model reply,
- * config-driven model or baseUrl resolution in `@askdb/client`/`@askdb/ai-openai` that
- * drifts from the raw path, and a replay miss that passes silently.
+ * config-driven model, baseUrl or dialect resolution in `@askdb/client`/`@askdb/ai-openai`
+ * that drifts from the raw path (a different dialect changes the prompt even when the
+ * replayed SQL can't differ), and a replay miss that passes silently.
  * Not covered elsewhere: the client and adapter unit tests mock the AI SDK; core's tests
  * use workspace source and never call a model over HTTP or run the SQL on an engine.
  * No production seam: both model paths are the documented ones; the replay server is
@@ -50,6 +52,11 @@ function printedSql(out: string): string | undefined {
   return match?.[1]!.replace(/\n {12}/g, "\n");
 }
 
+/** The digest `lab ask` printed of the prompt the replay server received. */
+function printedPrompt(out: string): string | undefined {
+  return /^prompt: {5}(.+)$/m.exec(out)?.[1];
+}
+
 function cassetteSql(dialect: SupportedDialect, questionId: string): string {
   const cassette = readCassette(dialect, QUESTIONS.find((q) => q.id === questionId)!);
   return /```sql\n([\s\S]*?)\n```/.exec(cassette!.reply)![1]!;
@@ -86,10 +93,12 @@ describe.each(SUPPORTED_DIALECTS.map((d) => [d] as [SupportedDialect]))("[%s] la
     expect(raw.out).toMatch(/^7 rows$/m);
   });
 
-  it.each(QUESTIONS.map((q) => [q.id]))("returns the cassette's SQL for %s through both model paths", (id) => {
+  it.each(QUESTIONS.map((q) => [q.id]))("sends the same prompt and returns the cassette's SQL for %s through both model paths", (id) => {
     const { raw, client } = runs.get(id)!;
 
     expect(client.status).toBe(0);
+    expect(printedPrompt(raw.out)).toBeDefined();
+    expect(printedPrompt(client.out)).toBe(printedPrompt(raw.out));
     expect(printedSql(raw.out)).toBe(cassetteSql(dialect, id));
     expect(printedSql(client.out)).toBe(printedSql(raw.out));
   });
