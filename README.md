@@ -124,25 +124,19 @@ pnpm preflight
 
 Public release steps are tracked in [`docs/release.md`](docs/release.md).
 
-**Pagila dev fixture** — optional PostgreSQL loaded with the [Pagila](https://github.com/devrimgunduz/pagila) sample database ([`fixtures/pagila/README.md`](fixtures/pagila/README.md)):
+**Multi-engine dev fixture** — the same logical schema and data in PostgreSQL, MySQL, MariaDB, SQL Server and SQLite ([`fixtures/multi-engine/README.md`](fixtures/multi-engine/README.md)):
 
 ```bash
-pnpm pagila:up        # docker compose up --build -d (PostgreSQL on localhost:5433)
-pnpm pagila:logs      # follow container logs
-pnpm pagila:down      # stop and remove containers (keeps volume)
-pnpm pagila:reset     # down and delete volume — next `pagila:up` re-imports Pagila
+pnpm fixture:up       # start the containers, wait for health, seed (idempotent)
+pnpm fixture:down     # stop the containers (keeps volumes)
+pnpm fixture:reset    # delete volumes and the SQLite file, then fixture:up
 ```
 
-Equivalent without pnpm:
+Then point AskDB at one of them, for example:
 
 ```bash
-docker compose -f fixtures/pagila/docker-compose.yml up --build -d
-```
-
-Then point AskDB at it:
-
-```bash
-export DATABASE_URL="postgres://postgres:postgres@127.0.0.1:5433/pagila"
+npx askdb introspect --engine postgres --schemas org,people,billing,ref \
+  --url "postgres://fixture_reader:fixture_reader@127.0.0.1:15432/askdb_fixture"
 ```
 
 **Schema artifacts** — see [`docs/contracts/schema-v2.md`](docs/contracts/schema-v2.md), [`fixtures/schemas/README.md`](fixtures/schemas/README.md), and the sample [`fixtures/schemas/orders-users.schema/`](fixtures/schemas/orders-users.schema). A schema artifact can be hand-authored, bundled as JSON, or produced from Postgres with `@askdb/introspect`. Optional **`sensitive`** markers tag columns/tables in NL→SQL DDL by default (`(sensitive)`); use **`--omit-sensitive-from-prompt`** or **`ASKDB_OMIT_SENSITIVE_FROM_PROMPT`** to withhold names instead. Policy for modes and summaries is in [`docs/contracts/sensitive-fields-and-modes.md`](docs/contracts/sensitive-fields-and-modes.md).
@@ -203,7 +197,7 @@ AskDB returns SQL for review; it does not execute generated SQL. Treat generated
 
 **Current limitations (pre-1.0 / dev):** AskDB returns SQL only (execution stays in your app); SQL guardrails are heuristic (not a full SQL parser); a first-party MCP server, richer report generation, and a hosted dashboard are roadmap work. Merge bars: **[Phase 1](docs/specs/phase-1-schema-sql-cli/validation.md)** · **[Phase 2](docs/specs/phase-2-hardening-modes/validation.md)**.
 
-**CI:** [`.github/workflows/ci.yml`](.github/workflows/ci.yml) runs `pnpm install --frozen-lockfile`, `pnpm build`, starts the Pagila introspection fixture, runs `pnpm test`, runs the installable smoke test, and validates publish with a dry run.
+**CI:** [`.github/workflows/ci.yml`](.github/workflows/ci.yml) runs `pnpm install --frozen-lockfile`, `pnpm build`, starts the multi-engine fixture, runs `pnpm test`, runs the installable smoke test, and validates publish with a dry run.
 
 ## What it does
 

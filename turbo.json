@@ -17,7 +17,7 @@
       "env": [
         "ASKDB_REQUIRE_INTEGRATION",
         "DATABASE_URL",
-        "PAGILA_DATABASE_URL",
+        "ASKDB_FIXTURE_HOST",
         "MYSQL_DATABASE_URL",
         "MSSQL_DATABASE_URL",
         "ASKDB_PGVECTOR_URL",

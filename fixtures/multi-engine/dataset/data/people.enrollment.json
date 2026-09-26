@@ -1,0 +1,242 @@
+[
+  {
+    "client_id": 1,
+    "agency_id": 1,
+    "program_code": "FOOD",
+    "enrolled_on": "2021-07-16",
+    "exited_on": null,
+    "status_code": "ACTIVE"
+  },
+  {
+    "client_id": 2,
+    "agency_id": 1,
+    "program_code": "YTH",
+    "enrolled_on": "2020-07-25",
+    "exited_on": "2021-12-04",
+    "status_code": "EXITED"
+  },
+  {
+    "client_id": 3,
+    "agency_id": 1,
+    "program_code": "FOOD",
+    "enrolled_on": "2022-09-15",
+    "exited_on": null,
+    "status_code": "ACTIVE"
+  },
+  {
+    "client_id": 3,
+    "agency_id": 1,
+    "program_code": "YTH",
+    "enrolled_on": "2019-06-19",
+    "exited_on": "2020-07-13",
+    "status_code": "EXITED"
+  },
+  {
+    "client_id": 4,
+    "agency_id": 1,
+    "program_code": "YTH",
+    "enrolled_on": "2019-08-14",
+    "exited_on": "2020-05-15",
+    "status_code": "EXITED"
+  },
+  {
+    "client_id": 5,
+    "agency_id": 1,
+    "program_code": "HOUS",
+    "enrolled_on": "2020-12-09",
+    "exited_on": null,
+    "status_code": "ACTIVE"
+  },
+  {
+    "client_id": 6,
+    "agency_id": 2,
+    "program_code": "FOOD",
+    "enrolled_on": "2021-03-25",
+    "exited_on": null,
+    "status_code": "WAITLIST"
+  },
+  {
+    "client_id": 6,
+    "agency_id": 2,
+    "program_code": "JOBS",
+    "enrolled_on": "2022-06-26",
+    "exited_on": "2023-02-01",
+    "status_code": "EXITED"
+  },
+  {
+    "client_id": 7,
+    "agency_id": 2,
+    "program_code": "FOOD",
+    "enrolled_on": "2021-12-26",
+    "exited_on": null,
+    "status_code": "ACTIVE"
+  },
+  {
+    "client_id": 8,
+    "agency_id": 2,
+    "program_code": "JOBS",
+    "enrolled_on": "2021-11-07",
+    "exited_on": null,
+    "status_code": "ACTIVE"
+  },
+  {
+    "client_id": 9,
+    "agency_id": 2,
+    "program_code": "FOOD",
+    "enrolled_on": "2023-04-02",
+    "exited_on": null,
+    "status_code": "ACTIVE"
+  },
+  {
+    "client_id": 9,
+    "agency_id": 2,
+    "program_code": "JOBS",
+    "enrolled_on": "2023-08-27",
+    "exited_on": null,
+    "status_code": "ACTIVE"
+  },
+  {
+    "client_id": 10,
+    "agency_id": 3,
+    "program_code": "YTH",
+    "enrolled_on": "2022-10-19",
+    "exited_on": "2023-04-23",
+    "status_code": "EXITED"
+  },
+  {
+    "client_id": 11,
+    "agency_id": 3,
+    "program_code": "YTH",
+    "enrolled_on": "2022-11-22",
+    "exited_on": "2023-11-04",
+    "status_code": "EXITED"
+  },
+  {
+    "client_id": 12,
+    "agency_id": 3,
+    "program_code": "ELD",
+    "enrolled_on": "2023-07-27",
+    "exited_on": null,
+    "status_code": "ACTIVE"
+  },
+  {
+    "client_id": 12,
+    "agency_id": 3,
+    "program_code": "YTH",
+    "enrolled_on": "2022-07-15",
+    "exited_on": "2023-10-04",
+    "status_code": "EXITED"
+  },
+  {
+    "client_id": 13,
+    "agency_id": 3,
+    "program_code": "YTH",
+    "enrolled_on": "2024-08-19",
+    "exited_on": "2025-06-07",
+    "status_code": "EXITED"
+  },
+  {
+    "client_id": 14,
+    "agency_id": 3,
+    "program_code": "ELD",
+    "enrolled_on": "2024-09-20",
+    "exited_on": null,
+    "status_code": "ACTIVE"
+  },
+  {
+    "client_id": 15,
+    "agency_id": 4,
+    "program_code": "FOOD",
+    "enrolled_on": "2023-03-17",
+    "exited_on": "2024-07-10",
+    "status_code": "EXITED"
+  },
+  {
+    "client_id": 15,
+    "agency_id": 4,
+    "program_code": "JOBS",
+    "enrolled_on": "2022-11-14",
+    "exited_on": null,
+    "status_code": "WAITLIST"
+  },
+  {
+    "client_id": 16,
+    "agency_id": 4,
+    "program_code": "JOBS",
+    "enrolled_on": "2022-06-19",
+    "exited_on": null,
+    "status_code": "WAITLIST"
+  },
+  {
+    "client_id": 17,
+    "agency_id": 4,
+    "program_code": "FOOD",
+    "enrolled_on": "2023-06-19",
+    "exited_on": null,
+    "status_code": "ACTIVE"
+  },
+  {
+    "client_id": 18,
+    "agency_id": 5,
+    "program_code": "HOUS",
+    "enrolled_on": "2023-01-10",
+    "exited_on": "2024-03-11",
+    "status_code": "EXITED"
+  },
+  {
+    "client_id": 19,
+    "agency_id": 5,
+    "program_code": "HOUS",
+    "enrolled_on": "2022-04-07",
+    "exited_on": null,
+    "status_code": "ACTIVE"
+  },
+  {
+    "client_id": 20,
+    "agency_id": 5,
+    "program_code": "HOUS",
+    "enrolled_on": "2023-08-22",
+    "exited_on": "2024-01-24",
+    "status_code": "EXITED"
+  },
+  {
+    "client_id": 21,
+    "agency_id": 6,
+    "program_code": "FOOD",
+    "enrolled_on": "2024-12-03",
+    "exited_on": null,
+    "status_code": "ACTIVE"
+  },
+  {
+    "client_id": 22,
+    "agency_id": 6,
+    "program_code": "FOOD",
+    "enrolled_on": "2022-01-06",
+    "exited_on": "2023-04-22",
+    "status_code": "EXITED"
+  },
+  {
+    "client_id": 23,
+    "agency_id": 7,
+    "program_code": "JOBS",
+    "enrolled_on": "2022-08-13",
+    "exited_on": null,
+    "status_code": "ACTIVE"
+  },
+  {
+    "client_id": 24,
+    "agency_id": 7,
+    "program_code": "JOBS",
+    "enrolled_on": "2024-07-05",
+    "exited_on": null,
+    "status_code": "ACTIVE"
+  },
+  {
+    "client_id": 25,
+    "agency_id": 7,
+    "program_code": "JOBS",
+    "enrolled_on": "2022-03-11",
+    "exited_on": null,
+    "status_code": "ACTIVE"
+  }
+]

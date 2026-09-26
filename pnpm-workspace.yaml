@@ -2,6 +2,8 @@ packages:
   - "packages/*"
   - "apps/*"
   - "examples/*"
+  # Shared multi-engine test fixture (replaces Pagila); see fixtures/multi-engine/README.md.
+  - "fixtures/multi-engine"
 publicHoistPattern:
   - "*turbo*"
 # Transitive-dependency pins we carry ahead of upstream.
