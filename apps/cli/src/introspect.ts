@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import { basename, join } from "node:path";
+import { isDeepStrictEqual } from "node:util";
 import {
   createAskDbLogger,
   formatSupportedAskDbLogLevels,
@@ -10,7 +11,7 @@ import {
 import { getAskDbRuntimeConfig } from "@askdb/config";
 import {
   introspect,
-  toV2SchemaJson,
+  renderSchemaV2Body,
   type Connector,
   type IntrospectResult,
   type IntrospectionFilters,
@@ -244,19 +245,32 @@ async function runWithOutput(
 
   if (opts.print) {
     const result = await introspect(input, undefined, { connector });
-    process.stdout.write(`${JSON.stringify(toV2SchemaJson(result.schema, schemaId), null, 2)}\n`);
-    return result;
+    const rendered = renderSchemaV2Body(result.schema, {
+      schemaId,
+      provider: result.provider,
+    });
+    process.stdout.write(rendered.body);
+    return { ...result, warnings: [...result.warnings, ...rendered.warnings] };
   }
 
   if (opts.diff) {
     const result = await introspect(input, undefined, { connector });
-    const generated = `${JSON.stringify(toV2SchemaJson(result.schema, schemaId), null, 2)}\n`;
     const existingPath = join(opts.diff, "schema.json");
-    const existing = existsSync(existingPath) ? readFileSync(existingPath, "utf8") : "";
+    const hasExisting = existsSync(existingPath);
+    // Render exactly what `--out <same dir>` would write: same provider, same
+    // ID-anchored merge (human-set `sensitive` flags carried over). Otherwise
+    // --diff reports "changed" against an untouched artifact.
+    const rendered = renderSchemaV2Body(result.schema, {
+      schemaId,
+      provider: result.provider,
+      existingArtifactDir: hasExisting && isV2SchemaFile(existingPath) ? opts.diff : undefined,
+    });
+    const existing = hasExisting ? readFileSync(existingPath, "utf8") : "";
+    const changed = rendered.body !== existing && !sameJson(existing, rendered.json);
     process.stdout.write(
-      `${JSON.stringify({ changed: generated !== existing, schemaJsonPath: existingPath }, null, 2)}\n`,
+      `${JSON.stringify({ changed, schemaJsonPath: existingPath }, null, 2)}\n`,
     );
-    return result;
+    return { ...result, warnings: [...result.warnings, ...rendered.warnings] };
   }
 
   const outDir = opts.out!;
@@ -269,6 +283,25 @@ async function runWithOutput(
     },
     { connector },
   );
+}
+
+/** True when `path` parses as a Schema v2 document (so it can seed the merge). */
+function isV2SchemaFile(path: string): boolean {
+  try {
+    const parsed: unknown = JSON.parse(readFileSync(path, "utf8"));
+    return typeof parsed === "object" && parsed !== null && (parsed as { version?: unknown }).version === 2;
+  } catch {
+    return false;
+  }
+}
+
+/** Key-order-insensitive comparison so a reformatted-but-equivalent file is not "changed". */
+function sameJson(existingBody: string, generated: unknown): boolean {
+  try {
+    return isDeepStrictEqual(JSON.parse(existingBody), generated);
+  } catch {
+    return false;
+  }
 }
 
 function buildFilters(opts: CliOptions): IntrospectionFilters | undefined {

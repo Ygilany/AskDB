@@ -42,3 +42,5 @@ export {
 } from "./exec/postgres.js";
 
 export { postgresConnectorProvider } from "./connector/provider.js";
+
+export { redactConnectionString } from "./redact.js";

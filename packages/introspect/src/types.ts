@@ -132,7 +132,20 @@ export type IntrospectionWarning =
   | { code: "new_column"; id: string; tableId: string }
   | { code: "unsupported_type"; column: string; type: string }
   | { code: "view_with_array_columns"; view: string; columns: string[] }
-  | { code: "ambiguous_filter"; filter: string };
+  | { code: "ambiguous_filter"; filter: string }
+  | {
+      /**
+       * A foreign key whose target lives in a different database/catalog than
+       * the one being introspected (e.g. MySQL `REFERENCES otherdb.t`). The
+       * target is not part of the artifact, so the relationship is omitted.
+       */
+      code: "cross_database_fk";
+      /** `table:<schema>.<name>` of the table declaring the FK. */
+      table: string;
+      constraint: string;
+      referencedDatabase: string;
+      referencedTable: string;
+    };
 
 export type IntrospectionResult = {
   schema: SqlSchema;

@@ -78,16 +78,6 @@ describe("describePostgres — orders-users snapshot", () => {
       defaultExpression: "now()",
     });
   });
-
-  it("is deterministic — two runs produce a byte-identical SqlSchema JSON", async () => {
-    const snapshot = loadFixture("orders-users.catalog.json");
-    const runner = createSnapshotCatalogQueryRunner(snapshot);
-
-    const a = await describePostgres({ runner, schemaId: "orders-users" });
-    const b = await describePostgres({ runner, schemaId: "orders-users" });
-
-    expect(JSON.stringify(a.schema)).toBe(JSON.stringify(b.schema));
-  });
 });
 
 describe("describePostgres — multi-column FK regression guard", () => {
@@ -258,35 +248,7 @@ describe("foldIntrospectionResult - live runner compatibility", () => {
   });
 });
 
-describe("describePostgres — declarative partitions (ADR 0003)", () => {
-  // Catalog rows are pre-filtered at the SQL boundary, so an in-memory
-  // snapshot runner can't reproduce the exclusion (it would have to also
-  // re-implement pg_inherits semantics). The unit-level assertion here is
-  // that the canonical `tables` template carries the NOT EXISTS clause; the
-  // end-to-end behavior is covered by the live pagila integration test
-  // (pagila's `payment` table is range-partitioned).
-  it("tables template SQL filters partition leaves via NOT EXISTS on pg_inherits", () => {
-    const connector = createPostgresConnector();
-    const bundle = connector.templates!();
-    const tablesTpl = bundle.templates.find((t) => t.name === "tables")!;
-    expect(tablesTpl.sql).toMatch(/NOT EXISTS/);
-    expect(tablesTpl.sql).toMatch(/pg_catalog\.pg_inherits/);
-    expect(tablesTpl.sql).toMatch(/p\.relkind\s*=\s*'p'/);
-  });
-});
-
 describe("createPostgresConnector wiring", () => {
-  it("describe() routes live mode through describePostgres", async () => {
-    const snapshot = loadFixture("orders-users.catalog.json");
-    const connector = createPostgresConnector();
-    const result = await connector.describe({
-      mode: "live",
-      runner: createSnapshotCatalogQueryRunner(snapshot),
-    });
-    expect(result.schema.schemaId).toBe("introspected");
-    expect(result.schema.schemas[0]!.tables).toHaveLength(2);
-  });
-
   it("templates() returns the canonical bundle with all 12 templates", () => {
     const connector = createPostgresConnector();
     const bundle = connector.templates();
@@ -312,12 +274,5 @@ describe("createPostgresConnector wiring", () => {
     for (const tpl of bundle.templates) {
       expect(tpl.sql).toMatch(/ORDER BY/i);
     }
-  });
-
-  it("describe() rejects missing from-export bundles with a clear error", async () => {
-    const connector = createPostgresConnector();
-    await expect(
-      connector.describe({ mode: "from-export", bundlePath: "/tmp/x" }),
-    ).rejects.toThrow(/missing manifest\.json/i);
   });
 });

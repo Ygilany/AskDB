@@ -67,6 +67,16 @@ pagilaSuite("introspect() against Pagila (live Postgres)", () => {
     ]) {
       expect(names.has(expected)).toBe(true);
     }
+
+    // Ordinary (non-partition) FKs render as relationships. Partition FK
+    // behavior (ADR 0003) is owned by partition-fk.integration.test.ts.
+    const raw = JSON.parse(readFileSync(join(outDir, "schema.json"), "utf8")) as {
+      tables: Array<{ relationships?: Array<{ from: string; to: string }> }>;
+    };
+    const rels = raw.tables.flatMap((t) => t.relationships ?? []);
+    expect(rels.map((r) => `${r.from}->${r.to}`)).toContain(
+      "table:public.rental#customer_id->table:public.customer#customer_id",
+    );
   });
 
   it("preserves composite primary-key column order on film_actor", async () => {
@@ -127,7 +137,7 @@ pagilaSuite("introspect() against Pagila (live Postgres)", () => {
     expect(leaves).toEqual([]);
   });
 
-  it("default include filter ['public'] excludes system schemas", async () => {
+  it("with no include filter, keeps public and excludes system schemas", async () => {
     const outDir = join(workDir, "pagila.schema");
     const result = await introspect(
       { mode: "live", runner: createPostgresCatalogQueryRunner(url!) },

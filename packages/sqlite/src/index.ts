@@ -29,3 +29,5 @@ export {
 } from "./exec/sqlite.js";
 
 export { sqliteConnectorProvider } from "./connector/provider.js";
+
+export { redactConnectionString } from "./redact.js";
