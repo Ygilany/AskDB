@@ -31,6 +31,7 @@ export function askdb(args: string[], cwd: string = LAB_ROOT): CliRun {
   return { status: run.status, stdout: run.stdout, stderr: run.stderr };
 }
 
+// `ai` and `rag` are required top-level fields (reference/config.mdx, "All top-level fields").
 function sqliteConfig(): string {
   return `import { defineConfig } from "@askdb/config";
 

@@ -304,7 +304,7 @@ The overlay marks `people.client.email` and `people.client.ssn` as `sensitive: t
 ## Commands and reporting
 
 - `pnpm lab:matrix` runs `lab:up` (idempotent), then the whole vitest suite, with `src/matrix-reporter.ts`. The reporter prints a `scenario × dialect` table with the values `pass`, `FAIL`, `n/a (reason)` and `known (discrepancy id)`. It also writes `.lab/matrix.json`. In CI the table is appended to `$GITHUB_STEP_SUMMARY`.
-- Test names encode `[dialect] scenario-id`, which is how the reporter builds the table. `--db` and `--only` filters pass through to vitest.
+- Test names encode `[dialect] scenario-id`, which is how the reporter builds the table. Vitest's own filters pass through: `pnpm lab:matrix -t <scenario-id>` or `-t '\[mysql\]'`.
 - **Known discrepancies** are GitHub issues labelled `discrepancy` (see `docs/agents/issue-tracker.md`). Each is classified with a label: `bug` for a product bug, `documentation` for a docs issue, and a note for a dataset/normalization or test issue. Each carries the docs quote, the observed behavior and the decision needed. A test for an open product bug is marked `it.fails` and names its issue, for example `it.fails("[mysql] … (#239)")`. When the bug is fixed, `it.fails` starts failing and forces the marker to be removed. The matrix shows `known (#239)` rather than green.
 
 ## CI plan
@@ -342,7 +342,7 @@ Every test file starts with a header comment answering the four authoring-gate q
 
 Seams the lab itself uses: the replay server and prompt capture are lab code. `deps.generateText` and `--mock-sql` are documented public seams.
 
-**Proof of failure.** Each PR description has a "break it" table: the temporary source change made in the checkout, the command (`pnpm lab:use . && pnpm lab:matrix --only <id>`), and the failing output. For example, removing `"delete"` from `BASE_FORBIDDEN` must turn the matching safety cases red; hardcoding `$N` markers must turn MySQL/SQL Server binding red. The change is then reverted. Negative controls must fail for the intended reason: each safety case asserts the rule code, not only that something was thrown.
+**Proof of failure.** Each PR description has a "break it" table: the temporary source change made in the checkout, the command (`pnpm lab:use . && pnpm lab:matrix -t <scenario-id>`), and the failing output. For example, removing `"delete"` from `BASE_FORBIDDEN` must turn the matching safety cases red; hardcoding `$N` markers must turn MySQL/SQL Server binding red. The change is then reverted. Negative controls must fail for the intended reason: each safety case asserts the rule code, not only that something was thrown.
 
 **Avoiding duplicates.** The lab does not replay unit-level cases the core validator tests already own, such as tokenizer edge cases. Its safety cases are the ones where engine behavior matters: whether the raw statement actually does damage on that engine.
 

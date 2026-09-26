@@ -20,7 +20,7 @@ pnpm lab ask --db sqlserver --via client "Which three agencies have the highest 
 pnpm lab ask --db postgres --sql "SELECT agency_id, name FROM org.agency"
 pnpm lab:test                  # the lab's own suite (needs the fixture and an installed lab)
 pnpm lab:matrix                # lab:up, then the suite as a scenario × dialect table
-pnpm lab:matrix -t '\[mysql\]'  # vitest flags pass through: one dialect, one file, …
+pnpm lab:matrix -t introspect-golden  # vitest flags pass through: one scenario (-t), one dialect (-t '\[mysql\]'), one file
 pnpm lab:use --restore         # put the committed baseline back
 ```
 
@@ -88,13 +88,15 @@ The dialect comes from the base URL: `http://127.0.0.1:<port>/<dialect>/v1`. The
 
 ## The matrix
 
-`pnpm lab:matrix` runs `lab:up` (idempotent: it installs only if the lab never was, so it tests whatever `lab:use` last installed), then the whole suite with `src/matrix-reporter.ts`. The reporter prints a `scenario × dialect` table and writes it to `.lab/matrix.json` (and to `$GITHUB_STEP_SUMMARY` when that is set). It builds the table from test results, never from a hand-kept list:
+`pnpm lab:matrix` runs `lab:up` (idempotent: it installs only if the lab never was, so it tests whatever `lab:use` last installed), then the whole suite with `src/matrix-reporter.ts`. The reporter prints a `scenario × dialect` table and writes it to `.lab/matrix.json` (and to `$GITHUB_STEP_SUMMARY` when that is set). It builds every test row from test results, never from a hand-kept list:
 
 - A test's full name starts with `[<dialect>] <scenario-id>`, usually as `describe("[mysql]")` around `it("introspect-golden: …")`. Tests that share a scenario and dialect share a cell.
 - `pass`: every test in the cell passed. `FAIL`: one failed, or its suite's hook did.
 - `known (#N)`: an `it.fails` test that names its `discrepancy` issue, for example `it.fails("… (#239)")`, failed as expected. Once the bug is fixed the test passes, `it.fails` turns that into a failure, and the cell shows `FAIL` until the marker is removed.
-- `n/a (reason)`: the test called `ctx.skip("reason")`. The `unique-constraints` and `view-marker` rows use this for facts Schema v2 can't express.
+- `n/a (reason)`: the test called `ctx.skip("reason")`, for a case that can't apply (for example a capability the target lacks).
 - `-`: no test ran for that dialect (none exists yet, or a `-t` filter excluded it).
+
+Below the test rows, the `unique-constraints *` and `view-marker *` rows are **annotations, not test results**: facts the golden schema holds but Schema v2 can't express (the "Not comparable" rule in [`NORMALIZATION.md`](../../fixtures/multi-engine/dataset/NORMALIZATION.md)). The reporter prints them as `n/a (not in Schema v2)` from a static list, and `matrix.json` keeps them under `annotations`.
 
 ## Introspection
 

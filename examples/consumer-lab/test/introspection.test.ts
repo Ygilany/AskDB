@@ -19,10 +19,6 @@
  * `askdb.config.ts`; that installed-CLI path is this file's distinct risk.
  * No production seam: only the installed `askdb` bin and `@askdb/core`'s public `loadSchema`.
  *
- * The `unique-constraints` and `view-marker` rows record facts the golden schema holds but
- * Schema v2 can't express (survey note 6 in `docs/specs/consumer-lab.md`); they are skipped
- * with that reason so the matrix shows `n/a` instead of silently omitting them.
- *
  * Needs the fixture (`pnpm fixture:up`) and an installed lab (`pnpm lab:use .`). It fails,
  * rather than skips, when either is missing.
  */
@@ -73,14 +69,6 @@ for (const dialect of DIALECTS) {
       const bundled = askdb(["bundle", artifact, "--out", bundle]);
       expect(bundled.status, bundled.stderr).toBe(0);
       expect(loadSchema(bundle)).toEqual(loadSchema(artifact));
-    });
-
-    it("unique-constraints: compared with the golden schema", (ctx) => {
-      ctx.skip("not in Schema v2");
-    });
-
-    it("view-marker: billing.agency_revenue marked as a view", (ctx) => {
-      ctx.skip("not in Schema v2");
     });
   });
 }

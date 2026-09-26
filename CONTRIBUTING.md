@@ -66,7 +66,7 @@ pnpm lab:use --restore                            # before committing: restore t
 
 `lab ask` answers only questions in the lab's catalog, from hand-written replies per dialect; adding a question means adding its replies (see the lab README).
 
-Lab test names start with `[<dialect>] <scenario-id>` (usually a `describe("[mysql]")` around `it("introspect-golden: …")`); that is how `lab:matrix` places each result. A lab test for an open product bug is an `it.fails` naming its `discrepancy` issue, such as `(#239)`, and shows as `known (#239)`. `ctx.skip("reason")` shows as `n/a (reason)`.
+Lab test names start with `[<dialect>] <scenario-id>`, which is how `lab:matrix` places each result; the cell values and how to mark a known bug are in the [lab README](examples/consumer-lab/README.md#the-matrix).
 
 `lab:use` rewrites the lab's `package.json`, `pnpm-workspace.yaml` and `pnpm-lock.yaml` to point at `.lab/tarballs/`; don't commit them in that state. Unlike the package suites above, lab tests don't use `integrationSuite()`: the lab exists to run against real databases, so a missing fixture or install fails the suite instead of skipping it.
 
