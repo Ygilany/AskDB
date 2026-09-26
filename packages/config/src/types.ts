@@ -230,6 +230,13 @@ export type IntrospectionProviderConfigs = {
      * When omitted, pass `--url` to `askdb introspect` or set `ASKDB_INTROSPECT_MYSQL_URL` in env.
      */
     databaseUrl?: string;
+    /**
+     * Databases to introspect (MySQL/MariaDB "schemas"), e.g. `["app", "sales", "analytics"]`.
+     * Each becomes its own namespace in the artifact, and cross-database foreign keys are kept.
+     * When omitted, only the connection URL's database is introspected, under the `public`
+     * namespace. `askdb introspect --schemas` overrides this list.
+     */
+    databases?: string[];
   };
   sqlite?: {
     /**

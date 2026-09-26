@@ -175,6 +175,7 @@ export function flattenAskDbConfig(config: AskDbConfig): Record<string, string> 
     // @askdb/prisma discovers it at runtime — no flat env key needed.
   } else if (intro.provider === "mysql") {
     set(out, "ASKDB_INTROSPECT_MYSQL_URL", intro.providerConfig?.mysql?.databaseUrl);
+    set(out, "ASKDB_INTROSPECT_MYSQL_DATABASES", intro.providerConfig?.mysql?.databases?.join(","));
   } else if (intro.provider === "sqlite") {
     set(out, "ASKDB_INTROSPECT_SQLITE_FILE", intro.providerConfig?.sqlite?.file);
   } else if (intro.provider === "sqlserver") {
