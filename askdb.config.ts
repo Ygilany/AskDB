@@ -26,7 +26,7 @@ export default defineConfig({
     providerConfig: {
       postgres: {
         // Postgres URL for `askdb introspect` — maps to ASKDB_INTROSPECT_POSTGRES_URL
-        // Pagila fixture (docker compose -f fixtures/pagila/docker-compose.yml …): often port 5433
+        // Multi-engine fixture (`pnpm fixture:up`): postgres://fixture_reader:fixture_reader@127.0.0.1:15432/askdb_fixture
         databaseUrl: env("DATABASE_URL"),
       },
     },
