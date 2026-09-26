@@ -31,6 +31,8 @@ The file is optional. A Schema v2 directory without `tenant-policy.md` has no te
 
 When present, the file enables tenant enforcement: `ask()` requires a valid `tenantScope`, prompts include the policy, and generated SQL is validated against scope.
 
+Only a **missing** file means "no tenant policy". In a bundle, that means only an absent `tenantPolicy` key. A `tenant-policy.md` that exists but is empty or cannot be read or parsed (for example, malformed YAML front-matter) makes `loadSchema()` throw `SchemaParseError` naming the file. The same applies to an empty or non-string bundle `tenantPolicy`. A broken policy never silently turns tenant enforcement off. `loadSchema("<dir>/schema.json")` loads the sibling `tenant-policy.md` the same way `loadSchema("<dir>")` does.
+
 ---
 
 ## Front-matter schema
@@ -351,7 +353,7 @@ When `ask({ parameterize: true })` (the default) also returns business-parameter
 
 ## Guardrail validation
 
-The validator runs after SQL generation, before placeholder replacement.
+In `ask()`, the validator runs on the SQL returned to the caller: `result.sql` after tenant placeholder replacement, plus `result.unboundSql` when the parameterized extras pass their consistency check. It runs for every dialect form, including custom `AskDialect` adapters. `generateSelectSql()` called directly validates the SQL it returns (placeholders still named).
 
 ### Parser-based validation (primary)
 

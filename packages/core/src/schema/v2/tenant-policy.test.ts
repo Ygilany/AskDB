@@ -186,6 +186,19 @@ schemaId: test
     expect(() => parseTenantPolicyMarkdown(content)).toThrow(SchemaParseError);
   });
 
+  it("throws SchemaParseError (not a raw YAMLException) for malformed YAML", () => {
+    const content = `---
+schemaId: test
+enforcement: strict
+roots: [unclosed
+---
+`;
+    expect(() => parseTenantPolicyMarkdown(content, "x/tenant-policy.md")).toThrow(SchemaParseError);
+    expect(() => parseTenantPolicyMarkdown(content, "x/tenant-policy.md")).toThrow(
+      /x\/tenant-policy\.md/,
+    );
+  });
+
   it("rejects unknown front-matter keys", () => {
     const content = `---
 schemaId: test

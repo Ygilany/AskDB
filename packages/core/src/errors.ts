@@ -42,6 +42,17 @@ export class SqlGenerationError extends AskDbError {
   }
 }
 
+/** A string `dialect` passed to `ask()` that is not a built-in dialect id. */
+export class UnknownDialectError extends AskDbError {
+  constructor(
+    message: string,
+    public readonly dialectId: string,
+  ) {
+    super(message);
+    this.name = "UnknownDialectError";
+  }
+}
+
 export type TenantScopeRejectionReason =
   | "MISSING_SCOPE"
   | "UNKNOWN_TENANT_ROOT"

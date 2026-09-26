@@ -76,7 +76,7 @@ interface AskPipelineResult {
   parameters?: QueryParameterBinding[] // named — for form UIs (includes values)
   preparedQuery?: PreparedQuery      // definitions + template only (no values)
   explain?: unknown
-  tenantGuardrail?: TenantGuardrailResult
+  tenantGuardrail?: TenantGuardrailResult // checked on the returned sql (+ unboundSql); every dialect form
   tenantParams?: unknown[]           // tenant-only; populated when tenantSqlMode = 'sql-params'
   tenantBindings?: TenantBinding[]
 }
@@ -91,6 +91,8 @@ type AskDialectInput =
   | DialectSpec             // descriptor object with promptBrief, extraForbiddenKeywords, etc.
   | AskDialect              // escape hatch: full custom { generate() } implementation
 ```
+
+A custom `AskDialect` bypasses the built-in SELECT-only validation. If the adapter should only emit read-only SQL, call the exported `validateSelectSql(spec, sql)` itself. Tenant enforcement does not depend on the dialect: when the schema has a tenant policy, `ask()` substitutes tenant placeholders and runs the tenant guardrail on the final SQL for every dialect form. An unknown string dialect id throws `UnknownDialectError`, which extends `AskDbError`.
 
 Key events emitted (stable field names, present on every log record):
 - `askdb.pipeline.started`
