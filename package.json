@@ -29,7 +29,8 @@
     "smoke:install": "bash examples/installable-smoke/run.sh",
     "preflight": "bash scripts/release-preflight.sh",
     "changeset": "changeset",
-    "release": "pnpm -r build && changeset publish",
+    "version-packages": "changeset version && pnpm install --lockfile-only",
+    "release": "pnpm -r build && pnpm test && pnpm smoke:install && pnpm -r publish --dry-run --no-git-checks --access=public && changeset publish",
     "doctor": "npx react-doctor@latest"
   },
   "devDependencies": {
