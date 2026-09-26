@@ -142,7 +142,7 @@ askdb introspect \
 | `--from-export <bundle-dir>` | Introspect from a previously exported bundle directory instead of a live connection. Postgres only. Mutually exclusive with `--url`. |
 | `--out <dir>` | Output directory for the schema artifact. Falls back to `introspection.outputDir` in `askdb.config.ts`. |
 | `--schema-id <id>` | Identifier embedded in `schema.json`. |
-| `--schemas <list>` | Comma-separated database schemas to include (e.g. `public,sales`). |
+| `--schemas <list>` | Comma-separated database schemas to include (e.g. `public,sales`). For MySQL/MariaDB these are databases; each becomes its own namespace, and the flag overrides `introspection.providerConfig.mysql.databases`. |
 | `--exclude-schemas <list>` | Comma-separated database schemas to skip. |
 | `--tables <list>` | Comma-separated tables to include. Repeatable — values accumulate. |
 | `--print` | Print the introspection result without writing. |

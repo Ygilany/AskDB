@@ -25,7 +25,7 @@ The `*.integration.test.ts` suites run against live databases and **skip** when 
 | Variable | Suite | Fixture (from repo root) |
 | --- | --- | --- |
 | `DATABASE_URL` | `@askdb/postgres` query runner | any Postgres, e.g. the pgvector fixture below: `postgres://postgres:postgres@127.0.0.1:5434/askdb_rag` |
-| `ASKDB_FIXTURE_HOST` | Live introspection in `@askdb/postgres`, `@askdb/sqlserver` and `@askdb/sqlite`, checked against one golden schema; the fixture's own dataset check | `pnpm fixture:up` → `127.0.0.1` (see [Multi-engine fixture](#multi-engine-fixture)) |
+| `ASKDB_FIXTURE_HOST` | Live introspection in `@askdb/postgres`, `@askdb/mysql` (MySQL and MariaDB), `@askdb/sqlserver`, `@askdb/sqlite` and the `askdb` CLI, checked against one golden schema; the fixture's own dataset check | `pnpm fixture:up` → `127.0.0.1` (see [Multi-engine fixture](#multi-engine-fixture)) |
 | `MYSQL_DATABASE_URL` | `@askdb/mysql` | `docker compose -f fixtures/mysql/docker-compose.yml up -d --wait` → `mysql://root:mysql@127.0.0.1:3306/askdb_test` |
 | `MSSQL_DATABASE_URL` | `@askdb/sqlserver` | `docker compose -f fixtures/sqlserver/docker-compose.yml up -d --wait`, then create `askdb_test` (see the compose file) → `Server=127.0.0.1,1433;Database=askdb_test;User Id=sa;Password=AskDB.123;Encrypt=false` |
 | `ASKDB_PGVECTOR_URL` (or `PGVECTOR_URL`) | `@askdb/rag` pgvector store | `pnpm pgvector:up` → `postgres://postgres:postgres@127.0.0.1:5434/askdb_rag` |

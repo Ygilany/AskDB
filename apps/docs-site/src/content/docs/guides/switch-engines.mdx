@@ -108,6 +108,26 @@ npx askdb introspect \
   </TabItem>
   <TabItem label="SQLite">
 
+For MySQL and MariaDB, the URL's database is the one introspected, and its tables appear under the `public` namespace. To introspect several databases at once (MySQL's "schemas"), list them. Each database becomes its own namespace (`sales.orders`), and foreign keys between databases are kept:
+
+```ts
+// askdb.config.ts
+export default {
+  introspection: {
+    provider: "mysql",
+    providerConfig: {
+      mysql: {
+        databaseUrl: env("DATABASE_URL"),
+        databases: ["app", "sales", "analytics"],
+      },
+    },
+  },
+  // ...
+};
+```
+
+`askdb introspect --schemas app,sales` does the same for one run and overrides the configured list.
+
 For SQLite, set the file path via `introspection.providerConfig.sqlite.file` in `askdb.config.ts`:
 
 ```ts

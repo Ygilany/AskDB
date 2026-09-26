@@ -58,6 +58,22 @@ const result = await introspect(
 );
 ```
 
+By default the connector reads the connection URL's database and renders it under the `public` namespace. To introspect several databases, list them in `filters.schemas`. Each database then becomes its own namespace, and foreign keys that cross databases keep the referenced database:
+
+```ts
+await introspect(
+  {
+    mode: "live",
+    runner: createMysqlCatalogQueryRunner(process.env.DATABASE_URL!),
+    filters: { schemas: ["app", "sales", "analytics"] },
+  },
+  { outDir: "./my-app.schema", schemaId: "my-app" },
+  { connector: createMysqlConnector() },
+);
+```
+
+With the `askdb` CLI, set `introspection.providerConfig.mysql.databases` in `askdb.config.ts`, or pass `--schemas app,sales`.
+
 ## Captured metadata
 
 Tables, views, columns (MySQL-native type strings), primary keys, unique constraints, foreign keys (with referential actions), and indexes.
