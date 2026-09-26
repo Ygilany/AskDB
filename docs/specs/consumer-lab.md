@@ -1,14 +1,14 @@
 # Feature: Consumer lab
 
 **Status:** Approved 2026-09-26. Being built in phases (see [Phased PR breakdown](#phased-pr-breakdown)).
-**Location:** `examples/consumer-lab/` (excluded from the pnpm workspace)
+**Location:** `examples/consumer-lab/` (excluded from the pnpm workspace). The databases it runs against are the shared fixture `fixtures/multi-engine`.
 **Packages under test:** every publishable package, installed from tarballs or npm. No workspace linking.
 
 ## Overview
 
 The consumer lab tests AskDB as a black box, the way its users run it. It has three parts:
 
-1. **Docker databases.** One database per supported engine: PostgreSQL, MySQL 8, MariaDB, SQL Server 2022, and SQLite (a file). All five hold the same logical schema and the same rows, and differ only by dialect.
+1. **Docker databases.** One database per supported engine: PostgreSQL, MySQL 8, MariaDB, SQL Server 2022, and SQLite (a file). All five hold the same logical schema and the same rows, and differ only by dialect. They are the shared fixture `fixtures/multi-engine`, which the packages' own integration tests also use.
 2. **A consumer app.** It is written the way an outside developer would write it from the docs site at askdb.tools. It installs AskDB from packed tarballs, a published version, or a local registry. It imports only documented public exports. Because it is the host app, it executes the generated SQL under a read-only role.
 3. **A vitest suite inside that app.** The suite runs the same scenarios against every dialect and compares the results with each other and with an independent oracle computed from the seed data.
 
@@ -28,123 +28,58 @@ Existing tests can't catch the failures the lab targets. Unit tests import works
 - **CI never needs an API key.** The CI model is a deterministic replay. A live model is for exploration only.
 - **Every test passes the test-audit authoring gate.** See [Test-audit compliance](#test-audit-compliance).
 
-## Dataset
+## Dataset and databases: the shared multi-engine fixture
+
+The databases are not private to the lab. They live in **`fixtures/multi-engine`**, a private workspace package that replaces Pagila (decision 8). Two kinds of test use the same fixture:
+
+- **Package integration tests** in `@askdb/postgres`, `@askdb/sqlserver`, `@askdb/sqlite` and, after the MySQL multi-database PR, `@askdb/mysql`. They introspect a real engine with the package's own connector and compare the Schema v2 artifact with the golden logical schema. They run in `pnpm test` when `ASKDB_FIXTURE_HOST` is set, as CI sets it. This is how the packages are tested against every engine before a release.
+- **The consumer lab**, which tests a different seam: packed or published AskDB, driven only through documented surfaces, with generated SQL executed on the same databases.
+
+The two overlap on introspection on purpose. A package test catches a connector regression at its owner boundary; the lab catches the same artifact arriving broken through a tarball or the CLI.
+
+The fixture never imports AskDB. Its seeder, oracle helpers, normalization and schema comparator (`compareToLogicalSchema`) use drivers and plain JSON only, so it can judge any AskDB version. The lab installs nothing from the workspace. It reads the fixture's dataset files by path, and reaches its databases through `pnpm fixture:up`.
 
 ### Logical schema
 
-The domain is a small multi-tenant social-services agency. It is small enough to read in one sitting, and it covers every requested feature.
+A small multi-tenant social-services domain. [`fixtures/multi-engine/README.md`](../../fixtures/multi-engine/README.md) and [`dataset/NORMALIZATION.md`](../../fixtures/multi-engine/dataset/NORMALIZATION.md) are the reference. In summary:
 
 | Logical schema | Table / view | Key points |
 |---|---|---|
-| `org` | `agency` | **Tenant root.** `agency_id` PK, `name` (unicode), `founded_on` date, `created_at` timestamp. Three tenants: "Agência São Paulo", "Zürich Dienste", "東京オフィス". |
-| `org` | `program` | **Composite PK** `(agency_id, program_code)`, `name`, `budget` decimal(12,2), `is_active` boolean, `starts_on` date, `ends_on` date **nullable**. **Unique** `(agency_id, name)`. |
-| `people` | `client` | `client_id` PK, `agency_id` FK, `full_name` (unicode), `email` **unique, sensitive**, `ssn` **sensitive, nullable**, `birth_date` date, `created_at` timestamp. |
-| `people` | `enrollment` | PK `(client_id, program_code)`, `agency_id`, **composite FK** `(agency_id, program_code) → org.program`, `enrolled_on` date, `exited_on` nullable date, `status_code` FK to `ref.status`. |
-| `billing` | `order` | **Reserved-word table name.** `order_id` PK, `agency_id`, `client_id` FK, `placed_at` timestamp, `total` decimal(10,2), `is_paid` boolean, `note` nullable unicode. |
-| `billing` | `order_line` | Composite PK `(order_id, line_no)`, `sku`, `quantity` int, `unit_price` decimal(10,2). |
-| `ref` | `status` | **Global (untenanted) table.** `status_code` PK, `label`. |
-| `billing` | `agency_revenue` (view) | Per `agency_id`: `order_count` and `paid_total`. |
+| `org` | `agency` | **Tenant root, a self-referencing tree** (`parent_agency_id` → `agency`). Three roots (São Paulo, Zürich, Tokyo) and four descendants. Santos Norte is a grandchild of São Paulo. |
+| `org` | `program` | Composite PK `(agency_id, program_code)`, unique `(agency_id, name)`, decimal budget, boolean, nullable end date. |
+| `people` | `client` | Sensitive `email` (unique) and `ssn` (nullable), unicode names. |
+| `people` | `enrollment` | Composite FK `(agency_id, program_code) → org.program`. |
+| `billing` | `order` | Reserved-word table name. |
+| `billing` | `order_line` | Composite PK; tenant-scoped through `order`. |
+| `billing` | `payment` | Declaratively partitioned on Postgres only; introspection must render the parent only (ADR 0003, formerly Pagila's job). |
+| `ref` | `status` | Global (untenanted). |
+| `billing` | `agency_revenue` (view) | Per agency: order count and paid total. |
 
-Rows: 3 agencies, about 8 programs, about 24 clients (several with a NULL `ssn`), about 36 enrollments, about 45 orders and about 100 order lines. The data deliberately includes:
+**Tenant hierarchy semantics (decision 9).** A scope for agency X sees X and every descendant of X. It never sees an ancestor, and never anything outside X's tree:
 
-- NULLs in every nullable column;
-- decimals with trailing zeros, such as `12.50`;
-- timestamps near midnight UTC;
-- a leap-day date;
-- accented Latin and CJK text.
-
-The data contains no values that differ only by case. MySQL, MariaDB and SQL Server compare strings case-insensitively by default, so a unique constraint on such values would fail there.
-
-**Multiple schemas per engine:**
-
-| Engine | How logical schemas map |
+| Scope | Visible agencies |
 |---|---|
-| Postgres, SQL Server | Real schemas: `org`, `people`, `billing`, `ref`. |
-| MySQL, MariaDB | Every table in one database, `askdb_lab`. AskDB's MySQL connector introspects only the connection's database (`DATABASE()`) and renders it as namespace `public` (`packages/mysql/src/connector/describe.ts`). One database is therefore the layout AskDB supports, and the common one for MySQL users. (Changed during Phase 1 from one database per logical schema, which would have left three of the four invisible to introspection.) |
-| SQLite | Only one schema, `main`, which AskDB also renders as `public`. |
+| 1 | 1, 4, 5, 6 |
+| 5 | 5, 6 |
+| 6 | 6 |
+| 7 | 7 |
 
-Table names are unique across logical schemas, so everything fits in one namespace on the flattened engines. Normalization maps each table back to its logical schema through `dataset/schema.logical.json`.
+AskDB's tenant policy cannot express a same-table tree today, and `subtree` access doesn't expand descendants at all (plan 047). The lab's hierarchy cases are therefore expected to fail until plans 047 and 053 land; see [Survey notes](#survey-notes-inconsistencies-to-confirm-with-the-lab).
 
-### Sources and files
+**Multiple schemas.** Postgres and SQL Server use real schemas. MySQL and MariaDB use one database per logical schema (`org`, `people`, `billing`, `ref`), which is how a multi-database MySQL deployment looks. Introspecting that layout needs the MySQL multi-database PR (decision 7); until then, AskDB's MySQL connector sees only the connection's database. SQLite has one namespace, which AskDB renders as `public`.
 
-```
-examples/consumer-lab/dataset/
-  schema.logical.json    # golden logical schema: tables, columns, logical types, nullability, PKs,
-                         # FKs (composite, ordered), unique constraints, views, tenant + sensitive tags
-  data/*.json            # one file per table; rows as JSON with logical values (ISO dates, decimal strings)
-  ddl/postgres.sql       # hand-written DDL per dialect (plus roles, grants, optional RLS)
-  ddl/mysql.sql
-  ddl/mariadb.sql        # starts as a copy of mysql.sql; kept separate so MariaDB drift is visible
-  ddl/sqlserver.sql
-  ddl/sqlite.sql
-  NORMALIZATION.md       # the type-normalization rules below, with the rationale for each
-```
+**Seeding** is idempotent: one seeder for all engines, keyed on a hash of the DDL, the data and the seeder's own source. `test/dataset.integration.test.ts` in the fixture proves every engine holds exactly the canonical rows, that the view matches an oracle, and that the read-only role can't write.
 
-### One seeder
+### Databases
 
-The seeder is `src/seed.ts`. It uses `pg`, `mysql2`, `mssql` and `better-sqlite3` directly, never AskDB. It:
+`fixtures/multi-engine/compose.yml` (project `askdb-fixture`) runs `postgres:17` on 15432, `mysql:8.4` on 13306, `mariadb:11.4` on 13307 and `mcr.microsoft.com/mssql/server:2022-CU27-ubuntu-22.04` on 11433, each with a healthcheck and a read-only `fixture_reader` role. SQLite is a file the seeder writes. The ports don't clash with 5432, 5434, 3306 or 1433. The commands are `pnpm fixture:up`, `fixture:down` and `fixture:reset`; `pnpm lab:up` (Phase 2) calls `fixture:up`.
 
-1. Reads `data/*.json`.
-2. Applies each dialect's DDL.
-3. Inserts the rows with driver parameters, in FK order.
-4. Writes a `lab_meta(dataset_hash, seeded_at)` row.
+Two things are lab-only and live in the lab, not the fixture:
 
-**Idempotency:** when the stored `dataset_hash` matches the hash of the DDL plus the data files, the seeder does nothing. Otherwise it drops and recreates the lab objects. The seeder does not verify its own work: `test/dataset.test.ts` is the one owner of that check. It reads every table back as `lab_reader` and compares it, after normalization, with the JSON, and runs first in `lab:matrix`.
+- **Postgres row-level security** (optional): a `lab_tenant` role with an RLS policy on the tenant tables, for one defense-in-depth scenario.
+- **Scratch databases** (Phase 4): writable throwaway copies used to prove a rejected statement would have done damage.
 
-In Phase 4 the seeder also creates a **scratch** database (or schema) per engine: a writable, throwaway copy that the safety suite uses to prove statements are dangerous. See [Scenario matrix](#scenario-matrix).
-
-### Type-normalization rules
-
-These rules are used both to compare introspected schemas and to compare result sets.
-
-| Logical type | Postgres | MySQL / MariaDB | SQL Server | SQLite | Normalized **schema** type | Normalized **value** |
-|---|---|---|---|---|---|---|
-| `int` | `integer` | `int` | `int` | `INTEGER` | `int` | JS number → canonical integer string |
-| `bigint` (counts) | `bigint` (pg returns a string) | `bigint` | `bigint` | `INTEGER` | `bigint` | canonical integer string |
-| `decimal(p,s)` | `numeric(p,s)` (string) | `decimal(p,s)` (string) | `decimal(p,s)` (number) | declared `DECIMAL(p,s)`, stored as REAL/INTEGER | `decimal(p,s)` | decimal string with trailing zeros removed: `12.50`→`12.5`, `3.00`→`3` |
-| `boolean` | `boolean` | `tinyint(1)` | `bit` | declared `BOOLEAN`, stored 0/1 | `boolean` | `true`/`false`. Applied only where the scenario declares the result column as `boolean`, because a MySQL `tinyint(1)` is indistinguishable from an integer at the driver level. |
-| `date` | `date` | `date` | `date` | `TEXT` (ISO) | `date` | `YYYY-MM-DD`. The pg `date` parser is replaced so it returns the raw string, with no timezone shift. |
-| `timestamp` (naive UTC) | `timestamp` | `datetime` | `datetime2(0)` | `TEXT` (ISO) | `timestamp` | `YYYY-MM-DDTHH:MM:SS`. The process runs with `TZ=UTC`. |
-| `text(n)` | `varchar(n)` | `varchar(n)` (utf8mb4) | `nvarchar(n)` | `TEXT` | `text` (length ignored) | Unicode NFC |
-| aggregates such as AVG | n/a | n/a | n/a | n/a | n/a | Rounded to 6 decimal places. Scenarios must avoid integer-average truncation (SQL Server's `AVG(int)`) by casting in the expected SQL. A mismatch is classed as a dataset/normalization issue, not a product bug. |
-
-**Result-set rules:**
-
-- Rows are compared as a multiset unless the scenario declares `ordered: true`. Ordered scenarios must `ORDER BY` a unique numeric key, because collations order strings differently across engines.
-- Columns are compared by position. Column labels are ignored, since alias case differs by engine and by model.
-- `NULL` stays `null`.
-- Collations are the engine defaults, as a real user would have them. Questions that depend on case sensitivity are marked `dialectSensitive` and compared to a per-dialect expectation, not across dialects.
-
-**Schema-comparison rules** (introspection suite):
-
-- Compare tables, columns, normalized types, `nullable`, `primaryKey`, and relationships (`from`/`to` column ids, compared as ordered lists per composite FK).
-- Identifiers are compared case-insensitively. They are mapped to logical schemas as described above.
-- **Not comparable today.** Schema v2 has no unique constraints, indexes or view marker: views render as ordinary `tables[]` entries (see `packages/introspect/src/render/render.ts`, `toV2View`). The golden file keeps those facts for DDL review, but the comparison skips them. Each skipped fact is listed in the matrix output as `n/a (not in Schema v2)` so it stays visible.
-- View column `nullable` is ignored. Engines disagree on it, and Postgres reports every view column as nullable.
-
-## Compose layout
-
-The lab uses one file, `examples/consumer-lab/compose.yml`, with project name `askdb-lab`.
-
-| Service | Image (pinned tag) | Host port | Notes |
-|---|---|---|---|
-| `postgres` | `postgres:17` | **15432** | Healthcheck `pg_isready`. Roles: `lab_owner` (seeding and scratch), `lab_reader` (`SELECT` only, `default_transaction_read_only=on`), and `lab_tenant` (subject to RLS; optional). |
-| `mysql` | `mysql:8.4` (LTS) | **13306** | Healthcheck `mysqladmin ping`. `lab_reader` has `SELECT` on the four databases only. |
-| `mariadb` | `mariadb:11.4` (LTS) | **13307** | Healthcheck `healthcheck.sh --connect --innodb_initialized`. `lab_reader` as for MySQL. |
-| `sqlserver` | `mcr.microsoft.com/mssql/server:2022-CU<n>-ubuntu-22.04` (pinned CU) | **11433** | Healthcheck `sqlcmd … SELECT 1`. `platform: linux/amd64`, which runs under Rosetta on Apple Silicon. The `lab` database is created by the seeder, not by hand. `lab_reader` login is in `db_datareader`, with explicit `DENY` on writes. |
-| `verdaccio` | `verdaccio/verdaccio:6` | **14873** | Behind the `registry` compose profile, so it only runs for install mode (c). |
-
-- SQLite is a file, `examples/consumer-lab/.data/lab.sqlite`, created by the seeder. The app opens it read-only (`readonly: true` plus `PRAGMA query_only`).
-- None of these ports clash with 5432, 5433, 5434, 3306 or 1433.
-- Data lives in named volumes.
-
-**Commands** (root `package.json`, all delegating into the lab directory):
-
-- `pnpm lab:up`: `docker compose up -d --wait`, then the seeder. Idempotent.
-- `pnpm lab:down`: `docker compose down`. Keeps the volumes.
-- `pnpm lab:reset`: `down -v`, deletes `.data/`, then `lab:up`.
-
-**Postgres row-level security** (optional): an RLS policy on the tenant tables filters on `current_setting('lab.agency_id')` for the `lab_tenant` role. It is used for one defense-in-depth scenario that shows what `run-safely-in-prod.mdx` and `how-askdb-works.mdx` recommend. It is not required for the AskDB tenant tests to pass.
+The `verdaccio` service for install mode (c) also belongs to the lab.
 
 ## Consumer app
 
@@ -152,8 +87,7 @@ The lab uses one file, `examples/consumer-lab/compose.yml`, with project name `a
 
 ```
 examples/consumer-lab/
-  compose.yml
-  dataset/                  # see Dataset
+  compose.yml               # lab-only services (verdaccio); the databases come from fixtures/multi-engine
   package.json              # private; third-party deps pinned exactly; @askdb/* specs written by lab:use
   pnpm-workspace.yaml       # makes this a standalone pnpm root: allowBuilds for better-sqlite3, no parent workspace
   pnpm-lock.yaml            # the app's own lockfile
@@ -165,10 +99,8 @@ examples/consumer-lab/
   cassettes/<dialect>/<question-id>.json   # recorded model replies
   src/
     use.mjs                 # install-mode switcher (no dependencies; runs before install)
-    seed.ts                 # seeder (drivers only)
     host/execute.ts         # read-only execution per dialect, following run-safely-in-prod.mdx
-    host/normalize.ts       # normalization rules above
-    oracle.ts               # expected answers computed in JS from dataset/data/*.json
+    oracle.ts               # expected answers computed in JS from fixtures/multi-engine/dataset/data/*.json
     model/replay-server.ts  # OpenAI-compatible replay/record server (see Model)
     lab-cli.ts              # `pnpm lab ask …`
     matrix-reporter.ts      # vitest reporter → dialect × scenario table
@@ -233,7 +165,7 @@ It prints:
 1. the SQL, plus `unboundSql` and `params` when present;
 2. the validation result: `ok`, or the thrown error's class and rule code, such as `SqlValidationError SQL_MULTI_STATEMENT`;
 3. `sensitiveGuardrail` and `tenantGuardrail`, when present;
-4. the rows, executed as `lab_reader` and printed as a table;
+4. the rows, executed as `fixture_reader` and printed as a table;
 5. the oracle's verdict, when the question is in the catalog.
 
 Flags:
@@ -304,7 +236,7 @@ Twelve to fifteen catalog questions. Between them they cover:
 
 | Scenario | C / R |
 |---|---|
-| `ask()` succeeds. Executing `sql` as `lab_reader` equals the oracle, and equals every other dialect after normalization | C: `ask()` returns executable, dialect-correct SQL (core pipeline plus dialect). R: validator false positives on valid dialect syntax (brackets, backticks, `TOP`, `OFFSET … FETCH`), extraction regressions, or a wrong dialect brief. |
+| `ask()` succeeds. Executing `sql` as `fixture_reader` equals the oracle, and equals every other dialect after normalization | C: `ask()` returns executable, dialect-correct SQL (core pipeline plus dialect). R: validator false positives on valid dialect syntax (brackets, backticks, `TOP`, `OFFSET … FETCH`), extraction regressions, or a wrong dialect brief. |
 | Binding `unboundSql` + `params` with the real driver returns the same rows as `sql`. Where documented, `bindPreparedQuery` is checked too | C: the parameterized output contract. R: markers the driver can't bind (`$N`, `?`, `@pN`), or values that are wrong or escaped wrongly. |
 | The same question through `createAskDb` (adapter path) returns the same SQL as through `ask()` with a raw `LanguageModel` | C: both model paths are equally supported (AGENTS.md). R: config-driven dialect or model resolution drifting from direct `ask()`. |
 
@@ -313,7 +245,7 @@ Twelve to fifteen catalog questions. Between them they cover:
 Each case is a model reply (an authored cassette) that must be rejected. For every case, the suite asserts two things:
 
 - `ask()` throws the documented error class and rule code;
-- **the case is meaningful:** the raw statement, run as `lab_owner` against that engine's **scratch** database, does run and changes observable state (a row count, a new table, a sequence value, a held lock or an elapsed sleep). If the raw statement is harmless on an engine, the case is marked `n/a` for that engine. It never counts as a pass.
+- **the case is meaningful:** the raw statement, run as `fixture_owner` against that engine's **scratch** database, does run and changes observable state (a row count, a new table, a sequence value, a held lock or an elapsed sleep). If the raw statement is harmless on an engine, the case is marked `n/a` for that engine. It never counts as a pass.
 
 | Case family | Examples |
 |---|---|
@@ -326,7 +258,7 @@ Each case is a model reply (an authored cassette) that must be rejected. For eve
 
 There is also a false-positive control: the reserved-word table `billing.order` and the unicode data must *not* be rejected.
 
-Defense in depth is reported but never counted as a pass: each case also records whether `lab_reader` would have blocked it anyway.
+Defense in depth is reported but never counted as a pass: each case also records whether `fixture_reader` would have blocked it anyway.
 
 **Expected tension:** the validator in `packages/core/src/sql/validate.ts` is a keyword heuristic. Some of these cases, such as `SELECT … INTO` and `nextval()`, are likely to be accepted. Each accepted case goes to classification against the documented claims. It does not get a softened test.
 
@@ -335,14 +267,17 @@ Defense in depth is reported but never counted as a pass: each case also records
 The overlay adds `tenant-policy.md`:
 
 - root `org.agency` with tenant column `agency_id`;
-- `scopedTables` for `program`, `client`, `enrollment`, `order` and `order_line` (the last through a join to `order`);
+- `scopedTables` for `program`, `client`, `enrollment`, `order`, `payment` and `order_line` (the last through a join to `order`);
 - `globalTables` for `ref.status`.
+
+The hierarchy cases need the self-referencing tree to be expressible (plan 053). Until then, the overlay declares only the flat root. The hierarchy cases are written against the intended semantics and marked `it.fails` with their discrepancy ids.
 
 | Scenario | C / R |
 |---|---|
-| With `tenantScope { kind: "ids", tenantRoot, ids: [2] }`, every scoped question's executed rows equal the oracle filtered to agency 2, on every dialect, in both `tenantSqlMode`s | C: `docs/contracts/tenant-policy.md` and `guides/multi-tenancy.mdx` ("the tenant predicate is present in the SQL AskDB returns"). R: placeholder substitution or markers wrong per dialect, or a predicate on the wrong alias. |
+| With `tenantScope { kind: "ids", tenantRoot, ids: [2] }`, every scoped question's executed rows equal the oracle filtered to agency 2 (not its child 7), on every dialect, in both `tenantSqlMode`s | C: `docs/contracts/tenant-policy.md` and `guides/multi-tenancy.mdx` ("the tenant predicate is present in the SQL AskDB returns"). R: placeholder substitution or markers wrong per dialect, or a predicate on the wrong alias. |
 | Strict mode: a reply with no tenant filter is rejected with `TenantGuardrailError`. The same SQL, executed raw, returns rows from other tenants, which proves the case is meaningful | C: strict fail-closed. R: the guardrail missing an unfiltered scoped table. |
 | A reply with a filter on the wrong tenant, or `OR 1=1` around the predicate, is rejected in strict mode | C: the predicate must be provable. R: the heuristic accepting a present-but-ineffective filter. |
+| **Hierarchy.** With `subtree` access from agency 1, executed rows are exactly those of agencies 1, 4, 5 and 6. From 5, they are 5 and 6. From 6, only 6. From 7, only 7. No row outside the tree ever appears, on every dialect | C: the maintainer's hierarchy semantics (decision 9) and `TenantAccessSubtree` ("include all descendants"). R: descendants dropped (today's behavior, plan 047), ancestors leaked, or a sibling tree leaked. Expected `it.fails` until plans 047 and 053. |
 | No `tenantScope` with a policy present gives `TenantScopeError` `MISSING_SCOPE` | C: fail closed before the prompt. |
 | Warn mode returns SQL and warnings, as documented | C: documented warn semantics. Recorded against the "can't be forgotten" claim (see Survey notes). |
 | (Optional, Postgres) The unfiltered SQL, run as `lab_tenant` with RLS, returns only agency 2 | Documents the defense-in-depth recommendation. Informational only. |
@@ -363,7 +298,7 @@ The overlay marks `people.client.email` and `people.client.ssn` as `sensitive: t
 |---|---|
 | `askdb` CLI | **`introspect`**: covered by suite 1, plus exit codes. **`ask`**: SQL on stdout; the sensitive `Warning:` on stderr; `--mock-sql`; exit codes 0/1/2 as documented in `reference/cli.mdx`. |
 | `@askdb/http-api` | **`POST /ask`**: 200 shape `{ ok, correlationId, sql, … }`. **Documented error codes**: `bad_request` 400, `payload_too_large` 413, `schema_parse_error` 400, `sql_validation_error` 400 (safety cases over HTTP), `sql_generation_error` 502 (replay server returns 500), `generation_not_configured` 500, `not_found` 404. Also `x-correlation-id` echo and `GET /health`. Transport risk the in-process tests can't reach. |
-| Studio local API | Each case follows ADR 0009 and `studio.mdx`: 403 without `x-askdb-studio-token`, 403 with a foreign `Host` (rebinding), 403 with a cross-site `Origin`, 415 for `text/plain`, and the token readable from the served page. **Execute:** with `studio.execute` configured, `/api/execute` returns rows for a SELECT. Given `lab_owner` credentials on the **scratch** database, it still refuses a write and a multi-statement, which tests ADR 0009's "single-statement, read-only, with timeouts and row caps" claim; the scratch DB proves the write would otherwise land. |
+| Studio local API | Each case follows ADR 0009 and `studio.mdx`: 403 without `x-askdb-studio-token`, 403 with a foreign `Host` (rebinding), 403 with a cross-site `Origin`, 415 for `text/plain`, and the token readable from the served page. **Execute:** with `studio.execute` configured, `/api/execute` returns rows for a SELECT. Given `fixture_owner` credentials on the **scratch** database, it still refuses a write and a multi-statement, which tests ADR 0009's "single-statement, read-only, with timeouts and row caps" claim; the scratch DB proves the write would otherwise land. |
 
 ## Commands and reporting
 
@@ -414,14 +349,15 @@ Seams the lab itself uses: the replay server and prompt capture are lab code. `d
 
 | Phase | PR | Contents | Done when |
 |---|---|---|---|
-| 1 | Dataset, compose, seeder | `dataset/`, `compose.yml`, `ddl/*`, `src/seed.ts`, `NORMALIZATION.md`, the lab `package.json` (drivers and vitest only) excluded from the workspace, root `lab:up/down/reset`. One suite (`test/dataset.test.ts`): every engine's rows, read as `lab_reader`, equal the JSON after normalization; the view matches an oracle; `lab_reader` cannot write. | `pnpm lab:reset` is green locally on Apple Silicon and on Linux. |
-| 2 | Consumer app, install modes, `lab ask` | `scripts/pack-tarballs.sh` (the smoke test switches to it), `src/use.mjs` with `.`/`git:`/`npm:` targets and the resolved-version check, `host/execute.ts`, `host/normalize.ts`, `oracle.ts`, the replay server with authored cassettes, `pnpm lab ask`. | `pnpm lab ask --db <each>` prints SQL, validation and rows. `pnpm smoke:install` is still green. |
+| 1 | Shared multi-engine fixture (replaces Pagila) | `fixtures/multi-engine`, a private workspace package with the dataset (org hierarchy, partitioned Postgres table), DDL for five engines, compose, idempotent seeder, normalization and golden-schema comparator; `test/dataset.integration.test.ts`; live-introspection tests in `@askdb/postgres` (replacing the Pagila suite), `@askdb/sqlserver` and `@askdb/sqlite` against the golden schema; CI and turbo move from `PAGILA_DATABASE_URL` to `ASKDB_FIXTURE_HOST`; `fixtures/pagila` removed. | `pnpm fixture:reset` and the gated suites are green locally and in CI. |
+| 1b | MySQL multi-database introspection (product change) | `@askdb/mysql` introspects the databases the user lists (`introspection.providerConfig.mysql.databases` in config, or the documented `--schemas` flag), not only `DATABASE()`; the `@askdb/mysql` fixture test for MySQL and MariaDB against the golden schema; docs and a changeset. | The MySQL and MariaDB introspection tests are green; the test was shown failing before the change. |
+| 2 | Consumer app, install modes, `lab ask` | `scripts/pack-tarballs.sh` (the smoke test switches to it), `src/use.mjs` with `.`/`git:`/`npm:` targets and the resolved-version check, `host/execute.ts`, `oracle.ts`, the replay server with authored cassettes, `pnpm lab ask`. | `pnpm lab ask --db <each>` prints SQL, validation and rows. `pnpm smoke:install` is still green. |
 | 3 | Introspection and result equivalence | Suites 1 and 2, `lab:record`, the first recorded cassettes, and the matrix reporter skeleton. | Those rows are green or have a filed discrepancy on all five dialects. |
 | 4 | Safety, tenant, sensitive | Suites 3–5, the scratch-database proofs, the policy/sensitive overlay, and the optional RLS scenario. | Every rejection is proved meaningful. Discrepancies are filed. |
 | 5 | CLI, HTTP API, Studio | Suite 6. | Documented codes and protections are covered. |
 | 6 | CI, `lab:matrix`, docs | The CI job and optional nightly, the final reporter, a "Consumer lab" section in `CONTRIBUTING.md`, and `verdaccio` mode `(c)`. The `consumer-lab` skill. | The CI job is green within budget. |
 
-Every phase runs `pnpm smoke:install` and `pnpm preflight` before its PR. None of the phases changes a publishable package, so they need no changeset. Product bugs the lab finds go into their own PRs with changesets, after the failing lab test has landed.
+Every phase runs `pnpm smoke:install` and `pnpm preflight` before its PR. Apart from 1b, no phase changes a publishable package, so they need no changeset. Product bugs the lab finds go into their own PRs with changesets, after the failing lab test has landed.
 
 ## Survey notes: inconsistencies to confirm with the lab
 
@@ -435,8 +371,15 @@ These came up while reading the docs. They are not findings yet: each one is eit
 6. Schema v2 has no unique constraints and no view marker, so the introspection golden can't compare them. This is a format limit, not a bug, but the lab's matrix will show it.
 7. The docs site names `POSTGRES_DIALECT` and `MYSQL_DIALECT` but never the MariaDB, SQLite or SQL Server constants, and it says "all four" dialects while listing six ids. The lab uses the string ids.
 8. The docs site documents programmatic introspection only for Prisma, so the lab has no documented way to introspect Postgres, MySQL, SQLite or SQL Server from code. It uses the CLI.
-9. There is no MariaDB fixture or test anywhere in the repo today, although `mariadb` is a built-in dialect.
+9. There was no MariaDB fixture or test anywhere in the repo, although `mariadb` is a built-in dialect. The multi-engine fixture adds one (Phase 1).
 10. `docs/specs/multi-tenancy.md` uses different front-matter keys from `docs/contracts/tenant-policy.md` (`tableId` and `tenantColumn` versus `id` and `tenantIdColumn`, among others). The lab follows the contract.
+
+Found while building Phase 1 (confirmed against the code):
+
+11. **MySQL introspection sees one database, and ignores `--schemas`.** The connector's catalog queries all filter on `DATABASE()` and render the result as namespace `public` (`packages/mysql/src/connector/describe.ts`). It honors `filters.tables` but never reads `filters.schemas`, although `reference/cli.mdx` documents `--schemas` for `askdb introspect` with no engine caveat. A multi-database MySQL deployment can only be introspected one database at a time. *Product gap.* Fix: Phase 1b.
+12. **The default schema filter is documented two ways.** `docs/integration/connectors.md` says `IntrospectionFilters.schemas` defaults to `["public"]` for relational engines. The type's own doc comment (`packages/introspect/src/types.ts`) says "all non-system schemas", and the Postgres connector does that: an unfiltered run over the fixture returns `org`, `people`, `billing`, `ref` and `fixture`. The Pagila test was named "default include filter ['public']" but could not tell the two apart, because Pagila only uses `public`. *Docs issue*; which behavior is intended is a maintainer call. The Postgres fixture test asserts only what both agree on (system schemas are never read).
+13. **A same-table tenant tree can't be expressed.** `roots[].parent` and `hierarchy[]` link different root tables. Declaring `org.agency` as its own parent is reported as a `hierarchy_cycle`. *Product gap*, captured as plan 053.
+14. **`subtree` access doesn't include descendants** (plan 047, still TODO). `includeDescendants: true` is typed and promised in the prompt, but the placeholder expands to the seed IDs only. *Product bug.* The lab's hierarchy cases will show it on every engine.
 
 ## Decisions (2026-09-26)
 
@@ -446,3 +389,6 @@ These came up while reading the docs. They are not findings yet: each one is eit
 4. **CI:** the lab runs on every PR (docs-only PRs are skipped by a path filter), plus a nightly run against `npm:beta`. A repo skill, `.agents/skills/consumer-lab/`, drives target selection: it works out the right `lab:use` target (a tarball from the checkout, a `git:` ref, a published version or dist-tag), refreshes the committed baseline when a new beta ships, and runs and reads the matrix.
 5. **Cassettes:** the first pass uses authored SQL only. Recording with a live key is optional and is done by the maintainer.
 6. **Docs:** the lab is documented in `CONTRIBUTING.md` only; there is no docs-site page.
+7. **MySQL multi-database introspection** is a product change, in its own PR with a changeset (Phase 1b). The user lists the databases to introspect in config (`introspection.providerConfig.mysql.databases`), and the documented `--schemas` flag works too. The connector queries `information_schema` with `TABLE_SCHEMA IN (…)` instead of `= DATABASE()`, and each database becomes a namespace. With no list, today's behavior is unchanged.
+8. **The databases are a shared fixture, not lab property.** The Phase 1 dataset moves to `fixtures/multi-engine`, used by package integration tests on every engine before a release, and by the lab. It replaces the Pagila fixture. The lab tests a different seam (packed or published AskDB through documented surfaces); overlap with the package tests is expected.
+9. **The tenant model is a hierarchy.** An org can be parented by another org, to any depth. A parent sees its own and its descendants' data; a child never sees its parent's; nothing outside the tree is visible. The fixture models it (`org.agency.parent_agency_id`). AskDB can't express or enforce it yet: plans 047 and 053 cover the product side, and the lab tests the semantics from Phase 4.
