@@ -1,8 +1,11 @@
 import { AskDbError } from "@askdb/core";
 import type { CatalogQueryResult, CatalogQueryRunner } from "@askdb/introspect";
-import { createRequire } from "node:module";
-import { join } from "node:path";
-import { pathToFileURL } from "node:url";
+import {
+  createOptionalDriverLoader,
+  isDriverInstalled,
+  missingDriverMessage,
+  type DriverLoadOptions,
+} from "@askdb/introspect/kit";
 
 export type { CatalogQueryResult, CatalogQueryRunner } from "@askdb/introspect";
 
@@ -15,62 +18,11 @@ type MssqlModule = typeof import("mssql");
  * pattern in `@askdb/postgres` / `@askdb/mysql` so consumers with a custom
  * `CatalogQueryRunner` can import `@askdb/sqlserver` without `mssql` installed.
  */
-type DriverLoadOptions = { resolveFrom?: string };
-
-let mssqlModulePromises = new Map<string | undefined, Promise<MssqlModule>>();
-
-function isModuleResolutionFailure(cause: unknown, packageName: string): boolean {
-  if (!(cause instanceof Error)) return false;
-  const nestedCause = (cause as { cause?: unknown }).cause;
-  if (nestedCause && nestedCause !== cause && isModuleResolutionFailure(nestedCause, packageName)) {
-    return true;
-  }
-  const code = (cause as { code?: unknown }).code;
-  if (code !== "ERR_MODULE_NOT_FOUND" && code !== "MODULE_NOT_FOUND") return false;
-  return cause.message.includes(packageName);
-}
-
-async function importOptionalMssql(opts?: DriverLoadOptions): Promise<MssqlModule> {
-  try {
-    return await import("mssql");
-  } catch (cause) {
-    if (!isModuleResolutionFailure(cause, "mssql")) throw cause;
-
-    const fromDir = opts?.resolveFrom ?? process.cwd();
-    const projectRequire = createRequire(join(fromDir, "package.json"));
-    try {
-      const resolved = projectRequire.resolve("mssql");
-      return (await import(pathToFileURL(resolved).href)) as MssqlModule;
-    } catch (projectCause) {
-      if (!isModuleResolutionFailure(projectCause, "mssql")) throw projectCause;
-      throw new AggregateError([cause, projectCause], "Unable to resolve optional `mssql` peer dependency");
-    }
-  }
-}
-
-async function loadMssqlOrThrow(opts?: DriverLoadOptions): Promise<MssqlModule> {
-  const key = opts?.resolveFrom;
-  let promise = mssqlModulePromises.get(key);
-  if (!promise) {
-    promise = importOptionalMssql(opts).catch((cause) => {
-      mssqlModulePromises.delete(key);
-      throw new AskDbError(
-        "The built-in SQL Server catalog query runner requires the optional `mssql` peer dependency. " +
-          "Install it in your project (e.g. `pnpm add mssql`) or include it in the same one-off command " +
-          "(e.g. `pnpm dlx -p askdb -p mssql askdb ...` or `npx -p askdb -p mssql askdb ...`). " +
-          "You can also pass a custom catalog query runner to the SQL Server connector.",
-        cause,
-      );
-    });
-    mssqlModulePromises.set(key, promise);
-  }
-  return promise;
-}
-
-/** @internal exposed for tests that need to reset the lazy `mssql` cache. */
-export function __resetMssqlModuleCacheForTests(): void {
-  mssqlModulePromises.clear();
-}
+const mssqlLoader = createOptionalDriverLoader<MssqlModule>({
+  packageName: "mssql",
+  importDriver: () => import("mssql"),
+  missingMessage: missingDriverMessage({ engine: "SQL Server", packageName: "mssql" }),
+});
 
 type MssqlDriverModule = MssqlModule;
 
@@ -79,18 +31,12 @@ type MssqlDriverModule = MssqlModule;
  * + project-root fallback behavior as the catalog runner.
  */
 export async function loadMssqlDriver(options?: DriverLoadOptions): Promise<MssqlDriverModule> {
-  const mod = await loadMssqlOrThrow(options);
+  const mod = await mssqlLoader.load(options);
   return (mod as unknown as { default?: MssqlDriverModule }).default ?? mod;
 }
 
 export function isMssqlDriverInstalled(options?: DriverLoadOptions): boolean {
-  try {
-    const req = createRequire(join(options?.resolveFrom ?? process.cwd(), "package.json"));
-    req.resolve("mssql");
-    return true;
-  } catch {
-    return false;
-  }
+  return isDriverInstalled("mssql", options);
 }
 
 export type MssqlConfigInput = {
@@ -231,7 +177,7 @@ async function runSqlServerCatalogQuery(
   params: ReadonlyArray<unknown> | undefined,
   options?: DriverLoadOptions,
 ): Promise<CatalogQueryResult> {
-  const mod = await loadMssqlOrThrow(options);
+  const mod = await mssqlLoader.load(options);
   const mssql = (mod as unknown as { default?: MssqlModule }).default ?? mod;
   const pool = new mssql.ConnectionPool(resolveConnectionInput(connectionString) as never);
   await pool.connect();

@@ -128,6 +128,7 @@ fi
 echo "smoke: validating @askdb/introspect tarball contents…"
 INTROSPECT_TARBALL_FILES="$(tar -tzf "$INTROSPECT_TARBALL")"
 grep -q '^package/dist/index.js$' <<<"$INTROSPECT_TARBALL_FILES"
+grep -q '^package/dist/kit/index.js$' <<<"$INTROSPECT_TARBALL_FILES"
 grep -q '^package/README.md$' <<<"$INTROSPECT_TARBALL_FILES"
 grep -q '^package/LICENSE$' <<<"$INTROSPECT_TARBALL_FILES"
 if grep -Eq '(^package/src/|\.test\.)' <<<"$INTROSPECT_TARBALL_FILES"; then
@@ -278,6 +279,7 @@ node -e "
   const j = JSON.parse(fs.readFileSync(p, 'utf8'));
   j.dependencies['@askdb/config'] = 'file:$CONFIG_TARBALL';
   j.dependencies['@askdb/core'] = 'file:$CORE_TARBALL';
+  j.dependencies['@askdb/introspect'] = 'file:$INTROSPECT_TARBALL';
   fs.writeFileSync(p, JSON.stringify(j, null, 2) + '\n');
 "
 
