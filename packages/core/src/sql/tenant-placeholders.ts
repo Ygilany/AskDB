@@ -99,9 +99,7 @@ function buildIdsByRoot(access: TenantAccess): Map<string, string[]> {
       m.set(access.tenantRoot, access.ids);
       break;
     case "subtree":
-      // Unreachable by contract from ask(): it expands a subtree to an `ids`
-      // access (via resolveTenantDescendants) before calling resolveTenantSql.
-      // A direct caller passing an unexpanded subtree gets the seed IDs only.
+      // ask() pre-expands subtrees to `ids`; direct callers get seeds only.
       m.set(access.tenantRoot, access.rootIds);
       break;
     case "multi_root":

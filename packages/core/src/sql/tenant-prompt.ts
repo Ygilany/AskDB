@@ -77,10 +77,7 @@ export function buildTenantPromptBlock(
     case "subtree": {
       const rootLabel = policy.roots.find((r) => r.id === access.tenantRoot)?.label ?? access.tenantRoot;
       const placeholder = `:tenant_${rootLabel.toLowerCase().replace(/[^a-z0-9]+/g, "_")}_ids`;
-      // The placeholder is substituted with the already-expanded subtree (see
-      // ask()'s resolveTenantDescendants), so the model filters on it like `ids`
-      // and must not try to build the recursion itself.
-      lines.push(`  Access: ${rootLabel} IDs = ${placeholder} (subtree — already expanded to every descendant ID)`);
+      lines.push(`  Access: ${rootLabel} subtree from IDs = ${placeholder} (include all descendants)`);
       lines.push(`  Use ${placeholder} as the parameter placeholder for tenant predicates.`);
       break;
     }

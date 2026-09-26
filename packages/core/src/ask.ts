@@ -449,7 +449,7 @@ export async function ask(options: AskPipelineOptions): Promise<AskPipelineResul
  * The seeds are unioned into the resolver's result here, not trusted to the
  * resolver, so an ancestor never loses access to its own rows when a host
  * returns strict descendants only. Fails closed: no resolver, or a resolver
- * result that is not a non-empty string array, throws `SUBTREE_NOT_RESOLVABLE`.
+ * result that is not a non-empty array of non-empty string IDs, throws `SUBTREE_NOT_RESOLVABLE`.
  */
 async function expandSubtreeScope(
   scope: TenantScope,
@@ -469,9 +469,9 @@ async function expandSubtreeScope(
   }
 
   const descendants: unknown = await resolve(access.tenantRoot, access.rootIds);
-  if (!Array.isArray(descendants) || descendants.some((id) => typeof id !== "string")) {
+  if (!isTenantIdArray(descendants)) {
     throw new TenantScopeError(
-      `resolveTenantDescendants for '${access.tenantRoot}' must return an array of string IDs.`,
+      `resolveTenantDescendants for '${access.tenantRoot}' must return an array of non-empty string IDs.`,
       "SUBTREE_NOT_RESOLVABLE",
     );
   }
@@ -484,8 +484,12 @@ async function expandSubtreeScope(
     );
   }
 
-  const ids = [...new Set<string>([...access.rootIds, ...(descendants as string[])])];
+  const ids = [...new Set([...access.rootIds, ...descendants])];
   return { ...scope, access: { kind: "ids", tenantRoot: access.tenantRoot, ids } };
+}
+
+function isTenantIdArray(value: unknown): value is readonly string[] {
+  return Array.isArray(value) && value.every((id) => typeof id === "string" && id.length > 0);
 }
 
 /**

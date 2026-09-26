@@ -21,11 +21,7 @@ export {
   type TenantPlaceholderResult,
   type TenantBinding,
 } from "./sql/tenant-placeholders.js";
-export {
-  expandClosure,
-  parentLinkageFor,
-  type TenantParentLinkage,
-} from "./sql/tenant-hierarchy.js";
+export { expandClosure } from "./sql/tenant-hierarchy.js";
 export {
   ask,
   type AskPipelineOptions,

@@ -613,8 +613,9 @@ describe("ask — subtree tenant scope expansion", () => {
 
   it.each([
     { name: "an empty array", resolved: [], message: /resolveTenantDescendants returned no IDs/ },
-    { name: "non-string IDs", resolved: [1, 2], message: /resolveTenantDescendants .* array of string IDs/ },
-    { name: "a non-array", resolved: undefined, message: /resolveTenantDescendants .* array of string IDs/ },
+    { name: "non-string IDs", resolved: [1, 2], message: /resolveTenantDescendants .* non-empty string IDs/ },
+    { name: "an empty-string ID", resolved: ["county-a", ""], message: /resolveTenantDescendants .* non-empty string IDs/ },
+    { name: "a non-array", resolved: undefined, message: /resolveTenantDescendants .* non-empty string IDs/ },
   ])("throws SUBTREE_NOT_RESOLVABLE naming the resolver when it returns $name", async ({ resolved, message }) => {
     const error = await ask({
       question: "count orders",
