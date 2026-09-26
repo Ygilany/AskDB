@@ -18,11 +18,11 @@ The dependency direction: `@askdb/core ← @askdb/enrich ← @askdb/studio`. UI 
 **`@askdb/enrich`:**
 - `Workspace` and `WorkspaceTable` — load a describable schema directory, expose tables as editable drafts
 - Table draft construction from `tables/*.md` parsed front-matter
-- `saveTable()` — round-trippable write through the Phase 5 writer
+- `saveTable()` — round-trippable write through the Phase 5 writer. New table files get a filename-safe `<table>.md`, or `<schema>.<table>.md` when bare names collide; existing files keep their names (matched by front-matter `id`); writes outside `tables/` are refused. See [schema-v2 contract](../contracts/schema-v2.md#describable-layer--tablestablemd).
 - Markdown body section update helpers (replace H2 sections without touching the rest)
 - `concepts.md` loading, saving, and link validation
 - AI suggestion source, target, and context helpers (builds the enrichment prompt; caller supplies the model)
-- `bundleSchema(dir) → bundledJson` — compiles a schema directory into a single packed JSON
+- `bundleSchemaDirectory(dir) → BundledSchemaV2` — compiles a schema directory (`schema.json`, `tables/*.md`, `concepts.md`, `tenant-policy.md`) into a single packed JSON
 
 ### Out of scope
 
@@ -74,4 +74,5 @@ askdb bundle <dir> --out <f>        # bundle directory to JSON via @askdb/enrich
 - Idempotency: opening, viewing, and quitting without edits leaves files byte-identical.
 - Sensitive warning: description mentioning a sensitive column name emits warning without blocking save.
 - Re-introspection ingestion: new un-described column IDs queued for description; orphan IDs offered for pruning.
-- Bundle round-trip: `loadSchema(bundle.json)` produces the same normalized representation as `loadSchema(directory)`.
+- Bundle round-trip: `loadSchema(bundle.json)` produces the same normalized representation as `loadSchema(directory)`, including the tenant policy for multi-tenant schemas.
+- Table filenames: colliding bare names get schema-qualified files; identifiers with path separators or `..` cannot write outside `tables/`; existing filenames are never renamed.

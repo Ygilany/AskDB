@@ -204,6 +204,8 @@ The tenant predicate is present in the SQL AskDB returns — it can't be forgott
 
 If `tenant-policy.md` is absent from the schema artifact, AskDB generates SQL without any tenant-scoping predicates. That's the right default for single-tenant deployments. Add the policy when (and only when) you go multi-tenant.
 
+If you deploy a bundle (`askdb bundle`), the policy travels inside it as the `tenantPolicy` field. Bundles built with `@askdb/enrich` 0.2.0-beta.13 or earlier left the policy out, so `ask()` loaded them as single-tenant and didn't require a `tenantScope`. Rebuild those bundles, then check that `loadSchema(bundlePath).tenantPolicy` is defined.
+
 ## Testing in Studio
 
 Studio's **Ask** panel includes tenant scope controls — provide a scope as JSON before generating SQL to see how predicate injection works:

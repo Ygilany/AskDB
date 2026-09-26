@@ -47,6 +47,20 @@ my-app.schema.bundle.json
 
 The bundle preserves all field semantics and IDs; it is read-only — authoring still happens against the directory.
 
+The bundle carries every file the directory loader reads, so `loadSchema(bundle)` produces the same normalized schema as `loadSchema(directory)`:
+
+```jsonc
+{
+  "bundled": true,
+  "physical": { /* schema.json */ },
+  "tables": { "orders.md": "<raw markdown>" }, // every tables/*.md, keyed by filename
+  "concepts": "<raw concepts.md>",             // present when concepts.md exists
+  "tenantPolicy": "<raw tenant-policy.md>"     // present when tenant-policy.md exists
+}
+```
+
+`tenantPolicy` is load-bearing: `ask()` only enforces tenant scope when the loaded schema has a policy, so a bundle without it would silently turn off tenant isolation. See [`tenant-policy.md`](./tenant-policy.md).
+
 ---
 
 ## Physical layer — `schema.json`
@@ -113,6 +127,14 @@ Required table fields are `id`, `name`, `schema`, and `columns`. Required column
 ## Describable layer — `tables/<table>.md`
 
 One file per described table. Format: **YAML front-matter** for structured fields, **markdown body** for prose.
+
+**Filenames.** Files are linked to tables by the front-matter `id`, never by filename, so an existing file keeps its name whatever it is. When `@askdb/enrich` creates a file for a table that has none yet, it picks:
+
+- `<table>.md` when the table name is unique across `schema.json` (compared case-insensitively, for case-insensitive filesystems);
+- `<schema>.<table>.md` when two tables share a name (e.g. `public.orders` and `archive.orders`), or when `<table>.md` is already taken by another file;
+- `<schema>.<table>-<n>.md` as a last resort if that is taken too.
+
+Names are made filename-safe first: path separators, NUL, control characters, and Windows-reserved characters become `_`, and a leading `.` or Windows device name gets a `_` prefix. Writes that would resolve outside `tables/` are refused.
 
 ```markdown
 ---
