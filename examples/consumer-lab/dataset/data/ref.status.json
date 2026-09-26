@@ -1,0 +1,14 @@
+[
+  {
+    "status_code": "ACTIVE",
+    "label": "Active"
+  },
+  {
+    "status_code": "EXITED",
+    "label": "Exited"
+  },
+  {
+    "status_code": "WAITLIST",
+    "label": "Waitlisted"
+  }
+]

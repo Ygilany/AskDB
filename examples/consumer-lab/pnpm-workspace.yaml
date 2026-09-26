@@ -1,0 +1,7 @@
+# This file makes the consumer lab its own pnpm root. The lab is deliberately NOT a
+# member of the AskDB monorepo workspace (the root pnpm-workspace.yaml excludes it),
+# so it resolves AskDB exactly as an outside developer's project would: from packed
+# tarballs or the npm registry, never through workspace links.
+allowBuilds:
+  better-sqlite3: true
+  esbuild: true

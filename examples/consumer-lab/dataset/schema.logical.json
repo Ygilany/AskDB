@@ -1,0 +1,424 @@
+{
+  "$comment": "Golden logical schema for the AskDB consumer lab. Hand-maintained. The DDL in ddl/*.sql must implement exactly this; data/<schema>.<table>.json holds the rows. Types are logical (see NORMALIZATION.md).",
+  "schemas": [
+    "org",
+    "people",
+    "billing",
+    "ref"
+  ],
+  "tables": [
+    {
+      "schema": "org",
+      "name": "agency",
+      "tenantRoot": true,
+      "columns": [
+        {
+          "name": "agency_id",
+          "type": "int",
+          "nullable": false
+        },
+        {
+          "name": "name",
+          "type": "text(100)",
+          "nullable": false
+        },
+        {
+          "name": "founded_on",
+          "type": "date",
+          "nullable": false
+        },
+        {
+          "name": "created_at",
+          "type": "timestamp",
+          "nullable": false
+        }
+      ],
+      "primaryKey": [
+        "agency_id"
+      ],
+      "unique": [],
+      "foreignKeys": []
+    },
+    {
+      "schema": "org",
+      "name": "program",
+      "tenantColumn": "agency_id",
+      "columns": [
+        {
+          "name": "agency_id",
+          "type": "int",
+          "nullable": false
+        },
+        {
+          "name": "program_code",
+          "type": "text(20)",
+          "nullable": false
+        },
+        {
+          "name": "name",
+          "type": "text(100)",
+          "nullable": false
+        },
+        {
+          "name": "budget",
+          "type": "decimal(12,2)",
+          "nullable": false
+        },
+        {
+          "name": "is_active",
+          "type": "boolean",
+          "nullable": false
+        },
+        {
+          "name": "starts_on",
+          "type": "date",
+          "nullable": false
+        },
+        {
+          "name": "ends_on",
+          "type": "date",
+          "nullable": true
+        }
+      ],
+      "primaryKey": [
+        "agency_id",
+        "program_code"
+      ],
+      "unique": [
+        [
+          "agency_id",
+          "name"
+        ]
+      ],
+      "foreignKeys": [
+        {
+          "columns": [
+            "agency_id"
+          ],
+          "references": {
+            "schema": "org",
+            "table": "agency",
+            "columns": [
+              "agency_id"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "schema": "ref",
+      "name": "status",
+      "global": true,
+      "columns": [
+        {
+          "name": "status_code",
+          "type": "text(20)",
+          "nullable": false
+        },
+        {
+          "name": "label",
+          "type": "text(50)",
+          "nullable": false
+        }
+      ],
+      "primaryKey": [
+        "status_code"
+      ],
+      "unique": [],
+      "foreignKeys": []
+    },
+    {
+      "schema": "people",
+      "name": "client",
+      "tenantColumn": "agency_id",
+      "columns": [
+        {
+          "name": "client_id",
+          "type": "int",
+          "nullable": false
+        },
+        {
+          "name": "agency_id",
+          "type": "int",
+          "nullable": false
+        },
+        {
+          "name": "full_name",
+          "type": "text(100)",
+          "nullable": false
+        },
+        {
+          "name": "email",
+          "type": "text(254)",
+          "nullable": false,
+          "sensitive": true
+        },
+        {
+          "name": "ssn",
+          "type": "text(11)",
+          "nullable": true,
+          "sensitive": true
+        },
+        {
+          "name": "birth_date",
+          "type": "date",
+          "nullable": false
+        },
+        {
+          "name": "created_at",
+          "type": "timestamp",
+          "nullable": false
+        }
+      ],
+      "primaryKey": [
+        "client_id"
+      ],
+      "unique": [
+        [
+          "email"
+        ]
+      ],
+      "foreignKeys": [
+        {
+          "columns": [
+            "agency_id"
+          ],
+          "references": {
+            "schema": "org",
+            "table": "agency",
+            "columns": [
+              "agency_id"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "schema": "people",
+      "name": "enrollment",
+      "tenantColumn": "agency_id",
+      "columns": [
+        {
+          "name": "client_id",
+          "type": "int",
+          "nullable": false
+        },
+        {
+          "name": "agency_id",
+          "type": "int",
+          "nullable": false
+        },
+        {
+          "name": "program_code",
+          "type": "text(20)",
+          "nullable": false
+        },
+        {
+          "name": "enrolled_on",
+          "type": "date",
+          "nullable": false
+        },
+        {
+          "name": "exited_on",
+          "type": "date",
+          "nullable": true
+        },
+        {
+          "name": "status_code",
+          "type": "text(20)",
+          "nullable": false
+        }
+      ],
+      "primaryKey": [
+        "client_id",
+        "program_code"
+      ],
+      "unique": [],
+      "foreignKeys": [
+        {
+          "columns": [
+            "client_id"
+          ],
+          "references": {
+            "schema": "people",
+            "table": "client",
+            "columns": [
+              "client_id"
+            ]
+          }
+        },
+        {
+          "columns": [
+            "agency_id",
+            "program_code"
+          ],
+          "references": {
+            "schema": "org",
+            "table": "program",
+            "columns": [
+              "agency_id",
+              "program_code"
+            ]
+          }
+        },
+        {
+          "columns": [
+            "status_code"
+          ],
+          "references": {
+            "schema": "ref",
+            "table": "status",
+            "columns": [
+              "status_code"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "schema": "billing",
+      "name": "order",
+      "reservedWord": true,
+      "tenantColumn": "agency_id",
+      "columns": [
+        {
+          "name": "order_id",
+          "type": "int",
+          "nullable": false
+        },
+        {
+          "name": "agency_id",
+          "type": "int",
+          "nullable": false
+        },
+        {
+          "name": "client_id",
+          "type": "int",
+          "nullable": false
+        },
+        {
+          "name": "placed_at",
+          "type": "timestamp",
+          "nullable": false
+        },
+        {
+          "name": "total",
+          "type": "decimal(10,2)",
+          "nullable": false
+        },
+        {
+          "name": "is_paid",
+          "type": "boolean",
+          "nullable": false
+        },
+        {
+          "name": "note",
+          "type": "text(200)",
+          "nullable": true
+        }
+      ],
+      "primaryKey": [
+        "order_id"
+      ],
+      "unique": [],
+      "foreignKeys": [
+        {
+          "columns": [
+            "agency_id"
+          ],
+          "references": {
+            "schema": "org",
+            "table": "agency",
+            "columns": [
+              "agency_id"
+            ]
+          }
+        },
+        {
+          "columns": [
+            "client_id"
+          ],
+          "references": {
+            "schema": "people",
+            "table": "client",
+            "columns": [
+              "client_id"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "schema": "billing",
+      "name": "order_line",
+      "tenantThrough": {
+        "table": "billing.order",
+        "join": [
+          [
+            "order_id",
+            "order_id"
+          ]
+        ]
+      },
+      "columns": [
+        {
+          "name": "order_id",
+          "type": "int",
+          "nullable": false
+        },
+        {
+          "name": "line_no",
+          "type": "int",
+          "nullable": false
+        },
+        {
+          "name": "sku",
+          "type": "text(20)",
+          "nullable": false
+        },
+        {
+          "name": "quantity",
+          "type": "int",
+          "nullable": false
+        },
+        {
+          "name": "unit_price",
+          "type": "decimal(10,2)",
+          "nullable": false
+        }
+      ],
+      "primaryKey": [
+        "order_id",
+        "line_no"
+      ],
+      "unique": [],
+      "foreignKeys": [
+        {
+          "columns": [
+            "order_id"
+          ],
+          "references": {
+            "schema": "billing",
+            "table": "order",
+            "columns": [
+              "order_id"
+            ]
+          }
+        }
+      ]
+    }
+  ],
+  "views": [
+    {
+      "schema": "billing",
+      "name": "agency_revenue",
+      "tenantColumn": "agency_id",
+      "columns": [
+        "agency_id",
+        "order_count",
+        "paid_total"
+      ],
+      "definition": "One row per agency that has orders: agency_id, COUNT(*) of its orders, SUM(total) over paid orders (0 when none are paid)."
+    }
+  ]
+}

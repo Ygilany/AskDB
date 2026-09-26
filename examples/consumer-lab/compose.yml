@@ -1,0 +1,84 @@
+# AskDB consumer lab databases. One engine per supported dialect, all holding the
+# same logical schema and data (seeded by `pnpm lab:up`, see src/seed.ts).
+# SQLite is a file (.data/lab.sqlite), not a service.
+#
+# Host ports are chosen to avoid the repo's other fixtures and CI services
+# (5432, 5433, 5434, 3306, 1433).
+#
+#   postgres   127.0.0.1:15432  owner lab_owner/lab_owner    reader lab_reader/lab_reader   db askdb_lab
+#   mysql      127.0.0.1:13306  owner root/lab_owner          reader lab_reader/lab_reader   db askdb_lab
+#   mariadb    127.0.0.1:13307  owner root/lab_owner          reader lab_reader/lab_reader   db askdb_lab
+#   sqlserver  127.0.0.1:11433  owner sa/Lab.Owner.2026       reader lab_reader/Lab.Reader.2026  db askdb_lab
+name: askdb-lab
+
+services:
+  postgres:
+    image: postgres:17
+    environment:
+      POSTGRES_USER: lab_owner
+      POSTGRES_PASSWORD: lab_owner
+      POSTGRES_DB: askdb_lab
+    ports:
+      - "15432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U lab_owner -d askdb_lab"]
+      interval: 3s
+      timeout: 5s
+      retries: 30
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  mysql:
+    image: mysql:8.4
+    environment:
+      MYSQL_ROOT_PASSWORD: lab_owner
+    ports:
+      - "13306:3306"
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -uroot -plab_owner --silent"]
+      interval: 3s
+      timeout: 5s
+      retries: 40
+      start_period: 20s
+    volumes:
+      - mysql_data:/var/lib/mysql
+
+  mariadb:
+    image: mariadb:11.4
+    environment:
+      MARIADB_ROOT_PASSWORD: lab_owner
+    ports:
+      - "13307:3306"
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 3s
+      timeout: 5s
+      retries: 40
+      start_period: 10s
+    volumes:
+      - mariadb_data:/var/lib/mysql
+
+  sqlserver:
+    image: mcr.microsoft.com/mssql/server:2022-CU27-ubuntu-22.04
+    # SQL Server images are amd64-only; Docker Desktop runs them under Rosetta on Apple Silicon.
+    platform: linux/amd64
+    environment:
+      ACCEPT_EULA: "Y"
+      MSSQL_SA_PASSWORD: Lab.Owner.2026
+      MSSQL_PID: Developer
+    ports:
+      - "11433:1433"
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P 'Lab.Owner.2026' -Q 'SELECT 1' -b -C -l 5"]
+      interval: 5s
+      timeout: 10s
+      retries: 36
+      start_period: 20s
+    volumes:
+      - sqlserver_data:/var/opt/mssql
+
+volumes:
+  postgres_data:
+  mysql_data:
+  mariadb_data:
+  sqlserver_data:
