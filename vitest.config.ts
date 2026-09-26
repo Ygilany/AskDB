@@ -11,7 +11,9 @@ export default defineConfig({
     globals: false,
     environment: "node",
     include: ["**/*.test.ts", "**/*.test.tsx", "**/*.integration.test.ts"],
-    exclude: ["**/node_modules/**", "**/dist/**"],
+    // The consumer lab is not a workspace member: it has its own install, vitest and
+    // databases (see examples/consumer-lab/README.md).
+    exclude: ["**/node_modules/**", "**/dist/**", "examples/consumer-lab/**"],
     testTimeout: 45_000,
     hookTimeout: 45_000,
   },
