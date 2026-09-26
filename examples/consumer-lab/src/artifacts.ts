@@ -4,7 +4,7 @@
  * switching targets with `pnpm lab:use` always re-introspects.
  */
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { SupportedDialect } from "./dialects.js";
@@ -26,10 +26,10 @@ export function requireInstallTarget(): { label: string } {
 /**
  * SQLite has no connection URL. The documented way to introspect it
  * (guides/switch-engines) is `introspection.providerConfig.sqlite.file` in the config,
- * then a bare `askdb introspect`. The lab writes that config into its own directory.
+ * then a bare `askdb introspect`. The lab writes that config into a directory of the
+ * caller's own, inside the lab so that the config's `@askdb/config` import resolves.
  */
-function sqliteConfigDir(): string {
-  const dir = join(STATE, "config", "sqlite");
+function writeSqliteConfig(dir: string): void {
   mkdirSync(dir, { recursive: true });
   const config = {
     ai: { provider: "openai", providerConfig: { openai: { apiKey: "", model: "gpt-4o-mini" } } },
@@ -42,12 +42,15 @@ function sqliteConfigDir(): string {
     join(dir, "askdb.config.ts"),
     `import { defineConfig } from "@askdb/config";\n\nexport default defineConfig(${JSON.stringify(config, null, 2)});\n`,
   );
-  return dir;
 }
 
 /** `askdb introspect` arguments for each dialect. MariaDB is introspected with the MySQL engine. */
-function introspectArgs(dialect: SupportedDialect): { args: string[]; cwd: string } {
-  if (dialect === "sqlite") return { args: [], cwd: sqliteConfigDir() };
+function introspectArgs(dialect: SupportedDialect, scratch: string): { args: string[]; cwd: string } {
+  if (dialect === "sqlite") {
+    const cwd = join(scratch, "config");
+    writeSqliteConfig(cwd);
+    return { args: [], cwd };
+  }
   return {
     cwd: LAB_ROOT,
     args: [
@@ -59,16 +62,35 @@ function introspectArgs(dialect: SupportedDialect): { args: string[]; cwd: strin
   };
 }
 
+/**
+ * The dialect's artifact directory, introspecting on first use. Several `lab ask`
+ * processes may start with a cold cache at once, so each introspects into its own
+ * scratch directory and renames the result into place. The first rename wins; the
+ * others discard theirs, which is the same introspection.
+ */
 export function ensureArtifact(dialect: SupportedDialect): string {
   requireInstallTarget();
   const outDir = join(ARTIFACTS, `${dialect}.schema`);
   if (existsSync(join(outDir, "schema.json"))) return outDir;
 
-  const { args, cwd } = introspectArgs(dialect);
-  execFileSync(
-    join(LAB_ROOT, "node_modules", ".bin", "askdb"),
-    ["introspect", ...args, "--schema-id", "multi-engine", "--out", outDir],
-    { cwd, stdio: ["ignore", "ignore", "inherit"] },
-  );
+  mkdirSync(ARTIFACTS, { recursive: true });
+  const scratch = mkdtempSync(join(ARTIFACTS, `.${dialect}-`));
+  try {
+    const { args, cwd } = introspectArgs(dialect, scratch);
+    const built = join(scratch, "schema");
+    execFileSync(
+      join(LAB_ROOT, "node_modules", ".bin", "askdb"),
+      ["introspect", ...args, "--schema-id", "multi-engine", "--out", built],
+      { cwd, stdio: ["ignore", "ignore", "inherit"] },
+    );
+    try {
+      renameSync(built, outDir);
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code;
+      if (!(code === "ENOTEMPTY" || code === "EEXIST") || !existsSync(join(outDir, "schema.json"))) throw error;
+    }
+  } finally {
+    rmSync(scratch, { recursive: true, force: true });
+  }
   return outDir;
 }

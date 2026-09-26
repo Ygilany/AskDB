@@ -13,6 +13,8 @@ let db;
 try {
   db = new Database(file, { readonly: true, fileMustExist: true });
   db.pragma("query_only = ON");
+  // The statement timeout starts now, not while the worker and the driver were loading.
+  parentPort.postMessage({ ready: true });
   const stmt = db.prepare(sql);
   if (!stmt.reader) throw new Error("the statement returns no rows");
   stmt.raw(true);

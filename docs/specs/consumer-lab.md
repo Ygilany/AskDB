@@ -187,7 +187,7 @@ Flags:
 
 - **Dialect:** taken from the base URL path, `http://127.0.0.1:<port>/<dialect>/v1`. This works with any model id and in record mode.
 - **Question:** found by matching the catalog's question texts, which are unique, inside the user prompt.
-- **No match:** the server fails with an error that names the missing cassette and the `lab:record` command. It never falls back to a default.
+- **No match:** the server fails with an error that names the missing cassette file and what to author in it (or, when the prompt holds no catalog question, the catalog entry to add). It never falls back to a default. Once `pnpm lab:record` exists (#247), the message names it too.
 
 **Cassettes** live at `cassettes/<dialect>/<id>.json`:
 

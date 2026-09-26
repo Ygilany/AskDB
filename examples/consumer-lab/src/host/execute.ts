@@ -87,8 +87,8 @@ async function runPostgres(sql: string, o: Resolved) {
         PG_RAW_TYPES.has(oid) ? (v: string) => v : pg.types.getTypeParser(oid, format)) as typeof pg.types.getTypeParser,
     },
   });
-  await client.connect();
   try {
+    await client.connect();
     await client.query("BEGIN READ ONLY");
     await client.query(`SET LOCAL statement_timeout = ${o.timeoutMs}`);
     const capped = `SELECT * FROM (${sql}) AS askdb_q LIMIT ${o.rowCap + 1}`;
@@ -100,7 +100,7 @@ async function runPostgres(sql: string, o: Resolved) {
     throw error;
   } finally {
     await client.query("ROLLBACK").catch(() => undefined);
-    await client.end();
+    await client.end().catch(() => undefined);
   }
 }
 
@@ -170,10 +170,12 @@ async function runSqlServer(sql: string, o: Resolved) {
     requestTimeout: o.timeoutMs,
     arrayRowMode: true,
   });
-  await pool.connect();
   const tx = new mssql.Transaction(pool);
+  let begun = false;
   try {
+    await pool.connect();
     await tx.begin();
+    begun = true;
     // Caps the rows any following statement returns, and keeps its ORDER BY.
     await new mssql.Request(tx).batch(`SET ROWCOUNT ${o.rowCap + 1}`);
     const request = new mssql.Request(tx);
@@ -187,8 +189,8 @@ async function runSqlServer(sql: string, o: Resolved) {
     if ((error as { code?: string }).code === "ETIMEOUT") throw new StatementTimeoutError("sqlserver", o.timeoutMs, { cause: error });
     throw error;
   } finally {
-    await tx.rollback().catch(() => undefined);
-    await pool.close();
+    if (begun) await tx.rollback().catch(() => undefined);
+    await pool.close().catch(() => undefined);
   }
 }
 
@@ -198,16 +200,24 @@ async function runSqlite(sql: string, o: Resolved) {
   });
   try {
     return await new Promise<{ columns: string[]; rows: unknown[][] }>((resolve, reject) => {
-      const timer = setTimeout(() => reject(new StatementTimeoutError("sqlite", o.timeoutMs)), o.timeoutMs);
-      worker.once("error", (error) => {
+      let timer: NodeJS.Timeout | undefined;
+      let settled = false;
+      const settle = (fn: () => void) => {
+        if (settled) return;
+        settled = true;
         clearTimeout(timer);
-        reject(error);
+        fn();
+      };
+      type Message = { ready: true } | { ok: true; columns: string[]; rows: unknown[][] } | { ok: false; message: string };
+      worker.on("message", (message: Message) => {
+        if ("ready" in message) {
+          // The database is open; from here on the statement is running.
+          timer = setTimeout(() => settle(() => reject(new StatementTimeoutError("sqlite", o.timeoutMs))), o.timeoutMs);
+        } else if (message.ok) settle(() => resolve({ columns: message.columns, rows: message.rows }));
+        else settle(() => reject(new Error(`[sqlite] ${message.message}`)));
       });
-      worker.once("message", (message: { ok: true; columns: string[]; rows: unknown[][] } | { ok: false; message: string }) => {
-        clearTimeout(timer);
-        if (message.ok) resolve({ columns: message.columns, rows: message.rows });
-        else reject(new Error(`[sqlite] ${message.message}`));
-      });
+      worker.once("error", (error) => settle(() => reject(error)));
+      worker.once("exit", (code) => settle(() => reject(new Error(`[sqlite] the worker exited (code ${code}) without a result`))));
     });
   } finally {
     await worker.terminate();
