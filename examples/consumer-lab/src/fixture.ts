@@ -7,6 +7,9 @@
 export {
   DIALECTS,
   LOGICAL_SCHEMAS,
+  SQLITE_FILE,
   connectionUrl,
+  loadRows,
+  physicalName,
   type Dialect,
 } from "../../../fixtures/multi-engine/src/index.js";
