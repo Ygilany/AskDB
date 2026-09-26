@@ -13,7 +13,7 @@
     "test:links": "node ./scripts/check-base-links.mjs /"
   },
   "engines": {
-    "node": ">=20"
+    "node": ">=22.12"
   },
   "devDependencies": {
     "@astrojs/check": "^0.9.10",
