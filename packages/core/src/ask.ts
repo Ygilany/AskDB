@@ -28,7 +28,11 @@ import {
   type SensitiveGuardrailMode,
   type SensitiveGuardrailResult,
 } from "./sql/sensitive-guardrail.js";
-import { SensitiveReferenceError, type SensitiveReference } from "./errors.js";
+import {
+  SensitiveReferenceError,
+  TenantScopeError,
+  type SensitiveReference,
+} from "./errors.js";
 import {
   bindPreparedQuery,
   sqlStructurallyEqual,
@@ -257,6 +261,13 @@ export async function ask(options: AskPipelineOptions): Promise<AskPipelineResul
       "tenant scope validated",
     );
   }
+  // A `subtree` scope is expanded to its full ID set here, before generation, so
+  // the prompt, guardrail, and placeholder substitution all see the same `ids`
+  // access — and a missing resolver fails before any model call is spent.
+  const tenantScope =
+    tenantPolicy && options.tenantScope
+      ? await expandSubtreeScope(options.tenantScope, options.resolveTenantDescendants)
+      : options.tenantScope;
 
   const explainRequested = options.explain ?? false;
   const omitSensitive = options.omitSensitiveIdentifiersFromNlToSqlPrompt ?? false;
@@ -280,7 +291,7 @@ export async function ask(options: AskPipelineOptions): Promise<AskPipelineResul
       providerOptions: options.deps?.providerOptions,
       prebuiltDdl,
       tenantPolicy,
-      tenantScope: options.tenantScope,
+      tenantScope,
       // Custom AskDialect implementations ignore this; built-in path uses it.
       parameterize: dialectSpec ? parameterize : undefined,
     },
@@ -377,14 +388,14 @@ export async function ask(options: AskPipelineOptions): Promise<AskPipelineResul
     }
   }
 
-  if (tenantPolicy && options.tenantScope) {
+  if (tenantPolicy && tenantScope) {
     const tenantMode = options.tenantSqlMode ?? "sql-only";
     const paramStartIndex =
       tenantMode === "sql-params" && result.params ? businessParamCount + 1 : 1;
     const resolved = resolveTenantSql(
       result.sql,
       tenantPolicy,
-      options.tenantScope,
+      tenantScope,
       tenantMode,
       paramStartIndex,
       dialectSpec,
@@ -400,7 +411,7 @@ export async function ask(options: AskPipelineOptions): Promise<AskPipelineResul
         const unboundWithTenant = resolveTenantSql(
           result.unboundSql,
           tenantPolicy,
-          options.tenantScope,
+          tenantScope,
           "sql-only",
           1,
           dialectSpec,
@@ -410,7 +421,7 @@ export async function ask(options: AskPipelineOptions): Promise<AskPipelineResul
         const unboundWithTenant = resolveTenantSql(
           result.unboundSql,
           tenantPolicy,
-          options.tenantScope,
+          tenantScope,
           "sql-params",
           paramStartIndex,
           dialectSpec,
@@ -429,6 +440,52 @@ export async function ask(options: AskPipelineOptions): Promise<AskPipelineResul
   applySensitiveGuardrail(result, options, logger);
 
   return result;
+}
+
+/**
+ * Replace a `subtree` access with the `ids` access it expands to. Other access
+ * kinds pass through untouched.
+ *
+ * The seeds are unioned into the resolver's result here, not trusted to the
+ * resolver, so an ancestor never loses access to its own rows when a host
+ * returns strict descendants only. Fails closed: no resolver, or a resolver
+ * result that is not a non-empty string array, throws `SUBTREE_NOT_RESOLVABLE`.
+ */
+async function expandSubtreeScope(
+  scope: TenantScope,
+  resolve: ResolveTenantDescendants | undefined,
+): Promise<TenantScope> {
+  const access = scope.access;
+  if (access.kind !== "subtree") return scope;
+
+  if (!resolve) {
+    throw new TenantScopeError(
+      `tenantScope.access is a 'subtree' of '${access.tenantRoot}', but no ` +
+        "resolveTenantDescendants was passed to ask(). AskDB does not query your database " +
+        "to find descendants: pass resolveTenantDescendants to expand the seed IDs, or pass " +
+        "an 'ids' access with the full ID set already expanded.",
+      "SUBTREE_NOT_RESOLVABLE",
+    );
+  }
+
+  const descendants: unknown = await resolve(access.tenantRoot, access.rootIds);
+  if (!Array.isArray(descendants) || descendants.some((id) => typeof id !== "string")) {
+    throw new TenantScopeError(
+      `resolveTenantDescendants for '${access.tenantRoot}' must return an array of string IDs.`,
+      "SUBTREE_NOT_RESOLVABLE",
+    );
+  }
+  if (descendants.length === 0) {
+    throw new TenantScopeError(
+      `resolveTenantDescendants returned no IDs for '${access.tenantRoot}' ` +
+        `(seeds: ${access.rootIds.join(", ")}). It must return every ID in the subtree, ` +
+        "including the seeds; refusing to build an empty tenant scope.",
+      "SUBTREE_NOT_RESOLVABLE",
+    );
+  }
+
+  const ids = [...new Set<string>([...access.rootIds, ...(descendants as string[])])];
+  return { ...scope, access: { kind: "ids", tenantRoot: access.tenantRoot, ids } };
 }
 
 /**

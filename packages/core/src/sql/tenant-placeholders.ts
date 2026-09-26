@@ -99,6 +99,9 @@ function buildIdsByRoot(access: TenantAccess): Map<string, string[]> {
       m.set(access.tenantRoot, access.ids);
       break;
     case "subtree":
+      // Unreachable by contract from ask(): it expands a subtree to an `ids`
+      // access (via resolveTenantDescendants) before calling resolveTenantSql.
+      // A direct caller passing an unexpanded subtree gets the seed IDs only.
       m.set(access.tenantRoot, access.rootIds);
       break;
     case "multi_root":
@@ -209,6 +212,14 @@ function escapeRegex(s: string): string {
 // High-level entry point
 // ---------------------------------------------------------------------------
 
+/**
+ * Substitute tenant placeholders in `sql` with the IDs from `scope`.
+ *
+ * A `subtree` access must be pre-expanded by the caller into an `ids` access
+ * holding the full descendant set; this function does not walk the hierarchy
+ * and substitutes the seed `rootIds` only. `ask()` does the expansion for you
+ * via its `resolveTenantDescendants` option.
+ */
 export function resolveTenantSql(
   sql: string,
   policy: NormalizedTenantPolicy,

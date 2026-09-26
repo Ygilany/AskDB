@@ -46,7 +46,9 @@ export type TenantScopeRejectionReason =
   | "MISSING_SCOPE"
   | "UNKNOWN_TENANT_ROOT"
   | "GLOBAL_WITHOUT_REASON"
-  | "INVALID_SCOPE_SHAPE";
+  | "INVALID_SCOPE_SHAPE"
+  /** A `subtree` scope could not be expanded: no `resolveTenantDescendants`, or it returned no usable IDs. */
+  | "SUBTREE_NOT_RESOLVABLE";
 
 export class TenantScopeError extends AskDbError {
   constructor(
