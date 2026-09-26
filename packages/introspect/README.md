@@ -57,6 +57,29 @@ A `Connector<TInput>` has two methods:
 
 The integration package owns its own input type (e.g. `PostgresIntrospectionInput`, `PrismaIntrospectionInput`). `@askdb/introspect` does not assume a live catalog runner exists, a bundle path exists, a schema-file path exists, or a template suite exists.
 
+### Connector registry
+
+Hosts that pick the engine from configuration use the connector provider registry. Every engine package exports an adapter: `postgresConnectorProvider`, `mysqlConnectorProvider`, `sqliteConnectorProvider`, `sqlServerConnectorProvider`, `prismaConnectorProvider`. Provider ids are open strings (`ConnectorProviderId`), so a third-party engine package can export `{ provider: "oracle", ... }` and register it the same way.
+
+```ts
+import { getAskDbRuntimeConfig } from "@askdb/config";
+import { createConnectorRegistry, introspect } from "@askdb/introspect";
+import { postgresConnectorProvider } from "@askdb/postgres";
+import { mysqlConnectorProvider } from "@askdb/mysql";
+
+const registry = createConnectorRegistry([postgresConnectorProvider, mysqlConnectorProvider]);
+
+// The adapter merges explicit values with askdb.config/env (explicit wins).
+const resolved = registry.resolveConnection("mysql", { runtime: getAskDbRuntimeConfig() });
+if (!resolved.ok) throw new Error(resolved.error);
+console.log(`Introspecting ${resolved.sourceLabel}`); // credentials masked
+
+const { connector, input } = registry.createConnector({ provider: "mysql", ...resolved.connection });
+await introspect(input, { outDir: "./askdb", schemaId: "shop" }, { connector });
+```
+
+`ConnectorProviderAdapter` is `{ provider, createConnector(config), getTemplates?(), resolveConnection?(request), redactConnectionString?(input) }`. `registry.redactConnectionString(provider, input)` falls back to generic redaction for adapters without a redactor and for unknown providers. See [Connector authoring](../../docs/integration/connectors.md#registering-with-askdb-hosts) for writing an adapter.
+
 ### Engine kit (`@askdb/introspect/kit`)
 
 The `@askdb/introspect/kit` subpath holds the engine-agnostic helpers every first-party engine package uses, so a new engine does not copy them:
@@ -68,6 +91,7 @@ The `@askdb/introspect/kit` subpath holds the engine-agnostic helpers every firs
 | `makeTableId(schema, table)`, `makeColumnId(schema, table, column)` | Schema v2 ids (`table:<schema>.<name>`, `table:<schema>.<name>#<column>`). |
 | `rowsToRecords(result, { expectedColumns?, source? })`, `groupBy`, `buildOrderedGroups`, `byName`, `sortedUnique`, `mapFkAction` | Folding positional `CatalogQueryResult` rows into Schema v2 tables, constraints, and indexes. |
 | `redactUrlUserinfo`, `redactSecretKeyValues`, `redactConnectionStringGeneric`, `hasUrlScheme`, `isSecretConnectionKey`, `REDACTED_SECRET` | Building blocks for an engine's `redactConnectionString()`. |
+| `defineLiveConnectorProvider({ provider, displayName, runtimeKey, connectionNoun, missingConnection, createConnector, createRunner, redactConnectionString })` | The full `ConnectorProviderAdapter` for an engine that only introspects through a live `CatalogQueryRunner`. `@askdb/mysql`, `@askdb/sqlite`, and `@askdb/sqlserver` use it. |
 
 ```ts
 import { createOptionalDriverLoader, missingDriverMessage } from "@askdb/introspect/kit";
