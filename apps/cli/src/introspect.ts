@@ -121,6 +121,10 @@ async function runIntrospectCommand(argv: readonly string[]): Promise<number> {
   // For the new live-driver engines, prefer the runtime-resolved per-engine
   // field (structured config -> provider-specific env -> DATABASE_URL fallback
   // for URL-shaped engines). SQLite has no DATABASE_URL fallback by design.
+  // Databases to introspect: `--schemas` wins, then introspection.providerConfig.mysql.databases.
+  if (engine === "mysql" && !opts.schemas && rt.introspection.mysqlDatabases) {
+    opts.schemas = rt.introspection.mysqlDatabases;
+  }
   if (engine === "mysql" && !opts.url) {
     if (rt.introspection.mysqlDatabaseUrl) opts.url = rt.introspection.mysqlDatabaseUrl;
     else

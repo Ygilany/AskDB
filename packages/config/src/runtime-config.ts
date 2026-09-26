@@ -57,6 +57,12 @@ export type AskDbRuntimeIntrospectionConfig = {
    */
   mysqlDatabaseUrl: string | undefined;
   /**
+   * Databases to introspect when `provider === "mysql"`:
+   * `providerConfig.mysql.databases` → `ASKDB_INTROSPECT_MYSQL_DATABASES` (comma-separated).
+   * `undefined` means "only the connection's database".
+   */
+  mysqlDatabases: string[] | undefined;
+  /**
    * Resolved SQLite file path when `provider === "sqlite"`:
    * `providerConfig.sqlite.file` → `ASKDB_INTROSPECT_SQLITE_FILE` env.
    * `undefined` for non-SQLite providers.
@@ -168,6 +174,12 @@ export function getAskDbRuntimeConfig(): AskDbRuntimeConfig {
       ? structured.introspection.providerConfig?.mysql?.databaseUrl?.trim() ||
         pickFlat(flat, "ASKDB_INTROSPECT_MYSQL_URL")
       : undefined;
+  const mysqlDatabasesRaw =
+    structured.introspection.provider === "mysql"
+      ? structured.introspection.providerConfig?.mysql?.databases ??
+        pickFlat(flat, "ASKDB_INTROSPECT_MYSQL_DATABASES")?.split(",")
+      : undefined;
+  const mysqlDatabases = mysqlDatabasesRaw?.map((d) => d.trim()).filter(Boolean);
   const sqliteFile =
     structured.introspection.provider === "sqlite"
       ? structured.introspection.providerConfig?.sqlite?.file?.trim() ||
@@ -190,6 +202,7 @@ export function getAskDbRuntimeConfig(): AskDbRuntimeConfig {
       postgresDatabaseUrl,
       prismaSchemaPath: prismaSchemaPathRaw || undefined,
       mysqlDatabaseUrl,
+      mysqlDatabases: mysqlDatabases?.length ? mysqlDatabases : undefined,
       sqliteFile,
       sqlserverDatabaseUrl,
       outputDir:
