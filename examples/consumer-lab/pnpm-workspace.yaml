@@ -6,6 +6,8 @@ allowBuilds:
   # `askdb` depends on @askdb/prisma, whose @prisma/engines has a postinstall script.
   # pnpm 11 refuses to install until it is approved, as any pnpm user would have to (#259).
   "@prisma/engines": true
+  # The host's SQLite driver, and the one `askdb introspect` loads for SQLite.
+  better-sqlite3: true
 # `pnpm lab:use` rewrites the block below so every @askdb/* package, including transitive
 # ones, resolves to the install target. Don't edit it by hand.
 # lab:use overrides begin
