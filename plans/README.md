@@ -30,6 +30,8 @@ Two findings are worth calling out because they are capability gaps rather than 
 
 PR #168 changed what is affordable here. Its `tokenizeSqlSpans` lexer (`packages/core/src/sql/bind.ts`) is the primitive the guardrail was missing, which makes 045's hardening cheap and 050's spike worth running. Its `markerStyleForDialect` also made 046 more urgent: business parameters now bind with dialect-correct markers while the tenant path still hardcodes Postgres `$N`, so a single statement on MySQL or SQL Server can now contain both `?` and `$1`.
 
+Plan 053: written 2026-09-26 at commit `bdd7fe5` from the consumer-lab design review (`docs/specs/consumer-lab.md`). The maintainer asked the shared test fixture to model a self-referencing org tree (an org parented by an org; a parent sees its descendants, a child never sees its ancestors). The tenant policy can only express hierarchies between different root tables, so this plan adds same-table trees on top of 047's descendant expansion.
+
 Execute in the order below unless dependencies say otherwise. Each executor: read the plan fully before starting, honor its STOP conditions, and update your row when done.
 
 ## Execution order & status
@@ -88,6 +90,7 @@ Execute in the order below unless dependencies say otherwise. Each executor: rea
 | 050 | Design spike: deterministic tenant predicate rewriting | P2 | M | 045 (soft) | TODO |
 | 051 | Let Studio actually author a tenant policy — add and edit, not just delete | P1 | L | 044 (hard) | TODO |
 | 052 | Make a tenant policy comprehensible in Studio — coverage, hierarchy tree, scope preview | P2 | M | 044 (hard), 051 (soft) | TODO |
+| 053 | Support self-referencing tenant hierarchies (an org tree in one table) | P1 | L | 047 (hard) | TODO |
 
 Status values: TODO | IN PROGRESS | DONE | BLOCKED (with one-line reason) | REJECTED (with one-line rationale)
 
