@@ -1,6 +1,6 @@
 // Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
 
-exports[`describePrismaSchema > wires through the Connector contract and renders deterministic Schema v2 JSON 1`] = `
+exports[`describePrismaSchema > wires through the Connector contract and renders Schema v2 JSON 1`] = `
 {
   "schemaId": "simple",
   "tables": [
