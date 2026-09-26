@@ -36,6 +36,8 @@ export {
   type AskUsage,
   type AskDialectGenerateResult,
   type AskGenerateDeps,
+  // Callback type for `ask({ resolveTenantDescendants })` (subtree tenant scopes).
+  type ResolveTenantDescendants,
 } from "./ask.js";
 export {
   parseAskDbModeV1,

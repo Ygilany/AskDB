@@ -111,6 +111,16 @@ export type AskGenerateDeps = {
   providerOptions?: Record<string, unknown>;
 };
 
+/**
+ * Host callback that expands a `subtree` tenant scope: given the tenant root id
+ * and the seed IDs, return every ID in the subtree (seeds included). Pass it to
+ * `ask()` as {@link AskPipelineOptions.resolveTenantDescendants}.
+ */
+export type ResolveTenantDescendants = (
+  tenantRoot: string,
+  seedIds: readonly string[],
+) => Promise<readonly string[]> | readonly string[];
+
 export type AskPipelineOptions = {
   question: string;
   schema: AnyNormalizedSchema;
@@ -173,6 +183,20 @@ export type AskPipelineOptions = {
    * literal values; `"sql-params"` converts to positional `$N` parameters.
    */
   tenantSqlMode?: TenantSqlOutputMode;
+  /**
+   * Expands a `subtree` tenant scope to the full descendant set.
+   *
+   * Called with the tenant root id and the seed IDs from
+   * `tenantScope.access.rootIds`; should return every ID in the subtree. The
+   * host is the right place for this: it already knows its own hierarchy, can
+   * cache the closure, and can apply its own authorization rules.
+   *
+   * Required when `tenantScope.access.kind === "subtree"` — AskDB never opens a
+   * database connection of its own. Without it, `ask()` throws
+   * `TenantScopeError` (`SUBTREE_NOT_RESOLVABLE`) rather than silently scoping
+   * to the seed IDs alone.
+   */
+  resolveTenantDescendants?: ResolveTenantDescendants;
   /**
    * Ask the model to also return the SQL in unbound form plus a JSON manifest
    * of the values it parameterized, populating `unboundSql`, `params`,
