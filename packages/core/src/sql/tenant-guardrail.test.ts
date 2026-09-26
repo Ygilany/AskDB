@@ -4,6 +4,7 @@ import { fileURLToPath } from "node:url";
 import { TenantGuardrailError } from "../errors.js";
 import { loadSchema } from "../schema/v2/loader.js";
 import type { TenantScope, NormalizedTenantPolicy } from "../schema/v2/tenant-policy.js";
+import { MYSQL_DIALECT, POSTGRES_DIALECT, type DialectSpec } from "./dialect-spec.js";
 import { validateTenantGuardrails } from "./tenant-guardrail.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -169,5 +170,77 @@ describe("validateTenantGuardrails — unknown tables", () => {
     const result = validateTenantGuardrails(sql, policyWithUnknown, agencyScope);
     expect(result.passed).toBe(false);
     expect(result.warnings.some((w) => w.rule === "UNKNOWN_TABLE_REFERENCED")).toBe(true);
+  });
+});
+
+describe("validateTenantGuardrails — matches only in code regions", () => {
+  const warnPolicy: NormalizedTenantPolicy = { ...policy, enforcement: "warn" };
+  const rules = (sql: string, dialect?: DialectSpec) =>
+    validateTenantGuardrails(sql, warnPolicy, agencyScope, { dialect }).warnings.map((w) => w.rule);
+
+  it.each([
+    ["a string literal", "SELECT * FROM orders WHERE note = 'agency_id'"],
+    ["a string literal with doubled quotes", "SELECT * FROM orders WHERE note = 'it''s agency_id'"],
+    ["a dollar-quoted body", "SELECT * FROM orders WHERE note = $q$agency_id$q$"],
+    ["a line comment", "SELECT * FROM orders -- filter by agency_id\nWHERE status = 'paid'"],
+    ["a block comment", "SELECT * FROM orders /* agency_id */ WHERE status = 'paid'"],
+    ["a quoted placeholder", "SELECT * FROM orders WHERE note = ':tenant_agency_ids'"],
+  ])("a tenant column named only inside %s is not a predicate", (_label, sql) => {
+    expect(rules(sql)).toEqual(["MISSING_TENANT_PREDICATE"]);
+  });
+
+  it("a real predicate next to a literal mentioning the column still passes", () => {
+    expect(rules("SELECT * FROM orders WHERE agency_id IN ('42') AND note = 'agency_id'")).toEqual([]);
+  });
+
+  it("an apostrophe inside a comment does not hide the rest of the statement", () => {
+    expect(rules("-- don't forget\nSELECT * FROM orders WHERE status = 'paid'")).toEqual([
+      "MISSING_TENANT_PREDICATE",
+    ]);
+  });
+
+  it("quoted identifiers still count: the table is checked and the column matches", () => {
+    expect(rules('SELECT * FROM "orders" WHERE status = \'paid\'')).toEqual([
+      "MISSING_TENANT_PREDICATE",
+    ]);
+    expect(
+      rules('SELECT * FROM "public"."orders" o WHERE o."agency_id" = \'42\'', POSTGRES_DIALECT),
+    ).toEqual([]);
+    expect(rules("SELECT * FROM `orders` WHERE `agency_id` = '42'", MYSQL_DIALECT)).toEqual([]);
+    expect(rules("SELECT * FROM [orders] WHERE [agency_id] = '42'")).toEqual([]);
+  });
+
+  it("a table name that only appears inside a literal is not a table reference", () => {
+    expect(rules("SELECT 'orders' AS label FROM lookup_states")).toEqual([]);
+  });
+
+  it("the placeholder path is live: a tenant placeholder satisfies a scoped table", () => {
+    // Before, `\b:tenant_…` could never match, so only the column name counted.
+    expect(rules("SELECT * FROM orders WHERE owner_ref IN (:tenant_agency_ids)")).toEqual([]);
+    expect(rules("SELECT * FROM orders WHERE owner_ref IN (:tenant_agency_ids_old)")).toEqual([
+      "MISSING_TENANT_PREDICATE",
+    ]);
+  });
+
+  // Regions are read the way the target engine reads them. Without a dialect the
+  // statement must pass under both the standard-SQL and the MySQL reading.
+  it.each([
+    ["mysql", "a double-quoted string", MYSQL_DIALECT, 'SELECT * FROM orders WHERE status = "agency_id"'],
+    ["mysql", "a backslash-escaped string", MYSQL_DIALECT, "SELECT * FROM orders WHERE status = 'it\\'s agency_id'"],
+    ["mysql", "a # comment", MYSQL_DIALECT, "SELECT * FROM orders # agency_id\nWHERE status = 'paid'"],
+    ["no dialect", "a double-quoted name", undefined, "SELECT * FROM orders WHERE \"agency_id\" = '42'"],
+    ["no dialect", "an upper-case placeholder", undefined, "SELECT * FROM orders WHERE owner_ref IN (:TENANT_AGENCY_IDS)"],
+  ])("%s: tenant scope named only in %s is not a predicate", (_d, _label, dialect, sql) => {
+    expect(rules(sql, dialect)).toEqual(["MISSING_TENANT_PREDICATE"]);
+  });
+
+  // Known limitations — this is a lint, not a parser. Pinned so a sounder
+  // implementation (plan 050) visibly changes them.
+  it("known limitation: a selected (not filtered) tenant column still passes", () => {
+    expect(rules("SELECT agency_id FROM orders")).toEqual([]);
+  });
+
+  it("known limitation: an OR-widened predicate still passes", () => {
+    expect(rules("SELECT * FROM orders WHERE agency_id IN ('42') OR 1=1")).toEqual([]);
   });
 });

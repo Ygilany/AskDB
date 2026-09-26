@@ -147,11 +147,12 @@ const result = await askdb.ask(
   }
 );
 
-// Prefer params (full positional array) when parameterized extras are present.
-await pool.query(result.sql);
+// Two executable pairs — pick one, never concatenate the arrays.
 if (result.unboundSql && result.params) {
+  // Every value bound; params already includes the tenant IDs.
   await pool.query(result.unboundSql, result.params);
 } else {
+  // Business values inlined; tenant markers start at $1.
   await pool.query(result.sql, result.tenantParams);
 }
 
@@ -165,21 +166,44 @@ if (result.preparedQuery) {
 ```
 
 `access.kind` selects the scope shape: `ids` (exact tenant IDs on one root —
-the common case), `subtree` (a root's IDs plus all descendants:
-`{ kind: "subtree", tenantRoot, rootIds, includeDescendants: true }`),
-`multi_root` (IDs across several roots), or `global` (deliberately unscoped,
-with a `reason` string for the audit trail). The optional `context` field
-carries advisory metadata (role, department) into the prompt, and
-`tenantFilters` lets the host pre-resolve polymorphic scope.
+the common case), `multi_root` (IDs across several roots), or `global`
+(deliberately unscoped, with a `reason` string for the audit trail). The
+optional `context` field carries advisory metadata (role, department) into
+the prompt.
+
+`subtree` (a root plus all its descendants) is declared in the type but
+**not supported yet**: AskDB doesn't expand descendants, so `ask()` rejects
+it with `TenantScopeError` (reason `UNSUPPORTED_ACCESS_KIND`) rather than
+silently scoping to the root IDs only. Resolve the subtree in your
+application and pass the explicit IDs with `ids` or `multi_root`.
+
+Polymorphic tables are declared in the policy and surfaced to the model
+through the prompt; there's no scope field for pre-resolving them at runtime.
 
 ## SQL output modes
 
 | Mode | When to use |
 | --- | --- |
-| `sql-only` | Tenant values inlined as literals. Useful for development inspection or ad-hoc queries you read directly. |
-| `sql-params` | Tenant values extracted as positional `$N` parameters. Use this in production with parameterized execution. |
+| `sql-only` | Tenant values inlined as escaped literals. Useful for development inspection or ad-hoc queries you read directly. |
+| `sql-params` | Tenant values bound through your dialect's driver markers — `$1` (Postgres, CockroachDB), `?` (MySQL, MariaDB, SQLite), `@p0` (SQL Server). Use this in production with parameterized execution. |
 
-When `parameterize` is on (default), business markers are allocated first and tenant markers continue from `N+1` in `sql-params` mode. `tenantParams` stays tenant-only — execute with `params` when using the new fields.
+In `sql-params` mode `ask()` returns two executable pairs:
+
+| Run | With | Notes |
+| --- | --- | --- |
+| `result.sql` | `result.tenantParams` | Business values inlined as literals; tenant markers start at the first slot. |
+| `result.unboundSql` | `result.params` | Present when `parameterize` is on (default). Every value is bound and `params` already includes the tenant IDs in marker order. |
+
+Don't concatenate `params` and `tenantParams`. `parameters[].indices` point into `params`.
+
+AskDB only substitutes placeholders that sit in SQL code — placeholder text
+inside a string literal is left alone. If the generated SQL references a
+tenant root your scope has no IDs for, `ask()` throws
+(`UNRESOLVED_TENANT_PLACEHOLDER`) instead of returning SQL with a raw
+`:tenant_…` token. Placeholders are case-sensitive: `:TENANT_ORGANIZATION_IDS`
+isn't substituted, so it throws the same error. With several IDs, `= :p` becomes `IN (…)` and `!= :p`
+becomes `NOT IN (…)`; a comparison like `<= :p` has no list form and throws
+`UNSUPPORTED_TENANT_PREDICATE`.
 
 ## What gets rewritten
 

@@ -133,16 +133,6 @@ export type TenantAccess =
   | TenantAccessMultiRoot
   | TenantAccessGlobal;
 
-export type TenantFilterCondition = {
-  column: string;
-  operator: "=" | "IN" | "!=" | "NOT IN";
-  value: string | string[];
-};
-
-export type TenantFilter = {
-  conditions: TenantFilterCondition[];
-};
-
 export type TenantScopeContext = {
   role?: string;
   label?: string;
@@ -154,7 +144,6 @@ export type TenantScopeContext = {
 
 export type TenantScope = {
   access: TenantAccess;
-  tenantFilters?: Record<string, TenantFilter>;
   context?: TenantScopeContext;
 };
 
@@ -199,16 +188,6 @@ export const tenantAccessSchema = z.discriminatedUnion("kind", [
   tenantAccessGlobalSchema,
 ]);
 
-const tenantFilterConditionSchema = z.object({
-  column: z.string().min(1),
-  operator: z.enum(["=", "IN", "!=", "NOT IN"]),
-  value: z.union([z.string(), z.array(z.string())]),
-});
-
-const tenantFilterSchema = z.object({
-  conditions: z.array(tenantFilterConditionSchema).min(1),
-});
-
 const tenantScopeContextSchema = z.strictObject({
   role: z.string().optional(),
   label: z.string().optional(),
@@ -218,9 +197,10 @@ const tenantScopeContextSchema = z.strictObject({
   description: z.string().optional(),
 });
 
+// Deliberately z.object (not strictObject): unknown keys — including the removed,
+// never-implemented `tenantFilters` — are ignored rather than rejected.
 export const tenantScopeSchema = z.object({
   access: tenantAccessSchema,
-  tenantFilters: z.record(z.string(), tenantFilterSchema).optional(),
   context: tenantScopeContextSchema.optional(),
 });
 

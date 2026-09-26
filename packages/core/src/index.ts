@@ -4,6 +4,7 @@ export { buildTenantPromptBlock } from "./sql/tenant-prompt.js";
 export {
   validateTenantGuardrails,
   type TenantGuardrailResult,
+  type ValidateTenantGuardrailsOptions,
 } from "./sql/tenant-guardrail.js";
 export {
   validateSensitiveReferences,
@@ -118,8 +119,6 @@ export type {
   TenantAccessSubtree,
   TenantAccessMultiRoot,
   TenantAccessGlobal,
-  TenantFilter,
-  TenantFilterCondition,
   TenantScopeContext,
   ParsedTenantPolicyMarkdown,
   NormalizedTenantPolicy,

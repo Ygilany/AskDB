@@ -210,6 +210,8 @@ async function runGenerateSelectSql(
         deps.tenantPolicy,
         deps.tenantScope,
         logger,
+        undefined,
+        dialect,
       );
     }
 

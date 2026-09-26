@@ -386,6 +386,20 @@ describe("generateSelectSql — tenant guardrail checks the returned SQL", () =>
     expect(out.tenantGuardrail?.warnings.map((w) => w.rule)).toContain("MISSING_TENANT_PREDICATE");
   });
 
+  it("reads the SQL with the target dialect: a Postgres double-quoted tenant column counts", async () => {
+    // Without the dialect the guardrail must also accept the MySQL reading, where
+    // "agency_id" is a string, and would reject this.
+    const schema = loadSchema(multiTenantDir);
+    const out = await generateSelectSql(POSTGRES_DIALECT, "orders", schema, fakeModel, {
+      generateText: vi.fn(async () => ({
+        text: "```sql\nSELECT * FROM orders WHERE \"agency_id\" = '42'\n```",
+      })) as never,
+      tenantPolicy: schema.tenantPolicy,
+      tenantScope: agencyScope,
+    });
+    expect(out.tenantGuardrail).toEqual({ passed: true, warnings: [] });
+  });
+
   it("also checks the unbound SQL when it is returned", async () => {
     const schema = loadSchema(multiTenantDir);
     const reply = [

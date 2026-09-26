@@ -168,7 +168,7 @@ Tables that use a type discriminator + id column pair, where the id references d
 | `idColumn` | string | yes | Stable column ID of the polymorphic FK (e.g., `table:public.notes#owner_id`). |
 | `mapping` | Record<string, string> | yes | Maps type discriminator values to stable table IDs of tenant roots. Keys are the literal values stored in `typeColumn`. |
 
-**Runtime:** The host is responsible for resolving polymorphic scope at runtime via `tenantFilters`. The validator checks that generated SQL includes the type discriminator column in its WHERE clause.
+**Runtime:** Polymorphic tables are declared in the policy and surfaced to the model through the prompt. There is no runtime pre-resolution of polymorphic scope (an earlier `tenantFilters` scope field was never read and has been removed). The validator checks that generated SQL mentions the type discriminator and id columns.
 
 #### `globalTables` — unscoped reference tables
 
@@ -268,8 +268,6 @@ interface TenantScope {
         reason: string;
       };
 
-  tenantFilters?: Record<string, TenantFilter>;
-
   context?: {
     role?: string;
     label?: string;
@@ -279,22 +277,16 @@ interface TenantScope {
     description?: string;
   };
 }
-
-interface TenantFilter {
-  conditions: Array<{
-    column: string;
-    operator: "=" | "IN" | "!=" | "NOT IN";
-    value: string | string[];
-  }>;
-}
 ```
+
+`TenantScope` previously declared a `tenantFilters` field for host-resolved polymorphic scope. Nothing ever read it, so it has been removed; a stray `tenantFilters` key on a scope object is ignored by validation.
 
 ### Access kinds
 
 | Kind | Meaning | When to use |
 |---|---|---|
 | `ids` | User can see rows matching specific tenant IDs at one root level. | Most common. Host has resolved the user's access to a flat ID list. |
-| `subtree` | User can see a root and all its descendants in the hierarchy. | Phase 10 accepts this but the proof expects the host to expand IDs. Full CTE generation may follow. |
+| `subtree` | User can see a root and all its descendants in the hierarchy. | **Not supported yet — rejected.** Descendant expansion is not implemented, so `validateTenantScope()`, `buildTenantPromptBlock()`, and `ask()` throw `TenantScopeError` (`UNSUPPORTED_ACCESS_KIND`) instead of silently scoping to `rootIds` only. Resolve the subtree in the host and pass explicit IDs with `ids` (or `multi_root`). |
 | `multi_root` | User has different scopes at different hierarchy levels. | Edge case: user is admin at one agency but also has direct client-level access elsewhere. |
 | `global` | User can see all data across all tenants. | Admin/superuser. Requires an explicit `reason` string for audit. |
 
@@ -318,7 +310,9 @@ Advisory context is included in prompts to help the LLM generate more relevant q
 | Tenant policy exists, no `tenantScope` passed | Fail closed. Query rejected before prompt generation. |
 | `tenantScope.access` references unknown tenant root | Rejected. |
 | `global` scope without `reason` | Rejected. |
-| `tenantFilters` references non-polymorphic table | Warning (does not block). |
+| `subtree` scope | Rejected (`UNSUPPORTED_ACCESS_KIND`) — not implemented yet. |
+| Generated SQL references a `:tenant_*` placeholder the scope has no IDs for (or that matches no root) | Rejected (`UNRESOLVED_TENANT_PLACEHOLDER`). SQL with an unsubstituted placeholder is never returned. |
+| Several IDs meet a tenant predicate with no list form (`<`, `>`, `<=`, `>=`, or a non-comparison position) | Rejected (`UNSUPPORTED_TENANT_PREDICATE`). |
 | Advisory `context` with unknown keys in `attributes` | Accepted (freeform). |
 
 ---
@@ -342,12 +336,21 @@ Examples:
 
 | Mode | Output shape | Placeholder handling |
 |---|---|---|
-| **SQL-only** (default) | `string` | Named placeholders replaced with literal values. SQL is complete and executable. |
-| **SQL+params** | `{ sql: string, params: unknown[], tenantBindings: Record<string, unknown> }` | Named placeholders converted to positional parameters (`$1`, `$2`). Values in `params` array. |
+| **SQL-only** (default) | `sql` | Named placeholders replaced with escaped literal values. SQL is complete and executable. |
+| **SQL+params** | `sql` + `tenantParams` | Named placeholders replaced with the dialect's driver markers — `$1, $2` (Postgres, CockroachDB, and custom `AskDialect`s), `?` (MySQL, MariaDB, SQLite), `@p0, @p1` (SQL Server). `tenantParams` holds the IDs in marker order. |
 
-The mode is configurable per `ask()` call or per schema configuration.
+The mode is configurable per `ask()` call (`tenantSqlMode`).
 
-When `ask({ parameterize: true })` (the default) also returns business-parameter extras, `result.params` is the full ordered array (business first, then tenant when `tenantSqlMode: "sql-params"`). `tenantParams` / `tenantBindings` keep their tenant-only meaning — callers using the new fields must execute with `params`, not `tenantParams`. `bindPreparedQuery()` binds tenant placeholders by name mechanically and **does not authorize** the IDs you pass; authorization remains the host's responsibility when constructing `tenantScope`.
+**Substitution rules.** Only placeholders in SQL code are substituted — placeholder text inside string literals or quoted identifiers is left untouched, so a tenant ID can never land inside (or close) a surrounding literal. With several IDs, `= :p` becomes `IN (…)`, `!= :p` / `<> :p` become `NOT IN (…)`, `IN (:p)` / `NOT IN (:p)` are expanded in place, and `= ANY(:p)` / `<> ALL(:p)` become `IN (…)` / `NOT IN (…)`. Any other operator or position with several IDs is rejected rather than rewritten.
+
+**Executable pairs.** Each SQL form `ask()` returns runs with exactly one params array — never concatenate them:
+
+| SQL | Run with | Contents |
+| --- | --- | --- |
+| `result.sql` | `result.tenantParams` (`sql-params` mode; nothing in `sql-only`) | Business values inlined as literals; tenant markers numbered from the first slot. |
+| `result.unboundSql` | `result.params` | All values as markers. In `sql-params` mode `params` already includes the tenant IDs: after the business values for numbered markers (`$N`, `@pN`), interleaved in source order for `?` dialects. `parameters[].indices` point into this array. In `sql-only` mode tenant IDs are inlined literals in `unboundSql` and `params` holds business values only. |
+
+`tenantBindings` keeps its tenant-only meaning for audit. `bindPreparedQuery()` binds tenant placeholders by name mechanically and **does not authorize** the IDs you pass; authorization remains the host's responsibility when constructing `tenantScope`.
 
 ---
 
@@ -372,6 +375,12 @@ When the parser cannot handle a SQL shape:
 
 1. Apply conservative pattern matching (table name detection, predicate presence).
 2. If heuristics cannot prove scope safety: reject (strict) or flag with `tenantWarnings` (warn).
+
+Pattern matching runs only over SQL code: string literals (`'…'`, `$tag$…$tag$`) and comments (`--`, `/* */`) are ignored, so a tenant column or table name that appears only inside them does not count. Quoted identifiers (`"agency_id"`, `` `orders` ``, `[orders]`) still count as the identifier they name.
+
+Regions are read the way the target dialect reads them. On MySQL and MariaDB, `"…"` is a string literal, not an identifier, `#` starts a comment, and a backslash escapes the next character inside strings (when the dialect's `backslashEscapes` is set), so `'it\'s agency_id'` is one string. `ask()` passes the dialect whenever it has a `DialectSpec`. For a custom `AskDialect`, or a direct `validateTenantGuardrails()` call without `options.dialect`, the statement must pass under both the standard-SQL and the MySQL reading: a table counts as referenced if either reading sees it, and a tenant predicate counts only if both do. So a predicate written only as `"agency_id"` is flagged there.
+
+A tenant placeholder counts only in its exact lowercase form (`:tenant_agency_ids`). Any other casing (`:TENANT_AGENCY_IDS`) is never substituted: `resolveTenantSql()` and `ask()` reject it with `UNRESOLVED_TENANT_PLACEHOLDER`.
 
 ### Enforcement modes
 

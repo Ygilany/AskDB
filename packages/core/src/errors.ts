@@ -57,7 +57,13 @@ export type TenantScopeRejectionReason =
   | "MISSING_SCOPE"
   | "UNKNOWN_TENANT_ROOT"
   | "GLOBAL_WITHOUT_REASON"
-  | "INVALID_SCOPE_SHAPE";
+  | "INVALID_SCOPE_SHAPE"
+  /** `access.kind` is declared but not implemented (currently `"subtree"`). */
+  | "UNSUPPORTED_ACCESS_KIND"
+  /** Generated SQL references a `:tenant_*` placeholder the scope has no IDs for. */
+  | "UNRESOLVED_TENANT_PLACEHOLDER"
+  /** A multi-ID scope met a tenant predicate with no list form (e.g. `<=`). */
+  | "UNSUPPORTED_TENANT_PREDICATE";
 
 export class TenantScopeError extends AskDbError {
   constructor(

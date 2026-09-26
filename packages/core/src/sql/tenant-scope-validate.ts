@@ -1,6 +1,7 @@
 import { TenantScopeError } from "../errors.js";
 import type { NormalizedTenantPolicy } from "../schema/v2/tenant-policy.js";
 import { tenantScopeSchema, type TenantScope } from "../schema/v2/tenant-policy.js";
+import { subtreeUnsupportedError } from "./tenant-placeholders.js";
 
 /**
  * Validate a `TenantScope` input against a tenant policy before prompt generation.
@@ -43,14 +44,9 @@ export function validateTenantScope(
       break;
 
     case "subtree":
-      if (!rootIds.has(access.tenantRoot)) {
-        throw new TenantScopeError(
-          `tenantScope.access references unknown tenant root '${access.tenantRoot}'. ` +
-            `Known roots: ${[...rootIds].join(", ")}`,
-          "UNKNOWN_TENANT_ROOT",
-        );
-      }
-      break;
+      // Fail closed: descendants are never expanded, so accepting this would
+      // silently scope the query to rootIds only.
+      throw subtreeUnsupportedError();
 
     case "multi_root":
       for (const scope of access.scopes) {

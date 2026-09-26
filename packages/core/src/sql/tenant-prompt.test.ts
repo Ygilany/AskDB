@@ -73,7 +73,7 @@ describe("buildTenantPromptBlock", () => {
     expect(block).toContain(":tenant_agency_ids");
   });
 
-  it("includes named placeholder for subtree scope", () => {
+  it("rejects subtree scope like validateTenantScope", () => {
     const scope: TenantScope = {
       access: {
         kind: "subtree",
@@ -82,9 +82,9 @@ describe("buildTenantPromptBlock", () => {
         includeDescendants: true,
       },
     };
-    const block = buildTenantPromptBlock(policy, scope);
-    expect(block).toContain(":tenant_agency_ids");
-    expect(block).toContain("subtree");
+    expect(() => buildTenantPromptBlock(policy, scope)).toThrow(
+      expect.objectContaining({ name: "TenantScopeError", reason: "UNSUPPORTED_ACCESS_KIND" }),
+    );
   });
 
   it("includes multiple placeholders for multi_root scope", () => {
