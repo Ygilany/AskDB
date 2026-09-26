@@ -157,7 +157,7 @@ One command switches the mode: `pnpm lab:use <target>`. It writes the `@askdb/*`
 
 ```
 pnpm lab ask --db postgres "How many active programs does each agency run?"
-             [--model replay|live] [--sql "<sql>"] [--tenant 2] [--strict] [--omit-sensitive]
+             [--via raw|client] [--model replay|live] [--sql "<sql>"] [--tenant 2] [--strict] [--omit-sensitive]
 ```
 
 It prints:
@@ -172,6 +172,7 @@ Flags:
 
 - `--model` defaults to `replay`. It switches to `live` when `LAB_LIVE_MODEL=1` and a provider key is set.
 - `--sql` bypasses the model through `deps.generateText`, which the docs name as the mock seam.
+- `--via` picks the model path: `raw` (default), a `createOpenAI({ baseURL })` model passed to `ask()`; or `client`, `createAskDb` with `@askdb/ai-openai` configured by `providerConfig.openai.baseUrl`. Both must send the same prompt and return the same SQL.
 
 ## Model
 

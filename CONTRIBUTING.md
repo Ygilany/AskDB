@@ -56,12 +56,14 @@ It uses ports 15432, 13306, 13307 and 11433, so it runs alongside the fixtures a
 ```bash
 pnpm lab:up                                       # fixture up + install the lab (first time)
 pnpm lab:use .                                    # repack this checkout and reinstall
-pnpm lab ask --db postgres --sql "SELECT 1"       # SQL, validation outcome, rows
+pnpm lab ask --db mysql "How many active programs does each agency run?"   # replay model, no API key
+pnpm lab ask --db sqlite --via client "…"          # same question through createAskDb + @askdb/ai-openai
+pnpm lab ask --db postgres --sql "SELECT 1"       # skip the model: SQL, validation outcome, rows
 pnpm lab:test
 pnpm lab:use --restore                            # before committing: restore the lab's manifests
 ```
 
-`lab:use` rewrites the lab's `package.json`, `pnpm-workspace.yaml` and `pnpm-lock.yaml` to point at `.lab/tarballs/`; don't commit them in that state. Unlike the package suites above, lab tests don't use `integrationSuite()`: the lab exists to run against real databases, so a missing fixture or install fails the suite instead of skipping it.
+`lab ask` answers only questions in the lab's catalog, from hand-written replies per dialect; adding a question means adding its replies (see the lab README). `lab:use` rewrites the lab's `package.json`, `pnpm-workspace.yaml` and `pnpm-lock.yaml` to point at `.lab/tarballs/`; don't commit them in that state. Unlike the package suites above, lab tests don't use `integrationSuite()`: the lab exists to run against real databases, so a missing fixture or install fails the suite instead of skipping it.
 
 ### Repo-root `askdb.config.ts` and your IDE
 
