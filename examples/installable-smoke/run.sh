@@ -316,6 +316,7 @@ node -e "
       '@askdb/prisma': 'file:$PRISMA_TARBALL',
       '@askdb/enrich': 'file:$ENRICH_TARBALL',
       askdb: 'file:$CLI_TARBALL',
+      '@askdb/http-api': 'file:$HTTP_API_TARBALL',
       '@askdb/studio': 'file:$STUDIO_TARBALL',
       '@askdb/rag': 'file:$RAG_TARBALL',
       '@askdb/mysql': 'file:$MYSQL_TARBALL',
@@ -332,17 +333,12 @@ echo "smoke: npm install app sandbox…"
 echo "smoke: app sandbox package resolution before driver install…"
 (cd "$WORK/apps" && node --input-type=module -e "import { createRequire } from 'node:module'; const require = createRequire(import.meta.url); require.resolve('askdb/package.json'); await import('@askdb/postgres');")
 if (cd "$WORK/apps" && node -e "require.resolve('pg')" >/dev/null 2>&1); then
-  echo "smoke: FAILED — packaged askdb installed 'pg' before the app opted into the driver." >&2
+  echo "smoke: FAILED — a packaged AskDB package (askdb, @askdb/http-api, …) installed 'pg' before the app opted into the driver." >&2
   exit 1
 fi
 
 echo "smoke: installing app-local pg driver…"
 (cd "$WORK/apps" && npm install --silent --no-audit --no-fund --no-package-lock 'pg@^8.21.0')
-
-# @askdb/http-api still hard-depends on pg (#260), so it joins the sandbox only after the app
-# has opted into the driver. Move it into the no-pg install above once #260 is fixed.
-echo "smoke: installing @askdb/http-api…"
-(cd "$WORK/apps" && npm install --silent --no-audit --no-fund --no-package-lock "$HTTP_API_TARBALL" 'pg@^8.21.0')
 
 echo "smoke: minimal askdb.config.ts for cli bootstrap…"
 cat >"$WORK/apps/askdb.config.ts" <<'SMOKEASKDB'
