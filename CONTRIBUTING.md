@@ -36,6 +36,18 @@ Set `ASKDB_REQUIRE_INTEGRATION=1` to make a missing prerequisite (an unset URL, 
 
 Turbo runs tasks in strict env mode: only variables listed in the `test` task's `env` in [`turbo.json`](turbo.json) reach vitest. If you add an integration suite gated on a new variable, add the variable there and gate the suite with `integrationSuite()` from [`scripts/test-utils/integration.mjs`](scripts/test-utils/integration.mjs).
 
+### Consumer lab
+
+[`examples/consumer-lab`](examples/consumer-lab/README.md) is a black-box test bed: the same logical schema and data in PostgreSQL, MySQL, MariaDB, SQL Server and SQLite, for testing AskDB the way its users run it. It is not part of `pnpm test`, and it is not a workspace member: it has its own `pnpm-workspace.yaml` and lockfile. The design is in [`docs/specs/consumer-lab.md`](docs/specs/consumer-lab.md).
+
+```bash
+pnpm lab:up                        # start the lab databases and seed them (idempotent)
+pnpm -C examples/consumer-lab test # run the lab suite; it fails when the databases are down
+pnpm lab:down                      # stop them (data is kept); pnpm lab:reset starts from scratch
+```
+
+The lab uses ports 15432, 13306, 13307 and 11433, so it runs alongside the fixtures above.
+
 ### Repo-root `askdb.config.ts` and your IDE
 
 The workspace root lists `@askdb/config` as a dev dependency so Node can resolve the package. For the editor, **root `tsconfig.json`** (only top-level `*.ts`) adds `compilerOptions.paths` so `@askdb/config` maps to **`packages/config/src`** (Cmd+click and type errors use source, not only `dist`). Shared compiler defaults live in **`tsconfig.base.json`**; packages extend that file so they do not inherit the root-only `paths` mapping. After dependency changes, run `pnpm install`, then **TypeScript: Restart TS Server** in the IDE if needed.
