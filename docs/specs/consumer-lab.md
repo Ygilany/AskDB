@@ -64,7 +64,7 @@ A small multi-tenant social-services domain. [`fixtures/multi-engine/README.md`]
 | 6 | 6 |
 | 7 | 7 |
 
-AskDB's tenant policy cannot express a same-table tree today, and `subtree` access doesn't expand descendants at all (plan 047). The lab's hierarchy cases are therefore expected to fail until plans 047 and 053 land; see [Survey notes](#survey-notes-inconsistencies-to-confirm-with-the-lab).
+AskDB's tenant policy cannot express a same-table tree today, and `subtree` access doesn't expand descendants at all (#232). The lab's hierarchy cases are therefore expected to fail until #232 and #238 land; see [Survey notes](#survey-notes-inconsistencies-to-confirm-with-the-lab).
 
 **Multiple schemas.** Postgres and SQL Server use real schemas. MySQL and MariaDB use one database per logical schema (`org`, `people`, `billing`, `ref`), which is how a multi-database MySQL deployment looks. Introspecting that layout needs the MySQL multi-database PR (decision 7); until then, AskDB's MySQL connector sees only the connection's database. SQLite has one namespace, which AskDB renders as `public`.
 
@@ -270,14 +270,14 @@ The overlay adds `tenant-policy.md`:
 - `scopedTables` for `program`, `client`, `enrollment`, `order`, `payment` and `order_line` (the last through a join to `order`);
 - `globalTables` for `ref.status`.
 
-The hierarchy cases need the self-referencing tree to be expressible (plan 053). Until then, the overlay declares only the flat root. The hierarchy cases are written against the intended semantics and marked `it.fails` with their discrepancy ids.
+The hierarchy cases need the self-referencing tree to be expressible (#238). Until then, the overlay declares only the flat root. The hierarchy cases are written against the intended semantics and marked `it.fails` with their discrepancy ids.
 
 | Scenario | C / R |
 |---|---|
 | With `tenantScope { kind: "ids", tenantRoot, ids: [2] }`, every scoped question's executed rows equal the oracle filtered to agency 2 (not its child 7), on every dialect, in both `tenantSqlMode`s | C: `docs/contracts/tenant-policy.md` and `guides/multi-tenancy.mdx` ("the tenant predicate is present in the SQL AskDB returns"). R: placeholder substitution or markers wrong per dialect, or a predicate on the wrong alias. |
 | Strict mode: a reply with no tenant filter is rejected with `TenantGuardrailError`. The same SQL, executed raw, returns rows from other tenants, which proves the case is meaningful | C: strict fail-closed. R: the guardrail missing an unfiltered scoped table. |
 | A reply with a filter on the wrong tenant, or `OR 1=1` around the predicate, is rejected in strict mode | C: the predicate must be provable. R: the heuristic accepting a present-but-ineffective filter. |
-| **Hierarchy.** With `subtree` access from agency 1, executed rows are exactly those of agencies 1, 4, 5 and 6. From 5, they are 5 and 6. From 6, only 6. From 7, only 7. No row outside the tree ever appears, on every dialect | C: the maintainer's hierarchy semantics (decision 9) and `TenantAccessSubtree` ("include all descendants"). R: descendants dropped (today's behavior, plan 047), ancestors leaked, or a sibling tree leaked. Expected `it.fails` until plans 047 and 053. |
+| **Hierarchy.** With `subtree` access from agency 1, executed rows are exactly those of agencies 1, 4, 5 and 6. From 5, they are 5 and 6. From 6, only 6. From 7, only 7. No row outside the tree ever appears, on every dialect | C: the maintainer's hierarchy semantics (decision 9) and `TenantAccessSubtree` ("include all descendants"). R: descendants dropped (today's behavior, #232), ancestors leaked, or a sibling tree leaked. Expected `it.fails` until #232 and #238. |
 | No `tenantScope` with a policy present gives `TenantScopeError` `MISSING_SCOPE` | C: fail closed before the prompt. |
 | Warn mode returns SQL and warnings, as documented | C: documented warn semantics. Recorded against the "can't be forgotten" claim (see Survey notes). |
 | (Optional, Postgres) The unfiltered SQL, run as `lab_tenant` with RLS, returns only agency 2 | Documents the defense-in-depth recommendation. Informational only. |
@@ -304,7 +304,7 @@ The overlay marks `people.client.email` and `people.client.ssn` as `sensitive: t
 
 - `pnpm lab:matrix` runs `lab:up` (idempotent), then the whole vitest suite, with `src/matrix-reporter.ts`. The reporter prints a `scenario × dialect` table with the values `pass`, `FAIL`, `n/a (reason)` and `known (discrepancy id)`. It also writes `.lab/matrix.json`. In CI the table is appended to `$GITHUB_STEP_SUMMARY`.
 - Test names encode `[dialect] scenario-id`, which is how the reporter builds the table. `--db` and `--only` filters pass through to vitest.
-- **Known discrepancies** live in `examples/consumer-lab/DISCREPANCIES.md`, with an id, a classification (product bug / dataset-normalization / test issue), the docs quote, the observed behavior and a linked issue or PR. A test for an open product bug is marked `it.fails` with the discrepancy id. When the bug is fixed, `it.fails` starts failing and forces the marker to be removed. The matrix shows `known (D-07)` rather than green.
+- **Known discrepancies** are GitHub issues labelled `discrepancy` (see `docs/agents/issue-tracker.md`). Each is classified with a label: `bug` for a product bug, `documentation` for a docs issue, and a note for a dataset/normalization or test issue. Each carries the docs quote, the observed behavior and the decision needed. A test for an open product bug is marked `it.fails` and names its issue, for example `it.fails("[mysql] … (#239)")`. When the bug is fixed, `it.fails` starts failing and forces the marker to be removed. The matrix shows `known (#239)` rather than green.
 
 ## CI plan
 
@@ -361,7 +361,7 @@ Every phase runs `pnpm smoke:install` and `pnpm preflight` before its PR. Apart 
 
 ## Survey notes: inconsistencies to confirm with the lab
 
-These came up while reading the docs. They are not findings yet: each one is either confirmed by a lab test in its phase or dropped.
+These came up while reading the docs. They are not findings yet: each one is either confirmed by a lab test in its phase or dropped. **A confirmed discrepancy is filed as a GitHub issue** labelled `discrepancy` (see `docs/agents/issue-tracker.md`), and the list below links it; this list is the lab's index, not the tracker.
 
 1. `docs/specs/studio.md` lists live SQL execution as out of scope. ADR 0009, `studio.mdx` and `apps/studio/src/server.ts` (`/api/execute`) all say Studio executes SQL. The docs site does not document execute as read-only; only ADR 0009 does, in one line.
 2. `docs/specs/http-api.md` describes `{ sql, warnings, correlationId }` with errors `{ error: { code, message, details } }`. The docs site shows `{ ok, correlationId, sql, explain, usage }` and a code list. The docs-site error example uses `rule: "read_only"`, but core rule codes are `SQL_*`.
@@ -377,9 +377,9 @@ These came up while reading the docs. They are not findings yet: each one is eit
 Found while building Phase 1 (confirmed against the code):
 
 11. **MySQL introspection sees one database, and ignores `--schemas`.** The connector's catalog queries all filter on `DATABASE()` and render the result as namespace `public` (`packages/mysql/src/connector/describe.ts`). It honors `filters.tables` but never reads `filters.schemas`, although `reference/cli.mdx` documents `--schemas` for `askdb introspect` with no engine caveat. A multi-database MySQL deployment can only be introspected one database at a time. *Product gap.* Fix: Phase 1b.
-12. **The default schema filter is documented two ways.** `docs/integration/connectors.md` says `IntrospectionFilters.schemas` defaults to `["public"]` for relational engines. The type's own doc comment (`packages/introspect/src/types.ts`) says "all non-system schemas", and the Postgres connector does that: an unfiltered run over the fixture returns `org`, `people`, `billing`, `ref` and `fixture`. The Pagila test was named "default include filter ['public']" but could not tell the two apart, because Pagila only uses `public`. *Docs issue*; which behavior is intended is a maintainer call. The Postgres fixture test asserts only what both agree on (system schemas are never read).
-13. **A same-table tenant tree can't be expressed.** `roots[].parent` and `hierarchy[]` link different root tables. Declaring `org.agency` as its own parent is reported as a `hierarchy_cycle`. *Product gap*, captured as plan 053.
-14. **`subtree` access doesn't include descendants** (plan 047, still TODO). `includeDescendants: true` is typed and promised in the prompt, but the placeholder expands to the seed IDs only. *Product bug.* The lab's hierarchy cases will show it on every engine.
+12. **The default schema filter is documented two ways.** `docs/integration/connectors.md` says `IntrospectionFilters.schemas` defaults to `["public"]` for relational engines. The type's own doc comment (`packages/introspect/src/types.ts`) says "all non-system schemas", and the Postgres connector does that: an unfiltered run over the fixture returns `org`, `people`, `billing`, `ref` and `fixture`. The Pagila test was named "default include filter ['public']" but could not tell the two apart, because Pagila only uses `public`. *Docs issue*; which behavior is intended is a maintainer call: **#239**. The Postgres fixture test asserts only what both agree on (system schemas are never read).
+13. **A same-table tenant tree can't be expressed.** `roots[].parent` and `hierarchy[]` link different root tables. Declaring `org.agency` as its own parent is reported as a `hierarchy_cycle`. *Product gap*: **#238**.
+14. **`subtree` access doesn't include descendants** (**#232**). `includeDescendants: true` is typed and promised in the prompt, but the placeholder expands to the seed IDs only. *Product bug.* The lab's hierarchy cases will show it on every engine.
 
 ## Decisions (2026-09-26)
 
@@ -391,4 +391,4 @@ Found while building Phase 1 (confirmed against the code):
 6. **Docs:** the lab is documented in `CONTRIBUTING.md` only; there is no docs-site page.
 7. **MySQL multi-database introspection** is a product change, in its own PR with a changeset (Phase 1b). The user lists the databases to introspect in config (`introspection.providerConfig.mysql.databases`), and the documented `--schemas` flag works too. The connector queries `information_schema` with `TABLE_SCHEMA IN (…)` instead of `= DATABASE()`, and each database becomes a namespace. With no list, today's behavior is unchanged.
 8. **The databases are a shared fixture, not lab property.** The Phase 1 dataset moves to `fixtures/multi-engine`, used by package integration tests on every engine before a release, and by the lab. It replaces the Pagila fixture. The lab tests a different seam (packed or published AskDB through documented surfaces); overlap with the package tests is expected.
-9. **The tenant model is a hierarchy.** An org can be parented by another org, to any depth. A parent sees its own and its descendants' data; a child never sees its parent's; nothing outside the tree is visible. The fixture models it (`org.agency.parent_agency_id`). AskDB can't express or enforce it yet: plans 047 and 053 cover the product side, and the lab tests the semantics from Phase 4.
+9. **The tenant model is a hierarchy.** An org can be parented by another org, to any depth. A parent sees its own and its descendants' data; a child never sees its parent's; nothing outside the tree is visible. The fixture models it (`org.agency.parent_agency_id`). AskDB can't express or enforce it yet: #232 and #238 cover the product side, and the lab tests the semantics from Phase 4.

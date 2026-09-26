@@ -79,7 +79,7 @@ fixtureSuite("introspect() against the multi-engine fixture (live Postgres)", ()
   it("without a schema filter, never reads system schemas", async () => {
     // What the default include list is is documented two ways (docs/integration/connectors.md:
     // `["public"]`; IntrospectionFilters: all non-system schemas), so this asserts only what
-    // both agree on. The conflict is recorded in docs/specs/consumer-lab.md.
+    // both agree on. The conflict is tracked in #239.
     const outDir = join(workDir, "default.schema");
     await introspectFixture(outDir, undefined);
     const schemaJson = JSON.parse(readFileSync(join(outDir, "schema.json"), "utf8")) as SchemaJson;
