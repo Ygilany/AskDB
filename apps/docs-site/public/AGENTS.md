@@ -39,7 +39,7 @@ table (purpose, install command, key exports) lives at `/reference/packages/`. A
 - **Embedding in a Node service** → `@askdb/client` + `@askdb/config` + one AI provider adapter (or `@askdb/core` directly if you construct the model yourself). See `/guides/embed-in-node/`.
 - **Need an HTTP boundary** (non-Node clients, or one AskDB service shared across consumers) → `@askdb/http-api` behind your own gateway/auth — it has no built-in auth of its own. See `/guides/deploy-as-http-service/`.
 - **Schema too big for one prompt** (rule of thumb: more than ~30 tables, or rendered DDL over ~8K tokens) → add `@askdb/rag` with a retriever. See `/guides/rag-for-large-schemas/`.
-- **Multi-tenant app** → declare a `tenant-policy.md` in the schema artifact and pass `tenantScope` on every `ask()` call, sourced from your host's auth context. See `/guides/multi-tenancy/`.
+- **Multi-tenant app** → declare a `tenant-policy.md` in the schema artifact and pass `tenantScope` on every `ask()` call, sourced from your host's auth context. Hierarchical access (`access.kind: "subtree"`) also needs a `resolveTenantDescendants` callback that returns every ID in the subtree; without one `ask()` throws. See `/guides/multi-tenancy/`.
 - **AskDB as an agent tool** → wrap `ask()` as a tool/function definition over the library or HTTP surface — there's no first-party MCP server yet. See `/guides/integrations/agents-mcp/`.
 - **Switching database engines** → swap the engine adapter package and the `dialect` value; the schema artifact format and the `ask()` API don't change. See `/guides/switch-engines/`.
 
