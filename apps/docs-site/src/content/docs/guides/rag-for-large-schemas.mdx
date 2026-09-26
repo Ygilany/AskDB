@@ -61,6 +61,8 @@ askdb-rag setup-store \
   --dimensions 1536
 ```
 
+Pass `--dimensions` (or `--embedder openai`) to match your embedding model. Without either, the command uses the default `mock` embedder's 64 dimensions. If the table already exists with different dimensions, the command fails instead of silently keeping the old size.
+
 Drop it into a deploy step:
 
 ```yaml
@@ -112,11 +114,11 @@ const { retriever, stats } = await buildSchemaIndex({
   store,
   embedder,
   embedderId: "openai:text-embedding-3-small", // changes force a full re-embed
-  lockFilePath: "./my-app.schema/schema.lock.json", // skip unchanged chunks
+  lockFilePath: "./my-app.schema/schema.lock.json", // records embedder, store, dimensions
 });
 ```
 
-`buildSchemaIndex` chunks the artifact, embeds only what changed since the last run (tracked in `schema.lock.json`), and returns a ready-to-use `retriever` plus indexing stats.
+`buildSchemaIndex` chunks the artifact and embeds only the chunks the store doesn't already hold with the same content hash. It returns a ready-to-use `retriever` plus indexing stats. The lock file records the embedder id, store, and dimensions. If any of them changed, or the lock is missing, every chunk is re-embedded. Pass `force: true` to re-embed unconditionally.
 
 ## Wire retrieval into `ask()`
 
@@ -139,11 +141,13 @@ const { sql } = await askdb.ask(question, {
 
 ## Sensitive fields and embeddings
 
-Chunks marked as sensitive in the schema artifact carry that flag into the store. Configure your indexing policy to exclude sensitive content from embeddings if your trust model requires it — see the [sensitive fields contract on GitHub](https://github.com/Ygilany/AskDB/blob/main/docs/contracts/sensitive-fields-and-modes.md) for the full rules.
+Sensitive content stays out of the index by default. The chunker drops the describable layer (descriptions, aliases, enum values, notes, common query language, example questions, business context, concepts) for sensitive tables and columns. It also drops any of that text that mentions a sensitive column by name (whole word, case-insensitive), so a concept that says "filter by SSN" is not embedded when `ssn` is sensitive. Column identifiers and types stay available to the model through `ask()`'s prompt.
+
+Set `chunkOptions: { includeSensitiveDescribable: true }` only if your trust model allows embedding that content. Chunks kept this way carry `sensitive: true`. See the [schema-v2 contract on GitHub](https://github.com/Ygilany/AskDB/blob/main/docs/contracts/schema-v2.md#sensitive-propagation) for the full rules.
 
 ## Custom table or dimensions
 
-To isolate multiple AskDB deployments in the same Postgres database, pass a custom table name and a matching embedding dimension:
+Several schemas can share one table: chunk ids are scoped by schema id (`chunk:<schemaId>:…`), and reindexing one schema never removes another schema's chunks. Use a separate table when deployments use different embedding models or dimensions. To isolate multiple AskDB deployments in the same Postgres database, pass a custom table name and a matching embedding dimension:
 
 ```bash
 askdb-rag setup-store \

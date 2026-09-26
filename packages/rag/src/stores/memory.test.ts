@@ -80,4 +80,34 @@ describe("createMemoryStore", () => {
       store.upsert([{ id: "b", vector: [1, 0, 0], payload: payload("b") }]),
     ).rejects.toThrow(/dimension mismatch/i);
   });
+
+  it("throws when the query vector's dimensions differ from the stored vectors", async () => {
+    const store = createMemoryStore();
+    await store.upsert([{ id: "a", vector: [1, 0, 0], payload: payload("a") }]);
+
+    await expect(store.query([1, 0], 1)).rejects.toThrow(
+      /Query vector dimension mismatch: the store holds 3-dimension vectors but the query has 2/,
+    );
+    await expect(store.query([1, 0, 0, 0], 1)).rejects.toThrow(/dimension mismatch/);
+  });
+
+  it("accepts a new dimension once emptied, and reports it via describe()", async () => {
+    const store = createMemoryStore();
+    expect(store.describe?.()).toEqual({ kind: "memory" });
+    await store.upsert([{ id: "a", vector: [1, 0], payload: payload("a") }]);
+    expect(store.describe?.()).toEqual({ kind: "memory", dimensions: 2 });
+    await store.delete(["a"]);
+    await store.upsert([{ id: "b", vector: [1, 0, 0], payload: payload("b") }]);
+    expect(store.describe?.()).toEqual({ kind: "memory", dimensions: 3 });
+  });
+
+  it("lists ids by schema", async () => {
+    const store = createMemoryStore();
+    await store.upsert([
+      { id: "a", vector: [1, 0], payload: payload("a") },
+      { id: "b", vector: [0, 1], payload: payload("b", { schemaId: "schema-b" }) },
+    ]);
+    expect(await store.idsBySchema?.("schema-a")).toEqual(["a"]);
+    expect(await store.idsBySchema?.("schema-b")).toEqual(["b"]);
+  });
 });
