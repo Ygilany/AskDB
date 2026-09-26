@@ -394,5 +394,17 @@ export type AskDbConfig = {
       port?: number;
       host?: string;
     };
+    /**
+     * Accept a per-request `schemaJson` override on `POST /ask`. Default `false`: an override
+     * lets any caller send arbitrary schema/prompt content through the server's model key, so
+     * enable it only for tests or trusted multi-schema deployments.
+     * Maps to `ASKDB_HTTP_ALLOW_SCHEMA_OVERRIDE`.
+     */
+    allowSchemaOverride?: boolean;
+    /**
+     * Abort the model call for a `POST /ask` request after this many milliseconds (positive
+     * integer). Default `60000`. Maps to `ASKDB_HTTP_REQUEST_TIMEOUT_MS`.
+     */
+    requestTimeoutMs?: number;
   };
 };
