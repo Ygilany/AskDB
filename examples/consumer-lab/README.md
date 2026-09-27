@@ -141,11 +141,11 @@ The baseline pins the lab's third-party dependencies exactly: the drivers (`pg`,
 
 A scenario may need a documented capability that an older target lacks. It declares that by calling `needsCapability(ctx, "<capability>")` from `src/capabilities.ts` first. When the installed target lacks the capability, the test is skipped with the note `capability: <capability>`, which the suite's verbose reporter prints and `lab:matrix` shows as `n/a (capability: <capability>)`.
 
-Capabilities are detected from the installed target's public surface: an export, a config field its published types declare, or documented `--help` output. They are never detected from version strings. Only a surface that works but lacks the capability counts as absent. A missing `askdb` bin, a crash, or a non-zero exit from `--help` is a broken install, and the test fails. When the target is this checkout (`lab:use .`), a missing capability fails the test instead: the lab is written against this checkout's docs, so there it's a regression.
+Capabilities are detected from the installed target's public surface: an export, documented `--help` output, or the documented behavior itself (a probe that runs the documented command). They are never detected from version strings. Only a surface that works but lacks the capability counts as absent. A missing `askdb` bin, a crash, or a non-zero exit from `--help` is a broken install, and the test fails. When the target is this checkout (`lab:use .`), a missing capability fails the test instead: the lab is written against this checkout's docs, so there it's a regression.
 
 | Capability | Detected by | Used by |
 |---|---|---|
 | `cli-introspect-engine` | `askdb introspect --help` documents `--engine` (`reference/cli.mdx`), when run with the lab's config | every scenario that builds a schema artifact (`test/lab-ask.test.ts`) |
-| `mysql-databases` | the installed `@askdb/config` types declare `introspection.providerConfig.mysql.databases` (`guides/switch-engines.mdx`) | MySQL and MariaDB `introspect-golden` / `introspect-loads` (`test/introspection.test.ts`) |
+| `mysql-databases` | `askdb introspect --schemas org,people,billing,ref` on the fixture's MySQL returns a table from a database other than the connection's (`reference/cli.mdx`, `guides/switch-engines.mdx`) | MySQL and MariaDB `introspect-golden` / `introspect-loads` (`test/introspection.test.ts`) |
 
 To add one, add a detector to `DETECTORS` in `src/capabilities.ts`, citing the docs page that documents the capability.

@@ -19,6 +19,7 @@
  * Dependency-free on purpose: it runs before anything is installed.
  */
 import { execFileSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, relative, resolve } from "node:path";
@@ -74,9 +75,14 @@ function packCheckout(root) {
 }
 
 function describeCheckout(root) {
-  const git = (...args) => execFileSync("git", ["-C", root, ...args], { encoding: "utf8" }).trim();
-  const dirty = git("status", "--porcelain").length > 0;
-  return `${git("rev-parse", "--short", "HEAD")}${dirty ? "+dirty" : ""} (${git("rev-parse", "--abbrev-ref", "HEAD")})`;
+  const git = (...args) => execFileSync("git", ["-C", root, ...args], { encoding: "utf8", maxBuffer: 256 * 1024 * 1024 }).trim();
+  // Uncommitted edits get a content hash, so a changed working tree is a different target
+  // (`--if-needed` then reinstalls instead of keeping stale tarballs). The lab's own files
+  // are left out: they aren't packed, and `lab:use` itself rewrites its manifests.
+  const outsideLab = ["--", ".", ":(exclude)examples/consumer-lab"];
+  const status = git("status", "--porcelain", ...outsideLab);
+  const dirty = status ? `+dirty.${createHash("sha256").update(status).update(git("diff", "HEAD", ...outsideLab)).digest("hex").slice(0, 8)}` : "";
+  return `${git("rev-parse", "--short", "HEAD")}${dirty} (${git("rev-parse", "--abbrev-ref", "HEAD")})`;
 }
 
 /**
@@ -266,13 +272,20 @@ function resolvedAskDbPackages() {
  * Print the resolved-version table and fail unless every @askdb package in the lockfile
  * comes from `target`: `{ source: "tarball" | "registry", packages: [{ name, version }] }`.
  */
-function verify(target) {
+/** Print the resolved-version table; on a mismatch, run `beforeFail` (e.g. a rollback) and exit. */
+function verify(target, beforeFail = () => {}) {
   const { rows, bad } = compareToTarget(target);
-  if (rows.length === 0) fail("no @askdb packages found in the lockfile");
+  if (rows.length === 0) {
+    beforeFail();
+    fail("no @askdb packages found in the lockfile");
+  }
   const width = Math.max(...rows.map((r) => r.package.length), 7);
   console.log(`\n${"package".padEnd(width)}  version              source`);
   for (const r of rows) console.log(`${r.package.padEnd(width)}  ${r.version.padEnd(20)} ${r.source}${r.problem ? `   <-- ${r.problem}` : ""}`);
-  if (bad.length) fail(`${bad.length} @askdb package(s) did not resolve to the target: ${bad.map((r) => r.package).join(", ")}`);
+  if (bad.length) {
+    beforeFail();
+    fail(`${bad.length} @askdb package(s) did not resolve to the target: ${bad.map((r) => r.package).join(", ")}`);
+  }
   const where = target.source === "tarball" ? "the target's tarballs" : "the registry at the target's versions";
   console.log(`\nlab:use: all ${rows.length} @askdb packages resolve to ${where}.`);
 }
@@ -289,6 +302,12 @@ function compareToTarget(target) {
       : "";
     return { package: r.name, version: r.version, source: r.source, problem };
   });
+  // Each of the lab's direct dependencies the target has must be installed at all; a
+  // package missing from the lockfile (or resolved only through a `link:` importer)
+  // would otherwise pass unseen. Older releases may lack some (see pinTo).
+  for (const name of DIRECT) {
+    if (expected.has(name) && !resolved.some((r) => r.name === name)) rows.push({ package: name, version: "-", source: "-", problem: "MISSING FROM THE LOCKFILE" });
+  }
   return { rows, bad: rows.filter((r) => r.problem) };
 }
 
@@ -298,6 +317,14 @@ function installedTarget() {
   const target = JSON.parse(readFileSync(TARGET_FILE, "utf8"));
   const { rows, bad } = compareToTarget(target);
   return rows.length && !bad.length ? target : undefined;
+}
+
+/** Whether the recorded install is what `target` would install now, without packing anything. */
+function sameTarget(recorded, target) {
+  if (target.startsWith("npm:") || target.startsWith("git:") || target === "registry") return false;
+  const root = resolve(target === "." ? REPO : target);
+  if (!existsSync(join(root, "packages", "core"))) return false;
+  return recorded.label === `checkout ${root} @ ${describeCheckout(root)}`;
 }
 
 function recordTarget(target) {
@@ -354,8 +381,10 @@ function main() {
   const target = args.find((a) => !a.startsWith("--"));
   if (!target) fail("usage: pnpm lab:use <. | path | git:<ref> | npm:<dist-tag> | npm:askdb@<version>> [--if-needed] | --check | --restore");
 
+  // `--if-needed` keeps an install only when it is still the requested target: for a
+  // checkout, the same commit and the same uncommitted edits. Any other target reinstalls.
   const current = ifNeeded && installedTarget();
-  if (current) {
+  if (current && sameTarget(current, target)) {
     console.log(`lab:use: already installed (${current.label}); skipping.`);
     return;
   }
@@ -368,14 +397,17 @@ function main() {
   rmSync(join(STATE, "artifacts"), { recursive: true, force: true });
   // If the install fails, put the manifests back rather than leave them half-switched.
   const before = new Map(MANAGED.map((f) => [f, existsSync(join(LAB, f)) ? readFileSync(join(LAB, f), "utf8") : undefined]));
-  pinTo(resolved.packages, resolved.label);
-  try {
-    run("pnpm", ["install", "--no-frozen-lockfile"], { cwd: LAB });
-  } catch {
+  const rollBack = () => {
     for (const [file, text] of before) {
       if (text === undefined) rmSync(join(LAB, file), { force: true });
       else writeFileSync(join(LAB, file), text);
     }
+  };
+  pinTo(resolved.packages, resolved.label);
+  try {
+    run("pnpm", ["install", "--no-frozen-lockfile"], { cwd: LAB });
+  } catch {
+    rollBack();
     fail(`pnpm install failed for ${resolved.label}. The lab's manifests are back as they were, but node_modules may be partial,\n` +
       "so the lab is marked not installed. Fix the cause and rerun `pnpm lab:use`, or `pnpm lab:use --restore`.");
   }
@@ -386,7 +418,10 @@ function main() {
     thisCheckout: resolved.thisCheckout === true,
     packages: resolved.packages.map(({ name, version }) => ({ name, version })),
   };
-  verify(recorded);
+  verify(recorded, () => {
+    rollBack();
+    console.error("lab:use: the lab's manifests are back as they were; the lab is marked not installed.");
+  });
   recordTarget(recorded);
 
   if (resolved.source === "tarball") {

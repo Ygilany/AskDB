@@ -7,11 +7,12 @@
  * and a checkout carries the same version number as the last release.
  */
 import { spawnSync } from "node:child_process";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { TestContext } from "vitest";
 import { requireInstallTarget } from "./artifacts.js";
-import { ASKDB_BIN } from "./introspect.js";
+import { ASKDB_BIN, introspectFixture } from "./introspect.js";
 import { LAB_ROOT } from "./paths.js";
 
 /**
@@ -32,25 +33,35 @@ function cliHelp(...command: string[]): string {
 }
 
 /**
- * A config field the installed `@askdb/config` declares in its published types. Types
- * are part of the package's public surface, so this is the same kind of evidence as an
- * export.
+ * Whether `askdb introspect --schemas` reads more than the connection's database on MySQL:
+ * introspect the fixture's MySQL with its four databases listed and look for a table from
+ * one other than the connection's (`org`). A run that fails is a broken install, and
+ * throws. The probe is the documented behavior itself (`--schemas`, reference/cli.mdx;
+ * `introspection.providerConfig.mysql.databases`, guides/switch-engines.mdx), so it can't
+ * drift from what the lab's scenarios use.
  */
-function configTypes(): string {
-  const file = join(LAB_ROOT, "node_modules", "@askdb", "config", "dist", "types.d.ts");
-  if (!existsSync(file)) throw new Error(`${file} is missing; reinstall the lab with \`pnpm lab:use <target>\``);
-  return readFileSync(file, "utf8");
+function mysqlReadsListedDatabases(): boolean {
+  const dir = mkdtempSync(join(tmpdir(), "lab-capability-mysql-"));
+  try {
+    const out = join(dir, "probe.schema");
+    const run = introspectFixture("mysql", out);
+    if (run.status !== 0) throw new Error(`askdb introspect failed while probing mysql-databases (exit ${run.status}):\n${run.stderr}`);
+    const schema = JSON.parse(readFileSync(join(out, "schema.json"), "utf8")) as { tables: { schema: string }[] };
+    return schema.tables.some((t) => t.schema === "ref");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 }
 
 const DETECTORS = {
   /** `askdb introspect --engine <id> --url …` (reference/cli.mdx), how the lab builds every schema artifact. */
   "cli-introspect-engine": () => /--engine\b/.test(cliHelp("introspect")),
   /**
-   * Introspecting several MySQL/MariaDB databases at once:
-   * `introspection.providerConfig.mysql.databases` (guides/switch-engines.mdx), which
-   * `--schemas` also feeds. Before it, the connector read only the connection's database.
+   * Introspecting several MySQL/MariaDB databases at once through `--schemas` (and
+   * `introspection.providerConfig.mysql.databases`). Before it, the connector read only
+   * the connection's database.
    */
-  "mysql-databases": () => /mysql\?:\s*\{[^}]*\bdatabases\?:/.test(configTypes()),
+  "mysql-databases": mysqlReadsListedDatabases,
 } satisfies Record<string, () => boolean>;
 
 export type Capability = keyof typeof DETECTORS;
