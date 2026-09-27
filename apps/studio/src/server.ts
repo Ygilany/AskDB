@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { appendFileSync, existsSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { extname, relative, join, resolve, dirname, sep } from "node:path";
 import { spawn } from "node:child_process";
@@ -19,8 +19,12 @@ import { googleProvider } from "@askdb/ai-google";
 import { openaiProvider } from "@askdb/ai-openai";
 import {
   ask,
+  formatSensitiveReference,
   isBuiltInDialectId,
   loadSchema,
+  schemaHasSensitiveIdentifiers,
+  SqlValidationError,
+  validateSensitiveReferences,
   suggestEnrichment,
   tenantScopeSchema,
   type AskDialectInput,
@@ -83,8 +87,18 @@ import type {
   SuggestResponse,
   SuggestTenantPolicyResponse,
 } from "./shared/api.js";
-import { EXECUTE_DRIVER_REGISTRY, isDriverInstalled } from "./execute-registry.js";
+import {
+  EXECUTE_DRIVER_REGISTRY,
+  isDriverInstalled,
+  isStudioExecuteProvider,
+  validateExecuteSql,
+} from "./execute-registry.js";
 import type { StudioExecuteProvider } from "./execute-registry.js";
+import {
+  lockfilePackageManager,
+  packageManagerAddArgs,
+  packageManagerSpawnSpec,
+} from "./package-manager.js";
 import { resolveStudioIntrospectionPlan, runStudioIntrospection } from "./introspection.js";
 import { probeSetupState, writeSetupConfig, SetupError, type SetupConfigInput } from "./setup.js";
 import {
@@ -1361,9 +1375,10 @@ function stableTokenHash(token: string): number {
 
 const HISTORY_MAX_STORED = 200;
 const HISTORY_MAX_RETURNED = 50;
+const HISTORY_FILE_NAME = "playground-history.json";
 
 function playgroundHistoryPath(schemaDir: string): string {
-  return join(schemaDir, "playground-history.json");
+  return join(schemaDir, HISTORY_FILE_NAME);
 }
 
 function readPlaygroundHistory(schemaDir: string): { entries: PlaygroundHistoryEntry[] } {
@@ -1387,7 +1402,67 @@ function appendPlaygroundHistory(
     timestamp: new Date().toISOString(),
   };
   const updated = [newEntry, ...existing].slice(0, HISTORY_MAX_STORED);
+  ensureSchemaDirGitignore(schemaDir);
   writeFileSync(histPath, JSON.stringify(updated, null, 2), "utf8");
+}
+
+/**
+ * Keep Playground history (questions + generated SQL, local-only) out of git.
+ * The schema artifact directory is meant to be committed, so Studio makes sure
+ * its `.gitignore` lists `playground-history.json` before writing the file.
+ *
+ * - No `.gitignore` yet: write one that also ignores `.env` files — the same
+ *   rules `askdb init` writes (plan 043) — unless the schema dir is the project
+ *   root, where ignoring `.env` is the project's call, not Studio's.
+ * - Existing `.gitignore` without the entry: append the entry; never rewrite.
+ * - Failure is non-fatal: history still saves.
+ */
+function ensureSchemaDirGitignore(schemaDir: string): void {
+  const gitignorePath = join(schemaDir, ".gitignore");
+  try {
+    if (existsSync(gitignorePath)) {
+      const content = readFileSync(gitignorePath, "utf8");
+      const lines = content.split(/\r?\n/).map((line) => line.trim());
+      if (lines.includes(HISTORY_FILE_NAME) || lines.includes(`/${HISTORY_FILE_NAME}`)) return;
+      const separator = content === "" || content.endsWith("\n") ? "" : "\n";
+      appendFileSync(
+        gitignorePath,
+        `${separator}# AskDB Studio Playground history (local only)\n${HISTORY_FILE_NAME}\n`,
+        "utf8",
+      );
+      return;
+    }
+    const lines = [
+      "# Written by AskDB Studio.",
+      "#",
+      "# The schema artifact in this directory is meant to be committed: schema.json",
+      "# plus any enrichment you author in Studio. Playground history (your questions",
+      "# and generated SQL) is local only.",
+      HISTORY_FILE_NAME,
+    ];
+    if (!isProjectRootDir(schemaDir)) {
+      lines.push(
+        "",
+        "# Credentials: keep API keys and connection strings out of version control",
+        "# even when they live here.",
+        ".env",
+        ".env.*",
+        "!.env.example",
+      );
+    }
+    writeFileSync(gitignorePath, `${lines.join("\n")}\n`, "utf8");
+  } catch {
+    // Non-fatal: the history write matters more than this defensive file.
+  }
+}
+
+function isProjectRootDir(dir: string): boolean {
+  if (existsSync(join(dir, "package.json"))) return true;
+  try {
+    return readdirSync(dir).some((name) => name.startsWith("askdb.config."));
+  } catch {
+    return false;
+  }
 }
 
 function deletePlaygroundHistoryEntry(
@@ -1407,40 +1482,151 @@ function deletePlaygroundHistoryEntry(
   return { ok: true };
 }
 
+const HISTORY_LIMITS = {
+  question: 4_000,
+  sql: 100_000,
+  explain: 100_000,
+  /** Serialized JSON size for `tenantScope` / `tenantParams`. */
+  json: 20_000,
+  error: 2_000,
+  ragChunkIds: 200,
+  ragChunkId: 512,
+} as const;
+
+/**
+ * Validate a history entry and copy **only** the known fields — the file is
+ * written inside the schema artifact directory, so nothing unexpected (or
+ * unbounded) from the request body may be persisted.
+ */
 function parsePlaygroundHistoryEntry(
   body: unknown,
 ): Omit<PlaygroundHistoryEntry, "id" | "timestamp"> {
   if (!isRecord(body)) {
     throw new StudioHttpError(400, "Request body must be a JSON object.");
   }
-  if (typeof body.question !== "string" || body.question.trim() === "") {
+  const question = requireBoundedString(body.question, "question", HISTORY_LIMITS.question);
+  if (question.trim() === "") {
     throw new StudioHttpError(400, "`question` is required.");
   }
   if (body.mode !== "full" && body.mode !== "rag") {
     throw new StudioHttpError(400, "`mode` must be `full` or `rag`.");
   }
-  if (typeof body.sqlMode !== "string") {
-    throw new StudioHttpError(400, "`sqlMode` is required.");
+  if (body.sqlMode !== "sql-only" && body.sqlMode !== "sql-params") {
+    throw new StudioHttpError(400, "`sqlMode` must be `sql-only` or `sql-params`.");
   }
-  if (typeof body.sql !== "string") {
-    throw new StudioHttpError(400, "`sql` is required.");
+  const entry: Omit<PlaygroundHistoryEntry, "id" | "timestamp"> = {
+    question,
+    mode: body.mode,
+    sqlMode: body.sqlMode,
+    sql: requireBoundedString(body.sql, "sql", HISTORY_LIMITS.sql),
+  };
+  if (body.explain !== undefined && body.explain !== null) {
+    entry.explain = requireBoundedString(body.explain, "explain", HISTORY_LIMITS.explain);
   }
-  return body as Omit<PlaygroundHistoryEntry, "id" | "timestamp">;
+  if (body.tenantScope !== undefined && body.tenantScope !== null) {
+    entry.tenantScope = requireBoundedJsonObject(body.tenantScope, "tenantScope");
+  }
+  if (body.tenantParams !== undefined && body.tenantParams !== null) {
+    entry.tenantParams = requireBoundedJsonObject(body.tenantParams, "tenantParams");
+  }
+  if (body.executionResult !== undefined && body.executionResult !== null) {
+    const r = body.executionResult;
+    if (
+      !isRecord(r) ||
+      !isNonNegativeFinite(r.rowCount) ||
+      !isNonNegativeFinite(r.durationMs) ||
+      typeof r.truncated !== "boolean"
+    ) {
+      throw new StudioHttpError(
+        400,
+        "`executionResult` must be { rowCount: number, durationMs: number, truncated: boolean, error?: string }.",
+      );
+    }
+    entry.executionResult = {
+      rowCount: r.rowCount,
+      durationMs: r.durationMs,
+      truncated: r.truncated,
+      ...(r.error !== undefined
+        ? { error: requireBoundedString(r.error, "executionResult.error", HISTORY_LIMITS.error) }
+        : {}),
+    };
+  }
+  if (body.ragChunkIds !== undefined && body.ragChunkIds !== null) {
+    if (
+      !Array.isArray(body.ragChunkIds) ||
+      body.ragChunkIds.length > HISTORY_LIMITS.ragChunkIds ||
+      !body.ragChunkIds.every((id) => typeof id === "string" && id.length <= HISTORY_LIMITS.ragChunkId)
+    ) {
+      throw new StudioHttpError(
+        400,
+        `\`ragChunkIds\` must be an array of at most ${HISTORY_LIMITS.ragChunkIds} strings.`,
+      );
+    }
+    entry.ragChunkIds = [...(body.ragChunkIds as string[])];
+  }
+  return entry;
+}
+
+function requireBoundedString(value: unknown, field: string, maxLength: number): string {
+  if (typeof value !== "string") {
+    throw new StudioHttpError(400, `\`${field}\` must be a string.`);
+  }
+  if (value.length > maxLength) {
+    throw new StudioHttpError(400, `\`${field}\` is too long (max ${maxLength} characters).`);
+  }
+  return value;
+}
+
+function requireBoundedJsonObject(value: unknown, field: string): Record<string, unknown> {
+  if (!isRecord(value)) {
+    throw new StudioHttpError(400, `\`${field}\` must be a JSON object.`);
+  }
+  if (JSON.stringify(value).length > HISTORY_LIMITS.json) {
+    throw new StudioHttpError(400, `\`${field}\` is too large (max ${HISTORY_LIMITS.json} characters as JSON).`);
+  }
+  return value;
+}
+
+function isNonNegativeFinite(value: unknown): value is number {
+  return typeof value === "number" && Number.isFinite(value) && value >= 0;
 }
 
 // ---------------------------------------------------------------------------
 // Execute endpoint helpers
 // ---------------------------------------------------------------------------
 
+const EXECUTE_DISABLED_MESSAGE =
+  "Studio execute is off. To run generated SQL from the Playground, set `studio.execute.enabled: true` " +
+  "and an execute connection (`studio.execute.databaseUrl`, or `studio.execute.file` for SQLite) in " +
+  "askdb.config.ts, ideally for a read-only database role, then restart Studio.";
+
+function executeNotConfiguredMessage(exec: ReturnType<typeof getAskDbRuntimeConfig>["studio"]["execute"]): string {
+  const field = exec.provider === "sqlite" ? "studio.execute.file" : "studio.execute.databaseUrl";
+  const base = `No execute connection configured. Set \`${field}\` in askdb.config.ts (ideally a read-only database role).`;
+  return exec.introspectionConnectionAvailable
+    ? `${base} Studio no longer reuses the introspection connection by default; set \`studio.execute.useIntrospectionConnection: true\` to opt in.`
+    : base;
+}
+
 async function getExecuteStatus(schemaDir: string): Promise<ExecuteStatusResponse> {
   const rt = getAskDbRuntimeConfig();
-  const { provider, databaseUrl, file } = rt.studio.execute;
+  const exec = rt.studio.execute;
+  const { provider, databaseUrl, file } = exec;
   const def = EXECUTE_DRIVER_REGISTRY[provider];
   const projectRoot = findProjectRoot(schemaDir) ?? schemaDir;
   const installed = isDriverInstalled(def.packageName, projectRoot);
   const connectionKind: "url" | "file" = provider === "sqlite" ? "file" : "url";
   const configured = connectionKind === "file" ? Boolean(file) : Boolean(databaseUrl);
+  const disabledReason = !exec.enabled
+    ? EXECUTE_DISABLED_MESSAGE
+    : !configured
+      ? executeNotConfiguredMessage(exec)
+      : null;
   return {
+    enabled: exec.enabled,
+    disabledReason,
+    timeoutMs: exec.timeoutMs,
+    maxRows: exec.maxRows,
     provider,
     label: def.label,
     configured,
@@ -1448,7 +1634,7 @@ async function getExecuteStatus(schemaDir: string): Promise<ExecuteStatusRespons
     packageName: def.packageName,
     installed,
     installCommand: def.installCommand,
-    canInstallFromStudio: true,
+    canInstallFromStudio: exec.enabled,
     manualInstallReason: null,
   };
 }
@@ -1458,49 +1644,46 @@ async function installExecuteDriver(
   schemaDir: string,
 ): Promise<ExecuteInstallDriverResponse> {
   const rt = getAskDbRuntimeConfig();
-  const configuredProvider = rt.studio.execute.provider;
+  if (!rt.studio.execute.enabled) {
+    throw new StudioHttpError(403, EXECUTE_DISABLED_MESSAGE);
+  }
 
-  // Accept the configured provider or an explicit allowlisted provider.
-  let provider: StudioExecuteProvider = configuredProvider;
-  if (isRecord(body) && typeof body.provider === "string") {
-    const requested = body.provider as StudioExecuteProvider;
-    if (!(requested in EXECUTE_DRIVER_REGISTRY)) {
-      return {
-        ok: false,
-        provider: configuredProvider,
-        packageName: EXECUTE_DRIVER_REGISTRY[configuredProvider].packageName,
-        command: [],
-        error: `Unknown provider: ${body.provider}`,
-        installed: false,
-      };
+  // Accept the configured provider or an explicit allowlisted provider. `Object.hasOwn`
+  // (via isStudioExecuteProvider) rejects inherited keys such as "constructor".
+  let provider: StudioExecuteProvider = rt.studio.execute.provider;
+  if (isRecord(body) && body.provider !== undefined) {
+    if (!isStudioExecuteProvider(body.provider)) {
+      throw new StudioHttpError(
+        400,
+        `Unknown provider: ${JSON.stringify(body.provider)}. Expected one of: ${Object.keys(EXECUTE_DRIVER_REGISTRY).join(", ")}.`,
+      );
     }
-    provider = requested;
+    provider = body.provider;
   }
 
   const def = EXECUTE_DRIVER_REGISTRY[provider];
-  const { packageManager, command, args, manualReason } = detectPackageManager(schemaDir, def.packageName);
+  const detection = detectPackageManager(schemaDir, def.packageName);
 
-  if (manualReason) {
+  if (detection.manualReason !== null) {
     return {
       ok: false,
       provider,
       packageName: def.packageName,
       command: [],
-      error: manualReason,
+      error: detection.manualReason,
       installed: false,
     };
   }
 
-  // Run the install.
-  const { stdout, stderr, code } = await spawnCommand(command, args, schemaDir);
-  const projectRoot = findProjectRoot(schemaDir) ?? schemaDir;
+  const { packageManager, projectRoot, spawnSpec } = detection;
+  const { stdout, stderr, code } = await spawnCommand(spawnSpec, projectRoot);
   const installed = isDriverInstalled(def.packageName, projectRoot);
 
   return {
     ok: code === 0,
     provider,
     packageName: def.packageName,
-    command: [command, ...args],
+    command: [spawnSpec.command, ...spawnSpec.args],
     stdout,
     stderr,
     error: code !== 0 ? `${packageManager} exited with code ${code}` : undefined,
@@ -1508,63 +1691,30 @@ async function installExecuteDriver(
   };
 }
 
-type PackageManagerDetection = {
-  packageManager: string;
-  command: string;
-  args: string[];
-  manualReason: string | null;
-};
+type PackageManagerDetection =
+  | {
+      manualReason: null;
+      packageManager: string;
+      projectRoot: string;
+      spawnSpec: ReturnType<typeof packageManagerSpawnSpec>;
+    }
+  | { manualReason: string };
 
 function detectPackageManager(cwd: string, packageName: string): PackageManagerDetection {
   // Walk up from schemaDir to find the project root's lockfile.
   const projectRoot = findProjectRoot(cwd);
   if (!projectRoot) {
-    return {
-      packageManager: "",
-      command: "",
-      args: [],
-      manualReason: `Could not locate a package.json above ${cwd}. Run the install manually.`,
-    };
+    return { manualReason: `Could not locate a package.json above ${cwd}. Run the install manually.` };
   }
-
-  if (existsSync(join(projectRoot, "pnpm-lock.yaml"))) {
-    return {
-      packageManager: "pnpm",
-      command: "pnpm",
-      args: ["add", packageName],
-      manualReason: null,
-    };
+  const pm = lockfilePackageManager(projectRoot);
+  if (!pm) {
+    return { manualReason: `No recognized lockfile found in ${projectRoot}. Run: pnpm add ${packageName}` };
   }
-  if (existsSync(join(projectRoot, "package-lock.json"))) {
-    return {
-      packageManager: "npm",
-      command: "npm",
-      args: ["install", packageName],
-      manualReason: null,
-    };
-  }
-  if (existsSync(join(projectRoot, "yarn.lock"))) {
-    return {
-      packageManager: "yarn",
-      command: "yarn",
-      args: ["add", packageName],
-      manualReason: null,
-    };
-  }
-  if (existsSync(join(projectRoot, "bun.lockb")) || existsSync(join(projectRoot, "bun.lock"))) {
-    return {
-      packageManager: "bun",
-      command: "bun",
-      args: ["add", packageName],
-      manualReason: null,
-    };
-  }
-
   return {
-    packageManager: "",
-    command: "",
-    args: [],
-    manualReason: `No recognized lockfile found in ${projectRoot}. Run: pnpm add ${packageName}`,
+    manualReason: null,
+    packageManager: pm,
+    projectRoot,
+    spawnSpec: packageManagerSpawnSpec(pm, packageManagerAddArgs(pm, [packageName])),
   };
 }
 
@@ -1580,12 +1730,11 @@ function findProjectRoot(startDir: string): string | null {
 }
 
 function spawnCommand(
-  command: string,
-  args: string[],
+  spec: ReturnType<typeof packageManagerSpawnSpec>,
   cwd: string,
 ): Promise<{ stdout: string; stderr: string; code: number }> {
   return new Promise((resolve) => {
-    const proc = spawn(command, args, { cwd, shell: false, stdio: ["ignore", "pipe", "pipe"] });
+    const proc = spawn(spec.command, spec.args, { cwd, shell: spec.shell, stdio: ["ignore", "pipe", "pipe"] });
     const stdoutChunks: Buffer[] = [];
     const stderrChunks: Buffer[] = [];
     proc.stdout.on("data", (chunk: Buffer) => stdoutChunks.push(chunk));
@@ -1605,17 +1754,69 @@ function spawnCommand(
 
 async function executeQuery(body: unknown, schemaDir: string): Promise<ExecuteResponse> {
   const rt = getAskDbRuntimeConfig();
-  const { provider, databaseUrl, file } = rt.studio.execute;
+  const exec = rt.studio.execute;
+  if (!exec.enabled) {
+    throw new StudioHttpError(403, EXECUTE_DISABLED_MESSAGE);
+  }
 
   if (!isRecord(body) || typeof body.sql !== "string" || body.sql.trim() === "") {
-    return { ok: false, error: "`sql` is required." };
+    throw new StudioHttpError(400, "`sql` is required.");
   }
-  const sql = body.sql;
-  const params = Array.isArray(body.params) ? body.params : [];
+  if (body.params !== undefined && !Array.isArray(body.params)) {
+    throw new StudioHttpError(400, "`params` must be an array.");
+  }
+  const params = (body.params as unknown[] | undefined) ?? [];
 
+  // Same read-only SELECT guardrail `ask()` applies, for the execute engine's
+  // dialect — rejects multi-statement input, comments, DDL/DML keywords, …
+  // before anything reaches a driver.
+  let sql: string;
+  try {
+    sql = validateExecuteSql(exec.provider, body.sql, rt.nlToSql.dialect);
+  } catch (error) {
+    if (error instanceof SqlValidationError) {
+      throw new StudioHttpError(400, `SQL rejected by the read-only guardrail (${error.rule}): ${error.message}`);
+    }
+    throw error;
+  }
+
+  const warnings = sensitiveExecuteWarnings(sql, schemaDir);
   const projectRoot = findProjectRoot(schemaDir) ?? schemaDir;
-  const def = EXECUTE_DRIVER_REGISTRY[provider];
-  return def.execute({ connectionString: databaseUrl, file, sql, params, projectRoot });
+  const def = EXECUTE_DRIVER_REGISTRY[exec.provider];
+  const result = await def.execute({
+    connectionString: exec.databaseUrl,
+    file: exec.file,
+    sql,
+    params,
+    projectRoot,
+    timeoutMs: exec.timeoutMs,
+    maxRows: exec.maxRows,
+  });
+  if (!result.ok && /^No (connection URL|SQLite file path) configured/.test(result.error)) {
+    return { ok: false, error: executeNotConfiguredMessage(exec) };
+  }
+  return result.ok && warnings.length > 0 ? { ...result, warnings } : result;
+}
+
+/**
+ * Warn (never block) when the SQL references identifiers marked `sensitive` —
+ * the same check `ask()` runs in its default `"warn"` mode. Studio has no
+ * strict-mode setting; hosts that need enforcement call
+ * `validateSensitiveReferences(sql, schema, { mode: "strict" })` themselves.
+ */
+function sensitiveExecuteWarnings(sql: string, schemaDir: string): string[] {
+  let schema: ReturnType<typeof loadSchema>;
+  try {
+    schema = loadSchema(schemaDir);
+  } catch {
+    return [];
+  }
+  if (!schemaHasSensitiveIdentifiers(schema)) return [];
+  const result = validateSensitiveReferences(sql, schema, { mode: "warn" });
+  if (result.references.length === 0) return [];
+  return [
+    `This query reads identifiers marked sensitive: ${result.references.map(formatSensitiveReference).join(", ")}.`,
+  ];
 }
 
 function isLoopbackRequest(req: IncomingMessage): boolean {
@@ -1845,11 +2046,36 @@ function readFiniteNumber(value: unknown): number | undefined {
   return typeof value === "number" && Number.isFinite(value) ? value : undefined;
 }
 
+/** Largest JSON request body Studio accepts. */
+export const MAX_JSON_BODY_BYTES = 1024 * 1024;
+
+function bodyTooLarge(): StudioHttpError {
+  return new StudioHttpError(413, `Request body is too large (limit ${MAX_JSON_BODY_BYTES} bytes).`);
+}
+
 async function readJson(req: IncomingMessage): Promise<unknown> {
-  const chunks: Buffer[] = [];
-  for await (const chunk of req) {
-    chunks.push(typeof chunk === "string" ? Buffer.from(chunk) : chunk);
+  const declared = Number(req.headers["content-length"]);
+  if (Number.isFinite(declared) && declared > MAX_JSON_BODY_BYTES) {
+    // Node discards the unread body after the 413 response is sent.
+    throw bodyTooLarge();
   }
+  const chunks: Buffer[] = [];
+  let size = 0;
+  let overflow = false;
+  for await (const chunk of req) {
+    // Keep draining (without buffering) once over the limit, so the client
+    // can read the 413 instead of hitting a reset connection.
+    if (overflow) continue;
+    const buf = typeof chunk === "string" ? Buffer.from(chunk) : (chunk as Buffer);
+    size += buf.length;
+    if (size > MAX_JSON_BODY_BYTES) {
+      overflow = true;
+      chunks.length = 0;
+      continue;
+    }
+    chunks.push(buf);
+  }
+  if (overflow) throw bodyTooLarge();
   if (chunks.length === 0) return {};
   try {
     return JSON.parse(Buffer.concat(chunks).toString("utf8"));

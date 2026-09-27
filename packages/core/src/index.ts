@@ -21,6 +21,7 @@ export {
   type TenantPlaceholderResult,
   type TenantBinding,
 } from "./sql/tenant-placeholders.js";
+export { expandClosure } from "./sql/tenant-hierarchy.js";
 export {
   ask,
   type AskPipelineOptions,
@@ -31,6 +32,8 @@ export {
   type AskUsage,
   type AskDialectGenerateResult,
   type AskGenerateDeps,
+  // Callback type for `ask({ resolveTenantDescendants })` (subtree tenant scopes).
+  type ResolveTenantDescendants,
 } from "./ask.js";
 export {
   parseAskDbModeV1,
