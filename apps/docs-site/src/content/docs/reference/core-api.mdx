@@ -35,6 +35,7 @@ const { sql } = await ask({
 | `omitSensitiveIdentifiersFromNlToSqlPrompt` | `boolean` | no | `false` | When `true`, strips sensitive table/column names from the NL→SQL DDL entirely. Default (`false`) includes them with a `(sensitive)` tag so the model can still ground queries. |
 | `tenantScope` | `TenantScope` | no | — | Required when the schema has a `tenant-policy.md`. The pipeline fails closed if a policy exists and this is absent. |
 | `tenantSqlMode` | `TenantSqlOutputMode` | no | `"sql-only"` | `"sql-only"` inlines literal tenant values; `"sql-params"` converts them to positional `$N` parameters. |
+| `resolveTenantDescendants` | `ResolveTenantDescendants` | for `subtree` scopes | — | `(tenantRoot, seedIds) => ids \| Promise<ids>`. Expands a `subtree` scope to every ID in the subtree; the seeds are always unioned in. Without it, a `subtree` scope throws `TenantScopeError` (`SUBTREE_NOT_RESOLVABLE`). See [Hierarchical scope](/guides/multi-tenancy/#hierarchical-scope-subtree). |
 | `parameterize` | `boolean` | no | `true` | Ask the model for unbound SQL + a parameter manifest. Still exactly one model call. Set `false` to save output tokens. Inert for custom `AskDialect` implementations. |
 | `sensitiveGuardrailMode` | `"warn" \| "strict" \| "off"` | no | `"warn"` | How to treat SQL that references identifiers marked `sensitive`. `"warn"` populates `result.sensitiveGuardrail` and logs; `"strict"` throws `SensitiveReferenceError`; `"off"` skips the check. See [`validateSensitiveReferences`](#validatesensitivereferencessql-schema-options). |
 | `retriever` | `Retriever` | no | — | RAG retriever from `@askdb/rag`. When supplied and schema chunk count exceeds `retrievalThresholdChunks`, retrieval replaces the full DDL in the prompt. |
@@ -377,7 +378,7 @@ Access kinds:
 | Kind | Description |
 | --- | --- |
 | `"ids"` | User can access specific root-entity ids. |
-| `"subtree"` | User can access a subtree rooted at specific ids. Descendants are not expanded yet: only `rootIds` are bound, so pass descendant IDs yourself with `"ids"`. |
+| `"subtree"` | User can access a subtree rooted at specific ids. Requires the `resolveTenantDescendants` option on `ask()`. |
 | `"multi_root"` | User has access across multiple tenant roots, each with their own id set. |
 | `"global"` | Super / admin access. Requires a `reason` string for audit. |
 

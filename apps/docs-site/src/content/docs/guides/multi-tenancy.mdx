@@ -160,13 +160,69 @@ if (result.preparedQuery) {
 }
 ```
 
-`access.kind` selects the scope shape: `ids` (exact tenant IDs on one root — the common case), `subtree` (`{ kind: "subtree", tenantRoot, rootIds, includeDescendants: true }`), `multi_root` (IDs across several roots), or `global` (deliberately unscoped, with a `reason` string for the audit trail). The optional `context` field carries advisory metadata (role, department) into the prompt. It isn't enforced.
+`access.kind` selects the scope shape: `ids` (exact tenant IDs on one root — the common case), `subtree` (a root's IDs plus all descendants: `{ kind: "subtree", tenantRoot, rootIds, includeDescendants: true }`; needs a `resolveTenantDescendants` callback, see [below](#hierarchical-scope-subtree)), `multi_root` (IDs across several roots), or `global` (deliberately unscoped, with a `reason` string for the audit trail). The optional `context` field carries advisory metadata (role, department) into the prompt. It isn't enforced.
 
-<Aside type="note" title="Not yet enforced: descendants and tenantFilters">
-`subtree` doesn't expand descendants yet. The prompt asks the model to include them, but only the `rootIds` you pass are bound into the SQL. Until expansion ships, resolve the descendant IDs in your application and pass them with `kind: "ids"`.
-
+<Aside type="note" title="Not yet enforced: tenantFilters">
 `TenantScope` also accepts a `tenantFilters` field. AskDB validates its shape but doesn't use it for anything, so it has no effect on the prompt, the check, or the returned SQL. Don't rely on it.
 </Aside>
+
+## Hierarchical scope (`subtree`)
+
+A `subtree` scope says "these IDs and everything beneath them". A state administrator, for example, sees the state agency and every county agency under it. AskDB never opens a database connection, so it can't walk your hierarchy itself. You pass a `resolveTenantDescendants` callback that expands the seed IDs, and `ask()` substitutes the full set into the tenant placeholder.
+
+```ts
+import { ask } from "@askdb/core";
+
+const result = await ask({
+  question: "how many open cases this month?",
+  schema,
+  model,
+  dialect: "postgres",
+  tenantScope: {
+    access: {
+      kind: "subtree",
+      tenantRoot: "table:public.agencies",
+      rootIds: [currentUser.stateAgencyId],
+      includeDescendants: true,
+    },
+  },
+  // Called once per ask() with the tenant root and the seed IDs.
+  resolveTenantDescendants: async (tenantRoot, seedIds) => {
+    if (tenantRoot !== "table:public.agencies") {
+      throw new Error(`no hierarchy resolver for ${tenantRoot}`);
+    }
+    const { rows } = await pool.query(
+      `WITH RECURSIVE tree AS (
+         SELECT id FROM agencies WHERE id = ANY($1)
+         UNION
+         SELECT a.id FROM agencies a JOIN tree t ON a.parent_agency_id = t.id
+       )
+       SELECT id::text AS id FROM tree`,
+      [seedIds],
+    );
+    return rows.map((r) => r.id);
+  },
+});
+// result.sql → ... WHERE agency_id IN ('state-1', 'county-a', 'county-b')
+```
+
+The callback's contract:
+
+- **Return IDs of the same tenant root.** They replace that root's `:tenant_<label>_ids` placeholder, so the example works for a self-referencing table like `agencies.parent_agency_id`.
+- **Seeds are always kept.** `ask()` unions `rootIds` into whatever you return, so returning only the strict descendants doesn't drop the ancestor's own rows.
+- **It fails closed.** If `resolveTenantDescendants` is missing, returns an empty array, or returns something that isn't an array of non-empty strings, `ask()` throws `TenantScopeError` with reason `SUBTREE_NOT_RESOLVABLE` before calling the model. It never falls back to the seed IDs alone.
+- **Authorization and caching are yours.** AskDB trusts the returned IDs, so cache the closure or apply extra rules inside the callback.
+
+If your hierarchy is already in memory (for example, a cached parent map), `expandClosure(seedIds, childrenOf)` from `@askdb/core` does the walk for you. It is breadth-first and cycle-safe:
+
+```ts
+import { expandClosure } from "@askdb/core";
+
+resolveTenantDescendants: (_root, seedIds) =>
+  expandClosure(seedIds, (id) => childrenByAgencyId.get(id) ?? []),
+```
+
+`@askdb/client` forwards `resolveTenantDescendants` like any other per-call override: `askdb.ask(question, { tenantScope, resolveTenantDescendants })`.
 
 ## SQL output modes
 

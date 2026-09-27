@@ -27,7 +27,8 @@ This is a Postgres-first proof. The tenant enforcement model is designed to gene
   - P3 — inherited scope via JOINs (`appointments → clients → agency`)
   - P4 — multi-level hierarchy traversal (agency → sub_agency → client)
   - P5 — polymorphic association (`notes.owner_type` + `notes.owner_id`)
-- **Unified `TenantScope` input to `ask()`** — `access` (ids, subtree, multi_root, global), `tenantFilters` (accepted and shape-validated, but **not read by any code today** — see plan 048), `context` (advisory: role, region, department)
+- **Unified `TenantScope` input to `ask()`** — `access` (ids, subtree, multi_root, global), `tenantFilters` (accepted and shape-validated, but **not read by any code today** — see #233), `context` (advisory: role, region, department)
+- **Subtree expansion via a host resolver.** A `subtree` access is expanded by `ask({ resolveTenantDescendants })` into the full ID set before generation. The seeds are always unioned in. With no resolver, or an empty or invalid result, `ask()` throws `TenantScopeError` (`SUBTREE_NOT_RESOLVABLE`) instead of silently scoping to the seeds. See [`tenant-policy.md` › Subtree expansion](../contracts/tenant-policy.md#subtree-expansion).
 - **Prompt assembly boundary** — policy front-matter, runtime scope, and advisory context injected into every generation prompt; named placeholder convention `:tenant_<root_label>_ids`
 - **SQL guardrail validator** — heuristic identifier-presence checks over the SQL text (no parser): each scoped table named in the SQL must be accompanied by its tenant column, join-path columns, or tenant placeholder somewhere in the statement; polymorphic tables must mention the type discriminator and id columns; tables classified `unknown` are flagged. Clause position, `OR`/negation, and cross-table scope compatibility are **not** checked
 - **Enforcement modes** — `strict` (throw `TenantGuardrailError` when the heuristic check finds a problem) and `warn` (return SQL with `tenantGuardrail.warnings`). Neither mode proves a query is tenant-safe
@@ -42,7 +43,7 @@ This is a Postgres-first proof. The tenant enforcement model is designed to gene
 - User authentication — AskDB receives authorized scope from the host; it does not authenticate users
 - Multi-engine tenant proof beyond Postgres — Phase 13
 - Row-level security (RLS) DDL generation — AskDB does not generate RLS policies. RLS (or equivalent database-level enforcement) is the **recommended primary tenant boundary**; AskDB's prompt instructions and guardrail are the defense-in-depth layer, not the other way round
-- Subtree expansion — `subtree` scope kind is accepted, and the prompt asks the model to include descendants, but only `rootIds` are bound into the tenant placeholders. Hosts must expand descendants to explicit IDs (plan 047 tracks real expansion)
+- Built-in subtree expansion. AskDB does not generate a recursive CTE for `subtree` scopes; the host supplies `resolveTenantDescendants`. An in-database recursive-CTE strategy is a possible follow-up (#268).
 
 ## Design decisions
 
@@ -60,11 +61,16 @@ This is a Postgres-first proof. The tenant enforcement model is designed to gene
 // ask() tenant input
 interface AskOptions {
   tenantScope?: TenantScope
+  // Required for access.kind === "subtree"; returns every ID in the subtree.
+  resolveTenantDescendants?: (
+    tenantRoot: string,
+    seedIds: readonly string[],
+  ) => Promise<readonly string[]> | readonly string[]
 }
 
 interface TenantScope {
   access: TenantAccess                          // ids | subtree | multi_root | global
-  tenantFilters?: Record<string, TenantFilter>  // accepted but currently unused (plan 048)
+  tenantFilters?: Record<string, TenantFilter>  // accepted but currently unused (#233)
   context?: TenantScopeContext                  // advisory: role, region, department, etc.
 }
 
@@ -117,6 +123,7 @@ See [`docs/contracts/tenant-policy.md`](../contracts/tenant-policy.md) for the f
 - Policy loading: fixture `tenant-policy.md` loads and normalizes deterministically; unknown table IDs, broken FK paths, and cycles produce clear validation errors.
 - All five discriminator patterns (P1–P5) covered by fixture tests.
 - `ask()` without scope when a policy is configured fails before model generation.
+- `subtree` scope: the resolver's full ID set reaches the SQL (seeds unioned in). With no resolver, or an empty or invalid result, `ask()` throws `SUBTREE_NOT_RESOLVABLE` before model generation. Closure expansion terminates on cyclic hierarchies.
 - `ask()` with valid agency scope proceeds to prompt assembly; golden prompt snapshot includes policy block, scope, and advisory context.
 - SQL guardrail: SQL that names a scoped table without mentioning `agency_id` (or the placeholder) throws in strict mode and warns in warn mode; SQL mentioning the tenant column passes; polymorphic table without type discriminator fails; unknown tables are flagged. (Cross-tenant JOIN compatibility is not checked.)
 - `sql-only` mode returns complete executable SQL; `sql-params` returns `{ sql, params }` with positional parameters; both pass the guardrail validator.

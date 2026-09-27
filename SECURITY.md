@@ -1,6 +1,6 @@
 # Security Policy
 
-AskDB is pre-1.0 software that generates SQL from schema context using a language model you supply. The library (`@askdb/core`, `@askdb/client`), the CLI, and the HTTP API return generated SQL and never execute it. The exception is Studio's optional Playground **Execute** action, a local development tool that runs SQL against the database you configure for it (see [Studio execute](#studio-execute) below). Applications that run generated SQL own the approval workflows, database roles, tenant enforcement, network controls, and audit logging around it.
+AskDB is pre-1.0 software that generates SQL from schema context using a language model you supply. The library (`@askdb/core`, `@askdb/client`), the CLI, and the HTTP API return generated SQL and never execute it. The exception is Studio's optional Playground **Execute** action, a local development tool that is off by default (`studio.execute.enabled`) and, when enabled, runs SQL against the database you configure for it (see [Studio execute](#studio-execute) below). Applications that run generated SQL own the approval workflows, database roles, tenant enforcement, network controls, and audit logging around it.
 
 ## Security model
 
@@ -20,7 +20,7 @@ These checks run over text after a heuristic string-literal stripper. They are *
 
 - **No parsing or semantic analysis.** AskDB doesn't verify that SQL is syntactically valid, that referenced tables or columns exist, or that a `SELECT` is free of side effects (for example, `SELECT … INTO` or side-effecting functions).
 - **No system-schema restrictions.** Queries against `pg_catalog`, `information_schema`, `sys`, and similar schemas are not rejected.
-- **No tenant-predicate correctness.** The tenant check confirms a column name is present, not that it filters. `WHERE tenant_id = … OR 1=1` passes. AskDB does not rewrite queries to add tenant filters. `subtree` scopes do not expand descendants yet, and `TenantScope.tenantFilters` is currently ignored.
+- **No tenant-predicate correctness.** The tenant check confirms a column name is present, not that it filters. `WHERE tenant_id = … OR 1=1` passes. AskDB does not rewrite queries to add tenant filters. `subtree` scopes are expanded only by the host's `resolveTenantDescendants` callback, and AskDB trusts the IDs it returns. `TenantScope.tenantFilters` is currently ignored.
 - **No complete sensitive-column detection.** Explicitly named sensitive columns and `SELECT *` on a table marked sensitive are caught. `SELECT *` on a table that merely contains a sensitive column is not.
 - **No protection from prompt injection.** The question text and schema enrichment (descriptions, concepts, tenant-policy prose) are part of the model prompt. Anyone who can write to them can influence the generated SQL.
 
@@ -30,7 +30,7 @@ Treat generated SQL as untrusted. Execute it with a least-privilege, read-only d
 
 ### Studio execute
 
-Studio is a local development tool and binds to `127.0.0.1` by default. When execute is configured, its Playground runs the SQL it is given against the configured connection. Postgres and MySQL queries run inside a read-only transaction and SQLite files are opened read-only. SQL Server queries have no read-only wrapper. Point `studio.execute` at a read-only, least-privilege login on a non-production database, and don't expose Studio on a shared network.
+Studio is a local development tool and binds to `127.0.0.1` by default. Its Playground **Execute** action is off by default (`studio.execute.enabled`). When enabled, Studio validates each query as a single read-only SELECT. It runs the query in a read-only (SQL Server: always-rolled-back) transaction with a statement timeout and a row cap. These guards are defense in depth, not a sandbox. Point `studio.execute` at a read-only, least-privilege database role on a non-production database, and don't expose Studio on a shared network. See the [Studio security model](https://askdb.tools/studio/#security-model).
 
 ## Reporting a Vulnerability
 
