@@ -522,7 +522,12 @@ export function PlaygroundPage() {
                 )}
 
                 <div style={{ padding: "var(--pad-y) var(--pad-x)", borderBottom: "1px solid var(--border)", display: "flex", flexDirection: "column", gap: 8 }}>
-                  {executeStatus && (
+                  {executeStatus && !executeStatus.enabled && (
+                    <p className="muted" style={{ fontSize: 12, margin: 0 }}>
+                      {executeStatus.disabledReason}
+                    </p>
+                  )}
+                  {executeStatus?.enabled && (
                     <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
                       <span className="muted" style={{ fontSize: 11, fontWeight: 600 }}>
                         {executeStatus.label}
@@ -559,17 +564,25 @@ export function PlaygroundPage() {
                       )}
                     </div>
                   )}
-                  <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-                    <button
-                      className="btn primary"
-                      disabled={busy.has("execute") || !askResult.sql || (executeStatus !== null && (!executeStatus.configured || !executeStatus.installed))}
-                      onClick={() => void handleExecute()}
-                    >
-                      {busy.has("execute") ? <Loader2 size={14} className="animate-spin" /> : <Play size={14} />}
-                      Execute Query
-                    </button>
-                    {executeMessage && <InlineStatus status={executeMessage} />}
-                  </div>
+                  {executeStatus?.enabled && executeStatus.disabledReason && (
+                    <p className="muted" style={{ fontSize: 12, margin: 0 }}>
+                      {executeStatus.disabledReason}
+                    </p>
+                  )}
+                  {executeStatus?.enabled && (
+                    <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                      <button
+                        className="btn primary"
+                        disabled={busy.has("execute") || !askResult.sql || !executeStatus.configured || !executeStatus.installed}
+                        onClick={() => void handleExecute()}
+                        title={`Runs read-only · ${Math.round(executeStatus.timeoutMs / 1000)}s timeout · first ${executeStatus.maxRows} rows`}
+                      >
+                        {busy.has("execute") ? <Loader2 size={14} className="animate-spin" /> : <Play size={14} />}
+                        Execute Query
+                      </button>
+                      {executeMessage && <InlineStatus status={executeMessage} />}
+                    </div>
+                  )}
                 </div>
 
                 <GetTheCodePanel />
@@ -579,7 +592,7 @@ export function PlaygroundPage() {
                     <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
                       <h3 style={{ fontSize: 13, fontWeight: 600 }}>Results</h3>
                       {executeResult.truncated && (
-                        <span className="chip amber">Showing first 500 rows</span>
+                        <span className="chip amber">Showing first {executeResult.rowLimit} rows</span>
                       )}
                     </div>
                     {executeResult.columns && executeResult.rows ? (
