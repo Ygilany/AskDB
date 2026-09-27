@@ -64,7 +64,11 @@ pnpm lab ask --db postgres --sql "SELECT 1"       # skip the model: SQL, validat
 pnpm lab:test
 pnpm lab:matrix                                   # the suite as a scenario × dialect table (.lab/matrix.json)
 pnpm lab:use --restore                            # before committing: restore the lab's manifests
+pnpm lab:down                                     # stop the fixture; its data and the lab install stay
+pnpm lab:reset                                    # start over: fixture reseeded, committed baseline reinstalled
 ```
+
+`lab:down` removes only the fixture's containers (`fixture:down`): the volumes, the SQLite file, the lab's `node_modules` and `.lab/` stay, so the next `lab:up` is fast. `lab:reset` runs `fixture:reset` (containers, volumes and the SQLite file removed, then started and reseeded), then `lab:use --restore`, which removes `.lab/` (tarballs, the recorded target, cached schema artifacts, scratch projects) and the lab's `node_modules`, checks out the lab's three manifests as committed, and installs and verifies the committed lockfile. It works from a half-finished `lab:use`. It leaves the committed `npm:latest` baseline installed, not this checkout; run `pnpm lab:use .` to install the checkout. Neither command touches anything else. To try them without stopping a fixture others are using, run a [second copy of the fixture](fixtures/multi-engine/README.md#running-a-second-copy) from another worktree.
 
 `lab ask` answers only questions in the lab's catalog, from hand-written replies per dialect; adding a question means adding its replies (see the lab README).
 

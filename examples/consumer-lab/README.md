@@ -26,9 +26,23 @@ pnpm lab:test                        # the lab's own suite (needs the fixture an
 pnpm lab:matrix                      # lab:up, then the suite as a scenario × dialect table
 pnpm lab:matrix -t introspect-golden # vitest flags pass through: one scenario (-t), one dialect (-t '\[mysql\]'), one file
 pnpm lab:use --restore               # put the committed baseline (npm:latest) back
+pnpm lab:down                        # stop the fixture; keep its data and the lab install
+pnpm lab:reset                       # reseed the fixture from scratch and put the committed baseline back
 ```
 
 `--db` is any fixture engine: `postgres`, `mysql`, `mariadb`, `sqlserver` or `sqlite`.
+
+## Stopping and resetting the lab
+
+| Command | Removes | Keeps |
+|---|---|---|
+| `pnpm lab:down` | The four fixture containers, stopped and removed (`pnpm fixture:down`). | The fixture's volumes and SQLite file, and the lab's `node_modules`, `.lab/` and manifests. A following `pnpm lab:up` reuses the seeded data and skips the install when it still matches the checkout. |
+| `pnpm lab:use --restore` | The lab's `.lab/` (tarballs, the recorded target, cached schema artifacts, scratch projects) and `node_modules`. It checks the lab's `package.json`, `pnpm-workspace.yaml` and `pnpm-lock.yaml` out as committed, then installs and verifies the committed lockfile. | Everything else, including other edits in the lab. |
+| `pnpm lab:reset` | The fixture's containers, volumes and SQLite file (`pnpm fixture:reset`, which then starts and reseeds it), then everything `pnpm lab:use --restore` removes. | Everything else. |
+
+`lab:reset` recovers from any lab state, a half-finished `lab:use` included. It clears `.lab/` together with the fixture because cached schema artifacts are keyed on the install target, not on the fixture's data. Afterwards the fixture is freshly seeded and the committed baseline (`npm:latest`) is installed, not this checkout: run `pnpm lab:use .` (or `pnpm lab:up`) to install the checkout.
+
+To run a second copy of the fixture beside the usual one (for example, to try `lab:reset` while other lab runs use the fixture), set `COMPOSE_PROJECT_NAME` and the `ASKDB_FIXTURE_<ENGINE>_PORT` variables (see the [fixture README](../../fixtures/multi-engine/README.md#running-a-second-copy)). The lab's `.lab/`, `node_modules` and the SQLite file belong to the checkout, so use a separate worktree for it.
 
 ## `pnpm lab ask`
 
@@ -130,7 +144,7 @@ The `consumer-lab` job in [`.github/workflows/ci.yml`](../../.github/workflows/c
 3. It writes a pnpm `overrides` block into `pnpm-workspace.yaml` covering **every** target package, headed by a `# lab:use target:` comment. Without it, a transitive `@askdb/*` dependency would resolve from npm under the same version number, so the lab would quietly test the published code instead of the checkout, or another release than the one asked for.
 4. It installs, then reads the lockfile and prints each `@askdb/*` package's version and source. It fails if any package isn't from the target's source (tarball, or registry), isn't at the target's version, or wasn't pinned by the target at all. `pnpm lab:use --check` repeats this check on the current install.
 
-`lab:use` rewrites `package.json`, `pnpm-workspace.yaml` and `pnpm-lock.yaml`. The committed versions are the **`npm:latest` baseline** (decision 2 in the spec): `latest` is what `npm install askdb` resolves, so it's what users run. `pnpm lab:use --restore` brings them back: it reinstalls the committed lockfile as-is and verifies it against the pins in the committed overrides block.
+`lab:use` rewrites `package.json`, `pnpm-workspace.yaml` and `pnpm-lock.yaml`. The committed versions are the **`npm:latest` baseline** (decision 2 in the spec): `latest` is what `npm install askdb` resolves, so it's what users run. `pnpm lab:use --restore` brings them back: it removes `.lab/` and `node_modules`, reinstalls the committed lockfile as-is and verifies it against the pins in the committed overrides block.
 
 - **Don't commit the three files after `.`, a path or `git:`**: they hold `file:` tarball paths. Don't commit them after another npm target either.
 - **To refresh the baseline** after a release ships, run `pnpm lab:use npm:latest` and commit the three files.

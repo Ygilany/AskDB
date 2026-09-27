@@ -72,7 +72,7 @@ A small multi-tenant social-services domain. [`fixtures/multi-engine/README.md`]
 
 ### Databases
 
-`fixtures/multi-engine/compose.yml` (project `askdb-fixture`) runs `postgres:17` on 15432, `mysql:8.4` on 13306, `mariadb:11.4` on 13307 and `mcr.microsoft.com/mssql/server:2022-CU27-ubuntu-22.04` on 11433, each with a healthcheck and a read-only `fixture_reader` role. SQLite is a file the seeder writes. The ports don't clash with 5432, 5434, 3306 or 1433. The commands are `pnpm fixture:up`, `fixture:down` and `fixture:reset`; `pnpm lab:up` (Phase 2) calls `fixture:up`.
+`fixtures/multi-engine/compose.yml` (project `askdb-fixture`) runs `postgres:17` on 15432, `mysql:8.4` on 13306, `mariadb:11.4` on 13307 and `mcr.microsoft.com/mssql/server:2022-CU27-ubuntu-22.04` on 11433, each with a healthcheck and a read-only `fixture_reader` role. SQLite is a file the seeder writes. The ports don't clash with 5432, 5434, 3306 or 1433. The commands are `pnpm fixture:up`, `fixture:down` and `fixture:reset`; `pnpm lab:up` (Phase 2) calls `fixture:up`, `pnpm lab:down` calls `fixture:down`, and `pnpm lab:reset` calls `fixture:reset`, then `lab:use --restore` (#297).
 
 Two things are lab-only and live in the lab, not the fixture:
 
