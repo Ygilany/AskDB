@@ -214,7 +214,8 @@ jobs:
       ASKDB_REQUIRE_INTEGRATION: "1"
       DATABASE_URL: postgres://postgres:postgres@localhost:5432/askdb_test
       ASKDB_PGVECTOR_URL: postgres://postgres:postgres@localhost:5432/askdb_test
-      PAGILA_DATABASE_URL: postgres://postgres:postgres@127.0.0.1:5433/pagila
+      # Multi-engine fixture (fixtures/multi-engine): Postgres, MySQL, MariaDB, SQL Server, SQLite.
+      ASKDB_FIXTURE_HOST: 127.0.0.1
       MYSQL_DATABASE_URL: mysql://root:mysql@127.0.0.1:3306/askdb_test
       MSSQL_DATABASE_URL: "Server=127.0.0.1,1433;Database=askdb_test;User Id=sa;Password=AskDB.123;Encrypt=false"
 
@@ -253,8 +254,8 @@ jobs:
           -Q "IF DB_ID('askdb_test') IS NULL CREATE DATABASE askdb_test"
           -C
 
-      - name: Start Pagila introspection fixture
-        run: docker compose -f fixtures/pagila/docker-compose.yml up --build --wait -d
+      - name: Start and seed the multi-engine fixture
+        run: pnpm fixture:up
 
       - name: Run unit + integration tests
         run: pnpm test

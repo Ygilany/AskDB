@@ -57,6 +57,12 @@ export type AskDbRuntimeIntrospectionConfig = {
    */
   mysqlDatabaseUrl: string | undefined;
   /**
+   * Schemas (MySQL/MariaDB: databases) to introspect, for every provider:
+   * `introspection.schemas` → `ASKDB_INTROSPECT_SCHEMAS` (comma-separated).
+   * `undefined` means the engine's default. `askdb introspect --schemas` overrides it.
+   */
+  schemas: string[] | undefined;
+  /**
    * Resolved SQLite file path when `provider === "sqlite"`:
    * `providerConfig.sqlite.file` → `ASKDB_INTROSPECT_SQLITE_FILE` env.
    * `undefined` for non-SQLite providers.
@@ -168,6 +174,9 @@ export function getAskDbRuntimeConfig(): AskDbRuntimeConfig {
       ? structured.introspection.providerConfig?.mysql?.databaseUrl?.trim() ||
         pickFlat(flat, "ASKDB_INTROSPECT_MYSQL_URL")
       : undefined;
+  const schemas = (structured.introspection.schemas ?? pickFlat(flat, "ASKDB_INTROSPECT_SCHEMAS")?.split(","))
+    ?.map((s) => s.trim())
+    .filter(Boolean);
   const sqliteFile =
     structured.introspection.provider === "sqlite"
       ? structured.introspection.providerConfig?.sqlite?.file?.trim() ||
@@ -190,6 +199,7 @@ export function getAskDbRuntimeConfig(): AskDbRuntimeConfig {
       postgresDatabaseUrl,
       prismaSchemaPath: prismaSchemaPathRaw || undefined,
       mysqlDatabaseUrl,
+      schemas: schemas?.length ? schemas : undefined,
       sqliteFile,
       sqlserverDatabaseUrl,
       outputDir:
