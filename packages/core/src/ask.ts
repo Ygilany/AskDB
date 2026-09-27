@@ -14,7 +14,8 @@ import {
   getDialectSpec,
   isBuiltInDialectId,
 } from "./sql/dialect-spec.js";
-import { generateSelectSql } from "./sql/generate.js";
+import { generateSelectSqlWithoutTenantGuardrail } from "./sql/generate.js";
+import { enforceTenantGuardrails } from "./sql/tenant-guardrail.js";
 import {
   resolveTenantSql,
   type TenantSqlOutputMode,
@@ -31,6 +32,7 @@ import {
 import {
   SensitiveReferenceError,
   TenantScopeError,
+  UnknownDialectError,
   type SensitiveReference,
 } from "./errors.js";
 import {
@@ -70,6 +72,11 @@ export type AskUsage = {
 export type AskDialectGenerateResult = {
   sql: string;
   explain?: unknown;
+  /**
+   * Optional tenant guardrail result from a custom generator. When the schema has a
+   * tenant policy, `ask()` merges its warnings into its own check of the final SQL;
+   * it can add failures but never replace or relax that check.
+   */
   tenantGuardrail?: import("./sql/tenant-guardrail.js").TenantGuardrailResult;
   usage?: AskUsage;
   unboundNamedSql?: string;
@@ -84,6 +91,18 @@ export type AskDialectGenerateResult = {
  * a {@link DialectSpec} to `ask({ dialect })` and let the centralized pipeline
  * handle prompt assembly + validation. Implement `AskDialect` only when those
  * defaults won't fit.
+ *
+ * Safety responsibilities:
+ *   - **Read-only validation is yours.** `ask()` does not run the SELECT-only
+ *     validator on SQL returned by a custom dialect (custom dialects may target
+ *     non-SELECT statements on purpose). If your generator should only emit
+ *     read-only SQL, call the exported `validateSelectSql(spec, sql)` yourself
+ *     before returning.
+ *   - **Tenant enforcement is not yours to skip.** When the schema has a tenant
+ *     policy, `ask()` substitutes tenant placeholders in the returned `sql` and
+ *     runs the tenant guardrail on the final statement regardless of dialect;
+ *     `strict` policies throw `TenantGuardrailError`. A `tenantGuardrail` your
+ *     generator returns is merged into that result, never used in place of it.
  */
 export type AskDialect = {
   generate(
@@ -236,6 +255,13 @@ export type AskPipelineResult = {
    * at least one `sensitive` table/column and `sensitiveGuardrailMode` is not `"off"`.
    */
   sensitiveGuardrail?: SensitiveGuardrailResult;
+  /**
+   * Tenant guardrail result for the SQL actually returned — `sql` after tenant
+   * placeholder substitution, plus `unboundSql` when present. Present whenever the
+   * schema has a tenant policy, for every dialect form. In `strict` mode a failure
+   * throws `TenantGuardrailError` instead, so a returned result is always `passed`
+   * under `strict`.
+   */
   tenantGuardrail?: import("./sql/tenant-guardrail.js").TenantGuardrailResult;
   tenantParams?: unknown[];
   tenantBindings?: TenantBinding[];
@@ -300,7 +326,11 @@ export async function ask(options: AskPipelineOptions): Promise<AskPipelineResul
   // markers applied below). Never overwrite it with a re-bound version.
   const result: AskPipelineResult = { sql: generated.sql };
   if (generated.explain !== undefined) result.explain = generated.explain;
-  if (generated.tenantGuardrail !== undefined) result.tenantGuardrail = generated.tenantGuardrail;
+  // With a tenant policy, `tenantGuardrail` is computed below from the final SQL;
+  // without one, pass through whatever a custom dialect reported.
+  if (!tenantPolicy && generated.tenantGuardrail !== undefined) {
+    result.tenantGuardrail = generated.tenantGuardrail;
+  }
   if (generated.usage !== undefined) result.usage = generated.usage;
 
   // Parameterize extras: build PreparedQuery, consistency-check via bindPreparedQuery,
@@ -435,6 +465,18 @@ export async function ask(options: AskPipelineOptions): Promise<AskPipelineResul
         }
       }
     }
+
+    // Tenant guardrail on exactly what the caller receives: the final `sql` after
+    // placeholder substitution, plus `unboundSql` only when the consistency check
+    // kept it. Runs for every dialect (built-in, DialectSpec, or custom AskDialect);
+    // the built-in generator skips its own check so this is the single report.
+    result.tenantGuardrail = enforceTenantGuardrails(
+      [result.sql, result.unboundSql],
+      tenantPolicy,
+      tenantScope,
+      logger,
+      generated.tenantGuardrail,
+    );
   }
 
   applySensitiveGuardrail(result, options, logger);
@@ -583,8 +625,9 @@ function resolveDialectSpec(input: AskDialectInput): DialectSpec | undefined {
 function resolveDialect(input: AskDialectInput): AskDialect {
   if (typeof input === "string") {
     if (!isBuiltInDialectId(input)) {
-      throw new Error(
+      throw new UnknownDialectError(
         `Unknown dialect id '${input}'. Pass a built-in DialectId, a DialectSpec object, or a custom AskDialect.`,
+        input,
       );
     }
     return specToDialect(getDialectSpec(input));
@@ -595,8 +638,10 @@ function resolveDialect(input: AskDialectInput): AskDialect {
 
 function specToDialect(spec: DialectSpec): AskDialect {
   return {
+    // ask() runs the tenant guardrail itself on the final SQL, so the built-in
+    // generator's copy is skipped to avoid a second (pre-substitution) report.
     generate: (question, schema, model, options) =>
-      generateSelectSql(spec, question, schema, model, options),
+      generateSelectSqlWithoutTenantGuardrail(spec, question, schema, model, options),
   };
 }
 
