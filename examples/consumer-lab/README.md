@@ -47,7 +47,7 @@ Both paths must send the same prompt and return the same SQL; `lab:test` checks 
 
 A question with no reply fails: `lab ask` exits 1 and says which file to add. There is no default reply.
 
-The schema artifact comes from the installed `askdb introspect`, run as the read-only role, and is cached per install target under `.lab/artifacts/`. MySQL and MariaDB are introspected with `--schemas org,people,billing,ref` (one database per logical schema); MariaDB uses the `mysql` engine. SQLite has no URL, so the lab writes a config with `introspection.providerConfig.sqlite.file` under `.lab/config/sqlite/` and introspects from there, as `guides/switch-engines` documents.
+The schema artifact comes from the installed `askdb introspect`, run as the read-only role, and is cached per install target under `.lab/artifacts/`. MySQL and MariaDB are introspected with `--schemas org,people,billing,ref` (one database per logical schema); MariaDB uses the `mysql` engine. SQLite has no URL, so the lab writes a config with `introspection.providerConfig.sqlite.file` into a fresh scratch directory under `.lab/` and introspects from there, as `guides/switch-engines` documents.
 
 ### Executing the SQL
 
@@ -59,7 +59,7 @@ The lab is the host, so it executes accepted SQL as `run-safely-in-prod` asks: a
 | MySQL | `START TRANSACTION READ ONLY` | `max_execution_time` | stops reading after 101 rows |
 | MariaDB | `START TRANSACTION READ ONLY` | `max_statement_time` | stops reading after 101 rows |
 | SQL Server | the role only (no read-only transaction exists) | request timeout, which cancels the statement | `SET ROWCOUNT 101` |
-| SQLite | read-only handle with `query_only` | the worker running it is terminated | stops reading after 101 rows |
+| SQLite | read-only handle with `query_only` | the child process running it is killed (a worker thread can't be stopped inside the native driver) | stops reading after 101 rows |
 
 The guide's wrapper is invalid on SQL Server and drops the statement's `ORDER BY` on MariaDB (#266), so only Postgres uses it.
 
