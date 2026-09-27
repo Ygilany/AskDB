@@ -3,6 +3,8 @@
 # SQLite is a file (.data/multi-engine.sqlite), not a service.
 #
 # Host ports avoid the repo's other fixtures and CI services (5432, 5434, 3306, 1433).
+# ASKDB_FIXTURE_<ENGINE>_PORT overrides one (src/env.ts reads the same variables), and
+# COMPOSE_PROJECT_NAME overrides the project name, to run a second copy beside this one.
 #
 #   postgres   127.0.0.1:15432  owner fixture_owner/fixture_owner  reader fixture_reader/fixture_reader      db askdb_fixture
 #   mysql      127.0.0.1:13306  owner root/fixture_owner           reader fixture_reader/fixture_reader      dbs org, people, billing, ref
@@ -18,7 +20,7 @@ services:
       POSTGRES_PASSWORD: fixture_owner
       POSTGRES_DB: askdb_fixture
     ports:
-      - "15432:5432"
+      - "${ASKDB_FIXTURE_POSTGRES_PORT:-15432}:5432"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U fixture_owner -d askdb_fixture"]
       interval: 3s
@@ -32,7 +34,7 @@ services:
     environment:
       MYSQL_ROOT_PASSWORD: fixture_owner
     ports:
-      - "13306:3306"
+      - "${ASKDB_FIXTURE_MYSQL_PORT:-13306}:3306"
     healthcheck:
       test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -uroot -pfixture_owner --silent"]
       interval: 3s
@@ -47,7 +49,7 @@ services:
     environment:
       MARIADB_ROOT_PASSWORD: fixture_owner
     ports:
-      - "13307:3306"
+      - "${ASKDB_FIXTURE_MARIADB_PORT:-13307}:3306"
     healthcheck:
       test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
       interval: 3s
@@ -66,7 +68,7 @@ services:
       MSSQL_SA_PASSWORD: Fixture.Owner.2026
       MSSQL_PID: Developer
     ports:
-      - "11433:1433"
+      - "${ASKDB_FIXTURE_SQLSERVER_PORT:-11433}:1433"
     healthcheck:
       test: ["CMD-SHELL", "/opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P 'Fixture.Owner.2026' -Q 'SELECT 1' -b -C -l 5"]
       interval: 5s
