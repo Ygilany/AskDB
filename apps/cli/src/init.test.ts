@@ -149,7 +149,47 @@ describe("renderInitConfig", () => {
     expect(out).toContain("satisfies AskDbConfig");
     expect(out).not.toContain("dotenv");
   });
+
+  it("escapes quotes, backslashes, and newlines in interpolated values (no code injection)", () => {
+    const hostile = 'x", injected: (() => { throw new Error("pwned"); })(), y: "\\\n';
+    const config = evaluateRenderedConfig(
+      renderInitConfig(
+        postgresAnswers({
+          database: "prisma",
+          connectionEnv: undefined,
+          prismaSchema: `./prisma/${hostile}`,
+          schemaOut: `./out/${hostile}`,
+          aiKeyEnv: `KEY${hostile}`,
+          ragStore: "pgvector",
+          pgvectorEnv: `PGV${hostile}`,
+          studioExecute: { enabled: true, provider: "sqlite", sqliteFile: `./db/${hostile}` },
+        }),
+      ),
+    ) as any;
+    expect(config.introspection.providerConfig.prisma.schemaPath).toBe(`./prisma/${hostile}`);
+    expect(config.introspection.outputDir).toBe(`./out/${hostile}`);
+    expect(config.ai.providerConfig.openai.apiKey).toEqual({ env: `KEY${hostile}` });
+    expect(config.rag.storeConfig.pgvector.databaseUrl).toEqual({ env: `PGV${hostile}` });
+    expect(config.studio.execute.file).toBe(`./db/${hostile}`);
+    expect(Object.keys(config).sort()).toEqual(["ai", "introspection", "rag", "studio"]);
+    expect(Object.keys(config.introspection).sort()).toEqual(["outputDir", "provider", "providerConfig"]);
+  });
 });
+
+/**
+ * Evaluate a rendered `askdb.config.ts` with stubbed `defineConfig` / `env`,
+ * so tests can assert on the object the config actually produces.
+ */
+function evaluateRenderedConfig(source: string): unknown {
+  const body = source
+    .replace(/^import .*$/m, "")
+    .replace("export default defineConfig(", "return defineConfig(")
+    .replace(/\}\s*satisfies AskDbConfig\);\s*$/, "});");
+  return new Function("defineConfig", "env", body)(
+    (config: unknown) => config,
+    (name: string) => ({ env: name }),
+  );
+}
 
 // ---------------------------------------------------------------------------
 // buildInitInstallPlan

@@ -1,0 +1,5 @@
+{
+  "question": "List every agency's id and name, ordered by id.",
+  "reply": "```sql\nSELECT agency_id, name\nFROM org.agency\nORDER BY agency_id\n```",
+  "source": "authored"
+}

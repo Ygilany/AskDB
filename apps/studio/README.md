@@ -1,7 +1,6 @@
 # @askdb/studio
 
-Local React browser UI for editing AskDB Schema v2 enrichment, checking RAG
-retrieval, and generating sample NL-to-SQL output.
+Local React browser UI for editing AskDB Schema v2 enrichment, checking RAG retrieval, and generating sample NL-to-SQL output.
 
 ```sh
 askdb-studio --schema ./my-app.schema
@@ -9,9 +8,7 @@ askdb-studio --schema ./my-app.schema
 askdb studio --schema ./my-app.schema
 ```
 
-Studio serves a local web app at `http://127.0.0.1:5556` by default. The
-published package contains a Node local server plus a Vite-built React client.
-It can:
+Studio serves a local web app at `http://127.0.0.1:5556` by default. The published package contains a Node local server plus a Vite-built React client. It can:
 
 - browse all physical tables and columns in `schema.json`
 - edit table descriptions, aliases, primary entities, tags, common query language, example questions, and column metadata
@@ -23,10 +20,7 @@ It can:
 - draft tenant policy with AI assistance
 - test NL→SQL with tenant scope controls and SQL output modes (`sql-only` vs `sql-params`)
 
-Schema browsing, enrichment, and SQL generation do not require a database
-driver. The optional Playground execute path runs generated SQL against a live
-database. Studio supports Postgres, MySQL, SQLite, and SQL Server. Each dialect
-requires its own optional peer driver package — install only the one you need:
+Schema browsing, enrichment, and SQL generation do not require a database driver. The optional Playground execute path runs generated SQL against a live database. Studio supports Postgres, MySQL, SQLite, and SQL Server. Each dialect requires its own optional peer driver package — install only the one you need:
 
 | Dialect | Package |
 |---|---|
@@ -35,15 +29,9 @@ requires its own optional peer driver package — install only the one you need:
 | SQLite | `pnpm add better-sqlite3` |
 | SQL Server | `pnpm add mssql` |
 
-The execute provider is resolved from `studio.execute.provider` in
-`askdb.config.ts`, falling back to the active introspection provider, then
-defaulting to Postgres for backward compatibility. The Playground displays the
-configured provider, connection status, and driver readiness near the Execute
-button. When running locally, Studio can install the missing driver for you.
+The execute provider is resolved from `studio.execute.provider` in `askdb.config.ts`, falling back to the active introspection provider, then defaulting to Postgres for backward compatibility. The Playground displays the configured provider, connection status, and driver readiness near the Execute button. When running locally, Studio can install the missing driver for you.
 
-Studio uses `@askdb/enrich` for the shared non-UI Schema v2 authoring logic:
-workspace loading, editable drafts, markdown/frontmatter preservation, save
-helpers, and suggestion context.
+Studio uses `@askdb/enrich` for the shared non-UI Schema v2 authoring logic: workspace loading, editable drafts, markdown/frontmatter preservation, save helpers, and suggestion context.
 
 ## Development
 
@@ -53,11 +41,9 @@ pnpm --filter @askdb/studio test
 pnpm --filter @askdb/studio start -- --schema ../../fixtures/schemas/orders-users.schema
 ```
 
-The client source lives in `src/web/` and builds to `dist/client/`. The server
-source lives in `src/` and serves the compiled client assets from that directory.
+The client source lives in `src/web/` and builds to `dist/client/`. The server source lives in `src/` and serves the compiled client assets from that directory.
 
-The React client is styled with Tailwind CSS and shadcn-style primitives. The
-requested shadcn preset is recorded in `components.json`:
+The React client is styled with Tailwind CSS and shadcn-style primitives. The requested shadcn preset is recorded in `components.json`:
 
 ```sh
 pnpm dlx shadcn@latest init --preset b1D0eCA4
@@ -76,6 +62,6 @@ Environment variables:
 | `ASKDB_RAG_EMBEDDER_MODEL` | Embedding model override for Studio RAG. |
 | `ASKDB_RAG_EMBEDDER_DIMENSIONS` | Optional embedding dimension override. |
 
-Studio uses the active `rag.store` branch from `askdb.config.*`. For `pgvector`,
-make sure the configured table/extension already exist and `ASKDB_PGVECTOR_URL`
-resolves correctly.
+Security: every `/api/*` request must carry the per-launch session token that Studio injects into the page it serves (`x-askdb-studio-token` header), come with an allowed `Host` (`localhost`, `127.0.0.1`, `[::1]`, or the bound host), and, for writes, be same-origin JSON. Programmatic callers of `createStudioServer()` can read the token from `server.sessionToken`. Binding to a non-loopback host exposes query execution and schema writes to anyone on that network who can load the page. Only do that on a trusted network. See [Studio → Security model](https://askdb.tools/studio/#security-model).
+
+Studio uses the active `rag.store` branch from `askdb.config.*`. For `pgvector`, make sure the configured table/extension already exist and `ASKDB_PGVECTOR_URL` resolves correctly.
