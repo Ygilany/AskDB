@@ -473,7 +473,7 @@ export async function ask(options: AskPipelineOptions): Promise<AskPipelineResul
     result.tenantGuardrail = enforceTenantGuardrails(
       [result.sql, result.unboundSql],
       tenantPolicy,
-      options.tenantScope,
+      tenantScope,
       logger,
       generated.tenantGuardrail,
     );
