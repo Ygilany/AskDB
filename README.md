@@ -31,8 +31,7 @@ npx askdb@latest introspect --url "$DATABASE_URL" --out my-app.schema --schema-i
 npx askdb@latest ask --schema my-app.schema --question "Which tables look active?"
 ```
 
-Use `npx askdb@latest studio --schema my-app.schema` when you want the local
-browser UI for schema enrichment and sample NL-to-SQL checks.
+Use `npx askdb@latest studio --schema my-app.schema` when you want the local browser UI for schema enrichment and sample NL-to-SQL checks.
 
 AskDB uses a **schema artifact**: either a directory such as `my-app.schema/`, a bundled JSON file, or a direct `schema.json`. To create that artifact from a real database, use introspection:
 
