@@ -37,7 +37,7 @@ function cliHelp(...command: string[]): string {
  * introspect the fixture's MySQL with its four databases listed and look for a table from
  * one other than the connection's (`org`). A run that fails is a broken install, and
  * throws. The probe is the documented behavior itself (`--schemas`, reference/cli.mdx;
- * `introspection.providerConfig.mysql.databases`, guides/switch-engines.mdx), so it can't
+ * `introspection.schemas`, guides/switch-engines.mdx), so it can't
  * drift from what the lab's scenarios use.
  */
 function mysqlReadsListedDatabases(): boolean {
@@ -58,7 +58,7 @@ const DETECTORS = {
   "cli-introspect-engine": () => /--engine\b/.test(cliHelp("introspect")),
   /**
    * Introspecting several MySQL/MariaDB databases at once through `--schemas` (and
-   * `introspection.providerConfig.mysql.databases`). Before it, the connector read only
+   * `introspection.schemas`). Before it, the connector read only
    * the connection's database.
    */
   "mysql-databases": mysqlReadsListedDatabases,
