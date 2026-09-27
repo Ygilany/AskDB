@@ -26,8 +26,9 @@ import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { loadSchema } from "@askdb/core";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, type TestContext } from "vitest";
 import { requireInstallTarget } from "../src/artifacts.js";
+import { needsCapability } from "../src/capabilities.js";
 import { DIALECTS, compareToLogicalSchema, loadLogicalSchema, type SchemaJson } from "../src/fixture.js";
 import { askdb, introspectFixture, type CliRun } from "../src/introspect.js";
 
@@ -51,13 +52,21 @@ for (const dialect of DIALECTS) {
       if (workDir) rmSync(workDir, { recursive: true, force: true });
     });
 
-    it("introspect-golden: askdb introspect matches schema.logical.json", () => {
+    // MySQL and MariaDB keep each logical schema in its own database, which needs
+    // multi-database introspection; older targets read only the connection's database.
+    const needsDatabases = (ctx: TestContext) => {
+      if (dialect === "mysql" || dialect === "mariadb") needsCapability(ctx, "mysql-databases");
+    };
+
+    it("introspect-golden: askdb introspect matches schema.logical.json", (ctx) => {
+      needsDatabases(ctx);
       expect(run.status, run.stderr).toBe(0);
       const schemaJson = JSON.parse(readFileSync(join(artifact, "schema.json"), "utf8")) as SchemaJson;
       expect(compareToLogicalSchema(schemaJson, { expectNamespaces: dialect !== "sqlite" })).toEqual([]);
     });
 
-    it("introspect-loads: loadSchema reads every table, with no warnings", () => {
+    it("introspect-loads: loadSchema reads every table, with no warnings", (ctx) => {
+      needsDatabases(ctx);
       const schema = loadSchema(artifact);
       expect(schema.warnings).toEqual([]);
       expect(schema.schemaId).toBe("multi-engine");

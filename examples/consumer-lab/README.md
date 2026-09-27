@@ -1,6 +1,6 @@
 # AskDB consumer lab
 
-A black-box test bed for AskDB. The lab installs AskDB the way an outside project would: from tarballs packed from a checkout, or later from npm (#244). It drives AskDB only through documented surfaces, and it acts as the host, executing the returned SQL on the shared [multi-engine fixture](../../fixtures/multi-engine/README.md).
+A black-box test bed for AskDB. The lab installs AskDB the way an outside project would: from tarballs packed from a checkout or a git ref, or from npm. It drives AskDB only through documented surfaces, and it acts as the host, executing the returned SQL on the shared [multi-engine fixture](../../fixtures/multi-engine/README.md).
 
 - Design: [`docs/specs/consumer-lab.md`](../../docs/specs/consumer-lab.md).
 - Work tracked in: #241.
@@ -12,16 +12,20 @@ This directory is **not** a member of the AskDB pnpm workspace. It is its own pn
 From the repo root:
 
 ```bash
-pnpm lab:up                    # start and seed the fixture; install the lab if it never was
-pnpm lab:use .                 # pack this checkout's publishable packages and install them
-pnpm lab:use ../other-checkout # …or another checkout's
+pnpm lab:up                          # start and seed the fixture; install `.` unless a verified install exists
+pnpm lab:use .                       # pack this checkout's publishable packages and install them
+pnpm lab:use ../other-checkout       # …or another checkout's
+pnpm lab:use git:origin/main         # …or a branch, tag or commit's (built in a temporary worktree)
+pnpm lab:use npm:latest              # published packages under a dist-tag (npm:beta, …)
+pnpm lab:use npm:askdb@1.0.0-beta.40 # a published CLI release and the @askdb/* versions it depends on
+pnpm lab:use --check                 # re-verify the current install against its target
 pnpm lab ask --db mysql "How many active programs does each agency run?"
 pnpm lab ask --db sqlserver --via client "Which three agencies have the highest paid order total?"
 pnpm lab ask --db postgres --sql "SELECT agency_id, name FROM org.agency"
-pnpm lab:test                  # the lab's own suite (needs the fixture and an installed lab)
-pnpm lab:matrix                # lab:up, then the suite as a scenario × dialect table
-pnpm lab:matrix -t introspect-golden  # vitest flags pass through: one scenario (-t), one dialect (-t '\[mysql\]'), one file
-pnpm lab:use --restore         # put the committed baseline back
+pnpm lab:test                        # the lab's own suite (needs the fixture and an installed lab)
+pnpm lab:matrix                      # lab:up, then the suite as a scenario × dialect table
+pnpm lab:matrix -t introspect-golden # vitest flags pass through: one scenario (-t), one dialect (-t '\[mysql\]'), one file
+pnpm lab:use --restore               # put the committed baseline (npm:latest) back
 ```
 
 `--db` is any fixture engine: `postgres`, `mysql`, `mariadb`, `sqlserver` or `sqlite`.
@@ -102,15 +106,46 @@ Below the test rows, the `unique-constraints *` and `view-marker *` rows are **a
 
 `test/introspection.test.ts` introspects every fixture database with the installed `askdb introspect`, as the docs site describes for each engine: `--engine`, `--url` (the read-only role) and `--schemas org,people,billing,ref` for Postgres, SQL Server, MySQL and MariaDB (`--engine mysql`), and `introspection.providerConfig.sqlite.file` in an `askdb.config.ts` for SQLite. That config is written to a fresh directory under `.lab/projects/` for each run (concurrent runs never share one), so its `@askdb/config` import resolves from the lab's `node_modules`. Each artifact is compared with the fixture's golden schema, loaded with `loadSchema`, and bundled with `askdb bundle`. The drivers the CLI needs (`pg`, `mysql2`, `mssql`, `better-sqlite3`) are the lab's own dependencies, as the CLI reference asks of a consumer project.
 
+## Install targets
+
+| Target | What gets installed |
+|---|---|
+| `.` or `<path>` | Tarballs packed from that checkout with `scripts/pack-tarballs.sh`, the same step `pnpm smoke:install` uses, into `.lab/tarballs/`. |
+| `git:<ref>` | Tarballs packed from `<ref>`. `lab:use` adds a temporary detached `git worktree` in the system temp directory, runs `pnpm install --frozen-lockfile` there, packs it with **this** checkout's pack script (`--root`, so refs older than the script pack too), then removes the worktree. Fetch remote refs first. |
+| `npm:<dist-tag>` | Each direct AskDB dependency at that dist-tag, and every `@askdb/*` package reachable from them through dependencies and peer dependencies, each at its own version under the tag. A package without the tag keeps the version its dependent asks for. |
+| `npm:askdb@<version>` | That CLI release, and the exact `@askdb/*` versions it depends on (read from the published manifests with `npm view`, recursively). Package versions aren't in lockstep, so the CLI release decides. A direct dependency that isn't in its tree is left out, with a message. |
+
+`registry` (a local verdaccio) arrives in #257.
+
 ## How `lab:use` pins the target
 
-1. It packs every publishable package with `scripts/pack-tarballs.sh`, the same step `pnpm smoke:install` uses, into `.lab/tarballs/`.
-2. It points the lab's direct AskDB dependencies (`@askdb/core`, `@askdb/client`, `@askdb/ai-openai`, `@askdb/config`, `askdb`) at those tarballs.
-3. It writes a pnpm `overrides` block into `pnpm-workspace.yaml` covering **every** packed package. Without it, a transitive `@askdb/*` dependency would resolve from npm under the same version number, so the lab would quietly test the published code instead of the checkout.
-4. It installs, then reads the lockfile and prints where each `@askdb/*` package resolved from. It fails if any resolved from anywhere but the target's tarballs.
+1. It works out the target's packages and versions (packing tarballs, or reading the published manifests).
+2. It points the lab's direct AskDB dependencies (`DIRECT` in `src/use.mjs`) at the target: `file:` tarball paths, or exact published versions.
+3. It writes a pnpm `overrides` block into `pnpm-workspace.yaml` covering **every** target package, headed by a `# lab:use target:` comment. Without it, a transitive `@askdb/*` dependency would resolve from npm under the same version number, so the lab would quietly test the published code instead of the checkout, or another release than the one asked for.
+4. It installs, then reads the lockfile and prints each `@askdb/*` package's version and source. It fails if any package isn't from the target's source (tarball, or registry), isn't at the target's version, or wasn't pinned by the target at all. `pnpm lab:use --check` repeats this check on the current install.
 
-`lab:use` rewrites `package.json`, `pnpm-workspace.yaml` and `pnpm-lock.yaml`. **Don't commit them in that state.** The committed versions are the baseline, and `pnpm lab:use --restore` brings them back.
+`lab:use` rewrites `package.json`, `pnpm-workspace.yaml` and `pnpm-lock.yaml`. The committed versions are the **`npm:latest` baseline** (decision 2 in the spec): `latest` is what `npm install askdb` resolves, so it's what users run. `pnpm lab:use --restore` brings them back: it reinstalls the committed lockfile as-is and verifies it against the pins in the committed overrides block.
+
+- **Don't commit the three files after `.`, a path or `git:`**: they hold `file:` tarball paths. Don't commit them after another npm target either.
+- **To refresh the baseline** after a release ships, run `pnpm lab:use npm:latest` and commit the three files.
+- `npm:beta` still works as a target, but the `beta` dist-tags are stale (#267): its CLI can't read the lab's `askdb.config.ts`, so `pnpm lab:test` fails against it.
+- The lab's typecheck (`pnpm -C examples/consumer-lab lint`) is against the installed target too, so run it after `pnpm lab:use .`.
+
+The lab sets no `minimumReleaseAge`, and it doesn't inherit the monorepo's (it is its own pnpm root). pnpm 11.22 applies no release-age delay without that setting (checked by installing a package published six hours earlier into a standalone pnpm root), so a just-published release installs straight away. If a later pnpm adds a default, add `minimumReleaseAgeExclude: ["askdb", "@askdb/*"]` to the lab's `pnpm-workspace.yaml`.
 
 The baseline pins the lab's third-party dependencies exactly: the drivers (`pg`, `mysql2`, `mssql`, `better-sqlite3`), and `ai`, `@ai-sdk/openai` and `zod` at the versions the workspace uses. The AskDB adapters declare `ai` as a peer, so the host pins it.
 
 `askdb` depends on `@askdb/prisma`, whose `@prisma/engines` has a postinstall script that pnpm 11 won't run until it's approved. The lab approves it in `pnpm-workspace.yaml`, as a pnpm user would have to (#259). It approves the `better-sqlite3` build the same way.
+
+## Capabilities: testing older targets
+
+A scenario may need a documented capability that an older target lacks. It declares that by calling `needsCapability(ctx, "<capability>")` from `src/capabilities.ts` first. When the installed target lacks the capability, the test is skipped with the note `capability: <capability>`, which the suite's verbose reporter prints and `lab:matrix` shows as `n/a (capability: <capability>)`.
+
+Capabilities are detected from the installed target's public surface: an export, a config field its published types declare, or documented `--help` output. They are never detected from version strings. Only a surface that works but lacks the capability counts as absent. A missing `askdb` bin, a crash, or a non-zero exit from `--help` is a broken install, and the test fails. When the target is this checkout (`lab:use .`), a missing capability fails the test instead: the lab is written against this checkout's docs, so there it's a regression.
+
+| Capability | Detected by | Used by |
+|---|---|---|
+| `cli-introspect-engine` | `askdb introspect --help` documents `--engine` (`reference/cli.mdx`), when run with the lab's config | every scenario that builds a schema artifact (`test/lab-ask.test.ts`) |
+| `mysql-databases` | the installed `@askdb/config` types declare `introspection.providerConfig.mysql.databases` (`guides/switch-engines.mdx`) | MySQL and MariaDB `introspect-golden` / `introspect-loads` (`test/introspection.test.ts`) |
+
+To add one, add a detector to `DETECTORS` in `src/capabilities.ts`, citing the docs page that documents the capability.

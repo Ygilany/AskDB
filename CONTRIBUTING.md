@@ -51,11 +51,13 @@ It uses ports 15432, 13306, 13307 and 11433, so it runs alongside the fixtures a
 
 ### Consumer lab
 
-[`examples/consumer-lab`](examples/consumer-lab/README.md) tests AskDB as a black box. It installs packed tarballs into an app outside the workspace (its own pnpm root and lockfile), then executes the SQL AskDB returns on the fixture above. Design: [`docs/specs/consumer-lab.md`](docs/specs/consumer-lab.md); remaining work: #241.
+[`examples/consumer-lab`](examples/consumer-lab/README.md) tests AskDB as a black box. It installs AskDB into an app outside the workspace (its own pnpm root and lockfile), from packed tarballs or from npm, then executes the SQL AskDB returns on the fixture above. Design: [`docs/specs/consumer-lab.md`](docs/specs/consumer-lab.md); remaining work: #241.
 
 ```bash
 pnpm lab:up                                       # fixture up + install the lab (first time)
 pnpm lab:use .                                    # repack this checkout and reinstall
+pnpm lab:use git:origin/main                      # …or pack a branch, tag or commit
+pnpm lab:use npm:askdb@1.0.0-beta.40              # …or a published release (or npm:<dist-tag>)
 pnpm lab ask --db mysql "How many active programs does each agency run?"   # replay model, no API key
 pnpm lab ask --db sqlite --via client "…"          # same question through createAskDb + @askdb/ai-openai
 pnpm lab ask --db postgres --sql "SELECT 1"       # skip the model: SQL, validation outcome, rows
@@ -68,7 +70,7 @@ pnpm lab:use --restore                            # before committing: restore t
 
 Lab test names start with `[<dialect>] <scenario-id>`, which is how `lab:matrix` places each result; the cell values and how to mark a known bug are in the [lab README](examples/consumer-lab/README.md#the-matrix).
 
-`lab:use` rewrites the lab's `package.json`, `pnpm-workspace.yaml` and `pnpm-lock.yaml` to point at `.lab/tarballs/`; don't commit them in that state. Unlike the package suites above, lab tests don't use `integrationSuite()`: the lab exists to run against real databases, so a missing fixture or install fails the suite instead of skipping it.
+`lab:use` rewrites the lab's `package.json`, `pnpm-workspace.yaml` and `pnpm-lock.yaml`. The committed versions are the `npm:latest` baseline, so don't commit them after any other target (a tarball install writes `file:` paths into them). To refresh the baseline after a release ships, run `pnpm lab:use npm:latest` and commit those three files. Unlike the package suites above, lab tests don't use `integrationSuite()`: the lab exists to run against real databases, so a missing fixture or install fails the suite instead of skipping it. The one exception is an older target that lacks a documented capability a scenario needs: that scenario reports `n/a (capability: …)` (see the lab README).
 
 ### Repo-root `askdb.config.ts` and your IDE
 

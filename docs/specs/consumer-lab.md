@@ -99,6 +99,7 @@ examples/consumer-lab/
   cassettes/<dialect>/<question-id>.json   # recorded model replies
   src/
     use.mjs                 # install-mode switcher (no dependencies; runs before install)
+    capabilities.ts         # documented capabilities a scenario can require; n/a on targets without them
     host/execute.ts         # read-only execution per dialect, following run-safely-in-prod.mdx
     oracle.ts               # expected answers computed in JS from fixtures/multi-engine/dataset/data/*.json
     model/replay-server.ts  # OpenAI-compatible replay/record server (see Model)
@@ -137,21 +138,21 @@ Deep imports are impossible because of the packages' `exports` maps. Code review
 
 One command switches the mode: `pnpm lab:use <target>`. It writes the `@askdb/*` specs into the app's `package.json`, writes a matching `overrides` block into the app's `pnpm-workspace.yaml` (pnpm 11 reads overrides there), runs `pnpm install` in the app, and prints a resolved-version table built from the lockfile.
 
-**Why overrides:** without them, a tarball of `@askdb/client` depends on `@askdb/core@<version>`, and that transitive dependency resolves from the npm registry instead of from the checkout under test. The checkout usually carries the **same version number** as the last release, so a version check can't tell them apart. After every switch, `lab:use` checks each `@askdb/*` package's resolution *source* in the lockfile and fails if any isn't a target tarball. (Verified in #242: with the overrides removed, all 19 transitive packages resolved from npm.) `pnpm lab:use --restore` puts the committed manifests back.
+**Why overrides:** without them, a tarball of `@askdb/client` depends on `@askdb/core@<version>`, and that transitive dependency resolves from the npm registry instead of from the checkout under test. The checkout usually carries the **same version number** as the last release, so a version check can't tell them apart. After every switch, `lab:use` checks each `@askdb/*` package's resolution *source* in the lockfile and fails if any isn't a target tarball. (Verified in #242: with the overrides removed, all 19 transitive packages resolved from npm.) For an npm target the check is the mirror image: every `@askdb/*` package must come from the registry at exactly the version the target pinned, so a leftover `file:` tarball or a transitive package at another release fails. A package the target didn't pin fails in either case. `pnpm lab:use --check` repeats the check on the current install. `pnpm lab:use --restore` puts the committed manifests back, reinstalls the committed lockfile frozen, and verifies it against the pins in the committed overrides block.
 
 | Target | Meaning |
 |---|---|
 | `.` or `<path>` | **(a) Tarballs from a checkout.** Build that checkout and pack every publishable package into `.lab/tarballs/`. |
-| `git:<ref>` | **(a) Tarballs from a branch or commit.** Create a temporary `git worktree` at `<ref>`, install, build and pack there, then remove the worktree. |
-| `npm:<dist-tag>` | **(b) Published dist-tag.** For example `npm:beta` or `npm:latest`. Every `@askdb/*` package is set to that tag. |
-| `npm:askdb@<version>` | **(b) Published version.** Package versions are not in lockstep (`@askdb/core` is at 1.0.0-beta.42 while `@askdb/mysql` is at 0.1.0-beta.17). So "a version" means a CLI release, and the matching version of every other package comes from that release's published dependency tree (`npm view`). |
+| `git:<ref>` | **(a) Tarballs from a branch or commit.** Create a temporary detached `git worktree` at `<ref>` in the system temp directory, `pnpm install --frozen-lockfile`, then build and pack there with this checkout's `scripts/pack-tarballs.sh --root` (so refs older than the script pack too), then remove the worktree. |
+| `npm:<dist-tag>` | **(b) Published dist-tag.** For example `npm:latest` (the committed baseline) or `npm:beta` (stale, #267). Every `@askdb/*` package is set to that tag: the lab's direct dependencies, and every `@askdb/*` package reachable from them through dependencies and peer dependencies, each at its own exact version under the tag. A package without the tag keeps the version its dependent asks for. |
+| `npm:askdb@<version>` | **(b) Published version.** Package versions are not in lockstep (`@askdb/core` is at 1.0.0-beta.42 while `@askdb/mysql` is at 0.1.0-beta.17). So "a version" means a CLI release, and the matching version of every other package comes from that release's published dependency tree (`npm view`, recursively; `askdb` pins its `@askdb/*` dependencies exactly). A direct dependency that isn't in the tree is left out of the install. |
 | `registry` | **(c) Local verdaccio registry.** Start the `registry` profile, `pnpm publish` the packed tarballs to it, and install from it with `--registry`. This also exercises publish-time rewriting such as `workspace:` → versions and `publishConfig`. |
 
 **Reuse.** The packing step moves out of `examples/installable-smoke/run.sh` into `scripts/pack-tarballs.sh`, which both the smoke test and the lab call. The smoke test's hardcoded package list becomes discovery of every non-private `packages/*` and `apps/*` package. That fixes the smoke test's current gap, where `@askdb/http-api` is packed but never assigned or installed. The smoke test's tarball-content assertions stay as they are.
 
-**Lockfile policy** (decision 2): commit `package.json` and `pnpm-lock.yaml` in the `npm:beta` state, which is the published baseline. `lab:use` changes them locally. CI always runs `lab:use .` and does not use a frozen lockfile, because tarball integrity hashes change on every pack. Third-party dependencies are pinned exactly in `package.json`, so they don't drift between modes.
+**Lockfile policy** (decision 2): commit `package.json`, `pnpm-workspace.yaml` (its overrides block) and `pnpm-lock.yaml` in the `npm:latest` state, which is the published baseline. `lab:use` changes them locally. The overrides block starts with a `# lab:use target:` comment, which is how `--restore` knows what the baseline is. To refresh it, run `pnpm lab:use npm:latest` and commit the three files. CI always runs `lab:use .` and does not use a frozen lockfile, because tarball integrity hashes change on every pack. Third-party dependencies are pinned exactly in `package.json`, so they don't drift between modes. The lab sets no `minimumReleaseAge` and, as its own pnpm root, doesn't inherit the monorepo's; pnpm 11 has no default delay, so a just-published release installs at once. `npm:beta` remains a valid target, but as of 2026-09-26 every `beta` dist-tag is stale, at the May 2026 `0.5.0-beta` release, and prereleases since then went to `latest` (#267).
 
-**Older versions.** A scenario may name the documented capability it needs, for example `parameterize`. When an older target lacks it, the matrix prints `n/a (capability)` for that scenario instead of failing. Capabilities are detected through public exports or documented CLI `--help` output, not version strings.
+**Older versions.** A scenario may name the documented capability it needs, for example `parameterize`. It calls `needsCapability(ctx, "<capability>")` from `src/capabilities.ts`. When the target lacks it, the test is skipped with the note `n/a (capability: <capability>)`, which the matrix shows instead of a failure. Capabilities are detected through public exports or documented CLI `--help` output, not version strings. The first one is `cli-introspect-engine` (`askdb introspect --help` lists `--engine`), which every artifact-building scenario needs. Only a working surface that lacks the capability counts as absent: a missing bin, a crash or a non-zero `--help` exit fails the scenario, so a broken install never reads as `n/a`. When the target is this checkout (`lab:use .`), a missing capability fails instead, because the scenarios are written against this checkout's docs.
 
 ### `pnpm lab ask`
 
@@ -328,7 +329,7 @@ Add a new `consumer-lab` job to `.github/workflows/ci.yml`. It needs `build`, ha
 
 Recommended additions (decision 4):
 
-- A **nightly** scheduled run with `lab:use npm:beta`. It catches publish-only drift: files missing from tarballs, or a bad `workspace:` rewrite.
+- A **nightly** scheduled run with `lab:use npm:latest`. It catches publish-only drift: files missing from tarballs, or a bad `workspace:` rewrite.
 - A **path filter**, so pull requests that only touch `apps/docs-site` skip the lab.
 
 ## Test-audit compliance
@@ -352,7 +353,7 @@ Seams the lab itself uses: the replay server and prompt capture are lab code. `d
 |---|---|---|---|
 | 1 | Shared multi-engine fixture (replaces Pagila) | `fixtures/multi-engine`, a private workspace package with the dataset (org hierarchy, partitioned Postgres table), DDL for five engines, compose, idempotent seeder, normalization and golden-schema comparator; `test/dataset.integration.test.ts`; live-introspection tests in `@askdb/postgres` (replacing the Pagila suite), `@askdb/sqlserver` and `@askdb/sqlite` against the golden schema; CI and turbo move from `PAGILA_DATABASE_URL` to `ASKDB_FIXTURE_HOST`; `fixtures/pagila` removed. | `pnpm fixture:reset` and the gated suites are green locally and in CI. |
 | 1b | MySQL multi-database introspection (product change) | `@askdb/mysql` introspects the databases the user lists (`introspection.schemas` in config, or the documented `--schemas` flag), not only `DATABASE()`; the `@askdb/mysql` fixture test for MySQL and MariaDB against the golden schema; docs and a changeset. | The MySQL and MariaDB introspection tests are green; the test was shown failing before the change. |
-| 2–6 | Tracked as issues | The rest of the lab is split into 16 tracer-bullet tickets under **#241**, each with its blocking edges: Phase 2 #242–#244 (tracer bullet, replay model, install modes), Phase 3 #245–#247 (introspection + `lab:matrix`, question → SQL → execute, record/live), Phase 4 #248–#250 (safety, tenant, sensitive), Phase 5 #251–#253 (CLI, HTTP API, Studio), Phase 6 #254–#257 (CI job, nightly `npm:beta`, `consumer-lab` skill, verdaccio). | Each ticket's acceptance criteria. |
+| 2–6 | Tracked as issues | The rest of the lab is split into 16 tracer-bullet tickets under **#241**, each with its blocking edges: Phase 2 #242–#244 (tracer bullet, replay model, install modes), Phase 3 #245–#247 (introspection + `lab:matrix`, question → SQL → execute, record/live), Phase 4 #248–#250 (safety, tenant, sensitive), Phase 5 #251–#253 (CLI, HTTP API, Studio), Phase 6 #254–#257 (CI job, nightly `npm:latest`, `consumer-lab` skill, verdaccio). | Each ticket's acceptance criteria. |
 
 Every phase runs `pnpm smoke:install` and `pnpm preflight` before its PR. Apart from 1b, no phase changes a publishable package, so they need no changeset. Product bugs the lab finds go into their own PRs with changesets, after the failing lab test has landed.
 
@@ -381,9 +382,9 @@ Found while building Phase 1 (confirmed against the code):
 ## Decisions (2026-09-26)
 
 1. **Location:** `examples/consumer-lab/`, excluded from the workspace with `!examples/consumer-lab`.
-2. **Lockfile:** the app's `package.json` and `pnpm-lock.yaml` are committed in the `npm:beta` baseline state.
+2. **Lockfile:** the app's `package.json` and `pnpm-lock.yaml` are committed in the `npm:latest` baseline state. (Changed from `npm:beta` on 2026-09-26: `latest` is what `npm install askdb` resolves, and the `beta` tags are stale; see #267.)
 3. **MySQL:** `mysql:8.4` LTS.
-4. **CI:** the lab runs on every PR (docs-only PRs are skipped by a path filter), plus a nightly run against `npm:beta`. A repo skill, `.agents/skills/consumer-lab/`, drives target selection: it works out the right `lab:use` target (a tarball from the checkout, a `git:` ref, a published version or dist-tag), refreshes the committed baseline when a new beta ships, and runs and reads the matrix.
+4. **CI:** the lab runs on every PR (docs-only PRs are skipped by a path filter), plus a nightly run against `npm:latest` (#267). A repo skill, `.agents/skills/consumer-lab/`, drives target selection: it works out the right `lab:use` target (a tarball from the checkout, a `git:` ref, a published version or dist-tag), refreshes the committed baseline when a new release ships, and runs and reads the matrix.
 5. **Cassettes:** the first pass uses authored SQL only. Recording with a live key is optional and is done by the maintainer.
 6. **Docs:** the lab is documented in `CONTRIBUTING.md` only; there is no docs-site page.
 7. **MySQL multi-database introspection** is a product change, in its own PR with a changeset (Phase 1b). The user lists the databases to introspect in config (`introspection.schemas`, the config equivalent of `--schemas` on every engine), and the documented `--schemas` flag works too. The connector queries `information_schema` with `TABLE_SCHEMA IN (…)` instead of `= DATABASE()`, and each database becomes a namespace. With no list, today's behavior is unchanged.

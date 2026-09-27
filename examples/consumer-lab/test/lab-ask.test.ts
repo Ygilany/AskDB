@@ -14,12 +14,18 @@
  * runs packed AskDB against a real engine.
  * No production seam: `deps.generateText` is documented in the core API reference.
  *
+ * Needs the `cli-introspect-engine` capability: a target whose `askdb introspect --help`
+ * doesn't list `--engine` reports `n/a (capability: cli-introspect-engine)` instead of
+ * failing. A CLI that can't print help at all (missing, crashing, or unable to read the
+ * lab's config, as the stale `npm:beta` does, #267) fails.
+ *
  * Needs the fixture (`pnpm fixture:up`) and an installed lab (`pnpm lab:use .`). It
  * fails, rather than skips, when either is missing.
  */
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
+import { needsCapability } from "../src/capabilities.js";
 import { SUPPORTED_DIALECTS, type SupportedDialect } from "../src/dialects.js";
 
 const LAB = fileURLToPath(new URL("..", import.meta.url));
@@ -38,7 +44,8 @@ function labAsk(dialect: SupportedDialect, sql: string) {
 }
 
 describe.each(SUPPORTED_DIALECTS.map((d) => [d] as [SupportedDialect]))("[%s] lab-ask --sql", (dialect) => {
-  it("prints the SQL, `validation: ok` and the rows the read-only role reads", () => {
+  it("prints the SQL, `validation: ok` and the rows the read-only role reads", (ctx) => {
+    needsCapability(ctx, "cli-introspect-engine");
     const sql = `SELECT agency_id, name FROM ${agencyTable(dialect)} ORDER BY agency_id`;
     const { status, out } = labAsk(dialect, sql);
 
@@ -49,7 +56,8 @@ describe.each(SUPPORTED_DIALECTS.map((d) => [d] as [SupportedDialect]))("[%s] la
     expect(status).toBe(0);
   });
 
-  it("reports a rejected statement's error class and rule code, and prints no rows", () => {
+  it("reports a rejected statement's error class and rule code, and prints no rows", (ctx) => {
+    needsCapability(ctx, "cli-introspect-engine");
     const { status, out } = labAsk(dialect, `DELETE FROM ${agencyTable(dialect)}`);
 
     expect(out).toMatch(/validation: rejected/);
