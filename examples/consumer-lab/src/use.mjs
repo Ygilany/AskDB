@@ -10,7 +10,7 @@
  *   pnpm lab:use npm:askdb@<version>  a published CLI release and the exact @askdb/* versions it depends on
  *   pnpm lab:use --if-needed .        skip when the recorded target is installed and verifies (used by lab:up)
  *   pnpm lab:use --check              re-verify the current install against its recorded target
- *   pnpm lab:use --restore            put the committed baseline (npm:latest) back
+ *   pnpm lab:use --restore            put the committed baseline (npm:latest) back, reinstalled from scratch
  *
  * Every @askdb/* package, including transitive dependencies of the lab's direct ones,
  * is pinned to the target through pnpm overrides, then verified from the lockfile: the
@@ -50,16 +50,25 @@ function run(cmd, args, opts = {}) {
   return execFileSync(cmd, args, { stdio: "inherit", ...opts });
 }
 
+/**
+ * Put the committed baseline back from any state, a half-finished `lab:use` included: the
+ * managed manifests as committed, `.lab/` gone (tarballs, target, cached schema artifacts,
+ * scratch projects), and a fresh install. Nothing else in the lab is touched.
+ */
 function restore() {
   run("git", ["-C", LAB, "checkout", "--", ...MANAGED]);
   rmSync(STATE, { recursive: true, force: true });
+  // An interrupted install leaves node_modules partial, and pnpm calls a partial tree whose
+  // lockfile matches "Already up to date"; verify() reads only the lockfile. Start clean.
+  rmSync(join(LAB, "node_modules"), { recursive: true, force: true });
   const { label, pins } = readOverridesBlock();
   // The committed lockfile resolves from the registry, so it installs as committed.
   run("pnpm", ["install", "--frozen-lockfile"], { cwd: LAB });
   const target = { label: `committed baseline (${label})`, source: "registry", packages: pins };
   verify(target);
   recordTarget(target);
-  console.log("lab:use: restored the committed baseline.");
+  console.log(`lab:use: restored the committed baseline (${label}): published packages, not this checkout.`);
+  console.log("         `pnpm lab:use .` installs this checkout.");
 }
 
 /** Pack a checkout with this repo's pack script (older checkouts may not have one). */

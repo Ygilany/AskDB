@@ -23,6 +23,8 @@
     "lab": "pnpm -C examples/consumer-lab --silent run lab",
     "lab:use": "node examples/consumer-lab/src/use.mjs",
     "lab:up": "pnpm fixture:up && node examples/consumer-lab/src/use.mjs --if-needed .",
+    "lab:down": "pnpm fixture:down",
+    "lab:reset": "pnpm fixture:reset && node examples/consumer-lab/src/use.mjs --restore",
     "lab:test": "pnpm -C examples/consumer-lab test",
     "lab:matrix": "pnpm lab:up && pnpm -C examples/consumer-lab --silent run matrix",
     "pgvector:up": "docker compose -f fixtures/pgvector/docker-compose.yml up -d",
