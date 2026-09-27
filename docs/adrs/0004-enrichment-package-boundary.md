@@ -4,11 +4,7 @@
 
 Accepted.
 
-> **Amendment (2026-07):** `@askdb/tui` has since been retired in favor of
-> Studio; `askdb enrich` opens Studio and `askdb bundle` calls `@askdb/enrich`
-> directly. The boundary this ADR established is unchanged — `@askdb/enrich`
-> remains the shared headless authoring layer consumed by `@askdb/studio` and
-> custom surfaces. TUI references below are preserved as historical context.
+> **Amendment (2026-07):** `@askdb/tui` has since been retired in favor of Studio; `askdb enrich` opens Studio and `askdb bundle` calls `@askdb/enrich` directly. The boundary this ADR established is unchanged — `@askdb/enrich` remains the shared headless authoring layer consumed by `@askdb/studio` and custom surfaces. TUI references below are preserved as historical context.
 
 ## Context
 

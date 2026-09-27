@@ -57,8 +57,7 @@ Your `.env` can use friendly names (`MY_OPENAI_API_KEY`, …). `defineConfig` ru
 
 ## Architectural rule — `@askdb/config` is the sole `process.env` reader
 
-**Only `@askdb/config` reads `process.env` directly.** All AskDB library packages obtain their
-configuration through a single typed gateway:
+**Only `@askdb/config` reads `process.env` directly.** All AskDB library packages obtain their configuration through a single typed gateway:
 
 ```ts
 import { getAskDbRuntimeConfig } from "@askdb/config";
