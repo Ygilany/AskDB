@@ -24,7 +24,7 @@ Studio also works as the *first* command in a brand-new project. Run `npx askdb 
 2. **Add your secrets to `.env` yourself.** The wizard shows exactly which variables to fill in; the values stay on your disk.
 3. **Run introspection from the browser.** Studio reads your schema structure server-side (tables and columns — never rows) and opens the Overview when it's done.
 
-Setup actions (writing the config, running introspection) only work from loopback clients — a Studio exposed on a non-localhost host serves the UI but refuses those writes. Prefer the terminal? `npx askdb init` is the same wizard as a CLI prompt.
+Setup actions (writing the config, running introspection) only work from loopback clients. If you bind Studio to a non-localhost host, it refuses setup requests from other machines. It still accepts their table, concept, and tenant-policy edits and query execution (see [Security model](#security-model)). Prefer the terminal? `npx askdb init` is the same wizard as a CLI prompt.
 
 ## The loop
 
@@ -125,6 +125,16 @@ The Tenancy view is where you declare tenant isolation for multi-tenant schemas.
 ## Studio and your data
 
 Studio binds to `127.0.0.1` by default — it is not reachable from outside your machine without an explicit host override. The model only ever sees schema text (table names, column names, descriptions, concepts): it never reads your actual rows. AI features — enrichment suggestions, tenant policy drafts, NL→SQL generation — are optional and only active when a model API key is configured in your environment.
+
+## Security model
+
+Studio is a local developer tool, not a hosted service. Its API can run SQL against your configured database and write your schema files. Studio protects that API from other websites open in your browser:
+
+- **Per-launch session token.** Each Studio launch generates a random token and injects it into the page it serves. The browser app sends it back as an `x-askdb-studio-token` header on every `/api/*` call; requests without the right token get `403`. Other websites can't read Studio's page, so they can't get the token. Restarting Studio issues a new token, so reload any open Studio tabs after a restart.
+- **Host check.** Studio accepts only a `Host` header of `localhost`, `127.0.0.1`, `[::1]`, or the host you bound with `--host`, and only on its own port. If you bound to `0.0.0.0`, it also accepts this machine's own IP addresses. This check applies to every request, including the page itself, and blocks DNS-rebinding attacks.
+- **Origin and content-type checks.** Studio rejects state-changing API requests whose `Origin` header points at another site, and API requests whose body isn't `Content-Type: application/json`. So a web page can't reach Studio with a simple cross-site form post or `no-cors` fetch.
+
+Binding to a non-loopback host (`--host 0.0.0.0` or a LAN address) prints a warning at startup. Anyone who can load Studio from that address gets the session token from the page, so on that network they can edit your schema and execute queries. Setup, **Resync schema**, and the driver **Install** button still only work from loopback clients. Keep the default `127.0.0.1` unless you're on a network you trust. Studio also expects to be reached directly: a reverse proxy that rewrites the `Host` header gets `403`.
 
 ## Read next
 

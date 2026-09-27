@@ -27,11 +27,7 @@ AskDB doesn't execute queries — but it does rewrite generated SQL to guarantee
 
 The recommended path is Studio's **Tenancy** view, which guides you through declaring tenant roots, scoped tables, and global tables in a form. Studio can also AI-draft a policy from a plain-language description of your tenancy model, for your review.
 
-You can also write `tenant-policy.md` by hand. The front-matter is YAML,
-validated strictly when the schema artifact loads — unknown keys are
-rejected, and every table or column reference uses the **stable IDs** from
-`schema.json` (`table:public.projects`, `table:public.projects#organization_id`),
-never bare names. Example for a simple SaaS schema:
+You can also write `tenant-policy.md` by hand. The front-matter is YAML, validated strictly when the schema artifact loads — unknown keys are rejected, and every table or column reference uses the **stable IDs** from `schema.json` (`table:public.projects`, `table:public.projects#organization_id`), never bare names. Example for a simple SaaS schema:
 
 ```yaml
 ---
@@ -64,9 +60,7 @@ Organizations are the only tenant level. Projects and documents carry a
 direct `organization_id`; plan tiers and countries are shared lookups.
 ```
 
-The markdown body below the front-matter is free-form business context; the
-`Hierarchy`, `Scope rules`, and `Sensitive interactions` H2 sections are
-recognized and fed into prompt assembly.
+The markdown body below the front-matter is free-form business context; the `Hierarchy`, `Scope rules`, and `Sensitive interactions` H2 sections are recognized and fed into prompt assembly.
 
 ## Field reference
 
@@ -82,9 +76,7 @@ Top-level front-matter fields:
 | `polymorphicTables` | no | Tables that reference different tenant types via a discriminator column pair. |
 | `globalTables` | no | Stable table IDs intentionally exempt from tenant filtering (shared lookups). |
 
-Tables that appear in none of `scopedTables`, `polymorphicTables`, or
-`globalTables` are classified **unknown** — they trigger warnings, and in
-`strict` mode block queries that touch them. Classify everything.
+Tables that appear in none of `scopedTables`, `polymorphicTables`, or `globalTables` are classified **unknown** — they trigger warnings, and in `strict` mode block queries that touch them. Classify everything.
 
 `roots[]` — each entry is one tenant-identifying table:
 
@@ -104,9 +96,7 @@ Tables that appear in none of `scopedTables`, `polymorphicTables`, or
 | `scopeThrough[].column` | one of | Stable column ID of a direct tenant FK on this table (`table:public.projects#organization_id`). |
 | `scopeThrough[].join` | one of | A list of `{ from, to }` stable-column-ID steps when the table reaches its root through other tables (e.g. `appointments → clients`). |
 
-A table may declare several `scopeThrough` paths (e.g. scoped directly by
-`agency_id` *and* through `client_id` → clients); the validator accepts any
-path that satisfies the caller's scope.
+A table may declare several `scopeThrough` paths (e.g. scoped directly by `agency_id` *and* through `client_id` → clients); the validator accepts any path that satisfies the caller's scope.
 
 `polymorphicTables[]` — type + id discriminator pairs:
 
@@ -117,17 +107,11 @@ path that satisfies the caller's scope.
 | `idColumn` | yes | Stable column ID of the polymorphic FK (e.g. `table:public.notes#owner_id`). |
 | `mapping` | yes | Maps each literal `typeColumn` value to a tenant root's table ID (`agency: table:public.agencies`). |
 
-The full contract — including hierarchy validation rules and the five
-scoping patterns these fields express — lives in
-[`docs/contracts/tenant-policy.md` on GitHub](https://github.com/Ygilany/AskDB/blob/main/docs/contracts/tenant-policy.md).
+The full contract — including hierarchy validation rules and the five scoping patterns these fields express — lives in [`docs/contracts/tenant-policy.md` on GitHub](https://github.com/Ygilany/AskDB/blob/main/docs/contracts/tenant-policy.md).
 
 ## Asking with a tenant scope
 
-When the policy exists, every `ask()` call must include a `tenantScope`.
-AskDB validates the scope against the policy and binds it into the
-generated SQL. With `enforcement: strict`, a query whose tenant filter
-can't be proven is rejected; with `enforcement: warn`, the SQL is returned
-together with `tenantWarnings` for your application to act on.
+When the policy exists, every `ask()` call must include a `tenantScope`. AskDB validates the scope against the policy and binds it into the generated SQL. With `enforcement: strict`, a query whose tenant filter can't be proven is rejected; with `enforcement: warn`, the SQL is returned together with `tenantWarnings` for your application to act on.
 
 ```ts
 // askdb initialized at startup with createAskDb() — see Embed in a Node app.
@@ -164,13 +148,7 @@ if (result.preparedQuery) {
 }
 ```
 
-`access.kind` selects the scope shape: `ids` (exact tenant IDs on one root —
-the common case), `subtree` (a root's IDs plus all descendants:
-`{ kind: "subtree", tenantRoot, rootIds, includeDescendants: true }`),
-`multi_root` (IDs across several roots), or `global` (deliberately unscoped,
-with a `reason` string for the audit trail). The optional `context` field
-carries advisory metadata (role, department) into the prompt, and
-`tenantFilters` lets the host pre-resolve polymorphic scope.
+`access.kind` selects the scope shape: `ids` (exact tenant IDs on one root — the common case), `subtree` (a root's IDs plus all descendants: `{ kind: "subtree", tenantRoot, rootIds, includeDescendants: true }`), `multi_root` (IDs across several roots), or `global` (deliberately unscoped, with a `reason` string for the audit trail). The optional `context` field carries advisory metadata (role, department) into the prompt, and `tenantFilters` lets the host pre-resolve polymorphic scope.
 
 ## SQL output modes
 
@@ -189,9 +167,7 @@ Without policy, a question like "how many documents this month?" might generate:
 SELECT COUNT(*) FROM documents WHERE created_at >= NOW() - INTERVAL '1 month';
 ```
 
-With the policy above and an access scope of
-`{ kind: "ids", tenantRoot: "table:public.organizations", ids: ["org_abc123"] }`,
-the same question generates:
+With the policy above and an access scope of `{ kind: "ids", tenantRoot: "table:public.organizations", ids: ["org_abc123"] }`, the same question generates:
 
 ```sql
 SELECT COUNT(*) FROM documents
