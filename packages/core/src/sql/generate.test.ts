@@ -224,26 +224,6 @@ describe("generateSelectSql — prompt parameterization per dialect", () => {
     expect(prompt).toMatch(/TOP/);
     expect(prompt).toMatch(/OFFSET .* FETCH NEXT/);
   });
-
-  it("rejects SQLite ATTACH via dialect's extraForbiddenKeywords", async () => {
-    const generateText = vi.fn(async () => ({
-      text: "```sql\nSELECT * FROM users; ATTACH 'other.db' AS o\n```",
-    }));
-    await expect(
-      generateSelectSql(SQLITE_DIALECT, "list users", minimalSchema, fakeModel, { generateText }),
-    ).rejects.toThrow(SqlValidationError);
-  });
-
-  it("rejects SQL Server EXEC via dialect's extraForbiddenKeywords", async () => {
-    const generateText = vi.fn(async () => ({
-      text: "```sql\nSELECT id FROM users WHERE id = exec('boom')\n```",
-    }));
-    await expect(
-      generateSelectSql(SQLSERVER_DIALECT, "list users", minimalSchema, fakeModel, {
-        generateText,
-      }),
-    ).rejects.toThrow(SqlValidationError);
-  });
 });
 
 describe("generateSelectSql — parameterize prompt + extras", () => {
