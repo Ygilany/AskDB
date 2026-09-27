@@ -56,7 +56,7 @@ export function validateSelectSql(dialect: DialectSpec, sql: string): string {
   }
 
   const head = firstMeaningfulToken(withoutStrings);
-  if (head !== "select" && head !== "with" && head !== "delete") { // TEMP break (#254 proof)
+  if (head !== "select" && head !== "with") {
     throw validationError(
       "SQL_NOT_SELECT_OR_WITH",
       `SQL must start with SELECT or WITH (got '${head || "none"}').`,
