@@ -1,6 +1,6 @@
 # Feature: Consumer lab
 
-**Status:** Approved 2026-09-26. Being built in phases (see [Phased PR breakdown](#phased-pr-breakdown)).
+**Status:** Approved 2026-09-26. Being built in phases (see [Phased PR breakdown](#phased-pr-breakdown)). Phases 1 and 1b and the first four lab tickets (#242–#245) merged on 2026-09-27.
 **Location:** `examples/consumer-lab/` (excluded from the pnpm workspace). The databases it runs against are the shared fixture `fixtures/multi-engine`.
 **Packages under test:** every publishable package, installed from tarballs or npm. No workspace linking.
 
@@ -66,7 +66,7 @@ A small multi-tenant social-services domain. [`fixtures/multi-engine/README.md`]
 
 AskDB's tenant policy cannot express a same-table tree today, and `subtree` access doesn't expand descendants at all (#232). The lab's hierarchy cases are therefore expected to fail until #232 and #238 land; see [Survey notes](#survey-notes-inconsistencies-to-confirm-with-the-lab).
 
-**Multiple schemas.** Postgres and SQL Server use real schemas. MySQL and MariaDB use one database per logical schema (`org`, `people`, `billing`, `ref`), which is how a multi-database MySQL deployment looks. Introspecting that layout needs the MySQL multi-database PR (decision 7); until then, AskDB's MySQL connector sees only the connection's database. SQLite has one namespace, which AskDB renders as `public`.
+**Multiple schemas.** Postgres and SQL Server use real schemas. MySQL and MariaDB use one database per logical schema (`org`, `people`, `billing`, `ref`), which is how a multi-database MySQL deployment looks. AskDB introspects that layout when the databases are listed (`introspection.schemas` or `--schemas`, decision 7, #220). Releases before #220 see only the connection's database, so the lab reports their MySQL/MariaDB introspection cells as `n/a (capability: mysql-databases)`. SQLite has one namespace, which AskDB renders as `public`.
 
 **Seeding** is idempotent: one seeder for all engines, keyed on a hash of the DDL, the data and the seeder's own source. `test/dataset.integration.test.ts` in the fixture proves every engine holds exactly the canonical rows, that the view matches an oracle, and that the read-only role can't write.
 
@@ -355,6 +355,8 @@ Seams the lab itself uses: the replay server and prompt capture are lab code. `d
 | 1b | MySQL multi-database introspection (product change) | `@askdb/mysql` introspects the databases the user lists (`introspection.schemas` in config, or the documented `--schemas` flag), not only `DATABASE()`; the `@askdb/mysql` fixture test for MySQL and MariaDB against the golden schema; docs and a changeset. | The MySQL and MariaDB introspection tests are green; the test was shown failing before the change. |
 | 2–6 | Tracked as issues | The rest of the lab is split into 16 tracer-bullet tickets under **#241**, each with its blocking edges: Phase 2 #242–#244 (tracer bullet, replay model, install modes), Phase 3 #245–#247 (introspection + `lab:matrix`, question → SQL → execute, record/live), Phase 4 #248–#250 (safety, tenant, sensitive), Phase 5 #251–#253 (CLI, HTTP API, Studio), Phase 6 #254–#257 (CI job, nightly `npm:latest`, `consumer-lab` skill, verdaccio). | Each ticket's acceptance criteria. |
 
+**Merged (2026-09-27, stack #258):** phase 1 (#219), phase 1b (#220), the tracer bullet #242 (#261), the replay model #243 (#271), the introspection suite and `lab:matrix` #245 (#272), install modes #244 (#269), and the fix for #260 that the lab found (#263). The remaining tickets are open under #241.
+
 Every phase runs `pnpm smoke:install` and `pnpm preflight` before its PR. Apart from 1b, no phase changes a publishable package, so they need no changeset. Product bugs the lab finds go into their own PRs with changesets, after the failing lab test has landed.
 
 ## Survey notes: inconsistencies to confirm with the lab
@@ -374,7 +376,7 @@ These came up while reading the docs. They are not findings yet: each one is eit
 
 Found while building Phase 1 (confirmed against the code):
 
-11. **MySQL introspection sees one database, and ignores `--schemas`.** The connector's catalog queries all filter on `DATABASE()` and render the result as namespace `public` (`packages/mysql/src/connector/describe.ts`). It honors `filters.tables` but never reads `filters.schemas`, although `reference/cli.mdx` documents `--schemas` for `askdb introspect` with no engine caveat. A multi-database MySQL deployment can only be introspected one database at a time. *Product gap.* Fixed in Phase 1b: `introspection.schemas` or `--schemas` lists the databases.
+11. **MySQL introspection sees one database, and ignores `--schemas`.** The connector's catalog queries all filter on `DATABASE()` and render the result as namespace `public` (`packages/mysql/src/connector/describe.ts`). It honors `filters.tables` but never reads `filters.schemas`, although `reference/cli.mdx` documents `--schemas` for `askdb introspect` with no engine caveat. A multi-database MySQL deployment can only be introspected one database at a time. *Product gap.* Fixed in Phase 1b (#220): `introspection.schemas` or `--schemas` lists the databases.
 12. **The default schema filter is documented two ways.** `docs/integration/connectors.md` says `IntrospectionFilters.schemas` defaults to `["public"]` for relational engines. The type's own doc comment (`packages/introspect/src/types.ts`) says "all non-system schemas", and the Postgres connector does that: an unfiltered run over the fixture returns `org`, `people`, `billing`, `ref` and `fixture`. The Pagila test was named "default include filter ['public']" but could not tell the two apart, because Pagila only uses `public`. *Docs issue*; which behavior is intended is a maintainer call: **#239**. The Postgres fixture test asserts only what both agree on (system schemas are never read).
 13. **A same-table tenant tree can't be expressed.** `roots[].parent` and `hierarchy[]` link different root tables. Declaring `org.agency` as its own parent is reported as a `hierarchy_cycle`. *Product gap*: **#238**.
 14. **`subtree` access doesn't include descendants** (**#232**). `includeDescendants: true` is typed and promised in the prompt, but the placeholder expands to the seed IDs only. *Product bug.* The lab's hierarchy cases will show it on every engine.
