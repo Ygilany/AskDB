@@ -126,6 +126,22 @@ The `consumer-lab` job in [`.github/workflows/ci.yml`](../../.github/workflows/c
 
 `test/introspection.test.ts` introspects every fixture database with the installed `askdb introspect`, as the docs site describes for each engine: `--engine`, `--url` (the read-only role) and `--schemas org,people,billing,ref` for Postgres, SQL Server, MySQL and MariaDB (`--engine mysql`), and `introspection.providerConfig.sqlite.file` in an `askdb.config.ts` for SQLite. That config is written to a fresh directory under `.lab/projects/` for each run (concurrent runs never share one), so its `@askdb/config` import resolves from the lab's `node_modules`. Each artifact is compared with the fixture's golden schema, loaded with `loadSchema`, and bundled with `askdb bundle`. The drivers the CLI needs (`pg`, `mysql2`, `mssql`, `better-sqlite3`) are the lab's own dependencies, as the CLI reference asks of a consumer project.
 
+## The `askdb` CLI
+
+`test/surfaces/cli.test.ts` runs the installed `node_modules/.bin/askdb` the way a user runs it, against [`reference/cli.mdx`](../../apps/docs-site/src/content/docs/reference/cli.mdx). `askdb ask` reads the lab's `askdb.config.ts`, so its model is the replay server (the test sets `LAB_REPLAY_BASE_URL`), and its dialect comes from the engine the artifact records.
+
+| Scenario | What it checks |
+|---|---|
+| `cli-ask-replay` | On every dialect, `askdb ask` prints each catalog question's cassette SQL on stdout and exits 0. |
+| `cli-ask-mock-sql` | `--mock-sql` prints its SQL on stdout, exits 0 and sends the configured model nothing. |
+| `cli-ask-sensitive-warning` | SQL reading a column the artifact marks `sensitive` gets a `Warning:` on stderr naming it, the SQL still on stdout, and exit 0; SQL that reads none gets no warning. |
+| `cli-ask-exit-1` | Rejected SQL and a missing schema artifact exit 1, with the error on stderr and no SQL on stdout. |
+| `cli-exit-2` | A missing `--question` and an unknown flag exit 2. Every argument error exits 1 today (#287), so these are `known (#287)`. |
+| `cli-introspect-exit-1` | On every dialect, `askdb introspect` with a wrong password (or a missing SQLite file) exits 1 and writes no artifact. |
+| `cli-introspect-output` | With no output flag, `askdb introspect` writes to `introspection.outputDir`; `--print` prints the schema and writes nothing. |
+
+The engine-independent scenarios run once, as `[postgres]`.
+
 ## Install targets
 
 | Target | What gets installed |
@@ -165,7 +181,7 @@ Capabilities are detected from the installed target's public surface: an export,
 
 | Capability | Detected by | Used by |
 |---|---|---|
-| `cli-introspect-engine` | `askdb introspect --help` documents `--engine` (`reference/cli.mdx`), when run with the lab's config | every scenario that builds a schema artifact (`test/lab-ask.test.ts`) |
+| `cli-introspect-engine` | `askdb introspect --help` documents `--engine` (`reference/cli.mdx`), when run with the lab's config | every scenario that builds a schema artifact (`test/lab-ask.test.ts`, `test/surfaces/cli.test.ts`) |
 | `mysql-databases` | `askdb introspect --schemas org,people,billing,ref` on the fixture's MySQL returns a table from a database other than the connection's (`reference/cli.mdx`, `guides/switch-engines.mdx`) | MySQL and MariaDB `introspect-golden` / `introspect-loads` (`test/introspection.test.ts`) |
 
 To add one, add a detector to `DETECTORS` in `src/capabilities.ts`, citing the docs page that documents the capability.
