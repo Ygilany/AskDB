@@ -1,7 +1,6 @@
 # ADR 0002 — Integration-package layout
 
-Status: Accepted (2026-05-10).
-Supersedes (in part): Phase 4 decision to ship `createPostgresExecutor` from a `@askdb/core/postgres` subpath (`docs/specs/distribution.md`, "Postgres helper packaging").
+Status: Accepted (2026-05-10). Supersedes (in part): Phase 4 decision to ship `createPostgresExecutor` from a `@askdb/core/postgres` subpath (`docs/specs/distribution.md`, "Postgres helper packaging").
 
 ## Context
 
