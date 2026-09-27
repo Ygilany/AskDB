@@ -1,10 +1,7 @@
-import dotenv from "dotenv";
 import { defineConfig, env, type AskDbConfig } from "@askdb/config";
 
-dotenv.config({ quiet: true });
-
-// Loads a local `.env` when this module runs (missing file is OK).
-// CLIs call `bootstrapAskDbEnv`, which loads `.env` then evaluates this file and installs the AskDB runtime snapshot.
+// CLIs call `bootstrapAskDbEnv`, which loads `.env` (a missing file is OK), then evaluates this file and
+// installs the AskDB runtime snapshot, so this file doesn't load `.env` itself.
 // Use `env("VAR")` for every value read from the environment; `flattenAskDbConfig` applies defaults
 // for optional fields (see `@askdb/config` / `defaults.ts`).
 export default defineConfig({
