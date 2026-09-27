@@ -142,6 +142,14 @@ The `consumer-lab` job in [`.github/workflows/ci.yml`](../../.github/workflows/c
 
 The engine-independent scenarios run once, as `[postgres]`.
 
+## The HTTP API
+
+`test/surfaces/http-api.test.ts` runs the installed `askdb-http` bin (`@askdb/http-api`, one of the lab's direct dependencies) the way `guides/deploy-as-http-service.mdx` does: `askdb-http --schema-path <artifact> --port <free port> --host 127.0.0.1`, from a project whose `askdb.config.ts` it reads. The model is the replay server, through the config's `providerConfig.openai.baseUrl`. Each server is ready once `GET /health` answers, and is killed when the suite ends (`src/http-api.ts`).
+
+It covers the `POST /ask` success shape on every dialect, and on Postgres one case per documented error code and status, the `x-correlation-id` header, `GET /health`, and a tenant-policy schema, which fails closed over HTTP because a request has no scope field (#277). The suite's own catalog adds one question whose reply is a write statement, for `sql_validation_error`; a question with no reply drives `sql_generation_error`.
+
+`test/surfaces/http-api-no-pg.test.ts` installs the deploy guide's packages (`@askdb/http-api @askdb/postgres ai @ai-sdk/openai`, pinned to the lab's target) into a fresh pnpm project in the system temp directory, checks that no `pg` is in its lockfile or resolvable from the AskDB packages, then starts that project's `askdb-http` and gets `/health`. It lives outside the lab because Node would otherwise resolve the lab's own `pg`.
+
 ## Install targets
 
 | Target | What gets installed |
@@ -177,11 +185,12 @@ The baseline pins the lab's third-party dependencies exactly: the drivers (`pg`,
 
 A scenario may need a documented capability that an older target lacks. It declares that by calling `needsCapability(ctx, "<capability>")` from `src/capabilities.ts` first. When the installed target lacks the capability, the test is skipped with the note `capability: <capability>`, which the suite's verbose reporter prints and `lab:matrix` shows as `n/a (capability: <capability>)`.
 
-Capabilities are detected from the installed target's public surface: an export, documented `--help` output, or the documented behavior itself (a probe that runs the documented command). They are never detected from version strings. Only a surface that works but lacks the capability counts as absent. A missing `askdb` bin, a crash, or a non-zero exit from `--help` is a broken install, and the test fails. When the target is this checkout (`lab:use .`), a missing capability fails the test instead: the lab is written against this checkout's docs, so there it's a regression.
+Capabilities are detected from the installed target's public surface: an export, documented `--help` output, the published package manifest, or the documented behavior itself (a probe that runs the documented command). They are never detected from version strings. Only a surface that works but lacks the capability counts as absent. A missing `askdb` bin, a crash, or a non-zero exit from `--help` is a broken install, and the test fails. When the target is this checkout (`lab:use .`), a missing capability fails the test instead: the lab is written against this checkout's docs, so there it's a regression.
 
 | Capability | Detected by | Used by |
 |---|---|---|
 | `cli-introspect-engine` | `askdb introspect --help` documents `--engine` (`reference/cli.mdx`), when run with the lab's config | every scenario that builds a schema artifact (`test/lab-ask.test.ts`, `test/surfaces/cli.test.ts`) |
 | `mysql-databases` | `askdb introspect --schemas org,people,billing,ref` on the fixture's MySQL returns a table from a database other than the connection's (`reference/cli.mdx`, `guides/switch-engines.mdx`) | MySQL and MariaDB `introspect-golden` / `introspect-loads` (`test/introspection.test.ts`) |
+| `http-api-optional-drivers` | the installed `@askdb/http-api`'s published manifest lists no database driver as a dependency, since the docs call drivers optional peers (`guides/switch-engines.mdx`, `reference/packages.mdx`; #260) | `http-no-pg` (`test/surfaces/http-api-no-pg.test.ts`) |
 
 To add one, add a detector to `DETECTORS` in `src/capabilities.ts`, citing the docs page that documents the capability.

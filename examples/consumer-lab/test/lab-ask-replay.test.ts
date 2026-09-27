@@ -28,7 +28,7 @@ import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { beforeAll, describe, expect, it } from "vitest";
 import { SUPPORTED_DIALECTS, type SupportedDialect } from "../src/dialects.js";
-import { loadQuestions, readCassette } from "../src/model/catalog.js";
+import { cassetteSql, loadQuestions } from "../src/model/catalog.js";
 
 const LAB = fileURLToPath(new URL("..", import.meta.url));
 const QUESTIONS = loadQuestions();
@@ -58,11 +58,6 @@ function printedSql(out: string): string | undefined {
 /** The digest `lab ask` printed of the prompt the replay server received. */
 function printedPrompt(out: string): string | undefined {
   return /^prompt: {5}(.+)$/m.exec(out)?.[1];
-}
-
-function cassetteSql(dialect: SupportedDialect, questionId: string): string {
-  const cassette = readCassette(dialect, QUESTIONS.find((q) => q.id === questionId)!);
-  return /```sql\n([\s\S]*?)\n```/.exec(cassette!.reply)![1]!;
 }
 
 describe.each(SUPPORTED_DIALECTS.map((d) => [d] as [SupportedDialect]))("[%s] lab-ask-replay", (dialect) => {

@@ -2,8 +2,9 @@
  * Documented capabilities a scenario can require. An older install target may lack one;
  * a scenario that needs it then reports `n/a (capability: …)` instead of failing.
  *
- * Each capability is detected from the installed target's public surface (an export, or
- * documented `--help` output), never from a version string: versions aren't in lockstep,
+ * Each capability is detected from the installed target's public surface (an export,
+ * documented `--help` output, the published package manifest, or the documented behavior
+ * itself), never from a version string: versions aren't in lockstep,
  * and a checkout carries the same version number as the last release.
  */
 import { spawnSync } from "node:child_process";
@@ -53,6 +54,21 @@ function mysqlReadsListedDatabases(): boolean {
   }
 }
 
+/** The database drivers the docs call optional peers (`reference/packages.mdx`, `guides/switch-engines.mdx`). */
+const DRIVERS = ["pg", "mysql2", "mssql", "better-sqlite3"];
+
+/**
+ * Whether the installed `@askdb/http-api` leaves the database drivers to the host, as the
+ * docs say: its published manifest lists none of them as a dependency (#260). A missing
+ * package is a broken install, and throws.
+ */
+function httpApiLeavesDriversOptional(): boolean {
+  const manifest = join(LAB_ROOT, "node_modules", "@askdb", "http-api", "package.json");
+  if (!existsSync(manifest)) throw new Error(`${manifest} is missing; reinstall the lab with \`pnpm lab:use <target>\``);
+  const { dependencies = {} } = JSON.parse(readFileSync(manifest, "utf8")) as { dependencies?: Record<string, string> };
+  return DRIVERS.every((driver) => !(driver in dependencies));
+}
+
 const DETECTORS = {
   /** `askdb introspect --engine <id> --url …` (reference/cli.mdx), how the lab builds every schema artifact. */
   "cli-introspect-engine": () => /--engine\b/.test(cliHelp("introspect")),
@@ -62,6 +78,12 @@ const DETECTORS = {
    * the connection's database.
    */
   "mysql-databases": mysqlReadsListedDatabases,
+  /**
+   * Installing `@askdb/http-api` without a database driver, as the deploy guide's install
+   * line does (`guides/deploy-as-http-service.mdx`). Before #260 was fixed it hard-depended
+   * on `pg`.
+   */
+  "http-api-optional-drivers": httpApiLeavesDriversOptional,
 } satisfies Record<string, () => boolean>;
 
 export type Capability = keyof typeof DETECTORS;
