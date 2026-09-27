@@ -45,15 +45,15 @@
     "test": "vitest run --config ../../vitest.config.ts"
   },
   "dependencies": {
-    "@ai-sdk/anthropic": "^4.0.29"
+    "@ai-sdk/anthropic": "^4.0.62"
   },
   "peerDependencies": {
     "@askdb/ai": "workspace:^",
-    "ai": "^7.0.51"
+    "ai": "^7.0.113"
   },
   "devDependencies": {
     "@askdb/ai": "workspace:*",
-    "ai": "^7.0.51",
+    "ai": "^7.0.113",
     "typescript": "^6.0.3",
     "vitest": "^4.1.10"
   }
