@@ -6,21 +6,11 @@ Accepted (2026-06-11).
 
 ## Context
 
-`@askdb/core` is the central dialect-agnostic NL-to-SQL pipeline. It currently depends on the
-Vercel AI SDK core package (`ai`) and concrete provider packages (`@ai-sdk/openai`,
-`@ai-sdk/azure`, `@ai-sdk/google`). The pipeline API is already mostly correct: callers pass a
-model into `ask()`, and core does not read `process.env` or choose a provider during a request.
+`@askdb/core` is the central dialect-agnostic NL-to-SQL pipeline. It currently depends on the Vercel AI SDK core package (`ai`) and concrete provider packages (`@ai-sdk/openai`, `@ai-sdk/azure`, `@ai-sdk/google`). The pipeline API is already mostly correct: callers pass a model into `ask()`, and core does not read `process.env` or choose a provider during a request.
 
-The problem is where the convenience provider construction lives. `@askdb/core` exports helpers
-such as `resolveAskDbAiConfig`, `createAskDbLanguageModelFromEnv`,
-`resolveAskDbEmbeddingConfig`, and `createAskDbEmbeddingModelFromEnv`. Those helpers construct
-OpenAI, Azure, and Google models from config/env maps, so every `@askdb/core` consumer installs
-the provider packages even when they only use one provider, provide their own AI SDK model, or do
-not use the env-based helpers at all.
+The problem is where the convenience provider construction lives. `@askdb/core` exports helpers such as `resolveAskDbAiConfig`, `createAskDbLanguageModelFromEnv`, `resolveAskDbEmbeddingConfig`, and `createAskDbEmbeddingModelFromEnv`. Those helpers construct OpenAI, Azure, and Google models from config/env maps, so every `@askdb/core` consumer installs the provider packages even when they only use one provider, provide their own AI SDK model, or do not use the env-based helpers at all.
 
-This violates the package boundary from ADR 0002: core should own the pipeline, schema types,
-prompt assembly, SQL validation, tenant policy, logging contracts, retrieval input, and dialect
-orchestration. Provider bootstrap is integration/bootstrap code.
+This violates the package boundary from ADR 0002: core should own the pipeline, schema types, prompt assembly, SQL validation, tenant policy, logging contracts, retrieval input, and dialect orchestration. Provider bootstrap is integration/bootstrap code.
 
 ### What core actually needs from the AI SDK
 
@@ -37,21 +27,15 @@ const result = await generateText({
 const text = result.text;
 ```
 
-AskDB core does not use streaming, tool calling, image input, provider registries, or structured
-generation for the NL-to-SQL path. The model is only passed to `generateText`; core never
-constructs or inspects provider instances.
+AskDB core does not use streaming, tool calling, image input, provider registries, or structured generation for the NL-to-SQL path. The model is only passed to `generateText`; core never constructs or inspects provider instances.
 
-The AI SDK's `LanguageModel` contract remains a reasonable public seam for AskDB because it is
-already provider-neutral and supports AI SDK custom providers. AskDB does not need to define a
-smaller inference interface merely to enable custom providers.
+The AI SDK's `LanguageModel` contract remains a reasonable public seam for AskDB because it is already provider-neutral and supports AI SDK custom providers. AskDB does not need to define a smaller inference interface merely to enable custom providers.
 
 ## Considered Options
 
 ### Option A - Keep the current mixed core package
 
-Keep `LanguageModel` from `ai` as the `ask()` contract. Keep all provider construction helpers in
-`@askdb/core`. Keep `@ai-sdk/openai`, `@ai-sdk/azure`, and `@ai-sdk/google` as hard dependencies
-of core.
+Keep `LanguageModel` from `ai` as the `ask()` contract. Keep all provider construction helpers in `@askdb/core`. Keep `@ai-sdk/openai`, `@ai-sdk/azure`, and `@ai-sdk/google` as hard dependencies of core.
 
 Pros:
 
@@ -63,13 +47,11 @@ Cons:
 - Every core consumer pays for all bundled provider packages.
 - Adding provider support requires changing core.
 - Core owns bootstrap concerns outside its stated responsibility.
-- The package layout is inconsistent with database driver packages, which already use optional
-  peer dependencies at integration boundaries.
+- The package layout is inconsistent with database driver packages, which already use optional peer dependencies at integration boundaries.
 
 ### Option B - Pure BYO model only
 
-Remove provider construction helpers from core and do not replace them. Integrators construct an
-AI SDK model themselves before calling `ask()`.
+Remove provider construction helpers from core and do not replace them. Integrators construct an AI SDK model themselves before calling `ask()`.
 
 Pros:
 
@@ -79,10 +61,8 @@ Pros:
 Cons:
 
 - First-party apps still need a shared home for provider/env resolution.
-- Users who want AskDB's config-driven provider selection would copy provider wiring into their
-  apps.
-- `@askdb/config` would describe provider branches with no corresponding convenience model
-  factory.
+- Users who want AskDB's config-driven provider selection would copy provider wiring into their apps.
+- `@askdb/config` would describe provider branches with no corresponding convenience model factory.
 
 ### Option C - Core fully manages AI
 
@@ -125,9 +105,7 @@ Cons:
 
 ### Option E - Extract provider construction to `@askdb/ai`
 
-Keep the AI SDK `LanguageModel` contract for `ask()`. Remove concrete provider packages and
-provider construction helpers from `@askdb/core`. Create `@askdb/ai` as the home for AskDB's
-config/env-to-model helpers.
+Keep the AI SDK `LanguageModel` contract for `ask()`. Remove concrete provider packages and provider construction helpers from `@askdb/core`. Create `@askdb/ai` as the home for AskDB's config/env-to-model helpers.
 
 Pros:
 
@@ -145,8 +123,7 @@ Cons:
 
 ### Option F - `@askdb/ai` plus provider-specific packages now
 
-Create a small `@askdb/ai` package for shared types/registry helpers and provider packages such
-as `@askdb/ai-openai`, `@askdb/ai-azure`, and `@askdb/ai-google`.
+Create a small `@askdb/ai` package for shared types/registry helpers and provider packages such as `@askdb/ai-openai`, `@askdb/ai-azure`, and `@askdb/ai-google`.
 
 Pros:
 
@@ -161,9 +138,7 @@ Cons:
 
 ## Decision
 
-Adopt Option F: extract provider construction out of `@askdb/core`, keep `@askdb/core`
-BYO-model, make `@askdb/ai` the shared registry/config package, and publish provider-specific
-packages for the concrete provider factories.
+Adopt Option F: extract provider construction out of `@askdb/core`, keep `@askdb/core` BYO-model, make `@askdb/ai` the shared registry/config package, and publish provider-specific packages for the concrete provider factories.
 
 ### `@askdb/core`
 
@@ -175,8 +150,7 @@ packages for the concrete provider factories.
   export type { LanguageModel as AskDbLanguageModel } from "ai";
   ```
 
-- Change public core types from `LanguageModel` to `AskDbLanguageModel`. This is a source-level
-  naming change, not a behavioral change: callers can continue passing any AI SDK language model.
+- Change public core types from `LanguageModel` to `AskDbLanguageModel`. This is a source-level naming change, not a behavioral change: callers can continue passing any AI SDK language model.
 - Remove provider construction helpers from the core root export:
   - `resolveAskDbAiConfig`
   - `resolveAskDbEmbeddingConfig`
@@ -186,9 +160,7 @@ packages for the concrete provider factories.
   - `createAskDbEmbeddingModelFromEnv`
   - `askDbAiKeyMissingMessage`
 
-Core should not re-export these helpers from `@askdb/ai`. A compatibility re-export would pull the
-new integration package back into core and weaken the dependency boundary. Because AskDB is still
-pre-1.0/beta, the import-path change is an acceptable breaking change when documented clearly.
+Core should not re-export these helpers from `@askdb/ai`. A compatibility re-export would pull the new integration package back into core and weaken the dependency boundary. Because AskDB is still pre-1.0/beta, the import-path change is an acceptable breaking change when documented clearly.
 
 ### `@askdb/ai`
 
@@ -217,8 +189,7 @@ Create provider-specific packages:
 - `@askdb/ai-azure` depends on `@ai-sdk/azure` and exports `azureProvider`.
 - `@askdb/ai-google` depends on `@ai-sdk/google` and exports `googleProvider`.
 
-First-party apps install and register the provider adapters they intentionally support. Library
-users install only the adapter packages they need.
+First-party apps install and register the provider adapters they intentionally support. Library users install only the adapter packages they need.
 
 ## Integration Paths
 
@@ -242,8 +213,7 @@ await ask({
 
 ### AskDB Config-Driven Provider Selection
 
-Users who want AskDB's env/config provider resolution install `@askdb/ai` plus the provider
-adapter package they use:
+Users who want AskDB's env/config provider resolution install `@askdb/ai` plus the provider adapter package they use:
 
 ```ts
 import { bootstrapAskDbEnv, getAskDbRuntimeConfig } from "@askdb/config";
@@ -306,16 +276,11 @@ Apps declare the provider packages they intentionally support as direct dependen
 - `@askdb/core` keeps a dependency on `ai` while it uses `generateText`.
 - Provider construction becomes an integration-layer concern in `@askdb/ai-*` packages.
 - `@askdb/ai` owns config resolution and registry dispatch only.
-- First-party apps and docs update provider-helper imports from `@askdb/core` to `@askdb/ai`
-  plus the provider adapter packages.
-- Consumers who import provider helpers from `@askdb/core` must update to `@askdb/ai` registry
-  usage.
-- `@askdb/rag` keeps its current optional peer dependency pattern for `ai`, `@ai-sdk/openai`,
-  and `pg`. It should not rely on transitive availability of `ai`; any public type or runtime
-  helper that uses AI SDK embedding models must continue declaring the relevant peer dependency.
+- First-party apps and docs update provider-helper imports from `@askdb/core` to `@askdb/ai` plus the provider adapter packages.
+- Consumers who import provider helpers from `@askdb/core` must update to `@askdb/ai` registry usage.
+- `@askdb/rag` keeps its current optional peer dependency pattern for `ai`, `@ai-sdk/openai`, and `pg`. It should not rely on transitive availability of `ai`; any public type or runtime helper that uses AI SDK embedding models must continue declaring the relevant peer dependency.
 - Adding a new provider no longer requires changing `@askdb/core`.
-- Adding a new provider is a new `@askdb/ai-*` package plus a config branch when AskDB wants to
-  support it through config/env resolution.
+- Adding a new provider is a new `@askdb/ai-*` package plus a config branch when AskDB wants to support it through config/env resolution.
 
 ## Related
 
@@ -328,97 +293,32 @@ Apps declare the provider packages they intentionally support as direct dependen
 
 ## Amendments
 
-**2026-06 — Implemented, then extended (adapter contract v2):** The architecture
-described here shipped. It was then extended: `@askdb/ai` no longer hard-codes
-provider env vars or defaults — adapters are now self-describing via `resolveConfig`,
-`aliases`, and `providerOptions`. The `AiProvider` type is now an open `string`
-instead of a closed union (so third-party adapters don't require a core change).
-`ai` is a peer dependency of `@askdb/ai` and all first-party adapter packages rather
-than a hard dependency. Standalone `resolveAiConfig` / `resolveEmbeddingConfig`
-functions moved onto `createAiRegistry()` registry instances. The consequence
-"adding a new provider is a new `@askdb/ai-*` package plus a config branch" was
-superseded: a config branch in `askdb.config.*` is now only needed for authoring-time
-type support; env-driven use (`ASKDB_AI_PROVIDER=<name>`) works without it.
+**2026-06 — Implemented, then extended (adapter contract v2):** The architecture described here shipped. It was then extended: `@askdb/ai` no longer hard-codes provider env vars or defaults — adapters are now self-describing via `resolveConfig`, `aliases`, and `providerOptions`. The `AiProvider` type is now an open `string` instead of a closed union (so third-party adapters don't require a core change). `ai` is a peer dependency of `@askdb/ai` and all first-party adapter packages rather than a hard dependency. Standalone `resolveAiConfig` / `resolveEmbeddingConfig` functions moved onto `createAiRegistry()` registry instances. The consequence "adding a new provider is a new `@askdb/ai-*` package plus a config branch" was superseded: a config branch in `askdb.config.*` is now only needed for authoring-time type support; env-driven use (`ASKDB_AI_PROVIDER=<name>`) works without it.
 
-**2026-08 — Provider-portable reasoning/latency effort:** Added an AskDB-owned
-config surface for reasoning/latency tuning (`reasoningEffort:
-"minimal" | "low" | "medium" | "high"`, from `@askdb/ai`'s `reasoning.ts`)
-without weakening the BYO-model boundary this ADR establishes.
+**2026-08 — Provider-portable reasoning/latency effort:** Added an AskDB-owned config surface for reasoning/latency tuning (`reasoningEffort: "minimal" | "low" | "medium" | "high"`, from `@askdb/ai`'s `reasoning.ts`) without weakening the BYO-model boundary this ADR establishes.
 
-The key design question was where the portable-to-native `providerOptions`
-mapping should live, given `@askdb/core` never imports concrete provider
-packages and only knows `generateText`'s minimal call shape (§"What core
-actually needs from the AI SDK"). The mapping needs provider-specific
-knowledge (OpenAI/Azure `reasoningEffort`, Google `thinkingConfig.thinkingLevel`
-vs. `thinkingBudget` depending on the Gemini generation, Anthropic `thinking`
-budgets) plus a per-model capability check (never send reasoning options to a
-non-reasoning model), so it cannot live in core.
+The key design question was where the portable-to-native `providerOptions` mapping should live, given `@askdb/core` never imports concrete provider packages and only knows `generateText`'s minimal call shape (§"What core actually needs from the AI SDK"). The mapping needs provider-specific knowledge (OpenAI/Azure `reasoningEffort`, Google `thinkingConfig.thinkingLevel` vs. `thinkingBudget` depending on the Gemini generation, Anthropic `thinking` budgets) plus a per-model capability check (never send reasoning options to a non-reasoning model), so it cannot live in core.
 
 Resolution, consistent with Option F's adapter-owns-its-provider principle:
 
-- `@askdb/ai-*` adapters implement an optional `resolveProviderOptions(config, { reasoningEffort })`
-  on `AiProviderAdapter`, returning the provider's native `providerOptions` bag
-  or `undefined` (unset effort, or a model that doesn't support reasoning
-  tuning — e.g. `gpt-4o-mini`, `gemini-2.0-flash`).
-- `AiRegistry` exposes `resolveProviderOptions(config, settings)`, dispatching
-  to the resolved adapter.
-- `@askdb/core` gained one new opaque field: `providerOptions?: Record<string, unknown>`
-  on `AskGenerateDeps` / `GenerateSqlDeps` / `SuggestEnrichmentDeps`, forwarded
-  verbatim into the existing `generateText({ ..., providerOptions })` call.
-  Core still does not interpret, validate, or default this bag — it is exactly
-  as BYO as the `model` parameter itself. Omitted (not sent as `{}`) when
-  unset, so existing `generateText` call shapes are byte-for-byte unchanged.
-- `@askdb/config`'s `ai.reasoning` block (`effort` / `nlToSql` / `enrichment`)
-  flattens to `ASKDB_AI_REASONING_EFFORT[_NL_TO_SQL|_ENRICHMENT]` env vars,
-  giving per-call-site defaults without adding a "call purpose" abstraction to
-  `@askdb/core` itself — call-site distinction is a config/env-resolution
-  concern (`@askdb/ai`'s `resolveReasoningEffort(env, purpose, override)`),
-  not a pipeline concern.
+- `@askdb/ai-*` adapters implement an optional `resolveProviderOptions(config, { reasoningEffort })` on `AiProviderAdapter`, returning the provider's native `providerOptions` bag or `undefined` (unset effort, or a model that doesn't support reasoning tuning — e.g. `gpt-4o-mini`, `gemini-2.0-flash`).
+- `AiRegistry` exposes `resolveProviderOptions(config, settings)`, dispatching to the resolved adapter.
+- `@askdb/core` gained one new opaque field: `providerOptions?: Record<string, unknown>` on `AskGenerateDeps` / `GenerateSqlDeps` / `SuggestEnrichmentDeps`, forwarded verbatim into the existing `generateText({ ..., providerOptions })` call. Core still does not interpret, validate, or default this bag — it is exactly as BYO as the `model` parameter itself. Omitted (not sent as `{}`) when unset, so existing `generateText` call shapes are byte-for-byte unchanged.
+- `@askdb/config`'s `ai.reasoning` block (`effort` / `nlToSql` / `enrichment`) flattens to `ASKDB_AI_REASONING_EFFORT[_NL_TO_SQL|_ENRICHMENT]` env vars, giving per-call-site defaults without adding a "call purpose" abstraction to `@askdb/core` itself — call-site distinction is a config/env-resolution concern (`@askdb/ai`'s `resolveReasoningEffort(env, purpose, override)`), not a pipeline concern.
 
-Net effect: `ask()`'s public contract for reasoning tuning is "pass me a
-`providerOptions` bag," exactly mirroring "pass me a `LanguageModel`." Hosts
-that want AskDB's portable enum go through `@askdb/ai`; hosts that already
-hand-roll `providerOptions` (existing BYO users) are unaffected and can keep
-doing so directly.
+Net effect: `ask()`'s public contract for reasoning tuning is "pass me a `providerOptions` bag," exactly mirroring "pass me a `LanguageModel`." Hosts that want AskDB's portable enum go through `@askdb/ai`; hosts that already hand-roll `providerOptions` (existing BYO users) are unaffected and can keep doing so directly.
 
-**2026-09 — `ai` becomes a peer dependency of `@askdb/core` (`^6 || ^7`):** This amends the
-2026-06-11 decision "Retain `ai` as a runtime dependency while core calls `generateText`" (and the
-matching Consequences bullet). `ai` moves from `@askdb/core`'s `dependencies` to a required
-`peerDependencies` entry with the range `^6.0.0 || ^7.0.0`; it stays in `devDependencies` (at
-`^7`) for building and testing core.
+**2026-09 — `ai` becomes a peer dependency of `@askdb/core` (`^6 || ^7`):** This amends the 2026-06-11 decision "Retain `ai` as a runtime dependency while core calls `generateText`" (and the matching Consequences bullet). `ai` moves from `@askdb/core`'s `dependencies` to a required `peerDependencies` entry with the range `^6.0.0 || ^7.0.0`; it stays in `devDependencies` (at `^7`) for building and testing core.
 
-Why the original reasoning no longer holds: calling `generateText` is a reason to *import* `ai`,
-not to *pin* it. Because `ask()` accepts a caller-constructed `LanguageModel`, the caller and core
-must agree on one `ai` instance; a hard dependency actively prevents that agreement across majors.
-The concrete evidence: a real integration runs `ai@^6` with `@ai-sdk/openai@^3` and is stuck on
-`@askdb/core@1.0.0-beta.40`, because `beta.41` moved core's dependency to `ai@^7`. Upgrading AskDB
-would force that host to migrate its whole AI stack — including AI features unrelated to AskDB —
-or to install two copies of `ai` whose `LanguageModel` / `generateText` types disagree. A peer
-dependency hands the version choice back to the host, which is where it belongs for a BYO-model
-library.
+Why the original reasoning no longer holds: calling `generateText` is a reason to *import* `ai`, not to *pin* it. Because `ask()` accepts a caller-constructed `LanguageModel`, the caller and core must agree on one `ai` instance; a hard dependency actively prevents that agreement across majors. The concrete evidence: a real integration runs `ai@^6` with `@ai-sdk/openai@^3` and is stuck on `@askdb/core@1.0.0-beta.40`, because `beta.41` moved core's dependency to `ai@^7`. Upgrading AskDB would force that host to migrate its whole AI stack — including AI features unrelated to AskDB — or to install two copies of `ai` whose `LanguageModel` / `generateText` types disagree. A peer dependency hands the version choice back to the host, which is where it belongs for a BYO-model library.
 
-Why the range spans two majors rather than just `^7`: a `^7`-only peer would turn the AI SDK 6
-host's silent duplicate into a hard `ERESOLVE`, which is worse. Core's AI SDK surface is small
-enough to support both:
+Why the range spans two majors rather than just `^7`: a `^7`-only peer would turn the AI SDK 6 host's silent duplicate into a hard `ERESOLVE`, which is worse. Core's AI SDK surface is small enough to support both:
 
-- Core calls `generateText` with `system` rather than AI SDK 7's `instructions`. AI SDK 6 only
-  reads `system` (it silently ignores `instructions`, so the NL→SQL system prompt was being
-  dropped); AI SDK 7 still honors `system` as a deprecated alias (`instructions = system` in its
-  prompt standardization). No dual-key or runtime version sniffing is needed.
+- Core calls `generateText` with `system` rather than AI SDK 7's `instructions`. AI SDK 6 only reads `system` (it silently ignores `instructions`, so the NL→SQL system prompt was being dropped); AI SDK 7 still honors `system` as a deprecated alias (`instructions = system` in its prompt standardization). No dual-key or runtime version sniffing is needed.
 - Usage parsing already tolerates both naming conventions (`promptTokens ?? inputTokens`).
-- The published declarations only reference `LanguageModel` and `generateText` from `ai`, which
-  exist in both majors; they resolve against the host's installed `ai`, which is the desired
-  behavior (`AskDbLanguageModel` is exactly the host's `LanguageModel`).
-- `examples/installable-smoke/consumer-ai6` installs the packed core tarball next to `ai@6` and
-  `@ai-sdk/openai@3` and runs `ask()` through AI SDK 6 end to end.
+- The published declarations only reference `LanguageModel` and `generateText` from `ai`, which exist in both majors; they resolve against the host's installed `ai`, which is the desired behavior (`AskDbLanguageModel` is exactly the host's `LanguageModel`).
+- `examples/installable-smoke/consumer-ai6` installs the packed core tarball next to `ai@6` and `@ai-sdk/openai@3` and runs `ask()` through AI SDK 6 end to end.
 
-`@askdb/rag`'s optional `ai` / `@ai-sdk/openai` peers were widened to the same majors for the
-same reason (its AI SDK embedder only needs `embedMany` and the `EmbeddingModel` type). `@askdb/ai`,
-the `@askdb/ai-*` adapters, and `@askdb/client` already declared `ai` as a peer and keep `^7`;
-first-party apps (`askdb`, `@askdb/http-api`, `@askdb/studio`) keep `ai` as a direct dependency
-because they are batteries-included products, not libraries.
+`@askdb/rag`'s optional `ai` / `@ai-sdk/openai` peers were widened to the same majors for the same reason (its AI SDK embedder only needs `embedMany` and the `EmbeddingModel` type). `@askdb/ai`, the `@askdb/ai-*` adapters, and `@askdb/client` already declared `ai` as a peer and keep `^7`; first-party apps (`askdb`, `@askdb/http-api`, `@askdb/studio`) keep `ai` as a direct dependency because they are batteries-included products, not libraries.
 
-What is unchanged: core stays BYO-model, still exports `AskDbLanguageModel`, and still calls
-`generateText`. The rule going forward: anything a host could reasonably already have installed
-(`ai`, `@ai-sdk/*`, database drivers) is a peer of a library package, never a bundled dependency.
-When AI SDK 8 ships, widening the peer range (after verifying the call shape) is the whole upgrade.
+What is unchanged: core stays BYO-model, still exports `AskDbLanguageModel`, and still calls `generateText`. The rule going forward: anything a host could reasonably already have installed (`ai`, `@ai-sdk/*`, database drivers) is a peer of a library package, never a bundled dependency. When AI SDK 8 ships, widening the peer range (after verifying the call shape) is the whole upgrade.

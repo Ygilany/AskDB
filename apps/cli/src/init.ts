@@ -64,14 +64,24 @@ const AI_DEFAULTS: Record<
   foundry: { keyEnv: "AZURE_OPENAI_API_KEY", modelEnv: "AZURE_OPENAI_DEPLOYMENT", modelField: "model" },
 };
 
+/**
+ * Render a value as a TypeScript string literal for the generated config.
+ * Every interpolated value goes through this — the file is later executed
+ * (via jiti), so a raw `"${value}"` would let a quote in a path inject code.
+ * Mirrors `tsString` in `apps/studio/src/setup.ts`.
+ */
+function tsString(value: string): string {
+  return JSON.stringify(value);
+}
+
 function renderAiSection(answers: InitAnswers): string {
   const { aiProvider, aiKeyEnv, aiModelEnv } = answers;
-  const modelLine = aiModelEnv ? `\n        ${AI_DEFAULTS[aiProvider].modelField}: env("${aiModelEnv}"),` : "";
+  const modelLine = aiModelEnv ? `\n        ${AI_DEFAULTS[aiProvider].modelField}: env(${tsString(aiModelEnv)}),` : "";
   return `  ai: {
-    provider: "${aiProvider}",
+    provider: ${tsString(aiProvider)},
     providerConfig: {
       ${aiProvider}: {
-        apiKey: env("${aiKeyEnv}"),${modelLine}
+        apiKey: env(${tsString(aiKeyEnv)}),${modelLine}
       },
     },
   },`;
@@ -79,14 +89,15 @@ function renderAiSection(answers: InitAnswers): string {
 
 function renderIntrospectionSection(answers: InitAnswers): string {
   const { database, connectionEnv, sqliteFile, prismaSchema, schemaOut } = answers;
-  const outputDirLine = `\n    outputDir: "${schemaOut}",`;
+  const outputDirLine = `\n    outputDir: ${tsString(schemaOut)},`;
+  const connectionEnvExpr = `env(${tsString(connectionEnv ?? "DATABASE_URL")})`;
   switch (database) {
     case "postgres":
       return `  introspection: {
     provider: "postgres",
     providerConfig: {
       postgres: {
-        databaseUrl: env("${connectionEnv ?? "DATABASE_URL"}"),
+        databaseUrl: ${connectionEnvExpr},
       },
     },${outputDirLine}
   },`;
@@ -95,16 +106,16 @@ function renderIntrospectionSection(answers: InitAnswers): string {
     provider: "mysql",
     providerConfig: {
       mysql: {
-        databaseUrl: env("${connectionEnv ?? "DATABASE_URL"}"),
+        databaseUrl: ${connectionEnvExpr},
       },
     },${outputDirLine}
   },`;
     case "sqlite": {
       const fileExpr = sqliteFile && !sqliteFile.startsWith("./") && !sqliteFile.startsWith("/")
-        ? `env("${sqliteFile}")`
+        ? `env(${tsString(sqliteFile)})`
         : `env("SQLITE_FILE")`;
       const resolvedFile = sqliteFile && (sqliteFile.startsWith("./") || sqliteFile.startsWith("/"))
-        ? `"${sqliteFile}"`
+        ? tsString(sqliteFile)
         : fileExpr;
       return `  introspection: {
     provider: "sqlite",
@@ -120,12 +131,12 @@ function renderIntrospectionSection(answers: InitAnswers): string {
     provider: "sqlserver",
     providerConfig: {
       sqlserver: {
-        databaseUrl: env("${connectionEnv ?? "DATABASE_URL"}"),
+        databaseUrl: ${connectionEnvExpr},
       },
     },${outputDirLine}
   },`;
     case "prisma": {
-      const schemaLine = prismaSchema ? `\n        schemaPath: "${prismaSchema}",` : "";
+      const schemaLine = prismaSchema ? `\n        schemaPath: ${tsString(prismaSchema)},` : "";
       return `  introspection: {
     provider: "prisma",
     providerConfig: {
@@ -165,7 +176,7 @@ function renderRagSection(answers: InitAnswers): string {
     store: "pgvector",
     storeConfig: {
       pgvector: {
-        databaseUrl: env("${pgvectorEnv ?? "ASKDB_PGVECTOR_URL"}"),
+        databaseUrl: env(${tsString(pgvectorEnv ?? "ASKDB_PGVECTOR_URL")}),
       },
     },
   },`;
@@ -179,8 +190,8 @@ function renderStudioSection(answers: InitAnswers): string | null {
   const { provider } = studioExecute;
   if (provider === "sqlite") {
     const fileExpr = studioExecute.sqliteFile && (studioExecute.sqliteFile.startsWith("./") || studioExecute.sqliteFile.startsWith("/"))
-      ? `"${studioExecute.sqliteFile}"`
-      : `env("${studioExecute.sqliteFile ?? "SQLITE_FILE"}")`;
+      ? tsString(studioExecute.sqliteFile)
+      : `env(${tsString(studioExecute.sqliteFile ?? "SQLITE_FILE")})`;
     return `  studio: {
     execute: {
       provider: "sqlite",
@@ -192,8 +203,8 @@ function renderStudioSection(answers: InitAnswers): string | null {
   const urlEnv = studioExecute.connectionEnv ?? "DATABASE_URL";
   return `  studio: {
     execute: {
-      provider: "${provider}",
-      databaseUrl: env("${urlEnv}"),
+      provider: ${tsString(provider)},
+      databaseUrl: env(${tsString(urlEnv)}),
     },
   },`;
 }

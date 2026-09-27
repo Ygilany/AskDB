@@ -195,6 +195,10 @@ See [Multi-tenancy](/guides/multi-tenancy/) for the full scope shape.
 
 The `tenantRoot` in the scope doesn't match any root defined in `tenant-policy.md`. Check the `id:` field of each root in the policy file — the scope must use the same stable table ID (e.g. `table:public.organizations`).
 
+### `TenantScopeError: SUBTREE_NOT_RESOLVABLE`
+
+The scope uses `access.kind: "subtree"`, but `ask()` couldn't expand it. Either no `resolveTenantDescendants` callback was passed, or the callback returned an empty array or something other than an array of non-empty string IDs. AskDB doesn't query your database to find descendants, and it won't fall back to the seed IDs alone. Pass a resolver that returns every ID in the subtree, or send an `ids` access with the IDs already expanded. See [Hierarchical scope](/guides/multi-tenancy/#hierarchical-scope-subtree).
+
 ### `TenantGuardrailError`
 
 The generated SQL doesn't include a required tenant predicate on one or more tenant-bound tables. This is a fail-closed guardrail: AskDB refuses to return SQL that could leak cross-tenant data. Re-ask the question with a more specific scope, or inspect the `warnings` array on the error for which table triggered the guardrail.

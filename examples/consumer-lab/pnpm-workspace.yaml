@@ -1,0 +1,35 @@
+# The consumer lab is its own pnpm root with its own lockfile. It is deliberately NOT a
+# member of the AskDB monorepo workspace (the root pnpm-workspace.yaml excludes it), so it
+# resolves AskDB exactly as an outside project would: from packed tarballs or the registry.
+allowBuilds:
+  # The host's SQLite driver, and the one `askdb introspect` loads for SQLite; it builds a native addon.
+  better-sqlite3: true
+  esbuild: true
+  # `askdb` depends on @askdb/prisma, whose @prisma/engines has a postinstall script.
+  # pnpm 11 refuses to install until it is approved, as any pnpm user would have to (#259).
+  "@prisma/engines": true
+# `pnpm lab:use` rewrites the block below so every @askdb/* package, including transitive
+# ones, resolves to the install target. Don't edit it by hand.
+# lab:use overrides begin
+# lab:use target: npm:latest
+overrides:
+  "@askdb/ai": "0.1.0-beta.6"
+  "@askdb/ai-anthropic": "1.0.0-beta.4"
+  "@askdb/ai-azure": "1.0.0-beta.6"
+  "@askdb/ai-google": "1.0.0-beta.6"
+  "@askdb/ai-openai": "1.0.0-beta.6"
+  "@askdb/client": "1.0.0-beta.5"
+  "@askdb/config": "1.0.0-beta.11"
+  "@askdb/connectors": "0.1.0-beta.7"
+  "@askdb/core": "1.0.0-beta.42"
+  "@askdb/enrich": "0.2.0-beta.13"
+  "@askdb/introspect": "0.3.0-beta.16"
+  "@askdb/mysql": "0.1.0-beta.17"
+  "@askdb/postgres": "0.2.0-beta.18"
+  "@askdb/prisma": "0.2.0-beta.16"
+  "@askdb/rag": "0.2.0-beta.22"
+  "@askdb/sqlite": "0.1.0-beta.17"
+  "@askdb/sqlserver": "0.1.0-beta.18"
+  "@askdb/studio": "0.2.0-beta.35"
+  "askdb": "1.0.0-beta.42"
+# lab:use overrides end

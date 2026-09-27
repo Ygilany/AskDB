@@ -26,6 +26,7 @@ This is a Postgres-first proof. The tenant enforcement model is designed to gene
   - P4 — multi-level hierarchy traversal (agency → sub_agency → client)
   - P5 — polymorphic association (`notes.owner_type` + `notes.owner_id`)
 - **Unified `TenantScope` input to `ask()`** — `access` (ids, subtree, multi_root, global), `tenantFilters` (polymorphic overrides, host-resolved), `context` (advisory: role, region, department)
+- **Subtree expansion via a host resolver.** A `subtree` access is expanded by `ask({ resolveTenantDescendants })` into the full ID set before generation. The seeds are always unioned in. With no resolver, or an empty or invalid result, `ask()` throws `TenantScopeError` (`SUBTREE_NOT_RESOLVABLE`) instead of silently scoping to the seeds. See [`tenant-policy.md` › Subtree expansion](../contracts/tenant-policy.md#subtree-expansion).
 - **Prompt assembly boundary** — policy front-matter, runtime scope, and advisory context injected into every generation prompt; named placeholder convention `:tenant_<root_label>_ids`
 - **SQL guardrail validator** — AST-based Postgres SQL checks: scoped tables must have required predicates; polymorphic tables must include type discriminator; cross-table scope compatibility checked
 - **Enforcement modes** — `strict` (fail closed on unproven queries) and `warn` (return SQL with `tenantWarnings`)
@@ -40,7 +41,7 @@ This is a Postgres-first proof. The tenant enforcement model is designed to gene
 - User authentication — AskDB receives authorized scope from the host; it does not authenticate users
 - Multi-engine tenant proof beyond Postgres — Phase 13
 - Row-level security (RLS) DDL generation — tenant predicates are SQL WHERE clauses; RLS is still recommended as a defense-in-depth layer
-- Subtree expansion — `subtree` scope kind is accepted but host must expand to explicit IDs in practice
+- Built-in subtree expansion. AskDB does not generate a recursive CTE for `subtree` scopes; the host supplies `resolveTenantDescendants`. An in-database recursive-CTE strategy is a possible follow-up (#268).
 
 ## Design decisions
 
@@ -58,6 +59,11 @@ This is a Postgres-first proof. The tenant enforcement model is designed to gene
 // ask() tenant input
 interface AskOptions {
   tenantScope?: TenantScope
+  // Required for access.kind === "subtree"; returns every ID in the subtree.
+  resolveTenantDescendants?: (
+    tenantRoot: string,
+    seedIds: readonly string[],
+  ) => Promise<readonly string[]> | readonly string[]
 }
 
 interface TenantScope {
@@ -104,6 +110,7 @@ enforcement: strict
 - Policy loading: fixture `tenant-policy.md` loads and normalizes deterministically; unknown table IDs, broken FK paths, and cycles produce clear validation errors.
 - All five discriminator patterns (P1–P5) covered by fixture tests.
 - `ask()` without scope when a policy is configured fails before model generation.
+- `subtree` scope: the resolver's full ID set reaches the SQL (seeds unioned in). With no resolver, or an empty or invalid result, `ask()` throws `SUBTREE_NOT_RESOLVABLE` before model generation. Closure expansion terminates on cyclic hierarchies.
 - `ask()` with valid agency scope proceeds to prompt assembly; golden prompt snapshot includes policy block, scope, and advisory context.
 - SQL guardrail: missing `agency_id` predicate fails closed in strict mode; correctly scoped SQL passes; polymorphic table without type discriminator fails; cross-tenant JOIN fails.
 - `sql-only` mode returns complete executable SQL; `sql-params` returns `{ sql, params }` with positional parameters; both pass the guardrail validator.
