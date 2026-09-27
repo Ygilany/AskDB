@@ -12,8 +12,13 @@
     "@askdb/ai-openai": "workspace:*",
     "@askdb/client": "workspace:*",
     "@askdb/config": "workspace:*",
+<<<<<<< HEAD
     "express": "^4.22.2",
     "pg": "^8.23.0"
+=======
+    "express": "^5.2.1",
+    "pg": "^8.22.0"
+>>>>>>> origin/dependabot/npm_and_yarn/express-5.2.1
   },
   "devDependencies": {
     "@types/express": "^5.0.6",
