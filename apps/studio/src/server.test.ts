@@ -1,12 +1,16 @@
-import { cpSync, existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
-import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
+import { cpSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { createServer, request as httpRequest, type IncomingMessage, type ServerResponse } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { flattenAskDbConfig, resetAskDbRuntimeForTests, setAskDbRuntimeForTests } from "@askdb/config";
 import type { AskDbConfig } from "@askdb/config";
 import { createMemoryStore } from "@askdb/rag";
 import { afterEach, describe, expect, it } from "vitest";
-import { createStudioServer, setStudioPgvectorStoreFactoryForTests } from "./server.js";
+import {
+  createStudioServer,
+  setStudioClientDirForTests,
+  setStudioPgvectorStoreFactoryForTests,
+} from "./server.js";
 import { setSetupInstallerForTests } from "./setup.js";
 
 const repoRoot = new URL("../../..", import.meta.url).pathname;
@@ -48,6 +52,7 @@ describe("AskDB Studio server", () => {
     resetAskDbRuntimeForTests();
     setStudioPgvectorStoreFactoryForTests(undefined);
     setSetupInstallerForTests(undefined);
+    setStudioClientDirForTests(undefined);
     await Promise.all(
       [...servers, ...embeddingServers].map(
         (server) =>
@@ -134,6 +139,161 @@ describe("AskDB Studio server", () => {
     });
     expect(retrieved.results.length).toBeGreaterThan(0);
     expect(retrieved.results[0].text).toEqual(expect.any(String));
+  });
+
+  describe("request guard", () => {
+    async function startGuardedServer() {
+      installStudioRuntime({ ASKDB_RAG_EMBEDDER: "mock" });
+      const server = createStudioServer({ schema: copyFixture() });
+      servers.push(server);
+      const baseUrl = await listen(server);
+      const port = new URL(baseUrl).port;
+      return { server, baseUrl, port, token: server.sessionToken };
+    }
+
+    it("issues a random 32-byte hex session token per server", async () => {
+      const a = await startGuardedServer();
+      const b = await startGuardedServer();
+      expect(a.token).toMatch(/^[0-9a-f]{64}$/);
+      expect(b.token).toMatch(/^[0-9a-f]{64}$/);
+      expect(a.token).not.toBe(b.token);
+    });
+
+    it("rejects spoofed Host headers (DNS rebinding) on API and static routes", async () => {
+      const { baseUrl, port, token } = await startGuardedServer();
+      for (const host of [
+        `evil.example:${port}`,
+        `evil.example`,
+        `127.0.0.1:1`,
+        `127.0.0.1`,
+        `evil@127.0.0.1:${port}`,
+        `127.0.0.1:${port}/x`,
+      ]) {
+        const api = await rawRequest(baseUrl, {
+          path: "/api/workspace",
+          headers: { host, "x-askdb-studio-token": token },
+        });
+        expect(api.status, host).toBe(403);
+        expect(JSON.parse(api.body).error.message).toContain("Host");
+      }
+      const page = await rawRequest(baseUrl, { path: "/", headers: { host: `evil.example:${port}` } });
+      expect(page.status).toBe(403);
+      expect(page.body).not.toContain(token);
+    });
+
+    it("accepts localhost, 127.0.0.1, and [::1] Host headers with the right port and token", async () => {
+      const { baseUrl, port, token } = await startGuardedServer();
+      for (const host of [`localhost:${port}`, `127.0.0.1:${port}`, `[::1]:${port}`, `LOCALHOST:${port}`]) {
+        const res = await rawRequest(baseUrl, {
+          path: "/api/workspace",
+          headers: { host, "x-askdb-studio-token": token },
+        });
+        expect(res.status, host).toBe(200);
+        expect(JSON.parse(res.body).schemaId).toBe("orders-users");
+      }
+    });
+
+    it("rejects API calls with a missing or wrong session token", async () => {
+      const { baseUrl, port, token } = await startGuardedServer();
+      const host = `127.0.0.1:${port}`;
+      const missing = await rawRequest(baseUrl, { path: "/api/workspace", headers: { host } });
+      expect(missing.status).toBe(403);
+      expect(JSON.parse(missing.body).error.message).toContain("session token");
+
+      const wrong = await rawRequest(baseUrl, {
+        path: "/api/workspace",
+        headers: { host, "x-askdb-studio-token": token.replace(/.$/, (c) => (c === "0" ? "1" : "0")) },
+      });
+      expect(wrong.status).toBe(403);
+
+      const truncated = await rawRequest(baseUrl, {
+        path: "/api/setup/status",
+        headers: { host, "x-askdb-studio-token": token.slice(0, 10) },
+      });
+      expect(truncated.status).toBe(403);
+    });
+
+    it("rejects the no-cors text/plain exploit and cross-origin writes", async () => {
+      const { baseUrl, port, token } = await startGuardedServer();
+      const host = `127.0.0.1:${port}`;
+      const body = JSON.stringify({ sql: "select 1" });
+
+      // What a malicious page can send with mode: "no-cors": no custom headers, text/plain body.
+      const noCors = await rawRequest(baseUrl, {
+        method: "POST",
+        path: "/api/execute",
+        headers: { host, origin: "https://evil.example", "content-type": "text/plain" },
+        body,
+      });
+      expect(noCors.status).toBe(403);
+
+      // Even with a (somehow obtained) token, a foreign Origin is refused.
+      for (const origin of ["https://evil.example", `http://evil.example:${port}`, "null", `https://127.0.0.1:${port}`]) {
+        const crossOrigin = await rawRequest(baseUrl, {
+          method: "POST",
+          path: "/api/concepts",
+          headers: { host, origin, "content-type": "application/json", "x-askdb-studio-token": token },
+          body: JSON.stringify({ concepts: [] }),
+        });
+        expect(crossOrigin.status, origin).toBe(403);
+        expect(JSON.parse(crossOrigin.body).error.message).toContain("cross-origin");
+      }
+
+      // A valid token but a non-JSON content type is refused (forces CORS preflight in browsers).
+      const textPlain = await rawRequest(baseUrl, {
+        method: "POST",
+        path: "/api/execute",
+        headers: { host, "content-type": "text/plain", "x-askdb-studio-token": token },
+        body,
+      });
+      expect(textPlain.status).toBe(415);
+
+      const noContentType = await rawRequest(baseUrl, {
+        method: "POST",
+        path: "/api/rag/index",
+        headers: { host, "x-askdb-studio-token": token },
+        body: "{}",
+      });
+      expect(noContentType.status).toBe(415);
+    });
+
+    it("accepts same-origin JSON writes with the session token", async () => {
+      const { baseUrl, port, token } = await startGuardedServer();
+      const res = await rawRequest(baseUrl, {
+        method: "POST",
+        path: "/api/rag/index",
+        headers: {
+          host: `localhost:${port}`,
+          origin: `http://localhost:${port}`,
+          "content-type": "application/json; charset=utf-8",
+          "x-askdb-studio-token": token,
+        },
+        body: "{}",
+      });
+      expect(res.status).toBe(200);
+      expect(JSON.parse(res.body).status.hasIndex).toBe(true);
+    });
+
+    it("injects the session token into the served index.html and forbids framing", async () => {
+      const clientDir = mkdtempSync(join(tmpdir(), "askdb-studio-client-"));
+      writeFileSync(
+        join(clientDir, "index.html"),
+        "<!doctype html>\n<html>\n  <head>\n    <title>AskDB Studio</title>\n  </head>\n  <body></body>\n</html>\n",
+      );
+      setStudioClientDirForTests(clientDir);
+      try {
+        const { baseUrl, port, token } = await startGuardedServer();
+        for (const path of ["/", "/tables/users"]) {
+          const page = await rawRequest(baseUrl, { path, headers: { host: `127.0.0.1:${port}` } });
+          expect(page.status).toBe(200);
+          expect(page.body).toContain(`<meta name="askdb-studio-token" content="${token}" />`);
+          expect(page.body.indexOf("askdb-studio-token")).toBeLessThan(page.body.indexOf("</head>"));
+          expect(page.headers["x-frame-options"]).toBe("DENY");
+        }
+      } finally {
+        rmSync(clientDir, { recursive: true, force: true });
+      }
+    });
   });
 
   it("keeps Studio on the shared enrichment package", () => {
@@ -536,7 +696,7 @@ describe("AskDB Studio server", () => {
       expect(status).toMatchObject({ needed: true, reason: "no-config" });
 
       // Non-setup endpoints are gated while setup is pending.
-      const gated = await fetch(`${baseUrl}/api/workspace`);
+      const gated = await fetch(`${baseUrl}/api/workspace`, { headers: authHeaders(baseUrl) });
       expect(gated.status).toBe(409);
 
       // Secrets are rejected — env var NAMES only.
@@ -646,14 +806,50 @@ function copyFixture(): string {
   return schemaDir;
 }
 
-async function listen(server: ReturnType<typeof createStudioServer>): Promise<string> {
+/** Session token per listening base URL, so request helpers can authenticate. */
+const sessionTokens = new Map<string, string>();
+
+async function listen(server: ReturnType<typeof createServer> & { sessionToken?: string }): Promise<string> {
   await new Promise<void>((resolve, reject) => {
     server.once("error", reject);
     server.listen(0, "127.0.0.1", resolve);
   });
   const address = server.address();
   if (!address || typeof address === "string") throw new Error("Server did not bind a TCP port.");
-  return `http://127.0.0.1:${address.port}`;
+  const baseUrl = `http://127.0.0.1:${address.port}`;
+  if (server.sessionToken) sessionTokens.set(baseUrl, server.sessionToken);
+  return baseUrl;
+}
+
+function authHeaders(url: string): Record<string, string> {
+  const token = sessionTokens.get(new URL(url).origin);
+  return token ? { "x-askdb-studio-token": token } : {};
+}
+
+/**
+ * Raw HTTP request — unlike `fetch`, lets tests send an arbitrary `Host`
+ * header (to simulate DNS rebinding).
+ */
+function rawRequest(
+  baseUrl: string,
+  options: { method?: string; path: string; headers?: Record<string, string>; body?: string },
+): Promise<{ status: number; body: string; headers: IncomingMessage["headers"] }> {
+  const { hostname, port } = new URL(baseUrl);
+  return new Promise((resolve, reject) => {
+    const req = httpRequest(
+      { hostname, port, method: options.method ?? "GET", path: options.path, headers: options.headers },
+      (res) => {
+        const chunks: Buffer[] = [];
+        res.on("data", (chunk: Buffer) => chunks.push(chunk));
+        res.on("end", () =>
+          resolve({ status: res.statusCode ?? 0, body: Buffer.concat(chunks).toString("utf8"), headers: res.headers }),
+        );
+      },
+    );
+    req.on("error", reject);
+    if (options.body !== undefined) req.write(options.body);
+    req.end();
+  });
 }
 
 function createEmbeddingServer(): ReturnType<typeof createServer> {
@@ -710,7 +906,7 @@ function tokenCount(text: string): number {
 
 
 async function getJson(url: string): Promise<any> {
-  const response = await fetch(url);
+  const response = await fetch(url, { headers: authHeaders(url) });
   if (response.status !== 200) {
     throw new Error(`GET ${url} failed with ${response.status}: ${await response.text()}`);
   }
@@ -728,7 +924,7 @@ async function postJson(url: string, body: unknown): Promise<any> {
 async function postRaw(url: string, body: unknown): Promise<Response> {
   const response = await fetch(url, {
     method: "POST",
-    headers: { "content-type": "application/json" },
+    headers: { "content-type": "application/json", ...authHeaders(url) },
     body: JSON.stringify(body),
   });
   return response;

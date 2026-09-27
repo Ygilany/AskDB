@@ -1,7 +1,7 @@
 import { defineConfig, env, type AskDbConfig } from "@askdb/config";
 
-// CLIs call `bootstrapAskDbEnv`, which loads a local `.env` (missing file is OK), then evaluates
-// this file and installs the AskDB runtime snapshot — no separate dotenv import needed here.
+// CLIs call `bootstrapAskDbEnv`, which loads `.env` (a missing file is OK), then evaluates this file and
+// installs the AskDB runtime snapshot, so this file doesn't load `.env` itself.
 // Use `env("VAR")` for every value read from the environment; `flattenAskDbConfig` applies defaults
 // for optional fields (see `@askdb/config` / `defaults.ts`).
 export default defineConfig({
@@ -23,7 +23,7 @@ export default defineConfig({
     providerConfig: {
       postgres: {
         // Postgres URL for `askdb introspect` — maps to ASKDB_INTROSPECT_POSTGRES_URL
-        // Pagila fixture (docker compose -f fixtures/pagila/docker-compose.yml …): often port 5433
+        // Multi-engine fixture (`pnpm fixture:up`): postgres://fixture_reader:fixture_reader@127.0.0.1:15432/askdb_fixture
         databaseUrl: env("DATABASE_URL"),
       },
     },
