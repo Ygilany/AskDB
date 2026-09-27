@@ -49,7 +49,9 @@ describe("writeSetupConfig escaping (config code injection)", () => {
     expect(Object.keys(config).sort()).toEqual(["ai", "introspection", "rag", "studio"]);
     expect(Object.keys(config.introspection).sort()).toEqual(["outputDir", "provider", "providerConfig"]);
     expect(Object.keys(config.introspection.providerConfig.sqlite)).toEqual(["file"]);
-    expect(Object.keys(config.studio.execute).sort()).toEqual(["file", "provider"]);
+    expect(Object.keys(config.studio.execute).sort()).toEqual(["enabled", "file", "provider"]);
+    // Choosing Studio execute in the wizard must actually turn it on (it is opt-in).
+    expect(config.studio.execute.enabled as unknown).toBe(true);
   });
 
   it("emits quotes and backslashes in the prisma schema path as a literal string", () => {

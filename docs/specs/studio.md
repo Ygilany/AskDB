@@ -25,7 +25,7 @@ The product shape follows the Prisma Studio pattern: a CLI command starts a loca
 
 ### Out of scope
 
-- Live SQL execution against a database
+- Live SQL execution beyond the opt-in, read-only Playground execute path (see [Execute](#execute)); no writes, no unbounded result sets
 - Multi-user / hosted deployment
 - Tenant policy authoring UI beyond the sample ask controls — see [`multi-tenancy.md`](./multi-tenancy.md)
 
@@ -49,6 +49,10 @@ The product shape follows the Prisma Studio pattern: a CLI command starts a loca
 | `POST` | `/api/rag/index` | Build the configured RAG index |
 | `POST` | `/api/rag/query` | Return scored chunks for a question |
 | `POST` | `/api/ask` | Generate SQL with optional RAG; returns SQL, explain, warnings, chunks |
+| `GET`/`POST`/`DELETE` | `/api/history`, `/api/history/:id` | Playground history (`playground-history.json` in the schema dir) |
+| `GET` | `/api/execute/status` | Execute provider, `enabled`, `disabledReason`, connection/driver readiness, `timeoutMs`, `maxRows` |
+| `POST` | `/api/execute` | Run a validated SELECT (opt-in; `403` when `studio.execute.enabled` is false) |
+| `POST` | `/api/execute/install-driver` | Install the configured driver package (loopback only; execute must be enabled) |
 
 **Server startup:**
 ```bash
@@ -68,6 +72,28 @@ Studio is a local dev tool whose API can execute SQL against the configured data
 - **Known limit:** on a non-loopback bind, anyone who can load the page from an allowed address gets the token. The token protects against cross-site browser attacks, not against untrusted networks.
 - **Design record:** why this is an in-page per-launch token rather than a Jupyter-style login token, the accepted limits, and the triggers for revisiting are in [ADR 0009](../adrs/0009-studio-local-api-protection.md).
 - **Setup config writer:** every value interpolated into the generated `askdb.config.ts` is emitted with `JSON.stringify` (the file is later executed via jiti); env names must match `^[A-Z][A-Z0-9_]*$`, and paths reject control characters. `askdb init` uses the same escaping.
+- **Request bodies:** `readJson` rejects bodies over 1 MiB (`MAX_JSON_BODY_BYTES`) with `413`: early on a declared `Content-Length`, otherwise while streaming (the rest of the body is drained, not buffered).
+- **Playground history:** `POST /api/history` copies only the known `PlaygroundHistoryEntry` fields, with type and length checks. `id`/`timestamp` are server-assigned. Before writing `playground-history.json`, Studio makes sure the schema dir's `.gitignore` lists it. If there's no `.gitignore`, Studio writes one that also ignores `.env`, `.env.*`, and `!.env.example` (the plan-043 rules; the `.env` rules are skipped when the schema dir is the project root). If a `.gitignore` exists, Studio only appends the entry. Failures are non-fatal.
+- **Driver install:** the requested provider must be an own key of `EXECUTE_DRIVER_REGISTRY` (`Object.hasOwn`, so `constructor`/`__proto__` → `400`). The package manager is spawned through `packageManagerSpawnSpec` (`src/package-manager.ts`, shared with the setup wizard): `shell: false` on POSIX, and `shell: true` on Windows (Node can't spawn `.cmd` shims without a shell) with every argument matched against a strict allowlist pattern.
+
+### Execute
+
+Execute is opt-in (`studio.execute.enabled`, default `false`). When disabled, `POST /api/execute` and `/api/execute/install-driver` return `403` with instructions, and `/api/execute/status` reports `enabled: false` plus `disabledReason`, so the Playground hides the Execute button. The execute connection is `studio.execute.databaseUrl` / `file`. The introspection connection is reused only with `studio.execute.useIntrospectionConnection: true`. `askdb init` and the setup wizard write `enabled: true` when the user chooses Studio execute. Both default to off.
+
+Each request (`apps/studio/src/server.ts` `executeQuery` → `apps/studio/src/execute-registry.ts`):
+
+1. `validateExecuteSql` runs `@askdb/core` `validateSelectSql` with the provider's `DialectSpec`. A same-family `dialect` override is honored: `cockroachdb` on postgres, `mariadb` on mysql. A `SqlValidationError` becomes a `400`, and the driver is never called. The normalized single statement is what gets executed.
+2. When the schema marks anything `sensitive`, `validateSensitiveReferences` runs in `"warn"` mode, and matches come back as `warnings` on a successful response. Studio has no strict setting.
+3. The engine runner executes one statement read-only, with a timeout (`studio.execute.timeoutMs`, default 30000) and a row cap (`studio.execute.maxRows`, default 500; fetch `maxRows + 1`, respond with `truncated`/`rowLimit`):
+
+| Engine | Single statement | Read-only | Timeout | Row cap |
+|---|---|---|---|---|
+| Postgres | `queryMode: "extended"` + named statement (never the simple protocol) | `SET default_transaction_read_only = on`; `BEGIN READ ONLY` … `ROLLBACK` | `SET LOCAL statement_timeout`; `query_timeout` backstop | `SELECT * FROM (…) AS askdb_q LIMIT n+1` |
+| MySQL / MariaDB | `execute()` (binary prepared protocol); `multipleStatements: false` | `SET SESSION TRANSACTION READ ONLY`; `START TRANSACTION READ ONLY` … `ROLLBACK` | `MAX_EXECUTION_TIME` (MariaDB: `max_statement_time`); connection destroyed on client backstop | `SELECT * FROM (…) AS askdb_q LIMIT n+1` |
+| SQLite | `better-sqlite3` `prepare()` rejects multiple statements; non-reader statements rejected | `readonly: true, fileMustExist: true` | Not enforced (`timeout` is lock wait only; queries run synchronously) | `.iterate()` stops at `n+1` |
+| SQL Server | Validation only (T-SQL batches allow several statements) | `SET XACT_ABORT ON; BEGIN TRANSACTION; … ROLLBACK` (no read-only mode; use a read-only login) | `request.cancel()` after `timeoutMs` | `SET ROWCOUNT n+1` |
+
+These guards narrow the blast radius. They don't replace a read-only database role.
 
 ## Test bar
 
@@ -79,6 +105,8 @@ Studio is a local dev tool whose API can execute SQL against the configured data
 - RAG: `POST /api/rag/index` builds index with mock or configured embedder; `POST /api/rag/query` returns scored chunks.
 - Ask: `POST /api/ask` returns SQL and warnings; works with `ASKDB_MOCK_SQL` without a live model.
 - Request guard: spoofed `Host` → `403`; cross-origin POST → `403`; `text/plain` POST → `415`/`403`; missing or wrong token → `403`; served `index.html` contains the token.
+- Execute: disabled by default → `403`; enabled + validated SELECT runs (real SQLite); `SELECT 1; DROP TABLE t` → `400` before the driver; row cap truncates with `truncated: true`; no silent reuse of the introspection connection; Postgres uses extended query mode inside `BEGIN READ ONLY`; SQL Server wraps in `BEGIN TRANSACTION`/`ROLLBACK` (mocked drivers).
+- Request bodies over 1 MiB → `413`. History stores only whitelisted fields and git-ignores `playground-history.json`. `install-driver` with `constructor` → `400`.
 - Setup writer: quotes/backslashes in paths round-trip as literal strings; control characters and invalid env names are rejected.
 - Package tarball includes `bin`, server dist, client dist, README, LICENSE.
 - Manual: `askdb-studio --schema fixtures/schemas/orders-users.schema` — browse tables, edit a description, save, confirm file updated, reload, confirm value persists.
