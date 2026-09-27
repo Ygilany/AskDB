@@ -303,7 +303,7 @@ The overlay marks `people.client.email` and `people.client.ssn` as `sensitive: t
 
 ## Commands and reporting
 
-- `pnpm lab:matrix` runs `lab:up` (idempotent), then the whole vitest suite, with `src/matrix-reporter.ts`. The reporter prints a `scenario × dialect` table with the values `pass`, `FAIL`, `n/a (reason)` and `known (discrepancy id)`. It also writes `.lab/matrix.json`. In CI the table is appended to `$GITHUB_STEP_SUMMARY`.
+- `pnpm lab:matrix` runs `lab:up` (idempotent), then the whole vitest suite, with `src/matrix-reporter.ts`. The reporter prints a `scenario × dialect` table with the values `pass`, `FAIL`, `n/a (capability: …)` and `known (#issue)`; any other skip counts as `FAIL`. It also writes `.lab/matrix.json`. In CI the table is appended to `$GITHUB_STEP_SUMMARY`.
 - Test names encode `[dialect] scenario-id`, which is how the reporter builds the table. Vitest's own filters pass through: `pnpm lab:matrix -t <scenario-id>` or `-t '\[mysql\]'`.
 - **Known discrepancies** are GitHub issues labelled `discrepancy` (see `docs/agents/issue-tracker.md`). Each is classified with a label: `bug` for a product bug, `documentation` for a docs issue, and a note for a dataset/normalization or test issue. Each carries the docs quote, the observed behavior and the decision needed. A test for an open product bug is marked `it.fails` and names its issue, for example `it.fails("[mysql] … (#239)")`. When the bug is fixed, `it.fails` starts failing and forces the marker to be removed. The matrix shows `known (#239)` rather than green.
 

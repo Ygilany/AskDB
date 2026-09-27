@@ -19,11 +19,10 @@
  */
 import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { fileURLToPath } from "node:url";
+import { LAB_STATE } from "./paths.js";
 import type { Reporter, SerializedError, TestCase, TestModule } from "vitest/node";
 import { DIALECTS } from "./fixture.js";
 
-const LAB_STATE = fileURLToPath(new URL("../.lab/", import.meta.url));
 const NAME = /^\[([a-z]+)\][\s>]+([a-z0-9][\w-]*)/i;
 const ISSUE = /\(#(\d+)\)/g;
 
@@ -57,8 +56,16 @@ function outcomeOf(test: TestCase): Outcome {
     // An expected failure that names no issue isn't tracked anywhere: show it as a failure.
     return issues.length ? { status: "known", detail: issues.join(", ") } : { status: "fail" };
   }
-  if (result.state === "skipped" && result.note) return { status: "na", detail: result.note };
-  // Skipped because a hook or its suite failed: that is a failure, not an absence.
+  // Only a capability gate (src/capabilities.ts) may skip a test that was meant to run: the
+  // lab fails rather than skips. Any other skip note is a failure.
+  if (result.state === "skipped" && result.note) {
+    return result.note.startsWith("capability:")
+      ? { status: "na", detail: result.note }
+      : { status: "fail", detail: `skipped: ${result.note}` };
+  }
+  // Filtered out (`-t`, `.skip`, `.todo`): the test never ran, whatever its siblings did.
+  if (test.options.mode !== "run" && test.options.mode !== "only") return { status: "not-run" };
+  // Meant to run, but skipped because a hook or its suite failed: a failure, not an absence.
   for (let p = test.parent; p.type !== "module"; p = p.parent) {
     if (p.state() === "failed") return { status: "fail" };
   }
@@ -72,8 +79,9 @@ function combine(outcomes: Outcome[], tests: string[]): Cell | undefined {
   const details = (s: Status) => [...new Set(ran.filter((o) => o.status === s).map((o) => o.detail))].join(", ");
   if (ran.some((o) => o.status === "fail")) return { status: "fail", text: "FAIL", tests };
   if (ran.some((o) => o.status === "known")) return { status: "known", text: `known (${details("known")})`, tests };
-  if (ran.some((o) => o.status === "pass")) return { status: "pass", text: "pass", tests };
-  return { status: "na", text: `n/a (${details("na")})`, tests };
+  // A gated test is never hidden behind a passing one in the same cell.
+  if (ran.some((o) => o.status === "na")) return { status: "na", text: `n/a (${details("na")})`, tests };
+  return { status: "pass", text: "pass", tests };
 }
 
 function table(header: string[], rows: string[][]): string {
