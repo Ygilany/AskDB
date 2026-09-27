@@ -4,7 +4,7 @@
  * own database (`org`, `people`, `billing`, `ref`).
  *
  * Protects: multi-database introspection. With the databases listed in
- * `filters.schemas` (what `introspection.providerConfig.mysql.databases` and
+ * `filters.schemas` (what `introspection.schemas` and
  * `askdb introspect --schemas` feed), every listed database is read, each
  * becomes its own namespace, and foreign keys that cross databases resolve to the
  * referenced database. The artifact matches the same golden logical schema every

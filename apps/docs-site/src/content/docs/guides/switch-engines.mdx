@@ -116,17 +116,15 @@ export default {
   introspection: {
     provider: "mysql",
     providerConfig: {
-      mysql: {
-        databaseUrl: env("DATABASE_URL"),
-        databases: ["app", "sales", "analytics"],
-      },
+      mysql: { databaseUrl: env("DATABASE_URL") },
     },
+    schemas: ["app", "sales", "analytics"],
   },
   // ...
 };
 ```
 
-`askdb introspect --schemas app,sales` does the same for one run and overrides the configured list.
+`introspection.schemas` works the same way on every engine: on Postgres and SQL Server it lists schemas (the default is every non-system schema). `askdb introspect --schemas app,sales` does the same for one run and overrides the configured list.
 
 For SQLite, set the file path via `introspection.providerConfig.sqlite.file` in `askdb.config.ts`:
 

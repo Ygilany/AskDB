@@ -230,13 +230,6 @@ export type IntrospectionProviderConfigs = {
      * When omitted, pass `--url` to `askdb introspect` or set `ASKDB_INTROSPECT_MYSQL_URL` in env.
      */
     databaseUrl?: string;
-    /**
-     * Databases to introspect (MySQL/MariaDB "schemas"), e.g. `["app", "sales", "analytics"]`.
-     * Each becomes its own namespace in the artifact, and cross-database foreign keys are kept.
-     * When omitted, only the connection URL's database is introspected, under the `public`
-     * namespace. `askdb introspect --schemas` overrides this list.
-     */
-    databases?: string[];
   };
   sqlite?: {
     /**
@@ -265,6 +258,14 @@ export type PostgresIntrospectionConfig = {
    * When unset/blank, `flattenAskDbConfig` uses the package default `./askdb/`.
    */
   outputDir?: string;
+  /**
+   * Schemas to introspect, like `askdb introspect --schemas` (which overrides it), e.g.
+   * `["public", "sales"]`. On MySQL/MariaDB these are databases: each becomes its own
+   * namespace and cross-database foreign keys are kept; without a list, only the
+   * connection URL's database is read, under the `public` namespace. On Postgres and SQL
+   * Server, the default is every non-system schema.
+   */
+  schemas?: string[];
 };
 
 /** Discriminated union branch for `introspection` when `provider` is `"prisma"`. */
@@ -276,6 +277,14 @@ export type PrismaIntrospectionConfig = {
    * When unset/blank, `flattenAskDbConfig` uses the package default `./askdb/`.
    */
   outputDir?: string;
+  /**
+   * Schemas to introspect, like `askdb introspect --schemas` (which overrides it), e.g.
+   * `["public", "sales"]`. On MySQL/MariaDB these are databases: each becomes its own
+   * namespace and cross-database foreign keys are kept; without a list, only the
+   * connection URL's database is read, under the `public` namespace. On Postgres and SQL
+   * Server, the default is every non-system schema.
+   */
+  schemas?: string[];
 };
 
 /** Discriminated union branch for `introspection` when `provider` is `"mysql"`. */
@@ -287,6 +296,14 @@ export type MysqlIntrospectionConfig = {
    * When unset/blank, `flattenAskDbConfig` uses the package default `./askdb/`.
    */
   outputDir?: string;
+  /**
+   * Schemas to introspect, like `askdb introspect --schemas` (which overrides it), e.g.
+   * `["public", "sales"]`. On MySQL/MariaDB these are databases: each becomes its own
+   * namespace and cross-database foreign keys are kept; without a list, only the
+   * connection URL's database is read, under the `public` namespace. On Postgres and SQL
+   * Server, the default is every non-system schema.
+   */
+  schemas?: string[];
 };
 
 /** Discriminated union branch for `introspection` when `provider` is `"sqlite"`. */
@@ -298,6 +315,14 @@ export type SqliteIntrospectionConfig = {
    * When unset/blank, `flattenAskDbConfig` uses the package default `./askdb/`.
    */
   outputDir?: string;
+  /**
+   * Schemas to introspect, like `askdb introspect --schemas` (which overrides it), e.g.
+   * `["public", "sales"]`. On MySQL/MariaDB these are databases: each becomes its own
+   * namespace and cross-database foreign keys are kept; without a list, only the
+   * connection URL's database is read, under the `public` namespace. On Postgres and SQL
+   * Server, the default is every non-system schema.
+   */
+  schemas?: string[];
 };
 
 /** Discriminated union branch for `introspection` when `provider` is `"sqlserver"`. */
@@ -309,6 +334,14 @@ export type SqlServerIntrospectionConfig = {
    * When unset/blank, `flattenAskDbConfig` uses the package default `./askdb/`.
    */
   outputDir?: string;
+  /**
+   * Schemas to introspect, like `askdb introspect --schemas` (which overrides it), e.g.
+   * `["public", "sales"]`. On MySQL/MariaDB these are databases: each becomes its own
+   * namespace and cross-database foreign keys are kept; without a list, only the
+   * connection URL's database is read, under the `public` namespace. On Postgres and SQL
+   * Server, the default is every non-system schema.
+   */
+  schemas?: string[];
 };
 
 /** Discriminated union of all supported introspection provider branches. */

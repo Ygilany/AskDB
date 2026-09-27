@@ -57,11 +57,11 @@ export type AskDbRuntimeIntrospectionConfig = {
    */
   mysqlDatabaseUrl: string | undefined;
   /**
-   * Databases to introspect when `provider === "mysql"`:
-   * `providerConfig.mysql.databases` → `ASKDB_INTROSPECT_MYSQL_DATABASES` (comma-separated).
-   * `undefined` means "only the connection's database".
+   * Schemas (MySQL/MariaDB: databases) to introspect, for every provider:
+   * `introspection.schemas` → `ASKDB_INTROSPECT_SCHEMAS` (comma-separated).
+   * `undefined` means the engine's default. `askdb introspect --schemas` overrides it.
    */
-  mysqlDatabases: string[] | undefined;
+  schemas: string[] | undefined;
   /**
    * Resolved SQLite file path when `provider === "sqlite"`:
    * `providerConfig.sqlite.file` → `ASKDB_INTROSPECT_SQLITE_FILE` env.
@@ -174,12 +174,9 @@ export function getAskDbRuntimeConfig(): AskDbRuntimeConfig {
       ? structured.introspection.providerConfig?.mysql?.databaseUrl?.trim() ||
         pickFlat(flat, "ASKDB_INTROSPECT_MYSQL_URL")
       : undefined;
-  const mysqlDatabasesRaw =
-    structured.introspection.provider === "mysql"
-      ? structured.introspection.providerConfig?.mysql?.databases ??
-        pickFlat(flat, "ASKDB_INTROSPECT_MYSQL_DATABASES")?.split(",")
-      : undefined;
-  const mysqlDatabases = mysqlDatabasesRaw?.map((d) => d.trim()).filter(Boolean);
+  const schemas = (structured.introspection.schemas ?? pickFlat(flat, "ASKDB_INTROSPECT_SCHEMAS")?.split(","))
+    ?.map((s) => s.trim())
+    .filter(Boolean);
   const sqliteFile =
     structured.introspection.provider === "sqlite"
       ? structured.introspection.providerConfig?.sqlite?.file?.trim() ||
@@ -202,7 +199,7 @@ export function getAskDbRuntimeConfig(): AskDbRuntimeConfig {
       postgresDatabaseUrl,
       prismaSchemaPath: prismaSchemaPathRaw || undefined,
       mysqlDatabaseUrl,
-      mysqlDatabases: mysqlDatabases?.length ? mysqlDatabases : undefined,
+      schemas: schemas?.length ? schemas : undefined,
       sqliteFile,
       sqlserverDatabaseUrl,
       outputDir:

@@ -72,7 +72,7 @@ await introspect(
 );
 ```
 
-With the `askdb` CLI, set `introspection.providerConfig.mysql.databases` in `askdb.config.ts`, or pass `--schemas app,sales`.
+With the `askdb` CLI, set `introspection.schemas` in `askdb.config.ts`, or pass `--schemas app,sales`.
 
 ## Captured metadata
 

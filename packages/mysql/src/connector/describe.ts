@@ -27,7 +27,7 @@ import { makeColumnId, makeTableId } from "./ids.js";
  *   database (`table_schema IN (…)`) and each becomes its own namespace, named
  *   after the database. Foreign keys that cross databases keep the referenced
  *   database. `filters.excludeSchemas` removes entries from the list.
- *   `introspection.providerConfig.mysql.databases` and
+ *   `introspection.schemas` (askdb.config.ts) and
  *   `askdb introspect --schemas` both feed this list.
  */
 const DEFAULT_NAMESPACE = "public";

@@ -143,14 +143,14 @@ export async function runStudioIntrospection(options: {
   if (!connection.ok) throw new Error(connection.error);
 
   const schemaId = options.schemaId ?? inferSchemaId(options.outDir);
-  // MySQL: resync reads the same database list `askdb introspect` does.
-  const mysqlDatabases = plan.engine === "mysql" ? getAskDbRuntimeConfig().introspection.mysqlDatabases : undefined;
+  // Resync reads the same schema list `askdb introspect` does (introspection.schemas).
+  const schemas = getAskDbRuntimeConfig().introspection.schemas;
   const connectorConfig: ConnectorConfig = {
     provider: plan.engine,
     url: connection.url,
     schemaPath: connection.schemaPath,
     schemaId,
-    ...(mysqlDatabases ? { filters: { schemas: mysqlDatabases } } : {}),
+    ...(schemas ? { filters: { schemas } } : {}),
   };
   const runConfig = connectorRegistry.createConnector(connectorConfig);
   const connector = runConfig.connector as Connector<unknown>;
