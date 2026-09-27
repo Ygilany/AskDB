@@ -60,8 +60,7 @@
     "@askdb/config": "workspace:*",
     "@askdb/core": "workspace:*",
     "@askdb/postgres": "workspace:*",
-    "ai": "^7.0.113",
-    "pg": "^8.23.0"
+    "ai": "^7.0.113"
   },
   "devDependencies": {
     "tsx": "^4.23.15",

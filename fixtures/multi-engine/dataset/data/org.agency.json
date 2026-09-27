@@ -1,0 +1,51 @@
+[
+  {
+    "agency_id": 1,
+    "parent_agency_id": null,
+    "name": "Agência São Paulo",
+    "founded_on": "1998-03-15",
+    "created_at": "2020-01-05T09:00:00"
+  },
+  {
+    "agency_id": 2,
+    "parent_agency_id": null,
+    "name": "Zürich Dienste",
+    "founded_on": "2005-11-30",
+    "created_at": "2020-02-29T23:59:59"
+  },
+  {
+    "agency_id": 3,
+    "parent_agency_id": null,
+    "name": "東京オフィス",
+    "founded_on": "2012-07-01",
+    "created_at": "2021-06-30T00:00:00"
+  },
+  {
+    "agency_id": 4,
+    "parent_agency_id": 1,
+    "name": "Agência Campinas",
+    "founded_on": "2008-05-20",
+    "created_at": "2020-03-01T08:30:00"
+  },
+  {
+    "agency_id": 5,
+    "parent_agency_id": 1,
+    "name": "Agência Santos",
+    "founded_on": "2010-09-09",
+    "created_at": "2020-03-02T12:00:00"
+  },
+  {
+    "agency_id": 6,
+    "parent_agency_id": 5,
+    "name": "Santos Norte",
+    "founded_on": "2016-02-29",
+    "created_at": "2021-01-15T17:45:00"
+  },
+  {
+    "agency_id": 7,
+    "parent_agency_id": 2,
+    "name": "Winterthur Dienste",
+    "founded_on": "2014-04-01",
+    "created_at": "2021-04-01T00:00:01"
+  }
+]

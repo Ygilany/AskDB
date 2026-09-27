@@ -25,7 +25,7 @@ The `*.integration.test.ts` suites run against live databases and **skip** when 
 | Variable | Suite | Fixture (from repo root) |
 | --- | --- | --- |
 | `DATABASE_URL` | `@askdb/postgres` query runner | any Postgres, e.g. the pgvector fixture below: `postgres://postgres:postgres@127.0.0.1:5434/askdb_rag` |
-| `PAGILA_DATABASE_URL` | `@askdb/postgres` live introspection against Pagila | `pnpm pagila:up` → `postgres://postgres:postgres@127.0.0.1:5433/pagila` |
+| `ASKDB_FIXTURE_HOST` | Live introspection in `@askdb/postgres`, `@askdb/mysql` (MySQL and MariaDB), `@askdb/sqlserver`, `@askdb/sqlite` and the `askdb` CLI, checked against one golden schema; the fixture's own dataset check | `pnpm fixture:up` → `127.0.0.1` (see [Multi-engine fixture](#multi-engine-fixture)) |
 | `MYSQL_DATABASE_URL` | `@askdb/mysql` | `docker compose -f fixtures/mysql/docker-compose.yml up -d --wait` → `mysql://root:mysql@127.0.0.1:3306/askdb_test` |
 | `MSSQL_DATABASE_URL` | `@askdb/sqlserver` | `docker compose -f fixtures/sqlserver/docker-compose.yml up -d --wait`, then create `askdb_test` (see the compose file) → `Server=127.0.0.1,1433;Database=askdb_test;User Id=sa;Password=AskDB.123;Encrypt=false` |
 | `ASKDB_PGVECTOR_URL` (or `PGVECTOR_URL`) | `@askdb/rag` pgvector store | `pnpm pgvector:up` → `postgres://postgres:postgres@127.0.0.1:5434/askdb_rag` |
@@ -35,6 +35,42 @@ The SQLite suite needs no server; it only needs the optional `better-sqlite3` na
 Set `ASKDB_REQUIRE_INTEGRATION=1` to make a missing prerequisite (an unset URL, or a `better-sqlite3` that fails to load) **fail** the suite instead of skipping it. CI sets it so a misconfigured job can't pass by running no integration tests.
 
 Turbo runs tasks in strict env mode: only variables listed in the `test` task's `env` in [`turbo.json`](turbo.json) reach vitest. If you add an integration suite gated on a new variable, add the variable there and gate the suite with `integrationSuite()` from [`scripts/test-utils/integration.mjs`](scripts/test-utils/integration.mjs).
+
+### Multi-engine fixture
+
+[`fixtures/multi-engine`](fixtures/multi-engine/README.md) holds one logical schema and one dataset in PostgreSQL 17, MySQL 8.4, MariaDB 11.4, SQL Server 2022 and SQLite, with a golden logical schema (`dataset/schema.logical.json`) every engine's introspection is compared against. It covers multiple schemas, composite keys and foreign keys, a view, a reserved-word table, a declaratively partitioned Postgres table (ADR 0003), a self-referencing tenant hierarchy, sensitive columns, unicode, dates, decimals and booleans. It replaces the Pagila fixture.
+
+```bash
+pnpm fixture:up                                   # start, wait for health, seed (idempotent)
+export ASKDB_FIXTURE_HOST=127.0.0.1               # enables the suites that use it
+pnpm --filter @askdb/postgres test                # e.g. live introspection vs. the golden schema
+pnpm fixture:down                                 # stop (data kept); pnpm fixture:reset starts over
+```
+
+It uses ports 15432, 13306, 13307 and 11433, so it runs alongside the fixtures above. A new engine-level test that needs a real schema should use it: import the helpers from `fixtures/multi-engine/src/index.ts` by relative path and gate the suite with `integrationSuite({ env: ["ASKDB_FIXTURE_HOST"] })`.
+
+### Consumer lab
+
+[`examples/consumer-lab`](examples/consumer-lab/README.md) tests AskDB as a black box. It installs AskDB into an app outside the workspace (its own pnpm root and lockfile), from packed tarballs or from npm, then executes the SQL AskDB returns on the fixture above. Design: [`docs/specs/consumer-lab.md`](docs/specs/consumer-lab.md); remaining work: #241.
+
+```bash
+pnpm lab:up                                       # fixture up + install the lab (first time)
+pnpm lab:use .                                    # repack this checkout and reinstall
+pnpm lab:use git:origin/main                      # …or pack a branch, tag or commit
+pnpm lab:use npm:askdb@1.0.0-beta.40              # …or a published release (or npm:<dist-tag>)
+pnpm lab ask --db mysql "How many active programs does each agency run?"   # replay model, no API key
+pnpm lab ask --db sqlite --via client "…"          # same question through createAskDb + @askdb/ai-openai
+pnpm lab ask --db postgres --sql "SELECT 1"       # skip the model: SQL, validation outcome, rows
+pnpm lab:test
+pnpm lab:matrix                                   # the suite as a scenario × dialect table (.lab/matrix.json)
+pnpm lab:use --restore                            # before committing: restore the lab's manifests
+```
+
+`lab ask` answers only questions in the lab's catalog, from hand-written replies per dialect; adding a question means adding its replies (see the lab README).
+
+Lab test names start with `[<dialect>] <scenario-id>`, which is how `lab:matrix` places each result; the cell values and how to mark a known bug are in the [lab README](examples/consumer-lab/README.md#the-matrix).
+
+`lab:use` rewrites the lab's `package.json`, `pnpm-workspace.yaml` and `pnpm-lock.yaml`. The committed versions are the `npm:latest` baseline, so don't commit them after any other target (a tarball install writes `file:` paths into them). To refresh the baseline after a release ships, run `pnpm lab:use npm:latest` and commit those three files. Unlike the package suites above, lab tests don't use `integrationSuite()`: the lab exists to run against real databases, so a missing fixture or install fails the suite instead of skipping it. The one exception is an older target that lacks a documented capability a scenario needs: that scenario reports `n/a (capability: …)` (see the lab README).
 
 ### Repo-root `askdb.config.ts` and your IDE
 
