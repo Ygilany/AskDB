@@ -1,6 +1,8 @@
 # Security Policy
 
-AskDB is pre-1.0 software that generates SQL from schema context. It does not execute generated SQL in the current public surfaces. Applications that run generated SQL are responsible for approval workflows, database roles, tenant policy, network controls, and audit logging.
+AskDB is pre-1.0 software that generates SQL from schema context. The library, CLI, and HTTP API return SQL and never execute it. Applications that run generated SQL are responsible for approval workflows, database roles, tenant policy, network controls, and audit logging.
+
+The one exception is AskDB Studio's Playground **Execute** action, a local developer tool that is off by default (`studio.execute.enabled`). When enabled, Studio validates each query as a single read-only SELECT. It runs the query in a read-only (SQL Server: always-rolled-back) transaction with a statement timeout and a row cap. These guards are defense in depth, not a sandbox. Point `studio.execute` at a read-only database role. See the [Studio security model](https://askdb.tools/studio/#security-model).
 
 ## Reporting a Vulnerability
 

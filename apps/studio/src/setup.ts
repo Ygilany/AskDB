@@ -3,6 +3,13 @@ import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { basename, dirname, join, resolve, isAbsolute, relative } from "node:path";
 import { bootstrapAskDbEnv, discoverAskDbConfigPath, getAskDbRuntimeConfig } from "@askdb/config";
+import {
+  formatInstallCommand,
+  lockfilePackageManager,
+  packageManagerAddArgs,
+  packageManagerSpawnSpec,
+  type PackageManager,
+} from "./package-manager.js";
 
 export type SetupDatabase = "postgres" | "mysql" | "sqlite" | "sqlserver" | "prisma";
 export type SetupAiProvider = "openai" | "anthropic" | "google" | "azure" | "foundry";
@@ -251,6 +258,7 @@ export function writeSetupConfig(cwd: string, input: SetupConfigInput): SetupCon
       const file = validateRelativePath(input.studioExecuteSqliteFile ?? input.sqliteFile ?? "./data.db", "studioExecuteSqliteFile");
       studioSection = `  studio: {
     execute: {
+      enabled: true,
       provider: "sqlite",
       file: ${tsString(file)},
     },
@@ -268,6 +276,7 @@ export function writeSetupConfig(cwd: string, input: SetupConfigInput): SetupCon
       });
       studioSection = `  studio: {
     execute: {
+      enabled: true,
       provider: ${tsString(studioExecuteProvider)},
       databaseUrl: env(${tsString(execConnectionEnv)}),
     },
@@ -473,8 +482,6 @@ function isLikelyWorkspaceRoot(packageDir: string): boolean {
   }
 }
 
-type PackageManager = "pnpm" | "npm" | "yarn" | "bun";
-
 type SetupInstaller = (pm: PackageManager, packageDir: string, packages: string[]) => boolean;
 
 let setupInstallerForTests: SetupInstaller | undefined;
@@ -487,10 +494,8 @@ export function setSetupInstallerForTests(installer: SetupInstaller | undefined)
 function detectPackageManager(packageDir: string): PackageManager {
   let dir = packageDir;
   for (let i = 0; i < 40; i += 1) {
-    if (existsSync(join(dir, "pnpm-lock.yaml"))) return "pnpm";
-    if (existsSync(join(dir, "bun.lockb")) || existsSync(join(dir, "bun.lock"))) return "bun";
-    if (existsSync(join(dir, "yarn.lock"))) return "yarn";
-    if (existsSync(join(dir, "package-lock.json"))) return "npm";
+    const pm = lockfilePackageManager(dir);
+    if (pm) return pm;
     const parent = dirname(dir);
     if (parent === dir) break;
     dir = parent;
@@ -500,41 +505,12 @@ function detectPackageManager(packageDir: string): PackageManager {
 
 function runInstall(pm: PackageManager, packageDir: string, packages: string[]): boolean {
   const env = { ...process.env, CI: process.env.CI ?? "true" };
-  const win = process.platform === "win32";
-  let cmd: string;
-  let args: string[];
-  switch (pm) {
-    case "pnpm":
-      cmd = win ? "pnpm.CMD" : "pnpm";
-      args = ["add", ...packages];
-      break;
-    case "yarn":
-      cmd = win ? "yarn.cmd" : "yarn";
-      args = ["add", ...packages];
-      break;
-    case "bun":
-      cmd = win ? "bun.exe" : "bun";
-      args = ["add", ...packages];
-      break;
-    default:
-      cmd = win ? "npm.cmd" : "npm";
-      args = ["install", "--save", ...packages];
-  }
-  const result = spawnSync(cmd, args, { cwd: packageDir, stdio: "ignore", env, shell: false });
-  return result.status === 0;
-}
-
-function formatInstallCommand(pm: PackageManager, packages: string[]): string {
-  const pkgList = packages.join(" ");
-  switch (pm) {
-    case "pnpm":
-      return `pnpm add ${pkgList}`;
-    case "yarn":
-      return `yarn add ${pkgList}`;
-    case "bun":
-      return `bun add ${pkgList}`;
-    default:
-      return `npm install --save ${pkgList}`;
+  try {
+    const { command, args, shell } = packageManagerSpawnSpec(pm, packageManagerAddArgs(pm, packages));
+    const result = spawnSync(command, args, { cwd: packageDir, stdio: "ignore", env, shell });
+    return result.status === 0;
+  } catch {
+    return false;
   }
 }
 

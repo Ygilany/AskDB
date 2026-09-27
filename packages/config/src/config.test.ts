@@ -647,7 +647,7 @@ describe("getAskDbRuntimeConfig — studio execute branches", () => {
 
   it("falls back to introspection provider when no execute provider is set", () => {
     installStudio(
-      undefined,
+      { execute: { useIntrospectionConnection: true } },
       { provider: "mysql", providerConfig: { mysql: { databaseUrl: "mysql://intro/db" } }, outputDir: "./askdb/" },
     );
     const rt = getAskDbRuntimeConfig();
@@ -657,7 +657,7 @@ describe("getAskDbRuntimeConfig — studio execute branches", () => {
 
   it("falls back to introspection provider for sqlserver", () => {
     installStudio(
-      undefined,
+      { execute: { useIntrospectionConnection: true } },
       { provider: "sqlserver", providerConfig: { sqlserver: { databaseUrl: "Server=localhost;Database=app;" } }, outputDir: "./askdb/" },
     );
     const rt = getAskDbRuntimeConfig();
@@ -687,7 +687,7 @@ describe("getAskDbRuntimeConfig — studio execute branches", () => {
 
   it("falls back to introspection sqlite file when studio.execute.file is absent", () => {
     installStudio(
-      undefined,
+      { execute: { useIntrospectionConnection: true } },
       { provider: "sqlite", providerConfig: { sqlite: { file: "./data/app.db" } }, outputDir: "./askdb/" },
     );
     const rt = getAskDbRuntimeConfig();
@@ -726,6 +726,82 @@ describe("getAskDbRuntimeConfig — studio execute branches", () => {
     const rt = getAskDbRuntimeConfig();
     expect(rt.studio.execute.provider).toBe("postgres");
     expect(rt.studio.execute.databaseUrl).toBe("postgres://legacy/db");
+  });
+});
+
+describe("getAskDbRuntimeConfig — studio execute safety defaults", () => {
+  afterEach(() => resetAskDbRuntimeForTests());
+
+  function install(studio: AskDbConfig["studio"], flatExtra: Record<string, string> = {}): void {
+    const structured = minimalConfig({
+      introspection: {
+        provider: "postgres",
+        providerConfig: { postgres: { databaseUrl: "postgres://introspect/db" } },
+        outputDir: "./askdb/",
+      },
+      studio,
+    });
+    setAskDbRuntimeForTests({ structured, flat: { ...flattenAskDbConfig(structured), ...flatExtra } });
+  }
+
+  it("is disabled by default with 30s timeout and 500-row cap", () => {
+    install(undefined);
+    const exec = getAskDbRuntimeConfig().studio.execute;
+    expect(exec.enabled).toBe(false);
+    expect(exec.useIntrospectionConnection).toBe(false);
+    expect(exec.timeoutMs).toBe(30_000);
+    expect(exec.maxRows).toBe(500);
+  });
+
+  it("does not reuse introspection credentials unless useIntrospectionConnection is on", () => {
+    install({ execute: { enabled: true } });
+    const exec = getAskDbRuntimeConfig().studio.execute;
+    expect(exec.enabled).toBe(true);
+    expect(exec.databaseUrl).toBeUndefined();
+    expect(exec.introspectionConnectionAvailable).toBe(true);
+
+    install({ execute: { enabled: true, useIntrospectionConnection: true } });
+    const reused = getAskDbRuntimeConfig().studio.execute;
+    expect(reused.databaseUrl).toBe("postgres://introspect/db");
+    expect(reused.introspectionConnectionAvailable).toBe(false);
+  });
+
+  it("prefers an explicit execute connection over the introspection one", () => {
+    install({ execute: { enabled: true, useIntrospectionConnection: true, databaseUrl: "postgres://readonly/db" } });
+    expect(getAskDbRuntimeConfig().studio.execute.databaseUrl).toBe("postgres://readonly/db");
+  });
+
+  it("flattens enabled, timeoutMs, and maxRows to canonical keys", () => {
+    const flat = flattenAskDbConfig(
+      minimalConfig({
+        studio: { execute: { enabled: true, useIntrospectionConnection: false, timeoutMs: 5000, maxRows: 25 } },
+      }),
+    );
+    expect(flat.ASKDB_STUDIO_EXECUTE_ENABLED).toBe("true");
+    expect(flat.ASKDB_STUDIO_EXECUTE_USE_INTROSPECTION_CONNECTION).toBe("false");
+    expect(flat.ASKDB_STUDIO_EXECUTE_TIMEOUT_MS).toBe("5000");
+    expect(flat.ASKDB_STUDIO_EXECUTE_MAX_ROWS).toBe("25");
+  });
+
+  it("reads the canonical flat keys", () => {
+    install(undefined, {
+      ASKDB_STUDIO_EXECUTE_ENABLED: "true",
+      ASKDB_STUDIO_EXECUTE_TIMEOUT_MS: "1000",
+      ASKDB_STUDIO_EXECUTE_MAX_ROWS: "10",
+    });
+    const exec = getAskDbRuntimeConfig().studio.execute;
+    expect(exec.enabled).toBe(true);
+    expect(exec.timeoutMs).toBe(1000);
+    expect(exec.maxRows).toBe(10);
+  });
+
+  it("rejects non-positive-integer timeoutMs / maxRows", () => {
+    expect(() =>
+      flattenAskDbConfig(minimalConfig({ studio: { execute: { timeoutMs: 0 } } })),
+    ).toThrow(/studio\.execute\.timeoutMs/);
+    expect(() =>
+      flattenAskDbConfig(minimalConfig({ studio: { execute: { maxRows: 1.5 } } })),
+    ).toThrow(/studio\.execute\.maxRows/);
   });
 });
 
