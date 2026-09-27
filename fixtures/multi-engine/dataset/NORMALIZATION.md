@@ -47,11 +47,11 @@ Postgres alone partitions `billing.payment` (by `paid_on`, with 2024, 2025 and d
 
 ## Schema-comparison rules
 
-Used by the package introspection suites (and the consumer lab) to compare an introspected Schema v2 artifact with `schema.logical.json`.
+Used by the package introspection suites (and the consumer lab) to compare an introspected schema artifact with `schema.logical.json`.
 
 - Compared: tables, columns, normalized types, `nullable`, `primaryKey`, and relationships (`from`/`to` column ids, as an ordered list per composite foreign key).
 - Identifiers are compared case-insensitively. Namespaces must equal the logical schemas on engines that expose them (Postgres, SQL Server, multi-database MySQL/MariaDB); SQLite's single namespace is mapped back by table name.
 - Any table the golden schema doesn't list (a partition leaf, the seeder's `fixture_meta`) is a difference.
 - Native types map to logical types by the value-rules table, in the direction native → logical (`normalizeNativeType`); a type the rules don't cover is a difference.
-- **Not comparable:** Schema v2 has no unique constraints, indexes or view marker; a view renders as an ordinary table entry. Those facts stay in `schema.logical.json` for DDL review; the comparison skips them.
+- **Not comparable:** The schema artifact has no unique constraints, indexes or view marker; a view renders as an ordinary table entry. Those facts stay in `schema.logical.json` for DDL review; the comparison skips them.
 - **View columns:** only names and order are compared. Engines derive view column types and nullability differently (Postgres reports every view column nullable; SQL Server's `COUNT(*)` is `int`, Postgres's is `bigint`).

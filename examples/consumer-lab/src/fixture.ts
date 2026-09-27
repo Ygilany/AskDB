@@ -12,10 +12,7 @@ export {
   loadRows,
   physicalName,
   type Dialect,
-} from "../../../fixtures/multi-engine/src/index.js";
-// The golden-schema comparison (`dataset/NORMALIZATION.md`, "Schema-comparison rules").
-export {
-  SQLITE_FILE,
+  // The golden-schema comparison (`dataset/NORMALIZATION.md`, "Schema-comparison rules").
   compareToLogicalSchema,
   loadLogicalSchema,
   type SchemaJson,

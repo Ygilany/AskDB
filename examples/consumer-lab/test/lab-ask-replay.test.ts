@@ -65,7 +65,7 @@ function cassetteSql(dialect: SupportedDialect, questionId: string): string {
   return /```sql\n([\s\S]*?)\n```/.exec(cassette!.reply)![1]!;
 }
 
-describe.each(SUPPORTED_DIALECTS.map((d) => [d] as [SupportedDialect]))("[%s] lab ask with the replay model", (dialect) => {
+describe.each(SUPPORTED_DIALECTS.map((d) => [d] as [SupportedDialect]))("[%s] lab-ask-replay", (dialect) => {
   const runs = new Map<string, { raw: Run; client: Run }>();
 
   beforeAll(async () => {

@@ -96,7 +96,7 @@ The dialect comes from the base URL: `http://127.0.0.1:<port>/<dialect>/v1`. The
 - `n/a (reason)`: the test called `ctx.skip("reason")`, for a case that can't apply (for example a capability the target lacks).
 - `-`: no test ran for that dialect (none exists yet, or a `-t` filter excluded it).
 
-Below the test rows, the `unique-constraints *` and `view-marker *` rows are **annotations, not test results**: facts the golden schema holds but Schema v2 can't express (the "Not comparable" rule in [`NORMALIZATION.md`](../../fixtures/multi-engine/dataset/NORMALIZATION.md)). The reporter prints them as `n/a (not in Schema v2)` from a static list, and `matrix.json` keeps them under `annotations`.
+Below the test rows, the `unique-constraints *` and `view-marker *` rows are **annotations, not test results**: facts the golden schema holds but the schema artifact can't express (the "Not comparable" rule in [`NORMALIZATION.md`](../../fixtures/multi-engine/dataset/NORMALIZATION.md)). The reporter prints them as `n/a (not in the schema artifact)` from a static list, and `matrix.json` keeps them under `annotations`.
 
 ## Introspection
 

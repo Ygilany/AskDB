@@ -5,9 +5,8 @@
  */
 import { existsSync, readFileSync } from "node:fs";
 import { join, relative } from "node:path";
-import { fileURLToPath } from "node:url";
+import { LAB_ROOT } from "../paths.js";
 
-const LAB_ROOT = fileURLToPath(new URL("../..", import.meta.url));
 export const QUESTIONS_FILE = join(LAB_ROOT, "scenarios", "questions.json");
 export const CASSETTES_DIR = join(LAB_ROOT, "cassettes");
 

@@ -1,20 +1,24 @@
 /**
- * Run the installed `askdb` CLI against a fixture database, the way the docs site says to
- * for each engine (`reference/cli.mdx`, `guides/switch-engines.mdx`):
+ * The one place the lab runs `askdb introspect`: the installed CLI against a fixture
+ * database, the way the docs site says to for each engine (`reference/cli.mdx`,
+ * `guides/switch-engines.mdx`):
  *
  * - Postgres, SQL Server, MySQL and MariaDB: `askdb introspect --engine … --url …
  *   --schemas org,people,billing,ref`, as the read-only role. MariaDB uses `--engine mysql`.
- * - SQLite: `introspection.providerConfig.sqlite.file` in `askdb.config.ts`, then a bare
- *   `askdb introspect`. The config lives in its own directory under `.lab/`, so its
+ *   The logical schemas are real schemas on Postgres and SQL Server, and one database each
+ *   on MySQL and MariaDB.
+ * - SQLite has no connection URL: `introspection.providerConfig.sqlite.file` in an
+ *   `askdb.config.ts`, then a bare `askdb introspect`. Each call writes that config into a
+ *   fresh project directory under `.lab/`, so concurrent calls never share one, and its
  *   `@askdb/config` import resolves from the lab's node_modules like any nested project's.
  *
- * Every call writes a fresh artifact; nothing is cached.
+ * Every call writes a fresh artifact; caching is `artifacts.ts`'s job.
  */
 import { spawnSync } from "node:child_process";
-import { mkdirSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { LAB_ROOT } from "./artifacts.js";
 import { LOGICAL_SCHEMAS, SQLITE_FILE, connectionUrl, type Dialect } from "./fixture.js";
+import { LAB_ROOT, LAB_STATE } from "./paths.js";
 
 export const ASKDB_BIN = join(LAB_ROOT, "node_modules", ".bin", "askdb");
 
@@ -31,7 +35,11 @@ export function askdb(args: string[], cwd: string = LAB_ROOT): CliRun {
   return { status: run.status, stdout: run.stdout, stderr: run.stderr };
 }
 
-// `ai` and `rag` are required top-level fields (reference/config.mdx, "All top-level fields").
+/**
+ * `ai` and `rag` are required top-level fields (reference/config.mdx, "All top-level
+ * fields"). The file is `.ts`, because the CLI can't load a documented `askdb.config.mjs`
+ * (#264), and uses `defineConfig`, because a plain exported object is rejected (#265).
+ */
 function sqliteConfig(): string {
   return `import { defineConfig } from "@askdb/config";
 
@@ -58,10 +66,14 @@ export default defineConfig({
 export function introspectFixture(dialect: Dialect, outDir: string): CliRun {
   const out = ["--schema-id", "multi-engine", "--out", outDir];
   if (dialect === "sqlite") {
-    const project = join(LAB_ROOT, ".lab", "projects", "sqlite");
-    mkdirSync(project, { recursive: true });
-    writeFileSync(join(project, "askdb.config.ts"), sqliteConfig());
-    return askdb(["introspect", ...out], project);
+    mkdirSync(join(LAB_STATE, "projects"), { recursive: true });
+    const project = mkdtempSync(join(LAB_STATE, "projects", "sqlite-"));
+    try {
+      writeFileSync(join(project, "askdb.config.ts"), sqliteConfig());
+      return askdb(["introspect", ...out], project);
+    } finally {
+      rmSync(project, { recursive: true, force: true });
+    }
   }
   return askdb([
     "introspect",

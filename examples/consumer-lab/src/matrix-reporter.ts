@@ -14,8 +14,8 @@
  * - `-` if no test ran for it (none exists, or a filter excluded it).
  *
  * After the test rows come annotation rows, marked `*`: facts the golden schema holds but
- * Schema v2 can't express, so no test can compare them. They are a static list, not test
- * results; see {@link SCHEMA_V2_LIMITS}.
+ * the schema artifact can't express, so no test can compare them. They are a static list, not test
+ * results; see {@link ARTIFACT_LIMITS}.
  */
 import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
@@ -28,12 +28,12 @@ const NAME = /^\[([a-z]+)\][\s>]+([a-z0-9][\w-]*)/i;
 const ISSUE = /\(#(\d+)\)/g;
 
 /**
- * The golden-schema facts Schema v2 can't express, from the "Not comparable" rule in
+ * The golden-schema facts the schema artifact can't express, from the "Not comparable" rule in
  * `fixtures/multi-engine/dataset/NORMALIZATION.md` (survey note 6 in
- * `docs/specs/consumer-lab.md`). Rendered as `n/a (not in Schema v2)` on every dialect.
+ * `docs/specs/consumer-lab.md`). Rendered as `n/a (not in the schema artifact)` on every dialect.
  */
-const SCHEMA_V2_LIMITS = ["unique-constraints", "view-marker"] as const;
-const SCHEMA_V2_LIMIT_TEXT = "n/a (not in Schema v2)";
+const ARTIFACT_LIMITS = ["unique-constraints", "view-marker"] as const;
+const ARTIFACT_LIMIT_TEXT = "n/a (not in the schema artifact)";
 
 type Status = "pass" | "fail" | "known" | "na";
 
@@ -124,15 +124,15 @@ export default class MatrixReporter implements Reporter {
       ) as Record<string, Cell>,
     }));
 
-    const annotations = SCHEMA_V2_LIMITS.map((scenario) => ({
+    const annotations = ARTIFACT_LIMITS.map((scenario) => ({
       scenario,
-      annotation: "not in Schema v2 (fixtures/multi-engine/dataset/NORMALIZATION.md)",
+      annotation: "not in the schema artifact (fixtures/multi-engine/dataset/NORMALIZATION.md)",
     }));
 
     const header = ["scenario", ...DIALECTS];
     const cells = [
       ...rows.map((r) => [r.scenario, ...DIALECTS.map((d) => r.cells[d]?.text ?? "-")]),
-      ...annotations.map((a) => [`${a.scenario} *`, ...DIALECTS.map(() => SCHEMA_V2_LIMIT_TEXT)]),
+      ...annotations.map((a) => [`${a.scenario} *`, ...DIALECTS.map(() => ARTIFACT_LIMIT_TEXT)]),
     ];
     const target = installTarget();
 
@@ -143,7 +143,7 @@ export default class MatrixReporter implements Reporter {
       table(header, cells),
       "",
       "- = no test ran for this dialect",
-      "* = annotation, not a test result: a golden-schema fact Schema v2 can't express (NORMALIZATION.md)",
+      "* = annotation, not a test result: a golden-schema fact the schema artifact can't express (NORMALIZATION.md)",
     ];
     if (unmatched.length) {
       out.push("", `Not in the matrix (name doesn't start with "[<dialect>] <scenario-id>"):`, ...unmatched.map((n) => `  ${n}`));

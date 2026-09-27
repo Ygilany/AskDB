@@ -32,7 +32,7 @@ function runawayCount(): string {
   return `SELECT COUNT(*) AS n FROM ${Array.from({ length: 9 }, (_, i) => `${digits} AS t${i}`).join(" CROSS JOIN ")}`;
 }
 
-describe.each(SUPPORTED_DIALECTS.map((d) => [d] as [SupportedDialect]))("[%s] host execution", (dialect) => {
+describe.each(SUPPORTED_DIALECTS.map((d) => [d] as [SupportedDialect]))("[%s] host-execute", (dialect) => {
   it("caps rows at the limit, flags truncation and keeps the statement's order", async () => {
     const sql = `SELECT order_id, line_no FROM ${physicalName(dialect, ORDER_LINE)} ORDER BY order_id DESC, line_no DESC`;
 

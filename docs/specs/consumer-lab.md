@@ -32,7 +32,7 @@ Existing tests can't catch the failures the lab targets. Unit tests import works
 
 The databases are not private to the lab. They live in **`fixtures/multi-engine`**, a private workspace package that replaces Pagila (decision 8). Two kinds of test use the same fixture:
 
-- **Package integration tests** in `@askdb/postgres`, `@askdb/sqlserver`, `@askdb/sqlite` and, after the MySQL multi-database PR, `@askdb/mysql`. They introspect a real engine with the package's own connector and compare the Schema v2 artifact with the golden logical schema. They run in `pnpm test` when `ASKDB_FIXTURE_HOST` is set, as CI sets it. This is how the packages are tested against every engine before a release.
+- **Package integration tests** in `@askdb/postgres`, `@askdb/sqlserver`, `@askdb/sqlite` and, after the MySQL multi-database PR, `@askdb/mysql`. They introspect a real engine with the package's own connector and compare the schema artifact with the golden logical schema. They run in `pnpm test` when `ASKDB_FIXTURE_HOST` is set, as CI sets it. This is how the packages are tested against every engine before a release.
 - **The consumer lab**, which tests a different seam: packed or published AskDB, driven only through documented surfaces, with generated SQL executed on the same databases.
 
 The two overlap on introspection on purpose. A package test catches a connector regression at its owner boundary; the lab catches the same artifact arriving broken through a tarball or the CLI.
@@ -215,7 +215,7 @@ Each scenario runs once per dialect: `postgres`, `mysql`, `mariadb`, `sqlserver`
 
 | Scenario | C / R |
 |---|---|
-| `askdb introspect` output for each database, after normalization, equals `schema.logical.json` | C: Schema v2 contract (`docs/contracts/schema-v2.md`) and CLI introspect. R: a lost composite FK order, a dropped nullable, a missing schema, a mis-mapped type, a view dropped by one engine, or a reserved-word table mangled. |
+| `askdb introspect` output for each database, after normalization, equals `schema.logical.json` | C: schema-artifact contract (`docs/contracts/schema-v2.md`) and CLI introspect. R: a lost composite FK order, a dropped nullable, a missing schema, a mis-mapped type, a view dropped by one engine, or a reserved-word table mangled. |
 | The artifact loads with `loadSchema` and survives `askdb bundle` | C: artifact/bundle loading. R: renderer output that core can't parse. |
 
 ### 2. Question → SQL → execute
@@ -365,7 +365,7 @@ These came up while reading the docs. They are not findings yet: each one is eit
 3. `POST /ask` has no `tenantScope` field, while `tenant-policy.md` lists the HTTP API as a scope-input surface. By the core rules, a tenant-policy schema served over HTTP should fail closed with `MISSING_SCOPE`.
 4. `guides/multi-tenancy.mdx` says the tenant predicate "can't be forgotten … and can't be removed by a malformed question", but `enforcement: warn` returns unfiltered SQL with warnings.
 5. `concepts/safety-boundaries.mdx` says invalid SQL is "rejected, not returned with a warning", while the default sensitive-field mode is `warn`.
-6. Schema v2 has no unique constraints and no view marker, so the introspection golden can't compare them. This is a format limit, not a bug, but the lab's matrix will show it.
+6. The schema artifact has no unique constraints and no view marker, so the introspection golden can't compare them. This is a format limit, not a bug, but the lab's matrix will show it.
 7. The docs site names `POSTGRES_DIALECT` and `MYSQL_DIALECT` but never the MariaDB, SQLite or SQL Server constants, and it says "all four" dialects while listing six ids. The lab uses the string ids.
 8. The docs site documents programmatic introspection only for Prisma, so the lab has no documented way to introspect Postgres, MySQL, SQLite or SQL Server from code. It uses the CLI.
 9. There was no MariaDB fixture or test anywhere in the repo, although `mariadb` is a built-in dialect. The multi-engine fixture adds one (Phase 1).

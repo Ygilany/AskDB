@@ -1,5 +1,5 @@
 /**
- * Compare an introspected Schema v2 `schema.json` with the golden logical schema
+ * Compare an introspected `schema.json` with the golden logical schema
  * (dataset/schema.logical.json), after the normalization rules in
  * dataset/NORMALIZATION.md ("Schema-comparison rules"). Returns human-readable
  * differences; an empty list means the artifact matches.
@@ -9,7 +9,7 @@
  */
 import { loadLogicalSchema, type LogicalSchema } from "./dataset.js";
 
-/** The parts of a Schema v2 `schema.json` the comparison reads. */
+/** The parts of a `schema.json` the comparison reads. */
 export interface SchemaJson {
   tables: Array<{
     id: string;
@@ -118,7 +118,7 @@ export function compareToLogicalSchema(
     }
   }
 
-  // Views: Schema v2 renders them as tables. Only names and column order are compared.
+  // Views: The schema artifact renders them as tables. Only names and column order are compared.
   for (const v of golden.views) {
     const label = `${v.schema}.${v.name}`;
     const t = byName.get(v.name.toLowerCase());

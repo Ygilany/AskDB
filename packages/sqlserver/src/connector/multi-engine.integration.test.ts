@@ -2,7 +2,7 @@
  * Live SQL Server introspection against the shared multi-engine fixture
  * (`fixtures/multi-engine`, `pnpm fixture:up`).
  *
- * Protects: the Schema v2 artifact rendered from a real SQL Server catalog —
+ * Protects: the schema artifact rendered from a real SQL Server catalog —
  * every table, column, normalized type, nullability, primary key and composite
  * foreign key (in column order), the reserved-word table `order`, views and
  * multiple schemas, compared with the same golden logical schema every engine is held to.
@@ -40,7 +40,7 @@ afterEach(() => {
 });
 
 fixtureSuite("introspect() against the multi-engine fixture (live SQL Server)", () => {
-  it("renders a loadable Schema v2 artifact that matches the golden logical schema", async () => {
+  it("renders a loadable schema artifact that matches the golden logical schema", async () => {
     const outDir = join(workDir, "multi-engine.schema");
     const result = await introspect(
       { mode: "live", runner: createSqlServerCatalogQueryRunner(connectionUrl("sqlserver", "reader")), filters: { schemas: [...LOGICAL_SCHEMAS] }, },

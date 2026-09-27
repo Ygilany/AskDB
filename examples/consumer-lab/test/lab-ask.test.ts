@@ -1,5 +1,5 @@
 /**
- * `pnpm lab ask --db postgres --sql …`: the lab's tracer bullet, end to end.
+ * `pnpm lab ask --db <dialect> --sql …`: fixed SQL through AskDB, end to end, on every engine.
  *
  * Protects: the lab's host path through AskDB as installed from the install
  * target's tarballs. Fixed SQL goes through the public `ask()` (via the documented
@@ -20,22 +20,29 @@
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
+import { SUPPORTED_DIALECTS, type SupportedDialect } from "../src/dialects.js";
 
 const LAB = fileURLToPath(new URL("..", import.meta.url));
 
-function labAsk(sql: string) {
-  const run = spawnSync("pnpm", ["--silent", "lab", "ask", "--db", "postgres", "--sql", sql], {
+/** `org.agency` everywhere except SQLite, whose single namespace holds the table unqualified. */
+function agencyTable(dialect: SupportedDialect): string {
+  return dialect === "sqlite" ? "agency" : "org.agency";
+}
+
+function labAsk(dialect: SupportedDialect, sql: string) {
+  const run = spawnSync("pnpm", ["--silent", "lab", "ask", "--db", dialect, "--sql", sql], {
     cwd: LAB,
     encoding: "utf8",
   });
   return { status: run.status, out: `${run.stdout}\n${run.stderr}` };
 }
 
-describe("[postgres] lab-ask --sql", () => {
+describe.each(SUPPORTED_DIALECTS.map((d) => [d] as [SupportedDialect]))("[%s] lab-ask --sql", (dialect) => {
   it("prints the SQL, `validation: ok` and the rows the read-only role reads", () => {
-    const { status, out } = labAsk("SELECT agency_id, name FROM org.agency ORDER BY agency_id");
+    const sql = `SELECT agency_id, name FROM ${agencyTable(dialect)} ORDER BY agency_id`;
+    const { status, out } = labAsk(dialect, sql);
 
-    expect(out).toContain("SELECT agency_id, name FROM org.agency ORDER BY agency_id");
+    expect(out).toContain(sql);
     expect(out).toContain("validation: ok");
     expect(out).toContain("東京オフィス");
     expect(out).toMatch(/7 rows/);
@@ -43,7 +50,7 @@ describe("[postgres] lab-ask --sql", () => {
   });
 
   it("reports a rejected statement's error class and rule code, and prints no rows", () => {
-    const { status, out } = labAsk("DELETE FROM org.agency");
+    const { status, out } = labAsk(dialect, `DELETE FROM ${agencyTable(dialect)}`);
 
     expect(out).toMatch(/validation: rejected/);
     expect(out).toContain("SqlValidationError");

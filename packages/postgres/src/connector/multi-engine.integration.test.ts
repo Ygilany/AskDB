@@ -2,7 +2,7 @@
  * Live Postgres introspection against the shared multi-engine fixture
  * (`fixtures/multi-engine`, `pnpm fixture:up`). Replaces the Pagila suite.
  *
- * Protects: the Schema v2 artifact rendered from a real Postgres catalog —
+ * Protects: the schema artifact rendered from a real Postgres catalog —
  * every table, column, normalized type, nullability, primary key and composite
  * foreign key (in column order), the reserved-word table `billing."order"`, views,
  * multiple schemas, and ADR 0003 (a declaratively partitioned table renders as
@@ -55,7 +55,7 @@ function introspectFixture(outDir: string, schemas: readonly string[] | undefine
 }
 
 fixtureSuite("introspect() against the multi-engine fixture (live Postgres)", () => {
-  it("renders a loadable Schema v2 artifact that matches the golden logical schema", async () => {
+  it("renders a loadable schema artifact that matches the golden logical schema", async () => {
     const outDir = join(workDir, "multi-engine.schema");
     const result = await introspectFixture(outDir);
 
