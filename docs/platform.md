@@ -2,9 +2,7 @@
 
 This document records the **initial** technical baseline for AskDB (runtime, stack, and repo shape). Adjustments are expected as requirements sharpen; the constitution should stay aligned with `mission.md` and `roadmap.md`.
 
-For the package-level architecture, diagrams, dependency boundaries, install
-profiles, and connector-vs-peer guidance, see
-[`docs/architecture.md`](architecture.md).
+For the package-level architecture, diagrams, dependency boundaries, install profiles, and connector-vs-peer guidance, see [`docs/architecture.md`](architecture.md).
 
 ## Package management
 
@@ -63,8 +61,7 @@ After init, add components with `pnpm dlx shadcn@latest add …` as needed.
 - **Enrichment pipeline (headless-first)** — A Schema v2 physical layer (typically produced by `@askdb/introspect` in Phase 6, or hand-authored) is enriched into a **describable schema** through:
   - **`@askdb/enrich`** — shared headless workspace logic for loading, editing, saving, validating, and bundling the markdown + YAML front-matter artifact ([`docs/contracts/schema-v2.md`](contracts/schema-v2.md)).
   - **`@askdb/studio`** — local browser authoring with AI-suggest + human-confirm, sample NL-to-SQL checks, and RAG-indexed schema exploration, built on `@askdb/enrich`.
-  - **Web catalog UI** (later phase) — graphical alternative authoring against the **same** Schema v2 artifact.
-  All surfaces write the same on-disk format; consumers always read it through `@askdb/core`.
+  - **Web catalog UI** (later phase) — graphical alternative authoring against the **same** Schema v2 artifact. All surfaces write the same on-disk format; consumers always read it through `@askdb/core`.
 
 ## Schema introspection
 

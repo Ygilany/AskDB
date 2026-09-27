@@ -1,15 +1,21 @@
-import { cpSync, existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
-import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
+import { cpSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { createServer, request as httpRequest, type IncomingMessage, type ServerResponse } from "node:http";
+import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { flattenAskDbConfig, resetAskDbRuntimeForTests, setAskDbRuntimeForTests } from "@askdb/config";
 import type { AskDbConfig } from "@askdb/config";
 import { createMemoryStore } from "@askdb/rag";
 import { afterEach, describe, expect, it } from "vitest";
-import { createStudioServer, setStudioPgvectorStoreFactoryForTests } from "./server.js";
+import {
+  createStudioServer,
+  setStudioClientDirForTests,
+  setStudioPgvectorStoreFactoryForTests,
+} from "./server.js";
 import { setSetupInstallerForTests } from "./setup.js";
 
 const repoRoot = new URL("../../..", import.meta.url).pathname;
+const BetterSqlite3 = createRequire(import.meta.url)("better-sqlite3") as typeof import("better-sqlite3");
 
 const STUDIO_TEST_BASE: AskDbConfig = {
   ai: {
@@ -48,6 +54,7 @@ describe("AskDB Studio server", () => {
     resetAskDbRuntimeForTests();
     setStudioPgvectorStoreFactoryForTests(undefined);
     setSetupInstallerForTests(undefined);
+    setStudioClientDirForTests(undefined);
     await Promise.all(
       [...servers, ...embeddingServers].map(
         (server) =>
@@ -136,11 +143,159 @@ describe("AskDB Studio server", () => {
     expect(retrieved.results[0].text).toEqual(expect.any(String));
   });
 
-  it("keeps Studio on the shared enrichment package", () => {
-    const packageJson = JSON.parse(
-      readFileSync(join(repoRoot, "apps/studio/package.json"), "utf8"),
-    ) as { dependencies?: Record<string, string> };
-    expect(packageJson.dependencies?.["@askdb/enrich"]).toBe("workspace:*");
+  describe("request guard", () => {
+    async function startGuardedServer() {
+      installStudioRuntime({ ASKDB_RAG_EMBEDDER: "mock" });
+      const server = createStudioServer({ schema: copyFixture() });
+      servers.push(server);
+      const baseUrl = await listen(server);
+      const port = new URL(baseUrl).port;
+      return { server, baseUrl, port, token: server.sessionToken };
+    }
+
+    it("issues a random 32-byte hex session token per server", async () => {
+      const a = await startGuardedServer();
+      const b = await startGuardedServer();
+      expect(a.token).toMatch(/^[0-9a-f]{64}$/);
+      expect(b.token).toMatch(/^[0-9a-f]{64}$/);
+      expect(a.token).not.toBe(b.token);
+    });
+
+    it("rejects spoofed Host headers (DNS rebinding) on API and static routes", async () => {
+      const { baseUrl, port, token } = await startGuardedServer();
+      for (const host of [
+        `evil.example:${port}`,
+        `evil.example`,
+        `127.0.0.1:1`,
+        `127.0.0.1`,
+        `evil@127.0.0.1:${port}`,
+        `127.0.0.1:${port}/x`,
+      ]) {
+        const api = await rawRequest(baseUrl, {
+          path: "/api/workspace",
+          headers: { host, "x-askdb-studio-token": token },
+        });
+        expect(api.status, host).toBe(403);
+        expect(JSON.parse(api.body).error.message).toContain("Host");
+      }
+      const page = await rawRequest(baseUrl, { path: "/", headers: { host: `evil.example:${port}` } });
+      expect(page.status).toBe(403);
+      expect(page.body).not.toContain(token);
+    });
+
+    it("accepts localhost, 127.0.0.1, and [::1] Host headers with the right port and token", async () => {
+      const { baseUrl, port, token } = await startGuardedServer();
+      for (const host of [`localhost:${port}`, `127.0.0.1:${port}`, `[::1]:${port}`, `LOCALHOST:${port}`]) {
+        const res = await rawRequest(baseUrl, {
+          path: "/api/workspace",
+          headers: { host, "x-askdb-studio-token": token },
+        });
+        expect(res.status, host).toBe(200);
+        expect(JSON.parse(res.body).schemaId).toBe("orders-users");
+      }
+    });
+
+    it("rejects API calls with a missing or wrong session token", async () => {
+      const { baseUrl, port, token } = await startGuardedServer();
+      const host = `127.0.0.1:${port}`;
+      const missing = await rawRequest(baseUrl, { path: "/api/workspace", headers: { host } });
+      expect(missing.status).toBe(403);
+      expect(JSON.parse(missing.body).error.message).toContain("session token");
+
+      const wrong = await rawRequest(baseUrl, {
+        path: "/api/workspace",
+        headers: { host, "x-askdb-studio-token": token.replace(/.$/, (c) => (c === "0" ? "1" : "0")) },
+      });
+      expect(wrong.status).toBe(403);
+
+      const truncated = await rawRequest(baseUrl, {
+        path: "/api/setup/status",
+        headers: { host, "x-askdb-studio-token": token.slice(0, 10) },
+      });
+      expect(truncated.status).toBe(403);
+    });
+
+    it("rejects the no-cors text/plain exploit and cross-origin writes", async () => {
+      const { baseUrl, port, token } = await startGuardedServer();
+      const host = `127.0.0.1:${port}`;
+      const body = JSON.stringify({ sql: "select 1" });
+
+      // What a malicious page can send with mode: "no-cors": no custom headers, text/plain body.
+      const noCors = await rawRequest(baseUrl, {
+        method: "POST",
+        path: "/api/execute",
+        headers: { host, origin: "https://evil.example", "content-type": "text/plain" },
+        body,
+      });
+      expect(noCors.status).toBe(403);
+
+      // Even with a (somehow obtained) token, a foreign Origin is refused.
+      for (const origin of ["https://evil.example", `http://evil.example:${port}`, "null", `https://127.0.0.1:${port}`]) {
+        const crossOrigin = await rawRequest(baseUrl, {
+          method: "POST",
+          path: "/api/concepts",
+          headers: { host, origin, "content-type": "application/json", "x-askdb-studio-token": token },
+          body: JSON.stringify({ concepts: [] }),
+        });
+        expect(crossOrigin.status, origin).toBe(403);
+        expect(JSON.parse(crossOrigin.body).error.message).toContain("cross-origin");
+      }
+
+      // A valid token but a non-JSON content type is refused (forces CORS preflight in browsers).
+      const textPlain = await rawRequest(baseUrl, {
+        method: "POST",
+        path: "/api/execute",
+        headers: { host, "content-type": "text/plain", "x-askdb-studio-token": token },
+        body,
+      });
+      expect(textPlain.status).toBe(415);
+
+      const noContentType = await rawRequest(baseUrl, {
+        method: "POST",
+        path: "/api/rag/index",
+        headers: { host, "x-askdb-studio-token": token },
+        body: "{}",
+      });
+      expect(noContentType.status).toBe(415);
+    });
+
+    it("accepts same-origin JSON writes with the session token", async () => {
+      const { baseUrl, port, token } = await startGuardedServer();
+      const res = await rawRequest(baseUrl, {
+        method: "POST",
+        path: "/api/rag/index",
+        headers: {
+          host: `localhost:${port}`,
+          origin: `http://localhost:${port}`,
+          "content-type": "application/json; charset=utf-8",
+          "x-askdb-studio-token": token,
+        },
+        body: "{}",
+      });
+      expect(res.status).toBe(200);
+      expect(JSON.parse(res.body).status.hasIndex).toBe(true);
+    });
+
+    it("injects the session token into the served index.html and forbids framing", async () => {
+      const clientDir = mkdtempSync(join(tmpdir(), "askdb-studio-client-"));
+      writeFileSync(
+        join(clientDir, "index.html"),
+        "<!doctype html>\n<html>\n  <head>\n    <title>AskDB Studio</title>\n  </head>\n  <body></body>\n</html>\n",
+      );
+      setStudioClientDirForTests(clientDir);
+      try {
+        const { baseUrl, port, token } = await startGuardedServer();
+        for (const path of ["/", "/tables/users"]) {
+          const page = await rawRequest(baseUrl, { path, headers: { host: `127.0.0.1:${port}` } });
+          expect(page.status).toBe(200);
+          expect(page.body).toContain(`<meta name="askdb-studio-token" content="${token}" />`);
+          expect(page.body.indexOf("askdb-studio-token")).toBeLessThan(page.body.indexOf("</head>"));
+          expect(page.headers["x-frame-options"]).toBe("DENY");
+        }
+      } finally {
+        rmSync(clientDir, { recursive: true, force: true });
+      }
+    });
   });
 
   it("indexes and queries Studio RAG with the OpenAI embedder", async () => {
@@ -350,7 +505,12 @@ describe("AskDB Studio server", () => {
     expect(typeof status.installed).toBe("boolean");
     expect(typeof status.configured).toBe("boolean");
     expect(status.installCommand).toBe("pnpm add pg");
-    expect(status.canInstallFromStudio).toBe(true);
+    // Execute is opt-in: disabled by default, with an explanation for the UI.
+    expect(status.enabled).toBe(false);
+    expect(status.disabledReason).toContain("studio.execute.enabled");
+    expect(status.canInstallFromStudio).toBe(false);
+    expect(status.timeoutMs).toBe(30_000);
+    expect(status.maxRows).toBe(500);
   });
 
   it("GET /api/execute/status reports sqlserver provider when introspection is sqlserver", async () => {
@@ -361,6 +521,7 @@ describe("AskDB Studio server", () => {
         providerConfig: { sqlserver: { databaseUrl: "Server=localhost;Database=app;" } },
         outputDir: "./askdb/",
       },
+      studio: { execute: { enabled: true, useIntrospectionConnection: true } },
     };
     installStudioRuntime({}, sqlserverConfig);
     const schemaDir = copyFixture();
@@ -384,6 +545,7 @@ describe("AskDB Studio server", () => {
         providerConfig: { sqlite: { file: "./data/app.db" } },
         outputDir: "./askdb/",
       },
+      studio: { execute: { enabled: true, useIntrospectionConnection: true } },
     };
     installStudioRuntime({}, sqliteConfig);
     const schemaDir = copyFixture();
@@ -415,22 +577,71 @@ describe("AskDB Studio server", () => {
     expect(status.configured).toBe(false);
   });
 
-  it("POST /api/execute/install-driver rejects unknown provider", async () => {
+  it("POST /api/execute/install-driver rejects unknown and inherited provider keys with 400", async () => {
+    installStudioRuntime({}, { ...STUDIO_TEST_BASE, studio: { execute: { enabled: true } } });
+    const schemaDir = copyFixture();
+    const server = createStudioServer({ schema: schemaDir });
+    servers.push(server);
+    const baseUrl = await listen(server);
+
+    for (const provider of ["oracle", "constructor", "__proto__", "toString"]) {
+      const res = await postRaw(`${baseUrl}/api/execute/install-driver`, { provider });
+      expect(res.status, provider).toBe(400);
+      expect((await res.json()).error.message).toMatch(/Unknown provider/);
+    }
+  });
+
+  it("POST /api/execute/install-driver is refused while execute is disabled", async () => {
     installStudioRuntime({});
     const schemaDir = copyFixture();
     const server = createStudioServer({ schema: schemaDir });
     servers.push(server);
     const baseUrl = await listen(server);
 
-    const result = await postJson(`${baseUrl}/api/execute/install-driver`, { provider: "oracle" });
+    const res = await postRaw(`${baseUrl}/api/execute/install-driver`, {});
+    expect(res.status).toBe(403);
+  });
+
+  it("POST /api/execute returns 403 while execute is disabled (the default)", async () => {
+    installStudioRuntime({});
+    const schemaDir = copyFixture();
+    const server = createStudioServer({ schema: schemaDir });
+    servers.push(server);
+    const baseUrl = await listen(server);
+
+    const res = await postRaw(`${baseUrl}/api/execute`, { sql: "SELECT 1" });
+    expect(res.status).toBe(403);
+    const body = await res.json();
+    expect(body.error.message).toContain("Studio execute is off");
+    expect(body.error.message).toContain("studio.execute.enabled: true");
+  });
+
+  it("POST /api/execute does not silently reuse the introspection connection", async () => {
+    // STUDIO_TEST_BASE's flat map carries an introspection Postgres URL.
+    installStudioRuntime(
+      { ASKDB_INTROSPECT_POSTGRES_URL: "postgres://introspect-only/db" },
+      { ...STUDIO_TEST_BASE, studio: { execute: { enabled: true } } },
+    );
+    const schemaDir = copyFixture();
+    const server = createStudioServer({ schema: schemaDir });
+    servers.push(server);
+    const baseUrl = await listen(server);
+
+    const status = await getJson(`${baseUrl}/api/execute/status`);
+    expect(status.enabled).toBe(true);
+    expect(status.configured).toBe(false);
+    expect(status.disabledReason).toContain("useIntrospectionConnection");
+
+    const result = await postJson(`${baseUrl}/api/execute`, { sql: "SELECT 1" });
     expect(result.ok).toBe(false);
-    expect(result.error).toMatch(/Unknown provider/);
+    expect(result.error).toContain("useIntrospectionConnection");
   });
 
   it("POST /api/execute returns ok:false when the connection is not configured", async () => {
     installStudioRuntime({}, {
       ...STUDIO_TEST_BASE,
       introspection: { provider: "postgres", providerConfig: { postgres: {} }, outputDir: "./askdb/" },
+      studio: { execute: { enabled: true } },
     }, { omitFlatKeys: ["ASKDB_INTROSPECT_POSTGRES_URL", "ASKDB_STUDIO_DATABASE_URL"] });
     const schemaDir = copyFixture();
     const server = createStudioServer({ schema: schemaDir });
@@ -439,17 +650,18 @@ describe("AskDB Studio server", () => {
 
     const result = await postJson(`${baseUrl}/api/execute`, { sql: "SELECT 1" });
     expect(result.ok).toBe(false);
-    expect(result.error).toMatch(/No connection URL/);
+    expect(result.error).toMatch(/No execute connection configured/);
   });
 
-  it("POST /api/execute dispatches to mysql runner when provider is mysql", async () => {
+  it("GET /api/execute/status reports mysql provider when introspection is mysql", async () => {
     const mysqlConfig: AskDbConfig = {
       ...STUDIO_TEST_BASE,
       introspection: {
         provider: "mysql",
-        providerConfig: { mysql: { databaseUrl: "mysql://unreachable-host/db" } },
+        providerConfig: { mysql: { databaseUrl: "mysql://localhost/db" } },
         outputDir: "./askdb/",
       },
+      studio: { execute: { enabled: true, useIntrospectionConnection: true } },
     };
     installStudioRuntime({}, mysqlConfig);
     const schemaDir = copyFixture();
@@ -457,12 +669,181 @@ describe("AskDB Studio server", () => {
     servers.push(server);
     const baseUrl = await listen(server);
 
-    // mysql2 is installed as a dev dep, so the error will be a connection error, not a missing-driver error
-    const result = await postJson(`${baseUrl}/api/execute`, { sql: "SELECT 1" });
-    expect(result.ok).toBe(false);
-    // The error should come from the mysql runner, not from a missing-pg error
-    expect(result.error).not.toMatch(/pg.*required/);
-    expect(result.error).not.toMatch(/`pg`/);
+    const status = await getJson(`${baseUrl}/api/execute/status`);
+    expect(status.provider).toBe("mysql");
+    expect(status.packageName).toBe("mysql2");
+    expect(status.connectionKind).toBe("url");
+    expect(status.configured).toBe(true);
+  });
+
+  describe("execute against a real SQLite database", () => {
+    function createSqliteDb(rows: number): string {
+      const dir = mkdtempSync(join(tmpdir(), "askdb-studio-exec-"));
+      const file = join(dir, "app.db");
+      const db = new BetterSqlite3(file);
+      db.exec("CREATE TABLE users (id INTEGER PRIMARY KEY, email TEXT NOT NULL)");
+      const insert = db.prepare("INSERT INTO users (email) VALUES (?)");
+      for (let i = 0; i < rows; i += 1) insert.run(`user${i}@example.com`);
+      db.close();
+      return file;
+    }
+
+    async function startSqliteServer(file: string, execute: { maxRows?: number } = {}) {
+      installStudioRuntime({}, {
+        ...STUDIO_TEST_BASE,
+        introspection: { provider: "sqlite", providerConfig: { sqlite: {} }, outputDir: "./askdb/" },
+        studio: { execute: { enabled: true, provider: "sqlite", file, ...execute } },
+      });
+      const server = createStudioServer({ schema: copyFixture() });
+      servers.push(server);
+      return listen(server);
+    }
+
+    it("runs a validated SELECT when execute is enabled", async () => {
+      const baseUrl = await startSqliteServer(createSqliteDb(3));
+      const result = await postJson(`${baseUrl}/api/execute`, { sql: "SELECT id FROM users ORDER BY id;" });
+      expect(result).toMatchObject({
+        ok: true,
+        columns: ["id"],
+        rows: [[1], [2], [3]],
+        rowCount: 3,
+        truncated: false,
+        rowLimit: 500,
+      });
+      expect(result.warnings).toBeUndefined();
+    });
+
+    it("caps rows at studio.execute.maxRows and reports truncated", async () => {
+      const baseUrl = await startSqliteServer(createSqliteDb(30), { maxRows: 10 });
+      const result = await postJson(`${baseUrl}/api/execute`, { sql: "SELECT id FROM users ORDER BY id" });
+      expect(result.ok).toBe(true);
+      expect(result.truncated).toBe(true);
+      expect(result.rowLimit).toBe(10);
+      expect(result.rows).toHaveLength(10);
+      expect(result.rowCount).toBe(10);
+      expect(result.rows[9]).toEqual([10]);
+
+      const exact = await postJson(`${baseUrl}/api/execute`, { sql: "SELECT id FROM users LIMIT 10" });
+      expect(exact.truncated).toBe(false);
+      expect(exact.rows).toHaveLength(10);
+    });
+
+    it("rejects multi-statement and write SQL with 400 before it reaches the driver", async () => {
+      const file = createSqliteDb(2);
+      const baseUrl = await startSqliteServer(file);
+      for (const sql of ["SELECT 1; DROP TABLE users", "DROP TABLE users", "SELECT 1 -- x"]) {
+        const res = await postRaw(`${baseUrl}/api/execute`, { sql });
+        expect(res.status, sql).toBe(400);
+        expect((await res.json()).error.message).toContain("read-only guardrail");
+      }
+      // The driver's own multi-statement error would have been a 200 with ok:false.
+      const db = new BetterSqlite3(file, { readonly: true });
+      expect(db.prepare("SELECT count(*) AS n FROM users").get()).toEqual({ n: 2 });
+      db.close();
+    });
+
+    it("warns (without blocking) when the SQL reads a column marked sensitive", async () => {
+      const baseUrl = await startSqliteServer(createSqliteDb(1));
+      const result = await postJson(`${baseUrl}/api/execute`, { sql: "SELECT email FROM users" });
+      expect(result.ok).toBe(true);
+      expect(result.warnings).toEqual([expect.stringContaining("users.email")]);
+    });
+  });
+
+  it("rejects request bodies over 1 MiB with 413", async () => {
+    installStudioRuntime({ ASKDB_RAG_EMBEDDER: "mock" });
+    const server = createStudioServer({ schema: copyFixture() });
+    servers.push(server);
+    const baseUrl = await listen(server);
+    const big = { question: "x".repeat(1024 * 1024 + 10), mode: "full", sqlMode: "sql-only", sql: "SELECT 1" };
+
+    const declared = await postRaw(`${baseUrl}/api/history`, big);
+    expect(declared.status).toBe(413);
+    expect((await declared.json()).error.message).toContain("too large");
+
+    // Chunked (no Content-Length) bodies are counted as they stream in.
+    const port = new URL(baseUrl).port;
+    const chunked = await rawRequest(baseUrl, {
+      method: "POST",
+      path: "/api/history",
+      headers: {
+        host: `127.0.0.1:${port}`,
+        "content-type": "application/json",
+        "transfer-encoding": "chunked",
+        ...authHeaders(baseUrl),
+      },
+      body: JSON.stringify(big),
+    });
+    expect(chunked.status).toBe(413);
+  });
+
+  it("persists only whitelisted, bounded history fields and git-ignores the history file", async () => {
+    installStudioRuntime({ ASKDB_RAG_EMBEDDER: "mock" });
+    const schemaDir = copyFixture();
+    const server = createStudioServer({ schema: schemaDir });
+    servers.push(server);
+    const baseUrl = await listen(server);
+
+    const fields = {
+      question: "How many users?",
+      mode: "full",
+      sqlMode: "sql-only",
+      sql: "SELECT count(*) FROM users",
+      explain: "Counts users.",
+      tenantParams: { "1": "t-1" },
+      executionResult: { rowCount: 1, durationMs: 3, truncated: false, extra: "dropped" },
+      id: "attacker-chosen",
+      timestamp: "1999-01-01",
+      injected: "x".repeat(10_000),
+    };
+    // A `__proto__:` key in an object literal sets the literal's prototype and JSON.stringify drops it,
+    // so splice it into the raw JSON: JSON.parse on the server then yields an own "__proto__" property.
+    const res = await fetch(`${baseUrl}/api/history`, {
+      method: "POST",
+      headers: { "content-type": "application/json", ...authHeaders(baseUrl) },
+      body: `{"__proto__":{"polluted":true},${JSON.stringify(fields).slice(1)}`,
+    });
+    expect(res.status).toBe(200);
+    expect(({} as Record<string, unknown>).polluted).toBeUndefined();
+    const stored = JSON.parse(readFileSync(join(schemaDir, "playground-history.json"), "utf8"));
+    expect(stored).toHaveLength(1);
+    expect(Object.keys(stored[0]).sort()).toEqual(
+      ["executionResult", "explain", "id", "mode", "question", "sql", "sqlMode", "tenantParams", "timestamp"].sort(),
+    );
+    expect(stored[0].id).not.toBe("attacker-chosen");
+    expect(stored[0].executionResult).toEqual({ rowCount: 1, durationMs: 3, truncated: false });
+
+    const gitignore = readFileSync(join(schemaDir, ".gitignore"), "utf8");
+    expect(gitignore.split("\n")).toEqual(expect.arrayContaining(["playground-history.json", ".env", ".env.*", "!.env.example"]));
+
+    for (const bad of [
+      { mode: "full", sqlMode: "sql-only", sql: "SELECT 1" },
+      { question: "q", mode: "full", sqlMode: "anything", sql: "SELECT 1" },
+      { question: "q", mode: "full", sqlMode: "sql-only", sql: 42 },
+      { question: "q".repeat(5000), mode: "full", sqlMode: "sql-only", sql: "SELECT 1" },
+      { question: "q", mode: "full", sqlMode: "sql-only", sql: "SELECT 1", tenantScope: "not-an-object" },
+      { question: "q", mode: "full", sqlMode: "sql-only", sql: "SELECT 1", executionResult: { rowCount: "1" } },
+    ]) {
+      const res = await postRaw(`${baseUrl}/api/history`, bad);
+      expect(res.status, JSON.stringify(bad).slice(0, 80)).toBe(400);
+    }
+  });
+
+  it("appends the history entry to an existing .gitignore without rewriting it", async () => {
+    installStudioRuntime({ ASKDB_RAG_EMBEDDER: "mock" });
+    const schemaDir = copyFixture();
+    writeFileSync(join(schemaDir, ".gitignore"), "# mine\nsecrets.txt");
+    const server = createStudioServer({ schema: schemaDir });
+    servers.push(server);
+    const baseUrl = await listen(server);
+
+    const entry = { question: "q", mode: "full", sqlMode: "sql-only", sql: "SELECT 1" };
+    await postJson(`${baseUrl}/api/history`, entry);
+    await postJson(`${baseUrl}/api/history`, entry);
+    const gitignore = readFileSync(join(schemaDir, ".gitignore"), "utf8");
+    expect(gitignore.startsWith("# mine\nsecrets.txt\n")).toBe(true);
+    expect(gitignore.match(/^playground-history\.json$/gm)).toHaveLength(1);
+    expect(gitignore).not.toContain(".env");
   });
 
   it("GET /api/setup/status reports not needed on a ready workspace", async () => {
@@ -536,7 +917,7 @@ describe("AskDB Studio server", () => {
       expect(status).toMatchObject({ needed: true, reason: "no-config" });
 
       // Non-setup endpoints are gated while setup is pending.
-      const gated = await fetch(`${baseUrl}/api/workspace`);
+      const gated = await fetch(`${baseUrl}/api/workspace`, { headers: authHeaders(baseUrl) });
       expect(gated.status).toBe(409);
 
       // Secrets are rejected — env var NAMES only.
@@ -630,6 +1011,7 @@ describe("AskDB Studio server", () => {
       expect(configContent).toContain('databaseUrl: env("MY_PGVECTOR_URL")');
       expect(configContent).toContain('provider: "sqlite"');
       expect(configContent).toContain('file: "./studio.db"');
+      expect(configContent).toContain("enabled: true");
     } finally {
       process.chdir(prevCwd);
       rmSync(projectDir, { recursive: true, force: true });
@@ -646,14 +1028,50 @@ function copyFixture(): string {
   return schemaDir;
 }
 
-async function listen(server: ReturnType<typeof createStudioServer>): Promise<string> {
+/** Session token per listening base URL, so request helpers can authenticate. */
+const sessionTokens = new Map<string, string>();
+
+async function listen(server: ReturnType<typeof createServer> & { sessionToken?: string }): Promise<string> {
   await new Promise<void>((resolve, reject) => {
     server.once("error", reject);
     server.listen(0, "127.0.0.1", resolve);
   });
   const address = server.address();
   if (!address || typeof address === "string") throw new Error("Server did not bind a TCP port.");
-  return `http://127.0.0.1:${address.port}`;
+  const baseUrl = `http://127.0.0.1:${address.port}`;
+  if (server.sessionToken) sessionTokens.set(baseUrl, server.sessionToken);
+  return baseUrl;
+}
+
+function authHeaders(url: string): Record<string, string> {
+  const token = sessionTokens.get(new URL(url).origin);
+  return token ? { "x-askdb-studio-token": token } : {};
+}
+
+/**
+ * Raw HTTP request — unlike `fetch`, lets tests send an arbitrary `Host`
+ * header (to simulate DNS rebinding).
+ */
+function rawRequest(
+  baseUrl: string,
+  options: { method?: string; path: string; headers?: Record<string, string>; body?: string },
+): Promise<{ status: number; body: string; headers: IncomingMessage["headers"] }> {
+  const { hostname, port } = new URL(baseUrl);
+  return new Promise((resolve, reject) => {
+    const req = httpRequest(
+      { hostname, port, method: options.method ?? "GET", path: options.path, headers: options.headers },
+      (res) => {
+        const chunks: Buffer[] = [];
+        res.on("data", (chunk: Buffer) => chunks.push(chunk));
+        res.on("end", () =>
+          resolve({ status: res.statusCode ?? 0, body: Buffer.concat(chunks).toString("utf8"), headers: res.headers }),
+        );
+      },
+    );
+    req.on("error", reject);
+    if (options.body !== undefined) req.write(options.body);
+    req.end();
+  });
 }
 
 function createEmbeddingServer(): ReturnType<typeof createServer> {
@@ -710,7 +1128,7 @@ function tokenCount(text: string): number {
 
 
 async function getJson(url: string): Promise<any> {
-  const response = await fetch(url);
+  const response = await fetch(url, { headers: authHeaders(url) });
   if (response.status !== 200) {
     throw new Error(`GET ${url} failed with ${response.status}: ${await response.text()}`);
   }
@@ -728,7 +1146,7 @@ async function postJson(url: string, body: unknown): Promise<any> {
 async function postRaw(url: string, body: unknown): Promise<Response> {
   const response = await fetch(url, {
     method: "POST",
-    headers: { "content-type": "application/json" },
+    headers: { "content-type": "application/json", ...authHeaders(url) },
     body: JSON.stringify(body),
   });
   return response;

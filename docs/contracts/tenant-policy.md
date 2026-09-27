@@ -294,9 +294,35 @@ interface TenantFilter {
 | Kind | Meaning | When to use |
 |---|---|---|
 | `ids` | User can see rows matching specific tenant IDs at one root level. | Most common. Host has resolved the user's access to a flat ID list. |
-| `subtree` | User can see a root and all its descendants in the hierarchy. | Phase 10 accepts this but the proof expects the host to expand IDs. Full CTE generation may follow. |
+| `subtree` | User can see a root and all its descendants in the hierarchy. | Hierarchical admins (state → counties). Requires `ask({ resolveTenantDescendants })`; see [Subtree expansion](#subtree-expansion). |
 | `multi_root` | User has different scopes at different hierarchy levels. | Edge case: user is admin at one agency but also has direct client-level access elsewhere. |
 | `global` | User can see all data across all tenants. | Admin/superuser. Requires an explicit `reason` string for audit. |
+
+### Subtree expansion
+
+AskDB does not open database connections, so it cannot compute a subtree itself. The host supplies the expansion to `ask()`:
+
+```ts
+type ResolveTenantDescendants = (
+  tenantRoot: string,
+  seedIds: readonly string[],
+) => Promise<readonly string[]> | readonly string[];
+
+ask({ ..., tenantScope, resolveTenantDescendants });
+```
+
+Contract:
+
+- `ask()` calls the resolver once, after scope validation and before model generation, with `access.tenantRoot` and `access.rootIds`.
+- The resolver returns IDs **of the same tenant root**, which replace that root's `:tenant_<label>_ids` placeholder. A self-referencing hierarchy (e.g. `agencies.parent_agency_id`) is expanded by the host the same way as any other.
+- `ask()` unions the seed IDs into the result (deduplicated), so an ancestor never loses its own rows when a resolver returns strict descendants only.
+- The expanded scope is treated as `{ kind: "ids", tenantRoot, ids }` for the prompt, the tenant guardrail, and placeholder substitution. Advisory `context` and `tenantFilters` are unchanged.
+- **Fail closed.** A `subtree` scope with no resolver, or a resolver returning an empty array or anything other than an array of non-empty strings, throws `TenantScopeError` with reason `SUBTREE_NOT_RESOLVABLE`. AskDB never falls back to the seed IDs alone.
+- The host owns authorization and caching of the closure. AskDB trusts the returned IDs.
+
+`resolveTenantSql()` (exported) does not walk the hierarchy. A direct caller must pass an already-expanded `ids` access, because an unexpanded `subtree` substitutes the seed IDs only.
+
+`@askdb/core` also exports `expandClosure(seedIds, childrenOf)`, a breadth-first, cycle-safe walk over an in-memory hierarchy, for use inside a resolver.
 
 ### Advisory context
 

@@ -7,6 +7,7 @@ import {
   AskDbError,
   SensitiveReferenceError,
   TenantGuardrailError,
+  TenantScopeError,
   UnknownDialectError,
 } from "./errors.js";
 import { AskDbLogEvent } from "./logging/log-events.js";
@@ -723,4 +724,123 @@ describe("ask — sensitive-identifier guardrail", () => {
     });
     expect(result.sensitiveGuardrail).toBeUndefined();
   });
+});
+
+describe("ask — subtree tenant scope expansion", () => {
+  const schema = loadSchema(multiTenantDir);
+  const agencyRoot = "table:public.agencies";
+  const subtreeScope: TenantScope = {
+    access: { kind: "subtree", tenantRoot: agencyRoot, rootIds: ["state-1"], includeDescendants: true },
+  };
+  const tenantSqlDialect = () => ({
+    generate: vi.fn(async () => ({
+      sql: "SELECT COUNT(*) FROM orders WHERE agency_id = :tenant_agency_ids",
+    })),
+  });
+
+  // Regression (#232): subtree scopes used to substitute the seed IDs only, so a
+  // state admin silently saw none of the county rows beneath the state.
+  it.each([
+    {
+      mode: "sql-only" as const,
+      sql: "SELECT COUNT(*) FROM orders WHERE agency_id IN ('state-1', 'county-a', 'county-b')",
+      tenantParams: undefined,
+    },
+    {
+      mode: "sql-params" as const,
+      sql: "SELECT COUNT(*) FROM orders WHERE agency_id IN ($1, $2, $3)",
+      tenantParams: ["state-1", "county-a", "county-b"],
+    },
+  ])("scopes the SQL to the resolver's full subtree ($mode)", async ({ mode, sql, tenantParams }) => {
+    const resolveTenantDescendants = vi.fn(async () => ["state-1", "county-a", "county-b"]);
+    const result = await ask({
+      question: "count orders",
+      schema,
+      model: fakeModel,
+      dialect: tenantSqlDialect(),
+      tenantScope: subtreeScope,
+      tenantSqlMode: mode,
+      resolveTenantDescendants,
+    });
+
+    expect(result.sql).toBe(sql);
+    expect(result.tenantParams).toEqual(tenantParams);
+    expect(result.tenantBindings?.[0]?.ids).toEqual(["state-1", "county-a", "county-b"]);
+    expect(resolveTenantDescendants).toHaveBeenCalledWith(agencyRoot, ["state-1"]);
+  });
+
+  // Regression guard for silent under-scoping: without a resolver there is no
+  // way to reach descendants, so ask() must refuse rather than use the seeds.
+  it("throws SUBTREE_NOT_RESOLVABLE without a resolver, before calling the model", async () => {
+    const dialect = tenantSqlDialect();
+    const error = await ask({
+      question: "count orders",
+      schema,
+      model: fakeModel,
+      dialect,
+      tenantScope: subtreeScope,
+    }).catch((e: unknown) => e);
+
+    expect(error).toBeInstanceOf(TenantScopeError);
+    expect((error as TenantScopeError).reason).toBe("SUBTREE_NOT_RESOLVABLE");
+    expect((error as TenantScopeError).message).toContain(agencyRoot);
+    expect(dialect.generate).not.toHaveBeenCalled();
+  });
+
+  // An ancestor must never lose its own rows because a host resolver returned
+  // strict descendants only; ask() unions the seeds in itself.
+  it("keeps the seed IDs when the resolver returns strict descendants only", async () => {
+    const result = await ask({
+      question: "count orders",
+      schema,
+      model: fakeModel,
+      dialect: tenantSqlDialect(),
+      tenantScope: subtreeScope,
+      resolveTenantDescendants: () => ["county-a", "county-b"],
+    });
+
+    expect(result.tenantBindings?.[0]?.ids).toEqual(["state-1", "county-a", "county-b"]);
+  });
+
+  it.each([
+    { name: "an empty array", resolved: [], message: /resolveTenantDescendants returned no IDs/ },
+    { name: "non-string IDs", resolved: [1, 2], message: /resolveTenantDescendants .* non-empty string IDs/ },
+    { name: "an empty-string ID", resolved: ["county-a", ""], message: /resolveTenantDescendants .* non-empty string IDs/ },
+    { name: "a non-array", resolved: undefined, message: /resolveTenantDescendants .* non-empty string IDs/ },
+  ])("throws SUBTREE_NOT_RESOLVABLE naming the resolver when it returns $name", async ({ resolved, message }) => {
+    const error = await ask({
+      question: "count orders",
+      schema,
+      model: fakeModel,
+      dialect: tenantSqlDialect(),
+      tenantScope: subtreeScope,
+      resolveTenantDescendants: async () => resolved as unknown as string[],
+    }).catch((e: unknown) => e);
+
+    expect(error).toBeInstanceOf(TenantScopeError);
+    expect((error as TenantScopeError).reason).toBe("SUBTREE_NOT_RESOLVABLE");
+    expect((error as TenantScopeError).message).toMatch(message);
+  });
+
+  // ids and multi_root must not change: no resolver needed, and supplying one
+  // neither calls it nor alters the output.
+  it.each([
+    { name: "ids", access: { kind: "ids", tenantRoot: agencyRoot, ids: ["42", "99"] } },
+    {
+      name: "multi_root",
+      access: { kind: "multi_root", scopes: [{ tenantRoot: agencyRoot, ids: ["42", "99"] }] },
+    },
+  ] satisfies Array<{ name: string; access: TenantScope["access"] }>)(
+    "leaves $name access untouched",
+    async ({ access }) => {
+      const base = { question: "count orders", schema, model: fakeModel, tenantScope: { access } };
+      const resolveTenantDescendants = vi.fn(() => ["should-not-appear"]);
+      const without = await ask({ ...base, dialect: tenantSqlDialect() });
+      const withResolver = await ask({ ...base, dialect: tenantSqlDialect(), resolveTenantDescendants });
+
+      expect(without.sql).toBe("SELECT COUNT(*) FROM orders WHERE agency_id IN ('42', '99')");
+      expect(withResolver).toEqual(without);
+      expect(resolveTenantDescendants).not.toHaveBeenCalled();
+    },
+  );
 });

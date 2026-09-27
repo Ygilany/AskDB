@@ -56,7 +56,10 @@ describe("resolvePlaceholders", () => {
     expect(resolved[0]!.rootId).toBe("table:public.agencies");
   });
 
-  it("resolves subtree scope", () => {
+  // Low-level contract: resolvePlaceholders does not walk the hierarchy. ask()
+  // pre-expands a subtree (resolveTenantDescendants) before substitution; a
+  // direct caller passing an unexpanded subtree gets the seed IDs only.
+  it("passes an unexpanded subtree's seed IDs through unchanged", () => {
     const scope: TenantScope = {
       access: { kind: "subtree", tenantRoot: "table:public.agencies", rootIds: ["42"], includeDescendants: true },
     };
