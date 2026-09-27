@@ -1,0 +1,18 @@
+[
+  {
+    "id": "agency-names",
+    "text": "List every agency's id and name, ordered by id."
+  },
+  {
+    "id": "active-programs-per-agency",
+    "text": "How many active programs does each agency run?"
+  },
+  {
+    "id": "unpaid-orders",
+    "text": "Which orders are still unpaid, and what are their totals?"
+  },
+  {
+    "id": "top-paid-agencies",
+    "text": "Which three agencies have the highest paid order total?"
+  }
+]

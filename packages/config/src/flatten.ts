@@ -183,6 +183,7 @@ export function flattenAskDbConfig(config: AskDbConfig): Record<string, string> 
 
   const outDir = intro.outputDir?.trim() || DEFAULT_INTROSPECT_OUTPUT_DIR;
   set(out, "ASKDB_INTROSPECT_OUT", outDir);
+  set(out, "ASKDB_INTROSPECT_SCHEMAS", intro.schemas?.join(","));
 
   // --- RAG ---
   const rag = config.rag;
