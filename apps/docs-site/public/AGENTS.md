@@ -40,9 +40,7 @@ AskDB is a workspace of small, layered packages — install only what your use c
 
 `ask()`'s contract is `model: LanguageModel` — a plain Vercel AI SDK model object. You can produce one via `@askdb/ai-*` adapters + `@askdb/client` (config-driven; the right default when AskDB should own provider config) or by constructing a raw AI SDK model and passing it to `ask()` directly (better when the host app already resolves provider config elsewhere, or needs to reuse one model instance for LLM calls AskDB doesn't make). Check whether the host codebase already constructs AI SDK models before picking — don't introduce a second, parallel provider-config system for one call site. Full decision rule and per-provider recipes: `/guides/bring-your-own-model/`.
 
-`ai` is a **peer dependency** of `@askdb/core` (`^6 || ^7`): add `ai` to the host app's own
-`package.json` next to `@askdb/core` and reuse the host's existing AI SDK version — never install a
-second copy. The `@askdb/ai-*` / `@askdb/client` config-driven path currently requires `ai@7`.
+`ai` is a **peer dependency** of `@askdb/core` (`^6 || ^7`): add `ai` to the host app's own `package.json` next to `@askdb/core` and reuse the host's existing AI SDK version — never install a second copy. The `@askdb/ai-*` / `@askdb/client` config-driven path currently requires `ai@7`.
 
 ## Safety and trust boundaries
 
