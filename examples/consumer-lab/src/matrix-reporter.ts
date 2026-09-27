@@ -13,6 +13,10 @@
  * - `n/a (reason)` if its tests were skipped with `ctx.skip("reason")`;
  * - `-` if no test ran for it (none exists, or a filter excluded it).
  *
+ * Any `FAIL` cell fails the run (exit code 1), even one vitest counts as passing: an
+ * `it.fails` test that names no issue, or a skip that isn't a capability gate. CI's
+ * consumer-lab job relies on this; `pass`, `n/a` and `known` cells don't fail it.
+ *
  * After the test rows come annotation rows, marked `*`: facts the golden schema holds but
  * the schema artifact can't express, so no test can compare them. They are a static list, not test
  * results; see {@link ARTIFACT_LIMITS}.
@@ -143,6 +147,7 @@ export default class MatrixReporter implements Reporter {
       ...annotations.map((a) => [`${a.scenario} *`, ...DIALECTS.map(() => ARTIFACT_LIMIT_TEXT)]),
     ];
     const target = installTarget();
+    const failed = rows.flatMap((r) => DIALECTS.filter((d) => r.cells[d]?.status === "fail").map((d) => `${r.scenario} [${d}]`));
 
     const out = [
       "",
@@ -153,6 +158,7 @@ export default class MatrixReporter implements Reporter {
       "- = no test ran for this dialect",
       "* = annotation, not a test result: a golden-schema fact the schema artifact can't express (NORMALIZATION.md)",
     ];
+    if (failed.length) out.push("", `${failed.length} FAIL cell(s): ${failed.join(", ")}`);
     if (unmatched.length) {
       out.push("", `Not in the matrix (name doesn't start with "[<dialect>] <scenario-id>"):`, ...unmatched.map((n) => `  ${n}`));
     }
@@ -165,7 +171,10 @@ export default class MatrixReporter implements Reporter {
 
     const summary = process.env.GITHUB_STEP_SUMMARY;
     if (summary) {
-      appendFileSync(summary, `### Consumer lab matrix${target ? ` (${target})` : ""}\n\n${markdown(header, cells)}\n\n`);
+      const verdict = failed.length ? `**${failed.length} FAIL cell(s):** ${failed.join(", ")}\n\n` : "";
+      appendFileSync(summary, `### Consumer lab matrix${target ? ` (${target})` : ""}\n\n${markdown(header, cells)}\n\n${verdict}`);
     }
+    // Vitest only ever raises the exit code, so this sticks; it never masks vitest's own failures.
+    if (failed.length) process.exitCode = 1;
   }
 }

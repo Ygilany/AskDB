@@ -100,7 +100,13 @@ The dialect comes from the base URL: `http://127.0.0.1:<port>/<dialect>/v1`. The
 - `n/a (capability: …)`: a capability gate skipped the test because the install target lacks a documented capability (see [Capabilities](#capabilities-testing-older-targets)). Any other skip of a test that was meant to run is a `FAIL`: the lab fails rather than skips.
 - `-`: no test ran for that dialect (none exists yet, or a `-t` filter excluded it; an excluded test never inherits a sibling's failure).
 
+`lab:matrix` exits 1 when any cell is `FAIL`, including the two that vitest itself counts as passing (an `it.fails` test that names no issue, and a skip that isn't a capability gate). `pass`, `n/a` and `known` cells don't fail it. The failing cells are listed under the table.
+
 Below the test rows, the `unique-constraints *` and `view-marker *` rows are **annotations, not test results**: facts the golden schema holds but the schema artifact can't express (the "Not comparable" rule in [`NORMALIZATION.md`](../../fixtures/multi-engine/dataset/NORMALIZATION.md)). The reporter prints them as `n/a (not in the schema artifact)` from a static list, and `matrix.json` keeps them under `annotations`.
+
+### In CI
+
+The `consumer-lab` job in [`.github/workflows/ci.yml`](../../.github/workflows/ci.yml) runs on every pull request and every push to `main`. It runs `pnpm lab:use .` (tarballs packed from the commit under test), then `pnpm lab:matrix`, with a 25-minute timeout. The table goes to the job summary, and `.lab/matrix.json` is uploaded as the `consumer-lab-matrix` artifact whether the job passes or fails. The job fails exactly when `lab:matrix` exits non-zero. Docs-only pull requests skip it: those whose every changed file is under `apps/docs-site/`, `docs/` or `plans/`, a top-level `*.md`, or a `README.md` or `CHANGELOG.md`. Other Markdown still runs the lab, because schema artifacts are Markdown too.
 
 ## Introspection
 

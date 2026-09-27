@@ -68,7 +68,7 @@ pnpm lab:use --restore                            # before committing: restore t
 
 `lab ask` answers only questions in the lab's catalog, from hand-written replies per dialect; adding a question means adding its replies (see the lab README).
 
-Lab test names start with `[<dialect>] <scenario-id>`, which is how `lab:matrix` places each result; the cell values and how to mark a known bug are in the [lab README](examples/consumer-lab/README.md#the-matrix).
+Lab test names start with `[<dialect>] <scenario-id>`, which is how `lab:matrix` places each result; the cell values and how to mark a known bug are in the [lab README](examples/consumer-lab/README.md#the-matrix). `lab:matrix` exits non-zero on any `FAIL` cell, and CI's `consumer-lab` job runs it on every pull request (docs-only ones excepted) against tarballs packed from the PR; see [In CI](examples/consumer-lab/README.md#in-ci).
 
 `lab:use` rewrites the lab's `package.json`, `pnpm-workspace.yaml` and `pnpm-lock.yaml`. The committed versions are the `npm:latest` baseline, so don't commit them after any other target (a tarball install writes `file:` paths into them). To refresh the baseline after a release ships, run `pnpm lab:use npm:latest` and commit those three files. Unlike the package suites above, lab tests don't use `integrationSuite()`: the lab exists to run against real databases, so a missing fixture or install fails the suite instead of skipping it. The one exception is an older target that lacks a documented capability a scenario needs: that scenario reports `n/a (capability: …)` (see the lab README).
 
