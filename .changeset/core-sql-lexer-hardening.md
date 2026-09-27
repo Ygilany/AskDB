@@ -19,4 +19,6 @@ Keywords are matched on whole unquoted tokens, so `created_into`, `copy_count`, 
 
 `validateSensitiveReferences` gains an optional `dialect` option and now reports `SELECT *`, `alias.*`, and whole-row references (`row_to_json(u)`, `to_jsonb(u)`, `json_agg(u)`) as referencing the table's sensitive columns. Without `dialect`, references are unioned across every built-in engine's reading. An unterminated token is reported as the new `UNTERMINATED_TOKEN` scope issue.
 
+`SELECT *` is recognized after each engine's `SELECT` modifiers (MySQL `DISTINCTROW`, `HIGH_PRIORITY`, `STRAIGHT_JOIN`, `SQL_NO_CACHE`, …; Postgres `DISTINCT ON (…)`; SQL Server `TOP n [PERCENT] [WITH TIES]`), closing a bypass where those modifiers hid the wildcard; without `dialect`, every engine's modifiers are accepted. Fewer false positives: `SELECT percent * rate` is multiplication, and an implicit output alias (`SELECT id u FROM users u`) is no longer reported as a column or whole-row reference.
+
 Also: `SqlValidationRuleCode` adds `SQL_FORBIDDEN_FUNCTION` and `SQL_UNTERMINATED`; `SensitiveScopeIssue` adds `UNTERMINATED_TOKEN`. Placeholder scanning no longer reads the type in a `value::type` cast, or text inside a comment, as a `:name` placeholder.

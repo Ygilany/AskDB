@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { SensitiveReferenceError } from "../errors.js";
 import type { NormalizedSchema } from "../schema/types.js";
 import type { NormalizedSchemaV2, NormalizedV2Table } from "../schema/v2/normalized.js";
-import { MYSQL_DIALECT, POSTGRES_DIALECT } from "./dialect-spec.js";
+import { MYSQL_DIALECT, POSTGRES_DIALECT, SQLSERVER_DIALECT } from "./dialect-spec.js";
 import { validateSensitiveReferences, schemaHasSensitiveIdentifiers } from "./sensitive-guardrail.js";
 
 // ---------------------------------------------------------------------------
@@ -491,13 +491,17 @@ describe("validateSensitiveReferences — wildcards and whole-row references", (
     ["SELECT * FROM users", "unqualified"],
     ["SELECT DISTINCT * FROM users", "unqualified"],
     ["SELECT o.id, * FROM orders o JOIN users u ON u.id = o.user_id", "unqualified"],
-    ["SELECT TOP 5 * FROM users", "unqualified"],
     ["SELECT u.* FROM users u", "qualified"],
     ["SELECT users.* FROM users", "qualified"],
     ["SELECT row_to_json(u) FROM users u", "qualified"],
     ["SELECT to_jsonb(u) FROM users AS u", "qualified"],
     ["SELECT json_agg(u) FROM users u", "qualified"],
     ["SELECT u FROM users u", "qualified"],
+    ["SELECT DISTINCT u FROM users u", "qualified"],
+    ["SELECT DISTINCT ON (id) u FROM users u", "qualified"],
+    ["SELECT id, u FROM users u", "qualified"],
+    ["SELECT CASE WHEN true THEN u END FROM users u", "qualified"],
+    ["SELECT (u) FROM users u", "qualified"],
   ] as const)("%s flags users.ssn", (sql, kind) => {
     const result = validateSensitiveReferences(sql, ssnSchema);
     expect(result.references).toEqual([ssnRef(kind)]);
@@ -511,10 +515,57 @@ describe("validateSensitiveReferences — wildcards and whole-row references", (
     ["SELECT o.* FROM orders o JOIN users u ON u.id = o.user_id"],
     ["SELECT id FROM orders o WHERE EXISTS (SELECT * FROM users u WHERE u.id = o.user_id)"],
     ["SELECT row_to_json(o) FROM orders o"],
+    // `percent` / `ties` are only modifiers inside `TOP n PERCENT` / `WITH TIES`.
+    ["SELECT percent * rate FROM users"],
+    ["SELECT ties * rate FROM users"],
+    // An implicit output alias names the output column; it does not read the row.
+    ["SELECT id u FROM users u"],
+    ["SELECT count(*) u FROM users u"],
+    ["SELECT 'x' u FROM users u"],
+    ['SELECT id "u" FROM users u'],
+    ["SELECT name ssn FROM users"],
   ])("%s does not flag users.ssn", (sql) => {
     const result = validateSensitiveReferences(sql, ssnSchema);
     expect(result.references).toEqual([]);
     expect(result.passed).toBe(true);
+  });
+
+  // Each row must be flagged under its own dialect's SELECT grammar and, with no dialect,
+  // under the union of every dialect's modifiers.
+  const dialects = { mysql: MYSQL_DIALECT, postgres: POSTGRES_DIALECT, sqlserver: SQLSERVER_DIALECT };
+  it.each([
+    ["mysql", "SELECT ALL * FROM users"],
+    ["mysql", "SELECT DISTINCTROW * FROM users"],
+    ["mysql", "SELECT HIGH_PRIORITY * FROM users"],
+    ["mysql", "SELECT STRAIGHT_JOIN * FROM users"],
+    ["mysql", "SELECT SQL_SMALL_RESULT * FROM users"],
+    ["mysql", "SELECT SQL_BIG_RESULT * FROM users"],
+    ["mysql", "SELECT SQL_BUFFER_RESULT * FROM users"],
+    ["mysql", "SELECT SQL_NO_CACHE * FROM users"],
+    ["mysql", "SELECT SQL_CACHE * FROM users"],
+    ["mysql", "SELECT SQL_CALC_FOUND_ROWS * FROM users"],
+    ["mysql", "SELECT HIGH_PRIORITY DISTINCT SQL_NO_CACHE * FROM users"],
+    ["mysql", "SELECT s.id FROM (SELECT DISTINCTROW * FROM users) s"],
+    ["mysql", "WITH x AS (SELECT SQL_NO_CACHE * FROM users) SELECT x.id FROM x"],
+    ["postgres", "SELECT DISTINCT ON (id) * FROM users"],
+    ["sqlserver", "SELECT TOP 5 * FROM users"],
+    ["sqlserver", "SELECT TOP (5) * FROM users"],
+    ["sqlserver", "SELECT TOP 5 PERCENT * FROM users"],
+    ["sqlserver", "SELECT TOP 5 WITH TIES * FROM users"],
+    ["sqlserver", "SELECT DISTINCT TOP (5) PERCENT WITH TIES * FROM users"],
+  ] as const)("%s: %s flags users.ssn with and without the dialect", (id, sql) => {
+    for (const options of [{ dialect: dialects[id] }, {}]) {
+      const result = validateSensitiveReferences(sql, ssnSchema, options);
+      expect(result.references).toEqual([ssnRef("unqualified")]);
+      expect(result.passed).toBe(false);
+    }
+  });
+
+  it("does not read `percent * rate` as a wildcard under SQL Server", () => {
+    const result = validateSensitiveReferences("SELECT percent * rate FROM users", ssnSchema, {
+      dialect: SQLSERVER_DIALECT,
+    });
+    expect(result.references).toEqual([]);
   });
 });
 
@@ -534,6 +585,13 @@ describe("validateSensitiveReferences — dialect-aware lexing", () => {
     ).toEqual([ssnRef("unqualified")]);
     // Without a dialect, every engine's reading is scanned.
     expect(validateSensitiveReferences(sql, ssnSchema).references).toEqual([ssnRef("unqualified")]);
+  });
+
+  it("reads a MySQL \"…\" string as an identifier, since ANSI_QUOTES servers do", () => {
+    const result = validateSensitiveReferences('SELECT "ssn" FROM users', ssnSchema, {
+      dialect: MYSQL_DIALECT,
+    });
+    expect(result.references).toEqual([ssnRef("unqualified")]);
   });
 
   it("does not treat Postgres [ as a bracket identifier", () => {

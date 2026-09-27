@@ -207,8 +207,7 @@ type Tok = { kind: TokKind; value: string; lower: string; quoted: boolean };
 
 /**
  * Map lexer tokens onto the scanner's simpler vocabulary. Comments are dropped (MySQL
- * `/*! … *\/` bodies are already lexed as code). A MySQL `"…"` string is treated as a
- * quoted identifier: under `ANSI_QUOTES` it is one, and over-reporting is the safe side.
+ * `/*! … *\/` bodies are already lexed as code).
  */
 function toToks(tokens: readonly SqlToken[]): Tok[] {
   const out: Tok[] = [];
@@ -223,6 +222,13 @@ function toToks(tokens: readonly SqlToken[]): Tok[] {
         out.push({ kind: "word", value: t.value, lower: t.lower, quoted: true });
         break;
       case "string":
+        // MySQL/MariaDB `"…"` is a string under the default sql_mode but an identifier
+        // under ANSI_QUOTES, and the lexer cannot know which the server runs. Reading it
+        // as an identifier means `SELECT "ssn"` is flagged: over-reporting is the safe
+        // failure for this check, while reading it as a string would be a bypass on
+        // ANSI_QUOTES servers. The tenant guardrail makes the mirror-image choice (a
+        // `"tenant_id"` predicate reads as a string, so it never counts as scoping),
+        // because there treating it as a string is what fails closed.
         if (t.quote === '"') {
           const inner = t.text.slice(1, t.unterminated ? undefined : -1);
           out.push({ kind: "word", value: inner, lower: inner.toLowerCase(), quoted: true });
@@ -281,6 +287,76 @@ const JOIN_MODIFIER = new Set([
   "inner", "left", "right", "full", "outer", "cross", "natural", "straight_join",
 ]);
 
+/**
+ * Words that continue an expression rather than end one, on top of {@link ALIAS_STOP} and
+ * {@link BARE_STOP}. A word after one of these is an operand, never an implicit alias —
+ * `a DIV u`, `ts AT TIME ZONE u`, `json_object('k' VALUE u)`. Broad on purpose: a word
+ * wrongly listed here only costs an over-report.
+ */
+const EXPR_KEYWORDS = new Set([
+  "array", "asymmetric", "binary", "content", "default", "div", "document", "false",
+  "glob", "interval", "isnull", "match", "mod", "notnull", "operator", "overlaps",
+  "placing", "regexp", "rlike", "row", "sounds", "symmetric", "to", "true", "unique",
+  "value", "variadic", "xor", "zone",
+]);
+
+const isKeyword = (lower: string): boolean =>
+  ALIAS_STOP.has(lower) || BARE_STOP.has(lower) || EXPR_KEYWORDS.has(lower);
+
+/** Unquoted words that end a select list at its own nesting depth. */
+const SELECT_LIST_END = new Set([
+  "except", "fetch", "for", "from", "group", "having", "intersect", "into", "limit",
+  "offset", "order", "union", "where", "window",
+]);
+
+/**
+ * What an engine accepts between `SELECT` and the first select-list item. A `*` right
+ * after this sequence is a bare wildcard projection.
+ */
+type SelectModifiers = {
+  /** Single-word modifiers: `ALL`, `DISTINCT`, MySQL `DISTINCTROW`, `SQL_NO_CACHE`, … */
+  words: ReadonlySet<string>;
+  /** Postgres `DISTINCT ON (…)`. */
+  distinctOn: boolean;
+  /** SQL Server `TOP n` / `TOP (expr)`, then optional `PERCENT` and `WITH TIES`. */
+  top: boolean;
+};
+
+const STANDARD_SELECT_WORDS = ["all", "distinct"];
+const MYSQL_SELECT_WORDS = [
+  ...STANDARD_SELECT_WORDS,
+  "distinctrow", "high_priority", "straight_join", "sql_small_result", "sql_big_result",
+  "sql_buffer_result", "sql_no_cache", "sql_cache", "sql_calc_found_rows",
+];
+
+const SELECT_MODIFIERS = {
+  postgres: { words: new Set(STANDARD_SELECT_WORDS), distinctOn: true, top: false },
+  mysql: { words: new Set(MYSQL_SELECT_WORDS), distinctOn: false, top: false },
+  sqlserver: { words: new Set(STANDARD_SELECT_WORDS), distinctOn: false, top: true },
+  sqlite: { words: new Set(STANDARD_SELECT_WORDS), distinctOn: false, top: false },
+  /** Unknown or no dialect: accept every engine's modifiers, so no wildcard slips past. */
+  any: { words: new Set(MYSQL_SELECT_WORDS), distinctOn: true, top: true },
+} satisfies Record<string, SelectModifiers>;
+
+function selectModifiersFor(
+  dialect: Pick<DialectSpec, "id"> | undefined,
+): SelectModifiers {
+  switch (dialect?.id as string | undefined) {
+    case "postgres":
+    case "cockroachdb":
+      return SELECT_MODIFIERS.postgres;
+    case "mysql":
+    case "mariadb":
+      return SELECT_MODIFIERS.mysql;
+    case "sqlserver":
+      return SELECT_MODIFIERS.sqlserver;
+    case "sqlite":
+      return SELECT_MODIFIERS.sqlite;
+    default:
+      return SELECT_MODIFIERS.any;
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Scan
 // ---------------------------------------------------------------------------
@@ -310,13 +386,16 @@ function scanSql(
   dialect: Pick<DialectSpec, "id" | "backslashEscapes"> | undefined,
 ): SensitiveGuardrailResult {
   const profile = dialect ? lexerProfileFor(dialect) : undefined;
-  if (profile) return finalize(scanTokens(lexSql(sql, profile), index));
+  if (profile) {
+    return finalize(scanTokens(lexSql(sql, profile), index, selectModifiersFor(dialect)));
+  }
 
-  const primary = scanTokens(lexSql(sql, GENERIC_LEXER), index);
+  const modifiers = SELECT_MODIFIERS.any;
+  const primary = scanTokens(lexSql(sql, GENERIC_LEXER), index, modifiers);
   for (const p of ENGINE_LEXER_PROFILES) {
     const tokens = lexSql(sql, p);
     if (hasUnterminatedToken(tokens)) continue;
-    for (const [key, ref] of scanTokens(tokens, index).found) {
+    for (const [key, ref] of scanTokens(tokens, index, modifiers).found) {
       const existing = primary.found.get(key);
       if (!existing) primary.found.set(key, ref);
       else if (ref.matchKind === "qualified") existing.matchKind = "qualified";
@@ -340,13 +419,16 @@ function finalize(outcome: ScanOutcome): SensitiveGuardrailResult {
   };
 }
 
-/** Words after which a `*` is a select-list wildcard rather than multiplication. */
-const STAR_LEADS = new Set(["select", "distinct", "all", "percent", "ties"]);
-
-function scanTokens(lexed: readonly SqlToken[], index: SchemaIndex): ScanOutcome {
+function scanTokens(
+  lexed: readonly SqlToken[],
+  index: SchemaIndex,
+  modifiers: SelectModifiers,
+): ScanOutcome {
   const tokens = toToks(lexed);
   const isWord = (t: Tok | undefined): boolean => t?.kind === "word";
   const isPunct = (t: Tok | undefined, v: string): boolean => t?.kind === "punct" && t.value === v;
+  const isKeywordTok = (t: Tok | undefined, v: string): boolean =>
+    t?.kind === "word" && !t.quoted && t.lower === v;
   const canAlias = (t: Tok | undefined): boolean =>
     t?.kind === "word" && (t.quoted || !ALIAS_STOP.has(t.lower));
 
@@ -383,29 +465,102 @@ function scanTokens(lexed: readonly SqlToken[], index: SchemaIndex): ScanOutcome
   };
 
   /**
-   * True when the `*` at `i` is a select-list wildcard: `SELECT *`, `SELECT a, *`,
-   * `SELECT DISTINCT *`, `SELECT DISTINCT ON (x) *`, `SELECT TOP 5 *`, `TOP (5) *`.
-   * Not `count(*)` or multiplication. `EXISTS (SELECT * …)` returns no columns, so it
-   * does not count.
+   * Index of the first select-list item after the `SELECT` at `select`, skipping the
+   * engine's modifiers: `DISTINCT`, `DISTINCT ON (x)`, MySQL `SQL_NO_CACHE`, SQL Server
+   * `TOP (5) PERCENT WITH TIES`, …. `PERCENT` / `TIES` only count inside a `TOP` clause,
+   * so `SELECT percent * rate` stays a multiplication.
    */
-  const isSelectListStar = (i: number): boolean => {
-    const prev = tokens[i - 1];
-    if (!prev) return false;
-    if (isPunct(prev, ",")) return true;
-    if (isWord(prev) && !prev.quoted && STAR_LEADS.has(prev.lower)) {
-      if (prev.lower !== "select") return true;
-      return !(isPunct(tokens[i - 2], "(") && isWord(tokens[i - 3]) && tokens[i - 3]!.lower === "exists");
+  const selectListStart = (select: number): number => {
+    let k = select + 1;
+    for (;;) {
+      const t = tokens[k];
+      if (t?.kind !== "word" || t.quoted) return k;
+      if (
+        modifiers.distinctOn &&
+        t.lower === "distinct" &&
+        isKeywordTok(tokens[k + 1], "on") &&
+        isPunct(tokens[k + 2], "(")
+      ) {
+        const close = closeParenAfter(k + 2);
+        if (close === -1) return k;
+        k = close + 1;
+        continue;
+      }
+      if (modifiers.words.has(t.lower)) {
+        k++;
+        continue;
+      }
+      if (modifiers.top && t.lower === "top") {
+        let j = k + 1;
+        if (isPunct(tokens[j], "(")) {
+          const close = closeParenAfter(j);
+          if (close === -1) return k;
+          j = close + 1;
+        } else if (tokens[j]?.kind === "number" || tokens[j]?.kind === "placeholder") {
+          j++;
+        } else {
+          return k; // `top` is an ordinary column name here
+        }
+        if (isKeywordTok(tokens[j], "percent")) j++;
+        if (isKeywordTok(tokens[j], "with") && isKeywordTok(tokens[j + 1], "ties")) j += 2;
+        k = j;
+        continue;
+      }
+      return k;
     }
-    if (prev.kind === "number") return isWord(tokens[i - 2]) && tokens[i - 2]!.lower === "top";
-    if (isPunct(prev, ")")) {
-      const open = openParenBefore(i - 1);
-      const lead = tokens[open - 1];
-      if (!isWord(lead)) return false;
-      if (lead!.lower === "top") return true;
-      return lead!.lower === "on" && isWord(tokens[open - 2]) && tokens[open - 2]!.lower === "distinct";
-    }
-    return false;
   };
+
+  /** A token that can end a select-list expression, so a word right after it is an alias. */
+  const endsExpression = (k: number): boolean => {
+    const t = tokens[k];
+    if (!t) return false;
+    if (t.kind === "word") return t.quoted || !isKeyword(t.lower);
+    if (t.kind === "number" || t.kind === "literal") return true;
+    if (!isPunct(t, ")")) return false;
+    // `a OPERATOR(pg_catalog.||) u` — the parenthesized operator takes a right operand.
+    return !isKeywordTok(tokens[openParenBefore(k) - 1], "operator");
+  };
+  const endsSelectList = (t: Tok | undefined): boolean =>
+    t === undefined ||
+    isPunct(t, ")") ||
+    isPunct(t, ";") ||
+    (t.kind === "word" && !t.quoted && SELECT_LIST_END.has(t.lower));
+
+  /**
+   * Bare `*` projections, and select-list words that are implicit output aliases. `SELECT
+   * id u` names an output column `u`, while `SELECT u` and `SELECT id, u` read the row, so
+   * only a word between an expression-ending token and the end of its item (`,` or the end
+   * of the list) is an alias. Anything less certain stays a reference.
+   */
+  const wildcards = new Set<number>();
+  const implicitAliases = new Set<number>();
+  for (let s = 0; s < tokens.length; s++) {
+    if (!isKeywordTok(tokens[s], "select")) continue;
+    const start = selectListStart(s);
+    // `EXISTS (SELECT * …)` returns no columns.
+    const inExists = isPunct(tokens[s - 1], "(") && isKeywordTok(tokens[s - 2], "exists");
+    if (isPunct(tokens[start], "*") && !inExists) wildcards.add(start);
+
+    let depth = 0;
+    for (let k = start; k < tokens.length; k++) {
+      const t = tokens[k]!;
+      if (isPunct(t, "(")) depth++;
+      else if (isPunct(t, ")")) {
+        if (depth === 0) break;
+        depth--;
+      } else if (depth > 0) continue;
+      else if (endsSelectList(t)) break;
+      else if (
+        k > start &&
+        t.kind === "word" &&
+        (t.quoted || !isKeyword(t.lower)) &&
+        endsExpression(k - 1) &&
+        (isPunct(tokens[k + 1], ",") || endsSelectList(tokens[k + 1]))
+      ) {
+        implicitAliases.add(k);
+      }
+    }
+  }
 
   /** Consume an optional `AS alias` / bare `alias`; returns the index after it. */
   const takeAlias = (start: number, register: (alias: string) => void): number => {
@@ -516,7 +671,9 @@ function scanTokens(lexed: readonly SqlToken[], index: SchemaIndex): ScanOutcome
   let bareStar = false;
   for (let i = 0; i < tokens.length; i++) {
     const t = tokens[i]!;
-    if (isPunct(t, "*") && isSelectListStar(i)) {
+    // `SELECT *`, `SELECT DISTINCT *`, `SELECT TOP 5 *`, `SELECT a, *` — not `count(*)`
+    // or multiplication.
+    if (isPunct(t, "*") && (wildcards.has(i) || isPunct(tokens[i - 1], ","))) {
       bareStar = true;
       continue;
     }
@@ -524,6 +681,7 @@ function scanTokens(lexed: readonly SqlToken[], index: SchemaIndex): ScanOutcome
     if (isPunct(tokens[i - 1], ".")) continue; // tail of a path, handled at its head
     if (isPunct(tokens[i - 1], "::")) continue; // cast target type
     if (isWord(tokens[i - 1]) && tokens[i - 1]!.lower === "as") continue; // output alias
+    if (implicitAliases.has(i)) continue; // output alias without AS
 
     if (isPunct(tokens[i + 1], ".")) {
       const path: string[] = [t.lower];

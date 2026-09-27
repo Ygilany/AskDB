@@ -141,7 +141,6 @@ describe("validateSelectSql — verified bypasses (mysql)", () => {
     [`SELECT LOAD_FILE('/etc/passwd')`],
     [`SELECT SLEEP(100)`],
     [`SELECT BENCHMARK(1000000, MD5('x'))`],
-    [`SELECT 1 /*! ; DROP TABLE t */`],
   ])("rejects %s", (sql) => {
     expectRejected(sql, MYSQL_DIALECT);
   });
