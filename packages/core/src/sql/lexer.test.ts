@@ -59,6 +59,14 @@ describe("lexSql", () => {
     expect(kinds("'abc", GENERIC_LEXER)).toEqual(["string:'abc!"]);
     expect(kinds("/* abc", POSTGRES_LEXER)).toEqual(["comment:/* abc!"]);
   });
+
+  it("marks a MySQL executable comment that never closes", () => {
+    expect(kinds("/*!50000 SELECT 1", MYSQL_LEXER)).toEqual([
+      "comment:/*!50000!",
+      "word:SELECT",
+      "number:1",
+    ]);
+  });
 });
 
 describe("lexerProfileFor", () => {

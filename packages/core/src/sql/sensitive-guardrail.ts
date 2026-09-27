@@ -62,7 +62,10 @@ export type SensitiveGuardrailResult = {
  * reported the same way (`UNTERMINATED_TOKEN`).
  *
  * `SELECT *`, `alias.*`, and whole-row references such as `row_to_json(alias)` count as
- * referencing every sensitive column of the table they reach.
+ * referencing every sensitive column of the table they reach. They expand per query
+ * block: a bare `*` covers its own `SELECT`'s FROM/JOIN tables, and an alias resolves in
+ * its own block first, then in enclosing blocks. When the block structure cannot be
+ * read with confidence, they expand against every table in the statement.
  *
  * Heuristic, not a SQL parser, and not a security boundary. It is defense in depth for
  * review and enforcement; database-side column privileges are the real control.
@@ -362,7 +365,8 @@ function selectModifiersFor(
 // ---------------------------------------------------------------------------
 
 type QualifiedRef = { qualifier: string; qualifierSchema?: string; column: string };
-type StarRef = { qualifier: string; qualifierSchema?: string };
+/** `at` is the token index of the reference, so it can be placed in its query block. */
+type StarRef = { qualifier: string; qualifierSchema?: string; at: number };
 
 type Found = SensitiveReference & { tableOrder: number; columnOrder: number };
 
@@ -436,8 +440,18 @@ function scanTokens(
   const consumed = new Set<number>();
   /** Relation names that exist but are not schema tables (CTEs, derived tables). */
   const derived = new Set<string>();
-  const sourcePaths: string[][] = [];
-  const aliasDecls: Array<{ alias: string; path: string[] }> = [];
+  // FROM/JOIN bindings. `at` is the index of the FROM/JOIN keyword that introduced them,
+  // which places the binding in that clause's query block.
+  const sourcePaths: Array<{ path: string[]; at: number }> = [];
+  const aliasDecls: Array<{ alias: string; path: string[]; at: number }> = [];
+  /** Aliases of derived tables and table functions — bound, but to no schema table. */
+  const derivedDecls: Array<{ alias: string; at: number }> = [];
+  /** The FROM/JOIN keyword whose items `parseTableRef` is reading. */
+  let bindingAt = -1;
+  const addDerived = (alias: string): void => {
+    derived.add(alias);
+    derivedDecls.push({ alias, at: bindingAt });
+  };
   let opaqueSource = false;
   let sawTableSource = false;
 
@@ -597,7 +611,7 @@ function scanTokens(
       const close = closeParenAfter(j);
       if (close === -1) return j + 1;
       sawTableSource = true;
-      return takeAlias(close + 1, (alias) => derived.add(alias));
+      return takeAlias(close + 1, addDerived);
     }
     if (!canAlias(tokens[j])) {
       // e.g. the operand in `EXTRACT(YEAR FROM 1)` — not a relation name.
@@ -622,11 +636,11 @@ function scanTokens(
       // Table function / table-valued expression — its columns are not schema columns.
       opaqueSource = true;
       const close = closeParenAfter(k);
-      return takeAlias(close === -1 ? k + 1 : close + 1, (alias) => derived.add(alias));
+      return takeAlias(close === -1 ? k + 1 : close + 1, addDerived);
     }
     sawTableSource = true;
-    sourcePaths.push(path);
-    return takeAlias(k, (alias) => aliasDecls.push({ alias, path }));
+    sourcePaths.push({ path, at: bindingAt });
+    return takeAlias(k, (alias) => aliasDecls.push({ alias, path, at: bindingAt }));
   };
 
   // Pass A — resolve relation names, aliases, and CTE names.
@@ -652,6 +666,7 @@ function scanTokens(
         consumed.add(k);
       }
     }
+    bindingAt = i;
     let j = i + 1;
     for (;;) {
       const next = parseTableRef(j);
@@ -668,13 +683,15 @@ function scanTokens(
   const qualifiedRefs: QualifiedRef[] = [];
   const starRefs: StarRef[] = [];
   const bare = new Set<string>();
-  let bareStar = false;
+  /** Each bare word where it occurs: a table name or alias used as a value is the whole row. */
+  const wholeRowRefs: Array<{ word: string; at: number }> = [];
+  const bareStars: number[] = [];
   for (let i = 0; i < tokens.length; i++) {
     const t = tokens[i]!;
     // `SELECT *`, `SELECT DISTINCT *`, `SELECT TOP 5 *`, `SELECT a, *` — not `count(*)`
     // or multiplication.
     if (isPunct(t, "*") && (wildcards.has(i) || isPunct(tokens[i - 1], ","))) {
-      bareStar = true;
+      bareStars.push(i);
       continue;
     }
     if (t.kind !== "word") continue;
@@ -703,6 +720,7 @@ function scanTokens(
         starRefs.push({
           qualifier: path[path.length - 1]!,
           ...(path.length >= 2 ? { qualifierSchema: path[path.length - 2]! } : {}),
+          at: i,
         });
       } else if (!star && path.length >= 2 && !consumed.has(i)) {
         qualifiedRefs.push({
@@ -719,6 +737,7 @@ function scanTokens(
     if (isPunct(tokens[i + 1], "(")) continue; // function call
     if (!t.quoted && BARE_STOP.has(t.lower)) continue;
     bare.add(t.lower);
+    wholeRowRefs.push({ word: t.lower, at: i });
   }
 
   // Bind relation names and aliases to schema tables.
@@ -733,19 +752,73 @@ function scanTokens(
     return candidates.filter((e) => e.schemaLower === undefined);
   };
 
+  // Query blocks, for wildcard and whole-row expansion. When the block tree cannot be
+  // trusted — an unterminated token, unbalanced parentheses, a SELECT that neither nests
+  // nor follows a set operator, or a FROM/JOIN outside every block — every binding and
+  // reference goes into one block, which is the statement-global reading.
+  let tree = hasUnterminatedToken(lexed) ? undefined : buildQueryBlocks(tokens);
+  if (tree && [...sourcePaths, ...derivedDecls].some((b) => tree!.blockOf[b.at] === -1)) {
+    tree = undefined;
+  }
+  const blockAt = (k: number): number => (tree ? tree.blockOf[k]! : 0);
+  const parentOf = (block: number): number => (tree ? tree.parent[block]! : -1);
+
+  /** Every table the statement reaches, and every qualifier it binds, in any block. */
   const inScope = new Set<TableEntry>();
   const qualifiers = new Map<string, TableEntry[]>();
-  const bindQualifier = (name: string, entries: TableEntry[]): void => {
-    const bucket = qualifiers.get(name);
-    if (bucket) bucket.push(...entries.filter((e) => !bucket.includes(e)));
-    else qualifiers.set(name, [...entries]);
+  /** The same per query block: the tables and qualifiers its own FROM/JOIN binds. */
+  type BlockScope = { tables: Set<TableEntry>; qualifiers: Map<string, TableEntry[]> };
+  const blockScopes = new Map<number, BlockScope>();
+  const blockScope = (block: number): BlockScope => {
+    let scope = blockScopes.get(block);
+    if (!scope) {
+      scope = { tables: new Set(), qualifiers: new Map() };
+      blockScopes.set(block, scope);
+    }
+    return scope;
   };
-  for (const path of sourcePaths) {
+  const bindQualifier = (
+    into: Map<string, TableEntry[]>,
+    name: string,
+    entries: TableEntry[],
+  ): void => {
+    const bucket = into.get(name);
+    if (bucket) bucket.push(...entries.filter((e) => !bucket.includes(e)));
+    else into.set(name, [...entries]);
+  };
+  for (const { path, at } of sourcePaths) {
     const entries = resolve(path);
-    for (const e of entries) inScope.add(e);
-    bindQualifier(path[path.length - 1]!, entries);
+    const scope = blockScope(blockAt(at));
+    for (const e of entries) {
+      inScope.add(e);
+      scope.tables.add(e);
+    }
+    bindQualifier(qualifiers, path[path.length - 1]!, entries);
+    bindQualifier(scope.qualifiers, path[path.length - 1]!, entries);
   }
-  for (const decl of aliasDecls) bindQualifier(decl.alias, resolve(decl.path));
+  for (const { alias, path, at } of aliasDecls) {
+    const entries = resolve(path);
+    bindQualifier(qualifiers, alias, entries);
+    bindQualifier(blockScope(blockAt(at)).qualifiers, alias, entries);
+  }
+  // A derived-table alias binds no schema table, but it still shadows outer bindings.
+  for (const { alias, at } of derivedDecls) {
+    bindQualifier(blockScope(blockAt(at)).qualifiers, alias, []);
+  }
+
+  /**
+   * The tables `name` denotes where it is written: its own block's bindings first, then
+   * each enclosing block's (correlated references). A name no enclosing block binds falls
+   * back to every binding in the statement, so a reference that cannot be placed is
+   * over-reported rather than dropped.
+   */
+  const lookupQualifier = (name: string, block: number): TableEntry[] | undefined => {
+    for (let b = block; b !== -1; b = parentOf(b)) {
+      const bound = blockScopes.get(b)?.qualifiers.get(name);
+      if (bound) return bound;
+    }
+    return qualifiers.get(name);
+  };
 
   // Collect findings.
   const found = new Map<string, Found>();
@@ -830,13 +903,15 @@ function scanTokens(
       if (column.sensitive) record(table, column.name, column.order, matchKind);
     }
   };
-  // Bare `SELECT *` — every in-scope table.
-  if (bareStar) {
-    for (const table of inScope) recordAllSensitive(table, "unqualified");
+  // Bare `SELECT *` — every table its own block's FROM/JOIN reaches.
+  for (const at of bareStars) {
+    const block = blockAt(at);
+    const tables = block === -1 ? inScope : (blockScopes.get(block)?.tables ?? []);
+    for (const table of tables) recordAllSensitive(table, "unqualified");
   }
   // `alias.*`
   for (const ref of starRefs) {
-    const bound = qualifiers.get(ref.qualifier);
+    const bound = lookupQualifier(ref.qualifier, blockAt(ref.at));
     if (!bound) {
       if (!derived.has(ref.qualifier)) issues.add("UNKNOWN_QUALIFIER");
       continue;
@@ -848,13 +923,72 @@ function scanTokens(
   }
   // A table name or alias used as a value — `row_to_json(u)`, `to_jsonb(u)`,
   // `json_agg(u)`, Postgres `SELECT u FROM users u` — is the whole row.
-  for (const word of bare) {
-    for (const table of qualifiers.get(word) ?? []) recordAllSensitive(table, "qualified");
+  for (const { word, at } of wholeRowRefs) {
+    for (const table of lookupQualifier(word, blockAt(at)) ?? []) {
+      recordAllSensitive(table, "qualified");
+    }
   }
 
-  if (lexed.some((t) => t.unterminated)) issues.add("UNTERMINATED_TOKEN");
+  if (hasUnterminatedToken(lexed)) issues.add("UNTERMINATED_TOKEN");
 
   return { found, issues, widened: noTableSource || unknownQualifierColumns.size > 0 };
+}
+
+/**
+ * The statement's query blocks, read from parenthesis depth. Every `SELECT` opens a block
+ * that runs to the `)` closing its depth, a set operator (`UNION` / `INTERSECT` /
+ * `EXCEPT`) at its depth, or a `;`. A block's parent is the innermost block still open
+ * where it starts, so subqueries, derived tables, CTE bodies, and `EXISTS` / `IN`
+ * operands nest, and set-operation branches are siblings. Parentheses that do not start
+ * a `SELECT` (function calls, parenthesized joins) stay in the enclosing block.
+ *
+ * `blockOf[k]` is the block token `k` belongs to, or -1 outside every block (e.g. the
+ * tokens of a top-level `WITH` clause). Returns `undefined` when the tree cannot be
+ * trusted: unbalanced parentheses, a `;` inside parentheses, or a `SELECT` at a depth
+ * whose block is still open (two statements with no separator, or a construct this
+ * reader does not know).
+ */
+function buildQueryBlocks(
+  tokens: readonly Tok[],
+): { blockOf: number[]; parent: number[] } | undefined {
+  const blockOf: number[] = [];
+  const parent: number[] = [];
+  /** `open[d]` is the block open at parenthesis depth `d`, or -1. */
+  const open: number[] = [-1];
+  const innermost = (): number => {
+    for (let d = open.length - 1; d >= 0; d--) if (open[d] !== -1) return open[d]!;
+    return -1;
+  };
+  for (const t of tokens) {
+    const depth = open.length - 1;
+    const punct = t.kind === "punct" ? t.value : undefined;
+    if (punct === "(") {
+      blockOf.push(innermost());
+      open.push(-1);
+      continue;
+    }
+    if (punct === ")") {
+      if (depth === 0) return undefined;
+      open.pop();
+      blockOf.push(innermost());
+      continue;
+    }
+    if (punct === ";") {
+      if (depth !== 0) return undefined;
+      open[0] = -1;
+      blockOf.push(-1);
+      continue;
+    }
+    const keyword = t.kind === "word" && !t.quoted ? t.lower : undefined;
+    if (keyword === "select") {
+      if (open[depth] !== -1) return undefined;
+      parent.push(innermost());
+      open[depth] = parent.length - 1;
+    }
+    blockOf.push(innermost());
+    if (keyword === "union" || keyword === "intersect" || keyword === "except") open[depth] = -1;
+  }
+  return open.length === 1 ? { blockOf, parent } : undefined;
 }
 
 const SCOPE_ISSUE_TEXT: Record<SensitiveScopeIssue, string> = {

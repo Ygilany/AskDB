@@ -569,6 +569,68 @@ describe("validateSensitiveReferences — wildcards and whole-row references", (
   });
 });
 
+describe("validateSensitiveReferences — wildcards expand per query block", () => {
+  // No dialect (every engine's reading) and each named dialect must agree.
+  const readings = [
+    {},
+    { dialect: POSTGRES_DIALECT },
+    { dialect: MYSQL_DIALECT },
+    { dialect: SQLSERVER_DIALECT },
+  ];
+
+  it.each([
+    // A bare `*` covers only its own SELECT's FROM, not a subquery's.
+    ["SELECT * FROM orders WHERE EXISTS (SELECT 1 FROM users)"],
+    ["SELECT * FROM orders WHERE user_id IN (SELECT id FROM users)"],
+    ["SELECT * FROM orders UNION SELECT id FROM users"],
+    // An alias resolves in its own block before any other block that reuses the name.
+    ["SELECT u.* FROM orders u WHERE EXISTS (SELECT 1 FROM users u)"],
+    ["SELECT row_to_json(u) FROM orders u WHERE EXISTS (SELECT 1 FROM users u)"],
+    ["SELECT s.* FROM (SELECT id FROM orders) s WHERE EXISTS (SELECT 1 FROM users s)"],
+  ])("%s does not flag users.ssn", (sql) => {
+    for (const options of readings) {
+      const result = validateSensitiveReferences(sql, ssnSchema, options);
+      expect(result.references).toEqual([]);
+      expect(result.passed).toBe(true);
+    }
+  });
+
+  it.each([
+    ["SELECT * FROM users WHERE EXISTS (SELECT 1 FROM orders)", "unqualified"],
+    ["SELECT * FROM orders, users", "unqualified"],
+    ["SELECT o.*, u.* FROM orders o JOIN users u ON u.id = o.user_id", "qualified"],
+    ["SELECT * FROM orders UNION SELECT * FROM users", "unqualified"],
+    // Derived tables and CTEs: the inner block's own `*` or column reference reports it.
+    ["SELECT * FROM (SELECT * FROM users) s", "unqualified"],
+    ["WITH c AS (SELECT * FROM users) SELECT * FROM c", "unqualified"],
+    ["WITH c AS (SELECT ssn AS x FROM users) SELECT * FROM c", "unqualified"],
+    // A correlated reference resolves outward to the enclosing block's binding.
+    ["SELECT (SELECT u.ssn FROM orders o) FROM users u", "qualified"],
+    ["SELECT (SELECT row_to_json(u) FROM orders o) FROM users u", "qualified"],
+  ] as const)("%s flags users.ssn", (sql, kind) => {
+    for (const options of readings) {
+      const result = validateSensitiveReferences(sql, ssnSchema, options);
+      expect(result.references).toEqual([ssnRef(kind)]);
+      expect(result.passed).toBe(false);
+    }
+  });
+
+  // When the block structure cannot be read, `*` expands against every table in the
+  // statement, so the subquery's `users` is reported even though a well-formed reading
+  // of the same query would not reach it.
+  it.each([
+    ["unbalanced parentheses", "SELECT * FROM orders WHERE EXISTS (SELECT 1 FROM users"],
+    ["an unterminated string", "SELECT * FROM orders WHERE EXISTS (SELECT 1 FROM users) AND 'x"],
+    ["a FROM outside every SELECT block", "SELECT * EXCEPT (id) FROM orders WHERE EXISTS (SELECT 1 FROM users)"],
+  ])("falls back to statement-wide expansion on %s", (_label, sql) => {
+    for (const options of readings) {
+      const result = validateSensitiveReferences(sql, ssnSchema, options);
+      expect(result.references).toEqual([ssnRef("unqualified")]);
+      expect(result.passed).toBe(false);
+    }
+  });
+});
+
 describe("validateSensitiveReferences — dialect-aware lexing", () => {
   it("sees a column after a Postgres E'' string with an escaped quote", () => {
     const sql = "SELECT E'\\'', ssn, '' FROM users";

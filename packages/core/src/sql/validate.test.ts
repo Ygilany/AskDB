@@ -196,6 +196,7 @@ describe("validateSelectSql — unterminated tokens fail closed", () => {
     [`SELECT 1 /* abc`, POSTGRES_DIALECT],
     [`SELECT 'abc\\'`, MYSQL_DIALECT],
     [`SELECT \`abc`, MYSQL_DIALECT],
+    [`/*!50000 SELECT 1`, MYSQL_DIALECT],
     [`SELECT [abc`, SQLSERVER_DIALECT],
   ] as const)("rejects %s", (sql, dialect) => {
     expectRule(sql, "SQL_UNTERMINATED", dialect);

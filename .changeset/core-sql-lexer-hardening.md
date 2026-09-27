@@ -21,4 +21,6 @@ Keywords are matched on whole unquoted tokens, so `created_into`, `copy_count`, 
 
 `SELECT *` is recognized after each engine's `SELECT` modifiers (MySQL `DISTINCTROW`, `HIGH_PRIORITY`, `STRAIGHT_JOIN`, `SQL_NO_CACHE`, …; Postgres `DISTINCT ON (…)`; SQL Server `TOP n [PERCENT] [WITH TIES]`), closing a bypass where those modifiers hid the wildcard; without `dialect`, every engine's modifiers are accepted. Fewer false positives: `SELECT percent * rate` is multiplication, and an implicit output alias (`SELECT id u FROM users u`) is no longer reported as a column or whole-row reference.
 
+`SELECT *`, `alias.*`, and whole-row references now expand per query block: a bare `*` reaches only its own `SELECT`'s `FROM`/`JOIN` tables (not a subquery's or another `UNION` branch's), and an alias resolves in its own block before enclosing ones; when the block structure cannot be read, they expand statement-wide as before. A MySQL `/*! …` executable comment that never closes is now reported as unterminated (`SQL_UNTERMINATED`, `UNTERMINATED_TOKEN`).
+
 Also: `SqlValidationRuleCode` adds `SQL_FORBIDDEN_FUNCTION` and `SQL_UNTERMINATED`; `SensitiveScopeIssue` adds `UNTERMINATED_TOKEN`. Placeholder scanning no longer reads the type in a `value::type` cast, or text inside a comment, as a `:name` placeholder.

@@ -205,7 +205,11 @@ export type SqlToken = {
   end: number;
   /** Opening delimiter for strings and quoted identifiers (`'`, `"`, `` ` ``, `[`, `$tag$`). */
   quote?: string;
-  /** The closing delimiter was never found; the token runs to the end of the input. */
+  /**
+   * The closing delimiter was never found; the token runs to the end of the input. On a
+   * MySQL `/*!` opener it means the matching `*\/` never came (the body is still lexed
+   * as code after it).
+   */
   unterminated?: true;
 };
 
@@ -220,8 +224,8 @@ export function lexSql(sql: string, profile: SqlLexerProfile): SqlToken[] {
   const tokens: SqlToken[] = [];
   const n = sql.length;
   let i = 0;
-  /** Inside a MySQL `/*! … *\/` executable comment. */
-  let inExecutableComment = false;
+  /** Index in `tokens` of the open MySQL `/*! … *\/` executable-comment opener, or -1. */
+  let executableOpener = -1;
 
   const push = (
     kind: SqlTokenKind,
@@ -309,18 +313,18 @@ export function lexSql(sql: string, profile: SqlLexerProfile): SqlToken[] {
       i = j;
       continue;
     }
-    if (ch === "*" && next === "/" && inExecutableComment) {
+    if (ch === "*" && next === "/" && executableOpener !== -1) {
       push("comment", i, i + 2);
-      inExecutableComment = false;
+      executableOpener = -1;
       i += 2;
       continue;
     }
     if (ch === "/" && next === "*") {
-      if (profile.executableComments && !inExecutableComment) {
+      if (profile.executableComments && executableOpener === -1) {
         const exec = /^\/\*M?!\d*/.exec(sql.slice(i));
         if (exec) {
+          executableOpener = tokens.length;
           push("comment", i, i + exec[0].length);
-          inExecutableComment = true;
           i += exec[0].length;
           continue;
         }
@@ -475,6 +479,10 @@ export function lexSql(sql: string, profile: SqlLexerProfile): SqlToken[] {
     push("punct", i, i + 1);
     i++;
   }
+
+  // An executable comment whose `*\/` never came: its body was lexed as code, but the
+  // comment itself runs off the end, so flag the opener like any other unclosed comment.
+  if (executableOpener !== -1) tokens[executableOpener]!.unterminated = true;
 
   return tokens;
 }
