@@ -42,7 +42,7 @@ describe.each(SUPPORTED_DIALECTS.map((d) => [d] as [SupportedDialect]))("[%s] ho
     expect(capped.columns).toEqual(["order_id", "line_no"]);
     expect(capped.rows.map((r) => r.map(Number))).toEqual(expectedTopLines.slice(0, 5));
     expect(capped.truncated).toBe(true);
-    expect(whole.rows).toHaveLength(expectedTopLines.length + (dialect === "sqlite" ? 1 : 0)); // TEMP break (#254 proof)
+    expect(whole.rows).toHaveLength(expectedTopLines.length);
     expect(whole.truncated).toBe(false);
   });
 
