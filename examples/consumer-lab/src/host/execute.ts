@@ -10,12 +10,12 @@
  * | MySQL      | `fixture_reader`, `START TRANSACTION READ ONLY` | `max_execution_time` | stop reading after cap + 1 rows |
  * | MariaDB    | `fixture_reader`, `START TRANSACTION READ ONLY` | `max_statement_time` | stop reading after cap + 1 rows |
  * | SQL Server | `fixture_reader` (no read-only transaction exists) | request timeout (cancels) | `SET ROWCOUNT cap + 1` |
- * | SQLite     | read-only file handle, `query_only`        | worker terminated         | stop reading after cap + 1 rows |
+ * | SQLite     | read-only file handle, `query_only`        | child process killed      | stop reading after cap + 1 rows |
  *
  * The checklist's `SELECT * FROM (…) LIMIT n` wrapper is invalid on SQL Server and loses
  * the statement's ORDER BY on MariaDB (#266), so only Postgres uses it.
  */
-import { Worker } from "node:worker_threads";
+import { fork } from "node:child_process";
 import mssql from "mssql";
 import mysql from "mysql2";
 import pg from "pg";
@@ -61,7 +61,10 @@ export async function executeReadOnly(dialect: SupportedDialect, sql: string, op
     timeoutMs: Math.trunc(opts.statementTimeoutMs ?? 5000),
     params: opts.params ? [...opts.params] : [],
   };
-  const read = await RUNNERS[dialect](sql, o, dialect);
+  // A trailing semicolon is allowed in AskDB's output (the NL→SQL prompt's "optional
+  // semicolon"), but it would break a wrapper around the statement.
+  const statement = sql.trim().replace(/;\s*$/, "");
+  const read = await RUNNERS[dialect](statement, o, dialect);
   return { columns: read.columns, rows: read.rows.slice(0, o.rowCap), truncated: read.rows.length > o.rowCap };
 }
 
@@ -194,10 +197,17 @@ async function runSqlServer(sql: string, o: Resolved) {
   }
 }
 
+/**
+ * better-sqlite3 is synchronous and can't interrupt a running statement, and a worker
+ * thread can't be stopped while it is inside native code. So the statement runs in a
+ * child process, which the timeout kills outright.
+ */
 async function runSqlite(sql: string, o: Resolved) {
-  const worker = new Worker(new URL("./sqlite-worker.mjs", import.meta.url), {
-    workerData: { file: SQLITE_FILE, sql, params: o.params, rowCap: o.rowCap },
+  const child = fork(new URL("./sqlite-worker.mjs", import.meta.url), [], {
+    serialization: "advanced",
+    stdio: ["ignore", "ignore", "inherit", "ipc"],
   });
+  child.send({ file: SQLITE_FILE, sql, params: o.params, rowCap: o.rowCap });
   try {
     return await new Promise<{ columns: string[]; rows: unknown[][] }>((resolve, reject) => {
       let timer: NodeJS.Timeout | undefined;
@@ -209,17 +219,20 @@ async function runSqlite(sql: string, o: Resolved) {
         fn();
       };
       type Message = { ready: true } | { ok: true; columns: string[]; rows: unknown[][] } | { ok: false; message: string };
-      worker.on("message", (message: Message) => {
+      child.on("message", (message: Message) => {
         if ("ready" in message) {
           // The database is open; from here on the statement is running.
           timer = setTimeout(() => settle(() => reject(new StatementTimeoutError("sqlite", o.timeoutMs))), o.timeoutMs);
         } else if (message.ok) settle(() => resolve({ columns: message.columns, rows: message.rows }));
         else settle(() => reject(new Error(`[sqlite] ${message.message}`)));
       });
-      worker.once("error", (error) => settle(() => reject(error)));
-      worker.once("exit", (code) => settle(() => reject(new Error(`[sqlite] the worker exited (code ${code}) without a result`))));
+      child.once("error", (error) => settle(() => reject(error)));
+      child.once("exit", (code, signal) =>
+        settle(() => reject(new Error(`[sqlite] the statement process exited (${signal ?? `code ${code}`}) without a result`))),
+      );
     });
   } finally {
-    await worker.terminate();
+    // Not awaited: a killed process stops at once, native code included.
+    child.kill("SIGKILL");
   }
 }

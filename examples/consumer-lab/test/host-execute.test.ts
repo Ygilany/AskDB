@@ -46,10 +46,19 @@ describe.each(SUPPORTED_DIALECTS.map((d) => [d] as [SupportedDialect]))("[%s] ho
     expect(whole.truncated).toBe(false);
   });
 
+  it("executes a statement that ends with a semicolon, which AskDB's output may", async () => {
+    // The NL→SQL prompt allows an optional trailing semicolon; a wrapper around the
+    // statement (the Postgres row cap) must not turn it into a syntax error.
+    const sql = `SELECT order_id FROM ${physicalName(dialect, ORDER_LINE)} ORDER BY order_id DESC, line_no DESC;`;
+    const result = await executeReadOnly(dialect, sql, { rowCap: 1 });
+    expect(result.rows.map((r) => Number(r[0]))).toEqual([expectedTopLines[0]![0]]);
+  });
+
   it("stops a statement that runs past the timeout", async () => {
     const started = Date.now();
 
     await expect(executeReadOnly(dialect, runawayCount(), { statementTimeoutMs: 500 })).rejects.toBeInstanceOf(StatementTimeoutError);
-    expect(Date.now() - started).toBeLessThan(10_000);
+    // Well under the ~9 s the runaway count takes when nothing stops it.
+    expect(Date.now() - started).toBeLessThan(3_000);
   }, 30_000);
 });
