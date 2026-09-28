@@ -303,11 +303,25 @@ function buildNormalized(
 
   const tables: NormalizedV2Table[] = physical.tables.map((physTable) => {
     const md = tableMarkdowns[physTable.id];
-    const tableSensitive = physTable.sensitive === true;
+    const tableFile = md ? `tables/${md.frontmatter.name}.md` : "";
+
+    // Sensitivity is escalate-only: front-matter `sensitive: true` (written by
+    // Studio / @askdb/enrich) marks a table or column sensitive on top of
+    // schema.json, but front-matter can never make something *less* sensitive.
+    // A `sensitive: false` that contradicts an effective `true` is ignored and
+    // reported as a warning so the author sees the override had no effect.
+    const tableSensitive = physTable.sensitive === true || md?.frontmatter.sensitive === true;
+    if (md?.frontmatter.sensitive === false && tableSensitive) {
+      warnings.push({ kind: "sensitivity_downgrade_ignored", tableFile, id: physTable.id });
+    }
 
     const columns: NormalizedV2Column[] = physTable.columns.map((physCol) => {
-      const colSensitive = physCol.sensitive === true || tableSensitive;
       const mdCol = md?.frontmatter.columns?.find((c) => c.id === physCol.id);
+      const colSensitive =
+        physCol.sensitive === true || mdCol?.sensitive === true || tableSensitive;
+      if (mdCol?.sensitive === false && colSensitive) {
+        warnings.push({ kind: "sensitivity_downgrade_ignored", tableFile, id: physCol.id });
+      }
 
       const normalized: NormalizedV2Column = {
         id: physCol.id,
