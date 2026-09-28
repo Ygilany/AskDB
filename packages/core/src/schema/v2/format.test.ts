@@ -84,6 +84,32 @@ describe("formatSchemaV2ForNlToSql — omitSensitiveIdentifiersFromPrompt", () =
     expect(stats.redactedColumnCount).toBe(1);
     expect(stats.listedSensitiveColumnCount).toBe(0);
   });
+
+  it("stubs a schema.json-sensitive table: keeps its name, withholds columns and prose", () => {
+    const physical = JSON.parse(readFileSync(v2SchemaJson, "utf8")) as {
+      tables: Array<{ id: string; sensitive: boolean }>;
+    };
+    physical.tables.find((t) => t.id === "table:public.orders")!.sensitive = true;
+    const schema = loadSchemaFromJson(
+      JSON.stringify({
+        bundled: true,
+        physical,
+        tables: { "orders.md": readFileSync(join(v2Dir, "tables", "orders.md"), "utf8") },
+      }),
+    );
+    const { ddl, stats } = formatSchemaV2ForNlToSql(schema, {
+      omitSensitiveIdentifiersFromPrompt: true,
+    });
+    expect(ddl).toContain(
+      "TABLE public.orders\n  (sensitive table — column definitions withheld from model context)",
+    );
+    expect(ddl).not.toContain("total_amount");
+    expect(ddl).not.toContain("purchases");
+    expect(ddl).not.toContain("Customer purchase orders");
+    expect(stats.sensitiveTableStubCount).toBe(1);
+    // users.email plus all four orders columns.
+    expect(stats.redactedColumnCount).toBe(5);
+  });
 });
 
 describe("formatSchemaV2ForNlToSql — ignored tables", () => {
