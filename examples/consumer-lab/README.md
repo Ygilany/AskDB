@@ -12,7 +12,7 @@ This directory is **not** a member of the AskDB pnpm workspace. It is its own pn
 From the repo root:
 
 ```bash
-pnpm lab:up                          # start and seed the fixture; install `.` unless a verified install exists
+pnpm lab:up                          # start and seed the fixture; install `.` unless a verified install is current or was chosen with lab:use
 pnpm lab:use .                       # pack this checkout's publishable packages and install them
 pnpm lab:use ../other-checkout       # …or another checkout's
 pnpm lab:use git:origin/main         # …or a branch, tag or commit's (built in a temporary worktree)
@@ -106,7 +106,7 @@ The dialect comes from the base URL: `http://127.0.0.1:<port>/<dialect>/v1`. The
 
 ## The matrix
 
-`pnpm lab:matrix` runs `lab:up` (idempotent: it installs only if the lab never was, so it tests whatever `lab:use` last installed), then the whole suite with `src/matrix-reporter.ts`. The reporter prints a `scenario × dialect` table and writes it to `.lab/matrix.json` (and to `$GITHUB_STEP_SUMMARY` when that is set). It builds every test row from test results, never from a hand-kept list:
+`pnpm lab:matrix` runs `lab:up`, then the whole suite with `src/matrix-reporter.ts`, so it tests whatever `lab:use` last installed. `lab:up` keeps a verified install that is still current (this checkout at the same commit and uncommitted edits) or that you chose with `lab:use` (a published version, a git ref, another path), and says which. It installs this checkout when nothing is installed, when the installed checkout is stale, or when only the restored baseline is installed (after `lab:use --restore` or `lab:reset`, as on a fresh clone). So `pnpm lab:use npm:latest && pnpm lab:matrix` tests `npm:latest`, and `pnpm lab:use .` switches back. The reporter prints a `scenario × dialect` table and writes it to `.lab/matrix.json` (and to `$GITHUB_STEP_SUMMARY` when that is set). It builds every test row from test results, never from a hand-kept list:
 
 - A test's full name starts with `[<dialect>] <scenario-id>`, usually as `describe("[mysql]")` around `it("introspect-golden: …")`. Tests that share a scenario and dialect share a cell.
 - `pass`: every test in the cell passed. `FAIL`: one failed, or its suite's hook did.

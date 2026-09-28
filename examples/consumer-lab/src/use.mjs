@@ -8,7 +8,7 @@
  *   pnpm lab:use git:<ref>            tarballs packed from a branch, tag or commit (temporary worktree)
  *   pnpm lab:use npm:<dist-tag>       published packages under a dist-tag, e.g. npm:beta, npm:latest
  *   pnpm lab:use npm:askdb@<version>  a published CLI release and the exact @askdb/* versions it depends on
- *   pnpm lab:use --if-needed .        skip when the recorded target is installed and verifies (used by lab:up)
+ *   pnpm lab:use --if-needed .        keep a verified install that is still current or that lab:use chose (used by lab:up)
  *   pnpm lab:use --check              re-verify the current install against its recorded target
  *   pnpm lab:use --restore            put the committed baseline (npm:latest) back, reinstalled from scratch
  *
@@ -328,6 +328,22 @@ function installedTarget() {
   return rows.length && !bad.length ? target : undefined;
 }
 
+/**
+ * Whether `--if-needed <target>` keeps the recorded, verified install. It keeps one that is
+ * still what `target` would install (a checkout at the same commit and uncommitted edits),
+ * and one that someone chose with `lab:use` (a published version, a git ref, another path),
+ * so `lab:matrix` tests whatever `lab:use` last installed. It reinstalls a stale install of
+ * `target` itself, and the restored baseline (`lab:use --restore`, `lab:reset`), which
+ * stands for "nothing chosen yet", as on a fresh clone.
+ */
+function keepsInstall(recorded, target) {
+  if (sameTarget(recorded, target)) return true;
+  if (recorded.label.startsWith("committed baseline")) return false;
+  if (target.startsWith("npm:") || target.startsWith("git:") || target === "registry") return false;
+  const root = resolve(target === "." ? REPO : target);
+  return !recorded.label.startsWith(`checkout ${root} @ `);
+}
+
 /** Whether the recorded install is what `target` would install now, without packing anything. */
 function sameTarget(recorded, target) {
   if (target.startsWith("npm:") || target.startsWith("git:") || target === "registry") return false;
@@ -390,11 +406,11 @@ function main() {
   const target = args.find((a) => !a.startsWith("--"));
   if (!target) fail("usage: pnpm lab:use <. | path | git:<ref> | npm:<dist-tag> | npm:askdb@<version>> [--if-needed] | --check | --restore");
 
-  // `--if-needed` keeps an install only when it is still the requested target: for a
-  // checkout, the same commit and the same uncommitted edits. Any other target reinstalls.
+  // `--if-needed`: see keepsInstall.
   const current = ifNeeded && installedTarget();
-  if (current && sameTarget(current, target)) {
-    console.log(`lab:use: already installed (${current.label}); skipping.`);
+  if (current && keepsInstall(current, target)) {
+    if (sameTarget(current, target)) console.log(`lab:use: already installed (${current.label}); skipping.`);
+    else console.log(`lab:use: keeping the installed target (${current.label}); \`pnpm lab:use ${target}\` switches to ${target === "." ? "this checkout" : target}.`);
     return;
   }
 
