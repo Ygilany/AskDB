@@ -60,4 +60,10 @@ export type SchemaV2Warning =
    * sensitive anyway (via `schema.json`, or — for a column — via its sensitive table).
    * Front-matter sensitivity is escalate-only, so the override was ignored.
    */
-  | { kind: "sensitivity_downgrade_ignored"; tableFile: string; id: string };
+  | { kind: "sensitivity_downgrade_ignored"; tableFile: string; id: string }
+  /**
+   * A `columns[]` entry in `tableFile` names a column (`id`) that belongs to another
+   * table (`tableId`). Only its `sensitive: true` is applied (escalate-only); every
+   * other field is ignored. Move the entry to `tableId`'s markdown.
+   */
+  | { kind: "misplaced_column_id"; tableFile: string; id: string; tableId: string };

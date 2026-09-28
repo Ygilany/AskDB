@@ -119,8 +119,15 @@ function writeSchemaDir(markdowns: Record<string, string> = tableMarkdowns): str
   return dir;
 }
 
-const bundleJson = () =>
-  JSON.stringify({ bundled: true, physical, tables: tableMarkdowns });
+const bundleJson = (markdowns: Record<string, string> = tableMarkdowns) =>
+  JSON.stringify({ bundled: true, physical, tables: markdowns });
+
+/** Load `markdowns` as a schema directory, asserting the bundle of the same files loads identically. */
+function loadDirAndBundle(markdowns: Record<string, string>) {
+  const fromDir = loadSchema(writeSchemaDir(markdowns));
+  expect(loadSchemaFromJson(bundleJson(markdowns))).toEqual(fromDir);
+  return fromDir;
+}
 
 describe("loadSchema — front-matter sensitivity is escalate-only", () => {
   it("front-matter `sensitive: true` escalates a column schema.json leaves non-sensitive", () => {
@@ -184,6 +191,75 @@ describe("loadSchema — front-matter sensitivity is escalate-only", () => {
     expect(users.sensitive).toBe(false);
     expect(users.columns.find((c) => c.name === "ssn")!.sensitive).toBe(false);
     expect(schema.warnings).toEqual([]);
+  });
+
+  it("a column ID filed under another table's markdown still escalates the column it names, and warns", () => {
+    // The column ID is authoritative, so a misplaced `sensitive: true` is honored (escalating
+    // can only add protection). Everything else in a misplaced entry — including a
+    // `sensitive: false` and prompt-visible description/aliases — is not applied.
+    const schema = loadDirAndBundle({
+      "audit_log.md": [
+        "---",
+        "id: table:public.audit_log",
+        "name: audit_log",
+        "schemaId: people",
+        "columns:",
+        "  - id: table:public.users#ssn",
+        "    sensitive: true",
+        "  - id: table:public.users#created_at",
+        "    description: Misplaced description.",
+        "    aliases: [signup_date]",
+        "  - id: table:public.users#email",
+        "    sensitive: false",
+        "---",
+        "",
+        "# Table: audit_log",
+        "",
+      ].join("\n"),
+    });
+    const users = schema.tables.find((t) => t.name === "users")!;
+    expect(users.columns.find((c) => c.name === "ssn")!.sensitive).toBe(true);
+    expect(users.columns.find((c) => c.name === "email")!.sensitive).toBe(true);
+    const createdAt = users.columns.find((c) => c.name === "created_at")!;
+    expect(createdAt.sensitive).toBe(false);
+    expect(createdAt.description).toBeUndefined();
+    expect(createdAt.aliases).toBeUndefined();
+    expect(schema.tables.find((t) => t.name === "audit_log")!.columns.some((c) => c.sensitive)).toBe(false);
+
+    expect(schema.warnings).toEqual(
+      ["ssn", "created_at", "email"].map((col) => ({
+        kind: "misplaced_column_id",
+        tableFile: "tables/audit_log.md",
+        id: `table:public.users#${col}`,
+        tableId: "table:public.users",
+      })),
+    );
+  });
+
+  it("warnings name the table markdown file actually read, not one derived from front-matter `name`", () => {
+    const schema = loadDirAndBundle({
+      "customer-records.md": [
+        "---",
+        "id: table:public.users",
+        "name: users",
+        "schemaId: people",
+        "columns:",
+        "  - id: table:public.users#email",
+        "    sensitive: false",
+        "  - id: table:public.users#gone",
+        "  - id: table:public.audit_log#payload",
+        "---",
+        "",
+        "# Table: users",
+        "",
+      ].join("\n"),
+      "old-table.md": ["---", "id: table:public.dropped", "name: dropped", "schemaId: people", "---", ""].join("\n"),
+    });
+    const warningFor = (id: string) => schema.warnings.find((w) => "id" in w && w.id === id);
+    expect(warningFor("table:public.users#email")).toMatchObject({ kind: "sensitivity_downgrade_ignored", tableFile: "tables/customer-records.md" });
+    expect(warningFor("table:public.users#gone")).toMatchObject({ kind: "orphaned_column_id", tableFile: "tables/customer-records.md" });
+    expect(warningFor("table:public.audit_log#payload")).toMatchObject({ kind: "misplaced_column_id", tableFile: "tables/customer-records.md" });
+    expect(warningFor("table:public.dropped")).toMatchObject({ kind: "orphaned_table_id", tableFile: "tables/old-table.md" });
   });
 
   it("the bundle path produces exactly the directory result", () => {
