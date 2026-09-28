@@ -160,7 +160,7 @@ The dialect comes from the base URL: `http://127.0.0.1:<port>/<dialect>/v1`. The
 
 A statement that starts with its verb (`DELETE`, `COPY`, `KILL`, `SET`) is rejected by the leading-keyword check before the keyword list is read, so its rule is `SQL_NOT_SELECT_OR_WITH`. T-SQL runs a batch without semicolons, so on SQL Server the lab puts `EXEC`, `KILL` and `WAITFOR` after a `SELECT`, where the keyword list is what rejects them.
 
-The file, OS, server-control and sleep cases are rejection tests only. They are never executed, on any database, scratch or not.
+The file, OS, server-control and sleep cases are rejection tests only. They are never executed, on any database, scratch or not, because the scratch databases share servers with other lab runs. So those cases prove AskDB rejects the statement, not that the statement would have done harm on that engine. Effect proofs on a disposable, isolated fixture copy are #323.
 
 ### Scratch databases
 
