@@ -2,10 +2,16 @@
  * Question → SQL → execute: every catalog question, on every engine, checked against an
  * oracle computed from the seed data.
  *
- * Protects: `ask()` returns executable, dialect-correct SQL (`reference/core-api.mdx`,
- * "Result — AskPipelineResult": `sql` is "the model's bound, validated SQL"), and the lab,
- * as the host, gets the right answer by running it the way `guides/run-safely-in-prod`
- * says (the read-only role, a statement timeout, a row cap). For each question the rows,
+ * Protects: packed AskDB passes a correct model reply through to `result.sql` without
+ * corrupting it (`reference/core-api.mdx`, "Result — AskPipelineResult": `sql` is "the
+ * model's bound, validated SQL"): extraction, validation and parameter binding keep a
+ * statement that returns the right rows. And the lab, as the host, gets the right answer by
+ * running it the way `guides/run-safely-in-prod` says (the read-only role, a statement
+ * timeout, a row cap). The replies are hand-written (`"source": "authored"`), so whether a
+ * reply is correct SQL for its dialect is the cassette author's job, checked here too; how
+ * well a real model writes SQL is not under test (#247). Why the expected rows come from
+ * an oracle rather than from running SQL: the lab README, "Why the expected answer never
+ * comes from SQL". For each question the rows,
  * normalized by `fixtures/multi-engine/dataset/NORMALIZATION.md`, equal the oracle in
  * `src/oracle.ts`, which computes the answer in TypeScript from
  * `fixtures/multi-engine/dataset/data/*.json` and never runs SQL. Five engines equal to one

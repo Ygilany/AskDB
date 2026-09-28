@@ -240,7 +240,7 @@ Twelve to fifteen catalog questions. Between them they cover:
 
 | Scenario | C / R |
 |---|---|
-| `ask()` succeeds. Executing `sql` as `fixture_reader` equals the oracle, and equals every other dialect after normalization | C: `ask()` returns executable, dialect-correct SQL (core pipeline plus dialect). R: validator false positives on valid dialect syntax (brackets, backticks, `TOP`, `OFFSET … FETCH`), extraction regressions, or a wrong dialect brief. |
+| `ask()` succeeds. Executing `sql` as `fixture_reader` equals the oracle, and equals every other dialect after normalization | C: packed AskDB returns a correct model reply as `result.sql` without corrupting it, and the host path returns the right rows (core pipeline plus dialect). With authored replies the SQL's correctness is the cassette author's; model quality is live mode's (#247). R: validator false positives on valid dialect syntax (brackets, backticks, `TOP`, `OFFSET … FETCH`), extraction regressions, or a wrong dialect brief. |
 | Binding `unboundSql` + `params` with the real driver returns the same rows as `sql`. Where documented, `bindPreparedQuery` is checked too | C: the parameterized output contract. R: markers the driver can't bind (`$N`, `?`, `@pN`), or values that are wrong or escaped wrongly. |
 | The same question through `createAskDb` (adapter path) returns the same SQL as through `ask()` with a raw `LanguageModel` | C: both model paths are equally supported (AGENTS.md). R: config-driven dialect or model resolution drifting from direct `ask()`. |
 
