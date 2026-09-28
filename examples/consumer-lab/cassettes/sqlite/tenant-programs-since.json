@@ -1,0 +1,5 @@
+{
+  "question": "Which programs in my scope started on or after 2021-02-01? Show the agency id and program code.",
+  "reply": "```sql\nSELECT agency_id, program_code\nFROM program\nWHERE agency_id = :tenant_agency_ids AND starts_on >= '2021-02-01'\nORDER BY agency_id, program_code\n```\n\n```sql-unbound\nSELECT agency_id, program_code\nFROM program\nWHERE agency_id = :tenant_agency_ids AND starts_on >= :start_date\nORDER BY agency_id, program_code\n```\n\n```json\n{\"parameters\":[{\"name\":\"start_date\",\"type\":\"date\",\"cardinality\":\"one\",\"description\":\"The earliest program start date to include\",\"value\":\"2021-02-01\"}]}\n```",
+  "source": "authored"
+}

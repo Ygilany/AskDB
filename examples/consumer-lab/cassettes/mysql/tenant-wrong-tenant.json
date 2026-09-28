@@ -1,0 +1,5 @@
+{
+  "question": "List the programs of agency 1 with their agency id.",
+  "reply": "```sql\nSELECT agency_id, program_code\nFROM org.program\nWHERE agency_id = 1\n```",
+  "source": "authored"
+}
