@@ -38,6 +38,13 @@ describe("tableSensitivity", () => {
       expected: { forced: false, effective: false, columns: { [email]: { forced: true, effective: true }, [ssn]: { forced: false, effective: true } } },
     },
     {
+      name: "a column another table's markdown escalates is forced",
+      table: false,
+      escalatedByOtherFiles: [ssn],
+      draft: draft(undefined, { [ssn]: { sensitive: false } }),
+      expected: { forced: false, effective: false, columns: { [email]: { forced: true, effective: true }, [ssn]: { forced: true, effective: true } } },
+    },
+    {
       name: "a table escalated by override forces every column, but not itself",
       table: false,
       draft: draft(true, { [ssn]: { sensitive: false } }),
@@ -49,7 +56,7 @@ describe("tableSensitivity", () => {
       draft: draft(false),
       expected: { forced: true, effective: true, columns: { [email]: { forced: true, effective: true }, [ssn]: { forced: true, effective: true } } },
     },
-  ])("$name", ({ table, draft, expected }) => {
-    expect(tableSensitivity(physical(table), draft)).toEqual(expected);
+  ])("$name", ({ table, escalatedByOtherFiles = [], draft, expected }) => {
+    expect(tableSensitivity({ physical: physical(table), escalatedByOtherFiles }, draft)).toEqual(expected);
   });
 });

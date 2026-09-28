@@ -126,13 +126,15 @@ function loadFromDirectory(dir: string): NormalizedSchemaV2 {
   // Load optional tables/*.md
   const tableDir = join(dir, "tables");
   const tableMarkdowns: Record<string, LoadedTableMarkdown> = {};
-  const entries = readOptionalDir(tableDir);
-  for (const entry of entries ?? []) {
+  // Sorted so warning order is deterministic (readdir order is filesystem-dependent)
+  // and matches the bundle loader, which sorts its `tables` keys the same way.
+  const entries = (readOptionalDir(tableDir) ?? []).sort();
+  for (const entry of entries) {
     if (!entry.endsWith(".md")) continue;
     const filePath = join(tableDir, entry);
     const content = readRequiredFile(filePath);
     const parsed = parseOrWrap(filePath, () => parseTableMarkdown(content, filePath));
-    tableMarkdowns[parsed.frontmatter.id] = { tableFile: `tables/${entry}`, parsed };
+    addTableMarkdown(tableMarkdowns, { tableFile: `tables/${entry}`, parsed }, dir);
   }
 
   // Load optional concepts.md
@@ -217,9 +219,12 @@ function loadFromBundle(bundle: BundledSchemaJson, filePath: string): Normalized
 
   // Bundle keys are the `tables/` filenames (see `bundleSchemaDirectory` in
   // @askdb/enrich), so warnings name the same path the directory loader would.
-  for (const [filename, content] of Object.entries(bundle.tables)) {
+  // Sorted like the directory loader's entries, so both report warnings in one order.
+  for (const [filename, content] of Object.entries(bundle.tables).sort(([a], [b]) =>
+    a < b ? -1 : a > b ? 1 : 0,
+  )) {
     const parsed = parseTableMarkdown(content, filename);
-    tableMarkdowns[parsed.frontmatter.id] = { tableFile: `tables/${filename}`, parsed };
+    addTableMarkdown(tableMarkdowns, { tableFile: `tables/${filename}`, parsed }, filePath);
   }
 
   // Mirror the directory loader: only an *absent* key means "no file". A present
@@ -243,6 +248,27 @@ function loadFromBundle(bundle: BundledSchemaJson, filePath: string): Normalized
   }
 
   return buildNormalized(physical, tableMarkdowns, concepts, [], tenantPolicy);
+}
+
+/**
+ * Register a parsed table markdown under its front-matter `id`. Two files claiming the
+ * same table is a broken artifact, not something to resolve silently: keeping either
+ * one would drop the other's front-matter (including any `sensitive: true`), and
+ * authoring tools could pair the table with the file the loader ignores.
+ */
+function addTableMarkdown(
+  tableMarkdowns: Record<string, LoadedTableMarkdown>,
+  loaded: LoadedTableMarkdown,
+  schemaPath: string,
+): void {
+  const id = loaded.parsed.frontmatter.id;
+  const existing = tableMarkdowns[id];
+  if (existing) {
+    throw new SchemaParseError(
+      `Invalid schema at ${schemaPath}: ${existing.tableFile} and ${loaded.tableFile} both have front-matter id \`${id}\`. Each table needs exactly one markdown file; merge them.`,
+    );
+  }
+  tableMarkdowns[id] = loaded;
 }
 
 /** Read an optional bundled markdown file: `undefined` only when the key is absent. */

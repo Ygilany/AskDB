@@ -18,6 +18,8 @@ export type StudioTableDto = {
   hasDescribableFile: boolean;
   draft: TableDraft;
   missingColumnIds: string[];
+  /** Columns another table's markdown marks `sensitive: true` (sensitive regardless of this draft). */
+  escalatedByOtherFiles: string[];
 };
 
 export type StudioWorkspaceDto = {

@@ -267,8 +267,7 @@ describe("loadSchema — front-matter sensitivity is escalate-only", () => {
         warnings: [duplicate("tables/users.md", ssn)],
       },
       {
-        name: "entries split across the owner's file and a misplaced file, with duplicates in each: escalates",
-        // Keys in readdir order, so the bundle's warnings come out in the directory's order.
+        name: "entries split across the owner's file and a misplaced file: every repeat and the overruled `false` are reported",
         markdowns: {
           "audit_log.md": auditMd(`  - id: ${ssn}`, "    sensitive: false", `  - id: ${ssn}`, "    sensitive: true"),
           "users.md": usersMd(`  - id: ${ssn}`, "    description: Social security number.", `  - id: ${ssn}`, "    sensitive: false"),
@@ -296,8 +295,20 @@ describe("loadSchema — front-matter sensitivity is escalate-only", () => {
       const schema = loadDirAndBundle(markdowns);
       const col = schema.tables.find((t) => t.name === "users")!.columns.find((c) => c.name === column)!;
       expect({ sensitive: col.sensitive, description: col.description }).toEqual(expected);
-      expect(schema.warnings).toHaveLength(warnings.length);
-      expect(schema.warnings).toEqual(expect.arrayContaining(warnings));
+      const sorted = (list: object[]) => list.map((w) => JSON.stringify(w)).sort();
+      expect(sorted(schema.warnings)).toEqual(sorted(warnings));
+    });
+
+    it("two markdown files claiming the same table id are rejected, naming both files", () => {
+      // Silently keeping one would drop the other's `sensitive: true`, and Studio could
+      // pair the table with the file the loader ignored.
+      const markdowns = {
+        "users.md": usersMd(`  - id: ${ssn}`, "    description: Social security number."),
+        "users-copy.md": usersMd(`  - id: ${ssn}`, "    sensitive: true"),
+      };
+      const message = /tables\/users-copy\.md and tables\/users\.md both have front-matter id `table:public\.users`/;
+      expect(() => loadSchema(writeSchemaDir(markdowns))).toThrow(message);
+      expect(() => loadSchemaFromJson(bundleJson(markdowns))).toThrow(message);
     });
   });
 

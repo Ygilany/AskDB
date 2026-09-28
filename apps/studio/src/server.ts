@@ -418,6 +418,7 @@ export function serializeWorkspace(workspace: Workspace): StudioWorkspaceDto {
               warning.kind === "missing_column_md" && warning.tableId === table.physical.id,
           )
           .map((warning) => warning.columnId),
+        escalatedByOtherFiles: table.escalatedByOtherFiles,
       };
     }),
     concepts: workspace.concepts?.frontmatter.concepts ?? [],
@@ -646,10 +647,13 @@ function saveDraft(state: StudioState, tableId: string, draft: TableDraft): void
   const table = workspace.tables.find((candidate) => candidate.physical.id === tableId);
   if (!table) throw new StudioHttpError(404, `No such table: ${tableId}`);
 
+  // Passing the file's current front-matter keeps entries for other tables' columns
+  // (e.g. a misplaced `sensitive: true`), which the draft does not carry.
   const frontmatter = buildFrontmatter(
     table.physical,
     workspace.physical.schemaId,
     draft,
+    table.parsed?.frontmatter,
   );
   let body = table.parsed
     ? replaceTableDescription(table.parsed.body, draft.description)
