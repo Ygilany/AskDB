@@ -56,7 +56,7 @@ describe("tableSensitivity", () => {
       draft: draft(false),
       expected: { forced: true, effective: true, columns: { [email]: { forced: true, effective: true }, [ssn]: { forced: true, effective: true } } },
     },
-  ])("$name", ({ table, escalatedByOtherFiles = [], draft, expected }) => {
+  ])("$name", ({ table, escalatedByOtherFiles, draft, expected }) => {
     expect(tableSensitivity({ physical: physical(table), escalatedByOtherFiles }, draft)).toEqual(expected);
   });
 });

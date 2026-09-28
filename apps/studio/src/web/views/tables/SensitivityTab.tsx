@@ -1,6 +1,6 @@
 import { useWorkspace } from "../../contexts/workspace-context";
 import { Badge } from "../../components/ui/badge";
-import { tableSensitivity } from "../../lib/sensitivity";
+import { tableSensitivity, UNKNOWN_COLUMN_SENSITIVITY } from "../../lib/sensitivity";
 
 export function SensitivityTab() {
   const { selectedTable, selectedDraft, updateColumnDraft, updateTableDraft } = useWorkspace();
@@ -80,7 +80,7 @@ export function SensitivityTab() {
             <tbody>
               {table.physical.columns.map((col) => {
                 const colDraft = draft.columns[col.id] ?? {};
-                const { forced, effective } = sensitivity.columns[col.id]!;
+                const { forced, effective } = sensitivity.columns[col.id] ?? UNKNOWN_COLUMN_SENSITIVITY;
                 return (
                   <tr key={col.id}>
                     <td><span className="mono">{col.name}</span></td>
