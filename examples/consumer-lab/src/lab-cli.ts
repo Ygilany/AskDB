@@ -20,11 +20,11 @@
  */
 import { createHash } from "node:crypto";
 import { parseArgs } from "node:util";
-import { createOpenAI } from "@ai-sdk/openai";
 import { openaiProvider } from "@askdb/ai-openai";
 import { createAskDb } from "@askdb/client";
 import { bootstrapAskDbEnv, getAskDbRuntimeConfig } from "@askdb/config";
 import { AskDbError, ask, loadSchema, type AskGenerateDeps } from "@askdb/core";
+import { askRaw, type AskResult } from "./ask.js";
 import { ensureArtifact, requireInstallTarget } from "./artifacts.js";
 import { LAB_ROOT } from "./paths.js";
 import { SUPPORTED_DIALECTS, isSupportedDialect, type SupportedDialect } from "./dialects.js";
@@ -39,13 +39,6 @@ const USAGE = [
   `       pnpm lab ask --db <${SUPPORTED_DIALECTS.join("|")}> --sql "<sql>" ["question"]`,
 ].join("\n");
 
-/** The model id sent to the replay server; the same as the config's `providerConfig.openai.model`. */
-const MODEL_ID = "gpt-4o-mini";
-/** The replay server ignores it; the OpenAI client requires one. */
-const API_KEY = "lab-replay-no-key";
-
-type AskResult = Awaited<ReturnType<typeof ask>>;
-
 /**
  * The documented `deps.generateText` seam: a "model" that always answers with this SQL,
  * fenced the way a model reply is.
@@ -55,16 +48,11 @@ function fixedSqlReply(sql: string): NonNullable<AskGenerateDeps["generateText"]
   return (async () => ({ text: `\`\`\`sql\n${sql}\n\`\`\`` })) as unknown as NonNullable<AskGenerateDeps["generateText"]>;
 }
 
-/** Path (a): a raw AI SDK `LanguageModel` pointed at the replay server, passed to `ask()`. */
-async function askRaw(dialect: SupportedDialect, question: string, schemaDir: string, baseURL: string): Promise<AskResult> {
-  const openai = createOpenAI({ baseURL, apiKey: API_KEY });
-  return ask({ question, schema: loadSchema(schemaDir), model: openai(MODEL_ID), dialect });
-}
-
 /**
- * Path (b): `createAskDb` with the OpenAI adapter. The model comes from `askdb.config.ts`,
- * whose `baseUrl` reads LAB_REPLAY_BASE_URL. The dialect is passed explicitly: MariaDB is
- * introspected with the MySQL engine, so its artifact records `mysql`.
+ * Path (b): `createAskDb` with the OpenAI adapter (path (a) is `askRaw`, in `ask.ts`).
+ * The model comes from `askdb.config.ts`, whose `baseUrl` reads LAB_REPLAY_BASE_URL. The
+ * dialect is passed explicitly: MariaDB is introspected with the MySQL engine, so its
+ * artifact records `mysql`.
  */
 async function askClient(dialect: SupportedDialect, question: string, schemaDir: string, baseURL: string): Promise<AskResult> {
   process.env.LAB_REPLAY_BASE_URL = baseURL;
@@ -161,7 +149,10 @@ async function askCommand(argv: string[]): Promise<number> {
   }
 
   console.log(`sql:        ${indent(result.sql)}`);
-  if (result.unboundSql) console.log(`unbound:    ${result.unboundSql}  params: ${JSON.stringify(result.params ?? [])}`);
+  if (result.unboundSql) {
+    console.log(`unbound:    ${indent(result.unboundSql)}`);
+    console.log(`params:     ${JSON.stringify(result.params ?? [])}`);
+  }
   console.log("validation: ok");
   if (result.sensitiveGuardrail && !result.sensitiveGuardrail.passed) {
     console.log(`sensitive:  ${JSON.stringify(result.sensitiveGuardrail.references)}`);
