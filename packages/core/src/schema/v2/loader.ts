@@ -301,15 +301,27 @@ function buildNormalized(
     physical.tables.flatMap((t) => t.columns.map((c) => [c.id, t.id] as const)),
   );
 
-  // Column ids that some *other* table's markdown marks `sensitive: true`.
-  const misplacedEscalations = new Set<string>();
+  // Column ids that any front-matter entry marks `sensitive: true`: in the owning
+  // table's markdown or another's, first entry or a later duplicate. Sensitivity is the
+  // one field aggregated across every entry naming a column, because escalating can
+  // only add protection; no entry can cancel another's `sensitive: true`.
+  const escalatedColumnIds = new Set<string>();
 
   // Validate all table markdown IDs against physical layer
   for (const [id, { tableFile, parsed }] of Object.entries(tableMarkdowns)) {
     if (!physicalTableIds.has(id)) {
       warnings.push({ kind: "orphaned_table_id", tableFile, id });
     }
+    const seenColumnIds = new Set<string>();
     for (const col of parsed.frontmatter.columns ?? []) {
+      // A repeated entry's description/aliases/enum are ignored (the first entry's
+      // apply), but its `sensitive: true` still escalates.
+      if (seenColumnIds.has(col.id)) {
+        warnings.push({ kind: "duplicate_column_id", tableFile, id: col.id });
+      }
+      seenColumnIds.add(col.id);
+      if (col.sensitive === true) escalatedColumnIds.add(col.id);
+
       const owner = columnOwner.get(col.id);
       if (owner === undefined) {
         warnings.push({ kind: "orphaned_column_id", tableFile, id: col.id });
@@ -320,7 +332,6 @@ function buildNormalized(
         // marked sensitive. Nothing else in the entry applies: `sensitive: false` never
         // de-escalates, and description/aliases/enum belong in the owner's own file.
         warnings.push({ kind: "misplaced_column_id", tableFile, id: col.id, tableId: owner });
-        if (col.sensitive === true) misplacedEscalations.add(col.id);
       }
     }
   }
@@ -341,13 +352,11 @@ function buildNormalized(
     }
 
     const columns: NormalizedV2Column[] = physTable.columns.map((physCol) => {
-      const mdCol = md?.frontmatter.columns?.find((c) => c.id === physCol.id);
+      const mdCols = md?.frontmatter.columns?.filter((c) => c.id === physCol.id) ?? [];
+      const mdCol = mdCols[0];
       const colSensitive =
-        physCol.sensitive === true ||
-        mdCol?.sensitive === true ||
-        misplacedEscalations.has(physCol.id) ||
-        tableSensitive;
-      if (mdCol?.sensitive === false && colSensitive) {
+        physCol.sensitive === true || escalatedColumnIds.has(physCol.id) || tableSensitive;
+      if (colSensitive && mdCols.some((c) => c.sensitive === false)) {
         warnings.push({ kind: "sensitivity_downgrade_ignored", tableFile, id: physCol.id });
       }
 

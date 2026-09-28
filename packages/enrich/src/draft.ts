@@ -41,12 +41,17 @@ export function buildTableDraft(
   const fm = parsed?.frontmatter;
   const columns: Record<string, ColumnDraft> = {};
   for (const col of physical.columns) {
-    const fmCol = fm?.columns?.find((c) => c.id === col.id);
+    // Mirror the core loader for a column listed more than once: the first entry's
+    // describable fields apply, but any entry's `sensitive: true` escalates. Saving the
+    // draft writes a single entry, so taking only the first would drop the escalation.
+    const fmCols = fm?.columns?.filter((c) => c.id === col.id) ?? [];
+    const fmCol = fmCols[0];
     const draft: ColumnDraft = {};
     if (fmCol?.description !== undefined) draft.description = fmCol.description;
     if (fmCol?.aliases !== undefined) draft.aliases = [...fmCol.aliases];
     if (fmCol?.enum !== undefined) draft.enum = [...fmCol.enum];
-    if (fmCol?.sensitive !== undefined) draft.sensitive = fmCol.sensitive;
+    if (fmCols.some((c) => c.sensitive === true)) draft.sensitive = true;
+    else if (fmCol?.sensitive !== undefined) draft.sensitive = fmCol.sensitive;
     columns[col.id] = draft;
   }
 

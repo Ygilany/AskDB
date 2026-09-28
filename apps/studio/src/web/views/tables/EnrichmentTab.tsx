@@ -5,6 +5,7 @@ import { Field } from "../../components/ui/field";
 import { Input } from "../../components/ui/input";
 import { ListInput } from "../../components/ui/list-input";
 import { Textarea } from "../../components/ui/textarea";
+import { tableSensitivity } from "../../lib/sensitivity";
 import type { ReactNode } from "react";
 
 export function EnrichmentTab() {
@@ -24,6 +25,7 @@ export function EnrichmentTab() {
   const table = selectedTable;
   const draft = selectedDraft;
   const tableId = table.physical.id;
+  const sensitivity = tableSensitivity(table.physical, draft);
 
   return (
     <div className="stack" style={{ padding: "var(--pad-y) var(--pad-x)" }}>
@@ -83,6 +85,7 @@ export function EnrichmentTab() {
               <SensitiveSelect
                 label="Table sensitivity override"
                 value={draft.sensitive}
+                forced={sensitivity.forced}
                 onChange={(v) => updateTableDraft(tableId, (d) => ({ ...d, sensitive: v }))}
               />
             </div>
@@ -134,6 +137,7 @@ export function EnrichmentTab() {
           <div style={{ display: "grid", gap: 12 }}>
             {table.physical.columns.map((column) => {
               const columnDraft = draft.columns[column.id] ?? {};
+              const columnSensitivity = sensitivity.columns[column.id]!;
               return (
                 <section className="column-row" key={column.id}>
                   <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
@@ -143,7 +147,7 @@ export function EnrichmentTab() {
                         <Badge variant="outline">{column.type}</Badge>
                         {column.primaryKey && <Badge variant="secondary">PK</Badge>}
                         {column.nullable && <Badge variant="outline">nullable</Badge>}
-                        {(column.sensitive || columnDraft.sensitive) && <Badge variant="danger">sensitive</Badge>}
+                        {columnSensitivity.effective && <Badge variant="danger">sensitive</Badge>}
                       </div>
                       <p className="muted tiny" style={{ marginTop: 4, wordBreak: "break-all" }}>{column.id}</p>
                     </div>
@@ -193,6 +197,7 @@ export function EnrichmentTab() {
                       <SensitiveSelect
                         label="Sensitivity override"
                         value={columnDraft.sensitive}
+                        forced={columnSensitivity.forced}
                         onChange={(v) => updateColumnDraft(tableId, column.id, (d) => ({ ...d, sensitive: v }))}
                       />
                     </div>
@@ -260,10 +265,13 @@ function FieldWithSuggest({
 }
 
 function SensitiveSelect({
+  forced,
   label,
   onChange,
   value,
 }: {
+  /** Sensitive regardless of the override, so "Not sensitive" could not take effect. */
+  forced: boolean;
   label: string;
   onChange: (value: boolean | undefined) => void;
   value: boolean | undefined;
@@ -281,7 +289,7 @@ function SensitiveSelect({
       >
         <option value="inherit">Inherit physical metadata</option>
         <option value="true">Sensitive</option>
-        <option value="false">Not sensitive</option>
+        <option value="false" disabled={forced}>Not sensitive</option>
       </select>
     </label>
   );

@@ -57,8 +57,9 @@ export type SchemaV2Warning =
   | { kind: "missing_column_md"; tableId: string; columnId: string }
   /**
    * Table markdown front-matter set `sensitive: false` on a table or column that is
-   * sensitive anyway (via `schema.json`, or — for a column — via its sensitive table).
-   * Front-matter sensitivity is escalate-only, so the override was ignored.
+   * sensitive anyway (via `schema.json`; for a column, also via its sensitive table or
+   * another front-matter entry's `sensitive: true`). Front-matter sensitivity is
+   * escalate-only, so the override was ignored.
    */
   | { kind: "sensitivity_downgrade_ignored"; tableFile: string; id: string }
   /**
@@ -66,4 +67,11 @@ export type SchemaV2Warning =
    * table (`tableId`). Only its `sensitive: true` is applied (escalate-only); every
    * other field is ignored. Move the entry to `tableId`'s markdown.
    */
-  | { kind: "misplaced_column_id"; tableFile: string; id: string; tableId: string };
+  | { kind: "misplaced_column_id"; tableFile: string; id: string; tableId: string }
+  /**
+   * `tableFile`'s `columns[]` lists column `id` again (one warning per repeat). Only the
+   * first entry's description, aliases, and enum are applied. Sensitivity is aggregated
+   * across every entry: any `sensitive: true` escalates the column, and a duplicate's
+   * `sensitive: false` never de-escalates it. Merge the entries into one.
+   */
+  | { kind: "duplicate_column_id"; tableFile: string; id: string };
