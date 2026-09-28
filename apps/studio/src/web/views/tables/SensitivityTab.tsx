@@ -1,5 +1,6 @@
 import { useWorkspace } from "../../contexts/workspace-context";
 import { Badge } from "../../components/ui/badge";
+import { tableSensitivity } from "../../lib/sensitivity";
 
 export function SensitivityTab() {
   const { selectedTable, selectedDraft, updateColumnDraft, updateTableDraft } = useWorkspace();
@@ -8,11 +9,9 @@ export function SensitivityTab() {
   const table = selectedTable;
   const draft = selectedDraft;
   const tableId = table.physical.id;
-  // Mirrors the core loader: overrides are escalate-only. `Sensitive` marks a table or
-  // column sensitive on top of schema.json; `Not sensitive` cannot un-mark anything that
-  // schema.json (or a sensitive table) already marks sensitive.
-  const physicalTableSensitive = table.physical.sensitive === true;
-  const tableEffective = physicalTableSensitive || draft.sensitive === true;
+  // Overrides are escalate-only (see tableSensitivity): "Not sensitive" is disabled
+  // wherever it could not take effect.
+  const sensitivity = tableSensitivity(table.physical, draft);
 
   return (
     <div className="stack" style={{ padding: "var(--pad-y) var(--pad-x)" }}>
@@ -57,11 +56,11 @@ export function SensitivityTab() {
             >
               <option value="inherit">Inherit physical metadata</option>
               <option value="true">Sensitive</option>
-              <option value="false" disabled={physicalTableSensitive}>Not sensitive</option>
+              <option value="false" disabled={sensitivity.forced}>Not sensitive</option>
             </select>
           </label>
           <p className="muted" style={{ fontSize: 12, marginTop: 8 }}>
-            Effective: {tableEffective ? <Badge variant="danger">sensitive</Badge> : "not sensitive"}
+            Effective: {sensitivity.effective ? <Badge variant="danger">sensitive</Badge> : "not sensitive"}
           </p>
         </div>
       </section>
@@ -81,8 +80,7 @@ export function SensitivityTab() {
             <tbody>
               {table.physical.columns.map((col) => {
                 const colDraft = draft.columns[col.id] ?? {};
-                const baseline = col.sensitive === true || tableEffective;
-                const effective = baseline || colDraft.sensitive === true;
+                const { forced, effective } = sensitivity.columns[col.id]!;
                 return (
                   <tr key={col.id}>
                     <td><span className="mono">{col.name}</span></td>
@@ -98,7 +96,7 @@ export function SensitivityTab() {
                       >
                         <option value="inherit">Inherit</option>
                         <option value="true">Sensitive</option>
-                        <option value="false" disabled={baseline}>Not sensitive</option>
+                        <option value="false" disabled={forced}>Not sensitive</option>
                       </select>
                     </td>
                     <td>

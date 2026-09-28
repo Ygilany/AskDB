@@ -236,6 +236,71 @@ describe("loadSchema — front-matter sensitivity is escalate-only", () => {
     );
   });
 
+  describe("a column listed more than once", () => {
+    const usersMd = (...columnLines: string[]) =>
+      ["---", "id: table:public.users", "name: users", "schemaId: people", "columns:", ...columnLines, "---", "", "# Table: users", ""].join("\n");
+    const auditMd = (...columnLines: string[]) =>
+      ["---", "id: table:public.audit_log", "name: audit_log", "schemaId: people", "columns:", ...columnLines, "---", "", "# Table: audit_log", ""].join("\n");
+    const ssn = "table:public.users#ssn";
+    const createdAt = "table:public.users#created_at";
+    const duplicate = (tableFile: string, id: string) => ({ kind: "duplicate_column_id", tableFile, id });
+    const downgrade = (tableFile: string, id: string) => ({ kind: "sensitivity_downgrade_ignored", tableFile, id });
+    const misplaced = (id: string) => ({ kind: "misplaced_column_id", tableFile: "tables/audit_log.md", id, tableId: "table:public.users" });
+
+    it.each([
+      {
+        name: "first entry `sensitive: false`, later duplicate `sensitive: true`: escalates",
+        markdowns: {
+          "users.md": usersMd(`  - id: ${ssn}`, "    sensitive: false", `  - id: ${ssn}`, "    sensitive: true"),
+        },
+        column: "ssn",
+        expected: { sensitive: true, description: undefined },
+        warnings: [duplicate("tables/users.md", ssn), downgrade("tables/users.md", ssn)],
+      },
+      {
+        name: "first entry omits `sensitive`, later duplicate `sensitive: true`: escalates and drops the description",
+        markdowns: {
+          "users.md": usersMd(`  - id: ${ssn}`, "    description: Social security number.", `  - id: ${ssn}`, "    sensitive: true"),
+        },
+        column: "ssn",
+        expected: { sensitive: true, description: undefined },
+        warnings: [duplicate("tables/users.md", ssn)],
+      },
+      {
+        name: "entries split across the owner's file and a misplaced file, with duplicates in each: escalates",
+        // Keys in readdir order, so the bundle's warnings come out in the directory's order.
+        markdowns: {
+          "audit_log.md": auditMd(`  - id: ${ssn}`, "    sensitive: false", `  - id: ${ssn}`, "    sensitive: true"),
+          "users.md": usersMd(`  - id: ${ssn}`, "    description: Social security number.", `  - id: ${ssn}`, "    sensitive: false"),
+        },
+        column: "ssn",
+        expected: { sensitive: true, description: undefined },
+        warnings: [
+          duplicate("tables/users.md", ssn),
+          downgrade("tables/users.md", ssn),
+          misplaced(ssn),
+          misplaced(ssn),
+          duplicate("tables/audit_log.md", ssn),
+        ],
+      },
+      {
+        name: "conflicting descriptions: the first entry's applies",
+        markdowns: {
+          "users.md": usersMd(`  - id: ${createdAt}`, "    description: First.", `  - id: ${createdAt}`, "    description: Second."),
+        },
+        column: "created_at",
+        expected: { sensitive: false, description: "First." },
+        warnings: [duplicate("tables/users.md", createdAt)],
+      },
+    ])("$name, and warns", ({ markdowns, column, expected, warnings }) => {
+      const schema = loadDirAndBundle(markdowns);
+      const col = schema.tables.find((t) => t.name === "users")!.columns.find((c) => c.name === column)!;
+      expect({ sensitive: col.sensitive, description: col.description }).toEqual(expected);
+      expect(schema.warnings).toHaveLength(warnings.length);
+      expect(schema.warnings).toEqual(expect.arrayContaining(warnings));
+    });
+  });
+
   it("warnings name the table markdown file actually read, not one derived from front-matter `name`", () => {
     const schema = loadDirAndBundle({
       "customer-records.md": [
