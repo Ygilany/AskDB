@@ -62,8 +62,22 @@ export type TenantScopeRejectionReason =
   | "UNKNOWN_TENANT_ROOT"
   | "GLOBAL_WITHOUT_REASON"
   | "INVALID_SCOPE_SHAPE"
-  /** A `subtree` scope could not be expanded: no `resolveTenantDescendants`, or it returned no usable IDs. */
-  | "SUBTREE_NOT_RESOLVABLE";
+  /**
+   * A `subtree` scope could not be expanded: no `resolveTenantDescendants`, or it
+   * returned no usable IDs. Also thrown when an unexpanded `subtree` reaches
+   * `resolveTenantSql()` directly.
+   */
+  | "SUBTREE_NOT_RESOLVABLE"
+  /** Generated SQL references a `:tenant_*` placeholder the scope has no IDs for. */
+  | "UNRESOLVED_TENANT_PLACEHOLDER"
+  /** A multi-ID scope met a tenant predicate with no list form (e.g. `<=`). */
+  | "UNSUPPORTED_TENANT_PREDICATE"
+  /**
+   * `resolveTenantSql()` in `sql-only` mode got a tenant ID containing a backslash
+   * and a dialect with an unknown `id` and no `backslashEscapes`, so it cannot
+   * escape the ID safely.
+   */
+  | "UNESCAPABLE_TENANT_ID";
 
 export class TenantScopeError extends AskDbError {
   constructor(

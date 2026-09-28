@@ -37,6 +37,8 @@ import {
 } from "./errors.js";
 import {
   bindPreparedQuery,
+  markerStyleForDialect,
+  scanPlaceholders,
   sqlStructurallyEqual,
   type PreparedQuery,
   type QueryParameterBinding,
@@ -203,7 +205,10 @@ export type AskPipelineOptions = {
   tenantScope?: TenantScope;
   /**
    * SQL output mode for tenant placeholders. Default `"sql-only"` inlines
-   * literal values; `"sql-params"` converts to positional `$N` parameters.
+   * escaped literal values. `"sql-params"` replaces them with the dialect's
+   * driver markers (`$N` for Postgres/CockroachDB and custom `AskDialect`s, `?`
+   * for MySQL/MariaDB/SQLite, `@pN` for SQL Server): run `sql` with
+   * `tenantParams`, or `unboundSql` with `params`.
    */
   tenantSqlMode?: TenantSqlOutputMode;
   /**
@@ -240,10 +245,23 @@ export type AskPipelineOptions = {
 };
 
 export type AskPipelineResult = {
-  sql: string; // the model's bound SQL — unchanged meaning
-  /** Driver markers; executable with `params`. */
+  /**
+   * The model's bound SQL: business values inlined as literals. Tenant IDs are
+   * inlined literals (`tenantSqlMode: "sql-only"`) or driver markers numbered from
+   * the first slot (`"sql-params"`) — then execute it with `tenantParams`.
+   */
+  sql: string;
+  /**
+   * Driver markers for every value (business and, in `"sql-params"` mode, tenant).
+   * Execute with `params` — never with `tenantParams`.
+   */
   unboundSql?: string;
-  /** Positional values for drivers (array slots on Postgres/CockroachDB listBinding). */
+  /**
+   * Values for `unboundSql`, in driver-marker order (array slots on
+   * Postgres/CockroachDB listBinding). In `"sql-params"` mode this already
+   * includes the tenant values — for `?` dialects interleaved in source order,
+   * otherwise after the business values. Do not concatenate `tenantParams`.
+   */
   params?: QueryParamSlot[];
   /** Named bindings for form UIs (includes runtime values). */
   parameters?: QueryParameterBinding[];
@@ -263,6 +281,10 @@ export type AskPipelineResult = {
    * under `strict`.
    */
   tenantGuardrail?: import("./sql/tenant-guardrail.js").TenantGuardrailResult;
+  /**
+   * `"sql-params"` mode only: the tenant IDs for the markers in `sql`, in marker
+   * order. `sql` + `tenantParams` is an executable pair on its own.
+   */
   tenantParams?: unknown[];
   tenantBindings?: TenantBinding[];
   /** Token usage for the LLM generation call. Absent when the provider does not report usage. */
@@ -420,14 +442,15 @@ export async function ask(options: AskPipelineOptions): Promise<AskPipelineResul
 
   if (tenantPolicy && tenantScope) {
     const tenantMode = options.tenantSqlMode ?? "sql-only";
-    const paramStartIndex =
-      tenantMode === "sql-params" && result.params ? businessParamCount + 1 : 1;
+    // `sql` carries business values as inlined literals, so its only markers are
+    // tenant markers, numbered from the first slot: `sql` runs with `tenantParams`
+    // alone. `unboundSql` runs with the combined `params` (handled below).
     const resolved = resolveTenantSql(
       result.sql,
       tenantPolicy,
       tenantScope,
       tenantMode,
-      paramStartIndex,
+      1,
       dialectSpec,
     );
     result.sql = resolved.sql;
@@ -447,22 +470,25 @@ export async function ask(options: AskPipelineOptions): Promise<AskPipelineResul
           dialectSpec,
         );
         result.unboundSql = unboundWithTenant.sql;
-      } else {
-        const unboundWithTenant = resolveTenantSql(
-          result.unboundSql,
+      } else if (
+        !bindTenantIntoUnboundSql(result, {
+          namedSql: result.preparedQuery.namedSql,
+          businessParamCount,
           tenantPolicy,
           tenantScope,
-          "sql-params",
-          paramStartIndex,
           dialectSpec,
+        })
+      ) {
+        dropParameterizeExtras(result);
+        logger?.debug?.(
+          {
+            event: AskDbLogEvent.PipelineParameterized,
+            parameterCount: 0,
+            listParameterCount: 0,
+            reason: "tenant_param_alignment",
+          },
+          "parameterize extras dropped",
         );
-        if (unboundWithTenant.mode === "sql-params") {
-          result.unboundSql = unboundWithTenant.sql;
-          result.params = [
-            ...(result.params ?? []),
-            ...(unboundWithTenant.params as QueryParamSlot[]),
-          ];
-        }
       }
     }
 
@@ -470,16 +496,19 @@ export async function ask(options: AskPipelineOptions): Promise<AskPipelineResul
     // placeholder substitution, plus `unboundSql` only when the consistency check
     // kept it. Runs for every dialect (built-in, DialectSpec, or custom AskDialect);
     // the built-in generator skips its own check so this is the single report.
+    // `dialectSpec` is undefined for a custom AskDialect: the guardrail then
+    // requires the statement to pass under both the standard-SQL and MySQL readings.
     result.tenantGuardrail = enforceTenantGuardrails(
       [result.sql, result.unboundSql],
       tenantPolicy,
       tenantScope,
       logger,
       generated.tenantGuardrail,
+      dialectSpec,
     );
   }
 
-  applySensitiveGuardrail(result, options, logger);
+  applySensitiveGuardrail(result, options, dialectSpec, logger);
 
   return result;
 }
@@ -537,10 +566,13 @@ function isTenantIdArray(value: unknown): value is readonly string[] {
 /**
  * Run the sensitive-identifier guardrail over the SQL the host is about to receive.
  * Runs after tenant resolution so it sees exactly the statement in `result.sql`.
+ * With a built-in id or `DialectSpec`, the SQL is lexed the way that engine reads it;
+ * for a custom `AskDialect` (no spec) references are unioned across every built-in reading.
  */
 function applySensitiveGuardrail(
   result: AskPipelineResult,
   options: AskPipelineOptions,
+  dialectSpec: DialectSpec | undefined,
   logger: AskDbLogger | undefined,
 ): void {
   const mode = options.sensitiveGuardrailMode ?? "warn";
@@ -548,7 +580,10 @@ function applySensitiveGuardrail(
   if (!schemaHasSensitiveIdentifiers(options.schema)) return;
 
   try {
-    const guardrail = validateSensitiveReferences(result.sql, options.schema, { mode });
+    const guardrail = validateSensitiveReferences(result.sql, options.schema, {
+      mode,
+      dialect: dialectSpec,
+    });
     result.sensitiveGuardrail = guardrail;
     logSensitiveReferences(logger, guardrail.references);
   } catch (error) {
@@ -573,6 +608,112 @@ function logSensitiveReferences(
     },
     "generated SQL references sensitive identifiers",
   );
+}
+
+/**
+ * Substitute tenant placeholders in `result.unboundSql` with driver markers and
+ * fold their values into `result.params`, so `unboundSql` + `params` is a single
+ * executable pair (`sql-params` mode).
+ *
+ * - `$N` / `@pN` dialects: markers are explicitly numbered, so tenant markers
+ *   continue after the business slots and tenant values are appended.
+ * - `?` dialects: markers are positional, so `params` must follow source order.
+ *   Business and tenant values are interleaved by walking the named template in
+ *   order, and `parameters[].indices` are remapped to the new positions.
+ *
+ * Returns false when the business binding and the tenant substitution disagree
+ * about the statement's shape; the caller then drops the extras rather than ship
+ * misaligned params.
+ */
+function bindTenantIntoUnboundSql(
+  result: AskPipelineResult,
+  ctx: {
+    namedSql: string;
+    businessParamCount: number;
+    tenantPolicy: import("./schema/v2/tenant-policy.js").NormalizedTenantPolicy;
+    tenantScope: TenantScope;
+    dialectSpec: DialectSpec | undefined;
+  },
+): boolean {
+  if (result.unboundSql === undefined) return false;
+  const unbound = resolveTenantSql(
+    result.unboundSql,
+    ctx.tenantPolicy,
+    ctx.tenantScope,
+    "sql-params",
+    ctx.businessParamCount + 1,
+    ctx.dialectSpec,
+  );
+  if (unbound.mode !== "sql-params") return false;
+  const business = result.params ?? [];
+  const tenantValues = unbound.params as QueryParamSlot[];
+
+  const dialectId = ctx.dialectSpec?.id;
+  const style =
+    dialectId !== undefined && isBuiltInDialectId(dialectId)
+      ? markerStyleForDialect(dialectId)
+      : "dollar";
+  if (style !== "question") {
+    result.unboundSql = unbound.sql;
+    result.params = [...business, ...tenantValues];
+    return true;
+  }
+
+  const idsByPlaceholder = new Map(unbound.bindings.map((b) => [b.placeholder, b.ids]));
+  const bindingByName = new Map((result.parameters ?? []).map((b) => [b.name, b]));
+  // Same lexer reading as bindPreparedQuery and the tenant substitution above.
+  const occurrences = scanPlaceholders(ctx.namedSql, ctx.dialectSpec);
+  const occurrenceCount = new Map<string, number>();
+  for (const occ of occurrences) {
+    occurrenceCount.set(occ.name, (occurrenceCount.get(occ.name) ?? 0) + 1);
+  }
+
+  const combined: QueryParamSlot[] = [];
+  const indexMap = new Map<number, number>();
+  const seen = new Map<string, number>();
+  for (const occ of occurrences) {
+    const tenantIds = idsByPlaceholder.get(occ.placeholder);
+    if (tenantIds) {
+      combined.push(...tenantIds);
+      continue;
+    }
+    // bindPreparedQuery pushes each occurrence's values contiguously, in source
+    // order, so occurrence k of a name owns the k-th equal slice of its indices.
+    const binding = bindingByName.get(occ.name);
+    const total = occurrenceCount.get(occ.name)!;
+    if (!binding || binding.indices.length % total !== 0) return false;
+    const per = binding.indices.length / total;
+    const k = seen.get(occ.name) ?? 0;
+    seen.set(occ.name, k + 1);
+    for (const idx of binding.indices.slice(k * per, (k + 1) * per)) {
+      if (idx >= business.length || indexMap.has(idx)) return false;
+      indexMap.set(idx, combined.length);
+      combined.push(business[idx]!);
+    }
+  }
+  if (
+    indexMap.size !== business.length ||
+    combined.length !== business.length + tenantValues.length
+  ) {
+    return false;
+  }
+
+  result.unboundSql = unbound.sql;
+  result.params = combined;
+  if (result.parameters) {
+    result.parameters = result.parameters.map((b) => ({
+      ...b,
+      indices: b.indices.map((i) => indexMap.get(i)!),
+    }));
+  }
+  return true;
+}
+
+function dropParameterizeExtras(result: AskPipelineResult): void {
+  delete result.unboundSql;
+  delete result.params;
+  delete result.parameters;
+  delete result.preparedQuery;
 }
 
 const TENANT_MASK_RE = /:tenant_([a-z0-9_]+)_ids/g;
