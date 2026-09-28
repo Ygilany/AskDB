@@ -93,7 +93,7 @@ examples/consumer-lab/
   pnpm-lock.yaml            # the app's own lockfile
   askdb.config.ts           # generated per dialect/test into temp dirs; this committed one is for `lab ask`
   scenarios/
-    questions.json          # id, text, dialect coverage, result types, ordered?, oracle id
+    questions.json          # id, text
     safety.json             # attack SQL cases (see matrix)
     overlay/                # authored artifact files applied after introspection: tenant-policy.md, sensitive marks
   cassettes/<dialect>/<question-id>.json   # recorded model replies
@@ -101,7 +101,7 @@ examples/consumer-lab/
     use.mjs                 # install-mode switcher (no dependencies; runs before install)
     capabilities.ts         # documented capabilities a scenario can require; n/a on targets without them
     host/execute.ts         # read-only execution per dialect, following run-safely-in-prod.mdx
-    oracle.ts               # expected answers computed in JS from fixtures/multi-engine/dataset/data/*.json
+    oracle.ts               # expected answers per question id, computed in TS from fixtures/multi-engine/dataset/data/*.json, with result types and ordered?
     model/replay-server.ts  # OpenAI-compatible replay/record server (see Model)
     http-api.ts             # runs the installed `askdb-http` bin on a free port
     lab-cli.ts              # `pnpm lab ask …`

@@ -1,0 +1,5 @@
+{
+  "question": "Which orders were placed in the first quarter of 2024? Show each order's id and when it was placed.",
+  "reply": "```sql\nSELECT order_id, placed_at\nFROM billing.\"order\"\nWHERE placed_at >= '2024-01-01' AND placed_at < '2024-04-01'\nORDER BY order_id\n```",
+  "source": "authored"
+}

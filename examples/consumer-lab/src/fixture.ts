@@ -16,4 +16,7 @@ export {
   compareToLogicalSchema,
   loadLogicalSchema,
   type SchemaJson,
+  // The value and result-set rules (`dataset/NORMALIZATION.md`, "Value rules", "Result-set rules").
+  normalizeRows,
+  type LogicalType,
 } from "../../../fixtures/multi-engine/src/index.js";

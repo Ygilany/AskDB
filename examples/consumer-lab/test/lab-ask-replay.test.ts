@@ -49,9 +49,12 @@ function labAsk(...args: string[]): Promise<Run> {
   });
 }
 
-/** The SQL `lab ask` printed: from `sql:` up to `validation:`, continuation indent removed. */
+/**
+ * The SQL `lab ask` printed: from `sql:` up to the next label (`unbound:` for parameterized
+ * output, else `validation:`), continuation indent removed.
+ */
 function printedSql(out: string): string | undefined {
-  const match = /^sql: {8}([\s\S]*?)\nvalidation:/m.exec(out);
+  const match = /^sql: {8}([\s\S]*?)\n(?:unbound|validation):/m.exec(out);
   return match?.[1]!.replace(/\n {12}/g, "\n");
 }
 

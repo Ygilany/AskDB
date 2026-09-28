@@ -1,0 +1,5 @@
+{
+  "question": "List every agency's id with the name of its parent agency, if it has one.",
+  "reply": "```sql\nSELECT a.agency_id, p.name AS parent_name\nFROM agency AS a\nLEFT JOIN agency AS p ON p.agency_id = a.parent_agency_id\nORDER BY a.agency_id\n```",
+  "source": "authored"
+}

@@ -1,0 +1,5 @@
+{
+  "question": "Which enrollments have no exit date? Show the client id and program code.",
+  "reply": "```sql\nSELECT client_id, program_code\nFROM people.enrollment\nWHERE exited_on IS NULL\nORDER BY client_id, program_code\n```",
+  "source": "authored"
+}

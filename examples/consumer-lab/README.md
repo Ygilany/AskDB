@@ -61,7 +61,7 @@ Both paths must send the same prompt and return the same SQL; `lab:test` checks 
 
 - the install target, the dialect and the model path;
 - `prompt:`, the length and a digest of the prompt the replay server received;
-- the SQL;
+- the SQL, and for parameterized output `unbound:` (the `unboundSql`) and `params:`;
 - the validation outcome (`ok`, or the error class and rule code, such as `SqlValidationError SQL_NOT_SELECT_OR_WITH`);
 - for accepted SQL, the rows.
 
@@ -92,9 +92,35 @@ The guide's wrapper is invalid on SQL Server and drops the statement's `ORDER BY
   { "question": "<the catalog text>", "reply": "```sql\nSELECT …\n```", "source": "authored" }
   ```
 
-  The reply is the model's whole answer, fences included. For now every reply is `"source": "authored"`: hand-written SQL, correct for its dialect (for example, the reserved-word table is `billing."order"` on Postgres, ``billing.`order` `` on MySQL and MariaDB, `billing.[order]` on SQL Server and `"order"` on SQLite). Recording replies from a live model comes with `pnpm lab:record` (#247).
+  The reply is the model's whole answer, fences included. For now every reply is `"source": "authored"`: hand-written SQL, correct and idiomatic for its dialect (for example, the reserved-word table is `billing."order"` on Postgres, ``billing.`order` `` on MySQL and MariaDB, `billing.[order]` on SQL Server and `"order"` on SQLite, and a non-ASCII string literal is `N'…'` on SQL Server). Recording replies from a live model comes with `pnpm lab:record` (#247).
+- A reply to a question that holds a value (`programs-started-since` asks about `2022-01-01`) follows the NL→SQL prompt's parameterized output format, as a model would: the bound statement in a ```` ```sql ```` fence, the same statement with `:name` placeholders in a ```` ```sql-unbound ```` fence, and a ```` ```json ```` fence with the parameter manifest.
+- `src/oracle.ts` holds each question's expected answer, computed in TypeScript from the fixture's seed data (`fixtures/multi-engine/dataset/data/*.json`), with its columns' logical types and whether its row order is part of the answer. It never runs SQL, the cassette's or any other.
 
-To add a question, add it to the catalog and add a reply for each of the five dialects. `lab:test` runs every catalog question on every dialect.
+To add a question, add it to the catalog, add a reply for each of the five dialects, and add its oracle. `lab:test` runs every catalog question on every dialect.
+
+## Question → SQL → execute
+
+`test/results.test.ts` asks every catalog question through `ask()` with the raw-model path, executes the SQL it returns as the host does (above), normalizes the rows by [`NORMALIZATION.md`](../../fixtures/multi-engine/dataset/NORMALIZATION.md) and compares them with the question's oracle. Each question is its own matrix row, named by its id. Every dialect is compared with the same oracle, so the five engines also agree with each other. A question with no oracle fails.
+
+| Question | Covers |
+|---|---|
+| `agency-names` | unicode text, ordered by a unique key |
+| `active-programs-per-agency` | a boolean filter, `GROUP BY` with `COUNT(*)` |
+| `unpaid-orders` | the reserved-word table, a boolean filter, decimals |
+| `top-paid-agencies` | the view `billing.agency_revenue`, ordered top-N (`LIMIT`, `TOP`) |
+| `client-agency-names` | a cross-schema join (`people` to `org`) |
+| `enrollment-program-names` | the composite-FK join `(agency_id, program_code)` |
+| `payments-per-agency` | `GROUP BY` with a decimal `SUM` |
+| `orders-q1-2024` | a timestamp range that includes a leap day at 23:59:59 |
+| `program-active-flags` | a boolean column in the result |
+| `open-enrollments` | `IS NULL` |
+| `client-named-sato` | a CJK equality match (`N'…'` on SQL Server) |
+| `top-five-orders` | ordered top-N on a base table (`LIMIT`, `OFFSET … FETCH`) |
+| `agency-parent-names` | a `LEFT JOIN` that produces NULLs |
+| `distinct-enrolled-clients` | `COUNT(DISTINCT …)` |
+| `programs-started-since` | a parameterized date literal |
+
+On `programs-started-since`, the suite also checks the parameterized output contract (`reference/core-api.mdx`): `unboundSql` holds the dialect's driver markers (`$1`, `?`, `@p0`) instead of the literal, binding it with `params` through the real driver returns the same rows as `sql`, and `bindPreparedQuery` with another date returns that date's oracle rows from both its `sql` and its `unboundSql` + `params`.
 
 The replay server serves:
 

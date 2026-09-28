@@ -1,0 +1,5 @@
+{
+  "question": "Show every program's agency id, program code and whether it is active.",
+  "reply": "```sql\nSELECT agency_id, program_code, is_active\nFROM program\nORDER BY agency_id, program_code\n```",
+  "source": "authored"
+}
