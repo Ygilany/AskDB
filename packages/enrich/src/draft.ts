@@ -71,11 +71,18 @@ export function buildTableDraft(
 /**
  * Build the V2TableFrontmatter to write to disk from a draft + physical.
  * Empty optional fields are omitted entirely (cleaner round-trip).
+ *
+ * Pass the file's `existing` front-matter when rewriting it: its `columns[]` entries
+ * for IDs that are not this table's columns (another table's column, which the core
+ * loader reports as `misplaced_column_id` but still escalates on `sensitive: true`,
+ * or an orphaned ID) are not part of the draft, so they are carried through unchanged
+ * rather than silently dropped. Use `pruneOrphanedColumns` to remove orphans on purpose.
  */
 export function buildFrontmatter(
   physical: V2Table,
   schemaId: string,
   draft: TableDraft,
+  existing?: V2TableFrontmatter,
 ): V2TableFrontmatter {
   const columns: V2ColumnFrontmatter[] = physical.columns.map((col) => {
     const c = draft.columns[col.id] ?? {};
@@ -88,6 +95,8 @@ export function buildFrontmatter(
     if (c.sensitive !== undefined) out.sensitive = c.sensitive;
     return out;
   });
+  const ownColumnIds = new Set(physical.columns.map((col) => col.id));
+  const foreignColumns = (existing?.columns ?? []).filter((col) => !ownColumnIds.has(col.id));
 
   const fm: V2TableFrontmatter = {
     id: physical.id,
@@ -101,7 +110,10 @@ export function buildFrontmatter(
   if (draft.tracked !== undefined) fm.tracked = draft.tracked;
   // Only emit columns array when at least one column has describable content,
   // so "untouched" tables stay minimal.
-  if (columns.some((c) => Object.keys(c).length > 1)) fm.columns = columns;
+  const described = columns.some((c) => Object.keys(c).length > 1);
+  if (described || foreignColumns.length > 0) {
+    fm.columns = [...(described ? columns : []), ...foreignColumns];
+  }
   return fm;
 }
 

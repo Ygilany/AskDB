@@ -11,7 +11,7 @@ export function SensitivityTab() {
   const tableId = table.physical.id;
   // Overrides are escalate-only (see tableSensitivity): "Not sensitive" is disabled
   // wherever it could not take effect.
-  const sensitivity = tableSensitivity(table.physical, draft);
+  const sensitivity = tableSensitivity(table, draft);
 
   return (
     <div className="stack" style={{ padding: "var(--pad-y) var(--pad-x)" }}>

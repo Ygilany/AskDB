@@ -25,7 +25,7 @@ export function EnrichmentTab() {
   const table = selectedTable;
   const draft = selectedDraft;
   const tableId = table.physical.id;
-  const sensitivity = tableSensitivity(table.physical, draft);
+  const sensitivity = tableSensitivity(table, draft);
 
   return (
     <div className="stack" style={{ padding: "var(--pad-y) var(--pad-x)" }}>

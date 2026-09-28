@@ -250,4 +250,36 @@ describe("workspace", () => {
 
     expect(loadSchemaFromJson(JSON.stringify(bundleSchemaDirectory(schemaDir)))).toEqual(schema);
   });
+
+  describe("a sensitive column entry filed in another table's markdown", () => {
+    const createdAtId = "table:public.users#created_at";
+    beforeEach(() => {
+      const ordersPath = join(schemaDir, "tables/orders.md");
+      writeFileSync(
+        ordersPath,
+        readFileSync(ordersPath, "utf8").replace(
+          "columns:\n",
+          `columns:\n  - id: ${createdAtId}\n    sensitive: true\n`,
+        ),
+      );
+    });
+    const createdAtSensitive = () =>
+      loadSchema(schemaDir).tables.flatMap((t) => t.columns).find((c) => c.id === createdAtId)!.sensitive;
+
+    it("survives saving that table's draft, so the loader still escalates it", () => {
+      expect(createdAtSensitive()).toBe(true);
+      const ws = loadWorkspace(schemaDir);
+      const orders = ws.tables.find((t) => t.physical.name === "orders")!;
+      const draft = buildTableDraft(orders.physical, orders.parsed);
+      draft.aliases = [...(draft.aliases ?? []), "purchase_orders"];
+      saveTable(ws, orders.physical.id, buildFrontmatter(orders.physical, "orders-users", draft, orders.parsed!.frontmatter), orders.parsed!.body);
+      expect(createdAtSensitive()).toBe(true);
+    });
+
+    it("is reported on the owning table, since that table's draft can't show it", () => {
+      const ws = loadWorkspace(schemaDir);
+      expect(ws.tables.find((t) => t.physical.name === "users")!.escalatedByOtherFiles).toEqual([createdAtId]);
+      expect(ws.tables.find((t) => t.physical.name === "orders")!.escalatedByOtherFiles).toEqual([]);
+    });
+  });
 });
