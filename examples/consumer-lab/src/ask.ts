@@ -5,7 +5,7 @@
  * `ask()`'s whole result, not only its SQL.
  */
 import { createOpenAI } from "@ai-sdk/openai";
-import { ask, loadSchema } from "@askdb/core";
+import { ask, loadSchema, type AskGenerateDeps } from "@askdb/core";
 import type { SupportedDialect } from "./dialects.js";
 
 /** The model id sent to the replay server; the same as the config's `providerConfig.openai.model`. */
@@ -19,4 +19,23 @@ export type AskResult = Awaited<ReturnType<typeof ask>>;
 export async function askRaw(dialect: SupportedDialect, question: string, schemaDir: string, baseURL: string): Promise<AskResult> {
   const openai = createOpenAI({ baseURL, apiKey: API_KEY });
   return ask({ question, schema: loadSchema(schemaDir), model: openai(MODEL_ID), dialect });
+}
+
+/**
+ * The documented `deps.generateText` seam: a "model" that always answers with this SQL,
+ * fenced the way a model reply is.
+ */
+function fixedSqlReply(sql: string): NonNullable<AskGenerateDeps["generateText"]> {
+  // Only `text` is read from a generateText result on this path.
+  return (async () => ({ text: `\`\`\`sql\n${sql}\n\`\`\`` })) as unknown as NonNullable<AskGenerateDeps["generateText"]>;
+}
+
+/**
+ * `ask()` with `sql` as the model's reply, through `deps.generateText`: what `lab ask --sql`
+ * runs, and how the safety suite delivers an attacker's reply. No model is called.
+ */
+export async function askFixedSql(dialect: SupportedDialect, sql: string, schemaDir: string, question = "Run the SQL supplied with --sql."): Promise<AskResult> {
+  // `model` is required; with `deps.generateText` supplied it is never called.
+  const model = {} as Parameters<typeof ask>[0]["model"];
+  return ask({ question, schema: loadSchema(schemaDir), model, dialect, deps: { generateText: fixedSqlReply(sql) } });
 }

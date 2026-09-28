@@ -94,7 +94,6 @@ examples/consumer-lab/
   askdb.config.ts           # generated per dialect/test into temp dirs; this committed one is for `lab ask`
   scenarios/
     questions.json          # id, text
-    safety.json             # attack SQL cases (see matrix)
     overlay/                # authored artifact files applied after introspection: tenant-policy.md, sensitive marks
   cassettes/<dialect>/<question-id>.json   # recorded model replies
   src/
@@ -106,6 +105,7 @@ examples/consumer-lab/
     http-api.ts             # runs the installed `askdb-http` bin on a free port
     lab-cli.ts              # `pnpm lab ask …`
     matrix-reporter.ts      # vitest reporter → dialect × scenario table
+    scratch.ts              # writable scratch copies of the fixture, created, reset and dropped by the lab
   test/
     introspection.test.ts
     results.test.ts
@@ -246,10 +246,12 @@ Twelve to fifteen catalog questions. Between them they cover:
 
 ### 3. Safety
 
-Each case is a model reply (an authored cassette) that must be rejected. For every case, the suite asserts two things:
+Each case is a model reply that must be rejected. The replies are hand-written SQL in `test/safety.test.ts`, delivered through the documented `deps.generateText` seam the way `lab ask --sql` delivers them, rather than as cassettes. For every case, the suite asserts two things:
 
 - `ask()` throws the documented error class and rule code;
 - **the case is meaningful:** the raw statement, run as `fixture_owner` against that engine's **scratch** database, does run and changes observable state (a row count, a new table, a sequence value, a held lock or an elapsed sleep). If the raw statement is harmless on an engine, the case is marked `n/a` for that engine. It never counts as a pass.
+
+The first safety suite (#248) proves the harmless write classes this way: writes and DDL, multiple statements, data-modifying CTEs, `SELECT … INTO` and `FOR UPDATE`. Cases that reach the file system, the OS or the server (`INTO OUTFILE`, `COPY … PROGRAM`, `xp_cmdshell`, `LOAD_FILE`, `pg_terminate_backend`, `KILL`, `SET GLOBAL`) and sleeps are never executed, on any database. They are rejection tests only and cite the rule that rejects them. Syntax an engine doesn't have isn't generated for it. The case list is in the lab README, under "Safety".
 
 | Case family | Examples |
 |---|---|

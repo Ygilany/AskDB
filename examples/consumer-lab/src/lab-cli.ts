@@ -23,8 +23,8 @@ import { parseArgs } from "node:util";
 import { openaiProvider } from "@askdb/ai-openai";
 import { createAskDb } from "@askdb/client";
 import { bootstrapAskDbEnv, getAskDbRuntimeConfig } from "@askdb/config";
-import { AskDbError, ask, loadSchema, type AskGenerateDeps } from "@askdb/core";
-import { askRaw, type AskResult } from "./ask.js";
+import { AskDbError } from "@askdb/core";
+import { askFixedSql, askRaw, type AskResult } from "./ask.js";
 import { ensureArtifact, requireInstallTarget } from "./artifacts.js";
 import { LAB_ROOT } from "./paths.js";
 import { SUPPORTED_DIALECTS, isSupportedDialect, type SupportedDialect } from "./dialects.js";
@@ -38,15 +38,6 @@ const USAGE = [
   `usage: pnpm lab ask --db <${SUPPORTED_DIALECTS.join("|")}> "<catalog question>" [--via ${VIAS.join("|")}]`,
   `       pnpm lab ask --db <${SUPPORTED_DIALECTS.join("|")}> --sql "<sql>" ["question"]`,
 ].join("\n");
-
-/**
- * The documented `deps.generateText` seam: a "model" that always answers with this SQL,
- * fenced the way a model reply is.
- */
-function fixedSqlReply(sql: string): NonNullable<AskGenerateDeps["generateText"]> {
-  // Only `text` is read from a generateText result on this path.
-  return (async () => ({ text: `\`\`\`sql\n${sql}\n\`\`\`` })) as unknown as NonNullable<AskGenerateDeps["generateText"]>;
-}
 
 /**
  * Path (b): `createAskDb` with the OpenAI adapter (path (a) is `askRaw`, in `ask.ts`).
@@ -116,10 +107,7 @@ async function askCommand(argv: string[]): Promise<number> {
   try {
     if (values.sql) {
       console.log("model:      none (--sql, through deps.generateText)");
-      // `model` is required; with `deps.generateText` supplied it is never called.
-      const model = {} as Parameters<typeof ask>[0]["model"];
-      const deps = { generateText: fixedSqlReply(values.sql) };
-      result = await ask({ question: question || "Run the SQL supplied with --sql.", schema: loadSchema(schemaDir), model, dialect, deps });
+      result = await askFixedSql(dialect, values.sql, schemaDir, question || undefined);
     } else {
       replay = await startReplayServer();
       const baseURL = replay.baseURL(dialect);

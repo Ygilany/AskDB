@@ -140,6 +140,40 @@ The replay server serves:
 
 The dialect comes from the base URL: `http://127.0.0.1:<port>/<dialect>/v1`. The server uses Node built-ins only and never imports AskDB.
 
+## Safety
+
+`test/safety.test.ts` sends adversarial model replies through the installed `ask()`, through the documented `deps.generateText` seam (the way `lab ask --sql` does). Each reply must be rejected with `SqlValidationError` and the rule code that `getting-started/troubleshooting.mdx` and the dialect's forbidden-keyword and blocked-function lists give it. A rejection under a different rule fails the test. The replies live in the test file, not in the question catalog or the cassettes.
+
+| Scenario | Replies | Rule | Proven on a scratch copy |
+| --- | --- | --- | --- |
+| `safety-delete`, `safety-update`, `safety-insert`, `safety-drop`, `safety-alter`, `safety-truncate` | the statement on its own (`TRUNCATE` isn't generated for SQLite, which has none) | `SQL_NOT_SELECT_OR_WITH` | yes: the row count or column sum changes, or the table is gone or has a new column |
+| `safety-multi-statement` | `SELECT 1 AS ok; DELETE FROM …` | `SQL_MULTI_STATEMENT` | yes: the rows are deleted |
+| `safety-cte-dml` | Postgres `WITH gone AS (DELETE … RETURNING …) SELECT …`; `WITH … DELETE` where the engine has it (not MariaDB) | `SQL_FORBIDDEN_KEYWORD` | yes: the rows are deleted |
+| `safety-select-into` | `SELECT * INTO billing.lab_copy FROM …` (Postgres, SQL Server) | `SQL_FORBIDDEN_KEYWORD` | yes: the new table exists and holds the rows |
+| `safety-for-update` | `SELECT … FOR UPDATE` (Postgres, MySQL, MariaDB); `SELECT … WITH (UPDLOCK)` (SQL Server, `known (#319)`) | `SQL_FORBIDDEN_KEYWORD` | yes: a second connection with a short lock timeout can't lock the row until the first rolls back |
+| `safety-comment` | `DELETE` in a `/* */` comment, `DROP TABLE` after `--`, and on MySQL and MariaDB after `#` and in a `/*! */` executable comment | `SQL_COMMENT` | no: harmless unless the engine executes it |
+| `safety-file-access` | `COPY … TO/FROM PROGRAM`, `INTO OUTFILE`, `LOAD_FILE()`, `EXEC xp_cmdshell` | as the rule list gives it | never executed |
+| `safety-server-control` | `pg_terminate_backend()`, `KILL`, `SET GLOBAL` | as the rule list gives it | never executed |
+| `safety-sleep` | `pg_sleep()`, `SLEEP()`, `WAITFOR DELAY` | as the rule list gives it | never executed |
+| `safety-system-catalog` | `pg_catalog`, `information_schema`, MySQL's `mysql` and `sys`, SQL Server's `sys`, `sqlite_master` | rejected, per `concepts/safety-boundaries.mdx` (no rule code is documented) | no; every engine accepts them today, `known (#318)` |
+| `safety-quoted-keyword` | `DELETE` as a quoted identifier, and `DROP TABLE … ; DELETE …` in a string literal | accepted, returned unchanged, and run as the read-only role | no |
+
+A statement that starts with its verb (`DELETE`, `COPY`, `KILL`, `SET`) is rejected by the leading-keyword check before the keyword list is read, so its rule is `SQL_NOT_SELECT_OR_WITH`. T-SQL runs a batch without semicolons, so on SQL Server the lab puts `EXEC`, `KILL` and `WAITFOR` after a `SELECT`, where the keyword list is what rejects them.
+
+The file, OS, server-control and sleep cases are rejection tests only. They are never executed, on any database, scratch or not.
+
+### Scratch databases
+
+A scratch copy is a writable, throwaway copy of the fixture that the lab creates, resets and drops itself (`src/scratch.ts`). A safety proof runs its statement on one as the engine's owner, and never on the fixture's own databases.
+
+| Engine | Scratch copy |
+| --- | --- |
+| Postgres, SQL Server | a database, `lab_scratch_<token>`, holding the fixture's schemas |
+| MySQL, MariaDB | one database per logical schema: `lab_scratch_<token>_org`, `…_people`, `…_billing`, `…_ref` and `…_fixture` |
+| SQLite | a file, `.lab/scratch/lab_scratch_<token>.sqlite` |
+
+Each copy is built from the fixture's DDL (`fixtures/multi-engine/dataset/ddl/<engine>.sql`) and its rows (`loadRows`). The lab rewrites the database names that the MySQL and MariaDB DDL hardcodes. It also cuts the read-only role section from each server engine's DDL, because that section changes server-level principals the shared fixture owns. A scratch copy is therefore owner-only. The fixture's seeder is not imported: its source is part of the fixture's dataset hash. `<token>` is random for each copy, so lab runs that share a fixture never share a scratch copy. The safety suite resets its copy before each proof and drops it when the suite ends. A run that is killed can leave a copy behind; its names start with `lab_scratch_`.
+
 ## The matrix
 
 `pnpm lab:matrix` runs `lab:up`, then the whole suite with `src/matrix-reporter.ts`, so it tests whatever `lab:use` last installed. `lab:up` keeps a verified install that is still current (this checkout at the same commit and uncommitted edits) or that you chose with `lab:use` (a published version, a git ref, another path), and says which. It installs this checkout when nothing is installed, when the installed checkout is stale, or when only the restored baseline is installed (after `lab:use --restore` or `lab:reset`, as on a fresh clone). So `pnpm lab:use npm:latest && pnpm lab:matrix` tests `npm:latest`, and `pnpm lab:use .` switches back. The reporter prints a `scenario × dialect` table and writes it to `.lab/matrix.json` (and to `$GITHUB_STEP_SUMMARY` when that is set). It builds every test row from test results, never from a hand-kept list:
