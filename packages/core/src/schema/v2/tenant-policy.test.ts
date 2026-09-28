@@ -466,19 +466,17 @@ describe("tenantScopeSchema", () => {
     expect(result.success).toBe(true);
   });
 
-  it("accepts scope with tenantFilters", () => {
+  it("ignores a stray tenantFilters key (removed; it was never read)", () => {
     const result = tenantScopeSchema.safeParse({
       access: { kind: "ids", tenantRoot: "table:public.agencies", ids: ["42"] },
       tenantFilters: {
         "table:public.notes": {
-          conditions: [
-            { column: "table:public.notes#owner_type", operator: "=", value: "agency" },
-            { column: "table:public.notes#owner_id", operator: "IN", value: ["42"] },
-          ],
+          conditions: [{ column: "table:public.notes#owner_type", operator: "=", value: "agency" }],
         },
       },
     });
     expect(result.success).toBe(true);
+    expect(result.success && "tenantFilters" in result.data).toBe(false);
   });
 
   it("rejects unknown context keys", () => {

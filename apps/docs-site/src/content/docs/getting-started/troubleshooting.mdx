@@ -203,7 +203,7 @@ The `tenantRoot` in the scope doesn't match any root defined in `tenant-policy.m
 
 ### `TenantScopeError: SUBTREE_NOT_RESOLVABLE`
 
-The scope uses `access.kind: "subtree"`, but `ask()` couldn't expand it. Either no `resolveTenantDescendants` callback was passed, or the callback returned an empty array or something other than an array of non-empty string IDs. AskDB doesn't query your database to find descendants, and it won't fall back to the seed IDs alone. Pass a resolver that returns every ID in the subtree, or send an `ids` access with the IDs already expanded. See [Hierarchical scope](/guides/multi-tenancy/#hierarchical-scope-subtree).
+The scope uses `access.kind: "subtree"`, but `ask()` couldn't expand it. Either no `resolveTenantDescendants` callback was passed, or the callback returned an empty array or something other than an array of non-empty string IDs. AskDB doesn't query your database to find descendants, and it won't fall back to the seed IDs alone. Pass a resolver that returns every ID in the subtree, or send an `ids` access with the IDs already expanded. Calling `resolveTenantSql()` directly with an unexpanded `subtree` scope throws the same error, because it doesn't walk the hierarchy either. See [Hierarchical scope](/guides/multi-tenancy/#hierarchical-scope-subtree).
 
 ### `TenantGuardrailError`
 

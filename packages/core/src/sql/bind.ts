@@ -145,8 +145,17 @@ export function scanPlaceholders(
   return out;
 }
 
-export function scanTenantPlaceholders(sql: string): PlaceholderOccurrence[] {
-  return scanPlaceholders(sql).filter((p) => /^tenant_[a-z0-9_]+_ids$/.test(p.name));
+/**
+ * `:tenant_<root>_ids` placeholders in code regions. Pass the dialect so strings and
+ * comments are recognized the way the target engine reads them (MySQL backslash
+ * escapes and `#` comments, Postgres nested block comments, …); without one the
+ * generic profile is used.
+ */
+export function scanTenantPlaceholders(
+  sql: string,
+  dialect?: Pick<DialectSpec, "id" | "backslashEscapes">,
+): PlaceholderOccurrence[] {
+  return scanPlaceholders(sql, dialect).filter((p) => /^tenant_[a-z0-9_]+_ids$/.test(p.name));
 }
 
 // ---------------------------------------------------------------------------
