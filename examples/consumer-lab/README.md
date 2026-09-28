@@ -102,6 +102,16 @@ To add a question, add it to the catalog, add a reply for each of the five diale
 
 `test/results.test.ts` asks every catalog question through `ask()` with the raw-model path, executes the SQL it returns as the host does (above), normalizes the rows by [`NORMALIZATION.md`](../../fixtures/multi-engine/dataset/NORMALIZATION.md) and compares them with the question's oracle. Each question is its own matrix row, named by its id. Every dialect is compared with the same oracle, so the five engines also agree with each other. A question with no oracle fails.
 
+### Why the expected answer never comes from SQL
+
+A common first reading of this suite is that it checks answers without running queries. It doesn't: every question's SQL runs on all five engines, and those rows are what the test measures. Only the *expected* rows are computed without SQL, by the oracle, from the seed data. That split is deliberate:
+
+- **Expected rows from the same SQL** (the reply's own statement) would compare the query with itself. The test would pass whatever the SQL returns, which the test-audit skill rejects as a self-comparison. During the #246 break-it proof, a MySQL reply that joined on the wrong key returned 93 rows instead of 30. `lab-ask-replay` and `cli-ask-replay` stayed green, because they compare the SQL with the reply. This suite failed, because it compares the rows with the oracle.
+- **Expected rows from one reference engine** (say, Postgres) would catch engines disagreeing. But a wrong answer on the reference engine would become the expected answer, and a reply wrong in the same way on every dialect would pass.
+- **An oracle computed from the seed data** is independent of the SQL, the engines and AskDB (`src/oracle.ts` never imports AskDB or runs a query). A wrong oracle fails loudly: a one-cent error in `payments-per-agency` turned all five cells red. A false pass would need the oracle and all five replies to be wrong in the same way. The cost is a small second implementation per question, and a new question fails until its oracle exists.
+
+What this suite proves: packed AskDB delivers a correct reply through extraction, validation and parameter binding without corrupting it, and the host path returns the right rows on every engine. What it doesn't prove: that a real model writes good SQL. The replies are hand-written, so their correctness is the cassette author's job. Live-model mode (#247) runs a real model, and because the oracle doesn't depend on the SQL, it grades the model's answers with the same oracle, whatever SQL the model writes.
+
 | Question | Covers |
 |---|---|
 | `agency-names` | unicode text, ordered by a unique key |
