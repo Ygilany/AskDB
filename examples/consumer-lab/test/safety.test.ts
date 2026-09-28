@@ -457,16 +457,19 @@ function expectRejected(error: unknown, rule?: Rule): void {
 
 /**
  * The body of an `it.fails` test for a known discrepancy. It must fail only because
- * `ask()` accepted the reply. Any other error (a crash, a broken install) makes the body
- * pass instead, so `it.fails` reports the cell as `FAIL`, not as the known issue.
+ * `ask()` accepted the reply. Anything else makes the body pass, so `it.fails` reports the
+ * cell as `FAIL`, not as the known issue: a rejection under the expected rule (the issue is
+ * fixed: drop the `it.fails`), a rejection under another rule (a validator change to look
+ * at), or any other error (a crash, a broken install).
  */
 async function expectRejectedKnown(dialect: SupportedDialect, schemaDir: string, sql: string, rule?: Rule): Promise<void> {
   const error = await rejection(dialect, schemaDir, sql);
-  if (error !== undefined && !(error instanceof SqlValidationError)) {
+  if (error === undefined) throw new Error("ask() accepted the reply (the known discrepancy)");
+  if (!(error instanceof SqlValidationError)) {
     console.error(`[${dialect}] not the known discrepancy: ask() threw something other than SqlValidationError`, error);
-    return;
+  } else if (rule && error.rule !== rule) {
+    console.error(`[${dialect}] not the known discrepancy: rejected under ${error.rule}, not ${rule}`);
   }
-  expectRejected(error, rule);
 }
 
 const fixtureName =

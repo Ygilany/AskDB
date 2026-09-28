@@ -95,7 +95,13 @@ export const SCRATCH_DIR = join(LAB_STATE, "scratch");
 export async function createScratch(dialect: SupportedDialect): Promise<ScratchDb> {
   const name = `lab_scratch_${randomBytes(3).toString("hex")}`;
   const db = SCRATCH[dialect](name, dialect);
-  await db.reset();
+  try {
+    await db.reset();
+  } catch (error) {
+    // The caller never gets `db` to drop, so drop the partial copy here; the seeding error wins.
+    await db.drop().catch(() => undefined);
+    throw error;
+  }
   return db;
 }
 
