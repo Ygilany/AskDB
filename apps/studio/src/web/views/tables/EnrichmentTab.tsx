@@ -5,7 +5,7 @@ import { Field } from "../../components/ui/field";
 import { Input } from "../../components/ui/input";
 import { ListInput } from "../../components/ui/list-input";
 import { Textarea } from "../../components/ui/textarea";
-import { tableSensitivity } from "../../lib/sensitivity";
+import { tableSensitivity, UNKNOWN_COLUMN_SENSITIVITY } from "../../lib/sensitivity";
 import type { ReactNode } from "react";
 
 export function EnrichmentTab() {
@@ -137,7 +137,7 @@ export function EnrichmentTab() {
           <div style={{ display: "grid", gap: 12 }}>
             {table.physical.columns.map((column) => {
               const columnDraft = draft.columns[column.id] ?? {};
-              const columnSensitivity = sensitivity.columns[column.id]!;
+              const columnSensitivity = sensitivity.columns[column.id] ?? UNKNOWN_COLUMN_SENSITIVITY;
               return (
                 <section className="column-row" key={column.id}>
                   <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", justifyContent: "space-between", gap: 8 }}>

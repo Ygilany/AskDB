@@ -34,7 +34,7 @@ export type WorkspaceTable = {
    * escalations, and they are not part of this table's draft, so an authoring UI must
    * treat these columns as sensitive regardless of the draft.
    */
-  escalatedByOtherFiles: string[];
+  escalatedByOtherFiles?: string[];
 };
 
 export type Workspace = {

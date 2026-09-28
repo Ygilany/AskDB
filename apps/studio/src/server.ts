@@ -418,7 +418,7 @@ export function serializeWorkspace(workspace: Workspace): StudioWorkspaceDto {
               warning.kind === "missing_column_md" && warning.tableId === table.physical.id,
           )
           .map((warning) => warning.columnId),
-        escalatedByOtherFiles: table.escalatedByOtherFiles,
+        escalatedByOtherFiles: table.escalatedByOtherFiles ?? [],
       };
     }),
     concepts: workspace.concepts?.frontmatter.concepts ?? [],

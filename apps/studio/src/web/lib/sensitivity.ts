@@ -12,8 +12,12 @@ export type SensitivityState = {
 };
 
 export type TableSensitivity = SensitivityState & {
+  /** Keyed by column id; covers every column of the table passed in. */
   columns: Record<string, SensitivityState>;
 };
+
+/** Fallback for a column id missing from `TableSensitivity.columns`: fail closed. */
+export const UNKNOWN_COLUMN_SENSITIVITY: SensitivityState = { forced: true, effective: true };
 
 /**
  * Effective sensitivity for a table and its columns, mirroring `loadSchema()` in
