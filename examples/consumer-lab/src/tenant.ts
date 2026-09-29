@@ -53,11 +53,17 @@ export function tenantArtifact(dialect: SupportedDialect, enforcement: Enforceme
   const ids = tableIds(source);
   mkdirSync(join(LAB_STATE, "artifacts", "tenant"), { recursive: true });
   const dir = join(mkdtempSync(join(LAB_STATE, "artifacts", "tenant", `${dialect}-${enforcement}-`)), "schema");
-  cpSync(source, dir, { recursive: true });
-  const policy = readFileSync(TENANT_OVERLAY, "utf8")
-    .replace(/^enforcement: \w+$/m, `enforcement: ${enforcement}`)
-    .replace(/\btable:[a-z_]+\.[a-z_]+/g, (logical) => mapTableId(ids, logical));
-  writeFileSync(join(dir, "tenant-policy.md"), policy);
+  try {
+    cpSync(source, dir, { recursive: true });
+    const policy = readFileSync(TENANT_OVERLAY, "utf8")
+      .replace(/^enforcement: \w+$/m, `enforcement: ${enforcement}`)
+      .replace(/\btable:[a-z_]+\.[a-z_]+/g, (logical) => mapTableId(ids, logical));
+    writeFileSync(join(dir, "tenant-policy.md"), policy);
+  } catch (error) {
+    // Nobody gets the path to remove it, so don't leave a half-made copy behind.
+    removeTenantArtifact(dir);
+    throw error;
+  }
   return dir;
 }
 
@@ -72,7 +78,7 @@ export function agencyRoot(dialect: SupportedDialect): string {
 }
 
 /** A flat scope: exactly these agencies (`access.kind: "ids"`). */
-export function idsScope(dialect: SupportedDialect, ids: readonly number[]): TenantScope {
+export function idsScope(dialect: SupportedDialect, ids: readonly (number | string)[]): TenantScope {
   return { access: { kind: "ids", tenantRoot: agencyRoot(dialect), ids: ids.map(String) } };
 }
 
@@ -93,9 +99,16 @@ function markers(dialect: SupportedDialect, count: number): string {
  * descendant, as strings. SQL Server spells a recursive CTE `WITH` (and needs `UNION ALL`);
  * the others take `WITH RECURSIVE`. The tree has no cycles, so `UNION ALL` is enough.
  *
+ * With `strictDescendants`, it leaves the seeds out and returns only the agencies beneath
+ * them, which the contract allows ("a resolver may return strict descendants only";
+ * `ask()` unions the seeds in).
+ *
  * `calls` records each call's arguments, so a test can tell the resolver was used.
  */
-export function agencyDescendants(dialect: SupportedDialect): ResolveTenantDescendants & { calls: [string, string[]][] } {
+export function agencyDescendants(
+  dialect: SupportedDialect,
+  { strictDescendants = false }: { strictDescendants?: boolean } = {},
+): ResolveTenantDescendants & { calls: [string, string[]][] } {
   const calls: [string, string[]][] = [];
   const agency = physicalName(dialect, { schema: "org", name: "agency" });
   const resolve = async (tenantRoot: string, seedIds: readonly string[]): Promise<string[]> => {
@@ -109,7 +122,8 @@ export function agencyDescendants(dialect: SupportedDialect): ResolveTenantDesce
       `)\nSELECT agency_id FROM tree`;
     const result = await executeReadOnly(dialect, sql, { params: seedIds });
     if (result.truncated) throw new Error("the agency tree is larger than the host's row cap");
-    return [...new Set(result.rows.map((row) => String(row[0])))];
+    const ids = [...new Set(result.rows.map((row) => String(row[0])))];
+    return strictDescendants ? ids.filter((id) => !seedIds.includes(id)) : ids;
   };
   return Object.assign(resolve, { calls });
 }

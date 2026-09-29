@@ -186,15 +186,17 @@ Each copy is built from the fixture's DDL (`fixtures/multi-engine/dataset/ddl/<e
 | Scenario | What it checks |
 |---|---|
 | `tenant-ids` | Every scoped question, in `sql-only` and `sql-params` mode, with `ids: ["2"]`: every executable pair (`sql` with `tenantParams`, and `unboundSql` with `params` when present) returns agency 2's rows, and not those of its child 7. |
+| `tenant-ids-hostile` | In `sql-only` mode, the tenant ID `2' OR '1'='1` (and on MySQL and MariaDB `2\' OR 1=1 -- `) is escaped: run as the host, the SQL returns no row outside agency 2, or the engine refuses to compare the integer column with the string. |
 | `tenant-subtree` | The same questions with `subtree` access from agencies 1, 5, 6 and 7 and the lab's resolver: exactly the visible agencies' rows, and the resolver is called once with the root and the seed. |
+| `tenant-subtree-seeds` | A resolver that returns strict descendants only (agency 1 still sees 1, 4, 5 and 6, because `ask()` unions the seeds in), and two seeds at once (5 and 2 see 2, 5, 6 and 7). |
 | `tenant-strict-unfiltered` | A reply with no tenant filter returns every agency's rows when run raw, and strict mode rejects it with `TenantGuardrailError`. |
-| `tenant-strict-column-only`, `-wrong-tenant`, `-or-true`, `-root-table` | Strict mode should reject a filter that doesn't keep the rows to the scope. It returns the SQL, which leaks when run: `known (#315)`. |
-| `tenant-warn` | With `enforcement: warn`, the unfiltered reply's SQL is returned, and `tenantGuardrail` reports the missing predicate. |
-| `tenant-warn-claims` | The docs say the returned SQL always carries the predicate and that warn mode's warnings are `tenantWarnings`. Neither holds: `known (#316)`. |
+| `tenant-strict-column-only`, `-wrong-tenant`, `-or-true`, `-root-table` | Each reply, run raw, returns rows outside agency 2 (a passing test). Strict mode should reject it, but returns the SQL, which leaks when run: `known (#315)`. |
+| `tenant-warn` | With `enforcement: warn`, the unfiltered reply's SQL is returned, and `tenantGuardrail` reports `MISSING_TENANT_PREDICATE`. |
+| `tenant-warn-claims` | The docs name warn mode's warnings `tenantWarnings`; `ask()`'s result has no such field: `known (#316)`. If #316 renames the docs to `tenantGuardrail`, this case is removed. |
 | `tenant-missing-scope` | No `tenantScope` with a policy: `TenantScopeError` `MISSING_SCOPE`, and no model call. Runs once, as `[postgres]`. |
 | `tenant-subtree-no-resolver` | `subtree` access with no resolver: `TenantScopeError` `SUBTREE_NOT_RESOLVABLE`, and no model call. Runs once, as `[postgres]`. |
 
-The `known` cases fail on the leak itself: when `ask()` returns SQL it should have rejected, the test runs that SQL and compares the rows with the scope's oracle before anything else. The optional Postgres row-level-security case is #317.
+The `known (#315)` cases fail on the leak itself: when `ask()` returns SQL it should have rejected, the test runs that SQL and compares the rows with the scope's oracle before anything else. Their cells also hold a passing test that runs each reply raw, so a missing or broken cassette shows as `FAIL`, not `known`. The `known (#316)` case fails because a result field is missing, not on a leak. The optional Postgres row-level-security case is #317.
 
 ## The matrix
 
@@ -285,6 +287,6 @@ Capabilities are detected from the installed target's public surface: an export,
 | `mysql-databases` | `askdb introspect --schemas org,people,billing,ref` on the fixture's MySQL returns a table from a database other than the connection's (`reference/cli.mdx`, `guides/switch-engines.mdx`) | MySQL and MariaDB `introspect-golden` / `introspect-loads` (`test/introspection.test.ts`), and every MySQL and MariaDB tenant scenario, whose policy scopes tables in all four databases (`test/tenant.test.ts`) |
 | `http-api-optional-drivers` | the installed `@askdb/http-api`'s published manifest lists no database driver as a dependency, since the docs call drivers optional peers (`guides/switch-engines.mdx`, `reference/packages.mdx`; #260) | `http-no-pg` (`test/surfaces/http-api-no-pg.test.ts`) |
 | `subtree-resolver` | `ask()` with `subtree` access and a recording `resolveTenantDescendants` calls it with the scope's root and seed (`guides/multi-tenancy.mdx`, "Hierarchical scope (`subtree`)"). Releases before #232 was fixed (#270) never call it. The probe doesn't check what `ask()` does with the answer, so a target that drops it fails `tenant-subtree` instead of reporting `n/a` | `tenant-subtree`, `tenant-subtree-no-resolver` (`test/tenant.test.ts`) |
-| `tenant-driver-markers` | `ask()` in `tenantSqlMode: "sql-params"` on SQLite returns `?` markers for the tenant IDs (`reference/core-api.mdx`, `tenantSqlMode`). Releases before the fix for #231 used Postgres `$N` markers on every dialect | the `sql-params` cases of `tenant-ids` and `tenant-subtree` (`test/tenant.test.ts`) |
+| `tenant-driver-markers` | `ask()` in `tenantSqlMode: "sql-params"` on SQLite returns `?` markers for the tenant IDs (`reference/core-api.mdx`, `tenantSqlMode`). Releases before the fix for #231 used Postgres `$N` markers on every dialect | the `sql-params` cases of `tenant-ids`, `tenant-subtree` and `tenant-subtree-seeds` (`test/tenant.test.ts`), except on Postgres, whose markers were always `$N`: there only the question with a business parameter needs it, because before #231 was fixed its tenant markers in `sql` were numbered after the business values |
 
 To add one, add a detector to `DETECTORS` in `src/capabilities.ts`, citing the docs page that documents the capability. A detector that has to run `ask()` is async: it goes in `ASYNC_DETECTORS`, and a scenario awaits `needsCapability` for it.
