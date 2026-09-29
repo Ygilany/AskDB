@@ -29,5 +29,3 @@ export {
 } from "./exec/sqlite.js";
 
 export { sqliteConnectorProvider } from "./connector/provider.js";
-
-export { connectionLabel } from "./label.js";

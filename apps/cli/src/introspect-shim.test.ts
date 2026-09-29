@@ -143,20 +143,24 @@ describe("cli spawn: introspect subcommand", () => {
       const existing = join(tmp, "existing.schema");
       const out = join(tmp, "out.schema");
       run("mkdir", ["-p", existing]);
-      writeFileSync(join(existing, "schema.json"), "{}\n", "utf8");
 
-      const diff = run("node", [
-        join(cliDir, "dist/cli.js"),
-        "introspect",
-        "--engine",
-        "prisma",
-        "--prisma-schema",
-        prismaFixture,
-        "--diff",
-        existing,
-      ]);
-      expect(diff.status).toBe(0);
-      expect(JSON.parse(diff.stdout)).toMatchObject({ changed: true });
+      // An existing schema.json that isn't valid Schema v2 (including one that only
+      // has `version: 2`) is reported as changed, not merged into.
+      for (const body of ["{}\n", '{ "version": 2 }\n']) {
+        writeFileSync(join(existing, "schema.json"), body, "utf8");
+        const diff = run("node", [
+          join(cliDir, "dist/cli.js"),
+          "introspect",
+          "--engine",
+          "prisma",
+          "--prisma-schema",
+          prismaFixture,
+          "--diff",
+          existing,
+        ]);
+        expect(diff.status, diff.stderr).toBe(0);
+        expect(JSON.parse(diff.stdout)).toMatchObject({ changed: true });
+      }
 
       const write = run("node", [
         join(cliDir, "dist/cli.js"),

@@ -1,32 +1,25 @@
-import {
-  formatConnectionLabel,
-  parseConnectionUrl,
-  type ConnectionLabelParts,
-} from "@askdb/connectors";
+import { parseConnectionUrl, type ConnectionLabelParts } from "@askdb/connectors";
+
+const SERVER_KEYS = ["server", "data source", "address", "addr", "network address"];
+const DATABASE_KEYS = ["database", "initial catalog"];
 
 /**
- * A credential-free label for a SQL Server connection string, for display or
- * logs: `sqlserver://host:port/database`, built only from the parts that parse
- * cleanly from the three forms `resolveConnectionInput()` accepts:
+ * The display-safe parts of a SQL Server connection string: host, port and
+ * database, parsed from the three forms `resolveConnectionInput()` accepts:
  *
  * - `mssql://user:password@host:1433/db`
  * - Prisma/JDBC style `sqlserver://host:1433;database=db;user=sa;password=…`
  * - ADO.NET `Server=tcp:host,1433;Database=db;User Id=sa;Password=…;`
  *
- * Only the host, port and database are read; user names, passwords and every
- * other key are never included. A string that does not parse cleanly — a
- * quoted or `{braced}` value with text after its closing delimiter, a segment
- * that is not `key=value`, a repeated key, an `@` in the `sqlserver://` form, a
- * named instance, or any other scheme — becomes `configured sqlserver connection`.
+ * User names, passwords and every other key are never returned. A string that
+ * does not parse cleanly returns `undefined`, so the registry labels it
+ * `configured sqlserver connection`: a quoted or `{braced}` value with text after
+ * its closing delimiter, a segment that is not `key=value`, a repeated key, an
+ * `@` in the `sqlserver://` form, a named instance, any other scheme, or one of
+ * the spellings the driver's own parser reads differently (an escaped `;;` or a
+ * value starting with `;`).
  */
-export function connectionLabel(input: string): string {
-  return formatConnectionLabel("sqlserver", parseSqlServerConnection(input));
-}
-
-const SERVER_KEYS = ["server", "data source", "address", "addr", "network address"];
-const DATABASE_KEYS = ["database", "initial catalog"];
-
-function parseSqlServerConnection(input: string): ConnectionLabelParts | undefined {
+export function parseSqlServerConnection(input: string): ConnectionLabelParts | undefined {
   if (/[\u0000-\u001f\u007f]/.test(input)) return undefined;
   if (/^mssql:\/\//i.test(input)) return parseConnectionUrl(input, ["mssql"]);
   if (/^sqlserver:\/\//i.test(input)) return parsePrismaForm(input.slice("sqlserver://".length));
@@ -79,28 +72,35 @@ function single(pairs: ReadonlyMap<string, string>, aliases: readonly string[]):
 }
 
 /**
- * Strict ADO.NET-style `key=value;key=value` tokenizer (keys lower-cased, inner
- * whitespace collapsed). A value is unquoted (no `{`, `}`, `'` or `"`), or wrapped
- * in `{…}`, `'…'` or `"…"` with the closing delimiter doubled to escape it; only
- * whitespace may follow the closing delimiter before `;`. Returns `undefined` for
- * any segment that breaks these rules or a repeated key.
+ * Strict ADO.NET-style `key=value;key=value` tokenizer (keys trimmed and
+ * lower-cased). A value is unquoted (no `{`, `}`, `'` or `"`), or wrapped in
+ * `{…}`, `'…'` or `"…"` with the closing delimiter doubled to escape it; only
+ * whitespace may follow the closing delimiter before `;`.
+ *
+ * `mssql` parses ADO.NET strings with `@tediousjs/connection-string`, which
+ * reads some spellings differently from a plain split on `;`: an unquoted `;;`
+ * is an escaped `;` inside the value, a value whose first non-blank character
+ * is `;` keeps it, a `;` where a key should start becomes part of that key, and
+ * `key==` escapes `=` inside the key. Each of those returns `undefined`, as does
+ * any other broken segment or a repeated key, so the label never shows text the
+ * driver reads as part of a password. Separators at the very end are allowed.
  */
 function parseKeyValuePairs(input: string): Map<string, string> | undefined {
   const pairs = new Map<string, string>();
   let i = 0;
-  while (i < input.length) {
-    if (input[i] === ";" || /\s/.test(input[i]!)) {
-      i++;
-      continue;
-    }
+  for (;;) {
+    while (i < input.length && /\s/.test(input[i]!)) i++;
+    if (i >= input.length) return pairs;
+    if (input[i] === ";") return /^[\s;]*$/.test(input.slice(i)) ? pairs : undefined;
     const eq = input.indexOf("=", i);
-    if (eq === -1) return undefined;
-    const key = input.slice(i, eq).trim().toLowerCase().replace(/\s+/g, " ");
+    if (eq === -1 || input[eq + 1] === "=") return undefined;
+    const key = input.slice(i, eq).trim().toLowerCase();
     if (!/^[a-z][a-z0-9 _]*$/.test(key) || pairs.has(key)) return undefined;
     let j = eq + 1;
     while (j < input.length && /[ \t]/.test(input[j]!)) j++;
     const open = input[j];
     let value = "";
+    if (open === ";") return undefined;
     if (open === "{" || open === "'" || open === '"') {
       const close = open === "{" ? "}" : open;
       j++;
@@ -124,7 +124,8 @@ function parseKeyValuePairs(input: string): Map<string, string> | undefined {
       j = end === -1 ? input.length : end;
     }
     pairs.set(key, value);
-    i = j;
+    // Step over the one `;` that ends this pair; another `;` right after it is
+    // an empty segment, which the loop only accepts at the end of the string.
+    i = j + 1;
   }
-  return pairs;
 }

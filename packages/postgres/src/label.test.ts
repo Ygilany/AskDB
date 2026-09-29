@@ -1,12 +1,17 @@
 import { describe, expect, it } from "vitest";
-import { connectionLabel } from "./label.js";
+import { createConnectorRegistry } from "@askdb/connectors";
+import { postgresConnectorProvider } from "./connector/provider.js";
+
+// The label hosts see: the adapter's parsed parts, built by the registry.
+const registry = createConnectorRegistry([postgresConnectorProvider]);
+const connectionLabel = (url: string) => registry.connectionLabel("postgres", { url });
 
 const FALLBACK = "configured postgres connection";
 
 // Inputs that leaked a secret through the earlier masking redactor (review
 // rounds 1-3 on #189/#195/#199) sit next to ordinary strings. A label only ever
 // holds host, port and database parsed from a clean URL.
-describe("connectionLabel (postgres)", () => {
+describe("postgres connection label (postgresConnectorProvider.connectionLabelParts through the registry)", () => {
   it.each([
     // Ordinary strings.
     ["postgres://app:S3cret@db.example.com:5432/app?sslmode=require", "postgres://db.example.com:5432/app"],
@@ -40,5 +45,14 @@ describe("connectionLabel (postgres)", () => {
     ["postgres://%2Fvar%2Frun%2Fpostgresql/app", FALLBACK],
   ])("%s -> %s", (input, label) => {
     expect(connectionLabel(input)).toBe(label);
+  });
+});
+
+describe("postgres export-bundle label", () => {
+  it.each([
+    ["./exports/pagila", "./exports/pagila"],
+    ["./exports?password=S3cret", "configured postgres connection"],
+  ])("%s -> %s", (fromExport, label) => {
+    expect(registry.connectionLabel("postgres", { fromExport })).toBe(label);
   });
 });

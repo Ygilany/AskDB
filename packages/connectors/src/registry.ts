@@ -1,4 +1,5 @@
 import type { Connector, IntrospectionFilters, SqlTemplateBundle } from "@askdb/introspect";
+import { formatConnectionLabel, type ConnectionLabelParts } from "./label.js";
 
 export const CONNECTOR_PROVIDERS = [
   "postgres",
@@ -35,11 +36,22 @@ export type ConnectorResult = {
   mode: string;
 };
 
+/** Where a connection comes from: the source fields of `ConnectorConfig`. */
+export type ConnectorConnection = Pick<ConnectorConfig, "url" | "fromExport" | "schemaPath">;
+
 export type ConnectorProviderAdapter = {
   provider: ConnectorProvider;
   createConnector(config: ConnectorConfig): ConnectorResult;
   /** Returns the engine's catalog SQL template bundle, if the engine supports it. */
   getTemplates?(): SqlTemplateBundle;
+  /**
+   * The parts of `connection` that are safe to display (host, port, database,
+   * or a file path), parsed by the engine's own rules; `undefined` when the
+   * connection doesn't parse cleanly. The registry turns them into the label
+   * with `formatConnectionLabel`, so an adapter never supplies label text
+   * itself (ADR 0011).
+   */
+  connectionLabelParts?(connection: ConnectorConnection): ConnectionLabelParts | undefined;
 };
 
 export type ConnectorProviderAdapters =
@@ -54,6 +66,13 @@ export type ConnectorRegistry = {
    * if the provider is not registered or does not support templates.
    */
   getTemplates(provider: ConnectorProvider): SqlTemplateBundle | undefined;
+  /**
+   * A credential-free label for a connection, safe to show in a UI or log:
+   * `formatConnectionLabel(provider, parts)` over the adapter's
+   * `connectionLabelParts`. A provider that is not registered, has no hook, or
+   * returns `undefined` gets `configured <provider> connection`.
+   */
+  connectionLabel(provider: ConnectorProvider, connection: ConnectorConnection): string;
 };
 
 export function createConnectorRegistry(
@@ -76,6 +95,9 @@ export function createConnectorRegistry(
     },
     getTemplates(provider) {
       return byProvider.get(provider)?.getTemplates?.();
+    },
+    connectionLabel(provider, connection) {
+      return formatConnectionLabel(provider, byProvider.get(provider)?.connectionLabelParts?.(connection));
     },
   };
 }

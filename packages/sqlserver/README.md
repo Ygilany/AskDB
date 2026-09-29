@@ -92,13 +92,7 @@ SQL Server uses TLS by default. If you connect to a local or dev instance with a
 
 **Labels for display**
 
-`connectionLabel(input)` returns a credential-free label built only from the host, port and database parsed from any of the three formats. A string that doesn't parse cleanly (a named instance, a quoted value with trailing text, an `@` in the `sqlserver://` form, JDBC) becomes `configured sqlserver connection`:
-
-```ts
-import { connectionLabel } from "@askdb/sqlserver";
-
-connectionLabel("Server=localhost,1433;Database=app;User Id=sa;Password=pass;"); // "sqlserver://localhost:1433/app"
-```
+`sqlServerConnectorProvider` parses a connection into display-safe parts, so a connector registry's `connectionLabel()` shows only the host, port and database from any of the three formats: `Server=localhost,1433;Database=app;User Id=sa;Password=pass;` becomes `sqlserver://localhost:1433/app`. A string that doesn't parse cleanly becomes `configured sqlserver connection`: a named instance, a quoted value with trailing text, an `@` in the `sqlserver://` form, JDBC, or an ADO.NET spelling the driver reads differently from a plain split on `;` (an escaped `;;`, or a value that starts with `;`).
 
 ## Captured metadata
 

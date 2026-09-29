@@ -1,12 +1,17 @@
 import { describe, expect, it } from "vitest";
-import { connectionLabel } from "./label.js";
+import { createConnectorRegistry } from "@askdb/connectors";
+import { sqlServerConnectorProvider } from "./connector/provider.js";
+
+// The label hosts see: the adapter's parsed parts, built by the registry.
+const registry = createConnectorRegistry([sqlServerConnectorProvider]);
+const connectionLabel = (url: string) => registry.connectionLabel("sqlserver", { url });
 
 const FALLBACK = "configured sqlserver connection";
 
 // Inputs that leaked a secret through the earlier masking redactor (review
 // rounds 1-3 on #189/#195/#199) sit next to ordinary strings in all three forms
 // SQL Server accepts. A label only ever holds host, port and database.
-describe("connectionLabel (sqlserver)", () => {
+describe("sqlserver connection label (sqlServerConnectorProvider.connectionLabelParts through the registry)", () => {
   it.each([
     // Ordinary mssql:// URLs.
     ["mssql://sa:S3cret@localhost:1433/app", "sqlserver://localhost:1433/app"],
@@ -43,6 +48,18 @@ describe("connectionLabel (sqlserver)", () => {
     ["Server=a;Data Source=b;Database=app", FALLBACK],
     ["Server=localhost\\SQLEXPRESS;Database=app;Password=S3cret", FALLBACK],
     ["User Id=sa;Password=S3cret", FALLBACK],
+    // Delta review: spellings the driver's ADO.NET parser (@tediousjs/connection-string)
+    // reads as part of the password: an escaped ";;", a value starting with ";",
+    // a ";" where a key starts, and "==" escaping "=" inside a key.
+    ["Server=h;User Id=sa;Password=p;;Database=leak", FALLBACK],
+    ["Server=h;User Id=sa;Password=;Database=leak", FALLBACK],
+    ["Data Source=h;Password=x;;Initial Catalog=leak", FALLBACK],
+    ["User Id=sa;Password=p;;Server=leakhost", FALLBACK],
+    ["Server=h;Password='x';;Database=leak", FALLBACK],
+    ["Server=h;Password==;Database=leak", FALLBACK],
+    ["sqlserver://h;password=p;;database=leak", FALLBACK],
+    // Separators at the very end are fine.
+    ["Server=db;Database=app;;", "sqlserver://db/app"],
     // The Prisma form has no userinfo, so any @ falls back (including user=name@server).
     ["sqlserver://host:1433;database=db;user=admin@corp;password=S3cret", FALLBACK],
   ])("%s -> %s", (input, label) => {

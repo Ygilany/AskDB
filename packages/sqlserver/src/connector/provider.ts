@@ -2,6 +2,7 @@ import type { Connector } from "@askdb/introspect";
 import type { ConnectorConfig, ConnectorProviderAdapter, ConnectorResult } from "@askdb/connectors";
 import { createSqlServerConnector } from "./index.js";
 import { createSqlServerCatalogQueryRunner } from "../exec/sqlserver.js";
+import { parseSqlServerConnection } from "../label.js";
 
 export const sqlServerConnectorProvider: ConnectorProviderAdapter = {
   provider: "sqlserver",
@@ -18,5 +19,8 @@ export const sqlServerConnectorProvider: ConnectorProviderAdapter = {
       },
       connector: createSqlServerConnector() as Connector<unknown>,
     };
+  },
+  connectionLabelParts({ url }) {
+    return url === undefined ? undefined : parseSqlServerConnection(url);
   },
 };

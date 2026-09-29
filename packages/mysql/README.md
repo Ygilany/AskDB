@@ -74,7 +74,7 @@ await introspect(
 
 With the `askdb` CLI, set `introspection.schemas` in `askdb.config.ts`, or pass `--schemas app,sales`.
 
-`connectionLabel(input)` returns a credential-free label for display or logs, built only from the host, port and database of a `mysql://` URL (`mysql://root:S3cret@db:3306/shop` → `mysql://db:3306/shop`). Anything else becomes `configured mysql connection`.
+`mysqlConnectorProvider` parses a connection into display-safe parts, so a connector registry's `connectionLabel()` shows only the host, port and database of a `mysql://` URL (`mysql://root:S3cret@db:3306/shop` → `mysql://db:3306/shop`). Anything else becomes `configured mysql connection`.
 
 ## Captured metadata
 

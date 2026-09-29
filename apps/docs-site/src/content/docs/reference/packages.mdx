@@ -123,9 +123,10 @@ Connector provider registry — mirrors the `@askdb/ai` pattern for introspectio
 | Symbol | Purpose |
 | --- | --- |
 | `createConnectorRegistry(adapters)` | Build a registry from a set of provider adapters. |
-| `ConnectorRegistry` | Registry type — `createConnector(provider, config)`, `getTemplates(provider)`. |
+| `ConnectorRegistry` | Registry type — `createConnector(provider, config)`, `getTemplates(provider)`, `connectionLabel(provider, connection)`. |
 | `ConnectorProviderAdapter` | The adapter shape each engine package exports. |
-| `formatConnectionLabel(engine, parts)`, `parseConnectionUrl(input, schemes)` | Build a credential-free connection label from parsed host, port and database (or a file path); anything that doesn't parse cleanly becomes `configured <engine> connection`. The engine packages' `connectionLabel()` is built on these. |
+| `registry.connectionLabel(provider, { url?, fromExport?, schemaPath? })` | A label that is safe to display or log. The registry builds it with `formatConnectionLabel` from the parts the engine adapter parses (host, port, database, or a file path); a connection that doesn't parse cleanly, or an adapter without a parser, gets `configured <engine> connection`. |
+| `formatConnectionLabel(engine, parts)`, `parseConnectionUrl(input, schemes)` | The allowlisted label builder and the standard-URL parser that engine adapters use. |
 
 ### `@askdb/config`
 
@@ -148,7 +149,7 @@ For tools that write a new `askdb.config.ts`, the `@askdb/config/scaffold` entry
 
 ## Engine adapters
 
-Each engine package ships the introspection connector for its engine, any catalog SQL templates, and a re-export of that engine's dialect constant. Each also exports `connectionLabel(input)`, which turns a connection string into a label that is safe to display or log: `postgres://app:S3cret@db:5432/app` becomes `postgres://db:5432/app`, and a string the engine can't parse cleanly becomes `configured <engine> connection`. The label never contains a user name, password, or query string. The dialect specs themselves (SQL generation + validation rules) live in `@askdb/core` — `ask()` needs only the dialect id, no engine package.
+Each engine package ships the introspection connector for its engine, any catalog SQL templates, and a re-export of that engine's dialect constant. Its connector provider adapter parses the engine's connection strings into display-safe parts, so `registry.connectionLabel()` turns `postgres://app:S3cret@db:5432/app` into `postgres://db:5432/app`, and a string the engine can't parse cleanly into `configured <engine> connection`. The label never contains a user name, password, or query string. The dialect specs themselves (SQL generation + validation rules) live in `@askdb/core` — `ask()` needs only the dialect id, no engine package.
 
 ### `@askdb/postgres`
 
@@ -181,6 +182,8 @@ SQL Server (T-SQL) dialect, connector, catalog SQL templates, and an optional `m
 The engine-agnostic introspection contract and the schema-directory writer. Use directly only when you're calling introspection from your own code — the CLI wraps this for you.
 
 <InstallTabs pkgs="@askdb/introspect" />
+
+To get the exact `schema.json` bytes without writing anything (a preview or a drift check), call `renderSchemaV2Body(result.schema, { schemaId, provider: result.provider, existingArtifactDir })`. It returns `{ json, body, warnings }`, applies the same merge `introspect()` does when writing (human-set `sensitive` flags carried over from an existing artifact), and backs `askdb introspect --out`, `--print` and `--diff`.
 
 ### `@askdb/prisma`
 

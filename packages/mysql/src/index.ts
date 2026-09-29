@@ -29,5 +29,3 @@ export {
 } from "./exec/mysql.js";
 
 export { mysqlConnectorProvider } from "./connector/provider.js";
-
-export { connectionLabel } from "./label.js";

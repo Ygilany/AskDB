@@ -55,13 +55,15 @@ Declarative partitions are folded into their partitioned parent ([ADR 0003](../.
 
 ### Connection labels
 
-`connectionLabel(input)` returns a credential-free label for display or logs, built only from the host, port and database of a `postgres://` or `postgresql://` URL. Anything else (a libpq `key=value` string, a JDBC or malformed URL) becomes `configured postgres connection`:
+`postgresConnectorProvider` parses a connection into display-safe parts, so a connector registry's `connectionLabel()` shows only the host, port and database of a `postgres://` or `postgresql://` URL, or an export bundle's path. Anything else (a libpq `key=value` string, a JDBC or malformed URL) becomes `configured postgres connection`:
 
 ```ts
-import { connectionLabel } from "@askdb/postgres";
+import { createConnectorRegistry } from "@askdb/connectors";
+import { postgresConnectorProvider } from "@askdb/postgres";
 
-connectionLabel("postgres://app:S3cret@db:5432/app?sslmode=require"); // "postgres://db:5432/app"
-connectionLabel("jdbc:postgresql://app:S3cret@db/app"); // "configured postgres connection"
+const registry = createConnectorRegistry([postgresConnectorProvider]);
+registry.connectionLabel("postgres", { url: "postgres://app:S3cret@db:5432/app?sslmode=require" }); // "postgres://db:5432/app"
+registry.connectionLabel("postgres", { url: "jdbc:postgresql://app:S3cret@db/app" }); // "configured postgres connection"
 ```
 
 ## License

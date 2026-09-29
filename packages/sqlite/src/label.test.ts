@@ -1,12 +1,17 @@
 import { describe, expect, it } from "vitest";
-import { connectionLabel } from "./label.js";
+import { createConnectorRegistry } from "@askdb/connectors";
+import { sqliteConnectorProvider } from "./connector/provider.js";
+
+// The label hosts see: the adapter's parsed parts, built by the registry.
+const registry = createConnectorRegistry([sqliteConnectorProvider]);
+const connectionLabel = (url: string) => registry.connectionLabel("sqlite", { url });
 
 const FALLBACK = "configured sqlite connection";
 
 // Inputs that leaked a secret through the earlier masking redactor (review
 // rounds 2-3 on #189/#195/#199) sit next to ordinary paths. A label is the file
 // path only; a `file:` URI's query string is never read.
-describe("connectionLabel (sqlite)", () => {
+describe("sqlite connection label (sqliteConnectorProvider.connectionLabelParts through the registry)", () => {
   it.each([
     // Ordinary paths.
     ["./data/app.db", "./data/app.db"],

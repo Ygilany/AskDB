@@ -4,6 +4,7 @@ export {
   CONNECTOR_PROVIDERS,
   type ConnectorProvider,
   type ConnectorConfig,
+  type ConnectorConnection,
   type ConnectorResult,
   type ConnectorProviderAdapter,
   type ConnectorProviderAdapters,

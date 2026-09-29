@@ -1,12 +1,17 @@
 import { describe, expect, it } from "vitest";
-import { connectionLabel } from "./label.js";
+import { createConnectorRegistry } from "@askdb/connectors";
+import { mysqlConnectorProvider } from "./connector/provider.js";
+
+// The label hosts see: the adapter's parsed parts, built by the registry.
+const registry = createConnectorRegistry([mysqlConnectorProvider]);
+const connectionLabel = (url: string) => registry.connectionLabel("mysql", { url });
 
 const FALLBACK = "configured mysql connection";
 
 // Inputs that leaked a secret through the earlier masking redactor (review
 // rounds 1-3 on #189/#195/#199) sit next to ordinary strings. A label only ever
 // holds host, port and database parsed from a clean `mysql://` URL.
-describe("connectionLabel (mysql)", () => {
+describe("mysql connection label (mysqlConnectorProvider.connectionLabelParts through the registry)", () => {
   it.each([
     // Ordinary strings.
     ["mysql://root:S3cret@localhost:3306/shop", "mysql://localhost:3306/shop"],

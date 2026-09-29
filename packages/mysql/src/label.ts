@@ -1,12 +1,12 @@
-import { formatConnectionLabel, parseConnectionUrl } from "@askdb/connectors";
+import { parseConnectionUrl, type ConnectionLabelParts } from "@askdb/connectors";
 
 /**
- * A credential-free label for a MySQL connection string, for display or logs:
- * `mysql://host:port/database`, built only from the parts of a `mysql://` URL
- * (the form `mysql2` accepts) that parse cleanly. The user name, password and
- * query string are never included. Anything else — a JDBC URL, a quoted or
- * malformed URL — becomes `configured mysql connection`.
+ * The display-safe parts of a MySQL connection string: host, port and database
+ * of a `mysql://` URL (the form `mysql2` accepts) that parses cleanly. The user
+ * name, password and query string are never returned. Anything else — a JDBC
+ * URL, a quoted or malformed URL — returns `undefined`, so the registry labels
+ * it `configured mysql connection`.
  */
-export function connectionLabel(input: string): string {
-  return formatConnectionLabel("mysql", parseConnectionUrl(input, ["mysql"]));
+export function parseMysqlConnection(input: string): ConnectionLabelParts | undefined {
+  return parseConnectionUrl(input, ["mysql"]);
 }

@@ -2,6 +2,7 @@ import type { Connector } from "@askdb/introspect";
 import type { ConnectorConfig, ConnectorProviderAdapter, ConnectorResult } from "@askdb/connectors";
 import { createPostgresConnector } from "./index.js";
 import { createPostgresCatalogQueryRunner } from "../exec/postgres.js";
+import { parsePostgresConnection } from "../label.js";
 
 export const postgresConnectorProvider: ConnectorProviderAdapter = {
   provider: "postgres",
@@ -30,5 +31,9 @@ export const postgresConnectorProvider: ConnectorProviderAdapter = {
   },
   getTemplates() {
     return createPostgresConnector().templates!();
+  },
+  connectionLabelParts({ url, fromExport }) {
+    if (url !== undefined) return parsePostgresConnection(url);
+    return fromExport === undefined ? undefined : { file: fromExport };
   },
 };

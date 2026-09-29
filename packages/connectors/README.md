@@ -40,13 +40,21 @@ const result = await introspect(input, { outDir: "./askdb", schemaId: "mydb" }, 
 - `ConnectorProvider` — `"postgres" | "prisma" | "mysql" | "sqlite" | "sqlserver"`
 - `ConnectorConfig` — unified per-call config shape
 - `ConnectorResult` — `{ connector, input, mode }` pair consumed by `introspect()`
-- `ConnectorProviderAdapter` — interface implemented by each concrete package
-- `ConnectorRegistry` — `{ hasProvider, createConnector, getTemplates }`
+- `ConnectorProviderAdapter` — interface implemented by each concrete package, with an optional `connectionLabelParts(connection)` hook
+- `ConnectorConnection` — `{ url?, fromExport?, schemaPath? }`, the source fields of `ConnectorConfig`
+- `ConnectorRegistry` — `{ hasProvider, createConnector, getTemplates, connectionLabel }`
 - `connectorProviderMissingMessage` — actionable error helper
 
 ### Connection labels
 
-Helpers the engine packages build their `connectionLabel()` on (`@askdb/postgres`, `@askdb/mysql`, `@askdb/sqlserver`, `@askdb/sqlite` each export one that parses its own connection-string formats). A label is built only from parts that parse cleanly, never by masking the raw string ([ADR 0011](../../docs/adrs/0011-connection-labels-from-parsed-parts.md)).
+`registry.connectionLabel(provider, connection)` returns a credential-free label for display or logs. It is always `formatConnectionLabel(provider, parts)`, where `parts` come from the adapter's optional `connectionLabelParts(connection)` hook: the host, port and database (or a file path) that the engine's own parser extracts cleanly. An adapter never returns label text, so a label is never built by masking the raw string, and a provider without the hook, or a connection that doesn't parse, gets `configured <provider> connection` ([ADR 0011](../../docs/adrs/0011-connection-labels-from-parsed-parts.md)).
+
+```ts
+const registry = createConnectorRegistry([postgresConnectorProvider]);
+registry.connectionLabel("postgres", { url: "postgres://app:S3cret@db:5432/app" }); // "postgres://db:5432/app"
+```
+
+The helpers engine parsers use:
 
 - `formatConnectionLabel(engine, parts)` — `<engine>://host[:port][/database]` for `{ host?, port?, database? }`, the path for `{ file }`; `configured <engine> connection` when `parts` is `undefined` or any part fails its allowlist
 - `parseConnectionUrl(input, schemes)` — parses a standard `scheme://[userinfo@]host[:port][/database][?query]` URL into `{ host, port, database }` (userinfo and query are never returned); `undefined` for another scheme, whitespace, a `#`, an `@` after the authority, or a multi-segment path

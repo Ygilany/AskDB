@@ -1,13 +1,12 @@
-import { formatConnectionLabel, parseConnectionUrl } from "@askdb/connectors";
+import { parseConnectionUrl, type ConnectionLabelParts } from "@askdb/connectors";
 
 /**
- * A credential-free label for a Postgres connection string, for display or
- * logs: `postgres://host:port/database`, built only from the parts of a
- * `postgres://` / `postgresql://` URL that parse cleanly. The user name,
- * password and query string are never included. Anything else — a libpq
- * `key=value` string, a JDBC URL, a quoted or malformed URL — becomes
- * `configured postgres connection`.
+ * The display-safe parts of a Postgres connection string: host, port and
+ * database of a `postgres://` / `postgresql://` URL that parses cleanly. The
+ * user name, password and query string are never returned. Anything else — a
+ * libpq `key=value` string, a JDBC URL, a quoted or malformed URL — returns
+ * `undefined`, so the registry labels it `configured postgres connection`.
  */
-export function connectionLabel(input: string): string {
-  return formatConnectionLabel("postgres", parseConnectionUrl(input, ["postgres", "postgresql"]));
+export function parsePostgresConnection(input: string): ConnectionLabelParts | undefined {
+  return parseConnectionUrl(input, ["postgres", "postgresql"]);
 }

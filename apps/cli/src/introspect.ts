@@ -15,6 +15,8 @@ import {
   type Connector,
   type IntrospectResult,
   type IntrospectionFilters,
+  type RenderBodyOptions,
+  type RenderBodyResult,
 } from "@askdb/introspect";
 import {
   createConnectorRegistry,
@@ -267,10 +269,10 @@ async function runWithOutput(
     // Render exactly what `--out <same dir>` would write: same provider, same
     // ID-anchored merge (human-set `sensitive` flags carried over). Otherwise
     // --diff reports "changed" against an untouched artifact.
-    const rendered = renderSchemaV2Body(result.schema, {
+    const rendered = renderForDiff(result.schema, {
       schemaId,
       provider: result.provider,
-      existingArtifactDir: hasExisting && isV2SchemaFile(existingPath) ? opts.diff : undefined,
+      existingArtifactDir: hasExisting ? opts.diff : undefined,
     });
     const existing = hasExisting ? readFileSync(existingPath, "utf8") : "";
     const changed = rendered.body !== existing && !sameJson(existing, rendered.json);
@@ -292,14 +294,21 @@ async function runWithOutput(
   );
 }
 
-/** True when `path` parses as a Schema v2 document (so it can seed the merge). */
-function isV2SchemaFile(path: string): boolean {
-  try {
-    const parsed: unknown = JSON.parse(readFileSync(path, "utf8"));
-    return typeof parsed === "object" && parsed !== null && (parsed as { version?: unknown }).version === 2;
-  } catch {
-    return false;
+/**
+ * Render with the `--out` merge when the existing `schema.json` is valid Schema
+ * v2. The renderer does the full validation; when it rejects the existing file
+ * (not JSON, or `{ "version": 2 }` without tables), render without the merge so
+ * `--diff` reports `changed: true` instead of failing.
+ */
+function renderForDiff(schema: IntrospectResult["schema"], options: RenderBodyOptions): RenderBodyResult {
+  if (options.existingArtifactDir) {
+    try {
+      return renderSchemaV2Body(schema, options);
+    } catch {
+      // Not a valid Schema v2 artifact: nothing to merge.
+    }
   }
+  return renderSchemaV2Body(schema, { ...options, existingArtifactDir: undefined });
 }
 
 /** Key-order-insensitive comparison so a reformatted-but-equivalent file is not "changed". */

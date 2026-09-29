@@ -1,17 +1,14 @@
-import { formatConnectionLabel, type ConnectionLabelParts } from "@askdb/connectors";
+import type { ConnectionLabelParts } from "@askdb/connectors";
 
 /**
- * A credential-free label for a SQLite database, for display or logs: the file
- * path. A plain path (or `:memory:`) is shown as-is when it contains none of
- * `? # ; = @` or a control character. For a `file:` URI only the path is
- * shown; its query string (where encryption keys live) is never read. Anything
- * else becomes `configured sqlite connection`.
+ * The display-safe part of a SQLite "connection string": the file path. A
+ * plain path (or `:memory:`) is returned as-is; `formatConnectionLabel` then
+ * rejects one that contains `? # ; = @` or a control character. For a `file:`
+ * URI only the path is returned; its query string (where encryption keys live)
+ * is never read. Anything else returns `undefined`, so the registry labels it
+ * `configured sqlite connection`.
  */
-export function connectionLabel(input: string): string {
-  return formatConnectionLabel("sqlite", parseSqliteConnection(input));
-}
-
-function parseSqliteConnection(input: string): ConnectionLabelParts | undefined {
+export function parseSqliteConnection(input: string): ConnectionLabelParts | undefined {
   if (!/^file:/i.test(input)) {
     return input.includes("://") ? undefined : { file: input };
   }

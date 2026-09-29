@@ -30,5 +30,3 @@ export {
 } from "./exec/sqlserver.js";
 
 export { sqlServerConnectorProvider } from "./connector/provider.js";
-
-export { connectionLabel } from "./label.js";

@@ -116,3 +116,25 @@ describe("createConnectorRegistry", () => {
     expect(registry.getTemplates("postgres")).toBeUndefined();
   });
 });
+
+// ADR 0011: adapters return parts, never label text, so the allowlist in
+// formatConnectionLabel applies to every adapter, including a third-party one
+// that hands back something unsafe.
+describe("createConnectorRegistry — connectionLabel", () => {
+  const url = "acme://scott:S3cret@db:1521/orcl";
+  it.each<[string, ConnectorProviderAdapter["connectionLabelParts"], string]>([
+    ["well-formed parts", () => ({ host: "db", port: "1521", database: "orcl" }), "postgres://db:1521/orcl"],
+    ["the raw URL as the host", ({ url: raw }) => ({ host: raw }), "configured postgres connection"],
+    ["a masked URL as the host", () => ({ host: "scott:****@db" }), "configured postgres connection"],
+    ["the raw URL as a file", ({ url: raw }) => ({ file: raw! }), "configured postgres connection"],
+    ["undefined (did not parse)", () => undefined, "configured postgres connection"],
+    ["no hook", undefined, "configured postgres connection"],
+  ])("builds the label from the adapter's parts: %s", (_name, connectionLabelParts, label) => {
+    const registry = createConnectorRegistry([{ ...makeAdapter("postgres"), connectionLabelParts }]);
+    expect(registry.connectionLabel("postgres", { url })).toBe(label);
+  });
+
+  it("labels an unregistered provider without throwing", () => {
+    expect(createConnectorRegistry([]).connectionLabel("mysql", { url })).toBe("configured mysql connection");
+  });
+});

@@ -9,4 +9,4 @@ Fix `askdb introspect --diff` reporting `changed: true` against an untouched art
 
 **@askdb/introspect**: new pure `renderSchemaV2Body(schema, { schemaId, provider?, existingArtifactDir? })` returns `{ json, body, warnings }` — the exact bytes `renderToSchemaV2` writes, including the merge with an existing artifact. `renderToSchemaV2` now writes through it.
 
-**askdb**: `--out`, `--print` and `--diff` all render through `renderSchemaV2Body`. `--diff` passes the connector's `provider` and merges with the existing artifact (when it is a valid Schema v2 file), and compares structurally so a key-reordered but equivalent file is not reported as changed.
+**askdb**: `--out`, `--print` and `--diff` all render through `renderSchemaV2Body`. `--diff` passes the connector's `provider` and merges with the existing artifact when the renderer accepts it as valid Schema v2 (an invalid file, such as `{ "version": 2 }` with no tables, is compared without the merge and reported as changed, as before), and compares structurally so a key-reordered but equivalent file is not reported as changed.

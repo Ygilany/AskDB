@@ -10,22 +10,10 @@ import {
   type ConnectorConfig,
   type ConnectorProvider,
 } from "@askdb/connectors";
-import {
-  postgresConnectorProvider,
-  connectionLabel as postgresConnectionLabel,
-} from "@askdb/postgres";
-import {
-  mysqlConnectorProvider,
-  connectionLabel as mysqlConnectionLabel,
-} from "@askdb/mysql";
-import {
-  sqliteConnectorProvider,
-  connectionLabel as sqliteConnectionLabel,
-} from "@askdb/sqlite";
-import {
-  sqlServerConnectorProvider,
-  connectionLabel as sqlServerConnectionLabel,
-} from "@askdb/sqlserver";
+import { postgresConnectorProvider } from "@askdb/postgres";
+import { mysqlConnectorProvider } from "@askdb/mysql";
+import { sqliteConnectorProvider } from "@askdb/sqlite";
+import { sqlServerConnectorProvider } from "@askdb/sqlserver";
 import { prismaConnectorProvider } from "@askdb/prisma";
 
 const connectorRegistry = createConnectorRegistry([
@@ -44,7 +32,8 @@ export type StudioIntrospectionPlan =
  * Resolve what a server-side introspection run would do, from the runtime
  * config alone. Mirrors the CLI's flag-free resolution in
  * `apps/cli/src/introspect.ts` (config provider + per-engine connection).
- * Never includes credentials in `sourceLabel` — it is shown in the UI.
+ * Never includes credentials in `sourceLabel` — it is shown in the UI. The
+ * registry builds it from the engine adapter's parsed parts (ADR 0011).
  */
 export function resolveStudioIntrospectionPlan(): StudioIntrospectionPlan {
   const rt = getAskDbRuntimeConfig();
@@ -73,7 +62,7 @@ function resolveConnection(engine: ConnectorProvider): ConnectionResolution {
             "No Postgres connection configured. Set introspection.providerConfig.postgres.databaseUrl in askdb.config.ts (bound to an env var in .env).",
         };
       }
-      return { ok: true, url, sourceLabel: labelFor(engine, url) };
+      return { ok: true, url, sourceLabel: connectorRegistry.connectionLabel(engine, { url }) };
     }
     case "mysql": {
       const url = rt.introspection.mysqlDatabaseUrl;
@@ -84,7 +73,7 @@ function resolveConnection(engine: ConnectorProvider): ConnectionResolution {
             "No MySQL connection configured. Set introspection.providerConfig.mysql.databaseUrl in askdb.config.ts (bound to an env var in .env).",
         };
       }
-      return { ok: true, url, sourceLabel: labelFor(engine, url) };
+      return { ok: true, url, sourceLabel: connectorRegistry.connectionLabel(engine, { url }) };
     }
     case "sqlserver": {
       const url = rt.introspection.sqlserverDatabaseUrl;
@@ -95,7 +84,7 @@ function resolveConnection(engine: ConnectorProvider): ConnectionResolution {
             "No SQL Server connection configured. Set introspection.providerConfig.sqlserver.databaseUrl in askdb.config.ts (bound to an env var in .env).",
         };
       }
-      return { ok: true, url, sourceLabel: labelFor(engine, url) };
+      return { ok: true, url, sourceLabel: connectorRegistry.connectionLabel(engine, { url }) };
     }
     case "sqlite": {
       const file = rt.introspection.sqliteFile;
@@ -106,7 +95,7 @@ function resolveConnection(engine: ConnectorProvider): ConnectionResolution {
             "No SQLite file configured. Set introspection.providerConfig.sqlite.file in askdb.config.ts.",
         };
       }
-      return { ok: true, url: file, sourceLabel: labelFor(engine, file) };
+      return { ok: true, url: file, sourceLabel: connectorRegistry.connectionLabel(engine, { url: file }) };
     }
     case "prisma": {
       // When unset, @askdb/prisma auto-discovers prisma/schema.prisma in the project root.
@@ -114,29 +103,12 @@ function resolveConnection(engine: ConnectorProvider): ConnectionResolution {
       return {
         ok: true,
         schemaPath,
-        sourceLabel: schemaPath ?? "auto-discovered prisma/schema.prisma",
+        sourceLabel:
+          schemaPath === undefined
+            ? "auto-discovered prisma/schema.prisma"
+            : connectorRegistry.connectionLabel(engine, { schemaPath }),
       };
     }
-  }
-}
-
-/**
- * The credential-free label `GET /api/introspect/status` serves as
- * `sourceLabel`. Each engine package builds it from the parts of its own
- * connection-string formats that parse cleanly (host, port, database, or a
- * SQLite file path), never by masking the raw string; anything else becomes
- * `configured <engine> connection` (ADR 0011).
- */
-function labelFor(provider: Exclude<ConnectorProvider, "prisma">, raw: string): string {
-  switch (provider) {
-    case "postgres":
-      return postgresConnectionLabel(raw);
-    case "mysql":
-      return mysqlConnectionLabel(raw);
-    case "sqlserver":
-      return sqlServerConnectionLabel(raw);
-    case "sqlite":
-      return sqliteConnectionLabel(raw);
   }
 }
 

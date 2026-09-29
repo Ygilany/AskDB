@@ -42,5 +42,3 @@ export {
 } from "./exec/postgres.js";
 
 export { postgresConnectorProvider } from "./connector/provider.js";
-
-export { connectionLabel } from "./label.js";

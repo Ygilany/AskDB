@@ -961,12 +961,30 @@ describe("AskDB Studio server", () => {
     ["sqlserver", "sqlserver://sa:se;cret@h", "configured sqlserver connection"],
     // Round 3: a percent-encoded SQLite key name.
     ["sqlite", "file:app.db?%6Bey=secret", "app.db"],
+    // Rounds 1-2 inputs that were only in the engine tables.
+    // (@askdb/config trims config values, so the leading space never reaches the parser.)
+    ["postgres", " postgres://app:S3cret@db:5432/app", "postgres://db:5432/app"],
+    ["postgres", "postgres://app:pa#ss@db:5432/app", "configured postgres connection"],
+    ["sqlserver", "mssql://sa:S3/cret@host:1433/db", "configured sqlserver connection"],
+    // Delta review: ADO.NET spellings the driver reads as part of the password.
+    ["sqlserver", "Server=h;User Id=sa;Password=p;;Database=leak", "configured sqlserver connection"],
+    ["sqlserver", "Server=h;User Id=sa;Password=;Database=leak", "configured sqlserver connection"],
+    ["sqlserver", "Data Source=h;Password=x;;Initial Catalog=leak", "configured sqlserver connection"],
+    ["sqlserver", "User Id=sa;Password=p;;Server=leakhost", "configured sqlserver connection"],
+    // Prisma schema paths go through the same allowlist.
+    ["prisma", "./prisma/schema.prisma", "./prisma/schema.prisma"],
+    ["prisma", "file:schema.prisma?key=S3cret", "configured prisma connection"],
   ] as const)("GET /api/introspect/status labels %s %s as %s", async (engine, url, sourceLabel) => {
     installStudioRuntime({}, {
       ...STUDIO_TEST_BASE,
       introspection: {
         provider: engine,
-        providerConfig: engine === "sqlite" ? { sqlite: { file: url } } : { [engine]: { databaseUrl: url } },
+        providerConfig:
+          engine === "sqlite"
+            ? { sqlite: { file: url } }
+            : engine === "prisma"
+              ? { prisma: { schemaPath: url } }
+              : { [engine]: { databaseUrl: url } },
         outputDir: "./askdb/",
       },
     });
