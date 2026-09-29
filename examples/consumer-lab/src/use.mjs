@@ -237,7 +237,11 @@ function pinTo(packages, label) {
   const begin = ws.indexOf(BLOCK_BEGIN);
   const end = ws.indexOf(BLOCK_END);
   if (begin < 0 || end < begin) fail("pnpm-workspace.yaml has lost its lab:use overrides block");
-  const lines = [`${BLOCK_TARGET}${label}`, "overrides:", ...packages.map((p) => `  "${p.name}": "${p.spec}"`)];
+  // The block holds entries of the file's top-level `overrides:` map, so the map's
+  // hand-written entries above it (third-party security pins) survive every switch.
+  const lastKey = ws.slice(0, begin).split("\n").filter((l) => /^[^\s#]/.test(l)).pop();
+  if (lastKey !== "overrides:") fail("pnpm-workspace.yaml's lab:use overrides block must sit inside its top-level `overrides:` map");
+  const lines = [`${BLOCK_TARGET}${label}`, ...packages.map((p) => `  "${p.name}": "${p.spec}"`)];
   writeFileSync(wsPath, `${ws.slice(0, begin + BLOCK_BEGIN.length)}\n${lines.join("\n")}\n${ws.slice(end)}`);
 }
 

@@ -6,10 +6,12 @@
  * matching version by semver, so prereleases like `1.0.0-beta.10` sort above
  * `1.0.0-beta.9`, whatever order `npm view` lists them in; (2) when `pnpm install` fails
  * after the manifests were rewritten, they are put back as they were and the lab is
- * marked not installed (no `.lab/target.json`), instead of left half-switched.
- * Catches: a lexical or npm-order pick of a range (pinning beta.9 over beta.10), and a
+ * marked not installed (no `.lab/target.json`), instead of left half-switched; (3) the
+ * pins go into the workspace's existing `overrides:` map, keeping its third-party pins.
+ * Catches: a lexical or npm-order pick of a range (pinning beta.9 over beta.10), a
  * failed switch that leaves `file:` or registry pins behind while the lab still claims
- * the old target.
+ * the old target, and a switch that writes a second `overrides:` key (in YAML the last
+ * one wins, silently dropping a security pin such as deepmerge-ts).
  * Not covered elsewhere: every published `askdb` pins its @askdb dependencies exactly,
  * so real `npm:` runs never reach the range path; and a real install failure can't be
  * produced on demand.
@@ -48,7 +50,7 @@ it("pins a range to its highest semver match, and puts the manifests back when t
   mkdirSync(bin);
   cpSync(join(LAB, "src", "use.mjs"), join(lab, "src", "use.mjs"));
   const pkg = `${JSON.stringify({ name: "scratch-lab", private: true, dependencies: { pg: "8.22.0" } }, null, 2)}\n`;
-  const ws = "allowBuilds:\n  esbuild: true\n# lab:use overrides begin\n# lab:use overrides end\n";
+  const ws = "allowBuilds:\n  esbuild: true\noverrides:\n  deepmerge-ts: ^8.0.2\n# lab:use overrides begin\n# lab:use overrides end\n";
   writeFileSync(join(lab, "package.json"), pkg);
   writeFileSync(join(lab, "pnpm-workspace.yaml"), ws);
   writeFileSync(join(lab, "pnpm-lock.yaml"), "lockfileVersion: '9.0'\n");
@@ -84,6 +86,9 @@ process.exit(1);
   const asked = readFileSync(join(dir, "asked-to-install.yaml"), "utf8");
   expect(asked).toContain(`"@askdb/core": "1.0.0-beta.10"`);
   expect(asked).toContain(`"askdb": "1.0.0"`);
+  // The pins land in the existing `overrides:` map, next to its hand-written third-party pins.
+  expect(asked.match(/^overrides:$/gm)).toHaveLength(1);
+  expect(asked).toContain("  deepmerge-ts: ^8.0.2\n# lab:use overrides begin\n");
 
   expect(out).toContain("pnpm install failed for npm:askdb@1.0.0");
   expect(run.status).toBe(1);
