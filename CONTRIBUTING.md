@@ -51,7 +51,7 @@ It uses ports 15432, 13306, 13307 and 11433, so it runs alongside the fixtures a
 
 ### Consumer lab
 
-[`examples/consumer-lab`](examples/consumer-lab/README.md) tests AskDB as a black box. It installs AskDB into an app outside the workspace (its own pnpm root and lockfile), from packed tarballs or from npm, then executes the SQL AskDB returns on the fixture above. Design: [`docs/specs/consumer-lab.md`](docs/specs/consumer-lab.md); remaining work: #241.
+[`examples/consumer-lab`](examples/consumer-lab/README.md) tests AskDB as a black box. It installs AskDB into an app outside the workspace (its own pnpm root and lockfile), from packed tarballs or from npm, then executes the SQL AskDB returns on the fixture above. Design: [`docs/specs/consumer-lab.md`](docs/specs/consumer-lab.md); remaining work: #241. Agents drive it with the [`consumer-lab` skill](.agents/skills/consumer-lab/SKILL.md): which target to install, how to read the matrix, and how to refresh the baseline after a release.
 
 ```bash
 pnpm lab:up                                       # fixture up + install the lab (first time)
