@@ -240,11 +240,11 @@ describe.each(SUPPORTED_DIALECTS.map((d) => [d] as [SupportedDialect]))("[%s]", 
   });
 
   /**
-   * Contract: `ask()` "unions the seed IDs into the result (deduplicated), so an ancestor
-   * never loses its own rows when a resolver returns strict descendants only", and it calls
-   * the resolver with every seed in `access.rootIds` (`docs/contracts/tenant-policy.md`,
-   * "Subtree expansion"; `reference/core-api.mdx`, `resolveTenantDescendants`: "the seeds are
-   * always unioned in"). So a resolver that returns only 4, 5 and 6 for agency 1 still scopes
+   * Contract: `ask()` "unions the seed IDs into the `tenantRoot` entry (deduplicated), so an
+   * ancestor never loses its own rows when a resolver returns strict descendants only", and it
+   * calls the resolver with every seed in `access.rootIds` (`docs/contracts/tenant-policy.md`,
+   * "Subtree expansion"; `reference/core-api.mdx`, `resolveTenantDescendants`: "`ask()`
+   * unions the seeds in"). So a resolver that returns only 4, 5 and 6 for agency 1 still scopes
    * to 1, 4, 5 and 6; and seeds 5 and 2 together see 2, 5, 6 and 7.
    * Catches: the seed union dropped (the lab's usual resolver returns the seeds itself, so
    * `tenant-subtree` can't see it), or a subtree expanded from its first seed only.
@@ -263,7 +263,7 @@ describe.each(SUPPORTED_DIALECTS.map((d) => [d] as [SupportedDialect]))("[%s]", 
         await needsCapability(ctx, "subtree-resolver");
         const resolveTenantDescendants = agencyDescendants(dialect, { strictDescendants });
         // The resolver must leave something to union in, or this couldn't catch a lost union.
-        if (strictDescendants) expect(await agencyDescendants(dialect, { strictDescendants })(agencyRoot(dialect), seeds.map(String))).not.toContain(String(seeds[0]));
+        if (strictDescendants) expect((await agencyDescendants(dialect, { strictDescendants })(agencyRoot(dialect), seeds.map(String)))[agencyRoot(dialect)]).not.toContain(String(seeds[0]));
 
         const result = await ask(dialect, id, { tenantScope: subtreeScope(dialect, [...seeds]), tenantSqlMode: mode, resolveTenantDescendants });
 

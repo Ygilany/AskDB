@@ -117,7 +117,7 @@ async function askCallsSubtreeResolver(): Promise<boolean> {
     tenantScope: subtreeScope("postgres", [1]),
     resolveTenantDescendants: (...args: unknown[]) => {
       calls.push(args);
-      return ["1"];
+      return { [agencyRoot("postgres")]: ["1"] };
     },
   });
   return calls.some(([root, seeds]) => root === agencyRoot("postgres") && JSON.stringify(seeds) === JSON.stringify(["1"]));

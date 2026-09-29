@@ -78,7 +78,24 @@ suite("tenant parameter binding executes on SQLite (better-sqlite3)", () => {
         ('42', 'open', 99, 'c'),
         ('99', 'paid', 30, 'd'),
         ('7',  'paid', 50, 'e'),
-        ('7',  'paid', 70, ':tenant_agency_ids');
+        ('7',  'paid', 70, ':tenant_agency_ids'),
+        ('1',  'open',  1, 'X order'),
+        ('5',  'open',  1, 'Y order');
+
+      -- Two tenants whose descendant IDs collide across root tables (#338): tenant X is
+      -- agency 1, which owns sub-agency 5 and client 5; tenant Y is agency 5.
+      CREATE TABLE agencies (id TEXT);
+      INSERT INTO agencies VALUES ('1'), ('5');
+      CREATE TABLE sub_agencies (id TEXT, agency_id TEXT);
+      INSERT INTO sub_agencies VALUES ('5', '1'), ('9', '5');
+      CREATE TABLE clients (id TEXT, sub_agency_id TEXT);
+      INSERT INTO clients VALUES ('5', '5'), ('1', '9');
+      CREATE TABLE appointments (client_id TEXT, label TEXT);
+      INSERT INTO appointments VALUES ('5', 'X appt'), ('1', 'Y appt');
+      CREATE TABLE notes (owner_type TEXT, owner_id TEXT, label TEXT);
+      INSERT INTO notes VALUES
+        ('agency', '1', 'X agency note'), ('agency', '5', 'Y agency note'),
+        ('client', '5', 'X client note'), ('client', '1', 'Y client note');
     `);
   });
 
@@ -87,6 +104,11 @@ suite("tenant parameter binding executes on SQLite (better-sqlite3)", () => {
   const count = (sql: string, params: readonly unknown[] = []): number => {
     const prepared = toSqlite(sql, params);
     return (db.prepare(prepared.sql).get(...prepared.args) as { n: number }).n;
+  };
+
+  const labels = (sql: string, params: readonly unknown[] = []): string[] => {
+    const prepared = toSqlite(sql, params);
+    return (db.prepare(prepared.sql).all(...prepared.args) as { label: string }[]).map((r) => r.label);
   };
 
   const twoAgencies: TenantScope = {
@@ -152,6 +174,63 @@ suite("tenant parameter binding executes on SQLite (better-sqlite3)", () => {
       });
       // Only the row whose note literally reads ':tenant_agency_ids' matches.
       expect(count(result.sql, result.tenantParams ?? [])).toBe(1);
+    },
+  );
+
+  // Regression (#338): a subtree whose descendant IDs collide with another tenant's IDs.
+  // Binding sub-agency 5 or client 5 as an agency ID returned tenant Y's rows. The host
+  // resolver walks the hierarchy on the database and returns each level's IDs under that
+  // level's root; each query must return exactly tenant X's rows.
+  it.each(["sql-only", "sql-params"] as const)(
+    "%s: a subtree with IDs colliding across root tables returns only its own tenant's rows",
+    async (tenantSqlMode) => {
+      const idsWhere = (table: string, fk: string, parents: readonly string[]): string[] =>
+        parents.length === 0
+          ? []
+          : (db.prepare(`SELECT id FROM ${table} WHERE ${fk} IN (${parents.map(() => "?").join(", ")})`).pluck().all(...parents) as string[]);
+      const resolveTenantDescendants = (tenantRoot: string, seedIds: readonly string[]) => {
+        const subAgencies = idsWhere("sub_agencies", "agency_id", seedIds);
+        return {
+          [tenantRoot]: [...seedIds],
+          "table:public.sub_agencies": subAgencies,
+          "table:public.clients": idsWhere("clients", "sub_agency_id", subAgencies),
+        };
+      };
+      const cases = [
+        { sql: "SELECT note AS label FROM orders WHERE agency_id = :tenant_agency_ids", rows: ["X order"] },
+        {
+          sql: "SELECT label FROM notes WHERE owner_type = 'agency' AND owner_id IN (:tenant_agency_ids)",
+          rows: ["X agency note"],
+        },
+        {
+          sql:
+            "SELECT a.label FROM appointments a JOIN clients c ON a.client_id = c.id " +
+            "JOIN sub_agencies s ON c.sub_agency_id = s.id WHERE s.agency_id IN (:tenant_agency_ids)",
+          rows: ["X appt"],
+        },
+        { sql: "SELECT a.label FROM appointments a JOIN clients c ON a.client_id = c.id WHERE c.id IN (:tenant_client_ids)", rows: ["X appt"] },
+        {
+          sql: "SELECT label FROM notes WHERE owner_type = 'client' AND owner_id IN (:tenant_client_ids)",
+          rows: ["X client note"],
+        },
+      ];
+
+      for (const c of cases) {
+        const result = await ask({
+          question: "tenant X's rows",
+          schema,
+          model: fakeModel,
+          dialect: "sqlite",
+          tenantScope: {
+            access: { kind: "subtree", tenantRoot: "table:public.agencies", rootIds: ["1"], includeDescendants: true },
+          },
+          resolveTenantDescendants,
+          tenantSqlMode,
+          parameterize: false,
+          deps: { generateText: reply(c.sql) as never },
+        });
+        expect(labels(result.sql, result.tenantParams ?? []), c.sql).toEqual(c.rows);
+      }
     },
   );
 });

@@ -36,6 +36,7 @@ export {
   type AskGenerateDeps,
   // Callback type for `ask({ resolveTenantDescendants })` (subtree tenant scopes).
   type ResolveTenantDescendants,
+  type TenantIdsByRoot,
 } from "./ask.js";
 export {
   parseAskDbModeV1,

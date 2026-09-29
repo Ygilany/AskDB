@@ -73,7 +73,10 @@ describe("buildTenantPromptBlock", () => {
     expect(block).toContain(":tenant_agency_ids");
   });
 
-  it("includes named placeholder for subtree scope", () => {
+  // ask() expands a subtree into per-root IDs before building the prompt (#338). An
+  // unexpanded subtree has no IDs for its descendant levels, so a prompt naming only the
+  // root's placeholder would invite the model to filter every level through it.
+  it("rejects an unexpanded subtree scope", () => {
     const scope: TenantScope = {
       access: {
         kind: "subtree",
@@ -82,12 +85,17 @@ describe("buildTenantPromptBlock", () => {
         includeDescendants: true,
       },
     };
-    const block = buildTenantPromptBlock(policy, scope);
-    expect(block).toContain(":tenant_agency_ids");
-    expect(block).toContain("subtree");
+    expect(() => buildTenantPromptBlock(policy, scope)).toThrow(
+      expect.objectContaining({ name: "TenantScopeError", reason: "SUBTREE_NOT_RESOLVABLE" }),
+    );
   });
 
-  it("includes multiple placeholders for multi_root scope", () => {
+  // Regression (#338): an expanded subtree is a multi_root scope, and each root table has
+  // its own ID space. The prompt pairs every placeholder with the columns that hold that
+  // root's IDs (its own ID, child-root foreign keys, scoped columns, polymorphic IDs), so
+  // the model isn't left to guess which placeholder filters `sub_agencies.agency_id` or
+  // `notes.owner_id`.
+  it("pairs each multi_root placeholder with the columns that hold that root's IDs", () => {
     const scope: TenantScope = {
       access: {
         kind: "multi_root",
@@ -98,8 +106,19 @@ describe("buildTenantPromptBlock", () => {
       },
     };
     const block = buildTenantPromptBlock(policy, scope);
-    expect(block).toContain(":tenant_agency_ids");
-    expect(block).toContain(":tenant_client_ids");
+    expect(block).toContain(
+      [
+        "Current user scope:",
+        "  Access: multiple roots. Each placeholder holds the IDs of one tenant root; compare it only with the columns listed under it:",
+        "    - Agency IDs = :tenant_agency_ids",
+        "      columns: table:public.agencies#id, table:public.sub_agencies#agency_id, table:public.orders#agency_id, " +
+          "table:public.campaigns#owning_agency, table:public.notes#owner_id (where table:public.notes#owner_type = 'agency')",
+        "    - Client IDs = :tenant_client_ids",
+        "      columns: table:public.clients#id, table:public.notes#owner_id (where table:public.notes#owner_type = 'client')",
+        "  The same ID value can name different tenants in different root tables: never compare one root's placeholder with another root's column.",
+        "",
+      ].join("\n"),
+    );
   });
 
   it("indicates global scope bypasses filtering", () => {

@@ -131,7 +131,7 @@ function buildIdsByRoot(access: TenantAccess): Map<string, string[]> {
       break;
     case "subtree":
       // resolveTenantSql() rejects an unexpanded subtree before reaching here.
-      throw unexpandedSubtreeError(access.tenantRoot);
+      throw unexpandedSubtreeError(access.tenantRoot, "resolveTenantSql()");
     case "multi_root":
       for (const s of access.scopes) {
         const existing = m.get(s.tenantRoot) ?? [];
@@ -145,16 +145,20 @@ function buildIdsByRoot(access: TenantAccess): Map<string, string[]> {
 }
 
 /**
- * The error for a `subtree` access that reached placeholder substitution
- * unexpanded. This layer does not walk the hierarchy, and binding only the seed
- * `rootIds` would silently drop every descendant.
+ * The error for a `subtree` access that reached placeholder substitution or the
+ * prompt builder unexpanded. Neither walks the hierarchy: binding only the seed
+ * `rootIds` would silently drop every descendant, and a prompt naming only the
+ * root's placeholder would invite the model to filter descendant roots through it.
  */
-function unexpandedSubtreeError(tenantRoot: string): TenantScopeError {
+export function unexpandedSubtreeError(
+  tenantRoot: string,
+  caller: "resolveTenantSql()" | "buildTenantPromptBlock()",
+): TenantScopeError {
   return new TenantScopeError(
-    `tenantScope.access is an unexpanded 'subtree' of '${tenantRoot}'. resolveTenantSql() does ` +
-      "not walk the hierarchy, so it would bind the seed rootIds only. Expand the subtree first: " +
-      "ask() does this when you pass resolveTenantDescendants; a direct caller passes an 'ids' " +
-      "access holding the full descendant set.",
+    `tenantScope.access is an unexpanded 'subtree' of '${tenantRoot}'. ${caller} does not walk ` +
+      "the hierarchy. Expand the subtree first: ask() does this when you pass " +
+      "resolveTenantDescendants; a direct caller passes a 'multi_root' access with each tenant " +
+      "root's IDs under that root (or an 'ids' access when the subtree is one root table).",
     "SUBTREE_NOT_RESOLVABLE",
   );
 }
@@ -415,10 +419,11 @@ export function replacePlaceholdersWithParams(
  * a `params` array (`"sql-params"`). Only placeholders in code regions are
  * touched; text inside string literals and quoted identifiers is left as-is.
  *
- * A `subtree` access must already be expanded into an `ids` access holding the
- * full descendant set: `ask()` does this via its `resolveTenantDescendants`
- * option. This function does not walk the hierarchy, so an unexpanded `subtree`
- * throws (`SUBTREE_NOT_RESOLVABLE`) rather than bind the seed IDs only.
+ * A `subtree` access must already be expanded into per-root IDs (a `multi_root`
+ * access, or `ids` when the subtree is one root table): `ask()` does this via its
+ * `resolveTenantDescendants` option. This function does not walk the hierarchy, so
+ * an unexpanded `subtree` throws (`SUBTREE_NOT_RESOLVABLE`) rather than bind the
+ * seed IDs only.
  *
  * Also throws `TenantScopeError` when a placeholder cannot be resolved
  * (`UNRESOLVED_TENANT_PLACEHOLDER`) or when a multi-ID scope meets a predicate
@@ -436,7 +441,7 @@ export function resolveTenantSql(
   dialect?: TenantSqlDialect,
 ): TenantPlaceholderResult {
   if (scope.access.kind === "subtree") {
-    throw unexpandedSubtreeError(scope.access.tenantRoot);
+    throw unexpandedSubtreeError(scope.access.tenantRoot, "resolveTenantSql()");
   }
   if (scope.access.kind === "global") {
     return mode === "sql-only"

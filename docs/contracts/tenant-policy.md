@@ -286,7 +286,7 @@ interface TenantScope {
 | Kind | Meaning | When to use |
 |---|---|---|
 | `ids` | User can see rows matching specific tenant IDs at one root level. | Most common. Host has resolved the user's access to a flat ID list. |
-| `subtree` | User can see a root and all its descendants in the hierarchy. | Hierarchical admins (state → counties). Requires `ask({ resolveTenantDescendants })`; see [Subtree expansion](#subtree-expansion). |
+| `subtree` | User can see a root and all its descendants in the hierarchy: same-table descendants of the root, and the rows of every descendant root (`roots[].parent`, `hierarchy[]`). | Hierarchical admins (state → counties, agency → sub-agencies → clients). Requires `ask({ resolveTenantDescendants })`, which returns IDs per root; see [Subtree expansion](#subtree-expansion). |
 | `multi_root` | User has different scopes at different hierarchy levels. | Edge case: user is admin at one agency but also has direct client-level access elsewhere. |
 | `global` | User can see all data across all tenants. | Admin/superuser. Requires an explicit `reason` string for audit. |
 
@@ -295,26 +295,42 @@ interface TenantScope {
 AskDB does not open database connections, so it cannot compute a subtree itself. The host supplies the expansion to `ask()`:
 
 ```ts
+type TenantIdsByRoot = Readonly<Record<string, readonly string[]>>;
+
 type ResolveTenantDescendants = (
   tenantRoot: string,
   seedIds: readonly string[],
-) => Promise<readonly string[]> | readonly string[];
+) => Promise<TenantIdsByRoot> | TenantIdsByRoot;
 
 ask({ ..., tenantScope, resolveTenantDescendants });
+```
+
+Each root table has its own ID space: in the P4 fixture, client `5` and agency `5` are different tenants. So the resolver returns the subtree's IDs **per tenant root**, keyed by root table ID, and each root's IDs bind only to that root's own `:tenant_<label>_ids` placeholder (see [ADR 0014](../adrs/0014-subtree-scope-expands-per-root.md)). For an agency admin over `agencies` → `sub_agencies` → `clients`, where agency `1` owns sub-agency `5` and client `5`:
+
+```ts
+resolveTenantDescendants("table:public.agencies", ["1"]);
+// → {
+//     "table:public.agencies": ["1"],
+//     "table:public.sub_agencies": ["5"],
+//     "table:public.clients": ["5"],
+//   }
 ```
 
 Contract:
 
 - `ask()` calls the resolver once, after scope validation and before model generation, with `access.tenantRoot` and `access.rootIds`.
-- The resolver returns IDs **of the same tenant root**, which replace that root's `:tenant_<label>_ids` placeholder. A self-referencing hierarchy (e.g. `agencies.parent_agency_id`) is expanded by the host the same way as any other.
-- `ask()` unions the seed IDs into the result (deduplicated), so an ancestor never loses its own rows when a resolver returns strict descendants only.
-- The expanded scope is treated as `{ kind: "ids", tenantRoot, ids }` for the prompt, the tenant guardrail, and placeholder substitution. Advisory `context` is unchanged.
-- **Fail closed.** A `subtree` scope with no resolver, or a resolver returning an empty array or anything other than an array of non-empty strings, throws `TenantScopeError` with reason `SUBTREE_NOT_RESOLVABLE`. AskDB never falls back to the seed IDs alone.
+- The allowed keys are `tenantRoot` and every root reachable from it through `roots[].parent` or `hierarchy[]`. The value under a key holds IDs of that root's own `tenantIdColumn`, never another root's IDs.
+- Under `tenantRoot`, return the seeds and any same-table descendants. A self-referencing hierarchy (e.g. `agencies.parent_agency_id`, which the policy can't declare yet) puts every agency in the tree under `tenantRoot`.
+- `ask()` unions the seed IDs into the `tenantRoot` entry (deduplicated), so an ancestor never loses its own rows when a resolver returns strict descendants only. A missing key, or an empty array, means that root has no IDs in the subtree.
+- The expanded scope is `{ kind: "multi_root", scopes }`, with one entry per root that has IDs: `tenantRoot` first, then its descendant roots breadth-first. When only `tenantRoot` has IDs, it is the equivalent `{ kind: "ids", tenantRoot, ids }`. The prompt, the tenant guardrail, and placeholder substitution all see the expanded scope. Advisory `context` is unchanged.
+- The prompt for a `multi_root` scope lists, under each placeholder, the columns that hold that root's IDs (its own ID column, child roots' foreign keys to it, scoped tables' direct columns, and polymorphic ID columns with their discriminator value), and tells the model never to compare one root's placeholder with another root's column. The tenant guardrail doesn't yet check that pairing (#315, #235).
+- A placeholder for a root with no IDs in the subtree throws `UNRESOLVED_TENANT_PLACEHOLDER` if the model uses it. It is never bound to another root's IDs.
+- **Fail closed.** These throw `TenantScopeError` with reason `SUBTREE_NOT_RESOLVABLE` before model generation: no resolver; a result that is an array (the flat shape from before this contract) or not a plain object; a key that isn't a tenant root in the policy, or a root outside this subtree; a value that isn't an array of non-empty strings; or no IDs at all. AskDB never falls back to the seed IDs alone, and never folds IDs from one root into another root's placeholder.
 - The host owns authorization and caching of the closure. AskDB trusts the returned IDs.
 
-`resolveTenantSql()` (exported) does not walk the hierarchy. A direct caller must pass an already-expanded `ids` access; an unexpanded `subtree` throws `TenantScopeError` (`SUBTREE_NOT_RESOLVABLE`) rather than substitute the seed IDs only.
+`resolveTenantSql()` and `buildTenantPromptBlock()` (exported) do not walk the hierarchy. A direct caller must pass an already-expanded `multi_root` access with each root's IDs under that root (or an `ids` access when the subtree is one root table); an unexpanded `subtree` throws `TenantScopeError` (`SUBTREE_NOT_RESOLVABLE`) rather than substitute the seed IDs only.
 
-`@askdb/core` also exports `expandClosure(seedIds, childrenOf)`, a breadth-first, cycle-safe walk over an in-memory hierarchy, for use inside a resolver.
+`@askdb/core` also exports `expandClosure(seedIds, childrenOf)`, a breadth-first, cycle-safe walk over an in-memory hierarchy of one root, for use inside a resolver.
 
 ### Advisory context
 
@@ -336,8 +352,8 @@ Advisory context is included in prompts to help the LLM generate more relevant q
 | Tenant policy exists, no `tenantScope` passed | Fail closed. Query rejected before prompt generation. |
 | `tenantScope.access` references unknown tenant root | Rejected. |
 | `global` scope without `reason` | Rejected. |
-| `subtree` scope with no `resolveTenantDescendants`, or a resolver returning an empty or invalid result | Rejected before prompt generation (`SUBTREE_NOT_RESOLVABLE`). |
-| Unexpanded `subtree` scope passed directly to `resolveTenantSql()` | Rejected (`SUBTREE_NOT_RESOLVABLE`). |
+| `subtree` scope with no `resolveTenantDescendants`, or a resolver returning a flat array, a key outside the subtree's roots, an invalid ID list, or no IDs | Rejected before prompt generation (`SUBTREE_NOT_RESOLVABLE`). |
+| Unexpanded `subtree` scope passed directly to `resolveTenantSql()` or `buildTenantPromptBlock()` | Rejected (`SUBTREE_NOT_RESOLVABLE`). |
 | Generated SQL references a `:tenant_*` placeholder the scope has no IDs for (or that matches no root) | Rejected (`UNRESOLVED_TENANT_PLACEHOLDER`). SQL with an unsubstituted placeholder is never returned. |
 | Several IDs meet a tenant predicate with no list form (`<`, `>`, `<=`, `>=`, or a non-comparison position) | Rejected (`UNSUPPORTED_TENANT_PREDICATE`). |
 | `"sql-only"` substitution of a tenant ID containing a backslash, with a dialect whose `backslashEscapes` is unset and whose `id` is not built-in | Rejected (`UNESCAPABLE_TENANT_ID`). A built-in `id` with `backslashEscapes` unset uses that engine's escaping (backslash escapes on for MySQL and MariaDB). |

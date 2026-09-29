@@ -1,9 +1,14 @@
 import type { NormalizedTenantPolicy } from "../schema/v2/tenant-policy.js";
 import type { TenantScope } from "../schema/v2/tenant-policy.js";
+import { placeholderForRoot, unexpandedSubtreeError } from "./tenant-placeholders.js";
 
 /**
  * Build the tenant policy + runtime scope block for NL→SQL prompts.
  * This block is always injected when a tenant policy exists (security boundary).
+ *
+ * A `subtree` scope must be expanded into per-root IDs first (`ask()` does this
+ * through `resolveTenantDescendants`); an unexpanded one throws
+ * `SUBTREE_NOT_RESOLVABLE`.
  */
 export function buildTenantPromptBlock(
   policy: NormalizedTenantPolicy,
@@ -69,25 +74,30 @@ export function buildTenantPromptBlock(
   switch (access.kind) {
     case "ids": {
       const rootLabel = policy.roots.find((r) => r.id === access.tenantRoot)?.label ?? access.tenantRoot;
-      const placeholder = `:tenant_${rootLabel.toLowerCase().replace(/[^a-z0-9]+/g, "_")}_ids`;
+      const placeholder = placeholderForRoot(rootLabel);
       lines.push(`  Access: ${rootLabel} IDs = ${placeholder}`);
       lines.push(`  Use ${placeholder} as the parameter placeholder for tenant predicates.`);
       break;
     }
-    case "subtree": {
-      const rootLabel = policy.roots.find((r) => r.id === access.tenantRoot)?.label ?? access.tenantRoot;
-      const placeholder = `:tenant_${rootLabel.toLowerCase().replace(/[^a-z0-9]+/g, "_")}_ids`;
-      lines.push(`  Access: ${rootLabel} subtree from IDs = ${placeholder} (include all descendants)`);
-      lines.push(`  Use ${placeholder} as the parameter placeholder for tenant predicates.`);
-      break;
-    }
+    case "subtree":
+      throw unexpandedSubtreeError(access.tenantRoot, "buildTenantPromptBlock()");
     case "multi_root": {
-      lines.push("  Access: multiple roots —");
+      // Each root table has its own ID space (an expanded subtree is a multi_root
+      // scope), so name the columns each placeholder may be compared with.
+      lines.push(
+        "  Access: multiple roots. Each placeholder holds the IDs of one tenant root; " +
+          "compare it only with the columns listed under it:",
+      );
       for (const s of access.scopes) {
         const rootLabel = policy.roots.find((r) => r.id === s.tenantRoot)?.label ?? s.tenantRoot;
-        const placeholder = `:tenant_${rootLabel.toLowerCase().replace(/[^a-z0-9]+/g, "_")}_ids`;
-        lines.push(`    - ${rootLabel} IDs = ${placeholder}`);
+        lines.push(`    - ${rootLabel} IDs = ${placeholderForRoot(rootLabel)}`);
+        const columns = columnsHoldingRootIds(policy, s.tenantRoot);
+        if (columns.length > 0) lines.push(`      columns: ${columns.join(", ")}`);
       }
+      lines.push(
+        "  The same ID value can name different tenants in different root tables: " +
+          "never compare one root's placeholder with another root's column.",
+      );
       break;
     }
     case "global":
@@ -132,4 +142,38 @@ export function buildTenantPromptBlock(
   lines.push("--- END TENANT POLICY ---");
 
   return lines.join("\n");
+}
+
+/**
+ * The columns whose values are IDs of `rootId`, per the policy, in a stable order:
+ * the root's own `tenantIdColumn`; each child root's foreign key to it
+ * (`roots[].parent`, `hierarchy[]`); each scoped table's direct column for it;
+ * and each polymorphic ID column, with the discriminator value that points at it.
+ * A table scoped through a join path is filtered on the root's own column after
+ * the join, as the join-path lines of the prompt say, so it adds no column here.
+ */
+function columnsHoldingRootIds(policy: NormalizedTenantPolicy, rootId: string): string[] {
+  const root = policy.roots.find((r) => r.id === rootId);
+  const columns: string[] = [];
+  const add = (column: string) => {
+    if (!columns.includes(column)) columns.push(column);
+  };
+  if (root) add(root.tenantIdColumn);
+  for (const child of policy.roots) {
+    if (child.parent?.root === rootId) add(child.parent.foreignKey);
+  }
+  for (const edge of policy.hierarchy) {
+    if (edge.parent === rootId) add(edge.foreignKey);
+  }
+  for (const st of policy.scopedTables) {
+    for (const path of st.scopeThrough) {
+      if (path.root === rootId && "column" in path) add(path.column);
+    }
+  }
+  for (const pt of policy.polymorphicTables) {
+    for (const [typeValue, target] of Object.entries(pt.mapping)) {
+      if (target === rootId) add(`${pt.idColumn} (where ${pt.typeColumn} = '${typeValue}')`);
+    }
+  }
+  return columns;
 }
