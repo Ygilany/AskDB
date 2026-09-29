@@ -14,7 +14,7 @@ flowchart LR
   core["@askdb/core<br/>load schema, assemble prompt, call model"]
   dialect["AskDialect<br/>engine-specific generation and validation"]
   model["BYO LanguageModel"]
-  sql["Validated SQL artifact"]
+  sql["Checked SQL artifact"]
   execution["Host-owned execution boundary"]
 
   asker --> host
@@ -307,7 +307,7 @@ flowchart TB
   retriever["Retriever"]
   core["@askdb/core ask()"]
   dialect["AskDialect validation"]
-  sql["Validated SQL"]
+  sql["Checked SQL"]
 
   schema --> chunker
   chunker --> embedder

@@ -17,7 +17,11 @@ GRANT CONNECT ON DATABASE myapp TO askdb_reader;
 GRANT USAGE ON SCHEMA public TO askdb_reader;
 -- Grant only the tables AskDB is meant to query. Leave sensitive tables out.
 GRANT SELECT ON public.orders, public.customers TO askdb_reader;
+-- Start every transaction this role opens as read-only.
+ALTER ROLE askdb_reader SET default_transaction_read_only = on;
 ```
+
+Table grants alone don't make a Postgres role read-only. Every role can still call some built-in functions that write, for example `lo_from_bytea`, which creates a large object. AskDB's function denylist blocks the known ones, but this role exists for SQL that gets past those checks. With `default_transaction_read_only` on, such a call fails with `cannot execute lo_from_bytea() in a read-only transaction`. The setting applies to new sessions of that role, and a session can change its own default, so also run each generated query inside a read-only transaction (`BEGIN READ ONLY` … `ROLLBACK` on Postgres, `START TRANSACTION READ ONLY` on MySQL).
 
 Use that role's credentials in the connection string AskDB's consumers use. Don't reuse your application's admin user.
 

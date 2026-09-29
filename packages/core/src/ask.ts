@@ -70,7 +70,7 @@ export type AskUsage = {
   totalTokens: number | null;
 };
 
-/** Output of a dialect's generator: validated SQL plus optional dialect-specific explain metadata. */
+/** Output of a dialect's generator: the generated SQL plus optional dialect-specific explain metadata. */
 export type AskDialectGenerateResult = {
   sql: string;
   explain?: unknown;

@@ -59,7 +59,7 @@ Completed: Published installable packages to npm and finalized release tooling/c
 **Spec:** [`docs/specs/distribution.md`](specs/distribution.md)
 
 - **Drop `private: true`** on `@askdb/core`, `askdb`, and `@askdb/http-api`. Pre-1.0 versions; semver applied to the published `index.ts` exports plus the contract docs under `docs/contracts/`.
-- **SQL output contract** — `ask()` returns validated SQL. Applications own any later execution outside AskDB.
+- **SQL output contract** — `ask()` returns checked SQL. Applications own any later execution outside AskDB.
 - **Release tooling** — pick and configure (e.g. **changesets**); set up CI publish workflow; add `LICENSE`, package READMEs, examples.
 - **Schema format unchanged** — Phase 4 ships the existing pre-v2 format. **Phase 5 makes the breaking change to Schema v2 with no migrator** (acceptable pre-1.0).
 
@@ -164,7 +164,7 @@ Completed: Delivered `@askdb/studio` as a full Vite + React browser UI with shad
 
 ## Phase 10 ✅ — Multi-tenancy proof
 
-Completed: Delivered multi-tenancy proof with tenant policy authoring (roots, hierarchy, scoped/polymorphic/global tables), AI-assisted policy drafting in Studio, runtime tenant scope input to `ask()`, tenant-predicate injection into generated SQL, and `sql-only`/`sql-params` output modes. `tenant-policy.md` lives alongside `schema.json` and `concepts.md` in the schema artifact directory.
+Completed: Delivered multi-tenancy proof with tenant policy authoring (roots, hierarchy, scoped/polymorphic/global tables), AI-assisted policy drafting in Studio, runtime tenant scope input to `ask()` (required when a policy exists), prompt instructions to filter by that scope, binding of the `:tenant_*_ids` placeholders the model writes, a heuristic tenant check, and `sql-only`/`sql-params` output modes. AskDB doesn't add a tenant filter the model left out, and the check doesn't prove scoping ([ADR 0012](adrs/0012-sql-checks-are-defense-in-depth.md)). `tenant-policy.md` lives alongside `schema.json` and `concepts.md` in the schema artifact directory.
 
 **Goal:** Prove AskDB can safely generate SQL for a multi-tenant database by capturing the tenant model at setup, accepting the current user's authorized scope at query time, and carrying both into prompt assembly and validation.
 
@@ -180,11 +180,11 @@ This phase is intentionally **Postgres-first**. Tenant boundaries are too centra
 - **Authoring surface** — Studio prompts the integrator to confirm the tenant boundary instead of guessing from names alone. Introspection may suggest likely tenant columns and relationships, but human confirmation is required before enabling tenant-enforced generation.
 - **Runtime access scope** — Add a typed input to `ask()` for the current user's allowed tenant scope, e.g. exact tenant ids, allowed agency subtree, allowed sub-agency ids, or an admin/global bypass explicitly marked by the host.
 - **Prompt boundary** — Prompt assembly includes a compact, explicit tenant policy section: the tenant graph, the user's allowed scope, and the rule that generated SQL must constrain every tenant-scoped table to that scope.
-- **SQL guardrails** — Validation checks that generated SQL contains the required tenant predicates or joins for scoped tables. Prompting alone is not enough; unsafe or unscoped SQL must fail closed with a clear error.
+- **SQL guardrails** — A heuristic check confirms that generated SQL mentions the tenant column, join-path columns, or placeholder for each scoped table. In `strict` mode, SQL that fails the check throws `TenantGuardrailError`; in `warn` mode it's returned with warnings. Passing the check doesn't prove the SQL is scoped, so tenant isolation is enforced in the database ([ADR 0012](adrs/0012-sql-checks-are-defense-in-depth.md)).
 - **RAG propagation** — Retrieved schema chunks must preserve enough tenant metadata for focused prompts to enforce the same boundary as full-schema prompts.
 - **Fixtures and tests** — Add a representative multi-tenant fixture with nested agencies/sub-agencies and tenant-scoped operational tables. Cover direct tenant filters, inherited scope through joins, subtree access, cross-tenant denial, and admin/global scope.
 
-**Demo:** Given a question like "show revenue by client this quarter" and a user scoped to one agency subtree, AskDB generates SQL that only includes rows reachable through that agency/sub-agency boundary. The same question with no tenant scope configured fails closed instead of producing broad SQL.
+**Demo:** Given a question like "show revenue by client this quarter" and a user scoped to one agency subtree, AskDB generates SQL that only includes rows reachable through that agency/sub-agency boundary. The same question without a tenant scope fails closed (`TenantScopeError`) before the model is called.
 
 ## Phase 11 — Additional databases (beyond Postgres) and schema adapters
 
@@ -210,7 +210,7 @@ Early phases intentionally stay **Postgres-only** so execution and guardrails st
 
 - Harden policy composition across surfaces, database engines, and report-generation modes.
 - Support richer tenant-policy authoring, audit output, and host integration hooks for production access-control systems.
-- When metadata/policies define **tenant scope**, query generation always requires and applies it (scope required, prompt instructions, ID binding, tenant lint), and execution paths enforce it in the database (row-level security or equivalent). AskDB's SQL checks stay defense in depth ([ADR 0012](adrs/0012-sql-checks-are-defense-in-depth.md)).
+- When metadata/policies define **tenant scope**, query generation requires a scope and prompts the model to filter by it, and tenant placeholders the model writes are bound to the scope's IDs. The tenant lint doesn't prove scoping: the model can write a literal ID or select the tenant column without filtering, and the check can still pass. Execution paths enforce tenancy in the database (row-level security or equivalent) ([ADR 0012](adrs/0012-sql-checks-are-defense-in-depth.md)).
 
 ## Phase 14 — MCP server surface
 

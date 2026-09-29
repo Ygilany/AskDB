@@ -2,7 +2,7 @@
 
 ## Status
 
-Proposed (2026-09-29) in PR #184; merging #184 accepts it. It replaces the "Strict mode fails closed" design decision in `docs/specs/multi-tenancy.md` and the parser-based design in `docs/contracts/tenant-policy.md` ("Guardrail validation").
+Accepted (2026-09-29). Adopted by PR #184. It replaces the "Strict mode fails closed" design decision in `docs/specs/multi-tenancy.md` and the parser-based design in `docs/contracts/tenant-policy.md` ("Guardrail validation").
 
 ## Context
 
@@ -51,10 +51,10 @@ Return the model's SQL unchecked and document the database as the only control.
 
 Option B.
 
-1. **The checks are a lint, not a boundary.** Docs call them checks or guardrails and the output "checked SQL". They never call them a security boundary, and never say they guarantee tenant isolation or read-only execution. `SECURITY.md` ("What AskDB guarantees") lists only the mechanical properties the checks do enforce, and says when they hold (a dialect that matches the server's string settings).
+1. **The checks are a lint, not a boundary.** Docs (the docs site, `SECURITY.md`, the package READMEs and descriptions, and `docs/`) call them checks or guardrails and the output "checked SQL". They never call them a security boundary, and never say they guarantee tenant isolation or read-only execution. `SECURITY.md` ("What AskDB guarantees") lists only the mechanical properties the checks do enforce, and says when they hold (a dialect that matches the server's string settings).
 2. **The database is the boundary.** The docs lead with the execution-side controls: a least-privilege read-only role, database-level tenant enforcement (Postgres row-level security keyed on a per-request setting, per-tenant views or roles), statement timeouts and row limits (`concepts/safety-boundaries.mdx`, "Run generated SQL safely"; `guides/run-safely-in-prod.mdx`).
-3. **AskDB fails closed where it owns the mechanism.** When a tenant policy exists, `ask()` throws without a valid `tenantScope`. It expands a `subtree` scope through the host's resolver or throws. It binds tenant IDs with dialect-aware escaping or driver markers, and throws on a placeholder it can't bind. In `strict` mode it throws when the tenant lint finds a problem. These are AskDB's guarantees; a passing lint isn't.
-4. **Bypass reports are hardening fixes.** SQL that gets past a check is in scope and gets fixed, but at hardening severity. A report is more severe when it defeats something AskDB does own (scope validation, ID binding), or when it causes data loss or a cross-tenant leak in an integration that followed the guidance above (`SECURITY.md`, "Scope").
+3. **AskDB fails closed where it owns the mechanism.** When a tenant policy exists, `ask()` throws without a valid `tenantScope`. It expands a `subtree` scope through the host's resolver or throws. It binds tenant IDs with driver markers (`sql-params`) or with literal escaping that matches the dialect's string settings (`sql-only`), and throws on a placeholder it can't bind. The literal form carries the same condition as the lint: it is safe only when the dialect's `backslashEscapes` matches how the server reads strings. Tenant IDs containing a backslash break that in the mismatch case; #371 makes `sql-only` binding reject them, so the guarantee no longer depends on the match. In `strict` mode it throws when the tenant lint finds a problem. These are AskDB's guarantees; a passing lint isn't.
+4. **Bypass reports are hardening fixes.** SQL that gets past a check is in scope and gets fixed, but at hardening severity. A report is more severe when it defeats something AskDB does own (scope validation, ID binding), or when it causes data loss or a cross-tenant leak in an integration that followed the guidance above (`SECURITY.md`, "Scope"). A report that depends only on a dialect whose string settings don't match the server is triaged as configuration, tracked in #340, unless it defeats ID binding for values AskDB accepts: that is an ID-binding defect (#371).
 5. **Tightening the lint doesn't move the boundary.** Better checks are welcome: the tenant check on pre-render forms (#315), one decision point for all checks (ADR 0010, #310), deterministic predicate rewriting (#235), a sql_mode-aware MySQL dialect (#340). None of them, on its own, makes the checks a boundary. Relaxing the "not a security boundary" language requires superseding this ADR and updating `docs/contracts/tenant-policy.md` ("Not implemented") in the same PR.
 
 ## Consequences
@@ -62,7 +62,7 @@ Option B.
 - **Hosts own isolation.** Multi-tenant hosts must enforce tenancy in the database. The multi-tenancy spec lists RLS (or equivalent) as the recommended primary tenant boundary, and the docs site's safety, production and multi-tenancy pages say so.
 - **`strict` means something narrower.** It means "throw when the lint finds a problem", not "reject what can't be proven safe". The field name and values don't change (`docs/contracts/tenant-policy.md`).
 - **Known gaps are documented, not hidden.** `SECURITY.md` and the docs site list them: the tenant check's `OR 1=1` and select-only cases (tracked in #315), the `FROM` forms the sensitive check misses (#306–#309), server string settings (#340), the SQL Server second-`SELECT` gap, and Postgres catalog visibility.
-- **Mission wording changes.** `docs/mission.md` separates what AskDB guarantees (scope required, prompt instructions, ID binding, the lint rejecting or flagging SQL without tenant identifiers) from what the database enforces. `docs/roadmap.md` Phase 13 follows it.
+- **Mission wording changes.** `docs/mission.md` separates what AskDB guarantees (scope required, prompt instructions, ID binding, the lint rejecting or flagging SQL without tenant identifiers) from what the database enforces. `docs/roadmap.md` follows it: Phase 10 (completed) no longer records tenant-predicate injection or fail-closed validation as delivered, and Phase 13 no longer calls tenant scoping non-negotiable.
 - **Later ADRs build on this.** ADR 0010's Consequences ("Not a stronger guarantee") assumes this stance, and this record is its source.
 - **Security triage has a stated policy.** Reporters and maintainers can tell a hardening fix from a vulnerability by the rule in Decision 4.
 

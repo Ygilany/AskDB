@@ -45,6 +45,8 @@ const { sql } = await ask({ question, schema, model, dialect: mysqlNoBackslashEs
 
 `@askdb/mysql` re-exports `MYSQL_DIALECT` and `MARIADB_DIALECT` from `@askdb/core`, so you can import them from either package. The same spec also goes to `validateSelectSql(spec, sql)` and to `@askdb/client` per call (`askdb.ask(question, { dialect: mysqlNoBackslashEscapes })`). The dialect setting in `askdb.config.ts`, and so the CLI, the HTTP API, and Studio, takes only a built-in dialect id, so those surfaces always assume the default settings ([#340](https://github.com/Ygilany/AskDB/issues/340)).
 
+The same setting decides how AskDB escapes the values it inlines: tenant IDs in the default `sql-only` mode, and the values `bindPreparedQuery` inlines into its `sql`. With a mismatched dialect, a value containing a backslash can escape its literal ([#371](https://github.com/Ygilany/AskDB/issues/371)). Values passed as driver parameters (`tenantSqlMode: "sql-params"`, or `unboundSql` with `params`) aren't affected.
+
 MySQL's `ANSI_QUOTES` mode (also part of the `ANSI` mode) isn't supported. It makes `"…"` an identifier, which the MySQL dialect reads as a string with backslash escapes, and no `DialectSpec` setting matches it. Run AskDB's SQL on a connection without `ANSI_QUOTES`.
 
 ### What these checks don't do
@@ -61,7 +63,7 @@ Guardrail bypasses are bugs and we fix them. Still, plan for the checks to miss 
 
 AskDB returns SQL. It does not run it. If your application executes that SQL, these controls are the actual boundary:
 
-- **Use a least-privilege, read-only database role.** Grant `SELECT` only on the tables AskDB is meant to query, and leave out sensitive tables you can exclude. Then a query that gets past AskDB's checks still can't write, and can't read rows the role can't see. Grants don't hide the system catalogs everywhere: on Postgres every role can read table names, column names, and view and function definitions through `PUBLIC`. See [Run safely in production](/guides/run-safely-in-prod/#database-role) for an example and your options for the catalogs.
+- **Use a least-privilege, read-only database role.** Grant `SELECT` only on the tables AskDB is meant to query, leave out sensitive tables you can exclude, and make the role's transactions read-only (on Postgres, grants alone don't stop every write). Then a query that gets past AskDB's checks still can't write, and can't read rows the role can't see. Grants don't hide the system catalogs everywhere: on Postgres every role can read table names, column names, and view and function definitions through `PUBLIC`. See [Run safely in production](/guides/run-safely-in-prod/#database-role) for an example and your options for the catalogs.
 - **Enforce tenancy in the database.** For multi-tenant data, make the database the tenant boundary: Postgres row-level security (RLS) keyed on a per-request setting, per-tenant views, or per-tenant roles. AskDB's tenant check catches a model that forgot the filter. It does not stop a query that includes the filter and then widens it.
 - **Set timeouts and row limits.** Configure `statement_timeout` (or your engine's equivalent) on the connection, and cap the rows you fetch.
 - **Treat inputs to the prompt as untrusted.** The question text and your schema enrichment (descriptions, concepts, tenant-policy prose) all go into the prompt. Someone who controls either one can try to steer the model toward a different query. The database controls above still apply when that happens.

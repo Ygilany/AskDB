@@ -5,11 +5,11 @@
 
 ## Overview
 
-The core pipeline turns a natural language question and a describable schema into validated SQL. The entry point is `ask()`, which accepts a question, a loaded schema, an `AskDbLanguageModel` (BYO), a dialect identifier or adapter, and optional runtime options (mode, tenant scope, retriever). It returns validated SQL and structured metadata — it does not execute queries.
+The core pipeline turns a natural language question and a describable schema into checked SQL. The entry point is `ask()`, which accepts a question, a loaded schema, an `AskDbLanguageModel` (BYO), a dialect identifier or adapter, and optional runtime options (mode, tenant scope, retriever). It returns checked SQL and structured metadata — it does not execute queries.
 
 `AskDbLanguageModel` is `@askdb/core`'s public alias for the AI SDK `LanguageModel` type (from `"ai"`). Provider construction helpers — resolving config from env, instantiating OpenAI/Azure/Google models — live in `@askdb/ai` and the per-provider adapter packages (`@askdb/ai-openai`, `@askdb/ai-azure`, `@askdb/ai-google`), not in core.
 
-The `askdb` CLI wraps `ask()` as the first-party surface, handling config bootstrapping, schema loading, and structured logging. SQL execution and tabular display happen at the CLI layer via the dialect's executor, not inside `ask()`.
+The `askdb` CLI wraps `ask()` as the first-party surface, handling config bootstrapping, schema loading, and structured logging. The CLI prints the generated SQL and does not execute it. Execution belongs to the host application (or, for local development, Studio's opt-in Playground **Execute**), never to `ask()`.
 
 The `@askdb/client` package provides `createAskDb()`, a config-aware facade that resolves the schema, model, and dialect from `askdb.config.*` (plus a host-supplied AI registry) and then calls `ask()`. It is strictly a consumer of this pipeline — `ask()` keeps its required, fully-explicit arguments and remains the pure BYO-model primitive; the facade adds no behavior to the core contract.
 
@@ -39,8 +39,8 @@ The `@askdb/client` package provides `createAskDb()`, a config-aware facade that
 
 - **BYO model** — `ask()` accepts `AskDbLanguageModel` (`@askdb/core`'s alias for the AI SDK `LanguageModel`); no provider is bundled into core. Consumers supply their own model instance. Provider construction helpers (`resolveAiConfig`, `createAiRegistry`) live in `@askdb/ai`; concrete adapters in `@askdb/ai-openai`, `@askdb/ai-azure`, `@askdb/ai-google`. See [ADR 0006](../adrs/0006-ai-provider-integration-strategy.md).
 - **Dialect as a string, spec, or adapter** — `dialect` accepts a built-in string ID (`"postgres"`, `"mysql"`, etc.), a `DialectSpec` descriptor object, or a full custom `AskDialect` adapter. The string path is the normal case; `@askdb/postgres` is for introspection connectors, not needed for `ask()`. See [ADR 0002](../adrs/0002-integration-package-layout.md).
-- **SQL-only output** — `ask()` returns validated SQL; execution is opt-in at the CLI/host layer. `@askdb/core` does not manage database connections.
-- **Schema precheck** — the pipeline runs a question-vs-schema precheck before calling the model. If the question references unknown tables or columns, it fails with a structured error before spending a model call.
+- **SQL-only output** — `ask()` returns checked SQL; execution belongs to the host application. `@askdb/core` does not manage database connections.
+- **Schema precheck** — before calling the model, `assertNlToSqlInputs` rejects an empty schema or a blank question with a structured error. It doesn't reject unknown tables or columns: a table the question names (`from X` / `join X`) that isn't in the schema becomes an ambiguity note in the prompt.
 - **Structured logging throughout** — all pipeline stages emit structured events with a stable `correlationId`. See [`modes-and-observability.md`](./modes-and-observability.md) and [ADR 0001](../adrs/0001-structured-logging-pino.md).
 
 ### SQL validation rules (`validateSelectSql`)
@@ -131,7 +131,7 @@ Key events emitted (stable field names, present on every log record):
 ## Test bar
 
 - `pnpm build` and `pnpm test` pass from repo root.
-- `ask()` with a mocked `LanguageModel` returns validated SQL without a live provider.
+- `ask()` with a mocked `LanguageModel` returns checked SQL without a live provider.
 - Schema precheck fails with an `AskDbError` for an empty schema or blank question, and adds prompt notes for question-mentioned tables that aren't in the schema.
 - SQL validation correctly rejects unsafe patterns (non-SELECT, dangerous keywords, side-effecting functions, unterminated tokens) per dialect lexing rules, with a regression test per known bypass in `packages/core/src/sql/validate.test.ts`.
 - Prompt assembly with a describable schema fixture includes table descriptions, aliases, and common query language sections.
