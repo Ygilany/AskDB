@@ -547,7 +547,8 @@ export async function ask(options: AskPipelineOptions): Promise<AskPipelineResul
  *
  * Each root's IDs stay under that root, so they bind only to its own placeholder:
  * root tables have separate ID spaces, and folding a client ID into the agency
- * placeholder would match another agency (#338). The seeds are unioned into the
+ * placeholder would match another agency (#338). This relies on every root deriving a distinct
+ * placeholder, which `validateTenantScope()` and the policy loader enforce. The seeds are unioned into the
  * `tenantRoot` entry here, not trusted to the resolver, so an ancestor never loses
  * its own rows when a host returns strict descendants only.
  *
@@ -593,10 +594,14 @@ async function expandSubtreeScope(
     );
   }
 
-  const idsByRoot = result as Record<string, unknown>;
+  // Read the result exactly once: validate and build from this snapshot, so a getter
+  // can't return one value to validation and another to the scope, and a property
+  // validation can't see (non-enumerable) is never read at all.
+  const idsByRoot = new Map<string, readonly string[]>();
   const knownRoots = new Set(policy.roots.map((root) => root.id));
   let returned = 0;
-  for (const [root, ids] of Object.entries(idsByRoot)) {
+  for (const [root, value] of Object.entries(result)) {
+    const ids: unknown = Array.isArray(value) ? [...value] : value;
     if (!knownRoots.has(root)) {
       throw fail(
         `resolveTenantDescendants returned IDs under a key the subtree can't have: '${root}' is ` +
@@ -614,6 +619,7 @@ async function expandSubtreeScope(
     if (!isTenantIdArray(ids)) {
       throw fail(`resolveTenantDescendants: the IDs for '${root}' must be an array of non-empty strings.`);
     }
+    idsByRoot.set(root, ids);
     returned += ids.length;
   }
   if (returned === 0) {
@@ -624,7 +630,7 @@ async function expandSubtreeScope(
   }
 
   const scopes = levels.flatMap((root) => {
-    const own = (idsByRoot[root] as readonly string[] | undefined) ?? [];
+    const own = idsByRoot.get(root) ?? [];
     const ids = [...new Set(root === tenantRoot ? [...rootIds, ...own] : own)];
     return ids.length > 0 ? [{ tenantRoot: root, ids }] : [];
   });

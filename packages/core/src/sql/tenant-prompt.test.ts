@@ -121,6 +121,47 @@ describe("buildTenantPromptBlock", () => {
     );
   });
 
+  // #375 review: a subtree with IDs at its root only expands to `ids`. With several roots
+  // in the policy the model still sees other roots' columns (#338's `c.id IN
+  // (:tenant_agency_ids)`), so the pairing lines belong to the policy, not the scope kind.
+  it("pairs an ids placeholder with its columns when the policy has several roots", () => {
+    const scope: TenantScope = {
+      access: { kind: "ids", tenantRoot: "table:public.agencies", ids: ["42"] },
+    };
+    const block = buildTenantPromptBlock(policy, scope);
+    expect(block).toContain(
+      [
+        "Current user scope:",
+        "  Access: Agency IDs = :tenant_agency_ids",
+        "    columns: table:public.agencies#id, table:public.sub_agencies#agency_id, table:public.orders#agency_id, " +
+          "table:public.campaigns#owning_agency, table:public.notes#owner_id (where table:public.notes#owner_type = 'agency')",
+        "  Use :tenant_agency_ids as the parameter placeholder for tenant predicates.",
+        "  The same ID value can name different tenants in different root tables: never compare one root's placeholder with another root's column.",
+        "",
+      ].join("\n"),
+    );
+  });
+
+  it("keeps the ids scope block unchanged for a single-root policy", () => {
+    const agencyOnly = {
+      ...policy,
+      roots: policy.roots.filter((r) => r.id === "table:public.agencies"),
+      hierarchy: [],
+    };
+    const scope: TenantScope = {
+      access: { kind: "ids", tenantRoot: "table:public.agencies", ids: ["42"] },
+    };
+    const block = buildTenantPromptBlock(agencyOnly, scope);
+    expect(block).toContain(
+      [
+        "Current user scope:",
+        "  Access: Agency IDs = :tenant_agency_ids",
+        "  Use :tenant_agency_ids as the parameter placeholder for tenant predicates.",
+        "",
+      ].join("\n"),
+    );
+  });
+
   it("indicates global scope bypasses filtering", () => {
     const scope: TenantScope = {
       access: { kind: "global", reason: "super_admin" },

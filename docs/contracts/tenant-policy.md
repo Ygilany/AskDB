@@ -124,7 +124,7 @@ Each root is a table that represents a tenant entity in the hierarchy.
 |---|---|---|---|
 | `id` | string | yes | Stable table ID from `schema.json` (e.g., `table:public.agencies`). |
 | `tenantIdColumn` | string | yes | Stable column ID of the root's primary identifier (e.g., `table:public.agencies#id`). |
-| `label` | string | yes | Human-readable label used in prompt assembly and named placeholders (e.g., `Agency` → `:tenant_agency_ids`). |
+| `label` | string | yes | Human-readable label used in prompt assembly and named placeholders (e.g., `Agency` → `:tenant_agency_ids`). Each root's label must derive a distinct placeholder: labels that match after lowercasing and collapsing non-alphanumeric runs to `_` (`Agency` and `agency`, `Sub-Agency` and `Sub Agency`) are a load error (`SchemaParseError`), because one root's IDs would be bound where the other root's column is compared. |
 | `parent` | object | no | If this root is a child in the hierarchy. |
 | `parent.root` | string | yes (if parent) | Stable table ID of the parent root. |
 | `parent.foreignKey` | string | yes (if parent) | Stable column ID of the FK linking this root to its parent. |
@@ -323,7 +323,7 @@ Contract:
 - Under `tenantRoot`, return the seeds and any same-table descendants. A self-referencing hierarchy (e.g. `agencies.parent_agency_id`, which the policy can't declare yet) puts every agency in the tree under `tenantRoot`.
 - `ask()` unions the seed IDs into the `tenantRoot` entry (deduplicated), so an ancestor never loses its own rows when a resolver returns strict descendants only. A missing key, or an empty array, means that root has no IDs in the subtree.
 - The expanded scope is `{ kind: "multi_root", scopes }`, with one entry per root that has IDs: `tenantRoot` first, then its descendant roots breadth-first. When only `tenantRoot` has IDs, it is the equivalent `{ kind: "ids", tenantRoot, ids }`. The prompt, the tenant guardrail, and placeholder substitution all see the expanded scope. Advisory `context` is unchanged.
-- The prompt for a `multi_root` scope lists, under each placeholder, the columns that hold that root's IDs (its own ID column, child roots' foreign keys to it, scoped tables' direct columns, and polymorphic ID columns with their discriminator value), and tells the model never to compare one root's placeholder with another root's column. The tenant guardrail doesn't yet check that pairing (#315, #235).
+- When the policy declares more than one root, the prompt for a `multi_root` or `ids` scope lists, under each placeholder, the columns that hold that root's IDs (its own ID column, child roots' foreign keys to it, scoped tables' direct columns, and polymorphic ID columns with their discriminator value), and tells the model never to compare one root's placeholder with another root's column. The tenant guardrail doesn't yet check that pairing (#315, #235). A single-root policy's `ids` block is unchanged.
 - A placeholder for a root with no IDs in the subtree throws `UNRESOLVED_TENANT_PLACEHOLDER` if the model uses it. It is never bound to another root's IDs.
 - **Fail closed.** These throw `TenantScopeError` with reason `SUBTREE_NOT_RESOLVABLE` before model generation: no resolver; a result that is an array (the flat shape from before this contract) or not a plain object; a key that isn't a tenant root in the policy, or a root outside this subtree; a value that isn't an array of non-empty strings; or no IDs at all. AskDB never falls back to the seed IDs alone, and never folds IDs from one root into another root's placeholder.
 - The host owns authorization and caching of the closure. AskDB trusts the returned IDs.
@@ -354,6 +354,7 @@ Advisory context is included in prompts to help the LLM generate more relevant q
 | `global` scope without `reason` | Rejected. |
 | `subtree` scope with no `resolveTenantDescendants`, or a resolver returning a flat array, a key outside the subtree's roots, an invalid ID list, or no IDs | Rejected before prompt generation (`SUBTREE_NOT_RESOLVABLE`). |
 | Unexpanded `subtree` scope passed directly to `resolveTenantSql()` or `buildTenantPromptBlock()` | Rejected (`SUBTREE_NOT_RESOLVABLE`). |
+| Two roots whose labels derive the same `:tenant_<label>_ids` placeholder | Rejected when the policy loads, and by `validateTenantScope()` (so by `ask()`) for a policy built in code (`SchemaParseError`, naming both roots). |
 | Generated SQL references a `:tenant_*` placeholder the scope has no IDs for (or that matches no root) | Rejected (`UNRESOLVED_TENANT_PLACEHOLDER`). SQL with an unsubstituted placeholder is never returned. |
 | Several IDs meet a tenant predicate with no list form (`<`, `>`, `<=`, `>=`, or a non-comparison position) | Rejected (`UNSUPPORTED_TENANT_PREDICATE`). |
 | `"sql-only"` substitution of a tenant ID containing a backslash, with a dialect whose `backslashEscapes` is unset and whose `id` is not built-in | Rejected (`UNESCAPABLE_TENANT_ID`). A built-in `id` with `backslashEscapes` unset uses that engine's escaping (backslash escapes on for MySQL and MariaDB). |

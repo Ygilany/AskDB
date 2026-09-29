@@ -352,6 +352,46 @@ roots:
   });
 });
 
+// Each root's IDs bind through the placeholder derived from its label. Two roots whose
+// labels derive the same placeholder would bind one root's IDs where the other's are
+// compared (#375 review), so the policy is rejected at load.
+describe("normalizeTenantPolicy — placeholder collisions", () => {
+  it.each([
+    { parentLabel: "Agency", childLabel: "agency", placeholder: ":tenant_agency_ids" },
+    { parentLabel: "Sub-Agency", childLabel: "Sub Agency", placeholder: ":tenant_sub_agency_ids" },
+  ])("rejects roots labelled '$parentLabel' and '$childLabel'", ({ parentLabel, childLabel, placeholder }) => {
+    const parsed = parseTenantPolicyMarkdown(`---
+schemaId: test
+enforcement: strict
+roots:
+  - id: table:public.a
+    tenantIdColumn: table:public.a#id
+    label: ${parentLabel}
+  - id: table:public.b
+    tenantIdColumn: table:public.b#id
+    label: ${childLabel}
+    parent:
+      root: table:public.a
+      foreignKey: table:public.b#a_id
+---
+`);
+    const tableIds = new Set(["table:public.a", "table:public.b"]);
+    const colIds = new Set(["table:public.a#id", "table:public.b#id", "table:public.b#a_id"]);
+
+    let error: unknown;
+    try {
+      normalizeTenantPolicy(parsed, tableIds, colIds);
+    } catch (e) {
+      error = e;
+    }
+    expect(error).toBeInstanceOf(SchemaParseError);
+    expect((error as SchemaParseError).message).toContain(
+      `roots 'table:public.a' (label "${parentLabel}") and 'table:public.b' (label "${childLabel}") ` +
+        `both map to the placeholder ${placeholder}`,
+    );
+  });
+});
+
 // ---------------------------------------------------------------------------
 // Zod schema validation for front-matter
 // ---------------------------------------------------------------------------

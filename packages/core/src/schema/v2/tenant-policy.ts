@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { SchemaParseError } from "../../errors.js";
 
 // ---------------------------------------------------------------------------
 // Front-matter zod schemas (validated when parsing tenant-policy.md)
@@ -74,6 +75,38 @@ export type ScopedTable = z.infer<typeof scopedTableSchema>;
 export type PolymorphicTable = z.infer<typeof polymorphicTableSchema>;
 export type EnforcementMode = z.infer<typeof enforcementModeSchema>;
 export type TenantPolicyFrontmatter = z.infer<typeof tenantPolicyFrontmatterSchema>;
+
+// ---------------------------------------------------------------------------
+// Placeholder naming convention
+// ---------------------------------------------------------------------------
+
+/** The `:tenant_<label>_ids` placeholder the model writes for a root with this label. */
+export function placeholderForRoot(label: string): string {
+  return `:tenant_${label.toLowerCase().replace(/[^a-z0-9]+/g, "_")}_ids`;
+}
+
+/**
+ * Throw `SchemaParseError` when two roots' labels derive the same placeholder
+ * (`Agency` and `agency`, `Sub-Agency` and `Sub Agency`). Each root's IDs bind through
+ * its placeholder, so a shared one would bind one root's IDs where the other root's
+ * column is compared: a cross-tenant leak whenever the two ID spaces overlap.
+ */
+export function assertDistinctRootPlaceholders(roots: readonly Pick<TenantRoot, "id" | "label">[]): void {
+  const byPlaceholder = new Map<string, Pick<TenantRoot, "id" | "label">>();
+  for (const root of roots) {
+    const placeholder = placeholderForRoot(root.label);
+    const other = byPlaceholder.get(placeholder);
+    if (other && other.id !== root.id) {
+      throw new SchemaParseError(
+        `Invalid tenant policy: roots '${other.id}' (label "${other.label}") and '${root.id}' ` +
+          `(label "${root.label}") both map to the placeholder ${placeholder}, so one root's IDs ` +
+          "would be bound where the other root's column is compared. Give each root a label that " +
+          "differs after lowercasing and collapsing non-alphanumeric characters to '_'.",
+      );
+    }
+    byPlaceholder.set(placeholder, root);
+  }
+}
 
 // ---------------------------------------------------------------------------
 // Recognized H2 sections in tenant-policy.md body

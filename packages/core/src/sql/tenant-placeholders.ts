@@ -1,8 +1,9 @@
 import { TenantScopeError } from "../errors.js";
-import type {
-  NormalizedTenantPolicy,
-  TenantScope,
-  TenantAccess,
+import {
+  placeholderForRoot,
+  type NormalizedTenantPolicy,
+  type TenantScope,
+  type TenantAccess,
 } from "../schema/v2/tenant-policy.js";
 import { getDialectSpec, isBuiltInDialectId, type DialectSpec } from "./dialect-spec.js";
 import {
@@ -64,12 +65,10 @@ function lexerDialect(
 }
 
 // ---------------------------------------------------------------------------
-// Placeholder naming convention (matches tenant-prompt.ts)
+// Placeholder naming convention (owned by the policy; re-exported for callers here)
 // ---------------------------------------------------------------------------
 
-export function placeholderForRoot(label: string): string {
-  return `:tenant_${label.toLowerCase().replace(/[^a-z0-9]+/g, "_")}_ids`;
-}
+export { placeholderForRoot };
 
 // ---------------------------------------------------------------------------
 // Extract placeholders found in SQL (quote-aware via shared scanner)

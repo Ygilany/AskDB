@@ -5,6 +5,7 @@ import { describe, expect, it, vi } from "vitest";
 import { ask, type AskDialect } from "./ask.js";
 import {
   AskDbError,
+  SchemaParseError,
   SensitiveReferenceError,
   TenantGuardrailError,
   TenantScopeError,
@@ -1056,6 +1057,74 @@ describe("ask — subtree tenant scope expansion", () => {
 
     expect(error).toBeInstanceOf(TenantScopeError);
     expect((error as TenantScopeError).reason).toBe("UNRESOLVED_TENANT_PLACEHOLDER");
+  });
+
+  // Regression (#375 review): with the sub-agency root labelled "agency", both roots
+  // derive :tenant_agency_ids, and substitution kept the later root, so the sub-agency's
+  // ID 5 was bound where agency IDs are compared. A policy that reaches ask() without the
+  // loader (built in code) must be refused too, before the model call.
+  it("refuses a policy whose root labels derive the same placeholder", async () => {
+    const policy = schema.tenantPolicy!;
+    const colliding = {
+      ...schema,
+      tenantPolicy: {
+        ...policy,
+        roots: policy.roots.map((root) => (root.id === subAgencies ? { ...root, label: "agency" } : root)),
+      },
+    };
+    const dialect = sqlDialect(ordersByAgency);
+    const error = await ask({
+      question: "list orders",
+      schema: colliding,
+      model: fakeModel,
+      dialect,
+      tenantScope: agencySubtree,
+      resolveTenantDescendants: () => ({ [agencies]: ["1"], [subAgencies]: ["5"] }),
+    }).catch((e: unknown) => e);
+
+    expect(error).toBeInstanceOf(SchemaParseError);
+    expect((error as SchemaParseError).message).toContain(
+      `roots '${agencies}' (label "Agency") and '${subAgencies}' (label "agency") both map to the placeholder :tenant_agency_ids`,
+    );
+    expect(dialect.generate).not.toHaveBeenCalled();
+  });
+
+  // The resolver result is read once: a value hidden from validation (non-enumerable) or
+  // one that changes between reads (a getter) must not reach the bound IDs.
+  it("ignores a non-enumerable level instead of binding its unvalidated value", async () => {
+    const resolved = { [agencies]: ["1"] };
+    Object.defineProperty(resolved, clients, { value: "15", enumerable: false });
+    const error = await ask({
+      question: "list client appointments",
+      schema,
+      model: fakeModel,
+      dialect: sqlDialect(
+        "SELECT a.id FROM appointments a JOIN clients c ON a.client_id = c.id WHERE c.id IN (:tenant_client_ids)",
+      ),
+      tenantScope: agencySubtree,
+      resolveTenantDescendants: () => resolved,
+    }).catch((e: unknown) => e);
+
+    expect(error).toBeInstanceOf(TenantScopeError);
+    expect((error as TenantScopeError).reason).toBe("UNRESOLVED_TENANT_PLACEHOLDER");
+  });
+
+  it("binds the IDs a getter returned when validated, not a later read", async () => {
+    const reads = [["5"], ["9"]];
+    const resolved = { [agencies]: ["1"] } as Record<string, readonly string[]>;
+    Object.defineProperty(resolved, clients, { get: () => reads.shift() ?? [""], enumerable: true });
+    const result = await ask({
+      question: "list client appointments",
+      schema,
+      model: fakeModel,
+      dialect: sqlDialect(
+        "SELECT a.id FROM appointments a JOIN clients c ON a.client_id = c.id WHERE c.id IN (:tenant_client_ids)",
+      ),
+      tenantScope: agencySubtree,
+      resolveTenantDescendants: () => resolved,
+    });
+
+    expect(result.sql).toBe("SELECT a.id FROM appointments a JOIN clients c ON a.client_id = c.id WHERE c.id IN ('5')");
   });
 
   // Regression guard for silent under-scoping: without a resolver there is no
