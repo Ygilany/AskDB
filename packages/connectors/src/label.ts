@@ -26,18 +26,26 @@ const FILE = /^[^\u0000-\u001f\u007f?#;=@]+$/;
  * Build a connection label from parsed parts: `<engine>://host[:port][/database]`
  * for network engines, the path itself for a file. Returns
  * `configured <engine> connection` when `parts` is `undefined` (the input did
- * not parse) or any part fails its allowlist.
+ * not parse) or any part fails its allowlist. The shape is checked at runtime
+ * too, because a plain-JS adapter can return anything: a value that isn't a
+ * plain object (a string, an array, a `URL`), or a part that isn't a string,
+ * also gets the fallback instead of throwing.
  */
 export function formatConnectionLabel(
   engine: string,
   parts: ConnectionLabelParts | undefined,
 ): string {
   const fallback = `configured ${engine} connection`;
-  if (!parts) return fallback;
+  if (!isPlainObject(parts)) return fallback;
   if ("file" in parts) {
-    return FILE.test(parts.file) && !parts.file.includes("://") ? parts.file : fallback;
+    const { file } = parts;
+    return typeof file === "string" && FILE.test(file) && !file.includes("://") ? file : fallback;
   }
-  const { host, port, database } = parts;
+  const raw = parts as { host?: unknown; port?: unknown; database?: unknown };
+  if (![raw.host, raw.port, raw.database].every((part) => part === undefined || typeof part === "string")) {
+    return fallback;
+  }
+  const { host, port, database } = raw as { host?: string; port?: string; database?: string };
   if (host === undefined && database === undefined) return fallback;
   if (host !== undefined && !HOST.test(host)) return fallback;
   if (port !== undefined && (host === undefined || !PORT.test(port))) return fallback;
@@ -45,6 +53,12 @@ export function formatConnectionLabel(
   return `${engine}://${host ?? ""}${port === undefined ? "" : `:${port}`}${
     database === undefined ? "" : `/${database}`
   }`;
+}
+
+function isPlainObject(value: unknown): value is ConnectionLabelParts {
+  if (typeof value !== "object" || value === null) return false;
+  const proto: unknown = Object.getPrototypeOf(value);
+  return proto === Object.prototype || proto === null;
 }
 
 // scheme://authority[/path][?query] — no fragment, and the whole input must match.

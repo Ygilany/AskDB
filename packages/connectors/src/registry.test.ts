@@ -129,6 +129,19 @@ describe("createConnectorRegistry — connectionLabel", () => {
     ["the raw URL as a file", ({ url: raw }) => ({ file: raw! }), "configured postgres connection"],
     ["undefined (did not parse)", () => undefined, "configured postgres connection"],
     ["no hook", undefined, "configured postgres connection"],
+    // Plain-JS adapters bypass the type: none of these may throw (the error text
+    // would quote the URL) or reach the label.
+    ["the raw URL string instead of parts", (({ url: raw }: { url?: string }) => raw) as never, "configured postgres connection"],
+    ["{ file: undefined }", (() => ({ file: undefined })) as never, "configured postgres connection"],
+    ["a non-string host", (() => ({ host: 42 })) as never, "configured postgres connection"],
+    ["a URL object", (({ url: raw }: { url?: string }) => new URL(raw!)) as never, "configured postgres connection"],
+    [
+      "a hook that throws with the URL in its message",
+      ({ url: raw }) => {
+        throw new Error(`cannot parse ${raw}`);
+      },
+      "configured postgres connection",
+    ],
   ])("builds the label from the adapter's parts: %s", (_name, connectionLabelParts, label) => {
     const registry = createConnectorRegistry([{ ...makeAdapter("postgres"), connectionLabelParts }]);
     expect(registry.connectionLabel("postgres", { url })).toBe(label);

@@ -126,7 +126,7 @@ Connector provider registry — mirrors the `@askdb/ai` pattern for introspectio
 | `ConnectorRegistry` | Registry type — `createConnector(provider, config)`, `getTemplates(provider)`, `connectionLabel(provider, connection)`. |
 | `ConnectorProviderAdapter` | The adapter shape each engine package exports. |
 | `registry.connectionLabel(provider, { url?, fromExport?, schemaPath? })` | A label that is safe to display or log. The registry builds it with `formatConnectionLabel` from the parts the engine adapter parses (host, port, database, or a file path); a connection that doesn't parse cleanly, or an adapter without a parser, gets `configured <engine> connection`. |
-| `formatConnectionLabel(engine, parts)`, `parseConnectionUrl(input, schemes)` | The allowlisted label builder and the standard-URL parser that engine adapters use. |
+| `formatConnectionLabel(engine, parts)`, `parseConnectionUrl(input, schemes)` | The allowlisted label builder, and a strict standard-URL parser for engines whose driver has no parser to reuse. The built-in engines take their parts from their driver's own parser (`pg-connection-string`, `@tediousjs/connection-string`, `mysql2`'s URL handling). |
 
 ### `@askdb/config`
 
@@ -183,7 +183,7 @@ The engine-agnostic introspection contract and the schema-directory writer. Use 
 
 <InstallTabs pkgs="@askdb/introspect" />
 
-To get the exact `schema.json` bytes without writing anything (a preview or a drift check), call `renderSchemaV2Body(result.schema, { schemaId, provider: result.provider, existingArtifactDir })`. It returns `{ json, body, warnings }`, applies the same merge `introspect()` does when writing (human-set `sensitive` flags carried over from an existing artifact), and backs `askdb introspect --out`, `--print` and `--diff`.
+To get the exact `schema.json` bytes without writing anything (a preview or a drift check), call `renderSchemaV2Body(result.schema, { schemaId, provider: result.provider, existingArtifactDir })`. It returns `{ json, body, warnings }`, applies the same merge `introspect()` does when writing (human-set `sensitive` flags carried over from an existing artifact), and backs `askdb introspect --out`, `--print` and `--diff`. `isSchemaV2Json(value)` is the check it applies to an existing `schema.json` before merging, for callers that need to decide up front.
 
 ### `@askdb/prisma`
 

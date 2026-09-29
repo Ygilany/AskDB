@@ -947,13 +947,15 @@ describe("AskDB Studio server", () => {
     ["sqlserver", "sqlserver://db:1433;database=app;user=sa;password=p@ssw0rd", "configured sqlserver connection"],
     ["sqlserver", "sqlserver://db:1433;database=app;user=sa;password={p@ss;w0rd};encrypt=true", "configured sqlserver connection"],
     // Round 2: an unescaped ; inside an unquoted password; SQLite URI keys.
-    ["sqlserver", "Server=db;User Id=sa;Password=ab;cd;Database=app", "configured sqlserver connection"],
-    ["sqlserver", "sqlserver://db:1433;user=sa;password=ab;cd;database=app", "configured sqlserver connection"],
+    // The driver reads `cd;Database` as one key, so no database is shown.
+    ["sqlserver", "Server=db;User Id=sa;Password=ab;cd;Database=app", "sqlserver://db"],
+    // The Prisma-form parser splits on every ";": `app` is the database it opens.
+    ["sqlserver", "sqlserver://db:1433;user=sa;password=ab;cd;database=app", "sqlserver://db:1433/app"],
     ["sqlite", "file:./data/app.db?mode=ro&key=S3cret", "./data/app.db"],
     // Round 3: a quoted or braced value followed by trailing text.
     ["postgres", "postgres://db:5432/app?password='ab'cd", "postgres://db:5432/app"],
     ["sqlserver", "Server=db;Database=app;Password='ab'cd;", "configured sqlserver connection"],
-    ["sqlserver", "sqlserver://db:1433;database=app;password={ab}cd", "configured sqlserver connection"],
+    ["sqlserver", "sqlserver://db:1433;database=app;password={ab}cd", "sqlserver://db:1433/app"],
     // Round 3: JDBC and near-miss URL forms.
     ["postgres", "jdbc:postgresql://u:secret@h/db", "configured postgres connection"],
     ["postgres", '"postgres://u:secret@h/db"', "configured postgres connection"],
@@ -967,10 +969,15 @@ describe("AskDB Studio server", () => {
     ["postgres", "postgres://app:pa#ss@db:5432/app", "configured postgres connection"],
     ["sqlserver", "mssql://sa:S3/cret@host:1433/db", "configured sqlserver connection"],
     // Delta review: ADO.NET spellings the driver reads as part of the password.
-    ["sqlserver", "Server=h;User Id=sa;Password=p;;Database=leak", "configured sqlserver connection"],
-    ["sqlserver", "Server=h;User Id=sa;Password=;Database=leak", "configured sqlserver connection"],
-    ["sqlserver", "Data Source=h;Password=x;;Initial Catalog=leak", "configured sqlserver connection"],
+    // The driver reads the rest as part of the password: no database comes from it.
+    ["sqlserver", "Server=h;User Id=sa;Password=p;;Database=leak", "sqlserver://h"],
+    ["sqlserver", "Server=h;User Id=sa;Password=;Database=leak", "sqlserver://h"],
+    ["sqlserver", "Data Source=h;Password=x;;Initial Catalog=leak", "sqlserver://h"],
     ["sqlserver", "User Id=sa;Password=p;;Server=leakhost", "configured sqlserver connection"],
+    // Delta review 3: Unicode whitespace before ";" (NBSP, U+FEFF).
+    ["sqlserver", "Server=h;User Id=sa;Password=\u00a0;Database=leak", "sqlserver://h"],
+    ["sqlserver", "Server=h;User Id=sa;Password=\ufeff;Database=leak", "sqlserver://h"],
+    ["sqlserver", "User Id=sa;Password=\u00a0;Server=leakhost", "configured sqlserver connection"],
     // Prisma schema paths go through the same allowlist.
     ["prisma", "./prisma/schema.prisma", "./prisma/schema.prisma"],
     ["prisma", "file:schema.prisma?key=S3cret", "configured prisma connection"],

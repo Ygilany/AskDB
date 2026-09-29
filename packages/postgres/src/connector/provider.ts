@@ -32,8 +32,9 @@ export const postgresConnectorProvider: ConnectorProviderAdapter = {
   getTemplates() {
     return createPostgresConnector().templates!();
   },
+  // Same precedence as createConnector: an export bundle is what gets read.
   connectionLabelParts({ url, fromExport }) {
-    if (url !== undefined) return parsePostgresConnection(url);
-    return fromExport === undefined ? undefined : { file: fromExport };
+    if (fromExport !== undefined) return { file: fromExport };
+    return url === undefined ? undefined : parsePostgresConnection(url);
   },
 };

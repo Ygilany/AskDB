@@ -1,5 +1,5 @@
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -178,6 +178,23 @@ describe("cli spawn: introspect subcommand", () => {
       expect(readFileSync(join(out, "schema.json"), "utf8")).toContain(
         '"id": "table:public.User"',
       );
+    } finally {
+      rmSync(tmp, { recursive: true, force: true });
+    }
+  });
+
+  it("--diff fails, as --out does, on a malformed tables/*.md next to a valid schema.json", () => {
+    const tmp = mkdtempSync(join(tmpdir(), "askdb-prisma-diff-md-"));
+    try {
+      const out = join(tmp, "simple.schema");
+      const base = [join(cliDir, "dist/cli.js"), "introspect", "--engine", "prisma", "--prisma-schema", prismaFixture];
+      expect(run("node", [...base, "--out", out]).status).toBe(0);
+      mkdirSync(join(out, "tables"), { recursive: true });
+      writeFileSync(join(out, "tables", "broken.md"), "---\nid: [unterminated\n---\n\n# Broken\n", "utf8");
+
+      const diff = run("node", [...base, "--diff", out]);
+      expect(diff.status).not.toBe(0);
+      expect(diff.stderr).toContain("Malformed table front-matter");
     } finally {
       rmSync(tmp, { recursive: true, force: true });
     }

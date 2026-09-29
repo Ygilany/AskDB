@@ -36,6 +36,7 @@ export {
 export {
   renderToSchemaV2,
   renderSchemaV2Body,
+  isSchemaV2Json,
   toV2SchemaJson,
   compactPostgresType,
 } from "./render/render.js";

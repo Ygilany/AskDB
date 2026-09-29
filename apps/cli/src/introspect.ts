@@ -11,12 +11,11 @@ import {
 import { getAskDbRuntimeConfig } from "@askdb/config";
 import {
   introspect,
+  isSchemaV2Json,
   renderSchemaV2Body,
   type Connector,
   type IntrospectResult,
   type IntrospectionFilters,
-  type RenderBodyOptions,
-  type RenderBodyResult,
 } from "@askdb/introspect";
 import {
   createConnectorRegistry,
@@ -269,10 +268,12 @@ async function runWithOutput(
     // Render exactly what `--out <same dir>` would write: same provider, same
     // ID-anchored merge (human-set `sensitive` flags carried over). Otherwise
     // --diff reports "changed" against an untouched artifact.
-    const rendered = renderForDiff(result.schema, {
+    // An existing schema.json that isn't valid Schema v2 is compared without the
+    // merge (reported as changed); every other render error propagates, as for --out.
+    const rendered = renderSchemaV2Body(result.schema, {
       schemaId,
       provider: result.provider,
-      existingArtifactDir: hasExisting ? opts.diff : undefined,
+      existingArtifactDir: hasExisting && isValidSchemaFile(existingPath) ? opts.diff : undefined,
     });
     const existing = hasExisting ? readFileSync(existingPath, "utf8") : "";
     const changed = rendered.body !== existing && !sameJson(existing, rendered.json);
@@ -295,20 +296,17 @@ async function runWithOutput(
 }
 
 /**
- * Render with the `--out` merge when the existing `schema.json` is valid Schema
- * v2. The renderer does the full validation; when it rejects the existing file
- * (not JSON, or `{ "version": 2 }` without tables), render without the merge so
- * `--diff` reports `changed: true` instead of failing.
+ * True when `path` holds valid Schema v2 JSON, by the renderer's own check
+ * (`isSchemaV2Json`), so `{ "version": 2 }` without tables doesn't seed a merge.
  */
-function renderForDiff(schema: IntrospectResult["schema"], options: RenderBodyOptions): RenderBodyResult {
-  if (options.existingArtifactDir) {
-    try {
-      return renderSchemaV2Body(schema, options);
-    } catch {
-      // Not a valid Schema v2 artifact: nothing to merge.
-    }
+function isValidSchemaFile(path: string): boolean {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(readFileSync(path, "utf8"));
+  } catch {
+    return false;
   }
-  return renderSchemaV2Body(schema, { ...options, existingArtifactDir: undefined });
+  return isSchemaV2Json(parsed);
 }
 
 /** Key-order-insensitive comparison so a reformatted-but-equivalent file is not "changed". */

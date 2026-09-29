@@ -122,6 +122,21 @@ function readExistingPhysical(existingArtifactDir: string): V2SchemaJson {
   return assertV2SchemaJson(parsed, schemaJsonPath);
 }
 
+/**
+ * True when `value` (a parsed `schema.json`) passes the same check
+ * `renderSchemaV2Body` applies before merging with an existing artifact. Lets a
+ * caller decide whether to pass `existingArtifactDir` without swallowing the
+ * merge's other errors (for example malformed `tables/*.md` front matter).
+ */
+export function isSchemaV2Json(value: unknown): boolean {
+  try {
+    assertV2SchemaJson(value, "schema.json");
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 function assertV2SchemaJson(value: unknown, filePath: string): V2SchemaJson {
   if (!isRecord(value) || value.version !== 2) {
     throw new Error(`@askdb/introspect: invalid Schema v2 file at ${filePath}`);
