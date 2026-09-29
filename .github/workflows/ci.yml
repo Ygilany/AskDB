@@ -299,3 +299,98 @@ jobs:
 
       - name: Validate publish (dry-run)
         run: pnpm -r publish --dry-run --no-git-checks --access=public
+
+  # ── 4. Consumer lab ───────────────────────────────────────────────────────
+  # Packs this commit's publishable packages into tarballs, installs them into
+  # examples/consumer-lab (its own pnpm root, outside the workspace) and runs
+  # the lab's scenario × dialect matrix against the multi-engine fixture. The
+  # job fails on any FAIL cell (the matrix reporter sets the exit code) and
+  # passes on pass / n/a / known. The table lands in the job summary and
+  # .lab/matrix.json is uploaded, pass or fail.
+  #
+  # Docs-only PRs skip it. The filter is a job-level `if:` on `lab-changes`,
+  # not a workflow-level `paths:`: a skipped job reports success, so this check
+  # can be made required without blocking docs-only PRs (see changesets.yml).
+  lab-changes:
+    runs-on: ubuntu-latest
+    outputs:
+      lab: ${{ steps.changes.outputs.lab }}
+    steps:
+      - name: Checkout
+        if: github.event_name == 'pull_request'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      # Docs-only = every changed file is under apps/docs-site/, docs/ or plans/,
+      # a top-level *.md, or a README.md / CHANGELOG.md. Other Markdown is not
+      # docs-only: schema artifacts (fixtures/schemas/**, lab overlays) are .md.
+      - name: Detect docs-only pull requests
+        id: changes
+        env:
+          EVENT: ${{ github.event_name }}
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          if [ "$EVENT" != "pull_request" ]; then
+            echo "lab=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          changed="$(git diff --name-only "origin/${BASE_REF}...HEAD")"
+          if [ -n "$changed" ] && ! printf '%s\n' "$changed" \
+            | grep -Eqv '^(apps/docs-site/|docs/|plans/)|^[^/]+\.md$|(^|/)(README|CHANGELOG)\.md$'; then
+            echo "lab=false" >> "$GITHUB_OUTPUT"
+            echo "Docs-only pull request; skipping the consumer lab."
+          else
+            echo "lab=true" >> "$GITHUB_OUTPUT"
+          fi
+
+  consumer-lab:
+    needs: [build, lab-changes]
+    if: needs.lab-changes.outputs.lab == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      ASKDB_FIXTURE_HOST: 127.0.0.1
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
+
+      - name: Setup Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Restore Turbo cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: .turbo
+          key: turbo-${{ runner.os }}-${{ github.sha }}
+          restore-keys: |
+            turbo-${{ runner.os }}-
+
+      - name: Pack this commit's tarballs and install them in the lab
+        run: pnpm lab:use .
+
+      # lab:up starts and seeds the fixture, then keeps the install above.
+      - name: Run the consumer lab matrix
+        run: pnpm lab:matrix
+
+      - name: Upload the matrix
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: consumer-lab-matrix
+          path: examples/consumer-lab/.lab/matrix.json
+          if-no-files-found: warn
+          # .lab/ is a dot-directory, which upload-artifact skips by default.
+          include-hidden-files: true

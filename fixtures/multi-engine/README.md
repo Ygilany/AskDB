@@ -26,6 +26,19 @@ Suites that use the fixture run when `ASKDB_FIXTURE_HOST` is set (to `127.0.0.1`
 
 The ports avoid the repo's other fixtures and CI services (5432, 5434, 3306, 1433). SQL Server runs as `linux/amd64`; on Apple Silicon, Docker Desktop runs it under Rosetta.
 
+### Running a second copy
+
+To run another copy beside the usual one, give it its own compose project name and host ports. `compose.yml` and `src/env.ts` read the same `ASKDB_FIXTURE_<ENGINE>_PORT` variables, so the seeder, the suites and the consumer lab connect to that copy:
+
+```bash
+COMPOSE_PROJECT_NAME=askdb-fixture-2 \
+ASKDB_FIXTURE_POSTGRES_PORT=25432 ASKDB_FIXTURE_MYSQL_PORT=23306 \
+ASKDB_FIXTURE_MARIADB_PORT=23307 ASKDB_FIXTURE_SQLSERVER_PORT=21433 \
+pnpm fixture:up
+```
+
+Set the same variables for every command that uses that copy, `fixture:down` and `fixture:reset` included; without `COMPOSE_PROJECT_NAME` they act on the usual one. The SQLite file is per checkout, so run the second copy from another worktree. A second SQL Server needs about 1 GB more memory in Docker.
+
 ## Using it from a test
 
 Import the helpers by relative path (the same way suites import `scripts/test-utils/integration.mjs`):

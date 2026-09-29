@@ -15,6 +15,7 @@ overrides:
   '@askdb/connectors': 0.1.0-beta.7
   '@askdb/core': 1.0.0-beta.42
   '@askdb/enrich': 0.2.0-beta.13
+  '@askdb/http-api': 1.0.0-beta.42
   '@askdb/introspect': 0.3.0-beta.16
   '@askdb/mysql': 0.1.0-beta.17
   '@askdb/postgres': 0.2.0-beta.18
@@ -44,6 +45,9 @@ importers:
       '@askdb/core':
         specifier: 1.0.0-beta.42
         version: 1.0.0-beta.42
+      '@askdb/http-api':
+        specifier: 1.0.0-beta.42
+        version: 1.0.0-beta.42(zod@4.4.3)
       ai:
         specifier: 7.0.51
         version: 7.0.51(zod@4.4.3)
@@ -209,6 +213,11 @@ packages:
   '@askdb/enrich@0.2.0-beta.13':
     resolution: {integrity: sha512-FbYGiQ/aIAiX32oIEPLTIKNE+GtlMdua+uL0F7kTrLePfmycDv0Oj/pf+jFf7qB3fhFwf+hEDReaUld5Oywwqg==}
     engines: {node: '>=22.12'}
+
+  '@askdb/http-api@1.0.0-beta.42':
+    resolution: {integrity: sha512-hbcHigX7KbOgs/z0231J2zLH7rAnChUOmjuYgwEzDPre/vcP+e4uD/5Na3ACkX0F9SdMm6FcGTJ2JjxXO8VFYQ==}
+    engines: {node: '>=22'}
+    hasBin: true
 
   '@askdb/introspect@0.3.0-beta.16':
     resolution: {integrity: sha512-lbTYn2i17W4/BQNHUXmPU3cNkiztGM4L8RHA/ekcevEsWSoUWQVcWS/1GJWvvhi9kGBqb+Z3aXIDhBlth1R6tg==}
@@ -2740,6 +2749,23 @@ snapshots:
   '@askdb/enrich@0.2.0-beta.13':
     dependencies:
       '@askdb/core': 1.0.0-beta.42
+
+  '@askdb/http-api@1.0.0-beta.42(zod@4.4.3)':
+    dependencies:
+      '@askdb/ai': 0.1.0-beta.6(ai@7.0.51(zod@4.4.3))
+      '@askdb/ai-anthropic': 1.0.0-beta.4(@askdb/ai@0.1.0-beta.6(ai@7.0.51(zod@4.4.3)))(ai@7.0.51(zod@4.4.3))(zod@4.4.3)
+      '@askdb/ai-azure': 1.0.0-beta.6(@askdb/ai@0.1.0-beta.6(ai@7.0.51(zod@4.4.3)))(ai@7.0.51(zod@4.4.3))(zod@4.4.3)
+      '@askdb/ai-google': 1.0.0-beta.6(@askdb/ai@0.1.0-beta.6(ai@7.0.51(zod@4.4.3)))(ai@7.0.51(zod@4.4.3))(zod@4.4.3)
+      '@askdb/ai-openai': 1.0.0-beta.6(@askdb/ai@0.1.0-beta.6(ai@7.0.51(zod@4.4.3)))(ai@7.0.51(zod@4.4.3))(zod@4.4.3)
+      '@askdb/client': 1.0.0-beta.5(@askdb/config@1.0.0-beta.11)(@askdb/core@1.0.0-beta.42)(ai@7.0.51(zod@4.4.3))
+      '@askdb/config': 1.0.0-beta.11
+      '@askdb/core': 1.0.0-beta.42
+      '@askdb/postgres': 0.2.0-beta.18(pg@8.22.0)
+      ai: 7.0.51(zod@4.4.3)
+      pg: 8.22.0
+    transitivePeerDependencies:
+      - pg-native
+      - zod
 
   '@askdb/introspect@0.3.0-beta.16':
     dependencies:

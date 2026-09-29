@@ -1,5 +1,5 @@
 import { readFileSync, readdirSync, statSync } from "node:fs";
-import { join, resolve } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
 import { SchemaParseError } from "../../errors.js";
 import { parseConceptsMarkdown, parseTableMarkdown } from "./parser.js";
 import { v2SchemaJsonSchema, type V2SchemaJson } from "./physical.js";
@@ -48,7 +48,15 @@ export function loadSchemaFromJson(raw: string): NormalizedSchemaV2 {
  * Autodetects between:
  *  - A v2 directory (`<schemaId>.schema/`) containing `schema.json`
  *  - A bundled JSON file (`*.bundle.json` or any JSON with `bundled: true`)
- *  - A direct path to a `schema.json` inside a directory
+ *  - A direct path to a `schema.json` inside a directory — loaded exactly like the
+ *    enclosing directory, including sibling `tables/*.md`, `concepts.md`, and
+ *    `tenant-policy.md`
+ *
+ * Any other JSON file is treated as a standalone physical layer.
+ *
+ * Optional sibling files may be absent, but a present file that cannot be read
+ * or parsed (e.g. malformed YAML front-matter in `tenant-policy.md`) throws
+ * `SchemaParseError` — a broken tenant policy never silently disables tenancy.
  */
 export function loadSchema(path: string): NormalizedSchemaV2 {
   const resolved = resolve(path);
@@ -71,7 +79,14 @@ export function loadSchema(path: string): NormalizedSchemaV2 {
     return loadFromBundle(parsed as BundledSchemaJson, resolved);
   }
 
-  // Bare schema.json — treat enclosing directory as the schema directory
+  // A file named `schema.json` is the physical layer of a schema directory: load
+  // the enclosing directory so sibling tables/*.md, concepts.md, and — critically —
+  // tenant-policy.md apply exactly as they would for the directory path.
+  if (basename(resolved) === "schema.json") {
+    return loadFromDirectory(dirname(resolved));
+  }
+
+  // Any other bare JSON file is a standalone physical layer with no sibling files.
   const physical = parsePhysicalLayer(parsed, resolved);
   return buildNormalized(physical, {}, undefined, [], undefined);
 }
@@ -94,50 +109,96 @@ function loadFromDirectory(dir: string): NormalizedSchemaV2 {
 
   const physical = parsePhysicalLayer(parsed, schemaJsonPath);
 
-  // Load tables/*.md
+  // The describable files below are optional, but only *absence* (ENOENT) is
+  // tolerated. Any other read or parse failure is fatal: silently skipping a
+  // broken tenant-policy.md would load the schema with tenant enforcement off.
+
+  // Load optional tables/*.md
   const tableDir = join(dir, "tables");
   const tableMarkdowns: Record<string, ReturnType<typeof parseTableMarkdown>> = {};
-  try {
-    const entries = readdirSync(tableDir);
-    for (const entry of entries) {
-      if (!entry.endsWith(".md")) continue;
-      const filePath = join(tableDir, entry);
-      const content = readFileSync(filePath, "utf8");
-      const parsed = parseTableMarkdown(content, filePath);
-      tableMarkdowns[parsed.frontmatter.id] = parsed;
-    }
-  } catch (e) {
-    // tables/ directory is optional; only rethrow SchemaParseError
-    if (e instanceof SchemaParseError) throw e;
+  const entries = readOptionalDir(tableDir);
+  for (const entry of entries ?? []) {
+    if (!entry.endsWith(".md")) continue;
+    const filePath = join(tableDir, entry);
+    const content = readRequiredFile(filePath);
+    const parsed = parseOrWrap(filePath, () => parseTableMarkdown(content, filePath));
+    tableMarkdowns[parsed.frontmatter.id] = parsed;
   }
 
   // Load optional concepts.md
   let concepts: V2ConceptsFrontmatter | undefined;
-  try {
-    const conceptsPath = join(dir, "concepts.md");
-    const content = readFileSync(conceptsPath, "utf8");
-    concepts = parseConceptsMarkdown(content, conceptsPath).frontmatter;
-  } catch {
-    // optional
+  const conceptsPath = join(dir, "concepts.md");
+  const conceptsContent = readOptionalFile(conceptsPath);
+  if (conceptsContent !== undefined) {
+    concepts = parseOrWrap(conceptsPath, () =>
+      parseConceptsMarkdown(conceptsContent, conceptsPath),
+    ).frontmatter;
   }
 
   // Load optional tenant-policy.md
   let tenantPolicy: NormalizedTenantPolicy | undefined;
-  try {
-    const policyPath = join(dir, "tenant-policy.md");
-    const content = readFileSync(policyPath, "utf8");
-    const parsed = parseTenantPolicyMarkdown(content, policyPath);
-    const physicalTableIds = new Set(physical.tables.map((t) => t.id));
-    const physicalColumnIds = new Set(
-      physical.tables.flatMap((t) => t.columns.map((c) => c.id)),
-    );
-    tenantPolicy = normalizeTenantPolicy(parsed, physicalTableIds, physicalColumnIds);
-  } catch (e) {
-    if (e instanceof SchemaParseError) throw e;
-    // optional — file not found is fine
+  const policyPath = join(dir, "tenant-policy.md");
+  const policyContent = readOptionalFile(policyPath);
+  if (policyContent !== undefined) {
+    tenantPolicy = parseOrWrap(policyPath, () => {
+      const parsed = parseTenantPolicyMarkdown(policyContent, policyPath);
+      const physicalTableIds = new Set(physical.tables.map((t) => t.id));
+      const physicalColumnIds = new Set(
+        physical.tables.flatMap((t) => t.columns.map((c) => c.id)),
+      );
+      return normalizeTenantPolicy(parsed, physicalTableIds, physicalColumnIds);
+    });
   }
 
   return buildNormalized(physical, tableMarkdowns, concepts, [], tenantPolicy);
+}
+
+function isMissingPathError(e: unknown): boolean {
+  return (
+    typeof e === "object" && e !== null && (e as { code?: unknown }).code === "ENOENT"
+  );
+}
+
+function errorMessage(e: unknown): string {
+  return e instanceof Error ? e.message : String(e);
+}
+
+/** Read an optional file: `undefined` when it does not exist, `SchemaParseError` on any other failure. */
+function readOptionalFile(path: string): string | undefined {
+  try {
+    return readFileSync(path, "utf8");
+  } catch (e) {
+    if (isMissingPathError(e)) return undefined;
+    throw new SchemaParseError(`Failed to read ${path}: ${errorMessage(e)}`, e);
+  }
+}
+
+/** List an optional directory: `undefined` when it does not exist, `SchemaParseError` on any other failure. */
+function readOptionalDir(path: string): string[] | undefined {
+  try {
+    return readdirSync(path);
+  } catch (e) {
+    if (isMissingPathError(e)) return undefined;
+    throw new SchemaParseError(`Failed to read directory ${path}: ${errorMessage(e)}`, e);
+  }
+}
+
+function readRequiredFile(path: string): string {
+  try {
+    return readFileSync(path, "utf8");
+  } catch (e) {
+    throw new SchemaParseError(`Failed to read ${path}: ${errorMessage(e)}`, e);
+  }
+}
+
+/** Run a parse step; rethrow `SchemaParseError` as-is and wrap anything else with the file path. */
+function parseOrWrap<T>(path: string, fn: () => T): T {
+  try {
+    return fn();
+  } catch (e) {
+    if (e instanceof SchemaParseError) throw e;
+    throw new SchemaParseError(`Failed to parse ${path}: ${errorMessage(e)}`, e);
+  }
 }
 
 function loadFromBundle(bundle: BundledSchemaJson, filePath: string): NormalizedSchemaV2 {
@@ -149,14 +210,19 @@ function loadFromBundle(bundle: BundledSchemaJson, filePath: string): Normalized
     tableMarkdowns[parsed.frontmatter.id] = parsed;
   }
 
+  // Mirror the directory loader: only an *absent* key means "no file". A present
+  // value — including an empty string — is parsed and must be valid, so an empty
+  // or corrupt tenantPolicy can never silently disable tenant enforcement.
   let concepts: V2ConceptsFrontmatter | undefined;
-  if (bundle.concepts) {
-    concepts = parseConceptsMarkdown(bundle.concepts, "concepts.md").frontmatter;
+  const conceptsContent = bundledFileContent(bundle, "concepts", "concepts.md", filePath);
+  if (conceptsContent !== undefined) {
+    concepts = parseConceptsMarkdown(conceptsContent, "concepts.md").frontmatter;
   }
 
   let tenantPolicy: NormalizedTenantPolicy | undefined;
-  if (bundle.tenantPolicy) {
-    const parsed = parseTenantPolicyMarkdown(bundle.tenantPolicy, "tenant-policy.md");
+  const policyContent = bundledFileContent(bundle, "tenantPolicy", "tenant-policy.md", filePath);
+  if (policyContent !== undefined) {
+    const parsed = parseTenantPolicyMarkdown(policyContent, "tenant-policy.md");
     const physicalTableIds = new Set(physical.tables.map((t) => t.id));
     const physicalColumnIds = new Set(
       physical.tables.flatMap((t) => t.columns.map((c) => c.id)),
@@ -165,6 +231,23 @@ function loadFromBundle(bundle: BundledSchemaJson, filePath: string): Normalized
   }
 
   return buildNormalized(physical, tableMarkdowns, concepts, [], tenantPolicy);
+}
+
+/** Read an optional bundled markdown file: `undefined` only when the key is absent. */
+function bundledFileContent(
+  bundle: BundledSchemaJson,
+  key: "concepts" | "tenantPolicy",
+  fileName: string,
+  bundlePath: string,
+): string | undefined {
+  const value: unknown = bundle[key];
+  if (value === undefined) return undefined;
+  if (typeof value !== "string") {
+    throw new SchemaParseError(
+      `Invalid bundle at ${bundlePath}: \`${key}\` must be the raw ${fileName} content (a string).`,
+    );
+  }
+  return value;
 }
 
 function parsePhysicalLayer(data: unknown, filePath: string): V2SchemaJson {

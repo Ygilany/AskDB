@@ -57,9 +57,13 @@ If you're seeing this on legitimate read questions, the model may be misreading 
 
 The model returned more than one SQL statement. AskDB refuses multi-statement output. Rephrase the question to ask for a single result, or break it into two separate `ask()` calls.
 
-### `SqlValidationError: SQL_COMMENT` / `SQL_FORBIDDEN_KEYWORD`
+### `SqlValidationError: SQL_COMMENT` / `SQL_FORBIDDEN_KEYWORD` / `SQL_FORBIDDEN_FUNCTION`
 
-The generated SQL contains a SQL comment or a forbidden keyword (for example `DELETE`, `CREATE`, or on SQL Server `EXEC`). These are heuristic guardrails that match whole words outside string literals, so a column or alias named like a keyword (say, `update`) also trips them. If this fires on a legitimate query, file an issue with the question and schema excerpt.
+The generated SQL contains a SQL comment (including `#` on MySQL), a forbidden keyword (`INTO`, `DELETE`, `EXEC`, `WAITFOR`, etc.), or a call to a blocked side-effecting function (`pg_sleep`, `set_config`, `LOAD_FILE`, `SLEEP`, etc.). Keywords are matched as whole, unquoted tokens, so a column like `deleted_at` or `"delete"` is fine, but an unquoted column or alias named like a keyword (say, `update`) also trips them. These are heuristic, defense-in-depth guardrails. If one fires on a legitimate query, file an issue with the question and schema excerpt.
+
+### `SqlValidationError: SQL_UNTERMINATED`
+
+A string literal, quoted identifier, dollar-quoted string, or block comment in the generated SQL never closes, so the validator cannot tell where the statement ends and rejects it. On MySQL, check that the dialect's `backslashEscapes` setting matches the server (`NO_BACKSLASH_ESCAPES`).
 
 ### Generated SQL references a column or table that doesn't exist
 
@@ -77,7 +81,7 @@ If the column exists in the database but the model keeps getting it wrong, check
 
 ### The SQL is syntactically valid but logically wrong
 
-SQL validation is heuristic — AskDB confirms the statement kind and blocks write keywords, but it doesn't check identifiers and can't verify that the query answers your question semantically. The quality of answers depends almost entirely on how well the schema artifact describes your data.
+SQL validation is heuristic — AskDB confirms the statement kind and blocks write keywords and side-effecting functions, but it doesn't check identifiers and can't verify that the query answers your question semantically. The quality of answers depends almost entirely on how well the schema artifact describes your data.
 
 Checklist:
 1. Does the relevant table have a description? (`description:` field in the table's `.md` file)
@@ -199,7 +203,7 @@ The `tenantRoot` in the scope doesn't match any root defined in `tenant-policy.m
 
 ### `TenantScopeError: SUBTREE_NOT_RESOLVABLE`
 
-The scope uses `access.kind: "subtree"`, but `ask()` couldn't expand it. Either no `resolveTenantDescendants` callback was passed, or the callback returned an empty array or something other than an array of non-empty string IDs. AskDB doesn't query your database to find descendants, and it won't fall back to the seed IDs alone. Pass a resolver that returns every ID in the subtree, or send an `ids` access with the IDs already expanded. See [Hierarchical scope](/guides/multi-tenancy/#hierarchical-scope-subtree).
+The scope uses `access.kind: "subtree"`, but `ask()` couldn't expand it. Either no `resolveTenantDescendants` callback was passed, or the callback returned an empty array or something other than an array of non-empty string IDs. AskDB doesn't query your database to find descendants, and it won't fall back to the seed IDs alone. Pass a resolver that returns every ID in the subtree, or send an `ids` access with the IDs already expanded. Calling `resolveTenantSql()` directly with an unexpanded `subtree` scope throws the same error, because it doesn't walk the hierarchy either. See [Hierarchical scope](/guides/multi-tenancy/#hierarchical-scope-subtree).
 
 ### `TenantGuardrailError`
 
