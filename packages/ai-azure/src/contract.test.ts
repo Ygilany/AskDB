@@ -103,6 +103,32 @@ describe("azureProvider — real @ai-sdk/azure contract", () => {
     expect(request.body.reasoning).toMatchObject({ effort: "medium" });
   });
 
+  it("sends minimal as low for a custom-named deployment declared as gpt-6", async () => {
+    // The SDK can't see the family behind "askdb-reporting", so it would put
+    // minimal on the wire, which gpt-6 and later reject (they accept low through max).
+    const request = await captureGenerate(
+      {
+        ...baseConfig,
+        model: "askdb-reporting",
+        providerOptions: { ...baseConfig.providerOptions, modelFamily: "gpt-6" },
+      },
+      "minimal",
+    );
+    expect(request.body.reasoning).toMatchObject({ effort: "low" });
+  });
+
+  it("keeps minimal for a custom-named deployment declared as gpt-5", async () => {
+    const request = await captureGenerate(
+      {
+        ...baseConfig,
+        model: "askdb-reporting",
+        providerOptions: { ...baseConfig.providerOptions, modelFamily: "gpt-5" },
+      },
+      "minimal",
+    );
+    expect(request.body.reasoning).toMatchObject({ effort: "minimal" });
+  });
+
   it("forwards embedding dimensions and user to the request body", async () => {
     const requests = captureFetch(embeddingResponse);
     const model = azureProvider.createEmbeddingModel(

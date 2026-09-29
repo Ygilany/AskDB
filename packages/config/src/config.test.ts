@@ -12,6 +12,7 @@ import {
   flattenAskDbConfig,
   getAskDbRuntimeConfig,
   loadAskDbConfigProjectionSync,
+  renderAskDbAiConfigScaffold,
   requiredEnv,
   resetAskDbRuntimeForTests,
   setAskDbRuntimeForTests,
@@ -469,6 +470,48 @@ describe("loadAskDbConfigProjectionSync", () => {
   afterEach(() => {
     resetAskDbRuntimeForTests();
     if (dir) rmSync(dir, { recursive: true, force: true });
+  });
+
+  it.each(ASKDB_AI_PROVIDERS)(
+    "the scaffolded %s ai block loads and reads every env var it lists",
+    (provider) => {
+      dir = mkdtempSync(join(tmpdir(), "askdb-config-"));
+      linkWorkspacePackage(dir);
+      const scaffold = renderAskDbAiConfigScaffold({ provider, keyEnv: "MY_KEY", modelEnv: "MY_MODEL" });
+      writeFileSync(
+        join(dir, "askdb.config.ts"),
+        `import { defineConfig, env, type AskDbConfig } from "@askdb/config";
+export default defineConfig({
+${scaffold.source}
+  introspection: { provider: "postgres", providerConfig: { postgres: { databaseUrl: "postgres://x/y" } }, outputDir: "./out/" },
+  rag: { embedder: "mock", embedderConfig: {}, store: "memory", storeConfig: { memory: {} } },
+} satisfies AskDbConfig);
+`,
+        "utf8",
+      );
+      const names = scaffold.envVars.map((v) => v.name);
+      for (const name of names) process.env[name] = `value-of-${name}`;
+      try {
+        const { projection } = loadAskDbConfigProjectionSync(dir);
+        expect(projection?.entries.ASKDB_AI_PROVIDER).toBe(provider);
+        const values = Object.values(projection?.entries ?? {});
+        for (const name of names) expect(values).toContain(`value-of-${name}`);
+        // Azure / Foundry can't start without a resource name or endpoint.
+        const isAzure = provider === "azure" || provider === "foundry";
+        expect(names.includes("AZURE_RESOURCE_NAME")).toBe(isAzure);
+        if (isAzure) {
+          expect(projection?.entries.ASKDB_AI_AZURE_RESOURCE_NAME).toBe("value-of-AZURE_RESOURCE_NAME");
+        }
+      } finally {
+        for (const name of names) delete process.env[name];
+      }
+    },
+  );
+
+  it("the ai scaffold rejects an unknown provider, which it would emit as an object key", () => {
+    expect(() =>
+      renderAskDbAiConfigScaffold({ provider: "__proto__" as "openai", keyEnv: "MY_KEY" }),
+    ).toThrow('Unknown AI provider: "__proto__"');
   });
 
   it("loads defineConfig projection from disk", () => {

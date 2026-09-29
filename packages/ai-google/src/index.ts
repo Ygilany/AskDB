@@ -1,7 +1,7 @@
 import { createGoogle } from "@ai-sdk/google";
-import { defaultEmbeddingSettingsMiddleware, wrapEmbeddingModel } from "ai";
 import {
   resolveBaseConfig,
+  withEmbeddingProviderOptions,
   type AiProviderAdapter,
   type ProviderEnvSpec,
   type ReasoningEffort,
@@ -61,15 +61,9 @@ export const googleProvider: AiProviderAdapter = {
     // Gemini's embedding API calls the output size `outputDimensionality`
     // (read from `providerOptions.google`). It has no per-end-user field, so
     // `options.user` is intentionally not forwarded.
-    if (options.dimensions === undefined) return model;
-    return wrapEmbeddingModel({
-      model,
-      middleware: defaultEmbeddingSettingsMiddleware({
-        settings: {
-          providerOptions: { google: { outputDimensionality: options.dimensions } },
-        },
-      }),
-    });
+    return withEmbeddingProviderOptions(model, "google", options, ({ dimensions }) => ({
+      outputDimensionality: dimensions,
+    }));
   },
   resolveProviderOptions(config, { reasoningEffort }) {
     if (!reasoningEffort) return undefined;

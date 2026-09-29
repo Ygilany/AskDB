@@ -4,6 +4,8 @@
 
 Accepted.
 
+> **Amendment (2026-09):** `@askdb/config` also renders the `ai` block of a new `askdb.config.ts` (`renderAskDbAiConfigScaffold`), and both `askdb init` and Studio's setup wizard call it. Before this, each app kept its own copy of the template with a "keep the two in sync" comment, and they drifted: #188 added Azure's required `resourceName` to `askdb init` only, so Studio still wrote an Azure config that failed at startup. Options considered: keep both copies and add a test that fails when they differ (the duplication stays, and the test has to live in one app and import the other); move the template into `@askdb/ai` (it owns provider knowledge, but not the config file's shape, and it has no dependency on `@askdb/config`); or move it into `@askdb/config`. `@askdb/config` won because it owns `AskDbConfig`, including the rule that `AzureConfig` / `FoundryConfig` need `resourceName` or `baseUrl`, and both apps already depend on it. Callers still pick the env var names for the API key and model; the rest of each app's template (introspection, RAG, Studio sections) is unchanged.
+
 ## Context
 
 First-party apps (`askdb`, `@askdb/http-api`, `@askdb/studio`) load secrets and defaults from `.env` via `dotenv`, then read canonical names such as `OPENAI_API_KEY`, `ASKDB_*`, and `DATABASE_URL` directly from `process.env`. Library packages like `@askdb/core`, `@askdb/rag`, and `@askdb/tui` were also reading `process.env` directly, which means:

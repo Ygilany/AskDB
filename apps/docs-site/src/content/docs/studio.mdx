@@ -21,7 +21,7 @@ Studio reads `outputDir` from `askdb.config.ts`. Pass `--schema <path>` to overr
 Studio also works as the *first* command in a brand-new project. Run `npx askdb studio` in a directory with no `askdb.config.ts` (or no schema artifact yet) and Studio opens a setup wizard instead of erroring:
 
 1. **Pick your database engine and AI provider.** The wizard asks for environment variable *names* only — it never accepts secret values. Studio writes `askdb.config.ts` and an `.env.example` for you.
-2. **Add your secrets to `.env` yourself.** The wizard shows exactly which variables to fill in; the values stay on your disk.
+2. **Add your secrets to `.env` yourself.** The wizard shows exactly which variables to fill in (for Azure OpenAI and Foundry, that includes `AZURE_RESOURCE_NAME`); the values stay on your disk.
 3. **Run introspection from the browser.** Studio reads your schema structure server-side (tables and columns — never rows) and opens the Overview when it's done.
 
 If `askdb.config.ts` exists but fails to load (a syntax error, or its dependencies aren't installed yet), Studio prints a warning with the load error in the terminal and starts without it. The wizard never overwrites an existing config: fix the file and restart Studio.

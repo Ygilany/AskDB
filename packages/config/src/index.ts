@@ -64,6 +64,12 @@ export type {
   PgvectorStoreConfig,
 } from "./types.js";
 export { flattenAskDbConfig } from "./flatten.js";
+export { renderAskDbAiConfigScaffold } from "./scaffold.js";
+export type {
+  AskDbAiConfigScaffold,
+  AskDbAiConfigScaffoldInput,
+  AskDbScaffoldEnvVar,
+} from "./scaffold.js";
 export {
   ASKDB_MODES_V1,
   ASKDB_LOG_LEVELS,
