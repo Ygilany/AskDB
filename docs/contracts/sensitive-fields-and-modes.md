@@ -71,7 +71,7 @@ Wildcards and whole-row references expand per query block. Each `SELECT` is a bl
 
 ## `bounded_results` and row data → model
 
-**Contract direction** ([`modes-v1.md`](./modes-v1.md)): post-execute paths that send **row payloads** to a model are **stubbed** in v1 (logging only).
+**Contract direction** ([`modes-v1.md`](./modes-v1.md)): AskDB does not execute SQL, so no v1 path sends **row payloads** to a model; `bounded_results` reserves a future summary step over results the host provides.
 
 **Intended rules when bounded summaries are implemented:**
 
@@ -79,7 +79,7 @@ Wildcards and whole-row references expand per query block. Each `SELECT` is a bl
 2. When result rows **are** allowed to be sent for summarization, **all sensitive columns must be removed** (or replaced with safe placeholders) **before** any LLM call that consumes row payloads—consistent with schema `sensitive` markers and any future row-level policy.
 3. **Ordering:** strip/redact **first**, then apply **budget** limits (row count, columns, bytes) as specified in the bounded-results contract.
 
-Validation and tests for this belong in the milestone that ships real post-execute summarization, not in the v1 stub-only phase.
+Validation and tests for this belong in the milestone that ships result summarization, not in v1.
 
 ---
 

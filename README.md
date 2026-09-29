@@ -12,7 +12,7 @@ AskDB grounds generation in a human-enriched schema artifact, and it keeps datab
 
 > **Ask your data. Keep control of the query.**
 >
-> **Status:** pre-release beta. Every package ships `-beta.N` prerelease versions on npm: the `askdb` CLI, `@askdb/core`, `@askdb/config`, `@askdb/client`, `@askdb/http-api`, and the `@askdb/ai-*` adapters are on the `1.0.0-beta` line, and the other packages are `0.x` betas. The core API (`ask()`), schema artifact, and config are documented, but public APIs may still change before 1.0 — Studio and RAG are the most likely to move.
+> **Status:** pre-release beta. Every published package ships `-beta.N` prerelease versions on npm: the `askdb` CLI, `@askdb/core`, `@askdb/config`, `@askdb/client`, `@askdb/http-api`, and the `@askdb/ai-*` adapters are on the `1.0.0-beta` line, and the other packages are `0.x` betas. The core API (`ask()`), schema artifact, and config are documented, but public APIs may still change before 1.0 — Studio and RAG are the most likely to move.
 >
 > AskDB returns SQL for review; it does not execute generated SQL.
 

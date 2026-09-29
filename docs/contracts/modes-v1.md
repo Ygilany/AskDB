@@ -8,10 +8,10 @@ This document fixes **trust boundaries** for headless pipelines (CLI today; MCP/
 
 ## Modes shipped in v1
 
-| Mode | ID | Model sees before SQL runs | Row data → model after execute |
-|------|-----|----------------------------|----------------------------------|
-| **Schema-grounded only** | `schema_only` | Schema artifact + NL question only (via NL→SQL prompt). | **Never.** Results are for the host/CLI output only. |
-| **Schema + bounded results (stub)** | `bounded_results` | Same as `schema_only` for the **first** model call. | **Contract:** a future step may attach a **bounded** subset for summaries; bounded limits and UX are specified when that step lands. **Today:** pipeline logs a **`post_execute` stub branch** (`branch: stub`) and performs **no** second LLM call with row payloads. |
+| Mode | ID | Model sees (NL→SQL call) | Row data → model |
+|------|-----|--------------------------|------------------|
+| **Schema-grounded only** | `schema_only` | Schema artifact + NL question only (via NL→SQL prompt). | **Never.** AskDB does not run the SQL, so it has no rows; results the host produces stay with the host. |
+| **Schema + bounded results (reserved)** | `bounded_results` | Same as `schema_only`. | **Contract:** a future step may let a host send a **bounded** subset of its own results back through the model for summaries; bounded limits and UX are specified when that step lands. **Today:** `ask()` behaves exactly as in `schema_only`: one NL→SQL model call, no row payloads, and no extra log event. |
 
 **Default:** `schema_only`.
 
@@ -27,8 +27,8 @@ Product copy in [`README.md`](../../README.md) describes additional modes (**rep
 
 ## Enforcement (v1 implementation)
 
-1. **`schema_only`** — After successful execute, the engine **must not** invoke any code path that passes query **row payloads** into `generateText` / chat completion (no such path exists in v1; this mode **requires** continuing to satisfy that invariant).
-2. **`bounded_results`** — Same invariant for the **NL→SQL** call. Post-execute, only the **stub** branch runs (logging); any real summary step **must** respect documented **row/column/byte budgets** before it is marked non-stub.
+1. **`schema_only`** — The pipeline **must not** pass query **row payloads** into `generateText` / chat completion. AskDB never executes SQL, so no row payloads exist inside the pipeline in v1; this mode **requires** keeping that invariant if a result-summary step is ever added.
+2. **`bounded_results`** — Same invariant for the **NL→SQL** call. v1 has no summary step; any future one **must** respect documented **row/column/byte budgets** before it ships.
 
 ---
 
@@ -39,7 +39,7 @@ Hosts pass **`AskDbModeV1`** (see `@askdb/core` exports):
 - CLI: `--mode <schema_only|bounded_results>` or env **`ASKDB_MODE`** (see [`README.md`](../../README.md)).
 - Library: **`ask({ ..., mode })`**.
 
-Structured logs emit **`askdb.pipeline.mode`** at pipeline start and **`askdb.pipeline.post_execute`** after execute when rows were produced.
+Structured logs emit **`askdb.pipeline.mode`** (with a `mode` field) at pipeline start, before the NL→SQL call. No other log event depends on the mode.
 
 ---
 
