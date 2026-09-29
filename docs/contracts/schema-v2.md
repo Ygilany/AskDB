@@ -136,11 +136,11 @@ One file per described table. Format: **YAML front-matter** for structured field
 - `<schema>.<table>.md` when two tables share a name (e.g. `public.orders` and `archive.orders`), or when `<table>.md` is already taken by another file;
 - `<schema>.<table>-<n>.md` as a last resort if that is taken too.
 
-Two names count as the same when a case-insensitive file system (APFS, NTFS) would store them as one file: the comparison ignores case, with full case folding (`straße` matches `STRASSE`), and Unicode normalization (NFC `café` matches NFD `café`).
+Two names count as the same when a case-insensitive file system (APFS, NTFS) would store them as one file: the comparison ignores case, with full case folding (`straße` matches `STRASSE` and `STRAẞE`), and Unicode normalization (NFC `café` matches NFD `café`). The key is `normalize("NFC").toLowerCase().toUpperCase().toLowerCase()`; ADR 0013 records how it was checked against Unicode full case folding. Every entry in `tables/` counts as taken, whatever its extension.
 
 Names are made filename-safe first: path separators, NUL, control characters, and Windows-reserved characters become `_`, and a leading `.` or Windows device name gets a `_` prefix. A filename longer than 200 bytes (UTF-8, decomposed) is cut to fit and ends in `~` plus the first 8 hex digits of the SHA-256 of the untruncated name: `<prefix>~<8 hex>.md`. Databases allow names longer than file systems do (SQL Server identifiers are up to 128 characters), so a schema-qualified or non-ASCII name can otherwise exceed the 255-byte limit.
 
-`saveTable()` writes only to a `.md` file directly inside `tables/`. It refuses a filename with a path separator or `..`, and it refuses to write when `tables/` or the target file is a symbolic link, so a link planted in the directory can't redirect a write elsewhere.
+`saveTable()` writes only to a `.md` file directly inside `tables/`. It refuses a filename with a path separator or `..`, and it refuses to write when `tables/` or the target file is a symbolic link. It writes the new content to a temporary file in `tables/` and renames it over the target, so a hard link at the target is replaced, not written through, and readers see the old file or the new one. A symbolic or hard link already in `tables/` therefore can't redirect a write. Replacing `tables/` itself with a symbolic link while a save is running is not guarded.
 
 ```markdown
 ---

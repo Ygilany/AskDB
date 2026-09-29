@@ -5,6 +5,8 @@ import {
   readdirSync,
   rmSync,
   cpSync,
+  linkSync,
+  statSync,
   symlinkSync,
   writeFileSync,
 } from "node:fs";
@@ -405,8 +407,9 @@ describe("workspace table filenames", () => {
   // treat each pair as two distinct quoted identifiers.
   it.each([
     ["case", "Orders", "orders"],
-    ["Unicode normalization (NFC vs NFD)", "café", "café"],
+    ["Unicode normalization (NFC vs NFD)", "caf\u00e9", "cafe\u0301"],
     ["full case folding (ß vs SS)", "straße", "STRASSE"],
+    ["full case folding (ß vs capital sharp s ẞ)", "straße", "STRA\u1e9eE"],
   ])("gives names that differ only by %s distinct default files", (_, first, second) => {
     writeSchema([table("public", first), table("public", second)]);
     const ws = loadWorkspace(schemaDir);
@@ -464,6 +467,15 @@ describe("workspace table filenames", () => {
     writeSchema([table("public", "straße")]);
     writeFileSync(join(schemaDir, "tables/STRASSE.md"), tableMd("public", "gone", "Orphan."), "utf8");
     expect(filenameOf(loadWorkspace(schemaDir), "table:public.straße")).toBe("public.straße.md");
+
+    // And so does a file AskDB itself ignores, such as one with an upper-case extension.
+    rmSync(join(schemaDir, "tables"), { recursive: true });
+    writeSchema([table("public", "orders")]);
+    writeFileSync(join(schemaDir, "tables/Orders.MD"), "precious notes\n", "utf8");
+    const ws3 = loadWorkspace(schemaDir);
+    expect(filenameOf(ws3, "table:public.orders")).toBe("public.orders.md");
+    saveDescribed(ws3, "table:public.orders");
+    expect(readFileSync(join(schemaDir, "tables/Orders.MD"), "utf8")).toBe("precious notes\n");
   });
 
   it("sanitizes identifiers so default filenames stay inside tables/", () => {
@@ -506,6 +518,21 @@ describe("workspace table filenames", () => {
 
     expect(() => saveDescribed(ws, "table:public.orders")).toThrow(/outside tables\/.*symbolic link/);
     expect(readFileSync(outside, "utf8")).toBe("untouched\n");
+  });
+
+  it("saveTable replaces a hard-linked file in tables/ instead of writing through the link", () => {
+    writeSchema([table("public", "orders")]);
+    const ws = loadWorkspace(schemaDir);
+    const outside = join(tmp, "outside.md");
+    writeFileSync(outside, "untouched\n", "utf8");
+    const target = join(schemaDir, "tables", "orders.md");
+    linkSync(outside, target);
+
+    saveDescribed(ws, "table:public.orders");
+    expect(readFileSync(outside, "utf8")).toBe("untouched\n");
+    expect(readFileSync(target, "utf8")).toContain("About table:public.orders.");
+    expect(statSync(target).nlink).toBe(1);
+    expect(readdirSync(join(schemaDir, "tables"))).toEqual(["orders.md"]);
   });
 
   it("saveTable refuses to write when tables/ is a symbolic link", () => {

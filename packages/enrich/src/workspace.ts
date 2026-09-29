@@ -1,13 +1,16 @@
-import { createHash } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import {
   closeSync,
   constants as fsConstants,
   existsSync,
+  fchmodSync,
   lstatSync,
   mkdirSync,
   openSync,
   readFileSync,
   readdirSync,
+  renameSync,
+  rmSync,
   writeFileSync,
 } from "node:fs";
 import { basename, dirname, join, resolve } from "node:path";
@@ -78,8 +81,11 @@ export function loadWorkspace(schemaDir: string): Workspace {
 
   const tableDir = join(schemaDir, "tables");
   const parsedByFile = new Map<string, ParsedTableMarkdown>();
+  // Every name in tables/, not only the `.md` files the loader reads: a default
+  // filename must not land on any of them (`Orders.MD` is `orders.md` on APFS).
+  const entriesOnDisk = existsSync(tableDir) ? readdirSync(tableDir) : [];
   if (existsSync(tableDir)) {
-    for (const entry of readdirSync(tableDir)) {
+    for (const entry of entriesOnDisk) {
       if (!entry.endsWith(".md")) continue;
       const content = readFileSync(join(tableDir, entry), "utf8");
       parsedByFile.set(entry, parseTableMarkdown(content, join(tableDir, entry)));
@@ -115,7 +121,7 @@ export function loadWorkspace(schemaDir: string): Workspace {
   const defaultFilenames = assignDefaultTableFilenames(
     physical.tables.filter((t) => !matchedByTableId.has(t.id)),
     physical.tables,
-    [...parsedByFile.keys()],
+    entriesOnDisk,
   );
   const tables: WorkspaceTable[] = physical.tables.map((physTable) => {
     const matched = matchedByTableId.get(physTable.id);
@@ -162,12 +168,7 @@ export function saveTable(
   const filePath = resolveTableFilePath(tablesDir, wt.filename);
   mkdirSync(tablesDir, { recursive: true });
   const md = writeTableMarkdown(frontmatter, body);
-  const fd = openTableFileForWrite(tablesDir, filePath, wt.filename);
-  try {
-    writeFileSync(fd, md, "utf8");
-  } finally {
-    closeSync(fd);
-  }
+  replaceTableFile(tablesDir, filePath, wt.filename, md);
   // Update in-memory parse so subsequent edits see the saved state.
   const reparsed = parseTableMarkdown(md, filePath);
   wt.parsed = reparsed;
@@ -320,13 +321,14 @@ function toSafeFilenameSlug(identifier: string): string {
 /**
  * The key under which two names are the same file on a case-insensitive file
  * system. APFS ignores Unicode normalization and compares with full case folding
- * (`straße` = `STRASSE`, NFC `café` = NFD `café`); NTFS compares with a per-character
- * uppercase table and no normalization. NFC, then uppercase (which expands `ß` to
- * `SS`), then lowercase is at least as coarse as both, so two names with different
- * keys are different files on each. Over-matching only costs a longer filename.
+ * (`straße` = `STRASSE` = `STRAẞE`, NFC `café` = NFD `café`); NTFS compares with a
+ * per-character uppercase table and no normalization. NFC removes normalization
+ * differences; lowercasing first maps capital sharp s `ẞ` to `ß`, and the uppercase
+ * step then expands `ß` to `SS`, so the key agrees with full case folding (ADR 0013
+ * records how that was checked). Over-matching only costs a longer filename.
  */
 function filenameKey(name: string): string {
-  return name.normalize("NFC").toUpperCase().toLowerCase();
+  return name.normalize("NFC").toLowerCase().toUpperCase().toLowerCase();
 }
 
 /**
@@ -418,24 +420,54 @@ function resolveTableFilePath(tablesDir: string, filename: string): string {
 }
 
 /**
- * Open a table markdown file for writing without following a symbolic link out of
- * `tables/`: neither `tables/` itself nor the file may be a link. A schema directory
- * can come from an untrusted checkout (git stores symlinks), and Studio saves into
- * it for as long as it runs. `O_NOFOLLOW` also closes the gap between the check and
- * the open where the platform has it (not Windows).
+ * Write a table markdown file so that no link can redirect the write out of
+ * `tables/`. A schema directory can come from an untrusted checkout (git stores
+ * symbolic links, tar archives also store hard links), and Studio saves into it
+ * for as long as it runs.
+ *
+ * - `tables/` itself and the target file must not be symbolic links; either one
+ *   is refused.
+ * - The content goes to a new temp file in `tables/` (`O_EXCL`, so it never opens
+ *   an existing path), which is then renamed over the target. `rename` replaces
+ *   the directory entry instead of writing into the existing file, so a hard link
+ *   to a file elsewhere is detached, not written through, and a symbolic link
+ *   planted at the target after the check is replaced, not followed. This holds on
+ *   Windows too, which has no `O_NOFOLLOW`.
+ * - Readers see either the old file or the new one, never a partial write.
+ *
+ * Not covered: `tables/` being swapped for a link after the check and before the
+ * rename, since the temp path and the rename still resolve through it. That needs
+ * a concurrent local writer racing a save.
  */
-function openTableFileForWrite(tablesDir: string, filePath: string, filename: string): number {
+function replaceTableFile(
+  tablesDir: string,
+  filePath: string,
+  filename: string,
+  content: string,
+): void {
   const refuse = (why: string) =>
     new Error(`Refusing to write table markdown outside tables/: ${why}`);
   if (lstatSync(tablesDir).isSymbolicLink()) throw refuse("tables/ is a symbolic link");
-  const linkError = refuse(`${JSON.stringify(filename)} is a symbolic link`);
-  if (lstatSync(filePath, { throwIfNoEntry: false })?.isSymbolicLink()) throw linkError;
-  const flags =
-    fsConstants.O_WRONLY | fsConstants.O_CREAT | fsConstants.O_TRUNC | (fsConstants.O_NOFOLLOW ?? 0);
+  const existing = lstatSync(filePath, { throwIfNoEntry: false });
+  if (existing?.isSymbolicLink()) throw refuse(`${JSON.stringify(filename)} is a symbolic link`);
+
+  const tempPath = join(tablesDir, `.askdb-save-${randomBytes(8).toString("hex")}.tmp`);
+  const fd = openSync(
+    tempPath,
+    fsConstants.O_WRONLY | fsConstants.O_CREAT | fsConstants.O_EXCL,
+    0o666,
+  );
   try {
-    return openSync(filePath, flags, 0o666);
+    try {
+      writeFileSync(fd, content, "utf8");
+      // Keep the replaced file's permission bits.
+      if (existing) fchmodSync(fd, existing.mode & 0o777);
+    } finally {
+      closeSync(fd);
+    }
+    renameSync(tempPath, filePath);
   } catch (e) {
-    if ((e as NodeJS.ErrnoException).code === "ELOOP") throw linkError;
+    rmSync(tempPath, { force: true });
     throw e;
   }
 }
