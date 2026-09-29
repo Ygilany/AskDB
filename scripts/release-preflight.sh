@@ -27,7 +27,7 @@ pnpm run audit
 step "build"
 pnpm -r build
 
-step "lint + typecheck"
+step "lint + typecheck (includes scripts/check-test-gating.mjs)"
 pnpm lint
 
 step "test"

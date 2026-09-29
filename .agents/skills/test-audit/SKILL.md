@@ -81,9 +81,13 @@ Record every field below before editing. A missing field means the candidate is 
 - production or test-support deletion unlocked;
 - risk and the focused validation command.
 
+For a regression table that asserts through a permissive helper (one any rejection satisfies), check each row fails on the pre-fix code for the reason its name gives, and prefer asserting the specific rule or error code over the helper.
+
 ## Edit shape
 
 Choose one coherent owner-boundary batch. Delete obsolete test-only exports, globals, wrappers, and dead production paths instead of preserving aliases. Move retained regressions to their canonical owners. Consolidate repeated package or dependency assertions into one generic contract.
+
+When a removed test is one the PR description cites, keep one owner-boundary proof that drives the PR's new input end to end, and edit the PR description in the same push.
 
 Prefer net-negative production LOC. Do not add replacement tests that restate the same implementation, and do not convert uncertain candidates into cleanup to increase deletion counts.
 
@@ -96,7 +100,7 @@ Never edit source or tests while Vitest is running in the checkout.
 3. Run `git diff --check`.
 4. Run the repository gates: `pnpm build`, `pnpm lint`, `pnpm test`.
 5. Inspect `git diff --numstat`; report production/tooling separately from tests and test support.
-6. After final audit edits, review the full diff with fresh eyes (e.g. the `code-review` skill) before opening the PR.
+6. Required: after final audit edits, an agent that did not write them reviews the full diff with the `pr-review` skill (configured by `docs/agents/pr-review.md`) before the PR leaves draft.
 
 ## Landing and continuation
 
