@@ -16,7 +16,7 @@ Schema is server-configured (`host.schemaPath` / `host.schemaJson`, or the `--sc
 - `POST /ask` — accepts question, mode, correlation ID; returns SQL, usage, and the sensitive-identifier guardrail result
 - Server-configured schema (path via config); opt-in per-request schema override (`httpApi.allowSchemaOverride`)
 - Mode selection via request field, wired through to `@askdb/core`
-- Correlation ID: accepted from inbound header/field or generated; echoed in response
+- Correlation ID: accepted from the inbound `x-correlation-id` header or generated; echoed in response
 - Structured logging reusing Phase 2 log factory — same event names, same `correlationId` per request
 - Stable error response shape with typed `code` field and consistent HTTP status codes
 - `GET /health` endpoint
@@ -92,7 +92,7 @@ Correlation ID comes from the `x-correlation-id` header, or is generated.
 | `internal_error` | 500 | Anything else, including `TenantScopeError` for every request against a tenant-policy schema. The message is generic. |
 | `sql_generation_error` | 502 | `SqlGenerationError` (provider failure or timeout). The message is generic. |
 
-Provider error text is never returned to clients, because it can echo request details or credential fragments. Every non-`2xx` `POST /ask` response is logged server-side as `askdb.run.error` with `status` and `code`, under the response's `correlationId`. Rejections before `ask()` runs (body, field validation, `schema_override_disabled`) log the client-facing message, or the body parse error; failures from `ask()` log the error name, message, cause, and (for `5xx`) the stack. `404 not_found` for unknown routes is not logged.
+Provider error text is never returned to clients, because it can echo request details or credential fragments. Every non-`2xx` `POST /ask` response is logged server-side as `askdb.run.error` with `status` and `code`, under the response's `correlationId`. Rejections before `ask()` runs (body, field validation, `schema_override_disabled`) log the client-facing message, or the body parse error; failures from `ask()` log the error name, message, cause, and (for `5xx`) the stack. `404 not_found` for unknown routes is not logged, and a last-resort `500` (an error that escapes the handler) is written to stderr, not to the structured log.
 
 ## Test bar
 

@@ -334,7 +334,7 @@ export function createAskDbHttpServer(options: AskDbHttpServerOptions = {}) {
     ) {
       reject(
         400,
-        badRequest(`\`omitSensitiveFromPrompt\` must be a boolean (got ${JSON.stringify(omitSensitiveFromPrompt)}).`),
+        badRequest(`\`omitSensitiveFromPrompt\` must be a boolean (got ${typeof omitSensitiveFromPrompt}).`),
       );
       return;
     }

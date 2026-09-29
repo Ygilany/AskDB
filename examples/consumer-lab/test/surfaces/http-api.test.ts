@@ -36,9 +36,8 @@
  * model is the lab's replay server, reached through the documented `openai` provider's
  * `baseUrl`.
  *
- * Known discrepancies, marked `it.fails`: `explain` is left out instead of `null` when not
- * requested (#285); the spec's `/ask` shapes (`docs/specs/http-api.md`) differ from the docs
- * site's (#300). Over HTTP a tenant-policy schema can only fail closed until the server
+ * Known discrepancy, marked `it.fails`: `explain` is left out instead of `null` when not
+ * requested (#285). Over HTTP a tenant-policy schema can only fail closed until the server
  * accepts a scope (#277).
  *
  * Needs the fixture (`pnpm fixture:up`) and an installed lab (`pnpm lab:use .`).
@@ -314,16 +313,6 @@ export default defineConfig({
     const http = await labServer(ctx, "postgres");
 
     expect((await postAsk(http, { question: AGENCIES.text })).body.explain).toBeNull();
-  });
-
-  it.fails("http-spec-shape: POST /ask takes a body correlationId and answers { sql, warnings, correlationId }, as docs/specs/http-api.md says (#300)", async (ctx) => {
-    const http = await labServer(ctx, "postgres");
-    const id = `lab-spec-${randomUUID()}`;
-    const reply = await postAsk(http, { question: AGENCIES.text, correlationId: id });
-
-    expect(reply.status).toBe(200);
-    expect(reply.body.correlationId).toBe(id);
-    expect(reply.body.warnings).toEqual(expect.any(Array));
   });
 
   it("http-tenant-fail-closed: a tenant-policy schema over HTTP, which has no scope field, returns no SQL and never calls the model", async (ctx) => {

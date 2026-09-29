@@ -67,7 +67,7 @@ Notes:
 - **Generation config**: set `ai.provider` / `ai.providerConfig` in `askdb.config.ts` (for tests/dev, set `dev.mockSql` to bypass live model calls). The server does not read `ASKDB_MOCK_SQL` from the shell; map it in the config with `dev: { mockSql: env("ASKDB_MOCK_SQL") }` if you want that.
 - **Schema config (recommended)**: set `host.schemaPath` in `askdb.config.ts` (or pass `--schema-path`) to an AskDB Schema v2 directory, bundled JSON file, or `schema.json`. Per-request `schemaJson` overrides are rejected with `403 schema_override_disabled` unless you set `httpApi.allowSchemaOverride: true`.
 - **Timeouts**: the model call is aborted after `httpApi.requestTimeoutMs` (default `60000`, at most `2147483647`) and the request returns `502 sql_generation_error`.
-- **Errors**: status codes come from the error type. Model-provider failures return a generic `502`, and unexpected failures return a generic `500`. Every non-`2xx` `POST /ask` response is logged as `askdb.run.error` under the response's `correlationId`, with the full error for failures inside `ask()`.
+- **Errors**: status codes come from the error type. Model-provider failures return a generic `502`, and unexpected failures return a generic `500`. Every non-`2xx` `POST /ask` response is logged as `askdb.run.error` under the response's `correlationId`, with the full error for failures inside `ask()`, except last-resort `500`s (an error that escapes the handler), which are written to stderr.
 
 ## Ask (Node)
 
