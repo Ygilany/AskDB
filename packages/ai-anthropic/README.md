@@ -1,8 +1,6 @@
 # `@askdb/ai-anthropic` (deprecated)
 
-> **Deprecated.** The Anthropic provider is now built into [`@askdb/ai`](../ai). This package
-> only re-exports `anthropicProvider` from `@askdb/ai` so existing imports keep working. It will
-> be removed before AskDB 1.0.
+> **Deprecated.** The Anthropic provider is now built into [`@askdb/ai`](../ai). This package only re-exports `anthropicProvider` from `@askdb/ai` so existing imports keep working. It will be removed before AskDB 1.0.
 
 ## Migrate
 
@@ -25,8 +23,7 @@ import { createAiRegistry } from "@askdb/ai";
 const ai = createAiRegistry(["anthropic"]);
 ```
 
-`anthropicProvider` is still exported from `@askdb/ai` if you want to pass the adapter object.
-Anthropic has no embeddings API; configure a separate embedding provider (e.g. OpenAI) for RAG.
+`anthropicProvider` is still exported from `@askdb/ai` if you want to pass the adapter object. Anthropic has no embeddings API; configure a separate embedding provider (e.g. OpenAI) for RAG.
 
 ## License
 
