@@ -82,6 +82,7 @@ describe("renderInitConfig", () => {
     expect(out).toContain('provider: "sqlserver"');
     expect(out).toContain('databaseUrl: env("DATABASE_URL")');
     expect(out).toContain("studio:");
+    expect(out).toContain("enabled: true");
     expect(out).not.toContain('"postgres"');
     expect(out).not.toContain('"pg"');
   });
@@ -133,11 +134,6 @@ describe("renderInitConfig", () => {
     expect(out).not.toContain('"memory"');
   });
 
-  it("no studio section when studioExecute is disabled", () => {
-    const out = renderInitConfig(postgresAnswers({ studioExecute: { enabled: false } }));
-    expect(out).not.toContain("studio:");
-  });
-
   it("MySQL: mysql branch only", () => {
     const out = renderInitConfig(postgresAnswers({ database: "mysql", connectionEnv: "DATABASE_URL" }));
     expect(out).toContain('provider: "mysql"');
@@ -149,7 +145,47 @@ describe("renderInitConfig", () => {
     expect(out).toContain("satisfies AskDbConfig");
     expect(out).not.toContain("dotenv");
   });
+
+  it("escapes quotes, backslashes, and newlines in interpolated values (no code injection)", () => {
+    const hostile = 'x", injected: (() => { throw new Error("pwned"); })(), y: "\\\n';
+    const config = evaluateRenderedConfig(
+      renderInitConfig(
+        postgresAnswers({
+          database: "prisma",
+          connectionEnv: undefined,
+          prismaSchema: `./prisma/${hostile}`,
+          schemaOut: `./out/${hostile}`,
+          aiKeyEnv: `KEY${hostile}`,
+          ragStore: "pgvector",
+          pgvectorEnv: `PGV${hostile}`,
+          studioExecute: { enabled: true, provider: "sqlite", sqliteFile: `./db/${hostile}` },
+        }),
+      ),
+    ) as any;
+    expect(config.introspection.providerConfig.prisma.schemaPath).toBe(`./prisma/${hostile}`);
+    expect(config.introspection.outputDir).toBe(`./out/${hostile}`);
+    expect(config.ai.providerConfig.openai.apiKey).toEqual({ env: `KEY${hostile}` });
+    expect(config.rag.storeConfig.pgvector.databaseUrl).toEqual({ env: `PGV${hostile}` });
+    expect(config.studio.execute.file).toBe(`./db/${hostile}`);
+    expect(Object.keys(config).sort()).toEqual(["ai", "introspection", "rag", "studio"]);
+    expect(Object.keys(config.introspection).sort()).toEqual(["outputDir", "provider", "providerConfig"]);
+  });
 });
+
+/**
+ * Evaluate a rendered `askdb.config.ts` with stubbed `defineConfig` / `env`,
+ * so tests can assert on the object the config actually produces.
+ */
+function evaluateRenderedConfig(source: string): unknown {
+  const body = source
+    .replace(/^import .*$/m, "")
+    .replace("export default defineConfig(", "return defineConfig(")
+    .replace(/\}\s*satisfies AskDbConfig\);\s*$/, "});");
+  return new Function("defineConfig", "env", body)(
+    (config: unknown) => config,
+    (name: string) => ({ env: name }),
+  );
+}
 
 // ---------------------------------------------------------------------------
 // buildInitInstallPlan
@@ -280,7 +316,7 @@ describe("runWizard", () => {
         "Schema output directory",
         "AI provider",
         "RAG store",
-        "Enable Studio execute (run queries from the browser playground)?",
+        "Enable Studio execute (run generated SQL read-only from the browser playground)?",
       ]),
     );
   });
@@ -296,6 +332,13 @@ describe("runWizard", () => {
     expect(answers!.ragStore).toBe("pgvector");
     expect(answers!.pgvectorEnv).toBe("ASKDB_PGVECTOR_URL");
     expect(messages.some((m) => m.toLowerCase().includes("env var"))).toBe(false);
+  });
+
+  it("defaults Studio execute to off when the user accepts every default", async () => {
+    const { prompter } = createRecordingPrompter();
+    const answers = await runWizard(prompter);
+    expect(answers!.studioExecute).toEqual({ enabled: false });
+    expect(renderInitConfig(answers!)).not.toContain("studio:");
   });
 
   it("Prisma + Studio execute still asks which live provider to use (a real decision)", async () => {
@@ -438,6 +481,8 @@ describe("runInitCli --yes --skip-install", () => {
       const content = readFileSync(outPath, "utf8");
       expect(content).toContain("studio:");
       expect(content).toContain("execute:");
+      // Execute is opt-in at runtime — choosing it must write `enabled: true`.
+      expect(content).toContain("enabled: true");
     } finally {
       rmSync(tmp, { recursive: true, force: true });
     }

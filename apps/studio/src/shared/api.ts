@@ -18,6 +18,8 @@ export type StudioTableDto = {
   hasDescribableFile: boolean;
   draft: TableDraft;
   missingColumnIds: string[];
+  /** Columns another table's markdown marks `sensitive: true` (sensitive regardless of this draft). */
+  escalatedByOtherFiles?: string[];
 };
 
 export type StudioWorkspaceDto = {
@@ -200,6 +202,17 @@ export type PlaygroundHistoryDto = {
 export type ExecuteProvider = "postgres" | "mysql" | "sqlite" | "sqlserver";
 
 export type ExecuteStatusResponse = {
+  /**
+   * Whether `POST /api/execute` is allowed (`studio.execute.enabled`). When
+   * false, the Playground hides Execute and shows {@link disabledReason}.
+   */
+  enabled: boolean;
+  /** Why execute is unavailable (disabled, or no connection configured). `null` when ready. */
+  disabledReason: string | null;
+  /** Per-query timeout in ms (`studio.execute.timeoutMs`). */
+  timeoutMs: number;
+  /** Row cap (`studio.execute.maxRows`). */
+  maxRows: number;
   provider: ExecuteProvider;
   label: string;
   configured: boolean;
@@ -295,5 +308,18 @@ export type IntrospectRunResponse = {
 };
 
 export type ExecuteResponse =
-  | { ok: true; columns: string[]; rows: unknown[][]; rowCount: number; durationMs: number; truncated: boolean }
+  | {
+      ok: true;
+      columns: string[];
+      rows: unknown[][];
+      /** Rows returned (at most `rowLimit`). */
+      rowCount: number;
+      durationMs: number;
+      /** True when the query had more than `rowLimit` rows; only the first `rowLimit` are returned. */
+      truncated: boolean;
+      /** The row cap applied (`studio.execute.maxRows`). */
+      rowLimit: number;
+      /** Non-blocking notices, e.g. the SQL references columns marked `sensitive`. */
+      warnings?: string[];
+    }
   | { ok: false; error: string };

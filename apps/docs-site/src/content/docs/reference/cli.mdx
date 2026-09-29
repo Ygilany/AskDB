@@ -118,8 +118,8 @@ npx askdb@latest init --yes    # non-interactive, Postgres + OpenAI defaults
 
 | Flag | Description |
 | --- | --- |
-| `--studio-execute` | Enable Studio execute (query playground). |
-| `--no-studio-execute` | Disable Studio execute. |
+| `--studio-execute` | Enable Studio execute (query playground): writes a `studio.execute` block with `enabled: true`. Off by default. |
+| `--no-studio-execute` | Disable Studio execute (default). |
 
 `init` generates only the config branches you selected — SQL Server users won't see a `pg` import, SQLite users get a `file:` field instead of `DATABASE_URL`, and Prisma users don't get a live DB driver unless they explicitly enable Studio execute. It does not create a `.env` — example variable names live inside `askdb.config.ts`.
 
@@ -142,7 +142,7 @@ askdb introspect \
 | `--from-export <bundle-dir>` | Introspect from a previously exported bundle directory instead of a live connection. Postgres only. Mutually exclusive with `--url`. |
 | `--out <dir>` | Output directory for the schema artifact. Falls back to `introspection.outputDir` in `askdb.config.ts`. |
 | `--schema-id <id>` | Identifier embedded in `schema.json`. |
-| `--schemas <list>` | Comma-separated database schemas to include (e.g. `public,sales`). |
+| `--schemas <list>` | Comma-separated database schemas to include (e.g. `public,sales`). For MySQL/MariaDB these are databases; each becomes its own namespace. Overrides `introspection.schemas` in `askdb.config.ts`. |
 | `--exclude-schemas <list>` | Comma-separated database schemas to skip. |
 | `--tables <list>` | Comma-separated tables to include. Repeatable — values accumulate. |
 | `--print` | Print the introspection result without writing. |

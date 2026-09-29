@@ -31,6 +31,8 @@ The file is optional. A Schema v2 directory without `tenant-policy.md` has no te
 
 When present, the file enables tenant enforcement: `ask()` requires a valid `tenantScope`, prompts include the policy, and generated SQL is validated against scope.
 
+Only a **missing** file means "no tenant policy". In a bundle, that means only an absent `tenantPolicy` key. A `tenant-policy.md` that exists but is empty or cannot be read or parsed (for example, malformed YAML front-matter) makes `loadSchema()` throw `SchemaParseError` naming the file. The same applies to an empty or non-string bundle `tenantPolicy`. A broken policy never silently turns tenant enforcement off. `loadSchema("<dir>/schema.json")` loads the sibling `tenant-policy.md` the same way `loadSchema("<dir>")` does.
+
 ---
 
 ## Front-matter schema
@@ -166,7 +168,7 @@ Tables that use a type discriminator + id column pair, where the id references d
 | `idColumn` | string | yes | Stable column ID of the polymorphic FK (e.g., `table:public.notes#owner_id`). |
 | `mapping` | Record<string, string> | yes | Maps type discriminator values to stable table IDs of tenant roots. Keys are the literal values stored in `typeColumn`. |
 
-**Runtime:** The host is responsible for resolving polymorphic scope at runtime via `tenantFilters`. The validator checks that generated SQL includes the type discriminator column in its WHERE clause.
+**Runtime:** Polymorphic tables are declared in the policy and surfaced to the model through the prompt. There is no runtime pre-resolution of polymorphic scope (an earlier `tenantFilters` scope field was never read and has been removed). The validator checks that generated SQL mentions the type discriminator and id columns.
 
 #### `globalTables` — unscoped reference tables
 
@@ -266,8 +268,6 @@ interface TenantScope {
         reason: string;
       };
 
-  tenantFilters?: Record<string, TenantFilter>;
-
   context?: {
     role?: string;
     label?: string;
@@ -277,24 +277,44 @@ interface TenantScope {
     description?: string;
   };
 }
-
-interface TenantFilter {
-  conditions: Array<{
-    column: string;
-    operator: "=" | "IN" | "!=" | "NOT IN";
-    value: string | string[];
-  }>;
-}
 ```
+
+`TenantScope` previously declared a `tenantFilters` field for host-resolved polymorphic scope. Nothing ever read it, so it has been removed; a stray `tenantFilters` key on a scope object is ignored by validation.
 
 ### Access kinds
 
 | Kind | Meaning | When to use |
 |---|---|---|
 | `ids` | User can see rows matching specific tenant IDs at one root level. | Most common. Host has resolved the user's access to a flat ID list. |
-| `subtree` | User can see a root and all its descendants in the hierarchy. | Phase 10 accepts this but the proof expects the host to expand IDs. Full CTE generation may follow. |
+| `subtree` | User can see a root and all its descendants in the hierarchy. | Hierarchical admins (state → counties). Requires `ask({ resolveTenantDescendants })`; see [Subtree expansion](#subtree-expansion). |
 | `multi_root` | User has different scopes at different hierarchy levels. | Edge case: user is admin at one agency but also has direct client-level access elsewhere. |
 | `global` | User can see all data across all tenants. | Admin/superuser. Requires an explicit `reason` string for audit. |
+
+### Subtree expansion
+
+AskDB does not open database connections, so it cannot compute a subtree itself. The host supplies the expansion to `ask()`:
+
+```ts
+type ResolveTenantDescendants = (
+  tenantRoot: string,
+  seedIds: readonly string[],
+) => Promise<readonly string[]> | readonly string[];
+
+ask({ ..., tenantScope, resolveTenantDescendants });
+```
+
+Contract:
+
+- `ask()` calls the resolver once, after scope validation and before model generation, with `access.tenantRoot` and `access.rootIds`.
+- The resolver returns IDs **of the same tenant root**, which replace that root's `:tenant_<label>_ids` placeholder. A self-referencing hierarchy (e.g. `agencies.parent_agency_id`) is expanded by the host the same way as any other.
+- `ask()` unions the seed IDs into the result (deduplicated), so an ancestor never loses its own rows when a resolver returns strict descendants only.
+- The expanded scope is treated as `{ kind: "ids", tenantRoot, ids }` for the prompt, the tenant guardrail, and placeholder substitution. Advisory `context` is unchanged.
+- **Fail closed.** A `subtree` scope with no resolver, or a resolver returning an empty array or anything other than an array of non-empty strings, throws `TenantScopeError` with reason `SUBTREE_NOT_RESOLVABLE`. AskDB never falls back to the seed IDs alone.
+- The host owns authorization and caching of the closure. AskDB trusts the returned IDs.
+
+`resolveTenantSql()` (exported) does not walk the hierarchy. A direct caller must pass an already-expanded `ids` access; an unexpanded `subtree` throws `TenantScopeError` (`SUBTREE_NOT_RESOLVABLE`) rather than substitute the seed IDs only.
+
+`@askdb/core` also exports `expandClosure(seedIds, childrenOf)`, a breadth-first, cycle-safe walk over an in-memory hierarchy, for use inside a resolver.
 
 ### Advisory context
 
@@ -316,7 +336,11 @@ Advisory context is included in prompts to help the LLM generate more relevant q
 | Tenant policy exists, no `tenantScope` passed | Fail closed. Query rejected before prompt generation. |
 | `tenantScope.access` references unknown tenant root | Rejected. |
 | `global` scope without `reason` | Rejected. |
-| `tenantFilters` references non-polymorphic table | Warning (does not block). |
+| `subtree` scope with no `resolveTenantDescendants`, or a resolver returning an empty or invalid result | Rejected before prompt generation (`SUBTREE_NOT_RESOLVABLE`). |
+| Unexpanded `subtree` scope passed directly to `resolveTenantSql()` | Rejected (`SUBTREE_NOT_RESOLVABLE`). |
+| Generated SQL references a `:tenant_*` placeholder the scope has no IDs for (or that matches no root) | Rejected (`UNRESOLVED_TENANT_PLACEHOLDER`). SQL with an unsubstituted placeholder is never returned. |
+| Several IDs meet a tenant predicate with no list form (`<`, `>`, `<=`, `>=`, or a non-comparison position) | Rejected (`UNSUPPORTED_TENANT_PREDICATE`). |
+| `"sql-only"` substitution of a tenant ID containing a backslash, with a dialect whose `backslashEscapes` is unset and whose `id` is not built-in | Rejected (`UNESCAPABLE_TENANT_ID`). A built-in `id` with `backslashEscapes` unset uses that engine's escaping (backslash escapes on for MySQL and MariaDB). |
 | Advisory `context` with unknown keys in `attributes` | Accepted (freeform). |
 
 ---
@@ -340,18 +364,27 @@ Examples:
 
 | Mode | Output shape | Placeholder handling |
 |---|---|---|
-| **SQL-only** (default) | `string` | Named placeholders replaced with literal values. SQL is complete and executable. |
-| **SQL+params** | `{ sql: string, params: unknown[], tenantBindings: Record<string, unknown> }` | Named placeholders converted to positional parameters (`$1`, `$2`). Values in `params` array. |
+| **SQL-only** (default) | `sql` | Named placeholders replaced with escaped literal values. SQL is complete and executable. |
+| **SQL+params** | `sql` + `tenantParams` | Named placeholders replaced with the dialect's driver markers — `$1, $2` (Postgres, CockroachDB, and custom `AskDialect`s), `?` (MySQL, MariaDB, SQLite), `@p0, @p1` (SQL Server). `tenantParams` holds the IDs in marker order. |
 
-The mode is configurable per `ask()` call or per schema configuration.
+The mode is configurable per `ask()` call (`tenantSqlMode`).
 
-When `ask({ parameterize: true })` (the default) also returns business-parameter extras, `result.params` is the full ordered array (business first, then tenant when `tenantSqlMode: "sql-params"`). `tenantParams` / `tenantBindings` keep their tenant-only meaning — callers using the new fields must execute with `params`, not `tenantParams`. `bindPreparedQuery()` binds tenant placeholders by name mechanically and **does not authorize** the IDs you pass; authorization remains the host's responsibility when constructing `tenantScope`.
+**Substitution rules.** Only placeholders in SQL code are substituted — placeholder text inside string literals or quoted identifiers is left untouched, so a tenant ID can never land inside (or close) a surrounding literal. With several IDs, `= :p` becomes `IN (…)`, `!= :p` / `<> :p` become `NOT IN (…)`, `IN (:p)` / `NOT IN (:p)` are expanded in place, and `= ANY(:p)` / `<> ALL(:p)` become `IN (…)` / `NOT IN (…)`. Any other operator or position with several IDs is rejected rather than rewritten.
+
+**Executable pairs.** Each SQL form `ask()` returns runs with exactly one params array — never concatenate them:
+
+| SQL | Run with | Contents |
+| --- | --- | --- |
+| `result.sql` | `result.tenantParams` (`sql-params` mode; nothing in `sql-only`) | Business values inlined as literals; tenant markers numbered from the first slot. |
+| `result.unboundSql` | `result.params` | All values as markers. In `sql-params` mode `params` already includes the tenant IDs: after the business values for numbered markers (`$N`, `@pN`), interleaved in source order for `?` dialects. `parameters[].indices` point into this array. In `sql-only` mode tenant IDs are inlined literals in `unboundSql` and `params` holds business values only. |
+
+`tenantBindings` keeps its tenant-only meaning for audit. `bindPreparedQuery()` binds tenant placeholders by name mechanically and **does not authorize** the IDs you pass; authorization remains the host's responsibility when constructing `tenantScope`.
 
 ---
 
 ## Guardrail validation
 
-The validator runs after SQL generation, before placeholder replacement.
+In `ask()`, the validator runs on the SQL returned to the caller: `result.sql` after tenant placeholder replacement, plus `result.unboundSql` when the parameterized extras pass their consistency check. It runs for every dialect form, including custom `AskDialect` adapters. `generateSelectSql()` called directly validates the SQL it returns (placeholders still named).
 
 ### Parser-based validation (primary)
 
@@ -370,6 +403,12 @@ When the parser cannot handle a SQL shape:
 
 1. Apply conservative pattern matching (table name detection, predicate presence).
 2. If heuristics cannot prove scope safety: reject (strict) or flag with `tenantWarnings` (warn).
+
+Pattern matching runs only over SQL code: string literals (`'…'`, `$tag$…$tag$`) and comments (`--`, `/* */`) are ignored, so a tenant column or table name that appears only inside them does not count. Quoted identifiers (`"agency_id"`, `` `orders` ``, `[orders]`) still count as the identifier they name.
+
+Regions are read the way the target dialect reads them. On MySQL and MariaDB, `"…"` is a string literal, not an identifier, `#` starts a comment, and a backslash escapes the next character inside strings (when the dialect's `backslashEscapes` is set), so `'it\'s agency_id'` is one string. On Postgres and CockroachDB, a backslash escapes the next character inside an `E'…'` escape string, so `E'it\'s agency_id'` is one string too. `ask()` passes the dialect whenever it has a `DialectSpec`. For a custom `AskDialect`, or a direct `validateTenantGuardrails()` call without `options.dialect`, the statement must pass under the standard-SQL, the Postgres, and the MySQL reading: a table counts as referenced if any reading sees it, and a tenant predicate counts only if every reading does. So a predicate written only as `"agency_id"` is flagged there.
+
+A tenant placeholder counts only in its exact lowercase form (`:tenant_agency_ids`). Any other casing (`:TENANT_AGENCY_IDS`) is never substituted: `resolveTenantSql()` and `ask()` reject it with `UNRESOLVED_TENANT_PLACEHOLDER`.
 
 ### Enforcement modes
 

@@ -1,4 +1,3 @@
-import { fileURLToPath } from "node:url";
 import { unified } from "@astrojs/markdown-remark";
 import { defineConfig } from "astro/config";
 import starlight from "@astrojs/starlight";
@@ -39,23 +38,11 @@ function remarkRebaseLinks() {
   return (tree) => walk(tree);
 }
 
-/** Starlight does not export `user-components/Icon.astro` in package.json `exports`. */
-const starlightIcon = fileURLToPath(
-  new URL("node_modules/@astrojs/starlight/user-components/Icon.astro", import.meta.url)
-);
-
 export default defineConfig({
   site: `${site}${normalizedBase}`,
   base,
   markdown: {
     processor: unified({ remarkPlugins: [remarkRebaseLinks] }),
-  },
-  vite: {
-    resolve: {
-      alias: {
-        "@starlight/icon": starlightIcon,
-      },
-    },
   },
   integrations: [
     starlight({

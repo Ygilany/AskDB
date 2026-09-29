@@ -1,8 +1,6 @@
 # AGENTS.md
 
-Instructions for coding agents working in this repository (contributing to AskDB itself).
-If you're an agent implementing AskDB *into a different project*, use the docs site's own
-`AGENTS.md` at `/AGENTS.md` on askdb.tools instead — this file is about developing AskDB.
+Instructions for coding agents working in this repository (contributing to AskDB itself). If you're an agent implementing AskDB *into a different project*, use the docs site's own `AGENTS.md` at `/AGENTS.md` on askdb.tools instead — this file is about developing AskDB.
 
 ## Stack
 
@@ -37,6 +35,20 @@ pnpm smoke:install
 pnpm preflight
 ```
 
+## Agent skills
+
+### Issue tracker
+
+GitHub Issues on `Ygilany/AskDB`, via `gh`. Unimplemented plans (label `plan`), specs and doc/behavior discrepancies (label `discrepancy`) live there, not as new files in the repo. See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+The five default roles (`needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, `wontfix`), with label strings matching the role names. See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Single-context: a root `CONTEXT.md` (created lazily) plus ADRs in `docs/adrs/`. See `docs/agents/domain.md`.
+
 ## Where product/architecture decisions live
 
 `docs/` is the constitution — check it before assuming behavior, not just the code:
@@ -46,26 +58,15 @@ pnpm preflight
 - `docs/contracts/` — formal contracts (modes, sensitive fields, schema format)
 - `docs/adrs/` — architecture decision records
 
-`apps/docs-site/src/content/docs/` is the public-facing docs (askdb.tools) — treat it as a
-product surface, not just documentation. If you change a package's public API or add a new
-integration pattern, the docs site needs a corresponding update or agents integrating AskDB
-elsewhere will get stale guidance.
+`apps/docs-site/src/content/docs/` is the public-facing docs (askdb.tools) — treat it as a product surface, not just documentation. If you change a package's public API or add a new integration pattern, the docs site needs a corresponding update or agents integrating AskDB elsewhere will get stale guidance.
 
 ## Conventions
 
-- AskDB returns SQL; it never executes it. Any code path that runs generated SQL against a
-  real database belongs in a host app or a fixture/test harness, not in `packages/core`.
-- `@askdb/ai-*` adapters and raw Vercel AI SDK `LanguageModel` objects are both first-party,
-  equally supported ways to give `ask()` a model — don't privilege one over the other in new
-  docs or examples without a reason tied to who owns provider config.
-- Provider adapters declare `ai` and `@askdb/ai` as peer dependencies — don't hard-pin AI SDK
-  versions inside adapters; let the host app's `package.json` pin them.
-- Add tests for behavior that affects public APIs, package output, SQL safety/validation, or
-  user-facing workflows. Integration tests that need a live database run when `DATABASE_URL`
-  is set (see the Pagila fixture in `CONTRIBUTING.md`).
-- Add a changeset (`pnpm changeset`) for any change to a publishable package. AskDB is
-  pre-1.0 — breaking public API changes normally use a minor changeset unless the project is
-  intentionally moving a package to 1.0.
-- Keep `apps/docs-site` accurate as you go, not as a follow-up: don't invent package names,
-  APIs, or file paths there — verify against the actual source or existing docs content
-  before writing a claim.
+- AskDB returns SQL; it never executes it. Any code path that runs generated SQL against a real database belongs in a host app or a fixture/test harness, not in `packages/core`.
+- `@askdb/ai-*` adapters and raw Vercel AI SDK `LanguageModel` objects are both first-party, equally supported ways to give `ask()` a model — don't privilege one over the other in new docs or examples without a reason tied to who owns provider config.
+- Provider adapters declare `ai` and `@askdb/ai` as peer dependencies — don't hard-pin AI SDK versions inside adapters; let the host app's `package.json` pin them.
+- Add tests for behavior that affects public APIs, package output, SQL safety/validation, or user-facing workflows. Integration tests that need a live database run when their env var is set. Tests that need a real schema in every engine use the multi-engine fixture (`pnpm fixture:up`, `ASKDB_FIXTURE_HOST`; see `CONTRIBUTING.md`).
+- Add a changeset (`pnpm changeset`) for any change to a publishable package. AskDB is pre-1.0 — breaking public API changes normally use a minor changeset unless the project is intentionally moving a package to 1.0.
+- Keep `apps/docs-site` accurate as you go, not as a follow-up: don't invent package names, APIs, or file paths there — verify against the actual source or existing docs content before writing a claim.
+- Markdown and MDX (docs, ADRs, skills, changesets, READMEs): one line per paragraph or list item, left for the editor to soft-wrap. Break lines only where the Markdown structure needs it — headings, list items, table rows, code blocks.
+- When opening an issue or PR, include a metadata section at the bottom with the originating thread ID. Format: `Thread ID: [id]`. This provides traceability back to the conversation that initiated the work and helps retrieve context later.

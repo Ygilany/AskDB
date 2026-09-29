@@ -143,11 +143,14 @@ export async function runStudioIntrospection(options: {
   if (!connection.ok) throw new Error(connection.error);
 
   const schemaId = options.schemaId ?? inferSchemaId(options.outDir);
+  // Resync reads the same schema list `askdb introspect` does (introspection.schemas).
+  const schemas = getAskDbRuntimeConfig().introspection.schemas;
   const connectorConfig: ConnectorConfig = {
     provider: plan.engine,
     url: connection.url,
     schemaPath: connection.schemaPath,
     schemaId,
+    ...(schemas ? { filters: { schemas } } : {}),
   };
   const runConfig = connectorRegistry.createConnector(connectorConfig);
   const connector = runConfig.connector as Connector<unknown>;

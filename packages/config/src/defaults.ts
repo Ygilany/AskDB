@@ -13,6 +13,10 @@ export const DEFAULT_RAG_EMBEDDING_MODEL = "text-embedding-3-small";
 export const DEFAULT_RAG_FILE_BASE_PATH = "./askdb/rag";
 export const DEFAULT_MOCK_RAG_EMBEDDING_DIMENSIONS = 64;
 export const DEFAULT_PGVECTOR_INDEX_STRATEGY = "hnsw" as const;
+/** Default per-query statement timeout for Studio execute (`studio.execute.timeoutMs`). */
+export const DEFAULT_STUDIO_EXECUTE_TIMEOUT_MS = 30_000;
+/** Default row cap for Studio execute results (`studio.execute.maxRows`). */
+export const DEFAULT_STUDIO_EXECUTE_MAX_ROWS = 500;
 
 export const PGVECTOR_INDEX_STRATEGIES = ["ivfflat", "hnsw", "none"] as const;
 export type PgvectorIndexStrategyId = (typeof PGVECTOR_INDEX_STRATEGIES)[number];
