@@ -7,7 +7,7 @@ import {
   parseTenantPolicyMarkdown,
   normalizeTenantPolicy,
 } from "./tenant-policy-loader.js";
-import { placeholderForRoot, tenantPolicyFrontmatterSchema, tenantScopeSchema } from "./tenant-policy.js";
+import { placeholderForTenantRoot, tenantPolicyFrontmatterSchema, tenantScopeSchema } from "./tenant-policy.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const fixturesDir = join(here, "../../../../../fixtures/schemas");
@@ -407,7 +407,7 @@ roots:
   // policy labelled that way couldn't bind any root. They now fall back to table names.
   it("loads two roots labelled in Cyrillic, each with its table name's placeholder", () => {
     const policy = normalizeTwoRoots({ table: "agencies", label: "Агентство" }, { table: "clients", label: "Клиент" });
-    expect(policy.roots.map((root) => placeholderForRoot(root.label, root.id))).toEqual([
+    expect(policy.roots.map((root) => placeholderForTenantRoot(root))).toEqual([
       ":tenant_agencies_ids",
       ":tenant_clients_ids",
     ]);

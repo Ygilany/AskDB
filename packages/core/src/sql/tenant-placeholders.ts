@@ -2,6 +2,7 @@ import { TenantScopeError } from "../errors.js";
 import {
   assertDistinctRootPlaceholders,
   placeholderForRoot,
+  placeholderForTenantRoot,
   type NormalizedTenantPolicy,
   type TenantScope,
   type TenantAccess,
@@ -69,7 +70,7 @@ function lexerDialect(
 // Placeholder naming convention (owned by the policy; re-exported for callers here)
 // ---------------------------------------------------------------------------
 
-export { placeholderForRoot };
+export { placeholderForRoot, placeholderForTenantRoot };
 
 // ---------------------------------------------------------------------------
 // Extract placeholders found in SQL (quote-aware via shared scanner)
@@ -104,7 +105,7 @@ export function resolvePlaceholders(
   assertDistinctRootPlaceholders(policy.roots);
   const rootsByPlaceholder = new Map<string, { rootId: string; label: string }>();
   for (const root of policy.roots) {
-    rootsByPlaceholder.set(placeholderForRoot(root.label, root.id), {
+    rootsByPlaceholder.set(placeholderForTenantRoot(root), {
       rootId: root.id,
       label: root.label,
     });

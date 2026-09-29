@@ -6,7 +6,7 @@ import {
 import type { AskDbLogger } from "../logging/askdb-logger.js";
 import { AskDbLogEvent } from "../logging/log-events.js";
 import {
-  placeholderForRoot,
+  placeholderForTenantRoot,
   type NormalizedTenantPolicy,
   type TenantScope,
   type ScopedTable,
@@ -187,7 +187,7 @@ function checkScopedTable(
     if ("column" in path) {
       const colName = extractColumnName(path.column);
       const rootLabel = policy.roots.find((r) => r.id === path.root)?.label ?? path.root;
-      const placeholder = placeholderForRoot(rootLabel, path.root);
+      const placeholder = placeholderForTenantRoot({ id: path.root, label: rootLabel });
 
       // Check if the tenant column or placeholder appears in the SQL
       if (mentionsIdentifier(sql, colName) || mentionsPlaceholder(sql, placeholder)) {
@@ -206,7 +206,7 @@ function checkScopedTable(
         if (rootTenantCol) {
           const rootColName = extractColumnName(rootTenantCol.tenantIdColumn);
           const rootLabel = rootTenantCol.label;
-          const placeholder = placeholderForRoot(rootLabel, rootTenantCol.id);
+          const placeholder = placeholderForTenantRoot(rootTenantCol);
           if (mentionsIdentifier(sql, rootColName) || mentionsPlaceholder(sql, placeholder)) {
             return; // Join path + root filter present
           }

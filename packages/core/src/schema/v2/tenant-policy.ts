@@ -83,21 +83,33 @@ export type TenantPolicyFrontmatter = z.infer<typeof tenantPolicyFrontmatterSche
 const placeholderName = (text: string): string => text.toLowerCase().replace(/[^a-z0-9]+/g, "_");
 
 /**
- * The `:tenant_<name>_ids` placeholder the model writes for a root. `<name>` is the label
- * lowercased, with every run of characters other than ASCII letters and digits replaced
- * by `_` (`Sub-Agency` → `:tenant_sub_agency_ids`).
+ * The `:tenant_<name>_ids` placeholder the model writes for a tenant root, and the one
+ * `ask()` and `resolveTenantSql()` bind. `<name>` is the root's label lowercased, with
+ * every run of characters other than ASCII letters and digits replaced by `_`
+ * (`Sub-Agency` → `:tenant_sub_agency_ids`).
  *
  * A label with no ASCII letter or digit (e.g. Cyrillic or CJK) would reduce to `_` for
- * every such root, so when `rootId` is given, `<name>` comes from the root's table name
- * instead (`table:public.agencies` → `:tenant_agencies_ids`). Labels that already have an
- * ASCII letter or digit are unaffected. Every derivation (prompt, substitution, guardrail,
- * collision check) must call this with the root's id, so they all agree.
+ * every such root, so `<name>` comes from the root's table name instead (`Клиент` on
+ * `table:public.clients` → `:tenant_clients_ids`). Every derivation in core (prompt,
+ * substitution, guardrail, collision check) goes through this function.
  */
-export function placeholderForRoot(label: string, rootId?: string): string {
-  const fromLabel = placeholderName(label);
-  if (rootId === undefined || /[a-z0-9]/.test(fromLabel)) return `:tenant_${fromLabel}_ids`;
-  const table = rootId.startsWith("table:") ? rootId.slice("table:".length) : rootId;
+export function placeholderForTenantRoot(root: Pick<TenantRoot, "id" | "label">): string {
+  const fromLabel = placeholderName(root.label);
+  if (/[a-z0-9]/.test(fromLabel)) return `:tenant_${fromLabel}_ids`;
+  const table = root.id.startsWith("table:") ? root.id.slice("table:".length) : root.id;
   return `:tenant_${placeholderName(table.slice(table.lastIndexOf(".") + 1))}_ids`;
+}
+
+/**
+ * The placeholder for a root label, from the label alone.
+ *
+ * @deprecated Use {@link placeholderForTenantRoot} with the root. For a label with no
+ * ASCII letter or digit this returns `:tenant___ids`, which is not the placeholder core
+ * prompts for and binds (that one comes from the root's table name). For every other
+ * label the two agree.
+ */
+export function placeholderForRoot(label: string): string {
+  return `:tenant_${placeholderName(label)}_ids`;
 }
 
 /**
@@ -109,7 +121,7 @@ export function placeholderForRoot(label: string, rootId?: string): string {
 export function assertDistinctRootPlaceholders(roots: readonly Pick<TenantRoot, "id" | "label">[]): void {
   const byPlaceholder = new Map<string, Pick<TenantRoot, "id" | "label">>();
   for (const root of roots) {
-    const placeholder = placeholderForRoot(root.label, root.id);
+    const placeholder = placeholderForTenantRoot(root);
     const other = byPlaceholder.get(placeholder);
     if (other && other.id !== root.id) {
       throw new SchemaParseError(

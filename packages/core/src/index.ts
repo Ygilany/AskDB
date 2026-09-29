@@ -18,6 +18,7 @@ export {
   resolveTenantSql,
   extractTenantPlaceholders,
   placeholderForRoot,
+  placeholderForTenantRoot,
   type TenantSqlOutputMode,
   type TenantPlaceholderResult,
   type TenantBinding,

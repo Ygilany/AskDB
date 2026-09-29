@@ -1,6 +1,7 @@
 import type { NormalizedTenantPolicy } from "../schema/v2/tenant-policy.js";
 import type { TenantScope } from "../schema/v2/tenant-policy.js";
-import { placeholderForRoot, unexpandedSubtreeError } from "./tenant-placeholders.js";
+import { placeholderForTenantRoot } from "../schema/v2/tenant-policy.js";
+import { unexpandedSubtreeError } from "./tenant-placeholders.js";
 
 const NEVER_CROSS_ROOTS =
   "  The same ID value can name different tenants in different root tables: " +
@@ -78,7 +79,7 @@ export function buildTenantPromptBlock(
   switch (access.kind) {
     case "ids": {
       const rootLabel = policy.roots.find((r) => r.id === access.tenantRoot)?.label ?? access.tenantRoot;
-      const placeholder = placeholderForRoot(rootLabel, access.tenantRoot);
+      const placeholder = placeholderForTenantRoot({ id: access.tenantRoot, label: rootLabel });
       lines.push(`  Access: ${rootLabel} IDs = ${placeholder}`);
       // With several roots the model also sees other roots' columns (an expanded
       // subtree with IDs at its root only is an `ids` scope), so pair this one too.
@@ -103,7 +104,7 @@ export function buildTenantPromptBlock(
       );
       for (const s of access.scopes) {
         const rootLabel = policy.roots.find((r) => r.id === s.tenantRoot)?.label ?? s.tenantRoot;
-        lines.push(`    - ${rootLabel} IDs = ${placeholderForRoot(rootLabel, s.tenantRoot)}`);
+        lines.push(`    - ${rootLabel} IDs = ${placeholderForTenantRoot({ id: s.tenantRoot, label: rootLabel })}`);
         const columns = columnsHoldingRootIds(policy, s.tenantRoot);
         if (columns.length > 0) lines.push(`      columns: ${columns.join(", ")}`);
       }

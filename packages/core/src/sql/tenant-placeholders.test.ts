@@ -17,6 +17,10 @@ import { ask, type AskDialect } from "../ask.js";
 import { SchemaParseError, TenantScopeError } from "../errors.js";
 import { getDialectSpec, type BuiltInDialectId } from "./dialect-spec.js";
 import { tokenizeSqlSpans } from "./bind.js";
+import {
+  placeholderForRoot as publicPlaceholderForRoot,
+  placeholderForTenantRoot as publicPlaceholderForTenantRoot,
+} from "../index.js";
 
 function reasonOf(fn: () => unknown): string | undefined {
   try {
@@ -668,5 +672,35 @@ describe("resolveTenantSql — placeholders derived per root", () => {
       { placeholder: ":tenant_agencies_ids", rootLabel: "Агентство", rootId: agencies, ids: ["1"] },
       { placeholder: ":tenant_clients_ids", rootLabel: "Клиент", rootId: clients, ids: ["5"] },
     ]);
+  });
+});
+
+// A host that computes a placeholder itself (to write or rebind SQL) must get the one
+// core binds. The public `placeholderForTenantRoot` is that derivation; the deprecated
+// label-only `placeholderForRoot` keeps its old output (#375 review).
+describe("placeholderForTenantRoot — the public derivation agrees with the binder", () => {
+  const relabelled: NormalizedTenantPolicy = {
+    ...policy,
+    roots: policy.roots.map((root) => (root.id === "table:public.clients" ? { ...root, label: "Клиент" } : root)),
+  };
+
+  it.each([
+    { name: "ASCII labels", roots: policy },
+    { name: "a Cyrillic label", roots: relabelled },
+  ])("binds each root's IDs under the placeholder the public function returns ($name)", ({ roots: p }) => {
+    const placeholders = p.roots.map((root) => publicPlaceholderForTenantRoot(root));
+    const result = resolveTenantSql(
+      placeholders.map((ph, i) => `SELECT ${i} FROM t WHERE c IN (${ph})`).join(" UNION ALL "),
+      p,
+      { access: { kind: "multi_root", scopes: p.roots.map((root, i) => ({ tenantRoot: root.id, ids: [`id-${i}`] })) } },
+    );
+    expect(result.bindings.map((b) => [b.placeholder, b.rootId])).toEqual(
+      p.roots.map((root, i) => [placeholders[i], root.id]),
+    );
+  });
+
+  it("keeps the deprecated label-only placeholderForRoot output unchanged", () => {
+    expect(publicPlaceholderForRoot("Sub-Agency")).toBe(":tenant_sub_agency_ids");
+    expect(publicPlaceholderForRoot("Клиент")).toBe(":tenant___ids");
   });
 });

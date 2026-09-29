@@ -377,7 +377,7 @@ Examples:
 - `:tenant_sub_agency_ids` for the `Sub-Agency` root
 - `:tenant_client_ids` for the `Client` root
 
-The name is the label lowercased, with every run of characters other than ASCII letters and digits replaced by `_`. A label with no ASCII letter or digit (Cyrillic, CJK, …) would reduce to `_` for every such root, so its placeholder comes from the root's table name instead: `Клиент` on `table:public.clients` → `:tenant_clients_ids`. Labels with an ASCII letter or digit always use the label. The prompt, placeholder substitution, the tenant guardrail and the load-time collision check all use this one derivation (`placeholderForRoot(label, rootId)`). Two roots that still derive the same placeholder are rejected (see the `label` row and Enforcement rules).
+The name is the label lowercased, with every run of characters other than ASCII letters and digits replaced by `_`. A label with no ASCII letter or digit (Cyrillic, CJK, …) would reduce to `_` for every such root, so its placeholder comes from the root's table name instead: `Клиент` on `table:public.clients` → `:tenant_clients_ids`. Labels with an ASCII letter or digit always use the label. The prompt, placeholder substitution, the tenant guardrail and the load-time collision check all use this one derivation, exported as `placeholderForTenantRoot(root)`. The older `placeholderForRoot(label)` is deprecated: it takes the label alone, so for a label with no ASCII letter or digit it still returns `:tenant___ids`, which core no longer binds. Two roots that still derive the same placeholder are rejected (see the `label` row and Enforcement rules).
 
 ### Output modes
 
