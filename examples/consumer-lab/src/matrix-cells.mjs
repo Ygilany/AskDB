@@ -22,10 +22,12 @@ import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
 
 const LAB = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const STATUSES = ["fail", "known", "na"];
+/** The `--status` values, the reporter's cell statuses, and how the matrix prints each. */
+const LABELS = { fail: "FAIL", known: "known", na: "n/a" };
+const STATUSES = Object.keys(LABELS);
 const USAGE = "usage: node examples/consumer-lab/src/matrix-cells.mjs [--status fail,known,na] [<matrix.json>]";
 
-function fail(message) {
+function refuse(message) {
   console.error(`matrix-cells: ${message}`);
   process.exit(2);
 }
@@ -34,30 +36,31 @@ const { values, positionals } = (() => {
   try {
     return parseArgs({ options: { status: { type: "string", default: STATUSES.join(",") } }, allowPositionals: true });
   } catch (error) {
-    return fail(`${error.message}\n${USAGE}`);
+    return refuse(`${error.message}\n${USAGE}`);
   }
 })();
 const wanted = values.status.split(",").map((s) => s.trim()).filter(Boolean);
 const unknown = wanted.filter((s) => !STATUSES.includes(s));
-if (unknown.length || !wanted.length || positionals.length > 1) fail(USAGE);
+if (unknown.length || !wanted.length || positionals.length > 1) refuse(USAGE);
 
 const file = resolve(positionals[0] ?? join(LAB, ".lab", "matrix.json"));
-if (!existsSync(file)) fail(`${file} doesn't exist; run \`pnpm lab:matrix\` first, or pass the path of a matrix.json`);
+if (!existsSync(file)) refuse(`${file} doesn't exist; run \`pnpm lab:matrix\` first, or pass the path of a matrix.json`);
 let matrix;
 try {
   matrix = JSON.parse(readFileSync(file, "utf8"));
 } catch (error) {
-  fail(`${file} isn't JSON: ${error.message}`);
+  refuse(`${file} isn't JSON: ${error.message}`);
 }
 // A file of another shape would list nothing, which reads as "no findings": refuse it instead.
-if (!Array.isArray(matrix?.rows) || !Array.isArray(matrix?.dialects)) fail(`${file} isn't a lab matrix (no rows or dialects)`);
+if (!Array.isArray(matrix?.rows) || !Array.isArray(matrix?.dialects)) refuse(`${file} isn't a lab matrix (no rows or dialects)`);
 
 /**
  * The groups a cell belongs to: `FAIL`, or one per issue or capability its text names.
- * The reporter joins them with ", " inside one pair of parentheses.
+ * `matrix.json` keeps only the text, where the reporter joins them with ", " inside one pair
+ * of parentheses; `test/matrix-cells.test.ts` runs the real reporter, so it fails if that changes.
  */
 function groupsOf(cell) {
-  if (cell.status === "fail") return ["FAIL"];
+  if (cell.status === "fail") return [LABELS.fail];
   const match = /^(known|n\/a) \((.*)\)$/.exec(cell.text);
   return match ? match[2].split(", ").map((part) => `${match[1]} (${part})`) : [cell.text];
 }
@@ -83,7 +86,7 @@ const out = [`matrix: ${file}`, `target: ${matrix.target ?? "(not recorded)"}`, 
 for (const status of wanted) {
   const byGroup = groups.get(status);
   if (!byGroup.size) {
-    out.push("", `${status === "fail" ? "FAIL" : status === "na" ? "n/a" : "known"}: none`);
+    out.push("", `${LABELS[status]}: none`);
     continue;
   }
   for (const [group, cells] of [...byGroup].sort(([a], [b]) => a.localeCompare(b, "en", { numeric: true }))) {

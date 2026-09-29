@@ -41,15 +41,15 @@ Triage every `FAIL` cell as [SKILL.md](SKILL.md#3-read-the-matrix) says. A cell 
 
 Done when every capability that `matrix-cells.mjs --status na` lists, and every capability in the table below, has a verdict.
 
-The first cases: once a release includes these, their `n/a` cells must become real results.
+The first cases: once a release includes the change, the capability's `n/a` cells must become real results. The README's Capabilities table says which scenarios each one gates.
 
-| Capability | Arrives with | Gates today |
-|---|---|---|
-| `mysql-databases` | #220 | MySQL and MariaDB `introspect-golden` and `introspect-loads`, and every MySQL and MariaDB tenant scenario |
-| `http-api-optional-drivers` | #263 (fixes #260) | `http-no-pg` |
-| `subtree-resolver` | #270 (fixes #232) | `tenant-subtree`, `tenant-subtree-seeds` and `tenant-subtree-no-resolver` |
-| `tenant-driver-markers` | #197 (fixes #231) | the `sql-params` cases of `tenant-ids`, `tenant-subtree` and `tenant-subtree-seeds` |
-| `tenant-predicate-required` | #341 (fixes #315), still open | the `tenant-strict-*` cases, once #341 merges and adds the capability; until then they are `known (#315)` |
+| Capability | Arrives with |
+|---|---|
+| `mysql-databases` | #220 |
+| `http-api-optional-drivers` | #263 (fixes #260) |
+| `subtree-resolver` | #270 (fixes #232) |
+| `tenant-driver-markers` | #197 (fixes #231) |
+| `tenant-predicate-required` | #341 (fixes #315), still open. It adds the capability to `src/capabilities.ts`; until it merges, the four `tenant-strict-*` cases it will gate read `known (#315)` instead. |
 
 Check `src/capabilities.ts` for the current list: a capability added since this table was written is checked the same way.
 

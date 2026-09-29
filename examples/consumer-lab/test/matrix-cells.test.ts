@@ -16,8 +16,10 @@
  * `consumer-lab-matrix` artifact with it.
  */
 import { spawnSync } from "node:child_process";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { describe, expect, it } from "vitest";
+import { beforeAll, describe, expect, it } from "vitest";
 import { LAB, runMatrix } from "./support/scratch-matrix.js";
 
 const PROBE = `
@@ -35,7 +37,7 @@ describe("[sqlserver]", () => { it("probe-red: fails", () => { expect(41, "rows 
 `;
 
 /** Run the script on `file`; parse its groups into `{ "<group>: n cell(s)": [lines…] }`. */
-function cells(file: string, ...args: string[]) {
+function listCells(file: string, ...args: string[]) {
   const run = spawnSync(process.execPath, [join(LAB, "src", "matrix-cells.mjs"), ...args, file], { encoding: "utf8" });
   const blocks = run.stdout.trim().split("\n\n").slice(1, -1);
   const groups = Object.fromEntries(blocks.map((b) => b.split("\n")).map(([head, ...lines]) => [head, lines.map((l) => l.trim())]));
@@ -43,10 +45,13 @@ function cells(file: string, ...args: string[]) {
 }
 
 describe("matrix-cells", () => {
-  const matrix = runMatrix(PROBE);
+  let matrix: ReturnType<typeof runMatrix>;
+  beforeAll(() => {
+    matrix = runMatrix(PROBE);
+  });
 
   it("lists every cell that isn't pass, once per FAIL, issue and capability it names", () => {
-    const { status, out, groups, total } = cells(matrix.file);
+    const { status, out, groups, total } = listCells(matrix.file);
     expect(status, out).toBe(0);
     expect(groups).toEqual({
       "FAIL: 1 cell(s)": ["probe-red [sqlserver]", "- [sqlserver] > probe-red: fails: AssertionError: rows for agency 2: expected 41 to be 42 // Object.is equality"],
@@ -59,9 +64,22 @@ describe("matrix-cells", () => {
   });
 
   it("keeps only the statuses --status names", () => {
-    const { status, out, groups, total } = cells(matrix.file, "--status", "na");
+    const { status, out, groups, total } = listCells(matrix.file, "--status", "na");
     expect(status, out).toBe(0);
     expect(Object.keys(groups)).toEqual(["n/a (capability: cap-a): 2 cell(s)", "n/a (capability: cap-b): 1 cell(s)"]);
     expect(total).toBe("2 cell(s) listed.");
+  });
+
+  it("refuses a file that isn't a matrix instead of listing nothing", () => {
+    const dir = mkdtempSync(join(tmpdir(), "lab-matrix-cells-"));
+    try {
+      const file = join(dir, "matrix.json");
+      writeFileSync(file, JSON.stringify({ target: "npm:latest", results: [] }));
+      const { status, out } = listCells(file);
+      expect(status, out).toBe(2);
+      expect(out).toContain("isn't a lab matrix");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });
