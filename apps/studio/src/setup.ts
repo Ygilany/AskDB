@@ -5,6 +5,7 @@ import { basename, dirname, join, resolve, isAbsolute, relative } from "node:pat
 import {
   bootstrapAskDbEnv,
   discoverAskDbConfigPath,
+  getAskDbAiScaffoldDefaults,
   getAskDbRuntimeConfig,
   renderAskDbAiConfigScaffold,
 } from "@askdb/config";
@@ -46,18 +47,6 @@ export type SetupConfigInput = {
   studioExecuteProvider?: SetupExecuteProvider;
   studioExecuteConnectionEnv?: string;
   studioExecuteSqliteFile?: string;
-};
-
-/**
- * Default key/model env var names. Mirrors `AI_DEFAULTS` in `apps/cli/src/init.ts`; the `ai`
- * block itself is rendered by `@askdb/config` (`renderAskDbAiConfigScaffold`).
- */
-const AI_DEFAULTS: Record<SetupAiProvider, { keyEnv: string; modelEnv: string }> = {
-  openai: { keyEnv: "OPENAI_API_KEY", modelEnv: "OPENAI_MODEL" },
-  anthropic: { keyEnv: "ANTHROPIC_API_KEY", modelEnv: "ANTHROPIC_MODEL" },
-  google: { keyEnv: "GOOGLE_GENERATIVE_AI_API_KEY", modelEnv: "GOOGLE_GENERATIVE_AI_MODEL" },
-  azure: { keyEnv: "AZURE_OPENAI_API_KEY", modelEnv: "AZURE_OPENAI_DEPLOYMENT" },
-  foundry: { keyEnv: "AZURE_OPENAI_API_KEY", modelEnv: "AZURE_OPENAI_DEPLOYMENT" },
 };
 
 const CONNECTION_ENV_DEFAULTS: Record<Exclude<SetupDatabase, "sqlite" | "prisma">, string> = {
@@ -167,9 +156,10 @@ export function writeSetupConfig(cwd: string, input: SetupConfigInput): SetupCon
   }
 
   const schemaOut = validateRelativePath(input.schemaOut ?? "./askdb", "schemaOut");
-  // Own-property lookup so `constructor`/`__proto__` can't masquerade as a provider —
-  // the provider name is emitted as an object key in the generated config.
-  const aiDefaults = Object.hasOwn(AI_DEFAULTS, input.aiProvider) ? AI_DEFAULTS[input.aiProvider] : undefined;
+  // Only ids in `ASKDB_AI_PROVIDERS` have defaults, so `constructor`/`__proto__` can't
+  // masquerade as a provider — the provider name is emitted as an object key in the
+  // generated config.
+  const aiDefaults = getAskDbAiScaffoldDefaults(input.aiProvider);
   if (!aiDefaults) throw new SetupError(400, `Unknown AI provider: ${JSON.stringify(input.aiProvider)}`);
   const aiKeyEnv = validateEnvName(input.aiKeyEnv ?? aiDefaults.keyEnv, "aiKeyEnv");
   const aiModelEnv = input.aiModelEnv ? validateEnvName(input.aiModelEnv, "aiModelEnv") : undefined;

@@ -22,6 +22,33 @@ export type AskDbAiConfigScaffold = {
   envVars: AskDbScaffoldEnvVar[];
 };
 
+/** Default env var names a new config reads the API key and model from. */
+export type AskDbAiScaffoldDefaults = {
+  keyEnv: string;
+  modelEnv: string;
+};
+
+const AI_SCAFFOLD_DEFAULTS: Record<AskDbAiProviderId, AskDbAiScaffoldDefaults> = {
+  openai: { keyEnv: "OPENAI_API_KEY", modelEnv: "OPENAI_MODEL" },
+  anthropic: { keyEnv: "ANTHROPIC_API_KEY", modelEnv: "ANTHROPIC_MODEL" },
+  google: { keyEnv: "GOOGLE_GENERATIVE_AI_API_KEY", modelEnv: "GOOGLE_GENERATIVE_AI_MODEL" },
+  azure: { keyEnv: "AZURE_OPENAI_API_KEY", modelEnv: "AZURE_OPENAI_DEPLOYMENT" },
+  foundry: { keyEnv: "AZURE_OPENAI_API_KEY", modelEnv: "AZURE_OPENAI_DEPLOYMENT" },
+};
+
+function isAiProvider(provider: string): provider is AskDbAiProviderId {
+  return (ASKDB_AI_PROVIDERS as readonly string[]).includes(provider);
+}
+
+/**
+ * The env var names `askdb init` and Studio's setup wizard suggest for a
+ * provider's API key and model. Returns `undefined` for an id that isn't in
+ * `ASKDB_AI_PROVIDERS` (including `constructor` / `__proto__`).
+ */
+export function getAskDbAiScaffoldDefaults(provider: string): AskDbAiScaffoldDefaults | undefined {
+  return isAiProvider(provider) ? AI_SCAFFOLD_DEFAULTS[provider] : undefined;
+}
+
 /**
  * Env var the scaffold reads `resourceName` from. It's also the name the Azure
  * adapter reads when there's no config file.
@@ -39,7 +66,7 @@ const AZURE_RESOURCE_NAME_ENV = "AZURE_RESOURCE_NAME";
 export function renderAskDbAiConfigScaffold(input: AskDbAiConfigScaffoldInput): AskDbAiConfigScaffold {
   const { provider, keyEnv, modelEnv } = input;
   // The provider id is emitted as an object key, so only known ids get through.
-  if (!(ASKDB_AI_PROVIDERS as readonly string[]).includes(provider)) {
+  if (!isAiProvider(provider)) {
     throw new Error(`Unknown AI provider: ${JSON.stringify(provider)}`);
   }
   const envVars: AskDbScaffoldEnvVar[] = [{ name: keyEnv, purpose: `${provider} API key` }];
