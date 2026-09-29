@@ -120,6 +120,7 @@ Optional config bootstrap: `.env` and `askdb.config.*` discovery, type-safe `def
 | `getAskDbRuntimeConfig()` | Read the runtime snapshot (preferred over `process.env`). |
 | `discoverAskDbConfigPath()` | Programmatic config-file discovery. |
 | `env`, `requiredEnv` | Typed env-var accessors. |
+| `isAskDbDebugEnabled()` | `true` when the `ASKDB_DEBUG` shell variable is `1` or `true`; works without a loaded config. |
 
 ## Engine adapters
 
