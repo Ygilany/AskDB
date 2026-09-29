@@ -39,7 +39,7 @@ pnpm preflight
 
 Open every PR as a draft. Before it is marked ready for review:
 
-- An agent or session that did not write the change reviews it with the `pr-review` skill (see "PR review" below). The implementer's own session never reviews its diff. AI reviews post from the maintainer's account, so each one opens with a disclosure line naming the model that ran it.
+- An agent, session, or person that did not write the change reviews it with the `pr-review` skill (see "PR review" below). The implementer's own session never reviews its diff. AI reviews post from the maintainer's account, so each one opens with a disclosure line naming the model that ran it.
 - Every review finding is fixed in a commit or answered in a reply on the PR.
 - After every push (review fixes, test-audit commits, rebases, merges), re-check the PR title and description against the final diff: every named test, export, count, and behavior claim. When non-trivial code changes land after the review, re-run it on the new commits.
 

@@ -5,7 +5,7 @@ AskDB's configuration for the generic `pr-review` skill (see `AGENTS.md`, "PR re
 ## When review is required
 
 - Every PR opens as a draft and gets an independent review before it is marked ready for review.
-- The reviewer is a different agent or session from the one that wrote the change. A session that wrote or edited any part of the diff stops and hands the review to a fresh agent: an author checks its own diff against the same mental model that wrote it, which is how #190, #192, and #197 reached review with defects only Copilot caught.
+- The reviewer is a different agent, session, or person from the one that wrote the change. A session that wrote or edited any part of the diff stops and hands the review to a fresh agent: an author checks its own diff against the same mental model that wrote it, which is how #190, #192, and #197 reached review with defects only Copilot caught.
 - Re-check the PR title and description against the final diff after every push. Re-run the review on the new commits (`git diff <last-reviewed-sha>..HEAD`) when non-trivial code changes land after it.
 - The PR leaves draft only when every finding is fixed in a commit or answered in a reply on its thread.
 
