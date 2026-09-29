@@ -348,7 +348,7 @@ export async function ask(options: AskPipelineOptions): Promise<AskPipelineResul
   // markers applied below). Never overwrite it with a re-bound version.
   const result: AskPipelineResult = { sql: generated.sql };
   if (generated.explain !== undefined) result.explain = generated.explain;
-  // With a tenant policy, `tenantGuardrail` is computed below from the final SQL;
+  // With a tenant policy, `tenantGuardrail` is computed below, before tenant rendering;
   // without one, pass through whatever a custom dialect reported.
   if (!tenantPolicy && generated.tenantGuardrail !== undefined) {
     result.tenantGuardrail = generated.tenantGuardrail;

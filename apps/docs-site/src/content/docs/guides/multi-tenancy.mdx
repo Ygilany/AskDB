@@ -118,11 +118,11 @@ When the policy exists, every `ask()` call must include a `tenantScope`. AskDB v
 AskDB checks the model's SQL before it binds the tenant IDs, while the `:tenant_<root>_ids` placeholders are still in place. The check covers every tenant-scoped table the query mentions:
 
 - **A real predicate.** The table's tenant column is compared with its root's placeholder: `agency_id = :tenant_agency_ids`, `agency_id IN (:tenant_agency_ids)` or `agency_id = ANY(:tenant_agency_ids)`.
-- **ANDed into the filter.** The predicate sits in a `WHERE`, `ON` or `HAVING` clause. It can't be next to an `OR` at its own level, under `NOT`, or in the select list. `agency_id = :tenant_agency_ids AND (status = 'a' OR status = 'b')` is fine; `agency_id = :tenant_agency_ids OR 1 = 1` is rejected.
-- **No literal IDs.** `agency_id = 2` is rejected, even when 2 is in the caller's scope: AskDB binds the IDs.
+- **ANDed into the filter.** The predicate sits in a `WHERE` clause, an inner join's `ON` clause, or a `HAVING` clause; an outer join's `ON` doesn't filter the preserved side, so it doesn't count. It can't be next to an `OR` at its own level, under `NOT`, or in the select list. `agency_id = :tenant_agency_ids AND (status = 'a' OR status = 'b')` is fine; `agency_id = :tenant_agency_ids OR 1 = 1` is rejected.
+- **No literal IDs.** `agency_id = 2` doesn't satisfy the rule, even when 2 is in the caller's scope: AskDB binds the IDs. Each `UNION` branch that reads a scoped table needs its own predicate.
 - **Root tables too.** A query on the root table itself (`agencies`) needs the predicate on its tenant ID column.
 
-It's a heuristic over the SQL's tokens, not a parser. It doesn't tie each predicate to a specific table reference, so an unfiltered reference next to a filtered one can still pass. Use it as defense in depth, together with database-side row-level security and a read-only role: see [Run safely in production](/guides/run-safely-in-prod/). The full rules are in [`docs/contracts/tenant-policy.md`](https://github.com/Ygilany/AskDB/blob/main/docs/contracts/tenant-policy.md#guardrail-validation).
+It's a heuristic over the SQL's tokens, not a parser. Within one query it doesn't tie each predicate to a specific table reference, so an unfiltered reference next to a filtered one can still pass. Use it as defense in depth, together with database-side row-level security and a read-only role: see [Run safely in production](/guides/run-safely-in-prod/). The full rules are in [`docs/contracts/tenant-policy.md`](https://github.com/Ygilany/AskDB/blob/main/docs/contracts/tenant-policy.md#guardrail-validation).
 
 ```ts
 // askdb initialized at startup with createAskDb() — see Embed in a Node app.

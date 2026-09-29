@@ -124,14 +124,6 @@ async function askCallsSubtreeResolver(): Promise<boolean> {
 }
 
 /**
- * Whether `tenantSqlMode: "sql-params"` binds tenant IDs through the dialect's driver
- * markers (`reference/core-api.mdx`, `tenantSqlMode`: "`?` MySQL/MariaDB/SQLite"): ask on
- * SQLite and check the returned `sql` uses `?`, not Postgres `$N`, and that the scope's ID
- * comes back in `tenantParams`. Releases before the fix for #231 bound them with Postgres
- * `$N` markers on every dialect, which a `?` driver can't bind. Only the marker and the
- * bound value are checked, not how the predicate around them is written.
- */
-/**
  * Whether strict mode requires a tenant predicate that actually filters
  * (`docs/contracts/tenant-policy.md`, "Guardrail validation": "the required tenant
  * predicate (`column = :placeholder` …)"): ask on Postgres with a reply that filters on
@@ -151,6 +143,14 @@ async function askRequiresTenantPredicate(): Promise<boolean> {
   }
 }
 
+/**
+ * Whether `tenantSqlMode: "sql-params"` binds tenant IDs through the dialect's driver
+ * markers (`reference/core-api.mdx`, `tenantSqlMode`: "`?` MySQL/MariaDB/SQLite"): ask on
+ * SQLite and check the returned `sql` uses `?`, not Postgres `$N`, and that the scope's ID
+ * comes back in `tenantParams`. Releases before the fix for #231 bound them with Postgres
+ * `$N` markers on every dialect, which a `?` driver can't bind. Only the marker and the
+ * bound value are checked, not how the predicate around them is written.
+ */
 async function askBindsTenantDriverMarkers(): Promise<boolean> {
   const { idsScope } = await import("./tenant.js");
   const result = await askTenantProbe("sqlite", "SELECT program_code FROM program WHERE agency_id = :tenant_agency_ids", {

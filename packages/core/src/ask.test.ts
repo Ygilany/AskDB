@@ -701,7 +701,7 @@ describe("ask — tenant guardrail runs on the SQL actually returned", () => {
     expect(result.tenantGuardrail).toEqual({ passed: true, warnings: [] });
   });
 
-  it("checks the model's SQL before tenant substitution, so every rendering passes (sql-params mode: $1)", async () => {
+  it("checks the model's SQL before tenant substitution, so its sql-params rendering ($1) passes", async () => {
     const schema = loadSchema(multiTenantDir);
     const generateText = vi.fn(async () => ({
       text: "```sql\nSELECT count(*) FROM orders WHERE agency_id = :tenant_agency_ids\n```",

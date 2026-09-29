@@ -282,6 +282,13 @@ describe("validateTenantGuardrails — a tenant predicate must actually filter (
     ["the predicate inside a CASE", "SELECT * FROM orders WHERE CASE WHEN agency_id = :tenant_agency_ids THEN 1 ELSE 1 END = 1"],
     ["the predicate as a function argument", "SELECT * FROM orders WHERE COALESCE(agency_id = :tenant_agency_ids, TRUE)"],
     ["another table's column compared with the placeholder", "SELECT * FROM orders WHERE status = :tenant_agency_ids"],
+    ["an OR after a function named like a clause keyword", "SELECT * FROM orders WHERE agency_id = :tenant_agency_ids AND LEFT(status, 1) = 'o' OR 1 = 1"],
+    ["the predicate in a LEFT JOIN's ON", "SELECT o.* FROM orders o LEFT JOIN lookup_states d ON o.agency_id = :tenant_agency_ids"],
+    ["the predicate in a FULL OUTER JOIN's ON", "SELECT o.* FROM orders o FULL OUTER JOIN lookup_states d ON d.code = o.state AND o.agency_id = :tenant_agency_ids"],
+    ["the predicate in a scalar subquery in the select list", "SELECT (SELECT 1 WHERE agency_id = :tenant_agency_ids) AS x, o.* FROM orders o"],
+    ["the predicate inside EXISTS, OR-ed away", "SELECT * FROM orders WHERE EXISTS (SELECT 1 WHERE agency_id = :tenant_agency_ids) OR 1 = 1"],
+    ["the predicate inside an uncorrelated EXISTS", "SELECT * FROM orders WHERE EXISTS (SELECT 1 FROM orders o2 WHERE o2.agency_id = :tenant_agency_ids)"],
+    ["a UNION branch with a literal ID", "SELECT * FROM orders WHERE agency_id = :tenant_agency_ids UNION ALL SELECT * FROM orders WHERE agency_id = 7"],
   ])("rejects %s", (_label, sql) => {
     expect(rules(sql)).toContain("MISSING_TENANT_PREDICATE");
   });
@@ -315,6 +322,11 @@ describe("validateTenantGuardrails — a tenant predicate must actually filter (
     ["HAVING", "SELECT agency_id, count(*) FROM orders GROUP BY agency_id HAVING agency_id = :tenant_agency_ids"],
     ["a clause after it", "SELECT * FROM orders WHERE agency_id = :tenant_agency_ids ORDER BY id LIMIT 5"],
     ["a trailing semicolon", "SELECT * FROM orders WHERE agency_id = :tenant_agency_ids;"],
+    ["a function named like a clause keyword beside it", "SELECT * FROM orders WHERE agency_id = :tenant_agency_ids AND LEFT(status, 1) = 'o'"],
+    ["an inner JOIN's ON", "SELECT o.* FROM orders o INNER JOIN lookup_states d ON d.code = o.state AND o.agency_id = :tenant_agency_ids"],
+    ["a derived table after a comma in FROM", "SELECT * FROM lookup_states s, (SELECT * FROM orders WHERE agency_id = :tenant_agency_ids) o"],
+    ["every UNION branch scoped", "SELECT id FROM orders WHERE agency_id = :tenant_agency_ids UNION SELECT id FROM orders WHERE agency_id IN (:tenant_agency_ids)"],
+    ["a UNION branch that doesn't touch the table", "SELECT id FROM orders WHERE agency_id = :tenant_agency_ids UNION SELECT id FROM lookup_states"],
   ])("accepts %s", (_label, sql) => {
     expect(rules(sql)).toEqual([]);
   });
