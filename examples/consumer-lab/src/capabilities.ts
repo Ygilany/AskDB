@@ -220,7 +220,6 @@ async function askFlagsSensitiveWildcard(): Promise<boolean> {
   }
 }
 
-
 const DETECTORS = {
   /** `askdb introspect --engine <id> --url …` (reference/cli.mdx), how the lab builds every schema artifact. */
   "cli-introspect-engine": () => /--engine\b/.test(cliHelp("introspect")),

@@ -215,12 +215,12 @@ The strict cases fail on the leak itself: when `ask()` returns SQL it should hav
 | `sensitive-omit-cli` | `askdb ask --omit-sensitive-from-prompt` sends neither column. Runs once, as `[postgres]`. |
 | `sensitive-omit-http` | `POST /ask` with `omitSensitiveFromPrompt: true` sends neither column. Runs once, as `[postgres]`. |
 | `sensitive-omit-config` | With `modes.omitSensitiveFromPrompt: true` in `askdb.config.ts`, `askdb ask` sends neither column. `askdb-http` from that config still sends both when a request leaves the field out, although the HTTP reference gives the field that default: `known (#376)`. Runs once, as `[postgres]`. |
-| `sensitive-omit-env` | `ASKDB_OMIT_SENSITIVE_FROM_PROMPT=true`, which the contract lists as a way to omit, is never read from the environment: `known (#377)`. Runs once, as `[postgres]`. |
+| `sensitive-omit-env` | `ASKDB_OMIT_SENSITIVE_FROM_PROMPT=true`, which the contract lists as a way to omit, is never read from the environment, by `askdb ask` or by `askdb-http`: `known (#377)`. Runs once, as `[postgres]`. |
 | `sensitive-warn` | In the default warn mode, each named-column reply is returned unchanged with `sensitiveGuardrail` `{ passed: false }` and exactly the expected references (`qualified` or `unqualified`). With omission on, a reply that reads `ssn` is still flagged. The control passes with no references. |
 | `sensitive-strict` | With `sensitiveGuardrailMode: "strict"`, each named-column reply reaches the model and is rejected with `SensitiveReferenceError` `SENSITIVE_COLUMN_REFERENCED` and the same references. The control is returned. |
 | `sensitive-wildcard` | `SELECT *` (both columns, `unqualified`) and `c.*` on a join (both, `qualified`), in warn and strict mode as above. |
 
-The `known` cases fail only on the prompt: a failed request, or not exactly one answered model call, makes the body pass, so `it.fails` shows the cell as `FAIL` instead. The passing cases in the same suite start the same CLI and HTTP server from the same artifact.
+The `known` cases fail only because the prompt still names the sensitive columns: a failed request, not exactly one answered model call, or a prompt that lost `people.client` makes the body pass, so `it.fails` shows the cell as `FAIL` instead. The passing cases in the same suite start the same CLI and HTTP server from the same artifact.
 
 ## The matrix
 

@@ -169,14 +169,27 @@ function expectTagged(prompt: string): void {
   expect(tagged.filter((l) => !SENSITIVE.some((c) => names(c).test(l))), "a column the overlay leaves unmarked is tagged").toEqual([]);
 }
 
-/**
- * An omitted prompt: neither sensitive column is named and nothing is tagged, while the rest
- * of `people.client` is still described (so the table itself didn't disappear).
- */
+/** Whether the prompt still describes the unmarked columns of `people.client`: the table itself didn't disappear. */
+const describesClient = (prompt: string) => UNMARKED_CLIENT_COLUMNS.every((column) => names(column).test(prompt));
+
+/** An omitted prompt: neither sensitive column is named and nothing is tagged, while the rest of `people.client` is still described. */
 function expectOmitted(prompt: string): void {
   for (const column of SENSITIVE) expect(prompt, `the prompt still names ${column}`).not.toMatch(names(column));
   expect(prompt).not.toContain("(sensitive)");
-  for (const column of UNMARKED_CLIENT_COLUMNS) expect(prompt, `the prompt lost people.client's ${column}`).toMatch(names(column));
+  expect(describesClient(prompt), `the prompt lost people.client's ${UNMARKED_CLIENT_COLUMNS.join(", ")}`).toBe(true);
+}
+
+/**
+ * An omission case with its control: `omit` makes the call with the surface's switch, `control`
+ * the same call without it. The switch must remove both columns, and the control must name
+ * and tag them, so the case can't pass because the table or the overlay is missing.
+ */
+async function expectOmittedAgainstControl(dialect: SupportedDialect, omit: () => Promise<unknown>, control: () => Promise<unknown>): Promise<void> {
+  const omitted = await promptOf(dialect, CONTROL, omit);
+  const tagged = await promptOf(dialect, CONTROL, control);
+
+  expectOmitted(omitted);
+  expectTagged(tagged);
 }
 
 /** The references the guardrail must report for a reply, as `SensitiveReference`s, sorted. */
@@ -231,7 +244,7 @@ async function expectRejected(dialect: SupportedDialect, reading: Reading): Prom
   const calls = await callsOf(async () => (outcome = await settle(ask(dialect, reading.id, { sensitiveGuardrailMode: "strict" }))));
 
   // The model answered; AskDB rejected what it wrote.
-  expect(calls.map((c) => [c.questionId, c.error])).toEqual([[reading.id, null]]);
+  expect(calls.map((c) => [c.dialect, c.questionId, c.error])).toEqual([[dialect, reading.id, null]]);
   expect(outcome.ok ? outcome.result.sql : undefined, "strict mode returned SQL that reads a sensitive column").toBeUndefined();
   const error = outcome.ok ? undefined : outcome.error;
   expect(error).toBeInstanceOf(SensitiveReferenceError);
@@ -273,11 +286,11 @@ describe.each(SUPPORTED_DIALECTS.map((d) => [d] as [SupportedDialect]))("[%s]", 
     it("sensitive-omit-library: ask() with omitSensitiveIdentifiersFromNlToSqlPrompt sends a prompt without email and ssn", async (ctx) => {
       needsSensitiveCapabilities(ctx, dialect);
 
-      const omitted = await promptOf(dialect, CONTROL, () => ask(dialect, CONTROL, { omitSensitiveIdentifiersFromNlToSqlPrompt: true }));
-      const control = await promptOf(dialect, CONTROL, () => ask(dialect, CONTROL));
-
-      expectOmitted(omitted);
-      expectTagged(control);
+      await expectOmittedAgainstControl(
+        dialect,
+        () => ask(dialect, CONTROL, { omitSensitiveIdentifiersFromNlToSqlPrompt: true }),
+        () => ask(dialect, CONTROL),
+      );
     });
   });
 
@@ -415,11 +428,11 @@ describe("[postgres] sensitive-omit-client", () => {
     const model = createOpenAI({ baseURL: replay.baseURL("postgres"), apiKey: API_KEY })(MODEL_ID);
     const text = question(CONTROL).text;
 
-    const omitted = await promptOf("postgres", CONTROL, () => askdb.ask(text, { model, omitSensitiveIdentifiersFromNlToSqlPrompt: true }));
-    const control = await promptOf("postgres", CONTROL, () => askdb.ask(text, { model }));
-
-    expectOmitted(omitted);
-    expectTagged(control);
+    await expectOmittedAgainstControl(
+      "postgres",
+      () => askdb.ask(text, { model, omitSensitiveIdentifiersFromNlToSqlPrompt: true }),
+      () => askdb.ask(text, { model }),
+    );
   });
 });
 
@@ -444,21 +457,21 @@ describe("[postgres] sensitive-omit-cli", () => {
   it("sensitive-omit-cli: askdb ask --omit-sensitive-from-prompt sends a prompt without email and ssn", async (ctx) => {
     needsSensitiveCapabilities(ctx, "postgres");
 
-    const omitted = await promptOf("postgres", CONTROL, async () => expect((await cliAsk(["--omit-sensitive-from-prompt"])).status).toBe(0));
-    const control = await promptOf("postgres", CONTROL, async () => expect((await cliAsk()).status).toBe(0));
-
-    expectOmitted(omitted);
-    expectTagged(control);
+    await expectOmittedAgainstControl(
+      "postgres",
+      async () => expect((await cliAsk(["--omit-sensitive-from-prompt"])).status).toBe(0),
+      async () => expect((await cliAsk()).status).toBe(0),
+    );
   });
 });
 
 /**
  * `askdb-http` on the Postgres artifact with the overlay, from `cwd`'s config (default: the
- * lab's), one per key, started on first use and killed in afterAll.
+ * lab's) with `env` added, one per key, started on first use and killed in afterAll.
  */
-function sensitiveHttpServer(key: string, cwd?: string): Promise<HttpServer> {
+function sensitiveHttpServer(key: string, { cwd, env = {} }: { cwd?: string; env?: Record<string, string> } = {}): Promise<HttpServer> {
   if (!httpServers.has(key)) {
-    httpServers.set(key, startHttpServer({ cwd, schemaPath: artifact("postgres"), env: { LAB_REPLAY_BASE_URL: replay.baseURL("postgres") } }));
+    httpServers.set(key, startHttpServer({ cwd, schemaPath: artifact("postgres"), env: { LAB_REPLAY_BASE_URL: replay.baseURL("postgres"), ...env } }));
   }
   return httpServers.get(key)!;
 }
@@ -477,11 +490,11 @@ describe("[postgres] sensitive-omit-http", () => {
     const http = await sensitiveHttpServer("lab");
     const text = question(CONTROL).text;
 
-    const omitted = await promptOf("postgres", CONTROL, async () => expect((await postAsk(http, { question: text, omitSensitiveFromPrompt: true })).status).toBe(200));
-    const control = await promptOf("postgres", CONTROL, async () => expect((await postAsk(http, { question: text })).status).toBe(200));
-
-    expectOmitted(omitted);
-    expectTagged(control);
+    await expectOmittedAgainstControl(
+      "postgres",
+      async () => expect((await postAsk(http, { question: text, omitSensitiveFromPrompt: true })).status).toBe(200),
+      async () => expect((await postAsk(http, { question: text })).status).toBe(200),
+    );
   });
 });
 
@@ -520,8 +533,8 @@ async function expectOmittedKnown(run: () => Promise<boolean>): Promise<void> {
   let ok = false;
   const calls = await callsOf(async () => (ok = await run()));
   const call = calls.length === 1 && calls[0]!.questionId === CONTROL && calls[0]!.error === null ? calls[0] : undefined;
-  if (!ok || !call) {
-    console.error("not the known discrepancy: the request failed, or it didn't make exactly one answered model call", calls);
+  if (!ok || !call || !describesClient(call.prompt)) {
+    console.error("not the known discrepancy: the request failed, it didn't make exactly one answered model call, or its prompt lost people.client", calls);
     return;
   }
   expectOmitted(call.prompt);
@@ -551,7 +564,7 @@ describe("[postgres] sensitive-omit-config", () => {
 
   it.fails("sensitive-omit-config: POST /ask without omitSensitiveFromPrompt, on a server whose config sets modes.omitSensitiveFromPrompt, sends a prompt without email and ssn (#376)", async (ctx) => {
     needsSensitiveCapabilities(ctx, "postgres");
-    const http = await sensitiveHttpServer("omit-config", omitConfigProject());
+    const http = await sensitiveHttpServer("omit-config", { cwd: omitConfigProject() });
 
     await expectOmittedKnown(async () => (await postAsk(http, { question: question(CONTROL).text })).status === 200);
   });
@@ -562,15 +575,27 @@ describe("[postgres] sensitive-omit-config", () => {
  * ways to omit: `omitSensitiveIdentifiersFromNlToSqlPrompt`, `--omit-sensitive-from-prompt`,
  * and `ASKDB_OMIT_SENSITIVE_FROM_PROMPT`. The variable is a flat key AskDB builds from
  * `askdb.config.ts`, never read from `process.env`, so setting it in the environment omits
- * nothing (#377; the same class of doc error as #282).
+ * nothing (#377; the same class of doc error as #282). Over HTTP, the request field's
+ * "env-driven" default (`reference/http-api.mdx`) reads as this variable too; that case also
+ * needs `askdb-http` to honor the runtime setting at all (#376), so it stays `known` until
+ * both are fixed.
  * Catches: an operator who sets the documented variable and still sends the model its
- * sensitive column names.
+ * sensitive column names, through the CLI or the HTTP API.
  * Not covered elsewhere: no other test sets the variable.
  */
 describe("[postgres] sensitive-omit-env", () => {
+  const env = { ASKDB_OMIT_SENSITIVE_FROM_PROMPT: "true" };
+
   it.fails("sensitive-omit-env: askdb ask with ASKDB_OMIT_SENSITIVE_FROM_PROMPT=true sends a prompt without email and ssn (#377)", async (ctx) => {
     needsSensitiveCapabilities(ctx, "postgres");
 
-    await expectOmittedKnown(async () => (await cliAsk([], { env: { ASKDB_OMIT_SENSITIVE_FROM_PROMPT: "true" } })).status === 0);
+    await expectOmittedKnown(async () => (await cliAsk([], { env })).status === 0);
+  });
+
+  it.fails("sensitive-omit-env: POST /ask without omitSensitiveFromPrompt, on a server started with ASKDB_OMIT_SENSITIVE_FROM_PROMPT=true, sends a prompt without email and ssn (#377)", async (ctx) => {
+    needsSensitiveCapabilities(ctx, "postgres");
+    const http = await sensitiveHttpServer("omit-env", { env });
+
+    await expectOmittedKnown(async () => (await postAsk(http, { question: question(CONTROL).text })).status === 200);
   });
 });
