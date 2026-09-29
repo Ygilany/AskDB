@@ -103,6 +103,7 @@ examples/consumer-lab/
     oracle.ts               # expected answers per question id, computed in TS from fixtures/multi-engine/dataset/data/*.json, with result types and ordered?
     model/replay-server.ts  # OpenAI-compatible replay/record server (see Model)
     http-api.ts             # runs the installed `askdb-http` bin on a free port
+    studio.ts               # runs the installed `askdb studio` on a free port, in a scratch project
     lab-cli.ts              # `pnpm lab ask …`
     matrix-reporter.ts      # vitest reporter → dialect × scenario table
     scratch.ts              # writable scratch copies of the fixture, created, reset and dropped by the lab
@@ -368,7 +369,7 @@ Every phase runs `pnpm smoke:install` and `pnpm preflight` before its PR. Apart 
 
 These came up while reading the docs. They are not findings yet: each one is either confirmed by a lab test in its phase or dropped. **A confirmed discrepancy is filed as a GitHub issue** labelled `discrepancy` (see `docs/agents/issue-tracker.md`), and the list below links it; this list is the lab's index, not the tracker.
 
-1. `docs/specs/studio.md` lists live SQL execution as out of scope. ADR 0009, `studio.mdx` and `apps/studio/src/server.ts` (`/api/execute`) all say Studio executes SQL. The docs site does not document execute as read-only; only ADR 0009 does, in one line.
+1. `docs/specs/studio.md` lists live SQL execution as out of scope. ADR 0009, `studio.mdx` and `apps/studio/src/server.ts` (`/api/execute`) all say Studio executes SQL. The docs site does not document execute as read-only; only ADR 0009 does, in one line. *Checked by the Studio suite (#253):* `studio.mdx` now documents execute's read-only guards, and the installed Studio follows them on every engine (a write and a second statement get `400`, even with owner credentials). `docs/specs/studio.md` still calls the Ask panel "generation only, no live execution" and gives the default port as 4983 (it is 5556), and it and `studio.mdx`'s lede say Studio opens the browser, while ADR 0009 and the installed Studio say it prints its URL: **#378**.
 2. `docs/specs/http-api.md` describes `{ sql, warnings, correlationId }` with errors `{ error: { code, message, details } }`. The docs site shows `{ ok, correlationId, sql, explain, usage }` and a code list. The docs-site error example uses `rule: "read_only"`, but core rule codes are `SQL_*`. *Confirmed by the HTTP suite (#252):* the spec-versus-docs-site shapes are **#300**; the docs-site-versus-server mismatches (`rule`, `explain: null`, the correlation ID format) are **#285**.
 3. `POST /ask` has no `tenantScope` field, while `tenant-policy.md` lists the HTTP API as a scope-input surface. By the core rules, a tenant-policy schema served over HTTP should fail closed with `MISSING_SCOPE`. *Confirmed by the HTTP suite (#252):* it does, with `500 internal_error`, no SQL and no model call; accepting a scope over HTTP is **#277**.
 4. `guides/multi-tenancy.mdx` says the tenant predicate "can't be forgotten … and can't be removed by a malformed question", but `enforcement: warn` returns unfiltered SQL with warnings. *Confirmed by the tenant suite (#249):* on every engine, and the warnings aren't in the `tenantWarnings` field the docs name but in `result.tenantGuardrail`: **#316**.

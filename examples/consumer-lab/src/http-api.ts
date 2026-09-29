@@ -15,7 +15,7 @@ import { LAB_ROOT } from "./paths.js";
 export const ASKDB_HTTP_BIN = join(LAB_ROOT, "node_modules", ".bin", "askdb-http");
 
 /** Provider keys a developer's shell may hold; a server must only see the config it's given. */
-const PROVIDER_KEYS = ["OPENAI_API_KEY", "AZURE_OPENAI_API_KEY", "AZURE_API_KEY", "GOOGLE_GENERATIVE_AI_API_KEY", "GEMINI_API_KEY", "ANTHROPIC_API_KEY"];
+export const PROVIDER_KEYS = ["OPENAI_API_KEY", "AZURE_OPENAI_API_KEY", "AZURE_API_KEY", "GOOGLE_GENERATIVE_AI_API_KEY", "GEMINI_API_KEY", "ANTHROPIC_API_KEY"];
 
 export interface HttpServerOptions {
   /** Project directory: where the server runs and finds `askdb.config.ts`. Default: the lab. */
@@ -49,7 +49,8 @@ export function freePort(): Promise<number> {
   });
 }
 
-function stop(child: ChildProcess): Promise<void> {
+/** SIGTERM a server process, then SIGKILL it if it hasn't exited within 5 seconds. */
+export function stopProcess(child: ChildProcess): Promise<void> {
   if (child.exitCode !== null || child.signalCode !== null) return Promise.resolve();
   return new Promise((resolve) => {
     const force = setTimeout(() => child.kill("SIGKILL"), 5_000);
@@ -77,7 +78,7 @@ export async function startHttpServer(options: HttpServerOptions = {}): Promise<
   child.stderr!.on("data", (d) => (output += d));
 
   const url = `http://127.0.0.1:${port}`;
-  const server: HttpServer = { url, output: () => output, close: () => stop(child) };
+  const server: HttpServer = { url, output: () => output, close: () => stopProcess(child) };
   const deadline = Date.now() + 30_000;
   while (Date.now() < deadline) {
     if (child.exitCode !== null || child.signalCode !== null) {

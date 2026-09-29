@@ -13,7 +13,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { AskGenerateDeps } from "@askdb/core";
 import type { TestContext } from "vitest";
-import { requireInstallTarget } from "./artifacts.js";
+import { ensureArtifact, requireInstallTarget } from "./artifacts.js";
 import { ASKDB_BIN, introspectFixture } from "./introspect.js";
 import { LAB_ROOT } from "./paths.js";
 
@@ -161,6 +161,37 @@ async function askBindsTenantDriverMarkers(): Promise<boolean> {
   return result.sql.includes("?") && !/\$\d/.test(result.sql) && params.map(String).includes("2");
 }
 
+/**
+ * One launch of the installed `askdb studio` with no `studio` block in its config, shared by
+ * the Studio detectors. It reads whether the served page carries the session token
+ * (ADR 0009; `studio.mdx`, "Security model") and whether `POST /api/execute` answers `403`
+ * while execute is off (`studio.mdx`, "Playground": "Execute is off by default … `POST
+ * /api/execute` returns `403`"), sending the page's token when there is one. A Studio that
+ * doesn't start or doesn't serve its page is a broken install, and throws.
+ */
+let studioProbe: Promise<{ pageToken: boolean; executeOffByDefault: boolean }> | undefined;
+function probeStudio() {
+  studioProbe ??= (async () => {
+    const { TOKEN_HEADER, pageToken, startStudio, studioRequest } = await import("./studio.js");
+    const studio = await startStudio({ schema: ensureArtifact("postgres") });
+    try {
+      const page = await studioRequest(studio);
+      if (page.status !== 200) throw new Error(`askdb studio answered ${page.status} for its page while probing:\n${studio.output()}`);
+      const token = pageToken(page.text);
+      const execute = await studioRequest(studio, {
+        method: "POST",
+        path: "/api/execute",
+        headers: { "content-type": "application/json", ...(token ? { [TOKEN_HEADER]: token } : {}) },
+        body: JSON.stringify({ sql: "SELECT 1 AS ok" }),
+      });
+      return { pageToken: token !== undefined, executeOffByDefault: execute.status === 403 };
+    } finally {
+      await studio.close();
+    }
+  })();
+  return studioProbe;
+}
+
 
 const DETECTORS = {
   /** `askdb introspect --engine <id> --url …` (reference/cli.mdx), how the lab builds every schema artifact. */
@@ -200,6 +231,19 @@ const ASYNC_DETECTORS = {
    * #315 the guardrail accepted any mention of the tenant column.
    */
   "tenant-predicate-required": askRequiresTenantPredicate,
+   * Studio's request guard (ADR 0009, PR #185): a per-launch session token in the served
+   * page, required on `/api/*`, with the Host, Origin and content-type checks that shipped
+   * with it. Detected by the page's `<meta name="askdb-studio-token">`. Releases before it
+   * check nothing but the socket address.
+   */
+  "studio-request-guard": async () => (await probeStudio()).pageToken,
+  /**
+   * Studio execute as `studio.mdx` documents it (PR #194): off until `studio.execute.enabled`,
+   * then validated with the read-only SELECT check before the driver runs anything.
+   * Detected by the default: `POST /api/execute` answers `403` with no `studio` block.
+   * Releases before it are always on and send the SQL to the driver unvalidated.
+   */
+  "studio-execute-guard": async () => (await probeStudio()).executeOffByDefault,
 } satisfies Record<string, () => Promise<boolean>>;
 
 export type SyncCapability = keyof typeof DETECTORS;
