@@ -5,7 +5,9 @@ import {
   redactUrlUserinfo,
 } from "@askdb/connectors";
 
-const PRISMA_SCHEME = /^sqlserver:\/\//i;
+// Leading whitespace is allowed so " sqlserver://…;password=…" still takes the
+// `;`-separated Prisma path instead of the `&`-separated URL path.
+const PRISMA_SCHEME = /^\s*sqlserver:\/\//i;
 
 /**
  * Mask secrets in a SQL Server connection string for display or logging.

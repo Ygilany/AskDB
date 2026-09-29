@@ -60,7 +60,7 @@ const result = await introspect(
 
 Tables, views, columns (SQLite affinity type strings), primary keys, unique constraints, foreign keys, and indexes. Requires SQLite ≥ 3.16 for `pragma_*` table-valued functions. A foreign key declared without a column list (`REFERENCES authors`) resolves to the parent table's primary key. Internal `sqlite_*` objects are skipped.
 
-`redactConnectionString(input)` is exported for parity with the other engine packages; SQLite paths carry no credentials, so it returns its input unchanged.
+`redactConnectionString(input)` is exported for parity with the other engine packages. A plain file path carries no credentials and is returned unchanged; in a `file:` URI, secret query params (`key`, `hexkey`, `textkey`, `password`, …) are masked (`file:app.db?mode=ro&key=****`).
 
 ## License
 

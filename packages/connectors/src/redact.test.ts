@@ -59,6 +59,13 @@ describe("redactSecretKeyValues", () => {
     ).toBe("a=1&password=****&sslpassword=****&access_token=****&api_key=****&PasswordHint=h");
   });
 
+  it("masks to the end when an unquoted secret is followed by a segment that is not key=value", () => {
+    expect(redactSecretKeyValues("Server=h;Pwd=ab;cd;Database=d", { separators: ";" })).toBe("Server=h;Pwd=****");
+    expect(redactSecretKeyValues("host=h password=se cret dbname=d", { separators: "", whitespaceSeparated: true })).toBe(
+      "host=h password=****",
+    );
+  });
+
   it("masks to the end of an unterminated quoted value", () => {
     expect(redactSecretKeyValues("Password='abc;def", { separators: ";" })).toBe("Password=****");
   });

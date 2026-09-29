@@ -23,6 +23,12 @@ describe("redactConnectionString (postgres)", () => {
     );
   });
 
+  it.each([" ", "\t", "\n"])("masks the userinfo password of a URL with leading %j", (lead) => {
+    expect(redactConnectionString(`${lead}postgres://app:S3cret@db:5432/app`)).toBe(
+      `${lead}postgres://app:****@db:5432/app`,
+    );
+  });
+
   it("leaves credential-free strings unchanged", () => {
     expect(redactConnectionString("postgres://localhost/app")).toBe("postgres://localhost/app");
   });

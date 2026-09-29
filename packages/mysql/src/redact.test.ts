@@ -8,6 +8,12 @@ describe("redactConnectionString (mysql)", () => {
     );
   });
 
+  it.each([" ", "\t", "\n"])("masks the userinfo password of a URL with leading %j", (lead) => {
+    expect(redactConnectionString(`${lead}mysql://root:S3cret@localhost:3306/shop`)).toBe(
+      `${lead}mysql://root:****@localhost:3306/shop`,
+    );
+  });
+
   it("masks secret query params", () => {
     expect(redactConnectionString("mysql://localhost/shop?user=root&password=S3cret&ssl=true")).toBe(
       "mysql://localhost/shop?user=root&password=****&ssl=true",

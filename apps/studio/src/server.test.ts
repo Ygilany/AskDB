@@ -927,56 +927,71 @@ describe("AskDB Studio server", () => {
     expect(typeof workspace.schemaPathRelative).toBe("string");
   });
 
-  it("GET /api/introspect/status masks passwords containing @, / and # in sourceLabel", async () => {
+  it.each([
+    {
+      engine: "postgres",
+      url: "postgres://app:p@ss/w#rd@db:5432/app",
+      sourceLabel: "postgres://app:****@db:5432/app",
+    },
+    {
+      engine: "mysql",
+      url: "mysql://root:pa/ss@db:3306/shop",
+      sourceLabel: "mysql://root:****@db:3306/shop",
+    },
+    {
+      engine: "sqlserver",
+      url: "sqlserver://db:1433;database=app;user=sa;password=p@ss/w#rd",
+      sourceLabel: "sqlserver://db:1433;database=app;user=sa;password=****",
+    },
+    {
+      engine: "sqlserver",
+      url: "sqlserver://db:1433;database=app;user=sa;password={p@ss;w0rd};encrypt=true",
+      sourceLabel: "sqlserver://db:1433;database=app;user=sa;password=****;encrypt=true",
+    },
+    {
+      engine: "sqlserver",
+      url: "mssql://sa:S3/cr@t#@db:1433/app",
+      sourceLabel: "mssql://sa:****@db:1433/app",
+    },
+    {
+      engine: "sqlserver",
+      url: "Server=db,1433;Database=app;User Id=sa;Password=p@ss/w#rd;",
+      sourceLabel: "Server=db,1433;Database=app;User Id=sa;Password=****;",
+    },
+  ] as const)("GET /api/introspect/status masks the password in sourceLabel for $url", async ({ engine, url, sourceLabel }) => {
+    installStudioRuntime({}, {
+      ...STUDIO_TEST_BASE,
+      introspection: {
+        provider: engine,
+        providerConfig: { [engine]: { databaseUrl: url } },
+        outputDir: "./askdb/",
+      },
+    });
     const schemaDir = copyFixture();
     const server = createStudioServer({ schema: schemaDir });
     servers.push(server);
     const baseUrl = await listen(server);
 
-    const cases = [
-      {
-        engine: "postgres",
-        url: "postgres://app:p@ss/w#rd@db:5432/app",
-        sourceLabel: "postgres://app:****@db:5432/app",
+    const plan = await getJson(`${baseUrl}/api/introspect/status`);
+    expect(plan).toEqual({ ok: true, engine, sourceLabel });
+  });
+
+  it("GET /api/introspect/status masks the encryption key in a SQLite file: URI sourceLabel", async () => {
+    installStudioRuntime({}, {
+      ...STUDIO_TEST_BASE,
+      introspection: {
+        provider: "sqlite",
+        providerConfig: { sqlite: { file: "file:./data/app.db?mode=ro&key=S3cret" } },
+        outputDir: "./askdb/",
       },
-      {
-        engine: "mysql",
-        url: "mysql://root:pa/ss@db:3306/shop",
-        sourceLabel: "mysql://root:****@db:3306/shop",
-      },
-      {
-        engine: "sqlserver",
-        url: "sqlserver://db:1433;database=app;user=sa;password=p@ss/w#rd",
-        sourceLabel: "sqlserver://db:1433;database=app;user=sa;password=****",
-      },
-      {
-        engine: "sqlserver",
-        url: "sqlserver://db:1433;database=app;user=sa;password={p@ss;w0rd};encrypt=true",
-        sourceLabel: "sqlserver://db:1433;database=app;user=sa;password=****;encrypt=true",
-      },
-      {
-        engine: "sqlserver",
-        url: "mssql://sa:S3/cr@t#@db:1433/app",
-        sourceLabel: "mssql://sa:****@db:1433/app",
-      },
-      {
-        engine: "sqlserver",
-        url: "Server=db,1433;Database=app;User Id=sa;Password=p@ss/w#rd;",
-        sourceLabel: "Server=db,1433;Database=app;User Id=sa;Password=****;",
-      },
-    ] as const;
-    for (const { engine, url, sourceLabel } of cases) {
-      installStudioRuntime({}, {
-        ...STUDIO_TEST_BASE,
-        introspection: {
-          provider: engine,
-          providerConfig: { [engine]: { databaseUrl: url } },
-          outputDir: "./askdb/",
-        },
-      });
-      const plan = await getJson(`${baseUrl}/api/introspect/status`);
-      expect(plan, url).toEqual({ ok: true, engine, sourceLabel });
-    }
+    });
+    const schemaDir = copyFixture();
+    const server = createStudioServer({ schema: schemaDir });
+    servers.push(server);
+    const baseUrl = await listen(server);
+
+    const plan = await getJson(`${baseUrl}/api/introspect/status`);
+    expect(plan).toEqual({ ok: true, engine: "sqlite", sourceLabel: "file:./data/app.db?mode=ro&key=****" });
   });
 
   it("POST /api/introspect resyncs from a prisma source and preserves enrichment files", async () => {

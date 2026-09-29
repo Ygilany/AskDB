@@ -25,11 +25,14 @@ export function isSecretConnectionKey(key: string): boolean {
   return SECRET_KEY.test(key.trim());
 }
 
-const URL_SCHEME = /^[a-z][a-z0-9+.-]*:\/\//i;
+// Leading whitespace is allowed (and kept in the output): a config value such
+// as " postgres://u:secret@h/db" must still be recognised as a URL, or its
+// userinfo would never be masked.
+const URL_SCHEME = /^\s*[a-z][a-z0-9+.-]*:\/\//i;
 
-/** True when the input starts with `scheme://`. */
+/** True when the input starts with `scheme://`, after any leading whitespace. */
 export function hasUrlScheme(input: string): boolean {
-  return URL_SCHEME.test(input.trim());
+  return URL_SCHEME.test(input);
 }
 
 /**
@@ -76,8 +79,11 @@ function escapeForCharClass(chars: string): string {
  * end in a secret word immediately before `=` (so `PasswordHint=` does not
  * match). Understands ADO.NET `{braced}` values (`}}` escapes) and
  * `'single'`/`"double"` quoted values (doubled or backslash-escaped quotes),
- * so a quoted secret containing a separator is masked whole. Non-secret values
- * are never consumed, so a secret assignment anywhere in the string is found.
+ * so a quoted secret containing a separator is masked whole. An unquoted
+ * secret followed by a segment that is not `key=value` (an unescaped separator
+ * inside the secret, as in `Password=ab;cd;Database=x`) is masked to the end
+ * of the string. Non-secret values are never consumed, so a secret assignment
+ * anywhere in the string is found.
  */
 export function redactSecretKeyValues(
   input: string,
@@ -143,12 +149,45 @@ function secretValueRanges(input: string, options: RedactKeyValueOptions): Range
   let match: RegExpExecArray | null;
   while ((match = re.exec(input)) !== null) {
     const valueStart = match.index + match[0].length;
-    const valueEnd = findValueEnd(input, valueStart, separators, ws);
+    let valueEnd = findValueEnd(input, valueStart, separators, ws);
+    // An unquoted secret followed by text that is not a `key=value` pair
+    // (`Password=ab;cd;Database=x`) most likely contains an unescaped
+    // separator. The driver would reject or misread it, so its real end is
+    // unknown: mask to the end of the string rather than show the rest.
+    if (!isQuoteOrBrace(input[valueStart]) && !remainderStartsWithPair(input, valueEnd, separators, ws)) {
+      valueEnd = input.length;
+    }
     ranges.push([valueStart, valueEnd]);
     if (valueEnd >= input.length) break;
     re.lastIndex = valueEnd;
   }
   return ranges;
+}
+
+function isQuoteOrBrace(ch: string | undefined): boolean {
+  return ch === "{" || ch === "'" || ch === '"';
+}
+
+/**
+ * True when the first non-empty segment after the separator at `from` looks
+ * like `key=value` (or only empty segments remain).
+ */
+function remainderStartsWithPair(
+  input: string,
+  from: number,
+  separators: string,
+  ws: boolean,
+): boolean {
+  let i = from;
+  while (i < input.length) {
+    const start = i + 1; // skip the separator at i
+    let end = start;
+    while (end < input.length && !isSeparator(input[end]!, separators, ws)) end++;
+    const segment = input.slice(start, end);
+    if (segment.trim() !== "") return segment.includes("=");
+    i = end;
+  }
+  return true;
 }
 
 /** Replace each range (overlapping or touching ranges merged) with one `REDACTED_SECRET`. */
@@ -183,7 +222,7 @@ function findValueEnd(
 ): number {
   let j = start;
   const open = input[j];
-  if (open === "{" || open === "'" || open === '"') {
+  if (isQuoteOrBrace(open)) {
     const close = open === "{" ? "}" : open;
     j++;
     while (j < input.length) {

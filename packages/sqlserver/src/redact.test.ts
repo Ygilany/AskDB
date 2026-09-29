@@ -26,6 +26,24 @@ describe("redactConnectionString (sqlserver)", () => {
     );
   });
 
+  it.each([" ", "\t", "\n"])("masks mssql:// and Prisma-form passwords after leading %j", (lead) => {
+    expect(redactConnectionString(`${lead}mssql://sa:S3cret@localhost:1433/app`)).toBe(
+      `${lead}mssql://sa:****@localhost:1433/app`,
+    );
+    expect(redactConnectionString(`${lead}sqlserver://host:1433;user=sa;password=S3cret;encrypt=true`)).toBe(
+      `${lead}sqlserver://host:1433;user=sa;password=****;encrypt=true`,
+    );
+  });
+
+  it("masks to the end of the string when an unquoted password contains a ; (malformed, fails closed)", () => {
+    expect(redactConnectionString("Server=db;User Id=sa;Password=ab;cd;Database=app")).toBe(
+      "Server=db;User Id=sa;Password=****",
+    );
+    expect(redactConnectionString("sqlserver://db:1433;user=sa;password=ab;cd;database=app")).toBe(
+      "sqlserver://db:1433;user=sa;password=****",
+    );
+  });
+
   it("reads the Prisma form's text after the first ; as key=value pairs, never as URL userinfo", () => {
     // An @ in the password was taken as the userinfo end: the port's `:` started
     // the mask and the rest of the password stayed visible.
