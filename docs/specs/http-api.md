@@ -50,9 +50,9 @@ Schema is server-configured (`host.schemaPath` / `host.schemaJson`, or the `--sc
 Correlation ID comes from the `x-correlation-id` header, or is generated.
 
 - **Mode** is parsed up front with core's `parseAskDbModeV1`. Invalid values return `400 bad_request`. With no request mode, config `modes.askdbMode` applies, then `schema_only`.
-- **Sensitive prompt handling:** config `modes.omitSensitiveFromPrompt` is a floor. The request flag can tighten it (`true`) but not loosen it. The floor is enforced in the `@askdb/client` facade, so every `createAskDb()` host gets the same behavior.
+- **Sensitive prompt handling:** config `modes.omitSensitiveFromPrompt` is a floor. The request flag can tighten it (`true`) but not loosen it. A non-boolean flag (`"true"`, `1`) returns `400 bad_request` instead of being ignored. The floor is enforced in the `@askdb/client` facade, so every `createAskDb()` host gets the same behavior.
 - **Schema overrides** are rejected with `403 schema_override_disabled` unless `httpApi.allowSchemaOverride: true` (default `false`). An override lets any caller put arbitrary schema text into the prompt through the operator's model key.
-- **Timeout:** the model call gets an `AbortSignal` that fires after `httpApi.requestTimeoutMs` (default `60000`). It is passed through `createAskDb().ask({ abortSignal })` to `generateText`.
+- **Timeout:** the model call gets an `AbortSignal` that fires after `httpApi.requestTimeoutMs` (default `60000`, at most `2147483647`, the Node timer maximum; `@askdb/config` rejects larger values). It is passed through `createAskDb().ask({ abortSignal })` to `generateText`.
 
 **Success response (`200`):**
 ```json
@@ -81,18 +81,18 @@ Correlation ID comes from the `x-correlation-id` header, or is generated.
 
 | Code | HTTP | Source |
 | --- | --- | --- |
-| `bad_request` | 400 | Malformed body, missing `question`, invalid `mode`, non-string `schemaJson`, retired execution field, `SchemaNotConfiguredError`, `DialectNotSupportedError` |
+| `bad_request` | 400 | Malformed body, missing `question`, invalid `mode`, non-boolean `omitSensitiveFromPrompt`, non-string `schemaJson`, retired execution field, `SchemaNotConfiguredError`, `DialectNotSupportedError` |
 | `schema_parse_error` | 400 | `SchemaLoadError` |
 | `sql_validation_error` | 400 | `SqlValidationError` (with `rule`) |
 | `schema_override_disabled` | 403 | `schemaJson` sent while `httpApi.allowSchemaOverride` is off |
 | `not_found` | 404 | Unknown route |
 | `payload_too_large` | 413 | Body over `maxBodyBytes` |
-| `guardrail_violation` | 422 | `SensitiveReferenceError`, `TenantGuardrailError` (with `rule`) |
+| `guardrail_violation` | 422 | `SensitiveReferenceError`, `TenantGuardrailError` (with `rule`). Not reachable today: the server never sets `sensitiveGuardrailMode: "strict"` and never passes a `tenantScope`, so a tenant-policy schema throws `TenantScopeError` first (→ `500 internal_error`). |
 | `generation_not_configured` | 500 | `ModelNotConfiguredError` |
-| `internal_error` | 500 | Anything else. The message is generic. |
+| `internal_error` | 500 | Anything else, including `TenantScopeError` for every request against a tenant-policy schema. The message is generic. |
 | `sql_generation_error` | 502 | `SqlGenerationError` (provider failure or timeout). The message is generic. |
 
-Provider error text is never returned to clients, because it can echo request details or credential fragments. Every `/ask` failure after body parsing is logged server-side as `askdb.run.error` with the status, code, error name, message, cause, and (for `5xx`) the stack, under the response's `correlationId`.
+Provider error text is never returned to clients, because it can echo request details or credential fragments. Every non-`2xx` `POST /ask` response is logged server-side as `askdb.run.error` with `status` and `code`, under the response's `correlationId`. Rejections before `ask()` runs (body, field validation, `schema_override_disabled`) log the client-facing message, or the body parse error; failures from `ask()` log the error name, message, cause, and (for `5xx`) the stack. `404 not_found` for unknown routes is not logged.
 
 ## Test bar
 
