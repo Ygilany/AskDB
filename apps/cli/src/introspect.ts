@@ -25,15 +25,14 @@ import { postgresConnectorProvider } from "@askdb/postgres";
 import { mysqlConnectorProvider } from "@askdb/mysql";
 import { sqliteConnectorProvider } from "@askdb/sqlite";
 import { sqlServerConnectorProvider } from "@askdb/sqlserver";
+import { prismaConnectorProvider } from "@askdb/prisma";
 
-// `@askdb/prisma` pulls in `@prisma/internals`, which is heavy to load. It is imported
-// lazily in `runIntrospectCommand()` only when `--engine prisma` is used, so every other
-// CLI invocation (which statically loads this module) doesn't pay for it.
 const connectorRegistry = createConnectorRegistry([
   postgresConnectorProvider,
   mysqlConnectorProvider,
   sqliteConnectorProvider,
   sqlServerConnectorProvider,
+  prismaConnectorProvider,
 ]);
 
 type Engine = ConnectorProvider;
@@ -199,10 +198,7 @@ async function runIntrospectCommand(argv: readonly string[]): Promise<number> {
     filters: buildFilters(opts),
     schemaId,
   };
-  const runConfig =
-    engine === "prisma"
-      ? (await import("@askdb/prisma")).prismaConnectorProvider.createConnector(connectorConfig)
-      : connectorRegistry.createConnector(connectorConfig);
+  const runConfig = connectorRegistry.createConnector(connectorConfig);
 
   logger.info(
     {
