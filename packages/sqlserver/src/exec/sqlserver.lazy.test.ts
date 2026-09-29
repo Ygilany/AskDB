@@ -127,4 +127,20 @@ describe("exec/sqlserver - lazy `mssql` peer dependency", () => {
       rows: [[1, "ok"]],
     });
   });
+
+  it("forwards resolveFrom to the driver loader: loads `mssql` from resolveFrom when cwd lacks it", async () => {
+    const { createSqlServerCatalogQueryRunner } = await import("./sqlserver.js");
+    const projectDir = await createTempProject();
+    await addMssqlFixture(projectDir);
+    process.chdir(await createTempProject());
+    mssqlState.shouldFail = true;
+
+    const runner = createSqlServerCatalogQueryRunner("mssql://user:pass@host:1433/db", {
+      resolveFrom: projectDir,
+    });
+    await expect(runner("SELECT 1")).resolves.toEqual({
+      columns: ["n", "label"],
+      rows: [[1, "ok"]],
+    });
+  });
 });

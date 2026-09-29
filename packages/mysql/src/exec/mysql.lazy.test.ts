@@ -124,4 +124,18 @@ describe("exec/mysql - lazy `mysql2` peer dependency", () => {
       rows: [[1, "ok"]],
     });
   });
+
+  it("forwards resolveFrom to the driver loader: loads `mysql2` from resolveFrom when cwd lacks it", async () => {
+    const { createMysqlCatalogQueryRunner } = await import("./mysql.js");
+    const projectDir = await createTempProject();
+    await addMysql2Fixture(projectDir);
+    process.chdir(await createTempProject());
+    mysql2State.shouldFail = true;
+
+    const runner = createMysqlCatalogQueryRunner("mysql://nowhere", { resolveFrom: projectDir });
+    await expect(runner("SELECT 1")).resolves.toEqual({
+      columns: ["n", "label"],
+      rows: [[1, "ok"]],
+    });
+  });
 });

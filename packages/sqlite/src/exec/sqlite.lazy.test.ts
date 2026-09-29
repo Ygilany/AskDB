@@ -131,4 +131,18 @@ describe("exec/sqlite - lazy `better-sqlite3` peer dependency", () => {
       rows: [[1, "ok"]],
     });
   });
+
+  it("forwards resolveFrom to the driver loader: loads `better-sqlite3` from resolveFrom when cwd lacks it", async () => {
+    const { createSqliteCatalogQueryRunner } = await import("./sqlite.js");
+    const projectDir = await createTempProject();
+    await addBetterSqlite3Fixture(projectDir);
+    process.chdir(await createTempProject());
+    bs3State.shouldFail = true;
+
+    const runner = createSqliteCatalogQueryRunner(":memory:", { resolveFrom: projectDir });
+    await expect(runner("SELECT 1")).resolves.toEqual({
+      columns: ["n", "label"],
+      rows: [[1, "ok"]],
+    });
+  });
 });

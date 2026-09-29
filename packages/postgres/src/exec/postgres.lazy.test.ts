@@ -127,4 +127,15 @@ describe("exec/postgres — lazy `pg` peer dependency", () => {
 
     await expect(runner("SELECT 1")).resolves.toEqual({ columns: ["n"], rows: [[1]] });
   });
+
+  it("forwards resolveFrom to the driver loader: loads `pg` from resolveFrom when cwd lacks it", async () => {
+    const { createPostgresCatalogQueryRunner } = await import("./postgres.js");
+    const projectDir = await createTempProject();
+    await addPgFixture(projectDir);
+    process.chdir(await createTempProject());
+    pgState.shouldFail = true;
+
+    const runner = createPostgresCatalogQueryRunner("postgres://nowhere", { resolveFrom: projectDir });
+    await expect(runner("SELECT 1")).resolves.toEqual({ columns: ["n"], rows: [[1]] });
+  });
 });
