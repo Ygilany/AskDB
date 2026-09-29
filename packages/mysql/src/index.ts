@@ -30,4 +30,4 @@ export {
 
 export { mysqlConnectorProvider } from "./connector/provider.js";
 
-export { redactConnectionString } from "./redact.js";
+export { connectionLabel } from "./label.js";

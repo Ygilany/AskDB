@@ -53,14 +53,15 @@ The connector input shape (`PostgresIntrospectionInput`) lives in this package â
 
 Declarative partitions are folded into their partitioned parent ([ADR 0003](../../docs/adrs/0003-postgres-partition-handling.md)): partition leaves are not listed as tables, and per-partition clones of foreign keys (on either side of the constraint) are not rendered as relationships.
 
-### Redacting connection strings
+### Connection labels
 
-`redactConnectionString(input)` masks credentials for display or logs â€” URL userinfo passwords, secret query params (`password`, `sslpassword`), and libpq `password=` values:
+`connectionLabel(input)` returns a credential-free label for display or logs, built only from the host, port and database of a `postgres://` or `postgresql://` URL. Anything else (a libpq `key=value` string, a JDBC or malformed URL) becomes `configured postgres connection`:
 
 ```ts
-import { redactConnectionString } from "@askdb/postgres";
+import { connectionLabel } from "@askdb/postgres";
 
-redactConnectionString("postgres://app:S3cret@db:5432/app"); // "postgres://app:****@db:5432/app"
+connectionLabel("postgres://app:S3cret@db:5432/app?sslmode=require"); // "postgres://db:5432/app"
+connectionLabel("jdbc:postgresql://app:S3cret@db/app"); // "configured postgres connection"
 ```
 
 ## License

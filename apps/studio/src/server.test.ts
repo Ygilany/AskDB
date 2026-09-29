@@ -927,43 +927,46 @@ describe("AskDB Studio server", () => {
     expect(typeof workspace.schemaPathRelative).toBe("string");
   });
 
+  // Every input that leaked a secret through the earlier masking redactor
+  // (review rounds 1-3 on #189/#195/#199), plus ordinary strings per engine.
+  // The label is built only from parsed host/port/database (or a SQLite path);
+  // anything that doesn't parse cleanly is "configured <engine> connection".
   it.each([
-    {
-      engine: "postgres",
-      url: "postgres://app:p@ss/w#rd@db:5432/app",
-      sourceLabel: "postgres://app:****@db:5432/app",
-    },
-    {
-      engine: "mysql",
-      url: "mysql://root:pa/ss@db:3306/shop",
-      sourceLabel: "mysql://root:****@db:3306/shop",
-    },
-    {
-      engine: "sqlserver",
-      url: "sqlserver://db:1433;database=app;user=sa;password=p@ss/w#rd",
-      sourceLabel: "sqlserver://db:1433;database=app;user=sa;password=****",
-    },
-    {
-      engine: "sqlserver",
-      url: "sqlserver://db:1433;database=app;user=sa;password={p@ss;w0rd};encrypt=true",
-      sourceLabel: "sqlserver://db:1433;database=app;user=sa;password=****;encrypt=true",
-    },
-    {
-      engine: "sqlserver",
-      url: "mssql://sa:S3/cr@t#@db:1433/app",
-      sourceLabel: "mssql://sa:****@db:1433/app",
-    },
-    {
-      engine: "sqlserver",
-      url: "Server=db,1433;Database=app;User Id=sa;Password=p@ss/w#rd;",
-      sourceLabel: "Server=db,1433;Database=app;User Id=sa;Password=****;",
-    },
-  ] as const)("GET /api/introspect/status masks the password in sourceLabel for $url", async ({ engine, url, sourceLabel }) => {
+    // Ordinary strings.
+    ["postgres", "postgres://app:S3cret@db:5432/app?sslmode=require", "postgres://db:5432/app"],
+    ["mysql", "mysql://root:S3cret@db:3306/shop", "mysql://db:3306/shop"],
+    ["sqlserver", "mssql://sa:S3cret@db:1433/app", "sqlserver://db:1433/app"],
+    ["sqlserver", "sqlserver://db:1433;database=app;user=sa;password=S3cret;encrypt=true", "sqlserver://db:1433/app"],
+    ["sqlserver", "Server=db,1433;Database=app;User Id=sa;Password=p@ss/w#rd;", "sqlserver://db:1433/app"],
+    ["sqlite", "./data/app.db", "./data/app.db"],
+    // Round 1: a password containing @, / or #.
+    ["postgres", "postgres://app:pa/ss@db:5432/app", "configured postgres connection"],
+    ["postgres", "postgres://app:p@ss/w#rd@db:5432/app", "configured postgres connection"],
+    ["mysql", "mysql://root:pa/ss@db:3306/shop", "configured mysql connection"],
+    ["sqlserver", "mssql://sa:S3/cr@t#@db:1433/app", "configured sqlserver connection"],
+    ["sqlserver", "sqlserver://db:1433;database=app;user=sa;password=p@ssw0rd", "configured sqlserver connection"],
+    ["sqlserver", "sqlserver://db:1433;database=app;user=sa;password={p@ss;w0rd};encrypt=true", "configured sqlserver connection"],
+    // Round 2: an unescaped ; inside an unquoted password; SQLite URI keys.
+    ["sqlserver", "Server=db;User Id=sa;Password=ab;cd;Database=app", "configured sqlserver connection"],
+    ["sqlserver", "sqlserver://db:1433;user=sa;password=ab;cd;database=app", "configured sqlserver connection"],
+    ["sqlite", "file:./data/app.db?mode=ro&key=S3cret", "./data/app.db"],
+    // Round 3: a quoted or braced value followed by trailing text.
+    ["postgres", "postgres://db:5432/app?password='ab'cd", "postgres://db:5432/app"],
+    ["sqlserver", "Server=db;Database=app;Password='ab'cd;", "configured sqlserver connection"],
+    ["sqlserver", "sqlserver://db:1433;database=app;password={ab}cd", "configured sqlserver connection"],
+    // Round 3: JDBC and near-miss URL forms.
+    ["postgres", "jdbc:postgresql://u:secret@h/db", "configured postgres connection"],
+    ["postgres", '"postgres://u:secret@h/db"', "configured postgres connection"],
+    ["postgres", "postgres:/u:secret@h/db", "configured postgres connection"],
+    ["sqlserver", "sqlserver://sa:se;cret@h", "configured sqlserver connection"],
+    // Round 3: a percent-encoded SQLite key name.
+    ["sqlite", "file:app.db?%6Bey=secret", "app.db"],
+  ] as const)("GET /api/introspect/status labels %s %s as %s", async (engine, url, sourceLabel) => {
     installStudioRuntime({}, {
       ...STUDIO_TEST_BASE,
       introspection: {
         provider: engine,
-        providerConfig: { [engine]: { databaseUrl: url } },
+        providerConfig: engine === "sqlite" ? { sqlite: { file: url } } : { [engine]: { databaseUrl: url } },
         outputDir: "./askdb/",
       },
     });
@@ -974,24 +977,6 @@ describe("AskDB Studio server", () => {
 
     const plan = await getJson(`${baseUrl}/api/introspect/status`);
     expect(plan).toEqual({ ok: true, engine, sourceLabel });
-  });
-
-  it("GET /api/introspect/status masks the encryption key in a SQLite file: URI sourceLabel", async () => {
-    installStudioRuntime({}, {
-      ...STUDIO_TEST_BASE,
-      introspection: {
-        provider: "sqlite",
-        providerConfig: { sqlite: { file: "file:./data/app.db?mode=ro&key=S3cret" } },
-        outputDir: "./askdb/",
-      },
-    });
-    const schemaDir = copyFixture();
-    const server = createStudioServer({ schema: schemaDir });
-    servers.push(server);
-    const baseUrl = await listen(server);
-
-    const plan = await getJson(`${baseUrl}/api/introspect/status`);
-    expect(plan).toEqual({ ok: true, engine: "sqlite", sourceLabel: "file:./data/app.db?mode=ro&key=****" });
   });
 
   it("POST /api/introspect resyncs from a prisma source and preserves enrichment files", async () => {

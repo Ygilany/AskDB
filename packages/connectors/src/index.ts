@@ -11,12 +11,7 @@ export {
 } from "./registry.js";
 
 export {
-  REDACTED_SECRET,
-  hasUrlScheme,
-  isSecretConnectionKey,
-  redactConnectionStringGeneric,
-  redactSecretKeyValues,
-  redactUrlConnectionString,
-  redactUrlUserinfo,
-  type RedactKeyValueOptions,
-} from "./redact.js";
+  formatConnectionLabel,
+  parseConnectionUrl,
+  type ConnectionLabelParts,
+} from "./label.js";

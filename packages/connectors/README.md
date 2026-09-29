@@ -44,15 +44,13 @@ const result = await introspect(input, { outDir: "./askdb", schemaId: "mydb" }, 
 - `ConnectorRegistry` — `{ hasProvider, createConnector, getTemplates }`
 - `connectorProviderMissingMessage` — actionable error helper
 
-### Connection-string redaction
+### Connection labels
 
-Display/logging helpers the engine packages build their `redactConnectionString()` on (`@askdb/postgres`, `@askdb/mysql`, `@askdb/sqlserver`, `@askdb/sqlite` each export one that knows its own formats). Output is for humans only — never pass it back to a driver.
+Helpers the engine packages build their `connectionLabel()` on (`@askdb/postgres`, `@askdb/mysql`, `@askdb/sqlserver`, `@askdb/sqlite` each export one that parses its own connection-string formats). A label is built only from parts that parse cleanly, never by masking the raw string ([ADR 0011](../../docs/adrs/0011-connection-labels-from-parsed-parts.md)).
 
-- `redactConnectionStringGeneric(input)` — masks URL userinfo passwords and secret `key=value` pairs (`?password=`, JDBC-style `;password=`, ADO.NET `Password=` / `Pwd=`); the fallback for providers without a dedicated redactor
-- `redactUrlConnectionString(input, { separators?, whitespaceSeparated? })` — masks the URL userinfo password and secret `key=value` pairs together; what the engine redactors use for URL forms
-- `redactUrlUserinfo(input)` — `scheme://user:secret@host` → `scheme://user:****@host`; userinfo runs to the last `@`, so a password containing `/`, `?`, `#` or `@` is masked whole
-- `redactSecretKeyValues(input, { separators?, whitespaceSeparated? })` — masks secret `key=value` pairs; quote- and `{brace}`-aware
-- `isSecretConnectionKey(key)`, `hasUrlScheme(input)`, `REDACTED_SECRET`
+- `formatConnectionLabel(engine, parts)` — `<engine>://host[:port][/database]` for `{ host?, port?, database? }`, the path for `{ file }`; `configured <engine> connection` when `parts` is `undefined` or any part fails its allowlist
+- `parseConnectionUrl(input, schemes)` — parses a standard `scheme://[userinfo@]host[:port][/database][?query]` URL into `{ host, port, database }` (userinfo and query are never returned); `undefined` for another scheme, whitespace, a `#`, an `@` after the authority, or a multi-segment path
+- `ConnectionLabelParts`
 
 ## License
 

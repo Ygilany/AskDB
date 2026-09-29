@@ -7,25 +7,24 @@ import {
 } from "@askdb/introspect";
 import {
   createConnectorRegistry,
-  redactConnectionStringGeneric,
   type ConnectorConfig,
   type ConnectorProvider,
 } from "@askdb/connectors";
 import {
   postgresConnectorProvider,
-  redactConnectionString as redactPostgresConnectionString,
+  connectionLabel as postgresConnectionLabel,
 } from "@askdb/postgres";
 import {
   mysqlConnectorProvider,
-  redactConnectionString as redactMysqlConnectionString,
+  connectionLabel as mysqlConnectionLabel,
 } from "@askdb/mysql";
 import {
   sqliteConnectorProvider,
-  redactConnectionString as redactSqliteConnectionString,
+  connectionLabel as sqliteConnectionLabel,
 } from "@askdb/sqlite";
 import {
   sqlServerConnectorProvider,
-  redactConnectionString as redactSqlServerConnectionString,
+  connectionLabel as sqlServerConnectionLabel,
 } from "@askdb/sqlserver";
 import { prismaConnectorProvider } from "@askdb/prisma";
 
@@ -74,7 +73,7 @@ function resolveConnection(engine: ConnectorProvider): ConnectionResolution {
             "No Postgres connection configured. Set introspection.providerConfig.postgres.databaseUrl in askdb.config.ts (bound to an env var in .env).",
         };
       }
-      return { ok: true, url, sourceLabel: redactUrl(engine, url) };
+      return { ok: true, url, sourceLabel: labelFor(engine, url) };
     }
     case "mysql": {
       const url = rt.introspection.mysqlDatabaseUrl;
@@ -85,7 +84,7 @@ function resolveConnection(engine: ConnectorProvider): ConnectionResolution {
             "No MySQL connection configured. Set introspection.providerConfig.mysql.databaseUrl in askdb.config.ts (bound to an env var in .env).",
         };
       }
-      return { ok: true, url, sourceLabel: redactUrl(engine, url) };
+      return { ok: true, url, sourceLabel: labelFor(engine, url) };
     }
     case "sqlserver": {
       const url = rt.introspection.sqlserverDatabaseUrl;
@@ -96,7 +95,7 @@ function resolveConnection(engine: ConnectorProvider): ConnectionResolution {
             "No SQL Server connection configured. Set introspection.providerConfig.sqlserver.databaseUrl in askdb.config.ts (bound to an env var in .env).",
         };
       }
-      return { ok: true, url, sourceLabel: redactUrl(engine, url) };
+      return { ok: true, url, sourceLabel: labelFor(engine, url) };
     }
     case "sqlite": {
       const file = rt.introspection.sqliteFile;
@@ -107,7 +106,7 @@ function resolveConnection(engine: ConnectorProvider): ConnectionResolution {
             "No SQLite file configured. Set introspection.providerConfig.sqlite.file in askdb.config.ts.",
         };
       }
-      return { ok: true, url: file, sourceLabel: redactUrl(engine, file) };
+      return { ok: true, url: file, sourceLabel: labelFor(engine, file) };
     }
     case "prisma": {
       // When unset, @askdb/prisma auto-discovers prisma/schema.prisma in the project root.
@@ -122,26 +121,22 @@ function resolveConnection(engine: ConnectorProvider): ConnectionResolution {
 }
 
 /**
- * Strip credentials from a connection string for display (never shown raw in
- * the UI). Dispatches to the engine package's `redactConnectionString()`, which
- * knows that engine's formats (URL userinfo, `?password=`, ADO.NET
- * `Password=`/`Pwd=`, JDBC-style `;password=`, libpq `password=`). Unknown
- * providers fall back to generic redaction of URL userinfo and secret
- * `key=value` pairs. `GET /api/introspect/status` serves the result as
- * `sourceLabel`.
+ * The credential-free label `GET /api/introspect/status` serves as
+ * `sourceLabel`. Each engine package builds it from the parts of its own
+ * connection-string formats that parse cleanly (host, port, database, or a
+ * SQLite file path), never by masking the raw string; anything else becomes
+ * `configured <engine> connection` (ADR 0011).
  */
-function redactUrl(provider: ConnectorProvider, raw: string): string {
+function labelFor(provider: Exclude<ConnectorProvider, "prisma">, raw: string): string {
   switch (provider) {
     case "postgres":
-      return redactPostgresConnectionString(raw);
+      return postgresConnectionLabel(raw);
     case "mysql":
-      return redactMysqlConnectionString(raw);
+      return mysqlConnectionLabel(raw);
     case "sqlserver":
-      return redactSqlServerConnectionString(raw);
+      return sqlServerConnectionLabel(raw);
     case "sqlite":
-      return redactSqliteConnectionString(raw);
-    default:
-      return redactConnectionStringGeneric(raw);
+      return sqliteConnectionLabel(raw);
   }
 }
 

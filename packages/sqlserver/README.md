@@ -90,14 +90,14 @@ SQL Server uses TLS by default. If you connect to a local or dev instance with a
 
 > **Never set `TrustServerCertificate=True` in production** unless you have verified the server's certificate through another means. Use a properly signed certificate, or install the CA cert in the system trust store (`NODE_EXTRA_CA_CERTS` / `--use-system-ca`).
 
-**Redacting for display**
+**Labels for display**
 
-`redactConnectionString(input)` masks credentials in all three formats — `mssql://sa:****@host/db`, `sqlserver://host;…;password=****`, and ADO.NET `Password=****;` / `Pwd=****;` (quoted and `{braced}` values included):
+`connectionLabel(input)` returns a credential-free label built only from the host, port and database parsed from any of the three formats. A string that doesn't parse cleanly (a named instance, a quoted value with trailing text, an `@` in the `sqlserver://` form, JDBC) becomes `configured sqlserver connection`:
 
 ```ts
-import { redactConnectionString } from "@askdb/sqlserver";
+import { connectionLabel } from "@askdb/sqlserver";
 
-redactConnectionString("Server=localhost,1433;User Id=sa;Password=pass;"); // "Server=localhost,1433;User Id=sa;Password=****;"
+connectionLabel("Server=localhost,1433;Database=app;User Id=sa;Password=pass;"); // "sqlserver://localhost:1433/app"
 ```
 
 ## Captured metadata
