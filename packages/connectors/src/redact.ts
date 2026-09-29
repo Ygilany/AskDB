@@ -36,25 +36,19 @@ export function hasUrlScheme(input: string): boolean {
  * Mask the password in a URL's userinfo (`scheme://user:secret@host` →
  * `scheme://user:****@host`). Parsed by hand rather than with `new URL()`:
  * non-special schemes such as `sqlserver:` get an opaque host, and passwords
- * frequently contain unencoded reserved characters. The authority runs to the
- * first `/`, `?` or `#`; userinfo is everything before the authority's *last*
- * `@`. Everything after the first `:` in that userinfo is masked, even if that
- * over-masks an unusual string. Inputs without a scheme are returned unchanged.
+ * frequently contain unencoded reserved characters. Userinfo runs from
+ * `scheme://` to the *last* `@` in the string, so an unencoded `/`, `?`, `#`
+ * or `@` in a password cannot end it early and leave part of the password
+ * visible. Everything after the first `:` in that userinfo is masked; an `@`
+ * in the path or query therefore over-masks rather than leaks. Userinfo
+ * without a `:` carries no password, and inputs without a scheme are returned
+ * unchanged.
+ *
+ * This masks userinfo only. For a URL that may also carry secret `key=value`
+ * pairs, use `redactUrlConnectionString()`.
  */
 export function redactUrlUserinfo(input: string): string {
-  const match = URL_SCHEME.exec(input);
-  if (!match) return input;
-  const schemeEnd = match[0].length;
-  const rest = input.slice(schemeEnd);
-  const authorityEnd = firstIndexOf(rest, ["/", "?", "#"]);
-  const authority = authorityEnd === -1 ? rest : rest.slice(0, authorityEnd);
-  const at = authority.lastIndexOf("@");
-  if (at === -1) return input;
-  const userinfo = authority.slice(0, at);
-  const colon = userinfo.indexOf(":");
-  if (colon === -1) return input;
-  const maskedUserinfo = `${userinfo.slice(0, colon)}:${REDACTED_SECRET}`;
-  return input.slice(0, schemeEnd) + maskedUserinfo + rest.slice(at);
+  return maskRanges(input, userinfoPasswordRanges(input));
 }
 
 export type RedactKeyValueOptions = {
@@ -89,24 +83,25 @@ export function redactSecretKeyValues(
   input: string,
   options: RedactKeyValueOptions = {},
 ): string {
-  const separators = options.separators ?? ";&";
-  const ws = options.whitespaceSeparated === true;
-  const re = new RegExp(
-    `(^|[${escapeForCharClass(separators)}?\\s])(${SECRET_KEY_SOURCE})(\\s*=\\s*)`,
-    "gi",
-  );
-  let out = "";
-  let last = 0;
-  let match: RegExpExecArray | null;
-  while ((match = re.exec(input)) !== null) {
-    const valueStart = match.index + match[0].length;
-    const valueEnd = findValueEnd(input, valueStart, separators, ws);
-    out += input.slice(last, valueStart) + REDACTED_SECRET;
-    last = valueEnd;
-    if (valueEnd >= input.length) break;
-    re.lastIndex = valueEnd;
-  }
-  return out + input.slice(last);
+  return maskRanges(input, secretValueRanges(input, options));
+}
+
+/**
+ * Mask a URL-form connection string: the userinfo password (as
+ * `redactUrlUserinfo()`) and every secret `key=value` pair (as
+ * `redactSecretKeyValues()` with `options`). Both are located in the original
+ * input and masked together, so a secret that looks like the other kind
+ * (`?password=p@ss` after a `host:port`, or `u:p&password=x@host`) is masked
+ * whole instead of being split between two passes.
+ */
+export function redactUrlConnectionString(
+  input: string,
+  options: RedactKeyValueOptions = {},
+): string {
+  return maskRanges(input, [
+    ...userinfoPasswordRanges(input),
+    ...secretValueRanges(input, options),
+  ]);
 }
 
 /**
@@ -118,18 +113,61 @@ export function redactSecretKeyValues(
  */
 export function redactConnectionStringGeneric(input: string): string {
   if (hasUrlScheme(input)) {
-    return redactSecretKeyValues(redactUrlUserinfo(input), { separators: ";&" });
+    return redactUrlConnectionString(input, { separators: ";&" });
   }
   return redactSecretKeyValues(input, { separators: ";" });
 }
 
-function firstIndexOf(value: string, needles: readonly string[]): number {
-  let best = -1;
-  for (const needle of needles) {
-    const idx = value.indexOf(needle);
-    if (idx !== -1 && (best === -1 || idx < best)) best = idx;
+/** A `[start, end)` span of the input to replace with `REDACTED_SECRET`. */
+type Range = readonly [start: number, end: number];
+
+function userinfoPasswordRanges(input: string): Range[] {
+  const match = URL_SCHEME.exec(input);
+  if (!match) return [];
+  const schemeEnd = match[0].length;
+  const at = input.lastIndexOf("@");
+  if (at < schemeEnd) return [];
+  const colon = input.indexOf(":", schemeEnd);
+  if (colon === -1 || colon > at) return [];
+  return [[colon + 1, at]];
+}
+
+function secretValueRanges(input: string, options: RedactKeyValueOptions): Range[] {
+  const separators = options.separators ?? ";&";
+  const ws = options.whitespaceSeparated === true;
+  const re = new RegExp(
+    `(^|[${escapeForCharClass(separators)}?\\s])(${SECRET_KEY_SOURCE})(\\s*=\\s*)`,
+    "gi",
+  );
+  const ranges: Range[] = [];
+  let match: RegExpExecArray | null;
+  while ((match = re.exec(input)) !== null) {
+    const valueStart = match.index + match[0].length;
+    const valueEnd = findValueEnd(input, valueStart, separators, ws);
+    ranges.push([valueStart, valueEnd]);
+    if (valueEnd >= input.length) break;
+    re.lastIndex = valueEnd;
   }
-  return best;
+  return ranges;
+}
+
+/** Replace each range (overlapping or touching ranges merged) with one `REDACTED_SECRET`. */
+function maskRanges(input: string, ranges: readonly Range[]): string {
+  if (ranges.length === 0) return input;
+  const sorted = [...ranges].sort((a, b) => a[0] - b[0]);
+  let out = "";
+  let last = 0;
+  let [start, end] = sorted[0]!;
+  for (const [s, e] of sorted.slice(1)) {
+    if (s <= end) {
+      end = Math.max(end, e);
+      continue;
+    }
+    out += input.slice(last, start) + REDACTED_SECRET;
+    last = end;
+    [start, end] = [s, e];
+  }
+  return out + input.slice(last, start) + REDACTED_SECRET + input.slice(end);
 }
 
 function isSeparator(ch: string, separators: string, ws: boolean): boolean {

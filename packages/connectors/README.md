@@ -49,7 +49,8 @@ const result = await introspect(input, { outDir: "./askdb", schemaId: "mydb" }, 
 Display/logging helpers the engine packages build their `redactConnectionString()` on (`@askdb/postgres`, `@askdb/mysql`, `@askdb/sqlserver`, `@askdb/sqlite` each export one that knows its own formats). Output is for humans only — never pass it back to a driver.
 
 - `redactConnectionStringGeneric(input)` — masks URL userinfo passwords and secret `key=value` pairs (`?password=`, JDBC-style `;password=`, ADO.NET `Password=` / `Pwd=`); the fallback for providers without a dedicated redactor
-- `redactUrlUserinfo(input)` — `scheme://user:secret@host` → `scheme://user:****@host`
+- `redactUrlConnectionString(input, { separators?, whitespaceSeparated? })` — masks the URL userinfo password and secret `key=value` pairs together; what the engine redactors use for URL forms
+- `redactUrlUserinfo(input)` — `scheme://user:secret@host` → `scheme://user:****@host`; userinfo runs to the last `@`, so a password containing `/`, `?`, `#` or `@` is masked whole
 - `redactSecretKeyValues(input, { separators?, whitespaceSeparated? })` — masks secret `key=value` pairs; quote- and `{brace}`-aware
 - `isSecretConnectionKey(key)`, `hasUrlScheme(input)`, `REDACTED_SECRET`
 

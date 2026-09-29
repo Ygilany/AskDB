@@ -26,8 +26,17 @@ describe("redactConnectionString (sqlserver)", () => {
     );
   });
 
-  it("never echoes a password that contains @ in a JDBC-style URL", () => {
-    const out = redactConnectionString("sqlserver://host:1433;user=sa;password=S3c@ret");
-    expect(out).not.toContain("S3c");
+  it("reads the Prisma form's text after the first ; as key=value pairs, never as URL userinfo", () => {
+    // An @ in the password was taken as the userinfo end: the port's `:` started
+    // the mask and the rest of the password stayed visible.
+    expect(redactConnectionString("sqlserver://host:1433;database=db;user=sa;password=p@ssw0rd")).toBe(
+      "sqlserver://host:1433;database=db;user=sa;password=****",
+    );
+    expect(redactConnectionString("sqlserver://host:1433;database=db;user=sa;password={p@ss;w0rd}")).toBe(
+      "sqlserver://host:1433;database=db;user=sa;password=****",
+    );
+    expect(redactConnectionString("sqlserver://host:1433;user=admin@corp;password=S3cret")).toBe(
+      "sqlserver://host:1433;user=admin@corp;password=****",
+    );
   });
 });

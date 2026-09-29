@@ -1,7 +1,7 @@
 import {
   hasUrlScheme,
   redactSecretKeyValues,
-  redactUrlUserinfo,
+  redactUrlConnectionString,
 } from "@askdb/connectors";
 
 /**
@@ -9,7 +9,8 @@ import {
  *
  * - URL form — `postgres://user:secret@host:5432/db?sslpassword=x` →
  *   `postgres://user:****@host:5432/db?sslpassword=****` (userinfo password
- *   and secret query params such as `password`, `sslpassword`).
+ *   and secret query params such as `password`, `sslpassword`). A password
+ *   with an unencoded `/`, `?`, `#` or `@` is masked whole.
  * - libpq keyword/value form — `host=h user=u password='se cret' dbname=d` →
  *   `host=h user=u password=**** dbname=d` (whitespace-separated, quote aware).
  *
@@ -17,7 +18,7 @@ import {
  */
 export function redactConnectionString(input: string): string {
   if (hasUrlScheme(input)) {
-    return redactSecretKeyValues(redactUrlUserinfo(input), { separators: "&" });
+    return redactUrlConnectionString(input, { separators: "&" });
   }
   return redactSecretKeyValues(input, { separators: "", whitespaceSeparated: true });
 }

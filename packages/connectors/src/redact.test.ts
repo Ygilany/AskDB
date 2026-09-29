@@ -19,6 +19,17 @@ describe("redactUrlUserinfo", () => {
     );
   });
 
+  it("masks the whole password when it contains an unencoded /, ? or # (fails closed, never echoes the input)", () => {
+    expect(redactUrlUserinfo("postgres://app:pa/ss@db:5432/app")).toBe("postgres://app:****@db:5432/app");
+    expect(redactUrlUserinfo("postgres://app:pa#ss@db:5432/app")).toBe("postgres://app:****@db:5432/app");
+    expect(redactUrlUserinfo("mysql://root:pa?ss@db:3306/shop")).toBe("mysql://root:****@db:3306/shop");
+    expect(redactUrlUserinfo("mssql://sa:p@ss/w@host:1433/db")).toBe("mssql://sa:****@host:1433/db");
+  });
+
+  it("over-masks an @ in the path or query rather than guess where userinfo ends", () => {
+    expect(redactUrlUserinfo("postgres://host:5432/db?application_name=a@b")).toBe("postgres://host:****@b");
+  });
+
   it("leaves URLs without a password and non-URLs unchanged", () => {
     expect(redactUrlUserinfo("postgres://app@host/db")).toBe("postgres://app@host/db");
     expect(redactUrlUserinfo("postgres://host/db")).toBe("postgres://host/db");
@@ -57,6 +68,14 @@ describe("redactConnectionStringGeneric", () => {
   it("handles the Studio leak case (opaque-host sqlserver URL with ;password=)", () => {
     expect(redactConnectionStringGeneric("sqlserver://host;database=db;user=sa;password=S3cret")).toBe(
       "sqlserver://host;database=db;user=sa;password=****",
+    );
+  });
+
+  it("over-masks rather than leaks a ;password= value containing @ after a host:port", () => {
+    // Without engine knowledge the `:1433;…;password=p@` span is ambiguous; it is
+    // masked together with the password instead of leaving `ssw0rd` visible.
+    expect(redactConnectionStringGeneric("sqlserver://host:1433;database=db;user=sa;password=p@ssw0rd")).toBe(
+      "sqlserver://host:****",
     );
   });
 

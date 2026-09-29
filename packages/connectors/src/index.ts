@@ -16,6 +16,7 @@ export {
   isSecretConnectionKey,
   redactConnectionStringGeneric,
   redactSecretKeyValues,
+  redactUrlConnectionString,
   redactUrlUserinfo,
   type RedactKeyValueOptions,
 } from "./redact.js";

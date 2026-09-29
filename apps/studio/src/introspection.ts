@@ -127,9 +127,10 @@ function resolveConnection(engine: ConnectorProvider): ConnectionResolution {
  * knows that engine's formats (URL userinfo, `?password=`, ADO.NET
  * `Password=`/`Pwd=`, JDBC-style `;password=`, libpq `password=`). Unknown
  * providers fall back to generic redaction of URL userinfo and secret
- * `key=value` pairs. Exported for tests.
+ * `key=value` pairs. `GET /api/introspect/status` serves the result as
+ * `sourceLabel`.
  */
-export function redactUrl(provider: ConnectorProvider | string, raw: string): string {
+function redactUrl(provider: ConnectorProvider, raw: string): string {
   switch (provider) {
     case "postgres":
       return redactPostgresConnectionString(raw);
