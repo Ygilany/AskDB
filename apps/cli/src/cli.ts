@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { bootstrapAskDbEnv, discoverAskDbConfigPath, getAskDbRuntimeConfig } from "@askdb/config";
+import { getAskDbRuntimeConfig, isAskDbDebugEnabled } from "@askdb/config";
 import {
   createAiRegistry,
 } from "@askdb/ai";
@@ -9,7 +9,6 @@ import { googleProvider } from "@askdb/ai-google";
 import { openaiProvider } from "@askdb/ai-openai";
 import { createAskDb, type DialectResolution } from "@askdb/client";
 import { randomUUID } from "node:crypto";
-import { readFileSync } from "node:fs";
 import {
   AskDbError,
   AskDbLogEvent,
@@ -29,46 +28,10 @@ import {
 import { Command } from "commander";
 import { runInitCli } from "./init.js";
 import { runIntrospectCli } from "./introspect.js";
+import { MissingAskDbConfigError, requireAskDbConfig } from "./project-config.js";
+import { readCliVersion } from "./version.js";
 
 const ai = createAiRegistry([openaiProvider, azureProvider, googleProvider, anthropicProvider]);
-
-/** Thrown when a command needs `askdb.config.*` and none exists in the working directory. */
-class MissingAskDbConfigError extends AskDbError {
-  constructor(cwd: string) {
-    super(`No askdb.config.* found in ${cwd}. Run \`npx askdb init\` to create one.`);
-    this.name = "MissingAskDbConfigError";
-  }
-}
-
-/**
- * Loads `.env` + `askdb.config.*` and installs the runtime snapshot. Config is loaded lazily,
- * only by commands that read it, so `--help`, `--version`, `init`, and `bundle` work in a
- * directory without a config.
- */
-function requireAskDbConfig(): void {
-  const cwd = process.cwd();
-  if (!discoverAskDbConfigPath(cwd)) throw new MissingAskDbConfigError(cwd);
-  bootstrapAskDbEnv({ cwd });
-}
-
-/**
- * `askdb studio` tolerates a missing (or broken) config: Studio starts in setup mode and its
- * browser wizard scaffolds the config. `askdb enrich` is a Studio alias, so it inherits this.
- */
-function tryLoadAskDbConfig(): void {
-  try {
-    bootstrapAskDbEnv({ cwd: process.cwd() });
-  } catch {
-    // Studio handles a missing config itself.
-  }
-}
-
-function readCliVersion(): string {
-  const parsed = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8")) as {
-    version?: unknown;
-  };
-  return typeof parsed.version === "string" ? parsed.version : "0.0.0";
-}
 
 function printCliError(error: unknown): void {
   if (error instanceof MissingAskDbConfigError) {
@@ -117,8 +80,9 @@ async function runBundleCommand(args: string[]): Promise<number> {
 }
 
 async function runStudioCommand(args: string[]): Promise<number> {
-  const { runStudioCli } = await import("@askdb/studio");
-  return runStudioCli(args);
+  // Studio owns config loading for its own startup: a missing config opens the setup wizard.
+  const { runStudioBin } = await import("@askdb/studio");
+  return runStudioBin(args);
 }
 
 function formatSchemaPathHint(schemaPath: string): string {
@@ -418,22 +382,16 @@ program
     },
   );
 
-const HELP_OR_VERSION_FLAGS = new Set(["--help", "-h", "--version", "-V"]);
-
+// Each command loads askdb.config itself, only on the path that reads it.
 async function main(argv: string[]): Promise<number | undefined> {
   const [command, ...rest] = argv.slice(2);
   switch (command) {
     case "init":
       return runInitCli(rest);
     case "introspect":
-      // `--help`, `--version`, and `templates` don't read askdb.config; everything else does.
-      if (rest[0] !== "templates" && !rest.some((arg) => HELP_OR_VERSION_FLAGS.has(arg))) {
-        requireAskDbConfig();
-      }
       return runIntrospectCli(rest);
     case "enrich":
     case "studio":
-      tryLoadAskDbConfig();
       return runStudioCommand(rest);
     case "bundle":
       return runBundleCommand(rest);
@@ -450,10 +408,10 @@ try {
   if (exitCode !== undefined) process.exit(exitCode);
 } catch (error) {
   printCliError(error);
-  if (process.env.DEBUG && error instanceof Error && error.stack) {
+  if (isAskDbDebugEnabled() && error instanceof Error && error.stack) {
     console.error(error.stack);
   } else if (!(error instanceof AskDbError)) {
-    console.error("Set DEBUG=1 to print the stack trace.");
+    console.error("Set ASKDB_DEBUG=1 to print the stack trace.");
   }
   process.exit(1);
 }

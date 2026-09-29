@@ -26,6 +26,8 @@ import { mysqlConnectorProvider } from "@askdb/mysql";
 import { sqliteConnectorProvider } from "@askdb/sqlite";
 import { sqlServerConnectorProvider } from "@askdb/sqlserver";
 import { prismaConnectorProvider } from "@askdb/prisma";
+import { requireAskDbConfig } from "./project-config.js";
+import { readCliVersion } from "./version.js";
 
 const connectorRegistry = createConnectorRegistry([
   postgresConnectorProvider,
@@ -67,19 +69,20 @@ type CliOptions = {
 };
 
 export async function runIntrospectCli(argv: readonly string[]): Promise<number> {
+  if (argv.includes("--version") || argv.includes("-V")) {
+    process.stdout.write(`${readCliVersion()}\n`);
+    return 0;
+  }
+  if (argv.includes("--help") || argv.includes("-h")) {
+    printHelp();
+    return 0;
+  }
+  const templates = argv[0] === "templates";
+  // Only an introspection run reads askdb.config. A missing or broken config propagates to
+  // the CLI's top-level error handler, the same as for `askdb ask`.
+  if (!templates) requireAskDbConfig();
   try {
-    if (argv.includes("--version") || argv.includes("-V")) {
-      process.stdout.write(`${readPackageVersion()}\n`);
-      return 0;
-    }
-    if (argv.includes("--help") || argv.includes("-h")) {
-      printHelp();
-      return 0;
-    }
-    if (argv[0] === "templates") {
-      return runTemplatesCommand(argv.slice(1));
-    }
-    return await runIntrospectCommand(argv);
+    return templates ? runTemplatesCommand(argv.slice(1)) : await runIntrospectCommand(argv);
   } catch (error) {
     process.stderr.write(`${formatError(error)}\n`);
     return 1;
@@ -393,12 +396,6 @@ function resolveLogLevel(opts: CliOptions, rt: ReturnType<typeof getAskDbRuntime
   if (env && isSupportedAskDbLogLevel(env)) return env;
   if (opts.verbose || opts.logFile || opts.logStdout) return "info";
   return "silent";
-}
-
-function readPackageVersion(): string {
-  const pkgPath = new URL("../package.json", import.meta.url);
-  const parsed = JSON.parse(readFileSync(pkgPath, "utf8")) as { version?: unknown };
-  return typeof parsed.version === "string" ? parsed.version : "0.0.0";
 }
 
 function printHelp(): void {
