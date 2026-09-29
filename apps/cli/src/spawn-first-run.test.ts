@@ -39,6 +39,8 @@ describe("cli spawn: first run outside a project (no askdb.config)", () => {
     [["--help"], "Usage: askdb"],
     [["-h"], "Usage: askdb"],
     [["help", "ask"], "Usage: askdb ask"],
+    // Unlike `help ask`, this parses `ask` itself, so it fails if config loads before commander's help check.
+    [["ask", "--help"], "Usage: askdb ask"],
     [["introspect", "--help"], "askdb introspect - Schema introspection"],
     [["introspect", "templates", "--engine", "postgres"], "-- schemas"],
     [["studio", "--help"], "askdb-studio - Local browser UI"],
@@ -49,12 +51,15 @@ describe("cli spawn: first run outside a project (no askdb.config)", () => {
     expect(exec.stdout).toContain(expected);
   });
 
-  it.each([["--version"], ["-V"]])("`askdb %s` prints the package version and exits 0", (flag) => {
-    const exec = run([flag], emptyDir);
-    expect(exec.status).toBe(0);
-    expect(exec.stdout.trim()).toBe(cliVersion);
-    expect(exec.stderr).toBe("");
-  });
+  it.each([[["--version"]], [["-V"]], [["introspect", "--version"]], [["introspect", "-V"]]])(
+    "`askdb %j` prints the package version and exits 0",
+    (args) => {
+      const exec = run(args, emptyDir);
+      expect(exec.status).toBe(0);
+      expect(exec.stdout.trim()).toBe(cliVersion);
+      expect(exec.stderr).toBe("");
+    },
+  );
 
   it("`askdb bundle` works without a config", () => {
     const out = join(emptyDir, "bundle.json");
