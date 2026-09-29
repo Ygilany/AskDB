@@ -39,7 +39,7 @@ pnpm preflight
 
 Open every PR as a draft. Before it is marked ready for review:
 
-- An agent or session that did not write the change reviews it with the `pr-review` skill (see "PR review" below). The implementer's own session never reviews its diff.
+- An agent or session that did not write the change reviews it with the `pr-review` skill (see "PR review" below). The implementer's own session never reviews its diff. AI reviews post from the maintainer's account, so each one opens with a disclosure line naming the model that ran it.
 - Every review finding is fixed in a commit or answered in a reply on the PR.
 - After every push (review fixes, test-audit commits, rebases, merges), re-check the PR title and description against the final diff: every named test, export, count, and behavior claim. When non-trivial code changes land after the review, re-run it on the new commits.
 
@@ -68,9 +68,17 @@ The `pr-review` skill from [Ygilany/ygilany-skills](https://github.com/Ygilany/y
 - `docs/mission.md` — north star, principles, non-goals
 - `docs/architecture.md` — package boundaries, install profiles
 - `docs/contracts/` — formal contracts (modes, sensitive fields, schema format)
-- `docs/adrs/` — architecture decision records
+- `docs/adrs/` — architecture decision records; `docs/adrs/README.md` indexes them in one line each. Read the index before you plan a change.
 
 `apps/docs-site/src/content/docs/` is the public-facing docs (askdb.tools) — treat it as a product surface, not just documentation. If you change a package's public API or add a new integration pattern, the docs site needs a corresponding update or agents integrating AskDB elsewhere will get stale guidance.
+
+## Architecture and decisions
+
+Every change, whether you write it or review it, is checked against these three rules.
+
+- **Right layer, clean boundary.** Put each change in the package that owns the behavior (`docs/architecture.md`, "Dependency boundaries"). Dependencies point down: core ← introspect / ai ← engine packages and optional libraries ← apps. Engine-specific code lives in its engine package; code shared by engines lives in the shared kit; app-only concerns (transport, request guards, UI) stay in the app. Fix a defect at its owner, not in the caller that hit it.
+- **User-facing changes update the docs site in the same PR.** That covers a public API, CLI flag, config key, default, error text, Studio behavior, or integration pattern: update `apps/docs-site/src/content/docs/` in the same PR, not as a follow-up.
+- **Record choices between clean options in an ADR.** When a change picks between two or more viable designs, add `docs/adrs/NNNN-title.md` (context, options considered, decision, consequences) and a row in `docs/adrs/README.md` in the same PR. To change an accepted decision, amend or supersede its ADR; don't just change the code. If two open PRs claim the same ADR number, the second to merge renumbers.
 
 ## Conventions
 

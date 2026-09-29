@@ -15,11 +15,28 @@ Apply every rule to every PR.
 
 - **SQL is returned, never executed.** No code path in `packages/core` or any public surface runs generated SQL; execution belongs in a host app, fixture, or test harness (`AGENTS.md` Conventions). Check new database-driver imports and any new `query`/`execute` call outside `*.test.ts`, fixtures, and `examples/`.
 - **Changeset for publishable changes.** A change under `packages/*/src`, `packages/*/package.json`, or `apps/{cli,http-api,studio}/{src,package.json}` carries a `.changeset/*.md` (the same path filter as `.github/workflows/changesets.yml`). AskDB is pre-1.0: a breaking change is a `minor`, never a `major`. Run `pnpm changeset status --verbose` and flag any package bumped `major` unintentionally.
+- **User-facing changes update the docs site in the same PR.** A change to a public API, CLI flag or command, config key, default, error text, Studio behaviour, or integration pattern updates `apps/docs-site/src/content/docs/` in the same PR (`AGENTS.md`). A missing update is a **Docs:** finding, not a follow-up ticket.
 - **Docs-site accuracy.** Every claim a PR adds or edits under `apps/docs-site/src/content/docs/` (package names, APIs, options, file paths, defaults, error text) matches the source; find each one with `git grep` before accepting it. A public API or integration-pattern change without a docs-site update is a finding.
 - **Docs house style.** Markdown and MDX follow `apps/docs-site/STYLE.md` and `AGENTS.md`: one line per paragraph or list item (unwrapped), sentence-case headings, the terminology table.
 - **Exported signatures name exported types.** Every type named in an exported function, class, or type signature is re-exported from the package entry point (`src/index.ts`), not reachable only through an internal path. #197 named `TenantSqlDialect` in a signature without re-exporting it until review caught it. Read `src/index.ts` against new and changed signatures; this stays manual until #325 adds a mechanical check.
 - **Integration suites gate through `integrationSuite()`.** Suites that need a database, a native driver, or an env var use `integrationSuite()` from `scripts/test-utils/integration.mjs`, so CI's `ASKDB_REQUIRE_INTEGRATION=1` turns a missing prerequisite into a failure. `pnpm lint` runs `scripts/check-test-gating.mjs` over every workspace package in `pnpm-workspace.yaml`; it rejects `describe`/`suite` `.skip`/`.skipIf`/`.runIf`, `it`/`test` `.skipIf`/`.runIf`, `it.skip` used as a value, and `cond ? describe : …`, and allows a line exempted with `// check-test-gating-ignore-next-line: <reason>` (question any new exemption). Still read new suites for gates it cannot see (an early `return` in `beforeAll`, a conditional `it` inside a loop).
 - **Tests pass the test-audit authoring gate.** New and changed tests meet `.agents/skills/test-audit/SKILL.md`: each names the behavior it protects; a regression test fails on the pre-fix code for the intended reason (flag it when neither the PR nor the diff shows that); it asserts the specific rule or error code, not a permissive helper any rejection satisfies; and it lives at the owner boundary where users hit the behavior. For a Studio save bug that is the Studio server route (`apps/studio/src/server.ts`), not only the `@askdb/enrich` helper it calls (#192).
+
+## Architecture
+
+Source: `docs/architecture.md` ("Package map", "Dependency boundaries"), `docs/mission.md`, and the accepted ADRs indexed in `docs/adrs/README.md`. Check every PR against these; tag a finding **Architecture:** and name the layer the code belongs in.
+
+- **Layers, lowest first.** `@askdb/core` (schema contract, prompt, SQL guardrails; pure, no drivers, no I/O against a database) → `@askdb/introspect` (connector contract, shared engine kit, registry) and `@askdb/ai` (provider dispatch) → engine packages (`@askdb/postgres`, `mysql`, `sqlite`, `sqlserver`, `prisma`) and optional libraries (`@askdb/rag`, `@askdb/enrich`, `@askdb/config`, `@askdb/client`) → first-party apps (`askdb` CLI, `@askdb/http-api`, `@askdb/studio`). Imports and `package.json` dependencies point down only; `@askdb/core` never depends on `@askdb/ai`, `@askdb/client`, or any engine package.
+- **Engine knowledge lives in its engine package.** Dialect quirks, catalog queries, driver loading, and connection-string forms for one engine belong in that engine's package; logic shared by two or more engines belongs in the shared kit they already depend on, not copied per engine and not in an app.
+- **Fix at the owner.** A defect is fixed in the package that owns the behaviour, not worked around in the CLI, Studio, or HTTP API that hit it. An app-side safety net is fine in addition to the owner fix, never instead of it.
+- **Apps are hosts.** App-only concerns (HTTP transport, CSRF/Origin checks, process lifecycle, UI) stay in the app. Library packages stay small and never pull optional drivers or providers into unrelated installs.
+- **Smallest public surface.** New exports, subpath entry points, and options serve a named caller; nothing is exported only for a test.
+
+## Decision records
+
+- Records: `docs/adrs/NNNN-kebab-title.md`. Index: `docs/adrs/README.md`, one row per record with its status and the decision in one line. Read the index before reviewing, and the full ADR for any record that touches the changed paths.
+- A change that settles a choice between two or more clean options adds an ADR (options considered, decision, consequences) in the same PR. A change that reverses or narrows an accepted ADR amends or supersedes it in the same PR. A PR that does either without a record is a **Docs:** finding; a PR that contradicts an accepted record without amending it is an **Architecture:** finding.
+- A new ADR adds its row to `docs/adrs/README.md` in the same PR. Two open PRs can claim the same ADR number; the second to merge renumbers.
 
 ## Sensitive areas
 
@@ -85,7 +102,8 @@ Start every comment with one tag:
 - `**Security:**` guardrail bypass, fail-open path, literal or identifier breakout, sensitive data exposed, SQL executed by AskDB;
 - `**Correctness:**` wrong result, crash, a setting silently discarded;
 - `**Tests:**` hand-rolled gate, regression that never failed pre-fix, permissive assertion, wrong boundary, missing case;
-- `**Docs:**` docs-site claim not backed by source, house-style break;
+- `**Architecture:**` code in the wrong layer, a dependency pointing up, logic duplicated across engine or provider packages, a contradicted ADR;
+- `**Docs:**` docs-site claim not backed by source, a user-facing change with no docs-site update, a missing ADR, house-style break;
 - `**Conventions:**` any other rule above: changeset, unexported type in a signature, PR description that disagrees with the diff, stacked-branch merge.
 
 Payload (`/tmp/askdb-review-<pr>.json`), with `commit_id` from `gh pr view <pr> --json headRefOid -q .headRefOid`:
@@ -93,7 +111,7 @@ Payload (`/tmp/askdb-review-<pr>.json`), with `commit_id` from `gh pr view <pr> 
 ```json
 {
   "commit_id": "<head sha>",
-  "body": "Independent review (pr-review). Spec: <source>. Checklists applied: <list>.\n\n<body-only findings, tagged>\n\n<items checked clean>",
+  "body": "> AI review by Claude Opus 5.5 (claude-opus-5-5), run by the maintainer's agent. Not a human review by @Ygilany.\n\nIndependent review (pr-review). Spec: <source>. Checklists applied: <list>.\n\n<body-only findings, tagged>\n\n<items checked clean>",
   "comments": [
     { "path": "packages/core/src/sql/lexer.ts", "line": 212, "side": "RIGHT", "body": "**Security:** …" },
     { "path": "packages/core/src/sql/validate.ts", "start_line": 88, "line": 94, "side": "RIGHT", "body": "**Correctness:** …" }
@@ -109,7 +127,9 @@ gh api "repos/Ygilany/AskDB/pulls/$PR/reviews" --jq '.[] | select(.state == "PEN
 REVIEW_ID=$(gh api -X POST "repos/Ygilany/AskDB/pulls/$PR/reviews" --input "/tmp/askdb-review-$PR.json" --jq .id)
 ```
 
-Leave the review PENDING for the maintainer unless the person who asked for the review says to submit it. Submit only as `COMMENT`:
+Every review body opens with the AI-review disclosure line above, with the model that actually ran the review: the review posts from the maintainer's account, and a reader must not mistake it for the maintainer's own review.
+
+Submit the review as `COMMENT` once its comments are verified (the maintainer asked for AI reviews to be posted, not left pending). Submitting keeps the body set at creation; do not pass a new `body`:
 
 ```bash
 gh api -X POST "repos/Ygilany/AskDB/pulls/$PR/reviews/$REVIEW_ID/events" -f event=COMMENT
