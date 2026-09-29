@@ -5,16 +5,18 @@
  * a partitioned table once per referenced partition. Neither kind of clone may
  * leak into the introspected foreign keys.
  *
- * Skipped unless `DATABASE_URL` is set. Creates and drops its own schema.
+ * Needs `DATABASE_URL`: skipped without it, failed under ASKDB_REQUIRE_INTEGRATION=1.
+ * Creates and drops its own schema.
  */
 import { randomUUID } from "node:crypto";
 import { introspect } from "@askdb/introspect";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, expect, it } from "vitest";
+import { integrationSuite } from "../../../../scripts/test-utils/integration.mjs";
 import { createPostgresCatalogQueryRunner } from "../exec/postgres.js";
 import { createPostgresConnector } from "./index.js";
 
 const url = process.env.DATABASE_URL;
-const suite = url ? describe : describe.skip;
+const suite = integrationSuite({ env: ["DATABASE_URL"] });
 const schemaName = `askdb_partfk_${randomUUID().replace(/-/g, "").slice(0, 12)}`;
 
 async function exec(sql: string): Promise<void> {
