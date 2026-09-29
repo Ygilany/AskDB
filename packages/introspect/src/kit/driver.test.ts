@@ -195,6 +195,27 @@ describe("createOptionalDriverLoader", () => {
     expect((err as Error).message).toContain(`${PKG}/lib/missing`);
   });
 
+  // Pins the fallback's resolve/import split: the driver resolves, and its own
+  // load throws a not-found error that names the driver itself.
+  it("reports a resolved driver whose load throws 'Cannot find module <driver>', not the install hint", async () => {
+    const project = await tempProject(true);
+    await writeFile(
+      join(project, "node_modules", PKG, "index.cjs"),
+      `throw Object.assign(new Error("Cannot find module '${PKG}'"), { code: "MODULE_NOT_FOUND" });\n`,
+    );
+    const loader = createOptionalDriverLoader({
+      packageName: PKG,
+      importDriver: async () => {
+        throw notFound();
+      },
+      missingMessage: "install it",
+    });
+
+    const err = await loader.load({ resolveFrom: project }).catch((e: unknown) => e);
+    expect((err as Error).message).not.toContain("install it");
+    expect((err as Error).message).toContain(`The optional \`${PKG}\` peer dependency failed to load:`);
+  });
+
   it("reports an installed driver missing its own file, found through the engine's import", async () => {
     const ownFile = Object.assign(new Error(`Cannot find module '${PKG}/lib/missing'`), { code: "MODULE_NOT_FOUND" });
     const loader = createOptionalDriverLoader({
