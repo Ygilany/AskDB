@@ -76,8 +76,9 @@ export type AskDialectGenerateResult = {
   explain?: unknown;
   /**
    * Optional tenant guardrail result from a custom generator. When the schema has a
-   * tenant policy, `ask()` merges its warnings into its own check of the final SQL;
-   * it can add failures but never replace or relax that check.
+   * tenant policy, `ask()` merges its warnings into its own check of `sql` and
+   * `unboundNamedSql` (before tenant rendering); it can add failures but never replace
+   * or relax that check.
    */
   tenantGuardrail?: import("./sql/tenant-guardrail.js").TenantGuardrailResult;
   usage?: AskUsage;
@@ -101,9 +102,10 @@ export type AskDialectGenerateResult = {
  *     read-only SQL, call the exported `validateSelectSql(spec, sql)` yourself
  *     before returning.
  *   - **Tenant enforcement is not yours to skip.** When the schema has a tenant
- *     policy, `ask()` substitutes tenant placeholders in the returned `sql` and
- *     runs the tenant guardrail on the final statement regardless of dialect;
- *     `strict` policies throw `TenantGuardrailError`. A `tenantGuardrail` your
+ *     policy, `ask()` runs the tenant guardrail on the returned `sql` (and
+ *     `unboundNamedSql`), with its `:tenant_<root>_ids` placeholders still in place,
+ *     then substitutes them, regardless of dialect; `strict` policies throw
+ *     `TenantGuardrailError`. A `tenantGuardrail` your
  *     generator returns is merged into that result, never used in place of it.
  */
 export type AskDialect = {
@@ -274,9 +276,11 @@ export type AskPipelineResult = {
    */
   sensitiveGuardrail?: SensitiveGuardrailResult;
   /**
-   * Tenant guardrail result for the SQL actually returned — `sql` after tenant
-   * placeholder substitution, plus `unboundSql` when present. Present whenever the
-   * schema has a tenant policy, for every dialect form. In `strict` mode a failure
+   * Tenant guardrail result for the model's SQL, checked before tenant rendering: the
+   * bound `sql` and its `sql-unbound` block, with the `:tenant_<root>_ids` placeholders
+   * still in place. `sql` and `unboundSql` differ from those only by the substituted
+   * tenant IDs or markers. Present whenever the schema has a tenant policy, for every
+   * dialect form. In `strict` mode a failure
    * throws `TenantGuardrailError` instead, so a returned result is always `passed`
    * under `strict`.
    */

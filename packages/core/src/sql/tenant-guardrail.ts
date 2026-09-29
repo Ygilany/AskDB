@@ -84,7 +84,9 @@ export function validateTenantGuardrails(
     const root = policy.roots.find((r) => r.id === rootId);
     if (!root || !mentionsTable(views, extractTableName(root.id))) continue;
     const column = extractColumnName(root.tenantIdColumn);
-    if (!hasTenantPredicate(views, extractTableName(root.id), [column], [placeholderForRoot(root.label)])) {
+    // Filtered on its own tenant ID column, or on a column that carries its IDs (a query
+    // that joins the root for a label, filtered on the scoped table's tenant column).
+    if (!hasTenantPredicate(views, extractTableName(root.id), idCarriers(policy, root.id))) {
       warnings.push(
         warn("MISSING_TENANT_PREDICATE", root.id,
           `Tenant root table '${extractTableName(root.id)}' is missing required tenant predicate. ` +
@@ -213,22 +215,20 @@ function checkScopedTable(
 ): void {
   const table = extractTableName(st.id);
   for (const path of st.scopeThrough) {
-    const root = policy.roots.find((r) => r.id === path.root);
     const placeholder = placeholderFor(policy, path.root);
     if ("column" in path) {
       // The table's tenant column compared with its root's placeholder.
-      if (hasTenantPredicate(sql, table, [extractColumnName(path.column)], [placeholder])) return;
+      if (hasTenantPredicate(sql, table, [{ placeholder, column: extractColumnName(path.column), table }])) return;
     } else {
-      // Inherited via JOINs: every join column appears, and a tenant predicate
-      // filters the root (on its tenant ID column, or, down a hierarchy, on any
-      // placeholder this scope binds).
+      // Inherited via JOINs: every join column appears, and a tenant predicate filters
+      // the root: on its tenant ID column, or, down a hierarchy, on a column that carries
+      // the IDs of a root this scope binds.
       const allStepsPresent = path.join.every(
         (step) => mentionsIdentifier(sql, extractColumnName(step.from)) && mentionsIdentifier(sql, extractColumnName(step.to)),
       );
       if (!allStepsPresent) continue;
-      const scopePlaceholders = scopeRootIds(scope).map((id) => placeholderFor(policy, id));
-      if (root && hasTenantPredicate(sql, table, [extractColumnName(root.tenantIdColumn)], [placeholder])) return;
-      if (hasTenantPredicate(sql, table, undefined, [placeholder, ...scopePlaceholders])) return;
+      const targets = [path.root, ...scopeRootIds(scope)].flatMap((rootId) => idCarriers(policy, rootId));
+      if (hasTenantPredicate(sql, table, targets)) return;
     }
   }
 
@@ -260,8 +260,9 @@ function checkPolymorphicTable(
     );
   }
 
-  const placeholders = Object.values(pt.mapping).map((rootId) => placeholderFor(policy, rootId));
-  if (!hasTenantPredicate(sql, extractTableName(pt.id), [idColName], placeholders)) {
+  const table = extractTableName(pt.id);
+  const targets = Object.values(pt.mapping).map((rootId) => ({ placeholder: placeholderFor(policy, rootId), column: idColName, table }));
+  if (!hasTenantPredicate(sql, table, targets)) {
     warnings.push(
       warn("MISSING_TENANT_PREDICATE", pt.id,
         `Polymorphic table '${extractTableName(pt.id)}' is missing a tenant predicate on '${idColName}' (compared with a tenant placeholder in a WHERE/ON/HAVING clause).`),
@@ -272,6 +273,44 @@ function checkPolymorphicTable(
 /** The placeholder `resolveTenantSql()` substitutes for a root (by its label). */
 function placeholderFor(policy: NormalizedTenantPolicy, rootId: string): string {
   return placeholderForRoot(policy.roots.find((r) => r.id === rootId)?.label ?? rootId);
+}
+
+/**
+ * The columns that hold a root's tenant IDs, each with its root's placeholder: the root's
+ * own `tenantIdColumn`; the foreign key of each child root pointing at it (`hierarchy[]`,
+ * `roots[].parent`), e.g. `sub_agencies.agency_id`; the tenant column of each table
+ * scoped directly through it; and the last hop of each join path that reaches it (the
+ * `from` column of a step whose `to` is the root's tenant ID column).
+ */
+function idCarriers(policy: NormalizedTenantPolicy, rootId: string): PredicateTarget[] {
+  const root = policy.roots.find((r) => r.id === rootId);
+  if (!root) return [];
+  const placeholder = placeholderForRoot(root.label);
+  const carriers: PredicateTarget[] = [
+    { placeholder, column: extractColumnName(root.tenantIdColumn), table: extractTableName(root.id) },
+  ];
+  for (const edge of policy.hierarchy) {
+    if (edge.parent === rootId) carriers.push({ placeholder, column: extractColumnName(edge.foreignKey), table: extractTableName(edge.child) });
+  }
+  for (const child of policy.roots) {
+    if (child.parent?.root === rootId) {
+      carriers.push({ placeholder, column: extractColumnName(child.parent.foreignKey), table: extractTableName(child.id) });
+    }
+  }
+  for (const st of policy.scopedTables) {
+    for (const path of st.scopeThrough) {
+      if (path.root !== rootId) continue;
+      if ("column" in path) {
+        carriers.push({ placeholder, column: extractColumnName(path.column), table: extractTableName(st.id) });
+        continue;
+      }
+      for (const step of path.join) {
+        if (step.to !== root.tenantIdColumn) continue;
+        carriers.push({ placeholder, column: extractColumnName(step.from), table: tableOfColumn(step.from) });
+      }
+    }
+  }
+  return carriers;
 }
 
 /** The tenant roots a scope binds IDs for (`global` binds none). */
@@ -304,6 +343,12 @@ function extractTableName(tableId: string): string {
   // "table:public.orders" → "orders"
   const dot = tableId.lastIndexOf(".");
   return dot !== -1 ? tableId.slice(dot + 1) : tableId;
+}
+
+function tableOfColumn(columnId: string): string {
+  // "table:public.orders#agency_id" → "orders"
+  const hash = columnId.lastIndexOf("#");
+  return extractTableName(hash !== -1 ? columnId.slice(0, hash) : columnId);
 }
 
 function extractColumnName(columnId: string): string {
@@ -379,6 +424,13 @@ function codeViews(
   return [{ text: codeView(sql, reading), reading }];
 }
 
+/**
+ * What a quoted identifier's delimiters become in a code view: not a word character, so
+ * identifier matching still sees `"agency_id"` as `agency_id`, but the tokenizer can tell
+ * a quoted `"where"` (an identifier) from the keyword `WHERE`.
+ */
+const QUOTE_MARK = "\u0001";
+
 /** A character that continues an identifier, so an `E` before it is not a string prefix. */
 const IDENTIFIER_CONTINUE = /[A-Za-z0-9_$\u0080-\uffff]/;
 
@@ -389,7 +441,7 @@ const IDENTIFIER_CONTINUE = /[A-Za-z0-9_$\u0080-\uffff]/;
  * and keeps the original case (placeholders are case-sensitive), so word
  * boundaries at the seams are unchanged.
  *
- * Quoted identifiers keep their contents and only lose their delimiters:
+ * Quoted identifiers keep their contents; their delimiters become {@link QUOTE_MARK}:
  * `"agency_id"` *is* the identifier `agency_id` on Postgres, and blanking it
  * would hide `FROM "orders"` from the table check and skip that table.
  */
@@ -462,9 +514,9 @@ function codeView(sql: string, reading: CodeReading): string {
     }
     if (ch === '"' || ch === "`" || ch === "[") {
       const close = sql.indexOf(ch === "[" ? "]" : ch, i + 1);
-      out[i] = " ";
+      out[i] = QUOTE_MARK;
       if (close === -1) break;
-      out[close] = " ";
+      out[close] = QUOTE_MARK;
       i = close + 1;
       continue;
     }
@@ -506,8 +558,10 @@ function mentionsIdentifier(views: CodeViews, identifier: string): boolean {
 type Token = {
   /** The token as written (placeholders are case-sensitive). */
   readonly text: string;
-  /** Lower-cased, for keyword and identifier comparison. */
+  /** Lower-cased, for identifier comparison. */
   readonly lower: string;
+  /** Lower-cased for keyword comparison; empty for a quoted identifier, which is never a keyword. */
+  readonly kw: string;
   /** Parenthesis nesting of the token; a `(` or `)` has the depth outside it. */
   readonly depth: number;
 };
@@ -518,10 +572,16 @@ const TOKEN = /:[A-Za-z0-9_]+|::|\|\||<>|!=|<=|>=|[A-Za-z_\u0080-\uffff][\w$\u00
 function tokenize(text: string): Token[] {
   const tokens: Token[] = [];
   let depth = 0;
+  let quoted = false;
   for (const m of text.matchAll(TOKEN)) {
     const t = m[0];
+    if (t === QUOTE_MARK) {
+      quoted = !quoted;
+      continue;
+    }
     if (t === ")") depth = Math.max(0, depth - 1);
-    tokens.push({ text: t, lower: t.toLowerCase(), depth });
+    const lower = t.toLowerCase();
+    tokens.push({ text: t, lower, kw: quoted ? "" : lower, depth });
     if (t === "(") depth++;
   }
   return tokens;
@@ -543,53 +603,71 @@ const SET_OPERATORS = new Set(["union", "intersect", "except", "minus"]);
 /** Words other than identifiers that the predicate forms use. */
 const PREDICATE_WORDS = new Set(["in", "any", "and", "or", "not", "xor"]);
 
+/** Keywords a table can be named after only when quoted (`"order"`, `[group]`). */
+const RESERVED = new Set([
+  ...FILTER_CLAUSE, ...CLAUSE_END, ...NOT_A_FILTER, ...SET_OPERATORS, ...PREDICATE_WORDS,
+  "order", "group", "user", "table", "limit", "offset", "all", "exists",
+]);
+
+/** What a tenant predicate compares: `column` (of `table`) with `placeholder`. */
+type PredicateTarget = { readonly placeholder: string; readonly column: string; readonly table: string };
+
 /**
  * Whether the statement has a tenant predicate for `table` on every reading: a column
- * in `columns` (any column when undefined) compared with one of `placeholders`, as a
- * conjunct of a filter clause. Each top-level query block (split at `UNION`,
- * `INTERSECT`, `EXCEPT`) that mentions the table needs its own. See
- * {@link validateTenantGuardrails} for the rule.
+ * and placeholder from `targets`, compared as a conjunct of a filter clause. Every query
+ * block that mentions the table needs its own: the statement, and each branch of every
+ * `UNION` / `INTERSECT` / `EXCEPT`, at the top level or inside a derived table or CTE.
+ * See {@link validateTenantGuardrails} for the rule.
  */
-function hasTenantPredicate(
-  views: CodeViews,
-  table: string,
-  columns: readonly string[] | undefined,
-  placeholders: readonly string[],
-): boolean {
-  const wanted = columns?.map((c) => c.toLowerCase());
-  const mentions = new RegExp(`\\b${escapeRegex(table)}\\b`, "i");
+function hasTenantPredicate(views: CodeViews, table: string, targets: readonly PredicateTarget[]): boolean {
+  const name = table.toLowerCase();
+  // A table named after a keyword (`order`) can only be written quoted, so its unquoted
+  // spelling (`ORDER BY`) is the keyword, not the table.
+  const mentions = (t: Token) => t.lower === name && (t.kw === "" || !RESERVED.has(t.kw));
   return views.every((view) => {
     const tokens = tokenize(view.text);
-    const blocks = queryBlocks(tokens);
-    const scoped = blocks.filter(([from, to]) => tokens.slice(from, to).some((t) => mentions.test(t.text)));
-    return (scoped.length > 0 ? scoped : blocks).every(([from, to]) =>
-      tokens.slice(from, to).some((token, offset) => {
-        const k = from + offset;
-        if (!placeholders.includes(token.text)) return false;
-        const span = predicateSpan(tokens, k, wanted);
-        return span !== undefined && isFilterConjunct(tokens, span[0], span[1], view.reading);
-      }),
-    );
+    return queryBlocks(tokens)
+      .filter(([from, to]) => tokens.slice(from, to).some(mentions))
+      .every(([from, to]) => {
+        for (let k = from; k < to; k++) {
+          for (const target of targets) {
+            if (tokens[k]!.text !== target.placeholder) continue;
+            const span = predicateSpan(tokens, k, target);
+            if (span && isFilterConjunct(tokens, span[0], span[1], view.reading)) return true;
+          }
+        }
+        return false;
+      });
   });
 }
 
-/** Token ranges `[from, to)` of the statement's top-level query blocks. */
+/**
+ * Token ranges `[from, to)` of the statement's query blocks: the whole statement, and
+ * each branch of every set operation at any depth (bounded by the parentheses around it).
+ */
 function queryBlocks(tokens: readonly Token[]): Array<[number, number]> {
-  const blocks: Array<[number, number]> = [];
-  let from = 0;
+  const blocks: Array<[number, number]> = [[0, tokens.length]];
+  const splits = new Map<number, number[]>(); // enclosing "(" (or -1) → set-operator positions
   tokens.forEach((t, i) => {
-    if (t.depth === 0 && SET_OPERATORS.has(t.lower)) {
-      blocks.push([from, i]);
-      from = i + 1;
-    }
+    if (!SET_OPERATORS.has(t.kw)) return;
+    const open = enclosing(tokens, i, "(");
+    splits.set(open, [...(splits.get(open) ?? []), i]);
   });
-  blocks.push([from, tokens.length]);
+  for (const [open, positions] of splits) {
+    const end = open < 0 ? tokens.length : enclosing(tokens, open + 1, ")");
+    let from = open + 1;
+    for (const at of positions) {
+      blocks.push([from, at]);
+      from = at + 1;
+    }
+    blocks.push([from, end < 0 ? tokens.length : end]);
+  }
   return blocks;
 }
 
 /** An identifier token: a word that isn't one of the predicate forms' keywords. */
 function isIdentifier(token: Token): boolean {
-  return /^[A-Za-z_\u0080-\uffff]/.test(token.text) && !PREDICATE_WORDS.has(token.lower);
+  return /^[A-Za-z_\u0080-\uffff]/.test(token.text) && !PREDICATE_WORDS.has(token.kw);
 }
 
 /** A clause keyword used as a function name (`LEFT(status, 1)`, `RIGHT(…)`) is an identifier. */
@@ -607,29 +685,57 @@ function qualifiedStart(tokens: readonly Token[], end: number): number {
 /**
  * The token span `[start, end]` of a tenant predicate around the placeholder at `k`:
  * `col = P`, `P = col`, `col IN (P)` or `col = ANY (P)`, where `col` (the last part of a
- * possibly qualified name) is in `columns`, or anything when `columns` is undefined.
+ * possibly qualified name) is the target's column. A qualifier that names, or is the
+ * alias of, a table other than the target's makes it no predicate for that table.
  */
-function predicateSpan(tokens: readonly Token[], k: number, columns: readonly string[] | undefined): [number, number] | undefined {
+function predicateSpan(tokens: readonly Token[], k: number, target: PredicateTarget): [number, number] | undefined {
   const at = (i: number) => tokens[i];
-  const matches = (t: Token | undefined) => t !== undefined && isIdentifier(t) && (columns === undefined || columns.includes(t.lower));
+  const column = target.column.toLowerCase();
+  const matches = (i: number) => {
+    const t = at(i);
+    if (t === undefined || !isIdentifier(t) || t.lower !== column) return false;
+    const qualifier = at(i - 1)?.text === "." ? at(i - 2) : undefined;
+    return qualifier === undefined || !namesOtherTable(tokens, qualifier.lower, target.table.toLowerCase());
+  };
   // col = P
-  if (at(k - 1)?.text === "=" && matches(at(k - 2))) return [qualifiedStart(tokens, k - 2), k];
+  if (at(k - 1)?.text === "=" && matches(k - 2)) return [qualifiedStart(tokens, k - 2), k];
   const closed = at(k + 1)?.text === ")";
   // col IN ( P )
-  if (closed && at(k - 1)?.text === "(" && at(k - 2)?.lower === "in" && matches(at(k - 3))) {
+  if (closed && at(k - 1)?.text === "(" && at(k - 2)?.kw === "in" && matches(k - 3)) {
     return [qualifiedStart(tokens, k - 3), k + 1];
   }
   // col = ANY ( P )
-  if (closed && at(k - 1)?.text === "(" && at(k - 2)?.lower === "any" && at(k - 3)?.text === "=" && matches(at(k - 4))) {
+  if (closed && at(k - 1)?.text === "(" && at(k - 2)?.kw === "any" && at(k - 3)?.text === "=" && matches(k - 4)) {
     return [qualifiedStart(tokens, k - 4), k + 1];
   }
   // P = col
   if (at(k + 1)?.text === "=") {
     let end = k + 2;
     while (at(end + 1)?.text === "." && at(end + 2) !== undefined && isIdentifier(at(end + 2)!)) end += 2;
-    if (matches(at(end))) return [k, end];
+    if (matches(end)) return [k, end];
   }
   return undefined;
+}
+
+/**
+ * Whether the qualifier `name` names a table other than `table`: `name` is that other
+ * table, or is declared as its alias (`FROM appointments a`, `JOIN appointments AS a`).
+ * A qualifier the statement doesn't declare (a derived table's or CTE's name) names no
+ * known table, so it doesn't rule the predicate out.
+ */
+function namesOtherTable(tokens: readonly Token[], name: string, table: string): boolean {
+  if (name === table) return false;
+  for (let i = 1; i < tokens.length; i++) {
+    if (tokens[i]!.lower !== name || !isIdentifier(tokens[i]!)) continue;
+    const source = tokens[i - 1]?.kw === "as" ? i - 2 : i - 1;
+    const src = tokens[source];
+    if (src === undefined || !isIdentifier(src) || tokens[source + 1]?.text === ".") continue;
+    const before = tokens[qualifiedStart(tokens, source) - 1];
+    if (before !== undefined && (before.kw === "from" || before.kw === "join" || before.text === ",")) {
+      return src.lower !== table;
+    }
+  }
+  return false;
 }
 
 /** How a parenthesized query block is used by the query around it. */
@@ -642,18 +748,23 @@ type SubqueryUse = "table" | "in" | "other";
  */
 function subqueryUse(tokens: readonly Token[], open: number): SubqueryUse {
   const opener = tokens[open - 1];
-  if (opener?.lower === "in") return tokens[open - 2] !== undefined && isIdentifier(tokens[open - 2]!) ? "in" : "other";
-  if (opener?.lower === "as" || opener?.lower === "lateral") return "table";
+  if (opener?.kw === "in") return tokens[open - 2] !== undefined && isIdentifier(tokens[open - 2]!) ? "in" : "other";
+  if (opener?.kw === "as" || opener?.kw === "lateral") return "table";
   const depth = tokens[open]!.depth;
   for (let i = open - 1; i >= 0; i--) {
     const t = tokens[i]!;
     if (t.depth < depth) return "other";
     if (t.depth > depth) continue;
-    if (t.lower === "from" || t.lower === "join" || t.lower === "apply") return "table";
-    if (t.text !== "," && !(isIdentifier(t) && !CLAUSE_END.has(t.lower) && !NOT_A_FILTER.has(t.lower))) return "other";
+    // OUTER APPLY keeps every left-side row, like an outer join; CROSS APPLY filters.
+    if (t.kw === "apply") return tokens[i - 1]?.kw === "outer" ? "other" : "table";
+    if (t.kw === "from" || t.kw === "join") return "table";
+    if (t.text !== "," && !(isIdentifier(t) && !CLAUSE_END.has(t.kw) && !NOT_A_FILTER.has(t.kw))) return "other";
   }
   return "other";
 }
+
+/** SQL Server join hints, written between the join kind and `JOIN` (`LEFT HASH JOIN`). */
+const JOIN_HINTS = new Set(["loop", "hash", "merge", "remote"]);
 
 /** Whether the `ON` at `on` belongs to an outer join, whose `ON` doesn't filter the preserved side. */
 function isOuterJoinOn(tokens: readonly Token[], on: number): boolean {
@@ -661,10 +772,11 @@ function isOuterJoinOn(tokens: readonly Token[], on: number): boolean {
   for (let i = on - 1; i >= 0; i--) {
     const t = tokens[i]!;
     if (t.depth < depth) return false;
-    if (t.depth > depth || t.lower !== "join") continue;
+    if (t.depth > depth || t.kw !== "join") continue;
     let kind = i - 1;
-    if (tokens[kind]?.lower === "outer") kind--;
-    return ["left", "right", "full"].includes(tokens[kind]?.lower ?? "");
+    if (JOIN_HINTS.has(tokens[kind]?.kw ?? "")) kind--;
+    if (tokens[kind]?.kw === "outer") kind--;
+    return ["left", "right", "full"].includes(tokens[kind]?.kw ?? "");
   }
   return false;
 }
@@ -679,8 +791,8 @@ function isOuterJoinOn(tokens: readonly Token[], on: number): boolean {
  * conjunct; not inside `EXISTS (…)`, a scalar subquery, or a comparison. A level opened by a function call or a comparison doesn't count.
  */
 function isFilterConjunct(tokens: readonly Token[], start: number, end: number, reading: CodeReading): boolean {
-  const disjunction = (t: Token) => t.lower === "or" || t.lower === "xor" || (t.text === "||" && reading.pipesAreOr);
-  const endsClause = (i: number) => CLAUSE_END.has(tokens[i]!.lower) && !isFunctionCall(tokens, i);
+  const disjunction = (t: Token) => t.kw === "or" || t.kw === "xor" || (t.text === "||" && reading.pipesAreOr);
+  const endsClause = (i: number) => CLAUSE_END.has(tokens[i]!.kw) && !isFunctionCall(tokens, i);
   let lo = start;
   let hi = end;
   let depth = tokens[start]!.depth;
@@ -688,8 +800,8 @@ function isFilterConjunct(tokens: readonly Token[], start: number, end: number, 
     // What is directly around the term, at its level.
     const before = tokens[lo - 1];
     const after = tokens[hi + 1];
-    const leftOk = before !== undefined && (before.lower === "and" || before.text === "(" || FILTER_CLAUSE.has(before.lower));
-    const rightOk = after === undefined || after.lower === "and" || after.text === ")" || after.text === ";" || endsClause(hi + 1);
+    const leftOk = before !== undefined && (before.kw === "and" || before.text === "(" || FILTER_CLAUSE.has(before.kw));
+    const rightOk = after === undefined || after.kw === "and" || after.text === ")" || after.text === ";" || endsClause(hi + 1);
     if (!leftOk || !rightOk) return false;
 
     // Scan the rest of this level on both sides for a disjunction, a NOT, or the clause keyword.
@@ -702,12 +814,12 @@ function isFilterConjunct(tokens: readonly Token[], start: number, end: number, 
         break;
       }
       if (t.depth > depth) continue;
-      if (disjunction(t) || t.lower === "not") return false;
-      if (FILTER_CLAUSE.has(t.lower)) {
+      if (disjunction(t) || t.kw === "not") return false;
+      if (FILTER_CLAUSE.has(t.kw)) {
         clause = i;
         break;
       }
-      if ((endsClause(i) || NOT_A_FILTER.has(t.lower)) && !isFunctionCall(tokens, i)) return false;
+      if ((endsClause(i) || NOT_A_FILTER.has(t.kw)) && !isFunctionCall(tokens, i)) return false;
     }
     let close = tokens.length;
     for (let j = hi + 1; j < tokens.length; j++) {
@@ -722,7 +834,7 @@ function isFilterConjunct(tokens: readonly Token[], start: number, end: number, 
     }
 
     if (clause >= 0) {
-      if (tokens[clause]!.lower === "on" && isOuterJoinOn(tokens, clause)) return false;
+      if (tokens[clause]!.kw === "on" && isOuterJoinOn(tokens, clause)) return false;
       if (depth === 0) return true;
       // The clause is inside a subquery: how does the query around it use that subquery?
       const blockOpen = enclosing(tokens, clause, "(");
@@ -742,7 +854,7 @@ function isFilterConjunct(tokens: readonly Token[], start: number, end: number, 
     // WHERE/ON/HAVING, AND, or another "(". Anything else (`f(`, `IN (`, `EXISTS (`,
     // `NOT (`, `= (`) makes it something other than a filter conjunct.
     const opener = tokens[open - 1];
-    if (opener === undefined || !(FILTER_CLAUSE.has(opener.lower) || opener.lower === "and" || opener.text === "(")) return false;
+    if (opener === undefined || !(FILTER_CLAUSE.has(opener.kw) || opener.kw === "and" || opener.text === "(")) return false;
     lo = open;
     hi = close;
     depth = tokens[open]!.depth;

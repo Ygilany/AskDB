@@ -289,6 +289,10 @@ describe("validateTenantGuardrails — a tenant predicate must actually filter (
     ["the predicate inside EXISTS, OR-ed away", "SELECT * FROM orders WHERE EXISTS (SELECT 1 WHERE agency_id = :tenant_agency_ids) OR 1 = 1"],
     ["the predicate inside an uncorrelated EXISTS", "SELECT * FROM orders WHERE EXISTS (SELECT 1 FROM orders o2 WHERE o2.agency_id = :tenant_agency_ids)"],
     ["a UNION branch with a literal ID", "SELECT * FROM orders WHERE agency_id = :tenant_agency_ids UNION ALL SELECT * FROM orders WHERE agency_id = 7"],
+    ["a UNION branch with a literal ID inside a derived table", "SELECT * FROM (SELECT * FROM orders WHERE agency_id = :tenant_agency_ids UNION ALL SELECT * FROM orders WHERE agency_id = 7) x"],
+    ["the predicate inside an OUTER APPLY", "SELECT o.* FROM orders o OUTER APPLY (SELECT 1 AS one WHERE o.agency_id = :tenant_agency_ids) x"],
+    ["the predicate in a hinted LEFT HASH JOIN's ON", "SELECT o.* FROM orders o LEFT HASH JOIN lookup_states d ON d.code = o.state AND o.agency_id = :tenant_agency_ids"],
+    ["a quoted function named like a clause keyword", 'SELECT * FROM orders WHERE "where"(agency_id = :tenant_agency_ids)'],
   ])("rejects %s", (_label, sql) => {
     expect(rules(sql)).toContain("MISSING_TENANT_PREDICATE");
   });
@@ -298,6 +302,11 @@ describe("validateTenantGuardrails — a tenant predicate must actually filter (
     expect(rules(sql, MYSQL_DIALECT)).toEqual(["MISSING_TENANT_PREDICATE"]);
     expect(rules(sql)).toEqual(["MISSING_TENANT_PREDICATE"]); // the MySQL reading, without a dialect
     expect(rules("SELECT * FROM orders WHERE status || 'x' = 'openx' AND agency_id = :tenant_agency_ids", POSTGRES_DIALECT)).toEqual([]);
+  });
+
+  it("a quoted identifier is never a keyword, but still names its column", () => {
+    expect(rules('SELECT * FROM orders WHERE "agency_id" = :tenant_agency_ids', POSTGRES_DIALECT)).toEqual([]);
+    expect(rules('SELECT * FROM orders WHERE "where"(agency_id = :tenant_agency_ids)', POSTGRES_DIALECT)).toEqual(["MISSING_TENANT_PREDICATE"]);
   });
 
   it("rejects the scope's root table queried without its tenant ID predicate", () => {
@@ -327,7 +336,29 @@ describe("validateTenantGuardrails — a tenant predicate must actually filter (
     ["a derived table after a comma in FROM", "SELECT * FROM lookup_states s, (SELECT * FROM orders WHERE agency_id = :tenant_agency_ids) o"],
     ["every UNION branch scoped", "SELECT id FROM orders WHERE agency_id = :tenant_agency_ids UNION SELECT id FROM orders WHERE agency_id IN (:tenant_agency_ids)"],
     ["a UNION branch that doesn't touch the table", "SELECT id FROM orders WHERE agency_id = :tenant_agency_ids UNION SELECT id FROM lookup_states"],
+    ["a CROSS APPLY's filter", "SELECT o.* FROM lookup_states d CROSS APPLY (SELECT * FROM orders WHERE agency_id = :tenant_agency_ids) o"],
+    ["a qualifier naming the scoped table itself", "SELECT * FROM orders WHERE orders.agency_id = :tenant_agency_ids"],
+    ["a filter on a derived table's output", "SELECT * FROM (SELECT * FROM orders) t WHERE t.agency_id = :tenant_agency_ids"],
+    ["ORDER BY, which is not a table named order", "SELECT * FROM orders WHERE agency_id = :tenant_agency_ids ORDER BY id"],
+    ["the root joined for a label, filtered on the scoped table's tenant column", "SELECT o.id, a.name FROM orders o JOIN agencies a ON a.id = o.agency_id WHERE o.agency_id IN (:tenant_agency_ids)"],
   ])("accepts %s", (_label, sql) => {
     expect(rules(sql)).toEqual([]);
+  });
+});
+
+describe("validateTenantGuardrails — down a hierarchy, the predicate must be on a column that carries the root's IDs", () => {
+  const warnPolicy: NormalizedTenantPolicy = { ...policy, enforcement: "warn" };
+  const rules = (sql: string) => validateTenantGuardrails(sql, warnPolicy, agencyScope).warnings.map((w) => w.rule);
+  const joined = "SELECT a.* FROM appointments a JOIN clients c ON a.client_id = c.id";
+
+  it("accepts a hierarchy foreign key compared with the scope's placeholder", () => {
+    expect(rules(`${joined} WHERE c.sub_agency_id IN (SELECT id FROM sub_agencies WHERE agency_id = :tenant_agency_ids)`)).toEqual([]);
+  });
+
+  it.each([
+    ["the appointment's own id", `${joined} WHERE a.id = :tenant_agency_ids`],
+    ["a column that carries no tenant IDs", `${joined} WHERE a.status = :tenant_agency_ids`],
+  ])("rejects %s compared with the scope's placeholder", (_label, sql) => {
+    expect(rules(sql)).toEqual(["MISSING_TENANT_PREDICATE"]);
   });
 });
