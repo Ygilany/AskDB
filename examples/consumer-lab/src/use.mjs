@@ -213,10 +213,27 @@ function resolveCliRelease(version) {
 }
 
 /**
- * Point the lab at the target: direct deps in package.json, and an override for every
- * target package in pnpm-workspace.yaml. `packages` is `[{ name, spec }]`.
+ * The lab's pnpm-workspace.yaml, split around its lab:use overrides block. Fails if the
+ * block is missing or isn't inside the file's top-level `overrides:` map, which holds the
+ * lab's hand-written third-party pins above the block. `main` calls this before it changes
+ * anything, so a malformed file can't leave the lab half-switched.
  */
-function pinTo(packages, label) {
+function readWorkspace() {
+  const ws = readFileSync(join(LAB, "pnpm-workspace.yaml"), "utf8");
+  const begin = ws.indexOf(BLOCK_BEGIN);
+  const end = ws.indexOf(BLOCK_END);
+  if (begin < 0 || end < begin) fail("pnpm-workspace.yaml has lost its lab:use overrides block");
+  const lastKey = ws.slice(0, begin).split("\n").filter((l) => /^[^\s#]/.test(l)).pop();
+  if (lastKey !== "overrides:") fail("pnpm-workspace.yaml's lab:use overrides block must sit inside its top-level `overrides:` map");
+  return { head: ws.slice(0, begin + BLOCK_BEGIN.length), tail: ws.slice(end) };
+}
+
+/**
+ * Point the lab at the target: direct deps in package.json, and an override for every
+ * target package in pnpm-workspace.yaml (`workspace` from readWorkspace). `packages` is
+ * `[{ name, spec }]`.
+ */
+function pinTo(packages, label, workspace) {
   const spec = new Map(packages.map((p) => [p.name, p.spec]));
 
   const pkgPath = join(LAB, "package.json");
@@ -232,17 +249,8 @@ function pinTo(packages, label) {
   pkg.dependencies = Object.fromEntries(Object.entries(pkg.dependencies).sort(([a], [b]) => a.localeCompare(b)));
   writeFileSync(pkgPath, `${JSON.stringify(pkg, null, 2)}\n`);
 
-  const wsPath = join(LAB, "pnpm-workspace.yaml");
-  const ws = readFileSync(wsPath, "utf8");
-  const begin = ws.indexOf(BLOCK_BEGIN);
-  const end = ws.indexOf(BLOCK_END);
-  if (begin < 0 || end < begin) fail("pnpm-workspace.yaml has lost its lab:use overrides block");
-  // The block holds entries of the file's top-level `overrides:` map, so the map's
-  // hand-written entries above it (third-party security pins) survive every switch.
-  const lastKey = ws.slice(0, begin).split("\n").filter((l) => /^[^\s#]/.test(l)).pop();
-  if (lastKey !== "overrides:") fail("pnpm-workspace.yaml's lab:use overrides block must sit inside its top-level `overrides:` map");
   const lines = [`${BLOCK_TARGET}${label}`, ...packages.map((p) => `  "${p.name}": "${p.spec}"`)];
-  writeFileSync(wsPath, `${ws.slice(0, begin + BLOCK_BEGIN.length)}\n${lines.join("\n")}\n${ws.slice(end)}`);
+  writeFileSync(join(LAB, "pnpm-workspace.yaml"), `${workspace.head}\n${lines.join("\n")}\n${workspace.tail}`);
 }
 
 /** The target label and exact-version pins recorded in pnpm-workspace.yaml's overrides block. */
@@ -418,6 +426,8 @@ function main() {
     return;
   }
 
+  // Before anything changes: a malformed workspace file fails here, with the lab as it was.
+  const workspace = readWorkspace();
   // From here until the new target verifies, the lab is not installed: target.json is
   // written only after a successful install and verification.
   rmSync(TARGET_FILE, { force: true });
@@ -432,7 +442,7 @@ function main() {
       else writeFileSync(join(LAB, file), text);
     }
   };
-  pinTo(resolved.packages, resolved.label);
+  pinTo(resolved.packages, resolved.label, workspace);
   try {
     run("pnpm", ["install", "--no-frozen-lockfile"], { cwd: LAB });
   } catch {
