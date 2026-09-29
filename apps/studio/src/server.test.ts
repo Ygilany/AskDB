@@ -3,7 +3,7 @@ import { createServer, request as httpRequest, type IncomingMessage, type Server
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { azureProvider } from "@askdb/ai-azure";
+import { azureProvider } from "@askdb/ai";
 import {
   flattenAskDbConfig,
   getAskDbRuntimeConfig,
