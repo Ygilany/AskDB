@@ -76,6 +76,8 @@ AI provider registry with built-in providers for OpenAI, Azure OpenAI / Microsof
 
 Each built-in provider loads its AI SDK package lazily. These packages are optional peer dependencies of `@askdb/ai`, so install the one for the provider your config selects. If it's missing, model creation fails with `Provider '<name>' requires the optional peer dependency @ai-sdk/<name>. Install it: npm i @ai-sdk/<name>`. `ai` itself is a required peer of `@askdb/ai`: npm and pnpm install it automatically, but depend on `ai` directly when you want to pin the version. AskDB raises its `ai` floor only when it needs a newer version or a security fix, and that release's changelog says which.
 
+Any 4.x release of each `@ai-sdk/*` package works (the peer range is `^4.0.0`), so AskDB doesn't force a provider SDK upgrade. `@askdb/client` declares the same optional peers and passes them through to `@askdb/ai`, so with strict installs (Yarn Plug'n'Play) install the SDK in the package that depends on `@askdb/client` or `@askdb/ai`, as the install lines above do. If you bundle your app, esbuild builds without the SDKs you didn't install, and a missing one fails only when its provider first builds a model. webpack 5 stops with `Module not found` for each missing `@ai-sdk/*` package: install them, or list the ones you don't use in `externals`.
+
 <Tabs syncKey="ai-provider">
   <TabItem label="OpenAI">
     <InstallTabs pkgs="@ai-sdk/openai" />
@@ -96,7 +98,7 @@ Each built-in provider loads its AI SDK package lazily. These packages are optio
 
 The CLI, Studio, and the HTTP API already include all four SDKs. Unknown `ai.provider` values require a registered adapter. The built-ins are `openai`, `azure` (aliases `azure-openai`, `foundry`), `google`, `anthropic`, and `gateway`. For anything else, embed AskDB and pass your own `AiProviderAdapter` to `createAiRegistry()` or `createAskDb({ providers })`, or use an OpenAI-compatible endpoint via the `openai` provider and a custom base URL.
 
-The `@askdb/ai-openai`, `@askdb/ai-azure`, `@askdb/ai-google`, and `@askdb/ai-anthropic` packages are **deprecated**. They re-export the built-in adapters from `@askdb/ai` and will be removed before 1.0.
+The `@askdb/ai-openai`, `@askdb/ai-azure`, `@askdb/ai-google`, and `@askdb/ai-anthropic` packages are **deprecated**. They re-export the built-in adapters from `@askdb/ai` and will be removed before 1.0 ([#347](https://github.com/Ygilany/AskDB/issues/347)).
 
 ### `@askdb/connectors`
 

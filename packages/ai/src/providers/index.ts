@@ -90,4 +90,3 @@ export { azureProvider } from "./azure.js";
 export { gatewayProvider } from "./gateway.js";
 export { googleProvider } from "./google.js";
 export { openaiProvider } from "./openai.js";
-export { optionalPeerMissingMessage } from "./optional-peer.js";

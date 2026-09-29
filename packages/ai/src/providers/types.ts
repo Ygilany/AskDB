@@ -27,8 +27,6 @@ export type BuiltinAiProvider = {
   peerPackage: string | undefined;
   /** Native env vars and defaults, as consumed by `resolveBaseConfig`. */
   env: BuiltinProviderEnvSpec;
-  /** Whether the provider offers an embeddings API. */
-  embeddings: boolean;
   /** Setup hint shown when no API key is configured (same as `adapter.configHint`). */
   configHint: string;
   /** The adapter registered by `createAiRegistry()`. */

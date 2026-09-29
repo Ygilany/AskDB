@@ -24,7 +24,7 @@ pnpm add @ai-sdk/openai
 
 Each built-in provider imports its SDK package lazily, the first time it builds a model, so registering all of them costs nothing. If the package isn't installed, model creation fails with: `Provider 'google' requires the optional peer dependency @ai-sdk/google. Install it: npm i @ai-sdk/google`. The same data is exported as `BUILTIN_AI_PROVIDERS`.
 
-> The `@askdb/ai-openai`, `@askdb/ai-azure`, `@askdb/ai-google`, and `@askdb/ai-anthropic` packages are deprecated re-export shims of these built-ins and will be removed before 1.0.
+> The `@askdb/ai-openai`, `@askdb/ai-azure`, `@askdb/ai-google`, and `@askdb/ai-anthropic` packages are deprecated re-export shims of these built-ins and will be removed before 1.0 (#347).
 
 ## Usage
 
@@ -61,11 +61,11 @@ const result = await ask({
 const ai = createAiRegistry(["openai", myMistralAdapter]);
 ```
 
-Passing adapter objects is also the bundler-friendly option: the built-ins use dynamic `import()` of optional peers, which some bundlers warn about when a peer isn't installed.
+Bundling: importing `@askdb/ai` reaches every built-in, and each loads its SDK with `import("@ai-sdk/<x>").catch(...)`. esbuild builds without the SDKs a host didn't install. webpack 5 reports `Module not found` for each missing one; install it or list it in `externals`.
 
 ## Reasoning/latency effort
 
-`resolveProviderOptions` maps a provider-portable reasoning effort (`"minimal" | "low" | "medium" | "high"`) to each adapter's native `generateText` `providerOptions` — OpenAI/Azure `reasoningEffort`, Google `thinkingConfig` (`thinkingLevel` for Gemini 3.x, `thinkingBudget` for Gemini 2.5), Anthropic extended or adaptive `thinking`. It returns `undefined` when the effort is unset or the model doesn't support reasoning tuning. The `gateway` provider doesn't map reasoning effort yet, so it always returns `undefined`.
+`resolveProviderOptions` maps a provider-portable reasoning effort (`"minimal" | "low" | "medium" | "high"`) to each adapter's native `generateText` `providerOptions` — OpenAI/Azure `reasoningEffort`, Google `thinkingConfig` (`thinkingLevel` for Gemini 3.x, `thinkingBudget` for Gemini 2.5), Anthropic extended or adaptive `thinking`. It returns `undefined` when the effort is unset or the model doesn't support reasoning tuning. The `gateway` provider uses its upstream's mapping for `openai/`, `google/`, and `anthropic/` model ids and returns `undefined` for other upstreams.
 
 ```ts
 const config = ai.resolveAiConfig(runtime.ai.aiEnv)!;
@@ -80,12 +80,12 @@ await ask({ question, schema, dialect: "postgres", model, deps: { providerOption
 ## Exports
 
 - `createAiRegistry`
-- `BUILTIN_AI_PROVIDERS`, `BUILTIN_AI_PROVIDER_NAMES`, `findBuiltinAiProvider`, `getBuiltinAiProviderSetup`, `listBuiltinAiProviderSetups`
+- `BUILTIN_AI_PROVIDERS`, `getBuiltinAiProviderSetup`, `listBuiltinAiProviderSetups`
 - the built-in adapters: `openaiProvider`, `azureProvider`, `googleProvider`, `anthropicProvider`, `gatewayProvider`
 - `resolveBaseConfig`
 - registry methods such as `resolveAiConfig`, `resolveEmbeddingConfig`, `createLanguageModelFromEnv`, `createEmbeddingModelFromEnv`, and `resolveProviderOptions`
 - `aiKeyMissingMessage`
-- `aiProviderMissingMessage`, `optionalPeerMissingMessage`
+- `aiProviderMissingMessage`
 - `resolveReasoningEffort`, `isReasoningEffort`, `REASONING_EFFORTS`
 
 ## License

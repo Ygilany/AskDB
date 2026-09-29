@@ -40,7 +40,9 @@ describe("openaiProvider", () => {
         { ...baseConfig, model },
         { reasoningEffort: "medium" },
       );
-      expect(result).toEqual(isReasoning ? { openai: { reasoningEffort: "medium" } } : undefined);
+      expect(result).toEqual(
+        isReasoning ? { openai: { reasoningEffort: "medium", forceReasoning: true } } : undefined,
+      );
     });
   });
 });

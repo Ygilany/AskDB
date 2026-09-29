@@ -223,7 +223,7 @@ ASKDB_AI_MODEL=anthropic/claude-sonnet-4-6  # optional; default: openai/gpt-4o-m
 ai: { provider: "gateway", providerConfig: { gateway: { apiKey: env("AI_GATEWAY_API_KEY"), model: "anthropic/claude-sonnet-4-6" } } }
 ```
 
-Gateway model ids are `<upstream>/<model>`. Reasoning effort (`ai.reasoning`) isn't mapped for the gateway yet, so it has no effect.
+Gateway model ids are `<upstream>/<model>`; an id without the prefix is rejected, including the RAG embedding model (set `rag.embedderConfig.openai.model` to e.g. `openai/text-embedding-3-small`). Reasoning effort (`ai.reasoning`) uses the upstream's mapping for `openai/`, `google/`, and `anthropic/` models; other upstreams get no reasoning options. Embedding `dimensions` are sent for `openai/` and `google/` models and refused for other upstreams.
 
 ### Custom provider
 

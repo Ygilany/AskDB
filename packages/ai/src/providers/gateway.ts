@@ -1,6 +1,9 @@
 import { createGateway } from "ai";
 import { withEmbeddingProviderOptions } from "../embedding.js";
 import { resolveBaseConfig, type AiConfig, type AiProviderAdapter } from "../provider.js";
+import { anthropicProvider } from "./anthropic.js";
+import { googleProvider } from "./google.js";
+import { openaiProvider } from "./openai.js";
 import type { BuiltinAiProvider, BuiltinProviderEnvSpec } from "./types.js";
 
 /**
@@ -18,6 +21,30 @@ const ENV_SPEC: BuiltinProviderEnvSpec = {
 const CONFIG_HINT =
   "For Vercel AI Gateway, set ai.provider: \"gateway\" and ai.providerConfig.gateway.apiKey in askdb.config.*.";
 
+/**
+ * Upstreams whose provider options AskDB knows how to write. The gateway
+ * forwards `providerOptions` to the upstream under the upstream's own key, so
+ * each entry reuses that direct provider's mapping on the id after the prefix.
+ */
+const UPSTREAM_ADAPTERS: Record<string, AiProviderAdapter> = {
+  openai: openaiProvider,
+  google: googleProvider,
+  anthropic: anthropicProvider,
+};
+
+/** Splits `openai/gpt-4o-mini` into `["openai", "gpt-4o-mini"]`; throws on an id with no upstream. */
+function splitModelId(model: string): [upstream: string, upstreamModel: string] {
+  const slash = model.indexOf("/");
+  if (slash <= 0 || slash === model.length - 1) {
+    throw new Error(
+      `Vercel AI Gateway model ids are "<provider>/<model>" (e.g. "openai/gpt-4o-mini"), got "${model}". ` +
+        "Set the model (or rag.embedderConfig.openai.model / ASKDB_RAG_EMBEDDER_MODEL for embeddings) " +
+        "to a prefixed id.",
+    );
+  }
+  return [model.slice(0, slash), model.slice(slash + 1)];
+}
+
 function createProvider(config: AiConfig) {
   return createGateway({
     apiKey: config.apiKey,
@@ -32,19 +59,41 @@ export const gatewayProvider: AiProviderAdapter = {
     return resolveBaseConfig("gateway", env, ENV_SPEC, options);
   },
   createLanguageModel(config) {
+    splitModelId(config.model);
     return createProvider(config)(config.model);
   },
   createEmbeddingModel(config, options = {}) {
+    const [upstream] = splitModelId(config.model);
     const model = createProvider(config).embeddingModel(config.model);
-    // The gateway forwards `providerOptions` to the upstream provider. Only
-    // OpenAI embedding models are known to accept `dimensions`/`user` under
-    // `providerOptions.openai`; for other upstreams the options are not
-    // forwarded rather than sent under a key the provider might ignore.
-    if (!config.model.startsWith("openai/")) return model;
-    return withEmbeddingProviderOptions(model, "openai", options);
+    // The gateway forwards `providerOptions` to the upstream under its own key,
+    // so use the direct provider's names: `dimensions`/`user` for OpenAI,
+    // `outputDimensionality` for Google (which has no per-end-user field).
+    if (upstream === "openai") return withEmbeddingProviderOptions(model, "openai", options);
+    if (upstream === "google") {
+      return withEmbeddingProviderOptions(model, "google", options, ({ dimensions }) => ({
+        outputDimensionality: dimensions,
+      }));
+    }
+    // `user` is forwarded only where supported; a requested size is not
+    // optional, so refuse rather than return vectors of the wrong length.
+    if (options.dimensions !== undefined) {
+      throw new Error(
+        `AskDB can't send embedding dimensions to "${upstream}" models through the Vercel AI Gateway ` +
+          '(it maps them for "openai/" and "google/" models). Unset the dimension override ' +
+          "(rag.embedderConfig.openai.dimension / ASKDB_RAG_EMBEDDER_DIMENSIONS) or use a supported upstream.",
+      );
+    }
+    return model;
   },
-  // No `resolveProviderOptions` yet: reasoning effort is not mapped for
-  // gateway models, so no reasoning options are sent.
+  resolveProviderOptions(config, settings) {
+    const [upstream, upstreamModel] = splitModelId(config.model);
+    // Other upstreams get no reasoning options, the same as a direct model
+    // that doesn't support reasoning tuning.
+    return UPSTREAM_ADAPTERS[upstream]?.resolveProviderOptions?.(
+      { ...config, provider: upstream, model: upstreamModel, providerOptions: undefined },
+      settings,
+    );
+  },
 };
 
 export const gatewayBuiltin: BuiltinAiProvider = {
@@ -53,7 +102,6 @@ export const gatewayBuiltin: BuiltinAiProvider = {
   aliases: [],
   peerPackage: undefined,
   env: ENV_SPEC,
-  embeddings: true,
   configHint: CONFIG_HINT,
   adapter: gatewayProvider,
 };

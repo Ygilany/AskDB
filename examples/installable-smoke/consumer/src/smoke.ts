@@ -19,7 +19,6 @@ import {
 import {
   createAiRegistry,
   openaiProvider,
-  optionalPeerMissingMessage,
   type AiRegistry,
 } from "@askdb/ai";
 import { openaiProvider as deprecatedShimOpenaiProvider } from "@askdb/ai-openai";
@@ -207,7 +206,8 @@ async function main(): Promise<void> {
       () => undefined,
       (e: unknown) => e,
     );
-  const expectedMissingPeer = optionalPeerMissingMessage("google", "@ai-sdk/google");
+  const expectedMissingPeer =
+    "Provider 'google' requires the optional peer dependency @ai-sdk/google. Install it: npm i @ai-sdk/google";
   if (!(missingPeerError instanceof Error) || missingPeerError.message !== expectedMissingPeer) {
     throw new Error(
       `smoke: expected "${expectedMissingPeer}" for a missing optional peer, got: ${String(missingPeerError)}`,

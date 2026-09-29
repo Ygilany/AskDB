@@ -23,7 +23,7 @@ From the user's request, determine — ask only for what cannot be inferred:
 
 ```bash
 grep -n "BUILTIN_AI_PROVIDERS" packages/ai/src/providers/index.ts   # must match
-grep -n "importOptionalPeer" packages/ai/src/providers/optional-peer.ts   # must match
+grep -n "rethrowMissingPeer" packages/ai/src/providers/optional-peer.ts   # must match
 ```
 
 **STOP if either grep is empty** — the codebase predates the built-in provider table (ADR 0006 amendment, 2026-09); report that instead of scaffolding a package.
@@ -42,7 +42,7 @@ Create `packages/ai/src/providers/<provider>.ts`, following this template:
 ```ts
 import { withEmbeddingProviderOptions } from "../embedding.js";
 import { resolveBaseConfig, type AiConfig, type AiProviderAdapter } from "../provider.js";
-import { importOptionalPeer } from "./optional-peer.js";
+import { rethrowMissingPeer } from "./optional-peer.js";
 import type { BuiltinAiProvider, BuiltinProviderEnvSpec } from "./types.js";
 
 const PEER_PACKAGE = "<sdk>";
@@ -60,9 +60,12 @@ const CONFIG_HINT =
   "For <ProviderName>, set ai.provider: \"<provider>\" and ai.providerConfig.<provider>.apiKey in askdb.config.*.";
 
 async function createProvider(config: AiConfig) {
-  // Literal specifier inside the function: lazy, bundler-visible, and no top-level await
-  // (a top-level await would break require('@askdb/ai') from CommonJS).
-  const { create<X> } = await importOptionalPeer("<provider>", PEER_PACKAGE, () => import("<sdk>"));
+  // Literal specifier inside the function: lazy, and no top-level await (a top-level await
+  // would break require('@askdb/ai') from CommonJS). Keep `.catch()` chained on the
+  // `import()` itself: that is how esbuild and other bundlers tell an optional import from a
+  // required one. Wrapping it as `() => import(...)` in a helper makes every host's bundle
+  // fail unless this SDK is installed (the installable smoke test's esbuild step checks this).
+  const { create<X> } = await import("<sdk>").catch(rethrowMissingPeer("<provider>", PEER_PACKAGE));
   return create<X>({
     apiKey: config.apiKey,
     ...(config.baseURL ? { baseURL: config.baseURL } : {}),
@@ -116,29 +119,36 @@ Rules:
 ## Step 2 — Register it
 
 1. Add `<provider>Builtin` to `BUILTIN_AI_PROVIDERS` in `packages/ai/src/providers/index.ts` (display order: append unless told otherwise) and re-export `<provider>Provider` there and from `packages/ai/src/index.ts`.
-2. In `packages/ai/package.json`, add `<sdk>` to `peerDependencies` **and** `peerDependenciesMeta` (`{ "optional": true }`) and to `devDependencies`, using the same major range style as the other `@ai-sdk/*` entries.
+2. In `packages/ai/package.json` **and** `packages/client/package.json`, add `<sdk>` to `peerDependencies` and `peerDependenciesMeta` (`{ "optional": true }`). `@askdb/client` re-declares the optional peers so strict installs (Yarn PnP) can pass them through to `@askdb/ai`. The peer floor is the oldest `<sdk>` version the contract tests pass against, not the latest: pin `devDependencies` to that version, run Step 3's tests, then put the current version back in `devDependencies`. A floor that's too high is a hard `ERESOLVE` for hosts on an older SDK.
 3. Add `<sdk>` to `dependencies` of the batteries-included surfaces: `apps/cli`, `apps/http-api`, `apps/studio`. No code changes there — they call `createAiRegistry()`, which registers every built-in.
+4. If the Vercel AI Gateway serves this provider's models under a `<provider>/` prefix and the provider has reasoning or embedding options, add it to `UPSTREAM_ADAPTERS` in `packages/ai/src/providers/gateway.ts` (and to the gateway's embedding mapping if its embedding option names differ).
 
 ## Step 3 — Tests
 
 - `packages/ai/src/providers/<provider>.test.ts`, modeled on `anthropic.test.ts` (pure functions, no SDK mocks). Required cases: `resolveConfig` resolves the native key var; default model applied; returns `undefined` when no key is configured; any `resolveProviderOptions` mapping.
 - `packages/ai/src/providers/<provider>.contract.test.ts`, modeled on `openai.contract.test.ts`: the **real** SDK with `vi.stubGlobal("fetch")`, asserting the request URL and HTTP body carry the model id, a configured `baseURL`, any provider options you emit, and embedding options (or the throw with a message containing "embeddings"). Don't mock the `@ai-sdk/*` package — a mock echoes its input and can't see what the SDK actually sends.
 - Update the expectations in `packages/ai/src/registry.test.ts` (built-in names/order, peer table, setup helpers) and `packages/ai/src/provider.test.ts` (`aiKeyMissingMessage`).
+- The installable smoke test (`examples/installable-smoke/run.sh`) loads every row of `BUILTIN_AI_PROVIDERS` in the app sandbox, so it needs no edit; it fails if the apps don't depend on `<sdk>`.
 
 **Verify**: `pnpm install && pnpm --filter @askdb/ai build && pnpm --filter @askdb/ai test` → exit 0.
 
 ## Step 4 — Config branch (required for built-ins)
 
-`packages/ai/src/providers/config-drift.test.ts` fails until `@askdb/config` knows the provider. `@askdb/config` must not depend on `@askdb/ai`, so mirror it there:
+`packages/client/src/provider-config-drift.test.ts` fails until `@askdb/config` knows the provider: it flattens every config branch and resolves it through the registry, so the id list, env var names, and default model must all agree. `@askdb/config` must not depend on `@askdb/ai`, so mirror it there:
 
 - `src/constants.ts`: append `<provider>` to `ASKDB_AI_PROVIDERS`.
-- `src/defaults.ts` (+ export from `src/index.ts`): `DEFAULT_<PROVIDER>_CHAT_MODEL`, equal to `ENV_SPEC.defaultModel`; add it to the drift test's defaults map.
+- `src/defaults.ts` (+ export from `src/index.ts`): `DEFAULT_<PROVIDER>_CHAT_MODEL`, equal to `ENV_SPEC.defaultModel`.
 - `src/types.ts`: a `<Provider>Config` type, add it to `AiProviderConfigs`, a `<Provider>AiConfig` branch, and the `AskDbAiConfig` union (export both from `src/index.ts`).
-- `src/flatten.ts`: an `apply<Provider>Ai()` writing the native env keys plus `ASKDB_AI_MODEL`, and a branch using `requireProviderBranch`.
+- `src/flatten.ts`: an `apply<Provider>Ai()` writing env keys the provider reads (`apiKeyVars[0]`, a `baseURLVars` entry) plus `ASKDB_AI_MODEL`, and a branch using `requireProviderBranch`.
 - `src/config.test.ts`: flatten tests for the new branch; update the `ASKDB_AI_PROVIDERS` list test.
 - `src/scaffold.ts`: if the provider can't start without a setting beyond the API key and model (as Azure needs `resourceName`), add it to `renderAskDbAiConfigScaffold`. `askdb init` and Studio's setup wizard both render the `ai` block through it, so this is the only place to change.
 
-Also add the provider to Studio's browser-side list in `apps/studio/src/web/views/setup/types.ts` (`AI_PROVIDERS`, `SetupAiProvider`) and to `PROVIDER_WIRING` in `apps/studio/src/web/views/playground/GetTheCodePanel.tsx`; `apps/studio/src/setup-providers.test.ts` fails until the setup list matches. `askdb init` derives its choices from the table and needs no change.
+Hand-maintained lists outside `@askdb/ai` and `@askdb/config` (everything else derives from `BUILTIN_AI_PROVIDERS` or `ASKDB_AI_PROVIDERS`):
+
+- `apps/studio/src/web/views/setup/types.ts` (`AI_PROVIDERS`, `SetupAiProvider`): Studio's browser bundle can't import `@askdb/ai`. `apps/studio/src/setup-providers.test.ts` fails until it matches.
+- `PROVIDER_WIRING` in `apps/studio/src/web/views/playground/GetTheCodePanel.tsx`: the "Get the code" snippet.
+
+These derive and need no change: `askdb init`'s choices, validation, and `--help` (`apps/cli/src/init.ts`, `apps/cli/src/cli.ts`), Studio's server-side setup (`apps/studio/src/setup.ts`) and its request type (`apps/studio/src/shared/api.ts`), and the smoke test's provider loop.
 
 **Verify**: `pnpm build && pnpm lint && pnpm test` → exit 0.
 
@@ -146,7 +156,14 @@ Also add the provider to Studio's browser-side list in `apps/studio/src/web/view
 
 - `docs/integration/installable-package.md`: add a provider recipe section (env form + `askdb.config.ts` form), formatted like the existing provider sections.
 - `packages/ai/README.md`: add the provider to the built-in provider table.
-- Docs site: `apps/docs-site/src/content/docs/reference/packages.mdx` (provider install tabs) and `reference/config.mdx` (env-var table) — match surrounding formatting.
+- Find every page that lists the built-ins and add the provider there: `git grep -n -i "anthropic" apps/docs-site/src apps/docs-site/public docs/architecture.md docs/integration`. When `gateway` was added, that meant:
+  - `guides/bring-your-own-model.mdx`: the config tab and the direct-model tab;
+  - `reference/cli.mdx`: the `--ai-provider` values;
+  - `reference/client-api.mdx`: the default list for `providers`;
+  - `reference/config.mdx`: the env-var table, the list of built-ins, and the reasoning mapping sentence;
+  - `reference/packages.mdx`: the install tabs and the other provider mentions;
+  - `apps/docs-site/public/AGENTS.md` and `docs/architecture.md`.
+  Match the surrounding formatting.
 
 **Verify**: `pnpm docs:build` → exit 0.
 

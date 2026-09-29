@@ -88,7 +88,9 @@ describe("azureProvider — real @ai-sdk/azure contract", () => {
       baseURL: "https://proxy.example/openai",
       model: "gpt-4o-mini",
     });
-    expect(request.url).toBe("https://proxy.example/openai/responses");
+    // The path under the base differs across @ai-sdk/azure 4.x (`/responses`, or
+    // `/v1/responses` before 4.0.55); what AskDB owns is that the base is used.
+    expect(request.url).toMatch(/^https:\/\/proxy\.example\/openai\/(v1\/)?responses\?/);
   });
 
   it("sends the configured apiVersion as the api-version query parameter", async () => {

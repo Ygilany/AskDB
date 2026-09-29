@@ -1,7 +1,7 @@
 import { withEmbeddingProviderOptions } from "../embedding.js";
 import { resolveBaseConfig, type AiConfig, type AiProviderAdapter } from "../provider.js";
 import { openaiReasoningEffort } from "./openai-reasoning.js";
-import { importOptionalPeer } from "./optional-peer.js";
+import { rethrowMissingPeer } from "./optional-peer.js";
 import type { BuiltinAiProvider, BuiltinProviderEnvSpec } from "./types.js";
 
 const PEER_PACKAGE = "@ai-sdk/openai";
@@ -20,7 +20,9 @@ const CONFIG_HINT =
   "For OpenAI, set ai.provider: \"openai\" and ai.providerConfig.openai.apiKey in askdb.config.*.";
 
 async function createProvider(config: AiConfig) {
-  const { createOpenAI } = await importOptionalPeer("openai", PEER_PACKAGE, () => import("@ai-sdk/openai"));
+  const { createOpenAI } = await import("@ai-sdk/openai").catch(
+    rethrowMissingPeer("openai", PEER_PACKAGE),
+  );
   return createOpenAI({
     apiKey: config.apiKey,
     ...(config.baseURL ? { baseURL: config.baseURL } : {}),
@@ -45,7 +47,11 @@ export const openaiProvider: AiProviderAdapter = {
   resolveProviderOptions(config, { reasoningEffort }) {
     if (!reasoningEffort) return undefined;
     const effort = openaiReasoningEffort(config.model, reasoningEffort);
-    return effort ? { openai: { reasoningEffort: effort } } : undefined;
+    // `forceReasoning`: the SDK decides whether to send `reasoning` from its own model
+    // table, and releases older than the one a host installed may not know a newer family
+    // (gpt-6 before @ai-sdk/openai 4.0.60). AskDB has already established that the model
+    // reasons, so say so.
+    return effort ? { openai: { reasoningEffort: effort, forceReasoning: true } } : undefined;
   },
 };
 
@@ -55,7 +61,6 @@ export const openaiBuiltin: BuiltinAiProvider = {
   aliases: [],
   peerPackage: PEER_PACKAGE,
   env: ENV_SPEC,
-  embeddings: true,
   configHint: CONFIG_HINT,
   adapter: openaiProvider,
 };

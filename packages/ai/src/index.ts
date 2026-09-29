@@ -15,11 +15,8 @@ export {
 export { createAiRegistry, aiKeyMissingMessage, aiProviderMissingMessage } from "./registry.js";
 export {
   BUILTIN_AI_PROVIDERS,
-  BUILTIN_AI_PROVIDER_NAMES,
-  findBuiltinAiProvider,
   getBuiltinAiProviderSetup,
   listBuiltinAiProviderSetups,
-  optionalPeerMissingMessage,
   openaiProvider,
   azureProvider,
   googleProvider,
