@@ -1,7 +1,7 @@
 import { withEmbeddingProviderOptions } from "../embedding.js";
 import { resolveBaseConfig, type AiConfig, type AiProviderAdapter } from "../provider.js";
 import { openaiReasoningEffort } from "./openai-reasoning.js";
-import { importOptionalPeer } from "./optional-peer.js";
+import { rethrowMissingPeer } from "./optional-peer.js";
 import type { BuiltinAiProvider, BuiltinProviderEnvSpec } from "./types.js";
 
 const PEER_PACKAGE = "@ai-sdk/azure";
@@ -105,7 +105,9 @@ export const azureProvider: AiProviderAdapter = {
 };
 
 async function createProvider(config: AiConfig) {
-  const { createAzure } = await importOptionalPeer("azure", PEER_PACKAGE, () => import("@ai-sdk/azure"));
+  const { createAzure } = await import("@ai-sdk/azure").catch(
+    rethrowMissingPeer("azure", PEER_PACKAGE),
+  );
   const { resourceName, apiVersion } = azureConnectionOptions(config);
   return createAzure({
     apiKey: config.apiKey,
@@ -139,7 +141,6 @@ export const azureBuiltin: BuiltinAiProvider = {
   aliasLabels: { foundry: "Azure AI Foundry" },
   peerPackage: PEER_PACKAGE,
   env: ENV_SPEC,
-  embeddings: true,
   configHint: CONFIG_HINT,
   adapter: azureProvider,
 };

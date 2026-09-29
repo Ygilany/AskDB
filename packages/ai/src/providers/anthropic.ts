@@ -1,6 +1,6 @@
 import { resolveBaseConfig, type AiProviderAdapter } from "../provider.js";
 import type { ReasoningEffort } from "../reasoning.js";
-import { importOptionalPeer } from "./optional-peer.js";
+import { rethrowMissingPeer } from "./optional-peer.js";
 import type { BuiltinAiProvider, BuiltinProviderEnvSpec } from "./types.js";
 
 const PEER_PACKAGE = "@ai-sdk/anthropic";
@@ -67,8 +67,8 @@ export const anthropicProvider: AiProviderAdapter = {
     return resolveBaseConfig("anthropic", env, ENV_SPEC, options);
   },
   async createLanguageModel(config) {
-    const { createAnthropic } = await importOptionalPeer("anthropic", PEER_PACKAGE, () =>
-      import("@ai-sdk/anthropic"),
+    const { createAnthropic } = await import("@ai-sdk/anthropic").catch(
+      rethrowMissingPeer("anthropic", PEER_PACKAGE),
     );
     const anthropic = createAnthropic({
       apiKey: config.apiKey,
@@ -110,7 +110,6 @@ export const anthropicBuiltin: BuiltinAiProvider = {
   aliases: [],
   peerPackage: PEER_PACKAGE,
   env: ENV_SPEC,
-  embeddings: false,
   configHint: CONFIG_HINT,
   adapter: anthropicProvider,
 };

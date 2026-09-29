@@ -1,7 +1,7 @@
 import { withEmbeddingProviderOptions } from "../embedding.js";
 import { resolveBaseConfig, type AiConfig, type AiProviderAdapter } from "../provider.js";
 import type { ReasoningEffort } from "../reasoning.js";
-import { importOptionalPeer } from "./optional-peer.js";
+import { rethrowMissingPeer } from "./optional-peer.js";
 import type { BuiltinAiProvider, BuiltinProviderEnvSpec } from "./types.js";
 
 const PEER_PACKAGE = "@ai-sdk/google";
@@ -41,7 +41,9 @@ const CONFIG_HINT =
   "For Google Gemini, set ai.provider: \"google\" and ai.providerConfig.google.apiKey in askdb.config.*.";
 
 async function createProvider(config: AiConfig) {
-  const { createGoogle } = await importOptionalPeer("google", PEER_PACKAGE, () => import("@ai-sdk/google"));
+  const { createGoogle } = await import("@ai-sdk/google").catch(
+    rethrowMissingPeer("google", PEER_PACKAGE),
+  );
   return createGoogle({
     apiKey: config.apiKey,
     ...(config.baseURL ? { baseURL: config.baseURL } : {}),
@@ -92,7 +94,6 @@ export const googleBuiltin: BuiltinAiProvider = {
   aliases: [],
   peerPackage: PEER_PACKAGE,
   env: ENV_SPEC,
-  embeddings: true,
   configHint: CONFIG_HINT,
   adapter: googleProvider,
 };

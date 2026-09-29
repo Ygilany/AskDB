@@ -4,39 +4,38 @@
  * dependencies of `@askdb/ai`, so installing `@askdb/ai` never pulls in every
  * provider SDK — only the ones the host app installs.
  *
- * The loader is always a literal `() => import("<pkg>")` at the call site so
- * bundlers can still see (and, if the package is installed, resolve) the
- * specifier. Keep these calls inside functions: a top-level `await import()`
- * would make `@askdb/ai` impossible to `require()` from CommonJS.
+ * Each provider writes the import as a literal with the handler chained on it:
+ *
+ *     await import("@ai-sdk/google").catch(rethrowMissingPeer("google", PEER_PACKAGE))
+ *
+ * The `.catch()` must sit on the `import()` expression itself (or the `import()`
+ * must sit lexically inside a `try`). That is how bundlers such as esbuild tell
+ * an optional import from a required one: they bundle the SDK when it's
+ * installed and leave the specifier for runtime when it isn't, instead of
+ * failing the build. Passing `() => import(...)` into a helper hides the
+ * handler from the bundler. Keep these calls inside functions: a top-level
+ * `await import()` would make `@askdb/ai` impossible to `require()` from
+ * CommonJS.
  */
-
-/** Actionable message for a built-in provider whose optional peer SDK is not installed. */
-export function optionalPeerMissingMessage(provider: string, peerPackage: string): string {
-  return (
-    `Provider '${provider}' requires the optional peer dependency ${peerPackage}. ` +
-    `Install it: npm i ${peerPackage}`
-  );
-}
 
 /**
- * Runs `load` and, when it fails because `peerPackage` itself cannot be
- * resolved, rethrows with {@link optionalPeerMissingMessage}. Any other
- * failure (including a missing transitive dependency *of* the peer) is
- * rethrown unchanged so the real cause stays visible.
+ * Returns a `.catch()` handler for a built-in provider's `import()` of its
+ * optional peer SDK. When the import failed because `peerPackage` itself can't
+ * be resolved, it throws an actionable install message. Any other failure
+ * (including a missing transitive dependency *of* the peer) is rethrown
+ * unchanged so the real cause stays visible.
  */
-export async function importOptionalPeer<T>(
-  provider: string,
-  peerPackage: string,
-  load: () => Promise<T>,
-): Promise<T> {
-  try {
-    return await load();
-  } catch (error) {
+export function rethrowMissingPeer(provider: string, peerPackage: string): (error: unknown) => never {
+  return (error) => {
     if (isMissingModule(error, peerPackage)) {
-      throw new Error(optionalPeerMissingMessage(provider, peerPackage), { cause: error });
+      throw new Error(
+        `Provider '${provider}' requires the optional peer dependency ${peerPackage}. ` +
+          `Install it: npm i ${peerPackage}`,
+        { cause: error },
+      );
     }
     throw error;
-  }
+  };
 }
 
 function isMissingModule(error: unknown, peerPackage: string): boolean {

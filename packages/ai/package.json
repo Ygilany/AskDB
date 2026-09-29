@@ -53,10 +53,10 @@
     "test": "vitest run --config ../../vitest.config.ts"
   },
   "peerDependencies": {
-    "@ai-sdk/anthropic": "^4.0.62",
-    "@ai-sdk/azure": "^4.0.78",
-    "@ai-sdk/google": "^4.0.79",
-    "@ai-sdk/openai": "^4.0.74",
+    "@ai-sdk/anthropic": "^4.0.0",
+    "@ai-sdk/azure": "^4.0.0",
+    "@ai-sdk/google": "^4.0.0",
+    "@ai-sdk/openai": "^4.0.0",
     "ai": "^7.0.51"
   },
   "peerDependenciesMeta": {
@@ -78,7 +78,6 @@
     "@ai-sdk/azure": "^4.0.78",
     "@ai-sdk/google": "^4.0.79",
     "@ai-sdk/openai": "^4.0.74",
-    "@askdb/config": "workspace:*",
     "ai": "^7.0.51",
     "typescript": "^6.0.3",
     "vitest": "^5.0.1"

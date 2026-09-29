@@ -61,7 +61,8 @@ export type InitPrompter = {
  * scaffold. Derived from `@askdb/ai`'s `BUILTIN_AI_PROVIDERS` so it cannot drift.
  */
 const AI_PROVIDER_SETUPS = listBuiltinAiProviderSetups(ASKDB_AI_PROVIDERS);
-const VALID_AI_PROVIDERS = AI_PROVIDER_SETUPS.map((setup) => setup.id as AskDbAiProviderId);
+/** Every id `--ai-provider` accepts; `cli.ts` builds its help text from this list too. */
+export const VALID_AI_PROVIDERS = AI_PROVIDER_SETUPS.map((setup) => setup.id as AskDbAiProviderId);
 
 function aiDefaults(provider: AskDbAiProviderId): { keyEnv: string; modelEnv: string } {
   const setup = getBuiltinAiProviderSetup(provider);

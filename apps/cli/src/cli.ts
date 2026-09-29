@@ -22,7 +22,7 @@ import {
   loadSchema,
 } from "@askdb/core";
 import { Command } from "commander";
-import { runInitCli } from "./init.js";
+import { runInitCli, VALID_AI_PROVIDERS } from "./init.js";
 import { runIntrospectCli } from "./introspect.js";
 import { MissingAskDbConfigError, requireAskDbConfig } from "./project-config.js";
 import { readCliVersion } from "./version.js";
@@ -165,7 +165,7 @@ program
   .option("--sqlite-file <path>", "SQLite file path or env var name")
   .option("--prisma-schema <path>", "Path to schema.prisma")
   .option("--schema-out <dir>", "Schema output directory (default: ./askdb)")
-  .option("--ai-provider <name>", "openai|anthropic|google|azure|foundry")
+  .option("--ai-provider <name>", VALID_AI_PROVIDERS.join("|"))
   .option("--ai-key-env <name>", "Env var name for AI API key")
   .option("--ai-model-env <name>", "Env var name for model override")
   .option("--rag-store <name>", "file|memory|pgvector (default: file)")
