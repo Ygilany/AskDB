@@ -286,7 +286,7 @@ The overlay declares the flat root `org.agency`. The hierarchy cases pass `subtr
 | **Hierarchy.** With `subtree` access from agency 1, executed rows are exactly those of agencies 1, 4, 5 and 6. From 5, they are 5 and 6. From 6, only 6. From 7, only 7. No row outside the tree ever appears, on every dialect | C: the maintainer's hierarchy semantics (decision 9) and `TenantAccessSubtree` ("include all descendants"). R: descendants dropped (the behavior before #232 was fixed), ancestors leaked, a sibling tree leaked, or a resolver result not substituted. Without a resolver, `subtree` fails closed with `TenantScopeError` `SUBTREE_NOT_RESOLVABLE`. |
 | No `tenantScope` with a policy present gives `TenantScopeError` `MISSING_SCOPE` | C: fail closed before the prompt. |
 | Warn mode returns SQL and warnings, as documented | C: documented warn semantics. Recorded against the "can't be forgotten" claim (see Survey notes). |
-| (Optional, Postgres) The unfiltered SQL, run as `lab_tenant` with RLS, returns only agency 2 | Documents the defense-in-depth recommendation. Informational only. |
+| (Optional, Postgres) The unfiltered SQL, run as `lab_tenant` with RLS, returns only agency 2 | Documents the defense-in-depth recommendation. Informational only. Not built with the rest of the suite (#249), because it needs DDL the shared fixture doesn't have: **#317**. |
 
 ### 5. Sensitive columns
 
@@ -370,7 +370,7 @@ These came up while reading the docs. They are not findings yet: each one is eit
 1. `docs/specs/studio.md` lists live SQL execution as out of scope. ADR 0009, `studio.mdx` and `apps/studio/src/server.ts` (`/api/execute`) all say Studio executes SQL. The docs site does not document execute as read-only; only ADR 0009 does, in one line.
 2. `docs/specs/http-api.md` describes `{ sql, warnings, correlationId }` with errors `{ error: { code, message, details } }`. The docs site shows `{ ok, correlationId, sql, explain, usage }` and a code list. The docs-site error example uses `rule: "read_only"`, but core rule codes are `SQL_*`. *Confirmed by the HTTP suite (#252):* the spec-versus-docs-site shapes are **#300**; the docs-site-versus-server mismatches (`rule`, `explain: null`, the correlation ID format) are **#285**.
 3. `POST /ask` has no `tenantScope` field, while `tenant-policy.md` lists the HTTP API as a scope-input surface. By the core rules, a tenant-policy schema served over HTTP should fail closed with `MISSING_SCOPE`. *Confirmed by the HTTP suite (#252):* it does, with `500 internal_error`, no SQL and no model call; accepting a scope over HTTP is **#277**.
-4. `guides/multi-tenancy.mdx` says the tenant predicate "can't be forgotten … and can't be removed by a malformed question", but `enforcement: warn` returns unfiltered SQL with warnings.
+4. `guides/multi-tenancy.mdx` says the tenant predicate "can't be forgotten … and can't be removed by a malformed question", but `enforcement: warn` returns unfiltered SQL with warnings. *Confirmed by the tenant suite (#249):* on every engine, and the warnings aren't in the `tenantWarnings` field the docs name but in `result.tenantGuardrail`: **#316**.
 5. `concepts/safety-boundaries.mdx` says invalid SQL is "rejected, not returned with a warning", while the default sensitive-field mode is `warn`.
 6. The schema artifact has no unique constraints and no view marker, so the introspection golden can't compare them. This is a format limit, not a bug, but the lab's matrix will show it.
 7. The docs site names `POSTGRES_DIALECT` and `MYSQL_DIALECT` but never the MariaDB, SQLite or SQL Server constants, and it says "all four" dialects while listing six ids. The lab uses the string ids.
@@ -388,6 +388,11 @@ Found while building Phase 1 (confirmed against the code):
 Found while building the HTTP suite (#252):
 
 15. **Every model-call failure over HTTP answers `400 bad_request`, not the documented `502 sql_generation_error`** (**#299**). The handler checks whether the error message contains "mode" before it checks the error's type, and "Model call failed" does.
+
+Found while building the tenant suite (#249):
+
+16. **Strict mode returns SQL whose tenant filter doesn't filter** (**#315**). The guardrail accepts a scoped table once the tenant column's name appears anywhere, so the column selected but never filtered, a filter on another tenant, and `OR 1 = 1` all pass, and it never checks the root table. Run as the host, each leaks other agencies' rows on every engine. The heuristic's limits are planned in #230 and #235; the documents still say strict rejects any filter it can't prove.
+17. **`reference/core-api.mdx` describes `sql-params` markers two ways** (**#320**): the dialect's driver markers in the `ask()` options table, Postgres `$N` in "Tenant types".
 
 ## Decisions (2026-09-26)
 

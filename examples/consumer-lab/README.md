@@ -96,7 +96,7 @@ The guide's wrapper is invalid on SQL Server and drops the statement's `ORDER BY
 - A reply to a question that holds a value (`programs-started-since` asks about `2022-01-01`) follows the NL→SQL prompt's parameterized output format, as a model would: the bound statement in a ```` ```sql ```` fence, the same statement with `:name` placeholders in a ```` ```sql-unbound ```` fence, and a ```` ```json ```` fence with the parameter manifest.
 - `src/oracle.ts` holds each question's expected answer, computed in TypeScript from the fixture's seed data (`fixtures/multi-engine/dataset/data/*.json`), with its columns' logical types and whether its row order is part of the answer. It never runs SQL, the cassette's or any other.
 
-To add a question, add it to the catalog, add a reply for each of the five dialects, and add its oracle. `lab:test` runs every catalog question on every dialect.
+To add a question, add it to the catalog, add a reply for each of the five dialects, and add its oracle. `lab:test` runs every catalog question on every dialect. The tenant suite keeps its own catalog, `scenarios/tenant-questions.json` (see [Tenant scoping](#tenant-scoping)).
 
 ## Question → SQL → execute
 
@@ -173,6 +173,30 @@ A scratch copy is a writable, throwaway copy of the fixture that the lab creates
 | SQLite | a file, `.lab/scratch/lab_scratch_<token>.sqlite` |
 
 Each copy is built from the fixture's DDL (`fixtures/multi-engine/dataset/ddl/<engine>.sql`) and its rows (`loadRows`). The lab rewrites the database names that the MySQL and MariaDB DDL hardcodes. It also cuts the read-only role section from each server engine's DDL, because that section changes server-level principals the shared fixture owns. A scratch copy is therefore owner-only. The fixture's seeder is not imported: its source is part of the fixture's dataset hash. `<token>` is random for each copy, so lab runs that share a fixture never share a scratch copy. The safety suite resets its copy before each proof and drops it when the suite ends. A run that is killed can leave a copy behind; its names start with `lab_scratch_`.
+
+## Tenant scoping
+
+`test/tenant.test.ts` asks tenant-scoped questions through `ask()` with a tenant policy, executes the SQL as the host does, and compares the rows with the oracle kept to the scope's agencies. The design is "Tenant scoping, by behavior" in [`docs/specs/consumer-lab.md`](../../docs/specs/consumer-lab.md).
+
+- **The policy.** `scenarios/overlay/tenant-policy.md` is written in the documented format ([`docs/contracts/tenant-policy.md`](../../docs/contracts/tenant-policy.md)): the flat root `org.agency` (`agency_id`), the six tenant tables and the `billing.agency_revenue` view as scoped tables (`order_line` through a join to `order`), and `ref.status` as global. `src/tenant.ts` copies each dialect's introspected artifact into a fresh directory under `.lab/artifacts/tenant/` and writes the policy there, with each stable ID mapped to that artifact's namespace (SQLite's tables are all under `public`) and `enforcement` set per scenario. The introspected artifacts stay policy-free for the other suites.
+- **The catalog.** The suite has its own questions, `scenarios/tenant-questions.json`, all with ids starting `tenant-`, and their replies in `cassettes/<dialect>/tenant-*.json`. The results suite never reads them. The scoped replies filter on the `:tenant_agency_ids` placeholder the NL→SQL prompt asks for, each in a different shape: `agency_id = :p`, `c.agency_id IN (:p)` on a join to the root table, `order_line` through its order, a decimal `SUM` per agency, and a business parameter next to the tenant one. The other replies are the "model" as the attacker: no filter, the tenant column selected but not filtered, another tenant's ID, `OR 1 = 1`, and the root table read unfiltered.
+- **The resolver.** The lab is the host, so it supplies `resolveTenantDescendants` (`agencyDescendants` in `src/tenant.ts`): a recursive query over `org.agency.parent_agency_id`, as in the multi-tenancy guide, run on each engine as the read-only role (`WITH` on SQL Server, `WITH RECURSIVE` elsewhere).
+- **The oracle.** `src/tenant-oracle.ts` computes each question's answer from the seed data, kept to a set of agencies. Which agencies a scope sees is decision 9's table, written down (1 sees 1, 4, 5 and 6; 5 sees 5 and 6; 6 sees 6; 7 sees 7), not computed, so a wrong resolver can't also move the expected answer.
+
+| Scenario | What it checks |
+|---|---|
+| `tenant-ids` | Every scoped question, in `sql-only` and `sql-params` mode, with `ids: ["2"]`: every executable pair (`sql` with `tenantParams`, and `unboundSql` with `params` when present) returns agency 2's rows, and not those of its child 7. |
+| `tenant-ids-hostile` | In `sql-only` mode, the tenant ID `2' OR '1'='1` (and on MySQL and MariaDB `2\' OR 1=1 -- `) is escaped: run as the host, the SQL returns no row outside agency 2, or the engine refuses to compare the integer column with the string. |
+| `tenant-subtree` | The same questions with `subtree` access from agencies 1, 5, 6 and 7 and the lab's resolver: exactly the visible agencies' rows, and the resolver is called once with the root and the seed. |
+| `tenant-subtree-seeds` | A resolver that returns strict descendants only (agency 1 still sees 1, 4, 5 and 6, because `ask()` unions the seeds in), and two seeds at once (5 and 2 see 2, 5, 6 and 7). |
+| `tenant-strict-unfiltered` | A reply with no tenant filter returns every agency's rows when run raw, and strict mode rejects it with `TenantGuardrailError`. |
+| `tenant-strict-column-only`, `-wrong-tenant`, `-or-true`, `-root-table` | Each reply, run raw, returns rows outside agency 2 (a passing test). Strict mode should reject it, but returns the SQL, which leaks when run: `known (#315)`. |
+| `tenant-warn` | With `enforcement: warn`, the unfiltered reply's SQL is returned, and `tenantGuardrail` reports `MISSING_TENANT_PREDICATE`. |
+| `tenant-warn-claims` | The docs name warn mode's warnings `tenantWarnings`; `ask()`'s result has no such field: `known (#316)`. If #316 renames the docs to `tenantGuardrail`, this case is removed. |
+| `tenant-missing-scope` | No `tenantScope` with a policy: `TenantScopeError` `MISSING_SCOPE`, and no model call. Runs once, as `[postgres]`. |
+| `tenant-subtree-no-resolver` | `subtree` access with no resolver: `TenantScopeError` `SUBTREE_NOT_RESOLVABLE`, and no model call. Runs once, as `[postgres]`. |
+
+The `known (#315)` cases fail on the leak itself: when `ask()` returns SQL it should have rejected, the test runs that SQL and compares the rows with the scope's oracle before anything else. Their cells also hold a passing test that runs each reply raw, so a missing or broken cassette shows as `FAIL`, not `known`. The `known (#316)` case fails because a result field is missing, not on a leak. The optional Postgres row-level-security case is #317.
 
 ## The matrix
 
@@ -260,7 +284,9 @@ Capabilities are detected from the installed target's public surface: an export,
 | Capability | Detected by | Used by |
 |---|---|---|
 | `cli-introspect-engine` | `askdb introspect --help` documents `--engine` (`reference/cli.mdx`), when run with the lab's config | every scenario that builds a schema artifact (`test/lab-ask.test.ts`, `test/surfaces/cli.test.ts`) |
-| `mysql-databases` | `askdb introspect --schemas org,people,billing,ref` on the fixture's MySQL returns a table from a database other than the connection's (`reference/cli.mdx`, `guides/switch-engines.mdx`) | MySQL and MariaDB `introspect-golden` / `introspect-loads` (`test/introspection.test.ts`) |
+| `mysql-databases` | `askdb introspect --schemas org,people,billing,ref` on the fixture's MySQL returns a table from a database other than the connection's (`reference/cli.mdx`, `guides/switch-engines.mdx`) | MySQL and MariaDB `introspect-golden` / `introspect-loads` (`test/introspection.test.ts`), and every MySQL and MariaDB tenant scenario, whose policy scopes tables in all four databases (`test/tenant.test.ts`) |
 | `http-api-optional-drivers` | the installed `@askdb/http-api`'s published manifest lists no database driver as a dependency, since the docs call drivers optional peers (`guides/switch-engines.mdx`, `reference/packages.mdx`; #260) | `http-no-pg` (`test/surfaces/http-api-no-pg.test.ts`) |
+| `subtree-resolver` | `ask()` with `subtree` access and a recording `resolveTenantDescendants` calls it with the scope's root and seed (`guides/multi-tenancy.mdx`, "Hierarchical scope (`subtree`)"). Releases before #232 was fixed (#270) never call it. The probe doesn't check what `ask()` does with the answer, so a target that drops it fails `tenant-subtree` instead of reporting `n/a` | `tenant-subtree`, `tenant-subtree-no-resolver` (`test/tenant.test.ts`) |
+| `tenant-driver-markers` | `ask()` in `tenantSqlMode: "sql-params"` on SQLite returns `?` markers for the tenant IDs (`reference/core-api.mdx`, `tenantSqlMode`). Releases before the fix for #231 used Postgres `$N` markers on every dialect | the `sql-params` cases of `tenant-ids`, `tenant-subtree` and `tenant-subtree-seeds` (`test/tenant.test.ts`), except on Postgres, whose markers were always `$N`: there only the question with a business parameter needs it, because before #231 was fixed its tenant markers in `sql` were numbered after the business values |
 
-To add one, add a detector to `DETECTORS` in `src/capabilities.ts`, citing the docs page that documents the capability.
+To add one, add a detector to `DETECTORS` in `src/capabilities.ts`, citing the docs page that documents the capability. A detector that has to run `ask()` is async: it goes in `ASYNC_DETECTORS`, and a scenario awaits `needsCapability` for it.

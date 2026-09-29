@@ -11,6 +11,7 @@ import { spawnSync } from "node:child_process";
 import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import type { AskGenerateDeps } from "@askdb/core";
 import type { TestContext } from "vitest";
 import { requireInstallTarget } from "./artifacts.js";
 import { ASKDB_BIN, introspectFixture } from "./introspect.js";
@@ -69,6 +70,78 @@ function httpApiLeavesDriversOptional(): boolean {
   return DRIVERS.every((driver) => !(driver in dependencies));
 }
 
+/**
+ * `ask()` on the dialect's tenant artifact (the lab's policy overlay), with `sql` as the
+ * model's reply through the documented `deps.generateText` seam, so no model is involved.
+ * AskDB and the lab's tenant module are loaded here, so the suites that never ask a
+ * tenant-scoped question don't load them (or the drivers). A throw is a broken install,
+ * and fails the scenario.
+ */
+async function askTenantProbe(dialect: "postgres" | "sqlite", sql: string, extras: Record<string, unknown>) {
+  const { ask, loadSchema } = await import("@askdb/core");
+  const { removeTenantArtifact, tenantArtifact } = await import("./tenant.js");
+  const generateText = (async () => ({ text: `\`\`\`sql\n${sql}\n\`\`\`` })) as unknown as NonNullable<AskGenerateDeps["generateText"]>;
+  const dir = tenantArtifact(dialect);
+  let schema: ReturnType<typeof loadSchema>;
+  try {
+    schema = loadSchema(dir);
+  } finally {
+    removeTenantArtifact(dir);
+  }
+  return ask({
+    ...extras,
+    question: "A probe for a tenant capability.",
+    schema,
+    // `model` is required; with `deps.generateText` supplied it is never called.
+    model: {} as Parameters<typeof ask>[0]["model"],
+    dialect,
+    deps: { generateText },
+  } as Parameters<typeof ask>[0]);
+}
+
+/**
+ * Whether `ask()` hands a `subtree` scope to the host's `resolveTenantDescendants`
+ * (`reference/core-api.mdx`; `guides/multi-tenancy.mdx`, "Hierarchical scope (`subtree`)"):
+ * ask about agency 1's subtree on Postgres with a resolver that only records its call, and
+ * see whether it was called with the scope's root and seed. Releases before #232 was fixed
+ * accept the option and never call it.
+ *
+ * The probe asks only whether the resolver is called, not what `ask()` does with its
+ * answer: the `tenant-subtree` scenarios test that, so a target that calls the resolver and
+ * drops its result fails there instead of reporting `n/a`.
+ */
+async function askCallsSubtreeResolver(): Promise<boolean> {
+  const { agencyRoot, subtreeScope } = await import("./tenant.js");
+  const calls: unknown[][] = [];
+  await askTenantProbe("postgres", "SELECT program_code FROM org.program WHERE agency_id = :tenant_agency_ids", {
+    tenantScope: subtreeScope("postgres", [1]),
+    resolveTenantDescendants: (...args: unknown[]) => {
+      calls.push(args);
+      return ["1"];
+    },
+  });
+  return calls.some(([root, seeds]) => root === agencyRoot("postgres") && JSON.stringify(seeds) === JSON.stringify(["1"]));
+}
+
+/**
+ * Whether `tenantSqlMode: "sql-params"` binds tenant IDs through the dialect's driver
+ * markers (`reference/core-api.mdx`, `tenantSqlMode`: "`?` MySQL/MariaDB/SQLite"): ask on
+ * SQLite and check the returned `sql` uses `?`, not Postgres `$N`, and that the scope's ID
+ * comes back in `tenantParams`. Releases before the fix for #231 bound them with Postgres
+ * `$N` markers on every dialect, which a `?` driver can't bind. Only the marker and the
+ * bound value are checked, not how the predicate around them is written.
+ */
+async function askBindsTenantDriverMarkers(): Promise<boolean> {
+  const { idsScope } = await import("./tenant.js");
+  const result = await askTenantProbe("sqlite", "SELECT program_code FROM program WHERE agency_id = :tenant_agency_ids", {
+    tenantScope: idsScope("sqlite", [2]),
+    tenantSqlMode: "sql-params",
+  });
+  const params = (result as { tenantParams?: readonly unknown[] }).tenantParams ?? [];
+  return result.sql.includes("?") && !/\$\d/.test(result.sql) && params.map(String).includes("2");
+}
+
+
 const DETECTORS = {
   /** `askdb introspect --engine <id> --url …` (reference/cli.mdx), how the lab builds every schema artifact. */
   "cli-introspect-engine": () => /--engine\b/.test(cliHelp("introspect")),
@@ -86,13 +159,38 @@ const DETECTORS = {
   "http-api-optional-drivers": httpApiLeavesDriversOptional,
 } satisfies Record<string, () => boolean>;
 
-export type Capability = keyof typeof DETECTORS;
+/** Capabilities whose probe runs `ask()`, which is async. A scenario awaits `needsCapability` for these. */
+const ASYNC_DETECTORS = {
+  /**
+   * Expanding a `subtree` tenant scope through the host's `resolveTenantDescendants`
+   * (`guides/multi-tenancy.mdx`, "Hierarchical scope (`subtree`)"). Before #232 was fixed
+   * (#270), `ask()` ignored the callback and scoped to the seed IDs only.
+   */
+  "subtree-resolver": askCallsSubtreeResolver,
+  /**
+   * Tenant IDs in `sql-params` mode bound through the dialect's driver markers (`$N`, `?`,
+   * `@pN`), with `sql` + `tenantParams` and `unboundSql` + `params` each an executable pair
+   * (`reference/core-api.mdx`, "Executing the result"). Before the fix for #231, every
+   * dialect got Postgres `$N` markers.
+   */
+  "tenant-driver-markers": askBindsTenantDriverMarkers,
+} satisfies Record<string, () => Promise<boolean>>;
 
-const detected = new Map<Capability, boolean>();
+export type SyncCapability = keyof typeof DETECTORS;
+export type AsyncCapability = keyof typeof ASYNC_DETECTORS;
+export type Capability = SyncCapability | AsyncCapability;
 
-export function hasCapability(capability: Capability): boolean {
+const detected = new Map<SyncCapability, boolean>();
+const detecting = new Map<AsyncCapability, Promise<boolean>>();
+
+export function hasCapability(capability: SyncCapability): boolean {
   if (!detected.has(capability)) detected.set(capability, DETECTORS[capability]());
   return detected.get(capability)!;
+}
+
+function hasAsyncCapability(capability: AsyncCapability): Promise<boolean> {
+  if (!detecting.has(capability)) detecting.set(capability, ASYNC_DETECTORS[capability]());
+  return detecting.get(capability)!;
 }
 
 /**
@@ -101,8 +199,17 @@ export function hasCapability(capability: Capability): boolean {
  * to lack one: the lab is written against its docs, so a missing capability there is a
  * regression, not an older target.
  */
-export function needsCapability(ctx: TestContext, capability: Capability): void {
-  if (hasCapability(capability)) return;
+export function needsCapability(ctx: TestContext, capability: SyncCapability): void;
+export function needsCapability(ctx: TestContext, capability: AsyncCapability): Promise<void>;
+export function needsCapability(ctx: TestContext, capability: Capability): void | Promise<void> {
+  if (capability in ASYNC_DETECTORS) {
+    return hasAsyncCapability(capability as AsyncCapability).then((has) => gate(ctx, capability, has));
+  }
+  gate(ctx, capability, hasCapability(capability as SyncCapability));
+}
+
+function gate(ctx: TestContext, capability: Capability, has: boolean): void {
+  if (has) return;
   if (requireInstallTarget().thisCheckout) {
     throw new Error(`this checkout lacks the documented capability "${capability}" that the lab's scenarios need`);
   }
