@@ -87,14 +87,15 @@ This works because AskDB returns validated SQL as a value — your application c
 
 ## Sensitive columns
 
-Mark sensitive columns in the schema artifact:
+Mark sensitive columns in the schema artifact, either in Studio's Sensitivity tab or directly in the table's markdown front-matter:
 
 ```yaml
 columns:
-  - id: table:users#email
-    name: email
+  - id: table:public.users#email
     sensitive: true
 ```
+
+Front-matter sensitivity is escalate-only. It can mark a column sensitive (or a whole table, with a table-level `sensitive: true`) on top of `schema.json`, but `sensitive: false` never un-marks something `schema.json` marks sensitive.
 
 Then choose the prompt-construction behavior per deployment:
 

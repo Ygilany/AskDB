@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { flattenAskDbConfig, resetAskDbRuntimeForTests, setAskDbRuntimeForTests } from "@askdb/config";
 import type { AskDbConfig } from "@askdb/config";
+import { loadSchema, parseTableMarkdown } from "@askdb/core";
 import { createMemoryStore } from "@askdb/rag";
 import { afterEach, describe, expect, it } from "vitest";
 import {
@@ -141,6 +142,33 @@ describe("AskDB Studio server", () => {
     });
     expect(retrieved.results.length).toBeGreaterThan(0);
     expect(retrieved.results[0].text).toEqual(expect.any(String));
+  });
+
+  it("saving a table keeps another table's sensitive column entry in its file and reports it on the owning table", async () => {
+    installStudioRuntime({ ASKDB_RAG_EMBEDDER: "mock" });
+    const schemaDir = copyFixture();
+    const createdAtId = "table:public.users#created_at";
+    const ordersMd = join(schemaDir, "tables", "orders.md");
+    writeFileSync(
+      ordersMd,
+      readFileSync(ordersMd, "utf8").replace("columns:\n", `columns:\n  - id: ${createdAtId}\n    sensitive: true\n`),
+    );
+    const server = createStudioServer({ schema: schemaDir });
+    servers.push(server);
+    const baseUrl = await listen(server);
+
+    const workspace = await getJson(`${baseUrl}/api/workspace`);
+    const orders = workspace.tables.find((table: any) => table.physical.name === "orders");
+    const saved = await postJson(`${baseUrl}/api/tables/${encodeURIComponent(orders.physical.id)}`, {
+      draft: { ...orders.draft, description: "Edited order description." },
+    });
+
+    const onDisk = parseTableMarkdown(readFileSync(ordersMd, "utf8"));
+    expect(onDisk.body).toContain("Edited order description.");
+    expect(onDisk.frontmatter.columns).toContainEqual({ id: createdAtId, sensitive: true });
+    expect(saved.tables.find((table: any) => table.physical.name === "users").escalatedByOtherFiles).toEqual([createdAtId]);
+    const createdAt = loadSchema(schemaDir).tables.flatMap((t) => t.columns).find((c) => c.id === createdAtId);
+    expect(createdAt?.sensitive).toBe(true);
   });
 
   describe("request guard", () => {

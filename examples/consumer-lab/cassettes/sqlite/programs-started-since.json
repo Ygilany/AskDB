@@ -1,0 +1,5 @@
+{
+  "question": "Which programs started on or after 2022-01-01? Show the agency id and program code.",
+  "reply": "```sql\nSELECT agency_id, program_code\nFROM program\nWHERE starts_on >= '2022-01-01'\nORDER BY agency_id, program_code\n```\n\n```sql-unbound\nSELECT agency_id, program_code\nFROM program\nWHERE starts_on >= :start_date\nORDER BY agency_id, program_code\n```\n\n```json\n{\"parameters\":[{\"name\":\"start_date\",\"type\":\"date\",\"cardinality\":\"one\",\"description\":\"The earliest program start date to include\",\"value\":\"2022-01-01\"}]}\n```",
+  "source": "authored"
+}

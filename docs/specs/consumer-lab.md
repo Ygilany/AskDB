@@ -72,7 +72,7 @@ A small multi-tenant social-services domain. [`fixtures/multi-engine/README.md`]
 
 ### Databases
 
-`fixtures/multi-engine/compose.yml` (project `askdb-fixture`) runs `postgres:17` on 15432, `mysql:8.4` on 13306, `mariadb:11.4` on 13307 and `mcr.microsoft.com/mssql/server:2022-CU27-ubuntu-22.04` on 11433, each with a healthcheck and a read-only `fixture_reader` role. SQLite is a file the seeder writes. The ports don't clash with 5432, 5434, 3306 or 1433. The commands are `pnpm fixture:up`, `fixture:down` and `fixture:reset`; `pnpm lab:up` (Phase 2) calls `fixture:up`.
+`fixtures/multi-engine/compose.yml` (project `askdb-fixture`) runs `postgres:17` on 15432, `mysql:8.4` on 13306, `mariadb:11.4` on 13307 and `mcr.microsoft.com/mssql/server:2022-CU27-ubuntu-22.04` on 11433, each with a healthcheck and a read-only `fixture_reader` role. SQLite is a file the seeder writes. The ports don't clash with 5432, 5434, 3306 or 1433. The commands are `pnpm fixture:up`, `fixture:down` and `fixture:reset`; `pnpm lab:up` (Phase 2) calls `fixture:up`, `pnpm lab:down` calls `fixture:down`, and `pnpm lab:reset` calls `fixture:reset`, then `lab:use --restore` (#297).
 
 Two things are lab-only and live in the lab, not the fixture:
 
@@ -93,18 +93,19 @@ examples/consumer-lab/
   pnpm-lock.yaml            # the app's own lockfile
   askdb.config.ts           # generated per dialect/test into temp dirs; this committed one is for `lab ask`
   scenarios/
-    questions.json          # id, text, dialect coverage, result types, ordered?, oracle id
-    safety.json             # attack SQL cases (see matrix)
+    questions.json          # id, text
     overlay/                # authored artifact files applied after introspection: tenant-policy.md, sensitive marks
   cassettes/<dialect>/<question-id>.json   # recorded model replies
   src/
     use.mjs                 # install-mode switcher (no dependencies; runs before install)
     capabilities.ts         # documented capabilities a scenario can require; n/a on targets without them
     host/execute.ts         # read-only execution per dialect, following run-safely-in-prod.mdx
-    oracle.ts               # expected answers computed in JS from fixtures/multi-engine/dataset/data/*.json
+    oracle.ts               # expected answers per question id, computed in TS from fixtures/multi-engine/dataset/data/*.json, with result types and ordered?
     model/replay-server.ts  # OpenAI-compatible replay/record server (see Model)
+    http-api.ts             # runs the installed `askdb-http` bin on a free port
     lab-cli.ts              # `pnpm lab ask …`
     matrix-reporter.ts      # vitest reporter → dialect × scenario table
+    scratch.ts              # writable scratch copies of the fixture, created, reset and dropped by the lab
   test/
     introspection.test.ts
     results.test.ts
@@ -113,6 +114,7 @@ examples/consumer-lab/
     sensitive.test.ts
     surfaces/cli.test.ts
     surfaces/http-api.test.ts
+    surfaces/http-api-no-pg.test.ts
     surfaces/studio.test.ts
 ```
 
@@ -238,16 +240,18 @@ Twelve to fifteen catalog questions. Between them they cover:
 
 | Scenario | C / R |
 |---|---|
-| `ask()` succeeds. Executing `sql` as `fixture_reader` equals the oracle, and equals every other dialect after normalization | C: `ask()` returns executable, dialect-correct SQL (core pipeline plus dialect). R: validator false positives on valid dialect syntax (brackets, backticks, `TOP`, `OFFSET … FETCH`), extraction regressions, or a wrong dialect brief. |
+| `ask()` succeeds. Executing `sql` as `fixture_reader` equals the oracle, and equals every other dialect after normalization | C: packed AskDB returns a correct model reply as `result.sql` without corrupting it, and the host path returns the right rows (core pipeline plus dialect). With authored replies the SQL's correctness is the cassette author's; model quality is live mode's (#247). R: validator false positives on valid dialect syntax (brackets, backticks, `TOP`, `OFFSET … FETCH`), extraction regressions, or a wrong dialect brief. |
 | Binding `unboundSql` + `params` with the real driver returns the same rows as `sql`. Where documented, `bindPreparedQuery` is checked too | C: the parameterized output contract. R: markers the driver can't bind (`$N`, `?`, `@pN`), or values that are wrong or escaped wrongly. |
 | The same question through `createAskDb` (adapter path) returns the same SQL as through `ask()` with a raw `LanguageModel` | C: both model paths are equally supported (AGENTS.md). R: config-driven dialect or model resolution drifting from direct `ask()`. |
 
 ### 3. Safety
 
-Each case is a model reply (an authored cassette) that must be rejected. For every case, the suite asserts two things:
+Each case is a model reply that must be rejected. The replies are hand-written SQL in `test/safety.test.ts`, delivered through the documented `deps.generateText` seam the way `lab ask --sql` delivers them, rather than as cassettes. For every case, the suite asserts two things:
 
 - `ask()` throws the documented error class and rule code;
-- **the case is meaningful:** the raw statement, run as `fixture_owner` against that engine's **scratch** database, does run and changes observable state (a row count, a new table, a sequence value, a held lock or an elapsed sleep). If the raw statement is harmless on an engine, the case is marked `n/a` for that engine. It never counts as a pass.
+- **the case is meaningful:** the raw statement, run as `fixture_owner` against that engine's **scratch** database, does run and changes observable state (a row count, a new table, a sequence value, a held lock or an elapsed sleep). If the raw statement is harmless on an engine, the case is marked `n/a` for that engine. It never counts as a pass. This second assertion applies to the executed classes below; the rejection-only classes don't have it yet (#323).
+
+The first safety suite (#248) proves the harmless write classes this way: writes and DDL, multiple statements, data-modifying CTEs, `SELECT … INTO` and `FOR UPDATE`. Cases that reach the file system, the OS or the server (`INTO OUTFILE`, `COPY … PROGRAM`, `xp_cmdshell`, `LOAD_FILE`, `pg_terminate_backend`, `KILL`, `SET GLOBAL`) and sleeps are never executed, on any database. They are rejection tests only and cite the rule that rejects them, because the scratch databases live on the fixture servers other lab runs share. That is a deliberate narrowing of #248's original contract (every case proves an effect): a rejection-only case still passes if the statement isn't valid, or would be harmless, on that engine. Proving their effect on a disposable, isolated fixture copy is #323. Syntax an engine doesn't have isn't generated for it. The case list is in the lab README, under "Safety".
 
 | Case family | Examples |
 |---|---|
@@ -282,7 +286,7 @@ The overlay declares the flat root `org.agency`. The hierarchy cases pass `subtr
 | **Hierarchy.** With `subtree` access from agency 1, executed rows are exactly those of agencies 1, 4, 5 and 6. From 5, they are 5 and 6. From 6, only 6. From 7, only 7. No row outside the tree ever appears, on every dialect | C: the maintainer's hierarchy semantics (decision 9) and `TenantAccessSubtree` ("include all descendants"). R: descendants dropped (the behavior before #232 was fixed), ancestors leaked, a sibling tree leaked, or a resolver result not substituted. Without a resolver, `subtree` fails closed with `TenantScopeError` `SUBTREE_NOT_RESOLVABLE`. |
 | No `tenantScope` with a policy present gives `TenantScopeError` `MISSING_SCOPE` | C: fail closed before the prompt. |
 | Warn mode returns SQL and warnings, as documented | C: documented warn semantics. Recorded against the "can't be forgotten" claim (see Survey notes). |
-| (Optional, Postgres) The unfiltered SQL, run as `lab_tenant` with RLS, returns only agency 2 | Documents the defense-in-depth recommendation. Informational only. |
+| (Optional, Postgres) The unfiltered SQL, run as `lab_tenant` with RLS, returns only agency 2 | Documents the defense-in-depth recommendation. Informational only. Not built with the rest of the suite (#249), because it needs DDL the shared fixture doesn't have: **#317**. |
 
 ### 5. Sensitive columns
 
@@ -299,7 +303,7 @@ The overlay marks `people.client.email` and `people.client.ssn` as `sensitive: t
 | Surface | Scenarios |
 |---|---|
 | `askdb` CLI | **`introspect`**: covered by suite 1, plus exit codes. **`ask`**: SQL on stdout; the sensitive `Warning:` on stderr; `--mock-sql`; exit codes 0/1/2 as documented in `reference/cli.mdx`. |
-| `@askdb/http-api` | **`POST /ask`**: 200 shape `{ ok, correlationId, sql, … }`. **Documented error codes**: `bad_request` 400, `payload_too_large` 413, `schema_parse_error` 400, `sql_validation_error` 400 (safety cases over HTTP), `sql_generation_error` 502 (replay server returns 500), `generation_not_configured` 500, `not_found` 404. Also `x-correlation-id` echo and `GET /health`. Transport risk the in-process tests can't reach. |
+| `@askdb/http-api` | **`POST /ask`**: 200 shape `{ ok, correlationId, sql, … }`. **Documented error codes**: `bad_request` 400, `payload_too_large` 413, `schema_parse_error` 400, `sql_validation_error` 400 (safety cases over HTTP), `sql_generation_error` 502 (the replay server refuses the call), `generation_not_configured` 500, `not_found` 404. Also `x-correlation-id` echo and `GET /health`. Transport risk the in-process tests can't reach. |
 | Studio local API | Each case follows ADR 0009 and `studio.mdx`: 403 without `x-askdb-studio-token`, 403 with a foreign `Host` (rebinding), 403 with a cross-site `Origin`, 415 for `text/plain`, and the token readable from the served page. **Execute:** with `studio.execute` configured, `/api/execute` returns rows for a SELECT. Given `fixture_owner` credentials on the **scratch** database, it still refuses a write and a multi-statement, which tests ADR 0009's "single-statement, read-only, with timeouts and row caps" claim; the scratch DB proves the write would otherwise land. |
 
 ## Commands and reporting
@@ -364,9 +368,9 @@ Every phase runs `pnpm smoke:install` and `pnpm preflight` before its PR. Apart 
 These came up while reading the docs. They are not findings yet: each one is either confirmed by a lab test in its phase or dropped. **A confirmed discrepancy is filed as a GitHub issue** labelled `discrepancy` (see `docs/agents/issue-tracker.md`), and the list below links it; this list is the lab's index, not the tracker.
 
 1. `docs/specs/studio.md` lists live SQL execution as out of scope. ADR 0009, `studio.mdx` and `apps/studio/src/server.ts` (`/api/execute`) all say Studio executes SQL. The docs site does not document execute as read-only; only ADR 0009 does, in one line.
-2. `docs/specs/http-api.md` describes `{ sql, warnings, correlationId }` with errors `{ error: { code, message, details } }`. The docs site shows `{ ok, correlationId, sql, explain, usage }` and a code list. The docs-site error example uses `rule: "read_only"`, but core rule codes are `SQL_*`.
-3. `POST /ask` has no `tenantScope` field, while `tenant-policy.md` lists the HTTP API as a scope-input surface. By the core rules, a tenant-policy schema served over HTTP should fail closed with `MISSING_SCOPE`.
-4. `guides/multi-tenancy.mdx` says the tenant predicate "can't be forgotten … and can't be removed by a malformed question", but `enforcement: warn` returns unfiltered SQL with warnings.
+2. `docs/specs/http-api.md` describes `{ sql, warnings, correlationId }` with errors `{ error: { code, message, details } }`. The docs site shows `{ ok, correlationId, sql, explain, usage }` and a code list. The docs-site error example uses `rule: "read_only"`, but core rule codes are `SQL_*`. *Confirmed by the HTTP suite (#252):* the spec-versus-docs-site shapes are **#300**; the docs-site-versus-server mismatches (`rule`, `explain: null`, the correlation ID format) are **#285**.
+3. `POST /ask` has no `tenantScope` field, while `tenant-policy.md` lists the HTTP API as a scope-input surface. By the core rules, a tenant-policy schema served over HTTP should fail closed with `MISSING_SCOPE`. *Confirmed by the HTTP suite (#252):* it does, with `500 internal_error`, no SQL and no model call; accepting a scope over HTTP is **#277**.
+4. `guides/multi-tenancy.mdx` says the tenant predicate "can't be forgotten … and can't be removed by a malformed question", but `enforcement: warn` returns unfiltered SQL with warnings. *Confirmed by the tenant suite (#249):* on every engine, and the warnings aren't in the `tenantWarnings` field the docs name but in `result.tenantGuardrail`: **#316**.
 5. `concepts/safety-boundaries.mdx` says invalid SQL is "rejected, not returned with a warning", while the default sensitive-field mode is `warn`.
 6. The schema artifact has no unique constraints and no view marker, so the introspection golden can't compare them. This is a format limit, not a bug, but the lab's matrix will show it.
 7. The docs site names `POSTGRES_DIALECT` and `MYSQL_DIALECT` but never the MariaDB, SQLite or SQL Server constants, and it says "all four" dialects while listing six ids. The lab uses the string ids.
@@ -380,6 +384,15 @@ Found while building Phase 1 (confirmed against the code):
 12. **The default schema filter is documented two ways.** `docs/integration/connectors.md` says `IntrospectionFilters.schemas` defaults to `["public"]` for relational engines. The type's own doc comment (`packages/introspect/src/types.ts`) says "all non-system schemas", and the Postgres connector does that: an unfiltered run over the fixture returns `org`, `people`, `billing`, `ref` and `fixture`. The Pagila test was named "default include filter ['public']" but could not tell the two apart, because Pagila only uses `public`. *Docs issue*; which behavior is intended is a maintainer call: **#239**. The Postgres fixture test asserts only what both agree on (system schemas are never read).
 13. **A same-table tenant tree can't be expressed.** `roots[].parent` and `hierarchy[]` link different root tables. Declaring `org.agency` as its own parent is reported as a `hierarchy_cycle`. *Product gap*: **#238**.
 14. **`subtree` access didn't include descendants** (**#232**). `includeDescendants: true` is typed and promised in the prompt, but the placeholder expands to the seed IDs only. *Product bug*, fixed: `ask()` now expands `subtree` through `resolveTenantDescendants`, and fails closed with `SUBTREE_NOT_RESOLVABLE` without one.
+
+Found while building the HTTP suite (#252):
+
+15. **Every model-call failure over HTTP answers `400 bad_request`, not the documented `502 sql_generation_error`** (**#299**). The handler checks whether the error message contains "mode" before it checks the error's type, and "Model call failed" does.
+
+Found while building the tenant suite (#249):
+
+16. **Strict mode returns SQL whose tenant filter doesn't filter** (**#315**). The guardrail accepts a scoped table once the tenant column's name appears anywhere, so the column selected but never filtered, a filter on another tenant, and `OR 1 = 1` all pass, and it never checks the root table. Run as the host, each leaks other agencies' rows on every engine. The heuristic's limits are planned in #230 and #235; the documents still say strict rejects any filter it can't prove.
+17. **`reference/core-api.mdx` describes `sql-params` markers two ways** (**#320**): the dialect's driver markers in the `ask()` options table, Postgres `$N` in "Tenant types".
 
 ## Decisions (2026-09-26)
 
