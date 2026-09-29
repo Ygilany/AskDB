@@ -55,4 +55,11 @@ describe("defineLiveConnectorProvider", () => {
       error: "--from-export is currently supported only for --engine postgres (got acme).",
     });
   });
+
+  it("reports a missing connection before rejecting --from-export (the CLI's historical check order)", () => {
+    expect(adapter.resolveConnection!({ explicit: { fromExport: "./b" }, runtime: runtime(), surface: "cli" })).toEqual({
+      ok: false,
+      error: "cli: pass --url",
+    });
+  });
 });
