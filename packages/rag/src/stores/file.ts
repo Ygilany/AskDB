@@ -1,6 +1,5 @@
 import { createHash, randomBytes } from "node:crypto";
 import { existsSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
-import { resolve } from "node:path";
 import type {
   ChunkPayload,
   Filter,
@@ -106,12 +105,11 @@ export function createFileStore(options: FileStoreOptions): FileStore {
       return (await memory.idsBySchema?.(schemaId)) ?? [];
     },
     describe() {
+      // No `location`: the indexer verifies this store through its own
+      // hashes, and `schema.lock.json` is committed, so a machine-local
+      // absolute path there would only churn and leak.
       const { dimensions } = memory.describe?.() ?? {};
-      return {
-        kind: "file",
-        location: resolve(basePath),
-        ...(dimensions !== undefined ? { dimensions } : {}),
-      };
+      return dimensions !== undefined ? { kind: "file", dimensions } : { kind: "file" };
     },
     flush,
     size() {

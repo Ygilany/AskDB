@@ -141,7 +141,7 @@ const { sql } = await askdb.ask(question, {
 
 ## Sensitive fields and embeddings
 
-Sensitive content stays out of the index by default. The chunker drops the describable layer (descriptions, aliases, enum values, notes, common query language, example questions, business context, concepts) for sensitive tables and columns. It also drops any of that text that mentions a sensitive column by name (whole word, case-insensitive), so a concept that says "filter by SSN" is not embedded when `ssn` is sensitive. Column identifiers and types stay available to the model through `ask()`'s prompt.
+Sensitive content stays out of the index by default. The chunker drops the describable layer (descriptions, aliases, primary entity, enum values, notes, common query language, example questions, business context) for sensitive tables and columns. It also drops any describable text that mentions a sensitive column by name (whole word, case-insensitive), wherever the text would appear, including the aliases and primary entity repeated in common query language and example question headings. Text that belongs to a table is checked against the sensitive columns of that same table. Concepts and tenant policy sections are checked against every sensitive column in the schema, so a concept that says "filter by SSN" is not embedded when any table's `ssn` column is sensitive. Column identifiers and types stay available to the model through `ask()`'s prompt.
 
 Set `chunkOptions: { includeSensitiveDescribable: true }` only if your trust model allows embedding that content. Chunks kept this way carry `sensitive: true`. See the [schema-v2 contract on GitHub](https://github.com/Ygilany/AskDB/blob/main/docs/contracts/schema-v2.md#sensitive-propagation) for the full rules.
 

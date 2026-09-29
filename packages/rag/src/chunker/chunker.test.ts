@@ -168,12 +168,26 @@ describe("tenant policy chunking", () => {
   });
 
   it("emits one chunk per H2 section", () => {
-    const { chunks } = chunkSchemaDir(MULTI_TENANT_DIR);
+    const { chunks } = chunkSchemaDir(MULTI_TENANT_DIR, { includeSensitiveDescribable: true });
     const tpChunks = chunks.filter((c) => c.type === "tenant-policy");
     const ids = tpChunks.map((c) => c.id);
     expect(ids).toContain("chunk:agency-multi-tenant:tenant-policy#hierarchy");
     expect(ids).toContain("chunk:agency-multi-tenant:tenant-policy#scope-rules");
     expect(ids).toContain("chunk:agency-multi-tenant:tenant-policy#sensitive-interactions");
+  });
+
+  it("excludes a section that names a sensitive column unless opted in", () => {
+    // "Sensitive interactions" names the sensitive `clients.email` / `clients.phone` columns.
+    const sectionId = "chunk:agency-multi-tenant:tenant-policy#sensitive-interactions";
+    const { chunks } = chunkSchemaDir(MULTI_TENANT_DIR);
+    const tpChunks = chunks.filter((c) => c.type === "tenant-policy");
+    expect(tpChunks.map((c) => c.id)).toContain("chunk:agency-multi-tenant:tenant-policy#hierarchy");
+    expect(tpChunks.filter((c) => /PII columns/.test(c.text))).toEqual([]);
+
+    const optIn = chunkSchemaDir(MULTI_TENANT_DIR, { includeSensitiveDescribable: true });
+    const section = optIn.chunks.find((c) => c.id === sectionId);
+    expect(section?.text).toContain("PII columns (`email`, `phone`)");
+    expect(section?.sensitive).toBe(true);
   });
 
   it("chunk text includes section heading and body", () => {
@@ -184,7 +198,7 @@ describe("tenant policy chunking", () => {
     expect(hierarchy!.text).toContain("Agencies");
   });
 
-  it("tenant-policy chunks are not sensitive", () => {
+  it("tenant-policy chunks are not sensitive by default", () => {
     const { chunks } = chunkSchemaDir(MULTI_TENANT_DIR);
     const tpChunks = chunks.filter((c) => c.type === "tenant-policy");
     for (const c of tpChunks) {
@@ -254,46 +268,107 @@ describe("sensitive-mention filtering", () => {
     return t!;
   }
 
-  it("matches sensitive column names case-insensitively in concepts", () => {
+  // Each case puts text naming the sensitive `users.email` column (in a
+  // different case than the column name) into one describable source. By
+  // default no chunk of any kind may embed it; opt-in embeds it in the named
+  // chunk, flagged sensitive.
+  it.each<{
+    source: string;
+    mutate: (s: ReturnType<typeof sources>) => void;
+    marker: RegExp;
+    optInId: string;
+    /** A chunk that must still be emitted by default (only the text is dropped). */
+    keptId?: string;
+    /** Increase of `stats.sensitiveExcluded` over the unmodified fixture. */
+    excludedDelta: number;
+  }>([
+    {
+      source: "concept description",
+      mutate: (s) =>
+        s.concepts!.frontmatter.concepts!.push({
+          id: "concept:contactability",
+          label: "Contactability",
+          description: "Filter by EMAIL domain to find reachable customers.",
+        }),
+      marker: /EMAIL domain/,
+      optInId: "chunk:orders-users:concept:contactability",
+      excludedDelta: 1,
+    },
+    {
+      source: "concept label",
+      mutate: (s) =>
+        s.concepts!.frontmatter.concepts!.push({ id: "concept:reach", label: "Email reach" }),
+      marker: /Email reach/,
+      optInId: "chunk:orders-users:concept:reach",
+      excludedDelta: 1,
+    },
+    {
+      source: "concept synonym",
+      mutate: (s) =>
+        s.concepts!.frontmatter.concepts!.push({
+          id: "concept:reach",
+          label: "Reach",
+          synonyms: ["Email reach"],
+        }),
+      marker: /Email reach/,
+      optInId: "chunk:orders-users:concept:reach",
+      excludedDelta: 1,
+    },
+    {
+      source: "common query language body",
+      mutate: (s) => {
+        table(s, "table:public.users").commonQueryLanguage = "Customers are reached via Email.";
+      },
+      marker: /reached via Email/,
+      optInId: "chunk:orders-users:table:public.users#cql",
+      excludedDelta: 1,
+    },
+    {
+      source: "table description",
+      mutate: (s) => {
+        table(s, "table:public.users").description = "Registered users keyed by their Email address.";
+      },
+      marker: /Email address/,
+      optInId: "chunk:orders-users:table:public.users",
+      keptId: "chunk:orders-users:table:public.users",
+      excludedDelta: 1,
+    },
+    {
+      source: "table alias (common query language heading)",
+      mutate: (s) => {
+        table(s, "table:public.users").aliases = ["accounts", "Email list"];
+      },
+      marker: /Email list/,
+      optInId: "chunk:orders-users:table:public.users#cql",
+      keptId: "chunk:orders-users:table:public.users#cql",
+      // The table chunk and the common query language chunk each drop it.
+      excludedDelta: 2,
+    },
+    {
+      source: "primary entity (example question heading)",
+      mutate: (s) => {
+        table(s, "table:public.users").primaryEntity = "Email subscriber";
+      },
+      marker: /Email subscriber/,
+      optInId: "chunk:orders-users:table:public.users#q:1",
+      keptId: "chunk:orders-users:table:public.users#q:1",
+      // The table chunk and both example-question chunks each drop it.
+      excludedDelta: 3,
+    },
+  ])("keeps a $source that names a sensitive column out of every chunk", (c) => {
+    const baseline = chunkSchema(sources());
     const s = sources();
-    s.concepts!.frontmatter.concepts!.push({
-      id: "concept:contactability",
-      label: "Contactability",
-      description: "Filter by EMAIL domain to find reachable customers.",
-    });
+    c.mutate(s);
+
     const excluded = chunkSchema(s);
-    expect(
-      excluded.chunks.find((c) => c.id === "chunk:orders-users:concept:contactability"),
-    ).toBeUndefined();
+    expect(excluded.chunks.filter((chunk) => c.marker.test(chunk.text))).toEqual([]);
+    if (c.keptId) expect(excluded.chunks.map((chunk) => chunk.id)).toContain(c.keptId);
+    expect(excluded.stats.sensitiveExcluded - baseline.stats.sensitiveExcluded).toBe(c.excludedDelta);
 
-    const included = chunkSchema(s, { includeSensitiveDescribable: true });
-    const chunk = included.chunks.find(
-      (c) => c.id === "chunk:orders-users:concept:contactability",
-    );
-    expect(chunk?.text).toContain("EMAIL domain");
+    const optIn = chunkSchema(s, { includeSensitiveDescribable: true });
+    const chunk = optIn.chunks.find((x) => x.id === c.optInId);
+    expect(chunk?.text).toMatch(c.marker);
     expect(chunk?.sensitive).toBe(true);
-    expect(included.stats.sensitiveIncluded).toBeGreaterThan(excluded.stats.sensitiveIncluded);
-  });
-
-  it("checks concept labels and synonyms, not just descriptions", () => {
-    const s = sources();
-    s.concepts!.frontmatter.concepts!.push({
-      id: "concept:reach",
-      label: "Reach",
-      synonyms: ["Email reach"],
-    });
-    expect(
-      chunkSchema(s).chunks.find((c) => c.id === "chunk:orders-users:concept:reach"),
-    ).toBeUndefined();
-  });
-
-  it("matches case-insensitively in common query language", () => {
-    const s = sources();
-    table(s, "table:public.users").commonQueryLanguage = "Customers are reached via Email.";
-    const { chunks } = chunkSchema(s);
-    expect(
-      chunks.find((c) => c.id.startsWith("chunk:orders-users:table:public.users#cql")),
-    ).toBeUndefined();
   });
 
   it("drops table description / aliases that name a sensitive column", () => {

@@ -442,6 +442,8 @@ The markdown body (business context prose) is chunked following the `concepts.md
 
 Long sections use `#bc:<n>` suffixes following the existing chunking convention.
 
+A section whose body mentions a sensitive column of any table by name (whole word, case-insensitive) is not chunked unless the host sets `includeSensitiveDescribable: true`; the chunk then carries `sensitive: true`. A `## Sensitive interactions` section usually names sensitive columns, so it is normally excluded. See [Sensitive propagation](./schema-v2.md#sensitive-propagation).
+
 ### Tenant metadata on table chunks
 
 Chunks for tenant-scoped tables carry metadata identifying their required scope root(s). This ensures that when a table chunk is retrieved, the prompt assembler can include the relevant tenant context even in a focused RAG prompt.

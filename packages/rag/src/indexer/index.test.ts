@@ -288,8 +288,10 @@ describe("buildSchemaIndex — store is the source of truth", () => {
       schemaId: "orders-users",
       embedderId: "test:deterministic",
       dimensions: 2,
-      store: { kind: "file", location: basePath },
+      store: { kind: "file" },
     });
+    // The lock is committed: it must not carry this machine's paths.
+    expect(readFileSync(lockFilePath, "utf8")).not.toContain(dirname(lockFilePath));
     expect(Object.keys(lock!.hashes).every((id) => id.startsWith("chunk:orders-users:"))).toBe(true);
   });
 
@@ -394,6 +396,35 @@ describe("buildSchemaIndex — schema-scoped ids and orphan cleanup", () => {
     const indexB = await buildSchemaIndex({ schema: b, embedder, store, embedderId: "e" });
     await buildSchemaIndex({ schema: a, embedder, store, embedderId: "e" });
     expect(await store.idsBySchema!("shop:eu")).toHaveLength(indexB.stats.chunksTotal);
+  });
+
+  it("never prunes another schema's chunks from a store that reports hashes but can't list ids by schema", async () => {
+    const backing = createMemoryStore();
+    const store: VectorStore = { ...lockOnlyStore(backing), hashesByPrefix: backing.hashesByPrefix };
+    const embedder = deterministicEmbedder();
+    const a = loadChunkerSourcesFromDir(FIXTURE_DIR);
+    a.schema.schemaId = "shop";
+    const b = loadChunkerSourcesFromDir(FIXTURE_DIR);
+    b.schema.schemaId = "shop:eu"; // ids start with `chunk:shop:` too
+    const lockA = tempLockPath();
+
+    await buildSchemaIndex({ schema: a, embedder, store, embedderId: "e", lockFilePath: lockA });
+    const indexB = await buildSchemaIndex({ schema: b, embedder, store, embedderId: "e", lockFilePath: tempLockPath() });
+    // Reindex `shop` with a table removed, with and without its lock.
+    const shrunk = loadChunkerSourcesFromDir(FIXTURE_DIR);
+    shrunk.schema.schemaId = "shop";
+    shrunk.concepts = undefined;
+    const reindexedA = await buildSchemaIndex({ schema: shrunk, embedder, store, embedderId: "e", lockFilePath: lockA });
+    const logger = { info: vi.fn(), error: vi.fn() };
+    await buildSchemaIndex({ schema: shrunk, embedder, store, embedderId: "e", logger });
+
+    expect(logger.info).toHaveBeenCalledWith(
+      expect.objectContaining({ event: "askdb.rag.orphan_cleanup_limited" }),
+      expect.any(String),
+    );
+    expect((await backing.idsBySchema!("shop:eu")).sort()).toEqual(indexB.chunks.map((c) => c.id).sort());
+    // `shop`'s own orphans (listed in its lock) are still pruned.
+    expect((await backing.idsBySchema!("shop")).sort()).toEqual(reindexedA.chunks.map((c) => c.id).sort());
   });
 
   it("prunes orphans via the lock for stores that can't list ids, scoped to the schema", async () => {

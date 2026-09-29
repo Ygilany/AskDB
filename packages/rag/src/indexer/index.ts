@@ -272,8 +272,16 @@ export async function buildSchemaIndex(
     // Exact: matched on payload schemaId (also finds older-format ids).
     for (const id of await store.idsBySchema(schemaId)) candidates.add(id);
   } else {
-    // Prefix match; only used when the store can't list ids by schema.
-    for (const id of Object.keys(storeHashes ?? {})) candidates.add(id);
+    // The id prefix is not schema-exact (`chunk:shop:` also prefixes
+    // `chunk:shop:eu:…`), so without `idsBySchema` only the ids this schema's
+    // own lock lists are pruned.
+    logger?.info(
+      {
+        ...baseLogContext,
+        event: AskDbRagLogEvent.OrphanCleanupLimited,
+      },
+      "store has no idsBySchema; only orphaned ids listed in the previous lock are pruned",
+    );
   }
   for (const id of Object.keys(previousLock?.hashes ?? {})) {
     if (id.startsWith(idPrefix)) candidates.add(id);

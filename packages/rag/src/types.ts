@@ -91,8 +91,9 @@ export type VectorStoreDescriptor = {
   /** Adapter kind, e.g. `"memory"`, `"file"`, `"pgvector"`. */
   kind: string;
   /**
-   * Where the vectors live, e.g. the file store's resolved `basePath` or the
-   * pgvector table name. Never include credentials.
+   * Where the vectors live, e.g. the pgvector table name. It is written to
+   * `schema.lock.json`, which is usually committed, so keep it stable across
+   * machines: no absolute paths, never credentials.
    */
   location?: string;
   /** Vector dimensions the store holds/expects, when known. */
@@ -123,6 +124,8 @@ export type VectorStore = {
    * Optional: every stored id whose payload `schemaId` matches. Lets the
    * indexer prune orphaned chunks for one schema (including ids written in
    * an older id format) without touching other schemas sharing the store.
+   * Without it, the indexer only prunes ids listed in the previous
+   * `schema.lock.json`.
    */
   idsBySchema?(schemaId: string): Promise<string[]>;
   /** Optional: store identity recorded in the lock file. */

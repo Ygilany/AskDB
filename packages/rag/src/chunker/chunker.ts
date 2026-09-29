@@ -24,7 +24,11 @@ import { chunkId } from "./ids.js";
 export type ChunkStats = {
   totalChunks: number;
   byType: Record<Chunk["type"], number>;
-  /** Describable-layer chunks dropped because the source content references a sensitive column/table. */
+  /**
+   * Chunks dropped, plus chunks emitted with part of their describable text
+   * (a description, alias, primary entity, enum values, or note) dropped,
+   * because the content belongs to or mentions a sensitive column/table.
+   */
   sensitiveExcluded: number;
   /** Describable-layer chunks emitted **only because** `includeSensitiveDescribable: true` was set. */
   sensitiveIncluded: number;
@@ -86,16 +90,12 @@ export function chunkSchema(
     if (table.sensitive && !includeSensitive) {
       stats.sensitiveExcluded++;
     } else {
-      const tableChunk = buildTableChunk(
-        table,
-        schema.schemaId,
-        includeSensitive,
-        schema,
-        sensitiveColumnNames,
-      );
+      const filter = describableFilter(sensitiveColumnNames, includeSensitive);
+      const tableChunk = buildTableChunk(table, schema.schemaId, includeSensitive, schema, filter);
       // A non-sensitive table whose description/aliases/column headlines
       // mention a sensitive column is only embedded verbatim in opt-in mode.
-      if (tableChunk.sensitive && !table.sensitive) stats.sensitiveIncluded++;
+      if (filter.dropped) stats.sensitiveExcluded++;
+      if (filter.included && !table.sensitive) stats.sensitiveIncluded++;
       chunks.push(tableChunk);
     }
 
@@ -155,18 +155,16 @@ export function chunkSchema(
       if (skip) {
         stats.sensitiveExcluded++;
       } else {
-        if (tableLevelSensitive || mentionsSensitive) {
-          stats.sensitiveIncluded++;
-        }
+        // The heading repeats the table's aliases; one naming a sensitive
+        // column is dropped like it is from the table chunk.
+        const filter = describableFilter(sensitiveColumnNames, includeSensitive);
+        const aliases = (table.aliases ?? []).filter((a) => filter.allow(a));
+        const sensitive = tableLevelSensitive || mentionsSensitive || filter.included;
+        if (filter.dropped) stats.sensitiveExcluded++;
+        if (sensitive) stats.sensitiveIncluded++;
         for (const part of splitLong(table.commonQueryLanguage, maxChars)) {
           chunks.push(
-            buildCqlChunk(
-              table,
-              part.text,
-              part.suffix,
-              schema.schemaId,
-              tableLevelSensitive || mentionsSensitive,
-            ),
+            buildCqlChunk(table, aliases, part.text, part.suffix, schema.schemaId, sensitive),
           );
         }
       }
@@ -194,17 +192,23 @@ export function chunkSchema(
         if (skipQuestions) {
           stats.sensitiveExcluded += questions.length;
         } else {
-          if (table.sensitive || questionsMentionSensitive) {
+          // Every question heading repeats the primary entity; one naming a
+          // sensitive column is dropped like it is from the table chunk.
+          const filter = describableFilter(sensitiveColumnNames, includeSensitive);
+          const primaryEntity = filter.allow(table.primaryEntity) ? table.primaryEntity : undefined;
+          if (filter.dropped) stats.sensitiveExcluded += questions.length;
+          if (table.sensitive || questionsMentionSensitive || filter.included) {
             stats.sensitiveIncluded += questions.length;
           }
           questions.forEach((q, i) => {
             chunks.push(
               buildQuestionChunk(
                 table,
+                primaryEntity,
                 q,
                 i + 1,
                 schema.schemaId,
-                table.sensitive || mentionsAnyName(q, sensitiveColumnNames),
+                table.sensitive || mentionsAnyName(q, sensitiveColumnNames) || filter.included,
               ),
             );
           });
@@ -256,8 +260,8 @@ export function chunkSchema(
   // Concept chunks. A concept that links to a sensitive column/table, or
   // whose label/synonyms/description names a sensitive column (matched
   // case-insensitively, like @askdb/enrich), is excluded by default.
+  const allSensitiveColumnNames = collectSensitiveColumnNames(schema);
   if (concepts?.frontmatter.concepts) {
-    const allSensitiveColumnNames = collectSensitiveColumnNames(schema);
     for (const concept of concepts.frontmatter.concepts) {
       const conceptResult = buildConceptChunk(
         concept,
@@ -274,10 +278,28 @@ export function chunkSchema(
     }
   }
 
-  // Tenant policy body chunks — one per H2 section.
+  // Tenant policy body chunks — one per H2 section. The policy is
+  // schema-level prose, so like concepts it is checked against every
+  // sensitive column in the schema; a section naming one is excluded by
+  // default.
   if (sources.tenantPolicy) {
-    for (const chunk of buildTenantPolicyChunks(sources.tenantPolicy, schema.schemaId, maxChars)) {
-      chunks.push(chunk);
+    for (const section of tenantPolicySections(sources.tenantPolicy)) {
+      const sensitive = mentionsAnyName(section.body, allSensitiveColumnNames);
+      if (sensitive && !includeSensitive) {
+        stats.sensitiveExcluded++;
+        continue;
+      }
+      if (sensitive) stats.sensitiveIncluded++;
+      for (const part of splitLong(section.body, maxChars)) {
+        chunks.push({
+          id: chunkId(schema.schemaId, `tenant-policy#${section.slug}${part.suffix}`),
+          type: "tenant-policy",
+          text: `${section.heading}\n${part.text}`,
+          schemaId: schema.schemaId,
+          refs: [],
+          sensitive,
+        });
+      }
     }
   }
 
@@ -301,20 +323,13 @@ function buildTableChunk(
   schemaId: string,
   includeSensitive: boolean,
   schema: NormalizedSchemaV2,
-  sensitiveColumnNames: string[],
+  filter: DescribableFilter,
 ): Chunk {
   const lines: string[] = [];
   const qualified = `${table.schema}.${table.name}`;
   // Describable text that names a sensitive column is dropped by default and
   // flags the chunk as sensitive when kept in opt-in mode.
-  let includedSensitiveMention = false;
-  const allow = (text: string | undefined): boolean => {
-    if (!text) return false;
-    if (!mentionsAnyName(text, sensitiveColumnNames)) return true;
-    if (!includeSensitive) return false;
-    includedSensitiveMention = true;
-    return true;
-  };
+  const { allow } = filter;
   lines.push(`# ${qualified}`);
   if (!table.sensitive) {
     if (allow(table.description)) lines.push(table.description!);
@@ -355,7 +370,7 @@ function buildTableChunk(
     text: lines.join("\n").trim(),
     schemaId,
     refs: [table.id, ...referencedColumns],
-    sensitive: table.sensitive || includedSensitiveMention,
+    sensitive: table.sensitive || filter.included,
   };
 }
 
@@ -410,14 +425,13 @@ function columnDescribableTexts(
 
 function buildCqlChunk(
   table: NormalizedV2Table,
+  aliases: string[],
   body: string,
   suffix: string,
   schemaId: string,
   sensitive: boolean,
 ): Chunk {
-  const aliasNote = table.aliases?.length
-    ? ` (also: ${table.aliases.join(", ")})`
-    : "";
+  const aliasNote = aliases.length ? ` (also: ${aliases.join(", ")})` : "";
   const text = `# ${table.schema}.${table.name}${aliasNote} — common query language\n${body.trim()}`;
   const id = chunkId(schemaId, `${table.id}#cql${suffix}`);
   return {
@@ -432,12 +446,13 @@ function buildCqlChunk(
 
 function buildQuestionChunk(
   table: NormalizedV2Table,
+  primaryEntity: string | undefined,
   question: string,
   index: number,
   schemaId: string,
   sensitive: boolean,
 ): Chunk {
-  const entity = table.primaryEntity ? ` [${table.primaryEntity}]` : "";
+  const entity = primaryEntity ? ` [${primaryEntity}]` : "";
   const text = `# ${table.schema}.${table.name}${entity} — example question\n${question.trim()}`;
   return {
     id: chunkId(schemaId, `${table.id}#q:${index}`),
@@ -531,46 +546,60 @@ function buildConceptChunk(
   };
 }
 
-function buildTenantPolicyChunks(
+/** Tenant-policy sections to chunk: one per non-empty H2, else the whole body. */
+function tenantPolicySections(
   tenantPolicy: ParsedTenantPolicyMarkdown,
-  schemaId: string,
-  maxChars: number,
-): Chunk[] {
-  const chunks: Chunk[] = [];
-  const sections = tenantPolicy.sections;
-
-  for (const [sectionName, sectionBody] of Object.entries(sections)) {
+): { slug: string; heading: string; body: string }[] {
+  const out: { slug: string; heading: string; body: string }[] = [];
+  for (const [sectionName, sectionBody] of Object.entries(tenantPolicy.sections)) {
     if (!sectionBody?.trim()) continue;
-    const slug = sectionName.toLowerCase().replace(/[^a-z0-9]+/g, "-");
-    for (const part of splitLong(sectionBody.trim(), maxChars)) {
-      chunks.push({
-        id: chunkId(schemaId, `tenant-policy#${slug}${part.suffix}`),
-        type: "tenant-policy",
-        text: `# Tenant policy — ${sectionName}\n${part.text}`,
-        schemaId,
-        refs: [],
-        sensitive: false,
-      });
-    }
+    out.push({
+      slug: sectionName.toLowerCase().replace(/[^a-z0-9]+/g, "-"),
+      heading: `# Tenant policy — ${sectionName}`,
+      body: sectionBody.trim(),
+    });
   }
-
-  if (chunks.length === 0 && tenantPolicy.body.trim()) {
-    for (const part of splitLong(tenantPolicy.body.trim(), maxChars)) {
-      chunks.push({
-        id: chunkId(schemaId, `tenant-policy#body${part.suffix}`),
-        type: "tenant-policy",
-        text: `# Tenant policy\n${part.text}`,
-        schemaId,
-        refs: [],
-        sensitive: false,
-      });
-    }
+  if (out.length === 0 && tenantPolicy.body.trim()) {
+    out.push({ slug: "body", heading: "# Tenant policy", body: tenantPolicy.body.trim() });
   }
-
-  return chunks;
+  return out;
 }
 
 // ---------- helpers ----------
+
+type DescribableFilter = {
+  /** True when `text` may be embedded; records whether a sensitive mention was dropped or kept. */
+  allow(text: string | undefined): text is string;
+  /** A text naming a sensitive column was dropped (default mode). */
+  readonly dropped: boolean;
+  /** A text naming a sensitive column was kept (`includeSensitiveDescribable: true`). */
+  readonly included: boolean;
+};
+
+/**
+ * Per-chunk gate for describable text (descriptions, aliases, primary
+ * entity) that the chunker drops piece by piece instead of excluding the
+ * whole chunk.
+ */
+function describableFilter(sensitiveNames: string[], includeSensitive: boolean): DescribableFilter {
+  let dropped = false;
+  let included = false;
+  return {
+    allow(text): text is string {
+      if (!text) return false;
+      if (!mentionsAnyName(text, sensitiveNames)) return true;
+      if (includeSensitive) included = true;
+      else dropped = true;
+      return includeSensitive;
+    },
+    get dropped() {
+      return dropped;
+    },
+    get included() {
+      return included;
+    },
+  };
+}
 
 function readColumnNote(
   md: ParsedTableMarkdown | undefined,

@@ -51,13 +51,21 @@ await buildSchemaIndex({
 });
 ```
 
-This writes `schema.embeddings.bin`, `schema.embeddings.json`, and `schema.lock.json`. Re-running embeds only chunks the store doesn't already hold with the same content hash. The lock records the embedder id, store identity (kind + location), and vector dimensions; changing any of them — or deleting the lock — re-embeds everything. Pass `force: true` (CLI: `--force`) to re-embed unconditionally.
+This writes `schema.embeddings.bin`, `schema.embeddings.json`, and `schema.lock.json`. Re-running embeds only chunks the store doesn't already hold with the same content hash. The lock records the embedder id, store identity (its kind, plus a location such as the pgvector table name), and vector dimensions; changing any of them — or deleting the lock — re-embeds everything. Pass `force: true` (CLI: `--force`) to re-embed unconditionally.
 
 The file store writes each file to a temp path and renames it into place, and the `.json` records a checksum of the `.bin`. If the two ever disagree (for example after a crash mid-write), loading the store fails with a message asking you to delete both files and reindex.
 
 ### Upgrading from an earlier `@askdb/rag`
 
-Chunk ids are now scoped to the schema (`chunk:<schemaId>:table:public.orders` instead of `chunk:table:public.orders`) and `schema.lock.json` moved to version 2. The first index run after upgrading re-embeds every chunk once and deletes that schema's old-format ids. The built-in stores find them by `schemaId` (`idsBySchema`), so they're removed even without the old lock. Custom stores without `idsBySchema` rely on the ids listed in the previous lock.
+Chunk ids are now scoped to the schema (`chunk:<schemaId>:table:public.orders` instead of `chunk:table:public.orders`) and `schema.lock.json` moved to version 2. The first index run after upgrading re-embeds every chunk once and deletes that schema's old-format ids. The built-in stores find them by `schemaId` (`idsBySchema`), so they're removed even without the old lock. Custom stores without `idsBySchema` rely on the ids listed in the previous lock: they never prune by id prefix, because `chunk:shop:` also prefixes another schema's `chunk:shop:eu:` ids.
+
+The pgvector store now needs a `content_hash` column. `ensureSchema()` adds it (Studio and `askdb-rag index --store pgvector` call it for you). If you create the table from `setupSql()` in your own migrations, or never call `ensureSchema()`, add a migration before the first index run; otherwise indexing fails on the missing column:
+
+```sql
+ALTER TABLE askdb_rag_chunks ADD COLUMN IF NOT EXISTS content_hash text;
+```
+
+Use your table name if you configured a custom `table`. A fresh `setupSql()` already includes this statement.
 
 ## pgvector Store
 
