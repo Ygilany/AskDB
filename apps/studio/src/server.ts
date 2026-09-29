@@ -29,6 +29,7 @@ import {
   tenantScopeSchema,
   type AskDialectInput,
   type AskGenerateDeps,
+  type DialectSpec,
   type TenantPolicyFrontmatter,
   type TenantScope,
   type TenantSqlOutputMode,
@@ -89,6 +90,7 @@ import type {
 } from "./shared/api.js";
 import {
   EXECUTE_DRIVER_REGISTRY,
+  executeDialectFor,
   isDriverInstalled,
   isStudioExecuteProvider,
   validateExecuteSql,
@@ -416,6 +418,7 @@ export function serializeWorkspace(workspace: Workspace): StudioWorkspaceDto {
               warning.kind === "missing_column_md" && warning.tableId === table.physical.id,
           )
           .map((warning) => warning.columnId),
+        escalatedByOtherFiles: table.escalatedByOtherFiles ?? [],
       };
     }),
     concepts: workspace.concepts?.frontmatter.concepts ?? [],
@@ -644,10 +647,13 @@ function saveDraft(state: StudioState, tableId: string, draft: TableDraft): void
   const table = workspace.tables.find((candidate) => candidate.physical.id === tableId);
   if (!table) throw new StudioHttpError(404, `No such table: ${tableId}`);
 
+  // Passing the file's current front-matter keeps entries for other tables' columns
+  // (e.g. a misplaced `sensitive: true`), which the draft does not carry.
   const frontmatter = buildFrontmatter(
     table.physical,
     workspace.physical.schemaId,
     draft,
+    table.parsed?.frontmatter,
   );
   let body = table.parsed
     ? replaceTableDescription(table.parsed.body, draft.description)
@@ -1780,7 +1786,11 @@ async function executeQuery(body: unknown, schemaDir: string): Promise<ExecuteRe
     throw error;
   }
 
-  const warnings = sensitiveExecuteWarnings(sql, schemaDir);
+  const warnings = sensitiveExecuteWarnings(
+    sql,
+    schemaDir,
+    executeDialectFor(exec.provider, rt.nlToSql.dialect),
+  );
   const projectRoot = findProjectRoot(schemaDir) ?? schemaDir;
   const def = EXECUTE_DRIVER_REGISTRY[exec.provider];
   const result = await def.execute({
@@ -1804,7 +1814,11 @@ async function executeQuery(body: unknown, schemaDir: string): Promise<ExecuteRe
  * strict-mode setting; hosts that need enforcement call
  * `validateSensitiveReferences(sql, schema, { mode: "strict" })` themselves.
  */
-function sensitiveExecuteWarnings(sql: string, schemaDir: string): string[] {
+function sensitiveExecuteWarnings(
+  sql: string,
+  schemaDir: string,
+  dialect: DialectSpec,
+): string[] {
   let schema: ReturnType<typeof loadSchema>;
   try {
     schema = loadSchema(schemaDir);
@@ -1812,7 +1826,7 @@ function sensitiveExecuteWarnings(sql: string, schemaDir: string): string[] {
     return [];
   }
   if (!schemaHasSensitiveIdentifiers(schema)) return [];
-  const result = validateSensitiveReferences(sql, schema, { mode: "warn" });
+  const result = validateSensitiveReferences(sql, schema, { mode: "warn", dialect });
   if (result.references.length === 0) return [];
   return [
     `This query reads identifiers marked sensitive: ${result.references.map(formatSensitiveReference).join(", ")}.`,

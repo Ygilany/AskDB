@@ -43,6 +43,33 @@ The `@askdb/client` package provides `createAskDb()`, a config-aware facade that
 - **Schema precheck** — the pipeline runs a question-vs-schema precheck before calling the model. If the question references unknown tables or columns, it fails with a structured error before spending a model call.
 - **Structured logging throughout** — all pipeline stages emit structured events with a stable `correlationId`. See [`modes-and-observability.md`](./modes-and-observability.md) and [ADR 0001](../adrs/0001-structured-logging-pino.md).
 
+### SQL validation rules (`validateSelectSql`)
+
+`validateSelectSql(dialect, sql)` is **defense in depth**, not a security boundary. It is not a SQL parser and cannot prove a statement is harmless; the real control is executing generated SQL under a database role that can only read what the caller may see.
+
+SQL is split into tokens by one shared, dialect-aware lexer (`packages/core/src/sql/lexer.ts`), chosen by `DialectSpec.id`, so string, identifier, and comment boundaries match the engine:
+
+| Engine family | Strings | Quoted identifiers | Comments |
+| --- | --- | --- | --- |
+| Postgres, CockroachDB | `'…'` (`''` escape), `E'…'` (backslash escapes), `$tag$…$tag$` (exact tag) | `"…"` (`""` escape; no backslash escape) | `--`, nested `/* */`. `#` is an operator; `[` is an array subscript. |
+| MySQL, MariaDB | `'…'` and `"…"` with backslash escapes when `backslashEscapes` is on (the default) | `` `…` `` | `#`, `--` followed by whitespace, `/* */`. `/*! … */` bodies are lexed as code. |
+| SQL Server | `'…'`, `N'…'` | `[…]` (`]]` escape), `"…"` | `--`, nested `/* */` |
+| SQLite | `'…'` | `"…"`, `` `…` ``, `[…]` | `--`, `/* */` |
+
+A `DialectSpec` whose `id` is not a built-in family must pass under every built-in lexer and every built-in denylist.
+
+Checks, in order — the first failure throws `SqlValidationError` with `rule`:
+
+1. `SQL_EMPTY` — nothing left after trimming.
+2. `SQL_UNTERMINATED` — a string, quoted identifier, dollar-quoted string, or block comment never closes. Fails closed.
+3. `SQL_MULTI_STATEMENT` — any `;` other than one trailing `;`.
+4. `SQL_COMMENT` — any comment, including MySQL `#`. `--` and `/*` are rejected even where the dialect lexes them as operators.
+5. `SQL_NOT_SELECT_OR_WITH` — the first token (after any leading `(`) is not `SELECT` or `WITH`.
+6. `SQL_FORBIDDEN_KEYWORD` — an unquoted keyword token from the shared denylist (`insert`, `update`, `delete`, `drop`, `truncate`, `alter`, `create`, `grant`, `revoke`, `vacuum`, `analyze`, `copy`, `call`, `merge`, `into`) or the dialect's `extraForbiddenKeywords`. Matching is on whole tokens, so `deleted_at`, `copy_count`, `"delete"`, and `'delete'` pass. `into` rejects `SELECT … INTO` (table creation), MySQL `INTO OUTFILE` / `DUMPFILE` / `@var`. SQL Server's list includes statement verbs (`shutdown`, `waitfor`, `kill`, `backup`, `restore`, `dbcc`, `use`, `set`, `exec`, …) because T-SQL runs batches without semicolons.
+7. `SQL_FORBIDDEN_FUNCTION` — a call (`name(`, including schema-qualified and quoted names) to a function in the dialect's `blockedFunctions`: e.g. Postgres `pg_sleep`, `set_config`, `pg_read_file`, `lo_import`/`lo_export`, `dblink*`, `pg_terminate_backend`, `nextval`/`setval`; MySQL `sleep`, `benchmark`, `load_file`, `get_lock`; SQLite `load_extension`, `readfile`/`writefile`.
+
+The dialect's `extraValidate` then runs on the SQL with any trailing `;` removed. Assumed server settings: Postgres `standard_conforming_strings = on` (the default since 9.1); MySQL without `ANSI_QUOTES`. Set `DialectSpec.backslashEscapes` to match `NO_BACKSLASH_ESCAPES` / legacy string settings.
+
 ## Contracts and API surface
 
 ```ts
@@ -73,12 +100,12 @@ interface AskPipelineOptions {
 interface AskPipelineResult {
   sql: string                        // model's bound SQL — never overwritten by rebind
   unboundSql?: string                // driver markers; use with params
-  params?: QueryParameterValue[]     // positional — prefer over tenantParams when present
+  params?: QueryParamSlot[]          // values for unboundSql in marker order; includes tenant IDs in 'sql-params'
   parameters?: QueryParameterBinding[] // named — for form UIs (includes values)
   preparedQuery?: PreparedQuery      // definitions + template only (no values)
   explain?: unknown
-  tenantGuardrail?: TenantGuardrailResult
-  tenantParams?: unknown[]           // tenant-only; populated when tenantSqlMode = 'sql-params'
+  tenantGuardrail?: TenantGuardrailResult // checked on the returned sql (+ unboundSql); every dialect form
+  tenantParams?: unknown[]           // 'sql-params' only: tenant IDs for the markers in `sql` (run sql with these; never concat with params)
   tenantBindings?: TenantBinding[]
 }
 
@@ -93,6 +120,8 @@ type AskDialectInput =
   | AskDialect              // escape hatch: full custom { generate() } implementation
 ```
 
+A custom `AskDialect` bypasses the built-in SELECT-only validation. If the adapter should only emit read-only SQL, call the exported `validateSelectSql(spec, sql)` itself. Tenant enforcement does not depend on the dialect: when the schema has a tenant policy, `ask()` substitutes tenant placeholders and runs the tenant guardrail on the final SQL for every dialect form. An unknown string dialect id throws `UnknownDialectError`, which extends `AskDbError`.
+
 Key events emitted (stable field names, present on every log record):
 - `askdb.pipeline.started`
 - `askdb.pipeline.generation_started` / `askdb.pipeline.generation_completed`
@@ -104,7 +133,7 @@ Key events emitted (stable field names, present on every log record):
 - `pnpm build` and `pnpm test` pass from repo root.
 - `ask()` with a mocked `LanguageModel` returns validated SQL without a live provider.
 - Schema precheck fails with a structured error for questions referencing unknown tables/columns.
-- SQL validation correctly rejects unsafe patterns (non-SELECT, dangerous keywords) per dialect rules.
+- SQL validation correctly rejects unsafe patterns (non-SELECT, dangerous keywords, side-effecting functions, unterminated tokens) per dialect lexing rules, with a regression test per known bypass in `packages/core/src/sql/validate.test.ts`.
 - Prompt assembly with a describable schema fixture includes table descriptions, aliases, and common query language sections.
 - A schema directory with only `schema.json` (no `tables/*.md`) produces DDL equivalent to the bare baseline.
 - Sensitive column identifiers appear in the DDL tagged `(sensitive)` by default.

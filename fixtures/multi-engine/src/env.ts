@@ -28,7 +28,17 @@ function host(): string {
   return process.env[FIXTURE_HOST_ENV]?.trim() || "127.0.0.1";
 }
 
-const PORTS = { postgres: 15432, mysql: 13306, mariadb: 13307, sqlserver: 11433 } as const;
+const DEFAULT_PORTS = { postgres: 15432, mysql: 13306, mariadb: 13307, sqlserver: 11433 } as const;
+
+/**
+ * Host port of a server engine. `ASKDB_FIXTURE_<ENGINE>_PORT` (e.g. `ASKDB_FIXTURE_MYSQL_PORT`)
+ * overrides it, matching the same variable in compose.yml, so a second copy of the fixture can
+ * run beside the usual one under another compose project name. Unset, the defaults apply.
+ */
+function port(dialect: Exclude<Dialect, "sqlite">): number {
+  const override = process.env[`ASKDB_FIXTURE_${dialect.toUpperCase()}_PORT`]?.trim();
+  return override ? Number(override) : DEFAULT_PORTS[dialect];
+}
 
 const CREDENTIALS: Record<Exclude<Dialect, "sqlite">, Record<Role, { user: string; password: string }>> = {
   postgres: { owner: { user: "fixture_owner", password: "fixture_owner" }, reader: { user: "fixture_reader", password: "fixture_reader" } },
@@ -52,11 +62,10 @@ const DEFAULT_DATABASE: Record<Exclude<Dialect, "sqlite">, string> = {
  */
 export function connectionUrl(dialect: Exclude<Dialect, "sqlite">, role: Role, opts: { database?: string | null } = {}): string {
   const { user, password } = CREDENTIALS[dialect][role];
-  const port = PORTS[dialect];
   const database = opts.database === undefined ? DEFAULT_DATABASE[dialect] : opts.database;
   if (dialect === "sqlserver") {
     return [
-      `Server=${host()},${port}`,
+      `Server=${host()},${port(dialect)}`,
       ...(database ? [`Database=${database}`] : []),
       `User Id=${user}`,
       `Password=${password}`,
@@ -66,5 +75,5 @@ export function connectionUrl(dialect: Exclude<Dialect, "sqlite">, role: Role, o
   }
   const scheme = dialect === "postgres" ? "postgres" : "mysql";
   const enc = encodeURIComponent;
-  return `${scheme}://${enc(user)}:${enc(password)}@${host()}:${port}/${database ?? ""}`;
+  return `${scheme}://${enc(user)}:${enc(password)}@${host()}:${port(dialect)}/${database ?? ""}`;
 }

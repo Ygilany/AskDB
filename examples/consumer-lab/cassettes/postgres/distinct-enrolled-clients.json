@@ -1,0 +1,5 @@
+{
+  "question": "How many distinct clients has each agency enrolled in programs?",
+  "reply": "```sql\nSELECT agency_id, COUNT(DISTINCT client_id) AS enrolled_clients\nFROM people.enrollment\nGROUP BY agency_id\nORDER BY agency_id\n```",
+  "source": "authored"
+}

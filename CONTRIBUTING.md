@@ -64,11 +64,15 @@ pnpm lab ask --db postgres --sql "SELECT 1"       # skip the model: SQL, validat
 pnpm lab:test
 pnpm lab:matrix                                   # the suite as a scenario × dialect table (.lab/matrix.json)
 pnpm lab:use --restore                            # before committing: restore the lab's manifests
+pnpm lab:down                                     # stop the fixture; its data and the lab install stay
+pnpm lab:reset                                    # start over: fixture reseeded, committed baseline reinstalled
 ```
 
-`lab ask` answers only questions in the lab's catalog, from hand-written replies per dialect; adding a question means adding its replies (see the lab README).
+`lab:down` removes only the fixture's containers (`fixture:down`): the volumes, the SQLite file, the lab's `node_modules` and `.lab/` stay, so the next `lab:up` is fast. `lab:reset` runs `fixture:reset` (containers, volumes and the SQLite file removed, then started and reseeded), then `lab:use --restore`, which removes `.lab/` (tarballs, the recorded target, cached schema artifacts, scratch projects) and the lab's `node_modules`, checks out the lab's three manifests as committed, and installs and verifies the committed lockfile. It works from a half-finished `lab:use`. It leaves the committed `npm:latest` baseline installed, not this checkout; run `pnpm lab:use .` to install the checkout. Neither command touches anything else. To try them without stopping a fixture others are using, run a [second copy of the fixture](fixtures/multi-engine/README.md#running-a-second-copy) from another worktree.
 
-Lab test names start with `[<dialect>] <scenario-id>`, which is how `lab:matrix` places each result; the cell values and how to mark a known bug are in the [lab README](examples/consumer-lab/README.md#the-matrix).
+`lab ask` answers only questions in the lab's catalog, from hand-written replies per dialect; adding a question means adding its replies and its oracle, the expected answer computed from the seed data, which `test/results.test.ts` compares with the rows every engine returns (see the lab README).
+
+Lab test names start with `[<dialect>] <scenario-id>`, which is how `lab:matrix` places each result; the cell values and how to mark a known bug are in the [lab README](examples/consumer-lab/README.md#the-matrix). `lab:matrix` exits non-zero on any `FAIL` cell, and CI's `consumer-lab` job runs it on every pull request (docs-only ones excepted) against tarballs packed from the PR; see [In CI](examples/consumer-lab/README.md#in-ci).
 
 `lab:use` rewrites the lab's `package.json`, `pnpm-workspace.yaml` and `pnpm-lock.yaml`. The committed versions are the `npm:latest` baseline, so don't commit them after any other target (a tarball install writes `file:` paths into them). To refresh the baseline after a release ships, run `pnpm lab:use npm:latest` and commit those three files. Unlike the package suites above, lab tests don't use `integrationSuite()`: the lab exists to run against real databases, so a missing fixture or install fails the suite instead of skipping it. The one exception is an older target that lacks a documented capability a scenario needs: that scenario reports `n/a (capability: …)` (see the lab README).
 

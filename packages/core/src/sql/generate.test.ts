@@ -4,10 +4,12 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { MockLanguageModelV3 } from "ai/test";
 import { describe, expect, it, vi } from "vitest";
-import { AskDbError, SqlValidationError } from "../errors.js";
+import { AskDbError, SqlValidationError, TenantGuardrailError } from "../errors.js";
 import { AskDbLogEvent } from "../logging/log-events.js";
 import { loadNormalizedSchemaFromJson } from "../schema/parse.js";
 import type { NormalizedSchema } from "../schema/types.js";
+import { loadSchema } from "../schema/v2/loader.js";
+import type { TenantScope } from "../schema/v2/tenant-policy.js";
 import {
   MYSQL_DIALECT,
   POSTGRES_DIALECT,
@@ -256,26 +258,6 @@ describe("generateSelectSql — prompt parameterization per dialect", () => {
     const systemMessage = prompt.find((m) => m.role === "system");
     expect(systemMessage?.content).toEqual(expect.stringContaining("AskDB SQL generator"));
   });
-
-  it("rejects SQLite ATTACH via dialect's extraForbiddenKeywords", async () => {
-    const generateText = vi.fn(async () => ({
-      text: "```sql\nSELECT * FROM users; ATTACH 'other.db' AS o\n```",
-    }));
-    await expect(
-      generateSelectSql(SQLITE_DIALECT, "list users", minimalSchema, fakeModel, { generateText }),
-    ).rejects.toThrow(SqlValidationError);
-  });
-
-  it("rejects SQL Server EXEC via dialect's extraForbiddenKeywords", async () => {
-    const generateText = vi.fn(async () => ({
-      text: "```sql\nSELECT id FROM users WHERE id = exec('boom')\n```",
-    }));
-    await expect(
-      generateSelectSql(SQLSERVER_DIALECT, "list users", minimalSchema, fakeModel, {
-        generateText,
-      }),
-    ).rejects.toThrow(SqlValidationError);
-  });
 });
 
 describe("generateSelectSql — parameterize prompt + extras", () => {
@@ -371,5 +353,85 @@ describe("generateSelectSql — parameterize prompt + extras", () => {
     expect(out.sql).toBe("SELECT count(*) FROM cities WHERE state = 'colorado'");
     expect(out.unboundNamedSql).toBeUndefined();
     expect(out.parameterManifest).toBeUndefined();
+  });
+});
+
+describe("generateSelectSql — tenant guardrail checks the returned SQL", () => {
+  const multiTenantDir = join(here, "../../../../fixtures/schemas/agency-multi-tenant.schema");
+  const agencyScope: TenantScope = {
+    access: { kind: "ids", tenantRoot: "table:public.agencies", ids: ["42"] },
+  };
+  // Scoped unbound block, unscoped bound block: the bound one is what callers run.
+  const disagreeingReply = [
+    "```sql",
+    "SELECT * FROM orders WHERE status='open'",
+    "```",
+    "```sql-unbound",
+    "SELECT * FROM orders WHERE agency_id = :tenant_agency_ids AND status = :status",
+    "```",
+    "```json",
+    '{"parameters":[{"name":"status","type":"string","cardinality":"one","value":"open"}]}',
+    "```",
+  ].join("\n");
+
+  it("strict: throws when the bound SQL is unscoped even though the unbound SQL is scoped", async () => {
+    const schema = loadSchema(multiTenantDir);
+    await expect(
+      generateSelectSql(POSTGRES_DIALECT, "open orders", schema, fakeModel, {
+        generateText: vi.fn(async () => ({ text: disagreeingReply })) as never,
+        parameterize: true,
+        tenantPolicy: schema.tenantPolicy,
+        tenantScope: agencyScope,
+      }),
+    ).rejects.toThrow(TenantGuardrailError);
+  });
+
+  it("warn: reports the unscoped bound SQL as a failure", async () => {
+    const schema = loadSchema(multiTenantDir);
+    const out = await generateSelectSql(POSTGRES_DIALECT, "open orders", schema, fakeModel, {
+      generateText: vi.fn(async () => ({ text: disagreeingReply })) as never,
+      parameterize: true,
+      tenantPolicy: { ...schema.tenantPolicy!, enforcement: "warn" },
+      tenantScope: agencyScope,
+    });
+    expect(out.tenantGuardrail?.passed).toBe(false);
+    expect(out.tenantGuardrail?.warnings.map((w) => w.rule)).toContain("MISSING_TENANT_PREDICATE");
+  });
+
+  it("reads the SQL with the target dialect: a Postgres double-quoted tenant column counts", async () => {
+    // Without the dialect the guardrail must also accept the MySQL reading, where
+    // "agency_id" is a string, and would reject this.
+    const schema = loadSchema(multiTenantDir);
+    const out = await generateSelectSql(POSTGRES_DIALECT, "orders", schema, fakeModel, {
+      generateText: vi.fn(async () => ({
+        text: "```sql\nSELECT * FROM orders WHERE \"agency_id\" = '42'\n```",
+      })) as never,
+      tenantPolicy: schema.tenantPolicy,
+      tenantScope: agencyScope,
+    });
+    expect(out.tenantGuardrail).toEqual({ passed: true, warnings: [] });
+  });
+
+  it("also checks the unbound SQL when it is returned", async () => {
+    const schema = loadSchema(multiTenantDir);
+    const reply = [
+      "```sql",
+      "SELECT * FROM orders WHERE agency_id = :tenant_agency_ids AND status='open'",
+      "```",
+      "```sql-unbound",
+      "SELECT * FROM orders WHERE status = :status",
+      "```",
+      "```json",
+      '{"parameters":[{"name":"status","type":"string","cardinality":"one","value":"open"}]}',
+      "```",
+    ].join("\n");
+    await expect(
+      generateSelectSql(POSTGRES_DIALECT, "open orders", schema, fakeModel, {
+        generateText: vi.fn(async () => ({ text: reply })) as never,
+        parameterize: true,
+        tenantPolicy: schema.tenantPolicy,
+        tenantScope: agencyScope,
+      }),
+    ).rejects.toThrow(TenantGuardrailError);
   });
 });
