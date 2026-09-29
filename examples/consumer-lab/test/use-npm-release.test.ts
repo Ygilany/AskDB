@@ -10,8 +10,8 @@
  * pins go into the workspace's existing `overrides:` map, keeping its third-party pins.
  * Catches: a lexical or npm-order pick of a range (pinning beta.9 over beta.10), a
  * failed switch that leaves `file:` or registry pins behind while the lab still claims
- * the old target, and a switch that writes a second `overrides:` key (in YAML the last
- * one wins, silently dropping a security pin such as deepmerge-ts).
+ * the old target, and a switch that writes a second `overrides:` key next to the lab's
+ * third-party pins (pnpm rejects the duplicate key, so every switch would fail).
  * Not covered elsewhere: every published `askdb` pins its @askdb dependencies exactly,
  * so real `npm:` runs never reach the range path; and a real install failure can't be
  * produced on demand.
