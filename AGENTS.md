@@ -4,7 +4,7 @@ Instructions for coding agents working in this repository (contributing to AskDB
 
 ## Stack
 
-pnpm workspace + Turborepo, TypeScript. Node 22.12+.
+pnpm workspace + Turborepo, TypeScript. Node 22.13+ to develop (pnpm 11's own floor); published packages support `>=22.12`.
 
 - `packages/core` — the NL-to-SQL pipeline (`ask()`), schema artifact loader.
 - `packages/ai`, `packages/ai-*` — AI provider registry and adapters (openai/anthropic/google/azure).
