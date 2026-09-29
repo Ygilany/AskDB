@@ -387,7 +387,7 @@ Found while building Phase 1 (confirmed against the code):
 
 Found while building the HTTP suite (#252):
 
-15. **Every model-call failure over HTTP answers `400 bad_request`, not the documented `502 sql_generation_error`** (**#299**). The handler checks whether the error message contains "mode" before it checks the error's type, and "Model call failed" does.
+15. **Every model-call failure over HTTP answers `400 bad_request`, not the documented `502 sql_generation_error`** (**#299**). The handler checks whether the error message contains "mode" before it checks the error's type, and "Model call failed" does. *Product bug*, fixed by #187: errors map by type, and the HTTP suite's `http-generation-error` case now passes. The same PR turns per-request `schemaJson` off by default (`403 schema_override_disabled`), so the suite's `schema_parse_error` case runs on a server that sets `httpApi.allowSchemaOverride: true`.
 
 ## Decisions (2026-09-26)
 
