@@ -402,7 +402,7 @@ A tenant placeholder counts only in its exact lowercase form (`:tenant_agency_id
 
 ### Not implemented
 
-The original design called for parser-based validation (AST table/alias resolution, predicate-shape checks, JOIN scope compatibility, aggregation checks) with a conservative heuristic fallback. None of the parser-based checks exist; the heuristic above is the only check. Any future parser-based work must update this section before the "not a security boundary" language is relaxed.
+The original design called for parser-based validation (AST table/alias resolution, predicate-shape checks, JOIN scope compatibility, aggregation checks) with a conservative heuristic fallback. None of the parser-based checks exist; the heuristic above is the only check. Any future parser-based work must update this section, and supersede [ADR 0012](../adrs/0012-sql-checks-are-defense-in-depth.md), before the "not a security boundary" language is relaxed.
 
 ### Enforcement modes
 

@@ -210,7 +210,7 @@ Early phases intentionally stay **Postgres-only** so execution and guardrails st
 
 - Harden policy composition across surfaces, database engines, and report-generation modes.
 - Support richer tenant-policy authoring, audit output, and host integration hooks for production access-control systems.
-- Query generation and execution paths enforce **tenant scope** when metadata/policies define it; treat as non-negotiable for supported configurations.
+- When metadata/policies define **tenant scope**, query generation always requires and applies it (scope required, prompt instructions, ID binding, tenant lint), and execution paths enforce it in the database (row-level security or equivalent). AskDB's SQL checks stay defense in depth ([ADR 0012](adrs/0012-sql-checks-are-defense-in-depth.md)).
 
 ## Phase 14 — MCP server surface
 
