@@ -41,7 +41,7 @@ Open every PR as a draft. Before it is marked ready for review:
 
 - An agent or session that did not write the change reviews it with the `pr-review` skill (see "PR review" below). The implementer's own session never reviews its diff.
 - Every review finding is fixed in a commit or answered in a reply on the PR.
-- After every push (review fixes, test-audit commits, rebases, merges), re-check the PR title and description against the final diff: every named test, export, count, and behavior claim.
+- After every push (review fixes, test-audit commits, rebases, merges), re-check the PR title and description against the final diff: every named test, export, count, and behavior claim. When non-trivial code changes land after the review, re-run it on the new commits.
 
 ## Agent skills
 
@@ -59,7 +59,7 @@ Single-context: a root `CONTEXT.md` (created lazily) plus ADRs in `docs/adrs/`. 
 
 ### PR review
 
-The `pr-review` skill from [Ygilany/ygilany-skills](https://github.com/Ygilany/ygilany-skills) (`npx skills add https://github.com/Ygilany/ygilany-skills --skill pr-review`). AskDB's rules, sensitive paths (which also get the built-in `/security-review`), checklists, and posting commands are in `docs/agents/pr-review.md`.
+The `pr-review` skill from [Ygilany/ygilany-skills](https://github.com/Ygilany/ygilany-skills) (`npx skills add https://github.com/Ygilany/ygilany-skills --skill pr-review`, available once Ygilany/ygilany-skills#1 merges). AskDB's rules, sensitive paths (which also get the built-in `/security-review`), checklists, and posting commands are in `docs/agents/pr-review.md`.
 
 ## Where product/architecture decisions live
 

@@ -6,7 +6,7 @@ AskDB's configuration for the generic `pr-review` skill (see `AGENTS.md`, "PR re
 
 - Every PR opens as a draft and gets an independent review before it is marked ready for review.
 - The reviewer is a different agent or session from the one that wrote the change. A session that wrote or edited any part of the diff stops and hands the review to a fresh agent: an author checks its own diff against the same mental model that wrote it, which is how #190, #192, and #197 reached review with defects only Copilot caught.
-- Review the PR's final state: re-review after every push that adds commits (`git diff <last-reviewed-sha>..HEAD`).
+- Re-check the PR title and description against the final diff after every push. Re-run the review on the new commits (`git diff <last-reviewed-sha>..HEAD`) when non-trivial code changes land after it.
 - The PR leaves draft only when every finding is fixed in a commit or answered in a reply on its thread.
 
 ## Repository conventions
@@ -18,20 +18,23 @@ Apply every rule to every PR.
 - **Docs-site accuracy.** Every claim a PR adds or edits under `apps/docs-site/src/content/docs/` (package names, APIs, options, file paths, defaults, error text) matches the source; find each one with `git grep` before accepting it. A public API or integration-pattern change without a docs-site update is a finding.
 - **Docs house style.** Markdown and MDX follow `apps/docs-site/STYLE.md` and `AGENTS.md`: one line per paragraph or list item (unwrapped), sentence-case headings, the terminology table.
 - **Exported signatures name exported types.** Every type named in an exported function, class, or type signature is re-exported from the package entry point (`src/index.ts`), not reachable only through an internal path. #197 named `TenantSqlDialect` in a signature without re-exporting it until review caught it. Read `src/index.ts` against new and changed signatures; this stays manual until #325 adds a mechanical check.
-- **Integration suites gate through `integrationSuite()`.** Suites that need a database, a native driver, or an env var use `integrationSuite()` from `scripts/test-utils/integration.mjs`, so CI's `ASKDB_REQUIRE_INTEGRATION=1` turns a missing prerequisite into a failure. `pnpm lint` runs `scripts/check-test-gating.mjs`, which rejects `describe.skip`, `describe.skipIf`, and `cond ? describe : …`; still read new suites for gates it cannot see (an early `return` in `beforeAll`, a conditional `it` inside a loop).
+- **Integration suites gate through `integrationSuite()`.** Suites that need a database, a native driver, or an env var use `integrationSuite()` from `scripts/test-utils/integration.mjs`, so CI's `ASKDB_REQUIRE_INTEGRATION=1` turns a missing prerequisite into a failure. `pnpm lint` runs `scripts/check-test-gating.mjs` over every workspace package in `pnpm-workspace.yaml`; it rejects `describe`/`suite` `.skip`/`.skipIf`/`.runIf`, `it`/`test` `.skipIf`/`.runIf`, `it.skip` used as a value, and `cond ? describe : …`, and allows a line exempted with `// check-test-gating-ignore-next-line: <reason>` (question any new exemption). Still read new suites for gates it cannot see (an early `return` in `beforeAll`, a conditional `it` inside a loop).
 - **Tests pass the test-audit authoring gate.** New and changed tests meet `.agents/skills/test-audit/SKILL.md`: each names the behavior it protects; a regression test fails on the pre-fix code for the intended reason (flag it when neither the PR nor the diff shows that); it asserts the specific rule or error code, not a permissive helper any rejection satisfies; and it lives at the owner boundary where users hit the behavior. For a Studio save bug that is the Studio server route (`apps/studio/src/server.ts`), not only the `@askdb/enrich` helper it calls (#192).
 
 ## Sensitive areas
 
-| Paths | Checklist | Built-in security review |
+| Glob | Checklist | Built-in security review |
 |---|---|---|
 | `packages/core/src/sql/**` | SQL guardrails | yes |
 | `packages/core/src/schema/**` | SQL guardrails | yes |
-| Tenant scoping, sensitive-column handling, escaping, quoting, or lexing code anywhere (e.g. `tenant-*`, `sensitive-*`, `lexer.ts`, `bind.ts`, dialect packages' quoting) | SQL guardrails | yes |
-| `apps/studio/src/server*`, `apps/studio/src/request-guard*` | — | yes |
+| `**/*tenant*` | SQL guardrails | yes |
+| `**/*sensitiv*` | SQL guardrails | yes |
+| `packages/rag/src/stores/**` | SQL guardrails | yes |
+| `apps/studio/src/server*` | — | yes |
+| `apps/studio/src/request-guard*` | — | yes |
 | `apps/http-api/**` | — | yes |
 
-The built-in security review is `/security-review`, run by the same independent reviewer; fold its findings in under **Security:**.
+A changed file that quotes, escapes, or lexes SQL but matches no glob gets the same treatment as `packages/core/src/sql/**`. The built-in security review is `/security-review`, run by the same independent reviewer; fold its findings in under **Security:**.
 
 ## Checklists
 

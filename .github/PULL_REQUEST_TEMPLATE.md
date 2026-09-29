@@ -11,5 +11,5 @@
 - [ ] Preflight passes: `pnpm smoke:install && pnpm preflight`
 - [ ] Does not introduce SQL execution into `@askdb/core` or any public surface — generated SQL is returned to the caller, never run by AskDB
 - [ ] No secrets, credentials, or production data committed
-- [ ] Independent review done by an agent or person who did not write the change (`pr-review` skill, `docs/agents/pr-review.md`): <link>
+- [ ] Independent review done by an agent or session (or person) that did not write the change (`pr-review` skill, `docs/agents/pr-review.md`): <link>
 - [ ] Description re-verified against the final diff after the last push
