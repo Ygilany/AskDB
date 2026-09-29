@@ -12,6 +12,7 @@ import type {
   PolymorphicTable,
 } from "../schema/v2/tenant-policy.js";
 import { isBuiltInDialectId, type DialectSpec } from "./dialect-spec.js";
+import { startsDashComment } from "./lexer.js";
 import { placeholderForRoot } from "./tenant-placeholders.js";
 
 export type TenantGuardrailResult = {
@@ -47,7 +48,11 @@ export type ValidateTenantGuardrailsOptions = {
  * enclosing level, under `NOT`, or anywhere but a filter clause (the select list,
  * a `CASE`) doesn't count, and neither does a literal ID or a bare mention of the
  * column. A root table the scope covers (`org.agency` under an `agency` scope)
- * needs the same predicate on its tenant ID column. It does not tie a predicate
+ * needs the same predicate on its tenant ID column. Down a join path, the predicate
+ * must be on a column that carries the IDs of the path's root or one of its ancestors
+ * in the hierarchy. A polymorphic table also needs `typeColumn = '<key>'` ANDed into
+ * the same query block, with a `mapping` key of the root whose placeholder filters
+ * its id column. It does not tie a predicate
  * to one table reference, so an unfiltered reference beside a filtered one can
  * still pass; database-side row-level security is the sound boundary.
  *
@@ -56,7 +61,8 @@ export type ValidateTenantGuardrailsOptions = {
  * read the way `options.dialect` reads them. Without a dialect (a custom
  * `AskDialect`, or a direct call without `options.dialect`) the statement is read
  * the standard-SQL way, the Postgres way (`E'…'` escape strings), and the MySQL
- * way: a table counts as referenced if any reading sees it, and a tenant
+ * way (`--` starts a comment only before whitespace, and a `/*! … *\/` body is read
+ * both as code and as a comment): a table counts as referenced if any reading sees it, and a tenant
  * predicate counts only if every reading does. So SQL whose scoping depends on
  * the dialect (`"agency_id"`, `'it\'s …'`, `E'it\'s …'`) is flagged, never
  * passed. A tenant placeholder counts only in its exact lowercase form, the only
@@ -99,7 +105,7 @@ export function validateTenantGuardrails(
   for (const st of policy.scopedTables) {
     const tableName = extractTableName(st.id);
     if (!mentionsTable(views, tableName)) continue;
-    checkScopedTable(views, st, policy, scope, warnings);
+    checkScopedTable(views, st, policy, warnings);
   }
 
   // Check polymorphic tables
@@ -210,7 +216,6 @@ function checkScopedTable(
   sql: CodeViews,
   st: ScopedTable,
   policy: NormalizedTenantPolicy,
-  scope: TenantScope,
   warnings: TenantGuardrailWarning[],
 ): void {
   const table = extractTableName(st.id);
@@ -221,13 +226,14 @@ function checkScopedTable(
       if (hasTenantPredicate(sql, table, [{ placeholder, column: extractColumnName(path.column), table }])) return;
     } else {
       // Inherited via JOINs: every join column appears, and a tenant predicate filters
-      // the root: on its tenant ID column, or, down a hierarchy, on a column that carries
-      // the IDs of a root this scope binds.
+      // the root: on its tenant ID column, or, up the hierarchy, on a column that carries
+      // the IDs of one of its ancestors. A root outside that chain filters nothing here,
+      // even one the scope binds.
       const allStepsPresent = path.join.every(
         (step) => mentionsIdentifier(sql, extractColumnName(step.from)) && mentionsIdentifier(sql, extractColumnName(step.to)),
       );
       if (!allStepsPresent) continue;
-      const targets = [path.root, ...scopeRootIds(scope)].flatMap((rootId) => idCarriers(policy, rootId));
+      const targets = selfAndAncestors(policy, path.root).flatMap((rootId) => idCarriers(policy, rootId));
       if (hasTenantPredicate(sql, table, targets)) return;
     }
   }
@@ -252,20 +258,41 @@ function checkPolymorphicTable(
 ): void {
   const typeColName = extractColumnName(pt.typeColumn);
   const idColName = extractColumnName(pt.idColumn);
+  const table = extractTableName(pt.id);
+  const typeMentioned = mentionsIdentifier(sql, typeColName);
 
-  if (!mentionsIdentifier(sql, typeColName)) {
+  if (!typeMentioned) {
     warnings.push(
       warn("MISSING_TYPE_DISCRIMINATOR", pt.id,
-        `Polymorphic table '${extractTableName(pt.id)}' is missing type discriminator column '${typeColName}' in WHERE clause.`),
+        `Polymorphic table '${table}' is missing type discriminator column '${typeColName}' in WHERE clause.`),
     );
   }
 
-  const table = extractTableName(pt.id);
-  const targets = Object.values(pt.mapping).map((rootId) => ({ placeholder: placeholderFor(policy, rootId), column: idColName, table }));
+  const rootIds = [...new Set(Object.values(pt.mapping))];
+  const targets = rootIds.map((rootId) => ({ placeholder: placeholderFor(policy, rootId), column: idColName, table }));
   if (!hasTenantPredicate(sql, table, targets)) {
     warnings.push(
       warn("MISSING_TENANT_PREDICATE", pt.id,
-        `Polymorphic table '${extractTableName(pt.id)}' is missing a tenant predicate on '${idColName}' (compared with a tenant placeholder in a WHERE/ON/HAVING clause).`),
+        `Polymorphic table '${table}' is missing a tenant predicate on '${idColName}' (compared with a tenant placeholder in a WHERE/ON/HAVING clause).`),
+    );
+    return;
+  }
+
+  // The id predicate filters by one root's IDs, so the discriminator must pick that root's
+  // rows: `owner_type = 'agency' AND owner_id = :tenant_agency_ids`, ANDed in the same block.
+  const paired = rootIds.map((rootId, i) => ({
+    ...targets[i]!,
+    discriminator: {
+      column: typeColName,
+      values: Object.entries(pt.mapping).filter(([, r]) => r === rootId).map(([key]) => key),
+    },
+  }));
+  if (typeMentioned && !hasTenantPredicate(sql, table, paired)) {
+    const [key, rootId] = Object.entries(pt.mapping)[0] ?? ["<key>", ""];
+    warnings.push(
+      warn("MISSING_TYPE_DISCRIMINATOR", pt.id,
+        `Polymorphic table '${table}' needs '${typeColName}' compared with the mapping key of the root whose placeholder filters '${idColName}', ` +
+        `ANDed into the same clause (e.g. ${typeColName} = '${key}' AND ${idColName} = ${placeholderFor(policy, rootId)}).`),
     );
   }
 }
@@ -311,6 +338,19 @@ function idCarriers(policy: NormalizedTenantPolicy, rootId: string): PredicateTa
     }
   }
   return carriers;
+}
+
+/** `rootId` and every root above it in the policy's hierarchy (`hierarchy[]`, `roots[].parent`). */
+function selfAndAncestors(policy: NormalizedTenantPolicy, rootId: string): string[] {
+  const chain = [rootId];
+  for (let i = 0; i < chain.length; i++) {
+    const parents = [
+      ...policy.hierarchy.filter((edge) => edge.child === chain[i]).map((edge) => edge.parent),
+      policy.roots.find((r) => r.id === chain[i])?.parent?.root,
+    ];
+    for (const parent of parents) if (parent !== undefined && !chain.includes(parent)) chain.push(parent);
+  }
+  return chain;
 }
 
 /** The tenant roots a scope binds IDs for (`global` binds none). */
@@ -376,6 +416,14 @@ type CodeReading = {
   eStrings: boolean;
   /** `||` is logical OR (MySQL/MariaDB without `PIPES_AS_CONCAT`), not string concatenation. */
   pipesAreOr: boolean;
+  /** `--` starts a comment only before whitespace, a control character, or the end (MySQL/MariaDB). */
+  dashCommentNeedsSpace: boolean;
+  /**
+   * The body of a `/*! … *\/` (or MariaDB `/*M! … *\/`) executable comment is code. MySQL
+   * runs it only on a server at least as new as its version number, so a MySQL dialect is
+   * read both with and without it (see {@link codeViews}).
+   */
+  executableComments: boolean;
 };
 
 const STANDARD_READING: CodeReading = {
@@ -384,6 +432,8 @@ const STANDARD_READING: CodeReading = {
   hashComments: false,
   eStrings: false,
   pipesAreOr: false,
+  dashCommentNeedsSpace: false,
+  executableComments: false,
 };
 const POSTGRES_READING: CodeReading = { ...STANDARD_READING, eStrings: true };
 const MYSQL_READING: CodeReading = {
@@ -392,10 +442,17 @@ const MYSQL_READING: CodeReading = {
   hashComments: true,
   eStrings: false,
   pipesAreOr: true,
+  dashCommentNeedsSpace: true,
+  executableComments: true,
 };
+/** MySQL with its executable comments read as comments: a server too old for their version skips them. */
+const MYSQL_SKIPPING_EXECUTABLE: CodeReading = { ...MYSQL_READING, executableComments: false };
 
-/** One same-length view of the statement per reading; see {@link codeView}. */
-type CodeViews = ReadonlyArray<{ readonly text: string; readonly reading: CodeReading }>;
+/**
+ * One same-length view of the statement per reading (see {@link codeView}), with the
+ * statement itself (`source`), where string literals are still readable at the same offsets.
+ */
+type CodeViews = ReadonlyArray<{ readonly text: string; readonly source: string; readonly reading: CodeReading }>;
 
 /**
  * A known dialect gets its own single reading. An unknown one gets every reading
@@ -404,24 +461,29 @@ type CodeViews = ReadonlyArray<{ readonly text: string; readonly reading: CodeRe
  * ambiguity toward a warning (tables: any view; predicates: every view). A MySQL
  * server running with `ANSI_QUOTES` reads `"…"` as an identifier; the MySQL
  * reading still treats it as a string, so a predicate written only as
- * `"agency_id"` is flagged there, never passed.
+ * `"agency_id"` is flagged there, never passed. A MySQL reading comes twice, with the
+ * bodies of `/*! … *\/` executable comments read as code and as comments, since whether
+ * the server runs one depends on its version.
  */
 function codeViews(
   sql: string,
   dialect: ValidateTenantGuardrailsOptions["dialect"] | undefined,
 ): CodeViews {
   if (dialect === undefined || !isBuiltInDialectId(dialect.id)) {
-    return [STANDARD_READING, POSTGRES_READING, MYSQL_READING].map((r) => ({ text: codeView(sql, r), reading: r }));
+    return [STANDARD_READING, POSTGRES_READING, MYSQL_READING, MYSQL_SKIPPING_EXECUTABLE].map((r) => view(sql, r));
   }
   const backslashEscapes = dialect.backslashEscapes === true;
-  const base =
+  const bases =
     dialect.id === "mysql" || dialect.id === "mariadb"
-      ? MYSQL_READING
+      ? [MYSQL_READING, MYSQL_SKIPPING_EXECUTABLE]
       : dialect.id === "postgres" || dialect.id === "cockroachdb"
-        ? POSTGRES_READING
-        : STANDARD_READING;
-  const reading = { ...base, backslashEscapes };
-  return [{ text: codeView(sql, reading), reading }];
+        ? [POSTGRES_READING]
+        : [STANDARD_READING];
+  return bases.map((base) => view(sql, { ...base, backslashEscapes }));
+}
+
+function view(sql: string, reading: CodeReading): CodeViews[number] {
+  return { text: codeView(sql, reading), source: sql, reading };
 }
 
 /**
@@ -437,7 +499,9 @@ const IDENTIFIER_CONTINUE = /[A-Za-z0-9_$\u0080-\uffff]/;
 /**
  * Blank out everything that is not SQL code, so identifier checks only see code
  * regions. String literals (`'…'`, `$tag$…$tag$` bodies, and `"…"` when the
- * reading says so) and comments become spaces. The output has the same length
+ * reading says so) and comments become spaces. A comment starts where the reading
+ * says (`--` only before whitespace on MySQL, see `startsDashComment` in the shared
+ * lexer), and an executable comment's body stays code when the reading says so. The output has the same length
  * and keeps the original case (placeholders are case-sensitive), so word
  * boundaries at the seams are unchanged.
  *
@@ -474,16 +538,34 @@ function codeView(sql: string, reading: CodeReading): string {
     return sql.length;
   };
   const dollarTag = /\$(?:[A-Za-z_][A-Za-z0-9_]*)?\$/y;
+  const executableOpener = /\/\*M?!\d*/y;
+  let inExecutable = false;
   let i = 0;
   while (i < sql.length) {
     const ch = sql[i]!;
     const next = sql[i + 1];
-    if ((ch === "-" && next === "-") || (ch === "#" && reading.hashComments)) {
+    if (startsDashComment(sql, i, reading.dashCommentNeedsSpace) || (ch === "#" && reading.hashComments)) {
       const newline = sql.indexOf("\n", i);
       const end = newline === -1 ? sql.length : newline;
       blank(i, end);
       i = end;
       continue;
+    }
+    if (ch === "*" && next === "/" && inExecutable) {
+      blank(i, i + 2);
+      inExecutable = false;
+      i += 2;
+      continue;
+    }
+    if (ch === "/" && next === "*" && reading.executableComments && !inExecutable) {
+      executableOpener.lastIndex = i;
+      const opener = executableOpener.exec(sql);
+      if (opener) {
+        blank(i, i + opener[0].length);
+        inExecutable = true;
+        i += opener[0].length;
+        continue;
+      }
     }
     if (ch === "/" && next === "*") {
       const close = sql.indexOf("*/", i + 2);
@@ -564,6 +646,8 @@ type Token = {
   readonly kw: string;
   /** Parenthesis nesting of the token; a `(` or `)` has the depth outside it. */
   readonly depth: number;
+  /** Offset of the token in the statement (a code view keeps the statement's offsets). */
+  readonly offset: number;
 };
 
 const TOKEN = /:[A-Za-z0-9_]+|::|\|\||<>|!=|<=|>=|[A-Za-z_\u0080-\uffff][\w$\u0080-\uffff]*|\d[\w.]*|\S/g;
@@ -581,7 +665,7 @@ function tokenize(text: string): Token[] {
     }
     if (t === ")") depth = Math.max(0, depth - 1);
     const lower = t.toLowerCase();
-    tokens.push({ text: t, lower, kw: quoted ? "" : lower, depth });
+    tokens.push({ text: t, lower, kw: quoted ? "" : lower, depth, offset: m.index });
     if (t === "(") depth++;
   }
   return tokens;
@@ -609,8 +693,17 @@ const RESERVED = new Set([
   "order", "group", "user", "table", "limit", "offset", "all", "exists",
 ]);
 
-/** What a tenant predicate compares: `column` (of `table`) with `placeholder`. */
-type PredicateTarget = { readonly placeholder: string; readonly column: string; readonly table: string };
+/**
+ * What a tenant predicate compares: `column` (of `table`) with `placeholder`. With a
+ * `discriminator`, the same query block must also AND in `discriminator.column = '<v>'`
+ * for one of its `values` (a polymorphic table's type column and mapping keys).
+ */
+type PredicateTarget = {
+  readonly placeholder: string;
+  readonly column: string;
+  readonly table: string;
+  readonly discriminator?: { readonly column: string; readonly values: readonly string[] };
+};
 
 /**
  * Whether the statement has a tenant predicate for `table` on every reading: a column
@@ -633,12 +726,44 @@ function hasTenantPredicate(views: CodeViews, table: string, targets: readonly P
           for (const target of targets) {
             if (tokens[k]!.text !== target.placeholder) continue;
             const span = predicateSpan(tokens, k, target);
-            if (span && isFilterConjunct(tokens, span[0], span[1], view.reading)) return true;
+            if (!span || !isFilterConjunct(tokens, span[0], span[1], view.reading)) continue;
+            if (!target.discriminator || hasDiscriminator(tokens, from, to, view, target)) return true;
           }
         }
         return false;
       });
   });
+}
+
+/**
+ * Whether the block `tokens[from, to)` ANDs in `col = '<value>'` for `target.discriminator`:
+ * its column (optionally qualified with the target's table or alias), `=`, and a plain
+ * `'…'` literal, read from `view.source` at the offsets where the view blanked it, whose
+ * value is one of the discriminator's values and which nothing but whitespace follows up
+ * to the next token (no `''`-escape, no adjacent literal, no comment).
+ */
+function hasDiscriminator(tokens: readonly Token[], from: number, to: number, view: CodeViews[number], target: PredicateTarget): boolean {
+  const { column, values } = target.discriminator!;
+  const source = view.source;
+  for (let i = from; i < to; i++) {
+    const t = tokens[i]!;
+    const eq = tokens[i + 1];
+    if (!isIdentifier(t) || t.lower !== column.toLowerCase() || eq?.text !== "=") continue;
+    const qualifier = tokens[i - 1]?.text === "." ? tokens[i - 2] : undefined;
+    if (qualifier !== undefined && namesOtherTable(tokens, qualifier.lower, target.table.toLowerCase())) continue;
+    let open = eq.offset + 1;
+    while (/\s/.test(source[open] ?? "")) open++;
+    if (source[open] !== "'") continue;
+    const close = source.indexOf("'", open + 1);
+    if (close < 0) continue;
+    const value = source.slice(open + 1, close);
+    if (value.includes("\\") || !values.includes(value)) continue;
+    // The view must read it as a string, and it must end there.
+    const next = tokens[i + 2]?.offset ?? source.length;
+    if (view.text.slice(open, close + 1).trim() !== "" || source.slice(close + 1, next).trim() !== "") continue;
+    if (isFilterConjunct(tokens, qualifiedStart(tokens, i), i + 1, view.reading)) return true;
+  }
+  return false;
 }
 
 /**
@@ -670,9 +795,12 @@ function isIdentifier(token: Token): boolean {
   return /^[A-Za-z_\u0080-\uffff]/.test(token.text) && !PREDICATE_WORDS.has(token.kw);
 }
 
-/** A clause keyword used as a function name (`LEFT(status, 1)`, `RIGHT(…)`) is an identifier. */
+/**
+ * A clause keyword used as a function name (`LEFT(status, 1)`, `RIGHT(…)`) is an identifier.
+ * A set operator never is: `UNION (SELECT …)` opens a parenthesized operand.
+ */
 function isFunctionCall(tokens: readonly Token[], i: number): boolean {
-  return tokens[i + 1]?.text === "(" && isIdentifier(tokens[i]!);
+  return tokens[i + 1]?.text === "(" && isIdentifier(tokens[i]!) && !SET_OPERATORS.has(tokens[i]!.kw);
 }
 
 /** Start index of a possibly qualified column (`o.agency_id`, `s.o.agency_id`) that ends at `end`. */
@@ -745,11 +873,25 @@ type SubqueryUse = "table" | "in" | "other";
  * Whether the subquery opened by the `(` at `open` is a row source (a derived table in
  * `FROM`/`JOIN`, a CTE body after `AS`), the right side of `col IN (…)`, or anything else.
  * `EXISTS (…)` is "other": its filter limits the subquery's rows, not the outer query's.
+ * A parenthesized statement, or a parenthesized operand of a set operation (after `(`,
+ * or after `UNION`/`INTERSECT`/`EXCEPT`/`MINUS` [`ALL`|`DISTINCT`]), produces the rows of
+ * the query around it, so it is used however that query is.
  */
 function subqueryUse(tokens: readonly Token[], open: number): SubqueryUse {
   const opener = tokens[open - 1];
-  if (opener?.kw === "in") return tokens[open - 2] !== undefined && isIdentifier(tokens[open - 2]!) ? "in" : "other";
-  if (opener?.kw === "as" || opener?.kw === "lateral") return "table";
+  const setOperand =
+    opener !== undefined &&
+    (SET_OPERATORS.has(opener.kw) ||
+      ((opener.kw === "all" || opener.kw === "distinct") && SET_OPERATORS.has(tokens[open - 2]?.kw ?? "")));
+  if (opener === undefined || opener.text === "(" || setOperand) {
+    const around = opener?.text === "(" ? open - 1 : enclosing(tokens, open, "(");
+    if (around < 0) return "table"; // the statement itself
+    // `col IN ((…))`: the caller reads `col IN` right before the subquery, so don't claim it.
+    const use = subqueryUse(tokens, around);
+    return use === "in" ? "other" : use;
+  }
+  if (opener.kw === "in") return tokens[open - 2] !== undefined && isIdentifier(tokens[open - 2]!) ? "in" : "other";
+  if (opener.kw === "as" || opener.kw === "lateral") return "table";
   const depth = tokens[open]!.depth;
   for (let i = open - 1; i >= 0; i--) {
     const t = tokens[i]!;
