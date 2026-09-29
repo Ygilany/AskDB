@@ -43,6 +43,9 @@ pnpm test
 step "installable smoke test"
 pnpm smoke:install
 
+step "@askdb/ai tests at the AI SDK peer floors"
+pnpm test:ai-floors
+
 step "validate publish (dry-run)"
 pnpm -r publish --dry-run --no-git-checks --access=public
 
