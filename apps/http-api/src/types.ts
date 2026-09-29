@@ -15,6 +15,7 @@ export type AskHttpRequest = {
   /**
    * Omit sensitive identifiers from the NL→SQL prompt for this request. Can only
    * tighten the server's `modes.omitSensitiveFromPrompt` — `false` never loosens it.
+   * Any value other than a boolean (or `null`) is rejected with `400 bad_request`.
    */
   omitSensitiveFromPrompt?: boolean;
 };

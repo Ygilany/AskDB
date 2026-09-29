@@ -6,6 +6,7 @@ import {
   DEFAULT_INTROSPECT_OUTPUT_DIR,
   DEFAULT_STUDIO_EXECUTE_MAX_ROWS,
   DEFAULT_STUDIO_EXECUTE_TIMEOUT_MS,
+  parseHttpApiRequestTimeoutMs,
   parsePositiveInteger,
 } from "./defaults.js";
 import { flatToAiEnv, getAskDbRuntimeStore } from "./runtime-store.js";
@@ -46,7 +47,7 @@ export type AskDbRuntimeHttpApiConfig = {
   };
   /** Whether `POST /ask` accepts a per-request `schemaJson` override. Default `false`. */
   allowSchemaOverride: boolean;
-  /** Model-call timeout per `POST /ask` request, in milliseconds. Default `60000`. */
+  /** Model-call timeout per `POST /ask` request, in milliseconds (1 to 2147483647). Default `60000`. */
   requestTimeoutMs: number;
 };
 
@@ -263,8 +264,8 @@ export function getAskDbRuntimeConfig(): AskDbRuntimeConfig {
         structured.httpApi?.allowSchemaOverride ??
         isTruthyFlag(pickFlat(flat, "ASKDB_HTTP_ALLOW_SCHEMA_OVERRIDE")),
       requestTimeoutMs:
-        parsePositiveInteger(structured.httpApi?.requestTimeoutMs) ??
-        parsePositiveInteger(pickFlat(flat, "ASKDB_HTTP_REQUEST_TIMEOUT_MS")) ??
+        parseHttpApiRequestTimeoutMs(structured.httpApi?.requestTimeoutMs, "httpApi.requestTimeoutMs") ??
+        parseHttpApiRequestTimeoutMs(pickFlat(flat, "ASKDB_HTTP_REQUEST_TIMEOUT_MS"), "ASKDB_HTTP_REQUEST_TIMEOUT_MS") ??
         DEFAULT_HTTP_API_REQUEST_TIMEOUT_MS,
     },
     dev: {

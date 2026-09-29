@@ -114,8 +114,8 @@ function getHeader(req: IncomingMessage, name: string): string | undefined {
   return undefined;
 }
 
-function badRequest(correlationId: string, message: string): AskHttpErrorResponse {
-  return { ok: false, correlationId, error: { code: "bad_request", message } };
+function badRequest(message: string): AskHttpErrorResponse["error"] {
+  return { code: "bad_request", message };
 }
 
 /**
@@ -274,39 +274,40 @@ export function createAskDbHttpServer(options: AskDbHttpServerOptions = {}) {
       logStdout: rt.logging.logStdout,
     });
 
+    // Every non-2xx response from `POST /ask` is logged as `askdb.run.error` with its
+    // status and code. Requests rejected before the pipeline runs log the client message.
+    const reject = (status: number, error: AskHttpErrorResponse["error"], errMessage = error.message): void => {
+      logger.error(
+        { event: AskDbLogEvent.RunError, status, code: error.code, errMessage },
+        "askdb http request rejected",
+      );
+      writeError(res, status, correlationId, error);
+    };
+
     let body: AskHttpRequest;
     try {
       body = await readJsonBody<AskHttpRequest>(req, maxBodyBytes);
     } catch (e) {
-      logger.error(
-        { event: AskDbLogEvent.RunError, errMessage: e instanceof Error ? e.message : String(e) },
-        "invalid JSON body",
-      );
+      const errMessage = e instanceof Error ? e.message : String(e);
       if (e instanceof RequestBodyTooLargeError) {
-        writeError(res, 413, correlationId, {
-          code: "payload_too_large",
-          message: `request body exceeds ${e.limitBytes} bytes`,
-        });
+        reject(413, { code: "payload_too_large", message: `request body exceeds ${e.limitBytes} bytes` }, errMessage);
         return;
       }
-      writeError(res, 400, correlationId, badRequest(correlationId, "invalid JSON body").error);
+      reject(400, badRequest("invalid JSON body"), errMessage);
       return;
     }
 
     if (!body || typeof body !== "object") {
-      writeError(res, 400, correlationId, badRequest(correlationId, "request body must be an object").error);
+      reject(400, badRequest("request body must be an object"));
       return;
     }
     if (typeof body.question !== "string" || body.question.trim() === "") {
-      writeError(res, 400, correlationId, badRequest(correlationId, "`question` is required").error);
+      reject(400, badRequest("`question` is required"));
       return;
     }
 
     if ("execute" in body || getHeader(req, "x-askdb-execute") !== undefined) {
-      writeError(res, 400, correlationId, {
-        code: "bad_request",
-        message: "Execution is not supported. This endpoint returns generated SQL only.",
-      });
+      reject(400, badRequest("Execution is not supported. This endpoint returns generated SQL only."));
       return;
     }
 
@@ -316,28 +317,37 @@ export function createAskDbHttpServer(options: AskDbHttpServerOptions = {}) {
     try {
       requestedMode = resolveRequestMode(body.mode, getHeader(req, "x-askdb-mode"));
     } catch (e) {
-      writeError(res, 400, correlationId, {
-        code: "bad_request",
-        message: e instanceof Error ? e.message : String(e),
-      });
+      reject(400, badRequest(e instanceof Error ? e.message : String(e)));
       return;
     }
 
     // Config mode was validated when askdb.config.* was flattened.
     const mode: AskDbModeV1 = requestedMode ?? parseAskDbModeV1(rt.modes.askdbMode);
 
+    // Strictly boolean: a string or number used to count as "omit", so silently
+    // ignoring one would send sensitive identifiers to the model.
+    const omitSensitiveFromPrompt: unknown = body.omitSensitiveFromPrompt;
+    if (
+      omitSensitiveFromPrompt !== undefined &&
+      omitSensitiveFromPrompt !== null &&
+      typeof omitSensitiveFromPrompt !== "boolean"
+    ) {
+      reject(
+        400,
+        badRequest(`\`omitSensitiveFromPrompt\` must be a boolean (got ${JSON.stringify(omitSensitiveFromPrompt)}).`),
+      );
+      return;
+    }
+
     let requestOverride: string | undefined;
     if (body.schemaJson !== undefined && body.schemaJson !== null) {
       if (typeof body.schemaJson !== "string") {
-        writeError(res, 400, correlationId, {
-          code: "bad_request",
-          message: "`schemaJson` must be a string containing a bundled AskDB schema artifact.",
-        });
+        reject(400, badRequest("`schemaJson` must be a string containing a bundled AskDB schema artifact."));
         return;
       }
       if (body.schemaJson.trim() !== "") {
         if (!rt.httpApi.allowSchemaOverride) {
-          writeError(res, 403, correlationId, {
+          reject(403, {
             code: "schema_override_disabled",
             message:
               "Per-request `schemaJson` overrides are disabled on this server. Omit `schemaJson` to use the server-configured schema.",
@@ -374,7 +384,7 @@ export function createAskDbHttpServer(options: AskDbHttpServerOptions = {}) {
         explain: Boolean(body.explain),
         // The facade treats config `modes.omitSensitiveFromPrompt` as a floor:
         // a request can tighten it but never loosen it.
-        omitSensitiveIdentifiersFromNlToSqlPrompt: body.omitSensitiveFromPrompt === true,
+        omitSensitiveIdentifiersFromNlToSqlPrompt: omitSensitiveFromPrompt === true,
         abortSignal,
       });
 

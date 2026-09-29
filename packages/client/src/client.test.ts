@@ -572,10 +572,18 @@ describe("createAskDb — abortSignal", () => {
     expect(generateText.mock.calls[0]![0].abortSignal).toBe(controller.signal);
   });
 
-  it("forwards abortSignal to the registry-resolved model call", async () => {
+  it("aborting the caller's controller aborts the registry-resolved model call", async () => {
     const preloaded = loadSchemaFromJson(minimalV2Json) as AnyNormalizedSchema;
+    // Without a signal the model answers at once, so ask() only rejects if the
+    // caller's signal reached doGenerate and aborting it cancelled the call.
     const doGenerate = vi.fn(async (opts: { abortSignal?: AbortSignal }) => {
-      if (opts.abortSignal?.aborted) throw new Error("aborted");
+      const signal = opts.abortSignal;
+      if (signal) {
+        await new Promise<never>((_resolve, reject) => {
+          if (signal.aborted) reject(signal.reason);
+          signal.addEventListener("abort", () => reject(signal.reason), { once: true });
+        });
+      }
       return {
         content: [{ type: "text", text: "```sql\nSELECT 1\n```" }],
         finishReason: { unified: "stop", raw: "stop" },
@@ -603,13 +611,15 @@ describe("createAskDb — abortSignal", () => {
       schema: { schema: preloaded },
     });
     const controller = new AbortController();
-    const out = await askdb.ask("q", {
+    const pending = askdb.ask("q", {
       dialect: "postgres",
       parameterize: false,
       abortSignal: controller.signal,
     });
-    expect(out.sql).toBe("SELECT 1");
-    expect(doGenerate).toHaveBeenCalledTimes(1);
-    expect(doGenerate.mock.calls[0]![0].abortSignal).toBeDefined();
+    await vi.waitFor(() => expect(doGenerate).toHaveBeenCalledTimes(1));
+    const reason = new Error("caller aborted");
+    controller.abort(reason);
+    await expect(pending).rejects.toMatchObject({ name: "SqlGenerationError", cause: reason });
+    expect(doGenerate.mock.calls[0]![0].abortSignal?.aborted).toBe(true);
   });
 });

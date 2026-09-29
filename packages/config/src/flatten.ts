@@ -16,6 +16,7 @@ import {
   DEFAULT_RAG_FILE_BASE_PATH,
   defaultRagEmbeddingDimensions,
   normalizePgvectorIndexStrategy,
+  parseHttpApiRequestTimeoutMs,
   parsePositiveInteger,
 } from "./defaults.js";
 import type {
@@ -332,14 +333,9 @@ export function flattenAskDbConfig(config: AskDbConfig): Record<string, string> 
   if (config.httpApi?.allowSchemaOverride === true) {
     set(out, "ASKDB_HTTP_ALLOW_SCHEMA_OVERRIDE", "true");
   }
-  if (config.httpApi?.requestTimeoutMs !== undefined) {
-    const timeoutMs = parsePositiveInteger(config.httpApi.requestTimeoutMs);
-    if (timeoutMs === undefined) {
-      throw new Error(
-        `askdb.config: invalid httpApi.requestTimeoutMs ${JSON.stringify(config.httpApi.requestTimeoutMs)} (expected a positive integer number of milliseconds).`,
-      );
-    }
-    set(out, "ASKDB_HTTP_REQUEST_TIMEOUT_MS", String(timeoutMs));
+  const requestTimeoutMs = parseHttpApiRequestTimeoutMs(config.httpApi?.requestTimeoutMs, "httpApi.requestTimeoutMs");
+  if (requestTimeoutMs !== undefined) {
+    set(out, "ASKDB_HTTP_REQUEST_TIMEOUT_MS", String(requestTimeoutMs));
   }
 
   return out;

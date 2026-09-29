@@ -472,7 +472,8 @@ export type AskDbConfig = {
     allowSchemaOverride?: boolean;
     /**
      * Abort the model call for a `POST /ask` request after this many milliseconds (positive
-     * integer). Default `60000`. Maps to `ASKDB_HTTP_REQUEST_TIMEOUT_MS`.
+     * integer, at most `2147483647`, the Node timer maximum; larger values are a config error).
+     * Default `60000`. Maps to `ASKDB_HTTP_REQUEST_TIMEOUT_MS`.
      */
     requestTimeoutMs?: number;
   };

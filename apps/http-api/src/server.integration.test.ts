@@ -120,6 +120,47 @@ function rejectWithSecret(_req: IncomingMessage, res: ServerResponse): void {
   res.end(body);
 }
 
+/** Answer an OpenAI Responses API call with `sql` in a fenced block. */
+function respondWithSql(sql: string) {
+  return (_req: IncomingMessage, res: ServerResponse): void => {
+    res.writeHead(200, { "content-type": "application/json" });
+    res.end(
+      JSON.stringify({
+        id: "resp_test",
+        object: "response",
+        created_at: 0,
+        model: "gpt-4o-mini",
+        status: "completed",
+        incomplete_details: null,
+        output: [
+          {
+            type: "message",
+            id: "msg_test",
+            status: "completed",
+            role: "assistant",
+            content: [{ type: "output_text", text: `\`\`\`sql\n${sql}\n\`\`\``, annotations: [] }],
+          },
+        ],
+        usage: {
+          input_tokens: 1,
+          input_tokens_details: { cached_tokens: 0 },
+          output_tokens: 1,
+          output_tokens_details: { reasoning_tokens: 0 },
+          total_tokens: 2,
+        },
+      }),
+    );
+  };
+}
+
+/** Parse a JSON-lines log file written by the AskDB logger. */
+function readLogEntries(logFile: string): Array<Record<string, unknown>> {
+  return readFileSync(logFile, "utf8")
+    .split("\n")
+    .filter(Boolean)
+    .map((line) => JSON.parse(line) as Record<string, unknown>);
+}
+
 async function postAsk(url: string, body: unknown, headers: Record<string, string> = {}) {
   const res = await fetch(`${url}/ask`, {
     method: "POST",
@@ -377,16 +418,12 @@ describe("http-api", () => {
       expect(JSON.stringify(json)).not.toContain(PROVIDER_SECRET);
       expect(JSON.stringify(json)).not.toContain("Incorrect API key");
 
-      const runError = readFileSync(logFile, "utf8")
-        .split("\n")
-        .filter(Boolean)
-        .map((line) => JSON.parse(line))
-        .find((entry) => entry.msg === "askdb http run error");
+      const runError = readLogEntries(logFile).find((entry) => entry.msg === "askdb http run error");
       expect(runError).toBeDefined();
-      expect(runError.correlationId).toBe("cid-502");
-      expect(runError.status).toBe(502);
-      expect(runError.errName).toBe("SqlGenerationError");
-      expect(String(runError.errMessage)).toContain("Incorrect API key");
+      expect(runError!.correlationId).toBe("cid-502");
+      expect(runError!.status).toBe(502);
+      expect(runError!.errName).toBe("SqlGenerationError");
+      expect(String(runError!.errMessage)).toContain("Incorrect API key");
     } finally {
       await app.close();
       await provider.close();
@@ -412,6 +449,26 @@ describe("http-api", () => {
       expect(status).toBe(502);
       expect(json.error.code).toBe("sql_generation_error");
       expect(json.error.message).toContain("timed out after 200 ms");
+    } finally {
+      await app.close();
+      await provider.close();
+    }
+  });
+
+  it("serves a model call under the largest accepted httpApi.requestTimeoutMs", async () => {
+    const provider = await startFakeProvider(respondWithSql("SELECT 1"));
+    installTestRuntime({
+      logLevel: "silent",
+      host: { schemaPath: schemaPath.pathname },
+      openaiBaseUrl: provider.baseUrl,
+      httpApi: { requestTimeoutMs: 2_147_483_647 },
+    });
+    const app = await startApp();
+    try {
+      const { status, json } = await postAsk(app.url, { question: "hi" });
+      expect(provider.bodies.length).toBe(1);
+      expect(status).toBe(200);
+      expect(json.sql).toBe("SELECT 1");
     } finally {
       await app.close();
       await provider.close();
@@ -476,6 +533,30 @@ describe("http-api", () => {
     }
   });
 
+  // A string or number used to mean "omit" (Boolean(...)); silently ignoring it would
+  // send sensitive column names to the model, so it is rejected before any model call.
+  it("rejects a non-boolean omitSensitiveFromPrompt with bad_request before calling the model", async () => {
+    const provider = await startFakeProvider(rejectWithSecret);
+    installTestRuntime({
+      logLevel: "silent",
+      host: { schemaPath: sensitiveSchemaPath.pathname },
+      openaiBaseUrl: provider.baseUrl,
+    });
+    const app = await startApp();
+    try {
+      for (const omitSensitiveFromPrompt of ["true", 1, "false", 0]) {
+        const { status, json } = await postAsk(app.url, { question: "list users", omitSensitiveFromPrompt });
+        expect(status).toBe(400);
+        expect(json.error.code).toBe("bad_request");
+        expect(json.error.message).toContain("`omitSensitiveFromPrompt` must be a boolean");
+      }
+      expect(provider.bodies).toEqual([]);
+    } finally {
+      await app.close();
+      await provider.close();
+    }
+  });
+
   it("sends sensitive identifiers to the model when neither config nor request omits them", async () => {
     const provider = await startFakeProvider(rejectWithSecret);
     installTestRuntime({
@@ -525,6 +606,38 @@ describe("http-api", () => {
       expect(nonString.json.error.code).toBe("bad_request");
     } finally {
       await app.close();
+    }
+  });
+
+  it("logs requests rejected before the pipeline runs as askdb.run.error with status and code", async () => {
+    const logDir = mkdtempSync(join(tmpdir(), "askdb-http-log-"));
+    const logFile = join(logDir, "askdb.log");
+    installTestRuntime({ mockSql: "select 1", logLevel: "error", logFile, host: { schemaPath: schemaPath.pathname } });
+    const app = await startApp();
+    try {
+      const overrideRejected = await postAsk(
+        app.url,
+        { question: "hi", schemaJson: unsupportedProviderSchemaJson },
+        { "x-correlation-id": "cid-403" },
+      );
+      expect(overrideRejected.status).toBe(403);
+      const badMode = await postAsk(app.url, { question: "hi", mode: "nope" }, { "x-correlation-id": "cid-400" });
+      expect(badMode.status).toBe(400);
+
+      const entries = readLogEntries(logFile);
+      expect(entries.find((entry) => entry.correlationId === "cid-403")).toMatchObject({
+        event: "askdb.run.error",
+        status: 403,
+        code: "schema_override_disabled",
+      });
+      expect(entries.find((entry) => entry.correlationId === "cid-400")).toMatchObject({
+        event: "askdb.run.error",
+        status: 400,
+        code: "bad_request",
+      });
+    } finally {
+      await app.close();
+      rmSync(logDir, { recursive: true, force: true });
     }
   });
 });
