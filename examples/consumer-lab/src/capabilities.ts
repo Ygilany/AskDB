@@ -164,10 +164,13 @@ async function askBindsTenantDriverMarkers(): Promise<boolean> {
 /**
  * One launch of the installed `askdb studio` with no `studio` block in its config, shared by
  * the Studio detectors. It reads whether the served page carries the session token
- * (ADR 0009; `studio.mdx`, "Security model") and whether `POST /api/execute` answers `403`
- * while execute is off (`studio.mdx`, "Playground": "Execute is off by default … `POST
- * /api/execute` returns `403`"), sending the page's token when there is one. A Studio that
- * doesn't start or doesn't serve its page is a broken install, and throws.
+ * (ADR 0009; `studio.mdx`, "Security model") and whether `POST /api/execute` is refused
+ * while execute is off (`studio.mdx`, "Playground": "Execute is off by default … the
+ * Playground hides the Execute button and explains how to enable it, and `POST /api/execute`
+ * returns `403`"). That request passes every request guard (the page's token when there is
+ * one, Studio's own `Origin`, JSON), and the `403` must explain how to enable execute, so a
+ * `403` from a guard can't pass for it. A Studio that doesn't start or doesn't serve its page
+ * is a broken install, and throws.
  */
 let studioProbe: Promise<{ pageToken: boolean; executeOffByDefault: boolean }> | undefined;
 function probeStudio() {
@@ -181,10 +184,11 @@ function probeStudio() {
       const execute = await studioRequest(studio, {
         method: "POST",
         path: "/api/execute",
-        headers: { "content-type": "application/json", ...(token ? { [TOKEN_HEADER]: token } : {}) },
+        headers: { "content-type": "application/json", origin: studio.origin, ...(token ? { [TOKEN_HEADER]: token } : {}) },
         body: JSON.stringify({ sql: "SELECT 1 AS ok" }),
       });
-      return { pageToken: token !== undefined, executeOffByDefault: execute.status === 403 };
+      const explainsHowToEnable = /studio\.execute\.enabled/.test(String(execute.json?.error?.message));
+      return { pageToken: token !== undefined, executeOffByDefault: execute.status === 403 && explainsHowToEnable };
     } finally {
       await studio.close();
     }

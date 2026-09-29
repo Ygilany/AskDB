@@ -6,16 +6,11 @@
  * Every server binds 127.0.0.1 on a free port and is ready once the documented `GET
  * /health` answers. `close()` kills it; callers call it in `afterAll` or `finally`.
  */
-import { spawn, type ChildProcess } from "node:child_process";
-import { existsSync } from "node:fs";
-import { createServer } from "node:net";
 import { join } from "node:path";
 import { LAB_ROOT } from "./paths.js";
+import { startServerProcess } from "./server-process.js";
 
 export const ASKDB_HTTP_BIN = join(LAB_ROOT, "node_modules", ".bin", "askdb-http");
-
-/** Provider keys a developer's shell may hold; a server must only see the config it's given. */
-export const PROVIDER_KEYS = ["OPENAI_API_KEY", "AZURE_OPENAI_API_KEY", "AZURE_API_KEY", "GOOGLE_GENERATIVE_AI_API_KEY", "GEMINI_API_KEY", "ANTHROPIC_API_KEY"];
 
 export interface HttpServerOptions {
   /** Project directory: where the server runs and finds `askdb.config.ts`. Default: the lab. */
@@ -36,63 +31,18 @@ export interface HttpServer {
   close(): Promise<void>;
 }
 
-/** A port nothing is listening on right now (the bin rejects `--port 0`). */
-export function freePort(): Promise<number> {
-  return new Promise((resolve, reject) => {
-    const probe = createServer();
-    probe.once("error", reject);
-    probe.listen(0, "127.0.0.1", () => {
-      const address = probe.address();
-      const port = typeof address === "object" && address ? address.port : 0;
-      probe.close(() => resolve(port));
-    });
-  });
-}
-
-/** SIGTERM a server process, then SIGKILL it if it hasn't exited within 5 seconds. */
-export function stopProcess(child: ChildProcess): Promise<void> {
-  if (child.exitCode !== null || child.signalCode !== null) return Promise.resolve();
-  return new Promise((resolve) => {
-    const force = setTimeout(() => child.kill("SIGKILL"), 5_000);
-    child.once("exit", () => {
-      clearTimeout(force);
-      resolve();
-    });
-    child.kill("SIGTERM");
-  });
-}
-
 /** Start `askdb-http` and wait until `GET /health` answers. Fails with the server's output if it exits first. */
 export async function startHttpServer(options: HttpServerOptions = {}): Promise<HttpServer> {
-  const bin = options.bin ?? ASKDB_HTTP_BIN;
-  if (!existsSync(bin)) throw new Error(`${bin} is missing; reinstall the lab with \`pnpm lab:use <target>\``);
-  const port = await freePort();
-  const args = ["--port", String(port), "--host", "127.0.0.1"];
-  if (options.schemaPath) args.push("--schema-path", options.schemaPath);
-
-  const env: NodeJS.ProcessEnv = { ...process.env, ...options.env };
-  for (const key of PROVIDER_KEYS) delete env[key];
-  const child = spawn(bin, args, { cwd: options.cwd ?? LAB_ROOT, env, stdio: ["ignore", "pipe", "pipe"] });
-  let output = "";
-  child.stdout!.on("data", (d) => (output += d));
-  child.stderr!.on("data", (d) => (output += d));
-
-  const url = `http://127.0.0.1:${port}`;
-  const server: HttpServer = { url, output: () => output, close: () => stopProcess(child) };
-  const deadline = Date.now() + 30_000;
-  while (Date.now() < deadline) {
-    if (child.exitCode !== null || child.signalCode !== null) {
-      throw new Error(`askdb-http exited (${child.exitCode ?? child.signalCode}) before serving /health:\n${output}`);
-    }
-    try {
-      if ((await fetch(`${url}/health`)).ok) return server;
-    } catch {
-      // Not listening yet.
-    }
-    await new Promise((r) => setTimeout(r, 100));
-  }
-  await server.close();
-  throw new Error(`askdb-http didn't serve /health within 30s:\n${output}`);
+  const server = await startServerProcess({
+    name: "askdb-http",
+    bin: options.bin ?? ASKDB_HTTP_BIN,
+    args: (port) => ["--port", String(port), "--host", "127.0.0.1", ...(options.schemaPath ? ["--schema-path", options.schemaPath] : [])],
+    cwd: options.cwd ?? LAB_ROOT,
+    env: options.env,
+    ready: async (port) => (await fetch(`http://127.0.0.1:${port}/health`)).ok,
+    readyWhen: "GET /health",
+  });
+  return { url: `http://127.0.0.1:${server.port}`, output: server.output, close: server.close };
 }
 
 export interface HttpReply {

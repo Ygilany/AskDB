@@ -12,12 +12,14 @@
  * write or a second statement is rejected with `400`, even when Studio holds the owner's
  * credentials.
  *
- * The authoring-gate answers are per scenario, above each `describe`. For all of them:
+ * The authoring-gate answers are per scenario, above each scenario's `describe` or `it`.
+ * For all of them:
  * No production seam: only the installed `askdb studio` bin and its documented flags, the
- * documented `studio.execute` config, the routes and headers ADR 0009 and `studio.mdx` name,
- * and the token read from the served page as the browser app reads it. The request body
- * `{ sql }` and the `{ ok, columns, rows }` reply are the served app's own; no document
- * names them.
+ * documented `studio.execute` config, the headers ADR 0009 and `studio.mdx` name, the
+ * routes in `docs/specs/studio.md`'s API table (`GET /api/workspace`, `POST /api/execute`),
+ * and the token read from the served page as the browser app reads it. No document gives
+ * `POST /api/execute`'s request `{ sql }` or its reply `{ ok, columns, rows }`: they are the
+ * served app's own, filed as #380.
  * Each rejection is one header (or one statement) away from a request the same test shows
  * is accepted, so it can only come from the protection the case targets: every other
  * guard is satisfied (a valid token, Studio's own `Host`, its own `Origin`, JSON).
@@ -26,7 +28,7 @@
  * execute scenarios run on every engine Studio's execute supports: all five (MariaDB
  * through the `mysql` provider, as `studio.mdx` describes). Each engine's Studio runs its
  * queries as the engine's owner on a scratch copy of the fixture (`src/scratch.ts`), never
- * on the fixture's own databases.
+ * on the fixture's own databases. Timeouts and row caps are not tested here.
  *
  * Needs the fixture (`pnpm fixture:up`) and an installed lab (`pnpm lab:use .`). Targets
  * older than the request guard or the execute guard report `n/a` (`studio-request-guard`,
@@ -63,8 +65,8 @@ const scratches = new Map<SupportedDialect, Promise<ScratchDb>>();
 const launches = new Map<string, Promise<Launched>>();
 
 afterAll(async () => {
-  await Promise.all([...launches.values()].map((l) => l.then((running) => running.server.close(), () => {})));
-  await Promise.all([...scratches.values()].map((s) => s.then((db) => db.drop(), () => {})));
+  await Promise.all([...launches.values()].map((launch) => launch.then((launched) => launched.server.close(), () => {})));
+  await Promise.all([...scratches.values()].map((scratch) => scratch.then((db) => db.drop(), () => {})));
 });
 
 function scratchFor(dialect: SupportedDialect): Promise<ScratchDb> {
@@ -77,10 +79,11 @@ function scratchFor(dialect: SupportedDialect): Promise<ScratchDb> {
  * started on first use, after the test's capability gates, and killed in `afterAll`.
  * `launch` names a separate launch with the same config.
  */
-async function studioFor(ctx: TestContext, dialect: SupportedDialect, opts: { guard?: boolean; launch?: string } = {}): Promise<Launched> {
+async function studioFor(ctx: TestContext, dialect: SupportedDialect, opts: { needsRequestGuard?: boolean; launch?: string } = {}): Promise<Launched> {
   needsCapability(ctx, "cli-introspect-engine");
-  if (opts.guard) await needsCapability(ctx, "studio-request-guard");
-  // Every Studio here has execute on: the protection cases send their requests to /api/execute.
+  if (opts.needsRequestGuard) await needsCapability(ctx, "studio-request-guard");
+  // Every Studio here has `studio.execute` on, and the Origin and content-type cases send
+  // their requests to `/api/execute`, so every scenario needs the execute guard's config.
   await needsCapability(ctx, "studio-execute-guard");
   const key = `${dialect}:${opts.launch ?? "main"}`;
   if (!launches.has(key)) {
@@ -92,7 +95,12 @@ async function studioFor(ctx: TestContext, dialect: SupportedDialect, opts: { gu
           schema: ensureArtifact(dialect),
           execute: { provider: EXECUTE_PROVIDER[dialect], databaseUrl: scratch.url, file: scratch.file },
         });
-        return { server, scratch, token: pageToken((await studioRequest(server)).text) };
+        try {
+          return { server, scratch, token: pageToken((await studioRequest(server)).text) };
+        } catch (error) {
+          await server.close();
+          throw error;
+        }
       })(),
     );
   }
@@ -103,21 +111,21 @@ async function studioFor(ctx: TestContext, dialect: SupportedDialect, opts: { gu
  * Headers for an `/api/*` request as Studio's own page sends it: its token, and for a POST
  * its own `Origin` and JSON. `change` replaces a header, or removes it when `undefined`.
  */
-function pageHeaders(l: Launched, method: "GET" | "POST", change: Record<string, string | undefined> = {}): Record<string, string> {
-  const headers: Record<string, string | undefined> = { [TOKEN_HEADER]: l.token };
-  if (method === "POST") Object.assign(headers, { origin: l.server.origin, "content-type": "application/json" });
+function pageHeaders(launched: Launched, method: "GET" | "POST", change: Record<string, string | undefined> = {}): Record<string, string> {
+  const headers: Record<string, string | undefined> = { [TOKEN_HEADER]: launched.token };
+  if (method === "POST") Object.assign(headers, { origin: launched.server.origin, "content-type": "application/json" });
   Object.assign(headers, change);
   return Object.fromEntries(Object.entries(headers).filter((e): e is [string, string] => e[1] !== undefined));
 }
 
 /** `GET /api/workspace`: a read, so only the Host and token checks apply. */
-function getWorkspace(l: Launched, change?: Record<string, string | undefined>): Promise<StudioReply> {
-  return studioRequest(l.server, { path: "/api/workspace", headers: pageHeaders(l, "GET", change) });
+function getWorkspace(launched: Launched, change?: Record<string, string | undefined>): Promise<StudioReply> {
+  return studioRequest(launched.server, { path: "/api/workspace", headers: pageHeaders(launched, "GET", change) });
 }
 
 /** `POST /api/execute` with `{ sql }`. */
-function execute(l: Launched, sql: string, change?: Record<string, string | undefined>): Promise<StudioReply> {
-  return studioRequest(l.server, { method: "POST", path: "/api/execute", headers: pageHeaders(l, "POST", change), body: JSON.stringify({ sql }) });
+function execute(launched: Launched, sql: string, change?: Record<string, string | undefined>): Promise<StudioReply> {
+  return studioRequest(launched.server, { method: "POST", path: "/api/execute", headers: pageHeaders(launched, "POST", change), body: JSON.stringify({ sql }) });
 }
 
 /** `POST /api/execute` ran the SQL and returned rows. */
@@ -128,8 +136,10 @@ function expectRan(reply: StudioReply): void {
 
 /**
  * Contract: each launch generates a random token and injects it into the page it serves;
- * every `/api/*` call without the right token gets `403`, and restarting Studio issues a
- * new one (`studio.mdx`; ADR 0009: `<meta name="askdb-studio-token">`, 256 bits, hex).
+ * every `/api/*` call without the right token gets `403`, and each launch issues its own,
+ * so a restart invalidates the old one (`studio.mdx`; ADR 0009: `<meta
+ * name="askdb-studio-token">`, 256 bits, hex). Two launches side by side stand in for a
+ * restart.
  * Catches: a packed Studio that serves no token (the browser app then gets `403` on every
  * call), accepts a request without one, or accepts another launch's token (a fixed or
  * reused token, which a stale tab or another page could hold).
@@ -139,32 +149,32 @@ function expectRan(reply: StudioReply): void {
  */
 describe("[postgres] studio-token", () => {
   it("the served page carries the launch's session token, and another launch's page carries another", async (ctx) => {
-    const a = await studioFor(ctx, "postgres", { guard: true });
-    const b = await studioFor(ctx, "postgres", { guard: true, launch: "second" });
-    const page = await studioRequest(a.server);
+    const first = await studioFor(ctx, "postgres", { needsRequestGuard: true });
+    const second = await studioFor(ctx, "postgres", { needsRequestGuard: true, launch: "second" });
+    const page = await studioRequest(first.server);
 
     expect(page.headers["content-type"]).toMatch(/^text\/html/);
     expect(page.status).toBe(200);
     expect(pageToken(page.text)).toMatch(/^[0-9a-f]{64}$/);
-    expect(b.token).toMatch(/^[0-9a-f]{64}$/);
-    expect(b.token).not.toBe(a.token);
+    expect(second.token).toMatch(/^[0-9a-f]{64}$/);
+    expect(second.token).not.toBe(first.token);
   });
 
   it("an /api request without x-askdb-studio-token answers 403; with the page's token it answers 200", async (ctx) => {
-    const l = await studioFor(ctx, "postgres", { guard: true });
+    const launched = await studioFor(ctx, "postgres", { needsRequestGuard: true });
 
-    expect((await getWorkspace(l, { [TOKEN_HEADER]: undefined })).status).toBe(403);
-    expect((await getWorkspace(l)).status).toBe(200);
+    expect((await getWorkspace(launched, { [TOKEN_HEADER]: undefined })).status).toBe(403);
+    expect((await getWorkspace(launched)).status).toBe(200);
   });
 
   it("another launch's token answers 403, on each launch", async (ctx) => {
-    const a = await studioFor(ctx, "postgres", { guard: true });
-    const b = await studioFor(ctx, "postgres", { guard: true, launch: "second" });
+    const first = await studioFor(ctx, "postgres", { needsRequestGuard: true });
+    const second = await studioFor(ctx, "postgres", { needsRequestGuard: true, launch: "second" });
 
-    expect((await getWorkspace(a, { [TOKEN_HEADER]: b.token })).status).toBe(403);
-    expect((await getWorkspace(b, { [TOKEN_HEADER]: a.token })).status).toBe(403);
-    expect((await getWorkspace(a)).status).toBe(200);
-    expect((await getWorkspace(b)).status).toBe(200);
+    expect((await getWorkspace(first, { [TOKEN_HEADER]: second.token })).status).toBe(403);
+    expect((await getWorkspace(second, { [TOKEN_HEADER]: first.token })).status).toBe(403);
+    expect((await getWorkspace(first)).status).toBe(200);
+    expect((await getWorkspace(second)).status).toBe(200);
   });
 });
 
@@ -181,26 +191,27 @@ describe("[postgres] studio-token", () => {
  */
 describe("[postgres] studio-host", () => {
   it("a rebound Host answers 403 on the page and on /api with a valid token; 127.0.0.1 and localhost on Studio's port answer 200", async (ctx) => {
-    const l = await studioFor(ctx, "postgres", { guard: true });
-    const rebound = `evil.example:${l.server.port}`;
+    const launched = await studioFor(ctx, "postgres", { needsRequestGuard: true });
+    const rebound = `evil.example:${launched.server.port}`;
 
-    const page = await studioRequest(l.server, { headers: { host: rebound } });
+    const page = await studioRequest(launched.server, { headers: { host: rebound } });
     expect(page.status).toBe(403);
-    expect(page.text).not.toContain(l.token!);
-    expect((await getWorkspace(l, { host: rebound })).status).toBe(403);
+    expect(page.text).not.toContain(launched.token!);
+    expect((await getWorkspace(launched, { host: rebound })).status).toBe(403);
 
-    for (const host of [l.server.host, `localhost:${l.server.port}`]) {
-      expect((await studioRequest(l.server, { headers: { host } })).status, host).toBe(200);
-      expect((await getWorkspace(l, { host })).status, host).toBe(200);
+    for (const host of [launched.server.host, `localhost:${launched.server.port}`]) {
+      expect((await studioRequest(launched.server, { headers: { host } })).status, host).toBe(200);
+      expect((await getWorkspace(launched, { host })).status, host).toBe(200);
     }
   });
 
   it("127.0.0.1 on another port answers 403", async (ctx) => {
-    const l = await studioFor(ctx, "postgres", { guard: true });
-    const otherPort = l.server.port === 65535 ? l.server.port - 1 : l.server.port + 1;
+    const launched = await studioFor(ctx, "postgres", { needsRequestGuard: true });
+    const { port } = launched.server;
+    const otherPort = port === 65535 ? port - 1 : port + 1;
 
-    expect((await getWorkspace(l, { host: `127.0.0.1:${otherPort}` })).status).toBe(403);
-    expect((await getWorkspace(l, { host: `127.0.0.1:${l.server.port}` })).status).toBe(200);
+    expect((await getWorkspace(launched, { host: `127.0.0.1:${otherPort}` })).status).toBe(403);
+    expect((await getWorkspace(launched, { host: `127.0.0.1:${port}` })).status).toBe(200);
   });
 });
 
@@ -214,10 +225,10 @@ describe("[postgres] studio-host", () => {
  */
 describe("[postgres] studio-origin", () => {
   it("POST /api/execute from a cross-site Origin, with a valid token and JSON, answers 403; from Studio's own origin, 200", async (ctx) => {
-    const l = await studioFor(ctx, "postgres", { guard: true });
+    const launched = await studioFor(ctx, "postgres", { needsRequestGuard: true });
 
-    expect((await execute(l, "SELECT 1 AS ok", { origin: "http://evil.example" })).status).toBe(403);
-    expectRan(await execute(l, "SELECT 1 AS ok"));
+    expect((await execute(launched, "SELECT 1 AS ok", { origin: "http://evil.example" })).status).toBe(403);
+    expectRan(await execute(launched, "SELECT 1 AS ok"));
   });
 });
 
@@ -231,29 +242,32 @@ describe("[postgres] studio-origin", () => {
  */
 describe("[postgres] studio-content-type", () => {
   it("POST /api/execute as text/plain, with a valid token and its own origin, answers 415; the same body as application/json, 200", async (ctx) => {
-    const l = await studioFor(ctx, "postgres", { guard: true });
+    const launched = await studioFor(ctx, "postgres", { needsRequestGuard: true });
 
-    expect((await execute(l, "SELECT 1 AS ok", { "content-type": "text/plain" })).status).toBe(415);
-    expectRan(await execute(l, "SELECT 1 AS ok"));
+    expect((await execute(launched, "SELECT 1 AS ok", { "content-type": "text/plain" })).status).toBe(415);
+    expectRan(await execute(launched, "SELECT 1 AS ok"));
   });
 });
 
-const lineCount = (s: ScratchDb) => withOwner(s, (c) => scalar(c, `SELECT COUNT(*) AS n FROM ${s.table({ schema: "billing", name: "order_line" })}`));
+/** The scratch copy's `billing.order_line`, the table the write cases delete from. */
+const orderLines = (scratch: ScratchDb) => scratch.table({ schema: "billing", name: "order_line" });
+
+const lineCount = (scratch: ScratchDb) => withOwner(scratch, (c) => scalar(c, `SELECT COUNT(*) AS n FROM ${orderLines(scratch)}`));
 
 /**
  * `sql`, sent to Studio's execute, is refused with `400` and leaves `billing.order_line`
  * as seeded; the same SQL, run raw as the owner on the same scratch copy, empties it.
  */
-async function expectRefusedThoughItWouldLand(l: Launched, sql: string): Promise<void> {
-  await l.scratch.reset();
-  const reply = await execute(l, sql);
+async function expectRefusedThoughItWouldLand(launched: Launched, sql: string): Promise<void> {
+  await launched.scratch.reset();
+  const reply = await execute(launched, sql);
 
   expect(reply.status, reply.text).toBe(400);
   expect(reply.json).not.toHaveProperty("rows");
-  expect(await lineCount(l.scratch), "Studio's refused request changed the scratch copy").toBe(ORDER_LINES.length);
-  // The proof: the refusal is what stood in the way. As the owner, the same SQL lands.
-  await withOwner(l.scratch, (c) => c.run(sql));
-  expect(await lineCount(l.scratch), "the SQL, run raw as the owner, didn't delete the rows").toBe(0);
+  expect(await lineCount(launched.scratch), "Studio's refused request changed the scratch copy").toBe(ORDER_LINES.length);
+  // The proof: the credentials Studio holds can make this write. Run raw as the owner, it lands.
+  await withOwner(launched.scratch, (c) => c.run(sql));
+  expect(await lineCount(launched.scratch), "the SQL, run raw as the owner, didn't delete the rows").toBe(0);
 }
 
 describe.each(SUPPORTED_DIALECTS.map((d) => [d] as [SupportedDialect]))("[%s]", (dialect) => {
@@ -267,8 +281,8 @@ describe.each(SUPPORTED_DIALECTS.map((d) => [d] as [SupportedDialect]))("[%s]", 
    * drivers for the other engines; nothing runs the packed Studio on a live engine.
    */
   it("studio-execute-select: POST /api/execute returns the rows of a SELECT", async (ctx) => {
-    const l = await studioFor(ctx, dialect);
-    const reply = await execute(l, `SELECT agency_id, name FROM ${l.scratch.table({ schema: "org", name: "agency" })} ORDER BY agency_id`);
+    const launched = await studioFor(ctx, dialect);
+    const reply = await execute(launched, `SELECT agency_id, name FROM ${launched.scratch.table({ schema: "org", name: "agency" })} ORDER BY agency_id`);
 
     expectRan(reply);
     expect(reply.json.columns).toEqual(["agency_id", "name"]);
@@ -287,32 +301,40 @@ describe.each(SUPPORTED_DIALECTS.map((d) => [d] as [SupportedDialect]))("[%s]", 
    * it; `apps/studio`'s tests use mocked drivers and never show a write would land.
    */
   it("studio-execute-write: a DELETE answers 400 and leaves the rows, though run raw as the owner it empties the table", async (ctx) => {
-    const l = await studioFor(ctx, dialect);
+    const launched = await studioFor(ctx, dialect);
 
-    await expectRefusedThoughItWouldLand(l, `DELETE FROM ${l.scratch.table({ schema: "billing", name: "order_line" })}`);
+    await expectRefusedThoughItWouldLand(launched, `DELETE FROM ${orderLines(launched.scratch)}`);
   });
 
   /**
    * Contract: "Multiple statements … are rejected with `400`" (`studio.mdx`, "Security
    * model"); execute runs one statement.
-   * Catches: a packed Studio that lets a second statement through: harmless-looking SELECTs
-   * (so only the single-statement check can reject them), and a SELECT followed by a DELETE
-   * that, run raw as the owner, lands.
+   * Catches: a packed Studio that lets a second statement through. Both statements here
+   * are SELECTs that each run on their own, so only the single-statement check can reject
+   * the pair.
    * Not covered elsewhere: as for `studio-execute-write`.
    */
   it("studio-execute-multi-statement: two SELECTs answer 400, while either alone answers 200", async (ctx) => {
-    const l = await studioFor(ctx, dialect);
-    const reply = await execute(l, "SELECT 1 AS a; SELECT 2 AS b");
+    const launched = await studioFor(ctx, dialect);
+    const reply = await execute(launched, "SELECT 1 AS a; SELECT 2 AS b");
 
     expect(reply.status, reply.text).toBe(400);
     expect(reply.json).not.toHaveProperty("rows");
-    expectRan(await execute(l, "SELECT 1 AS a"));
-    expectRan(await execute(l, "SELECT 2 AS b"));
+    expectRan(await execute(launched, "SELECT 1 AS a"));
+    expectRan(await execute(launched, "SELECT 2 AS b"));
   });
 
+  /**
+   * Contract: as above, for the attack the rule exists for: a harmless SELECT with a write
+   * after it.
+   * Catches: a packed Studio that runs the second statement, a DELETE that, run raw as the
+   * owner on the same scratch copy, lands. The DELETE keyword would also be rejected on its
+   * own, so the case above is what pins the single-statement check.
+   * Not covered elsewhere: as for `studio-execute-write`.
+   */
   it("studio-execute-multi-statement: a SELECT then a DELETE answers 400 and leaves the rows, though run raw as the owner it empties the table", async (ctx) => {
-    const l = await studioFor(ctx, dialect);
+    const launched = await studioFor(ctx, dialect);
 
-    await expectRefusedThoughItWouldLand(l, `SELECT 1 AS ok; DELETE FROM ${l.scratch.table({ schema: "billing", name: "order_line" })}`);
+    await expectRefusedThoughItWouldLand(launched, `SELECT 1 AS ok; DELETE FROM ${orderLines(launched.scratch)}`);
   });
 });
