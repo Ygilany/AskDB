@@ -8,7 +8,7 @@ This page is the reference contract for adding a new connector to AskDB. AskDB c
 - [`@askdb/sqlserver`](../../packages/sqlserver/README.md) — live `sys.*` catalog queries.
 - [`@askdb/prisma`](../../packages/prisma/README.md) — reads `schema.prisma` files offline.
 
-Architecture context lives in [ADR 0002 — Integration-package layout](../adrs/0002-integration-package-layout.md) and [ADR 0008 — Engine packages, engine kit, and the connector registry](../adrs/0008-engine-packages-and-connector-registry.md): connectors are engine-specific, `@askdb/introspect` is engine-agnostic, each integration owns its own input shape and connection resolution, and the shared mechanics live in `@askdb/introspect/kit`. A third-party engine is a self-contained package: nothing in AskDB needs editing to add one.
+Architecture context lives in [ADR 0002 — Integration-package layout](../adrs/0002-integration-package-layout.md) and [ADR 0008 — Engine packages, engine kit, and the connector registry](../adrs/0008-engine-packages-and-connector-registry.md): connectors are engine-specific, `@askdb/introspect` is engine-agnostic, each integration owns its own input shape and connection resolution, and the shared mechanics live in `@askdb/introspect/kit`. A third-party engine is a self-contained package that a custom host registers next to the built-in adapters without editing AskDB. The shipped `askdb` CLI and Studio register only the built-in engines, and `@askdb/config`'s `introspection.provider` list is closed, so using a third-party engine there still needs AskDB changes (ADR 0008).
 
 ---
 
@@ -250,7 +250,9 @@ import { createOracleCatalogQueryRunner, createOracleConnector } from "./connect
 export const oracleConnectorProvider = defineLiveConnectorProvider({
   provider: "oracle",
   displayName: "Oracle",
-  // Key read from runtime.introspection when no --url is passed.
+  // Looked up in runtime.introspection when no explicit URL is passed. @askdb/config
+  // fills that block only for the built-in engines, so for this engine the URL must
+  // arrive explicitly: registry.resolveConnection("oracle", { explicit: { url }, runtime }).
   runtimeKey: "oracleDatabaseUrl",
   connectionNoun: "a connection URL",
   missingConnection: {
@@ -264,7 +266,7 @@ export const oracleConnectorProvider = defineLiveConnectorProvider({
 });
 ```
 
-`@askdb/config`'s typed `introspection` block only knows the built-in engines, so a third-party adapter that needs config values reads them in its own `resolveConnection` — from `runtime.flat` (env-style keys) or `runtime.structured` — instead of relying on `runtimeKey`:
+`@askdb/config`'s typed `introspection` block only knows the built-in engines, so `runtimeKey` never finds a value for a third-party engine: with `defineLiveConnectorProvider` the host must pass the URL as `explicit.url`. To fall back to configuration instead, write `resolveConnection` yourself and read the value from `runtime.flat` (env-style keys) or `runtime.structured`:
 
 ```ts
 import type { ConnectorProviderAdapter } from "@askdb/introspect";
@@ -290,7 +292,7 @@ export const oracleConnectorProvider: ConnectorProviderAdapter = {
 };
 ```
 
-Register it next to the built-in adapters in your host:
+Register it next to the built-in adapters in your host. `createConnectorRegistry()` throws if two adapters use the same provider id:
 
 ```ts
 import { getAskDbRuntimeConfig } from "@askdb/config";

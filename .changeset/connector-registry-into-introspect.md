@@ -17,6 +17,7 @@ Move the connector provider registry into `@askdb/introspect` with open provider
   - Provider ids are typed `ConnectorProviderId = BuiltInConnectorProvider | (string & {})`, so a third-party engine can register its own id.
   - Adapters can implement `resolveConnection({ explicit?, runtime, surface? })`, which merges explicit values (CLI flags) with AskDB runtime config into `{ url?, fromExport?, schemaPath? }` (or an error). The registry adds `sourceLabel`, built from the adapter's `connectionLabelParts` with `formatConnectionLabel`, so no adapter supplies label text.
   - The registry exposes `resolveConnection(provider, request)`, `connectionLabel(provider, connection)` and `providers()`. An adapter without `connectionLabelParts` is labeled `configured <provider> connection`.
+  - `createConnectorRegistry()` throws when two adapters use the same provider id, instead of silently keeping the last one.
   - `@askdb/introspect/kit` adds `defineLiveConnectorProvider` for live-catalog-only engines.
 - **@askdb/connectors**: deprecated. It is now a re-export shim of the `@askdb/introspect` registry and the `@askdb/introspect/kit` connection-label helpers. `CONNECTOR_PROVIDERS` aliases `BUILT_IN_CONNECTOR_PROVIDERS`. `ConnectorProvider` aliases `ConnectorProviderId` and is now an open string type instead of a closed union. Migrate imports to `@askdb/introspect`.
 - **@askdb/postgres**, **@askdb/mysql**, **@askdb/sqlite**, **@askdb/sqlserver**, **@askdb/prisma**:

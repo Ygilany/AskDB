@@ -28,7 +28,7 @@ describe("cli spawn: introspect subcommand", () => {
     expect(exec.stdout).toContain("ORDER BY");
   });
 
-  it("rejects Prisma templates because Prisma introspection reads schema files", () => {
+  it("rejects `introspect templates` for Prisma, which provides no SQL templates", () => {
     const exec = run("node", [
       join(cliDir, "dist/cli.js"),
       "introspect",
