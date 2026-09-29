@@ -34,6 +34,8 @@ scopedTables:
         join:
           - from: table:billing.order_line#order_id
             to: table:billing.order#order_id
+          - from: table:billing.order#agency_id
+            to: table:org.agency#agency_id
   - id: table:billing.agency_revenue
     scopeThrough:
       - root: table:org.agency

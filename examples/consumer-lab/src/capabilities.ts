@@ -79,12 +79,19 @@ function httpApiLeavesDriversOptional(): boolean {
  */
 async function askTenantProbe(dialect: "postgres" | "sqlite", sql: string, extras: Record<string, unknown>) {
   const { ask, loadSchema } = await import("@askdb/core");
-  const { tenantArtifact } = await import("./tenant.js");
+  const { removeTenantArtifact, tenantArtifact } = await import("./tenant.js");
   const generateText = (async () => ({ text: `\`\`\`sql\n${sql}\n\`\`\`` })) as unknown as NonNullable<AskGenerateDeps["generateText"]>;
+  const dir = tenantArtifact(dialect);
+  let schema: ReturnType<typeof loadSchema>;
+  try {
+    schema = loadSchema(dir);
+  } finally {
+    removeTenantArtifact(dir);
+  }
   return ask({
     ...extras,
     question: "A probe for a tenant capability.",
-    schema: loadSchema(tenantArtifact(dialect)),
+    schema,
     // `model` is required; with `deps.generateText` supplied it is never called.
     model: {} as Parameters<typeof ask>[0]["model"],
     dialect,
@@ -119,8 +126,10 @@ async function askCallsSubtreeResolver(): Promise<boolean> {
 /**
  * Whether `tenantSqlMode: "sql-params"` binds tenant IDs through the dialect's driver
  * markers (`reference/core-api.mdx`, `tenantSqlMode`: "`?` MySQL/MariaDB/SQLite"): ask on
- * SQLite and look for `?` in the returned `sql`. Releases before the fix for #231 bound them
- * with Postgres `$N` markers on every dialect, which a `?` driver can't bind.
+ * SQLite and check the returned `sql` uses `?`, not Postgres `$N`, and that the scope's ID
+ * comes back in `tenantParams`. Releases before the fix for #231 bound them with Postgres
+ * `$N` markers on every dialect, which a `?` driver can't bind. Only the marker and the
+ * bound value are checked, not how the predicate around them is written.
  */
 async function askBindsTenantDriverMarkers(): Promise<boolean> {
   const { idsScope } = await import("./tenant.js");
@@ -128,7 +137,8 @@ async function askBindsTenantDriverMarkers(): Promise<boolean> {
     tenantScope: idsScope("sqlite", [2]),
     tenantSqlMode: "sql-params",
   });
-  return /agency_id = \?/.test(result.sql);
+  const params = (result as { tenantParams?: readonly unknown[] }).tenantParams ?? [];
+  return result.sql.includes("?") && !/\$\d/.test(result.sql) && params.map(String).includes("2");
 }
 
 

@@ -9,8 +9,8 @@
  * every table under `public`. The copy goes to a fresh directory: the introspected
  * artifact itself stays policy-free for the other suites.
  */
-import { cpSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { dirname, join } from "node:path";
 import type { TenantScope } from "@askdb/core";
 import { ensureArtifact } from "./artifacts.js";
 import type { SupportedDialect } from "./dialects.js";
@@ -45,7 +45,8 @@ function mapTableId(ids: Map<string, string>, logical: string): string {
 
 /**
  * A copy of the dialect's schema artifact with the tenant overlay applied, in a fresh
- * directory under `.lab/artifacts/tenant/`. `enforcement` replaces the overlay's own.
+ * directory under `.lab/artifacts/tenant/`. `enforcement` replaces the overlay's own. The
+ * caller removes it with {@link removeTenantArtifact} when done; nothing else clears it.
  */
 export function tenantArtifact(dialect: SupportedDialect, enforcement: Enforcement = "strict"): string {
   const source = ensureArtifact(dialect);
@@ -58,6 +59,11 @@ export function tenantArtifact(dialect: SupportedDialect, enforcement: Enforceme
     .replace(/\btable:[a-z_]+\.[a-z_]+/g, (logical) => mapTableId(ids, logical));
   writeFileSync(join(dir, "tenant-policy.md"), policy);
   return dir;
+}
+
+/** Remove a copy {@link tenantArtifact} made (its fresh parent directory). */
+export function removeTenantArtifact(dir: string): void {
+  rmSync(dirname(dir), { recursive: true, force: true });
 }
 
 /** The overlay's one tenant root, `org.agency`, as the dialect's artifact names it. */

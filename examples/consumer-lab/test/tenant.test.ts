@@ -43,7 +43,7 @@ import { cassetteSql, loadQuestions, type Question } from "../src/model/catalog.
 import { startReplayServer, type ReplayServer } from "../src/model/replay-server.js";
 import { LAB_ROOT } from "../src/paths.js";
 import { ALL_AGENCIES, TENANT_ORACLES, VISIBLE } from "../src/tenant-oracle.js";
-import { agencyDescendants, agencyRoot, idsScope, subtreeScope, tenantArtifact, type Enforcement } from "../src/tenant.js";
+import { agencyDescendants, agencyRoot, idsScope, removeTenantArtifact, subtreeScope, tenantArtifact, type Enforcement } from "../src/tenant.js";
 
 const TENANT_QUESTIONS = join(LAB_ROOT, "scenarios", "tenant-questions.json");
 const QUESTIONS = loadQuestions(TENANT_QUESTIONS);
@@ -74,6 +74,7 @@ beforeAll(async () => {
 
 afterAll(async () => {
   await replay?.close();
+  for (const dir of artifacts.values()) removeTenantArtifact(dir);
 });
 
 /**
@@ -286,7 +287,7 @@ describe.each(SUPPORTED_DIALECTS.map((d) => [d] as [SupportedDialect]))("[%s]", 
       const result = await ask(dialect, "tenant-unfiltered", { tenantScope: idsScope(dialect, [FLAT]) }, "warn");
 
       expect(result.sql).toBe(cassetteSql(dialect, "tenant-unfiltered", QUESTIONS));
-      expect(result.tenantGuardrail).toMatchObject({ passed: false, warnings: [expect.objectContaining({ tableId: expect.stringMatching(/\.program$/) })] });
+      expect(result.tenantGuardrail).toMatchObject({ passed: false, warnings: [expect.objectContaining({ rule: "MISSING_TENANT_PREDICATE", tableId: expect.stringMatching(/\.program$/) })] });
     });
   });
 
