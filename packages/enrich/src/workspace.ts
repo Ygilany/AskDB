@@ -1,9 +1,11 @@
 import { createHash, randomBytes } from "node:crypto";
 import {
+  accessSync,
   closeSync,
   constants as fsConstants,
   existsSync,
   fchmodSync,
+  fsyncSync,
   lstatSync,
   mkdirSync,
   openSync,
@@ -433,7 +435,14 @@ function resolveTableFilePath(tablesDir: string, filename: string): string {
  *   to a file elsewhere is detached, not written through, and a symbolic link
  *   planted at the target after the check is replaced, not followed. This holds on
  *   Windows too, which has no `O_NOFOLLOW`.
- * - Readers see either the old file or the new one, never a partial write.
+ * - A target the caller can't write is refused with `EACCES`, as a plain write
+ *   would be. `rename` needs only write access to `tables/`, so without this check
+ *   a read-only file (how Perforce and ClearCase mark files not checked out) would
+ *   be replaced on macOS and Linux.
+ * - The temp file gets the target's permission bits before any content is written,
+ *   so a `0600` file's new content is never readable by others, and it is
+ *   `fsync`ed before the rename. Readers, and a crash or power loss, see either the
+ *   old file or the new one, never a partial write.
  *
  * Not covered: `tables/` being swapped for a link after the check and before the
  * rename, since the temp path and the rename still resolve through it. That needs
@@ -450,6 +459,7 @@ function replaceTableFile(
   if (lstatSync(tablesDir).isSymbolicLink()) throw refuse("tables/ is a symbolic link");
   const existing = lstatSync(filePath, { throwIfNoEntry: false });
   if (existing?.isSymbolicLink()) throw refuse(`${JSON.stringify(filename)} is a symbolic link`);
+  if (existing) accessSync(filePath, fsConstants.W_OK);
 
   const tempPath = join(tablesDir, `.askdb-save-${randomBytes(8).toString("hex")}.tmp`);
   const fd = openSync(
@@ -459,9 +469,10 @@ function replaceTableFile(
   );
   try {
     try {
-      writeFileSync(fd, content, "utf8");
-      // Keep the replaced file's permission bits.
+      // Keep the replaced file's permission bits, before the content lands.
       if (existing) fchmodSync(fd, existing.mode & 0o777);
+      writeFileSync(fd, content, "utf8");
+      fsyncSync(fd);
     } finally {
       closeSync(fd);
     }

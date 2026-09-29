@@ -1,4 +1,5 @@
 import {
+  chmodSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
@@ -14,6 +15,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { loadSchema, loadSchemaFromJson } from "@askdb/core";
+import { integrationSuite } from "../../../scripts/test-utils/integration.mjs";
 import { buildFrontmatter, buildTableDraft } from "./draft.js";
 import {
   buildDefaultTableBody,
@@ -533,6 +535,30 @@ describe("workspace table filenames", () => {
     expect(readFileSync(target, "utf8")).toContain("About table:public.orders.");
     expect(statSync(target).nlink).toBe(1);
     expect(readdirSync(join(schemaDir, "tables"))).toEqual(["orders.md"]);
+  });
+
+  // File modes only mean this on POSIX, and root passes every write-permission check.
+  integrationSuite({
+    unavailable:
+      process.platform === "win32"
+        ? "POSIX file modes are required (not Windows)"
+        : process.getuid?.() === 0
+          ? "running as root, where every file is writable"
+          : false,
+  })("saveTable on a read-only table file", () => {
+    it("refuses with EACCES and leaves the file unchanged", () => {
+      writeSchema([table("public", "orders")]);
+      const target = join(schemaDir, "tables", "orders.md");
+      const original = tableMd("public", "orders", "Checked out read-only.");
+      writeFileSync(target, original, "utf8");
+      chmodSync(target, 0o444);
+      const ws = loadWorkspace(schemaDir);
+
+      expect(() => saveDescribed(ws, "table:public.orders")).toThrow(/EACCES/);
+      expect(readFileSync(target, "utf8")).toBe(original);
+      expect(statSync(target).mode & 0o777).toBe(0o444);
+      expect(readdirSync(join(schemaDir, "tables"))).toEqual(["orders.md"]);
+    });
   });
 
   it("saveTable refuses to write when tables/ is a symbolic link", () => {
