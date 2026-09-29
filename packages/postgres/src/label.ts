@@ -19,7 +19,7 @@ export function parsePostgresConnection(input: string): ConnectionLabelParts | u
   let parsed: ReturnType<typeof parse>;
   try {
     url = new URL(input);
-    parsed = parse(input);
+    parsed = parse(withoutSslParams(input));
   } catch {
     return undefined;
   }
@@ -31,4 +31,30 @@ export function parsePostgresConnection(input: string): ConnectionLabelParts | u
     ...(typeof port === "string" && port !== "" ? { port } : {}),
     ...(typeof database === "string" && database !== "" ? { database } : {}),
   };
+}
+
+/**
+ * The query without its `ssl*` parameters. `parse()` reads the files named by
+ * `sslcert`, `sslkey` and `sslrootcert` and warns process-wide for some
+ * `sslmode` values; none of them can change the host, port or database, so a
+ * label never needs them. Removed textually, so the rest of the string reaches
+ * the parser exactly as written.
+ */
+function withoutSslParams(input: string): string {
+  const query = input.indexOf("?");
+  if (query === -1) return input;
+  const kept = input
+    .slice(query + 1)
+    .split("&")
+    .filter((param) => !isSslKey(param.split("=", 1)[0]!));
+  return kept.length > 0 ? `${input.slice(0, query)}?${kept.join("&")}` : input.slice(0, query);
+}
+
+/** Decoded as the parser's URLSearchParams would (`%73slkey` is `sslkey`); undecodable keys are dropped too. */
+function isSslKey(rawKey: string): boolean {
+  try {
+    return /^ssl/i.test(decodeURIComponent(rawKey.replace(/\+/g, " ")));
+  } catch {
+    return true;
+  }
 }

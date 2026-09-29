@@ -949,8 +949,8 @@ describe("AskDB Studio server", () => {
     // Round 2: an unescaped ; inside an unquoted password; SQLite URI keys.
     // The driver reads `cd;Database` as one key, so no database is shown.
     ["sqlserver", "Server=db;User Id=sa;Password=ab;cd;Database=app", "sqlserver://db"],
-    // The Prisma-form parser splits on every ";": `app` is the database it opens.
-    ["sqlserver", "sqlserver://db:1433;user=sa;password=ab;cd;database=app", "sqlserver://db:1433/app"],
+    // Prisma rejects a segment that isn't key=value.
+    ["sqlserver", "sqlserver://db:1433;user=sa;password=ab;cd;database=app", "configured sqlserver connection"],
     ["sqlite", "file:./data/app.db?mode=ro&key=S3cret", "./data/app.db"],
     // Round 3: a quoted or braced value followed by trailing text.
     ["postgres", "postgres://db:5432/app?password='ab'cd", "postgres://db:5432/app"],
@@ -978,6 +978,11 @@ describe("AskDB Studio server", () => {
     ["sqlserver", "Server=h;User Id=sa;Password=\u00a0;Database=leak", "sqlserver://h"],
     ["sqlserver", "Server=h;User Id=sa;Password=\ufeff;Database=leak", "sqlserver://h"],
     ["sqlserver", "User Id=sa;Password=\u00a0;Server=leakhost", "configured sqlserver connection"],
+    // Delta review 4: Prisma's {…} escaping keeps a ;database= inside the value,
+    // and a quoted value holding ; is rejected, as Prisma rejects it.
+    ["sqlserver", "sqlserver://h:1433;database=app;user=sa;password={S3c;database=ret;}", "sqlserver://h:1433/app"],
+    ["sqlserver", "sqlserver://h;user={a;database=leak;}", "sqlserver://h"],
+    ["sqlserver", 'sqlserver://h;user=sa;password="S3c;database=ret;"', "configured sqlserver connection"],
     // Prisma schema paths go through the same allowlist.
     ["prisma", "./prisma/schema.prisma", "./prisma/schema.prisma"],
     ["prisma", "file:schema.prisma?key=S3cret", "configured prisma connection"],

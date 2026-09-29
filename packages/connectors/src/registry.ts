@@ -97,15 +97,14 @@ export function createConnectorRegistry(
       return byProvider.get(provider)?.getTemplates?.();
     },
     connectionLabel(provider, connection) {
-      let parts: ConnectionLabelParts | undefined;
       try {
-        parts = byProvider.get(provider)?.connectionLabelParts?.(connection);
+        return formatConnectionLabel(provider, byProvider.get(provider)?.connectionLabelParts?.(connection));
       } catch {
-        // A throwing parser gets the fallback. Its message may quote the
-        // connection string, so it must never become user-visible text.
-        parts = undefined;
+        // A throwing parser, or parts whose getter or Proxy trap throws while
+        // being read, get the fallback. The message may quote the connection
+        // string, so it must never become user-visible text.
+        return formatConnectionLabel(provider, undefined);
       }
-      return formatConnectionLabel(provider, parts);
     },
   };
 }

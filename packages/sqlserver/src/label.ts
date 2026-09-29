@@ -7,9 +7,10 @@ import { resolveConnectionInput } from "./exec/sqlserver.js";
  * code the connection uses — never a reimplementation of the grammar
  * (ADR 0011):
  *
- * - `resolveConnectionInput()` turns `mssql://…` and the Prisma/JDBC-style
- *   `sqlserver://host:port;key=value` form into `{ server, port, database }`,
- *   and hands ADO.NET strings to `mssql`;
+ * - `resolveConnectionInput()` turns `mssql://…` and Prisma's
+ *   `sqlserver://host:port;key=value` form into `{ server, port, database }`
+ *   (the latter with Prisma's own grammar, `{…}` escapes included), and hands
+ *   ADO.NET strings to `mssql`;
  * - `mssql` parses ADO.NET strings with `@tediousjs/connection-string`
  *   (`parse(…).toSchema(MSSQL_SCHEMA)`), then splits `data source` into
  *   server, instance and port. The split below mirrors that step; a
@@ -35,6 +36,7 @@ export function parseSqlServerConnection(input: string): ConnectionLabelParts | 
   }
   if (input.startsWith("sqlserver://") && input.includes("@")) return undefined;
   if (input.startsWith("mssql://") && !mssqlUrlIsUnambiguous(input)) return undefined;
+  if (resolved.options?.instanceName !== undefined) return undefined;
   return parts(resolved.server, resolved.port === undefined ? undefined : String(resolved.port), resolved.database);
 }
 
@@ -60,16 +62,19 @@ function adoNetParts(connectionString: string): ConnectionLabelParts | undefined
   if (/^np:/i.test(dataSource)) return undefined;
   const address = dataSource.replace(/^tcp:/i, "");
   if (address.includes("\\")) return undefined;
+  // Trimmed only around a `,port`, as mssql does: `tcp: leak` keeps its space.
   const comma = /^(.*),(.*)$/.exec(address);
-  const server = (comma ? comma[1]! : address).trim();
+  const server = comma ? comma[1]!.trim() : address;
   const port = comma ? comma[2]!.trim() : undefined;
   const host = server === "." || /^\((local|\.|localdb)\)$/i.test(server) ? "localhost" : server;
   return parts(host, port, database);
 }
 
-function parts(host: string, port: string | undefined, database: string | undefined): ConnectionLabelParts {
+/** No host means no label: `Server=;Database=app` falls back rather than showing `sqlserver:///app`. */
+function parts(host: string, port: string | undefined, database: string | undefined): ConnectionLabelParts | undefined {
+  if (host === "") return undefined;
   return {
-    ...(host !== "" ? { host } : {}),
+    host,
     ...(port !== undefined && port !== "" ? { port } : {}),
     ...(database !== undefined && database !== "" ? { database } : {}),
   };

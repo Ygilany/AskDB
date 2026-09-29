@@ -142,6 +142,29 @@ describe("createConnectorRegistry — connectionLabel", () => {
       },
       "configured postgres connection",
     ],
+    [
+      "parts whose getter throws with the URL in its message",
+      ({ url: raw }) =>
+        ({
+          get host(): string {
+            throw new Error(`cannot read ${raw}`);
+          },
+        }) as never,
+      "configured postgres connection",
+    ],
+    [
+      "a Proxy whose trap throws with the URL in its message",
+      ({ url: raw }) =>
+        new Proxy({}, {
+          has() {
+            throw new Error(`cannot read ${raw}`);
+          },
+          get() {
+            throw new Error(`cannot read ${raw}`);
+          },
+        }) as never,
+      "configured postgres connection",
+    ],
   ])("builds the label from the adapter's parts: %s", (_name, connectionLabelParts, label) => {
     const registry = createConnectorRegistry([{ ...makeAdapter("postgres"), connectionLabelParts }]);
     expect(registry.connectionLabel("postgres", { url })).toBe(label);

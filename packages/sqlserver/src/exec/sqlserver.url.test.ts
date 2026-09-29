@@ -126,5 +126,59 @@ describe("resolveConnectionInput", () => {
     it("throws when server is missing", () => {
       expect(() => resolveConnectionInput("sqlserver://;database=db")).toThrow("Cannot parse server hostname");
     });
+
+    // Prisma's grammar (prisma/connection-string, src/jdbc.rs): special characters
+    // go inside {…}, read verbatim up to the first }.
+    it("reads Prisma's documented {…} escaping (the doc example yields the password Pass:Word;)", () => {
+      expect(
+        resolveConnectionInput("sqlserver://host:1433;user={MyServer/User};password={Pass:Word;};database=db"),
+      ).toEqual({
+        server: "host",
+        port: 1433,
+        database: "db",
+        user: "MyServer/User",
+        password: "Pass:Word;",
+        options: {},
+      });
+    });
+
+    it("joins braced and plain runs as Prisma does ({abc;}}45} is abc;}45})", () => {
+      const result = resolveConnectionInput("sqlserver://h:4200;User ID=musti;Password={abc;}}45}") as {
+        password?: string;
+      };
+      expect(result.password).toBe("abc;}45}");
+    });
+
+    it("keeps a ;database= inside a braced value out of the database", () => {
+      const result = resolveConnectionInput("sqlserver://h:1433;database=app;user=sa;password={S3c;database=ret;}") as {
+        database?: string;
+        password?: string;
+      };
+      expect(result).toMatchObject({ database: "app", password: "S3c;database=ret;" });
+    });
+
+    it("honours Prisma's aliases and a named instance", () => {
+      expect(resolveConnectionInput("sqlserver://h\\SQLEXPRESS:1433;initial catalog=app;uid=sa;pwd=pw")).toEqual({
+        server: "h",
+        port: 1433,
+        database: "app",
+        user: "sa",
+        password: "pw",
+        options: { instanceName: "SQLEXPRESS" },
+      });
+    });
+
+    it.each([
+      ["an unclosed {", "sqlserver://h;password={S3cret", "is never closed"],
+      ["a quoted value holding ;", 'sqlserver://h;user=sa;password="S3c;database=ret;"', "must be joined to its value by ="],
+      ["an unescaped = in a value", "sqlserver://h;password=a=b", "unexpected"],
+      ["a segment that isn't key=value", "sqlserver://h;password=ab;cd;database=app", "must be joined to its value by ="],
+      ["an empty segment", "sqlserver://h;password=p;;database=leak", "empty property key"],
+      ["a non-ASCII character", "sqlserver://h;password=pässword", "non-ASCII"],
+      ["two aliases of one setting", "sqlserver://h;database=a;initial catalog=b", "set only one of database, initial catalog"],
+      ["a non-numeric port", "sqlserver://sa:se;cret@h", "the port is not a number"],
+    ])("rejects %s, as Prisma does", (_name, input, message) => {
+      expect(() => resolveConnectionInput(input)).toThrow(message);
+    });
   });
 });

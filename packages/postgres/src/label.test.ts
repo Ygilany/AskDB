@@ -71,6 +71,18 @@ describe("postgres label parts match what pg resolves", () => {
   });
 });
 
+// pg-connection-string's parse() reads the files ssl* params name; a label
+// never needs them, so they are removed before parsing (delta review 4).
+describe("postgres label ignores ssl* parameters", () => {
+  it.each([
+    "postgres://u:pw@db:5432/app?sslrootcert=/nonexistent/ca.pem",
+    "postgres://u:pw@db:5432/app?sslmode=verify-full&sslcert=/nonexistent/client.crt&sslkey=/nonexistent/client.key",
+    "postgres://u:pw@db:5432/app?%73slrootcert=/nonexistent/ca.pem",
+  ])("%s -> postgres://db:5432/app, without reading the files", (input) => {
+    expect(connectionLabel(input)).toBe("postgres://db:5432/app");
+  });
+});
+
 describe("postgres export-bundle label", () => {
   it.each([
     ["./exports/pagila", "./exports/pagila"],

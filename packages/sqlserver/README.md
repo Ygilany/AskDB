@@ -71,6 +71,8 @@ const result = await introspect(
 | Prisma `sqlserver://` | `sqlserver://localhost:1433;database=MyDb;user=sa;password=pass;encrypt=true` |
 | ADO.NET (`Key=Value;`) | `Server=localhost,1433;Database=MyDb;User Id=sa;Password=pass;` |
 
+In the Prisma form, wrap a value that contains `: \ = ; / [ ] { }` in curly braces, as Prisma does: `password={Pass:Word;}`. AskDB reads that form with Prisma's own grammar, so a string Prisma rejects (an unclosed `{`, a segment that isn't `key=value`, a quote-wrapped value holding `;`) is rejected here too, with an error that says why.
+
 **TLS / self-signed certificates**
 
 SQL Server uses TLS by default. If you connect to a local or dev instance with a self-signed certificate you will see a `self-signed certificate` error unless you tell the driver to trust it:
