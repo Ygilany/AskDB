@@ -132,12 +132,17 @@ describe("exec/sqlite - lazy `better-sqlite3` peer dependency", () => {
     });
   });
 
-  it("forwards resolveFrom to the driver loader: loads `better-sqlite3` from resolveFrom when cwd lacks it", async () => {
-    const { createSqliteCatalogQueryRunner } = await import("./sqlite.js");
+  it("forwards resolveFrom through the load and installed wrappers and the catalog runner: finds `better-sqlite3` there when cwd lacks it", async () => {
+    const { createSqliteCatalogQueryRunner, loadBetterSqlite3Driver, isBetterSqlite3DriverInstalled } = await import("./sqlite.js");
     const projectDir = await createTempProject();
     await addBetterSqlite3Fixture(projectDir);
     process.chdir(await createTempProject());
     bs3State.shouldFail = true;
+
+    // The wrappers Studio calls must forward resolveFrom too.
+    expect(isBetterSqlite3DriverInstalled({ resolveFrom: projectDir })).toBe(true);
+    expect(isBetterSqlite3DriverInstalled()).toBe(false);
+    await expect(loadBetterSqlite3Driver({ resolveFrom: projectDir })).resolves.toBeDefined();
 
     const runner = createSqliteCatalogQueryRunner(":memory:", { resolveFrom: projectDir });
     await expect(runner("SELECT 1")).resolves.toEqual({

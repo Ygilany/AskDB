@@ -62,6 +62,19 @@ describe("isModuleResolutionFailure", () => {
   it("does not match a missing path that merely contains the package name", () => {
     expect(isModuleResolutionFailure(cjsNotFound("/home/mssqluser/app/db.js"), "mssql")).toBe(false);
   });
+
+  it("recognises Yarn PnP's undeclared-dependency wording for the exact package", () => {
+    const pnp = (name: string) =>
+      Object.assign(
+        new Error(
+          `Your application tried to access ${name}, but it isn't declared in your dependencies; ` +
+            "this makes the require call ambiguous and unsound.\n\nRequired package: " + name,
+        ),
+        { code: "MODULE_NOT_FOUND" },
+      );
+    expect(isModuleResolutionFailure(pnp("pg"), "pg")).toBe(true);
+    expect(isModuleResolutionFailure(pnp("pg-connection-string"), "pg")).toBe(false);
+  });
 });
 
 describe("createOptionalDriverLoader", () => {
@@ -122,7 +135,7 @@ describe("createOptionalDriverLoader", () => {
     await expect(loader.load({ resolveFrom: without })).rejects.toThrow("missing");
   });
 
-  it("wraps non-resolution load errors without trying the project fallback", async () => {
+  it("reports a non-resolution load error as itself, without the install hint or the project fallback", async () => {
     const boom = new Error("driver exploded while loading");
     const loader = createOptionalDriverLoader({
       packageName: PKG,
@@ -133,7 +146,32 @@ describe("createOptionalDriverLoader", () => {
     });
     const err = await loader.load().catch((e: unknown) => e);
     expect((err as Error).name).toBe("AskDbError");
+    expect((err as Error).message).toBe(
+      `The optional \`${PKG}\` peer dependency failed to load: driver exploded while loading`,
+    );
     expect((err as { cause?: unknown }).cause).toBe(boom);
+  });
+
+  it("reports an installed driver whose own dependency is missing, not the install hint", async () => {
+    const project = await tempProject(true);
+    // The installed driver requires a module that isn't installed.
+    await writeFile(
+      join(project, "node_modules", PKG, "index.cjs"),
+      "require('askdb-kit-missing-dependency');\n",
+    );
+    const loader = createOptionalDriverLoader({
+      packageName: PKG,
+      importDriver: async () => {
+        throw notFound();
+      },
+      missingMessage: "install it",
+    });
+
+    const err = await loader.load({ resolveFrom: project }).catch((e: unknown) => e);
+    expect((err as Error).name).toBe("AskDbError");
+    expect((err as Error).message).not.toContain("install it");
+    expect((err as Error).message).toContain(`The optional \`${PKG}\` peer dependency failed to load:`);
+    expect((err as Error).message).toContain("askdb-kit-missing-dependency");
   });
 });
 

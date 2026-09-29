@@ -128,12 +128,17 @@ describe("exec/postgres — lazy `pg` peer dependency", () => {
     await expect(runner("SELECT 1")).resolves.toEqual({ columns: ["n"], rows: [[1]] });
   });
 
-  it("forwards resolveFrom to the driver loader: loads `pg` from resolveFrom when cwd lacks it", async () => {
-    const { createPostgresCatalogQueryRunner } = await import("./postgres.js");
+  it("forwards resolveFrom through the load and installed wrappers and the catalog runner: finds `pg` there when cwd lacks it", async () => {
+    const { createPostgresCatalogQueryRunner, loadPgDriver, isPgDriverInstalled } = await import("./postgres.js");
     const projectDir = await createTempProject();
     await addPgFixture(projectDir);
     process.chdir(await createTempProject());
     pgState.shouldFail = true;
+
+    // The wrappers Studio calls must forward resolveFrom too.
+    expect(isPgDriverInstalled({ resolveFrom: projectDir })).toBe(true);
+    expect(isPgDriverInstalled()).toBe(false);
+    await expect(loadPgDriver({ resolveFrom: projectDir })).resolves.toBeDefined();
 
     const runner = createPostgresCatalogQueryRunner("postgres://nowhere", { resolveFrom: projectDir });
     await expect(runner("SELECT 1")).resolves.toEqual({ columns: ["n"], rows: [[1]] });

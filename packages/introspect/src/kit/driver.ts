@@ -34,7 +34,9 @@ export type OptionalDriverLoader<T> = {
    * from `resolveFrom` (default `process.cwd()`). Successful loads are cached
    * per `resolveFrom`; failures clear the cache slot so a later call retries
    * (e.g. after the user runs `pnpm add pg`). Rejects with an `AskDbError`
-   * carrying `missingMessage` when the peer is missing everywhere.
+   * carrying `missingMessage` when the peer is missing everywhere, and with an
+   * `AskDbError` naming the real failure (`cause` set) when the peer is
+   * installed but fails to load.
    */
   load(options?: DriverLoadOptions): Promise<T>;
 };
@@ -43,8 +45,9 @@ export type OptionalDriverLoader<T> = {
  * True when `cause` (or any error in its `cause` chain) is a Node module
  * resolution failure (`ERR_MODULE_NOT_FOUND` / `MODULE_NOT_FOUND`) for
  * `packageName` itself: the specifier Node could not find
- * (`Cannot find package 'pg'`, `Cannot find module 'mysql2/promise'`) must be
- * the package or one of its subpaths. A different missing package whose name
+ * (`Cannot find package 'pg'`, `Cannot find module 'mysql2/promise'`, or Yarn
+ * PnP's `tried to access pg`) must be the package or one of its subpaths. A
+ * different missing package whose name
  * merely contains it (`pg-connection-string`) or a path that happens to
  * contain it (`/home/mssqluser/…`) does not count. Anything else — a driver
  * that is installed but throws while loading — is a real error and must
@@ -58,9 +61,16 @@ export function isModuleResolutionFailure(cause: unknown, packageName: string): 
   }
   const code = (cause as { code?: unknown }).code;
   if (code !== "ERR_MODULE_NOT_FOUND" && code !== "MODULE_NOT_FOUND") return false;
-  const missing = /Cannot find (?:module|package) '([^']+)'/.exec(cause.message)?.[1];
+  const missing =
+    // Node: `Cannot find package 'pg' imported from …` / `Cannot find module 'mysql2/promise'`.
+    /Cannot find (?:module|package) '([^']+)'/.exec(cause.message)?.[1] ??
+    // Yarn PnP: `… tried to access pg, but it isn't declared in its dependencies …`.
+    /tried to access ([^\s,]+)/.exec(cause.message)?.[1];
   return missing === packageName || (missing?.startsWith(`${packageName}/`) ?? false);
 }
+
+/** The driver resolves from neither the engine package nor `resolveFrom`. */
+class DriverNotFoundError extends AggregateError {}
 
 /**
  * Build a lazy, cached loader for an optional database-driver peer. Engine
@@ -84,7 +94,7 @@ export function createOptionalDriverLoader<T>(spec: OptionalDriverSpec<T>): Opti
         return (await import(pathToFileURL(resolved).href)) as T;
       } catch (projectCause) {
         if (!isModuleResolutionFailure(projectCause, packageName)) throw projectCause;
-        throw new AggregateError(
+        throw new DriverNotFoundError(
           [cause, projectCause],
           `Unable to resolve optional \`${packageName}\` peer dependency`,
         );
@@ -97,9 +107,14 @@ export function createOptionalDriverLoader<T>(spec: OptionalDriverSpec<T>): Opti
       const key = options?.resolveFrom;
       let promise = cache.get(key);
       if (!promise) {
-        promise = importOptional(options).catch((cause) => {
+        promise = importOptional(options).catch((cause: unknown) => {
           cache.delete(key);
-          throw new AskDbError(missingMessage, cause);
+          // Only a driver that resolves nowhere gets the install hint. A driver
+          // that is installed but fails to load (a missing dependency of its
+          // own, a native build error, …) reports that failure instead.
+          if (cause instanceof DriverNotFoundError) throw new AskDbError(missingMessage, cause);
+          const detail = cause instanceof Error ? cause.message : String(cause);
+          throw new AskDbError(`The optional \`${packageName}\` peer dependency failed to load: ${detail}`, cause);
         });
         cache.set(key, promise);
       }

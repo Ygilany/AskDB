@@ -128,12 +128,17 @@ describe("exec/sqlserver - lazy `mssql` peer dependency", () => {
     });
   });
 
-  it("forwards resolveFrom to the driver loader: loads `mssql` from resolveFrom when cwd lacks it", async () => {
-    const { createSqlServerCatalogQueryRunner } = await import("./sqlserver.js");
+  it("forwards resolveFrom through the load and installed wrappers and the catalog runner: finds `mssql` there when cwd lacks it", async () => {
+    const { createSqlServerCatalogQueryRunner, loadMssqlDriver, isMssqlDriverInstalled } = await import("./sqlserver.js");
     const projectDir = await createTempProject();
     await addMssqlFixture(projectDir);
     process.chdir(await createTempProject());
     mssqlState.shouldFail = true;
+
+    // The wrappers Studio calls must forward resolveFrom too.
+    expect(isMssqlDriverInstalled({ resolveFrom: projectDir })).toBe(true);
+    expect(isMssqlDriverInstalled()).toBe(false);
+    await expect(loadMssqlDriver({ resolveFrom: projectDir })).resolves.toBeDefined();
 
     const runner = createSqlServerCatalogQueryRunner("mssql://user:pass@host:1433/db", {
       resolveFrom: projectDir,

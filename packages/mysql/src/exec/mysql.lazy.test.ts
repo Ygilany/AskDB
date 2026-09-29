@@ -31,7 +31,7 @@ vi.mock("node:module", async () => {
             /* dir may not exist yet */
           }
         }
-        if (specifier === "mysql2/promise" && resolved) {
+        if ((specifier === "mysql2/promise" || specifier === "mysql2") && resolved) {
           return resolved;
         }
         const err = new Error(`Cannot find module '${specifier}'`);
@@ -125,12 +125,17 @@ describe("exec/mysql - lazy `mysql2` peer dependency", () => {
     });
   });
 
-  it("forwards resolveFrom to the driver loader: loads `mysql2` from resolveFrom when cwd lacks it", async () => {
-    const { createMysqlCatalogQueryRunner } = await import("./mysql.js");
+  it("forwards resolveFrom through the load and installed wrappers and the catalog runner: finds `mysql2` there when cwd lacks it", async () => {
+    const { createMysqlCatalogQueryRunner, loadMysql2Driver, isMysql2DriverInstalled } = await import("./mysql.js");
     const projectDir = await createTempProject();
     await addMysql2Fixture(projectDir);
     process.chdir(await createTempProject());
     mysql2State.shouldFail = true;
+
+    // The wrappers Studio calls must forward resolveFrom too.
+    expect(isMysql2DriverInstalled({ resolveFrom: projectDir })).toBe(true);
+    expect(isMysql2DriverInstalled()).toBe(false);
+    await expect(loadMysql2Driver({ resolveFrom: projectDir })).resolves.toBeDefined();
 
     const runner = createMysqlCatalogQueryRunner("mysql://nowhere", { resolveFrom: projectDir });
     await expect(runner("SELECT 1")).resolves.toEqual({
