@@ -84,6 +84,8 @@ export const <provider>Provider: AiProviderAdapter = {
     // SDK actually reads (verify it in the SDK source — see the contract tests):
     // const model = (await createProvider(config)).embedding(config.model);
     // return withEmbeddingProviderOptions(model, "<provider>", options);
+    // If the SDK names the settings differently, pass a mapper, as google.ts does:
+    // withEmbeddingProviderOptions(model, "google", options, ({ dimensions }) => ({ outputDimensionality: dimensions }))
     // If the provider has NO embeddings API, make this a plain (non-async) method that throws:
     throw new Error(
       "<ProviderName> does not provide an embeddings API. Configure a different " +
@@ -134,6 +136,7 @@ Rules:
 - `src/types.ts`: a `<Provider>Config` type, add it to `AiProviderConfigs`, a `<Provider>AiConfig` branch, and the `AskDbAiConfig` union (export both from `src/index.ts`).
 - `src/flatten.ts`: an `apply<Provider>Ai()` writing the native env keys plus `ASKDB_AI_MODEL`, and a branch using `requireProviderBranch`.
 - `src/config.test.ts`: flatten tests for the new branch; update the `ASKDB_AI_PROVIDERS` list test.
+- `src/scaffold.ts`: if the provider can't start without a setting beyond the API key and model (as Azure needs `resourceName`), add it to `renderAskDbAiConfigScaffold`. `askdb init` and Studio's setup wizard both render the `ai` block through it, so this is the only place to change.
 
 Also add the provider to Studio's browser-side list in `apps/studio/src/web/views/setup/types.ts` (`AI_PROVIDERS`, `SetupAiProvider`) and to `PROVIDER_WIRING` in `apps/studio/src/web/views/playground/GetTheCodePanel.tsx`; `apps/studio/src/setup-providers.test.ts` fails until the setup list matches. `askdb init` derives its choices from the table and needs no change.
 
