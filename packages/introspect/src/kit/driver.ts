@@ -43,20 +43,24 @@ export type OptionalDriverLoader<T> = {
 
 /**
  * True when `cause` (or any error in its `cause` chain) is a Node module
- * resolution failure (`ERR_MODULE_NOT_FOUND` / `MODULE_NOT_FOUND`) for
- * `packageName` itself: the specifier Node could not find
- * (`Cannot find package 'pg'`, `Cannot find module 'mysql2/promise'`, or Yarn
- * PnP's `tried to access pg`) must be the package or one of its subpaths. A
- * different missing package whose name
- * merely contains it (`pg-connection-string`) or a path that happens to
- * contain it (`/home/mssqluser/…`) does not count. Anything else — a driver
- * that is installed but throws while loading — is a real error and must
- * surface.
+ * resolution failure (`ERR_MODULE_NOT_FOUND` / `MODULE_NOT_FOUND`) for the
+ * driver itself: the specifier Node could not find (`Cannot find package 'pg'`,
+ * `Cannot find module 'mysql2/promise'`, or Yarn PnP's `tried to access pg`)
+ * must be `packageName` or `specifier`, the entry point the loader asks for
+ * (default `packageName`). A different missing package whose name merely
+ * contains it (`pg-connection-string`), a path that happens to contain it
+ * (`/home/mssqluser/…`), or another file of the package (`pg/lib/missing`,
+ * which the installed driver failed to load) does not count. Anything else is a
+ * real error and must surface.
  */
-export function isModuleResolutionFailure(cause: unknown, packageName: string): boolean {
+export function isModuleResolutionFailure(
+  cause: unknown,
+  packageName: string,
+  specifier: string = packageName,
+): boolean {
   if (!(cause instanceof Error)) return false;
   const nestedCause = (cause as { cause?: unknown }).cause;
-  if (nestedCause && nestedCause !== cause && isModuleResolutionFailure(nestedCause, packageName)) {
+  if (nestedCause && nestedCause !== cause && isModuleResolutionFailure(nestedCause, packageName, specifier)) {
     return true;
   }
   const code = (cause as { code?: unknown }).code;
@@ -66,7 +70,7 @@ export function isModuleResolutionFailure(cause: unknown, packageName: string): 
     /Cannot find (?:module|package) '([^']+)'/.exec(cause.message)?.[1] ??
     // Yarn PnP: `… tried to access pg, but it isn't declared in its dependencies …`.
     /tried to access ([^\s,]+)/.exec(cause.message)?.[1];
-  return missing === packageName || (missing?.startsWith(`${packageName}/`) ?? false);
+  return missing === packageName || missing === specifier;
 }
 
 /** The driver resolves from neither the engine package nor `resolveFrom`. */
@@ -85,20 +89,23 @@ export function createOptionalDriverLoader<T>(spec: OptionalDriverSpec<T>): Opti
     try {
       return await importDriver();
     } catch (cause) {
-      if (!isModuleResolutionFailure(cause, packageName)) throw cause;
+      if (!isModuleResolutionFailure(cause, packageName, specifier)) throw cause;
 
       const fromDir = options?.resolveFrom ?? process.cwd();
       const projectRequire = createRequire(join(fromDir, "package.json"));
+      let resolved: string;
       try {
-        const resolved = projectRequire.resolve(specifier);
-        return (await import(pathToFileURL(resolved).href)) as T;
+        resolved = projectRequire.resolve(specifier);
       } catch (projectCause) {
-        if (!isModuleResolutionFailure(projectCause, packageName)) throw projectCause;
+        if (!isModuleResolutionFailure(projectCause, packageName, specifier)) throw projectCause;
         throw new DriverNotFoundError(
           [cause, projectCause],
           `Unable to resolve optional \`${packageName}\` peer dependency`,
         );
       }
+      // Resolved in the project: any failure from here on is the installed
+      // driver failing to load, never "not installed".
+      return (await import(pathToFileURL(resolved).href)) as T;
     }
   }
 

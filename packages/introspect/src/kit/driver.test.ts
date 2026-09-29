@@ -51,8 +51,9 @@ describe("isModuleResolutionFailure", () => {
       code: "MODULE_NOT_FOUND",
     });
 
-  it("matches a missing subpath of the package", () => {
-    expect(isModuleResolutionFailure(cjsNotFound("mysql2/promise"), "mysql2")).toBe(true);
+  it("matches the entry point the loader asks for, not other files of the package", () => {
+    expect(isModuleResolutionFailure(cjsNotFound("mysql2/promise"), "mysql2", "mysql2/promise")).toBe(true);
+    expect(isModuleResolutionFailure(cjsNotFound("pg/lib/missing"), "pg")).toBe(false);
   });
 
   it("does not match a different missing package whose name contains it (a broken driver install)", () => {
@@ -172,6 +173,43 @@ describe("createOptionalDriverLoader", () => {
     expect((err as Error).message).not.toContain("install it");
     expect((err as Error).message).toContain(`The optional \`${PKG}\` peer dependency failed to load:`);
     expect((err as Error).message).toContain("askdb-kit-missing-dependency");
+  });
+
+  // An installed driver that fails to load one of its own files is broken, not
+  // missing: that error surfaces instead of the install hint, whether the
+  // driver came from the engine's import or from the project fallback.
+  it("reports an installed driver missing its own file, found through the project fallback", async () => {
+    const project = await tempProject(true);
+    await writeFile(join(project, "node_modules", PKG, "index.cjs"), `require('${PKG}/lib/missing');\n`);
+    const loader = createOptionalDriverLoader({
+      packageName: PKG,
+      importDriver: async () => {
+        throw notFound();
+      },
+      missingMessage: "install it",
+    });
+
+    const err = await loader.load({ resolveFrom: project }).catch((e: unknown) => e);
+    expect((err as Error).message).not.toContain("install it");
+    expect((err as Error).message).toContain(`The optional \`${PKG}\` peer dependency failed to load:`);
+    expect((err as Error).message).toContain(`${PKG}/lib/missing`);
+  });
+
+  it("reports an installed driver missing its own file, found through the engine's import", async () => {
+    const ownFile = Object.assign(new Error(`Cannot find module '${PKG}/lib/missing'`), { code: "MODULE_NOT_FOUND" });
+    const loader = createOptionalDriverLoader({
+      packageName: PKG,
+      importDriver: async () => {
+        throw ownFile;
+      },
+      missingMessage: "install it",
+    });
+
+    const err = await loader.load({ resolveFrom: await tempProject(false) }).catch((e: unknown) => e);
+    expect((err as Error).message).toBe(
+      `The optional \`${PKG}\` peer dependency failed to load: Cannot find module '${PKG}/lib/missing'`,
+    );
+    expect((err as { cause?: unknown }).cause).toBe(ownFile);
   });
 });
 
