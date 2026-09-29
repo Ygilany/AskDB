@@ -102,7 +102,7 @@ Key rules:
 
 ## What you get
 
-- `ask({ question, schema, model, dialect })` — generate validated SQL (plus optional `unboundSql` / `params` / `parameters` / `preparedQuery`).
+- `ask({ question, schema, model, dialect })` — generate checked SQL (plus optional `unboundSql` / `params` / `parameters` / `preparedQuery`).
 - `bindPreparedQuery(prepared, values)` — pure local rebind of a `PreparedQuery` (no model call).
 - `AskDbLanguageModel` — AskDB's public name for the AI SDK language model contract.
 - `AskDialect` — the dialect adapter contract. `@askdb/postgres` exports a ready-made one.

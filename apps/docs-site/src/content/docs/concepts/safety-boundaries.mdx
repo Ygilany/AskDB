@@ -16,7 +16,7 @@ AskDB does not parse SQL. Its checks are token- and pattern-based and can be byp
 
 ## What AskDB checks
 
-Before `ask()` returns, the generated SQL goes through these checks. The first four are the read-only checks in `validateSelectSql`. They run for built-in dialect ids and `DialectSpec` objects, and they always reject (throw `SqlValidationError`). A custom `AskDialect` skips them unless it calls `validateSelectSql` itself. The SQL is first split into tokens the way your engine reads it (string literals, quoted identifiers, dollar-quoted strings, comments), so a keyword inside a string or a quoted identifier doesn't count. A string, quoted identifier, or block comment that never closes is rejected rather than guessed at.
+Before `ask()` returns, the generated SQL goes through these checks. The first four are the read-only checks in `validateSelectSql`. They run for built-in dialect ids and `DialectSpec` objects, and they always reject (throw `SqlValidationError`). A custom `AskDialect` skips them unless it calls `validateSelectSql` itself. The SQL is first split into tokens the way your engine reads it under its default string settings (string literals, quoted identifiers, dollar-quoted strings, comments), so a keyword inside a string or a quoted identifier doesn't count. A string, quoted identifier, or block comment that never closes is rejected rather than guessed at. If your server reads strings differently from its default, set the dialect to match, or these checks can be bypassed: see [Match your server's string settings](#match-your-servers-string-settings).
 
 1. **Starts with `SELECT` or `WITH`.** The first keyword, after any opening parentheses, must be `SELECT` or `WITH`. Anything else is rejected.
 2. **Single statement.** A `;` that separates a second statement is rejected. A single trailing `;` is removed. On SQL Server, which doesn't need `;` between statements, a second statement made of verbs not on the denylist (for example a second `SELECT`) isn't detected.
@@ -25,10 +25,32 @@ Before `ask()` returns, the generated SQL goes through these checks. The first f
 5. **Tenant check (when your artifact has a tenant policy).** `ask()` refuses to run without a `tenantScope`. After it binds your tenant IDs, AskDB checks the SQL it's about to return: for each tenant-scoped table named in the SQL, the expected tenant column name (or the join columns on the declared path) must appear somewhere in the statement's code. Text inside string literals and comments doesn't count. Tables your policy leaves unclassified are flagged too. It doesn't check where the column appears or what the predicate does, so `WHERE org_id = … OR 1=1` passes. Your policy's `enforcement` setting decides what happens on a miss: `strict` throws `TenantGuardrailError`, and `warn` returns the SQL with the findings in `tenantGuardrail.warnings`. AskDB does not add a missing tenant filter. See [Multi-tenancy](/guides/multi-tenancy/).
 6. **Sensitive columns (when your schema marks any).** The returned SQL is checked for tables and columns marked `sensitive: true`, and the result is attached as `sensitiveGuardrail`. The default mode is `"warn"`, which returns the SQL with the findings attached. Set `sensitiveGuardrailMode: "strict"` to throw `SensitiveReferenceError` instead. The check reports sensitive columns named in the SQL, sensitive tables read in `FROM` or `JOIN`, and sensitive columns reached through `SELECT *`, `t.*`, or a whole-row reference such as `row_to_json(t)`. It can miss a table written in a `FROM` form it doesn't recognize, such as `SELECT * FROM (users)`. Separately, `--omit-sensitive-from-prompt` keeps sensitive columns out of the prompt entirely, which only affects what the model sees. Call `validateSensitiveReferences` yourself on any SQL you cache and re-execute.
 
+### Match your server's string settings
+
+The checks read backslashes inside ordinary `'…'` string literals the way each engine does by default: MySQL and MariaDB treat `\'` as an escaped quote, and Postgres and CockroachDB (with `standard_conforming_strings = on`, the default) treat a backslash as an ordinary character. When the server is configured differently, AskDB and the server disagree about where a string ends, and SQL the checks accept can run code they never saw. For example, on a MySQL server whose `sql_mode` includes `NO_BACKSLASH_ESCAPES`, the built-in `mysql` dialect accepts `SELECT 'x\' UNION SELECT load_file('/etc/passwd') -- '`: AskDB reads one string, and the server reads a `load_file` call followed by a comment.
+
+Set `backslashEscapes` on a `DialectSpec` to match the server, and pass that spec wherever you pass a dialect:
+
+```ts
+import { ask, MYSQL_DIALECT, POSTGRES_DIALECT, type DialectSpec } from "@askdb/core";
+
+// MySQL or MariaDB with NO_BACKSLASH_ESCAPES in sql_mode (spread MARIADB_DIALECT for MariaDB).
+const mysqlNoBackslashEscapes: DialectSpec = { ...MYSQL_DIALECT, backslashEscapes: false };
+
+// Postgres with standard_conforming_strings = off.
+const postgresLegacyStrings: DialectSpec = { ...POSTGRES_DIALECT, backslashEscapes: true };
+
+const { sql } = await ask({ question, schema, model, dialect: mysqlNoBackslashEscapes });
+```
+
+`@askdb/mysql` re-exports `MYSQL_DIALECT` and `MARIADB_DIALECT` from `@askdb/core`, so you can import them from either package. The same spec also goes to `validateSelectSql(spec, sql)` and to `@askdb/client` per call (`askdb.ask(question, { dialect: mysqlNoBackslashEscapes })`). The dialect setting in `askdb.config.ts`, and so the CLI, the HTTP API, and Studio, takes only a built-in dialect id, so those surfaces always assume the default settings ([#340](https://github.com/Ygilany/AskDB/issues/340)).
+
+MySQL's `ANSI_QUOTES` mode (also part of the `ANSI` mode) isn't supported. It makes `"…"` an identifier, which the MySQL dialect reads as a string with backslash escapes, and no `DialectSpec` setting matches it. Run AskDB's SQL on a connection without `ANSI_QUOTES`.
+
 ### What these checks don't do
 
 - **No SQL parsing.** AskDB splits SQL into tokens but doesn't build a syntax tree, so it can't tell whether the SQL is valid for your engine. Your database reports syntax errors when you run the query.
-- **No system-schema filtering.** Queries against `pg_catalog`, `information_schema`, MySQL's `mysql` schema, SQL Server's `sys`, and so on are not rejected. Restrict them with database privileges.
+- **No system-schema filtering.** Queries against `pg_catalog`, `information_schema`, MySQL's `mysql` schema, SQL Server's `sys`, and so on are not rejected. What they return depends on your database's privileges, and on Postgres every role can read the catalog metadata (see [System catalogs](/guides/run-safely-in-prod/#system-catalogs)).
 - **No query rewriting.** AskDB never adds a tenant filter, a row limit, or a timeout to the SQL. The only change it makes to the tenant predicate is binding: it replaces the `:tenant_*_ids` placeholders the model wrote with your scope's IDs (escaped literals or driver parameter markers), and with several IDs it turns `=` into `IN (…)` and `!=` or `<>` into `NOT IN (…)`.
 - **No complete side-effect analysis.** The function denylist covers known built-in functions only. A call to one of your own functions that writes, a locking read such as `FOR SHARE`, and a very expensive join all pass.
 - **No complete sensitive-column coverage.** The sensitive check can miss a table in some `FROM` forms, so a wildcard over it goes unreported: a parenthesized `FROM` item ([#306](https://github.com/Ygilany/AskDB/issues/306)), a comma-joined table after a `JOIN`'s `ON` or `USING` ([#307](https://github.com/Ygilany/AskDB/issues/307)), MySQL `STRAIGHT_JOIN` used as a join ([#308](https://github.com/Ygilany/AskDB/issues/308)), and Postgres `TABLE users` inside a derived table ([#309](https://github.com/Ygilany/AskDB/issues/309)). Use column privileges in the database for data that must not be read.
@@ -39,7 +61,7 @@ Guardrail bypasses are bugs and we fix them. Still, plan for the checks to miss 
 
 AskDB returns SQL. It does not run it. If your application executes that SQL, these controls are the actual boundary:
 
-- **Use a least-privilege, read-only database role.** Grant `SELECT` only on the tables AskDB is meant to query, and nothing on system catalogs or sensitive tables you can exclude. Then a query that gets past AskDB's checks still can't write, and can't read what the role can't see. See [Run safely in production](/guides/run-safely-in-prod/#database-role) for an example.
+- **Use a least-privilege, read-only database role.** Grant `SELECT` only on the tables AskDB is meant to query, and leave out sensitive tables you can exclude. Then a query that gets past AskDB's checks still can't write, and can't read rows the role can't see. Grants don't hide the system catalogs everywhere: on Postgres every role can read table names, column names, and view and function definitions through `PUBLIC`. See [Run safely in production](/guides/run-safely-in-prod/#database-role) for an example and your options for the catalogs.
 - **Enforce tenancy in the database.** For multi-tenant data, make the database the tenant boundary: Postgres row-level security (RLS) keyed on a per-request setting, per-tenant views, or per-tenant roles. AskDB's tenant check catches a model that forgot the filter. It does not stop a query that includes the filter and then widens it.
 - **Set timeouts and row limits.** Configure `statement_timeout` (or your engine's equivalent) on the connection, and cap the rows you fetch.
 - **Treat inputs to the prompt as untrusted.** The question text and your schema enrichment (descriptions, concepts, tenant-policy prose) all go into the prompt. Someone who controls either one can try to steer the model toward a different query. The database controls above still apply when that happens.

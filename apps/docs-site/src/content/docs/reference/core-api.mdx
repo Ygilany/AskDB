@@ -9,7 +9,7 @@ description: "Full API reference for @askdb/core: ask(), schema loading, dialect
 
 ## `ask(options)`
 
-The main pipeline function. Accepts a natural-language question and a loaded schema; returns validated SQL.
+The main pipeline function. Accepts a natural-language question and a loaded schema; returns checked SQL.
 
 ```ts
 import { ask } from "@askdb/core";
@@ -49,7 +49,7 @@ const { sql } = await ask({
 
 | Field | Type | When present |
 | --- | --- | --- |
-| `sql` | `string` | Always. The model's bound, validated SQL — business values inlined as literals. In `tenantSqlMode: "sql-params"` its tenant markers start at the first slot; run it with `tenantParams`. Never overwritten by rebind failures. |
+| `sql` | `string` | Always. The model's bound, checked SQL — business values inlined as literals. In `tenantSqlMode: "sql-params"` its tenant markers start at the first slot; run it with `tenantParams`. Never overwritten by rebind failures. |
 | `unboundSql` | `string \| undefined` | When `parameterize` is on and the model returned a consistent unbound block + manifest. Driver markers (`$N` / `?` / `@pN`) for every value; run it with `params`. |
 | `params` | `QueryParamSlot[] \| undefined` | Values for `unboundSql`, in marker order. In `"sql-params"` mode this already includes the tenant IDs. |
 | `parameters` | `QueryParameterBinding[] \| undefined` | Named bindings for form UIs (includes runtime `value`, `markers`, `indices`). |
@@ -283,6 +283,7 @@ const redshiftFlavor: DialectSpec = {
 | `extraForbiddenKeywords` | `readonly string[]` | no | Keywords to forbid in addition to the shared read-only denylist. |
 | `blockedFunctions` | `readonly string[]` | no | Functions `validateSelectSql` rejects when called (`name(`), such as `pg_sleep` or `load_file`. |
 | `extraValidate` | `(sql: string) => void` | no | Dialect-specific SQL validator. Throw `SqlValidationError` for failures. |
+| `backslashEscapes` | `boolean` | no | Whether a backslash escapes a quote inside `'…'` strings on your server. The built-in specs set the engine default (`true` for MySQL and MariaDB, `false` otherwise). Set `false` for MySQL or MariaDB with `NO_BACKSLASH_ESCAPES`, and `true` for Postgres with `standard_conforming_strings = off`. The checks lex strings this way, and bound tenant and parameter values are escaped to match. See [Match your server's string settings](/concepts/safety-boundaries/#match-your-servers-string-settings). |
 
 `id` also selects how the validator lexes strings, quoted identifiers, and comments. The built-in specs ship their own `extraForbiddenKeywords` and `blockedFunctions`; spread one (`{ ...POSTGRES_DIALECT, … }`) to keep them, since setting either field replaces the built-in list. These checks are defense in depth — run generated SQL under a read-only database role.
 

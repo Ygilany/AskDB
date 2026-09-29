@@ -63,7 +63,7 @@ The generated SQL contains a SQL comment (including `#` on MySQL), a forbidden k
 
 ### `SqlValidationError: SQL_UNTERMINATED`
 
-A string literal, quoted identifier, dollar-quoted string, or block comment in the generated SQL never closes, so the validator cannot tell where the statement ends and rejects it. On MySQL, check that the dialect's `backslashEscapes` setting matches the server (`NO_BACKSLASH_ESCAPES`).
+A string literal, quoted identifier, dollar-quoted string, or block comment in the generated SQL never closes, so the validator cannot tell where the statement ends and rejects it. On MySQL or MariaDB, check that the dialect's `backslashEscapes` setting matches the server (`NO_BACKSLASH_ESCAPES`). A mismatch matters beyond false rejections: it also lets SQL through that the server reads differently. See [Match your server's string settings](/concepts/safety-boundaries/#match-your-servers-string-settings).
 
 ### Generated SQL references a column or table that doesn't exist
 

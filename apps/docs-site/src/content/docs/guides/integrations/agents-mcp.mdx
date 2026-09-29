@@ -67,7 +67,7 @@ This works in Vercel AI SDK tools, OpenAI function calls, Anthropic tool use, an
 
 Two things matter when AskDB sits inside an agent:
 
-1. **The agent never executes SQL directly.** It calls `ask()` and gets back validated SQL — your host code decides whether and how to run it.
+1. **The agent never executes SQL directly.** It calls `ask()` and gets back checked SQL — your host code decides whether and how to run it.
 2. **The agent operates under a tenant scope you supply.** When the schema has tenant policy, pass `tenantScope` from your host's auth context — not from anything the agent (or the user) sent.
 
 ## Read next

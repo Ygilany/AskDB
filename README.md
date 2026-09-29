@@ -6,7 +6,7 @@
 
 # AskDB
 
-**AskDB is an open-source NL-to-SQL toolkit for developers: it uses your LLM to generate validated, schema-grounded SQL, then hands it back to your app to review and run.** BYO model, BYO database, BYO vector store.
+**AskDB is an open-source NL-to-SQL toolkit for developers: it uses your LLM to generate checked, schema-grounded SQL, then hands it back to your app to review and run.** BYO model, BYO database, BYO vector store.
 
 AskDB grounds generation in a human-enriched schema artifact, and it keeps database execution, permissions, tenant policy, and audit logging inside the host application. Library, CLI, Studio, and HTTP surfaces share the same core pipeline.
 

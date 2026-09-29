@@ -6,7 +6,7 @@ AskDB is pre-1.0 software that generates SQL from schema context using a languag
 
 ### What AskDB guarantees
 
-For SQL returned by `ask()` with a built-in dialect id or a `DialectSpec` (a custom `AskDialect` must call `validateSelectSql` itself to get the first four):
+For SQL returned by `ask()` with a built-in dialect id or a `DialectSpec`, when that dialect matches how your server reads strings (see the paragraph after this list; a custom `AskDialect` must call `validateSelectSql` itself to get the first four):
 
 - The statement starts with `SELECT` or `WITH` (after any opening parentheses).
 - It contains no `;` separating a second statement (on SQL Server, which doesn't need `;`, a second statement made of verbs not on the denylist, such as a second `SELECT`, isn't detected), no comments (`--`, `/* */`, and `#` on MySQL/MariaDB), and no string, quoted identifier, or block comment that never closes.
@@ -15,7 +15,9 @@ For SQL returned by `ask()` with a built-in dialect id or a `DialectSpec` (a cus
 - When the schema artifact has a tenant policy, `ask()` refuses to run without a valid `tenantScope`. A `subtree` scope is expanded through the host's `resolveTenantDescendants` callback or `ask()` throws. A tenant placeholder AskDB can't bind throws instead of being returned raw. Unless the scope is `global`, the tenant check has run on the SQL returned. It confirms that each tenant-scoped table named in the SQL comes with its tenant column somewhere in the statement's code (not inside a string literal or comment). With `enforcement: strict` a failed check throws; with `warn` the findings are returned in `tenantGuardrail.warnings`.
 - When the schema marks tables or columns `sensitive`, the sensitive-reference check has run (unless `sensitiveGuardrailMode: "off"`). It defaults to `warn` (findings returned in `sensitiveGuardrail`); `sensitiveGuardrailMode: "strict"` makes it throw.
 
-These checks split the SQL into tokens the way the target engine reads it, then look for keywords, function calls, and identifiers. They are **not a SQL parser**, and they are defense in depth that catches common model mistakes. They are **not a security boundary** against adversarial input.
+These checks split the SQL into tokens the way the target engine reads it under its default string settings, then look for keywords, function calls, and identifiers. They are **not a SQL parser**, and they are defense in depth that catches common model mistakes. They are **not a security boundary** against adversarial input.
+
+If your server reads strings differently, the list above holds only once the dialect matches the server: a MySQL or MariaDB server with `NO_BACKSLASH_ESCAPES` in its `sql_mode` needs a `DialectSpec` with `backslashEscapes: false`, such as `{ ...MYSQL_DIALECT, backslashEscapes: false }`, and Postgres with `standard_conforming_strings = off` needs `backslashEscapes: true`. MySQL's `ANSI_QUOTES` mode isn't supported. The CLI, the HTTP API, and Studio take only a built-in dialect id, so they always assume the default settings ([#340](https://github.com/Ygilany/AskDB/issues/340)). With a mismatched dialect, SQL that passes the checks can run a statement or function call they never saw, for example `SELECT 'x\' UNION SELECT load_file('/etc/passwd') -- '` on a `NO_BACKSLASH_ESCAPES` server with the built-in `mysql` dialect. See [Match your server's string settings](https://askdb.tools/concepts/safety-boundaries/#match-your-servers-string-settings).
 
 ### What AskDB does not guarantee
 

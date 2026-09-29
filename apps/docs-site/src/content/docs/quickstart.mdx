@@ -55,7 +55,7 @@ yarn dlx askdb ask --question "Which customers signed up last week?"
 
 Each step is explained below. The loop that makes answers good: **introspect once, then enrich and re-ask in Studio until the SQL matches how your team thinks about the data.**
 
-<img src={quickstartLoopUrl} alt="Four steps: init scaffolds config, introspect reads the database into a schema artifact, ask generates validated SQL from your first question, enrich in Studio adds descriptions — with a loop-back from enrich to ask to refine until the SQL is right" class="doc-diagram" />
+<img src={quickstartLoopUrl} alt="Four steps: init scaffolds config, introspect reads the database into a schema artifact, ask generates checked SQL from your first question, enrich in Studio adds descriptions — with a loop-back from enrich to ask to refine until the SQL is right" class="doc-diagram" />
 
 ## 1. Scaffold your config
 
@@ -193,7 +193,7 @@ For one-off checks and CI smoke tests, ask directly from the terminal:
 npx askdb ask --question "Which customers signed up last week?"
 ```
 
-You get validated SQL on stdout — for example:
+You get checked SQL on stdout — for example:
 
 ```sql
 SELECT c.id, c.name, c.signed_up_at

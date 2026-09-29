@@ -15,12 +15,21 @@ Connect under a role that <em>can't</em> write — even if AskDB's validator sli
 CREATE ROLE askdb_reader LOGIN PASSWORD '…';
 GRANT CONNECT ON DATABASE myapp TO askdb_reader;
 GRANT USAGE ON SCHEMA public TO askdb_reader;
-GRANT SELECT ON ALL TABLES IN SCHEMA public TO askdb_reader;
--- Restrict access to system schemas and any sensitive tables
-REVOKE ALL ON ALL TABLES IN SCHEMA pg_catalog FROM askdb_reader;
+-- Grant only the tables AskDB is meant to query. Leave sensitive tables out.
+GRANT SELECT ON public.orders, public.customers TO askdb_reader;
 ```
 
 Use that role's credentials in the connection string AskDB's consumers use. Don't reuse your application's admin user.
+
+### System catalogs
+
+On Postgres you can't take catalog read access away from a single role. `pg_catalog` and `information_schema` are readable through `PUBLIC`, which every role belongs to, so a `REVOKE … FROM askdb_reader` on them has no effect. Through the catalogs, `askdb_reader` can see the names and columns of every table in the database, view definitions, and function source code. It still can't read rows from a table it has no `SELECT` on.
+
+If that metadata matters, pick one of these:
+
+- **Accept catalog visibility.** Most deployments do. Keep the data itself out of reach with the table and column grants above, which the catalogs don't bypass.
+- **Use a dedicated database.** Catalogs such as `pg_class` describe only the objects in the current database, so a database (for example a reporting copy) that holds only the tables AskDB may query shows only those tables. Cluster-wide catalogs such as `pg_roles` and `pg_database` still list every role and database.
+- **Revoke from `PUBLIC`.** `REVOKE SELECT ON pg_catalog.pg_class, pg_catalog.pg_proc FROM PUBLIC;` blocks direct reads of those catalogs, but for every role in that database: your application, `psql`'s `\d`, and the role AskDB's introspection runs as lose them too, so grant them back to the roles that need them. It also doesn't hide everything: views such as `pg_tables`, casts such as `'public.secrets'::regclass`, and functions such as `pg_get_functiondef` still return catalog data. Test it against your own tooling before you rely on it.
 
 ## Connection limits
 
@@ -83,7 +92,7 @@ A common pattern:
 2. Render the SQL in the UI with the question for context.
 3. On user confirmation, POST the SQL back to a separate execution endpoint that runs it under the read-only role.
 
-This works because AskDB returns validated SQL as a value — your application controls when, if, and how it runs.
+This works because AskDB returns checked SQL as a value — your application controls when, if, and how it runs.
 
 ## Sensitive columns
 

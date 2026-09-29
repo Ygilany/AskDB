@@ -9,7 +9,7 @@ import InstallTabs from "../../../components/InstallTabs.astro";
 
 <p class="doc-eyebrow">Integrator guide</p>
 
-<p class="doc-lede">Drop <code>@askdb/client</code> into a TypeScript service. It reads the same <code>askdb.config.ts</code> the CLI and Studio use, generates validated SQL from a question, and hands it back. Your service runs it through its own connection pool against a read-only role.</p>
+<p class="doc-lede">Drop <code>@askdb/client</code> into a TypeScript service. It reads the same <code>askdb.config.ts</code> the CLI and Studio use, generates checked SQL from a question, and hands it back. Your service runs it through its own connection pool against a read-only role.</p>
 
 ## Install
 
@@ -77,7 +77,7 @@ AskDB's SQL checks catch common model mistakes but aren't a security boundary. C
 
 | Field | Type | When present |
 | --- | --- | --- |
-| `sql` | `string` | Always. The generated, validated SQL string. |
+| `sql` | `string` | Always. The generated, checked SQL string. |
 | `unboundSql` | `string \| undefined` | When `parameterize` is on (default) and the model returned consistent extras. Driver markers. |
 | `params` | `QueryParamSlot[] \| undefined` | Values for `unboundSql`, in marker order (includes tenant IDs in `tenantSqlMode: "sql-params"`). |
 | `parameters` | `QueryParameterBinding[] \| undefined` | Named bindings for form UIs (includes values). |

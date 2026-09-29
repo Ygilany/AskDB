@@ -1,6 +1,6 @@
 ---
 title: "How AskDB works"
-description: "The end-to-end flow from a natural-language question to validated SQL that your application runs."
+description: "The end-to-end flow from a natural-language question to checked SQL that your application runs."
 ---
 
 import runtimeBoundaryUrl from "../../../assets/diagrams/askdb-runtime-boundary.svg?url";
@@ -23,7 +23,7 @@ The return value is a string of checked SQL and a parameter list. What happens n
 
 ## The runtime boundary
 
-<img src={runtimeBoundaryUrl} alt="Flow from question and schema through ask() to validated SQL, with execution owned by your application" class="doc-diagram" />
+<img src={runtimeBoundaryUrl} alt="Flow from question and schema through ask() to checked SQL, with execution owned by your application" class="doc-diagram" />
 
 AskDB stops at checked SQL. Your application — the code that imports `@askdb/core` or calls the HTTP API — owns everything past that:
 
