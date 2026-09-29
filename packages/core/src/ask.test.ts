@@ -687,7 +687,7 @@ describe("ask — tenant guardrail runs on the SQL actually returned", () => {
     // "agency_id" is a string, and would reject this.
     const schema = loadSchema(multiTenantDir);
     const generateText = vi.fn(async () => ({
-      text: "```sql\nSELECT * FROM orders WHERE \"agency_id\" = '42'\n```",
+      text: "```sql\nSELECT * FROM orders WHERE \"agency_id\" = :tenant_agency_ids\n```",
     }));
     const result = await ask({
       question: "orders",
@@ -701,7 +701,7 @@ describe("ask — tenant guardrail runs on the SQL actually returned", () => {
     expect(result.tenantGuardrail).toEqual({ passed: true, warnings: [] });
   });
 
-  it("checks the final SQL after tenant placeholder substitution (sql-params mode)", async () => {
+  it("checks the model's SQL before tenant substitution, so every rendering passes (sql-params mode: $1)", async () => {
     const schema = loadSchema(multiTenantDir);
     const generateText = vi.fn(async () => ({
       text: "```sql\nSELECT count(*) FROM orders WHERE agency_id = :tenant_agency_ids\n```",

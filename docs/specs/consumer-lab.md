@@ -391,7 +391,7 @@ Found while building the HTTP suite (#252):
 
 Found while building the tenant suite (#249):
 
-16. **Strict mode returns SQL whose tenant filter doesn't filter** (**#315**). The guardrail accepts a scoped table once the tenant column's name appears anywhere, so the column selected but never filtered, a filter on another tenant, and `OR 1 = 1` all pass, and it never checks the root table. Run as the host, each leaks other agencies' rows on every engine. The heuristic's limits are planned in #230 and #235; the documents still say strict rejects any filter it can't prove.
+16. **Strict mode returns SQL whose tenant filter doesn't filter** (**#315**). The guardrail accepts a scoped table once the tenant column's name appears anywhere, so the column selected but never filtered, a filter on another tenant, and `OR 1 = 1` all pass, and it never checks the root table. Run as the host, each leaks other agencies' rows on every engine. *Product bug*, fixed: the tenant check now runs on the model's SQL before tenant rendering, and needs the tenant column compared with its root's placeholder, ANDed into a filter clause, with the root table scoped too. It is still a heuristic; #235 covers a sound rewrite.
 17. **`reference/core-api.mdx` describes `sql-params` markers two ways** (**#320**): the dialect's driver markers in the `ask()` options table, Postgres `$N` in "Tenant types".
 
 ## Decisions (2026-09-26)

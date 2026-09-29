@@ -1,0 +1,11 @@
+---
+"@askdb/core": minor
+---
+
+**Behavior change (security): the tenant guardrail now requires a tenant predicate that filters.** Before, a tenant-scoped table passed once its tenant column's name, or the placeholder, appeared anywhere in the SQL. So strict mode returned SQL that leaked other tenants' rows: the column selected but never filtered, a literal ID for another tenant (`agency_id = 1`), `agency_id = :tenant_agency_ids OR 1 = 1`, and the tenant root table read with no filter (#315, found by the consumer lab on five engines).
+
+A table now needs its tenant column compared with its root's placeholder (`= :tenant_<root>_ids`, `IN (…)` or `= ANY(…)`), ANDed into a `WHERE`, `ON` or `HAVING` clause. It fails next to an `OR`, `XOR` (or MySQL `||`) at any enclosing level, under `NOT`, in the select list or a `CASE`, and as a literal ID. A root table the scope covers needs the same predicate on its tenant ID column. Polymorphic tables need it on their id column. Strict mode rejects SQL it used to return; warn mode reports the same findings in `result.tenantGuardrail`.
+
+`ask()` now runs the check on the model's SQL **before** tenant rendering, with the `:tenant_<root>_ids` placeholders still named, as `generateSelectSql()` already did. So one rule covers every `tenantSqlMode` and dialect. If you call `validateTenantGuardrails()` directly, pass it that form: SQL whose tenant IDs are already substituted as literals or markers no longer passes.
+
+The check is still a heuristic, not a parser (see "Guardrail validation" in `docs/contracts/tenant-policy.md`). Keep database-side row-level security and a read-only role as the real boundary.

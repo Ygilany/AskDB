@@ -134,9 +134,13 @@ suite("tenant parameter binding executes on SQLite (better-sqlite3)", () => {
   it.each(["sql-only", "sql-params"] as const)(
     "%s: a crafted tenant ID cannot widen the query, and quoted placeholder text is not substituted",
     async (tenantSqlMode) => {
+      // The reply ORs the tenant predicate on purpose, to show what the crafted ID and the
+      // quoted placeholder text bind to. The strict guardrail rejects that shape (#315),
+      // so this runs the policy in warn mode: it's about binding, not the guardrail.
+      const warnSchema = { ...schema, tenantPolicy: { ...schema.tenantPolicy!, enforcement: "warn" as const } };
       const result = await ask({
         question: "orders",
-        schema,
+        schema: warnSchema,
         model: fakeModel,
         dialect: "sqlite",
         tenantScope: {

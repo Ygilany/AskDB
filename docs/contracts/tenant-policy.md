@@ -384,25 +384,24 @@ The mode is configurable per `ask()` call (`tenantSqlMode`).
 
 ## Guardrail validation
 
-In `ask()`, the validator runs on the SQL returned to the caller: `result.sql` after tenant placeholder replacement, plus `result.unboundSql` when the parameterized extras pass their consistency check. It runs for every dialect form, including custom `AskDialect` adapters. `generateSelectSql()` called directly validates the SQL it returns (placeholders still named).
+The check runs on the model's SQL **before** tenant rendering: the bound statement and, when present, its `sql-unbound` block, with the `:tenant_<root>_ids` placeholders still in place. Tenant rendering (`resolveTenantSql()`) then only swaps each placeholder for literals (`sql-only`) or the dialect's driver markers (`sql-params`), so one check covers every `tenantSqlMode`, dialect and output form. `ask()` checks those forms for every dialect path, including custom `AskDialect` adapters, and `generateSelectSql()` checks the SQL it returns, whose placeholders are still named. A direct `validateTenantGuardrails()` call should likewise get the SQL with its placeholders.
 
-### Parser-based validation (primary)
+### What the check requires
 
-Uses `node-sql-parser` (or equivalent) to parse the SQL into an AST:
+The check is a heuristic over SQL tokens, not a SQL parser:
 
-1. Identify all referenced tables and their aliases.
-2. For each tenant-scoped table: verify the required tenant predicate (`column = :placeholder` or `column = ANY(:placeholder)`) or validated inherited join path exists.
-3. For each polymorphic table: verify the type discriminator column appears in the WHERE clause.
-4. For JOINs between tenant-scoped tables: verify scope compatibility (both tables scoped to the same tenant root/IDs).
-5. For aggregation across tenant boundaries: verify the user's scope covers the aggregated set, or reject if `global` scope is required.
-6. For unknown tables: reject (strict) or flag (warn).
+1. **Scoped tables.** For each tenant-scoped table the query mentions, it looks for a tenant predicate on one of its scope paths.
+   - For a `column` path, the predicate is the table's tenant column compared with its root's placeholder: `col = :tenant_<root>_ids`, `col IN (:tenant_<root>_ids)` or `col = ANY(:tenant_<root>_ids)`, on either side, and optionally qualified (`o.agency_id`).
+   - For a `join` path, every join column must appear, plus a tenant predicate on the root's tenant ID column. Down a hierarchy, a predicate on a placeholder the scope binds also counts.
+2. **Conjuncts only.** The predicate counts only as a conjunct of a `WHERE`, `ON` or `HAVING` clause: ANDed with the rest of the clause, at its own level and at every enclosing parenthesized level. It doesn't count next to an `OR` or `XOR` at any of those levels (or MySQL's `||`), under `NOT`, compared again (`(… = :p) = FALSE`), inside a function call or `CASE`, or in the select list. An `OR` inside its own parentheses is fine: `agency_id = :tenant_agency_ids AND (status = 'a' OR status = 'b')`.
+3. **No literals or bare mentions.** A literal tenant ID (`agency_id = 2`) never counts, even one inside the caller's scope: AskDB binds the IDs itself. A bare mention of the column, as in `SELECT agency_id FROM …`, doesn't count either.
+4. **Root tables.** A root table the scope covers, such as `agencies` under an agency scope, needs the same predicate on its `tenantIdColumn`.
+5. **Polymorphic tables.** They need the type discriminator column, and a tenant predicate on the id column with the placeholder of a root in `mapping`.
+6. **Unknown tables.** Rejected (strict) or flagged (warn), as `UNKNOWN_TABLE_REFERENCED`.
 
-### Heuristic fallback
+A failed check throws `TenantGuardrailError` in `strict` mode, and is returned in `result.tenantGuardrail` in `warn` mode. The rule code is `MISSING_TENANT_PREDICATE`, `MISSING_TYPE_DISCRIMINATOR` or `UNKNOWN_TABLE_REFERENCED`.
 
-When the parser cannot handle a SQL shape:
-
-1. Apply conservative pattern matching (table name detection, predicate presence).
-2. If heuristics cannot prove scope safety: reject (strict) or flag with `tenantWarnings` (warn).
+**Limits.** The check doesn't tie a predicate to a particular table reference or alias, so an unfiltered reference next to a filtered one can still pass. Nor does it check that joined scoped tables share a scope. Treat it as defense in depth: the sound boundaries are database-side row-level security and the read-only role the host runs the SQL as. A deterministic rewrite that attaches the predicate itself is planned in #235.
 
 Pattern matching runs only over SQL code: string literals (`'…'`, `$tag$…$tag$`) and comments (`--`, `/* */`) are ignored, so a tenant column or table name that appears only inside them does not count. Quoted identifiers (`"agency_id"`, `` `orders` ``, `[orders]`) still count as the identifier they name.
 

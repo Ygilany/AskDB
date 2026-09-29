@@ -441,6 +441,23 @@ export async function ask(options: AskPipelineOptions): Promise<AskPipelineResul
   }
 
   if (tenantPolicy && tenantScope) {
+    // Tenant guardrail on the untrusted SQL, before rendering: the model's bound
+    // statement and its unbound block, with the `:tenant_<root>_ids` placeholders
+    // still in place. Rendering below only swaps each placeholder for literals or
+    // driver markers, so one check covers every tenantSqlMode, dialect and output
+    // form (#315). Runs for every dialect (built-in, DialectSpec, or custom
+    // AskDialect); the built-in generator skips its own check so this is the single
+    // report. `dialectSpec` is undefined for a custom AskDialect: the guardrail then
+    // requires the statement to pass under the standard-SQL, Postgres and MySQL readings.
+    result.tenantGuardrail = enforceTenantGuardrails(
+      [result.sql, generated.unboundNamedSql],
+      tenantPolicy,
+      tenantScope,
+      logger,
+      generated.tenantGuardrail,
+      dialectSpec,
+    );
+
     const tenantMode = options.tenantSqlMode ?? "sql-only";
     // `sql` carries business values as inlined literals, so its only markers are
     // tenant markers, numbered from the first slot: `sql` runs with `tenantParams`
@@ -492,20 +509,6 @@ export async function ask(options: AskPipelineOptions): Promise<AskPipelineResul
       }
     }
 
-    // Tenant guardrail on exactly what the caller receives: the final `sql` after
-    // placeholder substitution, plus `unboundSql` only when the consistency check
-    // kept it. Runs for every dialect (built-in, DialectSpec, or custom AskDialect);
-    // the built-in generator skips its own check so this is the single report.
-    // `dialectSpec` is undefined for a custom AskDialect: the guardrail then
-    // requires the statement to pass under both the standard-SQL and MySQL readings.
-    result.tenantGuardrail = enforceTenantGuardrails(
-      [result.sql, result.unboundSql],
-      tenantPolicy,
-      tenantScope,
-      logger,
-      generated.tenantGuardrail,
-      dialectSpec,
-    );
   }
 
   applySensitiveGuardrail(result, options, dialectSpec, logger);

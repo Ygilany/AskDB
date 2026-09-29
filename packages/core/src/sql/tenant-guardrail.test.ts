@@ -195,7 +195,7 @@ describe("validateTenantGuardrails — matches only in code regions", () => {
   });
 
   it("a real predicate next to a literal mentioning the column still passes", () => {
-    expect(rules("SELECT * FROM orders WHERE agency_id IN ('42') AND note = 'agency_id'")).toEqual([]);
+    expect(rules("SELECT * FROM orders WHERE agency_id IN (:tenant_agency_ids) AND note = 'agency_id'")).toEqual([]);
   });
 
   it("an apostrophe inside a comment does not hide the rest of the statement", () => {
@@ -209,20 +209,19 @@ describe("validateTenantGuardrails — matches only in code regions", () => {
       "MISSING_TENANT_PREDICATE",
     ]);
     expect(
-      rules('SELECT * FROM "public"."orders" o WHERE o."agency_id" = \'42\'', POSTGRES_DIALECT),
+      rules('SELECT * FROM "public"."orders" o WHERE o."agency_id" = :tenant_agency_ids', POSTGRES_DIALECT),
     ).toEqual([]);
-    expect(rules("SELECT * FROM `orders` WHERE `agency_id` = '42'", MYSQL_DIALECT)).toEqual([]);
-    expect(rules("SELECT * FROM [orders] WHERE [agency_id] = '42'")).toEqual([]);
+    expect(rules("SELECT * FROM `orders` WHERE `agency_id` = :tenant_agency_ids", MYSQL_DIALECT)).toEqual([]);
+    expect(rules("SELECT * FROM [orders] WHERE [agency_id] = :tenant_agency_ids")).toEqual([]);
   });
 
   it("a table name that only appears inside a literal is not a table reference", () => {
     expect(rules("SELECT 'orders' AS label FROM lookup_states")).toEqual([]);
   });
 
-  it("the placeholder path is live: a tenant placeholder satisfies a scoped table", () => {
-    // Before, `\b:tenant_…` could never match, so only the column name counted.
-    expect(rules("SELECT * FROM orders WHERE owner_ref IN (:tenant_agency_ids)")).toEqual([]);
-    expect(rules("SELECT * FROM orders WHERE owner_ref IN (:tenant_agency_ids_old)")).toEqual([
+  it("only the root's exact placeholder counts: a longer name is another token", () => {
+    expect(rules("SELECT * FROM orders WHERE agency_id IN (:tenant_agency_ids)")).toEqual([]);
+    expect(rules("SELECT * FROM orders WHERE agency_id IN (:tenant_agency_ids_old)")).toEqual([
       "MISSING_TENANT_PREDICATE",
     ]);
   });
@@ -245,7 +244,7 @@ describe("validateTenantGuardrails — matches only in code regions", () => {
   });
 
   it("E'…' strings: a real predicate still counts, and an identifier ending in e is no prefix", () => {
-    const scoped = "SELECT * FROM orders WHERE agency_id = 1 AND note = E'it\\'s x'";
+    const scoped = "SELECT * FROM orders WHERE agency_id = :tenant_agency_ids AND note = E'it\\'s x'";
     expect(rules(scoped, POSTGRES_DIALECT)).toEqual([]);
     expect(rules(scoped)).toEqual([]);
     // `date'…'` is a typed literal whose string ends at `\'`; the UNION is code.
@@ -253,14 +252,70 @@ describe("validateTenantGuardrails — matches only in code regions", () => {
       rules("SELECT id FROM lookup_states WHERE d = date'2020\\' UNION SELECT id FROM orders --'", POSTGRES_DIALECT),
     ).toEqual(["MISSING_TENANT_PREDICATE"]);
   });
+});
 
-  // Known limitations — this is a lint, not a parser. Pinned so a sounder
-  // implementation (plan 050) visibly changes them.
-  it("known limitation: a selected (not filtered) tenant column still passes", () => {
-    expect(rules("SELECT agency_id FROM orders")).toEqual([]);
+/**
+ * #315: strict mode returned SQL whose tenant filter didn't filter, because a bare
+ * mention of the tenant column or placeholder counted as a predicate. The consumer
+ * lab ran each shape on five engines and got other tenants' rows back. A tenant
+ * predicate is now the column compared with its root's placeholder, ANDed into a
+ * WHERE/ON/HAVING clause, and a query on the scope's root table needs one too.
+ */
+describe("validateTenantGuardrails — a tenant predicate must actually filter (#315)", () => {
+  const warnPolicy: NormalizedTenantPolicy = { ...policy, enforcement: "warn" };
+  const rules = (sql: string, dialect?: DialectSpec) =>
+    validateTenantGuardrails(sql, warnPolicy, agencyScope, { dialect }).warnings.map((w) => w.rule);
+
+  it.each([
+    ["the tenant column only selected", "SELECT agency_id, status FROM orders"],
+    ["a literal tenant ID", "SELECT * FROM orders WHERE agency_id = 1"],
+    ["a quoted literal tenant ID", "SELECT * FROM orders WHERE agency_id IN ('42')"],
+    ["the placeholder OR-ed away", "SELECT * FROM orders WHERE agency_id = :tenant_agency_ids OR 1 = 1"],
+    ["an OR before the predicate", "SELECT * FROM orders WHERE status = 'open' OR agency_id = :tenant_agency_ids"],
+    ["AND binding tighter than OR", "SELECT * FROM orders WHERE 1 = 1 OR status = 'x' AND agency_id = :tenant_agency_ids"],
+    ["an OR around the parenthesized predicate", "SELECT * FROM orders WHERE (agency_id = :tenant_agency_ids AND status = 'x') OR 1 = 1"],
+    ["NOT in front of the predicate", "SELECT * FROM orders WHERE NOT agency_id = :tenant_agency_ids"],
+    ["NOT around the predicate's group", "SELECT * FROM orders WHERE NOT (agency_id = :tenant_agency_ids)"],
+    ["XOR", "SELECT * FROM orders WHERE agency_id = :tenant_agency_ids XOR 1 = 1"],
+    ["the predicate compared again", "SELECT * FROM orders WHERE (agency_id = :tenant_agency_ids) = FALSE"],
+    ["the predicate in the select list", "SELECT agency_id = :tenant_agency_ids AS mine FROM orders"],
+    ["the predicate inside a CASE", "SELECT * FROM orders WHERE CASE WHEN agency_id = :tenant_agency_ids THEN 1 ELSE 1 END = 1"],
+    ["the predicate as a function argument", "SELECT * FROM orders WHERE COALESCE(agency_id = :tenant_agency_ids, TRUE)"],
+    ["another table's column compared with the placeholder", "SELECT * FROM orders WHERE status = :tenant_agency_ids"],
+  ])("rejects %s", (_label, sql) => {
+    expect(rules(sql)).toContain("MISSING_TENANT_PREDICATE");
   });
 
-  it("known limitation: an OR-widened predicate still passes", () => {
-    expect(rules("SELECT * FROM orders WHERE agency_id IN ('42') OR 1=1")).toEqual([]);
+  it("rejects MySQL's || as OR, but not Postgres's || as concatenation", () => {
+    const sql = "SELECT * FROM orders WHERE agency_id = :tenant_agency_ids || 1 = 1";
+    expect(rules(sql, MYSQL_DIALECT)).toEqual(["MISSING_TENANT_PREDICATE"]);
+    expect(rules(sql)).toEqual(["MISSING_TENANT_PREDICATE"]); // the MySQL reading, without a dialect
+    expect(rules("SELECT * FROM orders WHERE status || 'x' = 'openx' AND agency_id = :tenant_agency_ids", POSTGRES_DIALECT)).toEqual([]);
+  });
+
+  it("rejects the scope's root table queried without its tenant ID predicate", () => {
+    expect(rules("SELECT name FROM agencies")).toEqual(["MISSING_TENANT_PREDICATE"]);
+    expect(rules("SELECT name FROM agencies WHERE id = 7")).toEqual(["MISSING_TENANT_PREDICATE"]);
+    expect(rules("SELECT name FROM agencies WHERE id = :tenant_agency_ids")).toEqual([]);
+  });
+
+  it.each([
+    ["an equality", "SELECT * FROM orders WHERE agency_id = :tenant_agency_ids"],
+    ["an IN list", "SELECT * FROM orders WHERE agency_id IN (:tenant_agency_ids)"],
+    ["= ANY", "SELECT * FROM orders WHERE agency_id = ANY(:tenant_agency_ids)"],
+    ["the placeholder on the left", "SELECT * FROM orders WHERE :tenant_agency_ids = o.agency_id"],
+    ["a qualified column", "SELECT o.* FROM public.orders o WHERE public.o.agency_id = :tenant_agency_ids"],
+    ["other conjuncts on both sides", "SELECT * FROM orders WHERE status = 'open' AND agency_id = :tenant_agency_ids AND total > 5"],
+    ["an OR inside parentheses", "SELECT * FROM orders WHERE agency_id = :tenant_agency_ids AND (status = 'a' OR status = 'b')"],
+    ["a parenthesized AND group", "SELECT * FROM orders WHERE (agency_id = :tenant_agency_ids AND status = 'a') AND total > 1"],
+    ["BETWEEN beside it", "SELECT * FROM orders WHERE total BETWEEN 1 AND 5 AND agency_id = :tenant_agency_ids"],
+    ["a JOIN ON condition", "SELECT o.id FROM orders o JOIN agencies a ON a.id = o.agency_id AND o.agency_id = :tenant_agency_ids WHERE a.id = :tenant_agency_ids"],
+    ["a subquery's own WHERE", "SELECT * FROM (SELECT * FROM orders WHERE agency_id = :tenant_agency_ids) t WHERE t.total > 5"],
+    ["a CTE", "WITH mine AS (SELECT * FROM orders WHERE agency_id = :tenant_agency_ids) SELECT count(*) FROM mine"],
+    ["HAVING", "SELECT agency_id, count(*) FROM orders GROUP BY agency_id HAVING agency_id = :tenant_agency_ids"],
+    ["a clause after it", "SELECT * FROM orders WHERE agency_id = :tenant_agency_ids ORDER BY id LIMIT 5"],
+    ["a trailing semicolon", "SELECT * FROM orders WHERE agency_id = :tenant_agency_ids;"],
+  ])("accepts %s", (_label, sql) => {
+    expect(rules(sql)).toEqual([]);
   });
 });
