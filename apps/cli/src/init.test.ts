@@ -498,20 +498,25 @@ describe("runInitCli --yes --skip-install", () => {
     }
   });
 
-  it("--database sqlite --sqlite-file ./data.db: a literal path adds no env var", async () => {
+  it.each(["./data.db", "/srv/data.db", "data.db", "db/app.db", "../db/app.db"])(
+    "--database sqlite --sqlite-file %s: a path is written literally and adds no env var",
+    async (file) => {
     const tmp = mkdtempSync(join(tmpdir(), "askdb-init-test-"));
     try {
       const outPath = join(tmp, "askdb.config.ts");
       const code = await runInitCli([
-        "--yes", "--skip-install", "--path", outPath, "--database", "sqlite", "--sqlite-file", "./data.db",
+        "--yes", "--skip-install", "--path", outPath, "--database", "sqlite", "--sqlite-file", file,
       ]);
       expect(code).toBe(0);
-      expect(readFileSync(outPath, "utf8")).toContain('file: "./data.db"');
-      expect(readFileSync(join(tmp, ".env.example"), "utf8")).not.toMatch(/SQLITE|data\.db/);
+      expect(readFileSync(outPath, "utf8")).toContain(`file: ${JSON.stringify(file)}`);
+      const envExample = readFileSync(join(tmp, ".env.example"), "utf8");
+      expect(envExample).not.toContain(file);
+      expect(envExample).not.toMatch(/SQLITE/);
     } finally {
       rmSync(tmp, { recursive: true, force: true });
     }
-  });
+    },
+  );
 
   it("--ai-provider azure: config and .env.example include the resource name", async () => {
     const tmp = mkdtempSync(join(tmpdir(), "askdb-init-test-"));

@@ -74,14 +74,18 @@ function tsString(value: string): string {
   return JSON.stringify(value);
 }
 
+/** An env var name as `--sqlite-file` accepts one, e.g. `SQLITE_FILE`. Anything else is a path. */
+const ENV_NAME_PATTERN = /^[A-Z_][A-Z0-9_]*$/;
+
 /**
  * The env var a SQLite `file` setting reads, or `undefined` when it's a literal
- * path (`./…` or `/…`). No value means the `SQLITE_FILE` default. Rendering, the
+ * path (`data.db`, `../db/app.db`, `/srv/app.db`, …). Only an env-name-shaped value
+ * is a variable. No value means the `SQLITE_FILE` default. Rendering, the
  * `.env.example`, and the printed variable list all go through this.
  */
 function sqliteFileEnv(file: string | undefined): string | undefined {
   if (!file) return "SQLITE_FILE";
-  return file.startsWith("./") || file.startsWith("/") ? undefined : file;
+  return ENV_NAME_PATTERN.test(file) ? file : undefined;
 }
 
 /**
@@ -1090,7 +1094,7 @@ function printHelp(): void {
       "Database options:",
       "  --database <db>               postgres|mysql|sqlite|sqlserver|prisma (default: postgres)",
       "  --connection-env <name>       Env var name for connection URL",
-      "  --sqlite-file <path-or-env>   SQLite file path or env var name",
+      "  --sqlite-file <path-or-env>   SQLite file path, or an UPPER_SNAKE_CASE env var name",
       "  --prisma-schema <path>        Path to schema.prisma",
       "  --schema-out <dir>            Schema output directory (default: ./askdb)",
       "",
