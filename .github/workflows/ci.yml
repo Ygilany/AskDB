@@ -316,6 +316,11 @@ jobs:
       - name: Installable smoke test
         run: pnpm smoke:install
 
+      # @askdb/ai peers `ai` and each @ai-sdk/* package with wide floors; run its
+      # tests (contract tests included) with every peer installed at its floor.
+      - name: "@askdb/ai tests at the AI SDK peer floors"
+        run: pnpm test:ai-floors
+
       - name: Validate publish (dry-run)
         run: pnpm -r publish --dry-run --no-git-checks --access=public
 
