@@ -2,7 +2,12 @@ import { spawnSync } from "node:child_process";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { basename, dirname, join, resolve, isAbsolute, relative } from "node:path";
-import { bootstrapAskDbEnv, discoverAskDbConfigPath, getAskDbRuntimeConfig } from "@askdb/config";
+import {
+  bootstrapAskDbEnv,
+  discoverAskDbConfigPath,
+  getAskDbRuntimeConfig,
+  renderAskDbAiConfigScaffold,
+} from "@askdb/config";
 import {
   formatInstallCommand,
   lockfilePackageManager,
@@ -43,7 +48,10 @@ export type SetupConfigInput = {
   studioExecuteSqliteFile?: string;
 };
 
-/** Mirrors `AI_DEFAULTS` in `apps/cli/src/init.ts` — keep the two in sync. */
+/**
+ * Default key/model env var names. Mirrors `AI_DEFAULTS` in `apps/cli/src/init.ts`; the `ai`
+ * block itself is rendered by `@askdb/config` (`renderAskDbAiConfigScaffold`).
+ */
 const AI_DEFAULTS: Record<SetupAiProvider, { keyEnv: string; modelEnv: string }> = {
   openai: { keyEnv: "OPENAI_API_KEY", modelEnv: "OPENAI_MODEL" },
   anthropic: { keyEnv: "ANTHROPIC_API_KEY", modelEnv: "ANTHROPIC_MODEL" },
@@ -166,12 +174,16 @@ export function writeSetupConfig(cwd: string, input: SetupConfigInput): SetupCon
   const aiKeyEnv = validateEnvName(input.aiKeyEnv ?? aiDefaults.keyEnv, "aiKeyEnv");
   const aiModelEnv = input.aiModelEnv ? validateEnvName(input.aiModelEnv, "aiModelEnv") : undefined;
 
-  const envVars: SetupConfigResult["envVars"] = [
-    { name: aiKeyEnv, purpose: `${input.aiProvider} API key`, requiredForIntrospection: false },
-  ];
-  if (aiModelEnv) {
-    envVars.push({ name: aiModelEnv, purpose: `${input.aiProvider} model override`, requiredForIntrospection: false });
-  }
+  // The `ai` block comes from `@askdb/config`, shared with `askdb init`.
+  const aiScaffold = renderAskDbAiConfigScaffold({
+    provider: input.aiProvider,
+    keyEnv: aiKeyEnv,
+    ...(aiModelEnv ? { modelEnv: aiModelEnv } : {}),
+  });
+  const envVars: SetupConfigResult["envVars"] = aiScaffold.envVars.map((v) => ({
+    ...v,
+    requiredForIntrospection: false,
+  }));
 
   let introspectionSection: string;
   switch (input.database) {
@@ -284,20 +296,13 @@ export function writeSetupConfig(cwd: string, input: SetupConfigInput): SetupCon
     }
   }
 
-  const modelLine = aiModelEnv ? `\n        model: env(${tsString(aiModelEnv)}),` : "";
-  const sections = [introspectionSection, ragSection, studioSection].filter((s): s is string => s !== null);
+  const sections = [aiScaffold.source, introspectionSection, ragSection, studioSection].filter(
+    (s): s is string => s !== null,
+  );
 
   const config = `import { defineConfig, env, type AskDbConfig } from "@askdb/config";
 
 export default defineConfig({
-  ai: {
-    provider: ${tsString(input.aiProvider)},
-    providerConfig: {
-      ${input.aiProvider}: {
-        apiKey: env(${tsString(aiKeyEnv)}),${modelLine}
-      },
-    },
-  },
 ${sections.join("\n")}
 } satisfies AskDbConfig);
 `;

@@ -84,6 +84,18 @@ describe("openaiProvider — real @ai-sdk/openai contract", () => {
     expect(request.body.reasoning).toMatchObject({ effort: "high" });
   });
 
+  it("sends minimal as low for gpt-6 and later, which accept low through max", async () => {
+    // The SDK drops an unsupported effort with only a warning, so without the
+    // mapping a gpt-6 model silently ran at its default effort.
+    const request = await captureGenerate("gpt-6", "minimal");
+    expect(request.body.reasoning).toMatchObject({ effort: "low" });
+  });
+
+  it("keeps minimal for gpt-5 models, which accept it", async () => {
+    const request = await captureGenerate("gpt-5-mini", "minimal");
+    expect(request.body.reasoning).toMatchObject({ effort: "minimal" });
+  });
+
   it("does not send reasoning for gpt-5 -chat variants", async () => {
     const request = await captureGenerate("gpt-5-chat-latest", "high");
     expect(request.body.model).toBe("gpt-5-chat-latest");

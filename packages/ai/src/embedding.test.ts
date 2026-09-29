@@ -101,4 +101,40 @@ describe("withEmbeddingProviderOptions", () => {
       },
     });
   });
+
+  it("maps options to a provider's own setting names and drops the ones it leaves undefined", () => {
+    // Gemini calls the size `outputDimensionality` and has no per-end-user field.
+    const result = withEmbeddingProviderOptions(
+      baseModel,
+      "google",
+      { dimensions: 768, user: "alice" },
+      ({ dimensions }) => ({ outputDimensionality: dimensions }),
+    );
+    expect(result).toEqual({
+      kind: "wrapped",
+      options: {
+        model: baseModel,
+        middleware: {
+          kind: "middleware",
+          settings: {
+            settings: {
+              providerOptions: {
+                google: { outputDimensionality: 768 },
+              },
+            },
+          },
+        },
+      },
+    });
+  });
+
+  it("returns the model unchanged when the mapper yields no settings", () => {
+    const result = withEmbeddingProviderOptions(
+      baseModel,
+      "google",
+      { user: "alice" },
+      ({ dimensions }) => ({ outputDimensionality: dimensions }),
+    );
+    expect(result).toBe(baseModel);
+  });
 });

@@ -346,6 +346,9 @@ export function aiKeyMissingMessage(context: string): string {
 /**
  * First-party adapter packages, keyed by every provider id/alias they
  * register. Aliases (e.g. `foundry`) map to the package that owns them.
+ * The adapter packages depend on this one, so their declared `aliases` can't
+ * be imported here; this message table repeats them until the adapters move
+ * into `@askdb/ai`, which then derives it from their declarations.
  */
 const FIRST_PARTY_ADAPTER_PACKAGES: Record<string, { pkg: string; exportName: string }> = {
   openai: { pkg: "@askdb/ai-openai", exportName: "openaiProvider" },

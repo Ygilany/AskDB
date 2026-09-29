@@ -3,6 +3,7 @@ import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { renderAskDbAiConfigScaffold, type AskDbScaffoldEnvVar } from "@askdb/config";
 
 const DEFAULT_CONFIG_PATH = "askdb.config.ts";
 
@@ -52,16 +53,16 @@ export type InitPrompter = {
 // Config rendering
 // ---------------------------------------------------------------------------
 
-/** AI provider defaults for key/model env vars */
+/** Default key/model env var names. Mirrors `AI_DEFAULTS` in `apps/studio/src/setup.ts`. */
 const AI_DEFAULTS: Record<
   InitAnswers["aiProvider"],
-  { keyEnv: string; modelEnv: string; modelField: string }
+  { keyEnv: string; modelEnv: string }
 > = {
-  openai: { keyEnv: "OPENAI_API_KEY", modelEnv: "OPENAI_MODEL", modelField: "model" },
-  anthropic: { keyEnv: "ANTHROPIC_API_KEY", modelEnv: "ANTHROPIC_MODEL", modelField: "model" },
-  google: { keyEnv: "GOOGLE_GENERATIVE_AI_API_KEY", modelEnv: "GOOGLE_GENERATIVE_AI_MODEL", modelField: "model" },
-  azure: { keyEnv: "AZURE_OPENAI_API_KEY", modelEnv: "AZURE_OPENAI_DEPLOYMENT", modelField: "model" },
-  foundry: { keyEnv: "AZURE_OPENAI_API_KEY", modelEnv: "AZURE_OPENAI_DEPLOYMENT", modelField: "model" },
+  openai: { keyEnv: "OPENAI_API_KEY", modelEnv: "OPENAI_MODEL" },
+  anthropic: { keyEnv: "ANTHROPIC_API_KEY", modelEnv: "ANTHROPIC_MODEL" },
+  google: { keyEnv: "GOOGLE_GENERATIVE_AI_API_KEY", modelEnv: "GOOGLE_GENERATIVE_AI_MODEL" },
+  azure: { keyEnv: "AZURE_OPENAI_API_KEY", modelEnv: "AZURE_OPENAI_DEPLOYMENT" },
+  foundry: { keyEnv: "AZURE_OPENAI_API_KEY", modelEnv: "AZURE_OPENAI_DEPLOYMENT" },
 };
 
 /**
@@ -75,31 +76,16 @@ function tsString(value: string): string {
 }
 
 /**
- * Azure / Foundry also need the resource name (or a full endpoint URL) — the
- * adapter refuses to start without one. Scaffold the resource-name form; users
- * can swap it for `baseUrl` if they use a custom endpoint.
+ * The `ai` block and the env vars it reads, from `@askdb/config` (shared with
+ * Studio's setup wizard, so provider-specific fields such as Azure's
+ * `resourceName` live in one place).
  */
-const AZURE_RESOURCE_NAME_ENV = "AZURE_RESOURCE_NAME";
-
-function azureResourceEnv(answers: InitAnswers): string | undefined {
-  return answers.aiProvider === "azure" || answers.aiProvider === "foundry"
-    ? AZURE_RESOURCE_NAME_ENV
-    : undefined;
-}
-
-function renderAiSection(answers: InitAnswers): string {
-  const { aiProvider, aiKeyEnv, aiModelEnv } = answers;
-  const modelLine = aiModelEnv ? `\n        ${AI_DEFAULTS[aiProvider].modelField}: env(${tsString(aiModelEnv)}),` : "";
-  const resourceEnv = azureResourceEnv(answers);
-  const resourceLine = resourceEnv ? `\n        resourceName: env(${tsString(resourceEnv)}),` : "";
-  return `  ai: {
-    provider: ${tsString(aiProvider)},
-    providerConfig: {
-      ${aiProvider}: {
-        apiKey: env(${tsString(aiKeyEnv)}),${modelLine}${resourceLine}
-      },
-    },
-  },`;
+function aiScaffold(answers: InitAnswers): { source: string; envVars: AskDbScaffoldEnvVar[] } {
+  return renderAskDbAiConfigScaffold({
+    provider: answers.aiProvider,
+    keyEnv: answers.aiKeyEnv,
+    ...(answers.aiModelEnv ? { modelEnv: answers.aiModelEnv } : {}),
+  });
 }
 
 function renderIntrospectionSection(answers: InitAnswers): string {
@@ -228,7 +214,7 @@ function renderStudioSection(answers: InitAnswers): string | null {
 
 export function renderInitConfig(answers: InitAnswers): string {
   const sections: string[] = [
-    renderAiSection(answers),
+    aiScaffold(answers).source,
     renderIntrospectionSection(answers),
     renderRagSection(answers),
   ];
@@ -836,12 +822,9 @@ function buildEnvExample(answers: InitAnswers): string {
       : `${answers.studioExecute.connectionEnv}=`);
   }
 
-  lines.push(`${answers.aiKeyEnv}=`);
-  if (answers.aiModelEnv) lines.push(`${answers.aiModelEnv}=`);
-  const resourceEnv = azureResourceEnv(answers);
-  if (resourceEnv) {
-    lines.push(`# Subdomain of your endpoint, e.g. "my-resource" for https://my-resource.openai.azure.com`);
-    lines.push(`${resourceEnv}=`);
+  for (const envVar of aiScaffold(answers).envVars) {
+    lines.push(`# ${envVar.purpose}`);
+    lines.push(`${envVar.name}=`);
   }
   lines.push("");
   return lines.join("\n");
@@ -850,10 +833,7 @@ function buildEnvExample(answers: InitAnswers): string {
 /** Env var NAMES the generated config references — conventional defaults, not values. */
 function collectEnvVarNames(answers: InitAnswers): string[] {
   const names = new Set<string>();
-  names.add(answers.aiKeyEnv);
-  if (answers.aiModelEnv) names.add(answers.aiModelEnv);
-  const resourceEnv = azureResourceEnv(answers);
-  if (resourceEnv) names.add(resourceEnv);
+  for (const envVar of aiScaffold(answers).envVars) names.add(envVar.name);
   const isEnvName = (v: string) => !v.startsWith("./") && !v.startsWith("/");
   if (answers.database !== "sqlite" && answers.database !== "prisma" && answers.connectionEnv) {
     names.add(answers.connectionEnv);

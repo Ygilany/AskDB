@@ -67,7 +67,7 @@ AI provider registry and shared config helpers. You rarely install or import thi
 | `createAiRegistry` | Register provider adapters and build language or embedding models. |
 | `registry.resolveAiConfig(env)` / `registry.resolveEmbeddingConfig(env)` | Resolve provider config from env without constructing a model. These are methods on the registry returned by `createAiRegistry`, not standalone exports. |
 | `resolveBaseConfig` | Low-level helper — resolves a provider's base config object from an env map. Used internally by adapters. |
-| `withEmbeddingProviderOptions` | Wraps embedding provider options; shared across adapters. |
+| `withEmbeddingProviderOptions` | Wraps an embedding model so `dimensions`/`user` reach the provider; an optional mapper renames them to the provider's own settings (e.g. Gemini's `outputDimensionality`). Shared across adapters. |
 | `aiKeyMissingMessage` | Shared human-readable missing-key guidance. |
 
 ### Provider adapters
@@ -121,6 +121,7 @@ Optional config bootstrap: `.env` and `askdb.config.*` discovery, type-safe `def
 | `discoverAskDbConfigPath()` | Programmatic config-file discovery. |
 | `env`, `requiredEnv` | Typed env-var accessors. |
 | `isAskDbDebugEnabled()` | `true` when the `ASKDB_DEBUG` shell variable is `1` or `true`; works without a loaded config. |
+| `renderAskDbAiConfigScaffold(input)` | Render the `ai` block of a new `askdb.config.ts` and list the env vars it reads. `askdb init` and Studio's setup wizard use it. |
 
 ## Engine adapters
 

@@ -5,6 +5,7 @@ import {
   type AiConfig,
   type AiProviderAdapter,
   type ProviderEnvSpec,
+  type ReasoningEffort,
 } from "@askdb/ai";
 
 const ENV_SPEC: ProviderEnvSpec = {
@@ -26,20 +27,34 @@ const O_SERIES_PATTERN = /^o\d+(?:-|$)/i;
 const GPT_VERSION_PATTERN = /^gpt-(\d+)(?:\.\d+)?(?:-(.+))?$/i;
 
 /**
- * Whether a model id belongs to a family that accepts `reasoningEffort`:
- * the o-series and gpt-5+ — except the `-chat` variants
- * (e.g. `gpt-5-chat-latest`), which are non-reasoning chat models. Mirrors
- * `getOpenAILanguageModelCapabilities` in `@ai-sdk/openai`, but conservatively
- * excludes every `-chat` variant (including minor versions such as
- * `gpt-5.1-chat-latest`) so AskDB never sends a reasoning knob a chat model
+ * The `reasoningEffort` to send for an OpenAI model id, or `undefined` when
+ * the model doesn't accept one.
+ *
+ * Reasoning models are the o-series and gpt-5+, except the `-chat` variants
+ * (e.g. `gpt-5-chat-latest`), which are non-reasoning chat models. This
+ * mirrors `getOpenAILanguageModelCapabilities` in `@ai-sdk/openai`, but
+ * conservatively excludes every `-chat` variant (including minor versions such
+ * as `gpt-5.1-chat-latest`) so AskDB never sends a reasoning knob a chat model
  * might reject.
+ *
+ * gpt-6 and later accept `low` through `max` but not `minimal`, so `minimal`
+ * becomes `low`, the nearest level they accept.
+ *
+ * Duplicated verbatim in `@askdb/ai-openai` (Azure serves the same models): sibling adapters
+ * can't import each other, and vendor model knowledge doesn't belong in provider-agnostic
+ * `@askdb/ai`. Change both together.
  */
-function isReasoningModel(model: string): boolean {
-  if (O_SERIES_PATTERN.test(model)) return true;
+function openaiReasoningEffort(
+  model: string,
+  effort: ReasoningEffort,
+): ReasoningEffort | undefined {
+  if (O_SERIES_PATTERN.test(model)) return effort;
   const gpt = GPT_VERSION_PATTERN.exec(model);
-  if (!gpt) return false;
-  if (Number(gpt[1]) < 5) return false;
-  return !(gpt[2]?.toLowerCase().startsWith("chat") ?? false);
+  if (!gpt) return undefined;
+  const major = Number(gpt[1]);
+  if (major < 5) return undefined;
+  if (gpt[2]?.toLowerCase().startsWith("chat")) return undefined;
+  return major >= 6 && effort === "minimal" ? "low" : effort;
 }
 
 export const azureProvider: AiProviderAdapter = {
@@ -115,7 +130,10 @@ export const azureProvider: AiProviderAdapter = {
     // providerConfig.azure.modelFamily in askdb.config.*) to declare the true
     // backing model explicitly; we fall back to the deployment name otherwise.
     const modelFamily = readStringOption(config.providerOptions, "modelFamily") ?? config.model;
-    if (!isReasoningModel(modelFamily)) return undefined;
+    // The family also picks the effort: gpt-6 and later don't accept
+    // `minimal`, and the SDK can't see the family behind a custom name.
+    const effort = openaiReasoningEffort(modelFamily, reasoningEffort);
+    if (!effort) return undefined;
     // `azure(model)` builds an OpenAIResponsesLanguageModel, which reads
     // `providerOptions.azure` and falls back to `providerOptions.openai` only
     // when no "azure" entry exists; `azure.chat(model)` (OpenAIChatLanguageModel)
@@ -128,7 +146,7 @@ export const azureProvider: AiProviderAdapter = {
     // warning) when that name doesn't look like a reasoning model. We have
     // already established reasoning support above (via modelFamily or the
     // deployment name), so tell the SDK explicitly.
-    return { openai: { reasoningEffort, forceReasoning: true } };
+    return { openai: { reasoningEffort: effort, forceReasoning: true } };
   },
 };
 
