@@ -949,13 +949,13 @@ describe("AskDB Studio server", () => {
     // Round 2: an unescaped ; inside an unquoted password; SQLite URI keys.
     // The driver reads `cd;Database` as one key, so no database is shown.
     ["sqlserver", "Server=db;User Id=sa;Password=ab;cd;Database=app", "sqlserver://db"],
-    // Prisma rejects a segment that isn't key=value.
+    // An unbraced ; inside a value is ambiguous: the label falls back.
     ["sqlserver", "sqlserver://db:1433;user=sa;password=ab;cd;database=app", "configured sqlserver connection"],
     ["sqlite", "file:./data/app.db?mode=ro&key=S3cret", "./data/app.db"],
     // Round 3: a quoted or braced value followed by trailing text.
     ["postgres", "postgres://db:5432/app?password='ab'cd", "postgres://db:5432/app"],
     ["sqlserver", "Server=db;Database=app;Password='ab'cd;", "configured sqlserver connection"],
-    ["sqlserver", "sqlserver://db:1433;database=app;password={ab}cd", "sqlserver://db:1433/app"],
+    ["sqlserver", "sqlserver://db:1433;database=app;password={ab}cd", "configured sqlserver connection"],
     // Round 3: JDBC and near-miss URL forms.
     ["postgres", "jdbc:postgresql://u:secret@h/db", "configured postgres connection"],
     ["postgres", '"postgres://u:secret@h/db"', "configured postgres connection"],
@@ -978,10 +978,10 @@ describe("AskDB Studio server", () => {
     ["sqlserver", "Server=h;User Id=sa;Password=\u00a0;Database=leak", "sqlserver://h"],
     ["sqlserver", "Server=h;User Id=sa;Password=\ufeff;Database=leak", "sqlserver://h"],
     ["sqlserver", "User Id=sa;Password=\u00a0;Server=leakhost", "configured sqlserver connection"],
-    // Delta review 4: Prisma's {…} escaping keeps a ;database= inside the value,
-    // and a quoted value holding ; is rejected, as Prisma rejects it.
-    ["sqlserver", "sqlserver://h:1433;database=app;user=sa;password={S3c;database=ret;}", "sqlserver://h:1433/app"],
-    ["sqlserver", "sqlserver://h;user={a;database=leak;}", "sqlserver://h"],
+    // Delta review 4: a ;database= inside a Prisma {…} value or a quote. The
+    // string can be read more than one way, so the label falls back.
+    ["sqlserver", "sqlserver://h:1433;database=app;user=sa;password={S3c;database=ret;}", "configured sqlserver connection"],
+    ["sqlserver", "sqlserver://h;user={a;database=leak;}", "configured sqlserver connection"],
     ["sqlserver", 'sqlserver://h;user=sa;password="S3c;database=ret;"', "configured sqlserver connection"],
     // Prisma schema paths go through the same allowlist.
     ["prisma", "./prisma/schema.prisma", "./prisma/schema.prisma"],

@@ -99,7 +99,7 @@ export type MssqlConfigInput = {
   database?: string;
   user?: string;
   password?: string;
-  options?: { encrypt?: boolean; trustServerCertificate?: boolean; instanceName?: string };
+  options?: { encrypt?: boolean; trustServerCertificate?: boolean };
 };
 
 /**
@@ -184,78 +184,40 @@ function parseMssqlSchemeUrl(connectionString: string): MssqlConfigInput {
 
 /**
  * Parse Prisma's SQL Server connection URL,
- * `sqlserver://HOST[\INSTANCE][:PORT][;key=value…]`, with the grammar of
- * Prisma's own JDBC-string parser (`prisma/connection-string`, `src/jdbc.rs`),
- * so a string that works with Prisma means the same thing here:
+ * `sqlserver://HOST[:PORT][;key=value…]`.
  *
- * - The structural characters are `: = \ / ; [ ]`. Any of them, and `{`, can
- *   appear in a key or value only inside `{…}`, which is read verbatim up to the
- *   first `}` (Prisma's docs: "If your credentials contain `: \ = ; / [ ] { }`,
- *   wrap values in curly braces", e.g. `password={Pass:Word;}`). Braced and
- *   plain runs join into one value, so `{abc;}}45}` is `abc;}45}`.
- * - Keys are lower-cased; a later key replaces an earlier one. Prisma's aliases
- *   are honoured: `database` / `initial catalog`, `user` / `username` / `uid`,
- *   `password` / `pwd`.
- * - Unlike Prisma, whitespace around an unbraced key or value is ignored
- *   (brace it to keep it), as the earlier parser did.
+ * Backward compatible with the parser this replaces: a string without `{`
+ * connects with exactly the same values as before. Segments are split on `;`,
+ * a key ends at its first `=` (so `password=a=b` is `a=b`), keys are trimmed
+ * and lower-cased, values are trimmed, non-ASCII is fine, a segment without
+ * `=` or with an empty key or value is skipped, and a later key replaces an
+ * earlier one. The host part ends at its last `:`, and a port that isn't a
+ * number is ignored.
  *
- * Anything Prisma would reject throws: an unclosed `{`, a non-ASCII character,
- * a segment that isn't `key=value`, an empty key or value, a stray structural
- * character (so an unescaped `=` or a quoted value with `;` in it), a
- * non-numeric port, or two aliases of the same setting.
+ * On top of that it reads Prisma's `{…}` escaping (Prisma's SQL Server docs:
+ * "If your credentials contain `: \ = ; / [ ] { }`, wrap values in curly
+ * braces", e.g. `password={Pass:Word;}`), with the rule of Prisma's own
+ * JDBC-string parser (`prisma/connection-string`, `src/jdbc.rs`): a `{` opens
+ * a span read verbatim up to the first `}`, so `;` and `=` inside it are part
+ * of the value, and braced and plain runs join (`{abc;}}45}` is `abc;}45}`).
+ * Prisma's credential aliases are honoured (`username` and `uid` for `user`,
+ * `pwd` for `password`): the old parser dropped them, so such a string had no
+ * credentials. `initial catalog` is not, because the old parser ignored it and
+ * the connection used the login's default database; reading it now would
+ * change where a working string connects.
+ *
+ * It throws only where the reading can't be settled: a `{` that is never
+ * closed, or two aliases of one setting with different values.
  */
 function parsePrismaSqlServerUrl(connectionString: string): MssqlConfigInput {
-  const tokens = tokenizeJdbc(connectionString.slice("sqlserver://".length));
-  let i = 0;
-  const peek = () => tokens[i];
-  const invalid = (reason: string) =>
-    new AskDbError(
-      `Invalid Prisma-style SQL Server URL: ${reason}. ` +
-        "Expected sqlserver://HOST[:PORT];database=DATABASE;user=USER;password=PASSWORD, " +
-        "with any value containing : \\ = ; / [ ] { } wrapped in {curly braces}.",
-    );
-  const readIdent = (): string => {
-    const parts: Array<{ text: string; braced: boolean }> = [];
-    for (let token = peek(); token?.kind === "atom" || token?.kind === "escaped"; token = peek()) {
-      parts.push({ text: token.text, braced: token.kind === "escaped" });
-      i++;
-    }
-    // Unbraced whitespace at either end is not part of the value.
-    while (parts.length > 0 && !parts[0]!.braced && /^\s$/.test(parts[0]!.text)) parts.shift();
-    while (parts.length > 0 && !parts[parts.length - 1]!.braced && /^\s$/.test(parts[parts.length - 1]!.text)) {
-      parts.pop();
-    }
-    return parts.map((part) => part.text).join("");
-  };
+  const segments = splitPrismaSegments(connectionString.slice("sqlserver://".length));
+  const hostPart = unbrace(segments[0]!);
 
-  let server = "";
-  if (peek()?.kind === "[") {
-    i++;
-    let ipv6 = "[";
-    for (;;) {
-      const token = tokens[i++];
-      if (token?.kind === ":") ipv6 += ":";
-      else if (token?.kind === "atom" && /^[0-9A-Za-z]$/.test(token.text)) ipv6 += token.text;
-      else if (token?.kind === "]") break;
-      else throw invalid("malformed IPv6 host");
-    }
-    server = `${ipv6}]`;
-  } else {
-    server = readIdent();
-  }
-  let instanceName: string | undefined;
-  if (peek()?.kind === "\\") {
-    i++;
-    instanceName = readIdent();
-    if (!instanceName) throw invalid("empty instance name");
-  }
-  let port: number | undefined;
-  if (peek()?.kind === ":") {
-    i++;
-    const portText = readIdent();
-    if (!/^\+?\d+$/.test(portText) || Number(portText) > 65535) throw invalid("the port is not a number");
-    port = Number(portText);
-  }
+  const colonIdx = hostPart.lastIndexOf(":");
+  const server = colonIdx === -1 ? hostPart : hostPart.slice(0, colonIdx);
+  const portStr = colonIdx === -1 ? undefined : hostPart.slice(colonIdx + 1);
+  const port = portStr ? parseInt(portStr, 10) : undefined;
+
   if (!server) {
     throw new AskDbError(
       "Cannot parse server hostname from Prisma-style SQL Server URL. " +
@@ -263,82 +225,118 @@ function parsePrismaSqlServerUrl(connectionString: string): MssqlConfigInput {
     );
   }
 
-  const params = new Map<string, string>();
-  while (peek()?.kind === ";") {
-    i++;
-    if (peek() === undefined) break; // a trailing ";"
-    const key = readIdent().toLowerCase();
-    if (!key) throw invalid("empty property key");
-    if (tokens[i++]?.kind !== "=") throw invalid(`property "${key}" must be joined to its value by =`);
-    const value = readIdent();
-    if (!value) throw invalid(`property "${key}" has no value`);
-    params.set(key, value);
+  const params: Record<string, string> = {};
+  for (const segment of segments.slice(1)) {
+    const eq = segment.findIndex((piece) => !piece.braced && piece.text.includes("="));
+    if (eq === -1) continue;
+    const split = segment[eq]!.text.indexOf("=");
+    const keyPieces = [...segment.slice(0, eq), { braced: false, text: segment[eq]!.text.slice(0, split) }];
+    const valuePieces = [{ braced: false, text: segment[eq]!.text.slice(split + 1) }, ...segment.slice(eq + 1)];
+    const key = unbrace(keyPieces).trim().toLowerCase();
+    const value = trimUnbraced(valuePieces);
+    if (key && value) params[key] = value;
   }
-  if (peek() !== undefined) throw invalid(`unexpected "${peek()!.text}"`);
 
   const pick = (...aliases: string[]): string | undefined => {
-    const present = aliases.filter((alias) => params.has(alias));
-    if (present.length > 1) throw invalid(`set only one of ${present.join(", ")}`);
-    return present.length === 1 ? params.get(present[0]!) : undefined;
+    const values = [...new Set(aliases.filter((alias) => params[alias] !== undefined).map((alias) => params[alias]!))];
+    if (values.length > 1) {
+      throw new AskDbError(
+        `Prisma-style SQL Server URL sets ${aliases.join(" / ")} to different values. Keep one of them.`,
+      );
+    }
+    return values[0];
   };
-  const database = pick("database", "initial catalog");
+  const database = params["database"];
   const user = pick("user", "username", "uid");
   const password = pick("password", "pwd");
-  const encrypt = params.get("encrypt");
-  const trustServerCertificate = params.get("trustservercertificate");
 
   return {
     server,
-    ...(port !== undefined ? { port } : {}),
-    ...(database !== undefined ? { database } : {}),
-    ...(user !== undefined ? { user } : {}),
-    ...(password !== undefined ? { password } : {}),
+    ...(port !== undefined && !Number.isNaN(port) ? { port } : {}),
+    ...(database ? { database } : {}),
+    ...(user ? { user } : {}),
+    ...(password ? { password } : {}),
     options: {
-      ...(encrypt !== undefined ? { encrypt: encrypt.toLowerCase() === "true" } : {}),
-      ...(trustServerCertificate !== undefined
-        ? { trustServerCertificate: trustServerCertificate.toLowerCase() === "true" }
+      ...(params["encrypt"] !== undefined ? { encrypt: params["encrypt"].toLowerCase() === "true" } : {}),
+      ...(params["trustservercertificate"] !== undefined
+        ? { trustServerCertificate: params["trustservercertificate"].toLowerCase() === "true" }
         : {}),
-      ...(instanceName !== undefined ? { instanceName } : {}),
     },
   };
 }
 
-type JdbcToken =
-  | { kind: ":" | "=" | "\\" | "/" | ";" | "[" | "]"; text: string }
-  | { kind: "atom" | "escaped"; text: string };
+/**
+ * True when a Prisma-style `sqlserver://` string can be read more than one
+ * way, so a display label must not trust its parts: it uses `{…}` (the parser
+ * before Prisma escaping read the braces literally), a quote, a segment that
+ * isn't `key=value` (an unbraced `;` inside a value), an empty segment before
+ * another one, or an unclosed `{`. The connection still uses
+ * `parsePrismaSqlServerUrl`'s reading.
+ */
+export function isPrismaSqlServerUrlAmbiguous(connectionString: string): boolean {
+  const rest = connectionString.slice("sqlserver://".length);
+  if (/[{'"]/.test(rest)) return true;
+  const segments = rest.split(";").slice(1);
+  return segments.some((segment, i) => {
+    const last = i === segments.length - 1;
+    if (segment.trim() === "") return !last;
+    return !segment.includes("=");
+  });
+}
 
-/** Prisma's JDBC lexer: structural characters, `{…}` escapes (to the first `}`), and ASCII atoms. */
-function tokenizeJdbc(input: string): JdbcToken[] {
-  const tokens: JdbcToken[] = [];
+type PrismaPiece = { braced: boolean; text: string };
+
+/** Split on `;` outside `{…}`; each segment keeps its braced and plain pieces. */
+function splitPrismaSegments(input: string): PrismaPiece[][] {
+  const segments: PrismaPiece[][] = [[]];
+  let plain = "";
+  const flush = () => {
+    if (plain) segments[segments.length - 1]!.push({ braced: false, text: plain });
+    plain = "";
+  };
   for (let i = 0; i < input.length; i++) {
     const ch = input[i]!;
-    if (ch.charCodeAt(0) > 0x7f) {
-      throw new AskDbError(
-        "Invalid Prisma-style SQL Server URL: non-ASCII character. Prisma's SQL Server URLs accept ASCII only.",
-      );
-    }
-    if (ch === ":" || ch === "=" || ch === "\\" || ch === "/" || ch === ";" || ch === "[" || ch === "]") {
-      tokens.push({ kind: ch, text: ch });
-    } else if (ch === "{") {
+    if (ch === "{") {
       const close = input.indexOf("}", i + 1);
       if (close === -1) {
         throw new AskDbError(
-          "Invalid Prisma-style SQL Server URL: a { is never closed. Wrap each special value as {value}.",
+          "Prisma-style SQL Server URL has a { that is never closed. Wrap a value that contains " +
+            ": \\ = ; / [ ] { } in curly braces, e.g. password={Pass:Word;}.",
         );
       }
-      const text = input.slice(i + 1, close);
-      if (/[^\u0000-\u007f]/.test(text)) {
-        throw new AskDbError(
-          "Invalid Prisma-style SQL Server URL: non-ASCII character. Prisma's SQL Server URLs accept ASCII only.",
-        );
-      }
-      tokens.push({ kind: "escaped", text });
+      flush();
+      segments[segments.length - 1]!.push({ braced: true, text: input.slice(i + 1, close) });
       i = close;
+    } else if (ch === ";") {
+      flush();
+      segments.push([]);
     } else {
-      tokens.push({ kind: "atom", text: ch });
+      plain += ch;
     }
   }
-  return tokens;
+  flush();
+  return segments;
+}
+
+function unbrace(pieces: readonly PrismaPiece[]): string {
+  return pieces.map((piece) => piece.text).join("");
+}
+
+/** Join the pieces, trimming whitespace only from unbraced text at either end. */
+function trimUnbraced(pieces: readonly PrismaPiece[]): string {
+  const copy = pieces.map((piece) => ({ ...piece }));
+  while (copy.length > 0 && !copy[0]!.braced) {
+    copy[0]!.text = copy[0]!.text.trimStart();
+    if (copy[0]!.text !== "") break;
+    copy.shift();
+  }
+  while (copy.length > 0 && !copy[copy.length - 1]!.braced) {
+    const last = copy[copy.length - 1]!;
+    last.text = last.text.trimEnd();
+    if (last.text !== "") break;
+    copy.pop();
+  }
+  return unbrace(copy);
 }
 
 async function runSqlServerCatalogQuery(

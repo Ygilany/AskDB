@@ -1,6 +1,6 @@
 import type { ConnectionLabelParts } from "@askdb/connectors";
 import { MSSQL_SCHEMA, parse } from "@tediousjs/connection-string";
-import { resolveConnectionInput } from "./exec/sqlserver.js";
+import { isPrismaSqlServerUrlAmbiguous, resolveConnectionInput } from "./exec/sqlserver.js";
 
 /**
  * The display-safe parts of a SQL Server connection string, read by the same
@@ -9,7 +9,7 @@ import { resolveConnectionInput } from "./exec/sqlserver.js";
  *
  * - `resolveConnectionInput()` turns `mssql://…` and Prisma's
  *   `sqlserver://host:port;key=value` form into `{ server, port, database }`
- *   (the latter with Prisma's own grammar, `{…}` escapes included), and hands
+ *   (the latter backward compatible, plus Prisma's `{…}` escapes), and hands
  *   ADO.NET strings to `mssql`;
  * - `mssql` parses ADO.NET strings with `@tediousjs/connection-string`
  *   (`parse(…).toSchema(MSSQL_SCHEMA)`), then splits `data source` into
@@ -20,7 +20,8 @@ import { resolveConnectionInput } from "./exec/sqlserver.js";
  * Returns `undefined` (the registry labels it `configured sqlserver
  * connection`) when a parser throws, when there is no server, for a named
  * instance or named pipe, for any other scheme, for an `@` in the
- * `sqlserver://` form (it has no userinfo), and for an `@` or `#` after the
+ * `sqlserver://` form (it has no userinfo) or a `sqlserver://` string that can be
+ * read more than one way (`isPrismaSqlServerUrlAmbiguous`), and for an `@` or `#` after the
  * host of an `mssql://` URL (a password containing `/`, `?` or `#` is split
  * there). `formatConnectionLabel`'s allowlist is the second check.
  */
@@ -34,9 +35,10 @@ export function parseSqlServerConnection(input: string): ConnectionLabelParts | 
   if (typeof resolved === "string") {
     return resolved.includes("://") ? undefined : adoNetParts(resolved);
   }
-  if (input.startsWith("sqlserver://") && input.includes("@")) return undefined;
+  if (input.startsWith("sqlserver://") && (input.includes("@") || isPrismaSqlServerUrlAmbiguous(input))) {
+    return undefined;
+  }
   if (input.startsWith("mssql://") && !mssqlUrlIsUnambiguous(input)) return undefined;
-  if (resolved.options?.instanceName !== undefined) return undefined;
   return parts(resolved.server, resolved.port === undefined ? undefined : String(resolved.port), resolved.database);
 }
 

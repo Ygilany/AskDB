@@ -127,8 +127,8 @@ describe("resolveConnectionInput", () => {
       expect(() => resolveConnectionInput("sqlserver://;database=db")).toThrow("Cannot parse server hostname");
     });
 
-    // Prisma's grammar (prisma/connection-string, src/jdbc.rs): special characters
-    // go inside {…}, read verbatim up to the first }.
+    // Prisma's {…} escaping (Prisma's SQL Server docs; prisma/connection-string
+    // src/jdbc.rs): a { opens a span read verbatim up to the first }.
     it("reads Prisma's documented {…} escaping (the doc example yields the password Pass:Word;)", () => {
       expect(
         resolveConnectionInput("sqlserver://host:1433;user={MyServer/User};password={Pass:Word;};database=db"),
@@ -157,28 +157,116 @@ describe("resolveConnectionInput", () => {
       expect(result).toMatchObject({ database: "app", password: "S3c;database=ret;" });
     });
 
-    it("honours Prisma's aliases and a named instance", () => {
-      expect(resolveConnectionInput("sqlserver://h\\SQLEXPRESS:1433;initial catalog=app;uid=sa;pwd=pw")).toEqual({
-        server: "h",
-        port: 1433,
-        database: "app",
-        user: "sa",
-        password: "pw",
-        options: { instanceName: "SQLEXPRESS" },
-      });
-    });
-
     it.each([
-      ["an unclosed {", "sqlserver://h;password={S3cret", "is never closed"],
-      ["a quoted value holding ;", 'sqlserver://h;user=sa;password="S3c;database=ret;"', "must be joined to its value by ="],
-      ["an unescaped = in a value", "sqlserver://h;password=a=b", "unexpected"],
-      ["a segment that isn't key=value", "sqlserver://h;password=ab;cd;database=app", "must be joined to its value by ="],
-      ["an empty segment", "sqlserver://h;password=p;;database=leak", "empty property key"],
-      ["a non-ASCII character", "sqlserver://h;password=pässword", "non-ASCII"],
-      ["two aliases of one setting", "sqlserver://h;database=a;initial catalog=b", "set only one of database, initial catalog"],
-      ["a non-numeric port", "sqlserver://sa:se;cret@h", "the port is not a number"],
-    ])("rejects %s, as Prisma does", (_name, input, message) => {
+      ["a { that is never closed", "sqlserver://h;password={S3cret", "is never closed"],
+      ["two aliases of the password with different values", "sqlserver://h;password=a;pwd=b", "different values"],
+    ])("throws for %s", (_name, input, message) => {
       expect(() => resolveConnectionInput(input)).toThrow(message);
     });
+  });
+});
+
+// The Prisma-form parser before #189 (packages/sqlserver/src/exec/sqlserver.ts
+// on main), copied as a fixture: every string it read correctly must still
+// connect with the same values.
+function legacyParsePrismaSqlServerUrl(connectionString: string) {
+  const withoutScheme = connectionString.slice("sqlserver://".length);
+  const firstSemiIdx = withoutScheme.indexOf(";");
+  const hostPart = firstSemiIdx === -1 ? withoutScheme : withoutScheme.slice(0, firstSemiIdx);
+  const paramsPart = firstSemiIdx === -1 ? "" : withoutScheme.slice(firstSemiIdx + 1);
+
+  const colonIdx = hostPart.lastIndexOf(":");
+  const server = colonIdx === -1 ? hostPart : hostPart.slice(0, colonIdx);
+  const portStr = colonIdx === -1 ? undefined : hostPart.slice(colonIdx + 1);
+  const port = portStr ? parseInt(portStr, 10) : undefined;
+
+  if (!server) throw new Error("Cannot parse server hostname from Prisma-style SQL Server URL.");
+
+  const params: Record<string, string> = {};
+  for (const part of paramsPart.split(";")) {
+    const eqIdx = part.indexOf("=");
+    if (eqIdx === -1) continue;
+    const key = part.slice(0, eqIdx).trim().toLowerCase();
+    const value = part.slice(eqIdx + 1).trim();
+    if (key && value) params[key] = value;
+  }
+
+  return {
+    server,
+    ...(port !== undefined && !Number.isNaN(port) ? { port } : {}),
+    ...(params["database"] ? { database: params["database"] } : {}),
+    ...(params["user"] ? { user: params["user"] } : {}),
+    ...(params["password"] ? { password: params["password"] } : {}),
+    options: {
+      ...(params["encrypt"] !== undefined ? { encrypt: params["encrypt"].toLowerCase() === "true" } : {}),
+      ...(params["trustservercertificate"] !== undefined
+        ? { trustServerCertificate: params["trustservercertificate"].toLowerCase() === "true" }
+        : {}),
+    },
+  };
+}
+
+describe("sqlserver:// backward compatibility with the parser before #189", () => {
+  it.each([
+    "sqlserver://db.example.com:1433;database=AppCatalog;user=appuser;password=Str0ngP4ss;encrypt=true",
+    "sqlserver://db.example.com;database=AppCatalog;user=appuser;password=Str0ngP4ss",
+    "sqlserver://db:1433;database=app;user=sa;password=S3cret;trustServerCertificate=true;",
+    // An unbraced = in a value: the key ends at the first =.
+    "sqlserver://h;user=sa;password=a=b;database=app",
+    "sqlserver://h;user=sa;password=abc==",
+    // Non-ASCII.
+    "sqlserver://h;user=sa;password=pässwörd€;database=datenbänk",
+    // Whitespace around keys and values.
+    "sqlserver://h:1433; database = app ;user = sa; password = S3 cret ;",
+    // An unbraced ; inside a value (ambiguous; the old reading is kept, the label falls back).
+    "sqlserver://h;user=sa;password=ab;cd;database=app",
+    "sqlserver://h;password=p;;database=leak",
+    // Quotes are not escapes.
+    'sqlserver://h;user=sa;password="S3c;database=ret;"',
+    "sqlserver://h;user=sa;password='S3c'",
+    // A lone } is an ordinary character.
+    "sqlserver://h;user=sa;password=ab}cd",
+    // Repeated keys: the last one wins.
+    "sqlserver://h;database=a;database=b;DATABASE=c",
+    // Ports the old parser read leniently, IPv6, a named instance, and other hosts.
+    "sqlserver://h:14x3;database=app",
+    "sqlserver://h:abc;database=app",
+    "sqlserver://[::1]:1433;database=app",
+    "sqlserver://h\\SQLEXPRESS:1433;database=app",
+    "sqlserver:// h:1433;database=app",
+    "sqlserver://h;user=admin@corp;password=S3cret",
+    // `initial catalog` is still ignored, as before.
+    "sqlserver://h;initial catalog=app;user=sa;password=S3cret",
+    // Empty keys and values are skipped.
+    "sqlserver://h;=x;user=;password=S3cret",
+  ])("reads %s exactly as before", (input) => {
+    expect(resolveConnectionInput(input)).toEqual(legacyParsePrismaSqlServerUrl(input));
+  });
+
+  // The only strings that connect differently: the old reading couldn't log in.
+  it.each([
+    [
+      "Prisma's {…} escape: the old parser kept the braces and cut the value at the first ;",
+      "sqlserver://h;user={MyServer/User};password={Pass:Word;};database=db",
+      { user: "{MyServer/User}", password: "{Pass:Word" },
+      { user: "MyServer/User", password: "Pass:Word;" },
+    ],
+    [
+      "Prisma's pwd alias: the old parser dropped it, so there was no password",
+      "sqlserver://h;user=sa;pwd=S3cret",
+      { user: "sa", password: undefined },
+      { user: "sa", password: "S3cret" },
+    ],
+    [
+      "Prisma's uid and username aliases: the old parser dropped them, so there was no user",
+      "sqlserver://h;uid=sa;password=S3cret",
+      { user: undefined, password: "S3cret" },
+      { user: "sa", password: "S3cret" },
+    ],
+  ])("%s", (_reason, input, before, after) => {
+    const old = legacyParsePrismaSqlServerUrl(input) as { user?: string; password?: string };
+    const now = resolveConnectionInput(input) as { user?: string; password?: string };
+    expect({ user: old.user, password: old.password }).toEqual(before);
+    expect({ user: now.user, password: now.password }).toEqual(after);
   });
 });

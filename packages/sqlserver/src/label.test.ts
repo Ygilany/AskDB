@@ -20,11 +20,13 @@ const CORPUS: ReadonlyArray<readonly [input: string, label: string]> = [
   // Ordinary mssql:// URLs.
   ["mssql://sa:S3cret@localhost:1433/app", "sqlserver://localhost:1433/app"],
   ["mssql://localhost/app", "sqlserver://localhost/app"],
-  // Ordinary Prisma-style strings (parsePrismaSqlServerUrl, with Prisma's own grammar).
-  ["sqlserver://host:1433;database=db;user=sa;password={S3;cr&et};encrypt=true", "sqlserver://host:1433/db"],
-  ["sqlserver://host:1433;user={MyServer/User};password={Pass:Word;};database=db", "sqlserver://host:1433/db"],
-  // Prisma's alias for database.
-  ["sqlserver://db:1433;initial catalog=app;password={a;b}", "sqlserver://db:1433/app"],
+  // Prisma-style strings. A {…} value is read differently by the parser before
+  // Prisma escaping (it kept the braces), so the label doesn't trust it.
+  ["sqlserver://host:1433;database=db;user=sa;password=S3cret;encrypt=true", "sqlserver://host:1433/db"],
+  ["sqlserver://host:1433;database=db;user=sa;password={S3;cr&et};encrypt=true", FALLBACK],
+  ["sqlserver://host:1433;user={MyServer/User};password={Pass:Word;};database=db", FALLBACK],
+  // `initial catalog` isn't read for the connection (the old parser ignored it), so no database.
+  ["sqlserver://db:1433;initial catalog=app;password=S3cret", "sqlserver://db:1433"],
   // Ordinary ADO.NET strings (mssql parses them with @tediousjs/connection-string).
   ["Server=tcp:host,1433;User Id=sa;Password=S3c&ret word;Trust Server Certificate=true", "sqlserver://host:1433"],
   ["Data Source=host;UID=sa;PWD='a;b';", "sqlserver://host"],
@@ -43,12 +45,12 @@ const CORPUS: ReadonlyArray<readonly [input: string, label: string]> = [
   [" sqlserver://host:1433;user=sa;password=S3cret;encrypt=true", FALLBACK],
   // The driver reads `cd;Database` as one key, so there is no database.
   ["Server=db;User Id=sa;Password=ab;cd;Database=app", "sqlserver://db"],
-  // Prisma rejects a segment that isn't key=value.
+  // An unbraced ; inside a value is ambiguous: the connection keeps the old reading, the label falls back.
   ["sqlserver://db:1433;user=sa;password=ab;cd;database=app", FALLBACK],
   // Round 3: a quoted or braced value followed by trailing text (the ADO.NET parser throws).
   ["Server=db;Database=app;Password='ab'cd;", FALLBACK],
   ["Server=db;Database=app;Password={ab}cd;", FALLBACK],
-  ["sqlserver://db:1433;database=app;password={ab}cd", "sqlserver://db:1433/app"],
+  ["sqlserver://db:1433;database=app;password={ab}cd", FALLBACK],
   // Round 3: URL userinfo in the Prisma form, and JDBC, came back unchanged.
   ["sqlserver://sa:se;cret@h", FALLBACK],
   ["jdbc:sqlserver://h:1433;databaseName=app;user=sa;password=secret", FALLBACK],
@@ -67,13 +69,13 @@ const CORPUS: ReadonlyArray<readonly [input: string, label: string]> = [
   ["User Id=sa;Password=p;;Server=leakhost", FALLBACK],
   ["Server=h;Password='x';;Database=leak", "sqlserver://h"],
   ["Server=h;Password==;Database=leak", "sqlserver://h"],
-  // Prisma rejects an empty segment.
+  // An empty segment before another one is ambiguous too.
   ["sqlserver://h;password=p;;database=leak", FALLBACK],
-  // Delta review 4: a ;database= inside a Prisma {…} value is part of that value,
-  // and a quote is not an escape in Prisma's grammar (the string is rejected).
-  ["sqlserver://h:1433;database=app;user=sa;password={S3c;database=ret;}", "sqlserver://h:1433/app"],
-  ["sqlserver://h;password={ab;database=cd;x}", "sqlserver://h"],
-  ["sqlserver://h;user={a;database=leak;}", "sqlserver://h"],
+  // Delta review 4: a ;database= inside a Prisma {…} value. The connection reads
+  // it as part of the value; the label falls back, as for any {…} or quote.
+  ["sqlserver://h:1433;database=app;user=sa;password={S3c;database=ret;}", FALLBACK],
+  ["sqlserver://h;password={ab;database=cd;x}", FALLBACK],
+  ["sqlserver://h;user={a;database=leak;}", FALLBACK],
   ['sqlserver://h;user=sa;password="S3c;database=ret;"', FALLBACK],
   ["sqlserver://h;password={S3c;database=ret", FALLBACK],
   // A Prisma named instance isn't a host[:port] label.
