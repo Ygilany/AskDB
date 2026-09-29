@@ -226,6 +226,12 @@ function normalizeAdapters(adapters: ConnectorProviderAdapters): Map<string, Con
         `Connector provider adapter mismatch: registry key "${provider}" points to adapter "${adapter.provider}".`,
       );
     }
+    // A second adapter for the same id would silently replace the first one.
+    if (byProvider.has(provider)) {
+      throw new Error(
+        `Connector provider "${provider}" is registered twice. Pass one adapter per provider id to createConnectorRegistry().`,
+      );
+    }
     byProvider.set(provider, adapter);
   }
   return byProvider;

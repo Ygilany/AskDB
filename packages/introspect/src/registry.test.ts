@@ -49,6 +49,12 @@ describe("createConnectorRegistry", () => {
     expect(() => createConnectorRegistry({ mysql: pgAdapter })).toThrow(/adapter mismatch/);
   });
 
+  it("rejects two adapters for the same provider id instead of silently keeping the last", () => {
+    expect(() => createConnectorRegistry([makeAdapter("acme"), makeAdapter("acme")])).toThrow(
+      'Connector provider "acme" is registered twice.',
+    );
+  });
+
   it("passes all config fields through to the adapter", () => {
     const adapter = makeAdapter("postgres");
     const registry = createConnectorRegistry([adapter]);
