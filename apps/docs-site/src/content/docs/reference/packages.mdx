@@ -23,7 +23,9 @@ The dialect-agnostic NL-to-SQL pipeline. Schema loading, prompt construction, va
 
 <InstallTabs pkgs="@askdb/core ai" />
 
-`ai` (the Vercel AI SDK) is a required **peer dependency** of `@askdb/core`, supported at `^6 || ^7`. Your app owns its version: `ask()` receives a model your app constructs, so core uses your app's `ai` instead of bundling its own — upgrading AskDB never forces an AI SDK upgrade on the rest of your app. Build the model with an AI SDK provider package (for example `@ai-sdk/openai`), or through `@askdb/ai` plus a provider adapter (the config-driven path, which currently requires AI SDK 7).
+`ai` (the Vercel AI SDK) is a required **peer dependency** of `@askdb/core`, supported at `^6 || ^7`. Your app owns its version: `ask()` receives a model your app constructs, so core uses your app's `ai` instead of bundling its own — upgrading AskDB never forces an AI SDK upgrade on the rest of your app. Build the model with an AI SDK provider package (for example `@ai-sdk/openai`), or through the config-driven path (`@askdb/ai` and `@askdb/client`), which currently requires AI SDK 7.
+
+Every package on this page that depends on `@askdb/core` also needs `ai` installed, even if you only introspect and never generate SQL. That covers `@askdb/connectors`, the engine adapters, `@askdb/introspect`, `@askdb/prisma`, `@askdb/enrich` and `@askdb/rag`. Core loads `ai` when it is imported. npm 7+ and pnpm install the missing peer for you. Yarn doesn't, so the install commands on this page list `ai` explicitly.
 
 **Key exports**
 
@@ -97,7 +99,7 @@ Any provider that has a Vercel AI SDK package can be added as an adapter. Unknow
 
 Connector provider registry — mirrors the `@askdb/ai` pattern for introspection. Each engine adapter exports a `ConnectorProviderAdapter` constant; `@askdb/connectors` wires them into a unified registry used by the CLI and apps. Install directly only when you are building a custom introspection flow.
 
-<InstallTabs pkgs="@askdb/connectors" />
+<InstallTabs pkgs="@askdb/connectors ai" />
 
 **Key exports**
 
@@ -129,25 +131,25 @@ Each engine package ships the introspection connector for its engine, any catalo
 
 ### `@askdb/postgres`
 
-<InstallTabs pkgs="@askdb/postgres" />
+<InstallTabs pkgs="@askdb/postgres ai" />
 
 PostgreSQL dialect, connector, catalog SQL templates, and an optional `pg`-based catalog query runner for live introspection. Pass `dialect: "postgres"` to `ask()`.
 
 ### `@askdb/mysql`
 
-<InstallTabs pkgs="@askdb/mysql" />
+<InstallTabs pkgs="@askdb/mysql ai" />
 
 MySQL dialect, connector, catalog SQL templates, and an optional `mysql2`-based catalog query runner for live introspection. Pass `dialect: "mysql"` to `ask()`.
 
 ### `@askdb/sqlite`
 
-<InstallTabs pkgs="@askdb/sqlite" />
+<InstallTabs pkgs="@askdb/sqlite ai" />
 
 SQLite dialect, connector, catalog SQL templates, and an optional `better-sqlite3`-based catalog query runner for live introspection. Works with embedded file-backed databases. Pass `dialect: "sqlite"` to `ask()`.
 
 ### `@askdb/sqlserver`
 
-<InstallTabs pkgs="@askdb/sqlserver" />
+<InstallTabs pkgs="@askdb/sqlserver ai" />
 
 SQL Server (T-SQL) dialect, connector, catalog SQL templates, and an optional `mssql`-based catalog query runner for live introspection. Pass `dialect: "sqlserver"` to `ask()`.
 
@@ -157,13 +159,13 @@ SQL Server (T-SQL) dialect, connector, catalog SQL templates, and an optional `m
 
 The engine-agnostic introspection contract and the schema-directory writer. Use directly only when you're calling introspection from your own code — the CLI wraps this for you.
 
-<InstallTabs pkgs="@askdb/introspect" />
+<InstallTabs pkgs="@askdb/introspect ai" />
 
 ### `@askdb/prisma`
 
 File-only connector that reads `.prisma` schema files and produces AskDB physical metadata — no live database needed. Pair with an engine adapter for SQL generation at runtime.
 
-<InstallTabs pkgs="@askdb/prisma @askdb/introspect" />
+<InstallTabs pkgs="@askdb/prisma @askdb/introspect ai" />
 
 See [the Prisma integration guide](/guides/integrations/prisma/).
 
@@ -192,7 +194,7 @@ See [Studio — driver packages](/studio/#driver-packages) and [Configuration re
 
 Headless schema-authoring helpers used by Studio. Use directly when building a custom authoring surface.
 
-<InstallTabs pkgs="@askdb/enrich" />
+<InstallTabs pkgs="@askdb/enrich ai" />
 
 ## Retrieval
 
@@ -200,7 +202,7 @@ Headless schema-authoring helpers used by Studio. Use directly when building a c
 
 Chunks the schema artifact, indexes it in a vector store, and retrieves relevant chunks per question. Use with `ask()`'s `retriever` option for large schemas.
 
-<InstallTabs pkgs="@askdb/rag" />
+<InstallTabs pkgs="@askdb/rag ai" />
 
 **Key exports**
 

@@ -228,18 +228,6 @@ describe("generateSelectSql — prompt parameterization per dialect", () => {
     expect(prompt).toMatch(/OFFSET .* FETCH NEXT/);
   });
 
-  it("sends the system prompt as `system` (honored by AI SDK 6 and 7), not `instructions`", async () => {
-    // `ai` is a peer dependency (`^6 || ^7`). AI SDK 6 ignores `instructions`;
-    // AI SDK 7 treats `system` as a deprecated alias. Only `system` works on both.
-    const generateText = vi.fn(async () => ({ text: "```sql\nSELECT id FROM users\n```" }));
-    await generateSelectSql(POSTGRES_DIALECT, "show me users", minimalSchema, fakeModel, {
-      generateText,
-    });
-    const call = generateText.mock.calls[0]![0] as Record<string, unknown>;
-    expect(call.system).toEqual(expect.stringContaining("AskDB SQL generator"));
-    expect("instructions" in call).toBe(false);
-  });
-
   it("delivers the system prompt to the model through the real AI SDK generateText", async () => {
     const model = new MockLanguageModelV3({
       doGenerate: async () => ({

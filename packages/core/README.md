@@ -17,7 +17,9 @@ pnpm add @ai-sdk/openai
 pnpm add @askdb/ai @askdb/ai-openai
 ```
 
-`ai` is a **peer dependency** (`^6 || ^7`), not a bundled dependency: `ask()` receives a `LanguageModel` your app constructs, so core must use the same `ai` instance your app does. Hosts on AI SDK 6 (e.g. `@ai-sdk/openai@3`) and AI SDK 7 (`@ai-sdk/openai@4`) are both supported. The config-driven `@askdb/ai` / `@askdb/ai-*` / `@askdb/client` path currently requires AI SDK 7.
+`ai` is a **peer dependency** (`^6 || ^7`), not a bundled dependency: `ask()` receives a `LanguageModel` your app constructs, so core must use the same `ai` instance your app does. Hosts on AI SDK 6 (e.g. `@ai-sdk/openai@3`) and AI SDK 7 (`@ai-sdk/openai@4`) are both supported. The config-driven path (`@askdb/ai` and `@askdb/client`) currently requires AI SDK 7.
+
+`ai` is a required peer, not an optional one, and core loads it at import time. So any package that depends on `@askdb/core` needs `ai` installed, even for introspection only. That covers `@askdb/introspect`, the engine packages, `@askdb/prisma`, `@askdb/enrich` and `@askdb/rag`. npm 7+ and pnpm install the missing peer for you. Yarn doesn't, so add `ai` yourself. ADR 0006 records why (2026-09 amendment).
 
 `@askdb/core` itself does not depend on `pg`. The optional `pg` peer lives on `@askdb/postgres` for live Postgres introspection.
 

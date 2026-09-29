@@ -14,7 +14,7 @@
 pnpm add ai            # or: npm install ai
 ```
 
-npm 7+ and pnpm (with the default `auto-install-peers`) install a missing required peer automatically, but declaring it pins the version you actually use. No source changes are needed.
+npm 7+ and pnpm (with the default `auto-install-peers`) install a missing required peer automatically, but declaring it pins the version you actually use. Yarn (classic and Berry) doesn't install peers, so Yarn users must add `ai` themselves. That includes introspection-only installs (`@askdb/introspect`, `@askdb/prisma`, the engine packages), because core loads `ai` when it is imported. No source changes are needed.
 
 Core now passes the NL→SQL and enrichment system prompts to `generateText` as `system`, which AI SDK 6 reads and AI SDK 7 still honors as a deprecated alias of `instructions`. This also fixes AI SDK 6 hosts silently losing the system prompt: AI SDK 6 ignores `instructions`.
 
@@ -22,4 +22,4 @@ Core now passes the NL→SQL and enrichment system prompts to `generateText` as 
 
 **@askdb/studio**: the Playground's "Get the code" snippet for direct `@askdb/core` wiring now includes `ai` in its install line.
 
-The config-driven path (`@askdb/ai`, `@askdb/ai-*` adapters, `@askdb/client`) still requires AI SDK 7.
+The config-driven path (`@askdb/ai` and `@askdb/client`) still requires AI SDK 7.
