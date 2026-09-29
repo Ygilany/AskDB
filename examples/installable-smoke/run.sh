@@ -20,7 +20,7 @@ echo "smoke: building and packing every publishable package…"
 bash "$ROOT/scripts/pack-tarballs.sh" "$WORK/tarballs"
 
 echo "smoke: validating every tarball ships LICENSE/NOTICE/README.md and its entry paths, and no src/tests…"
-node "$SCRIPT_DIR/check-tarballs.mjs" "$WORK/tarballs" "$ROOT"
+node "$SCRIPT_DIR/check-tarballs.mjs" "$WORK/tarballs"
 
 CONFIG_TARBALL="$(ls "$WORK/tarballs"/askdb-config-*.tgz | head -n1)"
 [ -f "$CONFIG_TARBALL" ] || { echo "smoke: missing config tarball" >&2; exit 1; }

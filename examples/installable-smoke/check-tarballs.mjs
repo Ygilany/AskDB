@@ -5,17 +5,17 @@
 //     "exports" (including conditional/nested entries) exists in the tarball.
 //   - No tarball ships TypeScript sources (src/) or test files (*.test.*).
 //
-//   - With a workspace root, every non-private package under packages/* and apps/* was packed.
+// Which packages get packed is owned by scripts/pack-tarballs.sh (it discovers every
+// non-private packages/* and apps/* package), so this script only validates what it is given.
 //
-// Usage: node check-tarballs.mjs <tarball-dir> [workspace-root]
+// Usage: node check-tarballs.mjs <tarball-dir>
 import { execFileSync } from "node:child_process";
-import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { readdirSync } from "node:fs";
 import path from "node:path";
 
 const dir = process.argv[2];
-const workspaceRoot = process.argv[3];
 if (!dir) {
-  console.error("usage: check-tarballs.mjs <tarball-dir> [workspace-root]");
+  console.error("usage: check-tarballs.mjs <tarball-dir>");
   process.exit(2);
 }
 
@@ -92,27 +92,6 @@ for (const tarball of tarballs) {
     failures.push(`${pkg.name} (${tarball}):\n    - ${problems.join("\n    - ")}`);
   } else {
     console.log(`smoke: ${pkg.name} tarball ok (${targets.length} entry paths, ${REQUIRED_FILES.join("/")})`);
-  }
-}
-
-// When given the workspace root, also require that every publishable (non-private) workspace
-// package under packages/* and apps/* was packed, so new packages can't skip these checks.
-if (workspaceRoot) {
-  const packed = new Set(
-    tarballs.map(
-      (tarball) =>
-        JSON.parse(execFileSync("tar", ["-xzOf", path.join(dir, tarball), "package/package.json"], { encoding: "utf8" }))
-          .name,
-    ),
-  );
-  for (const group of ["packages", "apps"]) {
-    for (const entry of readdirSync(path.join(workspaceRoot, group))) {
-      const manifest = path.join(workspaceRoot, group, entry, "package.json");
-      if (!existsSync(manifest)) continue;
-      const pkg = JSON.parse(readFileSync(manifest, "utf8"));
-      if (pkg.private) continue;
-      if (!packed.has(pkg.name)) failures.push(`${pkg.name} (${group}/${entry}): publishable but not packed by the smoke test`);
-    }
   }
 }
 
