@@ -59,28 +59,18 @@ globalTables:
 
 # Tenant Policy
 
-This database serves a multi-level agency management platform where data is
-partitioned across a three-tier organizational hierarchy.
+This database serves a multi-level agency management platform where data is partitioned across a three-tier organizational hierarchy.
 
 ## Hierarchy
 
-Agencies are the top-level tenants. Each agency can have multiple sub-agencies,
-and each sub-agency manages multiple clients. Data flows downward — an agency
-admin can see all sub-agency and client data beneath them.
+Agencies are the top-level tenants. Each agency can have multiple sub-agencies, and each sub-agency manages multiple clients. Data flows downward — an agency admin can see all sub-agency and client data beneath them.
 
 ## Scope rules
 
-Most operational tables carry a direct `agency_id` or use a variant column name
-like `owning_agency`. The `appointments` table inherits its scope through the
-`clients` table — an appointment belongs to a client, and a client belongs to a
-sub-agency under an agency.
+Most operational tables carry a direct `agency_id` or use a variant column name like `owning_agency`. The `appointments` table inherits its scope through the `clients` table — an appointment belongs to a client, and a client belongs to a sub-agency under an agency.
 
-The `notes` table uses polymorphic ownership: a note can belong to an agency,
-sub-agency, or client depending on the `owner_type` discriminator column.
+The `notes` table uses polymorphic ownership: a note can belong to an agency, sub-agency, or client depending on the `owner_type` discriminator column.
 
 ## Sensitive interactions
 
-The `clients` table contains PII columns (`email`, `phone`) marked sensitive in
-the schema. Tenant scoping and sensitive-field rules apply independently — a
-user scoped to a particular agency still cannot see sensitive client fields
-unless the operating mode permits it.
+The `clients` table contains PII columns (`email`, `phone`) marked sensitive in the schema. Tenant scoping and sensitive-field rules apply independently — a user scoped to a particular agency still cannot see sensitive client fields unless the operating mode permits it.

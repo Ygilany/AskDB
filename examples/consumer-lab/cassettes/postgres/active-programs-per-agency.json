@@ -1,0 +1,5 @@
+{
+  "question": "How many active programs does each agency run?",
+  "reply": "```sql\nSELECT agency_id, COUNT(*) AS active_programs\nFROM org.program\nWHERE is_active = TRUE\nGROUP BY agency_id\nORDER BY agency_id\n```",
+  "source": "authored"
+}

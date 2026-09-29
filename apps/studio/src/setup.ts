@@ -3,6 +3,13 @@ import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { basename, dirname, join, resolve, isAbsolute, relative } from "node:path";
 import { bootstrapAskDbEnv, discoverAskDbConfigPath, getAskDbRuntimeConfig } from "@askdb/config";
+import {
+  formatInstallCommand,
+  lockfilePackageManager,
+  packageManagerAddArgs,
+  packageManagerSpawnSpec,
+  type PackageManager,
+} from "./package-manager.js";
 
 export type SetupDatabase = "postgres" | "mysql" | "sqlite" | "sqlserver" | "prisma";
 export type SetupAiProvider = "openai" | "anthropic" | "google" | "azure" | "foundry";
@@ -57,7 +64,22 @@ const EXECUTE_CONNECTION_ENV_DEFAULTS: Record<Exclude<SetupExecuteProvider, "sql
   sqlserver: "DATABASE_URL",
 };
 
+const EXECUTE_PROVIDERS = ["postgres", "mysql", "sqlite", "sqlserver"] as const satisfies readonly SetupExecuteProvider[];
+
 const ENV_NAME_PATTERN = /^[A-Z][A-Z0-9_]*$/;
+
+// C0 controls, DEL, and the JS line/paragraph separators — never legitimate in a project path.
+const CONTROL_CHAR_PATTERN = /[\u0000-\u001f\u007f\u2028\u2029]/;
+
+/**
+ * Render a value as a TypeScript string literal for the generated
+ * `askdb.config.ts`. Every interpolated value goes through this — the file is
+ * later executed (via jiti) by Studio and the CLI, so a raw `"${value}"` would
+ * let a quote in a path inject code.
+ */
+function tsString(value: string): string {
+  return JSON.stringify(value);
+}
 
 const DB_URL_PLACEHOLDER: Partial<Record<SetupDatabase | SetupExecuteProvider, string>> = {
   postgres: "postgresql://<USERNAME>:<PASSWORD>@<DATABASE_HOST>:<DATABASE_PORT>/<DATABASE_NAME>",
@@ -105,7 +127,7 @@ function renderRagSection(ragStore: SetupRagStore, pgvectorEnv: string | undefin
     store: "pgvector",
     storeConfig: {
       pgvector: {
-        databaseUrl: env("${pgvectorEnv ?? "ASKDB_PGVECTOR_URL"}"),
+        databaseUrl: env(${tsString(pgvectorEnv ?? "ASKDB_PGVECTOR_URL")}),
       },
     },
   },`;
@@ -137,8 +159,10 @@ export function writeSetupConfig(cwd: string, input: SetupConfigInput): SetupCon
   }
 
   const schemaOut = validateRelativePath(input.schemaOut ?? "./askdb", "schemaOut");
-  const aiDefaults = AI_DEFAULTS[input.aiProvider];
-  if (!aiDefaults) throw new SetupError(400, `Unknown AI provider: ${input.aiProvider}`);
+  // Own-property lookup so `constructor`/`__proto__` can't masquerade as a provider —
+  // the provider name is emitted as an object key in the generated config.
+  const aiDefaults = Object.hasOwn(AI_DEFAULTS, input.aiProvider) ? AI_DEFAULTS[input.aiProvider] : undefined;
+  if (!aiDefaults) throw new SetupError(400, `Unknown AI provider: ${JSON.stringify(input.aiProvider)}`);
   const aiKeyEnv = validateEnvName(input.aiKeyEnv ?? aiDefaults.keyEnv, "aiKeyEnv");
   const aiModelEnv = input.aiModelEnv ? validateEnvName(input.aiModelEnv, "aiModelEnv") : undefined;
 
@@ -165,13 +189,13 @@ export function writeSetupConfig(cwd: string, input: SetupConfigInput): SetupCon
         exampleValue: DB_URL_PLACEHOLDER[input.database],
       });
       introspectionSection = `  introspection: {
-    provider: "${input.database}",
+    provider: ${tsString(input.database)},
     providerConfig: {
       ${input.database}: {
-        databaseUrl: env("${connectionEnv}"),
+        databaseUrl: env(${tsString(connectionEnv)}),
       },
     },
-    outputDir: "${schemaOut}",
+    outputDir: ${tsString(schemaOut)},
   },`;
       break;
     }
@@ -181,16 +205,16 @@ export function writeSetupConfig(cwd: string, input: SetupConfigInput): SetupCon
     provider: "sqlite",
     providerConfig: {
       sqlite: {
-        file: "${file}",
+        file: ${tsString(file)},
       },
     },
-    outputDir: "${schemaOut}",
+    outputDir: ${tsString(schemaOut)},
   },`;
       break;
     }
     case "prisma": {
       const schemaLine = input.prismaSchema
-        ? `\n        schemaPath: "${validateRelativePath(input.prismaSchema, "prismaSchema")}",`
+        ? `\n        schemaPath: ${tsString(validateRelativePath(input.prismaSchema, "prismaSchema"))},`
         : "";
       introspectionSection = `  introspection: {
     provider: "prisma",
@@ -198,7 +222,7 @@ export function writeSetupConfig(cwd: string, input: SetupConfigInput): SetupCon
       prisma: {${schemaLine}
       },
     },
-    outputDir: "${schemaOut}",
+    outputDir: ${tsString(schemaOut)},
   },`;
       break;
     }
@@ -227,12 +251,16 @@ export function writeSetupConfig(cwd: string, input: SetupConfigInput): SetupCon
     if (!studioExecuteProvider) {
       throw new SetupError(400, "`studioExecuteProvider` is required when `studioExecute` is enabled and `database` is \"prisma\".");
     }
+    if (!(EXECUTE_PROVIDERS as readonly string[]).includes(studioExecuteProvider)) {
+      throw new SetupError(400, `Unknown studioExecuteProvider: ${JSON.stringify(studioExecuteProvider)}`);
+    }
     if (studioExecuteProvider === "sqlite") {
       const file = validateRelativePath(input.studioExecuteSqliteFile ?? input.sqliteFile ?? "./data.db", "studioExecuteSqliteFile");
       studioSection = `  studio: {
     execute: {
+      enabled: true,
       provider: "sqlite",
-      file: "${file}",
+      file: ${tsString(file)},
     },
   },`;
     } else {
@@ -248,24 +276,25 @@ export function writeSetupConfig(cwd: string, input: SetupConfigInput): SetupCon
       });
       studioSection = `  studio: {
     execute: {
-      provider: "${studioExecuteProvider}",
-      databaseUrl: env("${execConnectionEnv}"),
+      enabled: true,
+      provider: ${tsString(studioExecuteProvider)},
+      databaseUrl: env(${tsString(execConnectionEnv)}),
     },
   },`;
     }
   }
 
-  const modelLine = aiModelEnv ? `\n        model: env("${aiModelEnv}"),` : "";
+  const modelLine = aiModelEnv ? `\n        model: env(${tsString(aiModelEnv)}),` : "";
   const sections = [introspectionSection, ragSection, studioSection].filter((s): s is string => s !== null);
 
   const config = `import { defineConfig, env, type AskDbConfig } from "@askdb/config";
 
 export default defineConfig({
   ai: {
-    provider: "${input.aiProvider}",
+    provider: ${tsString(input.aiProvider)},
     providerConfig: {
       ${input.aiProvider}: {
-        apiKey: env("${aiKeyEnv}"),${modelLine}
+        apiKey: env(${tsString(aiKeyEnv)}),${modelLine}
       },
     },
   },
@@ -453,8 +482,6 @@ function isLikelyWorkspaceRoot(packageDir: string): boolean {
   }
 }
 
-type PackageManager = "pnpm" | "npm" | "yarn" | "bun";
-
 type SetupInstaller = (pm: PackageManager, packageDir: string, packages: string[]) => boolean;
 
 let setupInstallerForTests: SetupInstaller | undefined;
@@ -467,10 +494,8 @@ export function setSetupInstallerForTests(installer: SetupInstaller | undefined)
 function detectPackageManager(packageDir: string): PackageManager {
   let dir = packageDir;
   for (let i = 0; i < 40; i += 1) {
-    if (existsSync(join(dir, "pnpm-lock.yaml"))) return "pnpm";
-    if (existsSync(join(dir, "bun.lockb")) || existsSync(join(dir, "bun.lock"))) return "bun";
-    if (existsSync(join(dir, "yarn.lock"))) return "yarn";
-    if (existsSync(join(dir, "package-lock.json"))) return "npm";
+    const pm = lockfilePackageManager(dir);
+    if (pm) return pm;
     const parent = dirname(dir);
     if (parent === dir) break;
     dir = parent;
@@ -480,41 +505,12 @@ function detectPackageManager(packageDir: string): PackageManager {
 
 function runInstall(pm: PackageManager, packageDir: string, packages: string[]): boolean {
   const env = { ...process.env, CI: process.env.CI ?? "true" };
-  const win = process.platform === "win32";
-  let cmd: string;
-  let args: string[];
-  switch (pm) {
-    case "pnpm":
-      cmd = win ? "pnpm.CMD" : "pnpm";
-      args = ["add", ...packages];
-      break;
-    case "yarn":
-      cmd = win ? "yarn.cmd" : "yarn";
-      args = ["add", ...packages];
-      break;
-    case "bun":
-      cmd = win ? "bun.exe" : "bun";
-      args = ["add", ...packages];
-      break;
-    default:
-      cmd = win ? "npm.cmd" : "npm";
-      args = ["install", "--save", ...packages];
-  }
-  const result = spawnSync(cmd, args, { cwd: packageDir, stdio: "ignore", env, shell: false });
-  return result.status === 0;
-}
-
-function formatInstallCommand(pm: PackageManager, packages: string[]): string {
-  const pkgList = packages.join(" ");
-  switch (pm) {
-    case "pnpm":
-      return `pnpm add ${pkgList}`;
-    case "yarn":
-      return `yarn add ${pkgList}`;
-    case "bun":
-      return `bun add ${pkgList}`;
-    default:
-      return `npm install --save ${pkgList}`;
+  try {
+    const { command, args, shell } = packageManagerSpawnSpec(pm, packageManagerAddArgs(pm, packages));
+    const result = spawnSync(command, args, { cwd: packageDir, stdio: "ignore", env, shell });
+    return result.status === 0;
+  } catch {
+    return false;
   }
 }
 
@@ -572,7 +568,7 @@ function validateRelativePath(path: string, field: string): string {
     trimmed === "" ||
     isAbsolute(trimmed) ||
     relative(".", trimmed).startsWith("..") ||
-    trimmed.includes("\0")
+    CONTROL_CHAR_PATTERN.test(trimmed)
   ) {
     throw new SetupError(
       400,

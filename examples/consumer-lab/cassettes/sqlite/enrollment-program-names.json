@@ -1,0 +1,5 @@
+{
+  "question": "For each enrollment, show the client id, the program code and the name of the program.",
+  "reply": "```sql\nSELECT e.client_id, e.program_code, p.name AS program_name\nFROM enrollment AS e\nJOIN program AS p\n  ON p.agency_id = e.agency_id\n AND p.program_code = e.program_code\nORDER BY e.client_id, e.program_code\n```",
+  "source": "authored"
+}

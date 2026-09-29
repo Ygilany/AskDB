@@ -1,0 +1,62 @@
+[
+  {
+    "id": "agency-names",
+    "text": "List every agency's id and name, ordered by id."
+  },
+  {
+    "id": "active-programs-per-agency",
+    "text": "How many active programs does each agency run?"
+  },
+  {
+    "id": "unpaid-orders",
+    "text": "Which orders are still unpaid, and what are their totals?"
+  },
+  {
+    "id": "top-paid-agencies",
+    "text": "Which three agencies have the highest paid order total?"
+  },
+  {
+    "id": "client-agency-names",
+    "text": "List every client's id and full name together with the name of their agency."
+  },
+  {
+    "id": "enrollment-program-names",
+    "text": "For each enrollment, show the client id, the program code and the name of the program."
+  },
+  {
+    "id": "payments-per-agency",
+    "text": "What is the total payment amount received by each agency?"
+  },
+  {
+    "id": "orders-q1-2024",
+    "text": "Which orders were placed in the first quarter of 2024? Show each order's id and when it was placed."
+  },
+  {
+    "id": "program-active-flags",
+    "text": "Show every program's agency id, program code and whether it is active."
+  },
+  {
+    "id": "open-enrollments",
+    "text": "Which enrollments have no exit date? Show the client id and program code."
+  },
+  {
+    "id": "client-named-sato",
+    "text": "What are the client id and birth date of the client named 佐藤 花子?"
+  },
+  {
+    "id": "top-five-orders",
+    "text": "What are the five largest orders by total? Show the order id and total, largest first."
+  },
+  {
+    "id": "agency-parent-names",
+    "text": "List every agency's id with the name of its parent agency, if it has one."
+  },
+  {
+    "id": "distinct-enrolled-clients",
+    "text": "How many distinct clients has each agency enrolled in programs?"
+  },
+  {
+    "id": "programs-started-since",
+    "text": "Which programs started on or after 2022-01-01? Show the agency id and program code."
+  }
+]

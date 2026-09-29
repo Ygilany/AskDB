@@ -4,6 +4,7 @@ export { buildTenantPromptBlock } from "./sql/tenant-prompt.js";
 export {
   validateTenantGuardrails,
   type TenantGuardrailResult,
+  type ValidateTenantGuardrailsOptions,
 } from "./sql/tenant-guardrail.js";
 export {
   validateSensitiveReferences,
@@ -20,7 +21,9 @@ export {
   type TenantSqlOutputMode,
   type TenantPlaceholderResult,
   type TenantBinding,
+  type TenantSqlDialect,
 } from "./sql/tenant-placeholders.js";
+export { expandClosure } from "./sql/tenant-hierarchy.js";
 export {
   ask,
   type AskPipelineOptions,
@@ -31,6 +34,8 @@ export {
   type AskUsage,
   type AskDialectGenerateResult,
   type AskGenerateDeps,
+  // Callback type for `ask({ resolveTenantDescendants })` (subtree tenant scopes).
+  type ResolveTenantDescendants,
 } from "./ask.js";
 export {
   parseAskDbModeV1,
@@ -118,8 +123,6 @@ export type {
   TenantAccessSubtree,
   TenantAccessMultiRoot,
   TenantAccessGlobal,
-  TenantFilter,
-  TenantFilterCondition,
   TenantScopeContext,
   ParsedTenantPolicyMarkdown,
   NormalizedTenantPolicy,

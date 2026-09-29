@@ -74,6 +74,7 @@ All `AskPipelineOptions` fields can be overridden per call. In addition, `schema
 | `mode` | `AskDbModeV1` | Trust boundary override. |
 | `tenantScope` | `TenantScope` | Required when the schema has a tenant policy. |
 | `tenantSqlMode` | `TenantSqlOutputMode` | `"sql-only"` or `"sql-params"`. |
+| `resolveTenantDescendants` | `ResolveTenantDescendants` | Expands a `subtree` tenant scope to every ID in the subtree. Required for `subtree` scopes. |
 | `parameterize` | `boolean` | Default `true`. Set `false` to skip unbound SQL / parameter manifest output tokens. |
 | `retriever` | `Retriever` | RAG retriever. |
 | `retrievalK` | `number` | Top-k for the retriever. |
