@@ -86,7 +86,7 @@ Use `IntrospectionWarning` for everything the user should see but that isn't a h
 | `unsupported_type` | A column whose type the connector cannot represent (e.g. Prisma `Unsupported("…")`). |
 | `view_with_array_columns` | A view exposes array columns the renderer cannot fully describe. |
 | `ambiguous_filter` | A `tables` glob pattern matched nothing. |
-| `cross_database_fk` | A foreign key targets a table in another database (e.g. MySQL `REFERENCES otherdb.t`); the relationship is omitted because its target is not in the artifact. |
+| `cross_database_fk` | A foreign key targets a table in a database that was not introspected (e.g. MySQL `REFERENCES otherdb.t` when `otherdb` isn't listed); the relationship is omitted because its target is not in the artifact. |
 | `new_column` | (Render-time) A new column id appeared since the previous run. |
 | `orphan_id` | (Render-time) An id referenced by markdown is gone from the source. |
 
