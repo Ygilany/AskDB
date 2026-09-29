@@ -9,3 +9,13 @@ export {
   type ConnectorProviderAdapters,
   type ConnectorRegistry,
 } from "./registry.js";
+
+export {
+  REDACTED_SECRET,
+  hasUrlScheme,
+  isSecretConnectionKey,
+  redactConnectionStringGeneric,
+  redactSecretKeyValues,
+  redactUrlUserinfo,
+  type RedactKeyValueOptions,
+} from "./redact.js";

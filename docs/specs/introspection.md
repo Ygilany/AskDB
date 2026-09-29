@@ -24,7 +24,7 @@ Re-introspection is ID-anchored: existing stable IDs are preserved, new columns 
 - **`@askdb/sqlite`** — SQLite connector; live mode
 - **`@askdb/sqlserver`** — SQL Server connector; live mode
 - **`@askdb/prisma`** — Prisma schema file connector; `templates()` not applicable (no catalog SQL)
-- `askdb introspect` CLI subcommand — `--url` (live), `--from-export` (air-gapped), `--diff` (no writes), `--print` (stdout), `templates --engine <engine>` (print SQL)
+- `askdb introspect` CLI subcommand — `--url` (live), `--from-export` (air-gapped), `--diff` (no writes; renders exactly what `--out` would write — same `provider`, same merge with the existing artifact's `sensitive` flags — and reports whether it differs), `--print` (stdout), `templates --engine <engine>` (print SQL)
 - ID-anchored re-introspection merge — preserves existing IDs, emits `IntrospectionWarning` for orphans and new columns
 - Structured logging reusing modes/observability conventions — events under `askdb.introspect.*`
 
@@ -83,7 +83,7 @@ interface ConnectorConfig {
 }
 ```
 
-`IntrospectionWarning` codes: `orphan_id`, `new_column`, `bundle_missing_file`, `bundle_unknown_engine`
+`IntrospectionWarning` codes: `orphan_id`, `new_column`, `unsupported_type`, `view_with_array_columns`, `ambiguous_filter`, `cross_database_fk` (bundle problems in `--from-export` mode throw instead of warning)
 
 ## Test bar
 

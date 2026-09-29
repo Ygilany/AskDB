@@ -67,7 +67,6 @@
     "@askdb/client": "workspace:*",
     "@askdb/config": "workspace:*",
     "@askdb/core": "workspace:*",
-    "@askdb/postgres": "workspace:*",
     "ai": "^7.0.51"
   },
   "devDependencies": {

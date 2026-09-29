@@ -188,6 +188,18 @@ ORDER BY n.nspname, c.relname, con.conname, k.ord;
  *
  * `confdeltype`/`confupdtype` action codes (per pg_constraint.h):
  *   a=NO ACTION, r=RESTRICT, c=CASCADE, n=SET NULL, d=SET DEFAULT
+ *
+ * Partitioned tables (ADR 0003): PG11+ clones an FK declared on a partitioned
+ * table onto every partition, and PG12+ additionally clones an FK that
+ * *references* a partitioned table once per referenced partition
+ * (`conrelid` = the referencing table, `confrelid` = a partition leaf). Those
+ * clones carry `conparentid <> 0`. Rendering them would emit relationships to
+ * partition leaves the `tables` template already removed. We drop them with
+ * the same `pg_inherits` predicate the `tables` template uses — on either side
+ * of the constraint — rather than `con.conparentid = 0`, because `conparentid`
+ * does not exist before PG11 while the templates otherwise work on PG10
+ * (`relkind = 'p'`). It is also a strictly stronger guarantee: every
+ * relationship target is a relation the `tables` template returns.
  */
 const FOREIGN_KEYS_TEMPLATE: PostgresSqlTemplate = {
   name: "foreign_keys",
@@ -224,6 +236,12 @@ CROSS JOIN LATERAL unnest(con.conkey, con.confkey) WITH ORDINALITY AS k(attnum, 
 JOIN pg_catalog.pg_attribute a ON a.attrelid = con.conrelid AND a.attnum = k.attnum
 JOIN pg_catalog.pg_attribute ra ON ra.attrelid = con.confrelid AND ra.attnum = k.refattnum
 WHERE con.contype = 'f'
+  AND NOT EXISTS (
+    SELECT 1
+    FROM pg_catalog.pg_inherits inh
+    JOIN pg_catalog.pg_class p ON p.oid = inh.inhparent
+    WHERE inh.inhrelid IN (con.conrelid, con.confrelid) AND p.relkind = 'p'
+  )
   AND ${SYSTEM_SCHEMA_PREDICATE}
   AND ${FILTER_PREDICATE}
 ORDER BY n.nspname, c.relname, con.conname, k.ord;

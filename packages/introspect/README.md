@@ -42,6 +42,8 @@ const result = await introspect(
 );
 ```
 
+To get the exact `schema.json` bytes without writing anything (for previews or drift checks), use `renderSchemaV2Body(result.schema, { schemaId, provider: result.provider, existingArtifactDir })`. It is the same function `renderToSchemaV2` writes through — including the merge that carries human-set `sensitive` flags over from an existing artifact — and it backs `askdb introspect --out`, `--print`, and `--diff`.
+
 ## CLI
 
 The user-facing CLI for introspection ships in the [`askdb`](https://www.npmjs.com/package/askdb) package as `askdb introspect`. `@askdb/introspect` does not provide a standalone binary.
