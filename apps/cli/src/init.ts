@@ -3,7 +3,11 @@ import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { renderAskDbAiConfigScaffold, type AskDbScaffoldEnvVar } from "@askdb/config";
+import {
+  getAskDbAiScaffoldDefaults,
+  renderAskDbAiConfigScaffold,
+  type AskDbScaffoldEnvVar,
+} from "@askdb/config";
 
 const DEFAULT_CONFIG_PATH = "askdb.config.ts";
 
@@ -53,17 +57,12 @@ export type InitPrompter = {
 // Config rendering
 // ---------------------------------------------------------------------------
 
-/** Default key/model env var names. Mirrors `AI_DEFAULTS` in `apps/studio/src/setup.ts`. */
-const AI_DEFAULTS: Record<
-  InitAnswers["aiProvider"],
-  { keyEnv: string; modelEnv: string }
-> = {
-  openai: { keyEnv: "OPENAI_API_KEY", modelEnv: "OPENAI_MODEL" },
-  anthropic: { keyEnv: "ANTHROPIC_API_KEY", modelEnv: "ANTHROPIC_MODEL" },
-  google: { keyEnv: "GOOGLE_GENERATIVE_AI_API_KEY", modelEnv: "GOOGLE_GENERATIVE_AI_MODEL" },
-  azure: { keyEnv: "AZURE_OPENAI_API_KEY", modelEnv: "AZURE_OPENAI_DEPLOYMENT" },
-  foundry: { keyEnv: "AZURE_OPENAI_API_KEY", modelEnv: "AZURE_OPENAI_DEPLOYMENT" },
-};
+/** Default key/model env var names for a provider, from `@askdb/config` (shared with Studio). */
+function aiDefaults(provider: InitAnswers["aiProvider"]): { keyEnv: string; modelEnv: string } {
+  const defaults = getAskDbAiScaffoldDefaults(provider);
+  if (!defaults) throw new Error(`askdb init: unknown AI provider "${provider}".`);
+  return defaults;
+}
 
 /**
  * Render a value as a TypeScript string literal for the generated config.
@@ -73,6 +72,16 @@ const AI_DEFAULTS: Record<
  */
 function tsString(value: string): string {
   return JSON.stringify(value);
+}
+
+/**
+ * The env var a SQLite `file` setting reads, or `undefined` when it's a literal
+ * path (`./…` or `/…`). No value means the `SQLITE_FILE` default. Rendering, the
+ * `.env.example`, and the printed variable list all go through this.
+ */
+function sqliteFileEnv(file: string | undefined): string | undefined {
+  if (!file) return "SQLITE_FILE";
+  return file.startsWith("./") || file.startsWith("/") ? undefined : file;
 }
 
 /**
@@ -112,12 +121,8 @@ function renderIntrospectionSection(answers: InitAnswers): string {
     },${outputDirLine}
   },`;
     case "sqlite": {
-      const fileExpr = sqliteFile && !sqliteFile.startsWith("./") && !sqliteFile.startsWith("/")
-        ? `env(${tsString(sqliteFile)})`
-        : `env("SQLITE_FILE")`;
-      const resolvedFile = sqliteFile && (sqliteFile.startsWith("./") || sqliteFile.startsWith("/"))
-        ? tsString(sqliteFile)
-        : fileExpr;
+      const fileEnv = sqliteFileEnv(sqliteFile);
+      const resolvedFile = fileEnv ? `env(${tsString(fileEnv)})` : tsString(sqliteFile!);
       return `  introspection: {
     provider: "sqlite",
     providerConfig: {
@@ -190,9 +195,8 @@ function renderStudioSection(answers: InitAnswers): string | null {
 
   const { provider } = studioExecute;
   if (provider === "sqlite") {
-    const fileExpr = studioExecute.sqliteFile && (studioExecute.sqliteFile.startsWith("./") || studioExecute.sqliteFile.startsWith("/"))
-      ? tsString(studioExecute.sqliteFile)
-      : `env(${tsString(studioExecute.sqliteFile ?? "SQLITE_FILE")})`;
+    const fileEnv = sqliteFileEnv(studioExecute.sqliteFile);
+    const fileExpr = fileEnv ? `env(${tsString(fileEnv)})` : tsString(studioExecute.sqliteFile!);
     return `  studio: {
     execute: {
       enabled: true,
@@ -254,7 +258,7 @@ type InitAnswerOverrides = Partial<{
 export function resolveDefaultInitAnswers(overrides: InitAnswerOverrides = {}): InitAnswers {
   const database = overrides.database ?? "postgres";
   const aiProvider = overrides.aiProvider ?? "openai";
-  const aiDefaults = AI_DEFAULTS[aiProvider];
+  const providerDefaults = aiDefaults(aiProvider);
 
   let connectionEnv = overrides.connectionEnv;
   if (!connectionEnv) {
@@ -284,8 +288,8 @@ export function resolveDefaultInitAnswers(overrides: InitAnswerOverrides = {}): 
     prismaSchema: overrides.prismaSchema,
     schemaOut: overrides.schemaOut ?? "./askdb",
     aiProvider,
-    aiKeyEnv: overrides.aiKeyEnv ?? aiDefaults.keyEnv,
-    aiModelEnv: overrides.aiModelEnv ?? aiDefaults.modelEnv,
+    aiKeyEnv: overrides.aiKeyEnv ?? providerDefaults.keyEnv,
+    aiModelEnv: overrides.aiModelEnv ?? providerDefaults.modelEnv,
     ragStore: overrides.ragStore ?? "file",
     pgvectorEnv: overrides.pgvectorEnv,
     studioExecute,
@@ -677,8 +681,7 @@ export async function runWizard(prompter: InitPrompter): Promise<InitAnswers | n
     default: "openai",
   });
 
-  const aiKeyEnv = AI_DEFAULTS[aiProvider].keyEnv;
-  const aiModelEnv = AI_DEFAULTS[aiProvider].modelEnv;
+  const { keyEnv: aiKeyEnv, modelEnv: aiModelEnv } = aiDefaults(aiProvider);
 
   const ragStore = await prompter.select<InitAnswers["ragStore"]>({
     message: "RAG store",
@@ -792,6 +795,20 @@ const DB_URL_PLACEHOLDER: Partial<Record<InitAnswers["database"], string>> = {
     "Data Source=<DATABASE_HOST>,<DATABASE_PORT>;Initial Catalog=<DATABASE_NAME>;User ID=<USERNAME>;Password=<PASSWORD>;Trust Server Certificate=True;Authentication=SqlPassword;",
 };
 
+/** SQLite file env vars the config reads (introspection and Studio execute), without duplicates. */
+function sqliteFileEnvNames(answers: InitAnswers): string[] {
+  const names = new Set<string>();
+  if (answers.database === "sqlite") {
+    const name = sqliteFileEnv(answers.sqliteFile);
+    if (name) names.add(name);
+  }
+  if (answers.studioExecute.enabled && answers.studioExecute.provider === "sqlite") {
+    const name = sqliteFileEnv(answers.studioExecute.sqliteFile);
+    if (name) names.add(name);
+  }
+  return [...names];
+}
+
 function buildEnvExample(answers: InitAnswers): string {
   const lines: string[] = [
     "# AskDB environment — copy to .env and fill in real values.",
@@ -803,6 +820,11 @@ function buildEnvExample(answers: InitAnswers): string {
   if (needsConnectionEnv && answers.connectionEnv) {
     const placeholder = DB_URL_PLACEHOLDER[answers.database];
     lines.push(placeholder ? `${answers.connectionEnv}=${placeholder}` : `${answers.connectionEnv}=`);
+  }
+
+  for (const name of sqliteFileEnvNames(answers)) {
+    lines.push("# SQLite database file path");
+    lines.push(`${name}=`);
   }
 
   if (answers.ragStore === "pgvector" && answers.pgvectorEnv) {
@@ -834,18 +856,13 @@ function buildEnvExample(answers: InitAnswers): string {
 function collectEnvVarNames(answers: InitAnswers): string[] {
   const names = new Set<string>();
   for (const envVar of aiScaffold(answers).envVars) names.add(envVar.name);
-  const isEnvName = (v: string) => !v.startsWith("./") && !v.startsWith("/");
   if (answers.database !== "sqlite" && answers.database !== "prisma" && answers.connectionEnv) {
     names.add(answers.connectionEnv);
-  } else if (answers.database === "sqlite" && answers.sqliteFile && isEnvName(answers.sqliteFile)) {
-    names.add(answers.sqliteFile);
   }
+  for (const name of sqliteFileEnvNames(answers)) names.add(name);
   if (answers.ragStore === "pgvector" && answers.pgvectorEnv) names.add(answers.pgvectorEnv);
   if (answers.studioExecute.enabled) {
-    if (answers.studioExecute.provider === "sqlite") {
-      const f = answers.studioExecute.sqliteFile;
-      if (f && isEnvName(f)) names.add(f);
-    } else if (answers.studioExecute.connectionEnv) {
+    if (answers.studioExecute.provider !== "sqlite" && answers.studioExecute.connectionEnv) {
       names.add(answers.studioExecute.connectionEnv);
     }
   }

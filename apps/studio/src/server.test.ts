@@ -1033,7 +1033,11 @@ describe("AskDB Studio server", () => {
     async (aiProvider) => {
       const projectDir = mkdtempSync(join(repoRoot, "apps/studio/.tmp-setup-"));
       const prevCwd = process.cwd();
+      // dotenv never overrides a variable the shell already set, so clear these for the
+      // test and put the caller's values back afterwards.
       const envKeys = ["AZURE_OPENAI_API_KEY", "AZURE_RESOURCE_NAME"] as const;
+      const savedEnv = envKeys.map((key) => [key, process.env[key]] as const);
+      for (const key of envKeys) delete process.env[key];
       try {
         cpSync(
           join(repoRoot, "packages/prisma/test-fixtures/simple/schema.prisma"),
@@ -1065,7 +1069,10 @@ describe("AskDB Studio server", () => {
         expect(aiConfig?.providerOptions).toMatchObject({ resourceName: "my-foundry" });
       } finally {
         process.chdir(prevCwd);
-        for (const key of envKeys) delete process.env[key];
+        for (const [key, value] of savedEnv) {
+          if (value === undefined) delete process.env[key];
+          else process.env[key] = value;
+        }
         rmSync(projectDir, { recursive: true, force: true });
       }
     },
