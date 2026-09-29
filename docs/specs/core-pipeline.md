@@ -18,7 +18,7 @@ The `@askdb/client` package provides `createAskDb()`, a config-aware facade that
 ### In scope
 
 - `ask(options) → AskPipelineResult` — NL→SQL orchestration: prompt assembly, model call, SQL extraction, validation, guardrails
-- SQL validation and dialect-aware guardrails — lexer-based checks, not a parser: must start with `SELECT`/`WITH`, single statement, no comments, no unterminated strings/quoted identifiers/comments, no write/DDL keywords (base denylist including `INTO`, plus per-dialect extras), no calls to blocked side-effecting functions. Defense in depth, not a security boundary
+- SQL validation and dialect-aware guardrails — lexer-based checks, not a parser: must start with `SELECT`/`WITH`, single statement (on SQL Server, which doesn't need `;`, a second statement made only of verbs not on the denylist isn't detected), no comments, no unterminated strings/quoted identifiers/comments, no write/DDL keywords (base denylist including `INTO`, plus per-dialect extras), no calls to blocked side-effecting functions. Defense in depth, not a security boundary
 - Schema-grounded prompt assembly — DDL block construction from the loaded schema, including describable fields (descriptions, aliases, common query language) when present
 - BYO model via `AskDbLanguageModel` — `@askdb/core`'s public alias for the AI SDK `LanguageModel`; no hardcoded provider in core
 - Built-in dialect specs for all supported engines — `"postgres"`, `"mysql"`, `"mariadb"`, `"sqlite"`, `"sqlserver"`, `"cockroachdb"` — all in `@askdb/core`; consumers pass a plain string

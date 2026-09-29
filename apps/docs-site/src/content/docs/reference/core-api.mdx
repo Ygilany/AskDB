@@ -182,7 +182,7 @@ validateSensitiveReferences("SELECT email, password FROM identity.users", schema
 
 #### Conservative failure
 
-When scope cannot be proven, the check reports rather than silently passing. `unresolvedScope.issues` contains one or more of:
+When the check can tell it couldn't bind names to tables, it reports that in `unresolvedScope` rather than passing. It can't always tell: a table in a `FROM` form it doesn't recognize is skipped without a report (see [Safety boundaries](/concepts/safety-boundaries/), #306–#309). `unresolvedScope.issues` contains one or more of:
 
 | Issue | Cause | Effect |
 | --- | --- | --- |
@@ -191,7 +191,7 @@ When scope cannot be proven, the check reports rather than silently passing. `un
 | `OPAQUE_TABLE_SOURCE` | A table source that is not a relation name (table function, table-valued expression). | Reported only; no widening — such a source exposes no schema columns. |
 | `UNTERMINATED_TOKEN` | A string, quoted identifier, or comment never closes. | Reported only; the rest of the statement could not be scanned. |
 
-`unresolvedScope.widened` says whether matching was widened, and `.message` explains why. `strict` mode treats unresolved scope as a failure, mirroring how `validateTenantGuardrails` handles unprovable scope.
+`unresolvedScope.widened` says whether matching was widened, and `.message` explains why. `strict` mode treats unresolved scope as a failure: `passed` is `false`, so it throws `SensitiveReferenceError` (`rule: "UNRESOLVED_TABLE_SCOPE"` when no sensitive reference was found).
 
 The check is heuristic, not a SQL parser — a review and enforcement aid, not a substitute for database-side column privileges.
 
@@ -316,7 +316,7 @@ It must return `AskDialectGenerateResult`:
 | `tenantGuardrail` | `TenantGuardrailResult \| undefined` | Optional extra tenant findings from your generator. These are merged into `ask()`'s own check and cannot replace it. |
 | `usage` | `AskUsage \| undefined` | Token usage, if your generator has access to it. |
 
-A custom `AskDialect` is responsible for its own read-only validation. `ask()` does not run the SELECT-only validator on its output. If your generator should only emit read-only SQL, call `validateSelectSql(spec, sql)` before returning. Tenant enforcement is different: when the schema has a tenant policy, `ask()` substitutes tenant placeholders in the returned `sql` and runs the tenant guardrail on the final statement, whatever the dialect. Under `strict`, unscoped SQL throws `TenantGuardrailError`. A custom `AskDialect` doesn't tell the guardrail how its engine quotes strings, so the statement must pass under the standard-SQL, Postgres (`E'…'` escape strings), and MySQL (where `"…"` is a string) readings: a tenant column written only as `"agency_id"` doesn't count as a predicate.
+A custom `AskDialect` is responsible for its own read-only validation. `ask()` does not run the SELECT-only validator on its output. If your generator should only emit read-only SQL, call `validateSelectSql(spec, sql)` before returning. Tenant enforcement is different: when the schema has a tenant policy, `ask()` substitutes tenant placeholders in the returned `sql` and runs the tenant guardrail on the final statement, whatever the dialect. Under `strict`, SQL that fails the heuristic tenant check throws `TenantGuardrailError`; passing it doesn't prove the SQL is scoped. A custom `AskDialect` doesn't tell the guardrail how its engine quotes strings, so the statement must pass under the standard-SQL, Postgres (`E'…'` escape strings), and MySQL (where `"…"` is a string) readings: a tenant column written only as `"agency_id"` doesn't count as a predicate.
 
 Passing an unknown string dialect id throws `UnknownDialectError`, which extends `AskDbError`.
 

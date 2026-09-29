@@ -156,7 +156,7 @@ Execute is off until you set `studio.execute.enabled: true` (see [Playground](#p
   - Postgres runs the query as a single statement (extended query protocol) inside `BEGIN READ ONLY`, with `default_transaction_read_only` on.
   - MySQL and MariaDB use a prepared statement inside `START TRANSACTION READ ONLY`.
   - SQLite opens the file read-only, and the driver rejects multi-statement strings.
-  - SQL Server has no read-only transaction mode. Studio runs the query inside a transaction that it always rolls back, with `SET XACT_ABORT ON`.
+  - SQL Server has no read-only transaction mode. Studio runs the query inside a transaction that it always rolls back, with `SET XACT_ABORT ON`. The query runs as part of a batch, and a second statement written without `;` (for example a second `SELECT`) isn't caught by the SELECT check.
 - **Timeout.** `studio.execute.timeoutMs` (default 30 s) is enforced with `statement_timeout` on Postgres, `MAX_EXECUTION_TIME` on MySQL (`max_statement_time` on MariaDB), and request cancellation on SQL Server. SQLite queries can't be interrupted, so the timeout doesn't apply to them.
 - **Row cap.** Studio fetches at most `studio.execute.maxRows + 1` rows (default 500) and marks the result truncated when more exist. Postgres and MySQL wrap the query as `SELECT * FROM (…) AS askdb_q LIMIT n`, so a MySQL query that returns two columns with the same name needs aliases. SQL Server uses `SET ROWCOUNT`. SQLite stops reading at the cap.
 

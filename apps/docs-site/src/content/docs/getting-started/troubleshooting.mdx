@@ -207,7 +207,7 @@ The scope uses `access.kind: "subtree"`, but `ask()` couldn't expand it. Either 
 
 ### `TenantGuardrailError`
 
-Your tenant policy uses `enforcement: strict`, and the generated SQL names a tenant-scoped table without mentioning its tenant column or placeholder, or names a table the policy leaves unclassified. Inspect the `warnings` array on the error to see which table triggered it, then re-ask or classify the table. The check is heuristic. Passing it doesn't prove the query is tenant-safe, so keep tenant isolation enforced in the database. See [Run generated SQL safely](/concepts/safety-boundaries/#run-generated-sql-safely).
+Your tenant policy uses `enforcement: strict`, and the generated SQL names a tenant-scoped table without mentioning its tenant column or placeholder, names a table the policy leaves unclassified, or names a polymorphic table without its type and id columns. Inspect the `warnings` array on the error to see which table triggered it, then re-ask or classify the table. The check is heuristic. Passing it doesn't prove the query is tenant-safe, so keep tenant isolation enforced in the database. See [Run generated SQL safely](/concepts/safety-boundaries/#run-generated-sql-safely).
 
 ---
 

@@ -14,7 +14,7 @@ import InstallTabs from "../../../components/InstallTabs.astro";
 
 - The schema artifact format. Same `schema.json`, same `tables/*.md`, same enrichment workflow.
 - The `ask()` API. Same options, same return shape.
-- The SQL checks: must start with `SELECT` or `WITH`, single statement, no comments, no write or DDL keywords, no calls to known side-effecting functions, and the heuristic tenant and sensitive-column checks. Per engine, only the detail changes: SQL is split into tokens the way that engine reads strings, quoted identifiers, and comments, and each engine adds its own entries to the keyword and function denylists. See [Safety boundaries](/concepts/safety-boundaries/).
+- The SQL checks: must start with `SELECT` or `WITH`, single statement (with a SQL Server caveat), no comments, no write or DDL keywords, no calls to known side-effecting functions, and the heuristic tenant and sensitive-column checks. Per engine, only the detail changes: SQL is split into tokens the way that engine reads strings, quoted identifiers, and comments, and each engine adds its own entries to the keyword denylist, the function denylist, or both. See [Safety boundaries](/concepts/safety-boundaries/).
 - The privacy model. The model sees schema, not rows, regardless of engine.
 
 ## What changes
