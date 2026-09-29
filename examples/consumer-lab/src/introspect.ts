@@ -14,7 +14,7 @@
  *
  * Every call writes a fresh artifact; caching is `artifacts.ts`'s job.
  */
-import { spawnSync } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { LOGICAL_SCHEMAS, SQLITE_FILE, connectionUrl, type Dialect } from "./fixture.js";
@@ -33,6 +33,22 @@ export function askdb(args: string[], cwd: string = LAB_ROOT): CliRun {
   const run = spawnSync(ASKDB_BIN, args, { cwd, encoding: "utf8" });
   if (run.error) throw run.error;
   return { status: run.status, stdout: run.stdout, stderr: run.stderr };
+}
+
+/**
+ * Run the installed `askdb` binary without blocking the event loop, so an in-process
+ * replay server can answer its model call. `env` is added to the lab's environment.
+ */
+export function askdbAsync(args: string[], { cwd = LAB_ROOT, env = {} }: { cwd?: string; env?: Record<string, string> } = {}): Promise<CliRun> {
+  return new Promise((resolve, reject) => {
+    const child = spawn(ASKDB_BIN, args, { cwd, env: { ...process.env, ...env } });
+    let stdout = "";
+    let stderr = "";
+    child.stdout.on("data", (d) => (stdout += d));
+    child.stderr.on("data", (d) => (stderr += d));
+    child.on("error", reject);
+    child.on("close", (status) => resolve({ status, stdout, stderr }));
+  });
 }
 
 /**

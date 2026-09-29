@@ -1,0 +1,5 @@
+{
+  "question": "List each client's id with their social security number.",
+  "reply": "```sql\nSELECT client_id, ssn\nFROM people.client\nORDER BY client_id\n```",
+  "source": "authored"
+}

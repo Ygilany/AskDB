@@ -300,6 +300,8 @@ The overlay marks `people.client.email` and `people.client.ssn` as `sensitive: t
 | With `omitSensitiveIdentifiersFromNlToSqlPrompt`, the CLI flag `--omit-sensitive-from-prompt`, or HTTP `omitSensitiveFromPrompt`, the captured prompt contains neither identifier | C: prompt exclusion on every surface. R: one surface not forwarding the option. |
 | A reply that reads `ssn` gets `sensitiveGuardrail.passed === false` with the right references (`warn`), and `SensitiveReferenceError` `SENSITIVE_COLUMN_REFERENCED` (`strict`); `SELECT *` from `client` is flagged too | C: documented flagging. R: the heuristic missing qualified, aliased, `*` or quoted references per dialect quoting style. |
 
+Built in #250 as `test/sensitive.test.ts`; the [lab README](../../examples/consumer-lab/README.md#sensitive-columns) lists its scenarios. Besides the three omission surfaces above, it covers the `createAskDb` per-call override and the config and environment switches the docs name (survey notes 18 and 19).
+
 ### 6. Black-box surfaces
 
 | Surface | Scenarios |
@@ -396,6 +398,11 @@ Found while building the tenant suite (#249):
 
 16. **Strict mode returns SQL whose tenant filter doesn't filter** (**#315**). The guardrail accepts a scoped table once the tenant column's name appears anywhere, so the column selected but never filtered, a filter on another tenant, and `OR 1 = 1` all pass, and it never checks the root table. Run as the host, each leaks other agencies' rows on every engine. *Product bug*, fixed: the tenant check now runs on the model's SQL before tenant rendering, and needs the tenant column compared with its root's placeholder, ANDed into a filter clause, with the root table scoped too. It is still a heuristic; #235 covers a sound rewrite.
 17. **`reference/core-api.mdx` describes `sql-params` markers two ways** (**#320**): the dialect's driver markers in the `ask()` options table, Postgres `$N` in "Tenant types".
+
+Found while building the sensitive-column suite (#250):
+
+18. **`askdb-http` ignores config `modes.omitSensitiveFromPrompt`** (**#376**). `reference/http-api.mdx` gives the `POST /ask` field `omitSensitiveFromPrompt` the default "env-driven", and `reference/config.mdx` and `guides/run-safely-in-prod.mdx` make the config key the deployment switch. The CLI honors it; the HTTP server sends the sensitive columns, tagged, to a request that leaves the field out.
+19. **`ASKDB_OMIT_SENSITIVE_FROM_PROMPT` is never read from the environment** (**#377**). `docs/contracts/sensitive-fields-and-modes.md` lists it beside the library option and the CLI flag, but it is an internal flat key built from `askdb.config.ts`, the same class of doc error as #282.
 
 ## Decisions (2026-09-26)
 
