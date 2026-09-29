@@ -45,6 +45,23 @@ describe("isModuleResolutionFailure", () => {
     expect(isModuleResolutionFailure(new Error("wrapper", { cause: notFound() }), PKG)).toBe(true);
     expect(isModuleResolutionFailure("not an error", PKG)).toBe(false);
   });
+
+  const cjsNotFound = (specifier: string) =>
+    Object.assign(new Error(`Cannot find module '${specifier}'\nRequire stack:\n- /app/index.js`), {
+      code: "MODULE_NOT_FOUND",
+    });
+
+  it("matches a missing subpath of the package", () => {
+    expect(isModuleResolutionFailure(cjsNotFound("mysql2/promise"), "mysql2")).toBe(true);
+  });
+
+  it("does not match a different missing package whose name contains it (a broken driver install)", () => {
+    expect(isModuleResolutionFailure(notFound("pg-connection-string"), "pg")).toBe(false);
+  });
+
+  it("does not match a missing path that merely contains the package name", () => {
+    expect(isModuleResolutionFailure(cjsNotFound("/home/mssqluser/app/db.js"), "mssql")).toBe(false);
+  });
 });
 
 describe("createOptionalDriverLoader", () => {

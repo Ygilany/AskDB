@@ -41,8 +41,14 @@ export type OptionalDriverLoader<T> = {
 
 /**
  * True when `cause` (or any error in its `cause` chain) is a Node module
- * resolution failure that names `packageName`. Anything else — a driver that
- * is installed but throws while loading — is a real error and must surface.
+ * resolution failure (`ERR_MODULE_NOT_FOUND` / `MODULE_NOT_FOUND`) for
+ * `packageName` itself: the specifier Node could not find
+ * (`Cannot find package 'pg'`, `Cannot find module 'mysql2/promise'`) must be
+ * the package or one of its subpaths. A different missing package whose name
+ * merely contains it (`pg-connection-string`) or a path that happens to
+ * contain it (`/home/mssqluser/…`) does not count. Anything else — a driver
+ * that is installed but throws while loading — is a real error and must
+ * surface.
  */
 export function isModuleResolutionFailure(cause: unknown, packageName: string): boolean {
   if (!(cause instanceof Error)) return false;
@@ -52,7 +58,8 @@ export function isModuleResolutionFailure(cause: unknown, packageName: string): 
   }
   const code = (cause as { code?: unknown }).code;
   if (code !== "ERR_MODULE_NOT_FOUND" && code !== "MODULE_NOT_FOUND") return false;
-  return cause.message.includes(packageName);
+  const missing = /Cannot find (?:module|package) '([^']+)'/.exec(cause.message)?.[1];
+  return missing === packageName || (missing?.startsWith(`${packageName}/`) ?? false);
 }
 
 /**
