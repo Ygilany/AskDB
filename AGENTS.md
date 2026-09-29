@@ -41,6 +41,10 @@ pnpm preflight
 
 GitHub Issues on `Ygilany/AskDB`, via `gh`. Unimplemented plans (label `plan`), specs and doc/behavior discrepancies (label `discrepancy`) live there, not as new files in the repo. See `docs/agents/issue-tracker.md`.
 
+### Project board
+
+Priorities, release scope and which thread owns what live on GitHub Project #27. Read `docs/agents/project-board.md` before choosing your next item, when you find work outside your current item, and when you need a maintainer decision.
+
 ### Triage labels
 
 The five default roles (`needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, `wontfix`), with label strings matching the role names. See `docs/agents/triage-labels.md`.
