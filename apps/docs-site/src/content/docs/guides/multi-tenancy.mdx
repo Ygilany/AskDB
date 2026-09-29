@@ -84,7 +84,7 @@ Tables that appear in none of `scopedTables`, `polymorphicTables`, or `globalTab
 | --- | --- | --- |
 | `id` | yes | Stable table ID (e.g. `table:public.organizations`). |
 | `tenantIdColumn` | yes | Stable column ID of the root's identifier — the value your app passes at runtime. |
-| `label` | yes | Human-readable name used in prompts and named placeholders (`Organization` → `:tenant_organization_ids`). Each root needs a label that gives a different placeholder: `Agency` and `agency`, or `Sub-Agency` and `Sub Agency`, fail to load. |
+| `label` | yes | Human-readable name used in prompts and named placeholders (`Organization` → `:tenant_organization_ids`). The placeholder keeps only ASCII letters and digits from the label; a label with none (for example Cyrillic or CJK) uses the root's table name instead (`Клиент` on `table:public.clients` → `:tenant_clients_ids`). Each root needs a different placeholder: `Agency` and `agency`, or `Sub-Agency` and `Sub Agency`, fail to load. |
 | `parent.root`, `parent.foreignKey` | no | When this root is a child of another root: the parent's table ID and the FK column linking to it. |
 
 `scopedTables[]` — operational tables constrained by a tenant:

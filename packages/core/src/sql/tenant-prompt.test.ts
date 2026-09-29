@@ -142,6 +142,26 @@ describe("buildTenantPromptBlock", () => {
     );
   });
 
+  // The prompt must name the same placeholder substitution binds: for a label with no
+  // ASCII letters or digits, the one derived from the root's table name (#375 review).
+  it("names the table-name placeholder for a root labelled in Cyrillic", () => {
+    const cyrillic = {
+      ...policy,
+      roots: policy.roots.map((r) => (r.id === "table:public.clients" ? { ...r, label: "Клиент" } : r)),
+    };
+    const scope: TenantScope = {
+      access: {
+        kind: "multi_root",
+        scopes: [
+          { tenantRoot: "table:public.agencies", ids: ["42"] },
+          { tenantRoot: "table:public.clients", ids: ["99"] },
+        ],
+      },
+    };
+    const block = buildTenantPromptBlock(cyrillic, scope);
+    expect(block).toContain("    - Клиент IDs = :tenant_clients_ids\n");
+  });
+
   it("keeps the ids scope block unchanged for a single-root policy", () => {
     const agencyOnly = {
       ...policy,

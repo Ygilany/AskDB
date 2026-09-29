@@ -80,9 +80,24 @@ export type TenantPolicyFrontmatter = z.infer<typeof tenantPolicyFrontmatterSche
 // Placeholder naming convention
 // ---------------------------------------------------------------------------
 
-/** The `:tenant_<label>_ids` placeholder the model writes for a root with this label. */
-export function placeholderForRoot(label: string): string {
-  return `:tenant_${label.toLowerCase().replace(/[^a-z0-9]+/g, "_")}_ids`;
+const placeholderName = (text: string): string => text.toLowerCase().replace(/[^a-z0-9]+/g, "_");
+
+/**
+ * The `:tenant_<name>_ids` placeholder the model writes for a root. `<name>` is the label
+ * lowercased, with every run of characters other than ASCII letters and digits replaced
+ * by `_` (`Sub-Agency` → `:tenant_sub_agency_ids`).
+ *
+ * A label with no ASCII letter or digit (e.g. Cyrillic or CJK) would reduce to `_` for
+ * every such root, so when `rootId` is given, `<name>` comes from the root's table name
+ * instead (`table:public.agencies` → `:tenant_agencies_ids`). Labels that already have an
+ * ASCII letter or digit are unaffected. Every derivation (prompt, substitution, guardrail,
+ * collision check) must call this with the root's id, so they all agree.
+ */
+export function placeholderForRoot(label: string, rootId?: string): string {
+  const fromLabel = placeholderName(label);
+  if (rootId === undefined || /[a-z0-9]/.test(fromLabel)) return `:tenant_${fromLabel}_ids`;
+  const table = rootId.startsWith("table:") ? rootId.slice("table:".length) : rootId;
+  return `:tenant_${placeholderName(table.slice(table.lastIndexOf(".") + 1))}_ids`;
 }
 
 /**
@@ -94,14 +109,17 @@ export function placeholderForRoot(label: string): string {
 export function assertDistinctRootPlaceholders(roots: readonly Pick<TenantRoot, "id" | "label">[]): void {
   const byPlaceholder = new Map<string, Pick<TenantRoot, "id" | "label">>();
   for (const root of roots) {
-    const placeholder = placeholderForRoot(root.label);
+    const placeholder = placeholderForRoot(root.label, root.id);
     const other = byPlaceholder.get(placeholder);
     if (other && other.id !== root.id) {
       throw new SchemaParseError(
         `Invalid tenant policy: roots '${other.id}' (label "${other.label}") and '${root.id}' ` +
           `(label "${root.label}") both map to the placeholder ${placeholder}, so one root's IDs ` +
-          "would be bound where the other root's column is compared. Give each root a label that " +
-          "differs after lowercasing and collapsing non-alphanumeric characters to '_'.",
+          "would be bound where the other root's column is compared. A root's placeholder is " +
+          ":tenant_<name>_ids, where <name> is its label lowercased with every run of characters " +
+          "other than ASCII letters and digits replaced by '_'. A label with no ASCII letter or " +
+          "digit uses the root's table name instead. Rename one of these labels so the two " +
+          "placeholders differ (a label with ASCII letters or digits sets the name directly).",
       );
     }
     byPlaceholder.set(placeholder, root);

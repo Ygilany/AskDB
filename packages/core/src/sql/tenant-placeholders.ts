@@ -1,5 +1,6 @@
 import { TenantScopeError } from "../errors.js";
 import {
+  assertDistinctRootPlaceholders,
   placeholderForRoot,
   type NormalizedTenantPolicy,
   type TenantScope,
@@ -97,9 +98,13 @@ export function resolvePlaceholders(
   const placeholders = extractTenantPlaceholders(sql, dialect);
   if (placeholders.length === 0) return [];
 
+  // The loader and validateTenantScope() reject a shared placeholder too, but this is
+  // where the IDs bind: a policy built in code, or changed after validation, must not
+  // make the map below keep one root and bind its IDs where the other's are compared.
+  assertDistinctRootPlaceholders(policy.roots);
   const rootsByPlaceholder = new Map<string, { rootId: string; label: string }>();
   for (const root of policy.roots) {
-    rootsByPlaceholder.set(placeholderForRoot(root.label), {
+    rootsByPlaceholder.set(placeholderForRoot(root.label, root.id), {
       rootId: root.id,
       label: root.label,
     });
@@ -428,7 +433,8 @@ export function replacePlaceholdersWithParams(
  * (`UNRESOLVED_TENANT_PLACEHOLDER`) or when a multi-ID scope meets a predicate
  * with no list form (`UNSUPPORTED_TENANT_PREDICATE`), and in `sql-only` mode when
  * a tenant ID holds a backslash but the dialect's escaping is unknown
- * (`UNESCAPABLE_TENANT_ID`). `global` scope returns
+ * (`UNESCAPABLE_TENANT_ID`). Throws `SchemaParseError` when two of the policy's roots
+ * derive the same placeholder, rather than bind one root's IDs through the other's. `global` scope returns
  * `sql` unchanged.
  */
 export function resolveTenantSql(

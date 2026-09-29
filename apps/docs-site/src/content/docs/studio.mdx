@@ -133,7 +133,7 @@ Driver packages are optional peers, not hard dependencies. This keeps install si
 
 ![The Tenancy view offering Draft with AI or Configure manually options for multi-tenant isolation](../../assets/studio/tenancy.png)
 
-The Tenancy view is where you declare tenant isolation for multi-tenant schemas. Choose **Draft with AI** to let Studio analyse your schema and propose a tenant policy for your review, or **Configure manually** to pick the tenant root table and column yourself. Once configured, the Playground enforces tenant scope on every generated query and lets you test with different tenant IDs. See [Multi-tenancy](/guides/multi-tenancy/) for the full walkthrough.
+The Tenancy view is where you declare tenant isolation for multi-tenant schemas. Choose **Draft with AI** to let Studio analyse your schema and propose a tenant policy for your review, or **Configure manually** to pick the tenant root table and column yourself. Once configured, the Playground enforces tenant scope on every generated query and lets you test with different tenant IDs. Saving runs the same validation as loading the schema, so a policy AskDB couldn't load (for example, two roots whose labels give the same placeholder) is refused with an error and nothing is written. See [Multi-tenancy](/guides/multi-tenancy/) for the full walkthrough.
 
 ## Studio and your data
 

@@ -124,7 +124,7 @@ Each root is a table that represents a tenant entity in the hierarchy.
 |---|---|---|---|
 | `id` | string | yes | Stable table ID from `schema.json` (e.g., `table:public.agencies`). |
 | `tenantIdColumn` | string | yes | Stable column ID of the root's primary identifier (e.g., `table:public.agencies#id`). |
-| `label` | string | yes | Human-readable label used in prompt assembly and named placeholders (e.g., `Agency` → `:tenant_agency_ids`). Each root's label must derive a distinct placeholder: labels that match after lowercasing and collapsing non-alphanumeric runs to `_` (`Agency` and `agency`, `Sub-Agency` and `Sub Agency`) are a load error (`SchemaParseError`), because one root's IDs would be bound where the other root's column is compared. |
+| `label` | string | yes | Human-readable label used in prompt assembly and named placeholders (e.g., `Agency` → `:tenant_agency_ids`). Each root must derive a distinct placeholder. The name keeps only ASCII letters and digits (other runs become `_`); a label with none of them (e.g. Cyrillic or CJK) uses the root's table name instead (see [Named placeholder convention](#named-placeholder-convention)). Two roots that derive the same placeholder (`Agency` and `agency`, `Sub-Agency` and `Sub Agency`) are a load error (`SchemaParseError`), because one root's IDs would be bound where the other root's column is compared. |
 | `parent` | object | no | If this root is a child in the hierarchy. |
 | `parent.root` | string | yes (if parent) | Stable table ID of the parent root. |
 | `parent.foreignKey` | string | yes (if parent) | Stable column ID of the FK linking this root to its parent. |
@@ -354,7 +354,7 @@ Advisory context is included in prompts to help the LLM generate more relevant q
 | `global` scope without `reason` | Rejected. |
 | `subtree` scope with no `resolveTenantDescendants`, or a resolver returning a flat array, a key outside the subtree's roots, an invalid ID list, or no IDs | Rejected before prompt generation (`SUBTREE_NOT_RESOLVABLE`). |
 | Unexpanded `subtree` scope passed directly to `resolveTenantSql()` or `buildTenantPromptBlock()` | Rejected (`SUBTREE_NOT_RESOLVABLE`). |
-| Two roots whose labels derive the same `:tenant_<label>_ids` placeholder | Rejected when the policy loads, and by `validateTenantScope()` (so by `ask()`) for a policy built in code (`SchemaParseError`, naming both roots). |
+| Two roots that derive the same `:tenant_<name>_ids` placeholder | Rejected with `SchemaParseError` naming both roots: when the policy loads, by `validateTenantScope()` (so by `ask()`) and by `resolveTenantSql()` for a policy built in code or changed after validation, and by Studio's policy save (400, nothing written). |
 | Generated SQL references a `:tenant_*` placeholder the scope has no IDs for (or that matches no root) | Rejected (`UNRESOLVED_TENANT_PLACEHOLDER`). SQL with an unsubstituted placeholder is never returned. |
 | Several IDs meet a tenant predicate with no list form (`<`, `>`, `<=`, `>=`, or a non-comparison position) | Rejected (`UNSUPPORTED_TENANT_PREDICATE`). |
 | `"sql-only"` substitution of a tenant ID containing a backslash, with a dialect whose `backslashEscapes` is unset and whose `id` is not built-in | Rejected (`UNESCAPABLE_TENANT_ID`). A built-in `id` with `backslashEscapes` unset uses that engine's escaping (backslash escapes on for MySQL and MariaDB). |
@@ -376,6 +376,8 @@ Examples:
 - `:tenant_agency_ids` for the `Agency` root
 - `:tenant_sub_agency_ids` for the `Sub-Agency` root
 - `:tenant_client_ids` for the `Client` root
+
+The name is the label lowercased, with every run of characters other than ASCII letters and digits replaced by `_`. A label with no ASCII letter or digit (Cyrillic, CJK, …) would reduce to `_` for every such root, so its placeholder comes from the root's table name instead: `Клиент` on `table:public.clients` → `:tenant_clients_ids`. Labels with an ASCII letter or digit always use the label. The prompt, placeholder substitution, the tenant guardrail and the load-time collision check all use this one derivation (`placeholderForRoot(label, rootId)`). Two roots that still derive the same placeholder are rejected (see the `label` row and Enforcement rules).
 
 ### Output modes
 

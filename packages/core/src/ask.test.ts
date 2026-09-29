@@ -1089,6 +1089,28 @@ describe("ask — subtree tenant scope expansion", () => {
     expect(dialect.generate).not.toHaveBeenCalled();
   });
 
+  // The check before generation can't see labels changed afterwards (here by the resolver,
+  // i.e. host code editing its own policy), so substitution re-checks where the IDs bind.
+  it("refuses to bind when the policy's labels collide after scope validation", async () => {
+    const policy = schema.tenantPolicy!;
+    const roots = policy.roots.map((root) => ({ ...root }));
+    const mutable = { ...schema, tenantPolicy: { ...policy, roots } };
+    const error = await ask({
+      question: "list orders",
+      schema: mutable,
+      model: fakeModel,
+      dialect: sqlDialect(ordersByAgency),
+      tenantScope: agencySubtree,
+      resolveTenantDescendants: () => {
+        roots.find((root) => root.id === subAgencies)!.label = "agency";
+        return { [agencies]: ["1"], [subAgencies]: ["5"] };
+      },
+    }).catch((e: unknown) => e);
+
+    expect(error).toBeInstanceOf(SchemaParseError);
+    expect((error as SchemaParseError).message).toContain("both map to the placeholder :tenant_agency_ids");
+  });
+
   // The resolver result is read once: a value hidden from validation (non-enumerable) or
   // one that changes between reads (a getter) must not reach the bound IDs.
   it("ignores a non-enumerable level instead of binding its unvalidated value", async () => {

@@ -7,7 +7,7 @@ import {
   parseTenantPolicyMarkdown,
   normalizeTenantPolicy,
 } from "./tenant-policy-loader.js";
-import { tenantPolicyFrontmatterSchema, tenantScopeSchema } from "./tenant-policy.js";
+import { placeholderForRoot, tenantPolicyFrontmatterSchema, tenantScopeSchema } from "./tenant-policy.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const fixturesDir = join(here, "../../../../../fixtures/schemas");
@@ -356,41 +356,64 @@ roots:
 // labels derive the same placeholder would bind one root's IDs where the other's are
 // compared (#375 review), so the policy is rejected at load.
 describe("normalizeTenantPolicy — placeholder collisions", () => {
-  it.each([
-    { parentLabel: "Agency", childLabel: "agency", placeholder: ":tenant_agency_ids" },
-    { parentLabel: "Sub-Agency", childLabel: "Sub Agency", placeholder: ":tenant_sub_agency_ids" },
-  ])("rejects roots labelled '$parentLabel' and '$childLabel'", ({ parentLabel, childLabel, placeholder }) => {
+  /** Normalize a two-root policy (`b` a child of `a`) with these tables and labels. */
+  function normalizeTwoRoots(a: { table: string; label: string }, b: { table: string; label: string }) {
     const parsed = parseTenantPolicyMarkdown(`---
 schemaId: test
 enforcement: strict
 roots:
-  - id: table:public.a
-    tenantIdColumn: table:public.a#id
-    label: ${parentLabel}
-  - id: table:public.b
-    tenantIdColumn: table:public.b#id
-    label: ${childLabel}
+  - id: table:public.${a.table}
+    tenantIdColumn: table:public.${a.table}#id
+    label: ${a.label}
+  - id: table:public.${b.table}
+    tenantIdColumn: table:public.${b.table}#id
+    label: ${b.label}
     parent:
-      root: table:public.a
-      foreignKey: table:public.b#a_id
+      root: table:public.${a.table}
+      foreignKey: table:public.${b.table}#a_id
 ---
 `);
-    const tableIds = new Set(["table:public.a", "table:public.b"]);
-    const colIds = new Set(["table:public.a#id", "table:public.b#id", "table:public.b#a_id"]);
+    const tableIds = new Set([`table:public.${a.table}`, `table:public.${b.table}`]);
+    const colIds = new Set([`table:public.${a.table}#id`, `table:public.${b.table}#id`, `table:public.${b.table}#a_id`]);
+    return normalizeTenantPolicy(parsed, tableIds, colIds);
+  }
 
+  it.each([
+    { a: { table: "a", label: "Agency" }, b: { table: "b", label: "agency" }, placeholder: ":tenant_agency_ids" },
+    { a: { table: "a", label: "Sub-Agency" }, b: { table: "b", label: "Sub Agency" }, placeholder: ":tenant_sub_agency_ids" },
+    // A label with no ASCII letters or digits falls back to the table name, which can
+    // still meet another root's label.
+    { a: { table: "agency", label: "Агентство" }, b: { table: "b", label: "agency" }, placeholder: ":tenant_agency_ids" },
+    // Neither the label nor the table name has an ASCII letter or digit.
+    { a: { table: "агентства", label: "Агентство" }, b: { table: "клиенты", label: "Клиент" }, placeholder: ":tenant___ids" },
+  ])("rejects roots labelled '$a.label' and '$b.label' (tables $a.table, $b.table)", ({ a, b, placeholder }) => {
     let error: unknown;
     try {
-      normalizeTenantPolicy(parsed, tableIds, colIds);
+      normalizeTwoRoots(a, b);
     } catch (e) {
       error = e;
     }
     expect(error).toBeInstanceOf(SchemaParseError);
-    expect((error as SchemaParseError).message).toContain(
-      `roots 'table:public.a' (label "${parentLabel}") and 'table:public.b' (label "${childLabel}") ` +
+    const message = (error as SchemaParseError).message;
+    expect(message).toContain(
+      `roots 'table:public.${a.table}' (label "${a.label}") and 'table:public.${b.table}' (label "${b.label}") ` +
         `both map to the placeholder ${placeholder}`,
     );
+    expect(message).toContain("other than ASCII letters and digits");
+    expect(message).toContain("uses the root's table name instead");
+  });
+
+  // Labels in a non-Latin script used to all derive `:tenant___ids`, so a multi-root
+  // policy labelled that way couldn't bind any root. They now fall back to table names.
+  it("loads two roots labelled in Cyrillic, each with its table name's placeholder", () => {
+    const policy = normalizeTwoRoots({ table: "agencies", label: "Агентство" }, { table: "clients", label: "Клиент" });
+    expect(policy.roots.map((root) => placeholderForRoot(root.label, root.id))).toEqual([
+      ":tenant_agencies_ids",
+      ":tenant_clients_ids",
+    ]);
   });
 });
+
 
 // ---------------------------------------------------------------------------
 // Zod schema validation for front-matter

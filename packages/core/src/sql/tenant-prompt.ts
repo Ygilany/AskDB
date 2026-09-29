@@ -78,7 +78,7 @@ export function buildTenantPromptBlock(
   switch (access.kind) {
     case "ids": {
       const rootLabel = policy.roots.find((r) => r.id === access.tenantRoot)?.label ?? access.tenantRoot;
-      const placeholder = placeholderForRoot(rootLabel);
+      const placeholder = placeholderForRoot(rootLabel, access.tenantRoot);
       lines.push(`  Access: ${rootLabel} IDs = ${placeholder}`);
       // With several roots the model also sees other roots' columns (an expanded
       // subtree with IDs at its root only is an `ids` scope), so pair this one too.
@@ -103,7 +103,7 @@ export function buildTenantPromptBlock(
       );
       for (const s of access.scopes) {
         const rootLabel = policy.roots.find((r) => r.id === s.tenantRoot)?.label ?? s.tenantRoot;
-        lines.push(`    - ${rootLabel} IDs = ${placeholderForRoot(rootLabel)}`);
+        lines.push(`    - ${rootLabel} IDs = ${placeholderForRoot(rootLabel, s.tenantRoot)}`);
         const columns = columnsHoldingRootIds(policy, s.tenantRoot);
         if (columns.length > 0) lines.push(`      columns: ${columns.join(", ")}`);
       }

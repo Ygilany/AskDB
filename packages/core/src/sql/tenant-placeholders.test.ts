@@ -14,7 +14,7 @@ import {
   type TenantSqlDialect,
 } from "./tenant-placeholders.js";
 import { ask, type AskDialect } from "../ask.js";
-import { TenantScopeError } from "../errors.js";
+import { SchemaParseError, TenantScopeError } from "../errors.js";
 import { getDialectSpec, type BuiltInDialectId } from "./dialect-spec.js";
 import { tokenizeSqlSpans } from "./bind.js";
 
@@ -602,5 +602,71 @@ describe("resolveTenantSql — only code regions are substituted", () => {
     const mysqlOut = resolveTenantSql(mysqlSql, policy, agencyOne, "sql-params", 1, getDialectSpec("mysql"));
     expect(mysqlOut.sql).toBe("SELECT * FROM orders WHERE agency_id = ? # :tenant_agency_ids\n");
     if (mysqlOut.mode === "sql-params") expect(mysqlOut.params).toEqual(["42"]);
+  });
+});
+
+// The placeholder each root binds through is derived from its label (#375 review).
+describe("resolveTenantSql — placeholders derived per root", () => {
+  const agencies = "table:public.agencies";
+  const subAgencies = "table:public.sub_agencies";
+  const clients = "table:public.clients";
+  const relabel = (labels: Record<string, string>): NormalizedTenantPolicy => ({
+    ...policy,
+    roots: policy.roots.map((root) => (labels[root.id] ? { ...root, label: labels[root.id]! } : root)),
+  });
+  const agencyAndSub: TenantScope = {
+    access: {
+      kind: "multi_root",
+      scopes: [
+        { tenantRoot: agencies, ids: ["1"] },
+        { tenantRoot: subAgencies, ids: ["5"] },
+      ],
+    },
+  };
+
+  // A policy built in code skips the loader's check. Substitution used to keep the later
+  // of two roots sharing a placeholder, binding sub-agency 5 where agency IDs are compared.
+  it("throws on roots whose labels derive the same placeholder instead of keeping the last one", () => {
+    let error: unknown;
+    try {
+      resolveTenantSql(
+        "SELECT id FROM orders WHERE agency_id IN (:tenant_agency_ids)",
+        relabel({ [subAgencies]: "agency" }),
+        agencyAndSub,
+      );
+    } catch (e) {
+      error = e;
+    }
+    expect(error).toBeInstanceOf(SchemaParseError);
+    expect((error as SchemaParseError).message).toContain(
+      `roots '${agencies}' (label "Agency") and '${subAgencies}' (label "agency") both map to the placeholder :tenant_agency_ids`,
+    );
+  });
+
+  // Labels with no ASCII letters or digits derive the placeholder from the table name,
+  // so two Cyrillic-labelled roots each bind their own IDs.
+  it("binds each Cyrillic-labelled root through its table name's placeholder", () => {
+    const result = resolveTenantSql(
+      "SELECT id FROM orders WHERE agency_id = :tenant_agencies_ids " +
+        "UNION ALL SELECT id FROM notes WHERE owner_type = 'client' AND owner_id IN (:tenant_clients_ids)",
+      relabel({ [agencies]: "Агентство", [clients]: "Клиент" }),
+      {
+        access: {
+          kind: "multi_root",
+          scopes: [
+            { tenantRoot: agencies, ids: ["1"] },
+            { tenantRoot: clients, ids: ["5"] },
+          ],
+        },
+      },
+    );
+    expect(result.sql).toBe(
+      "SELECT id FROM orders WHERE agency_id = '1' " +
+        "UNION ALL SELECT id FROM notes WHERE owner_type = 'client' AND owner_id IN ('5')",
+    );
+    expect(result.bindings).toEqual([
+      { placeholder: ":tenant_agencies_ids", rootLabel: "Агентство", rootId: agencies, ids: ["1"] },
+      { placeholder: ":tenant_clients_ids", rootLabel: "Клиент", rootId: clients, ids: ["5"] },
+    ]);
   });
 });

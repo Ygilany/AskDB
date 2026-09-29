@@ -5,11 +5,12 @@ import {
 } from "../errors.js";
 import type { AskDbLogger } from "../logging/askdb-logger.js";
 import { AskDbLogEvent } from "../logging/log-events.js";
-import type {
-  NormalizedTenantPolicy,
-  TenantScope,
-  ScopedTable,
-  PolymorphicTable,
+import {
+  placeholderForRoot,
+  type NormalizedTenantPolicy,
+  type TenantScope,
+  type ScopedTable,
+  type PolymorphicTable,
 } from "../schema/v2/tenant-policy.js";
 import { isBuiltInDialectId, type DialectSpec } from "./dialect-spec.js";
 
@@ -186,7 +187,7 @@ function checkScopedTable(
     if ("column" in path) {
       const colName = extractColumnName(path.column);
       const rootLabel = policy.roots.find((r) => r.id === path.root)?.label ?? path.root;
-      const placeholder = `:tenant_${rootLabel.toLowerCase().replace(/[^a-z0-9]+/g, "_")}_ids`;
+      const placeholder = placeholderForRoot(rootLabel, path.root);
 
       // Check if the tenant column or placeholder appears in the SQL
       if (mentionsIdentifier(sql, colName) || mentionsPlaceholder(sql, placeholder)) {
@@ -205,7 +206,7 @@ function checkScopedTable(
         if (rootTenantCol) {
           const rootColName = extractColumnName(rootTenantCol.tenantIdColumn);
           const rootLabel = rootTenantCol.label;
-          const placeholder = `:tenant_${rootLabel.toLowerCase().replace(/[^a-z0-9]+/g, "_")}_ids`;
+          const placeholder = placeholderForRoot(rootLabel, rootTenantCol.id);
           if (mentionsIdentifier(sql, rootColName) || mentionsPlaceholder(sql, placeholder)) {
             return; // Join path + root filter present
           }
