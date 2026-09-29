@@ -72,6 +72,29 @@ Customer purchase orders.
     expect(statusFm?.description).toBe("Order state.");
   });
 
+  it("a duplicate column entry's `sensitive: true` survives the draft round-trip (saving can't drop it)", () => {
+    const md = `---
+id: table:public.orders
+name: orders
+schemaId: orders-users
+columns:
+  - id: table:public.orders#status
+    description: Order state.
+    sensitive: false
+  - id: table:public.orders#status
+    description: Ignored duplicate.
+    sensitive: true
+---
+
+# Table: orders
+`;
+    const draft = buildTableDraft(physical as never, parseTableMarkdown(md));
+    const statusFm = buildFrontmatter(physical as never, "orders-users", draft).columns?.filter(
+      (c) => c.id === "table:public.orders#status",
+    );
+    expect(statusFm).toEqual([{ id: "table:public.orders#status", description: "Order state.", sensitive: true }]);
+  });
+
   it("buildFrontmatter omits empty optional fields", () => {
     const draft = buildTableDraft(physical as never, undefined);
     draft.description = "anything";

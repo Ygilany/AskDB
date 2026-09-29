@@ -1,0 +1,40 @@
+{
+  "name": "askdb-consumer-lab",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Black-box consumer lab: installs AskDB from packed tarballs or npm like an outside project and runs it against the multi-engine fixture. Not a workspace member.",
+  "type": "module",
+  "engines": {
+    "node": ">=22.12"
+  },
+  "scripts": {
+    "lab": "tsx src/lab-cli.ts",
+    "test": "vitest run",
+    "matrix": "vitest run --reporter=default --reporter=./src/matrix-reporter.ts",
+    "lint": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@ai-sdk/openai": "4.0.29",
+    "@askdb/ai-openai": "1.0.0-beta.6",
+    "@askdb/client": "1.0.0-beta.5",
+    "@askdb/config": "1.0.0-beta.11",
+    "@askdb/core": "1.0.0-beta.42",
+    "@askdb/http-api": "1.0.0-beta.42",
+    "ai": "7.0.51",
+    "askdb": "1.0.0-beta.42",
+    "better-sqlite3": "12.11.1",
+    "mssql": "12.7.0",
+    "mysql2": "3.23.2",
+    "pg": "8.22.0",
+    "zod": "4.4.3"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "7.6.13",
+    "@types/mssql": "12.3.0",
+    "@types/node": "22.20.1",
+    "@types/pg": "8.20.3",
+    "tsx": "4.23.5",
+    "typescript": "6.0.3",
+    "vitest": "4.1.11"
+  }
+}

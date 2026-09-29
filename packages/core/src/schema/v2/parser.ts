@@ -10,12 +10,32 @@ import {
 } from "./describable.js";
 
 /**
+ * Split YAML front-matter from a markdown body. gray-matter throws a raw
+ * `YAMLException` on malformed YAML; rethrow it as a `SchemaParseError` naming
+ * the file so callers can rely on one error type for every artifact problem.
+ */
+export function readFrontMatter(
+  content: string,
+  kind: string,
+  filePath?: string,
+): { data: Record<string, unknown>; content: string } {
+  try {
+    const file = matter(content);
+    return { data: file.data, content: file.content };
+  } catch (e) {
+    const loc = filePath ? ` in ${filePath}` : "";
+    const reason = e instanceof Error ? e.message : String(e);
+    throw new SchemaParseError(`Malformed ${kind} front-matter YAML${loc}: ${reason}`, e);
+  }
+}
+
+/**
  * Parse a `tables/<table>.md` file.
  * Front-matter is validated by zod (strict — unknown keys are errors).
  * Recognized H2 sections are extracted; the rest of the body is preserved verbatim.
  */
 export function parseTableMarkdown(content: string, filePath?: string): ParsedTableMarkdown {
-  const file = matter(content);
+  const file = readFrontMatter(content, "table", filePath);
   const result = v2TableFrontmatterSchema.safeParse(file.data);
   if (!result.success) {
     const loc = filePath ? ` in ${filePath}` : "";
@@ -35,7 +55,7 @@ export function parseTableMarkdown(content: string, filePath?: string): ParsedTa
  * Parse `concepts.md`.
  */
 export function parseConceptsMarkdown(content: string, filePath?: string): ParsedConceptsMarkdown {
-  const file = matter(content);
+  const file = readFrontMatter(content, "concepts", filePath);
   const result = v2ConceptsFrontmatterSchema.safeParse(file.data);
   if (!result.success) {
     const loc = filePath ? ` in ${filePath}` : "";

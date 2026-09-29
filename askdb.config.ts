@@ -1,10 +1,7 @@
-import dotenv from "dotenv";
 import { defineConfig, env, type AskDbConfig } from "@askdb/config";
 
-dotenv.config({ quiet: true });
-
-// Loads a local `.env` when this module runs (missing file is OK).
-// CLIs call `bootstrapAskDbEnv`, which loads `.env` then evaluates this file and installs the AskDB runtime snapshot.
+// CLIs call `bootstrapAskDbEnv`, which loads `.env` (a missing file is OK), then evaluates this file and
+// installs the AskDB runtime snapshot, so this file doesn't load `.env` itself.
 // Use `env("VAR")` for every value read from the environment; `flattenAskDbConfig` applies defaults
 // for optional fields (see `@askdb/config` / `defaults.ts`).
 export default defineConfig({
@@ -26,7 +23,7 @@ export default defineConfig({
     providerConfig: {
       postgres: {
         // Postgres URL for `askdb introspect` — maps to ASKDB_INTROSPECT_POSTGRES_URL
-        // Pagila fixture (docker compose -f fixtures/pagila/docker-compose.yml …): often port 5433
+        // Multi-engine fixture (`pnpm fixture:up`): postgres://fixture_reader:fixture_reader@127.0.0.1:15432/askdb_fixture
         databaseUrl: env("DATABASE_URL"),
       },
     },
@@ -68,6 +65,8 @@ export default defineConfig({
       ...(env("ASKDB_STUDIO_PORT") ? { port: Number(env("ASKDB_STUDIO_PORT")) } : {}),
     },
     execute: {
+      // Studio execute is opt-in; this repo's dev setup turns it on.
+      enabled: true,
       // Connection URL for the Studio playground query runner (maps to ASKDB_STUDIO_DATABASE_URL)
       databaseUrl: env("DATABASE_URL"),
     },

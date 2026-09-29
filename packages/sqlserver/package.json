@@ -64,6 +64,6 @@
     "@types/mssql": "^12.3.0",
     "mssql": "^12.5.5",
     "typescript": "^6.0.3",
-    "vitest": "^4.1.10"
+    "vitest": "^5.0.1"
   }
 }

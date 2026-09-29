@@ -57,9 +57,13 @@ If you're seeing this on legitimate read questions, the model may be misreading 
 
 The model returned more than one SQL statement. AskDB refuses multi-statement output. Rephrase the question to ask for a single result, or break it into two separate `ask()` calls.
 
-### `SqlValidationError: SQL_COMMENT` / `SQL_FORBIDDEN_KEYWORD`
+### `SqlValidationError: SQL_COMMENT` / `SQL_FORBIDDEN_KEYWORD` / `SQL_FORBIDDEN_FUNCTION`
 
-The generated SQL contains a SQL comment or a forbidden keyword (`EXECUTE`, `EXEC`, `xp_`, etc.). These are heuristic guardrails. If this fires on a legitimate query, file an issue with the question and schema excerpt.
+The generated SQL contains a SQL comment (including `#` on MySQL), a forbidden keyword (`INTO`, `DELETE`, `EXEC`, `WAITFOR`, etc.), or a call to a blocked side-effecting function (`pg_sleep`, `set_config`, `LOAD_FILE`, `SLEEP`, etc.). Keywords are matched as whole, unquoted tokens, so a column like `deleted_at` or `"delete"` is fine. These are heuristic, defense-in-depth guardrails. If one fires on a legitimate query, file an issue with the question and schema excerpt.
+
+### `SqlValidationError: SQL_UNTERMINATED`
+
+A string literal, quoted identifier, dollar-quoted string, or block comment in the generated SQL never closes, so the validator cannot tell where the statement ends and rejects it. On MySQL, check that the dialect's `backslashEscapes` setting matches the server (`NO_BACKSLASH_ESCAPES`).
 
 ### Generated SQL references a column or table that doesn't exist
 
@@ -132,10 +136,12 @@ Generating SQL in Studio does **not** require a driver. Only the Execute Query a
 
 ### Studio doesn't connect to my database
 
-Check that `studio.execute.databaseUrl` is set in `askdb.config.ts` (or `ASKDB_STUDIO_DATABASE_URL` env var) and that the URL is reachable from your machine. Studio resolves the execute connection in this order:
+Studio execute is off by default. Check that `studio.execute.enabled: true` is set in `askdb.config.ts`, that `studio.execute.databaseUrl` (or `studio.execute.file` for SQLite) is set, and that the database is reachable from your machine. Restart Studio after editing the config. Studio resolves the execute connection in this order:
 
-1. `studio.execute.provider` + `studio.execute.databaseUrl`
-2. The active `introspection.provider` when it's a live engine
+1. `studio.execute.databaseUrl` / `studio.execute.file`
+2. The introspection connection for the same engine, only when `studio.execute.useIntrospectionConnection: true`
+
+The provider comes from `studio.execute.provider`, or the active `introspection.provider` when it's a live engine.
 
 See [Configuration — Studio execute](/reference/config/#studio-execute-configuration) for the full resolution order.
 
@@ -194,6 +200,10 @@ See [Multi-tenancy](/guides/multi-tenancy/) for the full scope shape.
 ### `TenantScopeError: UNKNOWN_TENANT_ROOT`
 
 The `tenantRoot` in the scope doesn't match any root defined in `tenant-policy.md`. Check the `id:` field of each root in the policy file — the scope must use the same stable table ID (e.g. `table:public.organizations`).
+
+### `TenantScopeError: SUBTREE_NOT_RESOLVABLE`
+
+The scope uses `access.kind: "subtree"`, but `ask()` couldn't expand it. Either no `resolveTenantDescendants` callback was passed, or the callback returned an empty array or something other than an array of non-empty string IDs. AskDB doesn't query your database to find descendants, and it won't fall back to the seed IDs alone. Pass a resolver that returns every ID in the subtree, or send an `ids` access with the IDs already expanded. Calling `resolveTenantSql()` directly with an unexpanded `subtree` scope throws the same error, because it doesn't walk the hierarchy either. See [Hierarchical scope](/guides/multi-tenancy/#hierarchical-scope-subtree).
 
 ### `TenantGuardrailError`
 

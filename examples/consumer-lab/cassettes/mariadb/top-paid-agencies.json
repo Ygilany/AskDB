@@ -1,0 +1,5 @@
+{
+  "question": "Which three agencies have the highest paid order total?",
+  "reply": "```sql\nSELECT agency_id, paid_total\nFROM billing.agency_revenue\nORDER BY paid_total DESC, agency_id\nLIMIT 3\n```",
+  "source": "authored"
+}

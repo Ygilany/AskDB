@@ -4,9 +4,7 @@
 >
 > **Drift check (run first)**:
 >
-> ```bash
-> git diff --stat 7152dec..HEAD -- apps/cli/src/init.ts apps/cli/src/init.test.ts apps/cli/src/cli.ts apps/cli/README.md apps/cli/package.json apps/docs-site/src/content/docs/quickstart.mdx apps/docs-site/src/content/docs/reference/cli.mdx packages/config/src/types.ts packages/config/src/runtime-config.ts packages/config/src/flatten.ts plans/030-studio-multi-dialect-execute.md
-> ```
+> ```bash git diff --stat 7152dec..HEAD -- apps/cli/src/init.ts apps/cli/src/init.test.ts apps/cli/src/cli.ts apps/cli/README.md apps/cli/package.json apps/docs-site/src/content/docs/quickstart.mdx apps/docs-site/src/content/docs/reference/cli.mdx packages/config/src/types.ts packages/config/src/runtime-config.ts packages/config/src/flatten.ts plans/030-studio-multi-dialect-execute.md ```
 >
 > If any in-scope file changed since this plan was written, compare the "Current state" excerpts against the live code before proceeding; on a mismatch, treat it as a STOP condition.
 

@@ -1,0 +1,5 @@
+{
+  "question": "What are the client id and birth date of the client named 佐藤 花子?",
+  "reply": "```sql\nSELECT client_id, birth_date\nFROM people.client\nWHERE full_name = '佐藤 花子'\n```",
+  "source": "authored"
+}

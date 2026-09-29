@@ -1,0 +1,5 @@
+{
+  "question": "Which orders are still unpaid, and what are their totals?",
+  "reply": "```sql\nSELECT order_id, total\nFROM \"order\"\nWHERE is_paid = 0\nORDER BY order_id\n```",
+  "source": "authored"
+}

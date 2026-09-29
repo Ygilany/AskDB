@@ -28,6 +28,13 @@ export type WorkspaceTable = {
   filename: string;
   /** Parsed markdown if the file exists; `undefined` for tables without a `.md` yet. */
   parsed: ParsedTableMarkdown | undefined;
+  /**
+   * IDs of this table's columns that some *other* table markdown file marks
+   * `sensitive: true` (a `misplaced_column_id` entry). The core loader honors those
+   * escalations, and they are not part of this table's draft, so an authoring UI must
+   * treat these columns as sensitive regardless of the draft.
+   */
+  escalatedByOtherFiles?: string[];
 };
 
 export type Workspace = {
@@ -80,6 +87,22 @@ export function loadWorkspace(schemaDir: string): Workspace {
     }
   }
 
+  // Column escalations filed in a file other than the owning table's (the loader's
+  // `misplaced_column_id` entries), keyed by owning table id.
+  const columnOwner = new Map(
+    physical.tables.flatMap((t) => t.columns.map((c) => [c.id, t.id] as const)),
+  );
+  const escalatedByOtherFiles = new Map<string, Set<string>>();
+  for (const parsed of parsedByFile.values()) {
+    for (const col of parsed.frontmatter.columns ?? []) {
+      const owner = columnOwner.get(col.id);
+      if (col.sensitive !== true || owner === undefined || owner === parsed.frontmatter.id) continue;
+      const set = escalatedByOtherFiles.get(owner) ?? new Set<string>();
+      set.add(col.id);
+      escalatedByOtherFiles.set(owner, set);
+    }
+  }
+
   // Pair physical tables with their .md (if any), matched by front-matter id —
   // existing files keep their filename whatever it is. Physical tables without
   // a .md get a safe, collision-free default filename.
@@ -97,13 +120,15 @@ export function loadWorkspace(schemaDir: string): Workspace {
   );
   const tables: WorkspaceTable[] = physical.tables.map((physTable) => {
     const matched = matchedByTableId.get(physTable.id);
+    const escalated = [...(escalatedByOtherFiles.get(physTable.id) ?? [])];
     if (matched) {
-      return { physical: physTable, filename: matched[0], parsed: matched[1] };
+      return { physical: physTable, filename: matched[0], parsed: matched[1], escalatedByOtherFiles: escalated };
     }
     return {
       physical: physTable,
       filename: defaultFilenames.get(physTable.id)!,
       parsed: undefined,
+      escalatedByOtherFiles: escalated,
     };
   });
 

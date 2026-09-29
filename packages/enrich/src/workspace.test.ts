@@ -11,6 +11,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { loadSchema, loadSchemaFromJson } from "@askdb/core";
+import { buildFrontmatter, buildTableDraft } from "./draft.js";
 import {
   buildDefaultTableBody,
   bundleSchemaDirectory,
@@ -228,6 +229,73 @@ describe("workspace", () => {
     const fromBundle = loadSchemaFromJson(JSON.stringify(bundle));
     expect(fromBundle).toEqual(fromDir);
     expect(bundle).not.toHaveProperty("tenantPolicy");
+  });
+
+  it("sensitivity marked in a draft round-trips through saveTable into the core loader (escalate-only)", () => {
+    const ws = loadWorkspace(schemaDir);
+    const orders = ws.tables.find((t) => t.physical.name === "orders")!;
+    const users = ws.tables.find((t) => t.physical.name === "users")!;
+    const statusId = "table:public.orders#status";
+    const emailId = "table:public.users#email";
+
+    // Studio's Sensitivity tab: mark orders.status Sensitive...
+    const ordersDraft = buildTableDraft(orders.physical, orders.parsed);
+    ordersDraft.columns[statusId] = { ...ordersDraft.columns[statusId], sensitive: true };
+    saveTable(ws, orders.physical.id, buildFrontmatter(orders.physical, "orders-users", ordersDraft), orders.parsed!.body);
+    // ...and try to mark users.email (sensitive in schema.json) Not sensitive.
+    const usersDraft = buildTableDraft(users.physical, users.parsed);
+    usersDraft.columns[emailId] = { ...usersDraft.columns[emailId], sensitive: false };
+    saveTable(ws, users.physical.id, buildFrontmatter(users.physical, "orders-users", usersDraft), users.parsed!.body);
+
+    const reloaded = loadWorkspace(schemaDir);
+    const reloadedOrders = reloaded.tables.find((t) => t.physical.name === "orders")!;
+    expect(buildTableDraft(reloadedOrders.physical, reloadedOrders.parsed).columns[statusId]?.sensitive).toBe(true);
+
+    const schema = loadSchema(schemaDir);
+    const column = (id: string) => schema.tables.flatMap((t) => t.columns).find((c) => c.id === id)!;
+    expect(column(statusId).sensitive).toBe(true);
+    expect(column(emailId).sensitive).toBe(true);
+    expect(schema.warnings).toContainEqual({
+      kind: "sensitivity_downgrade_ignored",
+      tableFile: "tables/users.md",
+      id: emailId,
+    });
+    // Studio surfaces loader warnings through the workspace.
+    expect(reloaded.warnings).toContainEqual(expect.objectContaining({ kind: "sensitivity_downgrade_ignored" }));
+
+    expect(loadSchemaFromJson(JSON.stringify(bundleSchemaDirectory(schemaDir)))).toEqual(schema);
+  });
+
+  describe("a sensitive column entry filed in another table's markdown", () => {
+    const createdAtId = "table:public.users#created_at";
+    beforeEach(() => {
+      const ordersPath = join(schemaDir, "tables/orders.md");
+      writeFileSync(
+        ordersPath,
+        readFileSync(ordersPath, "utf8").replace(
+          "columns:\n",
+          `columns:\n  - id: ${createdAtId}\n    sensitive: true\n`,
+        ),
+      );
+    });
+    const createdAtSensitive = () =>
+      loadSchema(schemaDir).tables.flatMap((t) => t.columns).find((c) => c.id === createdAtId)!.sensitive;
+
+    it("survives saving that table's draft, so the loader still escalates it", () => {
+      expect(createdAtSensitive()).toBe(true);
+      const ws = loadWorkspace(schemaDir);
+      const orders = ws.tables.find((t) => t.physical.name === "orders")!;
+      const draft = buildTableDraft(orders.physical, orders.parsed);
+      draft.aliases = [...(draft.aliases ?? []), "purchase_orders"];
+      saveTable(ws, orders.physical.id, buildFrontmatter(orders.physical, "orders-users", draft, orders.parsed!.frontmatter), orders.parsed!.body);
+      expect(createdAtSensitive()).toBe(true);
+    });
+
+    it("is reported on the owning table, since that table's draft can't show it", () => {
+      const ws = loadWorkspace(schemaDir);
+      expect(ws.tables.find((t) => t.physical.name === "users")!.escalatedByOtherFiles).toEqual([createdAtId]);
+      expect(ws.tables.find((t) => t.physical.name === "orders")!.escalatedByOtherFiles).toEqual([]);
+    });
   });
 });
 

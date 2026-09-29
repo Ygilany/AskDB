@@ -1,5 +1,6 @@
 import { useWorkspace } from "../../contexts/workspace-context";
 import { Badge } from "../../components/ui/badge";
+import { tableSensitivity, UNKNOWN_COLUMN_SENSITIVITY } from "../../lib/sensitivity";
 
 export function SensitivityTab() {
   const { selectedTable, selectedDraft, updateColumnDraft, updateTableDraft } = useWorkspace();
@@ -8,6 +9,9 @@ export function SensitivityTab() {
   const table = selectedTable;
   const draft = selectedDraft;
   const tableId = table.physical.id;
+  // Overrides are escalate-only (see tableSensitivity): "Not sensitive" is disabled
+  // wherever it could not take effect.
+  const sensitivity = tableSensitivity(table, draft);
 
   return (
     <div className="stack" style={{ padding: "var(--pad-y) var(--pad-x)" }}>
@@ -37,6 +41,9 @@ export function SensitivityTab() {
       <section className="card">
         <div className="card-hd"><h3>Table-level sensitivity</h3></div>
         <div className="card-bd">
+          <p className="muted" style={{ fontSize: 12, marginBottom: 10 }}>
+            Overrides can only escalate: marking a table or column sensitive takes effect on top of the physical metadata, but "Not sensitive" cannot un-mark something schema.json already marks sensitive. A sensitive table makes all of its columns sensitive.
+          </p>
           <label style={{ display: "grid", gap: 6 }}>
             <span className="muted" style={{ fontSize: 12, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.04em" }}>Override</span>
             <select
@@ -49,9 +56,12 @@ export function SensitivityTab() {
             >
               <option value="inherit">Inherit physical metadata</option>
               <option value="true">Sensitive</option>
-              <option value="false">Not sensitive</option>
+              <option value="false" disabled={sensitivity.forced}>Not sensitive</option>
             </select>
           </label>
+          <p className="muted" style={{ fontSize: 12, marginTop: 8 }}>
+            Effective: {sensitivity.effective ? <Badge variant="danger">sensitive</Badge> : "not sensitive"}
+          </p>
         </div>
       </section>
 
@@ -70,7 +80,7 @@ export function SensitivityTab() {
             <tbody>
               {table.physical.columns.map((col) => {
                 const colDraft = draft.columns[col.id] ?? {};
-                const effective = colDraft.sensitive !== undefined ? colDraft.sensitive : col.sensitive;
+                const { forced, effective } = sensitivity.columns[col.id] ?? UNKNOWN_COLUMN_SENSITIVITY;
                 return (
                   <tr key={col.id}>
                     <td><span className="mono">{col.name}</span></td>
@@ -86,7 +96,7 @@ export function SensitivityTab() {
                       >
                         <option value="inherit">Inherit</option>
                         <option value="true">Sensitive</option>
-                        <option value="false">Not sensitive</option>
+                        <option value="false" disabled={forced}>Not sensitive</option>
                       </select>
                     </td>
                     <td>
