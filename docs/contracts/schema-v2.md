@@ -25,6 +25,7 @@ my-app.schema/
     orders.md
     order_items.md
   concepts.md                # optional cross-table vocabulary
+  tenant-policy.md           # optional multi-tenant scoping rules
   schema.lock.json           # optional, machine-managed pointer to last embedded checksums
 ```
 
@@ -33,6 +34,7 @@ my-app.schema/
 | `schema.json` | yes | introspection / human | physical structure (tables, columns, types, FKs, baseline `sensitive`) |
 | `tables/<table>.md` | optional, one per described table | Studio / web catalog / human | descriptions, business context, aliases, common query language, examples, escalate-only `sensitive` overrides |
 | `concepts.md` | optional | Studio / human | cross-table vocabulary (e.g. *customer* → users + leads) |
+| `tenant-policy.md` | optional; its presence turns on tenant enforcement | application author / Studio | tenant roots, scoped tables and enforcement mode ([tenant policy contract](./tenant-policy.md)) |
 | `schema.lock.json` | optional | `@askdb/rag` | embedding checksums per chunk id |
 
 A v2 directory with `schema.json` and zero `tables/*.md` files is valid — `@askdb/core` loads it with an empty describable layer (no descriptions, no aliases, no concepts). Authoring the describable layer is opt-in per table.
@@ -47,7 +49,7 @@ my-app.schema.bundle.json
 
 The bundle preserves all field semantics and IDs; it is read-only — authoring still happens against the directory.
 
-The bundle carries every file the directory loader reads, so `loadSchema(bundle)` produces the same normalized schema as `loadSchema(directory)`:
+The bundle carries every file the directory loader reads, so `loadSchema(bundle)` produces the same normalized schema as `loadSchema(directory)`. `@askdb/core` owns the format and exports it as the `BundledSchemaV2` type; `@askdb/enrich`'s `bundleSchemaDirectory()` returns that type.
 
 ```jsonc
 {
@@ -128,13 +130,17 @@ Required table fields are `id`, `name`, `schema`, and `columns`. Required column
 
 One file per described table. Format: **YAML front-matter** for structured fields, **markdown body** for prose.
 
-**Filenames.** Files are linked to tables by the front-matter `id`, never by filename, so an existing file keeps its name whatever it is. When `@askdb/enrich` creates a file for a table that has none yet, it picks:
+**Filenames.** Files are linked to tables by the front-matter `id`, never by filename, so an existing file keeps its name whatever it is. When `@askdb/enrich` creates a file for a table that has none yet, it picks ([ADR 0013](../adrs/0013-table-filename-scheme.md)):
 
-- `<table>.md` when the table name is unique across `schema.json` (compared case-insensitively, for case-insensitive filesystems);
+- `<table>.md` when the table name is unique across `schema.json`;
 - `<schema>.<table>.md` when two tables share a name (e.g. `public.orders` and `archive.orders`), or when `<table>.md` is already taken by another file;
 - `<schema>.<table>-<n>.md` as a last resort if that is taken too.
 
-Names are made filename-safe first: path separators, NUL, control characters, and Windows-reserved characters become `_`, and a leading `.` or Windows device name gets a `_` prefix. Writes that would resolve outside `tables/` are refused.
+Two names count as the same when a case-insensitive file system (APFS, NTFS) would store them as one file: the comparison ignores case, with full case folding (`straße` matches `STRASSE`), and Unicode normalization (NFC `café` matches NFD `café`).
+
+Names are made filename-safe first: path separators, NUL, control characters, and Windows-reserved characters become `_`, and a leading `.` or Windows device name gets a `_` prefix. A filename longer than 200 bytes (UTF-8, decomposed) is cut to fit and ends in `~` plus the first 8 hex digits of the SHA-256 of the untruncated name: `<prefix>~<8 hex>.md`. Databases allow names longer than file systems do (SQL Server identifiers are up to 128 characters), so a schema-qualified or non-ASCII name can otherwise exceed the 255-byte limit.
+
+`saveTable()` writes only to a `.md` file directly inside `tables/`. It refuses a filename with a path separator or `..`, and it refuses to write when `tables/` or the target file is a symbolic link, so a link planted in the directory can't redirect a write elsewhere.
 
 ```markdown
 ---

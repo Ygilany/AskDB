@@ -22,7 +22,7 @@ The dependency direction: `@askdb/core ← @askdb/enrich ← @askdb/studio`. UI 
 - Markdown body section update helpers (replace H2 sections without touching the rest)
 - `concepts.md` loading, saving, and link validation
 - AI suggestion source, target, and context helpers (builds the enrichment prompt; caller supplies the model)
-- `bundleSchemaDirectory(dir) → BundledSchemaV2` — compiles a schema directory (`schema.json`, `tables/*.md`, `concepts.md`, `tenant-policy.md`) into a single packed JSON
+- `bundleSchemaDirectory(dir) → BundledSchemaV2` (the bundle type `@askdb/core` exports) — compiles a schema directory (`schema.json`, `tables/*.md`, `concepts.md`, `tenant-policy.md`) into a single packed JSON
 
 ### Out of scope
 
@@ -77,4 +77,4 @@ askdb bundle <dir> --out <f>        # bundle directory to JSON via @askdb/enrich
 - Sensitivity round-trip: a draft sensitivity override saved via `saveTable()` is honored by `loadSchema()` (escalate-only), in both directory and bundle form.
 - Re-introspection ingestion: new un-described column IDs queued for description; orphan IDs offered for pruning.
 - Bundle round-trip: `loadSchema(bundle.json)` produces the same normalized representation as `loadSchema(directory)`, including the tenant policy for multi-tenant schemas.
-- Table filenames: colliding bare names get schema-qualified files; identifiers with path separators or `..` cannot write outside `tables/`; existing filenames are never renamed.
+- Table filenames: colliding bare names get schema-qualified files, including names a case-insensitive file system treats as one; over-long names are shortened with a hash suffix; identifiers with path separators or `..`, and symbolic links in `tables/`, cannot redirect a write outside `tables/`; existing filenames are never renamed.
