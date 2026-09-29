@@ -5,6 +5,7 @@ import {
   readdirSync,
   rmSync,
   cpSync,
+  symlinkSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
@@ -367,6 +368,18 @@ describe("workspace table filenames", () => {
   const filenameOf = (ws: ReturnType<typeof loadWorkspace>, id: string) =>
     ws.tables.find((t) => t.physical.id === id)?.filename;
 
+  const saveDescribed = (ws: ReturnType<typeof loadWorkspace>, id: string) => {
+    const name = ws.tables.find((t) => t.physical.id === id)!.physical.name;
+    saveTable(ws, id, { id, name, schemaId: "fname" }, buildDefaultTableBody(name, `About ${id}.`));
+  };
+
+  /** Save every table, then check each one reads back from disk with its own description. */
+  const saveAllAndReload = (ws: ReturnType<typeof loadWorkspace>) => {
+    for (const t of ws.tables) saveDescribed(ws, t.physical.id);
+    expect(readdirSync(join(schemaDir, "tables"))).toHaveLength(ws.tables.length);
+    for (const t of loadSchema(schemaDir).tables) expect(t.description).toBe(`About ${t.id}.`);
+  };
+
   beforeEach(() => {
     tmp = mkdtempSync(join(tmpdir(), "askdb-enrich-fname-"));
     schemaDir = join(tmp, "fname.schema");
@@ -384,28 +397,24 @@ describe("workspace table filenames", () => {
     expect(filenameOf(ws, "table:archive.orders")).toBe("archive.orders.md");
     expect(filenameOf(ws, "table:public.users")).toBe("users.md");
 
-    for (const t of ws.tables) {
-      saveTable(
-        ws,
-        t.physical.id,
-        { id: t.physical.id, name: t.physical.name, schemaId: "fname" },
-        buildDefaultTableBody(t.physical.name, `About ${t.physical.id}.`),
-      );
-    }
-    expect(readdirSync(join(schemaDir, "tables")).sort()).toEqual([
-      "archive.orders.md",
-      "public.orders.md",
-      "users.md",
-    ]);
-    const loaded = loadSchema(schemaDir);
-    for (const t of loaded.tables) expect(t.description).toBe(`About ${t.id}.`);
+    saveAllAndReload(ws);
   });
 
-  it("treats names differing only by case as colliding", () => {
-    writeSchema([table("public", "Orders"), table("public", "orders")]);
+  // APFS and NTFS compare names case-insensitively, and APFS also ignores Unicode
+  // normalization, so each pair below names one file there. Postgres and SQL Server
+  // treat each pair as two distinct quoted identifiers.
+  it.each([
+    ["case", "Orders", "orders"],
+    ["Unicode normalization (NFC vs NFD)", "café", "café"],
+    ["full case folding (ß vs SS)", "straße", "STRASSE"],
+  ])("gives names that differ only by %s distinct default files", (_, first, second) => {
+    writeSchema([table("public", first), table("public", second)]);
     const ws = loadWorkspace(schemaDir);
-    const names = ws.tables.map((t) => t.filename.toLowerCase());
-    expect(new Set(names).size).toBe(2);
+    expect(ws.tables.map((t) => t.filename)).toEqual([
+      `public.${first}.md`,
+      `public.${second}-2.md`,
+    ]);
+    saveAllAndReload(ws);
   });
 
   it("keeps existing filenames stable and does not overwrite them", () => {
@@ -449,6 +458,12 @@ describe("workspace table filenames", () => {
     writeFileSync(join(schemaDir, "tables/legacy.md"), orphan, "utf8");
     const ws2 = loadWorkspace(schemaDir);
     expect(filenameOf(ws2, "table:public.legacy")).toBe("public.legacy.md");
+
+    // So does one whose name is the same file on a case-insensitive filesystem.
+    rmSync(join(schemaDir, "tables"), { recursive: true });
+    writeSchema([table("public", "straße")]);
+    writeFileSync(join(schemaDir, "tables/STRASSE.md"), tableMd("public", "gone", "Orphan."), "utf8");
+    expect(filenameOf(loadWorkspace(schemaDir), "table:public.straße")).toBe("public.straße.md");
   });
 
   it("sanitizes identifiers so default filenames stay inside tables/", () => {
@@ -462,14 +477,8 @@ describe("workspace table filenames", () => {
     for (const t of ws.tables) {
       expect(t.filename).not.toMatch(/[/\\\u0000]/);
       expect(t.filename.startsWith(".")).toBe(false);
-      saveTable(
-        ws,
-        t.physical.id,
-        { id: t.physical.id, name: t.physical.name, schemaId: "fname" },
-        buildDefaultTableBody("x", "Described."),
-      );
     }
-    expect(readdirSync(join(schemaDir, "tables"))).toHaveLength(4);
+    saveAllAndReload(ws);
     expect(readdirSync(tmp)).toEqual(["fname.schema"]);
     expect(readdirSync(schemaDir).sort()).toEqual(["schema.json", "tables"]);
   });
@@ -485,5 +494,48 @@ describe("workspace table filenames", () => {
       );
     }
     expect(readdirSync(tmp)).toEqual(["fname.schema"]);
+  });
+
+  it("saveTable refuses to write through a symbolic link in tables/", () => {
+    writeSchema([table("public", "orders")]);
+    const ws = loadWorkspace(schemaDir);
+    const outside = join(tmp, "outside.md");
+    writeFileSync(outside, "untouched\n", "utf8");
+    // Planted after load, as a long-running Studio session would meet it.
+    symlinkSync(outside, join(schemaDir, "tables", "orders.md"));
+
+    expect(() => saveDescribed(ws, "table:public.orders")).toThrow(/outside tables\/.*symbolic link/);
+    expect(readFileSync(outside, "utf8")).toBe("untouched\n");
+  });
+
+  it("saveTable refuses to write when tables/ is a symbolic link", () => {
+    writeSchema([table("public", "orders")]);
+    rmSync(join(schemaDir, "tables"), { recursive: true });
+    const elsewhere = join(tmp, "elsewhere");
+    mkdirSync(elsewhere);
+    symlinkSync(elsewhere, join(schemaDir, "tables"));
+    const ws = loadWorkspace(schemaDir);
+
+    expect(() => saveDescribed(ws, "table:public.orders")).toThrow(/outside tables\/.*symbolic link/);
+    expect(readdirSync(elsewhere)).toEqual([]);
+  });
+
+  it("shortens default filenames that would exceed file system name limits", () => {
+    // SQL Server allows 128-character identifiers, so a schema-qualified name can be
+    // 260 bytes, and 128 CJK characters are 384 bytes even unqualified. Most file
+    // systems cap one name at 255 bytes.
+    const long = "n".repeat(128);
+    writeSchema([
+      table("s".repeat(128), long),
+      table("x".repeat(128), long),
+      table("public", "表".repeat(128)),
+    ]);
+    const ws = loadWorkspace(schemaDir);
+    for (const t of ws.tables) {
+      expect(Buffer.byteLength(t.filename.normalize("NFD"))).toBeLessThanOrEqual(200);
+      expect(t.filename).toMatch(/~[0-9a-f]{8}\.md$/);
+    }
+    expect(filenameOf(ws, `table:${"s".repeat(128)}.${long}`)).toMatch(/^s{128}\.n+~/);
+    saveAllAndReload(ws);
   });
 });
