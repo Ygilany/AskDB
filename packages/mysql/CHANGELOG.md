@@ -1,5 +1,44 @@
 # @askdb/mysql
 
+## 0.1.0-beta.18
+
+### Minor Changes
+
+- 5dbe2d6: **MySQL/MariaDB: introspect several databases at once.**
+
+  **@askdb/mysql**: The MySQL connector honors `filters.schemas` as a list of databases (MySQL's "schemas"). Each listed database becomes its own namespace in the artifact (`table:sales.orders`), and foreign keys that cross databases keep the referenced database. `filters.excludeSchemas` removes entries from the list. Before this change the connector read only the connection's database (`DATABASE()`) and silently ignored `filters.schemas`. Without a list, behavior is unchanged: the connection's database is read and rendered under the `public` namespace. The exported `MYSQL_CATALOG_SQL` strings now also select `table_schema` (and `referenced_table_schema` for foreign keys).
+
+  **@askdb/config**: New `introspection.schemas?: string[]`, the config equivalent of `askdb introspect --schemas`, for every provider (on MySQL/MariaDB, the databases to introspect). Runtime config exposes it as `introspection.schemas`.
+
+  **askdb**: `askdb introspect` reads `introspection.schemas` from config for any engine; `--schemas` overrides it.
+
+  **@askdb/studio**: Resync passes the configured schema list to the connector, so it matches `askdb introspect`.
+
+### Patch Changes
+
+- ab2150b: Bump dependencies: AI SDK (`ai` 7.0.113, `@ai-sdk/*` 4.0.x), zod 4.6, mysql2 3.24, pg 8.23, @prisma/internals 7.10, @inquirer/prompts 8.7, React 19.3 and Vite 8.3 for Studio, and vitest 5 across the workspace.
+- 2787b21: Release packaging fixes:
+
+  - Ship `LICENSE` and `NOTICE` in `@askdb/ai`, `@askdb/ai-anthropic`, `@askdb/ai-azure`, `@askdb/ai-google`, `@askdb/ai-openai`, `@askdb/mysql`, `@askdb/sqlite`, and `@askdb/sqlserver` (they were listed in `files` but missing from the tarballs).
+  - `@askdb/studio`: React, Radix UI, lucide-react, react-router, clsx, tailwind-merge, and class-variance-authority are bundled into the prebuilt browser client, so they are now dev dependencies and are no longer installed with the package.
+  - Add `"sideEffects": false` to library packages (`@askdb/rag` lists its bin entry as side-effectful), and point `homepage` at the relevant askdb.tools page.
+  - Package READMEs no longer link to repo-relative paths that npmjs.com cannot resolve.
+
+- Updated dependencies [1338535]
+- Updated dependencies [70a9513]
+- Updated dependencies [ad9c9e5]
+- Updated dependencies [1338535]
+- Updated dependencies [764ec32]
+- Updated dependencies [ab2150b]
+- Updated dependencies [5e89384]
+- Updated dependencies [2787b21]
+- Updated dependencies [cb7dec5]
+- Updated dependencies [8410840]
+- Updated dependencies [41f1ed6]
+  - @askdb/core@1.0.0-beta.43
+  - @askdb/connectors@0.1.0-beta.8
+  - @askdb/introspect@0.3.0-beta.17
+
 ## 0.1.0-beta.17
 
 ### Minor Changes
