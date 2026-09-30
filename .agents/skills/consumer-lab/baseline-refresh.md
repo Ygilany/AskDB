@@ -9,7 +9,7 @@ The lab's committed `package.json`, `pnpm-workspace.yaml` and `pnpm-lock.yaml` p
 3. Run `git status --short examples/consumer-lab`. Exactly the three files may change. No change at all means the baseline already is `npm:latest`: stop, there is nothing to refresh.
 4. Review the diff, which must be small enough to read:
    - `package.json`: only the AskDB direct dependencies' versions move. Third-party pins (drivers, `ai`, `@ai-sdk/openai`, `zod`, dev tools) stay as they are.
-   - `pnpm-workspace.yaml`: only the lines between `# lab:use overrides begin` and `# lab:use overrides end` change, and the header still reads `# lab:use target: npm:latest`. The hand-written overrides above it (such as `deepmerge-ts`) and `allowBuilds` are untouched.
+   - `pnpm-workspace.yaml`: only the lines between `# lab:use overrides begin` and `# lab:use overrides end` change, and the header still reads `# lab:use target: npm:latest`. The hand-written overrides above it (such as `deepmerge-ts`), `allowBuilds` and `minimumReleaseAgeExclude` are untouched. If pnpm added versioned entries to `minimumReleaseAgeExclude`, or indented the `# lab:use` comments, it rewrote the file because a version younger than a day wasn't excluded ([release age](../../../examples/consumer-lab/README.md#how-labuse-pins-the-target)): don't commit that.
    - `pnpm-lock.yaml`: `git diff --stat` and a read of the hunks show AskDB packages at their new versions, plus only the transitive packages those versions add, drop or move.
    - `grep -n "file:" examples/consumer-lab/package.json examples/consumer-lab/pnpm-workspace.yaml examples/consumer-lab/pnpm-lock.yaml` prints nothing: no tarball path is committed.
 
