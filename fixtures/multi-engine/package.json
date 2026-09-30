@@ -18,7 +18,7 @@
   "dependencies": {
     "better-sqlite3": "^12.10.0",
     "mssql": "^12.5.5",
-    "mysql2": "^3.22.5",
+    "mysql2": "^3.24.5",
     "pg": "^8.21.0"
   },
   "devDependencies": {
