@@ -548,9 +548,9 @@ export async function ask(options: AskPipelineOptions): Promise<AskPipelineResul
 
 /**
  * Replace a `subtree` access with the per-root access it expands to: `multi_root`
- * with one entry per root that has IDs (the scope's root first, then its descendant
- * roots breadth-first), or `ids` when only the scope's root has IDs. Other access
- * kinds pass through untouched.
+ * with one entry per root the subtree covers (the scope's root first, then its
+ * descendant roots breadth-first), including a level with no IDs (`ids: []`), or `ids`
+ * when the subtree is the scope's root alone. Other access kinds pass through untouched.
  *
  * Each root's IDs stay under that root, so they bind only to its own placeholder:
  * root tables have separate ID spaces, and folding a client ID into the agency
@@ -636,10 +636,14 @@ async function expandSubtreeScope(
     );
   }
 
-  const scopes = levels.flatMap((root) => {
+  // Every level the subtree covers stays in the scope, even one with no IDs. The
+  // guardrail then checks a read of that root on its own placeholder, and binding that
+  // placeholder fails closed (UNRESOLVED_TENANT_PLACEHOLDER). Dropping the level would
+  // leave its rows readable through a parent's foreign key or an ancestor, which is
+  // less restricted than a level the resolver narrowed to some IDs.
+  const scopes = levels.map((root) => {
     const own = idsByRoot.get(root) ?? [];
-    const ids = [...new Set(root === tenantRoot ? [...rootIds, ...own] : own)];
-    return ids.length > 0 ? [{ tenantRoot: root, ids }] : [];
+    return { tenantRoot: root, ids: [...new Set(root === tenantRoot ? [...rootIds, ...own] : own)] };
   });
   const expanded: TenantAccess =
     scopes.length === 1 ? { kind: "ids", ...scopes[0]! } : { kind: "multi_root", scopes };

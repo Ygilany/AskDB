@@ -3,6 +3,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it, vi } from "vitest";
 import { ask, type AskDialect } from "./ask.js";
+import { placeholderForTenantRoot } from "./index.js";
 import {
   AskDbError,
   SchemaParseError,
@@ -1197,6 +1198,75 @@ describe("ask — subtree tenant scope expansion", () => {
 
     expect(error).toBeInstanceOf(TenantGuardrailError);
     expect((error as TenantGuardrailError).warnings.map((w) => [w.rule, w.tableId])).toEqual(warnings);
+  });
+
+  // A level the resolver returns no IDs for is still covered by the subtree: reading
+  // it must fail closed, not be less restricted than a level that has IDs (#375
+  // review). Without the level in the scope, the guardrail never checked the root, so
+  // filtering it only through its parent's key (or an ancestor) returned its rows.
+  it.each([
+    {
+      name: "an empty child level filtered only by its parent's foreign key",
+      resolved: { [agencies]: ["1"], [subAgencies]: ["5"] },
+      sql: "SELECT c.email FROM clients c WHERE c.sub_agency_id IN (:tenant_sub_agency_ids)",
+      warnings: [["MISSING_TENANT_PREDICATE", clients]],
+    },
+    {
+      name: "empty child levels reached only through the agency",
+      resolved: { [agencies]: ["1"] },
+      sql:
+        "SELECT a.id FROM appointments a JOIN clients c ON a.client_id = c.id " +
+        "JOIN sub_agencies s ON c.sub_agency_id = s.id WHERE s.agency_id IN (:tenant_agency_ids)",
+      warnings: [
+        ["MISSING_TENANT_PREDICATE", subAgencies],
+        ["MISSING_TENANT_PREDICATE", clients],
+      ],
+    },
+  ])("rejects reading $name (strict)", async ({ resolved, sql, warnings }) => {
+    const error = await ask({
+      question: "list rows",
+      schema,
+      model: fakeModel,
+      dialect: sqlDialect(sql),
+      tenantScope: agencySubtree,
+      resolveTenantDescendants: () => resolved,
+    }).catch((e: unknown) => e);
+
+    expect(error).toBeInstanceOf(TenantGuardrailError);
+    expect((error as TenantGuardrailError).warnings.map((w) => [w.rule, w.tableId])).toEqual(warnings);
+  });
+
+  // The guardrail must look for the placeholder the prompt and the binder use. For a
+  // root labelled without ASCII letters or digits that is the table-name placeholder,
+  // so SQL written with `placeholderForTenantRoot(root)` passes: on the root table
+  // itself, a scoped table joined to it, and a polymorphic table.
+  it.each([
+    "SELECT id FROM clients WHERE id IN (:tenant_clients_ids)",
+    "SELECT a.id FROM appointments a JOIN clients c ON a.client_id = c.id WHERE c.id IN (:tenant_clients_ids)",
+    "SELECT id FROM notes WHERE owner_type = 'client' AND owner_id IN (:tenant_clients_ids)",
+  ])("accepts %s for a root labelled in Cyrillic (strict)", async (sql) => {
+    const policy = schema.tenantPolicy!;
+    const cyrillic = {
+      ...schema,
+      tenantPolicy: {
+        ...policy,
+        roots: policy.roots.map((root) => (root.id === clients ? { ...root, label: "Клиент" } : root)),
+      },
+    };
+    const clientRoot = cyrillic.tenantPolicy.roots.find((root) => root.id === clients)!;
+    expect(placeholderForTenantRoot(clientRoot)).toBe(":tenant_clients_ids");
+
+    const result = await ask({
+      question: "list client rows",
+      schema: cyrillic,
+      model: fakeModel,
+      dialect: sqlDialect(sql),
+      tenantScope: agencySubtree,
+      resolveTenantDescendants: () => ({ [agencies]: ["1"], [subAgencies]: ["5"], [clients]: ["5"] }),
+    });
+
+    expect(result.tenantGuardrail?.passed).toBe(true);
+    expect(result.sql).toBe(sql.replace(":tenant_clients_ids", "'5'"));
   });
 
   // Regression guard for silent under-scoping: without a resolver there is no

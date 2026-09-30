@@ -116,7 +116,41 @@ describe("buildTenantPromptBlock", () => {
         "    - Client IDs = :tenant_client_ids",
         "      columns: table:public.clients#id, table:public.notes#owner_id (where table:public.notes#owner_type = 'client')",
         "  The same ID value can name different tenants in different root tables: never compare one root's placeholder with another root's column.",
-        "  A root table listed here that the query reads must itself be filtered with its own placeholder, even when a joined ancestor is filtered too.",
+        "  A root table listed here that the query reads must itself be filtered with its own placeholder; " +
+          "filtering it only through its parent's foreign key or a joined ancestor is not enough.",
+        "",
+      ].join("\n"),
+    );
+  });
+
+  // Under an expanded subtree every level is in the scope, and the guardrail checks each
+  // as a root table: filtering `clients` by `sub_agency_id` is rejected. So the column
+  // list mustn't offer a child root's foreign key when that child is itself in the scope,
+  // and the closing line says why (#375 review). Empty levels are listed as having no IDs.
+  it("omits a covered child root's foreign key from its parent's columns", () => {
+    const scope: TenantScope = {
+      access: {
+        kind: "multi_root",
+        scopes: [
+          { tenantRoot: "table:public.agencies", ids: ["1"] },
+          { tenantRoot: "table:public.sub_agencies", ids: ["5"] },
+          { tenantRoot: "table:public.clients", ids: [] },
+        ],
+      },
+    };
+    const block = buildTenantPromptBlock(policy, scope);
+    expect(block).toContain(
+      [
+        "    - Agency IDs = :tenant_agency_ids",
+        "      columns: table:public.agencies#id, table:public.orders#agency_id, " +
+          "table:public.campaigns#owning_agency, table:public.notes#owner_id (where table:public.notes#owner_type = 'agency')",
+        "    - Sub-Agency IDs = :tenant_sub_agency_ids",
+        "      columns: table:public.sub_agencies#id, table:public.notes#owner_id (where table:public.notes#owner_type = 'sub_agency')",
+        "    - Client IDs = :tenant_client_ids (no IDs in this scope: don't read this table)",
+        "      columns: table:public.clients#id, table:public.notes#owner_id (where table:public.notes#owner_type = 'client')",
+        "  The same ID value can name different tenants in different root tables: never compare one root's placeholder with another root's column.",
+        "  A root table listed here that the query reads must itself be filtered with its own placeholder; " +
+          "filtering it only through its parent's foreign key or a joined ancestor is not enough.",
         "",
       ].join("\n"),
     );

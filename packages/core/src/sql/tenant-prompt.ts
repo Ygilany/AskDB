@@ -102,18 +102,22 @@ export function buildTenantPromptBlock(
         "  Access: multiple roots. Each placeholder holds the IDs of one tenant root; " +
           "compare it only with the columns listed under it:",
       );
+      // The tenant guardrail checks every root the scope names as a root table (#341), so a
+      // child root in the scope can't be filtered through its parent's foreign key: don't
+      // offer that column under the parent's placeholder.
+      const covered = new Set(access.scopes.map((s) => s.tenantRoot));
       for (const s of access.scopes) {
         const rootLabel = policy.roots.find((r) => r.id === s.tenantRoot)?.label ?? s.tenantRoot;
-        lines.push(`    - ${rootLabel} IDs = ${placeholderForTenantRoot({ id: s.tenantRoot, label: rootLabel })}`);
-        const columns = columnsHoldingRootIds(policy, s.tenantRoot);
+        // A level an expanded subtree covers with no IDs: its placeholder binds nothing.
+        const empty = s.ids.length === 0 ? " (no IDs in this scope: don't read this table)" : "";
+        lines.push(`    - ${rootLabel} IDs = ${placeholderForTenantRoot({ id: s.tenantRoot, label: rootLabel })}${empty}`);
+        const columns = columnsHoldingRootIds(policy, s.tenantRoot, covered);
         if (columns.length > 0) lines.push(`      columns: ${columns.join(", ")}`);
       }
       lines.push(NEVER_CROSS_ROOTS);
-      // The tenant guardrail checks every root table the scope covers on its own (#341),
-      // so a query that joins such a root must filter it with its own placeholder too.
       lines.push(
-        "  A root table listed here that the query reads must itself be filtered with its own placeholder, " +
-          "even when a joined ancestor is filtered too.",
+        "  A root table listed here that the query reads must itself be filtered with its own placeholder; " +
+          "filtering it only through its parent's foreign key or a joined ancestor is not enough.",
       );
       break;
     }
@@ -164,12 +168,17 @@ export function buildTenantPromptBlock(
 /**
  * The columns whose values are IDs of `rootId`, per the policy, in a stable order:
  * the root's own `tenantIdColumn`; each child root's foreign key to it
- * (`roots[].parent`, `hierarchy[]`); each scoped table's direct column for it;
+ * (`roots[].parent`, `hierarchy[]`), unless that child is in `coveredRoots` (the guardrail
+ * checks a covered child on its own placeholder); each scoped table's direct column for it;
  * and each polymorphic ID column, with the discriminator value that points at it.
  * A table scoped through a join path is filtered on the root's own column after
  * the join, as the join-path lines of the prompt say, so it adds no column here.
  */
-function columnsHoldingRootIds(policy: NormalizedTenantPolicy, rootId: string): string[] {
+function columnsHoldingRootIds(
+  policy: NormalizedTenantPolicy,
+  rootId: string,
+  coveredRoots: ReadonlySet<string> = new Set(),
+): string[] {
   const root = policy.roots.find((r) => r.id === rootId);
   const columns: string[] = [];
   const add = (column: string) => {
@@ -177,10 +186,10 @@ function columnsHoldingRootIds(policy: NormalizedTenantPolicy, rootId: string): 
   };
   if (root) add(root.tenantIdColumn);
   for (const child of policy.roots) {
-    if (child.parent?.root === rootId) add(child.parent.foreignKey);
+    if (child.parent?.root === rootId && !coveredRoots.has(child.id)) add(child.parent.foreignKey);
   }
   for (const edge of policy.hierarchy) {
-    if (edge.parent === rootId) add(edge.foreignKey);
+    if (edge.parent === rootId && !coveredRoots.has(edge.child)) add(edge.foreignKey);
   }
   for (const st of policy.scopedTables) {
     for (const path of st.scopeThrough) {
