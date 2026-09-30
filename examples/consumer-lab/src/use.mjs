@@ -6,7 +6,7 @@
  *   pnpm lab:use .                    tarballs packed from this checkout
  *   pnpm lab:use <path>               tarballs packed from another checkout
  *   pnpm lab:use git:<ref>            tarballs packed from a branch, tag or commit (temporary worktree)
- *   pnpm lab:use npm:<dist-tag>       published packages under a dist-tag, e.g. npm:beta, npm:latest
+ *   pnpm lab:use npm:<dist-tag>       published packages under a dist-tag, e.g. npm:latest
  *   pnpm lab:use npm:askdb@<version>  a published CLI release and the exact @askdb/* versions it depends on
  *   pnpm lab:use --if-needed .        keep a verified install that is still current or that lab:use chose (used by lab:up)
  *   pnpm lab:use --check              re-verify the current install against its recorded target
