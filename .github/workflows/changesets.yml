@@ -1,7 +1,7 @@
 name: Changesets
 
 # Validate that any PR touching publishable sources includes a changeset entry.
-# Publishing itself remains a maintainer step (see release.yml).
+# Publishing is automated in release.yml (see docs/release.md).
 #
 # Runs on every PR (no workflow-level `paths:` filter) so the `status` check
 # always reports and can be a required status check in the `main` ruleset.
@@ -22,12 +22,20 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
+      # The Version PR that release.yml opens applies the pending changesets, so it
+      # changes every bumped package.json but adds no changeset, and
+      # `changeset status --since` fails on it by design. Skip the check there (the job
+      # still reports success). Only a branch pushed to this repo counts, not a fork's.
       - name: Detect changes to publishable sources
         id: changes
         env:
           BASE_REF: ${{ github.base_ref }}
+          IS_VERSION_PR: ${{ github.head_ref == 'changeset-release/main' && github.event.pull_request.head.repo.full_name == github.repository }}
         run: |
-          if git diff --name-only "origin/${BASE_REF}...HEAD" \
+          if [ "${IS_VERSION_PR}" = "true" ]; then
+            echo "publishable=false" >> "$GITHUB_OUTPUT"
+            echo "Version PR: its changesets are already applied; no new changeset required."
+          elif git diff --name-only "origin/${BASE_REF}...HEAD" \
             | grep -Eq '^packages/[^/]+/(src/|package\.json$)|^apps/(cli|http-api|studio)/(src/|package\.json$)'; then
             echo "publishable=true" >> "$GITHUB_OUTPUT"
           else
