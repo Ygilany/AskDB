@@ -17,7 +17,7 @@
  * Needs the `cli-introspect-engine` capability: a target whose `askdb introspect --help`
  * doesn't list `--engine` reports `n/a (capability: cli-introspect-engine)` instead of
  * failing. A CLI that can't print help at all (missing, crashing, or unable to read the
- * lab's config, as the stale `npm:beta` does, #267) fails.
+ * lab's config, as the May 2026 `0.5.0-beta` CLI does, #267) fails.
  *
  * Needs the fixture (`pnpm fixture:up`) and an installed lab (`pnpm lab:use .`). It
  * fails, rather than skips, when either is missing.

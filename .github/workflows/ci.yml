@@ -150,8 +150,19 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      # Each package's vitest run records its counts in ASKDB_TEST_SUMMARY_DIR
+      # (scripts/test-utils/summary-reporter.mjs); the next step renders one table.
       - name: Build + unit tests
         run: pnpm test
+        env:
+          ASKDB_TEST_SUMMARY_DIR: ${{ runner.temp }}/test-summary
+
+      - name: Test summary
+        if: always()
+        env:
+          ASKDB_TEST_SUMMARY_DIR: ${{ runner.temp }}/test-summary
+          TITLE: Unit tests (Node ${{ matrix.node }})
+        run: node scripts/test-summary.mjs "$TITLE" >> "$GITHUB_STEP_SUMMARY"
 
   # ── 2. Test ───────────────────────────────────────────────────────────────
   # Runs unit + integration tests. Turbo replays build outputs from cache so
@@ -259,6 +270,14 @@ jobs:
 
       - name: Run unit + integration tests
         run: pnpm test
+        env:
+          ASKDB_TEST_SUMMARY_DIR: ${{ runner.temp }}/test-summary
+
+      - name: Test summary
+        if: always()
+        env:
+          ASKDB_TEST_SUMMARY_DIR: ${{ runner.temp }}/test-summary
+        run: node scripts/test-summary.mjs "Unit + integration tests" >> "$GITHUB_STEP_SUMMARY"
 
   # ── 3. Preflight ──────────────────────────────────────────────────────────
   # Release smoke test + publish dry-run. Runs in parallel with `test` so

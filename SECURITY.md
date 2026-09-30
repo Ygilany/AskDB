@@ -6,7 +6,7 @@ The one exception is AskDB Studio's Playground **Execute** action, a local devel
 
 ## Reporting a Vulnerability
 
-Please report suspected security issues privately by opening a GitHub security advisory for this repository, if available. If private advisories are unavailable, open a minimal public issue that says you have a security report without including exploit details.
+Please report suspected security issues privately by opening a GitHub security advisory through the [Private vulnerability reporting](https://github.com/Ygilany/AskDB/security/advisories/new)
 
 Include:
 
