@@ -63,8 +63,8 @@ The maintainer does these once, before the first automated publish:
 
 1. **GitHub App.** Create a private App on the `Ygilany` account with repository permissions *Contents: Read and write* and *Pull requests: Read and write*, and install it on `Ygilany/AskDB` only. Store its client ID as the Actions variable `RELEASE_APP_CLIENT_ID` and a private key as the Actions secret `RELEASE_APP_PRIVATE_KEY`.
 2. **Environment.** Settings → Environments → `npm-publish`: add yourself as required reviewer, and limit deployment branches to `main`.
-3. **Trusted publisher, per package.** On npmjs.com, for each of the 20 public packages (the non-private ones in `pnpm -r ls --depth -1`): Settings → Trusted publisher → GitHub Actions, with owner `Ygilany`, repository `AskDB`, workflow `release.yml`, environment `npm-publish`.
-4. **After the first automated publish succeeds**, set each package's *Publishing access* to "Require two-factor authentication and disallow tokens".
+3. **Trusted publisher, per package.** On npmjs.com, for each of the 20 public packages (the non-private ones in `pnpm -r ls --depth -1`): package → Settings → Trusted publishing → GitHub Actions. Fill in *Organization or user* `Ygilany`, *Repository* `AskDB`, *Workflow filename* `release.yml` (file name only, no path) and *Environment name* `npm-publish`. Under *Allowed actions*, include `npm publish`, not only `npm stage publish`: the workflow publishes directly. Every field is case-sensitive and must match exactly. A saved configuration can't be edited, only deleted and re-created. Each package's `repository.url` must match the GitHub repository; all 20 have `git+https://github.com/Ygilany/AskDB.git`.
+4. **After the first automated publish succeeds**, on each package go to Settings → Publishing access, select "Require two-factor authentication and disallow tokens", and click *Update Package Settings*. Trusted publishing keeps working, but hand publishing with a token (like the granular token used on 2026-09-29) stops working.
 
 ## Publishing by Hand
 

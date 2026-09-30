@@ -23,7 +23,8 @@ name: Release
 # - npm auth is trusted publishing (OIDC): no npm token is stored anywhere. Only
 #   `publish` has `id-token: write`, and it runs in the `npm-publish` environment
 #   (required reviewer, `main` only). pnpm 11 does the OIDC exchange itself, and adds
-#   provenance because the repo and the packages are public.
+#   provenance because the repo and the packages are public. Each package's trusted
+#   publisher on npmjs.com must name this file (`release.yml`) and that environment.
 # - Betas publish under the `latest` dist-tag (`--tag latest`), not the `beta` tag from
 #   `.changeset/pre.json`, so `npm install askdb` gets the newest beta. That's why this
 #   runs `pnpm -r publish` and not `changeset publish`, which would use the `beta` tag.
@@ -145,8 +146,12 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
-          node-version: 22
+          # What npm's trusted-publishing docs require (Node >= 22.14, npm >= 11.5.1,
+          # registry-url). pnpm does the OIDC exchange itself, but this keeps the job
+          # on the documented setup.
+          node-version: 24
           cache: pnpm
+          registry-url: https://registry.npmjs.org
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
