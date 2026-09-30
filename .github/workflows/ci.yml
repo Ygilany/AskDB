@@ -14,10 +14,29 @@ permissions:
   contents: read
 
 jobs:
+  # TRIAL (do not merge): what the Ubuntu 26.04 image ships that CI relies on.
+  runner-diagnostics:
+    runs-on: ubuntu-26.04
+    steps:
+      - name: Runner image and tools
+        run: |
+          set -x
+          cat /etc/os-release
+          uname -r
+          echo "ImageOS=${ImageOS:-} ImageVersion=${ImageVersion:-}"
+          ldd --version | head -1
+          openssl version
+          docker version --format '{{.Server.Version}}'
+          docker compose version
+          jq --version
+          git --version
+          node --version
+          python3 --version
+
   # ── 1. Build ──────────────────────────────────────────────────────────────
   # Compiles all packages and seeds the Turbo cache for downstream jobs.
   build:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -54,7 +73,7 @@ jobs:
   # upstream `build` outputs (`lint` depends on `^build`) from the cache.
   lint:
     needs: build
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -89,7 +108,7 @@ jobs:
   # advisories live in .audit-ci.json; each one needs a written rationale in
   # CONTRIBUTING.md ("Dependency audit"). Independent of the build.
   audit:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -120,7 +139,7 @@ jobs:
   # owns integration coverage (on Node 22) so DB services aren't paid for twice.
   unit-node-matrix:
     name: unit (Node ${{ matrix.node }})
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     strategy:
       fail-fast: false
       matrix:
@@ -169,7 +188,7 @@ jobs:
   # packages are not rebuilt. DB services start in parallel with job setup.
   test:
     needs: build
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
 
     services:
       # pgvector/pgvector is stock Postgres 16 plus the `vector` extension, so the same
@@ -286,7 +305,7 @@ jobs:
   # safety net for any direct `pnpm build` calls.
   preflight:
     needs: build
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -331,7 +350,7 @@ jobs:
   # not a workflow-level `paths:`: a skipped job reports success, so this check
   # can be made required without blocking docs-only PRs (see changesets.yml).
   lab-changes:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     outputs:
       lab: ${{ steps.changes.outputs.lab }}
     steps:
@@ -367,7 +386,7 @@ jobs:
   consumer-lab:
     needs: [build, lab-changes]
     if: needs.lab-changes.outputs.lab == 'true'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 25
     env:
       ASKDB_FIXTURE_HOST: 127.0.0.1
