@@ -16,7 +16,7 @@ pnpm lab:up                          # start and seed the fixture; install `.` u
 pnpm lab:use .                       # pack this checkout's publishable packages and install them
 pnpm lab:use ../other-checkout       # …or another checkout's
 pnpm lab:use git:origin/main         # …or a branch, tag or commit's (built in a temporary worktree)
-pnpm lab:use npm:latest              # published packages under a dist-tag (npm:beta, …)
+pnpm lab:use npm:latest              # published packages under a dist-tag
 pnpm lab:use npm:askdb@1.0.0-beta.40 # a published CLI release and the @askdb/* versions it depends on
 pnpm lab:use --check                 # re-verify the current install against its target
 pnpm lab ask --db mysql "How many active programs does each agency run?"
@@ -266,7 +266,7 @@ It covers the `POST /ask` success shape on every dialect, and on Postgres one ca
 
 - **Don't commit the three files after `.`, a path or `git:`**: they hold `file:` tarball paths. Don't commit them after another npm target either.
 - **To refresh the baseline** after a release ships, run `pnpm lab:use npm:latest` and commit the three files.
-- `npm:beta` still works as a target, but the `beta` dist-tags are stale (#267): its CLI can't read the lab's `askdb.config.ts`, so `pnpm lab:test` fails against it.
+- There is no `beta` dist-tag: it was removed from every package on 2026-09-29 (#267), so `pnpm lab:use npm:beta` stops with `no AskDB package is published under the "beta" dist-tag`. Prereleases are on `latest` until the RC line (#354) publishes under `rc`.
 - The lab's typecheck (`pnpm -C examples/consumer-lab lint`) is against the installed target too, so run it after `pnpm lab:use .`.
 
 The lab sets no `minimumReleaseAge`, and it doesn't inherit the monorepo's (it is its own pnpm root). pnpm 11.22 applies no release-age delay without that setting (checked by installing a package published six hours earlier into a standalone pnpm root), so a just-published release installs straight away. If a later pnpm adds a default, add `minimumReleaseAgeExclude: ["askdb", "@askdb/*"]` to the lab's `pnpm-workspace.yaml`.
