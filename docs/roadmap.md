@@ -210,7 +210,7 @@ Early phases intentionally stay **Postgres-only** so execution and guardrails st
 
 - Harden policy composition across surfaces, database engines, and report-generation modes.
 - Support richer tenant-policy authoring, audit output, and host integration hooks for production access-control systems.
-- When metadata/policies define **tenant scope**, query generation requires a scope and prompts the model to filter by it, and tenant placeholders the model writes are bound to the scope's IDs. The tenant check rejects the common unscoped shapes (a literal ID, a column that's only selected, an `OR`-widened predicate), but it doesn't prove scoping: within one query block it doesn't tie a predicate to a particular table reference. Execution paths enforce tenancy in the database (row-level security or equivalent) ([ADR 0012](adrs/0012-sql-checks-are-defense-in-depth.md)).
+- When metadata/policies define **tenant scope**, query generation requires a scope and prompts the model to filter by it, and tenant placeholders the model writes are bound to the scope's IDs. The tenant check rejects the common unscoped shapes (a literal ID, a column that's only selected, an `OR`-widened predicate), but it doesn't prove scoping: anywhere in one statement, including its CTEs, derived tables and subqueries, it doesn't tie a predicate to a particular table reference, so a filtered CTE can cover an unfiltered outer read of the same table (#399). Execution paths enforce tenancy in the database (row-level security or equivalent) ([ADR 0012](adrs/0012-sql-checks-are-defense-in-depth.md)).
 
 ## Phase 14 — MCP server surface
 
