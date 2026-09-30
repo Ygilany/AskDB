@@ -33,7 +33,7 @@ export type ValidateTenantGuardrailsOptions = {
 };
 
 /**
- * Validate generated SQL against the tenant policy and runtime scope.
+ * Best-effort lint of generated SQL against the tenant policy and runtime scope.
  *
  * Pass the SQL **before** tenant substitution: the model's statement, with the
  * `:tenant_<root>_ids` placeholders still in place. That is the untrusted input;
@@ -56,6 +56,11 @@ export type ValidateTenantGuardrailsOptions = {
  * to one table reference, so an unfiltered reference beside a filtered one can
  * still pass; database-side row-level security is the sound boundary.
  *
+ * **This is not a security boundary.** Its purpose is to catch model mistakes
+ * (a forgotten or widened tenant filter, an unclassified table) early and
+ * cheaply. Real tenant isolation must come from the database (for example
+ * row-level security) or from the host applying the tenant predicate itself.
+ *
  * Identifiers are matched only in code regions: text inside string literals and
  * comments never counts as a table reference or a tenant predicate. Regions are
  * read the way `options.dialect` reads them. Without a dialect (a custom
@@ -68,8 +73,8 @@ export type ValidateTenantGuardrailsOptions = {
  * passed. A tenant placeholder counts only in its exact lowercase form, the only
  * form `resolveTenantSql()` substitutes.
  *
- * In `strict` mode, throws `TenantGuardrailError` on failure.
- * In `warn` mode, returns warnings without throwing.
+ * `global` scope skips the check. In `strict` mode, throws `TenantGuardrailError`
+ * when the check finds a problem. In `warn` mode, returns warnings without throwing.
  */
 export function validateTenantGuardrails(
   sql: string,

@@ -9,9 +9,9 @@ Machine-readable docs indexes:
 
 ## What AskDB is
 
-AskDB is a library, not a service. `ask({ question, schema, model, dialect })` from `@askdb/core` takes a schema artifact (physical structure plus human-authored enrichment) and a Vercel AI SDK `LanguageModel`, and returns validated SQL. It never executes SQL — your app runs it through its own connection, under its own database role, timeouts, and approval flow.
+AskDB is a library, not a service. `ask({ question, schema, model, dialect })` from `@askdb/core` takes a schema artifact (physical structure plus human-authored enrichment) and a Vercel AI SDK `LanguageModel`, and returns SQL that has passed heuristic checks. It never executes SQL — your app runs it through its own connection, under its own database role, timeouts, and approval flow.
 
-One pipeline, several surfaces: the `askdb` CLI, the `@askdb/client` / `@askdb/core` library, `@askdb/http-api`, and Studio (the local schema-authoring UI) all share the same generation and validation logic. Whichever surface you wrap, you get the same guarantees.
+One pipeline, several surfaces: the `askdb` CLI, the `@askdb/client` / `@askdb/core` library, `@askdb/http-api`, and Studio (the local schema-authoring UI) all share the same generation and validation logic. Whichever surface you wrap, the same SQL checks run.
 
 ## The package landscape
 
@@ -45,7 +45,7 @@ AskDB is a workspace of small, layered packages — install only what your use c
 - AskDB returns SQL; it never executes it. Don't wire generated SQL to a database call without a review/approval step the host app controls.
 - Tenant scope comes from the host application's own auth context — never from user input or from anything an agent decides on its own. AskDB validates and binds the scope you supply; it doesn't know who's asking.
 - Sensitive columns (`sensitive: true` in the schema artifact) can be tagged in the prompt (default) or omitted entirely (`--omit-sensitive-from-prompt`) — either way, the underlying *values* never enter the prompt, only the schema metadata.
-- See `/concepts/safety-boundaries/` for the full validator ruleset (read-only, single statement, no system schemas, tenant filters) and `/concepts/privacy-model/` for exactly what does and doesn't cross the boundary to the model.
+- See `/concepts/safety-boundaries/` for what the SQL checks cover and don't (they are heuristic defense in depth, not a security boundary; run generated SQL under a read-only, least-privilege role) and `/concepts/privacy-model/` for exactly what does and doesn't cross the boundary to the model.
 
 ## Going deeper
 

@@ -31,7 +31,7 @@ With **omission** mode, the model may **not** see withheld identifiers and may i
 
 ## Enforcement path: `validateSensitiveReferences`
 
-`@askdb/core` exports `validateSensitiveReferences(sql, schema, options?)` — the **enforcement** counterpart to the prompt-level flags above. It inspects a SQL string against the schema artifact and reports every `sensitive` table/column it references, regardless of whether the names were tagged, omitted, or never shown to a model at all.
+`@askdb/core` exports `validateSensitiveReferences(sql, schema, options?)` — the **enforcement** counterpart to the prompt-level flags above. It inspects a SQL string against the schema artifact and reports the `sensitive` tables/columns it can see the statement referencing — sensitive columns named explicitly (qualified or unqualified) and sensitive tables used as a `FROM`/`JOIN` target — regardless of whether the names were tagged, omitted, or never shown to a model at all. Wildcards (`SELECT *`, `t.*`) and whole-row references count as referencing every sensitive column of the table they reach (see below).
 
 ```ts
 import { validateSensitiveReferences } from "@askdb/core";
@@ -57,7 +57,7 @@ Wildcards and whole-row references expand per query block. Each `SELECT` is a bl
 
 **Lexing.** The statement is split by the same dialect-aware lexer as `validateSelectSql`, so a column cannot hide behind an engine-specific quote rule (Postgres `E'\''`, MySQL `'\''`, Postgres `ARRAY['a]']`). Pass `{ dialect }` (a `DialectSpec` or `{ id }`) for an exact reading. Without it, table scope is resolved under a dialect-neutral reading and references are unioned across every built-in engine's reading that lexes cleanly — conservative, so it can over-report in rare cases. MySQL `"…"` is read as an identifier, as it is on `ANSI_QUOTES` servers, so `SELECT "ssn"` is reported rather than passed as a string.
 
-**Conservative failure.** When scope cannot be resolved — no resolvable table source (`NO_TABLE_SOURCE`), a qualifier bound to nothing known (`UNKNOWN_QUALIFIER`), a table source that is not a relation name (`OPAQUE_TABLE_SOURCE`), or a string/quoted identifier/comment that never closes (`UNTERMINATED_TOKEN`) — the check reports `unresolvedScope` rather than passing silently, and for the first two it widens unqualified matching to every sensitive column. `strict` mode treats unresolved scope as a failure, mirroring how `validateTenantGuardrails` handles unprovable scope.
+**Conservative failure.** When scope cannot be resolved — no resolvable table source (`NO_TABLE_SOURCE`), a qualifier bound to nothing known (`UNKNOWN_QUALIFIER`), a table source that is not a relation name (`OPAQUE_TABLE_SOURCE`), or a string/quoted identifier/comment that never closes (`UNTERMINATED_TOKEN`) — the check reports `unresolvedScope` rather than passing silently, and for the first two it widens unqualified matching to every sensitive column. `strict` mode treats unresolved scope as a failure: `passed` is `false`, so it throws `SensitiveReferenceError` (`rule: "UNRESOLVED_TABLE_SCOPE"` when no sensitive reference was found).
 
 **In the pipeline.** `ask()` runs the guardrail over the SQL it is about to return and attaches the result as `AskPipelineResult.sensitiveGuardrail`. `AskPipelineOptions.sensitiveGuardrailMode` selects `"warn"` (default), `"strict"`, or `"off"`. The check is skipped entirely when the schema declares no `sensitive` markers, so `sensitiveGuardrail` is absent in that case.
 
@@ -65,7 +65,7 @@ Wildcards and whole-row references expand per query block. Each `SELECT` is a bl
 
 **Logs:** `askdb.pipeline.sensitive_sql_warning` with `sensitiveColumnCount` and the matched `sensitiveColumns` — schema metadata only, never row values. Emitted in both `warn` and `strict` modes.
 
-**Limits.** The check is heuristic, not a SQL parser. It is a review/enforcement aid, not a substitute for database-side column privileges.
+**Limits.** The check is heuristic, not a SQL parser, and defaults to `warn`. It can miss a table written in a FROM form it doesn't bind, so a wildcard over that table goes unreported. Known open cases: a parenthesized FROM item such as `SELECT * FROM (users)` ([#306](https://github.com/Ygilany/AskDB/issues/306)), a comma-joined table after a JOIN's `ON`/`USING` condition ([#307](https://github.com/Ygilany/AskDB/issues/307)), MySQL `STRAIGHT_JOIN` used as a join operator ([#308](https://github.com/Ygilany/AskDB/issues/308)), and Postgres `TABLE users` inside a derived table ([#309](https://github.com/Ygilany/AskDB/issues/309)). It is a review/enforcement aid and defense in depth, not a security boundary and not a substitute for database-side column privileges.
 
 ---
 

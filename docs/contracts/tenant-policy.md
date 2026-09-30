@@ -29,7 +29,7 @@ my-app.schema/
 
 The file is optional. A Schema v2 directory without `tenant-policy.md` has no tenant enforcement — all queries are unrestricted and `ask()` does not require a `tenantScope` input.
 
-When present, the file enables tenant enforcement: `ask()` requires a valid `tenantScope`, prompts include the policy, and generated SQL is validated against scope.
+When present, the file enables tenant handling: `ask()` requires a valid `tenantScope`, prompts include the policy, generated SQL goes through the heuristic tenant guardrail (see [Guardrail validation](#guardrail-validation)), and tenant placeholders are bound from the scope. The guardrail is defense in depth, not a security boundary — enforce tenant isolation in the database as well.
 
 Only a **missing** file means "no tenant policy". In a bundle, that means only an absent `tenantPolicy` key. A `tenant-policy.md` that exists but is empty or cannot be read or parsed (for example, malformed YAML front-matter) makes `loadSchema()` throw `SchemaParseError` naming the file. The same applies to an empty or non-string bundle `tenantPolicy`. A broken policy never silently turns tenant enforcement off. `loadSchema("<dir>/schema.json")` loads the sibling `tenant-policy.md` the same way `loadSchema("<dir>")` does.
 
@@ -109,7 +109,7 @@ globalTables:
 | Field | Type | Required | Meaning |
 |---|---|---|---|
 | `schemaId` | string | yes | Must match the parent `schema.json`'s `schemaId`. |
-| `enforcement` | `"strict"` \| `"warn"` | yes | Guardrail mode. `strict` rejects unproven queries; `warn` returns SQL with `tenantWarnings`. |
+| `enforcement` | `"strict"` \| `"warn"` | yes | Guardrail mode. When the heuristic tenant check finds a problem, `strict` throws `TenantGuardrailError`; `warn` returns SQL with `tenantGuardrail.warnings`. |
 | `roots` | array | yes | Tenant root definitions (see below). At least one root required. |
 | `hierarchy` | array | no | Explicit hierarchy edges between roots. Required when roots have parent/child relationships. |
 | `scopedTables` | array | no | Tables whose rows are constrained by tenant roots. |
@@ -155,7 +155,7 @@ Tables whose rows belong to a tenant scope. Each entry specifies how scope is ap
 
 Exactly one of `column` or `join` must be present per scope path.
 
-**Multiple scope paths:** A table may have multiple `scopeThrough` entries if it can be scoped through different roots (e.g., an `invoices` table scoped both through `agency_id` directly and through `client_id` → `clients`). The validator accepts any path that satisfies the user's runtime scope.
+**Multiple scope paths:** A table may have multiple `scopeThrough` entries if it can be scoped through different roots (e.g., an `invoices` table scoped both through `agency_id` directly and through `client_id` → `clients`). The validator passes the table when any one path has its tenant predicate (see [What the check requires](#what-the-check-requires)). It does not check that the path's root is the one the user's runtime scope names; a placeholder the scope has no IDs for throws `UNRESOLVED_TENANT_PLACEHOLDER` when AskDB binds it.
 
 #### `polymorphicTables[]` — polymorphic tenant association
 
@@ -404,7 +404,7 @@ The mode is configurable per `ask()` call (`tenantSqlMode`).
 
 ## Guardrail validation
 
-The check runs on the model's SQL **before** tenant rendering: the bound statement and, when present, its `sql-unbound` block, with the `:tenant_<root>_ids` placeholders still in place. Tenant rendering (`resolveTenantSql()`) then only swaps each placeholder for literals (`sql-only`) or the dialect's driver markers (`sql-params`), so one check covers every `tenantSqlMode`, dialect and output form. `ask()` checks those forms for every dialect path, including custom `AskDialect` adapters, and `generateSelectSql()` checks the SQL it returns, whose placeholders are still named. A direct `validateTenantGuardrails()` call should likewise get the SQL with its placeholders.
+The check runs on the model's SQL **before** tenant rendering: the bound statement and, when present, its `sql-unbound` block, with the `:tenant_<root>_ids` placeholders still in place. Tenant rendering (`resolveTenantSql()`) then only swaps each placeholder for literals (`sql-only`) or the dialect's driver markers (`sql-params`), so one check covers every `tenantSqlMode`, dialect and output form. `ask()` checks those forms for every dialect path, including custom `AskDialect` adapters, and `generateSelectSql()` checks the SQL it returns, whose placeholders are still named. A direct `validateTenantGuardrails()` call should likewise get the SQL with its placeholders. It is skipped for `global` scope.
 
 ### What the check requires
 
@@ -421,7 +421,7 @@ The check is a heuristic over SQL tokens, not a SQL parser:
 
 A failed check throws `TenantGuardrailError` in `strict` mode, and is returned in `result.tenantGuardrail` in `warn` mode. The rule code is `MISSING_TENANT_PREDICATE`, `MISSING_TYPE_DISCRIMINATOR` or `UNKNOWN_TABLE_REFERENCED`.
 
-**Limits.** Within one query block, the check doesn't tie a predicate to a particular table reference or alias, so an unfiltered or mispaired reference next to a filtered one can still pass (for example a scalar subquery on `clients` compared with `:tenant_agency_ids` beside a correctly filtered read of `clients`; see also #399, where a predicate in a CTE or derived table satisfies the check for an outer read), and so can a literal beside a real predicate on another reference. Only the roots the scope names are checked as root tables; a root reached through the hierarchy (`sub_agencies` under an agency `ids` scope) is not. An expanded `subtree` scope names every level it covers, including one with no IDs, so under it those roots are checked. Nor does it check that joined scoped tables share a scope. Treat it as defense in depth: the sound boundaries are database-side row-level security and the read-only role the host runs the SQL as. A deterministic rewrite that attaches the predicate itself is planned in #235.
+**Limits.** Within one statement, including its CTEs, derived tables and subqueries (only `UNION`, `INTERSECT` and `EXCEPT` branches are checked on their own), the check doesn't tie a predicate to a particular table reference or alias, so an unfiltered or mispaired reference next to a filtered one can still pass (for example a scalar subquery on `clients` compared with `:tenant_agency_ids` beside a correctly filtered read of `clients`), and so can a literal beside a real predicate on another reference. For example, `WITH t AS (SELECT id FROM orders WHERE agency_id = :tenant_agency_ids) SELECT * FROM orders` passes, and so does an unfiltered outer read beside a filtered derived table (#399). Only the roots the scope names are checked as root tables; a root reached through the hierarchy (`sub_agencies` under an agency `ids` scope) is not. An expanded `subtree` scope names every level it covers, including one with no IDs, so under it those roots are checked. Nor does it check that joined scoped tables share a scope. Treat it as defense in depth: the sound boundaries are database-side row-level security and the read-only role the host runs the SQL as. A deterministic rewrite that attaches the predicate itself is planned in #235.
 
 Pattern matching runs only over SQL code: string literals (`'…'`, `$tag$…$tag$`) and comments (`--`, `/* */`) are ignored, so a tenant column or table name that appears only inside them does not count. Quoted identifiers (`"agency_id"`, `` `orders` ``, `[orders]`) still count as the identifier they name.
 
@@ -429,12 +429,18 @@ Regions are read the way the target dialect reads them. On MySQL and MariaDB, `"
 
 A tenant placeholder counts only in its exact lowercase form (`:tenant_agency_ids`). Any other casing (`:TENANT_AGENCY_IDS`) is never substituted: `resolveTenantSql()` and `ask()` reject it with `UNRESOLVED_TENANT_PLACEHOLDER`.
 
+### Not implemented
+
+The original design called for parser-based validation (AST table/alias resolution, JOIN scope compatibility, aggregation checks) with a conservative heuristic fallback. There is no parser: the token-based checks above are the only check, with the limits listed there. It is defense in depth, not a security boundary ([ADR 0012](../adrs/0012-sql-checks-are-defense-in-depth.md)). Any future parser-based work must update this section, and supersede ADR 0012, before that language is relaxed.
+
 ### Enforcement modes
 
-| Mode | Unproven query | Unknown table | Missing scope predicate |
-|---|---|---|---|
-| `strict` | Rejected with policy error. | Rejected. | Rejected. |
-| `warn` | Returned with `tenantWarnings`. | Returned with warning. | Returned with warning. |
+| Mode | Check finds a problem (missing predicate, missing discriminator, unknown table) |
+|---|---|
+| `strict` | Throws `TenantGuardrailError` carrying the warnings. |
+| `warn` | SQL returned; findings in `tenantGuardrail.warnings`. |
+
+In both modes, a passing check does not prove the query is tenant-safe.
 
 Policy errors include: the table ID(s) involved, the expected scope path, and what was missing.
 
@@ -446,7 +452,7 @@ Policy errors include: the table ID(s) involved, the expected scope path, and wh
 
 ### Always injected (not chunked)
 
-The front-matter (structural policy data) is always included in every prompt when a tenant policy exists. This is a security boundary and must never be lost through RAG retrieval gaps.
+The front-matter (structural policy data) is always included in every prompt when a tenant policy exists. Tenant scoping in generated SQL depends on the model seeing the policy, so it must never be lost through RAG retrieval gaps.
 
 ### Chunked for RAG retrieval
 
@@ -500,7 +506,7 @@ Chunks for tenant-scoped tables carry metadata identifying their required scope 
 | Front-matter parser, validator, normalizer | `@askdb/core` |
 | `TenantScope` type and runtime validation | `@askdb/core` |
 | Prompt assembly (policy injection, scope formatting) | `@askdb/core` |
-| SQL guardrail validator (parser + heuristic) | `@askdb/core` |
+| SQL guardrail validator (heuristic) | `@askdb/core` |
 | SQL output modes (SQL-only, SQL+params) | `@askdb/core` |
 | AI-assisted policy drafting | `@askdb/enrich` |
 | Setup capture UI (per-section confirmation) | `@askdb/studio` |

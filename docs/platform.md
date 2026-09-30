@@ -88,7 +88,7 @@ Front-matter is validated by zod (round-trippable through `@askdb/enrich` author
 ## Data access
 
 - **Postgres-first** — The first shipped path targets **PostgreSQL** for dialect assumptions in generation, validation guardrails, and live introspection. Treat this as the **reference implementation** quality bar.
-- **No generated-SQL execution in core** — `@askdb/core` returns validated SQL only. Applications own any later approval, execution, read-only roles, network policy, and audit logging outside AskDB.
+- **No generated-SQL execution in core** — `@askdb/core` returns checked SQL only. Applications own any later approval, execution, read-only roles, network policy, and audit logging outside AskDB.
 - **Other databases later** — Support for **additional engines** (beyond Postgres) lands in a **later roadmap phase**: per-engine drivers, dialect-aware generation/validation, and tests—rolled out **one database at a time** so we do not dilute safety or correctness. See **`roadmap.md`** (multi-database phase).
 
 ## AI and integrations

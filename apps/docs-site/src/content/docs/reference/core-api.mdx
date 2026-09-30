@@ -5,11 +5,11 @@ description: "Full API reference for @askdb/core: ask(), schema loading, dialect
 
 <p class="doc-eyebrow">Reference · @askdb/core</p>
 
-<p class="doc-lede"><code>@askdb/core</code> is the dialect-agnostic NL-to-SQL pipeline. It owns schema loading, prompt construction, SQL validation, and tenant-scope enforcement. Everything else in the AskDB ecosystem composes it.</p>
+<p class="doc-lede"><code>@askdb/core</code> is the dialect-agnostic NL-to-SQL pipeline. It owns schema loading, prompt construction, heuristic SQL checks, and tenant-scope validation and binding. Everything else in the AskDB ecosystem composes it.</p>
 
 ## `ask(options)`
 
-The main pipeline function. Accepts a natural-language question and a loaded schema; returns validated SQL.
+The main pipeline function. Accepts a natural-language question and a loaded schema; returns checked SQL.
 
 ```ts
 import { ask } from "@askdb/core";
@@ -49,7 +49,7 @@ const { sql } = await ask({
 
 | Field | Type | When present |
 | --- | --- | --- |
-| `sql` | `string` | Always. The model's bound, validated SQL — business values inlined as literals. In `tenantSqlMode: "sql-params"` its tenant markers start at the first slot; run it with `tenantParams`. Never overwritten by rebind failures. |
+| `sql` | `string` | Always. The model's bound, checked SQL — business values inlined as literals. In `tenantSqlMode: "sql-params"` its tenant markers start at the first slot; run it with `tenantParams`. Never overwritten by rebind failures. |
 | `unboundSql` | `string \| undefined` | When `parameterize` is on and the model returned a consistent unbound block + manifest. Driver markers (`$N` / `?` / `@pN`) for every value; run it with `params`. |
 | `params` | `QueryParamSlot[] \| undefined` | Values for `unboundSql`, in marker order. In `"sql-params"` mode this already includes the tenant IDs. |
 | `parameters` | `QueryParameterBinding[] \| undefined` | Named bindings for form UIs (includes runtime `value`, `markers`, `indices`). |
@@ -57,7 +57,7 @@ const { sql } = await ask({
 | `usage` | `AskUsage \| undefined` | When the model provider reports token counts. |
 | `explain` | `unknown \| undefined` | When `explain: true`. Heuristic guardrail metadata — which read-only rules fired and why. |
 | `sensitiveGuardrail` | `SensitiveGuardrailResult \| undefined` | When the schema declares at least one `sensitive` table/column and `sensitiveGuardrailMode` is not `"off"`. The sensitive identifiers the returned SQL references. |
-| `tenantGuardrail` | `TenantGuardrailResult \| undefined` | When a tenant policy is active. Confirms the generated SQL references tenant-scoped tables correctly. |
+| `tenantGuardrail` | `TenantGuardrailResult \| undefined` | When a tenant policy is active. `{ passed, warnings }` from the heuristic tenant check, run on the model's SQL (and its `sql-unbound` block) before tenant binding. It requires each tenant-scoped table, and each root table the scope covers, to have a tenant predicate that filters: its tenant column compared with the placeholder, ANDed into a `WHERE`, inner-join `ON` or `HAVING` clause (see [What the tenant check requires](/guides/multi-tenancy/#what-the-tenant-check-requires)). Passing it doesn't prove the SQL is scoped. With `enforcement: strict`, a failure throws `TenantGuardrailError` instead. |
 | `tenantParams` | `unknown[] \| undefined` | When `tenantSqlMode: "sql-params"` and the SQL has tenant placeholders. The tenant IDs for the markers in `sql`, in marker order. |
 | `tenantBindings` | `TenantBinding[] \| undefined` | When a tenant policy is active. Structured binding metadata for audit. |
 
@@ -182,7 +182,7 @@ validateSensitiveReferences("SELECT email, password FROM identity.users", schema
 
 #### Conservative failure
 
-When scope cannot be proven, the check reports rather than silently passing. `unresolvedScope.issues` contains one or more of:
+When the check can tell it couldn't bind names to tables, it reports that in `unresolvedScope` rather than passing. It can't always tell: a table in a `FROM` form it doesn't recognize is skipped without a report (see [Safety boundaries](/concepts/safety-boundaries/), #306–#309). `unresolvedScope.issues` contains one or more of:
 
 | Issue | Cause | Effect |
 | --- | --- | --- |
@@ -191,7 +191,7 @@ When scope cannot be proven, the check reports rather than silently passing. `un
 | `OPAQUE_TABLE_SOURCE` | A table source that is not a relation name (table function, table-valued expression). | Reported only; no widening — such a source exposes no schema columns. |
 | `UNTERMINATED_TOKEN` | A string, quoted identifier, or comment never closes. | Reported only; the rest of the statement could not be scanned. |
 
-`unresolvedScope.widened` says whether matching was widened, and `.message` explains why. `strict` mode treats unresolved scope as a failure, mirroring how `validateTenantGuardrails` handles unprovable scope.
+`unresolvedScope.widened` says whether matching was widened, and `.message` explains why. `strict` mode treats unresolved scope as a failure: `passed` is `false`, so it throws `SensitiveReferenceError` (`rule: "UNRESOLVED_TABLE_SCOPE"` when no sensitive reference was found).
 
 The check is heuristic, not a SQL parser — a review and enforcement aid, not a substitute for database-side column privileges.
 
@@ -285,6 +285,7 @@ const redshiftFlavor: DialectSpec = {
 | `extraForbiddenKeywords` | `readonly string[]` | no | Keywords to forbid in addition to the shared read-only denylist. |
 | `blockedFunctions` | `readonly string[]` | no | Functions `validateSelectSql` rejects when called (`name(`), such as `pg_sleep` or `load_file`. |
 | `extraValidate` | `(sql: string) => void` | no | Dialect-specific SQL validator. Throw `SqlValidationError` for failures. |
+| `backslashEscapes` | `boolean` | no | Whether a backslash escapes a quote inside `'…'` strings on your server. The built-in specs set the engine default (`true` for MySQL and MariaDB, `false` otherwise). Set `false` for MySQL or MariaDB with `NO_BACKSLASH_ESCAPES`, and `true` for Postgres with `standard_conforming_strings = off`. The checks lex strings this way, and bound tenant and parameter values are escaped to match. See [Match your server's string settings](/concepts/safety-boundaries/#match-your-servers-string-settings). |
 
 `id` also selects how the validator lexes strings, quoted identifiers, and comments. The built-in specs ship their own `extraForbiddenKeywords` and `blockedFunctions`; spread one (`{ ...POSTGRES_DIALECT, … }`) to keep them, since setting either field replaces the built-in list. These checks are defense in depth — run generated SQL under a read-only database role.
 
@@ -318,7 +319,7 @@ It must return `AskDialectGenerateResult`:
 | `tenantGuardrail` | `TenantGuardrailResult \| undefined` | Optional extra tenant findings from your generator. These are merged into `ask()`'s own check and cannot replace it. |
 | `usage` | `AskUsage \| undefined` | Token usage, if your generator has access to it. |
 
-A custom `AskDialect` is responsible for its own read-only validation. `ask()` does not run the SELECT-only validator on its output. If your generator should only emit read-only SQL, call `validateSelectSql(spec, sql)` before returning. Tenant enforcement is different: when the schema has a tenant policy, `ask()` runs the tenant guardrail on the returned `sql` (and its `sql-unbound` block), with the `:tenant_<root>_ids` placeholders still in place, and then substitutes them, whatever the dialect. Under `strict`, unscoped SQL throws `TenantGuardrailError`. A custom `AskDialect` doesn't tell the guardrail how its engine quotes strings, so the statement must pass under the standard-SQL, Postgres (`E'…'` escape strings), and MySQL (where `"…"` is a string) readings: a tenant column written only as `"agency_id"` doesn't count as a predicate.
+A custom `AskDialect` is responsible for its own read-only validation. `ask()` does not run the SELECT-only validator on its output. If your generator should only emit read-only SQL, call `validateSelectSql(spec, sql)` before returning. Tenant enforcement is different: when the schema has a tenant policy, `ask()` runs the tenant guardrail on the returned `sql` (and its `sql-unbound` block), with the `:tenant_<root>_ids` placeholders still in place, and then substitutes them, whatever the dialect. Under `strict`, SQL that fails the tenant check throws `TenantGuardrailError`; passing it doesn't prove the SQL is scoped. A custom `AskDialect` doesn't tell the guardrail how its engine quotes strings, so the statement must pass under the standard-SQL, Postgres (`E'…'` escape strings), and MySQL (where `"…"` is a string) readings: a tenant column written only as `"agency_id"` doesn't count as a predicate.
 
 Passing an unknown string dialect id throws `UnknownDialectError`, which extends `AskDbError`.
 

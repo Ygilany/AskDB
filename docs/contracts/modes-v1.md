@@ -2,7 +2,7 @@
 
 This document fixes **trust boundaries** for headless pipelines (CLI today; MCP/HTTP later): what may enter **model context** beyond the AskDB schema and natural-language question.
 
-**Postgres:** Execution remains **read-only `SELECT`** in a **`BEGIN READ ONLY`** transaction ([`packages/core/src/exec/postgres.ts`](../../packages/core/src/exec/postgres.ts)) — unchanged from Phase 1.
+**Execution:** `ask()` returns SQL and never executes it; the CLI and HTTP API do not execute generated SQL either. Hosts own execution (see [`docs/mission.md`](../mission.md)). Studio's optional Playground execute runs Postgres SQL in a `BEGIN READ ONLY` transaction (`apps/studio/src/execute-registry.ts`); `@askdb/postgres`'s catalog query runner (`packages/postgres/src/exec/postgres.ts`) likewise wraps connector-owned introspection SQL in `BEGIN READ ONLY` and is never used for generated SQL.
 
 ---
 
