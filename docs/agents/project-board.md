@@ -39,7 +39,7 @@ Older items carry only the worktree name (`Thread ID: t3code-…`). Leave them a
 
 1. **Choosing what's next**: take the highest-Priority `Ready` item in your lane (query below). Before the first commit, set Status `In progress` and add your `Worked on by` line to the issue body.
 2. **Finding work along the way** (a bug, a doc mismatch, a gap): file an issue per `issue-tracker.md`, add it to the board with Status `Inbox`, set the Workstream you'd propose, and leave Priority empty. List it in your next summary to the maintainer. Your current item stays your focus; the new issue waits for the maintainer to route it.
-3. **Opening a PR**: `Closes #<n>` in the body, and set the issue's Status to `In review`.
+3. **Opening a PR**: put `Closes #<n>` in the body. The issue is the card: the board moves it to `In review` when the PR opens and to `Done` when it merges, and the PR shows as its linked PR. Leave the PR itself off the board. A PR with no issue behind it (a dependency bump, a small chore) goes on the board itself, with Status `In review`.
 4. **Needing a decision**: add the `needs-decision` label and a `## Decision needed` section to the issue or PR body: the options, their trade-offs, and your recommendation. Set Status `Blocked`. Remove the label once the maintainer answers, and record the answer in the body.
 5. **Blocked on another item**: native `blocked by` link (see `issue-tracker.md`) and Status `Blocked`.
 
