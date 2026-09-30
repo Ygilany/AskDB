@@ -96,7 +96,7 @@ Tables that appear in none of `scopedTables`, `polymorphicTables`, or `globalTab
 | --- | --- | --- |
 | `id` | yes | Stable table ID (e.g. `table:public.organizations`). |
 | `tenantIdColumn` | yes | Stable column ID of the root's identifier — the value your app passes at runtime. |
-| `label` | yes | Human-readable name used in prompts and named placeholders (`Organization` → `:tenant_organization_ids`). |
+| `label` | yes | Human-readable name used in prompts and named placeholders (`Organization` → `:tenant_organization_ids`). The placeholder keeps only ASCII letters and digits from the label; a label with none (for example Cyrillic or CJK) uses the root's table name instead (`Клиент` on `table:public.clients` → `:tenant_clients_ids`). Each root needs a different placeholder: `Agency` and `agency`, or `Sub-Agency` and `Sub Agency`, fail to load. To get a root's placeholder in code, call `placeholderForTenantRoot(root)` from `@askdb/core`; the older `placeholderForRoot(label)` is deprecated and returns `:tenant___ids` for a label with no ASCII letters or digits. |
 | `parent.root`, `parent.foreignKey` | no | When this root is a child of another root: the parent's table ID and the FK column linking to it. |
 
 `scopedTables[]` — operational tables constrained by a tenant:
@@ -172,19 +172,23 @@ if (result.preparedQuery) {
 }
 ```
 
-`access.kind` selects the scope shape: `ids` (exact tenant IDs on one root — the common case), `subtree` (a root's IDs plus all descendants: `{ kind: "subtree", tenantRoot, rootIds, includeDescendants: true }`; needs a `resolveTenantDescendants` callback, see [below](#hierarchical-scope-subtree)), `multi_root` (IDs across several roots), or `global` (deliberately unscoped, with a `reason` string for the audit trail; the tenant check is skipped). The optional `context` field carries advisory metadata (role, department) into the prompt. It isn't enforced.
+`access.kind` selects the scope shape: `ids` (exact tenant IDs on one root — the common case), `subtree` (a root's IDs plus all descendants: `{ kind: "subtree", tenantRoot, rootIds, includeDescendants: true }`; needs a `resolveTenantDescendants` callback that returns IDs per root, see [below](#hierarchical-scope-subtree)), `multi_root` (IDs across several roots), or `global` (deliberately unscoped, with a `reason` string for the audit trail; the tenant check is skipped). The optional `context` field carries advisory metadata (role, department) into the prompt. It isn't enforced.
 
 Polymorphic tables are declared in the policy and surfaced to the model through the prompt; there's no scope field for pre-resolving them at runtime.
 
 ## Hierarchical scope (`subtree`)
 
-A `subtree` scope says "these IDs and everything beneath them". A state administrator, for example, sees the state agency and every county agency under it. AskDB never opens a database connection, so it can't walk your hierarchy itself. You pass a `resolveTenantDescendants` callback that expands the seed IDs, and `ask()` substitutes the full set into the tenant placeholder.
+A `subtree` scope says "these IDs and everything beneath them". An agency administrator, for example, sees their agency, its sub-agencies, and those sub-agencies' clients. AskDB never opens a database connection, so it can't walk your hierarchy itself. You pass a `resolveTenantDescendants` callback that returns the subtree's IDs **grouped by tenant root**, and `ask()` binds each root's IDs to that root's own placeholder.
+
+Grouping matters because each root table has its own ID space. If agency `1` owns sub-agency `5` and client `5`, those are not agency `5`, which may be another tenant. A single list would put `5` into `:tenant_agency_ids` and return the other tenant's rows, so `ask()` rejects a flat array.
+
+With the policy's `agencies` → `sub_agencies` → `clients` hierarchy (declared through `roots[].parent` or `hierarchy`), return one entry per level, keyed by the root's table ID:
 
 ```ts
 import { ask } from "@askdb/core";
 
 const result = await ask({
-  question: "how many open cases this month?",
+  question: "how many appointments did my clients have this month?",
   schema,
   model,
   dialect: "postgres",
@@ -192,7 +196,7 @@ const result = await ask({
     access: {
       kind: "subtree",
       tenantRoot: "table:public.agencies",
-      rootIds: [currentUser.stateAgencyId],
+      rootIds: [currentUser.agencyId],
       includeDescendants: true,
     },
   },
@@ -201,35 +205,64 @@ const result = await ask({
     if (tenantRoot !== "table:public.agencies") {
       throw new Error(`no hierarchy resolver for ${tenantRoot}`);
     }
-    const { rows } = await pool.query(
-      `WITH RECURSIVE tree AS (
-         SELECT id FROM agencies WHERE id = ANY($1)
-         UNION
-         SELECT a.id FROM agencies a JOIN tree t ON a.parent_agency_id = t.id
-       )
-       SELECT id::text AS id FROM tree`,
+    const subAgencies = await pool.query(
+      "SELECT id::text AS id FROM sub_agencies WHERE agency_id = ANY($1)",
       [seedIds],
     );
-    return rows.map((r) => r.id);
+    const subAgencyIds = subAgencies.rows.map((r) => r.id);
+    const clients = await pool.query(
+      "SELECT id::text AS id FROM clients WHERE sub_agency_id = ANY($1)",
+      [subAgencyIds],
+    );
+    return {
+      "table:public.agencies": seedIds,
+      "table:public.sub_agencies": subAgencyIds,
+      "table:public.clients": clients.rows.map((r) => r.id),
+    };
   },
 });
+// e.g. { agencies: ["1"], sub_agencies: ["5"], clients: ["5"] } becomes a multi_root scope:
+// :tenant_agency_ids → '1', :tenant_sub_agency_ids → '5', :tenant_client_ids → '5'
+// result.sql → ... JOIN clients c ON a.client_id = c.id WHERE c.id IN ('5')
+```
+
+If your agencies form a tree inside one table (`agencies.parent_agency_id`), the descendants are agencies too, so they go under the root's own key. The policy can't declare a same-table parent yet, so the root has no child roots and this is the only key:
+
+```ts
+resolveTenantDescendants: async (tenantRoot, seedIds) => {
+  const { rows } = await pool.query(
+    `WITH RECURSIVE tree AS (
+       SELECT id FROM agencies WHERE id = ANY($1)
+       UNION
+       SELECT a.id FROM agencies a JOIN tree t ON a.parent_agency_id = t.id
+     )
+     SELECT id::text AS id FROM tree`,
+    [seedIds],
+  );
+  return { [tenantRoot]: rows.map((r) => r.id) };
+},
 // result.sql → ... WHERE agency_id IN ('state-1', 'county-a', 'county-b')
 ```
 
 The callback's contract:
 
-- **Return IDs of the same tenant root.** They replace that root's `:tenant_<label>_ids` placeholder, so the example works for a self-referencing table like `agencies.parent_agency_id`.
-- **Seeds are always kept.** `ask()` unions `rootIds` into whatever you return, so returning only the strict descendants doesn't drop the ancestor's own rows.
-- **It fails closed.** If `resolveTenantDescendants` is missing, returns an empty array, or returns something that isn't an array of non-empty strings, `ask()` throws `TenantScopeError` with reason `SUBTREE_NOT_RESOLVABLE` before calling the model. It never falls back to the seed IDs alone.
-- **Authorization and caching are yours.** AskDB trusts the returned IDs, so cache the closure or apply extra rules inside the callback.
+- **Return IDs per tenant root.** Allowed keys are the scope's `tenantRoot` and every root the policy's hierarchy reaches from it. Each value holds IDs of that root's own `tenantIdColumn`: seeds and same-table descendants under `tenantRoot`, each child root's IDs under that root.
+- **`ask()` scopes the query per root.** The result becomes a `multi_root` scope (an `ids` scope when the subtree is `tenantRoot` alone), with one entry per covered root, including a root you return no IDs for. When your policy has more than one root, the prompt lists, under each placeholder (in both cases), the columns that hold that root's IDs, and tells the model never to compare one root's placeholder with another root's column.
+- **Seeds are always kept.** `ask()` unions `rootIds` into the `tenantRoot` entry, so returning only descendants doesn't drop the ancestor's own rows.
+- **An empty level fails closed under `strict`.** A covered root you return no IDs for (missing key or `[]`) stays in the scope with no IDs. Under `enforcement: strict`, a query that reads that table must filter it with its own placeholder, so it can't be reached through a parent's key or a joined ancestor, and binding that placeholder throws `TenantScopeError` with reason `UNRESOLVED_TENANT_PLACEHOLDER`. So leaving a level out hides its rows. Under `warn`, a read through a parent's key or an ancestor is returned with a warning in `result.tenantGuardrail`; only a read that uses the empty level's own placeholder still fails at binding.
+- **It fails closed.** If `resolveTenantDescendants` is missing, returns an array (the flat shape), returns something other than an object, uses a key that isn't a root in the subtree, returns a value that isn't an array of non-empty strings, or returns no IDs at all, `ask()` throws `TenantScopeError` with reason `SUBTREE_NOT_RESOLVABLE` before calling the model. It never falls back to the seed IDs alone.
+- **Authorization and caching are yours.** AskDB checks which root each ID is filed under, not that it really is a descendant, so cache the closure or apply extra rules inside the callback.
 
-If your hierarchy is already in memory (for example, a cached parent map), `expandClosure(seedIds, childrenOf)` from `@askdb/core` does the walk for you. It is breadth-first and cycle-safe:
+In `strict` mode the tenant guardrail enforces the pairing. Each tenant column must be compared with its own root's placeholder, so a model that filters a client column with `:tenant_agency_ids`, or the agency column with `:tenant_client_ids`, is rejected with `TenantGuardrailError`. Every root the expanded scope covers is also checked as a root table: a query that reads `clients` must filter it with `:tenant_client_ids`, not only through `clients.sub_agency_id` or a joined, filtered agency. The limits in [What the tenant check requires](#what-the-tenant-check-requires) still apply. Within one query block a predicate isn't tied to a particular table reference, so a mispaired second reference next to a correctly filtered one can still pass: for example, a scalar subquery on `clients` compared with `:tenant_agency_ids` beside a read of `clients` filtered with `:tenant_client_ids`. A predicate inside a CTE or derived table can also satisfy the check for an unfiltered outer read of the same table ([#399](https://github.com/Ygilany/AskDB/issues/399)), and a join-path table can pass with a join on the wrong ID column ([#400](https://github.com/Ygilany/AskDB/issues/400)). Treat the check as defense in depth.
+
+If one root's hierarchy is already in memory (for example, a cached parent map of a same-table tree), `expandClosure(seedIds, childrenOf)` from `@askdb/core` does the walk for you. It is breadth-first and cycle-safe:
 
 ```ts
 import { expandClosure } from "@askdb/core";
 
-resolveTenantDescendants: (_root, seedIds) =>
-  expandClosure(seedIds, (id) => childrenByAgencyId.get(id) ?? []),
+resolveTenantDescendants: (tenantRoot, seedIds) => ({
+  [tenantRoot]: expandClosure(seedIds, (id) => childrenByAgencyId.get(id) ?? []),
+}),
 ```
 
 `@askdb/client` forwards `resolveTenantDescendants` like any other per-call override: `askdb.ask(question, { tenantScope, resolveTenantDescendants })`.

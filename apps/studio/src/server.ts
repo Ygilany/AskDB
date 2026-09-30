@@ -34,6 +34,9 @@ import {
   type TenantScope,
   type TenantSqlOutputMode,
   type V2Concept,
+  normalizeTenantPolicy,
+  parseTenantPolicyMarkdown,
+  SchemaParseError,
   writeTenantPolicyMarkdown,
   tenantPolicyFrontmatterSchema,
 } from "@askdb/core";
@@ -621,8 +624,23 @@ function saveTenantPolicy(
   frontmatter: TenantPolicyFrontmatter,
   body: string,
 ): void {
+  const workspace = requireWorkspace(state);
   const filePath = join(state.schemaDir, "tenant-policy.md");
   const md = writeTenantPolicyMarkdown(frontmatter, body);
+  // Run core's own load-time validation before writing: a policy that `loadSchema` would
+  // reject (e.g. two root labels deriving one placeholder) must not reach disk, or every
+  // later request fails until the file is fixed by hand.
+  try {
+    const physical = workspace.physical;
+    normalizeTenantPolicy(
+      parseTenantPolicyMarkdown(md, filePath),
+      new Set(physical.tables.map((table) => table.id)),
+      new Set(physical.tables.flatMap((table) => table.columns.map((column) => column.id))),
+    );
+  } catch (error) {
+    if (error instanceof SchemaParseError) throw new StudioHttpError(400, error.message);
+    throw error;
+  }
   writeFileSync(filePath, md, "utf8");
   state.workspace = loadWorkspace(state.schemaDir);
 }

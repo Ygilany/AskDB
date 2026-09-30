@@ -106,4 +106,27 @@ describe("validateTenantScope", () => {
     };
     expect(() => validateTenantScope(policy, scope)).toThrow(TenantScopeError);
   });
+
+  // A multi_root entry may name a root with no IDs (ask() expands an empty subtree level
+  // that way, #375), but a scope with no ID anywhere grants nothing and is rejected.
+  it("rejects a multi_root scope whose entries all have no IDs", () => {
+    const scope: TenantScope = {
+      access: {
+        kind: "multi_root",
+        scopes: [
+          { tenantRoot: "table:public.agencies", ids: [] },
+          { tenantRoot: "table:public.clients", ids: [] },
+        ],
+      },
+    };
+    let error: unknown;
+    try {
+      validateTenantScope(policy, scope);
+    } catch (e) {
+      error = e;
+    }
+    expect(error).toBeInstanceOf(TenantScopeError);
+    expect((error as TenantScopeError).reason).toBe("INVALID_SCOPE_SHAPE");
+    expect((error as TenantScopeError).message).toContain("at least one entry with an ID");
+  });
 });
