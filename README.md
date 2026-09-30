@@ -22,7 +22,7 @@ NL-to-SQL isn't a new problem — academic research goes back to LUNAR in 1972, 
 
 ## Quickstart
 
-For a new project, use Node **20+**, a database or schema source, and an API key from your model provider.
+For a new project, use Node **22.12+**, a database or schema source, and an API key from your model provider.
 
 ```bash
 npx askdb@latest init
