@@ -4,6 +4,7 @@ A black-box test bed for AskDB. The lab installs AskDB the way an outside projec
 
 - Design: [`docs/specs/consumer-lab.md`](../../docs/specs/consumer-lab.md).
 - Work tracked in: #241.
+- Agents driving the lab (choosing a target, triaging the matrix, refreshing the baseline after a release) follow the [`consumer-lab` skill](../../.agents/skills/consumer-lab/SKILL.md).
 
 This directory is **not** a member of the AskDB pnpm workspace. It is its own pnpm root with its own lockfile, so it never resolves `workspace:` links.
 
@@ -210,6 +211,8 @@ The strict cases fail on the leak itself: when `ask()` returns SQL it should hav
 
 `lab:matrix` exits 1 when any cell is `FAIL`, including the two that vitest itself counts as passing (an `it.fails` test that names no issue, and a skip that isn't a capability gate). `pass`, `n/a` and `known` cells don't fail it. The failing cells are listed under the table.
 
+`node examples/consumer-lab/src/matrix-cells.mjs [--status fail,known,na] [<matrix.json>]` lists the cells that aren't `pass`, one per line: each `FAIL` cell with the first line of each failure's reason, then one group per issue and per capability. It reads `.lab/matrix.json` unless given another file, such as CI's `consumer-lab-matrix` artifact.
+
 Below the test rows, the `unique-constraints *` and `view-marker *` rows are **annotations, not test results**: facts the golden schema holds but the schema artifact can't express (the "Not comparable" rule in [`NORMALIZATION.md`](../../fixtures/multi-engine/dataset/NORMALIZATION.md)). The reporter prints them as `n/a (not in the schema artifact)` from a static list, and `matrix.json` keeps them under `annotations`.
 
 ### In CI
@@ -288,7 +291,7 @@ Capabilities are detected from the installed target's public surface: an export,
 | `cli-introspect-engine` | `askdb introspect --help` documents `--engine` (`reference/cli.mdx`), when run with the lab's config | every scenario that builds a schema artifact (`test/lab-ask.test.ts`, `test/surfaces/cli.test.ts`) |
 | `mysql-databases` | `askdb introspect --schemas org,people,billing,ref` on the fixture's MySQL returns a table from a database other than the connection's (`reference/cli.mdx`, `guides/switch-engines.mdx`) | MySQL and MariaDB `introspect-golden` / `introspect-loads` (`test/introspection.test.ts`), and every MySQL and MariaDB tenant scenario, whose policy scopes tables in all four databases (`test/tenant.test.ts`) |
 | `http-api-optional-drivers` | the installed `@askdb/http-api`'s published manifest lists no database driver as a dependency, since the docs call drivers optional peers (`guides/switch-engines.mdx`, `reference/packages.mdx`; #260) | `http-no-pg` (`test/surfaces/http-api-no-pg.test.ts`) |
-| `subtree-resolver` | `ask()` with `subtree` access and a recording `resolveTenantDescendants` calls it with the scope's root and seed (`guides/multi-tenancy.mdx`, "Hierarchical scope (`subtree`)"). Releases before #232 was fixed (#270) never call it. The probe doesn't check what `ask()` does with the answer, so a target that drops it fails `tenant-subtree` instead of reporting `n/a` | `tenant-subtree`, `tenant-subtree-no-resolver` (`test/tenant.test.ts`) |
+| `subtree-resolver` | `ask()` with `subtree` access and a recording `resolveTenantDescendants` calls it with the scope's root and seed (`guides/multi-tenancy.mdx`, "Hierarchical scope (`subtree`)"). Releases before #232 was fixed (#270) never call it. The probe doesn't check what `ask()` does with the answer, so a target that drops it fails `tenant-subtree` instead of reporting `n/a` | `tenant-subtree`, `tenant-subtree-seeds`, `tenant-subtree-no-resolver` (`test/tenant.test.ts`) |
 | `tenant-driver-markers` | `ask()` in `tenantSqlMode: "sql-params"` on SQLite returns `?` markers for the tenant IDs (`reference/core-api.mdx`, `tenantSqlMode`). Releases before the fix for #231 used Postgres `$N` markers on every dialect | the `sql-params` cases of `tenant-ids`, `tenant-subtree` and `tenant-subtree-seeds` (`test/tenant.test.ts`), except on Postgres, whose markers were always `$N`: there only the question with a business parameter needs it, because before #231 was fixed its tenant markers in `sql` were numbered after the business values |
 | `tenant-predicate-required` | strict `ask()` rejects a reply that filters on a literal agency instead of `:tenant_agency_ids` (`docs/contracts/tenant-policy.md`, "Guardrail validation"). Releases before the fix for #315 accepted any mention of the tenant column | the strict-mode rejection cases of `tenant-strict-column-only`, `-wrong-tenant`, `-or-true` and `-root-table` (`test/tenant.test.ts`) |
 
