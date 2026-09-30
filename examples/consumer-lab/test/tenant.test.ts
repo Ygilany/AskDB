@@ -309,11 +309,12 @@ describe.each(SUPPORTED_DIALECTS.map((d) => [d] as [SupportedDialect]))("[%s]", 
    * - `tenant-strict-wrong-tenant`: `WHERE agency_id = 1` under a scope for agency 2;
    * - `tenant-strict-or-true`: `WHERE agency_id = :tenant_agency_ids OR 1 = 1`;
    * - `tenant-strict-root-table`: the root table `org.agency`, read with no filter.
-   * Catches: a guardrail that accepts a present-but-ineffective filter. Today it accepts all
-   * four (#315): it checks that the tenant column's name appears, not that it
-   * filters, and it never checks the root table.
-   * Not covered elsewhere: core's guardrail tests pin these as known limits of the heuristic
-   * (#230), but never run the SQL to show the leak on an engine.
+   * Catches: a guardrail that accepts a present-but-ineffective filter. Before the fix for
+   * #315 it accepted all four: it checked that the tenant column's name appeared, not that
+   * it filtered, and it never checked the root table. Releases from before that fix report
+   * `n/a (capability: tenant-predicate-required)`.
+   * Not covered elsewhere: core's guardrail tests check the rule on SQL text; only this runs
+   * the SQL on an engine, to show each reply really leaks.
    */
   const INEFFECTIVE = [
     // scenario, reply, oracle, the agencies the reply returns when run raw
@@ -336,8 +337,9 @@ describe.each(SUPPORTED_DIALECTS.map((d) => [d] as [SupportedDialect]))("[%s]", 
       expect(raw).not.toEqual(expected(oracleId, [FLAT]));
     });
 
-    it.fails(`strict mode rejects the ${id} reply, whose filter doesn't keep the rows to agency ${FLAT} (#315)`, async (ctx) => {
+    it(`strict mode rejects the ${id} reply, whose filter doesn't keep the rows to agency ${FLAT}`, async (ctx) => {
       await needsTenantCapabilities(ctx, dialect);
+      await needsCapability(ctx, "tenant-predicate-required");
 
       const outcome = await settle(ask(dialect, id, { tenantScope: idsScope(dialect, [FLAT]) }));
 

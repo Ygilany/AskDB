@@ -81,8 +81,9 @@ export type AskDialectGenerateResult = {
   explain?: unknown;
   /**
    * Optional tenant guardrail result from a custom generator. When the schema has a
-   * tenant policy, `ask()` merges its warnings into its own check of the final SQL;
-   * it can add failures but never replace or relax that check.
+   * tenant policy, `ask()` merges its warnings into its own check of `sql` and
+   * `unboundNamedSql` (before tenant rendering); it can add failures but never replace
+   * or relax that check.
    */
   tenantGuardrail?: import("./sql/tenant-guardrail.js").TenantGuardrailResult;
   usage?: AskUsage;
@@ -106,9 +107,10 @@ export type AskDialectGenerateResult = {
  *     read-only SQL, call the exported `validateSelectSql(spec, sql)` yourself
  *     before returning.
  *   - **Tenant enforcement is not yours to skip.** When the schema has a tenant
- *     policy, `ask()` substitutes tenant placeholders in the returned `sql` and
- *     runs the tenant guardrail on the final statement regardless of dialect;
- *     `strict` policies throw `TenantGuardrailError`. A `tenantGuardrail` your
+ *     policy, `ask()` runs the tenant guardrail on the returned `sql` (and
+ *     `unboundNamedSql`), with its `:tenant_<root>_ids` placeholders still in place,
+ *     then substitutes them, regardless of dialect; `strict` policies throw
+ *     `TenantGuardrailError`. A `tenantGuardrail` your
  *     generator returns is merged into that result, never used in place of it.
  */
 export type AskDialect = {
@@ -300,9 +302,11 @@ export type AskPipelineResult = {
    */
   sensitiveGuardrail?: SensitiveGuardrailResult;
   /**
-   * Tenant guardrail result for the SQL actually returned — `sql` after tenant
-   * placeholder substitution, plus `unboundSql` when present. Present whenever the
-   * schema has a tenant policy, for every dialect form. In `strict` mode a failure
+   * Tenant guardrail result for the model's SQL, checked before tenant rendering: the
+   * bound `sql` and its `sql-unbound` block, with the `:tenant_<root>_ids` placeholders
+   * still in place. `sql` and `unboundSql` differ from those only by the substituted
+   * tenant IDs or markers. Present whenever the schema has a tenant policy, for every
+   * dialect form. In `strict` mode a failure
    * throws `TenantGuardrailError` instead, so a returned result is always `passed`
    * under `strict`.
    */
@@ -374,7 +378,7 @@ export async function ask(options: AskPipelineOptions): Promise<AskPipelineResul
   // markers applied below). Never overwrite it with a re-bound version.
   const result: AskPipelineResult = { sql: generated.sql };
   if (generated.explain !== undefined) result.explain = generated.explain;
-  // With a tenant policy, `tenantGuardrail` is computed below from the final SQL;
+  // With a tenant policy, `tenantGuardrail` is computed below, before tenant rendering;
   // without one, pass through whatever a custom dialect reported.
   if (!tenantPolicy && generated.tenantGuardrail !== undefined) {
     result.tenantGuardrail = generated.tenantGuardrail;
@@ -467,6 +471,23 @@ export async function ask(options: AskPipelineOptions): Promise<AskPipelineResul
   }
 
   if (tenantPolicy && tenantScope) {
+    // Tenant guardrail on the untrusted SQL, before rendering: the model's bound
+    // statement and its unbound block, with the `:tenant_<root>_ids` placeholders
+    // still in place. Rendering below only swaps each placeholder for literals or
+    // driver markers, so one check covers every tenantSqlMode, dialect and output
+    // form (#315). Runs for every dialect (built-in, DialectSpec, or custom
+    // AskDialect); the built-in generator skips its own check so this is the single
+    // report. `dialectSpec` is undefined for a custom AskDialect: the guardrail then
+    // requires the statement to pass under the standard-SQL, Postgres and MySQL readings.
+    result.tenantGuardrail = enforceTenantGuardrails(
+      [result.sql, generated.unboundNamedSql],
+      tenantPolicy,
+      tenantScope,
+      logger,
+      generated.tenantGuardrail,
+      dialectSpec,
+    );
+
     const tenantMode = options.tenantSqlMode ?? "sql-only";
     // `sql` carries business values as inlined literals, so its only markers are
     // tenant markers, numbered from the first slot: `sql` runs with `tenantParams`
@@ -518,20 +539,6 @@ export async function ask(options: AskPipelineOptions): Promise<AskPipelineResul
       }
     }
 
-    // Tenant guardrail on exactly what the caller receives: the final `sql` after
-    // placeholder substitution, plus `unboundSql` only when the consistency check
-    // kept it. Runs for every dialect (built-in, DialectSpec, or custom AskDialect);
-    // the built-in generator skips its own check so this is the single report.
-    // `dialectSpec` is undefined for a custom AskDialect: the guardrail then
-    // requires the statement to pass under both the standard-SQL and MySQL readings.
-    result.tenantGuardrail = enforceTenantGuardrails(
-      [result.sql, result.unboundSql],
-      tenantPolicy,
-      tenantScope,
-      logger,
-      generated.tenantGuardrail,
-      dialectSpec,
-    );
   }
 
   applySensitiveGuardrail(result, options, dialectSpec, logger);

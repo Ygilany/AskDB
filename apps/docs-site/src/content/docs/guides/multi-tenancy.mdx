@@ -69,7 +69,7 @@ Top-level front-matter fields:
 | Field | Required | Meaning |
 | --- | --- | --- |
 | `schemaId` | yes | Must match the `schemaId` in the artifact's `schema.json`. Ties the policy to one schema. |
-| `enforcement` | yes | `strict` rejects any query whose tenant filter can't be proven; `warn` returns the SQL with tenant warnings instead. Start with `strict`. |
+| `enforcement` | yes | `strict` rejects a query unless every tenant-scoped table it touches has a tenant predicate (see [What the tenant check requires](#what-the-tenant-check-requires)); `warn` returns the SQL with tenant warnings instead. Start with `strict`. |
 | `roots` | yes | The tables that *are* tenants (at least one). Everything else is scoped relative to a root. |
 | `hierarchy` | no | Parent→child edges between roots (agency → sub-agency → client). Must form a cycle-free graph. |
 | `scopedTables` | no | Tables whose rows belong to a tenant, and how to reach the root from them. |
@@ -111,7 +111,18 @@ The full contract — including hierarchy validation rules and the five scoping 
 
 ## Asking with a tenant scope
 
-When the policy exists, every `ask()` call must include a `tenantScope`. AskDB validates the scope against the policy and binds it into the generated SQL. With `enforcement: strict`, a query whose tenant filter can't be proven is rejected; with `enforcement: warn`, the SQL is returned together with `tenantWarnings` for your application to act on.
+When the policy exists, every `ask()` call must include a `tenantScope`. AskDB validates the scope against the policy and binds it into the generated SQL. With `enforcement: strict`, a query without a tenant predicate is rejected; with `enforcement: warn`, the SQL is returned together with `tenantWarnings` for your application to act on.
+
+### What the tenant check requires
+
+AskDB checks the model's SQL before it binds the tenant IDs, while the `:tenant_<root>_ids` placeholders are still in place. The check covers every tenant-scoped table the query mentions:
+
+- **A real predicate.** The table's tenant column is compared with its root's placeholder: `agency_id = :tenant_agency_ids`, `agency_id IN (:tenant_agency_ids)` or `agency_id = ANY(:tenant_agency_ids)`.
+- **ANDed into the filter.** The predicate sits in a `WHERE` clause, an inner join's `ON` clause, or a `HAVING` clause; an outer join's `ON` doesn't filter the preserved side, so it doesn't count. It can't be next to an `OR` at its own level, under `NOT`, or in the select list. `agency_id = :tenant_agency_ids AND (status = 'a' OR status = 'b')` is fine; `agency_id = :tenant_agency_ids OR 1 = 1` is rejected.
+- **No literal IDs.** `agency_id = 2` doesn't satisfy the rule, even when 2 is in the caller's scope: AskDB binds the IDs. Each `UNION` branch that reads a scoped table needs its own predicate.
+- **Root tables too.** A query on the root table itself (`agencies`) needs the predicate on its tenant ID column.
+
+It's a heuristic over the SQL's tokens, not a parser. Within one query it doesn't tie each predicate to a specific table reference, so an unfiltered reference next to a filtered one can still pass. Use it as defense in depth, together with database-side row-level security and a read-only role: see [Run safely in production](/guides/run-safely-in-prod/). The full rules are in [`docs/contracts/tenant-policy.md`](https://github.com/Ygilany/AskDB/blob/main/docs/contracts/tenant-policy.md#guardrail-validation).
 
 ```ts
 // askdb initialized at startup with createAskDb() — see Embed in a Node app.
@@ -230,7 +241,7 @@ The callback's contract:
 - **It fails closed.** If `resolveTenantDescendants` is missing, returns an array (the flat shape), returns something other than an object, uses a key that isn't a root in the subtree, returns a value that isn't an array of non-empty strings, or returns no IDs at all, `ask()` throws `TenantScopeError` with reason `SUBTREE_NOT_RESOLVABLE` before calling the model. It never falls back to the seed IDs alone.
 - **Authorization and caching are yours.** AskDB checks which root each ID is filed under, not that it really is a descendant, so cache the closure or apply extra rules inside the callback.
 
-The tenant guardrail checks that a scoped table's tenant column or a tenant placeholder appears in the SQL, not that each placeholder is compared with its own root's column. A model that filters a client column with `:tenant_agency_ids` still passes it, so treat the prompt's column pairing as guidance to the model, not enforcement.
+In `strict` mode the tenant guardrail enforces the pairing. Each tenant column must be compared with its own root's placeholder, so a model that filters a client column with `:tenant_agency_ids`, or the agency column with `:tenant_client_ids`, is rejected with `TenantGuardrailError`. Every root the expanded scope names is also checked as a root table: a query that reads `clients` must filter it with `:tenant_client_ids`, even if it also joins up to a filtered agency. The limits in [What the tenant check requires](#what-the-tenant-check-requires) still apply: within one query block, a predicate isn't tied to a particular table reference, so treat the check as defense in depth.
 
 If one root's hierarchy is already in memory (for example, a cached parent map of a same-table tree), `expandClosure(seedIds, childrenOf)` from `@askdb/core` does the walk for you. It is breadth-first and cycle-safe:
 

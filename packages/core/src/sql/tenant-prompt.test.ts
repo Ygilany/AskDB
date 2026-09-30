@@ -116,6 +116,7 @@ describe("buildTenantPromptBlock", () => {
         "    - Client IDs = :tenant_client_ids",
         "      columns: table:public.clients#id, table:public.notes#owner_id (where table:public.notes#owner_type = 'client')",
         "  The same ID value can name different tenants in different root tables: never compare one root's placeholder with another root's column.",
+        "  A root table listed here that the query reads must itself be filtered with its own placeholder, even when a joined ancestor is filtered too.",
         "",
       ].join("\n"),
     );

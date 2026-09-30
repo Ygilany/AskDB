@@ -16,7 +16,7 @@ pnpm lab:up                          # start and seed the fixture; install `.` u
 pnpm lab:use .                       # pack this checkout's publishable packages and install them
 pnpm lab:use ../other-checkout       # …or another checkout's
 pnpm lab:use git:origin/main         # …or a branch, tag or commit's (built in a temporary worktree)
-pnpm lab:use npm:latest              # published packages under a dist-tag (npm:beta, …)
+pnpm lab:use npm:latest              # published packages under a dist-tag
 pnpm lab:use npm:askdb@1.0.0-beta.40 # a published CLI release and the @askdb/* versions it depends on
 pnpm lab:use --check                 # re-verify the current install against its target
 pnpm lab ask --db mysql "How many active programs does each agency run?"
@@ -190,13 +190,13 @@ Each copy is built from the fixture's DDL (`fixtures/multi-engine/dataset/ddl/<e
 | `tenant-subtree` | The same questions with `subtree` access from agencies 1, 5, 6 and 7 and the lab's resolver: exactly the visible agencies' rows, and the resolver is called once with the root and the seed. |
 | `tenant-subtree-seeds` | A resolver that returns strict descendants only (agency 1 still sees 1, 4, 5 and 6, because `ask()` unions the seeds in), and two seeds at once (5 and 2 see 2, 5, 6 and 7). |
 | `tenant-strict-unfiltered` | A reply with no tenant filter returns every agency's rows when run raw, and strict mode rejects it with `TenantGuardrailError`. |
-| `tenant-strict-column-only`, `-wrong-tenant`, `-or-true`, `-root-table` | Each reply, run raw, returns rows outside agency 2 (a passing test). Strict mode should reject it, but returns the SQL, which leaks when run: `known (#315)`. |
+| `tenant-strict-column-only`, `-wrong-tenant`, `-or-true`, `-root-table` | Each reply, run raw, returns rows outside agency 2, and strict mode rejects it with `TenantGuardrailError` (#315). If strict mode returns the SQL instead, the test runs it and fails on the leaked rows. |
 | `tenant-warn` | With `enforcement: warn`, the unfiltered reply's SQL is returned, and `tenantGuardrail` reports `MISSING_TENANT_PREDICATE`. |
 | `tenant-warn-claims` | The docs name warn mode's warnings `tenantWarnings`; `ask()`'s result has no such field: `known (#316)`. If #316 renames the docs to `tenantGuardrail`, this case is removed. |
 | `tenant-missing-scope` | No `tenantScope` with a policy: `TenantScopeError` `MISSING_SCOPE`, and no model call. Runs once, as `[postgres]`. |
 | `tenant-subtree-no-resolver` | `subtree` access with no resolver: `TenantScopeError` `SUBTREE_NOT_RESOLVABLE`, and no model call. Runs once, as `[postgres]`. |
 
-The `known (#315)` cases fail on the leak itself: when `ask()` returns SQL it should have rejected, the test runs that SQL and compares the rows with the scope's oracle before anything else. Their cells also hold a passing test that runs each reply raw, so a missing or broken cassette shows as `FAIL`, not `known`. The `known (#316)` case fails because a result field is missing, not on a leak. The optional Postgres row-level-security case is #317.
+The strict cases fail on the leak itself: when `ask()` returns SQL it should have rejected, the test runs that SQL and compares the rows with the scope's oracle before anything else. Their cells also hold a test that runs each reply raw, so a missing or broken cassette shows as `FAIL`. The `known (#316)` case fails because a result field is missing, not on a leak. The optional Postgres row-level-security case is #317.
 
 ## The matrix
 
@@ -259,19 +259,21 @@ It covers the `POST /ask` success shape on every dialect, and on Postgres one ca
 
 1. It works out the target's packages and versions (packing tarballs, or reading the published manifests).
 2. It points the lab's direct AskDB dependencies (`DIRECT` in `src/use.mjs`) at the target: `file:` tarball paths, or exact published versions.
-3. It writes a pnpm `overrides` block into `pnpm-workspace.yaml` covering **every** target package, headed by a `# lab:use target:` comment. Without it, a transitive `@askdb/*` dependency would resolve from npm under the same version number, so the lab would quietly test the published code instead of the checkout, or another release than the one asked for.
+3. It writes a pnpm `overrides` block into `pnpm-workspace.yaml` covering **every** target package, headed by a `# lab:use target:` comment. The block sits at the end of the file's `overrides:` map, below the lab's hand-written third-party pins, which it leaves alone. Without it, a transitive `@askdb/*` dependency would resolve from npm under the same version number, so the lab would quietly test the published code instead of the checkout, or another release than the one asked for.
 4. It installs, then reads the lockfile and prints each `@askdb/*` package's version and source. It fails if any package isn't from the target's source (tarball, or registry), isn't at the target's version, or wasn't pinned by the target at all. `pnpm lab:use --check` repeats this check on the current install.
 
 `lab:use` rewrites `package.json`, `pnpm-workspace.yaml` and `pnpm-lock.yaml`. The committed versions are the **`npm:latest` baseline** (decision 2 in the spec): `latest` is what `npm install askdb` resolves, so it's what users run. `pnpm lab:use --restore` brings them back: it removes `.lab/` and `node_modules`, reinstalls the committed lockfile as-is and verifies it against the pins in the committed overrides block.
 
 - **Don't commit the three files after `.`, a path or `git:`**: they hold `file:` tarball paths. Don't commit them after another npm target either.
 - **To refresh the baseline** after a release ships, run `pnpm lab:use npm:latest` and commit the three files.
-- `npm:beta` still works as a target, but the `beta` dist-tags are stale (#267): its CLI can't read the lab's `askdb.config.ts`, so `pnpm lab:test` fails against it.
+- There is no `beta` dist-tag: it was removed from every package on 2026-09-29 (#267), so `pnpm lab:use npm:beta` stops with `no AskDB package is published under the "beta" dist-tag`. Prereleases are on `latest` until the RC line (#354) publishes under `rc`.
 - The lab's typecheck (`pnpm -C examples/consumer-lab lint`) is against the installed target too, so run it after `pnpm lab:use .`.
 
 The lab sets no `minimumReleaseAge`, and it doesn't inherit the monorepo's (it is its own pnpm root). pnpm 11.22 applies no release-age delay without that setting (checked by installing a package published six hours earlier into a standalone pnpm root), so a just-published release installs straight away. If a later pnpm adds a default, add `minimumReleaseAgeExclude: ["askdb", "@askdb/*"]` to the lab's `pnpm-workspace.yaml`.
 
 The baseline pins the lab's third-party dependencies exactly: the drivers (`pg`, `mysql2`, `mssql`, `better-sqlite3`), and `ai`, `@ai-sdk/openai` and `zod` at the versions the workspace uses. The AskDB adapters declare `ai` as a peer, so the host pins it.
+
+A vulnerable transitive dependency that no parent release fixes yet gets an `overrides` entry above the `lab:use` block, with its advisory and removal condition in a comment, mirroring the monorepo's `pnpm-workspace.yaml`. Today that is `deepmerge-ts` (GHSA-ggr8-5vv4-36mx), which `@prisma/config` pins at 7.1.5.
 
 `askdb` depends on `@askdb/prisma`, whose `@prisma/engines` has a postinstall script that pnpm 11 won't run until it's approved. The lab approves it in `pnpm-workspace.yaml`, as a pnpm user would have to (#259). It approves the `better-sqlite3` build the same way.
 
@@ -288,5 +290,6 @@ Capabilities are detected from the installed target's public surface: an export,
 | `http-api-optional-drivers` | the installed `@askdb/http-api`'s published manifest lists no database driver as a dependency, since the docs call drivers optional peers (`guides/switch-engines.mdx`, `reference/packages.mdx`; #260) | `http-no-pg` (`test/surfaces/http-api-no-pg.test.ts`) |
 | `subtree-resolver` | `ask()` with `subtree` access and a recording `resolveTenantDescendants` calls it with the scope's root and seed (`guides/multi-tenancy.mdx`, "Hierarchical scope (`subtree`)"). Releases before #232 was fixed (#270) never call it. The probe doesn't check what `ask()` does with the answer, so a target that drops it fails `tenant-subtree` instead of reporting `n/a` | `tenant-subtree`, `tenant-subtree-no-resolver` (`test/tenant.test.ts`) |
 | `tenant-driver-markers` | `ask()` in `tenantSqlMode: "sql-params"` on SQLite returns `?` markers for the tenant IDs (`reference/core-api.mdx`, `tenantSqlMode`). Releases before the fix for #231 used Postgres `$N` markers on every dialect | the `sql-params` cases of `tenant-ids`, `tenant-subtree` and `tenant-subtree-seeds` (`test/tenant.test.ts`), except on Postgres, whose markers were always `$N`: there only the question with a business parameter needs it, because before #231 was fixed its tenant markers in `sql` were numbered after the business values |
+| `tenant-predicate-required` | strict `ask()` rejects a reply that filters on a literal agency instead of `:tenant_agency_ids` (`docs/contracts/tenant-policy.md`, "Guardrail validation"). Releases before the fix for #315 accepted any mention of the tenant column | the strict-mode rejection cases of `tenant-strict-column-only`, `-wrong-tenant`, `-or-true` and `-root-table` (`test/tenant.test.ts`) |
 
 To add one, add a detector to `DETECTORS` in `src/capabilities.ts`, citing the docs page that documents the capability. A detector that has to run `ask()` is async: it goes in `ASYNC_DETECTORS`, and a scenario awaits `needsCapability` for it.

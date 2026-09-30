@@ -109,6 +109,12 @@ export function buildTenantPromptBlock(
         if (columns.length > 0) lines.push(`      columns: ${columns.join(", ")}`);
       }
       lines.push(NEVER_CROSS_ROOTS);
+      // The tenant guardrail checks every root table the scope covers on its own (#341),
+      // so a query that joins such a root must filter it with its own placeholder too.
+      lines.push(
+        "  A root table listed here that the query reads must itself be filtered with its own placeholder, " +
+          "even when a joined ancestor is filtered too.",
+      );
       break;
     }
     case "global":

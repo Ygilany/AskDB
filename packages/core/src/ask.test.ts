@@ -688,7 +688,7 @@ describe("ask — tenant guardrail runs on the SQL actually returned", () => {
     // "agency_id" is a string, and would reject this.
     const schema = loadSchema(multiTenantDir);
     const generateText = vi.fn(async () => ({
-      text: "```sql\nSELECT * FROM orders WHERE \"agency_id\" = '42'\n```",
+      text: "```sql\nSELECT * FROM orders WHERE \"agency_id\" = :tenant_agency_ids\n```",
     }));
     const result = await ask({
       question: "orders",
@@ -702,7 +702,7 @@ describe("ask — tenant guardrail runs on the SQL actually returned", () => {
     expect(result.tenantGuardrail).toEqual({ passed: true, warnings: [] });
   });
 
-  it("checks the final SQL after tenant placeholder substitution (sql-params mode)", async () => {
+  it("checks the model's SQL before tenant substitution, so its sql-params rendering ($1) passes", async () => {
     const schema = loadSchema(multiTenantDir);
     const generateText = vi.fn(async () => ({
       text: "```sql\nSELECT count(*) FROM orders WHERE agency_id = :tenant_agency_ids\n```",
@@ -1147,6 +1147,56 @@ describe("ask — subtree tenant scope expansion", () => {
     });
 
     expect(result.sql).toBe("SELECT a.id FROM appointments a JOIN clients c ON a.client_id = c.id WHERE c.id IN ('5')");
+  });
+
+  // An expanded subtree puts one placeholder per root in front of the model. With IDs
+  // colliding across roots (agency 1 owns client 5; agency 5 is another tenant), a
+  // placeholder compared with another root's column binds another tenant's IDs. The
+  // strict tenant guardrail (#341) requires each column to be compared with its own
+  // root's placeholder, so these are rejected before any SQL is returned.
+  it.each([
+    {
+      name: "a client placeholder on the agency column",
+      sql: "SELECT id FROM orders WHERE agency_id IN (:tenant_client_ids)",
+      warnings: [["MISSING_TENANT_PREDICATE", "table:public.orders"]],
+    },
+    {
+      name: "a client placeholder under the agency discriminator",
+      sql: "SELECT id FROM notes WHERE owner_type = 'agency' AND owner_id IN (:tenant_client_ids)",
+      warnings: [["MISSING_TYPE_DISCRIMINATOR", "table:public.notes"]],
+    },
+    {
+      name: "the agency placeholder on the client column",
+      sql: "SELECT a.id FROM appointments a JOIN clients c ON a.client_id = c.id WHERE c.id IN (:tenant_agency_ids)",
+      warnings: [
+        ["MISSING_TENANT_PREDICATE", clients],
+        ["MISSING_TENANT_PREDICATE", "table:public.appointments"],
+      ],
+    },
+    // Not a mispairing, but the same rule: every root the expanded scope covers that the
+    // query reads needs its own placeholder, so joining up to the agency alone is refused.
+    {
+      name: "child roots filtered only through the agency",
+      sql:
+        "SELECT a.id FROM appointments a JOIN clients c ON a.client_id = c.id " +
+        "JOIN sub_agencies s ON c.sub_agency_id = s.id WHERE s.agency_id IN (:tenant_agency_ids)",
+      warnings: [
+        ["MISSING_TENANT_PREDICATE", subAgencies],
+        ["MISSING_TENANT_PREDICATE", clients],
+      ],
+    },
+  ])("rejects $name under an expanded subtree (strict)", async ({ sql, warnings }) => {
+    const error = await ask({
+      question: "list rows",
+      schema,
+      model: fakeModel,
+      dialect: sqlDialect(sql),
+      tenantScope: agencySubtree,
+      resolveTenantDescendants: () => ({ [agencies]: ["1"], [subAgencies]: ["5"], [clients]: ["5"] }),
+    }).catch((e: unknown) => e);
+
+    expect(error).toBeInstanceOf(TenantGuardrailError);
+    expect((error as TenantGuardrailError).warnings.map((w) => [w.rule, w.tableId])).toEqual(warnings);
   });
 
   // Regression guard for silent under-scoping: without a resolver there is no

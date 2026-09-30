@@ -124,6 +124,26 @@ async function askCallsSubtreeResolver(): Promise<boolean> {
 }
 
 /**
+ * Whether strict mode requires a tenant predicate that actually filters
+ * (`docs/contracts/tenant-policy.md`, "Guardrail validation": "the required tenant
+ * predicate (`column = :placeholder` …)"): ask on Postgres with a reply that filters on
+ * a literal agency, not the placeholder, and see whether `ask()` rejects it. Releases
+ * before the fix for #315 accepted any mention of the tenant column.
+ */
+async function askRequiresTenantPredicate(): Promise<boolean> {
+  const { idsScope } = await import("./tenant.js");
+  try {
+    await askTenantProbe("postgres", "SELECT program_code FROM org.program WHERE agency_id = 1", {
+      tenantScope: idsScope("postgres", [2]),
+    });
+    return false;
+  } catch (error) {
+    if ((error as { name?: string }).name === "TenantGuardrailError") return true;
+    throw error;
+  }
+}
+
+/**
  * Whether `tenantSqlMode: "sql-params"` binds tenant IDs through the dialect's driver
  * markers (`reference/core-api.mdx`, `tenantSqlMode`: "`?` MySQL/MariaDB/SQLite"): ask on
  * SQLite and check the returned `sql` uses `?`, not Postgres `$N`, and that the scope's ID
@@ -174,6 +194,12 @@ const ASYNC_DETECTORS = {
    * dialect got Postgres `$N` markers.
    */
   "tenant-driver-markers": askBindsTenantDriverMarkers,
+  /**
+   * Strict mode rejecting a tenant filter that doesn't filter: a literal ID, a column only
+   * selected, an `OR`-widened predicate, or an unfiltered root table. Before the fix for
+   * #315 the guardrail accepted any mention of the tenant column.
+   */
+  "tenant-predicate-required": askRequiresTenantPredicate,
 } satisfies Record<string, () => Promise<boolean>>;
 
 export type SyncCapability = keyof typeof DETECTORS;
