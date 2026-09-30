@@ -13,6 +13,16 @@ import type { V2ConceptsFrontmatter } from "./describable.js";
 import { parseTenantPolicyMarkdown, normalizeTenantPolicy } from "./tenant-policy-loader.js";
 import type { NormalizedTenantPolicy } from "./tenant-policy.js";
 
+/**
+ * A parsed `tables/*.md` file plus the path it was read from (relative to the schema
+ * directory, e.g. `tables/customer-records.md`). Filenames are free-form, so warnings
+ * name this path rather than one derived from front-matter.
+ */
+type LoadedTableMarkdown = {
+  tableFile: string;
+  parsed: ReturnType<typeof parseTableMarkdown>;
+};
+
 /** Bundled JSON produced by `askdb bundle` — packs the full directory into one file. */
 type BundledSchemaJson = {
   bundled: true;
@@ -115,14 +125,16 @@ function loadFromDirectory(dir: string): NormalizedSchemaV2 {
 
   // Load optional tables/*.md
   const tableDir = join(dir, "tables");
-  const tableMarkdowns: Record<string, ReturnType<typeof parseTableMarkdown>> = {};
-  const entries = readOptionalDir(tableDir);
-  for (const entry of entries ?? []) {
+  const tableMarkdowns: Record<string, LoadedTableMarkdown> = {};
+  // Sorted so warning order is deterministic (readdir order is filesystem-dependent)
+  // and matches the bundle loader, which sorts its `tables` keys the same way.
+  const entries = (readOptionalDir(tableDir) ?? []).sort();
+  for (const entry of entries) {
     if (!entry.endsWith(".md")) continue;
     const filePath = join(tableDir, entry);
     const content = readRequiredFile(filePath);
     const parsed = parseOrWrap(filePath, () => parseTableMarkdown(content, filePath));
-    tableMarkdowns[parsed.frontmatter.id] = parsed;
+    addTableMarkdown(tableMarkdowns, { tableFile: `tables/${entry}`, parsed }, dir);
   }
 
   // Load optional concepts.md
@@ -203,11 +215,16 @@ function parseOrWrap<T>(path: string, fn: () => T): T {
 
 function loadFromBundle(bundle: BundledSchemaJson, filePath: string): NormalizedSchemaV2 {
   const physical = parsePhysicalLayer(bundle.physical, filePath);
-  const tableMarkdowns: Record<string, ReturnType<typeof parseTableMarkdown>> = {};
+  const tableMarkdowns: Record<string, LoadedTableMarkdown> = {};
 
-  for (const [filename, content] of Object.entries(bundle.tables)) {
+  // Bundle keys are the `tables/` filenames (see `bundleSchemaDirectory` in
+  // @askdb/enrich), so warnings name the same path the directory loader would.
+  // Sorted like the directory loader's entries, so both report warnings in one order.
+  for (const [filename, content] of Object.entries(bundle.tables).sort(([a], [b]) =>
+    a < b ? -1 : a > b ? 1 : 0,
+  )) {
     const parsed = parseTableMarkdown(content, filename);
-    tableMarkdowns[parsed.frontmatter.id] = parsed;
+    addTableMarkdown(tableMarkdowns, { tableFile: `tables/${filename}`, parsed }, filePath);
   }
 
   // Mirror the directory loader: only an *absent* key means "no file". A present
@@ -231,6 +248,27 @@ function loadFromBundle(bundle: BundledSchemaJson, filePath: string): Normalized
   }
 
   return buildNormalized(physical, tableMarkdowns, concepts, [], tenantPolicy);
+}
+
+/**
+ * Register a parsed table markdown under its front-matter `id`. Two files claiming the
+ * same table is a broken artifact, not something to resolve silently: keeping either
+ * one would drop the other's front-matter (including any `sensitive: true`), and
+ * authoring tools could pair the table with the file the loader ignores.
+ */
+function addTableMarkdown(
+  tableMarkdowns: Record<string, LoadedTableMarkdown>,
+  loaded: LoadedTableMarkdown,
+  schemaPath: string,
+): void {
+  const id = loaded.parsed.frontmatter.id;
+  const existing = tableMarkdowns[id];
+  if (existing) {
+    throw new SchemaParseError(
+      `Invalid schema at ${schemaPath}: ${existing.tableFile} and ${loaded.tableFile} both have front-matter id \`${id}\`. Each table needs exactly one markdown file; merge them.`,
+    );
+  }
+  tableMarkdowns[id] = loaded;
 }
 
 /** Read an optional bundled markdown file: `undefined` only when the key is absent. */
@@ -276,38 +314,77 @@ function parsePhysicalLayer(data: unknown, filePath: string): V2SchemaJson {
 
 function buildNormalized(
   physical: V2SchemaJson,
-  tableMarkdowns: Record<string, ReturnType<typeof parseTableMarkdown>>,
+  tableMarkdowns: Record<string, LoadedTableMarkdown>,
   concepts: V2ConceptsFrontmatter | undefined,
   extraWarnings: SchemaV2Warning[],
   tenantPolicy: NormalizedTenantPolicy | undefined,
 ): NormalizedSchemaV2 {
   const warnings: SchemaV2Warning[] = [...extraWarnings];
 
-  // Build a map of all physical table ids and column ids for ID validation
+  // Physical table ids, and each physical column id's owning table, for ID validation
   const physicalTableIds = new Set(physical.tables.map((t) => t.id));
-  const physicalColumnIds = new Set(
-    physical.tables.flatMap((t) => t.columns.map((c) => c.id)),
+  const columnOwner = new Map(
+    physical.tables.flatMap((t) => t.columns.map((c) => [c.id, t.id] as const)),
   );
 
+  // Column ids that any front-matter entry marks `sensitive: true`: in the owning
+  // table's markdown or another's, first entry or a later duplicate. Sensitivity is the
+  // one field aggregated across every entry naming a column, because escalating can
+  // only add protection; no entry can cancel another's `sensitive: true`.
+  const escalatedColumnIds = new Set<string>();
+
   // Validate all table markdown IDs against physical layer
-  for (const [id, parsed] of Object.entries(tableMarkdowns)) {
+  for (const [id, { tableFile, parsed }] of Object.entries(tableMarkdowns)) {
     if (!physicalTableIds.has(id)) {
-      warnings.push({ kind: "orphaned_table_id", tableFile: `tables/${parsed.frontmatter.name}.md`, id });
+      warnings.push({ kind: "orphaned_table_id", tableFile, id });
     }
+    const seenColumnIds = new Set<string>();
     for (const col of parsed.frontmatter.columns ?? []) {
-      if (!physicalColumnIds.has(col.id)) {
-        warnings.push({ kind: "orphaned_column_id", tableFile: `tables/${parsed.frontmatter.name}.md`, id: col.id });
+      // A repeated entry's description/aliases/enum are ignored (the first entry's
+      // apply), but its `sensitive: true` still escalates.
+      if (seenColumnIds.has(col.id)) {
+        warnings.push({ kind: "duplicate_column_id", tableFile, id: col.id });
+      }
+      seenColumnIds.add(col.id);
+      if (col.sensitive === true) escalatedColumnIds.add(col.id);
+
+      const owner = columnOwner.get(col.id);
+      if (owner === undefined) {
+        warnings.push({ kind: "orphaned_column_id", tableFile, id: col.id });
+      } else if (owner !== id) {
+        // A column id names exactly one column, so a `sensitive: true` filed under the
+        // wrong table's markdown still escalates it: honoring it can only add
+        // protection, while dropping it would silently expose a column the author
+        // marked sensitive. Nothing else in the entry applies: `sensitive: false` never
+        // de-escalates, and description/aliases/enum belong in the owner's own file.
+        warnings.push({ kind: "misplaced_column_id", tableFile, id: col.id, tableId: owner });
       }
     }
   }
 
   const tables: NormalizedV2Table[] = physical.tables.map((physTable) => {
-    const md = tableMarkdowns[physTable.id];
-    const tableSensitive = physTable.sensitive === true;
+    const loaded = tableMarkdowns[physTable.id];
+    const md = loaded?.parsed;
+    const tableFile = loaded?.tableFile ?? "";
+
+    // Sensitivity is escalate-only: front-matter `sensitive: true` (written by
+    // Studio / @askdb/enrich) marks a table or column sensitive on top of
+    // schema.json, but front-matter can never make something *less* sensitive.
+    // A `sensitive: false` that contradicts an effective `true` is ignored and
+    // reported as a warning so the author sees the override had no effect.
+    const tableSensitive = physTable.sensitive === true || md?.frontmatter.sensitive === true;
+    if (md?.frontmatter.sensitive === false && tableSensitive) {
+      warnings.push({ kind: "sensitivity_downgrade_ignored", tableFile, id: physTable.id });
+    }
 
     const columns: NormalizedV2Column[] = physTable.columns.map((physCol) => {
-      const colSensitive = physCol.sensitive === true || tableSensitive;
-      const mdCol = md?.frontmatter.columns?.find((c) => c.id === physCol.id);
+      const mdCols = md?.frontmatter.columns?.filter((c) => c.id === physCol.id) ?? [];
+      const mdCol = mdCols[0];
+      const colSensitive =
+        physCol.sensitive === true || escalatedColumnIds.has(physCol.id) || tableSensitive;
+      if (colSensitive && mdCols.some((c) => c.sensitive === false)) {
+        warnings.push({ kind: "sensitivity_downgrade_ignored", tableFile, id: physCol.id });
+      }
 
       const normalized: NormalizedV2Column = {
         id: physCol.id,

@@ -17,9 +17,9 @@ export interface Oracle {
   rows(): unknown[][];
 }
 
-type Row = Record<string, string | number | boolean | null>;
+export type Row = Record<string, string | number | boolean | null>;
 
-const table = (schema: string, name: string): Row[] => loadRows({ schema, name });
+export const table = (schema: string, name: string): Row[] => loadRows({ schema, name });
 const agencies = () => table("org", "agency");
 const programs = () => table("org", "program");
 const clients = () => table("people", "client");
@@ -28,21 +28,21 @@ const orders = () => table("billing", "order");
 const payments = () => table("billing", "payment");
 
 /** `"118.05"` → 11805n. Every decimal in the dataset has two places. */
-function cents(value: unknown): bigint {
+export function cents(value: unknown): bigint {
   const match = /^(-?)(\d+)\.(\d{2})$/.exec(String(value));
   if (!match) throw new Error(`oracle: not a two-place decimal: ${JSON.stringify(value)}`);
   const magnitude = BigInt(match[2]!) * 100n + BigInt(match[3]!);
   return match[1] ? -magnitude : magnitude;
 }
 
-function fromCents(value: bigint): string {
+export function fromCents(value: bigint): string {
   const sign = value < 0n ? "-" : "";
   const abs = value < 0n ? -value : value;
   return `${sign}${abs / 100n}.${String(abs % 100n).padStart(2, "0")}`;
 }
 
 /** Group rows by a key and fold each group. Key order is first appearance. */
-function groupBy<K, V>(rows: Row[], key: (r: Row) => K, fold: (group: Row[]) => V): [K, V][] {
+export function groupBy<K, V>(rows: Row[], key: (r: Row) => K, fold: (group: Row[]) => V): [K, V][] {
   const groups = new Map<K, Row[]>();
   for (const r of rows) groups.set(key(r), [...(groups.get(key(r)) ?? []), r]);
   return [...groups].map(([k, group]) => [k, fold(group)]);

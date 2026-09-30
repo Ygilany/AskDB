@@ -204,7 +204,7 @@ AskDB returns SQL for review; it does not execute generated SQL. Treat generated
 - **Human-reviewed schema enrichment** — introspect your database, then enrich the schema artifact with descriptions, aliases, and business concepts using Studio.
 - **Clear execution boundary** — AskDB returns SQL; the library, CLI, and HTTP API do not execute it against your database. Your application decides whether to show it, review it, approve it, run it, log it, or reject it.
 - **Multiple surfaces** — the same schema artifact and generation pipeline across the CLI, a Node library, and an HTTP API.
-- **Multi-tenancy** — define a tenant policy (roots, hierarchy, scoped/polymorphic/global tables) and pass a runtime tenant scope to `ask()`; AskDB prompts the model to filter by tenant, binds your tenant IDs into the SQL, and runs a heuristic check that each scoped table's tenant column appears. Enforce tenant isolation in the database as the primary boundary.
+- **Multi-tenancy** — define a tenant policy (roots, hierarchy, scoped/polymorphic/global tables) and pass a runtime tenant scope to `ask()`; AskDB prompts the model to filter by tenant, binds your tenant IDs into the SQL, and runs a heuristic check that each scoped table has a tenant predicate that filters (its tenant column compared with the tenant placeholder, ANDed into the filter). Enforce tenant isolation in the database as the primary boundary.
 
 ## Product notes
 

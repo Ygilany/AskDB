@@ -111,6 +111,8 @@ pnpm changeset
 
 AskDB is currently pre-1.0. Breaking public API changes should normally use a minor changeset unless the project intentionally moves a package to 1.0.
 
+Releases are automated: merged changesets collect in a "chore: version packages (beta)" PR, and merging it publishes to npm after a maintainer approves. See [`docs/release.md`](docs/release.md).
+
 ## Safety Boundary
 
 AskDB public surfaces return generated SQL for review. They do not execute generated SQL. Any downstream execution must happen under the integrator's own database roles, read-only controls, tenant policy, approval process, and audit logging.

@@ -6,7 +6,7 @@ This document is the **format contract** for AskDB's describable-schema layer. I
 2. **Field semantics** — the structured front-matter fields and their meanings.
 3. **Stable identifiers** — the `id` scheme that survives re-introspection and re-embedding.
 4. **Chunking rules** — how `@askdb/rag` slices the artifact for embedding and retrieval.
-5. **Sensitive propagation** — how the `sensitive` flag flows from the physical layer into prompts and chunks.
+5. **Sensitive propagation** — how the `sensitive` flag flows from the physical layer (escalated by front-matter) into prompts and chunks.
 6. **Versioning** — how Schema v2 evolves pre-1.0 and how a future v3 would land.
 
 Schema v2 is the **only** schema format AskDB understands once Phase 5 lands. Pre-1.0 we are not maintaining a backward-compat path to any earlier internal format; the `version` literal in `schema.json` stays `2` as a stable marker.
@@ -30,8 +30,8 @@ my-app.schema/
 
 | File | Required | Owner | Source of truth for |
 |---|---|---|---|
-| `schema.json` | yes | introspection / human | physical structure (tables, columns, types, FKs, `sensitive`) |
-| `tables/<table>.md` | optional, one per described table | Studio / web catalog / human | descriptions, business context, aliases, common query language, examples |
+| `schema.json` | yes | introspection / human | physical structure (tables, columns, types, FKs, baseline `sensitive`) |
+| `tables/<table>.md` | optional, one per described table | Studio / web catalog / human | descriptions, business context, aliases, common query language, examples, escalate-only `sensitive` overrides |
 | `concepts.md` | optional | Studio / human | cross-table vocabulary (e.g. *customer* → users + leads) |
 | `schema.lock.json` | optional | `@askdb/rag` | embedding checksums per chunk id |
 
@@ -168,15 +168,15 @@ The front-matter shape is validated by zod (in `@askdb/core`). Cross-reference c
 | `primaryEntity` | string | no | Slug of the concept this table primarily represents (e.g. `order`). |
 | `aliases` | string[] | no | Alternate phrases users say for this table. |
 | `tags` | string[] | no | Free-form labels (`pii`, `revenue`, `internal-only`). |
-| `sensitive` | boolean | no | Accepted by the front-matter parser, but the current loader does not apply it. Effective sensitivity comes from `schema.json` only. |
+| `sensitive` | boolean | no | **Escalate-only.** `true` makes the table (and therefore every column in it) sensitive even when `schema.json` does not. `false` never un-marks a table `schema.json` marks sensitive; the loader ignores it and emits a `sensitivity_downgrade_ignored` warning. See [Sensitive propagation](#sensitive-propagation). |
 | `tracked` | boolean | no | Defaults to `true`. Set `false` to keep the table in the schema artifact but exclude it from full-schema NL→SQL prompt DDL and RAG indexing. |
 | `toIgnore` / `to-ignore` | boolean | no | Authoring aliases for table exclusion. `true` is normalized to `tracked: false`; writers persist the canonical `tracked` field. |
-| `columns` | array | no | Per-column overrides and additions. Items keyed by `id`. |
-| `columns[].id` | string | yes (in array) | Intended to equal a `table:*#*` id from `schema.json`. Unknown column IDs are reported as loader warnings and are ignored by normalization/chunking. |
+| `columns` | array | no | Per-column overrides and additions. Items keyed by `id`; list each column once. A repeated `id` is reported as a `duplicate_column_id` warning: only the first entry's description, aliases, and enum apply, while sensitivity is aggregated across every entry (see [Sensitive propagation](#sensitive-propagation)). |
+| `columns[].id` | string | yes (in array) | Intended to equal a `table:*#*` id from `schema.json` that belongs to this file's table. Unknown column IDs are reported as loader warnings and are ignored by normalization/chunking. An ID that belongs to a *different* table is reported as a `misplaced_column_id` warning; only its `sensitive: true` is applied (see [Sensitive propagation](#sensitive-propagation)), every other field of the entry is ignored. |
 | `columns[].aliases` | string[] | no | Alternate names for this column. |
 | `columns[].enum` | string[] | no | Known value set, used in prompts and "common query language" chunks. |
 | `columns[].description` | string | no | One- or two-sentence description. Goes into the column chunk. |
-| `columns[].sensitive` | boolean | no | Accepted by the front-matter parser, but the current loader does not apply it. Effective sensitivity comes from `schema.json` only. |
+| `columns[].sensitive` | boolean | no | **Escalate-only.** `true` makes the column sensitive even when `schema.json` does not. `false` never un-marks a column that is sensitive via `schema.json`, via a sensitive table, or via another front-matter entry's `sensitive: true`; the loader ignores it and emits a `sensitivity_downgrade_ignored` warning. |
 
 Front-matter must be **complete enough to validate** — unknown keys are an error (caught early so typos don't silently disappear). Use markdown body for anything not modeled. Cross-reference mismatches are non-fatal so re-introspection can surface orphaned describable metadata and authoring tools can offer a prune flow instead of refusing to load.
 
@@ -251,7 +251,24 @@ Given the same v2 artifact, the chunker must produce the **same chunk ids and th
 
 ## Sensitive propagation
 
-The `sensitive` flag must flow consistently from the physical layer through prompts and chunks. Prompt tagging and omission govern only what the model **sees**; SQL that reaches execution by another route (a host SQL cache, a replayed statement, a regenerated artifact) is covered by `validateSensitiveReferences` — see [`sensitive-fields-and-modes.md`](./sensitive-fields-and-modes.md). Behavior matches today's [`sensitive-fields-and-modes.md`](./sensitive-fields-and-modes.md) defaults extended for v2:
+The `sensitive` flag must flow consistently from the physical layer through prompts and chunks.
+
+**Effective sensitivity (escalate-only).** The loader computes one effective `sensitive` value per table and per column, and every downstream surface (prompt DDL, RAG chunks, `validateSensitiveReferences`) reads only that value from the normalized schema:
+
+- table sensitive = `schema.json` table `sensitive: true` **or** table front-matter `sensitive: true`
+- column sensitive = `schema.json` column `sensitive: true` **or** any front-matter `columns[]` entry naming the column with `sensitive: true` (in any `tables/*.md` file, including repeated entries) **or** the table is sensitive
+
+Front-matter can only *add* sensitivity, never remove it. This is what makes the Studio Sensitivity controls (which write front-matter via `@askdb/enrich`) take effect, while guaranteeing a describable-layer edit can never quietly expose something the physical layer marks sensitive. A front-matter `sensitive: false` that contradicts an effective `true` is ignored and reported in `NormalizedSchemaV2.warnings` as `{ kind: "sensitivity_downgrade_ignored", tableFile, id }` (Studio shows these under Settings → Schema Warnings). To un-mark something the physical layer marks sensitive, edit `schema.json`. The rule is identical for directory and bundle loads, since bundles carry the table markdown verbatim.
+
+A column ID is authoritative about which column it names. When a `columns[]` entry sits in another table's markdown (for example `table:public.users#ssn` listed in `tables/orders.md`), the loader reports `{ kind: "misplaced_column_id", tableFile, id, tableId }`, where `tableId` is the table that owns the column. Its `sensitive: true` still escalates the named column, because dropping it would silently expose a column the author marked sensitive and escalating can only add protection. Nothing else in a misplaced entry is applied: a `sensitive: false` never de-escalates, and its description, aliases, and enum are ignored because prompt-visible metadata belongs in the owning table's file (which may carry its own, conflicting entry). Move the entry to the owning table's markdown to fix the warning.
+
+A column may be named by more than one `columns[]` entry: repeated in the same file, or in several files through misplaced entries. Sensitivity is aggregated across all of them: the column is sensitive if any entry says `sensitive: true`, and no entry's `sensitive: false` cancels it (a contradicted `false` in the owning table's file is reported as `sensitivity_downgrade_ignored`). Each repeat of an ID within one file is reported as `{ kind: "duplicate_column_id", tableFile, id }`, and only the first entry's description, aliases, and enum are applied. Merge the entries into one to fix the warning.
+
+Each table has at most one markdown file. Two `tables/*.md` files whose front-matter has the same `id` make the artifact invalid: the loader throws `SchemaParseError` naming both files, for directory and bundle loads alike, rather than silently keeping one and dropping the other's front-matter (including any `sensitive: true`). Table markdown files are read in sorted filename order (bundle `tables` keys likewise), so warnings come out in the same deterministic order for both.
+
+Every loader warning that names a table markdown file (`orphaned_table_id`, `orphaned_column_id`, `sensitivity_downgrade_ignored`, `misplaced_column_id`, `duplicate_column_id`) reports the file actually read as `tables/<filename>` (for a bundle, the `tables` entry key), not a path derived from front-matter `name`, since table markdown filenames are free-form.
+
+Describable-layer fields (description, aliases, enum, `Common query language`) of an effectively sensitive table or column are dropped from the normalized schema exactly as they are for `schema.json`-sensitive ones. Prompt tagging and omission govern only what the model **sees**; SQL that reaches execution by another route (a host SQL cache, a replayed statement, a regenerated artifact) is covered by `validateSensitiveReferences` — see [`sensitive-fields-and-modes.md`](./sensitive-fields-and-modes.md). Behavior matches today's [`sensitive-fields-and-modes.md`](./sensitive-fields-and-modes.md) defaults extended for v2:
 
 | Surface | Default behavior for sensitive table/column | Override |
 |---|---|---|

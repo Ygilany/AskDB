@@ -41,6 +41,10 @@ pnpm preflight
 
 GitHub Issues on `Ygilany/AskDB`, via `gh`. Unimplemented plans (label `plan`), specs and doc/behavior discrepancies (label `discrepancy`) live there, not as new files in the repo. See `docs/agents/issue-tracker.md`.
 
+### Project board
+
+Priorities and release scope live on GitHub Project #27. Read `docs/agents/project-board.md` before choosing your next item, when you find work outside your current item, and when you need a maintainer decision.
+
 ### Triage labels
 
 The five default roles (`needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, `wontfix`), with label strings matching the role names. See `docs/agents/triage-labels.md`.
@@ -69,4 +73,4 @@ Single-context: a root `CONTEXT.md` (created lazily) plus ADRs in `docs/adrs/`. 
 - Add a changeset (`pnpm changeset`) for any change to a publishable package. AskDB is pre-1.0 — breaking public API changes normally use a minor changeset unless the project is intentionally moving a package to 1.0.
 - Keep `apps/docs-site` accurate as you go, not as a follow-up: don't invent package names, APIs, or file paths there — verify against the actual source or existing docs content before writing a claim.
 - Markdown and MDX (docs, ADRs, skills, changesets, READMEs): one line per paragraph or list item, left for the editor to soft-wrap. Break lines only where the Markdown structure needs it — headings, list items, table rows, code blocks.
-- When opening an issue or PR, include a metadata section at the bottom with the originating thread ID. Format: `Thread ID: [id]`. This provides traceability back to the conversation that initiated the work and helps retrieve context later.
+- When opening an issue or PR, include a metadata section at the bottom with the originating thread ID and its worktree. Format: `Thread ID: <thread-uuid> (worktree <worktree-name>)`, e.g. `Thread ID: 743d36c3-aac8-423a-b74c-62e1bbc9fa00 (worktree t3code-a0ad9d56)`. The worktree directory name is not the thread ID; look the UUID up as described in `docs/agents/project-board.md` (**Thread lines**). This provides traceability back to the conversation that initiated the work and helps retrieve context later. A thread that picks up an existing issue adds `Worked on by: <thread-uuid> (worktree <worktree-name>)` below that footer.

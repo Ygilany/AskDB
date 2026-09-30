@@ -120,7 +120,7 @@ type AskDialectInput =
   | AskDialect              // escape hatch: full custom { generate() } implementation
 ```
 
-A custom `AskDialect` bypasses the built-in SELECT-only validation. If the adapter should only emit read-only SQL, call the exported `validateSelectSql(spec, sql)` itself. Tenant enforcement does not depend on the dialect: when the schema has a tenant policy, `ask()` substitutes tenant placeholders and runs the tenant guardrail on the final SQL for every dialect form. An unknown string dialect id throws `UnknownDialectError`, which extends `AskDbError`.
+A custom `AskDialect` bypasses the built-in SELECT-only validation. If the adapter should only emit read-only SQL, call the exported `validateSelectSql(spec, sql)` itself. Tenant enforcement does not depend on the dialect: when the schema has a tenant policy, `ask()` runs the tenant guardrail on the model's SQL, with the tenant placeholders still named, and then substitutes them, for every dialect form. An unknown string dialect id throws `UnknownDialectError`, which extends `AskDbError`.
 
 Key events emitted (stable field names, present on every log record):
 - `askdb.pipeline.started`
