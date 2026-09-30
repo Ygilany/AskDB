@@ -264,7 +264,7 @@ const rows = result.recordset;
 | Prisma `sqlserver://` | `sqlserver://localhost:1433;database=MyDb;user=sa;password=pass` |
 | ADO.NET (`Key=Value;`) | `Server=localhost,1433;Database=MyDb;User Id=sa;Password=pass;` |
 
-In the Prisma form, wrap a value that contains `: \ = ; / [ ] { }` in curly braces, as Prisma does: `password={Pass:Word;}`. Strings that worked before, including unbraced `=` and non-ASCII characters, are read exactly as before; only a `{` that is never closed, or two aliases of one setting with different values (`password=a;pwd=b`), is rejected with an error that says why.
+In the Prisma form, wrap a value that contains `: \ = ; / [ ] { }` in curly braces, as Prisma does: `password={Pass:Word;}`. A string without `{` is read exactly as before, including an unbraced `=` and non-ASCII characters. A value with a literal `{` is now read as Prisma reads it: `password={abc}` is `abc`, and a `{` that is never closed is rejected with an error that says why. To keep a literal brace, write it inside a braced run: `{a{b}}c` is `a{b}c`.
 
 ### TLS / self-signed certificates
 

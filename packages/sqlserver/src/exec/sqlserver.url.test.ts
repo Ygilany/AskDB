@@ -157,11 +157,8 @@ describe("resolveConnectionInput", () => {
       expect(result).toMatchObject({ database: "app", password: "S3c;database=ret;" });
     });
 
-    it.each([
-      ["a { that is never closed", "sqlserver://h;password={S3cret", "is never closed"],
-      ["two aliases of the password with different values", "sqlserver://h;password=a;pwd=b", "different values"],
-    ])("throws for %s", (_name, input, message) => {
-      expect(() => resolveConnectionInput(input)).toThrow(message);
+    it("throws for a { that is never closed", () => {
+      expect(() => resolveConnectionInput("sqlserver://h;password={S3cret")).toThrow("is never closed");
     });
   });
 });
@@ -239,6 +236,10 @@ describe("sqlserver:// backward compatibility with the parser before #189", () =
     "sqlserver://h;initial catalog=app;user=sa;password=S3cret",
     // Empty keys and values are skipped.
     "sqlserver://h;=x;user=;password=S3cret",
+    // An alias next to its canonical key: the canonical key wins, as when aliases were ignored.
+    "sqlserver://h;user=sa;uid=other;password=x",
+    "sqlserver://h;user=sa;password=a;pwd=b",
+    "sqlserver://h;uid=other;user=sa;pwd=b;password=a",
   ])("reads %s exactly as before", (input) => {
     expect(resolveConnectionInput(input)).toEqual(legacyParsePrismaSqlServerUrl(input));
   });
@@ -268,5 +269,32 @@ describe("sqlserver:// backward compatibility with the parser before #189", () =
     const now = resolveConnectionInput(input) as { user?: string; password?: string };
     expect({ user: old.user, password: old.password }).toEqual(before);
     expect({ user: now.user, password: now.password }).toEqual(after);
+  });
+});
+
+// Values holding a literal { or }: before #189 braces were plain characters; now
+// a { opens a Prisma escape (the maintainer is deciding which reading to keep).
+// Each row records the old reading, whether that reading could ever have been
+// the value the user meant, and the reading now, which is also Prisma's own
+// (prisma/connection-string src/jdbc.rs). `throws` means an unclosed {.
+describe("sqlserver:// values with braces: the old reading vs Prisma's", () => {
+  it.each<[input: string, field: "password" | "database", old: string, oldCouldWork: boolean, now: string]>([
+    ["sqlserver://h;user=sa;password={abc}", "password", "{abc}", true, "abc"],
+    ["sqlserver://h;user=sa;password=a{b}c;database=app", "password", "a{b}c", true, "abc"],
+    ["sqlserver://h;user=sa;password=ab{cd", "password", "ab{cd", true, "throws"],
+    ["sqlserver://h;user=sa;password=}{", "password", "}{", true, "throws"],
+    // Prisma's doc example. The old parser split at the ; inside the braces and
+    // dropped the `}` segment, so it sent `{Pass:Word`: neither the braced value
+    // (`Pass:Word;`) nor the literal text (`{Pass:Word;}`).
+    ["sqlserver://h;user=sa;password={Pass:Word;}", "password", "{Pass:Word", false, "Pass:Word;"],
+    ["sqlserver://h;user=sa;password={Pass:Word}", "password", "{Pass:Word}", true, "Pass:Word"],
+    ["sqlserver://h;user=sa;password=x;database={app}", "database", "{app}", true, "app"],
+  ])("%s (%s): before %s (could have worked: %s), now %s", (input, field, old, _oldCouldWork, now) => {
+    expect((legacyParsePrismaSqlServerUrl(input) as Record<string, unknown>)[field]).toBe(old);
+    if (now === "throws") {
+      expect(() => resolveConnectionInput(input)).toThrow("is never closed");
+    } else {
+      expect((resolveConnectionInput(input) as Record<string, unknown>)[field]).toBe(now);
+    }
   });
 });

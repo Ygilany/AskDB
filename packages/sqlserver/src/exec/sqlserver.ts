@@ -186,8 +186,8 @@ function parseMssqlSchemeUrl(connectionString: string): MssqlConfigInput {
  * Parse Prisma's SQL Server connection URL,
  * `sqlserver://HOST[:PORT][;key=value…]`.
  *
- * Backward compatible with the parser this replaces: a string without `{`
- * connects with exactly the same values as before. Segments are split on `;`,
+ * Backward compatible with the parser this replaces for every string without
+ * `{`: it connects with exactly the same values as before. Segments are split on `;`,
  * a key ends at its first `=` (so `password=a=b` is `a=b`), keys are trimmed
  * and lower-cased, values are trimmed, non-ASCII is fine, a segment without
  * `=` or with an empty key or value is skipped, and a later key replaces an
@@ -200,14 +200,18 @@ function parseMssqlSchemeUrl(connectionString: string): MssqlConfigInput {
  * JDBC-string parser (`prisma/connection-string`, `src/jdbc.rs`): a `{` opens
  * a span read verbatim up to the first `}`, so `;` and `=` inside it are part
  * of the value, and braced and plain runs join (`{abc;}}45}` is `abc;}45}`).
- * Prisma's credential aliases are honoured (`username` and `uid` for `user`,
- * `pwd` for `password`): the old parser dropped them, so such a string had no
- * credentials. `initial catalog` is not, because the old parser ignored it and
+ * That changes a value holding a literal `{`: the old parser kept braces as
+ * plain characters (`password={abc}` was `{abc}`, now `abc`; `ab{cd` now
+ * throws). A literal brace is written inside a braced run: `{a{b}}c` is
+ * `a{b}c`.
+ * Prisma's credential aliases are read (`username` and `uid` for `user`,
+ * `pwd` for `password`) only when the canonical key is absent: the old parser
+ * dropped them, so such a string had no credentials, and where the canonical
+ * key is present it still wins. `initial catalog` is not, because the old parser ignored it and
  * the connection used the login's default database; reading it now would
  * change where a working string connects.
  *
- * It throws only where the reading can't be settled: a `{` that is never
- * closed, or two aliases of one setting with different values.
+ * It throws only for a `{` that is never closed.
  */
 function parsePrismaSqlServerUrl(connectionString: string): MssqlConfigInput {
   const segments = splitPrismaSegments(connectionString.slice("sqlserver://".length));
@@ -237,15 +241,10 @@ function parsePrismaSqlServerUrl(connectionString: string): MssqlConfigInput {
     if (key && value) params[key] = value;
   }
 
-  const pick = (...aliases: string[]): string | undefined => {
-    const values = [...new Set(aliases.filter((alias) => params[alias] !== undefined).map((alias) => params[alias]!))];
-    if (values.length > 1) {
-      throw new AskDbError(
-        `Prisma-style SQL Server URL sets ${aliases.join(" / ")} to different values. Keep one of them.`,
-      );
-    }
-    return values[0];
-  };
+  // The canonical key wins, as it did when the aliases were ignored; an alias
+  // is used only when the canonical key is absent.
+  const pick = (...keys: string[]): string | undefined =>
+    keys.map((key) => params[key]).find((value) => value !== undefined);
   const database = params["database"];
   const user = pick("user", "username", "uid");
   const password = pick("password", "pwd");
