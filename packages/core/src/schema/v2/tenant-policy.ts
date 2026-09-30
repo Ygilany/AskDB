@@ -229,14 +229,20 @@ const tenantAccessSubtreeSchema = z.object({
 
 const tenantAccessMultiRootSchema = z.object({
   kind: z.literal("multi_root"),
+  // An entry may have no IDs: it names a root the user is covered for but has no rows
+  // in (ask() expands an empty subtree level this way). Binding its placeholder fails
+  // closed (UNRESOLVED_TENANT_PLACEHOLDER). A scope with no ID anywhere grants nothing.
   scopes: z
     .array(
       z.object({
         tenantRoot: z.string().min(1),
-        ids: z.array(z.string()).min(1),
+        ids: z.array(z.string()),
       }),
     )
-    .min(1),
+    .min(1)
+    .refine((scopes) => scopes.some((s) => s.ids.length > 0), {
+      message: "multi_root needs at least one entry with an ID",
+    }),
 });
 
 const tenantAccessGlobalSchema = z.object({

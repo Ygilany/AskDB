@@ -260,8 +260,8 @@ interface TenantScope {
         kind: "multi_root";
         scopes: Array<{
           tenantRoot: string;
-          ids: string[];
-        }>;
+          ids: string[]; // may be empty: the root is covered but has no IDs
+        }>; // at least one entry must have an ID
       }
     | {
         kind: "global";
@@ -287,7 +287,7 @@ interface TenantScope {
 |---|---|---|
 | `ids` | User can see rows matching specific tenant IDs at one root level. | Most common. Host has resolved the user's access to a flat ID list. |
 | `subtree` | User can see a root and all its descendants in the hierarchy: same-table descendants of the root, and the rows of every descendant root (`roots[].parent`, `hierarchy[]`). | Hierarchical admins (state → counties, agency → sub-agencies → clients). Requires `ask({ resolveTenantDescendants })`, which returns IDs per root; see [Subtree expansion](#subtree-expansion). |
-| `multi_root` | User has different scopes at different hierarchy levels. | Edge case: user is admin at one agency but also has direct client-level access elsewhere. |
+| `multi_root` | User has different scopes at different hierarchy levels. An entry may have an empty `ids` list: that root is covered but has no IDs, so reading it fails closed (its placeholder throws `UNRESOLVED_TENANT_PLACEHOLDER`). At least one entry must have an ID. | Edge case: user is admin at one agency but also has direct client-level access elsewhere. |
 | `global` | User can see all data across all tenants. | Admin/superuser. Requires an explicit `reason` string for audit. |
 
 ### Subtree expansion
@@ -322,7 +322,7 @@ Contract:
 - The allowed keys are `tenantRoot` and every root reachable from it through `roots[].parent` or `hierarchy[]`. The value under a key holds IDs of that root's own `tenantIdColumn`, never another root's IDs.
 - Under `tenantRoot`, return the seeds and any same-table descendants. A self-referencing hierarchy (e.g. `agencies.parent_agency_id`, which the policy can't declare yet) puts every agency in the tree under `tenantRoot`.
 - `ask()` unions the seed IDs into the `tenantRoot` entry (deduplicated), so an ancestor never loses its own rows when a resolver returns strict descendants only. A missing key, or an empty array, means that root has no IDs in the subtree.
-- The expanded scope is `{ kind: "multi_root", scopes }`, with one entry per root the subtree covers: `tenantRoot` first, then its descendant roots breadth-first. A covered root with no IDs stays in the scope with `ids: []`, so reading it fails closed (below) instead of being less restricted than a root with some IDs. When the subtree is `tenantRoot` alone (no descendant roots in the policy), it is the equivalent `{ kind: "ids", tenantRoot, ids }`. The prompt, the tenant guardrail, and placeholder substitution all see the expanded scope, and so does a custom `AskDialect` (`options.tenantScope`), which should expect an empty `ids` list there. Advisory `context` is unchanged.
+- The expanded scope is `{ kind: "multi_root", scopes }`, with one entry per root the subtree covers: `tenantRoot` first, then its descendant roots breadth-first. A covered root with no IDs stays in the scope with `ids: []`, so reading it fails closed (below) instead of being less restricted than a root with some IDs. When the subtree is `tenantRoot` alone (no descendant roots in the policy), it is the equivalent `{ kind: "ids", tenantRoot, ids }`. The prompt, the tenant guardrail, and placeholder substitution all see the expanded scope, and so does a custom `AskDialect` (`options.tenantScope`). The scope schema allows an empty `ids` list per `multi_root` entry (at least one entry must have an ID), so `validateTenantScope()` accepts the expanded scope. Advisory `context` is unchanged.
 - When the policy declares more than one root, the prompt for a `multi_root` or `ids` scope lists, under each placeholder, the columns that hold that root's IDs (its own ID column, child roots' foreign keys to it, scoped tables' direct columns, and polymorphic ID columns with their discriminator value), and tells the model never to compare one root's placeholder with another root's column. For `multi_root`, a child root's foreign key is left out of its parent's list when that child is itself in the scope; a root with no IDs is marked as such; and the prompt says that every listed root table the query reads must be filtered with its own placeholder, not only through its parent's foreign key or a joined ancestor. A single-root policy's `ids` block is unchanged.
 - The expanded scope goes through the same [guardrail validation](#guardrail-validation) as any `multi_root` scope. So each scoped table's tenant column must be compared with its own root's placeholder, and a polymorphic discriminator must match the root whose placeholder filters the id column. Each root the expanded scope names (every covered level, including one with no IDs) is checked as a root table. A query that reads `clients` under an expanded agency subtree must filter it with `:tenant_client_ids` (or a column that carries client IDs), not only through `clients.sub_agency_id` or a joined, filtered agency. The guardrail's remaining limits (below) still apply.
 - A covered root with no IDs therefore can't be read. The guardrail requires its own placeholder, and binding that placeholder throws `UNRESOLVED_TENANT_PLACEHOLDER`. Its placeholder is never bound to another root's IDs.

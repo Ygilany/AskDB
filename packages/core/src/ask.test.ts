@@ -3,7 +3,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it, vi } from "vitest";
 import { ask, type AskDialect } from "./ask.js";
-import { placeholderForTenantRoot } from "./index.js";
+import { placeholderForTenantRoot, validateTenantScope } from "./index.js";
 import {
   AskDbError,
   SchemaParseError,
@@ -1234,6 +1234,56 @@ describe("ask — subtree tenant scope expansion", () => {
 
     expect(error).toBeInstanceOf(TenantGuardrailError);
     expect((error as TenantGuardrailError).warnings.map((w) => [w.rule, w.tableId])).toEqual(warnings);
+  });
+
+  // The expanded scope keeps an empty level as `ids: []`. A custom AskDialect that
+  // validates the scope it's handed must accept what ask() hands it (#375 review).
+  it("hands a custom AskDialect an expanded scope that validateTenantScope accepts", async () => {
+    let validationError: unknown = "not called";
+    const dialect: AskDialect = {
+      async generate(_question, _schema, _model, options) {
+        try {
+          validateTenantScope(options!.tenantPolicy!, options!.tenantScope);
+          validationError = undefined;
+        } catch (e) {
+          validationError = e;
+        }
+        return { sql: ordersByAgency };
+      },
+    };
+    await ask({
+      question: "list orders",
+      schema,
+      model: fakeModel,
+      dialect,
+      tenantScope: agencySubtree,
+      resolveTenantDescendants: () => ({ [agencies]: ["1"], [subAgencies]: ["5"] }),
+    });
+
+    expect(validationError).toBeUndefined();
+  });
+
+  // A host expanding a subtree by hand can say a root is covered but has no IDs. Reading
+  // it binds nothing, so it fails closed at binding.
+  it("throws UNRESOLVED_TENANT_PLACEHOLDER for a hand-built multi_root entry with no IDs", async () => {
+    const error = await ask({
+      question: "list clients",
+      schema,
+      model: fakeModel,
+      dialect: sqlDialect("SELECT id FROM clients WHERE id IN (:tenant_client_ids)"),
+      tenantScope: {
+        access: {
+          kind: "multi_root",
+          scopes: [
+            { tenantRoot: agencies, ids: ["1"] },
+            { tenantRoot: clients, ids: [] },
+          ],
+        },
+      },
+    }).catch((e: unknown) => e);
+
+    expect(error).toBeInstanceOf(TenantScopeError);
+    expect((error as TenantScopeError).reason).toBe("UNRESOLVED_TENANT_PLACEHOLDER");
   });
 
   // The guardrail must look for the placeholder the prompt and the binder use. For a

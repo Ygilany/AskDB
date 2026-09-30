@@ -307,7 +307,7 @@ The `generate` method receives:
 - `question: string`
 - `schema: AnyNormalizedSchema`
 - `model: AskDbLanguageModel`
-- `options?: AskDialectGenerateOptions` — `{ logger, explain, omitSensitiveIdentifiersFromNlToSqlPrompt, generateText, prebuiltDdl, tenantPolicy, tenantScope }`
+- `options?: AskDialectGenerateOptions` — `{ logger, explain, omitSensitiveIdentifiersFromNlToSqlPrompt, generateText, prebuiltDdl, tenantPolicy, tenantScope }`. `tenantScope` is the scope after `ask()` expands a `subtree`: a `multi_root` scope with one entry per covered root, where a root the resolver returned no IDs for has `ids: []`. `validateTenantScope()` accepts it.
 
 It must return `AskDialectGenerateResult`:
 
@@ -429,7 +429,7 @@ Access kinds:
 | --- | --- |
 | `"ids"` | User can access specific root-entity ids. |
 | `"subtree"` | User can access a subtree rooted at specific ids, including descendant roots. Requires the `resolveTenantDescendants` option on `ask()`, which returns IDs per root; `ask()` expands the scope to `"multi_root"` before generation. |
-| `"multi_root"` | User has access across multiple tenant roots, each with their own id set. |
+| `"multi_root"` | User has access across multiple tenant roots, each with their own id set. An entry's `ids` may be empty (a covered root with no IDs, which fails closed if read); at least one entry needs an ID. |
 | `"global"` | Super / admin access. Requires a `reason` string for audit. |
 
 ---
