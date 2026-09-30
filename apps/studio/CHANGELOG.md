@@ -1,5 +1,154 @@
 # @askdb/studio
 
+## 0.2.0-beta.36
+
+### Minor Changes
+
+- cc176d1: Breaking (pre-1.0, so a minor bump):
+
+  - Require Node `>=22.12` consistently: `askdb`, `@askdb/http-api`, and `@askdb/studio` previously declared `>=22`, but the libraries they depend on already required `>=22.12`.
+  - `@askdb/http-api` and `@askdb/studio` now declare an `exports` map: `.` (the package entry) and `./package.json`. Deep imports of other files, such as `@askdb/studio/dist/server.js`, are no longer allowed; import from the package entry instead.
+
+- 933bd6c: **@askdb/studio** (security): Playground execute is now opt-in, runs one read-only statement at a time, and has a timeout and a row cap.
+
+  - **Off by default.** `POST /api/execute` returns `403` with setup instructions until `studio.execute.enabled: true` is set. The Playground hides the Execute button and shows why. `/api/execute/status` now reports `enabled`, `disabledReason`, `timeoutMs`, and `maxRows`.
+  - **No silent credential reuse.** Execute no longer falls back to the introspection connection. Set `studio.execute.databaseUrl` / `file`, ideally for a read-only role, or opt in with `studio.execute.useIntrospectionConnection: true`. This is a breaking change for projects that relied on the fallback.
+  - **Validated before execution.** Every query must pass `@askdb/core`'s `validateSelectSql` for the execute engine's dialect. Otherwise the request fails with `400` and never reaches the driver. SQL that reads `sensitive` columns returns `warnings`.
+  - **One read-only statement.** Postgres forces the extended query protocol, so `SELECT 1; COMMIT; DROP …` can no longer escape `BEGIN READ ONLY`, and turns on `default_transaction_read_only`. MySQL and MariaDB use a prepared statement in `START TRANSACTION READ ONLY`. SQL Server runs inside `SET XACT_ABORT ON; BEGIN TRANSACTION … ROLLBACK`. SQL Server has no read-only mode, so use a read-only login.
+  - **Timeouts and row caps.** Queries time out after 30 s by default (`studio.execute.timeoutMs`; not enforced for SQLite). Studio fetches at most `studio.execute.maxRows + 1` rows (default 500) and reports `truncated` and `rowLimit`, instead of loading every row and slicing.
+  - **Bounded requests.** JSON bodies over 1 MiB return `413`. Playground history keeps only known fields with length limits. Studio adds `playground-history.json` to the schema directory's `.gitignore`, creating the file with `.env` rules if it doesn't exist.
+  - **Driver install.** Inherited keys such as `constructor` are rejected with `400`, and installs now work on Windows. The setup wizard and install endpoint share one package-manager spawn helper.
+  - The setup wizard now defaults Studio execute to off, and choosing it writes `enabled: true`.
+
+  **@askdb/config**: New `studio.execute` fields, each with a canonical flat key: `enabled` (`ASKDB_STUDIO_EXECUTE_ENABLED`, default `false`), `useIntrospectionConnection` (`ASKDB_STUDIO_EXECUTE_USE_INTROSPECTION_CONNECTION`, default `false`), `timeoutMs` (`ASKDB_STUDIO_EXECUTE_TIMEOUT_MS`, default `30000`), and `maxRows` (`ASKDB_STUDIO_EXECUTE_MAX_ROWS`, default `500`). The runtime `studio.execute.databaseUrl` / `file` no longer fall back to the introspection connection unless `useIntrospectionConnection` is `true`. Also exports `DEFAULT_STUDIO_EXECUTE_TIMEOUT_MS` and `DEFAULT_STUDIO_EXECUTE_MAX_ROWS`.
+
+  **askdb**: `askdb init` writes `enabled: true` in the `studio.execute` block when you choose Studio execute. The interactive wizard now defaults that choice to off, matching `--studio-execute`'s documented default.
+
+- 2a21161: **@askdb/studio** (security): The local API now rejects requests from other websites in your browser, closing a cross-site request and DNS-rebinding hole that let any open web page run SQL through `/api/execute` or rewrite schema files.
+
+  - Every request must send an allowed `Host`: `localhost`, `127.0.0.1`, `[::1]`, or the bound host (for `0.0.0.0` binds, this machine's own IP addresses), on Studio's own port.
+  - Every `/api/*` call must send the per-launch session token that Studio injects into the page it serves, as the `x-askdb-studio-token` header.
+  - State-changing calls must be same-origin, and requests with a body must use `Content-Type: application/json`.
+
+  The web app now shows the HTTP status instead of a JSON parse error when a failed API request returns a non-JSON body (a proxy error page or an empty 502); server-provided error messages are still shown as before. Binding to a non-loopback host now prints a startup warning. `createStudioServer()` returns the token as `server.sessionToken` for programmatic callers. This is a breaking change for any client that called the API without it. The setup wizard's `askdb.config.ts` writer now emits every value with `JSON.stringify`, rejects control characters in paths, and validates the execute provider. Previously, a crafted path could inject code that ran when Studio loaded the config.
+
+  **askdb**: `askdb init` escapes every value it writes into `askdb.config.ts` the same way, so quotes or backslashes in `--schema-out`, `--sqlite-file`, `--prisma-schema`, or env-name flags can no longer break out of their string literals.
+
+### Patch Changes
+
+- 1338535: **@askdb/core**: `ask()` now passes its dialect to `validateSensitiveReferences`, so the sensitive-column check lexes the returned SQL the way the target engine does instead of unioning every engine's reading. Custom `AskDialect`s (no `DialectSpec`) keep the conservative union. Tenant placeholder substitution (`resolveTenantSql`, `extractTenantPlaceholders`, `resolvePlaceholders`) also uses the dialect's lexer, so a `:tenant_*_ids` placeholder inside a MySQL backslash-escaped string literal or a MySQL `#` comment is left untouched, matching `bindPreparedQuery`. The case-variant placeholder check (`:TENANT_…` spellings are rejected) reads the same code regions with the same dialect, and no longer mistakes a `::type` cast for a placeholder.
+
+  **@askdb/studio**: Playground execute's sensitive-column warnings lex the SQL with the execute engine's dialect.
+
+- 70a9513: **@askdb/core**: `loadSchema()` and `loadSchemaFromJson()` now apply `sensitive: true` from table markdown front-matter (`tables/*.md`), at both the table and the `columns[]` level, on top of `schema.json`. Before, front-matter `sensitive` was parsed but ignored. Studio's Sensitivity tab writes front-matter, so a column marked Sensitive there was still treated as non-sensitive by the NL→SQL prompt (tagging and `omitSensitiveIdentifiersFromNlToSqlPrompt`), by `@askdb/rag` chunk exclusion, and by `validateSensitiveReferences`.
+
+  The rule is escalate-only. Front-matter can make a table or column sensitive but can never make one less sensitive. A front-matter `sensitive: false` on a table or column that is sensitive anyway (from `schema.json`; for a column, also from a sensitive table or another front-matter entry's `sensitive: true`) is ignored and reported in `NormalizedSchemaV2.warnings` as the new `{ kind: "sensitivity_downgrade_ignored", tableFile, id }` warning. Directory and bundle loads behave the same way.
+
+  A front-matter column ID is authoritative about which column it names. If a `columns[]` entry lists a column that belongs to a different table (for example `table:public.users#ssn` in `tables/orders.md`), its `sensitive: true` still escalates that column (dropping it would silently expose a column the author marked sensitive), and the loader reports the new `{ kind: "misplaced_column_id", tableFile, id, tableId }` warning, where `tableId` is the owning table. Nothing else in a misplaced entry is applied: `sensitive: false` never de-escalates, and its description, aliases, and enum are ignored.
+
+  A column may be named by more than one `columns[]` entry, repeated in one file or across files. Sensitivity is aggregated across all of them: the column is sensitive if any entry says `sensitive: true`, and no entry's `sensitive: false` cancels it. Each repeat of an ID within one file is reported as the new `{ kind: "duplicate_column_id", tableFile, id }` warning, and only the first entry's description, aliases, and enum are applied.
+
+  Two table markdown files whose front-matter has the same `id` are now a load error (`SchemaParseError` naming both files) for directory and bundle loads. Before, the loader silently kept whichever file it read last (which depended on filesystem order) and dropped the other's front-matter, including any `sensitive: true`, while Studio could pair the table with the other file. Table markdown files are now read in sorted filename order, so warning order is deterministic and identical for directory and bundle loads.
+
+  The `tableFile` in loader warnings (`orphaned_table_id`, `orphaned_column_id`, `sensitivity_downgrade_ignored`, `misplaced_column_id`, `duplicate_column_id`) is now the table markdown file actually read (`tables/<filename>`, or the bundle's `tables` entry key). Before, it was derived from front-matter `name`, which is wrong when the filename differs (for example `tables/customer-records.md` with `name: users`).
+
+  This is a behavior change: schemas whose front-matter already sets `sensitive: true` will now have more sensitive tables and columns. Those tables and columns lose their describable fields in the normalized schema, are tagged or omitted in prompts, are excluded from RAG chunks by default, and are flagged by the sensitive-SQL guardrail. Code that switches exhaustively over `SchemaV2Warning["kind"]` needs to handle the three new kinds.
+
+  **@askdb/studio**: the Sensitivity tab's "Effective" column now matches the loader. It accounts for table-level sensitivity, and "Not sensitive" is disabled where it could not take effect, on both the Sensitivity and Enrichment tabs. The Enrichment tab's column "sensitive" badge also reflects table-level sensitivity.
+
+  Studio also accounts for a column escalated from another table's markdown (shown as sensitive, with "Not sensitive" disabled), and saving a table no longer deletes `columns[]` entries for other tables' columns from its file.
+
+  **@askdb/enrich**: `buildTableDraft()` marks a column sensitive when any of its front-matter entries says `sensitive: true`, not just the first. Before, a file listing a column twice (first `sensitive: false` or unset, then `sensitive: true`) produced a non-sensitive draft, so saving it in Studio rewrote the file without the escalation. `buildFrontmatter()` takes an optional fourth argument, the file's `existing` front-matter: its `columns[]` entries for IDs that are not the table's own columns (misplaced or orphaned) are carried through unchanged, so rewriting a file no longer silently drops another table's `sensitive: true`. `WorkspaceTable` has a new optional `escalatedByOtherFiles` field (set by `loadWorkspace()`) listing the table's columns that another table's markdown marks `sensitive: true`. `loadWorkspace()` now throws when two table markdown files share a front-matter `id` (it calls `loadSchema()`).
+
+- 1338535: **@askdb/core**: tenant parameter binding is dialect-correct and fails closed; `tenantFilters` is removed.
+
+  - **Dialect-correct tenant markers.** In `tenantSqlMode: "sql-params"`, tenant IDs used to be bound with hardcoded Postgres `$N` markers. Since business parameters started using the dialect's markers, a MySQL, SQLite, or SQL Server statement could contain `?` or `@pN` markers next to `$2`. Tenant markers now follow the dialect: `$N` for Postgres, CockroachDB, and custom `AskDialect`s; `?` for MySQL, MariaDB, and SQLite; `@pN` for SQL Server.
+  - **Executable pairs.** `sql` + `tenantParams` now runs on its own. Before, when parameterized extras were present, the tenant markers in `sql` were numbered after the business values (`$2`), but `tenantParams` held only the tenant IDs. `unboundSql` + `params` carries every value in marker order: tenant IDs come after the business values for `$N`/`@pN` dialects, or interleaved in source order for `?` dialects, and `parameters[].indices` are remapped to match. Never concatenate `params` and `tenantParams`.
+  - **Only SQL code is substituted.** Before, a tenant placeholder inside a string literal was also replaced, and the escaped ID's quotes then closed the surrounding literal, which let a crafted tenant ID become SQL. Placeholder text inside string literals and quoted identifiers is now left untouched.
+  - **Unresolved placeholders throw.** Before, a `:tenant_*` placeholder with no IDs in scope, or with no matching root, was silently left in the SQL. It now throws `TenantScopeError` with the new reason `UNRESOLVED_TENANT_PLACEHOLDER`.
+  - **Operators are rewritten correctly.** Before, with several IDs, `!=`, `<=`, and `>=` were corrupted into `!IN (…)`, `<IN (…)`, and `>IN (…)`. Now `=` becomes `IN (…)`, `!=`/`<>` become `NOT IN (…)`, `= ANY(…)` becomes `IN (…)`, and `<> ALL(…)` becomes `NOT IN (…)`. `<`, `>`, `<=`, `>=`, or any other position with several IDs throws `TenantScopeError` with the new reason `UNSUPPORTED_TENANT_PREDICATE`.
+  - **`resolveTenantSql()` rejects an unexpanded `subtree` scope.** It doesn't walk the hierarchy, so it used to substitute the seed `rootIds` only and silently drop every descendant. It now throws `TenantScopeError` with reason `SUBTREE_NOT_RESOLVABLE`. `ask()` is unaffected: it expands a `subtree` through `resolveTenantDescendants` before substitution. A direct caller passes a `multi_root` access with each tenant root's IDs under that root (an `ids` access only when the whole subtree is one root table), never descendant IDs under the root's placeholder.
+  - **The tenant guardrail matches only SQL code.** A tenant column or table name that appears only inside a string literal (`'…'`, `$tag$…$tag$`) or a comment no longer counts as a predicate or a table reference. The placeholder branch of the scoped-table check, which could never match before, now works. Queries that previously passed only by accident can now produce warnings in `warn` mode or be rejected in `strict` mode. The guardrail is still a heuristic lint over identifier presence, not a SQL parser.
+  - **The tenant guardrail reads SQL the way the target dialect does.** `validateTenantGuardrails()` takes a new optional 4th argument, `{ dialect }`, and `ask()` and `generateSelectSql()` pass their dialect. On MySQL and MariaDB, `status = "agency_id"` (a string there) and `'it\'s agency_id'` (one backslash-escaped string) used to pass as tenant predicates, and `ask()` returned the unscoped SQL with `passed: true`. They are now flagged, and `#` comments are ignored. Without a dialect (a custom `AskDialect`, or no `options.dialect`), the statement must pass under the standard-SQL, Postgres, and MySQL readings. So a predicate written only as `"agency_id"` is now flagged there; pass the dialect to accept it.
+  - **The tenant guardrail reads Postgres `E'…'` strings.** On Postgres and CockroachDB, `note = E'it\'s agency_id'` used to pass as a tenant predicate because `\'` was read as the end of the string. A backslash now escapes the next character inside an `E'…'` string (only when the `E` starts a token, not for `date'…'`), and a statement without a dialect must also pass this Postgres reading.
+  - **Inlined tenant IDs are escaped for a partial dialect.** `resolveTenantSql(…, "sql-only", 1, { id: "mysql" })` used to double quotes only, so a tenant ID containing `\'` could close its literal under MySQL's default backslash escaping. When `backslashEscapes` is unset, a built-in `id` now supplies it; with an unknown `id`, a tenant ID containing a backslash throws `TenantScopeError` with the new reason `UNESCAPABLE_TENANT_ID`. The `TenantSqlDialect` type is exported.
+  - **Tenant placeholders are case-sensitive.** `:TENANT_AGENCY_IDS` was counted as a tenant predicate but never substituted, so `ask()` returned SQL with the raw placeholder and `passed: true`. The guardrail now counts only the exact lowercase form, and `resolveTenantSql()` (and so `ask()`) throws `TenantScopeError` with `UNRESOLVED_TENANT_PLACEHOLDER` for any other casing.
+  - **Breaking (types): `TenantScope.tenantFilters`, `TenantFilter`, and `TenantFilterCondition` are removed.** No code ever read them, so setting them had no effect. TypeScript callers now get a compile error; at runtime a stray `tenantFilters` key is still ignored by validation. Polymorphic tables in the tenant policy are unaffected.
+
+  **@askdb/studio**: the playground no longer offers the tenant-filter editor or the Subtree access kind. Studio can't supply the `resolveTenantDescendants` callback a `subtree` scope needs, so every subtree ask would fail closed. A saved history entry that uses subtree scope shows a validation message.
+
+- ab2150b: Bump dependencies: AI SDK (`ai` 7.0.113, `@ai-sdk/*` 4.0.x), zod 4.6, mysql2 3.24, pg 8.23, @prisma/internals 7.10, @inquirer/prompts 8.7, React 19.3 and Vite 8.3 for Studio, and vitest 5 across the workspace.
+- 5dbe2d6: **MySQL/MariaDB: introspect several databases at once.**
+
+  **@askdb/mysql**: The MySQL connector honors `filters.schemas` as a list of databases (MySQL's "schemas"). Each listed database becomes its own namespace in the artifact (`table:sales.orders`), and foreign keys that cross databases keep the referenced database. `filters.excludeSchemas` removes entries from the list. Before this change the connector read only the connection's database (`DATABASE()`) and silently ignored `filters.schemas`. Without a list, behavior is unchanged: the connection's database is read and rendered under the `public` namespace. The exported `MYSQL_CATALOG_SQL` strings now also select `table_schema` (and `referenced_table_schema` for foreign keys).
+
+  **@askdb/config**: New `introspection.schemas?: string[]`, the config equivalent of `askdb introspect --schemas`, for every provider (on MySQL/MariaDB, the databases to introspect). Runtime config exposes it as `introspection.schemas`.
+
+  **askdb**: `askdb introspect` reads `introspection.schemas` from config for any engine; `--schemas` overrides it.
+
+  **@askdb/studio**: Resync passes the configured schema list to the connector, so it matches `askdb introspect`.
+
+- 2787b21: Release packaging fixes:
+
+  - Ship `LICENSE` and `NOTICE` in `@askdb/ai`, `@askdb/ai-anthropic`, `@askdb/ai-azure`, `@askdb/ai-google`, `@askdb/ai-openai`, `@askdb/mysql`, `@askdb/sqlite`, and `@askdb/sqlserver` (they were listed in `files` but missing from the tarballs).
+  - `@askdb/studio`: React, Radix UI, lucide-react, react-router, clsx, tailwind-merge, and class-variance-authority are bundled into the prebuilt browser client, so they are now dev dependencies and are no longer installed with the package.
+  - Add `"sideEffects": false` to library packages (`@askdb/rag` lists its bin entry as side-effectful), and point `homepage` at the relevant askdb.tools page.
+  - Package READMEs no longer link to repo-relative paths that npmjs.com cannot resolve.
+
+- 8410840: **Fix a cross-tenant leak in `subtree` scopes (#338): `resolveTenantDescendants` now returns IDs per tenant root.** The resolver returned one flat list, and `ask()` bound every ID to the scope root's placeholder. In a multi-table hierarchy (agencies → sub-agencies → clients), a sub-agency or client ID that equalled another agency's ID matched that agency's rows. The resolver now returns `TenantIdsByRoot` (`Record<rootTableId, string[]>`), and `ask()` expands the subtree into a `multi_root` scope, so each root's IDs bind only to that root's own placeholder. A resolver that still returns an array throws `TenantScopeError` (`SUBTREE_NOT_RESOLVABLE`) with a message showing the per-root shape to return. So does a key that isn't a tenant root in the subtree. Migrate a same-table resolver by returning `{ [tenantRoot]: ids }`. The decision and the options are in `docs/adrs/0014-subtree-scope-expands-per-root.md`.
+
+  The resolver's result is read once: each entry is snapshotted before validation, and the scope is built from that snapshot. A getter can't return different IDs to validation and binding, and a non-enumerable property is never read.
+
+  **A policy whose roots derive the same placeholder is now rejected.** `Agency` and `agency` both give `:tenant_agency_ids`, as do `Sub-Agency` and `Sub Agency` with `:tenant_sub_agency_ids`. Substitution then bound one root's IDs where the other root's column is compared. Loading such a policy throws `SchemaParseError` naming both roots. `validateTenantScope()` (and so `ask()`) and `resolveTenantSql()` also throw it for a policy built in code. This applies to every scope kind.
+
+  **Labels without ASCII letters or digits now get a usable placeholder.** The placeholder keeps only ASCII letters and digits from the label, so every root labelled in Cyrillic, CJK or another non-Latin script derived `:tenant___ids`, and a policy with two such roots could never bind the right IDs. For such a label, the placeholder now comes from the root's table name (`Клиент` on `table:public.clients` → `:tenant_clients_ids`). Labels with an ASCII letter or digit keep their placeholder. Two setups that work today change, and both fail closed with an error:
+  - A lone root labelled without ASCII letters or digits gets a new placeholder name. SQL or code that still uses `:tenant___ids` (stored SQL, SQL passed to `resolveTenantSql()`, or a lookup by `tenantBindings[].placeholder` or a prepared-query parameter name) throws `UNRESOLVED_TENANT_PLACEHOLDER`.
+  - A non-ASCII label whose table name matches another root's label (`Агентство` on `table:public.agency` next to a root labelled `agency`) now fails at load with `SchemaParseError`.
+
+  To migrate, switch to the new name (`placeholderForTenantRoot(root)` returns it; see "Tenant types" in the core API reference), or give the root an ASCII label. For a load failure, rename one of the two labels.
+
+  **New export `placeholderForTenantRoot(root)`**, which takes the root object and returns the placeholder core prompts for and binds. `placeholderForRoot(label)` keeps its signature and its output, and is now `@deprecated`: for a label with no ASCII letter or digit it still returns `:tenant___ids`, which core no longer binds.
+
+  **The tenant prompt now pairs each placeholder with its columns when the policy has more than one root.** Under each `:tenant_<label>_ids` line of a `multi_root` or `ids` scope, it lists the columns that hold that root's IDs (its own ID column, child roots' foreign keys to it, scoped tables' direct columns, and polymorphic ID columns with their discriminator value). It then tells the model never to compare one root's placeholder with another root's column. This changes the prompt bytes for every `multi_root` scope, and for `ids` scopes on multi-root policies. A single-root policy's `ids` prompt is unchanged. For `multi_root`, the prompt leaves a child root's foreign key out of its parent's list when that child is in the scope, marks a root with no IDs, and says that every listed root table the query reads must be filtered with its own placeholder. An expanded subtree is a `multi_root` scope, so the strict tenant guardrail from #315's fix checks it like any other: each tenant column must be compared with its own root's placeholder, and every root the expanded scope covers is checked as a root table. A query that reads a covered child root (`clients`) and filters it only through its parent's foreign key (`clients.sub_agency_id`) or a joined ancestor is rejected.
+
+  **A covered level with no IDs stays in the expanded scope.** When the resolver returns no IDs for a level, that root stays in the `multi_root` scope with an empty ID list, instead of being dropped. Reading it then needs its own placeholder, which binds nothing and throws `UNRESOLVED_TENANT_PLACEHOLDER`. Dropped, it was checked less strictly than a level with IDs. A `multi_root` entry may now have an empty `ids` list (the scope schema and `validateTenantScope()` accept it, and at least one entry must still have an ID), so a custom `AskDialect` that validates its scope accepts the expansion, and a host expanding by hand can express an empty level. Reads through a parent's key or an ancestor are rejected under `enforcement: strict`; under `warn` they come back with a warning.
+
+  **`buildTenantPromptBlock()` rejects an unexpanded `subtree` scope** with `SUBTREE_NOT_RESOLVABLE`, like `resolveTenantSql()`, instead of rendering only the root's placeholder.
+
+  **@askdb/studio**: saving a tenant policy now runs the same validation as loading it. A policy the schema loader would reject, such as two roots deriving one placeholder, returns 400 with the loader's message, and nothing is written. Before, Studio wrote the file, returned 500, and then failed every request until the file was fixed by hand. The playground's message for a saved `subtree` scope now says to use the Multi-root scope with each root's IDs in its own row, not to fold the subtree into the IDs scope.
+
+  **@askdb/docs-site**: the multi-tenancy guide, the `ask()` and client references, troubleshooting, and `/AGENTS.md` document the per-root resolver with an agency → sub-agency → client example. The core API reference documents `placeholderForTenantRoot(root)` and the deprecation of `placeholderForRoot(label)`.
+
+- Updated dependencies [1338535]
+- Updated dependencies [70a9513]
+- Updated dependencies [ad9c9e5]
+- Updated dependencies [1338535]
+- Updated dependencies [764ec32]
+- Updated dependencies [ab2150b]
+- Updated dependencies [5e89384]
+- Updated dependencies [5dbe2d6]
+- Updated dependencies [2787b21]
+- Updated dependencies [933bd6c]
+- Updated dependencies [cb7dec5]
+- Updated dependencies [8410840]
+- Updated dependencies [41f1ed6]
+  - @askdb/core@1.0.0-beta.43
+  - @askdb/enrich@0.2.0-beta.14
+  - @askdb/ai-anthropic@1.0.0-beta.5
+  - @askdb/ai-azure@1.0.0-beta.7
+  - @askdb/ai-google@1.0.0-beta.7
+  - @askdb/ai-openai@1.0.0-beta.7
+  - @askdb/ai@0.1.0-beta.7
+  - @askdb/config@1.0.0-beta.12
+  - @askdb/connectors@0.1.0-beta.8
+  - @askdb/introspect@0.3.0-beta.17
+  - @askdb/mysql@0.1.0-beta.18
+  - @askdb/postgres@0.2.0-beta.19
+  - @askdb/prisma@0.2.0-beta.17
+  - @askdb/rag@0.2.0-beta.23
+  - @askdb/sqlite@0.1.0-beta.18
+  - @askdb/sqlserver@0.1.0-beta.19
+
 ## 0.2.0-beta.35
 
 ### Patch Changes

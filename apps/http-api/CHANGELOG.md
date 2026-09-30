@@ -1,5 +1,54 @@
 # @askdb/http-api
 
+## 1.0.0-beta.43
+
+### Minor Changes
+
+- cc176d1: Breaking (pre-1.0, so a minor bump):
+
+  - Require Node `>=22.12` consistently: `askdb`, `@askdb/http-api`, and `@askdb/studio` previously declared `>=22`, but the libraries they depend on already required `>=22.12`.
+  - `@askdb/http-api` and `@askdb/studio` now declare an `exports` map: `.` (the package entry) and `./package.json`. Deep imports of other files, such as `@askdb/studio/dist/server.js`, are no longer allowed; import from the package entry instead.
+
+### Patch Changes
+
+- ab2150b: Bump dependencies: AI SDK (`ai` 7.0.113, `@ai-sdk/*` 4.0.x), zod 4.6, mysql2 3.24, pg 8.23, @prisma/internals 7.10, @inquirer/prompts 8.7, React 19.3 and Vite 8.3 for Studio, and vitest 5 across the workspace.
+- 5e89384: **@askdb/core**: Documentation-only. The `validateTenantGuardrails` docstring (shipped in the `.d.ts`) now opens by calling the check a best-effort lint, and says it is not a SQL parser and not a security boundary, with real tenant isolation coming from the database, and that `global` scope skips it. The `AskDialect` generator's output docstring no longer calls the SQL validated (a custom dialect's SQL isn't checked unless it calls `validateSelectSql`). The package README adds a short security-model note: AskDB's SQL checks are defense in depth, and generated SQL should run under a read-only, least-privilege role with tenant isolation enforced in the database. No runtime behavior changes.
+
+  **@askdb/docs-site**: The safety, multi-tenancy, and reference pages describe AskDB's SQL guardrails as they behave today: heuristic checks that are defense in depth, not a security boundary, with a new "Run generated SQL safely" section and the sensitive-column check's known gaps. A new "Match your server's string settings" section shows the `DialectSpec` (`backslashEscapes`) a MySQL/MariaDB server with `NO_BACKSLASH_ESCAPES`, or Postgres with `standard_conforming_strings = off`, needs, and the Core API reference documents `backslashEscapes`. The production guide's database-role example no longer relies on a `REVOKE` on `pg_catalog` that has no effect, and explains what does limit catalog access on Postgres. Pages and diagrams now say "checked SQL" throughout. The production guide's example role also sets `default_transaction_read_only`, because table grants alone don't stop every write on Postgres.
+
+  **askdb**, **@askdb/http-api**: The package descriptions and READMEs say "checked SQL" instead of "validated SQL", matching the docs. No behavior change.
+
+- 7fa7d87: **@askdb/http-api**: Drop the hard `pg` dependency. The server only generates and validates SQL — it never connects to a database — and nothing in the package imports `pg`, so installing `@askdb/http-api` no longer pulls in a Postgres driver. This matches the documented install model where database drivers (`pg`, `mysql2`, `better-sqlite3`, `mssql`) are optional peers that the host app installs only when it runs its own execution or live introspection code. Host apps that relied on `pg` arriving transitively through `@askdb/http-api` should add it to their own `package.json`.
+- 2787b21: Release packaging fixes:
+
+  - Ship `LICENSE` and `NOTICE` in `@askdb/ai`, `@askdb/ai-anthropic`, `@askdb/ai-azure`, `@askdb/ai-google`, `@askdb/ai-openai`, `@askdb/mysql`, `@askdb/sqlite`, and `@askdb/sqlserver` (they were listed in `files` but missing from the tarballs).
+  - `@askdb/studio`: React, Radix UI, lucide-react, react-router, clsx, tailwind-merge, and class-variance-authority are bundled into the prebuilt browser client, so they are now dev dependencies and are no longer installed with the package.
+  - Add `"sideEffects": false` to library packages (`@askdb/rag` lists its bin entry as side-effectful), and point `homepage` at the relevant askdb.tools page.
+  - Package READMEs no longer link to repo-relative paths that npmjs.com cannot resolve.
+
+- Updated dependencies [1338535]
+- Updated dependencies [70a9513]
+- Updated dependencies [ad9c9e5]
+- Updated dependencies [1338535]
+- Updated dependencies [764ec32]
+- Updated dependencies [ab2150b]
+- Updated dependencies [5e89384]
+- Updated dependencies [5dbe2d6]
+- Updated dependencies [2787b21]
+- Updated dependencies [933bd6c]
+- Updated dependencies [cb7dec5]
+- Updated dependencies [8410840]
+- Updated dependencies [41f1ed6]
+  - @askdb/core@1.0.0-beta.43
+  - @askdb/ai-anthropic@1.0.0-beta.5
+  - @askdb/ai-azure@1.0.0-beta.7
+  - @askdb/ai-google@1.0.0-beta.7
+  - @askdb/ai-openai@1.0.0-beta.7
+  - @askdb/ai@0.1.0-beta.7
+  - @askdb/client@1.0.0-beta.6
+  - @askdb/config@1.0.0-beta.12
+  - @askdb/postgres@0.2.0-beta.19
+
 ## 1.0.0-beta.42
 
 ### Patch Changes
