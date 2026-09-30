@@ -207,7 +207,7 @@ The scope uses `access.kind: "subtree"`, but `ask()` couldn't expand it. Either 
 
 ### `TenantGuardrailError`
 
-The generated SQL doesn't include a required tenant predicate on one or more tenant-bound tables. This is a fail-closed guardrail: AskDB refuses to return SQL that could leak cross-tenant data. Re-ask the question with a more specific scope, or inspect the `warnings` array on the error for which table triggered the guardrail.
+The generated SQL doesn't include a required tenant predicate on one or more tenant-bound tables. This is a fail-closed guardrail: AskDB refuses to return SQL whose tenant filter doesn't filter. A predicate counts only as the table's tenant column compared with its placeholder (`agency_id = :tenant_agency_ids`, or `IN (…)` / `= ANY(…)`), ANDed into a `WHERE`, inner-join `ON`, or `HAVING` clause. A literal tenant ID, a column that's only selected, or a predicate next to an `OR` doesn't count, and a query on the root table itself needs the predicate too; see [What the tenant check requires](/guides/multi-tenancy/#what-the-tenant-check-requires). Inspect the `warnings` array on the error to see which table triggered the guardrail, then re-ask the question or narrow it.
 
 ---
 
