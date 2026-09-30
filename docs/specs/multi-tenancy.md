@@ -26,7 +26,7 @@ This is a Postgres-first proof. The tenant enforcement model is designed to gene
   - P4 — multi-level hierarchy traversal (agency → sub_agency → client)
   - P5 — polymorphic association (`notes.owner_type` + `notes.owner_id`)
 - **Unified `TenantScope` input to `ask()`** — `access` (ids, subtree, multi_root, global), `context` (advisory: role, region, department)
-- **Subtree expansion via a host resolver.** A `subtree` access is expanded by `ask({ resolveTenantDescendants })` into the full ID set before generation. The seeds are always unioned in. With no resolver, or an empty or invalid result, `ask()` throws `TenantScopeError` (`SUBTREE_NOT_RESOLVABLE`) instead of silently scoping to the seeds. See [`tenant-policy.md` › Subtree expansion](../contracts/tenant-policy.md#subtree-expansion).
+- **Subtree expansion via a host resolver.** A `subtree` access is expanded by `ask({ resolveTenantDescendants })` before generation. The resolver returns IDs per tenant root, and `ask()` turns them into a `multi_root` scope, so each root's IDs bind only to that root's own placeholder (root tables have separate ID spaces; [ADR 0014](../adrs/0014-subtree-scope-expands-per-root.md)). The seeds are always unioned into the scope root's entry. With no resolver, a flat array, a key outside the subtree's roots, an invalid ID list, or no IDs, `ask()` throws `TenantScopeError` (`SUBTREE_NOT_RESOLVABLE`) instead of silently scoping to the seeds or folding IDs into the wrong placeholder. See [`tenant-policy.md` › Subtree expansion](../contracts/tenant-policy.md#subtree-expansion).
 - **Prompt assembly boundary** — policy front-matter, runtime scope, and advisory context injected into every generation prompt; named placeholder convention `:tenant_<root_label>_ids`
 - **SQL guardrail validator** — AST-based Postgres SQL checks: scoped tables must have required predicates; polymorphic tables must include type discriminator; cross-table scope compatibility checked
 - **Enforcement modes** — `strict` (fail closed on unproven queries) and `warn` (return SQL with `tenantWarnings`)
@@ -53,6 +53,7 @@ This is a Postgres-first proof. The tenant enforcement model is designed to gene
 - **A broken policy is a load error** — only a missing `tenant-policy.md` (or, in a bundle, an absent `tenantPolicy` key) means "no tenancy". A present file or bundle value that is empty or fails to read or parse (including malformed YAML) throws `SchemaParseError`. Loading via a `schema.json` path picks up the sibling policy exactly like loading the directory.
 - **Named placeholders in prompt assembly** — `:tenant_<root_label>_ids` placeholders are inserted by the model following prompt instructions, then replaced by the output modes layer. This separates prompt semantics from execution binding.
 - **No silently ignored scope input** — `TenantScope.tenantFilters` (host-resolved polymorphic filters) was declared but never read, so it was removed rather than left as a field that looks like protection. For the same reason a `subtree` scope is never bound to its seed IDs alone: `ask()` expands it through `resolveTenantDescendants` or fails closed, and `resolveTenantSql()` rejects an unexpanded `subtree`.
+- **Subtree IDs stay per root** — root tables have separate ID spaces, so a descendant's ID is never bound to another root's placeholder. The resolver returns IDs keyed by root, `ask()` expands them into a `multi_root` scope, and the prompt pairs each placeholder with the columns that hold that root's IDs. The strict guardrail (#341) checks that each tenant column is compared with its own root's placeholder, and checks every root the expanded scope covers as a root table, including a level the resolver returned no IDs for (it stays in the scope with an empty ID list, so reading it fails closed). Its limits still apply: within one query block a predicate isn't tied to a table reference, so an unfiltered or mispaired reference next to a filtered one can pass (#399 covers CTEs and derived tables). See [ADR 0014](../adrs/0014-subtree-scope-expands-per-root.md).
 - **Unresolvable binding fails closed** — a tenant placeholder with no IDs in scope, or a multi-ID predicate with no list form, throws instead of emitting SQL with a raw `:tenant_*` token or a rewritten operator that means something else.
 - **Policy front-matter always injected with RAG** — tenant safety is a security boundary. Retrieving only a subset of schema chunks must not drop the policy context. The full policy front-matter is injected unconditionally when a policy is present.
 
@@ -64,11 +65,12 @@ This is a Postgres-first proof. The tenant enforcement model is designed to gene
 // ask() tenant input
 interface AskOptions {
   tenantScope?: TenantScope
-  // Required for access.kind === "subtree"; returns every ID in the subtree.
+  // Required for access.kind === "subtree"; returns the subtree's IDs per tenant root,
+  // keyed by root table ID (seeds and same-table descendants under tenantRoot).
   resolveTenantDescendants?: (
     tenantRoot: string,
     seedIds: readonly string[],
-  ) => Promise<readonly string[]> | readonly string[]
+  ) => Promise<TenantIdsByRoot> | TenantIdsByRoot // Readonly<Record<string, readonly string[]>>
 }
 
 interface TenantScope {
@@ -117,7 +119,7 @@ enforcement: strict
 - SQL guardrail on returned SQL: a model reply whose `sql` block is unscoped but whose `sql-unbound` block is scoped fails in strict mode and reports warnings in warn mode. A custom `AskDialect` returning unscoped SQL under a strict policy is rejected.
 - All five discriminator patterns (P1–P5) covered by fixture tests.
 - `ask()` without scope when a policy is configured fails before model generation.
-- `subtree` scope: the resolver's full ID set reaches the SQL (seeds unioned in). With no resolver, or an empty or invalid result, `ask()` throws `SUBTREE_NOT_RESOLVABLE` before model generation. Closure expansion terminates on cyclic hierarchies.
+- `subtree` scope: each root's IDs from the resolver reach the SQL through that root's own placeholder (seeds unioned into the scope root's entry), even when the same ID value appears at several levels; executed on SQLite, a subtree whose descendant IDs collide with another tenant's IDs returns none of that tenant's rows. With no resolver, a flat array, or an invalid result, `ask()` throws `SUBTREE_NOT_RESOLVABLE` before model generation. Closure expansion terminates on cyclic hierarchies.
 - `ask()` with valid agency scope proceeds to prompt assembly; golden prompt snapshot includes policy block, scope, and advisory context.
 - SQL guardrail: missing `agency_id` predicate fails closed in strict mode; correctly scoped SQL passes; polymorphic table without type discriminator fails; cross-tenant JOIN fails.
 - `sql-only` mode returns complete executable SQL; `sql-params` returns `{ sql, tenantParams }` with dialect-correct markers; both pass the guardrail validator.

@@ -35,7 +35,7 @@ const { sql } = await ask({
 | `omitSensitiveIdentifiersFromNlToSqlPrompt` | `boolean` | no | `false` | When `true`, strips sensitive table/column names from the NL→SQL DDL entirely. Default (`false`) includes them with a `(sensitive)` tag so the model can still ground queries. |
 | `tenantScope` | `TenantScope` | no | — | Required when the schema has a `tenant-policy.md`. The pipeline fails closed if a policy exists and this is absent. |
 | `tenantSqlMode` | `TenantSqlOutputMode` | no | `"sql-only"` | `"sql-only"` inlines escaped literal tenant values; `"sql-params"` replaces them with the dialect's driver markers (`$N` Postgres/CockroachDB and custom `AskDialect`s, `?` MySQL/MariaDB/SQLite, `@pN` SQL Server) and returns the IDs as `tenantParams`. See [Executing the result](#executing-the-result). |
-| `resolveTenantDescendants` | `ResolveTenantDescendants` | for `subtree` scopes | — | `(tenantRoot, seedIds) => ids \| Promise<ids>`. Expands a `subtree` scope to every ID in the subtree; the seeds are always unioned in. Without it, a `subtree` scope throws `TenantScopeError` (`SUBTREE_NOT_RESOLVABLE`). See [Hierarchical scope](/guides/multi-tenancy/#hierarchical-scope-subtree). |
+| `resolveTenantDescendants` | `ResolveTenantDescendants` | for `subtree` scopes | — | `(tenantRoot, seedIds) => TenantIdsByRoot \| Promise<TenantIdsByRoot>`, where `TenantIdsByRoot` is `Record<rootTableId, string[]>`. Returns the subtree's IDs grouped by tenant root: the seeds and same-table descendants under `tenantRoot`, each descendant root's IDs under that root, e.g. `{ "table:public.agencies": ["1"], "table:public.clients": ["5"] }`. `ask()` unions the seeds in and binds each root's IDs to its own placeholder (a `multi_root` scope). Without it, or when it returns a flat array or an invalid result, a `subtree` scope throws `TenantScopeError` (`SUBTREE_NOT_RESOLVABLE`). See [Hierarchical scope](/guides/multi-tenancy/#hierarchical-scope-subtree). |
 | `parameterize` | `boolean` | no | `true` | Ask the model for unbound SQL + a parameter manifest. Still exactly one model call. Set `false` to save output tokens. Inert for custom `AskDialect` implementations. |
 | `sensitiveGuardrailMode` | `"warn" \| "strict" \| "off"` | no | `"warn"` | How to treat SQL that references identifiers marked `sensitive`. `"warn"` populates `result.sensitiveGuardrail` and logs; `"strict"` throws `SensitiveReferenceError`; `"off"` skips the check. See [`validateSensitiveReferences`](#validatesensitivereferencessql-schema-options). |
 | `retriever` | `Retriever` | no | — | RAG retriever from `@askdb/rag`. When supplied and schema chunk count exceeds `retrievalThresholdChunks`, retrieval replaces the full DDL in the prompt. |
@@ -307,7 +307,7 @@ The `generate` method receives:
 - `question: string`
 - `schema: AnyNormalizedSchema`
 - `model: AskDbLanguageModel`
-- `options?: AskDialectGenerateOptions` — `{ logger, explain, omitSensitiveIdentifiersFromNlToSqlPrompt, generateText, prebuiltDdl, tenantPolicy, tenantScope }`
+- `options?: AskDialectGenerateOptions` — `{ logger, explain, omitSensitiveIdentifiersFromNlToSqlPrompt, generateText, prebuiltDdl, tenantPolicy, tenantScope }`. `tenantScope` is the scope after `ask()` expands a `subtree`: a `multi_root` scope with one entry per covered root, where a root the resolver returned no IDs for has `ids: []`. `validateTenantScope()` accepts it.
 
 It must return `AskDialectGenerateResult`:
 
@@ -390,6 +390,19 @@ type TenantBinding = {
 };
 ```
 
+### `placeholderForTenantRoot(root)`
+
+```ts
+import { placeholderForTenantRoot } from "@askdb/core";
+
+placeholderForTenantRoot({ id: "table:public.sub_agencies", label: "Sub-Agency" }); // ":tenant_sub_agency_ids"
+placeholderForTenantRoot({ id: "table:public.clients", label: "Клиент" });          // ":tenant_clients_ids"
+```
+
+Returns the `:tenant_<name>_ids` placeholder for a tenant root: the one the prompt names, `ask()` and `resolveTenantSql()` bind, and the tenant guardrail checks. `<name>` is the label lowercased, with every run of characters other than ASCII letters and digits replaced by `_`. A label with no ASCII letter or digit uses the root's table name instead. Pass a root from `schema.tenantPolicy.roots` (anything with `id` and `label`).
+
+`placeholderForRoot(label)` is deprecated. It takes the label alone, so for a label with no ASCII letter or digit it returns `:tenant___ids`, which core doesn't bind. For every other label the two agree.
+
 ### `TenantScope`
 
 Passed as `options.tenantScope` to `ask()`. Carries enforceable access plus optional advisory context.
@@ -415,8 +428,8 @@ Access kinds:
 | Kind | Description |
 | --- | --- |
 | `"ids"` | User can access specific root-entity ids. |
-| `"subtree"` | User can access a subtree rooted at specific ids. Requires the `resolveTenantDescendants` option on `ask()`. |
-| `"multi_root"` | User has access across multiple tenant roots, each with their own id set. |
+| `"subtree"` | User can access a subtree rooted at specific ids, including descendant roots. Requires the `resolveTenantDescendants` option on `ask()`, which returns IDs per root; `ask()` expands the scope to `"multi_root"` before generation. |
+| `"multi_root"` | User has access across multiple tenant roots, each with their own id set. An entry's `ids` may be empty (a covered root with no IDs, which fails closed if read); at least one entry needs an ID. |
 | `"global"` | Super / admin access. Requires a `reason` string for audit. |
 
 ---

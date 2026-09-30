@@ -84,7 +84,7 @@ interface AskPipelineOptions {
   retriever?: Retriever              // optional RAG retriever from @askdb/rag
   tenantScope?: TenantScope          // optional tenant scope from multi-tenancy
   tenantSqlMode?: TenantSqlOutputMode // 'sql-only' | 'sql-params'
-  resolveTenantDescendants?: ResolveTenantDescendants // expands a 'subtree' scope; required for subtree
+  resolveTenantDescendants?: ResolveTenantDescendants // expands a 'subtree' scope into IDs per tenant root; required for subtree
   /**
    * Ask the model for unbound SQL + a parameter manifest (default true).
    * Set false to skip the extra output tokens. Still exactly one model call either way.

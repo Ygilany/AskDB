@@ -5,15 +5,15 @@ import {
 } from "../errors.js";
 import type { AskDbLogger } from "../logging/askdb-logger.js";
 import { AskDbLogEvent } from "../logging/log-events.js";
-import type {
-  NormalizedTenantPolicy,
-  TenantScope,
-  ScopedTable,
-  PolymorphicTable,
+import {
+  placeholderForTenantRoot,
+  type NormalizedTenantPolicy,
+  type TenantScope,
+  type ScopedTable,
+  type PolymorphicTable,
 } from "../schema/v2/tenant-policy.js";
 import { isBuiltInDialectId, type DialectSpec } from "./dialect-spec.js";
 import { startsDashComment } from "./lexer.js";
-import { placeholderForRoot } from "./tenant-placeholders.js";
 
 export type TenantGuardrailResult = {
   passed: boolean;
@@ -96,7 +96,7 @@ export function validateTenantGuardrails(
       warnings.push(
         warn("MISSING_TENANT_PREDICATE", root.id,
           `Tenant root table '${extractTableName(root.id)}' is missing required tenant predicate. ` +
-          `Expected: ${column} = ${placeholderForRoot(root.label)}`),
+          `Expected: ${column} = ${placeholderForTenantRoot(root)}`),
       );
     }
   }
@@ -299,7 +299,7 @@ function checkPolymorphicTable(
 
 /** The placeholder `resolveTenantSql()` substitutes for a root (by its label). */
 function placeholderFor(policy: NormalizedTenantPolicy, rootId: string): string {
-  return placeholderForRoot(policy.roots.find((r) => r.id === rootId)?.label ?? rootId);
+  return placeholderForTenantRoot(policy.roots.find((r) => r.id === rootId) ?? { id: rootId, label: rootId });
 }
 
 /**
@@ -312,7 +312,7 @@ function placeholderFor(policy: NormalizedTenantPolicy, rootId: string): string 
 function idCarriers(policy: NormalizedTenantPolicy, rootId: string): PredicateTarget[] {
   const root = policy.roots.find((r) => r.id === rootId);
   if (!root) return [];
-  const placeholder = placeholderForRoot(root.label);
+  const placeholder = placeholderForTenantRoot(root);
   const carriers: PredicateTarget[] = [
     { placeholder, column: extractColumnName(root.tenantIdColumn), table: extractTableName(root.id) },
   ];
