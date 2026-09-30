@@ -1,9 +1,16 @@
 #!/usr/bin/env bash
 # Local release preflight — what CI runs in `ci.yml`, but as one command.
 #
-# Use this before merging the changesets "Version Packages" PR (or before a
-# manual `pnpm release`) to catch packaging / smoke / dry-publish regressions
-# without pushing first.
+# Use this on a feature branch to catch packaging / smoke / dry-publish
+# regressions without pushing first.
+#
+# Don't run it on the "chore: version packages" branch: the final
+# `changeset status` step fails there by design. `changeset version` has already
+# applied that PR's changesets (recorded in `.changeset/pre.json` in prerelease
+# mode), so `changeset status` sees changed packages with no pending changeset.
+# That PR is gated by `ci.yml` instead, whose `preflight` job runs the same smoke
+# test and dry-run publish without the `changeset status` step. Publishing is
+# automated in `release.yml` (see docs/release.md).
 #
 # CI breaks the same checks into discrete named steps so the GitHub Actions UI
 # shows per-step duration + pass/fail. Source of truth is mirrored: any step

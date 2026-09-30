@@ -17,12 +17,11 @@ Release tooling uses changesets for versioning and changelog generation. Package
 - `package.json` metadata: `description`, `keywords`, `repository`, `homepage`, `license`, `engines`, `files` (dist only)
 - `pnpm pack` validation — tarballs exclude `src/`, `tsconfig*`, test files
 - Consumer install smoke test — installs from local tarballs, imports and calls `ask()` with a mock model and fake executor
-- Changesets workflow — PR validation (changeset required for publishable changes), `changeset publish` for releases
+- Changesets workflow — PR validation (changeset required for publishable changes), a Version PR, and automated npm publish in CI (`.github/workflows/release.yml`, see `docs/release.md`)
 - Per-package `README.md` with install and minimal usage examples
 
 ### Out of scope
 
-- Automated npm publish in CI (manual maintainer step using `changeset publish`)
 - Registry mirroring or private registry setup
 - CDN/browser bundles
 

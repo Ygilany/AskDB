@@ -27,29 +27,48 @@ AskDB is pre-1.0. Breaking public API changes should normally use minor changese
 
 Before publishing, confirm `pnpm changeset status` does not show an unintended major bump.
 
-## npm Scope and Token
-
-Before the first public publish:
-
-- Confirm the npm `@askdb` scope exists and the maintainer account has publish rights.
-- Confirm GitHub Actions secret `NPM_TOKEN` can publish public packages under `@askdb`.
-- Confirm npm provenance is expected for the release workflow (`NPM_CONFIG_PROVENANCE=true`).
-- Spot-check current registry state:
-
-```bash
-npm view @askdb/core version
-```
-
-An `E404` is expected before the first public publish.
-
 ## Publish Flow
 
-1. Merge feature PRs with changesets.
-2. Run `pnpm changeset version` on `main` or use the Changesets version PR flow.
-3. Review generated package versions and changelogs.
-4. Run `pnpm preflight`.
-5. Trigger `.github/workflows/release.yml` on `main`.
-6. After publish, check package pages and install one package from npm in a clean directory.
+Releases run in `.github/workflows/release.yml`, triggered when `CI` passes on a push to `main`.
+
+1. Merge feature PRs with changesets. `changesets.yml` requires one on any PR that changes publishable sources.
+2. The `version` job opens or updates the **"chore: version packages (beta)"** PR on the `changeset-release/main` branch. It applies every pending changeset: version bumps, CHANGELOG entries, and the consumed changesets recorded in `.changeset/pre.json`.
+3. Review that PR's versions and changelogs, then merge it. CI runs on it like any PR; `changesets.yml` skips its changeset check there, because the PR applies changesets rather than adding one.
+4. When CI passes on the merge commit, the `publish` job waits for approval in the `npm-publish` environment. Approve it from the workflow run. It builds and runs `pnpm -r publish --access public --tag latest`, which publishes every public package whose version isn't on npm yet.
+5. The `tag` job pushes a `<name>@<version>` git tag for each published package.
+6. Check the package pages, and install one package from npm in a clean directory.
+
+A push to `main` with nothing new to publish doesn't ask for approval: `scripts/release-unpublished.mjs` compares every public package's version with npm first. If a publish fails partway, use "Re-run failed jobs" on the run; versions already on npm are skipped.
+
+The workflow only acts when the commit CI tested is still the tip of `main`. If another PR merges before CI finishes, that newer commit's CI run triggers the release instead.
+
+## Dist-tags
+
+Betas publish under `latest`, so `npm install askdb` gets the newest beta. There is no `beta` dist-tag: it was stale and was removed on 2026-09-29 (#267). The pipeline doesn't use `changeset publish`, because in prerelease mode that would publish under the `beta` tag from `.changeset/pre.json`. Trusted publishing can only publish, so a second tag can't be moved afterwards without an npm token. Revisit this when the 1.0 release candidates start (#354).
+
+## Pipeline Decisions
+
+Recorded 2026-09-29, in #354:
+
+- **Version PR author:** a GitHub App, not `GITHUB_TOKEN` or a personal access token. PRs opened with `GITHUB_TOKEN` don't trigger other workflows, so the required checks would never report on the Version PR. The repository setting "Allow GitHub Actions to create and approve pull requests" stays off.
+- **npm auth:** trusted publishing (OIDC). No npm token is stored in the repo. pnpm 11 does the OIDC exchange itself, and adds provenance because the repo and the packages are public.
+- **Gate:** the `npm-publish` environment, with the maintainer as required reviewer and deployments limited to `main`. Only the `publish` job can request an OIDC token.
+- **changesets/action:** v1, because v2 requires Changesets CLI v3. `@changesets/cli` is pinned exactly in the root `package.json`.
+- **GitHub Releases:** off. Package CHANGELOGs and git tags are the release record.
+- **Versioning:** unchanged. Packages keep their own versions, with `@askdb/core`, `askdb` and `@askdb/http-api` linked. One lockstep version line waits for the 1.0 release candidates (#354).
+
+## One-Time Setup
+
+The maintainer does these once, before the first automated publish:
+
+1. **GitHub App.** Create a private App on the `Ygilany` account with repository permissions *Contents: Read and write* and *Pull requests: Read and write*, and install it on `Ygilany/AskDB` only. Store its client ID as the Actions variable `RELEASE_APP_CLIENT_ID` and a private key as the Actions secret `RELEASE_APP_PRIVATE_KEY`.
+2. **Environment.** Settings → Environments → `npm-publish`: add yourself as required reviewer, and limit deployment branches to `main`.
+3. **Trusted publisher, per package.** On npmjs.com, for each of the 20 public packages (the non-private ones in `pnpm -r ls --depth -1`): Settings → Trusted publisher → GitHub Actions, with owner `Ygilany`, repository `AskDB`, workflow `release.yml`, environment `npm-publish`.
+4. **After the first automated publish succeeds**, set each package's *Publishing access* to "Require two-factor authentication and disallow tokens".
+
+## Publishing by Hand
+
+Only if the pipeline is unavailable: from a clean `main` that passed CI, run `pnpm preflight`, then `pnpm release` (build, then `pnpm -r publish --access public --tag latest`). npm asks for two-factor authentication per package, and hand publishes carry no provenance. Tag the published versions afterwards with `pnpm changeset tag && git push --tags`.
 
 ## Public Safety Note
 

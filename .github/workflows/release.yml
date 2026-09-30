@@ -1,39 +1,192 @@
 name: Release
 
-# Manual maintainer workflow. Run on `main` after merging a PR that bumps versions
-# (via `pnpm changeset version`). Publishes the current versions to npm.
+# Automated releases with Changesets, gated on CI and a maintainer approval.
 #
-# Phase 4 ships this as opt-in; the very first 0.1.0 publish may also be done by hand
-# (`pnpm -r build && pnpm -r publish --access=public`) before this workflow is wired up.
+# Flow (see docs/release.md):
+#   1. Feature PRs land on `main` with a changeset (enforced by changesets.yml).
+#   2. CI passes on that push, which triggers this workflow. The `version` job opens or
+#      updates the "chore: version packages (beta)" PR, which applies every pending
+#      changeset (version bumps and CHANGELOG entries). It publishes nothing.
+#   3. Merging that PR puts versions on `main` that npm doesn't have yet. Once CI passes
+#      on the merge commit, `publish` waits for approval in the `npm-publish`
+#      environment, then publishes them. `tag` then creates their git tags.
+#
+# Why each piece is shaped this way:
+# - `workflow_run` on `CI`, not `push`: publishing only starts after the full CI run
+#   (build, lint, the database-backed `test` job, `preflight` with the installable smoke
+#   test and a publish dry-run) passed on the exact commit being released. Those checks
+#   are not repeated here.
+# - Every job checks that the tested commit is still the tip of `main`. changesets/action
+#   bases the Version PR commit on `github.sha`, which for `workflow_run` is the newest
+#   commit on `main`, not the one CI tested. When `main` has moved on, this run does
+#   nothing; the newer commit's CI run triggers the release instead.
+# - npm auth is trusted publishing (OIDC): no npm token is stored anywhere. Only
+#   `publish` has `id-token: write`, and it runs in the `npm-publish` environment
+#   (required reviewer, `main` only). pnpm 11 does the OIDC exchange itself, and adds
+#   provenance because the repo and the packages are public.
+# - Betas publish under the `latest` dist-tag (`--tag latest`), not the `beta` tag from
+#   `.changeset/pre.json`, so `npm install askdb` gets the newest beta. That's why this
+#   runs `pnpm -r publish` and not `changeset publish`, which would use the `beta` tag.
+#   OIDC can only publish, so a second tag couldn't be moved afterwards.
+# - The GitHub App token (`RELEASE_APP_CLIENT_ID` / `RELEASE_APP_PRIVATE_KEY`) opens the
+#   Version PR. PRs opened with `GITHUB_TOKEN` don't trigger other workflows, so the
+#   required checks would never report on it. The token is minted after
+#   `pnpm install`, and the action commits through the GitHub API, so it never sits in
+#   the git config.
+# - changesets/action stays on the v1 line: v2 requires Changesets CLI v3, and this repo
+#   pins CLI v2.
+#
+# To re-run a failed publish, use "Re-run failed jobs" on the run. `pnpm -r publish`
+# skips versions that are already on npm.
 on:
-  workflow_dispatch:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
 
-permissions:
-  contents: read
-  id-token: write
+permissions: {}
+
+# Never let two releases race, and never cancel one partway: a cancelled publish can
+# leave npm and the git tags out of sync.
+concurrency:
+  group: release
+  cancel-in-progress: false
 
 jobs:
-  publish:
+  version:
+    # `vars.RELEASE_APP_CLIENT_ID` unset = the one-time setup in docs/release.md isn't
+    # done yet; skip instead of failing on every green push to `main`.
+    if: >-
+      github.repository == 'Ygilany/AskDB' &&
+      vars.RELEASE_APP_CLIENT_ID != '' &&
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'push' &&
+      github.event.workflow_run.head_branch == 'main' &&
+      github.event.workflow_run.head_sha == github.sha
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      packages: ${{ steps.unpublished.outputs.packages }}
+      publish: ${{ steps.unpublished.outputs.publish }}
     steps:
-      - uses: actions/checkout@v7
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+          fetch-depth: 0
+          persist-credentials: false
 
-      - uses: pnpm/action-setup@v6
+      - name: Setup pnpm
+        uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
 
-      - uses: actions/setup-node@v7
+      - name: Setup Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 22
           cache: pnpm
-          registry-url: https://registry.npmjs.org
 
-      - run: pnpm install --frozen-lockfile
-      - run: pnpm -r build
-      - run: pnpm test
-      - run: pnpm smoke:install
-      - run: pnpm -r publish --dry-run --no-git-checks --access=public
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
 
+      - name: Find versions not yet on npm
+        id: unpublished
+        run: |
+          packages="$(node scripts/release-unpublished.mjs)"
+          echo "packages=${packages}" >> "$GITHUB_OUTPUT"
+          if [ "${packages}" = "[]" ]; then
+            echo "publish=false" >> "$GITHUB_OUTPUT"
+            echo "Every public package's version is already on npm; nothing to publish."
+          else
+            echo "publish=true" >> "$GITHUB_OUTPUT"
+            echo "To publish: ${packages}"
+          fi
+
+      - name: Mint the release App token
+        id: app-token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          client-id: ${{ vars.RELEASE_APP_CLIENT_ID }}
+          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+          permission-contents: write
+          permission-pull-requests: write
+
+      # Opens or updates the Version PR when changesets are pending; otherwise a no-op.
+      # No `publish` input: publishing is the `publish` job's alone.
+      - name: Open or update the Version PR
+        uses: changesets/action@a45c4d594aa4e2c509dc14a9f2b3b67ba3780d0d # v1.9.0
+        with:
+          github-token: ${{ steps.app-token.outputs.token }}
+          version: pnpm version-packages
+          title: "chore: version packages"
+          commit: "chore: version packages"
+          branch: main
+          commitMode: github-api
+          createGithubReleases: false
+
+  publish:
+    needs: version
+    if: needs.version.outputs.publish == 'true'
+    runs-on: ubuntu-latest
+    environment: npm-publish
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+          persist-credentials: false
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
+
+      - name: Setup Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build all packages
+        run: pnpm -r build
+
+      # CI's `preflight` job already ran the smoke test and the dry-run on this commit;
+      # they aren't repeated here, to keep third-party code out of the job that can publish.
       - name: Publish to npm
-        run: pnpm changeset publish
+        run: pnpm -r publish --access public --no-git-checks --tag latest --report-summary
+
+      - name: Published packages
+        if: always()
+        run: cat pnpm-publish-summary.json 2>/dev/null || echo "no publish summary"
+
+  tag:
+    needs: [version, publish]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+
+      # Same `<name>@<version>` annotated tags `changeset tag` creates. Tags pushed with
+      # GITHUB_TOKEN trigger no workflows.
+      - name: Tag the published versions
         env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-          NPM_CONFIG_PROVENANCE: "true"
+          PACKAGES: ${{ needs.version.outputs.packages }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          echo "${PACKAGES}" | jq -r '.[] | "\(.name)@\(.version)"' | while read -r tag; do
+            if git ls-remote --exit-code --tags origin "refs/tags/${tag}" > /dev/null; then
+              echo "${tag}: already tagged"
+              continue
+            fi
+            git tag -a "${tag}" -m "${tag}"
+            git push origin "refs/tags/${tag}"
+          done
