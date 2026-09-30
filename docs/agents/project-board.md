@@ -15,10 +15,25 @@ A thread's **lane** is the Workstream named in its charter (the thread's first m
 
 ## Thread lines
 
-The thread ID is the T3 worktree directory name (e.g. `t3code-49ff058e`). Two lines at the bottom of an issue body, below a `---` rule, record the threads involved:
+A thread is identified by two values, and the lines below carry both:
 
-- `Thread ID: <id>`: the thread that filed it (the footer `AGENTS.md` requires). Written once.
-- `Worked on by: <id>`: the thread that picked it up. Added when work starts; a PR's own `Thread ID` footer covers the rest.
+- **Thread ID**: the T3 thread UUID (e.g. `743d36c3-aac8-423a-b74c-62e1bbc9fa00`). This is what T3's ⌘K search matches, so it's the value that leads back to the conversation.
+- **Worktree**: the T3 worktree directory name (e.g. `t3code-a0ad9d56`), the basename of `git rev-parse --show-toplevel`. It isn't the thread ID, and T3 search doesn't match it.
+
+Look up your thread UUID from T3's local database, read-only, from inside your worktree:
+
+```bash
+sqlite3 -readonly ~/.t3/userdata/state.sqlite "select thread_id from projection_threads where worktree_path = '$(git rev-parse --show-toplevel)' and deleted_at is null order by coalesce(latest_user_message_at, created_at) desc limit 1;"
+```
+
+A worktree can host more than one thread; the query picks the one with the most recent user message, which is the thread you're running in. If the query returns nothing, write `Thread ID: unknown (worktree <worktree-name>)` rather than putting the worktree name in the ID slot.
+
+Two lines at the bottom of an issue body, below a `---` rule, record the threads involved:
+
+- `Thread ID: <thread-uuid> (worktree <worktree-name>)`: the thread that filed it (the footer `AGENTS.md` requires). Written once.
+- `Worked on by: <thread-uuid> (worktree <worktree-name>)`: the thread that picked it up. Added when work starts; a PR's own `Thread ID` footer covers the rest.
+
+Older items carry only the worktree name (`Thread ID: t3code-…`). Leave them as they are.
 
 ## Steps
 
