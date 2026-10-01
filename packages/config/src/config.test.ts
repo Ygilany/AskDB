@@ -11,13 +11,12 @@ import {
   env,
   flattenAskDbConfig,
   getAskDbRuntimeConfig,
-  getAskDbAiScaffoldDefaults,
   loadAskDbConfigProjectionSync,
-  renderAskDbAiConfigScaffold,
   requiredEnv,
   resetAskDbRuntimeForTests,
   setAskDbRuntimeForTests,
 } from "./index.js";
+import { renderAskDbAiConfigScaffold } from "./scaffold/index.js";
 import type { AskDbConfig } from "./types.js";
 
 const pkgRoot = join(dirname(fileURLToPath(import.meta.url)), "..");
@@ -508,17 +507,6 @@ ${scaffold.source}
       }
     },
   );
-
-  it("the ai scaffold has default key and model env names for every provider, and none for other ids", () => {
-    for (const provider of ASKDB_AI_PROVIDERS) {
-      expect(getAskDbAiScaffoldDefaults(provider)).toMatchObject({
-        keyEnv: expect.stringMatching(/^[A-Z][A-Z0-9_]*$/),
-        modelEnv: expect.stringMatching(/^[A-Z][A-Z0-9_]*$/),
-      });
-    }
-    expect(getAskDbAiScaffoldDefaults("__proto__")).toBeUndefined();
-    expect(getAskDbAiScaffoldDefaults("constructor")).toBeUndefined();
-  });
 
   it("the ai scaffold rejects an unknown provider, which it would emit as an object key", () => {
     expect(() =>

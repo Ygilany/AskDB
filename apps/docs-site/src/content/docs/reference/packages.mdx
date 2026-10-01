@@ -121,8 +121,8 @@ Optional config bootstrap: `.env` and `askdb.config.*` discovery, type-safe `def
 | `discoverAskDbConfigPath()` | Programmatic config-file discovery. |
 | `env`, `requiredEnv` | Typed env-var accessors. |
 | `isAskDbDebugEnabled()` | `true` when the `ASKDB_DEBUG` shell variable is `1` or `true`; works without a loaded config. |
-| `renderAskDbAiConfigScaffold(input)` | Render the `ai` block of a new `askdb.config.ts` and list the env vars it reads. `askdb init` and Studio's setup wizard use it. |
-| `getAskDbAiScaffoldDefaults(provider)` | The default env var names a new config reads a provider's API key and model from. |
+
+For tools that write a new `askdb.config.ts`, the `@askdb/config/scaffold` entry point exports `renderAskDbAiConfigScaffold(input)`. It renders the config's `ai` block and lists the env vars that block reads. `askdb init` and Studio's setup wizard use it. Your own `askdb.config.ts` never needs it.
 
 ## Engine adapters
 

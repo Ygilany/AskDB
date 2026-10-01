@@ -3,11 +3,7 @@ import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import {
-  getAskDbAiScaffoldDefaults,
-  renderAskDbAiConfigScaffold,
-  type AskDbScaffoldEnvVar,
-} from "@askdb/config";
+import { renderAskDbAiConfigScaffold, type AskDbScaffoldEnvVar } from "@askdb/config/scaffold";
 
 const DEFAULT_CONFIG_PATH = "askdb.config.ts";
 
@@ -57,12 +53,14 @@ export type InitPrompter = {
 // Config rendering
 // ---------------------------------------------------------------------------
 
-/** Default key/model env var names for a provider, from `@askdb/config` (shared with Studio). */
-function aiDefaults(provider: InitAnswers["aiProvider"]): { keyEnv: string; modelEnv: string } {
-  const defaults = getAskDbAiScaffoldDefaults(provider);
-  if (!defaults) throw new Error(`askdb init: unknown AI provider "${provider}".`);
-  return defaults;
-}
+/** Default key/model env var names. Mirrors `AI_DEFAULTS` in `apps/studio/src/setup.ts`. */
+const AI_DEFAULTS: Record<InitAnswers["aiProvider"], { keyEnv: string; modelEnv: string }> = {
+  openai: { keyEnv: "OPENAI_API_KEY", modelEnv: "OPENAI_MODEL" },
+  anthropic: { keyEnv: "ANTHROPIC_API_KEY", modelEnv: "ANTHROPIC_MODEL" },
+  google: { keyEnv: "GOOGLE_GENERATIVE_AI_API_KEY", modelEnv: "GOOGLE_GENERATIVE_AI_MODEL" },
+  azure: { keyEnv: "AZURE_OPENAI_API_KEY", modelEnv: "AZURE_OPENAI_DEPLOYMENT" },
+  foundry: { keyEnv: "AZURE_OPENAI_API_KEY", modelEnv: "AZURE_OPENAI_DEPLOYMENT" },
+};
 
 /**
  * Render a value as a TypeScript string literal for the generated config.
@@ -89,7 +87,7 @@ function sqliteFileEnv(file: string | undefined): string | undefined {
 }
 
 /**
- * The `ai` block and the env vars it reads, from `@askdb/config` (shared with
+ * The `ai` block and the env vars it reads, from `@askdb/config/scaffold` (shared with
  * Studio's setup wizard, so provider-specific fields such as Azure's
  * `resourceName` live in one place).
  */
@@ -262,7 +260,7 @@ type InitAnswerOverrides = Partial<{
 export function resolveDefaultInitAnswers(overrides: InitAnswerOverrides = {}): InitAnswers {
   const database = overrides.database ?? "postgres";
   const aiProvider = overrides.aiProvider ?? "openai";
-  const providerDefaults = aiDefaults(aiProvider);
+  const providerDefaults = AI_DEFAULTS[aiProvider];
 
   let connectionEnv = overrides.connectionEnv;
   if (!connectionEnv) {
@@ -685,7 +683,7 @@ export async function runWizard(prompter: InitPrompter): Promise<InitAnswers | n
     default: "openai",
   });
 
-  const { keyEnv: aiKeyEnv, modelEnv: aiModelEnv } = aiDefaults(aiProvider);
+  const { keyEnv: aiKeyEnv, modelEnv: aiModelEnv } = AI_DEFAULTS[aiProvider];
 
   const ragStore = await prompter.select<InitAnswers["ragStore"]>({
     message: "RAG store",
