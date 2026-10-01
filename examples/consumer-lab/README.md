@@ -274,7 +274,11 @@ It covers the `POST /ask` success shape on every dialect, and on Postgres one ca
 
 The lab doesn't inherit the monorepo's `minimumReleaseAge` (it is its own pnpm root), but pnpm 11 defaults it to one day, so the lab's `pnpm-workspace.yaml` sets `minimumReleaseAgeExclude: [askdb, "@askdb/*"]`. Without it, a release published less than a day earlier still installs, because the lab pins it exactly, but pnpm adds each `@askdb/*` version to `minimumReleaseAgeExclude` itself and rewrites the file. The rewrite indents the `# lab:use` comments, so `lab:use --restore` no longer finds the committed target (seen refreshing the baseline to `askdb@1.0.0-beta.43` 21 minutes after it was published). Third-party packages keep the one-day delay.
 
-The baseline pins the lab's third-party dependencies exactly: the drivers (`pg`, `mysql2`, `mssql`, `better-sqlite3`), and `ai`, `@ai-sdk/openai` and `zod` at the versions the workspace uses. The AskDB adapters declare `ai` as a peer, so the host pins it.
+The baseline pins the lab's third-party dependencies exactly, so they stay the same across install targets: the drivers (`pg`, `mysql2`, `mssql`, `better-sqlite3`), `zod`, `ai` and `@ai-sdk/openai`. The AskDB adapters declare `ai` as a peer and `@askdb/rag` declares `@ai-sdk/openai` as an optional one, so the host pins both, by hand, at AskDB's published floors (ADR 0015). Dependabot's version updates skip the lab (`exclude-paths` in `.github/dependabot.yml`). A change that raises a floor on purpose raises the pin with it, or `host-peers` (`test/host-peers.test.ts`) fails:
+
+| Scenario | What it checks |
+|---|---|
+| `host-peers` | `pnpm peers check` finds no peer range declared by an installed AskDB package that the host's pins don't meet, and every installed AskDB package declares the same `ai` range, as a dependency or a peer, so a runtime `ai` floor can't rise alone. It doesn't notice a pin that rises above a floor. Runs once, as `[postgres]`. |
 
 A vulnerable transitive dependency that no parent release fixes yet gets an `overrides` entry above the `lab:use` block, with its advisory and removal condition in a comment, mirroring the monorepo's `pnpm-workspace.yaml`. Today that is `deepmerge-ts` (GHSA-ggr8-5vv4-36mx), which `@prisma/config` pins at 7.1.5.
 
