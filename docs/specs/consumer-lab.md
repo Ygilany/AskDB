@@ -333,7 +333,7 @@ Add a new `consumer-lab` job to `.github/workflows/ci.yml`. It needs `build`, ha
 
 Recommended additions (decision 4):
 
-- A **nightly** scheduled run with `lab:use npm:latest`. It catches publish-only drift: files missing from tarballs, or a bad `workspace:` rewrite.
+- A run against the **published packages after each release** (`lab:use npm:latest`), plus a weekly run that installs fresh to catch dependency drift (#255). The release run catches publish-only breakage: files missing from tarballs, or a bad `workspace:` rewrite. A nightly run would add little, because between releases only the dependencies' resolved versions change.
 - A **path filter**, so pull requests that only touch `apps/docs-site` skip the lab.
 
 ## Test-audit compliance
@@ -399,7 +399,7 @@ Found while building the tenant suite (#249):
 1. **Location:** `examples/consumer-lab/`, excluded from the workspace with `!examples/consumer-lab`.
 2. **Lockfile:** the app's `package.json` and `pnpm-lock.yaml` are committed in the `npm:latest` baseline state. (Changed from `npm:beta` on 2026-09-26: `latest` is what `npm install askdb` resolves, and the `beta` tags were stale and have since been removed; see #267.)
 3. **MySQL:** `mysql:8.4` LTS.
-4. **CI:** the lab runs on every PR (docs-only PRs are skipped by a path filter), plus a nightly run against `npm:latest` (#255). A repo skill, `.agents/skills/consumer-lab/`, drives target selection: it works out the right `lab:use` target (a tarball from the checkout, a `git:` ref, a published version or dist-tag), refreshes the committed baseline when a new release ships, and runs and reads the matrix.
+4. **CI:** the lab runs on every PR (docs-only PRs are skipped by a path filter), plus a run against `npm:latest` after each release and a weekly fresh-install run for dependency drift (#255; changed from nightly on 2026-10-01). A repo skill, `.agents/skills/consumer-lab/`, drives target selection: it works out the right `lab:use` target (a tarball from the checkout, a `git:` ref, a published version or dist-tag), refreshes the committed baseline when a new release ships, and runs and reads the matrix.
 5. **Cassettes:** the first pass uses authored SQL only. Recording with a live key is optional and is done by the maintainer.
 6. **Docs:** the lab is documented in `CONTRIBUTING.md` only; there is no docs-site page.
 7. **MySQL multi-database introspection** is a product change, in its own PR with a changeset (Phase 1b). The user lists the databases to introspect in config (`introspection.schemas`, the config equivalent of `--schemas` on every engine), and the documented `--schemas` flag works too. The connector queries `information_schema` with `TABLE_SCHEMA IN (…)` instead of `= DATABASE()`, and each database becomes a namespace. With no list, today's behavior is unchanged.
