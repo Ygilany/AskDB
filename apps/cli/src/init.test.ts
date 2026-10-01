@@ -518,6 +518,23 @@ describe("runInitCli --yes --skip-install", () => {
     },
   );
 
+  it.each([
+    { flags: ["--database", "prisma", "--studio-execute"], envName: "DATABASE_URL" },
+    { flags: ["--rag-store", "pgvector"], envName: "ASKDB_PGVECTOR_URL" },
+  ])("$flags: .env.example lists $envName, which the config reads, once", async ({ flags, envName }) => {
+    const tmp = mkdtempSync(join(tmpdir(), "askdb-init-test-"));
+    try {
+      const outPath = join(tmp, "askdb.config.ts");
+      const code = await runInitCli(["--yes", "--skip-install", "--path", outPath, ...flags]);
+      expect(code).toBe(0);
+      expect(readFileSync(outPath, "utf8")).toContain(`env("${envName}")`);
+      const envExample = readFileSync(join(tmp, ".env.example"), "utf8");
+      expect(envExample.match(new RegExp(`^${envName}=`, "gm"))).toHaveLength(1);
+    } finally {
+      rmSync(tmp, { recursive: true, force: true });
+    }
+  });
+
   it("--ai-provider azure: config and .env.example include the resource name", async () => {
     const tmp = mkdtempSync(join(tmpdir(), "askdb-init-test-"));
     try {
