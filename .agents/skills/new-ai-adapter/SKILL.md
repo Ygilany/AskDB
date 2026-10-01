@@ -140,7 +140,7 @@ Rules:
 - `src/types.ts`: a `<Provider>Config` type, add it to `AiProviderConfigs`, a `<Provider>AiConfig` branch, and the `AskDbAiConfig` union (export both from `src/index.ts`).
 - `src/flatten.ts`: an `apply<Provider>Ai()` writing env keys the provider reads (`apiKeyVars[0]`, a `baseURLVars` entry) plus `ASKDB_AI_MODEL`, and a branch using `requireProviderBranch`.
 - `src/config.test.ts`: flatten tests for the new branch; update the `ASKDB_AI_PROVIDERS` list test.
-- `src/scaffold.ts`: if the provider can't start without a setting beyond the API key and model (as Azure needs `resourceName`), add it to `renderAskDbAiConfigScaffold`. `askdb init` and Studio's setup wizard both render the `ai` block through it, so this is the only place to change.
+- `src/scaffold/ai.ts` (`@askdb/config/scaffold`): if the provider can't start without a setting beyond the API key and model (as Azure needs `resourceName`), add it to `renderAskDbAiConfigScaffold`. `askdb init` and Studio's setup wizard both render the `ai` block through it, so this is the only place to change.
 
 Hand-maintained lists outside `@askdb/ai` and `@askdb/config` (everything else derives from `BUILTIN_AI_PROVIDERS` or `ASKDB_AI_PROVIDERS`):
 
