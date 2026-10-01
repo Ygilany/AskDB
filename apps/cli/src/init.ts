@@ -799,18 +799,42 @@ const DB_URL_PLACEHOLDER: Partial<Record<InitAnswers["database"], string>> = {
     "Data Source=<DATABASE_HOST>,<DATABASE_PORT>;Initial Catalog=<DATABASE_NAME>;User ID=<USERNAME>;Password=<PASSWORD>;Trust Server Certificate=True;Authentication=SqlPassword;",
 };
 
-/** SQLite file env vars the config reads (introspection and Studio execute), without duplicates. */
-function sqliteFileEnvNames(answers: InitAnswers): string[] {
-  const names = new Set<string>();
-  if (answers.database === "sqlite") {
-    const name = sqliteFileEnv(answers.sqliteFile);
-    if (name) names.add(name);
+/** A database-side env var the generated config reads, with its `.env.example` placeholder. */
+type DatabaseEnvVar = { name: string; placeholder: string; purpose?: string };
+
+/**
+ * The database-side env vars the generated config reads (the introspection URL,
+ * SQLite file paths, the pgvector URL, and Studio execute's URL), each once.
+ * Names fall back to the same defaults the renderers above use, so
+ * `.env.example` and the printed variable list match the config.
+ */
+function databaseEnvVars(answers: InitAnswers): DatabaseEnvVar[] {
+  const { database, studioExecute } = answers;
+  const vars = new Map<string, DatabaseEnvVar>();
+  const add = (envVar: DatabaseEnvVar) => {
+    if (!vars.has(envVar.name)) vars.set(envVar.name, envVar);
+  };
+
+  if (database !== "sqlite" && database !== "prisma") {
+    add({ name: answers.connectionEnv ?? "DATABASE_URL", placeholder: DB_URL_PLACEHOLDER[database] ?? "" });
   }
-  if (answers.studioExecute.enabled && answers.studioExecute.provider === "sqlite") {
-    const name = sqliteFileEnv(answers.studioExecute.sqliteFile);
-    if (name) names.add(name);
+  const sqliteFileEnvs = [
+    database === "sqlite" ? sqliteFileEnv(answers.sqliteFile) : undefined,
+    studioExecute.enabled && studioExecute.provider === "sqlite" ? sqliteFileEnv(studioExecute.sqliteFile) : undefined,
+  ];
+  for (const name of sqliteFileEnvs) {
+    if (name) add({ name, placeholder: "", purpose: "SQLite database file path" });
   }
-  return [...names];
+  if (answers.ragStore === "pgvector") {
+    add({ name: answers.pgvectorEnv ?? "ASKDB_PGVECTOR_URL", placeholder: DB_URL_PLACEHOLDER.postgres ?? "" });
+  }
+  if (studioExecute.enabled && studioExecute.provider !== "sqlite") {
+    add({
+      name: studioExecute.connectionEnv ?? "DATABASE_URL",
+      placeholder: DB_URL_PLACEHOLDER[studioExecute.provider] ?? "",
+    });
+  }
+  return [...vars.values()];
 }
 
 function buildEnvExample(answers: InitAnswers): string {
@@ -820,32 +844,9 @@ function buildEnvExample(answers: InitAnswers): string {
     "",
   ];
 
-  const needsConnectionEnv = answers.database !== "sqlite" && answers.database !== "prisma";
-  if (needsConnectionEnv && answers.connectionEnv) {
-    const placeholder = DB_URL_PLACEHOLDER[answers.database];
-    lines.push(placeholder ? `${answers.connectionEnv}=${placeholder}` : `${answers.connectionEnv}=`);
-  }
-
-  for (const name of sqliteFileEnvNames(answers)) {
-    lines.push("# SQLite database file path");
-    lines.push(`${name}=`);
-  }
-
-  if (answers.ragStore === "pgvector" && answers.pgvectorEnv) {
-    lines.push(`${answers.pgvectorEnv}=postgresql://<USERNAME>:<PASSWORD>@<DATABASE_HOST>:<DATABASE_PORT>/<DATABASE_NAME>`);
-  }
-
-  // Only emit a separate execute URL if it differs from the introspection URL
-  if (
-    answers.studioExecute.enabled &&
-    answers.studioExecute.provider !== "sqlite" &&
-    answers.studioExecute.connectionEnv &&
-    answers.studioExecute.connectionEnv !== answers.connectionEnv
-  ) {
-    const placeholder = DB_URL_PLACEHOLDER[answers.studioExecute.provider];
-    lines.push(placeholder
-      ? `${answers.studioExecute.connectionEnv}=${placeholder}`
-      : `${answers.studioExecute.connectionEnv}=`);
+  for (const envVar of databaseEnvVars(answers)) {
+    if (envVar.purpose) lines.push(`# ${envVar.purpose}`);
+    lines.push(`${envVar.name}=${envVar.placeholder}`);
   }
 
   for (const envVar of aiScaffold(answers).envVars) {
@@ -860,16 +861,7 @@ function buildEnvExample(answers: InitAnswers): string {
 function collectEnvVarNames(answers: InitAnswers): string[] {
   const names = new Set<string>();
   for (const envVar of aiScaffold(answers).envVars) names.add(envVar.name);
-  if (answers.database !== "sqlite" && answers.database !== "prisma" && answers.connectionEnv) {
-    names.add(answers.connectionEnv);
-  }
-  for (const name of sqliteFileEnvNames(answers)) names.add(name);
-  if (answers.ragStore === "pgvector" && answers.pgvectorEnv) names.add(answers.pgvectorEnv);
-  if (answers.studioExecute.enabled) {
-    if (answers.studioExecute.provider !== "sqlite" && answers.studioExecute.connectionEnv) {
-      names.add(answers.studioExecute.connectionEnv);
-    }
-  }
+  for (const envVar of databaseEnvVars(answers)) names.add(envVar.name);
   return Array.from(names);
 }
 

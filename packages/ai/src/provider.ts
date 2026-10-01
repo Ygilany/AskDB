@@ -360,7 +360,11 @@ const FIRST_PARTY_ADAPTER_PACKAGES: Record<string, { pkg: string; exportName: st
 };
 
 export function aiProviderMissingMessage(provider: AiProvider): string {
-  const firstParty = FIRST_PARTY_ADAPTER_PACKAGES[normalizeProvider(provider)];
+  const key = normalizeProvider(provider);
+  // Own keys only: `constructor` or `__proto__` would otherwise hit Object.prototype.
+  const firstParty = Object.hasOwn(FIRST_PARTY_ADAPTER_PACKAGES, key)
+    ? FIRST_PARTY_ADAPTER_PACKAGES[key]
+    : undefined;
   if (firstParty) {
     return (
       `AI provider "${provider}" is not registered. ` +

@@ -378,13 +378,18 @@ describe("createAiRegistry", () => {
       expect(message).toContain(exportName);
     });
 
-    it("does not invent a package name for custom providers", () => {
-      const message = aiProviderMissingMessage("mistral");
-      expect(message).toContain('AI provider "mistral" is not registered.');
-      expect(message).not.toContain("@askdb/ai-mistral");
-      expect(message).toMatch(/no first-party AskDB adapter/);
-      expect(message).toMatch(/createAiRegistry\(\)/);
-    });
+    // `constructor` and `__proto__` are Object.prototype names, not adapters.
+    it.each(["mistral", "constructor", "__proto__"])(
+      "does not invent a package name for the custom provider %s",
+      (provider) => {
+        const message = aiProviderMissingMessage(provider);
+        expect(message).toContain(`AI provider "${provider}" is not registered.`);
+        expect(message).not.toContain(`@askdb/ai-${provider}`);
+        expect(message).not.toContain("undefined");
+        expect(message).toMatch(/no first-party AskDB adapter/);
+        expect(message).toMatch(/createAiRegistry\(\)/);
+      },
+    );
 
     it("maps an alias to its owning package when surfaced through the registry", async () => {
       const registry = createAiRegistry([]);
