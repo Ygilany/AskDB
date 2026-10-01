@@ -63,7 +63,7 @@
   },
   "devDependencies": {
     "mysql2": "^3.24.4",
-    "typescript": "^6.0.3",
+    "typescript": "^7.0.2",
     "vitest": "^5.0.1"
   }
 }
