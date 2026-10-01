@@ -41,7 +41,7 @@
   },
   "devDependencies": {
     "@askdb/config": "workspace:*",
-    "@changesets/cli": "2.31.1",
+    "@changesets/cli": "3.0.3",
     "@types/node": "^22.20.1",
     "askdb": "workspace:*",
     "audit-ci": "^7.1.0",
