@@ -565,7 +565,7 @@ function parseSetupConfigBody(body: unknown): SetupConfigInput {
     throw new StudioHttpError(400, "Request body must be a JSON object.");
   }
   const databases = ["postgres", "mysql", "sqlite", "sqlserver", "prisma"] as const;
-  // Every provider with an askdb.config.* branch; @askdb/ai asserts this matches its built-in table.
+  // Every provider with an askdb.config.* branch; @askdb/client's provider-config-drift test asserts this matches @askdb/ai's built-in table.
   const aiProviders = ASKDB_AI_PROVIDERS;
   const ragStores = ["file", "memory", "pgvector"] as const;
   const executeProviders = ["postgres", "mysql", "sqlite", "sqlserver"] as const;

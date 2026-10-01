@@ -29,7 +29,8 @@ export type AskDbRagStore = (typeof ASKDB_RAG_STORES)[number];
  * Provider ids with a dedicated `ai.providerConfig.<id>` branch in `askdb.config.*`.
  * Mirrors the built-in provider table in `@askdb/ai` (`BUILTIN_AI_PROVIDERS`: every
  * built-in plus the `foundry` alias). `@askdb/config` must not depend on `@askdb/ai`,
- * so the list is duplicated here; a test in `@askdb/ai` fails if the two drift.
+ * so the list is duplicated here; `packages/client/src/provider-config-drift.test.ts`
+ * fails if the two drift.
  */
 export const ASKDB_AI_PROVIDERS = ["openai", "azure", "foundry", "anthropic", "google", "gateway"] as const;
 export type AskDbAiProviderId = (typeof ASKDB_AI_PROVIDERS)[number];
