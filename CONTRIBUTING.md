@@ -12,7 +12,7 @@ pnpm build
 pnpm test
 ```
 
-If `pnpm build` fails with **Cannot find module `.../node_modules/turbo/bin/turbo`**, your `node_modules` tree is out of sync (common after interrupted installs or worktree sync). Run **`rm -rf node_modules && pnpm install`**, then try again. The repo’s **`.npmrc`** hoists `turbo` to reduce broken bin shims; root scripts use **`pnpm exec turbo`** so the CLI is resolved through pnpm.
+If `pnpm build` fails with **Cannot find module `.../node_modules/turbo/bin/turbo`**, your `node_modules` tree is out of sync (common after interrupted installs or worktree sync). Run **`rm -rf node_modules && pnpm install`**, then try again. The **`publicHoistPattern`** in `pnpm-workspace.yaml` hoists `turbo` to reduce broken bin shims; root scripts use **`pnpm exec turbo`** so the CLI is resolved through pnpm.
 
 Use Node 22.13 or newer (pnpm 11's own floor) and pnpm 11. The published libraries support Node `>=22.12`; CI builds and runs the unit suites on Node 22.12.0 and 24. Optional Postgres fixtures live under `fixtures/` for integration checks.
 
