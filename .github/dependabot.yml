@@ -27,12 +27,35 @@ updates:
     # allows moves only the lockfile, for version and security updates alike. A floor
     # rises by hand, with a changeset that says why.
     versioning-strategy: increase-if-necessary
-    # The consumer lab is its own pnpm root, whose lockfile Dependabot doesn't update, and
-    # its host pins sit at AskDB's floors on purpose. Version updates only.
+    # The consumer lab is its own pnpm root with its own lockfile, which this entry doesn't
+    # update (it bumped the lab's manifest alone in #402). The entry below covers it.
     exclude-paths:
       - "examples/consumer-lab/**"
     groups:
       npm-minor-patch:
+        patterns: ["*"]
+        update-types: [minor, patch]
+    open-pull-requests-limit: 5
+
+  # The consumer lab (examples/consumer-lab/README.md): its third-party pins, with its own
+  # lockfile. The ignored packages move on purpose, for version and security updates alike.
+  # An advisory against `ai` or `@ai-sdk/openai` still raises a Dependabot alert on the
+  # lab's lockfile, the only install of the floor version: the signal to raise the floor.
+  - package-ecosystem: npm
+    directory: /examples/consumer-lab
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 1
+    ignore:
+      # The committed baseline is `npm:latest`; `pnpm lab:use npm:latest` refreshes these.
+      - dependency-name: "askdb"
+      - dependency-name: "@askdb/*"
+      # Pinned at AskDB's published floors (docs/adrs/0015); they rise with the floor.
+      - dependency-name: "ai"
+      - dependency-name: "@ai-sdk/openai"
+    groups:
+      consumer-lab-minor-patch:
         patterns: ["*"]
         update-types: [minor, patch]
     open-pull-requests-limit: 5
