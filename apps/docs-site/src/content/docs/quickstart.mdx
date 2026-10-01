@@ -13,7 +13,7 @@ import ExampleLink from "../../components/ExampleLink.astro";
 
 ## Prerequisites
 
-- Node 20 or newer.
+- Node 22.12 or newer.
 - npm, pnpm, or yarn — tabbed examples adapt to your choice; standalone snippets use `npx` (substitute `pnpm dlx` or `yarn dlx`).
 - An API key from a model provider — OpenAI, Anthropic, Google, Azure, or any OpenAI-compatible endpoint (OpenRouter, vLLM, Ollama, ...). See [Bring your own model](/guides/bring-your-own-model/).
 - A database AskDB can read — Postgres, MySQL, SQLite, or SQL Server — or even a Prisma schema file (no live database required).
@@ -55,7 +55,7 @@ yarn dlx askdb ask --question "Which customers signed up last week?"
 
 Each step is explained below. The loop that makes answers good: **introspect once, then enrich and re-ask in Studio until the SQL matches how your team thinks about the data.**
 
-<img src={quickstartLoopUrl} alt="Four steps: init scaffolds config, introspect reads the database into a schema artifact, ask generates validated SQL from your first question, enrich in Studio adds descriptions — with a loop-back from enrich to ask to refine until the SQL is right" class="doc-diagram" />
+<img src={quickstartLoopUrl} alt="Four steps: init scaffolds config, introspect reads the database into a schema artifact, ask generates checked SQL from your first question, enrich in Studio adds descriptions — with a loop-back from enrich to ask to refine until the SQL is right" class="doc-diagram" />
 
 ## 1. Scaffold your config
 
@@ -193,7 +193,7 @@ For one-off checks and CI smoke tests, ask directly from the terminal:
 npx askdb ask --question "Which customers signed up last week?"
 ```
 
-You get validated SQL on stdout — for example:
+You get checked SQL on stdout — for example:
 
 ```sql
 SELECT c.id, c.name, c.signed_up_at
@@ -202,7 +202,9 @@ WHERE c.signed_up_at >= NOW() - INTERVAL '7 days'
 ORDER BY c.signed_up_at DESC;
 ```
 
-In both cases AskDB returns validated SQL. It does **not** run it against your database — your application owns execution.
+In both cases AskDB returns checked SQL. It does **not** run it against your database — your application owns execution.
+
+<Aside type="caution">AskDB's SQL checks are heuristic guardrails, not a security boundary. Before your application runs generated SQL, read [Run generated SQL safely](/concepts/safety-boundaries/#run-generated-sql-safely): use a read-only, least-privilege database role, set timeouts, and enforce tenant isolation in the database.</Aside>
 
 ## 5. From here
 

@@ -233,7 +233,7 @@ If the generated SQL references identifiers your schema marks `sensitive`, `askd
 
 You never pass a SQL dialect — it resolves automatically: `dialect` in `askdb.config.ts` when set, otherwise the engine recorded in the schema artifact at introspection time, otherwise `postgres`.
 
-`askdb ask` returns the validated SQL on stdout. Execution is not part of the CLI.
+`askdb ask` returns the checked SQL on stdout. Execution is not part of the CLI.
 
 ## Shared logging flags
 

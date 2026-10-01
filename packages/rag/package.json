@@ -1,6 +1,6 @@
 {
   "name": "@askdb/rag",
-  "version": "0.2.0-beta.22",
+  "version": "0.2.0-beta.23",
   "description": "AskDB RAG layer: deterministic chunker over Schema v2, BYO embedder + vector store (in-memory, file-backed, pgvector), and an optional retriever wired into @askdb/core ask().",
   "keywords": [
     "askdb",
@@ -11,7 +11,7 @@
     "pgvector",
     "ai"
   ],
-  "homepage": "https://github.com/Ygilany/AskDB#readme",
+  "homepage": "https://askdb.tools/reference/rag-api/",
   "bugs": {
     "url": "https://github.com/Ygilany/AskDB/issues"
   },
@@ -23,6 +23,10 @@
   "license": "Apache-2.0",
   "author": "Yahya Gilany",
   "type": "module",
+  "sideEffects": [
+    "./bin/askdb-rag.js",
+    "./dist/bin.js"
+  ],
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {
@@ -80,8 +84,8 @@
     "@askdb/core": "workspace:*"
   },
   "peerDependencies": {
-    "@ai-sdk/openai": "^4.0.74",
-    "ai": "^7.0.113",
+    "@ai-sdk/openai": "^4.0.29",
+    "ai": "^7.0.51",
     "pg": ">=8"
   },
   "peerDependenciesMeta": {
@@ -96,9 +100,9 @@
     }
   },
   "devDependencies": {
-    "@ai-sdk/openai": "^4.0.74",
+    "@ai-sdk/openai": "^4.0.29",
     "@types/pg": "^8.23.1",
-    "ai": "^7.0.113",
+    "ai": "^7.0.51",
     "pg": "^8.23.0",
     "typescript": "^6.0.3",
     "vitest": "^5.0.1"

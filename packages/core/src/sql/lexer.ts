@@ -219,6 +219,17 @@ const DIGIT = /[0-9]/;
 const HEX = /[0-9A-Fa-f]/;
 const DOLLAR_TAG = /^\$([A-Za-z_\u0080-￿][A-Za-z0-9_\u0080-￿]*)?\$/;
 
+/**
+ * Whether the `--` at `i` starts a line comment. It always does, except on MySQL/MariaDB
+ * (`needsSpace`), where it must be followed by whitespace, a control character, or the end
+ * of the statement: there `--1` is two minus signs and a number.
+ */
+export function startsDashComment(sql: string, i: number, needsSpace: boolean): boolean {
+  if (sql[i] !== "-" || sql[i + 1] !== "-") return false;
+  const after = sql[i + 2];
+  return !needsSpace || after === undefined || /[\s\x00-\x1f]/.test(after);
+}
+
 /** Split `sql` into tokens under `profile`. Whitespace is dropped; comments are kept. */
 export function lexSql(sql: string, profile: SqlLexerProfile): SqlToken[] {
   const tokens: SqlToken[] = [];
@@ -295,10 +306,7 @@ export function lexSql(sql: string, profile: SqlLexerProfile): SqlToken[] {
 
     // ---- comments -------------------------------------------------------
     if (ch === "-" && next === "-") {
-      const after = sql[i + 2];
-      const isComment =
-        !profile.dashCommentNeedsSpace || after === undefined || /[\s\x00-\x1f]/.test(after);
-      if (isComment) {
+      if (startsDashComment(sql, i, profile.dashCommentNeedsSpace)) {
         let j = i + 2;
         while (j < n && sql[j] !== "\n" && sql[j] !== "\r") j++;
         push("comment", i, j);

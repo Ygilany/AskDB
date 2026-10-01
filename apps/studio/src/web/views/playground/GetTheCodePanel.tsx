@@ -92,7 +92,7 @@ const { sql${tenant && askTenantSqlMode === "sql-params" ? ", tenantParams" : ""
   ${JSON.stringify(question)}${overrides ? indentBlock(overrides, 2) : ""}
 );
 
-// AskDB returns validated SQL — it never executes it.
+// AskDB returns checked SQL — it never executes it.
 // Run it through your own pool under a read-only role${tenant && askTenantSqlMode === "sql-params" ? ", binding tenantParams" : ""}.`;
     }
 
@@ -113,7 +113,7 @@ const { sql${tenant && askTenantSqlMode === "sql-params" ? ", tenantParams" : ""
   model,${tenantOptions}
 });
 
-// AskDB returns validated SQL — it never executes it.
+// AskDB returns checked SQL — it never executes it.
 // Run it through your own pool under a read-only role${tenant && askTenantSqlMode === "sql-params" ? ", binding tenantParams" : ""}.`;
   }, [workspace, wiring, askQuestion, askTenantEnabled, generatedTenantScopeJson, askTenantSqlMode]);
 

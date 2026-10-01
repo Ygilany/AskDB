@@ -27,9 +27,9 @@ The dialect-agnostic NL-to-SQL pipeline. Schema loading, prompt construction, va
 
 | Symbol | Purpose |
 | --- | --- |
-| `ask(options)` | The main pipeline. Returns validated SQL. See [full API reference](/reference/core-api/). |
+| `ask(options)` | The main pipeline. Returns checked SQL. See [full API reference](/reference/core-api/). |
 | `loadSchema(path)` | Load a schema artifact from a directory, bundle, or `schema.json`. |
-| `validateTenantScope` / `resolveTenantSql` | Tenant-scope enforcement primitives. |
+| `validateTenantScope` / `resolveTenantSql` | Tenant-scope validation and placeholder binding. |
 | `createAskDbLogger` | Structured logger that emits AskDB log events. |
 | `POSTGRES_DIALECT` and built-in dialect IDs | Dialect inputs accepted by `ask()`. |
 | `AskDbLanguageModel` | AskDB's public name for the AI SDK language model contract. |
@@ -72,7 +72,7 @@ AI provider registry and shared config helpers. You rarely install or import thi
 
 ### Provider adapters
 
-Provider adapters own concrete AI SDK provider dependencies. Each adapter declares `ai` and `@askdb/ai` as peer dependencies — npm/pnpm install them automatically, but your app should depend on `ai` directly when you want to pin the version.
+Provider adapters own concrete AI SDK provider dependencies. Each adapter declares `ai` and `@askdb/ai` as peer dependencies — npm/pnpm install them automatically, but your app should depend on `ai` directly when you want to pin the version. AskDB raises its `ai` floor only when it needs a newer version or a security fix, and that release's changelog says which.
 
 <Tabs syncKey="ai-provider">
   <TabItem label="OpenAI">
@@ -197,7 +197,7 @@ Headless schema-authoring helpers used by Studio. Use directly when building a c
 
 ### `@askdb/rag`
 
-Chunks the schema artifact, indexes it in a vector store, and retrieves relevant chunks per question. Use with `ask()`'s `retriever` option for large schemas.
+Chunks the schema artifact, indexes it in a vector store, and retrieves relevant chunks per question. Use with `ask()`'s `retriever` option for large schemas. `ai`, `@ai-sdk/openai` and `pg` are optional peer dependencies: install the ones your embedder and vector store use. Their floors move the same way as the adapters' `ai` floor.
 
 <InstallTabs pkgs="@askdb/rag" />
 

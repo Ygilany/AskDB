@@ -55,7 +55,7 @@ const providerOptions = ai.resolveProviderOptions(config, { reasoningEffort: "lo
 await ask({ question, schema, dialect: "postgres", model, deps: { providerOptions } });
 ```
 
-`resolveReasoningEffort(env, purpose, override)` resolves the effective effort from an explicit override, a call-site env var (`ASKDB_AI_REASONING_EFFORT_NL_TO_SQL` / `_ENRICHMENT`), then the global `ASKDB_AI_REASONING_EFFORT` — set from `askdb.config.ts`'s `ai.reasoning` block by `@askdb/config`. See the [config reference](../../apps/docs-site/src/content/docs/reference/config.mdx#ai-reasoning--reasoninglatency-effort).
+`resolveReasoningEffort(env, purpose, override)` resolves the effective effort from an explicit override, a call-site env var (`ASKDB_AI_REASONING_EFFORT_NL_TO_SQL` / `_ENRICHMENT`), then the global `ASKDB_AI_REASONING_EFFORT` — set from `askdb.config.ts`'s `ai.reasoning` block by `@askdb/config`. See the [config reference](https://askdb.tools/reference/config/#aireasoning--reasoninglatency-effort).
 
 ## Exports
 

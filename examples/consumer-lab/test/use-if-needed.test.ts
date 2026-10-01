@@ -44,6 +44,8 @@ function installedLab(label: string) {
   cpSync(join(LAB, "src", "use.mjs"), join(dir, "src", "use.mjs"));
   const packages = Object.entries(PINS).map(([name, version]) => ({ name, version }));
   writeFileSync(join(dir, ".lab", "target.json"), JSON.stringify({ label, source: "registry", packages }));
+  // A reinstall checks this file before anything else, so it must be well formed.
+  writeFileSync(join(dir, "pnpm-workspace.yaml"), "overrides:\n# lab:use overrides begin\n# lab:use overrides end\n");
   const entries = Object.entries(PINS).map(([name, version]) => registry(name, version));
   writeFileSync(join(dir, "pnpm-lock.yaml"), `lockfileVersion: '9.0'\n\npackages:\n\n${entries.join("\n")}\nsnapshots:\n\n  pg@8.22.0: {}\n`);
   return dir;

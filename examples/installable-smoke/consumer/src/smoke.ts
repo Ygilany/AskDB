@@ -124,11 +124,9 @@ async function main(): Promise<void> {
     throw new Error("smoke: @askdb/prisma connector did not load");
   }
 
-  // Verify the connector input type narrows.
+  // Type-level check (enforced by `tsc --noEmit`): the packed connector input type accepts a live runner.
   const input: PostgresIntrospectionInput = { mode: "live", runner: catalogRunner };
-  if (input.mode !== "live") {
-    throw new Error("smoke: PostgresIntrospectionInput type did not narrow");
-  }
+  void input;
 
   // Verify @askdb/introspect public functions are reachable.
   if (typeof introspect !== "function" || typeof renderToSchemaV2 !== "function") {

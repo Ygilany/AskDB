@@ -25,7 +25,7 @@ jobs:
           persist-credentials: false
 
       - name: Setup pnpm
-        uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
+        uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
 
       - name: Setup Node.js
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
@@ -62,7 +62,7 @@ jobs:
           persist-credentials: false
 
       - name: Setup pnpm
-        uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
+        uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
 
       - name: Setup Node.js
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
@@ -97,7 +97,7 @@ jobs:
           persist-credentials: false
 
       - name: Setup pnpm
-        uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
+        uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
 
       - name: Setup Node.js
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
@@ -134,7 +134,7 @@ jobs:
       # pnpm 11 itself needs Node >=22.13, so use the standalone build (bundles
       # its own Node runtime); scripts still run on the matrix Node below.
       - name: Setup pnpm
-        uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
+        uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
         with:
           standalone: true
 
@@ -150,8 +150,19 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      # Each package's vitest run records its counts in ASKDB_TEST_SUMMARY_DIR
+      # (scripts/test-utils/summary-reporter.mjs); the next step renders one table.
       - name: Build + unit tests
         run: pnpm test
+        env:
+          ASKDB_TEST_SUMMARY_DIR: ${{ runner.temp }}/test-summary
+
+      - name: Test summary
+        if: always()
+        env:
+          ASKDB_TEST_SUMMARY_DIR: ${{ runner.temp }}/test-summary
+          TITLE: Unit tests (Node ${{ matrix.node }})
+        run: node scripts/test-summary.mjs "$TITLE" >> "$GITHUB_STEP_SUMMARY"
 
   # ── 2. Test ───────────────────────────────────────────────────────────────
   # Runs unit + integration tests. Turbo replays build outputs from cache so
@@ -226,7 +237,7 @@ jobs:
           persist-credentials: false
 
       - name: Setup pnpm
-        uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
+        uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
 
       - name: Setup Node.js
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
@@ -259,6 +270,14 @@ jobs:
 
       - name: Run unit + integration tests
         run: pnpm test
+        env:
+          ASKDB_TEST_SUMMARY_DIR: ${{ runner.temp }}/test-summary
+
+      - name: Test summary
+        if: always()
+        env:
+          ASKDB_TEST_SUMMARY_DIR: ${{ runner.temp }}/test-summary
+        run: node scripts/test-summary.mjs "Unit + integration tests" >> "$GITHUB_STEP_SUMMARY"
 
   # ── 3. Preflight ──────────────────────────────────────────────────────────
   # Release smoke test + publish dry-run. Runs in parallel with `test` so
@@ -275,7 +294,7 @@ jobs:
           persist-credentials: false
 
       - name: Setup pnpm
-        uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
+        uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
 
       - name: Setup Node.js
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
@@ -359,13 +378,21 @@ jobs:
           persist-credentials: false
 
       - name: Setup pnpm
-        uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
+        uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
 
       - name: Setup Node.js
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 22
           cache: pnpm
+
+      # The lab's committed package.json and pnpm-lock.yaml must agree. Dependabot's root
+      # entry skips the lab for version updates only (exclude-paths; dependabot-core#14408),
+      # so a root security update can still bump a lab pin without the lab's lockfile, as
+      # #402 did. Revert that PR's change to the lab's package.json: the lab's own Dependabot
+      # entry proposes the lab's bumps with its lockfile (docs/adrs/0015).
+      - name: Check the lab's lockfile matches its manifest
+        run: pnpm -C examples/consumer-lab install --frozen-lockfile --lockfile-only
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile

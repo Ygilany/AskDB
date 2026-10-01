@@ -24,10 +24,14 @@ export type Enforcement = "strict" | "warn";
 
 /**
  * The `resolveTenantDescendants` callback, as `docs/contracts/tenant-policy.md` ("Subtree
- * expansion") writes it. Declared here, not imported, so the lab still typechecks against
- * a target from before the option existed.
+ * expansion") writes it: the subtree's IDs grouped by tenant root, keyed by root table ID.
+ * Declared here, not imported, so the lab still typechecks against a target from before
+ * the option existed.
  */
-export type ResolveTenantDescendants = (tenantRoot: string, seedIds: readonly string[]) => Promise<readonly string[]> | readonly string[];
+export type ResolveTenantDescendants = (
+  tenantRoot: string,
+  seedIds: readonly string[],
+) => Promise<Readonly<Record<string, readonly string[]>>> | Readonly<Record<string, readonly string[]>>;
 
 /** The artifact's stable table IDs by table name. Table names are unique across the fixture's schemas. */
 function tableIds(schemaDir: string): Map<string, string> {
@@ -95,13 +99,13 @@ function markers(dialect: SupportedDialect, count: number): string {
 /**
  * The lab's `resolveTenantDescendants`, as the multi-tenancy guide's host example writes one
  * ("Hierarchical scope (`subtree`)"): a recursive query over `org.agency.parent_agency_id`,
- * run on the dialect's engine as the read-only role. It returns the seeds and every
- * descendant, as strings. SQL Server spells a recursive CTE `WITH` (and needs `UNION ALL`);
+ * run on the dialect's engine as the read-only role. The tree is inside one table and the
+ * overlay declares no child roots, so it returns the seeds and every descendant agency, as
+ * strings, under the agency root's own key. SQL Server spells a recursive CTE `WITH` (and needs `UNION ALL`);
  * the others take `WITH RECURSIVE`. The tree has no cycles, so `UNION ALL` is enough.
  *
  * With `strictDescendants`, it leaves the seeds out and returns only the agencies beneath
- * them, which the contract allows ("a resolver may return strict descendants only";
- * `ask()` unions the seeds in).
+ * them, which the contract allows (`ask()` unions the seeds into the root's entry).
  *
  * `calls` records each call's arguments, so a test can tell the resolver was used.
  */
@@ -111,7 +115,7 @@ export function agencyDescendants(
 ): ResolveTenantDescendants & { calls: [string, string[]][] } {
   const calls: [string, string[]][] = [];
   const agency = physicalName(dialect, { schema: "org", name: "agency" });
-  const resolve = async (tenantRoot: string, seedIds: readonly string[]): Promise<string[]> => {
+  const resolve = async (tenantRoot: string, seedIds: readonly string[]): Promise<Record<string, string[]>> => {
     calls.push([tenantRoot, [...seedIds]]);
     if (tenantRoot !== agencyRoot(dialect)) throw new Error(`the lab has no hierarchy resolver for ${tenantRoot}`);
     const sql =
@@ -123,7 +127,7 @@ export function agencyDescendants(
     const result = await executeReadOnly(dialect, sql, { params: seedIds });
     if (result.truncated) throw new Error("the agency tree is larger than the host's row cap");
     const ids = [...new Set(result.rows.map((row) => String(row[0])))];
-    return strictDescendants ? ids.filter((id) => !seedIds.includes(id)) : ids;
+    return { [tenantRoot]: strictDescendants ? ids.filter((id) => !seedIds.includes(id)) : ids };
   };
   return Object.assign(resolve, { calls });
 }

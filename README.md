@@ -6,7 +6,7 @@
 
 # AskDB
 
-**AskDB is an open-source NL-to-SQL toolkit for developers: it uses your LLM to generate validated, schema-grounded SQL, then hands it back to your app to review and run.** BYO model, BYO database, BYO vector store.
+**AskDB is an open-source NL-to-SQL toolkit for developers: it uses your LLM to generate checked, schema-grounded SQL, then hands it back to your app to review and run.** BYO model, BYO database, BYO vector store.
 
 AskDB grounds generation in a human-enriched schema artifact, and it keeps database execution, permissions, tenant policy, and audit logging inside the host application. Library, CLI, Studio, and HTTP surfaces share the same core pipeline.
 
@@ -14,7 +14,7 @@ AskDB grounds generation in a human-enriched schema artifact, and it keeps datab
 >
 > **Status:** pre-release beta. Every published package ships `-beta.N` prerelease versions on npm: the `askdb` CLI, `@askdb/core`, `@askdb/config`, `@askdb/client`, `@askdb/http-api`, and the `@askdb/ai-*` adapters are on the `1.0.0-beta` line, and the other packages are `0.x` betas. The core API (`ask()`), schema artifact, and config are documented, but public APIs may still change before 1.0 — Studio and RAG are the most likely to move.
 >
-> AskDB returns SQL for review; it does not execute generated SQL.
+> AskDB returns SQL for review; the library, CLI, and HTTP API never execute it (Studio's optional Playground **Execute** is a local development tool). AskDB's SQL checks are heuristic defense in depth, not a security boundary. Run generated SQL under a read-only, least-privilege database role. See [Run generated SQL safely](https://askdb.tools/concepts/safety-boundaries/#run-generated-sql-safely).
 
 ## Why AskDB exists
 
@@ -22,7 +22,7 @@ NL-to-SQL isn't a new problem — academic research goes back to LUNAR in 1972, 
 
 ## Quickstart
 
-For a new project, use Node **20+**, a database or schema source, and an API key from your model provider.
+For a new project, use Node **22.12+**, a database or schema source, and an API key from your model provider.
 
 ```bash
 npx askdb@latest init
@@ -202,7 +202,7 @@ pnpm exec askdb ask \
   --question "How many orders are there?"
 ```
 
-AskDB returns SQL for review; it does not execute generated SQL. Treat generated SQL as an artifact that must be approved and run under your own database roles, read-only controls, tenant policy, and audit logging.
+AskDB returns SQL for review; it does not execute generated SQL. Treat generated SQL as untrusted: approve it and run it under your own least-privilege, read-only database roles, database-enforced tenant isolation (for example Postgres row-level security), statement timeouts, and audit logging. See [Run generated SQL safely](https://askdb.tools/concepts/safety-boundaries/#run-generated-sql-safely) and [SECURITY.md](SECURITY.md#security-model).
 
 **Engines:** PostgreSQL, MySQL, SQLite, and SQL Server are all first-class — install the matching `@askdb/postgres`, `@askdb/mysql`, `@askdb/sqlite`, or `@askdb/sqlserver` adapter and pass the dialect to `ask()`. Postgres is the reference dialect; the others ship dialect and introspection with parity tracked on the roadmap.
 
@@ -212,11 +212,11 @@ AskDB returns SQL for review; it does not execute generated SQL. Treat generated
 
 ## What it does
 
-- **Natural language → validated SQL** grounded in your database schema, with SQL validation and guardrails.
+- **Natural language → checked SQL** grounded in your database schema, with heuristic guardrails that catch common model mistakes (non-`SELECT` statements, stacked statements, write keywords, missing tenant columns, sensitive columns).
 - **Human-reviewed schema enrichment** — introspect your database, then enrich the schema artifact with descriptions, aliases, and business concepts using Studio.
-- **Clear execution boundary** — AskDB returns SQL; it does not execute against your database. Your application decides whether to show it, review it, approve it, run it, log it, or reject it.
+- **Clear execution boundary** — AskDB returns SQL; the library, CLI, and HTTP API do not execute it against your database. Your application decides whether to show it, review it, approve it, run it, log it, or reject it.
 - **Multiple surfaces** — the same schema artifact and generation pipeline across the CLI, a Node library, and an HTTP API.
-- **Multi-tenancy** — define a tenant policy (roots, hierarchy, scoped/polymorphic/global tables) and pass a runtime tenant scope to `ask()`; AskDB injects tenant-filtering predicates into generated SQL automatically.
+- **Multi-tenancy** — define a tenant policy (roots, hierarchy, scoped/polymorphic/global tables) and pass a runtime tenant scope to `ask()`; AskDB prompts the model to filter by tenant, binds your tenant IDs into the SQL, and runs a heuristic check that each scoped table has a tenant predicate that filters (its tenant column compared with the tenant placeholder, ANDed into the filter). Enforce tenant isolation in the database as the primary boundary.
 
 ## Product notes
 

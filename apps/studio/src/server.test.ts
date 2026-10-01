@@ -144,6 +144,37 @@ describe("AskDB Studio server", () => {
     expect(retrieved.results[0].text).toEqual(expect.any(String));
   });
 
+  // #375 review: roots whose labels derive the same placeholder are a load error. Studio
+  // used to write such a policy, return 500, and then fail every request, because the
+  // workspace no longer loaded. The save must be refused with 400, and nothing written.
+  it("refuses to save a tenant policy that wouldn't load, and writes nothing", async () => {
+    installStudioRuntime({ ASKDB_RAG_EMBEDDER: "mock" });
+    const schemaDir = copyFixture();
+    const server = createStudioServer({ schema: schemaDir });
+    servers.push(server);
+    const baseUrl = await listen(server);
+
+    const response = await postRaw(`${baseUrl}/api/tenant-policy`, {
+      frontmatter: {
+        schemaId: "orders-users",
+        enforcement: "strict",
+        roots: [
+          { id: "table:public.users", tenantIdColumn: "table:public.users#id", label: "Account" },
+          { id: "table:public.orders", tenantIdColumn: "table:public.orders#id", label: "account" },
+        ],
+      },
+      body: "",
+    });
+
+    expect(response.status).toBe(400);
+    expect(((await response.json()) as { error: { message: string } }).error.message).toContain(
+      `roots 'table:public.users' (label "Account") and 'table:public.orders' (label "account") ` +
+        "both map to the placeholder :tenant_account_ids",
+    );
+    expect(existsSync(join(schemaDir, "tenant-policy.md"))).toBe(false);
+    expect((await getJson(`${baseUrl}/api/workspace`)).schemaId).toBe("orders-users");
+  });
+
   it("saving a table keeps another table's sensitive column entry in its file and reports it on the owning table", async () => {
     installStudioRuntime({ ASKDB_RAG_EMBEDDER: "mock" });
     const schemaDir = copyFixture();

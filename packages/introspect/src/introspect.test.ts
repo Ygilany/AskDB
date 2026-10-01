@@ -91,6 +91,36 @@ describe("introspect() — engine-agnostic orchestrator", () => {
     expect(written).toContain('"table:public.users"');
   });
 
+  // MySQL and SQLite `describe()` return `schemas: []` for a database with no tables or
+  // views, and `askdb introspect --out` renders that result. This pins today's behaviour;
+  // #337 decides whether it becomes a clear refusal instead (then flip this test).
+  it("renders an empty SqlSchema (no namespaces) to a schema.json with no tables", async () => {
+    const connector: Connector<FakeInput> = {
+      async describe() {
+        return {
+          schema: { schemaId: "empty", schemas: [] },
+          warnings: [],
+          isEmpty: true,
+          viewDefinitions: {},
+        };
+      },
+    };
+    const outDir = join(workDir, "empty.schema");
+
+    const result = await introspect<FakeInput>(
+      { tag: "empty" },
+      { outDir, schemaId: "empty" },
+      { connector },
+    );
+
+    expect(result.isEmpty).toBe(true);
+    expect(JSON.parse(readFileSync(result.render!.schemaJsonPath, "utf8"))).toEqual({
+      version: 2,
+      schemaId: "empty",
+      tables: [],
+    });
+  });
+
   it("merges connector and render warnings", async () => {
     const connector: Connector<FakeInput> = {
       async describe() {
