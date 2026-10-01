@@ -5,7 +5,7 @@
  * Protects: the README's promise that `lab:matrix` "tests whatever `lab:use` last
  * installed". After `pnpm lab:use npm:latest` (or a version, or a git ref), `lab:matrix`
  * must test that install, which is how the older-target `n/a (capability: …)` cells and the
- * nightly run against `npm:latest` (#255) are produced. The restored baseline
+ * post-release run against `npm:latest` (#255) are produced. The restored baseline
  * (`lab:use --restore`, `lab:reset`) is the exception: it stands for "nothing chosen", so
  * `lab:up` installs the checkout, as on a fresh clone.
  * Catches: `--if-needed .` reinstalling the checkout over a chosen target (#302), so every
