@@ -26,16 +26,26 @@ jobs:
       # changes every bumped package.json but adds no changeset, and
       # `changeset status --since` fails on it by design. Skip the check there (the job
       # still reports success). Only a branch pushed to this repo counts, not a fork's.
+      # Dependabot dependency-only PRs change manifests and the lockfile but do not
+      # carry changesets; continue to require changesets if their diff includes other files.
       - name: Detect changes to publishable sources
         id: changes
         env:
           BASE_REF: ${{ github.base_ref }}
           IS_VERSION_PR: ${{ github.head_ref == 'changeset-release/main' && github.event.pull_request.head.repo.full_name == github.repository }}
+          IS_DEPENDABOT_PR: ${{ github.event.pull_request.user.login == 'dependabot[bot]' }}
         run: |
+          changed="$(git diff --name-only "origin/${BASE_REF}...HEAD")"
           if [ "${IS_VERSION_PR}" = "true" ]; then
             echo "publishable=false" >> "$GITHUB_OUTPUT"
             echo "Version PR: its changesets are already applied; no new changeset required."
-          elif git diff --name-only "origin/${BASE_REF}...HEAD" \
+          elif [ "${IS_DEPENDABOT_PR}" = "true" ] \
+            && [ -n "${changed}" ] \
+            && ! printf '%s\n' "${changed}" \
+              | grep -Eqv '(^|/)(package\.json|pnpm-lock\.yaml)$'; then
+            echo "publishable=false" >> "$GITHUB_OUTPUT"
+            echo "Dependabot dependency-only pull request; no changeset required."
+          elif printf '%s\n' "${changed}" \
             | grep -Eq '^packages/[^/]+/(src/|package\.json$)|^apps/(cli|http-api|studio)/(src/|package\.json$)'; then
             echo "publishable=true" >> "$GITHUB_OUTPUT"
           else
