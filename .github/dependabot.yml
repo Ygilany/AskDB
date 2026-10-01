@@ -23,6 +23,14 @@ updates:
     # lockfile that resolves anything younger, so don't propose brand-new releases.
     cooldown:
       default-days: 1
+    # Published ranges move only on purpose (docs/adrs/0015): a bump the range already
+    # allows moves only the lockfile, for version and security updates alike. A floor
+    # rises by hand, with a changeset that says why.
+    versioning-strategy: increase-if-necessary
+    # The consumer lab is its own pnpm root, whose lockfile Dependabot doesn't update, and
+    # its host pins sit at AskDB's floors on purpose. Version updates only.
+    exclude-paths:
+      - "examples/consumer-lab/**"
     groups:
       npm-minor-patch:
         patterns: ["*"]

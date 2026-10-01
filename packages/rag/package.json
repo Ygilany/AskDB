@@ -84,8 +84,8 @@
     "@askdb/core": "workspace:*"
   },
   "peerDependencies": {
-    "@ai-sdk/openai": "^4.0.74",
-    "ai": "^7.0.113",
+    "@ai-sdk/openai": "^4.0.29",
+    "ai": "^7.0.51",
     "pg": ">=8"
   },
   "peerDependenciesMeta": {
@@ -100,9 +100,9 @@
     }
   },
   "devDependencies": {
-    "@ai-sdk/openai": "^4.0.74",
+    "@ai-sdk/openai": "^4.0.29",
     "@types/pg": "^8.23.1",
-    "ai": "^7.0.113",
+    "ai": "^7.0.51",
     "pg": "^8.23.0",
     "typescript": "^6.0.3",
     "vitest": "^5.0.1"

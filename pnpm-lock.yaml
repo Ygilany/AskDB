@@ -103,7 +103,7 @@ importers:
         specifier: ^8.7.2
         version: 8.7.2(@types/node@22.20.4)
       ai:
-        specifier: ^7.0.113
+        specifier: ^7.0.51
         version: 7.0.113(zod@4.6.5)
       commander:
         specifier: ^15.0.0
@@ -167,7 +167,7 @@ importers:
         specifier: workspace:*
         version: link:../../packages/postgres
       ai:
-        specifier: ^7.0.113
+        specifier: ^7.0.51
         version: 7.0.113(zod@4.6.5)
     devDependencies:
       tsx:
@@ -231,7 +231,7 @@ importers:
         specifier: workspace:*
         version: link:../../packages/sqlserver
       ai:
-        specifier: ^7.0.113
+        specifier: ^7.0.51
         version: 7.0.113(zod@4.6.5)
     devDependencies:
       '@eslint/js':
@@ -421,7 +421,7 @@ importers:
   packages/ai:
     devDependencies:
       ai:
-        specifier: ^7.0.113
+        specifier: ^7.0.51
         version: 7.0.113(zod@4.6.5)
       typescript:
         specifier: ^6.0.3
@@ -440,7 +440,7 @@ importers:
         specifier: workspace:*
         version: link:../ai
       ai:
-        specifier: ^7.0.113
+        specifier: ^7.0.51
         version: 7.0.113(zod@4.6.5)
       typescript:
         specifier: ^6.0.3
@@ -459,7 +459,7 @@ importers:
         specifier: workspace:*
         version: link:../ai
       ai:
-        specifier: ^7.0.113
+        specifier: ^7.0.51
         version: 7.0.113(zod@4.6.5)
       typescript:
         specifier: ^6.0.3
@@ -478,7 +478,7 @@ importers:
         specifier: workspace:*
         version: link:../ai
       ai:
-        specifier: ^7.0.113
+        specifier: ^7.0.51
         version: 7.0.113(zod@4.6.5)
       typescript:
         specifier: ^6.0.3
@@ -497,7 +497,7 @@ importers:
         specifier: workspace:*
         version: link:../ai
       ai:
-        specifier: ^7.0.113
+        specifier: ^7.0.51
         version: 7.0.113(zod@4.6.5)
       typescript:
         specifier: ^6.0.3
@@ -519,7 +519,7 @@ importers:
         specifier: workspace:*
         version: link:../core
       ai:
-        specifier: ^7.0.113
+        specifier: ^7.0.51
         version: 7.0.113(zod@4.6.5)
       typescript:
         specifier: ^6.0.3
@@ -560,7 +560,7 @@ importers:
   packages/core:
     dependencies:
       ai:
-        specifier: ^7.0.113
+        specifier: ^7.0.51
         version: 7.0.113(zod@4.6.5)
       gray-matter:
         specifier: ^4.0.3
@@ -681,13 +681,13 @@ importers:
         version: link:../core
     devDependencies:
       '@ai-sdk/openai':
-        specifier: ^4.0.74
+        specifier: ^4.0.29
         version: 4.0.74(zod@4.6.5)
       '@types/pg':
         specifier: ^8.23.1
         version: 8.23.1
       ai:
-        specifier: ^7.0.113
+        specifier: ^7.0.51
         version: 7.0.113(zod@4.6.5)
       pg:
         specifier: ^8.23.0

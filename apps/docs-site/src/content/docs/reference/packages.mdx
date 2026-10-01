@@ -72,7 +72,7 @@ AI provider registry and shared config helpers. You rarely install or import thi
 
 ### Provider adapters
 
-Provider adapters own concrete AI SDK provider dependencies. Each adapter declares `ai` and `@askdb/ai` as peer dependencies — npm/pnpm install them automatically, but your app should depend on `ai` directly when you want to pin the version.
+Provider adapters own concrete AI SDK provider dependencies. Each adapter declares `ai` and `@askdb/ai` as peer dependencies — npm/pnpm install them automatically, but your app should depend on `ai` directly when you want to pin the version. AskDB raises its `ai` floor only when it needs a newer version or a security fix, and that release's changelog says which.
 
 <Tabs syncKey="ai-provider">
   <TabItem label="OpenAI">
@@ -196,7 +196,7 @@ Headless schema-authoring helpers used by Studio. Use directly when building a c
 
 ### `@askdb/rag`
 
-Chunks the schema artifact, indexes it in a vector store, and retrieves relevant chunks per question. Use with `ask()`'s `retriever` option for large schemas.
+Chunks the schema artifact, indexes it in a vector store, and retrieves relevant chunks per question. Use with `ask()`'s `retriever` option for large schemas. `ai`, `@ai-sdk/openai` and `pg` are optional peer dependencies: install the ones your embedder and vector store use. Their floors move the same way as the adapters' `ai` floor.
 
 <InstallTabs pkgs="@askdb/rag" />
 
