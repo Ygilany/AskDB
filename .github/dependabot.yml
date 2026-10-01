@@ -28,7 +28,9 @@ updates:
     # rises by hand, with a changeset that says why.
     versioning-strategy: increase-if-necessary
     # The consumer lab is its own pnpm root with its own lockfile, which this entry doesn't
-    # update (it bumped the lab's manifest alone in #402). The entry below covers it.
+    # update (it bumped the lab's manifest alone in #402); the entry below covers it.
+    # exclude-paths covers version updates only (dependabot-core#14408): a security update
+    # from this entry can still edit the lab's manifest, and CI's consumer-lab job fails it.
     exclude-paths:
       - "examples/consumer-lab/**"
     groups:

@@ -386,6 +386,14 @@ jobs:
           node-version: 22
           cache: pnpm
 
+      # The lab's committed package.json and pnpm-lock.yaml must agree. Dependabot's root
+      # entry skips the lab for version updates only (exclude-paths; dependabot-core#14408),
+      # so a root security update can still bump a lab pin without the lab's lockfile, as
+      # #402 did. Revert that PR's change to the lab's package.json: the lab's own Dependabot
+      # entry proposes the lab's bumps with its lockfile (docs/adrs/0015).
+      - name: Check the lab's lockfile matches its manifest
+        run: pnpm -C examples/consumer-lab install --frozen-lockfile --lockfile-only
+
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
