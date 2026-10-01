@@ -16,7 +16,7 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "better-sqlite3": "^12.10.0",
+    "better-sqlite3": "^13.0.3",
     "mssql": "^12.5.5",
     "mysql2": "^3.22.5",
     "pg": "^8.21.0"
