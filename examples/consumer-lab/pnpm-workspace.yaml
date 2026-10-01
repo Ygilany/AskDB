@@ -8,6 +8,13 @@ allowBuilds:
   # `askdb` depends on @askdb/prisma, whose @prisma/engines has a postinstall script.
   # pnpm 11 refuses to install until it is approved, as any pnpm user would have to (#259).
   "@prisma/engines": true
+# pnpm 11 holds back versions published less than a day ago (`minimumReleaseAge` defaults
+# to 1440 minutes). A just-published AskDB release still installs, since the lab pins it
+# exactly, but pnpm then adds every @askdb version to this list itself and rewrites the
+# file, indenting the lab:use comments below so `lab:use --restore` can't find them.
+minimumReleaseAgeExclude:
+  - askdb
+  - "@askdb/*"
 overrides:
   # Third-party pins, kept across `lab:use` (it rewrites only the marked block below).
   #
