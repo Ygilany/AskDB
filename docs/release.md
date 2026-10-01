@@ -42,6 +42,15 @@ A push to `main` with nothing new to publish doesn't ask for approval: `scripts/
 
 The workflow only acts when the commit CI tested is still the tip of `main`. If another PR merges before CI finishes, that newer commit's CI run triggers the release instead.
 
+## Dependency Updates
+
+Published ranges move only on purpose ([ADR 0015](adrs/0015-published-ranges-move-on-purpose.md)), so Dependabot's minor and patch groups change only `pnpm-lock.yaml` and need no changeset. A major update has to rewrite a range in the manifests:
+
+- When it changes only `devDependencies`, hosts install nothing new. `changesets.yml` doesn't count a `package.json` change confined to `devDependencies`, so the PR needs no changeset.
+- When it changes a range hosts install, like a published package's `dependencies` or `peerDependencies`, the changeset check fails until you push a changeset to the Dependabot branch. Write it by hand and name the reason, as ADR 0015 requires, or close the PR if AskDB doesn't need the new major.
+
+Once you push to a Dependabot branch, Dependabot stops resolving its conflicts. Rebase it by hand: `@dependabot recreate` rebuilds the PR without your commit.
+
 ## Dist-tags
 
 Betas publish under `latest`, so `npm install askdb` gets the newest beta. There is no `beta` dist-tag: it was stale and was removed on 2026-09-29 (#267). The pipeline doesn't use `changeset publish`, because in prerelease mode that would publish under the `beta` tag from `.changeset/pre.json`. Trusted publishing can only publish, so a second tag can't be moved afterwards without an npm token. Revisit this when the 1.0 release candidates start (#354).
