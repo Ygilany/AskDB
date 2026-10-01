@@ -421,7 +421,7 @@ importers:
   packages/ai:
     devDependencies:
       ai:
-        specifier: ^7.0.113
+        specifier: ^7.0.51
         version: 7.0.123(zod@4.6.5)
       typescript:
         specifier: ^6.0.3
@@ -440,7 +440,7 @@ importers:
         specifier: workspace:*
         version: link:../ai
       ai:
-        specifier: ^7.0.113
+        specifier: ^7.0.51
         version: 7.0.123(zod@4.6.5)
       typescript:
         specifier: ^6.0.3
@@ -459,7 +459,7 @@ importers:
         specifier: workspace:*
         version: link:../ai
       ai:
-        specifier: ^7.0.113
+        specifier: ^7.0.51
         version: 7.0.123(zod@4.6.5)
       typescript:
         specifier: ^6.0.3
@@ -478,7 +478,7 @@ importers:
         specifier: workspace:*
         version: link:../ai
       ai:
-        specifier: ^7.0.113
+        specifier: ^7.0.51
         version: 7.0.123(zod@4.6.5)
       typescript:
         specifier: ^6.0.3
@@ -497,7 +497,7 @@ importers:
         specifier: workspace:*
         version: link:../ai
       ai:
-        specifier: ^7.0.113
+        specifier: ^7.0.51
         version: 7.0.123(zod@4.6.5)
       typescript:
         specifier: ^6.0.3
@@ -519,7 +519,7 @@ importers:
         specifier: workspace:*
         version: link:../core
       ai:
-        specifier: ^7.0.113
+        specifier: ^7.0.51
         version: 7.0.123(zod@4.6.5)
       typescript:
         specifier: ^6.0.3
@@ -560,7 +560,7 @@ importers:
   packages/core:
     dependencies:
       ai:
-        specifier: ^7.0.113
+        specifier: ^7.0.51
         version: 7.0.123(zod@4.6.5)
       gray-matter:
         specifier: ^4.0.3
