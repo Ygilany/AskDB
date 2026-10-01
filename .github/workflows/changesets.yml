@@ -26,6 +26,10 @@ jobs:
       # changes every bumped package.json but adds no changeset, and
       # `changeset status --since` fails on it by design. Skip the check there (the job
       # still reports success). Only a branch pushed to this repo counts, not a fork's.
+      #
+      # A package.json change counts only outside `devDependencies`, which hosts never
+      # install. A dev-only bump, like a Dependabot major of a build or test tool, needs no
+      # changeset; a change to a range hosts install still does (docs/adrs/0015).
       - name: Detect changes to publishable sources
         id: changes
         env:
@@ -35,12 +39,32 @@ jobs:
           if [ "${IS_VERSION_PR}" = "true" ]; then
             echo "publishable=false" >> "$GITHUB_OUTPUT"
             echo "Version PR: its changesets are already applied; no new changeset required."
-          elif git diff --name-only "origin/${BASE_REF}...HEAD" \
-            | grep -Eq '^packages/[^/]+/(src/|package\.json$)|^apps/(cli|http-api|studio)/(src/|package\.json$)'; then
+            exit 0
+          fi
+
+          base="$(git merge-base "origin/${BASE_REF}" HEAD)"
+          # Succeeds when the manifest at $1 differs from the base outside `devDependencies`.
+          # An added or deleted manifest, or one jq can't parse, counts as changed.
+          manifest_changed() {
+            local before after
+            before="$(git show "${base}:$1" 2>/dev/null | jq 'del(.devDependencies)')" || return 0
+            after="$(git show "HEAD:$1" 2>/dev/null | jq 'del(.devDependencies)')" || return 0
+            [ "${before}" != "${after}" ]
+          }
+          publishable=false
+          for path in $(git diff --name-only "${base}" HEAD \
+            | grep -E '^packages/[^/]+/(src/|package\.json$)|^apps/(cli|http-api|studio)/(src/|package\.json$)'); do
+            case "${path}" in
+              */package.json) if manifest_changed "${path}"; then publishable=true; fi ;;
+              *) publishable=true ;;
+            esac
+          done
+
+          if [ "${publishable}" = "true" ]; then
             echo "publishable=true" >> "$GITHUB_OUTPUT"
           else
             echo "publishable=false" >> "$GITHUB_OUTPUT"
-            echo "No publishable sources changed; no changeset required."
+            echo "No publishable sources changed (devDependencies don't count); no changeset required."
           fi
 
       - if: steps.changes.outputs.publishable == 'true'
