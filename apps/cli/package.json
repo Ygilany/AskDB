@@ -62,7 +62,7 @@
     "@askdb/sqlserver": "workspace:*",
     "@askdb/studio": "workspace:*",
     "@inquirer/prompts": "^8.7.2",
-    "ai": "^7.0.122",
+    "ai": "^7.0.113",
     "commander": "^15.0.0"
   },
   "devDependencies": {

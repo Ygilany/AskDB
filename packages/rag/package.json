@@ -85,7 +85,7 @@
   },
   "peerDependencies": {
     "@ai-sdk/openai": "^4.0.74",
-    "ai": "^7.0.122",
+    "ai": "^7.0.113",
     "pg": ">=8"
   },
   "peerDependenciesMeta": {
@@ -102,7 +102,7 @@
   "devDependencies": {
     "@ai-sdk/openai": "^4.0.74",
     "@types/pg": "^8.23.1",
-    "ai": "^7.0.122",
+    "ai": "^7.0.113",
     "pg": "^8.23.0",
     "typescript": "^6.0.3",
     "vitest": "^5.0.1"

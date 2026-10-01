@@ -20,11 +20,11 @@
     "@askdb/config": "1.0.0-beta.11",
     "@askdb/core": "1.0.0-beta.42",
     "@askdb/http-api": "1.0.0-beta.42",
-    "ai": "7.0.122",
+    "ai": "7.0.51",
     "askdb": "1.0.0-beta.42",
     "better-sqlite3": "12.11.1",
     "mssql": "12.7.0",
-    "mysql2": "3.24.5",
+    "mysql2": "3.23.2",
     "pg": "8.22.0",
     "zod": "4.4.3"
   },

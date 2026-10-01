@@ -37,7 +37,7 @@ importers:
         specifier: ^0.9.14
         version: 0.9.14(@opentelemetry/core@2.11.0(@opentelemetry/api@1.9.1))(eslint@10.11.0(jiti@2.7.0)(supports-color@10.2.2))(react@19.3.0)(supports-color@10.2.2)
       turbo:
-        specifier: ^2.11.5
+        specifier: ^2.11.3
         version: 2.11.5
       typescript:
         specifier: ^6.0.3
@@ -103,7 +103,7 @@ importers:
         specifier: ^8.7.2
         version: 8.7.2(@types/node@22.20.4)
       ai:
-        specifier: ^7.0.122
+        specifier: ^7.0.113
         version: 7.0.122(zod@4.6.5)
       commander:
         specifier: ^15.0.0
@@ -131,7 +131,7 @@ importers:
         specifier: ^7.1.6
         version: 7.3.5(@astrojs/markdown-remark@7.3.1(supports-color@10.2.2))(@azure/identity@4.13.1(supports-color@10.2.2))(@types/node@22.20.4)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1)
       sharp:
-        specifier: ^0.35.5
+        specifier: ^0.35.3
         version: 0.35.5(@types/node@22.20.4)
       starlight-llms-txt:
         specifier: ^0.12.0
@@ -167,7 +167,7 @@ importers:
         specifier: workspace:*
         version: link:../../packages/postgres
       ai:
-        specifier: ^7.0.122
+        specifier: ^7.0.113
         version: 7.0.122(zod@4.6.5)
     devDependencies:
       tsx:
@@ -231,7 +231,7 @@ importers:
         specifier: workspace:*
         version: link:../../packages/sqlserver
       ai:
-        specifier: ^7.0.122
+        specifier: ^7.0.113
         version: 7.0.122(zod@4.6.5)
     devDependencies:
       '@eslint/js':
@@ -277,13 +277,13 @@ importers:
         specifier: ^4.17.1
         version: 4.17.1(@typescript-eslint/utils@8.71.0(eslint@10.11.0(jiti@2.7.0)(supports-color@10.2.2))(supports-color@10.2.2)(typescript@6.0.3))(eslint-import-resolver-node@0.3.10(supports-color@10.2.2))(eslint@10.11.0(jiti@2.7.0)(supports-color@10.2.2))(supports-color@10.2.2)
       lucide-react:
-        specifier: ^1.49.0
+        specifier: ^1.48.0
         version: 1.49.0(@types/react@19.3.0)(react@19.3.0)
       mssql:
         specifier: ^11.0.1
         version: 11.0.1(supports-color@10.2.2)
       mysql2:
-        specifier: ^3.24.5
+        specifier: ^3.24.4
         version: 3.24.5(@types/node@22.20.4)
       pg:
         specifier: ^8.23.0
@@ -310,7 +310,7 @@ importers:
         specifier: ^6.0.3
         version: 6.0.3
       typescript-eslint:
-        specifier: ^8.71.0
+        specifier: ^8.70.1
         version: 8.71.0(eslint@10.11.0(jiti@2.7.0)(supports-color@10.2.2))(supports-color@10.2.2)(typescript@6.0.3)
       vite:
         specifier: ^8.3.1
@@ -396,7 +396,7 @@ importers:
         specifier: ^12.5.5
         version: 12.7.0(supports-color@10.2.2)
       mysql2:
-        specifier: ^3.24.5
+        specifier: ^3.22.5
         version: 3.24.5(@types/node@22.20.1)
       pg:
         specifier: ^8.21.0
@@ -421,7 +421,7 @@ importers:
   packages/ai:
     devDependencies:
       ai:
-        specifier: ^7.0.122
+        specifier: ^7.0.113
         version: 7.0.122(zod@4.6.5)
       typescript:
         specifier: ^6.0.3
@@ -433,14 +433,14 @@ importers:
   packages/ai-anthropic:
     dependencies:
       '@ai-sdk/anthropic':
-        specifier: ^4.0.68
+        specifier: ^4.0.62
         version: 4.0.68(zod@4.6.5)
     devDependencies:
       '@askdb/ai':
         specifier: workspace:*
         version: link:../ai
       ai:
-        specifier: ^7.0.122
+        specifier: ^7.0.113
         version: 7.0.122(zod@4.6.5)
       typescript:
         specifier: ^6.0.3
@@ -452,14 +452,14 @@ importers:
   packages/ai-azure:
     dependencies:
       '@ai-sdk/azure':
-        specifier: ^4.0.85
+        specifier: ^4.0.78
         version: 4.0.85(zod@4.6.5)
     devDependencies:
       '@askdb/ai':
         specifier: workspace:*
         version: link:../ai
       ai:
-        specifier: ^7.0.122
+        specifier: ^7.0.113
         version: 7.0.122(zod@4.6.5)
       typescript:
         specifier: ^6.0.3
@@ -471,14 +471,14 @@ importers:
   packages/ai-google:
     dependencies:
       '@ai-sdk/google':
-        specifier: ^4.0.85
+        specifier: ^4.0.79
         version: 4.0.85(zod@4.6.5)
     devDependencies:
       '@askdb/ai':
         specifier: workspace:*
         version: link:../ai
       ai:
-        specifier: ^7.0.122
+        specifier: ^7.0.113
         version: 7.0.122(zod@4.6.5)
       typescript:
         specifier: ^6.0.3
@@ -497,7 +497,7 @@ importers:
         specifier: workspace:*
         version: link:../ai
       ai:
-        specifier: ^7.0.122
+        specifier: ^7.0.113
         version: 7.0.122(zod@4.6.5)
       typescript:
         specifier: ^6.0.3
@@ -519,7 +519,7 @@ importers:
         specifier: workspace:*
         version: link:../core
       ai:
-        specifier: ^7.0.122
+        specifier: ^7.0.113
         version: 7.0.122(zod@4.6.5)
       typescript:
         specifier: ^6.0.3
@@ -560,7 +560,7 @@ importers:
   packages/core:
     dependencies:
       ai:
-        specifier: ^7.0.122
+        specifier: ^7.0.113
         version: 7.0.122(zod@4.6.5)
       gray-matter:
         specifier: ^4.0.3
@@ -618,7 +618,7 @@ importers:
         version: link:../introspect
     devDependencies:
       mysql2:
-        specifier: ^3.24.5
+        specifier: ^3.24.4
         version: 3.24.5(@types/node@22.20.4)
       typescript:
         specifier: ^6.0.3
@@ -687,7 +687,7 @@ importers:
         specifier: ^8.23.1
         version: 8.23.1
       ai:
-        specifier: ^7.0.122
+        specifier: ^7.0.113
         version: 7.0.122(zod@4.6.5)
       pg:
         specifier: ^8.23.0
