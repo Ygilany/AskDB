@@ -1,4 +1,4 @@
-import { ASKDB_AI_PROVIDERS, type AskDbAiProviderId } from "./constants.js";
+import { ASKDB_AI_PROVIDERS, type AskDbAiProviderId } from "../constants.js";
 
 /** An env var a scaffolded config reads through `env()`. */
 export type AskDbScaffoldEnvVar = {
@@ -22,31 +22,8 @@ export type AskDbAiConfigScaffold = {
   envVars: AskDbScaffoldEnvVar[];
 };
 
-/** Default env var names a new config reads the API key and model from. */
-export type AskDbAiScaffoldDefaults = {
-  keyEnv: string;
-  modelEnv: string;
-};
-
-const AI_SCAFFOLD_DEFAULTS: Record<AskDbAiProviderId, AskDbAiScaffoldDefaults> = {
-  openai: { keyEnv: "OPENAI_API_KEY", modelEnv: "OPENAI_MODEL" },
-  anthropic: { keyEnv: "ANTHROPIC_API_KEY", modelEnv: "ANTHROPIC_MODEL" },
-  google: { keyEnv: "GOOGLE_GENERATIVE_AI_API_KEY", modelEnv: "GOOGLE_GENERATIVE_AI_MODEL" },
-  azure: { keyEnv: "AZURE_OPENAI_API_KEY", modelEnv: "AZURE_OPENAI_DEPLOYMENT" },
-  foundry: { keyEnv: "AZURE_OPENAI_API_KEY", modelEnv: "AZURE_OPENAI_DEPLOYMENT" },
-};
-
 function isAiProvider(provider: string): provider is AskDbAiProviderId {
   return (ASKDB_AI_PROVIDERS as readonly string[]).includes(provider);
-}
-
-/**
- * The env var names `askdb init` and Studio's setup wizard suggest for a
- * provider's API key and model. Returns `undefined` for an id that isn't in
- * `ASKDB_AI_PROVIDERS` (including `constructor` / `__proto__`).
- */
-export function getAskDbAiScaffoldDefaults(provider: string): AskDbAiScaffoldDefaults | undefined {
-  return isAiProvider(provider) ? AI_SCAFFOLD_DEFAULTS[provider] : undefined;
 }
 
 /**
