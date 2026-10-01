@@ -52,4 +52,18 @@ describe("@askdb/config agrees with @askdb/ai's built-in provider table", () => 
       expect(resolved?.model, "config's default model").toBe(row?.env.defaultModel);
     },
   );
+
+  // A model the provider falls back to by default can't show which env var flatten wrote,
+  // so this one is never a default.
+  it.each([...ASKDB_AI_PROVIDERS])("the %s config branch's model reaches the provider", (provider) => {
+    const azureLike = provider === "azure" || provider === "foundry";
+    const flat = flattenAskDbConfig(
+      configFor(provider, {
+        apiKey: "k",
+        model: "not-a-default-model",
+        ...(azureLike ? { resourceName: "my-resource" } : {}),
+      }),
+    );
+    expect(createAiRegistry().resolveAiConfig(flat)?.model).toBe("not-a-default-model");
+  });
 });

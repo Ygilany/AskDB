@@ -72,7 +72,7 @@ export const azureProvider: AiProviderAdapter = {
     const model = azure.embedding(config.model);
     // @ai-sdk/azure builds embeddings with OpenAIEmbeddingModel, which reads
     // only `providerOptions.openai` — an "azure" key would silently drop
-    // `dimensions`/`user` (see the real-SDK contract test in contract.test.ts).
+    // `dimensions`/`user` (see the real-SDK contract test in azure.contract.test.ts).
     return withEmbeddingProviderOptions(model, "openai", options);
   },
   resolveProviderOptions(config, { reasoningEffort }) {

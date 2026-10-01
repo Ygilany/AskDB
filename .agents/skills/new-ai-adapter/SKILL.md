@@ -105,7 +105,6 @@ export const <provider>Builtin: BuiltinAiProvider = {
   aliases: [],
   peerPackage: PEER_PACKAGE,
   env: ENV_SPEC,
-  embeddings: false, // true if createEmbeddingModel builds a model
   configHint: CONFIG_HINT,
   adapter: <provider>Provider,
 };
@@ -169,7 +168,7 @@ These derive and need no change: `askdb init`'s choices, validation, and `--help
 
 ## Step 6 — Changeset and final gate
 
-Create `.changeset/add-<provider>-provider.md`: minor for `@askdb/ai` and `@askdb/config`, patch for `askdb`, `@askdb/http-api`, `@askdb/studio` (new dependency). State the env vars, the default model, the peer package to install, and the config branch. Run `pnpm changeset status` and confirm no package is planned for a major bump.
+Create `.changeset/add-<provider>-provider.md`: minor for `@askdb/ai`, `@askdb/config`, `@askdb/client` (its manifest gains the optional peer), and `askdb`, `@askdb/http-api`, `@askdb/studio` (each accepts a new provider). State the env vars, the default model, the peer package to install, and the config branch. Run `pnpm changeset status` and confirm no package is planned for a major bump.
 
 **Final gate (all must pass):**
 
@@ -177,6 +176,7 @@ Create `.changeset/add-<provider>-provider.md`: minor for `@askdb/ai` and `@askd
 pnpm build && pnpm lint && pnpm test
 pnpm smoke:install
 pnpm docs:build
+pnpm preflight   # frozen install, audit, the @askdb/ai tests at the peer floors, publish dry-run
 git status   # only intended files changed
 ```
 
