@@ -1,15 +1,23 @@
 import { TenantScopeError } from "../errors.js";
 import type { NormalizedTenantPolicy } from "../schema/v2/tenant-policy.js";
-import { tenantScopeSchema, type TenantScope } from "../schema/v2/tenant-policy.js";
+import {
+  assertDistinctRootPlaceholders,
+  tenantScopeSchema,
+  type TenantScope,
+} from "../schema/v2/tenant-policy.js";
 
 /**
  * Validate a `TenantScope` input against a tenant policy before prompt generation.
- * Throws `TenantScopeError` on failure.
+ * Throws `TenantScopeError` on failure, and `SchemaParseError` when two of the
+ * policy's roots derive the same placeholder (the loader rejects that too; this
+ * covers a policy built in code).
  */
 export function validateTenantScope(
   tenantPolicy: NormalizedTenantPolicy,
   tenantScope: TenantScope | undefined,
 ): void {
+  assertDistinctRootPlaceholders(tenantPolicy.roots);
+
   // Fail closed: policy exists but no scope
   if (!tenantScope) {
     throw new TenantScopeError(

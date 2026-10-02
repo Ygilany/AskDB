@@ -9,6 +9,7 @@ import type {
   V2ConceptsFrontmatter,
   V2Table,
 } from "@askdb/core";
+import type { AskDbAiProviderId } from "@askdb/config";
 import type { SuggestSource, TableDraft } from "@askdb/enrich";
 import type { ChunkType } from "@askdb/rag";
 
@@ -266,7 +267,8 @@ export type SetupConfigRequest = {
   connectionEnv?: string;
   sqliteFile?: string;
   prismaSchema?: string;
-  aiProvider: "openai" | "anthropic" | "google" | "azure" | "foundry";
+  /** Any id with an `askdb.config.*` branch (`ASKDB_AI_PROVIDERS`). */
+  aiProvider: AskDbAiProviderId;
   /** Env var NAME for the model API key — values never travel through this API. */
   aiKeyEnv?: string;
   /** Env var NAME for the model override — values never travel through this API. */

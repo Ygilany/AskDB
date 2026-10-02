@@ -392,7 +392,7 @@ describe("generateSelectSql — tenant guardrail checks the returned SQL", () =>
     const schema = loadSchema(multiTenantDir);
     const out = await generateSelectSql(POSTGRES_DIALECT, "orders", schema, fakeModel, {
       generateText: vi.fn(async () => ({
-        text: "```sql\nSELECT * FROM orders WHERE \"agency_id\" = '42'\n```",
+        text: "```sql\nSELECT * FROM orders WHERE \"agency_id\" = :tenant_agency_ids\n```",
       })) as never,
       tenantPolicy: schema.tenantPolicy,
       tenantScope: agencyScope,

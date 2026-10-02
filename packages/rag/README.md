@@ -83,7 +83,7 @@ All exports are available from the root `@askdb/rag` import. Sub-path imports ar
 | Root import | Sub-path import | Description |
 |---|---|---|
 | `createAiSdkEmbedder` | `@askdb/rag/embedders/ai-sdk` | Generic AI SDK `EmbeddingModel` adapter. Requires `ai`. |
-| `createOpenAiEmbedder` | `@askdb/rag/embedders/openai` | **Deprecated.** OpenAI convenience helper. Use `createAiSdkEmbedder` with an `@askdb/ai-openai` model or the `@askdb/ai` registry instead. Removed in 1.0. |
+| `createOpenAiEmbedder` | `@askdb/rag/embedders/openai` | **Deprecated.** OpenAI convenience helper. Use `createAiSdkEmbedder` with an AI SDK embedding model (e.g. from `@ai-sdk/openai`) or one built by the `@askdb/ai` registry instead. Removed in 1.0. |
 
 ### Import examples
 
@@ -101,7 +101,7 @@ import { createMemoryStore } from "@askdb/rag/stores/memory";
 import { createFileStore } from "@askdb/rag/stores/file";
 import { createPgvectorStore } from "@askdb/rag/stores/pgvector";
 import { createAiSdkEmbedder } from "@askdb/rag/embedders/ai-sdk";
-// Recommended: bring your own model via @askdb/ai-openai + createAiSdkEmbedder
+// Recommended: bring your own embedding model (e.g. @ai-sdk/openai, or @askdb/ai's registry) + createAiSdkEmbedder
 // import { createOpenAiEmbedder } from "@askdb/rag/embedders/openai"; // deprecated, removed in 1.0
 ```
 

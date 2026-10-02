@@ -123,6 +123,29 @@ describe("renderInitConfig", () => {
     expect(out).not.toContain('"openai"');
   });
 
+  it.each(["azure", "foundry"] as const)(
+    "%s AI provider: scaffolds resourceName so the adapter can build an endpoint",
+    (aiProvider) => {
+      const out = renderInitConfig(postgresAnswers({
+        aiProvider,
+        aiKeyEnv: "AZURE_OPENAI_API_KEY",
+        aiModelEnv: "AZURE_OPENAI_DEPLOYMENT",
+      }));
+      expect(out).toContain(`provider: "${aiProvider}"`);
+      expect(out).toContain(`      ${aiProvider}: {`);
+      expect(out).toContain('apiKey: env("AZURE_OPENAI_API_KEY")');
+      expect(out).toContain('model: env("AZURE_OPENAI_DEPLOYMENT")');
+      expect(out).toContain('resourceName: env("AZURE_RESOURCE_NAME")');
+    },
+  );
+
+  it("non-Azure AI providers: no resourceName line", () => {
+    for (const aiProvider of ["openai", "anthropic", "google"] as const) {
+      const out = renderInitConfig(postgresAnswers({ aiProvider }));
+      expect(out).not.toContain("resourceName");
+    }
+  });
+
   it("pgvector RAG: only pgvector store branch", () => {
     const out = renderInitConfig(postgresAnswers({
       ragStore: "pgvector",
@@ -265,6 +288,15 @@ describe("resolveDefaultInitAnswers", () => {
     expect(a.studioExecute.enabled).toBe(false);
     expect(a.connectionEnv).toBe("DATABASE_URL");
     expect(a.schemaOut).toBe("./askdb");
+  });
+
+  it("scaffolds gateway with the env vars from @askdb/ai's provider table", () => {
+    const a = resolveDefaultInitAnswers({ aiProvider: "gateway" });
+    expect(a.aiKeyEnv).toBe("AI_GATEWAY_API_KEY");
+    expect(a.aiModelEnv).toBe("ASKDB_AI_MODEL");
+    const out = renderInitConfig(a);
+    expect(out).toContain('provider: "gateway"');
+    expect(out).toContain('apiKey: env("AI_GATEWAY_API_KEY")');
   });
 
   it("respects database override", () => {
@@ -450,6 +482,82 @@ describe("runInitCli --yes --skip-install", () => {
       const content = readFileSync(outPath, "utf8");
       expect(content).toContain('provider: "sqlserver"');
       expect(content).not.toContain('"postgres"');
+    } finally {
+      rmSync(tmp, { recursive: true, force: true });
+    }
+  });
+
+  it.each([
+    { flags: [], envName: "SQLITE_FILE" },
+    { flags: ["--sqlite-file", "MY_SQLITE_FILE"], envName: "MY_SQLITE_FILE" },
+    { flags: ["--sqlite-file", "MY_SQLITE_FILE", "--studio-execute"], envName: "MY_SQLITE_FILE" },
+  ])("--database sqlite $flags: .env.example lists the file env var the config reads", async ({ flags, envName }) => {
+    const tmp = mkdtempSync(join(tmpdir(), "askdb-init-test-"));
+    try {
+      const outPath = join(tmp, "askdb.config.ts");
+      const code = await runInitCli([
+        "--yes", "--skip-install", "--path", outPath, "--database", "sqlite", ...flags,
+      ]);
+      expect(code).toBe(0);
+      expect(readFileSync(outPath, "utf8")).toContain(`file: env("${envName}")`);
+      const envExample = readFileSync(join(tmp, ".env.example"), "utf8");
+      expect(envExample).toMatch(new RegExp(`^${envName}=`, "m"));
+    } finally {
+      rmSync(tmp, { recursive: true, force: true });
+    }
+  });
+
+  it.each(["./data.db", "/srv/data.db", "data.db", "db/app.db", "../db/app.db"])(
+    "--database sqlite --sqlite-file %s: a path is written literally and adds no env var",
+    async (file) => {
+    const tmp = mkdtempSync(join(tmpdir(), "askdb-init-test-"));
+    try {
+      const outPath = join(tmp, "askdb.config.ts");
+      const code = await runInitCli([
+        "--yes", "--skip-install", "--path", outPath, "--database", "sqlite", "--sqlite-file", file,
+      ]);
+      expect(code).toBe(0);
+      expect(readFileSync(outPath, "utf8")).toContain(`file: ${JSON.stringify(file)}`);
+      const envExample = readFileSync(join(tmp, ".env.example"), "utf8");
+      expect(envExample).not.toContain(file);
+      expect(envExample).not.toMatch(/SQLITE/);
+    } finally {
+      rmSync(tmp, { recursive: true, force: true });
+    }
+    },
+  );
+
+  it.each([
+    { flags: ["--database", "prisma", "--studio-execute"], envName: "DATABASE_URL" },
+    { flags: ["--rag-store", "pgvector"], envName: "ASKDB_PGVECTOR_URL" },
+  ])("$flags: .env.example lists $envName, which the config reads, once", async ({ flags, envName }) => {
+    const tmp = mkdtempSync(join(tmpdir(), "askdb-init-test-"));
+    try {
+      const outPath = join(tmp, "askdb.config.ts");
+      const code = await runInitCli(["--yes", "--skip-install", "--path", outPath, ...flags]);
+      expect(code).toBe(0);
+      expect(readFileSync(outPath, "utf8")).toContain(`env("${envName}")`);
+      const envExample = readFileSync(join(tmp, ".env.example"), "utf8");
+      expect(envExample.match(new RegExp(`^${envName}=`, "gm"))).toHaveLength(1);
+    } finally {
+      rmSync(tmp, { recursive: true, force: true });
+    }
+  });
+
+  it("--ai-provider azure: config and .env.example include the resource name", async () => {
+    const tmp = mkdtempSync(join(tmpdir(), "askdb-init-test-"));
+    try {
+      const outPath = join(tmp, "askdb.config.ts");
+      const code = await runInitCli([
+        "--yes", "--skip-install", "--path", outPath, "--ai-provider", "azure",
+      ]);
+      expect(code).toBe(0);
+      const content = readFileSync(outPath, "utf8");
+      expect(content).toContain('provider: "azure"');
+      expect(content).toContain('resourceName: env("AZURE_RESOURCE_NAME")');
+      const envExample = readFileSync(join(tmp, ".env.example"), "utf8");
+      expect(envExample).toMatch(/^AZURE_OPENAI_API_KEY=$/m);
+      expect(envExample).toMatch(/^AZURE_RESOURCE_NAME=$/m);
     } finally {
       rmSync(tmp, { recursive: true, force: true });
     }

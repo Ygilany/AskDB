@@ -1,7 +1,7 @@
 name: Changesets
 
 # Validate that any PR touching publishable sources includes a changeset entry.
-# Publishing itself remains a maintainer step (see release.yml).
+# Publishing is automated in release.yml (see docs/release.md).
 #
 # Runs on every PR (no workflow-level `paths:` filter) so the `status` check
 # always reports and can be a required status check in the `main` ruleset.
@@ -22,21 +22,53 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
+      # The Version PR that release.yml opens applies the pending changesets, so it
+      # changes every bumped package.json but adds no changeset, and
+      # `changeset status --since` fails on it by design. Skip the check there (the job
+      # still reports success). Only a branch pushed to this repo counts, not a fork's.
+      #
+      # A package.json change counts only outside `devDependencies`, which hosts never
+      # install. A dev-only bump, like a Dependabot major of a build or test tool, needs no
+      # changeset; a change to a range hosts install still does (docs/adrs/0015).
       - name: Detect changes to publishable sources
         id: changes
         env:
           BASE_REF: ${{ github.base_ref }}
+          IS_VERSION_PR: ${{ github.head_ref == 'changeset-release/main' && github.event.pull_request.head.repo.full_name == github.repository }}
         run: |
-          if git diff --name-only "origin/${BASE_REF}...HEAD" \
-            | grep -Eq '^packages/[^/]+/(src/|package\.json$)|^apps/(cli|http-api|studio)/(src/|package\.json$)'; then
+          if [ "${IS_VERSION_PR}" = "true" ]; then
+            echo "publishable=false" >> "$GITHUB_OUTPUT"
+            echo "Version PR: its changesets are already applied; no new changeset required."
+            exit 0
+          fi
+
+          base="$(git merge-base "origin/${BASE_REF}" HEAD)"
+          # Succeeds when the manifest at $1 differs from the base outside `devDependencies`.
+          # An added or deleted manifest, or one jq can't parse, counts as changed.
+          manifest_changed() {
+            local before after
+            before="$(git show "${base}:$1" 2>/dev/null | jq 'del(.devDependencies)')" || return 0
+            after="$(git show "HEAD:$1" 2>/dev/null | jq 'del(.devDependencies)')" || return 0
+            [ "${before}" != "${after}" ]
+          }
+          publishable=false
+          for path in $(git diff --name-only "${base}" HEAD \
+            | grep -E '^packages/[^/]+/(src/|package\.json$)|^apps/(cli|http-api|studio)/(src/|package\.json$)'); do
+            case "${path}" in
+              */package.json) if manifest_changed "${path}"; then publishable=true; fi ;;
+              *) publishable=true ;;
+            esac
+          done
+
+          if [ "${publishable}" = "true" ]; then
             echo "publishable=true" >> "$GITHUB_OUTPUT"
           else
             echo "publishable=false" >> "$GITHUB_OUTPUT"
-            echo "No publishable sources changed; no changeset required."
+            echo "No publishable sources changed (devDependencies don't count); no changeset required."
           fi
 
       - if: steps.changes.outputs.publishable == 'true'
-        uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
+        uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
 
       - if: steps.changes.outputs.publishable == 'true'
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0

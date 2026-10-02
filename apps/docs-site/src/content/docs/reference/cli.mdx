@@ -67,6 +67,17 @@ askdb --help
   </TabItem>
 </Tabs>
 
+## Help, version, and first run
+
+| Flag | Description |
+| --- | --- |
+| `-h, --help` | Print usage. `init`, `ask`, `introspect`, and `studio` also take `--help` for their own flags (for example `askdb ask --help`). |
+| `-V, --version` | Print the installed `askdb` version. |
+
+Commands that don't read the config work in any directory, including one with no `askdb.config.*`: `--help`, `--version`, `help`, `init`, `bundle`, `introspect --help`, `introspect templates`, and [`studio`](#askdb-studio).
+
+`ask` and `introspect` need `askdb.config.*` (or `.config/askdb.*`) in the current directory. Without one they print ``No askdb.config.* or .config/askdb.* found in <cwd>. Run `npx askdb init` to create one.`` and exit `1`.
+
 ## Commands
 
 ### `askdb init`
@@ -95,7 +106,7 @@ npx askdb@latest init --yes    # non-interactive, Postgres + OpenAI defaults
 | --- | --- |
 | `--database <db>` | `postgres` \| `mysql` \| `sqlite` \| `sqlserver` \| `prisma` |
 | `--connection-env <name>` | Env var name for the connection URL. |
-| `--sqlite-file <path-or-env>` | SQLite file path or env var name. |
+| `--sqlite-file <path-or-env>` | SQLite file path, or an env var name (`UPPER_SNAKE_CASE`, e.g. `SQLITE_FILE`) to read the path from. Anything else, such as `data.db` or `../db/app.db`, is written as a literal path. |
 | `--prisma-schema <path>` | Path to `schema.prisma`. |
 | `--schema-out <dir>` | Schema output directory (default `./askdb`). |
 
@@ -103,7 +114,7 @@ npx askdb@latest init --yes    # non-interactive, Postgres + OpenAI defaults
 
 | Flag | Description |
 | --- | --- |
-| `--ai-provider <name>` | `openai` \| `anthropic` \| `google` \| `azure` \| `foundry` |
+| `--ai-provider <name>` | `openai` \| `anthropic` \| `google` \| `azure` \| `foundry` \| `gateway` |
 | `--ai-key-env <name>` | Env var name for the API key. |
 | `--ai-model-env <name>` | Env var name for the model override. |
 
@@ -121,7 +132,7 @@ npx askdb@latest init --yes    # non-interactive, Postgres + OpenAI defaults
 | `--studio-execute` | Enable Studio execute (query playground): writes a `studio.execute` block with `enabled: true`. Off by default. |
 | `--no-studio-execute` | Disable Studio execute (default). |
 
-`init` generates only the config branches you selected — SQL Server users won't see a `pg` import, SQLite users get a `file:` field instead of `DATABASE_URL`, and Prisma users don't get a live DB driver unless they explicitly enable Studio execute. It does not create a `.env` — example variable names live inside `askdb.config.ts`.
+`init` generates only the config branches you selected — SQL Server users won't see a `pg` import, SQLite users get a `file:` field instead of `DATABASE_URL`, and Prisma users don't get a live DB driver unless they explicitly enable Studio execute. It does not create a `.env`; it writes an `.env.example` (unless one exists) listing every variable the config reads. For `azure` and `foundry` that includes `AZURE_RESOURCE_NAME`, the subdomain of your `https://<name>.openai.azure.com` endpoint.
 
 ### `askdb introspect`
 
@@ -185,7 +196,9 @@ askdb studio --schema ./my-app.schema
 
 Requires `@askdb/studio` to be installed (lazy-imported on first use). Studio schema browsing, enrichment, and SQL generation do not require a database driver; the optional Playground execute path requires the matching driver (`pg`, `mysql2`, `better-sqlite3`, or `mssql`). `askdb init --studio-execute` installs the correct driver automatically.
 
-`askdb studio` is the one command that also works *before* setup: run it with no config (or no schema artifact) and Studio opens a [guided setup wizard](/studio/#guided-setup) in the browser that scaffolds both. An explicit `--schema` pointing at a missing directory is an error, since you asked for a specific artifact.
+`askdb studio` is the one command that *completes* setup: run it with no config (or no schema artifact) and Studio opens a [guided setup wizard](/studio/#guided-setup) in the browser that scaffolds both. An explicit `--schema` pointing at a missing directory is an error, since you asked for a specific artifact.
+
+If `askdb.config.*` exists but fails to load (a syntax error, or its dependencies aren't installed yet), Studio prints a warning with the load error and starts without the config. The setup wizard never overwrites an existing config file; fix it and restart Studio.
 
 ### `askdb bundle`
 
@@ -220,7 +233,7 @@ If the generated SQL references identifiers your schema marks `sensitive`, `askd
 
 You never pass a SQL dialect — it resolves automatically: `dialect` in `askdb.config.ts` when set, otherwise the engine recorded in the schema artifact at introspection time, otherwise `postgres`.
 
-`askdb ask` returns the validated SQL on stdout. Execution is not part of the CLI.
+`askdb ask` returns the checked SQL on stdout. Execution is not part of the CLI.
 
 ## Shared logging flags
 
@@ -293,6 +306,8 @@ All three commands accept the [shared logging flags](#shared-logging-flags).
 | `2` | Invalid CLI arguments. |
 
 Errors print to stderr in human form; structured log events (with `-v`) follow the contract in [`@askdb/core` logging](/reference/packages/).
+
+An unexpected error, such as a config file that fails to load, prints its message and the hint `Set ASKDB_DEBUG=1 to print the stack trace.` Set `ASKDB_DEBUG` to `1` or `true` to add the stack trace. Any other value, including `0`, leaves it off, and the `DEBUG` variable used by the `debug` package has no effect.
 
 ## Read next
 

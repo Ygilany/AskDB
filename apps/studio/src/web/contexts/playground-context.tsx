@@ -577,7 +577,8 @@ function buildTenantScope({
     return {
       error:
         "Subtree scope needs a resolveTenantDescendants resolver, which Studio can't supply. " +
-        "Expand the subtree to explicit IDs and use the IDs scope.",
+        "Expand the subtree yourself and use the Multi-root scope, with each tenant root's IDs " +
+        "in its own row. Never put a descendant root's IDs under another root.",
     };
   } else if (accessKind === "multi_root") {
     const scopes = multiRootRows.flatMap((row) => {

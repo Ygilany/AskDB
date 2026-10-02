@@ -24,7 +24,15 @@ publicHoistPattern:
 # GHSA-2v37-7h3g-55p8 (predictable `nanoid()` output under a non-crypto fallback).
 # `pnpm update` will not move a transitive-only dependency, so pin it here. Drop this
 # once postcss raises its own floor past 3.3.18.
+#
+# brace-expansion: reached only through `minimatch@10` (via eslint and
+# typescript-eslint in `apps/studio`), so it is devDependency-only and never ships.
+# `minimatch` already allows `^5.0.8`; the lockfile was pinned at 5.0.9, which is
+# vulnerable to GHSA-6j4f-fj2g-mc7p, GHSA-qhr7-859c-m2p7 (stack exhaustion on nested
+# or comma-heavy braces) and GHSA-q2hr-2g5m-vwhr (quadratic-time `{a},b}` rewrite);
+# 5.0.12 fixes all three. Drop this once minimatch raises its own floor past 5.0.12.
 overrides:
+  brace-expansion: ^5.0.12
   deepmerge-ts: ^8.0.2
   nanoid: ^3.3.18
 allowBuilds:

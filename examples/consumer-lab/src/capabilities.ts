@@ -117,10 +117,30 @@ async function askCallsSubtreeResolver(): Promise<boolean> {
     tenantScope: subtreeScope("postgres", [1]),
     resolveTenantDescendants: (...args: unknown[]) => {
       calls.push(args);
-      return ["1"];
+      return { [agencyRoot("postgres")]: ["1"] };
     },
   });
   return calls.some(([root, seeds]) => root === agencyRoot("postgres") && JSON.stringify(seeds) === JSON.stringify(["1"]));
+}
+
+/**
+ * Whether strict mode requires a tenant predicate that actually filters
+ * (`docs/contracts/tenant-policy.md`, "Guardrail validation": "the required tenant
+ * predicate (`column = :placeholder` …)"): ask on Postgres with a reply that filters on
+ * a literal agency, not the placeholder, and see whether `ask()` rejects it. Releases
+ * before the fix for #315 accepted any mention of the tenant column.
+ */
+async function askRequiresTenantPredicate(): Promise<boolean> {
+  const { idsScope } = await import("./tenant.js");
+  try {
+    await askTenantProbe("postgres", "SELECT program_code FROM org.program WHERE agency_id = 1", {
+      tenantScope: idsScope("postgres", [2]),
+    });
+    return false;
+  } catch (error) {
+    if ((error as { name?: string }).name === "TenantGuardrailError") return true;
+    throw error;
+  }
 }
 
 /**
@@ -174,6 +194,12 @@ const ASYNC_DETECTORS = {
    * dialect got Postgres `$N` markers.
    */
   "tenant-driver-markers": askBindsTenantDriverMarkers,
+  /**
+   * Strict mode rejecting a tenant filter that doesn't filter: a literal ID, a column only
+   * selected, an `OR`-widened predicate, or an unfiltered root table. Before the fix for
+   * #315 the guardrail accepted any mention of the tenant column.
+   */
+  "tenant-predicate-required": askRequiresTenantPredicate,
 } satisfies Record<string, () => Promise<boolean>>;
 
 export type SyncCapability = keyof typeof DETECTORS;

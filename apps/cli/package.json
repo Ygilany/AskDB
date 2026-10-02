@@ -1,7 +1,7 @@
 {
   "name": "askdb",
-  "version": "1.0.0-beta.42",
-  "description": "AskDB CLI: ask natural-language questions and get validated SQL from the configured dialect.",
+  "version": "1.0.0-beta.43",
+  "description": "AskDB CLI: ask natural-language questions and get checked SQL from the configured dialect.",
   "keywords": [
     "askdb",
     "cli",
@@ -13,7 +13,7 @@
     "llm",
     "sql"
   ],
-  "homepage": "https://github.com/Ygilany/AskDB#readme",
+  "homepage": "https://askdb.tools/reference/cli/",
   "bugs": {
     "url": "https://github.com/Ygilany/AskDB/issues"
   },
@@ -36,7 +36,7 @@
     "NOTICE"
   ],
   "engines": {
-    "node": ">=22"
+    "node": ">=22.14"
   },
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
@@ -44,11 +44,11 @@
     "test": "vitest run --config ../../vitest.config.ts"
   },
   "dependencies": {
+    "@ai-sdk/anthropic": "^4.0.62",
+    "@ai-sdk/azure": "^4.0.78",
+    "@ai-sdk/google": "^4.0.79",
+    "@ai-sdk/openai": "^4.0.74",
     "@askdb/ai": "workspace:*",
-    "@askdb/ai-anthropic": "workspace:*",
-    "@askdb/ai-azure": "workspace:*",
-    "@askdb/ai-google": "workspace:*",
-    "@askdb/ai-openai": "workspace:*",
     "@askdb/client": "workspace:*",
     "@askdb/config": "workspace:*",
     "@askdb/connectors": "workspace:*",
@@ -62,7 +62,7 @@
     "@askdb/sqlserver": "workspace:*",
     "@askdb/studio": "workspace:*",
     "@inquirer/prompts": "^8.7.2",
-    "ai": "^7.0.113",
+    "ai": "^7.0.51",
     "commander": "^15.0.0"
   },
   "devDependencies": {

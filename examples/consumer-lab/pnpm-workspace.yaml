@@ -8,29 +8,43 @@ allowBuilds:
   # `askdb` depends on @askdb/prisma, whose @prisma/engines has a postinstall script.
   # pnpm 11 refuses to install until it is approved, as any pnpm user would have to (#259).
   "@prisma/engines": true
-# `pnpm lab:use` rewrites the block below so every @askdb/* package, including transitive
-# ones, resolves to the install target. Don't edit it by hand.
+# pnpm 11 holds back versions published less than a day ago (`minimumReleaseAge` defaults
+# to 1440 minutes). A just-published AskDB release still installs, since the lab pins it
+# exactly, but pnpm then adds every @askdb version to this list itself and rewrites the
+# file, indenting the lab:use comments below so `lab:use --restore` can't find them.
+minimumReleaseAgeExclude:
+  - askdb
+  - "@askdb/*"
+overrides:
+  # Third-party pins, kept across `lab:use` (it rewrites only the marked block below).
+  #
+  # deepmerge-ts: `@prisma/config` (via `askdb` > `@askdb/prisma` > `@prisma/internals`)
+  # pins exactly 7.1.5, which is vulnerable to GHSA-ggr8-5vv4-36mx (stack exhaustion on
+  # self-referential object graphs). Same pin and rationale as the monorepo's
+  # pnpm-workspace.yaml; drop both once Prisma ships a release on deepmerge-ts >= 8.
+  deepmerge-ts: ^8.0.2
+  # `pnpm lab:use` rewrites the block below so every @askdb/* package, including transitive
+  # ones, resolves to the install target. Don't edit it by hand.
 # lab:use overrides begin
 # lab:use target: npm:latest
-overrides:
-  "@askdb/ai": "0.1.0-beta.6"
-  "@askdb/ai-anthropic": "1.0.0-beta.4"
-  "@askdb/ai-azure": "1.0.0-beta.6"
-  "@askdb/ai-google": "1.0.0-beta.6"
-  "@askdb/ai-openai": "1.0.0-beta.6"
-  "@askdb/client": "1.0.0-beta.5"
-  "@askdb/config": "1.0.0-beta.11"
-  "@askdb/connectors": "0.1.0-beta.7"
-  "@askdb/core": "1.0.0-beta.42"
-  "@askdb/enrich": "0.2.0-beta.13"
-  "@askdb/http-api": "1.0.0-beta.42"
-  "@askdb/introspect": "0.3.0-beta.16"
-  "@askdb/mysql": "0.1.0-beta.17"
-  "@askdb/postgres": "0.2.0-beta.18"
-  "@askdb/prisma": "0.2.0-beta.16"
-  "@askdb/rag": "0.2.0-beta.22"
-  "@askdb/sqlite": "0.1.0-beta.17"
-  "@askdb/sqlserver": "0.1.0-beta.18"
-  "@askdb/studio": "0.2.0-beta.35"
-  "askdb": "1.0.0-beta.42"
+  "@askdb/ai": "0.1.0-beta.7"
+  "@askdb/ai-anthropic": "1.0.0-beta.5"
+  "@askdb/ai-azure": "1.0.0-beta.7"
+  "@askdb/ai-google": "1.0.0-beta.7"
+  "@askdb/ai-openai": "1.0.0-beta.7"
+  "@askdb/client": "1.0.0-beta.6"
+  "@askdb/config": "1.0.0-beta.12"
+  "@askdb/connectors": "0.1.0-beta.8"
+  "@askdb/core": "1.0.0-beta.43"
+  "@askdb/enrich": "0.2.0-beta.14"
+  "@askdb/http-api": "1.0.0-beta.43"
+  "@askdb/introspect": "0.3.0-beta.17"
+  "@askdb/mysql": "0.1.0-beta.18"
+  "@askdb/postgres": "0.2.0-beta.19"
+  "@askdb/prisma": "0.2.0-beta.17"
+  "@askdb/rag": "0.2.0-beta.23"
+  "@askdb/sqlite": "0.1.0-beta.18"
+  "@askdb/sqlserver": "0.1.0-beta.19"
+  "@askdb/studio": "0.2.0-beta.36"
+  "askdb": "1.0.0-beta.43"
 # lab:use overrides end
