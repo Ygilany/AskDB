@@ -2,6 +2,7 @@ import type { Connector } from "@askdb/introspect";
 import type { ConnectorConfig, ConnectorProviderAdapter, ConnectorResult } from "@askdb/connectors";
 import { createSqliteConnector } from "./index.js";
 import { createSqliteCatalogQueryRunner } from "../exec/sqlite.js";
+import { parseSqliteConnection } from "../label.js";
 
 export const sqliteConnectorProvider: ConnectorProviderAdapter = {
   provider: "sqlite",
@@ -18,5 +19,8 @@ export const sqliteConnectorProvider: ConnectorProviderAdapter = {
       },
       connector: createSqliteConnector() as Connector<unknown>,
     };
+  },
+  connectionLabelParts({ url }) {
+    return url === undefined ? undefined : parseSqliteConnection(url);
   },
 };

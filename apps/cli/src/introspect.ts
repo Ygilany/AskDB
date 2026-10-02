@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import { basename, join } from "node:path";
+import { isDeepStrictEqual } from "node:util";
 import {
   createAskDbLogger,
   formatSupportedAskDbLogLevels,
@@ -10,7 +11,8 @@ import {
 import { getAskDbRuntimeConfig } from "@askdb/config";
 import {
   introspect,
-  toV2SchemaJson,
+  isSchemaV2Json,
+  renderSchemaV2Body,
   type Connector,
   type IntrospectResult,
   type IntrospectionFilters,
@@ -251,19 +253,34 @@ async function runWithOutput(
 
   if (opts.print) {
     const result = await introspect(input, undefined, { connector });
-    process.stdout.write(`${JSON.stringify(toV2SchemaJson(result.schema, schemaId), null, 2)}\n`);
-    return result;
+    const rendered = renderSchemaV2Body(result.schema, {
+      schemaId,
+      provider: result.provider,
+    });
+    process.stdout.write(rendered.body);
+    return { ...result, warnings: [...result.warnings, ...rendered.warnings] };
   }
 
   if (opts.diff) {
     const result = await introspect(input, undefined, { connector });
-    const generated = `${JSON.stringify(toV2SchemaJson(result.schema, schemaId), null, 2)}\n`;
     const existingPath = join(opts.diff, "schema.json");
-    const existing = existsSync(existingPath) ? readFileSync(existingPath, "utf8") : "";
+    const hasExisting = existsSync(existingPath);
+    // Render exactly what `--out <same dir>` would write: same provider, same
+    // ID-anchored merge (human-set `sensitive` flags carried over). Otherwise
+    // --diff reports "changed" against an untouched artifact.
+    // An existing schema.json that isn't valid Schema v2 is compared without the
+    // merge (reported as changed); every other render error propagates, as for --out.
+    const rendered = renderSchemaV2Body(result.schema, {
+      schemaId,
+      provider: result.provider,
+      existingArtifactDir: hasExisting && isValidSchemaFile(existingPath) ? opts.diff : undefined,
+    });
+    const existing = hasExisting ? readFileSync(existingPath, "utf8") : "";
+    const changed = rendered.body !== existing && !sameJson(existing, rendered.json);
     process.stdout.write(
-      `${JSON.stringify({ changed: generated !== existing, schemaJsonPath: existingPath }, null, 2)}\n`,
+      `${JSON.stringify({ changed, schemaJsonPath: existingPath }, null, 2)}\n`,
     );
-    return result;
+    return { ...result, warnings: [...result.warnings, ...rendered.warnings] };
   }
 
   const outDir = opts.out!;
@@ -276,6 +293,29 @@ async function runWithOutput(
     },
     { connector },
   );
+}
+
+/**
+ * True when `path` holds valid Schema v2 JSON, by the renderer's own check
+ * (`isSchemaV2Json`), so `{ "version": 2 }` without tables doesn't seed a merge.
+ */
+function isValidSchemaFile(path: string): boolean {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(readFileSync(path, "utf8"));
+  } catch {
+    return false;
+  }
+  return isSchemaV2Json(parsed);
+}
+
+/** Key-order-insensitive comparison so a reformatted-but-equivalent file is not "changed". */
+function sameJson(existingBody: string, generated: unknown): boolean {
+  try {
+    return isDeepStrictEqual(JSON.parse(existingBody), generated);
+  } catch {
+    return false;
+  }
 }
 
 function buildFilters(opts: CliOptions): IntrospectionFilters | undefined {

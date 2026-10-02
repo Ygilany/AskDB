@@ -71,6 +71,8 @@ const result = await introspect(
 | Prisma `sqlserver://` | `sqlserver://localhost:1433;database=MyDb;user=sa;password=pass;encrypt=true` |
 | ADO.NET (`Key=Value;`) | `Server=localhost,1433;Database=MyDb;User Id=sa;Password=pass;` |
 
+In the Prisma form, wrap a value that contains `: \ = ; / [ ] { }` in curly braces, as Prisma does: `password={Pass:Word;}`. A string without `{` is read exactly as before, including an unbraced `=` and non-ASCII characters. A value with a literal `{` is now read as Prisma reads it: `password={abc}` is `abc`, and a `{` that is never closed is rejected with an error that says why. To keep a literal brace, write it inside a braced run: `{a{b}}c` is `a{b}c`.
+
 **TLS / self-signed certificates**
 
 SQL Server uses TLS by default. If you connect to a local or dev instance with a self-signed certificate you will see a `self-signed certificate` error unless you tell the driver to trust it:
@@ -90,9 +92,13 @@ SQL Server uses TLS by default. If you connect to a local or dev instance with a
 
 > **Never set `TrustServerCertificate=True` in production** unless you have verified the server's certificate through another means. Use a properly signed certificate, or install the CA cert in the system trust store (`NODE_EXTRA_CA_CERTS` / `--use-system-ca`).
 
+**Labels for display**
+
+`sqlServerConnectorProvider` parses a connection into display-safe parts, so a connector registry's `connectionLabel()` shows only the host, port and database from any of the three formats: `Server=localhost,1433;Database=app;User Id=sa;Password=pass;` becomes `sqlserver://localhost:1433/app`. The parts come from the same code the connection uses: `resolveConnectionInput()` for `mssql://` and `sqlserver://`, and `@tediousjs/connection-string` (the parser `mssql` uses, a dependency of this package) for ADO.NET strings, so the label names the host and database the driver will use. A string the driver rejects, a named instance or pipe, an `@` in the `sqlserver://` form, or JDBC becomes `configured sqlserver connection`.
+
 ## Captured metadata
 
-Tables, views, columns (SQL Server native type strings), primary keys, unique constraints, foreign keys (with referential actions), and indexes.
+Tables, views, columns (SQL Server native type strings), primary keys, unique constraints, foreign keys (with referential actions), and indexes. Objects shipped by SQL Server itself (`is_ms_shipped = 1`, e.g. replication `MS*` tables) are excluded.
 
 ## License
 

@@ -105,10 +105,7 @@ npx askdb introspect \
   --schema-id my-app
 ```
 
-  </TabItem>
-  <TabItem label="SQLite">
-
-For MySQL and MariaDB, the URL's database is the one introspected, and its tables appear under the `public` namespace. To introspect several databases at once (MySQL's "schemas"), list them. Each database becomes its own namespace (`sales.orders`), and foreign keys between databases are kept:
+For MySQL and MariaDB, the URL's database is the one introspected, and its tables appear under the `public` namespace. The URL must name that database: if the path has no database (`mysql://user:pass@host:3306`) and you don't list databases, introspection throws an error instead of writing an empty schema. To introspect several databases at once (MySQL's "schemas"), list them. Each database becomes its own namespace (`sales.orders`), and foreign keys between listed databases are kept:
 
 ```ts
 // askdb.config.ts
@@ -124,7 +121,10 @@ export default {
 };
 ```
 
-`introspection.schemas` works the same way on every engine: on Postgres and SQL Server it lists schemas (the default is every non-system schema). `askdb introspect --schemas app,sales` does the same for one run and overrides the configured list.
+A foreign key into a database that wasn't introspected has no target in the artifact, so it is dropped with a `cross_database_fk` warning that names the constraint and the referenced database. Without a database list that is every foreign key into another database; with one, it is every foreign key into a database missing from the list.
+
+  </TabItem>
+  <TabItem label="SQLite">
 
 For SQLite, set the file path via `introspection.providerConfig.sqlite.file` in `askdb.config.ts`:
 
@@ -162,6 +162,8 @@ SQL Server accepts three URL formats — see [SQL Server connection strings](#sq
 
   </TabItem>
 </Tabs>
+
+`introspection.schemas` works the same way on every engine: on Postgres and SQL Server it lists schemas (the default is every non-system schema). `askdb introspect --schemas app,sales` does the same for one run and overrides the configured list.
 
 The connection string format follows each engine's convention. The engine itself comes from `--engine` (or `introspection.provider` in `askdb.config.ts`) — the CLI does not infer it from the URL. The artifact records which engine produced it, and `askdb ask` infers the dialect from the artifact.
 
@@ -261,6 +263,8 @@ const rows = result.recordset;
 | `mssql://` URL | `mssql://sa:pass@localhost:1433/MyDb` |
 | Prisma `sqlserver://` | `sqlserver://localhost:1433;database=MyDb;user=sa;password=pass` |
 | ADO.NET (`Key=Value;`) | `Server=localhost,1433;Database=MyDb;User Id=sa;Password=pass;` |
+
+In the Prisma form, wrap a value that contains `: \ = ; / [ ] { }` in curly braces, as Prisma does: `password={Pass:Word;}`. A string without `{` is read exactly as before, including an unbraced `=` and non-ASCII characters. A value with a literal `{` is now read as Prisma reads it: `password={abc}` is `abc`, and a `{` that is never closed is rejected with an error that says why. To keep a literal brace, write it inside a braced run: `{a{b}}c` is `a{b}c`.
 
 ### TLS / self-signed certificates
 

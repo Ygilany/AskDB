@@ -21,7 +21,7 @@ This is the same problem that motivated `@askdb/ai` for AI providers (ADR 0006).
 
 @askdb/connectors
   higher-level bootstrap registry:
-  AskDbConnectorProviderAdapter, createAskDbConnectorRegistry
+  ConnectorProviderAdapter, createConnectorRegistry
   "given AskDB config, pick the right concrete connector adapter"
 
 @askdb/postgres, @askdb/mysql, @askdb/sqlite, @askdb/sqlserver, @askdb/prisma
@@ -39,12 +39,12 @@ Create `@askdb/connectors` — a lightweight workspace package published as `@as
 ### `@askdb/connectors`
 
 Owns:
-- `AskDbConnectorProvider` — `"postgres" | "prisma" | "mysql" | "sqlite" | "sqlserver"`.
-- `AskDbConnectorConfig` — unified per-call config (provider + url/fromExport/schemaPath/filters/schemaId).
-- `AskDbConnectorResult` — `{ connector: Connector<unknown>; input: unknown; mode: string }`.
-- `AskDbConnectorProviderAdapter` — the interface each concrete package implements (includes optional `getTemplates?()`).
-- `AskDbConnectorRegistry` — `{ hasProvider, createConnector, getTemplates }`.
-- `createAskDbConnectorRegistry(adapters)` — registry factory.
+- `ConnectorProvider` — `"postgres" | "prisma" | "mysql" | "sqlite" | "sqlserver"`.
+- `ConnectorConfig` — unified per-call config (provider + url/fromExport/schemaPath/filters/schemaId).
+- `ConnectorResult` — `{ connector: Connector<unknown>; input: unknown; mode: string }`.
+- `ConnectorProviderAdapter` — the interface each concrete package implements (includes optional `getTemplates?()`).
+- `ConnectorRegistry` — `{ hasProvider, createConnector, getTemplates }`.
+- `createConnectorRegistry(adapters)` — registry factory.
 - `askDbConnectorProviderMissingMessage()` — actionable error helper.
 
 Dependency model:
@@ -53,12 +53,12 @@ Dependency model:
 
 ### Concrete packages
 
-Each package depends on `@askdb/connectors` and exports a provider adapter constant typed as `AskDbConnectorProviderAdapter`. The `import type` in each package is erased at compile time, so there is no circular runtime dependency:
+Each package depends on `@askdb/connectors` and exports a provider adapter constant typed as `ConnectorProviderAdapter`. The `import type` in each package is erased at compile time, so there is no circular runtime dependency:
 
 ```
 @askdb/connectors (registry/types, runtime: no concrete deps)
   ← depends on (type-only, erased in JS output)
-@askdb/postgres (exports postgresConnectorProvider: AskDbConnectorProviderAdapter)
+@askdb/postgres (exports postgresConnectorProvider: ConnectorProviderAdapter)
 ```
 
 - `@askdb/postgres` → `postgresConnectorProvider` (live + from-export, implements `getTemplates()`).
@@ -74,14 +74,14 @@ All existing `create<Engine>Connector()` and `create<Engine>CatalogQueryRunner()
 Apps import the factory from `@askdb/connectors` and the adapter constants from each concrete package they intentionally support:
 
 ```ts
-import { createAskDbConnectorRegistry } from "@askdb/connectors";
+import { createConnectorRegistry } from "@askdb/connectors";
 import { postgresConnectorProvider } from "@askdb/postgres";
 import { mysqlConnectorProvider } from "@askdb/mysql";
 import { sqliteConnectorProvider } from "@askdb/sqlite";
 import { sqlServerConnectorProvider } from "@askdb/sqlserver";
 import { prismaConnectorProvider } from "@askdb/prisma";
 
-const connectors = createAskDbConnectorRegistry([
+const connectors = createConnectorRegistry([
   postgresConnectorProvider,
   mysqlConnectorProvider,
   sqliteConnectorProvider,
@@ -103,7 +103,7 @@ const { connector, input, mode } = connectors.createConnector({
 const bundle = connectors.getTemplates("postgres");
 ```
 
-Apps declare only the adapter packages they support. A hypothetical embedded deployment that only supports postgres installs `@askdb/postgres`, imports `postgresConnectorProvider`, and passes it to `createAskDbConnectorRegistry`.
+Apps declare only the adapter packages they support. A hypothetical embedded deployment that only supports postgres installs `@askdb/postgres`, imports `postgresConnectorProvider`, and passes it to `createConnectorRegistry`.
 
 ## Rationale
 
@@ -116,8 +116,7 @@ Apps declare only the adapter packages they support. A hypothetical embedded dep
 ## Consequences
 
 - `@askdb/postgres`, `@askdb/mysql`, `@askdb/sqlite`, `@askdb/sqlserver`, and `@askdb/prisma` gain `@askdb/connectors` as a direct runtime dependency (for the adapter type).
-- The CLI's inline engine switch in `buildRunConfig` is replaced by `createAskDbConnectorRegistry`
-  + `registry.createConnector(config)`.
+- The CLI's inline engine switch in `buildRunConfig` is replaced by `createConnectorRegistry` + `registry.createConnector(config)`.
 - Library consumers who do not want the registry layer continue to call `create<Engine>Connector()` and `create<Engine>CatalogQueryRunner()` directly — nothing is removed from those packages.
 - Adding a new engine integration adds a new package + adapter export; no changes to `@askdb/connectors`, `@askdb/introspect`, or `@askdb/core`.
 

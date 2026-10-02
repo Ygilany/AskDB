@@ -15,4 +15,7 @@ export const prismaConnectorProvider: ConnectorProviderAdapter = {
       connector: createPrismaConnector() as Connector<unknown>,
     };
   },
+  connectionLabelParts({ schemaPath }) {
+    return schemaPath === undefined ? undefined : { file: schemaPath };
+  },
 };

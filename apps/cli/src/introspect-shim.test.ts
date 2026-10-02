@@ -1,5 +1,5 @@
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -143,20 +143,24 @@ describe("cli spawn: introspect subcommand", () => {
       const existing = join(tmp, "existing.schema");
       const out = join(tmp, "out.schema");
       run("mkdir", ["-p", existing]);
-      writeFileSync(join(existing, "schema.json"), "{}\n", "utf8");
 
-      const diff = run("node", [
-        join(cliDir, "dist/cli.js"),
-        "introspect",
-        "--engine",
-        "prisma",
-        "--prisma-schema",
-        prismaFixture,
-        "--diff",
-        existing,
-      ]);
-      expect(diff.status).toBe(0);
-      expect(JSON.parse(diff.stdout)).toMatchObject({ changed: true });
+      // An existing schema.json that isn't valid Schema v2 (including one that only
+      // has `version: 2`) is reported as changed, not merged into.
+      for (const body of ["{}\n", '{ "version": 2 }\n']) {
+        writeFileSync(join(existing, "schema.json"), body, "utf8");
+        const diff = run("node", [
+          join(cliDir, "dist/cli.js"),
+          "introspect",
+          "--engine",
+          "prisma",
+          "--prisma-schema",
+          prismaFixture,
+          "--diff",
+          existing,
+        ]);
+        expect(diff.status, diff.stderr).toBe(0);
+        expect(JSON.parse(diff.stdout)).toMatchObject({ changed: true });
+      }
 
       const write = run("node", [
         join(cliDir, "dist/cli.js"),
@@ -174,6 +178,68 @@ describe("cli spawn: introspect subcommand", () => {
       expect(readFileSync(join(out, "schema.json"), "utf8")).toContain(
         '"id": "table:public.User"',
       );
+    } finally {
+      rmSync(tmp, { recursive: true, force: true });
+    }
+  });
+
+  it("--diff fails, as --out does, on a malformed tables/*.md next to a valid schema.json", () => {
+    const tmp = mkdtempSync(join(tmpdir(), "askdb-prisma-diff-md-"));
+    try {
+      const out = join(tmp, "simple.schema");
+      const base = [join(cliDir, "dist/cli.js"), "introspect", "--engine", "prisma", "--prisma-schema", prismaFixture];
+      expect(run("node", [...base, "--out", out]).status).toBe(0);
+      mkdirSync(join(out, "tables"), { recursive: true });
+      writeFileSync(join(out, "tables", "broken.md"), "---\nid: [unterminated\n---\n\n# Broken\n", "utf8");
+
+      const diff = run("node", [...base, "--diff", out]);
+      expect(diff.status).not.toBe(0);
+      expect(diff.stderr).toContain("Malformed table front-matter");
+    } finally {
+      rmSync(tmp, { recursive: true, force: true });
+    }
+  });
+
+  it("--diff reports unchanged against an artifact written by --out from the same source", () => {
+    const tmp = mkdtempSync(join(tmpdir(), "askdb-prisma-diff-"));
+    try {
+      const out = join(tmp, "simple.schema");
+      const schemaCopy = join(tmp, "schema.prisma");
+      writeFileSync(schemaCopy, readFileSync(prismaFixture, "utf8"), "utf8");
+      const base = [join(cliDir, "dist/cli.js"), "introspect", "--engine", "prisma", "--prisma-schema", schemaCopy];
+
+      const write = run("node", [...base, "--out", out]);
+      expect(write.status).toBe(0);
+      // --out persists the connector-detected provider; --diff must render the same body.
+      expect(readFileSync(join(out, "schema.json"), "utf8")).toContain('"provider": "postgres"');
+
+      const same = run("node", [...base, "--diff", out]);
+      expect(same.status).toBe(0);
+      expect(JSON.parse(same.stdout)).toMatchObject({ changed: false });
+
+      // Human-set sensitive flags live in the artifact, not the source — they must not
+      // register as drift (the --out path preserves them via the ID-anchored merge).
+      const artifact = JSON.parse(readFileSync(join(out, "schema.json"), "utf8")) as {
+        tables: Array<{ id: string; sensitive: boolean; columns: Array<{ name: string; sensitive: boolean }> }>;
+      };
+      const user = artifact.tables.find((t) => t.id === "table:public.User")!;
+      user.columns.find((c) => c.name === "email")!.sensitive = true;
+      artifact.tables.find((t) => t.id === "table:public.Order")!.sensitive = true;
+      writeFileSync(join(out, "schema.json"), `${JSON.stringify(artifact, null, 2)}\n`, "utf8");
+
+      const withSensitive = run("node", [...base, "--diff", out]);
+      expect(withSensitive.status).toBe(0);
+      expect(JSON.parse(withSensitive.stdout)).toMatchObject({ changed: false });
+
+      // A real source change (new model) is reported.
+      writeFileSync(
+        schemaCopy,
+        `${readFileSync(prismaFixture, "utf8")}\nmodel Invoice {\n  id String @id @db.Uuid\n}\n`,
+        "utf8",
+      );
+      const changed = run("node", [...base, "--diff", out]);
+      expect(changed.status).toBe(0);
+      expect(JSON.parse(changed.stdout)).toMatchObject({ changed: true });
     } finally {
       rmSync(tmp, { recursive: true, force: true });
     }

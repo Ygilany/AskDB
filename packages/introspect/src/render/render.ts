@@ -20,7 +20,12 @@ import type {
   SqlTable,
   SqlView,
 } from "../types.js";
-import type { RenderOptions, RenderResult } from "./types.js";
+import type {
+  RenderBodyOptions,
+  RenderBodyResult,
+  RenderOptions,
+  RenderResult,
+} from "./types.js";
 
 /**
  * Render a `SqlSchema` to a Schema v2 directory.
@@ -43,18 +48,35 @@ export function renderToSchemaV2(
   schema: SqlSchema,
   options: RenderOptions,
 ): RenderResult {
-  const warnings: IntrospectionWarning[] = [];
-  const fresh = toV2SchemaJson(schema, options.schemaId, options.provider);
-  const v2 = options.existingArtifactDir
-    ? mergeWithExistingArtifact(fresh, options.existingArtifactDir, warnings)
-    : fresh;
+  const { body, warnings } = renderSchemaV2Body(schema, options);
 
   mkdirSync(options.outDir, { recursive: true });
   const schemaJsonPath = resolve(options.outDir, "schema.json");
-  const body = JSON.stringify(v2, null, 2) + "\n";
   writeFileSync(schemaJsonPath, body, "utf8");
 
   return { schemaJsonPath, warnings };
+}
+
+/**
+ * Pure (no-write) form of {@link renderToSchemaV2}: produces the exact
+ * `schema.json` bytes `--out` would write, including the ID-anchored merge
+ * with `existingArtifactDir` (human-set `sensitive` flags preserved) and the
+ * connector-detected `provider`.
+ *
+ * `askdb introspect --out`, `--print`, and `--diff` all go through this one
+ * function so `--diff` against an artifact produced by `--out` from the same
+ * source reports no change.
+ */
+export function renderSchemaV2Body(
+  schema: SqlSchema,
+  options: RenderBodyOptions,
+): RenderBodyResult {
+  const warnings: IntrospectionWarning[] = [];
+  const fresh = toV2SchemaJson(schema, options.schemaId, options.provider);
+  const json = options.existingArtifactDir
+    ? mergeWithExistingArtifact(fresh, options.existingArtifactDir, warnings)
+    : fresh;
+  return { json, body: JSON.stringify(json, null, 2) + "\n", warnings };
 }
 
 function mergeWithExistingArtifact(
@@ -98,6 +120,21 @@ function readExistingPhysical(existingArtifactDir: string): V2SchemaJson {
   const schemaJsonPath = resolve(existingArtifactDir, "schema.json");
   const parsed: unknown = JSON.parse(readFileSync(schemaJsonPath, "utf8"));
   return assertV2SchemaJson(parsed, schemaJsonPath);
+}
+
+/**
+ * True when `value` (a parsed `schema.json`) passes the same check
+ * `renderSchemaV2Body` applies before merging with an existing artifact. Lets a
+ * caller decide whether to pass `existingArtifactDir` without swallowing the
+ * merge's other errors (for example malformed `tables/*.md` front matter).
+ */
+export function isSchemaV2Json(value: unknown): boolean {
+  try {
+    assertV2SchemaJson(value, "schema.json");
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 function assertV2SchemaJson(value: unknown, filePath: string): V2SchemaJson {
