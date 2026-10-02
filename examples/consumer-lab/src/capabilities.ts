@@ -235,6 +235,7 @@ const ASYNC_DETECTORS = {
    * #315 the guardrail accepted any mention of the tenant column.
    */
   "tenant-predicate-required": askRequiresTenantPredicate,
+  /**
    * Studio's request guard (ADR 0009, PR #185): a per-launch session token in the served
    * page, required on `/api/*`, with the Host, Origin and content-type checks that shipped
    * with it. Detected by the page's `<meta name="askdb-studio-token">`. Releases before it
