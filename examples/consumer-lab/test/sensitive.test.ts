@@ -526,12 +526,20 @@ export default defineConfig({
 
 /**
  * The body of an `it.fails` omission case. It must fail only because the prompt still names
- * the sensitive columns. Anything else, a failed request or no model call, makes the body
- * pass, so `it.fails` reports the cell as `FAIL`, not as the known issue.
+ * the sensitive columns. Anything else, a thrown error (a server that doesn't start, a failed
+ * request, an unreadable request log), a failed request or no model call, makes the body
+ * pass, so `it.fails` reports the cell as `FAIL`, not as the known issue. `run` does its own
+ * setup, such as starting a server, so a setup failure is caught here too.
  */
 async function expectOmittedKnown(run: () => Promise<boolean>): Promise<void> {
   let ok = false;
-  const calls = await callsOf(async () => (ok = await run()));
+  let calls: Awaited<ReturnType<typeof callsOf>>;
+  try {
+    calls = await callsOf(async () => (ok = await run()));
+  } catch (error) {
+    console.error("not the known discrepancy: the case threw before its prompt could be checked", error);
+    return;
+  }
   const call = calls.length === 1 && calls[0]!.questionId === CONTROL && calls[0]!.error === null ? calls[0] : undefined;
   if (!ok || !call || !describesClient(call.prompt)) {
     console.error("not the known discrepancy: the request failed, it didn't make exactly one answered model call, or its prompt lost people.client", calls);
@@ -564,9 +572,11 @@ describe("[postgres] sensitive-omit-config", () => {
 
   it.fails("sensitive-omit-config: POST /ask without omitSensitiveFromPrompt, on a server whose config sets modes.omitSensitiveFromPrompt, sends a prompt without email and ssn (#376)", async (ctx) => {
     needsSensitiveCapabilities(ctx, "postgres");
-    const http = await sensitiveHttpServer("omit-config", { cwd: omitConfigProject() });
 
-    await expectOmittedKnown(async () => (await postAsk(http, { question: question(CONTROL).text })).status === 200);
+    await expectOmittedKnown(async () => {
+      const http = await sensitiveHttpServer("omit-config", { cwd: omitConfigProject() });
+      return (await postAsk(http, { question: question(CONTROL).text })).status === 200;
+    });
   });
 });
 
@@ -592,10 +602,12 @@ describe("[postgres] sensitive-omit-env", () => {
     await expectOmittedKnown(async () => (await cliAsk([], { env })).status === 0);
   });
 
-  it.fails("sensitive-omit-env: POST /ask without omitSensitiveFromPrompt, on a server started with ASKDB_OMIT_SENSITIVE_FROM_PROMPT=true, sends a prompt without email and ssn (#377)", async (ctx) => {
+  it.fails("sensitive-omit-env: POST /ask without omitSensitiveFromPrompt, on a server started with ASKDB_OMIT_SENSITIVE_FROM_PROMPT=true, sends a prompt without email and ssn (#377, #376)", async (ctx) => {
     needsSensitiveCapabilities(ctx, "postgres");
-    const http = await sensitiveHttpServer("omit-env", { env });
 
-    await expectOmittedKnown(async () => (await postAsk(http, { question: question(CONTROL).text })).status === 200);
+    await expectOmittedKnown(async () => {
+      const http = await sensitiveHttpServer("omit-env", { env });
+      return (await postAsk(http, { question: question(CONTROL).text })).status === 200;
+    });
   });
 });
