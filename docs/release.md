@@ -62,7 +62,7 @@ Recorded 2026-09-29, in #354:
 - **Version PR author:** a GitHub App, not `GITHUB_TOKEN` or a personal access token. PRs opened with `GITHUB_TOKEN` don't trigger other workflows, so the required checks would never report on the Version PR. The repository setting "Allow GitHub Actions to create and approve pull requests" stays off.
 - **npm auth:** trusted publishing (OIDC). No npm token is stored in the repo. pnpm 11 does the OIDC exchange itself, and adds provenance because the repo and the packages are public.
 - **Gate:** the `npm-publish` environment, with the maintainer as required reviewer and deployments limited to `main`. Only the `publish` job can request an OIDC token.
-- **changesets/action:** v1, because v2 requires Changesets CLI v3. `@changesets/cli` is pinned exactly in the root `package.json`.
+- **changesets/action:** v2, with Changesets CLI v3 (`@changesets/cli` pinned exactly in the root `package.json`). The pipeline started on v1 with CLI v2; Dependabot moved both (#390, #393), and #424 moved the workflow and the prerelease state with them.
 - **GitHub Releases:** off. Package CHANGELOGs and git tags are the release record.
 - **Versioning:** unchanged. Packages keep their own versions, with `@askdb/core`, `askdb` and `@askdb/http-api` linked. One lockstep version line waits for the 1.0 release candidates (#354).
 
