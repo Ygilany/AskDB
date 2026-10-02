@@ -188,7 +188,7 @@ describe("flattenAskDbConfig", () => {
     expect(flat.ASKDB_INTROSPECT_SQLSERVER_URL).toBe("Server=localhost;Database=app;");
   });
 
-  it("defaults OpenAI chat model when model omitted", () => {
+  it("defaults OpenAI language model when model omitted", () => {
     const flat = flattenAskDbConfig(
       minimalConfig({
         ai: {
