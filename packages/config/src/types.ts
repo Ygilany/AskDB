@@ -31,6 +31,13 @@ export type OpenaiConfig = {
 export type AzureConfig = {
   apiKey?: string;
   secondaryApiKey?: string;
+  /**
+   * Azure resource name — the subdomain of your endpoint, e.g. `"my-foundry"`
+   * for `https://my-foundry.openai.azure.com`. One of `resourceName` or
+   * `baseUrl` is required.
+   */
+  resourceName?: string;
+  /** Full endpoint URL. Overrides `resourceName` when both are set. */
   baseUrl?: string;
   /** When unset, `flattenAskDbConfig` applies the default Azure deployment name (see `@askdb/config` defaults). */
   model?: string;
@@ -49,6 +56,9 @@ export type FoundryConfig = {
   secondaryApiKey?: string;
   model?: string;
   apiVersion?: string;
+  /** See {@link AzureConfig.resourceName}. */
+  resourceName?: string;
+  /** See {@link AzureConfig.baseUrl}. */
   baseUrl?: string;
   /** See {@link AzureConfig.modelFamily}. */
   modelFamily?: string;
@@ -65,6 +75,18 @@ export type GoogleConfig = {
   apiKey?: string;
   baseUrl?: string;
   /** When unset, `flattenAskDbConfig` applies the default Gemini chat model (see `@askdb/config` defaults). */
+  model?: string;
+};
+
+/** Vercel AI Gateway (`ai.provider: "gateway"`), built into `ai` — no extra provider package. */
+export type GatewayConfig = {
+  /** AI Gateway API key. Flattened to `AI_GATEWAY_API_KEY`. */
+  apiKey?: string;
+  baseUrl?: string;
+  /**
+   * Gateway model id in `<upstream>/<model>` form, e.g. `"anthropic/claude-sonnet-4-6"`.
+   * When unset, `flattenAskDbConfig` applies the default gateway model (see `@askdb/config` defaults).
+   */
   model?: string;
 };
 
@@ -95,6 +117,7 @@ export type AiProviderConfigs = {
   foundry?: FoundryConfig;
   anthropic?: AnthropicConfig;
   google?: GoogleConfig;
+  gateway?: GatewayConfig;
 };
 
 /** Discriminated union branch for `ai` when `provider` is `"openai"`. */
@@ -129,6 +152,13 @@ export type AnthropicAiConfig = {
 export type GoogleAiConfig = {
   provider: "google";
   providerConfig: AiProviderConfigs & { google: GoogleConfig };
+  reasoning?: AskDbAiReasoningConfig;
+};
+
+/** Discriminated union branch for `ai` when `provider` is `"gateway"` (Vercel AI Gateway). */
+export type GatewayAiConfig = {
+  provider: "gateway";
+  providerConfig: AiProviderConfigs & { gateway: GatewayConfig };
   reasoning?: AskDbAiReasoningConfig;
 };
 
@@ -170,6 +200,7 @@ export type AskDbAiConfig =
   | FoundryAiConfig
   | AnthropicAiConfig
   | GoogleAiConfig
+  | GatewayAiConfig
   | CustomAiConfig;
 
 // ---------------------------------------------------------------------------

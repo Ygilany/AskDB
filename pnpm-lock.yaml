@@ -48,21 +48,21 @@ importers:
 
   apps/cli:
     dependencies:
+      '@ai-sdk/anthropic':
+        specifier: ^4.0.62
+        version: 4.0.69(zod@4.6.5)
+      '@ai-sdk/azure':
+        specifier: ^4.0.78
+        version: 4.0.86(zod@4.6.5)
+      '@ai-sdk/google':
+        specifier: ^4.0.79
+        version: 4.0.86(zod@4.6.5)
+      '@ai-sdk/openai':
+        specifier: ^4.0.74
+        version: 4.0.82(zod@4.6.5)
       '@askdb/ai':
         specifier: workspace:*
         version: link:../../packages/ai
-      '@askdb/ai-anthropic':
-        specifier: workspace:*
-        version: link:../../packages/ai-anthropic
-      '@askdb/ai-azure':
-        specifier: workspace:*
-        version: link:../../packages/ai-azure
-      '@askdb/ai-google':
-        specifier: workspace:*
-        version: link:../../packages/ai-google
-      '@askdb/ai-openai':
-        specifier: workspace:*
-        version: link:../../packages/ai-openai
       '@askdb/client':
         specifier: workspace:*
         version: link:../../packages/client
@@ -139,21 +139,21 @@ importers:
 
   apps/http-api:
     dependencies:
+      '@ai-sdk/anthropic':
+        specifier: ^4.0.62
+        version: 4.0.69(zod@4.6.5)
+      '@ai-sdk/azure':
+        specifier: ^4.0.78
+        version: 4.0.86(zod@4.6.5)
+      '@ai-sdk/google':
+        specifier: ^4.0.79
+        version: 4.0.86(zod@4.6.5)
+      '@ai-sdk/openai':
+        specifier: ^4.0.74
+        version: 4.0.82(zod@4.6.5)
       '@askdb/ai':
         specifier: workspace:*
         version: link:../../packages/ai
-      '@askdb/ai-anthropic':
-        specifier: workspace:*
-        version: link:../../packages/ai-anthropic
-      '@askdb/ai-azure':
-        specifier: workspace:*
-        version: link:../../packages/ai-azure
-      '@askdb/ai-google':
-        specifier: workspace:*
-        version: link:../../packages/ai-google
-      '@askdb/ai-openai':
-        specifier: workspace:*
-        version: link:../../packages/ai-openai
       '@askdb/client':
         specifier: workspace:*
         version: link:../../packages/client
@@ -182,21 +182,21 @@ importers:
 
   apps/studio:
     dependencies:
+      '@ai-sdk/anthropic':
+        specifier: ^4.0.62
+        version: 4.0.69(zod@4.6.5)
+      '@ai-sdk/azure':
+        specifier: ^4.0.78
+        version: 4.0.86(zod@4.6.5)
+      '@ai-sdk/google':
+        specifier: ^4.0.79
+        version: 4.0.86(zod@4.6.5)
+      '@ai-sdk/openai':
+        specifier: ^4.0.74
+        version: 4.0.82(zod@4.6.5)
       '@askdb/ai':
         specifier: workspace:*
         version: link:../../packages/ai
-      '@askdb/ai-anthropic':
-        specifier: workspace:*
-        version: link:../../packages/ai-anthropic
-      '@askdb/ai-azure':
-        specifier: workspace:*
-        version: link:../../packages/ai-azure
-      '@askdb/ai-google':
-        specifier: workspace:*
-        version: link:../../packages/ai-google
-      '@askdb/ai-openai':
-        specifier: workspace:*
-        version: link:../../packages/ai-openai
       '@askdb/config':
         specifier: workspace:*
         version: link:../../packages/config
@@ -259,8 +259,8 @@ importers:
         specifier: ^6.1.1
         version: 6.1.1(vite@8.3.1(@types/node@22.20.4)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1))
       better-sqlite3:
-        specifier: ^11.10.0
-        version: 11.10.0
+        specifier: ^12.10.0
+        version: 12.11.1
       class-variance-authority:
         specifier: ^0.7.1
         version: 0.7.1
@@ -321,12 +321,12 @@ importers:
 
   examples/ask-question:
     dependencies:
+      '@ai-sdk/openai':
+        specifier: ^4.0.74
+        version: 4.0.82(zod@4.6.5)
       '@askdb/ai':
         specifier: workspace:*
         version: link:../../packages/ai
-      '@askdb/ai-openai':
-        specifier: workspace:*
-        version: link:../../packages/ai-openai
       '@askdb/client':
         specifier: workspace:*
         version: link:../../packages/client
@@ -352,12 +352,9 @@ importers:
 
   examples/express-server:
     dependencies:
-      '@askdb/ai':
-        specifier: workspace:*
-        version: link:../../packages/ai
-      '@askdb/ai-openai':
-        specifier: workspace:*
-        version: link:../../packages/ai-openai
+      '@ai-sdk/openai':
+        specifier: ^4.0.74
+        version: 4.0.82(zod@4.6.5)
       '@askdb/client':
         specifier: workspace:*
         version: link:../../packages/client
@@ -420,6 +417,18 @@ importers:
 
   packages/ai:
     devDependencies:
+      '@ai-sdk/anthropic':
+        specifier: ^4.0.62
+        version: 4.0.69(zod@4.6.5)
+      '@ai-sdk/azure':
+        specifier: ^4.0.78
+        version: 4.0.86(zod@4.6.5)
+      '@ai-sdk/google':
+        specifier: ^4.0.79
+        version: 4.0.86(zod@4.6.5)
+      '@ai-sdk/openai':
+        specifier: ^4.0.74
+        version: 4.0.82(zod@4.6.5)
       ai:
         specifier: ^7.0.51
         version: 7.0.123(zod@4.6.5)
@@ -435,79 +444,79 @@ importers:
       '@ai-sdk/anthropic':
         specifier: ^4.0.62
         version: 4.0.69(zod@4.6.5)
-    devDependencies:
       '@askdb/ai':
-        specifier: workspace:*
+        specifier: workspace:^
         version: link:../ai
+    devDependencies:
       ai:
         specifier: ^7.0.51
         version: 7.0.123(zod@4.6.5)
       typescript:
         specifier: ^6.0.3
         version: 6.0.3
-      vitest:
-        specifier: ^5.0.1
-        version: 5.0.2(@opentelemetry/api@1.9.1)(@types/node@22.20.4)(vite@8.3.1(@types/node@22.20.4)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1))
 
   packages/ai-azure:
     dependencies:
       '@ai-sdk/azure':
         specifier: ^4.0.78
         version: 4.0.86(zod@4.6.5)
-    devDependencies:
       '@askdb/ai':
-        specifier: workspace:*
+        specifier: workspace:^
         version: link:../ai
+    devDependencies:
       ai:
         specifier: ^7.0.51
         version: 7.0.123(zod@4.6.5)
       typescript:
         specifier: ^6.0.3
         version: 6.0.3
-      vitest:
-        specifier: ^5.0.1
-        version: 5.0.2(@opentelemetry/api@1.9.1)(@types/node@22.20.4)(vite@8.3.1(@types/node@22.20.4)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1))
 
   packages/ai-google:
     dependencies:
       '@ai-sdk/google':
         specifier: ^4.0.79
         version: 4.0.86(zod@4.6.5)
-    devDependencies:
       '@askdb/ai':
-        specifier: workspace:*
+        specifier: workspace:^
         version: link:../ai
+    devDependencies:
       ai:
         specifier: ^7.0.51
         version: 7.0.123(zod@4.6.5)
       typescript:
         specifier: ^6.0.3
         version: 6.0.3
-      vitest:
-        specifier: ^5.0.1
-        version: 5.0.2(@opentelemetry/api@1.9.1)(@types/node@22.20.4)(vite@8.3.1(@types/node@22.20.4)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1))
 
   packages/ai-openai:
     dependencies:
       '@ai-sdk/openai':
         specifier: ^4.0.74
         version: 4.0.82(zod@4.6.5)
-    devDependencies:
       '@askdb/ai':
-        specifier: workspace:*
+        specifier: workspace:^
         version: link:../ai
+    devDependencies:
       ai:
         specifier: ^7.0.51
         version: 7.0.123(zod@4.6.5)
       typescript:
         specifier: ^6.0.3
         version: 6.0.3
-      vitest:
-        specifier: ^5.0.1
-        version: 5.0.2(@opentelemetry/api@1.9.1)(@types/node@22.20.4)(vite@8.3.1(@types/node@22.20.4)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1))
 
   packages/client:
     dependencies:
+      '@ai-sdk/anthropic':
+        specifier: ^4.0.0
+        version: 4.0.69(zod@4.6.5)
+      '@ai-sdk/azure':
+        specifier: ^4.0.0
+        version: 4.0.86(zod@4.6.5)
+      '@ai-sdk/google':
+        specifier: ^4.0.0
+        version: 4.0.86(zod@4.6.5)
+      '@ai-sdk/openai':
+        specifier: ^4.0.0
+        version: 4.0.82(zod@4.6.5)
       '@askdb/ai':
         specifier: workspace:^
         version: link:../ai
@@ -4123,9 +4132,6 @@ packages:
 
   bcp-47@2.1.1:
     resolution: {integrity: sha512-KLw+H/gd2p4zly1X7Yh/qziuyae5/w/QFnvTng9eZL5fvszL7Whl3MBoWF8yxL7ksUjBfOD+OxkytiqbBpG+Fw==}
-
-  better-sqlite3@11.10.0:
-    resolution: {integrity: sha512-EwhOpyXiOEL/lKzHz9AW1msWFNzGc/z+LzeB3/jnFJpxu+th2yqvzsSWas1v9jgs9+xiXJcD5A8CJxAG2TaghQ==}
 
   better-sqlite3@12.11.1:
     resolution: {integrity: sha512-dq9AtApgg5PGFtBzPFSBl3HZQjHok5gaQCM6zh2Yk0aSmDCs1CbnVI8/HgASQkNKsWFpseIO9beg5xxpYhbIfA==}
@@ -10861,11 +10867,6 @@ snapshots:
       is-alphabetical: 2.0.1
       is-alphanumerical: 2.0.1
       is-decimal: 2.0.1
-
-  better-sqlite3@11.10.0:
-    dependencies:
-      bindings: 1.5.0
-      prebuild-install: 7.1.3
 
   better-sqlite3@12.11.1:
     dependencies:

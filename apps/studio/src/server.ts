@@ -5,7 +5,7 @@ import { extname, relative, join, resolve, dirname, sep } from "node:path";
 import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { generateText as defaultGenerateText } from "ai";
-import { bootstrapAskDbEnv, getAskDbRuntimeConfig } from "@askdb/config";
+import { ASKDB_AI_PROVIDERS, bootstrapAskDbEnv, getAskDbRuntimeConfig } from "@askdb/config";
 import {
   createAiRegistry,
   resolveReasoningEffort,
@@ -13,10 +13,6 @@ import {
   type AiEnv,
   type AiProvider,
 } from "@askdb/ai";
-import { anthropicProvider } from "@askdb/ai-anthropic";
-import { azureProvider } from "@askdb/ai-azure";
-import { googleProvider } from "@askdb/ai-google";
-import { openaiProvider } from "@askdb/ai-openai";
 import {
   ask,
   formatSensitiveReference,
@@ -113,7 +109,10 @@ import {
   injectSessionToken,
 } from "./request-guard.js";
 
-const ai = createAiRegistry([openaiProvider, azureProvider, googleProvider, anthropicProvider]);
+// Batteries-included surface: every built-in provider is registered, and each
+// loads its @ai-sdk/* package only when first used, so env config alone
+// selects the provider.
+const ai = createAiRegistry();
 
 const DEFAULT_CLIENT_DIR = fileURLToPath(new URL("./client/", import.meta.url));
 let clientDirForTests: string | undefined;
@@ -566,7 +565,8 @@ function parseSetupConfigBody(body: unknown): SetupConfigInput {
     throw new StudioHttpError(400, "Request body must be a JSON object.");
   }
   const databases = ["postgres", "mysql", "sqlite", "sqlserver", "prisma"] as const;
-  const aiProviders = ["openai", "anthropic", "google", "azure", "foundry"] as const;
+  // Every provider with an askdb.config.* branch; @askdb/client's provider-config-drift test asserts this matches @askdb/ai's built-in table.
+  const aiProviders = ASKDB_AI_PROVIDERS;
   const ragStores = ["file", "memory", "pgvector"] as const;
   const executeProviders = ["postgres", "mysql", "sqlite", "sqlserver"] as const;
   if (typeof body.database !== "string" || !databases.includes(body.database as (typeof databases)[number])) {

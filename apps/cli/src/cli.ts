@@ -3,10 +3,6 @@ import { getAskDbRuntimeConfig, isAskDbDebugEnabled } from "@askdb/config";
 import {
   createAiRegistry,
 } from "@askdb/ai";
-import { anthropicProvider } from "@askdb/ai-anthropic";
-import { azureProvider } from "@askdb/ai-azure";
-import { googleProvider } from "@askdb/ai-google";
-import { openaiProvider } from "@askdb/ai-openai";
 import { createAskDb, type DialectResolution } from "@askdb/client";
 import { randomUUID } from "node:crypto";
 import {
@@ -26,12 +22,15 @@ import {
   loadSchema,
 } from "@askdb/core";
 import { Command } from "commander";
-import { runInitCli } from "./init.js";
+import { runInitCli, VALID_AI_PROVIDERS } from "./init.js";
 import { runIntrospectCli } from "./introspect.js";
 import { MissingAskDbConfigError, requireAskDbConfig } from "./project-config.js";
 import { readCliVersion } from "./version.js";
 
-const ai = createAiRegistry([openaiProvider, azureProvider, googleProvider, anthropicProvider]);
+// Batteries-included surface: every built-in provider is registered, and each
+// loads its @ai-sdk/* package only when first used, so env config alone
+// selects the provider.
+const ai = createAiRegistry();
 
 function printCliError(error: unknown): void {
   if (error instanceof MissingAskDbConfigError) {
@@ -166,7 +165,7 @@ program
   .option("--sqlite-file <path>", "SQLite file path or env var name")
   .option("--prisma-schema <path>", "Path to schema.prisma")
   .option("--schema-out <dir>", "Schema output directory (default: ./askdb)")
-  .option("--ai-provider <name>", "openai|anthropic|google|azure|foundry")
+  .option("--ai-provider <name>", VALID_AI_PROVIDERS.join("|"))
   .option("--ai-key-env <name>", "Env var name for AI API key")
   .option("--ai-model-env <name>", "Env var name for model override")
   .option("--rag-store <name>", "file|memory|pgvector (default: file)")

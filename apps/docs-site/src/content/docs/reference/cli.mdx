@@ -106,7 +106,7 @@ npx askdb@latest init --yes    # non-interactive, Postgres + OpenAI defaults
 | --- | --- |
 | `--database <db>` | `postgres` \| `mysql` \| `sqlite` \| `sqlserver` \| `prisma` |
 | `--connection-env <name>` | Env var name for the connection URL. |
-| `--sqlite-file <path-or-env>` | SQLite file path or env var name. |
+| `--sqlite-file <path-or-env>` | SQLite file path, or an env var name (`UPPER_SNAKE_CASE`, e.g. `SQLITE_FILE`) to read the path from. Anything else, such as `data.db` or `../db/app.db`, is written as a literal path. |
 | `--prisma-schema <path>` | Path to `schema.prisma`. |
 | `--schema-out <dir>` | Schema output directory (default `./askdb`). |
 
@@ -114,7 +114,7 @@ npx askdb@latest init --yes    # non-interactive, Postgres + OpenAI defaults
 
 | Flag | Description |
 | --- | --- |
-| `--ai-provider <name>` | `openai` \| `anthropic` \| `google` \| `azure` \| `foundry` |
+| `--ai-provider <name>` | `openai` \| `anthropic` \| `google` \| `azure` \| `foundry` \| `gateway` |
 | `--ai-key-env <name>` | Env var name for the API key. |
 | `--ai-model-env <name>` | Env var name for the model override. |
 
@@ -132,7 +132,7 @@ npx askdb@latest init --yes    # non-interactive, Postgres + OpenAI defaults
 | `--studio-execute` | Enable Studio execute (query playground): writes a `studio.execute` block with `enabled: true`. Off by default. |
 | `--no-studio-execute` | Disable Studio execute (default). |
 
-`init` generates only the config branches you selected — SQL Server users won't see a `pg` import, SQLite users get a `file:` field instead of `DATABASE_URL`, and Prisma users don't get a live DB driver unless they explicitly enable Studio execute. It does not create a `.env` — example variable names live inside `askdb.config.ts`.
+`init` generates only the config branches you selected — SQL Server users won't see a `pg` import, SQLite users get a `file:` field instead of `DATABASE_URL`, and Prisma users don't get a live DB driver unless they explicitly enable Studio execute. It does not create a `.env`; it writes an `.env.example` (unless one exists) listing every variable the config reads. For `azure` and `foundry` that includes `AZURE_RESOURCE_NAME`, the subdomain of your `https://<name>.openai.azure.com` endpoint.
 
 ### `askdb introspect`
 
