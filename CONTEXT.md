@@ -21,5 +21,5 @@ _Avoid_: embeddings model
 ### Retrieval
 
 **Embedder**:
-Retrieval's source of vectors: either an embedding model, or the mock embedder, a deterministic lexical stand-in that needs no AI provider.
+Retrieval's source of vectors: anything that turns a batch of texts into vectors. It is usually backed by an embedding model. AskDB also ships the mock embedder, a deterministic lexical stand-in that needs no AI provider, and a host can supply its own.
 _Avoid_: embedding provider
