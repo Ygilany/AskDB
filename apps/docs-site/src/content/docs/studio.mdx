@@ -24,6 +24,8 @@ Studio also works as the *first* command in a brand-new project. Run `npx askdb 
 2. **Add your secrets to `.env` yourself.** The wizard shows exactly which variables to fill in; the values stay on your disk.
 3. **Run introspection from the browser.** Studio reads your schema structure server-side (tables and columns — never rows) and opens the Overview when it's done.
 
+If `askdb.config.ts` exists but fails to load (a syntax error, or its dependencies aren't installed yet), Studio prints a warning with the load error in the terminal and starts without it. The wizard never overwrites an existing config: fix the file and restart Studio.
+
 Setup actions (writing the config, running introspection) only work from loopback clients. If you bind Studio to a non-localhost host, it refuses setup requests from other machines. It still accepts their table, concept, and tenant-policy edits and query execution (see [Security model](#security-model)). Prefer the terminal? `npx askdb init` is the same wizard as a CLI prompt.
 
 ## The loop

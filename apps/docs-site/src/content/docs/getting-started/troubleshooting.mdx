@@ -13,17 +13,31 @@ import { Aside } from "@astrojs/starlight/components";
 
 ## Schema and config
 
-### `Error: Cannot find config file`
+### `No askdb.config.* or .config/askdb.* found in …`
+
+`askdb ask` and `askdb introspect` print this when the current directory has no config. `bootstrapAskDbEnv()` throws a similar error (`… found under <cwd>`) when you embed the libraries.
 
 AskDB looks for `askdb.config.<ext>` (then `.config/askdb.<ext>`) in the **current working directory only** — in a monorepo it won't find a config in a parent directory. Supported extensions, in precedence order: `ts`, `mts`, `cts`, `js`, `mjs`, `cjs`.
 
-The fix is always the same: run the CLI from the directory that holds the config.
+If the project has no config yet, create one with `npx askdb init`. If it has one, run the CLI from the directory that holds the config.
 
 ```bash
 cd apps/api && npx askdb ask --question "..."
 ```
 
 When embedding the libraries, the equivalent knob is the `cwd` option: `bootstrapAskDbEnv({ cwd: "/path/to/project" })`.
+
+### `Set ASKDB_DEBUG=1 to print the stack trace.`
+
+The CLI hit an unexpected error, most often a config file that exists but fails to load: a syntax error, a missing import, or dependencies that aren't installed yet. The line above the hint is the error message, and it usually names the file and line.
+
+Rerun with `ASKDB_DEBUG=1` to see the stack trace:
+
+```bash
+ASKDB_DEBUG=1 npx askdb ask --question "..."
+```
+
+`askdb studio` doesn't stop on a config that fails to load: it prints `askdb-studio: warning: <path> could not be loaded, so Studio is ignoring it: …` and starts without it. Fix the file and restart Studio; the setup wizard never overwrites it.
 
 ### `SchemaParseError: Cannot read schema at …`
 

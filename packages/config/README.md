@@ -2,7 +2,7 @@
 
 Prisma-style helpers for AskDB: `env()`, `defineConfig()`, plus discovery and loading of `askdb.config.*` / `.config/askdb.*` files used by first-party apps (`askdb` CLI, `@askdb/http-api`, `@askdb/studio`).
 
-**`@askdb/config` is the single package that reads `process.env` directly** (during dotenv load, while `askdb.config.*` evaluates, and for a tiny bootstrap-time overlay allowlist). All other packages obtain configuration through **`getAskDbRuntimeConfig()`**.
+**`@askdb/config` is the single package that reads `process.env` directly** (during dotenv load, while `askdb.config.*` evaluates, for a tiny bootstrap-time overlay allowlist, and for the `ASKDB_DEBUG` diagnostics switch). All other packages obtain configuration through **`getAskDbRuntimeConfig()`**.
 
 ## Install
 
@@ -83,6 +83,7 @@ const model = await aiRegistry.createLanguageModelFromEnv(config.ai.aiEnv, { ...
 
 - `getAskDbRuntimeConfig()` — **primary API for library packages**. Returns a typed `AskDbRuntimeConfig` from the bootstrapped snapshot (`structured`, `flat`-derived fields, and `ai.aiEnv` for `@askdb/core`).
 - `env(name)` / `requiredEnv(name)` — read `process.env` while authoring `askdb.config.*` only.
+- `isAskDbDebugEnabled()` — `true` when the `ASKDB_DEBUG` shell variable is `1` or `true`. Binaries use it to print stack traces; it reads `process.env` directly so it works even when the config fails to load.
 - `defineConfig(config)` — returns an `AskDbEnvProjection` with `config` (structured) and `entries` (flattened canonical map).
 - `flattenAskDbConfig(config)` — nested config → flat canonical map (applies defaults for optional values).
 - `bootstrapAskDbEnv(options?)` / `bootstrapAskDbRuntime` — load dotenv, load config, install the runtime snapshot.
