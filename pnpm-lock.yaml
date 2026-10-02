@@ -244,8 +244,8 @@ importers:
         specifier: ^7.6.13
         version: 7.6.13
       '@types/mssql':
-        specifier: ^9.1.11
-        version: 9.1.11(supports-color@10.2.2)
+        specifier: ^12.3.0
+        version: 12.3.0(supports-color@10.2.2)
       '@types/pg':
         specifier: ^8.23.1
         version: 8.23.1
@@ -280,8 +280,8 @@ importers:
         specifier: ^1.48.0
         version: 1.49.0(@types/react@19.3.0)(react@19.3.0)
       mssql:
-        specifier: ^11.0.1
-        version: 11.0.1(supports-color@10.2.2)
+        specifier: ^12.7.2
+        version: 12.7.2(supports-color@10.2.2)
       mysql2:
         specifier: ^3.24.4
         version: 3.24.5(@types/node@22.20.4)
@@ -391,7 +391,7 @@ importers:
         version: 12.11.1
       mssql:
         specifier: ^12.5.5
-        version: 12.7.0(supports-color@10.2.2)
+        version: 12.7.2(supports-color@10.2.2)
       mysql2:
         specifier: ^3.22.5
         version: 3.24.5(@types/node@22.20.1)
@@ -750,7 +750,7 @@ importers:
         version: 12.3.0(supports-color@10.2.2)
       mssql:
         specifier: ^12.5.5
-        version: 12.7.0(supports-color@10.2.2)
+        version: 12.7.2(supports-color@10.2.2)
       typescript:
         specifier: ^6.0.3
         version: 6.0.3
@@ -1981,9 +1981,6 @@ packages:
 
   '@jridgewell/trace-mapping@0.3.31':
     resolution: {integrity: sha512-zzNR+SdQSDJzc8joaeP8QQoCQr8NuYx2dIIytl1QeBEZHJ9uW6hebsrYgbz8hJwUQao3TWCMtmfV8Nu1twOLAw==}
-
-  '@js-joda/core@5.7.0':
-    resolution: {integrity: sha512-WBu4ULVVxySLLzK1Ppq+OdfP+adRS4ntmDQT915rzDJ++i95gc2jZkM5B6LWEAwN3lGXpfie3yPABozdD3K3Vg==}
 
   '@js-joda/core@6.1.0':
     resolution: {integrity: sha512-H8NTMRDJqad/leyv/D/A3kSOsf5/58Ydj4DJGDyaCWk9OU/zuZOLhndVffJgQjsgrn5GC0znHMHie7TfvPPG4w==}
@@ -3519,9 +3516,6 @@ packages:
     peerDependencies:
       vite: ^5.2.0 || ^6 || ^7 || ^8
 
-  '@tediousjs/connection-string@0.5.0':
-    resolution: {integrity: sha512-7qSgZbincDDDFyRweCIEvZULFAw5iz/DeunhvuxpL31nfntX3P4Yd4HkHBRg9H8CdqY1e5WFN1PZIz/REL9MVQ==}
-
   '@tediousjs/connection-string@1.1.0':
     resolution: {integrity: sha512-z9ZBWEG+8pIB5V1zYzlRPXx0oRJ5H7coPnMQK8EZOw03UTPI9Umn6viL36f5w+CuqkKsnCM50RVStpjZmR0Bng==}
 
@@ -3623,9 +3617,6 @@ packages:
 
   '@types/mssql@12.3.0':
     resolution: {integrity: sha512-+jy+AJtfuTDI5+nhh0hDNcir1p8P+pf+qsHXpUpYvg7EikxUUePBe+a+Kr6j/Xs89o4EbHlVzrh0HOxbqWM31Q==}
-
-  '@types/mssql@9.1.11':
-    resolution: {integrity: sha512-vcujgrDbDezCxNDO4KY6gjwduLYOKfrexpRUwhoysRvcXZ3+IgZ/PMYFDgh8c3cQIxZ6skAwYo+H6ibMrBWPjQ==}
 
   '@types/nlcst@2.0.3':
     resolution: {integrity: sha512-vSYNSDe6Ix3q+6Z7ri9lyWqgGhJTmzRjZRqyq15N0Z/1/UnVsno9G/N40NBijoYx2seFDIl0+B2mgAb9mezUCA==}
@@ -5131,10 +5122,6 @@ packages:
       typescript:
         optional: true
 
-  iconv-lite@0.6.3:
-    resolution: {integrity: sha512-4fCk79wshMdzMp2rH06qWrJE4iolqLhCUH+OiuIgU++RB0+94NlDL81atO7GX55uUKueo0txHNtvEyI6D7WdMw==}
-    engines: {node: '>=0.10.0'}
-
   iconv-lite@0.7.3:
     resolution: {integrity: sha512-IKXpvIzjnC9XTAUbVBcMfGS0EPaIXtW6v+zr+RRp+hqULEpo0owZax6wyRwPOJbWbzjYspQwusTsfVr0ifh4uQ==}
     engines: {node: '>=0.10.0'}
@@ -5891,13 +5878,8 @@ packages:
   ms@2.1.3:
     resolution: {integrity: sha512-6FlzubTLZG3J2a/NVCAleEhjzq5oxgHyaCU9yYXvcLsvoVaHJq/s5xXI6/XXP6tz7R9xAOtHnSO/tXtF3WRTlA==}
 
-  mssql@11.0.1:
-    resolution: {integrity: sha512-KlGNsugoT90enKlR8/G36H0kTxPthDhmtNUCwEHvgRza5Cjpjoj+P2X6eMpFUDN7pFrJZsKadL4x990G8RBE1w==}
-    engines: {node: '>=18'}
-    hasBin: true
-
-  mssql@12.7.0:
-    resolution: {integrity: sha512-J6SJKXi1jYbhHjjooLNtPnX7+s3cq5IJ701Wgy/UW1SXRpgFlJJsYi3IPve9RVgCUkq0Cqv2aaaSJ4IXtIF3mg==}
+  mssql@12.7.2:
+    resolution: {integrity: sha512-zhpPw+WXBWLw7d7J6Y0aWgQy0EV8HKDGNSvmkAjP8bSM4H41X0fweAeKWI+bg9Ri+JHCbsf/QScjmACBFcEo8A==}
     engines: {node: '>=18.19.0'}
     hasBin: true
 
@@ -6524,9 +6506,6 @@ packages:
   retext@9.0.0:
     resolution: {integrity: sha512-sbMDcpHCNjvlheSgMfEcVrZko3cDzdbe1x/e7G66dFp0Ff7Mldvi2uv6JkJQzdRcvLYE8CA8Oe8siQx8ZOgTcA==}
 
-  rfdc@1.4.1:
-    resolution: {integrity: sha512-q1b3N5QkRUWUl7iyylaaj3kOpIT0N2i9MqIEQXP73GVsN9cw3fdx8X63cEmWhJGi2PPCF23Ijp7ktmd39rawIA==}
-
   rolldown@1.2.11:
     resolution: {integrity: sha512-qpSwIyz0jHQq5qXBTNxFmE6664rJ7O+4TvPFOiOaBSrz8IOHc1koKKSqTM2H6u1UG1+TveuC6vaDHKXFOvb1Kw==}
     engines: {node: ^20.19.0 || >=22.12.0}
@@ -6828,10 +6807,6 @@ packages:
   tarn@3.1.2:
     resolution: {integrity: sha512-3RTvqKZcK/17jnJ8rMKFXbyNogywTs1z0gVPPwFsJGX46rkmUHOdIaSQ/aVO1rS7nH+soiXiWk7rvUXxndm8Dg==}
     engines: {node: '>=8.0.0'}
-
-  tedious@18.6.2:
-    resolution: {integrity: sha512-g7jC56o3MzLkE3lHkaFe2ZdOVFBahq5bsB60/M4NYUbocw/MCrS89IOEQUFr+ba6pb8ZHczZ/VqCyYeYq0xBAg==}
-    engines: {node: '>=18'}
 
   tedious@20.0.0:
     resolution: {integrity: sha512-bTR0aou0Ghucf0ytvZUJjnKHGKDV8tT57jPYtEkSpfTWFe++4uR1wxJLQ4mh5wlSvAYXzmgBxbI0vaE56qigXw==}
@@ -8755,8 +8730,6 @@ snapshots:
       '@jridgewell/resolve-uri': 3.1.2
       '@jridgewell/sourcemap-codec': 1.6.0
 
-  '@js-joda/core@5.7.0': {}
-
   '@js-joda/core@6.1.0': {}
 
   '@keyv/bigmap@1.3.1(keyv@5.6.0)':
@@ -10170,8 +10143,6 @@ snapshots:
       tailwindcss: 4.3.3
       vite: 8.3.1(@types/node@22.20.4)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1)
 
-  '@tediousjs/connection-string@0.5.0': {}
-
   '@tediousjs/connection-string@1.1.0': {}
 
   '@turbo/darwin-64@2.11.5':
@@ -10220,7 +10191,7 @@ snapshots:
 
   '@types/connect@3.4.38':
     dependencies:
-      '@types/node': 22.20.1
+      '@types/node': 22.20.4
 
   '@types/debug@4.1.13':
     dependencies:
@@ -10273,15 +10244,7 @@ snapshots:
 
   '@types/mssql@12.3.0(supports-color@10.2.2)':
     dependencies:
-      '@types/node': 22.20.1
-      tarn: 3.1.2
-      tedious: 20.0.0(supports-color@10.2.2)
-    transitivePeerDependencies:
-      - supports-color
-
-  '@types/mssql@9.1.11(supports-color@10.2.2)':
-    dependencies:
-      '@types/node': 22.20.1
+      '@types/node': 22.20.4
       tarn: 3.1.2
       tedious: 20.0.0(supports-color@10.2.2)
     transitivePeerDependencies:
@@ -10331,7 +10294,7 @@ snapshots:
 
   '@types/send@1.2.1':
     dependencies:
-      '@types/node': 22.20.1
+      '@types/node': 22.20.4
 
   '@types/serve-static@2.2.0':
     dependencies:
@@ -12202,10 +12165,6 @@ snapshots:
     optionalDependencies:
       typescript: 6.0.3
 
-  iconv-lite@0.6.3:
-    dependencies:
-      safer-buffer: 2.1.2
-
   iconv-lite@0.7.3:
     dependencies:
       safer-buffer: 2.1.2
@@ -13176,18 +13135,7 @@ snapshots:
 
   ms@2.1.3: {}
 
-  mssql@11.0.1(supports-color@10.2.2):
-    dependencies:
-      '@tediousjs/connection-string': 0.5.0
-      commander: 11.1.0
-      debug: 4.4.3(supports-color@10.2.2)
-      rfdc: 1.4.1
-      tarn: 3.1.2
-      tedious: 18.6.2(supports-color@10.2.2)
-    transitivePeerDependencies:
-      - supports-color
-
-  mssql@12.7.0(supports-color@10.2.2):
+  mssql@12.7.2(supports-color@10.2.2):
     dependencies:
       '@tediousjs/connection-string': 1.1.0
       commander: 11.1.0
@@ -14062,8 +14010,6 @@ snapshots:
       retext-stringify: 4.0.0
       unified: 11.0.5
 
-  rfdc@1.4.1: {}
-
   rolldown@1.2.11:
     dependencies:
       '@oxc-project/types': 0.151.0
@@ -14501,28 +14447,13 @@ snapshots:
 
   tarn@3.1.2: {}
 
-  tedious@18.6.2(supports-color@10.2.2):
-    dependencies:
-      '@azure/core-auth': 1.11.0(supports-color@10.2.2)
-      '@azure/identity': 4.13.1(supports-color@10.2.2)
-      '@azure/keyvault-keys': 4.10.2(supports-color@10.2.2)
-      '@js-joda/core': 5.7.0
-      '@types/node': 22.20.1
-      bl: 6.1.6
-      iconv-lite: 0.6.3
-      js-md4: 0.3.2
-      native-duplexpair: 1.0.0
-      sprintf-js: 1.1.3
-    transitivePeerDependencies:
-      - supports-color
-
   tedious@20.0.0(supports-color@10.2.2):
     dependencies:
       '@azure/core-auth': 1.11.0(supports-color@10.2.2)
       '@azure/identity': 4.13.1(supports-color@10.2.2)
       '@azure/keyvault-keys': 4.10.2(supports-color@10.2.2)
       '@js-joda/core': 6.1.0
-      '@types/node': 22.20.1
+      '@types/node': 22.20.4
       bl: 6.1.6
       iconv-lite: 0.7.3
       js-md4: 0.3.2
