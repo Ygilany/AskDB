@@ -5,7 +5,8 @@ import { snippetInstallLine } from "./install-line";
 // `@askdb/core` and `ai` are required peers of `@askdb/client`, and `ai` is a required peer of
 // `@askdb/core` (ADR 0006, 2026-09 amendment). Yarn doesn't install peers, so the line has to
 // name them. The gateway provider's SDK is `ai` itself, which must not be listed twice.
-const SDK_PACKAGES = ["@ai-sdk/openai", "@ai-sdk/anthropic", "@ai-sdk/google", "@ai-sdk/azure", "ai"];
+// One `@ai-sdk/*` package stands for every provider SDK; `ai` is the AI Gateway case.
+const SDK_PACKAGES = ["@ai-sdk/openai", "ai"];
 
 function packages(line: string): string[] {
   expect(line.startsWith("npm install ")).toBe(true);

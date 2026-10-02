@@ -3,11 +3,9 @@ import { Code2 } from "lucide-react";
 import { useWorkspace } from "../../contexts/workspace-context";
 import { usePlayground } from "../../contexts/playground-context";
 import { CopyButton } from "../../components/common/CopyButton";
-import { snippetInstallLine } from "../../lib/install-line";
+import { snippetInstallLine, type SnippetWiring } from "../../lib/install-line";
 
 const fieldsetResetStyle = { border: 0, padding: 0, margin: 0 };
-
-type Wiring = "client" | "core";
 
 type ProviderWiring = {
   /** AI SDK package the host installs; `@askdb/ai` loads it lazily for the config-driven path. */
@@ -58,7 +56,7 @@ export function GetTheCodePanel() {
     generatedTenantScopeJson,
     askTenantSqlMode,
   } = usePlayground();
-  const [wiring, setWiring] = useState<Wiring>("client");
+  const [wiring, setWiring] = useState<SnippetWiring>("client");
 
   const snippet = useMemo(() => {
     if (!workspace) return "";
