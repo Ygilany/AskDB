@@ -6,7 +6,7 @@
 #
 # Don't run it on the "chore: version packages" branch: the final
 # `changeset status` step fails there by design. `changeset version` has already
-# applied that PR's changesets (recorded in `.changeset/pre.json` in prerelease
+# applied that PR's changesets (moved into `.changeset/pre/` in prerelease
 # mode), so `changeset status` sees changed packages with no pending changeset.
 # That PR is gated by `ci.yml` instead, whose `preflight` job runs the same smoke
 # test and dry-run publish without the `changeset status` step. Publishing is
