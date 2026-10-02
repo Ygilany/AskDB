@@ -2,7 +2,7 @@
 // Lists the public workspace packages whose current version isn't on npm yet, as a
 // JSON array of `{ name, version }` on stdout. `release.yml` uses it to decide whether
 // there is anything to publish (so a push to `main` without a merged Version PR never
-// asks for a publish approval) and which git tags to create afterwards.
+// starts a publish) and which git tags to create afterwards.
 //
 // Only a 404 from the registry counts as "not published". Any other `npm view`
 // failure exits non-zero, so a registry outage can't read as "publish everything".
