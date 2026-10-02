@@ -43,7 +43,7 @@
     "NOTICE"
   ],
   "engines": {
-    "node": ">=22.12"
+    "node": ">=22.14"
   },
   "scripts": {
     "build": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\" && pnpm build:client && pnpm build:server",
