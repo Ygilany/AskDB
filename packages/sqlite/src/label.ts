@@ -1,4 +1,4 @@
-import type { ConnectionLabelParts } from "@askdb/connectors";
+import type { ConnectionLabelParts } from "@askdb/introspect/kit";
 
 /**
  * The display-safe part of a SQLite "connection string": the file path. A
