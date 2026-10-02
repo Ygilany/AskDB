@@ -20,8 +20,10 @@ import { ASKDB_BIN } from "./introspect.js";
 import { LAB_STATE } from "./paths.js";
 import { startServerProcess } from "./server-process.js";
 
-/** The `<meta>` tag Studio's page carries the session token in (ADR 0009). */
-const TOKEN_META = /<meta\s+name="askdb-studio-token"\s+content="([^"]*)"/;
+/** The `name` of the `<meta>` tag Studio's page carries the session token in (ADR 0009). */
+const TOKEN_META_NAME = "askdb-studio-token";
+const META_TAG = /<meta\b([^>]*)>/gi;
+const ATTRIBUTE = /([^\s"'=<>/]+)\s*(?:=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'=<>`]+)))?/g;
 /** The header every `/api/*` request must carry the token in (`studio.mdx`, "Security model"). */
 export const TOKEN_HEADER = "x-askdb-studio-token";
 
@@ -97,7 +99,15 @@ export function studioRequest(server: StudioAddress, req: StudioRequest = {}): P
 
 /** The session token in a served page, or `undefined` when the page has none. */
 export function pageToken(html: string): string | undefined {
-  return TOKEN_META.exec(html)?.[1];
+  // HTML attributes are unordered, and may be quoted either way or not at all.
+  for (const [, attrs] of html.matchAll(META_TAG)) {
+    const values = new Map<string, string>();
+    for (const [, name, double, single, bare] of attrs!.matchAll(ATTRIBUTE)) {
+      values.set(name!.toLowerCase(), double ?? single ?? bare ?? "");
+    }
+    if (values.get("name") === TOKEN_META_NAME && values.has("content")) return values.get("content");
+  }
+  return undefined;
 }
 
 /**
