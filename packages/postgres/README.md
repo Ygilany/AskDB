@@ -55,10 +55,10 @@ Declarative partitions are folded into their partitioned parent ([ADR 0003](../.
 
 ### Connection labels
 
-`postgresConnectorProvider` parses a connection into display-safe parts, so a connector registry's `connectionLabel()` shows only the host, port and database of a `postgres://` or `postgresql://` URL as `pg-connection-string` (the parser `pg` uses, a dependency of this package) reads them, including a `?host=` override, or an export bundle's path. Anything else (a libpq `key=value` string, a JDBC or malformed URL) becomes `configured postgres connection`:
+`postgresConnectorProvider` parses a connection into display-safe parts, so a connector registry's `connectionLabel()` (and the `sourceLabel` from `resolveConnection()`) shows only the host, port and database of a `postgres://` or `postgresql://` URL as `pg-connection-string` (the parser `pg` uses, a dependency of this package) reads them, including a `?host=` override, or an export bundle's path. Anything else (a libpq `key=value` string, a JDBC or malformed URL) becomes `configured postgres connection`:
 
 ```ts
-import { createConnectorRegistry } from "@askdb/connectors";
+import { createConnectorRegistry } from "@askdb/introspect";
 import { postgresConnectorProvider } from "@askdb/postgres";
 
 const registry = createConnectorRegistry([postgresConnectorProvider]);

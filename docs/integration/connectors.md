@@ -1,6 +1,6 @@
 # Authoring an AskDB connector
 
-This page is the reference contract for adding a new connector to AskDB. AskDB currently ships five first-party connectors, all plugging into [`@askdb/introspect`](../../packages/introspect/README.md) through the same small surface and registered with the CLI/Studio through [`@askdb/connectors`](../../packages/connectors/README.md):
+This page is the reference contract for adding a new connector to AskDB. AskDB currently ships five first-party connectors, all plugging into [`@askdb/introspect`](../../packages/introspect/README.md) through the same small surface and registered with the CLI/Studio through the connector registry that `@askdb/introspect` also exports:
 
 - [`@askdb/postgres`](../../packages/postgres/README.md) — live catalog SQL + air-gapped export bundles.
 - [`@askdb/mysql`](../../packages/mysql/README.md) — live `information_schema` queries against the connection's database, or the databases listed in `filters.schemas`.
@@ -8,7 +8,7 @@ This page is the reference contract for adding a new connector to AskDB. AskDB c
 - [`@askdb/sqlserver`](../../packages/sqlserver/README.md) — live `sys.*` catalog queries.
 - [`@askdb/prisma`](../../packages/prisma/README.md) — reads `schema.prisma` files offline.
 
-Architecture context lives in [ADR 0002 — Integration-package layout](../adrs/0002-integration-package-layout.md): connectors are engine-specific, `@askdb/introspect` is engine-agnostic, and each integration owns its own input shape.
+Architecture context lives in [ADR 0002 — Integration-package layout](../adrs/0002-integration-package-layout.md) and [ADR 0008 — Engine packages, engine kit, and the connector registry](../adrs/0008-engine-packages-and-connector-registry.md): connectors are engine-specific, `@askdb/introspect` is engine-agnostic, each integration owns its own input shape and connection resolution, and the shared mechanics live in `@askdb/introspect/kit`. A third-party engine is a self-contained package that a custom host registers next to the built-in adapters without editing AskDB. The shipped `askdb` CLI and Studio register only the built-in engines, and `@askdb/config`'s `introspection.provider` list is closed, so using a third-party engine there still needs AskDB changes (ADR 0008).
 
 ---
 
@@ -212,12 +212,104 @@ Required published exports:
 - `createXConnector(): Connector<XInput>` — the factory the CLI and library callers wire up.
 - `describeX(input: XInput): Promise<IntrospectionResult>` — the bare function, useful for tests and bespoke pipelines that bypass the orchestrator.
 - The input type (`XIntrospectionInput`).
-- `xConnectorProvider: ConnectorProviderAdapter` — the `@askdb/connectors` adapter that turns a `ConnectorConfig` into the connector + input pair.
-- For connectors that take a connection string or a path: an optional `connectionLabelParts(connection)` hook on `xConnectorProvider` that returns the parts safe to display (`{ host?, port?, database? }` or `{ file }`), taken from your driver's own connection-string parser where it has one (never a second implementation of its grammar), or `undefined` when the input doesn't parse cleanly (`parseConnectionUrl` from `@askdb/introspect/kit` is a strict fallback for a standard `scheme://host:port/database` URL). `registry.connectionLabel()` builds the label from them with `formatConnectionLabel`; an adapter never returns label text, and without the hook the label is `configured <engine> connection` ([ADR 0011](../adrs/0011-connection-labels-from-parsed-parts.md)).
+- `xConnectorProvider: ConnectorProviderAdapter` — the registry adapter (type from `@askdb/introspect`) that turns a `ConnectorConfig` into the connector + input pair and resolves the engine's connection from flags/config. See [Registering with AskDB hosts](#registering-with-askdb-hosts).
+- For connectors that take a connection string or a path: an optional `connectionLabelParts(connection)` hook on `xConnectorProvider` that returns the parts safe to display (`{ host?, port?, database? }` or `{ file }`), taken from your driver's own connection-string parser where it has one (never a second implementation of its grammar), or `undefined` when the input doesn't parse cleanly (`parseConnectionUrl` from `@askdb/introspect/kit` is a strict fallback for a standard `scheme://host:port/database` URL). The registry builds the label from them with `formatConnectionLabel` (`registry.connectionLabel()`, and the `sourceLabel` of `registry.resolveConnection()`); an adapter never returns label text, and without the hook the label is `configured <engine> connection` ([ADR 0011](../adrs/0011-connection-labels-from-parsed-parts.md)).
 - (Optional) a re-export of the engine's `DialectSpec` from `@askdb/core`.
 - (Optional) the template bundle constants when `templates()` is implemented.
 
-Add the package to the workspace's `pnpm-workspace.yaml`, depend on `@askdb/introspect` and `@askdb/connectors`, add the provider id to `CONNECTOR_PROVIDERS` in `@askdb/connectors`, and register the adapter in the `createConnectorRegistry([...])` calls in `apps/cli/src/introspect.ts` and `apps/studio/src/introspection.ts` so `--engine` / Studio wire it up. Update [`docs/integration/installable-package.md`](installable-package.md) and the `Packages` section of the docs site with the new package.
+Depend on `@askdb/introspect` (the contract, the registry types, and `@askdb/introspect/kit`) and on `@askdb/core` if you re-export a dialect. Do **not** depend on `@askdb/connectors` — it is a deprecated re-export shim.
+
+For a **first-party** engine, also add the package to `pnpm-workspace.yaml`, register its adapter in the `createConnectorRegistry([...])` calls in `apps/cli/src/introspect.ts` (`defaultConnectorRegistry`) and `apps/studio/src/introspection.ts`, give it a branch in `@askdb/config`'s typed `introspection` config, and update [`docs/integration/installable-package.md`](installable-package.md) and the `Packages` section of the docs site. The apps contain no per-engine switches — the adapter's `resolveConnection` carries the engine-specific logic.
+
+---
+
+## Registering with AskDB hosts
+
+Config-driven hosts (the `askdb` CLI, Studio, your own bootstrap) select an engine by id through the connector registry in `@askdb/introspect`. Provider ids are open strings — `ConnectorProviderId` is `BuiltInConnectorProvider | (string & {})` — so a third-party package registers its own id without editing AskDB.
+
+```ts
+export type ConnectorProviderAdapter = {
+  provider: ConnectorProviderId; // "postgres", "mysql", … or your own id
+  createConnector(config: ConnectorConfig): ConnectorResult; // → { connector, input, mode }
+  getTemplates?(): SqlTemplateBundle;
+  resolveConnection?(request: ConnectorConnectionRequest): ConnectorConnectionResult; // { ok, connection } | { ok: false, error }
+  connectionLabelParts?(connection: ConnectorConnection): ConnectionLabelParts | undefined;
+};
+```
+
+- `resolveConnection({ explicit?, runtime, surface? })` turns explicit values (CLI `--url` / `--from-export` / `--prisma-schema`) plus AskDB runtime config (`getAskDbRuntimeConfig()` from `@askdb/config`, typed structurally as `ConnectorRuntimeConfig`) into `{ ok: true, connection: { url?, fromExport?, schemaPath? } }` or `{ ok: false, error }`. Explicit values must win over config. `surface` is `"cli"` when errors should name CLI flags; anything else (Studio) should name config keys. Hosts show `error` as-is, so it must never echo the connection string. Without the hook, the registry passes `explicit` through.
+- `connectionLabelParts(connection)` returns the parts that are safe to display (`{ host?, port?, database? }` or `{ file }`), taken from your driver's own connection-string parser where it has one (never a second implementation of its grammar), or `undefined` when the input doesn't parse cleanly (`parseConnectionUrl` from `@askdb/introspect/kit` is a strict fallback for a standard `scheme://host:port/database` URL, as in the Oracle examples below). The registry builds `sourceLabel` from them with `formatConnectionLabel`; you never return label text. Without the hook, or when it returns `undefined`, the label is `configured <provider> connection` ([ADR 0011](../adrs/0011-connection-labels-from-parsed-parts.md)).
+
+A minimal third-party engine that introspects through a live catalog runner can build its whole adapter with `defineLiveConnectorProvider` from `@askdb/introspect/kit`:
+
+```ts
+// @acme/askdb-oracle — src/provider.ts
+import { defineLiveConnectorProvider, parseConnectionUrl } from "@askdb/introspect/kit";
+import { createOracleCatalogQueryRunner, createOracleConnector } from "./connector.js";
+
+export const oracleConnectorProvider = defineLiveConnectorProvider({
+  provider: "oracle",
+  displayName: "Oracle",
+  // Looked up in runtime.introspection when no explicit URL is passed. @askdb/config
+  // fills that block only for the built-in engines, so for this engine the URL must
+  // arrive explicitly: registry.resolveConnection("oracle", { explicit: { url }, runtime }).
+  runtimeKey: "oracleDatabaseUrl",
+  connectionNoun: "a connection URL",
+  missingConnection: {
+    cli: "Provide --url <oracle-url>.",
+    config: "No Oracle connection configured.",
+  },
+  createConnector: createOracleConnector, // () => Connector<{ mode: "live"; runner; filters? }>
+  createRunner: (url) => createOracleCatalogQueryRunner(url),
+  // oracle://user:pass@db:1521/orcl → label "oracle://db:1521/orcl"; anything else → "configured oracle connection"
+  connectionLabelParts: (url) => parseConnectionUrl(url, ["oracle"]),
+});
+```
+
+`@askdb/config`'s typed `introspection` block only knows the built-in engines, so `runtimeKey` never finds a value for a third-party engine: with `defineLiveConnectorProvider` the host must pass the URL as `explicit.url`. To fall back to configuration instead, write `resolveConnection` yourself and read the value from `runtime.flat` (env-style keys) or `runtime.structured`:
+
+```ts
+import type { ConnectorProviderAdapter } from "@askdb/introspect";
+import { parseConnectionUrl } from "@askdb/introspect/kit";
+
+export const oracleConnectorProvider: ConnectorProviderAdapter = {
+  provider: "oracle",
+  createConnector(config) {
+    if (!config.url) throw new Error("Oracle connector requires a connection URL (config.url).");
+    return {
+      mode: "live",
+      input: { mode: "live", runner: createOracleCatalogQueryRunner(config.url), filters: config.filters },
+      connector: createOracleConnector(),
+    };
+  },
+  resolveConnection({ explicit = {}, runtime }) {
+    const url = explicit.url ?? runtime.flat?.["ORACLE_URL"];
+    return url
+      ? { ok: true, connection: { url } }
+      : { ok: false, error: "Set ORACLE_URL or pass --url." };
+  },
+  connectionLabelParts: ({ url }) => (url === undefined ? undefined : parseConnectionUrl(url, ["oracle"])),
+};
+```
+
+Register it next to the built-in adapters in your host. `createConnectorRegistry()` throws if two adapters use the same provider id:
+
+```ts
+import { getAskDbRuntimeConfig } from "@askdb/config";
+import { createConnectorRegistry, introspect } from "@askdb/introspect";
+import { postgresConnectorProvider } from "@askdb/postgres";
+import { oracleConnectorProvider } from "@acme/askdb-oracle";
+
+const connectorRegistry = createConnectorRegistry([postgresConnectorProvider, oracleConnectorProvider]);
+
+// Programmatic introspection:
+const resolved = connectorRegistry.resolveConnection("oracle", { runtime: getAskDbRuntimeConfig() });
+if (!resolved.ok) throw new Error(resolved.error);
+const { connector, input } = connectorRegistry.createConnector({ provider: "oracle", ...resolved.connection });
+await introspect(input, { outDir: "./askdb", schemaId: "app" }, { connector });
+```
+
+The shipped `askdb` binary registers only the first-party engines (there is no plugin discovery yet). Its introspect command is written against an injected registry — `runIntrospectCli(argv, { connectorRegistry })` in `apps/cli/src/introspect.ts`, exercised with a custom adapter in `apps/cli/src/introspect-registry.test.ts` — so it contains no engine-specific code; that function is internal to the CLI, not a published API.
 
 ---
 

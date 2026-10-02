@@ -1,8 +1,11 @@
 import { describe, expect, it, vi } from "vitest";
 import {
   createConnectorRegistry,
+  runtimeIntrospectionString,
   type ConnectorProviderAdapter,
   type ConnectorConfig,
+  type ConnectorConnectionRequest,
+  type ConnectorConnectionResult,
 } from "./registry.js";
 
 const makeAdapter = (provider: ConnectorProviderAdapter["provider"]): ConnectorProviderAdapter => ({
@@ -15,19 +18,6 @@ const makeAdapter = (provider: ConnectorProviderAdapter["provider"]): ConnectorP
 });
 
 describe("createConnectorRegistry", () => {
-  it("dispatches to the correct adapter by provider (array form)", () => {
-    const pgAdapter = makeAdapter("postgres");
-    const registry = createConnectorRegistry([pgAdapter]);
-
-    const result = registry.createConnector({ provider: "postgres", url: "postgres://localhost/db" });
-
-    expect(pgAdapter.createConnector).toHaveBeenCalledWith({
-      provider: "postgres",
-      url: "postgres://localhost/db",
-    });
-    expect(result.mode).toBe("live");
-  });
-
   it("dispatches to the correct adapter by provider (object-map form)", () => {
     const pgAdapter = makeAdapter("postgres");
     const mysqlAdapter = makeAdapter("mysql");
@@ -46,35 +36,23 @@ describe("createConnectorRegistry", () => {
     expect(registry.hasProvider("mysql")).toBe(false);
   });
 
-  it("throws an actionable error when a provider is not registered", () => {
-    const registry = createConnectorRegistry([]);
-    expect(() => registry.createConnector({ provider: "mysql", url: "mysql://localhost/db" })).toThrow(
-      /Install @askdb\/mysql/,
-    );
-  });
-
-  it("throws for an unregistered sqlserver provider with the right package name", () => {
-    const registry = createConnectorRegistry([]);
-    expect(() => registry.createConnector({ provider: "sqlserver" })).toThrow(
-      /Install @askdb\/sqlserver/,
-    );
-  });
-
-  it("throws for an unregistered prisma provider with the right package name", () => {
-    const registry = createConnectorRegistry([]);
-    expect(() => registry.createConnector({ provider: "prisma" })).toThrow(
-      /Install @askdb\/prisma/,
-    );
-  });
-
-  it("returns false from hasProvider when registry is empty", () => {
-    const registry = createConnectorRegistry([]);
-    expect(registry.hasProvider("postgres")).toBe(false);
-  });
+  it.each(["mysql", "sqlserver", "prisma"])(
+    "throws an actionable error naming @askdb/%s when that provider is not registered",
+    (provider) => {
+      const registry = createConnectorRegistry([]);
+      expect(() => registry.createConnector({ provider })).toThrow(`Install @askdb/${provider}`);
+    },
+  );
 
   it("rejects mismatched object-map adapters", () => {
     const pgAdapter = makeAdapter("postgres");
     expect(() => createConnectorRegistry({ mysql: pgAdapter })).toThrow(/adapter mismatch/);
+  });
+
+  it("rejects two adapters for the same provider id instead of silently keeping the last", () => {
+    expect(() => createConnectorRegistry([makeAdapter("acme"), makeAdapter("acme")])).toThrow(
+      'Connector provider "acme" is registered twice.',
+    );
   });
 
   it("passes all config fields through to the adapter", () => {
@@ -172,5 +150,73 @@ describe("createConnectorRegistry — connectionLabel", () => {
 
   it("labels an unregistered provider without throwing", () => {
     expect(createConnectorRegistry([]).connectionLabel("mysql", { url })).toBe("configured mysql connection");
+  });
+});
+
+describe("createConnectorRegistry — open provider ids (third-party engines)", () => {
+  const runtime = { introspection: { provider: "acme", acmeUrl: "acme://configured" } };
+
+  it("accepts and dispatches a custom provider id", () => {
+    const acme = makeAdapter("acme");
+    const registry = createConnectorRegistry([makeAdapter("postgres"), acme]);
+
+    expect(registry.hasProvider("acme")).toBe(true);
+    expect(registry.providers()).toEqual(["postgres", "acme"]);
+    registry.createConnector({ provider: "acme", url: "acme://db" });
+    expect(acme.createConnector).toHaveBeenCalledWith({ provider: "acme", url: "acme://db" });
+  });
+
+  it("points unregistered custom providers at their own package", () => {
+    const registry = createConnectorRegistry([]);
+    expect(() => registry.createConnector({ provider: "acme" })).toThrow(
+      'Connector provider "acme" is not registered. Install the package that provides it',
+    );
+  });
+
+  it("resolveConnection delegates to the adapter hook with the full request and labels the result from its parts", () => {
+    const resolveConnection = vi.fn(
+      (request: ConnectorConnectionRequest): ConnectorConnectionResult => ({
+        ok: true,
+        connection: { url: request.explicit?.url ?? (request.runtime.introspection.acmeUrl as string) },
+      }),
+    );
+    const connectionLabelParts = vi.fn(() => ({ host: "configured" }));
+    const registry = createConnectorRegistry([{ ...makeAdapter("acme"), resolveConnection, connectionLabelParts }]);
+
+    const resolved = registry.resolveConnection("acme", { runtime, surface: "cli" });
+
+    expect(resolveConnection).toHaveBeenCalledWith({ runtime, surface: "cli" });
+    expect(connectionLabelParts).toHaveBeenCalledWith({ url: "acme://configured" });
+    expect(resolved).toEqual({ ok: true, connection: { url: "acme://configured" }, sourceLabel: "acme://configured" });
+  });
+
+  it("resolveConnection passes explicit values through when the adapter has no hook", () => {
+    const registry = createConnectorRegistry([makeAdapter("acme")]);
+    // Without the adapter's parser neither the URL nor a path is copied into the label (ADR 0011).
+    expect(
+      registry.resolveConnection("acme", { explicit: { url: "acme://u:S3cret@h/db" }, runtime }),
+    ).toEqual({ ok: true, connection: { url: "acme://u:S3cret@h/db" }, sourceLabel: "configured acme connection" });
+    expect(
+      registry.resolveConnection("acme", { explicit: { schemaPath: "file:app.db?key=S3cret" }, runtime }),
+    ).toEqual({ ok: true, connection: { schemaPath: "file:app.db?key=S3cret" }, sourceLabel: "configured acme connection" });
+    expect(registry.resolveConnection("acme", { runtime })).toEqual({
+      ok: true,
+      connection: {},
+      sourceLabel: "configured acme connection",
+    });
+  });
+
+  it("resolveConnection throws for unregistered providers", () => {
+    expect(() => createConnectorRegistry([]).resolveConnection("acme", { runtime })).toThrow(/not registered/);
+  });
+});
+
+describe("runtimeIntrospectionString", () => {
+  it("returns non-empty strings only", () => {
+    const runtime = { introspection: { a: "x", b: "", c: 3 } };
+    expect(runtimeIntrospectionString(runtime, "a")).toBe("x");
+    expect(runtimeIntrospectionString(runtime, "b")).toBeUndefined();
+    expect(runtimeIntrospectionString(runtime, "c")).toBeUndefined();
+    expect(runtimeIntrospectionString(runtime, "missing")).toBeUndefined();
   });
 });

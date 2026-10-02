@@ -94,7 +94,7 @@ SQL Server uses TLS by default. If you connect to a local or dev instance with a
 
 **Labels for display**
 
-`sqlServerConnectorProvider` parses a connection into display-safe parts, so a connector registry's `connectionLabel()` shows only the host, port and database from any of the three formats: `Server=localhost,1433;Database=app;User Id=sa;Password=pass;` becomes `sqlserver://localhost:1433/app`. The parts come from the same code the connection uses: `resolveConnectionInput()` for `mssql://` and `sqlserver://`, and `@tediousjs/connection-string` (the parser `mssql` uses, a dependency of this package) for ADO.NET strings, so the label names the host and database the driver will use. A string the driver rejects, a named instance or pipe, an `@` in the `sqlserver://` form, or JDBC becomes `configured sqlserver connection`.
+`sqlServerConnectorProvider` parses a connection into display-safe parts, so a connector registry's `connectionLabel()` (and the `sourceLabel` from `resolveConnection()`) shows only the host, port and database from any of the three formats: `Server=localhost,1433;Database=app;User Id=sa;Password=pass;` becomes `sqlserver://localhost:1433/app`. The parts come from the same code the connection uses: `resolveConnectionInput()` for `mssql://` and `sqlserver://`, and `@tediousjs/connection-string` (the parser `mssql` uses, a dependency of this package) for ADO.NET strings, so the label names the host and database the driver will use. A string the driver rejects, a named instance or pipe, an `@` in the `sqlserver://` form, or JDBC becomes `configured sqlserver connection`.
 
 ## Captured metadata
 

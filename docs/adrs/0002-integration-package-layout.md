@@ -57,3 +57,7 @@ Concretely:
 - Distribution spec: `docs/specs/distribution.md` (Postgres helper packaging — partially superseded).
 - Introspection spec: `docs/specs/introspection.md` (per-engine connector pattern — generalized).
 - Roadmap: "Phase 7.5 — Architecture reshape for integration packages."
+
+## Status note (2026-09-25)
+
+Partially superseded by [ADR 0008](0008-engine-packages-and-connector-registry.md) on dialect ownership. Dialect specs now live in `@askdb/core` (`packages/core/src/sql/dialect-spec.ts`), and engine packages only re-export them. The rest of this ADR still holds: one package per engine, `Connector<TInput>` generic over an engine-owned input shape, and an engine-agnostic `@askdb/introspect`. ADR 0008 adds the shared engine kit (`@askdb/introspect/kit`) and moves the connector registry into `@askdb/introspect`.

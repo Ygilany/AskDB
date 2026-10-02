@@ -1,7 +1,7 @@
 import { createRequire } from "node:module";
 import { dirname, join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { createConnectorRegistry } from "@askdb/connectors";
+import { createConnectorRegistry } from "@askdb/introspect";
 import { mysqlConnectorProvider } from "./connector/provider.js";
 import { parseMysqlConnection } from "./label.js";
 
