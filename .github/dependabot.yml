@@ -33,6 +33,11 @@ updates:
     # from this entry can still edit the lab's manifest, and CI's consumer-lab job fails it.
     exclude-paths:
       - "examples/consumer-lab/**"
+    # `@types/node` tracks the Node floor (`engines.node`), not the newest Node: a newer
+    # major types APIs the floor doesn't have. Its major rises by hand, with the floor.
+    ignore:
+      - dependency-name: "@types/node"
+        update-types: ["version-update:semver-major"]
     groups:
       npm-minor-patch:
         patterns: ["*"]
@@ -56,6 +61,9 @@ updates:
       # Pinned at AskDB's published floors (docs/adrs/0015); they rise with the floor.
       - dependency-name: "ai"
       - dependency-name: "@ai-sdk/openai"
+      # Tracks the Node floor, like the root entry's; its major rises with the floor (#412).
+      - dependency-name: "@types/node"
+        update-types: ["version-update:semver-major"]
     groups:
       consumer-lab-minor-patch:
         patterns: ["*"]
