@@ -196,6 +196,29 @@ function probeStudio() {
   return studioProbe;
 }
 
+/**
+ * Whether the sensitive guardrail expands `SELECT *` to the sensitive columns it reaches
+ * (`reference/core-api.mdx`, `SensitiveReference`: "Also a bare `SELECT *`, which reaches
+ * every sensitive column of the tables in that `SELECT`'s own `FROM`/`JOIN`"): `ask()` on the
+ * Postgres artifact with the lab's sensitive overlay, with `SELECT * FROM people.client` as
+ * the model's reply through the documented `deps.generateText` seam, must report `ssn`.
+ * Releases before the expansion report no reference for `SELECT *` or `alias.*`.
+ *
+ * The probe checks only that `ssn` is reported for a bare `*`, not the `matchKind` or
+ * `alias.*`: the `sensitive-wildcard` scenarios test those, so a target that expands `*`
+ * wrongly fails there instead of reporting `n/a`.
+ */
+async function askFlagsSensitiveWildcard(): Promise<boolean> {
+  const { askFixedSql } = await import("./ask.js");
+  const { removeSensitiveArtifact, sensitiveArtifact } = await import("./sensitive.js");
+  const dir = sensitiveArtifact("postgres");
+  try {
+    const result = await askFixedSql("postgres", "SELECT * FROM people.client", dir, "A probe for a sensitive-column capability.");
+    return (result.sensitiveGuardrail?.references ?? []).some((r) => r.column === "ssn");
+  } finally {
+    removeSensitiveArtifact(dir);
+  }
+}
 
 const DETECTORS = {
   /** `askdb introspect --engine <id> --url …` (reference/cli.mdx), how the lab builds every schema artifact. */
@@ -249,6 +272,12 @@ const ASYNC_DETECTORS = {
    * Releases before it are always on and send the SQL to the driver unvalidated.
    */
   "studio-execute-guard": async () => (await probeStudio()).executeOffByDefault,
+  /**
+   * `SELECT *` and `alias.*` reported as referencing each sensitive column they reach
+   * (`docs/contracts/sensitive-fields-and-modes.md`, "Wildcards and whole rows"). Before it,
+   * a wildcard named no column, so the guardrail passed it.
+   */
+  "sensitive-wildcards": askFlagsSensitiveWildcard,
 } satisfies Record<string, () => Promise<boolean>>;
 
 export type SyncCapability = keyof typeof DETECTORS;
