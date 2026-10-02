@@ -76,6 +76,17 @@ Single-context: a root `CONTEXT.md` (created lazily) plus ADRs in `docs/adrs/`. 
 - Markdown and MDX (docs, ADRs, skills, changesets, READMEs): one line per paragraph or list item, left for the editor to soft-wrap. Break lines only where the Markdown structure needs it — headings, list items, table rows, code blocks.
 - When opening an issue or PR, include a metadata section at the bottom with the originating thread ID and its worktree. Format: `Thread ID: <thread-uuid> (worktree <worktree-name>)`, e.g. `Thread ID: 743d36c3-aac8-423a-b74c-62e1bbc9fa00 (worktree t3code-a0ad9d56)`. The worktree directory name is not the thread ID; look the UUID up as described in `docs/agents/project-board.md` (**Thread lines**). This provides traceability back to the conversation that initiated the work and helps retrieve context later. A thread that picks up an existing issue adds `Worked on by: <thread-uuid> (worktree <worktree-name>)` below that footer.
 
+## Reporting to the maintainer
+
+The maintainer reads your end-of-turn reply top-down and wants the reasoning kept in it, so make it scannable, in this order:
+
+1. **Answer**: the outcome or your recommendation, in one or two lines.
+2. **Status table**: one row per PR, issue or check, when the turn touched several.
+3. **Needs you**: only the decisions that are the maintainer's to make.
+4. **Why**: the reasoning, under one short `###` heading per topic, a few bullets each, every bullet led by a bold phrase.
+
+State each point once, in the section it belongs to. Give verification as one line of results; the details go in the PR or issue body.
+
 <!-- BEGIN:turborepo-agent-rules -->
 
 # This is NOT the Turborepo you know
