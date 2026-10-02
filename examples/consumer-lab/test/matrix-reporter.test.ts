@@ -28,7 +28,7 @@ function matrix(body: string) {
 
 const GREEN = `
 describe("[postgres]", () => { it("probe-pass: passes", () => { expect(1).toBe(1); }); });
-describe("[mysql]", () => { it.fails("probe-known: a tracked bug (#1)", () => { expect(1).toBe(2); }); });
+describe("[mysql]", () => { it.fails("probe-known: a tracked bug (#1)", () => { expect(1).toBe(2); }); it.fails("probe-known: the same bug and another (#1) (#2)", () => { expect(1).toBe(2); }); });
 describe("[sqlite]", () => { it("probe-na: gated", (ctx) => { ctx.skip("capability: probe-capability"); }); });
 `;
 
@@ -37,7 +37,7 @@ describe("lab:matrix exit code", () => {
     const { status, out, cells, summary } = matrix(GREEN);
     expect(cells).toEqual({
       "probe-pass [postgres]": "pass",
-      "probe-known [mysql]": "known (#1)",
+      "probe-known [mysql]": "known (#1, #2)",
       "probe-na [sqlite]": "n/a (capability: probe-capability)",
     });
     expect(summary).toContain("### Consumer lab matrix");

@@ -602,7 +602,7 @@ describe("[postgres] sensitive-omit-env", () => {
     await expectOmittedKnown(async () => (await cliAsk([], { env })).status === 0);
   });
 
-  it.fails("sensitive-omit-env: POST /ask without omitSensitiveFromPrompt, on a server started with ASKDB_OMIT_SENSITIVE_FROM_PROMPT=true, sends a prompt without email and ssn (#377, #376)", async (ctx) => {
+  it.fails("sensitive-omit-env: POST /ask without omitSensitiveFromPrompt, on a server started with ASKDB_OMIT_SENSITIVE_FROM_PROMPT=true, sends a prompt without email and ssn (#377) (#376)", async (ctx) => {
     needsSensitiveCapabilities(ctx, "postgres");
 
     await expectOmittedKnown(async () => {
