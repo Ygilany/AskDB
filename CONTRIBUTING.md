@@ -112,7 +112,7 @@ pnpm changeset
 
 Twelve packages are on the 1.0 line and share one version (the `fixed` group in `.changeset/config.json`). A breaking change to one of them is a `major` changeset. Between `1.0.0-rc.1` and `1.0.0` their public API is frozen, so a breaking change there needs the maintainer's decision first. A breaking change confined to the experimental Studio and RAG surfaces in `@askdb/config` and the CLI ([ADR 0030](docs/adrs/0030-1-0-promises-checked-sql-only.md)) is a `minor`. Studio, `@askdb/enrich` and `@askdb/rag` stay on `0.x`: a breaking change there is a `minor`. See [`docs/release.md`](docs/release.md#version-posture).
 
-Releases are automated: merged changesets collect in a "chore: version packages (rc)" PR, and merging it publishes to npm after a maintainer approves. See [`docs/release.md`](docs/release.md).
+Releases are automated: merged changesets collect in a "chore: version packages (rc)" PR, and once the maintainer approves and merges it, CI publishes to npm. Only that PR changes package versions. See [`docs/release.md`](docs/release.md).
 
 ## Safety Boundary
 
