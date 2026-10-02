@@ -31,7 +31,7 @@ Triage every `FAIL` cell as [SKILL.md](SKILL.md#3-read-the-matrix) says. A cell 
 1. Find the change that brings it: the README's [Capabilities](../../../examples/consumer-lab/README.md#capabilities-testing-older-targets) table and the detector's comment in `examples/consumer-lab/src/capabilities.ts` name it. The first cases are below.
 2. Find its changeset: `gh pr view <pr> --json files --jq '.files[].path | select(startswith(".changeset/"))'`.
 3. The change has shipped when both hold:
-   - `git show origin/main:.changeset/pre.json` lists the changeset's id (its file name without `.md`) under `changesets` (the repo is in prerelease mode; outside it, the changeset file is gone from `.changeset/`);
+   - the changeset file has moved into `.changeset/pre/` on `origin/main`: `git cat-file -e origin/main:.changeset/pre/<id>.md` succeeds, where `<id>` is its file name without `.md` (the repo is in prerelease mode, where Changesets 3 keeps consumed changesets in `.changeset/pre/`; outside it, the changeset file is gone from `.changeset/`);
    - for each package the changeset names, its `CHANGELOG.md` on `origin/main` (under `packages/` or `apps/`) has the changeset's text under a `## <version>` heading at or below the version `lab:use npm:latest` installed. A higher version means it was versioned but not published yet.
 4. Record a verdict per capability:
    - **not shipped:** its `n/a` cells are expected; say so in the PR.
