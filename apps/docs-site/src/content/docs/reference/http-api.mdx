@@ -132,7 +132,7 @@ Generate SQL from a question.
 
 | Field | Type | Notes |
 | --- | --- | --- |
-| `sql` | `string` | The generated, validated SQL. |
+| `sql` | `string` | The generated, checked SQL. |
 | `explain` | `object \| null` | Heuristic guardrail metadata. Present (non-null) when `explain: true` was sent in the request. |
 | `usage` | `object \| null` | Token counts for the generation call: `promptTokens`, `completionTokens`, `totalTokens` (each `number \| null`). `null` when the provider does not report usage. |
 | `sensitiveGuardrail` | `object`, only on some responses | Present only when the schema marks at least one table or column `sensitive`. Shows which sensitive identifiers the returned `sql` references: `passed` (`boolean`), `references` (`{ table, schema?, column, matchKind }[]`), and `unresolvedScope` when the table scope couldn't be resolved. `passed: false` is a warning. The SQL is still returned, so check it before you execute. See [`validateSensitiveReferences`](/reference/core-api/#validatesensitivereferencessql-schema-options). |
@@ -160,7 +160,7 @@ Generate SQL from a question.
 | `payload_too_large` | `413` | Body exceeds `maxBodyBytes`. |
 | `schema_override_disabled` | `403` | The request sent `schemaJson` but `httpApi.allowSchemaOverride` is not `true`. |
 | `schema_parse_error` | `400` | The schema artifact (inline `schemaJson` or the server's configured schema) couldn't be loaded or parsed. |
-| `sql_validation_error` | `400` | Model output failed the validator (read-only, single-statement, scope). Includes `rule`. |
+| `sql_validation_error` | `400` | Model output failed the SQL checks (must start with `SELECT`/`WITH`, no `;`-separated second statement, no comments, no unterminated strings or quoted identifiers, no write or DDL keywords, no blocked side-effecting functions). Includes `rule`. |
 | `guardrail_violation` | `422` | Reserved for a tenant or sensitive-identifier guardrail rejecting the generated SQL, with `rule`. The server doesn't return it today: it runs the sensitive-identifier check in warn mode (see `sensitiveGuardrail`), and it can't pass a tenant scope, so a schema with a tenant policy fails earlier with `500 internal_error`. |
 | `generation_not_configured` | `500` | No model provider configured server-side. |
 | `sql_generation_error` | `502` | The model call failed (provider error, or it hit `httpApi.requestTimeoutMs`). The message is generic. The provider's own error text is logged server-side and never returned. |

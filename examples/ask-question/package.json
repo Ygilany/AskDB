@@ -1,7 +1,7 @@
 {
   "name": "askdb-ask-question-example",
   "private": true,
-  "version": "0.0.1-beta.19",
+  "version": "0.0.1-beta.20",
   "type": "module",
   "scripts": {
     "start": "tsx main.ts",
@@ -9,8 +9,8 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@ai-sdk/openai": "^4.0.74",
     "@askdb/ai": "workspace:*",
-    "@askdb/ai-openai": "workspace:*",
     "@askdb/client": "workspace:*",
     "@askdb/config": "workspace:*",
     "@askdb/core": "workspace:*",

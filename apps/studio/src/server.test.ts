@@ -3,7 +3,13 @@ import { createServer, request as httpRequest, type IncomingMessage, type Server
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { flattenAskDbConfig, resetAskDbRuntimeForTests, setAskDbRuntimeForTests } from "@askdb/config";
+import { azureProvider } from "@askdb/ai";
+import {
+  flattenAskDbConfig,
+  getAskDbRuntimeConfig,
+  resetAskDbRuntimeForTests,
+  setAskDbRuntimeForTests,
+} from "@askdb/config";
 import type { AskDbConfig } from "@askdb/config";
 import { loadSchema, parseTableMarkdown } from "@askdb/core";
 import { createMemoryStore } from "@askdb/rag";
@@ -142,6 +148,37 @@ describe("AskDB Studio server", () => {
     });
     expect(retrieved.results.length).toBeGreaterThan(0);
     expect(retrieved.results[0].text).toEqual(expect.any(String));
+  });
+
+  // #375 review: roots whose labels derive the same placeholder are a load error. Studio
+  // used to write such a policy, return 500, and then fail every request, because the
+  // workspace no longer loaded. The save must be refused with 400, and nothing written.
+  it("refuses to save a tenant policy that wouldn't load, and writes nothing", async () => {
+    installStudioRuntime({ ASKDB_RAG_EMBEDDER: "mock" });
+    const schemaDir = copyFixture();
+    const server = createStudioServer({ schema: schemaDir });
+    servers.push(server);
+    const baseUrl = await listen(server);
+
+    const response = await postRaw(`${baseUrl}/api/tenant-policy`, {
+      frontmatter: {
+        schemaId: "orders-users",
+        enforcement: "strict",
+        roots: [
+          { id: "table:public.users", tenantIdColumn: "table:public.users#id", label: "Account" },
+          { id: "table:public.orders", tenantIdColumn: "table:public.orders#id", label: "account" },
+        ],
+      },
+      body: "",
+    });
+
+    expect(response.status).toBe(400);
+    expect(((await response.json()) as { error: { message: string } }).error.message).toContain(
+      `roots 'table:public.users' (label "Account") and 'table:public.orders' (label "account") ` +
+        "both map to the placeholder :tenant_account_ids",
+    );
+    expect(existsSync(join(schemaDir, "tenant-policy.md"))).toBe(false);
+    expect((await getJson(`${baseUrl}/api/workspace`)).schemaId).toBe("orders-users");
   });
 
   it("saving a table keeps another table's sensitive column entry in its file and reports it on the owning table", async () => {
@@ -990,6 +1027,56 @@ describe("AskDB Studio server", () => {
       rmSync(projectDir, { recursive: true, force: true });
     }
   });
+
+  it.each(["azure", "foundry"] as const)(
+    "POST /api/setup/config with the %s AI provider writes a config the Azure adapter can start from",
+    async (aiProvider) => {
+      const projectDir = mkdtempSync(join(repoRoot, "apps/studio/.tmp-setup-"));
+      const prevCwd = process.cwd();
+      // dotenv never overrides a variable the shell already set, so clear these for the
+      // test and put the caller's values back afterwards.
+      const envKeys = ["AZURE_OPENAI_API_KEY", "AZURE_RESOURCE_NAME"] as const;
+      const savedEnv = envKeys.map((key) => [key, process.env[key]] as const);
+      for (const key of envKeys) delete process.env[key];
+      try {
+        cpSync(
+          join(repoRoot, "packages/prisma/test-fixtures/simple/schema.prisma"),
+          join(projectDir, "schema.prisma"),
+        );
+        // The user's filled-in .env; the setup step bootstraps the new config against it.
+        writeFileSync(
+          join(projectDir, ".env"),
+          "AZURE_OPENAI_API_KEY=test-key\nAZURE_RESOURCE_NAME=my-foundry\n",
+        );
+        process.chdir(projectDir);
+        resetAskDbRuntimeForTests();
+        setSetupInstallerForTests(() => true);
+
+        const server = createStudioServer({ schema: "./askdb", setupReason: "no-config" });
+        servers.push(server);
+        const baseUrl = await listen(server);
+
+        const written = await postJson(`${baseUrl}/api/setup/config`, {
+          database: "prisma",
+          prismaSchema: "./schema.prisma",
+          aiProvider,
+        });
+        expect(written.envVars.map((v: any) => v.name)).toContain("AZURE_RESOURCE_NAME");
+        expect(readFileSync(join(projectDir, ".env.example"), "utf8")).toMatch(/^AZURE_RESOURCE_NAME=/m);
+
+        // Without a resource name (or endpoint) the adapter refuses to start.
+        const aiConfig = azureProvider.resolveConfig(getAskDbRuntimeConfig().ai.aiEnv, { usage: "language" });
+        expect(aiConfig?.providerOptions).toMatchObject({ resourceName: "my-foundry" });
+      } finally {
+        process.chdir(prevCwd);
+        for (const [key, value] of savedEnv) {
+          if (value === undefined) delete process.env[key];
+          else process.env[key] = value;
+        }
+        rmSync(projectDir, { recursive: true, force: true });
+      }
+    },
+  );
 
   it("POST /api/setup/config writes model env, pgvector rag store, and Studio execute settings", async () => {
     const projectDir = mkdtempSync(join(repoRoot, "apps/studio/.tmp-setup-"));

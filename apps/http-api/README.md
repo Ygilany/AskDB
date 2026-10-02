@@ -1,6 +1,6 @@
 # @askdb/http-api
 
-Minimal HTTP surface that wraps [`@askdb/core`](https://www.npmjs.com/package/@askdb/core) — no duplicated NL→SQL logic. `POST /ask` returns validated SQL only.
+Minimal HTTP surface that wraps [`@askdb/core`](https://www.npmjs.com/package/@askdb/core) — no duplicated NL→SQL logic. `POST /ask` returns checked SQL only.
 
 > **Status:** pre-1.0.
 

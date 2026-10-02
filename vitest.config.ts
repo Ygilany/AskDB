@@ -1,4 +1,5 @@
 import { defineConfig } from "vitest/config";
+import { ciReporters } from "./scripts/test-utils/ci-reporters.mjs";
 
 // Tests are scoped to the directory vitest is invoked from (process.cwd()).
 // When run from the repo root this picks up all packages; when run from a
@@ -8,6 +9,8 @@ import { defineConfig } from "vitest/config";
 // package's tests inside the wrong cwd breaks vite's module resolution.
 export default defineConfig({
   test: {
+    // Job summary as one table per CI job; see scripts/test-utils/ci-reporters.mjs.
+    ...ciReporters(),
     globals: false,
     environment: "node",
     include: ["**/*.test.ts", "**/*.test.tsx", "**/*.integration.test.ts"],

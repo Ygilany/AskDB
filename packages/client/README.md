@@ -6,7 +6,6 @@ Config-aware AskDB facade. Resolves schema, model, and dialect from your runtime
 
 ```ts
 import { bootstrapAskDbEnv, getAskDbRuntimeConfig } from "@askdb/config";
-import { openaiProvider } from "@askdb/ai-openai";
 import { createAskDb } from "@askdb/client";
 
 // bootstrapAskDbEnv() reads .env and askdb.config.* into an in-memory snapshot.
@@ -14,14 +13,17 @@ import { createAskDb } from "@askdb/client";
 // Both calls are needed: bootstrap populates the store; getAskDbRuntimeConfig reads it.
 bootstrapAskDbEnv();
 const askdb = createAskDb({
-  config: getAskDbRuntimeConfig(),
-  providers: [openaiProvider], // the client builds its AI registry from these adapters
+  config: getAskDbRuntimeConfig(), // ai.provider in askdb.config.* picks the model
 });
 
 const { sql } = await askdb.ask("top 10 customers by revenue");
 ```
 
-Pass the adapter(s) for whichever `ai.provider` your config selects. Advanced alternative: build a registry yourself with `createAiRegistry` from `@askdb/ai` and pass it as `registry` instead (e.g. to share one registry across several clients) — exactly one of `providers` or `registry` is required.
+Install the AI SDK package for whichever `ai.provider` your config selects — e.g. `npm i @askdb/client @askdb/config @ai-sdk/openai`. With no `providers`/`registry` option, the client registers every provider built into `@askdb/ai` (OpenAI, Azure/Foundry, Google, Anthropic, Vercel AI Gateway); each loads its `@ai-sdk/*` package only when first used, and a missing one fails with an `npm i @ai-sdk/<provider>` hint.
+
+Options: `providers: ["openai"]` restricts the set to named built-ins, and `AiProviderAdapter` objects add custom providers (`providers: ["openai", myAdapter]`). Advanced alternative: build a registry yourself with `createAiRegistry` from `@askdb/ai` and pass it as `registry` (e.g. to share one registry across several clients). Pass at most one of `providers` or `registry`.
+
+To bypass config-driven model selection entirely, pass an AI SDK `LanguageModel` per call (`askdb.ask(q, { model })`) or call `ask()` from `@askdb/core` directly.
 
 ## Per-call overrides
 
@@ -82,7 +84,6 @@ Inspect how schema, model, and dialect resolved on each call — useful for logg
 ```ts
 const askdb = createAskDb({
   config,
-  providers: [openaiProvider],
   onResolve: ({ dialect, modelSource }) => {
     console.log(`dialect=${dialect.dialect} (${dialect.source}), model=${modelSource}`);
   },

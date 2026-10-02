@@ -63,7 +63,7 @@ function rewriteManifests(lab: string) {
   pkg.dependencies.askdb = spec;
   writeFileSync(join(lab, "package.json"), `${JSON.stringify(pkg, null, 2)}\n`);
   const ws = readFileSync(join(lab, "pnpm-workspace.yaml"), "utf8");
-  writeFileSync(join(lab, "pnpm-workspace.yaml"), ws.replace(/# lab:use target: .*\noverrides:\n/, `# lab:use target: checkout /elsewhere\noverrides:\n  "askdb": "${spec}"\n`));
+  writeFileSync(join(lab, "pnpm-workspace.yaml"), ws.replace(/# lab:use target: .*\n/, `# lab:use target: checkout /elsewhere\n  "askdb": "${spec}"\n`));
   // An install stopped part-way through rewriting the lockfile.
   const lock = readFileSync(join(lab, "pnpm-lock.yaml"), "utf8");
   writeFileSync(join(lab, "pnpm-lock.yaml"), lock.slice(0, lock.length / 2));

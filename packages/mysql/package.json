@@ -1,6 +1,6 @@
 {
   "name": "@askdb/mysql",
-  "version": "0.1.0-beta.17",
+  "version": "0.1.0-beta.18",
   "description": "AskDB MySQL integration: introspection connector via information_schema and a mysql2-backed catalog query runner. Pairs with @askdb/core's MYSQL_DIALECT.",
   "keywords": [
     "askdb",
@@ -12,7 +12,7 @@
     "introspection",
     "information-schema"
   ],
-  "homepage": "https://github.com/Ygilany/AskDB#readme",
+  "homepage": "https://askdb.tools/guides/switch-engines/",
   "bugs": {
     "url": "https://github.com/Ygilany/AskDB/issues"
   },
@@ -24,6 +24,7 @@
   "license": "Apache-2.0",
   "author": "Yahya Gilany",
   "type": "module",
+  "sideEffects": false,
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {
@@ -40,7 +41,7 @@
     "NOTICE"
   ],
   "engines": {
-    "node": ">=22.12"
+    "node": ">=22.14"
   },
   "scripts": {
     "build": "tsc -p tsconfig.build.json",

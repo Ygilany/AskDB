@@ -1,12 +1,8 @@
 #!/usr/bin/env node
-import { bootstrapAskDbEnv, getAskDbRuntimeConfig } from "@askdb/config";
+import { getAskDbRuntimeConfig, isAskDbDebugEnabled } from "@askdb/config";
 import {
   createAiRegistry,
 } from "@askdb/ai";
-import { anthropicProvider } from "@askdb/ai-anthropic";
-import { azureProvider } from "@askdb/ai-azure";
-import { googleProvider } from "@askdb/ai-google";
-import { openaiProvider } from "@askdb/ai-openai";
 import { createAskDb, type DialectResolution } from "@askdb/client";
 import { randomUUID } from "node:crypto";
 import {
@@ -26,45 +22,21 @@ import {
   loadSchema,
 } from "@askdb/core";
 import { Command } from "commander";
-import { runInitCli } from "./init.js";
+import { runInitCli, VALID_AI_PROVIDERS } from "./init.js";
 import { runIntrospectCli } from "./introspect.js";
+import { MissingAskDbConfigError, requireAskDbConfig } from "./project-config.js";
+import { readCliVersion } from "./version.js";
 
-const ai = createAiRegistry([openaiProvider, azureProvider, googleProvider, anthropicProvider]);
-
-// `askdb init` writes templates and should not require a valid askdb.config.
-// `askdb studio` tolerates a missing config too: Studio starts in setup mode
-// and its browser wizard scaffolds the config. `askdb enrich` is a Studio
-// alias, so it inherits the same tolerance.
-if (process.argv[2] !== "init") {
-  try {
-    bootstrapAskDbEnv({ cwd: process.cwd() });
-  } catch (error) {
-    if (process.argv[2] !== "studio" && process.argv[2] !== "enrich") throw error;
-  }
-}
-
-if (process.argv[2] === "init") {
-  process.exit(await runInitCli(process.argv.slice(3)));
-}
-
-if (process.argv[2] === "introspect") {
-  const exitCode = await runIntrospectCli(process.argv.slice(3));
-  process.exit(exitCode);
-}
-
-if (process.argv[2] === "enrich") {
-  process.exit(await runStudioCommand(process.argv.slice(3)));
-}
-
-if (process.argv[2] === "studio") {
-  process.exit(await runStudioCommand(process.argv.slice(3)));
-}
-
-if (process.argv[2] === "bundle") {
-  process.exit(await runBundleCommand(process.argv.slice(3)));
-}
+// Batteries-included surface: every built-in provider is registered, and each
+// loads its @ai-sdk/* package only when first used, so env config alone
+// selects the provider.
+const ai = createAiRegistry();
 
 function printCliError(error: unknown): void {
+  if (error instanceof MissingAskDbConfigError) {
+    console.error(error.message);
+    return;
+  }
   if (error instanceof SqlValidationError) {
     console.error(`${error.name} [${error.rule}]: ${error.message}`);
     if (error.hint) {
@@ -107,8 +79,9 @@ async function runBundleCommand(args: string[]): Promise<number> {
 }
 
 async function runStudioCommand(args: string[]): Promise<number> {
-  const { runStudioCli } = await import("@askdb/studio");
-  return runStudioCli(args);
+  // Studio owns config loading for its own startup: a missing config opens the setup wizard.
+  const { runStudioBin } = await import("@askdb/studio");
+  return runStudioBin(args);
 }
 
 function formatSchemaPathHint(schemaPath: string): string {
@@ -171,7 +144,10 @@ function resolveAskDbLogLevel(opts: {
 }
 
 const program = new Command();
-program.name("askdb").description("AskDB — natural language → PostgreSQL SELECT");
+program
+  .name("askdb")
+  .description("AskDB — natural language → validated SQL for your database")
+  .version(readCliVersion(), "-V, --version", "Print the askdb version");
 
 program
   .command("init")
@@ -189,7 +165,7 @@ program
   .option("--sqlite-file <path>", "SQLite file path or env var name")
   .option("--prisma-schema <path>", "Path to schema.prisma")
   .option("--schema-out <dir>", "Schema output directory (default: ./askdb)")
-  .option("--ai-provider <name>", "openai|anthropic|google|azure|foundry")
+  .option("--ai-provider <name>", VALID_AI_PROVIDERS.join("|"))
   .option("--ai-key-env <name>", "Env var name for AI API key")
   .option("--ai-model-env <name>", "Env var name for model override")
   .option("--rag-store <name>", "file|memory|pgvector (default: file)")
@@ -241,8 +217,16 @@ program
   .allowUnknownOption(true);
 
 program
+  .command("introspect")
+  .description("Introspect a database into Schema v2 files (see `askdb introspect --help`)")
+  .allowUnknownOption(true);
+
+program
   .command("ask")
   .description("Generate SQL from schema + question")
+  .hook("preAction", () => {
+    requireAskDbConfig();
+  })
   .option(
     "-s, --schema <path>",
     "Path to AskDB Schema v2 directory, bundled JSON, or schema.json (default: configured introspection.outputDir, or ./askdb/)",
@@ -397,4 +381,36 @@ program
     },
   );
 
-await program.parseAsync(process.argv);
+// Each command loads askdb.config itself, only on the path that reads it.
+async function main(argv: string[]): Promise<number | undefined> {
+  const [command, ...rest] = argv.slice(2);
+  switch (command) {
+    case "init":
+      return runInitCli(rest);
+    case "introspect":
+      return runIntrospectCli(rest);
+    case "enrich":
+    case "studio":
+      return runStudioCommand(rest);
+    case "bundle":
+      return runBundleCommand(rest);
+    default:
+      // Commander handles `--help`, `--version`, `help`, and no-args without loading config;
+      // commands that need config load it lazily in a preAction hook.
+      await program.parseAsync(argv);
+      return undefined;
+  }
+}
+
+try {
+  const exitCode = await main(process.argv);
+  if (exitCode !== undefined) process.exit(exitCode);
+} catch (error) {
+  printCliError(error);
+  if (isAskDbDebugEnabled() && error instanceof Error && error.stack) {
+    console.error(error.stack);
+  } else if (!(error instanceof AskDbError)) {
+    console.error("Set ASKDB_DEBUG=1 to print the stack trace.");
+  }
+  process.exit(1);
+}

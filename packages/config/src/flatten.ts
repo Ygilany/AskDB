@@ -8,6 +8,7 @@ import {
 import {
   DEFAULT_ANTHROPIC_CHAT_MODEL,
   DEFAULT_AZURE_OPENAI_DEPLOYMENT,
+  DEFAULT_GATEWAY_CHAT_MODEL,
   DEFAULT_GOOGLE_CHAT_MODEL,
   DEFAULT_INTROSPECT_OUTPUT_DIR,
   DEFAULT_MOCK_RAG_EMBEDDING_DIMENSIONS,
@@ -29,6 +30,8 @@ import type {
   CustomAiConfig,
   FoundryAiConfig,
   FoundryConfig,
+  GatewayAiConfig,
+  GatewayConfig,
   GoogleAiConfig,
   GoogleConfig,
   OpenaiAiConfig,
@@ -68,6 +71,13 @@ function applyGoogleAi(out: Record<string, string>, cfg: GoogleConfig): void {
   set(out, "ASKDB_AI_MODEL", model);
 }
 
+function applyGatewayAi(out: Record<string, string>, cfg: GatewayConfig): void {
+  set(out, "AI_GATEWAY_API_KEY", cfg.apiKey);
+  set(out, "ASKDB_AI_BASE_URL", cfg.baseUrl);
+  const model = cfg.model?.trim() || DEFAULT_GATEWAY_CHAT_MODEL;
+  set(out, "ASKDB_AI_MODEL", model);
+}
+
 function applyAzureLikeAi(out: Record<string, string>, cfg: AzureConfig | FoundryConfig): void {
   set(out, "AZURE_OPENAI_API_KEY", cfg.apiKey);
   if (cfg.secondaryApiKey) {
@@ -77,6 +87,7 @@ function applyAzureLikeAi(out: Record<string, string>, cfg: AzureConfig | Foundr
   set(out, "AZURE_OPENAI_DEPLOYMENT", model);
   set(out, "AZURE_DEPLOYMENT_NAME", model);
   set(out, "ASKDB_AI_MODEL", model);
+  set(out, "ASKDB_AI_AZURE_RESOURCE_NAME", cfg.resourceName);
   set(out, "AZURE_OPENAI_BASE_URL", cfg.baseUrl);
   set(out, "AZURE_OPENAI_API_VERSION", cfg.apiVersion);
   set(out, "ASKDB_AI_AZURE_MODEL_FAMILY", cfg.modelFamily);
@@ -154,6 +165,9 @@ export function flattenAskDbConfig(config: AskDbConfig): Record<string, string> 
   } else if (config.ai.provider === "anthropic") {
     set(out, "ASKDB_AI_PROVIDER", "anthropic");
     applyAnthropicAi(out, requireProviderBranch("anthropic", (config.ai as AnthropicAiConfig).providerConfig?.anthropic));
+  } else if (config.ai.provider === "gateway") {
+    set(out, "ASKDB_AI_PROVIDER", "gateway");
+    applyGatewayAi(out, requireProviderBranch("gateway", (config.ai as GatewayAiConfig).providerConfig?.gateway));
   } else {
     // Custom/third-party provider: flatten to the universal ASKDB_AI_* keys that
     // @askdb/ai's resolveBaseConfig honors for every registered adapter.

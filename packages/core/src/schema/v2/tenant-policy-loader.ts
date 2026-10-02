@@ -1,6 +1,7 @@
 import { SchemaParseError } from "../../errors.js";
 import { readFrontMatter } from "./parser.js";
 import {
+  assertDistinctRootPlaceholders,
   tenantPolicyFrontmatterSchema,
   TENANT_POLICY_H2_SECTIONS,
   type ParsedTenantPolicyMarkdown,
@@ -69,6 +70,9 @@ export function normalizeTenantPolicy(
 ): NormalizedTenantPolicy {
   const fm = parsed.frontmatter;
   const warnings: TenantPolicyWarning[] = [];
+
+  // A shared placeholder would bind one root's IDs where another root's column is compared.
+  assertDistinctRootPlaceholders(fm.roots);
 
   const rootIds = new Set(fm.roots.map((r) => r.id));
 

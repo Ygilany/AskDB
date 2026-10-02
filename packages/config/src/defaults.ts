@@ -6,6 +6,7 @@ export const DEFAULT_OPENAI_CHAT_MODEL = "gpt-4o-mini";
 export const DEFAULT_AZURE_OPENAI_DEPLOYMENT = "gpt-4o-mini";
 export const DEFAULT_ANTHROPIC_CHAT_MODEL = "claude-sonnet-4-6";
 export const DEFAULT_GOOGLE_CHAT_MODEL = "gemini-2.0-flash";
+export const DEFAULT_GATEWAY_CHAT_MODEL = "openai/gpt-4o-mini";
 export const DEFAULT_INTROSPECT_OUTPUT_DIR = "./askdb/";
 /** Default model-call timeout for `@askdb/http-api` `POST /ask` (`httpApi.requestTimeoutMs`). */
 export const DEFAULT_HTTP_API_REQUEST_TIMEOUT_MS = 60_000;

@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 920 140" role="img" aria-labelledby="title desc">
   <title id="title">AskDB runtime boundary</title>
-  <desc id="desc">Flow from question and schema through ask to validated SQL and host-owned execution.</desc>
+  <desc id="desc">Flow from question and schema through ask to checked SQL and host-owned execution.</desc>
   <defs>
     <style>
       :root {
@@ -56,10 +56,10 @@
   <text x="453" y="78" text-anchor="middle" font-family="ui-sans-serif,system-ui,sans-serif" font-size="13" font-weight="600" fill="var(--title-neutral)">BYO language model</text>
   <!-- Arrow 3→4 -->
   <line x1="538" y1="70" x2="578" y2="70" stroke="var(--arrow)" stroke-width="2" marker-end="url(#arrow)"/>
-  <!-- Validated read-only SQL -->
+  <!-- Checked SQL -->
   <rect x="578" y="28" width="150" height="84" rx="8" fill="var(--bg-neutral)" stroke="var(--border-neutral)" stroke-width="2"/>
-  <text x="653" y="58" text-anchor="middle" font-family="ui-sans-serif,system-ui,sans-serif" font-size="13" font-weight="600" fill="var(--title-neutral)">Validated</text>
-  <text x="653" y="78" text-anchor="middle" font-family="ui-sans-serif,system-ui,sans-serif" font-size="13" font-weight="600" fill="var(--title-neutral)">read-only SQL</text>
+  <text x="653" y="58" text-anchor="middle" font-family="ui-sans-serif,system-ui,sans-serif" font-size="13" font-weight="600" fill="var(--title-neutral)">Checked</text>
+  <text x="653" y="78" text-anchor="middle" font-family="ui-sans-serif,system-ui,sans-serif" font-size="13" font-weight="600" fill="var(--title-neutral)">SQL</text>
   <!-- Arrow 4→5 -->
   <line x1="728" y1="70" x2="768" y2="70" stroke="var(--arrow)" stroke-width="2" marker-end="url(#arrow)"/>
   <!-- Host-owned execution -->
