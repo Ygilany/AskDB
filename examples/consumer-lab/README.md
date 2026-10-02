@@ -173,7 +173,7 @@ A scratch copy is a writable, throwaway copy of the fixture that the lab creates
 | MySQL, MariaDB | one database per logical schema: `lab_scratch_<token>_org`, `…_people`, `…_billing`, `…_ref` and `…_fixture` |
 | SQLite | a file, `.lab/scratch/lab_scratch_<token>.sqlite` |
 
-Each copy is built from the fixture's DDL (`fixtures/multi-engine/dataset/ddl/<engine>.sql`) and its rows (`loadRows`). The lab rewrites the database names that the MySQL and MariaDB DDL hardcodes. It also cuts the read-only role section from each server engine's DDL, because that section changes server-level principals the shared fixture owns. A scratch copy is therefore owner-only. The fixture's seeder is not imported: its source is part of the fixture's dataset hash. `<token>` is random for each copy, so lab runs that share a fixture never share a scratch copy. The safety suite resets its copy before each proof and drops it when the suite ends. A run that is killed can leave a copy behind; its names start with `lab_scratch_`.
+Each copy is built from the fixture's DDL (`fixtures/multi-engine/dataset/ddl/<engine>.sql`) and its rows (`loadRows`). The lab rewrites the database names that the MySQL and MariaDB DDL hardcodes. It also cuts the read-only role section from each server engine's DDL, because that section changes server-level principals the shared fixture owns. A scratch copy is therefore owner-only. The fixture's seeder is not imported: its source is part of the fixture's dataset hash. `<token>` is random for each copy, so lab runs that share a fixture never share a scratch copy. The safety suite and the [Studio suite](#studio) reset their copy before each proof and drop it when the suite ends. A run that is killed can leave a copy behind; its names start with `lab_scratch_`.
 
 ## Tenant scoping
 
@@ -247,6 +247,24 @@ It covers the `POST /ask` success shape on every dialect, and on Postgres one ca
 
 `test/surfaces/http-api-no-pg.test.ts` installs the deploy guide's packages (`@askdb/http-api @askdb/postgres ai @ai-sdk/openai`, pinned to the lab's target) into a fresh pnpm project in the system temp directory, checks that no `pg` is in its lockfile or resolvable from the AskDB packages, then starts that project's `askdb-http` and gets `/health`. It lives outside the lab because Node would otherwise resolve the lab's own `pg`.
 
+## Studio
+
+`test/surfaces/studio.test.ts` runs the installed `askdb studio --schema <artifact> --port <free port> --host 127.0.0.1` (`reference/cli.mdx`; `@askdb/studio` is one of the lab's direct dependencies, as that page asks), and drives it over HTTP the way Studio's own page, a DNS-rebound page and another site would. Its contract is [ADR 0009](../../docs/adrs/0009-studio-local-api-protection.md) and `studio.mdx` ("Security model", "Playground"). Each server runs in a fresh project under `.lab/` with a copy of the artifact and an `askdb.config.ts` whose `studio.execute` block (`enabled: true`, the engine's `provider`, and `databaseUrl` or `file` through `env()`) points at a [scratch copy](#scratch-databases) of the fixture, as the engine's **owner**. It is ready once its page answers, and is killed when the suite ends (`src/studio.ts`; `src/server-process.ts` starts and stops it, as it does `askdb-http`). The session token is read from the served page's `<meta name="askdb-studio-token">`, as the browser app reads it.
+
+Each rejecting request is one header, or one statement, away from a request the same test shows is accepted, with every other guard satisfied, so the rejection can only come from the protection it targets.
+
+| Scenario | What it checks |
+|---|---|
+| `studio-token` | The page carries a 64-hex session token, and another launch's page carries another. `/api/workspace` without `x-askdb-studio-token` answers `403` and with the page's token `200`; each launch's token answers `403` on the other launch. |
+| `studio-host` | A rebound `Host` (`evil.example:<port>`) answers `403` on the page, which then holds no token, and on `/api/*` with a valid token; `127.0.0.1` and `localhost` on Studio's port answer `200`. `127.0.0.1` on another port answers `403`. |
+| `studio-origin` | `POST /api/execute` from `Origin: http://evil.example`, with a valid token and JSON, answers `403`; from Studio's own origin, `200`. |
+| `studio-content-type` | The same `POST /api/execute` as `text/plain` answers `415`; as `application/json`, `200`. |
+| `studio-execute-select` | On every dialect, a `SELECT` returns the scratch copy's agencies, unicode names included. |
+| `studio-execute-write` | On every dialect, a `DELETE` answers `400` and leaves the rows. Run raw as the owner on the same scratch copy, the same `DELETE` empties the table. |
+| `studio-execute-multi-statement` | On every dialect, two `SELECT`s in one request answer `400` while either alone answers `200`, and `SELECT 1 AS ok; DELETE …` answers `400` and leaves the rows, though run raw as the owner it deletes them. |
+
+The protection scenarios are engine-independent and run once, as `[postgres]`. The execute scenarios run on all five engines: Studio's execute supports Postgres, MySQL, SQLite and SQL Server, and MariaDB through the `mysql` provider. Every scenario needs the `studio-execute-guard` capability, because every Studio here has `studio.execute` on; the protection scenarios also need `studio-request-guard`. The routes are those in `docs/specs/studio.md`'s API table. No document gives `POST /api/execute`'s request `{ sql }` or its reply `{ ok, columns, rows }`: they are the served app's own (#380). Timeouts and row caps aren't tested.
+
 ## Install targets
 
 | Target | What gets installed |
@@ -298,5 +316,9 @@ Capabilities are detected from the installed target's public surface: an export,
 | `subtree-resolver` | `ask()` with `subtree` access and a recording `resolveTenantDescendants` calls it with the scope's root and seed (`guides/multi-tenancy.mdx`, "Hierarchical scope (`subtree`)"). Releases before #232 was fixed (#270) never call it. The probe doesn't check what `ask()` does with the answer, so a target that drops it fails `tenant-subtree` instead of reporting `n/a` | `tenant-subtree`, `tenant-subtree-seeds`, `tenant-subtree-no-resolver` (`test/tenant.test.ts`) |
 | `tenant-driver-markers` | `ask()` in `tenantSqlMode: "sql-params"` on SQLite returns `?` markers for the tenant IDs (`reference/core-api.mdx`, `tenantSqlMode`). Releases before the fix for #231 used Postgres `$N` markers on every dialect | the `sql-params` cases of `tenant-ids`, `tenant-subtree` and `tenant-subtree-seeds` (`test/tenant.test.ts`), except on Postgres, whose markers were always `$N`: there only the question with a business parameter needs it, because before #231 was fixed its tenant markers in `sql` were numbered after the business values |
 | `tenant-predicate-required` | strict `ask()` rejects a reply that filters on a literal agency instead of `:tenant_agency_ids` (`docs/contracts/tenant-policy.md`, "Guardrail validation"). Releases before the fix for #315 accepted any mention of the tenant column | the strict-mode rejection cases of `tenant-strict-column-only`, `-wrong-tenant`, `-or-true` and `-root-table` (`test/tenant.test.ts`) |
+| `studio-request-guard` | the page the installed `askdb studio` serves carries `<meta name="askdb-studio-token">` (ADR 0009; `studio.mdx`, "Security model"). Releases before PR #185 check nothing but the socket address | the protection scenarios in `test/surfaces/studio.test.ts` (`studio-token`, `studio-host`, `studio-origin`, `studio-content-type`) |
+| `studio-execute-guard` | with no `studio` block in its config, the installed Studio answers a `POST /api/execute` that passes every request guard with a `403` that explains how to enable execute (`studio.mdx`, "Playground": execute is off by default). Releases before PR #194 always execute, without the read-only SELECT check | every scenario in `test/surfaces/studio.test.ts` |
 
-To add one, add a detector to `DETECTORS` in `src/capabilities.ts`, citing the docs page that documents the capability. A detector that has to run `ask()` is async: it goes in `ASYNC_DETECTORS`, and a scenario awaits `needsCapability` for it.
+Both Studio capabilities come from one launch of the installed Studio, shared by the suite's run.
+
+To add one, add a detector to `DETECTORS` in `src/capabilities.ts`, citing the docs page that documents the capability. A detector that has to run `ask()` or start a server is async: it goes in `ASYNC_DETECTORS`, and a scenario awaits `needsCapability` for it.

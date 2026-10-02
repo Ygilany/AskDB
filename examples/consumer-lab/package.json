@@ -20,6 +20,7 @@
     "@askdb/config": "1.0.0-beta.12",
     "@askdb/core": "1.0.0-beta.43",
     "@askdb/http-api": "1.0.0-beta.43",
+    "@askdb/studio": "0.2.0-beta.36",
     "ai": "7.0.51",
     "askdb": "1.0.0-beta.43",
     "better-sqlite3": "13.0.3",
