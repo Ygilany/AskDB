@@ -40,6 +40,8 @@ Releases run in `.github/workflows/release.yml`, triggered when `CI` passes on a
 
 A push to `main` with nothing new to publish doesn't start a publish: `scripts/release-unpublished.mjs` compares every public package's version with npm first. If a publish fails partway, use "Re-run failed jobs" on the run; versions already on npm are skipped.
 
+A new public package can't go through the Version PR: `changesets.yml` fails the PR that adds it until its first version is on npm, and the pipeline can only publish a package that has a trusted publisher. Publish that first version by hand (see [Publishing by Hand](#publishing-by-hand)), set up its trusted publisher ([One-Time Setup](#one-time-setup) step 3), then merge the PR.
+
 The workflow only acts when the commit CI tested is still the tip of `main`. If another PR merges before CI finishes, that newer commit's CI run triggers the release instead.
 
 ## Dependency Updates
@@ -61,7 +63,7 @@ Recorded 2026-09-29, in #354:
 
 - **Version PR author:** a GitHub App, not `GITHUB_TOKEN` or a personal access token. PRs opened with `GITHUB_TOKEN` don't trigger other workflows, so the required checks would never report on the Version PR. The repository setting "Allow GitHub Actions to create and approve pull requests" stays off.
 - **npm auth:** trusted publishing (OIDC). No npm token is stored in the repo. pnpm 11 does the OIDC exchange itself, and adds provenance because the repo and the packages are public.
-- **Gate:** the maintainer's approval of the Version PR. `.github/CODEOWNERS` names the maintainer for every path, and the `main` ruleset requires a code-owner review, so the App-authored Version PR can't merge until the maintainer approves it. `changesets.yml` fails any other PR that changes a public package's version, so an unpublished version reaches `main` only through that PR. An admin bypass merge of the Version PR skips the approval and still publishes. Until 2026-10-02 the `npm-publish` environment also had the maintainer as required reviewer, which repeated the PR review; the environment stays, limited to `main`, because every trusted publisher names it and only the `publish` job can request an OIDC token.
+- **Gate:** the maintainer's approval of the Version PR. `.github/CODEOWNERS` names the maintainer for every path, and the `main` ruleset requires a code-owner review, so the App-authored Version PR can't merge until the maintainer approves it. `changesets.yml` fails any other PR that adds a public `name@version` npm doesn't have (a version bump, a new public package, or a package made public), so an unpublished version reaches `main` only through that PR. An admin bypass merge of the Version PR skips the approval and still publishes. Until 2026-10-02 the `npm-publish` environment also had the maintainer as required reviewer, which repeated the PR review; the environment stays, limited to `main`, because every trusted publisher names it and only the `publish` job can request an OIDC token.
 - **changesets/action:** v2, with Changesets CLI v3 (`@changesets/cli` pinned exactly in the root `package.json`). The pipeline started on v1 with CLI v2; Dependabot moved both (#390, #393), and #424 moved the workflow and the prerelease state with them.
 - **GitHub Releases:** off. Package CHANGELOGs and git tags are the release record.
 - **Versioning:** unchanged. Packages keep their own versions, with `@askdb/core`, `askdb` and `@askdb/http-api` linked. One lockstep version line waits for the 1.0 release candidates (#354).

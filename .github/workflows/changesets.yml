@@ -29,20 +29,36 @@ jobs:
 
       # Merging a PR that leaves an unpublished version on `main` publishes it with no
       # further approval: approving the Version PR is the release approval (release.yml).
-      # So the Version PR is the only PR that may change a public package's version.
-      # A newly added manifest isn't checked.
-      - name: Check that only the Version PR changes package versions
+      # So no other PR may add a public `name@version` that npm doesn't have: not a
+      # version bump, a new public package, or a package made public. A version already
+      # on npm passes, like a new package's first version, published by hand.
+      - name: Check that only the Version PR adds unpublished versions
         if: env.IS_VERSION_PR != 'true'
         run: |
           base="$(git merge-base "origin/${BASE_REF}" HEAD)"
+          # `name@version` of the manifest at $1 when it's public; empty when it's private,
+          # missing, or can't be parsed.
+          public_version() {
+            git show "$1" 2>/dev/null \
+              | jq -r 'select(.private != true and .name and .version) | "\(.name)@\(.version)"' 2>/dev/null \
+              || true
+          }
           status=0
           for path in $(git diff --name-only "${base}" HEAD | grep -E '(^|/)package\.json$'); do
-            after="$(git show "HEAD:${path}" 2>/dev/null | jq -r 'select(.private != true) | .version // empty')" || continue
-            before="$(git show "${base}:${path}" 2>/dev/null | jq -r '.version // empty')" || continue
-            if [ -n "${before}" ] && [ -n "${after}" ] && [ "${before}" != "${after}" ]; then
-              echo "::error file=${path}::version changed from ${before} to ${after}. Only the Version PR changes versions, and merging it publishes them. Revert the version and add a changeset (pnpm changeset) instead."
-              status=1
+            after="$(public_version "HEAD:${path}")"
+            if [ -z "${after}" ] || [ "${after}" = "$(public_version "${base}:${path}")" ]; then
+              continue
             fi
+            # Only a 404 means unpublished; any other failure fails the check.
+            if out="$(npm view "${after}" version 2>&1)"; then
+              continue
+            elif ! grep -q E404 <<< "${out}"; then
+              echo "${out}"
+              echo "::error file=${path}::npm view ${after} failed"
+              exit 1
+            fi
+            echo "::error file=${path}::${after} isn't on npm, and merging this PR would publish it. Only the Version PR changes versions: revert the version and add a changeset (pnpm changeset). A new public package needs its first version published by hand (docs/release.md)."
+            status=1
           done
           exit "${status}"
 
