@@ -969,3 +969,56 @@ describe("bootstrapAskDbEnv", () => {
     delete process.env.MY_DB;
   });
 });
+
+describe("getAskDbRuntimeConfig — httpApi", () => {
+  afterEach(() => resetAskDbRuntimeForTests());
+
+  function install(httpApi: AskDbConfig["httpApi"]): void {
+    const structured = minimalConfig(httpApi ? { httpApi } : {});
+    setAskDbRuntimeForTests({ structured, flat: flattenAskDbConfig(structured) });
+  }
+
+  it("defaults allowSchemaOverride to false and requestTimeoutMs to 60000", () => {
+    install(undefined);
+    const rt = getAskDbRuntimeConfig();
+    expect(rt.httpApi.allowSchemaOverride).toBe(false);
+    expect(rt.httpApi.requestTimeoutMs).toBe(60_000);
+  });
+
+  it("reads allowSchemaOverride and requestTimeoutMs from the structured config", () => {
+    install({ allowSchemaOverride: true, requestTimeoutMs: 1500 });
+    const rt = getAskDbRuntimeConfig();
+    expect(rt.httpApi.allowSchemaOverride).toBe(true);
+    expect(rt.httpApi.requestTimeoutMs).toBe(1500);
+    expect(rt.flat["ASKDB_HTTP_ALLOW_SCHEMA_OVERRIDE"]).toBe("true");
+    expect(rt.flat["ASKDB_HTTP_REQUEST_TIMEOUT_MS"]).toBe("1500");
+  });
+
+  it("rejects a non-positive requestTimeoutMs at flatten time", () => {
+    expect(() => flattenAskDbConfig(minimalConfig({ httpApi: { requestTimeoutMs: 0 } }))).toThrow(
+      /httpApi\.requestTimeoutMs/,
+    );
+  });
+
+  // Node timers cap at 2^31 - 1 ms: a larger AbortSignal.timeout() fires after ~1 ms
+  // (or throws ERR_OUT_OF_RANGE past 2^32 - 1), so every request would fail.
+  it("accepts requestTimeoutMs up to the Node timer maximum and rejects anything larger at flatten time", () => {
+    expect(flattenAskDbConfig(minimalConfig({ httpApi: { requestTimeoutMs: 2_147_483_647 } }))["ASKDB_HTTP_REQUEST_TIMEOUT_MS"]).toBe(
+      "2147483647",
+    );
+    for (const requestTimeoutMs of [2_147_483_648, 3e9, 5e9]) {
+      expect(() => flattenAskDbConfig(minimalConfig({ httpApi: { requestTimeoutMs } }))).toThrow(
+        /httpApi\.requestTimeoutMs.*at most 2147483647/,
+      );
+    }
+  });
+
+  it("rejects an out-of-range ASKDB_HTTP_REQUEST_TIMEOUT_MS in the flat fallback", () => {
+    const structured = minimalConfig({});
+    setAskDbRuntimeForTests({
+      structured,
+      flat: { ...flattenAskDbConfig(structured), ASKDB_HTTP_REQUEST_TIMEOUT_MS: "3000000000" },
+    });
+    expect(() => getAskDbRuntimeConfig()).toThrow(/ASKDB_HTTP_REQUEST_TIMEOUT_MS.*at most 2147483647/);
+  });
+});

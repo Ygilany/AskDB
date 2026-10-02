@@ -2,9 +2,11 @@ import type { AskDbDialectId, AskDbIntrospectionProvider, AskDbStudioExecuteProv
 import { ASKDB_STUDIO_EXECUTE_PROVIDERS } from "./constants.js";
 import type { AskDbConfig } from "./types.js";
 import {
+  DEFAULT_HTTP_API_REQUEST_TIMEOUT_MS,
   DEFAULT_INTROSPECT_OUTPUT_DIR,
   DEFAULT_STUDIO_EXECUTE_MAX_ROWS,
   DEFAULT_STUDIO_EXECUTE_TIMEOUT_MS,
+  parseHttpApiRequestTimeoutMs,
   parsePositiveInteger,
 } from "./defaults.js";
 import { flatToAiEnv, getAskDbRuntimeStore } from "./runtime-store.js";
@@ -43,6 +45,10 @@ export type AskDbRuntimeHttpApiConfig = {
     port: number;
     host: string;
   };
+  /** Whether `POST /ask` accepts a per-request `schemaJson` override. Default `false`. */
+  allowSchemaOverride: boolean;
+  /** Model-call timeout per `POST /ask` request, in milliseconds (1 to 2147483647). Default `60000`. */
+  requestTimeoutMs: number;
 };
 
 export type AskDbRuntimeIntrospectionConfig = {
@@ -151,6 +157,10 @@ export type AskDbRuntimeConfig = {
   studio: AskDbRuntimeStudioConfig;
 };
 
+function isTruthyFlag(raw: string | undefined): boolean {
+  return raw !== undefined && ["1", "true", "yes"].includes(raw.toLowerCase());
+}
+
 function pickFlat(flat: Readonly<Record<string, string>>, key: string): string | undefined {
   const v = flat[key];
   if (v === undefined || v.trim() === "") return undefined;
@@ -250,6 +260,13 @@ export function getAskDbRuntimeConfig(): AskDbRuntimeConfig {
     },
     httpApi: {
       listen: { port, host },
+      allowSchemaOverride:
+        structured.httpApi?.allowSchemaOverride ??
+        isTruthyFlag(pickFlat(flat, "ASKDB_HTTP_ALLOW_SCHEMA_OVERRIDE")),
+      requestTimeoutMs:
+        parseHttpApiRequestTimeoutMs(structured.httpApi?.requestTimeoutMs, "httpApi.requestTimeoutMs") ??
+        parseHttpApiRequestTimeoutMs(pickFlat(flat, "ASKDB_HTTP_REQUEST_TIMEOUT_MS"), "ASKDB_HTTP_REQUEST_TIMEOUT_MS") ??
+        DEFAULT_HTTP_API_REQUEST_TIMEOUT_MS,
     },
     dev: {
       mockSql: structured.dev?.mockSql ?? pickFlat(flat, "ASKDB_MOCK_SQL"),
