@@ -122,6 +122,31 @@ echo "smoke: npm install CommonJS consumer…"
 echo "smoke: node src/smoke.cjs…"
 (cd "$WORK/consumer-cjs" && npm run smoke)
 
+echo "smoke: staging AI SDK 6 consumer fixture…"
+# `ai` is a peer of @askdb/core (^6.0.0 || ^7.0.51) and an optional peer of @askdb/rag. This consumer pins
+# the AI SDK 6 floor exactly (ai@6.0.0 + @ai-sdk/openai@3.0.0, ADR 0015) and installs WITHOUT
+# --legacy-peer-deps, so a peer range that excludes it fails here with ERESOLVE, and core or rag
+# code that needs a newer 6.x fails the type-check or the run.
+cp -R "$SCRIPT_DIR/consumer-ai6" "$WORK/consumer-ai6"
+node -e "
+  const fs = require('fs');
+  const p = '$WORK/consumer-ai6/package.json';
+  const j = JSON.parse(fs.readFileSync(p, 'utf8'));
+  j.dependencies['@askdb/config'] = 'file:$CONFIG_TARBALL';
+  j.dependencies['@askdb/core'] = 'file:$CORE_TARBALL';
+  j.dependencies['@askdb/rag'] = 'file:$RAG_TARBALL';
+  fs.writeFileSync(p, JSON.stringify(j, null, 2) + '\n');
+"
+
+echo "smoke: npm install AI SDK 6 consumer…"
+(cd "$WORK/consumer-ai6" && npm install --silent --no-audit --no-fund --no-package-lock)
+
+echo "smoke: tsc --noEmit (AI SDK 6 consumer)…"
+(cd "$WORK/consumer-ai6" && npx --yes tsc --noEmit)
+
+echo "smoke: tsx src/smoke.ts (AI SDK 6 consumer)…"
+(cd "$WORK/consumer-ai6" && npx --yes tsx src/smoke.ts)
+
 echo "smoke: staging bundled consumer (esbuild, only @ai-sdk/openai at the peer floor)…"
 cp -R "$SCRIPT_DIR/consumer-bundle" "$WORK/consumer-bundle"
 node -e "

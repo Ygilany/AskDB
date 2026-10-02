@@ -278,7 +278,7 @@ The baseline pins the lab's third-party dependencies exactly, so they stay the s
 
 | Scenario | What it checks |
 |---|---|
-| `host-peers` | `pnpm peers check` finds no peer range declared by an installed AskDB package that the host's pins don't meet, and every installed AskDB package declares the same `ai` range, as a dependency or a peer, so a runtime `ai` floor can't rise alone. It doesn't notice a pin that rises above a floor. Runs once, as `[postgres]`. |
+| `host-peers` | `pnpm peers check` finds no peer range declared by an installed AskDB package that the host's pins don't meet, and every installed AskDB package declares the same `ai` range for the host's AI SDK major, as a dependency or a peer, so a runtime `ai` floor can't rise alone. `@askdb/core` and `@askdb/rag` also accept AI SDK 6 (`^6.0.0 || ^7.0.51`); only their 7.x part is compared. It doesn't notice a pin that rises above a floor. Runs once, as `[postgres]`. |
 
 A vulnerable transitive dependency that no parent release fixes yet gets an `overrides` entry above the `lab:use` block, with its advisory and removal condition in a comment, mirroring the monorepo's `pnpm-workspace.yaml`. Today that is `deepmerge-ts` (GHSA-ggr8-5vv4-36mx), which `@prisma/config` pins at 7.1.5.
 
