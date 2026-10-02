@@ -3,6 +3,7 @@ export type { AskDbConfigExtension } from "./discover.js";
 export { bootstrapAskDbEnv, bootstrapAskDbRuntime } from "./bootstrap.js";
 export type { BootstrapAskDbEnvOptions } from "./bootstrap.js";
 export { env, requiredEnv } from "./env.js";
+export { isAskDbDebugEnabled } from "./diagnostics.js";
 export {
   getAskDbRuntimeConfig,
 } from "./runtime-config.js";
