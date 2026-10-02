@@ -123,9 +123,10 @@ echo "smoke: node src/smoke.cjs…"
 (cd "$WORK/consumer-cjs" && npm run smoke)
 
 echo "smoke: staging AI SDK 6 consumer fixture…"
-# `ai` is a peer of @askdb/core (^6 || ^7) and an optional peer of @askdb/rag. This consumer pins
-# ai@6 + @ai-sdk/openai@3 and installs WITHOUT --legacy-peer-deps, so a peer range that excludes
-# AI SDK 6 fails here with ERESOLVE.
+# `ai` is a peer of @askdb/core (^6.0.0 || ^7.0.51) and an optional peer of @askdb/rag. This consumer pins
+# the AI SDK 6 floor exactly (ai@6.0.0 + @ai-sdk/openai@3.0.0, ADR 0015) and installs WITHOUT
+# --legacy-peer-deps, so a peer range that excludes it fails here with ERESOLVE, and core or rag
+# code that needs a newer 6.x fails the type-check or the run.
 cp -R "$SCRIPT_DIR/consumer-ai6" "$WORK/consumer-ai6"
 node -e "
   const fs = require('fs');

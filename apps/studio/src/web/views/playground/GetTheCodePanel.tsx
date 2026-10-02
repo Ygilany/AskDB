@@ -3,6 +3,7 @@ import { Code2 } from "lucide-react";
 import { useWorkspace } from "../../contexts/workspace-context";
 import { usePlayground } from "../../contexts/playground-context";
 import { CopyButton } from "../../components/common/CopyButton";
+import { snippetInstallLine } from "../../lib/install-line";
 
 const fieldsetResetStyle = { border: 0, padding: 0, margin: 0 };
 
@@ -71,11 +72,10 @@ export function GetTheCodePanel() {
         ? `, {\n  tenantScope: ${indentBlock(tenant, 2)},\n  tenantSqlMode: ${JSON.stringify(askTenantSqlMode)},\n}`
         : "";
       const bundledSdk = wiringDef.sdkPackage === "ai";
-      const sdkInstall = bundledSdk ? "" : ` ${wiringDef.sdkPackage}`;
       const providerNote = bundledSdk
         ? "the AI Gateway provider ships with `ai`"
         : `${wiringDef.sdkPackage} is loaded on first use`;
-      return `// npm install @askdb/client @askdb/config${sdkInstall}
+      return `// ${snippetInstallLine("client", wiringDef.sdkPackage)}
 import { createAskDb } from "@askdb/client";
 import { bootstrapAskDbEnv, getAskDbRuntimeConfig } from "@askdb/config";
 
@@ -99,7 +99,7 @@ const { sql${tenant && askTenantSqlMode === "sql-params" ? ", tenantParams" : ""
     const tenantOptions = tenant
       ? `\n  tenantScope: ${indentBlock(tenant, 2)},\n  tenantSqlMode: ${JSON.stringify(askTenantSqlMode)},`
       : "";
-    return `// npm install @askdb/core ai ${wiringDef.sdkPackage}
+    return `// ${snippetInstallLine("core", wiringDef.sdkPackage)}
 import { ask, loadSchema } from "@askdb/core";
 import { ${wiringDef.sdkImport} } from "${wiringDef.sdkPackage}";
 

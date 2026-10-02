@@ -20,6 +20,6 @@ Core now passes the NL→SQL and enrichment system prompts to `generateText` as 
 
 **@askdb/rag**: the optional `ai` and `@ai-sdk/openai` peers now accept AI SDK 6 as well (`ai` `^6.0.0 || ^7.0.51`, `@ai-sdk/openai` `^3.0.0 || ^4.0.29`), so AI SDK 6 hosts can install `@askdb/rag` without a peer conflict. `createAiSdkEmbedder` works with either major.
 
-**@askdb/studio**: the Playground's "Get the code" snippet for direct `@askdb/core` wiring now includes `ai` in its install line.
+**@askdb/studio**: the Playground's "Get the code" install lines now list the required peers. The `@askdb/client` snippet installs `@askdb/core` and `ai` (before, it had no `ai` at all with the AI Gateway provider), and the direct `@askdb/core` snippet installs `ai`, listed once even for the AI Gateway provider, whose SDK is `ai` itself.
 
 The config-driven path (`@askdb/ai` and `@askdb/client`) still requires AI SDK 7.

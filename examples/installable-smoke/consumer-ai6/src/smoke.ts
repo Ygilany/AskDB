@@ -1,7 +1,7 @@
 /**
  * AI SDK 6 compatibility smoke for `@askdb/core`.
  *
- * `ai` is a peer dependency of `@askdb/core` (`^6 || ^7`), so a host that is
+ * `ai` is a peer dependency of `@askdb/core` (`^6.0.0 || ^7.0.51`), so a host that is
  * still on AI SDK 6 (with `@ai-sdk/openai@3`) must be able to install the
  * packed core tarball without ERESOLVE, type-check a provider model against
  * `AskDbLanguageModel`, and run `ask()` through the real AI SDK 6

@@ -244,7 +244,7 @@ const model = gateway("openai/gpt-4o-mini");
 
 If you embed AskDB but want to reuse the same `askdb.config.ts` instead of hardcoding a provider, use `@askdb/client`. `createAskDb` resolves the schema, model, and dialect from your config — the same resolution the CLI and the bundled HTTP API use. Install the AI SDK package for the provider your config selects (`@ai-sdk/openai`, `@ai-sdk/anthropic`, `@ai-sdk/google`, or `@ai-sdk/azure`; the AI Gateway needs none):
 
-<InstallTabs pkgs="@askdb/client @askdb/config @ai-sdk/openai" />
+<InstallTabs pkgs="@askdb/client @askdb/core @askdb/config ai @ai-sdk/openai" />
 
 ```ts
 import { createAskDb } from "@askdb/client";
