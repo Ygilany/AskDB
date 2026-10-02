@@ -5,7 +5,7 @@
  * `providerOptions` are computed or sent, which preserves AskDB's current
  * behavior for callers that never opt in.
  *
- * Each `@askdb/ai-*` adapter maps this portable value to its provider's native
+ * Each provider adapter (built in or custom) maps this portable value to its provider's native
  * knob (OpenAI `reasoningEffort`, Google `thinkingConfig`, Anthropic extended
  * thinking, …) via {@link AiProviderAdapter.resolveProviderOptions}, and skips
  * models that don't support reasoning tuning.

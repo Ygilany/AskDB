@@ -4,6 +4,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it } from "vitest";
 import {
+  ASKDB_AI_PROVIDERS,
   bootstrapAskDbEnv,
   defineConfig,
   discoverAskDbConfigPath,
@@ -15,6 +16,7 @@ import {
   resetAskDbRuntimeForTests,
   setAskDbRuntimeForTests,
 } from "./index.js";
+import { renderAskDbAiConfigScaffold } from "./scaffold/index.js";
 import type { AskDbConfig } from "./types.js";
 
 const pkgRoot = join(dirname(fileURLToPath(import.meta.url)), "..");
@@ -85,6 +87,14 @@ describe("discoverAskDbConfigPath", () => {
     writeFileSync(join(dir, ".config", "askdb.ts"), "export default {}", "utf8");
     writeFileSync(join(dir, "askdb.config.js"), "export default {}", "utf8");
     expect(discoverAskDbConfigPath(dir)).toBe(join(dir, "askdb.config.js"));
+  });
+});
+
+describe("ASKDB_AI_PROVIDERS", () => {
+  it("lists every first-party provider id flattenAskDbConfig handles, including anthropic and gateway", () => {
+    expect([...ASKDB_AI_PROVIDERS].sort()).toEqual(
+      ["anthropic", "azure", "foundry", "gateway", "google", "openai"].sort(),
+    );
   });
 });
 
@@ -235,6 +245,39 @@ describe("flattenAskDbConfig", () => {
     expect(flat.ASKDB_AI_MODEL).toBe("claude-opus-4-8");
   });
 
+  it("flattens gateway provider branch to AI_GATEWAY_API_KEY and the universal model/base URL keys", () => {
+    const flat = flattenAskDbConfig(
+      minimalConfig({
+        ai: {
+          provider: "gateway",
+          providerConfig: {
+            gateway: {
+              apiKey: "gw-key",
+              model: "anthropic/claude-sonnet-4-6",
+              baseUrl: "https://gateway.example/v3/ai",
+            },
+          },
+        },
+      }),
+    );
+    expect(flat.ASKDB_AI_PROVIDER).toBe("gateway");
+    expect(flat.AI_GATEWAY_API_KEY).toBe("gw-key");
+    expect(flat.ASKDB_AI_MODEL).toBe("anthropic/claude-sonnet-4-6");
+    expect(flat.ASKDB_AI_BASE_URL).toBe("https://gateway.example/v3/ai");
+  });
+
+  it("defaults the gateway model to openai/gpt-4o-mini and requires its branch", () => {
+    const flat = flattenAskDbConfig(
+      minimalConfig({
+        ai: { provider: "gateway", providerConfig: { gateway: { apiKey: "gw-key" } } },
+      }),
+    );
+    expect(flat.ASKDB_AI_MODEL).toBe("openai/gpt-4o-mini");
+    expect(() =>
+      flattenAskDbConfig(minimalConfig({ ai: { provider: "gateway" } as never })),
+    ).toThrow(/ai\.providerConfig\.gateway is required/);
+  });
+
   it("defaults anthropic model to claude-sonnet-4-6 when model omitted", () => {
     const flat = flattenAskDbConfig(
       minimalConfig({
@@ -267,6 +310,44 @@ describe("flattenAskDbConfig", () => {
     );
     expect(flat.AZURE_OPENAI_DEPLOYMENT).toBe("askdb-reporting");
     expect(flat.ASKDB_AI_AZURE_MODEL_FAMILY).toBe("gpt-5");
+  });
+
+  it.each(["azure", "foundry"] as const)(
+    "flattens %s resourceName/baseUrl/apiVersion to the env keys the Azure adapter reads",
+    (provider) => {
+      const flat = flattenAskDbConfig(
+        minimalConfig({
+          ai: {
+            provider,
+            providerConfig: {
+              [provider]: {
+                apiKey: "k",
+                model: "gpt-4o-mini",
+                resourceName: "my-foundry",
+                baseUrl: "https://my-foundry.openai.azure.com/openai",
+                apiVersion: "2025-04-01-preview",
+              },
+            },
+          } as AskDbConfig["ai"],
+        }),
+      );
+      expect(flat.ASKDB_AI_PROVIDER).toBe(provider);
+      expect(flat.ASKDB_AI_AZURE_RESOURCE_NAME).toBe("my-foundry");
+      expect(flat.AZURE_OPENAI_BASE_URL).toBe("https://my-foundry.openai.azure.com/openai");
+      expect(flat.AZURE_OPENAI_API_VERSION).toBe("2025-04-01-preview");
+    },
+  );
+
+  it("omits ASKDB_AI_AZURE_RESOURCE_NAME when azure resourceName is unset", () => {
+    const flat = flattenAskDbConfig(
+      minimalConfig({
+        ai: {
+          provider: "azure",
+          providerConfig: { azure: { apiKey: "k", baseUrl: "https://x.openai.azure.com" } },
+        },
+      }),
+    );
+    expect(flat).not.toHaveProperty("ASKDB_AI_AZURE_RESOURCE_NAME");
   });
 
   it("flattens anthropic baseUrl when provided", () => {
@@ -422,6 +503,48 @@ describe("loadAskDbConfigProjectionSync", () => {
   afterEach(() => {
     resetAskDbRuntimeForTests();
     if (dir) rmSync(dir, { recursive: true, force: true });
+  });
+
+  it.each(ASKDB_AI_PROVIDERS)(
+    "the scaffolded %s ai block loads and reads every env var it lists",
+    (provider) => {
+      dir = mkdtempSync(join(tmpdir(), "askdb-config-"));
+      linkWorkspacePackage(dir);
+      const scaffold = renderAskDbAiConfigScaffold({ provider, keyEnv: "MY_KEY", modelEnv: "MY_MODEL" });
+      writeFileSync(
+        join(dir, "askdb.config.ts"),
+        `import { defineConfig, env, type AskDbConfig } from "@askdb/config";
+export default defineConfig({
+${scaffold.source}
+  introspection: { provider: "postgres", providerConfig: { postgres: { databaseUrl: "postgres://x/y" } }, outputDir: "./out/" },
+  rag: { embedder: "mock", embedderConfig: {}, store: "memory", storeConfig: { memory: {} } },
+} satisfies AskDbConfig);
+`,
+        "utf8",
+      );
+      const names = scaffold.envVars.map((v) => v.name);
+      for (const name of names) process.env[name] = `value-of-${name}`;
+      try {
+        const { projection } = loadAskDbConfigProjectionSync(dir);
+        expect(projection?.entries.ASKDB_AI_PROVIDER).toBe(provider);
+        const values = Object.values(projection?.entries ?? {});
+        for (const name of names) expect(values).toContain(`value-of-${name}`);
+        // Azure / Foundry can't start without a resource name or endpoint.
+        const isAzure = provider === "azure" || provider === "foundry";
+        expect(names.includes("AZURE_RESOURCE_NAME")).toBe(isAzure);
+        if (isAzure) {
+          expect(projection?.entries.ASKDB_AI_AZURE_RESOURCE_NAME).toBe("value-of-AZURE_RESOURCE_NAME");
+        }
+      } finally {
+        for (const name of names) delete process.env[name];
+      }
+    },
+  );
+
+  it("the ai scaffold rejects an unknown provider, which it would emit as an object key", () => {
+    expect(() =>
+      renderAskDbAiConfigScaffold({ provider: "__proto__" as "openai", keyEnv: "MY_KEY" }),
+    ).toThrow('Unknown AI provider: "__proto__"');
   });
 
   it("loads defineConfig projection from disk", () => {

@@ -7,7 +7,7 @@ Instructions for coding agents working in this repository (contributing to AskDB
 pnpm workspace + Turborepo, TypeScript. Node 22.13+ to develop (pnpm 11's own floor); published packages support `>=22.12`.
 
 - `packages/core` — the NL-to-SQL pipeline (`ask()`), schema artifact loader.
-- `packages/ai`, `packages/ai-*` — AI provider registry and adapters (openai/anthropic/google/azure).
+- `packages/ai` — AI provider registry and the built-in providers (openai/anthropic/google/azure/gateway), one file each under `packages/ai/src/providers/`. `packages/ai-*` are deprecated re-export shims; don't add code there.
 - `packages/client` — config-driven facade (`createAskDb`) over `@askdb/core` + `@askdb/ai`.
 - `packages/introspect`, `packages/postgres`, `packages/mysql`, `packages/sqlite`, `packages/sqlserver` — introspection + dialects.
 - `packages/rag` — schema chunking/indexing/retrieval.
@@ -67,8 +67,8 @@ Single-context: a root `CONTEXT.md` (created lazily) plus ADRs in `docs/adrs/`. 
 ## Conventions
 
 - AskDB returns SQL; it never executes it. Any code path that runs generated SQL against a real database belongs in a host app or a fixture/test harness, not in `packages/core`.
-- `@askdb/ai-*` adapters and raw Vercel AI SDK `LanguageModel` objects are both first-party, equally supported ways to give `ask()` a model — don't privilege one over the other in new docs or examples without a reason tied to who owns provider config.
-- Provider adapters declare `ai` and `@askdb/ai` as peer dependencies — don't hard-pin AI SDK versions inside adapters; let the host app's `package.json` pin them.
+- `@askdb/ai`'s built-in providers (`createAiRegistry()`, `createAskDb({ config })`) and raw Vercel AI SDK `LanguageModel` objects are both first-party, equally supported ways to give `ask()` a model — don't privilege one over the other in new docs or examples without a reason tied to who owns provider config. Don't point new docs or examples at the deprecated `@askdb/ai-*` shims.
+- `@askdb/ai` declares `ai` as a peer and each `@ai-sdk/*` provider SDK as an optional peer with a wide floor (the oldest version its contract tests pass against; `pnpm test:ai-floors` checks it in CI) — don't hard-pin AI SDK versions in library packages; let the host app's `package.json` pin them. Built-in providers import their SDK lazily with the `.catch()` chained on the `import()` so esbuild doesn't require every SDK; webpack still does unless the host lists the missing ones in `externals` (see `packages/ai/src/providers/optional-peer.ts`).
 - Published ranges are what hosts install against, so a bump the range already allows moves only the lockfile. A floor rises by hand, for a security fix or a version AskDB needs, with a changeset naming which; raising an `ai` or `@ai-sdk/openai` floor raises the consumer lab's host pin with it, or its `host-peers` scenario fails (ADR 0015).
 - Add tests for behavior that affects public APIs, package output, SQL safety/validation, or user-facing workflows. Integration tests that need a live database run when their env var is set. Tests that need a real schema in every engine use the multi-engine fixture (`pnpm fixture:up`, `ASKDB_FIXTURE_HOST`; see `CONTRIBUTING.md`).
 - Add a changeset (`pnpm changeset`) for any change to a publishable package. AskDB is pre-1.0 — breaking public API changes normally use a minor changeset unless the project is intentionally moving a package to 1.0.

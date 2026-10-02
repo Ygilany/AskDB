@@ -1,105 +1,7 @@
-import { describe, expect, it, vi, beforeEach } from "vitest";
-
-const mocks = vi.hoisted(() => {
-  const azure = vi.fn((model: string) => ({ kind: "language", model }));
-  Object.assign(azure, {
-    embedding: vi.fn((model: string) => ({
-      kind: "embedding",
-      model,
-    })),
-  });
-
-  return {
-    createAzure: vi.fn(() => azure),
-    defaultEmbeddingSettingsMiddleware: vi.fn((settings: unknown) => ({
-      kind: "middleware",
-      settings,
-    })),
-    azure,
-    wrapEmbeddingModel: vi.fn((options: unknown) => ({
-      kind: "wrapped",
-      options,
-    })),
-  };
-});
-
-vi.mock("@ai-sdk/azure", () => ({
-  createAzure: mocks.createAzure,
-}));
-vi.mock("ai", () => ({
-  defaultEmbeddingSettingsMiddleware: mocks.defaultEmbeddingSettingsMiddleware,
-  wrapEmbeddingModel: mocks.wrapEmbeddingModel,
-}));
-
-import { azureProvider } from "./index";
+import { describe, expect, it } from "vitest";
+import { azureProvider } from "./azure.js";
 
 describe("azureProvider", () => {
-  beforeEach(() => {
-    mocks.createAzure.mockClear();
-    mocks.defaultEmbeddingSettingsMiddleware.mockClear();
-    mocks.azure.mockClear();
-    mocks.azure.embedding.mockClear();
-    mocks.wrapEmbeddingModel.mockClear();
-  });
-
-  it("creates language and embedding models from AskDB config", () => {
-    expect(azureProvider.provider).toBe("azure");
-
-    const languageModel = azureProvider.createLanguageModel({
-      provider: "azure",
-      apiKey: "test-key",
-      baseURL: "https://askdb-ai.openai.azure.com",
-      model: "gpt-4o-mini",
-      providerOptions: {
-        resourceName: "askdb-ai",
-        apiVersion: "2024-10-21",
-      },
-    });
-    const embeddingModel = azureProvider.createEmbeddingModel(
-      {
-        provider: "azure",
-        apiKey: "test-key",
-        model: "text-embedding-3-small",
-        providerOptions: {
-          resourceName: "askdb-ai",
-        },
-      },
-      { dimensions: 512, user: "user-1" },
-    );
-
-    expect(languageModel).toEqual({ kind: "language", model: "gpt-4o-mini" });
-    expect(embeddingModel).toEqual({
-      kind: "wrapped",
-      options: {
-        model: { kind: "embedding", model: "text-embedding-3-small" },
-        middleware: {
-          kind: "middleware",
-          settings: {
-            settings: {
-              providerOptions: {
-                azure: {
-                  dimensions: 512,
-                  user: "user-1",
-                },
-              },
-            },
-          },
-        },
-      },
-    });
-    expect(mocks.createAzure).toHaveBeenNthCalledWith(1, {
-      apiKey: "test-key",
-      resourceName: "askdb-ai",
-      baseURL: "https://askdb-ai.openai.azure.com",
-      apiVersion: "2024-10-21",
-    });
-    expect(mocks.createAzure).toHaveBeenNthCalledWith(2, {
-      apiKey: "test-key",
-      resourceName: "askdb-ai",
-    });
-    expect(mocks.azure.embedding).toHaveBeenCalledWith("text-embedding-3-small");
-  });
-
   it("resolves native Azure config into provider options", () => {
     const config = azureProvider.resolveConfig(
       {
@@ -162,18 +64,36 @@ describe("azureProvider", () => {
     ).toThrowError(/Azure provider requires/);
   });
 
+  it("names the askdb.config keys (and env alternative) in the missing-resource error", () => {
+    expect(() =>
+      azureProvider.resolveConfig({ AZURE_OPENAI_API_KEY: "k" }, { usage: "language" }),
+    ).toThrowError(
+      /ai\.providerConfig\.azure\.resourceName.*ai\.providerConfig\.azure\.baseUrl.*AZURE_RESOURCE_NAME/s,
+    );
+  });
+
+  it("reads the resource name from AZURE_RESOURCE_NAME", () => {
+    expect(
+      azureProvider.resolveConfig(
+        { AZURE_OPENAI_API_KEY: "k", AZURE_RESOURCE_NAME: "native-resource" },
+        { usage: "language" },
+      )?.providerOptions,
+    ).toEqual({ resourceName: "native-resource" });
+  });
+
   describe("resolveProviderOptions", () => {
     const baseConfig = { provider: "azure", apiKey: "k" } as const;
 
-    it("maps reasoningEffort under the openai namespace (not azure) for o-series deployments", () => {
-      // @ai-sdk/azure only reads providerOptions.openai — see the comment in
-      // src/index.ts for why the "azure" namespace would be silently ignored.
+    it("maps reasoningEffort under the openai namespace for o-series deployments", () => {
+      // The "openai" namespace is read by both azure(model) (Responses API,
+      // which falls back to it when no "azure" entry exists) and
+      // azure.chat(model) (Chat Completions, which reads only "openai").
       expect(
         azureProvider.resolveProviderOptions?.(
           { ...baseConfig, model: "o3-mini" },
           { reasoningEffort: "low" },
         ),
-      ).toEqual({ openai: { reasoningEffort: "low" } });
+      ).toEqual({ openai: { reasoningEffort: "low", forceReasoning: true } });
     });
 
     it("maps reasoningEffort for gpt-5.x deployments", () => {
@@ -182,7 +102,7 @@ describe("azureProvider", () => {
           { ...baseConfig, model: "gpt-5-mini" },
           { reasoningEffort: "high" },
         ),
-      ).toEqual({ openai: { reasoningEffort: "high" } });
+      ).toEqual({ openai: { reasoningEffort: "high", forceReasoning: true } });
     });
 
     it("returns undefined when reasoningEffort is unset", () => {
@@ -208,7 +128,7 @@ describe("azureProvider", () => {
           { ...baseConfig, model: "askdb-reporting", providerOptions: { modelFamily: "gpt-5" } },
           { reasoningEffort: "low" },
         ),
-      ).toEqual({ openai: { reasoningEffort: "low" } });
+      ).toEqual({ openai: { reasoningEffort: "low", forceReasoning: true } });
     });
 
     it("does not send reasoningEffort when modelFamily override names a non-reasoning model", () => {
@@ -218,6 +138,29 @@ describe("azureProvider", () => {
           { reasoningEffort: "low" },
         ),
       ).toBeUndefined();
+    });
+
+    it.each([
+      ["o1", true],
+      ["o3-mini", true],
+      ["o4-mini", true],
+      ["gpt-5", true],
+      ["gpt-5-mini", true],
+      ["gpt-5.1", true],
+      ["gpt-5-chat", false],
+      ["gpt-5-chat-latest", false],
+      ["gpt-5.1-chat", false],
+      ["gpt-4o", false],
+      ["gpt-4.1-mini", false],
+      ["askdb-reporting", false],
+    ] as const)("model family %s → reasoning: %s", (modelFamily, isReasoning) => {
+      const result = azureProvider.resolveProviderOptions?.(
+        { ...baseConfig, model: "askdb-reporting", providerOptions: { modelFamily } },
+        { reasoningEffort: "medium" },
+      );
+      expect(result).toEqual(
+        isReasoning ? { openai: { reasoningEffort: "medium", forceReasoning: true } } : undefined,
+      );
     });
   });
 

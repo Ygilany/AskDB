@@ -122,6 +122,32 @@ echo "smoke: npm install CommonJS consumer…"
 echo "smoke: node src/smoke.cjs…"
 (cd "$WORK/consumer-cjs" && npm run smoke)
 
+echo "smoke: staging bundled consumer (esbuild, only @ai-sdk/openai at the peer floor)…"
+cp -R "$SCRIPT_DIR/consumer-bundle" "$WORK/consumer-bundle"
+node -e "
+  const fs = require('fs');
+  const p = '$WORK/consumer-bundle/package.json';
+  const j = JSON.parse(fs.readFileSync(p, 'utf8'));
+  j.dependencies['@askdb/ai'] = 'file:$AI_TARBALL';
+  j.dependencies['@askdb/client'] = 'file:$CLIENT_TARBALL';
+  j.dependencies['@askdb/config'] = 'file:$CONFIG_TARBALL';
+  j.dependencies['@askdb/core'] = 'file:$CORE_TARBALL';
+  fs.writeFileSync(p, JSON.stringify(j, null, 2) + '\n');
+"
+
+echo "smoke: npm install bundled consumer…"
+(cd "$WORK/consumer-bundle" && npm install --silent --no-audit --no-fund --no-package-lock)
+for missing in @ai-sdk/azure @ai-sdk/google @ai-sdk/anthropic; do
+  if [ -d "$WORK/consumer-bundle/node_modules/$missing" ]; then
+    echo "smoke: FAILED — $missing was installed in the bundled consumer; it must stay an optional peer." >&2
+    exit 1
+  fi
+done
+
+echo "smoke: esbuild bundle of @askdb/client without the other provider SDKs…"
+(cd "$WORK/consumer-bundle" && npm run --silent bundle)
+(cd "$WORK/consumer-bundle" && npm run --silent smoke)
+
 echo "smoke: staging app sandbox…"
 mkdir -p "$WORK/apps"
 node -e "
@@ -135,10 +161,6 @@ node -e "
       '@askdb/config': 'file:$CONFIG_TARBALL',
       '@askdb/core': 'file:$CORE_TARBALL',
       '@askdb/ai': 'file:$AI_TARBALL',
-      '@askdb/ai-openai': 'file:$AI_OPENAI_TARBALL',
-      '@askdb/ai-azure': 'file:$AI_AZURE_TARBALL',
-      '@askdb/ai-google': 'file:$AI_GOOGLE_TARBALL',
-      '@askdb/ai-anthropic': 'file:$AI_ANTHROPIC_TARBALL',
       '@askdb/client': 'file:$CLIENT_TARBALL',
       '@askdb/introspect': 'file:$INTROSPECT_TARBALL',
       '@askdb/connectors': 'file:$CONNECTORS_TARBALL',
@@ -204,6 +226,18 @@ export default defineConfig({
   },
 } satisfies AskDbConfig);
 SMOKEASKDB
+
+echo "smoke: batteries-included surfaces resolve every built-in provider SDK…"
+# The apps depend on @askdb/ai plus all four @ai-sdk/* packages (no @askdb/ai-*
+# adapters), so every built-in provider must lazily load its SDK here.
+(cd "$WORK/apps" && node --input-type=module -e "
+  const { BUILTIN_AI_PROVIDERS, createAiRegistry } = await import('@askdb/ai');
+  const ai = createAiRegistry();
+  for (const { provider } of BUILTIN_AI_PROVIDERS) {
+    const model = provider === 'gateway' ? 'openai/m' : 'm';
+    await ai.createLanguageModel({ provider, apiKey: 'smoke-key', model, providerOptions: { resourceName: 'smoke' } });
+  }
+")
 
 echo "smoke: askdb cli bin…"
 (cd "$WORK/apps" && ./node_modules/.bin/askdb --help | grep -q 'AskDB')
