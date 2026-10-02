@@ -32,7 +32,7 @@ Before publishing, confirm `pnpm changeset status` does not show an unintended m
 Releases run in `.github/workflows/release.yml`, triggered when `CI` passes on a push to `main`.
 
 1. Merge feature PRs with changesets. `changesets.yml` requires one on any PR that changes publishable sources.
-2. The `version` job opens or updates the **"chore: version packages (beta)"** PR on the `changeset-release/main` branch. It applies every pending changeset: version bumps, CHANGELOG entries, and the consumed changesets recorded in `.changeset/pre.json`.
+2. The `version` job opens or updates the **"chore: version packages (beta)"** PR on the `changeset-release/main` branch. It applies every pending changeset: version bumps and CHANGELOG entries. In prerelease mode, Changesets 3 then moves each consumed changeset into `.changeset/pre/`; `.changeset/pre.json` keeps only the mode and the `beta` tag.
 3. Review that PR's versions and changelogs, then merge it. CI runs on it like any PR; `changesets.yml` skips its changeset check there, because the PR applies changesets rather than adding one.
 4. When CI passes on the merge commit, the `publish` job waits for approval in the `npm-publish` environment. Approve it from the workflow run. It builds and runs `pnpm -r publish --access public --tag latest`, which publishes every public package whose version isn't on npm yet.
 5. The `tag` job pushes a `<name>@<version>` git tag for each published package.
