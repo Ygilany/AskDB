@@ -16,6 +16,11 @@ export const AskDbRagLogEvent = {
   SensitiveChunksExcluded: "askdb.rag.sensitive_chunks_excluded",
   /** Counts only — opt-in `includeSensitiveDescribable: true` is in effect. */
   SensitiveChunksIncluded: "askdb.rag.sensitive_chunks_included",
+  /**
+   * The store has no `idsBySchema`, so orphan cleanup only prunes ids listed
+   * in the previous `schema.lock.json` (never other schemas' chunks).
+   */
+  OrphanCleanupLimited: "askdb.rag.orphan_cleanup_limited",
   /** Retrieval ran for a question; counts only. */
   RetrievalCompleted: "askdb.rag.retrieval_completed",
 } as const;

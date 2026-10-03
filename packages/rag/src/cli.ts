@@ -10,6 +10,7 @@ import {
 } from "@askdb/core";
 import { getAskDbRuntimeConfig, type AskDbRuntimeConfig } from "@askdb/config";
 import { buildSchemaIndex } from "./indexer/index.js";
+import { inspectLockFile } from "./indexer/lock-file.js";
 import { loadChunkerSourcesFromDir } from "./chunker/sources.js";
 import { createOpenAiEmbedder as createAiSdkOpenAiEmbedder } from "./embedders/openai.js";
 import { createMemoryStore } from "./stores/memory.js";
@@ -44,6 +45,7 @@ type CliOptions = {
   filePath?: string;
   embedderModel?: string;
   apiKey?: string;
+  force?: boolean;
 };
 
 export async function runRagCli(argv: readonly string[]): Promise<number> {
@@ -81,13 +83,17 @@ async function runIndex(opts: CliOptions, logger: AskDbLogger, runtimeConfig: As
   const embedder = buildEmbedder(opts, runtimeConfig);
   const dimensions = embedderDimensions(opts);
   const store = await buildStore(opts, dimensions);
+  // Provision (idempotent) and verify the table's vector dimensions up front
+  // so a mismatch fails with a clear message instead of mid-upsert.
+  if (typeof store.ensureSchema === "function") await store.ensureSchema();
 
   const result = await buildSchemaIndex({
     schema: sources,
     embedder,
     store,
     embedderId: embedderId(opts),
-    lockFilePath: join(resolve(opts.schemaDir!), "schema.lock.json"),
+    lockFilePath: lockFilePathFor(opts),
+    force: opts.force,
     correlationId: opts.correlationId,
     logger,
   });
@@ -115,7 +121,14 @@ async function runQuery(opts: CliOptions, logger: AskDbLogger, runtimeConfig: As
   if (!opts.question) {
     throw new Error("Missing --question for query command.");
   }
+  if ((opts.store ?? "file") === "memory") {
+    throw new Error(
+      "query --store memory has nothing to search: the memory store lives only inside one process, " +
+        "so a separate `index --store memory` run cannot populate it. Use --store file or --store pgvector.",
+    );
+  }
   const sources = loadChunkerSourcesFromDir(opts.schemaDir!);
+  assertQueryMatchesIndex(opts, sources.schema.schemaId);
   const embedder = buildEmbedder(opts, runtimeConfig);
   const dimensions = embedderDimensions(opts);
   const store = await buildStore(opts, dimensions);
@@ -162,13 +175,48 @@ async function runQuery(opts: CliOptions, logger: AskDbLogger, runtimeConfig: As
   return 0;
 }
 
+function lockFilePathFor(opts: CliOptions): string {
+  return join(resolve(opts.schemaDir!), "schema.lock.json");
+}
+
+/**
+ * Refuse to query with a different embedder (or dimensions) than the index was
+ * built with — the similarity scores would be meaningless.
+ */
+function assertQueryMatchesIndex(opts: CliOptions, schemaId: string): void {
+  const inspected = inspectLockFile(lockFilePathFor(opts));
+  if (inspected.status === "outdated") {
+    throw new Error(
+      "schema.lock.json was written by an older @askdb/rag (unscoped chunk ids). Re-run `askdb-rag index` before querying.",
+    );
+  }
+  if (inspected.status !== "ok" || inspected.lock.schemaId !== schemaId) return;
+  const lock = inspected.lock;
+  const currentId = embedderId(opts);
+  if (lock.embedderId !== undefined && lock.embedderId !== currentId) {
+    throw new Error(
+      `The index was built with embedder "${lock.embedderId}" but this query uses "${currentId}". ` +
+        "Pass the same --embedder/--embedder-model/--dimensions used for `index`, or re-run `index`.",
+    );
+  }
+  const dims = embedderDimensions(opts);
+  if (lock.dimensions !== undefined && lock.dimensions !== dims) {
+    throw new Error(
+      `The index holds ${lock.dimensions}-dimension embeddings but this query uses ${dims}. ` +
+        "Pass the same --dimensions used for `index`, or re-run `index`.",
+    );
+  }
+}
+
 async function runSetupStore(opts: CliOptions): Promise<number> {
   if (!opts.pgUrl) {
     throw new Error(
       "setup-store requires --pg-url <connection-string>.",
     );
   }
-  const dimensions = opts.dimensions ?? 1536;
+  // Same resolution as `index`: --dimensions, else the embedder's default
+  // (mock → 64, openai text-embedding-3-small → 1536, …).
+  const dimensions = embedderDimensions(opts);
   const store = createPgvectorStore({
     connectionString: opts.pgUrl,
     table: opts.pgTable,
@@ -185,7 +233,7 @@ async function runSetupStore(opts: CliOptions): Promise<number> {
 
 function buildEmbedder(opts: CliOptions, runtimeConfig: AskDbRuntimeConfig): Embedder {
   const choice = opts.embedder ?? "mock";
-  if (choice === "mock") return createMockEmbedder();
+  if (choice === "mock") return createMockEmbedder(embedderDimensions(opts));
   if (choice === "openai") return createOpenAiEmbedder(opts, runtimeConfig);
   throw new Error(`Unknown embedder: ${choice}`);
 }
@@ -209,8 +257,10 @@ function embedderDimensions(opts: CliOptions): number {
     if (model === "text-embedding-ada-002") return 1536;
     throw new Error(`Pass --dimensions for unknown embedder model: ${model}`);
   }
-  return 64;
+  return DEFAULT_MOCK_DIMENSIONS;
 }
+
+const DEFAULT_MOCK_DIMENSIONS = 64;
 
 /**
  * Deterministic mock embedder used for tests, CI, and quick smoke-checks.
@@ -219,7 +269,7 @@ function embedderDimensions(opts: CliOptions): number {
  * same text always yields the same vector. Not a real embedder, but useful for
  * local smoke tests because shared terms like "revenue" can rank related chunks.
  */
-export function createMockEmbedder(dim = 64): Embedder {
+function createMockEmbedder(dim = DEFAULT_MOCK_DIMENSIONS): Embedder {
   return async (texts: string[]) => {
     return texts.map((text) => {
       const v = new Array<number>(dim).fill(0);
@@ -257,10 +307,16 @@ function createOpenAiEmbedder(opts: CliOptions, runtimeConfig: AskDbRuntimeConfi
   });
 }
 
+type CliStore = VectorStore & {
+  close?: () => Promise<void>;
+  flush?: () => void;
+  ensureSchema?: () => Promise<void>;
+};
+
 async function buildStore(
   opts: CliOptions,
   dimensions: number,
-): Promise<VectorStore & { close?: () => Promise<void>; flush?: () => void }> {
+): Promise<CliStore> {
   const choice = opts.store ?? "file";
   if (choice === "memory") return createMemoryStore();
   if (choice === "file") {
@@ -285,7 +341,7 @@ async function buildStore(
   throw new Error(`Unknown store: ${choice}`);
 }
 
-async function closeStore(store: VectorStore & { close?: () => Promise<void>; flush?: () => void }): Promise<void> {
+async function closeStore(store: CliStore): Promise<void> {
   if (typeof store.flush === "function") store.flush();
   if (typeof store.close === "function") await store.close();
 }
@@ -354,8 +410,17 @@ function parseOptions(argv: readonly string[]): CliOptions {
       case "--pg-table":
         opts.pgTable = readValue(argv, ++i, arg);
         break;
-      case "--dimensions":
-        opts.dimensions = Number(readValue(argv, ++i, arg));
+      case "--dimensions": {
+        const raw = readValue(argv, ++i, arg);
+        const n = Number(raw);
+        if (!Number.isInteger(n) || n <= 0) {
+          throw new Error(`--dimensions must be a positive integer (got ${raw}).`);
+        }
+        opts.dimensions = n;
+        break;
+      }
+      case "--force":
+        opts.force = true;
         break;
       case "--types":
         opts.filterTypes = readValue(argv, ++i, arg).split(",").map((s) => s.trim()).filter(Boolean);
@@ -406,22 +471,24 @@ function printHelp(): void {
       "askdb-rag - Chunk + index + query a Schema v2 directory.",
       "",
       "Usage:",
-      "  askdb-rag index <schema-dir>      [--store memory|file|pgvector] [--embedder mock|openai] [--dimensions <n>]",
-      "  askdb-rag query <schema-dir>      --question \"...\" [-k 8] [--types table,column,cql]",
-      "  askdb-rag setup-store             --pg-url <conn> [--pg-table askdb_rag_chunks] [--dimensions <n>]",
+      "  askdb-rag index <schema-dir>      [--store memory|file|pgvector] [--embedder mock|openai] [--dimensions <n>] [--force]",
+      "  askdb-rag query <schema-dir>      --question \"...\" [-k 8] [--types table,column,cql] [--store file|pgvector]",
+      "  askdb-rag setup-store             --pg-url <conn> [--pg-table askdb_rag_chunks] [--embedder mock|openai] [--dimensions <n>]",
       "",
       "Commands:",
-      "  index        Chunk and embed a schema directory into the configured store.",
-      "  query        Run a similarity query against an indexed store.",
+      "  index        Chunk and embed a schema directory into the configured store. Only chunks the store",
+      "               doesn't already hold (same id + content hash) are embedded; --force re-embeds everything.",
+      "  query        Run a similarity query against an indexed store. Use the same embedder/dimensions as `index`.",
       "  setup-store  Create the pgvector extension, table, and indexes. Idempotent — safe to re-run.",
+      "               Dimensions default to the embedder's (mock: 64, openai text-embedding-3-small: 1536).",
       "",
       "Stores:",
-      "  memory     in-memory cosine. Ephemeral. Default for `query`-only smoke checks against `index --store memory`.",
+      "  memory     in-memory cosine, lives only for one process. Useful for `index` dry runs; `query` can't use it.",
       "  file       persisted as <schema-dir>/schema.embeddings.{bin,json} (default).",
       "  pgvector   --pg-url <conn> [--pg-table askdb_rag_chunks] [--dimensions <n>]",
       "",
       "Embedders:",
-      "  mock       deterministic lexical hash. Default. CI-safe.",
+      "  mock       deterministic lexical hash (64 dimensions unless --dimensions). Default. CI-safe.",
       "  openai     AI SDK OpenAI embeddings; OPENAI_API_KEY (or --api-key); --embedder-model text-embedding-3-small (default).",
       "",
       "Logging matches `askdb`:",

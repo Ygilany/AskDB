@@ -1,8 +1,13 @@
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { readLockFile, writeLockFile, type SchemaLockFile } from "./lock-file.js";
+import {
+  inspectLockFile,
+  readLockFile,
+  writeLockFile,
+  type SchemaLockFile,
+} from "./lock-file.js";
 
 const tempDirs: string[] = [];
 
@@ -22,12 +27,14 @@ describe("schema.lock.json", () => {
   it("round-trips with deterministic hash key ordering", () => {
     const path = tempPath();
     const lock: SchemaLockFile = {
-      version: 1,
+      version: 2,
+      dimensions: 2,
+      store: { kind: "file", location: "/tmp/schema" },
       schemaId: "orders-users",
       embedderId: "test:lock",
       hashes: {
-        "chunk:z": "z-hash",
-        "chunk:a": "a-hash",
+        "chunk:orders-users:z": "z-hash",
+        "chunk:orders-users:a": "a-hash",
       },
       updatedAt: "2026-05-10T00:00:00.000Z",
     };
@@ -37,12 +44,38 @@ describe("schema.lock.json", () => {
     expect(first).toEqual({
       ...lock,
       hashes: {
-        "chunk:a": "a-hash",
-        "chunk:z": "z-hash",
+        "chunk:orders-users:a": "a-hash",
+        "chunk:orders-users:z": "z-hash",
       },
     });
 
     writeLockFile(path, first!);
     expect(readLockFile(path)).toEqual(first);
+  });
+
+  it("reports older-format locks as outdated (and readLockFile ignores them)", () => {
+    const path = tempPath();
+    writeFileSync(
+      path,
+      JSON.stringify({
+        version: 1,
+        schemaId: "orders-users",
+        hashes: { "chunk:table:public.orders": "h" },
+      }),
+    );
+    expect(readLockFile(path)).toBeUndefined();
+    expect(inspectLockFile(path)).toEqual({
+      status: "outdated",
+      version: 1,
+      schemaId: "orders-users",
+      hashes: { "chunk:table:public.orders": "h" },
+    });
+  });
+
+  it("distinguishes missing and invalid lock files", () => {
+    const path = tempPath();
+    expect(inspectLockFile(path)).toEqual({ status: "missing" });
+    writeFileSync(path, "{not json");
+    expect(inspectLockFile(path)).toEqual({ status: "invalid" });
   });
 });

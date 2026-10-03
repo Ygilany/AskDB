@@ -14,6 +14,7 @@ export type {
   UpsertRecord,
   Embedder,
   VectorStore,
+  VectorStoreDescriptor,
   Retriever,
 } from "./types.js";
 
@@ -21,6 +22,8 @@ export {
   chunkSchema,
   chunkSchemaDir,
   chunkSchemaBundle,
+  chunkId,
+  chunkIdPrefix,
   loadChunkerSourcesFromDir,
   loadChunkerSourcesFromBundleJson,
   DEFAULT_CHUNK_MAX_CHARS,
@@ -36,6 +39,7 @@ export {
   chunkContentHash,
   readLockFile,
   writeLockFile,
+  SCHEMA_LOCK_VERSION,
   type BuildSchemaIndexOptions,
   type BuildSchemaIndexResult,
   type IndexProgressEvent,

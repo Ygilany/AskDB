@@ -69,6 +69,12 @@ export function createMemoryStore(): MemoryStore {
     filter?: Filter,
   ): Promise<QueryResult[]> => {
     const q = toFloat32(vector);
+    if (dimensions !== undefined && records.size > 0 && q.length !== dimensions) {
+      throw new Error(
+        `Query vector dimension mismatch: the store holds ${dimensions}-dimension vectors but the query has ${q.length}. ` +
+          "Query with the same embedder (and dimensions) the index was built with, or reindex.",
+      );
+    }
     const qNorm = norm(q);
     if (qNorm === 0) return [];
     const out: { id: string; score: number; payload: ChunkPayload }[] = [];
@@ -88,6 +94,16 @@ export function createMemoryStore(): MemoryStore {
 
   const del = async (ids: string[]): Promise<void> => {
     for (const id of ids) records.delete(id);
+    // An emptied store can accept vectors of a new dimension.
+    if (records.size === 0) dimensions = undefined;
+  };
+
+  const idsBySchema = async (schemaId: string): Promise<string[]> => {
+    const out: string[] = [];
+    for (const r of records.values()) {
+      if (r.payload.schemaId === schemaId) out.push(r.id);
+    }
+    return out;
   };
 
   const hashesByPrefix = async (prefix: string): Promise<Record<string, string>> => {
@@ -103,6 +119,10 @@ export function createMemoryStore(): MemoryStore {
     query,
     delete: del,
     hashesByPrefix,
+    idsBySchema,
+    describe() {
+      return dimensions !== undefined ? { kind: "memory", dimensions } : { kind: "memory" };
+    },
     size() {
       return records.size;
     },
@@ -141,9 +161,11 @@ function toFloat32(v: number[] | Float32Array): Float32Array {
 }
 
 function dot(a: Float32Array, b: Float32Array): number {
+  if (a.length !== b.length) {
+    throw new Error(`Vector dimension mismatch: ${a.length} vs ${b.length}.`);
+  }
   let s = 0;
-  const len = Math.min(a.length, b.length);
-  for (let i = 0; i < len; i++) s += a[i] * b[i];
+  for (let i = 0; i < a.length; i++) s += a[i] * b[i];
   return s;
 }
 
