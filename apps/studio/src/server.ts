@@ -5,12 +5,16 @@ import { extname, relative, join, resolve, dirname, sep } from "node:path";
 import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { generateText as defaultGenerateText } from "ai";
-import { ASKDB_AI_PROVIDERS, bootstrapAskDbEnv, getAskDbRuntimeConfig } from "@askdb/config";
+import {
+  ASKDB_AI_PROVIDERS,
+  bootstrapAskDbEnv,
+  getAskDbRuntimeConfig,
+  knownEmbeddingDimensions,
+} from "@askdb/config";
 import {
   createAiRegistry,
   resolveReasoningEffort,
   type AiConfig,
-  type AiEnv,
   type AiProvider,
 } from "@askdb/ai";
 import {
@@ -166,8 +170,11 @@ type StudioRagEmbedderConfig =
   | {
       kind: "ai-sdk";
       provider: AiProvider;
+      /** Connection name within `ai.providerConfig.<provider>`. */
+      connection: string;
       embedderId: string;
-      dimensions: number;
+      /** The vector width, when `ai.embedding.dimensions` sets it or AskDB knows the model's. */
+      dimensions: number | undefined;
       configured: boolean;
       label: string;
       model: string;
@@ -201,7 +208,6 @@ type StudioTokenUsageInput = {
 
 const STUDIO_RAG_MOCK_DIMENSIONS = 64;
 const STUDIO_RAG_MOCK_EMBEDDER_ID = `studio:mock-lexical-${STUDIO_RAG_MOCK_DIMENSIONS}`;
-const DEFAULT_EMBEDDING_MODEL = "text-embedding-3-small";
 let studioPgvectorStoreFactoryForTests: typeof createPgvectorStore | undefined;
 
 export function setStudioPgvectorStoreFactoryForTests(
@@ -403,8 +409,8 @@ export function serializeWorkspace(workspace: Workspace): StudioWorkspaceDto {
     dialect,
     warnings: workspace.warnings,
     aiConfigured: Boolean(aiConfig),
-    model: aiConfig?.model ?? "gpt-4o-mini",
-    aiProvider: aiConfig?.provider ?? "openai",
+    model: aiConfig?.model ?? rt.ai.language.model ?? "provider default",
+    aiProvider: aiConfig?.provider ?? rt.ai.language.provider,
     tables: workspace.tables.map((table) => {
       const draft = buildTableDraft(table.physical, table.parsed);
       return {
@@ -966,8 +972,8 @@ async function getRagStatus(state: StudioState): Promise<StudioRagStatusDto> {
       updatedAt: lock?.updatedAt ?? null,
       chunksTotal: chunkResult.chunks.length,
       chunksIndexed,
-      dimensions: config.dimensions,
-      expectedDimensions: config.dimensions,
+      dimensions: config.dimensions ?? null,
+      expectedDimensions: config.dimensions ?? null,
       sensitiveExcluded: chunkResult.stats.sensitiveExcluded,
       sensitiveIncluded: chunkResult.stats.sensitiveIncluded,
       files: fileArtifacts,
@@ -980,7 +986,7 @@ async function getRagStatus(state: StudioState): Promise<StudioRagStatusDto> {
 async function indexRag(state: StudioState): Promise<RagIndexResponse> {
   const config = resolveStudioRagEmbedderConfig();
   if (!config.configured) {
-    throw new StudioHttpError(400, studioRagAiSdkKeyMissingMessage());
+    throw new StudioHttpError(400, studioRagAiSdkKeyMissingMessage(config));
   }
   const usage = createRequestUsageCollector();
   clearIncompatibleRagStore(state, config);
@@ -1049,7 +1055,7 @@ async function createCurrentStudioRagIndex(
 }> {
   const config = resolveStudioRagEmbedderConfig();
   if (!config.configured) {
-    throw new StudioHttpError(400, studioRagAiSdkKeyMissingMessage());
+    throw new StudioHttpError(400, studioRagAiSdkKeyMissingMessage(config));
   }
   const status = (await getRagStatus(state)) as {
     hasIndex?: boolean;
@@ -1105,7 +1111,7 @@ function resolveStudioRagStoreConfig(state: StudioState):
 
 async function openStudioRagStore(
   state: StudioState,
-  dimensions: number,
+  dimensions: number | undefined,
 ): Promise<StudioOpenRagStore> {
   const config = resolveStudioRagStoreConfig(state);
   if (config.kind === "memory") {
@@ -1132,6 +1138,10 @@ async function openStudioRagStore(
       400,
       'Studio pgvector RAG requires `ASKDB_PGVECTOR_URL` via `askdb.config.ts`.',
     );
+  }
+  if (dimensions === undefined) {
+    // Config loading refuses pgvector with an embedding model of unknown width.
+    throw new StudioHttpError(400, "Studio pgvector RAG needs ai.embedding.dimensions for this embedding model.");
   }
   const pgvectorFactory = studioPgvectorStoreFactoryForTests ?? createPgvectorStore;
   const store = pgvectorFactory({
@@ -1170,35 +1180,9 @@ function pickFlat(flat: Readonly<Record<string, string>>, key: string): string |
   return typeof value === "string" && value.trim() !== "" ? value.trim() : undefined;
 }
 
-function pickEnv(env: AiEnv, key: string): string | undefined {
-  const v = env[key];
-  return typeof v === "string" && v.trim() !== "" ? v.trim() : undefined;
-}
-
 function resolveStudioRagEmbedderConfig(): StudioRagEmbedderConfig {
-  const rt = getAskDbRuntimeConfig();
-  const base = rt.ai.aiEnv;
-  const explicitKind = pickEnv(base, "ASKDB_RAG_EMBEDDER");
-  const kind = explicitKind?.toLowerCase();
-  if (kind === "mock") {
-    return {
-      kind: "mock",
-      embedderId: STUDIO_RAG_MOCK_EMBEDDER_ID,
-      dimensions: STUDIO_RAG_MOCK_DIMENSIONS,
-      configured: true,
-      label: "Mock lexical",
-    };
-  }
-  if (kind !== undefined && kind !== "ai-sdk" && kind !== "openai") {
-    throw new StudioHttpError(400, `Unsupported Studio RAG embedder: ${kind}`);
-  }
-
-  const env = buildStudioRagEmbeddingEnv(kind, base);
-  const aiConfig = ai.resolveEmbeddingConfig(env, {
-    modelEnvVar: "ASKDB_RAG_EMBEDDER_MODEL",
-    modelDefault: DEFAULT_EMBEDDING_MODEL,
-  });
-  if (!aiConfig && kind === undefined) {
+  const embedding = getAskDbRuntimeConfig().ai.embedding;
+  if (!embedding) {
     return {
       kind: "mock",
       embedderId: STUDIO_RAG_MOCK_EMBEDDER_ID,
@@ -1208,47 +1192,36 @@ function resolveStudioRagEmbedderConfig(): StudioRagEmbedderConfig {
     };
   }
 
-  const provider = aiConfig?.provider ?? fallbackStudioRagProvider(kind, base);
-  const model = aiConfig?.model ?? DEFAULT_EMBEDDING_MODEL;
-  const dimensionOverride = readPositiveIntegerEnv(pickEnv(base, "ASKDB_RAG_EMBEDDER_DIMENSIONS"));
-  const dimensions = dimensionOverride ?? defaultEmbeddingDimensions(model);
+  // The env holds the embedding connection only, so no other provider's key can reach it (#345).
+  const aiConfig = ai.resolveEmbeddingConfig(embedding.env);
+  // The adapter's canonical name (`foundry` resolves to `azure`) keeps existing index ids stable.
+  const provider = aiConfig?.provider ?? embedding.provider;
+  const model = embedding.model;
+  const dimensions = embedding.dimensions ?? knownEmbeddingDimensions(embedding.provider, model);
   return {
     kind: "ai-sdk",
     provider,
-    embedderId: `ai-sdk:${provider}:${model}:${dimensions}`,
+    connection: embedding.connection,
+    embedderId: `ai-sdk:${provider}:${model}:${dimensions ?? "default"}`,
     dimensions,
     configured: Boolean(aiConfig),
     label: `AI SDK (${provider})`,
     model,
     baseUrl: aiConfig?.baseURL,
     aiConfig,
-    requestDimensions: dimensionOverride,
+    // Only an explicit ai.embedding.dimensions is sent; otherwise the model's own width applies.
+    requestDimensions: embedding.dimensions,
   };
 }
 
-function buildStudioRagEmbeddingEnv(kind: string | undefined, base: AiEnv): AiEnv {
-  const apiKeyOverride = pickEnv(base, "ASKDB_RAG_EMBEDDER_API_KEY");
-  const baseUrlOverride = pickEnv(base, "ASKDB_RAG_EMBEDDER_BASE_URL");
-  return {
-    ...base,
-    ...(kind === "openai" ? { ASKDB_AI_PROVIDER: "openai" } : {}),
-    ...(apiKeyOverride ? { ASKDB_AI_API_KEY: apiKeyOverride } : {}),
-    ...(baseUrlOverride ? { ASKDB_AI_BASE_URL: baseUrlOverride } : {}),
-  };
-}
-
-function fallbackStudioRagProvider(kind: string | undefined, base: AiEnv): AiProvider {
-  if (kind === "openai") return "openai";
-  const raw = (pickEnv(base, "ASKDB_AI_PROVIDER") ?? "").toLowerCase();
-  return raw === "azure" || raw === "azure-openai" || raw === "foundry"
-    ? "azure"
-    : "openai";
-}
-
-function studioRagAiSdkKeyMissingMessage(): string {
+function studioRagAiSdkKeyMissingMessage(config: StudioRagEmbedderConfig): string {
+  const connection =
+    config.kind === "ai-sdk"
+      ? `the ai.embedding connection ("${config.connection}" in ai.providerConfig.${config.provider})`
+      : "the ai.embedding connection";
   return (
-    "Studio RAG AI SDK embeddings require a configured AI provider key. " +
-    "Set ASKDB_AI_API_KEY or the provider-native key, or set ASKDB_RAG_EMBEDDER=mock for the local lexical embedder."
+    `Studio RAG embeddings need an API key on ${connection}. ` +
+    'Set it in askdb.config.*, or set rag.embedder: "mock" for the local lexical embedder.'
   );
 }
 
@@ -1258,7 +1231,7 @@ async function createStudioRagEmbedder(
 ): Promise<Embedder> {
   if (config.kind === "mock") return createStudioMockEmbedder(config.dimensions);
   if (!config.aiConfig) {
-    throw new StudioHttpError(400, studioRagAiSdkKeyMissingMessage());
+    throw new StudioHttpError(400, studioRagAiSdkKeyMissingMessage(config));
   }
   const model = await ai.createEmbeddingModel(config.aiConfig, {
     dimensions: config.requestDimensions,
@@ -1290,7 +1263,7 @@ function formatStudioRagOperationError(
     return new StudioHttpError(500, error instanceof Error ? error.message : String(error));
   }
   const parts = [
-    `Studio RAG embedding request failed for provider ${config.provider}, model ${config.model}.`,
+    `Studio RAG embedding request failed for ai.embedding (provider ${config.provider}, connection ${config.connection}, model ${config.model}).`,
   ];
   if (config.baseUrl) parts.push(`Base URL: ${config.baseUrl}.`);
   if (apiError?.statusCode) parts.push(`Status: ${apiError.statusCode}.`);
@@ -1335,28 +1308,18 @@ function clearIncompatibleRagStore(state: StudioState, config: StudioRagEmbedder
   if (store.kind !== "file") return;
   const embeddingsJsonPath = `${store.basePath}.embeddings.json`;
   const embeddings = readOptionalJson(embeddingsJsonPath) as { dimensions?: number } | undefined;
-  if (embeddings?.dimensions === undefined || embeddings.dimensions === config.dimensions) return;
-  for (const path of [
-    `${store.basePath}.embeddings.json`,
-    `${store.basePath}.embeddings.bin`,
-    join(state.schemaDir, "schema.lock.json"),
-  ]) {
+  if (embeddings?.dimensions === undefined) return;
+  // The file store refuses mixed widths. When the width isn't known up front, vectors from a
+  // different embedder may not match it, so they go too.
+  const lockPath = join(state.schemaDir, "schema.lock.json");
+  const compatible =
+    config.dimensions !== undefined
+      ? embeddings.dimensions === config.dimensions
+      : (readOptionalJson(lockPath) as { embedderId?: string } | undefined)?.embedderId === config.embedderId;
+  if (compatible) return;
+  for (const path of [`${store.basePath}.embeddings.json`, `${store.basePath}.embeddings.bin`, lockPath]) {
     rmSync(path, { force: true });
   }
-}
-
-function defaultEmbeddingDimensions(model: string): number {
-  if (model === "text-embedding-3-large") return 3072;
-  return 1536;
-}
-
-function readPositiveIntegerEnv(value: string | undefined): number | undefined {
-  if (value === undefined || value.trim() === "") return undefined;
-  const parsed = Number(value);
-  if (!Number.isInteger(parsed) || parsed <= 0) {
-    throw new StudioHttpError(400, `Invalid Studio RAG embedding dimensions: ${value}`);
-  }
-  return parsed;
 }
 
 function serializeRagResult(result: QueryResult): StudioRagChunkDto {

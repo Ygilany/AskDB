@@ -1,5 +1,6 @@
 import type { AskDbConfig } from "./types.js";
-import { flattenAskDbConfig } from "./flatten.js";
+import { flattenNormalizedAskDbConfig } from "./flatten.js";
+import { normalizeAskDbConfig } from "./normalize.js";
 
 export const ASKDB_ENV_PROJECTION = Symbol.for("askdb.envProjection");
 
@@ -8,6 +9,11 @@ export type AskDbEnvProjection = {
   /** Nested config as authored (same reference passed to {@link defineConfig}). */
   readonly config: AskDbConfig;
   readonly entries: Readonly<Record<string, string>>;
+  /**
+   * One message per deprecated key `config` uses. {@link bootstrapAskDbEnv} emits each as a
+   * `DeprecationWarning`. Absent on projections built by an older `@askdb/config`.
+   */
+  readonly deprecations?: readonly string[];
 };
 
 /**
@@ -16,16 +22,24 @@ export type AskDbEnvProjection = {
  *
  * ```ts
  * export default defineConfig({
- *   ai: { provider: "openai", providerConfig: { openai: { apiKey: "", model: "gpt-4o-mini" } } },
+ *   ai: {
+ *     provider: "openai",
+ *     providerConfig: { openai: { apiKey: env("OPENAI_API_KEY") } },
+ *     language: { model: "gpt-4o-mini" },
+ *   },
  *   // ...
  * } satisfies AskDbConfig);
  * ```
+ *
+ * Throws an `askdb.config: …` error for a config that can't load.
  */
 export function defineConfig<const T extends AskDbConfig>(config: T): AskDbEnvProjection {
+  const { config: normalized, deprecations } = normalizeAskDbConfig(config);
   return {
     [ASKDB_ENV_PROJECTION]: true,
     config,
-    entries: flattenAskDbConfig(config),
+    entries: flattenNormalizedAskDbConfig(normalized),
+    deprecations,
   };
 }
 

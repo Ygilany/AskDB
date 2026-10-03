@@ -106,7 +106,7 @@ export function OverviewPage() {
               </div>
               {ragStatus && (
                 <div className="stat-hint">
-                  {ragStatus.chunksTotal} chunks · {ragStatus.dimensions}d
+                  {ragStatus.chunksTotal} chunks{ragStatus.dimensions !== null ? ` · ${ragStatus.dimensions}d` : ""}
                 </div>
               )}
             </div>
@@ -205,7 +205,7 @@ export function OverviewPage() {
                     <div className="grid-2" style={{ gap: 10 }}>
                       <div><div className="muted tiny">Chunks</div><div style={{ fontSize: 18, fontWeight: 600 }}>{formatNumber(ragStatus.chunksTotal)}</div></div>
                       <div><div className="muted tiny">Indexed</div><div style={{ fontSize: 18, fontWeight: 600 }}>{formatNumber(ragStatus.chunksIndexed)}</div></div>
-                      <div><div className="muted tiny">Dimensions</div><div className="mono" style={{ fontSize: 13 }}>{formatNumber(ragStatus.dimensions)}</div></div>
+                      <div><div className="muted tiny">Dimensions</div><div className="mono" style={{ fontSize: 13 }}>{ragStatus.dimensions !== null ? formatNumber(ragStatus.dimensions) : "model default"}</div></div>
                       <div><div className="muted tiny">Model</div><div className="mono" style={{ fontSize: 12 }}>{ragStatus.embedder.label}</div></div>
                     </div>
                     <div className="bar" style={{ marginTop: 14 }}>

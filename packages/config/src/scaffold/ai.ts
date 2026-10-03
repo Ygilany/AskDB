@@ -11,7 +11,7 @@ export type AskDbAiConfigScaffoldInput = {
   provider: AskDbAiProviderId;
   /** Env var NAME for the API key. */
   keyEnv: string;
-  /** Env var NAME for the model (the deployment name on Azure). Omit to use the provider's default model. */
+  /** Env var NAME for the language model (the deployment name on Azure). Omit to use the provider's default model. */
   modelEnv?: string;
 };
 
@@ -33,8 +33,8 @@ function isAiProvider(provider: string): provider is AskDbAiProviderId {
 const AZURE_RESOURCE_NAME_ENV = "AZURE_RESOURCE_NAME";
 
 /**
- * Renders the `ai` block of a new `askdb.config.ts`, plus the env vars it
- * reads. `askdb init` and Studio's setup wizard both call this, so the fields
+ * Renders the `ai` block of a new `askdb.config.ts` (a provider connection, plus
+ * `ai.language` when a model env var is given), plus the env vars it reads. `askdb init` and Studio's setup wizard both call this, so the fields
  * a provider needs to start (e.g. Azure's `resourceName`) live in one place.
  *
  * Every value is emitted as a JSON string literal: the generated file is
@@ -48,11 +48,16 @@ export function renderAskDbAiConfigScaffold(input: AskDbAiConfigScaffoldInput): 
   }
   const envVars: AskDbScaffoldEnvVar[] = [{ name: keyEnv, purpose: `${provider} API key` }];
   const fields = [`apiKey: env(${JSON.stringify(keyEnv)}),`];
+  // The connection holds credentials only; the model choice lives in `ai.language`.
+  let language = "";
   if (modelEnv) {
     envVars.push({ name: modelEnv, purpose: `${provider} model override` });
-    fields.push(`model: env(${JSON.stringify(modelEnv)}),`);
+    language = `
+    language: {
+      model: env(${JSON.stringify(modelEnv)}),
+    },`;
   }
-  // `AzureConfig` / `FoundryConfig` need `resourceName` or `baseUrl`; the
+  // `AzureConnection` / `FoundryConnection` need `resourceName` or `baseUrl`; the
   // adapter refuses to start without one. Scaffold the resource-name form.
   if (provider === "azure" || provider === "foundry") {
     envVars.push({
@@ -67,7 +72,7 @@ export function renderAskDbAiConfigScaffold(input: AskDbAiConfigScaffoldInput): 
       ${provider}: {
 ${fields.map((field) => `        ${field}`).join("\n")}
       },
-    },
+    },${language}
   },`;
   return { source, envVars };
 }

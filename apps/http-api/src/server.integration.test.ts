@@ -29,10 +29,10 @@ const unsupportedProviderSchemaJson = JSON.stringify({
 });
 
 const BASE_CONFIG: AskDbConfig = {
-  ai: { provider: "openai", providerConfig: { openai: { apiKey: "x", model: "gpt-4o-mini" } } },
+  ai: { provider: "openai", providerConfig: { openai: { apiKey: "x" } }, language: { model: "gpt-4o-mini" } },
   database: { provider: "postgres", providerConfig: { postgres: { databaseUrl: "postgres://localhost/db" } } },
   introspection: { provider: "postgres", providerConfig: { postgres: {} }, outputDir: "./askdb/" },
-  rag: { embedder: "mock", embedderConfig: {}, store: "memory", storeConfig: { memory: {} } },
+  rag: { embedder: "mock", store: "memory", storeConfig: { memory: {} } },
 };
 
 function installTestRuntime(opts: {
@@ -392,7 +392,7 @@ describe("http-api", () => {
     // has no OPENAI_API_KEY and createLanguageModelFromEnv returns undefined.
     const noKeyConfig: AskDbConfig = {
       ...BASE_CONFIG,
-      ai: { provider: "openai", providerConfig: { openai: { apiKey: "", model: "gpt-4o-mini" } } },
+      ai: { provider: "openai", providerConfig: { openai: { apiKey: "" } }, language: { model: "gpt-4o-mini" } },
       host: { schemaPath: schemaPath.pathname },
     };
     setAskDbRuntimeForTests({ structured: noKeyConfig, flat: flattenAskDbConfig(noKeyConfig) });

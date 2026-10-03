@@ -118,21 +118,18 @@ function renderRagSection(ragStore: SetupRagStore, pgvectorEnv: string | undefin
     case "file":
       return `  rag: {
     embedder: "mock",
-    embedderConfig: {},
     store: "file",
     storeConfig: { file: {} },
   },`;
     case "memory":
       return `  rag: {
     embedder: "mock",
-    embedderConfig: {},
     store: "memory",
     storeConfig: { memory: {} },
   },`;
     case "pgvector":
       return `  rag: {
     embedder: "mock",
-    embedderConfig: {},
     store: "pgvector",
     storeConfig: {
       pgvector: {

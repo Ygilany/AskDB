@@ -131,11 +131,13 @@ describe("renderInitConfig", () => {
         aiKeyEnv: "AZURE_OPENAI_API_KEY",
         aiModelEnv: "AZURE_OPENAI_DEPLOYMENT",
       }));
-      expect(out).toContain(`provider: "${aiProvider}"`);
-      expect(out).toContain(`      ${aiProvider}: {`);
-      expect(out).toContain('apiKey: env("AZURE_OPENAI_API_KEY")');
-      expect(out).toContain('model: env("AZURE_OPENAI_DEPLOYMENT")');
-      expect(out).toContain('resourceName: env("AZURE_RESOURCE_NAME")');
+      const config = evaluateRenderedConfig(out) as any;
+      expect(config.ai.provider).toBe(aiProvider);
+      // The connection holds no model; the deployment name is the language model.
+      expect(config.ai.providerConfig).toEqual({
+        [aiProvider]: { apiKey: { env: "AZURE_OPENAI_API_KEY" }, resourceName: { env: "AZURE_RESOURCE_NAME" } },
+      });
+      expect(config.ai.language).toEqual({ model: { env: "AZURE_OPENAI_DEPLOYMENT" } });
     },
   );
 

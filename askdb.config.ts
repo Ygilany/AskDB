@@ -6,14 +6,25 @@ import { defineConfig, env, type AskDbConfig } from "@askdb/config";
 // for optional fields (see `@askdb/config` / `defaults.ts`).
 export default defineConfig({
   ai: {
-    // openai | azure | foundry (foundry uses Azure-compatible env vars) | google
+    // openai | azure | foundry | anthropic | google | gateway — the default provider for both sections below
     provider: "openai",
+    // Provider connections only (keys, endpoints). A provider can list several, each with a `name`.
     providerConfig: {
       openai: {
         // Live NL→SQL: set in `.env`, e.g. OPENAI_API_KEY=… (optional OPENAI_BASE_URL=…)
         apiKey: env("OPENAI_API_KEY"),
-        model: env("OPENAI_MODEL"),
       },
+    },
+    // The language model (NL→SQL, enrichment suggestions). Unset: the provider's default.
+    language: {
+      model: env("OPENAI_MODEL"),
+    },
+    // The embedding model behind `rag.embedder: "ai"`, on the openai connection above. To embed
+    // with another provider or key, set `provider` / `connection` here and add that connection.
+    embedding: {
+      model: env("ASKDB_RAG_EMBEDDER_MODEL") ?? "text-embedding-3-small",
+      // Optional for the OpenAI models; the one width setting, used by pgvector too.
+      dimensions: env("ASKDB_RAG_EMBEDDER_DIMENSIONS"),
     },
   },
 
@@ -32,16 +43,8 @@ export default defineConfig({
   },
 
   rag: {
-    // mock | openai | ai-sdk — optional: MY_RAG_EMBEDDER in `.env`
-    embedder: "openai",
-    embedderConfig: {
-      openai: {
-        model: env("ASKDB_RAG_EMBEDDER_MODEL"),
-        dimension: env("ASKDB_RAG_EMBEDDER_DIMENSIONS"),
-        apiKey: env("OPENAI_API_KEY"),
-        baseUrl: env("ASKDB_RAG_EMBEDDER_BASE_URL"),
-      },
-    },
+    // mock (local lexical, no AI) | ai (the `ai.embedding` model)
+    embedder: "ai",
     // file | memory | pgvector — optional: ASKDB_PGVECTOR_URL for pgvector (e.g. port 5434 fixture)
     store: "file",
     storeConfig: {
@@ -49,7 +52,6 @@ export default defineConfig({
       memory: {},
       pgvector: {
         databaseUrl: env("ASKDB_PGVECTOR_URL"),
-        dimensions: env("ASKDB_RAG_EMBEDDER_DIMENSIONS"),
       },
     },
   },
