@@ -92,7 +92,8 @@ When it fails, prefer fixing over allowlisting:
 
 | Advisory | Package / path | Why it is not exploitable here | Remove when |
 | --- | --- | --- | --- |
-| _none_ | | | |
+| GHSA-ch52-4w7c-c8xp | `http-cache-semantics` via `astro` (`apps/docs-site` only) | High severity: `max-stale` handling in a shared cache can disclose one user's cached response to another. `astro` uses it only to cache remote images fetched during the static docs build, which has no users to share a cache between, and `apps/docs-site` is private, so it isn't in any published package. | A patched `http-cache-semantics` (> 4.2.0) is released |
+| GHSA-vfj7-8cjw-p6xm | `braces` via `starlight-llms-txt > micromatch` (`apps/docs-site` only) | High severity: deeply nested braces patterns exhaust the stack. `starlight-llms-txt` matches doc IDs against its own default patterns (`astro.config.mjs` sets none), so no attacker-controlled pattern reaches it, and `apps/docs-site` is private, so it isn't in any published package. | A patched `braces` (> 3.0.3) is released |
 
 ## Before Opening a PR
 
