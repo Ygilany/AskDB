@@ -31,22 +31,19 @@ export default defineConfig({
     providerConfig: {
       openai: {
         apiKey: env("MY_OPENAI_API_KEY"),
-        model: env("MY_LANGUAGE_MODEL"),
       },
     },
-  },
-  database: {
-    provider: "postgres",
-    providerConfig: { postgres: { databaseUrl: env("MY_DATABASE_URL") } },
+    language: {
+      model: env("MY_LANGUAGE_MODEL"),
+    },
   },
   introspection: {
     provider: "postgres",
-    providerConfig: { postgres: {} },
+    providerConfig: { postgres: { databaseUrl: env("MY_DATABASE_URL") } },
     outputDir: env("MY_INTROSPECT_OUTPUT_DIR"),
   },
   rag: {
     embedder: "mock",
-    embedderConfig: {},
     store: "memory",
     storeConfig: { memory: {} },
   },
@@ -54,6 +51,8 @@ export default defineConfig({
 ```
 
 Your `.env` can use friendly names (`MY_OPENAI_API_KEY`, …). `defineConfig` runs `flattenAskDbConfig`, which maps the nested object onto the canonical environment variable names used in the **runtime flat map** (and in `aiEnv` for `@askdb/ai`). **Unset optional fields get defaults inside `flattenAskDbConfig`** (language model, introspection output dir, database URL fallbacks, RAG embedding dimensions, file-store base path, pgvector index strategy, etc. — see `packages/config/src/defaults.ts`).
+
+`ai.providerConfig` holds provider connections only (one per provider, or a named list). The model choice lives in `ai.language` (the language model) and `ai.embedding` (the embedding model behind `rag.embedder: "ai"`), each with an optional `provider` and `connection`. Configs written in the older shape (`providerConfig.<provider>.model`, `ai.reasoning`, `rag.embedder: "openai" | "ai-sdk"`, `rag.embedderConfig`) still load: AskDB translates them at load, and `bootstrapAskDbEnv` emits one `DeprecationWarning` (code `ASKDB_CONFIG_DEPRECATED`) per old key. The old keys are removed at 1.0. See the [configuration reference](https://askdb.tools/reference/config/#the-ai-block).
 
 ## Architectural rule — `@askdb/config` is the sole `process.env` reader
 
@@ -67,6 +66,8 @@ const apiKey = opts.apiKey ?? config.rag.embedder.apiKey;
 const level = config.logging.level;
 // For @askdb/ai registry methods that accept an env-map argument:
 const model = await aiRegistry.createLanguageModelFromEnv(config.ai.aiEnv, { ... });
+// The embedding model, built from the ai.embedding connection only (undefined unless rag.embedder is "ai"):
+const embeddingModel = config.ai.embedding && (await aiRegistry.createEmbeddingModelFromEnv(config.ai.embedding.env));
 ```
 
 **Rules:**
@@ -81,11 +82,12 @@ const model = await aiRegistry.createLanguageModelFromEnv(config.ai.aiEnv, { ...
 
 ## API
 
-- `getAskDbRuntimeConfig()` — **primary API for library packages**. Returns a typed `AskDbRuntimeConfig` from the bootstrapped snapshot (`structured`, `flat`-derived fields, and `ai.aiEnv` for `@askdb/core`).
+- `getAskDbRuntimeConfig()` — **primary API for library packages**. Returns a typed `AskDbRuntimeConfig` from the bootstrapped snapshot (`structured`, `flat`-derived fields, `ai.aiEnv` for `@askdb/core`, the resolved `ai.language` and `ai.embedding` sections, and `deprecations`, the config's deprecation messages).
 - `env(name)` / `requiredEnv(name)` — read `process.env` while authoring `askdb.config.*` only.
 - `isAskDbDebugEnabled()` — `true` when the `ASKDB_DEBUG` shell variable is `1` or `true`. Binaries use it to print stack traces; it reads `process.env` directly so it works even when the config fails to load.
 - `defineConfig(config)` — returns an `AskDbEnvProjection` with `config` (structured) and `entries` (flattened canonical map).
-- `flattenAskDbConfig(config)` — nested config → flat canonical map (applies defaults for optional values).
+- `flattenAskDbConfig(config)` — nested config → flat canonical map (translates deprecated keys, applies defaults for optional values).
+- `knownEmbeddingDimensions(provider, model)` — the vector width of an embedding model AskDB knows, else `undefined`.
 - `bootstrapAskDbEnv(options?)` / `bootstrapAskDbRuntime` — load dotenv, load config, install the runtime snapshot.
 - `loadAskDbConfigProjection(cwd)` / `loadAskDbConfigProjectionSync(cwd)` — load projection without installing the singleton (advanced / tests).
 - `discoverAskDbConfigPath(cwd)` — returns the resolved config path, if any.

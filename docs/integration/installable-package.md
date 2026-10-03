@@ -45,7 +45,7 @@ pnpm add pg
 
 `pg` is an **optional peer dependency** of `@askdb/postgres`. You do not need it when you only use `@askdb/core` to generate SQL.
 
-[`@askdb/config`](../../packages/config/README.md) is the **only** package that reads `process.env` directly. Library packages (`@askdb/rag`, `@askdb/enrich`, …) depend on `@askdb/config` and use **`getAskDbRuntimeConfig()`**. Pass `config.ai.aiEnv` into an `@askdb/ai` registry when you want AskDB's env/config model factory. Call `bootstrapAskDbEnv({ cwd: process.cwd() })` at start-up when you want the same `.env` + `askdb.config.*` behavior as the first-party CLI and HTTP API. `env()` is reserved for use **inside** `askdb.config.*` files.
+[`@askdb/config`](../../packages/config/README.md) is the **only** package that reads `process.env` directly. Library packages (`@askdb/rag`, `@askdb/enrich`, …) depend on `@askdb/config` and use **`getAskDbRuntimeConfig()`**. Pass `config.ai.aiEnv` into an `@askdb/ai` registry when you want AskDB's env/config model factory, and `config.ai.embedding.env` for the embedding model. Call `bootstrapAskDbEnv({ cwd: process.cwd() })` at start-up when you want the same `.env` + `askdb.config.*` behavior as the first-party CLI and HTTP API. `env()` is reserved for use **inside** `askdb.config.*` files.
 
 ## CommonJS
 
@@ -173,7 +173,7 @@ ASKDB_AI_MODEL=gpt-4o       # optional; default: gpt-4o-mini
 
 ```ts
 // askdb.config.ts
-ai: { provider: "openai", providerConfig: { openai: { apiKey: env("OPENAI_API_KEY"), model: "gpt-4o" } } }
+ai: { provider: "openai", providerConfig: { openai: { apiKey: env("OPENAI_API_KEY") } }, language: { model: "gpt-4o" } }
 ```
 
 ### Azure / Microsoft Foundry
@@ -209,7 +209,7 @@ ASKDB_AI_MODEL=claude-sonnet-4-6  # optional; default: claude-sonnet-4-6
 ai: { provider: "anthropic", providerConfig: { anthropic: { apiKey: env("ANTHROPIC_API_KEY") } } }
 ```
 
-**Note**: Anthropic does not provide an embeddings API. If you need RAG with Anthropic as your chat provider, configure a separate embedding provider via `ASKDB_RAG_EMBEDDER` (e.g. `openai`) alongside your Anthropic chat key.
+**Note**: Anthropic does not provide an embeddings API. If you need RAG with Anthropic as your language model provider, set `rag.embedder: "ai"` and point `ai.embedding` at another provider with its own connection, e.g. `embedding: { provider: "openai", model: "text-embedding-3-small" }` plus `providerConfig.openai.apiKey`.
 
 ### Vercel AI Gateway
 
@@ -220,10 +220,10 @@ ASKDB_AI_MODEL=anthropic/claude-sonnet-4-6  # optional; default: openai/gpt-4o-m
 ```
 
 ```ts
-ai: { provider: "gateway", providerConfig: { gateway: { apiKey: env("AI_GATEWAY_API_KEY"), model: "anthropic/claude-sonnet-4-6" } } }
+ai: { provider: "gateway", providerConfig: { gateway: { apiKey: env("AI_GATEWAY_API_KEY") } }, language: { model: "anthropic/claude-sonnet-4-6" } }
 ```
 
-Gateway model ids are `<upstream>/<model>`; an id without the prefix is rejected, including the RAG embedding model (set `rag.embedderConfig.openai.model` to e.g. `openai/text-embedding-3-small`). Reasoning effort (`ai.reasoning`) uses the upstream's mapping for `openai/`, `google/`, and `anthropic/` models; other upstreams get no reasoning options. Embedding `dimensions` are sent for `openai/` and `google/` models and refused for other upstreams.
+Gateway model ids are `<upstream>/<model>`; an id without the prefix is rejected, including the embedding model (set `ai.embedding.model` to e.g. `openai/text-embedding-3-small`). Reasoning effort (`ai.language.reasoning`) uses the upstream's mapping for `openai/`, `google/`, and `anthropic/` models; other upstreams get no reasoning options. Embedding `dimensions` are sent for `openai/` and `google/` models and refused for other upstreams.
 
 ### Custom provider
 
@@ -233,8 +233,9 @@ For any provider that isn't built in, use a custom string and register an adapte
 // askdb.config.ts
 ai: {
   provider: "mistral",
-  providerConfig: { custom: { apiKey: env("MISTRAL_API_KEY"), model: "mistral-large-2" } }
+  providerConfig: { mistral: { apiKey: env("MISTRAL_API_KEY") } },
+  language: { model: "mistral-large-2" },
 }
 ```
 
-The custom branch flattens to the universal `ASKDB_AI_*` env keys that `resolveBaseConfig` honors. This only works end to end when the host registry contains an adapter registered under this provider name, e.g. `createAiRegistry(["openai", mistralAdapter])` — the first-party apps do not include third-party adapters.
+A connection keyed by a custom provider id flattens to the universal `ASKDB_AI_*` env keys that `resolveBaseConfig` honors. This only works end to end when the host registry contains an adapter registered under this provider name, e.g. `createAiRegistry(["openai", mistralAdapter])` — the first-party apps do not include third-party adapters.

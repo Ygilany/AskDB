@@ -51,7 +51,7 @@ export default {
 };
 ```
 
-Default model: `gpt-4o-mini`. To use a different one, set `model` in `providerConfig.openai` (the scaffolded config reads it from `OPENAI_MODEL`).
+Default model: `gpt-4o-mini`. To use a different one, set `ai.language.model` (the scaffolded config reads it from `OPENAI_MODEL`).
 
   </TabItem>
   <TabItem label="Anthropic">
@@ -71,7 +71,7 @@ export default {
 };
 ```
 
-Default model: `claude-sonnet-4-6`. To use a different one, set `model` in `providerConfig.anthropic` (bind it to `ANTHROPIC_MODEL` in your config).
+Default model: `claude-sonnet-4-6`. To use a different one, set `ai.language.model` (bind it to `ANTHROPIC_MODEL` in your config). Anthropic has no embeddings API, so for RAG set `ai.embedding.provider` to another provider and give it a connection.
 
   </TabItem>
   <TabItem label="Google">
@@ -110,7 +110,7 @@ export default {
 };
 ```
 
-Set `model` in `providerConfig.azure` to your deployment name (the scaffolded config reads it from `AZURE_OPENAI_DEPLOYMENT`).
+Set `ai.language.model` to your deployment name (the scaffolded config reads it from `AZURE_OPENAI_DEPLOYMENT`).
 
   </TabItem>
   <TabItem label="Vercel AI Gateway">
@@ -123,9 +123,9 @@ export default {
     providerConfig: {
       gateway: {
         apiKey: env("AI_GATEWAY_API_KEY"),
-        model: "anthropic/claude-sonnet-4-6",
       },
     },
+    language: { model: "anthropic/claude-sonnet-4-6" },
   },
   // ...
 };
@@ -136,7 +136,7 @@ Gateway model ids are `<upstream>/<model>`. The default is `openai/gpt-4o-mini`.
   </TabItem>
 </Tabs>
 
-See the [Configuration reference](/reference/config/) for the full env-var table and the custom-provider escape hatch.
+`ai.providerConfig` holds only the connection (key, endpoint, resource). The model goes in `ai.language`, and the embedding model for RAG in `ai.embedding`, which can use the same provider or another one. See [The `ai` block](/reference/config/#the-ai-block) for both sections, the full env-var table, and the custom-provider escape hatch.
 
 ## In your code (embedding)
 
@@ -281,14 +281,14 @@ const model = await ai.createLanguageModelFromEnv(rt.ai.aiEnv);
 
 ## Reasoning/latency effort
 
-Set `ai.reasoning` in `askdb.config.ts` (see the [config reference](/reference/config/#ai-reasoning--reasoninglatency-effort)) for the config-driven path. Skip it and current behavior is unchanged — no `providerOptions` are sent, and the provider/model uses its own default.
+Set `ai.language.reasoning` in `askdb.config.ts` (see the [config reference](/reference/config/#reasoning-effort)) for the config-driven path. Skip it and current behavior is unchanged — no `providerOptions` are sent, and the provider/model uses its own default.
 
-**With `@askdb/client`**, `createAskDb` resolves `ai.reasoning.nlToSql`/`effort` automatically — nothing else to wire. Override per call, or set a client-level default:
+**With `@askdb/client`**, `createAskDb` resolves `ai.language.reasoning.nlToSql`/`effort` automatically — nothing else to wire. Override per call, or set a client-level default:
 
 ```ts
 const askdb = createAskDb({
   config: getAskDbRuntimeConfig(),
-  reasoningEffort: "medium", // client-level default, overrides ai.reasoning from config
+  reasoningEffort: "medium", // client-level default, overrides ai.language.reasoning from config
 });
 
 const { sql } = await askdb.ask("Which customers signed up last week?", {

@@ -33,21 +33,31 @@ There are three provisioning paths — pick the one that matches your deploy sto
 
 ### Path 1: Studio (local development)
 
-Studio auto-provisions the pgvector schema on first use. Configure the store in `askdb.config.ts`:
+Studio auto-provisions the pgvector schema on first use. Configure the embedding model and the store in `askdb.config.ts`:
 
 ```ts
-export default {
+import { defineConfig, env } from "@askdb/config";
+
+export default defineConfig({
+  ai: {
+    provider: "openai",
+    providerConfig: { openai: { apiKey: env("OPENAI_API_KEY") } },
+    embedding: { model: "text-embedding-3-small" },
+  },
   rag: {
-    embedder: "openai",
+    embedder: "ai",
     store: "pgvector",
     storeConfig: {
       pgvector: {
-        databaseUrl: process.env.PGVECTOR_URL,
+        databaseUrl: env("PGVECTOR_URL"),
       },
     },
   },
-};
+  // ...
+});
 ```
+
+`rag.embedder: "ai"` embeds with the [`ai.embedding`](/reference/config/#aiembedding) model, and `ai.embedding.model` is required: AskDB has no default embedding model. The embedding provider defaults to `ai.provider`; to keep a language model from a provider without embeddings (such as Anthropic), set `ai.embedding.provider` and give that provider a connection. AskDB knows the width of OpenAI's embedding models; for any other model, set `ai.embedding.dimensions` too, since the pgvector table needs a fixed width.
 
 Launch Studio (`npx askdb studio --schema ./my-app.schema`) and the first RAG operation creates the table.
 

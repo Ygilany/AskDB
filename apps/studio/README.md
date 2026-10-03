@@ -60,10 +60,7 @@ Environment variables:
 | `ASKDB_STUDIO_HOST` | Bind host. Defaults to `127.0.0.1`. |
 | `ASKDB_STUDIO_PORT` | Bind port. Defaults to `5556`. |
 | `ASKDB_MOCK_SQL` | Deterministic generated SQL for tests or offline demos. |
-| `ASKDB_RAG_EMBEDDER` | Set to `mock`, `openai`, or `ai-sdk` for Studio RAG indexing. Defaults to the mock lexical embedder unless an AI key is configured. |
-| `ASKDB_RAG_EMBEDDER_MODEL` | Embedding model override for Studio RAG. |
-| `ASKDB_RAG_EMBEDDER_DIMENSIONS` | Optional embedding dimension override. |
 
 Security: every `/api/*` request must carry the per-launch session token that Studio injects into the page it serves (`x-askdb-studio-token` header), come with an allowed `Host` (`localhost`, `127.0.0.1`, `[::1]`, or the bound host), and, for writes, be same-origin JSON. Programmatic callers of `createStudioServer()` can read the token from `server.sessionToken`. Binding to a non-loopback host exposes query execution and schema writes to anyone on that network who can load the page. Only do that on a trusted network. See [Studio → Security model](https://askdb.tools/studio/#security-model).
 
-Studio uses the active `rag.store` branch from `askdb.config.*`. For `pgvector`, make sure the configured table/extension already exist and `ASKDB_PGVECTOR_URL` resolves correctly.
+Studio uses the active `rag.store` branch from `askdb.config.*`, and embeds with `rag.embedder`: `mock`, a local lexical embedder that needs no key, or `ai`, the `ai.embedding` model, built from that section's connection only (see the [configuration reference](https://askdb.tools/reference/config/#aiembedding)). For `pgvector`, make sure the configured table/extension already exist and `ASKDB_PGVECTOR_URL` resolves correctly.
