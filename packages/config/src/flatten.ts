@@ -6,13 +6,13 @@ import {
   ASKDB_REASONING_EFFORTS,
 } from "./constants.js";
 import {
-  DEFAULT_ANTHROPIC_CHAT_MODEL,
+  DEFAULT_ANTHROPIC_LANGUAGE_MODEL,
   DEFAULT_AZURE_OPENAI_DEPLOYMENT,
-  DEFAULT_GATEWAY_CHAT_MODEL,
-  DEFAULT_GOOGLE_CHAT_MODEL,
+  DEFAULT_GATEWAY_LANGUAGE_MODEL,
+  DEFAULT_GOOGLE_LANGUAGE_MODEL,
   DEFAULT_INTROSPECT_OUTPUT_DIR,
   DEFAULT_MOCK_RAG_EMBEDDING_DIMENSIONS,
-  DEFAULT_OPENAI_CHAT_MODEL,
+  DEFAULT_OPENAI_LANGUAGE_MODEL,
   DEFAULT_RAG_EMBEDDING_MODEL,
   DEFAULT_RAG_FILE_BASE_PATH,
   defaultRagEmbeddingDimensions,
@@ -51,7 +51,7 @@ function set(out: Record<string, string>, key: string, value: string | undefined
 function applyOpenAiAi(out: Record<string, string>, cfg: OpenaiConfig): void {
   set(out, "OPENAI_API_KEY", cfg.apiKey);
   set(out, "OPENAI_BASE_URL", cfg.baseUrl);
-  const model = cfg.model?.trim() || DEFAULT_OPENAI_CHAT_MODEL;
+  const model = cfg.model?.trim() || DEFAULT_OPENAI_LANGUAGE_MODEL;
   set(out, "OPENAI_MODEL", model);
   set(out, "ASKDB_MODEL", model);
 }
@@ -59,21 +59,21 @@ function applyOpenAiAi(out: Record<string, string>, cfg: OpenaiConfig): void {
 function applyAnthropicAi(out: Record<string, string>, cfg: AnthropicConfig): void {
   set(out, "ANTHROPIC_API_KEY", cfg.apiKey);
   set(out, "ANTHROPIC_BASE_URL", cfg.baseUrl);
-  const model = cfg.model?.trim() || DEFAULT_ANTHROPIC_CHAT_MODEL;
+  const model = cfg.model?.trim() || DEFAULT_ANTHROPIC_LANGUAGE_MODEL;
   set(out, "ASKDB_AI_MODEL", model);
 }
 
 function applyGoogleAi(out: Record<string, string>, cfg: GoogleConfig): void {
   set(out, "GOOGLE_GENERATIVE_AI_API_KEY", cfg.apiKey);
   set(out, "GOOGLE_AI_BASE_URL", cfg.baseUrl);
-  const model = cfg.model?.trim() || DEFAULT_GOOGLE_CHAT_MODEL;
+  const model = cfg.model?.trim() || DEFAULT_GOOGLE_LANGUAGE_MODEL;
   set(out, "ASKDB_AI_MODEL", model);
 }
 
 function applyGatewayAi(out: Record<string, string>, cfg: GatewayConfig): void {
   set(out, "AI_GATEWAY_API_KEY", cfg.apiKey);
   set(out, "ASKDB_AI_BASE_URL", cfg.baseUrl);
-  const model = cfg.model?.trim() || DEFAULT_GATEWAY_CHAT_MODEL;
+  const model = cfg.model?.trim() || DEFAULT_GATEWAY_LANGUAGE_MODEL;
   set(out, "ASKDB_AI_MODEL", model);
 }
 

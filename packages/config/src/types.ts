@@ -24,7 +24,7 @@ import type {
 export type OpenaiConfig = {
   apiKey?: string;
   baseUrl?: string;
-  /** When unset, `flattenAskDbConfig` applies the default OpenAI chat model (see `@askdb/config` defaults). */
+  /** When unset, `flattenAskDbConfig` applies the default OpenAI language model (see `@askdb/config` defaults). */
   model?: string;
 };
 
@@ -67,14 +67,14 @@ export type FoundryConfig = {
 export type AnthropicConfig = {
   apiKey?: string;
   baseUrl?: string;
-  /** When unset, `flattenAskDbConfig` applies the default Anthropic chat model (see `@askdb/config` defaults). */
+  /** When unset, `flattenAskDbConfig` applies the default Anthropic language model (see `@askdb/config` defaults). */
   model?: string;
 };
 
 export type GoogleConfig = {
   apiKey?: string;
   baseUrl?: string;
-  /** When unset, `flattenAskDbConfig` applies the default Gemini chat model (see `@askdb/config` defaults). */
+  /** When unset, `flattenAskDbConfig` applies the default Gemini language model (see `@askdb/config` defaults). */
   model?: string;
 };
 
