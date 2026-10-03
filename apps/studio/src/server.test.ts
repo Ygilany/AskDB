@@ -457,6 +457,39 @@ describe("AskDB Studio server", () => {
     expect(body.error.message).toContain("embedding endpoint unavailable");
   });
 
+  it("names the configured provider, not the adapter's canonical one, in RAG errors", async () => {
+    const embeddingServer = createFailingEmbeddingServer();
+    embeddingServers.push(embeddingServer);
+    const embeddingBaseUrl = await listen(embeddingServer);
+    const foundry = (apiKey?: string): AskDbConfig => ({
+      ...STUDIO_TEST_BASE,
+      ai: {
+        provider: "foundry",
+        providerConfig: { foundry: { apiKey, baseUrl: embeddingBaseUrl } },
+        embedding: { model: "embedding-deployment", dimensions: 4 },
+      },
+      rag: { embedder: "ai", store: "memory", storeConfig: { memory: {} } },
+    });
+    const schemaDir = copyFixture();
+    const server = createStudioServer({ schema: schemaDir });
+    servers.push(server);
+    const baseUrl = await listen(server);
+
+    installStudioRuntime({}, foundry("test-key"));
+    const failed = await postRaw(`${baseUrl}/api/rag/index`, {});
+    expect(failed.status).toBe(502);
+    expect(((await failed.json()) as { error: { message: string } }).error.message).toContain(
+      "for ai.embedding (provider foundry, connection default, model embedding-deployment)",
+    );
+
+    installStudioRuntime({}, foundry());
+    const keyMissing = await postRaw(`${baseUrl}/api/rag/index`, {});
+    expect(keyMissing.status).toBe(400);
+    expect(((await keyMissing.json()) as { error: { message: string } }).error.message).toContain(
+      '("default" in ai.providerConfig.foundry)',
+    );
+  });
+
   it("embeds with the ai.embedding provider and model, not OpenAI's (#345)", async () => {
     installStudioRuntime({}, {
       ...STUDIO_TEST_BASE,

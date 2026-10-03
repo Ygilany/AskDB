@@ -356,7 +356,17 @@ const embedding = rt.ai.embedding;            // { provider, connection, model, 
 const outputDir = rt.introspection.outputDir; // resolved artifact directory
 ```
 
-`rt.ai.language` and `rt.ai.embedding` each carry the section's resolved provider, connection name and model, plus an `env` map built from that section's connection only. Pass `rt.ai.embedding.env` to `@askdb/ai`'s `createEmbeddingModelFromEnv` to build the embedding model.
+`rt.ai.language` and `rt.ai.embedding` each carry the section's resolved provider, connection name and model, plus an `env` map built from that section's connection only. To build the embedding model, pass `rt.ai.embedding.env` to `@askdb/ai`'s `createEmbeddingModelFromEnv`, with the configured width as an option, since the env map doesn't carry it:
+
+```ts
+import { createAiRegistry } from "@askdb/ai";
+
+const embeddingModel = rt.ai.embedding
+  ? await createAiRegistry().createEmbeddingModelFromEnv(rt.ai.embedding.env, {
+      dimensions: rt.ai.embedding.dimensions, // undefined leaves the model's own width
+    })
+  : undefined; // rag.embedder is "mock"
+```
 
 AskDB does **not** copy the full config into `process.env`. The runtime snapshot is the source of truth — use `getAskDbRuntimeConfig` rather than `process.env` for anything AskDB-specific.
 

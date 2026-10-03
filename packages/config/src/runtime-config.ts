@@ -35,7 +35,8 @@ export type AskDbRuntimeAiConfig = {
   language: AskDbRuntimeAiSection & { modelFamily: string | undefined };
   /**
    * `ai.embedding`: the embedding model. Undefined unless `rag.embedder` is `"ai"`. Pass `env`
-   * to `resolveEmbeddingConfig` / `createEmbeddingModelFromEnv`.
+   * to `resolveEmbeddingConfig` / `createEmbeddingModelFromEnv`, and `{ dimensions }` as the
+   * latter's options: `env` holds the connection and model, not the width.
    */
   embedding:
     | (AskDbRuntimeAiSection & {

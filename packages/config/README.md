@@ -66,8 +66,11 @@ const apiKey = opts.apiKey ?? config.rag.embedder.apiKey;
 const level = config.logging.level;
 // For @askdb/ai registry methods that accept an env-map argument:
 const model = await aiRegistry.createLanguageModelFromEnv(config.ai.aiEnv, { ... });
-// The embedding model, built from the ai.embedding connection only (undefined unless rag.embedder is "ai"):
-const embeddingModel = config.ai.embedding && (await aiRegistry.createEmbeddingModelFromEnv(config.ai.embedding.env));
+// The embedding model, built from the ai.embedding connection only (ai.embedding is undefined unless
+// rag.embedder is "ai"). The env map doesn't carry the width, so pass it as an option:
+const embeddingModel = config.ai.embedding
+  ? await aiRegistry.createEmbeddingModelFromEnv(config.ai.embedding.env, { dimensions: config.ai.embedding.dimensions })
+  : undefined;
 ```
 
 **Rules:**

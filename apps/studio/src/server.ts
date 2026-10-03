@@ -169,8 +169,11 @@ type StudioRagEmbedderConfig =
     }
   | {
       kind: "ai-sdk";
+      /** The adapter's canonical name (`foundry` resolves to `azure`), as the embedder id uses it. */
       provider: AiProvider;
-      /** Connection name within `ai.providerConfig.<provider>`. */
+      /** The provider as `ai.embedding` resolves it in the config (`foundry` stays `foundry`), for messages. */
+      configuredProvider: string;
+      /** Connection name within `ai.providerConfig.<configuredProvider>`. */
       connection: string;
       embedderId: string;
       /** The vector width, when `ai.embedding.dimensions` sets it or AskDB knows the model's. */
@@ -1201,6 +1204,7 @@ function resolveStudioRagEmbedderConfig(): StudioRagEmbedderConfig {
   return {
     kind: "ai-sdk",
     provider,
+    configuredProvider: embedding.provider,
     connection: embedding.connection,
     embedderId: `ai-sdk:${provider}:${model}:${dimensions ?? "default"}`,
     dimensions,
@@ -1217,7 +1221,7 @@ function resolveStudioRagEmbedderConfig(): StudioRagEmbedderConfig {
 function studioRagAiSdkKeyMissingMessage(config: Extract<StudioRagEmbedderConfig, { kind: "ai-sdk" }>): string {
   return (
     `Studio RAG embeddings need an API key on the ai.embedding connection ` +
-    `("${config.connection}" in ai.providerConfig.${config.provider}). ` +
+    `("${config.connection}" in ai.providerConfig.${config.configuredProvider}). ` +
     'Set it in askdb.config.*, or set rag.embedder: "mock" for the local lexical embedder.'
   );
 }
@@ -1260,7 +1264,7 @@ function formatStudioRagOperationError(
     return new StudioHttpError(500, error instanceof Error ? error.message : String(error));
   }
   const parts = [
-    `Studio RAG embedding request failed for ai.embedding (provider ${config.provider}, connection ${config.connection}, model ${config.model}).`,
+    `Studio RAG embedding request failed for ai.embedding (provider ${config.configuredProvider}, connection ${config.connection}, model ${config.model}).`,
   ];
   if (config.baseUrl) parts.push(`Base URL: ${config.baseUrl}.`);
   if (apiError?.statusCode) parts.push(`Status: ${apiError.statusCode}.`);

@@ -125,10 +125,11 @@ async function main(): Promise<void> {
   // For larger schemas (many tables / columns), build a vector index and pass
   // a retriever so only the relevant schema chunks are sent to the model.
   // `ai.embedding` in askdb.config.ts picks the embedding model; its env view
-  // holds that section's connection only.
-  const embeddingEnv = runtimeConfig.ai.embedding?.env;
-  const embeddingModel = embeddingEnv
-    ? await ai.createEmbeddingModelFromEnv(embeddingEnv)
+  // holds that section's connection only. The width isn't in the env view, so
+  // it's passed as an option.
+  const embedding = runtimeConfig.ai.embedding;
+  const embeddingModel = embedding
+    ? await ai.createEmbeddingModelFromEnv(embedding.env, { dimensions: embedding.dimensions })
     : undefined;
 
   if (!embeddingModel) {
