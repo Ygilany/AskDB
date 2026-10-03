@@ -33,12 +33,14 @@ Releases run in `.github/workflows/release.yml`, triggered when `CI` passes on a
 
 1. Merge feature PRs with changesets. `changesets.yml` requires one on any PR that changes publishable sources.
 2. The `version` job opens or updates the **"chore: version packages (beta)"** PR on the `changeset-release/main` branch. It applies every pending changeset: version bumps and CHANGELOG entries. In prerelease mode, Changesets 3 then moves each consumed changeset into `.changeset/pre/`; `.changeset/pre.json` keeps only the mode and the `beta` tag.
-3. Review that PR's versions and changelogs, then merge it. CI runs on it like any PR; `changesets.yml` skips its changeset check there, because the PR applies changesets rather than adding one.
-4. When CI passes on the merge commit, the `publish` job waits for approval in the `npm-publish` environment. Approve it from the workflow run. It builds and runs `pnpm -r publish --access public --tag latest`, which publishes every public package whose version isn't on npm yet.
+3. Review that PR's versions and changelogs, approve it, and merge it. Your approval is the release approval: nothing asks again after the merge. CI runs on it like any PR; `changesets.yml` skips its changeset and version checks there, because the PR applies changesets rather than adding one.
+4. When CI passes on the merge commit, the `publish` job builds and runs `pnpm -r publish --access public --tag latest`, which publishes every public package whose version isn't on npm yet.
 5. The `tag` job pushes a `<name>@<version>` git tag for each published package.
 6. Check the package pages, and install one package from npm in a clean directory.
 
-A push to `main` with nothing new to publish doesn't ask for approval: `scripts/release-unpublished.mjs` compares every public package's version with npm first. If a publish fails partway, use "Re-run failed jobs" on the run; versions already on npm are skipped.
+A push to `main` with nothing new to publish doesn't start a publish: `scripts/release-unpublished.mjs` compares every public package's version with npm first. If a publish fails partway, use "Re-run failed jobs" on the run; versions already on npm are skipped.
+
+A new public package can't go through the Version PR: `changesets.yml` fails the PR that adds it until its first version is on npm, and the pipeline can only publish a package that has a trusted publisher. Publish that first version by hand (see [Publishing by Hand](#publishing-by-hand)), set up its trusted publisher ([One-Time Setup](#one-time-setup) step 3), then merge the PR.
 
 The workflow only acts when the commit CI tested is still the tip of `main`. If another PR merges before CI finishes, that newer commit's CI run triggers the release instead.
 
@@ -61,7 +63,7 @@ Recorded 2026-09-29, in #354:
 
 - **Version PR author:** a GitHub App, not `GITHUB_TOKEN` or a personal access token. PRs opened with `GITHUB_TOKEN` don't trigger other workflows, so the required checks would never report on the Version PR. The repository setting "Allow GitHub Actions to create and approve pull requests" stays off.
 - **npm auth:** trusted publishing (OIDC). No npm token is stored in the repo. pnpm 11 does the OIDC exchange itself, and adds provenance because the repo and the packages are public.
-- **Gate:** the `npm-publish` environment, with the maintainer as required reviewer and deployments limited to `main`. Only the `publish` job can request an OIDC token.
+- **Gate:** the maintainer's approval of the Version PR. `.github/CODEOWNERS` names the maintainer for every path, and the `main` ruleset requires a code-owner review, so the App-authored Version PR can't merge until the maintainer approves it. `changesets.yml` fails any other PR that adds a public `name@version` npm doesn't have (a version bump, a new public package, or a package made public), so an unpublished version reaches `main` only through that PR. An admin bypass merge of the Version PR skips the approval and still publishes. Until 2026-10-02 the `npm-publish` environment also had the maintainer as required reviewer, which repeated the PR review; the environment stays, limited to `main`, because every trusted publisher names it and only the `publish` job can request an OIDC token.
 - **changesets/action:** v2, with Changesets CLI v3 (`@changesets/cli` pinned exactly in the root `package.json`). The pipeline started on v1 with CLI v2; Dependabot moved both (#390, #393), and #424 moved the workflow and the prerelease state with them.
 - **GitHub Releases:** off. Package CHANGELOGs and git tags are the release record.
 - **Versioning:** unchanged. Packages keep their own versions, with `@askdb/core`, `askdb` and `@askdb/http-api` linked. One lockstep version line waits for the 1.0 release candidates (#354).
@@ -71,7 +73,7 @@ Recorded 2026-09-29, in #354:
 The maintainer does these once, before the first automated publish:
 
 1. **GitHub App.** Create a private App on the `Ygilany` account with repository permissions *Contents: Read and write* and *Pull requests: Read and write*, and install it on `Ygilany/AskDB` only. Store its client ID as the Actions variable `RELEASE_APP_CLIENT_ID` and a private key as the Actions secret `RELEASE_APP_PRIVATE_KEY`.
-2. **Environment.** Settings → Environments → `npm-publish`: add yourself as required reviewer, and limit deployment branches to `main`.
+2. **Environment.** Settings → Environments → `npm-publish`: limit deployment branches to `main`, with no required reviewers. The Version PR approval is the release gate.
 3. **Trusted publisher, per package.** On npmjs.com, for each of the 20 public packages (the non-private ones in `pnpm -r ls --depth -1`): package → Settings → Trusted publishing → GitHub Actions. Fill in *Organization or user* `Ygilany`, *Repository* `AskDB`, *Workflow filename* `release.yml` (file name only, no path) and *Environment name* `npm-publish`. Under *Allowed actions*, include `npm publish`, not only `npm stage publish`: the workflow publishes directly. Every field is case-sensitive and must match exactly. A saved configuration can't be edited, only deleted and re-created. Each package's `repository.url` must match the GitHub repository; all 20 have `git+https://github.com/Ygilany/AskDB.git`.
 4. **After the first automated publish succeeds**, on each package go to Settings → Publishing access, select "Require two-factor authentication and disallow tokens", and click *Update Package Settings*. Trusted publishing keeps working, but hand publishing with a token (like the granular token used on 2026-09-29) stops working.
 
