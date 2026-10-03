@@ -1,5 +1,16 @@
 # @askdb/connectors
 
+## 0.1.0-beta.9
+
+### Minor Changes
+
+- 9021e54: Raise the supported Node floor from `>=22.12` to `>=22.14` (`engines.node` in every published package). `better-sqlite3` 13, which the `@askdb/sqlite` and `@askdb/studio` peer ranges allow, segfaults on Node 22.12.0 through 22.13.1 and works from 22.14.0 (bisected on linux-x64; upstream WiseLibs/better-sqlite3#1514). Hosts on Node 22.12 or 22.13 should upgrade to Node 22.14 or newer.
+
+### Patch Changes
+
+- Updated dependencies [9021e54]
+  - @askdb/introspect@0.3.0-beta.18
+
 ## 0.1.0-beta.8
 
 ### Patch Changes
