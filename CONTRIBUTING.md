@@ -34,7 +34,7 @@ The SQLite suite needs no server; it only needs the optional `better-sqlite3` na
 
 Set `ASKDB_REQUIRE_INTEGRATION=1` to make a missing prerequisite (an unset URL, or a `better-sqlite3` that fails to load) **fail** the suite instead of skipping it. CI sets it so a misconfigured job can't pass by running no integration tests.
 
-Turbo runs tasks in strict env mode: only variables listed in the `test` task's `env` in [`turbo.json`](turbo.json) reach vitest. If you add an integration suite gated on a new variable, add the variable there and gate the suite with `integrationSuite()` from [`scripts/test-utils/integration.mjs`](scripts/test-utils/integration.mjs).
+Turbo runs tasks in strict env mode: only variables listed in the `test` task's `env` in [`turbo.json`](turbo.json) reach vitest. If you add an integration suite gated on a new variable, add the variable there and gate the suite with `integrationSuite()` from [`scripts/test-utils/integration.mjs`](scripts/test-utils/integration.mjs). `pnpm lint` runs [`scripts/check-test-gating.mjs`](scripts/check-test-gating.mjs), which fails on hand-rolled gates (`describe.skip`, `describe.skipIf`, `cond ? describe : describe.skip`) in any workspace package's tests; a line that genuinely needs one takes `// check-test-gating-ignore-next-line: <reason>` on the line above.
 
 ### Multi-engine fixture
 

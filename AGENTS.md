@@ -35,6 +35,14 @@ pnpm smoke:install
 pnpm preflight
 ```
 
+## Before a PR leaves draft
+
+Open every PR as a draft. Before it is marked ready for review:
+
+- An agent, session, or person that did not write the change reviews it with the `pr-review` skill (see "PR review" below). The implementer's own session never reviews its diff. AI reviews post from the maintainer's account, so each one opens with a disclosure line naming the model that ran it.
+- Every review finding is fixed in a commit or answered in a reply on the PR.
+- After every push (review fixes, test-audit commits, rebases, merges), re-check the PR title and description against the final diff: every named test, export, count, and behavior claim. When non-trivial code changes land after the review, re-run it on the new commits.
+
 ## Agent skills
 
 ### Issue tracker
@@ -53,6 +61,10 @@ The five default roles (`needs-triage`, `needs-info`, `ready-for-agent`, `ready-
 
 Single-context: a root `CONTEXT.md` (created lazily) plus ADRs in `docs/adrs/`. See `docs/agents/domain.md`.
 
+### PR review
+
+The `pr-review` skill from [Ygilany/ygilany-skills](https://github.com/Ygilany/ygilany-skills) (`npx skills add https://github.com/Ygilany/ygilany-skills --skill pr-review`, available once Ygilany/ygilany-skills#1 merges). AskDB's rules, sensitive paths (which also get the built-in `/security-review`), checklists, and posting commands are in `docs/agents/pr-review.md`.
+
 ## Where product/architecture decisions live
 
 `docs/` is the constitution — check it before assuming behavior, not just the code:
@@ -60,9 +72,17 @@ Single-context: a root `CONTEXT.md` (created lazily) plus ADRs in `docs/adrs/`. 
 - `docs/mission.md` — north star, principles, non-goals
 - `docs/architecture.md` — package boundaries, install profiles
 - `docs/contracts/` — formal contracts (modes, sensitive fields, schema format)
-- `docs/adrs/` — architecture decision records
+- `docs/adrs/` — architecture decision records; `docs/adrs/README.md` indexes them in one line each. Read the index before you plan a change.
 
 `apps/docs-site/src/content/docs/` is the public-facing docs (askdb.tools) — treat it as a product surface, not just documentation. If you change a package's public API or add a new integration pattern, the docs site needs a corresponding update or agents integrating AskDB elsewhere will get stale guidance.
+
+## Architecture and decisions
+
+Every change, whether you write it or review it, is checked against these three rules.
+
+- **Right layer, clean boundary.** Put each change in the package that owns the behavior (`docs/architecture.md`, "Dependency boundaries"). Dependencies point down: core ← introspect / ai ← engine packages and optional libraries ← apps. Engine-specific code lives in its engine package; code shared by engines lives in the shared kit; app-only concerns (transport, request guards, UI) stay in the app. Fix a defect at its owner, not in the caller that hit it.
+- **User-facing changes update the docs site in the same PR.** That covers a public API, CLI flag, config key, default, error text, Studio behavior, or integration pattern: update `apps/docs-site/src/content/docs/` in the same PR, not as a follow-up.
+- **Record choices between clean options in an ADR.** When a change picks between two or more viable designs, add `docs/adrs/NNNN-title.md` (context, options considered, decision, consequences) and a row in `docs/adrs/README.md` in the same PR. To change an accepted decision, amend or supersede its ADR; don't just change the code. If two open PRs claim the same ADR number, the second to merge renumbers.
 
 ## Conventions
 
@@ -72,6 +92,7 @@ Single-context: a root `CONTEXT.md` (created lazily) plus ADRs in `docs/adrs/`. 
 - Published ranges are what hosts install against, so a bump the range already allows moves only the lockfile. A floor rises by hand, for a security fix or a version AskDB needs, with a changeset naming which; raising an `ai` or `@ai-sdk/openai` floor raises the consumer lab's host pin with it, or its `host-peers` scenario fails (ADR 0015).
 - Add tests for behavior that affects public APIs, package output, SQL safety/validation, or user-facing workflows. Integration tests that need a live database run when their env var is set. Tests that need a real schema in every engine use the multi-engine fixture (`pnpm fixture:up`, `ASKDB_FIXTURE_HOST`; see `CONTRIBUTING.md`).
 - Add a changeset (`pnpm changeset`) for any change to a publishable package. AskDB is pre-1.0 — breaking public API changes normally use a minor changeset unless the project is intentionally moving a package to 1.0.
+- A change that doesn't alter what a package ships to users (code comments, tests, docs-only edits) bumps no version. When the Changesets status check still requires an entry because a file under `src/` changed, add an empty one (`pnpm changeset --empty`) instead of a patch bump.
 - Keep `apps/docs-site` accurate as you go, not as a follow-up: don't invent package names, APIs, or file paths there — verify against the actual source or existing docs content before writing a claim.
 - Markdown and MDX (docs, ADRs, skills, changesets, READMEs): one line per paragraph or list item, left for the editor to soft-wrap. Break lines only where the Markdown structure needs it — headings, list items, table rows, code blocks.
 - When opening an issue or PR, include a metadata section at the bottom with the originating thread ID and its worktree. Format: `Thread ID: <thread-uuid> (worktree <worktree-name>)`, e.g. `Thread ID: 743d36c3-aac8-423a-b74c-62e1bbc9fa00 (worktree t3code-a0ad9d56)`. The worktree directory name is not the thread ID; look the UUID up as described in `docs/agents/project-board.md` (**Thread lines**). This provides traceability back to the conversation that initiated the work and helps retrieve context later. A thread that picks up an existing issue adds `Worked on by: <thread-uuid> (worktree <worktree-name>)` below that footer.
