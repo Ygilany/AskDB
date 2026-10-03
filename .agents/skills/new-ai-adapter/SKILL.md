@@ -16,7 +16,7 @@ From the user's request, determine — ask only for what cannot be inferred:
 1. **`<provider>`** — lowercase id: the `ASKDB_AI_PROVIDER` / `ai.provider` value and `adapter.provider` (e.g. `mistral`, `cohere`, `xai`).
 2. **`<sdk>`** — the AI SDK package, normally `@ai-sdk/<provider>`. Confirm it exists: `npm view @ai-sdk/<provider> version`. Confirm its factory API: `npm view @ai-sdk/<provider> readme | head -100` — you need the `create<X>` factory name (e.g. `createMistral`) and whether it exposes `.embedding()` / `.embeddingModel()` or has no embeddings at all. If the factory ships inside `ai` itself (as `createGateway` does), there is no peer package: see `providers/gateway.ts`.
 3. **Native env vars** — the provider's conventional key/model/baseURL variables (e.g. `MISTRAL_API_KEY`). Use the names the SDK's own docs use; never invent new ones.
-4. **`<defaultModel>`** — a current, real chat model id for the provider. Verify against the provider's docs (WebFetch/WebSearch if available); do not trust memory for model ids. For Anthropic specifically, consult the `claude-api` skill if available.
+4. **`<defaultModel>`** — a current, real language model id for the provider. Verify against the provider's docs (WebFetch/WebSearch if available); do not trust memory for model ids. For Anthropic specifically, consult the `claude-api` skill if available.
 5. **Aliases** — alternative `ASKDB_AI_PROVIDER` spellings users may try (often none).
 
 ## Prerequisites — verify before starting
@@ -136,7 +136,7 @@ Rules:
 `packages/client/src/provider-config-drift.test.ts` fails until `@askdb/config` knows the provider: it flattens every config branch and resolves it through the registry, so the id list, env var names, and default model must all agree. `@askdb/config` must not depend on `@askdb/ai`, so mirror it there:
 
 - `src/constants.ts`: append `<provider>` to `ASKDB_AI_PROVIDERS`.
-- `src/defaults.ts` (+ export from `src/index.ts`): `DEFAULT_<PROVIDER>_CHAT_MODEL`, equal to `ENV_SPEC.defaultModel`.
+- `src/defaults.ts` (+ export from `src/index.ts`): `DEFAULT_<PROVIDER>_LANGUAGE_MODEL`, equal to `ENV_SPEC.defaultModel`.
 - `src/types.ts`: a `<Provider>Config` type, add it to `AiProviderConfigs`, a `<Provider>AiConfig` branch, and the `AskDbAiConfig` union (export both from `src/index.ts`).
 - `src/flatten.ts`: an `apply<Provider>Ai()` writing env keys the provider reads (`apiKeyVars[0]`, a `baseURLVars` entry) plus `ASKDB_AI_MODEL`, and a branch using `requireProviderBranch`.
 - `src/config.test.ts`: flatten tests for the new branch; update the `ASKDB_AI_PROVIDERS` list test.
