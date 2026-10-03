@@ -109,6 +109,7 @@ export type {
   ParsedConceptsMarkdown,
   RecognizedH2Section,
   NormalizedSchemaV2,
+  BundledSchemaV2,
   NormalizedV2Table,
   NormalizedV2Column,
   SchemaV2Warning,
