@@ -787,19 +787,53 @@ describe("ai config sections: provider connections, ai.language, ai.embedding (#
       expect(rt.flat.ASKDB_RAG_EMBEDDER_DIMENSIONS).toBe("1536");
     });
 
-    it("keeps the 1536-wide vectors a legacy embedder assumed for a model AskDB doesn't know", () => {
+    // The width main sent for a legacy embedder: the model id alone looked up among OpenAI's, else 1536.
+    it.each<[string, AskDbConfig["ai"], string, number, boolean]>([
+      [
+        "an Azure deployment name",
+        { provider: "azure", providerConfig: { azure: { apiKey: "az-key", resourceName: "eastus" } } },
+        "my-embedding-deployment",
+        1536,
+        true,
+      ],
+      [
+        "a gateway id main didn't recognize",
+        { provider: "gateway", providerConfig: { gateway: { apiKey: "gw-key" } } },
+        "openai/text-embedding-3-large",
+        1536,
+        true,
+      ],
+      [
+        "an OpenAI model id on a custom provider",
+        { provider: "mistral", providerConfig: { mistral: { apiKey: "m-key" } } },
+        "text-embedding-3-large",
+        3072,
+        true,
+      ],
+      ["an OpenAI model on openai", OPENAI_AI, "text-embedding-3-large", 3072, false],
+    ])("a legacy embedder keeps main's width for %s", (_name, ai, model, width, asksToPin) => {
       const rt = runtimeFor(
-        config(
-          { provider: "azure", providerConfig: { azure: { apiKey: "az-key", resourceName: "eastus" } } },
-          {
-            embedder: "ai-sdk",
-            embedderConfig: { openai: { model: "my-embedding-deployment" } },
-            store: "memory",
-            storeConfig: { memory: {} },
-          },
-        ),
+        config(ai, { embedder: "ai-sdk", embedderConfig: { openai: { model } }, store: "memory", storeConfig: { memory: {} } }),
       );
-      expect(rt.ai.embedding).toMatchObject({ provider: "azure", model: "my-embedding-deployment", dimensions: 1536 });
+      expect(rt.ai.embedding).toMatchObject({ model, dimensions: width });
+      expect(rt.deprecations.some((message) => message.includes(`set ai.embedding.dimensions: ${width}`))).toBe(asksToPin);
+    });
+
+    it.each<[string, AskDbConfig["rag"]]>([
+      [
+        "rag.storeConfig.pgvector.dimensions",
+        { embedder: "openai", store: "pgvector", storeConfig: { pgvector: { databaseUrl: "postgres://pg/db", dimensions: "abc" } } },
+      ],
+      [
+        "rag.embedderConfig.openai.dimension",
+        { embedder: "openai", embedderConfig: { openai: { dimension: "0" } }, store: "memory", storeConfig: { memory: {} } },
+      ],
+    ])("reports an invalid legacy %s as ignored, and keeps main's width", (key, rag) => {
+      const rt = runtimeFor(config(OPENAI_AI, rag));
+      expect(rt.ai.embedding?.dimensions).toBe(1536);
+      expect(rt.deprecations.some((message) => message.includes(key) && message.includes("isn't a positive integer"))).toBe(
+        true,
+      );
     });
 
     it.each<[string, AskDbConfig, RegExp]>([
@@ -825,6 +859,11 @@ describe("ai config sections: provider connections, ai.language, ai.embedding (#
           { embedder: "ai", store: "memory", storeConfig: { memory: {} } },
         ),
         /ai\.providerConfig\.openai is required when ai\.embedding\.provider is "openai"/,
+      ],
+      [
+        "a custom provider with only named connections",
+        config({ provider: "mistral", providerConfig: { mistral: [{ name: "eu", apiKey: "k" }] }, language: { model: "m" } }),
+        /ai\.providerConfig\.mistral has no connection named "default" \(it has: "eu"\)/,
       ],
       [
         "no provider for the language section",

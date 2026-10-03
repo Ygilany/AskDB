@@ -75,7 +75,7 @@ const LEGACY_RAG_CONNECTION = "rag-embeddings";
 const LEGACY_RAG_KEY_PROVIDERS = new Set(["openai", "azure", "foundry", "gateway"]);
 /** Providers a legacy `"ai-sdk"` embedder without a model defaults to `text-embedding-3-small` on. */
 const LEGACY_DEFAULT_EMBEDDING_MODEL_PROVIDERS = new Set(["openai", "azure", "foundry"]);
-/** Width the deprecated embedders assumed for a model AskDB doesn't know. */
+/** Width the deprecated embedders sent for a model id that isn't one of OpenAI's. */
 const LEGACY_EMBEDDING_DIMENSIONS = 1536;
 
 export function isMember<T extends readonly string[]>(value: string, allowed: T): value is T[number] {
@@ -152,8 +152,9 @@ function connectionNames(provider: ProviderConnections | undefined): string {
 
 /**
  * Looks up a section's connection: `connection` within `provider`, `"default"` when unnamed.
- * A custom provider with no `"default"` connection gets an empty one (AI then resolves as
- * disabled, as it always has); a built-in provider must have one.
+ * A provider with named connections must name one `"default"` unless the section picks one. A
+ * custom provider with no connection at all gets an empty one (AI then resolves as disabled, as
+ * it always has); a built-in provider must have one.
  */
 function resolveConnection(
   table: Map<string, ProviderConnections>,
@@ -172,13 +173,13 @@ function resolveConnection(
         `has no connection by that name (it has: ${connectionNames(providerConnections)}).`,
     );
   }
-  if (!isBuiltinProvider(provider)) return undefined;
   if (providerConnections && providerConnections.entries.length > 0) {
     throw new Error(
       `askdb.config: ai.providerConfig.${provider} has no connection named "default" ` +
         `(it has: ${connectionNames(providerConnections)}); name one "default" or set ai.${section}.connection.`,
     );
   }
+  if (!isBuiltinProvider(provider)) return undefined;
   throw new Error(
     `askdb.config: ai.providerConfig.${provider} is required when ${providerSource} is "${provider}". ` +
       `(Did you put the settings under providerConfig.custom? That key was only for providers ` +
@@ -203,6 +204,27 @@ function parseConfiguredDimensions(value: string | number | undefined, key: stri
   if (parsed === undefined) {
     throw new Error(`askdb.config: ${key} must be a positive integer (got ${JSON.stringify(value)}).`);
   }
+  return parsed;
+}
+
+/**
+ * Reads a deprecated width key and warns that it's deprecated. A value that isn't a positive
+ * integer is ignored, as it always was, and the warning says so.
+ */
+function readLegacyWidth(
+  value: string | number | undefined,
+  key: string,
+  context: string,
+  warn: (message: string) => void,
+): number | undefined {
+  if (value === undefined || String(value).trim() === "") return undefined;
+  const parsed = parsePositiveInteger(value);
+  warn(
+    parsed === undefined
+      ? `askdb.config: ${key} is deprecated${context}, and ignored because it isn't a positive integer; ` +
+          "remove it, and set ai.embedding.dimensions if you need a width."
+      : `askdb.config: ${key} is deprecated${context}; move it to ai.embedding.dimensions.`,
+  );
   return parsed;
 }
 
@@ -260,10 +282,7 @@ function translateLegacyEmbedder(
     model = DEFAULT_RAG_EMBEDDING_MODEL;
   }
 
-  const dimensions = parsePositiveInteger(legacyOpenai.dimension);
-  if (legacyOpenai.dimension !== undefined && String(legacyOpenai.dimension).trim() !== "") {
-    warn("askdb.config: rag.embedderConfig.openai.dimension is deprecated; move it to ai.embedding.dimensions.");
-  }
+  const dimensions = readLegacyWidth(legacyOpenai.dimension, "rag.embedderConfig.openai.dimension", "", warn);
 
   const apiKey = nonBlank(legacyOpenai.apiKey);
   const baseUrl = nonBlank(legacyOpenai.baseUrl);
@@ -499,7 +518,14 @@ export function normalizeAskDbConfig(config: AskDbConfig): {
 
     // The legacy pgvector width moves to the embedding section.
     const pgvectorDimensions =
-      rag.store === "pgvector" ? parsePositiveInteger(rag.storeConfig.pgvector?.dimensions) : undefined;
+      rag.store === "pgvector"
+        ? readLegacyWidth(
+            rag.storeConfig.pgvector?.dimensions,
+            "rag.storeConfig.pgvector.dimensions",
+            ` with rag.embedder "${rag.embedder}"`,
+            warn,
+          )
+        : undefined;
     if (pgvectorDimensions !== undefined) {
       if (dimensions !== undefined && dimensions !== pgvectorDimensions) {
         throw new Error(
@@ -508,20 +534,20 @@ export function normalizeAskDbConfig(config: AskDbConfig): {
         );
       }
       dimensions = pgvectorDimensions;
-      warn(
-        `askdb.config: rag.storeConfig.pgvector.dimensions is deprecated with rag.embedder "${rag.embedder}"; move it to ai.embedding.dimensions.`,
-      );
     }
 
-    // The deprecated embedders assumed 1536 for a model AskDB doesn't know. Keep that, so an
-    // index built with a legacy config keeps its width and its embedder id.
+    // The deprecated embedders always sent a width: the model id's among OpenAI's (whatever the
+    // provider), else 1536. Keep it, so an index built with a legacy config keeps its width and
+    // its embedder id, and say when an ai.embedding section would resolve a different one.
     const knownWidth = knownEmbeddingDimensions(provider, embeddingModel);
-    if (legacy && dimensions === undefined && knownWidth === undefined) {
-      dimensions = LEGACY_EMBEDDING_DIMENSIONS;
-      warn(
-        `askdb.config: rag.embedder "${rag.embedder}" assumes ${LEGACY_EMBEDDING_DIMENSIONS} dimensions for embedding model ` +
-          `"${embeddingModel}"; when you move to ai.embedding, set ai.embedding.dimensions: ${LEGACY_EMBEDDING_DIMENSIONS} to keep the index you have.`,
-      );
+    if (legacy && dimensions === undefined) {
+      dimensions = knownEmbeddingDimensions("openai", embeddingModel) ?? LEGACY_EMBEDDING_DIMENSIONS;
+      if (dimensions !== knownWidth) {
+        warn(
+          `askdb.config: rag.embedder "${rag.embedder}" uses ${dimensions} dimensions for embedding model ` +
+            `"${embeddingModel}"; when you move to ai.embedding, set ai.embedding.dimensions: ${dimensions} to keep the index you have.`,
+        );
+      }
     }
 
     if (rag.store === "pgvector" && dimensions === undefined && knownWidth === undefined) {

@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted (2026-10-02, maintainer decision). Implemented by #435, which also fixes the RAG key leak in #345: the types are in `packages/config/src/types.ts`, the translation of the old keys and the section resolution in `packages/config/src/normalize.ts`, and Studio's RAG embedder reads `getAskDbRuntimeConfig().ai.embedding`. One departure, approved on #435: a config in the old `rag.embedder` shape keeps the 1536 width those embedders assumed for a model AskDB doesn't know, so its Studio index keeps its embedder id.
+Accepted (2026-10-02, maintainer decision). Implemented by #435, which also fixes the RAG key leak in #345: the types are in `packages/config/src/types.ts`, the translation of the old keys and the section resolution in `packages/config/src/normalize.ts`, and Studio's RAG embedder reads `getAskDbRuntimeConfig().ai.embedding`. One departure, approved on #435: a config in the old `rag.embedder` shape keeps the width those embedders always sent (the model id's among OpenAI's three, whatever the provider, else 1536), so its Studio index keeps its embedder id.
 
 ## Context
 

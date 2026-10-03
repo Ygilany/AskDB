@@ -150,7 +150,7 @@ Keyed by provider id. Each value is one connection, or a list of connections whe
 | `gateway` | `apiKey`, `baseUrl` (Vercel AI Gateway) |
 | any other id | `apiKey`, `baseUrl`, for a [custom provider](#custom-providers) |
 
-Every connection also takes `name`, which defaults to `"default"` and must be unique within its provider. For a built-in provider, a list needs a `"default"` entry unless every section that uses the provider sets `connection`.
+Every connection also takes `name`, which defaults to `"default"` and must be unique within its provider. A list needs a `"default"` entry unless every section that uses the provider sets `connection`.
 
 ### `ai.language`
 
@@ -238,7 +238,7 @@ How the old embedder keys translate:
 
 - A model left unset means `text-embedding-3-small` on `openai`, `azure` and `foundry`, as before. Any other provider fails to load and asks for `ai.embedding.model`.
 - `"ai-sdk"` embeds with the language model's provider, so with Anthropic, which has no embeddings API, it fails to load: move to `ai.embedding` with another provider.
-- A model AskDB doesn't know keeps the 1536-wide vectors the old embedders assumed, so an existing index keeps its embedder id. Set `ai.embedding.dimensions: 1536` when you migrate.
+- The old embedders always sent a width: the model's own when its id is one of OpenAI's three (`text-embedding-3-large` is 3072, the others 1536), whatever the provider, else 1536. A config in the old shape keeps that width, so an existing index keeps its embedder id. When `ai.embedding` would resolve a different width (an unknown model, or an `openai/…` id on the gateway), the warning names the `ai.embedding.dimensions` value to set when you migrate.
 - A `rag.embedderConfig.openai.apiKey` or `.baseUrl` that differs from the default connection of the embedding model's provider moves to a connection named `"rag-embeddings"`. It can only move to an `openai`, `azure`, `foundry` or `gateway` connection; with any other embedding provider the config fails to load instead of sending the key there.
 - An empty `rag.embedderConfig: {}`, which earlier scaffolds wrote, is ignored without a warning.
 
