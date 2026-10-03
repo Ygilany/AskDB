@@ -120,7 +120,7 @@ function studioConfig(execute: StudioExecute | undefined): string {
   return `import { defineConfig, env } from "@askdb/config";
 
 export default defineConfig({
-  ai: { provider: "openai", providerConfig: { openai: { apiKey: "", model: "gpt-4o-mini" } } },
+  ai: { provider: "openai", providerConfig: { openai: { apiKey: "" } } },
   introspection: { provider: "postgres", providerConfig: { postgres: {} } },
   rag: { embedder: "mock", embedderConfig: {}, store: "memory", storeConfig: { memory: {} } },${studio}
 });
