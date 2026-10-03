@@ -92,7 +92,8 @@ When it fails, prefer fixing over allowlisting:
 
 | Advisory | Package / path | Why it is not exploitable here | Remove when |
 | --- | --- | --- | --- |
-| _none_ | | | |
+| GHSA-ch52-4w7c-c8xp | `http-cache-semantics` via `astro` (`apps/docs-site` only) | Cross-user cache disclosure in a caching HTTP client; `astro` uses it for build-time fetches, never shared across users, and it isn't in any published package. | A patched `http-cache-semantics` (> 4.2.0) is released |
+| GHSA-vfj7-8cjw-p6xm | `braces` via `starlight-llms-txt > micromatch` (`apps/docs-site` only) | Stack exhaustion from deeply nested braces patterns; the docs build globs only our own fixed patterns, and it isn't in any published package. | A patched `braces` (> 3.0.3) is released |
 
 ## Before Opening a PR
 
