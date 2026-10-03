@@ -12,6 +12,7 @@ import {
   parsePositiveInteger,
 } from "./defaults.js";
 import {
+  isMember,
   normalizeAskDbConfig,
   type NormalizedAiConnection,
   type NormalizedAiEmbeddingSection,
@@ -19,10 +20,6 @@ import {
   type NormalizedAskDbConfig,
 } from "./normalize.js";
 import type { AskDbAiReasoningConfig, AskDbConfig } from "./types.js";
-
-function isMember<T extends readonly string[]>(value: string, allowed: T): value is T[number] {
-  return (allowed as readonly string[]).includes(value);
-}
 
 function set(out: Record<string, string>, key: string, value: string | undefined): void {
   if (value === undefined) return;

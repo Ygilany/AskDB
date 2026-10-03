@@ -1214,13 +1214,10 @@ function resolveStudioRagEmbedderConfig(): StudioRagEmbedderConfig {
   };
 }
 
-function studioRagAiSdkKeyMissingMessage(config: StudioRagEmbedderConfig): string {
-  const connection =
-    config.kind === "ai-sdk"
-      ? `the ai.embedding connection ("${config.connection}" in ai.providerConfig.${config.provider})`
-      : "the ai.embedding connection";
+function studioRagAiSdkKeyMissingMessage(config: Extract<StudioRagEmbedderConfig, { kind: "ai-sdk" }>): string {
   return (
-    `Studio RAG embeddings need an API key on ${connection}. ` +
+    `Studio RAG embeddings need an API key on the ai.embedding connection ` +
+    `("${config.connection}" in ai.providerConfig.${config.provider}). ` +
     'Set it in askdb.config.*, or set rag.embedder: "mock" for the local lexical embedder.'
   );
 }

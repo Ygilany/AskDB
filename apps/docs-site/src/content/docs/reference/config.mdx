@@ -168,12 +168,12 @@ Read only when `rag.embedder` is `"ai"`; ignored for `"mock"`.
 
 | Field | Default | Notes |
 | --- | --- | --- |
-| `provider` | `ai.provider` | Anthropic has no embeddings API, so a config whose embedding provider resolves to `anthropic` fails to load. Set `provider` (for example `"openai"`) and give it a connection. |
+| `provider` | `ai.provider` | Anthropic has no embeddings API, so a config whose `ai.embedding` provider resolves to `anthropic` fails to load. Set `provider` (for example `"openai"`) and give it a connection. |
 | `connection` | `"default"` | A connection name in `ai.providerConfig.<provider>`. |
 | `model` | none, required | AskDB has no default embedding model. On Azure, the embedding deployment name. On the AI Gateway, an `<upstream>/<model>` id such as `openai/text-embedding-3-small`. |
 | `dimensions` | The model's known width | A positive integer, sent to the provider as the requested vector size. AskDB knows `text-embedding-3-small` (1536), `text-embedding-3-large` (3072) and `text-embedding-ada-002` (1536) on `openai`, `azure` and `foundry`, and their `openai/…` ids on `gateway`. For any other model with the `pgvector` store, set it: pgvector needs a fixed width. |
 
-Changing the embedding provider, model or dimensions changes the index's embedder id: Studio then reports the RAG index as stale and asks you to reindex before using it.
+Changing the `ai.embedding` provider, model or dimensions changes the index's embedder id: Studio then reports the RAG index as stale and asks you to reindex before using it.
 
 ### Reasoning effort
 
@@ -220,7 +220,7 @@ With `embedder: "ai"`, the pgvector table's width is the embedding model's (`ai.
 
 ## Deprecated keys
 
-Configs written before the `ai.language` and `ai.embedding` sections still load. AskDB translates each old key at load and warns once per key with a Node `DeprecationWarning` (code `ASKDB_CONFIG_DEPRECATED`). The warning names the old and new location, never the value. `getAskDbRuntimeConfig().deprecations` lists the same messages. The old keys are removed at 1.0.
+Configs written before the `ai.language` and `ai.embedding` sections still load, apart from the few cases below that fail with an error saying what to change. AskDB translates each old key at load and warns once per key with a Node `DeprecationWarning` (code `ASKDB_CONFIG_DEPRECATED`). The warning names the old and new location, never the value. `getAskDbRuntimeConfig().deprecations` lists the same messages. The old keys are removed at 1.0.
 
 | Old key | Use instead |
 | --- | --- |
@@ -237,8 +237,9 @@ Configs written before the `ai.language` and `ai.embedding` sections still load.
 How the old embedder keys translate:
 
 - A model left unset means `text-embedding-3-small` on `openai`, `azure` and `foundry`, as before. Any other provider fails to load and asks for `ai.embedding.model`.
+- `"ai-sdk"` embeds with the language model's provider, so with Anthropic, which has no embeddings API, it fails to load: move to `ai.embedding` with another provider.
 - A model AskDB doesn't know keeps the 1536-wide vectors the old embedders assumed, so an existing index keeps its embedder id. Set `ai.embedding.dimensions: 1536` when you migrate.
-- A `rag.embedderConfig.openai.apiKey` or `.baseUrl` that differs from the embedding provider's default connection moves to a connection named `"rag-embeddings"`. It can only move to an `openai`, `azure`, `foundry` or `gateway` connection; with any other embedding provider the config fails to load instead of sending the key there.
+- A `rag.embedderConfig.openai.apiKey` or `.baseUrl` that differs from the default connection of the embedding model's provider moves to a connection named `"rag-embeddings"`. It can only move to an `openai`, `azure`, `foundry` or `gateway` connection; with any other embedding provider the config fails to load instead of sending the key there.
 - An empty `rag.embedderConfig: {}`, which earlier scaffolds wrote, is ignored without a warning.
 
 A model set in both places is fine: `ai.language.model` wins, and the warning says the old value is ignored. Other old keys set next to their replacement fail to load, and the error asks you to remove the old one: `ai.reasoning` with `ai.language.reasoning`, `ai.providerConfig.custom` with `ai.providerConfig.<provider id>`, `rag.embedderConfig` with `ai.embedding` or `rag.embedder: "ai"`, and two different widths in `rag.storeConfig.pgvector.dimensions` and the embedding section.

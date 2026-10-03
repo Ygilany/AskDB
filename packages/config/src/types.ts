@@ -173,7 +173,7 @@ export type AskDbAiLanguageConfig = {
 
 /** `ai.embedding`: the embedding model behind `rag.embedder: "ai"`. Ignored when `rag.embedder` is `"mock"`. */
 export type AskDbAiEmbeddingConfig = {
-  /** Defaults to `ai.provider`. Anthropic has no embeddings API, so it can't be the embedding provider. */
+  /** Defaults to `ai.provider`. Anthropic has no embeddings API, so it can't be this section's provider. */
   provider?: AskDbAiProviderId | (string & {});
   /** Name of a connection in `ai.providerConfig.<provider>`. Defaults to `"default"`. */
   connection?: string;

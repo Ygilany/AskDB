@@ -48,7 +48,7 @@ export function renderAskDbAiConfigScaffold(input: AskDbAiConfigScaffoldInput): 
   }
   const envVars: AskDbScaffoldEnvVar[] = [{ name: keyEnv, purpose: `${provider} API key` }];
   const fields = [`apiKey: env(${JSON.stringify(keyEnv)}),`];
-  // The connection holds credentials only; the model choice lives in `ai.language`.
+  // The provider connection holds the key and endpoint only; the model choice lives in `ai.language`.
   let language = "";
   if (modelEnv) {
     envVars.push({ name: modelEnv, purpose: `${provider} model override` });

@@ -137,7 +137,7 @@ Rules:
 
 - `src/constants.ts`: append `<provider>` to `ASKDB_AI_PROVIDERS`.
 - `src/defaults.ts` (+ export from `src/index.ts`): `DEFAULT_<PROVIDER>_LANGUAGE_MODEL`, equal to `ENV_SPEC.defaultModel`.
-- `src/types.ts`: a `<Provider>Connection` type holding connection fields only (`apiKey`, `baseUrl`, and any setting the adapter can't start without), never a model; add it to `AiProviderConnections` and export it from `src/index.ts`. If it has a field Azure's connection lacks, widen the index signature's union in `AiProviderConnections` too, or the named key stops type-checking.
+- `src/types.ts`: a `<Provider>Connection` type holding connection fields only (`apiKey`, `baseUrl`, and any setting the adapter can't start without), never a model; add it to `AiProviderConnections` and export it from `src/index.ts`. If it has a field Azure's connection lacks, widen the index signature's union in `AiProviderConnections` too, or the named key stops type-checking, and add the field to `CONNECTION_FIELDS` in `src/normalize.ts`, or loading drops it.
 - `src/flatten.ts`: a `case` in `applyAiConnection` writing the env keys the provider reads (`apiKeyVars[0]`, a `baseURLVars` entry). The language model goes out through `applyLanguageModel`'s default branch (`ASKDB_AI_MODEL`) unless the provider has a native model variable worth writing too.
 - `src/normalize.ts`: return `DEFAULT_<PROVIDER>_LANGUAGE_MODEL` from `defaultLanguageModel()`. If the provider has no embeddings API, make the `anthropic` check in `normalizeAskDbConfig` cover it too, so a config that embeds with it fails at load.
 - `src/config.test.ts`: flatten tests for the new provider's connection; update the `ASKDB_AI_PROVIDERS` list test.

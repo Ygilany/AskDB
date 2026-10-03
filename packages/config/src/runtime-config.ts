@@ -8,7 +8,7 @@ import {
   parsePositiveInteger,
 } from "./defaults.js";
 import { aiEmbeddingEnv, aiLanguageEnv } from "./flatten.js";
-import { normalizeAskDbConfig } from "./normalize.js";
+import { normalizeAskDbConfig, type NormalizedAiConnection } from "./normalize.js";
 import { flatToAiEnv, getAskDbRuntimeStore } from "./runtime-store.js";
 
 /** One resolved `ai` section: its provider, the connection it uses, its model, and an env view built from that connection only. */
@@ -198,6 +198,14 @@ function normalizedFor(structured: Readonly<AskDbConfig>): ReturnType<typeof nor
   return normalized;
 }
 
+/** The runtime view of a resolved `ai` section, with `env` built from its connection only. */
+function runtimeSection<M extends string | undefined>(
+  section: { provider: string; connection: NormalizedAiConnection; model: M },
+  env: Record<string, string>,
+): AskDbRuntimeAiSection & { model: M } {
+  return { provider: section.provider, connection: section.connection.name, model: section.model, env };
+}
+
 function pickFlat(flat: Readonly<Record<string, string>>, key: string): string | undefined {
   const v = flat[key];
   if (v === undefined || v.trim() === "") return undefined;
@@ -215,11 +223,8 @@ export function getAskDbRuntimeConfig(): AskDbRuntimeConfig {
   const embeddingSection = normalized.ai.embedding;
   const embedding = embeddingSection
     ? {
-        provider: embeddingSection.provider,
-        connection: embeddingSection.connection.name,
-        model: embeddingSection.model,
+        ...runtimeSection(embeddingSection, aiEmbeddingEnv(embeddingSection)),
         dimensions: embeddingSection.dimensions,
-        env: aiEmbeddingEnv(embeddingSection),
       }
     : undefined;
   // The RAG CLI's OpenAI embedder never reads another provider's key or base URL.
@@ -276,13 +281,7 @@ export function getAskDbRuntimeConfig(): AskDbRuntimeConfig {
     flat,
     ai: {
       aiEnv,
-      language: {
-        provider: language.provider,
-        connection: language.connection.name,
-        model: language.model,
-        modelFamily: language.modelFamily,
-        env: aiLanguageEnv(language),
-      },
+      language: { ...runtimeSection(language, aiLanguageEnv(language)), modelFamily: language.modelFamily },
       embedding,
     },
     introspection: {

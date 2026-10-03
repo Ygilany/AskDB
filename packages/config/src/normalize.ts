@@ -16,15 +16,13 @@ import {
 } from "./defaults.js";
 import type { AskDbAiReasoningConfig, AskDbConfig } from "./types.js";
 
-/** A provider connection after normalization: every field a built-in connection can carry, trimmed, plus its name. */
-export type NormalizedAiConnection = {
-  name: string;
-  apiKey?: string;
-  secondaryApiKey?: string;
-  resourceName?: string;
-  baseUrl?: string;
-  apiVersion?: string;
-};
+/** Every setting a built-in provider connection can carry, besides its name. */
+const CONNECTION_FIELDS = ["apiKey", "secondaryApiKey", "resourceName", "baseUrl", "apiVersion"] as const;
+
+type ConnectionSettings = { [Field in (typeof CONNECTION_FIELDS)[number]]?: string };
+
+/** A provider connection after normalization: its settings, trimmed, plus its name. */
+export type NormalizedAiConnection = ConnectionSettings & { name: string };
 
 export type NormalizedAiLanguageSection = {
   provider: string;
@@ -58,16 +56,7 @@ export type NormalizedAskDbConfig = Omit<AskDbConfig, "ai" | "rag"> & {
 };
 
 /** Fields a connection literal can hold, legacy model fields included. */
-type RawConnection = {
-  name?: string;
-  apiKey?: string;
-  secondaryApiKey?: string;
-  resourceName?: string;
-  baseUrl?: string;
-  apiVersion?: string;
-  model?: string;
-  modelFamily?: string;
-};
+type RawConnection = ConnectionSettings & { name?: string; model?: string; modelFamily?: string };
 
 type ConnectionEntry = { raw: RawConnection; connection: NormalizedAiConnection; label: string };
 
@@ -89,7 +78,7 @@ const LEGACY_DEFAULT_EMBEDDING_MODEL_PROVIDERS = new Set(["openai", "azure", "fo
 /** Width the deprecated embedders assumed for a model AskDB doesn't know. */
 const LEGACY_EMBEDDING_DIMENSIONS = 1536;
 
-function isMember<T extends readonly string[]>(value: string, allowed: T): value is T[number] {
+export function isMember<T extends readonly string[]>(value: string, allowed: T): value is T[number] {
   return (allowed as readonly string[]).includes(value);
 }
 
@@ -123,7 +112,7 @@ function defaultLanguageModel(provider: string): string | undefined {
 
 function toConnection(raw: RawConnection, name: string): NormalizedAiConnection {
   const connection: NormalizedAiConnection = { name };
-  for (const field of ["apiKey", "secondaryApiKey", "resourceName", "baseUrl", "apiVersion"] as const) {
+  for (const field of CONNECTION_FIELDS) {
     const value = nonBlank(raw[field]);
     if (value !== undefined) connection[field] = value;
   }
@@ -237,18 +226,18 @@ type LegacyEmbedding = {
 };
 
 /**
- * Translates `rag.embedder: "openai" | "ai-sdk"` plus `rag.embedderConfig.openai` (T5-T7).
- * A legacy key or base URL moves to a connection of the embedding provider, and only for
- * providers that ever accepted an OpenAI-shaped key (#345).
+ * Translates `rag.embedder: "openai" | "ai-sdk"` plus `rag.embedderConfig.openai`. A legacy key
+ * or base URL moves to a connection of the embedding model's provider, and only for providers
+ * that ever accepted an OpenAI-shaped key (#345).
  */
 function translateLegacyEmbedder(
+  embedder: "openai" | "ai-sdk",
   config: AskDbConfig,
   table: Map<string, ProviderConnections>,
   languageProvider: string,
   warn: (message: string) => void,
 ): LegacyEmbedding {
-  const embedder = config.rag.embedder as "openai" | "ai-sdk";
-  const eo = config.rag.embedderConfig?.openai ?? {};
+  const legacyOpenai = config.rag.embedderConfig?.openai ?? {};
   const provider = embedder === "openai" ? "openai" : languageProvider;
   warn(
     embedder === "openai"
@@ -256,7 +245,7 @@ function translateLegacyEmbedder(
       : `askdb.config: rag.embedder "ai-sdk" is deprecated; use rag.embedder: "ai" with ai.embedding: { model }.`,
   );
 
-  const legacyModel = nonBlank(eo.model);
+  const legacyModel = nonBlank(legacyOpenai.model);
   if (legacyModel !== undefined) {
     warn("askdb.config: rag.embedderConfig.openai.model is deprecated; move it to ai.embedding.model.");
   }
@@ -271,13 +260,13 @@ function translateLegacyEmbedder(
     model = DEFAULT_RAG_EMBEDDING_MODEL;
   }
 
-  const dimensions = parsePositiveInteger(eo.dimension);
-  if (eo.dimension !== undefined && String(eo.dimension).trim() !== "") {
+  const dimensions = parsePositiveInteger(legacyOpenai.dimension);
+  if (legacyOpenai.dimension !== undefined && String(legacyOpenai.dimension).trim() !== "") {
     warn("askdb.config: rag.embedderConfig.openai.dimension is deprecated; move it to ai.embedding.dimensions.");
   }
 
-  const apiKey = nonBlank(eo.apiKey);
-  const baseUrl = nonBlank(eo.baseUrl);
+  const apiKey = nonBlank(legacyOpenai.apiKey);
+  const baseUrl = nonBlank(legacyOpenai.baseUrl);
   if (apiKey !== undefined || baseUrl !== undefined) {
     if (!LEGACY_RAG_KEY_PROVIDERS.has(provider)) {
       throw new Error(
@@ -291,19 +280,20 @@ function translateLegacyEmbedder(
           `  rag: { embedder: "ai", /* ...store */ },`,
       );
     }
-    for (const field of ["apiKey", "baseUrl"] as const) {
-      if (field === "apiKey" ? apiKey !== undefined : baseUrl !== undefined) {
-        warn(
-          `askdb.config: rag.embedderConfig.openai.${field} is deprecated; put it on a connection in ai.providerConfig.${provider} ` +
-            `(and point ai.embedding.connection at that connection if it isn't the default one).`,
-        );
-      }
-    }
+    const moveTo =
+      `put it on a connection in ai.providerConfig.${provider} ` +
+      `(and point ai.embedding.connection at that connection if it isn't the default one).`;
+    if (apiKey !== undefined) warn(`askdb.config: rag.embedderConfig.openai.apiKey is deprecated; ${moveTo}`);
+    if (baseUrl !== undefined) warn(`askdb.config: rag.embedderConfig.openai.baseUrl is deprecated; ${moveTo}`);
   }
 
   const providerConnections = table.get(provider);
   const defaultEntry = providerConnections?.entries.find((entry) => entry.connection.name === DEFAULT_CONNECTION);
   if (!defaultEntry) {
+    if (apiKey === undefined && baseUrl === undefined && providerConnections && providerConnections.entries.length > 0) {
+      // Named connections but none called "default": resolving the section reports their names.
+      return { provider, model, dimensions, connection: undefined };
+    }
     // A provider used only for embeddings: its legacy key (or nothing, as before) becomes the default connection.
     const raw: RawConnection = { apiKey, baseUrl };
     const entry = { raw, connection: toConnection(raw, DEFAULT_CONNECTION), label: `ai.providerConfig.${provider}` };
@@ -333,6 +323,43 @@ function translateLegacyEmbedder(
 }
 
 /**
+ * Translates a legacy `model` or `modelFamily` on a connection. On the language section's
+ * connection it's the language model (`modelFamily` only on Azure and Foundry), unless
+ * `ai.language.<field>` is set to something else; on any other connection it was never read.
+ * Returns the field's value for the language section.
+ */
+function translateLegacyLanguageField(
+  field: "model" | "modelFamily",
+  configured: string | undefined,
+  table: Map<string, ProviderConnections>,
+  languageEntry: ConnectionEntry | undefined,
+  warn: (message: string) => void,
+): string | undefined {
+  const target = `ai.language.${field}`;
+  let value = configured;
+  for (const [provider, providerConnections] of table) {
+    for (const entry of providerConnections.entries) {
+      const legacy = nonBlank(entry.raw[field]);
+      if (legacy === undefined) continue;
+      const legacyKey = `${entry.label}.${field}`;
+      const translates =
+        entry === languageEntry && (field === "model" || provider === "azure" || provider === "foundry");
+      if (!translates) {
+        warn(
+          `askdb.config: ${legacyKey} is deprecated and ignored (it isn't on the language model's connection); remove it.`,
+        );
+      } else if (value !== undefined && value !== legacy) {
+        warn(`askdb.config: ${legacyKey} is deprecated and ignored because ${target} is set; remove it.`);
+      } else {
+        value = legacy;
+        warn(`askdb.config: ${legacyKey} is deprecated; move it to ${target}.`);
+      }
+    }
+  }
+  return value;
+}
+
+/**
  * Translates every deprecated `ai` / `rag` key to the current shape and resolves the
  * `ai.language` and `ai.embedding` sections to a provider, a connection and a model. Pure: it
  * reads no environment, and returns one deprecation message per legacy key in use (each names
@@ -359,7 +386,7 @@ export function normalizeAskDbConfig(config: AskDbConfig): {
   const table = readConnections(config);
   const topProvider = nonBlank(ai.provider);
 
-  // T4: `providerConfig.custom` is the connection of a custom `ai.provider`.
+  // The legacy `providerConfig.custom` is the connection of a custom `ai.provider`.
   const custom = table.get("custom");
   if (custom && topProvider !== undefined && topProvider !== "custom" && !isBuiltinProvider(topProvider)) {
     if (table.has(topProvider)) {
@@ -374,7 +401,7 @@ export function normalizeAskDbConfig(config: AskDbConfig): {
     table.set(topProvider, custom);
   }
 
-  // T3: `ai.reasoning` → `ai.language.reasoning`.
+  // The legacy `ai.reasoning` is `ai.language.reasoning`.
   const language = ai.language ?? {};
   if (ai.reasoning !== undefined && language.reasoning !== undefined) {
     throw new Error(
@@ -402,41 +429,14 @@ export function normalizeAskDbConfig(config: AskDbConfig): {
     nonBlank(language.connection),
   );
 
-  // T1 / T2: a legacy `model` / `modelFamily` on the language connection is the language model;
-  // on any other connection it was never read.
-  let model = nonBlank(language.model);
-  let modelFamily = nonBlank(language.modelFamily);
-  for (const [provider, providerConnections] of table) {
-    for (const entry of providerConnections.entries) {
-      const isLanguageConnection = provider === languageProvider && entry === languageEntry;
-      for (const [field, target] of [
-        ["model", "ai.language.model"],
-        ["modelFamily", "ai.language.modelFamily"],
-      ] as const) {
-        const legacy = nonBlank(entry.raw[field]);
-        if (legacy === undefined) continue;
-        const legacyKey = `${entry.label}.${field}`;
-        const translates =
-          isLanguageConnection && (field === "model" || provider === "azure" || provider === "foundry");
-        if (!translates) {
-          warn(
-            `askdb.config: ${legacyKey} is deprecated and ignored (it isn't on the language model's connection); remove it.`,
-          );
-          continue;
-        }
-        const current = field === "model" ? model : modelFamily;
-        if (current === undefined) {
-          if (field === "model") model = legacy;
-          else modelFamily = legacy;
-          warn(`askdb.config: ${legacyKey} is deprecated; move it to ${target}.`);
-        } else if (current !== legacy) {
-          warn(`askdb.config: ${legacyKey} is deprecated and ignored because ${target} is set; remove it.`);
-        } else {
-          warn(`askdb.config: ${legacyKey} is deprecated; move it to ${target}.`);
-        }
-      }
-    }
-  }
+  const model = translateLegacyLanguageField("model", nonBlank(language.model), table, languageEntry, warn);
+  const modelFamily = translateLegacyLanguageField(
+    "modelFamily",
+    nonBlank(language.modelFamily),
+    table,
+    languageEntry,
+    warn,
+  );
 
   const languageSection: NormalizedAiLanguageSection = {
     provider: languageProvider,
@@ -467,7 +467,10 @@ export function normalizeAskDbConfig(config: AskDbConfig): {
       );
     }
 
-    const legacy = legacyEmbedder ? translateLegacyEmbedder(config, table, languageProvider, warn) : undefined;
+    const legacy =
+      rag.embedder === "openai" || rag.embedder === "ai-sdk"
+        ? translateLegacyEmbedder(rag.embedder, config, table, languageProvider, warn)
+        : undefined;
     const section = ai.embedding ?? {};
     const embeddingModel = legacy?.model ?? nonBlank(section.model);
     if (embeddingModel === undefined) {
@@ -494,7 +497,7 @@ export function normalizeAskDbConfig(config: AskDbConfig): {
     let dimensions = legacy ? legacy.dimensions : parseConfiguredDimensions(section.dimensions, "ai.embedding.dimensions");
     const dimensionsKey = legacy ? "rag.embedderConfig.openai.dimension" : "ai.embedding.dimensions";
 
-    // T8: pgvector's width moves to the embedding section.
+    // The legacy pgvector width moves to the embedding section.
     const pgvectorDimensions =
       rag.store === "pgvector" ? parsePositiveInteger(rag.storeConfig.pgvector?.dimensions) : undefined;
     if (pgvectorDimensions !== undefined) {
@@ -512,7 +515,8 @@ export function normalizeAskDbConfig(config: AskDbConfig): {
 
     // The deprecated embedders assumed 1536 for a model AskDB doesn't know. Keep that, so an
     // index built with a legacy config keeps its width and its embedder id.
-    if (legacy && dimensions === undefined && knownEmbeddingDimensions(provider, embeddingModel) === undefined) {
+    const knownWidth = knownEmbeddingDimensions(provider, embeddingModel);
+    if (legacy && dimensions === undefined && knownWidth === undefined) {
       dimensions = LEGACY_EMBEDDING_DIMENSIONS;
       warn(
         `askdb.config: rag.embedder "${rag.embedder}" assumes ${LEGACY_EMBEDDING_DIMENSIONS} dimensions for embedding model ` +
@@ -520,11 +524,7 @@ export function normalizeAskDbConfig(config: AskDbConfig): {
       );
     }
 
-    if (
-      rag.store === "pgvector" &&
-      dimensions === undefined &&
-      knownEmbeddingDimensions(provider, embeddingModel) === undefined
-    ) {
+    if (rag.store === "pgvector" && dimensions === undefined && knownWidth === undefined) {
       throw new Error(
         `askdb.config: set ai.embedding.dimensions for embedding model "${embeddingModel}"; pgvector needs a fixed width.`,
       );

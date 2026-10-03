@@ -505,8 +505,11 @@ describe("ai config sections: provider connections, ai.language, ai.embedding (#
     return getAskDbRuntimeConfig();
   }
 
-  function withoutRagKeys(env: Record<string, string | undefined>): Record<string, string | undefined> {
-    return Object.fromEntries(Object.entries(env).filter(([key]) => !key.startsWith("ASKDB_RAG_")));
+  /** The env map without the RAG and introspection keys, which no `ai` section writes. */
+  function aiKeys<V>(env: Record<string, V>): Record<string, V> {
+    return Object.fromEntries(
+      Object.entries(env).filter(([key]) => !key.startsWith("ASKDB_RAG_") && !key.startsWith("ASKDB_INTROSPECT_")),
+    );
   }
 
   describe("regressions", () => {
@@ -552,7 +555,7 @@ describe("ai config sections: provider connections, ai.language, ai.embedding (#
         ASKDB_AI_EMBEDDING_MODEL: "text-embedding-3-small",
       });
       const languageOnly = runtimeFor(minimalConfig({ ai }));
-      expect(withoutRagKeys(withEmbedding.ai.aiEnv)).toEqual(withoutRagKeys(languageOnly.ai.aiEnv));
+      expect(aiKeys(withEmbedding.ai.aiEnv)).toEqual(aiKeys(languageOnly.ai.aiEnv));
     });
 
     it("gives the RAG CLI no key or base URL from a custom language provider", () => {
@@ -585,12 +588,6 @@ describe("ai config sections: provider connections, ai.language, ai.embedding (#
 
     function config(ai: AskDbConfig["ai"], rag: AskDbConfig["rag"] = MOCK_RAG): AskDbConfig {
       return { ...minimalConfig(), ai, rag };
-    }
-
-    function languageKeys(flat: Record<string, string>): Record<string, string> {
-      return Object.fromEntries(
-        Object.entries(flat).filter(([key]) => !key.startsWith("ASKDB_RAG_") && !key.startsWith("ASKDB_INTROSPECT_")),
-      );
     }
 
     // Expected maps are what `flattenAskDbConfig` produced on main before the sections existed.
@@ -714,7 +711,7 @@ describe("ai config sections: provider connections, ai.language, ai.embedding (#
         },
       ],
     ])("a legacy %s config flattens to the same language keys as before", (_name, ai, rag, expected) => {
-      expect(languageKeys(flattenAskDbConfig(config(ai, rag)))).toEqual(expected);
+      expect(aiKeys(flattenAskDbConfig(config(ai, rag)))).toEqual(expected);
     });
 
     it.each([
@@ -822,7 +819,7 @@ describe("ai config sections: provider connections, ai.language, ai.embedding (#
         /ai\.providerConfig\.azure has no connection named "default" \(it has: "westus"\)/,
       ],
       [
-        "a built-in embedding provider with no connection",
+        "an ai.embedding provider with no connection",
         config(
           { provider: "anthropic", providerConfig: { anthropic: { apiKey: "k" } }, embedding: { provider: "openai", model: "text-embedding-3-small" } },
           { embedder: "ai", store: "memory", storeConfig: { memory: {} } },
@@ -835,7 +832,7 @@ describe("ai config sections: provider connections, ai.language, ai.embedding (#
         /ai\.language has no provider; set ai\.language\.provider or ai\.provider/,
       ],
       [
-        "an anthropic embedding provider",
+        "anthropic as the ai.embedding provider",
         config(
           { provider: "anthropic", providerConfig: { anthropic: { apiKey: "k" } }, embedding: { model: "voyage-3" } },
           { embedder: "ai", store: "memory", storeConfig: { memory: {} } },
@@ -854,6 +851,14 @@ describe("ai config sections: provider connections, ai.language, ai.embedding (#
           { embedder: "ai-sdk", embedderConfig: {}, store: "memory", storeConfig: { memory: {} } },
         ),
         /rag\.embedder "ai-sdk" embeds with "google", which has no default embedding model/,
+      ],
+      [
+        'a legacy "openai" embedder whose provider has only named connections',
+        config(
+          { provider: "anthropic", providerConfig: { anthropic: { apiKey: "k" }, openai: [{ name: "eu", apiKey: "k" }] } },
+          { embedder: "openai", embedderConfig: {}, store: "memory", storeConfig: { memory: {} } },
+        ),
+        /ai\.providerConfig\.openai has no connection named "default" \(it has: "eu"\)/,
       ],
       [
         "pgvector with an embedding model of unknown width",

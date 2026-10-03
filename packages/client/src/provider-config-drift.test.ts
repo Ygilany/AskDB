@@ -80,7 +80,7 @@ describe("@askdb/config agrees with @askdb/ai's built-in provider table", () => 
     expect(createAiRegistry().resolveAiConfig(flat)?.model).toBe("not-a-default-model");
   });
 
-  // Anthropic has no embeddings API, so config refuses it as an embedding provider.
+  // Anthropic has no embeddings API, so config refuses it as the ai.embedding provider.
   it.each(ASKDB_AI_PROVIDERS.filter((provider) => provider !== "anthropic"))(
     "the %s embedding env view round-trips its connection and embedding model through the provider",
     (provider) => {
