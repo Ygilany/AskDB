@@ -19,6 +19,8 @@
  * The project is a fresh pnpm root in the system temp directory: inside the lab, Node's
  * resolution would walk up to the lab's own `node_modules/pg`. It pins every `@askdb/*`
  * package to the lab's install target with the lab's overrides block, as `lab:use` does.
+ * Under `lab:use registry` the local registry is gone by now and npm has the same version
+ * numbers, so it pins the tarballs that registry served, which `lab:use` kept in `.lab/tarballs/`.
  * `pg` is shown absent twice: no `pg` package in its lockfile, and `pg` doesn't resolve
  * from the installed `@askdb/postgres` or `@askdb/http-api`.
  *
@@ -29,14 +31,14 @@
  * Needs an installed lab (`pnpm lab:use .`) and the registry, for the third-party packages.
  */
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { basename, isAbsolute, join, resolve } from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
 import { needsCapability } from "../../src/capabilities.js";
 import { startHttpServer, type HttpServer } from "../../src/http-api.js";
-import { LAB_ROOT } from "../../src/paths.js";
+import { LAB_ROOT, LAB_STATE } from "../../src/paths.js";
 
 /** The deploy guide's install line (`<InstallTabs pkgs="…" />`). */
 const DEPLOY_GUIDE_PACKAGES = ["@askdb/http-api", "@askdb/postgres", "ai", "@ai-sdk/openai"];
@@ -51,6 +53,12 @@ afterAll(async () => {
 
 /** The lab's `@askdb/*` pins (its `lab:use` overrides block), with tarball paths made absolute. */
 function labPins(): Map<string, string> {
+  const targetFile = join(LAB_STATE, "target.json");
+  const target = existsSync(targetFile) ? (JSON.parse(readFileSync(targetFile, "utf8")) as { localRegistry?: boolean }) : {};
+  if (target.localRegistry) {
+    const served = JSON.parse(readFileSync(join(LAB_STATE, "tarballs", "manifest.json"), "utf8")) as { name: string; file: string }[];
+    return new Map(served.map((p) => [p.name, `file:${join(LAB_STATE, "tarballs", p.file)}`]));
+  }
   const ws = readFileSync(join(LAB_ROOT, "pnpm-workspace.yaml"), "utf8");
   const pins = [...ws.matchAll(/^ {2}"([^"]+)": "([^"]+)"$/gm)].map(([, name, spec]) => {
     const path = spec!.startsWith("file:") ? spec!.slice("file:".length) : undefined;

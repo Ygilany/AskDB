@@ -8,21 +8,25 @@
  *   pnpm lab:use git:<ref>            tarballs packed from a branch, tag or commit (temporary worktree)
  *   pnpm lab:use npm:<dist-tag>       published packages under a dist-tag, e.g. npm:latest
  *   pnpm lab:use npm:askdb@<version>  a published CLI release and the exact @askdb/* versions it depends on
+ *   pnpm lab:use registry             this checkout, published to a local verdaccio the way release.yml publishes to npm
  *   pnpm lab:use --if-needed .        keep a verified install that is still current or that lab:use chose (used by lab:up)
  *   pnpm lab:use --check              re-verify the current install against its recorded target
  *   pnpm lab:use --restore            put the committed baseline (npm:latest) back, reinstalled from scratch
  *
  * Every @askdb/* package, including transitive dependencies of the lab's direct ones,
  * is pinned to the target through pnpm overrides, then verified from the lockfile: the
- * command fails if any of them resolved from anywhere else, or at another version.
+ * command fails if any of them resolved from anywhere else, at another version, or (for a
+ * registry target that recorded it) as another tarball. A `registry` install's files are
+ * also compared with the tarballs the registry served.
  *
  * Dependency-free on purpose: it runs before anything is installed.
  */
 import { execFileSync } from "node:child_process";
-import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { createHash, randomBytes } from "node:crypto";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { createServer } from "node:net";
 import { tmpdir } from "node:os";
-import { dirname, join, relative, resolve } from "node:path";
+import { basename, dirname, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const LAB = resolve(dirname(fileURLToPath(import.meta.url)), "..");
@@ -187,12 +191,12 @@ function resolvePublishedTree(seeds, versionFor) {
     if (pins.has(name)) continue;
     const manifest = npmView(`${name}@${version}`);
     if (!manifest) fail(`${name}@${version} isn't published`);
-    pins.set(name, manifest.version);
+    pins.set(name, { version: manifest.version, integrity: manifest.dist?.integrity });
     for (const [dep, range] of Object.entries({ ...manifest.peerDependencies, ...manifest.dependencies })) {
       if (isAskDb(dep) && !pins.has(dep)) queue.push([dep, versionFor(dep, range)]);
     }
   }
-  return [...pins].map(([name, version]) => ({ name, version })).sort((a, b) => a.name.localeCompare(b.name));
+  return [...pins].map(([name, pin]) => ({ name, ...pin })).sort((a, b) => a.name.localeCompare(b.name));
 }
 
 /** `npm:<dist-tag>`: every @askdb package at that tag; one without the tag keeps what its dependent asks for. */
@@ -210,6 +214,173 @@ function resolveDistTag(tag) {
 function resolveCliRelease(version) {
   if (!npmView(`askdb@${version}`)) fail(`askdb@${version} isn't published`);
   return resolvePublishedTree([["askdb", version]], (_name, range) => range);
+}
+
+/**
+ * `registry`: a verdaccio (compose.yml's `registry` profile) on 127.0.0.1, with its storage in
+ * a temp dir, for this run only. It serves AskDB only from what is published to it and
+ * proxies npm for everything else. It is removed, storage included, when the process exits,
+ * however it exits. Returns the URL, the npm config to publish with, and pnpm's flags to
+ * install from it.
+ */
+async function startRegistry() {
+  const port = Number(process.env.LAB_REGISTRY_PORT ?? 4873);
+  if (!Number.isInteger(port) || port < 1 || port > 65535) fail(`LAB_REGISTRY_PORT=${process.env.LAB_REGISTRY_PORT} isn't a port`);
+  await new Promise((done) => {
+    const probe = createServer();
+    probe.once("error", () => fail(`port ${port} is in use; set LAB_REGISTRY_PORT to a free one (a registry left by a killed run is the compose project askdb-lab-registry-${port})`));
+    // Every interface, not only loopback: a listener on 0.0.0.0 would clash with Docker's too.
+    probe.listen(port, () => probe.close(done));
+  });
+  const url = `http://127.0.0.1:${port}/`;
+  const dir = mkdtempSync(join(tmpdir(), "askdb-lab-registry-"));
+  const storage = join(dir, "storage");
+  mkdirSync(storage);
+  const compose = (...args) =>
+    execFileSync("docker", ["compose", "-f", join(LAB, "compose.yml"), "-p", `askdb-lab-registry-${port}`, "--profile", "registry", ...args], {
+      stdio: ["ignore", "inherit", "inherit"],
+      env: { ...process.env, LAB_REGISTRY_PORT: String(port), LAB_REGISTRY_STORAGE: storage, LAB_REGISTRY_USER: `${process.getuid()}:${process.getgid()}` },
+    });
+  let stopped = false;
+  const stop = () => {
+    if (stopped) return;
+    stopped = true;
+    try {
+      compose("down", "--volumes", "--timeout", "1");
+    } catch {
+      console.error(`lab:use: couldn't remove the registry; run \`docker compose -p askdb-lab-registry-${port} down\`.`);
+    }
+    rmSync(dir, { recursive: true, force: true });
+  };
+  // `exit` listeners run on process.exit (fail() included); a signal needs turning into an exit first.
+  process.on("exit", stop);
+  for (const [signal, code] of [["SIGINT", 130], ["SIGTERM", 143]]) process.once(signal, () => process.exit(code));
+
+  console.log(`lab:use: local registry at ${url} (storage ${storage})`);
+  compose("up", "--detach", "--quiet-pull");
+  const deadline = Date.now() + 60_000;
+  while (!(await fetch(`${url}-/ping`).then((r) => r.ok, () => false))) {
+    if (Date.now() > deadline) fail(`the local registry at ${url} didn't answer within a minute; see \`docker compose -p askdb-lab-registry-${port} logs\``);
+    await new Promise((done) => setTimeout(done, 250));
+  }
+  // Sign up the one user verdaccio.yaml allows; its token goes only into the npm config below.
+  const signup = await fetch(`${url}-/user/org.couchdb.user:lab`, {
+    method: "PUT",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ name: "lab", password: randomBytes(16).toString("hex") }),
+  });
+  const token = signup.ok && (await signup.json()).token;
+  if (!token) fail(`couldn't sign up a publisher on the local registry (HTTP ${signup.status})`);
+  const npmrc = join(dir, "npmrc");
+  writeFileSync(npmrc, `registry=${url}\n//127.0.0.1:${port}/:_authToken=${token}\n`);
+  return { url, npmrc, stop, install: ["--registry", url, "--cache-dir", join(dir, "pnpm-cache")] };
+}
+
+/**
+ * The environment `pnpm publish` runs in: no npm or pnpm config from the caller's
+ * environment (npm/pnpm config variables, CI tokens, GitHub's OIDC request), and the npm
+ * config from `startRegistry` in place of the user's ~/.npmrc, so no credential for another
+ * registry is loaded. Then the guard: in that environment, from the checkout, pnpm's config
+ * must name no registry but the local one and hold no credential for any other host, and no
+ * package may set `publishConfig.registry` (pnpm prefers it to `--registry`). A project
+ * `.npmrc` is the checkout's own, so it is checked, not replaced.
+ */
+function publishEnv(root, registry) {
+  const env = Object.fromEntries(
+    Object.entries(process.env).filter(([key]) => !/^(npm_config_|pnpm_config_)|^(NPM_TOKEN|NODE_AUTH_TOKEN|ACTIONS_ID_TOKEN_REQUEST_URL|ACTIONS_ID_TOKEN_REQUEST_TOKEN)$/i.test(key)),
+  );
+  env.npm_config_userconfig = registry.npmrc;
+  const config = JSON.parse(execFileSync("pnpm", ["config", "list", "--json"], { cwd: root, env, encoding: "utf8" }));
+  const host = `//${new URL(registry.url).host}/`;
+  const problems = Object.entries(config)
+    .filter(([key, value]) => (["registry", "@askdb:registry"].includes(key) ? value !== registry.url : key.startsWith("//") && !key.startsWith(host)))
+    .map(([key]) => `${key} in pnpm's config`);
+  const projects = JSON.parse(execFileSync("pnpm", ["-r", "ls", "--json", "--depth", "-1"], { cwd: root, env, encoding: "utf8" }));
+  for (const project of projects) {
+    if (project.private) continue;
+    const manifest = JSON.parse(readFileSync(join(project.path, "package.json"), "utf8"));
+    for (const key of Object.keys(manifest.publishConfig ?? {}).filter((k) => /registry$/i.test(k))) problems.push(`${manifest.name}'s publishConfig.${key}`);
+  }
+  if (problems.length) fail(`refusing to publish: pnpm could send the publish, or a credential, somewhere other than ${registry.url}: ${problems.join(", ")}`);
+  return env;
+}
+
+/**
+ * GET from the local registry; undefined on a 404. The publish outlasts verdaccio's
+ * keep-alive timeout, so the first request after it can land on a socket the server
+ * already closed: a network error is retried.
+ */
+async function registryGet(url) {
+  for (let attempt = 1; ; attempt++) {
+    try {
+      const res = await fetch(url);
+      if (res.status === 404) return undefined;
+      if (!res.ok) fail(`GET ${url} answered HTTP ${res.status}`);
+      return res;
+    } catch (error) {
+      if (!(error instanceof TypeError) || attempt === 3) fail(`GET ${url} failed: ${error.cause?.message ?? error.message}`);
+    }
+  }
+}
+
+/**
+ * Publish this checkout to the local registry with release.yml's publish command and flags,
+ * after the build `pack-tarballs.sh` runs, then keep the tarballs the registry serves in
+ * `.lab/tarballs/` (for installs outside the lab, once the registry is gone) and return
+ * each package with the integrity the registry recorded.
+ */
+async function publishToRegistry(registry) {
+  const env = publishEnv(REPO, registry);
+  run("pnpm", ["-C", REPO, "build"]);
+  const summaryFile = join(REPO, "pnpm-publish-summary.json");
+  rmSync(summaryFile, { force: true });
+  try {
+    run("pnpm", ["-r", "publish", "--access", "public", "--no-git-checks", "--tag", "latest", "--report-summary", "--registry", registry.url], { cwd: REPO, env });
+  } catch {
+    rmSync(summaryFile, { force: true });
+    fail(`pnpm publish to the local registry failed (see above); the registry is being removed.`);
+  }
+  const { publishedPackages } = JSON.parse(readFileSync(summaryFile, "utf8"));
+  rmSync(summaryFile, { force: true });
+  if (!publishedPackages?.length) fail("pnpm publish published nothing");
+
+  rmSync(TARBALLS, { recursive: true, force: true });
+  mkdirSync(TARBALLS, { recursive: true });
+  const packages = [];
+  const manifest = [];
+  for (const { name, version } of publishedPackages) {
+    const meta = await (await registryGet(`${registry.url}${name.replace("/", "%2f")}`))?.json();
+    const dist = meta?.versions?.[version]?.dist;
+    if (!dist?.integrity) fail(`the local registry doesn't serve ${name}@${version}, which pnpm says it published`);
+    const served = await registryGet(dist.tarball);
+    if (!served) fail(`the local registry doesn't serve ${dist.tarball}, ${name}@${version}'s tarball`);
+    const tarball = Buffer.from(await served.arrayBuffer());
+    const [algorithm, digest] = dist.integrity.split(/-(.*)/s);
+    if (createHash(algorithm).update(tarball).digest("base64") !== digest) fail(`${name}@${version}'s tarball doesn't match the integrity the local registry recorded`);
+    const file = basename(new URL(dist.tarball).pathname);
+    writeFileSync(join(TARBALLS, file), tarball);
+    manifest.push({ name, version, file });
+    packages.push({ name, version, integrity: dist.integrity, spec: version });
+  }
+  writeFileSync(join(TARBALLS, "manifest.json"), `${JSON.stringify(manifest, null, 2)}\n`);
+  return packages.sort((a, b) => a.name.localeCompare(b.name));
+}
+
+/**
+ * Before a registry install: drop every AskDB package from the lockfile's `packages:` and
+ * `snapshots:`, so the install resolves each one afresh from the target. pnpm keeps a locked
+ * package whose version still satisfies its spec and installs it from its store by
+ * integrity, so a `registry` install would otherwise keep npm's tarball (or an earlier
+ * publish's) under the same version, and an npm install after it the local registry's.
+ * Importers and other packages' dependency lists still name the versions; pnpm fills them in.
+ * (A tarball target needs none of this: its `file:` specs are new to the lockfile.)
+ */
+function forgetLockedAskDb() {
+  const path = join(LAB, "pnpm-lock.yaml");
+  if (!existsSync(path)) return;
+  console.log("lab:use: dropping the lockfile's AskDB entries so pnpm resolves them from the target; it will call the lockfile broken.");
+  const lock = readFileSync(path, "utf8");
+  writeFileSync(path, lock.replace(/^ {2}'?(?:@askdb\/[\w.-]+|askdb)@[^\n]*\n(?: {4}[^\n]*\n)*\n?/gm, ""));
 }
 
 /**
@@ -279,12 +450,13 @@ function resolvedAskDbPackages() {
   for (const match of section.matchAll(/^ {2}'?((?:@askdb\/[\w.-]+)|askdb)@([^':\n]+(?::[^':\n]+)?)'?:\n((?: {4}.*\n)*)/gm)) {
     const [, name, spec, body] = match;
     const version = /^ {4}version: (\S+)/m.exec(body)?.[1] ?? spec;
+    const integrity = /resolution: \{integrity: ([^,}\s]+)/.exec(body)?.[1];
     const source = spec.startsWith("file:")
       ? "tarball"
       : /^\d/.test(spec) && /resolution: \{integrity:/.test(body) && !/tarball:/.test(body)
         ? "registry"
         : spec;
-    found.set(`${name}@${spec}`, { name, spec, version, source });
+    found.set(`${name}@${spec}`, { name, spec, version, integrity, source });
   }
   return [...found.values()].sort((a, b) => a.name.localeCompare(b.name));
 }
@@ -307,19 +479,27 @@ function verify(target, beforeFail = () => {}) {
     beforeFail();
     fail(`${bad.length} @askdb package(s) did not resolve to the target: ${bad.map((r) => r.package).join(", ")}`);
   }
-  const where = target.source === "tarball" ? "the target's tarballs" : "the registry at the target's versions";
+  const where =
+    target.source === "tarball" ? "the target's tarballs"
+    : target.localRegistry ? "the tarballs published to the local registry"
+    : "the registry at the target's versions";
   console.log(`\nlab:use: all ${rows.length} @askdb packages resolve to ${where}.`);
 }
 
 function compareToTarget(target) {
   const resolved = resolvedAskDbPackages();
-  const expected = new Map(target.packages.map((p) => [p.name, p.version]));
+  const notAsPublished = target.localRegistry ? installedNotAsPublished(new Set(resolved.map((r) => r.name))) : new Set();
+  const expected = new Map(target.packages.map((p) => [p.name, p]));
   const rows = resolved.map((r) => {
     const want = expected.get(r.name);
+    // A registry target may record each tarball's integrity: the same version number can be
+    // another tarball (npm's copy, or an earlier publish to the local registry).
     const problem =
       want === undefined ? "NOT PINNED BY THE TARGET"
       : r.source !== target.source ? `NOT FROM THE TARGET (${target.source})`
-      : r.version !== want ? `NOT THE TARGET VERSION (${want})`
+      : r.version !== want.version ? `NOT THE TARGET VERSION (${want.version})`
+      : want.integrity && r.integrity !== want.integrity ? `NOT THE TARGET'S TARBALL (integrity ${want.integrity})`
+      : notAsPublished.has(r.name) ? "INSTALLED FILES AREN'T THE PUBLISHED TARBALL"
       : "";
     return { package: r.name, version: r.version, source: r.source, problem };
   });
@@ -330,6 +510,53 @@ function compareToTarget(target) {
     if (expected.has(name) && !resolved.some((r) => r.name === name)) rows.push({ package: name, version: "-", source: "-", problem: "MISSING FROM THE LOCKFILE" });
   }
   return { rows, bad: rows.filter((r) => r.problem) };
+}
+
+/**
+ * For a `registry` target: of the AskDB packages in the lockfile (`names`), those that
+ * aren't installed as the tarball the registry served, kept in `.lab/tarballs/`: no kept
+ * tarball, no `node_modules/.pnpm` dir, or a dir with other files. pnpm keeps a package dir
+ * whose path didn't change even when the lockfile names another tarball for it, so the
+ * lockfile alone can't show this.
+ */
+function installedNotAsPublished(names) {
+  const virtualStore = join(LAB, "node_modules", ".pnpm");
+  const manifestFile = join(TARBALLS, "manifest.json");
+  if (!existsSync(virtualStore) || !existsSync(manifestFile)) return new Set(names);
+  const kept = new Map(JSON.parse(readFileSync(manifestFile, "utf8")).map((p) => [p.name, p]));
+  // A package's own files; pnpm may add a `node_modules/` (bin links), which no tarball ships.
+  const files = (dir) =>
+    new Map(
+      readdirSync(dir, { recursive: true, withFileTypes: true })
+        .filter((e) => e.isFile())
+        .map((e) => relative(dir, join(e.parentPath, e.name)))
+        .filter((path) => !path.startsWith(`node_modules${sep}`))
+        .map((path) => [path, readFileSync(join(dir, path))]),
+    );
+  const scratch = mkdtempSync(join(tmpdir(), "askdb-lab-check-"));
+  const differ = new Set();
+  try {
+    for (const name of names) {
+      const { version, file } = kept.get(name) ?? {};
+      const prefix = `${name.replace("/", "+")}@${version}`;
+      const dirs = file ? readdirSync(virtualStore).filter((d) => d === prefix || d.startsWith(`${prefix}_`)) : [];
+      if (!dirs.length) {
+        differ.add(name);
+        continue;
+      }
+      const unpacked = join(scratch, file);
+      mkdirSync(unpacked);
+      execFileSync("tar", ["-xzf", join(TARBALLS, file), "-C", unpacked]);
+      const want = files(join(unpacked, "package"));
+      for (const dir of dirs) {
+        const got = files(join(virtualStore, dir, "node_modules", name));
+        if (got.size !== want.size || [...want].some(([path, bytes]) => !got.get(path)?.equals(bytes))) differ.add(name);
+      }
+    }
+  } finally {
+    rmSync(scratch, { recursive: true, force: true });
+  }
+  return differ;
 }
 
 /** The recorded target, when the lab is installed and its lockfile still matches it. */
@@ -376,9 +603,20 @@ function check() {
   verify(target);
 }
 
-/** Resolve `target` to `{ label, source, packages: [{ name, version, spec }] }`, packing tarballs if needed. */
-function resolveTarget(target) {
-  if (target === "registry") fail(`install mode "registry" isn't implemented yet (see #257)`);
+/**
+ * Resolve `target` to `{ label, source, packages: [{ name, version, spec, integrity? }] }`,
+ * packing tarballs or publishing to the local registry if needed. `install` is extra
+ * `pnpm install` flags.
+ */
+async function resolveTarget(target) {
+  if (target === "registry") {
+    requireCheckout(REPO);
+    const label = `registry: checkout ${REPO} @ ${describeCheckout(REPO)}`;
+    console.log(`lab:use: target = ${label}`);
+    const registry = await startRegistry();
+    const packages = await publishToRegistry(registry);
+    return { label, source: "registry", localRegistry: true, thisCheckout: true, packages, install: registry.install, stop: registry.stop };
+  }
 
   if (target.startsWith("npm:")) {
     const what = target.slice("npm:".length);
@@ -410,13 +648,13 @@ function resolveTarget(target) {
   return { label, source: "tarball", thisCheckout, packages: manifest.map((p) => ({ name: p.name, version: p.version, spec: spec(p) })) };
 }
 
-function main() {
+async function main() {
   const args = process.argv.slice(2);
   if (args.includes("--restore")) return restore();
   if (args.includes("--check")) return check();
   const ifNeeded = args.includes("--if-needed");
   const target = args.find((a) => !a.startsWith("--"));
-  if (!target) fail("usage: pnpm lab:use <. | path | git:<ref> | npm:<dist-tag> | npm:askdb@<version>> [--if-needed] | --check | --restore");
+  if (!target) fail("usage: pnpm lab:use <. | path | git:<ref> | npm:<dist-tag> | npm:askdb@<version> | registry> [--if-needed] | --check | --restore");
 
   // `--if-needed`: see keepsInstall.
   const current = ifNeeded && installedTarget();
@@ -432,7 +670,7 @@ function main() {
   // written only after a successful install and verification.
   rmSync(TARGET_FILE, { force: true });
   mkdirSync(STATE, { recursive: true });
-  const resolved = resolveTarget(target);
+  const resolved = await resolveTarget(target);
   rmSync(join(STATE, "artifacts"), { recursive: true, force: true });
   // If the install fails, put the manifests back rather than leave them half-switched.
   const before = new Map(MANAGED.map((f) => [f, existsSync(join(LAB, f)) ? readFileSync(join(LAB, f), "utf8") : undefined]));
@@ -443,19 +681,28 @@ function main() {
     }
   };
   pinTo(resolved.packages, resolved.label, workspace);
+  if (resolved.source === "registry") {
+    forgetLockedAskDb();
+    // pnpm also keeps an installed package dir whose path is unchanged, whatever tarball the
+    // lockfile now names for it (the check below would catch it). Start clean, as --restore does.
+    rmSync(join(LAB, "node_modules"), { recursive: true, force: true });
+  }
   try {
-    run("pnpm", ["install", "--no-frozen-lockfile"], { cwd: LAB });
+    run("pnpm", ["install", "--no-frozen-lockfile", ...(resolved.install ?? [])], { cwd: LAB });
   } catch {
     rollBack();
     fail(`pnpm install failed for ${resolved.label}. The lab's manifests are back as they were, but node_modules may be partial,\n` +
       "so the lab is marked not installed. Fix the cause and rerun `pnpm lab:use`, or `pnpm lab:use --restore`.");
   }
+  resolved.stop?.();
   const recorded = {
     label: resolved.label,
     source: resolved.source,
     // The lab's scenarios are written against this checkout's docs, so it must have every capability they name.
     thisCheckout: resolved.thisCheckout === true,
-    packages: resolved.packages.map(({ name, version }) => ({ name, version })),
+    // Outside the lab (a scratch project), these versions resolve from npm: use `.lab/tarballs/`.
+    ...(resolved.localRegistry && { localRegistry: true }),
+    packages: resolved.packages.map(({ name, version, integrity }) => ({ name, version, integrity })),
   };
   verify(recorded, () => {
     rollBack();
@@ -463,8 +710,9 @@ function main() {
   });
   recordTarget(recorded);
 
-  if (resolved.source === "tarball") {
-    console.log(`lab:use: package.json, pnpm-workspace.yaml and pnpm-lock.yaml now point at local tarballs.`);
+  if (resolved.source === "tarball" || resolved.localRegistry) {
+    const at = resolved.localRegistry ? "this checkout's versions, as published to the local registry (now removed)" : "local tarballs";
+    console.log(`lab:use: package.json, pnpm-workspace.yaml and pnpm-lock.yaml now point at ${at}.`);
     console.log(`         Don't commit them; \`pnpm lab:use --restore\` puts the committed baseline back.`);
   } else {
     console.log(`lab:use: package.json, pnpm-workspace.yaml and pnpm-lock.yaml now pin ${resolved.label}.`);
@@ -472,4 +720,4 @@ function main() {
   }
 }
 
-main();
+await main();

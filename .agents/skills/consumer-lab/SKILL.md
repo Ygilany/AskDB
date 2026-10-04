@@ -23,7 +23,8 @@ Optional, only when `docker` fails with a credential-helper error (for example `
 
 | You want to know | Target | Notes |
 |---|---|---|
-| Whether your change works | `pnpm lab:use .` | Packs this checkout, uncommitted edits included. The only target where a missing capability is a `FAIL`, not `n/a`. CI's `consumer-lab` job runs this. |
+| Whether your change works | `pnpm lab:use .` | Packs this checkout, uncommitted edits included. A missing capability is a `FAIL`, not `n/a`, here and under `registry` (also this checkout); every other target shows `n/a`. CI's `consumer-lab` job runs this. |
+| Whether your change still works once published (a `package.json` change: dependencies, `publishConfig`, `files`) | `pnpm lab:use registry` | Publishes this checkout to a local verdaccio with release.yml's `pnpm -r publish`, so `workspace:` ranges are rewritten as on npm, then installs from it and removes the registry. Needs Docker; `LAB_REGISTRY_PORT` if 4873 is taken. |
 | What a PR, branch or commit does, or how it differs from yours | `pnpm lab:use git:<ref>` (`git:origin/main`, `git:origin/<branch>`, a sha) | `git fetch origin` first. Packs `<ref>` in a temporary worktree. A second checkout works too: `pnpm lab:use ../other-checkout`. |
 | What users get from `npm install askdb` | `pnpm lab:use npm:latest` | The committed baseline's target. Use it after a release, and to check a report against what is published. |
 | Which release broke something | `pnpm lab:use npm:askdb@<version>` | One release and the exact `@askdb/*` versions it depends on. Bisect over `npm view askdb versions --json`: run the failing scenario (`pnpm lab:matrix -t <scenario-id>`) on each candidate. |
