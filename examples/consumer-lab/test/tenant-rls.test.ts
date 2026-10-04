@@ -22,13 +22,15 @@
  * Seam: none. The SQL is a cassette, the policies are the lab's own DDL, and the rows come from
  * the driver.
  *
- * Needs the lab's Postgres (`pnpm lab:up`, or `pnpm -C examples/consumer-lab postgres:up`), not
- * an AskDB install. Runs once, as `[postgres]`.
+ * Needs the lab's Postgres running (`pnpm lab:up`, or `pnpm -C examples/consumer-lab postgres:up`),
+ * not an AskDB install. The `beforeAll` seeds it and applies the policies, so a setup that breaks
+ * fails this cell, not `lab:up` and the whole matrix. Informational about AskDB, but a `FAIL` still
+ * fails `lab:matrix`: it means the lab's policies or the fixture's DDL broke. Runs once, as `[postgres]`.
  */
 import { join } from "node:path";
-import { describe, expect, it } from "vitest";
+import { beforeAll, describe, expect, it } from "vitest";
 import { normalizeRows } from "../src/fixture.js";
-import { labPostgresRows } from "../src/lab-postgres.js";
+import { labPostgresRows, seedLabPostgres } from "../src/lab-postgres.js";
 import { cassetteSql, loadQuestions } from "../src/model/catalog.js";
 import { LAB_ROOT } from "../src/paths.js";
 import { ALL_AGENCIES, TENANT_ORACLES } from "../src/tenant-oracle.js";
@@ -41,6 +43,8 @@ const expected = (visible: readonly number[]) => normalizeRows(ORACLE.rows(visib
 const normalized = (rows: unknown[][]) => normalizeRows(rows, ORACLE.types);
 
 describe("[postgres] tenant-rls", () => {
+  beforeAll(seedLabPostgres);
+
   it(`tenant-rls: the unfiltered reply, run as lab_tenant with app.agency_id = ${AGENCY}, returns only agency ${AGENCY}'s programs; as fixture_reader, every agency's`, async () => {
     const sql = cassetteSql("postgres", "tenant-unfiltered", QUESTIONS);
     // Agency 2's programs must be a strict subset, or the policy couldn't be told from no policy.

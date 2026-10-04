@@ -10,7 +10,9 @@
  * a second copy of the fixture), so the lab copies neither its DDL nor its data. The seeder is
  * idempotent by dataset hash; the row-level security is reapplied on every run.
  *
- *   docker compose up -d --wait && tsx src/lab-postgres.ts seed    # `pnpm -C examples/consumer-lab postgres:up`
+ * `pnpm lab:up` only starts the server (`postgres:up`). The `tenant-rls` test seeds it in its
+ * `beforeAll` with {@link seedLabPostgres}, so a setup that breaks (a fixture DDL change the
+ * policies no longer fit) fails that one matrix cell, and the rest of the matrix still runs.
  *
  * The host port is 15442 unless `ASKDB_LAB_POSTGRES_PORT` overrides it, as in `compose.yml`.
  * The host is the fixture's (`ASKDB_FIXTURE_HOST`), and the credentials are the fixture
@@ -57,15 +59,7 @@ export function labPostgresUrl(role: LabPostgresRole): string {
  * set for that transaction only (`set_config(…, true)`). Returns the rows as arrays.
  */
 export async function labPostgresRows(role: LabPostgresRole, sql: string, opts: { agencyId?: number } = {}): Promise<unknown[][]> {
-  const client = new pg.Client({ connectionString: labPostgresUrl(role) });
-  try {
-    await client.connect();
-  } catch (error) {
-    throw new Error(
-      `can't connect to the lab's Postgres on port ${labPostgresPort()} as ${role} (${(error as Error).message}): start and seed it with \`pnpm lab:up\` or \`pnpm -C examples/consumer-lab postgres:up\``,
-      { cause: error },
-    );
-  }
+  const client = await connect(role);
   try {
     await client.query("BEGIN READ ONLY");
     await client.query("SET LOCAL statement_timeout = 5000");
@@ -78,14 +72,30 @@ export async function labPostgresRows(role: LabPostgresRole, sql: string, opts: 
   }
 }
 
+async function connect(role: LabPostgresRole): Promise<pg.Client> {
+  const client = new pg.Client({ connectionString: labPostgresUrl(role) });
+  try {
+    await client.connect();
+  } catch (error) {
+    throw new Error(
+      `can't connect to the lab's Postgres on port ${labPostgresPort()} as ${role} (${(error as Error).message}): start it with \`pnpm lab:up\` or \`pnpm -C examples/consumer-lab postgres:up\``,
+      { cause: error },
+    );
+  }
+  return client;
+}
+
 /** Run the fixture's seeder against the lab's Postgres. */
 function runFixtureSeeder(): void {
   const seeded = spawnSync("pnpm", ["-C", FIXTURE_ROOT, "exec", "tsx", "src/seed.ts", "postgres"], {
-    stdio: "inherit",
+    encoding: "utf8",
     env: { ...process.env, ASKDB_FIXTURE_POSTGRES_PORT: String(labPostgresPort()) },
   });
   if (seeded.error) throw new Error("lab postgres: couldn't run the fixture's seeder", { cause: seeded.error });
-  if (seeded.status !== 0) throw new Error(`lab postgres: the fixture's seeder exited ${seeded.status ?? seeded.signal}`);
+  if (seeded.status !== 0) {
+    // The output goes into the error, so the matrix's failure reason says why.
+    throw new Error(`lab postgres: the fixture's seeder exited ${seeded.status ?? seeded.signal}:\n${`${seeded.stdout}${seeded.stderr}`.trim()}`);
+  }
 }
 
 /**
@@ -94,9 +104,8 @@ function runFixtureSeeder(): void {
  * runs may start at once: both steps run under one session-level advisory lock, which the second
  * run waits for, then finds the dataset up to date. Postgres releases the lock if this process dies.
  */
-async function seed(): Promise<void> {
-  const client = new pg.Client({ connectionString: labPostgresUrl("owner") });
-  await client.connect();
+export async function seedLabPostgres(): Promise<void> {
+  const client = await connect("owner");
   try {
     await client.query("SELECT pg_advisory_lock(hashtext('askdb-lab-postgres-seed'))");
     runFixtureSeeder();
@@ -109,15 +118,4 @@ async function seed(): Promise<void> {
   } finally {
     await client.end();
   }
-}
-
-if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
-  const command = process.argv[2];
-  if (command !== "seed") {
-    console.error("usage: tsx src/lab-postgres.ts seed");
-    process.exit(2);
-  }
-  console.log(`lab postgres (port ${labPostgresPort()}): seeding with the fixture's seeder`);
-  await seed();
-  console.log("lab postgres: lab_tenant and row-level security applied");
 }

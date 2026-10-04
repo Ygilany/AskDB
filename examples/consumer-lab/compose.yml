@@ -2,9 +2,9 @@
 # the lab may change it, which it never does to the fixture's (docs/specs/consumer-lab.md,
 # "Two things are lab-only and live in the lab, not the fixture").
 #
-# `pnpm lab:up` starts and seeds it (`pnpm -C examples/consumer-lab postgres:up`, see
-# src/lab-postgres.ts); `pnpm lab:down` stops it. Its data is on a tmpfs, so stopping it
-# removes it and the next start reseeds.
+# `pnpm lab:up` starts it (`pnpm -C examples/consumer-lab postgres:up`); the tenant-rls test seeds
+# it before it runs (src/lab-postgres.ts). `pnpm lab:down` stops it. Its data is on a tmpfs, so
+# stopping it removes it.
 #
 #   postgres  127.0.0.1:15442  the fixture's Postgres schema and rows, seeded by the fixture's own
 #                              seeder, plus the lab_tenant role and row-level security

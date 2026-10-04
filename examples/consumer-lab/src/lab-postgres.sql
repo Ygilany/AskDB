@@ -1,7 +1,7 @@
 -- Row-level security on the consumer lab's own Postgres (compose.yml), never on the shared
 -- fixture. src/lab-postgres.ts runs it as the owner, in one transaction, after the fixture's
 -- seeder has created the schema and rows, under the lock that serializes concurrent runs.
--- Idempotent: it runs on every `postgres:up`.
+-- Idempotent: it runs before every `tenant-rls` run.
 --
 -- This is the database-side tenancy the docs recommend next to AskDB's tenant check
 -- (concepts/safety-boundaries.mdx, "Enforce tenancy in the database": "Postgres row-level

@@ -288,7 +288,7 @@ The overlay declares the flat root `org.agency`. The hierarchy cases pass `subtr
 | **Hierarchy.** With `subtree` access from agency 1, executed rows are exactly those of agencies 1, 4, 5 and 6. From 5, they are 5 and 6. From 6, only 6. From 7, only 7. No row outside the tree ever appears, on every dialect | C: the maintainer's hierarchy semantics (decision 9) and `TenantAccessSubtree` (`includeDescendants: true`). R: descendants dropped (the behavior before #232 was fixed), ancestors leaked, a sibling tree leaked, or a resolver result not substituted. Without a resolver, `subtree` fails closed with `TenantScopeError` `SUBTREE_NOT_RESOLVABLE`. |
 | No `tenantScope` with a policy present gives `TenantScopeError` `MISSING_SCOPE` | C: fail closed before the prompt. |
 | Warn mode returns SQL and warnings, as documented | C: documented warn semantics. Recorded against the "can't be forgotten" claim (see Survey notes). |
-| (Optional, Postgres) The unfiltered SQL, run as `lab_tenant` with RLS, returns only agency 2 | Documents the defense-in-depth recommendation. Informational only. Built in #317 as `tenant-rls`, on the lab's own Postgres, because it needs DDL the shared fixture doesn't have. |
+| (Optional, Postgres) The unfiltered SQL, run as `lab_tenant` with RLS, returns only agency 2 | Documents the defense-in-depth recommendation. Informational only. Built in #317 as `tenant-rls`, on the lab's own Postgres, because it needs DDL the shared fixture doesn't have. Informational about AskDB, but a `FAIL` still fails the matrix: nothing in AskDB can turn it red, so a red cell means the lab's setup broke. |
 
 ### 5. Sensitive columns
 
