@@ -78,9 +78,9 @@ function describeError(error: unknown): string {
 }
 
 /**
- * Run the input on one engine, giving up after `timeoutMs`. A timed-out run can't be
- * cancelled (no driver call here takes a signal): it ends on its own, or with the process.
- * `signal`, aborted when the server closes, kills its introspection.
+ * Run the input on one engine, giving up after `timeoutMs`. Giving up, or `signal` (aborted
+ * when the server closes), kills the run's introspection. Its driver calls can't be
+ * cancelled (none takes a signal): they end on their own, or with the process.
  * Returns the engine's event, and the rows it read, which the summary needs and the page doesn't.
  */
 async function runEngine(
@@ -91,10 +91,19 @@ async function runEngine(
 ): Promise<{ event: EngineEvent; rows?: ExecuteResult }> {
   const started = performance.now();
   const lines: TranscriptLine[] = [];
+  const givenUp = new AbortController();
   let timer: NodeJS.Timeout | undefined;
-  const deadline = new Promise<"timeout">((resolve) => (timer = setTimeout(() => resolve("timeout"), timeoutMs)));
+  const deadline = new Promise<"timeout">((resolve) => {
+    timer = setTimeout(() => {
+      resolve("timeout");
+      givenUp.abort();
+    }, timeoutMs);
+  });
   try {
-    const run = await Promise.race([askAndRun(dialect, input, { onLine: (line) => lines.push(line), signal }), deadline]);
+    const run = await Promise.race([
+      askAndRun(dialect, input, { onLine: (line) => lines.push(line), signal: AbortSignal.any([signal, givenUp.signal]) }),
+      deadline,
+    ]);
     const event: EngineEvent =
       run === "timeout"
         ? { type: "engine", dialect, status: "timeout", lines: [...lines], error: `no result after ${timeoutMs} ms`, timings: { totalMs: performance.now() - started } }

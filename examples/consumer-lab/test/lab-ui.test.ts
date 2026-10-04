@@ -43,17 +43,24 @@ interface CliRun {
   stderr: string;
 }
 
-function labAsk(...args: string[]): Promise<CliRun> {
+/** `pnpm lab <args>`. One still running after `killAfterMs` is killed, with its children, and has status null. */
+function lab(args: string[], killAfterMs = 120_000): Promise<CliRun> {
   return new Promise((resolve, reject) => {
-    const child = spawn("pnpm", ["--silent", "lab", "ask", ...args], { cwd: LAB });
+    const child = spawn("pnpm", ["--silent", "lab", ...args], { cwd: LAB, detached: true });
+    const timer = setTimeout(() => process.kill(-child.pid!, "SIGKILL"), killAfterMs);
     let stdout = "";
     let stderr = "";
     child.stdout.on("data", (d) => (stdout += d));
     child.stderr.on("data", (d) => (stderr += d));
     child.on("error", reject);
-    child.on("close", (status) => resolve({ status, stdout, stderr }));
+    child.on("close", (status) => {
+      clearTimeout(timer);
+      resolve({ status, stdout, stderr });
+    });
   });
 }
+
+const labAsk = (...args: string[]) => lab(["ask", ...args]);
 
 /** Each run starts its own replay server on a free port: mask the port, so nothing else may differ. */
 const maskPorts = (run: CliRun): CliRun => {
@@ -264,6 +271,34 @@ it("[postgres] lab-ui-input: refuses blank SQL instead of running its label", as
   const run = await uiRun(ui, { question: AGENCY_NAMES, sql: "   " });
 
   expect(run.status).toBe(400);
+});
+
+/*
+ * Protects: `lab ui` refuses an option it can't honor, printing its usage and exiting 2: a
+ * blank `--port` or one outside 0–65535, and a `--timeout` longer than Node's timer limit.
+ * Catches: a blank `--port` quietly read as 0 (a random port), a port the bind then crashes
+ * on, and a `--timeout` Node cuts to 1 ms, so every engine times out at once.
+ * Not covered elsewhere: every other test starts `lab ui` with valid options. The longest
+ * timeout Node can hold starts the server; one millisecond more is refused.
+ */
+it.for([
+  ["a blank --port", ["--port", ""]],
+  ["--port 65536", ["--port", "65536"]],
+  ["a --timeout beyond Node's timer limit", ["--timeout", String(2 ** 31)]],
+] as const)("[postgres] lab-ui-options: refuses %s", async ([, args]) => {
+  const run = await lab(["ui", ...args], 15_000);
+
+  expect(run.status).toBe(2);
+  expect(run.stderr).toMatch(/^usage: pnpm lab/);
+});
+
+it("[postgres] lab-ui-options: accepts the longest --timeout Node can hold", async () => {
+  const longest = await startLabUiProcess({ args: ["--timeout", String(2 ** 31 - 1)] });
+  try {
+    expect((await studioRequest(longest)).status).toBe(200);
+  } finally {
+    await longest.close();
+  }
 });
 
 /*

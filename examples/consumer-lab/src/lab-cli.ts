@@ -45,11 +45,20 @@ async function askCommand(argv: string[]): Promise<number> {
   return run.exitCode!;
 }
 
+/** Node can't hold a longer timer: it fires one after 1 ms instead. */
+const MAX_TIMEOUT_MS = 2 ** 31 - 1;
+
+/** An option's text as a whole number from `min` to `max`, or undefined for anything else, blank included. */
+function wholeNumber(text: string, min: number, max: number): number | undefined {
+  const n = /^\d+$/.test(text) ? Number(text) : NaN;
+  return n >= min && n <= max ? n : undefined;
+}
+
 async function uiCommand(argv: string[]): Promise<number> {
   const { values } = parseArgs({ args: argv, options: { port: { type: "string", default: "0" }, timeout: { type: "string", default: "60000" } } });
-  const port = Number(values.port);
-  const engineTimeoutMs = Number(values.timeout);
-  if (!Number.isInteger(port) || port < 0 || !Number.isInteger(engineTimeoutMs) || engineTimeoutMs <= 0) {
+  const port = wholeNumber(values.port, 0, 65535);
+  const engineTimeoutMs = wholeNumber(values.timeout, 1, MAX_TIMEOUT_MS);
+  if (port === undefined || engineTimeoutMs === undefined) {
     console.error(USAGE);
     return 2;
   }
