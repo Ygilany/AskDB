@@ -1,6 +1,6 @@
 # AskDB consumer lab
 
-A black-box test bed for AskDB. The lab installs AskDB the way an outside project would: from tarballs packed from a checkout or a git ref, or from npm. It drives AskDB only through documented surfaces, and it acts as the host, executing the returned SQL on the shared [multi-engine fixture](../../fixtures/multi-engine/README.md).
+A black-box test bed for AskDB. The lab installs AskDB the way an outside project would: from tarballs packed from a checkout or a git ref, from npm, or from a local registry this checkout is published to. It drives AskDB only through documented surfaces, and it acts as the host, executing the returned SQL on the shared [multi-engine fixture](../../fixtures/multi-engine/README.md).
 
 - Design: [`docs/specs/consumer-lab.md`](../../docs/specs/consumer-lab.md).
 - Work tracked in: #241.
@@ -19,6 +19,7 @@ pnpm lab:use ../other-checkout       # …or another checkout's
 pnpm lab:use git:origin/main         # …or a branch, tag or commit's (built in a temporary worktree)
 pnpm lab:use npm:latest              # published packages under a dist-tag
 pnpm lab:use npm:askdb@1.0.0-beta.40 # a published CLI release and the @askdb/* versions it depends on
+pnpm lab:use registry                # publish this checkout to a local verdaccio as release.yml publishes, and install from it
 pnpm lab:use --check                 # re-verify the current install against its target
 pnpm lab ask --db mysql "How many active programs does each agency run?"
 pnpm lab ask --db sqlserver --via client "Which three agencies have the highest paid order total?"
@@ -297,18 +298,29 @@ The protection scenarios are engine-independent and run once, as `[postgres]`. T
 | `npm:<dist-tag>` | Each direct AskDB dependency at that dist-tag, and every `@askdb/*` package reachable from them through dependencies and peer dependencies, each at its own version under the tag. A package without the tag keeps the version its dependent asks for. |
 | `npm:askdb@<version>` | That CLI release, and the exact `@askdb/*` versions it depends on (read from the published manifests with `npm view`, recursively). Package versions aren't in lockstep, so the CLI release decides. A direct dependency that isn't in its tree is left out, with a message. |
 
-`registry` (a local verdaccio) arrives in #257.
+| `registry` | This checkout, built as `pack-tarballs.sh` builds it, then published with release.yml's publish command (`pnpm -r publish --access public --no-git-checks --tag latest --report-summary`) to a local verdaccio, and installed from there. See [The local registry](#the-local-registry). |
+
+### The local registry
+
+`pnpm lab:use registry` tests the real publish path, which tarball installs skip: `pnpm -r publish` rewrites `workspace:` ranges to versions, applies `publishConfig` and ships only `files`, as the release does. It needs Docker, like the fixture.
+
+1. It starts verdaccio (`compose.yml`'s `registry` profile, configured by `verdaccio.yaml`) on `127.0.0.1:4873`, with its storage in a temp dir. Set `LAB_REGISTRY_PORT` when that port is taken. The registry serves `askdb` and `@askdb/*` only from what is published to it, never from npm, and proxies npm for everything else.
+2. It publishes with a throwaway user's token in a temp npm config that replaces your `~/.npmrc`, and with no npm or pnpm config from the environment (npm tokens, `npm_config_*`, GitHub's OIDC request). It refuses, before publishing anything, if pnpm's config in the checkout still names another registry for `@askdb` or holds a credential for another host (a project `.npmrc`), or if a package sets `publishConfig.registry`: pnpm would publish there despite `--registry`.
+3. It keeps the tarballs the registry serves in `.lab/tarballs/`, drops the lockfile's AskDB entries and `node_modules`, and installs with `--registry`. The checkout usually carries the last release's version numbers, and pnpm keeps a locked package, or an installed package directory, whose version is unchanged, so without that the lab would keep npm's copies. Each target package's integrity is recorded, and the check fails on a package with another one, or whose installed files aren't the kept tarball's.
+4. It removes the registry and its storage when it exits, whether it succeeded or not. A run killed with `SIGKILL` leaves the compose project `askdb-lab-registry-<port>`: `docker compose -p askdb-lab-registry-4873 down`.
+
+Not exercised: the npm side of a release, such as trusted publishing (OIDC), provenance, the `latest` dist-tag on npm and a version that is already published (`pnpm -r publish` skips it there, and the local registry is always empty). The install afterwards, `lab:use --check` and the suite work without the registry. `http-no-pg`, which installs a separate project, uses the kept tarballs, since npm would answer with its own copies of the same versions.
 
 ## How `lab:use` pins the target
 
 1. It works out the target's packages and versions (packing tarballs, or reading the published manifests).
 2. It points the lab's direct AskDB dependencies (`DIRECT` in `src/use.mjs`) at the target: `file:` tarball paths, or exact published versions.
 3. It writes a pnpm `overrides` block into `pnpm-workspace.yaml` covering **every** target package, headed by a `# lab:use target:` comment. The block sits at the end of the file's `overrides:` map, below the lab's hand-written third-party pins, which it leaves alone. Without it, a transitive `@askdb/*` dependency would resolve from npm under the same version number, so the lab would quietly test the published code instead of the checkout, or another release than the one asked for.
-4. It installs, then reads the lockfile and prints each `@askdb/*` package's version and source. It fails if any package isn't from the target's source (tarball, or registry), isn't at the target's version, or wasn't pinned by the target at all. `pnpm lab:use --check` repeats this check on the current install.
+4. It installs, then reads the lockfile and prints each `@askdb/*` package's version and source. It fails if any package isn't from the target's source (tarball, or registry), isn't at the target's version, has another integrity than the tarball the target recorded (npm and `registry` targets), or wasn't pinned by the target at all. `pnpm lab:use --check` repeats this check on the current install.
 
 `lab:use` rewrites `package.json`, `pnpm-workspace.yaml` and `pnpm-lock.yaml`. The committed versions are the **`npm:latest` baseline** (decision 2 in the spec): `latest` is what `npm install askdb` resolves, so it's what users run. `pnpm lab:use --restore` brings them back: it removes `.lab/` and `node_modules`, reinstalls the committed lockfile as-is and verifies it against the pins in the committed overrides block.
 
-- **Don't commit the three files after `.`, a path or `git:`**: they hold `file:` tarball paths. Don't commit them after another npm target either.
+- **Don't commit the three files after `.`, a path or `git:`**: they hold `file:` tarball paths. Don't commit them after `registry` (its lockfile holds tarballs npm doesn't have) or another npm target either.
 - **To refresh the baseline** after a release ships, run `pnpm lab:use npm:latest` and commit the three files.
 - There is no `beta` dist-tag: it was removed from every package on 2026-09-29 (#267), so `pnpm lab:use npm:beta` stops with `no AskDB package is published under the "beta" dist-tag`. Prereleases are on `latest` until the RC line (#354) publishes under `rc`.
 - The lab's typecheck (`pnpm -C examples/consumer-lab lint`) is against the installed target too, so run it after `pnpm lab:use .`.

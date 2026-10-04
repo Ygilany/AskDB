@@ -1,0 +1,27 @@
+# The local registry for `pnpm lab:use registry` (compose.yml's `registry` profile).
+storage: /verdaccio/storage/data
+auth:
+  htpasswd:
+    file: /verdaccio/storage/htpasswd
+    # `lab:use` signs up one user to publish with.
+    max_users: 1
+uplinks:
+  npmjs:
+    url: https://registry.npmjs.org/
+packages:
+  # AskDB comes only from what `lab:use` published here, never from npm: no `proxy`, so a
+  # package that wasn't published is a 404, not npm's copy at the same version.
+  askdb:
+    access: $all
+    publish: $authenticated
+  "@askdb/*":
+    access: $all
+    publish: $authenticated
+  # Everything else is npm's, proxied.
+  "**":
+    access: $all
+    proxy: npmjs
+log:
+  type: stdout
+  format: pretty
+  level: warn

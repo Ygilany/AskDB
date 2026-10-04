@@ -1,0 +1,14 @@
+# Lab-only services; the databases come from fixtures/multi-engine. Nothing here starts
+# without its profile: `pnpm lab:use registry` starts the `registry` profile for one run,
+# with its own project name, port and storage, and removes it before it exits.
+services:
+  verdaccio:
+    profiles: [registry]
+    image: verdaccio/verdaccio:6.10.5@sha256:560744912b640ddc0f23cd475d296b663b656c0fcfa0ba17cc5ca1cbcb620225
+    # The host user owns the storage, so `lab:use` can delete it afterwards.
+    user: "${LAB_REGISTRY_USER:?set by lab:use registry}"
+    ports:
+      - "127.0.0.1:${LAB_REGISTRY_PORT:?set by lab:use registry}:4873"
+    volumes:
+      - ./verdaccio.yaml:/verdaccio/conf/config.yaml:ro
+      - "${LAB_REGISTRY_STORAGE:?set by lab:use registry}:/verdaccio/storage"
