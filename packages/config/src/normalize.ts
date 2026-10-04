@@ -9,6 +9,7 @@ import {
   DEFAULT_AZURE_OPENAI_DEPLOYMENT,
   DEFAULT_GATEWAY_LANGUAGE_MODEL,
   DEFAULT_GOOGLE_LANGUAGE_MODEL,
+  DEFAULT_MOCK_RAG_EMBEDDING_DIMENSIONS,
   DEFAULT_OPENAI_LANGUAGE_MODEL,
   DEFAULT_RAG_EMBEDDING_MODEL,
   defaultRagEmbeddingDimensions,
@@ -478,6 +479,12 @@ export function normalizeAskDbConfig(config: AskDbConfig): {
   if (rag.embedder === "mock") {
     if (hasLegacyConfig) {
       warn('askdb.config: rag.embedderConfig is ignored because rag.embedder is "mock"; remove it.');
+    }
+    if (rag.store === "pgvector" && String(rag.storeConfig.pgvector?.dimensions ?? "").trim() !== "") {
+      warn(
+        `askdb.config: rag.storeConfig.pgvector.dimensions is ignored because rag.embedder is "mock" ` +
+          `(its vectors are always ${DEFAULT_MOCK_RAG_EMBEDDING_DIMENSIONS} wide); remove it.`,
+      );
     }
   } else {
     if (legacyEmbedder && ai.embedding !== undefined) {

@@ -216,7 +216,7 @@ Azure identifies models by deployment name (e.g. `askdb-reporting`), which may n
 | `store` | `"file"`, `"memory"` or `"pgvector"`. |
 | `storeConfig` | The selected store's branch: `file.{basePath, autoFlush}`, `memory: {}`, or `pgvector.{databaseUrl, table, indexStrategy, dimensions}`. |
 
-With `embedder: "ai"`, the pgvector table is created at the width the embedding model returns, learned when the index is first built (with `ai.embedding.dimensions` set, that's the size requested). An existing table of another width is refused, not overwritten. `storeConfig.pgvector.dimensions` sets the width for `embedder: "mock"` (default 64); with `embedder: "ai"` it's [deprecated](#deprecated-keys).
+With `embedder: "ai"`, the pgvector table is created at the width the embedding model returns, learned when the index is first built (with `ai.embedding.dimensions` set, that's the size requested). An existing table of another width is refused, not overwritten. `storeConfig.pgvector.dimensions` is [deprecated](#deprecated-keys): with `embedder: "ai"` it moves to `ai.embedding.dimensions`, and with `embedder: "mock"`, whose vectors are always 64 wide, it's ignored.
 
 ## Deprecated keys
 
@@ -233,6 +233,7 @@ Configs written before the `ai.language` and `ai.embedding` sections still load,
 | `rag.embedderConfig.openai.model`, `.dimension` | `ai.embedding.model`, `ai.embedding.dimensions` |
 | `rag.embedderConfig.openai.apiKey`, `.baseUrl` | A connection in `ai.providerConfig`, named in `ai.embedding.connection` if it isn't the default one |
 | `rag.storeConfig.pgvector.dimensions` with an AI embedder | `ai.embedding.dimensions` |
+| `rag.storeConfig.pgvector.dimensions` with `rag.embedder: "mock"` | Nothing: remove it. The mock embedder's vectors are always 64 wide. |
 
 How the old embedder keys translate:
 

@@ -173,9 +173,8 @@ export function flattenNormalizedAskDbConfig(config: NormalizedAskDbConfig): Rec
     set(out, "ASKDB_PGVECTOR_URL", url);
     // With `rag.embedder: "ai"`, normalization has already moved the width to ai.embedding and
     // refused a pgvector config whose width it can't know.
-    const pgDims = embedding
-      ? width
-      : (parsePositiveInteger(p.dimensions) ?? DEFAULT_MOCK_RAG_EMBEDDING_DIMENSIONS);
+    // The mock embedder's vectors are always 64 wide, whatever rag.storeConfig.pgvector.dimensions says.
+    const pgDims = embedding ? width : DEFAULT_MOCK_RAG_EMBEDDING_DIMENSIONS;
     if (pgDims !== undefined) set(out, "ASKDB_RAG_EMBEDDER_DIMENSIONS", String(pgDims));
     const strategy = normalizePgvectorIndexStrategy(
       typeof p.indexStrategy === "string" ? p.indexStrategy : undefined,

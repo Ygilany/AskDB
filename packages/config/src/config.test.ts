@@ -1030,6 +1030,37 @@ describe("ai config sections: provider connections, ai.language, ai.embedding (#
         expect(deprecations).toEqual(expected);
       },
     );
+
+    it.each([
+      [
+        "the pgvector store with a width",
+        { store: "pgvector", storeConfig: { pgvector: { databaseUrl: "postgres://x/db", dimensions: 128 } } },
+        [
+          'askdb.config: rag.storeConfig.pgvector.dimensions is ignored because rag.embedder is "mock" (its vectors are always 64 wide); remove it.',
+        ],
+      ],
+      ["the pgvector store without one", { store: "pgvector", storeConfig: { pgvector: { databaseUrl: "postgres://x/db" } } }, []],
+      [
+        "another store, with an unused pgvector branch",
+        { store: "memory", storeConfig: { memory: {}, pgvector: { dimensions: 128 } } },
+        [],
+      ],
+    ] satisfies [string, Pick<AskDbConfig["rag"], "store" | "storeConfig">, string[]][])(
+      'warns that rag.storeConfig.pgvector.dimensions does nothing with rag.embedder "mock": %s',
+      (_name, store, expected) => {
+        const ai = { provider: "openai", providerConfig: { openai: { apiKey: "k" } } } satisfies AskDbConfig["ai"];
+        const { deprecations } = defineConfig(config(ai, { embedder: "mock", ...store }));
+        expect(deprecations).toEqual(expected);
+      },
+    );
+
+    it('writes the mock embedder\'s own width to the flat map, not rag.storeConfig.pgvector.dimensions', () => {
+      const ai = { provider: "openai", providerConfig: { openai: { apiKey: "k" } } } satisfies AskDbConfig["ai"];
+      const { entries } = defineConfig(
+        config(ai, { embedder: "mock", store: "pgvector", storeConfig: { pgvector: { databaseUrl: "postgres://x/db", dimensions: 128 } } }),
+      );
+      expect(entries.ASKDB_RAG_EMBEDDER_DIMENSIONS).toBe("64");
+    });
   });
 });
 

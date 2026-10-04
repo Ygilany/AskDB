@@ -251,9 +251,9 @@ export type PgvectorStoreConfig = {
   databaseUrl?: string;
   table?: string;
   /**
-   * Vector width for `rag.embedder: "mock"` (default 64).
-   *
-   * @deprecated With `rag.embedder: "ai"`, use `ai.embedding.dimensions` (translated at load, with a warning). Removed at 1.0.
+   * @deprecated Ignored with `rag.embedder: "mock"`, whose vectors are always 64 wide (a load warning
+   * says so). With `rag.embedder: "ai"`, use `ai.embedding.dimensions` (translated at load, with a
+   * warning). Removed at 1.0.
    */
   dimensions?: string | number;
   /** When unset, {@link flattenAskDbConfig} uses `hnsw`. */

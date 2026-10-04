@@ -514,7 +514,8 @@ describe("AskDB Studio server", () => {
 
   it("honors the configured pgvector store for Studio RAG", async () => {
     const backingStore = createMemoryStore();
-    setStudioPgvectorStoreFactoryForTests(() => ({
+    const provisionedWith: (number | undefined)[] = [];
+    setStudioPgvectorStoreFactoryForTests((options) => ({
       upsert: backingStore.upsert,
       query: backingStore.query,
       delete: backingStore.delete,
@@ -526,7 +527,9 @@ describe("AskDB Studio server", () => {
         ).length;
       },
       setupSql: () => "",
-      ensureSchema: async () => {},
+      ensureSchema: async () => {
+        provisionedWith.push(options.dimensions);
+      },
       close: async () => {},
     }));
     const pgvectorStructured: AskDbConfig = {
@@ -538,7 +541,8 @@ describe("AskDB Studio server", () => {
           pgvector: {
             databaseUrl: "postgres://pgvector.test/askdb",
             table: "studio_rag_chunks",
-            dimensions: 64,
+            // Ignored with the mock embedder (a load warning says so): its vectors are always 64 wide.
+            dimensions: 128,
             indexStrategy: "hnsw",
           },
         },
@@ -561,6 +565,8 @@ describe("AskDB Studio server", () => {
     expect(indexed.status.store.table).toBe("studio_rag_chunks");
     expect(indexed.status.hasIndex).toBe(true);
     expect(indexed.status.stale).toBe(false);
+    expect(provisionedWith).toEqual([64]);
+    expect(indexed.status.dimensions).toBe(64);
     expect(indexed.status.files.embeddingsJson).toBe(false);
     expect(indexed.status.files.embeddingsBin).toBe(false);
 
