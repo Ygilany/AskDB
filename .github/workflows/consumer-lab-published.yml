@@ -8,9 +8,10 @@ name: Consumer lab (published)
 # Triggers:
 # - After a release that published: `workflow_run` on Release. Release runs after every
 #   green CI on `main` but publishes only when its `version` job finds versions npm doesn't
-#   have, so `plan` runs the lab only when the triggering run succeeded and its `publish`
-#   job did. The lab is checked out at the released commit and installs `npm:latest`
-#   through the committed lockfile, so a failure is the release's, not drift's.
+#   have, so `plan` runs the lab only when the triggering run's `publish` job succeeded,
+#   whatever the later `tag` job did: the packages are on npm either way. The lab is
+#   checked out at the released commit and installs `npm:latest` through the committed
+#   lockfile, so a failure is the release's, not drift's.
 # - Weekly: `npm:latest` resolved fresh, without the lab's lockfile, to catch dependency
 #   drift. The job summary lists every package that resolved differently.
 # - Manual: any npm target (`npm:latest`, `npm:askdb@<version>`, `npm:<dist-tag>`),
@@ -78,12 +79,13 @@ jobs:
           }
           case "${EVENT}" in
             workflow_run)
-              # The jobs of the run's latest attempt, so a re-run publish counts.
+              # The jobs of the run's latest attempt, so a re-run publish counts. Only the
+              # publish job gates: a failed `tag` after it leaves the packages on npm all the same.
               publish="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${RELEASE_RUN_ID}/jobs" \
                 --jq '[.jobs[] | select(.name == "publish") | .conclusion] | first // "missing"')"
               echo "Release run ${RELEASE_RUN_ID}: ${RELEASE_CONCLUSION}; its publish job: ${publish}."
-              if [ "${RELEASE_CONCLUSION}" != "success" ] || [ "${publish}" != "success" ]; then
-                echo "Nothing was published (or the release didn't finish); no lab run."
+              if [ "${publish}" != "success" ]; then
+                echo "Nothing was published; no lab run."
                 plan false "" "" false false
               else
                 plan true "${RELEASE_SHA}" npm:latest false true
