@@ -7,6 +7,20 @@ import { setAskDbRuntime } from "./runtime-store.js";
 /** dotenv v17 logs injected keys by default; keep bootstrap silent like v16. */
 const DOTENV_LOAD_OPTIONS = { quiet: true } as const;
 
+/** `process.emitWarning` code for a deprecated `askdb.config` key. */
+const CONFIG_DEPRECATION_CODE = "ASKDB_CONFIG_DEPRECATED";
+
+/** Deprecation messages already emitted: a process that bootstraps twice warns once. */
+const emittedDeprecations = new Set<string>();
+
+function emitConfigDeprecations(deprecations: readonly string[] | undefined): void {
+  for (const message of deprecations ?? []) {
+    if (emittedDeprecations.has(message)) continue;
+    emittedDeprecations.add(message);
+    process.emitWarning(message, { type: "DeprecationWarning", code: CONFIG_DEPRECATION_CODE });
+  }
+}
+
 export type BootstrapAskDbEnvOptions = {
   /** Working directory for `.env` default path and config discovery. Defaults to `process.cwd()`. */
   cwd?: string;
@@ -43,6 +57,9 @@ function handleDotenvError(error: unknown, nonFatal: boolean | undefined): void 
  *
  * `askdb.config.*` is the sole source of truth — use `env("VAR")` in the config file to read
  * from the environment at load time.
+ *
+ * Each deprecated config key in use is reported once per process as a `DeprecationWarning`
+ * (code `ASKDB_CONFIG_DEPRECATED`); `getAskDbRuntimeConfig().deprecations` lists them for UIs.
  */
 export function bootstrapAskDbEnv(options: BootstrapAskDbEnvOptions = {}): {
   dotenvPath?: string;
@@ -95,6 +112,7 @@ export function bootstrapAskDbEnv(options: BootstrapAskDbEnvOptions = {}): {
     structured: projection.config,
     flat: { ...projection.entries },
   });
+  emitConfigDeprecations(projection.deprecations);
 
   return { dotenvPath, configPath };
 }

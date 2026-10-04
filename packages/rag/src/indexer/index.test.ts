@@ -114,6 +114,20 @@ describe("buildSchemaIndex", () => {
     expect(Object.keys(lock.hashes)).toEqual(Object.keys(lock.hashes).sort());
   });
 
+  it("records the width of the vectors it embedded in the lock file, and keeps it when nothing is re-embedded", async () => {
+    const sources = loadChunkerSourcesFromDir(FIXTURE_DIR);
+    const lockFilePath = tempLockPath();
+    const store = createMemoryStore();
+    const readDimensions = () => (JSON.parse(readFileSync(lockFilePath, "utf8")) as { dimensions?: number }).dimensions;
+
+    await buildSchemaIndex({ schema: sources, embedder: deterministicEmbedder(), store, embedderId: "test:a", lockFilePath });
+    expect(readDimensions()).toBe(2);
+
+    const second = await buildSchemaIndex({ schema: sources, embedder: deterministicEmbedder(), store, embedderId: "test:a", lockFilePath });
+    expect(second.stats.chunksIndexed).toBe(0);
+    expect(readDimensions()).toBe(2);
+  });
+
   it("can reuse unchanged chunks from store hashes when no lock file is supplied", async () => {
     const sources = loadChunkerSourcesFromDir(FIXTURE_DIR);
     const store = createMemoryStore();

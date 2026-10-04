@@ -1,0 +1,5 @@
+{
+  "question": "List the clients in my scope with the name of their agency.",
+  "reply": "```sql\nSELECT c.client_id, c.full_name, a.name AS agency_name\nFROM client AS c\nJOIN agency AS a ON a.agency_id = c.agency_id\nWHERE c.agency_id IN (:tenant_agency_ids)\nORDER BY c.client_id\n```",
+  "source": "authored"
+}

@@ -3,12 +3,14 @@ export type { AskDbConfigExtension } from "./discover.js";
 export { bootstrapAskDbEnv, bootstrapAskDbRuntime } from "./bootstrap.js";
 export type { BootstrapAskDbEnvOptions } from "./bootstrap.js";
 export { env, requiredEnv } from "./env.js";
+export { isAskDbDebugEnabled } from "./diagnostics.js";
 export {
   getAskDbRuntimeConfig,
 } from "./runtime-config.js";
 export type {
   AskDbRuntimeConfig,
   AskDbRuntimeAiConfig,
+  AskDbRuntimeAiSection,
   AskDbRuntimeIntrospectionConfig,
   AskDbRuntimeRagConfig,
   AskDbRuntimeRagEmbedderConfig,
@@ -25,11 +27,18 @@ export {
   setAskDbRuntimeForTests,
 } from "./runtime-store.js";
 export {
+  DEFAULT_ANTHROPIC_CHAT_MODEL,
+  DEFAULT_ANTHROPIC_LANGUAGE_MODEL,
   DEFAULT_AZURE_OPENAI_DEPLOYMENT,
+  DEFAULT_GATEWAY_CHAT_MODEL,
+  DEFAULT_GATEWAY_LANGUAGE_MODEL,
+  DEFAULT_GOOGLE_CHAT_MODEL,
+  DEFAULT_GOOGLE_LANGUAGE_MODEL,
   DEFAULT_INTROSPECT_OUTPUT_DIR,
   DEFAULT_LOCAL_POSTGRES_URL,
   DEFAULT_MOCK_RAG_EMBEDDING_DIMENSIONS,
   DEFAULT_OPENAI_CHAT_MODEL,
+  DEFAULT_OPENAI_LANGUAGE_MODEL,
   DEFAULT_PGVECTOR_INDEX_STRATEGY,
   DEFAULT_RAG_EMBEDDING_MODEL,
   DEFAULT_RAG_FILE_BASE_PATH,
@@ -43,17 +52,31 @@ export { loadAskDbConfigProjection, loadAskDbConfigProjectionSync } from "./load
 export type {
   AskDbConfig,
   AskDbAiConfig,
+  AskDbAiLanguageConfig,
+  AskDbAiEmbeddingConfig,
   AskDbAiReasoningConfig,
+  AiProviderConnections,
+  AiConnections,
+  AiNamedConnection,
+  OpenaiConnection,
+  AzureConnection,
+  FoundryConnection,
+  AnthropicConnection,
+  GoogleConnection,
+  GatewayConnection,
+  CustomConnection,
   OpenaiAiConfig,
   AzureAiConfig,
   FoundryAiConfig,
   AnthropicAiConfig,
   GoogleAiConfig,
+  GatewayAiConfig,
   OpenaiConfig,
   AzureConfig,
   FoundryConfig,
   AnthropicConfig,
   GoogleConfig,
+  GatewayConfig,
   AskDbIntrospectionConfig,
   PostgresIntrospectionConfig,
   PrismaIntrospectionConfig,

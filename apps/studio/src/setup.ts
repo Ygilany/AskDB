@@ -2,7 +2,15 @@ import { spawnSync } from "node:child_process";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { basename, dirname, join, resolve, isAbsolute, relative } from "node:path";
-import { bootstrapAskDbEnv, discoverAskDbConfigPath, getAskDbRuntimeConfig } from "@askdb/config";
+import { getBuiltinAiProviderSetup } from "@askdb/ai";
+import {
+  ASKDB_AI_PROVIDERS,
+  bootstrapAskDbEnv,
+  discoverAskDbConfigPath,
+  getAskDbRuntimeConfig,
+  type AskDbAiProviderId,
+} from "@askdb/config";
+import { renderAskDbAiConfigScaffold } from "@askdb/config/scaffold";
 import {
   formatInstallCommand,
   lockfilePackageManager,
@@ -12,7 +20,8 @@ import {
 } from "./package-manager.js";
 
 export type SetupDatabase = "postgres" | "mysql" | "sqlite" | "sqlserver" | "prisma";
-export type SetupAiProvider = "openai" | "anthropic" | "google" | "azure" | "foundry";
+/** Any provider id with an `askdb.config.*` branch (`ASKDB_AI_PROVIDERS` in `@askdb/config`). */
+export type SetupAiProvider = AskDbAiProviderId;
 export type SetupRagStore = "file" | "memory" | "pgvector";
 export type SetupExecuteProvider = "postgres" | "mysql" | "sqlite" | "sqlserver";
 
@@ -43,14 +52,14 @@ export type SetupConfigInput = {
   studioExecuteSqliteFile?: string;
 };
 
-/** Mirrors `AI_DEFAULTS` in `apps/cli/src/init.ts` — keep the two in sync. */
-const AI_DEFAULTS: Record<SetupAiProvider, { keyEnv: string; modelEnv: string }> = {
-  openai: { keyEnv: "OPENAI_API_KEY", modelEnv: "OPENAI_MODEL" },
-  anthropic: { keyEnv: "ANTHROPIC_API_KEY", modelEnv: "ANTHROPIC_MODEL" },
-  google: { keyEnv: "GOOGLE_GENERATIVE_AI_API_KEY", modelEnv: "GOOGLE_GENERATIVE_AI_MODEL" },
-  azure: { keyEnv: "AZURE_OPENAI_API_KEY", modelEnv: "AZURE_OPENAI_DEPLOYMENT" },
-  foundry: { keyEnv: "AZURE_OPENAI_API_KEY", modelEnv: "AZURE_OPENAI_DEPLOYMENT" },
-};
+/**
+ * Key/model env var names to scaffold for a provider, from `@askdb/ai`'s built-in
+ * provider table — the same source `askdb init` uses, so the two cannot drift.
+ */
+function aiDefaults(provider: string): { keyEnv: string; modelEnv: string } | undefined {
+  if (!(ASKDB_AI_PROVIDERS as readonly string[]).includes(provider)) return undefined;
+  return getBuiltinAiProviderSetup(provider);
+}
 
 const CONNECTION_ENV_DEFAULTS: Record<Exclude<SetupDatabase, "sqlite" | "prisma">, string> = {
   postgres: "DATABASE_URL",
@@ -109,21 +118,18 @@ function renderRagSection(ragStore: SetupRagStore, pgvectorEnv: string | undefin
     case "file":
       return `  rag: {
     embedder: "mock",
-    embedderConfig: {},
     store: "file",
     storeConfig: { file: {} },
   },`;
     case "memory":
       return `  rag: {
     embedder: "mock",
-    embedderConfig: {},
     store: "memory",
     storeConfig: { memory: {} },
   },`;
     case "pgvector":
       return `  rag: {
     embedder: "mock",
-    embedderConfig: {},
     store: "pgvector",
     storeConfig: {
       pgvector: {
@@ -159,19 +165,24 @@ export function writeSetupConfig(cwd: string, input: SetupConfigInput): SetupCon
   }
 
   const schemaOut = validateRelativePath(input.schemaOut ?? "./askdb", "schemaOut");
-  // Own-property lookup so `constructor`/`__proto__` can't masquerade as a provider —
-  // the provider name is emitted as an object key in the generated config.
-  const aiDefaults = Object.hasOwn(AI_DEFAULTS, input.aiProvider) ? AI_DEFAULTS[input.aiProvider] : undefined;
-  if (!aiDefaults) throw new SetupError(400, `Unknown AI provider: ${JSON.stringify(input.aiProvider)}`);
-  const aiKeyEnv = validateEnvName(input.aiKeyEnv ?? aiDefaults.keyEnv, "aiKeyEnv");
+  // `aiDefaults` only accepts ids listed in `ASKDB_AI_PROVIDERS`, so `constructor`/`__proto__`
+  // can't masquerade as a provider — the provider name is emitted as an object key in the
+  // generated config.
+  const providerDefaults = aiDefaults(input.aiProvider);
+  if (!providerDefaults) throw new SetupError(400, `Unknown AI provider: ${JSON.stringify(input.aiProvider)}`);
+  const aiKeyEnv = validateEnvName(input.aiKeyEnv ?? providerDefaults.keyEnv, "aiKeyEnv");
   const aiModelEnv = input.aiModelEnv ? validateEnvName(input.aiModelEnv, "aiModelEnv") : undefined;
 
-  const envVars: SetupConfigResult["envVars"] = [
-    { name: aiKeyEnv, purpose: `${input.aiProvider} API key`, requiredForIntrospection: false },
-  ];
-  if (aiModelEnv) {
-    envVars.push({ name: aiModelEnv, purpose: `${input.aiProvider} model override`, requiredForIntrospection: false });
-  }
+  // The `ai` block comes from `@askdb/config/scaffold`, shared with `askdb init`.
+  const aiScaffold = renderAskDbAiConfigScaffold({
+    provider: input.aiProvider,
+    keyEnv: aiKeyEnv,
+    ...(aiModelEnv ? { modelEnv: aiModelEnv } : {}),
+  });
+  const envVars: SetupConfigResult["envVars"] = aiScaffold.envVars.map((v) => ({
+    ...v,
+    requiredForIntrospection: false,
+  }));
 
   let introspectionSection: string;
   switch (input.database) {
@@ -284,20 +295,13 @@ export function writeSetupConfig(cwd: string, input: SetupConfigInput): SetupCon
     }
   }
 
-  const modelLine = aiModelEnv ? `\n        model: env(${tsString(aiModelEnv)}),` : "";
-  const sections = [introspectionSection, ragSection, studioSection].filter((s): s is string => s !== null);
+  const sections = [aiScaffold.source, introspectionSection, ragSection, studioSection].filter(
+    (s): s is string => s !== null,
+  );
 
   const config = `import { defineConfig, env, type AskDbConfig } from "@askdb/config";
 
 export default defineConfig({
-  ai: {
-    provider: ${tsString(input.aiProvider)},
-    providerConfig: {
-      ${input.aiProvider}: {
-        apiKey: env(${tsString(aiKeyEnv)}),${modelLine}
-      },
-    },
-  },
 ${sections.join("\n")}
 } satisfies AskDbConfig);
 `;

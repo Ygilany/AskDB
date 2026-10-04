@@ -284,7 +284,7 @@
 
       <!-- SQL Output -->
       <rect x="570" y="175" width="140" height="55" rx="8" fill="#1a1d27" stroke="#34d399" stroke-width="1.5"/>
-      <text x="640" y="197" text-anchor="middle" fill="#34d399" font-size="11" font-weight="600">Validated SQL</text>
+      <text x="640" y="197" text-anchor="middle" fill="#34d399" font-size="11" font-weight="600">Checked SQL</text>
       <text x="640" y="213" text-anchor="middle" fill="#8892b0" font-size="9">output artifact</text>
 
       <!-- Execution boundary -->
@@ -690,7 +690,7 @@
           <tr>
             <td><code>@askdb/ai</code></td>
             <td><code>ai</code></td>
-            <td>Provider adapter packages (e.g. <code>@askdb/ai-openai</code>)</td>
+            <td>Optional peers: AI SDK provider packages (e.g. <code>@ai-sdk/openai</code>), loaded lazily by the built-in providers</td>
           </tr>
           <tr>
             <td><code>@askdb/introspect</code></td>
@@ -1351,7 +1351,7 @@
         <tr>
           <td><strong>Minimal Postgres SQL generation</strong></td>
           <td><code>@askdb/core @askdb/postgres</code></td>
-          <td>AI SDK provider package (e.g. <code>@ai-sdk/openai</code>) or AskDB provider adapter (e.g. <code>@askdb/ai-openai</code>)</td>
+          <td>AI SDK provider package (e.g. <code>@ai-sdk/openai</code>), optionally with <code>@askdb/ai</code> for config-driven model selection</td>
           <td>No <code>pg</code> needed. Uses <code>ask()</code> + <code>postgresDialect</code>.</td>
         </tr>
         <tr>

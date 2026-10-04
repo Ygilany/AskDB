@@ -1,0 +1,5 @@
+{
+  "question": "Show every client record together with the name of the client's agency.",
+  "reply": "```sql\nSELECT c.*, a.name AS agency_name\nFROM people.client AS c\nJOIN org.agency AS a ON a.agency_id = c.agency_id\nORDER BY c.client_id\n```",
+  "source": "authored"
+}

@@ -70,11 +70,13 @@ Use your table name if you configured a custom `table`. A fresh `setupSql()` alr
 ## pgvector Store
 
 ```ts
+import { detectEmbeddingDimensions } from "@askdb/rag";
 import { createPgvectorStore } from "@askdb/rag/stores/pgvector";
 
+// `embedder` is the same Embedder you index with (see above).
 const store = createPgvectorStore({
   connectionString: process.env.DATABASE_URL!,
-  dimensions: 1536,
+  dimensions: await detectEmbeddingDimensions(embedder), // the width your embedding model returns
   table: "askdb_rag_chunks",
 });
 ```
@@ -87,7 +89,7 @@ The adapter exposes two ways to provision the required extension, table, and ind
 await store.ensureSchema(); // safe to call on every startup
 ```
 
-Uses `CREATE EXTENSION IF NOT EXISTS` and `CREATE TABLE IF NOT EXISTS` guards throughout, so repeated calls are a no-op against an already-provisioned database. It also adds the `content_hash` column to tables created by older versions (`ALTER TABLE … ADD COLUMN IF NOT EXISTS`), and throws a clear error if the existing table's `embedding` column has different dimensions than the store was configured with. Studio and `askdb-rag index --store pgvector` call it automatically.
+Uses `CREATE EXTENSION IF NOT EXISTS` and `CREATE TABLE IF NOT EXISTS` guards throughout, so repeated calls are a no-op against an already-provisioned database. It also adds the `content_hash` column to tables created by older versions (`ALTER TABLE … ADD COLUMN IF NOT EXISTS`). Because an existing table is kept as it is, `ensureSchema()` first checks its width (`store.tableDimensions()`) and throws `PgvectorDimensionMismatchError` when it differs from `dimensions`, rather than letting inserts fail later. Studio (when it builds an index with pgvector configured) and `askdb-rag index --store pgvector` call it automatically.
 
 The adapter stores each chunk's content hash, so the indexer can check what the table actually holds. A committed `schema.lock.json` pointed at a fresh database still indexes everything.
 
@@ -123,11 +125,11 @@ Provider examples:
 - OpenAI via `@askdb/ai` registry (recommended):
 
 ```ts
+// pnpm add @askdb/ai @ai-sdk/openai
 import { createAiRegistry } from "@askdb/ai";
-import { openaiProvider } from "@askdb/ai-openai";
 import { createAiSdkEmbedder } from "@askdb/rag/embedders/ai-sdk";
 
-const registry = createAiRegistry([openaiProvider]);
+const registry = createAiRegistry(["openai"]);
 const model = await registry.createEmbeddingModelFromEnv(process.env);
 const embedder = createAiSdkEmbedder({ model });
 ```

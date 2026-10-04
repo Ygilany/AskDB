@@ -8,7 +8,7 @@ AskDB ships focused library packages:
 4. [`@askdb/prisma`](../../packages/prisma/README.md) — Prisma integration: schema-file connector that renders Schema v2 from `.prisma` files without a database connection.
 5. [`@askdb/enrich`](../../packages/enrich/README.md) — headless Schema v2 enrichment workspace helpers used by Studio and custom authoring surfaces.
 6. [`@askdb/config`](../../packages/config/README.md) — Prisma-style `askdb.config.*` / `.config/askdb.*` discovery and `bootstrapAskDbEnv()`. **This is the only package that reads `process.env` directly.** All other packages use **`getAskDbRuntimeConfig()`** from here (not raw `process.env`).
-7. [`@askdb/ai`](../../packages/ai/README.md) — optional config/env-to-model registry for AI SDK providers. Pair it with provider adapters such as `@askdb/ai-openai`.
+7. [`@askdb/ai`](../../packages/ai/README.md) — optional config/env-to-model registry with built-in OpenAI, Azure/Foundry, Google Gemini, Anthropic, and Vercel AI Gateway providers. Install the `@ai-sdk/*` package for the provider you configure (an optional peer), e.g. `@ai-sdk/openai`. (`@askdb/ai-openai` and the other `@askdb/ai-*` packages are deprecated shims.)
 
 The supported user-facing CLI is the [`askdb`](../../apps/cli/README.md) package (`askdb` binary, `npm i -g askdb`). `@askdb/http-api`, `@askdb/studio`, and `@askdb/docs-site` are first-party reference apps.
 
@@ -36,20 +36,20 @@ pnpm add @askdb/enrich
 pnpm add @askdb/prisma
 # Optional: Prisma-style env mapping + askdb.config discovery (used by the CLI; optional for library hosts)
 pnpm add @askdb/config
-# Optional: AskDB config/env model factory and matching provider adapter
+# Optional: AskDB config/env model factory (uses the @ai-sdk/openai installed above;
+# install the @ai-sdk/* package for whichever provider askdb.config.* selects)
 pnpm add @askdb/ai
-pnpm add @askdb/ai-openai
 # Optional: live Postgres introspection
 pnpm add pg
 ```
 
 `pg` is an **optional peer dependency** of `@askdb/postgres`. You do not need it when you only use `@askdb/core` to generate SQL.
 
-[`@askdb/config`](../../packages/config/README.md) is the **only** package that reads `process.env` directly. Library packages (`@askdb/rag`, `@askdb/enrich`, …) depend on `@askdb/config` and use **`getAskDbRuntimeConfig()`**. Pass `config.ai.aiEnv` into an `@askdb/ai` registry when you want AskDB's env/config model factory. Call `bootstrapAskDbEnv({ cwd: process.cwd() })` at start-up when you want the same `.env` + `askdb.config.*` behavior as the first-party CLI and HTTP API. `env()` is reserved for use **inside** `askdb.config.*` files.
+[`@askdb/config`](../../packages/config/README.md) is the **only** package that reads `process.env` directly. Library packages (`@askdb/rag`, `@askdb/enrich`, …) depend on `@askdb/config` and use **`getAskDbRuntimeConfig()`**. Pass `config.ai.aiEnv` into an `@askdb/ai` registry when you want AskDB's env/config model factory. For the embedding model, pass `config.ai.embedding.env` to `createEmbeddingModelFromEnv` with `{ dimensions: config.ai.embedding.dimensions }` as its options (the env map doesn't carry the width); `config.ai.embedding` is `undefined` when `rag.embedder` is `"mock"`, so check it first. Call `bootstrapAskDbEnv({ cwd: process.cwd() })` at start-up when you want the same `.env` + `askdb.config.*` behavior as the first-party CLI and HTTP API. `env()` is reserved for use **inside** `askdb.config.*` files.
 
 ## CommonJS
 
-AskDB packages are ESM, but CommonJS applications can require them on Node.js 22.12+ through Node's `require(esm)` support:
+AskDB packages are ESM, but CommonJS applications can require them on Node.js 22.14+ (AskDB's supported floor) through Node's `require(esm)` support:
 
 ```js
 const { ask } = require("@askdb/core");
@@ -156,10 +156,10 @@ Generated-SQL execution is no longer part of the AskDB package API:
 
 ## AI provider recipes
 
-AskDB's first-party surfaces (CLI, HTTP API, Studio) support OpenAI, Azure/Foundry, Google Gemini, and Anthropic Claude out of the box. The three-tier model for AI configuration:
+AskDB's first-party surfaces (CLI, HTTP API, Studio) support OpenAI, Azure/Foundry, Google Gemini, Anthropic Claude, and the Vercel AI Gateway out of the box. In your own app, `@askdb/ai` ships the same built-in providers; install the `@ai-sdk/*` SDK for the one you select (`@ai-sdk/openai`, `@ai-sdk/azure`, `@ai-sdk/google`, `@ai-sdk/anthropic`; the gateway needs nothing extra because it ships with `ai`). If the SDK is missing, model creation fails with `Provider '<name>' requires the optional peer dependency @ai-sdk/<name>. Install it: npm i @ai-sdk/<name>`. The three-tier model for AI configuration:
 
-1. **Known provider literal** (zero extra code): use a first-party provider name — `openai`, `azure`, `foundry`, `google`, `anthropic`.
-2. **Custom provider string + a host-registered adapter** (~40 lines): use any other string and register an adapter under that name in `createAiRegistry(...)`.
+1. **Known provider literal** (zero extra code): use a built-in provider name — `openai`, `azure`, `foundry`, `google`, `anthropic`, `gateway`.
+2. **Custom provider string + a host-registered adapter** (~40 lines): use any other string and pass an `AiProviderAdapter` registered under that name to `createAiRegistry(...)` (or `createAskDb({ providers })`).
 3. **BYO `LanguageModel` via `ask({ model })** (no config involvement): pass a model instance directly; `askdb.config` and `@askdb/ai` are not involved.
 
 ### OpenAI
@@ -173,7 +173,7 @@ ASKDB_AI_MODEL=gpt-4o       # optional; default: gpt-4o-mini
 
 ```ts
 // askdb.config.ts
-ai: { provider: "openai", providerConfig: { openai: { apiKey: env("OPENAI_API_KEY"), model: "gpt-4o" } } }
+ai: { provider: "openai", providerConfig: { openai: { apiKey: env("OPENAI_API_KEY") } }, language: { model: "gpt-4o" } }
 ```
 
 ### Azure / Microsoft Foundry
@@ -209,18 +209,33 @@ ASKDB_AI_MODEL=claude-sonnet-4-6  # optional; default: claude-sonnet-4-6
 ai: { provider: "anthropic", providerConfig: { anthropic: { apiKey: env("ANTHROPIC_API_KEY") } } }
 ```
 
-**Note**: Anthropic does not provide an embeddings API. If you need RAG with Anthropic as your chat provider, configure a separate embedding provider via `ASKDB_RAG_EMBEDDER` (e.g. `openai`) alongside your Anthropic chat key.
+**Note**: Anthropic does not provide an embeddings API. If you need RAG with Anthropic as your language model provider, set `rag.embedder: "ai"` and point `ai.embedding` at another provider with its own connection, e.g. `embedding: { provider: "openai", model: "text-embedding-3-small" }` plus `providerConfig.openai.apiKey`.
+
+### Vercel AI Gateway
+
+```bash
+ASKDB_AI_PROVIDER=gateway
+AI_GATEWAY_API_KEY=...
+ASKDB_AI_MODEL=anthropic/claude-sonnet-4-6  # optional; default: openai/gpt-4o-mini
+```
+
+```ts
+ai: { provider: "gateway", providerConfig: { gateway: { apiKey: env("AI_GATEWAY_API_KEY") } }, language: { model: "anthropic/claude-sonnet-4-6" } }
+```
+
+Gateway model ids are `<upstream>/<model>`; an id without the prefix is rejected, including the embedding model (set `ai.embedding.model` to e.g. `openai/text-embedding-3-small`). Reasoning effort (`ai.language.reasoning`) uses the upstream's mapping for `openai/`, `google/`, and `anthropic/` models; other upstreams get no reasoning options. Embedding `dimensions` are sent for `openai/` and `google/` models and refused for other upstreams.
 
 ### Custom provider
 
-For any provider not in the first-party list, use a custom string and register an adapter:
+For any provider that isn't built in, use a custom string and register an adapter:
 
 ```ts
 // askdb.config.ts
 ai: {
   provider: "mistral",
-  providerConfig: { custom: { apiKey: env("MISTRAL_API_KEY"), model: "mistral-large-2" } }
+  providerConfig: { mistral: { apiKey: env("MISTRAL_API_KEY") } },
+  language: { model: "mistral-large-2" },
 }
 ```
 
-The custom branch flattens to the universal `ASKDB_AI_*` env keys that `resolveBaseConfig` honors. This only works end to end when the host registry contains an adapter registered under this provider name — the first-party apps do not include third-party adapters.
+A connection keyed by a custom provider id flattens to the universal `ASKDB_AI_*` env keys that `resolveBaseConfig` honors. This only works end to end when the host registry contains an adapter registered under this provider name, e.g. `createAiRegistry(["openai", mistralAdapter])` — the first-party apps do not include third-party adapters.

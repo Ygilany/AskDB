@@ -7,20 +7,53 @@ import {
   DEFAULT_STUDIO_EXECUTE_TIMEOUT_MS,
   parsePositiveInteger,
 } from "./defaults.js";
+import { aiEmbeddingEnv, aiLanguageEnv } from "./flatten.js";
+import { normalizeAskDbConfig, type NormalizedAiConnection } from "./normalize.js";
 import { flatToAiEnv, getAskDbRuntimeStore } from "./runtime-store.js";
+
+/** One resolved `ai` section: its provider, the connection it uses, its model, and an env view built from that connection only. */
+export type AskDbRuntimeAiSection = {
+  provider: string;
+  /** Connection name within `ai.providerConfig.<provider>`. */
+  connection: string;
+  model: string | undefined;
+  /** `AiEnv` for `@askdb/ai` registry calls, built from this section's connection only. */
+  env: Record<string, string | undefined>;
+};
 
 /**
  * Typed AI runtime settings for `@askdb/core` (not `process.env`).
  */
 export type AskDbRuntimeAiConfig = {
   /**
-   * Flat env-shaped map built from the runtime snapshot. Pass to
-   * `@askdb/ai` registry methods such as `resolveAiConfig` and
+   * Flat env-shaped map built from the runtime snapshot: the language view plus every other
+   * canonical key. Pass to `@askdb/ai` registry methods such as `resolveAiConfig` and
    * `createLanguageModelFromEnv`.
    */
   aiEnv: Record<string, string | undefined>;
+  /** `ai.language`: the language model. `model` is undefined only for a custom provider with no model set. */
+  language: AskDbRuntimeAiSection & { modelFamily: string | undefined };
+  /**
+   * `ai.embedding`: the embedding model. Undefined unless `rag.embedder` is `"ai"`. Pass `env`
+   * to `resolveEmbeddingConfig` / `createEmbeddingModelFromEnv`, and `{ dimensions }` as the
+   * latter's options: `env` holds the connection and model, not the width.
+   */
+  embedding:
+    | (AskDbRuntimeAiSection & {
+        model: string;
+        /**
+         * `ai.embedding.dimensions`: the vector size to request from the provider. Undefined
+         * leaves the width to the model; `detectEmbeddingDimensions` in `@askdb/rag` learns it.
+         */
+        dimensions: number | undefined;
+      })
+    | undefined;
 };
 
+/**
+ * OpenAI embedder settings for the `askdb-rag` CLI. Filled from `ai.embedding` when its provider
+ * is `openai`; otherwise only from the OpenAI language connection.
+ */
 export type AskDbRuntimeRagEmbedderConfig = {
   apiKey: string | undefined;
   baseURL: string | undefined;
@@ -149,7 +182,29 @@ export type AskDbRuntimeConfig = {
   modes: AskDbRuntimeModesConfig;
   nlToSql: AskDbRuntimeNlToSqlConfig;
   studio: AskDbRuntimeStudioConfig;
+  /** One message per deprecated config key in use (it names the old and new key, never a value). */
+  deprecations: readonly string[];
 };
+
+/** Normalization is pure, so it runs once per installed config object. */
+const normalizedByConfig = new WeakMap<object, ReturnType<typeof normalizeAskDbConfig>>();
+
+function normalizedFor(structured: Readonly<AskDbConfig>): ReturnType<typeof normalizeAskDbConfig> {
+  let normalized = normalizedByConfig.get(structured);
+  if (!normalized) {
+    normalized = normalizeAskDbConfig(structured as AskDbConfig);
+    normalizedByConfig.set(structured, normalized);
+  }
+  return normalized;
+}
+
+/** The runtime view of a resolved `ai` section, with `env` built from its connection only. */
+function runtimeSection<M extends string | undefined>(
+  section: { provider: string; connection: NormalizedAiConnection; model: M },
+  env: Record<string, string>,
+): AskDbRuntimeAiSection & { model: M } {
+  return { provider: section.provider, connection: section.connection.name, model: section.model, env };
+}
 
 function pickFlat(flat: Readonly<Record<string, string>>, key: string): string | undefined {
   const v = flat[key];
@@ -163,6 +218,17 @@ function pickFlat(flat: Readonly<Record<string, string>>, key: string): string |
 export function getAskDbRuntimeConfig(): AskDbRuntimeConfig {
   const { structured, flat } = getAskDbRuntimeStore();
   const aiEnv = flatToAiEnv(flat);
+  const { config: normalized, deprecations } = normalizedFor(structured);
+  const language = normalized.ai.language;
+  const embeddingSection = normalized.ai.embedding;
+  const embedding = embeddingSection
+    ? {
+        ...runtimeSection(embeddingSection, aiEmbeddingEnv(embeddingSection)),
+        dimensions: embeddingSection.dimensions,
+      }
+    : undefined;
+  // The RAG CLI's OpenAI embedder never reads another provider's key or base URL.
+  const openaiEmbedding = embedding?.provider === "openai" ? embedding : undefined;
 
   const logStdoutRaw = pickFlat(flat, "ASKDB_LOG_STDOUT");
   const logStdout = logStdoutRaw !== undefined && ["1", "true", "yes"].includes(logStdoutRaw.toLowerCase());
@@ -215,6 +281,8 @@ export function getAskDbRuntimeConfig(): AskDbRuntimeConfig {
     flat,
     ai: {
       aiEnv,
+      language: { ...runtimeSection(language, aiLanguageEnv(language)), modelFamily: language.modelFamily },
+      embedding,
     },
     introspection: {
       provider: structured.introspection.provider,
@@ -230,17 +298,17 @@ export function getAskDbRuntimeConfig(): AskDbRuntimeConfig {
         DEFAULT_INTROSPECT_OUTPUT_DIR,
     },
     rag: {
-      embedder: {
-        apiKey:
-          pickFlat(flat, "ASKDB_RAG_EMBEDDER_API_KEY") ??
-          pickFlat(flat, "ASKDB_AI_API_KEY") ??
-          pickFlat(flat, "OPENAI_API_KEY"),
-        baseURL:
-          pickFlat(flat, "ASKDB_RAG_EMBEDDER_BASE_URL") ??
-          pickFlat(flat, "ASKDB_AI_BASE_URL") ??
-          pickFlat(flat, "OPENAI_BASE_URL"),
-        model: pickFlat(flat, "ASKDB_RAG_EMBEDDER_MODEL"),
-      },
+      embedder: openaiEmbedding
+        ? {
+            apiKey: openaiEmbedding.env.OPENAI_API_KEY,
+            baseURL: openaiEmbedding.env.OPENAI_BASE_URL,
+            model: openaiEmbedding.model,
+          }
+        : {
+            apiKey: pickFlat(flat, "OPENAI_API_KEY"),
+            baseURL: pickFlat(flat, "OPENAI_BASE_URL"),
+            model: undefined,
+          },
     },
     logging: {
       level: structured.logging?.level ?? pickFlat(flat, "ASKDB_LOG_LEVEL"),
@@ -264,6 +332,7 @@ export function getAskDbRuntimeConfig(): AskDbRuntimeConfig {
     studio: {
       execute: resolveStudioExecuteConfig(structured, flat),
     },
+    deprecations,
   };
 }
 

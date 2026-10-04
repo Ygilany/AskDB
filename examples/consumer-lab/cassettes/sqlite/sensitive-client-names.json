@@ -1,0 +1,5 @@
+{
+  "question": "Which clients do we serve? List each client's id and full name.",
+  "reply": "```sql\nSELECT client_id, full_name\nFROM client\nORDER BY client_id\n```",
+  "source": "authored"
+}

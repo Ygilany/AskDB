@@ -33,27 +33,37 @@ There are three provisioning paths — pick the one that matches your deploy sto
 
 ### Path 1: Studio (local development)
 
-Studio auto-provisions the pgvector schema on first use. Configure the store in `askdb.config.ts`:
+Studio creates the pgvector table the first time it builds the index. Configure the embedding model and the store in `askdb.config.ts`:
 
 ```ts
-export default {
+import { defineConfig, env } from "@askdb/config";
+
+export default defineConfig({
+  ai: {
+    provider: "openai",
+    providerConfig: { openai: { apiKey: env("OPENAI_API_KEY") } },
+    embedding: { model: "text-embedding-3-small" },
+  },
   rag: {
-    embedder: "openai",
+    embedder: "ai",
     store: "pgvector",
     storeConfig: {
       pgvector: {
-        databaseUrl: process.env.PGVECTOR_URL,
+        databaseUrl: env("PGVECTOR_URL"),
       },
     },
   },
-};
+  // ...
+});
 ```
 
-Launch Studio (`npx askdb studio --schema ./my-app.schema`) and the first RAG operation creates the table.
+`rag.embedder: "ai"` embeds with the [`ai.embedding`](/reference/config/#aiembedding) model, and `ai.embedding.model` is required: AskDB has no default embedding model. Its provider defaults to `ai.provider`; to keep a language model from a provider without embeddings (such as Anthropic), set `ai.embedding.provider` and give that provider a connection. You don't set the vector width: AskDB learns it from the model when it first builds the index, and creates the pgvector table at that width. Set `ai.embedding.dimensions` only to request a smaller size from a model that lets you choose one.
+
+Launch Studio (`npx askdb studio --schema ./my-app.schema`) and build the index from the **RAG Index** page; the first build creates the table.
 
 ### Path 2: `askdb-rag setup-store` (CI / staging)
 
-One idempotent command. All DDL uses `IF NOT EXISTS` so it's safe to re-run on every deploy.
+One idempotent command. All DDL uses `IF NOT EXISTS` so it's safe to re-run on every deploy. `setup-store` has no embedding model to ask, so pass the width yours returns (1536 for `text-embedding-3-small`; `detectEmbeddingDimensions(embedder)` tells you for any model).
 
 ```bash
 askdb-rag setup-store \
@@ -79,7 +89,7 @@ import { createPgvectorStore } from "@askdb/rag/stores/pgvector";
 
 const store = createPgvectorStore({
   connectionString: process.env.DATABASE_URL!,
-  dimensions: 1536,
+  dimensions: 1536, // your embedding model's width; detectEmbeddingDimensions(embedder) tells you
 });
 
 console.log(store.setupSql());
@@ -89,25 +99,27 @@ Paste the output (CREATE EXTENSION, CREATE TABLE, CREATE INDEX) into Flyway, Liq
 
 ## Index the schema artifact
 
-After the store is provisioned, index your schema's chunks:
+Index your schema's chunks. If none of the paths above created the table yet, `ensureSchema()` creates it at the width the embedding model returns:
 
 ```ts
 import {
   buildSchemaIndex,
   createAiSdkEmbedder,
   createPgvectorStore,
+  detectEmbeddingDimensions,
   loadChunkerSourcesFromDir,
 } from "@askdb/rag";
 import { openai } from "@ai-sdk/openai";
 
-const store = createPgvectorStore({
-  connectionString: process.env.PGVECTOR_URL!,
-  dimensions: 1536,
-});
-
 const embedder = createAiSdkEmbedder({
   model: openai.textEmbeddingModel("text-embedding-3-small"),
 });
+
+const store = createPgvectorStore({
+  connectionString: process.env.PGVECTOR_URL!,
+  dimensions: await detectEmbeddingDimensions(embedder), // the width the model returns
+});
+await store.ensureSchema(); // creates the table if needed; refuses an existing table of another width
 
 const { retriever, stats } = await buildSchemaIndex({
   schema: loadChunkerSourcesFromDir("./my-app.schema"),

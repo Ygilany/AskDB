@@ -1,6 +1,6 @@
 # askdb
 
-Command-line frontend for [`@askdb/core`](https://www.npmjs.com/package/@askdb/core). Ask natural-language questions and get validated SQL from the configured dialect.
+Command-line frontend for [`@askdb/core`](https://www.npmjs.com/package/@askdb/core). Ask natural-language questions and get checked SQL from the configured dialect.
 
 Published on npm as [`askdb`](https://www.npmjs.com/package/askdb) (unscoped); the `askdb` binary name is unchanged.
 

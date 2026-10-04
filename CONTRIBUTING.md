@@ -12,9 +12,9 @@ pnpm build
 pnpm test
 ```
 
-If `pnpm build` fails with **Cannot find module `.../node_modules/turbo/bin/turbo`**, your `node_modules` tree is out of sync (common after interrupted installs or worktree sync). Run **`rm -rf node_modules && pnpm install`**, then try again. The repo’s **`.npmrc`** hoists `turbo` to reduce broken bin shims; root scripts use **`pnpm exec turbo`** so the CLI is resolved through pnpm.
+If `pnpm build` fails with **Cannot find module `.../node_modules/turbo/bin/turbo`**, your `node_modules` tree is out of sync (common after interrupted installs or worktree sync). Run **`rm -rf node_modules && pnpm install`**, then try again. The **`publicHoistPattern`** in `pnpm-workspace.yaml` hoists `turbo` to reduce broken bin shims; root scripts use **`pnpm exec turbo`** so the CLI is resolved through pnpm.
 
-Use Node 22.13 or newer (pnpm 11's own floor) and pnpm 11. The published libraries support Node `>=22.12`; CI builds and runs the unit suites on Node 22.12.0 and 24. Optional Postgres fixtures live under `fixtures/` for integration checks.
+Use Node 22.14 or newer and pnpm 11. The published libraries support Node `>=22.14`; CI builds and runs the unit suites on Node 22.14.0 and 24. Optional Postgres fixtures live under `fixtures/` for integration checks.
 
 `pnpm test` runs each package's `test` task through Turbo, which first builds that package and its workspace dependencies (`test` depends on `build` and `^build`). Tests that spawn `apps/cli/dist/cli.js` rely on that; if you run `vitest` directly inside a package, run `pnpm build` first.
 
@@ -28,7 +28,7 @@ The `*.integration.test.ts` suites run against live databases and **skip** when 
 | `ASKDB_FIXTURE_HOST` | Live introspection in `@askdb/postgres`, `@askdb/mysql` (MySQL and MariaDB), `@askdb/sqlserver`, `@askdb/sqlite` and the `askdb` CLI, checked against one golden schema; the fixture's own dataset check | `pnpm fixture:up` → `127.0.0.1` (see [Multi-engine fixture](#multi-engine-fixture)) |
 | `MYSQL_DATABASE_URL` | `@askdb/mysql` | `docker compose -f fixtures/mysql/docker-compose.yml up -d --wait` → `mysql://root:mysql@127.0.0.1:3306/askdb_test` |
 | `MSSQL_DATABASE_URL` | `@askdb/sqlserver` | `docker compose -f fixtures/sqlserver/docker-compose.yml up -d --wait`, then create `askdb_test` (see the compose file) → `Server=127.0.0.1,1433;Database=askdb_test;User Id=sa;Password=AskDB.123;Encrypt=false` |
-| `ASKDB_PGVECTOR_URL` (or `PGVECTOR_URL`) | `@askdb/rag` pgvector store | `pnpm pgvector:up` → `postgres://postgres:postgres@127.0.0.1:5434/askdb_rag` |
+| `ASKDB_PGVECTOR_URL` (or `PGVECTOR_URL`) | `@askdb/rag` pgvector store; Studio's RAG index on pgvector | `pnpm pgvector:up` → `postgres://postgres:postgres@127.0.0.1:5434/askdb_rag`; `pnpm pgvector:test` runs both suites |
 
 The SQLite suite needs no server; it only needs the optional `better-sqlite3` native driver, which `pnpm install` builds.
 
@@ -51,7 +51,7 @@ It uses ports 15432, 13306, 13307 and 11433, so it runs alongside the fixtures a
 
 ### Consumer lab
 
-[`examples/consumer-lab`](examples/consumer-lab/README.md) tests AskDB as a black box. It installs AskDB into an app outside the workspace (its own pnpm root and lockfile), from packed tarballs or from npm, then executes the SQL AskDB returns on the fixture above. Design: [`docs/specs/consumer-lab.md`](docs/specs/consumer-lab.md); remaining work: #241.
+[`examples/consumer-lab`](examples/consumer-lab/README.md) tests AskDB as a black box. It installs AskDB into an app outside the workspace (its own pnpm root and lockfile), from packed tarballs or from npm, then executes the SQL AskDB returns on the fixture above. Design: [`docs/specs/consumer-lab.md`](docs/specs/consumer-lab.md); remaining work: #241. Agents drive it with the [`consumer-lab` skill](.agents/skills/consumer-lab/SKILL.md): which target to install, how to read the matrix, and how to refresh the baseline after a release.
 
 ```bash
 pnpm lab:up                                       # fixture up + install the lab (first time)
@@ -68,7 +68,7 @@ pnpm lab:down                                     # stop the fixture; its data a
 pnpm lab:reset                                    # start over: fixture reseeded, committed baseline reinstalled
 ```
 
-`lab:down` removes only the fixture's containers (`fixture:down`): the volumes, the SQLite file, the lab's `node_modules` and `.lab/` stay, so the next `lab:up` is fast. `lab:reset` runs `fixture:reset` (containers, volumes and the SQLite file removed, then started and reseeded), then `lab:use --restore`, which removes `.lab/` (tarballs, the recorded target, cached schema artifacts, scratch projects) and the lab's `node_modules`, checks out the lab's three manifests as committed, and installs and verifies the committed lockfile. It works from a half-finished `lab:use`. It leaves the committed `npm:latest` baseline installed, not this checkout; run `pnpm lab:use .` to install the checkout. Neither command touches anything else. To try them without stopping a fixture others are using, run a [second copy of the fixture](fixtures/multi-engine/README.md#running-a-second-copy) from another worktree.
+`lab:down` removes only the fixture's containers (`fixture:down`) and the lab's own Postgres (`examples/consumer-lab/compose.yml`, whose data is on a tmpfs): the fixture's volumes, the SQLite file, the lab's `node_modules` and `.lab/` stay, so the next `lab:up` is fast. `lab:reset` runs `fixture:reset` (containers, volumes and the SQLite file removed, then started and reseeded), then `lab:use --restore`, which removes `.lab/` (tarballs, the recorded target, cached schema artifacts, scratch projects) and the lab's `node_modules`, checks out the lab's three manifests as committed, and installs and verifies the committed lockfile, then restarts the lab's Postgres empty (the `tenant-rls` test seeds it). It works from a half-finished `lab:use`. It leaves the committed `npm:latest` baseline installed, not this checkout; run `pnpm lab:use .` to install the checkout. Neither command touches anything else. To try them without stopping a fixture others are using, run a [second copy of the fixture](fixtures/multi-engine/README.md#running-a-second-copy) from another worktree.
 
 `lab ask` answers only questions in the lab's catalog, from hand-written replies per dialect; adding a question means adding its replies and its oracle, the expected answer computed from the seed data, which `test/results.test.ts` compares with the rows every engine returns (see the lab README).
 
@@ -92,7 +92,8 @@ When it fails, prefer fixing over allowlisting:
 
 | Advisory | Package / path | Why it is not exploitable here | Remove when |
 | --- | --- | --- | --- |
-| _none_ | | | |
+| GHSA-ch52-4w7c-c8xp | `http-cache-semantics` via `astro` (`apps/docs-site` only) | High severity: `max-stale` handling in a shared cache can disclose one user's cached response to another. `astro` uses it only to cache remote images fetched during the static docs build, which has no users to share a cache between, and `apps/docs-site` is private, so it isn't in any published package. | A patched `http-cache-semantics` (> 4.2.0) is released |
+| GHSA-vfj7-8cjw-p6xm | `braces` via `starlight-llms-txt > micromatch` (`apps/docs-site` only) | High severity: deeply nested braces patterns exhaust the stack. `starlight-llms-txt` matches doc IDs against its own default patterns (`astro.config.mjs` sets none), so no attacker-controlled pattern reaches it, and `apps/docs-site` is private, so it isn't in any published package. | A patched `braces` (> 3.0.3) is released |
 
 ## Before Opening a PR
 
@@ -110,6 +111,8 @@ pnpm changeset
 ```
 
 AskDB is currently pre-1.0. Breaking public API changes should normally use a minor changeset unless the project intentionally moves a package to 1.0.
+
+Releases are automated: merged changesets collect in a "chore: version packages (beta)" PR, and merging it publishes to npm after a maintainer approves. See [`docs/release.md`](docs/release.md).
 
 ## Safety Boundary
 

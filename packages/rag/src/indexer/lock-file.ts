@@ -28,7 +28,7 @@ export type SchemaLockFile = {
   schemaId: string;
   /** Embedder id the embeddings were produced with (e.g. `openai:text-embedding-3-small`). */
   embedderId?: string;
-  /** Vector dimensions of the stored embeddings. */
+  /** Width of the vectors in the store, learned from the embedder's output. */
   dimensions?: number;
   /** Identity of the store the embeddings were written to (from `VectorStore.describe()`). */
   store?: { kind: string; location?: string };

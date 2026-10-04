@@ -24,6 +24,7 @@
         "PGVECTOR_URL",
         "UPDATE_RAG_GOLDEN"
       ],
+      "passThroughEnv": ["ASKDB_TEST_SUMMARY_DIR"],
       "outputs": []
     },
     "lint": {

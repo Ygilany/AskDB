@@ -1,5 +1,5 @@
 export type SetupDatabase = "postgres" | "mysql" | "sqlite" | "sqlserver" | "prisma";
-export type SetupAiProvider = "openai" | "anthropic" | "google" | "azure" | "foundry";
+export type SetupAiProvider = "openai" | "anthropic" | "google" | "azure" | "foundry" | "gateway";
 export type SetupRagStore = "file" | "memory" | "pgvector";
 export type SetupExecuteProvider = "postgres" | "mysql" | "sqlite" | "sqlserver";
 
@@ -11,12 +11,17 @@ export const DATABASES: Array<{ value: SetupDatabase; label: string }> = [
   { value: "prisma", label: "Prisma schema file (no live database)" },
 ];
 
+/**
+ * Mirrors `listBuiltinAiProviderSetups(ASKDB_AI_PROVIDERS)` from `@askdb/ai` (the browser bundle
+ * can't import it). `setup-providers.test.ts` fails if the two drift.
+ */
 export const AI_PROVIDERS: Array<{ value: SetupAiProvider; label: string; keyEnv: string; modelEnv: string }> = [
   { value: "openai", label: "OpenAI", keyEnv: "OPENAI_API_KEY", modelEnv: "OPENAI_MODEL" },
   { value: "anthropic", label: "Anthropic", keyEnv: "ANTHROPIC_API_KEY", modelEnv: "ANTHROPIC_MODEL" },
-  { value: "google", label: "Google", keyEnv: "GOOGLE_GENERATIVE_AI_API_KEY", modelEnv: "GOOGLE_GENERATIVE_AI_MODEL" },
+  { value: "google", label: "Google (Gemini)", keyEnv: "GOOGLE_GENERATIVE_AI_API_KEY", modelEnv: "GOOGLE_AI_MODEL" },
   { value: "azure", label: "Azure OpenAI", keyEnv: "AZURE_OPENAI_API_KEY", modelEnv: "AZURE_OPENAI_DEPLOYMENT" },
   { value: "foundry", label: "Azure AI Foundry", keyEnv: "AZURE_OPENAI_API_KEY", modelEnv: "AZURE_OPENAI_DEPLOYMENT" },
+  { value: "gateway", label: "Vercel AI Gateway", keyEnv: "AI_GATEWAY_API_KEY", modelEnv: "ASKDB_AI_MODEL" },
 ];
 
 export const RAG_STORES: Array<{ value: SetupRagStore; label: string }> = [

@@ -5,7 +5,7 @@ import { expect, it } from "vitest";
 import { loadChunkerSourcesFromDir } from "../chunker/index.js";
 import { buildSchemaIndex } from "../indexer/index.js";
 import type { Embedder } from "../types.js";
-import { createPgvectorStore } from "./pgvector.js";
+import { createPgvectorStore, PgvectorDimensionMismatchError } from "./pgvector.js";
 import { integrationSuite } from "../../../../scripts/test-utils/integration.mjs";
 
 // Runs only with a live pgvector database: `pnpm pgvector:up && pnpm pgvector:test`
@@ -129,9 +129,7 @@ run("createPgvectorStore integration", () => {
 
       const wrongDims = createPgvectorStore({ connectionString, dimensions: 3, table, indexStrategy: "none" });
       try {
-        await expect(wrongDims.ensureSchema()).rejects.toThrow(
-          /stores 2-dimension embeddings but this store is configured with dimensions=3/,
-        );
+        await expect(wrongDims.ensureSchema()).rejects.toThrow(PgvectorDimensionMismatchError);
       } finally {
         await wrongDims.close();
       }
@@ -181,6 +179,24 @@ run("createPgvectorStore integration", () => {
       }
     } finally {
       rmSync(dir, { recursive: true, force: true });
+      await dropTable(table);
+    }
+  });
+
+  it("reads an existing table's width and refuses a store set up for another", async () => {
+    const table = `askdb_rag_width_${process.pid}`;
+    const created = createPgvectorStore({ connectionString, dimensions: 3, table, indexStrategy: "none" });
+    const other = createPgvectorStore({ connectionString, dimensions: 4, table, indexStrategy: "none" });
+    const unsized = createPgvectorStore({ connectionString, table, indexStrategy: "none" });
+    try {
+      await expect(unsized.tableDimensions()).resolves.toBeUndefined();
+      await created.ensureSchema();
+      await expect(unsized.tableDimensions()).resolves.toBe(3);
+      await expect(other.ensureSchema()).rejects.toThrow(PgvectorDimensionMismatchError);
+      await expect(other.ensureSchema()).rejects.toThrow(/stores 3-dimension vectors, but this store is set up for 4/);
+      await expect(unsized.ensureSchema()).resolves.toBeUndefined();
+    } finally {
+      await Promise.all([created.close(), other.close(), unsized.close()]);
       await dropTable(table);
     }
   });

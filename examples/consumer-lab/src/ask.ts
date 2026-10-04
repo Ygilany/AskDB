@@ -7,18 +7,25 @@
 import { createOpenAI } from "@ai-sdk/openai";
 import { ask, loadSchema, type AskGenerateDeps } from "@askdb/core";
 import type { SupportedDialect } from "./dialects.js";
+import type { ResolveTenantDescendants } from "./tenant.js";
 
-/** The model id sent to the replay server; the same as the config's `providerConfig.openai.model`. */
+/** The model id sent to the replay server. The lab's configs leave the model unset, and AskDB's OpenAI default is this same id. */
 export const MODEL_ID = "gpt-4o-mini";
 /** The replay server ignores it; the OpenAI client requires one. */
 export const API_KEY = "lab-replay-no-key";
 
 export type AskResult = Awaited<ReturnType<typeof ask>>;
+type AskOptions = Parameters<typeof ask>[0];
+/**
+ * Further `ask()` options, such as `tenantScope` and `tenantSqlMode`. `resolveTenantDescendants`
+ * is spelled out so the lab typechecks against a target from before the option existed.
+ */
+export type AskExtras = Omit<AskOptions, "question" | "schema" | "model" | "dialect"> & { resolveTenantDescendants?: ResolveTenantDescendants };
 
 /** `ask()` with a raw `LanguageModel` pointed at `baseURL`, the replay server's base URL for `dialect`. */
-export async function askRaw(dialect: SupportedDialect, question: string, schemaDir: string, baseURL: string): Promise<AskResult> {
+export async function askRaw(dialect: SupportedDialect, question: string, schemaDir: string, baseURL: string, extras: AskExtras = {}): Promise<AskResult> {
   const openai = createOpenAI({ baseURL, apiKey: API_KEY });
-  return ask({ question, schema: loadSchema(schemaDir), model: openai(MODEL_ID), dialect });
+  return ask({ ...extras, question, schema: loadSchema(schemaDir), model: openai(MODEL_ID), dialect } as AskOptions);
 }
 
 /**

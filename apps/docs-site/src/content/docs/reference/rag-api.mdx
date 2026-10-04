@@ -14,14 +14,22 @@ See the [RAG for large schemas guide](/guides/rag-for-large-schemas/) for the en
 Chunks a schema artifact, embeds the chunks, upserts them into the vector store, and returns a bound retriever. Re-indexing is incremental: a chunk is skipped only when the store already holds the same content hash for its id. Built-in stores report their hashes, so a lock file can't make the indexer skip chunks a fresh or different store doesn't have.
 
 ```ts
-import { buildSchemaIndex, createAiSdkEmbedder, createPgvectorStore } from "@askdb/rag";
+import {
+  buildSchemaIndex,
+  createAiSdkEmbedder,
+  createPgvectorStore,
+  detectEmbeddingDimensions,
+  loadChunkerSourcesFromDir,
+} from "@askdb/rag";
 import { openai } from "@ai-sdk/openai";
-import { loadChunkerSourcesFromDir } from "@askdb/rag";
-
-const store = createPgvectorStore({ connectionString: process.env.DATABASE_URL, dimensions: 1536 });
-await store.ensureSchema();
 
 const embedder = createAiSdkEmbedder({ model: openai.embedding("text-embedding-3-small") });
+
+const store = createPgvectorStore({
+  connectionString: process.env.DATABASE_URL,
+  dimensions: await detectEmbeddingDimensions(embedder), // the width the model returns
+});
+await store.ensureSchema();
 
 const { retriever, stats } = await buildSchemaIndex({
   schema: loadChunkerSourcesFromDir("./my-app.schema"),
@@ -55,7 +63,7 @@ const { sql } = await ask({
 | `embedder` | `Embedder` | yes | Text embedding function: `(texts: string[]) => Promise<number[][]>`. Use `createAiSdkEmbedder()` or supply your own. |
 | `store` | `VectorStore` | yes | Vector store adapter. Use `createPgvectorStore()` or supply a custom adapter. |
 | `embedderId` | `string` | no | Stable identifier for the embedder (e.g. `"openai:text-embedding-3-small"`). Stored in the lock file. Changing it, including going from unset to set, triggers a full re-embed. Strongly recommended when using a lock file. |
-| `lockFilePath` | `string` | no | Path to `schema.lock.json`. Records the embedder id, store identity, dimensions, and chunk hashes. A missing lock, or one written by an older `@askdb/rag`, triggers a full re-embed. Write it inside the schema directory. |
+| `lockFilePath` | `string` | no | Path to `schema.lock.json`. Records the embedder id, store identity, the width of the vectors written (`dimensions`), and chunk hashes. A missing lock, or one written by an older `@askdb/rag`, triggers a full re-embed. Write it inside the schema directory. |
 | `force` | `boolean` | no | Re-embed every chunk regardless of the lock file or stored hashes. |
 | `chunkOptions` | `ChunkOptions` | no | `includeSensitiveDescribable` (default `false`), `emitRelationships` (default `false`), `chunkSizeMaxChars` (default `1000`). |
 | `batchSize` | `number` | no | Number of texts per embedder call. Default `64`. |
@@ -133,6 +141,16 @@ const embedder = createAiSdkEmbedder({
 
 A convenience wrapper around the OpenAI embeddings API. **Deprecated** — construct the model with `openai.embedding(...)` and use `createAiSdkEmbedder` instead.
 
+### `detectEmbeddingDimensions(embedder)`
+
+Learns an embedder's vector width by embedding one short text, so you don't have to look it up or hard-code it. Use it when a store needs the width before the first vector is written, such as a new pgvector table. It costs one embedding call. The memory and file stores learn the width from the first vector themselves, so they don't need it.
+
+```ts
+import { detectEmbeddingDimensions } from "@askdb/rag";
+
+const dimensions = await detectEmbeddingDimensions(embedder); // e.g. 1536 for text-embedding-3-small
+```
+
 ---
 
 ## Vector stores
@@ -146,7 +164,7 @@ import { createPgvectorStore } from "@askdb/rag";
 
 const store = createPgvectorStore({
   connectionString: process.env.DATABASE_URL,
-  dimensions: 1536,   // must match your embedding model's output dimensions
+  dimensions: await detectEmbeddingDimensions(embedder), // the width your embedding model returns
   table: "askdb_rag_chunks",
   indexStrategy: "hnsw",
 });
@@ -156,7 +174,7 @@ await store.ensureSchema(); // idempotent — safe to call on every startup
 
 | Option | Type | Required | Description |
 | --- | --- | --- | --- |
-| `dimensions` | `number` | yes | Embedding vector size. Must match the embedding model. Common values: `1536` (OpenAI `text-embedding-3-small`/`ada-002`), `3072` (`text-embedding-3-large`), `768` (many open-source models). |
+| `dimensions` | `number` | no | Width of the `embedding` column. Needed only to create the table (`setupSql()`, or `ensureSchema()` when the table doesn't exist yet); reads and writes don't use it. Take it from `detectEmbeddingDimensions(embedder)` rather than hard-coding it. |
 | `connectionString` | `string` | no† | PostgreSQL connection string. The store lazily imports and pools `pg` when this is supplied. |
 | `client` | `PgClient` | no† | Pre-built `pg.Pool` or `pg.Client`. Preferred when your app already manages a pool. The store never closes an externally supplied client. |
 | `table` | `string` | no | Table name. Default `"askdb_rag_chunks"`. Several schemas can share one table (chunk ids are schema-scoped); use separate tables for different embedding dimensions. |
@@ -178,8 +196,9 @@ Beyond the `VectorStore` interface, `createPgvectorStore` returns:
 
 | Method | Description |
 | --- | --- |
-| `setupSql()` | Returns the DDL string that creates the extension, table (including the `content_hash` column), and indexes, and adds `content_hash` to tables created by older versions. |
-| `ensureSchema()` | Executes `setupSql()` against the database. Idempotent — safe on every startup. Throws if the existing table's `embedding` column has different dimensions than `dimensions`. |
+| `setupSql()` | Returns the DDL string that creates the extension, table (including the `content_hash` column), and indexes, and adds `content_hash` to tables created by older versions. Needs `dimensions`. |
+| `ensureSchema()` | Creates the extension, table, and indexes when they're missing, and adds `content_hash` to tables created by older versions. Idempotent — safe on every startup. An existing table is kept as it is, so when its width differs from `dimensions` this throws a `PgvectorDimensionMismatchError` (with `table`, `tableDimensions` and `dimensions`), instead of letting inserts fail later. Without `dimensions` it uses an existing table's width, and throws when there's no table. |
+| `tableDimensions()` | The width of the existing table's `embedding` column, or `undefined` when the table doesn't exist. |
 | `close()` | Closes the internal connection pool. No-op when an external client was supplied. |
 | `count(filter?)` | Returns the number of stored chunks matching an optional filter. Useful for diagnostics. |
 

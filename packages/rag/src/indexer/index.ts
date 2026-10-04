@@ -297,8 +297,12 @@ export async function buildSchemaIndex(
 
   // 6. Persist lock file.
   if (lockFilePath) {
+    // The width of the vectors in the store: what this run embedded, else what the store
+    // reports, else (nothing was re-embedded with the same embedder) what the previous run recorded.
     const dimensions =
-      observedDimensions ?? descriptor?.dimensions ?? previousLock?.dimensions;
+      observedDimensions ??
+      descriptor?.dimensions ??
+      (embedderChanged ? undefined : previousLock?.dimensions);
     const lock: SchemaLockFile = {
       version: SCHEMA_LOCK_VERSION,
       schemaId,

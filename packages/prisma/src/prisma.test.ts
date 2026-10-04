@@ -178,14 +178,13 @@ describe("describePrismaSchema", () => {
     ).rejects.toThrow(/unsupported Prisma datasource provider 'mongodb'/);
   });
 
-  it("wires through the Connector contract and renders deterministic Schema v2 JSON", async () => {
+  it("wires through the Connector contract and renders Schema v2 JSON", async () => {
     const connector = createPrismaConnector();
     const result = await connector.describe({
       schemaPath: resolve(FIXTURE_DIR, "simple/schema.prisma"),
       schemaId: "simple",
     });
 
-    expect(JSON.stringify(result.schema)).toBe(JSON.stringify(result.schema));
     expect(toV2SchemaJson(result.schema, "simple")).toMatchSnapshot();
   });
 });
