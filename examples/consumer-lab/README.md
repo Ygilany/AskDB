@@ -23,7 +23,7 @@ pnpm lab:use --check                 # re-verify the current install against its
 pnpm lab ask --db mysql "How many active programs does each agency run?"
 pnpm lab ask --db sqlserver --via client "Which three agencies have the highest paid order total?"
 pnpm lab ask --db postgres --sql "SELECT agency_id, name FROM org.agency"
-pnpm lab:test                        # the lab's own suite (needs the fixture and an installed lab)
+pnpm lab:test                        # the lab's own suite (needs the fixture, the lab's Postgres and an installed lab)
 pnpm lab:matrix                      # lab:up, then the suite as a scenario × dialect table
 pnpm lab:matrix -t introspect-golden # vitest flags pass through: one scenario (-t), one dialect (-t '\[mysql\]'), one file
 pnpm lab:use --restore               # put the committed baseline (npm:latest) back
@@ -203,7 +203,7 @@ The strict cases fail on the leak itself: when `ask()` returns SQL it should hav
 
 `test/tenant-rls.test.ts` shows the database-side tenancy the docs recommend next to AskDB's check (`concepts/safety-boundaries.mdx`, "Enforce tenancy in the database"). It is **informational**: it tests Postgres and the lab's policies, not AskDB. The SQL is the unfiltered reply's cassette, and AskDB never sees it here.
 
-It runs on the **lab's Postgres**, a lab-only server in [`compose.yml`](compose.yml) on port 15442 (`ASKDB_LAB_POSTGRES_PORT` overrides it), never on the shared fixture, whose tables it would change for everyone. `pnpm lab:up` starts it and seeds it with the fixture's own seeder (`src/lab-postgres.ts` runs `tsx src/seed.ts postgres` with `ASKDB_FIXTURE_POSTGRES_PORT` pointed at it), then applies `src/lab-postgres.sql`: a read-only `lab_tenant` login, and on the tenant policy overlay's tables a policy that keeps `lab_tenant` to the agency in the setting `app.agency_id`. `fixture_reader` bypasses the policies. To start it alone, run `pnpm -C examples/consumer-lab postgres:up`; `postgres:down` stops it, and its data goes with it.
+It runs on the **lab's Postgres**, a lab-only server in [`compose.yml`](compose.yml) on port 15442 (`ASKDB_LAB_POSTGRES_PORT` overrides it), never on the shared fixture, whose tables it would change for everyone. `pnpm lab:up` starts it and seeds it with the fixture's own seeder (`src/lab-postgres.ts` runs `tsx src/seed.ts postgres` with `ASKDB_FIXTURE_POSTGRES_PORT` pointed at it), then applies `src/lab-postgres.sql`: a read-only `lab_tenant` login, and on the tenant policy overlay's tables a policy that keeps `lab_tenant` to the agency in the setting `app.agency_id`. `fixture_reader` bypasses the policies. To start it alone, run `pnpm -C examples/consumer-lab postgres:up`; `postgres:down` stops it, and its data goes with it. Like the fixture, it is one server shared by every checkout on the machine (project `askdb-consumer-lab`, whatever `COMPOSE_PROJECT_NAME` says), so `lab:down` and `lab:reset` stop it for everyone. To run a private one, start it under another project name and port (`ASKDB_LAB_POSTGRES_PORT=<port> docker compose -p <name> up -d --wait`, then `ASKDB_LAB_POSTGRES_PORT=<port> pnpm exec tsx src/lab-postgres.ts seed`) and set the same port for the tests.
 
 | Scenario | What it checks |
 |---|---|

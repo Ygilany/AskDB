@@ -24,13 +24,16 @@ import pg from "pg";
 import { connectionUrl } from "./fixture.js";
 import { LAB_ROOT } from "./paths.js";
 
-export const LAB_POSTGRES_PORT_ENV = "ASKDB_LAB_POSTGRES_PORT";
+const PORT_ENV = "ASKDB_LAB_POSTGRES_PORT";
 const DEFAULT_PORT = 15442;
 const FIXTURE_ROOT = fileURLToPath(new URL("../../../fixtures/multi-engine/", import.meta.url));
 
 export function labPostgresPort(): number {
-  const override = process.env[LAB_POSTGRES_PORT_ENV]?.trim();
-  return override ? Number(override) : DEFAULT_PORT;
+  const override = process.env[PORT_ENV]?.trim();
+  if (!override) return DEFAULT_PORT;
+  // A bad value must not fall through to the URL's port: that is the shared fixture's.
+  if (!/^\d+$/.test(override)) throw new Error(`${PORT_ENV} must be a port number, not ${JSON.stringify(override)}`);
+  return Number(override);
 }
 
 /**
@@ -41,7 +44,7 @@ export type LabPostgresRole = "owner" | "reader" | "tenant";
 
 /** The fixture Postgres's URL for the role, moved to the lab's port. */
 export function labPostgresUrl(role: LabPostgresRole): string {
-  const url = new URL(connectionUrl("postgres", role === "tenant" ? "reader" : role));
+  const url = new URL(connectionUrl("postgres", role === "owner" ? "owner" : "reader"));
   url.port = String(labPostgresPort());
   if (role === "tenant") url.username = url.password = "lab_tenant";
   return url.toString();
@@ -80,6 +83,7 @@ function seed(): void {
     stdio: "inherit",
     env: { ...process.env, ASKDB_FIXTURE_POSTGRES_PORT: String(labPostgresPort()) },
   });
+  if (seeded.error) throw new Error("lab postgres: couldn't run the fixture's seeder", { cause: seeded.error });
   if (seeded.status !== 0) throw new Error(`lab postgres: the fixture's seeder exited ${seeded.status ?? seeded.signal}`);
 }
 

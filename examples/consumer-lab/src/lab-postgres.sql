@@ -18,6 +18,10 @@
 -- `fixture_reader` bypasses row-level security, so it still reads every row: it is the control
 -- that shows the same SQL leaks without the policies.
 
+-- The lab's Postgres is shared by every checkout on this machine, like the fixture, so two runs
+-- may apply this at once: the second waits for the first, then finds the role.
+SELECT pg_advisory_xact_lock(hashtext('askdb-lab-postgres-rls'));
+
 DO $$
 BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'lab_tenant') THEN
