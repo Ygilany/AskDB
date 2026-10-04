@@ -13,7 +13,7 @@ This directory is **not** a member of the AskDB pnpm workspace. It is its own pn
 From the repo root:
 
 ```bash
-pnpm lab:up                          # start and seed the fixture; install `.` unless a verified install is current or was chosen with lab:use
+pnpm lab:up                          # start and seed the fixture, start the lab's Postgres; install `.` unless a verified install is current or was chosen with lab:use
 pnpm lab:use .                       # pack this checkout's publishable packages and install them
 pnpm lab:use ../other-checkout       # …or another checkout's
 pnpm lab:use git:origin/main         # …or a branch, tag or commit's (built in a temporary worktree)
@@ -23,11 +23,11 @@ pnpm lab:use --check                 # re-verify the current install against its
 pnpm lab ask --db mysql "How many active programs does each agency run?"
 pnpm lab ask --db sqlserver --via client "Which three agencies have the highest paid order total?"
 pnpm lab ask --db postgres --sql "SELECT agency_id, name FROM org.agency"
-pnpm lab:test                        # the lab's own suite (needs the fixture and an installed lab)
+pnpm lab:test                        # the lab's own suite (needs the fixture, the lab's Postgres and an installed lab)
 pnpm lab:matrix                      # lab:up, then the suite as a scenario × dialect table
 pnpm lab:matrix -t introspect-golden # vitest flags pass through: one scenario (-t), one dialect (-t '\[mysql\]'), one file
 pnpm lab:use --restore               # put the committed baseline (npm:latest) back
-pnpm lab:down                        # stop the fixture; keep its data and the lab install
+pnpm lab:down                        # stop the fixture and the lab's Postgres; keep the fixture's data and the lab install
 pnpm lab:reset                       # reseed the fixture from scratch and put the committed baseline back
 ```
 
@@ -37,9 +37,9 @@ pnpm lab:reset                       # reseed the fixture from scratch and put t
 
 | Command | Removes | Keeps |
 |---|---|---|
-| `pnpm lab:down` | The four fixture containers, stopped and removed (`pnpm fixture:down`). | The fixture's volumes and SQLite file, and the lab's `node_modules`, `.lab/` and manifests. A following `pnpm lab:up` reuses the seeded data and skips the install when it still matches the checkout. |
+| `pnpm lab:down` | The four fixture containers, stopped and removed (`pnpm fixture:down`), and the [lab's Postgres](#row-level-security-informational) with its data, which is on a tmpfs. | The fixture's volumes and SQLite file, and the lab's `node_modules`, `.lab/` and manifests. A following `pnpm lab:up` reuses the seeded data and skips the install when it still matches the checkout. |
 | `pnpm lab:use --restore` | The lab's `.lab/` (tarballs, the recorded target, cached schema artifacts, scratch projects) and `node_modules`. It checks the lab's `package.json`, `pnpm-workspace.yaml` and `pnpm-lock.yaml` out as committed, then installs and verifies the committed lockfile. | Everything else, including other edits in the lab. |
-| `pnpm lab:reset` | The fixture's containers, volumes and SQLite file (`pnpm fixture:reset`, which then starts and reseeds it), then everything `pnpm lab:use --restore` removes. | Everything else. |
+| `pnpm lab:reset` | The fixture's containers, volumes and SQLite file (`pnpm fixture:reset`, which then starts and reseeds it), then everything `pnpm lab:use --restore` removes, then the lab's Postgres and its data, which it starts again empty. | Everything else. |
 
 `lab:reset` recovers from any lab state, a half-finished `lab:use` included. It clears `.lab/` together with the fixture because cached schema artifacts are keyed on the install target, not on the fixture's data. Afterwards the fixture is freshly seeded and the committed baseline (`npm:latest`) is installed, not this checkout: run `pnpm lab:use .` (or `pnpm lab:up`) to install the checkout.
 
@@ -197,7 +197,19 @@ Each copy is built from the fixture's DDL (`fixtures/multi-engine/dataset/ddl/<e
 | `tenant-missing-scope` | No `tenantScope` with a policy: `TenantScopeError` `MISSING_SCOPE`, and no model call. Runs once, as `[postgres]`. |
 | `tenant-subtree-no-resolver` | `subtree` access with no resolver: `TenantScopeError` `SUBTREE_NOT_RESOLVABLE`, and no model call. Runs once, as `[postgres]`. |
 
-The strict cases fail on the leak itself: when `ask()` returns SQL it should have rejected, the test runs that SQL and compares the rows with the scope's oracle before anything else. Their cells also hold a test that runs each reply raw, so a missing or broken cassette shows as `FAIL`. The `known (#316)` case fails because a result field is missing, not on a leak. The optional Postgres row-level-security case is #317.
+The strict cases fail on the leak itself: when `ask()` returns SQL it should have rejected, the test runs that SQL and compares the rows with the scope's oracle before anything else. Their cells also hold a test that runs each reply raw, so a missing or broken cassette shows as `FAIL`. The `known (#316)` case fails because a result field is missing, not on a leak.
+
+### Row-level security (informational)
+
+`test/tenant-rls.test.ts` shows the database-side tenancy the docs recommend next to AskDB's check (`concepts/safety-boundaries.mdx`, "Enforce tenancy in the database"). It is **informational**: it tests Postgres and the lab's policies, not AskDB. The SQL is the unfiltered reply's cassette, and AskDB never sees it here.
+
+It runs on the **lab's Postgres**, a lab-only server in [`compose.yml`](compose.yml) on port 15442 (`ASKDB_LAB_POSTGRES_PORT` overrides it), never on the shared fixture, whose tables it would change for everyone. `pnpm lab:up` starts it. The test's `beforeAll` seeds it with the fixture's own seeder (`src/lab-postgres.ts` runs `tsx src/seed.ts postgres` with `ASKDB_FIXTURE_POSTGRES_PORT` pointed at it) and then applies `src/lab-postgres.sql`: a read-only `lab_tenant` login, and on the tenant policy overlay's tables a policy that keeps `lab_tenant` to the agency in the setting `app.agency_id`. `fixture_reader` bypasses the policies. To start it alone, run `pnpm -C examples/consumer-lab postgres:up`; `postgres:down` stops it, and its data goes with it. Seeding in the test, not in `lab:up`, keeps a broken setup (a fixture DDL change the policies no longer fit) to this one cell, with the error as its reason, while the rest of the matrix runs. Like the fixture, it is one server shared by every checkout on the machine (project `askdb-consumer-lab`, whatever `COMPOSE_PROJECT_NAME` says), so `lab:down` and `lab:reset` stop it for everyone. To run a private one, start it under another project name and port (`ASKDB_LAB_POSTGRES_PORT=<port> docker compose -f examples/consumer-lab/compose.yml -p <name> up -d --wait`) and set the same port for the tests.
+
+| Scenario | What it checks |
+|---|---|
+| `tenant-rls` | The `tenant-unfiltered` reply, run as `lab_tenant` with `app.agency_id` set to 2 for the transaction, returns exactly agency 2's programs from the oracle; run as `fixture_reader`, every agency's. Runs once, as `[postgres]`, and needs no AskDB install. |
+
+Informational describes what the case proves, not how the matrix counts it: a `FAIL` here fails `lab:matrix` like any other cell. Nothing in AskDB can turn it red; a red cell means the lab's policies, the fixture's DDL or the lab's Postgres broke, and the change that broke it should fix it.
 
 ## Sensitive columns
 
@@ -240,7 +252,7 @@ Below the test rows, the `unique-constraints *` and `view-marker *` rows are **a
 
 ### In CI
 
-The `consumer-lab` job in [`.github/workflows/ci.yml`](../../.github/workflows/ci.yml) runs on every pull request and every push to `main`. It runs `pnpm lab:use .` (tarballs packed from the commit under test), then `pnpm lab:matrix`, with a 25-minute timeout. The table goes to the job summary, followed by a collapsible block per failing test with the reason it failed (the assertion message, or the rule that made a passing test a failure) and any unhandled errors; the full stack traces are in the step log. `.lab/matrix.json` holds the same reasons (a `FAIL` cell's `failures`), and is uploaded as the `consumer-lab-matrix` artifact whether the job passes or fails. The job fails exactly when `lab:matrix` exits non-zero. Docs-only pull requests skip it: those whose every changed file is under `apps/docs-site/`, `docs/` or `plans/`, a top-level `*.md`, or a `README.md` or `CHANGELOG.md`. Other Markdown still runs the lab, because schema artifacts are Markdown too.
+The `consumer-lab` job in [`.github/workflows/ci.yml`](../../.github/workflows/ci.yml) runs on every pull request and every push to `main`. It runs `pnpm lab:use .` (tarballs packed from the commit under test), then `pnpm lab:matrix`, with a 25-minute timeout. `lab:matrix` runs `lab:up`, so the job also starts the lab's Postgres for `tenant-rls` (a few seconds, on the `postgres:17` image the fixture already pulled), and the test seeds it. The table goes to the job summary, followed by a collapsible block per failing test with the reason it failed (the assertion message, or the rule that made a passing test a failure) and any unhandled errors; the full stack traces are in the step log. `.lab/matrix.json` holds the same reasons (a `FAIL` cell's `failures`), and is uploaded as the `consumer-lab-matrix` artifact whether the job passes or fails. The job fails exactly when `lab:matrix` exits non-zero. Docs-only pull requests skip it: those whose every changed file is under `apps/docs-site/`, `docs/` or `plans/`, a top-level `*.md`, or a `README.md` or `CHANGELOG.md`. Other Markdown still runs the lab, because schema artifacts are Markdown too.
 
 ## Introspection
 
