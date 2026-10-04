@@ -139,8 +139,9 @@ describe("published-run drift", () => {
 describe("published-run baseline", () => {
   it("says the baseline is stale, and which pins moved, once lab:use changed it", () => {
     const { root, lab, run } = scratchRepo(undefined);
-    // The lab's own committed workspace file, so the block is in the format lab:use writes.
-    const committed = readFileSync(join(LAB, "pnpm-workspace.yaml"), "utf8");
+    // The lab's committed workspace file (not the working copy, which lab:use rewrites), so the
+    // block is in the format lab:use writes.
+    const committed = execFileSync("git", ["-C", LAB, "show", "HEAD:./pnpm-workspace.yaml"], { encoding: "utf8" });
     const askdb = /^ {2}"askdb": "([^"]+)"$/m.exec(committed)![1]!;
     for (const [file, text] of [["package.json", "{}\n"], ["pnpm-lock.yaml", "lockfileVersion: '9.0'\n"], ["pnpm-workspace.yaml", committed]]) writeFileSync(join(lab, file!), text!);
     const git = (...args: string[]) => execFileSync("git", ["-C", root, "-c", "user.name=lab", "-c", "user.email=lab@example.invalid", ...args]);
