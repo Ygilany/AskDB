@@ -11,9 +11,10 @@
  * The model is always the raw path (`createOpenAI({ baseURL })` → `ask()`): `--via client`
  * reads `askdb.config.ts` once per process, which pins the first engine's replay URL.
  *
- * The install target is the one `lab:use` recorded when the server started, whose modules
- * the process loaded. If `lab:use` switches it while the server runs, the page and the API
- * answer `409` until the server is restarted, rather than name one target and test another.
+ * The install is the one `lab:use` recorded when the server started, whose modules the
+ * process loaded. If `lab:use` reinstalls while the server runs (another target, or the
+ * same label at other versions), or is part-way through, the page and the API answer `409`
+ * until the server is restarted, rather than name one install and test another.
  *
  * Local-server protection, following ADR 0009's lesson for Studio: the server binds
  * 127.0.0.1 only, and every request's `Host` must be `127.0.0.1:<port>` or
@@ -26,7 +27,7 @@ import { readFileSync } from "node:fs";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import type { AddressInfo } from "node:net";
 import { askAndRun, type AskInput, type AskRun, type AskRunStatus, type TranscriptLine } from "../ask-run.js";
-import { requireInstallTarget } from "../artifacts.js";
+import { installRecord, requireInstallTarget } from "../artifacts.js";
 import { SUPPORTED_DIALECTS, type SupportedDialect } from "../dialects.js";
 import type { ExecuteResult } from "../host/execute.js";
 import { loadQuestions } from "../model/catalog.js";
@@ -78,16 +79,22 @@ function describeError(error: unknown): string {
 
 /**
  * Run the input on one engine, giving up after `timeoutMs`. A timed-out run can't be
- * cancelled (no driver call here takes a signal): it ends on its own, or with the server.
+ * cancelled (no driver call here takes a signal): it ends on its own, or with the process.
+ * `signal`, aborted when the server closes, kills its introspection.
  * Returns the engine's event, and the rows it read, which the summary needs and the page doesn't.
  */
-async function runEngine(dialect: SupportedDialect, input: UiInput, timeoutMs: number): Promise<{ event: EngineEvent; rows?: ExecuteResult }> {
+async function runEngine(
+  dialect: SupportedDialect,
+  input: UiInput,
+  timeoutMs: number,
+  signal: AbortSignal,
+): Promise<{ event: EngineEvent; rows?: ExecuteResult }> {
   const started = performance.now();
   const lines: TranscriptLine[] = [];
   let timer: NodeJS.Timeout | undefined;
   const deadline = new Promise<"timeout">((resolve) => (timer = setTimeout(() => resolve("timeout"), timeoutMs)));
   try {
-    const run = await Promise.race([askAndRun(dialect, input, (line) => lines.push(line)), deadline]);
+    const run = await Promise.race([askAndRun(dialect, input, { onLine: (line) => lines.push(line), signal }), deadline]);
     const event: EngineEvent =
       run === "timeout"
         ? { type: "engine", dialect, status: "timeout", lines: [...lines], error: `no result after ${timeoutMs} ms`, timings: { totalMs: performance.now() - started } }
@@ -145,13 +152,17 @@ function parseInput(body: string): UiInput | undefined {
   if (!value || typeof value !== "object") return undefined;
   const { question = "", sql } = value as Record<string, unknown>;
   if (typeof question !== "string" || (sql !== undefined && typeof sql !== "string")) return undefined;
-  if (!sql?.trim() && !question.trim()) return undefined;
-  return sql?.trim() ? { question: question.trim(), sql } : { question: question.trim() };
+  // SQL that was sent is what runs: blank SQL is refused, never replaced by its question.
+  if (sql !== undefined) return sql.trim() ? { question: question.trim(), sql } : undefined;
+  return question.trim() ? { question: question.trim() } : undefined;
 }
 
 export async function startLabUi(options: LabUiOptions = {}): Promise<LabUi> {
   const engineTimeoutMs = options.engineTimeoutMs ?? 60_000;
   const target = requireInstallTarget().label;
+  const installed = installRecord();
+  // Aborted on close: kills every run's child processes.
+  const closing = new AbortController();
   let port = 0;
   const allowedHosts = () => new Set([`127.0.0.1:${port}`, `localhost:${port}`]);
   const allowedOrigins = () => new Set([...allowedHosts()].map((h) => `http://${h}`));
@@ -159,8 +170,9 @@ export async function startLabUi(options: LabUiOptions = {}): Promise<LabUi> {
   async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> {
     // Every request, the page included: a rebound page must not even read the page.
     if (!allowedHosts().has(req.headers.host ?? "")) return sendText(res, 403, "lab ui: refused: foreign Host header");
-    const now = requireInstallTarget().label;
-    if (now !== target) return sendText(res, 409, `lab ui: lab:use switched the install target to "${now}" after this server started on "${target}"; restart pnpm lab ui.`);
+    if (installRecord() !== installed) {
+      return sendText(res, 409, `lab ui: lab:use changed the install after this server started on "${target}" (or is installing now); restart pnpm lab ui.`);
+    }
     const path = (req.url ?? "/").split("?")[0];
 
     if (req.method === "GET" && path === "/") {
@@ -181,13 +193,13 @@ export async function startLabUi(options: LabUiOptions = {}): Promise<LabUi> {
       const body = await readBody(req);
       if (body === undefined) return sendText(res, 413, "lab ui: request body too large");
       const input = parseInput(body);
-      if (!input) return sendText(res, 400, 'lab ui: send { "question": string, "sql"?: string } with a question or SQL');
+      if (!input) return sendText(res, 400, 'lab ui: send { "question": string, "sql"?: string } with a question, or with SQL that isn\'t blank');
 
       res.writeHead(200, { "content-type": "application/x-ndjson; charset=utf-8", "cache-control": "no-store" });
       // Engines run concurrently; each column is sent as soon as its engine finishes.
       const runs = await Promise.all(
         SUPPORTED_DIALECTS.map(async (dialect) => {
-          const run = await runEngine(dialect, input, engineTimeoutMs);
+          const run = await runEngine(dialect, input, engineTimeoutMs, closing.signal);
           res.write(`${JSON.stringify(run.event)}\n`);
           return run;
         }),
@@ -219,6 +231,7 @@ export async function startLabUi(options: LabUiOptions = {}): Promise<LabUi> {
     url: `http://127.0.0.1:${port}`,
     close: () =>
       new Promise<void>((resolve, reject) => {
+        closing.abort();
         server.close((error) => (error ? reject(error) : resolve()));
         server.closeAllConnections();
       }),

@@ -38,10 +38,14 @@ export function askdb(args: string[], cwd: string = LAB_ROOT): CliRun {
 /**
  * Run the installed `askdb` binary without blocking the event loop, so an in-process
  * replay server can answer its model call. `env` is added to the lab's environment.
+ * Aborting `signal` kills the process.
  */
-export function askdbAsync(args: string[], { cwd = LAB_ROOT, env = {} }: { cwd?: string; env?: Record<string, string> } = {}): Promise<CliRun> {
+export function askdbAsync(
+  args: string[],
+  { cwd = LAB_ROOT, env = {}, signal }: { cwd?: string; env?: Record<string, string>; signal?: AbortSignal } = {},
+): Promise<CliRun> {
   return new Promise((resolve, reject) => {
-    const child = spawn(ASKDB_BIN, args, { cwd, env: { ...process.env, ...env } });
+    const child = spawn(ASKDB_BIN, args, { cwd, env: { ...process.env, ...env }, signal });
     let stdout = "";
     let stderr = "";
     child.stdout.on("data", (d) => (stdout += d));
@@ -105,10 +109,10 @@ export function askdbInProject(introspection: Record<string, unknown>, args: str
 }
 
 /** {@link askdbInProject} without blocking the event loop. */
-export async function askdbInProjectAsync(introspection: Record<string, unknown>, args: string[]): Promise<ProjectRun> {
+export async function askdbInProjectAsync(introspection: Record<string, unknown>, args: string[], signal?: AbortSignal): Promise<ProjectRun> {
   const project = makeProject(introspection);
   try {
-    return { ...(await askdbAsync(args, { cwd: project })), files: projectFiles(project) };
+    return { ...(await askdbAsync(args, { cwd: project, signal })), files: projectFiles(project) };
   } finally {
     rmSync(project, { recursive: true, force: true });
   }
@@ -152,8 +156,11 @@ export function introspectFixture(dialect: Dialect, output: string | string[], c
   return project ? askdbInProject(project, args) : askdb(args);
 }
 
-/** {@link introspectFixture} without blocking the event loop, so other engines' work goes on meanwhile. */
-export function introspectFixtureAsync(dialect: Dialect, output: string | string[], connection: FixtureConnection = {}): Promise<CliRun> {
+/**
+ * {@link introspectFixture} without blocking the event loop, so other engines' work goes on
+ * meanwhile. Aborting `signal` kills the CLI.
+ */
+export function introspectFixtureAsync(dialect: Dialect, output: string | string[], connection: FixtureConnection = {}, signal?: AbortSignal): Promise<CliRun> {
   const { args, project } = introspectCall(dialect, output, connection);
-  return project ? askdbInProjectAsync(project, args) : askdbAsync(args);
+  return project ? askdbInProjectAsync(project, args, signal) : askdbAsync(args, { signal });
 }
