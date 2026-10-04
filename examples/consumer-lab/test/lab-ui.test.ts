@@ -1,0 +1,294 @@
+/**
+ * `pnpm lab ui`: one input run on every engine at once, one column per engine, driven over
+ * HTTP the way its page drives it (`POST /api/run`, read back as NDJSON).
+ *
+ * The authoring-gate answers are per scenario, above each group of tests. For all of them:
+ * No production seam: the tests start the real `pnpm lab ui` command (through `tsx`, as
+ * `pnpm lab` does) and the real `pnpm lab ask`, and send the requests the page sends. Engines
+ * are made to fail only from outside: `ASKDB_FIXTURE_<ENGINE>_PORT`, the fixture's own
+ * documented port override, points one engine at a closed port or at a socket that never
+ * answers. `--timeout` is the command's own option.
+ *
+ * Needs the `cli-introspect-engine` capability (every column builds a schema artifact), the
+ * fixture (`pnpm fixture:up`) and an installed lab (`pnpm lab:use .`).
+ */
+import { spawn } from "node:child_process";
+import { connect, createServer, type Server, type Socket } from "node:net";
+import { networkInterfaces } from "node:os";
+import { fileURLToPath } from "node:url";
+import { afterAll, beforeAll, expect, it } from "vitest";
+import { ensureArtifact, requireInstallTarget } from "../src/artifacts.js";
+import { needsCapability } from "../src/capabilities.js";
+import { SUPPORTED_DIALECTS, type SupportedDialect } from "../src/dialects.js";
+import { findQuestion } from "../src/model/catalog.js";
+import { freePort } from "../src/server-process.js";
+import { column, startLabUiProcess, uiRequest, uiRun, type LabUiProcess, type UiRun } from "./support/lab-ui.js";
+
+const LAB = fileURLToPath(new URL("..", import.meta.url));
+const AGENCY_NAMES = findQuestion("agency-names")!.text;
+/** Ordered decimals: the drivers return them as different JavaScript types, which normalization reconciles. */
+const TOP_PAID = findQuestion("top-paid-agencies")!.text;
+const NO_REPLY = "Which agency has the most volunteers?";
+const DIALECTS = SUPPORTED_DIALECTS.map((d) => [d] as [SupportedDialect]);
+
+interface CliRun {
+  status: number | null;
+  stdout: string;
+  stderr: string;
+}
+
+function labAsk(...args: string[]): Promise<CliRun> {
+  return new Promise((resolve, reject) => {
+    const child = spawn("pnpm", ["--silent", "lab", "ask", ...args], { cwd: LAB });
+    let stdout = "";
+    let stderr = "";
+    child.stdout.on("data", (d) => (stdout += d));
+    child.stderr.on("data", (d) => (stderr += d));
+    child.on("error", reject);
+    child.on("close", (status) => resolve({ status, stdout, stderr }));
+  });
+}
+
+/** Each run starts its own replay server on a free port; nothing else may differ. */
+const samePort = (run: CliRun): CliRun => {
+  const strip = (text: string) => text.replace(/127\.0\.0\.1:\d+/g, "127.0.0.1:<port>");
+  return { status: run.status, stdout: strip(run.stdout), stderr: strip(run.stderr) };
+};
+
+/** What a column says `lab ask` prints, as `lab ask` would print it to each stream. */
+function printed(run: UiRun, dialect: SupportedDialect): CliRun {
+  const event = column(run, dialect);
+  const stream = (s: "stdout" | "stderr") => event.lines.filter((l) => l.stream === s).map((l) => `${l.text}\n`).join("");
+  return samePort({ status: event.exitCode ?? null, stdout: stream("stdout"), stderr: stream("stderr") });
+}
+
+let ui: LabUiProcess;
+const runs = new Map<string, Promise<UiRun>>();
+/** One `POST /api/run` per input, shared by the scenarios that read it. */
+function runOnce(input: { question?: string; sql?: string }): Promise<UiRun> {
+  const key = JSON.stringify(input);
+  if (!runs.has(key)) runs.set(key, uiRun(ui, input));
+  return runs.get(key)!;
+}
+
+/** Postgres points at a socket that accepts and never answers; MySQL at a port nothing listens on. */
+const TIMEOUT_MS = 8_000;
+let failingUi: LabUiProcess | undefined;
+let silent: Server | undefined;
+const held: Socket[] = [];
+let failingRun: Promise<UiRun> | undefined;
+
+/**
+ * The input run with two engines failing. The schema artifacts are built first, from the
+ * real ports, so the failures come from executing the SQL, not from introspection.
+ */
+function runWithEnginesDown(): Promise<UiRun> {
+  failingRun ??= (async () => {
+    for (const dialect of SUPPORTED_DIALECTS) ensureArtifact(dialect);
+    silent = createServer((socket) => void held.push(socket));
+    await new Promise<void>((resolve) => silent!.listen(0, "127.0.0.1", resolve));
+    failingUi = await startLabUiProcess({
+      args: ["--timeout", String(TIMEOUT_MS)],
+      env: {
+        ASKDB_FIXTURE_POSTGRES_PORT: String((silent.address() as { port: number }).port),
+        ASKDB_FIXTURE_MYSQL_PORT: String(await freePort()),
+      },
+    });
+    return uiRun(failingUi, { question: AGENCY_NAMES });
+  })();
+  return failingRun;
+}
+
+beforeAll(async () => {
+  ui = await startLabUiProcess();
+});
+
+afterAll(async () => {
+  await Promise.all([ui?.close(), failingUi?.close()]);
+  held.forEach((s) => s.destroy());
+  await new Promise((resolve) => (silent ? silent.close(resolve) : resolve(undefined)));
+});
+
+/*
+ * Protects: `lab ask` and `lab ui` share one ask → validate → execute module, so an
+ * engine's column holds exactly what `pnpm lab ask --db <engine>` prints for the same input
+ * (issue #262): the SQL, the validation outcome or the rejecting error class and rule code,
+ * the replay server's refusal, and the rows with their count, and the same exit code.
+ * Catches: the page drifting into a second implementation: a column built from another
+ * model path, prompt or formatter, a rejection or refusal reported differently, or rows
+ * that aren't the ones `lab ask` reads.
+ * Not covered elsewhere: `lab-ask` and `lab-ask-replay` check `lab ask`'s own output, and
+ * nothing checks the page's columns against it.
+ */
+it.for(DIALECTS)("[%s] lab-ui-same-as-lab-ask: a catalog question", async ([dialect], ctx) => {
+  needsCapability(ctx, "cli-introspect-engine");
+  const [cli, run] = await Promise.all([labAsk("--db", dialect, TOP_PAID), runOnce({ question: TOP_PAID })]);
+
+  expect(cli.status).toBe(0);
+  expect(printed(run, dialect)).toEqual(samePort(cli));
+});
+
+it.for([
+  ["a rejected statement", { sql: "DELETE FROM org.agency" }, ["--sql", "DELETE FROM org.agency"]],
+  ["a question with no reply", { question: NO_REPLY }, [NO_REPLY]],
+] as const)("[postgres] lab-ui-same-as-lab-ask: %s", async ([, input, args], ctx) => {
+  needsCapability(ctx, "cli-introspect-engine");
+  const [cli, run] = await Promise.all([labAsk("--db", "postgres", ...args), runOnce(input)]);
+
+  expect(cli.status).toBe(1);
+  expect(printed(run, "postgres")).toEqual(samePort(cli));
+});
+
+/*
+ * Protects: the summary strip's two verdicts (issue #262): whether the engines agree after
+ * the fixture's normalization rules (`dataset/NORMALIZATION.md`), and whether each engine
+ * matches the oracle computed from the seed data (`src/oracle.ts`), for a catalog question
+ * and for raw SQL labelled with one.
+ * Catches: an indicator that says "agree" when the engines' rows differ (comparing counts,
+ * or skipping an engine), one that says "disagree" over driver-level differences the
+ * normalization rules erase (MySQL's string integers, SQL Server's numbers), and an oracle
+ * verdict that isn't per engine. The catalog question's paid totals are decimals, which
+ * Postgres and MySQL return as strings and SQL Server and SQLite as numbers.
+ * Not covered elsewhere: `results.test.ts` compares each engine with the oracle inside the
+ * suite; nothing checks what the page tells a contributor.
+ * The disagreement is real engine behavior: `LIKE 'a%'` is case-sensitive on Postgres and
+ * case-insensitive under the other servers' default collations, so Postgres reads no rows
+ * and MySQL, MariaDB and SQL Server read the three `Agência …` rows. SQLite has no `org`
+ * schema, so its column reports its own error and it isn't compared.
+ */
+it.for(DIALECTS)("[%s] lab-ui-summary: every engine agrees and matches the oracle on a catalog question", async ([dialect], ctx) => {
+  needsCapability(ctx, "cli-introspect-engine");
+  const { summary } = await runOnce({ question: TOP_PAID });
+
+  expect(summary?.questionId).toBe("top-paid-agencies");
+  expect(summary?.agreement.verdict).toBe("agree");
+  expect(summary?.agreement.groups.map((g) => g.slice().sort())).toEqual([[...SUPPORTED_DIALECTS].sort()]);
+  expect(summary?.oracle?.[dialect]).toEqual({ verdict: "match" });
+});
+
+const LIKE_SQL = "SELECT agency_id, name FROM org.agency WHERE name LIKE 'a%' ORDER BY agency_id";
+const CASE_INSENSITIVE: SupportedDialect[] = ["mariadb", "mysql", "sqlserver"];
+const DISAGREEMENT: Record<SupportedDialect, { group?: SupportedDialect[]; oracle: string }> = {
+  postgres: { group: ["postgres"], oracle: "mismatch" },
+  mysql: { group: CASE_INSENSITIVE, oracle: "mismatch" },
+  mariadb: { group: CASE_INSENSITIVE, oracle: "mismatch" },
+  sqlserver: { group: CASE_INSENSITIVE, oracle: "mismatch" },
+  sqlite: { oracle: "not compared" },
+};
+
+it.for(DIALECTS)("[%s] lab-ui-summary: engines that read different rows are shown disagreeing", async ([dialect], ctx) => {
+  needsCapability(ctx, "cli-introspect-engine");
+  const { summary } = await runOnce({ sql: LIKE_SQL, question: AGENCY_NAMES });
+  const want = DISAGREEMENT[dialect];
+
+  expect(summary?.agreement.verdict).toBe("disagree");
+  if (want.group) expect(summary?.agreement.groups.find((g) => g.includes(dialect))?.slice().sort()).toEqual(want.group);
+  else expect(summary?.agreement.notCompared).toEqual([{ dialect, reason: "failed" }]);
+  expect(summary?.oracle?.[dialect]?.verdict).toBe(want.oracle);
+});
+
+/*
+ * Protects: engines run concurrently and fail alone (issue #262): an engine that is down
+ * fails in its own column; one that never answers is reported as timed out after
+ * `--timeout`, its column sent after the others; the remaining engines still complete,
+ * agree and match the oracle.
+ * Catches: one engine's error failing the whole run, engines run one after another so a
+ * slow one holds the rest back, a hung engine that keeps the run from ever finishing, and a
+ * failed engine counted in the agreement.
+ * Not covered elsewhere: no other test runs more than one engine at a time.
+ */
+it("[postgres] lab-ui-isolation: an engine that never answers times out in its own column, after the others", async (ctx) => {
+  needsCapability(ctx, "cli-introspect-engine");
+  const run = await runWithEnginesDown();
+  const pg = column(run, "postgres");
+
+  expect(pg.status).toBe("timeout");
+  expect(pg.error).toBe(`no result after ${TIMEOUT_MS} ms`);
+  expect(run.engines.at(-1)?.dialect).toBe("postgres");
+});
+
+it("[mysql] lab-ui-isolation: an engine that's down fails in its own column", async (ctx) => {
+  needsCapability(ctx, "cli-introspect-engine");
+  const mysql = column(await runWithEnginesDown(), "mysql");
+
+  expect(mysql.status).toBe("failed");
+  expect(mysql.error).toMatch(/ECONNREFUSED/);
+});
+
+it.for([["mariadb"], ["sqlserver"], ["sqlite"]] as [SupportedDialect][])(
+  "[%s] lab-ui-isolation: completes, agrees and matches the oracle while other engines fail",
+  async ([dialect], ctx) => {
+    needsCapability(ctx, "cli-introspect-engine");
+    const run = await runWithEnginesDown();
+    const event = column(run, dialect);
+
+    expect(event.status).toBe("ok");
+    expect(event.rowCount).toBe(7);
+    expect(event.timings.totalMs).toBeLessThan(TIMEOUT_MS);
+    expect(run.summary?.agreement.verdict).toBe("agree");
+    expect(run.summary?.agreement.groups[0]).toContain(dialect);
+    expect(run.summary?.agreement.notCompared.map((n) => n.dialect).slice().sort()).toEqual(["mysql", "postgres"]);
+    expect(run.summary?.oracle?.[dialect]).toEqual({ verdict: "match" });
+  },
+);
+
+/*
+ * Protects: the page names what it tests (issue #262): the install target `lab:use`
+ * recorded, and the model mode.
+ * Catches: a page that names a stale or hard-coded target, so a contributor reads one
+ * version's results as another's.
+ * Not covered elsewhere: `lab ask` prints its target; nothing checks the page's.
+ */
+it("[postgres] lab-ui-page: names the install target and the model mode", async () => {
+  const page = await uiRequest(ui);
+
+  expect(page.status).toBe(200);
+  expect(page.text).toContain(`"target":${JSON.stringify(requireInstallTarget().label).replace(/</g, "\\u003c")}`);
+  expect(page.text).toContain('"modelMode":"replay"');
+});
+
+/*
+ * Protects: the local-server rules issue #262 takes from ADR 0009: the server listens on
+ * 127.0.0.1 only, never a wildcard address, and refuses a foreign `Host` on every request,
+ * the page included (DNS rebinding). `POST /api/run` also refuses a cross-site `Origin` and a
+ * body that isn't `application/json` (a CORS-simple cross-site POST).
+ * Catches: a bind to `0.0.0.0` or `::` that exposes the lab to the network, a Host check
+ * missing from the page or the API, and cross-site requests that make the browser run SQL.
+ * Not covered elsewhere: the Studio suite checks Studio's guard, not the lab's.
+ * Each refusal is one header away from a request the same test shows getting past the
+ * guards (the page, `200`; an empty input, `400` from the input check after them).
+ */
+it("[postgres] lab-ui-local-only: listens on loopback only", async () => {
+  const lan = Object.values(networkInterfaces()).flat().find((a) => a && a.family === "IPv4" && !a.internal)?.address;
+  expect(lan, "no non-loopback IPv4 interface to try the port on").toBeDefined();
+  const reaches = (host: string) =>
+    new Promise<boolean>((resolve) => {
+      const socket = connect({ host, port: ui.port });
+      socket.once("connect", () => {
+        socket.destroy();
+        resolve(true);
+      });
+      socket.once("error", () => resolve(false));
+    });
+
+  expect(await reaches("127.0.0.1")).toBe(true);
+  expect(await reaches(lan!)).toBe(false);
+});
+
+const PAGE = { method: "GET", path: "/", body: undefined, passes: 200 };
+const API = { method: "POST", path: "/api/run", body: "{}", passes: 400 };
+const OWN = () => ({ host: `127.0.0.1:${ui.port}`, origin: ui.origin, "content-type": "application/json" });
+
+it.for([
+  ["the page from a rebound Host", PAGE, { host: "rebound.example" }, 403],
+  ["the API from a rebound Host", API, { host: "rebound.example" }, 403],
+  ["the API from a cross-site Origin", API, { origin: "https://evil.example" }, 403],
+  ["the API with a text/plain body", API, { "content-type": "text/plain" }, 415],
+] as const)("[postgres] lab-ui-local-only: refuses %s", async ([, route, change, status]) => {
+  const send = (headers: Record<string, string>) => uiRequest(ui, { method: route.method, path: route.path, body: route.body, headers });
+  const own = OWN();
+  const changed = { ...own, ...change, ...("host" in change ? { host: `${change.host}:${ui.port}` } : {}) };
+
+  expect((await send(own)).status).toBe(route.passes);
+  expect((await send(changed)).status).toBe(status);
+});
