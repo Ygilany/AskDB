@@ -42,7 +42,8 @@ export type DialectSpec = {
    * Postgres-style schemas file the database's tables under `"public"` to keep table ids
    * stable across engines; the NL→SQL prompt lists that namespace's tables unqualified and
    * tells the model never to write `<namespace>.<table>`. Unset: every table is listed
-   * qualified with its schema.
+   * qualified with its schema. A MySQL database actually named `public` in a database list
+   * would be listed unqualified too.
    */
   unqualifiedNamespace?: string;
   /** Extra keywords to forbid on top of the dialect-agnostic base denylist. */

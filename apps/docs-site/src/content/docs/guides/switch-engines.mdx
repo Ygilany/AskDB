@@ -121,8 +121,6 @@ export default {
 };
 ```
 
-`introspection.schemas` works the same way on every engine: on Postgres and SQL Server it lists schemas (the default is every non-system schema). `askdb introspect --schemas app,sales` does the same for one run and overrides the configured list.
-
   </TabItem>
   <TabItem label="SQLite">
 
@@ -164,6 +162,8 @@ SQL Server accepts three URL formats — see [SQL Server connection strings](#sq
 
   </TabItem>
 </Tabs>
+
+`introspection.schemas` works the same way on every engine: on Postgres and SQL Server it lists schemas (the default is every non-system schema). `askdb introspect --schemas app,sales` does the same for one run and overrides the configured list.
 
 The connection string format follows each engine's convention. The engine itself comes from `--engine` (or `introspection.provider` in `askdb.config.ts`) — the CLI does not infer it from the URL. The artifact records which engine produced it, and `askdb ask` infers the dialect from the artifact.
 

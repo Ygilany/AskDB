@@ -27,12 +27,12 @@ export function formatSchemaV2ForNlToSql(
     }
 
     // Table header — qualified with its schema unless that namespace isn't one; alias annotation when present
-    const qualifiedName = promptTableName(t, options.unqualifiedNamespace);
+    const listedName = promptTableName(t, options.unqualifiedNamespace);
     const aliasNote =
       !t.sensitive && t.aliases?.length
         ? ` -- aliases: ${t.aliases.join(", ")}`
         : "";
-    lines.push(`TABLE ${qualifiedName}${aliasNote}`);
+    lines.push(`TABLE ${listedName}${aliasNote}`);
 
     // Table description as a comment line
     if (!t.sensitive && t.description) {

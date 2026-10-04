@@ -94,10 +94,10 @@ export function synthesizeRetrievedDdl(args: {
   for (const t of schema.tables) {
     if (!tableIds.has(t.id)) continue;
     tablesEmitted++;
-    const qualifiedName = promptTableName(t, args.unqualifiedNamespace);
+    const listedName = promptTableName(t, args.unqualifiedNamespace);
     const aliasNote =
       !t.sensitive && t.aliases?.length ? ` -- aliases: ${t.aliases.join(", ")}` : "";
-    lines.push(`TABLE ${qualifiedName}${aliasNote}`);
+    lines.push(`TABLE ${listedName}${aliasNote}`);
     if (!t.sensitive && t.description) lines.push(`-- ${t.description}`);
 
     if (omit && t.sensitive) {
