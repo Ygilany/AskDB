@@ -13,6 +13,15 @@
  * matching question, or no cassette for the question on that dialect, the request fails
  * with a message saying what's missing and how to add it. There is no default reply.
  *
+ * Record mode (`upstream`, for `pnpm lab:record`): a request for a catalog question is
+ * forwarded unchanged to the real OpenAI-compatible provider, with the server's own key in
+ * `Authorization` (the client's placeholder key is dropped), and the provider's reply goes
+ * back to the client untouched. The request log keeps the reply text and the model the
+ * provider says answered; it never holds a header, and the key is redacted from any
+ * provider error before the log or the client sees it. A prompt with no catalog question is
+ * refused, not forwarded. The server never writes a cassette: `src/record.ts` does, after
+ * grading the reply.
+ *
  * Node built-ins only: the replay server never imports AskDB.
  */
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
@@ -26,6 +35,15 @@ export interface ReplayServerOptions {
   port?: number;
   questionsFile?: string;
   cassettesDir?: string;
+  /** Record mode: forward catalog questions to this OpenAI-compatible provider instead of replaying cassettes. */
+  upstream?: Upstream;
+}
+
+export interface Upstream {
+  /** The provider's base URL, such as `https://api.openai.com/v1`. */
+  baseURL: string;
+  /** Sent only to `baseURL`, as `Authorization: Bearer <apiKey>`; never logged. */
+  apiKey: string;
 }
 
 export interface RecordedRequest {
@@ -36,8 +54,10 @@ export interface RecordedRequest {
   prompt: string;
   /** The catalog question found in the prompt, if any. */
   questionId: string | null;
-  /** The reply sent, from the cassette. */
+  /** The reply sent: the cassette's, or in record mode the provider's text. */
   reply: string | null;
+  /** Record mode: the model the provider says answered (`gpt-4o-mini-2024-07-18`), from its reply. */
+  upstreamModel?: string | null;
   /** Set when the request was refused; the same message the client received. */
   error: string | null;
 }
@@ -91,7 +111,7 @@ function matchQuestion(prompt: string, questions: Question[], dialect: string, q
   );
 }
 
-function reply(dialect: string, prompt: string, opts: Required<Omit<ReplayServerOptions, "port">>): { question: Question; text: string } {
+function reply(dialect: string, prompt: string, opts: Required<Omit<ReplayServerOptions, "port" | "upstream">>): { question: Question; text: string } {
   const question = matchQuestion(prompt, loadQuestions(opts.questionsFile), dialect, opts.questionsFile);
   const cassette = readCassette(dialect, question, opts.cassettesDir);
   if (!cassette) {
@@ -99,7 +119,9 @@ function reply(dialect: string, prompt: string, opts: Required<Omit<ReplayServer
     throw new ReplayMiss(
       404,
       `lab replay: no reply recorded for question ${question.id} on ${dialect}. Add ${path} with ` +
-        `{ "question": ${JSON.stringify(question.text)}, "reply": "\`\`\`sql\\n<${dialect} SQL>\\n\`\`\`", "source": "authored" }.`,
+        `{ "question": ${JSON.stringify(question.text)}, "reply": "\`\`\`sql\\n<${dialect} SQL>\\n\`\`\`", "source": "authored" }` +
+        // Only the main catalog is recorded; the tenant and sensitive replies are hand-written on purpose.
+        (opts.questionsFile === QUESTIONS_FILE ? `, or record one from a live model: pnpm lab:record --db ${dialect} --only ${question.id}.` : "."),
     );
   }
   return { question, text: cassette.reply };
@@ -153,6 +175,60 @@ async function readJson(req: IncomingMessage): Promise<Record<string, unknown>> 
   return JSON.parse(Buffer.concat(chunks).toString("utf8") || "{}") as Record<string, unknown>;
 }
 
+/** OpenAI-style secret keys (`sk-…`, `sk-proj-…`), even when a provider shows them half-masked. */
+const SECRET = /\bsk-[A-Za-z0-9_*-]{8,}/g;
+
+/** `text` with the key, and anything shaped like a secret key, replaced by `[redacted]`. */
+export function redact(text: string, apiKey: string): string {
+  return (apiKey ? text.split(apiKey).join("[redacted]") : text).replace(SECRET, "[redacted]");
+}
+
+/** The reply text in a Responses API or Chat Completions body. */
+export function replyText(body: Record<string, unknown>): string | null {
+  const output = body.output as { content?: { type?: string; text?: string }[] }[] | undefined;
+  const fromResponses = output?.flatMap((item) => item.content ?? []).filter((c) => c.type === "output_text").map((c) => c.text ?? "");
+  if (fromResponses?.length) return fromResponses.join("");
+  const choices = body.choices as { message?: { content?: unknown } }[] | undefined;
+  const content = choices?.[0]?.message?.content;
+  return typeof content === "string" ? content : null;
+}
+
+/**
+ * Forward a request to the provider with the server's key. Success comes back as the
+ * provider sent it; an error comes back as an OpenAI-shaped error with the key redacted.
+ */
+async function forward(upstream: Upstream, endpoint: string, body: Record<string, unknown>, record: RecordedRequest, res: ServerResponse): Promise<void> {
+  let status: number;
+  let text: string;
+  try {
+    const response = await fetch(`${upstream.baseURL.replace(/\/$/, "")}/${endpoint}`, {
+      method: "POST",
+      headers: { "content-type": "application/json", authorization: `Bearer ${upstream.apiKey}` },
+      body: JSON.stringify(body),
+    });
+    status = response.status;
+    text = await response.text();
+  } catch (error) {
+    record.error = redact(`lab record: the provider at ${upstream.baseURL} couldn't be reached: ${error instanceof Error ? error.message : String(error)}`, upstream.apiKey);
+    return sendError(res, 502, record.error);
+  }
+  let parsed: Record<string, unknown> | undefined;
+  try {
+    parsed = JSON.parse(text) as Record<string, unknown>;
+  } catch {
+    parsed = undefined;
+  }
+  if (status !== 200 || !parsed) {
+    const message = (parsed?.error as { message?: unknown } | undefined)?.message;
+    record.error = redact(`lab record: the provider answered ${status}: ${typeof message === "string" ? message : text.slice(0, 500)}`, upstream.apiKey);
+    return sendError(res, status === 200 ? 502 : status, record.error);
+  }
+  record.reply = replyText(parsed);
+  record.upstreamModel = typeof parsed.model === "string" ? parsed.model : null;
+  res.writeHead(200, { "content-type": "application/json" });
+  res.end(text);
+}
+
 const ROUTE = /^\/([a-z]+)\/v1\/(responses|chat\/completions)$/;
 
 export async function startReplayServer(options: ReplayServerOptions = {}): Promise<ReplayServer> {
@@ -176,6 +252,7 @@ export async function startReplayServer(options: ReplayServerOptions = {}): Prom
     const prompt = promptText(body);
     const model = typeof body.model === "string" ? body.model : null;
     const record: RecordedRequest = { dialect, endpoint, model, prompt, questionId: null, reply: null, error: null };
+    if (options.upstream) record.upstreamModel = null;
     requests.push(record);
 
     try {
@@ -183,6 +260,10 @@ export async function startReplayServer(options: ReplayServerOptions = {}): Prom
         throw new ReplayMiss(404, `lab replay: unknown dialect "${dialect}" in the base URL; use one of ${REPLAY_DIALECTS.join(", ")}.`);
       }
       if (body.stream === true) throw new ReplayMiss(400, "lab replay: streaming isn't supported; the lab's model calls are non-streaming.");
+      if (options.upstream) {
+        record.questionId = matchQuestion(prompt, loadQuestions(opts.questionsFile), dialect, opts.questionsFile).id;
+        return await forward(options.upstream, endpoint, body, record, res);
+      }
       const { question, text } = reply(dialect, prompt, opts);
       record.questionId = question.id;
       record.reply = text;
