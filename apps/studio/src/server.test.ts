@@ -623,6 +623,7 @@ describe("AskDB Studio server", () => {
     const embeddingServer = createEmbeddingServer(); // returns 4-wide vectors unless asked for another width
     embeddingServers.push(embeddingServer);
     const embeddingBaseUrl = await listen(embeddingServer);
+    let closed = 0;
     setStudioPgvectorStoreFactoryForTests((options) => ({
       ...createMemoryStore(),
       count: async () => 0,
@@ -631,7 +632,9 @@ describe("AskDB Studio server", () => {
         if (options.dimensions !== 8) throw new PgvectorDimensionMismatchError("askdb_chunks", 8, options.dimensions!);
       },
       tableDimensions: async () => 8,
-      close: async () => {},
+      close: async () => {
+        closed += 1;
+      },
     }));
     installStudioRuntime({}, {
       ...STUDIO_TEST_BASE,
@@ -657,6 +660,8 @@ describe("AskDB Studio server", () => {
           "or set ai.embedding.dimensions: 8 if model text-embedding-3-small supports that width.",
       },
     });
+    // The refused store's connection pool is closed, not left to its idle timeout.
+    expect(closed).toBe(1);
   });
 
   // ---------------------------------------------------------------------------

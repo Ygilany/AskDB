@@ -1162,7 +1162,15 @@ async function openStudioRagStore(
     ...(dimensions !== undefined ? { dimensions } : {}),
     ...(config.indexStrategy ? { indexStrategy: config.indexStrategy as "ivfflat" | "hnsw" | "none" } : {}),
   });
-  if (provision) await store.ensureSchema();
+  if (provision) {
+    try {
+      await store.ensureSchema();
+    } catch (error) {
+      // The caller never receives this store, so close its pool here (a width refusal has opened it).
+      await store.close().catch(() => {});
+      throw error;
+    }
+  }
   return {
     kind: "pgvector",
     store,
