@@ -51,7 +51,7 @@ await buildSchemaIndex({
 });
 ```
 
-This writes `schema.embeddings.bin`, `schema.embeddings.json`, and `schema.lock.json`. Re-running embeds only chunks the store doesn't already hold with the same content hash. The lock records the embedder id, store identity (its kind, plus a location such as the pgvector table name), and vector dimensions; changing any of them — or deleting the lock — re-embeds everything. Pass `force: true` (CLI: `--force`) to re-embed unconditionally.
+This writes `schema.embeddings.bin`, `schema.embeddings.json`, and `schema.lock.json`. Re-running embeds only chunks the store doesn't already hold with the same content hash. The lock records the embedder id, store identity (its kind, plus a location such as the pgvector table name), and vector dimensions. A different embedder id or deleting the lock re-embeds everything; a different store re-embeds whatever that store doesn't hold (stores that can't report their hashes re-embed everything). A different width needs a store with no vectors of the old width: a new or recreated pgvector table, or deleted file-store embeddings files. Pass `force: true` (CLI: `--force`) to re-embed unconditionally.
 
 The file store writes each file to a temp path and renames it into place, and the `.json` records a checksum of the `.bin`. If the two ever disagree (for example after a crash mid-write), loading the store fails with a message asking you to delete both files and reindex.
 

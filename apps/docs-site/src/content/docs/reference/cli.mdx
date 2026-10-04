@@ -285,7 +285,7 @@ askdb-rag index ./my-app.schema --store pgvector --embedder openai
 | `--pg-url` / `--pg-table` | pgvector connection when `--store pgvector`. The table is provisioned (idempotently) and its dimensions checked before indexing. |
 | `--force` | Re-embed every chunk, even ones the store already holds. |
 
-Only chunks the store doesn't already hold (same id and content hash) are embedded. `schema.lock.json` records the embedder id, store, and dimensions; if any of them changed, everything is re-embedded.
+Only chunks the store doesn't already hold (same id and content hash) are embedded. `schema.lock.json` records the embedder id, store, and dimensions; a different embedder id (which includes `--dimensions`) re-embeds everything, and a different store gets whatever it doesn't hold. A different width needs a store with no vectors of the old width: a new or recreated pgvector table, or deleted file-store embeddings files.
 
 ### `askdb-rag query`
 

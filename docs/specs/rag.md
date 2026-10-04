@@ -40,7 +40,7 @@ The retriever is wired into `ask()` via an optional `retriever` parameter. When 
 - **BYO embedder and store** — AskDB does not bundle an embedder or mandate a vector store. The same principle as BYO model: consumers bring their own infrastructure. The `VectorStore` interface is the plug-in seam.
 - **Sensitive chunks excluded by default** — the chunker excludes describable-layer content (descriptions, aliases, CQL sections) for sensitive columns. Embedding sensitive business context and making it retrievable is an opt-in decision by the host.
 - **The store is the source of truth for incremental indexing** — editing one table description should not re-embed every chunk, but a lock file alone can't prove the vectors exist (switching stores, a restarted in-memory store, or a fresh pgvector database with a committed lock would otherwise silently index nothing). Stores that implement `hashesByPrefix` (all built-ins) report what they hold; only chunks whose id + content hash they don't hold are embedded. Stores without `hashesByPrefix` fall back to the lock's hashes only when `describe()` reports the same store identity and dimensions the lock records; a store with neither re-embeds everything.
-- **`schema.lock.json` guards identity** — the lock (version 2) records `embedderId`, `dimensions`, store identity (`kind`, plus a machine-independent `location` such as the pgvector table; the file store records only its kind), and per-chunk hashes. A missing lock, a lock from an older version, a different embedder id (including unset vs. set), or different dimensions re-embeds everything. Stores that can't report hashes fall back to the lock's hashes when the store identity matches. Upgrading from a version-1 lock (unscoped chunk ids) triggers a one-time full reindex; the old ids listed in that lock are deleted.
+- **`schema.lock.json` guards identity** — the lock (version 2) records `embedderId`, `dimensions`, store identity (`kind`, plus a machine-independent `location` such as the pgvector table; the file store records only its kind), and per-chunk hashes. A missing lock, a lock from an older version, a different embedder id (including unset vs. set), or different dimensions re-embeds everything. Stores that can't report hashes fall back to the lock's hashes when the store identity matches (a store without `describe()` has none, so it re-embeds everything). Upgrading from a version-1 lock (unscoped chunk ids) triggers a one-time full reindex; the old ids listed in that lock are deleted.
 - **Full DDL path preserved** — when no retriever is supplied, `ask()` behavior is byte-identical to pre-RAG. RAG is additive, not a replacement.
 
 ## Contracts and API surface
@@ -81,7 +81,7 @@ interface VectorStore {
 }
 createMemoryStore(): MemoryStore
 createFileStore(options: { basePath: string; autoFlush?: boolean }): FileStore
-createPgvectorStore(options: { connectionString?: string; client?: PgClient; table?: string; dimensions: number; indexStrategy?: 'hnsw' | 'ivfflat' | 'none'; resolveFrom?: string }): PgvectorStore
+createPgvectorStore(options: { connectionString?: string; client?: PgClient; table?: string; dimensions?: number; indexStrategy?: 'hnsw' | 'ivfflat' | 'none'; resolveFrom?: string }): PgvectorStore
 
 // ask() integration
 ask({ ..., retriever?: Retriever }): Promise<AskResult>

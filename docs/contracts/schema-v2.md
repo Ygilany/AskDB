@@ -242,7 +242,7 @@ Every chunk id is scoped to the schema: `chunk:<schemaId>:<local-id>` (e.g. `chu
 
 ### Determinism
 
-Given the same v2 artifact, the chunker must produce the **same chunk ids and the same chunk texts** on every run. Re-embedding only happens when chunk text changes: the indexer skips a chunk only when the vector store already holds the same content hash for its id (stores that cannot report hashes fall back to `schema.lock.json`). A changed embedder id, store, or vector dimension re-embeds everything.
+Given the same v2 artifact, the chunker must produce the **same chunk ids and the same chunk texts** on every run. Re-embedding only happens when chunk text changes: the indexer skips a chunk only when the vector store already holds the same content hash for its id (stores that cannot report hashes fall back to `schema.lock.json`). A changed embedder id or vector dimension re-embeds everything; a different store re-embeds whatever it doesn't hold (all of it, for stores that can't report hashes).
 
 ### Size guidance
 

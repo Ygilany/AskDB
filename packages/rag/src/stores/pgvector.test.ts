@@ -164,6 +164,17 @@ describe("createPgvectorStore", () => {
     expect(query).not.toHaveBeenCalled();
   });
 
+  it("loads `pg` for a connection string and reaches the network (CJS default export handled)", async () => {
+    // Port 1 refuses connections: getting that far means `pg` loaded and `Pool` was found.
+    const store = createPgvectorStore({ connectionString: "postgres://u:p@127.0.0.1:1/none" });
+    try {
+      const error = (await store.count().catch((e: unknown) => e)) as Error & { code?: string };
+      expect(error.code).toBe("ECONNREFUSED");
+    } finally {
+      await store.close();
+    }
+  });
+
   it("reports stored hashes by id prefix and ids by schema", async () => {
     const query = vi.fn(async (sql: string) => ({
       rows: sql.includes("content_hash")
@@ -183,13 +194,20 @@ describe("createPgvectorStore", () => {
     expect(store.describe!()).toEqual({ kind: "pgvector", location: "t", dimensions: 2 });
   });
 
-  it("ensureSchema passes when dimensions match or the table is new", async () => {
-    for (const rows of [[{ dimensions: 64 }], []]) {
-      const query = vi.fn(async (sql: string) => ({
-        rows: sql.includes("pg_attribute") ? rows : [],
-      }));
-      const store = createPgvectorStore({ client: { query }, dimensions: 64, table: "t" });
-      await expect(store.ensureSchema()).resolves.toBeUndefined();
-    }
+  it("reports and enforces an existing table's width once ensureSchema reads it, when given none", async () => {
+    const store = createPgvectorStore({ client: clientWithTable(768).client, table: "t" });
+    expect(store.describe!()).toEqual({ kind: "pgvector", location: "t" });
+
+    await store.ensureSchema();
+    expect(store.describe!()).toEqual({ kind: "pgvector", location: "t", dimensions: 768 });
+    await expect(
+      store.upsert([
+        {
+          id: "x",
+          vector: [1, 0],
+          payload: { id: "x", type: "table", text: "x", schemaId: "s", refs: [], sensitive: false },
+        },
+      ]),
+    ).rejects.toThrow(/expects 768-dimension vectors; got 2/);
   });
 });

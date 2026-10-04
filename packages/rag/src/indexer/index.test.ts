@@ -317,7 +317,35 @@ describe("buildSchemaIndex — store is the source of truth", () => {
     };
     await expect(
       buildSchemaIndex({ schema: sources, embedder: deterministicEmbedder(), store }),
-    ).rejects.toThrow(/2-dimension vectors but the pgvector store expects 3/);
+    ).rejects.toThrow(/2-dimension vectors but the pgvector store holds 3-dimension vectors/);
+  });
+
+  it("tells a file-store user to delete the embeddings files when the width changes", async () => {
+    const sources = loadChunkerSourcesFromDir(FIXTURE_DIR);
+    const dir = mkdtempSync(join(tmpdir(), "askdb-rag-width-"));
+    tempDirs.push(dir);
+    const basePath = join(dir, "schema");
+    const lockFilePath = join(dir, "schema.lock.json");
+    await buildSchemaIndex({ schema: sources, embedder: deterministicEmbedder(), store: createFileStore({ basePath }), embedderId: "w2", lockFilePath });
+
+    const threeDims: Embedder = async (texts) => texts.map((t) => [t.length, 1, 2]);
+    await expect(
+      buildSchemaIndex({ schema: sources, embedder: threeDims, store: createFileStore({ basePath }), embedderId: "w3", lockFilePath }),
+    ).rejects.toThrow(/file store holds 2-dimension vectors.*file store: delete its embeddings files/);
+  });
+
+  it("reports a changed embedder even when another reason forces the full reindex", async () => {
+    const sources = loadChunkerSourcesFromDir(FIXTURE_DIR);
+    const lockFilePath = tempLockPath();
+    const store = createMemoryStore();
+    await buildSchemaIndex({ schema: sources, embedder: deterministicEmbedder(), store, embedderId: "a", lockFilePath });
+
+    const logger = { info: vi.fn(), error: vi.fn() };
+    await buildSchemaIndex({ schema: sources, embedder: deterministicEmbedder(), store, embedderId: "b", lockFilePath, force: true, logger });
+    expect(logger.info).toHaveBeenCalledWith(
+      expect.objectContaining({ event: "askdb.rag.indexing_started", embedderChanged: true, fullReindexReason: "force" }),
+      expect.any(String),
+    );
   });
 });
 
@@ -451,6 +479,28 @@ describe("buildSchemaIndex — schema-scoped ids and orphan cleanup", () => {
     expect((await backing.idsBySchema!("shop:eu")).sort()).toEqual(indexB.chunks.map((c) => c.id).sort());
     // `shop`'s own orphans (listed in its lock) are still pruned.
     expect((await backing.idsBySchema!("shop")).sort()).toEqual(reindexedA.chunks.map((c) => c.id).sort());
+  });
+
+  it("never prunes another schema's old-format ids that share this schema's prefix, from a store that can't list ids by schema", async () => {
+    const backing = createMemoryStore();
+    const store: VectorStore = { ...lockOnlyStore(backing), hashesByPrefix: backing.hashesByPrefix };
+    // An older, unscoped id another schema wrote: it starts with `chunk:table:`,
+    // which is also the prefix of a schema named `table`.
+    const legacyId = "chunk:table:public.legacy";
+    await backing.upsert([
+      {
+        id: legacyId,
+        vector: [1, 1],
+        hash: "h",
+        payload: { id: legacyId, type: "table", text: "legacy", schemaId: "other", refs: [], sensitive: false },
+      },
+    ]);
+    const sources = loadChunkerSourcesFromDir(FIXTURE_DIR);
+    sources.schema.schemaId = "table";
+
+    await buildSchemaIndex({ schema: sources, embedder: deterministicEmbedder(), store, embedderId: "e", lockFilePath: tempLockPath() });
+    await buildSchemaIndex({ schema: sources, embedder: deterministicEmbedder(), store, embedderId: "e" });
+    expect(await backing.idsBySchema!("other")).toEqual([legacyId]);
   });
 
   it("prunes orphans via the lock for stores that can't list ids, scoped to the schema", async () => {

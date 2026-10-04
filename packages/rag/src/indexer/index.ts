@@ -151,7 +151,11 @@ export async function buildSchemaIndex(
     descriptor,
     storeReportsHashes: storeHashes !== undefined,
   });
-  const embedderChanged = fullReindexReason === "embedder-changed";
+  // Whether or not it decided the full reindex (`force` or an outdated lock
+  // may come first): it also drops the previous lock's width below.
+  const embedderChanged =
+    previousLock !== undefined &&
+    (previousLock.embedderId ?? null) !== (embedderId ?? null);
   const previousHashes: Record<string, string> =
     storeHashes ?? previousLock?.hashes ?? {};
 
@@ -226,8 +230,9 @@ export async function buildSchemaIndex(
     ) {
       throw new Error(
         `Embedder returned ${observedDimensions}-dimension vectors but the ${descriptor.kind} store ` +
-          `expects ${descriptor.dimensions}. Configure the store with dimensions=${observedDimensions} ` +
-          `(pgvector: a new table or a recreated one), or use an embedder that produces ${descriptor.dimensions}-dimension vectors.`,
+          `holds ${descriptor.dimensions}-dimension vectors. Index into a store with none of the old width ` +
+          `(pgvector: a new or recreated table; file store: delete its embeddings files), ` +
+          `or use an embedder that produces ${descriptor.dimensions}-dimension vectors.`,
       );
     }
     await store.upsert(
@@ -298,12 +303,12 @@ export async function buildSchemaIndex(
 
   // 6. Persist lock file.
   if (lockFilePath) {
-    // The width of the vectors in the store: what this run embedded, else what the store
-    // reports, else (nothing was re-embedded with the same embedder) what the previous run recorded.
+    // The width of the vectors in the store: what this run embedded, else (nothing was
+    // re-embedded with the same embedder) what the previous run recorded, else what the
+    // store reports.
     const dimensions =
       observedDimensions ??
-      descriptor?.dimensions ??
-      (embedderChanged ? undefined : previousLock?.dimensions);
+      (embedderChanged ? undefined : (previousLock?.dimensions ?? descriptor?.dimensions));
     const lock: SchemaLockFile = {
       version: SCHEMA_LOCK_VERSION,
       schemaId,

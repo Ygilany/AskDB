@@ -26,11 +26,18 @@ import type {
   VectorStore,
 } from "./types.js";
 
+const CLI_EMBEDDERS = ["mock", "openai"] as const;
+type CliEmbedder = (typeof CLI_EMBEDDERS)[number];
+
+function isCliEmbedder(value: string): value is CliEmbedder {
+  return (CLI_EMBEDDERS as readonly string[]).includes(value);
+}
+
 type CliOptions = {
   command?: "index" | "query" | "setup-store";
   schemaDir?: string;
   store?: "memory" | "file" | "pgvector";
-  embedder?: "mock" | "openai";
+  embedder?: CliEmbedder;
   question?: string;
   k?: number;
   pgUrl?: string;
@@ -240,8 +247,7 @@ async function runSetupStore(opts: CliOptions): Promise<number> {
 function buildEmbedder(opts: CliOptions, runtimeConfig: AskDbRuntimeConfig): Embedder {
   const choice = opts.embedder ?? "mock";
   if (choice === "mock") return createMockEmbedder(embedderDimensions(opts));
-  if (choice === "openai") return createOpenAiEmbedder(opts, runtimeConfig);
-  throw new Error(`Unknown embedder: ${choice}`);
+  return createOpenAiEmbedder(opts, runtimeConfig);
 }
 
 function embedderId(opts: CliOptions): string {
@@ -396,8 +402,10 @@ function parseOptions(argv: readonly string[]): CliOptions {
         break;
       case "--embedder": {
         const raw = readValue(argv, ++i, arg);
-        if (raw !== "mock" && raw !== "openai") {
-          throw new Error(`Unknown embedder: ${raw} (expected 'mock' or 'openai').`);
+        if (!isCliEmbedder(raw)) {
+          throw new Error(
+            `Unknown embedder: ${raw} (expected ${CLI_EMBEDDERS.map((e) => `'${e}'`).join(" or ")}).`,
+          );
         }
         opts.embedder = raw;
         break;

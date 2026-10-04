@@ -97,6 +97,9 @@ export function createPgvectorStore(
 ): PgvectorStore {
   const table = options.table ?? DEFAULT_TABLE;
   const dimensions = options.dimensions;
+  // The width writes are checked against and `describe()` reports: the
+  // configured one, else the existing table's once `ensureSchema()` reads it.
+  let knownWidth = dimensions;
   const indexStrategy = options.indexStrategy ?? "hnsw";
 
   if (dimensions !== undefined && (!Number.isInteger(dimensions) || dimensions <= 0)) {
@@ -134,9 +137,9 @@ export function createPgvectorStore(
     const refs = records.map((r) => JSON.stringify(r.payload.refs));
     const sensitives = records.map((r) => r.payload.sensitive);
     const vectors = records.map((r) => {
-      if (dimensions !== undefined && r.vector.length !== dimensions) {
+      if (knownWidth !== undefined && r.vector.length !== knownWidth) {
         throw new Error(
-          `pgvector store "${table}" expects ${dimensions}-dimension vectors; got ${r.vector.length} for id="${r.id}".`,
+          `pgvector store "${table}" expects ${knownWidth}-dimension vectors; got ${r.vector.length} for id="${r.id}".`,
         );
       }
       return formatVector(r.vector);
@@ -329,6 +332,7 @@ export function createPgvectorStore(
     }
     const c = await getClient();
     await c.query(renderSetupSql(width));
+    knownWidth = width;
   };
 
   const close = async (): Promise<void> => {
@@ -370,7 +374,10 @@ export function createPgvectorStore(
     count,
     hashesByPrefix,
     idsBySchema,
-    describe: () => ({ kind: "pgvector", location: table, dimensions }),
+    describe: () =>
+      knownWidth !== undefined
+        ? { kind: "pgvector", location: table, dimensions: knownWidth }
+        : { kind: "pgvector", location: table },
     setupSql,
     ensureSchema,
     tableDimensions,
