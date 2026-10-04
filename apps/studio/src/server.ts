@@ -50,6 +50,7 @@ import {
   createRetriever,
   detectEmbeddingDimensions,
   loadChunkerSourcesFromDir,
+  PgvectorDimensionMismatchError,
   type ChunkType,
   type Embedder,
   type QueryResult,
@@ -1267,6 +1268,9 @@ function formatStudioRagOperationError(
   config: StudioRagEmbedderConfig,
 ): StudioHttpError {
   if (error instanceof StudioHttpError) return error;
+  if (error instanceof PgvectorDimensionMismatchError) {
+    return new StudioHttpError(409, studioRagWidthMismatchMessage(error, config));
+  }
   if (config.kind === "mock") {
     return new StudioHttpError(500, error instanceof Error ? error.message : String(error));
   }
@@ -1284,6 +1288,24 @@ function formatStudioRagOperationError(
   if (responseBody) parts.push(`Response: ${responseBody}`);
   if (!responseBody && error instanceof Error) parts.push(`Error: ${error.message}`);
   return new StudioHttpError(502, parts.join(" "));
+}
+
+/** An existing pgvector table of another width: say where the new width comes from and how to resolve it, in config terms. */
+function studioRagWidthMismatchMessage(error: PgvectorDimensionMismatchError, config: StudioRagEmbedderConfig): string {
+  const mismatch = `pgvector table "${error.table}" holds ${error.tableDimensions}-dimension vectors, but`;
+  const rebuild = `Drop the table (DROP TABLE "${error.table}";) and build the index again`;
+  const newTable = "point rag.storeConfig.pgvector.table at a new table";
+  if (config.kind === "mock") {
+    return `${mismatch} the mock embedder writes ${error.dimensions}. ${rebuild}, or ${newTable}.`;
+  }
+  const source =
+    config.dimensions !== undefined
+      ? `ai.embedding.dimensions asks for ${error.dimensions}`
+      : `embedding model ${config.model} returns ${error.dimensions}`;
+  return (
+    `${mismatch} ${source}. ${rebuild}, ${newTable}, ` +
+    `or set ai.embedding.dimensions: ${error.tableDimensions} if model ${config.model} supports that width.`
+  );
 }
 
 function findApiCallError(error: unknown): {

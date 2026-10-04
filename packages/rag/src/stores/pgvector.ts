@@ -1,3 +1,4 @@
+import { AskDbError } from "@askdb/core";
 import type {
   ChunkPayload,
   ChunkType,
@@ -49,6 +50,23 @@ export type PgvectorStore = VectorStore & {
   /** Diagnostic helper for hosts that need to verify persisted row counts. */
   count(filter?: Filter): Promise<number>;
 };
+
+/** `ensureSchema()` found an existing table whose `embedding` column has another width than the store's `dimensions`. */
+export class PgvectorDimensionMismatchError extends AskDbError {
+  constructor(
+    readonly table: string,
+    /** Width of the existing table's `embedding` column. */
+    readonly tableDimensions: number,
+    /** The store's `dimensions`. */
+    readonly dimensions: number,
+  ) {
+    super(
+      `pgvector table "${table}" stores ${tableDimensions}-dimension vectors, but this store is set up for ${dimensions}. ` +
+        `Drop the table to rebuild it at ${dimensions}, or embed at ${tableDimensions} dimensions.`,
+    );
+    this.name = "PgvectorDimensionMismatchError";
+  }
+}
 
 const DEFAULT_TABLE = "askdb_rag_chunks";
 
@@ -274,10 +292,7 @@ export function createPgvectorStore(
     // otherwise the mismatch only surfaces as a failed insert halfway through indexing.
     const existing = await tableDimensions();
     if (existing !== undefined && dimensions !== undefined && existing !== dimensions) {
-      throw new Error(
-        `pgvector table "${table}" stores ${existing}-dimension vectors, but this store is set up for ${dimensions}. ` +
-          `Drop the table to rebuild it at ${dimensions}, or embed at ${existing} dimensions.`,
-      );
+      throw new PgvectorDimensionMismatchError(table, existing, dimensions);
     }
     const width = dimensions ?? existing;
     if (width === undefined) {

@@ -76,7 +76,7 @@ All exports are available from the root `@askdb/rag` import. Sub-path imports ar
 |---|---|---|
 | `createMemoryStore` | `@askdb/rag/stores/memory` | In-memory cosine store. Zero deps. |
 | `createFileStore` | `@askdb/rag/stores/file` | Binary embedding file + JSON metadata. |
-| `createPgvectorStore` | `@askdb/rag/stores/pgvector` | pgvector adapter with documented setup SQL. Requires `pg`. Needs `dimensions` only to create its table; `ensureSchema()` refuses an existing table of another width. |
+| `createPgvectorStore` | `@askdb/rag/stores/pgvector` | pgvector adapter with documented setup SQL. Requires `pg`. Needs `dimensions` only to create its table; `ensureSchema()` refuses an existing table of another width with a `PgvectorDimensionMismatchError`. |
 
 ### Embedders
 

@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import type { PgClient } from "./pgvector.js";
-import { createPgvectorStore } from "./pgvector.js";
+import { createPgvectorStore, PgvectorDimensionMismatchError } from "./pgvector.js";
 
 describe("createPgvectorStore", () => {
   it("documents table, extension, and HNSW setup SQL without executing it", () => {
@@ -48,7 +48,10 @@ describe("createPgvectorStore", () => {
     const { client, ddl } = clientWithTable(1536);
     const store = createPgvectorStore({ client, dimensions: 3072, table: "askdb_rag_chunks" });
 
-    await expect(store.ensureSchema()).rejects.toThrow(
+    const error = await store.ensureSchema().catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(PgvectorDimensionMismatchError);
+    expect(error).toMatchObject({ table: "askdb_rag_chunks", tableDimensions: 1536, dimensions: 3072 });
+    expect((error as Error).message).toMatch(
       /pgvector table "askdb_rag_chunks" stores 1536-dimension vectors, but this store is set up for 3072/,
     );
     expect(ddl()).toEqual([]);

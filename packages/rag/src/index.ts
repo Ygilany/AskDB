@@ -54,6 +54,7 @@ export { createMemoryStore, type MemoryStore } from "./stores/memory.js";
 export { createFileStore, type FileStore, type FileStoreOptions } from "./stores/file.js";
 export {
   createPgvectorStore,
+  PgvectorDimensionMismatchError,
   type PgvectorStore,
   type PgClient,
   type PgvectorIndexStrategy,

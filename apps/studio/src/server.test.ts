@@ -12,7 +12,7 @@ import {
 } from "@askdb/config";
 import type { AskDbConfig } from "@askdb/config";
 import { loadSchema, parseTableMarkdown } from "@askdb/core";
-import { createMemoryStore } from "@askdb/rag";
+import { createMemoryStore, PgvectorDimensionMismatchError } from "@askdb/rag";
 import { afterEach, describe, expect, it } from "vitest";
 import {
   createStudioServer,
@@ -614,6 +614,49 @@ describe("AskDB Studio server", () => {
     expect(provisionedWith).toEqual([4]);
     expect(indexed.status).toMatchObject({ hasIndex: true, stale: false, dimensions: 4, expectedDimensions: null });
     expect(indexed.status.expectedEmbedderId).toBe("ai-sdk:openai:text-embedding-3-small:default");
+  });
+
+  it.each([
+    { dimensions: undefined, source: "embedding model text-embedding-3-small returns 4" },
+    { dimensions: 6, source: "ai.embedding.dimensions asks for 6" },
+  ])("refuses an existing pgvector table of another width with a 409 naming the config (dimensions: $dimensions)", async ({ dimensions, source }) => {
+    const embeddingServer = createEmbeddingServer(); // returns 4-wide vectors unless asked for another width
+    embeddingServers.push(embeddingServer);
+    const embeddingBaseUrl = await listen(embeddingServer);
+    setStudioPgvectorStoreFactoryForTests((options) => ({
+      ...createMemoryStore(),
+      count: async () => 0,
+      setupSql: () => "",
+      ensureSchema: async () => {
+        if (options.dimensions !== 8) throw new PgvectorDimensionMismatchError("askdb_chunks", 8, options.dimensions!);
+      },
+      tableDimensions: async () => 8,
+      close: async () => {},
+    }));
+    installStudioRuntime({}, {
+      ...STUDIO_TEST_BASE,
+      ai: {
+        provider: "openai",
+        providerConfig: { openai: { apiKey: "test-key", baseUrl: embeddingBaseUrl } },
+        embedding: { model: "text-embedding-3-small", ...(dimensions !== undefined ? { dimensions } : {}) },
+      },
+      rag: { embedder: "ai", store: "pgvector", storeConfig: { pgvector: { databaseUrl: "postgres://pgvector.test/askdb" } } },
+    });
+    const server = createStudioServer({ schema: copyFixture() });
+    servers.push(server);
+    const baseUrl = await listen(server);
+
+    const response = await postRaw(`${baseUrl}/api/rag/index`, {});
+    expect(response.status).toBe(409);
+    await expect(response.json()).resolves.toEqual({
+      error: {
+        message:
+          `pgvector table "askdb_chunks" holds 8-dimension vectors, but ${source}. ` +
+          'Drop the table (DROP TABLE "askdb_chunks";) and build the index again, ' +
+          "point rag.storeConfig.pgvector.table at a new table, " +
+          "or set ai.embedding.dimensions: 8 if model text-embedding-3-small supports that width.",
+      },
+    });
   });
 
   // ---------------------------------------------------------------------------

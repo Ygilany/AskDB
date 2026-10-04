@@ -169,8 +169,8 @@ jobs:
 
     services:
       # pgvector/pgvector is stock Postgres 16 plus the `vector` extension, so the same
-      # service backs both the plain Postgres suite (DATABASE_URL) and the @askdb/rag
-      # pgvector suite (ASKDB_PGVECTOR_URL; the test runs CREATE EXTENSION itself).
+      # service backs both the plain Postgres suite (DATABASE_URL) and the pgvector suites
+      # in @askdb/rag and Studio (ASKDB_PGVECTOR_URL; they run CREATE EXTENSION themselves).
       postgres:
         image: pgvector/pgvector:pg16
         env:

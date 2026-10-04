@@ -194,7 +194,7 @@ Beyond the `VectorStore` interface, `createPgvectorStore` returns:
 | Method | Description |
 | --- | --- |
 | `setupSql()` | Returns the DDL string that creates the extension, table, and indexes. Needs `dimensions`. |
-| `ensureSchema()` | Creates the extension, table, and indexes when they're missing. Idempotent — safe on every startup. An existing table is kept as it is, so this throws when its width differs from `dimensions`, instead of letting inserts fail later. Without `dimensions` it uses an existing table's width, and throws when there's no table. |
+| `ensureSchema()` | Creates the extension, table, and indexes when they're missing. Idempotent — safe on every startup. An existing table is kept as it is, so when its width differs from `dimensions` this throws a `PgvectorDimensionMismatchError` (with `table`, `tableDimensions` and `dimensions`), instead of letting inserts fail later. Without `dimensions` it uses an existing table's width, and throws when there's no table. |
 | `tableDimensions()` | The width of the existing table's `embedding` column, or `undefined` when the table doesn't exist. |
 | `close()` | Closes the internal connection pool. No-op when an external client was supplied. |
 | `count(filter?)` | Returns the number of stored chunks matching an optional filter. Useful for diagnostics. |

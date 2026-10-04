@@ -1,5 +1,5 @@
 import { expect, it } from "vitest";
-import { createPgvectorStore } from "./pgvector.js";
+import { createPgvectorStore, PgvectorDimensionMismatchError } from "./pgvector.js";
 import { integrationSuite } from "../../../../scripts/test-utils/integration.mjs";
 
 const connectionString = process.env.ASKDB_PGVECTOR_URL ?? process.env.PGVECTOR_URL;
@@ -83,6 +83,7 @@ run("createPgvectorStore integration", () => {
       await expect(unsized.tableDimensions()).resolves.toBeUndefined();
       await created.ensureSchema();
       await expect(unsized.tableDimensions()).resolves.toBe(3);
+      await expect(other.ensureSchema()).rejects.toThrow(PgvectorDimensionMismatchError);
       await expect(other.ensureSchema()).rejects.toThrow(/stores 3-dimension vectors, but this store is set up for 4/);
       await expect(unsized.ensureSchema()).resolves.toBeUndefined();
     } finally {
