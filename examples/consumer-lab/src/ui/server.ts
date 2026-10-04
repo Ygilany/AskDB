@@ -4,12 +4,16 @@
  * prints. Each engine's column shows that transcript, so it reads exactly as
  * `pnpm lab ask --db <engine>` would for the same input.
  *
- *   GET  /          the page (`page.html`), with the install target, model mode and catalog
+ *   GET  /          the page (`page.html`), naming the install target and model mode
  *   POST /api/run   `{ question, sql? }` → NDJSON: one `engine` event per engine as it
  *                   finishes, then one `summary` event (`summary.ts`)
  *
  * The model is always the raw path (`createOpenAI({ baseURL })` → `ask()`): `--via client`
  * reads `askdb.config.ts` once per process, which pins the first engine's replay URL.
+ *
+ * The install target is the one `lab:use` recorded when the server started, whose modules
+ * the process loaded. If `lab:use` switches it while the server runs, the page and the API
+ * answer `409` until the server is restarted, rather than name one target and test another.
  *
  * Local-server protection, following ADR 0009's lesson for Studio: the server binds
  * 127.0.0.1 only, and every request's `Host` must be `127.0.0.1:<port>` or
@@ -21,7 +25,7 @@
 import { readFileSync } from "node:fs";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import type { AddressInfo } from "node:net";
-import { askAndRun, type AskRun, type AskRunStatus, type TranscriptLine } from "../ask-run.js";
+import { askAndRun, type AskInput, type AskRun, type AskRunStatus, type TranscriptLine } from "../ask-run.js";
 import { requireInstallTarget } from "../artifacts.js";
 import { SUPPORTED_DIALECTS, type SupportedDialect } from "../dialects.js";
 import type { ExecuteResult } from "../host/execute.js";
@@ -47,13 +51,18 @@ export interface LabUi {
   close(): Promise<void>;
 }
 
+/** What `POST /api/run` takes: `lab ask`'s input, always on the raw model path. */
+export type UiInput = Omit<AskInput, "via">;
+
+export type EngineStatus = AskRunStatus | "timeout";
+
 /** One engine's column, as `POST /api/run` sends it. */
 export interface EngineEvent {
   type: "engine";
   dialect: SupportedDialect;
-  status: AskRunStatus | "timeout";
+  status: EngineStatus;
   /** `lab ask`'s exit code; absent when it would have thrown (`failed`, `timeout`). */
-  exitCode?: number;
+  exitCode?: AskRun["exitCode"];
   /** What `lab ask --db <dialect>` prints for the input, in order. */
   lines: TranscriptLine[];
   /** For `failed` and `timeout`: what went wrong. */
@@ -67,59 +76,47 @@ function describeError(error: unknown): string {
   return error instanceof Error ? `${error.name}: ${error.message}` : String(error);
 }
 
-/** The engine's event, and the rows it read (which the summary needs and the page doesn't). */
-async function runEngine(
-  dialect: SupportedDialect,
-  input: { question: string; sql?: string },
-  timeoutMs: number,
-): Promise<{ event: EngineEvent; rows?: ExecuteResult }> {
+/**
+ * Run the input on one engine, giving up after `timeoutMs`. A timed-out run can't be
+ * cancelled (no driver call here takes a signal): it ends on its own, or with the server.
+ * Returns the engine's event, and the rows it read, which the summary needs and the page doesn't.
+ */
+async function runEngine(dialect: SupportedDialect, input: UiInput, timeoutMs: number): Promise<{ event: EngineEvent; rows?: ExecuteResult }> {
   const started = performance.now();
   const lines: TranscriptLine[] = [];
   let timer: NodeJS.Timeout | undefined;
   const deadline = new Promise<"timeout">((resolve) => (timer = setTimeout(() => resolve("timeout"), timeoutMs)));
   try {
-    const run = await Promise.race([askAndRun(dialect, input, { onLine: (line) => lines.push(line) }), deadline]);
-    if (run === "timeout") {
-      const event: EngineEvent = {
-        type: "engine",
-        dialect,
-        status: "timeout",
-        lines: [...lines],
-        error: `no result after ${timeoutMs} ms`,
-        timings: { totalMs: performance.now() - started },
-      };
-      return { event };
-    }
-    const event: EngineEvent = {
-      type: "engine",
-      dialect,
-      status: run.status,
-      exitCode: run.exitCode,
-      lines: run.lines,
-      error: run.status === "failed" ? describeError(run.error) : undefined,
-      rowCount: run.rows?.rows.length,
-      truncated: run.rows?.truncated,
-      timings: run.timings,
-    };
-    return { event, rows: run.rows };
+    const run = await Promise.race([askAndRun(dialect, input, (line) => lines.push(line)), deadline]);
+    const event: EngineEvent =
+      run === "timeout"
+        ? { type: "engine", dialect, status: "timeout", lines: [...lines], error: `no result after ${timeoutMs} ms`, timings: { totalMs: performance.now() - started } }
+        : {
+            type: "engine",
+            dialect,
+            status: run.status,
+            exitCode: run.exitCode,
+            lines: run.lines,
+            error: run.status === "failed" ? describeError(run.error) : undefined,
+            rowCount: run.rows?.rows.length,
+            truncated: run.rows?.truncated,
+            timings: run.timings,
+          };
+    return { event, rows: run === "timeout" ? undefined : run.rows };
   } finally {
     clearTimeout(timer);
   }
 }
 
-/** JSON inside a `<script>` element: `<` escaped, so no value can close the element. */
-function scriptJson(value: unknown): string {
-  return JSON.stringify(value).replace(/</g, "\\u003c");
-}
+const escapeHtml = (text: string) => text.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
 
-function page(): string {
-  const info = {
-    target: requireInstallTarget().label,
-    modelMode: MODEL_MODE,
-    dialects: SUPPORTED_DIALECTS,
-    questions: loadQuestions(),
-  };
-  return readFileSync(PAGE, "utf8").replace("/*LAB_INFO*/null", () => scriptJson(info));
+function page(target: string): string {
+  // `<` escaped, so no value can close the <script> element the JSON sits in.
+  const data = JSON.stringify({ dialects: SUPPORTED_DIALECTS, questions: loadQuestions() }).replace(/</g, "\\u003c");
+  return readFileSync(PAGE, "utf8")
+    .replace("<!--TARGET-->", () => escapeHtml(target))
+    .replace("<!--MODEL_MODE-->", () => escapeHtml(MODEL_MODE))
+    .replace("/*LAB_DATA*/null", () => data);
 }
 
 function sendText(res: ServerResponse, status: number, text: string): void {
@@ -138,7 +135,7 @@ async function readBody(req: IncomingMessage): Promise<string | undefined> {
   return Buffer.concat(chunks).toString("utf8");
 }
 
-function parseInput(body: string): { question: string; sql?: string } | undefined {
+function parseInput(body: string): UiInput | undefined {
   let value: unknown;
   try {
     value = JSON.parse(body);
@@ -154,23 +151,27 @@ function parseInput(body: string): { question: string; sql?: string } | undefine
 
 export async function startLabUi(options: LabUiOptions = {}): Promise<LabUi> {
   const engineTimeoutMs = options.engineTimeoutMs ?? 60_000;
+  const target = requireInstallTarget().label;
   let port = 0;
   const allowedHosts = () => new Set([`127.0.0.1:${port}`, `localhost:${port}`]);
   const allowedOrigins = () => new Set([...allowedHosts()].map((h) => `http://${h}`));
 
-  const server = createServer(async (req, res) => {
+  async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> {
     // Every request, the page included: a rebound page must not even read the page.
     if (!allowedHosts().has(req.headers.host ?? "")) return sendText(res, 403, "lab ui: refused: foreign Host header");
+    const now = requireInstallTarget().label;
+    if (now !== target) return sendText(res, 409, `lab ui: lab:use switched the install target to "${now}" after this server started on "${target}"; restart pnpm lab ui.`);
     const path = (req.url ?? "/").split("?")[0];
 
     if (req.method === "GET" && path === "/") {
+      const html = page(target);
       res.writeHead(200, {
         "content-type": "text/html; charset=utf-8",
         "cache-control": "no-store",
         "x-frame-options": "DENY",
         "content-security-policy": "frame-ancestors 'none'",
       });
-      return res.end(page());
+      return void res.end(html);
     }
 
     if (req.method === "POST" && path === "/api/run") {
@@ -193,11 +194,19 @@ export async function startLabUi(options: LabUiOptions = {}): Promise<LabUi> {
       );
       // Raw SQL is compared through the catalog question it's labelled with, if any.
       const summary = summarize(input.question, runs.map(({ event, rows }) => ({ dialect: event.dialect, status: event.status, rows })));
-      res.end(`${JSON.stringify({ type: "summary", summary })}\n`);
-      return;
+      return void res.end(`${JSON.stringify({ type: "summary", summary })}\n`);
     }
 
     sendText(res, 404, `lab ui: no route for ${req.method} ${path}`);
+  }
+
+  const server = createServer((req, res) => {
+    handle(req, res).catch((error: unknown) => {
+      // A lab bug or an aborted request: answer it if we still can, and keep serving.
+      const message = `lab ui: ${describeError(error)}`;
+      if (!res.headersSent) sendText(res, 500, message);
+      else res.end(`${JSON.stringify({ type: "error", error: message })}\n`);
+    });
   });
 
   await new Promise<void>((resolve, reject) => {

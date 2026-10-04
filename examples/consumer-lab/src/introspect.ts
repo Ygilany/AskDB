@@ -81,17 +81,34 @@ export interface ProjectRun extends CliRun {
   files: string[];
 }
 
+/** A fresh project directory under `.lab/projects/` whose `askdb.config.ts` has this `introspection` block. */
+function makeProject(introspection: Record<string, unknown>): string {
+  mkdirSync(join(LAB_STATE, "projects"), { recursive: true });
+  const project = mkdtempSync(join(LAB_STATE, "projects", `${String(introspection.provider)}-`));
+  writeFileSync(join(project, "askdb.config.ts"), projectConfig(introspection));
+  return project;
+}
+
+const projectFiles = (project: string) => readdirSync(project).filter((f) => f !== "askdb.config.ts");
+
 /**
  * Run the installed `askdb` in a fresh project directory under `.lab/projects/` whose
  * `askdb.config.ts` has this `introspection` block, then remove the directory.
  */
 export function askdbInProject(introspection: Record<string, unknown>, args: string[]): ProjectRun {
-  mkdirSync(join(LAB_STATE, "projects"), { recursive: true });
-  const project = mkdtempSync(join(LAB_STATE, "projects", `${String(introspection.provider)}-`));
+  const project = makeProject(introspection);
   try {
-    writeFileSync(join(project, "askdb.config.ts"), projectConfig(introspection));
-    const run = askdb(args, project);
-    return { ...run, files: readdirSync(project).filter((f) => f !== "askdb.config.ts") };
+    return { ...askdb(args, project), files: projectFiles(project) };
+  } finally {
+    rmSync(project, { recursive: true, force: true });
+  }
+}
+
+/** {@link askdbInProject} without blocking the event loop. */
+export async function askdbInProjectAsync(introspection: Record<string, unknown>, args: string[]): Promise<ProjectRun> {
+  const project = makeProject(introspection);
+  try {
+    return { ...(await askdbAsync(args, { cwd: project })), files: projectFiles(project) };
   } finally {
     rmSync(project, { recursive: true, force: true });
   }
@@ -106,20 +123,37 @@ export interface FixtureConnection {
 }
 
 /**
+ * The `askdb` call that introspects one fixture database: its arguments, and for SQLite the
+ * `introspection` block of the project to run it in.
+ */
+function introspectCall(dialect: Dialect, output: string | string[], connection: FixtureConnection): { args: string[]; project?: Record<string, unknown> } {
+  const out = ["--schema-id", "multi-engine", ...(typeof output === "string" ? ["--out", output] : output)];
+  if (dialect === "sqlite") {
+    const sqlite = { file: connection.sqliteFile ?? SQLITE_FILE };
+    return { args: ["introspect", ...out], project: { provider: "sqlite", providerConfig: { sqlite } } };
+  }
+  return {
+    args: [
+      "introspect",
+      "--engine", dialect === "mariadb" ? "mysql" : dialect,
+      "--url", connection.url ?? connectionUrl(dialect, "reader"),
+      "--schemas", LOGICAL_SCHEMAS.join(","),
+      ...out,
+    ],
+  };
+}
+
+/**
  * Introspect one fixture database with the installed CLI. `output` is a directory for
  * `--out`, or the output flags themselves (`["--print"]`).
  */
 export function introspectFixture(dialect: Dialect, output: string | string[], connection: FixtureConnection = {}): CliRun {
-  const out = ["--schema-id", "multi-engine", ...(typeof output === "string" ? ["--out", output] : output)];
-  if (dialect === "sqlite") {
-    const sqlite = { file: connection.sqliteFile ?? SQLITE_FILE };
-    return askdbInProject({ provider: "sqlite", providerConfig: { sqlite } }, ["introspect", ...out]);
-  }
-  return askdb([
-    "introspect",
-    "--engine", dialect === "mariadb" ? "mysql" : dialect,
-    "--url", connection.url ?? connectionUrl(dialect, "reader"),
-    "--schemas", LOGICAL_SCHEMAS.join(","),
-    ...out,
-  ]);
+  const { args, project } = introspectCall(dialect, output, connection);
+  return project ? askdbInProject(project, args) : askdb(args);
+}
+
+/** {@link introspectFixture} without blocking the event loop, so other engines' work goes on meanwhile. */
+export function introspectFixtureAsync(dialect: Dialect, output: string | string[], connection: FixtureConnection = {}): Promise<CliRun> {
+  const { args, project } = introspectCall(dialect, output, connection);
+  return project ? askdbInProjectAsync(project, args) : askdbAsync(args);
 }

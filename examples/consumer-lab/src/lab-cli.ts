@@ -38,9 +38,9 @@ async function askCommand(argv: string[]): Promise<number> {
     return 2;
   }
 
-  const run = await askAndRun(dialect, { question, sql: values.sql, via }, {
-    onLine: (line) => (line.stream === "stdout" ? console.log : console.error)(line.text),
-  });
+  const run = await askAndRun(dialect, { question, sql: values.sql, via }, (line) =>
+    (line.stream === "stdout" ? console.log : console.error)(line.text),
+  );
   if (run.status === "failed") throw run.error;
   return run.exitCode!;
 }

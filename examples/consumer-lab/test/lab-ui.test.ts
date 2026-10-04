@@ -9,6 +9,10 @@
  * documented port override, points one engine at a closed port or at a socket that never
  * answers. `--timeout` is the command's own option.
  *
+ * Scenarios that run every engine have a cell per engine. The page and local-only scenarios
+ * don't depend on an engine and run once, as `[postgres]`, as the Studio suite's protection
+ * scenarios do.
+ *
  * Needs the `cli-introspect-engine` capability (every column builds a schema artifact), the
  * fixture (`pnpm fixture:up`) and an installed lab (`pnpm lab:use .`).
  */
@@ -22,7 +26,9 @@ import { needsCapability } from "../src/capabilities.js";
 import { SUPPORTED_DIALECTS, type SupportedDialect } from "../src/dialects.js";
 import { findQuestion } from "../src/model/catalog.js";
 import { freePort } from "../src/server-process.js";
-import { column, startLabUiProcess, uiRequest, uiRun, type LabUiProcess, type UiRun } from "./support/lab-ui.js";
+import { studioRequest } from "../src/studio.js";
+import type { UiInput } from "../src/ui/server.js";
+import { column, startLabUiProcess, uiRun, type LabUiProcess, type UiRun } from "./support/lab-ui.js";
 
 const LAB = fileURLToPath(new URL("..", import.meta.url));
 const AGENCY_NAMES = findQuestion("agency-names")!.text;
@@ -49,8 +55,8 @@ function labAsk(...args: string[]): Promise<CliRun> {
   });
 }
 
-/** Each run starts its own replay server on a free port; nothing else may differ. */
-const samePort = (run: CliRun): CliRun => {
+/** Each run starts its own replay server on a free port: mask the port, so nothing else may differ. */
+const maskPorts = (run: CliRun): CliRun => {
   const strip = (text: string) => text.replace(/127\.0\.0\.1:\d+/g, "127.0.0.1:<port>");
   return { status: run.status, stdout: strip(run.stdout), stderr: strip(run.stderr) };
 };
@@ -59,13 +65,13 @@ const samePort = (run: CliRun): CliRun => {
 function printed(run: UiRun, dialect: SupportedDialect): CliRun {
   const event = column(run, dialect);
   const stream = (s: "stdout" | "stderr") => event.lines.filter((l) => l.stream === s).map((l) => `${l.text}\n`).join("");
-  return samePort({ status: event.exitCode ?? null, stdout: stream("stdout"), stderr: stream("stderr") });
+  return maskPorts({ status: event.exitCode ?? null, stdout: stream("stdout"), stderr: stream("stderr") });
 }
 
 let ui: LabUiProcess;
 const runs = new Map<string, Promise<UiRun>>();
 /** One `POST /api/run` per input, shared by the scenarios that read it. */
-function runOnce(input: { question?: string; sql?: string }): Promise<UiRun> {
+function runOnce(input: UiInput): Promise<UiRun> {
   const key = JSON.stringify(input);
   if (!runs.has(key)) runs.set(key, uiRun(ui, input));
   return runs.get(key)!;
@@ -74,8 +80,8 @@ function runOnce(input: { question?: string; sql?: string }): Promise<UiRun> {
 /** Postgres points at a socket that accepts and never answers; MySQL at a port nothing listens on. */
 const TIMEOUT_MS = 8_000;
 let failingUi: LabUiProcess | undefined;
-let silent: Server | undefined;
-const held: Socket[] = [];
+let silentServer: Server | undefined;
+const heldSockets: Socket[] = [];
 let failingRun: Promise<UiRun> | undefined;
 
 /**
@@ -85,12 +91,12 @@ let failingRun: Promise<UiRun> | undefined;
 function runWithEnginesDown(): Promise<UiRun> {
   failingRun ??= (async () => {
     for (const dialect of SUPPORTED_DIALECTS) ensureArtifact(dialect);
-    silent = createServer((socket) => void held.push(socket));
-    await new Promise<void>((resolve) => silent!.listen(0, "127.0.0.1", resolve));
+    silentServer = createServer((socket) => void heldSockets.push(socket));
+    await new Promise<void>((resolve) => silentServer!.listen(0, "127.0.0.1", resolve));
     failingUi = await startLabUiProcess({
       args: ["--timeout", String(TIMEOUT_MS)],
       env: {
-        ASKDB_FIXTURE_POSTGRES_PORT: String((silent.address() as { port: number }).port),
+        ASKDB_FIXTURE_POSTGRES_PORT: String((silentServer.address() as { port: number }).port),
         ASKDB_FIXTURE_MYSQL_PORT: String(await freePort()),
       },
     });
@@ -105,8 +111,8 @@ beforeAll(async () => {
 
 afterAll(async () => {
   await Promise.all([ui?.close(), failingUi?.close()]);
-  held.forEach((s) => s.destroy());
-  await new Promise((resolve) => (silent ? silent.close(resolve) : resolve(undefined)));
+  heldSockets.forEach((s) => s.destroy());
+  await new Promise((resolve) => (silentServer ? silentServer.close(resolve) : resolve(undefined)));
 });
 
 /*
@@ -125,18 +131,18 @@ it.for(DIALECTS)("[%s] lab-ui-same-as-lab-ask: a catalog question", async ([dial
   const [cli, run] = await Promise.all([labAsk("--db", dialect, TOP_PAID), runOnce({ question: TOP_PAID })]);
 
   expect(cli.status).toBe(0);
-  expect(printed(run, dialect)).toEqual(samePort(cli));
+  expect(printed(run, dialect)).toEqual(maskPorts(cli));
 });
 
 it.for([
-  ["a rejected statement", { sql: "DELETE FROM org.agency" }, ["--sql", "DELETE FROM org.agency"]],
+  ["a rejected statement", { question: "", sql: "DELETE FROM org.agency" }, ["--sql", "DELETE FROM org.agency"]],
   ["a question with no reply", { question: NO_REPLY }, [NO_REPLY]],
 ] as const)("[postgres] lab-ui-same-as-lab-ask: %s", async ([, input, args], ctx) => {
   needsCapability(ctx, "cli-introspect-engine");
   const [cli, run] = await Promise.all([labAsk("--db", "postgres", ...args), runOnce(input)]);
 
   expect(cli.status).toBe(1);
-  expect(printed(run, "postgres")).toEqual(samePort(cli));
+  expect(printed(run, "postgres")).toEqual(maskPorts(cli));
 });
 
 /*
@@ -240,11 +246,12 @@ it.for([["mariadb"], ["sqlserver"], ["sqlite"]] as [SupportedDialect][])(
  * Not covered elsewhere: `lab ask` prints its target; nothing checks the page's.
  */
 it("[postgres] lab-ui-page: names the install target and the model mode", async () => {
-  const page = await uiRequest(ui);
+  const page = await studioRequest(ui);
+  const shown = (id: string) => new RegExp(`<dd id="${id}">([^<]*)</dd>`).exec(page.text)?.[1];
 
   expect(page.status).toBe(200);
-  expect(page.text).toContain(`"target":${JSON.stringify(requireInstallTarget().label).replace(/</g, "\\u003c")}`);
-  expect(page.text).toContain('"modelMode":"replay"');
+  expect(shown("target")).toBe(requireInstallTarget().label);
+  expect(shown("model")).toBe("replay");
 });
 
 /*
@@ -277,7 +284,8 @@ it("[postgres] lab-ui-local-only: listens on loopback only", async () => {
 
 const PAGE = { method: "GET", path: "/", body: undefined, passes: 200 };
 const API = { method: "POST", path: "/api/run", body: "{}", passes: 400 };
-const OWN = () => ({ host: `127.0.0.1:${ui.port}`, origin: ui.origin, "content-type": "application/json" });
+/** The headers the page itself sends. */
+const pageHeaders = () => ({ host: `127.0.0.1:${ui.port}`, origin: ui.origin, "content-type": "application/json" });
 
 it.for([
   ["the page from a rebound Host", PAGE, { host: "rebound.example" }, 403],
@@ -285,8 +293,8 @@ it.for([
   ["the API from a cross-site Origin", API, { origin: "https://evil.example" }, 403],
   ["the API with a text/plain body", API, { "content-type": "text/plain" }, 415],
 ] as const)("[postgres] lab-ui-local-only: refuses %s", async ([, route, change, status]) => {
-  const send = (headers: Record<string, string>) => uiRequest(ui, { method: route.method, path: route.path, body: route.body, headers });
-  const own = OWN();
+  const send = (headers: Record<string, string>) => studioRequest(ui, { method: route.method, path: route.path, body: route.body, headers });
+  const own = pageHeaders();
   const changed = { ...own, ...change, ...("host" in change ? { host: `${change.host}:${ui.port}` } : {}) };
 
   expect((await send(own)).status).toBe(route.passes);

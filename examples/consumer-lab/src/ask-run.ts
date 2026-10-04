@@ -23,7 +23,7 @@ import { createAskDb } from "@askdb/client";
 import { bootstrapAskDbEnv, getAskDbRuntimeConfig } from "@askdb/config";
 import { AskDbError } from "@askdb/core";
 import { askFixedSql, askRaw, type AskResult } from "./ask.js";
-import { ensureArtifact, requireInstallTarget } from "./artifacts.js";
+import { ensureArtifactAsync, requireInstallTarget } from "./artifacts.js";
 import type { SupportedDialect } from "./dialects.js";
 import { executeReadOnly, type ExecuteResult } from "./host/execute.js";
 import { startReplayServer, type ReplayServer } from "./model/replay-server.js";
@@ -37,7 +37,7 @@ export interface AskInput {
   question: string;
   /** Skip the model: this SQL goes through `ask()` as the model's reply. */
   sql?: string;
-  /** Default `raw`. */
+  /** Default `raw`. `client` loads `askdb.config.ts`, which a process does only once (see `askClient`). */
   via?: Via;
 }
 
@@ -67,11 +67,6 @@ export interface AskRun {
   error?: unknown;
   /** `askMs`: `ask()` (prompt, model, validation). `executeMs`: the read-only execution. */
   timings: { askMs?: number; executeMs?: number; totalMs: number };
-}
-
-export interface AskRunOptions {
-  /** Called with each transcript line as it's produced, so `lab ask` prints as it goes. */
-  onLine?: (line: TranscriptLine) => void;
 }
 
 /**
@@ -115,7 +110,8 @@ function formatRows(result: ExecuteResult): string {
   return [header, "-".repeat(header.length), ...cells.slice(1).map((r) => line(r as string[])), "", count].join("\n");
 }
 
-export async function askAndRun(dialect: SupportedDialect, input: AskInput, { onLine }: AskRunOptions = {}): Promise<AskRun> {
+/** `onLine` gets each transcript line as it's produced, so `lab ask` prints as it goes. */
+export async function askAndRun(dialect: SupportedDialect, input: AskInput, onLine?: (line: TranscriptLine) => void): Promise<AskRun> {
   const started = performance.now();
   const lines: TranscriptLine[] = [];
   const emit = (stream: TranscriptLine["stream"]) => (text: string) => {
@@ -144,7 +140,7 @@ export async function askAndRun(dialect: SupportedDialect, input: AskInput, { on
   try {
     out(`target:     ${requireInstallTarget().label}`);
     out(`dialect:    ${dialect}`);
-    const schemaDir = ensureArtifact(dialect);
+    const schemaDir = await ensureArtifactAsync(dialect);
 
     // What the model was sent, as a digest: equal digests mean the two paths built the same prompt.
     const showPrompt = () => {

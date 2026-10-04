@@ -6,6 +6,7 @@
  * those, so an input that isn't a catalog question (or raw SQL not labelled with one) is
  * shown, not compared.
  */
+import type { AskRunStatus } from "../ask-run.js";
 import type { SupportedDialect } from "../dialects.js";
 import { normalizeRows } from "../fixture.js";
 import type { ExecuteResult } from "../host/execute.js";
@@ -16,8 +17,8 @@ export interface EngineRows {
   dialect: SupportedDialect;
   /** The rows the read-only role read; absent when the engine didn't get that far. */
   rows?: ExecuteResult;
-  /** Why there are no rows (the engine's status), shown when it isn't compared. */
-  status: string;
+  /** Why there are no rows, shown when it isn't compared. */
+  status: AskRunStatus | "timeout";
 }
 
 export type Verdict =
@@ -58,13 +59,8 @@ export function summarize(question: string, engines: EngineRows[]): Summary {
   const verdicts: Partial<Record<SupportedDialect, Verdict>> = {};
 
   for (const { dialect, rows, status } of engines) {
-    if (!rows) {
-      notCompared.push({ dialect, reason: status });
-      verdicts[dialect] = { verdict: "not compared", reason: status };
-      continue;
-    }
-    if (rows.truncated) {
-      const reason = "the row cap cut the result";
+    if (!rows || rows.truncated) {
+      const reason = rows ? "the row cap cut the result" : status;
       notCompared.push({ dialect, reason });
       verdicts[dialect] = { verdict: "not compared", reason };
       continue;
