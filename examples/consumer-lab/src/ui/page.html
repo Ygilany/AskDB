@@ -1,0 +1,212 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AskDB consumer lab</title>
+<!-- Served by `pnpm lab ui` (src/ui/server.ts), which fills in the target, the model mode and lab-data. No dependencies. -->
+<script id="lab-data" type="application/json">/*LAB_DATA*/null</script>
+<style>
+  :root {
+    color-scheme: light dark;
+    --bg: #f7f7f8; --panel: #fff; --text: #1d1d20; --muted: #6b6b73; --line: #dcdce0;
+    --ok: #1a7f37; --warn: #9a6700; --bad: #cf222e; --idle: #6b6b73;
+    --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #141416; --panel: #1d1d20; --text: #e6e6ea; --muted: #9a9aa3; --line: #34343a;
+      --ok: #3fb950; --warn: #d29922; --bad: #f85149; --idle: #8b8b94; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; padding: 1rem 1.25rem 2rem; background: var(--bg); color: var(--text);
+    font: 14px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  header.top { display: flex; flex-wrap: wrap; align-items: baseline; gap: .5rem 1.5rem; margin-bottom: .75rem; }
+  h1 { font-size: 1.15rem; margin: 0; }
+  .meta { display: flex; flex-wrap: wrap; gap: .25rem 1.25rem; margin: 0; color: var(--muted); }
+  .meta dt { display: inline; }
+  .meta dd { display: inline; margin: 0 0 0 .35rem; color: var(--text); font-family: var(--mono); font-size: 12.5px; }
+  form { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: .75rem; display: grid; gap: .6rem; }
+  .modes { display: flex; gap: 1rem; border: 0; padding: 0; margin: 0; }
+  .modes label { cursor: pointer; }
+  select, input[type=text], textarea { width: 100%; font: inherit; color: inherit; background: var(--bg);
+    border: 1px solid var(--line); border-radius: 6px; padding: .4rem .5rem; }
+  textarea { font-family: var(--mono); font-size: 13px; min-height: 5.5rem; resize: vertical; }
+  .hint { margin: .25rem 0 0; color: var(--muted); font-size: 12.5px; }
+  .row { display: flex; gap: .75rem; align-items: center; }
+  button { font: inherit; font-weight: 600; padding: .45rem 1rem; border-radius: 6px; border: 1px solid var(--line);
+    background: var(--text); color: var(--bg); cursor: pointer; }
+  button:disabled { opacity: .5; cursor: progress; }
+  [hidden] { display: none !important; }
+  .summary { margin: .9rem 0; background: var(--panel); border: 1px solid var(--line); border-radius: 8px;
+    padding: .6rem .75rem; display: grid; gap: .35rem; }
+  .summary .line { display: flex; flex-wrap: wrap; gap: .35rem .6rem; align-items: baseline; }
+  .summary .label { color: var(--muted); min-width: 6.5rem; }
+  .chip { font-family: var(--mono); font-size: 12px; padding: .05rem .45rem; border-radius: 999px; border: 1px solid currentColor; }
+  .good { color: var(--ok); } .warn { color: var(--warn); } .bad { color: var(--bad); } .idle { color: var(--idle); }
+  .columns { display: flex; gap: .75rem; overflow-x: auto; padding-bottom: .5rem; align-items: flex-start; }
+  .col { flex: 1 0 30rem; min-width: 30rem; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+  .col > header { display: flex; flex-wrap: wrap; align-items: baseline; gap: .25rem .6rem; padding: .5rem .75rem; border-bottom: 1px solid var(--line); }
+  .col h2 { font-size: 1rem; margin: 0; }
+  .col .time, .col .facts { color: var(--muted); font-size: 12.5px; }
+  .col .time { margin-left: auto; font-family: var(--mono); }
+  .col pre { margin: 0; padding: .6rem .75rem; font: 12px/1.45 var(--mono); overflow-x: auto; white-space: pre; }
+  .col pre .stderr { color: var(--bad); }
+  .col .error { margin: 0; padding: .5rem .75rem; border-top: 1px solid var(--line); color: var(--bad); font-family: var(--mono); font-size: 12px; white-space: pre-wrap; }
+  .problem { color: var(--bad); margin: .75rem 0; font-family: var(--mono); white-space: pre-wrap; }
+</style>
+</head>
+<body>
+<header class="top">
+  <h1>AskDB consumer lab</h1>
+  <dl class="meta">
+    <div><dt>target</dt><dd id="target"><!--TARGET--></dd></div>
+    <div><dt>model</dt><dd id="model"><!--MODEL_MODE--></dd></div>
+  </dl>
+</header>
+
+<form id="ask">
+  <fieldset class="modes">
+    <label><input type="radio" name="mode" value="catalog" checked> Catalog question</label>
+    <label><input type="radio" name="mode" value="question"> Question</label>
+    <label><input type="radio" name="mode" value="sql"> SQL</label>
+  </fieldset>
+  <div data-mode="catalog"><select id="catalog" aria-label="Catalog question"></select></div>
+  <div data-mode="question" hidden>
+    <input type="text" id="free" aria-label="Question" placeholder="Ask anything">
+    <p class="hint">The replay model answers only catalog questions: any other question gets the replay server's refusal on every engine.</p>
+  </div>
+  <div data-mode="sql" hidden>
+    <textarea id="sql" aria-label="SQL" placeholder="SELECT agency_id, name FROM org.agency ORDER BY agency_id"></textarea>
+    <label class="hint">The question it answers, for the agreement check and the oracle (optional)
+      <select id="sql-question"><option value="">none</option></select></label>
+    <p class="hint">Goes through ask() as the model's reply (lab ask --sql). The same text runs on every engine.</p>
+  </div>
+  <div class="row"><button id="run" type="submit">Run on every engine</button><span id="state" class="hint"></span></div>
+</form>
+
+<p id="problem" class="problem" hidden></p>
+<section id="summary" class="summary" hidden aria-live="polite"></section>
+<section id="columns" class="columns"></section>
+
+<script>
+"use strict";
+const info = JSON.parse(document.getElementById("lab-data").textContent);
+const $ = (id) => document.getElementById(id);
+const el = (tag, attrs = {}, ...children) => {
+  const node = document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs)) node.setAttribute(k, v);
+  for (const c of children) node.append(c);
+  return node;
+};
+
+for (const q of info.questions) {
+  $("catalog").append(el("option", { value: q.text }, q.text));
+  $("sql-question").append(el("option", { value: q.text }, q.text));
+}
+
+const mode = () => document.querySelector("input[name=mode]:checked").value;
+for (const radio of document.querySelectorAll("input[name=mode]")) {
+  radio.addEventListener("change", () => {
+    for (const div of document.querySelectorAll("[data-mode]")) div.hidden = div.dataset.mode !== mode();
+  });
+}
+
+/** Every status and verdict the server sends, by the colour it shows in. */
+const TONE = {
+  ok: "good", agree: "good", match: "good",
+  rejected: "warn", refused: "warn",
+  failed: "bad", timeout: "bad", disagree: "bad", mismatch: "bad",
+  running: "idle", "not compared": "idle",
+};
+const ms = (n) => (n === undefined ? null : `${Math.round(n)} ms`);
+
+function column(dialect) {
+  const col = el("article", { class: "col", id: `col-${dialect}` },
+    el("header", {}, el("h2", {}, dialect), el("span", { class: "chip idle status" }, "running"), el("span", { class: "facts" }), el("span", { class: "time" })),
+    el("pre", { class: "transcript" }),
+  );
+  return col;
+}
+
+function showEngine(event) {
+  const col = $(`col-${event.dialect}`);
+  const chip = col.querySelector(".status");
+  chip.textContent = event.status;
+  chip.className = `chip status ${TONE[event.status] ?? "idle"}`;
+  const facts = [];
+  if (event.rowCount !== undefined) facts.push(event.truncated ? `more than ${event.rowCount} rows (cap)` : `${event.rowCount} ${event.rowCount === 1 ? "row" : "rows"}`);
+  if (event.exitCode !== undefined) facts.push(`exit ${event.exitCode}`);
+  col.querySelector(".facts").textContent = facts.join(" · ");
+  const t = event.timings;
+  col.querySelector(".time").textContent = [ms(t.askMs) && `ask ${ms(t.askMs)}`, ms(t.executeMs) && `execute ${ms(t.executeMs)}`, `total ${ms(t.totalMs)}`].filter(Boolean).join(" · ");
+  const pre = col.querySelector(".transcript");
+  pre.replaceChildren(...event.lines.map((l) => el("span", { class: l.stream }, `${l.text}\n`)));
+  if (event.error) col.append(el("p", { class: "error" }, event.error));
+}
+
+function showSummary(summary) {
+  const box = $("summary");
+  const a = summary.agreement;
+  const agreement = el("div", { class: "line" }, el("span", { class: "label" }, "engines"));
+  agreement.append(el("strong", { class: TONE[a.verdict] }, a.verdict));
+  if (a.verdict === "disagree") agreement.append(...a.groups.map((g) => el("span", { class: "chip warn" }, g.join(" = "))));
+  else if (a.verdict === "agree") agreement.append(el("span", { class: "hint" }, `${a.groups[0].length} engines, after the fixture's normalization`));
+  if (a.reason) agreement.append(el("span", { class: "hint" }, a.reason));
+  for (const n of a.notCompared) agreement.append(el("span", { class: "chip idle", title: n.reason }, `${n.dialect}: not compared (${n.reason})`));
+  const children = [agreement];
+  if (summary.oracle) {
+    const oracle = el("div", { class: "line" }, el("span", { class: "label" }, "oracle"), el("span", { class: "hint" }, summary.questionId));
+    for (const dialect of info.dialects) {
+      const v = summary.oracle[dialect];
+      if (!v) continue;
+      oracle.append(el("span", { class: `chip ${TONE[v.verdict]}`, title: v.reason ?? "" }, `${dialect}: ${v.verdict}`));
+    }
+    children.push(oracle);
+  }
+  box.replaceChildren(...children);
+  box.hidden = false;
+}
+
+$("ask").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const m = mode();
+  const input = m === "catalog" ? { question: $("catalog").value }
+    : m === "question" ? { question: $("free").value }
+    : { sql: $("sql").value, question: $("sql-question").value };
+  $("problem").hidden = true;
+  $("summary").hidden = true;
+  $("columns").replaceChildren(...info.dialects.map(column));
+  $("run").disabled = true;
+  $("state").textContent = "running on every engine…";
+  try {
+    const res = await fetch("/api/run", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(input) });
+    if (!res.ok) throw new Error(await res.text());
+    const reader = res.body.pipeThrough(new TextDecoderStream()).getReader();
+    let buffer = "";
+    for (;;) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buffer += value;
+      let nl;
+      while ((nl = buffer.indexOf("\n")) >= 0) {
+        const line = buffer.slice(0, nl);
+        buffer = buffer.slice(nl + 1);
+        if (!line) continue;
+        const event = JSON.parse(line);
+        if (event.type === "engine") showEngine(event);
+        else if (event.type === "summary") showSummary(event.summary);
+        else if (event.type === "error") throw new Error(event.error);
+      }
+    }
+    $("state").textContent = "";
+  } catch (error) {
+    $("problem").textContent = String(error.message ?? error);
+    $("problem").hidden = false;
+    $("state").textContent = "";
+  } finally {
+    $("run").disabled = false;
+  }
+});
+</script>
+</body>
+</html>

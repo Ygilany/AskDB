@@ -105,7 +105,9 @@ examples/consumer-lab/
     http-api.ts             # runs the installed `askdb-http` bin on a free port
     studio.ts               # runs the installed `askdb studio` on a free port, in a scratch project
     server-process.ts       # starts a server bin on 127.0.0.1 on a free port, waits for it, stops it
-    lab-cli.ts              # `pnpm lab ask …`
+    lab-cli.ts              # `pnpm lab ask …`, `pnpm lab ui`
+    ask-run.ts              # ask → validate → execute on one engine, shared by `lab ask` and `lab ui`
+    ui/                     # `lab ui`: the loopback server, its page, and the cross-engine summary
     matrix-reporter.ts      # vitest reporter → dialect × scenario table
     scratch.ts              # writable scratch copies of the fixture, created, reset and dropped by the lab
   test/
@@ -178,6 +180,10 @@ Flags:
 - `--model` defaults to `replay`. It switches to `live` when `LAB_LIVE_MODEL=1` and a provider key is set.
 - `--sql` bypasses the model through `deps.generateText`, which the docs name as the mock seam.
 - `--via` picks the model path: `raw` (default), a `createOpenAI({ baseURL })` model passed to `ask()`; or `client`, `createAskDb` with `@askdb/ai-openai` configured by `providerConfig.openai.baseUrl`. Both must send the same prompt and return the same SQL.
+
+### `pnpm lab ui`
+
+A page on `127.0.0.1` that runs one input (a catalog question, free text, or raw SQL) on all five engines concurrently, one column per engine, each showing what `lab ask --db <engine>` prints, through the same module. A summary strip says whether the engines agree after normalization and, for catalog questions, whether each matches the oracle. It follows ADR 0009's local-server lessons: loopback bind and a `Host` allowlist on every request. Built in #262; the [lab README](../../examples/consumer-lab/README.md#pnpm-lab-ui) describes it.
 
 ## Model
 

@@ -24,14 +24,23 @@ export function freePort(): Promise<number> {
   });
 }
 
+/** How `close()` stopped the process: `forced` when it ignored SIGTERM and needed SIGKILL. */
+export interface ServerStop {
+  forced: boolean;
+}
+
 /** SIGTERM the process, then SIGKILL it if it hasn't exited within 5 seconds. */
-function stopProcess(child: ChildProcess): Promise<void> {
-  if (child.exitCode !== null || child.signalCode !== null || child.pid === undefined) return Promise.resolve();
+function stopProcess(child: ChildProcess): Promise<ServerStop> {
+  if (child.exitCode !== null || child.signalCode !== null || child.pid === undefined) return Promise.resolve({ forced: false });
   return new Promise((resolve) => {
-    const force = setTimeout(() => child.kill("SIGKILL"), 5_000);
+    let forced = false;
+    const force = setTimeout(() => {
+      forced = true;
+      child.kill("SIGKILL");
+    }, 5_000);
     child.once("exit", () => {
       clearTimeout(force);
-      resolve();
+      resolve({ forced });
     });
     child.kill("SIGTERM");
   });
@@ -57,6 +66,8 @@ export interface ServerProcess {
   /** Everything the process wrote to stdout and stderr so far. */
   output(): string;
   close(): Promise<void>;
+  /** `close()`, saying whether the process needed SIGKILL. */
+  stop(): Promise<ServerStop>;
 }
 
 /** Start the server and wait until it's ready. Fails with its output if it can't start or exits first. */
@@ -72,7 +83,12 @@ export async function startServerProcess(options: ServerProcessOptions): Promise
   child.stdout!.on("data", (d) => (output += d));
   child.stderr!.on("data", (d) => (output += d));
 
-  const server: ServerProcess = { port, output: () => output, close: () => stopProcess(child) };
+  const server: ServerProcess = {
+    port,
+    output: () => output,
+    close: async () => void (await stopProcess(child)),
+    stop: () => stopProcess(child),
+  };
   const deadline = Date.now() + 30_000;
   while (Date.now() < deadline) {
     if (spawnError) throw new Error(`${options.name} couldn't start: ${spawnError.message}`);

@@ -23,6 +23,7 @@ pnpm lab:use --check                 # re-verify the current install against its
 pnpm lab ask --db mysql "How many active programs does each agency run?"
 pnpm lab ask --db sqlserver --via client "Which three agencies have the highest paid order total?"
 pnpm lab ask --db postgres --sql "SELECT agency_id, name FROM org.agency"
+pnpm lab ui                          # a page on 127.0.0.1 that runs one input on every engine side by side
 pnpm lab:test                        # the lab's own suite (needs the fixture and an installed lab)
 pnpm lab:matrix                      # lab:up, then the suite as a scenario × dialect table
 pnpm lab:matrix -t introspect-golden # vitest flags pass through: one scenario (-t), one dialect (-t '\[mysql\]'), one file
@@ -83,6 +84,18 @@ The lab is the host, so it executes accepted SQL as `run-safely-in-prod` asks: a
 | SQLite | read-only handle with `query_only` | the child process running it is killed (a worker thread can't be stopped inside the native driver) | stops reading after 101 rows |
 
 The guide's wrapper is invalid on SQL Server and drops the statement's `ORDER BY` on MariaDB (#266), so only Postgres uses it.
+
+## `pnpm lab ui`
+
+`pnpm lab ui [--port <port>] [--timeout <ms>]` serves one page on `127.0.0.1` (a free port unless `--port` names one) and prints its URL. Enter an input once, as a catalog question, a free-text question, or raw SQL, and the page runs it on all five engines at once, one column per engine; the row of columns scrolls sideways when it doesn't fit.
+
+Each column shows what `pnpm lab ask --db <engine>` prints for the same input, because both run the same module (`src/ask-run.ts`): the SQL (with `unbound:` and `params:` when present), the validation outcome or the error class and rule code, the sensitive-column note, and the rows the read-only role read with their count. Its header adds the status, the row count, the exit code `lab ask` would return, and how long `ask()` and the execution took. A column appears as soon as its engine finishes, and an engine that fails (down, rejected SQL, an execution error) fails only its own column. An engine with no result after `--timeout` (default 60 s) is shown as timed out; its database call isn't cancelled (no driver call takes a signal), so a hung connection stays open until it ends or `lab ui` stops. Stopping `lab ui` (Ctrl-C or SIGTERM) kills any introspection still running and exits, hung connections included.
+
+The summary strip says whether the engines agree and whether each matches the [oracle](#why-the-expected-answer-never-comes-from-sql). Both compare rows with the fixture's normalization rules, which need each column's logical type, and only a catalog question's oracle declares those. So a catalog question, or raw SQL labelled with the catalog question it answers, is compared (blank SQL is refused, never replaced by its label); any other input is shown but not compared. An engine that failed, or whose result the row cap cut, isn't compared either.
+
+The header names the install target (`lab:use`'s label) and the model mode: `replay`, since a live model doesn't exist yet (#247), so a free-text question outside the catalog gets the replay server's refusal on every engine. Questions always take the raw-model path: `--via client` reads `askdb.config.ts` once per process, which would pin every engine to the first engine's replay URL, so it stays a `lab ask` option. The install is the one in place when `lab ui` started, whose modules it loaded: if `lab:use` reinstalls while it runs (another target, or the same one at other versions) or is part-way through, the page and the API answer `409` until it's restarted.
+
+Like Studio's server ([ADR 0009](../../docs/adrs/0009-studio-local-api-protection.md)), it binds loopback only and answers `403` to any request whose `Host` isn't `127.0.0.1:<port>` or `localhost:<port>`, the page included, which stops DNS rebinding. `POST /api/run` also needs `Content-Type: application/json` (`415`) and a same-origin `Origin` when one is sent (`403`), so another site can't make the browser run SQL. There is no session token: the page holds no secret, and the SQL runs as the read-only role. A forwarded port that rewrites `Host` (a devcontainer, a remote preview browser) is refused.
 
 ## The question catalog and its replies
 
