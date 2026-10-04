@@ -45,7 +45,6 @@ export {
   DEFAULT_STUDIO_EXECUTE_MAX_ROWS,
   DEFAULT_STUDIO_EXECUTE_TIMEOUT_MS,
   defaultRagEmbeddingDimensions,
-  knownEmbeddingDimensions,
 } from "./defaults.js";
 export { defineConfig, isAskDbEnvProjection, ASKDB_ENV_PROJECTION } from "./projection.js";
 export type { AskDbEnvProjection } from "./projection.js";

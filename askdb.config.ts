@@ -23,7 +23,7 @@ export default defineConfig({
     // with another provider or key, set `provider` / `connection` here and add that connection.
     embedding: {
       model: env("ASKDB_RAG_EMBEDDER_MODEL") ?? "text-embedding-3-small",
-      // Optional for OpenAI's models on openai; the one width setting, used by pgvector too.
+      // Optional: a vector size to request. Unset, AskDB uses the width the model returns.
       dimensions: env("ASKDB_RAG_EMBEDDER_DIMENSIONS"),
     },
   },

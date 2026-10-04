@@ -16,6 +16,54 @@ describe("createPgvectorStore", () => {
     expect(sql).toContain("USING hnsw");
   });
 
+  /** A client whose table, if any, has an `embedding` column of `existingWidth`; records every query. */
+  function clientWithTable(existingWidth: number | undefined) {
+    const queries: string[] = [];
+    const client: PgClient = {
+      query: vi.fn(async (sql: string) => {
+        queries.push(sql);
+        if (sql.includes("pg_attribute")) {
+          return { rows: existingWidth === undefined ? [] : [{ dimensions: existingWidth }] };
+        }
+        return { rows: [] };
+      }),
+    };
+    return { client, ddl: () => queries.filter((sql) => sql.includes("CREATE TABLE")) };
+  }
+
+  it("reads and writes without a width, but needs one to create the table", async () => {
+    const store = createPgvectorStore({ client: clientWithTable(undefined).client, table: "askdb_rag_chunks" });
+
+    expect(() => store.setupSql()).toThrow(/pass dimensions .*detectEmbeddingDimensions/);
+    await expect(store.ensureSchema()).rejects.toThrow(/pass dimensions to create table "askdb_rag_chunks"/);
+    await expect(store.count()).resolves.toBe(0);
+  });
+
+  it("reports the width of an existing table, and none when there's no table", async () => {
+    await expect(createPgvectorStore({ client: clientWithTable(1536).client }).tableDimensions()).resolves.toBe(1536);
+    await expect(createPgvectorStore({ client: clientWithTable(undefined).client }).tableDimensions()).resolves.toBeUndefined();
+  });
+
+  it("refuses to use an existing table of another width, and changes nothing", async () => {
+    const { client, ddl } = clientWithTable(1536);
+    const store = createPgvectorStore({ client, dimensions: 3072, table: "askdb_rag_chunks" });
+
+    await expect(store.ensureSchema()).rejects.toThrow(
+      /pgvector table "askdb_rag_chunks" stores 1536-dimension vectors, but this store is set up for 3072/,
+    );
+    expect(ddl()).toEqual([]);
+  });
+
+  it.each<[string, number | undefined, number | undefined, string]>([
+    ["creates a new table at the given width", undefined, 768, "vector(768)"],
+    ["keeps an existing table of the same width", 768, 768, "vector(768)"],
+    ["adopts an existing table's width when given none", 768, undefined, "vector(768)"],
+  ])("ensureSchema %s", async (_case, existing, dimensions, column) => {
+    const { client, ddl } = clientWithTable(existing);
+    await createPgvectorStore({ client, dimensions }).ensureSchema();
+    expect(ddl()).toEqual([expect.stringContaining(column)]);
+  });
+
   it("emits parameterized upsert SQL", async () => {
     const query = vi.fn(async () => ({ rows: [] }));
     const store = createPgvectorStore({

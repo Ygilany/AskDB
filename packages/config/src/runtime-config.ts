@@ -42,9 +42,8 @@ export type AskDbRuntimeAiConfig = {
     | (AskDbRuntimeAiSection & {
         model: string;
         /**
-         * `ai.embedding.dimensions`, sent to the provider as the requested width. Undefined leaves
-         * the width to the model; `knownEmbeddingDimensions(provider, model)` gives it for the
-         * models AskDB knows.
+         * `ai.embedding.dimensions`: the vector size to request from the provider. Undefined
+         * leaves the width to the model; `detectEmbeddingDimensions` in `@askdb/rag` learns it.
          */
         dimensions: number | undefined;
       })

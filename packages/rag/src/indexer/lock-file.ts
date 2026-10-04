@@ -13,7 +13,7 @@ export type SchemaLockFile = {
   schemaId: string;
   /** Embedder id the embeddings were produced with (e.g. `openai:text-embedding-3-small`). */
   embedderId?: string;
-  /** Vector dimensions (informational; the store enforces). */
+  /** Width of the vectors the indexer wrote, learned from the embedder (informational; the store enforces). */
   dimensions?: number;
   /** chunkId → SHA-256 content hash of the chunk's text. */
   hashes: Record<string, string>;

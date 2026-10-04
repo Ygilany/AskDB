@@ -7,7 +7,6 @@ import {
   DEFAULT_INTROSPECT_OUTPUT_DIR,
   DEFAULT_MOCK_RAG_EMBEDDING_DIMENSIONS,
   DEFAULT_RAG_FILE_BASE_PATH,
-  knownEmbeddingDimensions,
   normalizePgvectorIndexStrategy,
   parsePositiveInteger,
 } from "./defaults.js";
@@ -106,11 +105,6 @@ export function aiEmbeddingEnv(section: NormalizedAiEmbeddingSection): Record<st
   return out;
 }
 
-/** The embedding model's vector width: `ai.embedding.dimensions`, else the model's known default. */
-export function embeddingWidth(section: NormalizedAiEmbeddingSection): number | undefined {
-  return section.dimensions ?? knownEmbeddingDimensions(section.provider, section.model);
-}
-
 /**
  * Flattens a nested {@link AskDbConfig} into canonical env keys for the runtime snapshot
  * (`AskDbEnvProjection.entries`). Deprecated keys are translated first (see
@@ -149,7 +143,7 @@ export function flattenNormalizedAskDbConfig(config: NormalizedAskDbConfig): Rec
   const rag = config.rag;
   set(out, "ASKDB_RAG_EMBEDDER", rag.embedder);
   const embedding = config.ai.embedding;
-  const width = embedding ? embeddingWidth(embedding) : undefined;
+  const width = embedding?.dimensions;
   if (embedding) {
     set(out, "ASKDB_RAG_EMBEDDER_MODEL", embedding.model);
     if (width !== undefined) set(out, "ASKDB_RAG_EMBEDDER_DIMENSIONS", String(width));

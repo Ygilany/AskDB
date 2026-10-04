@@ -9,7 +9,6 @@ import {
   ASKDB_AI_PROVIDERS,
   bootstrapAskDbEnv,
   getAskDbRuntimeConfig,
-  knownEmbeddingDimensions,
 } from "@askdb/config";
 import {
   createAiRegistry,
@@ -49,6 +48,7 @@ import {
   createMemoryStore,
   createPgvectorStore,
   createRetriever,
+  detectEmbeddingDimensions,
   loadChunkerSourcesFromDir,
   type ChunkType,
   type Embedder,
@@ -176,7 +176,7 @@ type StudioRagEmbedderConfig =
       /** Connection name within `ai.providerConfig.<configuredProvider>`. */
       connection: string;
       embedderId: string;
-      /** The vector width, when `ai.embedding.dimensions` sets it or AskDB knows the model's. */
+      /** The requested width (`ai.embedding.dimensions`); undefined leaves it to the model. */
       dimensions: number | undefined;
       configured: boolean;
       label: string;
@@ -195,6 +195,7 @@ type StudioOpenRagStore = {
     close?: () => Promise<void>;
     size?: () => number;
     count?: (filter?: { schemaId?: string }) => Promise<number>;
+    tableDimensions?: () => Promise<number | undefined>;
   };
   basePath?: string;
   table?: string;
@@ -921,14 +922,14 @@ async function getRagStatus(state: StudioState): Promise<StudioRagStatusDto> {
   const chunkResult = chunkSchema(sources);
   const lockPath = join(state.schemaDir, "schema.lock.json");
   const lock = readOptionalJson(lockPath) as
-    | { embedderId?: string; updatedAt?: string; hashes?: Record<string, string> }
+    | { embedderId?: string; updatedAt?: string; dimensions?: number; hashes?: Record<string, string> }
     | undefined;
   const currentHashes = Object.fromEntries(
     chunkResult.chunks.map((chunk) => [chunk.id, chunkContentHash(chunk.text)]),
   );
   const lockHashes = lock?.hashes ?? {};
   const hashIds = Object.keys(currentHashes);
-  const store = await openStudioRagStore(state, config.dimensions);
+  const store = await openStudioRagStore(state, { dimensions: config.dimensions });
   try {
     const chunksIndexed = await countStudioRagStoreChunks(store, sources.schema.schemaId);
     const stale =
@@ -975,7 +976,8 @@ async function getRagStatus(state: StudioState): Promise<StudioRagStatusDto> {
       updatedAt: lock?.updatedAt ?? null,
       chunksTotal: chunkResult.chunks.length,
       chunksIndexed,
-      dimensions: config.dimensions ?? null,
+      // The width the last index build learned from the model, else the one configured.
+      dimensions: lock?.dimensions ?? config.dimensions ?? null,
       expectedDimensions: config.dimensions ?? null,
       sensitiveExcluded: chunkResult.stats.sensitiveExcluded,
       sensitiveIncluded: chunkResult.stats.sensitiveIncluded,
@@ -994,12 +996,18 @@ async function indexRag(state: StudioState): Promise<RagIndexResponse> {
   const usage = createRequestUsageCollector();
   clearIncompatibleRagStore(state, config);
   const sources = loadChunkerSourcesFromDir(state.schemaDir);
-  const store = await openStudioRagStore(state, config.dimensions);
+  const embedder = await createStudioRagEmbedder(config, usage);
   let result: Awaited<ReturnType<typeof buildSchemaIndex>>;
+  let store: StudioOpenRagStore | undefined;
   try {
+    // A new pgvector table needs its width up front: the configured one, else the model's own.
+    const dimensions =
+      config.dimensions ??
+      (resolveStudioRagStoreConfig(state).kind === "pgvector" ? await detectEmbeddingDimensions(embedder) : undefined);
+    store = await openStudioRagStore(state, { dimensions, provision: true });
     result = await buildSchemaIndex({
       schema: sources,
-      embedder: await createStudioRagEmbedder(config, usage),
+      embedder,
       store: store.store,
       embedderId: config.embedderId,
       lockFilePath: join(state.schemaDir, "schema.lock.json"),
@@ -1007,7 +1015,7 @@ async function indexRag(state: StudioState): Promise<RagIndexResponse> {
   } catch (error) {
     throw formatStudioRagOperationError(error, config);
   } finally {
-    await store.dispose();
+    await store?.dispose();
   }
   return {
     status: await getRagStatus(state),
@@ -1075,7 +1083,7 @@ async function createCurrentStudioRagIndex(
   if (!status.schemaId || typeof status.chunksTotal !== "number") {
     throw new StudioHttpError(500, "Studio RAG status is missing schema metadata.");
   }
-  const store = await openStudioRagStore(state, config.dimensions);
+  const store = await openStudioRagStore(state, { dimensions: config.dimensions });
   return {
     config,
     status: {
@@ -1112,9 +1120,13 @@ function resolveStudioRagStoreConfig(state: StudioState):
   };
 }
 
+/**
+ * Opens the configured store. `provision` creates the pgvector table when it's missing, at
+ * `dimensions`; without it, a pgvector store only reads and writes an existing table.
+ */
 async function openStudioRagStore(
   state: StudioState,
-  dimensions: number | undefined,
+  { dimensions, provision = false }: { dimensions?: number; provision?: boolean },
 ): Promise<StudioOpenRagStore> {
   const config = resolveStudioRagStoreConfig(state);
   if (config.kind === "memory") {
@@ -1142,18 +1154,14 @@ async function openStudioRagStore(
       'Studio pgvector RAG requires `ASKDB_PGVECTOR_URL` via `askdb.config.ts`.',
     );
   }
-  if (dimensions === undefined) {
-    // Config loading refuses pgvector with an embedding model of unknown width.
-    throw new StudioHttpError(400, "Studio pgvector RAG needs ai.embedding.dimensions for this embedding model.");
-  }
   const pgvectorFactory = studioPgvectorStoreFactoryForTests ?? createPgvectorStore;
   const store = pgvectorFactory({
     connectionString: config.connectionString,
     table: config.table,
-    dimensions,
+    ...(dimensions !== undefined ? { dimensions } : {}),
     ...(config.indexStrategy ? { indexStrategy: config.indexStrategy as "ivfflat" | "hnsw" | "none" } : {}),
   });
-  await store.ensureSchema();
+  if (provision) await store.ensureSchema();
   return {
     kind: "pgvector",
     store,
@@ -1169,6 +1177,10 @@ async function countStudioRagStoreChunks(
   store: StudioOpenRagStore,
   schemaId: string,
 ): Promise<number> {
+  // A pgvector table that doesn't exist yet holds nothing; the first index build creates it.
+  if (typeof store.store.tableDimensions === "function" && (await store.store.tableDimensions()) === undefined) {
+    return 0;
+  }
   if (typeof store.store.count === "function") {
     return store.store.count({ schemaId });
   }
@@ -1200,7 +1212,7 @@ function resolveStudioRagEmbedderConfig(): StudioRagEmbedderConfig {
   // The adapter's canonical name (`foundry` resolves to `azure`) keeps existing index ids stable.
   const provider = aiConfig?.provider ?? embedding.provider;
   const model = embedding.model;
-  const dimensions = embedding.dimensions ?? knownEmbeddingDimensions(embedding.provider, model);
+  const dimensions = embedding.dimensions;
   return {
     kind: "ai-sdk",
     provider,

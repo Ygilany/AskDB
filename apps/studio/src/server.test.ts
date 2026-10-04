@@ -572,6 +572,50 @@ describe("AskDB Studio server", () => {
     expect(retrieved.results[0].score).toEqual(expect.any(Number));
   });
 
+  it("learns a new pgvector table's width from the embedding model when none is configured", async () => {
+    const embeddingServer = createEmbeddingServer(); // returns 4-wide vectors unless asked for another width
+    embeddingServers.push(embeddingServer);
+    const embeddingBaseUrl = await listen(embeddingServer);
+    const backingStore = createMemoryStore();
+    let tableWidth: number | undefined;
+    const provisionedWith: (number | undefined)[] = [];
+    setStudioPgvectorStoreFactoryForTests((options) => ({
+      upsert: backingStore.upsert,
+      query: backingStore.query,
+      delete: backingStore.delete,
+      hashesByPrefix: backingStore.hashesByPrefix,
+      count: async () => backingStore.size(),
+      setupSql: () => "",
+      ensureSchema: async () => {
+        provisionedWith.push(options.dimensions);
+        tableWidth ??= options.dimensions;
+      },
+      tableDimensions: async () => tableWidth,
+      close: async () => {},
+    }));
+    installStudioRuntime({}, {
+      ...STUDIO_TEST_BASE,
+      ai: {
+        provider: "openai",
+        providerConfig: { openai: { apiKey: "test-key", baseUrl: embeddingBaseUrl } },
+        embedding: { model: "text-embedding-3-small" },
+      },
+      rag: { embedder: "ai", store: "pgvector", storeConfig: { pgvector: { databaseUrl: "postgres://pgvector.test/askdb" } } },
+    });
+    const server = createStudioServer({ schema: copyFixture() });
+    servers.push(server);
+    const baseUrl = await listen(server);
+
+    const before = await getJson(`${baseUrl}/api/rag/status`);
+    expect(before).toMatchObject({ hasIndex: false, chunksIndexed: 0, dimensions: null });
+    expect(provisionedWith).toEqual([]);
+
+    const indexed = await postJson(`${baseUrl}/api/rag/index`, {});
+    expect(provisionedWith).toEqual([4]);
+    expect(indexed.status).toMatchObject({ hasIndex: true, stale: false, dimensions: 4, expectedDimensions: null });
+    expect(indexed.status.expectedEmbedderId).toBe("ai-sdk:openai:text-embedding-3-small:default");
+  });
+
   // ---------------------------------------------------------------------------
   // Execute status and install endpoint tests
   // ---------------------------------------------------------------------------

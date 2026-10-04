@@ -90,7 +90,6 @@ const embeddingModel = config.ai.embedding
 - `isAskDbDebugEnabled()` — `true` when the `ASKDB_DEBUG` shell variable is `1` or `true`. Binaries use it to print stack traces; it reads `process.env` directly so it works even when the config fails to load.
 - `defineConfig(config)` — returns an `AskDbEnvProjection` with `config` (structured) and `entries` (flattened canonical map).
 - `flattenAskDbConfig(config)` — nested config → flat canonical map (translates deprecated keys, applies defaults for optional values).
-- `knownEmbeddingDimensions(provider, model)` — the vector width of an embedding model AskDB knows for a fact (OpenAI's on `openai` and as `openai/…` ids on the gateway), else `undefined`.
 - `bootstrapAskDbEnv(options?)` / `bootstrapAskDbRuntime` — load dotenv, load config, install the runtime snapshot.
 - `loadAskDbConfigProjection(cwd)` / `loadAskDbConfigProjectionSync(cwd)` — load projection without installing the singleton (advanced / tests).
 - `discoverAskDbConfigPath(cwd)` — returns the resolved config path, if any.

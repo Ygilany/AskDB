@@ -11,7 +11,7 @@ import {
   DEFAULT_GOOGLE_LANGUAGE_MODEL,
   DEFAULT_OPENAI_LANGUAGE_MODEL,
   DEFAULT_RAG_EMBEDDING_MODEL,
-  knownEmbeddingDimensions,
+  defaultRagEmbeddingDimensions,
   parsePositiveInteger,
 } from "./defaults.js";
 import type { AskDbAiReasoningConfig, AskDbConfig } from "./types.js";
@@ -76,12 +76,11 @@ const LEGACY_RAG_KEY_PROVIDERS = new Set(["openai", "azure", "foundry", "gateway
 /** Providers a legacy `"ai-sdk"` embedder without a model defaults to `text-embedding-3-small` on. */
 const LEGACY_DEFAULT_EMBEDDING_MODEL_PROVIDERS = new Set(["openai", "azure", "foundry"]);
 /**
- * The width earlier AskDB versions sent for a deprecated `rag.embedder` with no width set: the
- * model id looked up among OpenAI's, whatever the provider, else 1536. Only for telling users
- * which width an existing index has; AskDB no longer assumes it.
+ * The width earlier AskDB versions assumed for a deprecated `rag.embedder` with no width set.
+ * Only for telling users which width an existing index has; AskDB no longer assumes it.
  */
-function widthEarlierVersionsUsed(model: string): number {
-  return knownEmbeddingDimensions("openai", model) ?? 1536;
+function widthEarlierVersionsAssumed(model: string): number {
+  return defaultRagEmbeddingDimensions(model);
 }
 
 export function isMember<T extends readonly string[]>(value: string, allowed: T): value is T[number] {
@@ -542,24 +541,15 @@ export function normalizeAskDbConfig(config: AskDbConfig): {
       dimensions = pgvectorDimensions;
     }
 
-    // AskDB assumes no width it doesn't know for a fact. The deprecated embedders did, so an
-    // index they built may be a different width from the one used now: say which, so it can be
-    // kept by setting it, or rebuilt.
-    const knownWidth = knownEmbeddingDimensions(provider, embeddingModel);
-    const earlierWidth = legacy && dimensions === undefined ? widthEarlierVersionsUsed(embeddingModel) : undefined;
-    if (earlierWidth !== undefined && earlierWidth !== knownWidth) {
+    // AskDB assumes no width: it uses the one the model returns. The deprecated embedders assumed
+    // one, so an index they built has it; say which, so the index can be kept or rebuilt.
+    if (legacy && dimensions === undefined) {
+      const earlierWidth = widthEarlierVersionsAssumed(embeddingModel);
       warn(
         `askdb.config: rag.embedder "${rag.embedder}" no longer assumes ${earlierWidth} dimensions for embedding model ` +
-          `"${embeddingModel}"; AskDB now uses ${knownWidth ?? "the model's own width"}. An index built with an earlier ` +
-          `AskDB version is ${earlierWidth} wide: to keep it, move to ai.embedding and set ai.embedding.dimensions: ${earlierWidth}. ` +
+          `"${embeddingModel}"; AskDB now uses the width the model returns. An index built with an earlier AskDB ` +
+          `version is ${earlierWidth} wide: to keep it, move to ai.embedding and set ai.embedding.dimensions: ${earlierWidth}. ` +
           `Otherwise rebuild the index.`,
-      );
-    }
-
-    if (rag.store === "pgvector" && dimensions === undefined && knownWidth === undefined) {
-      throw new Error(
-        `askdb.config: set ai.embedding.dimensions for embedding model "${embeddingModel}"; pgvector needs a fixed width.` +
-          (earlierWidth !== undefined ? ` A table built with an earlier AskDB version is ${earlierWidth} wide.` : ""),
       );
     }
 

@@ -784,11 +784,11 @@ describe("ai config sections: provider connections, ai.language, ai.embedding (#
         AI_GATEWAY_API_KEY: "gw-key",
         ASKDB_AI_EMBEDDING_MODEL: "openai/text-embedding-3-small",
       });
-      expect(rt.flat.ASKDB_RAG_EMBEDDER_DIMENSIONS).toBe("1536");
+      expect(rt.ai.embedding?.dimensions).toBeUndefined();
     });
 
-    // Earlier versions sent a width for a legacy embedder: the model id's among OpenAI's, else 1536.
-    it.each<[string, AskDbConfig["ai"], string, number | undefined]>([
+    // Earlier versions assumed a width for a legacy embedder: 3072 for text-embedding-3-large, else 1536.
+    it.each<[string, AskDbConfig["ai"], string, number]>([
       [
         "an Azure deployment name",
         { provider: "azure", providerConfig: { azure: { apiKey: "az-key", resourceName: "eastus" } } },
@@ -813,14 +813,36 @@ describe("ai config sections: provider connections, ai.language, ai.embedding (#
         "text-embedding-3-large",
         3072,
       ],
-      ["an OpenAI model on openai, whose width hasn't changed", OPENAI_AI, "text-embedding-3-large", undefined],
-    ])("a legacy embedder assumes no width for %s, and names the one earlier versions used", (_name, ai, model, earlier) => {
+      ["an OpenAI model on openai", OPENAI_AI, "text-embedding-3-large", 3072],
+    ])("a legacy embedder assumes no width for %s, and names the one earlier versions assumed", (_name, ai, model, earlier) => {
       const rt = runtimeFor(
         config(ai, { embedder: "ai-sdk", embedderConfig: { openai: { model } }, store: "memory", storeConfig: { memory: {} } }),
       );
       expect(rt.ai.embedding).toMatchObject({ model, dimensions: undefined });
       const asksToPin = rt.deprecations.filter((message) => message.includes("set ai.embedding.dimensions:"));
-      expect(asksToPin).toEqual(earlier === undefined ? [] : [expect.stringContaining(`set ai.embedding.dimensions: ${earlier}.`)]);
+      expect(asksToPin).toEqual([expect.stringContaining(`set ai.embedding.dimensions: ${earlier}.`)]);
+    });
+
+    it.each<[string, AskDbConfig["ai"], AskDbConfig["rag"]]>([
+      [
+        "an embedding model of any width",
+        { provider: "google", providerConfig: { google: { apiKey: "k" } }, embedding: { model: "gemini-embedding-001" } },
+        { embedder: "ai", store: "pgvector", storeConfig: { pgvector: { databaseUrl: "postgres://pg/db" } } },
+      ],
+      [
+        "a legacy embedder",
+        { provider: "azure", providerConfig: { azure: { apiKey: "k", resourceName: "eastus" } } },
+        {
+          embedder: "ai-sdk",
+          embedderConfig: { openai: { model: "my-embedding-deployment" } },
+          store: "pgvector",
+          storeConfig: { pgvector: { databaseUrl: "postgres://pg/db" } },
+        },
+      ],
+    ])("loads pgvector with %s and no width set: the width comes from the model when the index is built", (_case, ai, rag) => {
+      const rt = runtimeFor(config(ai, rag));
+      expect(rt.ai.embedding?.dimensions).toBeUndefined();
+      expect(rt.flat.ASKDB_RAG_EMBEDDER_DIMENSIONS).toBeUndefined();
     });
 
     it.each<[string, AskDbConfig["rag"]]>([
@@ -902,27 +924,6 @@ describe("ai config sections: provider connections, ai.language, ai.embedding (#
           { embedder: "openai", embedderConfig: {}, store: "memory", storeConfig: { memory: {} } },
         ),
         /ai\.providerConfig\.openai has no connection named "default" \(it has: "eu"\)/,
-      ],
-      [
-        "pgvector with an embedding model of unknown width",
-        config(
-          { provider: "google", providerConfig: { google: { apiKey: "k" } }, embedding: { model: "gemini-embedding-001" } },
-          { embedder: "ai", store: "pgvector", storeConfig: { pgvector: { databaseUrl: "postgres://pg/db" } } },
-        ),
-        /set ai\.embedding\.dimensions for embedding model "gemini-embedding-001"; pgvector needs a fixed width/,
-      ],
-      [
-        "a legacy embedder on pgvector with a model of unknown width",
-        config(
-          { provider: "azure", providerConfig: { azure: { apiKey: "k", resourceName: "eastus" } } },
-          {
-            embedder: "ai-sdk",
-            embedderConfig: { openai: { model: "my-embedding-deployment" } },
-            store: "pgvector",
-            storeConfig: { pgvector: { databaseUrl: "postgres://pg/db" } },
-          },
-        ),
-        /pgvector needs a fixed width\. A table built with an earlier AskDB version is 1536 wide/,
       ],
       [
         "pgvector dimensions that disagree with ai.embedding.dimensions",

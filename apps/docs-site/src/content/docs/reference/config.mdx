@@ -171,7 +171,7 @@ Read only when `rag.embedder` is `"ai"`; ignored for `"mock"`.
 | `provider` | `ai.provider` | Anthropic has no embeddings API, so a config whose `ai.embedding` provider resolves to `anthropic` fails to load. Set `provider` (for example `"openai"`) and give it a connection. |
 | `connection` | `"default"` | A connection name in `ai.providerConfig.<provider>`. |
 | `model` | none, required | AskDB has no default embedding model. On Azure, the embedding deployment name. On the AI Gateway, an `<upstream>/<model>` id such as `openai/text-embedding-3-small`. |
-| `dimensions` | The model's known width | A positive integer, sent to the provider as the requested vector size. AskDB assumes no width it doesn't know for a fact. It knows `text-embedding-3-small` (1536), `text-embedding-3-large` (3072) and `text-embedding-ada-002` (1536) on `openai`, and their `openai/…` ids on `gateway`. An Azure or Foundry deployment name doesn't say which model it serves, so AskDB knows no width there. For any model it doesn't know, set `dimensions` with the `pgvector` store, which needs a fixed width; other stores use the model's own width. |
+| `dimensions` | The model's own width | A positive integer: the vector size to request from the provider, for models that let you choose one (OpenAI's `text-embedding-3` models, Gemini's; on the AI Gateway, `openai/…` and `google/…` models). Unset, AskDB assumes nothing: it uses the width the model returns, which it learns when it first builds the index, so the `pgvector` store doesn't need it either. |
 
 Changing the `ai.embedding` provider, model or dimensions changes the index's embedder id: Studio then reports the RAG index as stale and asks you to reindex before using it.
 
@@ -216,7 +216,7 @@ Azure identifies models by deployment name (e.g. `askdb-reporting`), which may n
 | `store` | `"file"`, `"memory"` or `"pgvector"`. |
 | `storeConfig` | The selected store's branch: `file.{basePath, autoFlush}`, `memory: {}`, or `pgvector.{databaseUrl, table, indexStrategy, dimensions}`. |
 
-With `embedder: "ai"`, the pgvector table's width is the embedding model's (`ai.embedding.dimensions`, or the width AskDB knows for the model). `storeConfig.pgvector.dimensions` sets the width for `embedder: "mock"` (default 64); with `embedder: "ai"` it's [deprecated](#deprecated-keys).
+With `embedder: "ai"`, the pgvector table is created at the width the embedding model returns, learned when the index is first built (with `ai.embedding.dimensions` set, that's the size requested). An existing table of another width is refused, not overwritten. `storeConfig.pgvector.dimensions` sets the width for `embedder: "mock"` (default 64); with `embedder: "ai"` it's [deprecated](#deprecated-keys).
 
 ## Deprecated keys
 
@@ -238,7 +238,7 @@ How the old embedder keys translate:
 
 - A model left unset means `text-embedding-3-small` on `openai`, `azure` and `foundry`, as before. Any other provider fails to load and asks for `ai.embedding.model`.
 - `"ai-sdk"` embeds with the language model's provider, so with Anthropic, which has no embeddings API, it fails to load: move to `ai.embedding` with another provider.
-- The old embedders assumed a width when none was set: 3072 for `text-embedding-3-large`, 1536 for anything else, whatever the provider. AskDB no longer assumes one. When the width it uses now differs (an Azure or Foundry deployment, an unknown model, an `openai/…` id on the gateway, an OpenAI model id on another provider), the warning names the width an index built with an earlier version has: move to `ai.embedding` and set `dimensions` to it to keep that index, or rebuild the index. With the pgvector store and a model whose width AskDB doesn't know, the config fails to load until you set the width.
+- The old embedders assumed a width when none was set: 3072 for `text-embedding-3-large`, 1536 for anything else, whatever the provider. AskDB no longer assumes one; it uses the width the model returns. A config in the old shape with no width set gets a warning naming the width an index built with an earlier version has: move to `ai.embedding` and set `dimensions` to it to keep that index, or rebuild the index.
 - A `rag.embedderConfig.openai.apiKey` or `.baseUrl` that differs from the default connection of the embedding model's provider moves to a connection named `"rag-embeddings"`. It can only move to an `openai`, `azure`, `foundry` or `gateway` connection; with any other embedding provider the config fails to load instead of sending the key there.
 - An empty `rag.embedderConfig: {}`, which earlier scaffolds wrote, is ignored without a warning.
 

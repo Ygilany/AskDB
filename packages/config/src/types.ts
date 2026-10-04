@@ -180,8 +180,9 @@ export type AskDbAiEmbeddingConfig = {
   /** Required when `rag.embedder` is `"ai"`: AskDB has no default embedding model. On Azure, the deployment name. */
   model?: string;
   /**
-   * Vector width, as a positive integer or a string holding one. Sent to the provider as the
-   * requested size. Optional when AskDB knows the model's width; required for the pgvector store otherwise.
+   * Vector size to request from the provider, as a positive integer or a string holding one, for
+   * models that let you choose one (OpenAI's text-embedding-3 models, Gemini's). Unset: the
+   * model's own width, which AskDB learns from the model when it builds an index.
    */
   dimensions?: string | number;
 };
