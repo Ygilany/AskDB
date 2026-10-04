@@ -13,11 +13,11 @@ const ARTIFACTS = join(LAB_STATE, "artifacts");
 const TARGET_FILE = join(LAB_STATE, "target.json");
 
 /** The current install target, as recorded by `pnpm lab:use`. */
-export function requireInstallTarget(): { label: string; thisCheckout?: boolean } {
+export function requireInstallTarget(): { label: string; thisCheckout?: boolean; packages?: { name: string; version: string }[] } {
   if (!existsSync(TARGET_FILE)) {
     throw new Error("The lab isn't installed yet. Run `pnpm lab:use .` (or `pnpm lab:up`) first.");
   }
-  return JSON.parse(readFileSync(TARGET_FILE, "utf8")) as { label: string; thisCheckout?: boolean };
+  return JSON.parse(readFileSync(TARGET_FILE, "utf8")) as { label: string; thisCheckout?: boolean; packages?: { name: string; version: string }[] };
 }
 
 /**

@@ -15,6 +15,11 @@ export const MODEL_ID = "gpt-4o-mini";
 export const API_KEY = "lab-replay-no-key";
 
 export type AskResult = Awaited<ReturnType<typeof ask>>;
+
+/** `ask()`'s outcome as a value: its result, or what it threw. */
+export type Settled = { ok: true; result: AskResult } | { ok: false; error: unknown };
+export const settle = (p: Promise<AskResult>): Promise<Settled> =>
+  p.then((result) => ({ ok: true as const, result }), (error: unknown) => ({ ok: false as const, error }));
 type AskOptions = Parameters<typeof ask>[0];
 /**
  * Further `ask()` options, such as `tenantScope` and `tenantSqlMode`. `resolveTenantDescendants`
@@ -25,7 +30,12 @@ export type AskExtras = Omit<AskOptions, "question" | "schema" | "model" | "dial
 /** `ask()` with a raw `LanguageModel` pointed at `baseURL`, the replay server's base URL for `dialect`. */
 export async function askRaw(dialect: SupportedDialect, question: string, schemaDir: string, baseURL: string, extras: AskExtras = {}): Promise<AskResult> {
   const openai = createOpenAI({ baseURL, apiKey: API_KEY });
-  return ask({ ...extras, question, schema: loadSchema(schemaDir), model: openai(MODEL_ID), dialect } as AskOptions);
+  return askWithModel(dialect, question, schemaDir, openai(MODEL_ID), extras);
+}
+
+/** `ask()` with any raw `LanguageModel`: the replay server's, the recording proxy's, or a live provider's. */
+export async function askWithModel(dialect: SupportedDialect, question: string, schemaDir: string, model: AskOptions["model"], extras: AskExtras = {}): Promise<AskResult> {
+  return ask({ ...extras, question, schema: loadSchema(schemaDir), model, dialect } as AskOptions);
 }
 
 /**

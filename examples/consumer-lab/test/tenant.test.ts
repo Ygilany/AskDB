@@ -34,7 +34,7 @@
 import { TenantGuardrailError, TenantScopeError } from "@askdb/core";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it, type TestContext } from "vitest";
-import { askRaw, type AskExtras, type AskResult } from "../src/ask.js";
+import { askRaw, settle, type AskExtras, type AskResult, type Settled } from "../src/ask.js";
 import { needsCapability } from "../src/capabilities.js";
 import { SUPPORTED_DIALECTS, type SupportedDialect } from "../src/dialects.js";
 import { normalizeRows } from "../src/fixture.js";
@@ -110,8 +110,6 @@ function ask(dialect: SupportedDialect, id: string, extras: AskExtras, enforceme
   return askRaw(dialect, question(id).text, artifact(dialect, enforcement), replay.baseURL(dialect), extras);
 }
 
-type Settled = { ok: true; result: AskResult } | { ok: false; error: unknown };
-const settle = (p: Promise<AskResult>): Promise<Settled> => p.then((result) => ({ ok: true, result }), (error: unknown) => ({ ok: false, error }));
 
 /** The model calls the replay server received for a question. */
 const modelCalls = (id: string) => replay.requests().filter((r) => r.questionId === id).length;
