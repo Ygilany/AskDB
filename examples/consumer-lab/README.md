@@ -242,6 +242,23 @@ Below the test rows, the `unique-constraints *` and `view-marker *` rows are **a
 
 The `consumer-lab` job in [`.github/workflows/ci.yml`](../../.github/workflows/ci.yml) runs on every pull request and every push to `main`. It runs `pnpm lab:use .` (tarballs packed from the commit under test), then `pnpm lab:matrix`, with a 25-minute timeout. The table goes to the job summary, followed by a collapsible block per failing test with the reason it failed (the assertion message, or the rule that made a passing test a failure) and any unhandled errors; the full stack traces are in the step log. `.lab/matrix.json` holds the same reasons (a `FAIL` cell's `failures`), and is uploaded as the `consumer-lab-matrix` artifact whether the job passes or fails. The job fails exactly when `lab:matrix` exits non-zero. Docs-only pull requests skip it: those whose every changed file is under `apps/docs-site/`, `docs/` or `plans/`, a top-level `*.md`, or a `README.md` or `CHANGELOG.md`. Other Markdown still runs the lab, because schema artifacts are Markdown too.
 
+### Published packages
+
+The **Consumer lab (published)** workflow ([`.github/workflows/consumer-lab-published.yml`](../../.github/workflows/consumer-lab-published.yml)) runs the lab against AskDB as published on npm, which the `consumer-lab` job can't see: files missing from a published tarball, a bad `workspace:` rewrite, a dist-tag on the wrong version, and dependency drift with no AskDB release (#255).
+
+| Trigger | Target | Install |
+|---|---|---|
+| After a release that published: `workflow_run` on Release, when the run and its `publish` job succeeded | `npm:latest`, with the lab checked out at the released commit | The committed lockfile, so a failure is the release's. It first waits until every public package's `latest` dist-tag is the released commit's version, and fails if one isn't after 10 minutes. |
+| Weekly, Mondays | `npm:latest`, from `main` | Fresh: the lockfile `lab:use` wrote is deleted and every range resolves anew, as `npm install askdb` does that day. The AskDB pins stay, and `lab:use --check` verifies them. The job summary lists every package that resolved differently. |
+| Manual (`workflow_dispatch`) | Any npm target: `npm:latest`, `npm:askdb@<version>` or `npm:<dist-tag>`, from the branch it runs on | The lockfile, or fresh with `fresh` ticked. |
+
+On an `npm:latest` target, the job summary first says whether the committed baseline is stale (`lab:use` changed `package.json`, `pnpm-workspace.yaml` or `pnpm-lock.yaml`) and which AskDB pins moved. Then `lab:matrix` runs, and `node examples/consumer-lab/src/published-run.mjs verdict` decides the job:
+
+- A failure is expected only when [`known-release-failures.json`](known-release-failures.json) lists its cell for the installed `askdb` version, with the issue that tracks it: a release that shipped with a bug fixed on `main` since. Today that is `host-peers [postgres]` on `askdb@1.0.0-beta.43` (#403, fixed on `main` by #408). Any other `FAIL` cell, a failing test outside the matrix, an unhandled error, or a run that left no results fails the job. Entries are keyed by version, so one never hides the same failure in the next release.
+- After a release, a capability `n/a` cell fails the job as well. CI ran the lab on the released commit with `lab:use .`, where a missing capability fails, so the release should have every capability. When a changeset was still pending at that commit, the release may not include its change yet: the summary lists the cells and the changesets instead, to check with [baseline refresh](../../.agents/skills/consumer-lab/baseline-refresh.md) step 3.
+
+The matrix table and "Why they failed" are in the job summary, as in CI. The `consumer-lab-matrix` artifact holds `matrix.json`, vitest's `vitest-results.json` and, for a fresh run, the lockfiles before and after.
+
 ## Introspection
 
 `test/introspection.test.ts` introspects every fixture database with the installed `askdb introspect`, as the docs site describes for each engine: `--engine`, `--url` (the read-only role) and `--schemas org,people,billing,ref` for Postgres, SQL Server, MySQL and MariaDB (`--engine mysql`), and `introspection.providerConfig.sqlite.file` in an `askdb.config.ts` for SQLite. That config is written to a fresh directory under `.lab/projects/` for each run (concurrent runs never share one), so its `@askdb/config` import resolves from the lab's `node_modules`. Each artifact is compared with the fixture's golden schema, loaded with `loadSchema`, and bundled with `askdb bundle`. The drivers the CLI needs (`pg`, `mysql2`, `mssql`, `better-sqlite3`) are the lab's own dependencies, as the CLI reference asks of a consumer project.

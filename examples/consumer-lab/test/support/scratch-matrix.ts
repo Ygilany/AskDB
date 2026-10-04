@@ -23,10 +23,11 @@ export interface MatrixJson {
 }
 
 /**
- * Run `body` (a test file's describe blocks) under the matrix reporter. Returns the run's exit
- * status and output, the `matrix.json` it wrote and that file's path, and the step summary.
+ * Run `body` (a test file's describe blocks) under the matrix reporter, with `args` added to
+ * vitest's. Returns the run's exit status and output, the `matrix.json` it wrote and that file's
+ * path, and the step summary.
  */
-export function runMatrix(body: string) {
+export function runMatrix(body: string, args: string[] = []) {
   const dir = mkdtempSync(join(tmpdir(), "lab-matrix-"));
   scratch.push(dir);
   mkdirSync(join(dir, "src"));
@@ -40,7 +41,7 @@ export function runMatrix(body: string) {
   const env = { ...process.env, GITHUB_STEP_SUMMARY: summary };
   const run = spawnSync(
     process.execPath,
-    [join(LAB, "node_modules", "vitest", "vitest.mjs"), "run", "--root", dir, "--reporter=default", "--reporter=./src/matrix-reporter.ts"],
+    [join(LAB, "node_modules", "vitest", "vitest.mjs"), "run", "--root", dir, "--reporter=default", "--reporter=./src/matrix-reporter.ts", ...args],
     { cwd: dir, encoding: "utf8", env },
   );
   const file = join(dir, ".lab", "matrix.json");
