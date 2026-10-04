@@ -409,7 +409,8 @@ jobs:
       - name: Pack this commit's tarballs and install them in the lab
         run: pnpm lab:use .
 
-      # lab:up starts and seeds the fixture, then keeps the install above.
+      # lab:up starts and seeds the fixture and the lab's own Postgres (tenant-rls), then keeps
+      # the install above.
       - name: Run the consumer lab matrix
         run: pnpm lab:matrix
 
