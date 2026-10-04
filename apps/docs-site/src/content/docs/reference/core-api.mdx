@@ -282,6 +282,7 @@ const redshiftFlavor: DialectSpec = {
 | `displayName` | `string` | yes | Human-readable name. |
 | `promptBrief` | `string` | yes | One-paragraph guidance for the model about this dialect's syntax. |
 | `identifierQuote` | `'"' \| '`'` | yes | Identifier quoting style. |
+| `unqualifiedNamespace` | `string` | no | A namespace that isn't a schema in this engine. The prompt lists its tables without it and tells the model never to write `<namespace>.<table>`. The SQLite, MySQL and MariaDB specs set `"public"`, the namespace their connectors give the database's tables; spread one to keep it. |
 | `extraForbiddenKeywords` | `readonly string[]` | no | Keywords to forbid in addition to the shared read-only denylist. |
 | `blockedFunctions` | `readonly string[]` | no | Functions `validateSelectSql` rejects when called (`name(`), such as `pg_sleep` or `load_file`. |
 | `extraValidate` | `(sql: string) => void` | no | Dialect-specific SQL validator. Throw `SqlValidationError` for failures. |

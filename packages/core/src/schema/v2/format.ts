@@ -26,8 +26,8 @@ export function formatSchemaV2ForNlToSql(
       continue;
     }
 
-    // Table header — always qualify with database schema name; add alias annotation when present
-    const qualifiedName = `${t.schema}.${t.name}`;
+    // Table header — qualified with its schema unless that namespace isn't one; alias annotation when present
+    const qualifiedName = promptTableName(t, options.unqualifiedNamespace);
     const aliasNote =
       !t.sensitive && t.aliases?.length
         ? ` -- aliases: ${t.aliases.join(", ")}`
@@ -89,6 +89,14 @@ export function formatSchemaV2ForNlToSql(
       untrackedTableCount,
     },
   };
+}
+
+/** A table's name as the NL→SQL prompt lists it: `schema.name`, or `name` in the unqualified namespace. */
+export function promptTableName(
+  table: Pick<NormalizedSchemaV2["tables"][0], "schema" | "name">,
+  unqualifiedNamespace: string | undefined,
+): string {
+  return table.schema === unqualifiedNamespace ? table.name : `${table.schema}.${table.name}`;
 }
 
 function buildColumnLine(

@@ -46,8 +46,9 @@ export function buildNlToSqlUserPrompt(
    */
   parameterize?: boolean,
 ): string {
+  const unqualifiedNamespace = dialect.unqualifiedNamespace;
   const formatted = isV2(schema)
-    ? formatSchemaV2ForNlToSql(schema, nlToSqlSchemaOptions)
+    ? formatSchemaV2ForNlToSql(schema, { ...nlToSqlSchemaOptions, unqualifiedNamespace })
     : formatSchemaForNlToSql(schema, nlToSqlSchemaOptions);
   const ddl = prebuiltDdl ?? formatted.ddl;
   const stats = formatted.stats;
@@ -81,7 +82,9 @@ export function buildNlToSqlUserPrompt(
     "Rules:",
     `- Output exactly one ${dialect.displayName} SELECT query (CTE WITH is ok). End with optional semicolon.`,
     '- Put the SQL only inside one markdown fenced block labelled ```sql (preferred). No extra commentary.',
-    "- Use identifiers from the schema below; qualify table names where it helps readability.",
+    unqualifiedNamespace === undefined
+      ? "- Use identifiers from the schema below; qualify table names where it helps readability."
+      : `- Use identifiers from the schema below and write each table name exactly as it is listed. \`${unqualifiedNamespace}\` is not a schema in ${dialect.displayName}: never write \`${unqualifiedNamespace}.<table>\`, even where ids or notes below mention \`${unqualifiedNamespace}\`.`,
     "- Do NOT use DDL or write statements (INSERT, UPDATE, DELETE, etc.). SELECT-only.",
     `- Dialect notes: ${dialect.promptBrief}`,
     "",

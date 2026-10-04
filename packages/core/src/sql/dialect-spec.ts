@@ -37,6 +37,14 @@ export type DialectSpec = {
   promptBrief: string;
   /** Identifier quoting style — informational; mainly steers `promptBrief`. */
   identifierQuote: '"' | '`';
+  /**
+   * A namespace name that is not a schema in this engine. Connectors for engines without
+   * Postgres-style schemas file the database's tables under `"public"` to keep table ids
+   * stable across engines; the NL→SQL prompt lists that namespace's tables unqualified and
+   * tells the model never to write `<namespace>.<table>`. Unset: every table is listed
+   * qualified with its schema.
+   */
+  unqualifiedNamespace?: string;
   /** Extra keywords to forbid on top of the dialect-agnostic base denylist. */
   extraForbiddenKeywords?: readonly string[];
   /**
@@ -132,6 +140,8 @@ export const MYSQL_DIALECT: DialectSpec = {
     "Concatenate with `CONCAT(a, b)` — `||` is logical OR in MySQL, not string concat. " +
     "Limit rows with `LIMIT n` (or `LIMIT offset, n`).",
   identifierQuote: "`",
+  // The connection's database; a listed database keeps its own name and stays qualified.
+  unqualifiedNamespace: "public",
   // INTO OUTFILE / DUMPFILE are also covered by the base `into` keyword.
   extraForbiddenKeywords: ["outfile", "dumpfile"],
   blockedFunctions: [
@@ -165,6 +175,7 @@ export const SQLITE_DIALECT: DialectSpec = {
     "Concatenate with `||`. Limit rows with `LIMIT n` (optionally `LIMIT n OFFSET m`). " +
     "SQLite uses dynamic typing — keep CAST conservative and prefer text/integer/real over engine-specific types.",
   identifierQuote: '"',
+  unqualifiedNamespace: "public",
   // ATTACH/DETACH bring other DBs into scope; PRAGMA is configuration; REINDEX
   // is maintenance. None belong in a generated read-only SELECT. (`vacuum` is
   // already in the dialect-agnostic base denylist.)

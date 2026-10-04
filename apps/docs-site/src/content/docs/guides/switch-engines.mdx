@@ -105,10 +105,7 @@ npx askdb introspect \
   --schema-id my-app
 ```
 
-  </TabItem>
-  <TabItem label="SQLite">
-
-For MySQL and MariaDB, the URL's database is the one introspected, and its tables appear under the `public` namespace. To introspect several databases at once (MySQL's "schemas"), list them. Each database becomes its own namespace (`sales.orders`), and foreign keys between databases are kept:
+For MySQL and MariaDB, the URL's database is the one introspected, and its tables appear under the `public` namespace. `public` is AskDB's label, not a database, so the prompt `ask()` sends lists those tables unqualified (`orders`). To introspect several databases at once (MySQL's "schemas"), list them. Each database becomes its own namespace (`sales.orders`), listed qualified in the prompt, and foreign keys between databases are kept:
 
 ```ts
 // askdb.config.ts
@@ -125,6 +122,9 @@ export default {
 ```
 
 `introspection.schemas` works the same way on every engine: on Postgres and SQL Server it lists schemas (the default is every non-system schema). `askdb introspect --schemas app,sales` does the same for one run and overrides the configured list.
+
+  </TabItem>
+  <TabItem label="SQLite">
 
 For SQLite, set the file path via `introspection.providerConfig.sqlite.file` in `askdb.config.ts`:
 
@@ -146,6 +146,8 @@ Then run:
 ```bash
 npx askdb introspect --out my-app.schema --schema-id my-app
 ```
+
+SQLite has no schemas, so its tables appear under the `public` namespace (table ids like `table:public.orders`), and the prompt `ask()` sends lists them unqualified (`orders`).
 
   </TabItem>
   <TabItem label="SQL Server">
