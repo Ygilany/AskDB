@@ -11,7 +11,7 @@ An emulation of GitHub Copilot code review. Copilot's own prompt isn't published
 
 1. **Scope.** `git fetch origin`, then take the diff: `gh pr diff <number>` for a PR, `git diff <base>...HEAD` for a branch (base defaults to `origin/main`). For a PR, the code you run checks against must be the PR's head: compare `gh pr view <number> --json headRefOid` with `git rev-parse HEAD`, and when they differ, check the head out in a temporary worktree. Gather the PR body (`gh pr view <number>`), the issue it closes, `AGENTS.md`, and every spec, ADR or contract under `docs/` that the diff touches or names. For a PR, collect earlier review findings so the review checks their fixes instead of raising them again: inline findings from `gh api repos/Ygilany/AskDB/pulls/<number>/comments` (top-level ones only, `in_reply_to_id` null; the replies say how each was handled) and review summaries from `.../pulls/<number>/reviews`. A reply's commit may have been rebased away; judge each fix by the current code. Done when you hold the diff, its stated intent, the prior findings, and a checkout at the head.
 2. **Dispatch.** Hand the review to a fresh read-only subagent when your harness has one: give it this file's path, the scope from step 1, and the prior findings, and tell it to follow [The review](#the-review) and return its report. A fresh context reads the diff the way Copilot does, without the author's assumptions. With no subagent available, do [The review](#the-review) yourself.
-3. **Relay.** Pass the report to the user. Posting to GitHub happens only when the user asks.
+3. **Relay.** Pass the report to the user. When the user asks for it on the PR, follow [Post to GitHub](#post-to-github); otherwise the report stays in the chat.
 
 ## The review
 
@@ -47,3 +47,33 @@ A one-line verdict, `No issues` when nothing survived verification and `Changes 
 End with **Checked and sound**: one line per area you covered and found correct, so the reader sees the coverage. Copilot typically leaves one to six findings per round here.
 
 An example in Copilot's register (PR #187): "JSON `null` is a non-string mode, but this condition treats it as absent and runs the request with the configured/default mode. That contradicts the new up-front validation contract that non-string body modes return `400 bad_request`; only an omitted field should fall through. This issue also appears on line 342 of the same file."
+
+## Post to GitHub
+
+Only when the user asks, and only for a PR. The review posts as the account `gh` is logged in as, and it is public, so mark it as an emulation. Post one review per run, as a comment, never an approval or a change request.
+
+1. **Drop repeats.** Leave out each finding that an existing top-level comment (step 1's prior findings) already raises at the same place, unless that comment's fix is incomplete. Name the repeats in the review body with a link instead.
+2. **Place each finding.** A finding goes inline when its `path:line` falls inside a hunk of `gh pr diff <number>` on the new side; GitHub rejects inline comments on any other line. Every other finding goes in the review body in full.
+3. **Write the review.**
+   - **Each inline comment:** its body is the finding's problem and fix as prose, in Copilot's register (the [example](#report)), plus "This issue also appears on …" for repeats.
+   - **The review body, in order:** the first line, `Copilot-style review (local emulation, copilot-style-review skill)`; the verdict; one line per finding with its title and severity; the findings that didn't go inline; **Checked and sound**; and the `Thread ID:` line `AGENTS.md` asks for on PRs and issues.
+4. **Post it.** Write the review to a file in a temp directory and send it as one request, pinned to the head you reviewed:
+
+   ```bash
+   gh api repos/Ygilany/AskDB/pulls/<number>/reviews --method POST --input /tmp/review.json
+   ```
+
+   ```json
+   {
+     "commit_id": "<headRefOid>",
+     "event": "COMMENT",
+     "body": "Copilot-style review (local emulation, copilot-style-review skill)\n\nChanges recommended …",
+     "comments": [
+       { "path": "examples/consumer-lab/src/lab-cli.ts", "line": 52, "side": "RIGHT", "body": "…" },
+       { "path": "examples/consumer-lab/src/ui/server.ts", "start_line": 95, "line": 99, "side": "RIGHT", "body": "…" }
+     ]
+   }
+   ```
+
+   A `422` that rejects a comment's line means that finding wasn't inside the diff: move it to the body and post again. Done when the response returns the review's `html_url`; give it to the user.
+
