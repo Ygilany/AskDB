@@ -56,11 +56,13 @@ This writes `schema.embeddings.bin`, `schema.embeddings.json`, and `schema.lock.
 ## pgvector Store
 
 ```ts
+import { detectEmbeddingDimensions } from "@askdb/rag";
 import { createPgvectorStore } from "@askdb/rag/stores/pgvector";
 
+// `embedder` is the same Embedder you index with (see above).
 const store = createPgvectorStore({
   connectionString: process.env.DATABASE_URL!,
-  dimensions: 1536,
+  dimensions: await detectEmbeddingDimensions(embedder), // the width your embedding model returns
   table: "askdb_rag_chunks",
 });
 ```
@@ -73,7 +75,7 @@ The adapter exposes two ways to provision the required extension, table, and ind
 await store.ensureSchema(); // safe to call on every startup
 ```
 
-Uses `CREATE EXTENSION IF NOT EXISTS` and `CREATE TABLE IF NOT EXISTS` guards throughout, so repeated calls are a no-op against an already-provisioned database. Studio calls this automatically whenever pgvector is configured.
+Uses `CREATE EXTENSION IF NOT EXISTS` and `CREATE TABLE IF NOT EXISTS` guards throughout, so repeated calls are a no-op against an already-provisioned database. Because an existing table is kept as it is, `ensureSchema()` first checks its width (`store.tableDimensions()`) and throws when it differs from `dimensions`, rather than letting inserts fail later. Studio calls this when it builds an index with pgvector configured.
 
 **`setupSql()` — returns the DDL for your own migration system**
 

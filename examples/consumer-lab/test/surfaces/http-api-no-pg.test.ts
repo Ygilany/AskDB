@@ -98,7 +98,7 @@ describe("[postgres] http-no-pg", () => {
       `import { defineConfig } from "@askdb/config";
 
 export default defineConfig({
-  ai: { provider: "openai", providerConfig: { openai: { apiKey: "lab-no-key", model: "gpt-4o-mini" } } },
+  ai: { provider: "openai", providerConfig: { openai: { apiKey: "lab-no-key" } } },
   introspection: { provider: "postgres", providerConfig: { postgres: {} } },
   rag: { embedder: "mock", embedderConfig: {}, store: "memory", storeConfig: { memory: {} } },
 });

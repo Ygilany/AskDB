@@ -165,6 +165,7 @@ export async function buildSchemaIndex(
 
   // 4. Embed in batches and upsert.
   let embeddedCount = 0;
+  let embeddedWidth: number | undefined;
   for (let i = 0; i < toEmbed.length; i += batchSize) {
     const batch = toEmbed.slice(i, i + batchSize);
     const vectors = await embedder(batch.map((c) => c.text));
@@ -173,6 +174,7 @@ export async function buildSchemaIndex(
         `Embedder returned ${vectors.length} vectors for ${batch.length} inputs.`,
       );
     }
+    embeddedWidth ??= vectors[0]?.length;
     await store.upsert(
       batch.map((c, idx) => ({
         id: c.id,
@@ -224,6 +226,9 @@ export async function buildSchemaIndex(
       version: 1,
       schemaId: sources.schema.schemaId,
       embedderId,
+      // The width of the vectors in the store: what this run embedded, else (nothing was
+      // re-embedded with the same embedder) the width the previous run recorded.
+      dimensions: embeddedWidth ?? (embedderChanged ? undefined : previousLock?.dimensions),
       hashes: newHashes,
       updatedAt: new Date().toISOString(),
     };

@@ -2,7 +2,7 @@ import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   ASKDB_AI_PROVIDERS,
   bootstrapAskDbEnv,
@@ -50,7 +50,7 @@ function minimalConfig(overrides: Partial<AskDbConfig> = {}): AskDbConfig {
     ai: {
       provider: "openai",
       providerConfig: {
-        openai: { apiKey: "k", model: "gpt-4o-mini" },
+        openai: { apiKey: "k" },
       },
     },
     introspection: {
@@ -60,7 +60,6 @@ function minimalConfig(overrides: Partial<AskDbConfig> = {}): AskDbConfig {
     },
     rag: {
       embedder: "mock",
-      embedderConfig: {},
       store: "memory",
       storeConfig: { memory: {} },
     },
@@ -220,7 +219,6 @@ describe("flattenAskDbConfig", () => {
       minimalConfig({
         rag: {
           embedder: "mock",
-          embedderConfig: {},
           store: "file",
           storeConfig: { file: {} },
         },
@@ -235,8 +233,9 @@ describe("flattenAskDbConfig", () => {
         ai: {
           provider: "anthropic",
           providerConfig: {
-            anthropic: { apiKey: "ant-key", model: "claude-opus-4-8" },
+            anthropic: { apiKey: "ant-key" },
           },
+          language: { model: "claude-opus-4-8" },
         },
       }),
     );
@@ -253,10 +252,10 @@ describe("flattenAskDbConfig", () => {
           providerConfig: {
             gateway: {
               apiKey: "gw-key",
-              model: "anthropic/claude-sonnet-4-6",
               baseUrl: "https://gateway.example/v3/ai",
             },
           },
+          language: { model: "anthropic/claude-sonnet-4-6" },
         },
       }),
     );
@@ -300,11 +299,10 @@ describe("flattenAskDbConfig", () => {
           providerConfig: {
             azure: {
               apiKey: "k",
-              model: "askdb-reporting",
-              modelFamily: "gpt-5",
               baseUrl: "https://askdb-ai.openai.azure.com",
             },
           },
+          language: { model: "askdb-reporting", modelFamily: "gpt-5" },
         },
       }),
     );
@@ -322,7 +320,6 @@ describe("flattenAskDbConfig", () => {
             providerConfig: {
               [provider]: {
                 apiKey: "k",
-                model: "gpt-4o-mini",
                 resourceName: "my-foundry",
                 baseUrl: "https://my-foundry.openai.azure.com/openai",
                 apiVersion: "2025-04-01-preview",
@@ -370,8 +367,9 @@ describe("flattenAskDbConfig", () => {
         ai: {
           provider: "mistral",
           providerConfig: {
-            custom: { apiKey: "mistral-key", model: "mistral-large-2", baseUrl: "https://api.mistral.ai/v1" },
+            mistral: { apiKey: "mistral-key", baseUrl: "https://api.mistral.ai/v1" },
           },
+          language: { model: "mistral-large-2" },
         },
       }),
     );
@@ -433,8 +431,9 @@ describe("flattenAskDbConfig", () => {
         ai: {
           provider: "openai",
           providerConfig: {
-            openai: { apiKey: "oai-key", model: "gpt-4o" },
+            openai: { apiKey: "oai-key" },
           },
+          language: { model: "gpt-4o" },
         },
       }),
     );
@@ -444,7 +443,7 @@ describe("flattenAskDbConfig", () => {
     expect(flat.ASKDB_AI_API_KEY).toBeUndefined();
   });
 
-  describe("ai.reasoning", () => {
+  describe("ai.language.reasoning", () => {
     it("emits no reasoning env keys when unset (preserves current behavior)", () => {
       const flat = flattenAskDbConfig(minimalConfig());
       expect(flat.ASKDB_AI_REASONING_EFFORT).toBeUndefined();
@@ -458,7 +457,7 @@ describe("flattenAskDbConfig", () => {
           ai: {
             provider: "openai",
             providerConfig: { openai: { apiKey: "k" } },
-            reasoning: { effort: "medium" },
+            language: { reasoning: { effort: "medium" } },
           },
         }),
       );
@@ -473,7 +472,7 @@ describe("flattenAskDbConfig", () => {
           ai: {
             provider: "openai",
             providerConfig: { openai: { apiKey: "k" } },
-            reasoning: { effort: "medium", nlToSql: "high", enrichment: "low" },
+            language: { reasoning: { effort: "medium", nlToSql: "high", enrichment: "low" } },
           },
         }),
       );
@@ -489,11 +488,578 @@ describe("flattenAskDbConfig", () => {
             ai: {
               provider: "openai",
               providerConfig: { openai: { apiKey: "k" } },
-              reasoning: { effort: "ultra" as never },
+              language: { reasoning: { effort: "ultra" as never } },
             },
           }),
         ),
-      ).toThrow(/invalid ai\.reasoning value "ultra"/);
+      ).toThrow(/invalid ai\.language\.reasoning value "ultra"/);
+    });
+  });
+});
+
+describe("ai config sections: provider connections, ai.language, ai.embedding (#435)", () => {
+  afterEach(() => resetAskDbRuntimeForTests());
+
+  function runtimeFor(config: AskDbConfig) {
+    setAskDbRuntimeForTests({ structured: config, flat: flattenAskDbConfig(config) });
+    return getAskDbRuntimeConfig();
+  }
+
+  /** The env map without the RAG and introspection keys, which no `ai` section writes. */
+  function aiKeys<V>(env: Record<string, V>): Record<string, V> {
+    return Object.fromEntries(
+      Object.entries(env).filter(([key]) => !key.startsWith("ASKDB_RAG_") && !key.startsWith("ASKDB_INTROSPECT_")),
+    );
+  }
+
+  describe("regressions", () => {
+    it("refuses to move a legacy RAG key to a provider other than openai, azure, foundry or gateway (#345)", () => {
+      const config = minimalConfig({
+        ai: { provider: "google", providerConfig: { google: { apiKey: "google-key" } } },
+        rag: {
+          embedder: "ai-sdk",
+          embedderConfig: { openai: { apiKey: "sk-rag-secret", model: "text-embedding-3-small" } },
+          store: "memory",
+          storeConfig: { memory: {} },
+        },
+      });
+      let message = "";
+      try {
+        flattenAskDbConfig(config);
+      } catch (error) {
+        message = (error as Error).message;
+      }
+      expect(message).toMatch(/rag\.embedderConfig\.openai\.apiKey/);
+      expect(message).toMatch(/"google"/);
+      expect(message).toMatch(/ai\.embedding/);
+      expect(message).not.toContain("sk-rag-secret");
+    });
+
+    it("builds the embedding env from the embedding connection only, leaving the language view unchanged", () => {
+      const ai: AskDbConfig["ai"] = {
+        provider: "anthropic",
+        providerConfig: {
+          anthropic: { apiKey: "ant-key" },
+          openai: { apiKey: "oai-key" },
+        },
+      };
+      const withEmbedding = runtimeFor(
+        minimalConfig({
+          ai: { ...ai, embedding: { provider: "openai", model: "text-embedding-3-small" } },
+          rag: { embedder: "ai", store: "memory", storeConfig: { memory: {} } },
+        }),
+      );
+      expect(withEmbedding.ai.embedding?.env).toEqual({
+        ASKDB_AI_PROVIDER: "openai",
+        OPENAI_API_KEY: "oai-key",
+        ASKDB_AI_EMBEDDING_MODEL: "text-embedding-3-small",
+      });
+      const languageOnly = runtimeFor(minimalConfig({ ai }));
+      expect(aiKeys(withEmbedding.ai.aiEnv)).toEqual(aiKeys(languageOnly.ai.aiEnv));
+    });
+
+    it("gives the RAG CLI no key or base URL from a custom language provider", () => {
+      const rt = runtimeFor(
+        minimalConfig({
+          ai: {
+            provider: "mistral",
+            providerConfig: { custom: { apiKey: "mistral-key", baseUrl: "https://api.mistral.ai/v1" } },
+          },
+        }),
+      );
+      expect(rt.rag.embedder.apiKey).toBeUndefined();
+      expect(rt.rag.embedder.baseURL).toBeUndefined();
+    });
+  });
+
+  describe("compatibility", () => {
+    const MOCK_RAG: AskDbConfig["rag"] = { embedder: "mock", store: "memory", storeConfig: { memory: {} } };
+    const OPENAI_AI: AskDbConfig["ai"] = {
+      provider: "openai",
+      providerConfig: { openai: { apiKey: "oai-key", baseUrl: "https://oai.example/v1", model: "gpt-4o" } },
+    };
+    const OPENAI_LANGUAGE_KEYS = {
+      ASKDB_AI_PROVIDER: "openai",
+      OPENAI_API_KEY: "oai-key",
+      OPENAI_BASE_URL: "https://oai.example/v1",
+      OPENAI_MODEL: "gpt-4o",
+      ASKDB_MODEL: "gpt-4o",
+    };
+
+    function config(ai: AskDbConfig["ai"], rag: AskDbConfig["rag"] = MOCK_RAG): AskDbConfig {
+      return { ...minimalConfig(), ai, rag };
+    }
+
+    // Expected maps are what `flattenAskDbConfig` produced on main before the sections existed.
+    it.each<[string, AskDbConfig["ai"], AskDbConfig["rag"], Record<string, string>]>([
+      ["openai", OPENAI_AI, MOCK_RAG, OPENAI_LANGUAGE_KEYS],
+      [
+        "openai with a legacy rag.embedder and its own key",
+        OPENAI_AI,
+        { embedder: "openai", embedderConfig: { openai: { apiKey: "rag-key" } }, store: "memory", storeConfig: { memory: {} } },
+        OPENAI_LANGUAGE_KEYS,
+      ],
+      [
+        "azure with modelFamily",
+        {
+          provider: "azure",
+          providerConfig: {
+            azure: {
+              apiKey: "az-key",
+              secondaryApiKey: "az-key-2",
+              resourceName: "eastus-chat",
+              baseUrl: "https://eastus-chat.openai.azure.com/openai",
+              apiVersion: "2025-04-01-preview",
+              model: "askdb-reporting",
+              modelFamily: "gpt-5",
+            },
+          },
+        },
+        MOCK_RAG,
+        {
+          ASKDB_AI_PROVIDER: "azure",
+          AZURE_OPENAI_API_KEY: "az-key",
+          AZURE_OPENAI_API_KEY_SECONDARY: "az-key-2",
+          AZURE_OPENAI_DEPLOYMENT: "askdb-reporting",
+          AZURE_DEPLOYMENT_NAME: "askdb-reporting",
+          ASKDB_AI_MODEL: "askdb-reporting",
+          ASKDB_AI_AZURE_RESOURCE_NAME: "eastus-chat",
+          AZURE_OPENAI_BASE_URL: "https://eastus-chat.openai.azure.com/openai",
+          AZURE_OPENAI_API_VERSION: "2025-04-01-preview",
+          ASKDB_AI_AZURE_MODEL_FAMILY: "gpt-5",
+        },
+      ],
+      [
+        "foundry with the default deployment",
+        { provider: "foundry", providerConfig: { foundry: { apiKey: "fd-key", resourceName: "my-foundry" } } },
+        MOCK_RAG,
+        {
+          ASKDB_AI_PROVIDER: "foundry",
+          AZURE_OPENAI_API_KEY: "fd-key",
+          AZURE_OPENAI_DEPLOYMENT: "gpt-4o-mini",
+          AZURE_DEPLOYMENT_NAME: "gpt-4o-mini",
+          ASKDB_AI_MODEL: "gpt-4o-mini",
+          ASKDB_AI_AZURE_RESOURCE_NAME: "my-foundry",
+        },
+      ],
+      [
+        "anthropic",
+        { provider: "anthropic", providerConfig: { anthropic: { apiKey: "ant-key", baseUrl: "https://ant.example", model: "claude-opus-4-8" } } },
+        MOCK_RAG,
+        {
+          ASKDB_AI_PROVIDER: "anthropic",
+          ANTHROPIC_API_KEY: "ant-key",
+          ANTHROPIC_BASE_URL: "https://ant.example",
+          ASKDB_AI_MODEL: "claude-opus-4-8",
+        },
+      ],
+      [
+        "google with the default model",
+        { provider: "google", providerConfig: { google: { apiKey: "g-key", baseUrl: "https://g.example" } } },
+        MOCK_RAG,
+        {
+          ASKDB_AI_PROVIDER: "google",
+          GOOGLE_GENERATIVE_AI_API_KEY: "g-key",
+          GOOGLE_AI_BASE_URL: "https://g.example",
+          ASKDB_AI_MODEL: "gemini-2.0-flash",
+        },
+      ],
+      [
+        "gateway",
+        {
+          provider: "gateway",
+          providerConfig: { gateway: { apiKey: "gw-key", baseUrl: "https://gw.example/v3/ai", model: "anthropic/claude-sonnet-4-6" } },
+        },
+        MOCK_RAG,
+        {
+          ASKDB_AI_PROVIDER: "gateway",
+          AI_GATEWAY_API_KEY: "gw-key",
+          ASKDB_AI_BASE_URL: "https://gw.example/v3/ai",
+          ASKDB_AI_MODEL: "anthropic/claude-sonnet-4-6",
+        },
+      ],
+      [
+        "a custom provider under providerConfig.custom",
+        {
+          provider: "mistral",
+          providerConfig: { custom: { apiKey: "mistral-key", baseUrl: "https://api.mistral.ai/v1", model: "mistral-large-2" } },
+        },
+        MOCK_RAG,
+        {
+          ASKDB_AI_PROVIDER: "mistral",
+          ASKDB_AI_API_KEY: "mistral-key",
+          ASKDB_AI_BASE_URL: "https://api.mistral.ai/v1",
+          ASKDB_AI_MODEL: "mistral-large-2",
+        },
+      ],
+      [
+        "ai.reasoning",
+        {
+          provider: "openai",
+          providerConfig: { openai: { apiKey: "oai-key" } },
+          reasoning: { effort: "low", nlToSql: "high", enrichment: "minimal" },
+        },
+        MOCK_RAG,
+        {
+          ASKDB_AI_PROVIDER: "openai",
+          OPENAI_API_KEY: "oai-key",
+          OPENAI_MODEL: "gpt-4o-mini",
+          ASKDB_MODEL: "gpt-4o-mini",
+          ASKDB_AI_REASONING_EFFORT: "low",
+          ASKDB_AI_REASONING_EFFORT_NL_TO_SQL: "high",
+          ASKDB_AI_REASONING_EFFORT_ENRICHMENT: "minimal",
+        },
+      ],
+    ])("a legacy %s config flattens to the same language keys as before", (_name, ai, rag, expected) => {
+      expect(aiKeys(flattenAskDbConfig(config(ai, rag)))).toEqual(expected);
+    });
+
+    it.each([
+      ["no openai connection", { provider: "anthropic", providerConfig: { anthropic: { apiKey: "ant-key" } } }, "rag-key", "default", undefined],
+      ["the language connection's key", OPENAI_AI, "oai-key", "default", "https://oai.example/v1"],
+      ["a key of its own", OPENAI_AI, "rag-key", "rag-embeddings", "https://oai.example/v1"],
+    ] satisfies [string, AskDbConfig["ai"], string, string, string | undefined][])(
+      'rag.embedder "openai" with %s embeds through the right openai connection',
+      (_name, ai, ragKey, connection, baseUrl) => {
+        const rt = runtimeFor(
+          config(ai, {
+            embedder: "openai",
+            embedderConfig: { openai: { apiKey: ragKey } },
+            store: "memory",
+            storeConfig: { memory: {} },
+          }),
+        );
+        expect(rt.ai.embedding).toMatchObject({ provider: "openai", connection, model: "text-embedding-3-small" });
+        expect(rt.ai.embedding?.env.OPENAI_API_KEY).toBe(ragKey);
+        expect(rt.ai.embedding?.env.OPENAI_BASE_URL).toBe(baseUrl);
+        expect(rt.rag.embedder.apiKey).toBe(ragKey);
+      },
+    );
+
+    it("embeds through a second connection of the same provider", () => {
+      const designExample = {
+        ...minimalConfig(),
+        ai: {
+          provider: "anthropic",
+          providerConfig: {
+            anthropic: { apiKey: "ant-key" },
+            azure: [
+              { resourceName: "eastus-chat", apiKey: "chat-key" },
+              { name: "westus", resourceName: "westus-embed", apiKey: "embed-key" },
+            ],
+          },
+          language: { model: "claude-sonnet-4-6", reasoning: { effort: "low", nlToSql: "medium" } },
+          embedding: { provider: "azure", connection: "westus", model: "text-embedding-3-small", dimensions: 1536 },
+        },
+        rag: { embedder: "ai", store: "pgvector", storeConfig: { pgvector: { databaseUrl: "postgres://pgvector/db" } } },
+      } satisfies AskDbConfig;
+      const rt = runtimeFor(designExample);
+      expect(rt.ai.embedding?.env).toEqual({
+        ASKDB_AI_PROVIDER: "azure",
+        AZURE_OPENAI_API_KEY: "embed-key",
+        ASKDB_AI_AZURE_RESOURCE_NAME: "westus-embed",
+        ASKDB_AI_EMBEDDING_MODEL: "text-embedding-3-small",
+      });
+      expect(rt.ai.language).toMatchObject({ provider: "anthropic", connection: "default", model: "claude-sonnet-4-6" });
+      expect(rt.flat.ASKDB_AI_REASONING_EFFORT_NL_TO_SQL).toBe("medium");
+      expect(rt.flat.ASKDB_RAG_EMBEDDER_DIMENSIONS).toBe("1536");
+      expect(rt.deprecations).toEqual([]);
+    });
+
+    it("translates the documented gateway setup (an openai/ embedding model id)", () => {
+      const rt = runtimeFor(
+        config(
+          { provider: "gateway", providerConfig: { gateway: { apiKey: "gw-key" } } },
+          {
+            embedder: "ai-sdk",
+            embedderConfig: { openai: { model: "openai/text-embedding-3-small" } },
+            store: "memory",
+            storeConfig: { memory: {} },
+          },
+        ),
+      );
+      expect(rt.ai.embedding).toMatchObject({ provider: "gateway", model: "openai/text-embedding-3-small" });
+      expect(rt.ai.embedding?.env).toEqual({
+        ASKDB_AI_PROVIDER: "gateway",
+        AI_GATEWAY_API_KEY: "gw-key",
+        ASKDB_AI_EMBEDDING_MODEL: "openai/text-embedding-3-small",
+      });
+      expect(rt.ai.embedding?.dimensions).toBeUndefined();
+    });
+
+    // Earlier versions assumed a width for a legacy embedder: 3072 for text-embedding-3-large, else 1536.
+    it.each<[string, AskDbConfig["ai"], string, number]>([
+      [
+        "an Azure deployment name",
+        { provider: "azure", providerConfig: { azure: { apiKey: "az-key", resourceName: "eastus" } } },
+        "my-embedding-deployment",
+        1536,
+      ],
+      [
+        "an Azure deployment named after an OpenAI model",
+        { provider: "azure", providerConfig: { azure: { apiKey: "az-key", resourceName: "eastus" } } },
+        "text-embedding-3-small",
+        1536,
+      ],
+      [
+        "an openai/ id on the gateway",
+        { provider: "gateway", providerConfig: { gateway: { apiKey: "gw-key" } } },
+        "openai/text-embedding-3-large",
+        1536,
+      ],
+      [
+        "an OpenAI model id on a custom provider",
+        { provider: "mistral", providerConfig: { mistral: { apiKey: "m-key" } } },
+        "text-embedding-3-large",
+        3072,
+      ],
+      ["an OpenAI model on openai", OPENAI_AI, "text-embedding-3-large", 3072],
+    ])("a legacy embedder assumes no width for %s, and names the one earlier versions assumed", (_name, ai, model, earlier) => {
+      const rt = runtimeFor(
+        config(ai, { embedder: "ai-sdk", embedderConfig: { openai: { model } }, store: "memory", storeConfig: { memory: {} } }),
+      );
+      expect(rt.ai.embedding).toMatchObject({ model, dimensions: undefined });
+      const asksToPin = rt.deprecations.filter((message) => message.includes("set ai.embedding.dimensions:"));
+      expect(asksToPin).toEqual([expect.stringContaining(`set ai.embedding.dimensions: ${earlier}.`)]);
+    });
+
+    it.each<[string, AskDbConfig["ai"], AskDbConfig["rag"]]>([
+      [
+        "an embedding model of any width",
+        { provider: "google", providerConfig: { google: { apiKey: "k" } }, embedding: { model: "gemini-embedding-001" } },
+        { embedder: "ai", store: "pgvector", storeConfig: { pgvector: { databaseUrl: "postgres://pg/db" } } },
+      ],
+      [
+        "a legacy embedder",
+        { provider: "azure", providerConfig: { azure: { apiKey: "k", resourceName: "eastus" } } },
+        {
+          embedder: "ai-sdk",
+          embedderConfig: { openai: { model: "my-embedding-deployment" } },
+          store: "pgvector",
+          storeConfig: { pgvector: { databaseUrl: "postgres://pg/db" } },
+        },
+      ],
+    ])("loads pgvector with %s and no width set: the width comes from the model when the index is built", (_case, ai, rag) => {
+      const rt = runtimeFor(config(ai, rag));
+      expect(rt.ai.embedding?.dimensions).toBeUndefined();
+      expect(rt.flat.ASKDB_RAG_EMBEDDER_DIMENSIONS).toBeUndefined();
+    });
+
+    it.each<[string, AskDbConfig["rag"]]>([
+      [
+        "rag.storeConfig.pgvector.dimensions",
+        { embedder: "openai", store: "pgvector", storeConfig: { pgvector: { databaseUrl: "postgres://pg/db", dimensions: "abc" } } },
+      ],
+      [
+        "rag.embedderConfig.openai.dimension",
+        { embedder: "openai", embedderConfig: { openai: { dimension: "0" } }, store: "memory", storeConfig: { memory: {} } },
+      ],
+    ])("reports an invalid legacy %s as ignored", (key, rag) => {
+      const rt = runtimeFor(config(OPENAI_AI, rag));
+      expect(rt.ai.embedding?.dimensions).toBeUndefined();
+      expect(rt.deprecations.some((message) => message.includes(key) && message.includes("isn't a positive integer"))).toBe(
+        true,
+      );
+    });
+
+    it.each<[string, AskDbConfig, RegExp]>([
+      [
+        "duplicate connection names",
+        config({ provider: "azure", providerConfig: { azure: [{ resourceName: "a" }, { name: "default", resourceName: "b" }] } }),
+        /ai\.providerConfig\.azure has more than one connection named "default"/,
+      ],
+      [
+        "an unknown connection",
+        config({ provider: "openai", providerConfig: { openai: { apiKey: "k" } }, language: { connection: "eu" } }),
+        /ai\.language\.connection is "eu", but ai\.providerConfig\.openai has no connection by that name \(it has: "default"\)/,
+      ],
+      [
+        "no default connection among several",
+        config({ provider: "azure", providerConfig: { azure: [{ name: "westus", resourceName: "w" }] } }),
+        /ai\.providerConfig\.azure has no connection named "default" \(it has: "westus"\)/,
+      ],
+      [
+        "an ai.embedding provider with no connection",
+        config(
+          { provider: "anthropic", providerConfig: { anthropic: { apiKey: "k" } }, embedding: { provider: "openai", model: "text-embedding-3-small" } },
+          { embedder: "ai", store: "memory", storeConfig: { memory: {} } },
+        ),
+        /ai\.providerConfig\.openai is required when ai\.embedding\.provider is "openai"/,
+      ],
+      [
+        "a custom provider with only named connections",
+        config({ provider: "mistral", providerConfig: { mistral: [{ name: "eu", apiKey: "k" }] }, language: { model: "m" } }),
+        /ai\.providerConfig\.mistral has no connection named "default" \(it has: "eu"\)/,
+      ],
+      [
+        "no provider for the language section",
+        config({ providerConfig: { openai: { apiKey: "k" } } }),
+        /ai\.language has no provider; set ai\.language\.provider or ai\.provider/,
+      ],
+      [
+        "anthropic as the ai.embedding provider",
+        config(
+          { provider: "anthropic", providerConfig: { anthropic: { apiKey: "k" } }, embedding: { model: "voyage-3" } },
+          { embedder: "ai", store: "memory", storeConfig: { memory: {} } },
+        ),
+        /anthropic has no embeddings API; set ai\.embedding\.provider/,
+      ],
+      [
+        'rag.embedder "ai" without a model',
+        config(OPENAI_AI, { embedder: "ai", store: "memory", storeConfig: { memory: {} } }),
+        /rag\.embedder is "ai" but ai\.embedding\.model is not set/,
+      ],
+      [
+        'a legacy "ai-sdk" embedder on a provider with no default embedding model',
+        config(
+          { provider: "google", providerConfig: { google: { apiKey: "k" } } },
+          { embedder: "ai-sdk", embedderConfig: {}, store: "memory", storeConfig: { memory: {} } },
+        ),
+        /rag\.embedder "ai-sdk" embeds with "google", which has no default embedding model/,
+      ],
+      [
+        'a legacy "openai" embedder whose provider has only named connections',
+        config(
+          { provider: "anthropic", providerConfig: { anthropic: { apiKey: "k" }, openai: [{ name: "eu", apiKey: "k" }] } },
+          { embedder: "openai", embedderConfig: {}, store: "memory", storeConfig: { memory: {} } },
+        ),
+        /ai\.providerConfig\.openai has no connection named "default" \(it has: "eu"\)/,
+      ],
+      [
+        "pgvector dimensions that disagree with ai.embedding.dimensions",
+        config(
+          { ...OPENAI_AI, embedding: { model: "text-embedding-3-small", dimensions: 1536 } },
+          { embedder: "ai", store: "pgvector", storeConfig: { pgvector: { databaseUrl: "postgres://pg/db", dimensions: 768 } } },
+        ),
+        /ai\.embedding\.dimensions is 1536 but rag\.storeConfig\.pgvector\.dimensions is 768/,
+      ],
+      [
+        "ai.reasoning plus ai.language.reasoning",
+        config({ ...OPENAI_AI, reasoning: { effort: "low" }, language: { reasoning: { effort: "high" } } }),
+        /ai\.reasoning and ai\.language\.reasoning are both set/,
+      ],
+      [
+        "ai.embedding with a legacy rag.embedder",
+        config(
+          { ...OPENAI_AI, embedding: { model: "text-embedding-3-small" } },
+          { embedder: "openai", store: "memory", storeConfig: { memory: {} } },
+        ),
+        /ai\.embedding is set but rag\.embedder is "openai"; set rag\.embedder: "ai"/,
+      ],
+      [
+        'rag.embedderConfig with rag.embedder "ai"',
+        config(
+          { ...OPENAI_AI, embedding: { model: "text-embedding-3-small" } },
+          { embedder: "ai", embedderConfig: { openai: { dimension: 512 } }, store: "memory", storeConfig: { memory: {} } },
+        ),
+        /rag\.embedderConfig is set but rag\.embedder is "ai"/,
+      ],
+    ])("refuses %s at load", (_name, input, error) => {
+      expect(() => flattenAskDbConfig(input)).toThrow(error);
+    });
+
+    it("names each legacy key once in its deprecation message, and never a value", () => {
+      const legacy = {
+        ai: {
+          provider: "azure",
+          providerConfig: {
+            azure: { apiKey: "az-secret", resourceName: "eastus", model: "askdb-reporting", modelFamily: "gpt-5" },
+          },
+          reasoning: { effort: "low" },
+        },
+        introspection: { provider: "postgres", providerConfig: { postgres: {} } },
+        rag: {
+          embedder: "ai-sdk",
+          embedderConfig: {
+            openai: {
+              model: "embedding-deployment",
+              dimension: 1536,
+              apiKey: "rag-secret",
+              baseUrl: "https://westus-secret.openai.azure.com/openai",
+            },
+          },
+          store: "pgvector",
+          storeConfig: { pgvector: { databaseUrl: "postgres://pg-secret@db/rag", dimensions: 1536 } },
+        },
+      } satisfies AskDbConfig;
+      const { deprecations, entries } = defineConfig(legacy);
+      for (const key of [
+        "ai.providerConfig.azure.model",
+        "ai.providerConfig.azure.modelFamily",
+        "ai.reasoning",
+        'rag.embedder "ai-sdk"',
+        "rag.embedderConfig.openai.model",
+        "rag.embedderConfig.openai.dimension",
+        "rag.embedderConfig.openai.apiKey",
+        "rag.embedderConfig.openai.baseUrl",
+        "rag.storeConfig.pgvector.dimensions",
+      ]) {
+        expect(deprecations?.filter((message) => message.includes(`${key} `)), key).toHaveLength(1);
+      }
+      for (const secret of ["secret", "askdb-reporting", "embedding-deployment"]) {
+        expect(deprecations?.join("\n")).not.toContain(secret);
+      }
+      // The legacy keys still drive the same settings.
+      expect(entries.AZURE_OPENAI_DEPLOYMENT).toBe("askdb-reporting");
+      expect(entries.ASKDB_AI_AZURE_MODEL_FAMILY).toBe("gpt-5");
+      expect(entries.ASKDB_AI_REASONING_EFFORT).toBe("low");
+    });
+
+    it("prefers ai.language.model over a legacy provider model, and says the legacy one is ignored", () => {
+      const { deprecations, entries } = defineConfig(config({ ...OPENAI_AI, language: { model: "gpt-5" } }));
+      expect(entries.OPENAI_MODEL).toBe("gpt-5");
+      expect(deprecations).toEqual([
+        "askdb.config: ai.providerConfig.openai.model is deprecated and ignored because ai.language.model is set; remove it.",
+      ]);
+    });
+
+    it.each([
+      ["an empty rag.embedderConfig", {}, []],
+      [
+        "a rag.embedderConfig with values",
+        { openai: { model: "text-embedding-3-small" } },
+        ['askdb.config: rag.embedderConfig is ignored because rag.embedder is "mock"; remove it.'],
+      ],
+    ] satisfies [string, NonNullable<AskDbConfig["rag"]["embedderConfig"]>, string[]][])(
+      'warns about %s with rag.embedder "mock" only when it holds a value',
+      (_name, embedderConfig, expected) => {
+        const ai = { provider: "openai", providerConfig: { openai: { apiKey: "k" } } } satisfies AskDbConfig["ai"];
+        const { deprecations } = defineConfig(
+          config(ai, { embedder: "mock", embedderConfig, store: "memory", storeConfig: { memory: {} } }),
+        );
+        expect(deprecations).toEqual(expected);
+      },
+    );
+
+    it.each([
+      [
+        "the pgvector store with a width",
+        { store: "pgvector", storeConfig: { pgvector: { databaseUrl: "postgres://x/db", dimensions: 128 } } },
+        [
+          'askdb.config: rag.storeConfig.pgvector.dimensions is ignored because rag.embedder is "mock" (its vectors are always 64 wide); remove it.',
+        ],
+      ],
+      ["the pgvector store without one", { store: "pgvector", storeConfig: { pgvector: { databaseUrl: "postgres://x/db" } } }, []],
+      [
+        "another store, with an unused pgvector branch",
+        { store: "memory", storeConfig: { memory: {}, pgvector: { dimensions: 128 } } },
+        [],
+      ],
+    ] satisfies [string, Pick<AskDbConfig["rag"], "store" | "storeConfig">, string[]][])(
+      'warns that rag.storeConfig.pgvector.dimensions does nothing with rag.embedder "mock": %s',
+      (_name, store, expected) => {
+        const ai = { provider: "openai", providerConfig: { openai: { apiKey: "k" } } } satisfies AskDbConfig["ai"];
+        const { deprecations } = defineConfig(config(ai, { embedder: "mock", ...store }));
+        expect(deprecations).toEqual(expected);
+      },
+    );
+
+    it('writes the mock embedder\'s own width to the flat map, not rag.storeConfig.pgvector.dimensions', () => {
+      const ai = { provider: "openai", providerConfig: { openai: { apiKey: "k" } } } satisfies AskDbConfig["ai"];
+      const { entries } = defineConfig(
+        config(ai, { embedder: "mock", store: "pgvector", storeConfig: { pgvector: { databaseUrl: "postgres://x/db", dimensions: 128 } } }),
+      );
+      expect(entries.ASKDB_RAG_EMBEDDER_DIMENSIONS).toBe("64");
     });
   });
 });
@@ -517,7 +1083,7 @@ describe("loadAskDbConfigProjectionSync", () => {
 export default defineConfig({
 ${scaffold.source}
   introspection: { provider: "postgres", providerConfig: { postgres: { databaseUrl: "postgres://x/y" } }, outputDir: "./out/" },
-  rag: { embedder: "mock", embedderConfig: {}, store: "memory", storeConfig: { memory: {} } },
+  rag: { embedder: "mock", store: "memory", storeConfig: { memory: {} } },
 } satisfies AskDbConfig);
 `,
         "utf8",
@@ -527,6 +1093,7 @@ ${scaffold.source}
       try {
         const { projection } = loadAskDbConfigProjectionSync(dir);
         expect(projection?.entries.ASKDB_AI_PROVIDER).toBe(provider);
+        expect(projection?.deprecations).toEqual([]);
         const values = Object.values(projection?.entries ?? {});
         for (const name of names) expect(values).toContain(`value-of-${name}`);
         // Azure / Foundry can't start without a resource name or endpoint.
@@ -554,9 +1121,9 @@ ${scaffold.source}
       join(dir, "askdb.config.ts"),
       `import { defineConfig, env, type AskDbConfig } from "@askdb/config";
        export default defineConfig({
-         ai: { provider: "openai", providerConfig: { openai: { apiKey: env("MY_KEY"), model: "gpt-4o-mini" } } },
+         ai: { provider: "openai", providerConfig: { openai: { apiKey: env("MY_KEY") } }, language: { model: "gpt-4o-mini" } },
          introspection: { provider: "postgres", providerConfig: { postgres: { databaseUrl: env("MY_DB") } }, outputDir: "./out/" },
-         rag: { embedder: "mock", embedderConfig: {}, store: "memory", storeConfig: { memory: {} } },
+         rag: { embedder: "mock", store: "memory", storeConfig: { memory: {} } },
        } satisfies AskDbConfig);
     `,
       "utf8",
@@ -953,9 +1520,9 @@ describe("bootstrapAskDbEnv", () => {
       join(dir, "askdb.config.ts"),
       `import { defineConfig, env, type AskDbConfig } from "@askdb/config";
        export default defineConfig({
-         ai: { provider: "openai", providerConfig: { openai: { apiKey: env("MY_AI"), model: "gpt-4o-mini" } } },
+         ai: { provider: "openai", providerConfig: { openai: { apiKey: env("MY_AI") } }, language: { model: "gpt-4o-mini" } },
          introspection: { provider: "postgres", providerConfig: { postgres: { databaseUrl: env("MY_DB") } }, outputDir: "./askdb/" },
-         rag: { embedder: "mock", embedderConfig: {}, store: "memory", storeConfig: { memory: {} } },
+         rag: { embedder: "mock", store: "memory", storeConfig: { memory: {} } },
        } satisfies AskDbConfig);
     `,
       "utf8",
@@ -967,5 +1534,34 @@ describe("bootstrapAskDbEnv", () => {
     expect(rt.ai.aiEnv.ASKDB_INTROSPECT_POSTGRES_URL).toBe("postgres://localhost/db");
     delete process.env.MY_AI;
     delete process.env.MY_DB;
+  });
+  it("reports each deprecated key once per process as a DeprecationWarning", () => {
+    dir = mkdtempSync(join(tmpdir(), "askdb-config-"));
+    linkWorkspacePackage(dir);
+    // Deliberately the legacy shape: `ai.reasoning` instead of `ai.language.reasoning`.
+    writeFileSync(
+      join(dir, "askdb.config.ts"),
+      `import { defineConfig, type AskDbConfig } from "@askdb/config";
+       export default defineConfig({
+         ai: { provider: "openai", providerConfig: { openai: { apiKey: "k" } }, reasoning: { effort: "low" } },
+         introspection: { provider: "postgres", providerConfig: { postgres: {} } },
+         rag: { embedder: "mock", store: "memory", storeConfig: { memory: {} } },
+       } satisfies AskDbConfig);
+    `,
+      "utf8",
+    );
+    const emitWarning = vi.spyOn(process, "emitWarning").mockImplementation(() => {});
+    try {
+      bootstrapAskDbEnv({ cwd: dir });
+      bootstrapAskDbEnv({ cwd: dir });
+      const message = "askdb.config: ai.reasoning is deprecated; move it to ai.language.reasoning.";
+      expect(emitWarning.mock.calls).toEqual([
+        [message, { type: "DeprecationWarning", code: "ASKDB_CONFIG_DEPRECATED" }],
+      ]);
+      expect(getAskDbRuntimeConfig().deprecations).toEqual([message]);
+      expect(getAskDbRuntimeConfig().flat.ASKDB_AI_REASONING_EFFORT).toBe("low");
+    } finally {
+      emitWarning.mockRestore();
+    }
   });
 });
