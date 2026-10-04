@@ -152,17 +152,19 @@ export function chunkSchema(
       const tableLevelSensitive = table.sensitive;
       const skip =
         (tableLevelSensitive || mentionsSensitive) && !includeSensitive;
+      // Counted per chunk: a long body splits into several.
+      const parts = splitLong(table.commonQueryLanguage, maxChars);
       if (skip) {
-        stats.sensitiveExcluded++;
+        stats.sensitiveExcluded += parts.length;
       } else {
         // The heading repeats the table's aliases; one naming a sensitive
         // column is dropped like it is from the table chunk.
         const filter = describableFilter(sensitiveColumnNames, includeSensitive);
         const aliases = (table.aliases ?? []).filter((a) => filter.allow(a));
         const sensitive = tableLevelSensitive || mentionsSensitive || filter.included;
-        if (filter.dropped) stats.sensitiveExcluded++;
-        if (sensitive) stats.sensitiveIncluded++;
-        for (const part of splitLong(table.commonQueryLanguage, maxChars)) {
+        if (filter.dropped) stats.sensitiveExcluded += parts.length;
+        if (sensitive) stats.sensitiveIncluded += parts.length;
+        for (const part of parts) {
           chunks.push(
             buildCqlChunk(table, aliases, part.text, part.suffix, schema.schemaId, sensitive),
           );
@@ -219,13 +221,14 @@ export function chunkSchema(
       if (businessContext) {
         const skipBiz =
           (table.sensitive || bizMentionsSensitive) && !includeSensitive;
+        const parts = splitLong(businessContext, maxChars);
         if (skipBiz) {
-          stats.sensitiveExcluded++;
+          stats.sensitiveExcluded += parts.length;
         } else {
           if (table.sensitive || bizMentionsSensitive) {
-            stats.sensitiveIncluded++;
+            stats.sensitiveIncluded += parts.length;
           }
-          for (const part of splitLong(businessContext, maxChars)) {
+          for (const part of parts) {
             chunks.push(
               buildBusinessContextChunk(
                 table,
@@ -285,12 +288,13 @@ export function chunkSchema(
   if (sources.tenantPolicy) {
     for (const section of tenantPolicySections(sources.tenantPolicy)) {
       const sensitive = mentionsAnyName(section.body, allSensitiveColumnNames);
+      const parts = splitLong(section.body, maxChars);
       if (sensitive && !includeSensitive) {
-        stats.sensitiveExcluded++;
+        stats.sensitiveExcluded += parts.length;
         continue;
       }
-      if (sensitive) stats.sensitiveIncluded++;
-      for (const part of splitLong(section.body, maxChars)) {
+      if (sensitive) stats.sensitiveIncluded += parts.length;
+      for (const part of parts) {
         chunks.push({
           id: chunkId(schema.schemaId, `tenant-policy#${section.slug}${part.suffix}`),
           type: "tenant-policy",

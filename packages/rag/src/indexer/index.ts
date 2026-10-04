@@ -272,9 +272,10 @@ export async function buildSchemaIndex(
     // Exact: matched on payload schemaId (also finds older-format ids).
     for (const id of await store.idsBySchema(schemaId)) candidates.add(id);
   } else {
-    // The id prefix is not schema-exact (`chunk:shop:` also prefixes
-    // `chunk:shop:eu:…`), so without `idsBySchema` only the ids this schema's
-    // own lock lists are pruned.
+    // Without `idsBySchema` only the ids this schema's own lock lists are
+    // pruned. The id prefix isn't safe here: it can match other schemas' ids
+    // in the older, unscoped format (`chunk:table:` is both the prefix of a
+    // schema named `table` and the start of every old table-chunk id).
     logger?.info(
       {
         ...baseLogContext,
@@ -364,7 +365,8 @@ type FullReindexReason =
   | "lock-outdated"
   | "embedder-changed"
   | "dimensions-changed"
-  | "store-changed";
+  | "store-changed"
+  | "store-unidentified";
 
 function decideFullReindex(args: {
   force: boolean;
@@ -396,11 +398,14 @@ function decideFullReindex(args: {
   // The lock's hashes only describe the store they were written to. Stores
   // that report their own hashes don't depend on it.
   if (!args.storeReportsHashes) {
-    const current = args.descriptor ? storeIdentity(args.descriptor) : undefined;
+    // Without `describe()` nothing shows this is the store the lock was
+    // written to (a fresh, empty instance looks the same), so trust nothing.
+    if (!args.descriptor) return "store-unidentified";
+    const current = storeIdentity(args.descriptor);
     const previous = lock.store;
     if (
-      (current?.kind ?? null) !== (previous?.kind ?? null) ||
-      (current?.location ?? null) !== (previous?.location ?? null)
+      current.kind !== previous?.kind ||
+      (current.location ?? null) !== (previous?.location ?? null)
     ) {
       return "store-changed";
     }

@@ -1,4 +1,4 @@
-import { cpSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { cpSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -77,6 +77,24 @@ describe("askdb-rag CLI", () => {
       await runRagCli(["query", schemaDir, "--question", "paid orders", "--dimensions", "32"]),
     ).toBe(1);
     expect(stderr.join("")).toMatch(/built with embedder "mock:lexical-64" but this query uses "mock:lexical-32"/);
+  });
+
+  it("query refuses an index whose lock records no embedder id", async () => {
+    const schemaDir = copyFixture();
+    expect(await runRagCli(["index", schemaDir])).toBe(0);
+    const lockPath = join(schemaDir, "schema.lock.json");
+    const { embedderId: _, ...lock } = JSON.parse(readFileSync(lockPath, "utf8")) as Record<string, unknown>;
+    writeFileSync(lockPath, JSON.stringify(lock));
+
+    expect(await runRagCli(["query", schemaDir, "--question", "paid orders"])).toBe(1);
+    expect(stderr.join("")).toMatch(/built without an embedder id, so its embedder is unknown, but this query uses "mock:lexical-64"/);
+  });
+
+  it("setup-store rejects an unknown --embedder before touching the database", async () => {
+    expect(
+      await runRagCli(["setup-store", "--pg-url", "postgres://127.0.0.1:1/none", "--embedder", "opanai"]),
+    ).toBe(1);
+    expect(stderr.join("")).toMatch(/Unknown embedder: opanai \(expected 'mock' or 'openai'\)/);
   });
 
   it("query --store memory explains the store is per-process", async () => {

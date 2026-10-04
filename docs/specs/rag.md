@@ -16,7 +16,7 @@ The retriever is wired into `ask()` via an optional `retriever` parameter. When 
 ### In scope
 
 - **Chunker** — `chunkSchema(sources) → { chunks, stats }`; deterministic from the schema artifact; chunk types: `table`, `column`, `cql`, `question`, `concept`, `tenant-policy`, optional `relationship`
-- **Stable, schema-scoped chunk IDs** — `chunk:<schemaId>:<local-id>` (e.g. `chunk:orders-users:table:public.orders#cql`); stable across OS/file-system ordering; long-body paragraph splitting with stable `#bc:N` suffixes. Several schemas can share one store.
+- **Stable, schema-scoped chunk IDs** — `chunk:<schemaId>:<local-id>` (e.g. `chunk:orders-users:table:public.orders#cql`; `%` and `:` in the schema id are percent-encoded, so `shop:eu` becomes `shop%3Aeu`); stable across OS/file-system ordering; long-body paragraph splitting with stable `#bc:N` suffixes. Several schemas can share one store.
 - **Sensitive propagation** — describable-layer content for sensitive columns/tables excluded by default; `cql` / example-question / business-context chunks mentioning a sensitive column of the same table by name (whole word, case-insensitive) excluded; concepts and tenant-policy sections mentioning a sensitive column of any table excluded; table descriptions, aliases (including the `cql` heading's), primary entity (including the example-question heading's), and non-sensitive column descriptions/notes that mention one are dropped; relationship chunks touching a sensitive column excluded; `includeSensitiveDescribable: true` overrides with a warning event
 - **BYO embedder** — `Embedder = (texts: string[]) => Promise<number[][]>`; default reference: AI SDK `embedMany()`
 - **BYO vector store** — `VectorStore` interface; three adapters:
@@ -39,7 +39,7 @@ The retriever is wired into `ask()` via an optional `retriever` parameter. When 
 - **Deterministic chunker** — two runs on the same artifact always produce byte-identical chunks. Chunk IDs are content-stable so the indexer can skip unchanged chunks reliably. File-system ordering never affects output.
 - **BYO embedder and store** — AskDB does not bundle an embedder or mandate a vector store. The same principle as BYO model: consumers bring their own infrastructure. The `VectorStore` interface is the plug-in seam.
 - **Sensitive chunks excluded by default** — the chunker excludes describable-layer content (descriptions, aliases, CQL sections) for sensitive columns. Embedding sensitive business context and making it retrievable is an opt-in decision by the host.
-- **The store is the source of truth for incremental indexing** — editing one table description should not re-embed every chunk, but a lock file alone can't prove the vectors exist (switching stores, a restarted in-memory store, or a fresh pgvector database with a committed lock would otherwise silently index nothing). Stores that implement `hashesByPrefix` (all built-ins) report what they hold; only chunks whose id + content hash they don't hold are embedded.
+- **The store is the source of truth for incremental indexing** — editing one table description should not re-embed every chunk, but a lock file alone can't prove the vectors exist (switching stores, a restarted in-memory store, or a fresh pgvector database with a committed lock would otherwise silently index nothing). Stores that implement `hashesByPrefix` (all built-ins) report what they hold; only chunks whose id + content hash they don't hold are embedded. Stores without `hashesByPrefix` fall back to the lock's hashes only when `describe()` reports the same store identity and dimensions the lock records; a store with neither re-embeds everything.
 - **`schema.lock.json` guards identity** — the lock (version 2) records `embedderId`, `dimensions`, store identity (`kind`, plus a machine-independent `location` such as the pgvector table; the file store records only its kind), and per-chunk hashes. A missing lock, a lock from an older version, a different embedder id (including unset vs. set), or different dimensions re-embeds everything. Stores that can't report hashes fall back to the lock's hashes when the store identity matches. Upgrading from a version-1 lock (unscoped chunk ids) triggers a one-time full reindex; the old ids listed in that lock are deleted.
 - **Full DDL path preserved** — when no retriever is supplied, `ask()` behavior is byte-identical to pre-RAG. RAG is additive, not a replacement.
 
@@ -48,7 +48,7 @@ The retriever is wired into `ask()` via an optional `retriever` parameter. When 
 ```ts
 // Chunker
 chunkSchema(sources: ChunkerSources, options?: ChunkOptions): { chunks: Chunk[]; stats: ChunkStats }
-chunkIdPrefix(schemaId: string): string   // "chunk:<schemaId>:"
+chunkIdPrefix(schemaId: string): string   // "chunk:<schemaId>:", `%` and `:` in schemaId percent-encoded
 
 interface Chunk {
   id: string                     // e.g. "chunk:orders-users:table:public.orders"

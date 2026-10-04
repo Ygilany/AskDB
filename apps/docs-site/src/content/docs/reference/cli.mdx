@@ -263,7 +263,7 @@ askdb-rag setup-store --pg-url "$DATABASE_URL" --embedder openai
 | --- | --- |
 | `--pg-url <connstr>` | Postgres connection string (required). |
 | `--pg-table <name>` | Custom table name. Default `askdb_rag_chunks`. |
-| `--embedder <id>` / `--embedder-model <id>` | Used to pick the default dimensions, the same way `index` does. |
+| `--embedder <id>` / `--embedder-model <id>` | Used to pick the default dimensions, the same way `index` does. `--embedder` must be `mock` or `openai`. |
 | `--dimensions <n>` | Embedding dimensions. Defaults to the embedder's: `64` for the default `mock` embedder, `1536` for `--embedder openai` (`text-embedding-3-small`), `3072` for `text-embedding-3-large`. |
 
 If the table already exists with a different `vector(n)` dimension, the command fails with an error rather than keeping the old dimension silently.
@@ -300,7 +300,7 @@ askdb-rag query ./my-app.schema --question "customer signups" -k 8
 | `--question <text>` | The query text (required). |
 | `-k <n>` | Top-k chunks to return. Default `8`. |
 | `--types <list>` | Restrict chunk types, e.g. `table,column,cql`. |
-| `--store`, `--embedder`, `--embedder-model`, `--dimensions`, `--pg-url`, `--pg-table`, `--file-path` | Must match the `index` run. `query` fails if the embedder id or dimensions differ from `schema.lock.json`. `--store memory` isn't supported: a memory store only lives inside one process. |
+| `--store`, `--embedder`, `--embedder-model`, `--dimensions`, `--pg-url`, `--pg-table`, `--file-path` | Must match the `index` run. `query` fails if the embedder id or dimensions differ from `schema.lock.json`, or if the lock records no embedder id. `--store memory` isn't supported: a memory store only lives inside one process. |
 
 All three commands accept the [shared logging flags](#shared-logging-flags).
 

@@ -57,7 +57,7 @@ The file store writes each file to a temp path and renames it into place, and th
 
 ### Upgrading from an earlier `@askdb/rag`
 
-Chunk ids are now scoped to the schema (`chunk:<schemaId>:table:public.orders` instead of `chunk:table:public.orders`) and `schema.lock.json` moved to version 2. The first index run after upgrading re-embeds every chunk once and deletes that schema's old-format ids. The built-in stores find them by `schemaId` (`idsBySchema`), so they're removed even without the old lock. Custom stores without `idsBySchema` rely on the ids listed in the previous lock: they never prune by id prefix, because `chunk:shop:` also prefixes another schema's `chunk:shop:eu:` ids.
+Chunk ids are now scoped to the schema (`chunk:<schemaId>:table:public.orders` instead of `chunk:table:public.orders`) and `schema.lock.json` moved to version 2. The first index run after upgrading re-embeds every chunk once and deletes that schema's old-format ids. The built-in stores find them by `schemaId` (`idsBySchema`), so they're removed even without the old lock. `%` and `:` in a schema id are percent-encoded in chunk ids (`shop:eu` → `chunk:shop%3Aeu:…`). Custom stores without `idsBySchema` rely on the ids listed in the previous lock: they never prune by id prefix, because a prefix can match another schema's old-format ids (`chunk:table:` is both the prefix of a schema named `table` and the start of every old table-chunk id).
 
 The pgvector store now needs a `content_hash` column. `ensureSchema()` adds it (Studio and `askdb-rag index --store pgvector` call it for you). If you create the table from `setupSql()` in your own migrations, or never call `ensureSchema()`, add a migration before the first index run; otherwise indexing fails on the missing column:
 

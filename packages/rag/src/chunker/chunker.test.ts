@@ -256,6 +256,23 @@ describe("schema-scoped chunk ids", () => {
     const idsB = chunkSchema(b).chunks.map((c) => c.id);
     expect(idsB.some((id) => idsA.has(id))).toBe(false);
   });
+
+  it("keeps ids disjoint when a schema id contains `:`", () => {
+    // Unencoded, `shop` + `concept:eu:concept:tax` and `shop:concept:eu` +
+    // `concept:tax` would both be `chunk:shop:concept:eu:concept:tax`.
+    const a = loadChunkerSourcesFromDir(FIXTURE_DIR);
+    a.schema.schemaId = "shop";
+    a.concepts!.frontmatter.concepts = [{ id: "concept:eu:concept:tax", label: "EU tax" }];
+    const b = loadChunkerSourcesFromDir(FIXTURE_DIR);
+    b.schema.schemaId = "shop:concept:eu";
+    b.concepts!.frontmatter.concepts = [{ id: "concept:tax", label: "Tax" }];
+
+    const idsA = chunkSchema(a).chunks.map((c) => c.id);
+    const idsB = chunkSchema(b).chunks.map((c) => c.id);
+    expect(idsB.filter((id) => idsA.includes(id))).toEqual([]);
+    expect(idsB.filter((id) => id.startsWith(chunkIdPrefix("shop")))).toEqual([]);
+    expect(idsB).toContain("chunk:shop%3Aconcept%3Aeu:concept:tax");
+  });
 });
 
 describe("sensitive-mention filtering", () => {
@@ -369,6 +386,25 @@ describe("sensitive-mention filtering", () => {
     const chunk = optIn.chunks.find((x) => x.id === c.optInId);
     expect(chunk?.text).toMatch(c.marker);
     expect(chunk?.sensitive).toBe(true);
+  });
+
+  it("counts a sensitive source that splits into several chunks once per chunk", () => {
+    const opts = { chunkSizeMaxChars: 40 };
+    const optInOpts = { ...opts, includeSensitiveDescribable: true };
+    const baseline = chunkSchema(sources(), opts);
+    const baselineOptIn = chunkSchema(sources(), optInOpts);
+    const s = sources();
+    table(s, "table:public.users").commonQueryLanguage = [
+      "Customers are reached via Email.",
+      "Active means a login in the last 30 days.",
+      "Churned means no order in a year.",
+    ].join("\n\n");
+
+    const optIn = chunkSchema(s, optInOpts);
+    const parts = optIn.chunks.filter((c) => c.id.startsWith("chunk:orders-users:table:public.users#cql"));
+    expect(parts).toHaveLength(3);
+    expect(optIn.stats.sensitiveIncluded - baselineOptIn.stats.sensitiveIncluded).toBe(3);
+    expect(chunkSchema(s, opts).stats.sensitiveExcluded - baseline.stats.sensitiveExcluded).toBe(3);
   });
 
   it("drops table description / aliases that name a sensitive column", () => {

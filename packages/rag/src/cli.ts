@@ -193,9 +193,15 @@ function assertQueryMatchesIndex(opts: CliOptions, schemaId: string): void {
   if (inspected.status !== "ok" || inspected.lock.schemaId !== schemaId) return;
   const lock = inspected.lock;
   const currentId = embedderId(opts);
-  if (lock.embedderId !== undefined && lock.embedderId !== currentId) {
+  // A lock with no embedder id can't show the index was built with this one;
+  // equal dimensions don't make two models' vectors comparable.
+  if (lock.embedderId !== currentId) {
+    const built =
+      lock.embedderId === undefined
+        ? "without an embedder id, so its embedder is unknown,"
+        : `with embedder "${lock.embedderId}"`;
     throw new Error(
-      `The index was built with embedder "${lock.embedderId}" but this query uses "${currentId}". ` +
+      `The index was built ${built} but this query uses "${currentId}". ` +
         "Pass the same --embedder/--embedder-model/--dimensions used for `index`, or re-run `index`.",
     );
   }
@@ -388,9 +394,14 @@ function parseOptions(argv: readonly string[]): CliOptions {
       case "--store":
         opts.store = readValue(argv, ++i, arg) as CliOptions["store"];
         break;
-      case "--embedder":
-        opts.embedder = readValue(argv, ++i, arg) as CliOptions["embedder"];
+      case "--embedder": {
+        const raw = readValue(argv, ++i, arg);
+        if (raw !== "mock" && raw !== "openai") {
+          throw new Error(`Unknown embedder: ${raw} (expected 'mock' or 'openai').`);
+        }
+        opts.embedder = raw;
         break;
+      }
       case "--embedder-model":
         opts.embedderModel = readValue(argv, ++i, arg);
         break;

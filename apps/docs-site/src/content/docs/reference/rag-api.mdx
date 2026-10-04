@@ -81,7 +81,7 @@ const { sql } = await ask({
 | `stats.chunksTotal` | `number` | Total chunk count after indexing. Pass as `totalSchemaChunkCount` to `ask()`. |
 | `stats.chunksIndexed` | `number` | Chunks newly embedded in this run. |
 | `stats.chunksReused` | `number` | Chunks skipped because the store already held them with the same content hash. |
-| `stats.sensitiveExcluded` | `number` | Chunks left out, plus chunks emitted with part of their describable text (a description, alias, primary entity, enum values, or note) dropped, because the content belongs to or mentions a sensitive table/column. Exclusion is the default. |
+| `stats.sensitiveExcluded` | `number` | Chunks left out, plus chunks emitted with part of their describable text (a description, alias, primary entity, enum values, or note) dropped, because the content belongs to or mentions a sensitive table/column. A long source that would split into several chunks counts once per chunk. Exclusion is the default. |
 | `stats.sensitiveIncluded` | `number` | Chunks whose sensitive describable content was embedded only because `chunkOptions.includeSensitiveDescribable: true` was set. Always `0` by default. |
 | `chunks` | `Chunk[]` | Full chunk list sorted by id. Useful for diagnostics. |
 
@@ -220,7 +220,7 @@ interface VectorStore {
 }
 ```
 
-Persist `UpsertRecord.hash` and implement `hashesByPrefix` so the indexer can verify what your store holds. It then skips only chunks stored with the same content hash. Without it, the indexer falls back to the hashes in `schema.lock.json`, and only trusts them when `describe()` reports the same store and dimensions as the lock. Implement `idsBySchema` so chunks removed from the schema are pruned from your store without touching other schemas. Without it, the indexer prunes only the ids listed in the previous `schema.lock.json` and logs `askdb.rag.orphan_cleanup_limited`. Keep `describe().location` free of absolute paths: it is written to `schema.lock.json`, which you usually commit.
+Persist `UpsertRecord.hash` and implement `hashesByPrefix` so the indexer can verify what your store holds. It then skips only chunks stored with the same content hash. Without it, the indexer falls back to the hashes in `schema.lock.json`, and only trusts them when `describe()` reports the same store and dimensions as the lock. A store with neither `hashesByPrefix` nor `describe()` re-embeds every chunk on each run, because a fresh, empty instance can't be told apart from the one the lock describes. Implement `idsBySchema` so chunks removed from the schema are pruned from your store without touching other schemas. Without it, the indexer prunes only the ids listed in the previous `schema.lock.json` and logs `askdb.rag.orphan_cleanup_limited`. Keep `describe().location` free of absolute paths: it is written to `schema.lock.json`, which you usually commit.
 
 ---
 
@@ -292,7 +292,7 @@ type Filter = {
 
 | Field | Type | Description |
 | --- | --- | --- |
-| `id` | `string` | Stable, schema-scoped chunk id: `chunk:<schemaId>:<local-id>`, e.g. `chunk:my-app:table:public.orders#cql`. Unchanged across re-indexes. Use `chunkIdPrefix(schemaId)` to get the prefix. |
+| `id` | `string` | Stable, schema-scoped chunk id: `chunk:<schemaId>:<local-id>`, e.g. `chunk:my-app:table:public.orders#cql`. `%` and `:` in the schema id are percent-encoded (`shop:eu` → `chunk:shop%3Aeu:…`). Unchanged across re-indexes. Use `chunkIdPrefix(schemaId)` to get the prefix. |
 | `type` | `ChunkType` | Semantic kind of this chunk. |
 | `text` | `string` | The text that gets embedded. |
 | `schemaId` | `string` | The schema this chunk belongs to. |

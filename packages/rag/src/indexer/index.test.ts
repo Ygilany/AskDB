@@ -370,6 +370,18 @@ describe("buildSchemaIndex — lock-file fallback for stores without hashesByPre
     expect(second.stats.chunksIndexed).toBe(second.stats.chunksTotal);
     expect(readLockFile(lockFilePath)?.dimensions).toBe(3);
   });
+
+  it("re-embeds everything into a store that can't identify itself, even a fresh, empty one", async () => {
+    const sources = loadChunkerSourcesFromDir(FIXTURE_DIR);
+    const lockFilePath = tempLockPath();
+    const opts = { schema: sources, embedder: deterministicEmbedder(), embedderId: "e", lockFilePath };
+
+    await buildSchemaIndex({ ...opts, store: lockOnlyStore(createMemoryStore()) });
+    const fresh = createMemoryStore();
+    const second = await buildSchemaIndex({ ...opts, store: lockOnlyStore(fresh) });
+    expect(second.stats.chunksIndexed).toBe(second.stats.chunksTotal);
+    expect(fresh.size()).toBe(second.stats.chunksTotal);
+  });
 });
 
 describe("buildSchemaIndex — schema-scoped ids and orphan cleanup", () => {
@@ -405,7 +417,7 @@ describe("buildSchemaIndex — schema-scoped ids and orphan cleanup", () => {
     const a = loadChunkerSourcesFromDir(FIXTURE_DIR);
     a.schema.schemaId = "shop";
     const b = loadChunkerSourcesFromDir(FIXTURE_DIR);
-    b.schema.schemaId = "shop:eu"; // ids start with `chunk:shop:` too
+    b.schema.schemaId = "shop:eu"; // extends `shop`'s id
     await buildSchemaIndex({ schema: a, embedder, store, embedderId: "e" });
     const indexB = await buildSchemaIndex({ schema: b, embedder, store, embedderId: "e" });
     await buildSchemaIndex({ schema: a, embedder, store, embedderId: "e" });
@@ -419,7 +431,7 @@ describe("buildSchemaIndex — schema-scoped ids and orphan cleanup", () => {
     const a = loadChunkerSourcesFromDir(FIXTURE_DIR);
     a.schema.schemaId = "shop";
     const b = loadChunkerSourcesFromDir(FIXTURE_DIR);
-    b.schema.schemaId = "shop:eu"; // ids start with `chunk:shop:` too
+    b.schema.schemaId = "shop:eu"; // extends `shop`'s id
     const lockA = tempLockPath();
 
     await buildSchemaIndex({ schema: a, embedder, store, embedderId: "e", lockFilePath: lockA });

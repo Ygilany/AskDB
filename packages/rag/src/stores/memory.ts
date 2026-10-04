@@ -139,7 +139,9 @@ export function createMemoryStore(): MemoryStore {
     },
     restore(snap) {
       records.clear();
-      dimensions = snap.dimensions;
+      // An empty snapshot has no width (the file store writes it as 0), so
+      // the restored store accepts vectors of any width, like an emptied one.
+      dimensions = snap.records.length > 0 ? snap.dimensions : undefined;
       for (const r of snap.records) {
         records.set(r.id, {
           id: r.id,

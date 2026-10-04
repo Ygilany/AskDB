@@ -227,7 +227,7 @@ Concepts produce their own chunks at retrieval time (see [Chunking rules](#chunk
 
 `@askdb/rag` derives chunks deterministically from the v2 artifact. Each chunk has a stable `id` and a derived **chunk text** that is what gets embedded.
 
-Every chunk id is scoped to the schema: `chunk:<schemaId>:<local-id>` (e.g. `chunk:orders-users:table:public.orders#cql`), so several schemas can share one vector store without overwriting or pruning each other's chunks. The table below lists the `<local-id>` part.
+Every chunk id is scoped to the schema: `chunk:<schemaId>:<local-id>` (e.g. `chunk:orders-users:table:public.orders#cql`), so several schemas can share one vector store without overwriting or pruning each other's chunks. `%` and `:` in the schema id are percent-encoded (`shop:eu` → `shop%3Aeu`), so the first `:` after `chunk:` always ends the schema id. The table below lists the `<local-id>` part.
 
 | Chunk type | `<local-id>` | Chunk text contains |
 |---|---|---|

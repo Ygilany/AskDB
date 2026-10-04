@@ -159,7 +159,7 @@ Set `chunkOptions: { includeSensitiveDescribable: true }` only if your trust mod
 
 ## Custom table or dimensions
 
-Several schemas can share one table: chunk ids are scoped by schema id (`chunk:<schemaId>:…`), and reindexing one schema never removes another schema's chunks. Use a separate table when deployments use different embedding models or dimensions. To isolate multiple AskDB deployments in the same Postgres database, pass a custom table name and a matching embedding dimension:
+Several schemas can share one table: chunk ids are scoped by schema id (`chunk:<schemaId>:…`, with `%` and `:` in the schema id percent-encoded), and reindexing one schema never removes another schema's chunks. Use a separate table when deployments use different embedding models or dimensions. To isolate multiple AskDB deployments in the same Postgres database, pass a custom table name and a matching embedding dimension:
 
 ```bash
 askdb-rag setup-store \

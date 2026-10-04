@@ -20,7 +20,8 @@ export type ChunkType =
  * One slice of the v2 artifact, embedded as a single vector.
  *
  * `text` is what gets embedded. `id` is stable across runs and scoped to the
- * schema (`chunk:<schemaId>:<local-id>`, e.g.
+ * schema (`chunk:<schemaId>:<local-id>`, `%`/`:` in the schema id
+ * percent-encoded; e.g.
  * `chunk:orders-users:table:public.orders`) so several schemas can share one
  * vector store without overwriting each other. Re-embedding is gated on the
  * chunk's content hash as reported by the store (or `schema.lock.json` for
@@ -117,7 +118,8 @@ export type VectorStore = {
    * When implemented, the indexer treats the store as the source of truth:
    * a chunk is skipped only if the store reports the same content hash for
    * its id. Stores that omit it fall back to `schema.lock.json` bookkeeping
-   * (guarded by {@link VectorStore.describe} identity and dimensions).
+   * (guarded by {@link VectorStore.describe} identity and dimensions); a store
+   * that implements neither re-embeds every chunk on each run.
    */
   hashesByPrefix?(prefix: string): Promise<Record<string, string>>;
   /**
@@ -128,7 +130,12 @@ export type VectorStore = {
    * `schema.lock.json`.
    */
   idsBySchema?(schemaId: string): Promise<string[]>;
-  /** Optional: store identity recorded in the lock file. */
+  /**
+   * Optional: store identity recorded in the lock file. A store without
+   * `hashesByPrefix` needs it to reuse chunks from the lock: with neither,
+   * the indexer can't tell a fresh, empty instance from the one the lock
+   * describes, so it re-embeds everything.
+   */
   describe?(): VectorStoreDescriptor;
 };
 

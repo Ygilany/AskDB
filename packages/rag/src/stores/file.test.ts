@@ -83,6 +83,17 @@ describe("createFileStore", () => {
     expect((await reloaded.query([1, 0], 10)).map((r) => r.id)).toEqual(["users"]);
   });
 
+  it("reopens an emptied store without a width, so it accepts vectors of a new one", async () => {
+    const basePath = tempBasePath();
+    const store = createFileStore({ basePath });
+    await store.upsert([{ id: "orders", vector: [1, 0], payload: payload("orders") }]);
+    await store.delete(["orders"]);
+
+    const reloaded = createFileStore({ basePath });
+    await reloaded.upsert([{ id: "users", vector: [0, 0, 1], payload: payload("users") }]);
+    expect((await reloaded.query([0, 0, 1], 10)).map((r) => r.id)).toEqual(["users"]);
+  });
+
   it("supports indexer lock-file reuse after store reload", async () => {
     const basePath = tempBasePath();
     const lockFilePath = `${basePath}.lock.json`;
