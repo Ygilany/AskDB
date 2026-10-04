@@ -53,7 +53,7 @@ const ENV_SPEC: BuiltinProviderEnvSpec = {
   embeddingModelVars: ["<PROVIDER>_EMBEDDING_MODEL"], // only if embeddings exist
   baseURLVars: ["<PROVIDER>_BASE_URL"],
   defaultModel: "<defaultModel>",
-  // defaultEmbeddingModel only when the provider has a sensible default
+  // no defaultEmbeddingModel: it's deprecated, and embedding models have no defaults (configs set ai.embedding.model)
 };
 
 const CONFIG_HINT =
@@ -133,13 +133,14 @@ Rules:
 
 ## Step 4 — Config branch (required for built-ins)
 
-`packages/client/src/provider-config-drift.test.ts` fails until `@askdb/config` knows the provider: it flattens every config branch and resolves it through the registry, so the id list, env var names, and default model must all agree. `@askdb/config` must not depend on `@askdb/ai`, so mirror it there:
+`packages/client/src/provider-config-drift.test.ts` fails until `@askdb/config` knows the provider: it flattens a config for every built-in provider and resolves it through the registry, so the id list, env var names, and default language model must all agree. `@askdb/config` must not depend on `@askdb/ai`, so mirror it there. A provider adds a connection type and a language-model default, and no embedding default:
 
 - `src/constants.ts`: append `<provider>` to `ASKDB_AI_PROVIDERS`.
 - `src/defaults.ts` (+ export from `src/index.ts`): `DEFAULT_<PROVIDER>_LANGUAGE_MODEL`, equal to `ENV_SPEC.defaultModel`.
-- `src/types.ts`: a `<Provider>Config` type, add it to `AiProviderConfigs`, a `<Provider>AiConfig` branch, and the `AskDbAiConfig` union (export both from `src/index.ts`).
-- `src/flatten.ts`: an `apply<Provider>Ai()` writing env keys the provider reads (`apiKeyVars[0]`, a `baseURLVars` entry) plus `ASKDB_AI_MODEL`, and a branch using `requireProviderBranch`.
-- `src/config.test.ts`: flatten tests for the new branch; update the `ASKDB_AI_PROVIDERS` list test.
+- `src/types.ts`: a `<Provider>Connection` type holding connection fields only (`apiKey`, `baseUrl`, and any setting the adapter can't start without), never a model; add it to `AiProviderConnections` and export it from `src/index.ts`. If it has a field Azure's connection lacks, widen the index signature's union in `AiProviderConnections` too, or the named key stops type-checking, and add the field to `CONNECTION_FIELDS` in `src/normalize.ts`, or loading drops it.
+- `src/flatten.ts`: a `case` in `applyAiConnection` writing the env keys the provider reads (`apiKeyVars[0]`, a `baseURLVars` entry). The language model goes out through `applyLanguageModel`'s default branch (`ASKDB_AI_MODEL`) unless the provider has a native model variable worth writing too.
+- `src/normalize.ts`: return `DEFAULT_<PROVIDER>_LANGUAGE_MODEL` from `defaultLanguageModel()`. If the provider has no embeddings API, make the `anthropic` check in `normalizeAskDbConfig` cover it too, so a config that embeds with it fails at load.
+- `src/config.test.ts`: flatten tests for the new provider's connection; update the `ASKDB_AI_PROVIDERS` list test.
 - `src/scaffold/ai.ts` (`@askdb/config/scaffold`): if the provider can't start without a setting beyond the API key and model (as Azure needs `resourceName`), add it to `renderAskDbAiConfigScaffold`. `askdb init` and Studio's setup wizard both render the `ai` block through it, so this is the only place to change.
 
 Hand-maintained lists outside `@askdb/ai` and `@askdb/config` (everything else derives from `BUILTIN_AI_PROVIDERS` or `ASKDB_AI_PROVIDERS`):
@@ -159,7 +160,7 @@ These derive and need no change: `askdb init`'s choices, validation, and `--help
   - `guides/bring-your-own-model.mdx`: the config tab and the direct-model tab;
   - `reference/cli.mdx`: the `--ai-provider` values;
   - `reference/client-api.mdx`: the default list for `providers`;
-  - `reference/config.mdx`: the env-var table, the list of built-ins, and the reasoning mapping sentence;
+  - `reference/config.mdx`: the env-var table, the `ai.providerConfig` connection-fields table, the `ai.language` default-model row, the list of built-ins, and the reasoning mapping sentence;
   - `reference/packages.mdx`: the install tabs and the other provider mentions;
   - `apps/docs-site/public/AGENTS.md` and `docs/architecture.md`.
   Match the surrounding formatting.
@@ -168,7 +169,7 @@ These derive and need no change: `askdb init`'s choices, validation, and `--help
 
 ## Step 6 — Changeset and final gate
 
-Create `.changeset/add-<provider>-provider.md`: minor for `@askdb/ai`, `@askdb/config`, `@askdb/client` (its manifest gains the optional peer), and `askdb`, `@askdb/http-api`, `@askdb/studio` (each accepts a new provider). State the env vars, the default model, the peer package to install, and the config branch. Run `pnpm changeset status` and confirm no package is planned for a major bump.
+Create `.changeset/add-<provider>-provider.md`: minor for `@askdb/ai`, `@askdb/config`, `@askdb/client` (its manifest gains the optional peer), and `askdb`, `@askdb/http-api`, `@askdb/studio` (each accepts a new provider). State the env vars, the default language model, the peer package to install, and the connection fields. Run `pnpm changeset status` and confirm no package is planned for a major bump.
 
 **Final gate (all must pass):**
 

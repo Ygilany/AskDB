@@ -1,45 +1,24 @@
 import {
   ASKDB_LOG_LEVELS,
   ASKDB_MODES_V1,
-  ASKDB_RAG_EMBEDDERS,
   ASKDB_RAG_STORES,
-  ASKDB_REASONING_EFFORTS,
 } from "./constants.js";
 import {
-  DEFAULT_ANTHROPIC_LANGUAGE_MODEL,
-  DEFAULT_AZURE_OPENAI_DEPLOYMENT,
-  DEFAULT_GATEWAY_LANGUAGE_MODEL,
-  DEFAULT_GOOGLE_LANGUAGE_MODEL,
   DEFAULT_INTROSPECT_OUTPUT_DIR,
   DEFAULT_MOCK_RAG_EMBEDDING_DIMENSIONS,
-  DEFAULT_OPENAI_LANGUAGE_MODEL,
-  DEFAULT_RAG_EMBEDDING_MODEL,
   DEFAULT_RAG_FILE_BASE_PATH,
-  defaultRagEmbeddingDimensions,
   normalizePgvectorIndexStrategy,
   parsePositiveInteger,
 } from "./defaults.js";
-import type {
-  AnthropicConfig,
-  AnthropicAiConfig,
-  AskDbAiReasoningConfig,
-  AskDbConfig,
-  AzureAiConfig,
-  AzureConfig,
-  CustomAiConfig,
-  FoundryAiConfig,
-  FoundryConfig,
-  GatewayAiConfig,
-  GatewayConfig,
-  GoogleAiConfig,
-  GoogleConfig,
-  OpenaiAiConfig,
-  OpenaiConfig,
-} from "./types.js";
-
-function isMember<T extends readonly string[]>(value: string, allowed: T): value is T[number] {
-  return (allowed as readonly string[]).includes(value);
-}
+import {
+  isMember,
+  normalizeAskDbConfig,
+  type NormalizedAiConnection,
+  type NormalizedAiEmbeddingSection,
+  type NormalizedAiLanguageSection,
+  type NormalizedAskDbConfig,
+} from "./normalize.js";
+import type { AskDbAiReasoningConfig, AskDbConfig } from "./types.js";
 
 function set(out: Record<string, string>, key: string, value: string | undefined): void {
   if (value === undefined) return;
@@ -48,137 +27,98 @@ function set(out: Record<string, string>, key: string, value: string | undefined
   out[key] = t;
 }
 
-function applyOpenAiAi(out: Record<string, string>, cfg: OpenaiConfig): void {
-  set(out, "OPENAI_API_KEY", cfg.apiKey);
-  set(out, "OPENAI_BASE_URL", cfg.baseUrl);
-  const model = cfg.model?.trim() || DEFAULT_OPENAI_LANGUAGE_MODEL;
-  set(out, "OPENAI_MODEL", model);
-  set(out, "ASKDB_MODEL", model);
-}
-
-function applyAnthropicAi(out: Record<string, string>, cfg: AnthropicConfig): void {
-  set(out, "ANTHROPIC_API_KEY", cfg.apiKey);
-  set(out, "ANTHROPIC_BASE_URL", cfg.baseUrl);
-  const model = cfg.model?.trim() || DEFAULT_ANTHROPIC_LANGUAGE_MODEL;
-  set(out, "ASKDB_AI_MODEL", model);
-}
-
-function applyGoogleAi(out: Record<string, string>, cfg: GoogleConfig): void {
-  set(out, "GOOGLE_GENERATIVE_AI_API_KEY", cfg.apiKey);
-  set(out, "GOOGLE_AI_BASE_URL", cfg.baseUrl);
-  const model = cfg.model?.trim() || DEFAULT_GOOGLE_LANGUAGE_MODEL;
-  set(out, "ASKDB_AI_MODEL", model);
-}
-
-function applyGatewayAi(out: Record<string, string>, cfg: GatewayConfig): void {
-  set(out, "AI_GATEWAY_API_KEY", cfg.apiKey);
-  set(out, "ASKDB_AI_BASE_URL", cfg.baseUrl);
-  const model = cfg.model?.trim() || DEFAULT_GATEWAY_LANGUAGE_MODEL;
-  set(out, "ASKDB_AI_MODEL", model);
-}
-
-function applyAzureLikeAi(out: Record<string, string>, cfg: AzureConfig | FoundryConfig): void {
-  set(out, "AZURE_OPENAI_API_KEY", cfg.apiKey);
-  if (cfg.secondaryApiKey) {
-    set(out, "AZURE_OPENAI_API_KEY_SECONDARY", cfg.secondaryApiKey);
+/** Writes a connection's settings under the env keys `provider`'s `@askdb/ai` adapter reads. */
+function applyAiConnection(out: Record<string, string>, provider: string, connection: NormalizedAiConnection): void {
+  switch (provider) {
+    case "openai":
+      set(out, "OPENAI_API_KEY", connection.apiKey);
+      set(out, "OPENAI_BASE_URL", connection.baseUrl);
+      return;
+    case "anthropic":
+      set(out, "ANTHROPIC_API_KEY", connection.apiKey);
+      set(out, "ANTHROPIC_BASE_URL", connection.baseUrl);
+      return;
+    case "google":
+      set(out, "GOOGLE_GENERATIVE_AI_API_KEY", connection.apiKey);
+      set(out, "GOOGLE_AI_BASE_URL", connection.baseUrl);
+      return;
+    case "gateway":
+      set(out, "AI_GATEWAY_API_KEY", connection.apiKey);
+      set(out, "ASKDB_AI_BASE_URL", connection.baseUrl);
+      return;
+    case "azure":
+    case "foundry":
+      // `@askdb/core` treats `foundry` like Azure for env parsing.
+      set(out, "AZURE_OPENAI_API_KEY", connection.apiKey);
+      set(out, "AZURE_OPENAI_API_KEY_SECONDARY", connection.secondaryApiKey);
+      set(out, "ASKDB_AI_AZURE_RESOURCE_NAME", connection.resourceName);
+      set(out, "AZURE_OPENAI_BASE_URL", connection.baseUrl);
+      set(out, "AZURE_OPENAI_API_VERSION", connection.apiVersion);
+      return;
+    default:
+      // Custom/third-party provider: the universal ASKDB_AI_* keys that @askdb/ai's
+      // resolveBaseConfig honors for every registered adapter. Works end to end only when the
+      // host registry contains an adapter with this provider name.
+      set(out, "ASKDB_AI_API_KEY", connection.apiKey);
+      set(out, "ASKDB_AI_BASE_URL", connection.baseUrl);
   }
-  const model = cfg.model?.trim() || DEFAULT_AZURE_OPENAI_DEPLOYMENT;
-  set(out, "AZURE_OPENAI_DEPLOYMENT", model);
-  set(out, "AZURE_DEPLOYMENT_NAME", model);
-  set(out, "ASKDB_AI_MODEL", model);
-  set(out, "ASKDB_AI_AZURE_RESOURCE_NAME", cfg.resourceName);
-  set(out, "AZURE_OPENAI_BASE_URL", cfg.baseUrl);
-  set(out, "AZURE_OPENAI_API_VERSION", cfg.apiVersion);
-  set(out, "ASKDB_AI_AZURE_MODEL_FAMILY", cfg.modelFamily);
+}
+
+function applyLanguageModel(out: Record<string, string>, section: NormalizedAiLanguageSection): void {
+  const { provider, model } = section;
+  if (provider === "openai") {
+    set(out, "OPENAI_MODEL", model);
+    set(out, "ASKDB_MODEL", model);
+  } else if (provider === "azure" || provider === "foundry") {
+    set(out, "AZURE_OPENAI_DEPLOYMENT", model);
+    set(out, "AZURE_DEPLOYMENT_NAME", model);
+    set(out, "ASKDB_AI_MODEL", model);
+    set(out, "ASKDB_AI_AZURE_MODEL_FAMILY", section.modelFamily);
+  } else {
+    set(out, "ASKDB_AI_MODEL", model);
+  }
 }
 
 function applyReasoningAi(out: Record<string, string>, reasoning: AskDbAiReasoningConfig | undefined): void {
   if (!reasoning) return;
-  for (const [envKey, value] of [
-    ["ASKDB_AI_REASONING_EFFORT", reasoning.effort],
-    ["ASKDB_AI_REASONING_EFFORT_NL_TO_SQL", reasoning.nlToSql],
-    ["ASKDB_AI_REASONING_EFFORT_ENRICHMENT", reasoning.enrichment],
-  ] as const) {
-    if (value !== undefined && !isMember(value, ASKDB_REASONING_EFFORTS)) {
-      throw new Error(
-        `askdb.config: invalid ai.reasoning value "${value}" (expected one of: ${ASKDB_REASONING_EFFORTS.join(", ")}).`,
-      );
-    }
-    set(out, envKey, value);
-  }
+  set(out, "ASKDB_AI_REASONING_EFFORT", reasoning.effort);
+  set(out, "ASKDB_AI_REASONING_EFFORT_NL_TO_SQL", reasoning.nlToSql);
+  set(out, "ASKDB_AI_REASONING_EFFORT_ENRICHMENT", reasoning.enrichment);
 }
 
-function requireProviderBranch<T>(
-  provider: string,
-  branch: T | undefined,
-): T {
-  if (!branch) {
-    throw new Error(
-      `askdb.config: ai.providerConfig.${provider} is required when ai.provider is "${provider}". ` +
-        `(Did you put the settings under providerConfig.custom? That branch is only for ` +
-        `third-party providers without a first-party package.)`,
-    );
-  }
-  return branch;
+/** The env view of `ai.language`: its provider, its connection only, its model and reasoning. */
+export function aiLanguageEnv(section: NormalizedAiLanguageSection): Record<string, string> {
+  const out: Record<string, string> = {};
+  set(out, "ASKDB_AI_PROVIDER", section.provider);
+  applyAiConnection(out, section.provider, section.connection);
+  applyLanguageModel(out, section);
+  applyReasoningAi(out, section.reasoning);
+  return out;
 }
 
-function resolveRagEmbeddingDimensions(rag: AskDbConfig["rag"]): number {
-  if (rag.embedder === "openai" || rag.embedder === "ai-sdk") {
-    const ec = rag.embedderConfig.openai;
-    if (!ec) {
-      throw new Error(`askdb.config: rag.embedderConfig.openai is required for embedder "${rag.embedder}".`);
-    }
-    const model = ec.model?.trim() || DEFAULT_RAG_EMBEDDING_MODEL;
-    const parsed = parsePositiveInteger(ec.dimension);
-    return parsed ?? defaultRagEmbeddingDimensions(model);
-  }
-  return DEFAULT_MOCK_RAG_EMBEDDING_DIMENSIONS;
+/** The env view of `ai.embedding`: its provider, its connection only, and its model. Nothing from the language side. */
+export function aiEmbeddingEnv(section: NormalizedAiEmbeddingSection): Record<string, string> {
+  const out: Record<string, string> = {};
+  set(out, "ASKDB_AI_PROVIDER", section.provider);
+  applyAiConnection(out, section.provider, section.connection);
+  set(out, "ASKDB_AI_EMBEDDING_MODEL", section.model);
+  return out;
 }
 
 /**
  * Flattens a nested {@link AskDbConfig} into canonical env keys for the runtime snapshot
- * (`AskDbEnvProjection.entries`).
+ * (`AskDbEnvProjection.entries`). Deprecated keys are translated first (see
+ * `normalizeAskDbConfig`); the AI keys come from the `ai.language` section's connection.
  */
 export function flattenAskDbConfig(config: AskDbConfig): Record<string, string> {
+  return flattenNormalizedAskDbConfig(normalizeAskDbConfig(config).config);
+}
+
+export function flattenNormalizedAskDbConfig(config: NormalizedAskDbConfig): Record<string, string> {
   const out: Record<string, string> = {};
 
   // --- AI ---
-  // Use type assertions in each branch because the inclusion of CustomAiConfig (provider: string & {})
-  // in the union prevents TypeScript from narrowing providerConfig to the specific branch shape.
-  // requireProviderBranch enforces that the expected providerConfig key is present; without it a
-  // misconfigured object like { provider: "openai" } (no providerConfig) would dereference undefined
-  // and crash with an opaque TypeError at runtime.
-  if (config.ai.provider === "openai") {
-    set(out, "ASKDB_AI_PROVIDER", "openai");
-    applyOpenAiAi(out, requireProviderBranch("openai", (config.ai as OpenaiAiConfig).providerConfig?.openai));
-  } else if (config.ai.provider === "azure") {
-    set(out, "ASKDB_AI_PROVIDER", "azure");
-    applyAzureLikeAi(out, requireProviderBranch("azure", (config.ai as AzureAiConfig).providerConfig?.azure));
-  } else if (config.ai.provider === "foundry") {
-    // `@askdb/core` treats `foundry` like Azure for env parsing.
-    set(out, "ASKDB_AI_PROVIDER", "foundry");
-    applyAzureLikeAi(out, requireProviderBranch("foundry", (config.ai as FoundryAiConfig).providerConfig?.foundry));
-  } else if (config.ai.provider === "google") {
-    set(out, "ASKDB_AI_PROVIDER", "google");
-    applyGoogleAi(out, requireProviderBranch("google", (config.ai as GoogleAiConfig).providerConfig?.google));
-  } else if (config.ai.provider === "anthropic") {
-    set(out, "ASKDB_AI_PROVIDER", "anthropic");
-    applyAnthropicAi(out, requireProviderBranch("anthropic", (config.ai as AnthropicAiConfig).providerConfig?.anthropic));
-  } else if (config.ai.provider === "gateway") {
-    set(out, "ASKDB_AI_PROVIDER", "gateway");
-    applyGatewayAi(out, requireProviderBranch("gateway", (config.ai as GatewayAiConfig).providerConfig?.gateway));
-  } else {
-    // Custom/third-party provider: flatten to the universal ASKDB_AI_* keys that
-    // @askdb/ai's resolveBaseConfig honors for every registered adapter.
-    // Works end to end only when the host registry contains an adapter with this provider name.
-    set(out, "ASKDB_AI_PROVIDER", config.ai.provider);
-    const custom = (config.ai as CustomAiConfig).providerConfig?.custom;
-    set(out, "ASKDB_AI_API_KEY", custom?.apiKey);
-    set(out, "ASKDB_AI_BASE_URL", custom?.baseUrl);
-    set(out, "ASKDB_AI_MODEL", custom?.model);
-  }
-
-  applyReasoningAi(out, config.ai.reasoning);
+  Object.assign(out, aiLanguageEnv(config.ai.language));
 
   // --- Introspection ---
   const intro = config.introspection;
@@ -201,25 +141,12 @@ export function flattenAskDbConfig(config: AskDbConfig): Record<string, string> 
 
   // --- RAG ---
   const rag = config.rag;
-  if (!isMember(rag.embedder, ASKDB_RAG_EMBEDDERS)) {
-    throw new Error(
-      `askdb.config: invalid rag.embedder "${rag.embedder}" (expected one of: ${ASKDB_RAG_EMBEDDERS.join(", ")}).`,
-    );
-  }
   set(out, "ASKDB_RAG_EMBEDDER", rag.embedder);
-
-  const resolvedRagDimensions = resolveRagEmbeddingDimensions(rag);
-
-  if (rag.embedder === "openai" || rag.embedder === "ai-sdk") {
-    const ec = rag.embedderConfig.openai;
-    if (!ec) {
-      throw new Error(`askdb.config: rag.embedderConfig.openai is required for embedder "${rag.embedder}".`);
-    }
-    const model = ec.model?.trim() || DEFAULT_RAG_EMBEDDING_MODEL;
-    set(out, "ASKDB_RAG_EMBEDDER_MODEL", model);
-    set(out, "ASKDB_RAG_EMBEDDER_DIMENSIONS", String(resolvedRagDimensions));
-    set(out, "ASKDB_RAG_EMBEDDER_API_KEY", ec.apiKey);
-    set(out, "ASKDB_RAG_EMBEDDER_BASE_URL", ec.baseUrl);
+  const embedding = config.ai.embedding;
+  const width = embedding?.dimensions;
+  if (embedding) {
+    set(out, "ASKDB_RAG_EMBEDDER_MODEL", embedding.model);
+    if (width !== undefined) set(out, "ASKDB_RAG_EMBEDDER_DIMENSIONS", String(width));
   }
 
   if (!isMember(rag.store, ASKDB_RAG_STORES)) {
@@ -244,8 +171,12 @@ export function flattenAskDbConfig(config: AskDbConfig): Record<string, string> 
       );
     }
     set(out, "ASKDB_PGVECTOR_URL", url);
-    const pgDims = parsePositiveInteger(p.dimensions) ?? resolvedRagDimensions;
-    set(out, "ASKDB_RAG_EMBEDDER_DIMENSIONS", String(pgDims));
+    // With `rag.embedder: "ai"`, normalization has already moved the width to ai.embedding and
+    // refused a pgvector config whose width it can't know.
+    const pgDims = embedding
+      ? width
+      : (parsePositiveInteger(p.dimensions) ?? DEFAULT_MOCK_RAG_EMBEDDING_DIMENSIONS);
+    if (pgDims !== undefined) set(out, "ASKDB_RAG_EMBEDDER_DIMENSIONS", String(pgDims));
     const strategy = normalizePgvectorIndexStrategy(
       typeof p.indexStrategy === "string" ? p.indexStrategy : undefined,
     );

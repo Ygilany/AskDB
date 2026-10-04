@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted (2026-10-02, maintainer decision). Not implemented yet: the plan is #435, which also fixes the RAG key leak in #345.
+Accepted (2026-10-02, maintainer decision). Implemented by #435, which also fixes the RAG key leak in #345: the types are in `packages/config/src/types.ts`, the translation of the old keys and the section resolution in `packages/config/src/normalize.ts`, and Studio's RAG embedder reads `getAskDbRuntimeConfig().ai.embedding`. AskDB assumes no vector width for any model, old configs included (maintainer decision on #435): it learns the width from the model, and a deprecation warning tells an old config which width an existing index has.
 
 ## Context
 
@@ -16,7 +16,7 @@ The `ai` block had a second problem. `ai.providerConfig.<provider>` mixed a prov
 - The model choice moves into one section per use: `ai.language` (`provider?`, `connection?`, `model?`, `modelFamily?`, `reasoning?`) and `ai.embedding` (`provider?`, `connection?`, `model`, `dimensions?`).
 - `ai.provider` becomes an optional default for both sections. A section's provider is `section.provider ?? ai.provider`, and its connection is `section.connection ?? "default"`, looked up within that provider. A section that resolves to no provider, or to a connection that doesn't exist, fails at load.
 - The language model keeps a per-provider default. The embedding model is required whenever `rag.embedder` is `"ai"`, and no layer picks one: `@askdb/ai`'s `defaultEmbeddingModel` is deprecated too. An embedding section that resolves to Anthropic fails at load.
-- Dimensions live only in `ai.embedding.dimensions`. They're required when AskDB doesn't know the model's width and the store needs it up front (pgvector).
+- Dimensions live only in `ai.embedding.dimensions`, as a size to request from the provider. When a store needs the width up front (a new pgvector table), AskDB learns it from the model (`detectEmbeddingDimensions` in `@askdb/rag`), so no layer keeps a list of model widths. (Amended 2026-10-03 on #435: the first version required `dimensions` whenever AskDB didn't know the model's width.)
 - `rag` keeps what belongs to retrieval: `embedder: "mock" | "ai"` and the store.
 - Old keys are translated at load with a warning and removed at the 1.0 cutover. The translation carries a legacy embedding key or base URL only to openai, azure, foundry or gateway; for any other provider, loading fails and the error shows the replacement block.
 

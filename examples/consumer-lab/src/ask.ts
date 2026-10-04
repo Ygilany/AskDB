@@ -9,7 +9,7 @@ import { ask, loadSchema, type AskGenerateDeps } from "@askdb/core";
 import type { SupportedDialect } from "./dialects.js";
 import type { ResolveTenantDescendants } from "./tenant.js";
 
-/** The model id sent to the replay server; the same as the config's `providerConfig.openai.model`. */
+/** The model id sent to the replay server. The lab's configs leave the model unset, and AskDB's OpenAI default is this same id. */
 export const MODEL_ID = "gpt-4o-mini";
 /** The replay server ignores it; the OpenAI client requires one. */
 export const API_KEY = "lab-replay-no-key";

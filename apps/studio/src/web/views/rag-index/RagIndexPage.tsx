@@ -85,7 +85,7 @@ export function RagIndexPage() {
                 <div style={{ display: "grid", gap: 4, fontSize: 12, color: "var(--ink-400)" }}>
                   <span>Expected: {ragStatus.expectedEmbedderId}</span>
                   <span>Indexed: {ragStatus.embedder.indexedId ?? "none"}</span>
-                  <span>Dimensions: {ragStatus.dimensions} / expected {ragStatus.expectedDimensions}</span>
+                  <span>Dimensions: {ragStatus.dimensions ?? "model default"} / expected {ragStatus.expectedDimensions ?? "model default"}</span>
                   <span>Updated: {ragStatus.updatedAt ?? "never"}</span>
                   <span>Store: {ragStatus.store.kind}</span>
                 </div>

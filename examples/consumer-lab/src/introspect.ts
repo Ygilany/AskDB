@@ -63,7 +63,7 @@ function projectConfig(introspection: Record<string, unknown>): string {
 export default defineConfig({
   ai: {
     provider: "openai",
-    providerConfig: { openai: { apiKey: "", model: "gpt-4o-mini" } },
+    providerConfig: { openai: { apiKey: "" } },
   },
   introspection: ${JSON.stringify(introspection)},
   rag: {

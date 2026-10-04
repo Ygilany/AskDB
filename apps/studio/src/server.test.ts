@@ -28,18 +28,31 @@ const STUDIO_TEST_BASE: AskDbConfig = {
   ai: {
     provider: "openai",
     providerConfig: {
-      openai: { apiKey: "test-key", model: "gpt-4o-mini" },
+      openai: { apiKey: "test-key" },
     },
+    language: { model: "gpt-4o-mini" },
   },
   database: { provider: "postgres", providerConfig: { postgres: { databaseUrl: "postgres://localhost/db" } } },
   introspection: { provider: "postgres", providerConfig: { postgres: {} }, outputDir: "./askdb/" },
   rag: {
     embedder: "mock",
-    embedderConfig: {},
     store: "memory",
     storeConfig: { memory: {} },
   },
 };
+
+/** OpenAI language and embedding models on one connection, pointed at a local embeddings server. */
+function openaiEmbeddingConfig(embeddingBaseUrl: string): AskDbConfig {
+  return {
+    ...STUDIO_TEST_BASE,
+    ai: {
+      provider: "openai",
+      providerConfig: { openai: { apiKey: "test-key", baseUrl: embeddingBaseUrl } },
+      embedding: { model: "text-embedding-3-small", dimensions: 4 },
+    },
+    rag: { embedder: "ai", store: "memory", storeConfig: { memory: {} } },
+  };
+}
 
 function installStudioRuntime(
   flatExtra: Record<string, string> = {},
@@ -75,7 +88,7 @@ describe("AskDB Studio server", () => {
   });
 
   it("loads, saves enrichment, and generates sample SQL with the mock model", async () => {
-    installStudioRuntime({ ASKDB_RAG_EMBEDDER: "mock" });
+    installStudioRuntime();
     const schemaDir = copyFixture();
     const server = createStudioServer({ schema: schemaDir });
     servers.push(server);
@@ -105,10 +118,7 @@ describe("AskDB Studio server", () => {
     expect(existsSync(usersMd)).toBe(true);
     expect(readFileSync(usersMd, "utf8")).toContain("Application users who can place orders.");
 
-    installStudioRuntime({
-      ASKDB_RAG_EMBEDDER: "mock",
-      ASKDB_MOCK_SQL: "select count(*) from users",
-    });
+    installStudioRuntime({ ASKDB_MOCK_SQL: "select count(*) from users" });
     const generated = await postJson(`${baseUrl}/api/ask`, {
       question: "How many users are there?",
     });
@@ -154,7 +164,7 @@ describe("AskDB Studio server", () => {
   // used to write such a policy, return 500, and then fail every request, because the
   // workspace no longer loaded. The save must be refused with 400, and nothing written.
   it("refuses to save a tenant policy that wouldn't load, and writes nothing", async () => {
-    installStudioRuntime({ ASKDB_RAG_EMBEDDER: "mock" });
+    installStudioRuntime();
     const schemaDir = copyFixture();
     const server = createStudioServer({ schema: schemaDir });
     servers.push(server);
@@ -182,7 +192,7 @@ describe("AskDB Studio server", () => {
   });
 
   it("saving a table keeps another table's sensitive column entry in its file and reports it on the owning table", async () => {
-    installStudioRuntime({ ASKDB_RAG_EMBEDDER: "mock" });
+    installStudioRuntime();
     const schemaDir = copyFixture();
     const createdAtId = "table:public.users#created_at";
     const ordersMd = join(schemaDir, "tables", "orders.md");
@@ -210,7 +220,7 @@ describe("AskDB Studio server", () => {
 
   describe("request guard", () => {
     async function startGuardedServer() {
-      installStudioRuntime({ ASKDB_RAG_EMBEDDER: "mock" });
+      installStudioRuntime();
       const server = createStudioServer({ schema: copyFixture() });
       servers.push(server);
       const baseUrl = await listen(server);
@@ -367,12 +377,7 @@ describe("AskDB Studio server", () => {
     const embeddingServer = createEmbeddingServer();
     embeddingServers.push(embeddingServer);
     const embeddingBaseUrl = await listen(embeddingServer);
-    installStudioRuntime({
-      ASKDB_RAG_EMBEDDER: "openai",
-      ASKDB_RAG_EMBEDDER_DIMENSIONS: "4",
-      OPENAI_API_KEY: "test-key",
-      OPENAI_BASE_URL: embeddingBaseUrl,
-    });
+    installStudioRuntime({}, openaiEmbeddingConfig(embeddingBaseUrl));
 
     const schemaDir = copyFixture();
     const server = createStudioServer({ schema: schemaDir });
@@ -383,6 +388,7 @@ describe("AskDB Studio server", () => {
     expect(status.embedder.kind).toBe("ai-sdk");
     expect(status.embedder.provider).toBe("openai");
     expect(status.embedder.configured).toBe(true);
+    expect(status.embedder.label).toBe("AI SDK (openai)");
     expect(status.expectedEmbedderId).toBe("ai-sdk:openai:text-embedding-3-small:4");
     expect(status.expectedDimensions).toBe(4);
 
@@ -402,78 +408,39 @@ describe("AskDB Studio server", () => {
     expect(retrieved.usage.embeddingTokens).toBeGreaterThan(0);
   });
 
-  it("defaults Studio RAG to AI SDK embeddings when an AI key is configured", async () => {
-    installStudioRuntime(
-      {
-        ASKDB_AI_PROVIDER: "openai",
-        ASKDB_AI_API_KEY: "test-key",
-        ASKDB_RAG_EMBEDDER_DIMENSIONS: "4",
-      },
-      STUDIO_TEST_BASE,
-      { omitFlatKeys: ["ASKDB_RAG_EMBEDDER"] },
-    );
-
-    const schemaDir = copyFixture();
-    const server = createStudioServer({ schema: schemaDir });
-    servers.push(server);
-    const baseUrl = await listen(server);
-
-    const status = await getJson(`${baseUrl}/api/rag/status`);
-    expect(status.embedder.kind).toBe("ai-sdk");
-    expect(status.embedder.provider).toBe("openai");
-    expect(status.embedder.configured).toBe(true);
-    expect(status.expectedEmbedderId).toBe("ai-sdk:openai:text-embedding-3-small:4");
-    expect(status.embedder.label).toBe("AI SDK (openai)");
-  });
-
-  it("uses the configured Azure AI SDK connection for Studio RAG status", async () => {
-    const azureStructured: AskDbConfig = {
-      ...STUDIO_TEST_BASE,
-      ai: {
-        provider: "azure",
-        providerConfig: {
-          azure: {
-            apiKey: "test-key",
-            baseUrl: "https://example.test/openai/v1",
-            model: "embedding-deployment",
-          },
+  it.each(["azure", "foundry"] as const)(
+    "uses the %s embedding deployment for Studio RAG under the adapter's canonical name",
+    async (provider) => {
+      installStudioRuntime({}, {
+        ...STUDIO_TEST_BASE,
+        ai: {
+          provider,
+          providerConfig: { [provider]: { apiKey: "test-key", baseUrl: "https://example.test/openai/v1" } },
+          language: { model: "chat-deployment" },
+          embedding: { model: "embedding-deployment", dimensions: 4 },
         },
-      },
-    };
-    installStudioRuntime(
-      {
-        ASKDB_RAG_EMBEDDER_DIMENSIONS: "4",
-        AZURE_OPENAI_EMBEDDING_DEPLOYMENT: "embedding-deployment",
-      },
-      azureStructured,
-      {
-        omitFlatKeys: ["ASKDB_RAG_EMBEDDER"],
-      },
-    );
+        rag: { embedder: "ai", store: "memory", storeConfig: { memory: {} } },
+      });
 
-    const schemaDir = copyFixture();
-    const server = createStudioServer({ schema: schemaDir });
-    servers.push(server);
-    const baseUrl = await listen(server);
+      const schemaDir = copyFixture();
+      const server = createStudioServer({ schema: schemaDir });
+      servers.push(server);
+      const baseUrl = await listen(server);
 
-    const status = await getJson(`${baseUrl}/api/rag/status`);
-    expect(status.embedder.kind).toBe("ai-sdk");
-    expect(status.embedder.provider).toBe("azure");
-    expect(status.embedder.configured).toBe(true);
-    expect(status.expectedEmbedderId).toBe("ai-sdk:azure:embedding-deployment:4");
-    expect(status.embedder.label).toBe("AI SDK (azure)");
-  });
+      const status = await getJson(`${baseUrl}/api/rag/status`);
+      expect(status.embedder.kind).toBe("ai-sdk");
+      expect(status.embedder.provider).toBe("azure");
+      expect(status.embedder.configured).toBe(true);
+      expect(status.expectedEmbedderId).toBe("ai-sdk:azure:embedding-deployment:4");
+      expect(status.embedder.label).toBe("AI SDK (azure)");
+    },
+  );
 
   it("surfaces provider details when Studio RAG embedding requests fail", async () => {
     const embeddingServer = createFailingEmbeddingServer();
     embeddingServers.push(embeddingServer);
     const embeddingBaseUrl = await listen(embeddingServer);
-    installStudioRuntime({
-      ASKDB_RAG_EMBEDDER: "openai",
-      ASKDB_RAG_EMBEDDER_DIMENSIONS: "4",
-      OPENAI_API_KEY: "test-key",
-      OPENAI_BASE_URL: embeddingBaseUrl,
-    });
+    installStudioRuntime({}, openaiEmbeddingConfig(embeddingBaseUrl));
 
     const schemaDir = copyFixture();
     const server = createStudioServer({ schema: schemaDir });
@@ -483,11 +450,66 @@ describe("AskDB Studio server", () => {
     const response = await postRaw(`${baseUrl}/api/rag/index`, {});
     expect(response.status).toBe(502);
     const body = await response.json();
-    expect(body.error.message).toContain("Studio RAG embedding request failed");
-    expect(body.error.message).toContain("provider openai");
-    expect(body.error.message).toContain("model text-embedding-3-small");
+    expect(body.error.message).toContain(
+      "Studio RAG embedding request failed for ai.embedding (provider openai, connection default, model text-embedding-3-small)",
+    );
     expect(body.error.message).toContain("Status: 500");
     expect(body.error.message).toContain("embedding endpoint unavailable");
+  });
+
+  it("names the configured provider, not the adapter's canonical one, in RAG errors", async () => {
+    const embeddingServer = createFailingEmbeddingServer();
+    embeddingServers.push(embeddingServer);
+    const embeddingBaseUrl = await listen(embeddingServer);
+    const foundry = (apiKey?: string): AskDbConfig => ({
+      ...STUDIO_TEST_BASE,
+      ai: {
+        provider: "foundry",
+        providerConfig: { foundry: { apiKey, baseUrl: embeddingBaseUrl } },
+        embedding: { model: "embedding-deployment", dimensions: 4 },
+      },
+      rag: { embedder: "ai", store: "memory", storeConfig: { memory: {} } },
+    });
+    const schemaDir = copyFixture();
+    const server = createStudioServer({ schema: schemaDir });
+    servers.push(server);
+    const baseUrl = await listen(server);
+
+    installStudioRuntime({}, foundry("test-key"));
+    const failed = await postRaw(`${baseUrl}/api/rag/index`, {});
+    expect(failed.status).toBe(502);
+    expect(((await failed.json()) as { error: { message: string } }).error.message).toContain(
+      "for ai.embedding (provider foundry, connection default, model embedding-deployment)",
+    );
+
+    installStudioRuntime({}, foundry());
+    const keyMissing = await postRaw(`${baseUrl}/api/rag/index`, {});
+    expect(keyMissing.status).toBe(400);
+    expect(((await keyMissing.json()) as { error: { message: string } }).error.message).toContain(
+      '("default" in ai.providerConfig.foundry)',
+    );
+  });
+
+  it("embeds with the ai.embedding provider and model, not OpenAI's (#345)", async () => {
+    installStudioRuntime({}, {
+      ...STUDIO_TEST_BASE,
+      ai: {
+        provider: "google",
+        providerConfig: { google: { apiKey: "google-key" } },
+        embedding: { model: "gemini-embedding-001", dimensions: 768 },
+      },
+      rag: { embedder: "ai", store: "memory", storeConfig: { memory: {} } },
+    });
+
+    const schemaDir = copyFixture();
+    const server = createStudioServer({ schema: schemaDir });
+    servers.push(server);
+    const baseUrl = await listen(server);
+
+    const status = await getJson(`${baseUrl}/api/rag/status`);
+    expect(status.embedder.provider).toBe("google");
+    expect(status.embedder.model).toBe("gemini-embedding-001");
+    expect(status.expectedEmbedderId).toBe("ai-sdk:google:gemini-embedding-001:768");
   });
 
   it("honors the configured pgvector store for Studio RAG", async () => {
@@ -511,7 +533,6 @@ describe("AskDB Studio server", () => {
       ...STUDIO_TEST_BASE,
       rag: {
         embedder: "mock",
-        embedderConfig: {},
         store: "pgvector",
         storeConfig: {
           pgvector: {
@@ -551,12 +572,56 @@ describe("AskDB Studio server", () => {
     expect(retrieved.results[0].score).toEqual(expect.any(Number));
   });
 
+  it("learns a new pgvector table's width from the embedding model when none is configured", async () => {
+    const embeddingServer = createEmbeddingServer(); // returns 4-wide vectors unless asked for another width
+    embeddingServers.push(embeddingServer);
+    const embeddingBaseUrl = await listen(embeddingServer);
+    const backingStore = createMemoryStore();
+    let tableWidth: number | undefined;
+    const provisionedWith: (number | undefined)[] = [];
+    setStudioPgvectorStoreFactoryForTests((options) => ({
+      upsert: backingStore.upsert,
+      query: backingStore.query,
+      delete: backingStore.delete,
+      hashesByPrefix: backingStore.hashesByPrefix,
+      count: async () => backingStore.size(),
+      setupSql: () => "",
+      ensureSchema: async () => {
+        provisionedWith.push(options.dimensions);
+        tableWidth ??= options.dimensions;
+      },
+      tableDimensions: async () => tableWidth,
+      close: async () => {},
+    }));
+    installStudioRuntime({}, {
+      ...STUDIO_TEST_BASE,
+      ai: {
+        provider: "openai",
+        providerConfig: { openai: { apiKey: "test-key", baseUrl: embeddingBaseUrl } },
+        embedding: { model: "text-embedding-3-small" },
+      },
+      rag: { embedder: "ai", store: "pgvector", storeConfig: { pgvector: { databaseUrl: "postgres://pgvector.test/askdb" } } },
+    });
+    const server = createStudioServer({ schema: copyFixture() });
+    servers.push(server);
+    const baseUrl = await listen(server);
+
+    const before = await getJson(`${baseUrl}/api/rag/status`);
+    expect(before).toMatchObject({ hasIndex: false, chunksIndexed: 0, dimensions: null });
+    expect(provisionedWith).toEqual([]);
+
+    const indexed = await postJson(`${baseUrl}/api/rag/index`, {});
+    expect(provisionedWith).toEqual([4]);
+    expect(indexed.status).toMatchObject({ hasIndex: true, stale: false, dimensions: 4, expectedDimensions: null });
+    expect(indexed.status.expectedEmbedderId).toBe("ai-sdk:openai:text-embedding-3-small:default");
+  });
+
   // ---------------------------------------------------------------------------
   // Execute status and install endpoint tests
   // ---------------------------------------------------------------------------
 
   it("GET /api/execute/status returns postgres provider when no execute provider is configured", async () => {
-    installStudioRuntime({ ASKDB_RAG_EMBEDDER: "mock" });
+    installStudioRuntime();
     const schemaDir = copyFixture();
     const server = createStudioServer({ schema: schemaDir });
     servers.push(server);
@@ -816,7 +881,7 @@ describe("AskDB Studio server", () => {
   });
 
   it("rejects request bodies over 1 MiB with 413", async () => {
-    installStudioRuntime({ ASKDB_RAG_EMBEDDER: "mock" });
+    installStudioRuntime();
     const server = createStudioServer({ schema: copyFixture() });
     servers.push(server);
     const baseUrl = await listen(server);
@@ -843,7 +908,7 @@ describe("AskDB Studio server", () => {
   });
 
   it("persists only whitelisted, bounded history fields and git-ignores the history file", async () => {
-    installStudioRuntime({ ASKDB_RAG_EMBEDDER: "mock" });
+    installStudioRuntime();
     const schemaDir = copyFixture();
     const server = createStudioServer({ schema: schemaDir });
     servers.push(server);
@@ -895,7 +960,7 @@ describe("AskDB Studio server", () => {
   });
 
   it("appends the history entry to an existing .gitignore without rewriting it", async () => {
-    installStudioRuntime({ ASKDB_RAG_EMBEDDER: "mock" });
+    installStudioRuntime();
     const schemaDir = copyFixture();
     writeFileSync(join(schemaDir, ".gitignore"), "# mine\nsecrets.txt");
     const server = createStudioServer({ schema: schemaDir });
@@ -912,7 +977,7 @@ describe("AskDB Studio server", () => {
   });
 
   it("GET /api/setup/status reports not needed on a ready workspace", async () => {
-    installStudioRuntime({ ASKDB_RAG_EMBEDDER: "mock" });
+    installStudioRuntime();
     const schemaDir = copyFixture();
     const server = createStudioServer({ schema: schemaDir });
     servers.push(server);
@@ -938,7 +1003,7 @@ describe("AskDB Studio server", () => {
         outputDir: "./askdb/",
       },
     };
-    installStudioRuntime({ ASKDB_RAG_EMBEDDER: "mock" }, prismaConfig);
+    installStudioRuntime({}, prismaConfig);
     const schemaDir = copyFixture();
     const usersMd = join(schemaDir, "tables", "users.md");
     expect(existsSync(usersMd)).toBe(true);

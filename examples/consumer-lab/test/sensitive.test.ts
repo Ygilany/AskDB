@@ -513,7 +513,7 @@ function omitConfigProject(): string {
 export default defineConfig({
   ai: {
     provider: "openai",
-    providerConfig: { openai: { apiKey: "${API_KEY}", baseUrl: env("LAB_REPLAY_BASE_URL"), model: "${MODEL_ID}" } },
+    providerConfig: { openai: { apiKey: "${API_KEY}", baseUrl: env("LAB_REPLAY_BASE_URL") } },
   },
   introspection: { provider: "postgres", providerConfig: { postgres: {} } },
   modes: { omitSensitiveFromPrompt: true },
