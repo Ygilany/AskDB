@@ -170,7 +170,8 @@ jobs:
     services:
       # pgvector/pgvector is stock Postgres 16 plus the `vector` extension, so the same
       # service backs both the plain Postgres suite (DATABASE_URL) and the pgvector suites
-      # in @askdb/rag and Studio (ASKDB_PGVECTOR_URL; they run CREATE EXTENSION themselves).
+      # in @askdb/rag and Studio (ASKDB_PGVECTOR_URL). A step below creates the extension
+      # before the tests run.
       postgres:
         image: pgvector/pgvector:pg16
         env:
@@ -260,6 +261,16 @@ jobs:
           -S localhost -U sa -P 'AskDB.123'
           -Q "IF DB_ID('askdb_test') IS NULL CREATE DATABASE askdb_test"
           -C
+
+      # Both pgvector suites run CREATE EXTENSION IF NOT EXISTS, which Postgres doesn't
+      # serialize: when turbo runs the two packages' tests at once, one can fail on a duplicate
+      # pg_extension key. With the extension already there, both statements are no-ops.
+      - name: Create the pgvector extension
+        run: >-
+          docker exec
+          "$(docker ps -q --filter "ancestor=pgvector/pgvector:pg16")"
+          psql -U postgres -d askdb_test
+          -c "CREATE EXTENSION IF NOT EXISTS vector"
 
       - name: Start and seed the multi-engine fixture
         run: pnpm fixture:up
