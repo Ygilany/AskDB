@@ -42,14 +42,15 @@ const OPENAI_EMBEDDING_DIMENSIONS: ReadonlyMap<string, number> = new Map([
 ]);
 
 /**
- * The default vector width of `model` on `provider`, when AskDB knows it: the OpenAI embedding
- * models on openai, azure and foundry, and their `openai/…` ids on the Vercel AI Gateway.
- * Returns `undefined` for anything else; set `ai.embedding.dimensions` then.
+ * The default vector width of `model` on `provider`, when AskDB knows it for a fact: the OpenAI
+ * embedding models on openai, and their `openai/…` ids on the Vercel AI Gateway. Returns
+ * `undefined` for anything else, Azure and Foundry included, whose deployment names say nothing
+ * certain about the model behind them; set `ai.embedding.dimensions` then.
  */
 export function knownEmbeddingDimensions(provider: string, model: string): number | undefined {
   const p = provider.trim().toLowerCase();
   const m = model.trim();
-  if (p === "openai" || p === "azure" || p === "azure-openai" || p === "foundry") {
+  if (p === "openai") {
     return OPENAI_EMBEDDING_DIMENSIONS.get(m);
   }
   if (p === "gateway" && m.startsWith("openai/")) {

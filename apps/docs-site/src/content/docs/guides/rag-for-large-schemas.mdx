@@ -57,7 +57,7 @@ export default defineConfig({
 });
 ```
 
-`rag.embedder: "ai"` embeds with the [`ai.embedding`](/reference/config/#aiembedding) model, and `ai.embedding.model` is required: AskDB has no default embedding model. Its provider defaults to `ai.provider`; to keep a language model from a provider without embeddings (such as Anthropic), set `ai.embedding.provider` and give that provider a connection. AskDB knows the width of OpenAI's embedding models; for any other model, set `ai.embedding.dimensions` too, since the pgvector table needs a fixed width.
+`rag.embedder: "ai"` embeds with the [`ai.embedding`](/reference/config/#aiembedding) model, and `ai.embedding.model` is required: AskDB has no default embedding model. Its provider defaults to `ai.provider`; to keep a language model from a provider without embeddings (such as Anthropic), set `ai.embedding.provider` and give that provider a connection. AskDB knows the width of OpenAI's embedding models on the `openai` provider (and their `openai/…` ids on the gateway); for any other model, an Azure or Foundry deployment included, set `ai.embedding.dimensions` too, since the pgvector table needs a fixed width.
 
 Launch Studio (`npx askdb studio --schema ./my-app.schema`) and the first RAG operation creates the table.
 

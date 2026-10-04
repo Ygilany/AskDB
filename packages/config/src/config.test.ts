@@ -787,36 +787,40 @@ describe("ai config sections: provider connections, ai.language, ai.embedding (#
       expect(rt.flat.ASKDB_RAG_EMBEDDER_DIMENSIONS).toBe("1536");
     });
 
-    // The width main sent for a legacy embedder: the model id alone looked up among OpenAI's, else 1536.
-    it.each<[string, AskDbConfig["ai"], string, number, boolean]>([
+    // Earlier versions sent a width for a legacy embedder: the model id's among OpenAI's, else 1536.
+    it.each<[string, AskDbConfig["ai"], string, number | undefined]>([
       [
         "an Azure deployment name",
         { provider: "azure", providerConfig: { azure: { apiKey: "az-key", resourceName: "eastus" } } },
         "my-embedding-deployment",
         1536,
-        true,
       ],
       [
-        "a gateway id main didn't recognize",
+        "an Azure deployment named after an OpenAI model",
+        { provider: "azure", providerConfig: { azure: { apiKey: "az-key", resourceName: "eastus" } } },
+        "text-embedding-3-small",
+        1536,
+      ],
+      [
+        "an openai/ id on the gateway",
         { provider: "gateway", providerConfig: { gateway: { apiKey: "gw-key" } } },
         "openai/text-embedding-3-large",
         1536,
-        true,
       ],
       [
         "an OpenAI model id on a custom provider",
         { provider: "mistral", providerConfig: { mistral: { apiKey: "m-key" } } },
         "text-embedding-3-large",
         3072,
-        true,
       ],
-      ["an OpenAI model on openai", OPENAI_AI, "text-embedding-3-large", 3072, false],
-    ])("a legacy embedder keeps main's width for %s", (_name, ai, model, width, asksToPin) => {
+      ["an OpenAI model on openai, whose width hasn't changed", OPENAI_AI, "text-embedding-3-large", undefined],
+    ])("a legacy embedder assumes no width for %s, and names the one earlier versions used", (_name, ai, model, earlier) => {
       const rt = runtimeFor(
         config(ai, { embedder: "ai-sdk", embedderConfig: { openai: { model } }, store: "memory", storeConfig: { memory: {} } }),
       );
-      expect(rt.ai.embedding).toMatchObject({ model, dimensions: width });
-      expect(rt.deprecations.some((message) => message.includes(`set ai.embedding.dimensions: ${width}`))).toBe(asksToPin);
+      expect(rt.ai.embedding).toMatchObject({ model, dimensions: undefined });
+      const asksToPin = rt.deprecations.filter((message) => message.includes("set ai.embedding.dimensions:"));
+      expect(asksToPin).toEqual(earlier === undefined ? [] : [expect.stringContaining(`set ai.embedding.dimensions: ${earlier}.`)]);
     });
 
     it.each<[string, AskDbConfig["rag"]]>([
@@ -828,9 +832,9 @@ describe("ai config sections: provider connections, ai.language, ai.embedding (#
         "rag.embedderConfig.openai.dimension",
         { embedder: "openai", embedderConfig: { openai: { dimension: "0" } }, store: "memory", storeConfig: { memory: {} } },
       ],
-    ])("reports an invalid legacy %s as ignored, and keeps main's width", (key, rag) => {
+    ])("reports an invalid legacy %s as ignored", (key, rag) => {
       const rt = runtimeFor(config(OPENAI_AI, rag));
-      expect(rt.ai.embedding?.dimensions).toBe(1536);
+      expect(rt.ai.embedding?.dimensions).toBeUndefined();
       expect(rt.deprecations.some((message) => message.includes(key) && message.includes("isn't a positive integer"))).toBe(
         true,
       );
@@ -906,6 +910,19 @@ describe("ai config sections: provider connections, ai.language, ai.embedding (#
           { embedder: "ai", store: "pgvector", storeConfig: { pgvector: { databaseUrl: "postgres://pg/db" } } },
         ),
         /set ai\.embedding\.dimensions for embedding model "gemini-embedding-001"; pgvector needs a fixed width/,
+      ],
+      [
+        "a legacy embedder on pgvector with a model of unknown width",
+        config(
+          { provider: "azure", providerConfig: { azure: { apiKey: "k", resourceName: "eastus" } } },
+          {
+            embedder: "ai-sdk",
+            embedderConfig: { openai: { model: "my-embedding-deployment" } },
+            store: "pgvector",
+            storeConfig: { pgvector: { databaseUrl: "postgres://pg/db" } },
+          },
+        ),
+        /pgvector needs a fixed width\. A table built with an earlier AskDB version is 1536 wide/,
       ],
       [
         "pgvector dimensions that disagree with ai.embedding.dimensions",

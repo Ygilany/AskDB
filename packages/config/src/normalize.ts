@@ -75,8 +75,14 @@ const LEGACY_RAG_CONNECTION = "rag-embeddings";
 const LEGACY_RAG_KEY_PROVIDERS = new Set(["openai", "azure", "foundry", "gateway"]);
 /** Providers a legacy `"ai-sdk"` embedder without a model defaults to `text-embedding-3-small` on. */
 const LEGACY_DEFAULT_EMBEDDING_MODEL_PROVIDERS = new Set(["openai", "azure", "foundry"]);
-/** Width the deprecated embedders sent for a model id that isn't one of OpenAI's. */
-const LEGACY_EMBEDDING_DIMENSIONS = 1536;
+/**
+ * The width earlier AskDB versions sent for a deprecated `rag.embedder` with no width set: the
+ * model id looked up among OpenAI's, whatever the provider, else 1536. Only for telling users
+ * which width an existing index has; AskDB no longer assumes it.
+ */
+function widthEarlierVersionsUsed(model: string): number {
+  return knownEmbeddingDimensions("openai", model) ?? 1536;
+}
 
 export function isMember<T extends readonly string[]>(value: string, allowed: T): value is T[number] {
   return (allowed as readonly string[]).includes(value);
@@ -536,23 +542,24 @@ export function normalizeAskDbConfig(config: AskDbConfig): {
       dimensions = pgvectorDimensions;
     }
 
-    // The deprecated embedders always sent a width: the model id's among OpenAI's (whatever the
-    // provider), else 1536. Keep it, so an index built with a legacy config keeps its width and
-    // its embedder id, and say when an ai.embedding section would resolve a different one.
+    // AskDB assumes no width it doesn't know for a fact. The deprecated embedders did, so an
+    // index they built may be a different width from the one used now: say which, so it can be
+    // kept by setting it, or rebuilt.
     const knownWidth = knownEmbeddingDimensions(provider, embeddingModel);
-    if (legacy && dimensions === undefined) {
-      dimensions = knownEmbeddingDimensions("openai", embeddingModel) ?? LEGACY_EMBEDDING_DIMENSIONS;
-      if (dimensions !== knownWidth) {
-        warn(
-          `askdb.config: rag.embedder "${rag.embedder}" uses ${dimensions} dimensions for embedding model ` +
-            `"${embeddingModel}"; when you move to ai.embedding, set ai.embedding.dimensions: ${dimensions} to keep the index you have.`,
-        );
-      }
+    const earlierWidth = legacy && dimensions === undefined ? widthEarlierVersionsUsed(embeddingModel) : undefined;
+    if (earlierWidth !== undefined && earlierWidth !== knownWidth) {
+      warn(
+        `askdb.config: rag.embedder "${rag.embedder}" no longer assumes ${earlierWidth} dimensions for embedding model ` +
+          `"${embeddingModel}"; AskDB now uses ${knownWidth ?? "the model's own width"}. An index built with an earlier ` +
+          `AskDB version is ${earlierWidth} wide: to keep it, move to ai.embedding and set ai.embedding.dimensions: ${earlierWidth}. ` +
+          `Otherwise rebuild the index.`,
+      );
     }
 
     if (rag.store === "pgvector" && dimensions === undefined && knownWidth === undefined) {
       throw new Error(
-        `askdb.config: set ai.embedding.dimensions for embedding model "${embeddingModel}"; pgvector needs a fixed width.`,
+        `askdb.config: set ai.embedding.dimensions for embedding model "${embeddingModel}"; pgvector needs a fixed width.` +
+          (earlierWidth !== undefined ? ` A table built with an earlier AskDB version is ${earlierWidth} wide.` : ""),
       );
     }
 
