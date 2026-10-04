@@ -264,7 +264,7 @@ askdb-rag setup-store --pg-url "$DATABASE_URL" --embedder openai
 | `--pg-url <connstr>` | Postgres connection string (required). |
 | `--pg-table <name>` | Custom table name. Default `askdb_rag_chunks`. |
 | `--embedder <id>` / `--embedder-model <id>` | Used to pick the default dimensions, the same way `index` does. `--embedder` must be `mock` or `openai`. |
-| `--dimensions <n>` | Embedding dimensions. Defaults to the embedder's: `64` for the default `mock` embedder, `1536` for `--embedder openai` (`text-embedding-3-small`), `3072` for `text-embedding-3-large`. |
+| `--dimensions <n>` | Embedding dimensions. Defaults to the embedder's: `64` for the default `mock` embedder, `1536` for `--embedder openai` (`text-embedding-3-small`), `3072` for `text-embedding-3-large`. `setup-store` creates an HNSW index, which pgvector supports only up to 2000 dimensions, so for `text-embedding-3-large` pass `--dimensions` of 2000 or less (OpenAI's `text-embedding-3` models can shorten their vectors) or create the table yourself with `createPgvectorStore({ indexStrategy: "none" })`. |
 
 If the table already exists with a different `vector(n)` dimension, the command fails with an error rather than keeping the old dimension silently.
 
@@ -311,6 +311,8 @@ All three commands accept the [shared logging flags](#shared-logging-flags).
 | `0` | Success. |
 | `1` | Generic error (config, IO, generation, validation). |
 | `2` | Invalid CLI arguments. |
+
+`askdb-rag` exits `1` for every error, including invalid arguments.
 
 Errors print to stderr in human form; structured log events (with `-v`) follow the contract in [`@askdb/core` logging](/reference/packages/).
 

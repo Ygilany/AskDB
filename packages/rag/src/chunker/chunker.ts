@@ -95,7 +95,8 @@ export function chunkSchema(
       // A non-sensitive table whose description/aliases/column headlines
       // mention a sensitive column is only embedded verbatim in opt-in mode.
       if (filter.dropped) stats.sensitiveExcluded++;
-      if (filter.included && !table.sensitive) stats.sensitiveIncluded++;
+      // Opt-in: a sensitive table's chunk is emitted only because of it.
+      if (table.sensitive || filter.included) stats.sensitiveIncluded++;
       chunks.push(tableChunk);
     }
 
@@ -112,8 +113,8 @@ export function chunkSchema(
       }
       const describable = columnDescribableTexts(col, colNote);
       if (colSensitive) {
-        // Opt-in mode.
-        if (describable.length > 0) stats.sensitiveIncluded++;
+        // Opt-in mode: the default leaves this chunk out entirely.
+        stats.sensitiveIncluded++;
         chunks.push(
           buildColumnChunk(table, col, schema.schemaId, colNote, true, true),
         );
@@ -199,9 +200,11 @@ export function chunkSchema(
           const filter = describableFilter(sensitiveColumnNames, includeSensitive);
           const primaryEntity = filter.allow(table.primaryEntity) ? table.primaryEntity : undefined;
           if (filter.dropped) stats.sensitiveExcluded += questions.length;
-          if (table.sensitive || questionsMentionSensitive || filter.included) {
-            stats.sensitiveIncluded += questions.length;
-          }
+          // The questions are gated together, so in opt-in mode one naming a
+          // sensitive column makes every question chunk of the table sensitive.
+          const questionsSensitive =
+            table.sensitive || questionsMentionSensitive || filter.included;
+          if (questionsSensitive) stats.sensitiveIncluded += questions.length;
           questions.forEach((q, i) => {
             chunks.push(
               buildQuestionChunk(
@@ -210,7 +213,7 @@ export function chunkSchema(
                 q,
                 i + 1,
                 schema.schemaId,
-                table.sensitive || mentionsAnyName(q, sensitiveColumnNames) || filter.included,
+                questionsSensitive,
               ),
             );
           });

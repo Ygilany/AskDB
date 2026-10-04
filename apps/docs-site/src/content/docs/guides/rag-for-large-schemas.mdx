@@ -130,7 +130,7 @@ const { retriever, stats } = await buildSchemaIndex({
 });
 ```
 
-`buildSchemaIndex` chunks the artifact and embeds only the chunks the store doesn't already hold with the same content hash. It returns a ready-to-use `retriever` plus indexing stats. The lock file records the embedder id, store, and dimensions. If any of them changed, or the lock is missing, every chunk is re-embedded. Pass `force: true` to re-embed unconditionally.
+`buildSchemaIndex` chunks the artifact and embeds only the chunks the store doesn't already hold with the same content hash. It returns a ready-to-use `retriever` plus indexing stats. The lock file records the embedder id, store, and dimensions. If the embedder id changed, or the lock is missing, every chunk is re-embedded; a different store gets the chunks it doesn't already hold. Pass `force: true` to re-embed unconditionally.
 
 ## Wire retrieval into `ask()`
 

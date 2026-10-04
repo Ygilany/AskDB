@@ -32,9 +32,10 @@ export type CreatePgvectorStoreOptions = {
   /** Table name to read/write. Default `"askdb_rag_chunks"`. */
   table?: string;
   /**
-   * Width of the `embedding` column. Needed only to create the table (`setupSql()`, or
-   * `ensureSchema()` when the table doesn't exist yet); reads and writes don't use it. When
-   * nothing configures it, `detectEmbeddingDimensions(embedder)` learns it from the embedder.
+   * Width of the `embedding` column. Needed to create the table (`setupSql()`, or
+   * `ensureSchema()` when the table doesn't exist yet); when set, `upsert` also rejects
+   * vectors of another width. Without it, `ensureSchema()` adopts an existing table's width.
+   * When nothing configures it, `detectEmbeddingDimensions(embedder)` learns it from the embedder.
    */
   dimensions?: number;
   /** Index strategy hint, surfaced via the documented DDL helper. Default `"hnsw"`. */

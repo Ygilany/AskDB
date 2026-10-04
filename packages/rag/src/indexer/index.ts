@@ -230,9 +230,10 @@ export async function buildSchemaIndex(
     ) {
       throw new Error(
         `Embedder returned ${observedDimensions}-dimension vectors but the ${descriptor.kind} store ` +
-          `holds ${descriptor.dimensions}-dimension vectors. Index into a store with none of the old width ` +
-          `(pgvector: a new or recreated table; file store: delete its embeddings files), ` +
-          `or use an embedder that produces ${descriptor.dimensions}-dimension vectors.`,
+          `is set up for ${descriptor.dimensions}. Use a store set up for ${observedDimensions} ` +
+          `(pgvector: dimensions=${observedDimensions}, on a new or recreated table; file store: delete its ` +
+          `embeddings files; memory store: a new instance), or an embedder that produces ` +
+          `${descriptor.dimensions}-dimension vectors.`,
       );
     }
     await store.upsert(
@@ -291,6 +292,13 @@ export async function buildSchemaIndex(
   }
   for (const id of Object.keys(previousLock?.hashes ?? {})) {
     if (id.startsWith(idPrefix)) candidates.add(id);
+  }
+  if (lockState.status === "ok" && lockState.lock.schemaId !== schemaId) {
+    // The schema was renamed: this lock lists the ids it wrote under its old id.
+    const oldPrefix = chunkIdPrefix(lockState.lock.schemaId);
+    for (const id of Object.keys(lockState.lock.hashes)) {
+      if (id.startsWith(oldPrefix)) candidates.add(id);
+    }
   }
   if (lockState.status === "outdated" && lockState.schemaId === schemaId) {
     // Older-format (unscoped) ids this schema wrote under the previous lock.

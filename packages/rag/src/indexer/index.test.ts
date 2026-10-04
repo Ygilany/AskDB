@@ -317,7 +317,7 @@ describe("buildSchemaIndex — store is the source of truth", () => {
     };
     await expect(
       buildSchemaIndex({ schema: sources, embedder: deterministicEmbedder(), store }),
-    ).rejects.toThrow(/2-dimension vectors but the pgvector store holds 3-dimension vectors/);
+    ).rejects.toThrow(/2-dimension vectors but the pgvector store is set up for 3\. Use a store set up for 2 \(pgvector: dimensions=2/);
   });
 
   it("tells a file-store user to delete the embeddings files when the width changes", async () => {
@@ -331,7 +331,7 @@ describe("buildSchemaIndex — store is the source of truth", () => {
     const threeDims: Embedder = async (texts) => texts.map((t) => [t.length, 1, 2]);
     await expect(
       buildSchemaIndex({ schema: sources, embedder: threeDims, store: createFileStore({ basePath }), embedderId: "w3", lockFilePath }),
-    ).rejects.toThrow(/file store holds 2-dimension vectors.*file store: delete its embeddings files/);
+    ).rejects.toThrow(/file store is set up for 2\..*file store: delete its embeddings files/);
   });
 
   it("reports a changed embedder even when another reason forces the full reindex", async () => {
@@ -501,6 +501,38 @@ describe("buildSchemaIndex — schema-scoped ids and orphan cleanup", () => {
     await buildSchemaIndex({ schema: sources, embedder: deterministicEmbedder(), store, embedderId: "e", lockFilePath: tempLockPath() });
     await buildSchemaIndex({ schema: sources, embedder: deterministicEmbedder(), store, embedderId: "e" });
     expect(await backing.idsBySchema!("other")).toEqual([legacyId]);
+  });
+
+  it("prunes the ids a renamed schema wrote under its old id, listed in its lock", async () => {
+    const store = createMemoryStore();
+    const lockFilePath = tempLockPath();
+    const sources = loadChunkerSourcesFromDir(FIXTURE_DIR);
+    sources.schema.schemaId = "old";
+    await buildSchemaIndex({ schema: sources, embedder: deterministicEmbedder(), store, embedderId: "e", lockFilePath });
+
+    sources.schema.schemaId = "new";
+    const renamed = await buildSchemaIndex({ schema: sources, embedder: deterministicEmbedder(), store, embedderId: "e", lockFilePath });
+    expect(await store.idsBySchema!("old")).toEqual([]);
+    expect(store.size()).toBe(renamed.stats.chunksTotal);
+  });
+
+  it("deletes nothing on the word of a lock from a newer @askdb/rag", async () => {
+    const store = createMemoryStore();
+    const otherId = "chunk:other:table:public.kept";
+    await store.upsert([
+      {
+        id: otherId,
+        vector: [1, 1],
+        payload: { id: otherId, type: "table", text: "kept", schemaId: "other", refs: [], sensitive: false },
+      },
+    ]);
+    const lockFilePath = tempLockPath();
+    writeFileSync(lockFilePath, JSON.stringify({ version: 99, schemaId: "orders-users", hashes: { [otherId]: "h" } }));
+
+    const result = await buildSchemaIndex({ schema: loadChunkerSourcesFromDir(FIXTURE_DIR), embedder: deterministicEmbedder(), store, embedderId: "e", lockFilePath });
+    expect(result.stats.chunksIndexed).toBe(result.stats.chunksTotal);
+    expect(await store.idsBySchema!("other")).toEqual([otherId]);
+    expect(readLockFile(lockFilePath)?.version).toBe(2);
   });
 
   it("prunes orphans via the lock for stores that can't list ids, scoped to the schema", async () => {

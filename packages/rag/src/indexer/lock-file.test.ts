@@ -72,6 +72,12 @@ describe("schema.lock.json", () => {
     });
   });
 
+  it("treats a lock from a newer version as invalid, not outdated", () => {
+    const path = tempPath();
+    writeFileSync(path, JSON.stringify({ version: 3, schemaId: "orders-users", hashes: { "chunk:x": "h" } }));
+    expect(inspectLockFile(path)).toEqual({ status: "invalid" });
+  });
+
   it("distinguishes missing and invalid lock files", () => {
     const path = tempPath();
     expect(inspectLockFile(path)).toEqual({ status: "missing" });

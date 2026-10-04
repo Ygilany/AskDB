@@ -174,7 +174,7 @@ await store.ensureSchema(); // idempotent — safe to call on every startup
 
 | Option | Type | Required | Description |
 | --- | --- | --- | --- |
-| `dimensions` | `number` | no | Width of the `embedding` column. Needed only to create the table (`setupSql()`, or `ensureSchema()` when the table doesn't exist yet); reads and writes don't use it. Take it from `detectEmbeddingDimensions(embedder)` rather than hard-coding it. |
+| `dimensions` | `number` | no | Width of the `embedding` column. Needed to create the table (`setupSql()`, or `ensureSchema()` when the table doesn't exist yet). `upsert` rejects vectors of another width, checked against `dimensions` or, without it, the existing table's width once `ensureSchema()` has read it. Take it from `detectEmbeddingDimensions(embedder)` rather than hard-coding it. |
 | `connectionString` | `string` | no† | PostgreSQL connection string. The store lazily imports and pools `pg` when this is supplied. |
 | `client` | `PgClient` | no† | Pre-built `pg.Pool` or `pg.Client`. Preferred when your app already manages a pool. The store never closes an externally supplied client. |
 | `table` | `string` | no | Table name. Default `"askdb_rag_chunks"`. Several schemas can share one table (chunk ids are schema-scoped); use separate tables for different embedding dimensions. |

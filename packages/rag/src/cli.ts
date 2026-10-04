@@ -99,7 +99,9 @@ async function runIndex(opts: CliOptions, logger: AskDbLogger, runtimeConfig: As
     embedder,
     store,
     embedderId: embedderId(opts),
-    lockFilePath: lockFilePathFor(opts),
+    // A memory index vanishes with this process: recording it in the
+    // committed lock would only misdescribe the persisted index.
+    lockFilePath: (opts.store ?? "file") === "memory" ? undefined : lockFilePathFor(opts),
     force: opts.force,
     correlationId: opts.correlationId,
     logger,
@@ -420,9 +422,15 @@ function parseOptions(argv: readonly string[]): CliOptions {
         opts.question = readValue(argv, ++i, arg);
         break;
       case "-k":
-      case "--k":
-        opts.k = Number(readValue(argv, ++i, arg));
+      case "--k": {
+        const raw = readValue(argv, ++i, arg);
+        const n = Number(raw);
+        if (!Number.isInteger(n) || n <= 0) {
+          throw new Error(`-k must be a positive integer (got ${raw}).`);
+        }
+        opts.k = n;
         break;
+      }
       case "--pg-url":
         opts.pgUrl = readValue(argv, ++i, arg);
         break;
@@ -491,7 +499,7 @@ function printHelp(): void {
       "",
       "Usage:",
       "  askdb-rag index <schema-dir>      [--store memory|file|pgvector] [--embedder mock|openai] [--dimensions <n>] [--force]",
-      "  askdb-rag query <schema-dir>      --question \"...\" [-k 8] [--types table,column,cql] [--store file|pgvector]",
+      "  askdb-rag query <schema-dir>      --question \"...\" [-k 8] [--types table,column,cql] [--store file|pgvector] [--embedder mock|openai] [--dimensions <n>]",
       "  askdb-rag setup-store             --pg-url <conn> [--pg-table askdb_rag_chunks] [--embedder mock|openai] [--dimensions <n>]",
       "",
       "Commands:",
@@ -502,7 +510,7 @@ function printHelp(): void {
       "               Dimensions default to the embedder's (mock: 64, openai text-embedding-3-small: 1536).",
       "",
       "Stores:",
-      "  memory     in-memory cosine, lives only for one process. Useful for `index` dry runs; `query` can't use it.",
+      "  memory     in-memory cosine, lives only for one process. Useful for `index` dry runs (writes no schema.lock.json); `query` can't use it.",
       "  file       persisted as <schema-dir>/schema.embeddings.{bin,json} (default).",
       "  pgvector   --pg-url <conn> [--pg-table askdb_rag_chunks] [--dimensions <n>]",
       "",

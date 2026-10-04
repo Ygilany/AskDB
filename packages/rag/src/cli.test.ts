@@ -117,6 +117,23 @@ describe("askdb-rag CLI", () => {
     expect(forced.chunksIndexed).toBe(forced.chunksTotal);
   });
 
+  it("index --store memory leaves the committed lock alone", async () => {
+    const schemaDir = copyFixture();
+    expect(await runRagCli(["index", schemaDir])).toBe(0);
+    const lockPath = join(schemaDir, "schema.lock.json");
+    const before = readFileSync(lockPath, "utf8");
+
+    expect(await runRagCli(["index", schemaDir, "--store", "memory", "--dimensions", "16"])).toBe(0);
+    expect(readFileSync(lockPath, "utf8")).toBe(before);
+    expect(await runRagCli(["query", schemaDir, "--question", "paid orders"])).toBe(0);
+  });
+
+  it("rejects a -k that isn't a positive integer", async () => {
+    const schemaDir = copyFixture();
+    expect(await runRagCli(["query", schemaDir, "--question", "x", "-k", "abc"])).toBe(1);
+    expect(stderr.join("")).toMatch(/-k must be a positive integer \(got abc\)/);
+  });
+
   it("rejects a non-positive --dimensions", async () => {
     const schemaDir = copyFixture();
     expect(await runRagCli(["index", schemaDir, "--dimensions", "0"])).toBe(1);

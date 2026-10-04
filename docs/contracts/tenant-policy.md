@@ -463,7 +463,9 @@ The markdown body (business context prose) is chunked following the `concepts.md
 | **Hierarchy** | `chunk:<schemaId>:tenant-policy#hierarchy` | The `## Hierarchy` body, prefixed with `# Tenant policy — Hierarchy`. |
 | **Scope rules** | `chunk:<schemaId>:tenant-policy#scope-rules` | The `## Scope rules` body, prefixed with `# Tenant policy — Scope rules`. |
 | **Sensitive interactions** | `chunk:<schemaId>:tenant-policy#sensitive-interactions` | The `## Sensitive interactions` body, prefixed with its heading. |
-| **Other sections** | `chunk:<schemaId>:tenant-policy#<slug>` | Other H2 bodies (slug = lower-cased heading, non-alphanumerics → `-`), prefixed with their heading. |
+| **Whole body** | `chunk:<schemaId>:tenant-policy#body` | Only when none of the three sections above has content: the whole markdown body, prefixed with `# Tenant policy`. |
+
+Other H2 sections are not chunked: the tenant-policy loader keeps only the three sections above.
 
 Long sections use `#bc:<n>` suffixes following the existing chunking convention.
 

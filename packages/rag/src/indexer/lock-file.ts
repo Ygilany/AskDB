@@ -1,4 +1,5 @@
-import { readFileSync, writeFileSync } from "node:fs";
+import { randomBytes } from "node:crypto";
+import { readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 
 /** Current `schema.lock.json` format version. */
 export const SCHEMA_LOCK_VERSION = 2;
@@ -76,7 +77,10 @@ export function inspectLockFile(path: string): LockFileInspection {
   const obj = parsed as Record<string, unknown>;
   const hashes = isStringRecord(obj.hashes) ? obj.hashes : undefined;
   if (obj.version !== SCHEMA_LOCK_VERSION) {
-    if (!hashes) return { status: "invalid" };
+    // Only an older lock is "outdated" (its ids get cleaned up). A newer one
+    // was written by a later @askdb/rag whose id format this one can't know.
+    const older = typeof obj.version === "number" && obj.version < SCHEMA_LOCK_VERSION;
+    if (!hashes || !older) return { status: "invalid" };
     return {
       status: "outdated",
       version: obj.version,
@@ -95,7 +99,14 @@ export function writeLockFile(path: string, lock: SchemaLockFile): void {
     sortedHashes[k] = lock.hashes[k];
   }
   const out: SchemaLockFile = { ...lock, hashes: sortedHashes };
-  writeFileSync(path, JSON.stringify(out, null, 2) + "\n", "utf8");
+  // Temp file + rename, so a crash never leaves a half-written lock.
+  const tmp = `${path}.tmp-${process.pid}-${randomBytes(4).toString("hex")}`;
+  try {
+    writeFileSync(tmp, JSON.stringify(out, null, 2) + "\n", "utf8");
+    renameSync(tmp, path);
+  } finally {
+    rmSync(tmp, { force: true });
+  }
 }
 
 function isStringRecord(value: unknown): value is Record<string, string> {

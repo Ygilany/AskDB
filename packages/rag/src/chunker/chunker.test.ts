@@ -388,6 +388,33 @@ describe("sensitive-mention filtering", () => {
     expect(chunk?.sensitive).toBe(true);
   });
 
+  it.each<[string, (s: ReturnType<typeof sources>) => void]>([
+    [
+      "an example question names a sensitive column",
+      (s) => {
+        s.tables["table:public.users"]!.sections["Example questions"] =
+          "- How many users signed up last month?\n- Which users have an Email on file?";
+      },
+    ],
+    [
+      "a whole table is sensitive",
+      (s) => {
+        table(s, "table:public.orders").sensitive = true;
+      },
+    ],
+  ])("in opt-in mode, counts and flags every chunk the default leaves out or trims when %s", (_case, mutate) => {
+    const s = sources();
+    mutate(s);
+    const optIn = chunkSchema(s, { includeSensitiveDescribable: true });
+    const flagged = optIn.chunks.filter((c) => c.sensitive);
+    expect(flagged.length).toBeGreaterThan(0);
+    expect(optIn.stats.sensitiveIncluded).toBe(flagged.length);
+    // Every chunk the default leaves out is flagged in opt-in mode.
+    const defaultIds = new Set(chunkSchema(s).chunks.map((c) => c.id));
+    const leftOut = optIn.chunks.filter((c) => !defaultIds.has(c.id));
+    expect(leftOut.filter((c) => !c.sensitive)).toEqual([]);
+  });
+
   it("counts a sensitive source that splits into several chunks once per chunk", () => {
     const opts = { chunkSizeMaxChars: 40 };
     const optInOpts = { ...opts, includeSensitiveDescribable: true };
