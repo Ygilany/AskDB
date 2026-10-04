@@ -11,7 +11,10 @@
     "lab": "tsx src/lab-cli.ts",
     "test": "vitest run",
     "matrix": "vitest run --reporter=default --reporter=./src/matrix-reporter.ts",
-    "lint": "tsc --noEmit"
+    "lint": "tsc --noEmit",
+    "postgres:up": "docker compose -p askdb-consumer-lab up -d --wait",
+    "postgres:down": "docker compose -p askdb-consumer-lab down",
+    "postgres:reset": "docker compose -p askdb-consumer-lab down && docker compose -p askdb-consumer-lab up -d --wait"
   },
   "dependencies": {
     "@ai-sdk/openai": "4.0.29",
