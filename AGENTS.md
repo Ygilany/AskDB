@@ -53,6 +53,14 @@ The five default roles (`needs-triage`, `needs-info`, `ready-for-agent`, `ready-
 
 Single-context: a root `CONTEXT.md` (created lazily) plus ADRs in `docs/adrs/`. See `docs/agents/domain.md`.
 
+### Code review
+
+Copilot-style reviews follow this repo's review profile. See `docs/agents/code-review.md`.
+
+### Docs house style
+
+The docs site's house style (readers, voice, terminology, site structure, components, build commands) lives beside it. See `apps/docs-site/STYLE.md`.
+
 ## Where product/architecture decisions live
 
 `docs/` is the constitution — check it before assuming behavior, not just the code:
