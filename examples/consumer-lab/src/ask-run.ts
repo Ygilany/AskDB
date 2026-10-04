@@ -110,8 +110,14 @@ function formatRows(result: ExecuteResult): string {
   return [header, "-".repeat(header.length), ...cells.slice(1).map((r) => line(r as string[])), "", count].join("\n");
 }
 
-/** `onLine` gets each transcript line as it's produced, so `lab ask` prints as it goes. */
-export async function askAndRun(dialect: SupportedDialect, input: AskInput, onLine?: (line: TranscriptLine) => void): Promise<AskRun> {
+export interface AskRunOptions {
+  /** Gets each transcript line as it's produced, so `lab ask` prints as it goes. */
+  onLine?: (line: TranscriptLine) => void;
+  /** Aborting it kills the run's child processes (introspection). Driver calls take no signal. */
+  signal?: AbortSignal;
+}
+
+export async function askAndRun(dialect: SupportedDialect, input: AskInput, { onLine, signal }: AskRunOptions = {}): Promise<AskRun> {
   const started = performance.now();
   const lines: TranscriptLine[] = [];
   const emit = (stream: TranscriptLine["stream"]) => (text: string) => {
@@ -140,7 +146,7 @@ export async function askAndRun(dialect: SupportedDialect, input: AskInput, onLi
   try {
     out(`target:     ${requireInstallTarget().label}`);
     out(`dialect:    ${dialect}`);
-    const schemaDir = await ensureArtifactAsync(dialect);
+    const schemaDir = await ensureArtifactAsync(dialect, signal);
 
     // What the model was sent, as a digest: equal digests mean the two paths built the same prompt.
     const showPrompt = () => {

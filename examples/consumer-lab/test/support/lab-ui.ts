@@ -7,11 +7,13 @@ import { join } from "node:path";
 import type { EngineEvent, UiInput } from "../../src/ui/server.js";
 import type { Summary } from "../../src/ui/summary.js";
 import { LAB_ROOT } from "../../src/paths.js";
-import { startServerProcess, type ServerProcess } from "../../src/server-process.js";
+import { startServerProcess, type ServerProcess, type ServerStop } from "../../src/server-process.js";
 import { studioRequest, type StudioAddress } from "../../src/studio.js";
 
 export interface LabUiProcess extends StudioAddress {
   close(): Promise<void>;
+  /** `close()`, saying whether the process ignored SIGTERM and needed SIGKILL. */
+  stop(): Promise<ServerStop>;
 }
 
 /** Start `pnpm lab ui --port <free port>` with `args` and `env` added; ready once `GET /` answers 200. */
@@ -26,7 +28,7 @@ export async function startLabUiProcess({ args = [], env = {} }: { args?: string
     ready: async (port) => (await studioRequest(address(port))).status === 200,
     readyWhen: "GET /",
   });
-  return { ...address(server.port), close: () => server.close() };
+  return { ...address(server.port), close: () => server.close(), stop: () => server.stop() };
 }
 
 export interface UiRun {

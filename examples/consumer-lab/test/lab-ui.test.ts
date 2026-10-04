@@ -239,6 +239,34 @@ it.for([["mariadb"], ["sqlserver"], ["sqlite"]] as [SupportedDialect][])(
 );
 
 /*
+ * Protects: `lab ui` stops on SIGTERM (or Ctrl-C) even while an engine's connection still
+ * hangs, as the isolation run above leaves Postgres's.
+ * Catches: a shutdown that closes only the HTTP server, so the timed-out engine's socket
+ * keeps the process alive until someone kills it.
+ * Not covered elsewhere: every other test stops the server with nothing left running.
+ * Runs after the isolation scenarios, which start the run it stops.
+ */
+it("[postgres] lab-ui-shutdown: exits on SIGTERM while a timed-out engine's connection still hangs", async (ctx) => {
+  needsCapability(ctx, "cli-introspect-engine");
+  await runWithEnginesDown();
+
+  expect(await failingUi!.stop(), "lab ui ignored SIGTERM and had to be killed").toEqual({ forced: false });
+});
+
+/*
+ * Protects: the page runs exactly the input it was given (issue #262). In SQL mode a blank
+ * SQL field is refused (`400`), not run as the catalog question it's labelled with.
+ * Catches: blank SQL silently dropped, so every engine answers the label's replay
+ * question and the page shows rows for SQL nobody wrote.
+ * Not covered elsewhere: the other runs all send non-blank input.
+ */
+it("[postgres] lab-ui-input: refuses blank SQL instead of running its label", async () => {
+  const run = await uiRun(ui, { question: AGENCY_NAMES, sql: "   " });
+
+  expect(run.status).toBe(400);
+});
+
+/*
  * Protects: the page names what it tests (issue #262): the install target `lab:use`
  * recorded, and the model mode.
  * Catches: a page that names a stale or hard-coded target, so a contributor reads one
