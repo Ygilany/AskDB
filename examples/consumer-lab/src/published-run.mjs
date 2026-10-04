@@ -65,17 +65,20 @@ function report(lines) {
 }
 
 /** The `"name": "version"` pins in a pnpm-workspace.yaml's lab:use block, and its target label. */
-function labUseBlock(text) {
-  const block = text.slice(text.indexOf("# lab:use overrides begin"), text.indexOf("# lab:use overrides end"));
+function labUseBlock(text, where) {
+  const begin = text.indexOf("# lab:use overrides begin");
+  const end = text.indexOf("# lab:use overrides end");
+  const block = begin >= 0 && end > begin ? text.slice(begin, end) : "";
   const label = /^# lab:use target: (.+)$/m.exec(block)?.[1];
+  if (!label) refuse(`${where} has no lab:use target block`);
   return { label, pins: new Map([...block.matchAll(/^ {2}"([^"]+)": "([^"]+)"$/gm)].map(([, name, version]) => [name, version])) };
 }
 
 function baseline() {
   const git = (...args) => execFileSync("git", ["-C", LAB, ...args], { encoding: "utf8", maxBuffer: 256 * 1024 * 1024 });
   const changed = MANAGED.filter((file) => git("status", "--porcelain", "--", file).trim());
-  const committed = labUseBlock(git("show", "HEAD:./pnpm-workspace.yaml"));
-  const now = labUseBlock(readFileSync(join(LAB, "pnpm-workspace.yaml"), "utf8"));
+  const committed = labUseBlock(git("show", "HEAD:./pnpm-workspace.yaml"), "the committed pnpm-workspace.yaml");
+  const now = labUseBlock(readFileSync(join(LAB, "pnpm-workspace.yaml"), "utf8"), "pnpm-workspace.yaml");
   const lines = ["### Committed baseline", ""];
   if (!changed.length) {
     lines.push(`Current: \`pnpm lab:use ${now.label}\` changed none of the lab's ${MANAGED.map((f) => `\`${f}\``).join(", ")}, so the committed baseline is what it installs (askdb@${now.pins.get("askdb")}).`);
@@ -126,7 +129,7 @@ function drift(beforeFile) {
   } else {
     lines.push("Each resolved to the version in `lab:use`'s lockfile.");
   }
-  lines.push("", "The fresh lockfile is in the `consumer-lab-published` artifact.");
+  lines.push("", "Both lockfiles are in the `consumer-lab-matrix` artifact.");
   report(lines);
 }
 
@@ -176,19 +179,20 @@ function verdict(afterRelease) {
     lines.push(`Listed as expected for askdb@${askdb} but not failing: ${passing.map((n) => `\`${n}\``).join(", ")}. Remove them from \`${KNOWN}\` if they keep passing.`, "");
   }
 
-  let flips = [];
+  // After a release: every capability `n/a` cell, and whether they fail the run (no changeset was pending).
+  const naCells = afterRelease ? cells.filter((c) => c.cell.status === "na") : [];
+  let naFail = false;
   if (afterRelease) {
-    flips = cells.filter((c) => c.cell.status === "na");
     const dir = join(REPO, ".changeset");
     const pending = existsSync(dir) ? readdirSync(dir).filter((f) => f.endsWith(".md") && f !== "README.md").sort() : [];
     lines.push("### Capabilities after this release", "");
-    if (!flips.length) {
+    if (!naCells.length) {
       lines.push("No capability `n/a` cell: the release has every capability the lab checks.", "");
     } else {
       lines.push(
-        `${flips.length} capability \`n/a\` cell(s). CI passed the lab on this commit with \`lab:use .\`, where a missing capability fails, so each should have flipped with this release:`,
+        `${naCells.length} capability \`n/a\` cell(s). CI passed the lab on this commit with \`lab:use .\`, where a missing capability fails, so each should have flipped with this release:`,
         "",
-        ...flips.map((c) => `- \`${c.name}\`: ${c.cell.text}`),
+        ...naCells.map((c) => `- \`${c.name}\`: ${c.cell.text}`),
         "",
       );
       if (pending.length) {
@@ -196,15 +200,16 @@ function verdict(afterRelease) {
           `${pending.length} changeset(s) were still pending at this commit, so the release may not include their changes yet: ${pending.map((f) => `\`.changeset/${f}\``).join(", ")}. Check each capability's change with \`.agents/skills/consumer-lab/baseline-refresh.md\` step 3.`,
           "",
         );
-        flips = [];
       } else {
+        naFail = true;
         lines.push("No changeset was pending at this commit, so the release lacks a change it should have shipped, or a detector misreads it: a finding (`.agents/skills/consumer-lab/baseline-refresh.md` step 3).", "");
       }
     }
   }
 
-  if (unexpected.length || flips.length) {
-    lines.push(`**Failed:** ${unexpected.length + flips.length} problem(s) not expected for askdb@${askdb}.`, "", ...unexpected.map((u) => `- ${u}`), ...flips.map((c) => `- capability \`n/a\` after the release: \`${c.name}\``));
+  if (naFail) unexpected.push(...naCells.map((c) => `capability \`n/a\` after the release: \`${c.name}\``));
+  if (unexpected.length) {
+    lines.push(`**Failed:** ${unexpected.length} problem(s) not expected for askdb@${askdb}.`, "", ...unexpected.map((u) => `- ${u}`));
     report(lines);
     process.exit(1);
   }

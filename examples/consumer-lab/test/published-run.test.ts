@@ -139,8 +139,10 @@ describe("published-run drift", () => {
 describe("published-run baseline", () => {
   it("says the baseline is stale, and which pins moved, once lab:use changed it", () => {
     const { root, lab, run } = scratchRepo(undefined);
-    const ws = (askdb: string) => `overrides:\n# lab:use overrides begin\n# lab:use target: npm:latest\n  "@askdb/core": "1.0.0-beta.43"\n  "askdb": "${askdb}"\n# lab:use overrides end\n`;
-    for (const [file, text] of [["package.json", "{}\n"], ["pnpm-lock.yaml", "lockfileVersion: '9.0'\n"], ["pnpm-workspace.yaml", ws("1.0.0-beta.43")]]) writeFileSync(join(lab, file!), text!);
+    // The lab's own committed workspace file, so the block is in the format lab:use writes.
+    const committed = readFileSync(join(LAB, "pnpm-workspace.yaml"), "utf8");
+    const askdb = /^ {2}"askdb": "([^"]+)"$/m.exec(committed)![1]!;
+    for (const [file, text] of [["package.json", "{}\n"], ["pnpm-lock.yaml", "lockfileVersion: '9.0'\n"], ["pnpm-workspace.yaml", committed]]) writeFileSync(join(lab, file!), text!);
     const git = (...args: string[]) => execFileSync("git", ["-C", root, "-c", "user.name=lab", "-c", "user.email=lab@example.invalid", ...args]);
     git("init", "-q");
     git("add", ".");
@@ -150,11 +152,11 @@ describe("published-run baseline", () => {
     expect(current.status, current.out).toBe(0);
     expect(current.out).toContain("Current: `pnpm lab:use npm:latest` changed none of the lab's");
 
-    writeFileSync(join(lab, "pnpm-workspace.yaml"), ws("1.0.0-beta.44"));
+    writeFileSync(join(lab, "pnpm-workspace.yaml"), committed.replace(`  "askdb": "${askdb}"`, '  "askdb": "9.9.9"'));
     const stale = run("baseline");
     expect(stale.status, stale.out).toBe(0);
     expect(stale.out).toContain("**Stale:** `pnpm lab:use npm:latest` changed `pnpm-workspace.yaml`");
-    expect(stale.out).toContain("| askdb | 1.0.0-beta.43 | 1.0.0-beta.44 |");
+    expect(stale.out).toContain(`| askdb | ${askdb} | 9.9.9 |`);
     expect(stale.out).not.toContain("@askdb/core |");
   });
 });
