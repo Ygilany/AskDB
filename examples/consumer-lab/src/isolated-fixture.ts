@@ -36,6 +36,13 @@ export function assertLocalDocker(): void {
  */
 export function assertIsolatedTarget(dialect: ServerDialect, connectionString: string): string {
   const endpoint = dialect === "sqlserver" ? mssql.ConnectionPool.parseConnectionString(connectionString) : new URL(connectionString);
+  // The fixture emits canonical URLs with no driver options. In particular, pg
+  // query parameters can override the authority that WHATWG URL reports. Reject
+  // these forms before Docker inspection or any connection can be authorized.
+  const protocol = dialect === "postgres" ? "postgres:" : "mysql:";
+  if (endpoint instanceof URL && (endpoint.protocol !== protocol || endpoint.search || endpoint.hash || endpoint.href !== connectionString)) {
+    throw new Error("isolated fixture: refused noncanonical URL or driver URL options");
+  }
   const host = "server" in endpoint ? endpoint.server : endpoint.hostname;
   const port = Number(endpoint.port);
   if (host !== "127.0.0.1" || port !== ISOLATED_PORTS[dialect]) {

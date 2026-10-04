@@ -5,7 +5,7 @@
  * No production seam: the same lab guard is used by the runner and effect proofs.
  */
 import { connectionUrl } from "../src/fixture.js";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { assertIsolatedTarget, docker, ISOLATED_PROJECT } from "../src/isolated-fixture.js";
 
 const targets = [
@@ -22,6 +22,23 @@ describe("isolated fixture guard", () => {
   it.each(targets)("refuses unsafe %s endpoint %s", (dialect, url) => {
     expect(() => assertIsolatedTarget(dialect, url)).toThrow(/isolated fixture: refused endpoint/);
   });
+});
+
+/**
+ * Protects: the driver cannot override the endpoint the isolation guard approves.
+ * Catches: PostgreSQL URL query parameters redirecting an apparently isolated URL.
+ * Not covered elsewhere: plain shared-port refusals do not exercise driver URL overrides.
+ * No production seam: the real fixture URL builder and the suite's execution guard.
+ */
+it("refuses a fixture host that injects driver endpoint overrides", () => {
+  vi.stubEnv("ASKDB_FIXTURE_HOST", "127.0.0.1:25432/postgres?host=127.0.0.1&port=15432&unused=");
+  vi.stubEnv("ASKDB_FIXTURE_POSTGRES_PORT", "25432");
+  try {
+    expect(() => assertIsolatedTarget("postgres", connectionUrl("postgres", "owner")))
+      .toThrow(/isolated fixture: refused noncanonical URL/);
+  } finally {
+    vi.unstubAllEnvs();
+  }
 });
 
 // Only the lifecycle runner owns containers it is allowed to alter. It runs this
