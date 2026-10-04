@@ -69,9 +69,10 @@ export function summarize(question: string, engines: EngineRows[]): Summary {
     try {
       key = normalize(rows.rows);
     } catch (error) {
-      // Rows that don't fit the question's column types agree with nothing.
-      const reason = error instanceof Error ? error.message : String(error);
-      groups.set(`unnormalizable:${dialect}`, [dialect]);
+      // Rows that don't fit the question's column types can't be compared with any engine's;
+      // when the SQL doesn't fit its label, that's true of every engine, so it isn't a disagreement.
+      const reason = `rows don't fit the question's columns: ${error instanceof Error ? error.message : String(error)}`;
+      notCompared.push({ dialect, reason });
       verdicts[dialect] = { verdict: "mismatch", reason };
       continue;
     }
@@ -82,7 +83,7 @@ export function summarize(question: string, engines: EngineRows[]): Summary {
   const compared = [...groups.values()];
   const agreement: Summary["agreement"] =
     compared.flat().length < 2
-      ? { verdict: "not compared", reason: "fewer than two engines returned rows", groups: compared, notCompared }
+      ? { verdict: "not compared", reason: "fewer than two engines returned rows to compare", groups: compared, notCompared }
       : { verdict: compared.length === 1 ? "agree" : "disagree", groups: compared, notCompared };
   return { questionId, agreement, oracle: verdicts };
 }

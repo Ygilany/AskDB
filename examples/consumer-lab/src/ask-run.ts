@@ -155,7 +155,7 @@ export async function askAndRun(dialect: SupportedDialect, input: AskInput, { on
     };
     let result: AskResult;
     try {
-      if (sql) {
+      if (sql !== undefined) {
         out("model:      none (--sql, through deps.generateText)");
         result = await timed("askMs", () => askFixedSql(dialect, sql, schemaDir, question || undefined));
       } else {
@@ -178,7 +178,7 @@ export async function askAndRun(dialect: SupportedDialect, input: AskInput, { on
       if (!(error instanceof AskDbError)) throw error;
       const rule = "rule" in error ? ` ${String(error.rule)}` : "";
       const reply = sql ?? replay?.requests().at(-1)?.reply;
-      if (reply) out(`${sql ? "sql:  " : "reply:"}      ${indent(reply)}`);
+      if (reply) out(`${sql !== undefined ? "sql:  " : "reply:"}      ${indent(reply)}`);
       out(`validation: rejected — ${error.name}${rule}`);
       out(`            ${error.message}`);
       return done("rejected", { exitCode: 1, error });

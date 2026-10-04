@@ -168,6 +168,9 @@ it.for([
  * case-insensitive under the other servers' default collations, so Postgres reads no rows
  * and MySQL, MariaDB and SQL Server read the three `Agência …` rows. SQLite has no `org`
  * schema, so its column reports its own error and it isn't compared.
+ * Raw SQL labelled with a question it doesn't answer (three columns for a two-column
+ * question) returns the same rows everywhere, so it's not compared rather than shown as a
+ * disagreement, and the oracle calls each engine a mismatch.
  */
 it.for(DIALECTS)("[%s] lab-ui-summary: every engine agrees and matches the oracle on a catalog question", async ([dialect], ctx) => {
   needsCapability(ctx, "cli-introspect-engine");
@@ -198,6 +201,15 @@ it.for(DIALECTS)("[%s] lab-ui-summary: engines that read different rows are show
   if (want.group) expect(summary?.agreement.groups.find((g) => g.includes(dialect))?.slice().sort()).toEqual(want.group);
   else expect(summary?.agreement.notCompared).toEqual([{ dialect, reason: "failed" }]);
   expect(summary?.oracle?.[dialect]?.verdict).toBe(want.oracle);
+});
+
+it.for(DIALECTS)("[%s] lab-ui-summary: rows that don't fit the labelled question aren't compared, not shown disagreeing", async ([dialect], ctx) => {
+  needsCapability(ctx, "cli-introspect-engine");
+  const { summary } = await runOnce({ sql: "SELECT 1 AS a, 2 AS b, 3 AS c", question: AGENCY_NAMES });
+
+  expect(summary?.agreement.verdict).toBe("not compared");
+  expect(summary?.agreement.notCompared.find((n) => n.dialect === dialect)?.reason).toMatch(/^rows don't fit the question's columns/);
+  expect(summary?.oracle?.[dialect]?.verdict).toBe("mismatch");
 });
 
 /*
@@ -261,10 +273,11 @@ it("[postgres] lab-ui-shutdown: exits on SIGTERM while a timed-out engine's conn
 });
 
 /*
- * Protects: the page runs exactly the input it was given (issue #262). In SQL mode a blank
- * SQL field is refused (`400`), not run as the catalog question it's labelled with.
- * Catches: blank SQL silently dropped, so every engine answers the label's replay
- * question and the page shows rows for SQL nobody wrote.
+ * Protects: the page and `lab ask` run exactly the input they were given (issue #262). Blank
+ * SQL is refused (`400` from the page, usage and exit 2 from `lab ask --sql ""`), not run as
+ * the question it's labelled with.
+ * Catches: blank SQL silently dropped, so the label's replay question runs instead and rows
+ * appear for SQL nobody wrote.
  * Not covered elsewhere: the other runs all send non-blank input.
  */
 it("[postgres] lab-ui-input: refuses blank SQL instead of running its label", async () => {
@@ -273,11 +286,21 @@ it("[postgres] lab-ui-input: refuses blank SQL instead of running its label", as
   expect(run.status).toBe(400);
 });
 
+it("[postgres] lab-ui-input: lab ask refuses a blank --sql, as the page does", async () => {
+  const run = await lab(["ask", "--db", "postgres", "--sql", "", AGENCY_NAMES]);
+
+  expect(run.status).toBe(2);
+  expect(run.stderr).toContain("usage: pnpm lab");
+  expect(run.stdout).toBe("");
+});
+
 /*
  * Protects: `lab ui` refuses an option it can't honor, printing its usage and exiting 2: a
- * blank `--port` or one outside 0–65535, and a `--timeout` longer than Node's timer limit.
+ * blank `--port` or one outside 0–65535, a `--timeout` longer than Node's timer limit, an
+ * option with no value, an unknown option and an extra argument.
  * Catches: a blank `--port` quietly read as 0 (a random port), a port the bind then crashes
- * on, and a `--timeout` Node cuts to 1 ms, so every engine times out at once.
+ * on, a `--timeout` Node cuts to 1 ms, so every engine times out at once, and a parse error
+ * that escapes as a stack trace.
  * Not covered elsewhere: every other test starts `lab ui` with valid options. The longest
  * timeout Node can hold starts the server; one millisecond more is refused.
  */
@@ -285,12 +308,15 @@ it.for([
   ["a blank --port", ["--port", ""]],
   ["--port 65536", ["--port", "65536"]],
   ["a --timeout beyond Node's timer limit", ["--timeout", String(2 ** 31)]],
+  ["--port with no value", ["--port"]],
+  ["an unknown option", ["--verbose"]],
+  ["an extra argument", ["extra"]],
 ] as const)("[postgres] lab-ui-options: refuses %s", async ([, args]) => {
   // A refused option exits within seconds; a server that starts instead is killed before the test times out.
   const run = await lab(["ui", ...args], 90_000);
 
   expect(run.status).toBe(2);
-  expect(run.stderr).toMatch(/^usage: pnpm lab/);
+  expect(run.stderr).toContain("pnpm lab ui [--port <port>] [--timeout <ms>]");
 });
 
 it("[postgres] lab-ui-options: accepts the longest --timeout Node can hold", async () => {

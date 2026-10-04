@@ -12,7 +12,7 @@
  * `lab ui` serves a page on 127.0.0.1 that runs one input on every engine at once, through
  * the same code path, side by side (`src/ui/server.ts`).
  */
-import { parseArgs } from "node:util";
+import { parseArgs, type ParseArgsConfig } from "node:util";
 import { askAndRun, VIAS, type Via } from "./ask-run.js";
 import { requireInstallTarget } from "./artifacts.js";
 import { SUPPORTED_DIALECTS, isSupportedDialect } from "./dialects.js";
@@ -24,16 +24,30 @@ const USAGE = [
   "       pnpm lab ui [--port <port>] [--timeout <ms>]",
 ].join("\n");
 
+/** `parseArgs`, or undefined after printing why and the usage: an unknown option, a missing value, an extra argument. */
+function parse<T extends ParseArgsConfig>(config: T): ReturnType<typeof parseArgs<T>> | undefined {
+  try {
+    return parseArgs(config);
+  } catch (error) {
+    console.error(`${(error as Error).message}\n${USAGE}`);
+    return undefined;
+  }
+}
+
 async function askCommand(argv: string[]): Promise<number> {
-  const { values, positionals } = parseArgs({
+  const parsed = parse({
     args: argv,
     options: { db: { type: "string" }, sql: { type: "string" }, via: { type: "string", default: "raw" } },
     allowPositionals: true,
   });
+  if (!parsed) return 2;
+  const { values, positionals } = parsed;
   const dialect = values.db;
   const via = values.via as Via;
   const question = positionals.join(" ");
-  if (!dialect || !isSupportedDialect(dialect) || !(VIAS as readonly string[]).includes(via) || (!values.sql && !question)) {
+  // `--sql` that was given is what runs: blank SQL is refused, never replaced by the question.
+  const sqlOk = values.sql === undefined ? Boolean(question) : values.sql.trim() !== "";
+  if (!dialect || !isSupportedDialect(dialect) || !(VIAS as readonly string[]).includes(via) || !sqlOk) {
     console.error(USAGE);
     return 2;
   }
@@ -55,7 +69,9 @@ function wholeNumber(text: string, min: number, max: number): number | undefined
 }
 
 async function uiCommand(argv: string[]): Promise<number> {
-  const { values } = parseArgs({ args: argv, options: { port: { type: "string", default: "0" }, timeout: { type: "string", default: "60000" } } });
+  const parsed = parse({ args: argv, options: { port: { type: "string", default: "0" }, timeout: { type: "string", default: "60000" } } });
+  if (!parsed) return 2;
+  const { values } = parsed;
   const port = wholeNumber(values.port, 0, 65535);
   const engineTimeoutMs = wholeNumber(values.timeout, 1, MAX_TIMEOUT_MS);
   if (port === undefined || engineTimeoutMs === undefined) {
