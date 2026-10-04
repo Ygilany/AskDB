@@ -1,6 +1,7 @@
 -- Row-level security on the consumer lab's own Postgres (compose.yml), never on the shared
 -- fixture. src/lab-postgres.ts runs it as the owner, in one transaction, after the fixture's
--- seeder has created the schema and rows. Idempotent: it runs on every `postgres:up`.
+-- seeder has created the schema and rows, under the lock that serializes concurrent runs.
+-- Idempotent: it runs on every `postgres:up`.
 --
 -- This is the database-side tenancy the docs recommend next to AskDB's tenant check
 -- (concepts/safety-boundaries.mdx, "Enforce tenancy in the database": "Postgres row-level
@@ -17,10 +18,6 @@
 --
 -- `fixture_reader` bypasses row-level security, so it still reads every row: it is the control
 -- that shows the same SQL leaks without the policies.
-
--- The lab's Postgres is shared by every checkout on this machine, like the fixture, so two runs
--- may apply this at once: the second waits for the first, then finds the role.
-SELECT pg_advisory_xact_lock(hashtext('askdb-lab-postgres-rls'));
 
 DO $$
 BEGIN

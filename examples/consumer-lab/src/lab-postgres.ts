@@ -31,9 +31,10 @@ const FIXTURE_ROOT = fileURLToPath(new URL("../../../fixtures/multi-engine/", im
 export function labPostgresPort(): number {
   const override = process.env[PORT_ENV]?.trim();
   if (!override) return DEFAULT_PORT;
-  // A bad value must not fall through to the URL's port: that is the shared fixture's.
-  if (!/^\d+$/.test(override)) throw new Error(`${PORT_ENV} must be a port number, not ${JSON.stringify(override)}`);
-  return Number(override);
+  // A bad value must not fall through to the URL's port, which is the shared fixture's.
+  const port = /^\d+$/.test(override) ? Number(override) : NaN;
+  if (!(port >= 1 && port <= 65535)) throw new Error(`${PORT_ENV} must be a port from 1 to 65535, not ${JSON.stringify(override)}`);
+  return port;
 }
 
 /**
@@ -77,8 +78,8 @@ export async function labPostgresRows(role: LabPostgresRole, sql: string, opts: 
   }
 }
 
-/** Seed the lab's Postgres with the fixture's seeder, then apply the row-level security. */
-function seed(): void {
+/** Run the fixture's seeder against the lab's Postgres. */
+function runFixtureSeeder(): void {
   const seeded = spawnSync("pnpm", ["-C", FIXTURE_ROOT, "exec", "tsx", "src/seed.ts", "postgres"], {
     stdio: "inherit",
     env: { ...process.env, ASKDB_FIXTURE_POSTGRES_PORT: String(labPostgresPort()) },
@@ -87,10 +88,18 @@ function seed(): void {
   if (seeded.status !== 0) throw new Error(`lab postgres: the fixture's seeder exited ${seeded.status ?? seeded.signal}`);
 }
 
-async function applyRowLevelSecurity(): Promise<void> {
+/**
+ * Seed the lab's Postgres with the fixture's seeder, then apply the row-level security in one
+ * transaction. The server is shared by every checkout on the machine, like the fixture, so two
+ * runs may start at once: both steps run under one session-level advisory lock, which the second
+ * run waits for, then finds the dataset up to date. Postgres releases the lock if this process dies.
+ */
+async function seed(): Promise<void> {
   const client = new pg.Client({ connectionString: labPostgresUrl("owner") });
   await client.connect();
   try {
+    await client.query("SELECT pg_advisory_lock(hashtext('askdb-lab-postgres-seed'))");
+    runFixtureSeeder();
     await client.query("BEGIN");
     await client.query(readFileSync(join(LAB_ROOT, "src", "lab-postgres.sql"), "utf8"));
     await client.query("COMMIT");
@@ -109,7 +118,6 @@ if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
     process.exit(2);
   }
   console.log(`lab postgres (port ${labPostgresPort()}): seeding with the fixture's seeder`);
-  seed();
-  await applyRowLevelSecurity();
+  await seed();
   console.log("lab postgres: lab_tenant and row-level security applied");
 }
