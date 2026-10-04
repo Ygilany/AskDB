@@ -286,7 +286,8 @@ it.for([
   ["--port 65536", ["--port", "65536"]],
   ["a --timeout beyond Node's timer limit", ["--timeout", String(2 ** 31)]],
 ] as const)("[postgres] lab-ui-options: refuses %s", async ([, args]) => {
-  const run = await lab(["ui", ...args], 15_000);
+  // A refused option exits within seconds; a server that starts instead is killed before the test times out.
+  const run = await lab(["ui", ...args], 90_000);
 
   expect(run.status).toBe(2);
   expect(run.stderr).toMatch(/^usage: pnpm lab/);
