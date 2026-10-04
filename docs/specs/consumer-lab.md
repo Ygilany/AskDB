@@ -338,7 +338,7 @@ Add a new `consumer-lab` job to `.github/workflows/ci.yml`. It needs `build`, ha
 
 Recommended additions (decision 4):
 
-- A run against the **published packages after each release** (`lab:use npm:latest`), plus a weekly run that installs fresh to catch dependency drift (#255). The release run catches publish-only breakage: files missing from tarballs, or a bad `workspace:` rewrite. A nightly run would add little, because between releases only the dependencies' resolved versions change.
+- A run against the **published packages after each release** (`lab:use npm:latest`), plus a weekly run that installs fresh to catch dependency drift (#255). The release run catches publish-only breakage: files missing from tarballs, or a bad `workspace:` rewrite. A nightly run would add little, because between releases only the dependencies' resolved versions change. Both are the `Consumer lab (published)` workflow, `.github/workflows/consumer-lab-published.yml`; a failure fixed on `main` but not yet released is listed per release in `examples/consumer-lab/known-release-failures.json`, so the job doesn't sit red on it.
 - A **path filter**, so pull requests that only touch `apps/docs-site` skip the lab.
 
 ## Test-audit compliance

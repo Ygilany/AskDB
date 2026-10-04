@@ -1,0 +1,221 @@
+name: Consumer lab (published)
+
+# The consumer lab against AskDB as published on npm (#255). CI's `consumer-lab` job tests
+# tarballs packed from the commit under test; this tests what `npm install askdb` gets:
+# publish-only breakage (files missing from a tarball, a bad `workspace:` rewrite, a
+# dist-tag on the wrong version) and dependency drift with no AskDB release at all.
+#
+# Triggers:
+# - After a release that published: `workflow_run` on Release. Release runs after every
+#   green CI on `main` but publishes only when its `version` job finds versions npm doesn't
+#   have, so `plan` runs the lab only when the triggering run succeeded and its `publish`
+#   job did. The lab is checked out at the released commit and installs `npm:latest`
+#   through the committed lockfile, so a failure is the release's, not drift's.
+# - Weekly: `npm:latest` resolved fresh, without the lab's lockfile, to catch dependency
+#   drift. The job summary lists every package that resolved differently.
+# - Manual: any npm target (`npm:latest`, `npm:askdb@<version>`, `npm:<dist-tag>`),
+#   optionally fresh.
+#
+# Why a workflow of its own, triggered by `workflow_run`, and not a job in release.yml: a
+# lab failure must not mark the release red (the packages are already on npm), the
+# 25-minute lab must not hold release.yml's `release` concurrency group, and the lab's
+# third-party code stays out of the workflow that can publish. CI → Release → this is
+# three `workflow_run` levels, GitHub's maximum. A tag pushed with GITHUB_TOKEN triggers
+# nothing, so `on: push: tags` can't be used.
+#
+# The verdict (examples/consumer-lab/src/published-run.mjs) fails the job on any failure
+# that examples/consumer-lab/known-release-failures.json doesn't list for the installed
+# askdb version, and, after a release, on a capability `n/a` cell. The matrix and "Why
+# they failed" are in the job summary, and `consumer-lab-matrix` holds matrix.json.
+on:
+  workflow_run:
+    workflows: [Release]
+    types: [completed]
+    branches: [main]
+  schedule:
+    # Mondays 06:17 UTC.
+    - cron: "17 6 * * 1"
+  workflow_dispatch:
+    inputs:
+      target:
+        description: "Published AskDB to install: npm:latest, npm:askdb@<version> or npm:<dist-tag>"
+        required: false
+        default: npm:latest
+      fresh:
+        description: "Resolve every dependency fresh, ignoring the lab's lockfile"
+        type: boolean
+        default: false
+
+permissions: {}
+
+jobs:
+  plan:
+    if: github.repository == 'Ygilany/AskDB'
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+    outputs:
+      run: ${{ steps.plan.outputs.run }}
+      ref: ${{ steps.plan.outputs.ref }}
+      target: ${{ steps.plan.outputs.target }}
+      fresh: ${{ steps.plan.outputs.fresh }}
+      after-release: ${{ steps.plan.outputs.after-release }}
+    steps:
+      - name: Decide what to run
+        id: plan
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVENT: ${{ github.event_name }}
+          RELEASE_RUN_ID: ${{ github.event.workflow_run.id }}
+          RELEASE_CONCLUSION: ${{ github.event.workflow_run.conclusion }}
+          RELEASE_SHA: ${{ github.event.workflow_run.head_sha }}
+          INPUT_TARGET: ${{ inputs.target }}
+          INPUT_FRESH: ${{ inputs.fresh }}
+        run: |
+          plan() {
+            printf 'run=%s\nref=%s\ntarget=%s\nfresh=%s\nafter-release=%s\n' "$@" >> "$GITHUB_OUTPUT"
+            echo "run=$1 ref=$2 target=$3 fresh=$4 after-release=$5"
+          }
+          case "${EVENT}" in
+            workflow_run)
+              # The jobs of the run's latest attempt, so a re-run publish counts.
+              publish="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${RELEASE_RUN_ID}/jobs" \
+                --jq '[.jobs[] | select(.name == "publish") | .conclusion] | first // "missing"')"
+              echo "Release run ${RELEASE_RUN_ID}: ${RELEASE_CONCLUSION}; its publish job: ${publish}."
+              if [ "${RELEASE_CONCLUSION}" != "success" ] || [ "${publish}" != "success" ]; then
+                echo "Nothing was published (or the release didn't finish); no lab run."
+                plan false "" "" false false
+              else
+                plan true "${RELEASE_SHA}" npm:latest false true
+              fi
+              ;;
+            schedule)
+              plan true "${GITHUB_SHA}" npm:latest true false
+              ;;
+            workflow_dispatch)
+              target="${INPUT_TARGET:-npm:latest}"
+              case "${target}" in
+                npm:?*) ;;
+                *) echo "::error::target must be npm:<dist-tag> or npm:askdb@<version>, not '${target}'. CI's consumer-lab job tests checkouts."; exit 1 ;;
+              esac
+              plan true "${GITHUB_SHA}" "${target}" "${INPUT_FRESH}" false
+              ;;
+            *)
+              echo "::error::unexpected event ${EVENT}"
+              exit 1
+              ;;
+          esac
+
+  lab:
+    needs: plan
+    if: needs.plan.outputs.run == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    permissions:
+      contents: read
+    env:
+      ASKDB_FIXTURE_HOST: 127.0.0.1
+      TARGET: ${{ needs.plan.outputs.target }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.plan.outputs.ref }}
+          persist-credentials: false
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+          cache: pnpm
+
+      # The fixture's seeder is a workspace package.
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # Every public package's `latest` must be the version this commit has: the release
+      # published it with `--tag latest`, and the packages it didn't bump were already there.
+      # Retries while the registry catches up; never reaching it is a publish bug (#267).
+      - name: Wait for npm's latest to reach this release
+        if: needs.plan.outputs.after-release == 'true'
+        run: |
+          # Read first: a failure inside a process substitution wouldn't fail the step.
+          packages="$(pnpm -r ls --depth -1 --json | jq -r '.[] | select(.private != true) | "\(.name) \(.version)"')"
+          if [ -z "${packages}" ]; then
+            echo "::error::found no public package in the workspace"
+            exit 1
+          fi
+          deadline=$((SECONDS + 600))
+          while :; do
+            behind=""
+            while read -r name version; do
+              latest="$(npm view --prefer-online "${name}" dist-tags.latest 2>/dev/null || true)"
+              if [ "${latest}" != "${version}" ]; then
+                behind+="${name}: latest is ${latest:-unknown}, this commit has ${version}"$'\n'
+              fi
+            done <<< "${packages}"
+            if [ -z "${behind}" ]; then
+              echo "Every public package's latest dist-tag is this commit's version."
+              break
+            fi
+            if [ "${SECONDS}" -ge "${deadline}" ]; then
+              printf '%s' "${behind}"
+              echo "::error::npm's latest dist-tag doesn't point at this release after 10 minutes"
+              exit 1
+            fi
+            printf 'Waiting for the registry:\n%s' "${behind}"
+            sleep 30
+          done
+
+      - name: Install ${{ needs.plan.outputs.target }} in the lab
+        run: pnpm lab:use "${TARGET}"
+
+      - name: Check the committed baseline
+        if: needs.plan.outputs.target == 'npm:latest'
+        run: node examples/consumer-lab/src/published-run.mjs baseline
+
+      # The lockfile `lab:use` wrote keeps every resolution it can, so it would replay old
+      # versions; a fresh install resolves each range anew, as `npm install askdb` does
+      # today. The AskDB pins stay (pnpm-workspace.yaml's overrides); `--check` verifies them.
+      - name: Resolve every dependency fresh
+        if: needs.plan.outputs.fresh == 'true'
+        working-directory: examples/consumer-lab
+        run: |
+          cp pnpm-lock.yaml .lab/pnpm-lock.before-fresh.yaml
+          rm -rf pnpm-lock.yaml node_modules
+          pnpm install --no-frozen-lockfile
+          pnpm -C ../.. lab:use --check
+          cp pnpm-lock.yaml .lab/pnpm-lock.fresh.yaml
+          node src/published-run.mjs drift .lab/pnpm-lock.before-fresh.yaml
+
+      # lab:up starts and seeds the fixture, then keeps the install above. lab:matrix exits 1
+      # on any FAIL cell; the verdict below decides which of them were expected.
+      - name: Run the consumer lab matrix
+        run: |
+          rm -f examples/consumer-lab/.lab/matrix.json examples/consumer-lab/.lab/vitest-results.json
+          pnpm lab:matrix --reporter=json --outputFile.json=.lab/vitest-results.json \
+            || echo "lab:matrix exited non-zero; the verdict decides whether every failure was expected."
+
+      - name: Verdict
+        env:
+          AFTER_RELEASE: ${{ needs.plan.outputs.after-release }}
+        run: |
+          args=(verdict)
+          if [ "${AFTER_RELEASE}" = "true" ]; then args+=(--after-release); fi
+          node examples/consumer-lab/src/published-run.mjs "${args[@]}"
+
+      - name: Upload the matrix
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: consumer-lab-matrix
+          path: |
+            examples/consumer-lab/.lab/matrix.json
+            examples/consumer-lab/.lab/vitest-results.json
+            examples/consumer-lab/.lab/pnpm-lock.*.yaml
+          if-no-files-found: warn
+          # .lab/ is a dot-directory, which upload-artifact skips by default.
+          include-hidden-files: true
