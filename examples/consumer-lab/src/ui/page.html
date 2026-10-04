@@ -4,8 +4,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>AskDB consumer lab</title>
-<!-- Served by `pnpm lab ui` (src/ui/server.ts), which fills in lab-info. No dependencies. -->
-<script id="lab-info" type="application/json">/*LAB_INFO*/null</script>
+<!-- Served by `pnpm lab ui` (src/ui/server.ts), which fills in the target, the model mode and lab-data. No dependencies. -->
+<script id="lab-data" type="application/json">/*LAB_DATA*/null</script>
 <style>
   :root {
     color-scheme: light dark;
@@ -59,8 +59,8 @@
 <header class="top">
   <h1>AskDB consumer lab</h1>
   <dl class="meta">
-    <div><dt>target</dt><dd id="target"></dd></div>
-    <div><dt>model</dt><dd id="model"></dd></div>
+    <div><dt>target</dt><dd id="target"><!--TARGET--></dd></div>
+    <div><dt>model</dt><dd id="model"><!--MODEL_MODE--></dd></div>
   </dl>
 </header>
 
@@ -90,7 +90,7 @@
 
 <script>
 "use strict";
-const info = JSON.parse(document.getElementById("lab-info").textContent);
+const info = JSON.parse(document.getElementById("lab-data").textContent);
 const $ = (id) => document.getElementById(id);
 const el = (tag, attrs = {}, ...children) => {
   const node = document.createElement(tag);
@@ -99,8 +99,6 @@ const el = (tag, attrs = {}, ...children) => {
   return node;
 };
 
-$("target").textContent = info.target;
-$("model").textContent = info.modelMode;
 for (const q of info.questions) {
   $("catalog").append(el("option", { value: q.text }, q.text));
   $("sql-question").append(el("option", { value: q.text }, q.text));
@@ -113,7 +111,13 @@ for (const radio of document.querySelectorAll("input[name=mode]")) {
   });
 }
 
-const STATUS_CLASS = { ok: "good", rejected: "warn", refused: "warn", failed: "bad", timeout: "bad", running: "idle" };
+/** Every status and verdict the server sends, by the colour it shows in. */
+const TONE = {
+  ok: "good", agree: "good", match: "good",
+  rejected: "warn", refused: "warn",
+  failed: "bad", timeout: "bad", disagree: "bad", mismatch: "bad",
+  running: "idle", "not compared": "idle",
+};
 const ms = (n) => (n === undefined ? null : `${Math.round(n)} ms`);
 
 function column(dialect) {
@@ -128,7 +132,7 @@ function showEngine(event) {
   const col = $(`col-${event.dialect}`);
   const chip = col.querySelector(".status");
   chip.textContent = event.status;
-  chip.className = `chip status ${STATUS_CLASS[event.status] ?? "idle"}`;
+  chip.className = `chip status ${TONE[event.status] ?? "idle"}`;
   const facts = [];
   if (event.rowCount !== undefined) facts.push(event.truncated ? `more than ${event.rowCount} rows (cap)` : `${event.rowCount} ${event.rowCount === 1 ? "row" : "rows"}`);
   if (event.exitCode !== undefined) facts.push(`exit ${event.exitCode}`);
@@ -144,8 +148,7 @@ function showSummary(summary) {
   const box = $("summary");
   const a = summary.agreement;
   const agreement = el("div", { class: "line" }, el("span", { class: "label" }, "engines"));
-  const verdictClass = { agree: "good", disagree: "bad", "not compared": "idle" }[a.verdict];
-  agreement.append(el("strong", { class: verdictClass }, a.verdict));
+  agreement.append(el("strong", { class: TONE[a.verdict] }, a.verdict));
   if (a.verdict === "disagree") agreement.append(...a.groups.map((g) => el("span", { class: "chip warn" }, g.join(" = "))));
   else if (a.verdict === "agree") agreement.append(el("span", { class: "hint" }, `${a.groups[0].length} engines, after the fixture's normalization`));
   if (a.reason) agreement.append(el("span", { class: "hint" }, a.reason));
@@ -156,8 +159,7 @@ function showSummary(summary) {
     for (const dialect of info.dialects) {
       const v = summary.oracle[dialect];
       if (!v) continue;
-      const cls = { match: "good", mismatch: "bad", "not compared": "idle" }[v.verdict];
-      oracle.append(el("span", { class: `chip ${cls}`, title: v.reason ?? "" }, `${dialect}: ${v.verdict}`));
+      oracle.append(el("span", { class: `chip ${TONE[v.verdict]}`, title: v.reason ?? "" }, `${dialect}: ${v.verdict}`));
     }
     children.push(oracle);
   }
@@ -193,6 +195,7 @@ $("ask").addEventListener("submit", async (e) => {
         const event = JSON.parse(line);
         if (event.type === "engine") showEngine(event);
         else if (event.type === "summary") showSummary(event.summary);
+        else if (event.type === "error") throw new Error(event.error);
       }
     }
     $("state").textContent = "";

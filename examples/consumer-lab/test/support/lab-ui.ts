@@ -4,15 +4,14 @@
  * `Origin` or `Content-Type`.
  */
 import { join } from "node:path";
-import type { EngineEvent } from "../../src/ui/server.js";
+import type { EngineEvent, UiInput } from "../../src/ui/server.js";
 import type { Summary } from "../../src/ui/summary.js";
 import { LAB_ROOT } from "../../src/paths.js";
 import { startServerProcess, type ServerProcess } from "../../src/server-process.js";
-import { studioRequest, type StudioAddress, type StudioReply, type StudioRequest } from "../../src/studio.js";
+import { studioRequest, type StudioAddress } from "../../src/studio.js";
 
 export interface LabUiProcess extends StudioAddress {
   close(): Promise<void>;
-  output(): string;
 }
 
 /** Start `pnpm lab ui --port <free port>` with `args` and `env` added; ready once `GET /` answers 200. */
@@ -27,11 +26,7 @@ export async function startLabUiProcess({ args = [], env = {} }: { args?: string
     ready: async (port) => (await studioRequest(address(port))).status === 200,
     readyWhen: "GET /",
   });
-  return { ...address(server.port), close: () => server.close(), output: () => server.output() };
-}
-
-export function uiRequest(ui: StudioAddress, req: StudioRequest = {}): Promise<StudioReply> {
-  return studioRequest(ui, req);
+  return { ...address(server.port), close: () => server.close() };
 }
 
 export interface UiRun {
@@ -42,8 +37,8 @@ export interface UiRun {
 }
 
 /** `POST /api/run` as the page sends it. */
-export async function uiRun(ui: StudioAddress, input: { question?: string; sql?: string }): Promise<UiRun> {
-  const reply = await uiRequest(ui, {
+export async function uiRun(ui: StudioAddress, input: UiInput): Promise<UiRun> {
+  const reply = await studioRequest(ui, {
     method: "POST",
     path: "/api/run",
     headers: { "content-type": "application/json", origin: ui.origin },
