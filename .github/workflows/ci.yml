@@ -425,6 +425,12 @@ jobs:
       - name: Run the consumer lab matrix
         run: pnpm lab:matrix
 
+      # The safety cases' effect proofs (#323), on a disposable second fixture (compose project
+      # askdb-lab-isolated, ports 25432/23306/23307/21433), never the shared one started above.
+      # The runner starts, seeds, tests and removes it, including after a failure. About a minute.
+      - name: Prove the safety cases' effects on an isolated fixture copy
+        run: pnpm lab:safety:isolated
+
       - name: Upload the matrix
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1

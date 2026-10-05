@@ -1,4 +1,4 @@
-/** Opt-in safety proofs. Own the whole lifecycle, including cleanup on failure/signals. */
+/** Safety effect proofs (`pnpm lab:safety:isolated`, also a CI step). Own the whole lifecycle, including cleanup on failure/signals. */
 import { spawn } from "node:child_process";
 import { mkdirSync, rmdirSync } from "node:fs";
 import { tmpdir } from "node:os";
