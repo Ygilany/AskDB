@@ -53,7 +53,7 @@ Use the `env()` helper (rather than `process.env`) so AskDB can capture which en
 | --- | --- | --- |
 | `ai` | yes | Provider connections (`provider`, `providerConfig`), the language model (`language`) and the embedding model (`embedding`). See [The `ai` block](#the-ai-block) and [Bring your own model](/guides/bring-your-own-model/). |
 | `introspection` | yes | Introspection engine (`provider`: `postgres`, `mysql`, `sqlite`, `sqlserver`, `prisma`), its connection (`providerConfig`), `outputDir` (default `./askdb/`), and optionally `schemas`: the schemas to introspect, like `askdb introspect --schemas` (which overrides it). On MySQL/MariaDB these are databases. |
-| `rag` | yes | Embedder (`mock`, or `ai` for the `ai.embedding` model) and vector store (`file`, `memory`, `pgvector`) plus the store's config branch. See [The `rag` block](#the-rag-block). |
+| `rag` | no | Embedder (`mock`, or `ai` for the `ai.embedding` model) and vector store (`file`, `memory`, `pgvector`) plus the store's config branch. See [The `rag` block](#the-rag-block). Omit it when you don't use retrieval: AskDB then uses the mock embedder and the in-memory store. |
 | `dialect` | no | Override the NL-to-SQL dialect (`postgres`, `mysql`, `sqlite`, `sqlserver`). When unset, it's inferred from the schema artifact's recorded provider. |
 | `modes` | no | `askdbMode` (`schema_only` default, `bounded_results`) and `omitSensitiveFromPrompt` (default `false`). |
 | `host` | no | `schemaPath` — the default schema artifact for embedding hosts and the HTTP API. `schemaJson` — inline artifact JSON, for environments without a file system path. |
@@ -210,6 +210,8 @@ Azure identifies models by deployment name (e.g. `askdb-reporting`), which may n
 
 ## The `rag` block
 
+The block is optional. Without it, AskDB behaves as if `rag: { embedder: "mock", store: "memory", storeConfig: {} }` were set: Studio's RAG page uses the in-memory store and the mock embedder, and the only RAG key in the runtime snapshot is `ASKDB_RAG_EMBEDDER=mock`. When the block is present, `embedder`, `store` and `storeConfig` are required.
+
 | Field | What it configures |
 | --- | --- |
 | `embedder` | `"mock"`, a deterministic lexical embedder that needs no key, or `"ai"`, the [`ai.embedding`](#aiembedding) model. |
@@ -354,6 +356,7 @@ bootstrapAskDbEnv({ cwd: process.cwd() });
 const rt = getAskDbRuntimeConfig();
 const aiEnv = rt.ai.aiEnv;                    // language model env map, for @askdb/ai
 const embedding = rt.ai.embedding;            // { provider, connection, model, dimensions, env } when rag.embedder is "ai"
+const store = rt.rag.store;                   // "file" | "memory" | "pgvector"; "memory" when the config has no rag block
 const outputDir = rt.introspection.outputDir; // resolved artifact directory
 ```
 
