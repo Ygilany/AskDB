@@ -55,11 +55,11 @@ Single-context: a root `CONTEXT.md` (created lazily) plus ADRs in `docs/adrs/`. 
 
 ### Code review
 
-Copilot-style reviews follow this repo's review profile. See `docs/agents/code-review.md`.
+Every PR needs an independent review before it leaves draft, and always when an agent authored it. Review with a fresh agent using the `code-review` skill, which follows this repo's review profile. See `docs/agents/code-review.md`.
 
 ### Docs house style
 
-The docs site's house style (readers, voice, terminology, site structure, components, build commands) lives beside it. See `apps/docs-site/STYLE.md`.
+Docs follow the house style in `apps/docs-site/STYLE.md`. Its Terminology line naming the `@askdb/ai-*` adapters as a first-party path is stale (#456); follow the Conventions above there.
 
 ## Where product/architecture decisions live
 
