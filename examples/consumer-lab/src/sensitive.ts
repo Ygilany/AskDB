@@ -13,6 +13,7 @@ import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } f
 import { dirname, join } from "node:path";
 import { ensureArtifact } from "./artifacts.js";
 import type { SupportedDialect } from "./dialects.js";
+import { loadRows } from "./fixture.js";
 import { LAB_ROOT, LAB_STATE } from "./paths.js";
 
 export const SENSITIVE_OVERLAY = join(LAB_ROOT, "scenarios", "overlay", "sensitive-columns.json");
@@ -33,6 +34,39 @@ export function sensitiveColumns(): SensitiveColumn[] {
     const [, schema, table, column] = match as unknown as [string, string, string, string];
     return { schema, table, column };
   });
+}
+
+/** Each sensitive column's seeded non-null values, from its own table's seed rows. */
+export function seededSensitiveValues(): { column: string; values: string[] }[] {
+  return sensitiveColumns().map(({ schema, table, column }) => ({
+    column,
+    values: loadRows({ schema, name: table }).flatMap((row) => (row[column] == null ? [] : [String(row[column])])),
+  }));
+}
+
+/** The parts of a seeded value that identify it on their own: an SSN's digits and its last four, an email's local part. */
+function fragments(value: string): { contains: string[]; equals: string[] } {
+  if (/^\d{3}-\d{2}-\d{4}$/.test(value)) return { contains: [value.replace(/-/g, "")], equals: [value.slice(-4)] };
+  const local = /^([^@]{6,})@/.exec(value)?.[1];
+  return { contains: local ? [local.toLowerCase()] : [], equals: [] };
+}
+
+/**
+ * How many of each sensitive column's seeded values show up in `cells`: whole, or as a fragment
+ * that identifies them (an SSN without its dashes or its last four digits, an email's local
+ * part), in any case. So SQL that transforms a sensitive value (`RIGHT(ssn, 4)`, `UPPER(email)`,
+ * `full_name || ' <' || email || '>'`) still counts. No seeded value elsewhere in the dataset
+ * equals an SSN's last four digits, so that match is safe here.
+ */
+export function sensitiveValuesIn(cells: readonly unknown[]): { column: string; count: number }[] {
+  const texts = cells.filter((c) => c != null).map((c) => String(c).toLowerCase());
+  return seededSensitiveValues().map(({ column, values }) => ({
+    column,
+    count: values.filter((value) => {
+      const { contains, equals } = fragments(value);
+      return texts.some((t) => t.includes(value.toLowerCase()) || contains.some((f) => t.includes(f)) || equals.includes(t.trim()));
+    }).length,
+  }));
 }
 
 interface SchemaJsonTable {

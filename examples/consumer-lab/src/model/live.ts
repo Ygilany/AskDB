@@ -4,11 +4,12 @@
  * off the replay model.
  *
  * The key comes from the environment or from a `.env.live` file (gitignored), in the lab
- * (`examples/consumer-lab/.env.live`) or else at the repo root, which only these modes read: AskDB's config loads `.env`, so a key kept there would reach
- * every replay run too. A variable already set in the environment wins over the file, and
+ * (`examples/consumer-lab/.env.live`) or else at the repo root, which only these modes read:
+ * AskDB's config loads `.env`, so a key kept there would reach every replay run too. A variable already set in the environment wins over the file, and
  * reading the file doesn't change `process.env`: `lab:record` keeps the key in its proxy, and
  * only the live suite's own worker puts it in `process.env`, for the adapter path's config. The
- * key is never printed; callers send it to the provider only and scrub it from what they write.
+ * key is never printed; callers send it to the provider only and scrub it with {@link redact}
+ * from what they write.
  *
  * Node built-ins only: this never imports AskDB.
  */
@@ -30,6 +31,14 @@ export interface LiveSettings {
   /** `LAB_LIVE_MODEL_ID`, or AskDB's OpenAI default. */
   modelId: string;
   baseURL: string;
+}
+
+/** OpenAI-style secret keys (`sk-…`, `sk-proj-…`), even when a provider shows them half-masked. */
+const SECRET = /\bsk-[A-Za-z0-9_*-]{8,}/g;
+
+/** `text` with the key, and anything shaped like a secret key, replaced by `[redacted]`. */
+export function redact(text: string, apiKey: string): string {
+  return (apiKey ? text.split(apiKey).join("[redacted]") : text).replace(SECRET, "[redacted]");
 }
 
 /** A refusal: no key, or a CI run. Its message is meant for the terminal as is. */

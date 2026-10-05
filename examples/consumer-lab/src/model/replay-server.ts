@@ -27,6 +27,8 @@
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import type { AddressInfo } from "node:net";
 import { CASSETTES_DIR, QUESTIONS_FILE, cassettePath, displayPath, loadQuestions, readCassette, type Question } from "./catalog.js";
+import { redact } from "./live.js";
+import { replyText } from "./openai-wire.js";
 
 export const REPLAY_DIALECTS = ["postgres", "mysql", "mariadb", "sqlserver", "sqlite"] as const;
 
@@ -173,24 +175,6 @@ async function readJson(req: IncomingMessage): Promise<Record<string, unknown>> 
   const chunks: Buffer[] = [];
   for await (const chunk of req) chunks.push(chunk as Buffer);
   return JSON.parse(Buffer.concat(chunks).toString("utf8") || "{}") as Record<string, unknown>;
-}
-
-/** OpenAI-style secret keys (`sk-…`, `sk-proj-…`), even when a provider shows them half-masked. */
-const SECRET = /\bsk-[A-Za-z0-9_*-]{8,}/g;
-
-/** `text` with the key, and anything shaped like a secret key, replaced by `[redacted]`. */
-export function redact(text: string, apiKey: string): string {
-  return (apiKey ? text.split(apiKey).join("[redacted]") : text).replace(SECRET, "[redacted]");
-}
-
-/** The reply text in a Responses API or Chat Completions body. */
-export function replyText(body: Record<string, unknown>): string | null {
-  const output = body.output as { content?: { type?: string; text?: string }[] }[] | undefined;
-  const fromResponses = output?.flatMap((item) => item.content ?? []).filter((c) => c.type === "output_text").map((c) => c.text ?? "");
-  if (fromResponses?.length) return fromResponses.join("");
-  const choices = body.choices as { message?: { content?: unknown } }[] | undefined;
-  const content = choices?.[0]?.message?.content;
-  return typeof content === "string" ? content : null;
 }
 
 /**

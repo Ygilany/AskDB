@@ -58,11 +58,16 @@ export function readCassette(dialect: string, question: Question, dir = CASSETTE
   return cassette;
 }
 
+/** The SQL inside a reply's first ```sql fence, read exactly the way the replay suites read a cassette. */
+export function fencedSql(reply: string): string | undefined {
+  return /```sql\n([\s\S]*?)\n```/.exec(reply)?.[1];
+}
+
 /** The SQL inside a cassette's ```sql fence: what AskDB should return for that question on that dialect. */
 export function cassetteSql(dialect: string, questionId: string, questions = loadQuestions()): string {
   const question = findQuestion(questionId, questions);
   const cassette = question && readCassette(dialect, question);
-  const sql = cassette && /```sql\n([\s\S]*?)\n```/.exec(cassette.reply)?.[1];
+  const sql = cassette && fencedSql(cassette.reply);
   if (!sql) throw new Error(`no \`\`\`sql reply for ${questionId} on ${dialect} in ${displayPath(cassettePath(dialect, questionId))}`);
   return sql;
 }

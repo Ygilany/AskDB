@@ -6,9 +6,12 @@
  * and each question is asked through the raw-model path, `createOpenAI()` → `ask()`, pointed at
  * it. Each reply is graded before anything is written (`src/grade.ts`): the SQL `ask()` returns,
  * run as the host, must return the oracle's rows, and the parameterized question must come back
- * parameterized. A reply that passes replaces the cassette, with `"source": "recorded"` and
- * `recordedWith` (the model the provider says answered, the install target, the date). A reply
- * that misses is listed, in the terminal and in `.lab/record-misses.json`, and leaves the
+ * parameterized. Its ```sql fence must also hold exactly that SQL: the replay suites read a
+ * cassette's fence strictly (`fencedSql`) and compare it with what `ask()` returns, and `ask()`
+ * forgives a trailing semicolon or another fence tag that they don't. A reply that passes
+ * replaces the cassette, with `"source": "recorded"` and `recordedWith` (the model the provider
+ * says answered, the install target, the date). An identical reply from the same model is left
+ * alone (`unchanged`), so a re-run doesn't churn dates. A reply that misses is listed, in the terminal and in `.lab/record-misses.json`, and leaves the
  * cassette as it was. The maintainer reviews the cassette diff in git: staging a file accepts it,
  * `git restore` rejects it.
  *
@@ -18,17 +21,21 @@
  *
  * The key never reaches a file: the clients send the replay server a placeholder, the request
  * log holds no header, and a cassette that would contain the key is not written.
+ *
+ * Any error that stops the run (the provider refusing a request, the fixture down, a model call
+ * AskDB couldn't make) becomes a {@link RecordAbort} carrying what the run did until then, with the
+ * key redacted, so `.lab/record-misses.json` still lists it.
  */
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { createOpenAI } from "@ai-sdk/openai";
 import { API_KEY, askWithModel, settle } from "./ask.js";
 import { ensureArtifact } from "./artifacts.js";
 import { SUPPORTED_DIALECTS, type SupportedDialect } from "./dialects.js";
 import { gradeCatalogAnswer } from "./grade.js";
-import { CASSETTES_DIR, QUESTIONS_FILE, cassettePath, displayPath, loadQuestions, type Cassette, type Question } from "./model/catalog.js";
-import { LiveModelError, type LiveSettings } from "./model/live.js";
-import { redact, startReplayServer } from "./model/replay-server.js";
+import { CASSETTES_DIR, QUESTIONS_FILE, cassettePath, displayPath, fencedSql, loadQuestions, type Cassette, type Question } from "./model/catalog.js";
+import { redact, type LiveSettings } from "./model/live.js";
+import { startReplayServer } from "./model/replay-server.js";
 
 export interface RecordOptions {
   settings: LiveSettings;
@@ -68,12 +75,18 @@ export interface RecordOutcome {
  * (`checkout /Users/me/AskDB @ b14da348` → `askdb@1.0.0-beta.43, checkout @ b14da348`).
  */
 export function portableTarget(target: { label: string; packages?: { name: string; version: string }[] }): string {
-  const label = target.label.replace(/ (?:\/|[A-Za-z]:\\)\S*/g, "");
+  // Only `lab:use <path>` labels hold a path: `checkout <path> @ <commit> (<branch>)`. The path may contain spaces.
+  const label = target.label.replace(/^checkout .+? @ /, "checkout @ ");
   const askdb = target.packages?.find((p) => p.name === "askdb")?.version;
   return askdb ? `askdb@${askdb}, ${label}` : label;
 }
 
-/** A request failed (the provider refused it: a bad key, a quota, an outage): the run stops. */
+/** A question id `lab:record` won't ask: a hand-written test reply's, or one the catalog doesn't have. Nothing was called. */
+export class RecordRefusal extends Error {
+  override name = "RecordRefusal";
+}
+
+/** The run stopped: the provider refused a request (a bad key, a quota, an outage), or the fixture or the model call failed. */
 export class RecordAbort extends Error {
   override name = "RecordAbort";
   constructor(
@@ -91,13 +104,13 @@ export function selectQuestions(only: readonly string[] | undefined): Question[]
   if (!only?.length) return catalog;
   const handWritten = only.filter((id) => /^(tenant|sensitive|safety)-/.test(id));
   if (handWritten.length) {
-    throw new LiveModelError(
+    throw new RecordRefusal(
       `${handWritten.join(", ")}: hand-written test replies; lab:record only records the catalog questions in ${displayPath(QUESTIONS_FILE)}. ` +
         "The tenant and sensitive suites' replies play the attacker on purpose, and a model's reply would change what they test.",
     );
   }
   const unknown = only.filter((id) => !catalog.some((q) => q.id === id));
-  if (unknown.length) throw new LiveModelError(`${unknown.join(", ")}: not in ${displayPath(QUESTIONS_FILE)}.`);
+  if (unknown.length) throw new RecordRefusal(`${unknown.join(", ")}: not in ${displayPath(QUESTIONS_FILE)}.`);
   return catalog.filter((q) => only.includes(q.id));
 }
 
@@ -150,6 +163,10 @@ export async function record(opts: RecordOptions): Promise<RecordOutcome> {
           miss("the provider's reply had no text the lab could store");
           continue;
         }
+        if (answer.ok && fencedSql(raw) !== answer.result.sql) {
+          miss("the reply's ```sql fence doesn't hold exactly the SQL ask() returned (a trailing semicolon, another fence tag), so the replay suites would read other SQL");
+          continue;
+        }
         const cassette: Cassette = {
           question: question.text,
           reply: raw,
@@ -174,8 +191,35 @@ export async function record(opts: RecordOptions): Promise<RecordOutcome> {
         log(`recorded   [${dialect}] ${question.id}`);
       }
     }
+  } catch (error) {
+    if (error instanceof RecordAbort) throw error;
+    const message = error instanceof Error ? `${error.name}: ${error.message}` : String(error);
+    throw new RecordAbort(redact(message, settings.apiKey), outcome);
   } finally {
     await proxy.close();
   }
   return outcome;
+}
+
+export interface RecordReport {
+  /** 0 when every question was asked (misses included); 1 when the run stopped or a reply broke a guarantee. */
+  exitCode: number;
+  /** What to print after the per-reply lines. */
+  summary: string[];
+}
+
+/**
+ * Writes `missesFile` (every miss and violation, each reply redacted) and says how the run ends.
+ * `stopped` is a {@link RecordAbort}'s message: the file still lists what the run found before it.
+ */
+export function writeRecordReport(outcome: RecordOutcome, model: string, missesFile: string, stopped?: string): RecordReport {
+  mkdirSync(dirname(missesFile), { recursive: true });
+  writeFileSync(missesFile, `${JSON.stringify({ generatedAt: new Date().toISOString(), model, stopped: stopped ?? null, misses: outcome.misses, violations: outcome.violations }, null, 2)}\n`);
+  const summary = [
+    "",
+    `${outcome.written.length} recorded, ${outcome.unchanged.length} unchanged, ${outcome.misses.length} missed (not written; listed in ${displayPath(missesFile)}).`,
+    ...(outcome.violations.length ? [`${outcome.violations.length} guarantee violation(s), not written: a product failure to file (listed in ${displayPath(missesFile)}).`] : []),
+    ...(outcome.written.length ? ["Review: git diff examples/consumer-lab/cassettes/  (stage what you accept, git restore what you reject)"] : []),
+  ];
+  return { exitCode: stopped || outcome.violations.length ? 1 : 0, summary };
 }

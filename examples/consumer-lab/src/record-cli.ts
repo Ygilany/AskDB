@@ -3,20 +3,19 @@
  * replies from a live OpenAI model (`src/record.ts` says how). Needs `OPENAI_API_KEY`, in the
  * shell or in a `.env.live` in the lab or at the repo root; refuses to run in CI.
  *
- * Exit codes: 0 when every question was asked (misses included: they're model quality); 1 when a
- * request failed and stopped the run (a bad key, a quota), or a reply broke a guarantee; 2 for a
- * usage error, a missing key, a CI run, or an id that can't be recorded. Every run that asked
+ * Exit codes (`writeRecordReport` in `src/record.ts`): 0 when every question was asked (misses
+ * included: they're model quality); 1 when the run stopped (the provider refused a request, the
+ * fixture or a model call failed) or a reply broke a guarantee; 2 for a usage error, a missing
+ * key, a CI run, or an id that can't be recorded. Every run that asked
  * anything rewrites `.lab/record-misses.json` with its misses and violations, an aborted one too.
  */
-import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { parseArgs } from "node:util";
 import { requireInstallTarget } from "./artifacts.js";
 import { SUPPORTED_DIALECTS, isSupportedDialect, type SupportedDialect } from "./dialects.js";
-import { displayPath } from "./model/catalog.js";
 import { LiveModelError, liveSettings, type LiveSettings } from "./model/live.js";
 import { LAB_STATE } from "./paths.js";
-import { RecordAbort, portableTarget, record, selectQuestions, type RecordOutcome } from "./record.js";
+import { RecordAbort, RecordRefusal, portableTarget, record, selectQuestions, writeRecordReport, type RecordOutcome } from "./record.js";
 
 const MISSES_FILE = join(LAB_STATE, "record-misses.json");
 
@@ -54,27 +53,16 @@ async function main(argv: string[]): Promise<number> {
       stopped = error.message;
     }
   } catch (error) {
-    if (error instanceof LiveModelError) {
+    if (error instanceof LiveModelError || error instanceof RecordRefusal) {
       console.error(`lab:record: ${error.message}`);
       return 2;
     }
     throw error;
   }
-  mkdirSync(LAB_STATE, { recursive: true });
-  writeFileSync(MISSES_FILE, `${JSON.stringify({ generatedAt: new Date().toISOString(), model: settings.modelId, misses: outcome.misses, violations: outcome.violations }, null, 2)}\n`);
-  console.log(
-    [
-      "",
-      `${outcome.written.length} recorded, ${outcome.unchanged.length} unchanged, ${outcome.misses.length} missed (not written; listed in ${displayPath(MISSES_FILE)}).`,
-      ...(outcome.violations.length ? [`${outcome.violations.length} guarantee violation(s), not written: a product failure to file (listed in ${displayPath(MISSES_FILE)}).`] : []),
-      ...(outcome.written.length ? ["Review: git diff examples/consumer-lab/cassettes/  (stage what you accept, git restore what you reject)"] : []),
-    ].join("\n"),
-  );
-  if (stopped) {
-    console.error(`lab:record: stopped. ${stopped}`);
-    return 1;
-  }
-  return outcome.violations.length ? 1 : 0;
+  const report = writeRecordReport(outcome, settings.modelId, MISSES_FILE, stopped);
+  console.log(report.summary.join("\n"));
+  if (stopped) console.error(`lab:record: stopped. ${stopped}`);
+  return report.exitCode;
 }
 
 process.exitCode = await main(process.argv.slice(2));

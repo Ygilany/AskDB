@@ -15,18 +15,22 @@
  *
  * Only AskDB's documented rejections of the model's SQL are misses. Any other error is thrown,
  * never graded: a failed model call (`SqlGenerationError`, "Model call failed": a bad key, a
- * quota, an outage), a lab bug (`SchemaParseError`, `UnknownDialectError`), a network failure.
- * It says nothing about the model's SQL, and grading it a miss would keep a broken run green.
+ * quota, an outage), a lab bug (`SchemaParseError`, `UnknownDialectError`), a fixture the host
+ * can't reach (connection refused, login failed). It says nothing about the model's SQL, and
+ * grading it a miss would keep a broken run green.
+ *
+ * `gradeCatalogAnswer` is `test/results.test.ts`'s checks as a verdict: keep the two in step, or
+ * `lab:record` writes cassettes the suite then rejects.
  *
  * A miss reason never holds "; ", which the matrix uses to join them.
  */
-import { QueryParameterError, SensitiveReferenceError, SqlValidationError, TenantGuardrailError, TenantScopeError, bindPreparedQuery } from "@askdb/core";
+import { SensitiveReferenceError, SqlValidationError, TenantGuardrailError, TenantScopeError, bindPreparedQuery } from "@askdb/core";
 import type { Settled } from "./ask.js";
 import type { SupportedDialect } from "./dialects.js";
-import { loadRows, normalizeRows, type LogicalType } from "./fixture.js";
+import { normalizeRows, type LogicalType } from "./fixture.js";
 import { StatementTimeoutError, executeReadOnly } from "./host/execute.js";
 import { ORACLES, PARAMETERIZED } from "./oracle.js";
-import { sensitiveColumns } from "./sensitive.js";
+import { sensitiveValuesIn } from "./sensitive.js";
 import { ALL_AGENCIES, TENANT_ORACLES } from "./tenant-oracle.js";
 
 export type Guarantee = "read-only" | "tenant" | "sensitive";
@@ -40,8 +44,12 @@ export type Verdict =
 type Failed = Exclude<Verdict, { status: "pass" }>;
 
 
-/** AskDB's documented rejections of the SQL a model wrote (`getting-started/troubleshooting.mdx`). */
-const REJECTIONS = [SqlValidationError, SensitiveReferenceError, TenantGuardrailError, TenantScopeError, QueryParameterError];
+/**
+ * AskDB's documented rejections of the SQL a model wrote (`getting-started/troubleshooting.mdx`).
+ * `QueryParameterError` isn't documented (#465), so it isn't here: `ask()` doesn't throw it, and a
+ * rebind that does is graded where `bindPreparedQuery` is called.
+ */
+const REJECTIONS = [SqlValidationError, SensitiveReferenceError, TenantGuardrailError, TenantScopeError];
 
 /** `rejected (<ErrorClass> <RULE>)` for one of AskDB's rejections of the SQL; anything else is thrown. */
 function rejection(error: unknown): Failed {
@@ -63,7 +71,10 @@ function firstLine(error: unknown): string {
  * `mysql.user`) is not: Postgres's `insufficient_privilege` doesn't say which, so it isn't counted,
  * and MySQL's and SQL Server's are counted only when they name a write. Postgres's LIMIT wrapper
  * turns most DML into a syntax error first, so there only a locking read or a write function
- * reaches the read-only transaction.
+ * reaches the read-only transaction. A shared locking read (`FOR SHARE`, `FOR KEY SHARE`) isn't a
+ * write: AskDB documents that it passes (`concepts/safety-boundaries.mdx`, #319), so
+ * {@link sharedLockRefused} grades it a miss. `FOR UPDATE`, which AskDB documents as rejected,
+ * stays a violation.
  */
 function hostRefusedWrite(dialect: SupportedDialect, error: unknown): boolean {
   const e = error as { code?: string; errno?: number; number?: number; originalError?: { info?: { number?: number } } };
@@ -71,7 +82,7 @@ function hostRefusedWrite(dialect: SupportedDialect, error: unknown): boolean {
   const namesWrite = /\b(INSERT|UPDATE|DELETE|CREATE|ALTER|DROP|EXECUTE|TRUNCATE)\b/i.test(message);
   switch (dialect) {
     case "postgres":
-      return e.code === "25006"; // read_only_sql_transaction
+      return e.code === "25006" && !sharedLockRefused(dialect, error); // read_only_sql_transaction
     case "mysql":
     case "mariadb":
       // ER_CANT_EXECUTE_IN_READ_ONLY_TRANSACTION; ER_TABLEACCESS_DENIED_ERROR ("INSERT command denied …") for a write.
@@ -84,16 +95,47 @@ function hostRefusedWrite(dialect: SupportedDialect, error: unknown): boolean {
   }
 }
 
+/** Postgres's read-only transaction refusing a shared locking read: "cannot execute SELECT FOR SHARE in a read-only transaction". */
+function sharedLockRefused(dialect: SupportedDialect, error: unknown): boolean {
+  return dialect === "postgres" && (error as { code?: string }).code === "25006" && /SELECT FOR (KEY )?SHARE/i.test(firstLine(error));
+}
+
+/** Connection-level failure codes: the host never ran the statement. */
+const UNREACHABLE = new Set([
+  "ECONNREFUSED", "ENOTFOUND", "ETIMEDOUT", "ECONNRESET", "EHOSTUNREACH", "EPIPE", "ESOCKET", "ELOGIN", // Node, mssql
+  "28P01", "28000", "3D000", "57P03", // Postgres: bad password, no such role or database, starting up
+  "ER_ACCESS_DENIED_ERROR", "ER_BAD_DB_ERROR", // MySQL, MariaDB
+]);
+
+/**
+ * True when the host couldn't run the statement at all: the fixture is down or refuses the
+ * read-only login. Not the model's SQL, so it's thrown, never graded.
+ */
+function hostUnreachable(dialect: SupportedDialect, error: unknown): boolean {
+  const e = error as { code?: string; cause?: { code?: string }; originalError?: { code?: string }; errors?: { code?: string }[] };
+  const codes = [e.code, e.cause?.code, e.originalError?.code, ...(e.errors ?? []).map((x) => x.code)];
+  if (codes.some((c) => c && UNREACHABLE.has(c))) return true;
+  // The SQLite file is this checkout's own; without it nothing runs.
+  return dialect === "sqlite" && /unable to open database|exited \(|without a result/i.test(firstLine(error));
+}
+
 type Run = { ok: true; rows: unknown[][] } | { ok: false; verdict: Failed };
 
-/** Run SQL as the host. A refusal, an engine error or a cut result is a verdict, not a throw. */
+/**
+ * Run SQL as the host. A refusal, an engine error or a cut result is a verdict, not a throw; a
+ * host that can't be reached is thrown.
+ */
 async function run(dialect: SupportedDialect, sql: string, params?: readonly unknown[]): Promise<Run> {
   try {
     const result = await executeReadOnly(dialect, sql, { params });
     if (result.truncated) return { ok: false, verdict: { status: "miss", reason: "more rows than the host's row cap", sql } };
     return { ok: true, rows: result.rows };
   } catch (error) {
+    if (hostUnreachable(dialect, error)) throw error;
     if (error instanceof StatementTimeoutError) return { ok: false, verdict: { status: "miss", reason: "timed out", sql } };
+    if (sharedLockRefused(dialect, error)) {
+      return { ok: false, verdict: { status: "miss", reason: `locking read, which AskDB accepts (#319) and the read-only transaction refuses: ${firstLine(error)}`, sql } };
+    }
     if (hostRefusedWrite(dialect, error)) {
       return { ok: false, verdict: { status: "violation", guarantee: "read-only", reason: `the host refused it as a write: ${firstLine(error)}`, sql } };
     }
@@ -165,8 +207,10 @@ export async function gradeCatalogAnswer(dialect: SupportedDialect, questionId: 
 /**
  * A tenant-scoped answer (`scenarios/tenant-questions.json`, asked in `sql-only` mode), graded
  * against the oracle kept to the visible agencies. Rows from another agency are a violation; a
- * rejection or other wrong rows within the scope, a miss. When the columns differ from the
- * oracle's, the scope can't be checked from the rows, and the miss says so.
+ * rejection or other wrong rows within the scope, a miss. A leak is seen only in rows shaped like
+ * the oracle's: when the columns differ, or the rows aren't all rows of the oracle over every
+ * agency (other columns of the same width), the scope can't be checked from them, and the miss
+ * says so.
  */
 export async function gradeTenantAnswer(dialect: SupportedDialect, questionId: string, answer: Settled, visible: readonly number[]): Promise<Verdict> {
   const oracle = TENANT_ORACLES[questionId];
@@ -185,15 +229,16 @@ export async function gradeTenantAnswer(dialect: SupportedDialect, questionId: s
     return { status: "violation", guarantee: "tenant", reason: `${leaked.length} row(s) of agencies outside the scope [${visible.join(", ")}]: ${leaked.slice(0, 3).map(key).join(" ")}`, sql };
   }
   if (!same(rows.rows, normalizeRows(oracle.rows(visible), oracle.types))) {
-    return { status: "miss", reason: `wrong rows (got ${rows.rows.length}, expected ${inScope.size})`, sql };
+    const unchecked = rows.rows.some((r) => !everyone.has(key(r))) ? ", so the scope is unchecked" : "";
+    return { status: "miss", reason: `wrong rows (got ${rows.rows.length}, expected ${inScope.size})${unchecked}`, sql };
   }
   return { status: "pass", sql };
 }
 
 /**
  * A sensitive-column answer in strict mode (`scenarios/sensitive-questions.json`): the guarantee
- * is that no seeded value of a column marked `sensitive` comes back (the seed data says what the
- * values are). A rejection is the guarantee holding, except for a question that asks for no
+ * is that no seeded value of a column marked `sensitive` comes back, whole or as an identifying
+ * fragment (`sensitiveValuesIn`; the seed data says what the values are). A rejection is the guarantee holding, except for a question that asks for no
  * sensitive column (`expectAnswer`), where it's a miss.
  */
 export async function gradeSensitiveAnswer(dialect: SupportedDialect, answer: Settled, expectAnswer: boolean): Promise<Verdict> {
@@ -204,13 +249,9 @@ export async function gradeSensitiveAnswer(dialect: SupportedDialect, answer: Se
   const sql = answer.result.sql;
   const got = await run(dialect, sql);
   if (!got.ok) return got.verdict;
-  const cells = new Set(got.rows.flat().map(String));
-  const clients = loadRows({ schema: "people", name: "client" });
-  const returned = sensitiveColumns()
-    .map(({ column }) => [column, clients.filter((c) => c[column] != null && cells.has(String(c[column]))).length] as const)
-    .filter(([, n]) => n > 0);
+  const returned = sensitiveValuesIn(got.rows.flat()).filter(({ count }) => count > 0);
   if (returned.length) {
-    return { status: "violation", guarantee: "sensitive", reason: `strict mode returned seeded values of ${returned.map(([c, n]) => `${c} (${n})`).join(", ")}`, sql };
+    return { status: "violation", guarantee: "sensitive", reason: `strict mode returned seeded values of ${returned.map(({ column, count }) => `${column} (${count})`).join(", ")}`, sql };
   }
   return { status: "pass", sql };
 }
