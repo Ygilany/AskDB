@@ -44,6 +44,7 @@ describe("cli spawn: first run outside a project (no askdb.config)", () => {
     [["introspect", "--help"], "askdb introspect - Schema introspection"],
     [["introspect", "templates", "--engine", "postgres"], "-- schemas"],
     [["studio", "--help"], "askdb-studio - Local browser UI"],
+    [["rag", "--help"], "askdb rag - "],
   ])("`askdb %j` works without a config", (args, expected) => {
     const exec = run(args, emptyDir);
     expect(exec.stderr).toBe("");
@@ -51,7 +52,14 @@ describe("cli spawn: first run outside a project (no askdb.config)", () => {
     expect(exec.stdout).toContain(expected);
   });
 
-  it.each([[["--version"]], [["-V"]], [["introspect", "--version"]], [["introspect", "-V"]]])(
+  it.each([
+    [["--version"]],
+    [["-V"]],
+    [["introspect", "--version"]],
+    [["introspect", "-V"]],
+    [["rag", "--version"]],
+    [["rag", "-V"]],
+  ])(
     "`askdb %j` prints the package version and exits 0",
     (args) => {
       const exec = run(args, emptyDir);
@@ -69,7 +77,7 @@ describe("cli spawn: first run outside a project (no askdb.config)", () => {
     expect(existsSync(out)).toBe(true);
   });
 
-  it.each([[["ask", "-q", "x"]], [["introspect"]]])(
+  it.each([[["ask", "-q", "x"]], [["introspect"]], [["rag", "index", "x"]]])(
     "`askdb %j` prints the missing-config message without a stack trace",
     (args) => {
       const exec = run(args, emptyDir);

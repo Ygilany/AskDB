@@ -25,6 +25,7 @@ import { Command } from "commander";
 import { runInitCli, VALID_AI_PROVIDERS } from "./init.js";
 import { runIntrospectCli } from "./introspect.js";
 import { MissingAskDbConfigError, requireAskDbConfig } from "./project-config.js";
+import { runRagCli } from "./rag.js";
 import { readCliVersion } from "./version.js";
 
 // Batteries-included surface: every built-in provider is registered, and each
@@ -222,6 +223,11 @@ program
   .allowUnknownOption(true);
 
 program
+  .command("rag")
+  .description("Chunk, embed, and query a schema artifact for retrieval (see `askdb rag --help`)")
+  .allowUnknownOption(true);
+
+program
   .command("ask")
   .description("Generate SQL from schema + question")
   .hook("preAction", () => {
@@ -381,6 +387,8 @@ program
     },
   );
 
+const RAG_NO_CONFIG_FLAGS = new Set(["--help", "-h", "--version", "-V"]);
+
 // Each command loads askdb.config itself, only on the path that reads it.
 async function main(argv: string[]): Promise<number | undefined> {
   const [command, ...rest] = argv.slice(2);
@@ -389,6 +397,10 @@ async function main(argv: string[]): Promise<number | undefined> {
       return runInitCli(rest);
     case "introspect":
       return runIntrospectCli(rest);
+    case "rag":
+      // Help, version and no args work without a config; every other rag command reads it.
+      if (rest.length > 0 && !rest.some((arg) => RAG_NO_CONFIG_FLAGS.has(arg))) requireAskDbConfig();
+      return runRagCli(rest);
     case "enrich":
     case "studio":
       return runStudioCommand(rest);

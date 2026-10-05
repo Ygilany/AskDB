@@ -1,0 +1,501 @@
+import { randomUUID } from "node:crypto";
+import { join, resolve } from "node:path";
+import {
+  createAskDbLogger,
+  formatSupportedAskDbLogLevels,
+  isSupportedAskDbLogLevel,
+  type AskDbLogger,
+  type AskDbLogLevel,
+} from "@askdb/core";
+import { getAskDbRuntimeConfig, type AskDbRuntimeConfig } from "@askdb/config";
+import {
+  buildSchemaIndex,
+  checkIndexMatches,
+  createFileStore,
+  createMemoryStore,
+  createOpenAiEmbedder as createAiSdkOpenAiEmbedder,
+  createPgvectorStore,
+  loadChunkerSourcesFromDir,
+  type CreatePgvectorStoreOptions,
+  type Embedder,
+  type Filter,
+  type QueryResult,
+  type VectorStore,
+} from "@askdb/rag";
+import { readCliVersion } from "./version.js";
+
+const CLI_EMBEDDERS = ["mock", "openai"] as const;
+type CliEmbedder = (typeof CLI_EMBEDDERS)[number];
+
+function isCliEmbedder(value: string): value is CliEmbedder {
+  return (CLI_EMBEDDERS as readonly string[]).includes(value);
+}
+
+type CliOptions = {
+  command?: "index" | "query" | "setup-store";
+  schemaDir?: string;
+  store?: "memory" | "file" | "pgvector";
+  embedder?: CliEmbedder;
+  question?: string;
+  k?: number;
+  pgUrl?: string;
+  pgTable?: string;
+  dimensions?: number;
+  filterTypes?: string[];
+  verbose?: boolean;
+  logLevel?: string;
+  logFile?: string;
+  logStdout?: boolean;
+  correlationId?: string;
+  filePath?: string;
+  embedderModel?: string;
+  apiKey?: string;
+  force?: boolean;
+};
+
+export async function runRagCli(argv: readonly string[]): Promise<number> {
+  try {
+    if (argv.includes("--version") || argv.includes("-V")) {
+      process.stdout.write(`${readCliVersion()}\n`);
+      return 0;
+    }
+    if (argv.length === 0 || argv.includes("--help") || argv.includes("-h")) {
+      printHelp();
+      return 0;
+    }
+    const cmd = argv[0];
+    if (cmd !== "index" && cmd !== "query" && cmd !== "setup-store") {
+      throw new Error(`Unknown command: ${cmd} (expected 'index', 'query', or 'setup-store')`);
+    }
+    const opts = parseOptions(argv.slice(1));
+    opts.command = cmd;
+    if (cmd === "setup-store") return await runSetupStore(opts);
+    if (!opts.schemaDir) {
+      throw new Error("Missing positional <schema-dir>.");
+    }
+    const runtimeConfig = getAskDbRuntimeConfig();
+    const logger = buildLogger(opts, runtimeConfig);
+    if (cmd === "index") return await runIndex(opts, logger, runtimeConfig);
+    return await runQuery(opts, logger, runtimeConfig);
+  } catch (e) {
+    process.stderr.write(`${e instanceof Error ? e.message : String(e)}\n`);
+    return 1;
+  }
+}
+
+async function runIndex(opts: CliOptions, logger: AskDbLogger, runtimeConfig: AskDbRuntimeConfig): Promise<number> {
+  const sources = loadChunkerSourcesFromDir(opts.schemaDir!);
+  const embedder = buildEmbedder(opts, runtimeConfig);
+  const dimensions = embedderDimensions(opts);
+  const store = await buildStore(opts, dimensions);
+  // Provision (idempotent) and verify the table's vector dimensions up front
+  // so a mismatch fails with a clear message instead of mid-upsert.
+  if (typeof store.ensureSchema === "function") await store.ensureSchema();
+
+  const result = await buildSchemaIndex({
+    schema: sources,
+    embedder,
+    store,
+    embedderId: embedderId(opts),
+    // The indexer leaves the lock alone for an ephemeral (memory) store.
+    lockFilePath: lockFilePathFor(opts),
+    force: opts.force,
+    correlationId: opts.correlationId,
+    logger,
+  });
+
+  process.stdout.write(
+    `${JSON.stringify(
+      {
+        schemaId: sources.schema.schemaId,
+        chunksTotal: result.stats.chunksTotal,
+        chunksIndexed: result.stats.chunksIndexed,
+        chunksReused: result.stats.chunksReused,
+        sensitiveExcluded: result.stats.sensitiveExcluded,
+        sensitiveIncluded: result.stats.sensitiveIncluded,
+      },
+      null,
+      2,
+    )}\n`,
+  );
+
+  await closeStore(store);
+  return 0;
+}
+
+async function runQuery(opts: CliOptions, logger: AskDbLogger, runtimeConfig: AskDbRuntimeConfig): Promise<number> {
+  if (!opts.question) {
+    throw new Error("Missing --question for query command.");
+  }
+  if ((opts.store ?? "file") === "memory") {
+    throw new Error(
+      "query --store memory has nothing to search: the memory store lives only inside one process, " +
+        "so a separate `index --store memory` run cannot populate it. Use --store file or --store pgvector.",
+    );
+  }
+  const sources = loadChunkerSourcesFromDir(opts.schemaDir!);
+  assertQueryMatchesIndex(opts, sources.schema.schemaId);
+  const embedder = buildEmbedder(opts, runtimeConfig);
+  const dimensions = embedderDimensions(opts);
+  const store = await buildStore(opts, dimensions);
+
+  const filter: Filter = { schemaId: sources.schema.schemaId };
+  if (opts.filterTypes && opts.filterTypes.length > 0) {
+    filter.types = opts.filterTypes as Filter["types"];
+  }
+
+  const [vector] = await embedder([opts.question]);
+  const k = opts.k ?? 8;
+  const results = await store.query(vector, k, filter);
+
+  logger.info(
+    {
+      event: "askdb.rag.cli.query",
+      questionChars: opts.question.length,
+      k,
+      resultCount: results.length,
+    },
+    "rag query completed",
+  );
+
+  process.stdout.write(
+    `${JSON.stringify(
+      {
+        question: opts.question,
+        k,
+        results: results.map((r: QueryResult) => ({
+          id: r.id,
+          score: Number(r.score.toFixed(6)),
+          type: r.payload.type,
+          schemaId: r.payload.schemaId,
+          refs: r.payload.refs,
+          textPreview: r.payload.text.slice(0, 200),
+        })),
+      },
+      null,
+      2,
+    )}\n`,
+  );
+
+  await closeStore(store);
+  return 0;
+}
+
+function lockFilePathFor(opts: CliOptions): string {
+  return join(resolve(opts.schemaDir!), "schema.lock.json");
+}
+
+/**
+ * Refuse to query with a different embedder (or dimensions) than the index was
+ * built with — the similarity scores would be meaningless.
+ */
+function assertQueryMatchesIndex(opts: CliOptions, schemaId: string): void {
+  const match = checkIndexMatches({
+    lockFilePath: lockFilePathFor(opts),
+    schemaId,
+    embedderId: embedderId(opts),
+    dimensions: embedderDimensions(opts),
+  });
+  if (match.ok) return;
+  const fix =
+    match.reason === "lock-outdated"
+      ? "Re-run `askdb rag index` before querying."
+      : "Pass the same --embedder/--embedder-model/--dimensions used for `index`, or re-run `index`.";
+  throw new Error(`${match.message} ${fix}`);
+}
+
+async function runSetupStore(opts: CliOptions): Promise<number> {
+  if (!opts.pgUrl) {
+    throw new Error(
+      "setup-store requires --pg-url <connection-string>.",
+    );
+  }
+  // Same resolution as `index`: --dimensions, else the embedder's default
+  // (mock → 64, openai text-embedding-3-small → 1536, …).
+  const dimensions = embedderDimensions(opts);
+  const store = createPgvectorStore({
+    connectionString: opts.pgUrl,
+    table: opts.pgTable,
+    dimensions,
+  });
+  await store.ensureSchema();
+  await store.close();
+  const table = opts.pgTable ?? "askdb_rag_chunks";
+  process.stdout.write(
+    `pgvector schema ready: table "${table}" (dimensions=${dimensions})\n`,
+  );
+  return 0;
+}
+
+function buildEmbedder(opts: CliOptions, runtimeConfig: AskDbRuntimeConfig): Embedder {
+  const choice = opts.embedder ?? "mock";
+  if (choice === "mock") return createMockEmbedder(embedderDimensions(opts));
+  return createOpenAiEmbedder(opts, runtimeConfig);
+}
+
+function embedderId(opts: CliOptions): string {
+  const choice = opts.embedder ?? "mock";
+  if (choice === "openai") {
+    const base = `openai:${opts.embedderModel ?? "text-embedding-3-small"}`;
+    return opts.dimensions ? `${base}:${opts.dimensions}` : base;
+  }
+  return `mock:lexical-${embedderDimensions(opts)}`;
+}
+
+function embedderDimensions(opts: CliOptions): number {
+  if (opts.dimensions) return opts.dimensions;
+  const choice = opts.embedder ?? "mock";
+  if (choice === "openai") {
+    const model = opts.embedderModel ?? "text-embedding-3-small";
+    if (model === "text-embedding-3-small") return 1536;
+    if (model === "text-embedding-3-large") return 3072;
+    if (model === "text-embedding-ada-002") return 1536;
+    throw new Error(`Pass --dimensions for unknown embedder model: ${model}`);
+  }
+  return DEFAULT_MOCK_DIMENSIONS;
+}
+
+const DEFAULT_MOCK_DIMENSIONS = 64;
+
+/**
+ * Deterministic mock embedder used for tests, CI, and quick smoke-checks.
+ *
+ * Produces a stable lexical bag-of-words vector by hashing normalized tokens;
+ * same text always yields the same vector. Not a real embedder, but useful for
+ * local smoke tests because shared terms like "revenue" can rank related chunks.
+ */
+function createMockEmbedder(dim = DEFAULT_MOCK_DIMENSIONS): Embedder {
+  return async (texts: string[]) => {
+    return texts.map((text) => {
+      const v = new Array<number>(dim).fill(0);
+      const tokens = text.toLowerCase().match(/[a-z0-9_]+/g) ?? [];
+      for (const token of tokens) {
+        v[stableTokenHash(token) % dim] += 1;
+      }
+      const norm = Math.sqrt(v.reduce((s, x) => s + x * x, 0)) || 1;
+      return v.map((x) => x / norm);
+    });
+  };
+}
+
+function stableTokenHash(token: string): number {
+  let h = 2166136261;
+  for (let i = 0; i < token.length; i++) {
+    h ^= token.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  return h >>> 0;
+}
+
+function createOpenAiEmbedder(opts: CliOptions, runtimeConfig: AskDbRuntimeConfig): Embedder {
+  const apiKey = opts.apiKey ?? runtimeConfig.rag.embedder.apiKey;
+  if (!apiKey) {
+    throw new Error(
+      "createOpenAiEmbedder: set OPENAI_API_KEY or pass --api-key. The OpenAI embedder uses the AI SDK optional peers (`ai` and `@ai-sdk/openai`).",
+    );
+  }
+  return createAiSdkOpenAiEmbedder({
+    apiKey,
+    model: opts.embedderModel ?? "text-embedding-3-small",
+    baseURL: runtimeConfig.rag.embedder.baseURL,
+    dimensions: opts.dimensions,
+  });
+}
+
+type CliStore = VectorStore & {
+  close?: () => Promise<void>;
+  flush?: () => void;
+  ensureSchema?: () => Promise<void>;
+};
+
+async function buildStore(
+  opts: CliOptions,
+  dimensions: number,
+): Promise<CliStore> {
+  const choice = opts.store ?? "file";
+  if (choice === "memory") return createMemoryStore();
+  if (choice === "file") {
+    const path = opts.filePath
+      ? opts.filePath
+      : join(resolve(opts.schemaDir!), "schema");
+    return createFileStore({ basePath: path });
+  }
+  if (choice === "pgvector") {
+    if (!opts.pgUrl) {
+      throw new Error(
+        "pgvector store requires --pg-url (or set PGURL/DATABASE_URL via your shell).",
+      );
+    }
+    const pgOptions: CreatePgvectorStoreOptions = {
+      connectionString: opts.pgUrl,
+      table: opts.pgTable,
+      dimensions,
+    };
+    return createPgvectorStore(pgOptions);
+  }
+  throw new Error(`Unknown store: ${choice}`);
+}
+
+async function closeStore(store: CliStore): Promise<void> {
+  if (typeof store.flush === "function") store.flush();
+  if (typeof store.close === "function") await store.close();
+}
+
+function buildLogger(opts: CliOptions, runtimeConfig: AskDbRuntimeConfig): AskDbLogger {
+  const level = resolveLogLevel(opts, runtimeConfig);
+  return createAskDbLogger({
+    correlationId:
+      opts.correlationId ?? runtimeConfig.logging.correlationId ?? randomUUID(),
+    level,
+    logFile: opts.logFile ?? runtimeConfig.logging.logFile,
+    logStdout: opts.logStdout ?? runtimeConfig.logging.logStdout,
+  });
+}
+
+function resolveLogLevel(opts: CliOptions, runtimeConfig: AskDbRuntimeConfig): AskDbLogLevel {
+  if (opts.logLevel !== undefined && opts.logLevel !== "") {
+    const lvl = opts.logLevel.toLowerCase();
+    if (!isSupportedAskDbLogLevel(lvl)) {
+      throw new Error(
+        `Invalid --log-level: ${opts.logLevel} (expected one of ${formatSupportedAskDbLogLevels()})`,
+      );
+    }
+    return lvl;
+  }
+  const envLevel = runtimeConfig.logging.level?.toLowerCase();
+  if (envLevel && isSupportedAskDbLogLevel(envLevel)) return envLevel;
+  if (opts.verbose || opts.logFile || opts.logStdout) return "info";
+  return "silent";
+}
+
+function parseOptions(argv: readonly string[]): CliOptions {
+  const opts: CliOptions = {};
+  let positional = 0;
+  for (let i = 0; i < argv.length; i++) {
+    const arg = argv[i]!;
+    if (!arg.startsWith("-")) {
+      if (positional === 0) opts.schemaDir = arg;
+      else throw new Error(`Unexpected positional argument: ${arg}`);
+      positional++;
+      continue;
+    }
+    switch (arg) {
+      case "--store":
+        opts.store = readValue(argv, ++i, arg) as CliOptions["store"];
+        break;
+      case "--embedder": {
+        const raw = readValue(argv, ++i, arg);
+        if (!isCliEmbedder(raw)) {
+          throw new Error(
+            `Unknown embedder: ${raw} (expected ${CLI_EMBEDDERS.map((e) => `'${e}'`).join(" or ")}).`,
+          );
+        }
+        opts.embedder = raw;
+        break;
+      }
+      case "--embedder-model":
+        opts.embedderModel = readValue(argv, ++i, arg);
+        break;
+      case "--api-key":
+        opts.apiKey = readValue(argv, ++i, arg);
+        break;
+      case "--question":
+        opts.question = readValue(argv, ++i, arg);
+        break;
+      case "-k":
+      case "--k": {
+        const raw = readValue(argv, ++i, arg);
+        const n = Number(raw);
+        if (!Number.isInteger(n) || n <= 0) {
+          throw new Error(`-k must be a positive integer (got ${raw}).`);
+        }
+        opts.k = n;
+        break;
+      }
+      case "--pg-url":
+        opts.pgUrl = readValue(argv, ++i, arg);
+        break;
+      case "--pg-table":
+        opts.pgTable = readValue(argv, ++i, arg);
+        break;
+      case "--dimensions": {
+        const raw = readValue(argv, ++i, arg);
+        const n = Number(raw);
+        if (!Number.isInteger(n) || n <= 0) {
+          throw new Error(`--dimensions must be a positive integer (got ${raw}).`);
+        }
+        opts.dimensions = n;
+        break;
+      }
+      case "--force":
+        opts.force = true;
+        break;
+      case "--types":
+        opts.filterTypes = readValue(argv, ++i, arg).split(",").map((s) => s.trim()).filter(Boolean);
+        break;
+      case "--file-path":
+        opts.filePath = readValue(argv, ++i, arg);
+        break;
+      case "-v":
+      case "--verbose":
+        opts.verbose = true;
+        break;
+      case "--log-level":
+        opts.logLevel = readValue(argv, ++i, arg);
+        break;
+      case "--log-file":
+        opts.logFile = readValue(argv, ++i, arg);
+        break;
+      case "--log-stdout":
+        opts.logStdout = true;
+        break;
+      case "--correlation-id":
+        opts.correlationId = readValue(argv, ++i, arg);
+        break;
+      default:
+        throw new Error(`Unknown option: ${arg}`);
+    }
+  }
+  return opts;
+}
+
+function readValue(argv: readonly string[], index: number, flag: string): string {
+  const value = argv[index];
+  if (!value || (value.startsWith("--") && value !== flag)) {
+    throw new Error(`${flag} requires a value.`);
+  }
+  return value;
+}
+
+function printHelp(): void {
+  process.stdout.write(
+    [
+      "askdb rag - Chunk, embed, and query a schema artifact directory.",
+      "",
+      "Usage:",
+      "  askdb rag index <schema-dir>      [--store memory|file|pgvector] [--embedder mock|openai] [--dimensions <n>] [--force]",
+      "  askdb rag query <schema-dir>      --question \"...\" [-k 8] [--types table,column,cql] [--store file|pgvector] [--embedder mock|openai] [--dimensions <n>]",
+      "  askdb rag setup-store             --pg-url <conn> [--pg-table askdb_rag_chunks] [--embedder mock|openai] [--dimensions <n>]",
+      "",
+      "Commands:",
+      "  index        Chunk and embed a schema directory into the configured store. Only chunks the store",
+      "               doesn't already hold (same id + content hash) are embedded; --force re-embeds everything.",
+      "  query        Run a similarity query against an indexed store. Use the same embedder/dimensions as `index`.",
+      "  setup-store  Create the pgvector extension, table, and indexes. Idempotent — safe to re-run.",
+      "               Dimensions default to the embedder's (mock: 64, openai text-embedding-3-small: 1536).",
+      "",
+      "Stores:",
+      "  memory     in-memory cosine, lives only for one process. Useful for `index` dry runs (writes no schema.lock.json); `query` can't use it.",
+      "  file       persisted as <schema-dir>/schema.embeddings.{bin,json} (default).",
+      "  pgvector   --pg-url <conn> [--pg-table askdb_rag_chunks] [--dimensions <n>]",
+      "",
+      "Embedders:",
+      "  mock       deterministic lexical hash (64 dimensions unless --dimensions). Default. CI-safe.",
+      "  openai     AI SDK OpenAI embeddings; OPENAI_API_KEY (or --api-key); --embedder-model text-embedding-3-small (default).",
+      "",
+      "Logging matches `askdb`:",
+      "  --log-level <level> --log-file <path> --log-stdout --correlation-id <id> -v/--verbose",
+      "",
+    ].join("\n"),
+  );
+}

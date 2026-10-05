@@ -94,6 +94,9 @@ importers:
       '@askdb/prisma':
         specifier: workspace:*
         version: link:../../packages/prisma
+      '@askdb/rag':
+        specifier: workspace:*
+        version: link:../../packages/rag
       '@askdb/sqlite':
         specifier: workspace:*
         version: link:../../packages/sqlite
