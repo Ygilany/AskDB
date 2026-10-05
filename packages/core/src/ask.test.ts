@@ -503,6 +503,51 @@ describe("ask — identifier quoting in the prompt per dialect (#451)", () => {
     expect(mysql).toContain("  - createdAt timestamp (NOT NULL)");
   });
 
+  it("lists columns quoted with omitSensitiveIdentifiersFromNlToSqlPrompt too", async () => {
+    const prompt = await promptFor("postgres", schemaOf("billing"), { omitSensitiveIdentifiersFromNlToSqlPrompt: true });
+    expect(prompt).toMatch(/^TABLE billing\."order"$/m);
+    expect(prompt).toContain('  - "group" text (NULL)');
+  });
+
+  it.each([
+    ["postgres", 'SELECT "copy" FROM public."call"'],
+    ["mysql", "SELECT `copy` FROM `call`"],
+    ["sqlserver", "SELECT [copy] FROM [public].[call]"],
+    ["sqlite", 'SELECT "copy" FROM "call"'],
+  ] as const)(
+    "%s: SQL that copies a listed name AskDB's validator rejects bare (`copy`, `call`) passes validation",
+    async (dialect, expected) => {
+      const schema = loadSchemaFromJson(
+        JSON.stringify({
+          version: 2,
+          schemaId: "validator-words",
+          tables: [
+            {
+              id: "table:public.call",
+              name: "call",
+              schema: "public",
+              columns: [{ id: "table:public.call#copy", name: "copy", type: "text", nullable: true, primaryKey: false }],
+            },
+          ],
+        }),
+      );
+      const generateText = vi.fn(async ({ prompt }: { prompt: string }) => {
+        const table = /^TABLE (\S+)$/m.exec(prompt)![1];
+        const column = /^ {2}- (\S+) text/m.exec(prompt)![1];
+        return { text: "```sql\nSELECT " + column + " FROM " + table + "\n```" };
+      });
+      const result = await ask({
+        question: "What is the copy of each call?",
+        schema,
+        model: fakeModel,
+        dialect,
+        parameterize: false,
+        deps: { generateText: generateText as never },
+      });
+      expect(result.sql).toBe(expected);
+    },
+  );
+
   it("quotes for a custom DialectSpec by its id", async () => {
     const spec: DialectSpec = { ...POSTGRES_DIALECT, displayName: "Amazon Redshift" };
     const prompt = await promptFor(spec, schemaOf("billing"));

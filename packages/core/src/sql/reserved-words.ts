@@ -9,6 +9,7 @@
  */
 
 // Source: https://www.postgresql.org/docs/current/sql-keywords-appendix.html (PostgreSQL 18.6, fetched 2026-10-05). PostgreSQL column = "reserved" or "reserved (can be function or type)", incl. their ", requires AS" variants.
+// Checked 2026-10-05 against PostgreSQL 17.11: exactly the pg_get_keywords() words the server rejects as a bare column or table name.
 export const POSTGRES_RESERVED_WORDS: readonly string[] = [
   "all", "analyse", "analyze", "and", "any", "array", "as", "asc", "asymmetric", "authorization",
   "binary", "both", "case", "cast", "check", "collate", "collation", "column", "concurrently", "constraint",
@@ -23,11 +24,13 @@ export const POSTGRES_RESERVED_WORDS: readonly string[] = [
   "with",
 ];
 
-// Source: CockroachDB's grammar (pkg/sql/parser/sql.y): type/function-name keywords that Postgres
-// doesn't reserve and a bare column name can't use. Its reserved keywords match the Postgres list.
+// Source: https://github.com/cockroachdb/cockroach/blob/master/pkg/sql/parser/sql.y (master at d30c905fff79,
+// fetched 2026-10-05): type/function-name keywords Postgres doesn't reserve (`type_func_name_crdb_extra_keyword`
+// and `none`). Every other word in its `reserved_keyword` and type/function-name lists is on the Postgres list.
 export const COCKROACHDB_EXTRA_RESERVED_WORDS: readonly string[] = ["family", "none"];
 
-// Source: https://dev.mysql.com/doc/refman/8.4/en/keywords.html (MySQL 8.4, words marked (R); matches information_schema.KEYWORDS on a MySQL 8.4.11 server) UNION https://mariadb.com/docs/server/reference/sql-structure/sql-language-structure/reserved-words (MariaDB main reserved-words table incl. version-tagged entries; Oracle-mode list excluded). Fetched 2026-10-05.
+// Source: https://dev.mysql.com/doc/refman/8.4/en/keywords.html (MySQL 8.4, words marked (R)) UNION https://mariadb.com/docs/server/reference/sql-structure/sql-language-structure/reserved-words (MariaDB main reserved-words table incl. version-tagged entries; Oracle-mode list excluded), fetched 2026-10-05.
+// Checked 2026-10-05 against MySQL 8.4.11 and MariaDB 11.4.13: every information_schema.KEYWORDS word the server rejects as a bare column name is listed. The docs miss some (`portion`, and SELECT modifiers such as `sql_no_cache`).
 export const MYSQL_RESERVED_WORDS: readonly string[] = [
   "accessible", "add", "all", "alter", "analyze", "and", "as", "asc", "asensitive", "before",
   "between", "bigint", "binary", "blob", "both", "by", "call", "cascade", "case", "change",
@@ -43,21 +46,21 @@ export const MYSQL_RESERVED_WORDS: readonly string[] = [
   "int1", "int2", "int3", "int4", "int8", "integer", "intersect", "interval", "into", "io_after_gtids",
   "io_before_gtids", "is", "iterate", "join", "json_table", "key", "keys", "kill", "lag", "last_value",
   "lateral", "lead", "leading", "leave", "left", "like", "limit", "linear", "lines", "load",
-  "localtime", "localtimestamp", "lock", "long", "longblob", "longtext", "loop", "low_priority", "master_heartbeat_period", "master_ssl_verify_server_cert",
-  "match", "maxvalue", "mediumblob", "mediumint", "mediumtext", "middleint", "minute_microsecond", "minute_second", "mod", "modifies",
-  "natural", "no_write_to_binlog", "not", "nth_value", "ntile", "null", "numeric", "of", "offset", "on",
-  "optimize", "optimizer_costs", "option", "optionally", "or", "order", "out", "outer", "outfile", "over",
-  "page_checksum", "parse_vcol_expr", "partition", "percent_rank", "precision", "primary", "procedure", "purge", "qualify", "range",
-  "rank", "read", "read_write", "reads", "real", "recursive", "ref_system_id", "references", "regexp", "release",
-  "rename", "repeat", "replace", "require", "resignal", "restrict", "return", "returning", "revoke", "right",
-  "rlike", "row", "row_number", "rows", "schema", "schemas", "second_microsecond", "select", "sensitive", "separator",
-  "set", "show", "signal", "slow", "smallint", "spatial", "specific", "sql", "sql_big_result", "sql_calc_found_rows",
-  "sql_small_result", "sqlexception", "sqlstate", "sqlwarning", "ssl", "starting", "stats_auto_recalc", "stats_persistent", "stats_sample_pages", "stored",
-  "straight_join", "system", "table", "tablesample", "terminated", "then", "tinyblob", "tinyint", "tinytext", "to",
-  "to_date", "trailing", "trigger", "true", "undo", "union", "unique", "unlock", "unsigned", "update",
-  "usage", "use", "using", "utc_date", "utc_time", "utc_timestamp", "values", "varbinary", "varchar", "varcharacter",
-  "varying", "vector", "virtual", "when", "where", "while", "window", "with", "write", "xor",
-  "year_month", "zerofill",
+  "localtime", "localtimestamp", "lock", "long", "longblob", "longtext", "loop", "low_priority", "master_demote_to_replica", "master_demote_to_slave",
+  "master_heartbeat_period", "master_ssl_verify_server_cert", "match", "maxvalue", "mediumblob", "mediumint", "mediumtext", "middleint", "minute_microsecond", "minute_second",
+  "mod", "modifies", "natural", "no_write_to_binlog", "not", "nth_value", "ntile", "null", "numeric", "of",
+  "offset", "on", "optimize", "optimizer_costs", "option", "optionally", "or", "order", "out", "outer",
+  "outfile", "over", "page_checksum", "parse_vcol_expr", "partition", "percent_rank", "portion", "precision", "primary", "procedure",
+  "purge", "qualify", "range", "rank", "read", "read_write", "reads", "real", "recursive", "ref_system_id",
+  "references", "regexp", "release", "rename", "repeat", "replace", "require", "resignal", "restrict", "return",
+  "returning", "revoke", "right", "rlike", "row", "row_number", "rows", "schema", "schemas", "second_microsecond",
+  "select", "sensitive", "separator", "set", "show", "signal", "slow", "smallint", "spatial", "specific",
+  "sql", "sql_after_gtids", "sql_before_gtids", "sql_big_result", "sql_buffer_result", "sql_cache", "sql_calc_found_rows", "sql_no_cache", "sql_small_result", "sqlexception",
+  "sqlstate", "sqlwarning", "ssl", "starting", "stats_auto_recalc", "stats_persistent", "stats_sample_pages", "stored", "straight_join", "system",
+  "table", "tablesample", "terminated", "then", "tinyblob", "tinyint", "tinytext", "to", "to_date", "trailing",
+  "trigger", "true", "undo", "union", "unique", "unlock", "unsigned", "update", "usage", "use",
+  "using", "utc_date", "utc_time", "utc_timestamp", "values", "varbinary", "varchar", "varcharacter", "varying", "vector",
+  "virtual", "when", "where", "while", "window", "with", "write", "xor", "year_month", "zerofill",
 ];
 
 // Source: https://learn.microsoft.com/en-us/sql/t-sql/language-elements/reserved-keywords-transact-sql (view=sql-server-ver17, updated 2026-09-21, fetched 2026-10-05). Main "SQL Server and Azure Synapse Analytics" table only; doc entry "WITHIN GROUP" stored as "within".

@@ -173,7 +173,8 @@ function checkWithProfile(
   return tokens;
 }
 
-function forbiddenKeywordsFor(dialect: DialectSpec): Set<string> {
+/** The words `validateSelectSql` rejects unquoted for a dialect, lowercase. */
+export function forbiddenKeywordsFor(dialect: Pick<DialectSpec, "extraForbiddenKeywords">): Set<string> {
   return new Set([...BASE_FORBIDDEN, ...(dialect.extraForbiddenKeywords ?? [])].map((w) => w.toLowerCase()));
 }
 
