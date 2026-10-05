@@ -8,6 +8,8 @@ Accepted.
 
 > **Amendment (2026-10):** With the four adapters folded into `@askdb/ai` (ADR 0006, 2026-09 amendment), `askdb init` and Studio take each provider's default API key and model env var names from `@askdb/ai`'s built-in provider table (`getBuiltinAiProviderSetup`), which owns the providers' native env vars, and drop their `AI_DEFAULTS` copies. The renderer stays in `@askdb/config/scaffold` and still takes the names from its callers, so `@askdb/config` gains no dependency on `@askdb/ai`.
 
+> **Amendment (2026-10, #346):** `@askdb/rag` no longer depends on `@askdb/config`. Only its bundled `askdb-rag` CLI read config, and that CLI moved into the `askdb` app as `askdb rag`, which reads config and passes plain values to the library. No library package calls `getAskDbRuntimeConfig()` now: a library that needs AskDB settings takes them from its host, as `@askdb/client` takes a runtime snapshot. Rule 6 and the consequence below still hold for any library that does read config: it goes through `getAskDbRuntimeConfig()`, never `process.env`.
+
 ## Context
 
 First-party apps (`askdb`, `@askdb/http-api`, `@askdb/studio`) load secrets and defaults from `.env` via `dotenv`, then read canonical names such as `OPENAI_API_KEY`, `ASKDB_*`, and `DATABASE_URL` directly from `process.env`. Library packages like `@askdb/core`, `@askdb/rag`, and `@askdb/tui` were also reading `process.env` directly, which means:

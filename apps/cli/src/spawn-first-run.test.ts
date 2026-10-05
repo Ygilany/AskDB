@@ -44,7 +44,9 @@ describe("cli spawn: first run outside a project (no askdb.config)", () => {
     [["introspect", "--help"], "askdb introspect - Schema introspection"],
     [["introspect", "templates", "--engine", "postgres"], "-- schemas"],
     [["studio", "--help"], "askdb-studio - Local browser UI"],
+    [["rag"], "askdb rag - "],
     [["rag", "--help"], "askdb rag - "],
+    [["rag", "-h"], "askdb rag - "],
   ])("`askdb %j` works without a config", (args, expected) => {
     const exec = run(args, emptyDir);
     expect(exec.stderr).toBe("");

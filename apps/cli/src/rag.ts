@@ -248,6 +248,7 @@ async function runSetupStore(opts: CliOptions, runtimeConfig: AskDbRuntimeConfig
         "(the same value as ai.embedding.dimensions).",
     );
   }
+  assertStoreFlagsApply(opts, "pgvector");
   const config = resolvePgvectorConfig(opts, readConfiguredStore(runtimeConfig));
   const store = await openStore(config, { dimensions, provision: (width) => `--dimensions asks for ${width}` });
   await closeStore(store);
@@ -378,9 +379,9 @@ type ConfiguredStore = {
 
 /**
  * Every store setting the CLI reads from askdb.config.*, in one place: the store, the file base
- * path, and the pgvector URL, table and index strategy, read the way Studio reads them. The URL
- * comes from the structured config, so it also serves `--store pgvector` when another store is
- * configured.
+ * path, and the pgvector URL, table and index strategy. The pgvector settings come from the
+ * structured config, so they also serve `--store pgvector` and `setup-store` when another store
+ * is configured.
  */
 function readConfiguredStore(runtimeConfig: AskDbRuntimeConfig): ConfiguredStore {
   const { store, storeConfig } = runtimeConfig.structured.rag;
@@ -389,7 +390,7 @@ function readConfiguredStore(runtimeConfig: AskDbRuntimeConfig): ConfiguredStore
     fileBasePath: trimmed(storeConfig.file?.basePath),
     pgUrl: trimmed(storeConfig.pgvector?.databaseUrl),
     pgTable: trimmed(storeConfig.pgvector?.table),
-    pgIndexStrategy: trimmed(runtimeConfig.flat.ASKDB_PGVECTOR_INDEX_STRATEGY),
+    pgIndexStrategy: trimmed(storeConfig.pgvector?.indexStrategy),
   };
 }
 
@@ -397,6 +398,7 @@ function readConfiguredStore(runtimeConfig: AskDbRuntimeConfig): ConfiguredStore
 function resolveStoreConfig(opts: CliOptions, runtimeConfig: AskDbRuntimeConfig, schemaDir: string): StoreConfig {
   const configured = readConfiguredStore(runtimeConfig);
   const kind = opts.store ?? configured.kind;
+  assertStoreFlagsApply(opts, kind);
   if (kind === "memory") return { kind };
   if (kind === "file") {
     const basePath =
@@ -415,8 +417,32 @@ function resolvePgvectorConfig(opts: CliOptions, configured: ConfiguredStore): P
     kind: "pgvector",
     connectionString,
     table: opts.pgTable ?? configured.pgTable,
-    indexStrategy: configured.pgIndexStrategy as PgvectorIndexStrategy | undefined,
+    indexStrategy: parseIndexStrategy(configured.pgIndexStrategy),
   };
+}
+
+const STORE_FLAGS = [
+  ["filePath", "--file-path", "file"],
+  ["pgUrl", "--pg-url", "pgvector"],
+  ["pgTable", "--pg-table", "pgvector"],
+] as const;
+
+/** A flag for another store than the one this run uses would be silently ignored, so refuse it. */
+function assertStoreFlagsApply(opts: CliOptions, kind: CliStoreKind): void {
+  for (const [key, flag, store] of STORE_FLAGS) {
+    if (opts[key] === undefined || kind === store) continue;
+    throw new Error(
+      `${flag} applies to the ${store} store, but this run uses the ${kind} store ` +
+        `(from ${opts.store ? "--store" : "rag.store"}). Pass --store ${store}, or drop ${flag}.`,
+    );
+  }
+}
+
+/** Validated here because config load checks it only when `rag.store` is `pgvector`. */
+function parseIndexStrategy(raw: string | undefined): PgvectorIndexStrategy | undefined {
+  const value = raw?.toLowerCase();
+  if (value === undefined || value === "ivfflat" || value === "hnsw" || value === "none") return value;
+  throw new Error(`Invalid rag.storeConfig.pgvector.indexStrategy "${raw}" (expected ivfflat, hnsw, or none).`);
 }
 
 function trimmed(value: string | undefined): string | undefined {
@@ -524,9 +550,13 @@ function parseOptions(argv: readonly string[]): CliOptions {
         opts.embedder = raw;
         break;
       }
-      case "--embedder-model":
-        opts.embedderModel = readValue(argv, ++i, arg);
+      case "--embedder-model": {
+        // Trimmed as the registry trims it, so the embedder id names the model that embeds.
+        const model = readValue(argv, ++i, arg).trim();
+        if (!model) throw new Error(`${arg} requires a value.`);
+        opts.embedderModel = model;
         break;
+      }
       case "--api-key":
         // Secrets on argv leak through shell history and the process list.
         throw new Error("--api-key was removed; set the key on a connection in ai.providerConfig in askdb.config.*.");

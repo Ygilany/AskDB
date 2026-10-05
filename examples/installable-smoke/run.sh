@@ -335,14 +335,21 @@ echo "smoke: askdb-http bin…"
 echo "smoke: askdb rag…"
 (cd "$WORK/apps" && ./node_modules/.bin/askdb rag --help | grep -q 'askdb rag')
 
-echo "smoke: the deprecated askdb-rag stub fails with a pointer to askdb rag…"
-if RAG_STUB_STDERR="$(cd "$WORK/apps" && ./node_modules/.bin/askdb-rag index x 2>&1 >/dev/null)"; then
-  echo "smoke: FAILED — askdb-rag exited 0; the stub must exit 1." >&2
+echo "smoke: the deprecated askdb-rag stub exits 1 with a pointer to askdb rag, and echoes no secret…"
+RAG_STUB_STATUS=0
+RAG_STUB_STDERR="$(cd "$WORK/apps" && ./node_modules/.bin/askdb-rag index x --pg-url 'postgres://u:smoke-secret@h/db' 2>&1 >/dev/null)" ||
+  RAG_STUB_STATUS=$?
+if [ "$RAG_STUB_STATUS" -ne 1 ]; then
+  echo "smoke: FAILED — askdb-rag exited $RAG_STUB_STATUS; the stub must exit 1." >&2
   exit 1
 fi
-grep -q 'askdb rag' <<<"$RAG_STUB_STDERR" || {
-  echo "smoke: FAILED — askdb-rag's message doesn't name askdb rag:" >&2
+grep -q 'askdb rag index' <<<"$RAG_STUB_STDERR" || {
+  echo "smoke: FAILED — askdb-rag's message doesn't name askdb rag index:" >&2
   echo "$RAG_STUB_STDERR" >&2
   exit 1
 }
+if grep -q 'smoke-secret' <<<"$RAG_STUB_STDERR"; then
+  echo "smoke: FAILED — askdb-rag echoed a --pg-url password to stderr." >&2
+  exit 1
+fi
 echo "smoke: PASSED"

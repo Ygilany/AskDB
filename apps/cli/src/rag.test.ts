@@ -209,10 +209,19 @@ describe("askdb rag", () => {
     expect(stderr.join("")).toMatch(/built without an embedder id, so its embedder is unknown, but this query uses "mock:lexical-64"/);
   });
 
-  it("index rejects an unknown --embedder", async () => {
+  it.each([
+    ["--embedder", "opanai", "Unknown embedder: opanai (expected 'mock' or 'ai')."],
+    ["--store", "pgvctor", "Unknown store: pgvctor (expected 'memory', 'file', or 'pgvector')."],
+  ])("index rejects an unknown %s before opening a store", async (flag, value, message) => {
+    // A configured pgvector URL, so an unvalidated store name would reach createPgvectorStore.
+    installRuntime({
+      ...BASE_CONFIG,
+      rag: { embedder: "mock", store: "file", storeConfig: { file: {}, pgvector: { databaseUrl: PG_URL } } },
+    });
     const schemaDir = copyFixture();
-    expect(await runRagCli(["index", schemaDir, "--embedder", "opanai"])).toBe(1);
-    expect(stderr.join("")).toMatch(/Unknown embedder: opanai \(expected 'mock' or 'ai'\)/);
+    expect(await runRagCli(["index", schemaDir, flag, value])).toBe(1);
+    expect(stderr.join("")).toBe(`${message}\n`);
+    expect(pgvector.options).toEqual([]);
     expect(existsSync(join(schemaDir, "schema.lock.json"))).toBe(false);
   });
 
@@ -281,6 +290,10 @@ describe("askdb rag", () => {
       expect(await runRagCli(["index"])).toBe(0);
       expect(existsSync(`${basePath}.embeddings.json`)).toBe(true);
       expect(readLock(schemaDir)).toMatchObject({ embedderId: "mock:lexical-64" });
+
+      const flagPath = join(tempDir(), "flag");
+      expect(await runRagCli(["index", "--file-path", flagPath])).toBe(0);
+      expect(existsSync(`${flagPath}.embeddings.json`)).toBe(true);
     });
 
     it("pgvector settings come from rag.storeConfig.pgvector, and flags win", async () => {
@@ -301,13 +314,55 @@ describe("askdb rag", () => {
       ]);
     });
 
-    it("--store pgvector reads the URL from rag.storeConfig.pgvector when another store is configured", async () => {
+    it("--store pgvector and setup-store read rag.storeConfig.pgvector when another store is configured", async () => {
       installRuntime({
         ...BASE_CONFIG,
-        rag: { embedder: "mock", store: "file", storeConfig: { file: {}, pgvector: { databaseUrl: PG_URL } } },
+        rag: {
+          embedder: "mock",
+          store: "file",
+          storeConfig: { file: {}, pgvector: { databaseUrl: PG_URL, indexStrategy: "none" } },
+        },
       });
       expect(await runRagCli(["index", copyFixture(), "--store", "pgvector"])).toBe(0);
-      expect(pgvector.options).toEqual([expect.objectContaining({ connectionString: PG_URL })]);
+      expect(await runRagCli(["setup-store", "--dimensions", "16"])).toBe(0);
+      expect(pgvector.options).toEqual([
+        expect.objectContaining({ connectionString: PG_URL, indexStrategy: "none" }),
+        expect.objectContaining({ connectionString: PG_URL, indexStrategy: "none", dimensions: 16 }),
+      ]);
+    });
+
+    it("rejects an unknown rag.storeConfig.pgvector.indexStrategy that config load didn't check", async () => {
+      installRuntime({
+        ...BASE_CONFIG,
+        rag: { embedder: "mock", store: "file", storeConfig: { file: {}, pgvector: { indexStrategy: "hsnw" } } },
+      });
+      expect(await runRagCli(["setup-store", "--pg-url", PG_URL, "--dimensions", "16"])).toBe(1);
+      expect(stderr.join("")).toBe(
+        'Invalid rag.storeConfig.pgvector.indexStrategy "hsnw" (expected ivfflat, hnsw, or none).\n',
+      );
+      expect(pgvector.options).toEqual([]);
+    });
+
+    it.each<[string, string[], AskDbConfig, string]>([
+      [
+        "--file-path on the configured pgvector store",
+        ["--file-path", "./vectors"],
+        { ...BASE_CONFIG, rag: { embedder: "mock", store: "pgvector", storeConfig: { pgvector: { databaseUrl: PG_URL } } } },
+        "--file-path applies to the file store, but this run uses the pgvector store (from rag.store). Pass --store file, or drop --file-path.",
+      ],
+      [
+        "--pg-table with --store file",
+        ["--store", "file", "--pg-table", "chunks"],
+        BASE_CONFIG,
+        "--pg-table applies to the pgvector store, but this run uses the file store (from --store). Pass --store pgvector, or drop --pg-table.",
+      ],
+    ])("index refuses %s instead of ignoring it", async (_case, flags, config, message) => {
+      installRuntime(config);
+      const schemaDir = copyFixture();
+      expect(await runRagCli(["index", schemaDir, ...flags])).toBe(1);
+      expect(stderr.join("")).toBe(`${message}\n`);
+      expect(pgvector.options).toEqual([]);
+      expect(existsSync(join(schemaDir, "schema.lock.json"))).toBe(false);
     });
 
     it("a pgvector store without a URL names the flag and the config key", async () => {
@@ -328,6 +383,13 @@ describe("askdb rag", () => {
         "text-embedding-3-large",
         "ai-sdk:openai:text-embedding-3-large:4",
       ],
+      [
+        "a padded --embedder-model",
+        ["--embedder-model", " text-embedding-3-large "],
+        { model: "text-embedding-3-small", dimensions: 4 },
+        "text-embedding-3-large",
+        "ai-sdk:openai:text-embedding-3-large:4",
+      ],
       ["the model's own width", [], { model: "text-embedding-3-small" }, "text-embedding-3-small", "ai-sdk:openai:text-embedding-3-small:default"],
     ])("indexes and queries with %s, under Studio's embedder id", async (_case, flags, embedding, model, embedderId) => {
       const server = await startEmbeddingServer();
@@ -336,13 +398,31 @@ describe("askdb rag", () => {
 
       expect(await runRagCli(["index", schemaDir, ...flags])).toBe(0);
       expect(readLock(schemaDir)).toMatchObject({ embedderId, dimensions: 4 });
+      // A file store learns the width from the first vector: every text embedded is a chunk, with no width probe.
+      const { chunksIndexed } = JSON.parse(stdout.join("")) as { chunksIndexed: number };
+      expect(server.requests.reduce((total, request) => total + request.inputs, 0)).toBe(chunksIndexed);
       expect(await runRagCli(["query", schemaDir, "--question", "paid orders", ...flags])).toBe(0);
       expect(new Set(server.requests.map((request) => request.model))).toEqual(new Set([model]));
     });
 
-    it("--embedder ai can't override rag.embedder: \"mock\"", async () => {
+    it("--embedder ai with rag.embedder: \"mock\" (no ai.embedding) says how to configure it", async () => {
       expect(await runRagCli(["index", copyFixture(), "--embedder", "ai"])).toBe(1);
       expect(stderr.join("")).toMatch(/needs ai\.embedding in askdb\.config\.\*: set rag\.embedder: "ai" and ai\.embedding\.model/);
+    });
+
+    it("an ai.embedding connection without an API key names the connection", async () => {
+      installRuntime({
+        ...BASE_CONFIG,
+        ai: { provider: "openai", providerConfig: { openai: {} }, embedding: { model: "text-embedding-3-small" } },
+        rag: { embedder: "ai", store: "file", storeConfig: { file: {} } },
+      });
+      const schemaDir = copyFixture();
+      expect(await runRagCli(["index", schemaDir])).toBe(1);
+      expect(stderr.join("")).toBe(
+        'askdb rag: embeddings need an API key on the ai.embedding connection ("default" in ai.providerConfig.openai). ' +
+          "Set it in askdb.config.*, or pass --embedder mock.\n",
+      );
+      expect(existsSync(join(schemaDir, "schema.lock.json"))).toBe(false);
     });
 
     it.each([
@@ -405,6 +485,23 @@ describe("askdb rag", () => {
       expect(readLock(schemaDir)).toMatchObject({ embedderId, dimensions });
     });
 
+    it("query on pgvector with no width neither probes the model nor provisions the table", async () => {
+      const server = await startEmbeddingServer();
+      installRuntime(aiEmbeddingConfig(server.baseUrl, { model: "text-embedding-3-small" }));
+      const schemaDir = copyFixture();
+      expect(await runRagCli(["index", schemaDir, "--store", "pgvector", "--pg-url", PG_URL])).toBe(0);
+      pgvector.options.length = 0;
+      pgvector.calls.length = 0;
+      server.requests.length = 0;
+
+      expect(await runRagCli(["query", schemaDir, "--question", "paid orders", "--store", "pgvector", "--pg-url", PG_URL])).toBe(0);
+      expect(pgvector.options).toHaveLength(1);
+      expect(pgvector.options[0]).not.toHaveProperty("dimensions");
+      expect(pgvector.calls).toEqual(["close"]);
+      // One request: the question. No width probe.
+      expect(server.requests).toEqual([{ model: "text-embedding-3-small", inputs: 1 }]);
+    });
+
     it("a table of another width fails before any chunk is embedded, with the fix in flags", async () => {
       pgvector.tableDimensions = 8;
       const server = await startEmbeddingServer();
@@ -415,6 +512,11 @@ describe("askdb rag", () => {
           ["index", copyFixture(), "--store", "pgvector", "--pg-url", PG_URL],
           aiEmbeddingConfig(server.baseUrl, { model: "text-embedding-3-small" }),
           "embedding model text-embedding-3-small returns 4",
+        ],
+        [
+          ["index", copyFixture(), "--store", "pgvector", "--pg-url", PG_URL],
+          aiEmbeddingConfig(server.baseUrl, { model: "text-embedding-3-small", dimensions: 4 }),
+          "ai.embedding.dimensions asks for 4",
         ],
       ];
       for (const [args, config, source] of runs) {
@@ -427,8 +529,8 @@ describe("askdb rag", () => {
             "or pass --dimensions 8 if your embedding model supports that width.\n",
         );
       }
-      expect(pgvector.calls).toEqual(["ensureSchema", "close", "ensureSchema", "close", "ensureSchema", "close"]);
-      // The only embedding call is the width probe.
+      expect(pgvector.calls).toEqual(["ensureSchema", "close", "ensureSchema", "close", "ensureSchema", "close", "ensureSchema", "close"]);
+      // The only embedding call is the width probe of the run with no width set.
       expect(server.requests).toEqual([{ model: "text-embedding-3-small", inputs: 1 }]);
     });
   });
