@@ -88,19 +88,11 @@ export function chunkSchema(
     }
 
     const md = tableMarkdowns[table.id];
-    // A table's own text may also name its sensitive columns bare, including
-    // those sensitive only through the table.
-    const tableSensitiveNames = [
-      ...new Set([
-        ...table.columns.filter((c) => c.sensitive).map((c) => c.name),
-        ...schemaSensitiveNames,
-      ]),
-    ];
 
     if (table.sensitive && !includeSensitive) {
       stats.sensitiveExcluded++;
     } else {
-      const filter = describableFilter(tableSensitiveNames, includeSensitive);
+      const filter = describableFilter(schemaSensitiveNames, includeSensitive);
       const tableChunk = buildTableChunk(table, schema.schemaId, includeSensitive, schema, filter);
       // A non-sensitive table whose description/aliases/column headlines
       // mention a sensitive column is only embedded verbatim in opt-in mode.
@@ -131,7 +123,7 @@ export function chunkSchema(
         continue;
       }
       const describableMentionsSensitive = describable.some((text) =>
-        mentionsAnyName(text, tableSensitiveNames),
+        mentionsAnyName(text, schemaSensitiveNames),
       );
       if (describableMentionsSensitive && !includeSensitive) {
         // Keep the identifier + type; drop the whole describable layer.
@@ -158,7 +150,7 @@ export function chunkSchema(
     if (table.commonQueryLanguage) {
       const mentionsSensitive = mentionsAnyName(
         table.commonQueryLanguage,
-        tableSensitiveNames,
+        schemaSensitiveNames,
       );
       const tableLevelSensitive = table.sensitive;
       const skip =
@@ -170,7 +162,7 @@ export function chunkSchema(
       } else {
         // The heading repeats the table's aliases; one naming a sensitive
         // column is dropped like it is from the table chunk.
-        const filter = describableFilter(tableSensitiveNames, includeSensitive);
+        const filter = describableFilter(schemaSensitiveNames, includeSensitive);
         const aliases = (table.aliases ?? []).filter((a) => filter.allow(a));
         const sensitive = tableLevelSensitive || mentionsSensitive || filter.included;
         if (filter.dropped) stats.sensitiveExcluded += parts.length;
@@ -188,11 +180,11 @@ export function chunkSchema(
       const questions = extractExampleQuestions(md);
       const businessContext = md.sections["Business context"]?.trim() ?? "";
       const questionsMentionSensitive = questions.some((q) =>
-        mentionsAnyName(q, tableSensitiveNames),
+        mentionsAnyName(q, schemaSensitiveNames),
       );
       const bizMentionsSensitive = mentionsAnyName(
         businessContext,
-        tableSensitiveNames,
+        schemaSensitiveNames,
       );
 
       // Per-table sensitive gate: if table is sensitive OR mentions exist, skip
@@ -207,7 +199,7 @@ export function chunkSchema(
         } else {
           // Every question heading repeats the primary entity; one naming a
           // sensitive column is dropped like it is from the table chunk.
-          const filter = describableFilter(tableSensitiveNames, includeSensitive);
+          const filter = describableFilter(schemaSensitiveNames, includeSensitive);
           const primaryEntity = filter.allow(table.primaryEntity) ? table.primaryEntity : undefined;
           if (filter.dropped) stats.sensitiveExcluded += questions.length;
           // The questions are gated together, so in opt-in mode one naming a

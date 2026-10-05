@@ -500,6 +500,20 @@ describe("sensitive-mention filtering", () => {
       expect(ids).not.toContain("chunk:orders-users:tenant-policy#scope-rules");
     });
 
+    it("counts the sensitive columns of an untracked table too", () => {
+      // The table isn't indexed, but its columns are still sensitive data.
+      const s = loadWithSensitiveOrders();
+      table(s, "table:public.users").tracked = false;
+      table(s, "table:public.orders").tracked = false;
+      s.concepts!.frontmatter.concepts = [
+        concept("concept:reach", "Customers we can Email."),
+        concept("concept:dotted", "Read orders.total_amount for revenue."),
+      ];
+      const ids = chunkSchema(s).chunks.map((c) => c.id);
+      expect(ids).not.toContain("chunk:orders-users:concept:reach");
+      expect(ids).not.toContain("chunk:orders-users:concept:dotted");
+    });
+
     it("drops another table's text that names it qualified", () => {
       const s = loadWithSensitiveOrders();
       table(s, "table:public.users").description = "Lifetime value is the sum of orders.total_amount.";

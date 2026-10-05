@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted (2026-10-04, maintainer decision on #193's review). The rule is in `collectSensitiveNames` (`packages/rag/src/chunker/chunker.ts`), qualified names are matched by `findMentionedNames` (`packages/core/src/schema/v2/mentions.ts`, the mention rule rag and enrich share since #193), and the column provenance it needs is `NormalizedV2Column.sensitiveFromTable`, set by `loadSchema()` (`packages/core/src/schema/v2/loader.ts`). Contract: [`schema-v2.md` → Sensitive propagation](../contracts/schema-v2.md#sensitive-propagation).
+Accepted (2026-10-04, maintainer decision on #193's review). The rule is in `collectSensitiveNames` (`packages/rag/src/chunker/chunker.ts`), qualified names are matched by `findMentionedNames` (`packages/core/src/schema/v2/mentions.ts`, the mention rule rag and enrich share since #193), and the column provenance it needs is `NormalizedV2Column.sensitiveFromTable`, set by `loadSchema()` and `loadSchemaFromJson()` (`packages/core/src/schema/v2/loader.ts`). Contract: [`schema-v2.md` → Sensitive propagation](../contracts/schema-v2.md#sensitive-propagation).
 
 ## Context
 
@@ -19,10 +19,9 @@ The normalized schema didn't record why a column is sensitive: the loader folded
 
 - Every piece of describable text is checked against one schema-wide list of names, whichever table or chunk it belongs to: table, column, common query language, example question, business context, concept, and tenant policy text.
 - A column marked sensitive itself (in `schema.json`, or by a front-matter `sensitive: true` entry) is on the list by its bare name.
-- A column sensitive only because its table is, is on the list only as `table.column`. Matching stays whole-word and case-insensitive, and the qualified form also matches with a schema prefix (`public.users.org_id`), with each part quoted or bracketed (`"users"."org_id"`, `[users].[org_id]`, `` `users`.`org_id` ``), and with spaces around the dot. The table part is the table's name without its schema, so a sensitive `public.users` also matches mentions of `audit.users.org_id`: an over-exclusion, the safe direction.
-- A table's own text also counts its own sensitive columns by bare name, including the ones sensitive through the table. Text owned by a sensitive table is excluded by default anyway, so this only matters for opt-in flags.
+- A column sensitive only because its table is, is on the list only as `table.column`. Matching stays whole-word and case-insensitive, and the qualified form also matches with a schema prefix (`public.users.org_id`), with each part quoted or bracketed (`"users"."org_id"`, `[users].[org_id]`, `` `users`.`org_id` ``), and with spaces or tabs on both sides of the dot (`users . org_id`, not across a sentence break such as `users. Org_id`). The table part is the table's name without its schema, so a sensitive `public.users` also matches mentions of `audit.users.org_id`: an over-exclusion, the safe direction.
 - Sensitive columns of untracked tables are on the list too: they are still sensitive data, even though their tables aren't indexed.
-- `loadSchema()` records the provenance as `NormalizedV2Column.sensitiveFromTable: true`, set only on columns that are sensitive solely through their table. Normalized schemas built some other way, without the field, are treated as if every sensitive column were marked itself (bare names: the conservative reading).
+- `loadSchema()` and `loadSchemaFromJson()` (directory and bundle loads) record the provenance as `NormalizedV2Column.sensitiveFromTable: true`, set only on columns that are sensitive solely through their table. Normalized schemas built some other way, without the field, are treated as if every sensitive column were marked itself (bare names: the conservative reading).
 
 ## Options considered
 
