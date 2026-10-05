@@ -102,7 +102,7 @@ Like Studio's server ([ADR 0009](../../docs/adrs/0009-studio-local-api-protectio
 ## The question catalog and its replies
 
 - `scenarios/questions.json` lists the questions: `{ "id", "text" }`. The texts must be unique, because the replay server finds the question by looking for its text in the prompt.
-- Each question names the columns it expects, in the oracle's order ("For each agency, show its id and how many active programs it runs."). The oracle compares columns by position, so a live model that answers an unspecific question sensibly, with the agency's name where the oracle has its id, is graded a miss, and `lab:record` can't record it (#452).
+- Each question names the columns it expects, in the oracle's order (`active-programs-per-agency` asks for each agency's id, then its count). Live answers are graded by position ([Record and live](#record-and-live)), so a sensible answer to a question that leaves its columns open, with the agency's name where the oracle has its id, is a miss that `lab:record` won't record (#452).
 - `cassettes/<dialect>/<id>.json` holds the reply for one question on one dialect:
 
   ```json
