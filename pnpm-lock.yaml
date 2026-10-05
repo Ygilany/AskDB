@@ -689,9 +689,6 @@ importers:
 
   packages/rag:
     dependencies:
-      '@askdb/config':
-        specifier: workspace:*
-        version: link:../config
       '@askdb/core':
         specifier: workspace:*
         version: link:../core

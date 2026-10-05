@@ -24,8 +24,7 @@
   "author": "Yahya Gilany",
   "type": "module",
   "sideEffects": [
-    "./bin/askdb-rag.js",
-    "./dist/bin.js"
+    "./bin/askdb-rag.js"
   ],
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -80,7 +79,6 @@
     "test": "vitest run --config ../../vitest.config.ts"
   },
   "dependencies": {
-    "@askdb/config": "workspace:*",
     "@askdb/core": "workspace:*"
   },
   "peerDependencies": {
