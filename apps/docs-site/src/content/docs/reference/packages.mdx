@@ -224,7 +224,7 @@ Headless schema-authoring helpers used by Studio. Use directly when building a c
 
 ### `@askdb/rag`
 
-Chunks the schema artifact, indexes it in a vector store, and retrieves relevant chunks per question. Use with `ask()`'s `retriever` option for large schemas. `ai`, `@ai-sdk/openai` and `pg` are optional peer dependencies: install the ones your embedder and vector store use. Their floors move the same way as the adapters' `ai` floor.
+Chunks the schema artifact, indexes it in a vector store, and retrieves relevant chunks per question. Use with `ask()`'s `retriever` option for large schemas. Always install `ai`: `@askdb/rag` depends on `@askdb/core`, which loads `ai` when it is imported, even with a custom embedder or the in-memory or file store. Install `@ai-sdk/openai` and `pg` only if your embedder and vector store use them; they are optional peers. Their floors move the same way as the adapters' `ai` floor.
 
 <InstallTabs pkgs="@askdb/rag ai" />
 

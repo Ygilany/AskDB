@@ -126,7 +126,8 @@ echo "smoke: staging AI SDK 6 consumer fixture…"
 # `ai` is a peer of @askdb/core (^6.0.0 || ^7.0.51) and an optional peer of @askdb/rag. This consumer pins
 # the AI SDK 6 floor exactly (ai@6.0.0 + @ai-sdk/openai@3.0.0, ADR 0015) and installs WITHOUT
 # --legacy-peer-deps, so a peer range that excludes it fails here with ERESOLVE, and core or rag
-# code that needs a newer 6.x fails the type-check or the run.
+# code that needs a newer 6.x fails the type-check or the run. Its tsconfig sets skipLibCheck: false
+# so the packed core/rag declarations are checked against ai@6 too.
 cp -R "$SCRIPT_DIR/consumer-ai6" "$WORK/consumer-ai6"
 node -e "
   const fs = require('fs');
