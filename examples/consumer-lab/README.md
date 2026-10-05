@@ -20,8 +20,8 @@ pnpm lab:use git:origin/main         # …or a branch, tag or commit's (built in
 pnpm lab:use npm:latest              # published packages under a dist-tag
 pnpm lab:use npm:askdb@1.0.0-beta.40 # a published CLI release and the @askdb/* versions it depends on
 pnpm lab:use --check                 # re-verify the current install against its target
-pnpm lab ask --db mysql "How many active programs does each agency run?"
-pnpm lab ask --db sqlserver --via client "Which three agencies have the highest paid order total?"
+pnpm lab ask --db mysql "For each agency, show its id and how many active programs it runs."
+pnpm lab ask --db sqlserver --via client "Which three agencies have the highest paid order total? Show each agency's id and that total, highest first."
 pnpm lab ask --db postgres --sql "SELECT agency_id, name FROM org.agency"
 pnpm lab ui                          # a page on 127.0.0.1 that runs one input on every engine side by side
 pnpm lab:test                        # the lab's own suite (needs the fixture, the lab's Postgres and an installed lab)
@@ -102,6 +102,7 @@ Like Studio's server ([ADR 0009](../../docs/adrs/0009-studio-local-api-protectio
 ## The question catalog and its replies
 
 - `scenarios/questions.json` lists the questions: `{ "id", "text" }`. The texts must be unique, because the replay server finds the question by looking for its text in the prompt.
+- Each question names the columns it expects, in the oracle's order ("For each agency, show its id and how many active programs it runs."). The oracle compares columns by position, so a live model that answers an unspecific question sensibly, with the agency's name where the oracle has its id, is graded a miss, and `lab:record` can't record it (#452).
 - `cassettes/<dialect>/<id>.json` holds the reply for one question on one dialect:
 
   ```json
@@ -263,7 +264,7 @@ Each copy is built from the fixture's DDL (`fixtures/multi-engine/dataset/ddl/<e
 `test/tenant.test.ts` asks tenant-scoped questions through `ask()` with a tenant policy, executes the SQL as the host does, and compares the rows with the oracle kept to the scope's agencies. The design is "Tenant scoping, by behavior" in [`docs/specs/consumer-lab.md`](../../docs/specs/consumer-lab.md).
 
 - **The policy.** `scenarios/overlay/tenant-policy.md` is written in the documented format ([`docs/contracts/tenant-policy.md`](../../docs/contracts/tenant-policy.md)): the flat root `org.agency` (`agency_id`), the six tenant tables and the `billing.agency_revenue` view as scoped tables (`order_line` through a join to `order`), and `ref.status` as global. `src/tenant.ts` copies each dialect's introspected artifact into a fresh directory under `.lab/artifacts/tenant/` and writes the policy there, with each stable ID mapped to that artifact's namespace (SQLite's tables are all under `public`) and `enforcement` set per scenario. The introspected artifacts stay policy-free for the other suites.
-- **The catalog.** The suite has its own questions, `scenarios/tenant-questions.json`, all with ids starting `tenant-`, and their replies in `cassettes/<dialect>/tenant-*.json`. The results suite never reads them. The scoped replies filter on the `:tenant_agency_ids` placeholder the NL→SQL prompt asks for, each in a different shape: `agency_id = :p`, `c.agency_id IN (:p)` on a join to the root table, `order_line` through its order, a decimal `SUM` per agency, and a business parameter next to the tenant one. The other replies are the "model" as the attacker: no filter, the tenant column selected but not filtered, another tenant's ID, `OR 1 = 1`, and the root table read unfiltered.
+- **The catalog.** The suite has its own questions, `scenarios/tenant-questions.json`, all with ids starting `tenant-`, and their replies in `cassettes/<dialect>/tenant-*.json`. The results suite never reads them. The scoped questions name their columns, as the results catalog's do, so live mode can check the scope from a model's rows. The scoped replies filter on the `:tenant_agency_ids` placeholder the NL→SQL prompt asks for, each in a different shape: `agency_id = :p`, `c.agency_id IN (:p)` on a join to the root table, `order_line` through its order, a decimal `SUM` per agency, and a business parameter next to the tenant one. The other replies are the "model" as the attacker: no filter, the tenant column selected but not filtered, another tenant's ID, `OR 1 = 1`, and the root table read unfiltered.
 - **The resolver.** The lab is the host, so it supplies `resolveTenantDescendants` (`agencyDescendants` in `src/tenant.ts`): a recursive query over `org.agency.parent_agency_id`, as in the multi-tenancy guide, run on each engine as the read-only role (`WITH` on SQL Server, `WITH RECURSIVE` elsewhere).
 - **The oracle.** `src/tenant-oracle.ts` computes each question's answer from the seed data, kept to a set of agencies. Which agencies a scope sees is decision 9's table, written down (1 sees 1, 4, 5 and 6; 5 sees 5 and 6; 6 sees 6; 7 sees 7), not computed, so a wrong resolver can't also move the expected answer.
 
