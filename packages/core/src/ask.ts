@@ -6,6 +6,7 @@ import type { AnyNormalizedSchema } from "./schema/types.js";
 import { DEFAULT_ASKDB_MODE, type AskDbModeV1 } from "./modes/types.js";
 import type { Retriever } from "./retrieval/types.js";
 import { synthesizeRetrievedDdl } from "./retrieval/synthesize-ddl.js";
+import { unqualifiedNamespaceFor } from "./sql/prompt.js";
 import type { NormalizedSchemaV2 } from "./schema/v2/normalized.js";
 import type {
   NormalizedTenantPolicy,
@@ -350,12 +351,13 @@ export async function ask(options: AskPipelineOptions): Promise<AskPipelineResul
   const explainRequested = options.explain ?? false;
   const omitSensitive = options.omitSensitiveIdentifiersFromNlToSqlPrompt ?? false;
   const parameterize = options.parameterize !== false; // default true
+  const dialectSpec = resolveDialectSpec(options.dialect);
   const prebuiltDdl = await maybeRetrieveDdl({
     options,
     logger,
     omitSensitive,
+    unqualifiedNamespace: unqualifiedNamespaceFor(options.schema, dialectSpec?.unqualifiedNamespace),
   });
-  const dialectSpec = resolveDialectSpec(options.dialect);
   const dialect = resolveDialect(options.dialect);
   const generated = await dialect.generate(
     options.question,
@@ -891,8 +893,9 @@ async function maybeRetrieveDdl(args: {
   options: AskPipelineOptions;
   logger: AskDbLogger | undefined;
   omitSensitive: boolean;
+  unqualifiedNamespace: string | undefined;
 }): Promise<string | undefined> {
-  const { options, logger, omitSensitive } = args;
+  const { options, logger, omitSensitive, unqualifiedNamespace } = args;
   const retriever = options.retriever;
   if (!retriever) return undefined;
 
@@ -943,6 +946,7 @@ async function maybeRetrieveDdl(args: {
     schema: options.schema,
     results,
     omitSensitiveIdentifiersFromPrompt: omitSensitive,
+    unqualifiedNamespace,
   });
   logger?.info(
     {

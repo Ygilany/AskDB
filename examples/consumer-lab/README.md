@@ -13,7 +13,7 @@ This directory is **not** a member of the AskDB pnpm workspace. It is its own pn
 From the repo root:
 
 ```bash
-pnpm lab:up                          # start and seed the fixture; install `.` unless a verified install is current or was chosen with lab:use
+pnpm lab:up                          # start and seed the fixture, start the lab's Postgres; install `.` unless a verified install is current or was chosen with lab:use
 pnpm lab:use .                       # pack this checkout's publishable packages and install them
 pnpm lab:use ../other-checkout       # …or another checkout's
 pnpm lab:use git:origin/main         # …or a branch, tag or commit's (built in a temporary worktree)
@@ -23,11 +23,11 @@ pnpm lab:use --check                 # re-verify the current install against its
 pnpm lab ask --db mysql "How many active programs does each agency run?"
 pnpm lab ask --db sqlserver --via client "Which three agencies have the highest paid order total?"
 pnpm lab ask --db postgres --sql "SELECT agency_id, name FROM org.agency"
-pnpm lab:test                        # the lab's own suite (needs the fixture and an installed lab)
+pnpm lab:test                        # the lab's own suite (needs the fixture, the lab's Postgres and an installed lab)
 pnpm lab:matrix                      # lab:up, then the suite as a scenario × dialect table
 pnpm lab:matrix -t introspect-golden # vitest flags pass through: one scenario (-t), one dialect (-t '\[mysql\]'), one file
 pnpm lab:use --restore               # put the committed baseline (npm:latest) back
-pnpm lab:down                        # stop the fixture; keep its data and the lab install
+pnpm lab:down                        # stop the fixture and the lab's Postgres; keep the fixture's data and the lab install
 pnpm lab:reset                       # reseed the fixture from scratch and put the committed baseline back
 ```
 
@@ -37,9 +37,9 @@ pnpm lab:reset                       # reseed the fixture from scratch and put t
 
 | Command | Removes | Keeps |
 |---|---|---|
-| `pnpm lab:down` | The four fixture containers, stopped and removed (`pnpm fixture:down`). | The fixture's volumes and SQLite file, and the lab's `node_modules`, `.lab/` and manifests. A following `pnpm lab:up` reuses the seeded data and skips the install when it still matches the checkout. |
+| `pnpm lab:down` | The four fixture containers, stopped and removed (`pnpm fixture:down`), and the [lab's Postgres](#row-level-security-informational) with its data, which is on a tmpfs. | The fixture's volumes and SQLite file, and the lab's `node_modules`, `.lab/` and manifests. A following `pnpm lab:up` reuses the seeded data and skips the install when it still matches the checkout. |
 | `pnpm lab:use --restore` | The lab's `.lab/` (tarballs, the recorded target, cached schema artifacts, scratch projects) and `node_modules`. It checks the lab's `package.json`, `pnpm-workspace.yaml` and `pnpm-lock.yaml` out as committed, then installs and verifies the committed lockfile. | Everything else, including other edits in the lab. |
-| `pnpm lab:reset` | The fixture's containers, volumes and SQLite file (`pnpm fixture:reset`, which then starts and reseeds it), then everything `pnpm lab:use --restore` removes. | Everything else. |
+| `pnpm lab:reset` | The fixture's containers, volumes and SQLite file (`pnpm fixture:reset`, which then starts and reseeds it), then everything `pnpm lab:use --restore` removes, then the lab's Postgres and its data, which it starts again empty. | Everything else. |
 
 `lab:reset` recovers from any lab state, a half-finished `lab:use` included. It clears `.lab/` together with the fixture because cached schema artifacts are keyed on the install target, not on the fixture's data. Afterwards the fixture is freshly seeded and the committed baseline (`npm:latest`) is installed, not this checkout: run `pnpm lab:use .` (or `pnpm lab:up`) to install the checkout.
 
@@ -97,7 +97,7 @@ The guide's wrapper is invalid on SQL Server and drops the statement's `ORDER BY
 - A reply to a question that holds a value (`programs-started-since` asks about `2022-01-01`) follows the NL→SQL prompt's parameterized output format, as a model would: the bound statement in a ```` ```sql ```` fence, the same statement with `:name` placeholders in a ```` ```sql-unbound ```` fence, and a ```` ```json ```` fence with the parameter manifest.
 - `src/oracle.ts` holds each question's expected answer, computed in TypeScript from the fixture's seed data (`fixtures/multi-engine/dataset/data/*.json`), with its columns' logical types and whether its row order is part of the answer. It never runs SQL, the cassette's or any other.
 
-To add a question, add it to the catalog, add a reply for each of the five dialects, and add its oracle. `lab:test` runs every catalog question on every dialect. The tenant suite keeps its own catalog, `scenarios/tenant-questions.json` (see [Tenant scoping](#tenant-scoping)).
+To add a question, add it to the catalog, add a reply for each of the five dialects, and add its oracle. `lab:test` runs every catalog question on every dialect. The tenant suite keeps its own catalog, `scenarios/tenant-questions.json` (see [Tenant scoping](#tenant-scoping)), and so does the sensitive-column suite, `scenarios/sensitive-questions.json` (see [Sensitive columns](#sensitive-columns)).
 
 ## Question → SQL → execute
 
@@ -173,7 +173,7 @@ A scratch copy is a writable, throwaway copy of the fixture that the lab creates
 | MySQL, MariaDB | one database per logical schema: `lab_scratch_<token>_org`, `…_people`, `…_billing`, `…_ref` and `…_fixture` |
 | SQLite | a file, `.lab/scratch/lab_scratch_<token>.sqlite` |
 
-Each copy is built from the fixture's DDL (`fixtures/multi-engine/dataset/ddl/<engine>.sql`) and its rows (`loadRows`). The lab rewrites the database names that the MySQL and MariaDB DDL hardcodes. It also cuts the read-only role section from each server engine's DDL, because that section changes server-level principals the shared fixture owns. A scratch copy is therefore owner-only. The fixture's seeder is not imported: its source is part of the fixture's dataset hash. `<token>` is random for each copy, so lab runs that share a fixture never share a scratch copy. The safety suite resets its copy before each proof and drops it when the suite ends. A run that is killed can leave a copy behind; its names start with `lab_scratch_`.
+Each copy is built from the fixture's DDL (`fixtures/multi-engine/dataset/ddl/<engine>.sql`) and its rows (`loadRows`). The lab rewrites the database names that the MySQL and MariaDB DDL hardcodes. It also cuts the read-only role section from each server engine's DDL, because that section changes server-level principals the shared fixture owns. A scratch copy is therefore owner-only. The fixture's seeder is not imported: its source is part of the fixture's dataset hash. `<token>` is random for each copy, so lab runs that share a fixture never share a scratch copy. The safety suite and the [Studio suite](#studio) reset their copy before each proof and drop it when the suite ends. A run that is killed can leave a copy behind; its names start with `lab_scratch_`.
 
 ## Tenant scoping
 
@@ -197,7 +197,42 @@ Each copy is built from the fixture's DDL (`fixtures/multi-engine/dataset/ddl/<e
 | `tenant-missing-scope` | No `tenantScope` with a policy: `TenantScopeError` `MISSING_SCOPE`, and no model call. Runs once, as `[postgres]`. |
 | `tenant-subtree-no-resolver` | `subtree` access with no resolver: `TenantScopeError` `SUBTREE_NOT_RESOLVABLE`, and no model call. Runs once, as `[postgres]`. |
 
-The strict cases fail on the leak itself: when `ask()` returns SQL it should have rejected, the test runs that SQL and compares the rows with the scope's oracle before anything else. Their cells also hold a test that runs each reply raw, so a missing or broken cassette shows as `FAIL`. The `known (#316)` case fails because a result field is missing, not on a leak. The optional Postgres row-level-security case is #317.
+The strict cases fail on the leak itself: when `ask()` returns SQL it should have rejected, the test runs that SQL and compares the rows with the scope's oracle before anything else. Their cells also hold a test that runs each reply raw, so a missing or broken cassette shows as `FAIL`. The `known (#316)` case fails because a result field is missing, not on a leak.
+
+### Row-level security (informational)
+
+`test/tenant-rls.test.ts` shows the database-side tenancy the docs recommend next to AskDB's check (`concepts/safety-boundaries.mdx`, "Enforce tenancy in the database"). It is **informational**: it tests Postgres and the lab's policies, not AskDB. The SQL is the unfiltered reply's cassette, and AskDB never sees it here.
+
+It runs on the **lab's Postgres**, a lab-only server in [`compose.yml`](compose.yml) on port 15442 (`ASKDB_LAB_POSTGRES_PORT` overrides it), never on the shared fixture, whose tables it would change for everyone. `pnpm lab:up` starts it. The test's `beforeAll` seeds it with the fixture's own seeder (`src/lab-postgres.ts` runs `tsx src/seed.ts postgres` with `ASKDB_FIXTURE_POSTGRES_PORT` pointed at it) and then applies `src/lab-postgres.sql`: a read-only `lab_tenant` login, and on the tenant policy overlay's tables a policy that keeps `lab_tenant` to the agency in the setting `app.agency_id`. `fixture_reader` bypasses the policies. To start it alone, run `pnpm -C examples/consumer-lab postgres:up`; `postgres:down` stops it, and its data goes with it. Seeding in the test, not in `lab:up`, keeps a broken setup (a fixture DDL change the policies no longer fit) to this one cell, with the error as its reason, while the rest of the matrix runs. Like the fixture, it is one server shared by every checkout on the machine (project `askdb-consumer-lab`, whatever `COMPOSE_PROJECT_NAME` says), so `lab:down` and `lab:reset` stop it for everyone. To run a private one, start it under another project name and port (`ASKDB_LAB_POSTGRES_PORT=<port> docker compose -f examples/consumer-lab/compose.yml -p <name> up -d --wait`) and set the same port for the tests.
+
+| Scenario | What it checks |
+|---|---|
+| `tenant-rls` | The `tenant-unfiltered` reply, run as `lab_tenant` with `app.agency_id` set to 2 for the transaction, returns exactly agency 2's programs from the oracle; run as `fixture_reader`, every agency's. Runs once, as `[postgres]`, and needs no AskDB install. |
+
+Informational describes what the case proves, not how the matrix counts it: a `FAIL` here fails `lab:matrix` like any other cell. Nothing in AskDB can turn it red; a red cell means the lab's policies, the fixture's DDL or the lab's Postgres broke, and the change that broke it should fix it.
+
+## Sensitive columns
+
+`test/sensitive.test.ts` checks the sensitive-column contract ([`docs/contracts/sensitive-fields-and-modes.md`](../../docs/contracts/sensitive-fields-and-modes.md)) on the prompt the model receives and on the SQL that comes back. The design is "Sensitive columns" in [`docs/specs/consumer-lab.md`](../../docs/specs/consumer-lab.md).
+
+- **The overlay.** `scenarios/overlay/sensitive-columns.json` lists `table:people.client#email` and `table:people.client#ssn`. `src/sensitive.ts` copies each dialect's introspected artifact into a fresh directory under `.lab/artifacts/sensitive/` and sets `sensitive: true` on those two columns in its `schema.json`, finding each by table and column name (SQLite's tables are under `public`). The introspected artifacts stay unmarked for the other suites.
+- **The prompt.** Every prompt assertion reads the replay server's request log over HTTP, `GET /__lab/requests`, so it checks what the model received, not what AskDB says it sent. Each omission case also makes the same call without the switch, as its control: there the columns must be named and tagged, so an omission case can't pass because the table, or the overlay, is missing. An omitted prompt must still describe the rest of `people.client` (`full_name`, `birth_date`).
+- **The catalog.** The suite's questions are `scenarios/sensitive-questions.json`, all with ids starting `sensitive-`, and their replies are `cassettes/<dialect>/sensitive-*.json`. The control reply reads only unmarked columns. The others read `email` or `ssn` in a different shape each: a bare column, an alias-qualified one, the dialect's quoted identifiers (`"c"."ssn"` on Postgres and SQLite, `` `c`.`ssn` `` on MySQL and MariaDB, `[c].[ssn]` on SQL Server), a `WHERE` filter only, `SELECT *`, and `c.*` on a join. The warn-mode cases also run each reply as the host and count the seeded emails and SSNs that come back, against the seed data: a reply that selects a column returns every seeded value of it, and the control and the filter-only reply return none.
+
+| Scenario | What it checks |
+|---|---|
+| `sensitive-prompt-tagged` | The default prompt names `email` and `ssn`, every line that names them carries `(sensitive)`, and no other line does. |
+| `sensitive-omit-library` | `ask()` with `omitSensitiveIdentifiersFromNlToSqlPrompt: true` sends neither column. |
+| `sensitive-omit-client` | `createAskDb().ask()` with the `omitSensitiveIdentifiersFromNlToSqlPrompt` override sends neither column. Runs once, as `[postgres]`. |
+| `sensitive-omit-cli` | `askdb ask --omit-sensitive-from-prompt` sends neither column. Runs once, as `[postgres]`. |
+| `sensitive-omit-http` | `POST /ask` with `omitSensitiveFromPrompt: true` sends neither column. Runs once, as `[postgres]`. |
+| `sensitive-omit-config` | With `modes.omitSensitiveFromPrompt: true` in `askdb.config.ts`, `askdb ask` sends neither column. `askdb-http` from that config still sends both when a request leaves the field out, although the HTTP reference gives the field that default: `known (#376)`. Runs once, as `[postgres]`. |
+| `sensitive-omit-env` | `ASKDB_OMIT_SENSITIVE_FROM_PROMPT=true`, which the contract lists as a way to omit, is never read from the environment, by `askdb ask` or by `askdb-http`: `known (#377, #376)`. The HTTP case also needs `askdb-http` to honor the runtime setting at all (#376). Runs once, as `[postgres]`. |
+| `sensitive-warn` | In the default warn mode, each named-column reply is returned unchanged with `sensitiveGuardrail` `{ passed: false }` and exactly the expected references (`qualified` or `unqualified`). With omission on, a reply that reads `ssn` is still flagged. The control passes with no references. |
+| `sensitive-strict` | With `sensitiveGuardrailMode: "strict"`, each named-column reply reaches the model and is rejected with `SensitiveReferenceError` `SENSITIVE_COLUMN_REFERENCED` and the same references. The control is returned. |
+| `sensitive-wildcard` | `SELECT *` (both columns, `unqualified`) and `c.*` on a join (both, `qualified`), in warn and strict mode as above. |
+
+The `known` cases fail only because the prompt still names the sensitive columns: a failed request, not exactly one answered model call, or a prompt that lost `people.client` makes the body pass, so `it.fails` shows the cell as `FAIL` instead. The passing cases in the same suite start the same CLI and HTTP server from the same artifact.
 
 ## The matrix
 
@@ -217,7 +252,24 @@ Below the test rows, the `unique-constraints *` and `view-marker *` rows are **a
 
 ### In CI
 
-The `consumer-lab` job in [`.github/workflows/ci.yml`](../../.github/workflows/ci.yml) runs on every pull request and every push to `main`. It runs `pnpm lab:use .` (tarballs packed from the commit under test), then `pnpm lab:matrix`, with a 25-minute timeout. The table goes to the job summary, followed by a collapsible block per failing test with the reason it failed (the assertion message, or the rule that made a passing test a failure) and any unhandled errors; the full stack traces are in the step log. `.lab/matrix.json` holds the same reasons (a `FAIL` cell's `failures`), and is uploaded as the `consumer-lab-matrix` artifact whether the job passes or fails. The job fails exactly when `lab:matrix` exits non-zero. Docs-only pull requests skip it: those whose every changed file is under `apps/docs-site/`, `docs/` or `plans/`, a top-level `*.md`, or a `README.md` or `CHANGELOG.md`. Other Markdown still runs the lab, because schema artifacts are Markdown too.
+The `consumer-lab` job in [`.github/workflows/ci.yml`](../../.github/workflows/ci.yml) runs on every pull request and every push to `main`. It runs `pnpm lab:use .` (tarballs packed from the commit under test), then `pnpm lab:matrix`, with a 25-minute timeout. `lab:matrix` runs `lab:up`, so the job also starts the lab's Postgres for `tenant-rls` (a few seconds, on the `postgres:17` image the fixture already pulled), and the test seeds it. The table goes to the job summary, followed by a collapsible block per failing test with the reason it failed (the assertion message, or the rule that made a passing test a failure) and any unhandled errors; the full stack traces are in the step log. `.lab/matrix.json` holds the same reasons (a `FAIL` cell's `failures`), and is uploaded as the `consumer-lab-matrix` artifact whether the job passes or fails. The job fails exactly when `lab:matrix` exits non-zero. Docs-only pull requests skip it: those whose every changed file is under `apps/docs-site/`, `docs/` or `plans/`, a top-level `*.md`, or a `README.md` or `CHANGELOG.md`. Other Markdown still runs the lab, because schema artifacts are Markdown too.
+
+### Published packages
+
+The **Consumer lab (published)** workflow ([`.github/workflows/consumer-lab-published.yml`](../../.github/workflows/consumer-lab-published.yml)) runs the lab against AskDB as published on npm, which the `consumer-lab` job can't see: files missing from a published tarball, a bad `workspace:` rewrite, a dist-tag on the wrong version, and dependency drift with no AskDB release (#255).
+
+| Trigger | Target | Install |
+|---|---|---|
+| After a release that published: `workflow_run` on Release, when the run and its `publish` job succeeded | `npm:latest`, with the lab checked out at the released commit | The committed lockfile, so a failure is the release's. It first waits until every public package's `latest` dist-tag is the released commit's version, and fails if one isn't after 10 minutes. |
+| Weekly, Mondays | `npm:latest`, from `main` | Fresh: the lockfile `lab:use` wrote is deleted and every range resolves anew, as `npm install askdb` does that day. The AskDB pins stay, and `lab:use --check` verifies them. So do the host's own exact pins (drivers, `ai`, `@ai-sdk/openai`, `zod`), which Dependabot moves: what drifts is what AskDB's packages and those pins resolve within their ranges. The job summary lists every package that resolved differently. |
+| Manual (`workflow_dispatch`) | Any npm target: `npm:latest`, `npm:askdb@<version>` or `npm:<dist-tag>`, from the branch it runs on | The lockfile, or fresh with `fresh` ticked. |
+
+On an `npm:latest` target, the job summary first says whether the committed baseline is stale (`lab:use` changed `package.json`, `pnpm-workspace.yaml` or `pnpm-lock.yaml`) and which AskDB pins moved. Then `lab:matrix` runs, and `node examples/consumer-lab/src/published-run.mjs verdict` decides the job:
+
+- A failure is expected only when [`known-release-failures.json`](known-release-failures.json) lists its cell for the installed `askdb` version, with the issue that tracks it: a release that shipped with a bug fixed on `main` since. A listed cell passes whatever fails in it, so an entry is for one release only. Any other `FAIL` cell, a failing test outside the matrix, an unhandled error, or a run that left no results fails the job. Entries are keyed by version, so one never hides a failure in the next release.
+- After a release, a capability `n/a` cell fails the job as well. CI ran the lab on the released commit with `lab:use .`, where a missing capability fails, so the release should have every capability. When a changeset was still pending at that commit, the release may not include its change yet: the summary lists the cells and the changesets instead, to check with [baseline refresh](../../.agents/skills/consumer-lab/baseline-refresh.md) step 3.
+
+The matrix table and "Why they failed" are in the job summary, as in CI. The `consumer-lab-matrix` artifact holds `matrix.json`, vitest's `vitest-results.json` and, for a fresh run, the lockfiles before and after.
 
 ## Introspection
 
@@ -246,6 +298,24 @@ The engine-independent scenarios run once, as `[postgres]`.
 It covers the `POST /ask` success shape on every dialect, and on Postgres one case per documented error code and status, the `x-correlation-id` header, `GET /health`, and a tenant-policy schema, which fails closed over HTTP because a request has no scope field (#277). The suite's own catalog adds one question whose reply is a write statement, for `sql_validation_error`; a question with no reply drives `sql_generation_error`.
 
 `test/surfaces/http-api-no-pg.test.ts` installs the deploy guide's packages (`@askdb/http-api @askdb/postgres ai @ai-sdk/openai`, pinned to the lab's target) into a fresh pnpm project in the system temp directory, checks that no `pg` is in its lockfile or resolvable from the AskDB packages, then starts that project's `askdb-http` and gets `/health`. It lives outside the lab because Node would otherwise resolve the lab's own `pg`.
+
+## Studio
+
+`test/surfaces/studio.test.ts` runs the installed `askdb studio --schema <artifact> --port <free port> --host 127.0.0.1` (`reference/cli.mdx`; `@askdb/studio` is one of the lab's direct dependencies, as that page asks), and drives it over HTTP the way Studio's own page, a DNS-rebound page and another site would. Its contract is [ADR 0009](../../docs/adrs/0009-studio-local-api-protection.md) and `studio.mdx` ("Security model", "Playground"). Each server runs in a fresh project under `.lab/` with a copy of the artifact and an `askdb.config.ts` whose `studio.execute` block (`enabled: true`, the engine's `provider`, and `databaseUrl` or `file` through `env()`) points at a [scratch copy](#scratch-databases) of the fixture, as the engine's **owner**. It is ready once its page answers, and is killed when the suite ends (`src/studio.ts`; `src/server-process.ts` starts and stops it, as it does `askdb-http`). The session token is read from the served page's `<meta name="askdb-studio-token">`, as the browser app reads it.
+
+Each rejecting request is one header, or one statement, away from a request the same test shows is accepted, with every other guard satisfied, so the rejection can only come from the protection it targets.
+
+| Scenario | What it checks |
+|---|---|
+| `studio-token` | The page carries a 64-hex session token, and another launch's page carries another. `/api/workspace` without `x-askdb-studio-token` answers `403` and with the page's token `200`; each launch's token answers `403` on the other launch. |
+| `studio-host` | A rebound `Host` (`evil.example:<port>`) answers `403` on the page, which then holds no token, and on `/api/*` with a valid token; `127.0.0.1` and `localhost` on Studio's port answer `200`. `127.0.0.1` on another port answers `403`. |
+| `studio-origin` | `POST /api/execute` from `Origin: http://evil.example`, with a valid token and JSON, answers `403`; from Studio's own origin, `200`. |
+| `studio-content-type` | The same `POST /api/execute` as `text/plain` answers `415`; as `application/json`, `200`. |
+| `studio-execute-select` | On every dialect, a `SELECT` returns the scratch copy's agencies, unicode names included. |
+| `studio-execute-write` | On every dialect, a `DELETE` answers `400` and leaves the rows. Run raw as the owner on the same scratch copy, the same `DELETE` empties the table. |
+| `studio-execute-multi-statement` | On every dialect, two `SELECT`s in one request answer `400` while either alone answers `200`, and `SELECT 1 AS ok; DELETE …` answers `400` and leaves the rows, though run raw as the owner it deletes them. |
+
+The protection scenarios are engine-independent and run once, as `[postgres]`. The execute scenarios run on all five engines: Studio's execute supports Postgres, MySQL, SQLite and SQL Server, and MariaDB through the `mysql` provider. Every scenario needs the `studio-execute-guard` capability, because every Studio here has `studio.execute` on; the protection scenarios also need `studio-request-guard`. The routes are those in `docs/specs/studio.md`'s API table. No document gives `POST /api/execute`'s request `{ sql }` or its reply `{ ok, columns, rows }`: they are the served app's own (#380). Timeouts and row caps aren't tested.
 
 ## Install targets
 
@@ -293,10 +363,15 @@ Capabilities are detected from the installed target's public surface: an export,
 | Capability | Detected by | Used by |
 |---|---|---|
 | `cli-introspect-engine` | `askdb introspect --help` documents `--engine` (`reference/cli.mdx`), when run with the lab's config | every scenario that builds a schema artifact (`test/lab-ask.test.ts`, `test/surfaces/cli.test.ts`) |
-| `mysql-databases` | `askdb introspect --schemas org,people,billing,ref` on the fixture's MySQL returns a table from a database other than the connection's (`reference/cli.mdx`, `guides/switch-engines.mdx`) | MySQL and MariaDB `introspect-golden` / `introspect-loads` (`test/introspection.test.ts`), and every MySQL and MariaDB tenant scenario, whose policy scopes tables in all four databases (`test/tenant.test.ts`) |
+| `mysql-databases` | `askdb introspect --schemas org,people,billing,ref` on the fixture's MySQL returns a table from a database other than the connection's (`reference/cli.mdx`, `guides/switch-engines.mdx`) | MySQL and MariaDB `introspect-golden` / `introspect-loads` (`test/introspection.test.ts`), every MySQL and MariaDB tenant scenario, whose policy scopes tables in all four databases (`test/tenant.test.ts`), and every MySQL and MariaDB sensitive-column scenario, whose overlay marks columns in the `people` database (`test/sensitive.test.ts`) |
 | `http-api-optional-drivers` | the installed `@askdb/http-api`'s published manifest lists no database driver as a dependency, since the docs call drivers optional peers (`guides/switch-engines.mdx`, `reference/packages.mdx`; #260) | `http-no-pg` (`test/surfaces/http-api-no-pg.test.ts`) |
 | `subtree-resolver` | `ask()` with `subtree` access and a recording `resolveTenantDescendants` calls it with the scope's root and seed (`guides/multi-tenancy.mdx`, "Hierarchical scope (`subtree`)"). Releases before #232 was fixed (#270) never call it. The probe doesn't check what `ask()` does with the answer, so a target that drops it fails `tenant-subtree` instead of reporting `n/a` | `tenant-subtree`, `tenant-subtree-seeds`, `tenant-subtree-no-resolver` (`test/tenant.test.ts`) |
 | `tenant-driver-markers` | `ask()` in `tenantSqlMode: "sql-params"` on SQLite returns `?` markers for the tenant IDs (`reference/core-api.mdx`, `tenantSqlMode`). Releases before the fix for #231 used Postgres `$N` markers on every dialect | the `sql-params` cases of `tenant-ids`, `tenant-subtree` and `tenant-subtree-seeds` (`test/tenant.test.ts`), except on Postgres, whose markers were always `$N`: there only the question with a business parameter needs it, because before #231 was fixed its tenant markers in `sql` were numbered after the business values |
 | `tenant-predicate-required` | strict `ask()` rejects a reply that filters on a literal agency instead of `:tenant_agency_ids` (`docs/contracts/tenant-policy.md`, "Guardrail validation"). Releases before the fix for #315 accepted any mention of the tenant column | the strict-mode rejection cases of `tenant-strict-column-only`, `-wrong-tenant`, `-or-true` and `-root-table` (`test/tenant.test.ts`) |
+| `studio-request-guard` | the page the installed `askdb studio` serves carries `<meta name="askdb-studio-token">` (ADR 0009; `studio.mdx`, "Security model"). Releases before PR #185 check nothing but the socket address | the protection scenarios in `test/surfaces/studio.test.ts` (`studio-token`, `studio-host`, `studio-origin`, `studio-content-type`) |
+| `studio-execute-guard` | with no `studio` block in its config, the installed Studio answers a `POST /api/execute` that passes every request guard with a `403` that explains how to enable execute (`studio.mdx`, "Playground": execute is off by default). Releases before PR #194 always execute, without the read-only SELECT check | every scenario in `test/surfaces/studio.test.ts` |
+| `sensitive-wildcards` | `ask()` on the Postgres artifact with the sensitive overlay, with `SELECT * FROM people.client` as the reply through `deps.generateText`, reports `ssn` in `sensitiveGuardrail.references` (`reference/core-api.mdx`, `SensitiveReference`: a bare `SELECT *` "reaches every sensitive column"). Releases before the expansion report no reference for `SELECT *` or `alias.*`. The probe doesn't check `alias.*` or the `matchKind`, so a target that expands them wrongly fails `sensitive-wildcard` instead of reporting `n/a` | `sensitive-wildcard` (`test/sensitive.test.ts`) |
 
-To add one, add a detector to `DETECTORS` in `src/capabilities.ts`, citing the docs page that documents the capability. A detector that has to run `ask()` is async: it goes in `ASYNC_DETECTORS`, and a scenario awaits `needsCapability` for it.
+Both Studio capabilities come from one launch of the installed Studio, shared by the suite's run.
+
+To add one, add a detector to `DETECTORS` in `src/capabilities.ts`, citing the docs page that documents the capability. A detector that has to run `ask()` or start a server is async: it goes in `ASYNC_DETECTORS`, and a scenario awaits `needsCapability` for it.

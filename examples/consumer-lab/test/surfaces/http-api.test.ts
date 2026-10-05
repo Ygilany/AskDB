@@ -228,7 +228,7 @@ describe("[postgres]", () => {
         `import { defineConfig } from "@askdb/config";
 
 export default defineConfig({
-  ai: { provider: "openai", providerConfig: { openai: { apiKey: "lab-replay-no-key", model: "gpt-4o-mini" } } },
+  ai: { provider: "openai", providerConfig: { openai: { apiKey: "lab-replay-no-key" } } },
   introspection: { provider: "postgres", providerConfig: { postgres: {} } },
   rag: { embedder: "mock", embedderConfig: {}, store: "memory", storeConfig: { memory: {} } },
   httpApi: { allowSchemaOverride: true },
@@ -271,7 +271,7 @@ export default defineConfig({
         `import { defineConfig } from "@askdb/config";
 
 export default defineConfig({
-  ai: { provider: "openai", providerConfig: { openai: { apiKey: "", model: "gpt-4o-mini" } } },
+  ai: { provider: "openai", providerConfig: { openai: { apiKey: "" } } },
   introspection: { provider: "postgres", providerConfig: { postgres: {} } },
   rag: { embedder: "mock", embedderConfig: {}, store: "memory", storeConfig: { memory: {} } },
 });

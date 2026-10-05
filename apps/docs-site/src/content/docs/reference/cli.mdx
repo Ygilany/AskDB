@@ -116,7 +116,7 @@ npx askdb@latest init --yes    # non-interactive, Postgres + OpenAI defaults
 | --- | --- |
 | `--ai-provider <name>` | `openai` \| `anthropic` \| `google` \| `azure` \| `foundry` \| `gateway` |
 | `--ai-key-env <name>` | Env var name for the API key. |
-| `--ai-model-env <name>` | Env var name for the model override. |
+| `--ai-model-env <name>` | Env var name for the model override. The generated config reads it into `ai.language.model`. |
 
 **RAG flags**
 

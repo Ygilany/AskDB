@@ -1,3 +1,4 @@
+import { AskDbError } from "@askdb/core";
 import type {
   ChunkPayload,
   ChunkType,
@@ -27,8 +28,12 @@ export type CreatePgvectorStoreOptions = {
   client?: PgClient;
   /** Table name to read/write. Default `"askdb_rag_chunks"`. */
   table?: string;
-  /** Embedding dimensions. Required — pgvector columns are dimension-typed. */
-  dimensions: number;
+  /**
+   * Width of the `embedding` column. Needed only to create the table (`setupSql()`, or
+   * `ensureSchema()` when the table doesn't exist yet); reads and writes don't use it. When
+   * nothing configures it, `detectEmbeddingDimensions(embedder)` learns it from the embedder.
+   */
+  dimensions?: number;
   /** Index strategy hint, surfaced via the documented DDL helper. Default `"hnsw"`. */
   indexStrategy?: PgvectorIndexStrategy;
 };
@@ -38,11 +43,30 @@ export type PgvectorStore = VectorStore & {
   setupSql(): string;
   /** Executes setupSql() against the configured database. Idempotent — safe to call on every start. */
   ensureSchema(): Promise<void>;
+  /** Width of the existing table's `embedding` column, or `undefined` when the table doesn't exist. */
+  tableDimensions(): Promise<number | undefined>;
   /** Close any pool the adapter built internally. No-op when an external client was supplied. */
   close(): Promise<void>;
   /** Diagnostic helper for hosts that need to verify persisted row counts. */
   count(filter?: Filter): Promise<number>;
 };
+
+/** `ensureSchema()` found an existing table whose `embedding` column has another width than the store's `dimensions`. */
+export class PgvectorDimensionMismatchError extends AskDbError {
+  constructor(
+    readonly table: string,
+    /** Width of the existing table's `embedding` column. */
+    readonly tableDimensions: number,
+    /** The store's `dimensions`. */
+    readonly dimensions: number,
+  ) {
+    super(
+      `pgvector table "${table}" stores ${tableDimensions}-dimension vectors, but this store is set up for ${dimensions}. ` +
+        `Drop the table to rebuild it at ${dimensions}, or embed at ${tableDimensions} dimensions.`,
+    );
+    this.name = "PgvectorDimensionMismatchError";
+  }
+}
 
 const DEFAULT_TABLE = "askdb_rag_chunks";
 
@@ -60,7 +84,7 @@ export function createPgvectorStore(
   const dimensions = options.dimensions;
   const indexStrategy = options.indexStrategy ?? "hnsw";
 
-  if (!Number.isInteger(dimensions) || dimensions <= 0) {
+  if (dimensions !== undefined && (!Number.isInteger(dimensions) || dimensions <= 0)) {
     throw new Error(`pgvector store requires positive integer dimensions; got ${dimensions}`);
   }
 
@@ -213,7 +237,7 @@ export function createPgvectorStore(
     return typeof raw === "number" ? raw : Number(raw ?? 0);
   };
 
-  const setupSql = (): string => {
+  const renderSetupSql = (width: number): string => {
     const indexClause =
       indexStrategy === "hnsw"
         ? `CREATE INDEX IF NOT EXISTS ${quoteIdent(`${table}_embedding_hnsw`)} ON ${quoteIdent(table)} USING hnsw (embedding vector_cosine_ops);`
@@ -229,7 +253,7 @@ export function createPgvectorStore(
       `  schema_id text NOT NULL,`,
       `  refs jsonb NOT NULL DEFAULT '[]'::jsonb,`,
       `  sensitive boolean NOT NULL DEFAULT false,`,
-      `  embedding vector(${dimensions}) NOT NULL`,
+      `  embedding vector(${width}) NOT NULL`,
       `);`,
       `CREATE INDEX IF NOT EXISTS ${quoteIdent(`${table}_schema_id`)} ON ${quoteIdent(table)} (schema_id);`,
       `CREATE INDEX IF NOT EXISTS ${quoteIdent(`${table}_type`)} ON ${quoteIdent(table)} (type);`,
@@ -240,9 +264,45 @@ export function createPgvectorStore(
       .join("\n");
   };
 
-  const ensureSchema = async (): Promise<void> => {
+  const setupSql = (): string => {
+    if (dimensions === undefined) {
+      throw new Error(
+        "createPgvectorStore: pass dimensions to render the table DDL " +
+          "(detectEmbeddingDimensions(embedder) gives your embedder's width).",
+      );
+    }
+    return renderSetupSql(dimensions);
+  };
+
+  const tableDimensions = async (): Promise<number | undefined> => {
     const c = await getClient();
-    await c.query(setupSql());
+    // pgvector keeps a `vector(n)` column's width as its type modifier (-1 when untyped).
+    const result = await c.query(
+      `SELECT a.atttypmod AS dimensions FROM pg_attribute a ` +
+        `WHERE a.attrelid = to_regclass($1) AND a.attname = 'embedding' AND NOT a.attisdropped`,
+      [quoteIdent(table)],
+    );
+    const raw = (result.rows[0] as { dimensions?: number | string } | undefined)?.dimensions;
+    const width = raw === undefined ? undefined : Number(raw);
+    return width !== undefined && Number.isInteger(width) && width > 0 ? width : undefined;
+  };
+
+  const ensureSchema = async (): Promise<void> => {
+    // `CREATE TABLE IF NOT EXISTS` keeps an existing table as it is, so check its width first:
+    // otherwise the mismatch only surfaces as a failed insert halfway through indexing.
+    const existing = await tableDimensions();
+    if (existing !== undefined && dimensions !== undefined && existing !== dimensions) {
+      throw new PgvectorDimensionMismatchError(table, existing, dimensions);
+    }
+    const width = dimensions ?? existing;
+    if (width === undefined) {
+      throw new Error(
+        `createPgvectorStore: pass dimensions to create table "${table}" ` +
+          "(detectEmbeddingDimensions(embedder) gives your embedder's width).",
+      );
+    }
+    const c = await getClient();
+    await c.query(renderSetupSql(width));
   };
 
   const close = async (): Promise<void> => {
@@ -268,6 +328,7 @@ export function createPgvectorStore(
     hashesByPrefix,
     setupSql,
     ensureSchema,
+    tableDimensions,
     close,
   };
 }

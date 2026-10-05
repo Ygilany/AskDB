@@ -120,7 +120,9 @@ function outcomeOf(test: TestCase): Outcome {
 function combine(outcomes: Outcome[], tests: string[]): Cell | undefined {
   const ran = outcomes.filter((o) => o.status !== "not-run");
   if (!ran.length) return undefined;
-  const details = (s: Status) => [...new Set(ran.filter((o) => o.status === s).map((o) => o.detail))].join(", ");
+  // Each test's detail may list several items ("#377, #376"); list each item once per cell.
+  const details = (s: Status) =>
+    [...new Set(ran.filter((o) => o.status === s).flatMap((o) => (o.detail ?? "").split(", ")).filter(Boolean))].join(", ");
   if (ran.some((o) => o.status === "fail")) {
     const failures = outcomes.flatMap((o, i) => (o.status === "fail" ? [{ test: tests[i]!, reason: o.reason ?? "failed" }] : []));
     return { status: "fail", text: "FAIL", tests, failures };

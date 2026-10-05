@@ -14,7 +14,6 @@
  * Needs the fixture (`pnpm fixture:up`) and an installed lab (`pnpm lab:use .`). It fails,
  * rather than skips, when either is missing.
  */
-import { spawn } from "node:child_process";
 import { cpSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -23,10 +22,9 @@ import { ensureArtifact, requireInstallTarget } from "../../src/artifacts.js";
 import { hasCapability, needsCapability } from "../../src/capabilities.js";
 import { SUPPORTED_DIALECTS, type SupportedDialect } from "../../src/dialects.js";
 import { LOGICAL_SCHEMAS, compareToLogicalSchema, connectionUrl, type SchemaJson } from "../../src/fixture.js";
-import { ASKDB_BIN, askdbInProject, introspectFixture, type CliRun } from "../../src/introspect.js";
+import { askdbAsync, askdbInProject, introspectFixture, type CliRun } from "../../src/introspect.js";
 import { loadQuestions, readCassette } from "../../src/model/catalog.js";
 import { startReplayServer, type ReplayServer } from "../../src/model/replay-server.js";
-import { LAB_ROOT } from "../../src/paths.js";
 
 const QUESTIONS = loadQuestions();
 
@@ -50,16 +48,7 @@ afterAll(async () => {
  * server can answer while it runs.
  */
 function askdbCli(args: string[], dialect: SupportedDialect = "postgres"): Promise<CliRun> {
-  return new Promise((resolve, reject) => {
-    const env = { ...process.env, LAB_REPLAY_BASE_URL: replay.baseURL(dialect) };
-    const child = spawn(ASKDB_BIN, args, { cwd: LAB_ROOT, env });
-    let stdout = "";
-    let stderr = "";
-    child.stdout.on("data", (d) => (stdout += d));
-    child.stderr.on("data", (d) => (stderr += d));
-    child.on("error", reject);
-    child.on("close", (status) => resolve({ status, stdout, stderr }));
-  });
+  return askdbAsync(args, { env: { LAB_REPLAY_BASE_URL: replay.baseURL(dialect) } });
 }
 
 function cassetteSql(dialect: SupportedDialect, questionId: string): string {
