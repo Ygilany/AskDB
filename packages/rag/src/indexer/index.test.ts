@@ -6,7 +6,7 @@ import { loadChunkerSourcesFromDir } from "../chunker/index.js";
 import { createFileStore } from "../stores/file.js";
 import { createMemoryStore, type MemoryStore } from "../stores/memory.js";
 import type { Embedder, VectorStore } from "../types.js";
-import { buildSchemaIndex, readLockFile } from "./index.js";
+import { buildSchemaIndex, checkIndexMatches, readLockFile } from "./index.js";
 
 const FIXTURE_DIR = resolve(
   __dirname,
@@ -252,9 +252,13 @@ describe("buildSchemaIndex — store is the source of truth", () => {
     await expect(
       buildSchemaIndex({ schema: sources, embedder: modelB, store, embedderId: "b", lockFilePath, batchSize: 4 }),
     ).rejects.toThrow("rate limited");
+    // Until a build finishes, a query guard refuses the mixed index.
+    const guard = () => checkIndexMatches({ lockFilePath, schemaId: "orders-users", embedderId: "a" });
+    expect(guard()).toMatchObject({ ok: false, reason: "index-incomplete" });
 
     const third = await buildSchemaIndex({ schema: sources, embedder: modelA, store, embedderId: "a", lockFilePath });
     expect(third.stats.chunksIndexed).toBe(4);
+    expect(guard()).toMatchObject({ ok: true });
   });
 
   it("neither reads nor writes the lock for an ephemeral (memory) store", async () => {
@@ -447,6 +451,24 @@ describe("buildSchemaIndex — lock-file fallback for stores without hashesByPre
     });
     expect(second.stats.chunksIndexed).toBe(second.stats.chunksTotal);
     expect(readLockFile(lockFilePath)?.dimensions).toBe(3);
+  });
+
+  it("re-embeds everything after an interrupted embedder switch, when the store can't report hashes", async () => {
+    const sources = loadChunkerSourcesFromDir(FIXTURE_DIR);
+    const lockFilePath = tempLockPath();
+    const store = lockOnlyStore(createMemoryStore(), { kind: "custom" });
+    await buildSchemaIndex({ schema: sources, embedder: deterministicEmbedder(), store, embedderId: "a", lockFilePath });
+    let calls = 0;
+    const failing: Embedder = async (texts) => {
+      if (calls++ > 0) throw new Error("rate limited");
+      return texts.map(() => [9, 9]);
+    };
+    await expect(
+      buildSchemaIndex({ schema: sources, embedder: failing, store, embedderId: "b", lockFilePath, batchSize: 4 }),
+    ).rejects.toThrow("rate limited");
+
+    const third = await buildSchemaIndex({ schema: sources, embedder: deterministicEmbedder(), store, embedderId: "a", lockFilePath });
+    expect(third.stats.chunksIndexed).toBe(third.stats.chunksTotal);
   });
 
   it("re-embeds everything into a store that can't identify itself, even a fresh, empty one", async () => {

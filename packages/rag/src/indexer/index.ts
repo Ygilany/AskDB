@@ -14,6 +14,7 @@ import { chunkContentHash, storedVectorHash } from "./hash.js";
 import {
   SCHEMA_LOCK_VERSION,
   inspectLockFile,
+  sameEmbedderId,
   writeLockFile,
   type LockFileInspection,
   type SchemaLockFile,
@@ -170,8 +171,7 @@ export async function buildSchemaIndex(
   // Whether or not it decided the full reindex (`force` or an outdated lock
   // may come first): it also drops the previous lock's width below.
   const embedderChanged =
-    previousLock !== undefined &&
-    (previousLock.embedderId ?? null) !== (embedderId ?? null);
+    previousLock !== undefined && !sameEmbedderId(previousLock.embedderId, embedderId);
   const previousHashes: Record<string, string> =
     storeHashes ?? previousLock?.hashes ?? {};
 
@@ -225,6 +225,11 @@ export async function buildSchemaIndex(
   }
 
   // 4. Embed in batches and upsert.
+  if (lockFilePath && previousLock && embedderChanged && toEmbed.length > 0) {
+    // Until this run finishes, the store holds two models' vectors: mark the
+    // lock so a query guard (checkIndexMatches) refuses it if the run fails.
+    writeLockFile(lockFilePath, { ...previousLock, incomplete: true, updatedAt: new Date().toISOString() });
+  }
   let embeddedCount = 0;
   let observedDimensions: number | undefined;
   for (let i = 0; i < toEmbed.length; i += batchSize) {
@@ -391,7 +396,8 @@ type FullReindexReason =
   | "embedder-changed"
   | "dimensions-changed"
   | "store-changed"
-  | "store-unidentified";
+  | "store-unidentified"
+  | "lock-incomplete";
 
 function decideFullReindex(args: {
   force: boolean;
@@ -412,7 +418,7 @@ function decideFullReindex(args: {
   }
   if (!lock) return undefined;
   // Undefined vs defined counts as a change: we can't prove it's the same model.
-  if ((lock.embedderId ?? null) !== (args.embedderId ?? null)) return "embedder-changed";
+  if (!sameEmbedderId(lock.embedderId, args.embedderId)) return "embedder-changed";
   if (
     lock.dimensions !== undefined &&
     args.descriptor?.dimensions !== undefined &&
@@ -423,6 +429,9 @@ function decideFullReindex(args: {
   // The lock's hashes only describe the store they were written to. Stores
   // that report their own hashes don't depend on it.
   if (!args.storeReportsHashes) {
+    // An interrupted embedder switch left vectors the lock's hashes don't
+    // describe; only a store that reports its own hashes can sort them out.
+    if (lock.incomplete) return "lock-incomplete";
     // Without `describe()` nothing shows this is the store the lock was
     // written to (a fresh, empty instance looks the same), so trust nothing.
     if (!args.descriptor) return "store-unidentified";

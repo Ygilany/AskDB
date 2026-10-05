@@ -641,11 +641,6 @@ function extractExampleQuestions(md: ParsedTableMarkdown): string[] {
   return out;
 }
 
-/**
- * True when `text` names any of `names` as a whole word. Case-insensitive to
- * match `@askdb/enrich`'s sensitive-mention check ("filter by SSN" names the
- * sensitive `ssn` column).
- */
 /** Core's one "mentions a sensitive column by name" rule, shared with `@askdb/enrich`. */
 function mentionsAnyName(text: string, names: string[]): boolean {
   return findMentionedNames(text, names).length > 0;

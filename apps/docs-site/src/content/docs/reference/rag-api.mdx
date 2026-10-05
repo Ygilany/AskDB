@@ -126,11 +126,11 @@ const match = checkIndexMatches({
   embedderId: "openai:text-embedding-3-small",
   dimensions: 1536, // optional
 });
-if (!match.ok) throw new Error(match.message); // match.reason: "lock-outdated" | "embedder-changed" | "dimensions-changed"
+if (!match.ok) throw new Error(match.message); // match.reason: "lock-outdated" | "index-incomplete" | "embedder-changed" | "dimensions-changed"
 const retriever = createRetriever({ embedder, store });
 ```
 
-The embedder id must equal the one the lock records; a lock with no embedder id, or a query without one against a lock that has one, doesn't match, since equal widths don't make two models' vectors comparable. When both widths are known they must match. A lock written by an older `@askdb/rag` doesn't match until the index is rebuilt. A missing or unreadable lock, or one for another schema id, has nothing to compare and returns `{ ok: true, lock: undefined }`.
+The embedder id must equal the one the lock records, since equal widths don't make two models' vectors comparable: a lock with no embedder id matches only a query without one, as in `buildSchemaIndex`. When both widths are known they must match. A lock written by an older `@askdb/rag` doesn't match until the index is rebuilt, and neither does a lock marked `incomplete` by a build that switched embedders and didn't finish (the store then holds two models' vectors). A missing or unreadable lock, or one for another schema id, has nothing to compare and returns `{ ok: true, lock: undefined }`.
 
 ---
 

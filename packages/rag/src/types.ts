@@ -24,8 +24,9 @@ export type ChunkType =
  * percent-encoded; e.g.
  * `chunk:orders-users:table:public.orders`) so several schemas can share one
  * vector store without overwriting each other. Re-embedding is gated on the
- * chunk's content hash as reported by the store (or `schema.lock.json` for
- * stores that cannot report hashes).
+ * hash the store reports for the chunk, which covers its text and the
+ * embedder id (or on `schema.lock.json`'s text hashes, for stores that cannot
+ * report hashes).
  */
 export type Chunk = {
   id: string;
@@ -72,7 +73,11 @@ export type UpsertRecord = {
   id: string;
   vector: number[];
   payload: ChunkPayload;
-  /** Optional content hash. Stores may persist it for `hashesByPrefix` reuse. */
+  /**
+   * Hash of the chunk text and the embedder id that produced `vector`. Stores
+   * that persist it and return it from `hashesByPrefix` let the indexer skip
+   * chunks they already hold.
+   */
   hash?: string;
 };
 
@@ -124,12 +129,13 @@ export type VectorStore = {
   query(vector: number[], k: number, filter?: Filter): Promise<QueryResult[]>;
   delete(ids: string[]): Promise<void>;
   /**
-   * Returns `chunkId → contentHash` for stored ids that start with `prefix`
-   * (records stored without a hash are omitted).
+   * Returns `chunkId → hash` (the `UpsertRecord.hash` stored with it) for
+   * stored ids that start with `prefix` (records stored without a hash are
+   * omitted).
    *
    * When implemented, the indexer treats the store as the source of truth:
-   * a chunk is skipped only if the store reports the same content hash for
-   * its id. Stores that omit it fall back to `schema.lock.json` bookkeeping
+   * a chunk is skipped only if the store reports the hash of the same text
+   * embedded by the same embedder for its id. Stores that omit it fall back to `schema.lock.json` bookkeeping
    * (guarded by {@link VectorStore.describe} identity and dimensions); a store
    * that implements neither re-embeds every chunk on each run.
    */

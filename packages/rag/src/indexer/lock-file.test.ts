@@ -104,6 +104,18 @@ describe("schema.lock.json", () => {
       ["refuses another embedder", () => lockWith({}), { embedderId: "f", dimensions: 3 }, "embedder-changed"],
       ["refuses a lock with no embedder id", () => lockWith({ embedderId: undefined }), { embedderId: "e" }, "embedder-changed"],
       ["refuses no embedder id against a lock with one", () => lockWith({}), {}, "embedder-changed"],
+      ["matches no embedder id against a lock without one, as the indexer does", () => lockWith({ embedderId: undefined }), {}, undefined],
+      ["refuses a lock an interrupted embedder switch left incomplete", () => lockWith({ incomplete: true }), { embedderId: "e" }, "index-incomplete"],
+      [
+        "passes an older-format lock for another schema",
+        () => {
+          const path = tempPath();
+          writeFileSync(path, JSON.stringify({ version: 1, schemaId: "other", hashes: {} }));
+          return path;
+        },
+        { embedderId: "e" },
+        undefined,
+      ],
       ["refuses another width", () => lockWith({}), { embedderId: "e", dimensions: 4 }, "dimensions-changed"],
       [
         "refuses an older-format lock",

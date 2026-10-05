@@ -280,7 +280,7 @@ if ! grep -q 'without resolveFrom: .*optional `pg` peer dependency' <<<"$PGVECTO
   echo "$PGVECTOR_PG_OUTPUT" >&2
   exit 1
 fi
-if ! grep -Eq 'with resolveFrom: .*(ECONNREFUSED|connect)' <<<"$PGVECTOR_PG_OUTPUT"; then
+if ! grep -q 'with resolveFrom: ECONNREFUSED' <<<"$PGVECTOR_PG_OUTPUT"; then
   echo "smoke: FAILED — createPgvectorStore did not load pg through resolveFrom." >&2
   echo "$PGVECTOR_PG_OUTPUT" >&2
   exit 1

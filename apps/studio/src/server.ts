@@ -54,6 +54,7 @@ import {
   type ChunkType,
   type Embedder,
   type QueryResult,
+  type SchemaLockFile,
   type VectorStore,
 } from "@askdb/rag";
 import {
@@ -924,12 +925,9 @@ async function askSampleQuestion(
 }
 
 /** The `schema.lock.json` fields the RAG status reads. */
-type StudioRagIndexRecord = {
-  embedderId?: string;
-  updatedAt?: string;
-  dimensions?: number;
-  hashes?: Record<string, string>;
-};
+type StudioRagIndexRecord = Partial<
+  Pick<SchemaLockFile, "embedderId" | "updatedAt" | "dimensions" | "hashes" | "incomplete">
+>;
 
 async function getRagStatus(state: StudioState): Promise<StudioRagStatusDto> {
   const config = resolveStudioRagEmbedderConfig();
@@ -950,6 +948,7 @@ async function getRagStatus(state: StudioState): Promise<StudioRagStatusDto> {
     const chunksIndexed = await countStudioRagStoreChunks(store, sources.schema.schemaId);
     const stale =
       !lock ||
+      lock.incomplete === true ||
       lock.embedderId !== config.embedderId ||
       Object.keys(lockHashes).length !== hashIds.length ||
       hashIds.some((id) => lockHashes[id] !== currentHashes[id]) ||
