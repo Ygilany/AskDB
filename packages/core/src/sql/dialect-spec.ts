@@ -41,7 +41,10 @@ export type DialectSpec = {
   displayName: string;
   /** One short paragraph injected into the NL→SQL user prompt. */
   promptBrief: string;
-  /** Identifier quoting style — informational; mainly steers `promptBrief`. */
+  /**
+   * Identifier quoting style — informational; mainly steers `promptBrief`. The prompt's schema block
+   * quotes reserved-word names the way `id`'s engine does (`promptIdentifierQuoter`), not with this.
+   */
   identifierQuote: '"' | '`';
   /**
    * A namespace name that is not a schema in this engine. Connectors for engines without

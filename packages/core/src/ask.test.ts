@@ -452,18 +452,18 @@ describe("ask — identifier quoting in the prompt per dialect (#451)", () => {
     ["retrieved schema", retrieved],
   ] as const)("%s", (_path, extra) => {
     it.each([
-      ["postgres", 'TABLE billing."order"', '  - "group" text', '`"schema"."table"`, never `"schema.table"`'],
-      ["cockroachdb", 'TABLE billing."order"', '  - "group" text', '`"schema"."table"`, never `"schema.table"`'],
-      ["mysql", "TABLE billing.`order`", "  - `group` text", "`` `schema`.`table` ``, never `` `schema.table` ``"],
-      ["mariadb", "TABLE billing.`order`", "  - `group` text", "`` `schema`.`table` ``, never `` `schema.table` ``"],
-      ["sqlserver", "TABLE billing.[order]", "  - [group] text", "`[schema].[table]`, never `[schema.table]`"],
+      ["postgres", 'TABLE billing."order"', '  - "group" text', '`"schema"."table"`'],
+      ["cockroachdb", 'TABLE billing."order"', '  - "group" text', '`"schema"."table"`'],
+      ["mysql", "TABLE billing.`order`", "  - `group` text", "`` `schema`.`table` ``"],
+      ["mariadb", "TABLE billing.`order`", "  - `group` text", "`` `schema`.`table` ``"],
+      ["sqlserver", "TABLE billing.[order]", "  - [group] text", "`[schema].[table]`"],
     ] as const)("%s lists reserved words quoted and says to quote a qualified name part by part", async (dialect, table, column, rule) => {
       const prompt = await promptFor(dialect, schemaOf("billing"), extra);
       expect(prompt).toMatch(new RegExp(`^${escapeRegExp(table)}$`, "m"));
       expect(prompt).toContain(`${column} (NULL)`);
       expect(prompt).toMatch(/^TABLE billing\.payment$/m);
       expect(prompt).toMatch(/^ {2}- order_id integer \(PK NOT NULL\)$/m);
-      expect(prompt).toContain(`- Quote each part of a qualified name separately: ${rule}.`);
+      expect(prompt).toContain(`- When you quote a qualified name, quote each part separately: ${rule}.`);
     });
   });
 

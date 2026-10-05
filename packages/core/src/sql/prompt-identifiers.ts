@@ -57,12 +57,15 @@ export function promptIdentifierQuoter(
     PLAIN_IDENTIFIER.test(name) && !quoting.reserved.has(name.toLowerCase()) ? name : quote(quoting, name);
 }
 
-/** The prompt rule for qualified names, with the dialect's quotes in its example. */
+/**
+ * The prompt rule for qualified names, with the dialect's quotes in its example. It shows only
+ * the right form: with `never \`schema.table\`` added, gpt-4o-mini quoted the whole dotted name
+ * more often, not less (#451).
+ */
 export function qualifiedNameQuotingRule(dialect: Pick<DialectSpec, "id" | "identifierQuote">): string {
   const quoting = quotingFor(dialect);
   const parts = `${quote(quoting, "schema")}.${quote(quoting, "table")}`;
-  const whole = quote(quoting, "schema.table");
-  return `- Quote each part of a qualified name separately: ${inlineCode(parts)}, never ${inlineCode(whole)}.`;
+  return `- When you quote a qualified name, quote each part separately: ${inlineCode(parts)}.`;
 }
 
 /** Markdown inline code that may itself contain backticks. */
