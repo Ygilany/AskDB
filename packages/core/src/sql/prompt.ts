@@ -58,19 +58,12 @@ export function buildNlToSqlUserPrompt(
    * pre-parameterize path (byte-identical).
    */
   parameterize?: boolean,
-  /**
-   * The namespace `prebuiltDdl` lists unqualified (`ask()` passes the one it rendered
-   * the retrieved DDL with), so the identifier rule matches the DDL it sits beside.
-   */
-  prebuiltDdlUnqualifiedNamespace?: string,
 ): string {
-  const listedNamespace = unqualifiedNamespaceFor(schema, dialect.unqualifiedNamespace);
+  const unqualifiedNamespace = unqualifiedNamespaceFor(schema, dialect.unqualifiedNamespace);
   const formatted = isV2(schema)
-    ? formatSchemaV2ForNlToSql(schema, { ...nlToSqlSchemaOptions, unqualifiedNamespace: listedNamespace })
+    ? formatSchemaV2ForNlToSql(schema, { ...nlToSqlSchemaOptions, unqualifiedNamespace })
     : formatSchemaForNlToSql(schema, nlToSqlSchemaOptions);
   const ddl = prebuiltDdl ?? formatted.ddl;
-  const unqualifiedNamespace =
-    prebuiltDdl === undefined ? listedNamespace : prebuiltDdlUnqualifiedNamespace;
   const stats = formatted.stats;
   if (
     stats.omitSensitiveIdentifiersFromPrompt &&

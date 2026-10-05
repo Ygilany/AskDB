@@ -309,7 +309,7 @@ The `generate` method receives:
 - `question: string`
 - `schema: AnyNormalizedSchema`
 - `model: AskDbLanguageModel`
-- `options?: AskDialectGenerateOptions` — `{ logger, explain, omitSensitiveIdentifiersFromNlToSqlPrompt, generateText, prebuiltDdl, prebuiltDdlUnqualifiedNamespace, tenantPolicy, tenantScope }`. `prebuiltDdlUnqualifiedNamespace` is the namespace `prebuiltDdl` lists unqualified; forward it with `prebuiltDdl` to `generateSelectSql` so the prompt's identifier rule matches the DDL. `tenantScope` is the scope after `ask()` expands a `subtree`: a `multi_root` scope with one entry per covered root, where a root the resolver returned no IDs for has `ids: []`. `validateTenantScope()` accepts it.
+- `options?: AskDialectGenerateOptions` — `{ logger, explain, omitSensitiveIdentifiersFromNlToSqlPrompt, generateText, prebuiltDdl, tenantPolicy, tenantScope }`. `tenantScope` is the scope after `ask()` expands a `subtree`: a `multi_root` scope with one entry per covered root, where a root the resolver returned no IDs for has `ids: []`. `validateTenantScope()` accepts it.
 
 It must return `AskDialectGenerateResult`:
 

@@ -39,8 +39,6 @@ export type GenerateSqlDeps = {
    * directly.
    */
   prebuiltDdl?: string;
-  /** The namespace `prebuiltDdl` lists unqualified, so the prompt's identifier rule matches it. Forwarded from ask(). */
-  prebuiltDdlUnqualifiedNamespace?: string;
   /** Normalized tenant policy from the schema artifact. Forwarded from ask(). */
   tenantPolicy?: NormalizedTenantPolicy;
   /** Validated tenant scope from the host. Forwarded from ask(). */
@@ -155,7 +153,6 @@ async function runGenerateSelectSql(
           deps.tenantPolicy,
           deps.tenantScope,
           parameterize || undefined,
-          deps.prebuiltDdlUnqualifiedNamespace,
         ),
         temperature: 0,
         // Cast: AskDB's public `providerOptions` type is a plain opaque bag

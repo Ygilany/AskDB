@@ -19,7 +19,6 @@ import { formatSchemaV2ForNlToSql } from "./schema/v2/index.js";
 import { loadSchema, loadSchemaFromJson } from "./schema/v2/loader.js";
 import type { NormalizedSchemaV2 } from "./schema/v2/normalized.js";
 import { SQLITE_DIALECT, type DialectSpec } from "./sql/dialect-spec.js";
-import { generateSelectSql } from "./sql/generate.js";
 import type { TenantScope } from "./schema/v2/tenant-policy.js";
 
 const minimalSchema: NormalizedSchema = {
@@ -392,19 +391,6 @@ describe("ask — table names in the prompt per dialect (#447)", () => {
       expect(prompt).toContain("never write `main.<table>`");
       expect(prompt).not.toContain("`public`");
     }
-  });
-
-  it("keeps retrieved table names and the rule consistent when a custom AskDialect wraps generateSelectSql", async () => {
-    const wrapped: AskDialect = {
-      generate: (question, schema, model, options) => generateSelectSql(SQLITE_DIALECT, question, schema, model, options),
-    };
-    const prompt = await promptFor(wrapped, singleNamespace, {
-      retriever: retrieverFor("table:public.users"),
-      totalSchemaChunkCount: 100,
-    });
-    expect(prompt).toContain("TABLE public.users");
-    expect(prompt).toContain(oldRule);
-    expect(prompt).not.toContain("never write");
   });
 });
 
