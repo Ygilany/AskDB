@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { join, resolve } from "node:path";
+import { createAiRegistry, type AiConfig } from "@askdb/ai";
 import {
   createAskDbLogger,
   formatSupportedAskDbLogLevels,
@@ -11,30 +12,51 @@ import { getAskDbRuntimeConfig, type AskDbRuntimeConfig } from "@askdb/config";
 import {
   buildSchemaIndex,
   checkIndexMatches,
+  createAiSdkEmbedder,
   createFileStore,
   createMemoryStore,
-  createOpenAiEmbedder as createAiSdkOpenAiEmbedder,
   createPgvectorStore,
+  detectEmbeddingDimensions,
   loadChunkerSourcesFromDir,
-  type CreatePgvectorStoreOptions,
+  PgvectorDimensionMismatchError,
   type Embedder,
   type Filter,
+  type PgvectorIndexStrategy,
   type QueryResult,
   type VectorStore,
 } from "@askdb/rag";
 import { readCliVersion } from "./version.js";
 
-const CLI_EMBEDDERS = ["mock", "openai"] as const;
-type CliEmbedder = (typeof CLI_EMBEDDERS)[number];
+// Every built-in provider is registered and loads its @ai-sdk/* package only when first used,
+// so ai.embedding alone selects the provider.
+const ai = createAiRegistry();
+
+const CLI_EMBEDDERS = ["mock", "ai"] as const;
+/** Aliases of `ai` that mirror the deprecated `rag.embedder` values; removed at 1.0. */
+const DEPRECATED_EMBEDDERS = {
+  openai: 'askdb rag: --embedder "openai" is deprecated; use --embedder ai with ai.embedding: { provider: "openai", model }.',
+  "ai-sdk": 'askdb rag: --embedder "ai-sdk" is deprecated; use --embedder ai.',
+} as const;
+type CliEmbedder = (typeof CLI_EMBEDDERS)[number] | keyof typeof DEPRECATED_EMBEDDERS;
 
 function isCliEmbedder(value: string): value is CliEmbedder {
-  return (CLI_EMBEDDERS as readonly string[]).includes(value);
+  return (CLI_EMBEDDERS as readonly string[]).includes(value) || Object.hasOwn(DEPRECATED_EMBEDDERS, value);
 }
 
+const CLI_STORES = ["memory", "file", "pgvector"] as const;
+type CliStoreKind = (typeof CLI_STORES)[number];
+
+function isCliStore(value: string): value is CliStoreKind {
+  return (CLI_STORES as readonly string[]).includes(value);
+}
+
+/** The mock embedder is AskDB's own, so its width is the only one the CLI knows. */
+const DEFAULT_MOCK_DIMENSIONS = 64;
+const DEFAULT_PGVECTOR_TABLE = "askdb_rag_chunks";
+
 type CliOptions = {
-  command?: "index" | "query" | "setup-store";
   schemaDir?: string;
-  store?: "memory" | "file" | "pgvector";
+  store?: CliStoreKind;
   embedder?: CliEmbedder;
   question?: string;
   k?: number;
@@ -49,7 +71,6 @@ type CliOptions = {
   correlationId?: string;
   filePath?: string;
   embedderModel?: string;
-  apiKey?: string;
   force?: boolean;
 };
 
@@ -68,12 +89,8 @@ export async function runRagCli(argv: readonly string[]): Promise<number> {
       throw new Error(`Unknown command: ${cmd} (expected 'index', 'query', or 'setup-store')`);
     }
     const opts = parseOptions(argv.slice(1));
-    opts.command = cmd;
-    if (cmd === "setup-store") return await runSetupStore(opts);
-    if (!opts.schemaDir) {
-      throw new Error("Missing positional <schema-dir>.");
-    }
     const runtimeConfig = getAskDbRuntimeConfig();
+    if (cmd === "setup-store") return await runSetupStore(opts, runtimeConfig);
     const logger = buildLogger(opts, runtimeConfig);
     if (cmd === "index") return await runIndex(opts, logger, runtimeConfig);
     return await runQuery(opts, logger, runtimeConfig);
@@ -84,21 +101,31 @@ export async function runRagCli(argv: readonly string[]): Promise<number> {
 }
 
 async function runIndex(opts: CliOptions, logger: AskDbLogger, runtimeConfig: AskDbRuntimeConfig): Promise<number> {
-  const sources = loadChunkerSourcesFromDir(opts.schemaDir!);
-  const embedder = buildEmbedder(opts, runtimeConfig);
-  const dimensions = embedderDimensions(opts);
-  const store = await buildStore(opts, dimensions);
+  const schemaDir = resolveSchemaDir(opts, runtimeConfig);
+  const sources = loadChunkerSourcesFromDir(schemaDir);
+  const storeConfig = resolveStoreConfig(opts, runtimeConfig, schemaDir);
+  const embedderConfig = resolveEmbedderConfig(opts, runtimeConfig);
+  const embedder = await createEmbedder(embedderConfig);
+  // A new pgvector table needs its width up front: the requested one, else the model's own. The
+  // memory and file stores learn it from the first vector.
+  const dimensions =
+    storeConfig.kind === "pgvector"
+      ? (embedderConfig.dimensions ?? (await detectEmbeddingDimensions(embedder)))
+      : undefined;
   // Provision (idempotent) and verify the table's vector dimensions up front
-  // so a mismatch fails with a clear message instead of mid-upsert.
-  if (typeof store.ensureSchema === "function") await store.ensureSchema();
+  // so a mismatch fails with a clear message before any chunk is embedded.
+  const store = await openStore(storeConfig, {
+    dimensions,
+    provision: (width) => describeWidth(opts, embedderConfig, width),
+  });
 
   const result = await buildSchemaIndex({
     schema: sources,
     embedder,
     store,
-    embedderId: embedderId(opts),
+    embedderId: embedderConfig.id,
     // The indexer leaves the lock alone for an ephemeral (memory) store.
-    lockFilePath: lockFilePathFor(opts),
+    lockFilePath: lockFilePathFor(schemaDir),
     force: opts.force,
     correlationId: opts.correlationId,
     logger,
@@ -127,17 +154,20 @@ async function runQuery(opts: CliOptions, logger: AskDbLogger, runtimeConfig: As
   if (!opts.question) {
     throw new Error("Missing --question for query command.");
   }
-  if ((opts.store ?? "file") === "memory") {
+  const schemaDir = resolveSchemaDir(opts, runtimeConfig);
+  const storeConfig = resolveStoreConfig(opts, runtimeConfig, schemaDir);
+  if (storeConfig.kind === "memory") {
     throw new Error(
-      "query --store memory has nothing to search: the memory store lives only inside one process, " +
-        "so a separate `index --store memory` run cannot populate it. Use --store file or --store pgvector.",
+      "query has nothing to search in the memory store: the memory store lives only inside one process, " +
+        "so a separate `index` run cannot populate it. Use --store file or --store pgvector.",
     );
   }
-  const sources = loadChunkerSourcesFromDir(opts.schemaDir!);
-  assertQueryMatchesIndex(opts, sources.schema.schemaId);
-  const embedder = buildEmbedder(opts, runtimeConfig);
-  const dimensions = embedderDimensions(opts);
-  const store = await buildStore(opts, dimensions);
+  const sources = loadChunkerSourcesFromDir(schemaDir);
+  const embedderConfig = resolveEmbedderConfig(opts, runtimeConfig);
+  assertQueryMatchesIndex(schemaDir, sources.schema.schemaId, embedderConfig);
+  const embedder = await createEmbedder(embedderConfig);
+  // Never detect here: without a known width, the pgvector store reads the existing table as it is.
+  const store = await openStore(storeConfig, { dimensions: embedderConfig.dimensions });
 
   const filter: Filter = { schemaId: sources.schema.schemaId };
   if (opts.filterTypes && opts.filterTypes.length > 0) {
@@ -181,20 +211,25 @@ async function runQuery(opts: CliOptions, logger: AskDbLogger, runtimeConfig: As
   return 0;
 }
 
-function lockFilePathFor(opts: CliOptions): string {
-  return join(resolve(opts.schemaDir!), "schema.lock.json");
+/** The positional `<schema-dir>`, else `introspection.outputDir`, the same fallback as `askdb ask --schema`. */
+function resolveSchemaDir(opts: CliOptions, runtimeConfig: AskDbRuntimeConfig): string {
+  return resolve(opts.schemaDir ?? runtimeConfig.introspection.outputDir);
+}
+
+function lockFilePathFor(schemaDir: string): string {
+  return join(schemaDir, "schema.lock.json");
 }
 
 /**
  * Refuse to query with a different embedder (or dimensions) than the index was
  * built with — the similarity scores would be meaningless.
  */
-function assertQueryMatchesIndex(opts: CliOptions, schemaId: string): void {
+function assertQueryMatchesIndex(schemaDir: string, schemaId: string, embedderConfig: EmbedderConfig): void {
   const match = checkIndexMatches({
-    lockFilePath: lockFilePathFor(opts),
+    lockFilePath: lockFilePathFor(schemaDir),
     schemaId,
-    embedderId: embedderId(opts),
-    dimensions: embedderDimensions(opts),
+    embedderId: embedderConfig.id,
+    dimensions: embedderConfig.dimensions,
   });
   if (match.ok) return;
   const fix =
@@ -204,58 +239,95 @@ function assertQueryMatchesIndex(opts: CliOptions, schemaId: string): void {
   throw new Error(`${match.message} ${fix}`);
 }
 
-async function runSetupStore(opts: CliOptions): Promise<number> {
-  if (!opts.pgUrl) {
+async function runSetupStore(opts: CliOptions, runtimeConfig: AskDbRuntimeConfig): Promise<number> {
+  // There's no embedder to ask, so the width has no default; fail before anything connects.
+  const dimensions = opts.dimensions;
+  if (dimensions === undefined) {
     throw new Error(
-      "setup-store requires --pg-url <connection-string>.",
+      "setup-store requires --dimensions <n>: the vector width of your embedding model " +
+        "(the same value as ai.embedding.dimensions).",
     );
   }
-  // Same resolution as `index`: --dimensions, else the embedder's default
-  // (mock → 64, openai text-embedding-3-small → 1536, …).
-  const dimensions = embedderDimensions(opts);
-  const store = createPgvectorStore({
-    connectionString: opts.pgUrl,
-    table: opts.pgTable,
-    dimensions,
-  });
-  await store.ensureSchema();
-  await store.close();
-  const table = opts.pgTable ?? "askdb_rag_chunks";
+  const config = resolvePgvectorConfig(opts, readConfiguredStore(runtimeConfig));
+  const store = await openStore(config, { dimensions, provision: (width) => `--dimensions asks for ${width}` });
+  await closeStore(store);
   process.stdout.write(
-    `pgvector schema ready: table "${table}" (dimensions=${dimensions})\n`,
+    `pgvector schema ready: table "${config.table ?? DEFAULT_PGVECTOR_TABLE}" (dimensions=${dimensions})\n`,
   );
   return 0;
 }
 
-function buildEmbedder(opts: CliOptions, runtimeConfig: AskDbRuntimeConfig): Embedder {
-  const choice = opts.embedder ?? "mock";
-  if (choice === "mock") return createMockEmbedder(embedderDimensions(opts));
-  return createOpenAiEmbedder(opts, runtimeConfig);
-}
+type EmbedderConfig =
+  | { kind: "mock"; id: string; dimensions: number }
+  | {
+      kind: "ai";
+      id: string;
+      /** The width to request, from --dimensions or ai.embedding.dimensions; undefined leaves it to the model. */
+      dimensions: number | undefined;
+      model: string;
+      aiConfig: AiConfig;
+    };
 
-function embedderId(opts: CliOptions): string {
-  const choice = opts.embedder ?? "mock";
-  if (choice === "openai") {
-    const base = `openai:${opts.embedderModel ?? "text-embedding-3-small"}`;
-    return opts.dimensions ? `${base}:${opts.dimensions}` : base;
+/**
+ * `--embedder`, else the configured one: `ai` when askdb.config.* sets `rag.embedder: "ai"` (the
+ * only case the runtime resolves `ai.embedding`), else `mock`. The `ai` embedder takes the same
+ * path and id as Studio's, so either accepts an index the other built.
+ */
+function resolveEmbedderConfig(opts: CliOptions, runtimeConfig: AskDbRuntimeConfig): EmbedderConfig {
+  const embedding = runtimeConfig.ai.embedding;
+  const choice = opts.embedder ?? (embedding ? "ai" : "mock");
+  if (choice === "mock") {
+    const dimensions = opts.dimensions ?? DEFAULT_MOCK_DIMENSIONS;
+    return { kind: "mock", id: `mock:lexical-${dimensions}`, dimensions };
   }
-  return `mock:lexical-${embedderDimensions(opts)}`;
-}
-
-function embedderDimensions(opts: CliOptions): number {
-  if (opts.dimensions) return opts.dimensions;
-  const choice = opts.embedder ?? "mock";
-  if (choice === "openai") {
-    const model = opts.embedderModel ?? "text-embedding-3-small";
-    if (model === "text-embedding-3-small") return 1536;
-    if (model === "text-embedding-3-large") return 3072;
-    if (model === "text-embedding-ada-002") return 1536;
-    throw new Error(`Pass --dimensions for unknown embedder model: ${model}`);
+  if (choice !== "ai") process.stderr.write(`${DEPRECATED_EMBEDDERS[choice]}\n`);
+  if (!embedding) {
+    throw new Error(
+      `--embedder ${choice} needs ai.embedding in askdb.config.*: set rag.embedder: "ai" and ai.embedding.model.`,
+    );
   }
-  return DEFAULT_MOCK_DIMENSIONS;
+  if (choice === "openai" && embedding.provider !== "openai") {
+    throw new Error(
+      `--embedder openai embeds with OpenAI, but ai.embedding.provider is "${embedding.provider}"; use --embedder ai.`,
+    );
+  }
+  // The registry reads ASKDB_AI_EMBEDDING_MODEL first, so --embedder-model overrides ai.embedding.model.
+  const env = opts.embedderModel
+    ? { ...embedding.env, ASKDB_AI_EMBEDDING_MODEL: opts.embedderModel }
+    : embedding.env;
+  const aiConfig = ai.resolveEmbeddingConfig(env);
+  if (!aiConfig) {
+    throw new Error(
+      `askdb rag: embeddings need an API key on the ai.embedding connection ` +
+        `("${embedding.connection}" in ai.providerConfig.${embedding.provider}). ` +
+        "Set it in askdb.config.*, or pass --embedder mock.",
+    );
+  }
+  const model = opts.embedderModel ?? embedding.model;
+  const dimensions = opts.dimensions ?? embedding.dimensions;
+  return {
+    kind: "ai",
+    // Studio's id. The adapter's canonical provider name (`foundry` resolves to `azure`) keeps ids stable.
+    id: `ai-sdk:${aiConfig.provider}:${model}:${dimensions ?? "default"}`,
+    dimensions,
+    model,
+    aiConfig,
+  };
 }
 
-const DEFAULT_MOCK_DIMENSIONS = 64;
+async function createEmbedder(config: EmbedderConfig): Promise<Embedder> {
+  if (config.kind === "mock") return createMockEmbedder(config.dimensions);
+  const model = await ai.createEmbeddingModel(config.aiConfig, { dimensions: config.dimensions });
+  return createAiSdkEmbedder({ model });
+}
+
+/** Where the width a pgvector table refused came from, for the mismatch message. */
+function describeWidth(opts: CliOptions, embedderConfig: EmbedderConfig, width: number): string {
+  if (opts.dimensions !== undefined) return `--dimensions asks for ${width}`;
+  if (embedderConfig.kind === "mock") return `the mock embedder writes ${width}`;
+  if (embedderConfig.dimensions !== undefined) return `ai.embedding.dimensions asks for ${width}`;
+  return `embedding model ${embedderConfig.model} returns ${width}`;
+}
 
 /**
  * Deterministic mock embedder used for tests, CI, and quick smoke-checks.
@@ -287,53 +359,107 @@ function stableTokenHash(token: string): number {
   return h >>> 0;
 }
 
-function createOpenAiEmbedder(opts: CliOptions, runtimeConfig: AskDbRuntimeConfig): Embedder {
-  const apiKey = opts.apiKey ?? runtimeConfig.rag.embedder.apiKey;
-  if (!apiKey) {
-    throw new Error(
-      "createOpenAiEmbedder: set OPENAI_API_KEY or pass --api-key. The OpenAI embedder uses the AI SDK optional peers (`ai` and `@ai-sdk/openai`).",
-    );
+type PgvectorConfig = {
+  kind: "pgvector";
+  connectionString: string;
+  table: string | undefined;
+  indexStrategy: PgvectorIndexStrategy | undefined;
+};
+
+type StoreConfig = { kind: "memory" } | { kind: "file"; basePath: string } | PgvectorConfig;
+
+type ConfiguredStore = {
+  kind: CliStoreKind;
+  fileBasePath: string | undefined;
+  pgUrl: string | undefined;
+  pgTable: string | undefined;
+  pgIndexStrategy: string | undefined;
+};
+
+/**
+ * Every store setting the CLI reads from askdb.config.*, in one place: the store, the file base
+ * path, and the pgvector URL, table and index strategy, read the way Studio reads them. The URL
+ * comes from the structured config, so it also serves `--store pgvector` when another store is
+ * configured.
+ */
+function readConfiguredStore(runtimeConfig: AskDbRuntimeConfig): ConfiguredStore {
+  const { store, storeConfig } = runtimeConfig.structured.rag;
+  return {
+    kind: store,
+    fileBasePath: trimmed(storeConfig.file?.basePath),
+    pgUrl: trimmed(storeConfig.pgvector?.databaseUrl),
+    pgTable: trimmed(storeConfig.pgvector?.table),
+    pgIndexStrategy: trimmed(runtimeConfig.flat.ASKDB_PGVECTOR_INDEX_STRATEGY),
+  };
+}
+
+/** Flags first, then askdb.config.*, then the built-in default. */
+function resolveStoreConfig(opts: CliOptions, runtimeConfig: AskDbRuntimeConfig, schemaDir: string): StoreConfig {
+  const configured = readConfiguredStore(runtimeConfig);
+  const kind = opts.store ?? configured.kind;
+  if (kind === "memory") return { kind };
+  if (kind === "file") {
+    const basePath =
+      opts.filePath ?? (configured.fileBasePath ? resolve(configured.fileBasePath) : join(schemaDir, "schema"));
+    return { kind, basePath };
   }
-  return createAiSdkOpenAiEmbedder({
-    apiKey,
-    model: opts.embedderModel ?? "text-embedding-3-small",
-    baseURL: runtimeConfig.rag.embedder.baseURL,
-    dimensions: opts.dimensions,
-  });
+  return resolvePgvectorConfig(opts, configured);
+}
+
+function resolvePgvectorConfig(opts: CliOptions, configured: ConfiguredStore): PgvectorConfig {
+  const connectionString = opts.pgUrl ?? configured.pgUrl;
+  if (!connectionString) {
+    throw new Error("pgvector store requires --pg-url, or rag.storeConfig.pgvector.databaseUrl in askdb.config.*.");
+  }
+  return {
+    kind: "pgvector",
+    connectionString,
+    table: opts.pgTable ?? configured.pgTable,
+    indexStrategy: configured.pgIndexStrategy as PgvectorIndexStrategy | undefined,
+  };
+}
+
+function trimmed(value: string | undefined): string | undefined {
+  const t = value?.trim();
+  return t ? t : undefined;
 }
 
 type CliStore = VectorStore & {
   close?: () => Promise<void>;
   flush?: () => void;
-  ensureSchema?: () => Promise<void>;
 };
 
-async function buildStore(
-  opts: CliOptions,
-  dimensions: number,
+/**
+ * Opens the store. `dimensions` reaches only a pgvector store, and only when known. With
+ * `provision`, a pgvector store creates its table when it's missing and refuses an existing table
+ * of another width, with the fix in flags; `provision` says where the refused width came from.
+ */
+async function openStore(
+  config: StoreConfig,
+  { dimensions, provision }: { dimensions?: number; provision?: (width: number) => string },
 ): Promise<CliStore> {
-  const choice = opts.store ?? "file";
-  if (choice === "memory") return createMemoryStore();
-  if (choice === "file") {
-    const path = opts.filePath
-      ? opts.filePath
-      : join(resolve(opts.schemaDir!), "schema");
-    return createFileStore({ basePath: path });
+  if (config.kind === "memory") return createMemoryStore();
+  if (config.kind === "file") return createFileStore({ basePath: config.basePath });
+  const store = createPgvectorStore({
+    connectionString: config.connectionString,
+    table: config.table,
+    ...(dimensions !== undefined ? { dimensions } : {}),
+    ...(config.indexStrategy ? { indexStrategy: config.indexStrategy } : {}),
+  });
+  if (!provision) return store;
+  try {
+    await store.ensureSchema();
+  } catch (error) {
+    // The caller never receives this store, so close its pool here.
+    await store.close().catch(() => {});
+    if (!(error instanceof PgvectorDimensionMismatchError)) throw error;
+    throw new Error(
+      `pgvector table "${error.table}" holds ${error.tableDimensions}-dimension vectors, but ${provision(error.dimensions)}. ` +
+        `Drop the table (DROP TABLE "${error.table}";) and run again, pass --pg-table <name> for a new table, ` +
+        `or pass --dimensions ${error.tableDimensions} if your embedding model supports that width.`,
+    );
   }
-  if (choice === "pgvector") {
-    if (!opts.pgUrl) {
-      throw new Error(
-        "pgvector store requires --pg-url (or set PGURL/DATABASE_URL via your shell).",
-      );
-    }
-    const pgOptions: CreatePgvectorStoreOptions = {
-      connectionString: opts.pgUrl,
-      table: opts.pgTable,
-      dimensions,
-    };
-    return createPgvectorStore(pgOptions);
-  }
-  throw new Error(`Unknown store: ${choice}`);
+  return store;
 }
 
 async function closeStore(store: CliStore): Promise<void> {
@@ -380,9 +506,14 @@ function parseOptions(argv: readonly string[]): CliOptions {
       continue;
     }
     switch (arg) {
-      case "--store":
-        opts.store = readValue(argv, ++i, arg) as CliOptions["store"];
+      case "--store": {
+        const raw = readValue(argv, ++i, arg);
+        if (!isCliStore(raw)) {
+          throw new Error(`Unknown store: ${raw} (expected 'memory', 'file', or 'pgvector').`);
+        }
+        opts.store = raw;
         break;
+      }
       case "--embedder": {
         const raw = readValue(argv, ++i, arg);
         if (!isCliEmbedder(raw)) {
@@ -397,8 +528,8 @@ function parseOptions(argv: readonly string[]): CliOptions {
         opts.embedderModel = readValue(argv, ++i, arg);
         break;
       case "--api-key":
-        opts.apiKey = readValue(argv, ++i, arg);
-        break;
+        // Secrets on argv leak through shell history and the process list.
+        throw new Error("--api-key was removed; set the key on a connection in ai.providerConfig in askdb.config.*.");
       case "--question":
         opts.question = readValue(argv, ++i, arg);
         break;
@@ -473,25 +604,29 @@ function printHelp(): void {
       "askdb rag - Chunk, embed, and query a schema artifact directory.",
       "",
       "Usage:",
-      "  askdb rag index <schema-dir>      [--store memory|file|pgvector] [--embedder mock|openai] [--dimensions <n>] [--force]",
-      "  askdb rag query <schema-dir>      --question \"...\" [-k 8] [--types table,column,cql] [--store file|pgvector] [--embedder mock|openai] [--dimensions <n>]",
-      "  askdb rag setup-store             --pg-url <conn> [--pg-table askdb_rag_chunks] [--embedder mock|openai] [--dimensions <n>]",
+      "  askdb rag index [schema-dir]   [--store memory|file|pgvector] [--embedder mock|ai] [--embedder-model <id>] [--dimensions <n>] [--force]",
+      "  askdb rag query [schema-dir]   --question \"...\" [-k 8] [--types table,column,cql] [--store file|pgvector] [--embedder mock|ai] [--embedder-model <id>] [--dimensions <n>]",
+      "  askdb rag setup-store          --dimensions <n> [--pg-url <conn>] [--pg-table askdb_rag_chunks]",
+      "",
+      "Flags override askdb.config.*: [schema-dir] defaults to introspection.outputDir, --store to rag.store,",
+      "--pg-url, --pg-table and --file-path to rag.storeConfig, and --embedder to rag.embedder.",
       "",
       "Commands:",
-      "  index        Chunk and embed a schema directory into the configured store. Only chunks the store",
+      "  index        Chunk and embed a schema directory into the store. Only chunks the store",
       "               doesn't already hold (same id + content hash) are embedded; --force re-embeds everything.",
       "  query        Run a similarity query against an indexed store. Use the same embedder/dimensions as `index`.",
-      "  setup-store  Create the pgvector extension, table, and indexes. Idempotent — safe to re-run.",
-      "               Dimensions default to the embedder's (mock: 64, openai text-embedding-3-small: 1536).",
+      "  setup-store  Create the pgvector extension, table, and indexes at --dimensions, the vector width of",
+      "               your embedding model. Idempotent — safe to re-run.",
       "",
       "Stores:",
       "  memory     in-memory cosine, lives only for one process. Useful for `index` dry runs (writes no schema.lock.json); `query` can't use it.",
-      "  file       persisted as <schema-dir>/schema.embeddings.{bin,json} (default).",
-      "  pgvector   --pg-url <conn> [--pg-table askdb_rag_chunks] [--dimensions <n>]",
+      "  file       persisted as <schema-dir>/schema.embeddings.{bin,json}, or <path>.embeddings.{bin,json} with --file-path <path>.",
+      "  pgvector   --pg-url <conn> [--pg-table askdb_rag_chunks]",
       "",
       "Embedders:",
-      "  mock       deterministic lexical hash (64 dimensions unless --dimensions). Default. CI-safe.",
-      "  openai     AI SDK OpenAI embeddings; OPENAI_API_KEY (or --api-key); --embedder-model text-embedding-3-small (default).",
+      "  mock       deterministic lexical hash, 64 dimensions unless --dimensions. CI-safe.",
+      "  ai         the ai.embedding model from askdb.config.* (needs rag.embedder: \"ai\"). --embedder-model",
+      "             overrides its model; --dimensions requests a width.",
       "",
       "Logging matches `askdb`:",
       "  --log-level <level> --log-file <path> --log-stdout --correlation-id <id> -v/--verbose",
