@@ -89,7 +89,7 @@ export function chunkSchema(
     const md = tableMarkdowns[table.id];
     // A table's own text may also name its sensitive columns bare, including
     // those sensitive only through the table.
-    const sensitiveColumnNames = [
+    const tableSensitiveNames = [
       ...new Set([
         ...table.columns.filter((c) => c.sensitive).map((c) => c.name),
         ...schemaSensitiveNames,
@@ -99,7 +99,7 @@ export function chunkSchema(
     if (table.sensitive && !includeSensitive) {
       stats.sensitiveExcluded++;
     } else {
-      const filter = describableFilter(sensitiveColumnNames, includeSensitive);
+      const filter = describableFilter(tableSensitiveNames, includeSensitive);
       const tableChunk = buildTableChunk(table, schema.schemaId, includeSensitive, schema, filter);
       // A non-sensitive table whose description/aliases/column headlines
       // mention a sensitive column is only embedded verbatim in opt-in mode.
@@ -130,7 +130,7 @@ export function chunkSchema(
         continue;
       }
       const describableMentionsSensitive = describable.some((text) =>
-        mentionsAnyName(text, sensitiveColumnNames),
+        mentionsAnyName(text, tableSensitiveNames),
       );
       if (describableMentionsSensitive && !includeSensitive) {
         // Keep the identifier + type; drop the whole describable layer.
@@ -157,7 +157,7 @@ export function chunkSchema(
     if (table.commonQueryLanguage) {
       const mentionsSensitive = mentionsAnyName(
         table.commonQueryLanguage,
-        sensitiveColumnNames,
+        tableSensitiveNames,
       );
       const tableLevelSensitive = table.sensitive;
       const skip =
@@ -169,7 +169,7 @@ export function chunkSchema(
       } else {
         // The heading repeats the table's aliases; one naming a sensitive
         // column is dropped like it is from the table chunk.
-        const filter = describableFilter(sensitiveColumnNames, includeSensitive);
+        const filter = describableFilter(tableSensitiveNames, includeSensitive);
         const aliases = (table.aliases ?? []).filter((a) => filter.allow(a));
         const sensitive = tableLevelSensitive || mentionsSensitive || filter.included;
         if (filter.dropped) stats.sensitiveExcluded += parts.length;
@@ -187,11 +187,11 @@ export function chunkSchema(
       const questions = extractExampleQuestions(md);
       const businessContext = md.sections["Business context"]?.trim() ?? "";
       const questionsMentionSensitive = questions.some((q) =>
-        mentionsAnyName(q, sensitiveColumnNames),
+        mentionsAnyName(q, tableSensitiveNames),
       );
       const bizMentionsSensitive = mentionsAnyName(
         businessContext,
-        sensitiveColumnNames,
+        tableSensitiveNames,
       );
 
       // Per-table sensitive gate: if table is sensitive OR mentions exist, skip
@@ -206,7 +206,7 @@ export function chunkSchema(
         } else {
           // Every question heading repeats the primary entity; one naming a
           // sensitive column is dropped like it is from the table chunk.
-          const filter = describableFilter(sensitiveColumnNames, includeSensitive);
+          const filter = describableFilter(tableSensitiveNames, includeSensitive);
           const primaryEntity = filter.allow(table.primaryEntity) ? table.primaryEntity : undefined;
           if (filter.dropped) stats.sensitiveExcluded += questions.length;
           // The questions are gated together, so in opt-in mode one naming a
@@ -275,14 +275,13 @@ export function chunkSchema(
   // Concept chunks. A concept that links to a sensitive column/table, or
   // whose label/synonyms/description names a sensitive column (matched
   // case-insensitively, like @askdb/enrich), is excluded by default.
-  const allSensitiveColumnNames = schemaSensitiveNames;
   if (concepts?.frontmatter.concepts) {
     for (const concept of concepts.frontmatter.concepts) {
       const conceptResult = buildConceptChunk(
         concept,
         schema.schemaId,
         schema,
-        allSensitiveColumnNames,
+        schemaSensitiveNames,
       );
       if (conceptResult.sensitive && !includeSensitive) {
         stats.sensitiveExcluded++;
@@ -299,7 +298,7 @@ export function chunkSchema(
   // default.
   if (sources.tenantPolicy) {
     for (const section of tenantPolicySections(sources.tenantPolicy)) {
-      const sensitive = mentionsAnyName(section.body, allSensitiveColumnNames);
+      const sensitive = mentionsAnyName(section.body, schemaSensitiveNames);
       const parts = splitLong(section.body, maxChars);
       if (sensitive && !includeSensitive) {
         stats.sensitiveExcluded += parts.length;
@@ -531,7 +530,7 @@ function buildConceptChunk(
   concept: V2Concept,
   schemaId: string,
   schema: NormalizedSchemaV2,
-  allSensitiveColumnNames: string[],
+  schemaSensitiveNames: string[],
 ): { chunk: Chunk; sensitive: boolean } {
   const links = (concept.links ?? []).filter((id) => !isUntrackedId(id, schema));
   const linkedSensitive = links.some((id) => isSensitiveId(id, schema));
@@ -539,7 +538,7 @@ function buildConceptChunk(
     concept.label,
     ...(concept.synonyms ?? []),
     concept.description ?? "",
-  ].some((text) => mentionsAnyName(text, allSensitiveColumnNames));
+  ].some((text) => mentionsAnyName(text, schemaSensitiveNames));
   const sensitive = linkedSensitive || textMentionsSensitive;
 
   const lines: string[] = [];
@@ -657,11 +656,15 @@ function extractExampleQuestions(md: ParsedTableMarkdown): string[] {
 function mentionsAnyName(text: string, names: string[]): boolean {
   if (!text || names.length === 0) return false;
   for (const name of names) {
-    // Word-boundary match (also matches when wrapped in backticks).
-    const pattern = new RegExp(
-      `(^|[^a-zA-Z0-9_])${escapeRegex(name)}([^a-zA-Z0-9_]|$)`,
-      "i",
-    );
+    // Word-boundary match (also matches when wrapped in backticks). A
+    // qualified `table.column` also matches with each part quoted or
+    // bracketed (`"users"."org_id"`, `[users].[org_id]`) and spaces around
+    // the dot.
+    const body = name
+      .split(".")
+      .map((part) => `[\`"\\[]?${escapeRegex(part)}[\`"\\]]?`)
+      .join("\\s*\\.\\s*");
+    const pattern = new RegExp(`(^|[^a-zA-Z0-9_])${body}([^a-zA-Z0-9_]|$)`, "i");
     if (pattern.test(text)) return true;
   }
   return false;

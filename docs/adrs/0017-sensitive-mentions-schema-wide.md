@@ -19,8 +19,9 @@ The normalized schema didn't record why a column is sensitive: the loader folded
 
 - Every piece of describable text is checked against one schema-wide list of names, whichever table or chunk it belongs to: table, column, common query language, example question, business context, concept, and tenant policy text.
 - A column marked sensitive itself (in `schema.json`, or by a front-matter `sensitive: true` entry) is on the list by its bare name.
-- A column sensitive only because its table is, is on the list only as `table.column`. Matching stays whole-word and case-insensitive, so `schema.table.column` and `` `table.column` `` match too.
+- A column sensitive only because its table is, is on the list only as `table.column`. Matching stays whole-word and case-insensitive, and the qualified form also matches with a schema prefix (`public.users.org_id`), with each part quoted or bracketed (`"users"."org_id"`, `[users].[org_id]`, `` `users`.`org_id` ``), and with spaces around the dot. The table part is the table's name without its schema, so a sensitive `public.users` also matches mentions of `audit.users.org_id`: an over-exclusion, the safe direction.
 - A table's own text also counts its own sensitive columns by bare name, including the ones sensitive through the table. Text owned by a sensitive table is excluded by default anyway, so this only matters for opt-in flags.
+- Sensitive columns of untracked tables are on the list too: they are still sensitive data, even though their tables aren't indexed.
 - `loadSchema()` records the provenance as `NormalizedV2Column.sensitiveFromTable: true`, set only on columns that are sensitive solely through their table. Normalized schemas built some other way, without the field, are treated as if every sensitive column were marked itself (bare names: the conservative reading).
 
 ## Options considered
@@ -36,4 +37,4 @@ The normalized schema didn't record why a column is sensitive: the loader folded
 - A column marked sensitive itself with a generic name (for example a PII `users.name`) now excludes every table's text that says "name", not only `users`' own text. That over-exclusion is the cost of catching cross-table mentions, and there is no per-column way to opt a name out.
 - A mention of a table-inherited column by its bare name in another table's text ("dedupe by org_id" in `orders`) is embedded. It names an identifier, not data, and the column's own describable layer is still excluded.
 - Upgrading changes which chunks are excluded for some schemas, so their content hashes change and an index re-embeds those chunks on the next run.
-- `@askdb/enrich`'s authoring warning still checks only a table's own physical-layer sensitive columns, so it no longer predicts every exclusion; aligning it is tracked separately.
+- `@askdb/enrich`'s authoring warning still checks only a table's own physical-layer sensitive columns, so it no longer predicts every exclusion; aligning it is tracked in #453.
