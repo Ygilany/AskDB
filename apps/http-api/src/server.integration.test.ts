@@ -496,6 +496,23 @@ describe("http-api", () => {
     }
   });
 
+  it("treats JSON null in optional body fields as absent", async () => {
+    installTestRuntime({ mockSql: "select 1", logLevel: "silent", host: { schemaPath: schemaPath.pathname } });
+    const app = await startApp();
+    try {
+      const ok = await postAsk(app.url, { question: "hi", mode: null, omitSensitiveFromPrompt: null, schemaJson: null });
+      expect(ok.status).toBe(200);
+      expect(ok.json.sql).toBe("select 1");
+
+      // A null body mode falls through to the header, as an omitted one does.
+      const headerMode = await postAsk(app.url, { question: "hi", mode: null }, { "x-askdb-mode": "nope" });
+      expect(headerMode.status).toBe(400);
+      expect(headerMode.json.error.message).toContain("Invalid mode");
+    } finally {
+      await app.close();
+    }
+  });
+
   it("unmapped errors return 500 internal_error with a generic message", async () => {
     // A tenant-policy schema without a tenant scope makes core throw TenantScopeError,
     // which the HTTP API does not map to a caller-facing error.

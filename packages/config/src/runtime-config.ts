@@ -328,9 +328,12 @@ export function getAskDbRuntimeConfig(): AskDbRuntimeConfig {
     },
     httpApi: {
       listen: { port, host },
+      // Only a real boolean counts: flattening rejects anything else, so a store installed
+      // without it falls back to the flat key, which is set only for `true`.
       allowSchemaOverride:
-        structured.httpApi?.allowSchemaOverride ??
-        isTruthyFlag(pickFlat(flat, "ASKDB_HTTP_ALLOW_SCHEMA_OVERRIDE")),
+        typeof structured.httpApi?.allowSchemaOverride === "boolean"
+          ? structured.httpApi.allowSchemaOverride
+          : isTruthyFlag(pickFlat(flat, "ASKDB_HTTP_ALLOW_SCHEMA_OVERRIDE")),
       requestTimeoutMs:
         parseHttpApiRequestTimeoutMs(structured.httpApi?.requestTimeoutMs, "httpApi.requestTimeoutMs") ??
         parseHttpApiRequestTimeoutMs(pickFlat(flat, "ASKDB_HTTP_REQUEST_TIMEOUT_MS"), "ASKDB_HTTP_REQUEST_TIMEOUT_MS") ??

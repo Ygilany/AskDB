@@ -1590,6 +1590,21 @@ describe("getAskDbRuntimeConfig — httpApi", () => {
     expect(rt.flat["ASKDB_HTTP_REQUEST_TIMEOUT_MS"]).toBe("1500");
   });
 
+  // A JavaScript config isn't type-checked, and the string "false" is truthy.
+  it("rejects a non-boolean allowSchemaOverride at flatten time", () => {
+    for (const allowSchemaOverride of ["false", "true", 1, 0]) {
+      expect(() =>
+        flattenAskDbConfig(minimalConfig({ httpApi: { allowSchemaOverride } as unknown as AskDbConfig["httpApi"] })),
+      ).toThrow(/httpApi\.allowSchemaOverride must be a boolean/);
+    }
+  });
+
+  it("keeps schema overrides off for a non-boolean structured allowSchemaOverride that skipped flattening", () => {
+    const structured = minimalConfig({ httpApi: { allowSchemaOverride: "false" } as unknown as AskDbConfig["httpApi"] });
+    setAskDbRuntimeForTests({ structured, flat: flattenAskDbConfig(minimalConfig({})) });
+    expect(getAskDbRuntimeConfig().httpApi.allowSchemaOverride).toBe(false);
+  });
+
   it("rejects a non-positive requestTimeoutMs at flatten time", () => {
     expect(() => flattenAskDbConfig(minimalConfig({ httpApi: { requestTimeoutMs: 0 } }))).toThrow(
       /httpApi\.requestTimeoutMs/,

@@ -50,8 +50,9 @@ Schema is server-configured (`host.schemaPath` / `host.schemaJson`, or the `--sc
 Correlation ID comes from the `x-correlation-id` header, or is generated.
 
 - **Mode** is parsed up front with core's `parseAskDbModeV1`. Invalid values return `400 bad_request`. With no request mode, config `modes.askdbMode` applies, then `schema_only`.
+- **`null` fields:** an optional field sent as JSON `null` counts as absent, as does an empty or whitespace-only `schemaJson`; a `null` body `mode` falls back to the header.
 - **Sensitive prompt handling:** config `modes.omitSensitiveFromPrompt` is a floor. The request flag can tighten it (`true`) but not loosen it. A non-boolean flag (`"true"`, `1`) returns `400 bad_request` instead of being ignored. The floor is enforced in the `@askdb/client` facade, so every `createAskDb()` host gets the same behavior.
-- **Schema overrides** are rejected with `403 schema_override_disabled` unless `httpApi.allowSchemaOverride: true` (default `false`). An override lets any caller put arbitrary schema text into the prompt through the operator's model key.
+- **Schema overrides** are rejected with `403 schema_override_disabled` unless `httpApi.allowSchemaOverride: true` (default `false`; `@askdb/config` rejects a non-boolean value). An override lets any caller put arbitrary schema text into the prompt through the operator's model key.
 - **Timeout:** the model call gets an `AbortSignal` that fires after `httpApi.requestTimeoutMs` (default `60000`, at most `2147483647`, the Node timer maximum; `@askdb/config` rejects larger values). It is passed through `createAskDb().ask({ abortSignal })` to `generateText`.
 
 **Success response (`200`):**

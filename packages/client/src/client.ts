@@ -51,9 +51,11 @@ export type AskOverrides = Omit<
   reasoningEffort?: ReasoningEffort;
   /**
    * Abort signal forwarded to the NL→SQL model call (`generateText({ abortSignal })`).
-   * Use it to enforce a per-request timeout (e.g. `AbortSignal.timeout(60_000)`); an
-   * aborted call rejects with `SqlGenerationError`. Custom `AskDialect` implementations
-   * receive it only through `deps.generateText`.
+   * Use it to enforce a per-request timeout (e.g. `AbortSignal.timeout(60_000)`). With a
+   * built-in dialect, an aborted call rejects with `SqlGenerationError`. A custom
+   * `AskDialect` receives the signal only through `deps.generateText`, and `ask()` doesn't
+   * wrap what its `generate()` throws, so the abort surfaces as that dialect's own error
+   * (typically the AI SDK's `AbortError`) unless the dialect maps it.
    */
   abortSignal?: AbortSignal;
 };

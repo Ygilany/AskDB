@@ -274,8 +274,12 @@ export function flattenNormalizedAskDbConfig(config: NormalizedAskDbConfig): Rec
   if (httpListen?.host) {
     set(out, "HOST", httpListen.host);
   }
-  if (config.httpApi?.allowSchemaOverride === true) {
-    set(out, "ASKDB_HTTP_ALLOW_SCHEMA_OVERRIDE", "true");
+  const allowSchemaOverride = config.httpApi?.allowSchemaOverride;
+  if (allowSchemaOverride !== undefined) {
+    if (typeof allowSchemaOverride !== "boolean") {
+      throw new Error("askdb.config: httpApi.allowSchemaOverride must be a boolean.");
+    }
+    if (allowSchemaOverride) set(out, "ASKDB_HTTP_ALLOW_SCHEMA_OVERRIDE", "true");
   }
   const requestTimeoutMs = parseHttpApiRequestTimeoutMs(config.httpApi?.requestTimeoutMs, "httpApi.requestTimeoutMs");
   if (requestTimeoutMs !== undefined) {
