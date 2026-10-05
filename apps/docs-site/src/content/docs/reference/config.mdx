@@ -164,7 +164,7 @@ Every connection also takes `name`, which defaults to `"default"` and must be un
 
 ### `ai.embedding`
 
-Read only when `rag.embedder` is `"ai"`; ignored for `"mock"`.
+Read only when `rag.embedder` is `"ai"`; ignored for `"mock"`, and ignored with a warning when the config has no `rag` block.
 
 | Field | Default | Notes |
 | --- | --- | --- |

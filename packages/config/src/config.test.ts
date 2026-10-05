@@ -531,6 +531,22 @@ describe("optional rag block (#226)", () => {
 
   it.each([
     [
+      "with a model",
+      { model: "text-embedding-3-small" },
+      [
+        'askdb.config: ai.embedding is ignored because the config has no rag block; add rag: { embedder: "ai", store, storeConfig } to use it, or remove it.',
+      ],
+    ],
+    ["empty", {}, []],
+  ] satisfies [string, NonNullable<AskDbConfig["ai"]["embedding"]>, string[]][])(
+    "warns that ai.embedding does nothing without a rag block only when it holds a value: %s",
+    (_name, embedding, expected) => {
+      expect(defineConfig({ ...noRag, ai: { ...noRag.ai, embedding } }).deprecations).toEqual(expected);
+    },
+  );
+
+  it.each([
+    [
       "the mock embedder with the pgvector store",
       {
         rag: {
@@ -582,13 +598,18 @@ describe("optional rag block (#226)", () => {
     expect(rt.rag.storeConfig).toEqual({});
   });
 
-  it("exposes the authored store and storeConfig on the runtime view, with no defaults filled in", () => {
-    const rt = runtimeFor(
-      minimalConfig({ rag: { embedder: "mock", store: "file", storeConfig: { file: { basePath: "./data/rag" } } } }),
-    );
-    expect(rt.rag.store).toBe("file");
-    expect(rt.rag.storeConfig).toEqual({ file: { basePath: "./data/rag" } });
-  });
+  it.each([
+    ["a file store with a base path", { store: "file", storeConfig: { file: { basePath: "./data/rag" } } }],
+    ["a file store without one", { store: "file", storeConfig: { file: {} } }],
+    ["a pgvector store without an index strategy", { store: "pgvector", storeConfig: { pgvector: { databaseUrl: "postgres://pg/db" } } }],
+  ] satisfies [string, Pick<NonNullable<AskDbConfig["rag"]>, "store" | "storeConfig">][])(
+    "exposes the authored store and storeConfig on the runtime view, with no defaults filled in: %s",
+    (_name, store) => {
+      const rt = runtimeFor(minimalConfig({ rag: { embedder: "mock", ...store } }));
+      expect(rt.rag.store).toBe(store.store);
+      expect(rt.rag.storeConfig).toEqual(store.storeConfig);
+    },
+  );
 });
 
 describe("ai config sections: provider connections, ai.language, ai.embedding (#435)", () => {

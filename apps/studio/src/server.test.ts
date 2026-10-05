@@ -389,6 +389,25 @@ describe("AskDB Studio server", () => {
     expect(status.hasIndex).toBe(false);
   });
 
+  it.each([
+    ["uses rag.storeConfig.file.basePath", true],
+    ["falls back to the schema directory without one", false],
+  ])("reads the file store's base path from the runtime config: %s", async (_name, authored) => {
+    const schemaDir = copyFixture();
+    const basePath = authored ? join(schemaDir, "rag-index") : undefined;
+    installStudioRuntime({}, {
+      ...STUDIO_TEST_BASE,
+      rag: { embedder: "mock", store: "file", storeConfig: { file: basePath ? { basePath } : {} } },
+    });
+    const server = createStudioServer({ schema: schemaDir });
+    servers.push(server);
+    const baseUrl = await listen(server);
+
+    const status = await getJson(`${baseUrl}/api/rag/status`);
+    expect(status.store.kind).toBe("file");
+    expect(status.store.basePath).toBe(basePath ?? join(schemaDir, "schema"));
+  });
+
   it("indexes and queries Studio RAG with the OpenAI embedder", async () => {
     const embeddingServer = createEmbeddingServer();
     embeddingServers.push(embeddingServer);
