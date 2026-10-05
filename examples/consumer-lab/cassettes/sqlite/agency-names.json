@@ -1,5 +1,10 @@
 {
   "question": "List every agency's id and name, ordered by id.",
-  "reply": "```sql\nSELECT agency_id, name\nFROM agency\nORDER BY agency_id\n```",
-  "source": "authored"
+  "reply": "```sql\nSELECT agency_id, name FROM agency ORDER BY agency_id;\n```\n```sql-unbound\nSELECT agency_id, name FROM agency ORDER BY agency_id;\n```\n```json\n{\"parameters\":[]}\n```",
+  "source": "recorded",
+  "recordedWith": {
+    "model": "gpt-4o-mini-2024-07-18",
+    "askdbTarget": "askdb@1.0.0-beta.43, checkout @ fd5f2a9f (consumer-lab/452-question-columns)",
+    "at": "2026-10-05"
+  }
 }

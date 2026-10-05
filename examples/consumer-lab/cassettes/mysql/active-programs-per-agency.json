@@ -1,5 +1,10 @@
 {
   "question": "For each agency, show its id and how many active programs it runs.",
-  "reply": "```sql\nSELECT agency_id, COUNT(*) AS active_programs\nFROM org.program\nWHERE is_active = 1\nGROUP BY agency_id\nORDER BY agency_id\n```",
-  "source": "authored"
+  "reply": "```sql\nSELECT \n    `agency`.`agency_id`, \n    COUNT(`program`.`program_code`) AS active_program_count\nFROM \n    `org`.`agency` AS `agency`\nJOIN \n    `org`.`program` AS `program` ON `agency`.`agency_id` = `program`.`agency_id`\nWHERE \n    `program`.`is_active` = 1\nGROUP BY \n    `agency`.`agency_id`;\n```\n\n```sql-unbound\nSELECT \n    `agency`.`agency_id`, \n    COUNT(`program`.`program_code`) AS active_program_count\nFROM \n    `org`.`agency` AS `agency`\nJOIN \n    `org`.`program` AS `program` ON `agency`.`agency_id` = `program`.`agency_id`\nWHERE \n    `program`.`is_active` = :is_active\nGROUP BY \n    `agency`.`agency_id`;\n```\n\n```json\n{\"parameters\":[{\"name\":\"is_active\",\"type\":\"boolean\",\"cardinality\":\"one\",\"description\":\"Filter for active programs\",\"value\":1}]}\n```",
+  "source": "recorded",
+  "recordedWith": {
+    "model": "gpt-4o-mini-2024-07-18",
+    "askdbTarget": "askdb@1.0.0-beta.43, checkout @ fd5f2a9f (consumer-lab/452-question-columns)",
+    "at": "2026-10-05"
+  }
 }

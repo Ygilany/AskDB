@@ -1,5 +1,10 @@
 {
   "question": "Which orders are still unpaid? Show each order's id and total.",
-  "reply": "```sql\nSELECT order_id, total\nFROM \"order\"\nWHERE is_paid = 0\nORDER BY order_id\n```",
-  "source": "authored"
+  "reply": "```sql\nSELECT \"order_id\", \"total\" \nFROM \"order\" \nWHERE \"is_paid\" = 0;\n```\n\n```sql-unbound\nSELECT \"order_id\", \"total\" \nFROM \"order\" \nWHERE \"is_paid\" = :is_paid;\n```\n\n```json\n{\"parameters\":[{\"name\":\"is_paid\",\"type\":\"boolean\",\"cardinality\":\"one\",\"description\":\"Filter for unpaid orders\",\"value\":0}]}\n```",
+  "source": "recorded",
+  "recordedWith": {
+    "model": "gpt-4o-mini-2024-07-18",
+    "askdbTarget": "askdb@1.0.0-beta.43, checkout @ fd5f2a9f (consumer-lab/452-question-columns)",
+    "at": "2026-10-05"
+  }
 }

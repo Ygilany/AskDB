@@ -1,5 +1,10 @@
 {
   "question": "For each agency, show its id and the total payment amount it received.",
-  "reply": "```sql\nSELECT agency_id, SUM(amount) AS total_amount\nFROM billing.payment\nGROUP BY agency_id\nORDER BY agency_id\n```",
-  "source": "authored"
+  "reply": "```sql\nSELECT \n    [agency].[agency_id], \n    SUM([payment].[amount]) AS total_payment_amount\nFROM \n    [billing].[payment] AS [payment]\nJOIN \n    [org].[agency] AS [agency] ON [payment].[agency_id] = [agency].[agency_id]\nGROUP BY \n    [agency].[agency_id];\n```\n\n```sql-unbound\nSELECT \n    [agency].[agency_id], \n    SUM([payment].[amount]) AS total_payment_amount\nFROM \n    [billing].[payment] AS [payment]\nJOIN \n    [org].[agency] AS [agency] ON [payment].[agency_id] = [agency].[agency_id]\nGROUP BY \n    [agency].[agency_id];\n```\n\n```json\n{\n    \"parameters\": []\n}\n```",
+  "source": "recorded",
+  "recordedWith": {
+    "model": "gpt-4o-mini-2024-07-18",
+    "askdbTarget": "askdb@1.0.0-beta.43, checkout @ fd5f2a9f (consumer-lab/452-question-columns)",
+    "at": "2026-10-05"
+  }
 }
