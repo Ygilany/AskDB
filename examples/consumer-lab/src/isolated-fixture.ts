@@ -36,6 +36,10 @@ export function assertLocalDocker(): void {
  */
 export function assertIsolatedTarget(dialect: ServerDialect, connectionString: string): string {
   const endpoint = dialect === "sqlserver" ? mssql.ConnectionPool.parseConnectionString(connectionString) : new URL(connectionString);
+  // mssql discards an explicit port when a named instance enables SQL Browser discovery.
+  if ("server" in endpoint && endpoint.options?.instanceName) {
+    throw new Error("isolated fixture: refused SQL Server instance discovery");
+  }
   // The fixture emits canonical URLs with no driver options. In particular, pg
   // query parameters can override the authority that WHATWG URL reports. Reject
   // these forms before Docker inspection or any connection can be authorized.

@@ -41,6 +41,23 @@ it("refuses a fixture host that injects driver endpoint overrides", () => {
   }
 });
 
+/**
+ * Protects: SQL Server connects to the explicit port verified by the isolation guard.
+ * Catches: a named instance making the driver discard that port and use SQL Browser.
+ * Not covered elsewhere: URL-option and shared-port checks do not exercise instance discovery.
+ * No production seam: the real fixture URL builder and the suite's execution guard.
+ */
+it("refuses a fixture host that enables SQL Server instance discovery", () => {
+  vi.stubEnv("ASKDB_FIXTURE_HOST", String.raw`127.0.0.1\MSSQLSERVER`);
+  vi.stubEnv("ASKDB_FIXTURE_SQLSERVER_PORT", "21433");
+  try {
+    expect(() => assertIsolatedTarget("sqlserver", connectionUrl("sqlserver", "owner")))
+      .toThrow(/isolated fixture: refused SQL Server instance discovery/);
+  } finally {
+    vi.unstubAllEnvs();
+  }
+});
+
 // Only the lifecycle runner owns containers it is allowed to alter. It runs this
 // file before safety.test.ts, so these negative controls cannot race the proofs.
 if (process.env.ASKDB_LAB_ISOLATED === "1") {
