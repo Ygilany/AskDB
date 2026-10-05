@@ -375,10 +375,12 @@ export function createPgvectorStore(
     count,
     hashesByPrefix,
     idsBySchema,
-    describe: () =>
-      knownWidth !== undefined
-        ? { kind: "pgvector", location: table, dimensions: knownWidth }
-        : { kind: "pgvector", location: table },
+    describe: () => ({
+      kind: "pgvector",
+      location: table,
+      ...(knownWidth !== undefined ? { dimensions: knownWidth } : {}),
+      widthHint: `Drop table "${table}" (or use a new table) and create it with the new \`dimensions\`.`,
+    }),
     setupSql,
     ensureSchema,
     tableDimensions,

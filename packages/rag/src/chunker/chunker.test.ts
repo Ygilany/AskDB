@@ -508,6 +508,19 @@ describe("sensitive-mention filtering", () => {
     });
   });
 
+  it.each<[string, string, boolean]>([
+    ["ssn$", "Dedupe on the ssn$ hash.", true],
+    ["café", "Grouped by CAFÉ.", true],
+    ["café", "Grouped by cafés.", false],
+    ["caf", "Open the café.", false],
+  ])("uses core's mention rule for a sensitive column named %j (%j excluded: %s)", (name, text, excluded) => {
+    const s = sources();
+    table(s, "table:public.users").columns.find((c) => c.name === "email")!.name = name;
+    s.concepts!.frontmatter.concepts = [{ id: "concept:probe", label: "Probe", description: text }];
+    const ids = chunkSchema(s).chunks.map((c) => c.id);
+    expect(ids.includes("chunk:orders-users:concept:probe")).toBe(!excluded);
+  });
+
   it("counts a sensitive source that splits into several chunks once per chunk", () => {
     const opts = { chunkSizeMaxChars: 40 };
     const optInOpts = { ...opts, includeSensitiveDescribable: true };

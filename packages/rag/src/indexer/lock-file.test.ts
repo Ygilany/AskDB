@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import {
+  checkIndexMatches,
   inspectLockFile,
   readLockFile,
   writeLockFile,
@@ -83,5 +84,52 @@ describe("schema.lock.json", () => {
     expect(inspectLockFile(path)).toEqual({ status: "missing" });
     writeFileSync(path, "{not json");
     expect(inspectLockFile(path)).toEqual({ status: "invalid" });
+  });
+
+  describe("checkIndexMatches", () => {
+    function lockWith(fields: Partial<SchemaLockFile>): string {
+      const path = tempPath();
+      writeFileSync(
+        path,
+        JSON.stringify({ version: 2, schemaId: "s", embedderId: "e", dimensions: 3, hashes: {}, ...fields }),
+      );
+      return path;
+    }
+
+    it.each<[string, () => string, { embedderId?: string; dimensions?: number }, string | undefined]>([
+      ["matches", () => lockWith({}), { embedderId: "e", dimensions: 3 }, undefined],
+      ["ignores a width the caller doesn't know", () => lockWith({}), { embedderId: "e" }, undefined],
+      ["passes when there's no lock", () => tempPath(), { embedderId: "e" }, undefined],
+      ["passes a lock for another schema", () => lockWith({ schemaId: "other" }), { embedderId: "x" }, undefined],
+      ["refuses another embedder", () => lockWith({}), { embedderId: "f", dimensions: 3 }, "embedder-changed"],
+      ["refuses a lock with no embedder id", () => lockWith({ embedderId: undefined }), { embedderId: "e" }, "embedder-changed"],
+      ["refuses no embedder id against a lock with one", () => lockWith({}), {}, "embedder-changed"],
+      ["matches no embedder id against a lock without one, as the indexer does", () => lockWith({ embedderId: undefined }), {}, undefined],
+      ["refuses a lock an interrupted embedder switch left incomplete", () => lockWith({ incomplete: true }), { embedderId: "e" }, "index-incomplete"],
+      [
+        "passes an older-format lock for another schema",
+        () => {
+          const path = tempPath();
+          writeFileSync(path, JSON.stringify({ version: 1, schemaId: "other", hashes: {} }));
+          return path;
+        },
+        { embedderId: "e" },
+        undefined,
+      ],
+      ["refuses another width", () => lockWith({}), { embedderId: "e", dimensions: 4 }, "dimensions-changed"],
+      [
+        "refuses an older-format lock",
+        () => {
+          const path = tempPath();
+          writeFileSync(path, JSON.stringify({ version: 1, schemaId: "s", hashes: {} }));
+          return path;
+        },
+        { embedderId: "e" },
+        "lock-outdated",
+      ],
+    ])("%s", (_case, lockFilePath, query, reason) => {
+      const match = checkIndexMatches({ lockFilePath: lockFilePath(), schemaId: "s", ...query, embedderId: query.embedderId });
+      expect(match.ok ? undefined : match.reason).toBe(reason);
+    });
   });
 });

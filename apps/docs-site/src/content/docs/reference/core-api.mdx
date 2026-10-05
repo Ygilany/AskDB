@@ -234,6 +234,15 @@ const schema = loadSchemaFromJson(bundleJsonString);
 
 Parses a raw JSON string. Accepts the same formats as `loadSchema` (bundled JSON or bare `schema.json` blob). Useful when the schema is passed as a string over a network boundary (e.g., the HTTP API's `schemaJson` request field).
 
+### `findMentionedNames(text, names)`
+
+```ts
+import { findMentionedNames } from "@askdb/core";
+findMentionedNames("Dedupe by EMAIL; see users_email", ["email", "ssn"]); // → ["email"]
+```
+
+Returns the names `text` mentions, in the order given: a whole-word, case-insensitive match whose ends may not touch a letter, digit, or `_` of any script (`email` isn't mentioned by `emailed` or `user_email`; a name wrapped in backticks or quotes is). A qualified name such as `users.org_id` also matches with a schema prefix, with each part quoted or bracketed (`"users"."org_id"`, `[users].[org_id]`), and with spaces around a dot. This is the schema contract's "mentions a sensitive column by name" rule: `@askdb/rag`'s chunker and `@askdb/enrich`'s authoring warning both use it.
+
 ---
 
 ## Dialects

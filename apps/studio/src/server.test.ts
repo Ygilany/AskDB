@@ -141,6 +141,8 @@ describe("AskDB Studio server", () => {
     expect(indexed.stats.chunksTotal).toBeGreaterThan(0);
     expect(indexed.status.hasIndex).toBe(true);
     expect(indexed.status.stale).toBe(false);
+    // The memory index lives in this process only; the committed lock is left alone.
+    expect(existsSync(join(schemaDir, "schema.lock.json"))).toBe(false);
 
     const generatedWithRag = await postJson(`${baseUrl}/api/ask`, {
       question: "How many users are there?",

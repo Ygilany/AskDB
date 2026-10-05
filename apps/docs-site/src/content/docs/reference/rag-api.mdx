@@ -11,7 +11,7 @@ See the [RAG for large schemas guide](/guides/rag-for-large-schemas/) for the en
 
 ## `buildSchemaIndex(options)`
 
-Chunks a schema artifact, embeds the chunks, upserts them into the vector store, and returns a bound retriever. Re-indexing is incremental: a chunk is skipped only when the store already holds the same content hash for its id. Built-in stores report their hashes, so a lock file can't make the indexer skip chunks a fresh or different store doesn't have.
+Chunks a schema artifact, embeds the chunks, upserts them into the vector store, and returns a bound retriever. Re-indexing is incremental: a chunk is skipped only when the store already holds, for its id, the hash of the same text embedded by the same embedder. Built-in stores report their hashes, so a lock file can't make the indexer skip chunks a fresh or different store doesn't have, and an interrupted embedder switch can't leave another model's vectors passing as current. For the memory store, which keeps nothing past the process, the lock file is neither read nor written.
 
 ```ts
 import {
@@ -80,7 +80,7 @@ const { sql } = await ask({
 | `retriever` | `Retriever` | Bound to the store and embedder. Pass directly to `ask()`. |
 | `stats.chunksTotal` | `number` | Total chunk count after indexing. Pass as `totalSchemaChunkCount` to `ask()`. |
 | `stats.chunksIndexed` | `number` | Chunks newly embedded in this run. |
-| `stats.chunksReused` | `number` | Chunks skipped because the store already held them with the same content hash. |
+| `stats.chunksReused` | `number` | Chunks skipped because the store already held them with the same text and embedder. |
 | `stats.sensitiveExcluded` | `number` | Chunks left out, plus chunks emitted with part of their describable text (a description, alias, primary entity, enum values, or note) dropped, because the content belongs to or mentions a sensitive table/column. A long source that would split into several chunks counts once per chunk. Exclusion is the default. |
 | `stats.sensitiveIncluded` | `number` | Chunks whose sensitive describable content was embedded only because `chunkOptions.includeSensitiveDescribable: true` was set. Always `0` by default. |
 | `chunks` | `Chunk[]` | Full chunk list sorted by id. Useful for diagnostics. |
@@ -112,6 +112,25 @@ const retriever = createRetriever({ embedder, store });
 | `store` | `VectorStore` | yes | The store that holds the indexed chunks. |
 | `logger` | `AskDbLogger` | no | Structured logger. |
 | `correlationId` | `string` | no | Correlation id for log lines. |
+
+### `checkIndexMatches(options)`
+
+Checks, before querying, that a persisted index was built with the embedder you're about to query with. `askdb-rag query` applies the same rule.
+
+```ts
+import { checkIndexMatches, createRetriever } from "@askdb/rag";
+
+const match = checkIndexMatches({
+  lockFilePath: "./my-app.schema/schema.lock.json",
+  schemaId: "my-app",
+  embedderId: "openai:text-embedding-3-small",
+  dimensions: 1536, // optional
+});
+if (!match.ok) throw new Error(match.message); // match.reason: "lock-outdated" | "index-incomplete" | "embedder-changed" | "dimensions-changed"
+const retriever = createRetriever({ embedder, store });
+```
+
+The embedder id must equal the one the lock records, since equal widths don't make two models' vectors comparable: a lock with no embedder id matches only a query without one, as in `buildSchemaIndex`. When both widths are known they must match. A lock written by an older `@askdb/rag` doesn't match until the index is rebuilt, and neither does a lock marked `incomplete` by a build that switched embedders and didn't finish (the store then holds two models' vectors). A missing or unreadable lock, or one for another schema id, has nothing to compare and returns `{ ok: true, lock: undefined }`.
 
 ---
 
@@ -216,11 +235,11 @@ interface VectorStore {
   // Optional — every stored id for one schema (orphan pruning).
   idsBySchema?(schemaId: string): Promise<string[]>;
   // Optional — identity recorded in schema.lock.json.
-  describe?(): { kind: string; location?: string; dimensions?: number };
+  describe?(): { kind: string; location?: string; dimensions?: number; ephemeral?: boolean; widthHint?: string };
 }
 ```
 
-Persist `UpsertRecord.hash` and implement `hashesByPrefix` so the indexer can verify what your store holds. It then skips only chunks stored with the same content hash. Without it, the indexer falls back to the hashes in `schema.lock.json`, and only trusts them when `describe()` reports the same store and dimensions as the lock. A store with neither `hashesByPrefix` nor `describe()` re-embeds every chunk on each run, because a fresh, empty instance can't be told apart from the one the lock describes. Implement `idsBySchema` so chunks removed from the schema are pruned from your store without touching other schemas. Without it, the indexer prunes only the ids listed in the previous `schema.lock.json` and logs `askdb.rag.orphan_cleanup_limited`. Keep `describe().location` free of absolute paths: it is written to `schema.lock.json`, which you usually commit.
+Persist `UpsertRecord.hash` and implement `hashesByPrefix` so the indexer can verify what your store holds. The hash covers the chunk text and the embedder id, and the indexer skips only chunks stored with the same hash. Without it, the indexer falls back to the hashes in `schema.lock.json`, and only trusts them when `describe()` reports the same store and dimensions as the lock. A store with neither `hashesByPrefix` nor `describe()` re-embeds every chunk on each run, because a fresh, empty instance can't be told apart from the one the lock describes. Implement `idsBySchema` so chunks removed from the schema are pruned from your store without touching other schemas. Without it, the indexer prunes only the ids listed in the previous `schema.lock.json` and logs `askdb.rag.orphan_cleanup_limited`. Keep `describe().location` free of absolute paths: it is written to `schema.lock.json`, which you usually commit. Return `ephemeral: true` from a store that keeps nothing past the process, so the indexer leaves the lock alone. `widthHint` is appended to the indexer's width-mismatch error, to say how to give your store a different vector width. If a lock was written for another schema id (a renamed schema, or a lock copied from another schema's directory), the indexer logs `askdb.rag.lock_schema_mismatch`, reindexes without it, and deletes none of the ids it lists; remove an old schema id's chunks yourself with `idsBySchema` and `delete`.
 
 ---
 
@@ -292,7 +311,7 @@ type Filter = {
 
 | Field | Type | Description |
 | --- | --- | --- |
-| `id` | `string` | Stable, schema-scoped chunk id: `chunk:<schemaId>:<local-id>`, e.g. `chunk:my-app:table:public.orders#cql`. `%` and `:` in the schema id are percent-encoded (`shop:eu` → `chunk:shop%3Aeu:…`). Unchanged across re-indexes. Use `chunkIdPrefix(schemaId)` to get the prefix. |
+| `id` | `string` | Stable, schema-scoped chunk id: `chunk:<schemaId>:<local-id>`, e.g. `chunk:my-app:table:public.orders#cql`. `%` and `:` in the schema id are percent-encoded (`shop:eu` → `chunk:shop%3Aeu:…`). Unchanged across re-indexes. |
 | `type` | `ChunkType` | Semantic kind of this chunk. |
 | `text` | `string` | The text that gets embedded. |
 | `schemaId` | `string` | The schema this chunk belongs to. |

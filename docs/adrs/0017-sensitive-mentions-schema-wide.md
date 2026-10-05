@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted (2026-10-04, maintainer decision on #193's review). The rule is in `collectSensitiveNames` (`packages/rag/src/chunker/chunker.ts`), and the column provenance it needs is `NormalizedV2Column.sensitiveFromTable`, set by `loadSchema()` (`packages/core/src/schema/v2/loader.ts`). Contract: [`schema-v2.md` → Sensitive propagation](../contracts/schema-v2.md#sensitive-propagation).
+Accepted (2026-10-04, maintainer decision on #193's review). The rule is in `collectSensitiveNames` (`packages/rag/src/chunker/chunker.ts`), qualified names are matched by `findMentionedNames` (`packages/core/src/schema/v2/mentions.ts`, the mention rule rag and enrich share since #193), and the column provenance it needs is `NormalizedV2Column.sensitiveFromTable`, set by `loadSchema()` (`packages/core/src/schema/v2/loader.ts`). Contract: [`schema-v2.md` → Sensitive propagation](../contracts/schema-v2.md#sensitive-propagation).
 
 ## Context
 

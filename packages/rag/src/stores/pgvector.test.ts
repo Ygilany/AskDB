@@ -164,7 +164,7 @@ describe("createPgvectorStore", () => {
     expect(query).not.toHaveBeenCalled();
   });
 
-  it("loads `pg` for a connection string and reaches the network (CJS default export handled)", async () => {
+  it("loads the installed `pg` for a connection string and reaches the network", async () => {
     // Port 1 refuses connections: getting that far means `pg` loaded and `Pool` was found.
     const store = createPgvectorStore({ connectionString: "postgres://u:p@127.0.0.1:1/none" });
     try {
@@ -191,15 +191,16 @@ describe("createPgvectorStore", () => {
 
     expect(await store.idsBySchema!("s")).toEqual(["chunk:s:a", "chunk:table:legacy"]);
     expect(query.mock.calls[1]).toEqual(['SELECT id FROM "t" WHERE schema_id = $1', ["s"]]);
-    expect(store.describe!()).toEqual({ kind: "pgvector", location: "t", dimensions: 2 });
+    expect(store.describe!()).toMatchObject({ kind: "pgvector", location: "t", dimensions: 2 });
   });
 
   it("reports and enforces an existing table's width once ensureSchema reads it, when given none", async () => {
     const store = createPgvectorStore({ client: clientWithTable(768).client, table: "t" });
-    expect(store.describe!()).toEqual({ kind: "pgvector", location: "t" });
+    expect(store.describe!()).toMatchObject({ kind: "pgvector", location: "t" });
+    expect(store.describe!()).not.toHaveProperty("dimensions");
 
     await store.ensureSchema();
-    expect(store.describe!()).toEqual({ kind: "pgvector", location: "t", dimensions: 768 });
+    expect(store.describe!()).toMatchObject({ kind: "pgvector", location: "t", dimensions: 768 });
     await expect(
       store.upsert([
         {

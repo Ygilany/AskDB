@@ -21,6 +21,12 @@ export const AskDbRagLogEvent = {
    * in the previous `schema.lock.json` (never other schemas' chunks).
    */
   OrphanCleanupLimited: "askdb.rag.orphan_cleanup_limited",
+  /**
+   * `schema.lock.json` names another schema id (a renamed schema, or a lock
+   * copied from another schema's directory). The run reindexes without it
+   * and deletes none of the ids it lists.
+   */
+  LockSchemaMismatch: "askdb.rag.lock_schema_mismatch",
   /** Retrieval ran for a question; counts only. */
   RetrievalCompleted: "askdb.rag.retrieval_completed",
 } as const;

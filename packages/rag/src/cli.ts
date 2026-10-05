@@ -10,7 +10,7 @@ import {
 } from "@askdb/core";
 import { getAskDbRuntimeConfig, type AskDbRuntimeConfig } from "@askdb/config";
 import { buildSchemaIndex } from "./indexer/index.js";
-import { inspectLockFile } from "./indexer/lock-file.js";
+import { checkIndexMatches } from "./indexer/lock-file.js";
 import { loadChunkerSourcesFromDir } from "./chunker/sources.js";
 import { createOpenAiEmbedder as createAiSdkOpenAiEmbedder } from "./embedders/openai.js";
 import { createMemoryStore } from "./stores/memory.js";
@@ -99,9 +99,8 @@ async function runIndex(opts: CliOptions, logger: AskDbLogger, runtimeConfig: As
     embedder,
     store,
     embedderId: embedderId(opts),
-    // A memory index vanishes with this process: recording it in the
-    // committed lock would only misdescribe the persisted index.
-    lockFilePath: (opts.store ?? "file") === "memory" ? undefined : lockFilePathFor(opts),
+    // The indexer leaves the lock alone for an ephemeral (memory) store.
+    lockFilePath: lockFilePathFor(opts),
     force: opts.force,
     correlationId: opts.correlationId,
     logger,
@@ -193,34 +192,18 @@ function lockFilePathFor(opts: CliOptions): string {
  * built with — the similarity scores would be meaningless.
  */
 function assertQueryMatchesIndex(opts: CliOptions, schemaId: string): void {
-  const inspected = inspectLockFile(lockFilePathFor(opts));
-  if (inspected.status === "outdated") {
-    throw new Error(
-      "schema.lock.json was written by an older @askdb/rag (unscoped chunk ids). Re-run `askdb-rag index` before querying.",
-    );
-  }
-  if (inspected.status !== "ok" || inspected.lock.schemaId !== schemaId) return;
-  const lock = inspected.lock;
-  const currentId = embedderId(opts);
-  // A lock with no embedder id can't show the index was built with this one;
-  // equal dimensions don't make two models' vectors comparable.
-  if (lock.embedderId !== currentId) {
-    const built =
-      lock.embedderId === undefined
-        ? "without an embedder id, so its embedder is unknown,"
-        : `with embedder "${lock.embedderId}"`;
-    throw new Error(
-      `The index was built ${built} but this query uses "${currentId}". ` +
-        "Pass the same --embedder/--embedder-model/--dimensions used for `index`, or re-run `index`.",
-    );
-  }
-  const dims = embedderDimensions(opts);
-  if (lock.dimensions !== undefined && lock.dimensions !== dims) {
-    throw new Error(
-      `The index holds ${lock.dimensions}-dimension embeddings but this query uses ${dims}. ` +
-        "Pass the same --dimensions used for `index`, or re-run `index`.",
-    );
-  }
+  const match = checkIndexMatches({
+    lockFilePath: lockFilePathFor(opts),
+    schemaId,
+    embedderId: embedderId(opts),
+    dimensions: embedderDimensions(opts),
+  });
+  if (match.ok) return;
+  const fix =
+    match.reason === "lock-outdated"
+      ? "Re-run `askdb-rag index` before querying."
+      : "Pass the same --embedder/--embedder-model/--dimensions used for `index`, or re-run `index`.";
+  throw new Error(`${match.message} ${fix}`);
 }
 
 async function runSetupStore(opts: CliOptions): Promise<number> {

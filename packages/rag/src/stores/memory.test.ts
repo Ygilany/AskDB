@@ -93,12 +93,13 @@ describe("createMemoryStore", () => {
 
   it("accepts a new dimension once emptied, and reports it via describe()", async () => {
     const store = createMemoryStore();
-    expect(store.describe?.()).toEqual({ kind: "memory" });
+    expect(store.describe?.()).toMatchObject({ kind: "memory", ephemeral: true });
+    expect(store.describe?.()).not.toHaveProperty("dimensions");
     await store.upsert([{ id: "a", vector: [1, 0], payload: payload("a") }]);
-    expect(store.describe?.()).toEqual({ kind: "memory", dimensions: 2 });
+    expect(store.describe?.()).toMatchObject({ dimensions: 2 });
     await store.delete(["a"]);
     await store.upsert([{ id: "b", vector: [1, 0, 0], payload: payload("b") }]);
-    expect(store.describe?.()).toEqual({ kind: "memory", dimensions: 3 });
+    expect(store.describe?.()).toMatchObject({ dimensions: 3 });
   });
 
   it("lists ids by schema", async () => {
