@@ -18,6 +18,19 @@ function isV2(schema: AnyNormalizedSchema): schema is NormalizedSchemaV2 {
 }
 
 /**
+ * The namespace whose tables the prompt lists unqualified: the dialect's
+ * `unqualifiedNamespace` when it is the schema's only namespace. Next to other
+ * namespaces it is a real name (a MySQL database list) and stays qualified.
+ */
+export function unqualifiedNamespaceFor(
+  schema: AnyNormalizedSchema,
+  namespace: string | undefined,
+): string | undefined {
+  if (namespace === undefined || !isV2(schema)) return undefined;
+  return schema.tables.every((t) => t.schema === namespace) ? namespace : undefined;
+}
+
+/**
  * Build the dialect-parameterized NL→SQL user prompt. The same scaffolding is used
  * for every dialect; the dialect's `displayName` and `promptBrief` are interpolated
  * to steer the model toward dialect-correct syntax.
@@ -28,7 +41,7 @@ export function buildNlToSqlUserPrompt(
   schema: AnyNormalizedSchema,
   ambiguityNotes: readonly string[] = [],
   logger?: AskDbLogger,
-  nlToSqlSchemaOptions?: FormatNlToSqlOptions,
+  nlToSqlSchemaOptions?: Omit<FormatNlToSqlOptions, "unqualifiedNamespace">,
   /**
    * Optional pre-synthesized DDL block. When supplied, this replaces the
    * formatter output verbatim — used by `ask({ retriever })` to inject a
@@ -45,12 +58,19 @@ export function buildNlToSqlUserPrompt(
    * pre-parameterize path (byte-identical).
    */
   parameterize?: boolean,
+  /**
+   * The namespace `prebuiltDdl` lists unqualified (`ask()` passes the one it rendered
+   * the retrieved DDL with), so the identifier rule matches the DDL it sits beside.
+   */
+  prebuiltDdlUnqualifiedNamespace?: string,
 ): string {
-  const unqualifiedNamespace = dialect.unqualifiedNamespace;
+  const listedNamespace = unqualifiedNamespaceFor(schema, dialect.unqualifiedNamespace);
   const formatted = isV2(schema)
-    ? formatSchemaV2ForNlToSql(schema, { ...nlToSqlSchemaOptions, unqualifiedNamespace })
+    ? formatSchemaV2ForNlToSql(schema, { ...nlToSqlSchemaOptions, unqualifiedNamespace: listedNamespace })
     : formatSchemaForNlToSql(schema, nlToSqlSchemaOptions);
   const ddl = prebuiltDdl ?? formatted.ddl;
+  const unqualifiedNamespace =
+    prebuiltDdl === undefined ? listedNamespace : prebuiltDdlUnqualifiedNamespace;
   const stats = formatted.stats;
   if (
     stats.omitSensitiveIdentifiersFromPrompt &&

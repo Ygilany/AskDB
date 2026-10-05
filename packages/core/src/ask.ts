@@ -6,6 +6,7 @@ import type { AnyNormalizedSchema } from "./schema/types.js";
 import { DEFAULT_ASKDB_MODE, type AskDbModeV1 } from "./modes/types.js";
 import type { Retriever } from "./retrieval/types.js";
 import { synthesizeRetrievedDdl } from "./retrieval/synthesize-ddl.js";
+import { unqualifiedNamespaceFor } from "./sql/prompt.js";
 import type { NormalizedSchemaV2 } from "./schema/v2/normalized.js";
 import type {
   NormalizedTenantPolicy,
@@ -59,6 +60,8 @@ export type AskDialectGenerateOptions = {
   generateText?: typeof defaultGenerateText;
   providerOptions?: Record<string, unknown>;
   prebuiltDdl?: string;
+  /** The namespace `prebuiltDdl` lists unqualified; the built-in generator matches its identifier rule to it. */
+  prebuiltDdlUnqualifiedNamespace?: string;
   tenantPolicy?: import("./schema/v2/tenant-policy.js").NormalizedTenantPolicy;
   tenantScope?: TenantScope;
   /**
@@ -351,11 +354,14 @@ export async function ask(options: AskPipelineOptions): Promise<AskPipelineResul
   const omitSensitive = options.omitSensitiveIdentifiersFromNlToSqlPrompt ?? false;
   const parameterize = options.parameterize !== false; // default true
   const dialectSpec = resolveDialectSpec(options.dialect);
+  // A custom AskDialect has no spec here, so its retrieved DDL stays qualified; the
+  // namespace travels with the DDL so a wrapped built-in generator's rule agrees with it.
+  const retrievedNamespace = unqualifiedNamespaceFor(options.schema, dialectSpec?.unqualifiedNamespace);
   const prebuiltDdl = await maybeRetrieveDdl({
     options,
     logger,
     omitSensitive,
-    unqualifiedNamespace: dialectSpec?.unqualifiedNamespace,
+    unqualifiedNamespace: retrievedNamespace,
   });
   const dialect = resolveDialect(options.dialect);
   const generated = await dialect.generate(
@@ -369,6 +375,7 @@ export async function ask(options: AskPipelineOptions): Promise<AskPipelineResul
       generateText: options.deps?.generateText,
       providerOptions: options.deps?.providerOptions,
       prebuiltDdl,
+      prebuiltDdlUnqualifiedNamespace: prebuiltDdl === undefined ? undefined : retrievedNamespace,
       tenantPolicy,
       tenantScope,
       // Custom AskDialect implementations ignore this; built-in path uses it.

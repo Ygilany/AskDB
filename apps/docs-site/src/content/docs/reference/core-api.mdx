@@ -282,7 +282,7 @@ const redshiftFlavor: DialectSpec = {
 | `displayName` | `string` | yes | Human-readable name. |
 | `promptBrief` | `string` | yes | One-paragraph guidance for the model about this dialect's syntax. |
 | `identifierQuote` | `'"' \| '`'` | yes | Identifier quoting style. |
-| `unqualifiedNamespace` | `string` | no | A namespace that isn't a schema in this engine. The prompt lists its tables without it and tells the model never to write `<namespace>.<table>`. The SQLite, MySQL and MariaDB specs set `"public"`, the namespace their connectors give the database's tables; spread one to keep it. (A MySQL database actually named `public` in a database list would be listed unqualified too.) |
+| `unqualifiedNamespace` | `string` | no | A namespace that isn't a schema in this engine. When it is the schema's only namespace, the prompt lists its tables without it and tells the model never to write `<namespace>.<table>`; next to other namespaces (a MySQL database list that includes a database named `public`) it stays qualified. The SQLite, MySQL and MariaDB specs set `SINGLE_NAMESPACE_LABEL` (`"public"`), the namespace their connectors give the database's tables; spread one to keep it. |
 | `extraForbiddenKeywords` | `readonly string[]` | no | Keywords to forbid in addition to the shared read-only denylist. |
 | `blockedFunctions` | `readonly string[]` | no | Functions `validateSelectSql` rejects when called (`name(`), such as `pg_sleep` or `load_file`. |
 | `extraValidate` | `(sql: string) => void` | no | Dialect-specific SQL validator. Throw `SqlValidationError` for failures. |
@@ -309,7 +309,7 @@ The `generate` method receives:
 - `question: string`
 - `schema: AnyNormalizedSchema`
 - `model: AskDbLanguageModel`
-- `options?: AskDialectGenerateOptions` — `{ logger, explain, omitSensitiveIdentifiersFromNlToSqlPrompt, generateText, prebuiltDdl, tenantPolicy, tenantScope }`. `tenantScope` is the scope after `ask()` expands a `subtree`: a `multi_root` scope with one entry per covered root, where a root the resolver returned no IDs for has `ids: []`. `validateTenantScope()` accepts it.
+- `options?: AskDialectGenerateOptions` — `{ logger, explain, omitSensitiveIdentifiersFromNlToSqlPrompt, generateText, prebuiltDdl, prebuiltDdlUnqualifiedNamespace, tenantPolicy, tenantScope }`. `prebuiltDdlUnqualifiedNamespace` is the namespace `prebuiltDdl` lists unqualified; forward it with `prebuiltDdl` to `generateSelectSql` so the prompt's identifier rule matches the DDL. `tenantScope` is the scope after `ask()` expands a `subtree`: a `multi_root` scope with one entry per covered root, where a root the resolver returned no IDs for has `ids: []`. `validateTenantScope()` accepts it.
 
 It must return `AskDialectGenerateResult`:
 

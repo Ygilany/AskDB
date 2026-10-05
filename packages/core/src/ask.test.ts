@@ -2,7 +2,7 @@ import type { LanguageModel } from "ai";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it, vi } from "vitest";
-import { ask, type AskDialect } from "./ask.js";
+import { ask, type AskDialect, type AskDialectInput } from "./ask.js";
 import { placeholderForTenantRoot, validateTenantScope } from "./index.js";
 import {
   AskDbError,
@@ -17,7 +17,9 @@ import { formatSchemaForNlToSql } from "./schema/normalize.js";
 import type { NormalizedSchema } from "./schema/types.js";
 import { formatSchemaV2ForNlToSql } from "./schema/v2/index.js";
 import { loadSchema, loadSchemaFromJson } from "./schema/v2/loader.js";
-import type { BuiltInDialectId } from "./sql/dialect-spec.js";
+import type { NormalizedSchemaV2 } from "./schema/v2/normalized.js";
+import { SQLITE_DIALECT, type DialectSpec } from "./sql/dialect-spec.js";
+import { generateSelectSql } from "./sql/generate.js";
 import type { TenantScope } from "./schema/v2/tenant-policy.js";
 
 const minimalSchema: NormalizedSchema = {
@@ -292,37 +294,45 @@ describe("ask — retriever wiring", () => {
 });
 
 describe("ask — table names in the prompt per dialect (#447)", () => {
-  // `public` is the namespace SQLite and single-database MySQL/MariaDB connectors give
-  // their only namespace; `sales` is a real one (a MySQL database from a database list).
-  const twoNamespaceSchema = loadSchemaFromJson(
-    JSON.stringify({
-      version: 2,
-      schemaId: "two-namespaces",
-      tables: [
-        {
-          id: "table:public.users",
-          name: "users",
-          schema: "public",
-          columns: [{ id: "table:public.users#id", name: "id", type: "integer", nullable: false, primaryKey: true }],
-        },
-        {
-          id: "table:sales.orders",
-          name: "orders",
-          schema: "sales",
-          columns: [{ id: "table:sales.orders#id", name: "id", type: "integer", nullable: false, primaryKey: true }],
-        },
-      ],
-    }),
-  );
+  function schemaOf(...tables: Array<[namespace: string, table: string]>) {
+    return loadSchemaFromJson(
+      JSON.stringify({
+        version: 2,
+        schemaId: "namespaces",
+        tables: tables.map(([ns, name]) => ({
+          id: `table:${ns}.${name}`,
+          name,
+          schema: ns,
+          columns: [{ id: `table:${ns}.${name}#id`, name: "id", type: "integer", nullable: false, primaryKey: true }],
+        })),
+      }),
+    );
+  }
+  // `public` as the only namespace: what SQLite and single-database MySQL/MariaDB connectors emit.
+  const singleNamespace = schemaOf(["public", "orders"], ["public", "users"]);
+  // A MySQL database list that includes a database actually named `public`.
+  const databaseList = schemaOf(["public", "users"], ["sales", "orders"]);
+  const oldRule = "- Use identifiers from the schema below; qualify table names where it helps readability.";
+
+  function retrieverFor(...tableIds: string[]) {
+    return vi.fn(async () =>
+      tableIds.map((ref) => ({
+        id: `chunk:${ref}`,
+        score: 1,
+        payload: { id: `chunk:${ref}`, type: "table" as const, text: `# ${ref}`, schemaId: "namespaces", refs: [ref], sensitive: false },
+      })),
+    );
+  }
 
   async function promptFor(
-    dialect: BuiltInDialectId,
+    dialect: AskDialectInput,
+    schema: NormalizedSchemaV2,
     extra: Partial<Parameters<typeof ask>[0]> = {},
   ): Promise<string> {
     const generateText = vi.fn(async () => ({ text: "```sql\nSELECT COUNT(*) FROM users\n```" }));
     await ask({
       question: "How many users?",
-      schema: twoNamespaceSchema,
+      schema,
       model: fakeModel,
       dialect,
       parameterize: false,
@@ -333,13 +343,13 @@ describe("ask — table names in the prompt per dialect (#447)", () => {
   }
 
   it.each(["sqlite", "mysql", "mariadb"] as const)(
-    "%s lists `public` tables unqualified and tells the model `public` is not a schema",
+    "%s lists tables of its only namespace `public` unqualified and tells the model `public` is not a schema",
     async (dialect) => {
-      const prompt = await promptFor(dialect);
+      const prompt = await promptFor(dialect, singleNamespace);
       expect(prompt).toMatch(/^TABLE users$/m);
-      expect(prompt).toMatch(/^TABLE sales\.orders$/m);
+      expect(prompt).toMatch(/^TABLE orders$/m);
       expect(prompt).not.toContain("TABLE public.");
-      expect(prompt).not.toContain("qualify table names where it helps readability");
+      expect(prompt).not.toContain(oldRule);
       expect(prompt).toContain("never write `public.<table>`");
     },
   );
@@ -347,35 +357,54 @@ describe("ask — table names in the prompt per dialect (#447)", () => {
   it.each(["postgres", "cockroachdb", "sqlserver"] as const)(
     "%s keeps every table qualified with its schema",
     async (dialect) => {
-      const prompt = await promptFor(dialect);
+      const prompt = await promptFor(dialect, singleNamespace);
       expect(prompt).toMatch(/^TABLE public\.users$/m);
-      expect(prompt).toMatch(/^TABLE sales\.orders$/m);
-      expect(prompt).toContain(
-        "- Use identifiers from the schema below; qualify table names where it helps readability.",
-      );
-      expect(prompt).not.toContain("never write `public.<table>`");
+      expect(prompt).toContain(oldRule);
+      expect(prompt).not.toContain("never write");
     },
   );
 
-  it("sqlite lists retrieved `public` tables unqualified too", async () => {
-    const retriever = vi.fn(async () => [
-      {
-        id: "chunk:table:public.users",
-        score: 1,
-        payload: {
-          id: "chunk:table:public.users",
-          type: "table" as const,
-          text: "# public.users",
-          schemaId: "two-namespaces",
-          refs: ["table:public.users"],
-          sensitive: false,
-        },
-      },
-    ]);
-    const prompt = await promptFor("sqlite", { retriever, totalSchemaChunkCount: 100 });
+  it.each([
+    ["full schema", {}],
+    ["retrieved schema", { retriever: retrieverFor("table:public.users", "table:sales.orders"), totalSchemaChunkCount: 100 }],
+  ] as const)("mysql keeps a real database named `public` qualified when it isn't the only namespace (%s)", async (_path, extra) => {
+    const prompt = await promptFor("mysql", databaseList, extra);
+    expect(prompt).toMatch(/^TABLE public\.users$/m);
+    expect(prompt).toMatch(/^TABLE sales\.orders$/m);
+    expect(prompt).toContain(oldRule);
+    expect(prompt).not.toContain("never write");
+  });
+
+  it("sqlite lists retrieved tables unqualified too", async () => {
+    const retriever = retrieverFor("table:public.users");
+    const prompt = await promptFor("sqlite", singleNamespace, { retriever, totalSchemaChunkCount: 100 });
     expect(retriever).toHaveBeenCalledOnce();
     expect(prompt).toMatch(/^TABLE users$/m);
     expect(prompt).not.toContain("TABLE public.");
+    expect(prompt).toContain("never write `public.<table>`");
+  });
+
+  it("reads the namespace from a custom DialectSpec", async () => {
+    const spec: DialectSpec = { ...SQLITE_DIALECT, unqualifiedNamespace: "main" };
+    for (const extra of [{}, { retriever: retrieverFor("table:main.users"), totalSchemaChunkCount: 100 }]) {
+      const prompt = await promptFor(spec, schemaOf(["main", "users"]), extra);
+      expect(prompt).toMatch(/^TABLE users$/m);
+      expect(prompt).toContain("never write `main.<table>`");
+      expect(prompt).not.toContain("`public`");
+    }
+  });
+
+  it("keeps retrieved table names and the rule consistent when a custom AskDialect wraps generateSelectSql", async () => {
+    const wrapped: AskDialect = {
+      generate: (question, schema, model, options) => generateSelectSql(SQLITE_DIALECT, question, schema, model, options),
+    };
+    const prompt = await promptFor(wrapped, singleNamespace, {
+      retriever: retrieverFor("table:public.users"),
+      totalSchemaChunkCount: 100,
+    });
+    expect(prompt).toContain("TABLE public.users");
+    expect(prompt).toContain(oldRule);
+    expect(prompt).not.toContain("never write");
   });
 });
 
