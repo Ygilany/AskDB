@@ -97,6 +97,17 @@ askdb introspect --engine prisma --prisma-schema ./prisma/schema.prisma --print
 askdb introspect --engine prisma --prisma-schema ./prisma --diff my-app.schema
 ```
 
+## RAG
+
+`askdb rag` chunks and embeds a schema artifact for retrieval and queries the index. It reads `rag.store`, `rag.storeConfig`, and `ai.embedding` from `askdb.config.*`, and its flags override them. It replaces the `askdb-rag` binary that `@askdb/rag` used to ship.
+
+```bash
+askdb rag index my-app.schema
+askdb rag query my-app.schema --question "customer signups" -k 8
+```
+
+See the [CLI reference](https://askdb.tools/reference/cli/#askdb-rag) for every flag, including `setup-store` for provisioning a pgvector table.
+
 ## Environment
 
 The CLI loads `.env` from the current working directory (via dotenv), then evaluates an optional AskDB config file (`askdb.config.*` or `.config/askdb.*`) via [`@askdb/config`](https://www.npmjs.com/package/@askdb/config) (`bootstrapAskDbEnv`), which installs the **runtime snapshot** used by `getAskDbRuntimeConfig()` — AskDB does **not** copy the full flattened map into `process.env`. Run `askdb init` to create **`askdb.config.ts`** with nested `defineConfig` and `env()` examples; optional `.env` guidance is in comments in that file (no `.env` is generated).

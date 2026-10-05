@@ -1,0 +1,13 @@
+---
+"askdb": minor
+"@askdb/rag": minor
+---
+
+**`askdb rag` replaces the `askdb-rag` binary, reads `askdb.config.*`, and assumes no embedding width.**
+
+- **`askdb rag index | query | setup-store`** is the RAG CLI now, in the `askdb` package. `@askdb/rag` no longer depends on `@askdb/config`, so a host that embeds the library doesn't install the config loader. Its `askdb-rag` binary stays until 1.0 as a stub that prints the `askdb rag` command to run and exits `1`; it doesn't forward, because `askdb rag` reads its store from config where `askdb-rag` always defaulted to the file store.
+- **Config fallbacks.** Flags still win. The schema dir falls back to `introspection.outputDir`, `--store` to `rag.store`, `--pg-url` and `--pg-table` to `rag.storeConfig.pgvector`, `--file-path` to `rag.storeConfig.file.basePath`, and `--embedder` to `rag.embedder`. With `rag.store: "pgvector"`, the pgvector index strategy comes from `rag.storeConfig.pgvector.indexStrategy`. `askdb rag --help` and `--version` work without a config.
+- **`--embedder mock|ai`.** `ai` embeds with the `ai.embedding` model, through the same path as Studio, and needs `rag.embedder: "ai"`. `--embedder-model` overrides `ai.embedding.model`. `--embedder openai` and `--embedder ai-sdk` are deprecated aliases of `ai` until 1.0 and print a warning; `openai` also requires `ai.embedding.provider: "openai"`. To migrate from `--embedder openai`, configure `ai.embedding` and `rag.embedder: "ai"`.
+- **`--api-key` is removed.** Set the key on a connection in `ai.providerConfig`.
+- **AI embedder ids change** from `openai:<model>[:<dims>]` to Studio's `ai-sdk:<provider>:<model>:<dims|default>`, so the CLI and Studio accept each other's indexes. An index built by `askdb-rag --embedder openai` re-embeds once on the next `askdb rag index`, and `query` refuses it until then. Mock indexes (`mock:lexical-<dims>`) stay valid.
+- **No assumed width.** `setup-store` requires `--dimensions` and fails before connecting without it; it used to default to the mock embedder's 64, or 1536 with `--embedder openai`. The CLI's list of OpenAI model widths is gone: `index` and `query` take `--dimensions`, else `ai.embedding.dimensions`, else the model's own width (mock: 64), and `index` learns a new pgvector table's width from the model. A pgvector table of another width fails before any chunk is embedded, with the fix in flags: drop the table, pass `--pg-table` for a new table, or pass `--dimensions <table width>`.

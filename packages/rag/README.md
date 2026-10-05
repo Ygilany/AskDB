@@ -10,7 +10,7 @@ Deterministic retrieval over AskDB Schema v2 artifacts. `@askdb/rag` chunks the 
 pnpm add @askdb/rag @askdb/core ai
 # only if you use the pgvector adapter:
 pnpm add pg
-# only if you use the OpenAI embedder helper or CLI `--embedder openai`:
+# only if you use the OpenAI embedder helper:
 pnpm add @ai-sdk/openai
 ```
 
@@ -52,13 +52,15 @@ const { sql } = await ask({
 
 ## CLI
 
+`@askdb/rag` is a library. The command line for it is `askdb rag` in the [`askdb`](https://www.npmjs.com/package/askdb) package, which reads `rag.*` and `ai.embedding` from `askdb.config.*`:
+
 ```bash
-askdb-rag index fixtures/schemas/orders-users.schema --store file
-askdb-rag query fixtures/schemas/orders-users.schema \
+npx askdb rag index fixtures/schemas/orders-users.schema --store file
+npx askdb rag query fixtures/schemas/orders-users.schema \
   --question "How much revenue did we make last month?"
 ```
 
-The default CLI embedder is a deterministic mock for smoke tests. Use `--embedder openai` with `OPENAI_API_KEY` for real embeddings.
+See the [CLI reference](https://askdb.tools/reference/cli/#askdb-rag) for every flag. The `askdb-rag` binary this package used to ship now only points at `askdb rag`, and is removed at 1.0.
 
 ## Public Surface
 
