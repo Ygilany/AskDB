@@ -49,7 +49,13 @@ if (cliOptions.help) {
   }
 }
 
-const { httpApi } = getAskDbRuntimeConfig();
+let httpApi: ReturnType<typeof getAskDbRuntimeConfig>["httpApi"];
+try {
+  ({ httpApi } = getAskDbRuntimeConfig());
+} catch (error) {
+  process.stderr.write(`askdb-http: ${formatError(error)}\n`);
+  process.exit(1);
+}
 const app = createAskDbHttpServer({
   port: cliOptions.port ?? httpApi.listen.port,
   host: cliOptions.host ?? httpApi.listen.host,

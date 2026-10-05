@@ -70,7 +70,7 @@ npx askdb-http --schema-path ./my-app.schema --port 3000 --host 127.0.0.1
 
 Every flag is optional. Precedence per setting: CLI flag → `askdb.config.ts` (`host.schemaPath`, `httpApi.listen.port`, `httpApi.listen.host`) → built-in default.
 
-If the server can't bind (for example, the port is already in use), `askdb-http` prints a one-line error and exits with code `1`.
+If the server can't load its config (no `askdb.config.*` found, or an invalid value such as an out-of-range `httpApi.requestTimeoutMs`) or can't bind (for example, the port is already in use), `askdb-http` prints a one-line error and exits with code `1`.
 
 ## Endpoints
 

@@ -241,7 +241,7 @@ export function getAskDbRuntimeConfig(): AskDbRuntimeConfig {
   const openaiEmbedding = embedding?.provider === "openai" ? embedding : undefined;
 
   const logStdoutRaw = pickFlat(flat, "ASKDB_LOG_STDOUT");
-  const logStdout = logStdoutRaw !== undefined && ["1", "true", "yes"].includes(logStdoutRaw.toLowerCase());
+  const logStdout = isTruthyFlag(logStdoutRaw);
 
   const portRaw = pickFlat(flat, "PORT");
   const portParsed = portRaw !== undefined ? Number(portRaw) : NaN;
@@ -251,8 +251,7 @@ export function getAskDbRuntimeConfig(): AskDbRuntimeConfig {
   const host = structured.httpApi?.listen?.host ?? pickFlat(flat, "HOST") ?? "127.0.0.1";
 
   const omitRaw = pickFlat(flat, "ASKDB_OMIT_SENSITIVE_FROM_PROMPT");
-  const omitFromFlat =
-    omitRaw !== undefined && ["1", "true", "yes"].includes(omitRaw.toLowerCase());
+  const omitFromFlat = isTruthyFlag(omitRaw);
 
   const prismaSchemaPathRaw =
     structured.introspection.provider === "prisma"

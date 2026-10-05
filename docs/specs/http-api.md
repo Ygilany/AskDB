@@ -82,7 +82,7 @@ Correlation ID comes from the `x-correlation-id` header, or is generated.
 
 | Code | HTTP | Source |
 | --- | --- | --- |
-| `bad_request` | 400 | Malformed body, missing `question`, invalid `mode`, non-boolean `omitSensitiveFromPrompt`, non-string `schemaJson`, retired execution field, `SchemaNotConfiguredError`, `DialectNotSupportedError` |
+| `bad_request` | 400 | Malformed body, missing `question`, invalid `mode`, non-boolean `omitSensitiveFromPrompt`, non-string `schemaJson`, retired execution field, `SchemaNotConfiguredError` (the server builds its client with `unknownDialect: "fallback-postgres"`, so `DialectNotSupportedError` isn't raised; the mapping stays as a guard) |
 | `schema_parse_error` | 400 | `SchemaLoadError` |
 | `sql_validation_error` | 400 | `SqlValidationError` (with `rule`) |
 | `schema_override_disabled` | 403 | `schemaJson` sent while `httpApi.allowSchemaOverride` is off |
