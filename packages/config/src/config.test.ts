@@ -497,6 +497,100 @@ describe("flattenAskDbConfig", () => {
   });
 });
 
+describe("optional rag block (#226)", () => {
+  afterEach(() => resetAskDbRuntimeForTests());
+
+  function runtimeFor(config: AskDbConfig) {
+    setAskDbRuntimeForTests({ structured: config, flat: flattenAskDbConfig(config) });
+    return getAskDbRuntimeConfig();
+  }
+
+  /** Only the keys the `rag` block writes. */
+  function ragKeys<V>(env: Record<string, V>): Record<string, V> {
+    return Object.fromEntries(
+      Object.entries(env).filter(([key]) => key.startsWith("ASKDB_RAG_") || key.startsWith("ASKDB_PGVECTOR_")),
+    );
+  }
+
+  const { rag: _rag, ...noRag } = minimalConfig();
+
+  it("flattens a config without a rag block to the mock embedder", () => {
+    expect(flattenAskDbConfig(noRag).ASKDB_RAG_EMBEDDER).toBe("mock");
+  });
+
+  it("writes no store keys for a config without a rag block", () => {
+    expect(Object.keys(ragKeys(flattenAskDbConfig(noRag)))).toEqual(["ASKDB_RAG_EMBEDDER"]);
+  });
+
+  it("treats an omitted rag block exactly like an explicit mock + memory block, with no deprecations", () => {
+    expect(flattenAskDbConfig(noRag)).toEqual(
+      flattenAskDbConfig({ ...noRag, rag: { embedder: "mock", store: "memory", storeConfig: {} } }),
+    );
+    expect(defineConfig(noRag).deprecations).toEqual([]);
+  });
+
+  it.each([
+    [
+      "the mock embedder with the pgvector store",
+      {
+        rag: {
+          embedder: "mock",
+          store: "pgvector",
+          storeConfig: { pgvector: { databaseUrl: "postgres://pg/db", table: "askdb_chunks", indexStrategy: "ivfflat" } },
+        },
+      },
+      {
+        ASKDB_RAG_EMBEDDER: "mock",
+        ASKDB_PGVECTOR_URL: "postgres://pg/db",
+        ASKDB_RAG_EMBEDDER_DIMENSIONS: "64",
+        ASKDB_PGVECTOR_INDEX_STRATEGY: "ivfflat",
+      },
+    ],
+    [
+      "the ai embedder with the pgvector store",
+      {
+        ai: {
+          provider: "openai",
+          providerConfig: { openai: { apiKey: "k" } },
+          embedding: { model: "text-embedding-3-small", dimensions: 1536 },
+        },
+        rag: { embedder: "ai", store: "pgvector", storeConfig: { pgvector: { databaseUrl: "postgres://pg/db" } } },
+      },
+      {
+        ASKDB_RAG_EMBEDDER: "ai",
+        ASKDB_RAG_EMBEDDER_MODEL: "text-embedding-3-small",
+        ASKDB_RAG_EMBEDDER_DIMENSIONS: "1536",
+        ASKDB_PGVECTOR_URL: "postgres://pg/db",
+        ASKDB_PGVECTOR_INDEX_STRATEGY: "hnsw",
+      },
+    ],
+    [
+      "the mock embedder with the file store",
+      { rag: { embedder: "mock", store: "file", storeConfig: { file: { basePath: "./data/rag" } } } },
+      { ASKDB_RAG_EMBEDDER: "mock", ASKDB_RAG_FILE_BASE_PATH: "./data/rag" },
+    ],
+  ] satisfies [string, Partial<AskDbConfig>, Record<string, string>][])(
+    "flattens a full rag block as before: %s",
+    (_name, overrides, expected) => {
+      expect(ragKeys(flattenAskDbConfig(minimalConfig(overrides)))).toEqual(expected);
+    },
+  );
+
+  it("defaults the runtime store to memory, with an empty storeConfig, when the rag block is omitted", () => {
+    const rt = runtimeFor(noRag);
+    expect(rt.rag.store).toBe("memory");
+    expect(rt.rag.storeConfig).toEqual({});
+  });
+
+  it("exposes the authored store and storeConfig on the runtime view, with no defaults filled in", () => {
+    const rt = runtimeFor(
+      minimalConfig({ rag: { embedder: "mock", store: "file", storeConfig: { file: { basePath: "./data/rag" } } } }),
+    );
+    expect(rt.rag.store).toBe("file");
+    expect(rt.rag.storeConfig).toEqual({ file: { basePath: "./data/rag" } });
+  });
+});
+
 describe("ai config sections: provider connections, ai.language, ai.embedding (#435)", () => {
   afterEach(() => resetAskDbRuntimeForTests());
 
@@ -1020,7 +1114,7 @@ describe("ai config sections: provider connections, ai.language, ai.embedding (#
         { openai: { model: "text-embedding-3-small" } },
         ['askdb.config: rag.embedderConfig is ignored because rag.embedder is "mock"; remove it.'],
       ],
-    ] satisfies [string, NonNullable<AskDbConfig["rag"]["embedderConfig"]>, string[]][])(
+    ] satisfies [string, NonNullable<NonNullable<AskDbConfig["rag"]>["embedderConfig"]>, string[]][])(
       'warns about %s with rag.embedder "mock" only when it holds a value',
       (_name, embedderConfig, expected) => {
         const ai = { provider: "openai", providerConfig: { openai: { apiKey: "k" } } } satisfies AskDbConfig["ai"];
@@ -1045,7 +1139,7 @@ describe("ai config sections: provider connections, ai.language, ai.embedding (#
         { store: "memory", storeConfig: { memory: {}, pgvector: { dimensions: 128 } } },
         [],
       ],
-    ] satisfies [string, Pick<AskDbConfig["rag"], "store" | "storeConfig">, string[]][])(
+    ] satisfies [string, Pick<NonNullable<AskDbConfig["rag"]>, "store" | "storeConfig">, string[]][])(
       'warns that rag.storeConfig.pgvector.dimensions does nothing with rag.embedder "mock": %s',
       (_name, store, expected) => {
         const ai = { provider: "openai", providerConfig: { openai: { apiKey: "k" } } } satisfies AskDbConfig["ai"];

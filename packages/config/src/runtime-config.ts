@@ -62,7 +62,7 @@ export type AskDbRuntimeRagEmbedderConfig = {
 
 export type AskDbRuntimeRagConfig = {
   embedder: AskDbRuntimeRagEmbedderConfig;
-  /** `rag.store`, or `"memory"` when the config has no `rag` block. Read this, not `structured.rag.store`. */
+  /** `rag.store`, or `"memory"` when the config has no `rag` block. Read this rather than `structured.rag`, which is `undefined` when the block is omitted. */
   store: AskDbRagStore;
   /** `rag.storeConfig` as written, with no defaults filled in; `{}` when the config has no `rag` block. */
   storeConfig: NonNullable<AskDbConfig["rag"]>["storeConfig"];

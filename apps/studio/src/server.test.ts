@@ -375,6 +375,20 @@ describe("AskDB Studio server", () => {
     });
   });
 
+  it("uses the in-memory store and the mock embedder when the config has no rag block (#226)", async () => {
+    const { rag: _rag, ...noRag } = STUDIO_TEST_BASE;
+    installStudioRuntime({}, noRag);
+    const schemaDir = copyFixture();
+    const server = createStudioServer({ schema: schemaDir });
+    servers.push(server);
+    const baseUrl = await listen(server);
+
+    const status = await getJson(`${baseUrl}/api/rag/status`);
+    expect(status.store.kind).toBe("memory");
+    expect(status.embedder.kind).toBe("mock");
+    expect(status.hasIndex).toBe(false);
+  });
+
   it("indexes and queries Studio RAG with the OpenAI embedder", async () => {
     const embeddingServer = createEmbeddingServer();
     embeddingServers.push(embeddingServer);
