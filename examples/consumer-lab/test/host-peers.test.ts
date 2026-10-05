@@ -16,8 +16,9 @@
  * 2026-09 amendment), so the check compares the part of each range that covers the
  * host's major, not the whole range.
  * Not covered elsewhere: the workspace's own tests resolve `ai` from its lockfile, at the
- * newest version, so they pass whatever the floor says, and `pnpm smoke:install` doesn't
- * pin `ai`, so npm installs whatever meets the range.
+ * newest version, so they pass whatever the floor says, and `pnpm smoke:install` pins only
+ * the AI SDK 6 floor (its `consumer-ai6` fixture); its AI SDK 7 consumers install whatever
+ * meets the range.
  * No production seam: pnpm's own `pnpm peers check --json` and `pnpm ls --json` over the
  * lab's install, and the installed packages' manifests. It checks the declared ranges, not
  * which `ai` versions the lockfile holds: those depend on what was installed before.
@@ -119,7 +120,12 @@ function hostAiPin(): string {
  * A range with no alternative for that major comes back whole, so it never matches one that has one.
  */
 function rangeForMajor(range: string, major: string): string {
-  return range.split("||").map((part) => part.trim()).find((part) => part.replace(/^[\^~=]/, "").split(".")[0] === major) ?? range;
+  return range.split("||").map((part) => part.trim()).find((part) => majorOf(part) === major) ?? range;
+}
+
+/** The major of a pin or a single-comparator range: `7` for `7.0.51`, `^7.0.51` or `~7.0.51`. */
+function majorOf(version: string): string {
+  return version.replace(/^[\^~=]/, "").split(".")[0]!;
 }
 
 describe("[postgres]", () => {
@@ -134,7 +140,7 @@ describe("[postgres]", () => {
     ];
     expect([...new Set(unmet)].sort()).toEqual([]);
 
-    const hostMajor = hostAiPin().split(".")[0]!;
+    const hostMajor = majorOf(hostAiPin());
     const declarersByRange: Record<string, string[]> = {};
     for (const manifest of installedAskDbManifests()) {
       for (const [field, ranges] of [["dependency", manifest.dependencies], ["peer", manifest.peerDependencies]] as const) {
