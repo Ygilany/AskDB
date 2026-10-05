@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  COCKROACHDB_DIALECT,
   MYSQL_DIALECT,
   POSTGRES_DIALECT,
   SQLITE_DIALECT,
@@ -18,6 +19,7 @@ describe("promptIdentifierQuoter", () => {
     expect([postgres("user"), mysql("user"), sqlserver("user")]).toEqual(['"user"', "user", "[user]"]);
     expect([postgres("rank"), mysql("rank"), sqlserver("rank")]).toEqual(["rank", "`rank`", "rank"]);
     expect(sqlite("key")).toBe('"key"');
+    expect([postgres("family"), promptIdentifierQuoter(COCKROACHDB_DIALECT)("family")]).toEqual(["family", '"family"']);
   });
 
   it("keeps the stored case of a reserved word", () => {

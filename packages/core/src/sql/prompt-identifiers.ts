@@ -1,5 +1,6 @@
 import type { DialectSpec } from "./dialect-spec.js";
 import {
+  COCKROACHDB_EXTRA_RESERVED_WORDS,
   MYSQL_RESERVED_WORDS,
   POSTGRES_RESERVED_WORDS,
   SQLITE_KEYWORDS,
@@ -9,12 +10,19 @@ import {
 type Quoting = { open: string; close: string; reserved: ReadonlySet<string> };
 
 const POSTGRES_QUOTING: Quoting = { open: '"', close: '"', reserved: new Set(POSTGRES_RESERVED_WORDS) };
+const COCKROACHDB_QUOTING: Quoting = {
+  ...POSTGRES_QUOTING,
+  reserved: new Set([...POSTGRES_RESERVED_WORDS, ...COCKROACHDB_EXTRA_RESERVED_WORDS]),
+};
 const MYSQL_QUOTING: Quoting = { open: "`", close: "`", reserved: new Set(MYSQL_RESERVED_WORDS) };
 // Brackets, not double quotes: double quotes are a string under `SET QUOTED_IDENTIFIER OFF` (sqlcmd's default).
 const SQLSERVER_QUOTING: Quoting = { open: "[", close: "]", reserved: new Set(SQLSERVER_RESERVED_WORDS) };
 const SQLITE_QUOTING: Quoting = { open: '"', close: '"', reserved: new Set(SQLITE_KEYWORDS) };
 
-/** A name every engine reads unquoted, unless it is a reserved word. */
+/**
+ * A name every engine tokenizes as one identifier, unless it is a reserved word. Mixed case
+ * stays bare: Postgres and CockroachDB fold it to lowercase, which `promptBrief` covers.
+ */
 const PLAIN_IDENTIFIER = /^[\p{L}_][\p{L}\p{N}_$]*$/u;
 
 /**
@@ -24,8 +32,9 @@ const PLAIN_IDENTIFIER = /^[\p{L}_][\p{L}\p{N}_$]*$/u;
 function quotingFor(dialect: Pick<DialectSpec, "id" | "identifierQuote">): Quoting {
   switch (dialect.id as string) {
     case "postgres":
-    case "cockroachdb":
       return POSTGRES_QUOTING;
+    case "cockroachdb":
+      return COCKROACHDB_QUOTING;
     case "mysql":
     case "mariadb":
       return MYSQL_QUOTING;

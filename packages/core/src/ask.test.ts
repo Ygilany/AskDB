@@ -472,7 +472,12 @@ describe("ask — identifier quoting in the prompt per dialect (#451)", () => {
     expect(prompt).toMatch(/^TABLE "order"$/m);
     expect(prompt).toMatch(/^TABLE payment$/m);
     expect(prompt).toContain('  - "group" text (NULL)');
-    expect(prompt).not.toContain("qualified name");
+    expect(prompt).not.toContain("quote each part separately");
+  });
+
+  it("leaves the qualified-name rule out of a v1 schema's prompt, which lists no schemas", async () => {
+    const prompt = await promptFor("postgres", minimalSchema as never);
+    expect(prompt).not.toContain("quote each part separately");
   });
 
   it("quotes for a custom DialectSpec by its id", async () => {

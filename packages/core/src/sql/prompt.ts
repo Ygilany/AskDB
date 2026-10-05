@@ -103,8 +103,8 @@ export function buildNlToSqlUserPrompt(
     unqualifiedNamespace === undefined
       ? "- Use identifiers from the schema below; qualify table names where it helps readability."
       : `- Use identifiers from the schema below and write each table name exactly as it is listed. \`${unqualifiedNamespace}\` is not a schema in ${dialect.displayName}: never write \`${unqualifiedNamespace}.<table>\`, even where ids or notes below mention \`${unqualifiedNamespace}\`.`,
-    // Only a prompt that lists qualified names gets the rule.
-    ...(unqualifiedNamespace === undefined ? [qualifiedNameQuotingRule(dialect)] : []),
+    // Only a prompt that lists qualified names gets the rule; a v1 schema lists no schemas.
+    ...(isV2(schema) && unqualifiedNamespace === undefined ? [qualifiedNameQuotingRule(dialect)] : []),
     "- Do NOT use DDL or write statements (INSERT, UPDATE, DELETE, etc.). SELECT-only.",
     `- Dialect notes: ${dialect.promptBrief}`,
     "",

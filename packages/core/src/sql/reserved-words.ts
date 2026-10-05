@@ -22,6 +22,10 @@ export const POSTGRES_RESERVED_WORDS: readonly string[] = [
   "with",
 ];
 
+// Source: CockroachDB's grammar (pkg/sql/parser/sql.y): type/function-name keywords that Postgres
+// doesn't reserve and a bare column name can't use. Its reserved keywords match the Postgres list.
+export const COCKROACHDB_EXTRA_RESERVED_WORDS: readonly string[] = ["family", "none"];
+
 // Source: https://dev.mysql.com/doc/refman/8.4/en/keywords.html (MySQL 8.4, words marked (R); matches information_schema.KEYWORDS on a MySQL 8.4.11 server) UNION https://mariadb.com/docs/server/reference/sql-structure/sql-language-structure/reserved-words (MariaDB main reserved-words table incl. version-tagged entries; Oracle-mode list excluded). Fetched 2026-10-05.
 export const MYSQL_RESERVED_WORDS: readonly string[] = [
   "accessible", "add", "all", "alter", "analyze", "and", "as", "asc", "asensitive", "before",

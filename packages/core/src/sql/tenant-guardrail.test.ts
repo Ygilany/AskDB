@@ -256,13 +256,6 @@ describe("validateTenantGuardrails — matches only in code regions", () => {
   });
 });
 
-/**
- * #315: strict mode returned SQL whose tenant filter didn't filter, because a bare
- * mention of the tenant column or placeholder counted as a predicate. The consumer
- * lab ran each shape on five engines and got other tenants' rows back. A tenant
- * predicate is now the column compared with its root's placeholder, ANDed into a
- * WHERE/ON/HAVING clause, and a query on the scope's root table needs one too.
- */
 describe("validateTenantGuardrails — a reserved-word table quoted the way the prompt lists it (#451)", () => {
   // `order` is reserved on every engine, so the prompt lists it quoted.
   const orderPolicy: NormalizedTenantPolicy = {
@@ -299,6 +292,13 @@ describe("validateTenantGuardrails — a reserved-word table quoted the way the 
   });
 });
 
+/**
+ * #315: strict mode returned SQL whose tenant filter didn't filter, because a bare
+ * mention of the tenant column or placeholder counted as a predicate. The consumer
+ * lab ran each shape on five engines and got other tenants' rows back. A tenant
+ * predicate is now the column compared with its root's placeholder, ANDed into a
+ * WHERE/ON/HAVING clause, and a query on the scope's root table needs one too.
+ */
 describe("validateTenantGuardrails — a tenant predicate must actually filter (#315)", () => {
   const warnPolicy: NormalizedTenantPolicy = { ...policy, enforcement: "warn" };
   const rules = (sql: string, dialect?: DialectSpec) =>
