@@ -480,6 +480,29 @@ describe("ask — identifier quoting in the prompt per dialect (#451)", () => {
     expect(prompt).not.toContain("quote each part separately");
   });
 
+  it("postgres lists a mixed-case table and column quoted, as Prisma creates them; mysql leaves them bare", async () => {
+    const prisma = loadSchemaFromJson(
+      JSON.stringify({
+        version: 2,
+        schemaId: "prisma",
+        tables: [
+          {
+            id: "table:public.Post",
+            name: "Post",
+            schema: "public",
+            columns: [{ id: "table:public.Post#createdAt", name: "createdAt", type: "timestamp", nullable: false, primaryKey: false }],
+          },
+        ],
+      }),
+    );
+    const postgres = await promptFor("postgres", prisma);
+    expect(postgres).toMatch(/^TABLE public\."Post"$/m);
+    expect(postgres).toContain('  - "createdAt" timestamp (NOT NULL)');
+    const mysql = await promptFor("mysql", prisma);
+    expect(mysql).toMatch(/^TABLE Post$/m);
+    expect(mysql).toContain("  - createdAt timestamp (NOT NULL)");
+  });
+
   it("quotes for a custom DialectSpec by its id", async () => {
     const spec: DialectSpec = { ...POSTGRES_DIALECT, displayName: "Amazon Redshift" };
     const prompt = await promptFor(spec, schemaOf("billing"));

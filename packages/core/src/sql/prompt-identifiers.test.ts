@@ -28,14 +28,14 @@ describe("promptIdentifierQuoter", () => {
 
   it("leaves plain names bare", () => {
     for (const quote of [postgres, mysql, sqlserver, sqlite]) {
-      expect(["order_id", "Agency", "_tmp", "café", "total$"].map(quote)).toEqual([
-        "order_id",
-        "Agency",
-        "_tmp",
-        "café",
-        "total$",
-      ]);
+      expect(["order_id", "_tmp", "café", "total$"].map(quote)).toEqual(["order_id", "_tmp", "café", "total$"]);
     }
+  });
+
+  it("quotes a name with capitals only on Postgres and CockroachDB, which fold unquoted names to lowercase", () => {
+    const cockroach = promptIdentifierQuoter(COCKROACHDB_DIALECT);
+    expect([postgres("Post"), postgres("createdAt"), cockroach("createdAt")]).toEqual(['"Post"', '"createdAt"', '"createdAt"']);
+    expect([mysql("createdAt"), sqlserver("createdAt"), sqlite("createdAt")]).toEqual(["createdAt", "createdAt", "createdAt"]);
   });
 
   it("quotes a name that isn't a plain identifier", () => {
@@ -50,9 +50,15 @@ describe("promptIdentifierQuoter", () => {
     expect(sqlserver("a]b")).toBe("[a]]b]");
   });
 
-  it("an id that is no built-in engine quotes with identifierQuote and knows no reserved words", () => {
-    const quote = promptIdentifierQuoter({ id: "redshift" as DialectSpec["id"], identifierQuote: '"' });
-    expect(quote("order")).toBe("order");
-    expect(quote("order line")).toBe('"order line"');
+  it("reads the reserved words from the spec: a spread keeps them, setting the field replaces them", () => {
+    const spread = promptIdentifierQuoter({ ...POSTGRES_DIALECT, displayName: "Amazon Redshift" });
+    expect(spread("order")).toBe('"order"');
+    const replaced = promptIdentifierQuoter({ ...POSTGRES_DIALECT, reservedWords: ["widget"] });
+    expect([replaced("widget"), replaced("order")]).toEqual(['"widget"', "order"]);
+  });
+
+  it("an id that is no built-in engine quotes with identifierQuote", () => {
+    const quote = promptIdentifierQuoter({ id: "redshift" as DialectSpec["id"], identifierQuote: '"', reservedWords: ["order"] });
+    expect([quote("order"), quote("order line"), quote("Post")]).toEqual(['"order"', '"order line"', "Post"]);
   });
 });

@@ -29,7 +29,7 @@ flowchart LR
   sql --> execution
 ```
 
-`@askdb/core` is dialect-agnostic. It does not import database drivers, does not own live database connections, and does not execute generated SQL. Database-specific behavior is supplied through integration packages such as `@askdb/postgres`. The exception is what the pipeline itself needs to read and prompt for each built-in engine family: the `DialectSpec`s, their lexing rules and denylists, and the reserved words and quoting the prompt uses for identifiers live in `@askdb/core`, selected by `DialectSpec.id`, and integration packages re-export the specs.
+`@askdb/core` is dialect-agnostic. It does not import database drivers, does not own live database connections, and does not execute generated SQL. Database-specific behavior is supplied through integration packages such as `@askdb/postgres`. The exception is what the pipeline itself needs to read and prompt for each built-in engine family: the built-in `DialectSpec`s (with their denylists and the reserved words the prompt quotes) live in `@askdb/core`, lexing and identifier quoting are selected by `DialectSpec.id`, and integration packages re-export the specs. See the ADR 0002 amendment; #464 evaluates whether this should change.
 
 ## Package map
 

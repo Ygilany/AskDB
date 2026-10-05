@@ -282,6 +282,7 @@ const redshiftFlavor: DialectSpec = {
 | `displayName` | `string` | yes | Human-readable name. |
 | `promptBrief` | `string` | yes | One-paragraph guidance for the model about this dialect's syntax. |
 | `identifierQuote` | `'"' \| '`'` | yes | Identifier quoting style. The prompt quotes names the way `id`'s engine does, not with this field. |
+| `reservedWords` | `readonly string[]` | no | Words the engine reserves, case-insensitive. The prompt lists a schema, table or column with one of these names quoted. The built-in specs set their engine's list; spread one to keep it, since setting the field replaces the list. |
 | `unqualifiedNamespace` | `string` | no | A namespace that isn't a schema in this engine. When it is the schema's only namespace, the prompt lists its tables without it and tells the model never to write `<namespace>.<table>`; next to other namespaces (a MySQL database list that includes a database named `public`) it stays qualified. The SQLite, MySQL and MariaDB specs set `SINGLE_NAMESPACE_LABEL` (`"public"`), the namespace their connectors give the database's tables; spread one to keep it. |
 | `extraForbiddenKeywords` | `readonly string[]` | no | Keywords to forbid in addition to the shared read-only denylist. |
 | `blockedFunctions` | `readonly string[]` | no | Functions `validateSelectSql` rejects when called (`name(`), such as `pg_sleep` or `load_file`. |
@@ -290,7 +291,7 @@ const redshiftFlavor: DialectSpec = {
 
 `id` also selects how the validator lexes strings, quoted identifiers, and comments. The built-in specs ship their own `extraForbiddenKeywords` and `blockedFunctions`; spread one (`{ ...POSTGRES_DIALECT, … }`) to keep them, since setting either field replaces the built-in list. These checks are defense in depth — run generated SQL under a read-only database role.
 
-`id` also decides how the prompt lists names: a schema, table or column whose name is one of that engine's reserved words, or isn't a plain identifier, is listed quoted (`billing."order"` for `postgres` and `cockroachdb`, ``billing.`order` `` for `mysql` and `mariadb`, `billing.[order]` for `sqlserver`, `"order"` for `sqlite`). When the prompt lists tables with their schema, it also tells the model to quote each part of a qualified name separately. `promptIdentifierQuoter(dialect)` returns that quoting as a function; pass it as `quoteIdentifier` when you call `formatSchemaV2ForNlToSql` or `synthesizeRetrievedDdl` yourself.
+`id` also decides how the prompt quotes names. A schema, table or column whose name is in `reservedWords`, isn't a plain identifier, or (for `postgres` and `cockroachdb`, which fold unquoted names to lowercase) has capitals, is listed quoted (`billing."order"` for `postgres` and `cockroachdb`, ``billing.`order` `` for `mysql` and `mariadb`, `billing.[order]` for `sqlserver`, `"order"` for `sqlite`; a Prisma table `Post` is `public."Post"` on Postgres). When the prompt lists tables with their schema, it also tells the model to quote each part of a qualified name separately. `promptIdentifierQuoter(dialect)` returns that quoting as a function; pass it as `quoteIdentifier` when you call `formatSchemaV2ForNlToSql` or `synthesizeRetrievedDdl` yourself.
 
 ### `AskDialect`
 

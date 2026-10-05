@@ -1,6 +1,7 @@
 /**
- * Words each engine family reserves, from its own docs: the NL→SQL prompt lists a schema,
- * table or column with one of these names quoted (see `prompt-identifiers.ts`).
+ * Words each engine family reserves, from its own docs. The built-in specs in
+ * `dialect-spec.ts` set them as `reservedWords`, and the NL→SQL prompt lists a schema, table
+ * or column with one of these names quoted (see `prompt-identifiers.ts`).
  *
  * Quoting a name that isn't reserved is harmless, so a list may be a superset; a word it
  * misses reaches the model unquoted. When an engine reserves a new word, add it here.
