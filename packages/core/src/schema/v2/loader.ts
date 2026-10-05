@@ -380,8 +380,8 @@ function buildNormalized(
     const columns: NormalizedV2Column[] = physTable.columns.map((physCol) => {
       const mdCols = md?.frontmatter.columns?.filter((c) => c.id === physCol.id) ?? [];
       const mdCol = mdCols[0];
-      const colSensitive =
-        physCol.sensitive === true || escalatedColumnIds.has(physCol.id) || tableSensitive;
+      const colMarked = physCol.sensitive === true || escalatedColumnIds.has(physCol.id);
+      const colSensitive = colMarked || tableSensitive;
       if (colSensitive && mdCols.some((c) => c.sensitive === false)) {
         warnings.push({ kind: "sensitivity_downgrade_ignored", tableFile, id: physCol.id });
       }
@@ -393,6 +393,7 @@ function buildNormalized(
         nullable: physCol.nullable,
         primaryKey: physCol.primaryKey ?? false,
         sensitive: colSensitive,
+        ...(tableSensitive && !colMarked ? { sensitiveFromTable: true as const } : {}),
       };
 
       // Describable-layer fields excluded when sensitive

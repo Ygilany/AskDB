@@ -76,6 +76,10 @@ export function chunkSchema(
   };
 
   const { schema, tables: tableMarkdowns, concepts } = sources;
+  // Names whose mention marks describable text as sensitive, schema-wide
+  // (ADR 0017): every table's text, concept, and tenant policy section is
+  // checked against them.
+  const schemaSensitiveNames = collectSensitiveNames(schema);
 
   for (const table of schema.tables) {
     if (table.tracked === false) {
@@ -83,9 +87,14 @@ export function chunkSchema(
     }
 
     const md = tableMarkdowns[table.id];
-    const sensitiveColumnNames = table.columns
-      .filter((c) => c.sensitive)
-      .map((c) => c.name);
+    // A table's own text may also name its sensitive columns bare, including
+    // those sensitive only through the table.
+    const sensitiveColumnNames = [
+      ...new Set([
+        ...table.columns.filter((c) => c.sensitive).map((c) => c.name),
+        ...schemaSensitiveNames,
+      ]),
+    ];
 
     if (table.sensitive && !includeSensitive) {
       stats.sensitiveExcluded++;
@@ -102,8 +111,8 @@ export function chunkSchema(
 
     // Column chunks — one per column. Identifier + type always; describable
     // fields only when not sensitive (or when opted in). A non-sensitive
-    // column whose describable fields name a sensitive column of the same
-    // table is treated like a sensitive column's describable layer.
+    // column whose describable fields name a sensitive column is treated
+    // like a sensitive column's describable layer.
     for (const col of table.columns) {
       const colNote = readColumnNote(md, col.name);
       const colSensitive = col.sensitive || table.sensitive;
@@ -266,7 +275,7 @@ export function chunkSchema(
   // Concept chunks. A concept that links to a sensitive column/table, or
   // whose label/synonyms/description names a sensitive column (matched
   // case-insensitively, like @askdb/enrich), is excluded by default.
-  const allSensitiveColumnNames = collectSensitiveColumnNames(schema);
+  const allSensitiveColumnNames = schemaSensitiveNames;
   if (concepts?.frontmatter.concepts) {
     for (const concept of concepts.frontmatter.concepts) {
       const conceptResult = buildConceptChunk(
@@ -702,11 +711,19 @@ function parseColumnId(columnId: string): { tableId: string; column: string } {
   };
 }
 
-function collectSensitiveColumnNames(schema: NormalizedSchemaV2): string[] {
+/**
+ * Names that mark text as mentioning a sensitive column, for the whole schema
+ * (ADR 0017). A column marked sensitive itself matches by its bare name. A
+ * column sensitive only because its table is matches only as `table.column`
+ * (which also matches `schema.table.column`): its bare name is often generic
+ * (`id`, `org_id`, `name`) and would exclude unrelated text.
+ */
+function collectSensitiveNames(schema: NormalizedSchemaV2): string[] {
   const names = new Set<string>();
   for (const t of schema.tables) {
     for (const c of t.columns) {
-      if (c.sensitive || t.sensitive) names.add(c.name);
+      if (!c.sensitive && !t.sensitive) continue;
+      names.add(c.sensitiveFromTable === true ? `${t.name}.${c.name}` : c.name);
     }
   }
   return Array.from(names);

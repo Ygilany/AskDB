@@ -90,6 +90,23 @@ describe("loadSchema — v2 directory", () => {
     expect(emailCol.description).toBeUndefined();
   });
 
+  it("marks a column sensitive only through its table with sensitiveFromTable", () => {
+    const dir = copyFixture(v2Dir);
+    const jsonPath = join(dir, "schema.json");
+    const json = JSON.parse(readFileSync(jsonPath, "utf8")) as {
+      tables: { id: string; sensitive?: boolean }[];
+    };
+    json.tables.find((t) => t.id === "table:public.users")!.sensitive = true;
+    writeFileSync(jsonPath, JSON.stringify(json));
+
+    const users = loadSchema(dir).tables.find((t) => t.id === "table:public.users")!;
+    const col = (name: string) => users.columns.find((c) => c.name === name)!;
+    // `email` is marked in schema.json itself; `id` is sensitive only through the table.
+    expect(col("email")).toMatchObject({ sensitive: true });
+    expect(col("email").sensitiveFromTable).toBeUndefined();
+    expect(col("id")).toMatchObject({ sensitive: true, sensitiveFromTable: true });
+  });
+
   it("provides non-sensitive column describable fields", () => {
     const schema = loadSchema(v2Dir);
     const orders = schema.tables.find((t) => t.name === "orders")!;

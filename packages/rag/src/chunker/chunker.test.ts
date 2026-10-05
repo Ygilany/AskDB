@@ -351,6 +351,25 @@ describe("sensitive-mention filtering", () => {
       excludedDelta: 1,
     },
     {
+      source: "description of another table",
+      mutate: (s) => {
+        table(s, "table:public.orders").description = "Receipts go to the buyer's Email address.";
+      },
+      marker: /buyer's Email/,
+      optInId: "chunk:orders-users:table:public.orders",
+      keptId: "chunk:orders-users:table:public.orders",
+      excludedDelta: 1,
+    },
+    {
+      source: "common query language body of another table",
+      mutate: (s) => {
+        table(s, "table:public.orders").commonQueryLanguage = "Join users to send receipts by Email.";
+      },
+      marker: /receipts by Email/,
+      optInId: "chunk:orders-users:table:public.orders#cql",
+      excludedDelta: 1,
+    },
+    {
       source: "table alias (common query language heading)",
       mutate: (s) => {
         table(s, "table:public.users").aliases = ["accounts", "Email list"];
@@ -413,6 +432,25 @@ describe("sensitive-mention filtering", () => {
     const defaultIds = new Set(chunkSchema(s).chunks.map((c) => c.id));
     const leftOut = optIn.chunks.filter((c) => !defaultIds.has(c.id));
     expect(leftOut.filter((c) => !c.sensitive)).toEqual([]);
+  });
+
+  it("matches a column sensitive only through its table as `table.column`, not by its bare name", () => {
+    // The loader marks `orders`' columns sensitiveFromTable when only the table is sensitive.
+    const s = sources();
+    const orders = table(s, "table:public.orders");
+    orders.sensitive = true;
+    for (const c of orders.columns) Object.assign(c, { sensitive: true, sensitiveFromTable: true });
+    s.concepts!.frontmatter.concepts = [
+      { id: "concept:by-status", label: "By status", description: "Count signups grouped by status and id." },
+      { id: "concept:order-state", label: "Order state", description: "Read orders.status for the state." },
+      { id: "concept:reach", label: "Reach", description: "Customers we can Email." },
+    ];
+
+    const ids = chunkSchema(s).chunks.map((c) => c.id);
+    expect(ids).toContain("chunk:orders-users:concept:by-status");
+    expect(ids).not.toContain("chunk:orders-users:concept:order-state");
+    // `users.email` is marked itself, so its bare name still counts.
+    expect(ids).not.toContain("chunk:orders-users:concept:reach");
   });
 
   it("counts a sensitive source that splits into several chunks once per chunk", () => {
