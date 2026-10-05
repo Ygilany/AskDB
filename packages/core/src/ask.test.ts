@@ -18,7 +18,7 @@ import type { NormalizedSchema } from "./schema/types.js";
 import { formatSchemaV2ForNlToSql } from "./schema/v2/index.js";
 import { loadSchema, loadSchemaFromJson } from "./schema/v2/loader.js";
 import type { NormalizedSchemaV2 } from "./schema/v2/normalized.js";
-import { SQLITE_DIALECT, type DialectSpec } from "./sql/dialect-spec.js";
+import { POSTGRES_DIALECT, SQLITE_DIALECT, type DialectSpec } from "./sql/dialect-spec.js";
 import type { TenantScope } from "./schema/v2/tenant-policy.js";
 
 const minimalSchema: NormalizedSchema = {
@@ -353,11 +353,16 @@ describe("ask — table names in the prompt per dialect (#447)", () => {
     },
   );
 
-  it.each(["postgres", "cockroachdb", "sqlserver"] as const)(
+  it.each([
+    ["postgres", /^TABLE public\.users$/m],
+    ["cockroachdb", /^TABLE public\.users$/m],
+    // `public` is a reserved word in T-SQL (#451).
+    ["sqlserver", /^TABLE \[public\]\.users$/m],
+  ] as const)(
     "%s keeps every table qualified with its schema",
-    async (dialect) => {
+    async (dialect, listed) => {
       const prompt = await promptFor(dialect, singleNamespace);
-      expect(prompt).toMatch(/^TABLE public\.users$/m);
+      expect(prompt).toMatch(listed);
       expect(prompt).toContain(oldRule);
       expect(prompt).not.toContain("never write");
     },
@@ -393,6 +398,93 @@ describe("ask — table names in the prompt per dialect (#447)", () => {
     }
   });
 });
+
+describe("ask — identifier quoting in the prompt per dialect (#451)", () => {
+  // `order` and `group` are reserved on every built-in engine; `payment` and `order_id` on none.
+  function schemaOf(namespace: string) {
+    return loadSchemaFromJson(
+      JSON.stringify({
+        version: 2,
+        schemaId: "quoting",
+        tables: ["order", "payment"].map((name) => ({
+          id: `table:${namespace}.${name}`,
+          name,
+          schema: namespace,
+          columns: [
+            { id: `table:${namespace}.${name}#${name}_id`, name: `${name}_id`, type: "integer", nullable: false, primaryKey: true },
+            { id: `table:${namespace}.${name}#group`, name: "group", type: "text", nullable: true, primaryKey: false },
+          ],
+        })),
+      }),
+    );
+  }
+  const retrieved = {
+    retriever: vi.fn(async () =>
+      ["order", "payment"].map((name) => ({
+        id: `chunk:${name}`,
+        score: 1,
+        payload: { id: `chunk:${name}`, type: "table" as const, text: `# ${name}`, schemaId: "quoting", refs: [`table:billing.${name}`], sensitive: false },
+      })),
+    ),
+    totalSchemaChunkCount: 100,
+  };
+
+  async function promptFor(
+    dialect: AskDialectInput,
+    schema: NormalizedSchemaV2,
+    extra: Partial<Parameters<typeof ask>[0]> = {},
+  ): Promise<string> {
+    const generateText = vi.fn(async () => ({ text: "```sql\nSELECT 1\n```" }));
+    await ask({
+      question: "How many orders?",
+      schema,
+      model: fakeModel,
+      dialect,
+      parameterize: false,
+      deps: { generateText: generateText as never },
+      ...extra,
+    });
+    return (generateText.mock.calls[0]![0] as { prompt: string }).prompt;
+  }
+
+  describe.each([
+    ["full schema", {}],
+    ["retrieved schema", retrieved],
+  ] as const)("%s", (_path, extra) => {
+    it.each([
+      ["postgres", 'TABLE billing."order"', '  - "group" text', '`"schema"."table"`, never `"schema.table"`'],
+      ["cockroachdb", 'TABLE billing."order"', '  - "group" text', '`"schema"."table"`, never `"schema.table"`'],
+      ["mysql", "TABLE billing.`order`", "  - `group` text", "`` `schema`.`table` ``, never `` `schema.table` ``"],
+      ["mariadb", "TABLE billing.`order`", "  - `group` text", "`` `schema`.`table` ``, never `` `schema.table` ``"],
+      ["sqlserver", "TABLE billing.[order]", "  - [group] text", "`[schema].[table]`, never `[schema.table]`"],
+    ] as const)("%s lists reserved words quoted and says to quote a qualified name part by part", async (dialect, table, column, rule) => {
+      const prompt = await promptFor(dialect, schemaOf("billing"), extra);
+      expect(prompt).toMatch(new RegExp(`^${escapeRegExp(table)}$`, "m"));
+      expect(prompt).toContain(`${column} (NULL)`);
+      expect(prompt).toMatch(/^TABLE billing\.payment$/m);
+      expect(prompt).toMatch(/^ {2}- order_id integer \(PK NOT NULL\)$/m);
+      expect(prompt).toContain(`- Quote each part of a qualified name separately: ${rule}.`);
+    });
+  });
+
+  it("sqlite lists a reserved table name quoted and leaves out the qualified-name rule", async () => {
+    const prompt = await promptFor("sqlite", schemaOf("public"));
+    expect(prompt).toMatch(/^TABLE "order"$/m);
+    expect(prompt).toMatch(/^TABLE payment$/m);
+    expect(prompt).toContain('  - "group" text (NULL)');
+    expect(prompt).not.toContain("qualified name");
+  });
+
+  it("quotes for a custom DialectSpec by its id", async () => {
+    const spec: DialectSpec = { ...POSTGRES_DIALECT, displayName: "Amazon Redshift" };
+    const prompt = await promptFor(spec, schemaOf("billing"));
+    expect(prompt).toMatch(/^TABLE billing\."order"$/m);
+  });
+});
+
+function escapeRegExp(text: string): string {
+  return text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
 
 describe("ask — parameterize", () => {
   const threeBlock = [

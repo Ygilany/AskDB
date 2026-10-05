@@ -11,6 +11,7 @@ import {
 } from "../schema/v2/index.js";
 import type { NormalizedTenantPolicy, TenantScope } from "../schema/v2/tenant-policy.js";
 import type { DialectSpec } from "./dialect-spec.js";
+import { promptIdentifierQuoter, qualifiedNameQuotingRule } from "./prompt-identifiers.js";
 import { buildTenantPromptBlock } from "./tenant-prompt.js";
 
 function isV2(schema: AnyNormalizedSchema): schema is NormalizedSchemaV2 {
@@ -41,7 +42,7 @@ export function buildNlToSqlUserPrompt(
   schema: AnyNormalizedSchema,
   ambiguityNotes: readonly string[] = [],
   logger?: AskDbLogger,
-  nlToSqlSchemaOptions?: Omit<FormatNlToSqlOptions, "unqualifiedNamespace">,
+  nlToSqlSchemaOptions?: Omit<FormatNlToSqlOptions, "unqualifiedNamespace" | "quoteIdentifier">,
   /**
    * Optional pre-synthesized DDL block. When supplied, this replaces the
    * formatter output verbatim — used by `ask({ retriever })` to inject a
@@ -61,7 +62,11 @@ export function buildNlToSqlUserPrompt(
 ): string {
   const unqualifiedNamespace = unqualifiedNamespaceFor(schema, dialect.unqualifiedNamespace);
   const formatted = isV2(schema)
-    ? formatSchemaV2ForNlToSql(schema, { ...nlToSqlSchemaOptions, unqualifiedNamespace })
+    ? formatSchemaV2ForNlToSql(schema, {
+        ...nlToSqlSchemaOptions,
+        unqualifiedNamespace,
+        quoteIdentifier: promptIdentifierQuoter(dialect),
+      })
     : formatSchemaForNlToSql(schema, nlToSqlSchemaOptions);
   const ddl = prebuiltDdl ?? formatted.ddl;
   const stats = formatted.stats;
@@ -98,6 +103,8 @@ export function buildNlToSqlUserPrompt(
     unqualifiedNamespace === undefined
       ? "- Use identifiers from the schema below; qualify table names where it helps readability."
       : `- Use identifiers from the schema below and write each table name exactly as it is listed. \`${unqualifiedNamespace}\` is not a schema in ${dialect.displayName}: never write \`${unqualifiedNamespace}.<table>\`, even where ids or notes below mention \`${unqualifiedNamespace}\`.`,
+    // Only a prompt that lists qualified names gets the rule.
+    ...(unqualifiedNamespace === undefined ? [qualifiedNameQuotingRule(dialect)] : []),
     "- Do NOT use DDL or write statements (INSERT, UPDATE, DELETE, etc.). SELECT-only.",
     `- Dialect notes: ${dialect.promptBrief}`,
     "",

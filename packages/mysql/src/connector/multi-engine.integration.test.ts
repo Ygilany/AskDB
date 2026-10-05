@@ -10,6 +10,8 @@
  * referenced database. The artifact matches the same golden logical schema every
  * engine is held to. Without a list, the connection's database is read as
  * before, under the `public` namespace.
+ * Also that SQL naming ``billing.`order` `` the way the NL→SQL prompt lists it runs across
+ * databases (#451).
  * Catches: a connector that reads only `DATABASE()`, drops cross-database
  * references, mislabels namespaces, or changes the single-database default.
  *
@@ -19,17 +21,19 @@
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { loadSchema } from "@askdb/core";
+import { ask, loadSchema } from "@askdb/core";
 import { introspect } from "@askdb/introspect";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { createMysqlCatalogQueryRunner } from "../exec/mysql.js";
 import { createMysqlConnector } from "./index.js";
 import { integrationSuite } from "../../../../scripts/test-utils/integration.mjs";
+import { askCopyingListedTableNames } from "../../../../scripts/test-utils/prompt-listed-names.mjs";
 import {
   FIXTURE_HOST_ENV,
   LOGICAL_SCHEMAS,
   compareToLogicalSchema,
   connectionUrl,
+  loadRows,
   type SchemaJson,
 } from "../../../../fixtures/multi-engine/src/index.js";
 
@@ -72,6 +76,14 @@ fixtureSuite("introspect() against the multi-engine fixture (live MySQL family)"
       // The fixture's connection database is `org`.
       const { schemaJson } = await introspectFixture(engine, join(workDir, `${engine}-default.schema`));
       expect(schemaJson.tables.map((t) => `${t.schema}.${t.name}`).sort()).toEqual(["public.agency", "public.program"]);
+    });
+
+    it("runs SQL that names the reserved-word table `order` as the prompt lists it", async () => {
+      const outDir = join(workDir, `${engine}.schema`);
+      await introspectFixture(engine, outDir, LOGICAL_SCHEMAS);
+      const sql = await askCopyingListedTableNames(ask, loadSchema(outDir), engine);
+      const runner = createMysqlCatalogQueryRunner(connectionUrl(engine, "reader"));
+      expect(Number((await runner(sql)).rows[0]![0])).toBe(loadRows({ schema: "billing", name: "order" }).length);
     });
   });
 });

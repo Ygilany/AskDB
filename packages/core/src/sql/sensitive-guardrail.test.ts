@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { SensitiveReferenceError } from "../errors.js";
 import type { NormalizedSchema } from "../schema/types.js";
 import type { NormalizedSchemaV2, NormalizedV2Table } from "../schema/v2/normalized.js";
-import { MYSQL_DIALECT, POSTGRES_DIALECT, SQLSERVER_DIALECT } from "./dialect-spec.js";
+import { MYSQL_DIALECT, POSTGRES_DIALECT, SQLITE_DIALECT, SQLSERVER_DIALECT } from "./dialect-spec.js";
 import { validateSensitiveReferences, schemaHasSensitiveIdentifiers } from "./sensitive-guardrail.js";
 
 // ---------------------------------------------------------------------------
@@ -682,5 +682,31 @@ describe("validateSensitiveReferences — dialect-aware lexing", () => {
     );
     expect(result.passed).toBe(false);
     expect(result.unresolvedScope?.issues).toContain("UNTERMINATED_TOKEN");
+  });
+});
+
+describe("validateSensitiveReferences — reserved words quoted the way the prompt lists them (#451)", () => {
+  // `order` and `group` are reserved on every engine, so the prompt lists them quoted.
+  const orderSchema: NormalizedSchemaV2 = {
+    schemaId: "billing",
+    warnings: [],
+    tables: [table("billing", "order", [["id"], ["note"], ["group", true]])],
+  };
+
+  it.each([
+    ["postgres", POSTGRES_DIALECT, 'SELECT o."group" FROM billing."order" o'],
+    ["mysql", MYSQL_DIALECT, "SELECT o.`group` FROM `billing`.`order` o"],
+    ["sqlserver", SQLSERVER_DIALECT, "SELECT o.[group] FROM [billing].[order] o"],
+  ])("%s: finds a sensitive column on a quoted table", (_d, dialect, sql) => {
+    expect(validateSensitiveReferences(sql, orderSchema, { dialect }).references).toEqual([
+      { table: "order", schema: "billing", column: "group", matchKind: "qualified" },
+    ]);
+  });
+
+  it("sqlite: finds a sensitive column on a table listed without its namespace", () => {
+    const sql = 'SELECT o."group" FROM "order" o';
+    expect(validateSensitiveReferences(sql, orderSchema, { dialect: SQLITE_DIALECT }).references).toEqual([
+      { table: "order", schema: "billing", column: "group", matchKind: "qualified" },
+    ]);
   });
 });
