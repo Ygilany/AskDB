@@ -1,4 +1,4 @@
-import type { AskDbDialectId, AskDbIntrospectionProvider, AskDbStudioExecuteProvider } from "./constants.js";
+import type { AskDbDialectId, AskDbIntrospectionProvider, AskDbRagStore, AskDbStudioExecuteProvider } from "./constants.js";
 import { ASKDB_STUDIO_EXECUTE_PROVIDERS } from "./constants.js";
 import type { AskDbConfig } from "./types.js";
 import {
@@ -62,6 +62,10 @@ export type AskDbRuntimeRagEmbedderConfig = {
 
 export type AskDbRuntimeRagConfig = {
   embedder: AskDbRuntimeRagEmbedderConfig;
+  /** `rag.store`, or `"memory"` when the config has no `rag` block. Read this, not `structured.rag.store`. */
+  store: AskDbRagStore;
+  /** `rag.storeConfig` as written, with no defaults filled in; `{}` when the config has no `rag` block. */
+  storeConfig: NonNullable<AskDbConfig["rag"]>["storeConfig"];
 };
 
 export type AskDbRuntimeLoggingConfig = {
@@ -309,6 +313,8 @@ export function getAskDbRuntimeConfig(): AskDbRuntimeConfig {
             baseURL: pickFlat(flat, "OPENAI_BASE_URL"),
             model: undefined,
           },
+      store: normalized.rag.store,
+      storeConfig: normalized.rag.storeConfig,
     },
     logging: {
       level: structured.logging?.level ?? pickFlat(flat, "ASKDB_LOG_LEVEL"),

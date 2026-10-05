@@ -1129,17 +1129,17 @@ function resolveStudioRagStoreConfig(state: StudioState):
   | { kind: "file"; basePath: string }
   | { kind: "pgvector"; connectionString?: string; table?: string; indexStrategy?: string } {
   const rt = getAskDbRuntimeConfig();
-  const kind = rt.structured.rag.store;
+  const kind = rt.rag.store;
   if (kind === "memory") return { kind };
   if (kind === "file") {
-    const basePath = rt.structured.rag.storeConfig.file?.basePath?.trim();
+    const basePath = rt.rag.storeConfig.file?.basePath?.trim();
     return { kind, basePath: basePath ? resolve(basePath) : join(state.schemaDir, "schema") };
   }
   const connectionString = pickFlat(rt.flat, "ASKDB_PGVECTOR_URL");
   return {
     kind,
     connectionString,
-    table: rt.structured.rag.storeConfig.pgvector?.table?.trim() || undefined,
+    table: rt.rag.storeConfig.pgvector?.table?.trim() || undefined,
     indexStrategy: pickFlat(rt.flat, "ASKDB_PGVECTOR_INDEX_STRATEGY"),
   };
 }
