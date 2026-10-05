@@ -7,7 +7,8 @@ Engine-agnostic introspection orchestrator for AskDB. Defines the `Connector` co
 ## Install
 
 ```bash
-pnpm add @askdb/introspect @askdb/core
+# `ai` (Vercel AI SDK 6 or 7) is a required peer dependency of @askdb/core
+pnpm add @askdb/introspect @askdb/core ai
 # Plus an integration package for the engine you're targeting, e.g.:
 pnpm add @askdb/postgres pg
 # Or for Prisma schema-file introspection:

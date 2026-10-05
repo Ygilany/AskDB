@@ -42,7 +42,9 @@ export async function suggestEnrichment(
 
   const result = await generateText({
     model,
-    instructions: ENRICHMENT_SYSTEM_PROMPT,
+    // `system`, not `instructions`: works on both AI SDK 6 and 7 (see the
+    // matching comment in `sql/generate.ts`).
+    system: ENRICHMENT_SYSTEM_PROMPT,
     prompt: buildEnrichmentUserPrompt(target, context),
     temperature: deps.temperature ?? 0.4,
     // Cast: AskDB's public `providerOptions` type is a plain opaque bag

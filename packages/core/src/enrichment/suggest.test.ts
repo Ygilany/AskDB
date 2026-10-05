@@ -74,6 +74,17 @@ describe("enrichment suggestions", () => {
     );
   });
 
+  it("sends the system prompt as `system` (honored by AI SDK 6 and 7), not `instructions`", async () => {
+    const generateText = vi.fn(async () => ({ text: "A description." }));
+    const target: EnrichmentTarget = { kind: "table-description", table: usersTable };
+
+    await suggestEnrichment(target, { schemaId: "orders-users" }, fakeModel, { generateText });
+
+    const call = generateText.mock.calls[0]![0] as Record<string, unknown>;
+    expect(typeof call.system).toBe("string");
+    expect("instructions" in call).toBe(false);
+  });
+
   it("does not send providerOptions to generateText when unset (preserves current behavior)", async () => {
     const generateText = vi.fn(async () => ({ text: "A description." }));
     const target: EnrichmentTarget = { kind: "table-description", table: usersTable };
