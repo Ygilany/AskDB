@@ -117,24 +117,31 @@ describe("loadSchema — v2 directory", () => {
     });
 
     it.each([
-      ["in its own table's front-matter", "users.md", "  - id: table:public.users#created_at\n"],
-      ["by an entry misplaced in another table's file", "orders.md", "columns:\n"],
-    ])("is not set on a column escalated %s", (_case, file, after) => {
-      const insert =
-        file === "users.md" ? "    sensitive: true\n" : "  - id: table:public.users#created_at\n    sensitive: true\n";
+      ["in its own table's front-matter", "users.md", "  - id: table:public.users#created_at\n", "    sensitive: true\n"],
+      [
+        "by an entry misplaced in another table's file",
+        "orders.md",
+        "columns:\n",
+        "  - id: table:public.users#created_at\n    sensitive: true\n",
+      ],
+    ])("is not set on a column escalated %s", (_case, file, after, insert) => {
       const columns = usersColumns(loadSchema(usersSensitive({ file, after, insert })));
       expect(columns.created_at).toBeUndefined();
       expect(columns.id).toBe(true);
     });
 
-    it("is set the same way for a bundle", () => {
-      const dir = usersSensitive();
+    it("is set the same way for a bundle, front-matter escalation included", () => {
+      const dir = usersSensitive({
+        file: "users.md",
+        after: "  - id: table:public.users#created_at\n",
+        insert: "    sensitive: true\n",
+      });
       const bundle = JSON.stringify({
         bundled: true,
         physical: JSON.parse(readFileSync(join(dir, "schema.json"), "utf8")),
         tables: { "users.md": readFileSync(join(dir, "tables", "users.md"), "utf8") },
       });
-      expect(usersColumns(loadSchemaFromJson(bundle))).toEqual(usersColumns(loadSchema(dir)));
+      expect(usersColumns(loadSchemaFromJson(bundle))).toEqual({ id: true, email: undefined, created_at: undefined });
     });
   });
 

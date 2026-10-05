@@ -61,4 +61,9 @@ export type {
   TenantPolicyH2Section,
 } from "./tenant-policy.js";
 
-export { findMentionedNames } from "./mentions.js";
+export {
+  createMentionMatcher,
+  findMentionedNames,
+  type MentionMatcher,
+  type MentionName,
+} from "./mentions.js";

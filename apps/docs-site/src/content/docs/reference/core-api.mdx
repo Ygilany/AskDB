@@ -234,14 +234,18 @@ const schema = loadSchemaFromJson(bundleJsonString);
 
 Parses a raw JSON string. Accepts the same formats as `loadSchema` (bundled JSON or bare `schema.json` blob). Useful when the schema is passed as a string over a network boundary (e.g., the HTTP API's `schemaJson` request field).
 
-### `findMentionedNames(text, names)`
+### `findMentionedNames(text, names)` and `createMentionMatcher(names)`
 
 ```ts
-import { findMentionedNames } from "@askdb/core";
+import { createMentionMatcher, findMentionedNames } from "@askdb/core";
 findMentionedNames("Dedupe by EMAIL; see users_email", ["email", "ssn"]); // → ["email"]
+
+const sensitive = createMentionMatcher(["ssn", { table: "users", column: "org_id" }]);
+sensitive.mentionsAny('filter by "users"."org_id"'); // → true
+sensitive.find("Rows come from users. Org_id is the key"); // → []
 ```
 
-Returns the names `text` mentions, in the order given: a whole-word, case-insensitive match whose ends may not touch a letter, digit, or `_` of any script (`email` isn't mentioned by `emailed` or `user_email`; a name wrapped in backticks or quotes is). A qualified name such as `users.org_id` also matches with a schema prefix, with each part quoted or bracketed (`"users"."org_id"`, `[users].[org_id]`), and with spaces or tabs on both sides of the dot (`users . org_id`, not across a sentence break such as `users. Org_id`). This is the schema contract's "mentions a sensitive column by name" rule: `@askdb/rag`'s chunker and `@askdb/enrich`'s authoring warning both use it.
+The schema contract's "mentions a sensitive column by name" rule, which `@askdb/rag`'s chunker and `@askdb/enrich`'s authoring warning both use: whole-word and case-insensitive, with a bare name (a string, matched literally) or a qualified one (`{ table, column }`). The full rule is in the [schema-v2 contract on GitHub](https://github.com/Ygilany/AskDB/blob/main/docs/contracts/schema-v2.md#sensitive-propagation). `findMentionedNames` returns the names `text` mentions, in the order given. It compiles the names on every call, so to check many texts against one list, build a `MentionMatcher` once with `createMentionMatcher` and call `mentionsAny(text)` or `find(text)`.
 
 ---
 

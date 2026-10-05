@@ -500,6 +500,14 @@ describe("sensitive-mention filtering", () => {
       expect(ids).not.toContain("chunk:orders-users:tenant-policy#scope-rules");
     });
 
+    it("matches by bare name a column whose table isn't sensitive, even with a stray sensitiveFromTable", () => {
+      // A hand-built schema can carry the flag inconsistently; only a sensitive table's columns go qualified-only.
+      const s = sources();
+      Object.assign(table(s, "table:public.users").columns.find((c) => c.name === "email")!, { sensitiveFromTable: true });
+      s.concepts!.frontmatter.concepts = [concept("concept:reach", "Customers we can Email.")];
+      expect(chunkSchema(s).chunks.map((c) => c.id)).not.toContain("chunk:orders-users:concept:reach");
+    });
+
     it("counts the sensitive columns of an untracked table too", () => {
       // The table isn't indexed, but its columns are still sensitive data.
       const s = loadWithSensitiveOrders();

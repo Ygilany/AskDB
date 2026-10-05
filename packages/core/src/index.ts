@@ -96,7 +96,10 @@ export {
   tenantScopeSchema,
   tenantAccessSchema,
   TENANT_POLICY_H2_SECTIONS,
+  createMentionMatcher,
   findMentionedNames,
+  type MentionMatcher,
+  type MentionName,
 } from "./schema/v2/index.js";
 export type {
   V2SchemaJson,
