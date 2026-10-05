@@ -40,7 +40,7 @@ describe("buildSchemaIndex", () => {
   it("indexes all chunks on first run and reuses all unchanged chunks on second run", async () => {
     const sources = loadChunkerSourcesFromDir(FIXTURE_DIR);
     const lockFilePath = tempLockPath();
-    const store = createMemoryStore();
+    const store = lockedMemoryStore();
     const embedder = vi.fn(deterministicEmbedder());
 
     const first = await buildSchemaIndex({
@@ -68,7 +68,7 @@ describe("buildSchemaIndex", () => {
 
   it("re-embeds only chunks whose content hash changed", async () => {
     const lockFilePath = tempLockPath();
-    const store = createMemoryStore();
+    const store = lockedMemoryStore();
     const embedder = vi.fn(deterministicEmbedder());
     const sources = loadChunkerSourcesFromDir(FIXTURE_DIR);
 
@@ -103,7 +103,7 @@ describe("buildSchemaIndex", () => {
     await buildSchemaIndex({
       schema: sources,
       embedder: deterministicEmbedder(),
-      store: createMemoryStore(),
+      store: lockedMemoryStore(),
       embedderId: "test:deterministic",
       lockFilePath,
     });
@@ -117,7 +117,7 @@ describe("buildSchemaIndex", () => {
   it("records the width of the vectors it embedded in the lock file, and keeps it when nothing is re-embedded", async () => {
     const sources = loadChunkerSourcesFromDir(FIXTURE_DIR);
     const lockFilePath = tempLockPath();
-    const store = createMemoryStore();
+    const store = lockedMemoryStore();
     const readDimensions = () => (JSON.parse(readFileSync(lockFilePath, "utf8")) as { dimensions?: number }).dimensions;
 
     await buildSchemaIndex({ schema: sources, embedder: deterministicEmbedder(), store, embedderId: "test:a", lockFilePath });
@@ -130,7 +130,7 @@ describe("buildSchemaIndex", () => {
 
   it("can reuse unchanged chunks from store hashes when no lock file is supplied", async () => {
     const sources = loadChunkerSourcesFromDir(FIXTURE_DIR);
-    const store = createMemoryStore();
+    const store = lockedMemoryStore();
     const embedder = vi.fn(deterministicEmbedder());
 
     const first = await buildSchemaIndex({
@@ -159,7 +159,7 @@ describe("buildSchemaIndex", () => {
     await buildSchemaIndex({
       schema: sources,
       embedder: deterministicEmbedder(),
-      store: createMemoryStore(),
+      store: lockedMemoryStore(),
       embedderId: "test:deterministic",
       logger,
       chunkOptions: { includeSensitiveDescribable: true },
@@ -172,6 +172,15 @@ describe("buildSchemaIndex", () => {
     }
   });
 });
+
+/**
+ * A memory store that doesn't call itself ephemeral, so the indexer reads and
+ * writes the lock with it, as with any persistent store.
+ */
+function lockedMemoryStore(): MemoryStore {
+  const store = createMemoryStore();
+  return { ...store, describe: () => ({ ...store.describe!(), ephemeral: false }) };
+}
 
 /** A store that can't report hashes/ids — forces the lock-file fallback path. */
 function lockOnlyStore(
@@ -195,7 +204,7 @@ describe("buildSchemaIndex — store is the source of truth", () => {
     await buildSchemaIndex({
       schema: sources,
       embedder,
-      store: createMemoryStore(),
+      store: lockedMemoryStore(),
       embedderId: "test:deterministic",
       lockFilePath,
     });
@@ -220,17 +229,53 @@ describe("buildSchemaIndex — store is the source of truth", () => {
     const embedder = vi.fn(deterministicEmbedder());
     const opts = { schema: sources, embedder, embedderId: "test:deterministic", lockFilePath };
 
-    await buildSchemaIndex({ ...opts, store: createMemoryStore() });
-    const restarted = createMemoryStore();
+    await buildSchemaIndex({ ...opts, store: lockedMemoryStore() });
+    const restarted = lockedMemoryStore();
     const second = await buildSchemaIndex({ ...opts, store: restarted });
     expect(second.stats.chunksIndexed).toBe(second.stats.chunksTotal);
     expect(restarted.size()).toBe(second.stats.chunksTotal);
   });
 
+  it("re-embeds the vectors an interrupted embedder switch left behind, though both models have the same width", async () => {
+    const sources = loadChunkerSourcesFromDir(FIXTURE_DIR);
+    const store = lockedMemoryStore();
+    const lockFilePath = tempLockPath();
+    const modelA = deterministicEmbedder();
+    await buildSchemaIndex({ schema: sources, embedder: modelA, store, embedderId: "a", lockFilePath });
+
+    // Model B writes one batch of 4, then fails; the lock still says "a".
+    let calls = 0;
+    const modelB: Embedder = async (texts) => {
+      if (calls++ > 0) throw new Error("rate limited");
+      return texts.map(() => [9, 9]);
+    };
+    await expect(
+      buildSchemaIndex({ schema: sources, embedder: modelB, store, embedderId: "b", lockFilePath, batchSize: 4 }),
+    ).rejects.toThrow("rate limited");
+
+    const third = await buildSchemaIndex({ schema: sources, embedder: modelA, store, embedderId: "a", lockFilePath });
+    expect(third.stats.chunksIndexed).toBe(4);
+  });
+
+  it("neither reads nor writes the lock for an ephemeral (memory) store", async () => {
+    const sources = loadChunkerSourcesFromDir(FIXTURE_DIR);
+    const lockFilePath = tempLockPath();
+    await buildSchemaIndex({ schema: sources, embedder: deterministicEmbedder(), store: lockedMemoryStore(), embedderId: "file-index", lockFilePath });
+    const before = readFileSync(lockFilePath, "utf8");
+
+    const memory = createMemoryStore();
+    const first = await buildSchemaIndex({ schema: sources, embedder: deterministicEmbedder(), store: memory, embedderId: "studio", lockFilePath });
+    expect(readFileSync(lockFilePath, "utf8")).toBe(before);
+    expect(first.stats.chunksIndexed).toBe(first.stats.chunksTotal);
+    // Still incremental, from the store's own hashes.
+    const second = await buildSchemaIndex({ schema: sources, embedder: deterministicEmbedder(), store: memory, embedderId: "studio", lockFilePath });
+    expect(second.stats.chunksIndexed).toBe(0);
+  });
+
   it("re-embeds only chunks the store is missing", async () => {
     const sources = loadChunkerSourcesFromDir(FIXTURE_DIR);
     const lockFilePath = tempLockPath();
-    const store = createMemoryStore();
+    const store = lockedMemoryStore();
     const embedder = vi.fn(deterministicEmbedder());
     const opts = { schema: sources, embedder, store, embedderId: "test:deterministic", lockFilePath };
 
@@ -244,7 +289,7 @@ describe("buildSchemaIndex — store is the source of truth", () => {
   it("`force: true` re-embeds everything", async () => {
     const sources = loadChunkerSourcesFromDir(FIXTURE_DIR);
     const lockFilePath = tempLockPath();
-    const store = createMemoryStore();
+    const store = lockedMemoryStore();
     const embedder = vi.fn(deterministicEmbedder());
     const opts = { schema: sources, embedder, store, embedderId: "test:deterministic", lockFilePath };
 
@@ -257,7 +302,7 @@ describe("buildSchemaIndex — store is the source of truth", () => {
   it("treats a missing-vs-present embedderId as an embedder change", async () => {
     const sources = loadChunkerSourcesFromDir(FIXTURE_DIR);
     const lockFilePath = tempLockPath();
-    const store = createMemoryStore();
+    const store = lockedMemoryStore();
     const embedder = vi.fn(deterministicEmbedder());
 
     await buildSchemaIndex({ schema: sources, embedder, store, lockFilePath });
@@ -276,7 +321,7 @@ describe("buildSchemaIndex — store is the source of truth", () => {
 
   it("re-embeds everything when the lock file is missing but the store has data", async () => {
     const sources = loadChunkerSourcesFromDir(FIXTURE_DIR);
-    const store = createMemoryStore();
+    const store = lockedMemoryStore();
     const embedder = vi.fn(deterministicEmbedder());
     const opts = { schema: sources, embedder, store, embedderId: "test:deterministic" };
 
@@ -312,12 +357,17 @@ describe("buildSchemaIndex — store is the source of truth", () => {
   it("throws a clear error when the embedder's dimensions don't match the store", async () => {
     const sources = loadChunkerSourcesFromDir(FIXTURE_DIR);
     const store: VectorStore = {
-      ...createMemoryStore(),
-      describe: () => ({ kind: "pgvector", location: "t", dimensions: 3 }),
+      ...lockedMemoryStore(),
+      describe: () => ({ kind: "qdrant", location: "t", dimensions: 3 }),
     };
-    await expect(
-      buildSchemaIndex({ schema: sources, embedder: deterministicEmbedder(), store }),
-    ).rejects.toThrow(/2-dimension vectors but the pgvector store is set up for 3\. Use a store set up for 2 \(pgvector: dimensions=2/);
+    const error = await buildSchemaIndex({ schema: sources, embedder: deterministicEmbedder(), store }).catch(
+      (e: unknown) => e as Error,
+    );
+    // Generic: no advice that only fits a built-in store.
+    expect(error.message).toBe(
+      "Embedder returned 2-dimension vectors but the qdrant store is set up for 3. Use a store set up for 2, " +
+        "or an embedder that produces 3-dimension vectors.",
+    );
   });
 
   it("tells a file-store user to delete the embeddings files when the width changes", async () => {
@@ -331,13 +381,13 @@ describe("buildSchemaIndex — store is the source of truth", () => {
     const threeDims: Embedder = async (texts) => texts.map((t) => [t.length, 1, 2]);
     await expect(
       buildSchemaIndex({ schema: sources, embedder: threeDims, store: createFileStore({ basePath }), embedderId: "w3", lockFilePath }),
-    ).rejects.toThrow(/file store is set up for 2\..*file store: delete its embeddings files/);
+    ).rejects.toThrow(`file store is set up for 2. Use a store set up for 3, or an embedder that produces 2-dimension vectors. Delete ${basePath}.embeddings.bin and ${basePath}.embeddings.json to rebuild the index at the new width.`);
   });
 
   it("reports a changed embedder even when another reason forces the full reindex", async () => {
     const sources = loadChunkerSourcesFromDir(FIXTURE_DIR);
     const lockFilePath = tempLockPath();
-    const store = createMemoryStore();
+    const store = lockedMemoryStore();
     await buildSchemaIndex({ schema: sources, embedder: deterministicEmbedder(), store, embedderId: "a", lockFilePath });
 
     const logger = { info: vi.fn(), error: vi.fn() };
@@ -353,7 +403,7 @@ describe("buildSchemaIndex — lock-file fallback for stores without hashesByPre
   it("reuses chunks when store identity, dimensions, and embedder match", async () => {
     const sources = loadChunkerSourcesFromDir(FIXTURE_DIR);
     const lockFilePath = tempLockPath();
-    const backing = createMemoryStore();
+    const backing = lockedMemoryStore();
     const store = lockOnlyStore(backing, { kind: "custom", location: "a" });
     const opts = { schema: sources, embedder: deterministicEmbedder(), store, embedderId: "e", lockFilePath };
 
@@ -370,11 +420,11 @@ describe("buildSchemaIndex — lock-file fallback for stores without hashesByPre
 
     await buildSchemaIndex({
       ...opts,
-      store: lockOnlyStore(createMemoryStore(), { kind: "custom", location: "a" }),
+      store: lockOnlyStore(lockedMemoryStore(), { kind: "custom", location: "a" }),
     });
     const second = await buildSchemaIndex({
       ...opts,
-      store: lockOnlyStore(createMemoryStore(), { kind: "custom", location: "b" }),
+      store: lockOnlyStore(lockedMemoryStore(), { kind: "custom", location: "b" }),
     });
     expect(second.stats.chunksIndexed).toBe(second.stats.chunksTotal);
   });
@@ -387,13 +437,13 @@ describe("buildSchemaIndex — lock-file fallback for stores without hashesByPre
     await buildSchemaIndex({
       ...opts,
       embedder: deterministicEmbedder(),
-      store: lockOnlyStore(createMemoryStore(), { kind: "custom", dimensions: 2 }),
+      store: lockOnlyStore(lockedMemoryStore(), { kind: "custom", dimensions: 2 }),
     });
     const threeDims: Embedder = async (texts) => texts.map((t) => [t.length, 1, 2]);
     const second = await buildSchemaIndex({
       ...opts,
       embedder: threeDims,
-      store: lockOnlyStore(createMemoryStore(), { kind: "custom", dimensions: 3 }),
+      store: lockOnlyStore(lockedMemoryStore(), { kind: "custom", dimensions: 3 }),
     });
     expect(second.stats.chunksIndexed).toBe(second.stats.chunksTotal);
     expect(readLockFile(lockFilePath)?.dimensions).toBe(3);
@@ -404,8 +454,8 @@ describe("buildSchemaIndex — lock-file fallback for stores without hashesByPre
     const lockFilePath = tempLockPath();
     const opts = { schema: sources, embedder: deterministicEmbedder(), embedderId: "e", lockFilePath };
 
-    await buildSchemaIndex({ ...opts, store: lockOnlyStore(createMemoryStore()) });
-    const fresh = createMemoryStore();
+    await buildSchemaIndex({ ...opts, store: lockOnlyStore(lockedMemoryStore()) });
+    const fresh = lockedMemoryStore();
     const second = await buildSchemaIndex({ ...opts, store: lockOnlyStore(fresh) });
     expect(second.stats.chunksIndexed).toBe(second.stats.chunksTotal);
     expect(fresh.size()).toBe(second.stats.chunksTotal);
@@ -414,7 +464,7 @@ describe("buildSchemaIndex — lock-file fallback for stores without hashesByPre
 
 describe("buildSchemaIndex — schema-scoped ids and orphan cleanup", () => {
   it("indexing one schema never deletes another schema's chunks in a shared store", async () => {
-    const store = createMemoryStore();
+    const store = lockedMemoryStore();
     const embedder = deterministicEmbedder();
     const a = loadChunkerSourcesFromDir(FIXTURE_DIR);
     const b = loadChunkerSourcesFromDir(FIXTURE_DIR);
@@ -440,7 +490,7 @@ describe("buildSchemaIndex — schema-scoped ids and orphan cleanup", () => {
   });
 
   it("does not treat a schema whose id extends another's as its orphans", async () => {
-    const store = createMemoryStore();
+    const store = lockedMemoryStore();
     const embedder = deterministicEmbedder();
     const a = loadChunkerSourcesFromDir(FIXTURE_DIR);
     a.schema.schemaId = "shop";
@@ -453,7 +503,7 @@ describe("buildSchemaIndex — schema-scoped ids and orphan cleanup", () => {
   });
 
   it("never prunes another schema's chunks from a store that reports hashes but can't list ids by schema", async () => {
-    const backing = createMemoryStore();
+    const backing = lockedMemoryStore();
     const store: VectorStore = { ...lockOnlyStore(backing), hashesByPrefix: backing.hashesByPrefix };
     const embedder = deterministicEmbedder();
     const a = loadChunkerSourcesFromDir(FIXTURE_DIR);
@@ -482,7 +532,7 @@ describe("buildSchemaIndex — schema-scoped ids and orphan cleanup", () => {
   });
 
   it("never prunes another schema's old-format ids that share this schema's prefix, from a store that can't list ids by schema", async () => {
-    const backing = createMemoryStore();
+    const backing = lockedMemoryStore();
     const store: VectorStore = { ...lockOnlyStore(backing), hashesByPrefix: backing.hashesByPrefix };
     // An older, unscoped id another schema wrote: it starts with `chunk:table:`,
     // which is also the prefix of a schema named `table`.
@@ -503,21 +553,28 @@ describe("buildSchemaIndex — schema-scoped ids and orphan cleanup", () => {
     expect(await backing.idsBySchema!("other")).toEqual([legacyId]);
   });
 
-  it("prunes the ids a renamed schema wrote under its old id, listed in its lock", async () => {
-    const store = createMemoryStore();
+  it("deletes none of another schema's chunks on the word of a lock copied from its directory, and logs it", async () => {
+    const store = lockedMemoryStore();
     const lockFilePath = tempLockPath();
-    const sources = loadChunkerSourcesFromDir(FIXTURE_DIR);
-    sources.schema.schemaId = "old";
-    await buildSchemaIndex({ schema: sources, embedder: deterministicEmbedder(), store, embedderId: "e", lockFilePath });
+    const shop = loadChunkerSourcesFromDir(FIXTURE_DIR);
+    shop.schema.schemaId = "shop";
+    const indexedShop = await buildSchemaIndex({ schema: shop, embedder: deterministicEmbedder(), store, embedderId: "e", lockFilePath });
 
-    sources.schema.schemaId = "new";
-    const renamed = await buildSchemaIndex({ schema: sources, embedder: deterministicEmbedder(), store, embedderId: "e", lockFilePath });
-    expect(await store.idsBySchema!("old")).toEqual([]);
-    expect(store.size()).toBe(renamed.stats.chunksTotal);
+    // `shop.schema/` copied to `shop-eu.schema/` with its lock, schemaId edited.
+    const shopEu = loadChunkerSourcesFromDir(FIXTURE_DIR);
+    shopEu.schema.schemaId = "shop-eu";
+    const logger = { info: vi.fn(), error: vi.fn() };
+    await buildSchemaIndex({ schema: shopEu, embedder: deterministicEmbedder(), store, embedderId: "e", lockFilePath, logger });
+
+    expect(await store.idsBySchema!("shop")).toHaveLength(indexedShop.stats.chunksTotal);
+    expect(logger.info).toHaveBeenCalledWith(
+      expect.objectContaining({ event: "askdb.rag.lock_schema_mismatch", lockSchemaId: "shop", schemaId: "shop-eu" }),
+      expect.any(String),
+    );
   });
 
   it("deletes nothing on the word of a lock from a newer @askdb/rag", async () => {
-    const store = createMemoryStore();
+    const store = lockedMemoryStore();
     const otherId = "chunk:other:table:public.kept";
     await store.upsert([
       {
@@ -536,7 +593,7 @@ describe("buildSchemaIndex — schema-scoped ids and orphan cleanup", () => {
   });
 
   it("prunes orphans via the lock for stores that can't list ids, scoped to the schema", async () => {
-    const backing = createMemoryStore();
+    const backing = lockedMemoryStore();
     const store = lockOnlyStore(backing, { kind: "custom" });
     const embedder = deterministicEmbedder();
     const lockA = tempLockPath();
@@ -560,7 +617,7 @@ describe("buildSchemaIndex — schema-scoped ids and orphan cleanup", () => {
   it("an older-format lock triggers a full reindex and removes that schema's unscoped ids", async () => {
     const sources = loadChunkerSourcesFromDir(FIXTURE_DIR);
     const lockFilePath = tempLockPath();
-    const backing = createMemoryStore();
+    const backing = lockedMemoryStore();
     // Simulate an index written by the previous version: unscoped ids + v1 lock.
     const legacyIds = ["chunk:table:public.orders", "chunk:table:public.users"];
     await backing.upsert(

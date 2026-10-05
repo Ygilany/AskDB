@@ -4,6 +4,30 @@ import { join, resolve } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { resetAskDbRuntimeForTests, setAskDbRuntimeForTests } from "@askdb/config";
 import { runRagCli } from "./cli.js";
+import type { CreatePgvectorStoreOptions } from "./stores/pgvector.js";
+
+/** What the CLI did to the pgvector store: the options it built it with, then each call. */
+const pgvector = vi.hoisted(() => ({ options: [] as unknown[], calls: [] as string[] }));
+vi.mock("./stores/pgvector.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("./stores/pgvector.js")>()),
+  createPgvectorStore: (options: CreatePgvectorStoreOptions) => {
+    pgvector.options.push(options);
+    const call = (name: string) => async () => {
+      pgvector.calls.push(name);
+    };
+    return {
+      ensureSchema: call("ensureSchema"),
+      upsert: call("upsert"),
+      delete: call("delete"),
+      close: call("close"),
+      query: async () => [],
+      count: async () => 0,
+      hashesByPrefix: async () => ({}),
+      idsBySchema: async () => [],
+      describe: () => ({ kind: "pgvector", location: "askdb_rag_chunks" }),
+    };
+  },
+}));
 
 const FIXTURE_DIR = resolve(__dirname, "../../../fixtures/schemas/orders-users.schema");
 
@@ -132,6 +156,24 @@ describe("askdb-rag CLI", () => {
     const schemaDir = copyFixture();
     expect(await runRagCli(["query", schemaDir, "--question", "x", "-k", "abc"])).toBe(1);
     expect(stderr.join("")).toMatch(/-k must be a positive integer \(got abc\)/);
+  });
+
+  it.each<[string, string[], number]>([
+    ["the mock embedder's width by default", [], 64],
+    ["openai text-embedding-3-small's width for --embedder openai", ["--embedder", "openai"], 1536],
+    ["--dimensions over the embedder's width", ["--embedder", "openai", "--dimensions", "16"], 16],
+  ])("setup-store provisions %s", async (_case, flags, dimensions) => {
+    pgvector.options.length = 0;
+    expect(await runRagCli(["setup-store", "--pg-url", "postgres://localhost/db", ...flags])).toBe(0);
+    expect(pgvector.options).toEqual([expect.objectContaining({ dimensions })]);
+  });
+
+  it("index --store pgvector provisions the table before writing to it", async () => {
+    pgvector.calls.length = 0;
+    const schemaDir = copyFixture();
+    expect(await runRagCli(["index", schemaDir, "--store", "pgvector", "--pg-url", "postgres://localhost/db"])).toBe(0);
+    expect(pgvector.calls[0]).toBe("ensureSchema");
+    expect(pgvector.calls).toContain("upsert");
   });
 
   it("rejects a non-positive --dimensions", async () => {

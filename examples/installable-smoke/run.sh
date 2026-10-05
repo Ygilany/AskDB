@@ -257,6 +257,39 @@ if [ "$POSTGRES_DRIVER_STATUS" -ne 0 ] && ! grep -Eq 'ECONNREFUSED|connect|Postg
   echo "$POSTGRES_DRIVER_OUTPUT" >&2
   exit 1
 fi
+echo "smoke: @askdb/rag pgvector store resolves the optional pg peer through resolveFrom…"
+# The consumer has @askdb/rag but no pg; the app sandbox has the real pg. A
+# fake pg exposing Pool only on its default export (as older pg releases and
+# some bundles do) checks the default-export unwrap under plain Node.
+mkdir -p "$WORK/fake-pg-default/node_modules/pg"
+echo '{"name":"pg","type":"module","main":"index.js"}' >"$WORK/fake-pg-default/node_modules/pg/package.json"
+echo 'export default { Pool: class { async query() { throw new Error("fake default-only pg"); } async end() {} } };' >"$WORK/fake-pg-default/node_modules/pg/index.js"
+PGVECTOR_PG_OUTPUT="$(cd "$WORK/consumer" && APPS_DIR="$WORK/apps" FAKE_PG_DIR="$WORK/fake-pg-default" node --input-type=module -e "
+  const { createPgvectorStore } = await import('@askdb/rag');
+  const url = 'postgres://127.0.0.1:65432/askdb_smoke_placeholder';
+  const probe = async (options) => {
+    const store = createPgvectorStore({ connectionString: url, ...options });
+    try { await store.count(); return 'connected'; } catch (e) { return [e.code, e.message].filter(Boolean).join(' '); } finally { await store.close(); }
+  };
+  console.log('without resolveFrom: ' + await probe({}));
+  console.log('with resolveFrom: ' + await probe({ resolveFrom: process.env.APPS_DIR }));
+  console.log('default-only pg: ' + await probe({ resolveFrom: process.env.FAKE_PG_DIR }));
+" 2>&1)"
+if ! grep -q 'without resolveFrom: .*optional `pg` peer dependency' <<<"$PGVECTOR_PG_OUTPUT"; then
+  echo "smoke: FAILED — without pg resolvable, createPgvectorStore should give the install hint." >&2
+  echo "$PGVECTOR_PG_OUTPUT" >&2
+  exit 1
+fi
+if ! grep -Eq 'with resolveFrom: .*(ECONNREFUSED|connect)' <<<"$PGVECTOR_PG_OUTPUT"; then
+  echo "smoke: FAILED — createPgvectorStore did not load pg through resolveFrom." >&2
+  echo "$PGVECTOR_PG_OUTPUT" >&2
+  exit 1
+fi
+if ! grep -q 'default-only pg: fake default-only pg' <<<"$PGVECTOR_PG_OUTPUT"; then
+  echo "smoke: FAILED — createPgvectorStore did not find Pool on a default-only pg module." >&2
+  echo "$PGVECTOR_PG_OUTPUT" >&2
+  exit 1
+fi
 # SQL Server's optional-peer cwd fallback is covered by unit tests; installing `mssql`
 # here would materially increase install smoke time for the same driver-load assertion.
 

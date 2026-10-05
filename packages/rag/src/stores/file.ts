@@ -109,7 +109,11 @@ export function createFileStore(options: FileStoreOptions): FileStore {
       // hashes, and `schema.lock.json` is committed, so a machine-local
       // absolute path there would only churn and leak.
       const { dimensions } = memory.describe?.() ?? {};
-      return dimensions !== undefined ? { kind: "file", dimensions } : { kind: "file" };
+      return {
+        kind: "file",
+        ...(dimensions !== undefined ? { dimensions } : {}),
+        widthHint: `Delete ${binPath} and ${metaPath} to rebuild the index at the new width.`,
+      };
     },
     flush,
     size() {

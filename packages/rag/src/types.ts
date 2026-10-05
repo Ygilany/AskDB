@@ -99,6 +99,18 @@ export type VectorStoreDescriptor = {
   location?: string;
   /** Vector dimensions the store holds/expects, when known. */
   dimensions?: number;
+  /**
+   * The store keeps nothing past the process (the memory store). The indexer
+   * neither reads nor writes `schema.lock.json` for it, since the lock
+   * describes a persisted index another process can query.
+   */
+  ephemeral?: boolean;
+  /**
+   * How to give this store a different vector width, appended to the
+   * indexer's width-mismatch error (e.g. which files to delete or table to
+   * drop). Not written to the lock.
+   */
+  widthHint?: string;
 };
 
 /**

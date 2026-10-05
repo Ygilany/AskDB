@@ -196,9 +196,14 @@ describe("createFileStore", () => {
     rmSync(`${basePath}.embeddings.json`);
     mkdirSync(`${basePath}.embeddings.json`);
     writeFileSync(join(`${basePath}.embeddings.json`, "keep"), "x");
+    // The rename onto that directory, not some unrelated error (code varies by platform).
     await expect(
       store.upsert([{ id: "users", vector: [0, 1], payload: payload("users") }]),
-    ).rejects.toThrow();
+    ).rejects.toMatchObject({
+      code: expect.stringMatching(/^(ENOTEMPTY|EISDIR|EEXIST|EPERM)$/),
+      syscall: "rename",
+      dest: `${basePath}.embeddings.json`,
+    });
     expect(readdirSync(dirname(basePath)).filter((f) => f.includes(".tmp-"))).toEqual([]);
   });
 });

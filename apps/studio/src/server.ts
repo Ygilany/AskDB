@@ -158,6 +158,12 @@ type StudioState = {
   workspace: Workspace | null;
   setupReason: SetupReason | null;
   ragMemoryStore?: ReturnType<typeof createMemoryStore>;
+  /**
+   * What the last build into `ragMemoryStore` recorded. The indexer writes no
+   * `schema.lock.json` for an ephemeral store, so Studio keeps the same
+   * fields in memory for the status check.
+   */
+  ragMemoryIndex?: StudioRagIndexRecord;
 };
 
 type StudioRagEmbedderConfig =
@@ -917,14 +923,23 @@ async function askSampleQuestion(
   };
 }
 
+/** The `schema.lock.json` fields the RAG status reads. */
+type StudioRagIndexRecord = {
+  embedderId?: string;
+  updatedAt?: string;
+  dimensions?: number;
+  hashes?: Record<string, string>;
+};
+
 async function getRagStatus(state: StudioState): Promise<StudioRagStatusDto> {
   const config = resolveStudioRagEmbedderConfig();
   const sources = loadChunkerSourcesFromDir(state.schemaDir);
   const chunkResult = chunkSchema(sources);
   const lockPath = join(state.schemaDir, "schema.lock.json");
-  const lock = readOptionalJson(lockPath) as
-    | { embedderId?: string; updatedAt?: string; dimensions?: number; hashes?: Record<string, string> }
-    | undefined;
+  const lock =
+    resolveStudioRagStoreConfig(state).kind === "memory"
+      ? state.ragMemoryIndex
+      : (readOptionalJson(lockPath) as StudioRagIndexRecord | undefined);
   const currentHashes = Object.fromEntries(
     chunkResult.chunks.map((chunk) => [chunk.id, chunkContentHash(chunk.text)]),
   );
@@ -1013,6 +1028,14 @@ async function indexRag(state: StudioState): Promise<RagIndexResponse> {
       embedderId: config.embedderId,
       lockFilePath: join(state.schemaDir, "schema.lock.json"),
     });
+    if (store.kind === "memory") {
+      state.ragMemoryIndex = {
+        embedderId: config.embedderId,
+        updatedAt: new Date().toISOString(),
+        dimensions: store.store.describe?.().dimensions,
+        hashes: Object.fromEntries(result.chunks.map((chunk) => [chunk.id, chunkContentHash(chunk.text)])),
+      };
+    }
   } catch (error) {
     throw formatStudioRagOperationError(error, config);
   } finally {

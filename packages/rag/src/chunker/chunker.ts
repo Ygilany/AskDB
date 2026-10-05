@@ -1,3 +1,4 @@
+import { findMentionedNames } from "@askdb/core";
 import type {
   NormalizedSchemaV2,
   NormalizedV2Column,
@@ -645,21 +646,9 @@ function extractExampleQuestions(md: ParsedTableMarkdown): string[] {
  * match `@askdb/enrich`'s sensitive-mention check ("filter by SSN" names the
  * sensitive `ssn` column).
  */
+/** Core's one "mentions a sensitive column by name" rule, shared with `@askdb/enrich`. */
 function mentionsAnyName(text: string, names: string[]): boolean {
-  if (!text || names.length === 0) return false;
-  for (const name of names) {
-    // Word-boundary match (also matches when wrapped in backticks).
-    const pattern = new RegExp(
-      `(^|[^a-zA-Z0-9_])${escapeRegex(name)}([^a-zA-Z0-9_]|$)`,
-      "i",
-    );
-    if (pattern.test(text)) return true;
-  }
-  return false;
-}
-
-function escapeRegex(s: string): string {
-  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return findMentionedNames(text, names).length > 0;
 }
 
 /** Split a long body on paragraph boundaries; suffix is `""` for single-chunk, `#bc:N` (1-indexed) otherwise. */

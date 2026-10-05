@@ -121,7 +121,12 @@ export function createMemoryStore(): MemoryStore {
     hashesByPrefix,
     idsBySchema,
     describe() {
-      return dimensions !== undefined ? { kind: "memory", dimensions } : { kind: "memory" };
+      return {
+        kind: "memory",
+        ...(dimensions !== undefined ? { dimensions } : {}),
+        ephemeral: true,
+        widthHint: "Index into a new memory store instance.",
+      };
     },
     size() {
       return records.size;

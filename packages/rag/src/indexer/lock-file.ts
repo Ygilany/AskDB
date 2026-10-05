@@ -113,3 +113,65 @@ function isStringRecord(value: unknown): value is Record<string, string> {
   if (typeof value !== "object" || value === null || Array.isArray(value)) return false;
   return Object.values(value).every((v) => typeof v === "string");
 }
+
+/** Result of {@link checkIndexMatches}. */
+export type IndexMatch =
+  | {
+      ok: true;
+      /** The lock compared against; `undefined` when there is none for this schema (nothing to check). */
+      lock: SchemaLockFile | undefined;
+    }
+  | {
+      ok: false;
+      reason: "lock-outdated" | "embedder-changed" | "dimensions-changed";
+      message: string;
+    };
+
+/**
+ * Whether an index described by `schema.lock.json` can be queried with this
+ * embedder: the rule `askdb-rag query` applies, for any host that queries a
+ * persisted index (e.g. through `createRetriever`). The embedder id must be
+ * the one the lock records (a lock with none can't show it is), and when
+ * both widths are known they must match. A missing or unreadable lock, or one
+ * for another schema, has nothing to compare and passes.
+ */
+export function checkIndexMatches(args: {
+  lockFilePath: string;
+  schemaId: string;
+  embedderId: string | undefined;
+  dimensions?: number;
+}): IndexMatch {
+  const inspected = inspectLockFile(args.lockFilePath);
+  if (inspected.status === "outdated") {
+    return {
+      ok: false,
+      reason: "lock-outdated",
+      message: "schema.lock.json was written by an older @askdb/rag (unscoped chunk ids); rebuild the index.",
+    };
+  }
+  if (inspected.status !== "ok" || inspected.lock.schemaId !== args.schemaId) {
+    return { ok: true, lock: undefined };
+  }
+  const lock = inspected.lock;
+  // Equal widths don't make two models' vectors comparable.
+  if ((lock.embedderId ?? null) !== (args.embedderId ?? null)) {
+    const built =
+      lock.embedderId === undefined
+        ? "without an embedder id, so its embedder is unknown,"
+        : `with embedder "${lock.embedderId}"`;
+    const using = args.embedderId === undefined ? "no embedder id" : `"${args.embedderId}"`;
+    return {
+      ok: false,
+      reason: "embedder-changed",
+      message: `The index was built ${built} but this query uses ${using}.`,
+    };
+  }
+  if (lock.dimensions !== undefined && args.dimensions !== undefined && lock.dimensions !== args.dimensions) {
+    return {
+      ok: false,
+      reason: "dimensions-changed",
+      message: `The index holds ${lock.dimensions}-dimension embeddings but this query uses ${args.dimensions}.`,
+    };
+  }
+  return { ok: true, lock };
+}

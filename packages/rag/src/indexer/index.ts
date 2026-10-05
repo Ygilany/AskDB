@@ -10,7 +10,7 @@ import type {
   VectorStore,
   VectorStoreDescriptor,
 } from "../types.js";
-import { chunkContentHash } from "./hash.js";
+import { chunkContentHash, storedVectorHash } from "./hash.js";
 import {
   SCHEMA_LOCK_VERSION,
   inspectLockFile,
@@ -80,7 +80,6 @@ export async function buildSchemaIndex(
     embedder,
     store,
     embedderId,
-    lockFilePath,
     chunkOptions,
     batchSize = DEFAULT_BATCH_SIZE,
     logger,
@@ -125,16 +124,33 @@ export async function buildSchemaIndex(
   // 3. Decide which chunks need (re-)embedding.
   //
   // Stores that can report stored hashes are the source of truth: a chunk is
-  // skipped only when the store already holds the same content hash for its
-  // id. The lock file only guards embedder identity for them. Stores that
-  // cannot report hashes fall back to the lock's hashes, guarded by store
-  // identity and dimensions.
+  // skipped only when the store already holds, for its id, the hash of the
+  // same text embedded by the same embedder (`storedVectorHash`). Stores that
+  // cannot report hashes fall back to the lock's text hashes, guarded by the
+  // lock's embedder id, store identity, and dimensions.
   const schemaId = sources.schema.schemaId;
   const idPrefix = chunkIdPrefix(schemaId);
   const descriptor = store.describe?.();
+  // An ephemeral store (memory) outlives no process, so the lock, which
+  // describes the persisted index, is neither read nor written for it.
+  const lockFilePath = descriptor?.ephemeral === true ? undefined : options.lockFilePath;
   const lockState: LockFileInspection = lockFilePath
     ? inspectLockFile(lockFilePath)
     : { status: "missing" };
+  if (lockState.status === "ok" && lockState.lock.schemaId !== schemaId) {
+    // Renamed, or a lock copied from another schema's directory: its ids may
+    // belong to a schema that still shares this store, so nothing is deleted
+    // on its word.
+    logger?.info(
+      {
+        ...baseLogContext,
+        event: AskDbRagLogEvent.LockSchemaMismatch,
+        lockSchemaId: lockState.lock.schemaId,
+        schemaId,
+      },
+      "schema.lock.json was written for another schema id; reindexing without it and pruning none of its ids",
+    );
+  }
   const previousLock =
     lockState.status === "ok" && lockState.lock.schemaId === schemaId
       ? lockState.lock
@@ -159,13 +175,17 @@ export async function buildSchemaIndex(
   const previousHashes: Record<string, string> =
     storeHashes ?? previousLock?.hashes ?? {};
 
+  // `newHashes` (text only) go to the lock; `vectorHashes` (text + embedder
+  // id) go to the store with each vector.
   const newHashes: Record<string, string> = {};
+  const vectorHashes: Record<string, string> = {};
   const toEmbed: Chunk[] = [];
   let reused = 0;
   for (const c of chunks) {
-    const hash = chunkContentHash(c.text);
-    newHashes[c.id] = hash;
-    if (fullReindexReason === undefined && previousHashes[c.id] === hash) {
+    newHashes[c.id] = chunkContentHash(c.text);
+    vectorHashes[c.id] = storedVectorHash(c.text, embedderId);
+    const current = storeHashes !== undefined ? vectorHashes[c.id] : newHashes[c.id];
+    if (fullReindexReason === undefined && previousHashes[c.id] === current) {
       // Same text, same embedder, and (for hash-reporting stores) verified
       // present in the store — keep the stored vector.
       reused++;
@@ -230,17 +250,16 @@ export async function buildSchemaIndex(
     ) {
       throw new Error(
         `Embedder returned ${observedDimensions}-dimension vectors but the ${descriptor.kind} store ` +
-          `is set up for ${descriptor.dimensions}. Use a store set up for ${observedDimensions} ` +
-          `(pgvector: dimensions=${observedDimensions}, on a new or recreated table; file store: delete its ` +
-          `embeddings files; memory store: a new instance), or an embedder that produces ` +
-          `${descriptor.dimensions}-dimension vectors.`,
+          `is set up for ${descriptor.dimensions}. Use a store set up for ${observedDimensions}, or an ` +
+          `embedder that produces ${descriptor.dimensions}-dimension vectors.` +
+          (descriptor.widthHint ? ` ${descriptor.widthHint}` : ""),
       );
     }
     await store.upsert(
       batch.map((c, idx) => ({
         id: c.id,
         vector: vectors[idx],
-        hash: newHashes[c.id],
+        hash: vectorHashes[c.id],
         payload: {
           id: c.id,
           type: c.type,
@@ -292,13 +311,6 @@ export async function buildSchemaIndex(
   }
   for (const id of Object.keys(previousLock?.hashes ?? {})) {
     if (id.startsWith(idPrefix)) candidates.add(id);
-  }
-  if (lockState.status === "ok" && lockState.lock.schemaId !== schemaId) {
-    // The schema was renamed: this lock lists the ids it wrote under its old id.
-    const oldPrefix = chunkIdPrefix(lockState.lock.schemaId);
-    for (const id of Object.keys(lockState.lock.hashes)) {
-      if (id.startsWith(oldPrefix)) candidates.add(id);
-    }
   }
   if (lockState.status === "outdated" && lockState.schemaId === schemaId) {
     // Older-format (unscoped) ids this schema wrote under the previous lock.
@@ -470,9 +482,11 @@ export function createRetriever(args: {
 }
 
 export {
+  checkIndexMatches,
   readLockFile,
   writeLockFile,
   SCHEMA_LOCK_VERSION,
+  type IndexMatch,
   type SchemaLockFile,
 } from "./lock-file.js";
 export { chunkContentHash } from "./hash.js";
