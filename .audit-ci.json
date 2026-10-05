@@ -3,5 +3,8 @@
   "package-manager": "pnpm",
   "report-type": "summary",
   "show-not-found": true,
-  "allowlist": []
+  "allowlist": [
+    "GHSA-ch52-4w7c-c8xp|apps__docs-site>*>http-cache-semantics",
+    "GHSA-vfj7-8cjw-p6xm|apps__docs-site>*>braces"
+  ]
 }

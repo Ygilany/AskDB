@@ -76,7 +76,7 @@ A small multi-tenant social-services domain. [`fixtures/multi-engine/README.md`]
 
 Two things are lab-only and live in the lab, not the fixture:
 
-- **Postgres row-level security** (optional): a `lab_tenant` role with an RLS policy on the tenant tables, for one defense-in-depth scenario.
+- **Postgres row-level security** (optional): a `lab_tenant` role with an RLS policy on the tenant tables, for one defense-in-depth scenario. It lives on the lab's own Postgres (`examples/consumer-lab/compose.yml`, port 15442), seeded by the fixture's seeder (#317).
 - **Scratch databases** (Phase 4): writable throwaway copies used to prove a rejected statement would have done damage.
 
 The `verdaccio` service for install mode (c) also belongs to the lab.
@@ -103,6 +103,8 @@ examples/consumer-lab/
     oracle.ts               # expected answers per question id, computed in TS from fixtures/multi-engine/dataset/data/*.json, with result types and ordered?
     model/replay-server.ts  # OpenAI-compatible replay/record server (see Model)
     http-api.ts             # runs the installed `askdb-http` bin on a free port
+    studio.ts               # runs the installed `askdb studio` on a free port, in a scratch project
+    server-process.ts       # starts a server bin on 127.0.0.1 on a free port, waits for it, stops it
     lab-cli.ts              # `pnpm lab ask …`
     matrix-reporter.ts      # vitest reporter → dialect × scenario table
     scratch.ts              # writable scratch copies of the fixture, created, reset and dropped by the lab
@@ -286,7 +288,7 @@ The overlay declares the flat root `org.agency`. The hierarchy cases pass `subtr
 | **Hierarchy.** With `subtree` access from agency 1, executed rows are exactly those of agencies 1, 4, 5 and 6. From 5, they are 5 and 6. From 6, only 6. From 7, only 7. No row outside the tree ever appears, on every dialect | C: the maintainer's hierarchy semantics (decision 9) and `TenantAccessSubtree` (`includeDescendants: true`). R: descendants dropped (the behavior before #232 was fixed), ancestors leaked, a sibling tree leaked, or a resolver result not substituted. Without a resolver, `subtree` fails closed with `TenantScopeError` `SUBTREE_NOT_RESOLVABLE`. |
 | No `tenantScope` with a policy present gives `TenantScopeError` `MISSING_SCOPE` | C: fail closed before the prompt. |
 | Warn mode returns SQL and warnings, as documented | C: documented warn semantics. Recorded against the "can't be forgotten" claim (see Survey notes). |
-| (Optional, Postgres) The unfiltered SQL, run as `lab_tenant` with RLS, returns only agency 2 | Documents the defense-in-depth recommendation. Informational only. Not built with the rest of the suite (#249), because it needs DDL the shared fixture doesn't have: **#317**. |
+| (Optional, Postgres) The unfiltered SQL, run as `lab_tenant` with RLS, returns only agency 2 | Documents the defense-in-depth recommendation. Informational only. Built in #317 as `tenant-rls`, on the lab's own Postgres, because it needs DDL the shared fixture doesn't have. Informational about AskDB, but a `FAIL` still fails the matrix: nothing in AskDB can turn it red, so a red cell means the lab's setup broke. |
 
 ### 5. Sensitive columns
 
@@ -298,13 +300,15 @@ The overlay marks `people.client.email` and `people.client.ssn` as `sensitive: t
 | With `omitSensitiveIdentifiersFromNlToSqlPrompt`, the CLI flag `--omit-sensitive-from-prompt`, or HTTP `omitSensitiveFromPrompt`, the captured prompt contains neither identifier | C: prompt exclusion on every surface. R: one surface not forwarding the option. |
 | A reply that reads `ssn` gets `sensitiveGuardrail.passed === false` with the right references (`warn`), and `SensitiveReferenceError` `SENSITIVE_COLUMN_REFERENCED` (`strict`); `SELECT *` from `client` is flagged too | C: documented flagging. R: the heuristic missing qualified, aliased, `*` or quoted references per dialect quoting style. |
 
+Built in #250 as `test/sensitive.test.ts`; the [lab README](../../examples/consumer-lab/README.md#sensitive-columns) lists its scenarios. Besides the three omission surfaces above, it covers the `createAskDb` per-call override and the config and environment switches the docs name (survey notes 18 and 19).
+
 ### 6. Black-box surfaces
 
 | Surface | Scenarios |
 |---|---|
 | `askdb` CLI | **`introspect`**: covered by suite 1, plus exit codes. **`ask`**: SQL on stdout; the sensitive `Warning:` on stderr; `--mock-sql`; exit codes 0/1/2 as documented in `reference/cli.mdx`. |
 | `@askdb/http-api` | **`POST /ask`**: 200 shape `{ ok, correlationId, sql, … }`. **Documented error codes**: `bad_request` 400, `payload_too_large` 413, `schema_parse_error` 400, `sql_validation_error` 400 (safety cases over HTTP), `sql_generation_error` 502 (the replay server refuses the call), `generation_not_configured` 500, `not_found` 404. Also `x-correlation-id` echo and `GET /health`. Transport risk the in-process tests can't reach. |
-| Studio local API | Each case follows ADR 0009 and `studio.mdx`: 403 without `x-askdb-studio-token`, 403 with a foreign `Host` (rebinding), 403 with a cross-site `Origin`, 415 for `text/plain`, and the token readable from the served page. **Execute:** with `studio.execute` configured, `/api/execute` returns rows for a SELECT. Given `fixture_owner` credentials on the **scratch** database, it still refuses a write and a multi-statement, which tests ADR 0009's "single-statement, read-only, with timeouts and row caps" claim; the scratch DB proves the write would otherwise land. |
+| Studio local API | Each case follows ADR 0009 and `studio.mdx`: 403 without `x-askdb-studio-token`, 403 with a foreign `Host` (rebinding), 403 with a cross-site `Origin`, 415 for `text/plain`, and the token readable from the served page. **Execute:** with `studio.execute` configured, `/api/execute` returns rows for a SELECT. Given `fixture_owner` credentials on the **scratch** database, it still refuses a write and a multi-statement, which tests the "single-statement, read-only" part of ADR 0009's "single-statement, read-only, with timeouts and row caps" claim (timeouts and row caps aren't tested); the scratch DB proves the write would otherwise land. |
 | Install contract | **`host-peers`** (ADR 0015): the host's pinned `ai` and `@ai-sdk/openai` meet every peer range an installed AskDB package declares (`pnpm peers check`), and every installed AskDB package declares the same `ai` range for the host's AI SDK major (`@askdb/core` and `@askdb/rag` also accept AI SDK 6). |
 
 ## Commands and reporting
@@ -334,7 +338,7 @@ Add a new `consumer-lab` job to `.github/workflows/ci.yml`. It needs `build`, ha
 
 Recommended additions (decision 4):
 
-- A run against the **published packages after each release** (`lab:use npm:latest`), plus a weekly run that installs fresh to catch dependency drift (#255). The release run catches publish-only breakage: files missing from tarballs, or a bad `workspace:` rewrite. A nightly run would add little, because between releases only the dependencies' resolved versions change.
+- A run against the **published packages after each release** (`lab:use npm:latest`), plus a weekly run that installs fresh to catch dependency drift (#255). The release run catches publish-only breakage: files missing from tarballs, or a bad `workspace:` rewrite. A nightly run would add little, because between releases only the dependencies' resolved versions change. Both are the `Consumer lab (published)` workflow, `.github/workflows/consumer-lab-published.yml`; a failure fixed on `main` but not yet released is listed per release in `examples/consumer-lab/known-release-failures.json`, so the job doesn't sit red on it.
 - A **path filter**, so pull requests that only touch `apps/docs-site` skip the lab.
 
 ## Test-audit compliance
@@ -368,7 +372,7 @@ Every phase runs `pnpm smoke:install` and `pnpm preflight` before its PR. Apart 
 
 These came up while reading the docs. They are not findings yet: each one is either confirmed by a lab test in its phase or dropped. **A confirmed discrepancy is filed as a GitHub issue** labelled `discrepancy` (see `docs/agents/issue-tracker.md`), and the list below links it; this list is the lab's index, not the tracker.
 
-1. `docs/specs/studio.md` lists live SQL execution as out of scope. ADR 0009, `studio.mdx` and `apps/studio/src/server.ts` (`/api/execute`) all say Studio executes SQL. The docs site does not document execute as read-only; only ADR 0009 does, in one line.
+1. `docs/specs/studio.md` lists live SQL execution as out of scope. ADR 0009, `studio.mdx` and `apps/studio/src/server.ts` (`/api/execute`) all say Studio executes SQL. The docs site does not document execute as read-only; only ADR 0009 does, in one line. *Checked by the Studio suite (#253):* `studio.mdx` now documents execute's read-only guards. The suite checks the first of them on every engine: the read-only SELECT check refuses a write and a second statement with `400`, even with owner credentials (the timeout and row cap aren't tested). `docs/specs/studio.md` still calls the Ask panel "generation only, no live execution", gives the default port as 4983 (it is 5556) and calls the server Express (it is `node:http`), and it and `studio.mdx`'s lede say Studio opens the browser, while ADR 0009 and the installed Studio say it prints its URL: **#378**. No document gives `POST /api/execute`'s request or reply, and the spec promises typed error codes Studio doesn't send: **#380**.
 2. `docs/specs/http-api.md` describes `{ sql, warnings, correlationId }` with errors `{ error: { code, message, details } }`. The docs site shows `{ ok, correlationId, sql, explain, usage }` and a code list. The docs-site error example uses `rule: "read_only"`, but core rule codes are `SQL_*`. *Confirmed by the HTTP suite (#252):* the spec-versus-docs-site shapes are **#300**; the docs-site-versus-server mismatches (`rule`, `explain: null`, the correlation ID format) are **#285**.
 3. `POST /ask` has no `tenantScope` field, while `tenant-policy.md` lists the HTTP API as a scope-input surface. By the core rules, a tenant-policy schema served over HTTP should fail closed with `MISSING_SCOPE`. *Confirmed by the HTTP suite (#252):* it does, with `500 internal_error`, no SQL and no model call; accepting a scope over HTTP is **#277**.
 4. `guides/multi-tenancy.mdx` says the tenant predicate "can't be forgotten … and can't be removed by a malformed question", but `enforcement: warn` returns unfiltered SQL with warnings. *Confirmed by the tenant suite (#249):* on every engine, and the warnings aren't in the `tenantWarnings` field the docs name but in `result.tenantGuardrail`: **#316**.
@@ -394,6 +398,11 @@ Found while building the tenant suite (#249):
 
 16. **Strict mode returns SQL whose tenant filter doesn't filter** (**#315**). The guardrail accepts a scoped table once the tenant column's name appears anywhere, so the column selected but never filtered, a filter on another tenant, and `OR 1 = 1` all pass, and it never checks the root table. Run as the host, each leaks other agencies' rows on every engine. *Product bug*, fixed: the tenant check now runs on the model's SQL before tenant rendering, and needs the tenant column compared with its root's placeholder, ANDed into a filter clause, with the root table scoped too. It is still a heuristic; #235 covers a sound rewrite.
 17. **`reference/core-api.mdx` describes `sql-params` markers two ways** (**#320**): the dialect's driver markers in the `ask()` options table, Postgres `$N` in "Tenant types".
+
+Found while building the sensitive-column suite (#250):
+
+18. **`askdb-http` ignores config `modes.omitSensitiveFromPrompt`** (**#376**). `reference/http-api.mdx` gives the `POST /ask` field `omitSensitiveFromPrompt` the default "env-driven", and `reference/config.mdx` and `guides/run-safely-in-prod.mdx` make the config key the deployment switch. The CLI honors it; the HTTP server sends the sensitive columns, tagged, to a request that leaves the field out.
+19. **`ASKDB_OMIT_SENSITIVE_FROM_PROMPT` is never read from the environment** (**#377**). `docs/contracts/sensitive-fields-and-modes.md` lists it beside the library option and the CLI flag, but it is an internal flat key built from `askdb.config.ts`, the same class of doc error as #282.
 
 ## Decisions (2026-09-26)
 

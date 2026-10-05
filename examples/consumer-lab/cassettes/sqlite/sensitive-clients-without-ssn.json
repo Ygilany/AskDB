@@ -1,0 +1,5 @@
+{
+  "question": "Which clients have no social security number on file? Show their id and full name.",
+  "reply": "```sql\nSELECT client_id, full_name\nFROM client\nWHERE ssn IS NULL\nORDER BY client_id\n```",
+  "source": "authored"
+}

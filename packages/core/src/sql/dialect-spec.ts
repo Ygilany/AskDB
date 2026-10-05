@@ -30,6 +30,12 @@ export type DialectId =
   | "sqlite"
   | "sqlserver";
 
+/**
+ * The namespace connectors give an engine's only namespace when it has no Postgres-style
+ * schemas (SQLite, single-database MySQL/MariaDB), so table ids stay stable across engines.
+ */
+export const SINGLE_NAMESPACE_LABEL = "public";
+
 export type DialectSpec = {
   id: DialectId;
   displayName: string;
@@ -37,6 +43,15 @@ export type DialectSpec = {
   promptBrief: string;
   /** Identifier quoting style — informational; mainly steers `promptBrief`. */
   identifierQuote: '"' | '`';
+  /**
+   * A namespace name that is not a schema in this engine. Connectors for engines without
+   * Postgres-style schemas file the database's tables under {@link SINGLE_NAMESPACE_LABEL}.
+   * When it is the schema's only namespace, the NL→SQL prompt lists its tables unqualified
+   * and tells the model never to write `<namespace>.<table>`; alongside other namespaces
+   * (a MySQL database list that includes a database named `public`) it is a real name and
+   * stays qualified. Unset: every table is listed qualified with its schema.
+   */
+  unqualifiedNamespace?: string;
   /** Extra keywords to forbid on top of the dialect-agnostic base denylist. */
   extraForbiddenKeywords?: readonly string[];
   /**
@@ -132,6 +147,8 @@ export const MYSQL_DIALECT: DialectSpec = {
     "Concatenate with `CONCAT(a, b)` — `||` is logical OR in MySQL, not string concat. " +
     "Limit rows with `LIMIT n` (or `LIMIT offset, n`).",
   identifierQuote: "`",
+  // The connection's database; a listed database keeps its own name and stays qualified.
+  unqualifiedNamespace: SINGLE_NAMESPACE_LABEL,
   // INTO OUTFILE / DUMPFILE are also covered by the base `into` keyword.
   extraForbiddenKeywords: ["outfile", "dumpfile"],
   blockedFunctions: [
@@ -165,6 +182,7 @@ export const SQLITE_DIALECT: DialectSpec = {
     "Concatenate with `||`. Limit rows with `LIMIT n` (optionally `LIMIT n OFFSET m`). " +
     "SQLite uses dynamic typing — keep CAST conservative and prefer text/integer/real over engine-specific types.",
   identifierQuote: '"',
+  unqualifiedNamespace: SINGLE_NAMESPACE_LABEL,
   // ATTACH/DETACH bring other DBs into scope; PRAGMA is configuration; REINDEX
   // is maintenance. None belong in a generated read-only SELECT. (`vacuum` is
   // already in the dialect-agnostic base denylist.)

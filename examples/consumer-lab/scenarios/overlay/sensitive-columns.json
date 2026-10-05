@@ -1,0 +1,4 @@
+{
+  "$comment": "The columns the sensitive suite marks `sensitive: true` in each dialect's schema.json (docs/contracts/sensitive-fields-and-modes.md). Logical stable IDs; src/sensitive.ts maps each to the dialect's artifact (SQLite renders every table under `public`).",
+  "sensitive": ["table:people.client#email", "table:people.client#ssn"]
+}

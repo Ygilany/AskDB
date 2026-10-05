@@ -1,5 +1,5 @@
 import { expect, it } from "vitest";
-import { createPgvectorStore } from "./pgvector.js";
+import { createPgvectorStore, PgvectorDimensionMismatchError } from "./pgvector.js";
 import { integrationSuite } from "../../../../scripts/test-utils/integration.mjs";
 
 const connectionString = process.env.ASKDB_PGVECTOR_URL ?? process.env.PGVECTOR_URL;
@@ -71,6 +71,30 @@ run("createPgvectorStore integration", () => {
       } finally {
         await pool.end();
       }
+    }
+  });
+
+  it("reads an existing table's width and refuses a store set up for another", async () => {
+    const table = `askdb_rag_width_${process.pid}`;
+    const created = createPgvectorStore({ connectionString, dimensions: 3, table, indexStrategy: "none" });
+    const other = createPgvectorStore({ connectionString, dimensions: 4, table, indexStrategy: "none" });
+    const unsized = createPgvectorStore({ connectionString, table, indexStrategy: "none" });
+    try {
+      await expect(unsized.tableDimensions()).resolves.toBeUndefined();
+      await created.ensureSchema();
+      await expect(unsized.tableDimensions()).resolves.toBe(3);
+      await expect(other.ensureSchema()).rejects.toThrow(PgvectorDimensionMismatchError);
+      await expect(other.ensureSchema()).rejects.toThrow(/stores 3-dimension vectors, but this store is set up for 4/);
+      await expect(unsized.ensureSchema()).resolves.toBeUndefined();
+    } finally {
+      const client = await import("pg");
+      const pool = new client.Pool({ connectionString });
+      try {
+        await pool.query(`DROP TABLE IF EXISTS "${table}"`);
+      } finally {
+        await pool.end();
+      }
+      await Promise.all([created.close(), other.close(), unsized.close()]);
     }
   });
 });

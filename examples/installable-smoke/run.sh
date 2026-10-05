@@ -229,8 +229,9 @@ export default defineConfig({
   ai: {
     provider: "openai",
     providerConfig: {
-      openai: { apiKey: "", model: "gpt-4o-mini" },
+      openai: { apiKey: "" },
     },
+    language: { model: "gpt-4o-mini" },
   },
   database: {
     provider: "postgres",
@@ -245,7 +246,6 @@ export default defineConfig({
   },
   rag: {
     embedder: "mock",
-    embedderConfig: {},
     store: "memory",
     storeConfig: { memory: {} },
   },

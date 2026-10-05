@@ -28,7 +28,7 @@ The `*.integration.test.ts` suites run against live databases and **skip** when 
 | `ASKDB_FIXTURE_HOST` | Live introspection in `@askdb/postgres`, `@askdb/mysql` (MySQL and MariaDB), `@askdb/sqlserver`, `@askdb/sqlite` and the `askdb` CLI, checked against one golden schema; the fixture's own dataset check | `pnpm fixture:up` → `127.0.0.1` (see [Multi-engine fixture](#multi-engine-fixture)) |
 | `MYSQL_DATABASE_URL` | `@askdb/mysql` | `docker compose -f fixtures/mysql/docker-compose.yml up -d --wait` → `mysql://root:mysql@127.0.0.1:3306/askdb_test` |
 | `MSSQL_DATABASE_URL` | `@askdb/sqlserver` | `docker compose -f fixtures/sqlserver/docker-compose.yml up -d --wait`, then create `askdb_test` (see the compose file) → `Server=127.0.0.1,1433;Database=askdb_test;User Id=sa;Password=AskDB.123;Encrypt=false` |
-| `ASKDB_PGVECTOR_URL` (or `PGVECTOR_URL`) | `@askdb/rag` pgvector store | `pnpm pgvector:up` → `postgres://postgres:postgres@127.0.0.1:5434/askdb_rag` |
+| `ASKDB_PGVECTOR_URL` (or `PGVECTOR_URL`) | `@askdb/rag` pgvector store; Studio's RAG index on pgvector | `pnpm pgvector:up` → `postgres://postgres:postgres@127.0.0.1:5434/askdb_rag`; `pnpm pgvector:test` runs both suites |
 
 The SQLite suite needs no server; it only needs the optional `better-sqlite3` native driver, which `pnpm install` builds.
 
@@ -68,7 +68,7 @@ pnpm lab:down                                     # stop the fixture; its data a
 pnpm lab:reset                                    # start over: fixture reseeded, committed baseline reinstalled
 ```
 
-`lab:down` removes only the fixture's containers (`fixture:down`): the volumes, the SQLite file, the lab's `node_modules` and `.lab/` stay, so the next `lab:up` is fast. `lab:reset` runs `fixture:reset` (containers, volumes and the SQLite file removed, then started and reseeded), then `lab:use --restore`, which removes `.lab/` (tarballs, the recorded target, cached schema artifacts, scratch projects) and the lab's `node_modules`, checks out the lab's three manifests as committed, and installs and verifies the committed lockfile. It works from a half-finished `lab:use`. It leaves the committed `npm:latest` baseline installed, not this checkout; run `pnpm lab:use .` to install the checkout. Neither command touches anything else. To try them without stopping a fixture others are using, run a [second copy of the fixture](fixtures/multi-engine/README.md#running-a-second-copy) from another worktree.
+`lab:down` removes only the fixture's containers (`fixture:down`) and the lab's own Postgres (`examples/consumer-lab/compose.yml`, whose data is on a tmpfs): the fixture's volumes, the SQLite file, the lab's `node_modules` and `.lab/` stay, so the next `lab:up` is fast. `lab:reset` runs `fixture:reset` (containers, volumes and the SQLite file removed, then started and reseeded), then `lab:use --restore`, which removes `.lab/` (tarballs, the recorded target, cached schema artifacts, scratch projects) and the lab's `node_modules`, checks out the lab's three manifests as committed, and installs and verifies the committed lockfile, then restarts the lab's Postgres empty (the `tenant-rls` test seeds it). It works from a half-finished `lab:use`. It leaves the committed `npm:latest` baseline installed, not this checkout; run `pnpm lab:use .` to install the checkout. Neither command touches anything else. To try them without stopping a fixture others are using, run a [second copy of the fixture](fixtures/multi-engine/README.md#running-a-second-copy) from another worktree.
 
 `lab ask` answers only questions in the lab's catalog, from hand-written replies per dialect; adding a question means adding its replies and its oracle, the expected answer computed from the seed data, which `test/results.test.ts` compares with the rows every engine returns (see the lab README).
 
@@ -92,7 +92,8 @@ When it fails, prefer fixing over allowlisting:
 
 | Advisory | Package / path | Why it is not exploitable here | Remove when |
 | --- | --- | --- | --- |
-| _none_ | | | |
+| GHSA-ch52-4w7c-c8xp | `http-cache-semantics` via `astro` (`apps/docs-site` only) | High severity: `max-stale` handling in a shared cache can disclose one user's cached response to another. `astro` uses it only to cache remote images fetched during the static docs build, which has no users to share a cache between, and `apps/docs-site` is private, so it isn't in any published package. | A patched `http-cache-semantics` (> 4.2.0) is released |
+| GHSA-vfj7-8cjw-p6xm | `braces` via `starlight-llms-txt > micromatch` (`apps/docs-site` only) | High severity: deeply nested braces patterns exhaust the stack. `starlight-llms-txt` matches doc IDs against its own default patterns (`astro.config.mjs` sets none), so no attacker-controlled pattern reaches it, and `apps/docs-site` is private, so it isn't in any published package. | A patched `braces` (> 3.0.3) is released |
 
 ## Before Opening a PR
 

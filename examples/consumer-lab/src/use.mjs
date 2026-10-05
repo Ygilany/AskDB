@@ -32,7 +32,7 @@ const TARBALLS = join(STATE, "tarballs");
 const TARGET_FILE = join(STATE, "target.json");
 
 /** The AskDB packages the lab imports or runs directly. Everything else arrives transitively. */
-const DIRECT = ["@askdb/ai-openai", "@askdb/client", "@askdb/config", "@askdb/core", "@askdb/http-api", "askdb"];
+const DIRECT = ["@askdb/ai-openai", "@askdb/client", "@askdb/config", "@askdb/core", "@askdb/http-api", "@askdb/studio", "askdb"];
 
 const MANAGED = ["package.json", "pnpm-workspace.yaml", "pnpm-lock.yaml"];
 const BLOCK_BEGIN = "# lab:use overrides begin";

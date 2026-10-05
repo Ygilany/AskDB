@@ -1,0 +1,5 @@
+{
+  "question": "Show everything we store about each client.",
+  "reply": "```sql\nSELECT *\nFROM client\nORDER BY client_id\n```",
+  "source": "authored"
+}

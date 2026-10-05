@@ -2,6 +2,8 @@
 
 The lab's committed `package.json`, `pnpm-workspace.yaml` and `pnpm-lock.yaml` pin what `npm install askdb` resolves (decision 2 in [`docs/specs/consumer-lab.md`](../../../docs/specs/consumer-lab.md)). After a release ships, refresh them in their own PR, and check the matrix for cells the release should have changed. Paths below are from the repo root.
 
+The `Consumer lab (published)` workflow runs after each release that publishes. Its job summary already says whether the baseline is stale and which pins moved, and lists the capability `n/a` cells the release should have flipped. Read it first; triaging its cells is still steps 2 and 3 ([Published packages](../../../examples/consumer-lab/README.md#published-packages)).
+
 ## 1. Refresh the three files
 
 1. Start from `origin/main` on a new branch, with the lab on its committed baseline (`git status examples/consumer-lab` clean).
@@ -57,6 +59,7 @@ Check `src/capabilities.ts` for the current list: a capability added since this 
 
 ## 4. Commit and open the PR
 
-1. Stage exactly the three files: `git add examples/consumer-lab/package.json examples/consumer-lab/pnpm-workspace.yaml examples/consumer-lab/pnpm-lock.yaml`, then `git diff --cached --name-only` must print those three and nothing else.
-2. Commit, for example `chore(lab): refresh the npm:latest baseline to askdb@<version>`. No changeset: the lab isn't published. The installed lab now matches the commit, so `pnpm lab:use --restore` isn't needed.
-3. The PR body gives the versions before and after, the `FAIL` cells and their triage, the verdict for each capability, and the findings filed, and ends with the `Thread ID:` line.
+1. In `examples/consumer-lab/known-release-failures.json`, delete the entries for releases older than the new baseline: no `npm:latest` run installs them again.
+2. Stage exactly the three files: `git add examples/consumer-lab/package.json examples/consumer-lab/pnpm-workspace.yaml examples/consumer-lab/pnpm-lock.yaml`, plus `git add examples/consumer-lab/known-release-failures.json` if step 1 changed it. Then `git diff --cached --name-only` must print those and nothing else.
+3. Commit, for example `chore(lab): refresh the npm:latest baseline to askdb@<version>`. No changeset: the lab isn't published. The installed lab now matches the commit, so `pnpm lab:use --restore` isn't needed.
+4. The PR body gives the versions before and after, the `FAIL` cells and their triage, the verdict for each capability, and the findings filed, and ends with the `Thread ID:` line.

@@ -1,3 +1,4 @@
+import { promptTableName } from "../schema/v2/format.js";
 import type { NormalizedSchemaV2 } from "../schema/v2/normalized.js";
 import type { RetrievedResult } from "./types.js";
 
@@ -22,6 +23,8 @@ export function synthesizeRetrievedDdl(args: {
   results: RetrievedResult[];
   /** Mirrors `formatSchemaV2ForNlToSql`'s `omitSensitiveIdentifiersFromPrompt`. */
   omitSensitiveIdentifiersFromPrompt?: boolean;
+  /** Mirrors `formatSchemaV2ForNlToSql`'s `unqualifiedNamespace`. */
+  unqualifiedNamespace?: string;
 }): { ddl: string; tablesEmitted: number; chunksUsed: number } {
   const { schema, results } = args;
   const omit = args.omitSensitiveIdentifiersFromPrompt === true;
@@ -91,10 +94,10 @@ export function synthesizeRetrievedDdl(args: {
   for (const t of schema.tables) {
     if (!tableIds.has(t.id)) continue;
     tablesEmitted++;
-    const qualifiedName = `${t.schema}.${t.name}`;
+    const listedName = promptTableName(t, args.unqualifiedNamespace);
     const aliasNote =
       !t.sensitive && t.aliases?.length ? ` -- aliases: ${t.aliases.join(", ")}` : "";
-    lines.push(`TABLE ${qualifiedName}${aliasNote}`);
+    lines.push(`TABLE ${listedName}${aliasNote}`);
     if (!t.sensitive && t.description) lines.push(`-- ${t.description}`);
 
     if (omit && t.sensitive) {

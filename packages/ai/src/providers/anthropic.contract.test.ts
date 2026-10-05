@@ -90,6 +90,6 @@ describe("anthropicProvider — real @ai-sdk/anthropic contract", () => {
         { provider: "anthropic", apiKey: "test-key", model: "any" },
         { dimensions: 256 },
       ),
-    ).toThrow(/Anthropic does not provide an embeddings API.*rag\.embedder/);
+    ).toThrow(/Anthropic does not provide an embeddings API.*ai\.embedding\.provider/);
   });
 });

@@ -147,7 +147,7 @@ Optional config bootstrap: `.env` and `askdb.config.*` discovery, type-safe `def
 | `env`, `requiredEnv` | Typed env-var accessors. |
 | `isAskDbDebugEnabled()` | `true` when the `ASKDB_DEBUG` shell variable is `1` or `true`; works without a loaded config. |
 
-For tools that write a new `askdb.config.ts`, the `@askdb/config/scaffold` entry point exports `renderAskDbAiConfigScaffold(input)`. It renders the config's `ai` block and lists the env vars that block reads. `askdb init` and Studio's setup wizard use it. Your own `askdb.config.ts` never needs it.
+For tools that write a new `askdb.config.ts`, the `@askdb/config/scaffold` entry point exports `renderAskDbAiConfigScaffold(input)`. It renders the config's `ai` block (the provider connection in `ai.providerConfig`, plus `ai.language.model` read from an env var when one is given) and lists the env vars that block reads. `askdb init` and Studio's setup wizard use it. Your own `askdb.config.ts` never needs it.
 
 ## Engine adapters
 
@@ -236,6 +236,7 @@ Chunks the schema artifact, indexes it in a vector store, and retrieves relevant
 | `createAiSdkEmbedder({ model })` / `createOpenAiEmbedder(...)` | Wrap an AI SDK embedding model (or raw OpenAI) as the `embedder`. |
 | `createRetriever({ store, embedder })` | Build the retriever passed to `ask()`. |
 | `createPgvectorStore` | The pgvector store factory. |
+| `detectEmbeddingDimensions(embedder)` | Learn an embedder's vector width with one short embedding call, for a new pgvector table. |
 | `loadChunkerSourcesFromDir(path)` | Load a schema directory into chunker format (includes markdown). |
 
 Ships a small CLI binary `askdb-rag` with three commands — `index`, `query`, and `setup-store` (pgvector provisioning). See [CLI reference — the askdb-rag binary](/reference/cli/#the-askdb-rag-binary) and [RAG for large schemas](/guides/rag-for-large-schemas/).

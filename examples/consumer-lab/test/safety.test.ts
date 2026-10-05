@@ -49,7 +49,7 @@ import { hasCapability, needsCapability } from "../src/capabilities.js";
 import { SUPPORTED_DIALECTS, type SupportedDialect } from "../src/dialects.js";
 import { loadRows, physicalName } from "../src/fixture.js";
 import { executeReadOnly } from "../src/host/execute.js";
-import { createScratch, type ScratchConnection, type ScratchDb } from "../src/scratch.js";
+import { createScratch, scalar, withOwner, type ScratchConnection, type ScratchDb } from "../src/scratch.js";
 
 type Rule = SqlValidationError["rule"];
 /** A logical table's physical name: the fixture's (for `ask()`) or a scratch copy's (for the proof). */
@@ -86,20 +86,6 @@ const ORDER_LINES = loadRows({ schema: "billing", name: "order_line" });
 const STATUSES = loadRows({ schema: "ref", name: "status" });
 
 // --- Proof helpers: each observes state on the scratch copy before and after the statement ---
-
-async function withOwner<T>(scratch: ScratchDb, fn: (c: ScratchConnection) => Promise<T>): Promise<T> {
-  const c = await scratch.connect();
-  try {
-    return await fn(c);
-  } finally {
-    await c.close();
-  }
-}
-
-async function scalar(c: ScratchConnection, sql: string): Promise<number> {
-  const [row] = await c.rows(sql);
-  return Number(Object.values(row ?? {})[0]);
-}
 
 /** Runs the statement and returns `observe`'s value before and after it. */
 async function beforeAfter<T>(p: ProofContext, observe: (c: ScratchConnection) => Promise<T>): Promise<{ before: T; after: T }> {

@@ -37,7 +37,7 @@ Studio is a local development tool and binds to `127.0.0.1` by default. Its Play
 
 ## Reporting a Vulnerability
 
-Please report suspected security issues privately by opening a GitHub security advisory through the [Private vulnerability reporting](https://github.com/Ygilany/AskDB/security/advisories/new)
+Please report suspected security issues privately by opening a GitHub security advisory through [private vulnerability reporting](https://github.com/Ygilany/AskDB/security/advisories/new).
 
 Include:
 
