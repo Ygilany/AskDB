@@ -337,7 +337,7 @@ askdb rag query ./my-app.schema --question "customer signups" -k 8
 | --- | --- |
 | `--question <text>` | The query text (required). |
 | `-k <n>` | Top-k chunks to return. Default `8`. |
-| `--types <list>` | Restrict chunk types, comma-separated: `table`, `column`, `cql`, `question`, `concept`, `relationship`, `tenant-policy`. |
+| `--types <list>` | Restrict chunk types, comma-separated: `table`, `column`, `cql`, `question`, `concept`, `relationship`, `tenant-policy`. Any other value is an error. |
 | `[schema-dir]`, `--store`, `--embedder`, `--embedder-model`, `--dimensions`, `--file-path`, `--pg-url`, `--pg-table` | As for `index`, and they must match the `index` run. `query` fails if the embedder id or dimensions differ from `schema.lock.json`, or if the lock records no embedder id. The memory store isn't supported: it only lives inside one process. |
 
 `index` and `query` accept the [shared logging flags](#shared-logging-flags).

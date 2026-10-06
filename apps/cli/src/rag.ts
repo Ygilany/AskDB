@@ -19,6 +19,7 @@ import {
   detectEmbeddingDimensions,
   loadChunkerSourcesFromDir,
   PgvectorDimensionMismatchError,
+  type ChunkType,
   type Embedder,
   type Filter,
   type PgvectorIndexStrategy,
@@ -50,6 +51,21 @@ function isCliStore(value: string): value is CliStoreKind {
   return (CLI_STORES as readonly string[]).includes(value);
 }
 
+/** The chunk types `--types` accepts. A record, so a new `ChunkType` doesn't compile until it's listed here. */
+const CHUNK_TYPES: Record<ChunkType, true> = {
+  table: true,
+  column: true,
+  cql: true,
+  question: true,
+  concept: true,
+  relationship: true,
+  "tenant-policy": true,
+};
+
+function isChunkType(value: string): value is ChunkType {
+  return Object.hasOwn(CHUNK_TYPES, value);
+}
+
 /** The mock embedder is AskDB's own, so its width is the only one the CLI knows. */
 const DEFAULT_MOCK_DIMENSIONS = 64;
 const DEFAULT_PGVECTOR_TABLE = "askdb_rag_chunks";
@@ -63,7 +79,7 @@ type CliOptions = {
   pgUrl?: string;
   pgTable?: string;
   dimensions?: number;
-  filterTypes?: string[];
+  filterTypes?: ChunkType[];
   verbose?: boolean;
   logLevel?: string;
   logFile?: string;
@@ -173,7 +189,7 @@ async function runQuery(opts: CliOptions, logger: AskDbLogger, runtimeConfig: As
 
   const filter: Filter = { schemaId: sources.schema.schemaId };
   if (opts.filterTypes && opts.filterTypes.length > 0) {
-    filter.types = opts.filterTypes as Filter["types"];
+    filter.types = opts.filterTypes;
   }
 
   const [vector] = await embedder([opts.question]);
@@ -627,9 +643,18 @@ function parseOptions(argv: readonly string[]): CliOptions {
       case "--force":
         opts.force = set();
         break;
-      case "--types":
-        opts.filterTypes = value().split(",").map((s) => s.trim()).filter(Boolean);
+      case "--types": {
+        // A misspelt type would match nothing and look like an empty index.
+        const types: ChunkType[] = [];
+        for (const type of value().split(",").map((s) => s.trim()).filter(Boolean)) {
+          if (!isChunkType(type)) {
+            throw new Error(`Unknown --types value: ${type} (expected ${Object.keys(CHUNK_TYPES).join(", ")}).`);
+          }
+          types.push(type);
+        }
+        opts.filterTypes = types;
         break;
+      }
       case "--file-path":
         opts.filePath = value();
         break;

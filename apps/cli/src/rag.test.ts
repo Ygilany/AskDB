@@ -264,6 +264,13 @@ describe("askdb rag", () => {
     expect(stderr.join("")).toMatch(/-k must be a positive integer \(got abc\)/);
   });
 
+  it("rejects an unknown --types value instead of returning no results", async () => {
+    expect(await runRagCli(["query", "./schema", "--question", "x", "--types", "table,tabel"])).toBe(1);
+    expect(stderr.join("")).toBe(
+      "Unknown --types value: tabel (expected table, column, cql, question, concept, relationship, tenant-policy).\n",
+    );
+  });
+
   it("rejects a non-positive --dimensions", async () => {
     const schemaDir = copyFixture();
     expect(await runRagCli(["index", schemaDir, "--dimensions", "0"])).toBe(1);
