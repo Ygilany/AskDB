@@ -84,9 +84,11 @@ export async function runRagCli(argv: readonly string[]): Promise<number> {
       printHelp();
       return 0;
     }
-    const cmd = argv[0];
+    const cmd = argv[0]!;
     if (cmd !== "index" && cmd !== "query" && cmd !== "setup-store") {
-      throw new Error(`Unknown command: ${cmd} (expected 'index', 'query', or 'setup-store')`);
+      // Named only when it looks like a command: a misplaced value can be a secret.
+      const named = /^[a-z][a-z-]*$/.test(cmd) ? `: ${cmd}` : "";
+      throw new Error(`Unknown command${named} (expected 'index', 'query', or 'setup-store')`);
     }
     const opts = parseOptions(argv.slice(1));
     const runtimeConfig = getAskDbRuntimeConfig();
@@ -522,18 +524,34 @@ function resolveLogLevel(opts: CliOptions, runtimeConfig: AskDbRuntimeConfig): A
 
 function parseOptions(argv: readonly string[]): CliOptions {
   const opts: CliOptions = {};
-  let positional = 0;
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i]!;
     if (!arg.startsWith("-")) {
-      if (positional === 0) opts.schemaDir = arg;
-      else throw new Error(`Unexpected positional argument: ${arg}`);
-      positional++;
+      if (opts.schemaDir !== undefined) {
+        // Not repeated: a stray value can be a secret, such as a connection string without its flag.
+        throw new Error(
+          "Unexpected extra argument: askdb rag takes one [schema-dir]. Pass other values with their flag, such as --pg-url <conn>.",
+        );
+      }
+      opts.schemaDir = arg;
       continue;
     }
-    switch (arg) {
+    // `--flag=value` works like `--flag value`. Errors name the flag, never the value.
+    const eq = arg.indexOf("=");
+    const flag = eq === -1 ? arg : arg.slice(0, eq);
+    const inline = eq === -1 ? undefined : arg.slice(eq + 1);
+    const value = (): string => {
+      if (inline === undefined) return readValue(argv, ++i, flag);
+      if (!inline) throw new Error(`${flag} requires a value.`);
+      return inline;
+    };
+    const set = (): true => {
+      if (inline !== undefined) throw new Error(`${flag} takes no value.`);
+      return true;
+    };
+    switch (flag) {
       case "--store": {
-        const raw = readValue(argv, ++i, arg);
+        const raw = value();
         if (!isCliStore(raw)) {
           throw new Error(`Unknown store: ${raw} (expected 'memory', 'file', or 'pgvector').`);
         }
@@ -541,7 +559,7 @@ function parseOptions(argv: readonly string[]): CliOptions {
         break;
       }
       case "--embedder": {
-        const raw = readValue(argv, ++i, arg);
+        const raw = value();
         if (!isCliEmbedder(raw)) {
           throw new Error(
             `Unknown embedder: ${raw} (expected ${CLI_EMBEDDERS.map((e) => `'${e}'`).join(" or ")}).`,
@@ -552,8 +570,8 @@ function parseOptions(argv: readonly string[]): CliOptions {
       }
       case "--embedder-model": {
         // Trimmed as the registry trims it, so the embedder id names the model that embeds.
-        const model = readValue(argv, ++i, arg).trim();
-        if (!model) throw new Error(`${arg} requires a value.`);
+        const model = value().trim();
+        if (!model) throw new Error(`${flag} requires a value.`);
         opts.embedderModel = model;
         break;
       }
@@ -561,11 +579,11 @@ function parseOptions(argv: readonly string[]): CliOptions {
         // Secrets on argv leak through shell history and the process list.
         throw new Error("--api-key was removed; set the key on a connection in ai.providerConfig in askdb.config.*.");
       case "--question":
-        opts.question = readValue(argv, ++i, arg);
+        opts.question = value();
         break;
       case "-k":
       case "--k": {
-        const raw = readValue(argv, ++i, arg);
+        const raw = value();
         const n = Number(raw);
         if (!Number.isInteger(n) || n <= 0) {
           throw new Error(`-k must be a positive integer (got ${raw}).`);
@@ -574,13 +592,13 @@ function parseOptions(argv: readonly string[]): CliOptions {
         break;
       }
       case "--pg-url":
-        opts.pgUrl = readValue(argv, ++i, arg);
+        opts.pgUrl = value();
         break;
       case "--pg-table":
-        opts.pgTable = readValue(argv, ++i, arg);
+        opts.pgTable = value();
         break;
       case "--dimensions": {
-        const raw = readValue(argv, ++i, arg);
+        const raw = value();
         const n = Number(raw);
         if (!Number.isInteger(n) || n <= 0) {
           throw new Error(`--dimensions must be a positive integer (got ${raw}).`);
@@ -589,32 +607,32 @@ function parseOptions(argv: readonly string[]): CliOptions {
         break;
       }
       case "--force":
-        opts.force = true;
+        opts.force = set();
         break;
       case "--types":
-        opts.filterTypes = readValue(argv, ++i, arg).split(",").map((s) => s.trim()).filter(Boolean);
+        opts.filterTypes = value().split(",").map((s) => s.trim()).filter(Boolean);
         break;
       case "--file-path":
-        opts.filePath = readValue(argv, ++i, arg);
+        opts.filePath = value();
         break;
       case "-v":
       case "--verbose":
-        opts.verbose = true;
+        opts.verbose = set();
         break;
       case "--log-level":
-        opts.logLevel = readValue(argv, ++i, arg);
+        opts.logLevel = value();
         break;
       case "--log-file":
-        opts.logFile = readValue(argv, ++i, arg);
+        opts.logFile = value();
         break;
       case "--log-stdout":
-        opts.logStdout = true;
+        opts.logStdout = set();
         break;
       case "--correlation-id":
-        opts.correlationId = readValue(argv, ++i, arg);
+        opts.correlationId = value();
         break;
       default:
-        throw new Error(`Unknown option: ${arg}`);
+        throw new Error(`Unknown option: ${flag}`);
     }
   }
   return opts;

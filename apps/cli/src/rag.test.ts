@@ -270,6 +270,29 @@ describe("askdb rag", () => {
     expect(stderr.join("")).toMatch(/--dimensions must be a positive integer/);
   });
 
+  it.each<[string, string[], string]>([
+    ["an unknown --flag=value", ["index", "./schema", "--pg-urll=postgres://u:secret@h/db"], "Unknown option: --pg-urll\n"],
+    [
+      "--api-key=value",
+      ["index", "./schema", "--api-key=sk-secret"],
+      "--api-key was removed; set the key on a connection in ai.providerConfig in askdb.config.*.\n",
+    ],
+    [
+      "a stray positional",
+      ["index", "./schema", "postgres://u:secret@h/db"],
+      "Unexpected extra argument: askdb rag takes one [schema-dir]. Pass other values with their flag, such as --pg-url <conn>.\n",
+    ],
+    ["an unknown command", ["postgres://u:secret@h/db"], "Unknown command (expected 'index', 'query', or 'setup-store')\n"],
+  ])("never repeats %s in its error", async (_case, args, message) => {
+    expect(await runRagCli(args)).toBe(1);
+    expect(stderr.join("")).toBe(message);
+  });
+
+  it("takes --flag=value like --flag value", async () => {
+    expect(await runRagCli(["index", copyFixture(), "--store=pgvector", `--pg-url=${PG_URL}`, "--pg-table=chunks"])).toBe(0);
+    expect(pgvector.options).toEqual([expect.objectContaining({ connectionString: PG_URL, table: "chunks" })]);
+  });
+
   it("rejects --api-key: keys come from ai.providerConfig, never argv", async () => {
     const schemaDir = copyFixture();
     expect(await runRagCli(["index", schemaDir, "--api-key", "sk-secret"])).toBe(1);
