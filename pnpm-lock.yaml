@@ -107,7 +107,7 @@ importers:
         specifier: ^8.7.3
         version: 8.7.3(@types/node@22.20.5)
       ai:
-        specifier: ^7.0.127
+        specifier: ^7.0.51
         version: 7.0.127(zod@4.6.5)
       commander:
         specifier: ^15.0.0
@@ -171,7 +171,7 @@ importers:
         specifier: workspace:*
         version: link:../../packages/postgres
       ai:
-        specifier: ^7.0.127
+        specifier: ^7.0.51
         version: 7.0.127(zod@4.6.5)
     devDependencies:
       tsx:
@@ -235,7 +235,7 @@ importers:
         specifier: workspace:*
         version: link:../../packages/sqlserver
       ai:
-        specifier: ^7.0.127
+        specifier: ^7.0.51
         version: 7.0.127(zod@4.6.5)
     devDependencies:
       '@eslint/js':
@@ -510,16 +510,16 @@ importers:
   packages/client:
     dependencies:
       '@ai-sdk/anthropic':
-        specifier: ^4.0.71
+        specifier: ^4.0.0
         version: 4.0.71(zod@4.6.5)
       '@ai-sdk/azure':
-        specifier: ^4.0.90
+        specifier: ^4.0.0
         version: 4.0.90(zod@4.6.5)
       '@ai-sdk/google':
-        specifier: ^4.0.87
+        specifier: ^4.0.0
         version: 4.0.87(zod@4.6.5)
       '@ai-sdk/openai':
-        specifier: ^4.0.83
+        specifier: ^4.0.0
         version: 4.0.83(zod@4.6.5)
       '@askdb/ai':
         specifier: workspace:^
