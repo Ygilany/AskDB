@@ -1,10 +1,37 @@
 {
-  "moderate": true,
-  "package-manager": "pnpm",
-  "report-type": "summary",
-  "show-not-found": true,
   "allowlist": [
-    "GHSA-ch52-4w7c-c8xp|apps__docs-site>*>http-cache-semantics",
-    "GHSA-vfj7-8cjw-p6xm|apps__docs-site>*>braces"
-  ]
+    {
+      "advisory": "GHSA-hp3w-g68c-fv3c",
+      "path": "packages/core>gray-matter>js-yaml>argparse>sprintf-js"
+    },
+    {
+      "advisory": "GHSA-hp3w-g68c-fv3c",
+      "path": "packages/sqlserver>mssql>tedious>sprintf-js"
+    },
+    {
+      "advisory": "GHSA-hp3w-g68c-fv3c",
+      "path": "packages/sqlserver>@types/mssql>tedious>sprintf-js"
+    },
+    {
+      "advisory": "GHSA-hp3w-g68c-fv3c",
+      "path": "fixtures/multi-engine>mssql>tedious>sprintf-js"
+    },
+    {
+      "advisory": "GHSA-hp3w-g68c-fv3c",
+      "path": "fixtures/multi-engine>@types/mssql>tedious>sprintf-js"
+    },
+    {
+      "advisory": "GHSA-hp3w-g68c-fv3c",
+      "path": "apps/studio>mssql>tedious>sprintf-js"
+    },
+    {
+      "advisory": "GHSA-hp3w-g68c-fv3c",
+      "path": "apps/studio>@types/mssql>tedious>sprintf-js"
+    },
+    {
+      "advisory": "GHSA-vfj7-8cjw-p6xm",
+      "path": "apps/docs-site>starlight-llms-txt>micromatch>braces"
+    }
+  ],
+  "show-not-found": true
 }
