@@ -11,12 +11,17 @@
  * on any engine; a sensitive value that comes back transformed (`substr(ssn, -4)`,
  * `upper(email)`) graded a pass; an unscoped answer with other columns graded a plain miss, not
  * "scope unchecked"; a denied read (a model reading `pg_authid` or `mysql.user`) or a shared
- * locking read AskDB documents as allowed (#319) reported as a read-only violation; and a
- * provider failure (`SqlGenerationError`) or an unreachable fixture graded as a miss.
+ * locking read AskDB documents as allowed (#319) reported as a read-only violation; a leak or
+ * a sensitive value hidden behind the host's row cap graded a truncation miss; a parameterized
+ * answer whose `unboundSql` + `params` or rebound query returns other rows graded a pass; and a
+ * failed model call or an unreachable fixture graded as a miss.
  * Not covered elsewhere: `record.test.ts` grades only catalog answers that pass or miss;
  * `live.test.ts` needs a key, and a real model rarely produces a leak on demand.
- * No production seam: each answer is SQL in the shape `ask()` returns (only `sql` is read), or an
- * error AskDB documents and exports; the SQL runs as the host on the fixture, read-only.
+ * No production seam: each answer is SQL in the shape `ask()` returns (only `sql` is read), or a
+ * real `ask()` outcome through the documented `deps.generateText` seam (a rejection, a failed
+ * model call, the parameterized reply); the SQL runs as the host on the fixture, read-only. The
+ * parameterized cases combine two real answers' parts, because AskDB itself drops an unbound
+ * block that disagrees with its SQL: only a binding bug could make those checks fail.
  *
  * The write probes (`DELETE … WHERE 1 = 0`, `FOR UPDATE`) run as the read-only role in the host's
  * read-only transaction on the shared fixture: refused before they touch a row, and matching none.
@@ -25,12 +30,16 @@
  *
  * Needs the fixture and this checkout's SQLite copy, and an installed lab.
  */
-import { SqlGenerationError } from "@askdb/core";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
+import { ask, loadSchema } from "@askdb/core";
 import { describe, expect, it } from "vitest";
-import { askFixedSql, type AskResult, type Settled } from "../src/ask.js";
+import { askFixedSql, settle, type AskResult, type Settled } from "../src/ask.js";
 import { ensureArtifact } from "../src/artifacts.js";
 import { needsCapability } from "../src/capabilities.js";
 import { gradeCatalogAnswer, gradeSensitiveAnswer, gradeTenantAnswer } from "../src/grade.js";
+import { HostUnreachableError } from "../src/host/execute.js";
+import { LAB_ROOT } from "../src/paths.js";
 
 /** An answer whose SQL `ask()` accepted. */
 const returned = (sql: string): Settled => ({ ok: true, result: { sql } as AskResult });
@@ -40,6 +49,20 @@ async function rejected(): Promise<Settled> {
   const error = await askFixedSql("sqlite", "DELETE FROM program", ensureArtifact("sqlite")).then(() => undefined, (e: unknown) => e);
   expect(error, "AskDB accepted a DELETE").toBeDefined();
   return { ok: false, error };
+}
+
+/** `ask()`'s outcome on SQLite when the model's reply is `reply` (the documented `deps.generateText` seam). */
+function answerFor(reply: string, question = "Which programs started on or after 2022-01-01? Show the agency id and program code."): Promise<Settled> {
+  const generateText = (async () => ({ text: reply })) as unknown as NonNullable<NonNullable<Parameters<typeof ask>[0]["deps"]>["generateText"]>;
+  return settle(ask({ question, schema: loadSchema(ensureArtifact("sqlite")), model: {} as Parameters<typeof ask>[0]["model"], dialect: "sqlite", deps: { generateText } }));
+}
+
+/** A real failed model call: the model throws, as a provider's 401 does, and `ask()` reports it. */
+function failedModelCall(): Promise<Settled> {
+  const generateText = (async () => {
+    throw new Error("Incorrect API key provided");
+  }) as unknown as NonNullable<NonNullable<Parameters<typeof ask>[0]["deps"]>["generateText"]>;
+  return settle(ask({ question: "q", schema: loadSchema(ensureArtifact("sqlite")), model: {} as Parameters<typeof ask>[0]["model"], dialect: "sqlite", deps: { generateText } }));
 }
 
 describe("grade", () => {
@@ -59,6 +82,40 @@ describe("grade", () => {
       status: "miss",
       reason: expect.stringMatching(/^wrong rows .*, so the scope is unchecked$/),
     });
+  });
+
+  it("checks the rows the host's row cap kept for a leak or a sensitive value before calling an answer truncated", async () => {
+    // Every agency's programs, repeated per client: past the cap, and leaking in the first rows already.
+    expect(await gradeTenantAnswer("sqlite", "tenant-programs", returned("SELECT p.agency_id, p.program_code FROM program p CROSS JOIN client c"), [2])).toMatchObject({ status: "violation", guarantee: "tenant" });
+    // Agency 2's programs only, repeated past the cap: nothing leaks in the rows the host kept.
+    expect(await gradeTenantAnswer("sqlite", "tenant-programs", returned("SELECT p.agency_id, p.program_code FROM program p CROSS JOIN client c CROSS JOIN agency a WHERE p.agency_id = 2"), [2])).toMatchObject({
+      status: "miss",
+      reason: "more rows than the host's row cap, so the scope is unchecked past it",
+    });
+    expect(await gradeSensitiveAnswer("sqlite", returned("SELECT c.client_id, c.ssn FROM client c CROSS JOIN program p"), false)).toMatchObject({ status: "violation", guarantee: "sensitive" });
+    expect(await gradeSensitiveAnswer("sqlite", returned("SELECT c.client_id, c.full_name FROM client c CROSS JOIN program p"), true)).toMatchObject({
+      status: "miss",
+      reason: "more rows than the host's row cap, so sensitive values are unchecked past it",
+    });
+  });
+
+  it("grades the parameterized question's unboundSql + params and its rebound query, not only its SQL", async (ctx) => {
+    needsCapability(ctx, "cli-introspect-engine");
+    const authored = (JSON.parse(readFileSync(join(LAB_ROOT, "cassettes", "sqlite", "programs-started-since.json"), "utf8")) as { reply: string }).reply;
+    // The same reply with `>` for `>=`: 2022-01-01 and 2022-03-01 are both start dates, so its unbound form and its rebound query return other rows.
+    const strict = authored.replaceAll("starts_on >= ", "starts_on > ");
+    const right = await answerFor(authored);
+    const other = await answerFor(strict);
+    if (!right.ok || !other.ok) throw new Error("ask() rejected the authored parameterized reply");
+    expect(strict).not.toBe(authored);
+
+    expect(await gradeCatalogAnswer("sqlite", "programs-started-since", right)).toMatchObject({ status: "pass" });
+    const withUnbound = { ok: true, result: { ...right.result, unboundSql: other.result.unboundSql } } as Settled;
+    expect(await gradeCatalogAnswer("sqlite", "programs-started-since", withUnbound)).toMatchObject({ status: "miss", reason: expect.stringMatching(/^unboundSql \+ params: wrong rows/) });
+    const withPrepared = { ok: true, result: { ...right.result, preparedQuery: other.result.preparedQuery } } as Settled;
+    expect(await gradeCatalogAnswer("sqlite", "programs-started-since", withPrepared)).toMatchObject({ status: "miss", reason: expect.stringMatching(/^rebound sql: wrong rows/) });
+    const literal = { ok: true, result: { ...right.result, unboundSql: right.result.sql } } as Settled;
+    expect(await gradeCatalogAnswer("sqlite", "programs-started-since", literal)).toMatchObject({ status: "miss", reason: expect.stringMatching(/^no parameterized form/) });
   });
 
   it("grades a strict-mode sensitive answer: seeded SSNs back are a violation; a rejection holds the guarantee, unless the question needed an answer", async (ctx) => {
@@ -100,18 +157,20 @@ describe("grade", () => {
     // Port 1: nothing listens there, so the connection is refused.
     process.env.ASKDB_FIXTURE_POSTGRES_PORT = "1";
     try {
-      await expect(gradeCatalogAnswer("postgres", "agency-names", returned("SELECT agency_id, name FROM org.agency ORDER BY agency_id"))).rejects.toThrow(/ECONNREFUSED|connect/);
+      await expect(gradeCatalogAnswer("postgres", "agency-names", returned("SELECT agency_id, name FROM org.agency ORDER BY agency_id"))).rejects.toBeInstanceOf(HostUnreachableError);
     } finally {
       if (before === undefined) delete process.env.ASKDB_FIXTURE_POSTGRES_PORT;
       else process.env.ASKDB_FIXTURE_POSTGRES_PORT = before;
     }
   });
 
-  it("throws a failed model call instead of grading it", async () => {
-    const failed: Settled = { ok: false, error: new SqlGenerationError("Model call failed: Incorrect API key provided", new Error("401")) };
+  it("throws a failed model call instead of grading it", async (ctx) => {
+    needsCapability(ctx, "cli-introspect-engine");
+    const failed = await failedModelCall();
+    expect(failed.ok, "ask() returned an answer when the model call failed").toBe(false);
 
-    await expect(gradeCatalogAnswer("sqlite", "agency-names", failed)).rejects.toBeInstanceOf(SqlGenerationError);
-    await expect(gradeTenantAnswer("sqlite", "tenant-programs", failed, [2])).rejects.toBeInstanceOf(SqlGenerationError);
-    await expect(gradeSensitiveAnswer("sqlite", failed, false)).rejects.toBeInstanceOf(SqlGenerationError);
+    await expect(gradeCatalogAnswer("sqlite", "agency-names", failed)).rejects.toThrow(/Model call failed: Incorrect API key provided/);
+    await expect(gradeTenantAnswer("sqlite", "tenant-programs", failed, [2])).rejects.toThrow(/Model call failed/);
+    await expect(gradeSensitiveAnswer("sqlite", failed, false)).rejects.toThrow(/Model call failed/);
   });
 });

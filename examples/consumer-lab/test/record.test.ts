@@ -11,7 +11,7 @@
  * the run, and so does any other error (the fixture, a model call AskDB couldn't make), keeping
  * what the run did. A reply whose ```sql fence doesn't hold exactly the SQL `ask()` returned is
  * a miss, because the replay suites read the fence strictly. The parameterized question's reply
- * passes with any placeholder name and misses when its unbound form selects other rows. The key
+ * passes with any placeholder name and misses when its unbound block disagrees with its SQL. The key
  * never reaches what lab:record writes: a reply holding it is not recorded, and is listed
  * redacted. The CLI exits 2 on a refusal before any call, and 1 when the run stopped or broke a
  * guarantee, and `.lab/record-misses.json` lists what an aborted run found. Neither mode runs in
@@ -160,13 +160,11 @@ describe("lab:record", () => {
     // The misses go to .lab/record-misses.json: a reply holding the key is listed redacted.
     expect(JSON.stringify(outcome)).not.toContain(KEY);
 
-    // The same reply from the same model again: nothing to rewrite but the date.
-    const again = await record({ settings, dialects: ["sqlite"], only: ["agency-names"], target: "lab-test-target", cassettesDir });
-    expect(again).toMatchObject({ written: [], unchanged: [{ dialect: "sqlite", id: "agency-names" }] });
   });
 
-  // AskDB drops an unbound block that disagrees with the inline SQL, so the reply comes back unparameterized: a miss either way.
-  it("records the parameterized question's reply whatever its placeholder is called, and misses one whose unbound form selects other rows", async (ctx) => {
+  // AskDB drops an unbound block that disagrees with the inline SQL, so the reply comes back unparameterized. The grader's own
+  // unbound and rebind checks, which only a binding bug reaches, are grade.test.ts's.
+  it("records the parameterized question's reply whatever its placeholder is called, and misses one whose unbound block disagrees with its SQL", async (ctx) => {
     needsCapability(ctx, "cli-introspect-engine");
     const cassettesDir = freshDir();
     const renamed = sqlite("programs-started-since").replaceAll(":start_date", ":since_date").replace('"name":"start_date"', '"name":"since_date"');
@@ -221,7 +219,7 @@ describe("lab:record", () => {
 
 describe("lab:record's report and CLI", () => {
   const miss = { dialect: "sqlite" as const, id: "agency-names", question: "q", reason: "wrong rows (got 1, expected 7)", reply: "```sql\nSELECT 1\n```" };
-  const outcome = (o: Partial<RecordOutcome> = {}): RecordOutcome => ({ written: [], unchanged: [], misses: [], violations: [], ...o });
+  const outcome = (o: Partial<RecordOutcome> = {}): RecordOutcome => ({ written: [], misses: [], violations: [], ...o });
 
   it("exits 0 with misses, 1 with a violation or when the run stopped, and lists what a stopped run found", () => {
     const file = join(freshDir(), "record-misses.json");
@@ -239,7 +237,8 @@ describe("lab:record's report and CLI", () => {
     const run = spawnSync(join(LAB_ROOT, "node_modules", ".bin", "tsx"), [join(LAB_ROOT, "src", "record-cli.ts"), ...args], {
       cwd: LAB_ROOT,
       encoding: "utf8",
-      env: { ...process.env, CI: "", GITHUB_ACTIONS: "", ...env },
+      // No key, from the shell or `.env.live` (an empty variable wins over the file): a regression here can't make a paid call.
+      env: { ...process.env, CI: "", GITHUB_ACTIONS: "", OPENAI_API_KEY: "", ...env },
     });
     return { status: run.status, stderr: run.stderr };
   }

@@ -10,8 +10,7 @@
  * cassette's fence strictly (`fencedSql`) and compare it with what `ask()` returns, and `ask()`
  * forgives a trailing semicolon or another fence tag that they don't. A reply that passes
  * replaces the cassette, with `"source": "recorded"` and `recordedWith` (the model the provider
- * says answered, the install target, the date). An identical reply from the same model is left
- * alone (`unchanged`), so a re-run doesn't churn dates. A reply that misses is listed, in the terminal and in `.lab/record-misses.json`, and leaves the
+ * says answered, the install target, the date). A reply that misses is listed, in the terminal and in `.lab/record-misses.json`, and leaves the
  * cassette as it was. The maintainer reviews the cassette diff in git: staging a file accepts it,
  * `git restore` rejects it.
  *
@@ -26,7 +25,7 @@
  * AskDB couldn't make) becomes a {@link RecordAbort} carrying what the run did until then, with the
  * key redacted, so `.lab/record-misses.json` still lists it.
  */
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { createOpenAI } from "@ai-sdk/openai";
 import { API_KEY, askWithModel, settle } from "./ask.js";
@@ -62,8 +61,6 @@ export interface RecordMiss {
 
 export interface RecordOutcome {
   written: { dialect: SupportedDialect; id: string }[];
-  /** The reply equals the recorded cassette's, from the same model: rewriting would only change the date. */
-  unchanged: { dialect: SupportedDialect; id: string }[];
   misses: RecordMiss[];
   /** Guarantee violations (`src/grade.ts`): SQL that passed AskDB's checks and broke one. Not written; a product failure to file. */
   violations: RecordMiss[];
@@ -114,10 +111,6 @@ export function selectQuestions(only: readonly string[] | undefined): Question[]
   return catalog.filter((q) => only.includes(q.id));
 }
 
-function readExisting(path: string): Cassette | undefined {
-  return existsSync(path) ? (JSON.parse(readFileSync(path, "utf8")) as Cassette) : undefined;
-}
-
 export async function record(opts: RecordOptions): Promise<RecordOutcome> {
   const { settings } = opts;
   const questions = selectQuestions(opts.only);
@@ -125,7 +118,7 @@ export async function record(opts: RecordOptions): Promise<RecordOutcome> {
   const cassettesDir = opts.cassettesDir ?? CASSETTES_DIR;
   const at = new Date().toISOString().slice(0, 10);
   const log = opts.log ?? (() => {});
-  const outcome: RecordOutcome = { written: [], unchanged: [], misses: [], violations: [] };
+  const outcome: RecordOutcome = { written: [], misses: [], violations: [] };
 
   const proxy = await startReplayServer({
     cassettesDir,
@@ -179,12 +172,6 @@ export async function record(opts: RecordOptions): Promise<RecordOutcome> {
           continue;
         }
         const path = cassettePath(dialect, question.id, cassettesDir);
-        const existing = readExisting(path);
-        if (existing?.source === "recorded" && existing.reply === raw && existing.recordedWith?.model === cassette.recordedWith!.model) {
-          outcome.unchanged.push({ dialect, id: question.id });
-          log(`unchanged  [${dialect}] ${question.id}`);
-          continue;
-        }
         mkdirSync(join(cassettesDir, dialect), { recursive: true });
         writeFileSync(path, json);
         outcome.written.push({ dialect, id: question.id });
@@ -217,7 +204,7 @@ export function writeRecordReport(outcome: RecordOutcome, model: string, missesF
   writeFileSync(missesFile, `${JSON.stringify({ generatedAt: new Date().toISOString(), model, stopped: stopped ?? null, misses: outcome.misses, violations: outcome.violations }, null, 2)}\n`);
   const summary = [
     "",
-    `${outcome.written.length} recorded, ${outcome.unchanged.length} unchanged, ${outcome.misses.length} missed (not written; listed in ${displayPath(missesFile)}).`,
+    `${outcome.written.length} recorded, ${outcome.misses.length} missed (not written; listed in ${displayPath(missesFile)}).`,
     ...(outcome.violations.length ? [`${outcome.violations.length} guarantee violation(s), not written: a product failure to file (listed in ${displayPath(missesFile)}).`] : []),
     ...(outcome.written.length ? ["Review: git diff examples/consumer-lab/cassettes/  (stage what you accept, git restore what you reject)"] : []),
   ];

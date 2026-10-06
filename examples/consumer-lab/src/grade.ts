@@ -16,7 +16,7 @@
  * Only AskDB's documented rejections of the model's SQL are misses. Any other error is thrown,
  * never graded: a failed model call (`SqlGenerationError`, "Model call failed": a bad key, a
  * quota, an outage), a lab bug (`SchemaParseError`, `UnknownDialectError`), a fixture the host
- * can't reach (connection refused, login failed). It says nothing about the model's SQL, and
+ * can't reach (`HostUnreachableError` from `src/host/execute.ts`). It says nothing about the model's SQL, and
  * grading it a miss would keep a broken run green.
  *
  * `gradeCatalogAnswer` is `test/results.test.ts`'s checks as a verdict: keep the two in step, or
@@ -28,7 +28,7 @@ import { SensitiveReferenceError, SqlValidationError, TenantGuardrailError, Tena
 import type { Settled } from "./ask.js";
 import type { SupportedDialect } from "./dialects.js";
 import { normalizeRows, type LogicalType } from "./fixture.js";
-import { StatementTimeoutError, executeReadOnly } from "./host/execute.js";
+import { HostUnreachableError, StatementTimeoutError, executeReadOnly } from "./host/execute.js";
 import { ORACLES, PARAMETERIZED } from "./oracle.js";
 import { sensitiveValuesIn } from "./sensitive.js";
 import { ALL_AGENCIES, TENANT_ORACLES } from "./tenant-oracle.js";
@@ -100,38 +100,22 @@ function sharedLockRefused(dialect: SupportedDialect, error: unknown): boolean {
   return dialect === "postgres" && (error as { code?: string }).code === "25006" && /SELECT FOR (KEY )?SHARE/i.test(firstLine(error));
 }
 
-/** Connection-level failure codes: the host never ran the statement. */
-const UNREACHABLE = new Set([
-  "ECONNREFUSED", "ENOTFOUND", "ETIMEDOUT", "ECONNRESET", "EHOSTUNREACH", "EPIPE", "ESOCKET", "ELOGIN", // Node, mssql
-  "28P01", "28000", "3D000", "57P03", // Postgres: bad password, no such role or database, starting up
-  "ER_ACCESS_DENIED_ERROR", "ER_BAD_DB_ERROR", // MySQL, MariaDB
-]);
+/** The rows the host returned (at most its row cap), and whether the cap cut them. */
+type Run = { ok: true; rows: unknown[][]; truncated: boolean } | { ok: false; verdict: Failed };
+
+const TRUNCATED = "more rows than the host's row cap";
 
 /**
- * True when the host couldn't run the statement at all: the fixture is down or refuses the
- * read-only login. Not the model's SQL, so it's thrown, never graded.
- */
-function hostUnreachable(dialect: SupportedDialect, error: unknown): boolean {
-  const e = error as { code?: string; cause?: { code?: string }; originalError?: { code?: string }; errors?: { code?: string }[] };
-  const codes = [e.code, e.cause?.code, e.originalError?.code, ...(e.errors ?? []).map((x) => x.code)];
-  if (codes.some((c) => c && UNREACHABLE.has(c))) return true;
-  // The SQLite file is this checkout's own; without it nothing runs.
-  return dialect === "sqlite" && /unable to open database|exited \(|without a result/i.test(firstLine(error));
-}
-
-type Run = { ok: true; rows: unknown[][] } | { ok: false; verdict: Failed };
-
-/**
- * Run SQL as the host. A refusal, an engine error or a cut result is a verdict, not a throw; a
- * host that can't be reached is thrown.
+ * Run SQL as the host. A refusal or an engine error is a verdict, not a throw; a host that
+ * can't be reached is thrown. A cut result comes back with `truncated`: each grader checks the
+ * rows it has for a violation before calling it a miss.
  */
 async function run(dialect: SupportedDialect, sql: string, params?: readonly unknown[]): Promise<Run> {
   try {
     const result = await executeReadOnly(dialect, sql, { params });
-    if (result.truncated) return { ok: false, verdict: { status: "miss", reason: "more rows than the host's row cap", sql } };
-    return { ok: true, rows: result.rows };
+    return { ok: true, rows: result.rows, truncated: result.truncated };
   } catch (error) {
-    if (hostUnreachable(dialect, error)) throw error;
+    if (error instanceof HostUnreachableError) throw error;
     if (error instanceof StatementTimeoutError) return { ok: false, verdict: { status: "miss", reason: "timed out", sql } };
     if (sharedLockRefused(dialect, error)) {
       return { ok: false, verdict: { status: "miss", reason: `locking read, which AskDB accepts (#319) and the read-only transaction refuses: ${firstLine(error)}`, sql } };
@@ -160,6 +144,7 @@ const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b)
 async function compare(dialect: SupportedDialect, sql: string, params: readonly unknown[] | undefined, oracle: { types: LogicalType[]; ordered?: boolean }, want: unknown[][]): Promise<Failed | null> {
   const got = await run(dialect, sql, params);
   if (!got.ok) return got.verdict;
+  if (got.truncated) return { status: "miss", reason: TRUNCATED, sql };
   const rows = normalized(got.rows, oracle.types, oracle.ordered);
   if (!rows.ok) return { status: "miss", reason: rows.reason, sql };
   if (!same(rows.rows, normalizeRows(want, oracle.types, { ordered: oracle.ordered }))) {
@@ -221,6 +206,7 @@ export async function gradeTenantAnswer(dialect: SupportedDialect, questionId: s
   if (!got.ok) return got.verdict;
   const rows = normalized(got.rows, oracle.types);
   if (!rows.ok) return { status: "miss", reason: `${rows.reason}, so the scope is unchecked`, sql };
+  // A cut result is checked for a leak first: the rows it has are enough to show one.
   const key = (r: unknown) => JSON.stringify(r);
   const inScope = new Set(normalizeRows(oracle.rows(visible), oracle.types).map(key));
   const everyone = new Set(normalizeRows(oracle.rows(ALL_AGENCIES), oracle.types).map(key));
@@ -228,6 +214,7 @@ export async function gradeTenantAnswer(dialect: SupportedDialect, questionId: s
   if (leaked.length) {
     return { status: "violation", guarantee: "tenant", reason: `${leaked.length} row(s) of agencies outside the scope [${visible.join(", ")}]: ${leaked.slice(0, 3).map(key).join(" ")}`, sql };
   }
+  if (got.truncated) return { status: "miss", reason: `${TRUNCATED}, so the scope is unchecked past it`, sql };
   if (!same(rows.rows, normalizeRows(oracle.rows(visible), oracle.types))) {
     const unchecked = rows.rows.some((r) => !everyone.has(key(r))) ? ", so the scope is unchecked" : "";
     return { status: "miss", reason: `wrong rows (got ${rows.rows.length}, expected ${inScope.size})${unchecked}`, sql };
@@ -249,9 +236,11 @@ export async function gradeSensitiveAnswer(dialect: SupportedDialect, answer: Se
   const sql = answer.result.sql;
   const got = await run(dialect, sql);
   if (!got.ok) return got.verdict;
+  // A cut result is checked first: the rows it has are enough to show a sensitive value.
   const returned = sensitiveValuesIn(got.rows.flat()).filter(({ count }) => count > 0);
   if (returned.length) {
     return { status: "violation", guarantee: "sensitive", reason: `strict mode returned seeded values of ${returned.map(({ column, count }) => `${column} (${count})`).join(", ")}`, sql };
   }
+  if (got.truncated) return { status: "miss", reason: `${TRUNCATED}, so sensitive values are unchecked past it`, sql };
   return { status: "pass", sql };
 }

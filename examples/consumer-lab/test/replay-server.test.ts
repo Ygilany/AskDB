@@ -84,6 +84,23 @@ describe("replay server", () => {
     await expect(call).rejects.toThrow(/no reply recorded for question client-count on mysql\. Add .*cassettes\/mysql\/client-count\.json .*"source": "authored"/);
   });
 
+  it("names pnpm lab:record in a missing-cassette message for the lab's catalog, and not for another catalog", async () => {
+    const empty = mkdtempSync(join(tmpdir(), "lab-replay-empty-"));
+    const labCatalog = await startReplayServer({ cassettesDir: empty });
+    try {
+      const openai = createOpenAI({ baseURL: labCatalog.baseURL("mysql"), apiKey: "unused" });
+      const call = generateText({ model: openai("gpt-4o-mini"), ...prompt("List every agency's id and name, ordered by id."), maxRetries: 0 });
+      await expect(call).rejects.toThrow(/or record one from a live model: pnpm lab:record --db mysql --only agency-names\./);
+    } finally {
+      await labCatalog.close();
+      rmSync(empty, { recursive: true, force: true });
+    }
+
+    const other = await generateText({ model: model("mysql", "responses"), ...prompt(UNANSWERED.text) }).then(() => "", (e: Error) => e.message);
+    expect(other).toMatch(/no reply recorded for question client-count/);
+    expect(other).not.toMatch(/lab:record/);
+  });
+
   it("refuses a prompt that contains no catalog question", async () => {
     const call = generateText({ model: model("postgres", "responses"), ...prompt("What is the meaning of life?") });
 

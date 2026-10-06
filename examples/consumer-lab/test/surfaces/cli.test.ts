@@ -23,7 +23,7 @@ import { hasCapability, needsCapability } from "../../src/capabilities.js";
 import { SUPPORTED_DIALECTS, type SupportedDialect } from "../../src/dialects.js";
 import { LOGICAL_SCHEMAS, compareToLogicalSchema, connectionUrl, type SchemaJson } from "../../src/fixture.js";
 import { askdbAsync, askdbInProject, introspectFixture, type CliRun } from "../../src/introspect.js";
-import { loadQuestions, readCassette } from "../../src/model/catalog.js";
+import { cassetteSql, loadQuestions } from "../../src/model/catalog.js";
 import { startReplayServer, type ReplayServer } from "../../src/model/replay-server.js";
 
 const QUESTIONS = loadQuestions();
@@ -49,11 +49,6 @@ afterAll(async () => {
  */
 function askdbCli(args: string[], dialect: SupportedDialect = "postgres"): Promise<CliRun> {
   return askdbAsync(args, { env: { LAB_REPLAY_BASE_URL: replay.baseURL(dialect) } });
-}
-
-function cassetteSql(dialect: SupportedDialect, questionId: string): string {
-  const cassette = readCassette(dialect, QUESTIONS.find((q) => q.id === questionId)!);
-  return /```sql\n([\s\S]*?)\n```/.exec(cassette!.reply)![1]!;
 }
 
 /**
