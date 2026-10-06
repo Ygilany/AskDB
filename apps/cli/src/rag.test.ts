@@ -621,6 +621,11 @@ describe("askdb rag", () => {
         [["setup-store", "--pg-url", PG_URL, "--dimensions", "16"], BASE_CONFIG, "--dimensions asks for 16"],
         [["index", copyFixture(), "--store", "pgvector", "--pg-url", PG_URL], BASE_CONFIG, "the mock embedder writes 64"],
         [
+          ["index", copyFixture(), "--store", "pgvector", "--pg-url", PG_URL, "--dimensions", "16"],
+          BASE_CONFIG,
+          "--dimensions asks for 16",
+        ],
+        [
           ["index", copyFixture(), "--store", "pgvector", "--pg-url", PG_URL],
           aiEmbeddingConfig(server.baseUrl, { model: "text-embedding-3-small" }),
           "embedding model text-embedding-3-small returns 4",
@@ -641,7 +646,7 @@ describe("askdb rag", () => {
             "or pass --dimensions 8 if your embedding model supports that width.\n",
         );
       }
-      expect(pgvector.calls).toEqual(["ensureSchema", "close", "ensureSchema", "close", "ensureSchema", "close", "ensureSchema", "close"]);
+      expect(pgvector.calls).toEqual(Array.from({ length: runs.length }, () => ["ensureSchema", "close"]).flat());
       // The only embedding call is the width probe of the run with no width set.
       expect(server.requests).toEqual([{ model: "text-embedding-3-small", inputs: 1 }]);
     });
