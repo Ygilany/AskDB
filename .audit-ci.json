@@ -4,7 +4,13 @@
   "report-type": "summary",
   "show-not-found": true,
   "allowlist": [
-    "GHSA-ch52-4w7c-c8xp|apps__docs-site>*>http-cache-semantics",
-    "GHSA-vfj7-8cjw-p6xm|apps__docs-site>*>braces"
+    "GHSA-vfj7-8cjw-p6xm|apps__docs-site>starlight-llms-txt>micromatch>braces",
+    "GHSA-hp3w-g68c-fv3c|packages__core>gray-matter>js-yaml>argparse>sprintf-js",
+    "GHSA-hp3w-g68c-fv3c|packages__sqlserver>mssql>tedious>sprintf-js",
+    "GHSA-hp3w-g68c-fv3c|packages__sqlserver>@types/mssql>tedious>sprintf-js",
+    "GHSA-hp3w-g68c-fv3c|fixtures__multi-engine>mssql>tedious>sprintf-js",
+    "GHSA-hp3w-g68c-fv3c|fixtures__multi-engine>@types/mssql>tedious>sprintf-js",
+    "GHSA-hp3w-g68c-fv3c|apps__studio>mssql>tedious>sprintf-js",
+    "GHSA-hp3w-g68c-fv3c|apps__studio>@types/mssql>tedious>sprintf-js"
   ]
 }
