@@ -470,6 +470,16 @@ describe("askdb rag", () => {
       expect(stderr.join("")).toMatch(/needs ai\.embedding in askdb\.config\.\*: set rag\.embedder: "ai" and ai\.embedding\.model/);
     });
 
+    it.each([[["--embedder-model", " "]], [["--embedder-model=  "]]])("a blank --embedder-model fails: %j", async (flags) => {
+      const server = await startEmbeddingServer();
+      installRuntime(aiEmbeddingConfig(server.baseUrl));
+      const schemaDir = copyFixture();
+      expect(await runRagCli(["index", schemaDir, ...flags])).toBe(1);
+      expect(stderr.join("")).toBe("--embedder-model requires a value.\n");
+      expect(existsSync(join(schemaDir, "schema.lock.json"))).toBe(false);
+      expect(server.requests).toEqual([]);
+    });
+
     it("--embedder-model with the mock embedder fails instead of indexing with the lexical hash", async () => {
       const schemaDir = copyFixture();
       expect(await runRagCli(["index", schemaDir, "--embedder-model", "text-embedding-3-large"])).toBe(1);
