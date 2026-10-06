@@ -454,6 +454,17 @@ describe("askdb rag", () => {
       expect(new Set(server.requests.map((request) => request.model))).toEqual(new Set([model]));
     });
 
+    it.each<[string, string[], string, number]>([
+      ["--dimensions over ai.embedding.dimensions", ["--dimensions", "6"], "ai-sdk:openai:text-embedding-3-small:6", 6],
+      ['--embedder mock over rag.embedder: "ai"', ["--embedder", "mock"], "mock:lexical-64", 64],
+    ])("%s", async (_case, flags, embedderId, dimensions) => {
+      const server = await startEmbeddingServer();
+      installRuntime(aiEmbeddingConfig(server.baseUrl, { model: "text-embedding-3-small", dimensions: 4 }));
+      const schemaDir = copyFixture();
+      expect(await runRagCli(["index", schemaDir, ...flags])).toBe(0);
+      expect(readLock(schemaDir)).toMatchObject({ embedderId, dimensions });
+    });
+
     it("--embedder ai with rag.embedder: \"mock\" (no ai.embedding) says how to configure it", async () => {
       expect(await runRagCli(["index", copyFixture(), "--embedder", "ai"])).toBe(1);
       expect(stderr.join("")).toMatch(/needs ai\.embedding in askdb\.config\.\*: set rag\.embedder: "ai" and ai\.embedding\.model/);
