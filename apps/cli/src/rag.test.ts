@@ -433,6 +433,16 @@ describe("askdb rag", () => {
       expect(stderr.join("")).toMatch(/needs ai\.embedding in askdb\.config\.\*: set rag\.embedder: "ai" and ai\.embedding\.model/);
     });
 
+    it("--embedder-model with the mock embedder fails instead of indexing with the lexical hash", async () => {
+      const schemaDir = copyFixture();
+      expect(await runRagCli(["index", schemaDir, "--embedder-model", "text-embedding-3-large"])).toBe(1);
+      expect(stderr.join("")).toBe(
+        "--embedder-model applies to the ai embedder, but this run uses the mock embedder (from rag.embedder). " +
+          'Drop --embedder-model, or embed with ai.embedding (rag.embedder: "ai" in askdb.config.*).\n',
+      );
+      expect(existsSync(join(schemaDir, "schema.lock.json"))).toBe(false);
+    });
+
     it("an ai.embedding connection without an API key names the connection", async () => {
       installRuntime({
         ...BASE_CONFIG,

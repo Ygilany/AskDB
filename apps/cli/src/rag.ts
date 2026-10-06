@@ -280,6 +280,14 @@ function resolveEmbedderConfig(opts: CliOptions, runtimeConfig: AskDbRuntimeConf
   const embedding = runtimeConfig.ai.embedding;
   const choice = opts.embedder ?? (embedding ? "ai" : "mock");
   if (choice === "mock") {
+    // Ignoring it would index with the lexical hash while the user believes the model embedded.
+    if (opts.embedderModel !== undefined) {
+      throw new Error(
+        `--embedder-model applies to the ai embedder, but this run uses the mock embedder ` +
+          `(from ${opts.embedder ? "--embedder" : "rag.embedder"}). Drop --embedder-model, ` +
+          'or embed with ai.embedding (rag.embedder: "ai" in askdb.config.*).',
+      );
+    }
     const dimensions = opts.dimensions ?? DEFAULT_MOCK_DIMENSIONS;
     return { kind: "mock", id: `mock:lexical-${dimensions}`, dimensions };
   }
