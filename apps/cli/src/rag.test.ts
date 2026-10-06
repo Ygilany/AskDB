@@ -10,6 +10,7 @@ import {
   setAskDbRuntimeForTests,
   type AskDbConfig,
 } from "@askdb/config";
+import { formatSupportedAskDbLogLevels } from "@askdb/core";
 import type { CreatePgvectorStoreOptions } from "@askdb/rag";
 import { runRagCli } from "./rag.js";
 
@@ -312,6 +313,34 @@ describe("askdb rag", () => {
   ])("never repeats %s in its error", async (_case, args, message) => {
     expect(await runRagCli(args)).toBe(1);
     expect(stderr.join("")).toBe(message);
+  });
+
+  it.each<[string, string[], string]>([
+    ["an unknown command", ["idnex"], "Unknown command: idnex (expected 'index', 'query', or 'setup-store')"],
+    ["an unknown option", ["index", "./schema", "--nope"], "Unknown option: --nope"],
+    ["a flag without its value", ["index", "./schema", "--store"], "--store requires a value."],
+    ["a value on a switch", ["index", "./schema", "--force=yes"], "--force takes no value."],
+    [
+      "an unknown --log-level",
+      ["index", "./schema", "--log-level", "loud"],
+      `Invalid --log-level: loud (expected one of ${formatSupportedAskDbLogLevels()})`,
+    ],
+  ])("rejects %s", async (_case, args, message) => {
+    expect(await runRagCli(args)).toBe(1);
+    expect(stderr.join("")).toBe(`${message}\n`);
+  });
+
+  it("query on a lock from an older @askdb/rag says to re-run askdb rag index", async () => {
+    const schemaDir = copyFixture();
+    expect(await runRagCli(["index", schemaDir])).toBe(0);
+    const lockPath = join(schemaDir, "schema.lock.json");
+    writeFileSync(lockPath, JSON.stringify({ ...JSON.parse(readFileSync(lockPath, "utf8")), version: 1 }));
+
+    expect(await runRagCli(["query", schemaDir, "--question", "paid orders"])).toBe(1);
+    expect(stderr.join("")).toBe(
+      "schema.lock.json was written by an older @askdb/rag (unscoped chunk ids); rebuild the index. " +
+        "Re-run `askdb rag index` before querying.\n",
+    );
   });
 
   it("takes --flag=value like --flag value", async () => {
