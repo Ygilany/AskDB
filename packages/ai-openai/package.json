@@ -48,7 +48,7 @@
     "@askdb/ai": "workspace:^"
   },
   "peerDependencies": {
-    "ai": "^7.0.127"
+    "ai": "^7.0.51"
   },
   "devDependencies": {
     "ai": "^7.0.127",

@@ -53,7 +53,7 @@
     "zod": "^4.6.5"
   },
   "peerDependencies": {
-    "ai": "^6.0.300"
+    "ai": "^6.0.0 || ^7.0.51"
   },
   "devDependencies": {
     "ai": "^7.0.51",
