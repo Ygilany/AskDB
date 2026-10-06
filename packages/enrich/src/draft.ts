@@ -1,3 +1,4 @@
+import { findMentionedNames } from "@askdb/core";
 import type {
   ParsedTableMarkdown,
   V2Column,
@@ -134,18 +135,10 @@ export function findSensitiveColumnReferences(
   description: string,
   physical: V2Table,
 ): string[] {
-  const lower = description.toLowerCase();
-  return physical.columns
-    .filter((c) => c.sensitive)
-    .map((c) => c.name)
-    .filter((name) => {
-      const re = new RegExp(`\\b${escapeRegex(name)}\\b`, "i");
-      return re.test(lower);
-    });
-}
-
-function escapeRegex(s: string): string {
-  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return findMentionedNames(
+    description,
+    physical.columns.filter((c) => c.sensitive).map((c) => c.name),
+  );
 }
 
 function nonEmptyStrings(list: string[] | undefined): list is string[] {

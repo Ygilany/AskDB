@@ -460,12 +460,16 @@ The markdown body (business context prose) is chunked following the `concepts.md
 
 | Chunk type | ID | Content |
 |---|---|---|
-| **Hierarchy** | `chunk:tenant-policy#hierarchy` | The `## Hierarchy` body, prefixed with schema ID. |
-| **Scope rules** | `chunk:tenant-policy#scope-rules` | The `## Scope rules` body, prefixed with schema ID. |
-| **Sensitive interactions** | `chunk:tenant-policy#sensitive` | The `## Sensitive interactions` body, prefixed with schema ID. |
-| **Other sections** | `chunk:tenant-policy#section:<slug>` | Other H2 bodies, prefixed with schema ID. |
+| **Hierarchy** | `chunk:<schemaId>:tenant-policy#hierarchy` | The `## Hierarchy` body, prefixed with `# Tenant policy — Hierarchy`. |
+| **Scope rules** | `chunk:<schemaId>:tenant-policy#scope-rules` | The `## Scope rules` body, prefixed with `# Tenant policy — Scope rules`. |
+| **Sensitive interactions** | `chunk:<schemaId>:tenant-policy#sensitive-interactions` | The `## Sensitive interactions` body, prefixed with its heading. |
+| **Whole body** | `chunk:<schemaId>:tenant-policy#body` | Only when none of the three sections above has content: the whole markdown body, prefixed with `# Tenant policy`. |
+
+Other H2 sections are not chunked: the tenant-policy loader keeps only the three sections above.
 
 Long sections use `#bc:<n>` suffixes following the existing chunking convention.
+
+A section whose body mentions a sensitive column of any table by name (whole word, case-insensitive) is not chunked unless the host sets `includeSensitiveDescribable: true`; the chunk then carries `sensitive: true`. A `## Sensitive interactions` section usually names sensitive columns, so it is normally excluded. See [Sensitive propagation](./schema-v2.md#sensitive-propagation).
 
 ### Tenant metadata on table chunks
 

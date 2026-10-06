@@ -9,12 +9,16 @@
  * Catches: a published floor raised above what the host pins, as a routine Dependabot
  * bump raised `ai` to `^7.0.113` in `askdb@1.0.0-beta.43` (#403). A raised peer range
  * fails `npm install` with ERESOLVE for a host on an older `ai`, and pnpm installs a
- * second AI SDK for AskDB. A runtime `ai` range (`@askdb/core`, the apps) raised alone
- * gives AskDB a second AI SDK with no peer warning, so every AskDB package must declare
- * the same `ai` range: the one the peer check holds the host's pin to.
+ * second AI SDK for AskDB. A runtime `ai` range (the apps) raised alone gives AskDB a
+ * second AI SDK with no peer warning, so every AskDB package must declare the same `ai`
+ * range for the host's AI SDK major: the one the peer check holds the host's pin to.
+ * `@askdb/core` and `@askdb/rag` also accept AI SDK 6 (`^6.0.0 || ^7.0.51`, ADR 0006's
+ * 2026-09 amendment), so the check compares the part of each range that covers the
+ * host's major, not the whole range.
  * Not covered elsewhere: the workspace's own tests resolve `ai` from its lockfile, at the
- * newest version, so they pass whatever the floor says, and `pnpm smoke:install` doesn't
- * pin `ai`, so npm installs whatever meets the range.
+ * newest version, so they pass whatever the floor says, and `pnpm smoke:install` pins only
+ * the AI SDK 6 floor (its `consumer-ai6` fixture); its AI SDK 7 consumers install whatever
+ * meets the range.
  * No production seam: pnpm's own `pnpm peers check --json` and `pnpm ls --json` over the
  * lab's install, and the installed packages' manifests. It checks the declared ranges, not
  * which `ai` versions the lockfile holds: those depend on what was installed before.
@@ -104,8 +108,28 @@ function installedAskDbManifests(): Manifest[] {
   return [...paths].map((path) => JSON.parse(readFileSync(join(path, "package.json"), "utf8")) as Manifest);
 }
 
+/** The lab's own `ai` pin, the host's AI SDK version. */
+function hostAiPin(): string {
+  const pin = (JSON.parse(readFileSync(join(LAB_ROOT, "package.json"), "utf8")) as Manifest).dependencies?.ai;
+  if (!pin) throw new Error("the lab's package.json doesn't pin ai");
+  return pin;
+}
+
+/**
+ * The alternative of an `ai` range that covers the host's major: `^6.0.0 || ^7.0.51` → `^7.0.51` for a host on 7.x.
+ * A range with no alternative for that major comes back whole, so it never matches one that has one.
+ */
+function rangeForMajor(range: string, major: string): string {
+  return range.split("||").map((part) => part.trim()).find((part) => majorOf(part) === major) ?? range;
+}
+
+/** The major of a pin or a single-comparator range: `7` for `7.0.51`, `^7.0.51` or `~7.0.51`. */
+function majorOf(version: string): string {
+  return version.replace(/^[\^~=]/, "").split(".")[0]!;
+}
+
 describe("[postgres]", () => {
-  it("host-peers: the host's own pins meet every peer range an installed AskDB package declares, and every AskDB package declares the same ai range", () => {
+  it("host-peers: the host's own pins meet every peer range an installed AskDB package declares, and every AskDB package declares the same ai range for the host's major", () => {
     const peers = labPeers();
     const unmet = [
       ...askDbIssues(peers.bad, (issue) => issue.foundVersion ?? "another version"),
@@ -116,12 +140,13 @@ describe("[postgres]", () => {
     ];
     expect([...new Set(unmet)].sort()).toEqual([]);
 
+    const hostMajor = majorOf(hostAiPin());
     const declarersByRange: Record<string, string[]> = {};
     for (const manifest of installedAskDbManifests()) {
       for (const [field, ranges] of [["dependency", manifest.dependencies], ["peer", manifest.peerDependencies]] as const) {
-        if (ranges?.ai) (declarersByRange[ranges.ai] ??= []).push(`${manifest.name}@${manifest.version} (${field})`);
+        if (ranges?.ai) (declarersByRange[rangeForMajor(ranges.ai, hostMajor)] ??= []).push(`${manifest.name}@${manifest.version} (${field}: ${ranges.ai})`);
       }
     }
-    expect(Object.keys(declarersByRange), `every AskDB package declares one ai range: ${JSON.stringify(declarersByRange)}`).toHaveLength(1);
+    expect(Object.keys(declarersByRange), `every AskDB package declares one ai ${hostMajor}.x range: ${JSON.stringify(declarersByRange)}`).toHaveLength(1);
   });
 });

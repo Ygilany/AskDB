@@ -152,16 +152,46 @@ The dialect comes from the base URL: `http://127.0.0.1:<port>/<dialect>/v1`. The
 | `safety-cte-dml` | Postgres `WITH gone AS (DELETE … RETURNING …) SELECT …`; `WITH … DELETE` where the engine has it (not MariaDB) | `SQL_FORBIDDEN_KEYWORD` | yes: the rows are deleted |
 | `safety-select-into` | `SELECT * INTO billing.lab_copy FROM …` (Postgres, SQL Server) | `SQL_FORBIDDEN_KEYWORD` | yes: the new table exists and holds the rows |
 | `safety-for-update` | `SELECT … FOR UPDATE` (Postgres, MySQL, MariaDB); `SELECT … WITH (UPDLOCK)` (SQL Server, `known (#319)`) | `SQL_FORBIDDEN_KEYWORD` | yes: a second connection with a short lock timeout can't lock the row until the first rolls back |
-| `safety-comment` | `DELETE` in a `/* */` comment, `DROP TABLE` after `--`, and on MySQL and MariaDB after `#` and in a `/*! */` executable comment | `SQL_COMMENT` | no: harmless unless the engine executes it |
-| `safety-file-access` | `COPY … TO/FROM PROGRAM`, `INTO OUTFILE`, `LOAD_FILE()`, `EXEC xp_cmdshell` | as the rule list gives it | never executed |
-| `safety-server-control` | `pg_terminate_backend()`, `KILL`, `SET GLOBAL` | as the rule list gives it | never executed |
-| `safety-sleep` | `pg_sleep()`, `SLEEP()`, `WAITFOR DELAY` | as the rule list gives it | never executed |
+| `safety-comment` | `DELETE` in a `/* */` comment, `DROP TABLE` after `--`, and on MySQL and MariaDB after `#` and in a `/*! */` executable comment | `SQL_COMMENT` | ordinary comments are inert; executable `/*! */` OUTFILE is proven on the isolated copy |
+| `safety-file-access` | `COPY … TO/FROM PROGRAM`, `INTO OUTFILE`, `LOAD_FILE()`, `EXEC xp_cmdshell` | as the rule list gives it | isolated copy only; see case table below |
+| `safety-server-control` | `pg_terminate_backend()`, `KILL`, `SET GLOBAL` | as the rule list gives it | isolated copy only; see case table below |
+| `safety-sleep` | `pg_sleep()`, `SLEEP()`, `WAITFOR DELAY` | as the rule list gives it | isolated copy only; see case table below |
 | `safety-system-catalog` | `pg_catalog`, `information_schema`, MySQL's `mysql` and `sys`, SQL Server's `sys`, `sqlite_master` | rejected, per `concepts/safety-boundaries.mdx` (no rule code is documented) | no; every engine accepts them today, `known (#318)` |
 | `safety-quoted-keyword` | `DELETE` as a quoted identifier, and `DROP TABLE … ; DELETE …` in a string literal | accepted, returned unchanged, and run as the read-only role | no |
 
 A statement that starts with its verb (`DELETE`, `COPY`, `KILL`, `SET`) is rejected by the leading-keyword check before the keyword list is read, so its rule is `SQL_NOT_SELECT_OR_WITH`. T-SQL runs a batch without semicolons, so on SQL Server the lab puts `EXEC`, `KILL` and `WAITFOR` after a `SELECT`, where the keyword list is what rejects them.
 
-The file, OS, server-control and sleep cases are rejection tests only. They are never executed, on any database, scratch or not, because the scratch databases share servers with other lab runs. So those cases prove AskDB rejects the statement, not that the statement would have done harm on that engine. Effect proofs on a disposable, isolated fixture copy are #323.
+The matrix checks rejection of file, OS, server-control and sleep replies without executing them. Their effect proofs run on a disposable second fixture owned by the lab (#323): CI's `consumer-lab` job runs them in its own step after the matrix, and locally you run `pnpm lab:use .` then `pnpm lab:safety:isolated` from the repository root; append `-t 'isolated effect'` to run only the additional proofs. This command never runs `lab:up` or reseeds the shared fixture. It starts, seeds, tests and removes Compose project `askdb-lab-isolated`, including its volumes, even after test failure or SIGINT/SIGTERM. It also seeds this checkout's SQLite file. Docker Engine 28+ and Compose 2.24.4+ are required; a local Unix-socket Docker daemon is required.
+
+The runner fixes the host to `127.0.0.1` and the ports to Postgres 25432, MySQL 23306, MariaDB 23307 and SQL Server 21433. The database containers share an internal network with an isolated gateway and no host mounts. A TCP relay exposes only those loopback ports; its fixed configuration forwards only to these four containers, with IP forwarding disabled. Before seeding and each effect proof, the guard checks the actual connection string, published binding, Compose project/service labels, container identity, relay configuration, database network and volume ownership. URL-based drivers must receive canonical URLs without query parameters or fragments, so driver options cannot override the endpoint being checked. SQL Server named instances are rejected because instance discovery discards the explicit port. Setting `ASKDB_LAB_ISOLATED=1` alone grants no permission: a shared or remote endpoint fails before any effect statement runs.
+
+A lock shared by this user's worktrees and an existing-project check refuse concurrent ownership; the runner never adopts an existing copy. After an uncatchable SIGKILL or machine crash, inspect the project and confirm its owning run has stopped. From the repository root, remove the entire copy using both Compose files (the override defines the relay and entry network):
+
+```bash
+ASKDB_FIXTURE_POSTGRES_PORT=25432 \
+ASKDB_FIXTURE_MYSQL_PORT=23306 \
+ASKDB_FIXTURE_MARIADB_PORT=23307 \
+ASKDB_FIXTURE_SQLSERVER_PORT=21433 \
+ASKDB_LAB_RELAY_CONFIG="$PWD/examples/consumer-lab/isolated-haproxy.cfg" \
+docker compose -f fixtures/multi-engine/compose.yml \
+  -f examples/consumer-lab/compose.isolated.yml \
+  -p askdb-lab-isolated down -v
+```
+
+After successful teardown, remove the `askdb-lab-isolated.lock` directory under Node's `os.tmpdir()`. The runner prints startup, seed, guard, suite and teardown timings. The measured full run on the rebased checkout took 52.84 seconds with fresh volumes and schema artifacts, using cached images: startup 10.47, seeding 1.70, guard tests 2.26, safety suite 35.33 and teardown 2.35 (plus orchestration). This is 3.5% of the PR job's 25-minute budget; a [completed main CI job](https://github.com/Ygilany/AskDB/actions/runs/37221345533) took 5 minutes 30 seconds, so adding this local measurement projects about 6 minutes 23 seconds, before image pulls and CI variance. In CI ([run 37264776682](https://github.com/Ygilany/AskDB/actions/runs/37264776682)) the step took 56 seconds (startup 11.89, seed 1.53, guards 1.32, suite 28.83, teardown 10.84) and the whole `consumer-lab` job 5 minutes 13 seconds. That fits, so the PR job runs it: an effect that quietly stops happening on an engine would leave its rejection test passing while proving nothing, and an opt-in run only catches that when someone remembers to run it.
+
+| Rejected case | Postgres | MySQL | MariaDB | SQL Server | SQLite |
+| --- | --- | --- | --- | --- | --- |
+| `COPY … TO PROGRAM` | writes container-local sentinel file | n/a: no COPY PROGRAM | n/a: no COPY PROGRAM | n/a: no COPY PROGRAM | n/a: no COPY PROGRAM |
+| `COPY … FROM PROGRAM` | imports sentinel status row | n/a: no COPY PROGRAM | n/a: no COPY PROGRAM | n/a: no COPY PROGRAM | n/a: no COPY PROGRAM |
+| `INTO OUTFILE`, including `/*!50000 … */` | n/a: no OUTFILE | file equals seeded agency IDs | file equals seeded agency IDs | n/a: no OUTFILE | n/a: no OUTFILE |
+| `LOAD_FILE()` | n/a: no LOAD_FILE | reads exact container sentinel | reads exact container sentinel | n/a: no LOAD_FILE | n/a: no LOAD_FILE |
+| `EXEC xp_cmdshell` | n/a: no xp_cmdshell | n/a: no xp_cmdshell | n/a: no xp_cmdshell | n/a: disabled; verifies configuration and error 15281 | n/a: no xp_cmdshell |
+| `pg_terminate_backend()` / `KILL` | owned victim session disappears | owned victim session disappears | owned victim session disappears | owned victim session disappears | n/a: no server sessions |
+| `SET GLOBAL max_connections` | n/a: different configuration syntax | value changes and is restored | value changes and is restored | n/a: different configuration syntax | n/a: no server settings |
+| `pg_sleep(1)` / `SLEEP(1)` / `WAITFOR DELAY` | elapsed ≥900 ms | elapsed ≥900 ms | elapsed ≥900 ms | elapsed ≥900 ms | n/a: no built-in sleep |
+
+The executable statements use bounded sentinel effects: program output goes only to a container file or scratch row; file reads use a lab-created file in MySQL's permitted directory (MariaDB uses `/tmp`); session IDs come from a second connection created by the proof; setting changes are restored in `finally`; sleeps last one second. Every exact statement, including dynamically addressed session IDs and setting values, is also rejected by installed `ask()` under its documented rule. Ordinary comments contain no executable effect; system-catalog queries remain rejection checks tracking #318, and quoted-keyword cases remain accepted read-only controls.
 
 ### Scratch databases
 
@@ -348,7 +378,7 @@ The baseline pins the lab's third-party dependencies exactly, so they stay the s
 
 | Scenario | What it checks |
 |---|---|
-| `host-peers` | `pnpm peers check` finds no peer range declared by an installed AskDB package that the host's pins don't meet, and every installed AskDB package declares the same `ai` range, as a dependency or a peer, so a runtime `ai` floor can't rise alone. It doesn't notice a pin that rises above a floor. Runs once, as `[postgres]`. |
+| `host-peers` | `pnpm peers check` finds no peer range declared by an installed AskDB package that the host's pins don't meet, and every installed AskDB package declares the same `ai` range for the host's AI SDK major, as a dependency or a peer, so a runtime `ai` floor can't rise alone. `@askdb/core` and `@askdb/rag` also accept AI SDK 6 (`^6.0.0 || ^7.0.51`); only their 7.x part is compared. It doesn't notice a pin that rises above a floor. Runs once, as `[postgres]`. |
 
 A vulnerable transitive dependency that no parent release fixes yet gets an `overrides` entry above the `lab:use` block, with its advisory and removal condition in a comment, mirroring the monorepo's `pnpm-workspace.yaml`. Today that is `deepmerge-ts` (GHSA-ggr8-5vv4-36mx), which `@prisma/config` pins at 7.1.5.
 

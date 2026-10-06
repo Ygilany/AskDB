@@ -60,3 +60,5 @@ export type {
   TableTenantClassification,
   TenantPolicyH2Section,
 } from "./tenant-policy.js";
+
+export { findMentionedNames } from "./mentions.js";

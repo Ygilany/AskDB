@@ -122,6 +122,32 @@ echo "smoke: npm install CommonJS consumer…"
 echo "smoke: node src/smoke.cjs…"
 (cd "$WORK/consumer-cjs" && npm run smoke)
 
+echo "smoke: staging AI SDK 6 consumer fixture…"
+# `ai` is a peer of @askdb/core (^6.0.0 || ^7.0.51) and an optional peer of @askdb/rag. This consumer pins
+# the AI SDK 6 floor exactly (ai@6.0.0 + @ai-sdk/openai@3.0.0, ADR 0015) and installs WITHOUT
+# --legacy-peer-deps, so a peer range that excludes it fails here with ERESOLVE, and core or rag
+# code that needs a newer 6.x fails the type-check or the run. Its tsconfig sets skipLibCheck: false
+# so the packed core/rag declarations are checked against ai@6 too.
+cp -R "$SCRIPT_DIR/consumer-ai6" "$WORK/consumer-ai6"
+node -e "
+  const fs = require('fs');
+  const p = '$WORK/consumer-ai6/package.json';
+  const j = JSON.parse(fs.readFileSync(p, 'utf8'));
+  j.dependencies['@askdb/config'] = 'file:$CONFIG_TARBALL';
+  j.dependencies['@askdb/core'] = 'file:$CORE_TARBALL';
+  j.dependencies['@askdb/rag'] = 'file:$RAG_TARBALL';
+  fs.writeFileSync(p, JSON.stringify(j, null, 2) + '\n');
+"
+
+echo "smoke: npm install AI SDK 6 consumer…"
+(cd "$WORK/consumer-ai6" && npm install --silent --no-audit --no-fund --no-package-lock)
+
+echo "smoke: tsc --noEmit (AI SDK 6 consumer)…"
+(cd "$WORK/consumer-ai6" && npx --yes tsc --noEmit)
+
+echo "smoke: tsx src/smoke.ts (AI SDK 6 consumer)…"
+(cd "$WORK/consumer-ai6" && npx --yes tsx src/smoke.ts)
+
 echo "smoke: staging bundled consumer (esbuild, only @ai-sdk/openai at the peer floor)…"
 cp -R "$SCRIPT_DIR/consumer-bundle" "$WORK/consumer-bundle"
 node -e "
@@ -255,6 +281,39 @@ fi
 if [ "$POSTGRES_DRIVER_STATUS" -ne 0 ] && ! grep -Eq 'ECONNREFUSED|connect|PostgreSQL catalog query failed|timeout' <<<"$POSTGRES_DRIVER_OUTPUT"; then
   echo "smoke: FAILED — expected a PostgreSQL connection/catalog failure after pg loaded." >&2
   echo "$POSTGRES_DRIVER_OUTPUT" >&2
+  exit 1
+fi
+echo "smoke: @askdb/rag pgvector store resolves the optional pg peer through resolveFrom…"
+# The consumer has @askdb/rag but no pg; the app sandbox has the real pg. A
+# fake pg exposing Pool only on its default export (as older pg releases and
+# some bundles do) checks the default-export unwrap under plain Node.
+mkdir -p "$WORK/fake-pg-default/node_modules/pg"
+echo '{"name":"pg","type":"module","main":"index.js"}' >"$WORK/fake-pg-default/node_modules/pg/package.json"
+echo 'export default { Pool: class { async query() { throw new Error("fake default-only pg"); } async end() {} } };' >"$WORK/fake-pg-default/node_modules/pg/index.js"
+PGVECTOR_PG_OUTPUT="$(cd "$WORK/consumer" && APPS_DIR="$WORK/apps" FAKE_PG_DIR="$WORK/fake-pg-default" node --input-type=module -e "
+  const { createPgvectorStore } = await import('@askdb/rag');
+  const url = 'postgres://127.0.0.1:65432/askdb_smoke_placeholder';
+  const probe = async (options) => {
+    const store = createPgvectorStore({ connectionString: url, ...options });
+    try { await store.count(); return 'connected'; } catch (e) { return [e.code, e.message].filter(Boolean).join(' '); } finally { await store.close(); }
+  };
+  console.log('without resolveFrom: ' + await probe({}));
+  console.log('with resolveFrom: ' + await probe({ resolveFrom: process.env.APPS_DIR }));
+  console.log('default-only pg: ' + await probe({ resolveFrom: process.env.FAKE_PG_DIR }));
+" 2>&1)"
+if ! grep -q 'without resolveFrom: .*optional `pg` peer dependency' <<<"$PGVECTOR_PG_OUTPUT"; then
+  echo "smoke: FAILED — without pg resolvable, createPgvectorStore should give the install hint." >&2
+  echo "$PGVECTOR_PG_OUTPUT" >&2
+  exit 1
+fi
+if ! grep -q 'with resolveFrom: ECONNREFUSED' <<<"$PGVECTOR_PG_OUTPUT"; then
+  echo "smoke: FAILED — createPgvectorStore did not load pg through resolveFrom." >&2
+  echo "$PGVECTOR_PG_OUTPUT" >&2
+  exit 1
+fi
+if ! grep -q 'default-only pg: fake default-only pg' <<<"$PGVECTOR_PG_OUTPUT"; then
+  echo "smoke: FAILED — createPgvectorStore did not find Pool on a default-only pg module." >&2
+  echo "$PGVECTOR_PG_OUTPUT" >&2
   exit 1
 fi
 # SQL Server's optional-peer cwd fallback is covered by unit tests; installing `mssql`

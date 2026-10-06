@@ -19,7 +19,7 @@ const askdb = createAskDb({
 const { sql } = await askdb.ask("top 10 customers by revenue");
 ```
 
-Install the AI SDK package for whichever `ai.provider` your config selects — e.g. `npm i @askdb/client @askdb/config @ai-sdk/openai`. With no `providers`/`registry` option, the client registers every provider built into `@askdb/ai` (OpenAI, Azure/Foundry, Google, Anthropic, Vercel AI Gateway); each loads its `@ai-sdk/*` package only when first used, and a missing one fails with an `npm i @ai-sdk/<provider>` hint.
+Install the AI SDK package for whichever `ai.provider` your config selects — e.g. `npm i @askdb/client @askdb/core @askdb/config ai @ai-sdk/openai` (`@askdb/core` and `ai`, AI SDK 7, are required peers of the client; npm adds them for you, Yarn doesn't). With no `providers`/`registry` option, the client registers every provider built into `@askdb/ai` (OpenAI, Azure/Foundry, Google, Anthropic, Vercel AI Gateway); each loads its `@ai-sdk/*` package only when first used, and a missing one fails with an `npm i @ai-sdk/<provider>` hint.
 
 Options: `providers: ["openai"]` restricts the set to named built-ins, and `AiProviderAdapter` objects add custom providers (`providers: ["openai", myAdapter]`). Advanced alternative: build a registry yourself with `createAiRegistry` from `@askdb/ai` and pass it as `registry` (e.g. to share one registry across several clients). Pass at most one of `providers` or `registry`.
 
