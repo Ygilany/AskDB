@@ -7,6 +7,7 @@ import { DEFAULT_ASKDB_MODE, type AskDbModeV1 } from "./modes/types.js";
 import type { Retriever } from "./retrieval/types.js";
 import { synthesizeRetrievedDdl } from "./retrieval/synthesize-ddl.js";
 import { unqualifiedNamespaceFor } from "./sql/prompt.js";
+import { promptIdentifierQuoter } from "./sql/prompt-identifiers.js";
 import type { NormalizedSchemaV2 } from "./schema/v2/normalized.js";
 import type {
   NormalizedTenantPolicy,
@@ -357,6 +358,7 @@ export async function ask(options: AskPipelineOptions): Promise<AskPipelineResul
     logger,
     omitSensitive,
     unqualifiedNamespace: unqualifiedNamespaceFor(options.schema, dialectSpec?.unqualifiedNamespace),
+    quoteIdentifier: dialectSpec ? promptIdentifierQuoter(dialectSpec) : undefined,
   });
   const dialect = resolveDialect(options.dialect);
   const generated = await dialect.generate(
@@ -894,8 +896,9 @@ async function maybeRetrieveDdl(args: {
   logger: AskDbLogger | undefined;
   omitSensitive: boolean;
   unqualifiedNamespace: string | undefined;
+  quoteIdentifier: ((name: string) => string) | undefined;
 }): Promise<string | undefined> {
-  const { options, logger, omitSensitive, unqualifiedNamespace } = args;
+  const { options, logger, omitSensitive, unqualifiedNamespace, quoteIdentifier } = args;
   const retriever = options.retriever;
   if (!retriever) return undefined;
 
@@ -947,6 +950,7 @@ async function maybeRetrieveDdl(args: {
     results,
     omitSensitiveIdentifiersFromPrompt: omitSensitive,
     unqualifiedNamespace,
+    quoteIdentifier,
   });
   logger?.info(
     {

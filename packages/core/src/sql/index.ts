@@ -28,6 +28,7 @@ export {
   buildNlToSqlUserPrompt,
   buildNlToSqlSystemPrompt,
 } from "./prompt.js";
+export { promptIdentifierQuoter } from "./prompt-identifiers.js";
 export {
   assertNlToSqlInputs,
   nlToSqlAmbiguityNotes,

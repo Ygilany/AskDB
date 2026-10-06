@@ -22,6 +22,7 @@ import InstallTabs from "../../../components/InstallTabs.astro";
 - The engine package you install.
 - The `dialect` value you pass to `ask()`.
 - Engine-specific SQL features the validator allows (LIMIT vs TOP, parameter syntax, JSON path syntax).
+- How the prompt `ask()` sends quotes names. A schema, table or column whose name is one of the engine's reserved words is listed quoted the engine's way, so the model copies it quoted: `billing."order"` on Postgres, ``billing.`order` `` on MySQL and MariaDB, `billing.[order]` on SQL Server, `"order"` on SQLite. On Postgres, which folds unquoted names to lowercase, a name with capitals is quoted too, so a Prisma table `Post` is listed as `public."Post"`. Where tables are listed with their schema, the prompt also tells the model that when it quotes a qualified name, it quotes each part separately (`"billing"."order"`, not `"billing.order"`).
 - The driver your app uses to execute (`pg`, `mysql2`, `better-sqlite3`, `mssql`).
 - How the CLI introspects the database (connection-string format and catalog queries differ per engine).
 

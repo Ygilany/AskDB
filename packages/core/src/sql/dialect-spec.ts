@@ -21,6 +21,14 @@
  * execute generated SQL under a read-only database role.
  */
 
+import {
+  COCKROACHDB_EXTRA_RESERVED_WORDS,
+  MYSQL_RESERVED_WORDS,
+  POSTGRES_RESERVED_WORDS,
+  SQLITE_KEYWORDS,
+  SQLSERVER_RESERVED_WORDS,
+} from "./reserved-words.js";
+
 /** Stable identifier for a built-in dialect. Connectors may surface this via `IntrospectionResult.provider`. */
 export type DialectId =
   | "postgres"
@@ -41,8 +49,20 @@ export type DialectSpec = {
   displayName: string;
   /** One short paragraph injected into the NL→SQL user prompt. */
   promptBrief: string;
-  /** Identifier quoting style — informational; mainly steers `promptBrief`. */
+  /**
+   * Identifier quoting style — informational; mainly steers `promptBrief`. The prompt's schema block
+   * quotes names with `id`'s engine quotes (`promptIdentifierQuoter`); this is used only for an `id`
+   * that is no built-in engine family.
+   */
   identifierQuote: '"' | '`';
+  /**
+   * Words the engine reserves (case-insensitive). The NL→SQL prompt lists a schema, table or column
+   * with one of these names quoted, so a model that copies it writes it quoted. The built-in specs
+   * set their engine's list; a spec that sets the field replaces it. Whether set or not, the prompt
+   * also quotes words `validateSelectSql` rejects unquoted (`copy`), names that aren't plain
+   * identifiers, and, on Postgres and CockroachDB, names with capitals.
+   */
+  reservedWords?: readonly string[];
   /**
    * A namespace name that is not a schema in this engine. Connectors for engines without
    * Postgres-style schemas file the database's tables under {@link SINGLE_NAMESPACE_LABEL}.
@@ -124,6 +144,7 @@ export const POSTGRES_DIALECT: DialectSpec = {
     "Quote identifiers with double quotes when they collide with keywords or contain mixed case. " +
     'Cast with `value::type`. Use NOW(), CURRENT_DATE, date_trunc(). Concatenate with `||`.',
   identifierQuote: '"',
+  reservedWords: POSTGRES_RESERVED_WORDS,
   blockedFunctions: POSTGRES_BLOCKED_FUNCTIONS,
   listBinding: "array",
   backslashEscapes: false,
@@ -134,6 +155,7 @@ export const COCKROACHDB_DIALECT: DialectSpec = {
   ...POSTGRES_DIALECT,
   id: "cockroachdb",
   displayName: "CockroachDB",
+  reservedWords: [...POSTGRES_RESERVED_WORDS, ...COCKROACHDB_EXTRA_RESERVED_WORDS],
 };
 
 /** MySQL — backtick identifiers, CONCAT() for concat, no ILIKE. */
@@ -151,6 +173,8 @@ export const MYSQL_DIALECT: DialectSpec = {
   unqualifiedNamespace: SINGLE_NAMESPACE_LABEL,
   // INTO OUTFILE / DUMPFILE are also covered by the base `into` keyword.
   extraForbiddenKeywords: ["outfile", "dumpfile"],
+  // MySQL 8.4 and MariaDB's reserved words together; MariaDB spreads this spec.
+  reservedWords: MYSQL_RESERVED_WORDS,
   blockedFunctions: [
     "load_file", "sleep", "benchmark", "get_lock", "release_lock", "release_all_locks",
     "master_pos_wait", "source_pos_wait", "wait_for_executed_gtid_set",
@@ -188,6 +212,7 @@ export const SQLITE_DIALECT: DialectSpec = {
   // already in the dialect-agnostic base denylist.)
   extraForbiddenKeywords: ["attach", "detach", "pragma", "reindex"],
   // load_extension loads native code; readfile/writefile/edit are CLI-shell extensions.
+  reservedWords: SQLITE_KEYWORDS,
   blockedFunctions: ["load_extension", "readfile", "writefile", "edit", "fts3_tokenizer"],
   listBinding: "expand",
   backslashEscapes: false,
@@ -216,6 +241,7 @@ export const SQLSERVER_DIALECT: DialectSpec = {
     "bulk", "use", "set", "revert", "setuser", "checkpoint", "commit", "rollback",
     "writetext", "updatetext", "disable", "enable", "receive", "send", "xp_cmdshell",
   ],
+  reservedWords: SQLSERVER_RESERVED_WORDS,
   listBinding: "expand",
   backslashEscapes: false,
 };

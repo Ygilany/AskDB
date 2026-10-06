@@ -29,7 +29,7 @@ flowchart LR
   sql --> execution
 ```
 
-`@askdb/core` is dialect-agnostic. It does not import database drivers, does not own live database connections, and does not execute generated SQL. Database-specific behavior is supplied through integration packages such as `@askdb/postgres`.
+`@askdb/core` is dialect-agnostic. It does not import database drivers, does not own live database connections, and does not execute generated SQL. Database-specific behavior is supplied through integration packages such as `@askdb/postgres`. The exception is what the pipeline itself needs to read and prompt for each built-in engine family: the built-in `DialectSpec`s (with their denylists and the reserved words the prompt quotes) live in `@askdb/core`, lexing and identifier quoting are selected by `DialectSpec.id`, and integration packages re-export the specs. See the ADR 0002 amendment; #464 evaluates whether this should change.
 
 ## Package map
 
@@ -170,7 +170,7 @@ flowchart BT
 Boundary rules:
 
 - `@askdb/core` remains the schema and NL-to-SQL contract package. It receives a dialect, a model, an optional retriever, and a schema; it returns SQL.
-- Integration packages own engine-specific knowledge. `@askdb/postgres` owns Postgres dialect behavior and Postgres catalog introspection. `@askdb/prisma` owns Prisma schema-file introspection.
+- Integration packages own engine-specific knowledge, apart from the built-in dialect facts above. `@askdb/postgres` owns Postgres dialect behavior and Postgres catalog introspection. `@askdb/prisma` owns Prisma schema-file introspection.
 - `@askdb/introspect` does not know whether an integration reads a live database, an export bundle, a file, or a future API. The connector input shape belongs to the connector package.
 - `@askdb/enrich` owns reusable authoring behavior. `@askdb/studio` (and any custom authoring surface) depends on it rather than duplicating workspace logic.
 - `@askdb/rag` is optional. It can narrow schema context before `ask()`, but it does not replace dialect validation.

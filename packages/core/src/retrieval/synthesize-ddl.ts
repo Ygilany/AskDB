@@ -1,4 +1,4 @@
-import { promptTableName } from "../schema/v2/format.js";
+import { listAsStored, promptTableName } from "../schema/v2/format.js";
 import type { NormalizedSchemaV2 } from "../schema/v2/normalized.js";
 import type { RetrievedResult } from "./types.js";
 
@@ -25,9 +25,12 @@ export function synthesizeRetrievedDdl(args: {
   omitSensitiveIdentifiersFromPrompt?: boolean;
   /** Mirrors `formatSchemaV2ForNlToSql`'s `unqualifiedNamespace`. */
   unqualifiedNamespace?: string;
+  /** Mirrors `formatSchemaV2ForNlToSql`'s `quoteIdentifier`. */
+  quoteIdentifier?: (name: string) => string;
 }): { ddl: string; tablesEmitted: number; chunksUsed: number } {
   const { schema, results } = args;
   const omit = args.omitSensitiveIdentifiersFromPrompt === true;
+  const quoteIdentifier = args.quoteIdentifier ?? listAsStored;
 
   const tableIds = new Set<string>();
   const cqlPerTable = new Map<string, RetrievedResult["payload"][]>();
@@ -94,7 +97,7 @@ export function synthesizeRetrievedDdl(args: {
   for (const t of schema.tables) {
     if (!tableIds.has(t.id)) continue;
     tablesEmitted++;
-    const listedName = promptTableName(t, args.unqualifiedNamespace);
+    const listedName = promptTableName(t, args.unqualifiedNamespace, quoteIdentifier);
     const aliasNote =
       !t.sensitive && t.aliases?.length ? ` -- aliases: ${t.aliases.join(", ")}` : "";
     lines.push(`TABLE ${listedName}${aliasNote}`);
@@ -112,7 +115,7 @@ export function synthesizeRetrievedDdl(args: {
       if (c.primaryKey) flags.push("PK");
       flags.push(c.nullable ? "NULL" : "NOT NULL");
       const sensitiveTag = c.sensitive || t.sensitive ? " (sensitive)" : "";
-      let line = `  - ${c.name} ${c.type} (${flags.join(" ")})${sensitiveTag}`;
+      let line = `  - ${quoteIdentifier(c.name)} ${c.type} (${flags.join(" ")})${sensitiveTag}`;
       if (!c.sensitive && !t.sensitive) {
         const extras: string[] = [];
         if (c.aliases?.length) extras.push(`aliases: ${c.aliases.join(", ")}`);
