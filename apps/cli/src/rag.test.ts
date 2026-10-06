@@ -186,6 +186,25 @@ describe("askdb rag", () => {
     expect(readLock(schemaDir)).toMatchObject({ embedderId: "mock:lexical-16", dimensions: 16 });
   });
 
+  it.each<[string, string[], number]>([
+    ["the top -k chunks", ["-k", "1"], 1],
+    ["only the --types asked for", ["--types", "column", "-k", "3"], 3],
+  ])("query prints %s", async (_case, flags, count) => {
+    const schemaDir = copyFixture();
+    expect(await runRagCli(["index", schemaDir])).toBe(0);
+    stdout = [];
+    expect(await runRagCli(["query", schemaDir, "--question", "paid orders", ...flags])).toBe(0);
+    const out = JSON.parse(stdout.join("")) as { question: string; k: number; results: { type: string }[] };
+    expect(out).toMatchObject({ question: "paid orders", k: count });
+    expect(out.results).toHaveLength(count);
+    if (flags.includes("--types")) expect(new Set(out.results.map((result) => result.type))).toEqual(new Set(["column"]));
+  });
+
+  it("query requires --question", async () => {
+    expect(await runRagCli(["query", copyFixture()])).toBe(1);
+    expect(stderr.join("")).toBe("Missing --question for query command.\n");
+  });
+
   it("query refuses an embedder that differs from the one the index was built with", async () => {
     const schemaDir = copyFixture();
     expect(await runRagCli(["index", schemaDir])).toBe(0);
