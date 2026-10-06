@@ -400,6 +400,12 @@ describe("askdb rag", () => {
         "--file-path applies to the file store, but this run uses the pgvector store (from rag.store). Pass --store file, or drop --file-path.",
       ],
       [
+        "--pg-url on the configured file store",
+        ["--pg-url", PG_URL],
+        BASE_CONFIG,
+        "--pg-url applies to the pgvector store, but this run uses the file store (from rag.store). Pass --store pgvector, or drop --pg-url.",
+      ],
+      [
         "--pg-table with --store file",
         ["--store", "file", "--pg-table", "chunks"],
         BASE_CONFIG,
