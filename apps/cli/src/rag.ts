@@ -482,11 +482,24 @@ function assertSetupStoreFlags(opts: CliOptions): void {
   }
 }
 
-/** Validated here because config load checks it only when `rag.store` is `pgvector`. */
+/** A record, so a new `PgvectorIndexStrategy` doesn't compile until it's listed here. */
+const PGVECTOR_INDEX_STRATEGIES: Record<PgvectorIndexStrategy, true> = { ivfflat: true, hnsw: true, none: true };
+
+function isIndexStrategy(value: string): value is PgvectorIndexStrategy {
+  return Object.hasOwn(PGVECTOR_INDEX_STRATEGIES, value);
+}
+
+/**
+ * Validated here because config load checks it only when `rag.store` is `pgvector`, while
+ * setup-store and `--store pgvector` read it whatever the store is. Retire this once
+ * @askdb/config validates the block wherever it's present (follow-up on #226).
+ */
 function parseIndexStrategy(raw: string | undefined): PgvectorIndexStrategy | undefined {
   const value = raw?.toLowerCase();
-  if (value === undefined || value === "ivfflat" || value === "hnsw" || value === "none") return value;
-  throw new Error(`Invalid rag.storeConfig.pgvector.indexStrategy "${raw}" (expected ivfflat, hnsw, or none).`);
+  if (value === undefined || isIndexStrategy(value)) return value;
+  throw new Error(
+    `Invalid rag.storeConfig.pgvector.indexStrategy "${raw}" (expected ${Object.keys(PGVECTOR_INDEX_STRATEGIES).join(", ")}).`,
+  );
 }
 
 function trimmed(value: string | undefined): string | undefined {

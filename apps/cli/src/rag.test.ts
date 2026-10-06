@@ -387,7 +387,7 @@ describe("askdb rag", () => {
       });
       expect(await runRagCli(["setup-store", "--pg-url", PG_URL, "--dimensions", "16"])).toBe(1);
       expect(stderr.join("")).toBe(
-        'Invalid rag.storeConfig.pgvector.indexStrategy "hsnw" (expected ivfflat, hnsw, or none).\n',
+        'Invalid rag.storeConfig.pgvector.indexStrategy "hsnw" (expected ivfflat, hnsw, none).\n',
       );
       expect(pgvector.options).toEqual([]);
     });
