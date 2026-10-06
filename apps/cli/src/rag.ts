@@ -250,7 +250,7 @@ async function runSetupStore(opts: CliOptions, runtimeConfig: AskDbRuntimeConfig
         "(the same value as ai.embedding.dimensions).",
     );
   }
-  assertStoreFlagsApply(opts, "pgvector");
+  assertSetupStoreFlags(opts);
   const config = resolvePgvectorConfig(opts, readConfiguredStore(runtimeConfig));
   const store = await openStore(config, { dimensions, provision: (width) => `--dimensions asks for ${width}` });
   await closeStore(store);
@@ -437,6 +437,16 @@ function assertStoreFlagsApply(opts: CliOptions, kind: CliStoreKind): void {
       `${flag} applies to the ${store} store, but this run uses the ${kind} store ` +
         `(from ${opts.store ? "--store" : "rag.store"}). Pass --store ${store}, or drop ${flag}.`,
     );
+  }
+}
+
+/** setup-store provisions only the pgvector store, whatever `rag.store` is, so another store's flag is a mistake. */
+function assertSetupStoreFlags(opts: CliOptions): void {
+  if (opts.store !== undefined && opts.store !== "pgvector") {
+    throw new Error(`setup-store provisions only the pgvector store; drop --store ${opts.store}.`);
+  }
+  if (opts.filePath !== undefined) {
+    throw new Error("setup-store provisions only the pgvector store; drop --file-path.");
   }
 }
 

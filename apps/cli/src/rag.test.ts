@@ -483,6 +483,20 @@ describe("askdb rag", () => {
       expect(pgvector.options).toEqual([]);
     });
 
+    it.each([
+      ["--store memory", ["--store", "memory"], "setup-store provisions only the pgvector store; drop --store memory.\n"],
+      ["--file-path", ["--file-path", "./vectors"], "setup-store provisions only the pgvector store; drop --file-path.\n"],
+    ])("setup-store refuses %s before connecting", async (_case, flags, message) => {
+      // A configured pgvector URL, so setup-store would connect if it ignored the flag.
+      installRuntime({
+        ...BASE_CONFIG,
+        rag: { embedder: "mock", store: "file", storeConfig: { file: {}, pgvector: { databaseUrl: PG_URL } } },
+      });
+      expect(await runRagCli(["setup-store", "--dimensions", "16", ...flags])).toBe(1);
+      expect(stderr.join("")).toBe(message);
+      expect(pgvector.options).toEqual([]);
+    });
+
     it("setup-store provisions the table at --dimensions", async () => {
       expect(await runRagCli(["setup-store", "--pg-url", PG_URL, "--dimensions", "16"])).toBe(0);
       expect(pgvector.options).toEqual([expect.objectContaining({ connectionString: PG_URL, dimensions: 16 })]);
