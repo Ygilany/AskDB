@@ -200,7 +200,8 @@ describe("lab:record", () => {
 
   // What crosses the wire, the key's redaction included, is replay-server.test.ts's: this is what lab:record does about it.
   it.for([
-    ["the provider refuses a request (401)", { status: 401 }, /provider answered 401/],
+    // The stop reason is the provider's refusal itself, not AskDB's wrapping of it.
+    ["the provider refuses a request (401)", { status: 401 }, /^lab record: the provider answered 401: Incorrect API key provided: \[redacted\]/],
     ["a model call AskDB can't make (an empty reply body)", { empty: true }, /SqlGenerationError/],
   ] as [string, { status: 401 } | { empty: true }, RegExp][])("stops when %s, keeping what it recorded before", async ([, behavior, reason], ctx) => {
     needsCapability(ctx, "cli-introspect-engine");
