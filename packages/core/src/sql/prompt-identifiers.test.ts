@@ -9,6 +9,7 @@ import {
   type DialectSpec,
 } from "./dialect-spec.js";
 import { promptIdentifierQuoter } from "./prompt-identifiers.js";
+import { validateSelectSql } from "./validate.js";
 
 describe("promptIdentifierQuoter", () => {
   const postgres = promptIdentifierQuoter(POSTGRES_DIALECT);
@@ -42,8 +43,13 @@ describe("promptIdentifierQuoter", () => {
 
   it("leaves plain names bare", () => {
     for (const quote of [postgres, mysql, sqlserver, sqlite]) {
-      expect(["order_id", "_tmp", "café", "total$"].map(quote)).toEqual(["order_id", "_tmp", "café", "total$"]);
+      expect(["order_id", "_tmp", "total$"].map(quote)).toEqual(["order_id", "_tmp", "total$"]);
     }
+    expect([postgres("café"), mysql("café"), sqlite("café")]).toEqual(["café", "café", "café"]);
+  });
+
+  it("on SQL Server, leaves only ASCII names bare: T-SQL rejects letters outside Unicode 3.2 and the BMP", () => {
+    expect([sqlserver("café"), sqlserver("𠮷田"), sqlserver("ẞtraße")]).toEqual(["[café]", "[𠮷田]", "[ẞtraße]"]);
   });
 
   it("quotes a name with capitals only on Postgres and CockroachDB, which fold unquoted names to lowercase", () => {
@@ -69,12 +75,22 @@ describe("promptIdentifierQuoter", () => {
   it("reads the reserved words from the spec: a spread keeps them, setting the field replaces them", () => {
     const spread = promptIdentifierQuoter({ ...POSTGRES_DIALECT, displayName: "Amazon Redshift" });
     expect(spread("order")).toBe('"order"');
-    const replaced = promptIdentifierQuoter({ ...POSTGRES_DIALECT, reservedWords: ["widget"] });
+    // Case-insensitive on the list side too: a list copied from uppercase docs still works.
+    const replaced = promptIdentifierQuoter({ ...POSTGRES_DIALECT, reservedWords: ["WIDGET"] });
     expect([replaced("widget"), replaced("order")]).toEqual(['"widget"', "order"]);
   });
 
   it("an id that is no built-in engine quotes with identifierQuote", () => {
     const quote = promptIdentifierQuoter({ id: "redshift" as DialectSpec["id"], identifierQuote: '"', reservedWords: ["order"] });
     expect([quote("order"), quote("order line"), quote("Post")]).toEqual(['"order"', '"order line"', "Post"]);
+  });
+
+  it("an id that is no built-in engine quotes every word the validator rejects for it", () => {
+    // The validator reads such SQL every engine's way, so SQL Server's `set` is rejected bare too.
+    const spec = { ...POSTGRES_DIALECT, id: "redshift" as DialectSpec["id"] };
+    const quote = promptIdentifierQuoter(spec);
+    expect(quote("set")).toBe('"set"');
+    expect(validateSelectSql(spec, `SELECT ${quote("set")} FROM t`)).toBe('SELECT "set" FROM t');
+    expect(() => validateSelectSql(spec, "SELECT set FROM t")).toThrow(/SET/i);
   });
 });

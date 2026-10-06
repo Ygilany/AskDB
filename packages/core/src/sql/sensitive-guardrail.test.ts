@@ -710,3 +710,19 @@ describe("validateSensitiveReferences — reserved words quoted the way the prom
     ]);
   });
 });
+
+describe("validateSensitiveReferences — columns whose names differ only in case (#460 review)", () => {
+  // Postgres keeps `"SSN"` and `ssn` apart; the prompt now lists `"SSN"` quoted, as a model copies it.
+  const caseSchema: NormalizedSchemaV2 = {
+    schemaId: "case",
+    warnings: [],
+    tables: [table("public", "User", [["id"], ["SSN", true], ["ssn"]])],
+  };
+
+  it("finds the sensitive one through a qualified reference, whichever is declared last", () => {
+    for (const schema of [caseSchema, { ...caseSchema, tables: [table("public", "User", [["id"], ["ssn"], ["SSN", true]])] }]) {
+      const result = validateSensitiveReferences('SELECT u."SSN" FROM public."User" u', schema, { dialect: POSTGRES_DIALECT });
+      expect(result.references).toEqual([{ table: "User", schema: "public", column: "SSN", matchKind: "qualified" }]);
+    }
+  });
+});

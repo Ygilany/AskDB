@@ -76,11 +76,11 @@ export function validateSelectSql(dialect: DialectSpec, sql: string): string {
 
   const profile = lexerProfileFor(dialect);
   let tokens: SqlToken[];
+  const keywords = keywordsRejectedUnquoted(dialect);
   if (profile) {
-    tokens = checkWithProfile(trimmed, profile, forbiddenKeywordsFor(dialect), blockedFunctionsFor(dialect));
+    tokens = checkWithProfile(trimmed, profile, keywords, blockedFunctionsFor(dialect));
   } else {
     // Unknown engine: every plausible reading of the SQL must be safe.
-    const keywords = new Set([...forbiddenKeywordsFor(dialect), ...allBuiltInKeywords()]);
     const functions = new Set([...blockedFunctionsFor(dialect), ...allBuiltInFunctions()]);
     tokens = [];
     for (const p of ENGINE_LEXER_PROFILES) tokens = checkWithProfile(trimmed, p, keywords, functions);
@@ -173,8 +173,20 @@ function checkWithProfile(
   return tokens;
 }
 
-/** The words `validateSelectSql` rejects unquoted for a dialect, lowercase. */
-export function forbiddenKeywordsFor(dialect: Pick<DialectSpec, "extraForbiddenKeywords">): Set<string> {
+/**
+ * The words `validateSelectSql` rejects unquoted for a dialect, lowercase: the shared denylist
+ * and the spec's `extraForbiddenKeywords`, plus every built-in spec's for an id that is no
+ * built-in engine family. The NL→SQL prompt quotes names in this set.
+ */
+export function keywordsRejectedUnquoted(
+  dialect: Pick<DialectSpec, "id" | "backslashEscapes" | "extraForbiddenKeywords">,
+): Set<string> {
+  const keywords = forbiddenKeywordsFor(dialect);
+  if (!lexerProfileFor(dialect)) for (const word of allBuiltInKeywords()) keywords.add(word.toLowerCase());
+  return keywords;
+}
+
+function forbiddenKeywordsFor(dialect: Pick<DialectSpec, "extraForbiddenKeywords">): Set<string> {
   return new Set([...BASE_FORBIDDEN, ...(dialect.extraForbiddenKeywords ?? [])].map((w) => w.toLowerCase()));
 }
 

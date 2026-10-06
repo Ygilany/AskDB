@@ -511,7 +511,9 @@ describe("ask — identifier quoting in the prompt per dialect (#451)", () => {
 
   it.each([
     ["postgres", 'SELECT "copy" FROM public."call"'],
+    ["cockroachdb", 'SELECT "copy" FROM public."call"'],
     ["mysql", "SELECT `copy` FROM `call`"],
+    ["mariadb", "SELECT `copy` FROM `call`"],
     ["sqlserver", "SELECT [copy] FROM [public].[call]"],
     ["sqlite", 'SELECT "copy" FROM "call"'],
   ] as const)(

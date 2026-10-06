@@ -58,8 +58,9 @@ export type DialectSpec = {
   /**
    * Words the engine reserves (case-insensitive). The NL→SQL prompt lists a schema, table or column
    * with one of these names quoted, so a model that copies it writes it quoted. The built-in specs
-   * set their engine's list; a spec that sets the field replaces it. Unset: only names that aren't
-   * plain identifiers (and, on Postgres and CockroachDB, names with capitals) are quoted.
+   * set their engine's list; a spec that sets the field replaces it. Whether set or not, the prompt
+   * also quotes words `validateSelectSql` rejects unquoted (`copy`), names that aren't plain
+   * identifiers, and, on Postgres and CockroachDB, names with capitals.
    */
   reservedWords?: readonly string[];
   /**
