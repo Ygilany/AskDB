@@ -288,13 +288,21 @@ type EmbedderConfig =
     };
 
 /**
- * `--embedder`, else the configured one: `ai` when askdb.config.* sets `rag.embedder: "ai"` (the
- * only case the runtime resolves `ai.embedding`), else `mock`. The `ai` embedder takes the same
- * path and id as Studio's, so either accepts an index the other built.
+ * `rag.embedder`, normalized: the runtime resolves `ai.embedding` exactly when `rag.embedder` is
+ * `"ai"` or one of its deprecated aliases (`"openai"`, `"ai-sdk"`), and leaves it undefined for
+ * `"mock"`. The runtime view exposes no normalized `rag.embedder` itself.
+ */
+function configuredEmbedder(runtimeConfig: AskDbRuntimeConfig): "ai" | "mock" {
+  return runtimeConfig.ai.embedding ? "ai" : "mock";
+}
+
+/**
+ * `--embedder`, else `rag.embedder`. The `ai` embedder takes the same path and id as Studio's, so
+ * either accepts an index the other built.
  */
 function resolveEmbedderConfig(opts: CliOptions, runtimeConfig: AskDbRuntimeConfig): EmbedderConfig {
   const embedding = runtimeConfig.ai.embedding;
-  const choice = opts.embedder ?? (embedding ? "ai" : "mock");
+  const choice = opts.embedder ?? configuredEmbedder(runtimeConfig);
   if (choice === "mock") {
     // Ignoring it would index with the lexical hash while the user believes the model embedded.
     if (opts.embedderModel !== undefined) {

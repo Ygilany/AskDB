@@ -264,7 +264,7 @@ Chunks, embeds, and queries a schema artifact for [retrieval](/guides/rag-for-la
 | `--file-path <path>` | `rag.storeConfig.file.basePath`, else `<schema-dir>/schema` |
 | `--pg-url <connstr>` | `rag.storeConfig.pgvector.databaseUrl`, read even when `rag.store` is another store |
 | `--pg-table <name>` | `rag.storeConfig.pgvector.table`, else `askdb_rag_chunks` |
-| `--embedder mock\|ai` | `rag.embedder` |
+| `--embedder mock\|ai` | `rag.embedder`: `"ai"` (or its deprecated `"openai"` and `"ai-sdk"`) selects `ai`, and `"mock"` selects `mock` |
 | `--embedder-model <id>` | `ai.embedding.model` |
 | `--dimensions <n>` | See [Vector width](#vector-width) |
 
@@ -273,7 +273,7 @@ Chunks, embeds, and queries a schema artifact for [retrieval](/guides/rag-for-la
 ### Embedders
 
 - **`mock`**: a deterministic lexical hash, 64 dimensions unless `--dimensions`. It needs no API key, so it's the one to use in CI.
-- **`ai`**: the [`ai.embedding`](/reference/config/#aiembedding) model, with the key from its connection in `ai.providerConfig`. It needs `rag.embedder: "ai"`, since that's the only setting under which AskDB resolves `ai.embedding`, so `--embedder ai` can't override `rag.embedder: "mock"`. `--embedder-model` overrides `ai.embedding.model`, and `--dimensions` requests a width. `--embedder-model` with the `mock` embedder is an error.
+- **`ai`**: the [`ai.embedding`](/reference/config/#aiembedding) model, with the key from its connection in `ai.providerConfig`. It needs `rag.embedder: "ai"` (or a deprecated alias of it), since that's the only setting under which AskDB resolves `ai.embedding`, so `--embedder ai` can't override `rag.embedder: "mock"`. `--embedder-model` overrides `ai.embedding.model`, and `--dimensions` requests a width. `--embedder-model` with the `mock` embedder is an error.
 
 An index built with `ai` records the embedder id `ai-sdk:<provider>:<model>:<dimensions>`, ending in `default` when no width was requested. Studio uses the same id, so either accepts an index the other built.
 

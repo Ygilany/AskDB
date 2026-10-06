@@ -99,7 +99,7 @@ askdb introspect --engine prisma --prisma-schema ./prisma --diff my-app.schema
 
 ## RAG
 
-`askdb rag` chunks and embeds a schema artifact for retrieval and queries the index. It reads `rag.store`, `rag.storeConfig`, and `ai.embedding` from `askdb.config.*`, and its flags override them. It replaces the `askdb-rag` binary that `@askdb/rag` used to ship.
+`askdb rag` chunks and embeds a schema artifact for retrieval and queries the index. It reads `rag.embedder`, `rag.store`, `rag.storeConfig`, and `ai.embedding` from `askdb.config.*`, and its flags override them. It replaces the `askdb-rag` binary that `@askdb/rag` used to ship.
 
 ```bash
 askdb rag index my-app.schema

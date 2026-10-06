@@ -460,6 +460,18 @@ describe("askdb rag", () => {
       expect(new Set(server.requests.map((request) => request.model))).toEqual(new Set([model]));
     });
 
+    it('falls back to rag.embedder, including its deprecated "openai"', async () => {
+      const server = await startEmbeddingServer();
+      installRuntime({
+        ...BASE_CONFIG,
+        ai: { ...BASE_CONFIG.ai, providerConfig: { openai: { apiKey: "test-key", baseUrl: server.baseUrl } } },
+        rag: { embedder: "openai", store: "file", storeConfig: { file: {} } },
+      });
+      const schemaDir = copyFixture();
+      expect(await runRagCli(["index", schemaDir])).toBe(0);
+      expect(readLock(schemaDir)).toMatchObject({ embedderId: "ai-sdk:openai:text-embedding-3-small:default" });
+    });
+
     it.each<[string, string[], string, number]>([
       ["--dimensions over ai.embedding.dimensions", ["--dimensions", "6"], "ai-sdk:openai:text-embedding-3-small:6", 6],
       ['--embedder mock over rag.embedder: "ai"', ["--embedder", "mock"], "mock:lexical-64", 64],
