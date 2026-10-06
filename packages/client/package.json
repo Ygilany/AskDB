@@ -45,13 +45,13 @@
     "test": "vitest run --config ../../vitest.config.ts"
   },
   "peerDependencies": {
-    "@ai-sdk/anthropic": "^4.0.71",
-    "@ai-sdk/azure": "^4.0.90",
-    "@ai-sdk/google": "^4.0.87",
-    "@ai-sdk/openai": "^4.0.83",
+    "@ai-sdk/anthropic": "^4.0.0",
+    "@ai-sdk/azure": "^4.0.0",
+    "@ai-sdk/google": "^4.0.0",
+    "@ai-sdk/openai": "^4.0.0",
     "@askdb/config": "workspace:^",
     "@askdb/core": "workspace:^",
-    "ai": "^7.0.127"
+    "ai": "^7.0.51"
   },
   "peerDependenciesMeta": {
     "@ai-sdk/anthropic": {
@@ -70,7 +70,7 @@
   "devDependencies": {
     "@askdb/config": "workspace:*",
     "@askdb/core": "workspace:*",
-    "ai": "^7.0.127",
+    "ai": "^7.0.51",
     "typescript": "^6.0.3",
     "vitest": "^5.0.3"
   },
