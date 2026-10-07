@@ -102,9 +102,7 @@ export async function runRagCli(argv: readonly string[]): Promise<number> {
     }
     const cmd = argv[0]!;
     if (cmd !== "index" && cmd !== "query" && cmd !== "setup-store") {
-      // Named only when it looks like a command: a misplaced value can be a secret.
-      const named = /^[a-z][a-z-]*$/.test(cmd) ? `: ${cmd}` : "";
-      throw new Error(`Unknown command${named} (expected 'index', 'query', or 'setup-store')`);
+      throw new Error(`${labelled("Unknown command", cmd)} (expected 'index', 'query', or 'setup-store')`);
     }
     const opts = parseOptions(argv.slice(1));
     const runtimeConfig = getAskDbRuntimeConfig();
@@ -566,7 +564,7 @@ function resolveLogLevel(opts: CliOptions, runtimeConfig: AskDbRuntimeConfig): A
     const lvl = opts.logLevel.toLowerCase();
     if (!isSupportedAskDbLogLevel(lvl)) {
       throw new Error(
-        `Invalid --log-level: ${opts.logLevel} (expected one of ${formatSupportedAskDbLogLevels()})`,
+        `${labelled("Invalid --log-level", opts.logLevel)} (expected one of ${formatSupportedAskDbLogLevels()})`,
       );
     }
     return lvl;
@@ -588,10 +586,14 @@ function parseOptions(argv: readonly string[]): CliOptions {
           "Unexpected extra argument: askdb rag takes one [schema-dir]. Pass other values with their flag, such as --pg-url <conn>.",
         );
       }
+      // Failing on it as a path would print it, password included.
+      if (/^[a-z][a-z0-9+.-]*:\/\//i.test(arg)) {
+        throw new Error("The [schema-dir] argument looks like a connection string; pass a connection string with --pg-url.");
+      }
       opts.schemaDir = arg;
       continue;
     }
-    // `--flag=value` works like `--flag value`. Errors name the flag, never the value.
+    // `--flag=value` works like `--flag value`. Errors repeat a value only when it's `showable`.
     const eq = arg.indexOf("=");
     const flag = eq === -1 ? arg : arg.slice(0, eq);
     const inline = eq === -1 ? undefined : arg.slice(eq + 1);
@@ -608,7 +610,7 @@ function parseOptions(argv: readonly string[]): CliOptions {
       case "--store": {
         const raw = value();
         if (!isCliStore(raw)) {
-          throw new Error(`Unknown store: ${raw} (expected 'memory', 'file', or 'pgvector').`);
+          throw new Error(`${labelled("Unknown store", raw)} (expected 'memory', 'file', or 'pgvector').`);
         }
         opts.store = raw;
         break;
@@ -617,7 +619,7 @@ function parseOptions(argv: readonly string[]): CliOptions {
         const raw = value();
         if (!isCliEmbedder(raw)) {
           throw new Error(
-            `Unknown embedder: ${raw} (expected ${CLI_EMBEDDERS.map((e) => `'${e}'`).join(" or ")}).`,
+            `${labelled("Unknown embedder", raw)} (expected ${CLI_EMBEDDERS.map((e) => `'${e}'`).join(" or ")}).`,
           );
         }
         opts.embedder = raw;
@@ -641,7 +643,7 @@ function parseOptions(argv: readonly string[]): CliOptions {
         const raw = value();
         const n = Number(raw);
         if (!Number.isInteger(n) || n <= 0) {
-          throw new Error(`-k must be a positive integer (got ${raw}).`);
+          throw new Error(`-k must be a positive integer${showable(raw) ? ` (got ${raw})` : ""}.`);
         }
         opts.k = n;
         break;
@@ -656,7 +658,7 @@ function parseOptions(argv: readonly string[]): CliOptions {
         const raw = value();
         const n = Number(raw);
         if (!Number.isInteger(n) || n <= 0) {
-          throw new Error(`--dimensions must be a positive integer (got ${raw}).`);
+          throw new Error(`--dimensions must be a positive integer${showable(raw) ? ` (got ${raw})` : ""}.`);
         }
         opts.dimensions = n;
         break;
@@ -669,7 +671,7 @@ function parseOptions(argv: readonly string[]): CliOptions {
         const types: ChunkType[] = [];
         for (const type of value().split(",").map((s) => s.trim()).filter(Boolean)) {
           if (!isChunkType(type)) {
-            throw new Error(`Unknown --types value: ${type} (expected ${Object.keys(CHUNK_TYPES).join(", ")}).`);
+            throw new Error(`${labelled("Unknown --types value", type)} (expected ${Object.keys(CHUNK_TYPES).join(", ")}).`);
           }
           types.push(type);
         }
@@ -700,6 +702,18 @@ function parseOptions(argv: readonly string[]): CliOptions {
     }
   }
   return opts;
+}
+
+/**
+ * Whether an error may repeat `value`: it looks like a name or a number. Anything else, such as a
+ * connection string given to the wrong flag, is left out because it can hold a password.
+ */
+function showable(value: string): boolean {
+  return /^[\w.+-]{1,40}$/.test(value);
+}
+
+function labelled(label: string, value: string): string {
+  return showable(value) ? `${label}: ${value}` : label;
 }
 
 function readValue(argv: readonly string[], index: number, flag: string): string {

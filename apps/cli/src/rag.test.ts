@@ -310,6 +310,17 @@ describe("askdb rag", () => {
       "Unexpected extra argument: askdb rag takes one [schema-dir]. Pass other values with their flag, such as --pg-url <conn>.\n",
     ],
     ["an unknown command", ["postgres://u:secret@h/db"], "Unknown command (expected 'index', 'query', or 'setup-store')\n"],
+    [
+      "a connection string as [schema-dir]",
+      ["index", "--store", "pgvector", "postgres://u:secret@h/db"],
+      "The [schema-dir] argument looks like a connection string; pass a connection string with --pg-url.\n",
+    ],
+    [
+      "a connection string given to --store",
+      ["index", "./schema", "--store", "postgres://u:secret@h/db"],
+      "Unknown store (expected 'memory', 'file', or 'pgvector').\n",
+    ],
+    ["a connection string given to --embedder", ["index", "./schema", "--embedder", "postgres://u:secret@h/db"], "Unknown embedder (expected 'mock' or 'ai').\n"],
   ])("never repeats %s in its error", async (_case, args, message) => {
     expect(await runRagCli(args)).toBe(1);
     expect(stderr.join("")).toBe(message);
