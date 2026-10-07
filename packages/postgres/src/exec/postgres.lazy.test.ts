@@ -99,6 +99,16 @@ describe("exec/postgres — lazy `pg` peer dependency", () => {
     tempDirs = [];
   });
 
+  // Hosts build a runner without the optional peer installed; an eager load() would
+  // reject unhandled at construction, which fails this test.
+  it("createPostgresCatalogQueryRunner() does not load `pg` at construction time", async () => {
+    const { createPostgresCatalogQueryRunner } = await import("./postgres.js");
+    pgState.shouldFail = true;
+
+    expect(() => createPostgresCatalogQueryRunner("postgres://nowhere")).not.toThrow();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  });
+
   it("invoking the runner when `pg` is missing rejects with a helpful AskDbError", async () => {
     const { createPostgresCatalogQueryRunner } = await import("./postgres.js");
     process.chdir(await createTempProject());

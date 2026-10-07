@@ -101,6 +101,16 @@ describe("exec/sqlite - lazy `better-sqlite3` peer dependency", () => {
     tempDirs = [];
   });
 
+  // Hosts build a runner without the optional peer installed; an eager load() would
+  // reject unhandled at construction, which fails this test.
+  it("createSqliteCatalogQueryRunner() does not load `better-sqlite3` at construction time", async () => {
+    const { createSqliteCatalogQueryRunner } = await import("./sqlite.js");
+    bs3State.shouldFail = true;
+
+    expect(() => createSqliteCatalogQueryRunner(":memory:")).not.toThrow();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  });
+
   it("invoking the runner when `better-sqlite3` is missing rejects with a helpful AskDbError", async () => {
     const { createSqliteCatalogQueryRunner } = await import("./sqlite.js");
     process.chdir(await createTempProject());

@@ -19,7 +19,7 @@ export type { Bs3Namespace };
 
 const bs3Loader = createOptionalDriverLoader<Bs3Namespace>({
   packageName: "better-sqlite3",
-  importDriver: async () => (await import("better-sqlite3").catch(rethrowDriverImportError)) as unknown as Bs3Namespace,
+  importDriver: () => import("better-sqlite3").catch(rethrowDriverImportError) as unknown as Promise<Bs3Namespace>,
   missingMessage: missingDriverMessage({ engine: "SQLite", packageName: "better-sqlite3" }),
 });
 

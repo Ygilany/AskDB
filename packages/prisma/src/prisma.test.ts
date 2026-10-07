@@ -67,6 +67,23 @@ describe("describePrismaSchema", () => {
     ]);
   });
 
+  it("maps Prisma's one-word referential actions (SetNull, NoAction, SetDefault) to SQL actions", async () => {
+    const result = await describePrismaSchema({
+      schemaPath: resolve(FIXTURE_DIR, "referential-actions/schema.prisma"),
+      schemaId: "referential-actions",
+    });
+
+    const actions = Object.fromEntries(
+      result.schema.schemas[0]!.tables.flatMap((table) =>
+        table.foreignKeys.map((fk) => [table.name, { onDelete: fk.onDelete, onUpdate: fk.onUpdate }]),
+      ),
+    );
+    expect(actions).toEqual({
+      Post: { onDelete: "set null", onUpdate: "no action" },
+      Comment: { onDelete: "set default", onUpdate: "restrict" },
+    });
+  });
+
   it("uses mapped physical table, column, enum, and index names", async () => {
     const result = await describePrismaSchema({
       schemaPath: resolve(FIXTURE_DIR, "mapped/schema.prisma"),
