@@ -525,6 +525,13 @@ describe("optional rag block (#226)", () => {
     expect(defineConfig(noRag).deprecations).toEqual([]);
   });
 
+  it("loads a null rag block, as a JS config can write it, like an omitted one", () => {
+    const nullRag = { ...noRag, rag: null as unknown as AskDbConfig["rag"] };
+    expect(flattenAskDbConfig(nullRag)).toEqual(flattenAskDbConfig(noRag));
+    expect(defineConfig(nullRag).deprecations).toEqual([]);
+    expect(runtimeFor(nullRag).rag).toMatchObject({ store: "memory", storeConfig: {} });
+  });
+
   it.each([
     ["omitted", noRag],
     ["null, as a JS config can write it", { ...noRag, rag: null as unknown as AskDbConfig["rag"] }],
