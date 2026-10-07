@@ -12,17 +12,17 @@ This directory is **not** a member of the AskDB pnpm workspace. It is its own pn
 
 The packages' own tests, the lab on the replay model, and the lab on a live model each make different steps of a question's path real:
 
-| Step | Package unit tests | Lab, replay (`lab:matrix`, `lab ask`, `lab ui`) | Lab, live (`--model live`, `LAB_LIVE_MODEL=1`) |
+| Step | Package tests (unit + fixture integration) | Lab, replay (`lab:matrix`, `lab ask`, `lab ui`) | Lab, live (`--model live`, `LAB_LIVE_MODEL=1`) |
 |---|---|---|---|
 | AskDB installed the way users get it (tarball or npm) | no, workspace source | real | real |
-| Schema introspected from a real engine via the installed CLI | mostly no | real, 5 engines | real, 5 engines |
-| Prompt built, both model paths (raw + client) | real | real | real |
+| Schema introspected from a real engine | real, all 5 engines, through each connector's API; never through the installed CLI | real, 5 engines, through the installed CLI | real, 5 engines, through the installed CLI |
+| Prompt built, both model paths (raw + client) | raw path real and byte-tested; the client path never sends a prompt built from config, and nothing checks the two agree | real, and the two paths checked to agree | real |
 | The model's reply | stubbed | canned, reviewed | real OpenAI |
-| Reply extracted, validated, parameters bound | real | real | real |
-| SQL executed on each engine, rows checked against the oracle | no | real | real |
+| Reply extracted, validated, parameters bound | real, but binding is checked as strings; only SQLite binds through a real driver | real, bound by every engine's driver | real, bound by every engine's driver |
+| SQL executed on each engine, rows checked against the oracle | one `ask()` statement per engine, its row count checked against the seed data; no catalog, no parameters | the whole catalog, rows checked against the oracle | the whole catalog, rows checked against the oracle |
 | Same result every run, so it can gate CI | yes | yes | no: the model varies, and each call costs money |
 
-Replay fakes one step out of six, and stays deterministic, so a red cell is AskDB's fault and CI can gate on it. Live makes that step real too, so it finds what a hand-written reply can't (a provider's wire format, how real models format SQL), but its answers vary and it's for exploration only (see [Record and live](#record-and-live)).
+The package column's real-engine cells come from the fixture integration suites (`packages/*/src/connector/multi-engine.integration.test.ts`), which skip locally without `ASKDB_FIXTURE_HOST`; CI's `test` job sets `ASKDB_REQUIRE_INTEGRATION`, so there a skip fails instead. Replay fakes one step out of six, and stays deterministic, so a red cell is AskDB's fault and CI can gate on it. Live makes that step real too, so it finds what a hand-written reply can't (a provider's wire format, how real models format SQL), but its answers vary and it's for exploration only (see [Record and live](#record-and-live)).
 
 ## Commands
 
