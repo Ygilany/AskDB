@@ -50,6 +50,7 @@ Schema is server-configured (`host.schemaPath` / `host.schemaJson`, or the `--sc
 Correlation ID comes from the `x-correlation-id` header, or is generated.
 
 - **Mode** is parsed up front with core's `parseAskDbModeV1`. Invalid values return `400 bad_request`. With no request mode, config `modes.askdbMode` applies, then `schema_only`.
+- **`explain`** must be a JSON boolean; anything else returns `400 bad_request` (it used to go through `Boolean(...)`, so `"false"` turned it on).
 - **`null` fields:** an optional field sent as JSON `null` counts as absent, as does an empty or whitespace-only `schemaJson`; a `null` body `mode` falls back to the header.
 - **Sensitive prompt handling:** config `modes.omitSensitiveFromPrompt` is a floor. The request flag can tighten it (`true`) but not loosen it. A non-boolean flag (`"true"`, `1`) returns `400 bad_request` instead of being ignored. The floor is enforced in the `@askdb/client` facade, so every `createAskDb()` host gets the same behavior.
 - **Schema overrides** are rejected with `403 schema_override_disabled` unless `httpApi.allowSchemaOverride: true` (default `false`; `@askdb/config` rejects a non-boolean value). An override lets any caller put arbitrary schema text into the prompt through the operator's model key.
@@ -82,7 +83,7 @@ Correlation ID comes from the `x-correlation-id` header, or is generated.
 
 | Code | HTTP | Source |
 | --- | --- | --- |
-| `bad_request` | 400 | Malformed body, missing `question`, invalid `mode`, non-boolean `omitSensitiveFromPrompt`, non-string `schemaJson`, retired execution field, `SchemaNotConfiguredError` (the server builds its client with `unknownDialect: "fallback-postgres"`, so `DialectNotSupportedError` isn't raised; the mapping stays as a guard) |
+| `bad_request` | 400 | Malformed body, missing `question`, invalid `mode`, non-boolean `omitSensitiveFromPrompt` or `explain`, non-string `schemaJson`, retired execution field, `SchemaNotConfiguredError` (the server builds its client with `unknownDialect: "fallback-postgres"`, so `DialectNotSupportedError` isn't raised; the mapping stays as a guard) |
 | `schema_parse_error` | 400 | `SchemaLoadError` |
 | `sql_validation_error` | 400 | `SqlValidationError` (with `rule`) |
 | `schema_override_disabled` | 403 | `schemaJson` sent while `httpApi.allowSchemaOverride` is off |

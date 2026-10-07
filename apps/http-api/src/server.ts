@@ -323,19 +323,14 @@ export function createAskDbHttpServer(options: AskDbHttpServerOptions = {}) {
     // Config mode was validated when askdb.config.* was flattened.
     const mode: AskDbModeV1 = requestedMode ?? parseAskDbModeV1(rt.modes.askdbMode);
 
-    // Strictly boolean: a string or number used to count as "omit", so silently
-    // ignoring one would send sensitive identifiers to the model.
-    const omitSensitiveFromPrompt: unknown = body.omitSensitiveFromPrompt;
-    if (
-      omitSensitiveFromPrompt !== undefined &&
-      omitSensitiveFromPrompt !== null &&
-      typeof omitSensitiveFromPrompt !== "boolean"
-    ) {
-      reject(
-        400,
-        badRequest(`\`omitSensitiveFromPrompt\` must be a boolean (got ${typeof omitSensitiveFromPrompt}).`),
-      );
-      return;
+    // Strictly boolean (`null` counts as absent): `Boolean(...)` used to read a string or
+    // number as `true`, and ignoring one would silently send sensitive identifiers to the model.
+    for (const field of ["omitSensitiveFromPrompt", "explain"] as const) {
+      const value: unknown = body[field];
+      if (value !== undefined && value !== null && typeof value !== "boolean") {
+        reject(400, badRequest(`\`${field}\` must be a boolean (got ${typeof value}).`));
+        return;
+      }
     }
 
     let requestOverride: string | undefined;
@@ -380,10 +375,10 @@ export function createAskDbHttpServer(options: AskDbHttpServerOptions = {}) {
         schema: requestOverride ? { json: requestOverride } : undefined,
         logger,
         mode,
-        explain: Boolean(body.explain),
+        explain: body.explain === true,
         // The facade treats config `modes.omitSensitiveFromPrompt` as a floor:
         // a request can tighten it but never loosen it.
-        omitSensitiveIdentifiersFromNlToSqlPrompt: omitSensitiveFromPrompt === true,
+        omitSensitiveIdentifiersFromNlToSqlPrompt: body.omitSensitiveFromPrompt === true,
         abortSignal,
       });
 

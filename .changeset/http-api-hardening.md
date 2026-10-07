@@ -8,6 +8,7 @@ Harden `POST /ask` error handling, sensitivity, and schema overrides.
 - **`mode` is validated up front.** An invalid body `mode` or `x-askdb-mode` header returns `400 bad_request`.
 - **Config `modes.omitSensitiveFromPrompt` is honored.** A request's `omitSensitiveFromPrompt` can tighten it but not loosen it.
 - **Breaking: `omitSensitiveFromPrompt` must be a boolean.** A string or number (`"true"`, `1`) used to count as "omit"; it now returns `400 bad_request` instead of reaching the model.
+- **Breaking: `explain` must be a boolean.** It used to go through `Boolean(...)`, so `"false"` turned it on; any non-boolean now returns `400 bad_request`. For every optional body field, JSON `null` counts as absent.
 - **`sensitiveGuardrail` is returned** in the success response when the schema marks something `sensitive`.
 - **Breaking: per-request `schemaJson` is off by default.** A request that sends it now gets `403 schema_override_disabled`. Set `httpApi.allowSchemaOverride: true` to accept overrides again.
 - **Model-call timeout.** Controlled by `httpApi.requestTimeoutMs` (default `60000`, at most `2147483647`). A timed-out request returns `502`.

@@ -513,6 +513,29 @@ describe("http-api", () => {
     }
   });
 
+  // `Boolean(body.explain)` used to turn `"false"` into true.
+  it("rejects a non-boolean explain with bad_request; true returns explain metadata", async () => {
+    installTestRuntime({ mockSql: "select 1", logLevel: "silent", host: { schemaPath: schemaPath.pathname } });
+    const app = await startApp();
+    try {
+      for (const explain of ["false", "true", 0, 1]) {
+        const { status, json } = await postAsk(app.url, { question: "hi", explain });
+        expect(status).toBe(400);
+        expect(json.error.code).toBe("bad_request");
+        expect(json.error.message).toContain("`explain` must be a boolean");
+      }
+
+      const on = await postAsk(app.url, { question: "hi", explain: true });
+      expect(on.status).toBe(200);
+      expect(on.json.explain).toEqual(expect.any(Object));
+      const off = await postAsk(app.url, { question: "hi", explain: null });
+      expect(off.status).toBe(200);
+      expect(off.json.explain ?? null).toBeNull();
+    } finally {
+      await app.close();
+    }
+  });
+
   it("unmapped errors return 500 internal_error with a generic message", async () => {
     // A tenant-policy schema without a tenant scope makes core throw TenantScopeError,
     // which the HTTP API does not map to a caller-facing error.

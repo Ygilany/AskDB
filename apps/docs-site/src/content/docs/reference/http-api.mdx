@@ -106,7 +106,7 @@ Generate SQL from a question.
 | --- | --- | --- | --- |
 | `question` | yes | — | The natural-language question. |
 | `mode` | no | `modes.askdbMode`, else `schema_only` | One of `schema_only`, `bounded_results`. Also accepted as the `x-askdb-mode` header (the body wins). An unrecognized value returns `400 bad_request`. |
-| `explain` | no | `false` | Return heuristic guardrail metadata. |
+| `explain` | no | `false` | Return heuristic guardrail metadata. Must be a JSON boolean: any other value, such as `"false"`, returns `400 bad_request`. |
 | `omitSensitiveFromPrompt` | no | `modes.omitSensitiveFromPrompt` | `true` omits sensitive columns from the prompt for this request. It can only tighten the server setting. When the server sets `modes.omitSensitiveFromPrompt: true`, sending `false` has no effect. Must be a JSON boolean: any other value, such as `"true"` or `1`, returns `400 bad_request`. |
 | `schemaJson` | no | — | Inline schema artifact that replaces the server schema for this request. Rejected with `403 schema_override_disabled` unless the server sets `httpApi.allowSchemaOverride: true`. Preferred: set `host.schemaPath` in `askdb.config.ts` server-side. |
 
@@ -158,7 +158,7 @@ An optional field sent as JSON `null` counts as absent, as does an empty or whit
 | Code | HTTP | When |
 | --- | --- | --- |
 | `not_found` | `404` | Unknown route. |
-| `bad_request` | `400` | Malformed JSON, missing `question`, invalid `mode`, non-boolean `omitSensitiveFromPrompt`, non-string `schemaJson`, a retired execution field, or no schema configured server-side. |
+| `bad_request` | `400` | Malformed JSON, missing `question`, invalid `mode`, non-boolean `omitSensitiveFromPrompt` or `explain`, non-string `schemaJson`, a retired execution field, or no schema configured server-side. |
 | `payload_too_large` | `413` | Body exceeds `maxBodyBytes`. |
 | `schema_override_disabled` | `403` | The request sent `schemaJson` but `httpApi.allowSchemaOverride` is not `true`. |
 | `schema_parse_error` | `400` | The schema artifact (inline `schemaJson` or the server's configured schema) couldn't be loaded or parsed. |
