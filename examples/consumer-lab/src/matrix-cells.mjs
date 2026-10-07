@@ -4,13 +4,14 @@
  * reader can account for every one of them (the consumer-lab skill's triage and baseline
  * refresh do).
  *
- *   node examples/consumer-lab/src/matrix-cells.mjs [--status fail,known,na] [<matrix.json>]
+ *   node examples/consumer-lab/src/matrix-cells.mjs [--status fail,known,na,miss] [<matrix.json>]
  *
  * `<matrix.json>` defaults to the lab's `.lab/matrix.json`, the one `pnpm lab:matrix` last
  * wrote. Pass another path to read CI's `consumer-lab-matrix` artifact. `--status` keeps some
- * of `fail`, `known` and `na` (default: all three). Groups: every `FAIL` cell with the first
- * line of each failure's reason, then one group per issue (`known (#N)`) and per capability
- * (`n/a (capability: …)`). A cell that names several, such as
+ * of `fail`, `known`, `na` and `miss` (default: all four). Groups: every `FAIL` cell with the
+ * first line of each failure's reason, then one group per issue (`known (#N)`), per capability
+ * (`n/a (capability: …)`) and per live-model miss (`miss (raw: wrong rows)`, only in a
+ * `LAB_LIVE_MODEL=1` run). A cell that names several, such as
  * `n/a (capability: a, capability: b)`, is listed under each. Exits 2 when the file is
  * missing or isn't a matrix.
  *
@@ -23,9 +24,9 @@ import { parseArgs } from "node:util";
 
 const LAB = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 /** The `--status` values, the reporter's cell statuses, and how the matrix prints each. */
-const LABELS = { fail: "FAIL", known: "known", na: "n/a" };
+const LABELS = { fail: "FAIL", known: "known", na: "n/a", miss: "miss" };
 const STATUSES = Object.keys(LABELS);
-const USAGE = "usage: node examples/consumer-lab/src/matrix-cells.mjs [--status fail,known,na] [<matrix.json>]";
+const USAGE = "usage: node examples/consumer-lab/src/matrix-cells.mjs [--status fail,known,na,miss] [<matrix.json>]";
 
 function refuse(message) {
   console.error(`matrix-cells: ${message}`);
@@ -57,15 +58,17 @@ if (!Array.isArray(matrix?.rows) || !Array.isArray(matrix?.dialects)) refuse(`${
 /**
  * The groups a cell belongs to: `FAIL`, or one per issue or capability its text names.
  * `matrix.json` keeps only the text, where the reporter joins them with ", " inside one pair
- * of parentheses; `test/matrix-cells.test.ts` runs the real reporter, so it fails if that changes.
+ * of parentheses (misses with "; ", since a miss reason may hold a comma);
+ * `test/matrix-cells.test.ts` runs the real reporter, so it fails if that changes.
  */
 function groupsOf(cell) {
   if (cell.status === "fail") return [LABELS.fail];
+  if (cell.status === "miss") return cell.text.replace(/^miss \((.*)\)$/, "$1").split("; ").map((part) => `miss (${part})`);
   const match = /^(known|n\/a) \((.*)\)$/.exec(cell.text);
   return match ? match[2].split(", ").map((part) => `${match[1]} (${part})`) : [cell.text];
 }
 
-/** `status` → group (`FAIL`, `known (#N)`, `n/a (capability: …)`) → cells. */
+/** `status` → group (`FAIL`, `known (#N)`, `n/a (capability: …)`, `miss (…)`) → cells. */
 const groups = new Map(STATUSES.map((s) => [s, new Map()]));
 const listed = new Set();
 for (const row of matrix.rows) {

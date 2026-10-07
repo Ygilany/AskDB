@@ -9,6 +9,7 @@
   },
   "scripts": {
     "lab": "tsx src/lab-cli.ts",
+    "record": "tsx src/record-cli.ts",
     "test": "vitest run",
     "matrix": "vitest run --reporter=default --reporter=./src/matrix-reporter.ts",
     "lint": "tsc --noEmit",

@@ -26,6 +26,7 @@
     "lab:down": "pnpm fixture:down && pnpm -C examples/consumer-lab --silent run postgres:down",
     "lab:reset": "pnpm fixture:reset && node examples/consumer-lab/src/use.mjs --restore && pnpm -C examples/consumer-lab --silent run postgres:reset",
     "lab:safety:isolated": "pnpm -C examples/consumer-lab exec tsx src/isolated-run.ts",
+    "lab:record": "pnpm -C examples/consumer-lab --silent run record",
     "lab:test": "pnpm -C examples/consumer-lab test",
     "lab:matrix": "pnpm lab:up && pnpm -C examples/consumer-lab --silent run matrix",
     "pgvector:up": "docker compose -f fixtures/pgvector/docker-compose.yml up -d",

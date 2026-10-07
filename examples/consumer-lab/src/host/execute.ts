@@ -49,6 +49,30 @@ export class StatementTimeoutError extends Error {
   }
 }
 
+/**
+ * The host couldn't run the statement at all: the engine refused the connection or the
+ * read-only login, or (SQLite) the database file couldn't be opened. Nothing about the SQL.
+ */
+export class HostUnreachableError extends Error {
+  constructor(
+    readonly dialect: SupportedDialect,
+    options?: { cause?: unknown },
+  ) {
+    const cause = options?.cause instanceof Error ? options.cause.message : String(options?.cause ?? "");
+    super(`[${dialect}] the host couldn't reach the fixture: ${cause}`, options);
+    this.name = "HostUnreachableError";
+  }
+}
+
+/** `step`, with any failure reported as {@link HostUnreachableError}: for the connect and session-setup steps, before the statement runs. */
+async function connecting<T>(dialect: SupportedDialect, step: () => Promise<T>): Promise<T> {
+  try {
+    return await step();
+  } catch (error) {
+    throw new HostUnreachableError(dialect, { cause: error });
+  }
+}
+
 interface Resolved {
   rowCap: number;
   timeoutMs: number;
@@ -91,7 +115,7 @@ async function runPostgres(sql: string, o: Resolved) {
     },
   });
   try {
-    await client.connect();
+    await connecting("postgres", () => client.connect());
     await client.query("BEGIN READ ONLY");
     await client.query(`SET LOCAL statement_timeout = ${o.timeoutMs}`);
     const capped = `SELECT * FROM (${sql}) AS askdb_q LIMIT ${o.rowCap + 1}`;
@@ -122,10 +146,13 @@ async function runMysql(sql: string, o: Resolved, dialect: SupportedDialect) {
   const setup = conn.promise();
   let stoppedEarly = false;
   try {
-    await setup.query(
-      dialect === "mariadb"
-        ? `SET SESSION max_statement_time = ${o.timeoutMs / 1000}`
-        : `SET SESSION max_execution_time = ${o.timeoutMs}`,
+    // The first query opens the connection.
+    await connecting(dialect, () =>
+      setup.query(
+        dialect === "mariadb"
+          ? `SET SESSION max_statement_time = ${o.timeoutMs / 1000}`
+          : `SET SESSION max_execution_time = ${o.timeoutMs}`,
+      ),
     );
     await setup.query("START TRANSACTION READ ONLY");
     return await new Promise<{ columns: string[]; rows: unknown[][] }>((resolve, reject) => {
@@ -176,7 +203,7 @@ async function runSqlServer(sql: string, o: Resolved) {
   const tx = new mssql.Transaction(pool);
   let begun = false;
   try {
-    await pool.connect();
+    await connecting("sqlserver", () => pool.connect());
     await tx.begin();
     begun = true;
     // Caps the rows any following statement returns, and keeps its ORDER BY.
@@ -212,6 +239,8 @@ async function runSqlite(sql: string, o: Resolved) {
     return await new Promise<{ columns: string[]; rows: unknown[][] }>((resolve, reject) => {
       let timer: NodeJS.Timeout | undefined;
       let settled = false;
+      /** Set once the worker has opened the database: a failure before it is the file, not the SQL. */
+      let ready = false;
       const settle = (fn: () => void) => {
         if (settled) return;
         settled = true;
@@ -222,14 +251,17 @@ async function runSqlite(sql: string, o: Resolved) {
       child.on("message", (message: Message) => {
         if ("ready" in message) {
           // The database is open; from here on the statement is running.
+          ready = true;
           timer = setTimeout(() => settle(() => reject(new StatementTimeoutError("sqlite", o.timeoutMs))), o.timeoutMs);
         } else if (message.ok) settle(() => resolve({ columns: message.columns, rows: message.rows }));
+        else if (!ready) settle(() => reject(new HostUnreachableError("sqlite", { cause: new Error(message.message) })));
         else settle(() => reject(new Error(`[sqlite] ${message.message}`)));
       });
       child.once("error", (error) => settle(() => reject(error)));
-      child.once("exit", (code, signal) =>
-        settle(() => reject(new Error(`[sqlite] the statement process exited (${signal ?? `code ${code}`}) without a result`))),
-      );
+      child.once("exit", (code, signal) => {
+        const exited = new Error(`[sqlite] the statement process exited (${signal ?? `code ${code}`}) without a result`);
+        settle(() => reject(ready ? exited : new HostUnreachableError("sqlite", { cause: exited })));
+      });
     });
   } finally {
     // Not awaited: a killed process stops at once, native code included.

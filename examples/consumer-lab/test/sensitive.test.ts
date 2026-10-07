@@ -36,17 +36,16 @@ import { bootstrapAskDbEnv, getAskDbRuntimeConfig } from "@askdb/config";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it, type TestContext } from "vitest";
-import { API_KEY, MODEL_ID, askRaw, type AskExtras, type AskResult } from "../src/ask.js";
+import { API_KEY, MODEL_ID, askRaw, settle, type AskExtras, type AskResult, type Settled } from "../src/ask.js";
 import { needsCapability } from "../src/capabilities.js";
 import { SUPPORTED_DIALECTS, type SupportedDialect } from "../src/dialects.js";
-import { loadRows } from "../src/fixture.js";
 import { executeReadOnly } from "../src/host/execute.js";
 import { postAsk, startHttpServer, type HttpServer } from "../src/http-api.js";
 import { askdbAsync } from "../src/introspect.js";
 import { cassetteSql, loadQuestions, type Question } from "../src/model/catalog.js";
 import { startReplayServer, type RecordedRequest, type ReplayServer } from "../src/model/replay-server.js";
 import { LAB_ROOT, LAB_STATE } from "../src/paths.js";
-import { removeSensitiveArtifact, sensitiveArtifact, sensitiveColumns } from "../src/sensitive.js";
+import { removeSensitiveArtifact, seededSensitiveValues, sensitiveArtifact, sensitiveColumns } from "../src/sensitive.js";
 
 const SENSITIVE_QUESTIONS = join(LAB_ROOT, "scenarios", "sensitive-questions.json");
 const QUESTIONS = loadQuestions(SENSITIVE_QUESTIONS);
@@ -55,8 +54,8 @@ const QUESTIONS = loadQuestions(SENSITIVE_QUESTIONS);
 const SENSITIVE = sensitiveColumns().map((c) => c.column);
 /** Columns of `people.client` the overlay leaves unmarked, which appear in no other table. */
 const UNMARKED_CLIENT_COLUMNS = ["full_name", "birth_date"];
-/** The seeded clients: what a reply that reads a sensitive column returns. */
-const CLIENTS = loadRows({ schema: "people", name: "client" });
+/** Each sensitive column's seeded values: what a reply that reads the column returns. */
+const SEEDED = seededSensitiveValues();
 
 /** The control: a reply that reads only unmarked columns. Also the question the prompt scenarios ask. */
 const CONTROL = "sensitive-client-names";
@@ -127,8 +126,6 @@ function ask(dialect: SupportedDialect, id: string, extras: AskExtras = {}): Pro
   return askRaw(dialect, question(id).text, artifact(dialect), replay.baseURL(dialect), extras);
 }
 
-type Settled = { ok: true; result: AskResult } | { ok: false; error: unknown };
-const settle = (p: Promise<AskResult>): Promise<Settled> => p.then((result) => ({ ok: true, result }), (error: unknown) => ({ ok: false, error }));
 
 /** The replay server's request log, as `GET /__lab/requests` serves it. */
 async function requestLog(): Promise<RecordedRequest[]> {
@@ -210,12 +207,12 @@ async function seededValuesReturned(dialect: SupportedDialect, sql: string): Pro
   expect(result.truncated, "the host's row cap cut the result").toBe(false);
   expect(result.rows.length, "the reply returned no rows, so it shows nothing").toBeGreaterThan(0);
   const cells = new Set(result.rows.flat().map(String));
-  return Object.fromEntries(SENSITIVE.map((column) => [column, CLIENTS.filter((c) => c[column] != null && cells.has(String(c[column]))).length]));
+  return Object.fromEntries(SEEDED.map(({ column, values }) => [column, values.filter((v) => cells.has(v)).length]));
 }
 
 /** What {@link seededValuesReturned} gives for SQL that returns every seeded value of `columns`, and none of the others. */
 function allSeededValuesOf(columns: readonly string[]): Record<string, number> {
-  return Object.fromEntries(SENSITIVE.map((column) => [column, columns.includes(column) ? CLIENTS.filter((c) => c[column] != null).length : 0]));
+  return Object.fromEntries(SEEDED.map(({ column, values }) => [column, columns.includes(column) ? values.length : 0]));
 }
 
 /**

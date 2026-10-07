@@ -27,6 +27,8 @@ pnpm lab ui                          # a page on 127.0.0.1 that runs one input o
 pnpm lab:test                        # the lab's own suite (needs the fixture, the lab's Postgres and an installed lab)
 pnpm lab:matrix                      # lab:up, then the suite as a scenario × dialect table
 pnpm lab:matrix -t introspect-golden # vitest flags pass through: one scenario (-t), one dialect (-t '\[mysql\]'), one file
+pnpm lab:record                      # record the catalog's replies from a live OpenAI model (needs OPENAI_API_KEY; see Record and live)
+LAB_LIVE_MODEL=1 pnpm lab:matrix     # the suite plus a live model's answers, graded by the oracle; writes no cassette
 pnpm lab:use --restore               # put the committed baseline (npm:latest) back
 pnpm lab:down                        # stop the fixture and the lab's Postgres; keep the fixture's data and the lab install
 pnpm lab:reset                       # reseed the fixture from scratch and put the committed baseline back
@@ -93,7 +95,7 @@ Each column shows what `pnpm lab ask --db <engine>` prints for the same input, b
 
 The summary strip says whether the engines agree and whether each matches the [oracle](#why-the-expected-answer-never-comes-from-sql). Both compare rows with the fixture's normalization rules, which need each column's logical type, and only a catalog question's oracle declares those. So a catalog question, or raw SQL labelled with the catalog question it answers, is compared (blank SQL is refused, never replaced by its label); any other input is shown but not compared. An engine that failed, whose result the row cap cut, or whose rows don't fit the question's columns (raw SQL labelled with a question it doesn't answer) isn't compared either; the oracle calls the last a mismatch.
 
-The header names the install target (`lab:use`'s label) and the model mode: `replay`, since a live model doesn't exist yet (#247), so a free-text question outside the catalog gets the replay server's refusal on every engine. Questions always take the raw-model path: `--via client` reads `askdb.config.ts` once per process, which would pin every engine to the first engine's replay URL, so it stays a `lab ask` option. The install is the one in place when `lab ui` started, whose modules it loaded: if `lab:use` reinstalls while it runs (another target, or the same one at other versions) or is part-way through, the page and the API answer `409` until it's restarted.
+The header names the install target (`lab:use`'s label) and the model mode, always `replay`: `lab ui` asks the replay model only, so a free-text question outside the catalog gets the replay server's refusal on every engine. A live model is the live suite and `pnpm lab:record` (see [Record and live](#record-and-live)); `lab ask --model live` is #448. Questions always take the raw-model path: `--via client` reads `askdb.config.ts` once per process, which would pin every engine to the first engine's replay URL, so it stays a `lab ask` option. The install is the one in place when `lab ui` started, whose modules it loaded: if `lab:use` reinstalls while it runs (another target, or the same one at other versions) or is part-way through, the page and the API answer `409` until it's restarted.
 
 Like Studio's server ([ADR 0009](../../docs/adrs/0009-studio-local-api-protection.md)), it binds loopback only and answers `403` to any request whose `Host` isn't `127.0.0.1:<port>` or `localhost:<port>`, the page included, which stops DNS rebinding. `POST /api/run` also needs `Content-Type: application/json` (`415`) and a same-origin `Origin` when one is sent (`403`), so another site can't make the browser run SQL. There is no session token: the page holds no secret, and the SQL runs as the read-only role. A forwarded port that rewrites `Host` (a devcontainer, a remote preview browser) is refused.
 
@@ -106,11 +108,11 @@ Like Studio's server ([ADR 0009](../../docs/adrs/0009-studio-local-api-protectio
   { "question": "<the catalog text>", "reply": "```sql\nSELECT …\n```", "source": "authored" }
   ```
 
-  The reply is the model's whole answer, fences included. For now every reply is `"source": "authored"`: hand-written SQL, correct and idiomatic for its dialect (for example, the reserved-word table is `billing."order"` on Postgres, ``billing.`order` `` on MySQL and MariaDB, `billing.[order]` on SQL Server and `"order"` on SQLite, and a non-ASCII string literal is `N'…'` on SQL Server). Recording replies from a live model comes with `pnpm lab:record` (#247).
+  The reply is the model's whole answer, fences included. An `"authored"` reply is hand-written SQL, correct and idiomatic for its dialect (for example, the reserved-word table is `billing."order"` on Postgres, ``billing.`order` `` on MySQL and MariaDB, `billing.[order]` on SQL Server and `"order"` on SQLite, and a non-ASCII string literal is `N'…'` on SQL Server). A `"recorded"` reply is a live model's, written by `pnpm lab:record` after it passed the results suite's checks and reviewed in git, and it adds `"recordedWith": { "model", "askdbTarget", "at" }`: the model the provider says answered (`gpt-4o-mini-2024-07-18`), the `askdb` version and install target (with no local paths) and the date (see [Record and live](#record-and-live)).
 - A reply to a question that holds a value (`programs-started-since` asks about `2022-01-01`) follows the NL→SQL prompt's parameterized output format, as a model would: the bound statement in a ```` ```sql ```` fence, the same statement with `:name` placeholders in a ```` ```sql-unbound ```` fence, and a ```` ```json ```` fence with the parameter manifest.
 - `src/oracle.ts` holds each question's expected answer, computed in TypeScript from the fixture's seed data (`fixtures/multi-engine/dataset/data/*.json`), with its columns' logical types and whether its row order is part of the answer. It never runs SQL, the cassette's or any other.
 
-To add a question, add it to the catalog, add a reply for each of the five dialects, and add its oracle. `lab:test` runs every catalog question on every dialect. The tenant suite keeps its own catalog, `scenarios/tenant-questions.json` (see [Tenant scoping](#tenant-scoping)), and so does the sensitive-column suite, `scenarios/sensitive-questions.json` (see [Sensitive columns](#sensitive-columns)).
+To add a question, add it to the catalog, add a reply for each of the five dialects (by hand, or with `pnpm lab:record --only <id>`), and add its oracle. `lab:test` runs every catalog question on every dialect. The tenant suite keeps its own catalog, `scenarios/tenant-questions.json` (see [Tenant scoping](#tenant-scoping)), and so does the sensitive-column suite, `scenarios/sensitive-questions.json` (see [Sensitive columns](#sensitive-columns)).
 
 ## Question → SQL → execute
 
@@ -153,6 +155,44 @@ The replay server serves:
 - `GET /__lab/requests`, every request received, with its prompt text and the question it matched, for suites that assert on prompts.
 
 The dialect comes from the base URL: `http://127.0.0.1:<port>/<dialect>/v1`. The server uses Node built-ins only and never imports AskDB.
+
+## Record and live
+
+Two modes call a real model; everything else replays. Both use OpenAI, through the same two model paths as `lab ask`, and both need a key: `OPENAI_API_KEY` in the shell, or in a `.env.live` file in `examples/consumer-lab/` or at the repo root (the first that exists is read). Both are gitignored; never commit a key. AskDB's config loads `.env`, so a key kept there would reach every replay run; `.env.live` is read only by these two modes. `lab:record` keeps the key in its proxy; the live suite sets `OPENAI_API_KEY` in its own test worker, for the adapter path's config. `LAB_LIVE_MODEL_ID` picks another model; the default is `gpt-4o-mini`, AskDB's own OpenAI default.
+
+Neither mode runs in CI: with `CI` or `GITHUB_ACTIONS` set, each refuses before reading a key, and without a key each fails with a message naming the variable and the file. Neither falls back to the replay model. CI's job never sets `LAB_LIVE_MODEL`, and `vitest.config.ts` leaves the live suite out unless it's `1`.
+
+At `gpt-4o-mini`'s price, a full `lab:record` (15 questions × 5 dialects, about 1,100 prompt tokens each) costs about $0.03, and a live run (about 210 calls) about $0.10.
+
+### `pnpm lab:record`
+
+```bash
+pnpm lab:record                                     # every catalog question on every dialect
+pnpm lab:record --db postgres --db sqlite           # some dialects
+pnpm lab:record --db mysql --only top-paid-agencies # some questions
+```
+
+- **What it asks.** Only the catalog, `scenarios/questions.json`. The tenant and sensitive suites' replies are hand-written, many of them as the attacker, and a model's reply would change what they test, so `--only tenant-…`, `sensitive-…` and `safety-…` are refused before any call, as is an id the catalog doesn't have.
+- **How.** The replay server runs in record mode (`src/model/replay-server.ts`, `upstream`): it forwards each request to OpenAI with the key, and the raw-model path (`createOpenAI()` → `ask()`) is pointed at it with a placeholder key. The request log keeps the prompt, the reply and the model the provider named; it never holds a header, and the key is redacted from any provider error before the terminal sees it.
+- **The gate** (`src/grade.ts`, the results suite's checks as a verdict). A reply is written only when the SQL `ask()` returns, run as the host, returns the oracle's rows, and on `programs-started-since` it also comes back parameterized: `unboundSql` + `params` and `bindPreparedQuery`'s rebound forms return the right rows. The placeholder's name is the reply's own. The reply's ```` ```sql ```` fence must also hold exactly the SQL `ask()` returned, because the replay suites read a cassette's fence strictly and compare it with `ask()`'s result: `ask()` forgives a trailing semicolon or another fence tag, they don't. A reply that would contain the key, or anything shaped like a secret key, is never written.
+- **What gets written.** A passing reply replaces its cassette as `"source": "recorded"` with `recordedWith`, even when it equals the reply already recorded: a re-run refreshes the date.
+- **Misses** (a validation rejection, SQL the engine refused, other rows or columns than the oracle's, no parameterized form) are printed with their reason and written, with the model's whole reply (anything shaped like a key redacted), to `.lab/record-misses.json`. The cassette stays as it was, so CI stays green. The oracle compares columns by position and count: a reply with the right rows plus an extra column is a miss.
+- **A guarantee violation** (SQL that passed AskDB's checks and was refused by the host as a write) is listed as a violation in the same file, not written, and makes the run exit 1: a product failure to file. No SQL AskDB accepts reaches this today.
+- **A run that stops** (the provider refuses a request: a bad key, a quota, an outage; the fixture can't be reached; a model call AskDB couldn't make) exits 1, and `.lab/record-misses.json` still lists what it found until then, with `stopped` saying why. Usage errors, a missing key, a CI run and refused ids exit 2. Misses don't change the exit code.
+
+**Reviewing.** `git diff examples/consumer-lab/cassettes/` shows each new or changed reply. Check that the SQL answers the question, that it still covers what the question is in the catalog for (the [results table](#question--sql--execute)'s "Covers" column: the quoted reserved word, `N'…'`, `TOP` or `OFFSET … FETCH`), that `programs-started-since` has its `sql-unbound` block and parameter manifest, and that `recordedWith` names the right model, target and date. Stage a file to accept it; `git restore <file>` rejects it and brings back the reply it replaced. Then `pnpm lab:test test/results.test.ts` checks the accepted replies on replay.
+
+### `LAB_LIVE_MODEL=1 pnpm lab:matrix`
+
+Runs the usual suite on replay, plus `test/live.test.ts`, which asks a live model directly, with no proxy: the prompt goes out over the network and the reply comes back to be extracted, validated, bound and executed. Nothing is written to `cassettes/`; every answer, with its SQL and verdict, goes to `.lab/live-answers.json`. Each answer is graded by `src/grade.ts`:
+
+| Scenario | Asked through | Cell |
+|---|---|---|
+| `live-<id>`, one per catalog question | both paths: `createOpenAI()` → `ask()`, and `createAskDb` with `@askdb/ai-openai` from `live/askdb.config.ts` | `pass` when the SQL returns the oracle's rows; otherwise `miss (<path>: <reason>)` |
+| `live-tenant-<id>`, the five scoped tenant questions | the raw path, with `tenantScope` for agency 2 and the strict overlay | `pass` when the rows are agency 2's; `FAIL` when any belongs to another agency; otherwise a miss. A leak is seen only in rows shaped like the oracle's, so a miss whose columns differ, or whose rows aren't the oracle's rows for some agency, says the scope is unchecked |
+| `live-sensitive-<id>`, every sensitive question | the raw path, with `sensitiveGuardrailMode: "strict"` | `FAIL` when any seeded email or SSN comes back, whole or as an identifying fragment (an SSN without dashes or its last four digits, an email's local part, in any case); otherwise `pass` (a rejection is the guarantee holding), except that a rejection of `sensitive-client-names`, which reads no sensitive column, is a miss |
+
+A miss is model quality: only AskDB's documented rejections of the SQL (`SqlValidationError`, `SensitiveReferenceError`, `TenantGuardrailError`, `TenantScopeError`) count as one. A `FAIL` is a guarantee violation, a product failure to file: SQL that passed AskDB's checks and leaked another tenant's rows, returned sensitive values in strict mode, or was refused by the host as a write (read-only). A denied read, such as a model reading `pg_authid`, is a miss, and so is a shared locking read (`FOR SHARE`) that Postgres's read-only transaction refuses: AskDB documents that it passes (`concepts/safety-boundaries.mdx`, #319). A failed model call (`SqlGenerationError`: a bad key, a quota, an outage) or a fixture the host can't reach (`HostUnreachableError`, from `src/host/execute.ts`) is a `FAIL` too, never a miss, with its reason in `matrix.json`. An answer past the host's 100-row cap is checked for a leak or a sensitive value in the rows the host kept before it's called a miss, and the miss says the rest is unchecked. `test/grade.test.ts` checks these verdicts without a key. The tenant and sensitive questions use the raw path only: their enforcement is in `ask()`, which both paths share. The adapter path reads `live/askdb.config.ts`, apart from the lab's `askdb.config.ts`, so the CLI, HTTP API and Studio suites never see a key. It uses `@askdb/ai-openai`, like `lab ask --via client`: deprecated on `main` in favour of `@askdb/ai`'s built-in `openai`, but the documented adapter on the releases the lab also targets.
 
 ## Safety
 
@@ -284,12 +324,13 @@ The `known` cases fail only because the prompt still names the sensitive columns
 - A test's full name starts with `[<dialect>] <scenario-id>`, usually as `describe("[mysql]")` around `it("introspect-golden: …")`. Tests that share a scenario and dialect share a cell.
 - `pass`: every test in the cell passed. `FAIL`: one failed, or its suite's hook did.
 - `known (#N)`: an `it.fails` test that names its `discrepancy` issue, for example `it.fails("… (#239)")`, failed as expected. Once the bug is fixed the test passes, `it.fails` turns that into a failure, and the cell shows `FAIL` until the marker is removed.
+- `miss (<path>: <reason>; …)`: only in a `LAB_LIVE_MODEL=1` run. A live model's answer was wrong (a validation rejection, SQL the engine refused, other rows than the oracle's), and AskDB did what it documents: model quality, not a product failure. The test passes and records the miss with `ctx.annotate("<reason>", "miss")`. See [Record and live](#record-and-live).
 - `n/a (capability: …)`: a capability gate skipped the test because the install target lacks a documented capability (see [Capabilities](#capabilities-testing-older-targets)). Any other skip of a test that was meant to run is a `FAIL`: the lab fails rather than skips.
 - `-`: no test ran for that dialect (none exists yet, or a `-t` filter excluded it; an excluded test never inherits a sibling's failure).
 
-`lab:matrix` exits 1 when any cell is `FAIL`, including the two that vitest itself counts as passing (an `it.fails` test that names no issue, and a skip that isn't a capability gate). `pass`, `n/a` and `known` cells don't fail it. The failing cells are listed under the table.
+`lab:matrix` exits 1 when any cell is `FAIL`, including the two that vitest itself counts as passing (an `it.fails` test that names no issue, and a skip that isn't a capability gate). `pass`, `n/a`, `known` and `miss` cells don't fail it. The failing cells are listed under the table.
 
-`node examples/consumer-lab/src/matrix-cells.mjs [--status fail,known,na] [<matrix.json>]` lists the cells that aren't `pass`, one per line: each `FAIL` cell with the first line of each failure's reason, then one group per issue and per capability. It reads `.lab/matrix.json` unless given another file, such as CI's `consumer-lab-matrix` artifact.
+`node examples/consumer-lab/src/matrix-cells.mjs [--status fail,known,na,miss] [<matrix.json>]` lists the cells that aren't `pass`, one per line: each `FAIL` cell with the first line of each failure's reason, then one group per issue, per capability and per live-model miss. It reads `.lab/matrix.json` unless given another file, such as CI's `consumer-lab-matrix` artifact.
 
 Below the test rows, the `unique-constraints *` and `view-marker *` rows are **annotations, not test results**: facts the golden schema holds but the schema artifact can't express (the "Not comparable" rule in [`NORMALIZATION.md`](../../fixtures/multi-engine/dataset/NORMALIZATION.md)). The reporter prints them as `n/a (not in the schema artifact)` from a static list, and `matrix.json` keeps them under `annotations`.
 

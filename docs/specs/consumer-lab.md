@@ -177,7 +177,7 @@ It prints:
 
 Flags:
 
-- `--model` defaults to `replay`. It switches to `live` when `LAB_LIVE_MODEL=1` and a provider key is set.
+- `--model` defaults to `replay`. It switches to `live` when `LAB_LIVE_MODEL=1` and a provider key is set. Not built yet: #247 built live mode as a suite and `lab:record`; the flag is #448.
 - `--sql` bypasses the model through `deps.generateText`, which the docs name as the mock seam.
 - `--via` picks the model path: `raw` (default), a `createOpenAI({ baseURL })` model passed to `ask()`; or `client`, `createAskDb` with `@askdb/ai-openai` configured by `providerConfig.openai.baseUrl`. Both must send the same prompt and return the same SQL.
 
@@ -198,7 +198,7 @@ A page on `127.0.0.1` that runs one input (a catalog question, free text, or raw
 
 - **Dialect:** taken from the base URL path, `http://127.0.0.1:<port>/<dialect>/v1`. This works with any model id and in record mode.
 - **Question:** found by matching the catalog's question texts, which are unique, inside the user prompt.
-- **No match:** the server fails with an error that names the missing cassette file and what to author in it (or, when the prompt holds no catalog question, the catalog entry to add). It never falls back to a default. Once `pnpm lab:record` exists (#247), the message names it too.
+- **No match:** the server fails with an error that names the missing cassette file and what to author in it (or, when the prompt holds no catalog question, the catalog entry to add). It never falls back to a default. For a catalog question, the message also names `pnpm lab:record --db <dialect> --only <id>`.
 
 **Cassettes** live at `cassettes/<dialect>/<id>.json`:
 
@@ -214,8 +214,11 @@ A page on `127.0.0.1` that runs one input (a catalog question, free text, or raw
 
 ### Record and live
 
-- `pnpm lab:record [--db …] [--only <id>]` needs `OPENAI_API_KEY`, or another documented provider set through `LAB_LIVE_PROVIDER`. The server proxies to the real provider and writes or refreshes cassettes. Afterwards, the maintainer reviews the cassette diff in git before committing it.
-- `LAB_LIVE_MODEL=1 pnpm lab:matrix` runs against the live model without writing anything. Cross-dialect equality and oracle checks still apply. Failures are reported as model quality, not product bugs, unless the SQL passed validation but violated a guarantee (tenant, sensitive, read-only).
+Built in #247; the lab README's "Record and live" section is the reference.
+
+- **Provider and key:** OpenAI only (maintainer decision on #247), through both documented model paths. The key is `OPENAI_API_KEY`, from the shell or a gitignored `.env.live` in the lab or at the repo root, which only these modes read (AskDB's config loads `.env`). `LAB_LIVE_MODEL_ID` picks the model; the default is AskDB's OpenAI default, `gpt-4o-mini`. With `CI` or `GITHUB_ACTIONS` set, both modes refuse before reading a key; without a key, both fail with a message. Neither falls back to the replay model.
+- `pnpm lab:record [--db …]… [--only <id>]…` records the catalog questions only: the tenant and sensitive suites' replies are hand-written attackers, and their ids are refused before any call. The replay server proxies to OpenAI with the key (the clients send it a placeholder; its request log holds no header; provider errors are redacted). Each reply is graded first, with the results suite's checks (`src/grade.ts`): only a reply whose SQL returns the oracle's rows (and, on the parameterized question, comes back parameterized) replaces its cassette, as `"source": "recorded"` with `recordedWith`. Misses are listed in `.lab/record-misses.json` and leave the cassette alone. The maintainer reviews the cassette diff in git before committing it: staging accepts, `git restore` rejects.
+- `LAB_LIVE_MODEL=1 pnpm lab:matrix` adds `test/live.test.ts`, which asks the live model directly and writes no cassette. Every catalog question is asked through both paths and graded by its oracle; the scoped tenant questions and the sensitive questions (strict mode) through the raw path. A wrong answer, a validation rejection included, is a `miss (…)` cell, model quality, which doesn't fail the run. SQL that passed AskDB's checks but leaked another tenant's rows, returned seeded sensitive values in strict mode, or was refused by the host as a write is a guarantee violation: a `FAIL` cell.
 - CI never sets either of these.
 
 ## Scenario matrix

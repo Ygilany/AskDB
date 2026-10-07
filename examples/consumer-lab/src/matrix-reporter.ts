@@ -9,13 +9,16 @@
  *
  * - `FAIL` if any of its tests failed (an `it.fails` test whose bug is fixed fails too);
  * - `known (#N)` if its tests are `it.fails` cases naming issue `#N` that failed as expected;
+ * - `miss (reason; …)` if its tests passed but annotated a live-model miss with
+ *   `ctx.annotate("<reason>", "miss")` (`test/live.test.ts`): the model's answer was wrong,
+ *   which is model quality, not a product failure;
  * - `pass` if its tests passed;
  * - `n/a (reason)` if its tests were skipped with `ctx.skip("reason")`;
  * - `-` if no test ran for it (none exists, or a filter excluded it).
  *
  * Any `FAIL` cell fails the run (exit code 1), even one vitest counts as passing: an
  * `it.fails` test that names no issue, or a skip that isn't a capability gate. CI's
- * consumer-lab job relies on this; `pass`, `n/a` and `known` cells don't fail it.
+ * consumer-lab job relies on this; `pass`, `n/a`, `known` and `miss` cells don't fail it.
  *
  * Each `FAIL` cell records why each of its tests failed (the error, or the rule that made a
  * passing test a failure), in `matrix.json` and in the step summary, so CI shows the reason
@@ -42,7 +45,10 @@ const ISSUE = /\(#(\d+)\)/g;
 const ARTIFACT_LIMITS = ["unique-constraints", "view-marker"] as const;
 const ARTIFACT_LIMIT_TEXT = "n/a (not in the schema artifact)";
 
-type Status = "pass" | "fail" | "known" | "na";
+type Status = "pass" | "fail" | "known" | "miss" | "na";
+
+/** The annotation type a live-model test gives a miss (`ctx.annotate(reason, "miss")`). */
+const MISS = "miss";
 
 interface Failure {
   test: string;
@@ -89,7 +95,10 @@ function outcomeOf(test: TestCase): Outcome {
     return { status: "fail", reason: errorText(result.errors) ?? "failed with no error message" };
   }
   if (result.state === "passed") {
-    if (!test.options.fails) return { status: "pass" };
+    if (!test.options.fails) {
+      const misses = test.annotations().filter((a) => a.type === MISS).map((a) => a.message);
+      return misses.length ? { status: "miss", detail: misses.join("; ") } : { status: "pass" };
+    }
     const issues = [...test.name.matchAll(ISSUE)].map((m) => `#${m[1]}`);
     // An expected failure that names no issue isn't tracked anywhere: show it as a failure.
     return issues.length
@@ -128,6 +137,11 @@ function combine(outcomes: Outcome[], tests: string[]): Cell | undefined {
     return { status: "fail", text: "FAIL", tests, failures };
   }
   if (ran.some((o) => o.status === "known")) return { status: "known", text: `known (${details("known")})`, tests };
+  // A miss reason may hold ", " itself, so misses are joined with "; " and never split.
+  if (ran.some((o) => o.status === "miss")) {
+    const misses = [...new Set(ran.flatMap((o) => (o.status === "miss" && o.detail ? o.detail.split("; ") : [])))];
+    return { status: "miss", text: `miss (${misses.join("; ")})`, tests };
+  }
   // A gated test is never hidden behind a passing one in the same cell.
   if (ran.some((o) => o.status === "na")) return { status: "na", text: `n/a (${details("na")})`, tests };
   return { status: "pass", text: "pass", tests };
