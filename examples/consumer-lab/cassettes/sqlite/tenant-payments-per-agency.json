@@ -1,0 +1,5 @@
+{
+  "question": "For each agency in my scope, show its id and the total payment amount.",
+  "reply": "```sql\nSELECT agency_id, SUM(amount) AS total_amount\nFROM payment\nWHERE agency_id = :tenant_agency_ids\nGROUP BY agency_id\nORDER BY agency_id\n```",
+  "source": "authored"
+}

@@ -4,10 +4,10 @@ import type { ReasoningSettings } from "./reasoning.js";
 /**
  * AI provider selector. AskDB is BYO-LanguageModel at the function level
  * (see `ask()`), but the bundled apps (CLI, HTTP API, Studio) all need
- * to construct one from environment variables. This package now owns only the
- * universal AskDB precedence rules and registry dispatch. Individual provider
- * adapters own their native env vars, aliases, defaults, and connection
- * options.
+ * to construct one from environment variables. This module owns the adapter
+ * contract and the universal AskDB precedence rules; each provider adapter
+ * (built in under `./providers/`, or supplied by the host) owns its native env
+ * vars, aliases, defaults, and connection options.
  */
 export type AiProvider = string;
 
@@ -28,7 +28,7 @@ export type ResolveConfigOptions = {
   usage: AiUsage;
   /** Default model when no env override is set. */
   modelDefault?: string;
-  /** Per-app embedding model env var (e.g. `ASKDB_RAG_EMBEDDER_MODEL`). Embedding usage only. */
+  /** Per-app embedding model env var, read before `ASKDB_AI_EMBEDDING_MODEL`. Embedding usage only. */
   modelEnvVar?: string;
 };
 
@@ -40,6 +40,10 @@ export type ProviderEnvSpec = {
   embeddingModelVars?: readonly string[];
   baseURLVars?: readonly string[];
   defaultModel?: string;
+  /**
+   * @deprecated The embedding model is baked into a persisted index, so no layer should pick
+   * one. Using it emits a `DeprecationWarning` once per process; removed at 1.0.
+   */
   defaultEmbeddingModel?: string;
 };
 
@@ -73,7 +77,7 @@ export type ProviderEnvSpec = {
  *   3. `ASKDB_EMBEDDING_MODEL`
  *   4. provider-native embedding model vars
  *   5. `options.modelDefault`
- *   6. provider default embedding model
+ *   6. provider default embedding model (deprecated: warns once, removed at 1.0)
  *
  * Precedence for base URLs:
  *   1. `ASKDB_AI_BASE_URL`
@@ -110,29 +114,51 @@ export function resolveBaseConfig(
   };
 }
 
+let warnedDefaultEmbeddingModel = false;
+
+function warnDefaultEmbeddingModel(provider: string, model: string): void {
+  if (warnedDefaultEmbeddingModel) return;
+  warnedDefaultEmbeddingModel = true;
+  process.emitWarning(
+    `${provider}: no embedding model configured, so AskDB used its default "${model}". ` +
+      "Set ai.embedding.model in askdb.config.*, or set ASKDB_AI_EMBEDDING_MODEL or the provider's embedding model variable; " +
+      "the default is removed at 1.0.",
+    { type: "DeprecationWarning", code: "ASKDB_AI_DEFAULT_EMBEDDING_MODEL" },
+  );
+}
+
 function resolveModel(
   provider: string,
   env: AiEnv,
   spec: ProviderEnvSpec,
   options: ResolveConfigOptions,
 ): string {
-  const model =
-    options.usage === "embedding"
-      ? first(env, options.modelEnvVar ? [options.modelEnvVar] : []) ||
-        first(env, ["ASKDB_AI_EMBEDDING_MODEL"]) ||
-        first(env, ["ASKDB_EMBEDDING_MODEL"]) ||
-        first(env, spec.embeddingModelVars ?? []) ||
-        options.modelDefault ||
-        spec.defaultEmbeddingModel
-      : first(env, ["ASKDB_AI_MODEL"]) ||
-        first(env, ["ASKDB_MODEL"]) ||
-        first(env, spec.modelVars ?? []) ||
-        options.modelDefault ||
-        spec.defaultModel;
+  let model: string | undefined;
+  if (options.usage === "embedding") {
+    model =
+      first(env, options.modelEnvVar ? [options.modelEnvVar] : []) ||
+      first(env, ["ASKDB_AI_EMBEDDING_MODEL"]) ||
+      first(env, ["ASKDB_EMBEDDING_MODEL"]) ||
+      first(env, spec.embeddingModelVars ?? []) ||
+      options.modelDefault;
+    if (!model && spec.defaultEmbeddingModel) {
+      model = spec.defaultEmbeddingModel;
+      warnDefaultEmbeddingModel(provider, model);
+    }
+  } else {
+    model =
+      first(env, ["ASKDB_AI_MODEL"]) ||
+      first(env, ["ASKDB_MODEL"]) ||
+      first(env, spec.modelVars ?? []) ||
+      options.modelDefault ||
+      spec.defaultModel;
+  }
 
   if (!model) {
     throw new Error(
-      `${provider}: no ${options.usage} model configured. Set ASKDB_AI_MODEL (or the provider's native model variable).`,
+      options.usage === "embedding"
+        ? `${provider}: no embedding model configured. Set ai.embedding.model in askdb.config.* (or ASKDB_AI_EMBEDDING_MODEL).`
+        : `${provider}: no language model configured. Set ASKDB_AI_MODEL (or the provider's native model variable).`,
     );
   }
   return model;
@@ -186,8 +212,20 @@ export type AiProviderAdapter = {
   ): Record<string, unknown> | undefined;
 };
 
+/**
+ * One entry passed to `createAiRegistry()`: either the name (or alias) of a
+ * provider built into `@askdb/ai` (e.g. `"openai"`, `"foundry"`), or an
+ * {@link AiProviderAdapter} object for a custom / third-party provider.
+ */
+export type AiProviderSelector = AiProvider | AiProviderAdapter;
+
+/**
+ * What `createAiRegistry()` accepts: a list of built-in provider names and/or
+ * adapter objects, or a record keyed by provider name. Omit it entirely to
+ * register every built-in provider.
+ */
 export type AiProviderAdapters =
-  | readonly AiProviderAdapter[]
+  | readonly AiProviderSelector[]
   | Partial<Record<AiProvider, AiProviderAdapter>>;
 
 export type AiRegistry = {
@@ -234,147 +272,3 @@ export type AiRegistry = {
    */
   keyMissingMessage(context: string): string;
 };
-
-export function createAiRegistry(
-  adapters: AiProviderAdapters,
-): AiRegistry {
-  const byProvider = normalizeAdapters(adapters);
-
-  function adapterFor(provider: AiProvider): AiProviderAdapter {
-    const adapter = byProvider.get(normalizeProvider(provider));
-    if (!adapter) {
-      throw new Error(aiProviderMissingMessage(provider));
-    }
-    return adapter;
-  }
-
-  function selectAdapter(env: AiEnv): AiProviderAdapter {
-    const raw = normalizeProvider(env.ASKDB_AI_PROVIDER ?? "");
-    const provider = raw || "openai";
-    const adapter = byProvider.get(provider);
-    if (!adapter) {
-      if (raw) {
-        throw new Error(
-          `Unknown ASKDB_AI_PROVIDER "${env.ASKDB_AI_PROVIDER}". Registered providers: ${[
-            ...byProvider.keys(),
-          ].join(", ")}.`,
-        );
-      }
-      throw new Error(aiProviderMissingMessage(provider));
-    }
-    return adapter;
-  }
-
-  function resolveAiConfig(
-    env: AiEnv,
-    options: { modelDefault?: string } = {},
-  ): AiConfig | undefined {
-    const adapter = selectAdapter(env);
-    return adapter.resolveConfig(env, { usage: "language", ...options });
-  }
-
-  function resolveEmbeddingConfig(
-    env: AiEnv,
-    options: { modelDefault?: string; modelEnvVar?: string } = {},
-  ): AiConfig | undefined {
-    const adapter = selectAdapter(env);
-    return adapter.resolveConfig(env, { usage: "embedding", ...options });
-  }
-
-  return {
-    hasProvider(provider) {
-      return byProvider.has(normalizeProvider(provider));
-    },
-    resolveAiConfig,
-    resolveEmbeddingConfig,
-    async createLanguageModel(config) {
-      return adapterFor(config.provider).createLanguageModel(config);
-    },
-    async createEmbeddingModel(config, options = {}) {
-      return adapterFor(config.provider).createEmbeddingModel(config, options);
-    },
-    async createLanguageModelFromEnv(env, options = {}) {
-      const config = resolveAiConfig(env, options);
-      if (!config) return undefined;
-      return adapterFor(config.provider).createLanguageModel(config);
-    },
-    async createEmbeddingModelFromEnv(env, options = {}) {
-      const config = resolveEmbeddingConfig(env, options);
-      if (!config) return undefined;
-      return adapterFor(config.provider).createEmbeddingModel(config, options);
-    },
-    resolveProviderOptions(config, settings) {
-      return adapterFor(config.provider).resolveProviderOptions?.(config, settings);
-    },
-    keyMissingMessage(context: string): string {
-      // Collect configHint from unique adapter objects (aliases share the same object).
-      const seen = new Set<AiProviderAdapter>();
-      const hints: string[] = [];
-      for (const adapter of byProvider.values()) {
-        if (!seen.has(adapter)) {
-          seen.add(adapter);
-          if (adapter.configHint) {
-            hints.push(adapter.configHint);
-          }
-        }
-      }
-      if (hints.length === 0) {
-        return aiKeyMissingMessage(context);
-      }
-      return `${context}: no AI API key configured. ${hints.join(" ")}`;
-    },
-  };
-}
-
-/**
- * Human-readable message describing how to configure AI, used by callers
- * when no key is configured.
- *
- * @deprecated Use {@link AiRegistry.keyMissingMessage}(context) instead.
- * The registry method assembles hints from registered adapters automatically.
- */
-export function aiKeyMissingMessage(context: string): string {
-  return (
-    `${context}: no AI API key configured. ` +
-    `For OpenAI, set ai.provider: "openai" and ai.providerConfig.openai.apiKey in askdb.config.*. ` +
-    `For Azure / Microsoft Foundry, set ai.provider: "azure" and ai.providerConfig.azure.apiKey in askdb.config.*. ` +
-    `For Google Gemini, set ai.provider: "google" and ai.providerConfig.google.apiKey in askdb.config.*.`
-  );
-}
-
-export function aiProviderMissingMessage(provider: AiProvider): string {
-  return (
-    `AI provider "${provider}" is not registered. ` +
-    `Install @askdb/ai-${provider} and pass its provider adapter to createAiRegistry().`
-  );
-}
-
-function normalizeAdapters(
-  adapters: AiProviderAdapters,
-): Map<AiProvider, AiProviderAdapter> {
-  const entries = Array.isArray(adapters)
-    ? adapters.map((adapter) => [adapter.provider, adapter] as const)
-    : Object.entries(adapters).filter(isAdapterEntry);
-  const byProvider = new Map<AiProvider, AiProviderAdapter>();
-  for (const [provider, adapter] of entries) {
-    if (adapter.provider !== provider) {
-      throw new Error(
-        `AI provider adapter mismatch: registry key "${provider}" points to adapter "${adapter.provider}".`,
-      );
-    }
-    for (const name of [adapter.provider, ...(adapter.aliases ?? [])]) {
-      byProvider.set(normalizeProvider(name), adapter);
-    }
-  }
-  return byProvider;
-}
-
-function normalizeProvider(provider: string): string {
-  return provider.toLowerCase().trim();
-}
-
-function isAdapterEntry(
-  entry: [string, AiProviderAdapter | undefined],
-): entry is [AiProvider, AiProviderAdapter] {
-  return entry[1] !== undefined;
-}

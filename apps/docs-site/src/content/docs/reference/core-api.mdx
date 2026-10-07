@@ -5,11 +5,11 @@ description: "Full API reference for @askdb/core: ask(), schema loading, dialect
 
 <p class="doc-eyebrow">Reference · @askdb/core</p>
 
-<p class="doc-lede"><code>@askdb/core</code> is the dialect-agnostic NL-to-SQL pipeline. It owns schema loading, prompt construction, SQL validation, and tenant-scope enforcement. Everything else in the AskDB ecosystem composes it.</p>
+<p class="doc-lede"><code>@askdb/core</code> is the dialect-agnostic NL-to-SQL pipeline. It owns schema loading, prompt construction, heuristic SQL checks, and tenant-scope validation and binding. Everything else in the AskDB ecosystem composes it.</p>
 
 ## `ask(options)`
 
-The main pipeline function. Accepts a natural-language question and a loaded schema; returns validated SQL.
+The main pipeline function. Accepts a natural-language question and a loaded schema; returns checked SQL.
 
 ```ts
 import { ask } from "@askdb/core";
@@ -35,7 +35,7 @@ const { sql } = await ask({
 | `omitSensitiveIdentifiersFromNlToSqlPrompt` | `boolean` | no | `false` | When `true`, strips sensitive table/column names from the NL→SQL DDL entirely. Default (`false`) includes them with a `(sensitive)` tag so the model can still ground queries. |
 | `tenantScope` | `TenantScope` | no | — | Required when the schema has a `tenant-policy.md`. The pipeline fails closed if a policy exists and this is absent. |
 | `tenantSqlMode` | `TenantSqlOutputMode` | no | `"sql-only"` | `"sql-only"` inlines escaped literal tenant values; `"sql-params"` replaces them with the dialect's driver markers (`$N` Postgres/CockroachDB and custom `AskDialect`s, `?` MySQL/MariaDB/SQLite, `@pN` SQL Server) and returns the IDs as `tenantParams`. See [Executing the result](#executing-the-result). |
-| `resolveTenantDescendants` | `ResolveTenantDescendants` | for `subtree` scopes | — | `(tenantRoot, seedIds) => ids \| Promise<ids>`. Expands a `subtree` scope to every ID in the subtree; the seeds are always unioned in. Without it, a `subtree` scope throws `TenantScopeError` (`SUBTREE_NOT_RESOLVABLE`). See [Hierarchical scope](/guides/multi-tenancy/#hierarchical-scope-subtree). |
+| `resolveTenantDescendants` | `ResolveTenantDescendants` | for `subtree` scopes | — | `(tenantRoot, seedIds) => TenantIdsByRoot \| Promise<TenantIdsByRoot>`, where `TenantIdsByRoot` is `Record<rootTableId, string[]>`. Returns the subtree's IDs grouped by tenant root: the seeds and same-table descendants under `tenantRoot`, each descendant root's IDs under that root, e.g. `{ "table:public.agencies": ["1"], "table:public.clients": ["5"] }`. `ask()` unions the seeds in and binds each root's IDs to its own placeholder (a `multi_root` scope). Without it, or when it returns a flat array or an invalid result, a `subtree` scope throws `TenantScopeError` (`SUBTREE_NOT_RESOLVABLE`). See [Hierarchical scope](/guides/multi-tenancy/#hierarchical-scope-subtree). |
 | `parameterize` | `boolean` | no | `true` | Ask the model for unbound SQL + a parameter manifest. Still exactly one model call. Set `false` to save output tokens. Inert for custom `AskDialect` implementations. |
 | `sensitiveGuardrailMode` | `"warn" \| "strict" \| "off"` | no | `"warn"` | How to treat SQL that references identifiers marked `sensitive`. `"warn"` populates `result.sensitiveGuardrail` and logs; `"strict"` throws `SensitiveReferenceError`; `"off"` skips the check. See [`validateSensitiveReferences`](#validatesensitivereferencessql-schema-options). |
 | `retriever` | `Retriever` | no | — | RAG retriever from `@askdb/rag`. When supplied and schema chunk count exceeds `retrievalThresholdChunks`, retrieval replaces the full DDL in the prompt. |
@@ -44,12 +44,13 @@ const { sql } = await ask({
 | `totalSchemaChunkCount` | `number` | no | `Infinity` | Total chunk count from `buildSchemaIndex`. Pass `result.stats.chunksTotal` here for the threshold check to be meaningful; omit to always use the retriever when one is supplied. |
 | `logger` | `AskDbLogger` | no | — | Structured logger. Attach one for observability — it emits `AskDbLogEvent` entries at each pipeline stage. |
 | `deps` | `AskGenerateDeps` | no | — | `{ generateText? }` — inject a mock `generateText` for unit tests. |
+| `abortSignal` | `AbortSignal` | no | — | Cancels the model call (`generateText({ abortSignal })`). Use `AbortSignal.timeout(ms)` for a per-request timeout. With a built-in dialect or `DialectSpec`, an aborted call rejects with `SqlGenerationError` whose `cause` is the abort reason. A custom `AskDialect` receives it as `options.abortSignal` and maps its own errors. |
 
 ### Result — `AskPipelineResult`
 
 | Field | Type | When present |
 | --- | --- | --- |
-| `sql` | `string` | Always. The model's bound, validated SQL — business values inlined as literals. In `tenantSqlMode: "sql-params"` its tenant markers start at the first slot; run it with `tenantParams`. Never overwritten by rebind failures. |
+| `sql` | `string` | Always. The model's bound, checked SQL — business values inlined as literals. In `tenantSqlMode: "sql-params"` its tenant markers start at the first slot; run it with `tenantParams`. Never overwritten by rebind failures. |
 | `unboundSql` | `string \| undefined` | When `parameterize` is on and the model returned a consistent unbound block + manifest. Driver markers (`$N` / `?` / `@pN`) for every value; run it with `params`. |
 | `params` | `QueryParamSlot[] \| undefined` | Values for `unboundSql`, in marker order. In `"sql-params"` mode this already includes the tenant IDs. |
 | `parameters` | `QueryParameterBinding[] \| undefined` | Named bindings for form UIs (includes runtime `value`, `markers`, `indices`). |
@@ -57,7 +58,7 @@ const { sql } = await ask({
 | `usage` | `AskUsage \| undefined` | When the model provider reports token counts. |
 | `explain` | `unknown \| undefined` | When `explain: true`. Heuristic guardrail metadata — which read-only rules fired and why. |
 | `sensitiveGuardrail` | `SensitiveGuardrailResult \| undefined` | When the schema declares at least one `sensitive` table/column and `sensitiveGuardrailMode` is not `"off"`. The sensitive identifiers the returned SQL references. |
-| `tenantGuardrail` | `TenantGuardrailResult \| undefined` | When a tenant policy is active. Confirms the generated SQL references tenant-scoped tables correctly. |
+| `tenantGuardrail` | `TenantGuardrailResult \| undefined` | When a tenant policy is active. `{ passed, warnings }` from the heuristic tenant check, run on the model's SQL (and its `sql-unbound` block) before tenant binding. It requires each tenant-scoped table, and each root table the scope covers, to have a tenant predicate that filters: its tenant column compared with the placeholder, ANDed into a `WHERE`, inner-join `ON` or `HAVING` clause (see [What the tenant check requires](/guides/multi-tenancy/#what-the-tenant-check-requires)). Passing it doesn't prove the SQL is scoped. With `enforcement: strict`, a failure throws `TenantGuardrailError` instead. |
 | `tenantParams` | `unknown[] \| undefined` | When `tenantSqlMode: "sql-params"` and the SQL has tenant placeholders. The tenant IDs for the markers in `sql`, in marker order. |
 | `tenantBindings` | `TenantBinding[] \| undefined` | When a tenant policy is active. Structured binding metadata for audit. |
 
@@ -182,7 +183,7 @@ validateSensitiveReferences("SELECT email, password FROM identity.users", schema
 
 #### Conservative failure
 
-When scope cannot be proven, the check reports rather than silently passing. `unresolvedScope.issues` contains one or more of:
+When the check can tell it couldn't bind names to tables, it reports that in `unresolvedScope` rather than passing. It can't always tell: a table in a `FROM` form it doesn't recognize is skipped without a report (see [Safety boundaries](/concepts/safety-boundaries/), #306–#309). `unresolvedScope.issues` contains one or more of:
 
 | Issue | Cause | Effect |
 | --- | --- | --- |
@@ -191,7 +192,7 @@ When scope cannot be proven, the check reports rather than silently passing. `un
 | `OPAQUE_TABLE_SOURCE` | A table source that is not a relation name (table function, table-valued expression). | Reported only; no widening — such a source exposes no schema columns. |
 | `UNTERMINATED_TOKEN` | A string, quoted identifier, or comment never closes. | Reported only; the rest of the statement could not be scanned. |
 
-`unresolvedScope.widened` says whether matching was widened, and `.message` explains why. `strict` mode treats unresolved scope as a failure, mirroring how `validateTenantGuardrails` handles unprovable scope.
+`unresolvedScope.widened` says whether matching was widened, and `.message` explains why. `strict` mode treats unresolved scope as a failure: `passed` is `false`, so it throws `SensitiveReferenceError` (`rule: "UNRESOLVED_TABLE_SCOPE"` when no sensitive reference was found).
 
 The check is heuristic, not a SQL parser — a review and enforcement aid, not a substitute for database-side column privileges.
 
@@ -221,7 +222,7 @@ Autodetects and loads a v2 schema artifact. Accepts:
 
 Returns `NormalizedSchemaV2`. Throws `SchemaParseError` on failure. The optional files (`tables/*.md`, `concepts.md`, `tenant-policy.md`) may be absent. If one exists but is empty or cannot be read or parsed, for example because of malformed YAML front-matter, loading throws. Bundles follow the same rule: only an absent `tenantPolicy` key means "no policy". A broken `tenant-policy.md` never silently turns tenant enforcement off.
 
-Each table and column in the result has one effective `sensitive` flag. It is `true` when `schema.json` marks it sensitive, when its `tables/*.md` front-matter sets `sensitive: true` (which is what Studio's Sensitivity tab writes), or, for a column, when its table is sensitive. Front-matter is escalate-only: a front-matter `sensitive: false` never un-marks something that is sensitive anyway. It is ignored and reported in `schema.warnings` as `{ kind: "sensitivity_downgrade_ignored", tableFile, id }`. A `columns` entry whose ID belongs to a different table than the file it is in is reported as `{ kind: "misplaced_column_id", tableFile, id, tableId }`. Its `sensitive: true` still applies to the column the ID names, but nothing else in the entry does. A column ID listed more than once in the same file is reported as `{ kind: "duplicate_column_id", tableFile, id }`. Only the first entry's description, aliases, and enum are used, but the column is sensitive if any entry naming it, in any `tables/*.md` file, sets `sensitive: true`. Two `tables/*.md` files with the same front-matter `id` make `loadSchema()` and `loadSchemaFromJson()` throw `SchemaParseError` naming both files. `tableFile` is always the markdown file that was actually read. Prompt formatting, `validateSensitiveReferences`, and `@askdb/rag` chunking all read this effective flag.
+Each table and column in the result has one effective `sensitive` flag. It is `true` when `schema.json` marks it sensitive, when its `tables/*.md` front-matter sets `sensitive: true` (which is what Studio's Sensitivity tab writes), or, for a column, when its table is sensitive. Front-matter is escalate-only: a front-matter `sensitive: false` never un-marks something that is sensitive anyway. It is ignored and reported in `schema.warnings` as `{ kind: "sensitivity_downgrade_ignored", tableFile, id }`. A `columns` entry whose ID belongs to a different table than the file it is in is reported as `{ kind: "misplaced_column_id", tableFile, id, tableId }`. Its `sensitive: true` still applies to the column the ID names, but nothing else in the entry does. A column ID listed more than once in the same file is reported as `{ kind: "duplicate_column_id", tableFile, id }`. Only the first entry's description, aliases, and enum are used, but the column is sensitive if any entry naming it, in any `tables/*.md` file, sets `sensitive: true`. Two `tables/*.md` files with the same front-matter `id` make `loadSchema()` and `loadSchemaFromJson()` throw `SchemaParseError` naming both files. `tableFile` is always the markdown file that was actually read. Prompt formatting, `validateSensitiveReferences`, and `@askdb/rag` chunking all read this effective flag. A column that is sensitive only because its table is also carries `sensitiveFromTable: true`; `@askdb/rag` uses it to count a mention of that column only when written as `table.column`.
 
 `loadSchema` is synchronous — load once at startup and keep the result in memory, not per request.
 
@@ -233,6 +234,19 @@ const schema = loadSchemaFromJson(bundleJsonString);
 ```
 
 Parses a raw JSON string. Accepts the same formats as `loadSchema` (bundled JSON or bare `schema.json` blob). Useful when the schema is passed as a string over a network boundary (e.g., the HTTP API's `schemaJson` request field).
+
+### `findMentionedNames(text, names)` and `createMentionMatcher(names)`
+
+```ts
+import { createMentionMatcher, findMentionedNames } from "@askdb/core";
+findMentionedNames("Dedupe by EMAIL; see users_email", ["email", "ssn"]); // → ["email"]
+
+const sensitive = createMentionMatcher(["ssn", { table: "users", column: "org_id" }]);
+sensitive.mentionsAny('filter by "users"."org_id"'); // → true
+sensitive.find("Rows come from users. Org_id is the key"); // → []
+```
+
+The schema contract's "mentions a sensitive column by name" rule, which `@askdb/rag`'s chunker and `@askdb/enrich`'s authoring warning both use: whole-word and case-insensitive, with a bare name (a string, matched literally) or a qualified one (`{ table, column }`). The full rule is in the [schema-v2 contract on GitHub](https://github.com/Ygilany/AskDB/blob/main/docs/contracts/schema-v2.md#sensitive-propagation). `findMentionedNames` returns the names `text` mentions, in the order given. It compiles the names on every call, so to check many texts against one list, build a `MentionMatcher` once with `createMentionMatcher` and call `mentionsAny(text)` or `find(text)`.
 
 ---
 
@@ -281,12 +295,17 @@ const redshiftFlavor: DialectSpec = {
 | `id` | `DialectId` | yes | One of the six built-in ids — the engine family this spec belongs to. |
 | `displayName` | `string` | yes | Human-readable name. |
 | `promptBrief` | `string` | yes | One-paragraph guidance for the model about this dialect's syntax. |
-| `identifierQuote` | `'"' \| '`'` | yes | Identifier quoting style. |
+| `identifierQuote` | `'"' \| '`'` | yes | Identifier quoting style. The prompt quotes names the way `id`'s engine does, not with this field. |
+| `reservedWords` | `readonly string[]` | no | Words the engine reserves, case-insensitive. The prompt lists a schema, table or column with one of these names quoted. The built-in specs set their engine's list; spread one to keep it, since setting the field replaces the list. |
+| `unqualifiedNamespace` | `string` | no | A namespace that isn't a schema in this engine. When it is the schema's only namespace, the prompt lists its tables without it and tells the model never to write `<namespace>.<table>`; next to other namespaces (a MySQL database list that includes a database named `public`) it stays qualified. The SQLite, MySQL and MariaDB specs set `SINGLE_NAMESPACE_LABEL` (`"public"`), the namespace their connectors give the database's tables; spread one to keep it. |
 | `extraForbiddenKeywords` | `readonly string[]` | no | Keywords to forbid in addition to the shared read-only denylist. |
 | `blockedFunctions` | `readonly string[]` | no | Functions `validateSelectSql` rejects when called (`name(`), such as `pg_sleep` or `load_file`. |
 | `extraValidate` | `(sql: string) => void` | no | Dialect-specific SQL validator. Throw `SqlValidationError` for failures. |
+| `backslashEscapes` | `boolean` | no | Whether a backslash escapes a quote inside `'…'` strings on your server. The built-in specs set the engine default (`true` for MySQL and MariaDB, `false` otherwise). Set `false` for MySQL or MariaDB with `NO_BACKSLASH_ESCAPES`, and `true` for Postgres with `standard_conforming_strings = off`. The checks lex strings this way, and bound tenant and parameter values are escaped to match. See [Match your server's string settings](/concepts/safety-boundaries/#match-your-servers-string-settings). |
 
 `id` also selects how the validator lexes strings, quoted identifiers, and comments. The built-in specs ship their own `extraForbiddenKeywords` and `blockedFunctions`; spread one (`{ ...POSTGRES_DIALECT, … }`) to keep them, since setting either field replaces the built-in list. These checks are defense in depth — run generated SQL under a read-only database role.
+
+`id` also decides how the prompt quotes names. A schema, table or column whose name is in `reservedWords`, is a word the SQL checks reject unquoted (the shared denylist plus `extraForbiddenKeywords`, such as `copy`), isn't a plain identifier (on `sqlserver`, anything beyond ASCII letters, digits, `_` and `$`), or (for `postgres` and `cockroachdb`, which fold unquoted names to lowercase) has capitals, is listed quoted (`billing."order"` for `postgres` and `cockroachdb`, ``billing.`order` `` for `mysql` and `mariadb`, `billing.[order]` for `sqlserver`, `"order"` for `sqlite`; a Prisma table `Post` is `public."Post"` on Postgres). When the prompt lists tables with their schema, it also tells the model to quote each part of a qualified name separately. `promptIdentifierQuoter(dialect)` returns that quoting as a function; pass it as `quoteIdentifier` when you call `formatSchemaV2ForNlToSql` or `synthesizeRetrievedDdl` yourself.
 
 ### `AskDialect`
 
@@ -307,7 +326,7 @@ The `generate` method receives:
 - `question: string`
 - `schema: AnyNormalizedSchema`
 - `model: AskDbLanguageModel`
-- `options?: AskDialectGenerateOptions` — `{ logger, explain, omitSensitiveIdentifiersFromNlToSqlPrompt, generateText, prebuiltDdl, tenantPolicy, tenantScope }`
+- `options?: AskDialectGenerateOptions` — `{ logger, explain, omitSensitiveIdentifiersFromNlToSqlPrompt, generateText, providerOptions, abortSignal, prebuiltDdl, tenantPolicy, tenantScope }`. Pass `abortSignal` to your model call so the caller's timeout cancels it; `ask()` doesn't wrap what `generate()` throws, so an abort surfaces as your dialect's own error (typically the AI SDK's `AbortError`) unless you map it. `tenantScope` is the scope after `ask()` expands a `subtree`: a `multi_root` scope with one entry per covered root, where a root the resolver returned no IDs for has `ids: []`. `validateTenantScope()` accepts it.
 
 It must return `AskDialectGenerateResult`:
 
@@ -318,7 +337,7 @@ It must return `AskDialectGenerateResult`:
 | `tenantGuardrail` | `TenantGuardrailResult \| undefined` | Optional extra tenant findings from your generator. These are merged into `ask()`'s own check and cannot replace it. |
 | `usage` | `AskUsage \| undefined` | Token usage, if your generator has access to it. |
 
-A custom `AskDialect` is responsible for its own read-only validation. `ask()` does not run the SELECT-only validator on its output. If your generator should only emit read-only SQL, call `validateSelectSql(spec, sql)` before returning. Tenant enforcement is different: when the schema has a tenant policy, `ask()` substitutes tenant placeholders in the returned `sql` and runs the tenant guardrail on the final statement, whatever the dialect. Under `strict`, unscoped SQL throws `TenantGuardrailError`. A custom `AskDialect` doesn't tell the guardrail how its engine quotes strings, so the statement must pass under the standard-SQL, Postgres (`E'…'` escape strings), and MySQL (where `"…"` is a string) readings: a tenant column written only as `"agency_id"` doesn't count as a predicate.
+A custom `AskDialect` is responsible for its own read-only validation. `ask()` does not run the SELECT-only validator on its output. If your generator should only emit read-only SQL, call `validateSelectSql(spec, sql)` before returning. Tenant enforcement is different: when the schema has a tenant policy, `ask()` runs the tenant guardrail on the returned `sql` (and its `sql-unbound` block), with the `:tenant_<root>_ids` placeholders still in place, and then substitutes them, whatever the dialect. Under `strict`, SQL that fails the tenant check throws `TenantGuardrailError`; passing it doesn't prove the SQL is scoped. A custom `AskDialect` doesn't tell the guardrail how its engine quotes strings, so the statement must pass under the standard-SQL, Postgres (`E'…'` escape strings), and MySQL (where `"…"` is a string) readings: a tenant column written only as `"agency_id"` doesn't count as a predicate.
 
 Passing an unknown string dialect id throws `UnknownDialectError`, which extends `AskDbError`.
 
@@ -390,6 +409,19 @@ type TenantBinding = {
 };
 ```
 
+### `placeholderForTenantRoot(root)`
+
+```ts
+import { placeholderForTenantRoot } from "@askdb/core";
+
+placeholderForTenantRoot({ id: "table:public.sub_agencies", label: "Sub-Agency" }); // ":tenant_sub_agency_ids"
+placeholderForTenantRoot({ id: "table:public.clients", label: "Клиент" });          // ":tenant_clients_ids"
+```
+
+Returns the `:tenant_<name>_ids` placeholder for a tenant root: the one the prompt names, `ask()` and `resolveTenantSql()` bind, and the tenant guardrail checks. `<name>` is the label lowercased, with every run of characters other than ASCII letters and digits replaced by `_`. A label with no ASCII letter or digit uses the root's table name instead. Pass a root from `schema.tenantPolicy.roots` (anything with `id` and `label`).
+
+`placeholderForRoot(label)` is deprecated. It takes the label alone, so for a label with no ASCII letter or digit it returns `:tenant___ids`, which core doesn't bind. For every other label the two agree.
+
 ### `TenantScope`
 
 Passed as `options.tenantScope` to `ask()`. Carries enforceable access plus optional advisory context.
@@ -415,8 +447,8 @@ Access kinds:
 | Kind | Description |
 | --- | --- |
 | `"ids"` | User can access specific root-entity ids. |
-| `"subtree"` | User can access a subtree rooted at specific ids. Requires the `resolveTenantDescendants` option on `ask()`. |
-| `"multi_root"` | User has access across multiple tenant roots, each with their own id set. |
+| `"subtree"` | User can access a subtree rooted at specific ids, including descendant roots. Requires the `resolveTenantDescendants` option on `ask()`, which returns IDs per root; `ask()` expands the scope to `"multi_root"` before generation. |
+| `"multi_root"` | User has access across multiple tenant roots, each with their own id set. An entry's `ids` may be empty (a covered root with no IDs, which fails closed if read); at least one entry needs an ID. |
 | `"global"` | Super / admin access. Requires a `reason` string for audit. |
 
 ---

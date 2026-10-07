@@ -216,7 +216,7 @@ Mirror what the Postgres and Prisma connectors do today:
 
 1. **Unit:** a representative source → expected `SqlSchema`, including filters, ordering, and warnings.
 2. **Filter:** verify schemas/exclude/tables behaviour, including the system-schema guarantee and `ambiguous_filter` emission.
-3. **Determinism:** re-running the connector on unchanged input produces byte-identical `schema.json`.
+3. **Determinism:** re-running the connector on unchanged input produces byte-identical `schema.json`. A golden file or snapshot of the rendered output satisfies this (Postgres pins a byte-exact golden `schema.json`; Prisma snapshots `toV2SchemaJson(...)`), so a separate two-run comparison isn't needed.
 4. **Re-introspection:** running through `introspect()` against an existing output directory preserves table/column IDs, emits `new_column` for additions, and `orphan_id` for references that disappear.
 5. **Integration (when applicable):** for a live runner, hit a real instance (the multi-engine fixture, `fixtures/multi-engine`, holds the same golden schema in every engine) and snapshot the output. For file readers, commit fixture inputs alongside the snapshot.
 

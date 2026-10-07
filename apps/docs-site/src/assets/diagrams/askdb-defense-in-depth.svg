@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 556 500" role="img" aria-labelledby="did-title did-desc">
   <title id="did-title">AskDB defense-in-depth production stack</title>
-  <desc id="did-desc">Vertical flow: question feeds ask() with schema artifact and model, producing validated SQL, which your app logs and optionally shows, then executes via a read-only DB role with a statement-timeout pool, returning a paginated result.</desc>
+  <desc id="did-desc">Vertical flow: question feeds ask() with schema artifact and model, producing checked SQL, which your app logs and optionally shows, then executes via a read-only DB role with a statement-timeout pool, returning a paginated result.</desc>
   <defs>
     <style>
       :root {
@@ -58,9 +58,9 @@
 
   <line x1="130" y1="154" x2="130" y2="184" stroke="var(--arrow)" stroke-width="2" marker-end="url(#v)"/>
 
-  <!-- 3: validated SQL -->
+  <!-- 3: checked SQL -->
   <rect x="40" y="188" width="180" height="46" rx="8" fill="var(--bg-neutral)" stroke="var(--border-neutral)" stroke-width="2"/>
-  <text x="130" y="216" text-anchor="middle" font-family="ui-sans-serif,system-ui,sans-serif" font-size="13" font-weight="600" fill="var(--title-neutral)">validated SQL</text>
+  <text x="130" y="216" text-anchor="middle" font-family="ui-sans-serif,system-ui,sans-serif" font-size="13" font-weight="600" fill="var(--title-neutral)">checked SQL</text>
 
   <line x1="130" y1="234" x2="130" y2="264" stroke="var(--arrow)" stroke-width="2" marker-end="url(#v)"/>
 

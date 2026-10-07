@@ -90,6 +90,61 @@ describe("loadSchema — v2 directory", () => {
     expect(emailCol.description).toBeUndefined();
   });
 
+  describe("sensitiveFromTable", () => {
+    /** The fixture with `users` marked sensitive in schema.json, plus an optional front-matter edit. */
+    function usersSensitive(edit?: { file: string; after: string; insert: string }): string {
+      const dir = copyFixture(v2Dir);
+      const jsonPath = join(dir, "schema.json");
+      const json = JSON.parse(readFileSync(jsonPath, "utf8")) as { tables: { id: string; sensitive?: boolean }[] };
+      json.tables.find((t) => t.id === "table:public.users")!.sensitive = true;
+      writeFileSync(jsonPath, JSON.stringify(json));
+      if (edit) {
+        const mdPath = join(dir, "tables", edit.file);
+        const md = readFileSync(mdPath, "utf8");
+        expect(md).toContain(edit.after);
+        writeFileSync(mdPath, md.replace(edit.after, edit.after + edit.insert));
+      }
+      return dir;
+    }
+    const usersColumns = (schema: ReturnType<typeof loadSchema>) =>
+      Object.fromEntries(
+        schema.tables.find((t) => t.id === "table:public.users")!.columns.map((c) => [c.name, c.sensitiveFromTable]),
+      );
+
+    it("is set only on a column sensitive solely through its table", () => {
+      // `email` is marked in schema.json itself.
+      expect(usersColumns(loadSchema(usersSensitive()))).toEqual({ id: true, email: undefined, created_at: true });
+    });
+
+    it.each([
+      ["in its own table's front-matter", "users.md", "  - id: table:public.users#created_at\n", "    sensitive: true\n"],
+      [
+        "by an entry misplaced in another table's file",
+        "orders.md",
+        "columns:\n",
+        "  - id: table:public.users#created_at\n    sensitive: true\n",
+      ],
+    ])("is not set on a column escalated %s", (_case, file, after, insert) => {
+      const columns = usersColumns(loadSchema(usersSensitive({ file, after, insert })));
+      expect(columns.created_at).toBeUndefined();
+      expect(columns.id).toBe(true);
+    });
+
+    it("is set the same way for a bundle, front-matter escalation included", () => {
+      const dir = usersSensitive({
+        file: "users.md",
+        after: "  - id: table:public.users#created_at\n",
+        insert: "    sensitive: true\n",
+      });
+      const bundle = JSON.stringify({
+        bundled: true,
+        physical: JSON.parse(readFileSync(join(dir, "schema.json"), "utf8")),
+        tables: { "users.md": readFileSync(join(dir, "tables", "users.md"), "utf8") },
+      });
+      expect(usersColumns(loadSchemaFromJson(bundle))).toEqual({ id: true, email: undefined, created_at: undefined });
+    });
+  });
+
   it("provides non-sensitive column describable fields", () => {
     const schema = loadSchema(v2Dir);
     const orders = schema.tables.find((t) => t.name === "orders")!;

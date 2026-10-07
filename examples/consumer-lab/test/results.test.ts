@@ -46,21 +46,9 @@ import { normalizeRows } from "../src/fixture.js";
 import { executeReadOnly } from "../src/host/execute.js";
 import { loadQuestions, type Question } from "../src/model/catalog.js";
 import { startReplayServer, type ReplayServer } from "../src/model/replay-server.js";
-import { ORACLES, PROGRAMS_SINCE, programsStartedOnOrAfter, type Oracle } from "../src/oracle.js";
+import { ORACLES, PARAMETERIZED, type Oracle } from "../src/oracle.js";
 
 const QUESTIONS = loadQuestions();
-
-/**
- * The catalog's parameterized question: the value its text asks about, the placeholder its
- * replies bind that value to, and another value to rebind it to with `bindPreparedQuery`.
- */
-const PARAMETERIZED = {
-  id: "programs-started-since",
-  placeholder: "start_date",
-  value: PROGRAMS_SINCE,
-  rebindTo: "2022-03-01",
-  rows: programsStartedOnOrAfter,
-} as const;
 
 let replay: ReplayServer;
 
@@ -129,7 +117,10 @@ describe.each(SUPPORTED_DIALECTS.map((d) => [d] as [SupportedDialect]))("[%s]", 
     const result = await answer(asked);
     expect(result.preparedQuery, "ask() returned no preparedQuery for a reply with a sql-unbound block and a manifest").toBeDefined();
 
-    const rebound = bindPreparedQuery(result.preparedQuery!, { [PARAMETERIZED.placeholder]: PARAMETERIZED.rebindTo });
+    // The placeholder's name is the reply's: `start_date` in an authored reply, the model's choice in a recorded one.
+    const name = result.parameters?.[0]?.name;
+    expect(name, "ask() returned no named parameter binding for a reply with a manifest").toBeDefined();
+    const rebound = bindPreparedQuery(result.preparedQuery!, { [name!]: PARAMETERIZED.rebindTo });
     const want = expected(PARAMETERIZED.rows(PARAMETERIZED.rebindTo));
 
     // The new value must change the answer, or this couldn't tell a rebind from the original.

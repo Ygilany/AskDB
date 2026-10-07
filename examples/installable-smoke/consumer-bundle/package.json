@@ -1,0 +1,21 @@
+{
+  "name": "askdb-installable-smoke-bundle",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "bundle": "esbuild src/entry.mjs --bundle --platform=node --format=esm --outfile=dist/bundle.mjs --log-level=warning \"--banner:js=import { createRequire } from 'node:module'; const require = createRequire(import.meta.url);\"",
+    "smoke": "node dist/bundle.mjs"
+  },
+  "dependencies": {
+    "@askdb/ai": "__ASKDB_AI_TARBALL__",
+    "@askdb/client": "__ASKDB_CLIENT_TARBALL__",
+    "@askdb/config": "__ASKDB_CONFIG_TARBALL__",
+    "@askdb/core": "__ASKDB_CORE_TARBALL__",
+    "@ai-sdk/openai": "4.0.0",
+    "ai": "^7.0.113"
+  },
+  "devDependencies": {
+    "esbuild": "^0.28.1"
+  }
+}

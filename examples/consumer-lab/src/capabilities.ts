@@ -11,8 +11,9 @@ import { spawnSync } from "node:child_process";
 import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import type { AskGenerateDeps } from "@askdb/core";
 import type { TestContext } from "vitest";
-import { requireInstallTarget } from "./artifacts.js";
+import { ensureArtifact, requireInstallTarget } from "./artifacts.js";
 import { ASKDB_BIN, introspectFixture } from "./introspect.js";
 import { LAB_ROOT } from "./paths.js";
 
@@ -69,6 +70,156 @@ function httpApiLeavesDriversOptional(): boolean {
   return DRIVERS.every((driver) => !(driver in dependencies));
 }
 
+/**
+ * `ask()` on the dialect's tenant artifact (the lab's policy overlay), with `sql` as the
+ * model's reply through the documented `deps.generateText` seam, so no model is involved.
+ * AskDB and the lab's tenant module are loaded here, so the suites that never ask a
+ * tenant-scoped question don't load them (or the drivers). A throw is a broken install,
+ * and fails the scenario.
+ */
+async function askTenantProbe(dialect: "postgres" | "sqlite", sql: string, extras: Record<string, unknown>) {
+  const { ask, loadSchema } = await import("@askdb/core");
+  const { removeTenantArtifact, tenantArtifact } = await import("./tenant.js");
+  const generateText = (async () => ({ text: `\`\`\`sql\n${sql}\n\`\`\`` })) as unknown as NonNullable<AskGenerateDeps["generateText"]>;
+  const dir = tenantArtifact(dialect);
+  let schema: ReturnType<typeof loadSchema>;
+  try {
+    schema = loadSchema(dir);
+  } finally {
+    removeTenantArtifact(dir);
+  }
+  return ask({
+    ...extras,
+    question: "A probe for a tenant capability.",
+    schema,
+    // `model` is required; with `deps.generateText` supplied it is never called.
+    model: {} as Parameters<typeof ask>[0]["model"],
+    dialect,
+    deps: { generateText },
+  } as Parameters<typeof ask>[0]);
+}
+
+/**
+ * Whether `ask()` hands a `subtree` scope to the host's `resolveTenantDescendants`
+ * (`reference/core-api.mdx`; `guides/multi-tenancy.mdx`, "Hierarchical scope (`subtree`)"):
+ * ask about agency 1's subtree on Postgres with a resolver that only records its call, and
+ * see whether it was called with the scope's root and seed. Releases before #232 was fixed
+ * accept the option and never call it.
+ *
+ * The probe asks only whether the resolver is called, not what `ask()` does with its
+ * answer: the `tenant-subtree` scenarios test that, so a target that calls the resolver and
+ * drops its result fails there instead of reporting `n/a`.
+ */
+async function askCallsSubtreeResolver(): Promise<boolean> {
+  const { agencyRoot, subtreeScope } = await import("./tenant.js");
+  const calls: unknown[][] = [];
+  await askTenantProbe("postgres", "SELECT program_code FROM org.program WHERE agency_id = :tenant_agency_ids", {
+    tenantScope: subtreeScope("postgres", [1]),
+    resolveTenantDescendants: (...args: unknown[]) => {
+      calls.push(args);
+      return { [agencyRoot("postgres")]: ["1"] };
+    },
+  });
+  return calls.some(([root, seeds]) => root === agencyRoot("postgres") && JSON.stringify(seeds) === JSON.stringify(["1"]));
+}
+
+/**
+ * Whether strict mode requires a tenant predicate that actually filters
+ * (`docs/contracts/tenant-policy.md`, "Guardrail validation": "the required tenant
+ * predicate (`column = :placeholder` …)"): ask on Postgres with a reply that filters on
+ * a literal agency, not the placeholder, and see whether `ask()` rejects it. Releases
+ * before the fix for #315 accepted any mention of the tenant column.
+ */
+async function askRequiresTenantPredicate(): Promise<boolean> {
+  const { idsScope } = await import("./tenant.js");
+  try {
+    await askTenantProbe("postgres", "SELECT program_code FROM org.program WHERE agency_id = 1", {
+      tenantScope: idsScope("postgres", [2]),
+    });
+    return false;
+  } catch (error) {
+    if ((error as { name?: string }).name === "TenantGuardrailError") return true;
+    throw error;
+  }
+}
+
+/**
+ * Whether `tenantSqlMode: "sql-params"` binds tenant IDs through the dialect's driver
+ * markers (`reference/core-api.mdx`, `tenantSqlMode`: "`?` MySQL/MariaDB/SQLite"): ask on
+ * SQLite and check the returned `sql` uses `?`, not Postgres `$N`, and that the scope's ID
+ * comes back in `tenantParams`. Releases before the fix for #231 bound them with Postgres
+ * `$N` markers on every dialect, which a `?` driver can't bind. Only the marker and the
+ * bound value are checked, not how the predicate around them is written.
+ */
+async function askBindsTenantDriverMarkers(): Promise<boolean> {
+  const { idsScope } = await import("./tenant.js");
+  const result = await askTenantProbe("sqlite", "SELECT program_code FROM program WHERE agency_id = :tenant_agency_ids", {
+    tenantScope: idsScope("sqlite", [2]),
+    tenantSqlMode: "sql-params",
+  });
+  const params = (result as { tenantParams?: readonly unknown[] }).tenantParams ?? [];
+  return result.sql.includes("?") && !/\$\d/.test(result.sql) && params.map(String).includes("2");
+}
+
+/**
+ * One launch of the installed `askdb studio` with no `studio` block in its config, shared by
+ * the Studio detectors. It reads whether the served page carries the session token
+ * (ADR 0009; `studio.mdx`, "Security model") and whether `POST /api/execute` is refused
+ * while execute is off (`studio.mdx`, "Playground": "Execute is off by default … the
+ * Playground hides the Execute button and explains how to enable it, and `POST /api/execute`
+ * returns `403`"). That request passes every request guard (the page's token when there is
+ * one, Studio's own `Origin`, JSON), and the `403` must explain how to enable execute, so a
+ * `403` from a guard can't pass for it. A Studio that doesn't start or doesn't serve its page
+ * is a broken install, and throws.
+ */
+let studioProbe: Promise<{ pageToken: boolean; executeOffByDefault: boolean }> | undefined;
+function probeStudio() {
+  studioProbe ??= (async () => {
+    const { TOKEN_HEADER, pageToken, startStudio, studioRequest } = await import("./studio.js");
+    const studio = await startStudio({ schema: ensureArtifact("postgres") });
+    try {
+      const page = await studioRequest(studio);
+      if (page.status !== 200) throw new Error(`askdb studio answered ${page.status} for its page while probing:\n${studio.output()}`);
+      const token = pageToken(page.text);
+      const execute = await studioRequest(studio, {
+        method: "POST",
+        path: "/api/execute",
+        headers: { "content-type": "application/json", origin: studio.origin, ...(token ? { [TOKEN_HEADER]: token } : {}) },
+        body: JSON.stringify({ sql: "SELECT 1 AS ok" }),
+      });
+      const explainsHowToEnable = /studio\.execute\.enabled/.test(String(execute.json?.error?.message));
+      return { pageToken: token !== undefined, executeOffByDefault: execute.status === 403 && explainsHowToEnable };
+    } finally {
+      await studio.close();
+    }
+  })();
+  return studioProbe;
+}
+
+/**
+ * Whether the sensitive guardrail expands `SELECT *` to the sensitive columns it reaches
+ * (`reference/core-api.mdx`, `SensitiveReference`: "Also a bare `SELECT *`, which reaches
+ * every sensitive column of the tables in that `SELECT`'s own `FROM`/`JOIN`"): `ask()` on the
+ * Postgres artifact with the lab's sensitive overlay, with `SELECT * FROM people.client` as
+ * the model's reply through the documented `deps.generateText` seam, must report `ssn`.
+ * Releases before the expansion report no reference for `SELECT *` or `alias.*`.
+ *
+ * The probe checks only that `ssn` is reported for a bare `*`, not the `matchKind` or
+ * `alias.*`: the `sensitive-wildcard` scenarios test those, so a target that expands `*`
+ * wrongly fails there instead of reporting `n/a`.
+ */
+async function askFlagsSensitiveWildcard(): Promise<boolean> {
+  const { askFixedSql } = await import("./ask.js");
+  const { removeSensitiveArtifact, sensitiveArtifact } = await import("./sensitive.js");
+  const dir = sensitiveArtifact("postgres");
+  try {
+    const result = await askFixedSql("postgres", "SELECT * FROM people.client", dir, "A probe for a sensitive-column capability.");
+    return (result.sensitiveGuardrail?.references ?? []).some((r) => r.column === "ssn");
+  } finally {
+    removeSensitiveArtifact(dir);
+  }
+}
+
 const DETECTORS = {
   /** `askdb introspect --engine <id> --url …` (reference/cli.mdx), how the lab builds every schema artifact. */
   "cli-introspect-engine": () => /--engine\b/.test(cliHelp("introspect")),
@@ -86,13 +237,64 @@ const DETECTORS = {
   "http-api-optional-drivers": httpApiLeavesDriversOptional,
 } satisfies Record<string, () => boolean>;
 
-export type Capability = keyof typeof DETECTORS;
+/** Capabilities whose probe runs `ask()`, which is async. A scenario awaits `needsCapability` for these. */
+const ASYNC_DETECTORS = {
+  /**
+   * Expanding a `subtree` tenant scope through the host's `resolveTenantDescendants`
+   * (`guides/multi-tenancy.mdx`, "Hierarchical scope (`subtree`)"). Before #232 was fixed
+   * (#270), `ask()` ignored the callback and scoped to the seed IDs only.
+   */
+  "subtree-resolver": askCallsSubtreeResolver,
+  /**
+   * Tenant IDs in `sql-params` mode bound through the dialect's driver markers (`$N`, `?`,
+   * `@pN`), with `sql` + `tenantParams` and `unboundSql` + `params` each an executable pair
+   * (`reference/core-api.mdx`, "Executing the result"). Before the fix for #231, every
+   * dialect got Postgres `$N` markers.
+   */
+  "tenant-driver-markers": askBindsTenantDriverMarkers,
+  /**
+   * Strict mode rejecting a tenant filter that doesn't filter: a literal ID, a column only
+   * selected, an `OR`-widened predicate, or an unfiltered root table. Before the fix for
+   * #315 the guardrail accepted any mention of the tenant column.
+   */
+  "tenant-predicate-required": askRequiresTenantPredicate,
+  /**
+   * Studio's request guard (ADR 0009, PR #185): a per-launch session token in the served
+   * page, required on `/api/*`, with the Host, Origin and content-type checks that shipped
+   * with it. Detected by the page's `<meta name="askdb-studio-token">`. Releases before it
+   * check nothing but the socket address.
+   */
+  "studio-request-guard": async () => (await probeStudio()).pageToken,
+  /**
+   * Studio execute as `studio.mdx` documents it (PR #194): off until `studio.execute.enabled`,
+   * then validated with the read-only SELECT check before the driver runs anything.
+   * Detected by the default: `POST /api/execute` answers `403` with no `studio` block.
+   * Releases before it are always on and send the SQL to the driver unvalidated.
+   */
+  "studio-execute-guard": async () => (await probeStudio()).executeOffByDefault,
+  /**
+   * `SELECT *` and `alias.*` reported as referencing each sensitive column they reach
+   * (`docs/contracts/sensitive-fields-and-modes.md`, "Wildcards and whole rows"). Before it,
+   * a wildcard named no column, so the guardrail passed it.
+   */
+  "sensitive-wildcards": askFlagsSensitiveWildcard,
+} satisfies Record<string, () => Promise<boolean>>;
 
-const detected = new Map<Capability, boolean>();
+export type SyncCapability = keyof typeof DETECTORS;
+export type AsyncCapability = keyof typeof ASYNC_DETECTORS;
+export type Capability = SyncCapability | AsyncCapability;
 
-export function hasCapability(capability: Capability): boolean {
+const detected = new Map<SyncCapability, boolean>();
+const detecting = new Map<AsyncCapability, Promise<boolean>>();
+
+export function hasCapability(capability: SyncCapability): boolean {
   if (!detected.has(capability)) detected.set(capability, DETECTORS[capability]());
   return detected.get(capability)!;
+}
+
+function hasAsyncCapability(capability: AsyncCapability): Promise<boolean> {
+  if (!detecting.has(capability)) detecting.set(capability, ASYNC_DETECTORS[capability]());
+  return detecting.get(capability)!;
 }
 
 /**
@@ -101,8 +303,17 @@ export function hasCapability(capability: Capability): boolean {
  * to lack one: the lab is written against its docs, so a missing capability there is a
  * regression, not an older target.
  */
-export function needsCapability(ctx: TestContext, capability: Capability): void {
-  if (hasCapability(capability)) return;
+export function needsCapability(ctx: TestContext, capability: SyncCapability): void;
+export function needsCapability(ctx: TestContext, capability: AsyncCapability): Promise<void>;
+export function needsCapability(ctx: TestContext, capability: Capability): void | Promise<void> {
+  if (capability in ASYNC_DETECTORS) {
+    return hasAsyncCapability(capability as AsyncCapability).then((has) => gate(ctx, capability, has));
+  }
+  gate(ctx, capability, hasCapability(capability as SyncCapability));
+}
+
+function gate(ctx: TestContext, capability: Capability, has: boolean): void {
+  if (has) return;
   if (requireInstallTarget().thisCheckout) {
     throw new Error(`this checkout lacks the documented capability "${capability}" that the lab's scenarios need`);
   }

@@ -1,5 +1,10 @@
 {
   "question": "For each enrollment, show the client id, the program code and the name of the program.",
-  "reply": "```sql\nSELECT e.client_id, e.program_code, p.name AS program_name\nFROM enrollment AS e\nJOIN program AS p\n  ON p.agency_id = e.agency_id\n AND p.program_code = e.program_code\nORDER BY e.client_id, e.program_code\n```",
-  "source": "authored"
+  "reply": "```sql\nSELECT enrollment.client_id, enrollment.program_code, program.name\nFROM enrollment\nJOIN program ON enrollment.agency_id = program.agency_id AND enrollment.program_code = program.program_code;\n```\n\n```sql-unbound\nSELECT enrollment.client_id, enrollment.program_code, program.name\nFROM enrollment\nJOIN program ON enrollment.agency_id = program.agency_id AND enrollment.program_code = program.program_code;\n```\n\n```json\n{\"parameters\":[]}\n```",
+  "source": "recorded",
+  "recordedWith": {
+    "model": "gpt-4o-mini-2024-07-18",
+    "askdbTarget": "askdb@1.0.0-beta.43, checkout @ fd5f2a9f (consumer-lab/452-question-columns)",
+    "at": "2026-10-05"
+  }
 }

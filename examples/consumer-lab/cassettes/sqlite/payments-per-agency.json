@@ -1,5 +1,10 @@
 {
-  "question": "What is the total payment amount received by each agency?",
-  "reply": "```sql\nSELECT agency_id, SUM(amount) AS total_amount\nFROM payment\nGROUP BY agency_id\nORDER BY agency_id\n```",
-  "source": "authored"
+  "question": "For each agency, show its id and the total payment amount it received.",
+  "reply": "```sql\nSELECT agency.agency_id, SUM(payment.amount) AS total_payment\nFROM agency\nLEFT JOIN payment ON agency.agency_id = payment.agency_id\nGROUP BY agency.agency_id;\n```\n\n```sql-unbound\nSELECT agency.agency_id, SUM(payment.amount) AS total_payment\nFROM agency\nLEFT JOIN payment ON agency.agency_id = payment.agency_id\nGROUP BY agency.agency_id;\n```\n\n```json\n{\"parameters\":[]}\n```",
+  "source": "recorded",
+  "recordedWith": {
+    "model": "gpt-4o-mini-2024-07-18",
+    "askdbTarget": "askdb@1.0.0-beta.43, checkout @ fd5f2a9f (consumer-lab/452-question-columns)",
+    "at": "2026-10-05"
+  }
 }

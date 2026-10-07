@@ -13,6 +13,7 @@ import type {
   SqlUnique,
   SqlView,
 } from "@askdb/introspect";
+import { SINGLE_NAMESPACE_LABEL } from "@askdb/core";
 import { compileTableFilters } from "./glob.js";
 import { makeColumnId, makeTableId } from "./ids.js";
 
@@ -30,7 +31,7 @@ import { makeColumnId, makeTableId } from "./ids.js";
  *   `introspection.schemas` (askdb.config.ts) and
  *   `askdb introspect --schemas` both feed this list.
  */
-const DEFAULT_NAMESPACE = "public";
+const DEFAULT_NAMESPACE = SINGLE_NAMESPACE_LABEL;
 
 export type DescribeMysqlInput = {
   runner: CatalogQueryRunner;

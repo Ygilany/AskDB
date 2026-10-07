@@ -13,7 +13,7 @@ Call **`ask()`** from [`packages/core/src/ask.ts`](../../packages/core/src/ask.t
 
 Returning **`AskPipelineResult`** (`sql`, optional `result`, optional `explain`).
 
-Avoid reimplementing: NL→SQL prompt assembly (`buildNlToSqlUserPrompt`), SQL guardrails (`validatePostgresSelectSql`), or mode-specific post-execute logging hooks unless you deliberately fork policy.
+Avoid reimplementing: NL→SQL prompt assembly (`buildNlToSqlUserPrompt`) or SQL guardrails (`validatePostgresSelectSql`) unless you deliberately fork policy.
 
 ## Exports hosts typically need
 

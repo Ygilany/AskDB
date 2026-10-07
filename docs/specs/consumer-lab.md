@@ -20,6 +20,8 @@ Existing tests can't catch the failures the lab targets. Unit tests import works
 - dialects that disagree on the answer to the same question;
 - a documented surface (CLI, HTTP API, Studio) that has drifted from its docs.
 
+The lab README's table, [What each kind of test exercises](../../examples/consumer-lab/README.md#what-each-kind-of-test-exercises), sets the package tests, the lab on the replay model and the lab on a live model side by side, step by step.
+
 ## Design principles
 
 - **Docs are the spec.** Every import, CLI flag, config key and HTTP route the lab uses must appear in `apps/docs-site/src/content/docs/` or `docs/` (contracts, specs, ADRs). Where docs and behavior disagree, the lab records a discrepancy. It never bends the test to match the code.
@@ -76,7 +78,7 @@ A small multi-tenant social-services domain. [`fixtures/multi-engine/README.md`]
 
 Two things are lab-only and live in the lab, not the fixture:
 
-- **Postgres row-level security** (optional): a `lab_tenant` role with an RLS policy on the tenant tables, for one defense-in-depth scenario.
+- **Postgres row-level security** (optional): a `lab_tenant` role with an RLS policy on the tenant tables, for one defense-in-depth scenario. It lives on the lab's own Postgres (`examples/consumer-lab/compose.yml`, port 15442), seeded by the fixture's seeder (#317).
 - **Scratch databases** (Phase 4): writable throwaway copies used to prove a rejected statement would have done damage.
 
 The `verdaccio` service for install mode (c) also belongs to the lab.
@@ -103,7 +105,11 @@ examples/consumer-lab/
     oracle.ts               # expected answers per question id, computed in TS from fixtures/multi-engine/dataset/data/*.json, with result types and ordered?
     model/replay-server.ts  # OpenAI-compatible replay/record server (see Model)
     http-api.ts             # runs the installed `askdb-http` bin on a free port
-    lab-cli.ts              # `pnpm lab ask …`
+    studio.ts               # runs the installed `askdb studio` on a free port, in a scratch project
+    server-process.ts       # starts a server bin on 127.0.0.1 on a free port, waits for it, stops it
+    lab-cli.ts              # `pnpm lab ask …`, `pnpm lab ui`
+    ask-run.ts              # ask → validate → execute on one engine, shared by `lab ask` and `lab ui`
+    ui/                     # `lab ui`: the loopback server, its page, one process per engine run, and the cross-engine summary
     matrix-reporter.ts      # vitest reporter → dialect × scenario table
     scratch.ts              # writable scratch copies of the fixture, created, reset and dropped by the lab
   test/
@@ -138,7 +144,7 @@ Deep imports are impossible because of the packages' `exports` maps. Code review
 
 ### Install modes
 
-One command switches the mode: `pnpm lab:use <target>`. It writes the `@askdb/*` specs into the app's `package.json`, writes a matching `overrides` block into the app's `pnpm-workspace.yaml` (pnpm 11 reads overrides there), runs `pnpm install` in the app, and prints a resolved-version table built from the lockfile.
+One command switches the mode: `pnpm lab:use <target>`. It writes the `@askdb/*` specs into the app's `package.json`, writes a matching block of entries at the end of the `overrides:` map in the app's `pnpm-workspace.yaml` (pnpm 11 reads overrides there), leaving the map's hand-written entries above the block alone, runs `pnpm install` in the app, and prints a resolved-version table built from the lockfile.
 
 **Why overrides:** without them, a tarball of `@askdb/client` depends on `@askdb/core@<version>`, and that transitive dependency resolves from the npm registry instead of from the checkout under test. The checkout usually carries the **same version number** as the last release, so a version check can't tell them apart. After every switch, `lab:use` checks each `@askdb/*` package's resolution *source* in the lockfile and fails if any isn't a target tarball. (Verified in #242: with the overrides removed, all 19 transitive packages resolved from npm.) For an npm target the check is the mirror image: every `@askdb/*` package must come from the registry at exactly the version the target pinned, so a leftover `file:` tarball or a transitive package at another release fails. A package the target didn't pin fails in either case. `pnpm lab:use --check` repeats the check on the current install. `pnpm lab:use --restore` puts the committed manifests back, reinstalls the committed lockfile frozen, and verifies it against the pins in the committed overrides block.
 
@@ -146,20 +152,20 @@ One command switches the mode: `pnpm lab:use <target>`. It writes the `@askdb/*`
 |---|---|
 | `.` or `<path>` | **(a) Tarballs from a checkout.** Build that checkout and pack every publishable package into `.lab/tarballs/`. |
 | `git:<ref>` | **(a) Tarballs from a branch or commit.** Create a temporary detached `git worktree` at `<ref>` in the system temp directory, `pnpm install --frozen-lockfile`, then build and pack there with this checkout's `scripts/pack-tarballs.sh --root` (so refs older than the script pack too), then remove the worktree. |
-| `npm:<dist-tag>` | **(b) Published dist-tag.** For example `npm:latest` (the committed baseline) or `npm:beta` (stale, #267). Every `@askdb/*` package is set to that tag: the lab's direct dependencies, and every `@askdb/*` package reachable from them through dependencies and peer dependencies, each at its own exact version under the tag. A package without the tag keeps the version its dependent asks for. |
+| `npm:<dist-tag>` | **(b) Published dist-tag.** For example `npm:latest` (the committed baseline). Every `@askdb/*` package is set to that tag: the lab's direct dependencies, and every `@askdb/*` package reachable from them through dependencies and peer dependencies, each at its own exact version under the tag. A package without the tag keeps the version its dependent asks for. |
 | `npm:askdb@<version>` | **(b) Published version.** Package versions are not in lockstep (`@askdb/core` is at 1.0.0-beta.42 while `@askdb/mysql` is at 0.1.0-beta.17). So "a version" means a CLI release, and the matching version of every other package comes from that release's published dependency tree (`npm view`, recursively; `askdb` pins its `@askdb/*` dependencies exactly). A direct dependency that isn't in the tree is left out of the install. |
 | `registry` | **(c) Local verdaccio registry.** Start the `registry` profile, `pnpm publish` the packed tarballs to it, and install from it with `--registry`. This also exercises publish-time rewriting such as `workspace:` → versions and `publishConfig`. |
 
 **Reuse.** The packing step moves out of `examples/installable-smoke/run.sh` into `scripts/pack-tarballs.sh`, which both the smoke test and the lab call. The smoke test's hardcoded package list becomes discovery of every non-private `packages/*` and `apps/*` package. That fixes the smoke test's current gap, where `@askdb/http-api` is packed but never assigned or installed. The smoke test's tarball-content assertions stay as they are.
 
-**Lockfile policy** (decision 2): commit `package.json`, `pnpm-workspace.yaml` (its overrides block) and `pnpm-lock.yaml` in the `npm:latest` state, which is the published baseline. `lab:use` changes them locally. The overrides block starts with a `# lab:use target:` comment, which is how `--restore` knows what the baseline is. To refresh it, run `pnpm lab:use npm:latest` and commit the three files. CI always runs `lab:use .` and does not use a frozen lockfile, because tarball integrity hashes change on every pack. Third-party dependencies are pinned exactly in `package.json`, so they don't drift between modes. The lab sets no `minimumReleaseAge` and, as its own pnpm root, doesn't inherit the monorepo's; pnpm 11 has no default delay, so a just-published release installs at once. `npm:beta` remains a valid target, but as of 2026-09-26 every `beta` dist-tag is stale, at the May 2026 `0.5.0-beta` release, and prereleases since then went to `latest` (#267).
+**Lockfile policy** (decision 2): commit `package.json`, `pnpm-workspace.yaml` (its overrides block) and `pnpm-lock.yaml` in the `npm:latest` state, which is the published baseline. `lab:use` changes them locally. The overrides block starts with a `# lab:use target:` comment, which is how `--restore` knows what the baseline is. To refresh it, run `pnpm lab:use npm:latest` and commit the three files. CI always runs `lab:use .` and does not use a frozen lockfile, because tarball integrity hashes change on every pack. Third-party dependencies are pinned exactly in `package.json`, so they don't drift between modes. `ai` and `@ai-sdk/openai` are pinned at AskDB's published floors; Dependabot's entry for the lab leaves those two pins and the AskDB packages alone (ADR 0015). A vulnerable transitive dependency that no parent release fixes yet (today `deepmerge-ts`, GHSA-ggr8-5vv4-36mx, which `@prisma/config` pins at 7.1.5) gets a hand-written entry in the same `overrides:` map, above the `lab:use` block, with its advisory and removal condition in a comment; `lab:use` rewrites only the block, so these pins hold in every mode, and it refuses to switch (changing nothing) if the block is missing or outside that map. As its own pnpm root, the lab doesn't inherit the monorepo's `minimumReleaseAge`, but pnpm 11 defaults it to one day, so the lab's `pnpm-workspace.yaml` excludes `askdb` and `@askdb/*` from it: a just-published release installs at once, and pnpm doesn't rewrite the file to exclude it. There is no `beta` dist-tag: it had been stale since the May 2026 `0.5.0-beta` release and was removed from every package on 2026-09-29 (#267).
 
 **Older versions.** A scenario may name the documented capability it needs, for example `parameterize`. It calls `needsCapability(ctx, "<capability>")` from `src/capabilities.ts`. When the target lacks it, the test is skipped with the note `n/a (capability: <capability>)`, which the matrix shows instead of a failure. Capabilities are detected through public exports or documented CLI `--help` output, not version strings. The first one is `cli-introspect-engine` (`askdb introspect --help` lists `--engine`), which every artifact-building scenario needs. Only a working surface that lacks the capability counts as absent: a missing bin, a crash or a non-zero `--help` exit fails the scenario, so a broken install never reads as `n/a`. When the target is this checkout (`lab:use .`), a missing capability fails instead, because the scenarios are written against this checkout's docs.
 
 ### `pnpm lab ask`
 
 ```
-pnpm lab ask --db postgres "How many active programs does each agency run?"
+pnpm lab ask --db postgres "For each agency, show its id and how many active programs it runs."
              [--via raw|client] [--model replay|live] [--sql "<sql>"] [--tenant 2] [--strict] [--omit-sensitive]
 ```
 
@@ -169,13 +175,17 @@ It prints:
 2. the validation result: `ok`, or the thrown error's class and rule code, such as `SqlValidationError SQL_MULTI_STATEMENT`;
 3. `sensitiveGuardrail` and `tenantGuardrail`, when present;
 4. the rows, executed as `fixture_reader` and printed as a table;
-5. the oracle's verdict, when the question is in the catalog.
+5. on the live model, the oracle's verdict, when the question is in the catalog.
 
 Flags:
 
-- `--model` defaults to `replay`. It switches to `live` when `LAB_LIVE_MODEL=1` and a provider key is set.
+- `--model` defaults to `replay`; `--model live` asks the live OpenAI model through either path (#448). Only the flag switches it: `LAB_LIVE_MODEL=1`, which turns on the live suite, doesn't, so no exported variable spends (maintainer decision on #448). It refuses in CI and without a key, before anything runs, and never falls back to replay.
 - `--sql` bypasses the model through `deps.generateText`, which the docs name as the mock seam.
 - `--via` picks the model path: `raw` (default), a `createOpenAI({ baseURL })` model passed to `ask()`; or `client`, `createAskDb` with `@askdb/ai-openai` configured by `providerConfig.openai.baseUrl`. Both must send the same prompt and return the same SQL.
+
+### `pnpm lab ui`
+
+A page on `127.0.0.1` that runs one input (a catalog question, free text, or raw SQL) on the engines you pick concurrently, one column per engine, each showing what `lab ask --db <engine>` prints, through the same module. You pick the model (replay, or live when a key is set and it isn't CI) and the path (`raw` or `client`), so the page exercises both documented model paths end to end; each engine runs in its own process, because the client path reads its config once per process. A summary strip says whether the engines agree after normalization and, for catalog questions, whether each matches the oracle. It follows ADR 0009's local-server lessons: loopback bind and a `Host` allowlist on every request. Built in #262, with the model, path and engine picks in #448; the [lab README](../../examples/consumer-lab/README.md#pnpm-lab-ui) describes it.
 
 ## Model
 
@@ -190,7 +200,7 @@ Flags:
 
 - **Dialect:** taken from the base URL path, `http://127.0.0.1:<port>/<dialect>/v1`. This works with any model id and in record mode.
 - **Question:** found by matching the catalog's question texts, which are unique, inside the user prompt.
-- **No match:** the server fails with an error that names the missing cassette file and what to author in it (or, when the prompt holds no catalog question, the catalog entry to add). It never falls back to a default. Once `pnpm lab:record` exists (#247), the message names it too.
+- **No match:** the server fails with an error that names the missing cassette file and what to author in it (or, when the prompt holds no catalog question, the catalog entry to add). It never falls back to a default. For a catalog question, the message also names `pnpm lab:record --db <dialect> --only <id>`.
 
 **Cassettes** live at `cassettes/<dialect>/<id>.json`:
 
@@ -206,9 +216,13 @@ Flags:
 
 ### Record and live
 
-- `pnpm lab:record [--db …] [--only <id>]` needs `OPENAI_API_KEY`, or another documented provider set through `LAB_LIVE_PROVIDER`. The server proxies to the real provider and writes or refreshes cassettes. Afterwards, the maintainer reviews the cassette diff in git before committing it.
-- `LAB_LIVE_MODEL=1 pnpm lab:matrix` runs against the live model without writing anything. Cross-dialect equality and oracle checks still apply. Failures are reported as model quality, not product bugs, unless the SQL passed validation but violated a guarantee (tenant, sensitive, read-only).
-- CI never sets either of these.
+Built in #247, with asking the live model by hand in #448; the lab README's "Record and live" section is the reference.
+
+- **Provider and key:** OpenAI only (maintainer decision on #247), through both documented model paths. The key is `OPENAI_API_KEY`, from the shell or a gitignored `.env.live` in the lab or at the repo root, which only these modes read (AskDB's config loads `.env`). `LAB_LIVE_MODEL_ID` picks the model; the default is AskDB's OpenAI default, `gpt-4o-mini`. With `CI` or `GITHUB_ACTIONS` set, every live mode refuses before reading a key; without a key, each fails with a message. None falls back to the replay model.
+- `pnpm lab:record [--db …]… [--only <id>]…` records the catalog questions only: the tenant and sensitive suites' replies are hand-written attackers, and their ids are refused before any call. The replay server proxies to OpenAI with the key (the clients send it a placeholder; its request log holds no header; provider errors are redacted). Each reply is graded first, with the results suite's checks (`src/grade.ts`): only a reply whose SQL returns the oracle's rows (and, on the parameterized question, comes back parameterized) replaces its cassette, as `"source": "recorded"` with `recordedWith`. Misses are listed in `.lab/record-misses.json` and leave the cassette alone. The maintainer reviews the cassette diff in git before committing it: staging accepts, `git restore` rejects.
+- `LAB_LIVE_MODEL=1 pnpm lab:matrix` adds `test/live.test.ts`, which asks the live model directly and writes no cassette. Every catalog question is asked through both paths and graded by its oracle; the scoped tenant questions and the sensitive questions (strict mode) through the raw path. A wrong answer, a validation rejection included, is a `miss (…)` cell, model quality, which doesn't fail the run. SQL that passed AskDB's checks but leaked another tenant's rows, returned seeded sensitive values in strict mode, or was refused by the host as a write is a guarantee violation: a `FAIL` cell.
+- `pnpm lab ask --model live` and `pnpm lab ui`'s live option ask the live model one input at a time, through either path, and print the oracle's verdict for a catalog question. Their tests use an empty `OPENAI_API_KEY`, which wins over `.env.live`, or a fake one with a stand-in for OpenAI that replaces `fetch` for `api.openai.com` only.
+- CI never sets any of these.
 
 ## Scenario matrix
 
@@ -249,9 +263,11 @@ Twelve to fifteen catalog questions. Between them they cover:
 Each case is a model reply that must be rejected. The replies are hand-written SQL in `test/safety.test.ts`, delivered through the documented `deps.generateText` seam the way `lab ask --sql` delivers them, rather than as cassettes. For every case, the suite asserts two things:
 
 - `ask()` throws the documented error class and rule code;
-- **the case is meaningful:** the raw statement, run as `fixture_owner` against that engine's **scratch** database, does run and changes observable state (a row count, a new table, a sequence value, a held lock or an elapsed sleep). If the raw statement is harmless on an engine, the case is marked `n/a` for that engine. It never counts as a pass. This second assertion applies to the executed classes below; the rejection-only classes don't have it yet (#323).
+- **the case is meaningful:** the raw statement, run as `fixture_owner` against that engine's **scratch** database, does run and changes observable state (a row count, a new table, a sequence value, a held lock or an elapsed sleep). If the raw statement is harmless on an engine, the case is marked `n/a` for that engine. It never counts as a pass. The file/OS, server-control and sleep proofs run only on the isolated copy below; the matrix checks their rejection only.
 
-The first safety suite (#248) proves the harmless write classes this way: writes and DDL, multiple statements, data-modifying CTEs, `SELECT … INTO` and `FOR UPDATE`. Cases that reach the file system, the OS or the server (`INTO OUTFILE`, `COPY … PROGRAM`, `xp_cmdshell`, `LOAD_FILE`, `pg_terminate_backend`, `KILL`, `SET GLOBAL`) and sleeps are never executed, on any database. They are rejection tests only and cite the rule that rejects them, because the scratch databases live on the fixture servers other lab runs share. That is a deliberate narrowing of #248's original contract (every case proves an effect): a rejection-only case still passes if the statement isn't valid, or would be harmless, on that engine. Proving their effect on a disposable, isolated fixture copy is #323. Syntax an engine doesn't have isn't generated for it. The case list is in the lab README, under "Safety".
+The first safety suite (#248) proves writes and DDL, multiple statements, data-modifying CTEs, `SELECT … INTO` and locking reads on scratch databases. File/OS operations (`INTO OUTFILE`, executable-comment OUTFILE, `COPY … PROGRAM`, `LOAD_FILE`, `xp_cmdshell`), session termination, server settings and sleeps have a separate effect path (#323): `pnpm lab:use . && pnpm lab:safety:isolated`, which CI's `consumer-lab` job runs as its own step after the matrix. It reuses the multi-engine fixture's Compose definition and seeder, as the lab-only Postgres does, under project `askdb-lab-isolated` on ports 25432/23306/23307/21433. A loopback TCP relay fronts an internal network with an isolated gateway; database containers cannot reach the host or external network. The execution guard resolves the actual connection host/port to Docker's published binding and checks the relay configuration, Compose project/service and container identities, isolated network and owned volumes. URL connections reject driver options and noncanonical forms; SQL Server connections reject named instances, whose discovery would discard the checked port. A flag alone is insufficient. The lifecycle runner refuses an already-owned project, serializes concurrent runs with a lock, and tears down volumes on success, failure and catchable interruption. It never runs `fixture:up` or reseeds the shared server databases.
+
+Each file proof observes known bytes in a container-local file or a new scratch status row. Termination proofs create their own victim connection and observe its session disappear while the control connection survives. MySQL/MariaDB change and restore `max_connections`; one-second sleeps must consume at least 900 ms on an already connected client. SQL Server's `xp_cmdshell` effect is `n/a`: the test verifies that the default configuration disables it and the statement raises error 15281, rather than enabling it. Syntax missing from an engine is `n/a` with its reason in the README's case × engine table; SQLite has none of these server/file/program/sleep facilities. Ordinary comments are inert, and system-catalog rejection remains the separately tracked #318 discrepancy. The matrix retains all rejection tests; only `lab:safety:isolated` executes these additional effects. Docker Engine 28+ and Compose 2.24.4+ are prerequisites; the runner prints separate lifecycle timings. A full local run on the rebased checkout measured 52.84 seconds (10.47 startup, 1.70 seed, 2.26 guards, 35.33 suite, 2.35 teardown plus orchestration; fresh volumes/artifacts, cached images). A completed main CI job (run 37221345533) took 5 minutes 30 seconds; adding the local measurement projects about 6 minutes 23 seconds, comfortably inside the 25-minute budget, before image pulls and CI variance. Measured in CI (run 37264776682), the step took 56 seconds and the whole job 5 minutes 13 seconds. It therefore runs in the PR job: an effect that quietly stops happening on an engine leaves its rejection test passing while proving nothing, and an opt-in run would only catch that when someone remembered to run it.
 
 | Case family | Examples |
 |---|---|
@@ -283,10 +299,10 @@ The overlay declares the flat root `org.agency`. The hierarchy cases pass `subtr
 | With `tenantScope { kind: "ids", tenantRoot, ids: [2] }`, every scoped question's executed rows equal the oracle filtered to agency 2 (not its child 7), on every dialect, in both `tenantSqlMode`s | C: `docs/contracts/tenant-policy.md` and `guides/multi-tenancy.mdx` ("the tenant predicate is present in the SQL AskDB returns"). R: placeholder substitution or markers wrong per dialect, or a predicate on the wrong alias. |
 | Strict mode: a reply with no tenant filter is rejected with `TenantGuardrailError`. The same SQL, executed raw, returns rows from other tenants, which proves the case is meaningful | C: strict fail-closed. R: the guardrail missing an unfiltered scoped table. |
 | A reply with a filter on the wrong tenant, or `OR 1=1` around the predicate, is rejected in strict mode | C: the predicate must be provable. R: the heuristic accepting a present-but-ineffective filter. |
-| **Hierarchy.** With `subtree` access from agency 1, executed rows are exactly those of agencies 1, 4, 5 and 6. From 5, they are 5 and 6. From 6, only 6. From 7, only 7. No row outside the tree ever appears, on every dialect | C: the maintainer's hierarchy semantics (decision 9) and `TenantAccessSubtree` ("include all descendants"). R: descendants dropped (the behavior before #232 was fixed), ancestors leaked, a sibling tree leaked, or a resolver result not substituted. Without a resolver, `subtree` fails closed with `TenantScopeError` `SUBTREE_NOT_RESOLVABLE`. |
+| **Hierarchy.** With `subtree` access from agency 1, executed rows are exactly those of agencies 1, 4, 5 and 6. From 5, they are 5 and 6. From 6, only 6. From 7, only 7. No row outside the tree ever appears, on every dialect | C: the maintainer's hierarchy semantics (decision 9) and `TenantAccessSubtree` (`includeDescendants: true`). R: descendants dropped (the behavior before #232 was fixed), ancestors leaked, a sibling tree leaked, or a resolver result not substituted. Without a resolver, `subtree` fails closed with `TenantScopeError` `SUBTREE_NOT_RESOLVABLE`. |
 | No `tenantScope` with a policy present gives `TenantScopeError` `MISSING_SCOPE` | C: fail closed before the prompt. |
 | Warn mode returns SQL and warnings, as documented | C: documented warn semantics. Recorded against the "can't be forgotten" claim (see Survey notes). |
-| (Optional, Postgres) The unfiltered SQL, run as `lab_tenant` with RLS, returns only agency 2 | Documents the defense-in-depth recommendation. Informational only. |
+| (Optional, Postgres) The unfiltered SQL, run as `lab_tenant` with RLS, returns only agency 2 | Documents the defense-in-depth recommendation. Informational only. Built in #317 as `tenant-rls`, on the lab's own Postgres, because it needs DDL the shared fixture doesn't have. Informational about AskDB, but a `FAIL` still fails the matrix: nothing in AskDB can turn it red, so a red cell means the lab's setup broke. |
 
 ### 5. Sensitive columns
 
@@ -298,13 +314,16 @@ The overlay marks `people.client.email` and `people.client.ssn` as `sensitive: t
 | With `omitSensitiveIdentifiersFromNlToSqlPrompt`, the CLI flag `--omit-sensitive-from-prompt`, or HTTP `omitSensitiveFromPrompt`, the captured prompt contains neither identifier | C: prompt exclusion on every surface. R: one surface not forwarding the option. |
 | A reply that reads `ssn` gets `sensitiveGuardrail.passed === false` with the right references (`warn`), and `SensitiveReferenceError` `SENSITIVE_COLUMN_REFERENCED` (`strict`); `SELECT *` from `client` is flagged too | C: documented flagging. R: the heuristic missing qualified, aliased, `*` or quoted references per dialect quoting style. |
 
+Built in #250 as `test/sensitive.test.ts`; the [lab README](../../examples/consumer-lab/README.md#sensitive-columns) lists its scenarios. Besides the three omission surfaces above, it covers the `createAskDb` per-call override and the config and environment switches the docs name (survey notes 18 and 19).
+
 ### 6. Black-box surfaces
 
 | Surface | Scenarios |
 |---|---|
 | `askdb` CLI | **`introspect`**: covered by suite 1, plus exit codes. **`ask`**: SQL on stdout; the sensitive `Warning:` on stderr; `--mock-sql`; exit codes 0/1/2 as documented in `reference/cli.mdx`. |
 | `@askdb/http-api` | **`POST /ask`**: 200 shape `{ ok, correlationId, sql, … }`. **Documented error codes**: `bad_request` 400, `payload_too_large` 413, `schema_parse_error` 400, `sql_validation_error` 400 (safety cases over HTTP), `sql_generation_error` 502 (the replay server refuses the call), `generation_not_configured` 500, `not_found` 404. Also `x-correlation-id` echo and `GET /health`. Transport risk the in-process tests can't reach. |
-| Studio local API | Each case follows ADR 0009 and `studio.mdx`: 403 without `x-askdb-studio-token`, 403 with a foreign `Host` (rebinding), 403 with a cross-site `Origin`, 415 for `text/plain`, and the token readable from the served page. **Execute:** with `studio.execute` configured, `/api/execute` returns rows for a SELECT. Given `fixture_owner` credentials on the **scratch** database, it still refuses a write and a multi-statement, which tests ADR 0009's "single-statement, read-only, with timeouts and row caps" claim; the scratch DB proves the write would otherwise land. |
+| Studio local API | Each case follows ADR 0009 and `studio.mdx`: 403 without `x-askdb-studio-token`, 403 with a foreign `Host` (rebinding), 403 with a cross-site `Origin`, 415 for `text/plain`, and the token readable from the served page. **Execute:** with `studio.execute` configured, `/api/execute` returns rows for a SELECT. Given `fixture_owner` credentials on the **scratch** database, it still refuses a write and a multi-statement, which tests the "single-statement, read-only" part of ADR 0009's "single-statement, read-only, with timeouts and row caps" claim (timeouts and row caps aren't tested); the scratch DB proves the write would otherwise land. |
+| Install contract | **`host-peers`** (ADR 0015): the host's pinned `ai` and `@ai-sdk/openai` meet every peer range an installed AskDB package declares (`pnpm peers check`), and every installed AskDB package declares the same `ai` range for the host's AI SDK major (`@askdb/core` and `@askdb/rag` also accept AI SDK 6). |
 
 ## Commands and reporting
 
@@ -333,7 +352,7 @@ Add a new `consumer-lab` job to `.github/workflows/ci.yml`. It needs `build`, ha
 
 Recommended additions (decision 4):
 
-- A **nightly** scheduled run with `lab:use npm:latest`. It catches publish-only drift: files missing from tarballs, or a bad `workspace:` rewrite.
+- A run against the **published packages after each release** (`lab:use npm:latest`), plus a weekly run that installs fresh to catch dependency drift (#255). The release run catches publish-only breakage: files missing from tarballs, or a bad `workspace:` rewrite. A nightly run would add little, because between releases only the dependencies' resolved versions change. Both are the `Consumer lab (published)` workflow, `.github/workflows/consumer-lab-published.yml`; a failure fixed on `main` but not yet released is listed per release in `examples/consumer-lab/known-release-failures.json`, so the job doesn't sit red on it.
 - A **path filter**, so pull requests that only touch `apps/docs-site` skip the lab.
 
 ## Test-audit compliance
@@ -357,7 +376,7 @@ Seams the lab itself uses: the replay server and prompt capture are lab code. `d
 |---|---|---|---|
 | 1 | Shared multi-engine fixture (replaces Pagila) | `fixtures/multi-engine`, a private workspace package with the dataset (org hierarchy, partitioned Postgres table), DDL for five engines, compose, idempotent seeder, normalization and golden-schema comparator; `test/dataset.integration.test.ts`; live-introspection tests in `@askdb/postgres` (replacing the Pagila suite), `@askdb/sqlserver` and `@askdb/sqlite` against the golden schema; CI and turbo move from `PAGILA_DATABASE_URL` to `ASKDB_FIXTURE_HOST`; `fixtures/pagila` removed. | `pnpm fixture:reset` and the gated suites are green locally and in CI. |
 | 1b | MySQL multi-database introspection (product change) | `@askdb/mysql` introspects the databases the user lists (`introspection.schemas` in config, or the documented `--schemas` flag), not only `DATABASE()`; the `@askdb/mysql` fixture test for MySQL and MariaDB against the golden schema; docs and a changeset. | The MySQL and MariaDB introspection tests are green; the test was shown failing before the change. |
-| 2–6 | Tracked as issues | The rest of the lab is split into 16 tracer-bullet tickets under **#241**, each with its blocking edges: Phase 2 #242–#244 (tracer bullet, replay model, install modes), Phase 3 #245–#247 (introspection + `lab:matrix`, question → SQL → execute, record/live), Phase 4 #248–#250 (safety, tenant, sensitive), Phase 5 #251–#253 (CLI, HTTP API, Studio), Phase 6 #254–#257 (CI job, nightly `npm:latest`, `consumer-lab` skill, verdaccio). | Each ticket's acceptance criteria. |
+| 2–6 | Tracked as issues | The rest of the lab is split into 16 tracer-bullet tickets under **#241**, each with its blocking edges: Phase 2 #242–#244 (tracer bullet, replay model, install modes), Phase 3 #245–#247 (introspection + `lab:matrix`, question → SQL → execute, record/live), Phase 4 #248–#250 (safety, tenant, sensitive), Phase 5 #251–#253 (CLI, HTTP API, Studio), Phase 6 #254–#257 (CI job, `npm:latest` after each release and weekly fresh install, `consumer-lab` skill, verdaccio). | Each ticket's acceptance criteria. |
 
 **Merged (2026-09-27, stack #258):** phase 1 (#219), phase 1b (#220), the tracer bullet #242 (#261), the replay model #243 (#271), the introspection suite and `lab:matrix` #245 (#272), install modes #244 (#269), and the fix for #260 that the lab found (#263). The remaining tickets are open under #241.
 
@@ -367,10 +386,10 @@ Every phase runs `pnpm smoke:install` and `pnpm preflight` before its PR. Apart 
 
 These came up while reading the docs. They are not findings yet: each one is either confirmed by a lab test in its phase or dropped. **A confirmed discrepancy is filed as a GitHub issue** labelled `discrepancy` (see `docs/agents/issue-tracker.md`), and the list below links it; this list is the lab's index, not the tracker.
 
-1. `docs/specs/studio.md` lists live SQL execution as out of scope. ADR 0009, `studio.mdx` and `apps/studio/src/server.ts` (`/api/execute`) all say Studio executes SQL. The docs site does not document execute as read-only; only ADR 0009 does, in one line.
-2. `docs/specs/http-api.md` describes `{ sql, warnings, correlationId }` with errors `{ error: { code, message, details } }`. The docs site shows `{ ok, correlationId, sql, explain, usage }` and a code list. The docs-site error example uses `rule: "read_only"`, but core rule codes are `SQL_*`. *Confirmed by the HTTP suite (#252):* the spec-versus-docs-site shapes are **#300**; the docs-site-versus-server mismatches (`rule`, `explain: null`, the correlation ID format) are **#285**.
+1. `docs/specs/studio.md` lists live SQL execution as out of scope. ADR 0009, `studio.mdx` and `apps/studio/src/server.ts` (`/api/execute`) all say Studio executes SQL. The docs site does not document execute as read-only; only ADR 0009 does, in one line. *Checked by the Studio suite (#253):* `studio.mdx` now documents execute's read-only guards. The suite checks the first of them on every engine: the read-only SELECT check refuses a write and a second statement with `400`, even with owner credentials (the timeout and row cap aren't tested). `docs/specs/studio.md` still calls the Ask panel "generation only, no live execution", gives the default port as 4983 (it is 5556) and calls the server Express (it is `node:http`), and it and `studio.mdx`'s lede say Studio opens the browser, while ADR 0009 and the installed Studio say it prints its URL: **#378**. No document gives `POST /api/execute`'s request or reply, and the spec promises typed error codes Studio doesn't send: **#380**.
+2. `docs/specs/http-api.md` describes `{ sql, warnings, correlationId }` with errors `{ error: { code, message, details } }`. The docs site shows `{ ok, correlationId, sql, explain, usage }` and a code list. The docs-site error example uses `rule: "read_only"`, but core rule codes are `SQL_*`. *Confirmed by the HTTP suite (#252):* the spec-versus-docs-site shapes are **#300**, fixed by #187, which rewrote the spec's contract to the docs-site shapes (the suite's `http-spec-shape` case is retired); the docs-site-versus-server mismatches (`rule`, `explain: null`, the correlation ID format) are **#285**.
 3. `POST /ask` has no `tenantScope` field, while `tenant-policy.md` lists the HTTP API as a scope-input surface. By the core rules, a tenant-policy schema served over HTTP should fail closed with `MISSING_SCOPE`. *Confirmed by the HTTP suite (#252):* it does, with `500 internal_error`, no SQL and no model call; accepting a scope over HTTP is **#277**.
-4. `guides/multi-tenancy.mdx` says the tenant predicate "can't be forgotten … and can't be removed by a malformed question", but `enforcement: warn` returns unfiltered SQL with warnings.
+4. `guides/multi-tenancy.mdx` says the tenant predicate "can't be forgotten … and can't be removed by a malformed question", but `enforcement: warn` returns unfiltered SQL with warnings. *Confirmed by the tenant suite (#249):* on every engine, and the warnings aren't in the `tenantWarnings` field the docs name but in `result.tenantGuardrail`: **#316**.
 5. `concepts/safety-boundaries.mdx` says invalid SQL is "rejected, not returned with a warning", while the default sensitive-field mode is `warn`.
 6. The schema artifact has no unique constraints and no view marker, so the introspection golden can't compare them. This is a format limit, not a bug, but the lab's matrix will show it.
 7. The docs site names `POSTGRES_DIALECT` and `MYSQL_DIALECT` but never the MariaDB, SQLite or SQL Server constants, and it says "all four" dialects while listing six ids. The lab uses the string ids.
@@ -387,14 +406,24 @@ Found while building Phase 1 (confirmed against the code):
 
 Found while building the HTTP suite (#252):
 
-15. **Every model-call failure over HTTP answers `400 bad_request`, not the documented `502 sql_generation_error`** (**#299**). The handler checks whether the error message contains "mode" before it checks the error's type, and "Model call failed" does.
+15. **Every model-call failure over HTTP answers `400 bad_request`, not the documented `502 sql_generation_error`** (**#299**). The handler checks whether the error message contains "mode" before it checks the error's type, and "Model call failed" does. *Product bug*, fixed by #187: errors map by type, and the HTTP suite's `http-generation-error` case now passes. The same PR turns per-request `schemaJson` off by default (`403 schema_override_disabled`), so the suite's `schema_parse_error` case runs on a server that sets `httpApi.allowSchemaOverride: true`.
+
+Found while building the tenant suite (#249):
+
+16. **Strict mode returns SQL whose tenant filter doesn't filter** (**#315**). The guardrail accepts a scoped table once the tenant column's name appears anywhere, so the column selected but never filtered, a filter on another tenant, and `OR 1 = 1` all pass, and it never checks the root table. Run as the host, each leaks other agencies' rows on every engine. *Product bug*, fixed: the tenant check now runs on the model's SQL before tenant rendering, and needs the tenant column compared with its root's placeholder, ANDed into a filter clause, with the root table scoped too. It is still a heuristic; #235 covers a sound rewrite.
+17. **`reference/core-api.mdx` describes `sql-params` markers two ways** (**#320**): the dialect's driver markers in the `ask()` options table, Postgres `$N` in "Tenant types".
+
+Found while building the sensitive-column suite (#250):
+
+18. **`askdb-http` ignores config `modes.omitSensitiveFromPrompt`** (**#376**). `reference/http-api.mdx` gives the `POST /ask` field `omitSensitiveFromPrompt` the default "env-driven", and `reference/config.mdx` and `guides/run-safely-in-prod.mdx` make the config key the deployment switch. The CLI honors it; the HTTP server sends the sensitive columns, tagged, to a request that leaves the field out. *Product bug*, fixed by #187: the `@askdb/client` facade treats config `true` as a floor, and the suite's HTTP `sensitive-omit-config` case now passes.
+19. **`ASKDB_OMIT_SENSITIVE_FROM_PROMPT` is never read from the environment** (**#377**). `docs/contracts/sensitive-fields-and-modes.md` lists it beside the library option and the CLI flag, but it is an internal flat key built from `askdb.config.ts`, the same class of doc error as #282.
 
 ## Decisions (2026-09-26)
 
 1. **Location:** `examples/consumer-lab/`, excluded from the workspace with `!examples/consumer-lab`.
-2. **Lockfile:** the app's `package.json` and `pnpm-lock.yaml` are committed in the `npm:latest` baseline state. (Changed from `npm:beta` on 2026-09-26: `latest` is what `npm install askdb` resolves, and the `beta` tags are stale; see #267.)
+2. **Lockfile:** the app's `package.json` and `pnpm-lock.yaml` are committed in the `npm:latest` baseline state. (Changed from `npm:beta` on 2026-09-26: `latest` is what `npm install askdb` resolves, and the `beta` tags were stale and have since been removed; see #267.)
 3. **MySQL:** `mysql:8.4` LTS.
-4. **CI:** the lab runs on every PR (docs-only PRs are skipped by a path filter), plus a nightly run against `npm:latest` (#267). A repo skill, `.agents/skills/consumer-lab/`, drives target selection: it works out the right `lab:use` target (a tarball from the checkout, a `git:` ref, a published version or dist-tag), refreshes the committed baseline when a new release ships, and runs and reads the matrix.
+4. **CI:** the lab runs on every PR (docs-only PRs are skipped by a path filter), plus a run against `npm:latest` after each release and a weekly fresh-install run for dependency drift (#255; changed from nightly on 2026-10-01). A repo skill, `.agents/skills/consumer-lab/`, drives target selection: it works out the right `lab:use` target (a tarball from the checkout, a `git:` ref, a published version or dist-tag), refreshes the committed baseline when a new release ships, and runs and reads the matrix.
 5. **Cassettes:** the first pass uses authored SQL only. Recording with a live key is optional and is done by the maintainer.
 6. **Docs:** the lab is documented in `CONTRIBUTING.md` only; there is no docs-site page.
 7. **MySQL multi-database introspection** is a product change, in its own PR with a changeset (Phase 1b). The user lists the databases to introspect in config (`introspection.schemas`, the config equivalent of `--schemas` on every engine), and the documented `--schemas` flag works too. The connector queries `information_schema` with `TABLE_SCHEMA IN (…)` instead of `= DATABASE()`, and each database becomes a namespace. With no list, today's behavior is unchanged.

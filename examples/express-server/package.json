@@ -1,23 +1,22 @@
 {
   "name": "askdb-express-server-example",
   "private": true,
-  "version": "0.0.2-beta.3",
+  "version": "0.0.2-beta.4",
   "type": "module",
   "scripts": {
     "start": "tsx server.ts",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@askdb/ai": "workspace:*",
-    "@askdb/ai-openai": "workspace:*",
+    "@ai-sdk/openai": "^4.0.83",
     "@askdb/client": "workspace:*",
     "@askdb/config": "workspace:*",
     "express": "^5.2.1",
-    "pg": "^8.23.0"
+    "pg": "^8.23.1"
   },
   "devDependencies": {
     "@types/express": "^5.0.6",
-    "@types/node": "^22.20.1",
+    "@types/node": "^22.20.5",
     "@types/pg": "^8.23.1",
     "tsx": "^4.23.15",
     "typescript": "^6.0.3"

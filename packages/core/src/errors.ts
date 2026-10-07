@@ -64,8 +64,10 @@ export type TenantScopeRejectionReason =
   | "INVALID_SCOPE_SHAPE"
   /**
    * A `subtree` scope could not be expanded: no `resolveTenantDescendants`, or it
-   * returned no usable IDs. Also thrown when an unexpanded `subtree` reaches
-   * `resolveTenantSql()` directly.
+   * returned something other than IDs per tenant root (a flat array, a key that
+   * isn't a root in the subtree, a value that isn't an array of non-empty strings,
+   * or no IDs at all). Also thrown when an unexpanded `subtree` reaches
+   * `resolveTenantSql()` or `buildTenantPromptBlock()` directly.
    */
   | "SUBTREE_NOT_RESOLVABLE"
   /** Generated SQL references a `:tenant_*` placeholder the scope has no IDs for. */

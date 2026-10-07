@@ -37,7 +37,7 @@ body:
     id: runtime
     attributes:
       label: Node / pnpm / OS
-      placeholder: "Node 20.x, pnpm 11.x, Ubuntu 22.04"
+      placeholder: "Node 22.x, pnpm 11.x, Ubuntu 22.04"
     validations:
       required: true
   - type: checkboxes

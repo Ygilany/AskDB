@@ -100,7 +100,7 @@ Never edit source or tests while Vitest is running in the checkout.
 3. Run `git diff --check`.
 4. Run the repository gates: `pnpm build`, `pnpm lint`, `pnpm test`.
 5. Inspect `git diff --numstat`; report production/tooling separately from tests and test support.
-6. Required: after final audit edits, an agent that did not write them reviews the full diff with the `pr-review` skill (configured by `docs/agents/pr-review.md`) before the PR leaves draft.
+6. After final audit edits, review the full diff with fresh eyes (e.g. the `code-review` skill) before opening the PR.
 
 ## Landing and continuation
 

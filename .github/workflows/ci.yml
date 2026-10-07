@@ -25,7 +25,7 @@ jobs:
           persist-credentials: false
 
       - name: Setup pnpm
-        uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
+        uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
 
       - name: Setup Node.js
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
@@ -66,7 +66,7 @@ jobs:
           persist-credentials: false
 
       - name: Setup pnpm
-        uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
+        uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
 
       - name: Setup Node.js
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
@@ -101,7 +101,7 @@ jobs:
           persist-credentials: false
 
       - name: Setup pnpm
-        uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
+        uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
 
       - name: Setup Node.js
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
@@ -116,7 +116,7 @@ jobs:
         run: pnpm run audit
 
   # ── 1d. Supported Node versions ───────────────────────────────────────────
-  # The published libraries declare `engines.node >=22.12`; this proves the
+  # The published libraries declare `engines.node >=22.14`; this proves the
   # floor and the current LTS both build and pass the unit suites. It is a
   # clean build (no Turbo cache) so the build itself runs on each version.
   # Integration suites skip here: no DB URLs are set, and
@@ -128,19 +128,15 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        node: ["22.12.0", "24"]
+        node: ["22.14.0", "24"]
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
-      # pnpm 11 itself needs Node >=22.13, so use the standalone build (bundles
-      # its own Node runtime); scripts still run on the matrix Node below.
       - name: Setup pnpm
-        uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
-        with:
-          standalone: true
+        uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
 
       - name: Setup Node.js
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
@@ -154,8 +150,19 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      # Each package's vitest run records its counts in ASKDB_TEST_SUMMARY_DIR
+      # (scripts/test-utils/summary-reporter.mjs); the next step renders one table.
       - name: Build + unit tests
         run: pnpm test
+        env:
+          ASKDB_TEST_SUMMARY_DIR: ${{ runner.temp }}/test-summary
+
+      - name: Test summary
+        if: always()
+        env:
+          ASKDB_TEST_SUMMARY_DIR: ${{ runner.temp }}/test-summary
+          TITLE: Unit tests (Node ${{ matrix.node }})
+        run: node scripts/test-summary.mjs "$TITLE" >> "$GITHUB_STEP_SUMMARY"
 
   # ── 2. Test ───────────────────────────────────────────────────────────────
   # Runs unit + integration tests. Turbo replays build outputs from cache so
@@ -166,8 +173,9 @@ jobs:
 
     services:
       # pgvector/pgvector is stock Postgres 16 plus the `vector` extension, so the same
-      # service backs both the plain Postgres suite (DATABASE_URL) and the @askdb/rag
-      # pgvector suite (ASKDB_PGVECTOR_URL; the test runs CREATE EXTENSION itself).
+      # service backs both the plain Postgres suite (DATABASE_URL) and the pgvector suites
+      # in @askdb/rag and Studio (ASKDB_PGVECTOR_URL). A step below creates the extension
+      # before the tests run.
       postgres:
         image: pgvector/pgvector:pg16
         env:
@@ -230,7 +238,7 @@ jobs:
           persist-credentials: false
 
       - name: Setup pnpm
-        uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
+        uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
 
       - name: Setup Node.js
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
@@ -258,11 +266,29 @@ jobs:
           -Q "IF DB_ID('askdb_test') IS NULL CREATE DATABASE askdb_test"
           -C
 
+      # Both pgvector suites run CREATE EXTENSION IF NOT EXISTS, which Postgres doesn't
+      # serialize: when turbo runs the two packages' tests at once, one can fail on a duplicate
+      # pg_extension key. With the extension already there, both statements are no-ops.
+      - name: Create the pgvector extension
+        run: >-
+          docker exec
+          "$(docker ps -q --filter "ancestor=pgvector/pgvector:pg16")"
+          psql -U postgres -d askdb_test
+          -c "CREATE EXTENSION IF NOT EXISTS vector"
+
       - name: Start and seed the multi-engine fixture
         run: pnpm fixture:up
 
       - name: Run unit + integration tests
         run: pnpm test
+        env:
+          ASKDB_TEST_SUMMARY_DIR: ${{ runner.temp }}/test-summary
+
+      - name: Test summary
+        if: always()
+        env:
+          ASKDB_TEST_SUMMARY_DIR: ${{ runner.temp }}/test-summary
+        run: node scripts/test-summary.mjs "Unit + integration tests" >> "$GITHUB_STEP_SUMMARY"
 
   # ── 3. Preflight ──────────────────────────────────────────────────────────
   # Release smoke test + publish dry-run. Runs in parallel with `test` so
@@ -279,7 +305,7 @@ jobs:
           persist-credentials: false
 
       - name: Setup pnpm
-        uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
+        uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
 
       - name: Setup Node.js
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
@@ -300,6 +326,11 @@ jobs:
 
       - name: Installable smoke test
         run: pnpm smoke:install
+
+      # @askdb/ai peers `ai` and each @ai-sdk/* package with wide floors; run its
+      # tests (contract tests included) with every peer installed at its floor.
+      - name: "@askdb/ai tests at the AI SDK peer floors"
+        run: pnpm test:ai-floors
 
       - name: Validate publish (dry-run)
         run: pnpm -r publish --dry-run --no-git-checks --access=public
@@ -363,13 +394,21 @@ jobs:
           persist-credentials: false
 
       - name: Setup pnpm
-        uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
+        uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
 
       - name: Setup Node.js
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 22
           cache: pnpm
+
+      # The lab's committed package.json and pnpm-lock.yaml must agree. Dependabot's root
+      # entry skips the lab for version updates only (exclude-paths; dependabot-core#14408),
+      # so a root security update can still bump a lab pin without the lab's lockfile, as
+      # #402 did. Revert that PR's change to the lab's package.json: the lab's own Dependabot
+      # entry proposes the lab's bumps with its lockfile (docs/adrs/0015).
+      - name: Check the lab's lockfile matches its manifest
+        run: pnpm -C examples/consumer-lab install --frozen-lockfile --lockfile-only
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
@@ -385,9 +424,16 @@ jobs:
       - name: Pack this commit's tarballs and install them in the lab
         run: pnpm lab:use .
 
-      # lab:up starts and seeds the fixture, then keeps the install above.
+      # lab:up starts and seeds the fixture, starts the lab's own Postgres (tenant-rls seeds it),
+      # then keeps the install above.
       - name: Run the consumer lab matrix
         run: pnpm lab:matrix
+
+      # The safety cases' effect proofs (#323), on a disposable second fixture (compose project
+      # askdb-lab-isolated, ports 25432/23306/23307/21433), never the shared one started above.
+      # The runner starts, seeds, tests and removes it, including after a failure. About a minute.
+      - name: Prove the safety cases' effects on an isolated fixture copy
+        run: pnpm lab:safety:isolated
 
       - name: Upload the matrix
         if: always()
