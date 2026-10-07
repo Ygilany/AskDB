@@ -115,6 +115,16 @@ columns:
     expect(refs).toEqual(["email"]);
   });
 
+  it.each<[string, string, string[]]>([
+    ["ssn$", "We hash the ssn$ value.", ["ssn$"]],
+    ["café", "Grouped by CAFÉ.", ["café"]],
+    ["café", "Grouped by cafés.", []],
+    ["caf", "Open the café.", []],
+  ])("findSensitiveColumnReferences uses core's mention rule for %j", (name, text, expected) => {
+    const table = { ...physical, columns: [{ ...physical.columns[0], name, sensitive: true }] };
+    expect(findSensitiveColumnReferences(text, table as never)).toEqual(expected);
+  });
+
   it("findSensitiveColumnReferences ignores non-sensitive columns", () => {
     const refs = findSensitiveColumnReferences(
       "The status column drives all reporting filters.",

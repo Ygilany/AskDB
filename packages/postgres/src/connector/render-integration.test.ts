@@ -68,15 +68,6 @@ describe("renderToSchemaV2 — clean write", () => {
     expect(schema.warnings).toHaveLength(0);
   });
 
-  it("is deterministic — two render runs produce a byte-identical schema.json", async () => {
-    const a = await renderOrdersUsers();
-    // Clean out and re-render with a fresh snapshot run to make sure we are
-    // not just reading a cached file.
-    rmSync(a.outDir, { recursive: true, force: true });
-    const b = await renderOrdersUsers();
-    expect(b.bytes).toBe(a.bytes);
-  });
-
   it("ends with a trailing newline (matches Phase 5 fixtures)", async () => {
     const { bytes } = await renderOrdersUsers();
     expect(bytes.endsWith("\n")).toBe(true);

@@ -16,16 +16,16 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "better-sqlite3": "^12.10.0",
-    "mssql": "^12.5.5",
-    "mysql2": "^3.22.5",
-    "pg": "^8.21.0"
+    "better-sqlite3": "^12.11.1",
+    "mssql": "^12.7.4",
+    "mysql2": "^3.24.5",
+    "pg": "^8.23.1"
   },
   "devDependencies": {
     "@types/better-sqlite3": "^7.6.13",
     "@types/mssql": "^12.3.0",
-    "@types/node": "^22.20.1",
-    "@types/pg": "^8.20.3",
-    "tsx": "^4.23.5"
+    "@types/node": "^22.20.5",
+    "@types/pg": "^8.23.1",
+    "tsx": "^4.23.15"
   }
 }

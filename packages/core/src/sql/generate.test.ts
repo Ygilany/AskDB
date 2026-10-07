@@ -2,6 +2,7 @@ import type { LanguageModel } from "ai";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { MockLanguageModelV3 } from "ai/test";
 import { describe, expect, it, vi } from "vitest";
 import { AskDbError, SqlValidationError, TenantGuardrailError } from "../errors.js";
 import { AskDbLogEvent } from "../logging/log-events.js";
@@ -191,40 +192,61 @@ describe("generateSelectSql — prompt parameterization per dialect", () => {
   async function capturedPrompt(
     dialect: typeof POSTGRES_DIALECT,
     sqlForModel: string,
-  ): Promise<{ instructions: string; prompt: string }> {
+  ): Promise<{ system: string; prompt: string }> {
     const generateText = vi.fn(async () => ({ text: `\`\`\`sql\n${sqlForModel}\n\`\`\`` }));
     await generateSelectSql(dialect, "show me users", minimalSchema, fakeModel, {
       generateText,
     });
-    const call = generateText.mock.calls[0]![0] as { instructions: string; prompt: string };
-    return { instructions: call.instructions, prompt: call.prompt };
+    const call = generateText.mock.calls[0]![0] as { system: string; prompt: string };
+    return { system: call.system, prompt: call.prompt };
   }
 
   it("MySQL prompt mentions backticks and CONCAT(), system prompt names MySQL", async () => {
-    const { instructions, prompt } = await capturedPrompt(MYSQL_DIALECT, "SELECT id FROM users");
-    expect(instructions).toMatch(/MySQL/);
+    const { system, prompt } = await capturedPrompt(MYSQL_DIALECT, "SELECT id FROM users");
+    expect(system).toMatch(/MySQL/);
     expect(prompt).toMatch(/MySQL SELECT/);
     expect(prompt).toMatch(/backtick/i);
     expect(prompt).toMatch(/CONCAT/);
   });
 
   it("SQLite prompt mentions strftime() and `||` concat, system prompt names SQLite", async () => {
-    const { instructions, prompt } = await capturedPrompt(SQLITE_DIALECT, "SELECT id FROM users");
-    expect(instructions).toMatch(/SQLite/);
+    const { system, prompt } = await capturedPrompt(SQLITE_DIALECT, "SELECT id FROM users");
+    expect(system).toMatch(/SQLite/);
     expect(prompt).toMatch(/SQLite SELECT/);
     expect(prompt).toMatch(/strftime/);
     expect(prompt).toMatch(/\|\|/);
   });
 
   it("SQL Server prompt mentions TOP and OFFSET .. FETCH NEXT", async () => {
-    const { instructions, prompt } = await capturedPrompt(
+    const { system, prompt } = await capturedPrompt(
       SQLSERVER_DIALECT,
       "SELECT TOP (5) id FROM users",
     );
-    expect(instructions).toMatch(/SQL Server/);
+    expect(system).toMatch(/SQL Server/);
     expect(prompt).toMatch(/SQL Server SELECT/);
     expect(prompt).toMatch(/TOP/);
     expect(prompt).toMatch(/OFFSET .* FETCH NEXT/);
+  });
+
+  // AI SDK 7 reads `system` only as a deprecated alias of `instructions`; this fails if the
+  // installed 7.x stops honoring it. The AI SDK 6 side is held by the consumer-ai6 install smoke.
+  it("delivers the `system` prompt to the model through the real AI SDK 7 generateText", async () => {
+    const model = new MockLanguageModelV3({
+      doGenerate: async () => ({
+        content: [{ type: "text", text: "```sql\nSELECT id FROM users\n```" }],
+        finishReason: { unified: "stop", raw: undefined },
+        usage: {
+          inputTokens: { total: 1, noCache: 1, cacheRead: undefined, cacheWrite: undefined },
+          outputTokens: { total: 1, text: 1, reasoning: undefined },
+        },
+        warnings: [],
+      }),
+    });
+    const result = await generateSelectSql(POSTGRES_DIALECT, "show me users", minimalSchema, model);
+    expect(result.sql).toMatch(/SELECT id FROM users/);
+    const prompt = model.doGenerateCalls[0]!.prompt;
+    const systemMessage = prompt.find((m) => m.role === "system");
+    expect(systemMessage?.content).toEqual(expect.stringContaining("AskDB SQL generator"));
   });
 });
 
@@ -372,7 +394,7 @@ describe("generateSelectSql — tenant guardrail checks the returned SQL", () =>
     const schema = loadSchema(multiTenantDir);
     const out = await generateSelectSql(POSTGRES_DIALECT, "orders", schema, fakeModel, {
       generateText: vi.fn(async () => ({
-        text: "```sql\nSELECT * FROM orders WHERE \"agency_id\" = '42'\n```",
+        text: "```sql\nSELECT * FROM orders WHERE \"agency_id\" = :tenant_agency_ids\n```",
       })) as never,
       tenantPolicy: schema.tenantPolicy,
       tenantScope: agencyScope,

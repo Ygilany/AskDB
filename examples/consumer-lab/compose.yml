@@ -1,0 +1,33 @@
+# The consumer lab's own database, beside the shared multi-engine fixture. It is lab-only, so
+# the lab may change it, which it never does to the fixture's (docs/specs/consumer-lab.md,
+# "Two things are lab-only and live in the lab, not the fixture").
+#
+# `pnpm lab:up` starts it (`pnpm -C examples/consumer-lab postgres:up`); the tenant-rls test seeds
+# it before it runs (src/lab-postgres.ts). `pnpm lab:down` stops it. Its data is on a tmpfs, so
+# stopping it removes it.
+#
+#   postgres  127.0.0.1:15442  the fixture's Postgres schema and rows, seeded by the fixture's own
+#                              seeder, plus the lab_tenant role and row-level security
+#                              (src/lab-postgres.sql). Same owner, reader and database as the
+#                              fixture's Postgres; lab_tenant/lab_tenant.
+#
+# ASKDB_LAB_POSTGRES_PORT overrides the host port (src/lab-postgres.ts reads it too). The
+# fixture's ports (15432, 13306, 13307, 11433) and their usual second copy (25432, …) are left free.
+name: askdb-consumer-lab
+
+services:
+  postgres:
+    image: postgres:17
+    environment:
+      POSTGRES_USER: fixture_owner
+      POSTGRES_PASSWORD: fixture_owner
+      POSTGRES_DB: askdb_fixture
+    ports:
+      - "${ASKDB_LAB_POSTGRES_PORT:-15442}:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U fixture_owner -d askdb_fixture"]
+      interval: 2s
+      timeout: 5s
+      retries: 30
+    tmpfs:
+      - /var/lib/postgresql/data

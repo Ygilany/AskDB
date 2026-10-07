@@ -1,5 +1,10 @@
 {
   "question": "List every agency's id with the name of its parent agency, if it has one.",
-  "reply": "```sql\nSELECT a.agency_id, p.name AS parent_name\nFROM org.agency AS a\nLEFT JOIN org.agency AS p ON p.agency_id = a.parent_agency_id\nORDER BY a.agency_id\n```",
-  "source": "authored"
+  "reply": "```sql\nSELECT \n    \"agency\".\"agency_id\", \n    \"parent_agency\".\"name\" AS \"parent_agency_name\"\nFROM \n    \"org\".\"agency\" AS \"agency\"\nLEFT JOIN \n    \"org\".\"agency\" AS \"parent_agency\" \nON \n    \"agency\".\"parent_agency_id\" = \"parent_agency\".\"agency_id\";\n```\n\n```sql-unbound\nSELECT \n    \"agency\".\"agency_id\", \n    \"parent_agency\".\"name\" AS \"parent_agency_name\"\nFROM \n    \"org\".\"agency\" AS \"agency\"\nLEFT JOIN \n    \"org\".\"agency\" AS \"parent_agency\" \nON \n    \"agency\".\"parent_agency_id\" = \"parent_agency\".\"agency_id\";\n```\n\n```json\n{\"parameters\":[]}\n```",
+  "source": "recorded",
+  "recordedWith": {
+    "model": "gpt-4o-mini-2024-07-18",
+    "askdbTarget": "askdb@1.0.0-beta.43, checkout @ fd5f2a9f (consumer-lab/452-question-columns)",
+    "at": "2026-10-05"
+  }
 }

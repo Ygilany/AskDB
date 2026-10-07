@@ -88,12 +88,12 @@ Front-matter is validated by zod (round-trippable through `@askdb/enrich` author
 ## Data access
 
 - **Postgres-first** — The first shipped path targets **PostgreSQL** for dialect assumptions in generation, validation guardrails, and live introspection. Treat this as the **reference implementation** quality bar.
-- **No generated-SQL execution in core** — `@askdb/core` returns validated SQL only. Applications own any later approval, execution, read-only roles, network policy, and audit logging outside AskDB.
+- **No generated-SQL execution in core** — `@askdb/core` returns checked SQL only. Applications own any later approval, execution, read-only roles, network policy, and audit logging outside AskDB.
 - **Other databases later** — Support for **additional engines** (beyond Postgres) lands in a **later roadmap phase**: per-engine drivers, dialect-aware generation/validation, and tests—rolled out **one database at a time** so we do not dilute safety or correctness. See **`roadmap.md`** (multi-database phase).
 
 ## AI and integrations
 
-- **BYO chat model** — `ask({ model })` accepts any AI SDK `LanguageModel`. Customers wire OpenAI, Anthropic, Google, Bedrock, AI Gateway, Ollama, etc. without changes inside AskDB. Per-provider config recipes (OpenAI, Azure OpenAI / Foundry, Google Gemini, Anthropic) in [`docs/integration/installable-package.md`](integration/installable-package.md).
+- **BYO language model** — `ask({ model })` accepts any AI SDK `LanguageModel`. Customers wire OpenAI, Anthropic, Google, Bedrock, AI Gateway, Ollama, etc. without changes inside AskDB. Per-provider config recipes (OpenAI, Azure OpenAI / Foundry, Google Gemini, Anthropic) in [`docs/integration/installable-package.md`](integration/installable-package.md).
 - **BYO embedder** (Phase 8) — `@askdb/rag` chunking and retrieval accept any embedder function (AI SDK `embed()` / `embedMany()` shape). Default reference: `text-embedding-3-small`; nothing in `@askdb/core` requires it.
 - **BYO vector store** (Phase 8) — `@askdb/rag` ships an `VectorStore` interface with adapters added one at a time: in-memory (default, zero deps), file-backed (`*.embeddings.bin` checked in next to the schema artifact), pgvector, then others as demand drives. Consumers pick the adapter or implement their own.
 - **No mandatory vendors** — Nothing in the package requires an AskDB-owned account or service. Every external dependency is a seam the integrator chooses.

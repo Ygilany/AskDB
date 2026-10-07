@@ -22,7 +22,6 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { bootstrapAskDbEnv, getAskDbRuntimeConfig } from "@askdb/config";
 import { createAiRegistry } from "@askdb/ai";
-import { openaiProvider } from "@askdb/ai-openai";
 import { createAskDb } from "@askdb/client";
 import {
   ask,
@@ -31,9 +30,10 @@ import {
 import { buildSchemaIndex, createMemoryStore, createAiSdkEmbedder } from "@askdb/rag";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-// Registry built manually only for the advanced direct-ask() path below;
-// the fast path passes `providers` to createAskDb instead.
-const ai = createAiRegistry([openaiProvider]);
+// Registry built manually only for the advanced direct-ask() path below; the
+// fast path lets createAskDb register the built-in providers itself. "openai" is
+// built into @askdb/ai and loads @ai-sdk/openai (installed here) on first use.
+const ai = createAiRegistry(["openai"]);
 
 // Load .env (if present) and evaluate askdb.config.ts in this directory,
 // installing the AskDB runtime snapshot used by all subsequent calls.
@@ -77,7 +77,6 @@ async function main(): Promise<void> {
 
   const askdb = createAskDb({
     config: runtimeConfig,
-    providers: [openaiProvider], // adapters only — the client builds the registry
     schema: { path: SCHEMA_DIR }, // or set host.schemaPath in askdb.config.ts and omit this
   });
 
@@ -125,14 +124,16 @@ async function main(): Promise<void> {
   //
   // For larger schemas (many tables / columns), build a vector index and pass
   // a retriever so only the relevant schema chunks are sent to the model.
-  // createEmbeddingModelFromEnv uses the same config but defaults to the
-  // embedding model (text-embedding-3-small) rather than the chat model.
-  const embeddingModel = await ai.createEmbeddingModelFromEnv(
-    runtimeConfig.ai.aiEnv,
-  );
+  // `ai.embedding` in askdb.config.ts picks the embedding model; its env view
+  // holds that section's connection only. The width isn't in the env view, so
+  // it's passed as an option.
+  const embedding = runtimeConfig.ai.embedding;
+  const embeddingModel = embedding
+    ? await ai.createEmbeddingModelFromEnv(embedding.env, { dimensions: embedding.dimensions })
+    : undefined;
 
   if (!embeddingModel) {
-    console.log("\nSkipping RAG path — no embedding key configured.");
+    console.log("\nSkipping RAG path — no embedding model or key configured.");
     return;
   }
 

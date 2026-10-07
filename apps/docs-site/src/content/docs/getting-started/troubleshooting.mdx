@@ -13,17 +13,31 @@ import { Aside } from "@astrojs/starlight/components";
 
 ## Schema and config
 
-### `Error: Cannot find config file`
+### `No askdb.config.* or .config/askdb.* found in …`
+
+`askdb ask` and `askdb introspect` print this when the current directory has no config. `bootstrapAskDbEnv()` throws a similar error (`… found under <cwd>`) when you embed the libraries.
 
 AskDB looks for `askdb.config.<ext>` (then `.config/askdb.<ext>`) in the **current working directory only** — in a monorepo it won't find a config in a parent directory. Supported extensions, in precedence order: `ts`, `mts`, `cts`, `js`, `mjs`, `cjs`.
 
-The fix is always the same: run the CLI from the directory that holds the config.
+If the project has no config yet, create one with `npx askdb init`. If it has one, run the CLI from the directory that holds the config.
 
 ```bash
 cd apps/api && npx askdb ask --question "..."
 ```
 
 When embedding the libraries, the equivalent knob is the `cwd` option: `bootstrapAskDbEnv({ cwd: "/path/to/project" })`.
+
+### `Set ASKDB_DEBUG=1 to print the stack trace.`
+
+The CLI hit an unexpected error, most often a config file that exists but fails to load: a syntax error, a missing import, or dependencies that aren't installed yet. The line above the hint is the error message, and it usually names the file and line.
+
+Rerun with `ASKDB_DEBUG=1` to see the stack trace:
+
+```bash
+ASKDB_DEBUG=1 npx askdb ask --question "..."
+```
+
+`askdb studio` doesn't stop on a config that fails to load: it prints `askdb-studio: warning: <path> could not be loaded, so Studio is ignoring it: …` and starts without it. Fix the file and restart Studio; the setup wizard never overwrites it.
 
 ### `SchemaParseError: Cannot read schema at …`
 
@@ -59,15 +73,15 @@ The model returned more than one SQL statement. AskDB refuses multi-statement ou
 
 ### `SqlValidationError: SQL_COMMENT` / `SQL_FORBIDDEN_KEYWORD` / `SQL_FORBIDDEN_FUNCTION`
 
-The generated SQL contains a SQL comment (including `#` on MySQL), a forbidden keyword (`INTO`, `DELETE`, `EXEC`, `WAITFOR`, etc.), or a call to a blocked side-effecting function (`pg_sleep`, `set_config`, `LOAD_FILE`, `SLEEP`, etc.). Keywords are matched as whole, unquoted tokens, so a column like `deleted_at` or `"delete"` is fine. These are heuristic, defense-in-depth guardrails. If one fires on a legitimate query, file an issue with the question and schema excerpt.
+The generated SQL contains a SQL comment (including `#` on MySQL), a forbidden keyword (`INTO`, `DELETE`, `EXEC`, `WAITFOR`, etc.), or a call to a blocked side-effecting function (`pg_sleep`, `set_config`, `LOAD_FILE`, `SLEEP`, etc.). Keywords are matched as whole, unquoted tokens, so a column like `deleted_at` or `"delete"` is fine, but an unquoted column or alias named like a keyword (say, `update`) also trips them. These are heuristic, defense-in-depth guardrails. If one fires on a legitimate query, file an issue with the question and schema excerpt.
 
 ### `SqlValidationError: SQL_UNTERMINATED`
 
-A string literal, quoted identifier, dollar-quoted string, or block comment in the generated SQL never closes, so the validator cannot tell where the statement ends and rejects it. On MySQL, check that the dialect's `backslashEscapes` setting matches the server (`NO_BACKSLASH_ESCAPES`).
+A string literal, quoted identifier, dollar-quoted string, or block comment in the generated SQL never closes, so the validator cannot tell where the statement ends and rejects it. On MySQL or MariaDB, check that the dialect's `backslashEscapes` setting matches the server (`NO_BACKSLASH_ESCAPES`). A mismatch matters beyond false rejections: it also lets SQL through that the server reads differently. See [Match your server's string settings](/concepts/safety-boundaries/#match-your-servers-string-settings).
 
 ### Generated SQL references a column or table that doesn't exist
 
-This is the most common failure mode. The model hallucinated an identifier that isn't in your schema. AskDB's heuristic validator catches *most* of these, but not all.
+This is the most common failure mode. The model hallucinated an identifier that isn't in your schema. AskDB doesn't check generated identifiers against the schema, so your database reports these when you run the query.
 
 **Fix:** Enrich the relevant tables in your schema artifact with plain-English descriptions. The more context the model has, the less it invents:
 
@@ -81,7 +95,7 @@ If the column exists in the database but the model keeps getting it wrong, check
 
 ### The SQL is syntactically valid but logically wrong
 
-SQL validation is heuristic — AskDB confirms the statement kind and grounds identifiers, but it can't verify that the query answers your question semantically. The quality of answers depends almost entirely on how well the schema artifact describes your data.
+SQL validation is heuristic — AskDB confirms the statement kind and blocks write keywords and side-effecting functions, but it doesn't check identifiers and can't verify that the query answers your question semantically. The quality of answers depends almost entirely on how well the schema artifact describes your data.
 
 Checklist:
 1. Does the relevant table have a description? (`description:` field in the table's `.md` file)
@@ -203,11 +217,15 @@ The `tenantRoot` in the scope doesn't match any root defined in `tenant-policy.m
 
 ### `TenantScopeError: SUBTREE_NOT_RESOLVABLE`
 
-The scope uses `access.kind: "subtree"`, but `ask()` couldn't expand it. Either no `resolveTenantDescendants` callback was passed, or the callback returned an empty array or something other than an array of non-empty string IDs. AskDB doesn't query your database to find descendants, and it won't fall back to the seed IDs alone. Pass a resolver that returns every ID in the subtree, or send an `ids` access with the IDs already expanded. Calling `resolveTenantSql()` directly with an unexpanded `subtree` scope throws the same error, because it doesn't walk the hierarchy either. See [Hierarchical scope](/guides/multi-tenancy/#hierarchical-scope-subtree).
+The scope uses `access.kind: "subtree"`, but `ask()` couldn't expand it. Either no `resolveTenantDescendants` callback was passed, or the callback didn't return IDs per tenant root. The message says which: it returned an array (the flat shape from before per-root IDs), something other than a plain object, a key that isn't a tenant root in the subtree, a value that isn't an array of non-empty string IDs, or no IDs at all. AskDB doesn't query your database to find descendants, and it won't fall back to the seed IDs alone. Return an object keyed by root table ID, with the seeds and same-table descendants under the scope's `tenantRoot` and each descendant root's IDs under that root: `{ "table:public.agencies": ["1"], "table:public.clients": ["5"] }`. Or send a `multi_root` access with each root's IDs already expanded. Calling `resolveTenantSql()` or `buildTenantPromptBlock()` directly with an unexpanded `subtree` scope throws the same error, because neither walks the hierarchy. See [Hierarchical scope](/guides/multi-tenancy/#hierarchical-scope-subtree).
+
+### `SchemaParseError: Invalid tenant policy: roots … both map to the placeholder …`
+
+Two roots in `tenant-policy.md` derive the same placeholder. A placeholder is the label lowercased, with every run of characters other than ASCII letters and digits turned into `_`, so `Agency` and `agency` both give `:tenant_agency_ids`. A label with no ASCII letter or digit (Cyrillic, CJK and so on) uses the root's table name instead: `Клиент` on `table:public.clients` gives `:tenant_clients_ids`. That fallback can still collide, for example when both table names are non-ASCII too, or when it meets another root's label. Each root's IDs are bound through its own placeholder, so a shared one would bind one root's IDs where the other root's column is compared. AskDB rejects the policy when it loads, `ask()` and `resolveTenantSql()` reject a policy built in code the same way, and Studio refuses to save it. Rename one of the two roots named in the message, using a label with ASCII letters or digits if the fallback collides. See the `label` row in the [field reference](/guides/multi-tenancy/#field-reference).
 
 ### `TenantGuardrailError`
 
-The generated SQL doesn't include a required tenant predicate on one or more tenant-bound tables. This is a fail-closed guardrail: AskDB refuses to return SQL that could leak cross-tenant data. Re-ask the question with a more specific scope, or inspect the `warnings` array on the error for which table triggered the guardrail.
+Your tenant policy uses `enforcement: strict`, and the generated SQL is missing a required tenant predicate on a tenant-scoped or root table, names a table the policy leaves unclassified, or names a polymorphic table without its type discriminator. AskDB throws instead of returning that SQL. A predicate counts only as the table's tenant column compared with its placeholder (`agency_id = :tenant_agency_ids`, or `IN (…)` / `= ANY(…)`), ANDed into a `WHERE`, inner-join `ON`, or `HAVING` clause. A literal tenant ID, a column that's only selected, or a predicate next to an `OR` doesn't count, and a query on the root table itself needs the predicate too; see [What the tenant check requires](/guides/multi-tenancy/#what-the-tenant-check-requires). Under a `subtree` scope, each covered root the query reads needs its own placeholder: filtering `clients` only through `clients.sub_agency_id` or a joined agency is rejected, and a covered root you returned no IDs for can't be read at all (see [Hierarchical scope](/guides/multi-tenancy/#hierarchical-scope-subtree)). Inspect the `warnings` array on the error to see which table triggered it, then re-ask the question or narrow it. The check is heuristic: passing it doesn't prove the query is tenant-safe, so keep tenant isolation enforced in the database. See [Run generated SQL safely](/concepts/safety-boundaries/#run-generated-sql-safely).
 
 ---
 

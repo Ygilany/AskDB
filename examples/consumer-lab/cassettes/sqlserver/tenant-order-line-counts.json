@@ -1,5 +1,5 @@
 {
-  "question": "How many lines does each order in my scope have?",
+  "question": "For each order in my scope, show its id and how many lines it has.",
   "reply": "```sql\nSELECT o.order_id, COUNT(*) AS line_count\nFROM billing.order_line AS l\nJOIN billing.[order] AS o ON o.order_id = l.order_id\nWHERE o.agency_id = :tenant_agency_ids\nGROUP BY o.order_id\nORDER BY o.order_id\n```",
   "source": "authored"
 }

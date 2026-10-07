@@ -34,7 +34,7 @@
 import { TenantGuardrailError, TenantScopeError } from "@askdb/core";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it, type TestContext } from "vitest";
-import { askRaw, type AskExtras, type AskResult } from "../src/ask.js";
+import { askRaw, settle, type AskExtras, type AskResult, type Settled } from "../src/ask.js";
 import { needsCapability } from "../src/capabilities.js";
 import { SUPPORTED_DIALECTS, type SupportedDialect } from "../src/dialects.js";
 import { normalizeRows } from "../src/fixture.js";
@@ -110,8 +110,6 @@ function ask(dialect: SupportedDialect, id: string, extras: AskExtras, enforceme
   return askRaw(dialect, question(id).text, artifact(dialect, enforcement), replay.baseURL(dialect), extras);
 }
 
-type Settled = { ok: true; result: AskResult } | { ok: false; error: unknown };
-const settle = (p: Promise<AskResult>): Promise<Settled> => p.then((result) => ({ ok: true, result }), (error: unknown) => ({ ok: false, error }));
 
 /** The model calls the replay server received for a question. */
 const modelCalls = (id: string) => replay.requests().filter((r) => r.questionId === id).length;
@@ -240,11 +238,11 @@ describe.each(SUPPORTED_DIALECTS.map((d) => [d] as [SupportedDialect]))("[%s]", 
   });
 
   /**
-   * Contract: `ask()` "unions the seed IDs into the result (deduplicated), so an ancestor
-   * never loses its own rows when a resolver returns strict descendants only", and it calls
-   * the resolver with every seed in `access.rootIds` (`docs/contracts/tenant-policy.md`,
-   * "Subtree expansion"; `reference/core-api.mdx`, `resolveTenantDescendants`: "the seeds are
-   * always unioned in"). So a resolver that returns only 4, 5 and 6 for agency 1 still scopes
+   * Contract: `ask()` "unions the seed IDs into the `tenantRoot` entry (deduplicated), so an
+   * ancestor never loses its own rows when a resolver returns strict descendants only", and it
+   * calls the resolver with every seed in `access.rootIds` (`docs/contracts/tenant-policy.md`,
+   * "Subtree expansion"; `reference/core-api.mdx`, `resolveTenantDescendants`: "`ask()`
+   * unions the seeds in"). So a resolver that returns only 4, 5 and 6 for agency 1 still scopes
    * to 1, 4, 5 and 6; and seeds 5 and 2 together see 2, 5, 6 and 7.
    * Catches: the seed union dropped (the lab's usual resolver returns the seeds itself, so
    * `tenant-subtree` can't see it), or a subtree expanded from its first seed only.
@@ -263,7 +261,7 @@ describe.each(SUPPORTED_DIALECTS.map((d) => [d] as [SupportedDialect]))("[%s]", 
         await needsCapability(ctx, "subtree-resolver");
         const resolveTenantDescendants = agencyDescendants(dialect, { strictDescendants });
         // The resolver must leave something to union in, or this couldn't catch a lost union.
-        if (strictDescendants) expect(await agencyDescendants(dialect, { strictDescendants })(agencyRoot(dialect), seeds.map(String))).not.toContain(String(seeds[0]));
+        if (strictDescendants) expect((await agencyDescendants(dialect, { strictDescendants })(agencyRoot(dialect), seeds.map(String)))[agencyRoot(dialect)]).not.toContain(String(seeds[0]));
 
         const result = await ask(dialect, id, { tenantScope: subtreeScope(dialect, [...seeds]), tenantSqlMode: mode, resolveTenantDescendants });
 
@@ -309,11 +307,12 @@ describe.each(SUPPORTED_DIALECTS.map((d) => [d] as [SupportedDialect]))("[%s]", 
    * - `tenant-strict-wrong-tenant`: `WHERE agency_id = 1` under a scope for agency 2;
    * - `tenant-strict-or-true`: `WHERE agency_id = :tenant_agency_ids OR 1 = 1`;
    * - `tenant-strict-root-table`: the root table `org.agency`, read with no filter.
-   * Catches: a guardrail that accepts a present-but-ineffective filter. Today it accepts all
-   * four (#315): it checks that the tenant column's name appears, not that it
-   * filters, and it never checks the root table.
-   * Not covered elsewhere: core's guardrail tests pin these as known limits of the heuristic
-   * (#230), but never run the SQL to show the leak on an engine.
+   * Catches: a guardrail that accepts a present-but-ineffective filter. Before the fix for
+   * #315 it accepted all four: it checked that the tenant column's name appeared, not that
+   * it filtered, and it never checked the root table. Releases from before that fix report
+   * `n/a (capability: tenant-predicate-required)`.
+   * Not covered elsewhere: core's guardrail tests check the rule on SQL text; only this runs
+   * the SQL on an engine, to show each reply really leaks.
    */
   const INEFFECTIVE = [
     // scenario, reply, oracle, the agencies the reply returns when run raw
@@ -336,8 +335,9 @@ describe.each(SUPPORTED_DIALECTS.map((d) => [d] as [SupportedDialect]))("[%s]", 
       expect(raw).not.toEqual(expected(oracleId, [FLAT]));
     });
 
-    it.fails(`strict mode rejects the ${id} reply, whose filter doesn't keep the rows to agency ${FLAT} (#315)`, async (ctx) => {
+    it(`strict mode rejects the ${id} reply, whose filter doesn't keep the rows to agency ${FLAT}`, async (ctx) => {
       await needsTenantCapabilities(ctx, dialect);
+      await needsCapability(ctx, "tenant-predicate-required");
 
       const outcome = await settle(ask(dialect, id, { tenantScope: idsScope(dialect, [FLAT]) }));
 

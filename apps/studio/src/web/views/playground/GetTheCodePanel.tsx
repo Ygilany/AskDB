@@ -3,14 +3,12 @@ import { Code2 } from "lucide-react";
 import { useWorkspace } from "../../contexts/workspace-context";
 import { usePlayground } from "../../contexts/playground-context";
 import { CopyButton } from "../../components/common/CopyButton";
+import { snippetInstallLine, type SnippetWiring } from "../../lib/install-line";
 
 const fieldsetResetStyle = { border: 0, padding: 0, margin: 0 };
 
-type Wiring = "client" | "core";
-
 type ProviderWiring = {
-  adapterPackage: string;
-  adapterImport: string;
+  /** AI SDK package the host installs; `@askdb/ai` loads it lazily for the config-driven path. */
   sdkPackage: string;
   sdkImport: string;
   sdkModel: (model: string) => string;
@@ -18,32 +16,29 @@ type ProviderWiring = {
 
 const PROVIDER_WIRING: Record<string, ProviderWiring> = {
   openai: {
-    adapterPackage: "@askdb/ai-openai",
-    adapterImport: "openaiProvider",
     sdkPackage: "@ai-sdk/openai",
     sdkImport: "openai",
     sdkModel: (model) => `openai(${JSON.stringify(model)})`,
   },
   anthropic: {
-    adapterPackage: "@askdb/ai-anthropic",
-    adapterImport: "anthropicProvider",
     sdkPackage: "@ai-sdk/anthropic",
     sdkImport: "anthropic",
     sdkModel: (model) => `anthropic(${JSON.stringify(model)})`,
   },
   google: {
-    adapterPackage: "@askdb/ai-google",
-    adapterImport: "googleProvider",
     sdkPackage: "@ai-sdk/google",
     sdkImport: "google",
     sdkModel: (model) => `google(${JSON.stringify(model)})`,
   },
   azure: {
-    adapterPackage: "@askdb/ai-azure",
-    adapterImport: "azureProvider",
     sdkPackage: "@ai-sdk/azure",
     sdkImport: "azure",
     sdkModel: (model) => `azure(${JSON.stringify(model)}) // your deployment name`,
+  },
+  gateway: {
+    sdkPackage: "ai",
+    sdkImport: "gateway",
+    sdkModel: (model) => `gateway(${JSON.stringify(model)})`,
   },
 };
 
@@ -61,7 +56,7 @@ export function GetTheCodePanel() {
     generatedTenantScopeJson,
     askTenantSqlMode,
   } = usePlayground();
-  const [wiring, setWiring] = useState<Wiring>("client");
+  const [wiring, setWiring] = useState<SnippetWiring>("client");
 
   const snippet = useMemo(() => {
     if (!workspace) return "";
@@ -74,17 +69,20 @@ export function GetTheCodePanel() {
       const overrides = tenant
         ? `, {\n  tenantScope: ${indentBlock(tenant, 2)},\n  tenantSqlMode: ${JSON.stringify(askTenantSqlMode)},\n}`
         : "";
-      return `// npm install @askdb/client @askdb/config ${wiringDef.adapterPackage}
+      const bundledSdk = wiringDef.sdkPackage === "ai";
+      const providerNote = bundledSdk
+        ? "the AI Gateway provider ships with `ai`"
+        : `${wiringDef.sdkPackage} is loaded on first use`;
+      return `// ${snippetInstallLine("client", wiringDef.sdkPackage)}
 import { createAskDb } from "@askdb/client";
 import { bootstrapAskDbEnv, getAskDbRuntimeConfig } from "@askdb/config";
-import { ${wiringDef.adapterImport} } from "${wiringDef.adapterPackage}";
 
 // Reads the same askdb.config.ts + .env this Studio session uses.
 bootstrapAskDbEnv({ cwd: process.cwd() });
 
 const askdb = createAskDb({
+  // ai.provider in askdb.config.ts picks the model; ${providerNote}.
   config: getAskDbRuntimeConfig(),
-  providers: [${wiringDef.adapterImport}],
   schema: { path: ${JSON.stringify(schemaPath)} },
 });
 
@@ -92,14 +90,14 @@ const { sql${tenant && askTenantSqlMode === "sql-params" ? ", tenantParams" : ""
   ${JSON.stringify(question)}${overrides ? indentBlock(overrides, 2) : ""}
 );
 
-// AskDB returns validated SQL — it never executes it.
+// AskDB returns checked SQL — it never executes it.
 // Run it through your own pool under a read-only role${tenant && askTenantSqlMode === "sql-params" ? ", binding tenantParams" : ""}.`;
     }
 
     const tenantOptions = tenant
       ? `\n  tenantScope: ${indentBlock(tenant, 2)},\n  tenantSqlMode: ${JSON.stringify(askTenantSqlMode)},`
       : "";
-    return `// npm install @askdb/core ${wiringDef.sdkPackage}
+    return `// ${snippetInstallLine("core", wiringDef.sdkPackage)}
 import { ask, loadSchema } from "@askdb/core";
 import { ${wiringDef.sdkImport} } from "${wiringDef.sdkPackage}";
 
@@ -113,7 +111,7 @@ const { sql${tenant && askTenantSqlMode === "sql-params" ? ", tenantParams" : ""
   model,${tenantOptions}
 });
 
-// AskDB returns validated SQL — it never executes it.
+// AskDB returns checked SQL — it never executes it.
 // Run it through your own pool under a read-only role${tenant && askTenantSqlMode === "sql-params" ? ", binding tenantParams" : ""}.`;
   }, [workspace, wiring, askQuestion, askTenantEnabled, generatedTenantScopeJson, askTenantSqlMode]);
 

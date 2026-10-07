@@ -5,15 +5,15 @@
   },
   {
     "id": "tenant-client-agencies",
-    "text": "List the clients in my scope with the name of their agency."
+    "text": "List the id and full name of each client in my scope, with the name of their agency."
   },
   {
     "id": "tenant-order-line-counts",
-    "text": "How many lines does each order in my scope have?"
+    "text": "For each order in my scope, show its id and how many lines it has."
   },
   {
     "id": "tenant-payments-per-agency",
-    "text": "What is the total payment amount for each agency in my scope?"
+    "text": "For each agency in my scope, show its id and the total payment amount."
   },
   {
     "id": "tenant-programs-since",

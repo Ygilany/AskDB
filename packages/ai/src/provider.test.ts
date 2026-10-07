@@ -1,10 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
-import {
-  createAiRegistry,
-  resolveBaseConfig,
-  type AiProviderAdapter,
-  type ProviderEnvSpec,
-} from "./provider.js";
+import { resolveBaseConfig, type AiProviderAdapter, type ProviderEnvSpec } from "./provider.js";
+import { aiKeyMissingMessage, aiProviderMissingMessage, createAiRegistry } from "./registry.js";
 
 const spec: ProviderEnvSpec = {
   apiKeyVars: ["NATIVE_API_KEY"],
@@ -198,8 +194,34 @@ describe("resolveBaseConfig", () => {
         { usage: "embedding" },
       ),
     ).toThrowError(
-      "test: no embedding model configured. Set ASKDB_AI_MODEL (or the provider's native model variable).",
+      "test: no embedding model configured. Set ai.embedding.model in askdb.config.* (or ASKDB_AI_EMBEDDING_MODEL).",
     );
+  });
+});
+
+describe("the deprecated default embedding model", () => {
+  it("warns once per process when it picks the model, and never when a model is set", async () => {
+    // A fresh module graph, so an earlier test's use of the default doesn't hide the warning.
+    vi.resetModules();
+    const { createAiRegistry: createFreshRegistry } = await import("./registry.js");
+    const emitWarning = vi.spyOn(process, "emitWarning").mockImplementation(() => {});
+    try {
+      const ai = createFreshRegistry(["openai"]);
+      expect(
+        ai.resolveEmbeddingConfig({ OPENAI_API_KEY: "k", ASKDB_AI_EMBEDDING_MODEL: "text-embedding-3-large" })?.model,
+      ).toBe("text-embedding-3-large");
+      expect(emitWarning).not.toHaveBeenCalled();
+
+      expect(ai.resolveEmbeddingConfig({ OPENAI_API_KEY: "k" })?.model).toBe("text-embedding-3-small");
+      expect(ai.resolveEmbeddingConfig({ OPENAI_API_KEY: "k" })?.model).toBe("text-embedding-3-small");
+      expect(emitWarning).toHaveBeenCalledTimes(1);
+      expect(emitWarning).toHaveBeenCalledWith(expect.stringContaining("set ASKDB_AI_EMBEDDING_MODEL"), {
+        type: "DeprecationWarning",
+        code: "ASKDB_AI_DEFAULT_EMBEDDING_MODEL",
+      });
+    } finally {
+      emitWarning.mockRestore();
+    }
   });
 });
 
@@ -357,7 +379,62 @@ describe("createAiRegistry", () => {
         apiKey: "k",
         model: "gemini-2.0-flash",
       }),
-    ).rejects.toThrow(/Install @askdb\/ai-google/);
+    ).rejects.toThrow(/pass "google" to createAiRegistry\(\).*npm i @ai-sdk\/google/);
+  });
+
+  describe("aiProviderMissingMessage", () => {
+    it.each([
+      ["openai", "openai", "@ai-sdk/openai"],
+      ["azure", "azure", "@ai-sdk/azure"],
+      ["foundry", "azure", "@ai-sdk/azure"],
+      ["azure-openai", "azure", "@ai-sdk/azure"],
+      ["Foundry", "azure", "@ai-sdk/azure"],
+      ["anthropic", "anthropic", "@ai-sdk/anthropic"],
+      ["google", "google", "@ai-sdk/google"],
+    ])("tells %s to register built-in %s and install %s", (provider, builtin, pkg) => {
+      const message = aiProviderMissingMessage(provider);
+      expect(message).toContain(`AI provider "${provider}" is not registered.`);
+      expect(message).toContain(`pass "${builtin}" to createAiRegistry()`);
+      expect(message).toContain(`npm i ${pkg}.`);
+      expect(message).not.toContain("@askdb/ai-");
+    });
+
+    it("does not ask to install a package for the gateway, which ships with ai", () => {
+      const message = aiProviderMissingMessage("gateway");
+      expect(message).toContain('pass "gateway" to createAiRegistry()');
+      expect(message).not.toContain("npm i");
+    });
+
+    // `constructor` and `__proto__` are Object.prototype names, not adapters.
+    it.each(["mistral", "constructor", "__proto__"])(
+      "does not invent a package name for the custom provider %s",
+      (provider) => {
+        const message = aiProviderMissingMessage(provider);
+        expect(message).toContain(`AI provider "${provider}" is not registered.`);
+        expect(message).not.toContain(`@askdb/ai-${provider}`);
+        expect(message).not.toContain(`@ai-sdk/${provider}`);
+        expect(message).not.toContain("undefined");
+        expect(message).toMatch(/not built into @askdb\/ai \(built-in providers: openai, anthropic, google, azure, gateway\)/);
+        expect(message).toMatch(/createAiRegistry\(\)/);
+      },
+    );
+
+    it("maps an alias to its owning package when surfaced through the registry", async () => {
+      const registry = createAiRegistry([]);
+      await expect(
+        registry.createLanguageModel({ provider: "foundry", apiKey: "k", model: "m" }),
+      ).rejects.toThrow(/pass "azure" to createAiRegistry\(\).*npm i @ai-sdk\/azure/);
+    });
+  });
+
+  describe("aiKeyMissingMessage", () => {
+    it("names every built-in provider, including Anthropic and the gateway", () => {
+      const message = aiKeyMissingMessage("ctx");
+      expect(message).toContain("ctx: no AI API key configured.");
+      for (const provider of ["openai", "azure", "anthropic", "google", "gateway"]) {
+        expect(message).toContain(`ai.providerConfig.${provider}.apiKey`);
+      }
+    });
   });
 
   it("lists registered providers when ASKDB_AI_PROVIDER is unknown", () => {

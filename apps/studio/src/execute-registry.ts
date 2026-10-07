@@ -14,8 +14,13 @@
  * 1. The server validates SQL with `@askdb/core`'s `validateSelectSql` before it
  *    reaches a runner ({@link validateExecuteSql}). Runners receive the
  *    normalized single statement (no trailing semicolon, no comments).
- * 2. Each runner executes exactly one statement, inside a read-only (or
- *    always-rolled-back) transaction, with a statement timeout.
+ * 2. Each runner executes the SQL read-only: inside a read-only transaction
+ *    (Postgres, MySQL/MariaDB), on a read-only file handle (SQLite), or inside
+ *    an always-rolled-back transaction (SQL Server). Postgres, MySQL/MariaDB,
+ *    and SQLite run a single statement; SQL Server runs the SQL as part of a
+ *    batch, where a second statement without `;` isn't detected by step 1.
+ *    Every engine except SQLite (whose queries can't be interrupted) enforces
+ *    a statement timeout.
  * 3. Each runner fetches at most `maxRows + 1` rows and reports `truncated`.
  *
  * None of this replaces a read-only database role — point Studio at one.

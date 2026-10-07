@@ -14,7 +14,7 @@ import InstallTabs from "../../../components/InstallTabs.astro";
 
 - The schema artifact format. Same `schema.json`, same `tables/*.md`, same enrichment workflow.
 - The `ask()` API. Same options, same return shape.
-- The validator semantics: read-only, single-statement, no system schemas, tenant filter enforcement.
+- The SQL checks: must start with `SELECT` or `WITH`, single statement (with a SQL Server caveat), no comments, no write or DDL keywords, no calls to known side-effecting functions, and the heuristic tenant and sensitive-column checks. Per engine, only the detail changes: SQL is split into tokens the way that engine reads strings, quoted identifiers, and comments, and each engine adds its own entries to the keyword denylist, the function denylist, or both. See [Safety boundaries](/concepts/safety-boundaries/).
 - The privacy model. The model sees schema, not rows, regardless of engine.
 
 ## What changes
@@ -22,6 +22,7 @@ import InstallTabs from "../../../components/InstallTabs.astro";
 - The engine package you install.
 - The `dialect` value you pass to `ask()`.
 - Engine-specific SQL features the validator allows (LIMIT vs TOP, parameter syntax, JSON path syntax).
+- How the prompt `ask()` sends quotes names. A schema, table or column whose name is one of the engine's reserved words is listed quoted the engine's way, so the model copies it quoted: `billing."order"` on Postgres, ``billing.`order` `` on MySQL and MariaDB, `billing.[order]` on SQL Server, `"order"` on SQLite. On Postgres, which folds unquoted names to lowercase, a name with capitals is quoted too, so a Prisma table `Post` is listed as `public."Post"`. Where tables are listed with their schema, the prompt also tells the model that when it quotes a qualified name, it quotes each part separately (`"billing"."order"`, not `"billing.order"`).
 - The driver your app uses to execute (`pg`, `mysql2`, `better-sqlite3`, `mssql`).
 - How the CLI introspects the database (connection-string format and catalog queries differ per engine).
 
@@ -41,7 +42,7 @@ import InstallTabs from "../../../components/InstallTabs.astro";
 <Tabs syncKey="engine">
   <TabItem label="PostgreSQL">
 
-<InstallTabs pkgs="@askdb/postgres" />
+<InstallTabs pkgs="@askdb/postgres ai" />
 
 If you plan to run live introspection, also add the driver:
 
@@ -50,7 +51,7 @@ If you plan to run live introspection, also add the driver:
   </TabItem>
   <TabItem label="MySQL">
 
-<InstallTabs pkgs="@askdb/mysql" />
+<InstallTabs pkgs="@askdb/mysql ai" />
 
 If you plan to run live introspection, also add the driver:
 
@@ -59,7 +60,7 @@ If you plan to run live introspection, also add the driver:
   </TabItem>
   <TabItem label="SQLite">
 
-<InstallTabs pkgs="@askdb/sqlite" />
+<InstallTabs pkgs="@askdb/sqlite ai" />
 
 If you plan to run live introspection, also add the driver:
 
@@ -68,7 +69,7 @@ If you plan to run live introspection, also add the driver:
   </TabItem>
   <TabItem label="SQL Server">
 
-<InstallTabs pkgs="@askdb/sqlserver" />
+<InstallTabs pkgs="@askdb/sqlserver ai" />
 
 If you plan to run live introspection, also add the driver:
 
@@ -105,10 +106,7 @@ npx askdb introspect \
   --schema-id my-app
 ```
 
-  </TabItem>
-  <TabItem label="SQLite">
-
-For MySQL and MariaDB, the URL's database is the one introspected, and its tables appear under the `public` namespace. To introspect several databases at once (MySQL's "schemas"), list them. Each database becomes its own namespace (`sales.orders`), and foreign keys between databases are kept:
+For MySQL and MariaDB, the URL's database is the one introspected, and its tables appear under the `public` namespace. `public` is AskDB's label, not a database, so the prompt `ask()` sends lists those tables unqualified (`orders`). To introspect several databases at once (MySQL's "schemas"), list them. Each database becomes its own namespace (`sales.orders`), listed qualified in the prompt, and foreign keys between databases are kept:
 
 ```ts
 // askdb.config.ts
@@ -124,7 +122,8 @@ export default {
 };
 ```
 
-`introspection.schemas` works the same way on every engine: on Postgres and SQL Server it lists schemas (the default is every non-system schema). `askdb introspect --schemas app,sales` does the same for one run and overrides the configured list.
+  </TabItem>
+  <TabItem label="SQLite">
 
 For SQLite, set the file path via `introspection.providerConfig.sqlite.file` in `askdb.config.ts`:
 
@@ -147,6 +146,8 @@ Then run:
 npx askdb introspect --out my-app.schema --schema-id my-app
 ```
 
+SQLite has no schemas, so its tables appear under the `public` namespace (table ids like `table:public.orders`), and the prompt `ask()` sends lists them unqualified (`orders`).
+
   </TabItem>
   <TabItem label="SQL Server">
 
@@ -162,6 +163,8 @@ SQL Server accepts three URL formats — see [SQL Server connection strings](#sq
 
   </TabItem>
 </Tabs>
+
+`introspection.schemas` works the same way on every engine: on Postgres and SQL Server it lists schemas (the default is every non-system schema). `askdb introspect --schemas app,sales` does the same for one run and overrides the configured list.
 
 The connection string format follows each engine's convention. The engine itself comes from `--engine` (or `introspection.provider` in `askdb.config.ts`) — the CLI does not infer it from the URL. The artifact records which engine produced it, and `askdb ask` infers the dialect from the artifact.
 

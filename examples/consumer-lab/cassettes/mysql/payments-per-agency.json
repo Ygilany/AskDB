@@ -1,5 +1,5 @@
 {
-  "question": "What is the total payment amount received by each agency?",
+  "question": "For each agency, show its id and the total payment amount it received.",
   "reply": "```sql\nSELECT agency_id, SUM(amount) AS total_amount\nFROM billing.payment\nGROUP BY agency_id\nORDER BY agency_id\n```",
   "source": "authored"
 }

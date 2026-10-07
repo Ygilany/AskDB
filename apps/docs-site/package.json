@@ -1,6 +1,6 @@
 {
   "name": "@askdb/docs-site",
-  "version": "0.0.1-beta.5",
+  "version": "0.0.1-beta.6",
   "private": true,
   "description": "Static documentation site for AskDB.",
   "type": "module",
@@ -13,14 +13,14 @@
     "test:links": "node ./scripts/check-base-links.mjs /"
   },
   "engines": {
-    "node": ">=20"
+    "node": ">=22.14"
   },
   "devDependencies": {
     "@astrojs/check": "^0.9.10",
     "@astrojs/markdown-remark": "^7.3.1",
-    "@astrojs/starlight": "^0.42.4",
-    "astro": "^7.1.6",
-    "sharp": "^0.35.3",
+    "@astrojs/starlight": "^0.42.5",
+    "astro": "^7.3.5",
+    "sharp": "^0.35.5",
     "starlight-llms-txt": "^0.12.0"
   }
 }

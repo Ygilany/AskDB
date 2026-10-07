@@ -1,6 +1,6 @@
 {
   "name": "@askdb/introspect",
-  "version": "0.3.0-beta.16",
+  "version": "0.3.0-beta.17",
   "description": "AskDB schema introspection: engine-agnostic Connector contract + orchestrator + Schema v2 renderer. Integration packages (e.g. @askdb/postgres) supply connectors.",
   "keywords": [
     "askdb",
@@ -8,7 +8,7 @@
     "schema",
     "schema-v2"
   ],
-  "homepage": "https://github.com/Ygilany/AskDB#readme",
+  "homepage": "https://askdb.tools/reference/packages/",
   "bugs": {
     "url": "https://github.com/Ygilany/AskDB/issues"
   },
@@ -20,6 +20,7 @@
   "license": "Apache-2.0",
   "author": "Yahya Gilany",
   "type": "module",
+  "sideEffects": false,
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {
@@ -36,7 +37,7 @@
     "NOTICE"
   ],
   "engines": {
-    "node": ">=22.12"
+    "node": ">=22.14"
   },
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
@@ -48,6 +49,6 @@
   },
   "devDependencies": {
     "typescript": "^6.0.3",
-    "vitest": "^5.0.1"
+    "vitest": "^5.0.3"
   }
 }

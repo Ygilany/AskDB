@@ -58,6 +58,18 @@ export function programsStartedOnOrAfter(date: string): unknown[][] {
 /** The value `programs-started-since` asks about, as its question text writes it. */
 export const PROGRAMS_SINCE = "2022-01-01";
 
+/**
+ * The catalog's parameterized question: the value its text asks about, and another value to
+ * rebind it to with `bindPreparedQuery`. The placeholder's name is the reply's own: an authored
+ * reply calls it `start_date`, a recorded one whatever the model chose.
+ */
+export const PARAMETERIZED = {
+  id: "programs-started-since",
+  value: PROGRAMS_SINCE,
+  rebindTo: "2022-03-01",
+  rows: programsStartedOnOrAfter,
+} as const;
+
 export const ORACLES: Record<string, Oracle> = {
   "agency-names": {
     types: ["int", "text"],

@@ -54,7 +54,7 @@ export default defineConfig({
     providerConfig: { ${provider}: { databaseUrl: ${JSON.stringify(url)} } },
     schemas: ${JSON.stringify(schemas)},
   },
-  rag: { embedder: "mock", embedderConfig: {}, store: "memory", storeConfig: { memory: {} } },
+  rag: { embedder: "mock", store: "memory", storeConfig: { memory: {} } },
 } satisfies AskDbConfig);
 `,
   );

@@ -1,0 +1,5 @@
+{
+  "question": "List each client's id and SSN, with every identifier quoted.",
+  "reply": "```sql\nSELECT \"c\".\"client_id\", \"c\".\"ssn\"\nFROM \"client\" AS \"c\"\nORDER BY \"c\".\"client_id\"\n```",
+  "source": "authored"
+}
