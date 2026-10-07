@@ -94,8 +94,9 @@ export type StudioRagStatusDto = {
   updatedAt: string | null;
   chunksTotal: number;
   chunksIndexed: number;
-  dimensions: number;
-  expectedDimensions: number;
+  /** Vector width; null when the embedding model's width is left to the model and AskDB doesn't know it. */
+  dimensions: number | null;
+  expectedDimensions: number | null;
   sensitiveExcluded: number;
   sensitiveIncluded: number;
   files: {

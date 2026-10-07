@@ -105,6 +105,22 @@ export async function createScratch(dialect: SupportedDialect): Promise<ScratchD
   return db;
 }
 
+/** Run `fn` on a new owner connection to `scratch`, and close it afterwards. */
+export async function withOwner<T>(scratch: ScratchDb, fn: (c: ScratchConnection) => Promise<T>): Promise<T> {
+  const c = await scratch.connect();
+  try {
+    return await fn(c);
+  } finally {
+    await c.close();
+  }
+}
+
+/** The first value of the first row `sql` returns, as a number (a `COUNT(*)`, a `SUM`). */
+export async function scalar(c: ScratchConnection, sql: string): Promise<number> {
+  const [row] = await c.rows(sql);
+  return Number(Object.values(row ?? {})[0]);
+}
+
 // --- The DDL, adapted -----------------------------------------------------------------
 
 /** The comment that opens the read-only role section at the end of each server engine's DDL. */

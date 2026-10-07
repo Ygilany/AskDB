@@ -6,6 +6,8 @@ import { join } from "path";
 import type DatabaseCtor from "better-sqlite3";
 import { createSqliteCatalogQueryRunner } from "./sqlite.js";
 import { createSqliteConnector } from "../connector/index.js";
+import { ask, loadSchemaFromJson } from "@askdb/core";
+import { toV2SchemaJson } from "@askdb/introspect";
 import { integrationSuite } from "../../../../scripts/test-utils/integration.mjs";
 
 type Bs3Namespace = { default: typeof DatabaseCtor };
@@ -92,5 +94,29 @@ sqliteSuite("SQLite integration (better-sqlite3 driver)", () => {
 
     const viewNames = ns.views.map((v) => v.name);
     expect(viewNames).toContain("active_users");
+  });
+
+  it("a table named the way ask()'s prompt lists it runs on SQLite (#447)", async () => {
+    const runner = createSqliteCatalogQueryRunner(dbPath);
+    const described = await createSqliteConnector().describe({ mode: "live", runner });
+    const schema = loadSchemaFromJson(
+      JSON.stringify(toV2SchemaJson(described.schema, "sqlite-integ", described.provider)),
+    );
+    // Stands in for a model that copies the table name exactly as the prompt lists it.
+    const generateText = async ({ prompt }: { prompt: string }) => {
+      const listed = /^TABLE (\S*\busers)$/m.exec(prompt)?.[1];
+      return { text: `\`\`\`sql\nSELECT COUNT(*) AS n FROM ${listed}\n\`\`\`` };
+    };
+
+    const { sql } = await ask({
+      question: "How many users are there?",
+      schema,
+      model: {} as Parameters<typeof ask>[0]["model"],
+      dialect: "sqlite",
+      parameterize: false,
+      deps: { generateText: generateText as never },
+    });
+
+    expect(await runner(sql)).toMatchObject({ columns: ["n"], rows: [[0]] });
   });
 });

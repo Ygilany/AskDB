@@ -23,6 +23,16 @@ export type FormatNlToSqlOptions = {
    * Default **false** — names are **included** and tagged `(sensitive)` so the model can ground SQL without hallucinating missing columns.
    */
   omitSensitiveIdentifiersFromPrompt?: boolean;
+  /**
+   * Schema v2 only: tables in this namespace are listed without it (`TABLE agency`, not
+   * `TABLE public.agency`). Set from the dialect's `DialectSpec.unqualifiedNamespace`.
+   */
+  unqualifiedNamespace?: string;
+  /**
+   * Schema v2 only: how each schema, table and column name is listed. Set from the dialect
+   * with `promptIdentifierQuoter(dialect)`, which quotes reserved words. Unset: names are listed as stored.
+   */
+  quoteIdentifier?: (name: string) => string;
 };
 
 /** Stats when building DDL for NL→SQL (meaning depends on {@link FormatNlToSqlOptions.omitSensitiveIdentifiersFromPrompt}). */

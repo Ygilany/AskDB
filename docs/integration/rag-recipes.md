@@ -51,16 +51,32 @@ await buildSchemaIndex({
 });
 ```
 
-This writes `schema.embeddings.bin`, `schema.embeddings.json`, and `schema.lock.json`. Re-running with the same lock file skips unchanged chunks.
+This writes `schema.embeddings.bin`, `schema.embeddings.json`, and `schema.lock.json`. Re-running embeds only chunks the store doesn't already hold with the same content hash. The lock records the embedder id, store identity (its kind, plus a location such as the pgvector table name), and vector dimensions. A different embedder id or deleting the lock re-embeds everything; a different store re-embeds whatever that store doesn't hold (stores that can't report their hashes re-embed everything). A different width needs a store with no vectors of the old width: a new or recreated pgvector table, or deleted file-store embeddings files. Pass `force: true` (CLI: `--force`) to re-embed unconditionally.
+
+The file store writes each file to a temp path and renames it into place, and the `.json` records a checksum of the `.bin`. If the two ever disagree (for example after a crash mid-write), loading the store fails with a message asking you to delete both files and reindex.
+
+### Upgrading from an earlier `@askdb/rag`
+
+Chunk ids are now scoped to the schema (`chunk:<schemaId>:table:public.orders` instead of `chunk:table:public.orders`) and `schema.lock.json` moved to version 2. The first index run after upgrading re-embeds every chunk once and deletes that schema's old-format ids. The built-in stores find them by `schemaId` (`idsBySchema`), so they're removed even without the old lock. `%` and `:` in a schema id are percent-encoded in chunk ids (`shop:eu` → `chunk:shop%3Aeu:…`). Custom stores without `idsBySchema` rely on the ids listed in the previous lock: they never prune by id prefix, because a prefix can match another schema's old-format ids (`chunk:table:` is both the prefix of a schema named `table` and the start of every old table-chunk id).
+
+The pgvector store now needs a `content_hash` column. `ensureSchema()` adds it (Studio and `askdb rag index --store pgvector` call it for you). If you create the table from `setupSql()` in your own migrations, or never call `ensureSchema()`, add a migration before the first index run; otherwise indexing fails on the missing column:
+
+```sql
+ALTER TABLE askdb_rag_chunks ADD COLUMN IF NOT EXISTS content_hash text;
+```
+
+Use your table name if you configured a custom `table`. A fresh `setupSql()` already includes this statement.
 
 ## pgvector Store
 
 ```ts
+import { detectEmbeddingDimensions } from "@askdb/rag";
 import { createPgvectorStore } from "@askdb/rag/stores/pgvector";
 
+// `embedder` is the same Embedder you index with (see above).
 const store = createPgvectorStore({
   connectionString: process.env.DATABASE_URL!,
-  dimensions: 1536,
+  dimensions: await detectEmbeddingDimensions(embedder), // the width your embedding model returns
   table: "askdb_rag_chunks",
 });
 ```
@@ -73,7 +89,9 @@ The adapter exposes two ways to provision the required extension, table, and ind
 await store.ensureSchema(); // safe to call on every startup
 ```
 
-Uses `CREATE EXTENSION IF NOT EXISTS` and `CREATE TABLE IF NOT EXISTS` guards throughout, so repeated calls are a no-op against an already-provisioned database. Studio calls this automatically whenever pgvector is configured.
+Uses `CREATE EXTENSION IF NOT EXISTS` and `CREATE TABLE IF NOT EXISTS` guards throughout, so repeated calls are a no-op against an already-provisioned database. It also adds the `content_hash` column to tables created by older versions (`ALTER TABLE … ADD COLUMN IF NOT EXISTS`). Because an existing table is kept as it is, `ensureSchema()` first checks its width (`store.tableDimensions()`) and throws `PgvectorDimensionMismatchError` when it differs from `dimensions`, rather than letting inserts fail later. Studio (when it builds an index with pgvector configured) and `askdb rag index --store pgvector` call it automatically.
+
+The adapter stores each chunk's content hash, so the indexer can check what the table actually holds. A committed `schema.lock.json` pointed at a fresh database still indexes everything.
 
 **`setupSql()` — returns the DDL for your own migration system**
 
@@ -83,13 +101,16 @@ console.log(store.setupSql()); // pipe into psql or your migration runner
 
 Use this when you want explicit DDL in a versioned migration file rather than runtime provisioning.
 
-**CLI — `askdb-rag setup-store`**
+**CLI — `askdb rag setup-store`**
 
 ```bash
-askdb-rag setup-store --pg-url "$DATABASE_URL" --dimensions 1536
+npx askdb rag setup-store --pg-url "$DATABASE_URL" --dimensions 1536   # text-embedding-3-small
+npx askdb rag setup-store --pg-url "$DATABASE_URL" --dimensions 768    # e.g. nomic-embed-text
 ```
 
-Runs `ensureSchema()` from the command line. Useful in CI pipelines, Dockerfiles, and staging environment bootstrap scripts.
+Runs `ensureSchema()` from the command line. Useful in CI pipelines, Dockerfiles, and staging environment bootstrap scripts. `--dimensions` is required: `setup-store` has no embedding model to ask, so pass the width your model returns (`detectEmbeddingDimensions(embedder)` tells you). `--pg-url` and `--pg-table` fall back to `rag.storeConfig.pgvector` in `askdb.config.*`.
+
+Several schemas can share one table: ids are scoped per schema, and reindexing one schema only prunes that schema's chunks.
 
 ## Embedder Providers
 
@@ -137,10 +158,10 @@ const embedder = createAiSdkEmbedder({
 - Cohere or Voyage: map each returned provider vector to `number[]`.
 - Local models: call Ollama, Transformers.js, or your own embedding service behind the same function.
 
-Keep `embedderId` stable and descriptive, such as `openai:text-embedding-3-small`, so `schema.lock.json` invalidates correctly when the model changes.
+Keep `embedderId` stable and descriptive, such as `openai:text-embedding-3-small`, so `schema.lock.json` invalidates correctly when the model changes. Going from no `embedderId` to one (or back) also counts as a change. `askdb rag query` refuses to run with a different embedder or dimensions than the lock records.
 
 ## Retrieval Threshold
 
 `ask({ retriever })` accepts `totalSchemaChunkCount`. Pass `index.stats.chunksTotal` so small schemas can keep using full DDL while larger schemas switch to focused retrieved DDL.
 
-Sensitive describable-layer chunks are excluded by default. Set `includeSensitiveDescribable: true` only when your deployment policy allows sensitive schema descriptions or aliases to be embedded.
+Sensitive describable-layer chunks are excluded by default. That covers text that mentions a sensitive column by name (whole word, case-insensitive), such as a concept that says "filter by SSN" or a table description that names the `email` column. Set `includeSensitiveDescribable: true` only when your deployment policy allows sensitive schema descriptions or aliases to be embedded.

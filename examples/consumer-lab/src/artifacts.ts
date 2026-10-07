@@ -6,18 +6,54 @@
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import type { SupportedDialect } from "./dialects.js";
-import { introspectFixture } from "./introspect.js";
+import { introspectFixture, introspectFixtureAsync, type CliRun } from "./introspect.js";
 import { LAB_STATE } from "./paths.js";
 
 const ARTIFACTS = join(LAB_STATE, "artifacts");
+const TARGET_FILE = join(LAB_STATE, "target.json");
 
 /** The current install target, as recorded by `pnpm lab:use`. */
-export function requireInstallTarget(): { label: string; thisCheckout?: boolean } {
-  const file = join(LAB_STATE, "target.json");
-  if (!existsSync(file)) {
+export function requireInstallTarget(): { label: string; thisCheckout?: boolean; packages?: { name: string; version: string }[] } {
+  if (!existsSync(TARGET_FILE)) {
     throw new Error("The lab isn't installed yet. Run `pnpm lab:use .` (or `pnpm lab:up`) first.");
   }
-  return JSON.parse(readFileSync(file, "utf8")) as { label: string; thisCheckout?: boolean };
+  return JSON.parse(readFileSync(TARGET_FILE, "utf8")) as { label: string; thisCheckout?: boolean; packages?: { name: string; version: string }[] };
+}
+
+/**
+ * The install record `pnpm lab:use` wrote, as text, or undefined while there is none:
+ * `lab:use` removes it while it installs. Any reinstall changes it (`installedAt`), even
+ * one that keeps the label.
+ */
+export function installRecord(): string | undefined {
+  try {
+    return readFileSync(TARGET_FILE, "utf8");
+  } catch {
+    return undefined;
+  }
+}
+
+const artifactDir = (dialect: SupportedDialect) => join(ARTIFACTS, `${dialect}.schema`);
+
+/** A scratch directory to introspect into, beside the cache. */
+function scratchDir(dialect: SupportedDialect): string {
+  mkdirSync(ARTIFACTS, { recursive: true });
+  return mkdtempSync(join(ARTIFACTS, `.${dialect}-`));
+}
+
+/** Move a finished introspection into the cache. When another process got there first, keep theirs. */
+function adopt(dialect: SupportedDialect, built: string, run: CliRun): string {
+  const outDir = artifactDir(dialect);
+  if (run.status !== 0) {
+    throw new Error(`askdb introspect failed for ${dialect} (exit ${run.status}):\n${run.stderr}`);
+  }
+  try {
+    renameSync(built, outDir);
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code;
+    if (!(code === "ENOTEMPTY" || code === "EEXIST") || !existsSync(join(outDir, "schema.json"))) throw error;
+  }
+  return outDir;
 }
 
 /**
@@ -28,25 +64,28 @@ export function requireInstallTarget(): { label: string; thisCheckout?: boolean 
  */
 export function ensureArtifact(dialect: SupportedDialect): string {
   requireInstallTarget();
-  const outDir = join(ARTIFACTS, `${dialect}.schema`);
-  if (existsSync(join(outDir, "schema.json"))) return outDir;
-
-  mkdirSync(ARTIFACTS, { recursive: true });
-  const scratch = mkdtempSync(join(ARTIFACTS, `.${dialect}-`));
+  if (existsSync(join(artifactDir(dialect), "schema.json"))) return artifactDir(dialect);
+  const scratch = scratchDir(dialect);
   try {
     const built = join(scratch, "schema");
-    const run = introspectFixture(dialect, built);
-    if (run.status !== 0) {
-      throw new Error(`askdb introspect failed for ${dialect} (exit ${run.status}):\n${run.stderr}`);
-    }
-    try {
-      renameSync(built, outDir);
-    } catch (error) {
-      const code = (error as NodeJS.ErrnoException).code;
-      if (!(code === "ENOTEMPTY" || code === "EEXIST") || !existsSync(join(outDir, "schema.json"))) throw error;
-    }
+    return adopt(dialect, built, introspectFixture(dialect, built));
   } finally {
     rmSync(scratch, { recursive: true, force: true });
   }
-  return outDir;
+}
+
+/**
+ * {@link ensureArtifact} without blocking the event loop, so `lab ui` introspects every
+ * engine at once. Aborting `signal` kills the introspection.
+ */
+export async function ensureArtifactAsync(dialect: SupportedDialect, signal?: AbortSignal): Promise<string> {
+  requireInstallTarget();
+  if (existsSync(join(artifactDir(dialect), "schema.json"))) return artifactDir(dialect);
+  const scratch = scratchDir(dialect);
+  try {
+    const built = join(scratch, "schema");
+    return adopt(dialect, built, await introspectFixtureAsync(dialect, built, {}, signal));
+  } finally {
+    rmSync(scratch, { recursive: true, force: true });
+  }
 }

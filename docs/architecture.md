@@ -29,7 +29,7 @@ flowchart LR
   sql --> execution
 ```
 
-`@askdb/core` is dialect-agnostic. It does not import database drivers, does not own live database connections, and does not execute generated SQL. Database-specific behavior is supplied through integration packages such as `@askdb/postgres`.
+`@askdb/core` is dialect-agnostic. It does not import database drivers, does not own live database connections, and does not execute generated SQL. Database-specific behavior is supplied through integration packages such as `@askdb/postgres`. The exception is what the pipeline itself needs to read and prompt for each built-in engine family: the built-in `DialectSpec`s (with their denylists and the reserved words the prompt quotes) live in `@askdb/core`, lexing and identifier quoting are selected by `DialectSpec.id`, and integration packages re-export the specs. See the ADR 0002 amendment; #464 evaluates whether this should change.
 
 ## Package map
 
@@ -168,7 +168,7 @@ flowchart BT
 Boundary rules:
 
 - `@askdb/core` remains the schema and NL-to-SQL contract package. It receives a dialect, a model, an optional retriever, and a schema; it returns SQL.
-- Integration packages own engine-specific knowledge. `@askdb/postgres` owns Postgres dialect behavior and Postgres catalog introspection. `@askdb/prisma` owns Prisma schema-file introspection.
+- Integration packages own engine-specific knowledge, apart from the built-in dialect facts above. `@askdb/postgres` owns Postgres dialect behavior and Postgres catalog introspection. `@askdb/prisma` owns Prisma schema-file introspection.
 - `@askdb/introspect` does not know whether an integration reads a live database, an export bundle, a file, or a future API. The connector input shape belongs to the connector package.
 - `@askdb/enrich` owns reusable authoring behavior. `@askdb/studio` (and any custom authoring surface) depends on it rather than duplicating workspace logic.
 - `@askdb/rag` is optional. It can narrow schema context before `ask()`, but it does not replace dialect validation.
@@ -308,14 +308,14 @@ In the table below, "selected packages" are packages the consumer chooses for a 
 
 | Workflow | Selected packages | Automatically installed by those packages | Optional peers or provider packages | Notes |
 | --- | --- | --- | --- | --- |
-| Minimal Postgres SQL generation | `@askdb/core`, `@askdb/postgres` | `@askdb/postgres` pulls `@askdb/core`, `@askdb/introspect`, and `ai` as package dependencies. | Add a model provider such as `@ai-sdk/openai` when your runtime creates the model directly. Add `@askdb/ai` (plus the same `@ai-sdk/*` package, an optional peer) only if you want AskDB config/env model factories. `pg` is not needed. | Uses `ask()` plus `postgresDialect`; SQL execution remains host-owned. |
-| Live Postgres introspection | `@askdb/introspect`, `@askdb/postgres` | `@askdb/postgres` pulls `@askdb/core` and `@askdb/introspect`. | `pg` for `createPostgresCatalogQueryRunner()`. | Callers can also supply their own `CatalogQueryRunner`. |
-| Air-gapped Postgres introspection | `@askdb/introspect`, `@askdb/postgres` | Same as live Postgres introspection. | No `pg` required if using from-export bundles only. | Templates come from `POSTGRES_TEMPLATE_BUNDLE`. |
-| Prisma schema-file introspection | `@askdb/introspect`, `@askdb/prisma` | `@askdb/prisma` pulls `@askdb/introspect` and `@prisma/internals`. | No database driver peer declared. | Produces Schema v2 physical metadata from Prisma files; no dialect included. |
+| Minimal Postgres SQL generation | `@askdb/core`, `@askdb/postgres`, `ai` | `@askdb/postgres` pulls `@askdb/core` and `@askdb/introspect`. `ai` is a required peer of `@askdb/core` (AI SDK 6 or 7) that the host installs and pins. | Add a model provider such as `@ai-sdk/openai` when your runtime creates the model directly. Add `@askdb/ai` (plus the same `@ai-sdk/*` package, an optional peer) only if you want AskDB config/env model factories. `pg` is not needed. | Uses `ask()` plus `postgresDialect`; SQL execution remains host-owned. |
+| Live Postgres introspection | `@askdb/introspect`, `@askdb/postgres`, `ai` | `@askdb/postgres` pulls `@askdb/core` and `@askdb/introspect`. `ai` is a required peer of `@askdb/core`, which loads it at import time even when no SQL is generated (ADR 0006, 2026-09 amendment). | `pg` for `createPostgresCatalogQueryRunner()`. | Callers can also supply their own `CatalogQueryRunner`. |
+| Air-gapped Postgres introspection | `@askdb/introspect`, `@askdb/postgres`, `ai` | Same as live Postgres introspection. | No `pg` required if using from-export bundles only. | Templates come from `POSTGRES_TEMPLATE_BUNDLE`. |
+| Prisma schema-file introspection | `@askdb/introspect`, `@askdb/prisma`, `ai` | `@askdb/prisma` pulls `@askdb/introspect` (and through it `@askdb/core`) and `@prisma/internals`. `ai` is the required peer of `@askdb/core`. | No database driver peer declared. | Produces Schema v2 physical metadata from Prisma files; no dialect included. |
 | CLI workflow | `askdb` | Pulls first-party integrations and surfaces used by the `askdb` binary, including core, ai, the four `@ai-sdk/*` provider SDKs, introspect, postgres, prisma, enrich, studio, and `pg`. | Environment variables choose which runtime paths are active. | Batteries-included product surface, not the smallest library install. |
 | Local browser Studio | `@askdb/studio` | Pulls core, ai, the four `@ai-sdk/*` provider SDKs, enrich, postgres, rag, and React UI dependencies. | `OPENAI_API_KEY` enables suggestions/sample generation; RAG provider choices are runtime config. | Local authoring UI, sample SQL checks, and local RAG exploration. |
-| RAG with memory or file store | `@askdb/rag`, `@askdb/core` | `@askdb/rag` pulls `@askdb/core`. | Embedder packages only if using a helper such as OpenAI. | In-memory and file stores do not need `pg`. |
-| RAG with pgvector | `@askdb/rag`, `@askdb/core` | `@askdb/rag` pulls `@askdb/core`. | `pg` when using the pgvector adapter with a Postgres connection; embedding provider package as needed. | Vector storage is optional and selected by the host. |
+| RAG with memory or file store | `@askdb/rag`, `@askdb/core`, `ai` | `@askdb/rag` pulls `@askdb/core`; `ai` is the required peer of `@askdb/core`. | Embedder packages only if using a helper such as OpenAI. | In-memory and file stores do not need `pg`. |
+| RAG with pgvector | `@askdb/rag`, `@askdb/core`, `ai` | `@askdb/rag` pulls `@askdb/core`; `ai` is the required peer of `@askdb/core`. | `pg` when using the pgvector adapter with a Postgres connection; embedding provider package as needed. | Vector storage is optional and selected by the host. |
 
 ## Connectors vs peer packages
 

@@ -42,6 +42,8 @@ A push to `main` with nothing new to publish doesn't ask for approval: `scripts/
 
 The workflow only acts when the commit CI tested is still the tip of `main`. If another PR merges before CI finishes, that newer commit's CI run triggers the release instead.
 
+After a publish, the **Consumer lab (published)** workflow (`.github/workflows/consumer-lab-published.yml`) runs the [consumer lab](../examples/consumer-lab/README.md#published-packages) against `npm:latest` from the released commit. A failure there is the release's: triage it with the [`consumer-lab` skill](../.agents/skills/consumer-lab/SKILL.md). Its job summary also says whether the lab's committed baseline is stale; refresh it as [`baseline-refresh.md`](../.agents/skills/consumer-lab/baseline-refresh.md) says.
+
 ## Dependency Updates
 
 Published ranges move only on purpose ([ADR 0015](adrs/0015-published-ranges-move-on-purpose.md)), so Dependabot's minor and patch groups change only `pnpm-lock.yaml` and need no changeset. A major update has to rewrite a range in the manifests:

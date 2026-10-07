@@ -4,23 +4,34 @@
  * at runtime. `@askdb/client` depends on both, so the guard that the two agree
  * lives here rather than as an upward edge from `@askdb/ai` to `@askdb/config`.
  *
- * Each `askdb.config.*` branch is flattened and then resolved by the registry
- * the client uses, so an env var name that `flatten.ts` writes but the
- * provider doesn't read (or the reverse) fails here.
+ * Each provider's `askdb.config.*` connection is flattened (and, for embeddings, turned into
+ * the `ai.embedding` env view) and then resolved by the registry the client uses, so an env
+ * var name that `@askdb/config` writes but the provider doesn't read (or the reverse) fails here.
  */
 import { BUILTIN_AI_PROVIDERS, createAiRegistry, getBuiltinAiProviderSetup } from "@askdb/ai";
-import { ASKDB_AI_PROVIDERS, flattenAskDbConfig, type AskDbConfig } from "@askdb/config";
-import { describe, expect, it } from "vitest";
+import {
+  ASKDB_AI_PROVIDERS,
+  flattenAskDbConfig,
+  getAskDbRuntimeConfig,
+  resetAskDbRuntimeForTests,
+  setAskDbRuntimeForTests,
+  type AskDbConfig,
+} from "@askdb/config";
+import { afterEach, describe, expect, it } from "vitest";
 
-function configFor(provider: string, providerConfig: Record<string, string>): AskDbConfig {
+function configFor(
+  provider: string,
+  connection: Record<string, string>,
+  sections: Pick<AskDbConfig["ai"], "language" | "embedding"> = {},
+): AskDbConfig {
   return {
-    ai: { provider, providerConfig: { [provider]: providerConfig } } as AskDbConfig["ai"],
+    ai: { provider, providerConfig: { [provider]: connection }, ...sections },
     introspection: {
       provider: "postgres",
       providerConfig: { postgres: { databaseUrl: "postgres://localhost/db" } },
       outputDir: "./askdb/",
     },
-    rag: { embedder: "mock", embedderConfig: {}, store: "memory", storeConfig: { memory: {} } },
+    rag: { embedder: sections.embedding ? "ai" : "mock", store: "memory", storeConfig: { memory: {} } },
   };
 }
 
@@ -35,8 +46,10 @@ describe("@askdb/config agrees with @askdb/ai's built-in provider table", () => 
     }
   });
 
+  afterEach(() => resetAskDbRuntimeForTests());
+
   it.each([...ASKDB_AI_PROVIDERS])(
-    "the %s config branch round-trips its API key, base URL, and default model through the provider",
+    "the %s connection round-trips its API key, base URL, and default model through the provider",
     (provider) => {
       const azureLike = provider === "azure" || provider === "foundry";
       const flat = flattenAskDbConfig(
@@ -55,15 +68,35 @@ describe("@askdb/config agrees with @askdb/ai's built-in provider table", () => 
 
   // A model the provider falls back to by default can't show which env var flatten wrote,
   // so this one is never a default.
-  it.each([...ASKDB_AI_PROVIDERS])("the %s config branch's model reaches the provider", (provider) => {
+  it.each([...ASKDB_AI_PROVIDERS])("the %s language model reaches the provider", (provider) => {
     const azureLike = provider === "azure" || provider === "foundry";
     const flat = flattenAskDbConfig(
-      configFor(provider, {
-        apiKey: "k",
-        model: "not-a-default-model",
-        ...(azureLike ? { resourceName: "my-resource" } : {}),
-      }),
+      configFor(
+        provider,
+        { apiKey: "k", ...(azureLike ? { resourceName: "my-resource" } : {}) },
+        { language: { model: "not-a-default-model" } },
+      ),
     );
     expect(createAiRegistry().resolveAiConfig(flat)?.model).toBe("not-a-default-model");
   });
+
+  // Anthropic has no embeddings API, so config refuses it as the ai.embedding provider.
+  it.each(ASKDB_AI_PROVIDERS.filter((provider) => provider !== "anthropic"))(
+    "the %s embedding env view round-trips its connection and embedding model through the provider",
+    (provider) => {
+      const azureLike = provider === "azure" || provider === "foundry";
+      const structured = configFor(
+        provider,
+        { apiKey: "k", baseUrl: "https://proxy.example/v1", ...(azureLike ? { resourceName: "my-resource" } : {}) },
+        { embedding: { model: "not-a-default-embedding-model", dimensions: 8 } },
+      );
+      setAskDbRuntimeForTests({ structured, flat: flattenAskDbConfig(structured) });
+      const embedding = getAskDbRuntimeConfig().ai.embedding;
+      expect(createAiRegistry().resolveEmbeddingConfig(embedding?.env ?? {})).toMatchObject({
+        apiKey: "k",
+        baseURL: "https://proxy.example/v1",
+        model: "not-a-default-embedding-model",
+      });
+    },
+  );
 });

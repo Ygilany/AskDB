@@ -96,6 +96,10 @@ export {
   tenantScopeSchema,
   tenantAccessSchema,
   TENANT_POLICY_H2_SECTIONS,
+  createMentionMatcher,
+  findMentionedNames,
+  type MentionMatcher,
+  type MentionName,
 } from "./schema/v2/index.js";
 export type {
   V2SchemaJson,
@@ -173,6 +177,7 @@ export {
   MARIADB_DIALECT,
   SQLITE_DIALECT,
   SQLSERVER_DIALECT,
+  SINGLE_NAMESPACE_LABEL,
   BUILT_IN_DIALECTS,
   SUPPORTED_DIALECT_IDS,
   isBuiltInDialectId,
@@ -192,6 +197,7 @@ export {
   buildNlToSqlUserPrompt,
   buildNlToSqlSystemPrompt,
 } from "./sql/prompt.js";
+export { promptIdentifierQuoter } from "./sql/prompt-identifiers.js";
 export {
   assertNlToSqlInputs,
   nlToSqlAmbiguityNotes,

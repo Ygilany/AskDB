@@ -13,13 +13,14 @@ import InstallTabs from "../../../components/InstallTabs.astro";
 
 ## Install
 
-<InstallTabs pkgs="@askdb/client @askdb/config @ai-sdk/openai pg" />
+<InstallTabs pkgs="@askdb/client @askdb/core @askdb/config ai @ai-sdk/openai pg" />
 
 | Package | Why |
 | --- | --- |
 | `@askdb/client` | `createAskDb()` — resolves the schema, model, and dialect from config. |
 | `@ai-sdk/openai` | The AI SDK package for the provider your config selects. Swap it for `@ai-sdk/anthropic`, `@ai-sdk/google`, or `@ai-sdk/azure` (the Vercel AI Gateway needs none). AskDB loads it on first use. |
 | `@askdb/config` | Loads `.env` and `askdb.config.ts` at startup. |
+| `@askdb/core`, `ai` | Required peer dependencies of `@askdb/client` (`ai` at AI SDK 7). npm and pnpm add them for you; Yarn doesn't, so list them. |
 | `pg` | The Postgres driver. AskDB doesn't open the connection; your app does. |
 
 ## Wire it into a handler
@@ -113,7 +114,9 @@ The full result and option types are in the [@askdb/core API reference](/referen
 
 `createAskDb` is a convenience layer over `@askdb/core`'s pure `ask()` — not a replacement. Drop down to `ask()` when you construct the model yourself, serve multiple schemas from one process, or want zero dependency on `@askdb/config` / `@askdb/ai`.
 
-<InstallTabs pkgs="@askdb/core @ai-sdk/openai pg" />
+<InstallTabs pkgs="@askdb/core ai @ai-sdk/openai pg" />
+
+`ai` is a required peer dependency of `@askdb/core` (AI SDK 6 or 7) — your app owns its version.
 
 Dialects for all four engines are built into `@askdb/core` — install `@askdb/postgres` only if this service also runs `askdb introspect` programmatically.
 

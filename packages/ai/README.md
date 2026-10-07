@@ -14,13 +14,15 @@ pnpm add @askdb/ai ai
 pnpm add @ai-sdk/openai
 ```
 
-| Provider (`ai.provider`) | Install | API key env var | Default model |
+| Provider (`ai.provider`) | Install | API key env var | Default language model |
 |---|---|---|---|
 | `openai` | `@ai-sdk/openai` | `OPENAI_API_KEY` | `gpt-4o-mini` |
 | `anthropic` | `@ai-sdk/anthropic` | `ANTHROPIC_API_KEY` | `claude-sonnet-4-6` |
 | `google` | `@ai-sdk/google` | `GOOGLE_GENERATIVE_AI_API_KEY` | `gemini-2.0-flash` |
 | `azure` (aliases `azure-openai`, `foundry`) | `@ai-sdk/azure` | `AZURE_OPENAI_API_KEY` | `gpt-4o-mini` (deployment name) |
 | `gateway` (Vercel AI Gateway) | nothing: ships with `ai` | `AI_GATEWAY_API_KEY` | `openai/gpt-4o-mini` |
+
+Embedding models have no default in `askdb.config.*`: `rag.embedder: "ai"` requires `ai.embedding.model`, and `getAskDbRuntimeConfig().ai.embedding.env` always carries it. An env map with no embedding model still falls back to `text-embedding-3-small` on `openai` and `azure` (`openai/text-embedding-3-small` on `gateway`), with a one-time `DeprecationWarning` (code `ASKDB_AI_DEFAULT_EMBEDDING_MODEL`). That fallback is removed at 1.0.
 
 Each built-in provider imports its SDK package lazily, the first time it builds a model, so registering all of them costs nothing. If the package isn't installed, model creation fails with: `Provider 'google' requires the optional peer dependency @ai-sdk/google. Install it: npm i @ai-sdk/google`. The same data is exported as `BUILTIN_AI_PROVIDERS`.
 
@@ -75,7 +77,7 @@ const providerOptions = ai.resolveProviderOptions(config, { reasoningEffort: "lo
 await ask({ question, schema, dialect: "postgres", model, deps: { providerOptions } });
 ```
 
-`resolveReasoningEffort(env, purpose, override)` resolves the effective effort from an explicit override, a call-site env var (`ASKDB_AI_REASONING_EFFORT_NL_TO_SQL` / `_ENRICHMENT`), then the global `ASKDB_AI_REASONING_EFFORT` — set from `askdb.config.ts`'s `ai.reasoning` block by `@askdb/config`. See the [config reference](https://askdb.tools/reference/config/#aireasoning--reasoninglatency-effort).
+`resolveReasoningEffort(env, purpose, override)` resolves the effective effort from an explicit override, a call-site env var (`ASKDB_AI_REASONING_EFFORT_NL_TO_SQL` / `_ENRICHMENT`), then the global `ASKDB_AI_REASONING_EFFORT` — set from `askdb.config.ts`'s `ai.language.reasoning` block by `@askdb/config`. See the [config reference](https://askdb.tools/reference/config/#reasoning-effort).
 
 ## Exports
 

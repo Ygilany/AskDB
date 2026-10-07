@@ -3,7 +3,7 @@
  *
  * Protects: the CI gate. The consumer-lab job in `.github/workflows/ci.yml` passes or fails on
  * the matrix command's exit code, and the README promises it fails on any `FAIL` cell and
- * passes on `pass`, `n/a` and `known`.
+ * passes on `pass`, `n/a`, `known` and `miss` (a live-model miss, `LAB_LIVE_MODEL=1`, #247).
  * Catches: a `FAIL` cell that vitest itself counts as passing, so CI stays green. Two exist: an
  * `it.fails` test that names no issue (vitest: "expected fail"), and a skip whose note isn't a
  * capability gate (vitest: "skipped"). Also catches the opposite regression: a `known (#N)` or
@@ -28,7 +28,7 @@ function matrix(body: string) {
 
 const GREEN = `
 describe("[postgres]", () => { it("probe-pass: passes", () => { expect(1).toBe(1); }); });
-describe("[mysql]", () => { it.fails("probe-known: a tracked bug (#1)", () => { expect(1).toBe(2); }); });
+describe("[mysql]", () => { it.fails("probe-known: a tracked bug (#1)", () => { expect(1).toBe(2); }); it.fails("probe-known: the same bug and another (#1) (#2)", () => { expect(1).toBe(2); }); });
 describe("[sqlite]", () => { it("probe-na: gated", (ctx) => { ctx.skip("capability: probe-capability"); }); });
 `;
 
@@ -37,7 +37,7 @@ describe("lab:matrix exit code", () => {
     const { status, out, cells, summary } = matrix(GREEN);
     expect(cells).toEqual({
       "probe-pass [postgres]": "pass",
-      "probe-known [mysql]": "known (#1)",
+      "probe-known [mysql]": "known (#1, #2)",
       "probe-na [sqlite]": "n/a (capability: probe-capability)",
     });
     expect(summary).toContain("### Consumer lab matrix");
@@ -70,6 +70,29 @@ describe("lab:matrix exit code", () => {
     expect(summary).toContain(`<summary><code>probe-red [mariadb]</code>: ${failure?.test.replace(/>/g, "&gt;")}</summary>`);
     expect(summary).toContain(reason);
     expect(summary).not.toContain("\u001b[");
+  });
+
+  // Live-model mode (test/live.test.ts, #247). Contract: a test annotated `miss` reads
+  // `miss (<reasons>)` and doesn't fail the run (model quality), but a failing test beside it
+  // (a guarantee violation) still makes the cell FAIL. Catches: misses read as `pass` (the live
+  // run hides what the model got wrong), or failing the run (every live run red). No other test
+  // runs the reporter on annotations; no production seam (a real vitest run in a scratch lab).
+  it("passes a run whose live-model misses read miss (…), and still fails a FAIL cell next to a miss", () => {
+    const misses = `
+describe("[postgres]", () => {
+  it("probe-miss: raw", (ctx) => { ctx.annotate("raw: wrong rows", "miss"); });
+  it("probe-miss: client", (ctx) => { ctx.annotate("client: rejected (SqlValidationError SQL_MULTI_STATEMENT)", "miss"); });
+  it("probe-miss-pass: raw", () => { expect(1).toBe(1); });
+  it("probe-miss-pass: client", (ctx) => { ctx.annotate("client: wrong columns", "miss"); });
+});`;
+    const green = matrix(`${GREEN}\n${misses}`);
+    expect(green.cells["probe-miss [postgres]"]).toBe("miss (raw: wrong rows; client: rejected (SqlValidationError SQL_MULTI_STATEMENT))");
+    expect(green.cells["probe-miss-pass [postgres]"]).toBe("miss (client: wrong columns)");
+    expect(green.status, green.out).toBe(0);
+
+    const red = matrix(`${GREEN}\n${misses}\ndescribe("[postgres]", () => { it("probe-miss: violation", () => { expect("leaked", "a guarantee violation").toBe("held"); }); });`);
+    expect(red.cells["probe-miss [postgres]"]).toBe("FAIL");
+    expect(red.status, red.out).toBe(1);
   });
 
   it("gives no reasons when nothing failed", () => {

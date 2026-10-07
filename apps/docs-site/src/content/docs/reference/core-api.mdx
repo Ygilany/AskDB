@@ -44,6 +44,7 @@ const { sql } = await ask({
 | `totalSchemaChunkCount` | `number` | no | `Infinity` | Total chunk count from `buildSchemaIndex`. Pass `result.stats.chunksTotal` here for the threshold check to be meaningful; omit to always use the retriever when one is supplied. |
 | `logger` | `AskDbLogger` | no | — | Structured logger. Attach one for observability — it emits `AskDbLogEvent` entries at each pipeline stage. |
 | `deps` | `AskGenerateDeps` | no | — | `{ generateText? }` — inject a mock `generateText` for unit tests. |
+| `abortSignal` | `AbortSignal` | no | — | Cancels the model call (`generateText({ abortSignal })`). Use `AbortSignal.timeout(ms)` for a per-request timeout. With a built-in dialect or `DialectSpec`, an aborted call rejects with `SqlGenerationError` whose `cause` is the abort reason. A custom `AskDialect` receives it as `options.abortSignal` and maps its own errors. |
 
 ### Result — `AskPipelineResult`
 
@@ -221,7 +222,7 @@ Autodetects and loads a v2 schema artifact. Accepts:
 
 Returns `NormalizedSchemaV2`. Throws `SchemaParseError` on failure. The optional files (`tables/*.md`, `concepts.md`, `tenant-policy.md`) may be absent. If one exists but is empty or cannot be read or parsed, for example because of malformed YAML front-matter, loading throws. Bundles follow the same rule: only an absent `tenantPolicy` key means "no policy". A broken `tenant-policy.md` never silently turns tenant enforcement off.
 
-Each table and column in the result has one effective `sensitive` flag. It is `true` when `schema.json` marks it sensitive, when its `tables/*.md` front-matter sets `sensitive: true` (which is what Studio's Sensitivity tab writes), or, for a column, when its table is sensitive. Front-matter is escalate-only: a front-matter `sensitive: false` never un-marks something that is sensitive anyway. It is ignored and reported in `schema.warnings` as `{ kind: "sensitivity_downgrade_ignored", tableFile, id }`. A `columns` entry whose ID belongs to a different table than the file it is in is reported as `{ kind: "misplaced_column_id", tableFile, id, tableId }`. Its `sensitive: true` still applies to the column the ID names, but nothing else in the entry does. A column ID listed more than once in the same file is reported as `{ kind: "duplicate_column_id", tableFile, id }`. Only the first entry's description, aliases, and enum are used, but the column is sensitive if any entry naming it, in any `tables/*.md` file, sets `sensitive: true`. Two `tables/*.md` files with the same front-matter `id` make `loadSchema()` and `loadSchemaFromJson()` throw `SchemaParseError` naming both files. `tableFile` is always the markdown file that was actually read. Prompt formatting, `validateSensitiveReferences`, and `@askdb/rag` chunking all read this effective flag.
+Each table and column in the result has one effective `sensitive` flag. It is `true` when `schema.json` marks it sensitive, when its `tables/*.md` front-matter sets `sensitive: true` (which is what Studio's Sensitivity tab writes), or, for a column, when its table is sensitive. Front-matter is escalate-only: a front-matter `sensitive: false` never un-marks something that is sensitive anyway. It is ignored and reported in `schema.warnings` as `{ kind: "sensitivity_downgrade_ignored", tableFile, id }`. A `columns` entry whose ID belongs to a different table than the file it is in is reported as `{ kind: "misplaced_column_id", tableFile, id, tableId }`. Its `sensitive: true` still applies to the column the ID names, but nothing else in the entry does. A column ID listed more than once in the same file is reported as `{ kind: "duplicate_column_id", tableFile, id }`. Only the first entry's description, aliases, and enum are used, but the column is sensitive if any entry naming it, in any `tables/*.md` file, sets `sensitive: true`. Two `tables/*.md` files with the same front-matter `id` make `loadSchema()` and `loadSchemaFromJson()` throw `SchemaParseError` naming both files. `tableFile` is always the markdown file that was actually read. Prompt formatting, `validateSensitiveReferences`, and `@askdb/rag` chunking all read this effective flag. A column that is sensitive only because its table is also carries `sensitiveFromTable: true`; `@askdb/rag` uses it to count a mention of that column only when written as `table.column`.
 
 `loadSchema` is synchronous — load once at startup and keep the result in memory, not per request.
 
@@ -233,6 +234,19 @@ const schema = loadSchemaFromJson(bundleJsonString);
 ```
 
 Parses a raw JSON string. Accepts the same formats as `loadSchema` (bundled JSON or bare `schema.json` blob). Useful when the schema is passed as a string over a network boundary (e.g., the HTTP API's `schemaJson` request field).
+
+### `findMentionedNames(text, names)` and `createMentionMatcher(names)`
+
+```ts
+import { createMentionMatcher, findMentionedNames } from "@askdb/core";
+findMentionedNames("Dedupe by EMAIL; see users_email", ["email", "ssn"]); // → ["email"]
+
+const sensitive = createMentionMatcher(["ssn", { table: "users", column: "org_id" }]);
+sensitive.mentionsAny('filter by "users"."org_id"'); // → true
+sensitive.find("Rows come from users. Org_id is the key"); // → []
+```
+
+The schema contract's "mentions a sensitive column by name" rule, which `@askdb/rag`'s chunker and `@askdb/enrich`'s authoring warning both use: whole-word and case-insensitive, with a bare name (a string, matched literally) or a qualified one (`{ table, column }`). The full rule is in the [schema-v2 contract on GitHub](https://github.com/Ygilany/AskDB/blob/main/docs/contracts/schema-v2.md#sensitive-propagation). `findMentionedNames` returns the names `text` mentions, in the order given. It compiles the names on every call, so to check many texts against one list, build a `MentionMatcher` once with `createMentionMatcher` and call `mentionsAny(text)` or `find(text)`.
 
 ---
 
@@ -281,13 +295,17 @@ const redshiftFlavor: DialectSpec = {
 | `id` | `DialectId` | yes | One of the six built-in ids — the engine family this spec belongs to. |
 | `displayName` | `string` | yes | Human-readable name. |
 | `promptBrief` | `string` | yes | One-paragraph guidance for the model about this dialect's syntax. |
-| `identifierQuote` | `'"' \| '`'` | yes | Identifier quoting style. |
+| `identifierQuote` | `'"' \| '`'` | yes | Identifier quoting style. The prompt quotes names the way `id`'s engine does, not with this field. |
+| `reservedWords` | `readonly string[]` | no | Words the engine reserves, case-insensitive. The prompt lists a schema, table or column with one of these names quoted. The built-in specs set their engine's list; spread one to keep it, since setting the field replaces the list. |
+| `unqualifiedNamespace` | `string` | no | A namespace that isn't a schema in this engine. When it is the schema's only namespace, the prompt lists its tables without it and tells the model never to write `<namespace>.<table>`; next to other namespaces (a MySQL database list that includes a database named `public`) it stays qualified. The SQLite, MySQL and MariaDB specs set `SINGLE_NAMESPACE_LABEL` (`"public"`), the namespace their connectors give the database's tables; spread one to keep it. |
 | `extraForbiddenKeywords` | `readonly string[]` | no | Keywords to forbid in addition to the shared read-only denylist. |
 | `blockedFunctions` | `readonly string[]` | no | Functions `validateSelectSql` rejects when called (`name(`), such as `pg_sleep` or `load_file`. |
 | `extraValidate` | `(sql: string) => void` | no | Dialect-specific SQL validator. Throw `SqlValidationError` for failures. |
 | `backslashEscapes` | `boolean` | no | Whether a backslash escapes a quote inside `'…'` strings on your server. The built-in specs set the engine default (`true` for MySQL and MariaDB, `false` otherwise). Set `false` for MySQL or MariaDB with `NO_BACKSLASH_ESCAPES`, and `true` for Postgres with `standard_conforming_strings = off`. The checks lex strings this way, and bound tenant and parameter values are escaped to match. See [Match your server's string settings](/concepts/safety-boundaries/#match-your-servers-string-settings). |
 
 `id` also selects how the validator lexes strings, quoted identifiers, and comments. The built-in specs ship their own `extraForbiddenKeywords` and `blockedFunctions`; spread one (`{ ...POSTGRES_DIALECT, … }`) to keep them, since setting either field replaces the built-in list. These checks are defense in depth — run generated SQL under a read-only database role.
+
+`id` also decides how the prompt quotes names. A schema, table or column whose name is in `reservedWords`, is a word the SQL checks reject unquoted (the shared denylist plus `extraForbiddenKeywords`, such as `copy`), isn't a plain identifier (on `sqlserver`, anything beyond ASCII letters, digits, `_` and `$`), or (for `postgres` and `cockroachdb`, which fold unquoted names to lowercase) has capitals, is listed quoted (`billing."order"` for `postgres` and `cockroachdb`, ``billing.`order` `` for `mysql` and `mariadb`, `billing.[order]` for `sqlserver`, `"order"` for `sqlite`; a Prisma table `Post` is `public."Post"` on Postgres). When the prompt lists tables with their schema, it also tells the model to quote each part of a qualified name separately. `promptIdentifierQuoter(dialect)` returns that quoting as a function; pass it as `quoteIdentifier` when you call `formatSchemaV2ForNlToSql` or `synthesizeRetrievedDdl` yourself.
 
 ### `AskDialect`
 
@@ -308,7 +326,7 @@ The `generate` method receives:
 - `question: string`
 - `schema: AnyNormalizedSchema`
 - `model: AskDbLanguageModel`
-- `options?: AskDialectGenerateOptions` — `{ logger, explain, omitSensitiveIdentifiersFromNlToSqlPrompt, generateText, prebuiltDdl, tenantPolicy, tenantScope }`. `tenantScope` is the scope after `ask()` expands a `subtree`: a `multi_root` scope with one entry per covered root, where a root the resolver returned no IDs for has `ids: []`. `validateTenantScope()` accepts it.
+- `options?: AskDialectGenerateOptions` — `{ logger, explain, omitSensitiveIdentifiersFromNlToSqlPrompt, generateText, providerOptions, abortSignal, prebuiltDdl, tenantPolicy, tenantScope }`. Pass `abortSignal` to your model call so the caller's timeout cancels it; `ask()` doesn't wrap what `generate()` throws, so an abort surfaces as your dialect's own error (typically the AI SDK's `AbortError`) unless you map it. `tenantScope` is the scope after `ask()` expands a `subtree`: a `multi_root` scope with one entry per covered root, where a root the resolver returned no IDs for has `ids: []`. `validateTenantScope()` accepts it.
 
 It must return `AskDialectGenerateResult`:
 

@@ -28,7 +28,7 @@ export type ResolveConfigOptions = {
   usage: AiUsage;
   /** Default model when no env override is set. */
   modelDefault?: string;
-  /** Per-app embedding model env var (e.g. `ASKDB_RAG_EMBEDDER_MODEL`). Embedding usage only. */
+  /** Per-app embedding model env var, read before `ASKDB_AI_EMBEDDING_MODEL`. Embedding usage only. */
   modelEnvVar?: string;
 };
 
@@ -40,6 +40,10 @@ export type ProviderEnvSpec = {
   embeddingModelVars?: readonly string[];
   baseURLVars?: readonly string[];
   defaultModel?: string;
+  /**
+   * @deprecated The embedding model is baked into a persisted index, so no layer should pick
+   * one. Using it emits a `DeprecationWarning` once per process; removed at 1.0.
+   */
   defaultEmbeddingModel?: string;
 };
 
@@ -73,7 +77,7 @@ export type ProviderEnvSpec = {
  *   3. `ASKDB_EMBEDDING_MODEL`
  *   4. provider-native embedding model vars
  *   5. `options.modelDefault`
- *   6. provider default embedding model
+ *   6. provider default embedding model (deprecated: warns once, removed at 1.0)
  *
  * Precedence for base URLs:
  *   1. `ASKDB_AI_BASE_URL`
@@ -110,29 +114,51 @@ export function resolveBaseConfig(
   };
 }
 
+let warnedDefaultEmbeddingModel = false;
+
+function warnDefaultEmbeddingModel(provider: string, model: string): void {
+  if (warnedDefaultEmbeddingModel) return;
+  warnedDefaultEmbeddingModel = true;
+  process.emitWarning(
+    `${provider}: no embedding model configured, so AskDB used its default "${model}". ` +
+      "Set ai.embedding.model in askdb.config.*, or set ASKDB_AI_EMBEDDING_MODEL or the provider's embedding model variable; " +
+      "the default is removed at 1.0.",
+    { type: "DeprecationWarning", code: "ASKDB_AI_DEFAULT_EMBEDDING_MODEL" },
+  );
+}
+
 function resolveModel(
   provider: string,
   env: AiEnv,
   spec: ProviderEnvSpec,
   options: ResolveConfigOptions,
 ): string {
-  const model =
-    options.usage === "embedding"
-      ? first(env, options.modelEnvVar ? [options.modelEnvVar] : []) ||
-        first(env, ["ASKDB_AI_EMBEDDING_MODEL"]) ||
-        first(env, ["ASKDB_EMBEDDING_MODEL"]) ||
-        first(env, spec.embeddingModelVars ?? []) ||
-        options.modelDefault ||
-        spec.defaultEmbeddingModel
-      : first(env, ["ASKDB_AI_MODEL"]) ||
-        first(env, ["ASKDB_MODEL"]) ||
-        first(env, spec.modelVars ?? []) ||
-        options.modelDefault ||
-        spec.defaultModel;
+  let model: string | undefined;
+  if (options.usage === "embedding") {
+    model =
+      first(env, options.modelEnvVar ? [options.modelEnvVar] : []) ||
+      first(env, ["ASKDB_AI_EMBEDDING_MODEL"]) ||
+      first(env, ["ASKDB_EMBEDDING_MODEL"]) ||
+      first(env, spec.embeddingModelVars ?? []) ||
+      options.modelDefault;
+    if (!model && spec.defaultEmbeddingModel) {
+      model = spec.defaultEmbeddingModel;
+      warnDefaultEmbeddingModel(provider, model);
+    }
+  } else {
+    model =
+      first(env, ["ASKDB_AI_MODEL"]) ||
+      first(env, ["ASKDB_MODEL"]) ||
+      first(env, spec.modelVars ?? []) ||
+      options.modelDefault ||
+      spec.defaultModel;
+  }
 
   if (!model) {
     throw new Error(
-      `${provider}: no ${options.usage} model configured. Set ASKDB_AI_MODEL (or the provider's native model variable).`,
+      options.usage === "embedding"
+        ? `${provider}: no embedding model configured. Set ai.embedding.model in askdb.config.* (or ASKDB_AI_EMBEDDING_MODEL).`
+        : `${provider}: no language model configured. Set ASKDB_AI_MODEL (or the provider's native model variable).`,
     );
   }
   return model;

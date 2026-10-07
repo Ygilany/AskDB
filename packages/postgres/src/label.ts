@@ -13,6 +13,10 @@ import { parse } from "pg-connection-string";
  * when an `@` or `#` sits after the host: a password containing `/`, `?` or `#`
  * is split there, and the "host" or "database" the parser finds is then part
  * of the password. `formatConnectionLabel`'s allowlist is the second check.
+ *
+ * The parser returns an IPv6 host without its brackets (`::1`), as `pg`
+ * connects to it; the label part puts them back (`[::1]`), the URL form the
+ * allowlist accepts.
  */
 export function parsePostgresConnection(input: string): ConnectionLabelParts | undefined {
   let url: URL;
@@ -27,10 +31,14 @@ export function parsePostgresConnection(input: string): ConnectionLabelParts | u
   if (url.hash !== "" || `${url.pathname}${url.search}`.includes("@")) return undefined;
   const { host, port, database } = parsed;
   return {
-    ...(typeof host === "string" && host !== "" ? { host } : {}),
+    ...(typeof host === "string" && host !== "" ? { host: bracketIpv6(host) } : {}),
     ...(typeof port === "string" && port !== "" ? { port } : {}),
     ...(typeof database === "string" && database !== "" ? { database } : {}),
   };
+}
+
+function bracketIpv6(host: string): string {
+  return host.includes(":") && !host.startsWith("[") ? `[${host}]` : host;
 }
 
 /**
