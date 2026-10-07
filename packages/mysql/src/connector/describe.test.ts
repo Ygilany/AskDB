@@ -279,6 +279,57 @@ describe("describeMysql", () => {
     );
   });
 
+  it("keeps FKs inside a listed database whose name the catalog spells in another case", async () => {
+    // lower_case_table_names=1/2: `table_schema IN ('Shop')` matches, rows come back as `shop`.
+    const rows: Record<string, ReadonlyArray<Record<string, unknown>>> = {
+      tables: [
+        { table_schema: "shop", table_name: "orders", table_type: "BASE TABLE", table_comment: "" },
+        { table_schema: "shop", table_name: "users", table_type: "BASE TABLE", table_comment: "" },
+      ],
+      columns: [
+        ["orders", "id", 1, "PRI"],
+        ["orders", "user_id", 2, "MUL"],
+        ["users", "id", 1, "PRI"],
+      ].map(([table, column, pos, key]) => ({
+        table_schema: "shop",
+        table_name: table,
+        column_name: column,
+        ordinal_position: pos,
+        column_default: null,
+        is_nullable: "NO",
+        data_type: "int",
+        column_type: "int",
+        column_key: key,
+        extra: "",
+        column_comment: "",
+      })),
+      key_column_usage: [
+        {
+          constraint_name: "orders_user_fk",
+          table_name: "orders",
+          column_name: "user_id",
+          table_schema: "shop",
+          referenced_table_schema: "shop",
+          referenced_table_name: "users",
+          referenced_column_name: "id",
+          ordinal_position: 1,
+          update_rule: "NO ACTION",
+          delete_rule: "NO ACTION",
+        },
+      ],
+    };
+    const runner: CatalogQueryRunner = async (sql, params) => {
+      expect(params).toEqual(["Shop"]);
+      const from = /FROM information_schema\.(\w+)/.exec(sql)?.[1] ?? "";
+      return rowsToResult(rows[from] ?? []);
+    };
+
+    const result = await describeMysql({ runner, filters: { schemas: ["Shop"] } });
+    const orders = result.schema.schemas[0]!.tables.find((t) => t.name === "orders")!;
+    expect(orders.foreignKeys.map((fk) => fk.references)).toEqual([{ schema: "shop", table: "users", columns: ["id"] }]);
+    expect(result.warnings).toEqual([]);
+  });
+
   it("skips cross-database foreign keys with a cross_database_fk warning", async () => {
     const intCol = (table: string, column: string, pos: number, key = "") => ({
       table_schema: "app",

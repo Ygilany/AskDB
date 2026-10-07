@@ -128,9 +128,9 @@ describe("resolveConnectionInput", () => {
     });
 
     // Prisma's {…} escaping (Prisma's SQL Server docs; prisma/connection-string
-    // src/jdbc.rs), read only where the braces wrap a ;: such a span is read
-    // verbatim up to the first }.
-    it("reads braces that wrap a ; as Prisma's escape (the doc example yields the password Pass:Word;)", () => {
+    // src/jdbc.rs), read only for a whole value that starts with {, ends with }
+    // and holds a ; in between.
+    it("reads a braced value holding a ; as Prisma's escape (the doc example yields the password Pass:Word;)", () => {
       expect(resolveConnectionInput("sqlserver://host:1433;user=sa;password={Pass:Word;};database=db")).toEqual({
         server: "host",
         port: 1433,
@@ -142,10 +142,12 @@ describe("resolveConnectionInput", () => {
     });
 
     it.each([
-      // Braced and plain runs join, as in Prisma: the second } is a plain character.
-      ["sqlserver://h:4200;User ID=musti;Password={abc;}}45}", "abc;}45}"],
-      // A literal { inside an escaping span, so a value can hold both braces and a ;.
+      // Braces inside the escape are literal, so a value can hold both braces and a ;.
       ["sqlserver://h;user=sa;password={{a;b}}", "{a;b}"],
+      // The escape ends at the } that ends the value (Prisma would end it at the first }: abc;}45}).
+      ["sqlserver://h:4200;User ID=musti;Password={abc;}}45}", "abc;}}45"],
+      // Blanks around the braces, as around any value.
+      ["sqlserver://h;user=sa;password=  {a;b}  ;database=app", "a;b"],
     ])("reads %s as the password %s", (input, password) => {
       expect((resolveConnectionInput(input) as { password?: string }).password).toBe(password);
     });
@@ -247,6 +249,12 @@ describe("sqlserver:// backward compatibility with the parser before #189", () =
     "sqlserver://h;user={MyServer/User};password={Pass:Word}",
     "sqlserver://h;user=sa;password=x;database={app}",
     "sqlserver://h;user=sa;password={a{b}}c",
+    // A { and a } in different values never pair up, and a } that doesn't end
+    // its value doesn't close an escape.
+    "sqlserver://h;user=sa;password=ab{cd;database=a}pp",
+    "sqlserver://h;user=sa;password=ab{cd;database=app;x=}",
+    "sqlserver://h;user=sa;password={ab;database=a}pp",
+    "sqlserver://h;user=sa;password={ab}cd;database=app",
   ])("reads %s exactly as before", (input) => {
     expect(resolveConnectionInput(input)).toEqual(legacyParsePrismaSqlServerUrl(input));
   });
@@ -266,10 +274,16 @@ describe("sqlserver:// backward compatibility with the parser before #189", () =
       { user: "sa", password: "S3cret" },
     ],
     [
-      "Prisma's uid and username aliases: the old parser dropped them, so there was no user",
+      "Prisma's uid alias: the old parser dropped it, so there was no user",
       "sqlserver://h;uid=sa;password=S3cret",
       { user: undefined, password: "S3cret" },
       { user: "sa", password: "S3cret" },
+    ],
+    [
+      "Prisma's username alias, which wins over uid: the old parser dropped both",
+      "sqlserver://h;uid=b;username=a;password=S3cret",
+      { user: undefined, password: "S3cret" },
+      { user: "a", password: "S3cret" },
     ],
   ])("%s", (_reason, input, before, after) => {
     const old = legacyParsePrismaSqlServerUrl(input) as { user?: string; password?: string };
