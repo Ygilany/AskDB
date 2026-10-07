@@ -272,12 +272,9 @@ export function bundleSchemaDirectory(schemaDir: string): CoreBundledSchemaV2 {
   }
   const physical = parsePhysical(readFileSync(schemaJsonPath, "utf8"), schemaJsonPath);
   const tables: Record<string, string> = {};
-  const tableDir = join(schemaDir, "tables");
-  if (existsSync(tableDir)) {
-    for (const entry of readdirSync(tableDir).sort()) {
-      if (!entry.endsWith(".md")) continue;
-      tables[entry] = readFileSync(join(tableDir, entry), "utf8");
-    }
+  for (const entry of (readOptionalDir(join(schemaDir, "tables")) ?? []).sort()) {
+    if (!entry.endsWith(".md")) continue;
+    tables[entry] = readFileSync(join(schemaDir, "tables", entry), "utf8");
   }
   const bundle: CoreBundledSchemaV2 = { bundled: true, physical, tables };
   for (const [key, file] of Object.entries(OPTIONAL_BUNDLE_FILES) as [OptionalBundleKey, string][]) {
@@ -299,8 +296,29 @@ const OPTIONAL_BUNDLE_FILES: Record<OptionalBundleKey, string> = {
   tenantPolicy: "tenant-policy.md",
 };
 
+// Like core's directory loader, only a missing path (ENOENT) counts as absent. Any
+// other failure (EACCES, ELOOP, ENOTDIR, ...) throws, because skipping an unreadable
+// tenant-policy.md would write a bundle that loads with tenant enforcement off.
 function readOptionalFile(filePath: string): string | undefined {
-  return existsSync(filePath) ? readFileSync(filePath, "utf8") : undefined;
+  try {
+    return readFileSync(filePath, "utf8");
+  } catch (e) {
+    if (isMissingPathError(e)) return undefined;
+    throw e;
+  }
+}
+
+function readOptionalDir(dirPath: string): string[] | undefined {
+  try {
+    return readdirSync(dirPath);
+  } catch (e) {
+    if (isMissingPathError(e)) return undefined;
+    throw e;
+  }
+}
+
+function isMissingPathError(e: unknown): boolean {
+  return (e as NodeJS.ErrnoException | null)?.code === "ENOENT";
 }
 
 /**

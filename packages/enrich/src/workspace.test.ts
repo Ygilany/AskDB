@@ -334,6 +334,26 @@ describe("bundleSchemaDirectory with a tenant policy", () => {
     expect(fromFile).toEqual(fromDir);
     expect(fromFile.tenantPolicy).toEqual(fromDir.tenantPolicy);
   });
+
+  // The directory loader treats only a missing file as "no policy". A bundler that
+  // skipped an unreadable one would write a bundle that loads with enforcement off.
+  it("refuses to bundle when tenant-policy.md exists but can't be read, as loadSchema does", () => {
+    const policyPath = join(schemaDir, "tenant-policy.md");
+    rmSync(policyPath);
+    symlinkSync("tenant-policy.md", policyPath); // a link to itself: ELOOP
+
+    expect(() => loadSchema(schemaDir)).toThrow(/ELOOP/);
+    expect(() => bundleSchemaDirectory(schemaDir)).toThrow(/ELOOP/);
+  });
+
+  it("refuses to bundle when tables/ exists but can't be listed, as loadSchema does", () => {
+    const tablesPath = join(schemaDir, "tables");
+    rmSync(tablesPath, { recursive: true, force: true });
+    symlinkSync("tables", tablesPath);
+
+    expect(() => loadSchema(schemaDir)).toThrow(/ELOOP/);
+    expect(() => bundleSchemaDirectory(schemaDir)).toThrow(/ELOOP/);
+  });
 });
 
 describe("workspace table filenames", () => {
@@ -435,6 +455,13 @@ describe("workspace table filenames", () => {
     const ws = loadWorkspace(schemaDir);
     expect(filenameOf(ws, "table:public.orders")).toBe("orders.md");
     expect(filenameOf(ws, "table:archive.orders")).toBe("Custom Name.md");
+
+    saveDescribed(ws, "table:archive.orders");
+    expect(readFileSync(join(schemaDir, "tables/orders.md"), "utf8")).toBe(existing);
+    expect(readFileSync(join(schemaDir, "tables/Custom Name.md"), "utf8")).toContain(
+      "About table:archive.orders.",
+    );
+    expect(readdirSync(join(schemaDir, "tables")).sort()).toEqual(["Custom Name.md", "orders.md"]);
   });
 
   it("does not reuse a filename already on disk for a new table", () => {
@@ -537,6 +564,20 @@ describe("workspace table filenames", () => {
     expect(readdirSync(join(schemaDir, "tables"))).toEqual(["orders.md"]);
   });
 
+  it("saveTable reports a failed replace and leaves no temp file behind", () => {
+    writeSchema([table("public", "orders")]);
+    const ws = loadWorkspace(schemaDir);
+    // A non-empty directory at the target passes the link and permission checks,
+    // then makes the rename fail after the temp file has been written.
+    const target = join(schemaDir, "tables", "orders.md");
+    mkdirSync(target);
+    writeFileSync(join(target, "keep"), "kept\n", "utf8");
+
+    expect(() => saveDescribed(ws, "table:public.orders")).toThrow(/rename/);
+    expect(readdirSync(join(schemaDir, "tables"))).toEqual(["orders.md"]);
+    expect(readFileSync(join(target, "keep"), "utf8")).toBe("kept\n");
+  });
+
   // File modes only mean this on POSIX, and root passes every write-permission check.
   integrationSuite({
     unavailable:
@@ -558,6 +599,22 @@ describe("workspace table filenames", () => {
       expect(readFileSync(target, "utf8")).toBe(original);
       expect(statSync(target).mode & 0o777).toBe(0o444);
       expect(readdirSync(join(schemaDir, "tables"))).toEqual(["orders.md"]);
+    });
+  });
+
+  integrationSuite({
+    unavailable: process.platform === "win32" ? "POSIX file modes are required (not Windows)" : false,
+  })("saveTable and file permission bits", () => {
+    it("keeps the replaced file's mode", () => {
+      writeSchema([table("public", "orders")]);
+      const target = join(schemaDir, "tables", "orders.md");
+      writeFileSync(target, tableMd("public", "orders", "Private notes."), "utf8");
+      chmodSync(target, 0o600);
+      const ws = loadWorkspace(schemaDir);
+
+      saveDescribed(ws, "table:public.orders");
+      expect(readFileSync(target, "utf8")).toContain("About table:public.orders.");
+      expect(statSync(target).mode & 0o777).toBe(0o600);
     });
   });
 
@@ -589,6 +646,20 @@ describe("workspace table filenames", () => {
       expect(t.filename).toMatch(/~[0-9a-f]{8}\.md$/);
     }
     expect(filenameOf(ws, `table:${"s".repeat(128)}.${long}`)).toMatch(/^s{128}\.n+~/);
+    saveAllAndReload(ws);
+  });
+
+  it("keeps long names that share a truncated prefix apart by their hash", () => {
+    const shared = "n".repeat(250);
+    writeSchema([table("public", `${shared}a`), table("public", `${shared}b`)]);
+    const ws = loadWorkspace(schemaDir);
+    const [first, second] = ws.tables.map((t) => t.filename);
+    // Both keep the bare-name form: the hash, not the schema-qualified fallback or a
+    // counter, is what tells them apart.
+    expect(first).toMatch(/^n+~[0-9a-f]{8}\.md$/);
+    expect(second).toMatch(/^n+~[0-9a-f]{8}\.md$/);
+    expect(first!.replace(/~.*$/, "")).toBe(second!.replace(/~.*$/, ""));
+    expect(first).not.toBe(second);
     saveAllAndReload(ws);
   });
 });

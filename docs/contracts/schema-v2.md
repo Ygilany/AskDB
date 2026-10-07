@@ -49,7 +49,7 @@ my-app.schema.bundle.json
 
 The bundle preserves all field semantics and IDs; it is read-only — authoring still happens against the directory.
 
-The bundle carries every file the directory loader reads, so `loadSchema(bundle)` produces the same normalized schema as `loadSchema(directory)`. `@askdb/core` owns the format and exports it as the `BundledSchemaV2` type; `@askdb/enrich`'s `bundleSchemaDirectory()` returns that type.
+The bundle carries every file the directory loader reads, so `loadSchema(bundle)` produces the same normalized schema as `loadSchema(directory)`. `@askdb/core` owns the format and exports it as the `BundledSchemaV2` type; `@askdb/enrich`'s `bundleSchemaDirectory()` returns that type. Like the directory loader, the bundler treats only a missing optional file as absent: if `tenant-policy.md`, `concepts.md` or `tables/` exists but can't be read, bundling fails rather than writing a bundle without it.
 
 ```jsonc
 {

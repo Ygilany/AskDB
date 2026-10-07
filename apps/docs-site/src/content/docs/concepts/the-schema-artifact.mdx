@@ -32,7 +32,7 @@ When you need one portable file (for distributing to a service, an agent, or a b
 npx askdb bundle my-app.schema --out my-app.schema.bundle.json
 ```
 
-The bundle carries `schema.json`, every `tables/*.md`, `concepts.md`, and `tenant-policy.md`, so loading it gives the same result as loading the directory.
+The bundle carries `schema.json`, every `tables/*.md`, `concepts.md`, and `tenant-policy.md`, so loading it gives the same result as loading the directory. If one of those files exists but can't be read, `askdb bundle` fails instead of leaving it out.
 
 ## The physical layer
 
