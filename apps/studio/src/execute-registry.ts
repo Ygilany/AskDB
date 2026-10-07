@@ -108,14 +108,17 @@ export function executeDialectFor(provider: StudioExecuteProvider, dialectOverri
 
 /**
  * Run `@askdb/core`'s read-only SELECT guardrail for the provider's dialect.
- * Returns the normalized single statement; throws `SqlValidationError`.
+ * Returns the single statement without its trailing `;`, so runners can wrap it
+ * in a row cap; throws `SqlValidationError`.
  */
 export function validateExecuteSql(
   provider: StudioExecuteProvider,
   sql: string,
   dialectOverride?: string,
 ): string {
-  return validateSelectSql(executeDialectFor(provider, dialectOverride), sql);
+  // `validateSelectSql` keeps a trailing `;`; it is the only `;` left once the
+  // statement passes, so dropping it can't touch a string or identifier.
+  return validateSelectSql(executeDialectFor(provider, dialectOverride), sql).replace(/\s*;$/, "");
 }
 
 // ---------------------------------------------------------------------------

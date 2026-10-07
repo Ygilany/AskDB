@@ -150,6 +150,7 @@ import {
   executeDialectFor,
   isDriverInstalled,
   isStudioExecuteProvider,
+  validateExecuteSql,
 } from "./execute-registry.js";
 import { packageManagerSpawnSpec } from "./package-manager.js";
 
@@ -321,6 +322,13 @@ describe("studio execute safety", () => {
     expect(executeDialectFor("postgres", "sqlserver").id).toBe("postgres");
     expect(executeDialectFor("sqlite").id).toBe("sqlite");
     expect(executeDialectFor("sqlserver").id).toBe("sqlserver");
+  });
+
+  it("validateExecuteSql hands runners the statement without its trailing semicolon", () => {
+    expect(validateExecuteSql("postgres", "SELECT 1;")).toBe("SELECT 1");
+    expect(validateExecuteSql("mysql", "SELECT 1 ;\n")).toBe("SELECT 1");
+    expect(validateExecuteSql("sqlite", "SELECT ';'")).toBe("SELECT ';'");
+    expect(() => validateExecuteSql("postgres", "SELECT 1; SELECT 2")).toThrow(/Multiple SQL statements/);
   });
 
   it("isStudioExecuteProvider rejects inherited object keys", () => {
