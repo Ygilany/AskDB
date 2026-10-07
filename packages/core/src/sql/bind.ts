@@ -589,7 +589,7 @@ export function sqlStructurallyEqual(a: string, b: string): boolean {
   const norm = (s: string) =>
     s
       .trim()
-      .replace(/;\s*$/, "")
+      .replace(/\s*;\s*$/, "")
       .replace(/\s+/g, " ")
       .toLowerCase();
   return norm(a) === norm(b);

@@ -853,6 +853,37 @@ describe("ask — a model's trailing semicolon is kept (#477)", () => {
   });
 
   it.each([
+    { bound: "'colorado' ;", unbound: ":state_name;", sql: "'colorado' ;", unboundSql: "$1;" },
+    { bound: "'colorado';", unbound: ":state_name", sql: "'colorado';", unboundSql: "$1" },
+    { bound: "'colorado'", unbound: ":state_name ;", sql: "'colorado'", unboundSql: "$1 ;" },
+  ])("keeps the parameterized extras when the two blocks end differently ($bound / $unbound)", async (c) => {
+    const result = await ask({
+      question: "How many cities does Colorado have?",
+      schema: minimalSchema,
+      model: fakeModel,
+      dialect: "postgres",
+      deps: {
+        generateText: vi.fn(async () => ({
+          text: [
+            "```sql",
+            `SELECT count(*) FROM cities WHERE state = ${c.bound}`,
+            "```",
+            "```sql-unbound",
+            `SELECT count(*) FROM cities WHERE state = ${c.unbound}`,
+            "```",
+            "```json",
+            '{"parameters":[{"name":"state_name","type":"string","cardinality":"one","value":"colorado"}]}',
+            "```",
+          ].join("\n"),
+        })),
+      },
+    });
+    expect(result.sql).toBe(`SELECT count(*) FROM cities WHERE state = ${c.sql}`);
+    expect(result.unboundSql).toBe(`SELECT count(*) FROM cities WHERE state = ${c.unboundSql}`);
+    expect(result.params).toEqual(["colorado"]);
+  });
+
+  it.each([
     {
       dialect: "postgres" as const,
       mode: "sql-only" as const,
