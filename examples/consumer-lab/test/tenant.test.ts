@@ -39,7 +39,7 @@ import { needsCapability } from "../src/capabilities.js";
 import { SUPPORTED_DIALECTS, type SupportedDialect } from "../src/dialects.js";
 import { normalizeRows } from "../src/fixture.js";
 import { executeReadOnly } from "../src/host/execute.js";
-import { cassetteSql, loadQuestions, type Question } from "../src/model/catalog.js";
+import { cassetteSql, loadQuestions, withoutTerminator, type Question } from "../src/model/catalog.js";
 import { startReplayServer, type ReplayServer } from "../src/model/replay-server.js";
 import { LAB_ROOT } from "../src/paths.js";
 import { ALL_AGENCIES, TENANT_ORACLES, VISIBLE } from "../src/tenant-oracle.js";
@@ -371,7 +371,7 @@ describe.each(SUPPORTED_DIALECTS.map((d) => [d] as [SupportedDialect]))("[%s]", 
 
       const result = await ask(dialect, "tenant-unfiltered", { tenantScope: idsScope(dialect, [FLAT]) }, "warn");
 
-      expect(result.sql).toBe(cassetteSql(dialect, "tenant-unfiltered", QUESTIONS));
+      expect(withoutTerminator(result.sql)).toBe(cassetteSql(dialect, "tenant-unfiltered", QUESTIONS));
       expect(result.tenantGuardrail).toMatchObject({ passed: false, warnings: [expect.objectContaining({ rule: "MISSING_TENANT_PREDICATE", tableId: expect.stringMatching(/\.program$/) })] });
     });
   });

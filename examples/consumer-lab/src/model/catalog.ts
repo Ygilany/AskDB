@@ -68,15 +68,22 @@ export function readCassette(dialect: string, question: Question, dir = CASSETTE
 }
 
 /**
- * The SQL inside a reply's first ```sql fence, read exactly the way the replay suites read a cassette.
- * A single trailing `;` is removed, as AskDB removes it from the SQL it returns
- * (`concepts/safety-boundaries.mdx`, "Single statement"): a model's reply usually ends with one.
+ * SQL without a single trailing `;`. A model's reply usually ends with one. Released AskDB removes
+ * it from the SQL it returns (`concepts/safety-boundaries.mdx`, "Single statement"); #477 keeps it.
+ * The lab compares SQL with it removed on both sides, so it reads either behavior, and still sees
+ * a `;` anywhere else or any other change to the statement.
  */
-export function fencedSql(reply: string): string | undefined {
-  return /```sql\n([\s\S]*?)\n```/.exec(reply)?.[1]?.trim().replace(/;$/, "").trimEnd();
+export function withoutTerminator(sql: string): string {
+  return sql.trim().replace(/;$/, "").trimEnd();
 }
 
-/** The SQL inside a cassette's ```sql fence: what AskDB should return for that question on that dialect. */
+/** The SQL inside a reply's first ```sql fence, without its terminator, read the way the replay suites read a cassette. */
+export function fencedSql(reply: string): string | undefined {
+  const sql = /```sql\n([\s\S]*?)\n```/.exec(reply)?.[1];
+  return sql === undefined ? undefined : withoutTerminator(sql);
+}
+
+/** The SQL inside a cassette's ```sql fence, without its terminator: what AskDB should return for that question on that dialect. */
 export function cassetteSql(dialect: string, questionId: string, questions = loadQuestions()): string {
   const question = findQuestion(questionId, questions);
   const cassette = question && readCassette(dialect, question);

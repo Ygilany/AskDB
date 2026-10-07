@@ -54,7 +54,7 @@ import { ensureArtifact } from "../../src/artifacts.js";
 import { needsCapability } from "../../src/capabilities.js";
 import { SUPPORTED_DIALECTS, type SupportedDialect } from "../../src/dialects.js";
 import { postAsk, startHttpServer, type HttpReply, type HttpServer, type HttpServerOptions } from "../../src/http-api.js";
-import { CASSETTES_DIR, cassetteSql, loadQuestions } from "../../src/model/catalog.js";
+import { CASSETTES_DIR, cassetteSql, loadQuestions, withoutTerminator } from "../../src/model/catalog.js";
 import { startReplayServer, type ReplayServer } from "../../src/model/replay-server.js";
 import { LAB_ROOT, LAB_STATE } from "../../src/paths.js";
 
@@ -106,7 +106,8 @@ afterAll(async () => {
 });
 
 function expectSuccess(reply: HttpReply, sql: string): void {
-  expect(reply.body).toMatchObject({ ok: true, sql });
+  expect(reply.body).toMatchObject({ ok: true, sql: expect.any(String) });
+  expect(withoutTerminator(reply.body.sql)).toBe(sql);
   expect(reply.body.correlationId).toMatch(/\S/);
   // `usage`: `null`, or `{ promptTokens, completionTokens, totalTokens }`, each `number | null`.
   expect(reply.body).toHaveProperty("usage");
