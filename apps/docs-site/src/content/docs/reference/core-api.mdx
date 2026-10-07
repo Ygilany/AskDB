@@ -44,6 +44,7 @@ const { sql } = await ask({
 | `totalSchemaChunkCount` | `number` | no | `Infinity` | Total chunk count from `buildSchemaIndex`. Pass `result.stats.chunksTotal` here for the threshold check to be meaningful; omit to always use the retriever when one is supplied. |
 | `logger` | `AskDbLogger` | no | — | Structured logger. Attach one for observability — it emits `AskDbLogEvent` entries at each pipeline stage. |
 | `deps` | `AskGenerateDeps` | no | — | `{ generateText? }` — inject a mock `generateText` for unit tests. |
+| `abortSignal` | `AbortSignal` | no | — | Cancels the model call (`generateText({ abortSignal })`). Use `AbortSignal.timeout(ms)` for a per-request timeout. With a built-in dialect or `DialectSpec`, an aborted call rejects with `SqlGenerationError` whose `cause` is the abort reason. A custom `AskDialect` receives it as `options.abortSignal` and maps its own errors. |
 
 ### Result — `AskPipelineResult`
 
@@ -321,7 +322,7 @@ The `generate` method receives:
 - `question: string`
 - `schema: AnyNormalizedSchema`
 - `model: AskDbLanguageModel`
-- `options?: AskDialectGenerateOptions` — `{ logger, explain, omitSensitiveIdentifiersFromNlToSqlPrompt, generateText, prebuiltDdl, tenantPolicy, tenantScope }`. `tenantScope` is the scope after `ask()` expands a `subtree`: a `multi_root` scope with one entry per covered root, where a root the resolver returned no IDs for has `ids: []`. `validateTenantScope()` accepts it.
+- `options?: AskDialectGenerateOptions` — `{ logger, explain, omitSensitiveIdentifiersFromNlToSqlPrompt, generateText, providerOptions, abortSignal, prebuiltDdl, tenantPolicy, tenantScope }`. Pass `abortSignal` to your model call so the caller's timeout cancels it; `ask()` doesn't wrap what `generate()` throws, so an abort surfaces as your dialect's own error (typically the AI SDK's `AbortError`) unless you map it. `tenantScope` is the scope after `ask()` expands a `subtree`: a `multi_root` scope with one entry per covered root, where a root the resolver returned no IDs for has `ids: []`. `validateTenantScope()` accepts it.
 
 It must return `AskDialectGenerateResult`:
 

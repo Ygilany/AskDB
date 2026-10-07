@@ -278,9 +278,6 @@ program
         const schemaPath = resolveSchemaPathForAsk(opts.schema, runtime);
         const schema = loadSchemaFromPath(schemaPath);
 
-        const omitSensitiveFromPrompt =
-          Boolean(opts.omitSensitiveFromPrompt) || runtime.modes.omitSensitiveFromPrompt;
-
         const askdb = createAskDb({
           config: runtime,
           registry: ai,
@@ -303,7 +300,8 @@ program
           logger,
           mode,
           explain: Boolean(opts.explain),
-          omitSensitiveIdentifiersFromNlToSqlPrompt: omitSensitiveFromPrompt,
+          // The facade adds config `modes.omitSensitiveFromPrompt` as a floor.
+          omitSensitiveIdentifiersFromNlToSqlPrompt: Boolean(opts.omitSensitiveFromPrompt),
           // When --mock-sql flag is set explicitly (not just from runtime config),
           // pass it as a per-call deps override so the flag wins over config.
           ...(opts.mockSql !== undefined

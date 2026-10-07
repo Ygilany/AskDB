@@ -7,7 +7,6 @@ import {
   type ReasoningEffort,
 } from "@askdb/ai";
 import type { AskDbRuntimeConfig } from "@askdb/config";
-import { generateText as defaultGenerateText } from "ai";
 import {
   ask,
   isBuiltInDialectId,
@@ -49,15 +48,6 @@ export type AskOverrides = Omit<
    * Ignored when `model` or `deps.generateText` is also set (BYO paths).
    */
   reasoningEffort?: ReasoningEffort;
-  /**
-   * Abort signal forwarded to the NL→SQL model call (`generateText({ abortSignal })`).
-   * Use it to enforce a per-request timeout (e.g. `AbortSignal.timeout(60_000)`). With a
-   * built-in dialect, an aborted call rejects with `SqlGenerationError`. A custom
-   * `AskDialect` receives the signal only through `deps.generateText`, and `ask()` doesn't
-   * wrap what its `generate()` throws, so the abort surfaces as that dialect's own error
-   * (typically the AI SDK's `AbortError`) unless the dialect maps it.
-   */
-  abortSignal?: AbortSignal;
 };
 
 export type DialectResolution = {
@@ -274,7 +264,6 @@ export function createAskDb(options: CreateAskDbOptions): AskDbClient {
         dialect: dialectOverride,
         deps,
         reasoningEffort,
-        abortSignal,
         omitSensitiveIdentifiersFromNlToSqlPrompt,
         ...rest
       } = overrides;
@@ -285,14 +274,13 @@ export function createAskDb(options: CreateAskDbOptions): AskDbClient {
 
       // An explicit `deps.providerOptions` from the caller always wins over
       // the computed one; otherwise merge the resolved reasoning effort in.
-      const resolvedDeps: AskGenerateDeps | undefined =
+      const finalDeps: AskGenerateDeps | undefined =
         resolvedModel.mockDeps ??
         (deps?.providerOptions !== undefined
           ? deps
           : resolvedModel.providerOptions !== undefined
             ? { ...deps, providerOptions: resolvedModel.providerOptions }
             : deps);
-      const finalDeps = abortSignal ? withAbortSignal(resolvedDeps, abortSignal) : resolvedDeps;
 
       // Config `modes.omitSensitiveFromPrompt` is a floor: a per-call override can
       // tighten it (true) but never loosen it (false) when the operator enabled it.
@@ -311,12 +299,4 @@ export function createAskDb(options: CreateAskDbOptions): AskDbClient {
       });
     },
   };
-}
-
-/** Wrap `generateText` (the caller's mock or the AI SDK default) so every call carries `signal`. */
-function withAbortSignal(deps: AskGenerateDeps | undefined, signal: AbortSignal): AskGenerateDeps {
-  const inner = deps?.generateText ?? defaultGenerateText;
-  const generateText = ((args: Parameters<typeof defaultGenerateText>[0]) =>
-    inner({ ...args, abortSignal: signal })) as typeof defaultGenerateText;
-  return { ...deps, generateText };
 }

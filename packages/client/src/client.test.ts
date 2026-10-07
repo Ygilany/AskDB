@@ -567,27 +567,8 @@ describe("createAskDb — omitSensitiveFromPrompt config floor", () => {
 });
 
 describe("createAskDb — abortSignal", () => {
-  it("forwards abortSignal into the generateText call", async () => {
-    const preloaded = loadSchemaFromJson(minimalV2Json) as AnyNormalizedSchema;
-    const generateText = vi.fn(async (_args: { abortSignal?: AbortSignal }) => ({
-      text: "```sql\nSELECT 1\n```",
-    }));
-    const askdb = createAskDb({
-      config: makeConfig(),
-      registry: makeRegistry(),
-      schema: { schema: preloaded },
-    });
-    const controller = new AbortController();
-    await askdb.ask("q", {
-      dialect: "postgres",
-      parameterize: false,
-      deps: { generateText: generateText as never },
-      abortSignal: controller.signal,
-    });
-    expect(generateText).toHaveBeenCalledTimes(1);
-    expect(generateText.mock.calls[0]![0].abortSignal).toBe(controller.signal);
-  });
-
+  // The abort contract itself is core's (ask.test.ts); this pins that the facade passes the
+  // signal through on the path the HTTP API uses: a registry-resolved model, no deps.
   it("aborting the caller's controller aborts the registry-resolved model call", async () => {
     const preloaded = loadSchemaFromJson(minimalV2Json) as AnyNormalizedSchema;
     // Without a signal the model answers at once, so ask() only rejects if the
