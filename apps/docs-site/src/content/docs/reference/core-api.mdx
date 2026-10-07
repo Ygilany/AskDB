@@ -222,7 +222,7 @@ Autodetects and loads a v2 schema artifact. Accepts:
 
 Returns `NormalizedSchemaV2`. Throws `SchemaParseError` on failure. The optional files (`tables/*.md`, `concepts.md`, `tenant-policy.md`) may be absent. If one exists but is empty or cannot be read or parsed, for example because of malformed YAML front-matter, loading throws. Bundles follow the same rule: only an absent `tenantPolicy` key means "no policy". A broken `tenant-policy.md` never silently turns tenant enforcement off.
 
-Each table and column in the result has one effective `sensitive` flag. It is `true` when `schema.json` marks it sensitive, when its `tables/*.md` front-matter sets `sensitive: true` (which is what Studio's Sensitivity tab writes), or, for a column, when its table is sensitive. Front-matter is escalate-only: a front-matter `sensitive: false` never un-marks something that is sensitive anyway. It is ignored and reported in `schema.warnings` as `{ kind: "sensitivity_downgrade_ignored", tableFile, id }`. A `columns` entry whose ID belongs to a different table than the file it is in is reported as `{ kind: "misplaced_column_id", tableFile, id, tableId }`. Its `sensitive: true` still applies to the column the ID names, but nothing else in the entry does. A column ID listed more than once in the same file is reported as `{ kind: "duplicate_column_id", tableFile, id }`. Only the first entry's description, aliases, and enum are used, but the column is sensitive if any entry naming it, in any `tables/*.md` file, sets `sensitive: true`. Two `tables/*.md` files with the same front-matter `id` make `loadSchema()` and `loadSchemaFromJson()` throw `SchemaParseError` naming both files. `tableFile` is always the markdown file that was actually read. Prompt formatting, `validateSensitiveReferences`, and `@askdb/rag` chunking all read this effective flag.
+Each table and column in the result has one effective `sensitive` flag. It is `true` when `schema.json` marks it sensitive, when its `tables/*.md` front-matter sets `sensitive: true` (which is what Studio's Sensitivity tab writes), or, for a column, when its table is sensitive. Front-matter is escalate-only: a front-matter `sensitive: false` never un-marks something that is sensitive anyway. It is ignored and reported in `schema.warnings` as `{ kind: "sensitivity_downgrade_ignored", tableFile, id }`. A `columns` entry whose ID belongs to a different table than the file it is in is reported as `{ kind: "misplaced_column_id", tableFile, id, tableId }`. Its `sensitive: true` still applies to the column the ID names, but nothing else in the entry does. A column ID listed more than once in the same file is reported as `{ kind: "duplicate_column_id", tableFile, id }`. Only the first entry's description, aliases, and enum are used, but the column is sensitive if any entry naming it, in any `tables/*.md` file, sets `sensitive: true`. Two `tables/*.md` files with the same front-matter `id` make `loadSchema()` and `loadSchemaFromJson()` throw `SchemaParseError` naming both files. `tableFile` is always the markdown file that was actually read. Prompt formatting, `validateSensitiveReferences`, and `@askdb/rag` chunking all read this effective flag. A column that is sensitive only because its table is also carries `sensitiveFromTable: true`; `@askdb/rag` uses it to count a mention of that column only when written as `table.column`.
 
 `loadSchema` is synchronous — load once at startup and keep the result in memory, not per request.
 
@@ -235,14 +235,18 @@ const schema = loadSchemaFromJson(bundleJsonString);
 
 Parses a raw JSON string. Accepts the same formats as `loadSchema` (bundled JSON or bare `schema.json` blob). Useful when the schema is passed as a string over a network boundary (e.g., the HTTP API's `schemaJson` request field).
 
-### `findMentionedNames(text, names)`
+### `findMentionedNames(text, names)` and `createMentionMatcher(names)`
 
 ```ts
-import { findMentionedNames } from "@askdb/core";
+import { createMentionMatcher, findMentionedNames } from "@askdb/core";
 findMentionedNames("Dedupe by EMAIL; see users_email", ["email", "ssn"]); // → ["email"]
+
+const sensitive = createMentionMatcher(["ssn", { table: "users", column: "org_id" }]);
+sensitive.mentionsAny('filter by "users"."org_id"'); // → true
+sensitive.find("Rows come from users. Org_id is the key"); // → []
 ```
 
-Returns the names `text` mentions, in the order given: a whole-word, case-insensitive match whose ends may not touch a letter, digit, or `_` of any script (`email` isn't mentioned by `emailed` or `user_email`; a name wrapped in backticks or quotes is). This is the schema contract's "mentions a sensitive column by name" rule: `@askdb/rag`'s chunker and `@askdb/enrich`'s authoring warning both use it.
+The schema contract's "mentions a sensitive column by name" rule, which `@askdb/rag`'s chunker and `@askdb/enrich`'s authoring warning both use: whole-word and case-insensitive, with a bare name (a string, matched literally) or a qualified one (`{ table, column }`). The full rule is in the [schema-v2 contract on GitHub](https://github.com/Ygilany/AskDB/blob/main/docs/contracts/schema-v2.md#sensitive-propagation). `findMentionedNames` returns the names `text` mentions, in the order given. It compiles the names on every call, so to check many texts against one list, build a `MentionMatcher` once with `createMentionMatcher` and call `mentionsAny(text)` or `find(text)`.
 
 ---
 

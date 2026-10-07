@@ -1,5 +1,6 @@
-import { describe, expect, it } from "vitest";
-import { join, resolve } from "node:path";
+import { afterEach, describe, expect, it } from "vitest";
+import { dirname, join, resolve } from "node:path";
+import type { ParsedTenantPolicyMarkdown } from "@askdb/core";
 import { cpSync, mkdtempSync, readFileSync, rmSync, writeFileSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { chunkSchemaDir, chunkSchema, chunkIdPrefix } from "./index.js";
@@ -351,6 +352,25 @@ describe("sensitive-mention filtering", () => {
       excludedDelta: 1,
     },
     {
+      source: "description of another table",
+      mutate: (s) => {
+        table(s, "table:public.orders").description = "Receipts go to the buyer's Email address.";
+      },
+      marker: /buyer's Email/,
+      optInId: "chunk:orders-users:table:public.orders",
+      keptId: "chunk:orders-users:table:public.orders",
+      excludedDelta: 1,
+    },
+    {
+      source: "common query language body of another table",
+      mutate: (s) => {
+        table(s, "table:public.orders").commonQueryLanguage = "Join users to send receipts by Email.";
+      },
+      marker: /receipts by Email/,
+      optInId: "chunk:orders-users:table:public.orders#cql",
+      excludedDelta: 1,
+    },
+    {
       source: "table alias (common query language heading)",
       mutate: (s) => {
         table(s, "table:public.users").aliases = ["accounts", "Email list"];
@@ -413,6 +433,101 @@ describe("sensitive-mention filtering", () => {
     const defaultIds = new Set(chunkSchema(s).chunks.map((c) => c.id));
     const leftOut = optIn.chunks.filter((c) => !defaultIds.has(c.id));
     expect(leftOut.filter((c) => !c.sensitive)).toEqual([]);
+  });
+
+  describe("a column sensitive only through its table (ADR 0017)", () => {
+    const tempDirs: string[] = [];
+    afterEach(() => {
+      while (tempDirs.length > 0) rmSync(tempDirs.pop()!, { recursive: true, force: true });
+    });
+    /** The fixture, loaded with `orders` marked sensitive in schema.json and `status` escalated in front-matter. */
+    function loadWithSensitiveOrders() {
+      const dir = join(mkdtempSync(join(tmpdir(), "askdb-rag-adr17-")), "orders-users.schema");
+      tempDirs.push(dirname(dir));
+      cpSync(FIXTURE_DIR, dir, { recursive: true });
+      const jsonPath = join(dir, "schema.json");
+      const json = JSON.parse(readFileSync(jsonPath, "utf8")) as { tables: { id: string; sensitive?: boolean }[] };
+      json.tables.find((t) => t.id === "table:public.orders")!.sensitive = true;
+      writeFileSync(jsonPath, JSON.stringify(json));
+      const mdPath = join(dir, "tables", "orders.md");
+      writeFileSync(
+        mdPath,
+        readFileSync(mdPath, "utf8").replace("  - id: table:public.orders#status\n", "  - id: table:public.orders#status\n    sensitive: true\n"),
+      );
+      return loadChunkerSourcesFromDir(dir);
+    }
+    const concept = (id: string, description: string) => ({ id, label: id.slice("concept:".length), description });
+
+    it("counts as `table.column` in any quoting, not by its bare name", () => {
+      const s = loadWithSensitiveOrders();
+      s.concepts!.frontmatter.concepts = [
+        concept("concept:bare", "Count signups grouped by id."),
+        concept("concept:dotted", "Read public.orders.total_amount for revenue."),
+        concept("concept:double-quoted", 'Read "orders"."total_amount" for revenue.'),
+        concept("concept:bracketed", "Read [orders].[total_amount] for revenue."),
+        concept("concept:backticked", "Read `orders`.`total_amount` for revenue."),
+      ];
+      const ids = chunkSchema(s).chunks.map((c) => c.id);
+      expect(ids).toContain("chunk:orders-users:concept:bare");
+      for (const kind of ["dotted", "double-quoted", "bracketed", "backticked"]) {
+        expect(ids).not.toContain(`chunk:orders-users:concept:${kind}`);
+      }
+    });
+
+    it("still counts by bare name when marked itself, including by front-matter", () => {
+      const s = loadWithSensitiveOrders();
+      s.concepts!.frontmatter.concepts = [
+        concept("concept:by-status", "Count orders grouped by status."),
+        concept("concept:reach", "Customers we can Email."),
+      ];
+      const ids = chunkSchema(s).chunks.map((c) => c.id);
+      expect(ids).not.toContain("chunk:orders-users:concept:by-status");
+      expect(ids).not.toContain("chunk:orders-users:concept:reach");
+    });
+
+    it("keeps a tenant policy section that names it bare, and drops one that names it qualified", () => {
+      const s = loadWithSensitiveOrders();
+      s.tenantPolicy = {
+        frontmatter: {} as ParsedTenantPolicyMarkdown["frontmatter"],
+        body: "",
+        sections: {
+          Hierarchy: "Each user belongs to one org; filter every read by id.",
+          "Scope rules": "Never return orders.user_id outside the caller's org.",
+        },
+      };
+      const ids = chunkSchema(s).chunks.map((c) => c.id);
+      expect(ids).toContain("chunk:orders-users:tenant-policy#hierarchy");
+      expect(ids).not.toContain("chunk:orders-users:tenant-policy#scope-rules");
+    });
+
+    it("matches by bare name a column whose table isn't sensitive, even with a stray sensitiveFromTable", () => {
+      // A hand-built schema can carry the flag inconsistently; only a sensitive table's columns go qualified-only.
+      const s = sources();
+      Object.assign(table(s, "table:public.users").columns.find((c) => c.name === "email")!, { sensitiveFromTable: true });
+      s.concepts!.frontmatter.concepts = [concept("concept:reach", "Customers we can Email.")];
+      expect(chunkSchema(s).chunks.map((c) => c.id)).not.toContain("chunk:orders-users:concept:reach");
+    });
+
+    it("counts the sensitive columns of an untracked table too", () => {
+      // The table isn't indexed, but its columns are still sensitive data.
+      const s = loadWithSensitiveOrders();
+      table(s, "table:public.users").tracked = false;
+      table(s, "table:public.orders").tracked = false;
+      s.concepts!.frontmatter.concepts = [
+        concept("concept:reach", "Customers we can Email."),
+        concept("concept:dotted", "Read orders.total_amount for revenue."),
+      ];
+      const ids = chunkSchema(s).chunks.map((c) => c.id);
+      expect(ids).not.toContain("chunk:orders-users:concept:reach");
+      expect(ids).not.toContain("chunk:orders-users:concept:dotted");
+    });
+
+    it("drops another table's text that names it qualified", () => {
+      const s = loadWithSensitiveOrders();
+      table(s, "table:public.users").description = "Lifetime value is the sum of orders.total_amount.";
+      const usersChunk = chunkSchema(s).chunks.find((c) => c.id === "chunk:orders-users:table:public.users");
+      expect(usersChunk!.text).not.toMatch(/Lifetime value/);
+    });
   });
 
   it.each<[string, string, boolean]>([

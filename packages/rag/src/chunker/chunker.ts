@@ -1,4 +1,4 @@
-import { findMentionedNames } from "@askdb/core";
+import { createMentionMatcher, type MentionMatcher, type MentionName } from "@askdb/core";
 import type {
   NormalizedSchemaV2,
   NormalizedV2Column,
@@ -77,6 +77,10 @@ export function chunkSchema(
   };
 
   const { schema, tables: tableMarkdowns, concepts } = sources;
+  // Names whose mention marks describable text as sensitive, schema-wide
+  // (ADR 0017): every table's text, concept, and tenant policy section is
+  // checked against them.
+  const sensitiveMentions = createMentionMatcher(collectSensitiveNames(schema));
 
   for (const table of schema.tables) {
     if (table.tracked === false) {
@@ -84,14 +88,11 @@ export function chunkSchema(
     }
 
     const md = tableMarkdowns[table.id];
-    const sensitiveColumnNames = table.columns
-      .filter((c) => c.sensitive)
-      .map((c) => c.name);
 
     if (table.sensitive && !includeSensitive) {
       stats.sensitiveExcluded++;
     } else {
-      const filter = describableFilter(sensitiveColumnNames, includeSensitive);
+      const filter = describableFilter(sensitiveMentions, includeSensitive);
       const tableChunk = buildTableChunk(table, schema.schemaId, includeSensitive, schema, filter);
       // A non-sensitive table whose description/aliases/column headlines
       // mention a sensitive column is only embedded verbatim in opt-in mode.
@@ -103,8 +104,8 @@ export function chunkSchema(
 
     // Column chunks — one per column. Identifier + type always; describable
     // fields only when not sensitive (or when opted in). A non-sensitive
-    // column whose describable fields name a sensitive column of the same
-    // table is treated like a sensitive column's describable layer.
+    // column whose describable fields name a sensitive column is treated
+    // like a sensitive column's describable layer.
     for (const col of table.columns) {
       const colNote = readColumnNote(md, col.name);
       const colSensitive = col.sensitive || table.sensitive;
@@ -122,7 +123,7 @@ export function chunkSchema(
         continue;
       }
       const describableMentionsSensitive = describable.some((text) =>
-        mentionsAnyName(text, sensitiveColumnNames),
+        sensitiveMentions.mentionsAny(text),
       );
       if (describableMentionsSensitive && !includeSensitive) {
         // Keep the identifier + type; drop the whole describable layer.
@@ -147,10 +148,7 @@ export function chunkSchema(
 
     // CQL chunk — excluded entirely if the body mentions a sensitive column by name.
     if (table.commonQueryLanguage) {
-      const mentionsSensitive = mentionsAnyName(
-        table.commonQueryLanguage,
-        sensitiveColumnNames,
-      );
+      const mentionsSensitive = sensitiveMentions.mentionsAny(table.commonQueryLanguage);
       const tableLevelSensitive = table.sensitive;
       const skip =
         (tableLevelSensitive || mentionsSensitive) && !includeSensitive;
@@ -161,7 +159,7 @@ export function chunkSchema(
       } else {
         // The heading repeats the table's aliases; one naming a sensitive
         // column is dropped like it is from the table chunk.
-        const filter = describableFilter(sensitiveColumnNames, includeSensitive);
+        const filter = describableFilter(sensitiveMentions, includeSensitive);
         const aliases = (table.aliases ?? []).filter((a) => filter.allow(a));
         const sensitive = tableLevelSensitive || mentionsSensitive || filter.included;
         if (filter.dropped) stats.sensitiveExcluded += parts.length;
@@ -179,12 +177,9 @@ export function chunkSchema(
       const questions = extractExampleQuestions(md);
       const businessContext = md.sections["Business context"]?.trim() ?? "";
       const questionsMentionSensitive = questions.some((q) =>
-        mentionsAnyName(q, sensitiveColumnNames),
+        sensitiveMentions.mentionsAny(q),
       );
-      const bizMentionsSensitive = mentionsAnyName(
-        businessContext,
-        sensitiveColumnNames,
-      );
+      const bizMentionsSensitive = sensitiveMentions.mentionsAny(businessContext);
 
       // Per-table sensitive gate: if table is sensitive OR mentions exist, skip
       // the *whole* describable layer for that table by default. Authoring rule
@@ -198,7 +193,7 @@ export function chunkSchema(
         } else {
           // Every question heading repeats the primary entity; one naming a
           // sensitive column is dropped like it is from the table chunk.
-          const filter = describableFilter(sensitiveColumnNames, includeSensitive);
+          const filter = describableFilter(sensitiveMentions, includeSensitive);
           const primaryEntity = filter.allow(table.primaryEntity) ? table.primaryEntity : undefined;
           if (filter.dropped) stats.sensitiveExcluded += questions.length;
           // The questions are gated together, so in opt-in mode one naming a
@@ -267,14 +262,13 @@ export function chunkSchema(
   // Concept chunks. A concept that links to a sensitive column/table, or
   // whose label/synonyms/description names a sensitive column (matched
   // case-insensitively, like @askdb/enrich), is excluded by default.
-  const allSensitiveColumnNames = collectSensitiveColumnNames(schema);
   if (concepts?.frontmatter.concepts) {
     for (const concept of concepts.frontmatter.concepts) {
       const conceptResult = buildConceptChunk(
         concept,
         schema.schemaId,
         schema,
-        allSensitiveColumnNames,
+        sensitiveMentions,
       );
       if (conceptResult.sensitive && !includeSensitive) {
         stats.sensitiveExcluded++;
@@ -291,7 +285,7 @@ export function chunkSchema(
   // default.
   if (sources.tenantPolicy) {
     for (const section of tenantPolicySections(sources.tenantPolicy)) {
-      const sensitive = mentionsAnyName(section.body, allSensitiveColumnNames);
+      const sensitive = sensitiveMentions.mentionsAny(section.body);
       const parts = splitLong(section.body, maxChars);
       if (sensitive && !includeSensitive) {
         stats.sensitiveExcluded += parts.length;
@@ -523,7 +517,7 @@ function buildConceptChunk(
   concept: V2Concept,
   schemaId: string,
   schema: NormalizedSchemaV2,
-  allSensitiveColumnNames: string[],
+  sensitiveMentions: MentionMatcher,
 ): { chunk: Chunk; sensitive: boolean } {
   const links = (concept.links ?? []).filter((id) => !isUntrackedId(id, schema));
   const linkedSensitive = links.some((id) => isSensitiveId(id, schema));
@@ -531,7 +525,7 @@ function buildConceptChunk(
     concept.label,
     ...(concept.synonyms ?? []),
     concept.description ?? "",
-  ].some((text) => mentionsAnyName(text, allSensitiveColumnNames));
+  ].some((text) => sensitiveMentions.mentionsAny(text));
   const sensitive = linkedSensitive || textMentionsSensitive;
 
   const lines: string[] = [];
@@ -589,13 +583,13 @@ type DescribableFilter = {
  * entity) that the chunker drops piece by piece instead of excluding the
  * whole chunk.
  */
-function describableFilter(sensitiveNames: string[], includeSensitive: boolean): DescribableFilter {
+function describableFilter(sensitiveMentions: MentionMatcher, includeSensitive: boolean): DescribableFilter {
   let dropped = false;
   let included = false;
   return {
     allow(text): text is string {
       if (!text) return false;
-      if (!mentionsAnyName(text, sensitiveNames)) return true;
+      if (!sensitiveMentions.mentionsAny(text)) return true;
       if (includeSensitive) included = true;
       else dropped = true;
       return includeSensitive;
@@ -641,10 +635,6 @@ function extractExampleQuestions(md: ParsedTableMarkdown): string[] {
   return out;
 }
 
-/** Core's one "mentions a sensitive column by name" rule, shared with `@askdb/enrich`. */
-function mentionsAnyName(text: string, names: string[]): boolean {
-  return findMentionedNames(text, names).length > 0;
-}
 
 /** Split a long body on paragraph boundaries; suffix is `""` for single-chunk, `#bc:N` (1-indexed) otherwise. */
 function splitLong(body: string, maxChars: number): { text: string; suffix: string }[] {
@@ -686,14 +676,28 @@ function parseColumnId(columnId: string): { tableId: string; column: string } {
   };
 }
 
-function collectSensitiveColumnNames(schema: NormalizedSchemaV2): string[] {
-  const names = new Set<string>();
+/**
+ * Names that mark text as mentioning a sensitive column, for the whole schema
+ * (ADR 0017; matching is the schema-v2 contract's mention rule). A column
+ * marked sensitive itself counts by its bare name; a column of a sensitive
+ * table that is sensitive only through it counts only qualified, since its
+ * bare name is often generic (`id`, `org_id`, `name`).
+ */
+function collectSensitiveNames(schema: NormalizedSchemaV2): MentionName[] {
+  const names: MentionName[] = [];
+  const bare = new Set<string>();
   for (const t of schema.tables) {
     for (const c of t.columns) {
-      if (c.sensitive || t.sensitive) names.add(c.name);
+      if (!c.sensitive && !t.sensitive) continue;
+      if (t.sensitive && c.sensitiveFromTable === true) {
+        names.push({ table: t.name, column: c.name });
+      } else if (!bare.has(c.name)) {
+        bare.add(c.name);
+        names.push(c.name);
+      }
     }
   }
-  return Array.from(names);
+  return names;
 }
 
 function isSensitiveId(id: string, schema: NormalizedSchemaV2): boolean {

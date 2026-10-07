@@ -469,7 +469,7 @@ Other H2 sections are not chunked: the tenant-policy loader keeps only the three
 
 Long sections use `#bc:<n>` suffixes following the existing chunking convention.
 
-A section whose body mentions a sensitive column of any table by name (whole word, case-insensitive) is not chunked unless the host sets `includeSensitiveDescribable: true`; the chunk then carries `sensitive: true`. A `## Sensitive interactions` section usually names sensitive columns, so it is normally excluded. See [Sensitive propagation](./schema-v2.md#sensitive-propagation).
+A section whose body mentions a sensitive column by name (whole word, case-insensitive; a column sensitive only through its table counts only as `table.column`) is not chunked unless the host sets `includeSensitiveDescribable: true`; the chunk then carries `sensitive: true`. A `## Sensitive interactions` section usually names sensitive columns, so it is normally excluded. See [Sensitive propagation](./schema-v2.md#sensitive-propagation).
 
 ### Tenant metadata on table chunks
 
