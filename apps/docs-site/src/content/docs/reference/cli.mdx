@@ -318,7 +318,7 @@ askdb rag index ./my-app.schema --store pgvector
 | `--store <id>` | `memory`, `file` (persists next to the artifact), or `pgvector`. Falls back to `rag.store`. |
 | `--embedder <id>` | `mock` or `ai`. Falls back to `rag.embedder`. |
 | `--embedder-model <id>` | Overrides `ai.embedding.model` for the `ai` embedder. |
-| `--dimensions <n>` | Vector width: the `mock` embedder's size (default `64`), or the size the `ai` embedder requests (falls back to `ai.embedding.dimensions`). |
+| `--dimensions <n>` | Vector width: the size the `mock` embedder writes, or the size the `ai` embedder requests (falls back to `ai.embedding.dimensions`). See [Vector width](#vector-width). |
 | `--file-path <path>` | File store base path; vectors go to `<path>.embeddings.{bin,json}`. Falls back to `rag.storeConfig.file.basePath`, else `<schema-dir>/schema`. |
 | `--pg-url` / `--pg-table` | pgvector connection and table. The table is provisioned (idempotently) and its width checked before indexing. |
 | `--force` | Re-embed every chunk, even ones the store already holds. |
