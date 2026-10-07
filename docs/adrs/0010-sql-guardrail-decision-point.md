@@ -2,7 +2,7 @@
 
 ## Status
 
-Proposed (2026-09-27; revised 2026-09-29 after two independent review rounds; brought up to date with `main` on 2026-10-07). The maintainer chose the direction: checks are pure rules, one decision point owns the modes, and enforcement points act on its verdict. One mechanism is still open: **how reuse is enforced** (see "Open question: enforcing reuse"), with one sub-question: whether `ask()` rejects a `global`-scope answer that still has tenant placeholders. This ADR recommends re-checking at rebind, which reverses a design-review decision recorded in plan 033 (see "What the recommendation reverses"). The maintainer decides before it is marked Accepted.
+Accepted (2026-10-07). Proposed 2026-09-27, revised 2026-09-29 after two independent review rounds, and brought up to date with `main` on 2026-10-07. The maintainer chose the direction first: checks are pure rules, one decision point owns the modes, and enforcement points act on its verdict. On 2026-10-07 the maintainer settled the two remaining questions: **reuse is enforced by re-checking at rebind, with no stored verdict** (see "Enforcing reuse"), and **`ask()` rejects a `global`-scope answer that still has a tenant placeholder**, the same rule as the binder (see "`global` answers with tenant placeholders"). Re-checking at rebind reverses a design-review decision recorded in plan 033 (see "What this reverses").
 
 Implementation is tracked in #310. Stage (a) of the plan below is done: #341 (fixing #315) moved the tenant check to the pre-render forms. PRs #186, #197 and #192, which this ADR originally waited for, have merged. ADR 0012 records the stance this ADR assumes: AskDB's checks are defense in depth, and the database is the security and tenant boundary.
 
@@ -98,7 +98,7 @@ interface GuardrailCheck {
 
 Every check evaluates every form in the candidate. Checking `template` as well as `sql` is defense in depth: by the structural-equality rule above, the forms can't produce different findings through `ask()` today, but the invariant costs one extra scan and survives changes to that rule.
 
-`scope` is the scope of the enforcement point that builds the candidate: the expanded scope inside `ask()`, and the bind-time scope at rebind (decision 4). The tenant check reads the scope's kind and the roots it names (`scopeRootIds` in `tenant-guardrail.ts`, since #341: each named root's table must be filtered on its own tenant column); it never reads IDs. IDs are enforced by rendering instead: tenant substitution fills each `:tenant_*` placeholder from the scope's IDs for that placeholder's root, and throws when the scope has none (see "What the recommended mechanism settles" for the `global` case). Neither step needs a `subtree` expanded inside the binder, so a check at rebind stays synchronous.
+`scope` is the scope of the enforcement point that builds the candidate: the expanded scope inside `ask()`, and the bind-time scope at rebind (decision 4). The tenant check reads the scope's kind and the roots it names (`scopeRootIds` in `tenant-guardrail.ts`, since #341: each named root's table must be filtered on its own tenant column); it never reads IDs. IDs are enforced by rendering instead: tenant substitution fills each `:tenant_*` placeholder from the scope's IDs for that placeholder's root, and throws when the scope has none (see "What re-check at rebind settles" for the `global` case). Neither step needs a `subtree` expanded inside the binder, so a check at rebind stays synchronous.
 
 Tenant data exists only on v2 schemas. On a v1 schema the candidate has no `tenant`, and the sensitive and read-only checks run as they do today.
 
@@ -133,7 +133,7 @@ The outcome is the most severe entry. A read-only finding on the optional `templ
 
 **Why only a tenant `warn` is refused at rebind.** `warn` means "return and report" everywhere except where reuse is itself the risk. A tenant `warn` at rebind means a statement that may read other tenants' rows runs again, with nobody looking at a fresh generation; that is the #186 requirement, so it is refused unless the caller accepts it. A sensitive `warn` is the default configuration (`sensitiveGuardrailMode` defaults to `warn`, and sensitive columns are in the prompt by default), and the sensitive check is documented as defense in depth, not a security boundary (`sensitive-guardrail.ts`). Refusing it would break every default-configuration template that reads a sensitive column. Reporting it in the rebind result's verdict on every rebind meets the requirement that a warning isn't seen only once. An operator who wants sensitive reads refused sets `strict`, which denies at both points.
 
-The verdict records no `basis` (policy or schema hashes). Under the recommended mechanism nothing reads it, and core has no canonical schema hashing to build it from.
+The verdict records no `basis` (policy or schema hashes). Under re-check at rebind nothing reads it, and core has no canonical schema hashing to build it from.
 
 ### 3. Every path builds the same candidate; the check set is per path
 
@@ -152,20 +152,20 @@ The verdict records no `basis` (policy or schema hashes). Under the recommended 
 
 - **`ask()` return:** `deny` → throw; `warn` → return the result with the verdict; `allow` → return.
 - **`generateSelectSql()` return:** the same.
-- **Reuse:** see the open question below. The recommended mechanism makes `bindPreparedQuery()` an enforcement point: it runs the same checks and `decide` (with `point: "rebind"`) on the template, under the bind-time scope and modes, then `deny` → throw, `warn` / `allow` → bind and return the verdict.
+- **Reuse:** `bindPreparedQuery()` is an enforcement point (see "Enforcing reuse"): it runs the same checks and `decide` (with `point: "rebind"`) on the template, under the bind-time scope and modes, then `deny` → throw, `warn` / `allow` → bind and return the verdict.
 
 **When several checks deny,** all checks still run (they're pure and cheap), and the thrown error is the existing typed error of the highest-precedence check: read-only (`SqlValidationError`), then tenant (`TenantGuardrailError`), then sensitive (`SensitiveReferenceError`). That is the order today (read-only throws inside generation; tenant runs before sensitive in `ask()`), so callers' `instanceof` handling doesn't change. Tenant ranks above sensitive because a cross-tenant read is the wider leak. The thrown error gains a `verdict` property with every finding.
 
 ### 5. Public surface
 
 - **Existing validators stay public with unchanged signatures and behavior.** `validateSelectSql`, `validateSensitiveReferences(sql, schema, { mode })` and `validateTenantGuardrails(sql, policy, scope, options)` remain the rules' public entry points. Internally, the last two become the pure rule plus a single-check call to `decide`, so modes still live in one place. They are not deprecated.
-- **New public types:** `result.verdict` (and the verdict on `generateSelectSql()`'s result and on the rebind result) make `GuardrailVerdict`, `GuardrailFinding`, `GuardrailOutcome` and `GuardrailCheckId` public. They are exported from `@askdb/core`'s entry point, like every type named in an exported signature. Under the recommended mechanism they are in-memory API only: AskDB doesn't persist them, so they carry no format version and change under the normal pre-1.0 rules (breaking = minor changeset). The rule-code unions are already exported from `errors.ts`.
+- **New public types:** `result.verdict` (and the verdict on `generateSelectSql()`'s result and on the rebind result) make `GuardrailVerdict`, `GuardrailFinding`, `GuardrailOutcome` and `GuardrailCheckId` public. They are exported from `@askdb/core`'s entry point, like every type named in an exported signature. They are in-memory API only: AskDB doesn't persist them, so they carry no format version and change under the normal pre-1.0 rules (breaking = minor changeset). The rule-code unions are already exported from `errors.ts`.
 - **Internal:** `Candidate`, `GuardrailCheck`, `decide` and the analysis stay internal to `@askdb/core` (Alternative D).
 - **Compatibility fields stay:** `result.tenantGuardrail` and `result.sensitiveGuardrail` are derived from the verdict. Deprecate them only if a later release chooses to.
 
-## Open question: enforcing reuse
+## Enforcing reuse: re-check at rebind
 
-This is the open question for the maintainer. The #186 requirement is that a template which failed a check can't be replayed by accident. Four mechanisms meet it to different degrees.
+The #186 requirement is that a template which failed a check can't be replayed by accident. Four mechanisms meet it to different degrees; the maintainer chose re-check at rebind.
 
 - **Stored verdict** (this ADR's first draft): `PreparedQuery` carries the verdict it was produced under, and `bindPreparedQuery()` refuses a non-`allow` template unless the caller opts in.
 - **Re-check at rebind:** `bindPreparedQuery()` re-runs every check on the template, with the schema, scope and modes given at bind time, through the same `decide`, and renders the tenant values from the bind-time scope. Nothing is stored on the template.
@@ -182,9 +182,9 @@ This is the open question for the maintainer. The #186 requirement is that a tem
 | **Cost at rebind** | A field comparison, plus the scope comparison above. | The schema (with its tenant policy), the scope and the modes must be available where the host rebinds. For plan 033's intended use (rebind after a form edit, right after `ask()`) the host already holds them. `@askdb/client` users don't: `AskDbClient` exposes only `ask()` and `reload()`, and the schema it resolves is private, so the client needs `askdb.bind()` (below). One scan per check over the template, the same order of work `bindPreparedQuery()` already does (it lexes the template and validates both rendered forms). | As re-check. | None. |
 | **Layering** | The binder interprets a decision made at another time, under inputs it can't see. `basis` would add canonical schema hashing to core. | The same checks and the same `decide` run at both enforcement points: one decision point, literally. `bind.ts` calls the guardrail module and the tenant resolution `ask()` uses; all stay pure and synchronous in `@askdb/core`. `@askdb/client` supplies its cached schema and forwards, so config resolution stays in the facade. | Both mechanisms' code. | Everything stays in `ask()`; rebind unchanged. |
 
-**Recommendation: re-check at rebind, with no stored verdict.** It avoids three of the stored verdict's problems outright: the fail-open on missing verdicts, the scope mismatch, and a new persisted format. It also removes the staleness problem `basis` existed for, and takes tenant values from the same scope `ask()` uses. With per-check opt-ins on both sides, amended Alternative A differs from it only in the `global` / other-root scope case, policy and schema changes, and where tenant values come from; those three are why the recommendation needs more than A. Its cost is real: a host must have the schema and scope where it rebinds, and it reverses a design-review decision (next section). A host that rebinds already knows the caller's tenant access, and a scope-safe stored verdict would need the bind-time scope too, so the extra input is the schema; `askdb.bind()` supplies it for `@askdb/client` users. The hybrid adds a persisted format for display only; a host that wants to show "had warnings" can store `result.verdict` itself. Drop-on-warn is the fallback if #310 slips, but it doesn't address the scope case.
+**Decision: re-check at rebind, with no stored verdict.** It avoids three of the stored verdict's problems outright: the fail-open on missing verdicts, the scope mismatch, and a new persisted format. It also removes the staleness problem `basis` existed for, and takes tenant values from the same scope `ask()` uses. With per-check opt-ins on both sides, amended Alternative A differs from it only in the `global` / other-root scope case, policy and schema changes, and where tenant values come from; those three are why the decision needs more than A. Its cost is real: a host must have the schema and scope where it rebinds, and it reverses a design-review decision (next section). A host that rebinds already knows the caller's tenant access, and a scope-safe stored verdict would need the bind-time scope too, so the extra input is the schema; `askdb.bind()` supplies it for `@askdb/client` users. The hybrid adds a persisted format for display only; a host that wants to show "had warnings" can store `result.verdict` itself. Drop-on-warn is the fallback if #310 slips, but it doesn't address the scope case.
 
-### What the recommendation reverses
+### What this reverses
 
 Plan 033, which introduced `bindPreparedQuery()`, was rewritten after a maintainer design review. It says the binder "must **not** take a schema, compute fingerprints, validate a `TenantScope` shape, re-run tenant guardrails, or police reuse" (`plans/033-reusable-parameterized-queries.md`, "Local rebind utility"), and lists "tenant access-shape comparison at bind time" and any `packages/client/src/client.ts` change as out of scope. `plans/README.md` records that the first draft's fingerprints, tenant access-shape comparison and `client.bind()` rebind path were dropped because "every AskDB request always invokes the model" (plan 033: "This is not a cache").
 
@@ -192,7 +192,7 @@ Plan 033, which introduced `bindPreparedQuery()`, was rewritten after a maintain
 
 **What still holds from plan 033:** `ask()` always calls the model; AskDB adds no cache, cache key, fingerprint, persistence or signing; the HTTP API still doesn't accept caller-supplied prepared SQL. **What is reversed:** the binder takes a schema and a scope, validates the scope, re-runs the guardrails, and renders tenant values from the scope; `@askdb/client` gains `askdb.bind()`.
 
-### What the recommended mechanism settles
+### What re-check at rebind settles
 
 - **Signature.** `bindPreparedQuery(prepared, values, guardrails)`, where `guardrails` is `{ schema, tenantScope?, sensitiveGuardrailMode?, acceptWarnings? }`. The third argument is required.
 - **Fails closed.** Called without it (plain JavaScript), `bindPreparedQuery()` throws `QueryParameterError` with a new reason, `MISSING_GUARDRAIL_CONTEXT`. A schema with a tenant policy and no `tenantScope` throws `TenantScopeError`, as in `ask()` (`validateTenantScope`). There is no public unchecked binder; `ask()`'s internal consistency check uses an internal renderer.
@@ -202,7 +202,7 @@ Plan 033, which introduced `bindPreparedQuery()`, was rewritten after a maintain
   - In `unboundSql`, they become driver markers after the business markers, with the IDs folded into `params` in marker order: appended for `$N` / `@pN` dialects, interleaved in source order for `?` dialects, with `parameters[].indices` remapped. This is what `ask()`'s `bindTenantIntoUnboundSql` does; #310 moves that function next to the binder so both callers share it. Where `ask()` drops the reuse artifacts because the tenant markers can't be aligned, the binder throws `QueryParameterError` with a new reason, `TENANT_PARAM_ALIGNMENT`.
   - An `ids` scope supplies its root's IDs, and a `multi_root` scope supplies each listed root's IDs. A placeholder whose root has no IDs in the scope throws `TenantScopeError` (`UNRESOLVED_TENANT_PLACEHOLDER`), so a template scoped through one root can't bind under a scope for another.
   - A `subtree` scope must arrive expanded the way `ask()` expands it (ADR 0014): a `multi_root` scope with one entry per covered root, or an `ids` scope when the subtree is the root table alone. A covered root with `ids: []` throws `UNRESOLVED_TENANT_PLACEHOLDER` for its placeholder, as above. An unexpanded `subtree` throws `SUBTREE_NOT_RESOLVABLE`, as `resolveTenantSql()` does.
-  - **`global` is a new rule.** On `main`, `resolveTenantSql()` returns the SQL unchanged under a `global` scope, before any placeholder lookup, and `tenant-placeholders.test.ts` pins that. So `ask()` under `global` today returns SQL with raw `:tenant_*` placeholders, `tenantGuardrail.passed: true`, and a `preparedQuery`. The binder does not inherit that pass-through: a template with a `:tenant_*` placeholder rebound under a `global` scope throws `TenantScopeError` (`UNRESOLVED_TENANT_PLACEHOLDER`). A template without one binds. Whether `ask()` adopts the same rule is a sub-question below.
+  - **`global` is a new rule.** On `main`, `resolveTenantSql()` returns the SQL unchanged under a `global` scope, before any placeholder lookup, and `tenant-placeholders.test.ts` pins that. So `ask()` under `global` today returns SQL with raw `:tenant_*` placeholders, `tenantGuardrail.passed: true`, and a `preparedQuery`. The binder does not inherit that pass-through: a template with a `:tenant_*` placeholder rebound under a `global` scope throws `TenantScopeError` (`UNRESOLVED_TENANT_PLACEHOLDER`). A template without one binds. `ask()` adopts the same rule (next section).
   - All of this is synchronous. A `:tenant_*` key in `values` throws `QueryParameterError` with a new reason, `TENANT_VALUE_SUPPLIED`, so there is one source of truth. Authorization stays the host's, exactly as in `ask()`: it happens when the host builds `tenantScope`.
 - **Scope.** The tenant check runs under the bind-time `tenantScope`, whatever scope the template was produced under.
 - **Opt-in is per check.** `acceptWarnings` accepts `"tenant"`, the only check whose `warn` is refused at rebind. Read-only has no `warn` outcome, and a sensitive `warn` is never refused, so neither can be listed. A later check whose `warn` is refused at rebind joins the list; per-rule-code acceptance can be added without breaking this.
@@ -210,36 +210,25 @@ Plan 033, which introduced `bindPreparedQuery()`, was rewritten after a maintain
 - **Result.** The rebind result (`BoundQuery`) gains `verdict`, so an accepted tenant warning and any sensitive warning are reported on every rebind, not once.
 - **`@askdb/client`.** `AskDbClient` gains `bind(prepared, values, options?)`, with `options` `{ tenantScope?, sensitiveGuardrailMode?, acceptWarnings?, schema? }`. It resolves the schema the way its `ask()` does (per-call `schema` override, then the client default, then `host.schemaJson` or `ASKDB_SCHEMA_JSON`, then `host.schemaPath` or `ASKDB_SCHEMA_PATH`), synchronously (the client's schema loaders are synchronous), and forwards to core's `bindPreparedQuery()`. Hosts on the facade don't re-implement config resolution.
 
-### Sub-question for the maintainer: `global` answers with tenant placeholders in `ask()`
+### `global` answers with tenant placeholders
 
-Should `ask()` also reject a `global`-scope answer that still contains a `:tenant_*` placeholder, so both enforcement points agree?
+`ask()` also rejects a `global`-scope answer that still contains a `:tenant_*` placeholder, so both enforcement points agree.
 
-**Recommendation: yes, and fix it once, in `resolveTenantSql()`.** Under a `global` scope, throw `TenantScopeError` (`UNRESOLVED_TENANT_PLACEHOLDER`) when the SQL still has a `:tenant_*` placeholder in a code region, instead of returning it unchanged. SQL without one passes through as today. Reasons:
+**Decision: fix it once, in `resolveTenantSql()`.** Under a `global` scope, throw `TenantScopeError` (`UNRESOLVED_TENANT_PLACEHOLDER`) when the SQL still has a `:tenant_*` placeholder in a code region, instead of returning it unchanged. SQL without one passes through as today. Reasons:
 
 - The SQL `ask()` returns today isn't executable as returned: the placeholder has no value, and nothing in the result supplies one (`tenantBindings` and `tenantParams` are absent under `global`). It also reports `tenantGuardrail.passed: true` and attaches a `preparedQuery` that the new binder rule refuses under `global`.
 - Tenant substitution is the owner of rendering, and both enforcement points call it. One change there keeps them in agreement, with no special case in `ask()` or the binder.
 - It fails closed, consistent with how substitution treats every other unresolved placeholder.
 
-The cost is availability for admins: a `global` ask whose model wrote a tenant placeholder anyway (the prompt says predicates are optional under `global`, and still names the placeholders) fails instead of returning SQL the host couldn't run. Telling the model not to use tenant placeholders under `global` would reduce that; it's a possible prompt follow-up, not part of this decision.
+The cost is availability for admins: a `global` ask whose model wrote a tenant placeholder anyway (the prompt says predicates are optional under `global`, and still shows a placeholder as an example) fails instead of returning SQL the host couldn't run. Telling the model not to use tenant placeholders under `global` would reduce that; it's a possible prompt follow-up, not part of this decision.
 
-If adopted, the test that pins today's pass-through changes from "no throw" to expecting `TenantScopeError` (`UNRESOLVED_TENANT_PLACEHOLDER`): `packages/core/src/sql/tenant-placeholders.test.ts`, `describe("resolveTenantSql — fails closed on unresolved placeholders")` › `it("global scope is unaffected: SQL returned unchanged, no throw")`. The other `global` tests in the same file (`"passes through SQL unchanged for global scope"`, `"passes through for global scope with empty params"`, and the `ask()`-level `"passes through unmodified for global scope"`) use SQL without placeholders and don't change. `resolveTenantSql()` is public, so this is a minor `@askdb/core` changeset. If the maintainer declines, `ask()` keeps the pass-through, and the binder's `global` rule stays a documented difference between the two enforcement points.
-
-### If the maintainer chooses the stored verdict instead
-
-The review showed these must be settled in this ADR before #310, not during implementation:
-
-- `PreparedQuery` goes to `version: 2` with a required verdict. A v1 template, or one with no verdict, rebinds only with `{ acceptUnverified: true }`: a missing verdict fails closed.
-- The verdict records the scope kind and roots it was computed under. `bindPreparedQuery()` takes the bind-time scope and refuses a mismatch, including any `global` template rebound under a non-`global` scope, unless the host opts in explicitly. Tenant values should still be rendered from that scope, by tenant substitution, so the `col = :tenant_…_ids` form rebinds.
-- Opt-in is per check, as above.
-- The verdict types become a persisted format: exported, and versioned with `PreparedQuery`.
-- `basis` is added only with a named consumer and a stated hash coverage; otherwise it stays out.
-- It also reverses plan 033 (the binder polices reuse), for the same premise.
+The test that pins today's pass-through changes from "no throw" to expecting `TenantScopeError` (`UNRESOLVED_TENANT_PLACEHOLDER`): `packages/core/src/sql/tenant-placeholders.test.ts`, `describe("resolveTenantSql — fails closed on unresolved placeholders")` › `it("global scope is unaffected: SQL returned unchanged, no throw")`. The other `global` tests in the same file (`"passes through SQL unchanged for global scope"`, `"passes through for global scope with empty params"`, and the `ask()`-level `"passes through unmodified for global scope"`) use SQL without placeholders and don't change. `resolveTenantSql()` is public, so this is a minor `@askdb/core` changeset.
 
 ## Alternatives considered
 
 ### A. Drop the reuse artifacts whenever a check warns
 
-Simple, needs no type change, and fails closed. Rejected as the long-term design, but not because of how it treats `warn`: with a per-check `ask()`-time opt-in (the amended form in the open question), it treats a tenant `warn` the way the recommendation does at rebind (refused by default, accepted per check), and it can leave sensitive warnings alone just as the recommendation does. It loses because it enforces only at `ask()`: it doesn't catch the `global` / other-root scope case or policy changes, and a template it hands out rebinds unchecked with host-supplied tenant values. It remains the stop-gap if #310 slips.
+Simple, needs no type change, and fails closed. Rejected as the long-term design, but not because of how it treats `warn`: with a per-check `ask()`-time opt-in (the amended form in "Enforcing reuse"), it treats a tenant `warn` the way re-check at rebind does (refused by default, accepted per check), and it can leave sensitive warnings alone just as re-check at rebind does. It loses because it enforces only at `ask()`: it doesn't catch the `global` / other-root scope case or policy changes, and a template it hands out rebinds unchecked with host-supplied tenant values. It remains the stop-gap if #310 slips.
 
 ### B. Attach the verdict to the template without enforcing it
 
@@ -253,27 +242,39 @@ The smallest diff today, but it is the structure that produced F2, F5, the scope
 
 Three checks don't justify a public extension point. The decision point stays an internal module in `@askdb/core`. Revisit if a real third-party check appears.
 
+### E. Store the verdict on the template, enforced at rebind (or a hybrid)
+
+The stored verdict was this ADR's first draft; the hybrid stores it for display and re-checks anyway. Rejected for the reasons in the comparison table: a missing or stale verdict has to fail closed by rule, a scope-safe verdict needs the bind-time scope anyway, and `GuardrailVerdict` would become a persisted, versioned format hosts must migrate. Done safely, it would have needed:
+
+- `PreparedQuery` at `version: 2` with a required verdict; a v1 template, or one with no verdict, rebinding only with `{ acceptUnverified: true }`.
+- The verdict recording the scope kind and roots, and `bindPreparedQuery()` refusing a mismatch (including any `global` template rebound under a non-`global` scope) unless the host opts in.
+- Tenant values still rendered from the bind-time scope, so the `col = :tenant_…_ids` form rebinds.
+- `basis` hashes, with a named consumer and stated coverage, to detect staleness.
+
+Revisit it only if hosts need to rebind where the schema isn't available (see "When to revisit").
+
 ## Consequences
 
 - **One place for modes.** Adding a check (or a mode) means writing a pure `evaluate` and a decision-table row, not threading logic through `ask.ts`, `generate.ts` and each result field.
 - **Every form is checked on every path in the table above.** No new sensitive findings are expected from checking the template (see Context); the invariant is defense in depth.
-- **`bindPreparedQuery()` stops being a mechanical binder** (under the recommendation). It takes a schema and a scope, validates the scope, re-runs the guardrails, and renders tenant values from the scope. That reverses plan 033's design-review decision; see "What the recommendation reverses".
+- **`bindPreparedQuery()` stops being a mechanical binder.** It takes a schema and a scope, validates the scope, re-runs the guardrails, and renders tenant values from the scope. That reverses plan 033's design-review decision; see "What this reverses".
 - **Breaking changes to `bindPreparedQuery()`,** each in a minor `@askdb/core` changeset (pre-1.0) with an upgrade note:
   - the third argument is required;
   - tenant values come from `tenantScope`, and a `:tenant_*` key in `values` throws;
   - a template with a `:tenant_*` placeholder can't be rebound under a `global` scope;
   - a template whose tenant check warns is refused unless `acceptWarnings: ["tenant"]`; this affects hosts whose tenant policy has `enforcement: warn`.
+- **`ask()` under a `global` scope** throws `TenantScopeError` (`UNRESOLVED_TENANT_PLACEHOLDER`) when the model's SQL still has a `:tenant_*` placeholder, through the same `resolveTenantSql()` change; placeholder-free admin SQL is unaffected. It is in the same minor `@askdb/core` changeset, with its own upgrade note.
 - **The default configuration** (`sensitiveGuardrailMode: "warn"`, sensitive columns in the prompt, no tenant policy) sees only the required argument and a `verdict` on the rebind result. A template that reads a sensitive column still binds; its sensitive warning is reported in the verdict on every rebind. Hosts with a tenant policy also move tenant IDs from `values` to `tenantScope`; with `enforcement: strict` they are refused at rebind exactly when `ask()` would deny the same SQL under that scope, and with `enforcement: warn` a tenant warning is refused unless accepted.
 - **`@askdb/client` gains `askdb.bind()`**, additive, with a minor `@askdb/client` changeset. Its docs examples switch from core's `bindPreparedQuery()` to it.
 - **Policy and schema changes apply to stored templates** at their next rebind. A template that rebinds today can start failing after the policy is tightened. That is intended: it fails closed.
-- **`PreparedQuery` doesn't change** (under the recommendation). Templates stored before the change keep working once the host passes the guardrail context.
+- **`PreparedQuery` doesn't change.** Templates stored before the change keep working once the host passes the guardrail context.
 - **Not a stronger guarantee.** The checks stay heuristic: after #341 the tenant check matches predicate shapes, not a parse, and known gaps remain (#399); #235 or a parser is stage (d). ADR 0012 is the source of this stance: a read-only database role plus database-level tenant enforcement (RLS) remain the real controls, and tightening the lint doesn't move the boundary (its Decision 5 lists this ADR as one such tightening). Docs must not present the new structure as more than tidier, consistent enforcement.
-- **No verdict to tamper with** (under the recommendation). The host is trusted to build the right `tenantScope`, as in `ask()`.
+- **No verdict to tamper with.** The host is trusted to build the right `tenantScope`, as in `ask()`.
 
 ## When to revisit
 
 - A check needs inputs that don't fit the candidate (e.g. live database metadata).
-- Hosts need to rebind where the schema isn't available and `askdb.bind()` doesn't help: reconsider the stored verdict or the hybrid.
+- Hosts need to rebind where the schema isn't available and `askdb.bind()` doesn't help: reconsider the stored verdict or the hybrid (Alternative E).
 - A third-party check becomes a real requirement (then consider Alternative D).
 - Deterministic tenant predicate rewriting (#235) lands. The tenant check may then become a rewrite plus a verification step, which could change how the decision table treats it.
 
@@ -281,6 +282,6 @@ Three checks don't justify a public extension point. The decision point stays an
 
 - #310 (implementation), #315 and PR #341 (stage (a): tenant check on the pre-render forms), #399 (tenant check gap after #341), #371 (literal escaping when string settings differ), #235 (deterministic tenant rewriting), #314 and #319 (future read-only rules on the shared analysis), #321 (consumer lab, hostile-ID escaping test).
 - PR #186 (tenant enforcement fails closed; the review discussion that led here), #197 (tenant binding), #192 (sensitivity overrides), #190 (dialect-aware lexer), #270 (subtree scope), #375 (subtree scope expands per root).
-- `plans/033-reusable-parameterized-queries.md` and its entry in `plans/README.md` (the design review this ADR's recommendation reverses).
+- `plans/033-reusable-parameterized-queries.md` and its entry in `plans/README.md` (the design review this ADR reverses).
 - ADR 0012 (SQL checks are defense in depth; the database is the boundary), ADR 0014 (subtree scope expands per root), ADR 0009 (Studio local API protection), ADR 0006 (AI providers).
 - `docs/contracts/tenant-policy.md`, `docs/contracts/sensitive-fields-and-modes.md`, `docs/specs/core-pipeline.md`, `apps/docs-site/src/content/docs/reference/core-api.mdx` (`bindPreparedQuery`, `AskDialect`), `apps/docs-site/src/content/docs/reference/client-api.mdx`.
