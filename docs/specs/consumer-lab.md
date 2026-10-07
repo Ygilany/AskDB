@@ -163,7 +163,7 @@ One command switches the mode: `pnpm lab:use <target>`. It writes the `@askdb/*`
 ### `pnpm lab ask`
 
 ```
-pnpm lab ask --db postgres "How many active programs does each agency run?"
+pnpm lab ask --db postgres "For each agency, show its id and how many active programs it runs."
              [--via raw|client] [--model replay|live] [--sql "<sql>"] [--tenant 2] [--strict] [--omit-sensitive]
 ```
 
