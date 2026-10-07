@@ -125,18 +125,21 @@ describe("lab ask --model live, spawned", () => {
   const spawned = stubOpenAiEnv(REPLIES);
   afterAll(() => spawned.dispose());
 
+  /** Not AskDB's default, so a path that drops `LAB_LIVE_MODEL_ID` asks the wrong model. */
+  const MODEL_ID = "gpt-4.1-mini";
+
   it.for([
-    ["raw", "model:      live gpt-4o-mini at https://api.openai.com/v1, via createOpenAI() → ask()"],
+    ["raw", `model:      live ${MODEL_ID} at https://api.openai.com/v1, via createOpenAI() → ask()`],
     ["client", "model:      live, via createAskDb() + @askdb/ai-openai (live/askdb.config.ts)"],
   ] as const)("asks the live model with the key and model it read, through the %s path", ([via, modelLine], ctx) => {
     needsCapability(ctx, "cli-introspect-engine");
     const before = spawned.requests().length;
 
-    const run = labAsk(["--model", "live", "--via", via, text("agency-names")], spawned.env);
+    const run = labAsk(["--model", "live", "--via", via, text("agency-names")], { ...spawned.env, LAB_LIVE_MODEL_ID: MODEL_ID });
 
     expect(run.stdout.split("\n")).toContain(modelLine);
     expect(run.stdout.trimEnd().split("\n").at(-1)).toBe("oracle:     pass");
-    expect(spawned.requests().slice(before)).toEqual([expect.objectContaining({ question: text("agency-names"), model: "gpt-4o-mini", authorized: true })]);
+    expect(spawned.requests().slice(before)).toEqual([expect.objectContaining({ question: text("agency-names"), model: MODEL_ID, authorized: true })]);
     expect(run.stdout + run.stderr).not.toContain(STUB_KEY);
     expect(run.status).toBe(0);
   });
