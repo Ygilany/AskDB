@@ -216,7 +216,10 @@ describe("askdb rag", () => {
     expect(
       await runRagCli(["query", schemaDir, "--question", "paid orders", "--dimensions", "32"]),
     ).toBe(1);
-    expect(stderr.join("")).toMatch(/built with embedder "mock:lexical-64" but this query uses "mock:lexical-32"/);
+    expect(stderr.join("")).toBe(
+      'The index was built with embedder "mock:lexical-64" but this query uses "mock:lexical-32". ' +
+        "Pass the same --embedder/--embedder-model/--dimensions used for `index`, or re-run `index`.\n",
+    );
   });
 
   it("query refuses an index whose lock records no embedder id", async () => {
@@ -590,11 +593,14 @@ describe("askdb rag", () => {
       expect(server.requests).toEqual([]);
     });
 
-    it("--embedder-model with the mock embedder fails instead of indexing with the lexical hash", async () => {
+    it.each([
+      ["rag.embedder", []],
+      ["--embedder", ["--embedder", "mock"]],
+    ])("--embedder-model with the mock embedder from %s fails instead of indexing with the lexical hash", async (source, flags) => {
       const schemaDir = copyFixture();
-      expect(await runRagCli(["index", schemaDir, "--embedder-model", "text-embedding-3-large"])).toBe(1);
+      expect(await runRagCli(["index", schemaDir, ...flags, "--embedder-model", "text-embedding-3-large"])).toBe(1);
       expect(stderr.join("")).toBe(
-        "--embedder-model applies to the ai embedder, but this run uses the mock embedder (from rag.embedder). " +
+        `--embedder-model applies to the ai embedder, but this run uses the mock embedder (from ${source}). ` +
           'Drop --embedder-model, or embed with ai.embedding (rag.embedder: "ai" in askdb.config.*).\n',
       );
       expect(existsSync(join(schemaDir, "schema.lock.json"))).toBe(false);
@@ -652,6 +658,7 @@ describe("askdb rag", () => {
 
     it.each([
       ["--store memory", ["--store", "memory"], "setup-store provisions only the pgvector store; drop --store memory.\n"],
+      ["--store file", ["--store", "file"], "setup-store provisions only the pgvector store; drop --store file.\n"],
       ["--file-path", ["--file-path", "./vectors"], "setup-store provisions only the pgvector store; drop --file-path.\n"],
       [
         "a positional",
@@ -669,8 +676,8 @@ describe("askdb rag", () => {
       expect(pgvector.options).toEqual([]);
     });
 
-    it("setup-store provisions the table at --dimensions", async () => {
-      expect(await runRagCli(["setup-store", "--pg-url", PG_URL, "--dimensions", "16"])).toBe(0);
+    it.each([[[]], [["--store", "pgvector"]]])("setup-store %j provisions the table at --dimensions", async (flags) => {
+      expect(await runRagCli(["setup-store", "--pg-url", PG_URL, "--dimensions", "16", ...flags])).toBe(0);
       expect(pgvector.options).toEqual([expect.objectContaining({ connectionString: PG_URL, dimensions: 16 })]);
       expect(pgvector.calls).toEqual(["ensureSchema", "close"]);
     });
