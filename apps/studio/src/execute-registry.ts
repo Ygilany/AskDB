@@ -117,8 +117,10 @@ export function validateExecuteSql(
   dialectOverride?: string,
 ): string {
   // `validateSelectSql` keeps a trailing `;`; it is the only `;` left once the
-  // statement passes, so dropping it can't touch a string or identifier.
-  return validateSelectSql(executeDialectFor(provider, dialectOverride), sql).replace(/\s*;$/, "");
+  // statement passes, so dropping it can't touch a string or identifier. Its
+  // result is trimmed, so the `;` is the last character. No `\s*;` pattern: it
+  // backtracks quadratically on a long whitespace run.
+  return validateSelectSql(executeDialectFor(provider, dialectOverride), sql).replace(/;$/, "").trimEnd();
 }
 
 // ---------------------------------------------------------------------------

@@ -331,6 +331,14 @@ describe("studio execute safety", () => {
     expect(() => validateExecuteSql("postgres", "SELECT 1; SELECT 2")).toThrow(/Multiple SQL statements/);
   });
 
+  it("validateExecuteSql removes the semicolon in linear time, however long a whitespace run the statement has", () => {
+    const gap = " ".repeat(100_000);
+    const started = Date.now();
+    expect(validateExecuteSql("postgres", `SELECT 1 AS a,${gap}2 AS b ;`)).toBe(`SELECT 1 AS a,${gap}2 AS b`);
+    // A backtracking terminator pattern takes tens of seconds on this statement.
+    expect(Date.now() - started).toBeLessThan(2_000);
+  });
+
   it("isStudioExecuteProvider rejects inherited object keys", () => {
     expect(isStudioExecuteProvider("postgres")).toBe(true);
     for (const key of ["constructor", "__proto__", "toString", "hasOwnProperty", "oracle", 1, null]) {

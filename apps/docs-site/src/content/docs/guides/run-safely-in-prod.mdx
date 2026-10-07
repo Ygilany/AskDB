@@ -59,11 +59,11 @@ The SQL `ask()` returns can end with a `;`, because AskDB keeps the model's sing
 ```ts
 // askdb initialized at startup with createAskDb() — see Embed in a Node app.
 const { sql } = await askdb.ask(question);
-const statement = sql.replace(/\s*;$/, "");
+const statement = sql.replace(/;$/, "").trimEnd();
 const cappedSql = `SELECT * FROM (${statement}) AS askdb_q LIMIT 1000`;
 ```
 
-`ask()`'s read-only checks (`validateSelectSql`) allow a `;` only at the end of the statement, so this removes the terminator and nothing else.
+`ask()` returns the SQL trimmed, and its read-only checks (`validateSelectSql`) allow a `;` only at the end of the statement, so this removes the terminator, and any space before it, and nothing else. Avoid a pattern such as `/\s*;$/`: it backtracks on a long run of whitespace, so a reply padded with one can stall your server.
 
 ## Audit logging
 

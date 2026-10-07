@@ -852,6 +852,35 @@ describe("ask — a model's trailing semicolon is kept (#477)", () => {
     expect(result.preparedQuery?.namedSql).toBe("SELECT count(*) FROM cities WHERE state = :state_name;");
   });
 
+  it("compares the parameterized blocks in linear time, however long a whitespace run the model writes", async () => {
+    const gap = " ".repeat(100_000);
+    const started = Date.now();
+    const result = await ask({
+      question: "How many cities does Colorado have?",
+      schema: minimalSchema,
+      model: fakeModel,
+      dialect: "postgres",
+      deps: {
+        generateText: vi.fn(async () => ({
+          text: [
+            "```sql",
+            `SELECT count(*) FROM cities WHERE${gap}state = 'colorado';`,
+            "```",
+            "```sql-unbound",
+            `SELECT count(*) FROM cities WHERE${gap}state = :state_name;`,
+            "```",
+            "```json",
+            '{"parameters":[{"name":"state_name","type":"string","cardinality":"one","value":"colorado"}]}',
+            "```",
+          ].join("\n"),
+        })),
+      },
+    });
+    expect(result.params).toEqual(["colorado"]);
+    // A backtracking terminator pattern takes tens of seconds on this reply.
+    expect(Date.now() - started).toBeLessThan(2_000);
+  });
+
   it.each([
     { bound: "'colorado' ;", unbound: ":state_name;", sql: "'colorado' ;", unboundSql: "$1;" },
     { bound: "'colorado';", unbound: ":state_name", sql: "'colorado';", unboundSql: "$1" },
