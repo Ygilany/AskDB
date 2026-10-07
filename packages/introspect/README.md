@@ -64,19 +64,20 @@ The `@askdb/introspect/kit` subpath holds the engine-agnostic helpers every firs
 
 | Helper | Purpose |
 | --- | --- |
-| `createOptionalDriverLoader({ packageName, specifier?, importDriver, missingMessage })`, `isDriverInstalled(packageName, { resolveFrom? })`, `missingDriverMessage({ engine, packageName })` | Lazy, cached loading of an optional driver peer (`pg`, `mysql2`, …): the engine package's own `import()` first, then the caller's project (`resolveFrom`, default `process.cwd()`). A missing peer rejects with an `AskDbError`; the failed cache slot is cleared so a later call retries. |
+| `createOptionalDriverLoader({ packageName, specifier?, importDriver, missingMessage })`, `isDriverInstalled(packageName, { resolveFrom? })`, `missingDriverMessage({ engine, packageName })`, `rethrowDriverImportError` | Lazy, cached loading of an optional driver peer (`pg`, `mysql2`, …): the engine package's own `import()` first, then the caller's project (`resolveFrom`, default `process.cwd()`). A missing peer rejects with an `AskDbError`; the failed cache slot is cleared so a later call retries. Chain `.catch(rethrowDriverImportError)` on your `import()` so bundlers such as esbuild treat the peer as optional. |
 | `compileTableFilters(patterns)`, `ambiguousFilterWarnings(patterns, qualifiedNames)` | `IntrospectionFilters.tables` glob matching (`*`, `?`) and the `ambiguous_filter` warning for patterns that match nothing. |
 | `makeTableId(schema, table)`, `makeColumnId(schema, table, column)` | Schema v2 ids (`table:<schema>.<name>`, `table:<schema>.<name>#<column>`). |
 | `rowsToRecords(result, { expectedColumns?, source? })`, `groupBy`, `buildOrderedGroups`, `byName`, `sortedUnique`, `mapFkAction` | Folding positional `CatalogQueryResult` rows into Schema v2 tables, constraints, and indexes. |
 | `formatConnectionLabel`, `parseConnectionUrl`, `ConnectionLabelParts` | `ConnectionLabelParts` is what an adapter's `connectionLabelParts` hook returns (take the parts from your driver's own parser where it has one; `parseConnectionUrl` is a strict fallback for a standard URL). `formatConnectionLabel` is what `registry.connectionLabel()` applies to those parts: host, port and database (or a file path), else `configured <engine> connection` ([ADR 0011](../../docs/adrs/0011-connection-labels-from-parsed-parts.md)). |
 
 ```ts
-import { createOptionalDriverLoader, missingDriverMessage } from "@askdb/introspect/kit";
+import { createOptionalDriverLoader, missingDriverMessage, rethrowDriverImportError } from "@askdb/introspect/kit";
 
 const driver = createOptionalDriverLoader<typeof import("my-driver")>({
   packageName: "my-driver",
-  // Keep the import literal in *your* package, where the peer is declared.
-  importDriver: () => import("my-driver"),
+  // Keep the import literal in *your* package, where the peer is declared, with the
+  // rethrowing .catch() on it, so bundlers treat the peer as optional.
+  importDriver: () => import("my-driver").catch(rethrowDriverImportError),
   missingMessage: missingDriverMessage({ engine: "MyEngine", packageName: "my-driver" }),
 });
 ```

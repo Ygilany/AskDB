@@ -2,6 +2,7 @@ import { AskDbError } from "@askdb/core";
 import type { CatalogQueryResult, CatalogQueryRunner } from "@askdb/introspect";
 import {
   createOptionalDriverLoader,
+  rethrowDriverImportError,
   isDriverInstalled,
   missingDriverMessage,
   type DriverLoadOptions,
@@ -20,7 +21,7 @@ type MssqlModule = typeof import("mssql");
  */
 const mssqlLoader = createOptionalDriverLoader<MssqlModule>({
   packageName: "mssql",
-  importDriver: () => import("mssql"),
+  importDriver: () => import("mssql").catch(rethrowDriverImportError),
   missingMessage: missingDriverMessage({ engine: "SQL Server", packageName: "mssql" }),
 });
 

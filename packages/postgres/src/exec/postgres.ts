@@ -2,6 +2,7 @@ import { AskDbError } from "@askdb/core";
 import type { CatalogQueryResult, CatalogQueryRunner } from "@askdb/introspect";
 import {
   createOptionalDriverLoader,
+  rethrowDriverImportError,
   isDriverInstalled,
   missingDriverMessage,
   type DriverLoadOptions,
@@ -21,7 +22,7 @@ export type { CatalogQueryResult, CatalogQueryRunner } from "@askdb/introspect";
  */
 const pgLoader = createOptionalDriverLoader<typeof import("pg")>({
   packageName: "pg",
-  importDriver: () => import("pg"),
+  importDriver: () => import("pg").catch(rethrowDriverImportError),
   missingMessage: missingDriverMessage({ engine: "Postgres", packageName: "pg" }),
 });
 

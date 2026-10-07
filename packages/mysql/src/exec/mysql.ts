@@ -2,6 +2,7 @@ import { AskDbError } from "@askdb/core";
 import type { CatalogQueryResult, CatalogQueryRunner } from "@askdb/introspect";
 import {
   createOptionalDriverLoader,
+  rethrowDriverImportError,
   isDriverInstalled,
   missingDriverMessage,
   type DriverLoadOptions,
@@ -17,7 +18,7 @@ export type { CatalogQueryResult, CatalogQueryRunner } from "@askdb/introspect";
 const mysql2Loader = createOptionalDriverLoader<typeof import("mysql2/promise")>({
   packageName: "mysql2",
   specifier: "mysql2/promise",
-  importDriver: () => import("mysql2/promise"),
+  importDriver: () => import("mysql2/promise").catch(rethrowDriverImportError),
   missingMessage: missingDriverMessage({ engine: "MySQL", packageName: "mysql2" }),
 });
 

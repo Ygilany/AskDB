@@ -189,7 +189,7 @@ The engine-agnostic introspection contract and the schema-directory writer. Use 
 
 To get the exact `schema.json` bytes without writing anything (a preview or a drift check), call `renderSchemaV2Body(result.schema, { schemaId, provider: result.provider, existingArtifactDir })`. It returns `{ json, body, warnings }`, applies the same merge `introspect()` does when writing (human-set `sensitive` flags carried over from an existing artifact), and backs `askdb introspect --out`, `--print` and `--diff`. `isSchemaV2Json(value)` is the check it applies to an existing `schema.json` before merging, for callers that need to decide up front.
 
-The `@askdb/introspect/kit` subpath holds the shared helpers the engine packages are built on — optional-driver loading (`createOptionalDriverLoader`, `isDriverInstalled`), table-glob filters (`compileTableFilters`, `ambiguousFilterWarnings`), Schema v2 ids (`makeTableId`, `makeColumnId`), catalog-row folding (`rowsToRecords`, `groupBy`, `buildOrderedGroups`, `mapFkAction`), and connection labels (`formatConnectionLabel`, `parseConnectionUrl`). Import it when you write a connector for a new engine.
+The `@askdb/introspect/kit` subpath holds the shared helpers the engine packages are built on — optional-driver loading (`createOptionalDriverLoader`, `isDriverInstalled`, and `rethrowDriverImportError` to chain on your driver's `import()` so bundlers treat it as optional), table-glob filters (`compileTableFilters`, `ambiguousFilterWarnings`), Schema v2 ids (`makeTableId`, `makeColumnId`), catalog-row folding (`rowsToRecords`, `groupBy`, `buildOrderedGroups`, `mapFkAction`), and connection labels (`formatConnectionLabel`, `parseConnectionUrl`). Import it when you write a connector for a new engine.
 
 ### `@askdb/prisma`
 
