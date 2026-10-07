@@ -70,6 +70,9 @@ const BASE_CONFIG: AskDbConfig = {
   rag: { embedder: "mock", store: "file", storeConfig: { file: {} } },
 };
 
+/** A config with no `rag` block: the mock embedder and the memory store, by default (#226). */
+const NO_RAG_CONFIG: AskDbConfig = { ai: BASE_CONFIG.ai, introspection: BASE_CONFIG.introspection };
+
 /** `rag.embedder: "ai"` with an OpenAI `ai.embedding` pointed at a local embeddings server. */
 function aiEmbeddingConfig(
   baseUrl: string,
@@ -268,7 +271,7 @@ describe("askdb rag", () => {
   it.each<[string, string[], AskDbConfig]>([
     ["--store memory", ["--store", "memory"], BASE_CONFIG],
     ["rag.store: \"memory\"", [], { ...BASE_CONFIG, rag: { embedder: "mock", store: "memory", storeConfig: { memory: {} } } }],
-    ["no rag block (#226)", [], { ai: BASE_CONFIG.ai, introspection: BASE_CONFIG.introspection }],
+    ["no rag block (#226)", [], NO_RAG_CONFIG],
   ])("query with %s explains the store is per-process", async (_case, flags, config) => {
     installRuntime(config);
     const schemaDir = copyFixture();
@@ -523,6 +526,12 @@ describe("askdb rag", () => {
         BASE_CONFIG,
         "--pg-table applies to the pgvector store, but this run uses the file store (from --store). Pass --store pgvector, or drop --pg-table.",
       ],
+      [
+        "--file-path with no rag block",
+        ["--file-path", "./vectors"],
+        NO_RAG_CONFIG,
+        "--file-path applies to the file store, but this run uses the memory store (the default: askdb.config.* has no rag block). Pass --store file, or drop --file-path.",
+      ],
     ])("index refuses %s instead of ignoring it", async (_case, flags, config, message) => {
       installRuntime(config);
       const schemaDir = copyFixture();
@@ -627,14 +636,16 @@ describe("askdb rag", () => {
       expect(server.requests).toEqual([]);
     });
 
-    it.each([
-      ["rag.embedder", []],
-      ["--embedder", ["--embedder", "mock"]],
-    ])("--embedder-model with the mock embedder from %s fails instead of indexing with the lexical hash", async (source, flags) => {
+    it.each<[string, string[], AskDbConfig, string]>([
+      ["rag.embedder", [], BASE_CONFIG, "from rag.embedder"],
+      ["--embedder", ["--embedder", "mock"], BASE_CONFIG, "from --embedder"],
+      ["no rag block", [], NO_RAG_CONFIG, "the default: askdb.config.* has no rag block"],
+    ])("--embedder-model with the mock embedder from %s fails instead of indexing with the lexical hash", async (_case, flags, config, source) => {
+      installRuntime(config);
       const schemaDir = copyFixture();
       expect(await runRagCli(["index", schemaDir, ...flags, "--embedder-model", "text-embedding-3-large"])).toBe(1);
       expect(stderr.join("")).toBe(
-        `--embedder-model applies to the ai embedder, but this run uses the mock embedder (from ${source}). ` +
+        `--embedder-model applies to the ai embedder, but this run uses the mock embedder (${source}). ` +
           'Drop --embedder-model, or embed with ai.embedding (rag.embedder: "ai" in askdb.config.*).\n',
       );
       expect(existsSync(join(schemaDir, "schema.lock.json"))).toBe(false);
