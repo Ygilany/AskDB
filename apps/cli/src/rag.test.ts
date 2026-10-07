@@ -367,6 +367,51 @@ describe("askdb rag", () => {
     );
   });
 
+  describe("logging", () => {
+    function readEvents(path: string): Record<string, unknown>[] {
+      if (!existsSync(path)) return [];
+      return readFileSync(path, "utf8")
+        .split("\n")
+        .filter(Boolean)
+        .map((line) => JSON.parse(line) as Record<string, unknown>);
+    }
+
+    it("--log-file and --correlation-id tag every event, query's included", async () => {
+      const schemaDir = copyFixture();
+      const logFile = join(tempDir(), "rag.log");
+      const flags = ["--log-file", logFile, "--correlation-id", "cid-1"];
+      expect(await runRagCli(["index", schemaDir, ...flags])).toBe(0);
+      expect(await runRagCli(["query", schemaDir, "--question", "paid orders", ...flags])).toBe(0);
+      const events = readEvents(logFile);
+      expect(events.filter((event) => String(event.event).startsWith("askdb.rag.index")).length).toBeGreaterThan(0);
+      expect(events.every((event) => event.correlationId === "cid-1")).toBe(true);
+      // Once per event: a second copy from the indexer's own context would be a duplicate JSON key.
+      const lines = readFileSync(logFile, "utf8").split("\n").filter(Boolean);
+      expect(lines.every((line) => line.split('"correlationId"').length === 2)).toBe(true);
+      expect(events).toContainEqual(
+        expect.objectContaining({ event: "askdb.rag.cli.query", k: 8, resultCount: expect.any(Number) }),
+      );
+    });
+
+    // `LOG` stands for the run's log file, in config or on the command line.
+    it.each<[string, NonNullable<AskDbConfig["logging"]>, string[], string | undefined]>([
+      ["logging.* from config", { logFile: "LOG", level: "info", correlationId: "cfg-cid" }, [], "cfg-cid"],
+      ["logging.level over the info --log-file implies", { level: "warn" }, ["--log-file", "LOG"], undefined],
+      ["--log-level in upper case", {}, ["--log-file", "LOG", "--log-level", "WARN"], undefined],
+    ])("honours %s", async (_case, logging, flags, correlationId) => {
+      const schemaDir = copyFixture();
+      expect(await runRagCli(["index", schemaDir])).toBe(0);
+      const logFile = join(tempDir(), "rag.log");
+      const withLog = (value: string | undefined) => (value === "LOG" ? logFile : value);
+      installRuntime({ ...BASE_CONFIG, logging: { ...logging, logFile: withLog(logging.logFile) } });
+
+      const args = ["query", schemaDir, "--question", "paid orders", ...flags.map((flag) => withLog(flag)!)];
+      expect(await runRagCli(args)).toBe(0);
+      const queryEvents = readEvents(logFile).filter((event) => event.event === "askdb.rag.cli.query");
+      expect(queryEvents).toEqual(correlationId ? [expect.objectContaining({ correlationId })] : []);
+    });
+  });
+
   describe("config fallbacks", () => {
     it("index reads the schema dir from introspection.outputDir and the file store path from rag.storeConfig.file", async () => {
       const schemaDir = copyFixture();

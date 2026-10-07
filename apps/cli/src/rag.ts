@@ -143,7 +143,7 @@ async function runIndex(opts: CliOptions, logger: AskDbLogger, runtimeConfig: As
     // The indexer leaves the lock alone for an ephemeral (memory) store.
     lockFilePath: lockFilePathFor(schemaDir),
     force: opts.force,
-    correlationId: opts.correlationId,
+    // The logger carries the correlation id; passing it here too would repeat the key on every event.
     logger,
   });
 
