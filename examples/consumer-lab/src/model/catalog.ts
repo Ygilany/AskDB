@@ -67,16 +67,40 @@ export function readCassette(dialect: string, question: Question, dir = CASSETTE
   return cassette;
 }
 
-/**
- * The SQL inside a reply's first ```sql fence, read exactly the way the replay suites read a cassette.
- * A single trailing `;` is removed, as AskDB removes it from the SQL it returns
- * (`concepts/safety-boundaries.mdx`, "Single statement"): a model's reply usually ends with one.
- */
-export function fencedSql(reply: string): string | undefined {
-  return /```sql\n([\s\S]*?)\n```/.exec(reply)?.[1]?.trim().replace(/;$/, "").trimEnd();
+/** SQL without a single trailing `;` (and the whitespace around the statement). */
+function withoutTerminator(sql: string): string {
+  return sql.trim().replace(/;$/, "").trimEnd();
 }
 
-/** The SQL inside a cassette's ```sql fence: what AskDB should return for that question on that dialect. */
+/**
+ * Whether `sql`, as `ask()` returned it, is the statement `expected` holds: the lab's one rule for
+ * comparing AskDB's SQL with a cassette's, used by the replay suites (`test/support/cassette-sql.ts`)
+ * and by `lab:record`'s fence gate. The two are equal once a single trailing `;` is removed from
+ * each. A model's reply usually ends with one; released AskDB removes it from the SQL it returns
+ * (`concepts/safety-boundaries.mdx`, "Single statement"), and #477 keeps it, so the lab reads either
+ * behavior, and still sees a `;` anywhere else or any other change to the statement.
+ */
+export function sameStatement(sql: string, expected: string): boolean {
+  return withoutTerminator(sql) === withoutTerminator(expected);
+}
+
+/** The SQL inside a reply's first ```sql fence, without its terminator, read the way the replay suites read a cassette. */
+export function fencedSql(reply: string): string | undefined {
+  const sql = /```sql\n([\s\S]*?)\n```/.exec(reply)?.[1];
+  return sql === undefined ? undefined : withoutTerminator(sql);
+}
+
+/**
+ * Whether a model's reply can be written as a cassette for the SQL `ask()` returned from it:
+ * its ```sql fence holds that statement, by `sameStatement`. `lab:record`'s gate. A reply whose
+ * SQL `ask()` read from somewhere the replay suites don't (an untagged fence) fails it.
+ */
+export function fenceHoldsSql(reply: string, sql: string): boolean {
+  const fenced = fencedSql(reply);
+  return fenced !== undefined && sameStatement(sql, fenced);
+}
+
+/** The SQL inside a cassette's ```sql fence, without its terminator: what AskDB should return for that question on that dialect. */
 export function cassetteSql(dialect: string, questionId: string, questions = loadQuestions()): string {
   const question = findQuestion(questionId, questions);
   const cassette = question && readCassette(dialect, question);
