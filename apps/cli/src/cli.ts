@@ -4,7 +4,6 @@ import {
   createAiRegistry,
 } from "@askdb/ai";
 import { createAskDb, type DialectResolution } from "@askdb/client";
-import { randomUUID } from "node:crypto";
 import {
   AskDbError,
   AskDbLogEvent,
@@ -13,17 +12,15 @@ import {
   type AskGenerateDeps,
   SchemaParseError,
   formatAskDbModesV1,
-  formatSupportedAskDbLogLevels,
-  isSupportedAskDbLogLevel,
   parseAskDbModeV1,
   SqlValidationError,
-  createAskDbLogger,
   formatSensitiveReference,
   loadSchema,
 } from "@askdb/core";
 import { Command } from "commander";
 import { runInitCli, VALID_AI_PROVIDERS } from "./init.js";
 import { runIntrospectCli } from "./introspect.js";
+import { createCliLogger, resolveCliLogLevel } from "./logger.js";
 import { MissingAskDbConfigError, requireAskDbConfig } from "./project-config.js";
 import { runRagCli } from "./rag.js";
 import { readCliVersion } from "./version.js";
@@ -114,34 +111,6 @@ function resolveSchemaPathForAsk(
   runtime: ReturnType<typeof getAskDbRuntimeConfig>,
 ): string {
   return optionSchema ?? runtime.introspection.outputDir;
-}
-
-function resolveAskDbLogLevel(opts: {
-  verbose?: boolean;
-  logLevel?: string;
-  logFile?: string;
-  logStdout?: boolean;
-}): AskDbLogLevel {
-  if (opts.logLevel !== undefined && opts.logLevel !== "") {
-    const l = opts.logLevel.toLowerCase();
-    if (!isSupportedAskDbLogLevel(l)) {
-      throw new Error(
-        `Invalid --log-level: ${opts.logLevel} (expected one of ${formatSupportedAskDbLogLevels()})`,
-      );
-    }
-    return l;
-  }
-  const env = getAskDbRuntimeConfig().logging.level?.toLowerCase();
-  if (env && isSupportedAskDbLogLevel(env)) {
-    return env;
-  }
-  if (opts.verbose) {
-    return "info";
-  }
-  if (opts.logFile || opts.logStdout) {
-    return "info";
-  }
-  return "silent";
 }
 
 const program = new Command();
@@ -279,7 +248,7 @@ program
       let mode: AskDbModeV1;
       const runtime = getAskDbRuntimeConfig();
       try {
-        logLevel = resolveAskDbLogLevel(opts);
+        logLevel = resolveCliLogLevel(opts, runtime);
         mode = parseAskDbModeV1(opts.mode ?? runtime.modes.askdbMode);
       } catch (e) {
         printCliError(e);
@@ -287,14 +256,7 @@ program
         return;
       }
 
-      const correlationId =
-        opts.correlationId ?? runtime.logging.correlationId ?? randomUUID();
-      const logger = createAskDbLogger({
-        correlationId,
-        level: logLevel,
-        logFile: opts.logFile ?? runtime.logging.logFile,
-        logStdout: opts.logStdout ?? runtime.logging.logStdout,
-      });
+      const logger = createCliLogger(opts, runtime, logLevel);
 
       const mockSql = opts.mockSql ?? runtime.dev.mockSql;
       const aiConfig = mockSql ? undefined : ai.resolveAiConfig(runtime.ai.aiEnv);

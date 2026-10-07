@@ -1,13 +1,6 @@
-import { randomUUID } from "node:crypto";
 import { join, resolve } from "node:path";
 import { createAiRegistry, type AiConfig } from "@askdb/ai";
-import {
-  createAskDbLogger,
-  formatSupportedAskDbLogLevels,
-  isSupportedAskDbLogLevel,
-  type AskDbLogger,
-  type AskDbLogLevel,
-} from "@askdb/core";
+import type { AskDbLogger } from "@askdb/core";
 import { getAskDbRuntimeConfig, type AskDbRuntimeConfig } from "@askdb/config";
 import {
   buildSchemaIndex,
@@ -26,6 +19,8 @@ import {
   type QueryResult,
   type VectorStore,
 } from "@askdb/rag";
+import { labelled, showable } from "./error-values.js";
+import { createCliLogger } from "./logger.js";
 import { readCliVersion } from "./version.js";
 
 // Every built-in provider is registered and loads its @ai-sdk/* package only when first used,
@@ -107,7 +102,7 @@ export async function runRagCli(argv: readonly string[]): Promise<number> {
     const opts = parseOptions(argv.slice(1));
     const runtimeConfig = getAskDbRuntimeConfig();
     if (cmd === "setup-store") return await runSetupStore(opts, runtimeConfig);
-    const logger = buildLogger(opts, runtimeConfig);
+    const logger = createCliLogger(opts, runtimeConfig);
     if (cmd === "index") return await runIndex(opts, logger, runtimeConfig);
     return await runQuery(opts, logger, runtimeConfig);
   } catch (e) {
@@ -552,33 +547,6 @@ async function closeStore(store: CliStore): Promise<void> {
   if (typeof store.close === "function") await store.close();
 }
 
-function buildLogger(opts: CliOptions, runtimeConfig: AskDbRuntimeConfig): AskDbLogger {
-  const level = resolveLogLevel(opts, runtimeConfig);
-  return createAskDbLogger({
-    correlationId:
-      opts.correlationId ?? runtimeConfig.logging.correlationId ?? randomUUID(),
-    level,
-    logFile: opts.logFile ?? runtimeConfig.logging.logFile,
-    logStdout: opts.logStdout ?? runtimeConfig.logging.logStdout,
-  });
-}
-
-function resolveLogLevel(opts: CliOptions, runtimeConfig: AskDbRuntimeConfig): AskDbLogLevel {
-  if (opts.logLevel !== undefined && opts.logLevel !== "") {
-    const lvl = opts.logLevel.toLowerCase();
-    if (!isSupportedAskDbLogLevel(lvl)) {
-      throw new Error(
-        `${labelled("Invalid --log-level", opts.logLevel)} (expected one of ${formatSupportedAskDbLogLevels()})`,
-      );
-    }
-    return lvl;
-  }
-  const envLevel = runtimeConfig.logging.level?.toLowerCase();
-  if (envLevel && isSupportedAskDbLogLevel(envLevel)) return envLevel;
-  if (opts.verbose || opts.logFile || opts.logStdout) return "info";
-  return "silent";
-}
-
 function parseOptions(argv: readonly string[]): CliOptions {
   const opts: CliOptions = {};
   for (let i = 0; i < argv.length; i++) {
@@ -706,18 +674,6 @@ function parseOptions(argv: readonly string[]): CliOptions {
     }
   }
   return opts;
-}
-
-/**
- * Whether an error may repeat `value`: it looks like a name or a number. Anything else, such as a
- * connection string given to the wrong flag, is left out because it can hold a password.
- */
-function showable(value: string): boolean {
-  return /^[\w.+-]{1,40}$/.test(value);
-}
-
-function labelled(label: string, value: string): string {
-  return showable(value) ? `${label}: ${value}` : label;
 }
 
 function readValue(argv: readonly string[], index: number, flag: string): string {
