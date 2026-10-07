@@ -478,7 +478,11 @@ function replaceTableFile(
     }
     renameSync(tempPath, filePath);
   } catch (e) {
-    rmSync(tempPath, { force: true });
+    try {
+      rmSync(tempPath, { force: true });
+    } catch {
+      // Report the save's own error, not a failed cleanup (e.g. Windows EPERM).
+    }
     throw e;
   }
 }
