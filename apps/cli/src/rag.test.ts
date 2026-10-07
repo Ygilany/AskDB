@@ -601,6 +601,11 @@ describe("askdb rag", () => {
     it.each([
       ["--store memory", ["--store", "memory"], "setup-store provisions only the pgvector store; drop --store memory.\n"],
       ["--file-path", ["--file-path", "./vectors"], "setup-store provisions only the pgvector store; drop --file-path.\n"],
+      [
+        "a positional",
+        ["my_chunks"],
+        "setup-store takes no [schema-dir]; pass the connection string with --pg-url and the table with --pg-table.\n",
+      ],
     ])("setup-store refuses %s before connecting", async (_case, flags, message) => {
       // A configured pgvector URL, so setup-store would connect if it ignored the flag.
       installRuntime({

@@ -268,7 +268,7 @@ Chunks, embeds, and queries a schema artifact for [retrieval](/guides/rag-for-la
 | `--embedder-model <id>` | `ai.embedding.model` |
 | `--dimensions <n>` | See [Vector width](#vector-width) |
 
-`rag.storeConfig.pgvector.indexStrategy` sets the index `setup-store` and `index` create on pgvector (default `hnsw`), whatever `rag.store` is. A store flag for a store the run doesn't use, such as `--file-path` when the store is pgvector or `--pg-url` when it's the file store, is an error rather than ignored. `setup-store` provisions only pgvector, whatever `rag.store` is, so it refuses `--store memory`, `--store file` and `--file-path`.
+`rag.storeConfig.pgvector.indexStrategy` sets the index `setup-store` and `index` create on pgvector (default `hnsw`), whatever `rag.store` is. A store flag for a store the run doesn't use, such as `--file-path` when the store is pgvector or `--pg-url` when it's the file store, is an error rather than ignored. `setup-store` provisions only pgvector, whatever `rag.store` is, so it refuses `--store memory`, `--store file`, `--file-path` and a `[schema-dir]`.
 
 ### Embedders
 

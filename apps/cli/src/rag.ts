@@ -472,6 +472,10 @@ function assertStoreFlagsApply(opts: CliOptions, kind: CliStoreKind): void {
 
 /** setup-store provisions only the pgvector store, whatever `rag.store` is, so another store's flag is a mistake. */
 function assertSetupStoreFlags(opts: CliOptions): void {
+  // Ignored, it would provision the configured database while the user meant another.
+  if (opts.schemaDir !== undefined) {
+    throw new Error("setup-store takes no [schema-dir]; pass the connection string with --pg-url and the table with --pg-table.");
+  }
   if (opts.store !== undefined && opts.store !== "pgvector") {
     throw new Error(`setup-store provisions only the pgvector store; drop --store ${opts.store}.`);
   }
