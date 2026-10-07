@@ -186,8 +186,8 @@ function parseMssqlSchemeUrl(connectionString: string): MssqlConfigInput {
  * Parse Prisma's SQL Server connection URL,
  * `sqlserver://HOST[:PORT][;key=value…]`.
  *
- * Backward compatible with the parser this replaces for every string without
- * `{`: it connects with exactly the same values as before. Segments are split on `;`,
+ * Backward compatible with the parser this replaces for every string it could
+ * read: it connects with exactly the same values as before. Segments are split on `;`,
  * a key ends at its first `=` (so `password=a=b` is `a=b`), keys are trimmed
  * and lower-cased, values are trimmed, non-ASCII is fine, a segment without
  * `=` or with an empty key or value is skipped, and a later key replaces an
@@ -196,22 +196,24 @@ function parseMssqlSchemeUrl(connectionString: string): MssqlConfigInput {
  *
  * On top of that it reads Prisma's `{…}` escaping (Prisma's SQL Server docs:
  * "If your credentials contain `: \ = ; / [ ] { }`, wrap values in curly
- * braces", e.g. `password={Pass:Word;}`), with the rule of Prisma's own
- * JDBC-string parser (`prisma/connection-string`, `src/jdbc.rs`): a `{` opens
- * a span read verbatim up to the first `}`, so `;` and `=` inside it are part
- * of the value, and braced and plain runs join (`{abc;}}45}` is `abc;}45}`).
- * That changes a value holding a literal `{`: the old parser kept braces as
- * plain characters (`password={abc}` was `{abc}`, now `abc`; `ab{cd` now
- * throws). A literal brace is written inside a braced run: `{a{b}}c` is
- * `a{b}c`.
+ * braces", e.g. `password={Pass:Word;}`), but only where the old parser could
+ * never have read the value: a `{` is an escape only when the text up to the
+ * first `}` after it contains a `;`. That span is then read verbatim, as in
+ * Prisma's own JDBC-string parser (`prisma/connection-string`, `src/jdbc.rs`),
+ * so `;` and `=` inside it are part of the value, and braced and plain runs
+ * join (`{abc;}}45}` is `abc;}45}`). The old parser cut such a value at the
+ * `;`, so it never connected with the value the user wrote. Any other `{` or
+ * `}` is a plain character, as before: `password={abc}` is `{abc}`, and an
+ * unclosed `{` is part of the value. A string whose braces wrap no `;`
+ * therefore connects with exactly the same values as before, which is where
+ * this differs from Prisma (Prisma reads `{abc}` as `abc`).
+ *
  * Prisma's credential aliases are read (`username` and `uid` for `user`,
  * `pwd` for `password`) only when the canonical key is absent: the old parser
  * dropped them, so such a string had no credentials, and where the canonical
  * key is present it still wins. `initial catalog` is not, because the old parser ignored it and
  * the connection used the login's default database; reading it now would
  * change where a working string connects.
- *
- * It throws only for a `{` that is never closed.
  */
 function parsePrismaSqlServerUrl(connectionString: string): MssqlConfigInput {
   const segments = splitPrismaSegments(connectionString.slice("sqlserver://".length));
@@ -266,8 +268,8 @@ function parsePrismaSqlServerUrl(connectionString: string): MssqlConfigInput {
 
 /**
  * True when a Prisma-style `sqlserver://` string can be read more than one
- * way, so a display label must not trust its parts: it uses `{…}` (the parser
- * before Prisma escaping read the braces literally), a quote, a segment that
+ * way, so a display label must not trust its parts: it has a `{` (an escape
+ * only when it wraps a `;`, while Prisma reads every `{…}` as one), a quote, a segment that
  * isn't `key=value` (an unbraced `;` inside a value), an empty segment before
  * another one, or an unclosed `{`. The connection still uses
  * `parsePrismaSqlServerUrl`'s reading.
@@ -285,7 +287,10 @@ export function isPrismaSqlServerUrlAmbiguous(connectionString: string): boolean
 
 type PrismaPiece = { braced: boolean; text: string };
 
-/** Split on `;` outside `{…}`; each segment keeps its braced and plain pieces. */
+/**
+ * Split on `;` outside an escaping `{…}` (one that wraps a `;`; see
+ * `parsePrismaSqlServerUrl`); each segment keeps its braced and plain pieces.
+ */
 function splitPrismaSegments(input: string): PrismaPiece[][] {
   const segments: PrismaPiece[][] = [[]];
   let plain = "";
@@ -295,14 +300,8 @@ function splitPrismaSegments(input: string): PrismaPiece[][] {
   };
   for (let i = 0; i < input.length; i++) {
     const ch = input[i]!;
-    if (ch === "{") {
-      const close = input.indexOf("}", i + 1);
-      if (close === -1) {
-        throw new AskDbError(
-          "Prisma-style SQL Server URL has a { that is never closed. Wrap a value that contains " +
-            ": \\ = ; / [ ] { } in curly braces, e.g. password={Pass:Word;}.",
-        );
-      }
+    const close = ch === "{" ? input.indexOf("}", i + 1) : -1;
+    if (close !== -1 && input.slice(i + 1, close).includes(";")) {
       flush();
       segments[segments.length - 1]!.push({ braced: true, text: input.slice(i + 1, close) });
       i = close;

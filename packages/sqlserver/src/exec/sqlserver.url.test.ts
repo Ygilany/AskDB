@@ -128,25 +128,26 @@ describe("resolveConnectionInput", () => {
     });
 
     // Prisma's {…} escaping (Prisma's SQL Server docs; prisma/connection-string
-    // src/jdbc.rs): a { opens a span read verbatim up to the first }.
-    it("reads Prisma's documented {…} escaping (the doc example yields the password Pass:Word;)", () => {
-      expect(
-        resolveConnectionInput("sqlserver://host:1433;user={MyServer/User};password={Pass:Word;};database=db"),
-      ).toEqual({
+    // src/jdbc.rs), read only where the braces wrap a ;: such a span is read
+    // verbatim up to the first }.
+    it("reads braces that wrap a ; as Prisma's escape (the doc example yields the password Pass:Word;)", () => {
+      expect(resolveConnectionInput("sqlserver://host:1433;user=sa;password={Pass:Word;};database=db")).toEqual({
         server: "host",
         port: 1433,
         database: "db",
-        user: "MyServer/User",
+        user: "sa",
         password: "Pass:Word;",
         options: {},
       });
     });
 
-    it("joins braced and plain runs as Prisma does ({abc;}}45} is abc;}45})", () => {
-      const result = resolveConnectionInput("sqlserver://h:4200;User ID=musti;Password={abc;}}45}") as {
-        password?: string;
-      };
-      expect(result.password).toBe("abc;}45}");
+    it.each([
+      // Braced and plain runs join, as in Prisma: the second } is a plain character.
+      ["sqlserver://h:4200;User ID=musti;Password={abc;}}45}", "abc;}45}"],
+      // A literal { inside an escaping span, so a value can hold both braces and a ;.
+      ["sqlserver://h;user=sa;password={{a;b}}", "{a;b}"],
+    ])("reads %s as the password %s", (input, password) => {
+      expect((resolveConnectionInput(input) as { password?: string }).password).toBe(password);
     });
 
     it("keeps a ;database= inside a braced value out of the database", () => {
@@ -155,10 +156,6 @@ describe("resolveConnectionInput", () => {
         password?: string;
       };
       expect(result).toMatchObject({ database: "app", password: "S3c;database=ret;" });
-    });
-
-    it("throws for a { that is never closed", () => {
-      expect(() => resolveConnectionInput("sqlserver://h;password={S3cret")).toThrow("is never closed");
     });
   });
 });
@@ -240,6 +237,16 @@ describe("sqlserver:// backward compatibility with the parser before #189", () =
     "sqlserver://h;user=sa;uid=other;password=x",
     "sqlserver://h;user=sa;password=a;pwd=b",
     "sqlserver://h;uid=other;user=sa;pwd=b;password=a",
+    // Braces that wrap no ; are plain characters, as before (Prisma would read
+    // {abc} as abc), and an unclosed { is part of the value.
+    "sqlserver://h;user=sa;password={abc}",
+    "sqlserver://h;user=sa;password=a{b}c;database=app",
+    "sqlserver://h;user=sa;password=ab{cd",
+    "sqlserver://h;user=sa;password=ab{cd;database=app",
+    "sqlserver://h;user=sa;password=}{",
+    "sqlserver://h;user={MyServer/User};password={Pass:Word}",
+    "sqlserver://h;user=sa;password=x;database={app}",
+    "sqlserver://h;user=sa;password={a{b}}c",
   ])("reads %s exactly as before", (input) => {
     expect(resolveConnectionInput(input)).toEqual(legacyParsePrismaSqlServerUrl(input));
   });
@@ -247,10 +254,10 @@ describe("sqlserver:// backward compatibility with the parser before #189", () =
   // The only strings that connect differently: the old reading couldn't log in.
   it.each([
     [
-      "Prisma's {…} escape: the old parser kept the braces and cut the value at the first ;",
+      "Braces that wrap a ; (Prisma's escape): the old parser cut the value at the ; inside them",
       "sqlserver://h;user={MyServer/User};password={Pass:Word;};database=db",
       { user: "{MyServer/User}", password: "{Pass:Word" },
-      { user: "MyServer/User", password: "Pass:Word;" },
+      { user: "{MyServer/User}", password: "Pass:Word;" },
     ],
     [
       "Prisma's pwd alias: the old parser dropped it, so there was no password",
@@ -269,32 +276,5 @@ describe("sqlserver:// backward compatibility with the parser before #189", () =
     const now = resolveConnectionInput(input) as { user?: string; password?: string };
     expect({ user: old.user, password: old.password }).toEqual(before);
     expect({ user: now.user, password: now.password }).toEqual(after);
-  });
-});
-
-// Values holding a literal { or }: before #189 braces were plain characters; now
-// a { opens a Prisma escape (the maintainer is deciding which reading to keep).
-// Each row records the old reading, whether that reading could ever have been
-// the value the user meant, and the reading now, which is also Prisma's own
-// (prisma/connection-string src/jdbc.rs). `throws` means an unclosed {.
-describe("sqlserver:// values with braces: the old reading vs Prisma's", () => {
-  it.each<[input: string, field: "password" | "database", old: string, oldCouldWork: boolean, now: string]>([
-    ["sqlserver://h;user=sa;password={abc}", "password", "{abc}", true, "abc"],
-    ["sqlserver://h;user=sa;password=a{b}c;database=app", "password", "a{b}c", true, "abc"],
-    ["sqlserver://h;user=sa;password=ab{cd", "password", "ab{cd", true, "throws"],
-    ["sqlserver://h;user=sa;password=}{", "password", "}{", true, "throws"],
-    // Prisma's doc example. The old parser split at the ; inside the braces and
-    // dropped the `}` segment, so it sent `{Pass:Word`: neither the braced value
-    // (`Pass:Word;`) nor the literal text (`{Pass:Word;}`).
-    ["sqlserver://h;user=sa;password={Pass:Word;}", "password", "{Pass:Word", false, "Pass:Word;"],
-    ["sqlserver://h;user=sa;password={Pass:Word}", "password", "{Pass:Word}", true, "Pass:Word"],
-    ["sqlserver://h;user=sa;password=x;database={app}", "database", "{app}", true, "app"],
-  ])("%s (%s): before %s (could have worked: %s), now %s", (input, field, old, _oldCouldWork, now) => {
-    expect((legacyParsePrismaSqlServerUrl(input) as Record<string, unknown>)[field]).toBe(old);
-    if (now === "throws") {
-      expect(() => resolveConnectionInput(input)).toThrow("is never closed");
-    } else {
-      expect((resolveConnectionInput(input) as Record<string, unknown>)[field]).toBe(now);
-    }
   });
 });

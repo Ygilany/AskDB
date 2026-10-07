@@ -9,7 +9,7 @@ import { isPrismaSqlServerUrlAmbiguous, resolveConnectionInput } from "./exec/sq
  *
  * - `resolveConnectionInput()` turns `mssql://…` and Prisma's
  *   `sqlserver://host:port;key=value` form into `{ server, port, database }`
- *   (the latter backward compatible, plus Prisma's `{…}` escapes), and hands
+ *   (the latter backward compatible, plus Prisma's `{…}` escapes where they wrap a `;`), and hands
  *   ADO.NET strings to `mssql`;
  * - `mssql` parses ADO.NET strings with `@tediousjs/connection-string`
  *   (`parse(…).toSchema(MSSQL_SCHEMA)`), then splits `data source` into

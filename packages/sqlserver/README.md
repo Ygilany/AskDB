@@ -73,7 +73,7 @@ const result = await introspect(
 | Prisma `sqlserver://` | `sqlserver://localhost:1433;database=MyDb;user=sa;password=pass;encrypt=true` |
 | ADO.NET (`Key=Value;`) | `Server=localhost,1433;Database=MyDb;User Id=sa;Password=pass;` |
 
-In the Prisma form, wrap a value that contains `: \ = ; / [ ] { }` in curly braces, as Prisma does: `password={Pass:Word;}`. A string without `{` is read exactly as before, including an unbraced `=` and non-ASCII characters. A value with a literal `{` is now read as Prisma reads it: `password={abc}` is `abc`, and a `{` that is never closed is rejected with an error that says why. To keep a literal brace, write it inside a braced run: `{a{b}}c` is `a{b}c`.
+In the Prisma form, wrap a value that contains `;` in curly braces, as Prisma does: `password={Pass:Word;}` is `Pass:Word;`. AskDB reads braces as an escape only when they wrap a `;`, so strings that worked before keep connecting with the same values. Any other brace is a plain character, as before: `password={abc}` is `{abc}`, and a `{` that is never closed is part of the value. Prisma reads every `{…}` as an escape, so a URL shared with Prisma that braces a value without a `;` (such as `password={Pass:Word}`) sends that value to SQL Server with its braces when AskDB connects. To keep a literal brace in a value that also holds a `;`, put it inside the braces: `{{a;b}}` is `{a;b}`.
 
 **TLS / self-signed certificates**
 
