@@ -140,8 +140,18 @@ describe("lab ask --model live, spawned", () => {
     expect(run.stdout.split("\n")).toContain(modelLine);
     expect(run.stdout.trimEnd().split("\n").at(-1)).toBe("oracle:     pass");
     expect(spawned.requests().slice(before)).toEqual([expect.objectContaining({ question: text("agency-names"), model: MODEL_ID, authorized: true })]);
-    expect(run.stdout + run.stderr).not.toContain(STUB_KEY);
     expect(run.status).toBe(0);
+  });
+
+  // The in-process case covers the raw path; this is the client path's own failure report, in the CLI's own output.
+  it("reports the client path's failed model call with the key the provider echoed redacted, exit 1", (ctx) => {
+    needsCapability(ctx, "cli-introspect-engine");
+
+    const run = labAsk(["--model", "live", "--via", "client", text("client-named-sato")], spawned.env);
+
+    expect(run.stderr).toMatch(/^model call failed: SqlGenerationError: .*Incorrect API key provided: \[redacted\]/m);
+    expect(run.stdout + run.stderr).not.toContain(STUB_KEY);
+    expect(run.status).toBe(1);
   });
 });
 

@@ -45,6 +45,7 @@ const NO_REPLY = "Which agency has the most volunteers?";
 /** The parameterized question, which the grader checks for more than its rows. */
 const PROGRAMS_SINCE = findQuestion("programs-started-since")!.text;
 const UNPAID = findQuestion("unpaid-orders")!.text;
+const SATO = findQuestion("client-named-sato")!.text;
 const DIALECTS = SUPPORTED_DIALECTS.map((d) => [d] as [SupportedDialect]);
 
 interface CliRun {
@@ -129,6 +130,8 @@ beforeAll(async () => {
 /** A `lab ui` with the live model: the fake key, and the stand-in's replies. */
 const liveStub = stubOpenAiEnv({
   [AGENCY_NAMES]: (JSON.parse(readFileSync(join(LAB, "cassettes", "sqlite", "agency-names.json"), "utf8")) as { reply: string }).reply,
+  // A refusal that echoes the key, as OpenAI's does.
+  [SATO]: { status: 401 },
   // A write: AskDB rejects it.
   [UNPAID]: '```sql\nDELETE FROM "order" WHERE is_paid = 0\n```',
   // The right rows, but only the inline statement: no sql-unbound block, no manifest.
@@ -187,7 +190,8 @@ it.for(DIALECTS)("[%s] lab-ui-same-as-lab-ask: a catalog question through the cl
  * that key, through the path picked (both documented paths work end to end), never the replay
  * server; each column ends with the grader's verdict (`gradeCatalogAnswer`), and the summary's
  * oracle chip shows that same verdict, which checks more than the rows (the parameterized
- * question's form, a rejection, which has no rows). Nothing the page receives holds the key.
+ * question's form, a rejection, which has no rows). A failed model call reaches the page with
+ * the key the provider echoed redacted.
  * Catches: a live run that loses the live settings between the page, the server and the engine
  * process and silently replays; a path the live run drops; and a summary that calls an answer
  * a match while its column says the oracle missed it.
@@ -208,6 +212,16 @@ it.for([
   expect(printed.at(-1)).toBe("oracle:     pass");
   expect(run.summary?.oracle?.sqlite).toEqual({ verdict: "match" });
   expect(liveStub.requests().slice(before)).toEqual([expect.objectContaining({ question: AGENCY_NAMES, authorized: true })]);
+});
+
+it("[sqlite] lab-ui-live: a failed model call reaches the page with the key the provider echoed redacted", async (ctx) => {
+  needsCapability(ctx, "cli-introspect-engine");
+
+  const run = await liveRun({ question: SATO, model: "live", via: "client", engines: ["sqlite"] });
+  const event = column(run, "sqlite");
+
+  expect(event.status).toBe("refused");
+  expect(event.lines.filter((l) => l.stream === "stderr").map((l) => l.text)).toEqual([expect.stringMatching(/^model call failed: SqlGenerationError: .*Incorrect API key provided: \[redacted\]/)]);
   expect(JSON.stringify(run)).not.toContain(STUB_KEY);
 });
 
