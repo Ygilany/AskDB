@@ -24,8 +24,7 @@
   "author": "Yahya Gilany",
   "type": "module",
   "sideEffects": [
-    "./bin/askdb-rag.js",
-    "./dist/bin.js"
+    "./bin/askdb-rag.js"
   ],
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -80,12 +79,11 @@
     "test": "vitest run --config ../../vitest.config.ts"
   },
   "dependencies": {
-    "@askdb/config": "workspace:*",
     "@askdb/core": "workspace:*"
   },
   "peerDependencies": {
-    "@ai-sdk/openai": "^4.0.29",
-    "ai": "^7.0.51",
+    "@ai-sdk/openai": "^3.0.0 || ^4.0.29",
+    "ai": "^6.0.0 || ^7.0.51",
     "pg": ">=8"
   },
   "peerDependenciesMeta": {
@@ -105,6 +103,6 @@
     "ai": "^7.0.51",
     "pg": "^8.23.0",
     "typescript": "^6.0.3",
-    "vitest": "^5.0.1"
+    "vitest": "^5.0.3"
   }
 }

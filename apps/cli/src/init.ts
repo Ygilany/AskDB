@@ -170,7 +170,6 @@ function renderRagSection(answers: InitAnswers): string {
     case "file":
       return `  rag: {
     embedder: "mock",
-    embedderConfig: {},
     store: "file",
     storeConfig: {
       file: {},
@@ -179,7 +178,6 @@ function renderRagSection(answers: InitAnswers): string {
     case "memory":
       return `  rag: {
     embedder: "mock",
-    embedderConfig: {},
     store: "memory",
     storeConfig: {
       memory: {},
@@ -188,7 +186,6 @@ function renderRagSection(answers: InitAnswers): string {
     case "pgvector":
       return `  rag: {
     embedder: "mock",
-    embedderConfig: {},
     store: "pgvector",
     storeConfig: {
       pgvector: {

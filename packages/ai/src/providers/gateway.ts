@@ -38,8 +38,7 @@ function splitModelId(model: string): [upstream: string, upstreamModel: string] 
   if (slash <= 0 || slash === model.length - 1) {
     throw new Error(
       `Vercel AI Gateway model ids are "<provider>/<model>" (e.g. "openai/gpt-4o-mini"), got "${model}". ` +
-        "Set the model (or rag.embedderConfig.openai.model / ASKDB_RAG_EMBEDDER_MODEL for embeddings) " +
-        "to a prefixed id.",
+        "Set the model (ai.language.model, or ai.embedding.model for embeddings) to a prefixed id.",
     );
   }
   return [model.slice(0, slash), model.slice(slash + 1)];
@@ -79,8 +78,8 @@ export const gatewayProvider: AiProviderAdapter = {
     if (options.dimensions !== undefined) {
       throw new Error(
         `AskDB can't send embedding dimensions to "${upstream}" models through the Vercel AI Gateway ` +
-          '(it maps them for "openai/" and "google/" models). Unset the dimension override ' +
-          "(rag.embedderConfig.openai.dimension / ASKDB_RAG_EMBEDDER_DIMENSIONS) or use a supported upstream.",
+          '(it maps them for "openai/" and "google/" models). Unset ai.embedding.dimensions ' +
+          "or use a supported upstream.",
       );
     }
     return model;

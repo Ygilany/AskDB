@@ -169,8 +169,9 @@ jobs:
 
     services:
       # pgvector/pgvector is stock Postgres 16 plus the `vector` extension, so the same
-      # service backs both the plain Postgres suite (DATABASE_URL) and the @askdb/rag
-      # pgvector suite (ASKDB_PGVECTOR_URL; the test runs CREATE EXTENSION itself).
+      # service backs both the plain Postgres suite (DATABASE_URL) and the pgvector suites
+      # in @askdb/rag and Studio (ASKDB_PGVECTOR_URL). A step below creates the extension
+      # before the tests run.
       postgres:
         image: pgvector/pgvector:pg16
         env:
@@ -260,6 +261,16 @@ jobs:
           -S localhost -U sa -P 'AskDB.123'
           -Q "IF DB_ID('askdb_test') IS NULL CREATE DATABASE askdb_test"
           -C
+
+      # Both pgvector suites run CREATE EXTENSION IF NOT EXISTS, which Postgres doesn't
+      # serialize: when turbo runs the two packages' tests at once, one can fail on a duplicate
+      # pg_extension key. With the extension already there, both statements are no-ops.
+      - name: Create the pgvector extension
+        run: >-
+          docker exec
+          "$(docker ps -q --filter "ancestor=pgvector/pgvector:pg16")"
+          psql -U postgres -d askdb_test
+          -c "CREATE EXTENSION IF NOT EXISTS vector"
 
       - name: Start and seed the multi-engine fixture
         run: pnpm fixture:up
@@ -409,9 +420,16 @@ jobs:
       - name: Pack this commit's tarballs and install them in the lab
         run: pnpm lab:use .
 
-      # lab:up starts and seeds the fixture, then keeps the install above.
+      # lab:up starts and seeds the fixture, starts the lab's own Postgres (tenant-rls seeds it),
+      # then keeps the install above.
       - name: Run the consumer lab matrix
         run: pnpm lab:matrix
+
+      # The safety cases' effect proofs (#323), on a disposable second fixture (compose project
+      # askdb-lab-isolated, ports 25432/23306/23307/21433), never the shared one started above.
+      # The runner starts, seeds, tests and removes it, including after a failure. About a minute.
+      - name: Prove the safety cases' effects on an isolated fixture copy
+        run: pnpm lab:safety:isolated
 
       - name: Upload the matrix
         if: always()

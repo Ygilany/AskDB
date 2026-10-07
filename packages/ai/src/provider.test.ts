@@ -194,8 +194,34 @@ describe("resolveBaseConfig", () => {
         { usage: "embedding" },
       ),
     ).toThrowError(
-      "test: no embedding model configured. Set ASKDB_AI_MODEL (or the provider's native model variable).",
+      "test: no embedding model configured. Set ai.embedding.model in askdb.config.* (or ASKDB_AI_EMBEDDING_MODEL).",
     );
+  });
+});
+
+describe("the deprecated default embedding model", () => {
+  it("warns once per process when it picks the model, and never when a model is set", async () => {
+    // A fresh module graph, so an earlier test's use of the default doesn't hide the warning.
+    vi.resetModules();
+    const { createAiRegistry: createFreshRegistry } = await import("./registry.js");
+    const emitWarning = vi.spyOn(process, "emitWarning").mockImplementation(() => {});
+    try {
+      const ai = createFreshRegistry(["openai"]);
+      expect(
+        ai.resolveEmbeddingConfig({ OPENAI_API_KEY: "k", ASKDB_AI_EMBEDDING_MODEL: "text-embedding-3-large" })?.model,
+      ).toBe("text-embedding-3-large");
+      expect(emitWarning).not.toHaveBeenCalled();
+
+      expect(ai.resolveEmbeddingConfig({ OPENAI_API_KEY: "k" })?.model).toBe("text-embedding-3-small");
+      expect(ai.resolveEmbeddingConfig({ OPENAI_API_KEY: "k" })?.model).toBe("text-embedding-3-small");
+      expect(emitWarning).toHaveBeenCalledTimes(1);
+      expect(emitWarning).toHaveBeenCalledWith(expect.stringContaining("set ASKDB_AI_EMBEDDING_MODEL"), {
+        type: "DeprecationWarning",
+        code: "ASKDB_AI_DEFAULT_EMBEDDING_MODEL",
+      });
+    } finally {
+      emitWarning.mockRestore();
+    }
   });
 });
 

@@ -13,7 +13,7 @@ import type {
   SqlUnique,
   SqlView,
 } from "@askdb/introspect";
-import { AskDbError } from "@askdb/core";
+import { AskDbError, SINGLE_NAMESPACE_LABEL } from "@askdb/core";
 import { compileTableFilters } from "./glob.js";
 import { makeColumnId, makeTableId } from "./ids.js";
 
@@ -35,7 +35,7 @@ import { makeColumnId, makeTableId } from "./ids.js";
  * target in the artifact; it is skipped and reported as a `cross_database_fk`
  * warning.
  */
-const DEFAULT_NAMESPACE = "public";
+const DEFAULT_NAMESPACE = SINGLE_NAMESPACE_LABEL;
 
 export type DescribeMysqlInput = {
   runner: CatalogQueryRunner;

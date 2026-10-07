@@ -42,6 +42,12 @@ export function SettingsPage() {
             <div className="card-bd">
               {ragStatus ? (
                 <dl className="definition-list">
+                  <dt>Embedder</dt>
+                  <dd>
+                    {ragStatus.embedder.kind === "mock"
+                      ? "mock (local lexical)"
+                      : `${ragStatus.embedder.provider ?? "unknown provider"} · ${ragStatus.embedder.model ?? "no model"}`}
+                  </dd>
                   <dt>Store</dt>
                   <dd>{ragStatus.store.kind}</dd>
                   <dt>Lock file</dt>

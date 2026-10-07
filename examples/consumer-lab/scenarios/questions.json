@@ -5,15 +5,15 @@
   },
   {
     "id": "active-programs-per-agency",
-    "text": "How many active programs does each agency run?"
+    "text": "For each agency, show its id and how many active programs it runs."
   },
   {
     "id": "unpaid-orders",
-    "text": "Which orders are still unpaid, and what are their totals?"
+    "text": "Which orders are still unpaid? Show each order's id and total."
   },
   {
     "id": "top-paid-agencies",
-    "text": "Which three agencies have the highest paid order total?"
+    "text": "Which three agencies have the highest paid order total? Show each agency's id and that total, highest first."
   },
   {
     "id": "client-agency-names",
@@ -25,7 +25,7 @@
   },
   {
     "id": "payments-per-agency",
-    "text": "What is the total payment amount received by each agency?"
+    "text": "For each agency, show its id and the total payment amount it received."
   },
   {
     "id": "orders-q1-2024",
@@ -53,7 +53,7 @@
   },
   {
     "id": "distinct-enrolled-clients",
-    "text": "How many distinct clients has each agency enrolled in programs?"
+    "text": "For each agency, show its id and how many distinct clients it has enrolled in programs."
   },
   {
     "id": "programs-started-since",

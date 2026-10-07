@@ -9,6 +9,11 @@ export type NormalizedV2Column = {
   nullable: boolean;
   primaryKey: boolean;
   sensitive: boolean;
+  /**
+   * `true` when the column is sensitive only because its table is: neither
+   * `schema.json` nor table front-matter marks the column itself. Absent otherwise.
+   */
+  sensitiveFromTable?: true;
   /** Describable-layer fields. Absent when sensitive=true (excluded from prompts). */
   description?: string;
   aliases?: string[];

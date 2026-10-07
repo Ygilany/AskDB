@@ -2,7 +2,7 @@ import type { LanguageModel } from "ai";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it, vi } from "vitest";
-import { ask, type AskDialect } from "./ask.js";
+import { ask, type AskDialect, type AskDialectInput } from "./ask.js";
 import { placeholderForTenantRoot, validateTenantScope } from "./index.js";
 import {
   AskDbError,
@@ -16,7 +16,9 @@ import { AskDbLogEvent } from "./logging/log-events.js";
 import { formatSchemaForNlToSql } from "./schema/normalize.js";
 import type { NormalizedSchema } from "./schema/types.js";
 import { formatSchemaV2ForNlToSql } from "./schema/v2/index.js";
-import { loadSchema } from "./schema/v2/loader.js";
+import { loadSchema, loadSchemaFromJson } from "./schema/v2/loader.js";
+import type { NormalizedSchemaV2 } from "./schema/v2/normalized.js";
+import { POSTGRES_DIALECT, SQLITE_DIALECT, type DialectSpec } from "./sql/dialect-spec.js";
 import type { TenantScope } from "./schema/v2/tenant-policy.js";
 
 const minimalSchema: NormalizedSchema = {
@@ -50,7 +52,7 @@ const promptForwardingDialect: AskDialect = {
 
     await options?.generateText?.({
       model: fakeModel,
-      instructions: "test",
+      system: "test",
       prompt,
       temperature: 0,
     } as never);
@@ -116,6 +118,76 @@ describe("ask — providerOptions passthrough", () => {
     });
 
     expect((seen as { providerOptions?: unknown })?.providerOptions).toBe(providerOptions);
+  });
+});
+
+describe("ask — abortSignal", () => {
+  it("aborting the caller's controller aborts the model call and rejects with SqlGenerationError", async () => {
+    // Without a signal the model answers at once, so ask() only rejects if the
+    // caller's signal reached doGenerate and aborting it cancelled the call.
+    const doGenerate = vi.fn(async (opts: { abortSignal?: AbortSignal }) => {
+      const signal = opts.abortSignal;
+      if (signal) {
+        await new Promise<never>((_resolve, reject) => {
+          if (signal.aborted) reject(signal.reason);
+          signal.addEventListener("abort", () => reject(signal.reason), { once: true });
+        });
+      }
+      return {
+        content: [{ type: "text", text: "```sql\nSELECT 1\n```" }],
+        finishReason: { unified: "stop", raw: "stop" },
+        usage: {
+          inputTokens: { total: 1, noCache: 1, cacheRead: 0, cacheWrite: 0 },
+          outputTokens: { total: 1, text: 1, reasoning: 0 },
+        },
+        warnings: [],
+      };
+    });
+    const model = {
+      specificationVersion: "v3",
+      provider: "test",
+      modelId: "test",
+      supportedUrls: {},
+      doGenerate,
+      doStream: vi.fn(),
+    } as unknown as LanguageModel;
+    const controller = new AbortController();
+
+    const pending = ask({
+      question: "count users",
+      schema: minimalSchema,
+      model,
+      dialect: "postgres",
+      parameterize: false,
+      abortSignal: controller.signal,
+    });
+    await vi.waitFor(() => expect(doGenerate).toHaveBeenCalledTimes(1));
+    const reason = new Error("caller aborted");
+    controller.abort(reason);
+
+    await expect(pending).rejects.toMatchObject({ name: "SqlGenerationError", cause: reason });
+    expect(doGenerate.mock.calls[0]![0].abortSignal?.aborted).toBe(true);
+  });
+
+  it("passes abortSignal to a custom dialect's generate() options", async () => {
+    let seen: { abortSignal?: AbortSignal } | undefined;
+    const capturingDialect: AskDialect = {
+      async generate(_question, _schema, _model, options) {
+        seen = options;
+        return { sql: "SELECT COUNT(*) AS n FROM users" };
+      },
+    };
+    const controller = new AbortController();
+
+    await ask({
+      question: "count users",
+      schema: minimalSchema,
+      model: fakeModel,
+      dialect: capturingDialect,
+      abortSignal: controller.signal,
+    });
+
+    expect(seen?.abortSignal).toBe(controller.signal);
   });
 });
 
@@ -289,6 +361,275 @@ describe("ask — retriever wiring", () => {
     );
   });
 });
+
+describe("ask — table names in the prompt per dialect (#447)", () => {
+  function schemaOf(...tables: Array<[namespace: string, table: string]>) {
+    return loadSchemaFromJson(
+      JSON.stringify({
+        version: 2,
+        schemaId: "namespaces",
+        tables: tables.map(([ns, name]) => ({
+          id: `table:${ns}.${name}`,
+          name,
+          schema: ns,
+          columns: [{ id: `table:${ns}.${name}#id`, name: "id", type: "integer", nullable: false, primaryKey: true }],
+        })),
+      }),
+    );
+  }
+  // `public` as the only namespace: what SQLite and single-database MySQL/MariaDB connectors emit.
+  const singleNamespace = schemaOf(["public", "orders"], ["public", "users"]);
+  // A MySQL database list that includes a database actually named `public`.
+  const databaseList = schemaOf(["public", "users"], ["sales", "orders"]);
+  const oldRule = "- Use identifiers from the schema below; qualify table names where it helps readability.";
+
+  function retrieverFor(...tableIds: string[]) {
+    return vi.fn(async () =>
+      tableIds.map((ref) => ({
+        id: `chunk:${ref}`,
+        score: 1,
+        payload: { id: `chunk:${ref}`, type: "table" as const, text: `# ${ref}`, schemaId: "namespaces", refs: [ref], sensitive: false },
+      })),
+    );
+  }
+
+  async function promptFor(
+    dialect: AskDialectInput,
+    schema: NormalizedSchemaV2,
+    extra: Partial<Parameters<typeof ask>[0]> = {},
+  ): Promise<string> {
+    const generateText = vi.fn(async () => ({ text: "```sql\nSELECT COUNT(*) FROM users\n```" }));
+    await ask({
+      question: "How many users?",
+      schema,
+      model: fakeModel,
+      dialect,
+      parameterize: false,
+      deps: { generateText: generateText as never },
+      ...extra,
+    });
+    return (generateText.mock.calls[0]![0] as { prompt: string }).prompt;
+  }
+
+  it.each(["sqlite", "mysql", "mariadb"] as const)(
+    "%s lists tables of its only namespace `public` unqualified and tells the model `public` is not a schema",
+    async (dialect) => {
+      const prompt = await promptFor(dialect, singleNamespace);
+      expect(prompt).toMatch(/^TABLE users$/m);
+      expect(prompt).toMatch(/^TABLE orders$/m);
+      expect(prompt).not.toContain("TABLE public.");
+      expect(prompt).not.toContain(oldRule);
+      expect(prompt).toContain("never write `public.<table>`");
+    },
+  );
+
+  it.each([
+    ["postgres", /^TABLE public\.users$/m],
+    ["cockroachdb", /^TABLE public\.users$/m],
+    // `public` is a reserved word in T-SQL (#451).
+    ["sqlserver", /^TABLE \[public\]\.users$/m],
+  ] as const)(
+    "%s keeps every table qualified with its schema",
+    async (dialect, listed) => {
+      const prompt = await promptFor(dialect, singleNamespace);
+      expect(prompt).toMatch(listed);
+      expect(prompt).toContain(oldRule);
+      expect(prompt).not.toContain("never write");
+    },
+  );
+
+  it.each([
+    ["full schema", {}],
+    ["retrieved schema", { retriever: retrieverFor("table:public.users", "table:sales.orders"), totalSchemaChunkCount: 100 }],
+  ] as const)("mysql keeps a real database named `public` qualified when it isn't the only namespace (%s)", async (_path, extra) => {
+    const prompt = await promptFor("mysql", databaseList, extra);
+    expect(prompt).toMatch(/^TABLE public\.users$/m);
+    expect(prompt).toMatch(/^TABLE sales\.orders$/m);
+    expect(prompt).toContain(oldRule);
+    expect(prompt).not.toContain("never write");
+  });
+
+  it("sqlite lists retrieved tables unqualified too", async () => {
+    const retriever = retrieverFor("table:public.users");
+    const prompt = await promptFor("sqlite", singleNamespace, { retriever, totalSchemaChunkCount: 100 });
+    expect(retriever).toHaveBeenCalledOnce();
+    expect(prompt).toMatch(/^TABLE users$/m);
+    expect(prompt).not.toContain("TABLE public.");
+    expect(prompt).toContain("never write `public.<table>`");
+  });
+
+  it("reads the namespace from a custom DialectSpec", async () => {
+    const spec: DialectSpec = { ...SQLITE_DIALECT, unqualifiedNamespace: "main" };
+    for (const extra of [{}, { retriever: retrieverFor("table:main.users"), totalSchemaChunkCount: 100 }]) {
+      const prompt = await promptFor(spec, schemaOf(["main", "users"]), extra);
+      expect(prompt).toMatch(/^TABLE users$/m);
+      expect(prompt).toContain("never write `main.<table>`");
+      expect(prompt).not.toContain("`public`");
+    }
+  });
+});
+
+describe("ask — identifier quoting in the prompt per dialect (#451)", () => {
+  // `order` and `group` are reserved on every built-in engine; `payment` and `order_id` on none.
+  function schemaOf(namespace: string) {
+    return loadSchemaFromJson(
+      JSON.stringify({
+        version: 2,
+        schemaId: "quoting",
+        tables: ["order", "payment"].map((name) => ({
+          id: `table:${namespace}.${name}`,
+          name,
+          schema: namespace,
+          columns: [
+            { id: `table:${namespace}.${name}#${name}_id`, name: `${name}_id`, type: "integer", nullable: false, primaryKey: true },
+            { id: `table:${namespace}.${name}#group`, name: "group", type: "text", nullable: true, primaryKey: false },
+          ],
+        })),
+      }),
+    );
+  }
+  const retrieved = {
+    retriever: vi.fn(async () =>
+      ["order", "payment"].map((name) => ({
+        id: `chunk:${name}`,
+        score: 1,
+        payload: { id: `chunk:${name}`, type: "table" as const, text: `# ${name}`, schemaId: "quoting", refs: [`table:billing.${name}`], sensitive: false },
+      })),
+    ),
+    totalSchemaChunkCount: 100,
+  };
+
+  async function promptFor(
+    dialect: AskDialectInput,
+    schema: NormalizedSchemaV2,
+    extra: Partial<Parameters<typeof ask>[0]> = {},
+  ): Promise<string> {
+    const generateText = vi.fn(async () => ({ text: "```sql\nSELECT 1\n```" }));
+    await ask({
+      question: "How many orders?",
+      schema,
+      model: fakeModel,
+      dialect,
+      parameterize: false,
+      deps: { generateText: generateText as never },
+      ...extra,
+    });
+    return (generateText.mock.calls[0]![0] as { prompt: string }).prompt;
+  }
+
+  describe.each([
+    ["full schema", {}],
+    ["retrieved schema", retrieved],
+  ] as const)("%s", (_path, extra) => {
+    it.each([
+      ["postgres", 'TABLE billing."order"', '  - "group" text', '`"schema"."table"`'],
+      ["cockroachdb", 'TABLE billing."order"', '  - "group" text', '`"schema"."table"`'],
+      ["mysql", "TABLE billing.`order`", "  - `group` text", "`` `schema`.`table` ``"],
+      ["mariadb", "TABLE billing.`order`", "  - `group` text", "`` `schema`.`table` ``"],
+      ["sqlserver", "TABLE billing.[order]", "  - [group] text", "`[schema].[table]`"],
+    ] as const)("%s lists reserved words quoted and says to quote a qualified name part by part", async (dialect, table, column, rule) => {
+      const prompt = await promptFor(dialect, schemaOf("billing"), extra);
+      expect(prompt).toMatch(new RegExp(`^${escapeRegExp(table)}$`, "m"));
+      expect(prompt).toContain(`${column} (NULL)`);
+      expect(prompt).toMatch(/^TABLE billing\.payment$/m);
+      expect(prompt).toMatch(/^ {2}- order_id integer \(PK NOT NULL\)$/m);
+      expect(prompt).toContain(`- When you quote a qualified name, quote each part separately: ${rule}.`);
+    });
+  });
+
+  it("sqlite lists a reserved table name quoted and leaves out the qualified-name rule", async () => {
+    const prompt = await promptFor("sqlite", schemaOf("public"));
+    expect(prompt).toMatch(/^TABLE "order"$/m);
+    expect(prompt).toMatch(/^TABLE payment$/m);
+    expect(prompt).toContain('  - "group" text (NULL)');
+    expect(prompt).not.toContain("quote each part separately");
+  });
+
+  it("leaves the qualified-name rule out of a v1 schema's prompt, which lists no schemas", async () => {
+    const prompt = await promptFor("postgres", minimalSchema as never);
+    expect(prompt).not.toContain("quote each part separately");
+  });
+
+  it("postgres lists a mixed-case table and column quoted, as Prisma creates them; mysql leaves them bare", async () => {
+    const prisma = loadSchemaFromJson(
+      JSON.stringify({
+        version: 2,
+        schemaId: "prisma",
+        tables: [
+          {
+            id: "table:public.Post",
+            name: "Post",
+            schema: "public",
+            columns: [{ id: "table:public.Post#createdAt", name: "createdAt", type: "timestamp", nullable: false, primaryKey: false }],
+          },
+        ],
+      }),
+    );
+    const postgres = await promptFor("postgres", prisma);
+    expect(postgres).toMatch(/^TABLE public\."Post"$/m);
+    expect(postgres).toContain('  - "createdAt" timestamp (NOT NULL)');
+    const mysql = await promptFor("mysql", prisma);
+    expect(mysql).toMatch(/^TABLE Post$/m);
+    expect(mysql).toContain("  - createdAt timestamp (NOT NULL)");
+  });
+
+  it("lists columns quoted with omitSensitiveIdentifiersFromNlToSqlPrompt too", async () => {
+    const prompt = await promptFor("postgres", schemaOf("billing"), { omitSensitiveIdentifiersFromNlToSqlPrompt: true });
+    expect(prompt).toMatch(/^TABLE billing\."order"$/m);
+    expect(prompt).toContain('  - "group" text (NULL)');
+  });
+
+  it.each([
+    ["postgres", 'SELECT "copy" FROM public."call"'],
+    ["cockroachdb", 'SELECT "copy" FROM public."call"'],
+    ["mysql", "SELECT `copy` FROM `call`"],
+    ["mariadb", "SELECT `copy` FROM `call`"],
+    ["sqlserver", "SELECT [copy] FROM [public].[call]"],
+    ["sqlite", 'SELECT "copy" FROM "call"'],
+  ] as const)(
+    "%s: SQL that copies a listed name AskDB's validator rejects bare (`copy`, `call`) passes validation",
+    async (dialect, expected) => {
+      const schema = loadSchemaFromJson(
+        JSON.stringify({
+          version: 2,
+          schemaId: "validator-words",
+          tables: [
+            {
+              id: "table:public.call",
+              name: "call",
+              schema: "public",
+              columns: [{ id: "table:public.call#copy", name: "copy", type: "text", nullable: true, primaryKey: false }],
+            },
+          ],
+        }),
+      );
+      const generateText = vi.fn(async ({ prompt }: { prompt: string }) => {
+        const table = /^TABLE (\S+)$/m.exec(prompt)![1];
+        const column = /^ {2}- (\S+) text/m.exec(prompt)![1];
+        return { text: "```sql\nSELECT " + column + " FROM " + table + "\n```" };
+      });
+      const result = await ask({
+        question: "What is the copy of each call?",
+        schema,
+        model: fakeModel,
+        dialect,
+        parameterize: false,
+        deps: { generateText: generateText as never },
+      });
+      expect(result.sql).toBe(expected);
+    },
+  );
+
+  it("quotes for a custom DialectSpec by its id", async () => {
+    const spec: DialectSpec = { ...POSTGRES_DIALECT, displayName: "Amazon Redshift" };
+    const prompt = await promptFor(spec, schemaOf("billing"));
+    expect(prompt).toMatch(/^TABLE billing\."order"$/m);
+  });
+});
+
+function escapeRegExp(text: string): string {
+  return text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
 
 describe("ask — parameterize", () => {
   const threeBlock = [

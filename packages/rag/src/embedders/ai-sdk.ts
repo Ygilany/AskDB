@@ -30,6 +30,25 @@ export type AiSdkEmbedderUsage = {
   totalTokens?: number;
 };
 
+export type AiSdkEmbedderIdOptions = {
+  /** The AI provider adapter's canonical name, such as `openai` or `azure` (`foundry` resolves to `azure`). */
+  provider: string;
+  /** The embedding model, or the deployment name on Azure. */
+  model: string;
+  /** The width requested from the model; omit it when the model's own width applies. */
+  dimensions?: number;
+};
+
+/**
+ * The `embedderId` an index records when it's embedded through an AI SDK embedding model built
+ * from an AskDB `ai.embedding` section: `ai-sdk:<provider>:<model>:<dimensions>`, ending in
+ * `default` when no width was requested. Studio and `askdb rag` both build their ids with it, so
+ * either accepts an index the other built.
+ */
+export function aiSdkEmbedderId(options: AiSdkEmbedderIdOptions): string {
+  return `ai-sdk:${options.provider}:${options.model}:${options.dimensions ?? "default"}`;
+}
+
 /**
  * Generic AI SDK embedder adapter.
  *

@@ -8,6 +8,8 @@ import {
   COCKROACHDB_DIALECT,
   MYSQL_DIALECT,
   POSTGRES_DIALECT,
+  SQLITE_DIALECT,
+  SQLSERVER_DIALECT,
   type DialectSpec,
 } from "./dialect-spec.js";
 import { validateTenantGuardrails } from "./tenant-guardrail.js";
@@ -251,6 +253,42 @@ describe("validateTenantGuardrails — matches only in code regions", () => {
     expect(
       rules("SELECT id FROM lookup_states WHERE d = date'2020\\' UNION SELECT id FROM orders --'", POSTGRES_DIALECT),
     ).toEqual(["MISSING_TENANT_PREDICATE"]);
+  });
+});
+
+describe("validateTenantGuardrails — a reserved-word table quoted the way the prompt lists it (#451)", () => {
+  // `order` is reserved on every engine, so the prompt lists it quoted.
+  const orderPolicy: NormalizedTenantPolicy = {
+    ...policy,
+    enforcement: "warn",
+    scopedTables: [
+      {
+        id: "table:billing.order",
+        scopeThrough: [{ root: "table:public.agencies", column: "table:billing.order#agency_id" }],
+      },
+    ],
+    polymorphicTables: [],
+    globalTables: [],
+    coverage: [],
+  };
+  const rules = (sql: string, dialect: DialectSpec) =>
+    validateTenantGuardrails(sql, orderPolicy, agencyScope, { dialect }).warnings.map((w) => w.rule);
+
+  it.each([
+    ["postgres", POSTGRES_DIALECT, 'billing."order"'],
+    ["mysql", MYSQL_DIALECT, "`billing`.`order`"],
+    ["sqlserver", SQLSERVER_DIALECT, "[billing].[order]"],
+    ["sqlite", SQLITE_DIALECT, '"order"'],
+  ])("%s: checks %s for its tenant predicate", (_d, dialect, table) => {
+    const scoped = `SELECT o.order_id FROM ${table} o WHERE o.agency_id = :tenant_agency_ids ORDER BY o.order_id`;
+    expect(rules(scoped, dialect)).toEqual([]);
+    expect(rules(`SELECT o.order_id FROM ${table} o ORDER BY o.order_id`, dialect)).toEqual([
+      "MISSING_TENANT_PREDICATE",
+    ]);
+  });
+
+  it("still checks a qualified name quoted whole", () => {
+    expect(rules("SELECT * FROM [billing.order]", SQLSERVER_DIALECT)).toEqual(["MISSING_TENANT_PREDICATE"]);
   });
 });
 

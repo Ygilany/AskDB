@@ -5,7 +5,8 @@ AskDB connector provider registry for app/bootstrap wiring. Maps config-driven i
 ## Install
 
 ```bash
-pnpm add @askdb/connectors
+# `ai` (Vercel AI SDK 6 or 7) is a required peer of @askdb/core, which these packages load
+pnpm add @askdb/connectors ai
 # Plus the connector provider packages your runtime uses:
 pnpm add @askdb/postgres @askdb/mysql @askdb/sqlite @askdb/sqlserver @askdb/prisma
 ```

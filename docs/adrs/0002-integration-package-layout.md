@@ -1,6 +1,6 @@
 # ADR 0002 — Integration-package layout
 
-Status: Accepted (2026-05-10).
+Status: Accepted (2026-05-10). Amended 2026-10 (dialect specs live in `@askdb/core`; see Amendments).
 Supersedes (in part): Phase 4 decision to ship `createPostgresExecutor` from a `@askdb/core/postgres` subpath (`docs/specs/distribution.md`, "Postgres helper packaging").
 
 ## Context
@@ -57,3 +57,7 @@ Concretely:
 - Distribution spec: `docs/specs/distribution.md` (Postgres helper packaging — partially superseded).
 - Introspection spec: `docs/specs/introspection.md` (per-engine connector pattern — generalized).
 - Roadmap: "Phase 7.5 — Architecture reshape for integration packages."
+
+## Amendments
+
+**2026-10 — Dialect specs live in `@askdb/core`:** The first Decision bullet ("does not know what SQL dialect is being generated") and the rationale "Dialect is integration-package knowledge" no longer describe the code. The six built-in `DialectSpec`s live in `@askdb/core` (`packages/core/src/sql/dialect-spec.ts`) with their prompt briefs, forbidden keywords, blocked functions and, from #451, the reserved words the prompt quotes (`reservedWords`). Core also selects lexing and identifier quoting by `DialectSpec.id`. The engine packages re-export the specs and own their connectors, input shapes and catalog query runners. Core still imports no driver and executes no SQL. Two constraints hold the specs in core: `ask({ dialect: "postgres" })` works with only `@askdb/core` installed (documented in the core API reference), and every engine package depends on `@askdb/core`, so core can't take the specs from them without a dependency cycle. ADR 0007 lists moving `DialectSpec` out of core as out of scope. Whether this layering should change is evaluated in #464.

@@ -34,6 +34,11 @@ describe("[mariadb]", () => {
   it("probe-na-two: gated on b", (ctx) => { ctx.skip("capability: cap-b"); });
 });
 describe("[sqlserver]", () => { it("probe-red: fails", () => { expect(41, "rows for agency 2").toBe(42); }); });
+// A live-model miss cell (#247): listed per reason, so a cell must not vanish from the list.
+describe("[postgres]", () => {
+  it("probe-miss: raw", (ctx) => { ctx.annotate("raw: wrong rows (got 3, expected 7)", "miss"); });
+  it("probe-miss: client", (ctx) => { ctx.annotate("client: wrong columns", "miss"); });
+});
 `;
 
 /** Run the script on `file`; parse its groups into `{ "<group>: n cell(s)": [lines…] }`. */
@@ -59,8 +64,10 @@ describe("matrix-cells", () => {
       "known (#2): 1 cell(s)": ["probe-known-two [mysql]"],
       "n/a (capability: cap-a): 2 cell(s)": ["probe-na [sqlite]", "probe-na-two [mariadb]"],
       "n/a (capability: cap-b): 1 cell(s)": ["probe-na-two [mariadb]"],
+      "miss (client: wrong columns): 1 cell(s)": ["probe-miss [postgres]"],
+      "miss (raw: wrong rows (got 3, expected 7)): 1 cell(s)": ["probe-miss [postgres]"],
     });
-    expect(total).toBe("5 cell(s) listed.");
+    expect(total).toBe("6 cell(s) listed.");
   });
 
   it("keeps only the statuses --status names", () => {
