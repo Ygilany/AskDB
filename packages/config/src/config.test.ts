@@ -625,6 +625,15 @@ describe("optional rag block (#226)", () => {
   });
 
   it.each([
+    ["file", 'askdb.config: rag.store is "file" but `rag.storeConfig.file` is missing.'],
+    ["pgvector", 'askdb.config: rag.store is "pgvector" but `rag.storeConfig.pgvector` is missing.'],
+  ] as const)("names the missing branch when a %s block is written without storeConfig", (store, message) => {
+    expect(() => flattenAskDbConfig(minimalConfig({ rag: { embedder: "mock", store } as AskDbConfig["rag"] }))).toThrow(
+      message,
+    );
+  });
+
+  it.each([
     ["a file store with a base path", { store: "file", storeConfig: { file: { basePath: "./data/rag" } } }],
     ["a file store without one", { store: "file", storeConfig: { file: {} } }],
     ["a pgvector store without an index strategy", { store: "pgvector", storeConfig: { pgvector: { databaseUrl: "postgres://pg/db" } } }],

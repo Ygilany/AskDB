@@ -314,8 +314,7 @@ export function getAskDbRuntimeConfig(): AskDbRuntimeConfig {
             model: undefined,
           },
       store: normalized.rag.store,
-      // Typed as required, but config load accepts a memory store without it.
-      storeConfig: normalized.rag.storeConfig ?? {},
+      storeConfig: normalized.rag.storeConfig,
     },
     logging: {
       level: structured.logging?.level ?? pickFlat(flat, "ASKDB_LOG_LEVEL"),

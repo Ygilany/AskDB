@@ -403,7 +403,9 @@ export function normalizeAskDbConfig(config: AskDbConfig): {
   // An omitted `rag` block means "not using retrieval": the mock embedder and the in-memory store,
   // which write no store keys. This is the only place that default lives (#226): the flat map,
   // defineConfig and the runtime view (`rt.rag.store`) all read the normalized block.
-  const rag: NonNullable<AskDbConfig["rag"]> = config.rag ?? { embedder: "mock", store: "memory", storeConfig: {} };
+  const authored: NonNullable<AskDbConfig["rag"]> = config.rag ?? { embedder: "mock", store: "memory", storeConfig: {} };
+  // `storeConfig` is typed as required, but a JS config can leave it out (the memory store needs none).
+  const rag = { ...authored, storeConfig: authored.storeConfig ?? {} };
   // The default can't be seen in the file, so refuse a config whose embedding model it would leave unused.
   if (
     (config.rag === undefined || config.rag === null) &&
