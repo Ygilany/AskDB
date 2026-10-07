@@ -64,7 +64,7 @@ export type AskDbRuntimeRagConfig = {
   embedder: AskDbRuntimeRagEmbedderConfig;
   /** `rag.store`, or `"memory"` when the config has no `rag` block. Read this rather than `structured.rag`, which is `undefined` when the block is omitted. */
   store: AskDbRagStore;
-  /** `rag.storeConfig` as written, with no defaults filled in; `{}` when the config has no `rag` block. */
+  /** `rag.storeConfig` as written, with no defaults filled in; `{}` when the config has no `rag` block or the block has no `storeConfig`. */
   storeConfig: NonNullable<AskDbConfig["rag"]>["storeConfig"];
 };
 
@@ -314,7 +314,8 @@ export function getAskDbRuntimeConfig(): AskDbRuntimeConfig {
             model: undefined,
           },
       store: normalized.rag.store,
-      storeConfig: normalized.rag.storeConfig,
+      // Typed as required, but config load accepts a memory store without it.
+      storeConfig: normalized.rag.storeConfig ?? {},
     },
     logging: {
       level: structured.logging?.level ?? pickFlat(flat, "ASKDB_LOG_LEVEL"),

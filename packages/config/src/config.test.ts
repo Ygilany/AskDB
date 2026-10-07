@@ -609,6 +609,13 @@ describe("optional rag block (#226)", () => {
     expect(rt.rag.storeConfig).toEqual({});
   });
 
+  it("gives the runtime view an empty storeConfig for a memory block written without one", () => {
+    // AskDbConfig types storeConfig as required, but config load accepts a memory store without it.
+    const rt = runtimeFor(minimalConfig({ rag: { embedder: "mock", store: "memory" } as AskDbConfig["rag"] }));
+    expect(rt.rag.store).toBe("memory");
+    expect(rt.rag.storeConfig).toEqual({});
+  });
+
   it.each([
     ["a file store with a base path", { store: "file", storeConfig: { file: { basePath: "./data/rag" } } }],
     ["a file store without one", { store: "file", storeConfig: { file: {} } }],

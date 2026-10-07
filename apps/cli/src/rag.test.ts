@@ -268,6 +268,7 @@ describe("askdb rag", () => {
   it.each<[string, string[], AskDbConfig]>([
     ["--store memory", ["--store", "memory"], BASE_CONFIG],
     ["rag.store: \"memory\"", [], { ...BASE_CONFIG, rag: { embedder: "mock", store: "memory", storeConfig: { memory: {} } } }],
+    ["no rag block (#226)", [], { ai: BASE_CONFIG.ai, introspection: BASE_CONFIG.introspection }],
   ])("query with %s explains the store is per-process", async (_case, flags, config) => {
     installRuntime(config);
     const schemaDir = copyFixture();
