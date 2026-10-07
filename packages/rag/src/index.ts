@@ -67,7 +67,9 @@ export {
 
 // Embedders
 export {
+  aiSdkEmbedderId,
   createAiSdkEmbedder,
+  type AiSdkEmbedderIdOptions,
   type AiSdkProviderOptions,
   type CreateAiSdkEmbedderOptions,
   type AiSdkEmbedderUsage,

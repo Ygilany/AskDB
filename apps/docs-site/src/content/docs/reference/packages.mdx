@@ -237,9 +237,10 @@ Chunks the schema artifact, indexes it in a vector store, and retrieves relevant
 | `createRetriever({ store, embedder })` | Build the retriever passed to `ask()`. |
 | `createPgvectorStore` | The pgvector store factory. |
 | `detectEmbeddingDimensions(embedder)` | Learn an embedder's vector width with one short embedding call, for a new pgvector table. |
+| `aiSdkEmbedderId({ provider, model, dimensions })` | The `embedderId` Studio and `askdb rag` record for an `ai.embedding` model, so a host can share their indexes. |
 | `loadChunkerSourcesFromDir(path)` | Load a schema directory into chunker format (includes markdown). |
 
-Ships a small CLI binary `askdb-rag` with three commands — `index`, `query`, and `setup-store` (pgvector provisioning). See [CLI reference — the askdb-rag binary](/reference/cli/#the-askdb-rag-binary) and [RAG for large schemas](/guides/rag-for-large-schemas/).
+The command line for it is the `askdb` package's [`askdb rag`](/reference/cli/#askdb-rag), with three commands — `index`, `query`, and `setup-store` (pgvector provisioning). The `askdb-rag` binary `@askdb/rag` used to run them only points there until 1.0. See [RAG for large schemas](/guides/rag-for-large-schemas/).
 
 See the **[@askdb/rag API reference](/reference/rag-api/)** for the full option and type documentation.
 

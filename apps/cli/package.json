@@ -58,6 +58,7 @@
     "@askdb/mysql": "workspace:*",
     "@askdb/postgres": "workspace:*",
     "@askdb/prisma": "workspace:*",
+    "@askdb/rag": "workspace:*",
     "@askdb/sqlite": "workspace:*",
     "@askdb/sqlserver": "workspace:*",
     "@askdb/studio": "workspace:*",

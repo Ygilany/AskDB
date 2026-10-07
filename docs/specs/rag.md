@@ -25,7 +25,7 @@ The retriever is wired into `ask()` via an optional `retriever` parameter. When 
   - pgvector — production target; persists a `content_hash` column; `pg` is an optional peer dependency
 - **Indexer** — `buildSchemaIndex({ schema, embedder, store }) → { retriever, stats, chunks }`; a chunk is skipped only when the store reports the same content hash for its id; orphan pruning is scoped to the schema; `force: true` re-embeds everything; structured progress events
 - **`ask({ retriever })`** — when supplied, retriever replaces the full DDL block with top-k focused chunks; when omitted, current behavior preserved
-- **`askdb-rag` CLI** — `index` and `query` subcommands for non-library consumers
+- **`askdb rag` CLI** (in the `askdb` package) — `index`, `query`, and `setup-store` subcommands for non-library consumers
 
 ### Out of scope
 

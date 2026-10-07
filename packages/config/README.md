@@ -75,7 +75,7 @@ const embeddingModel = config.ai.embedding
 
 **Rules:**
 
-- Library packages (`@askdb/rag`, `@askdb/enrich`, …) must call `getAskDbRuntimeConfig()` and use the returned typed fields. They must **not** call `env()`, `requiredEnv()`, or access `process.env` directly.
+- Library packages that read AskDB settings must call `getAskDbRuntimeConfig()`, or take the runtime snapshot from their host as `@askdb/client` does, and use the returned typed fields. They must **not** call `env()`, `requiredEnv()`, or access `process.env` directly.
 - `env(name)` is only for use inside `askdb.config.*` files authored by end users — it maps friendly `.env` names onto values that become part of the structured config and flat map.
 - First-party app entry points call `bootstrapAskDbEnv()` at start-up. That loads dotenv, evaluates `askdb.config.*`, and installs an **in-memory runtime snapshot** (structured config + flat map + derived `aiEnv`). It does **not** copy AskDB settings into `process.env`.
 

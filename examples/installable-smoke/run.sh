@@ -4,7 +4,7 @@
 # Builds and packs every publishable package (scripts/pack-tarballs.sh, shared with the consumer
 # lab), validates every tarball (LICENSE/NOTICE/README.md and all package.json entry paths, via
 # check-tarballs.mjs), copies the consumer fixture into a fresh tmpdir, installs
-# library tarballs (no workspace; includes @askdb/config for @askdb/rag's dependency), runs `tsc --noEmit`,
+# library tarballs (no workspace; includes @askdb/config, a peer of @askdb/client), runs `tsc --noEmit`,
 # and executes the smoke script. The app sandbox gets a minimal askdb.config.ts because the CLI
 # bootstraps runtime config on startup.
 set -euo pipefail
@@ -133,7 +133,6 @@ node -e "
   const fs = require('fs');
   const p = '$WORK/consumer-ai6/package.json';
   const j = JSON.parse(fs.readFileSync(p, 'utf8'));
-  j.dependencies['@askdb/config'] = 'file:$CONFIG_TARBALL';
   j.dependencies['@askdb/core'] = 'file:$CORE_TARBALL';
   j.dependencies['@askdb/rag'] = 'file:$RAG_TARBALL';
   fs.writeFileSync(p, JSON.stringify(j, null, 2) + '\n');
@@ -141,6 +140,13 @@ node -e "
 
 echo "smoke: npm install AI SDK 6 consumer…"
 (cd "$WORK/consumer-ai6" && npm install --silent --no-audit --no-fund --no-package-lock)
+
+# This consumer imports only @askdb/core and @askdb/rag, so @askdb/config must not be installed. A
+# clean install alone proves nothing: npm would fetch a published @askdb/config from the registry.
+if [ -e "$WORK/consumer-ai6/node_modules/@askdb/config" ]; then
+  echo "smoke: FAILED — @askdb/rag pulled @askdb/config into a library consumer." >&2
+  exit 1
+fi
 
 echo "smoke: tsc --noEmit (AI SDK 6 consumer)…"
 (cd "$WORK/consumer-ai6" && npx --yes tsc --noEmit)
@@ -326,6 +332,24 @@ echo "smoke: askdb-studio bin…"
 echo "smoke: askdb-http bin…"
 (cd "$WORK/apps" && ./node_modules/.bin/askdb-http --help | grep -q 'askdb-http')
 
-echo "smoke: askdb-rag bin…"
-(cd "$WORK/apps" && ./node_modules/.bin/askdb-rag --version >/dev/null)
+echo "smoke: askdb rag…"
+(cd "$WORK/apps" && ./node_modules/.bin/askdb rag --help | grep -q 'askdb rag')
+
+echo "smoke: the deprecated askdb-rag stub exits 1 with a pointer to askdb rag, and echoes no secret…"
+RAG_STUB_STATUS=0
+RAG_STUB_STDERR="$(cd "$WORK/apps" && ./node_modules/.bin/askdb-rag index x --pg-url 'postgres://u:smoke-secret@h/db' 2>&1 >/dev/null)" ||
+  RAG_STUB_STATUS=$?
+if [ "$RAG_STUB_STATUS" -ne 1 ]; then
+  echo "smoke: FAILED — askdb-rag exited $RAG_STUB_STATUS; the stub must exit 1." >&2
+  exit 1
+fi
+grep -q 'askdb rag index' <<<"$RAG_STUB_STDERR" || {
+  echo "smoke: FAILED — askdb-rag's message doesn't name askdb rag index:" >&2
+  echo "$RAG_STUB_STDERR" >&2
+  exit 1
+}
+if grep -q 'smoke-secret' <<<"$RAG_STUB_STDERR"; then
+  echo "smoke: FAILED — askdb-rag echoed a --pg-url password to stderr." >&2
+  exit 1
+fi
 echo "smoke: PASSED"

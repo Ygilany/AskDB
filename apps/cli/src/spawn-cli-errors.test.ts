@@ -134,3 +134,23 @@ describe("cli spawn: rich errors", () => {
     expect(exec.stderr).toContain("unknown option '--execute'");
   });
 });
+
+describe("cli spawn: askdb rag exits with runRagCli's code", () => {
+  const repoRoot = join(import.meta.dirname, "../../..");
+  const cliJs = join(repoRoot, "apps/cli/dist/cli.js");
+  const schemaDir = "fixtures/schemas/orders-users.schema";
+
+  it("exits 0 with the index summary on stdout", () => {
+    // The memory store writes nothing, so the fixture's lock and files stay as they are.
+    const exec = run("node", [cliJs, "rag", "index", schemaDir, "--store", "memory", "--embedder", "mock"], { cwd: repoRoot });
+    expect(exec.stderr).toBe("");
+    expect(exec.status).toBe(0);
+    expect(JSON.parse(exec.stdout)).toMatchObject({ schemaId: "orders-users", chunksIndexed: expect.any(Number) });
+  });
+
+  it("exits 1 when the command fails", () => {
+    const exec = run("node", [cliJs, "rag", "query", schemaDir, "--store", "memory", "--question", "x"], { cwd: repoRoot });
+    expect(exec.status).toBe(1);
+    expect(exec.stderr).toContain("the memory store lives only inside one process");
+  });
+});

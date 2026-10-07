@@ -144,7 +144,7 @@ export type IndexMatch =
 
 /**
  * Whether an index described by `schema.lock.json` can be queried with this
- * embedder: the rule `askdb-rag query` applies, for any host that queries a
+ * embedder: the rule `askdb rag query` applies, for any host that queries a
  * persisted index (e.g. through `createRetriever`). The embedder id must be
  * the one the lock records (unset matches only unset, as in the indexer),
  * and when both widths are known they must match. A lock left `incomplete`

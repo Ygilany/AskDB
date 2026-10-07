@@ -61,23 +61,23 @@ export default defineConfig({
 
 Launch Studio (`npx askdb studio --schema ./my-app.schema`) and build the index from the **RAG Index** page; the first build creates the table.
 
-### Path 2: `askdb-rag setup-store` (CI / staging)
+### Path 2: `askdb rag setup-store` (CI / staging)
 
 One idempotent command. All DDL uses `IF NOT EXISTS` so it's safe to re-run on every deploy. `setup-store` has no embedding model to ask, so pass the width yours returns (1536 for `text-embedding-3-small`; `detectEmbeddingDimensions(embedder)` tells you for any model).
 
 ```bash
-askdb-rag setup-store \
+npx askdb rag setup-store \
   --pg-url "$PGVECTOR_URL" \
   --dimensions 1536
 ```
 
-Pass `--dimensions` (or `--embedder openai`) to match your embedding model. Without either, the command uses the default `mock` embedder's 64 dimensions. If the table already exists with different dimensions, the command fails instead of silently keeping the old size.
+`--dimensions` is required, and 1536 here is `text-embedding-3-small`'s width: use your model's. `--pg-url` and `--pg-table` fall back to `rag.storeConfig.pgvector` in `askdb.config.*`. If the table already exists with different dimensions, the command fails instead of silently keeping the old size. See [`askdb rag`](/reference/cli/#askdb-rag) for every flag.
 
 Drop it into a deploy step:
 
 ```yaml
 - name: Provision pgvector schema
-  run: askdb-rag setup-store --pg-url "${{ secrets.PGVECTOR_URL }}" --dimensions 1536
+  run: npx askdb rag setup-store --pg-url "${{ secrets.PGVECTOR_URL }}" --dimensions 1536  # text-embedding-3-small's width
 ```
 
 ### Path 3: Explicit migration (production)
@@ -162,13 +162,13 @@ Set `chunkOptions: { includeSensitiveDescribable: true }` only if your trust mod
 Several schemas can share one table: chunk ids are scoped by schema id (`chunk:<schemaId>:…`, with `%` and `:` in the schema id percent-encoded), and reindexing one schema never removes another schema's chunks. Use a separate table when deployments use different embedding models or dimensions. To isolate multiple AskDB deployments in the same Postgres database, pass a custom table name and a matching embedding dimension:
 
 ```bash
-askdb-rag setup-store \
+npx askdb rag setup-store \
   --pg-url "$DATABASE_URL" \
   --pg-table myapp_rag_chunks \
   --dimensions 1536
 ```
 
-Match the same `table` value in `askdb.config.ts` under `rag.storeConfig.pgvector.table`.
+1536 is `text-embedding-3-small`'s width; pass your model's. Match the same `table` value in `askdb.config.ts` under `rag.storeConfig.pgvector.table`, which Studio and `askdb rag` read; with it set there, `askdb rag` needs no `--pg-table`.
 
 ## Read next
 

@@ -124,7 +124,7 @@ export function createFileStore(options: FileStoreOptions): FileStore {
 
 const REINDEX_HINT =
   "The embeddings files are out of sync (likely an interrupted write). " +
-  "Delete both files and rebuild the index (e.g. `askdb-rag index <schema-dir>`, or `buildSchemaIndex` with `force: true`).";
+  "Delete both files and rebuild the index (e.g. `askdb rag index <schema-dir>`, or `buildSchemaIndex` with `force: true`).";
 
 function hydrate(memory: MemoryStore, binPath: string, metaPath: string): void {
   const hasBin = existsSync(binPath);
