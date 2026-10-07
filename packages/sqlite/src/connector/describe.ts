@@ -295,8 +295,9 @@ type TableRef = { name: string; pkColumns: string[] };
 
 /**
  * Case-insensitive index of every table's canonical name and ordered PK
- * columns. SQLite identifiers are case-insensitive, so `REFERENCES Authors`
- * resolves to a table created as `authors`.
+ * columns. SQLite identifiers are case-insensitive for ASCII letters only, so
+ * `REFERENCES Authors` resolves to a table created as `authors`, while `Ä` and
+ * `ä` stay two tables.
  */
 function buildTableRefIndex(
   objectRows: ObjectRow[],
@@ -309,9 +310,14 @@ function buildTableRefIndex(
       .filter((c) => c.pk > 0)
       .sort((a, b) => a.pk - b.pk)
       .map((c) => c.column_name);
-    refs.set(obj.name.toLowerCase(), { name: obj.name, pkColumns });
+    refs.set(foldIdentifier(obj.name), { name: obj.name, pkColumns });
   }
   return refs;
+}
+
+/** SQLite's identifier case folding: ASCII `A`–`Z` only. */
+function foldIdentifier(name: string): string {
+  return name.replace(/[A-Z]/g, (c) => c.toLowerCase());
 }
 
 function buildForeignKeys(
@@ -325,7 +331,7 @@ function buildForeignKeys(
     (r) => r.seq,
     (_fkId, ordered): SqlForeignKey => {
       const sample = ordered[0]!;
-      const target = tableRefs.get(sample.referenced_table.toLowerCase());
+      const target = tableRefs.get(foldIdentifier(sample.referenced_table));
       // SQLite doesn't name foreign keys; synthesize a stable name.
       const name = `${sample.table_name}_${ordered.map((r) => r.column_name).join("_")}_fkey`;
       return {

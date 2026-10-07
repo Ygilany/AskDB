@@ -133,8 +133,8 @@ function parseMssqlSchemeUrl(connectionString: string): MssqlConfigInput {
  * Parse Prisma's SQL Server connection URL,
  * `sqlserver://HOST[:PORT][;key=value…]`.
  *
- * Backward compatible with the parser this replaces for every string without
- * `{`: it connects with exactly the same values as before. Segments are split on `;`,
+ * Backward compatible with the parser this replaces for every string it could
+ * read: it connects with exactly the same values as before. Segments are split on `;`,
  * a key ends at its first `=` (so `password=a=b` is `a=b`), keys are trimmed
  * and lower-cased, values are trimmed, non-ASCII is fine, a segment without
  * `=` or with an empty key or value is skipped, and a later key replaces an
@@ -143,22 +143,24 @@ function parseMssqlSchemeUrl(connectionString: string): MssqlConfigInput {
  *
  * On top of that it reads Prisma's `{…}` escaping (Prisma's SQL Server docs:
  * "If your credentials contain `: \ = ; / [ ] { }`, wrap values in curly
- * braces", e.g. `password={Pass:Word;}`), with the rule of Prisma's own
- * JDBC-string parser (`prisma/connection-string`, `src/jdbc.rs`): a `{` opens
- * a span read verbatim up to the first `}`, so `;` and `=` inside it are part
- * of the value, and braced and plain runs join (`{abc;}}45}` is `abc;}45}`).
- * That changes a value holding a literal `{`: the old parser kept braces as
- * plain characters (`password={abc}` was `{abc}`, now `abc`; `ab{cd` now
- * throws). A literal brace is written inside a braced run: `{a{b}}c` is
- * `a{b}c`.
+ * braces", e.g. `password={Pass:Word;}`), but only where the old parser could
+ * never have read the value: a value that starts with `{`, ends with `}`, and
+ * holds a `;` in between. The old parser cut such a value at the `;`, so it
+ * never connected with the value the user wrote. The value is everything
+ * between the braces, read verbatim, so `;`, `=` and braces inside it are part
+ * of it (`{{a;b}}` is `{a;b}`); it ends at the first `}` followed only by
+ * blanks and then `;` or the end of the string. Any other `{` or `}` is a
+ * plain character, as before: `password={abc}` is `{abc}`, an unclosed `{` is
+ * part of the value, and a `{` in one value never pairs with a `}` in another.
+ * This is where it differs from Prisma, which reads every `{…}` as an escape
+ * (`{abc}` is `abc`) and ends it at the first `}`.
+ *
  * Prisma's credential aliases are read (`username` and `uid` for `user`,
  * `pwd` for `password`) only when the canonical key is absent: the old parser
  * dropped them, so such a string had no credentials, and where the canonical
  * key is present it still wins. `initial catalog` is not, because the old parser ignored it and
  * the connection used the login's default database; reading it now would
  * change where a working string connects.
- *
- * It throws only for a `{` that is never closed.
  */
 function parsePrismaSqlServerUrl(connectionString: string): MssqlConfigInput {
   const segments = splitPrismaSegments(connectionString.slice("sqlserver://".length));
@@ -213,8 +215,9 @@ function parsePrismaSqlServerUrl(connectionString: string): MssqlConfigInput {
 
 /**
  * True when a Prisma-style `sqlserver://` string can be read more than one
- * way, so a display label must not trust its parts: it uses `{…}` (the parser
- * before Prisma escaping read the braces literally), a quote, a segment that
+ * way, so a display label must not trust its parts: it has a `{` (an escape
+ * only around a whole value holding a `;`, while Prisma reads every `{…}` as
+ * one), a quote, a segment that
  * isn't `key=value` (an unbraced `;` inside a value), an empty segment before
  * another one, or an unclosed `{`. The connection still uses
  * `parsePrismaSqlServerUrl`'s reading.
@@ -232,36 +235,62 @@ export function isPrismaSqlServerUrlAmbiguous(connectionString: string): boolean
 
 type PrismaPiece = { braced: boolean; text: string };
 
-/** Split on `;` outside `{…}`; each segment keeps its braced and plain pieces. */
+/**
+ * Split on `;` outside an escaping `{…}`; each segment keeps its braced and
+ * plain pieces. A value is an escape (see `parsePrismaSqlServerUrl`) when it
+ * starts with `{` (after `key=` and blanks), ends at a `}` followed only by
+ * blanks before the next `;` or the end of the string, and holds a `;` in
+ * between. Everything else, including the host part, splits on every `;`.
+ */
 function splitPrismaSegments(input: string): PrismaPiece[][] {
-  const segments: PrismaPiece[][] = [[]];
-  let plain = "";
-  const flush = () => {
-    if (plain) segments[segments.length - 1]!.push({ braced: false, text: plain });
-    plain = "";
-  };
-  for (let i = 0; i < input.length; i++) {
-    const ch = input[i]!;
-    if (ch === "{") {
-      const close = input.indexOf("}", i + 1);
-      if (close === -1) {
-        throw new AskDbError(
-          "Prisma-style SQL Server URL has a { that is never closed. Wrap a value that contains " +
-            ": \\ = ; / [ ] { } in curly braces, e.g. password={Pass:Word;}.",
-        );
-      }
-      flush();
-      segments[segments.length - 1]!.push({ braced: true, text: input.slice(i + 1, close) });
-      i = close;
-    } else if (ch === ";") {
-      flush();
-      segments.push([]);
+  const hostEnd = input.indexOf(";");
+  if (hostEnd === -1) return [[{ braced: false, text: input }]];
+  const segments: PrismaPiece[][] = [[{ braced: false, text: input.slice(0, hostEnd) }]];
+  let pos = hostEnd + 1;
+  while (pos <= input.length) {
+    const next = input.indexOf(";", pos);
+    const end = next === -1 ? input.length : next;
+    const escape = escapedValue(input, pos, end);
+    if (escape) {
+      segments.push(
+        [
+          { braced: false, text: input.slice(pos, escape.open) },
+          { braced: true, text: input.slice(escape.open + 1, escape.close) },
+          { braced: false, text: input.slice(escape.close + 1, escape.end) },
+        ].filter((piece) => piece.braced || piece.text !== ""),
+      );
+      pos = escape.end + 1;
     } else {
-      plain += ch;
+      segments.push(end > pos ? [{ braced: false, text: input.slice(pos, end) }] : []);
+      pos = end + 1;
     }
   }
-  flush();
   return segments;
+}
+
+/**
+ * The escaping `{…}` of the segment starting at `start` (whose first `;` is at
+ * `firstSemi`), or `undefined`: the value must start with `{`, and the first
+ * `}` followed only by blanks and then `;` or the end of the input closes it.
+ */
+function escapedValue(
+  input: string,
+  start: number,
+  firstSemi: number,
+): { open: number; close: number; end: number } | undefined {
+  const eq = input.indexOf("=", start);
+  if (eq === -1 || eq >= firstSemi) return undefined;
+  let open = eq + 1;
+  while (input[open] === " " || input[open] === "\t") open++;
+  if (input[open] !== "{") return undefined;
+  const closing = /\}[ \t]*(?:;|$)/g;
+  closing.lastIndex = open + 1;
+  const match = closing.exec(input);
+  if (!match) return undefined;
+  const close = match.index;
+  if (!input.slice(open + 1, close).includes(";")) return undefined;
+  const end = match[0].endsWith(";") ? close + match[0].length - 1 : input.length;
+  return { open, close, end };
 }
 
 function unbrace(pieces: readonly PrismaPiece[]): string {
