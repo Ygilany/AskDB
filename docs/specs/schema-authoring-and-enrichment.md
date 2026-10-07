@@ -41,23 +41,27 @@ The dependency direction: `@askdb/core ← @askdb/enrich ← @askdb/studio`. UI 
 ## Contracts and API surface
 
 ```ts
-// @askdb/enrich
-import { openWorkspace, saveTable, bundleSchema } from '@askdb/enrich'
+// @askdb/enrich (all synchronous)
+import { loadWorkspace, saveTable, bundleSchemaDirectory } from '@askdb/enrich'
+import type { BundledSchemaV2 } from '@askdb/core'
 
-openWorkspace(schemaDir: string): Promise<Workspace>
+loadWorkspace(schemaDir: string): Workspace
 
 interface Workspace {
-  tables: WorkspaceTable[]
-  warnings: WorkspaceWarning[]   // orphan IDs, new un-described IDs
+  schemaDir: string
+  physical: V2SchemaJson
+  tables: WorkspaceTable[]       // each paired with its tables/*.md file (by front-matter id) or a default filename
+  concepts: ParsedConceptsMarkdown | undefined
+  warnings: SchemaV2Warning[]    // loader warnings: orphan IDs, ignored downgrades, ...
 }
 
-saveTable(table: WorkspaceTable, draft: TableDraft): Promise<void>
+saveTable(workspace: Workspace, tableId: string, frontmatter: V2TableFrontmatter, body: string): void
 
-bundleSchema(schemaDir: string): Promise<BundledSchema>
+bundleSchemaDirectory(schemaDir: string): BundledSchemaV2
 
 // AI suggestion helpers
-buildSuggestSource(table: WorkspaceTable): SuggestSource
-buildSuggestContext(workspace: Workspace): SuggestContext
+buildSuggestionTarget(workspace: Workspace, source: SuggestSource): EnrichmentTarget
+buildSuggestionContext(workspace: Workspace, tableId: string): EnrichmentContext
 ```
 
 ```sh
