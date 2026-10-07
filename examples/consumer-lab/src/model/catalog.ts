@@ -58,9 +58,13 @@ export function readCassette(dialect: string, question: Question, dir = CASSETTE
   return cassette;
 }
 
-/** The SQL inside a reply's first ```sql fence, read exactly the way the replay suites read a cassette. */
+/**
+ * The SQL inside a reply's first ```sql fence, read exactly the way the replay suites read a cassette.
+ * A single trailing `;` is removed, as AskDB removes it from the SQL it returns
+ * (`concepts/safety-boundaries.mdx`, "Single statement"): a model's reply usually ends with one.
+ */
 export function fencedSql(reply: string): string | undefined {
-  return /```sql\n([\s\S]*?)\n```/.exec(reply)?.[1];
+  return /```sql\n([\s\S]*?)\n```/.exec(reply)?.[1]?.trim().replace(/;$/, "").trimEnd();
 }
 
 /** The SQL inside a cassette's ```sql fence: what AskDB should return for that question on that dialect. */

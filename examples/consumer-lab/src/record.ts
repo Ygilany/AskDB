@@ -6,9 +6,9 @@
  * and each question is asked through the raw-model path, `createOpenAI()` → `ask()`, pointed at
  * it. Each reply is graded before anything is written (`src/grade.ts`): the SQL `ask()` returns,
  * run as the host, must return the oracle's rows, and the parameterized question must come back
- * parameterized. Its ```sql fence must also hold exactly that SQL: the replay suites read a
- * cassette's fence strictly (`fencedSql`) and compare it with what `ask()` returns, and `ask()`
- * forgives a trailing semicolon or another fence tag that they don't. A reply that passes
+ * parameterized. Its ```sql fence must also hold that SQL: the replay suites read a cassette's
+ * fence (`fencedSql`, which drops a trailing semicolon as `ask()` does) and compare it with what
+ * `ask()` returns, and `ask()` forgives another fence tag that they don't. A reply that passes
  * replaces the cassette, with `"source": "recorded"` and `recordedWith` (the model the provider
  * says answered, the install target, the date). A reply that misses is listed, in the terminal and in `.lab/record-misses.json`, and leaves the
  * cassette as it was. The maintainer reviews the cassette diff in git: staging a file accepts it,
@@ -157,7 +157,7 @@ export async function record(opts: RecordOptions): Promise<RecordOutcome> {
           continue;
         }
         if (answer.ok && fencedSql(raw) !== answer.result.sql) {
-          miss("the reply's ```sql fence doesn't hold exactly the SQL ask() returned (a trailing semicolon, another fence tag), so the replay suites would read other SQL");
+          miss("the reply's ```sql fence doesn't hold the SQL ask() returned (another fence tag, a second fence), so the replay suites would read other SQL");
           continue;
         }
         const cassette: Cassette = {
