@@ -69,7 +69,7 @@ const REPLIES: Record<string, string> = {
   "programs-started-since": fence("SELECT agency_id, program_code FROM program WHERE starts_on >= '2022-01-01' ORDER BY agency_id, program_code"),
   // A reply that somehow holds the key: never written.
   "open-enrollments": `${fence("SELECT client_id, program_code FROM enrollment WHERE exited_on IS NULL")}\n-- ${KEY}`,
-  // The right rows, ending with the semicolon a model usually writes: `ask()` and the replay suites both drop it.
+  // The right rows, ending with the semicolon a model usually writes: the lab compares SQL without it, on the fence's side and on `ask()`'s.
   "program-active-flags": fence("SELECT agency_id, program_code, is_active FROM program;"),
   // The right rows in an untagged fence: `ask()` reads it, the replay suites wouldn't.
   "top-five-orders": '```\nSELECT order_id, total FROM "order" ORDER BY total DESC, order_id LIMIT 5\n```',
