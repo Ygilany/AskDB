@@ -86,6 +86,7 @@ All exports are available from the root `@askdb/rag` import. Sub-path imports ar
 |---|---|---|
 | `createAiSdkEmbedder` | `@askdb/rag/embedders/ai-sdk` | Generic AI SDK `EmbeddingModel` adapter. Requires `ai`. |
 | `detectEmbeddingDimensions` | — | Learns an embedder's vector width by embedding one short text. Use it for a new pgvector table instead of hard-coding a width. |
+| `aiSdkEmbedderId` | `@askdb/rag/embedders/ai-sdk` | The `embedderId` Studio and `askdb rag` record for an `ai.embedding` model (`ai-sdk:<provider>:<model>:<dimensions or default>`), so an index built by one is accepted by the other. |
 | `createOpenAiEmbedder` | `@askdb/rag/embedders/openai` | **Deprecated.** OpenAI convenience helper. Use `createAiSdkEmbedder` with an AI SDK embedding model (e.g. from `@ai-sdk/openai`) or one built by the `@askdb/ai` registry instead. Removed in 1.0. |
 
 ### Import examples

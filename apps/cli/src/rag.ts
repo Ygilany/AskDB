@@ -3,6 +3,7 @@ import { createAiRegistry, type AiConfig } from "@askdb/ai";
 import type { AskDbLogger } from "@askdb/core";
 import { getAskDbRuntimeConfig, type AskDbRuntimeConfig } from "@askdb/config";
 import {
+  aiSdkEmbedderId,
   buildSchemaIndex,
   checkIndexMatches,
   createAiSdkEmbedder,
@@ -336,7 +337,7 @@ function resolveEmbedderConfig(opts: CliOptions, runtimeConfig: AskDbRuntimeConf
   return {
     kind: "ai",
     // Studio's id. The adapter's canonical provider name (`foundry` resolves to `azure`) keeps ids stable.
-    id: `ai-sdk:${aiConfig.provider}:${model}:${dimensions ?? "default"}`,
+    id: aiSdkEmbedderId({ provider: aiConfig.provider, model, dimensions }),
     dimensions,
     model,
     aiConfig,

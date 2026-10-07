@@ -156,6 +156,22 @@ const embedder = createAiSdkEmbedder({
 | `providerOptions` | `object` | no | Provider-specific options forwarded to the AI SDK call. |
 | `onUsage` | `(usage: AiSdkEmbedderUsage) => void` | no | Called after each embedding batch with token counts. `AiSdkEmbedderUsage` has `tokens`, `promptTokens`, and `totalTokens` (each optional). |
 
+### `aiSdkEmbedderId(options)`
+
+The `embedderId` for an index embedded through an AI SDK model built from an AskDB `ai.embedding` section: `ai-sdk:<provider>:<model>:<dimensions>`, ending in `default` when no width was requested. Studio and [`askdb rag`](/reference/cli/#askdb-rag) build their ids with it, so either accepts an index the other built. Pass the same id to `buildSchemaIndex` and `checkIndexMatches` if your host should share an index with them.
+
+```ts
+import { aiSdkEmbedderId } from "@askdb/rag";
+
+aiSdkEmbedderId({ provider: "openai", model: "text-embedding-3-small" }); // "ai-sdk:openai:text-embedding-3-small:default"
+```
+
+| Option | Type | Required | Description |
+| --- | --- | --- | --- |
+| `provider` | `string` | yes | The provider adapter's canonical name, such as `openai` or `azure` (`foundry` resolves to `azure`). |
+| `model` | `string` | yes | The embedding model, or the deployment name on Azure. |
+| `dimensions` | `number` | no | The width requested from the model. Omit it when the model's own width applies. |
+
 ### `createOpenAiEmbedder(options?)` *(deprecated)*
 
 A convenience wrapper around the OpenAI embeddings API. **Deprecated** — construct the model with `openai.embedding(...)` and use `createAiSdkEmbedder` instead.
