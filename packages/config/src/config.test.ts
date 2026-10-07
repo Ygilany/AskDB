@@ -1611,6 +1611,15 @@ describe("getAskDbRuntimeConfig — httpApi", () => {
     );
   });
 
+  // A JavaScript config isn't type-checked; these used to throw a bare TypeError from `.trim()`.
+  it("rejects a requestTimeoutMs that is neither a number nor a string with an error naming the key", () => {
+    for (const requestTimeoutMs of [true, null, {}]) {
+      expect(() =>
+        flattenAskDbConfig(minimalConfig({ httpApi: { requestTimeoutMs } as unknown as AskDbConfig["httpApi"] })),
+      ).toThrow(/askdb\.config: invalid httpApi\.requestTimeoutMs/);
+    }
+  });
+
   // Node timers cap at 2^31 - 1 ms: a larger AbortSignal.timeout() fires after ~1 ms
   // (or throws ERR_OUT_OF_RANGE past 2^32 - 1), so every request would fail.
   it("accepts requestTimeoutMs up to the Node timer maximum and rejects anything larger at flatten time", () => {
@@ -1622,6 +1631,17 @@ describe("getAskDbRuntimeConfig — httpApi", () => {
         /httpApi\.requestTimeoutMs.*at most 2147483647/,
       );
     }
+  });
+
+  it("reads allowSchemaOverride and requestTimeoutMs from the flat keys when the structured config leaves them out", () => {
+    const structured = minimalConfig({});
+    setAskDbRuntimeForTests({
+      structured,
+      flat: { ...flattenAskDbConfig(structured), ASKDB_HTTP_ALLOW_SCHEMA_OVERRIDE: "true", ASKDB_HTTP_REQUEST_TIMEOUT_MS: "1500" },
+    });
+    const rt = getAskDbRuntimeConfig();
+    expect(rt.httpApi.allowSchemaOverride).toBe(true);
+    expect(rt.httpApi.requestTimeoutMs).toBe(1500);
   });
 
   it("rejects an out-of-range ASKDB_HTTP_REQUEST_TIMEOUT_MS in the flat fallback", () => {

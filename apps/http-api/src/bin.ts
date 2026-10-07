@@ -49,6 +49,8 @@ if (cliOptions.help) {
   }
 }
 
+// Defensive: bootstrap installs only flattened, already-validated values (an invalid
+// `httpApi.requestTimeoutMs` fails above), so this is not expected to throw.
 let httpApi: ReturnType<typeof getAskDbRuntimeConfig>["httpApi"];
 try {
   ({ httpApi } = getAskDbRuntimeConfig());

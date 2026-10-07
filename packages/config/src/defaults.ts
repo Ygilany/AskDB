@@ -71,7 +71,8 @@ export function parsePositiveInteger(value: string | number | undefined): number
  */
 export function parseHttpApiRequestTimeoutMs(value: string | number | undefined, source: string): number | undefined {
   if (value === undefined) return undefined;
-  const n = parsePositiveInteger(value);
+  // A JavaScript config can pass any type; only numbers and numeric strings are parsed.
+  const n = typeof value === "number" || typeof value === "string" ? parsePositiveInteger(value) : undefined;
   if (n === undefined || n > MAX_HTTP_API_REQUEST_TIMEOUT_MS) {
     throw new Error(
       `askdb.config: invalid ${source} ${JSON.stringify(value)} (expected a positive integer number of milliseconds, at most ${MAX_HTTP_API_REQUEST_TIMEOUT_MS}).`,

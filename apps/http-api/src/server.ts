@@ -153,7 +153,8 @@ function causeMessage(e: unknown): string | undefined {
  * error type only. Messages from the model provider are never returned to the client (they
  * can echo request details or credential fragments); unknown errors get a generic message.
  */
-function mapAskError(e: unknown, ctx: { timedOut: boolean; timeoutMs: number }): MappedError {
+/** @internal Exported for unit tests; not re-exported from the package entry point. */
+export function mapAskError(e: unknown, ctx: { timedOut: boolean; timeoutMs: number }): MappedError {
   if (isErrorOf(e, SqlGenerationError)) {
     return {
       status: 502,
