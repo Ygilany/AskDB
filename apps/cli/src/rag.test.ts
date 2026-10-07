@@ -202,6 +202,22 @@ describe("askdb rag", () => {
     if (flags.includes("--types")) expect(new Set(out.results.map((result) => result.type))).toEqual(new Set(["column"]));
   });
 
+  it("query searches only its own schema in a store two schemas share", async () => {
+    const vectors = join(tempDir(), "shared");
+    const ordersDir = copyFixture();
+    const otherDir = copyFixture();
+    const schemaJson = join(otherDir, "schema.json");
+    writeFileSync(schemaJson, readFileSync(schemaJson, "utf8").replace('"schemaId": "orders-users"', '"schemaId": "other-copy"'));
+    expect(await runRagCli(["index", ordersDir, "--file-path", vectors])).toBe(0);
+    expect(await runRagCli(["index", otherDir, "--file-path", vectors])).toBe(0);
+
+    stdout = [];
+    expect(await runRagCli(["query", ordersDir, "--file-path", vectors, "--question", "paid orders", "-k", "20"])).toBe(0);
+    const { results } = JSON.parse(stdout.join("")) as { results: { schemaId: string }[] };
+    expect(results.length).toBeGreaterThan(0);
+    expect(new Set(results.map((result) => result.schemaId))).toEqual(new Set(["orders-users"]));
+  });
+
   it("query requires --question", async () => {
     expect(await runRagCli(["query", copyFixture()])).toBe(1);
     expect(stderr.join("")).toBe("Missing --question for query command.\n");
