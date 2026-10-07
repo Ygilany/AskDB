@@ -24,8 +24,8 @@ const BASE_CONFIG: AskDbConfig = {
   rag: { embedder: "mock", embedderConfig: {}, store: "memory", storeConfig: { memory: {} } },
 };
 
-function installRuntime(flatExtra: Record<string, string> = {}): void {
-  setAskDbRuntimeForTests({ structured: BASE_CONFIG, flat: { ...flattenAskDbConfig(BASE_CONFIG), ...flatExtra } });
+function installRuntime(): void {
+  setAskDbRuntimeForTests({ structured: BASE_CONFIG, flat: flattenAskDbConfig(BASE_CONFIG) });
 }
 
 const acmeResult: IntrospectionResult = {
@@ -76,7 +76,9 @@ function acmeAdapter() {
     connector: { describe: vi.fn(async () => acmeResult) },
   }));
   const resolveConnection = vi.fn((request: ConnectorConnectionRequest) => {
-    const url = request.explicit?.url ?? request.runtime.flat?.["ACME_URL"];
+    // A third-party adapter's fallback reads a source it owns: @askdb/config's runtime
+    // carries only the built-in engines' keys (docs/integration/connectors.md).
+    const url = request.explicit?.url ?? process.env["ACME_URL"];
     return url
       ? { ok: true as const, connection: { url } }
       : { ok: false as const, error: "Set ACME_URL or pass --url." };
@@ -103,12 +105,14 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.restoreAllMocks();
+  vi.unstubAllEnvs();
   resetAskDbRuntimeForTests();
 });
 
 describe("askdb introspect — injected connector registry", () => {
   it("dispatches a third-party engine through its adapter's resolveConnection", async () => {
-    installRuntime({ ACME_URL: "acme://configured" });
+    installRuntime();
+    vi.stubEnv("ACME_URL", "acme://configured");
     const { adapter, createConnector, resolveConnection } = acmeAdapter();
     const connectorRegistry = createConnectorRegistry([adapter]);
 
@@ -128,7 +132,8 @@ describe("askdb introspect — injected connector registry", () => {
   });
 
   it("lets explicit --url win over the adapter's configured fallback", async () => {
-    installRuntime({ ACME_URL: "acme://configured" });
+    installRuntime();
+    vi.stubEnv("ACME_URL", "acme://configured");
     const { adapter, createConnector } = acmeAdapter();
 
     const code = await runIntrospectCli(["--engine", "acme", "--url", "acme://flag", "--print"], {

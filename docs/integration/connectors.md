@@ -266,7 +266,7 @@ export const oracleConnectorProvider = defineLiveConnectorProvider({
 });
 ```
 
-`@askdb/config`'s typed `introspection` block only knows the built-in engines, so `runtimeKey` never finds a value for a third-party engine: with `defineLiveConnectorProvider` the host must pass the URL as `explicit.url`. To fall back to configuration instead, write `resolveConnection` yourself and read the value from `runtime.flat` (env-style keys) or `runtime.structured`:
+`@askdb/config`'s typed `introspection` block only knows the built-in engines, so `runtimeKey` never finds a value for a third-party engine: with `defineLiveConnectorProvider` the host must pass the URL as `explicit.url`. The runtime config can't carry it either: `runtime.flat` holds only `@askdb/config`'s own keys, and `runtime.structured` only its typed sections. To fall back to a value the host doesn't pass, write `resolveConnection` yourself and read a source your package owns, such as its own environment variable:
 
 ```ts
 import type { ConnectorProviderAdapter } from "@askdb/introspect";
@@ -282,8 +282,8 @@ export const oracleConnectorProvider: ConnectorProviderAdapter = {
       connector: createOracleConnector(),
     };
   },
-  resolveConnection({ explicit = {}, runtime }) {
-    const url = explicit.url ?? runtime.flat?.["ORACLE_URL"];
+  resolveConnection({ explicit = {} }) {
+    const url = explicit.url ?? process.env.ORACLE_URL;
     return url
       ? { ok: true, connection: { url } }
       : { ok: false, error: "Set ORACLE_URL or pass --url." };
