@@ -4,20 +4,26 @@
  *
  * Protects: on each of the five engines, a result longer than the cap comes back cut to
  * the cap, flagged `truncated`, and in the statement's own ORDER BY; a statement that
- * runs past the timeout is stopped and reported as `StatementTimeoutError`.
+ * runs past the timeout is stopped and reported as `StatementTimeoutError`. On the server
+ * engines, a fixture that refuses the connection is reported as `HostUnreachableError`, so the
+ * live-mode grader (`src/grade.ts`) can tell it from the model's SQL failing.
  * Catches: a cap that silently reorders rows (the checklist's LIMIT wrapper does, on
  * MariaDB: #266), a cap that isn't applied or doesn't report truncation, and a timeout
- * that never fires, so a runaway statement would hang every later lab suite.
+ * that never fires, so a runaway statement would hang every later lab suite; and a refused
+ * connection reported as an ordinary error, which the grader would count as a model miss.
  * Not covered elsewhere: AskDB never executes SQL, so no package test owns this; the
  * fixture's own tests read rows back but apply no cap or timeout.
  * No production seam: `executeReadOnly` is the lab's own host code, called directly.
+ *
+ * SQLite's case (the database file can't be opened) isn't tested: the file is the fixture's
+ * `SQLITE_FILE`, which no test can point elsewhere without a seam.
  *
  * Needs the fixture (`pnpm fixture:up`) and an installed lab (`pnpm lab:use .`).
  */
 import { describe, expect, it } from "vitest";
 import { SUPPORTED_DIALECTS, type SupportedDialect } from "../src/dialects.js";
 import { loadRows, physicalName } from "../src/fixture.js";
-import { StatementTimeoutError, executeReadOnly } from "../src/host/execute.js";
+import { HostUnreachableError, StatementTimeoutError, executeReadOnly } from "../src/host/execute.js";
 
 const ORDER_LINE = { schema: "billing", name: "order_line" };
 
@@ -61,4 +67,19 @@ describe.each(SUPPORTED_DIALECTS.map((d) => [d] as [SupportedDialect]))("[%s] ho
     // Well under the ~9 s the runaway count takes when nothing stops it.
     expect(Date.now() - started).toBeLessThan(3_000);
   }, 30_000);
+
+  if (dialect !== "sqlite") {
+    it("reports a fixture that refuses the connection as HostUnreachableError", async () => {
+      const variable = `ASKDB_FIXTURE_${dialect.toUpperCase()}_PORT`;
+      const before = process.env[variable];
+      // Port 1: nothing listens there, so the connection is refused at once.
+      process.env[variable] = "1";
+      try {
+        await expect(executeReadOnly(dialect, "SELECT 1")).rejects.toBeInstanceOf(HostUnreachableError);
+      } finally {
+        if (before === undefined) delete process.env[variable];
+        else process.env[variable] = before;
+      }
+    });
+  }
 });

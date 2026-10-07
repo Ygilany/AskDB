@@ -6,11 +6,11 @@
  *   pnpm lab:use .                    tarballs packed from this checkout
  *   pnpm lab:use <path>               tarballs packed from another checkout
  *   pnpm lab:use git:<ref>            tarballs packed from a branch, tag or commit (temporary worktree)
- *   pnpm lab:use npm:<dist-tag>       published packages under a dist-tag, e.g. npm:beta, npm:latest
+ *   pnpm lab:use npm:<dist-tag>       published packages under a dist-tag, e.g. npm:latest
  *   pnpm lab:use npm:askdb@<version>  a published CLI release and the exact @askdb/* versions it depends on
- *   pnpm lab:use --if-needed .        skip when the recorded target is installed and verifies (used by lab:up)
+ *   pnpm lab:use --if-needed .        keep a verified install that is still current or that lab:use chose (used by lab:up)
  *   pnpm lab:use --check              re-verify the current install against its recorded target
- *   pnpm lab:use --restore            put the committed baseline (npm:latest) back
+ *   pnpm lab:use --restore            put the committed baseline (npm:latest) back, reinstalled from scratch
  *
  * Every @askdb/* package, including transitive dependencies of the lab's direct ones,
  * is pinned to the target through pnpm overrides, then verified from the lockfile: the
@@ -32,7 +32,7 @@ const TARBALLS = join(STATE, "tarballs");
 const TARGET_FILE = join(STATE, "target.json");
 
 /** The AskDB packages the lab imports or runs directly. Everything else arrives transitively. */
-const DIRECT = ["@askdb/ai-openai", "@askdb/client", "@askdb/config", "@askdb/core", "askdb"];
+const DIRECT = ["@askdb/ai-openai", "@askdb/client", "@askdb/config", "@askdb/core", "@askdb/http-api", "@askdb/studio", "askdb"];
 
 const MANAGED = ["package.json", "pnpm-workspace.yaml", "pnpm-lock.yaml"];
 const BLOCK_BEGIN = "# lab:use overrides begin";
@@ -50,16 +50,25 @@ function run(cmd, args, opts = {}) {
   return execFileSync(cmd, args, { stdio: "inherit", ...opts });
 }
 
+/**
+ * Put the committed baseline back from any state, a half-finished `lab:use` included: the
+ * managed manifests as committed, `.lab/` gone (tarballs, target, cached schema artifacts,
+ * scratch projects), and a fresh install. Nothing else in the lab is touched.
+ */
 function restore() {
   run("git", ["-C", LAB, "checkout", "--", ...MANAGED]);
   rmSync(STATE, { recursive: true, force: true });
+  // An interrupted install leaves node_modules partial, and pnpm calls a partial tree whose
+  // lockfile matches "Already up to date"; verify() reads only the lockfile. Start clean.
+  rmSync(join(LAB, "node_modules"), { recursive: true, force: true });
   const { label, pins } = readOverridesBlock();
   // The committed lockfile resolves from the registry, so it installs as committed.
   run("pnpm", ["install", "--frozen-lockfile"], { cwd: LAB });
   const target = { label: `committed baseline (${label})`, source: "registry", packages: pins };
   verify(target);
   recordTarget(target);
-  console.log("lab:use: restored the committed baseline.");
+  console.log(`lab:use: restored the committed baseline (${label}): published packages, not this checkout.`);
+  console.log("         `pnpm lab:use .` installs this checkout.");
 }
 
 /** Pack a checkout with this repo's pack script (older checkouts may not have one). */
@@ -204,10 +213,27 @@ function resolveCliRelease(version) {
 }
 
 /**
- * Point the lab at the target: direct deps in package.json, and an override for every
- * target package in pnpm-workspace.yaml. `packages` is `[{ name, spec }]`.
+ * The lab's pnpm-workspace.yaml, split around its lab:use overrides block. Fails if the
+ * block is missing or isn't inside the file's top-level `overrides:` map, which holds the
+ * lab's hand-written third-party pins above the block. `main` calls this before it changes
+ * anything, so a malformed file can't leave the lab half-switched.
  */
-function pinTo(packages, label) {
+function readWorkspace() {
+  const ws = readFileSync(join(LAB, "pnpm-workspace.yaml"), "utf8");
+  const begin = ws.indexOf(BLOCK_BEGIN);
+  const end = ws.indexOf(BLOCK_END);
+  if (begin < 0 || end < begin) fail("pnpm-workspace.yaml has lost its lab:use overrides block");
+  const lastKey = ws.slice(0, begin).split("\n").filter((l) => /^[^\s#]/.test(l)).pop();
+  if (lastKey !== "overrides:") fail("pnpm-workspace.yaml's lab:use overrides block must sit inside its top-level `overrides:` map");
+  return { head: ws.slice(0, begin + BLOCK_BEGIN.length), tail: ws.slice(end) };
+}
+
+/**
+ * Point the lab at the target: direct deps in package.json, and an override for every
+ * target package in pnpm-workspace.yaml (`workspace` from readWorkspace). `packages` is
+ * `[{ name, spec }]`.
+ */
+function pinTo(packages, label, workspace) {
   const spec = new Map(packages.map((p) => [p.name, p.spec]));
 
   const pkgPath = join(LAB, "package.json");
@@ -223,13 +249,8 @@ function pinTo(packages, label) {
   pkg.dependencies = Object.fromEntries(Object.entries(pkg.dependencies).sort(([a], [b]) => a.localeCompare(b)));
   writeFileSync(pkgPath, `${JSON.stringify(pkg, null, 2)}\n`);
 
-  const wsPath = join(LAB, "pnpm-workspace.yaml");
-  const ws = readFileSync(wsPath, "utf8");
-  const begin = ws.indexOf(BLOCK_BEGIN);
-  const end = ws.indexOf(BLOCK_END);
-  if (begin < 0 || end < begin) fail("pnpm-workspace.yaml has lost its lab:use overrides block");
-  const lines = [`${BLOCK_TARGET}${label}`, "overrides:", ...packages.map((p) => `  "${p.name}": "${p.spec}"`)];
-  writeFileSync(wsPath, `${ws.slice(0, begin + BLOCK_BEGIN.length)}\n${lines.join("\n")}\n${ws.slice(end)}`);
+  const lines = [`${BLOCK_TARGET}${label}`, ...packages.map((p) => `  "${p.name}": "${p.spec}"`)];
+  writeFileSync(join(LAB, "pnpm-workspace.yaml"), `${workspace.head}\n${lines.join("\n")}\n${workspace.tail}`);
 }
 
 /** The target label and exact-version pins recorded in pnpm-workspace.yaml's overrides block. */
@@ -319,6 +340,22 @@ function installedTarget() {
   return rows.length && !bad.length ? target : undefined;
 }
 
+/**
+ * Whether `--if-needed <target>` keeps the recorded, verified install. It keeps one that is
+ * still what `target` would install (a checkout at the same commit and uncommitted edits),
+ * and one that someone chose with `lab:use` (a published version, a git ref, another path),
+ * so `lab:matrix` tests whatever `lab:use` last installed. It reinstalls a stale install of
+ * `target` itself, and the restored baseline (`lab:use --restore`, `lab:reset`), which
+ * stands for "nothing chosen yet", as on a fresh clone.
+ */
+function keepsInstall(recorded, target) {
+  if (sameTarget(recorded, target)) return true;
+  if (recorded.label.startsWith("committed baseline")) return false;
+  if (target.startsWith("npm:") || target.startsWith("git:") || target === "registry") return false;
+  const root = resolve(target === "." ? REPO : target);
+  return !recorded.label.startsWith(`checkout ${root} @ `);
+}
+
 /** Whether the recorded install is what `target` would install now, without packing anything. */
 function sameTarget(recorded, target) {
   if (target.startsWith("npm:") || target.startsWith("git:") || target === "registry") return false;
@@ -381,14 +418,16 @@ function main() {
   const target = args.find((a) => !a.startsWith("--"));
   if (!target) fail("usage: pnpm lab:use <. | path | git:<ref> | npm:<dist-tag> | npm:askdb@<version>> [--if-needed] | --check | --restore");
 
-  // `--if-needed` keeps an install only when it is still the requested target: for a
-  // checkout, the same commit and the same uncommitted edits. Any other target reinstalls.
+  // `--if-needed`: see keepsInstall.
   const current = ifNeeded && installedTarget();
-  if (current && sameTarget(current, target)) {
-    console.log(`lab:use: already installed (${current.label}); skipping.`);
+  if (current && keepsInstall(current, target)) {
+    if (sameTarget(current, target)) console.log(`lab:use: already installed (${current.label}); skipping.`);
+    else console.log(`lab:use: keeping the installed target (${current.label}); \`pnpm lab:use ${target}\` switches to ${target === "." ? "this checkout" : target}.`);
     return;
   }
 
+  // Before anything changes: a malformed workspace file fails here, with the lab as it was.
+  const workspace = readWorkspace();
   // From here until the new target verifies, the lab is not installed: target.json is
   // written only after a successful install and verification.
   rmSync(TARGET_FILE, { force: true });
@@ -403,7 +442,7 @@ function main() {
       else writeFileSync(join(LAB, file), text);
     }
   };
-  pinTo(resolved.packages, resolved.label);
+  pinTo(resolved.packages, resolved.label, workspace);
   try {
     run("pnpm", ["install", "--no-frozen-lockfile"], { cwd: LAB });
   } catch {

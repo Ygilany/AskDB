@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 765 160" role="img" aria-labelledby="qltitle qldesc">
   <title id="qltitle">AskDB quickstart loop</title>
-  <desc id="qldesc">Four steps: init creates config, introspect reads the database into a schema artifact, ask generates validated SQL from your first question, and enrich in Studio adds descriptions and tests questions — with a loop-back from enrich to ask to refine until the SQL is right.</desc>
+  <desc id="qldesc">Four steps: init creates config, introspect reads the database into a schema artifact, ask generates checked SQL from your first question, and enrich in Studio adds descriptions and tests questions — with a loop-back from enrich to ask to refine until the SQL is right.</desc>
   <defs>
     <style>
       :root {
@@ -64,7 +64,7 @@
   <!-- Step 3: ask -->
   <rect x="402" y="38" width="158" height="72" rx="8" fill="var(--bg-ask)" stroke="var(--border-ask)" stroke-width="2"/>
   <text x="481" y="66" text-anchor="middle" font-family="ui-sans-serif,system-ui,sans-serif" font-size="13" font-weight="700" fill="var(--title-ask)">ask</text>
-  <text x="481" y="84" text-anchor="middle" font-family="ui-sans-serif,system-ui,sans-serif" font-size="11" fill="var(--sub-ask)">validated SQL from</text>
+  <text x="481" y="84" text-anchor="middle" font-family="ui-sans-serif,system-ui,sans-serif" font-size="11" fill="var(--sub-ask)">checked SQL from</text>
   <text x="481" y="100" text-anchor="middle" font-family="ui-sans-serif,system-ui,sans-serif" font-size="11" fill="var(--sub-ask)">your first question</text>
   <!-- Arrow 3→4 -->
   <line x1="560" y1="74" x2="599" y2="74" stroke="var(--arrow)" stroke-width="2" marker-end="url(#qarrow)"/>

@@ -1,0 +1,5 @@
+{
+  "question": "What are the names of all the agencies?",
+  "reply": "```sql\nSELECT name\nFROM agency\n```",
+  "source": "authored"
+}

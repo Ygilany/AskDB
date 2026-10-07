@@ -1,13 +1,13 @@
 {
   "name": "@askdb/config",
-  "version": "1.0.0-beta.11",
+  "version": "1.0.0-beta.12",
   "description": "AskDB configuration helpers: Prisma-style env() and askdb.config file discovery for first-party apps.",
   "keywords": [
     "askdb",
     "config",
     "environment"
   ],
-  "homepage": "https://github.com/Ygilany/AskDB#readme",
+  "homepage": "https://askdb.tools/reference/config/",
   "bugs": {
     "url": "https://github.com/Ygilany/AskDB/issues"
   },
@@ -19,6 +19,7 @@
   "license": "Apache-2.0",
   "author": "Yahya Gilany",
   "type": "module",
+  "sideEffects": false,
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {
@@ -26,6 +27,11 @@
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js",
       "default": "./dist/index.js"
+    },
+    "./scaffold": {
+      "types": "./dist/scaffold/index.d.ts",
+      "import": "./dist/scaffold/index.js",
+      "default": "./dist/scaffold/index.js"
     }
   },
   "files": [
@@ -35,7 +41,7 @@
     "NOTICE"
   ],
   "engines": {
-    "node": ">=22.12"
+    "node": ">=22.14"
   },
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
@@ -43,11 +49,11 @@
     "test": "vitest run --config ../../vitest.config.ts"
   },
   "dependencies": {
-    "dotenv": "^17.4.2",
+    "dotenv": "^18.0.5",
     "jiti": "^2.7.0"
   },
   "devDependencies": {
     "typescript": "^6.0.3",
-    "vitest": "^5.0.1"
+    "vitest": "^5.0.3"
   }
 }

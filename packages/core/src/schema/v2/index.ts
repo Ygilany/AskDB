@@ -52,8 +52,6 @@ export type {
   TenantAccessSubtree,
   TenantAccessMultiRoot,
   TenantAccessGlobal,
-  TenantFilter,
-  TenantFilterCondition,
   TenantScopeContext,
   ParsedTenantPolicyMarkdown,
   NormalizedTenantPolicy,
@@ -62,3 +60,10 @@ export type {
   TableTenantClassification,
   TenantPolicyH2Section,
 } from "./tenant-policy.js";
+
+export {
+  createMentionMatcher,
+  findMentionedNames,
+  type MentionMatcher,
+  type MentionName,
+} from "./mentions.js";

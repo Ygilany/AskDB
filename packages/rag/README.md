@@ -7,14 +7,14 @@ Deterministic retrieval over AskDB Schema v2 artifacts. `@askdb/rag` chunks the 
 ## Install
 
 ```bash
-pnpm add @askdb/rag @askdb/core
+pnpm add @askdb/rag @askdb/core ai
 # only if you use the pgvector adapter:
 pnpm add pg
-# only if you use the OpenAI embedder helper or CLI `--embedder openai`:
-pnpm add ai @ai-sdk/openai
+# only if you use the OpenAI embedder helper:
+pnpm add @ai-sdk/openai
 ```
 
-`pg`, `ai`, and `@ai-sdk/openai` are optional peer dependencies. The chunker, in-memory store, and file store do not require them.
+`ai` is a required peer dependency of `@askdb/core`. For `@askdb/rag` itself, `pg`, `ai`, and `@ai-sdk/openai` are optional peer dependencies — the chunker, in-memory store, and file store do not require them.
 
 ## Quickstart
 
@@ -52,13 +52,15 @@ const { sql } = await ask({
 
 ## CLI
 
+`@askdb/rag` is a library. The command line for it is `askdb rag` in the [`askdb`](https://www.npmjs.com/package/askdb) package, which reads `rag.*` and `ai.embedding` from `askdb.config.*`:
+
 ```bash
-askdb-rag index fixtures/schemas/orders-users.schema --store file
-askdb-rag query fixtures/schemas/orders-users.schema \
+npx askdb rag index fixtures/schemas/orders-users.schema --store file
+npx askdb rag query fixtures/schemas/orders-users.schema \
   --question "How much revenue did we make last month?"
 ```
 
-The default CLI embedder is a deterministic mock for smoke tests. Use `--embedder openai` with `OPENAI_API_KEY` for real embeddings.
+See the [CLI reference](https://askdb.tools/reference/cli/#askdb-rag) for every flag. The `askdb-rag` binary this package used to ship now only points at `askdb rag`, and is removed at 1.0.
 
 ## Public Surface
 
@@ -76,14 +78,16 @@ All exports are available from the root `@askdb/rag` import. Sub-path imports ar
 |---|---|---|
 | `createMemoryStore` | `@askdb/rag/stores/memory` | In-memory cosine store. Zero deps. |
 | `createFileStore` | `@askdb/rag/stores/file` | Binary embedding file + JSON metadata. |
-| `createPgvectorStore` | `@askdb/rag/stores/pgvector` | pgvector adapter with documented setup SQL. Requires `pg`. |
+| `createPgvectorStore` | `@askdb/rag/stores/pgvector` | pgvector adapter with documented setup SQL. Requires `pg`. Needs `dimensions` only to create its table; `ensureSchema()` refuses an existing table of another width with a `PgvectorDimensionMismatchError`. |
 
 ### Embedders
 
 | Root import | Sub-path import | Description |
 |---|---|---|
 | `createAiSdkEmbedder` | `@askdb/rag/embedders/ai-sdk` | Generic AI SDK `EmbeddingModel` adapter. Requires `ai`. |
-| `createOpenAiEmbedder` | `@askdb/rag/embedders/openai` | **Deprecated.** OpenAI convenience helper. Use `createAiSdkEmbedder` with an `@askdb/ai-openai` model or the `@askdb/ai` registry instead. Removed in 1.0. |
+| `detectEmbeddingDimensions` | — | Learns an embedder's vector width by embedding one short text. Use it for a new pgvector table instead of hard-coding a width. |
+| `aiSdkEmbedderId` | `@askdb/rag/embedders/ai-sdk` | The `embedderId` Studio and `askdb rag` record for an `ai.embedding` model (`ai-sdk:<provider>:<model>:<dimensions or default>`), so an index built by one is accepted by the other. |
+| `createOpenAiEmbedder` | `@askdb/rag/embedders/openai` | **Deprecated.** OpenAI convenience helper. Use `createAiSdkEmbedder` with an AI SDK embedding model (e.g. from `@ai-sdk/openai`) or one built by the `@askdb/ai` registry instead. Removed in 1.0. |
 
 ### Import examples
 
@@ -101,7 +105,7 @@ import { createMemoryStore } from "@askdb/rag/stores/memory";
 import { createFileStore } from "@askdb/rag/stores/file";
 import { createPgvectorStore } from "@askdb/rag/stores/pgvector";
 import { createAiSdkEmbedder } from "@askdb/rag/embedders/ai-sdk";
-// Recommended: bring your own model via @askdb/ai-openai + createAiSdkEmbedder
+// Recommended: bring your own embedding model (e.g. @ai-sdk/openai, or @askdb/ai's registry) + createAiSdkEmbedder
 // import { createOpenAiEmbedder } from "@askdb/rag/embedders/openai"; // deprecated, removed in 1.0
 ```
 

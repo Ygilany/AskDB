@@ -1,6 +1,7 @@
-import matter from "gray-matter";
 import { SchemaParseError } from "../../errors.js";
+import { readFrontMatter } from "./parser.js";
 import {
+  assertDistinctRootPlaceholders,
   tenantPolicyFrontmatterSchema,
   TENANT_POLICY_H2_SECTIONS,
   type ParsedTenantPolicyMarkdown,
@@ -21,7 +22,9 @@ export function parseTenantPolicyMarkdown(
   content: string,
   filePath?: string,
 ): ParsedTenantPolicyMarkdown {
-  const file = matter(content);
+  // Malformed YAML must surface as SchemaParseError, never as a raw exception a
+  // caller might treat as "no policy" — that would silently disable tenancy.
+  const file = readFrontMatter(content, "tenant-policy", filePath);
   const result = tenantPolicyFrontmatterSchema.safeParse(file.data);
   if (!result.success) {
     const loc = filePath ? ` in ${filePath}` : "";
@@ -67,6 +70,9 @@ export function normalizeTenantPolicy(
 ): NormalizedTenantPolicy {
   const fm = parsed.frontmatter;
   const warnings: TenantPolicyWarning[] = [];
+
+  // A shared placeholder would bind one root's IDs where another root's column is compared.
+  assertDistinctRootPlaceholders(fm.roots);
 
   const rootIds = new Set(fm.roots.map((r) => r.id));
 

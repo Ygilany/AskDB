@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { SchemaParseError } from "../../errors.js";
 
 // ---------------------------------------------------------------------------
 // Front-matter zod schemas (validated when parsing tenant-policy.md)
@@ -76,6 +77,68 @@ export type EnforcementMode = z.infer<typeof enforcementModeSchema>;
 export type TenantPolicyFrontmatter = z.infer<typeof tenantPolicyFrontmatterSchema>;
 
 // ---------------------------------------------------------------------------
+// Placeholder naming convention
+// ---------------------------------------------------------------------------
+
+const placeholderName = (text: string): string => text.toLowerCase().replace(/[^a-z0-9]+/g, "_");
+
+/**
+ * The `:tenant_<name>_ids` placeholder the model writes for a tenant root, and the one
+ * `ask()` and `resolveTenantSql()` bind. `<name>` is the root's label lowercased, with
+ * every run of characters other than ASCII letters and digits replaced by `_`
+ * (`Sub-Agency` → `:tenant_sub_agency_ids`).
+ *
+ * A label with no ASCII letter or digit (e.g. Cyrillic or CJK) would reduce to `_` for
+ * every such root, so `<name>` comes from the root's table name instead (`Клиент` on
+ * `table:public.clients` → `:tenant_clients_ids`). Every derivation in core (prompt,
+ * substitution, guardrail, collision check) goes through this function.
+ */
+export function placeholderForTenantRoot(root: Pick<TenantRoot, "id" | "label">): string {
+  const fromLabel = placeholderName(root.label);
+  if (/[a-z0-9]/.test(fromLabel)) return `:tenant_${fromLabel}_ids`;
+  const table = root.id.startsWith("table:") ? root.id.slice("table:".length) : root.id;
+  return `:tenant_${placeholderName(table.slice(table.lastIndexOf(".") + 1))}_ids`;
+}
+
+/**
+ * The placeholder for a root label, from the label alone.
+ *
+ * @deprecated Use {@link placeholderForTenantRoot} with the root. For a label with no
+ * ASCII letter or digit this returns `:tenant___ids`, which is not the placeholder core
+ * prompts for and binds (that one comes from the root's table name). For every other
+ * label the two agree.
+ */
+export function placeholderForRoot(label: string): string {
+  return `:tenant_${placeholderName(label)}_ids`;
+}
+
+/**
+ * Throw `SchemaParseError` when two roots' labels derive the same placeholder
+ * (`Agency` and `agency`, `Sub-Agency` and `Sub Agency`). Each root's IDs bind through
+ * its placeholder, so a shared one would bind one root's IDs where the other root's
+ * column is compared: a cross-tenant leak whenever the two ID spaces overlap.
+ */
+export function assertDistinctRootPlaceholders(roots: readonly Pick<TenantRoot, "id" | "label">[]): void {
+  const byPlaceholder = new Map<string, Pick<TenantRoot, "id" | "label">>();
+  for (const root of roots) {
+    const placeholder = placeholderForTenantRoot(root);
+    const other = byPlaceholder.get(placeholder);
+    if (other && other.id !== root.id) {
+      throw new SchemaParseError(
+        `Invalid tenant policy: roots '${other.id}' (label "${other.label}") and '${root.id}' ` +
+          `(label "${root.label}") both map to the placeholder ${placeholder}, so one root's IDs ` +
+          "would be bound where the other root's column is compared. A root's placeholder is " +
+          ":tenant_<name>_ids, where <name> is its label lowercased with every run of characters " +
+          "other than ASCII letters and digits replaced by '_'. A label with no ASCII letter or " +
+          "digit uses the root's table name instead. Rename one of these labels so the two " +
+          "placeholders differ (a label with ASCII letters or digits sets the name directly).",
+      );
+    }
+    byPlaceholder.set(placeholder, root);
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Recognized H2 sections in tenant-policy.md body
 // ---------------------------------------------------------------------------
 
@@ -133,16 +196,6 @@ export type TenantAccess =
   | TenantAccessMultiRoot
   | TenantAccessGlobal;
 
-export type TenantFilterCondition = {
-  column: string;
-  operator: "=" | "IN" | "!=" | "NOT IN";
-  value: string | string[];
-};
-
-export type TenantFilter = {
-  conditions: TenantFilterCondition[];
-};
-
 export type TenantScopeContext = {
   role?: string;
   label?: string;
@@ -154,7 +207,6 @@ export type TenantScopeContext = {
 
 export type TenantScope = {
   access: TenantAccess;
-  tenantFilters?: Record<string, TenantFilter>;
   context?: TenantScopeContext;
 };
 
@@ -177,14 +229,20 @@ const tenantAccessSubtreeSchema = z.object({
 
 const tenantAccessMultiRootSchema = z.object({
   kind: z.literal("multi_root"),
+  // An entry may have no IDs: it names a root the user is covered for but has no rows
+  // in (ask() expands an empty subtree level this way). Binding its placeholder fails
+  // closed (UNRESOLVED_TENANT_PLACEHOLDER). A scope with no ID anywhere grants nothing.
   scopes: z
     .array(
       z.object({
         tenantRoot: z.string().min(1),
-        ids: z.array(z.string()).min(1),
+        ids: z.array(z.string()),
       }),
     )
-    .min(1),
+    .min(1)
+    .refine((scopes) => scopes.some((s) => s.ids.length > 0), {
+      message: "multi_root needs at least one entry with an ID",
+    }),
 });
 
 const tenantAccessGlobalSchema = z.object({
@@ -199,16 +257,6 @@ export const tenantAccessSchema = z.discriminatedUnion("kind", [
   tenantAccessGlobalSchema,
 ]);
 
-const tenantFilterConditionSchema = z.object({
-  column: z.string().min(1),
-  operator: z.enum(["=", "IN", "!=", "NOT IN"]),
-  value: z.union([z.string(), z.array(z.string())]),
-});
-
-const tenantFilterSchema = z.object({
-  conditions: z.array(tenantFilterConditionSchema).min(1),
-});
-
 const tenantScopeContextSchema = z.strictObject({
   role: z.string().optional(),
   label: z.string().optional(),
@@ -218,9 +266,10 @@ const tenantScopeContextSchema = z.strictObject({
   description: z.string().optional(),
 });
 
+// Deliberately z.object (not strictObject): unknown keys — including the removed,
+// never-implemented `tenantFilters` — are ignored rather than rejected.
 export const tenantScopeSchema = z.object({
   access: tenantAccessSchema,
-  tenantFilters: z.record(z.string(), tenantFilterSchema).optional(),
   context: tenantScopeContextSchema.optional(),
 });
 

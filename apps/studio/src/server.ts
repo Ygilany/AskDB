@@ -5,18 +5,17 @@ import { extname, relative, join, resolve, dirname, sep } from "node:path";
 import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { generateText as defaultGenerateText } from "ai";
-import { bootstrapAskDbEnv, getAskDbRuntimeConfig } from "@askdb/config";
+import {
+  ASKDB_AI_PROVIDERS,
+  bootstrapAskDbEnv,
+  getAskDbRuntimeConfig,
+} from "@askdb/config";
 import {
   createAiRegistry,
   resolveReasoningEffort,
   type AiConfig,
-  type AiEnv,
   type AiProvider,
 } from "@askdb/ai";
-import { anthropicProvider } from "@askdb/ai-anthropic";
-import { azureProvider } from "@askdb/ai-azure";
-import { googleProvider } from "@askdb/ai-google";
-import { openaiProvider } from "@askdb/ai-openai";
 import {
   ask,
   formatSensitiveReference,
@@ -29,10 +28,14 @@ import {
   tenantScopeSchema,
   type AskDialectInput,
   type AskGenerateDeps,
+  type DialectSpec,
   type TenantPolicyFrontmatter,
   type TenantScope,
   type TenantSqlOutputMode,
   type V2Concept,
+  normalizeTenantPolicy,
+  parseTenantPolicyMarkdown,
+  SchemaParseError,
   writeTenantPolicyMarkdown,
   tenantPolicyFrontmatterSchema,
 } from "@askdb/core";
@@ -40,15 +43,19 @@ import {
   buildSchemaIndex,
   chunkContentHash,
   chunkSchema,
+  aiSdkEmbedderId,
   createAiSdkEmbedder,
   createFileStore,
   createMemoryStore,
   createPgvectorStore,
   createRetriever,
+  detectEmbeddingDimensions,
   loadChunkerSourcesFromDir,
+  PgvectorDimensionMismatchError,
   type ChunkType,
   type Embedder,
   type QueryResult,
+  type SchemaLockFile,
   type VectorStore,
 } from "@askdb/rag";
 import {
@@ -89,6 +96,7 @@ import type {
 } from "./shared/api.js";
 import {
   EXECUTE_DRIVER_REGISTRY,
+  executeDialectFor,
   isDriverInstalled,
   isStudioExecuteProvider,
   validateExecuteSql,
@@ -108,7 +116,10 @@ import {
   injectSessionToken,
 } from "./request-guard.js";
 
-const ai = createAiRegistry([openaiProvider, azureProvider, googleProvider, anthropicProvider]);
+// Batteries-included surface: every built-in provider is registered, and each
+// loads its @ai-sdk/* package only when first used, so env config alone
+// selects the provider.
+const ai = createAiRegistry();
 
 const DEFAULT_CLIENT_DIR = fileURLToPath(new URL("./client/", import.meta.url));
 let clientDirForTests: string | undefined;
@@ -149,6 +160,12 @@ type StudioState = {
   workspace: Workspace | null;
   setupReason: SetupReason | null;
   ragMemoryStore?: ReturnType<typeof createMemoryStore>;
+  /**
+   * What the last build into `ragMemoryStore` recorded. The indexer writes no
+   * `schema.lock.json` for an ephemeral store, so Studio keeps the same
+   * fields in memory for the status check.
+   */
+  ragMemoryIndex?: StudioRagIndexRecord;
 };
 
 type StudioRagEmbedderConfig =
@@ -161,9 +178,15 @@ type StudioRagEmbedderConfig =
     }
   | {
       kind: "ai-sdk";
+      /** The adapter's canonical name (`foundry` resolves to `azure`), as the embedder id uses it. */
       provider: AiProvider;
+      /** The provider as `ai.embedding` resolves it in the config (`foundry` stays `foundry`), for messages. */
+      configuredProvider: string;
+      /** Connection name within `ai.providerConfig.<configuredProvider>`. */
+      connection: string;
       embedderId: string;
-      dimensions: number;
+      /** The requested width (`ai.embedding.dimensions`); undefined leaves it to the model. */
+      dimensions: number | undefined;
       configured: boolean;
       label: string;
       model: string;
@@ -181,6 +204,7 @@ type StudioOpenRagStore = {
     close?: () => Promise<void>;
     size?: () => number;
     count?: (filter?: { schemaId?: string }) => Promise<number>;
+    tableDimensions?: () => Promise<number | undefined>;
   };
   basePath?: string;
   table?: string;
@@ -197,7 +221,6 @@ type StudioTokenUsageInput = {
 
 const STUDIO_RAG_MOCK_DIMENSIONS = 64;
 const STUDIO_RAG_MOCK_EMBEDDER_ID = `studio:mock-lexical-${STUDIO_RAG_MOCK_DIMENSIONS}`;
-const DEFAULT_EMBEDDING_MODEL = "text-embedding-3-small";
 let studioPgvectorStoreFactoryForTests: typeof createPgvectorStore | undefined;
 
 export function setStudioPgvectorStoreFactoryForTests(
@@ -399,8 +422,8 @@ export function serializeWorkspace(workspace: Workspace): StudioWorkspaceDto {
     dialect,
     warnings: workspace.warnings,
     aiConfigured: Boolean(aiConfig),
-    model: aiConfig?.model ?? "gpt-4o-mini",
-    aiProvider: aiConfig?.provider ?? "openai",
+    model: aiConfig?.model ?? rt.ai.language.model ?? "provider default",
+    aiProvider: aiConfig?.provider ?? rt.ai.language.provider,
     tables: workspace.tables.map((table) => {
       const draft = buildTableDraft(table.physical, table.parsed);
       return {
@@ -416,6 +439,7 @@ export function serializeWorkspace(workspace: Workspace): StudioWorkspaceDto {
               warning.kind === "missing_column_md" && warning.tableId === table.physical.id,
           )
           .map((warning) => warning.columnId),
+        escalatedByOtherFiles: table.escalatedByOtherFiles ?? [],
       };
     }),
     concepts: workspace.concepts?.frontmatter.concepts ?? [],
@@ -560,7 +584,8 @@ function parseSetupConfigBody(body: unknown): SetupConfigInput {
     throw new StudioHttpError(400, "Request body must be a JSON object.");
   }
   const databases = ["postgres", "mysql", "sqlite", "sqlserver", "prisma"] as const;
-  const aiProviders = ["openai", "anthropic", "google", "azure", "foundry"] as const;
+  // Every provider with an askdb.config.* branch; @askdb/client's provider-config-drift test asserts this matches @askdb/ai's built-in table.
+  const aiProviders = ASKDB_AI_PROVIDERS;
   const ragStores = ["file", "memory", "pgvector"] as const;
   const executeProviders = ["postgres", "mysql", "sqlite", "sqlserver"] as const;
   if (typeof body.database !== "string" || !databases.includes(body.database as (typeof databases)[number])) {
@@ -618,8 +643,23 @@ function saveTenantPolicy(
   frontmatter: TenantPolicyFrontmatter,
   body: string,
 ): void {
+  const workspace = requireWorkspace(state);
   const filePath = join(state.schemaDir, "tenant-policy.md");
   const md = writeTenantPolicyMarkdown(frontmatter, body);
+  // Run core's own load-time validation before writing: a policy that `loadSchema` would
+  // reject (e.g. two root labels deriving one placeholder) must not reach disk, or every
+  // later request fails until the file is fixed by hand.
+  try {
+    const physical = workspace.physical;
+    normalizeTenantPolicy(
+      parseTenantPolicyMarkdown(md, filePath),
+      new Set(physical.tables.map((table) => table.id)),
+      new Set(physical.tables.flatMap((table) => table.columns.map((column) => column.id))),
+    );
+  } catch (error) {
+    if (error instanceof SchemaParseError) throw new StudioHttpError(400, error.message);
+    throw error;
+  }
   writeFileSync(filePath, md, "utf8");
   state.workspace = loadWorkspace(state.schemaDir);
 }
@@ -644,10 +684,13 @@ function saveDraft(state: StudioState, tableId: string, draft: TableDraft): void
   const table = workspace.tables.find((candidate) => candidate.physical.id === tableId);
   if (!table) throw new StudioHttpError(404, `No such table: ${tableId}`);
 
+  // Passing the file's current front-matter keeps entries for other tables' columns
+  // (e.g. a misplaced `sensitive: true`), which the draft does not carry.
   const frontmatter = buildFrontmatter(
     table.physical,
     workspace.physical.schemaId,
     draft,
+    table.parsed?.frontmatter,
   );
   let body = table.parsed
     ? replaceTableDescription(table.parsed.body, draft.description)
@@ -882,24 +925,31 @@ async function askSampleQuestion(
   };
 }
 
+/** The `schema.lock.json` fields the RAG status reads. */
+type StudioRagIndexRecord = Partial<
+  Pick<SchemaLockFile, "embedderId" | "updatedAt" | "dimensions" | "hashes" | "incomplete">
+>;
+
 async function getRagStatus(state: StudioState): Promise<StudioRagStatusDto> {
   const config = resolveStudioRagEmbedderConfig();
   const sources = loadChunkerSourcesFromDir(state.schemaDir);
   const chunkResult = chunkSchema(sources);
   const lockPath = join(state.schemaDir, "schema.lock.json");
-  const lock = readOptionalJson(lockPath) as
-    | { embedderId?: string; updatedAt?: string; hashes?: Record<string, string> }
-    | undefined;
+  const lock =
+    resolveStudioRagStoreConfig(state).kind === "memory"
+      ? state.ragMemoryIndex
+      : (readOptionalJson(lockPath) as StudioRagIndexRecord | undefined);
   const currentHashes = Object.fromEntries(
     chunkResult.chunks.map((chunk) => [chunk.id, chunkContentHash(chunk.text)]),
   );
   const lockHashes = lock?.hashes ?? {};
   const hashIds = Object.keys(currentHashes);
-  const store = await openStudioRagStore(state, config.dimensions);
+  const store = await openStudioRagStore(state, { dimensions: config.dimensions });
   try {
     const chunksIndexed = await countStudioRagStoreChunks(store, sources.schema.schemaId);
     const stale =
       !lock ||
+      lock.incomplete === true ||
       lock.embedderId !== config.embedderId ||
       Object.keys(lockHashes).length !== hashIds.length ||
       hashIds.some((id) => lockHashes[id] !== currentHashes[id]) ||
@@ -942,8 +992,9 @@ async function getRagStatus(state: StudioState): Promise<StudioRagStatusDto> {
       updatedAt: lock?.updatedAt ?? null,
       chunksTotal: chunkResult.chunks.length,
       chunksIndexed,
-      dimensions: config.dimensions,
-      expectedDimensions: config.dimensions,
+      // The width the last index build learned from the model, else the one configured.
+      dimensions: lock?.dimensions ?? config.dimensions ?? null,
+      expectedDimensions: config.dimensions ?? null,
       sensitiveExcluded: chunkResult.stats.sensitiveExcluded,
       sensitiveIncluded: chunkResult.stats.sensitiveIncluded,
       files: fileArtifacts,
@@ -956,25 +1007,39 @@ async function getRagStatus(state: StudioState): Promise<StudioRagStatusDto> {
 async function indexRag(state: StudioState): Promise<RagIndexResponse> {
   const config = resolveStudioRagEmbedderConfig();
   if (!config.configured) {
-    throw new StudioHttpError(400, studioRagAiSdkKeyMissingMessage());
+    throw new StudioHttpError(400, studioRagAiSdkKeyMissingMessage(config));
   }
   const usage = createRequestUsageCollector();
   clearIncompatibleRagStore(state, config);
   const sources = loadChunkerSourcesFromDir(state.schemaDir);
-  const store = await openStudioRagStore(state, config.dimensions);
+  const embedder = await createStudioRagEmbedder(config, usage);
   let result: Awaited<ReturnType<typeof buildSchemaIndex>>;
+  let store: StudioOpenRagStore | undefined;
   try {
+    // A new pgvector table needs its width up front: the configured one, else the model's own.
+    const dimensions =
+      config.dimensions ??
+      (resolveStudioRagStoreConfig(state).kind === "pgvector" ? await detectEmbeddingDimensions(embedder) : undefined);
+    store = await openStudioRagStore(state, { dimensions, provision: true });
     result = await buildSchemaIndex({
       schema: sources,
-      embedder: await createStudioRagEmbedder(config, usage),
+      embedder,
       store: store.store,
       embedderId: config.embedderId,
       lockFilePath: join(state.schemaDir, "schema.lock.json"),
     });
+    if (store.kind === "memory") {
+      state.ragMemoryIndex = {
+        embedderId: config.embedderId,
+        updatedAt: new Date().toISOString(),
+        dimensions: store.store.describe?.().dimensions,
+        hashes: Object.fromEntries(result.chunks.map((chunk) => [chunk.id, chunkContentHash(chunk.text)])),
+      };
+    }
   } catch (error) {
     throw formatStudioRagOperationError(error, config);
   } finally {
-    await store.dispose();
+    await store?.dispose();
   }
   return {
     status: await getRagStatus(state),
@@ -1025,7 +1090,7 @@ async function createCurrentStudioRagIndex(
 }> {
   const config = resolveStudioRagEmbedderConfig();
   if (!config.configured) {
-    throw new StudioHttpError(400, studioRagAiSdkKeyMissingMessage());
+    throw new StudioHttpError(400, studioRagAiSdkKeyMissingMessage(config));
   }
   const status = (await getRagStatus(state)) as {
     hasIndex?: boolean;
@@ -1042,7 +1107,7 @@ async function createCurrentStudioRagIndex(
   if (!status.schemaId || typeof status.chunksTotal !== "number") {
     throw new StudioHttpError(500, "Studio RAG status is missing schema metadata.");
   }
-  const store = await openStudioRagStore(state, config.dimensions);
+  const store = await openStudioRagStore(state, { dimensions: config.dimensions });
   return {
     config,
     status: {
@@ -1064,24 +1129,28 @@ function resolveStudioRagStoreConfig(state: StudioState):
   | { kind: "file"; basePath: string }
   | { kind: "pgvector"; connectionString?: string; table?: string; indexStrategy?: string } {
   const rt = getAskDbRuntimeConfig();
-  const kind = rt.structured.rag.store;
+  const kind = rt.rag.store;
   if (kind === "memory") return { kind };
   if (kind === "file") {
-    const basePath = rt.structured.rag.storeConfig.file?.basePath?.trim();
+    const basePath = rt.rag.storeConfig.file?.basePath?.trim();
     return { kind, basePath: basePath ? resolve(basePath) : join(state.schemaDir, "schema") };
   }
   const connectionString = pickFlat(rt.flat, "ASKDB_PGVECTOR_URL");
   return {
     kind,
     connectionString,
-    table: rt.structured.rag.storeConfig.pgvector?.table?.trim() || undefined,
+    table: rt.rag.storeConfig.pgvector?.table?.trim() || undefined,
     indexStrategy: pickFlat(rt.flat, "ASKDB_PGVECTOR_INDEX_STRATEGY"),
   };
 }
 
+/**
+ * Opens the configured store. `provision` creates the pgvector table when it's missing, at
+ * `dimensions`; without it, a pgvector store only reads and writes an existing table.
+ */
 async function openStudioRagStore(
   state: StudioState,
-  dimensions: number,
+  { dimensions, provision = false }: { dimensions?: number; provision?: boolean },
 ): Promise<StudioOpenRagStore> {
   const config = resolveStudioRagStoreConfig(state);
   if (config.kind === "memory") {
@@ -1113,10 +1182,18 @@ async function openStudioRagStore(
   const store = pgvectorFactory({
     connectionString: config.connectionString,
     table: config.table,
-    dimensions,
+    ...(dimensions !== undefined ? { dimensions } : {}),
     ...(config.indexStrategy ? { indexStrategy: config.indexStrategy as "ivfflat" | "hnsw" | "none" } : {}),
   });
-  await store.ensureSchema();
+  if (provision) {
+    try {
+      await store.ensureSchema();
+    } catch (error) {
+      // The caller never receives this store, so close its pool here (a width refusal has opened it).
+      await store.close().catch(() => {});
+      throw error;
+    }
+  }
   return {
     kind: "pgvector",
     store,
@@ -1132,6 +1209,10 @@ async function countStudioRagStoreChunks(
   store: StudioOpenRagStore,
   schemaId: string,
 ): Promise<number> {
+  // A pgvector table that doesn't exist yet holds nothing; the first index build creates it.
+  if (typeof store.store.tableDimensions === "function" && (await store.store.tableDimensions()) === undefined) {
+    return 0;
+  }
   if (typeof store.store.count === "function") {
     return store.store.count({ schemaId });
   }
@@ -1146,35 +1227,9 @@ function pickFlat(flat: Readonly<Record<string, string>>, key: string): string |
   return typeof value === "string" && value.trim() !== "" ? value.trim() : undefined;
 }
 
-function pickEnv(env: AiEnv, key: string): string | undefined {
-  const v = env[key];
-  return typeof v === "string" && v.trim() !== "" ? v.trim() : undefined;
-}
-
 function resolveStudioRagEmbedderConfig(): StudioRagEmbedderConfig {
-  const rt = getAskDbRuntimeConfig();
-  const base = rt.ai.aiEnv;
-  const explicitKind = pickEnv(base, "ASKDB_RAG_EMBEDDER");
-  const kind = explicitKind?.toLowerCase();
-  if (kind === "mock") {
-    return {
-      kind: "mock",
-      embedderId: STUDIO_RAG_MOCK_EMBEDDER_ID,
-      dimensions: STUDIO_RAG_MOCK_DIMENSIONS,
-      configured: true,
-      label: "Mock lexical",
-    };
-  }
-  if (kind !== undefined && kind !== "ai-sdk" && kind !== "openai") {
-    throw new StudioHttpError(400, `Unsupported Studio RAG embedder: ${kind}`);
-  }
-
-  const env = buildStudioRagEmbeddingEnv(kind, base);
-  const aiConfig = ai.resolveEmbeddingConfig(env, {
-    modelEnvVar: "ASKDB_RAG_EMBEDDER_MODEL",
-    modelDefault: DEFAULT_EMBEDDING_MODEL,
-  });
-  if (!aiConfig && kind === undefined) {
+  const embedding = getAskDbRuntimeConfig().ai.embedding;
+  if (!embedding) {
     return {
       kind: "mock",
       embedderId: STUDIO_RAG_MOCK_EMBEDDER_ID,
@@ -1184,47 +1239,34 @@ function resolveStudioRagEmbedderConfig(): StudioRagEmbedderConfig {
     };
   }
 
-  const provider = aiConfig?.provider ?? fallbackStudioRagProvider(kind, base);
-  const model = aiConfig?.model ?? DEFAULT_EMBEDDING_MODEL;
-  const dimensionOverride = readPositiveIntegerEnv(pickEnv(base, "ASKDB_RAG_EMBEDDER_DIMENSIONS"));
-  const dimensions = dimensionOverride ?? defaultEmbeddingDimensions(model);
+  // The env holds the embedding connection only, so no other provider's key can reach it (#345).
+  const aiConfig = ai.resolveEmbeddingConfig(embedding.env);
+  // The adapter's canonical name (`foundry` resolves to `azure`) keeps existing index ids stable.
+  const provider = aiConfig?.provider ?? embedding.provider;
+  const model = embedding.model;
+  const dimensions = embedding.dimensions;
   return {
     kind: "ai-sdk",
     provider,
-    embedderId: `ai-sdk:${provider}:${model}:${dimensions}`,
+    configuredProvider: embedding.provider,
+    connection: embedding.connection,
+    embedderId: aiSdkEmbedderId({ provider, model, dimensions }),
     dimensions,
     configured: Boolean(aiConfig),
     label: `AI SDK (${provider})`,
     model,
     baseUrl: aiConfig?.baseURL,
     aiConfig,
-    requestDimensions: dimensionOverride,
+    // Only an explicit ai.embedding.dimensions is sent; otherwise the model's own width applies.
+    requestDimensions: embedding.dimensions,
   };
 }
 
-function buildStudioRagEmbeddingEnv(kind: string | undefined, base: AiEnv): AiEnv {
-  const apiKeyOverride = pickEnv(base, "ASKDB_RAG_EMBEDDER_API_KEY");
-  const baseUrlOverride = pickEnv(base, "ASKDB_RAG_EMBEDDER_BASE_URL");
-  return {
-    ...base,
-    ...(kind === "openai" ? { ASKDB_AI_PROVIDER: "openai" } : {}),
-    ...(apiKeyOverride ? { ASKDB_AI_API_KEY: apiKeyOverride } : {}),
-    ...(baseUrlOverride ? { ASKDB_AI_BASE_URL: baseUrlOverride } : {}),
-  };
-}
-
-function fallbackStudioRagProvider(kind: string | undefined, base: AiEnv): AiProvider {
-  if (kind === "openai") return "openai";
-  const raw = (pickEnv(base, "ASKDB_AI_PROVIDER") ?? "").toLowerCase();
-  return raw === "azure" || raw === "azure-openai" || raw === "foundry"
-    ? "azure"
-    : "openai";
-}
-
-function studioRagAiSdkKeyMissingMessage(): string {
+function studioRagAiSdkKeyMissingMessage(config: Extract<StudioRagEmbedderConfig, { kind: "ai-sdk" }>): string {
   return (
-    "Studio RAG AI SDK embeddings require a configured AI provider key. " +
-    "Set ASKDB_AI_API_KEY or the provider-native key, or set ASKDB_RAG_EMBEDDER=mock for the local lexical embedder."
+    `Studio RAG embeddings need an API key on the ai.embedding connection ` +
+    `("${config.connection}" in ai.providerConfig.${config.configuredProvider}). ` +
+    'Set it in askdb.config.*, or set rag.embedder: "mock" for the local lexical embedder.'
   );
 }
 
@@ -1234,7 +1276,7 @@ async function createStudioRagEmbedder(
 ): Promise<Embedder> {
   if (config.kind === "mock") return createStudioMockEmbedder(config.dimensions);
   if (!config.aiConfig) {
-    throw new StudioHttpError(400, studioRagAiSdkKeyMissingMessage());
+    throw new StudioHttpError(400, studioRagAiSdkKeyMissingMessage(config));
   }
   const model = await ai.createEmbeddingModel(config.aiConfig, {
     dimensions: config.requestDimensions,
@@ -1257,6 +1299,9 @@ function formatStudioRagOperationError(
   config: StudioRagEmbedderConfig,
 ): StudioHttpError {
   if (error instanceof StudioHttpError) return error;
+  if (error instanceof PgvectorDimensionMismatchError) {
+    return new StudioHttpError(409, studioRagWidthMismatchMessage(error, config));
+  }
   if (config.kind === "mock") {
     return new StudioHttpError(500, error instanceof Error ? error.message : String(error));
   }
@@ -1266,7 +1311,7 @@ function formatStudioRagOperationError(
     return new StudioHttpError(500, error instanceof Error ? error.message : String(error));
   }
   const parts = [
-    `Studio RAG embedding request failed for provider ${config.provider}, model ${config.model}.`,
+    `Studio RAG embedding request failed for ai.embedding (provider ${config.configuredProvider}, connection ${config.connection}, model ${config.model}).`,
   ];
   if (config.baseUrl) parts.push(`Base URL: ${config.baseUrl}.`);
   if (apiError?.statusCode) parts.push(`Status: ${apiError.statusCode}.`);
@@ -1274,6 +1319,24 @@ function formatStudioRagOperationError(
   if (responseBody) parts.push(`Response: ${responseBody}`);
   if (!responseBody && error instanceof Error) parts.push(`Error: ${error.message}`);
   return new StudioHttpError(502, parts.join(" "));
+}
+
+/** An existing pgvector table of another width: say where the new width comes from and how to resolve it, in config terms. */
+function studioRagWidthMismatchMessage(error: PgvectorDimensionMismatchError, config: StudioRagEmbedderConfig): string {
+  const mismatch = `pgvector table "${error.table}" holds ${error.tableDimensions}-dimension vectors, but`;
+  const rebuild = `Drop the table (DROP TABLE "${error.table}";) and build the index again`;
+  const newTable = "point rag.storeConfig.pgvector.table at a new table";
+  if (config.kind === "mock") {
+    return `${mismatch} the mock embedder writes ${error.dimensions}. ${rebuild}, or ${newTable}.`;
+  }
+  const source =
+    config.dimensions !== undefined
+      ? `ai.embedding.dimensions asks for ${error.dimensions}`
+      : `embedding model ${config.model} returns ${error.dimensions}`;
+  return (
+    `${mismatch} ${source}. ${rebuild}, ${newTable}, ` +
+    `or set ai.embedding.dimensions: ${error.tableDimensions} if model ${config.model} supports that width.`
+  );
 }
 
 function findApiCallError(error: unknown): {
@@ -1311,28 +1374,18 @@ function clearIncompatibleRagStore(state: StudioState, config: StudioRagEmbedder
   if (store.kind !== "file") return;
   const embeddingsJsonPath = `${store.basePath}.embeddings.json`;
   const embeddings = readOptionalJson(embeddingsJsonPath) as { dimensions?: number } | undefined;
-  if (embeddings?.dimensions === undefined || embeddings.dimensions === config.dimensions) return;
-  for (const path of [
-    `${store.basePath}.embeddings.json`,
-    `${store.basePath}.embeddings.bin`,
-    join(state.schemaDir, "schema.lock.json"),
-  ]) {
+  if (embeddings?.dimensions === undefined) return;
+  // The file store refuses mixed widths. When the width isn't known up front, vectors from a
+  // different embedder may not match it, so they go too.
+  const lockPath = join(state.schemaDir, "schema.lock.json");
+  const compatible =
+    config.dimensions !== undefined
+      ? embeddings.dimensions === config.dimensions
+      : (readOptionalJson(lockPath) as { embedderId?: string } | undefined)?.embedderId === config.embedderId;
+  if (compatible) return;
+  for (const path of [`${store.basePath}.embeddings.json`, `${store.basePath}.embeddings.bin`, lockPath]) {
     rmSync(path, { force: true });
   }
-}
-
-function defaultEmbeddingDimensions(model: string): number {
-  if (model === "text-embedding-3-large") return 3072;
-  return 1536;
-}
-
-function readPositiveIntegerEnv(value: string | undefined): number | undefined {
-  if (value === undefined || value.trim() === "") return undefined;
-  const parsed = Number(value);
-  if (!Number.isInteger(parsed) || parsed <= 0) {
-    throw new StudioHttpError(400, `Invalid Studio RAG embedding dimensions: ${value}`);
-  }
-  return parsed;
 }
 
 function serializeRagResult(result: QueryResult): StudioRagChunkDto {
@@ -1780,7 +1833,11 @@ async function executeQuery(body: unknown, schemaDir: string): Promise<ExecuteRe
     throw error;
   }
 
-  const warnings = sensitiveExecuteWarnings(sql, schemaDir);
+  const warnings = sensitiveExecuteWarnings(
+    sql,
+    schemaDir,
+    executeDialectFor(exec.provider, rt.nlToSql.dialect),
+  );
   const projectRoot = findProjectRoot(schemaDir) ?? schemaDir;
   const def = EXECUTE_DRIVER_REGISTRY[exec.provider];
   const result = await def.execute({
@@ -1804,7 +1861,11 @@ async function executeQuery(body: unknown, schemaDir: string): Promise<ExecuteRe
  * strict-mode setting; hosts that need enforcement call
  * `validateSensitiveReferences(sql, schema, { mode: "strict" })` themselves.
  */
-function sensitiveExecuteWarnings(sql: string, schemaDir: string): string[] {
+function sensitiveExecuteWarnings(
+  sql: string,
+  schemaDir: string,
+  dialect: DialectSpec,
+): string[] {
   let schema: ReturnType<typeof loadSchema>;
   try {
     schema = loadSchema(schemaDir);
@@ -1812,7 +1873,7 @@ function sensitiveExecuteWarnings(sql: string, schemaDir: string): string[] {
     return [];
   }
   if (!schemaHasSensitiveIdentifiers(schema)) return [];
-  const result = validateSensitiveReferences(sql, schema, { mode: "warn" });
+  const result = validateSensitiveReferences(sql, schema, { mode: "warn", dialect });
   if (result.references.length === 0) return [];
   return [
     `This query reads identifiers marked sensitive: ${result.references.map(formatSensitiveReference).join(", ")}.`,

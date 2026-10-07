@@ -2,11 +2,14 @@ import type { LanguageModel } from "ai";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { MockLanguageModelV3 } from "ai/test";
 import { describe, expect, it, vi } from "vitest";
-import { AskDbError, SqlValidationError } from "../errors.js";
+import { AskDbError, SqlValidationError, TenantGuardrailError } from "../errors.js";
 import { AskDbLogEvent } from "../logging/log-events.js";
 import { loadNormalizedSchemaFromJson } from "../schema/parse.js";
 import type { NormalizedSchema } from "../schema/types.js";
+import { loadSchema } from "../schema/v2/loader.js";
+import type { TenantScope } from "../schema/v2/tenant-policy.js";
 import {
   MYSQL_DIALECT,
   POSTGRES_DIALECT,
@@ -189,40 +192,61 @@ describe("generateSelectSql — prompt parameterization per dialect", () => {
   async function capturedPrompt(
     dialect: typeof POSTGRES_DIALECT,
     sqlForModel: string,
-  ): Promise<{ instructions: string; prompt: string }> {
+  ): Promise<{ system: string; prompt: string }> {
     const generateText = vi.fn(async () => ({ text: `\`\`\`sql\n${sqlForModel}\n\`\`\`` }));
     await generateSelectSql(dialect, "show me users", minimalSchema, fakeModel, {
       generateText,
     });
-    const call = generateText.mock.calls[0]![0] as { instructions: string; prompt: string };
-    return { instructions: call.instructions, prompt: call.prompt };
+    const call = generateText.mock.calls[0]![0] as { system: string; prompt: string };
+    return { system: call.system, prompt: call.prompt };
   }
 
   it("MySQL prompt mentions backticks and CONCAT(), system prompt names MySQL", async () => {
-    const { instructions, prompt } = await capturedPrompt(MYSQL_DIALECT, "SELECT id FROM users");
-    expect(instructions).toMatch(/MySQL/);
+    const { system, prompt } = await capturedPrompt(MYSQL_DIALECT, "SELECT id FROM users");
+    expect(system).toMatch(/MySQL/);
     expect(prompt).toMatch(/MySQL SELECT/);
     expect(prompt).toMatch(/backtick/i);
     expect(prompt).toMatch(/CONCAT/);
   });
 
   it("SQLite prompt mentions strftime() and `||` concat, system prompt names SQLite", async () => {
-    const { instructions, prompt } = await capturedPrompt(SQLITE_DIALECT, "SELECT id FROM users");
-    expect(instructions).toMatch(/SQLite/);
+    const { system, prompt } = await capturedPrompt(SQLITE_DIALECT, "SELECT id FROM users");
+    expect(system).toMatch(/SQLite/);
     expect(prompt).toMatch(/SQLite SELECT/);
     expect(prompt).toMatch(/strftime/);
     expect(prompt).toMatch(/\|\|/);
   });
 
   it("SQL Server prompt mentions TOP and OFFSET .. FETCH NEXT", async () => {
-    const { instructions, prompt } = await capturedPrompt(
+    const { system, prompt } = await capturedPrompt(
       SQLSERVER_DIALECT,
       "SELECT TOP (5) id FROM users",
     );
-    expect(instructions).toMatch(/SQL Server/);
+    expect(system).toMatch(/SQL Server/);
     expect(prompt).toMatch(/SQL Server SELECT/);
     expect(prompt).toMatch(/TOP/);
     expect(prompt).toMatch(/OFFSET .* FETCH NEXT/);
+  });
+
+  // AI SDK 7 reads `system` only as a deprecated alias of `instructions`; this fails if the
+  // installed 7.x stops honoring it. The AI SDK 6 side is held by the consumer-ai6 install smoke.
+  it("delivers the `system` prompt to the model through the real AI SDK 7 generateText", async () => {
+    const model = new MockLanguageModelV3({
+      doGenerate: async () => ({
+        content: [{ type: "text", text: "```sql\nSELECT id FROM users\n```" }],
+        finishReason: { unified: "stop", raw: undefined },
+        usage: {
+          inputTokens: { total: 1, noCache: 1, cacheRead: undefined, cacheWrite: undefined },
+          outputTokens: { total: 1, text: 1, reasoning: undefined },
+        },
+        warnings: [],
+      }),
+    });
+    const result = await generateSelectSql(POSTGRES_DIALECT, "show me users", minimalSchema, model);
+    expect(result.sql).toMatch(/SELECT id FROM users/);
+    const prompt = model.doGenerateCalls[0]!.prompt;
+    const systemMessage = prompt.find((m) => m.role === "system");
+    expect(systemMessage?.content).toEqual(expect.stringContaining("AskDB SQL generator"));
   });
 });
 
@@ -319,5 +343,85 @@ describe("generateSelectSql — parameterize prompt + extras", () => {
     expect(out.sql).toBe("SELECT count(*) FROM cities WHERE state = 'colorado'");
     expect(out.unboundNamedSql).toBeUndefined();
     expect(out.parameterManifest).toBeUndefined();
+  });
+});
+
+describe("generateSelectSql — tenant guardrail checks the returned SQL", () => {
+  const multiTenantDir = join(here, "../../../../fixtures/schemas/agency-multi-tenant.schema");
+  const agencyScope: TenantScope = {
+    access: { kind: "ids", tenantRoot: "table:public.agencies", ids: ["42"] },
+  };
+  // Scoped unbound block, unscoped bound block: the bound one is what callers run.
+  const disagreeingReply = [
+    "```sql",
+    "SELECT * FROM orders WHERE status='open'",
+    "```",
+    "```sql-unbound",
+    "SELECT * FROM orders WHERE agency_id = :tenant_agency_ids AND status = :status",
+    "```",
+    "```json",
+    '{"parameters":[{"name":"status","type":"string","cardinality":"one","value":"open"}]}',
+    "```",
+  ].join("\n");
+
+  it("strict: throws when the bound SQL is unscoped even though the unbound SQL is scoped", async () => {
+    const schema = loadSchema(multiTenantDir);
+    await expect(
+      generateSelectSql(POSTGRES_DIALECT, "open orders", schema, fakeModel, {
+        generateText: vi.fn(async () => ({ text: disagreeingReply })) as never,
+        parameterize: true,
+        tenantPolicy: schema.tenantPolicy,
+        tenantScope: agencyScope,
+      }),
+    ).rejects.toThrow(TenantGuardrailError);
+  });
+
+  it("warn: reports the unscoped bound SQL as a failure", async () => {
+    const schema = loadSchema(multiTenantDir);
+    const out = await generateSelectSql(POSTGRES_DIALECT, "open orders", schema, fakeModel, {
+      generateText: vi.fn(async () => ({ text: disagreeingReply })) as never,
+      parameterize: true,
+      tenantPolicy: { ...schema.tenantPolicy!, enforcement: "warn" },
+      tenantScope: agencyScope,
+    });
+    expect(out.tenantGuardrail?.passed).toBe(false);
+    expect(out.tenantGuardrail?.warnings.map((w) => w.rule)).toContain("MISSING_TENANT_PREDICATE");
+  });
+
+  it("reads the SQL with the target dialect: a Postgres double-quoted tenant column counts", async () => {
+    // Without the dialect the guardrail must also accept the MySQL reading, where
+    // "agency_id" is a string, and would reject this.
+    const schema = loadSchema(multiTenantDir);
+    const out = await generateSelectSql(POSTGRES_DIALECT, "orders", schema, fakeModel, {
+      generateText: vi.fn(async () => ({
+        text: "```sql\nSELECT * FROM orders WHERE \"agency_id\" = :tenant_agency_ids\n```",
+      })) as never,
+      tenantPolicy: schema.tenantPolicy,
+      tenantScope: agencyScope,
+    });
+    expect(out.tenantGuardrail).toEqual({ passed: true, warnings: [] });
+  });
+
+  it("also checks the unbound SQL when it is returned", async () => {
+    const schema = loadSchema(multiTenantDir);
+    const reply = [
+      "```sql",
+      "SELECT * FROM orders WHERE agency_id = :tenant_agency_ids AND status='open'",
+      "```",
+      "```sql-unbound",
+      "SELECT * FROM orders WHERE status = :status",
+      "```",
+      "```json",
+      '{"parameters":[{"name":"status","type":"string","cardinality":"one","value":"open"}]}',
+      "```",
+    ].join("\n");
+    await expect(
+      generateSelectSql(POSTGRES_DIALECT, "open orders", schema, fakeModel, {
+        generateText: vi.fn(async () => ({ text: reply })) as never,
+        parameterize: true,
+        tenantPolicy: schema.tenantPolicy,
+        tenantScope: agencyScope,
+      }),
+    ).rejects.toThrow(TenantGuardrailError);
   });
 });

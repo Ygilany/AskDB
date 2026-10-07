@@ -1,0 +1,5 @@
+{
+  "question": "What are the five largest orders by total? Show the order id and total, largest first.",
+  "reply": "```sql\nSELECT order_id, total\nFROM billing.[order]\nORDER BY total DESC, order_id\nOFFSET 0 ROWS FETCH NEXT 5 ROWS ONLY\n```",
+  "source": "authored"
+}

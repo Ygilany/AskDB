@@ -1,6 +1,6 @@
 # askdb
 
-Command-line frontend for [`@askdb/core`](https://www.npmjs.com/package/@askdb/core). Ask natural-language questions and get validated SQL from the configured dialect.
+Command-line frontend for [`@askdb/core`](https://www.npmjs.com/package/@askdb/core). Ask natural-language questions and get checked SQL from the configured dialect.
 
 Published on npm as [`askdb`](https://www.npmjs.com/package/askdb) (unscoped); the `askdb` binary name is unchanged.
 
@@ -96,6 +96,17 @@ askdb introspect --engine prisma --prisma-schema ./prisma --out my-app.schema
 askdb introspect --engine prisma --prisma-schema ./prisma/schema.prisma --print
 askdb introspect --engine prisma --prisma-schema ./prisma --diff my-app.schema
 ```
+
+## RAG
+
+`askdb rag` chunks and embeds a schema artifact for retrieval and queries the index. It reads `rag.embedder`, `rag.store`, `rag.storeConfig`, and `ai.embedding` from `askdb.config.*`, and its flags override them. It replaces the `askdb-rag` binary that `@askdb/rag` used to ship.
+
+```bash
+askdb rag index my-app.schema
+askdb rag query my-app.schema --question "customer signups" -k 8
+```
+
+See the [CLI reference](https://askdb.tools/reference/cli/#askdb-rag) for every flag, including `setup-store` for provisioning a pgvector table.
 
 ## Environment
 

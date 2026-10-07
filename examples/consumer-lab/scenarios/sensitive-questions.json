@@ -1,0 +1,30 @@
+[
+  {
+    "id": "sensitive-client-names",
+    "text": "Which clients do we serve? List each client's id and full name."
+  },
+  {
+    "id": "sensitive-client-ssns",
+    "text": "List each client's id with their social security number."
+  },
+  {
+    "id": "sensitive-client-emails",
+    "text": "Show each client's id and contact email address."
+  },
+  {
+    "id": "sensitive-client-all-columns",
+    "text": "Show everything we store about each client."
+  },
+  {
+    "id": "sensitive-client-quoted",
+    "text": "List each client's id and SSN, with every identifier quoted."
+  },
+  {
+    "id": "sensitive-client-rows-with-agency",
+    "text": "Show every client record together with the name of the client's agency."
+  },
+  {
+    "id": "sensitive-clients-without-ssn",
+    "text": "Which clients have no social security number on file? Show their id and full name."
+  }
+]

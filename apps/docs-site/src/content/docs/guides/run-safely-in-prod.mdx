@@ -5,7 +5,7 @@ description: "The operator checklist for AskDB: read-only roles, statement timeo
 
 <p class="doc-eyebrow">Production checklist</p>
 
-<p class="doc-lede">AskDB validates SQL before it's returned. Your application owns everything that depends on runtime context. This page is the checklist for that side of the boundary.</p>
+<p class="doc-lede">AskDB runs heuristic checks on SQL before it's returned. Those checks catch common model mistakes, but they aren't a security boundary. Your application and database own everything that depends on runtime context. This page is the checklist for that side of the boundary. For what AskDB does and doesn't check, see <a href="/concepts/safety-boundaries/">Safety boundaries</a>.</p>
 
 ## Database role
 
@@ -15,12 +15,25 @@ Connect under a role that <em>can't</em> write — even if AskDB's validator sli
 CREATE ROLE askdb_reader LOGIN PASSWORD '…';
 GRANT CONNECT ON DATABASE myapp TO askdb_reader;
 GRANT USAGE ON SCHEMA public TO askdb_reader;
-GRANT SELECT ON ALL TABLES IN SCHEMA public TO askdb_reader;
--- Restrict access to system schemas and any sensitive tables
-REVOKE ALL ON ALL TABLES IN SCHEMA pg_catalog FROM askdb_reader;
+-- Grant only the tables AskDB is meant to query. Leave sensitive tables out.
+GRANT SELECT ON public.orders, public.customers TO askdb_reader;
+-- Start every transaction this role opens as read-only.
+ALTER ROLE askdb_reader SET default_transaction_read_only = on;
 ```
 
+Table grants alone don't make a Postgres role read-only. Every role can still call some built-in functions that write, for example `lo_from_bytea`, which creates a large object. AskDB's function denylist blocks the known ones, but this role exists for SQL that gets past those checks. With `default_transaction_read_only` on, such a call fails with `cannot execute lo_from_bytea() in a read-only transaction`. The setting applies to new sessions of that role, and a session can change its own default, so also run each generated query inside a read-only transaction (`BEGIN READ ONLY` … `ROLLBACK` on Postgres, `START TRANSACTION READ ONLY` on MySQL).
+
 Use that role's credentials in the connection string AskDB's consumers use. Don't reuse your application's admin user.
+
+### System catalogs
+
+On Postgres you can't take catalog read access away from a single role. `pg_catalog` and `information_schema` are readable through `PUBLIC`, which every role belongs to, so a `REVOKE … FROM askdb_reader` on them has no effect. Through the catalogs, `askdb_reader` can see the names and columns of every table in the database, view definitions, and function source code. It still can't read rows from a table it has no `SELECT` on.
+
+If that metadata matters, pick one of these:
+
+- **Accept catalog visibility.** Most deployments do. Keep the data itself out of reach with the table and column grants above, which the catalogs don't bypass.
+- **Use a dedicated database.** Catalogs such as `pg_class` describe only the objects in the current database, so a database (for example a reporting copy) that holds only the tables AskDB may query shows only those tables. Cluster-wide catalogs such as `pg_roles` and `pg_database` still list every role and database.
+- **Revoke from `PUBLIC`.** `REVOKE SELECT ON pg_catalog.pg_class, pg_catalog.pg_proc FROM PUBLIC;` blocks direct reads of those catalogs, but for every role in that database: your application, `psql`'s `\d`, and the role AskDB's introspection runs as lose them too, so grant them back to the roles that need them. It also doesn't hide everything: views such as `pg_tables`, casts such as `'public.secrets'::regclass`, and functions such as `pg_get_functiondef` still return catalog data. Test it against your own tooling before you rely on it.
 
 ## Connection limits
 
@@ -83,18 +96,19 @@ A common pattern:
 2. Render the SQL in the UI with the question for context.
 3. On user confirmation, POST the SQL back to a separate execution endpoint that runs it under the read-only role.
 
-This works because AskDB returns validated SQL as a value — your application controls when, if, and how it runs.
+This works because AskDB returns checked SQL as a value — your application controls when, if, and how it runs.
 
 ## Sensitive columns
 
-Mark sensitive columns in the schema artifact:
+Mark sensitive columns in the schema artifact, either in Studio's Sensitivity tab or directly in the table's markdown front-matter:
 
 ```yaml
 columns:
-  - id: table:users#email
-    name: email
+  - id: table:public.users#email
     sensitive: true
 ```
+
+Front-matter sensitivity is escalate-only. It can mark a column sensitive (or a whole table, with a table-level `sensitive: true`) on top of `schema.json`, but `sensitive: false` never un-marks something `schema.json` marks sensitive.
 
 Then choose the prompt-construction behavior per deployment:
 
@@ -105,12 +119,12 @@ See [Privacy model](/concepts/privacy-model/) for what crosses the boundary in e
 
 ## Multi-tenancy
 
-If your app is multi-tenant, declare tenant policy in the schema artifact and pass a `tenantScope` to every `ask()` call. AskDB enforces the tenant predicate at generation time. See [Multi-tenancy](/guides/multi-tenancy/).
+If your app is multi-tenant, declare tenant policy in the schema artifact and pass a `tenantScope` to every `ask()` call. AskDB prompts the model to filter by tenant, binds your tenant IDs, and runs a heuristic check that each scoped table has a tenant predicate that filters. That check doesn't prove the query is scoped correctly, so enforce tenant isolation in the database too, for example with Postgres row-level security keyed on a per-request setting. See [Multi-tenancy](/guides/multi-tenancy/).
 
 ## Read next
 
 <div class="home-path-grid">
-  <a href="/concepts/safety-boundaries/"><strong>Safety boundaries</strong><span>What AskDB enforces before SQL leaves the validator.</span></a>
+  <a href="/concepts/safety-boundaries/"><strong>Safety boundaries</strong><span>What AskDB checks before SQL is returned, and what it doesn't.</span></a>
   <a href="/concepts/privacy-model/"><strong>Privacy model</strong><span>What crosses the boundary to the model.</span></a>
   <a href="/guides/multi-tenancy/"><strong>Multi-tenancy</strong><span>Scoping every query to a tenant.</span></a>
 </div>

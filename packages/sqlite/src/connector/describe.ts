@@ -13,6 +13,7 @@ import type {
   SqlUnique,
   SqlView,
 } from "@askdb/introspect";
+import { SINGLE_NAMESPACE_LABEL } from "@askdb/core";
 import { compileTableFilters } from "./glob.js";
 import { makeColumnId, makeTableId } from "./ids.js";
 
@@ -20,7 +21,7 @@ import { makeColumnId, makeTableId } from "./ids.js";
  * SQLite has a single namespace per database file. We emit it as `"public"`
  * to match `@askdb/prisma`'s convention and keep table ids cross-engine stable.
  */
-const NAMESPACE = "public";
+const NAMESPACE = SINGLE_NAMESPACE_LABEL;
 
 export type DescribeSqliteInput = {
   runner: CatalogQueryRunner;

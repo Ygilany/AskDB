@@ -9,6 +9,7 @@ import type {
   V2ConceptsFrontmatter,
   V2Table,
 } from "@askdb/core";
+import type { AskDbAiProviderId } from "@askdb/config";
 import type { SuggestSource, TableDraft } from "@askdb/enrich";
 import type { ChunkType } from "@askdb/rag";
 
@@ -18,6 +19,8 @@ export type StudioTableDto = {
   hasDescribableFile: boolean;
   draft: TableDraft;
   missingColumnIds: string[];
+  /** Columns another table's markdown marks `sensitive: true` (sensitive regardless of this draft). */
+  escalatedByOtherFiles?: string[];
 };
 
 export type StudioWorkspaceDto = {
@@ -91,8 +94,9 @@ export type StudioRagStatusDto = {
   updatedAt: string | null;
   chunksTotal: number;
   chunksIndexed: number;
-  dimensions: number;
-  expectedDimensions: number;
+  /** Vector width; null when the embedding model's width is left to the model and AskDB doesn't know it. */
+  dimensions: number | null;
+  expectedDimensions: number | null;
   sensitiveExcluded: number;
   sensitiveIncluded: number;
   files: {
@@ -264,7 +268,8 @@ export type SetupConfigRequest = {
   connectionEnv?: string;
   sqliteFile?: string;
   prismaSchema?: string;
-  aiProvider: "openai" | "anthropic" | "google" | "azure" | "foundry";
+  /** Any id with an `askdb.config.*` branch (`ASKDB_AI_PROVIDERS`). */
+  aiProvider: AskDbAiProviderId;
   /** Env var NAME for the model API key — values never travel through this API. */
   aiKeyEnv?: string;
   /** Env var NAME for the model override — values never travel through this API. */

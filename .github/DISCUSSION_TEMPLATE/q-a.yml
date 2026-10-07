@@ -42,7 +42,7 @@ body:
     id: runtime
     attributes:
       label: Node / pnpm / OS
-      placeholder: "Node 20.x, pnpm 11.x, macOS 14"
+      placeholder: "Node 22.x, pnpm 11.x, macOS 14"
   - type: input
     id: model
     attributes:

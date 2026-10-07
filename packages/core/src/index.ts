@@ -4,6 +4,7 @@ export { buildTenantPromptBlock } from "./sql/tenant-prompt.js";
 export {
   validateTenantGuardrails,
   type TenantGuardrailResult,
+  type ValidateTenantGuardrailsOptions,
 } from "./sql/tenant-guardrail.js";
 export {
   validateSensitiveReferences,
@@ -17,9 +18,11 @@ export {
   resolveTenantSql,
   extractTenantPlaceholders,
   placeholderForRoot,
+  placeholderForTenantRoot,
   type TenantSqlOutputMode,
   type TenantPlaceholderResult,
   type TenantBinding,
+  type TenantSqlDialect,
 } from "./sql/tenant-placeholders.js";
 export { expandClosure } from "./sql/tenant-hierarchy.js";
 export {
@@ -34,6 +37,7 @@ export {
   type AskGenerateDeps,
   // Callback type for `ask({ resolveTenantDescendants })` (subtree tenant scopes).
   type ResolveTenantDescendants,
+  type TenantIdsByRoot,
 } from "./ask.js";
 export {
   parseAskDbModeV1,
@@ -92,6 +96,10 @@ export {
   tenantScopeSchema,
   tenantAccessSchema,
   TENANT_POLICY_H2_SECTIONS,
+  createMentionMatcher,
+  findMentionedNames,
+  type MentionMatcher,
+  type MentionName,
 } from "./schema/v2/index.js";
 export type {
   V2SchemaJson,
@@ -121,8 +129,6 @@ export type {
   TenantAccessSubtree,
   TenantAccessMultiRoot,
   TenantAccessGlobal,
-  TenantFilter,
-  TenantFilterCondition,
   TenantScopeContext,
   ParsedTenantPolicyMarkdown,
   NormalizedTenantPolicy,
@@ -171,6 +177,7 @@ export {
   MARIADB_DIALECT,
   SQLITE_DIALECT,
   SQLSERVER_DIALECT,
+  SINGLE_NAMESPACE_LABEL,
   BUILT_IN_DIALECTS,
   SUPPORTED_DIALECT_IDS,
   isBuiltInDialectId,
@@ -190,6 +197,7 @@ export {
   buildNlToSqlUserPrompt,
   buildNlToSqlSystemPrompt,
 } from "./sql/prompt.js";
+export { promptIdentifierQuoter } from "./sql/prompt-identifiers.js";
 export {
   assertNlToSqlInputs,
   nlToSqlAmbiguityNotes,

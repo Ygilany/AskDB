@@ -122,3 +122,25 @@ describe("cli spawn: structured logs contract", () => {
   });
 });
 
+describe("cli spawn: askdb rag logs", () => {
+  const repoRoot = join(import.meta.dirname, "../../..");
+  const cliJs = join(repoRoot, "apps/cli/dist/cli.js");
+  // The memory store writes nothing, so the fixture's lock and files stay as they are.
+  const index = ["rag", "index", "fixtures/schemas/orders-users.schema", "--store", "memory", "--embedder", "mock"];
+  const quiet = { ASKDB_LOG_LEVEL: undefined, ASKDB_LOG_FILE: undefined, ASKDB_LOG_STDOUT: undefined };
+
+  it("-v writes JSONL events to stderr and leaves stdout the command's JSON", () => {
+    const exec = run("node", [cliJs, ...index, "-v"], { cwd: repoRoot, env: quiet });
+    expect(exec.status).toBe(0);
+    expect(JSON.parse(exec.stdout)).toMatchObject({ schemaId: "orders-users" });
+    const events = exec.stderr.trim().split("\n").map((line) => JSON.parse(line) as { event?: string });
+    expect(events.some((event) => event.event?.startsWith("askdb.rag."))).toBe(true);
+  });
+
+  it("--log-stdout mirrors the events to stdout", () => {
+    const exec = run("node", [cliJs, ...index, "--log-stdout"], { cwd: repoRoot, env: quiet });
+    expect(exec.status).toBe(0);
+    expect(exec.stdout).toMatch(/^\{"level":30,.*"event":"askdb\.rag\./m);
+  });
+});
+

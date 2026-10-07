@@ -1,6 +1,6 @@
 {
   "name": "@askdb/client",
-  "version": "1.0.0-beta.5",
+  "version": "1.0.0-beta.6",
   "description": "Config-aware AskDB facade: resolves schema, model, and dialect from config so callers only pass a question.",
   "keywords": [
     "askdb",
@@ -8,7 +8,7 @@
     "facade",
     "client"
   ],
-  "homepage": "https://github.com/Ygilany/AskDB#readme",
+  "homepage": "https://askdb.tools/reference/client-api/",
   "bugs": {
     "url": "https://github.com/Ygilany/AskDB/issues"
   },
@@ -20,6 +20,7 @@
   "license": "Apache-2.0",
   "author": "Yahya Gilany",
   "type": "module",
+  "sideEffects": false,
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {
@@ -36,7 +37,7 @@
     "NOTICE"
   ],
   "engines": {
-    "node": ">=22.12"
+    "node": ">=22.14"
   },
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
@@ -44,16 +45,34 @@
     "test": "vitest run --config ../../vitest.config.ts"
   },
   "peerDependencies": {
+    "@ai-sdk/anthropic": "^4.0.0",
+    "@ai-sdk/azure": "^4.0.0",
+    "@ai-sdk/google": "^4.0.0",
+    "@ai-sdk/openai": "^4.0.0",
     "@askdb/config": "workspace:^",
     "@askdb/core": "workspace:^",
-    "ai": "^7.0.113"
+    "ai": "^7.0.51"
+  },
+  "peerDependenciesMeta": {
+    "@ai-sdk/anthropic": {
+      "optional": true
+    },
+    "@ai-sdk/azure": {
+      "optional": true
+    },
+    "@ai-sdk/google": {
+      "optional": true
+    },
+    "@ai-sdk/openai": {
+      "optional": true
+    }
   },
   "devDependencies": {
     "@askdb/config": "workspace:*",
     "@askdb/core": "workspace:*",
-    "ai": "^7.0.113",
+    "ai": "^7.0.127",
     "typescript": "^6.0.3",
-    "vitest": "^5.0.1"
+    "vitest": "^5.0.3"
   },
   "dependencies": {
     "@askdb/ai": "workspace:^"

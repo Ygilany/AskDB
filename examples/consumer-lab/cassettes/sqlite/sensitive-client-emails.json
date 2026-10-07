@@ -1,0 +1,5 @@
+{
+  "question": "Show each client's id and contact email address.",
+  "reply": "```sql\nSELECT c.client_id, c.email\nFROM client AS c\nORDER BY c.client_id\n```",
+  "source": "authored"
+}

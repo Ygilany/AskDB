@@ -1,12 +1,5 @@
-import { randomUUID } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import { basename, join } from "node:path";
-import {
-  createAskDbLogger,
-  formatSupportedAskDbLogLevels,
-  isSupportedAskDbLogLevel,
-  type AskDbLogLevel,
-} from "@askdb/core";
 import { getAskDbRuntimeConfig } from "@askdb/config";
 import {
   introspect,
@@ -26,6 +19,9 @@ import { mysqlConnectorProvider } from "@askdb/mysql";
 import { sqliteConnectorProvider } from "@askdb/sqlite";
 import { sqlServerConnectorProvider } from "@askdb/sqlserver";
 import { prismaConnectorProvider } from "@askdb/prisma";
+import { createCliLogger } from "./logger.js";
+import { requireAskDbConfig } from "./project-config.js";
+import { readCliVersion } from "./version.js";
 
 const connectorRegistry = createConnectorRegistry([
   postgresConnectorProvider,
@@ -67,19 +63,20 @@ type CliOptions = {
 };
 
 export async function runIntrospectCli(argv: readonly string[]): Promise<number> {
+  if (argv.includes("--version") || argv.includes("-V")) {
+    process.stdout.write(`${readCliVersion()}\n`);
+    return 0;
+  }
+  if (argv.includes("--help") || argv.includes("-h")) {
+    printHelp();
+    return 0;
+  }
+  const templates = argv[0] === "templates";
+  // Only an introspection run reads askdb.config. A missing or broken config propagates to
+  // the CLI's top-level error handler, the same as for `askdb ask`.
+  if (!templates) requireAskDbConfig();
   try {
-    if (argv.includes("--version") || argv.includes("-V")) {
-      process.stdout.write(`${readPackageVersion()}\n`);
-      return 0;
-    }
-    if (argv.includes("--help") || argv.includes("-h")) {
-      printHelp();
-      return 0;
-    }
-    if (argv[0] === "templates") {
-      return runTemplatesCommand(argv.slice(1));
-    }
-    return await runIntrospectCommand(argv);
+    return templates ? runTemplatesCommand(argv.slice(1)) : await runIntrospectCommand(argv);
   } catch (error) {
     process.stderr.write(`${formatError(error)}\n`);
     return 1;
@@ -180,15 +177,7 @@ async function runIntrospectCommand(argv: readonly string[]): Promise<number> {
   }
 
   const schemaId = opts.schemaId ?? inferSchemaId(opts.out ?? opts.diff) ?? "introspected";
-  const logLevel = resolveLogLevel(opts, rt);
-  const correlationId =
-    opts.correlationId ?? rt.logging.correlationId ?? randomUUID();
-  const logger = createAskDbLogger({
-    correlationId,
-    level: logLevel,
-    logFile: opts.logFile ?? rt.logging.logFile,
-    logStdout: opts.logStdout ?? rt.logging.logStdout,
-  });
+  const logger = createCliLogger(opts, rt);
 
   const connectorConfig: ConnectorConfig = {
     provider: engine,
@@ -377,28 +366,6 @@ function inferSchemaId(path: string | undefined): string | undefined {
   if (!path) return undefined;
   const name = basename(path);
   return name.endsWith(".schema") ? name.slice(0, -".schema".length) : name;
-}
-
-function resolveLogLevel(opts: CliOptions, rt: ReturnType<typeof getAskDbRuntimeConfig>): AskDbLogLevel {
-  if (opts.logLevel !== undefined && opts.logLevel !== "") {
-    const level = opts.logLevel.toLowerCase();
-    if (!isSupportedAskDbLogLevel(level)) {
-      throw new Error(
-        `Invalid --log-level: ${opts.logLevel} (expected one of ${formatSupportedAskDbLogLevels()})`,
-      );
-    }
-    return level;
-  }
-  const env = rt.logging.level?.toLowerCase();
-  if (env && isSupportedAskDbLogLevel(env)) return env;
-  if (opts.verbose || opts.logFile || opts.logStdout) return "info";
-  return "silent";
-}
-
-function readPackageVersion(): string {
-  const pkgPath = new URL("../package.json", import.meta.url);
-  const parsed = JSON.parse(readFileSync(pkgPath, "utf8")) as { version?: unknown };
-  return typeof parsed.version === "string" ? parsed.version : "0.0.0";
 }
 
 function printHelp(): void {

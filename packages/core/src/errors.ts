@@ -46,13 +46,40 @@ export class SqlGenerationError extends AskDbError {
   }
 }
 
+/** A string `dialect` passed to `ask()` that is not a built-in dialect id. */
+export class UnknownDialectError extends AskDbError {
+  constructor(
+    message: string,
+    public readonly dialectId: string,
+  ) {
+    super(message);
+    this.name = "UnknownDialectError";
+  }
+}
+
 export type TenantScopeRejectionReason =
   | "MISSING_SCOPE"
   | "UNKNOWN_TENANT_ROOT"
   | "GLOBAL_WITHOUT_REASON"
   | "INVALID_SCOPE_SHAPE"
-  /** A `subtree` scope could not be expanded: no `resolveTenantDescendants`, or it returned no usable IDs. */
-  | "SUBTREE_NOT_RESOLVABLE";
+  /**
+   * A `subtree` scope could not be expanded: no `resolveTenantDescendants`, or it
+   * returned something other than IDs per tenant root (a flat array, a key that
+   * isn't a root in the subtree, a value that isn't an array of non-empty strings,
+   * or no IDs at all). Also thrown when an unexpanded `subtree` reaches
+   * `resolveTenantSql()` or `buildTenantPromptBlock()` directly.
+   */
+  | "SUBTREE_NOT_RESOLVABLE"
+  /** Generated SQL references a `:tenant_*` placeholder the scope has no IDs for. */
+  | "UNRESOLVED_TENANT_PLACEHOLDER"
+  /** A multi-ID scope met a tenant predicate with no list form (e.g. `<=`). */
+  | "UNSUPPORTED_TENANT_PREDICATE"
+  /**
+   * `resolveTenantSql()` in `sql-only` mode got a tenant ID containing a backslash
+   * and a dialect with an unknown `id` and no `backslashEscapes`, so it cannot
+   * escape the ID safely.
+   */
+  | "UNESCAPABLE_TENANT_ID";
 
 export class TenantScopeError extends AskDbError {
   constructor(

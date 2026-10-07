@@ -1,4 +1,5 @@
 export { chunkSchema, type ChunkResult, type ChunkStats } from "./chunker.js";
+export { chunkId, chunkIdPrefix } from "./ids.js";
 export {
   loadChunkerSourcesFromDir,
   loadChunkerSourcesFromBundleJson,

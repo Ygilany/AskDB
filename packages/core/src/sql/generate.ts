@@ -15,7 +15,7 @@ import {
 } from "./parameter-manifest.js";
 import { buildNlToSqlSystemPrompt, buildNlToSqlUserPrompt } from "./prompt.js";
 import { assertNlToSqlInputs, nlToSqlAmbiguityNotes } from "./schema-question-precheck.js";
-import { validateTenantGuardrails, type TenantGuardrailResult } from "./tenant-guardrail.js";
+import { enforceTenantGuardrails, type TenantGuardrailResult } from "./tenant-guardrail.js";
 import {
   buildSelectGuardrailExplanation,
   validateSelectSql,
@@ -52,6 +52,8 @@ export type GenerateSqlDeps = {
    * are unaffected.
    */
   providerOptions?: Record<string, unknown>;
+  /** Forwarded to the `generateText` call; an aborted call rejects with `SqlGenerationError`. */
+  abortSignal?: AbortSignal;
   /**
    * When true, ask the model for unbound SQL + parameter manifest and return
    * them as optional extras when valid. Forwarded from ask(); default decided there.
@@ -76,6 +78,11 @@ export type GenerateSelectSqlResult = {
  * Dialect-parameterized NL→SQL generator. Validates inputs, builds the user/system
  * prompt with the dialect's syntax brief, calls the model, extracts the fenced SQL,
  * and runs the shared read-only validator (plus any dialect-specific `extraValidate`).
+ *
+ * When `deps.tenantPolicy` and `deps.tenantScope` are supplied, the tenant guardrail
+ * runs on the returned `sql` (and on `unboundNamedSql` when that is returned too);
+ * `strict` policies throw `TenantGuardrailError`. Tenant placeholders are left in
+ * place — `ask()` substitutes them and re-checks the final SQL.
  */
 export async function generateSelectSql(
   dialect: DialectSpec,
@@ -83,6 +90,33 @@ export async function generateSelectSql(
   schema: AnyNormalizedSchema,
   model: AskDbLanguageModel,
   deps: GenerateSqlDeps = {},
+): Promise<GenerateSelectSqlResult> {
+  return runGenerateSelectSql(dialect, question, schema, model, deps, true);
+}
+
+/**
+ * Internal entry used by `ask()`: identical to {@link generateSelectSql} but skips the
+ * tenant guardrail, because `ask()` runs it once on the final SQL — after tenant
+ * placeholder substitution and the unbound/bound consistency check. Not exported
+ * from the package index.
+ */
+export async function generateSelectSqlWithoutTenantGuardrail(
+  dialect: DialectSpec,
+  question: string,
+  schema: AnyNormalizedSchema,
+  model: AskDbLanguageModel,
+  deps: GenerateSqlDeps = {},
+): Promise<GenerateSelectSqlResult> {
+  return runGenerateSelectSql(dialect, question, schema, model, deps, false);
+}
+
+async function runGenerateSelectSql(
+  dialect: DialectSpec,
+  question: string,
+  schema: AnyNormalizedSchema,
+  model: AskDbLanguageModel,
+  deps: GenerateSqlDeps,
+  runTenantGuardrail: boolean,
 ): Promise<GenerateSelectSqlResult> {
   assertNlToSqlInputs(schema, question);
   const ambiguityNotes = nlToSqlAmbiguityNotes(question, schema);
@@ -109,7 +143,12 @@ export async function generateSelectSql(
     try {
       const result = await generateText({
         model,
-        instructions: buildNlToSqlSystemPrompt(dialect),
+        // `system` (not `instructions`) on purpose: `ai` is a peer dependency
+        // (`^6 || ^7`). AI SDK 6 only reads `system`; AI SDK 7 renamed it to
+        // `instructions` but still honors `system` as a deprecated alias
+        // (`instructions = system` in its prompt standardization). Passing
+        // `instructions` would be silently dropped on AI SDK 6.
+        system: buildNlToSqlSystemPrompt(dialect),
         prompt: buildNlToSqlUserPrompt(
           dialect,
           question,
@@ -129,6 +168,7 @@ export async function generateSelectSql(
         ...(deps.providerOptions
           ? { providerOptions: deps.providerOptions as Parameters<typeof generateText>[0]["providerOptions"] }
           : {}),
+        ...(deps.abortSignal ? { abortSignal: deps.abortSignal } : {}),
       });
       text = result.text;
       const u = (result as {
@@ -167,27 +207,20 @@ export async function generateSelectSql(
       parameterManifest = extras.parameterManifest;
     }
 
-    // Tenant guardrail validation: prefer unbound (named) SQL when available so
-    // `:tenant_*` placeholders still match today's guardrail behavior.
+    // Tenant guardrail: check every SQL form this function returns — the bound
+    // `sql` callers execute, plus the unbound form when it is returned too. Never
+    // check only the unbound form: both blocks come from the model and can
+    // disagree (e.g. a scoped unbound block next to an unscoped bound one).
     let tenantGuardrail: TenantGuardrailResult | undefined;
-    if (deps.tenantPolicy && deps.tenantScope) {
-      const guardrailSql = unboundNamedSql ?? sql;
-      tenantGuardrail = validateTenantGuardrails(guardrailSql, deps.tenantPolicy, deps.tenantScope);
-      if (tenantGuardrail.passed) {
-        logger?.info(
-          { event: AskDbLogEvent.TenantGuardrailPassed },
-          "tenant guardrail validation passed",
-        );
-      } else {
-        logger?.info(
-          {
-            event: AskDbLogEvent.TenantGuardrailFailed,
-            warningCount: tenantGuardrail.warnings.length,
-            enforcement: deps.tenantPolicy.enforcement,
-          },
-          "tenant guardrail validation found issues",
-        );
-      }
+    if (runTenantGuardrail && deps.tenantPolicy && deps.tenantScope) {
+      tenantGuardrail = enforceTenantGuardrails(
+        [sql, unboundNamedSql],
+        deps.tenantPolicy,
+        deps.tenantScope,
+        logger,
+        undefined,
+        dialect,
+      );
     }
 
     const explain = deps.explain ? buildSelectGuardrailExplanation(sql) : undefined;

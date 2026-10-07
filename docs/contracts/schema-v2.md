@@ -6,7 +6,7 @@ This document is the **format contract** for AskDB's describable-schema layer. I
 2. **Field semantics** — the structured front-matter fields and their meanings.
 3. **Stable identifiers** — the `id` scheme that survives re-introspection and re-embedding.
 4. **Chunking rules** — how `@askdb/rag` slices the artifact for embedding and retrieval.
-5. **Sensitive propagation** — how the `sensitive` flag flows from the physical layer into prompts and chunks.
+5. **Sensitive propagation** — how the `sensitive` flag flows from the physical layer (escalated by front-matter) into prompts and chunks.
 6. **Versioning** — how Schema v2 evolves pre-1.0 and how a future v3 would land.
 
 Schema v2 is the **only** schema format AskDB understands once Phase 5 lands. Pre-1.0 we are not maintaining a backward-compat path to any earlier internal format; the `version` literal in `schema.json` stays `2` as a stable marker.
@@ -30,8 +30,8 @@ my-app.schema/
 
 | File | Required | Owner | Source of truth for |
 |---|---|---|---|
-| `schema.json` | yes | introspection / human | physical structure (tables, columns, types, FKs, `sensitive`) |
-| `tables/<table>.md` | optional, one per described table | Studio / web catalog / human | descriptions, business context, aliases, common query language, examples |
+| `schema.json` | yes | introspection / human | physical structure (tables, columns, types, FKs, baseline `sensitive`) |
+| `tables/<table>.md` | optional, one per described table | Studio / web catalog / human | descriptions, business context, aliases, common query language, examples, escalate-only `sensitive` overrides |
 | `concepts.md` | optional | Studio / human | cross-table vocabulary (e.g. *customer* → users + leads) |
 | `schema.lock.json` | optional | `@askdb/rag` | embedding checksums per chunk id |
 
@@ -168,15 +168,15 @@ The front-matter shape is validated by zod (in `@askdb/core`). Cross-reference c
 | `primaryEntity` | string | no | Slug of the concept this table primarily represents (e.g. `order`). |
 | `aliases` | string[] | no | Alternate phrases users say for this table. |
 | `tags` | string[] | no | Free-form labels (`pii`, `revenue`, `internal-only`). |
-| `sensitive` | boolean | no | Accepted by the front-matter parser, but the current loader does not apply it. Effective sensitivity comes from `schema.json` only. |
+| `sensitive` | boolean | no | **Escalate-only.** `true` makes the table (and therefore every column in it) sensitive even when `schema.json` does not. `false` never un-marks a table `schema.json` marks sensitive; the loader ignores it and emits a `sensitivity_downgrade_ignored` warning. See [Sensitive propagation](#sensitive-propagation). |
 | `tracked` | boolean | no | Defaults to `true`. Set `false` to keep the table in the schema artifact but exclude it from full-schema NL→SQL prompt DDL and RAG indexing. |
 | `toIgnore` / `to-ignore` | boolean | no | Authoring aliases for table exclusion. `true` is normalized to `tracked: false`; writers persist the canonical `tracked` field. |
-| `columns` | array | no | Per-column overrides and additions. Items keyed by `id`. |
-| `columns[].id` | string | yes (in array) | Intended to equal a `table:*#*` id from `schema.json`. Unknown column IDs are reported as loader warnings and are ignored by normalization/chunking. |
+| `columns` | array | no | Per-column overrides and additions. Items keyed by `id`; list each column once. A repeated `id` is reported as a `duplicate_column_id` warning: only the first entry's description, aliases, and enum apply, while sensitivity is aggregated across every entry (see [Sensitive propagation](#sensitive-propagation)). |
+| `columns[].id` | string | yes (in array) | Intended to equal a `table:*#*` id from `schema.json` that belongs to this file's table. Unknown column IDs are reported as loader warnings and are ignored by normalization/chunking. An ID that belongs to a *different* table is reported as a `misplaced_column_id` warning; only its `sensitive: true` is applied (see [Sensitive propagation](#sensitive-propagation)), every other field of the entry is ignored. |
 | `columns[].aliases` | string[] | no | Alternate names for this column. |
 | `columns[].enum` | string[] | no | Known value set, used in prompts and "common query language" chunks. |
 | `columns[].description` | string | no | One- or two-sentence description. Goes into the column chunk. |
-| `columns[].sensitive` | boolean | no | Accepted by the front-matter parser, but the current loader does not apply it. Effective sensitivity comes from `schema.json` only. |
+| `columns[].sensitive` | boolean | no | **Escalate-only.** `true` makes the column sensitive even when `schema.json` does not. `false` never un-marks a column that is sensitive via `schema.json`, via a sensitive table, or via another front-matter entry's `sensitive: true`; the loader ignores it and emits a `sensitivity_downgrade_ignored` warning. |
 
 Front-matter must be **complete enough to validate** — unknown keys are an error (caught early so typos don't silently disappear). Use markdown body for anything not modeled. Cross-reference mismatches are non-fatal so re-introspection can surface orphaned describable metadata and authoring tools can offer a prune flow instead of refusing to load.
 
@@ -227,19 +227,22 @@ Concepts produce their own chunks at retrieval time (see [Chunking rules](#chunk
 
 `@askdb/rag` derives chunks deterministically from the v2 artifact. Each chunk has a stable `id` and a derived **chunk text** that is what gets embedded.
 
-| Chunk type | `id` | Chunk text contains |
+Every chunk id is scoped to the schema: `chunk:<schemaId>:<local-id>` (e.g. `chunk:orders-users:table:public.orders#cql`), so several schemas can share one vector store without overwriting or pruning each other's chunks. `%` and `:` in the schema id are percent-encoded (`shop:eu` → `shop%3Aeu`), so the first `:` after `chunk:` always ends the schema id. The table below lists the `<local-id>` part.
+
+| Chunk type | `<local-id>` | Chunk text contains |
 |---|---|---|
-| **Table** | `chunk:<table-id>` | `# <schema>.<name>` + first paragraph + aliases + primary entity + relationship IDs + column **headlines** (`name type (flags) — description`). |
-| **Column** | `chunk:<column-id>` | qualified column name + type + flags + physical id + description + aliases + enum values + any matching `Column notes` line. |
-| **Common query language** | `chunk:<table-id>#cql` | the H2 body verbatim, prefixed with the table name + aliases so retrieval has table context. Long CQL bodies use `#bc:<n>` suffixes. |
-| **Example question** | `chunk:<table-id>#q:<n>` | one bullet from `Example questions`, prefixed with the table name + primary entity. |
-| **Business context** | `chunk:<table-id>#biz` | the `Business context` H2 body, prefixed with the table name. Long bodies use `#bc:<n>` suffixes, e.g. `chunk:table:public.orders#biz#bc:1`. |
-| **Concept** | `chunk:<concept-id>` | label + synonyms + link IDs + description when the concept is included. |
-| **Relationship** (optional) | `chunk:<from-id>-><to-id>` | natural-language summary: `Relationship: <from-table>.<from-col> references <to-table>.<to-col>`. |
+| **Table** | `<table-id>` | `# <schema>.<name>` + first paragraph + aliases + primary entity + relationship IDs + column **headlines** (`name type (flags) — description`). |
+| **Column** | `<column-id>` | qualified column name + type + flags + physical id + description + aliases + enum values + any matching `Column notes` line. |
+| **Common query language** | `<table-id>#cql` | the H2 body verbatim, prefixed with the table name + aliases so retrieval has table context. Long CQL bodies use `#bc:<n>` suffixes. |
+| **Example question** | `<table-id>#q:<n>` | one bullet from `Example questions`, prefixed with the table name + primary entity. |
+| **Business context** | `<table-id>#biz` | the `Business context` H2 body, prefixed with the table name. Long bodies use `#bc:<n>` suffixes, e.g. `chunk:orders-users:table:public.orders#biz#bc:1`. |
+| **Concept** | `<concept-id>` | label + synonyms + link IDs + description when the concept is included. |
+| **Tenant policy** | `tenant-policy#<section-slug>` | one H2 section of `tenant-policy.md` (see [`tenant-policy.md`](./tenant-policy.md)). |
+| **Relationship** (optional) | `<from-id>-><to-id>` | natural-language summary: `Relationship: <from-table>.<from-col> references <to-table>.<to-col>`. |
 
 ### Determinism
 
-Given the same v2 artifact, the chunker must produce the **same chunk ids and the same chunk texts** on every run. Re-embedding only happens when chunk text changes (tracked via `schema.lock.json`).
+Given the same v2 artifact, the chunker must produce the **same chunk ids and the same chunk texts** on every run. Re-embedding only happens when chunk text changes: the indexer skips a chunk only when the vector store already holds the same content hash for its id (stores that cannot report hashes fall back to `schema.lock.json`). A changed embedder id or vector dimension re-embeds everything; a different store re-embeds whatever it doesn't hold (all of it, for stores that can't report hashes).
 
 ### Size guidance
 
@@ -251,17 +254,45 @@ Given the same v2 artifact, the chunker must produce the **same chunk ids and th
 
 ## Sensitive propagation
 
-The `sensitive` flag must flow consistently from the physical layer through prompts and chunks. Prompt tagging and omission govern only what the model **sees**; SQL that reaches execution by another route (a host SQL cache, a replayed statement, a regenerated artifact) is covered by `validateSensitiveReferences` — see [`sensitive-fields-and-modes.md`](./sensitive-fields-and-modes.md). Behavior matches today's [`sensitive-fields-and-modes.md`](./sensitive-fields-and-modes.md) defaults extended for v2:
+The `sensitive` flag must flow consistently from the physical layer through prompts and chunks.
+
+**Effective sensitivity (escalate-only).** The loader computes one effective `sensitive` value per table and per column, and every downstream surface (prompt DDL, RAG chunks, `validateSensitiveReferences`) reads only that value from the normalized schema:
+
+- table sensitive = `schema.json` table `sensitive: true` **or** table front-matter `sensitive: true`
+- column sensitive = `schema.json` column `sensitive: true` **or** any front-matter `columns[]` entry naming the column with `sensitive: true` (in any `tables/*.md` file, including repeated entries) **or** the table is sensitive
+- a column sensitive only because its table is (neither of the first two marks it) also carries `sensitiveFromTable: true`, which the mention rule below uses
+
+Front-matter can only *add* sensitivity, never remove it. This is what makes the Studio Sensitivity controls (which write front-matter via `@askdb/enrich`) take effect, while guaranteeing a describable-layer edit can never quietly expose something the physical layer marks sensitive. A front-matter `sensitive: false` that contradicts an effective `true` is ignored and reported in `NormalizedSchemaV2.warnings` as `{ kind: "sensitivity_downgrade_ignored", tableFile, id }` (Studio shows these under Settings → Schema Warnings). To un-mark something the physical layer marks sensitive, edit `schema.json`. The rule is identical for directory and bundle loads, since bundles carry the table markdown verbatim.
+
+A column ID is authoritative about which column it names. When a `columns[]` entry sits in another table's markdown (for example `table:public.users#ssn` listed in `tables/orders.md`), the loader reports `{ kind: "misplaced_column_id", tableFile, id, tableId }`, where `tableId` is the table that owns the column. Its `sensitive: true` still escalates the named column, because dropping it would silently expose a column the author marked sensitive and escalating can only add protection. Nothing else in a misplaced entry is applied: a `sensitive: false` never de-escalates, and its description, aliases, and enum are ignored because prompt-visible metadata belongs in the owning table's file (which may carry its own, conflicting entry). Move the entry to the owning table's markdown to fix the warning.
+
+A column may be named by more than one `columns[]` entry: repeated in the same file, or in several files through misplaced entries. Sensitivity is aggregated across all of them: the column is sensitive if any entry says `sensitive: true`, and no entry's `sensitive: false` cancels it (a contradicted `false` in the owning table's file is reported as `sensitivity_downgrade_ignored`). Each repeat of an ID within one file is reported as `{ kind: "duplicate_column_id", tableFile, id }`, and only the first entry's description, aliases, and enum are applied. Merge the entries into one to fix the warning.
+
+Each table has at most one markdown file. Two `tables/*.md` files whose front-matter has the same `id` make the artifact invalid: the loader throws `SchemaParseError` naming both files, for directory and bundle loads alike, rather than silently keeping one and dropping the other's front-matter (including any `sensitive: true`). Table markdown files are read in sorted filename order (bundle `tables` keys likewise), so warnings come out in the same deterministic order for both.
+
+Every loader warning that names a table markdown file (`orphaned_table_id`, `orphaned_column_id`, `sensitivity_downgrade_ignored`, `misplaced_column_id`, `duplicate_column_id`) reports the file actually read as `tables/<filename>` (for a bundle, the `tables` entry key), not a path derived from front-matter `name`, since table markdown filenames are free-form.
+
+Describable-layer fields (description, aliases, enum, `Common query language`) of an effectively sensitive table or column are dropped from the normalized schema exactly as they are for `schema.json`-sensitive ones. Prompt tagging and omission govern only what the model **sees**; SQL that reaches execution by another route (a host SQL cache, a replayed statement, a regenerated artifact) is covered by `validateSensitiveReferences` — see [`sensitive-fields-and-modes.md`](./sensitive-fields-and-modes.md). Behavior matches today's [`sensitive-fields-and-modes.md`](./sensitive-fields-and-modes.md) defaults extended for v2:
 
 | Surface | Default behavior for sensitive table/column | Override |
 |---|---|---|
 | **NL→SQL DDL** (in core prompt) | Identifier listed, tagged `(sensitive)` — model can ground SQL. | `omitSensitiveIdentifiersFromNlToSqlPrompt` strips identifiers entirely (existing flag). |
-| **Describable layer chunks (table/column)** | Sensitive table chunks and sensitive column chunks are excluded entirely. Non-sensitive table chunks omit sensitive columns from their column headline list and refs. | `@askdb/rag` option `includeSensitiveDescribable: true` (off by default). |
-| **`Common query language` chunk** | If the H2 body **mentions** a sensitive column by name, the chunk is **excluded entirely**. The chunker does not partial-redact prose. | Same option as above. |
-| **Example question / `Business context` chunks** | If the table is sensitive or the source text mentions a sensitive column by name, the affected chunks are excluded entirely. | Same option as above. |
-| **Concept chunks** | Concepts that **link to** a sensitive id, or whose description mentions a sensitive column by name, are excluded entirely by default. | Same option as above. |
+| **Describable layer chunks (table/column)** | Sensitive table chunks and sensitive column chunks are excluded entirely. Non-sensitive table chunks omit sensitive columns from their column headline list and refs, and drop any description, alias, primary entity, or column-headline description that mentions a sensitive column. A non-sensitive column whose description / aliases / enum values / `Column notes` line mention a sensitive column keeps only its identifier + type. | `@askdb/rag` option `includeSensitiveDescribable: true` (off by default). |
+| **`Common query language` chunk** | If the H2 body **mentions** a sensitive column by name, the chunk is **excluded entirely**. The chunker does not partial-redact prose. A table alias that mentions one is dropped from the chunk's heading, as it is from the table chunk. | Same option as above. |
+| **Example question / `Business context` chunks** | If the table is sensitive or the source text mentions a sensitive column by name, the affected chunks are excluded entirely. A primary entity that mentions one is dropped from every example-question heading, as it is from the table chunk. | Same option as above. |
+| **Concept chunks** | Concepts that **link to** a sensitive id, or whose label, synonyms, or description mention a sensitive column by name, are excluded entirely by default. | Same option as above. |
+| **Tenant policy chunks** | A `tenant-policy.md` body section that mentions a sensitive column by name is excluded entirely by default. The policy front-matter is never chunked; it is always in the prompt (see [`tenant-policy.md`](./tenant-policy.md#chunking-rules)). | Same option as above. |
+| **Relationship chunks** (optional) | Excluded when either side's table **or column** is sensitive. | Same option as above. |
 | **Generated / replayed SQL** | `ask()` runs `validateSensitiveReferences` over the SQL it returns and attaches `AskPipelineResult.sensitiveGuardrail`. This is the **enforcement** surface — the rows above are prompt-level only. | `AskPipelineOptions.sensitiveGuardrailMode`: `"warn"` (default), `"strict"`, `"off"`. |
 | **Logs** | Counts only — `askdb.rag.sensitive_chunks_excluded`, `askdb.rag.sensitive_chunks_included`. Never log identifiers or values. `askdb.pipeline.sensitive_sql_warning` carries matched identifier names (schema metadata, never row values). | n/a |
+
+**Mention rule.** This is the one statement of the rule; the code (`createMentionMatcher` / `findMentionedNames` in `@askdb/core`, used by `@askdb/rag`'s chunker and the authoring surfaces' warning) and the other docs refer here.
+
+- **Which names.** Every piece of describable text, whichever table or chunk it belongs to, is checked against the sensitive columns of the whole schema ([ADR 0017](../adrs/0017-sensitive-mentions-schema-wide.md)). A column marked sensitive itself counts by its bare name. A column sensitive only because its table is (`sensitiveFromTable`) counts only qualified as `table.column`, because its bare name is often generic (`id`, `org_id`); this holds for the table's own text too, since a sensitive table's describable text is excluded anyway.
+- **Bare names.** A whole-word, **case-insensitive** match (`SSN` mentions the `ssn` column) whose ends may not touch a letter, digit, or `_` of any script (`email` isn't mentioned by `emailed`, `user_email`, or `email2`). The name may also be wrapped in one matching pair of double quotes, backticks, or brackets. Its characters are literal, dots included.
+- **Qualified names.** The table part and the column part, each as written or in one matching pair of quotes or brackets (`users.org_id`, `"users"."org_id"`, `[users].[org_id]`), joined by a dot with no space or with spaces or tabs on both sides (`users . org_id`). A dot followed only by a space or line break ends a sentence, so "rows come from users. Org_id is the key" is no mention. Anything may come before the table part, so a schema prefix (`public.users.org_id`) matches; the table part is the table's name without its schema, so a sensitive `public.users` also matches `audit.users.org_id`, an over-exclusion, the safe direction.
+
+`stats.sensitiveExcluded` counts every chunk excluded by these rules plus every emitted chunk that had part of its describable text (a description, alias, primary entity, enum values, or note) dropped. Chunks kept this way in opt-in mode carry `sensitive: true` and are counted in `stats.sensitiveIncluded`.
 
 **Authoring rule (authoring surfaces):** when a user adds a description that mentions a sensitive column by name, the authoring surface shows a non-blocking warning explaining the chunk-exclusion behavior. The user can still save; the chunker will exclude the resulting chunk.
 

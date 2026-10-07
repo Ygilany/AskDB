@@ -14,7 +14,7 @@ export default defineConfig({
   ai: {
     provider: "openai",
     providerConfig: {
-      openai: { apiKey: "lab-replay-no-key", baseUrl: env("LAB_REPLAY_BASE_URL"), model: "gpt-4o-mini" },
+      openai: { apiKey: "lab-replay-no-key", baseUrl: env("LAB_REPLAY_BASE_URL") },
     },
   },
   introspection: {
