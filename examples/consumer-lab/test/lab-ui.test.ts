@@ -44,6 +44,7 @@ const TOP_PAID = findQuestion("top-paid-agencies")!.text;
 const NO_REPLY = "Which agency has the most volunteers?";
 /** The parameterized question, which the grader checks for more than its rows. */
 const PROGRAMS_SINCE = findQuestion("programs-started-since")!.text;
+const UNPAID = findQuestion("unpaid-orders")!.text;
 const DIALECTS = SUPPORTED_DIALECTS.map((d) => [d] as [SupportedDialect]);
 
 interface CliRun {
@@ -128,6 +129,8 @@ beforeAll(async () => {
 /** A `lab ui` with the live model: the fake key, and the stand-in's replies. */
 const liveStub = stubOpenAiEnv({
   [AGENCY_NAMES]: (JSON.parse(readFileSync(join(LAB, "cassettes", "sqlite", "agency-names.json"), "utf8")) as { reply: string }).reply,
+  // A write: AskDB rejects it.
+  [UNPAID]: '```sql\nDELETE FROM "order" WHERE is_paid = 0\n```',
   // The right rows, but only the inline statement: no sql-unbound block, no manifest.
   [PROGRAMS_SINCE]: "```sql\nSELECT agency_id, program_code FROM program WHERE starts_on >= '2022-01-01' ORDER BY agency_id, program_code\n```",
 });
@@ -184,7 +187,7 @@ it.for(DIALECTS)("[%s] lab-ui-same-as-lab-ask: a catalog question through the cl
  * that key, through the path picked (both documented paths work end to end), never the replay
  * server; each column ends with the grader's verdict (`gradeCatalogAnswer`), and the summary's
  * oracle chip shows that same verdict, which checks more than the rows (the parameterized
- * question's form). Nothing the page receives holds the key.
+ * question's form, a rejection, which has no rows). Nothing the page receives holds the key.
  * Catches: a live run that loses the live settings between the page, the server and the engine
  * process and silently replays; a path the live run drops; and a summary that calls an answer
  * a match while its column says the oracle missed it.
@@ -208,13 +211,16 @@ it.for([
   expect(JSON.stringify(run)).not.toContain(STUB_KEY);
 });
 
-it("[sqlite] lab-ui-live: the summary's oracle verdict is the grader's, which checks more than the rows", async (ctx) => {
+it.for([
+  ["the parameterized question without its parameterized form", PROGRAMS_SINCE, /^oracle: {5}miss — no parameterized form/],
+  ["a rejection, which has no rows", UNPAID, /^oracle: {5}miss — rejected \(SqlValidationError SQL_NOT_SELECT_OR_WITH\)$/],
+] as const)("[sqlite] lab-ui-live: the summary's oracle verdict is the grader's, which checks more than the rows: %s", async ([, question, verdict], ctx) => {
   needsCapability(ctx, "cli-introspect-engine");
 
-  const run = await liveRun({ question: PROGRAMS_SINCE, model: "live", engines: ["sqlite"] });
+  const run = await liveRun({ question, model: "live", engines: ["sqlite"] });
   const printed = column(run, "sqlite").lines.map((l) => l.text);
 
-  expect(printed.at(-1)).toMatch(/^oracle: {5}miss — no parameterized form/);
+  expect(printed.at(-1)).toMatch(verdict);
   expect(run.summary?.oracle?.sqlite).toEqual({ verdict: "mismatch", reason: printed.at(-1)!.replace(/^oracle: {5}miss — /, "") });
 });
 

@@ -11,10 +11,10 @@
  * per request). `stubOpenAiEnv` in `stub-openai.ts` writes both.
  *
  * A request is answered with the reply for the first catalog question its body holds, in the
- * Responses API's shape or Chat Completions' by path. The log records the question, and
- * whether the request carried `LAB_STUB_KEY`, never the header itself: a key that isn't the
- * fake one is refused with a 401 and logged as such, so a test that picks up a real key fails
- * without writing it anywhere.
+ * Responses API's shape or Chat Completions' by path. The log records the question, the model
+ * asked for, and whether the request carried `LAB_STUB_KEY`, never the header itself: a key
+ * that isn't the fake one is refused with a 401 and logged as such, so a test that picks up a
+ * real key fails without writing it anywhere.
  *
  * Node built-ins only, and plain JavaScript, so it loads before any TypeScript loader.
  */
@@ -36,7 +36,11 @@ export function installOpenAiStub({ replies, key, onRequest = () => {} }) {
     const body = typeof init?.body === "string" ? init.body : input instanceof Request ? await input.text() : "";
     const headers = new Headers(init?.headers ?? (input instanceof Request ? input.headers : undefined));
     const question = Object.keys(replies).find((q) => body.includes(JSON.stringify(q).slice(1, -1))) ?? null;
-    const request = { path: new URL(url).pathname, question, authorized: headers.get("authorization") === `Bearer ${key}` };
+    let model = null;
+    try {
+      model = JSON.parse(body).model ?? null;
+    } catch {}
+    const request = { path: new URL(url).pathname, question, model, authorized: headers.get("authorization") === `Bearer ${key}` };
     requests.push(request);
     onRequest(request);
     const reply = question === null ? "```sql\nSELECT 1\n```" : replies[question];

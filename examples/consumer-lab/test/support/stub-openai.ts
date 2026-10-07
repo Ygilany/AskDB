@@ -14,6 +14,8 @@ const PRELOAD = pathToFileURL(join(import.meta.dirname, "stub-openai-fetch.mjs")
 export interface StubRequest {
   path: string;
   question: string | null;
+  /** The model id the request asked for. */
+  model: string | null;
   /** Whether it carried {@link STUB_KEY}. */
   authorized: boolean;
 }

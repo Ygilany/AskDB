@@ -103,8 +103,9 @@ function describeError(error: unknown): string {
 
 /**
  * Stop a run: `abort` lets it kill its introspection and clean up; one still going after the
- * grace period (a database connection that hangs) is killed with its whole process group. A
- * server that exits first leaves that to the process, which aborts when the server goes away.
+ * grace period (a database connection that hangs, a SQLite statement) is killed with its whole
+ * process group, by the engine process itself, which also aborts when the server goes away.
+ * The kill here is the fallback for an engine process that can't act on `abort`.
  */
 function stopRun(child: ChildProcess): void {
   if (child.connected) child.send({ type: "abort" } satisfies WorkerRequest, () => {});

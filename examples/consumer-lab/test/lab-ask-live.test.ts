@@ -3,7 +3,7 @@
  * ask at all.
  *
  * Protects: `lab ask --model live` asks the live model, through either documented path, with
- * the key `liveSettings` read, never the replay server; and through the shared ask → validate
+ * the key and model `liveSettings` read, never the replay server; and through the shared ask → validate
  * → execute module (`src/ask-run.ts`) it prints the model and path, then for a catalog
  * question the oracle's verdict (`gradeCatalogAnswer`): `pass`, or the miss and its reason, a
  * validation rejection included. A question outside the catalog says it has no oracle. Exit
@@ -13,7 +13,8 @@
  * `--model` other than `replay|live`, and for `--model live` with `--sql`, which calls no
  * model. `LAB_LIVE_MODEL=1` alone doesn't switch `lab ask` to the live model (maintainer
  * decision on #448): only the flag spends.
- * Catches: `--model live` that loses the live settings on the way in and silently replays; a
+ * Catches: `--model live` that loses the live settings on the way in and silently replays; the
+ * two paths asking different models; a
  * live run that prints a key a provider echoed; a bad key reported as AskDB rejecting SQL; a
  * live answer with no verdict, or a miss that fails the exit code; a refusal that runs
  * introspection first or falls back to replay; and an exported `LAB_LIVE_MODEL=1` that makes
@@ -123,7 +124,7 @@ describe("lab ask --model live, spawned", () => {
   it.for([
     ["raw", "model:      live gpt-4o-mini at https://api.openai.com/v1, via createOpenAI() → ask()"],
     ["client", "model:      live, via createAskDb() + @askdb/ai-openai (live/askdb.config.ts)"],
-  ] as const)("asks the live model with the key it read, through the %s path", ([via, modelLine], ctx) => {
+  ] as const)("asks the live model with the key and model it read, through the %s path", ([via, modelLine], ctx) => {
     needsCapability(ctx, "cli-introspect-engine");
     const before = spawned.requests().length;
 
@@ -131,7 +132,7 @@ describe("lab ask --model live, spawned", () => {
 
     expect(run.stdout.split("\n")).toContain(modelLine);
     expect(run.stdout.trimEnd().split("\n").at(-1)).toBe("oracle:     pass");
-    expect(spawned.requests().slice(before)).toEqual([expect.objectContaining({ question: text("agency-names"), authorized: true })]);
+    expect(spawned.requests().slice(before)).toEqual([expect.objectContaining({ question: text("agency-names"), model: "gpt-4o-mini", authorized: true })]);
     expect(run.stdout + run.stderr).not.toContain(STUB_KEY);
     expect(run.status).toBe(0);
   });

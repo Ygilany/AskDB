@@ -49,8 +49,10 @@ const toJson = <T>(value: T): T => JSON.parse(JSON.stringify(value, (_key, v: un
 const aborted = new AbortController();
 function abort(): void {
   aborted.abort();
-  // A driver call takes no signal: a connection that hangs would keep the process alive.
-  setTimeout(() => process.exit(1), ABORT_GRACE_MS).unref();
+  // The signal reaches introspection only: a driver call, or SQLite's statement process, runs
+  // on. After the grace period, end the whole process group this process leads (the server
+  // forks it detached), so nothing it started outlives it, even when the server is gone.
+  setTimeout(() => process.kill(-process.pid, "SIGKILL"), ABORT_GRACE_MS).unref();
 }
 process.once("disconnect", abort);
 
