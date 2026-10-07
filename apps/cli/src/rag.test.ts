@@ -680,6 +680,7 @@ describe("askdb rag", () => {
       expect(pgvector.options).toEqual([expect.objectContaining({ dimensions: 64 })]);
       expect(pgvector.calls[0]).toBe("ensureSchema");
       expect(pgvector.calls).toContain("upsert");
+      expect(pgvector.calls.at(-1)).toBe("close");
     });
 
     it.each<[string, string[], number, string]>([
