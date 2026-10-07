@@ -5,6 +5,8 @@ import {
   constants as fsConstants,
   existsSync,
   fchmodSync,
+  fchownSync,
+  fstatSync,
   fsyncSync,
   lstatSync,
   mkdirSync,
@@ -14,6 +16,7 @@ import {
   renameSync,
   rmSync,
   writeFileSync,
+  type Stats,
 } from "node:fs";
 import { basename, dirname, join, resolve } from "node:path";
 import {
@@ -323,14 +326,18 @@ function isMissingPathError(e: unknown): boolean {
 
 /**
  * Turn a database identifier into a filename-safe slug. Path separators, NUL,
- * control characters, and characters reserved on Windows become `_`; names
+ * control characters, lone UTF-16 surrogates, and characters reserved on Windows
+ * become `_`; names
  * that would be hidden files (including `.` / `..`) or Windows device names
  * get a `_` prefix; trailing dots and spaces (which Windows strips) become `_`.
  * Everything else, including non-ASCII letters, is kept so ordinary names
  * stay readable.
  */
 function toSafeFilenameSlug(identifier: string): string {
-  let slug = identifier.replace(/[\u0000-\u001f\u007f/\\<>:"|?*]/g, "_");
+  // Node writes a lone UTF-16 surrogate in a path as U+FFFD, so `a\ud800` and
+  // `a\ud801` would name the same file.
+  let slug = identifier.replace(/\p{Surrogate}/gu, "_");
+  slug = slug.replace(/[\u0000-\u001f\u007f/\\<>:"|?*]/g, "_");
   slug = slug.replace(/[. ]+$/, (m) => "_".repeat(m.length));
   if (slug === "") return "_";
   if (slug.startsWith(".")) slug = `_${slug}`;
@@ -419,7 +426,9 @@ function assignDefaultTableFilenames(
 /**
  * Resolve a workspace table filename to an absolute path, refusing anything
  * that would land outside `tablesDir` (path separators, `..`, absolute paths,
- * NUL bytes) or is not a `.md` file.
+ * NUL bytes) or is not a `.md` file. `\` separates paths only on Windows; on
+ * macOS and Linux it is an ordinary filename character, so a file such as
+ * `ord\ers.md` already in `tables/` can still be saved.
  */
 function resolveTableFilePath(tablesDir: string, filename: string): string {
   const root = resolve(tablesDir);
@@ -427,7 +436,7 @@ function resolveTableFilePath(tablesDir: string, filename: string): string {
   if (
     filename.includes("\0") ||
     filename.includes("/") ||
-    filename.includes("\\") ||
+    (process.platform === "win32" && filename.includes("\\")) ||
     basename(filePath) !== filename ||
     dirname(filePath) !== root ||
     !filename.endsWith(".md")
@@ -457,14 +466,18 @@ function resolveTableFilePath(tablesDir: string, filename: string): string {
  *   would be. `rename` needs only write access to `tables/`, so without this check
  *   a read-only file (how Perforce and ClearCase mark files not checked out) would
  *   be replaced on macOS and Linux.
- * - The temp file gets the target's permission bits before any content is written,
- *   so a `0600` file's new content is never readable by others, and it is
- *   `fsync`ed before the rename. Readers, and a crash or power loss, see either the
- *   old file or the new one, never a partial write.
+ * - The temp file gets the target's owner, group, and permission bits before any
+ *   content is written, so a `0600` file's new content is never readable by others
+ *   and a `0660` file stays shared with its own group, not the group a new file in
+ *   `tables/` would get (`keepOwnerAndGroup`). It is `fsync`ed before the rename.
+ *   Readers, and a crash or power loss, see either the old file or the new one,
+ *   never a partial write.
  *
  * Not covered: `tables/` being swapped for a link after the check and before the
  * rename, since the temp path and the rename still resolve through it. That needs
- * a concurrent local writer racing a save.
+ * a concurrent local writer racing a save. And only root can give a file to another
+ * user, so on macOS and Linux a save by someone other than the file's owner (a
+ * member of a group that may write it) makes the saver its owner.
  */
 function replaceTableFile(
   tablesDir: string,
@@ -487,8 +500,11 @@ function replaceTableFile(
   );
   try {
     try {
-      // Keep the replaced file's permission bits, before the content lands.
-      if (existing) fchmodSync(fd, existing.mode & 0o777);
+      // Keep the replaced file's owner, group, and permission bits, before the content lands.
+      if (existing) {
+        const mode = existing.mode & 0o777;
+        fchmodSync(fd, keepOwnerAndGroup(fd, existing) ? mode : withoutGroupOnlyAccess(mode));
+      }
       writeFileSync(fd, content, "utf8");
       fsyncSync(fd);
     } finally {
@@ -503,6 +519,35 @@ function replaceTableFile(
     }
     throw e;
   }
+}
+
+/**
+ * Give the file open at `fd` the owner and group of `existing`, as far as the
+ * process may: only root can change a file's owner, and anyone else can set only
+ * a group they belong to. Returns whether the group now matches; Windows has no
+ * POSIX owner or group, so there it is always true.
+ */
+function keepOwnerAndGroup(fd: number, existing: Stats): boolean {
+  if (process.platform === "win32") return true;
+  const tryChown = (uid: number, gid: number) => {
+    try {
+      fchownSync(fd, uid, gid);
+    } catch {
+      // Not permitted (or not supported by this file system); checked below.
+    }
+  };
+  if (fstatSync(fd).uid !== existing.uid) tryChown(existing.uid, existing.gid);
+  if (fstatSync(fd).gid !== existing.gid) tryChown(-1, existing.gid);
+  return fstatSync(fd).gid === existing.gid;
+}
+
+/**
+ * `mode` with the group's bits cut down to what others may do, for a file whose
+ * group could not be kept: the group it has now must not gain access the old
+ * group had.
+ */
+function withoutGroupOnlyAccess(mode: number): number {
+  return (mode & 0o707) | (((mode >> 3) & mode & 0o007) << 3);
 }
 
 /**

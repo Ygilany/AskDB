@@ -1,5 +1,6 @@
 import {
   chmodSync,
+  chownSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
@@ -524,6 +525,24 @@ describe("workspace table filenames", () => {
     expect(readdirSync(schemaDir).sort()).toEqual(["schema.json", "tables"]);
   });
 
+  it("gives names that differ only by a lone UTF-16 surrogate distinct files", () => {
+    // Node writes a lone surrogate in a path as U+FFFD, so left alone these two
+    // would both be `a\ufffd.md` on disk.
+    writeSchema([table("public", "a\ud800"), table("public", "a\ud801")]);
+    const ws = loadWorkspace(schemaDir);
+    expect(ws.tables.map((t) => t.filename)).toEqual(["public.a_.md", "public.a_-2.md"]);
+    // The frontmatter escapes each id, so both read back; the descriptions avoid
+    // surrogates, which UTF-8 markdown text can't hold.
+    for (const [i, t] of ws.tables.entries()) {
+      const { id, name } = t.physical;
+      saveTable(ws, id, { id, name, schemaId: "fname" }, buildDefaultTableBody(name, `Table ${i}.`));
+    }
+    expect(loadSchema(schemaDir).tables.map((t) => [t.id, t.description])).toEqual([
+      ["table:public.a\ud800", "Table 0."],
+      ["table:public.a\ud801", "Table 1."],
+    ]);
+  });
+
   it("saveTable refuses a filename that resolves outside tables/", () => {
     writeSchema([table("public", "orders")]);
     const ws = loadWorkspace(schemaDir);
@@ -615,6 +634,55 @@ describe("workspace table filenames", () => {
       saveDescribed(ws, "table:public.orders");
       expect(readFileSync(target, "utf8")).toContain("About table:public.orders.");
       expect(statSync(target).mode & 0o777).toBe(0o600);
+    });
+  });
+
+  // A group, other than the one new files in a temp directory get, that this
+  // process belongs to and so may give a file.
+  const otherGroup = (() => {
+    if (process.platform === "win32") return undefined;
+    const dir = mkdtempSync(join(tmpdir(), "askdb-enrich-gid-"));
+    const newFileGid = statSync(dir).gid;
+    rmSync(dir, { recursive: true });
+    return process.getgroups?.().find((g) => g !== newFileGid && g !== process.getegid?.());
+  })();
+
+  integrationSuite({
+    unavailable:
+      process.platform === "win32"
+        ? "POSIX owners and groups are required (not Windows)"
+        : otherGroup === undefined
+          ? "this user belongs to no second group to give the file"
+          : false,
+  })("saveTable and file ownership", () => {
+    it("keeps the replaced file's group", () => {
+      writeSchema([table("public", "orders")]);
+      const target = join(schemaDir, "tables", "orders.md");
+      writeFileSync(target, tableMd("public", "orders", "Shared with one team."), "utf8");
+      chownSync(target, -1, otherGroup!);
+      chmodSync(target, 0o660);
+      const ws = loadWorkspace(schemaDir);
+
+      saveDescribed(ws, "table:public.orders");
+      expect(readFileSync(target, "utf8")).toContain("About table:public.orders.");
+      expect(statSync(target).gid).toBe(otherGroup);
+      expect(statSync(target).mode & 0o777).toBe(0o660);
+    });
+  });
+
+  integrationSuite({
+    unavailable: process.platform === "win32" ? "`\\` separates paths on Windows" : false,
+  })("saveTable and a backslash in a filename", () => {
+    it("saves a table whose existing file has a backslash in its name", () => {
+      writeSchema([table("public", "ord\\ers")]);
+      const target = join(schemaDir, "tables", "ord\\ers.md");
+      writeFileSync(target, tableMd("public", "ord\\ers", "Written before."), "utf8");
+      const ws = loadWorkspace(schemaDir);
+      expect(filenameOf(ws, "table:public.ord\\ers")).toBe("ord\\ers.md");
+
+      saveDescribed(ws, "table:public.ord\\ers");
+      expect(readFileSync(target, "utf8")).toContain("About table:public.ord\\ers.");
+      expect(readdirSync(join(schemaDir, "tables"))).toEqual(["ord\\ers.md"]);
     });
   });
 
