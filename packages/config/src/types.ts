@@ -418,7 +418,7 @@ export type AskDbIntrospectionConfig =
  *
  * - **`ai`**: provider connections (`providerConfig`) plus the `language` and `embedding` model sections.
  * - **`introspection`**: target engine for `askdb introspect` (postgres / prisma / mysql / sqlite / sqlserver) — selecting `provider` determines which `providerConfig` branch is valid. Each branch holds the connection URL/path for that engine.
- * - **`rag`**: the embedder (`"mock"`, or `"ai"` for `ai.embedding`) and the vector store, flattened to `ASKDB_RAG_*` / `ASKDB_PGVECTOR_URL` / file paths.
+ * - **`rag`** (optional): the embedder (`"mock"`, or `"ai"` for `ai.embedding`) and the vector store, flattened to `ASKDB_RAG_*` / `ASKDB_PGVECTOR_URL` / file paths. Omitting it means the mock embedder and the in-memory store.
  * - **`logging` | `modes` | `host`**: optional operational defaults.
  */
 export type AskDbConfig = {
@@ -436,7 +436,13 @@ export type AskDbConfig = {
    */
   dialect?: AskDbDialectId;
 
-  rag: {
+  /**
+   * Retrieval (RAG): the embedder and the vector store. Optional: omit it when you don't use
+   * retrieval, and AskDB behaves as if `{ embedder: "mock", store: "memory", storeConfig: {} }`
+   * were set, so no store keys are written. Setting `ai.embedding` without it is an error, since
+   * nothing would use that model. When present, `embedder`, `store` and `storeConfig` are required.
+   */
+  rag?: {
     /** `"mock"` (a local lexical embedder) or `"ai"` (the `ai.embedding` model). `"openai"` and `"ai-sdk"` are deprecated. */
     embedder: AskDbRagEmbedder;
     /** @deprecated Use `ai.embedding` and a connection in `ai.providerConfig`. Translated at load (with a warning); removed at 1.0. */

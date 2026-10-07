@@ -52,7 +52,7 @@ export type NormalizedAskDbConfig = Omit<AskDbConfig, "ai" | "rag"> & {
   rag: {
     embedder: "mock" | "ai";
     store: AskDbRagStore;
-    storeConfig: AskDbConfig["rag"]["storeConfig"];
+    storeConfig: NonNullable<AskDbConfig["rag"]>["storeConfig"];
   };
 };
 
@@ -235,7 +235,7 @@ function readLegacyWidth(
 }
 
 /** Whether `rag.embedderConfig` holds any value (an empty `{}`, or one of unset `env()` reads, doesn't). */
-function hasLegacyEmbedderConfig(rag: AskDbConfig["rag"]): boolean {
+function hasLegacyEmbedderConfig(rag: NonNullable<AskDbConfig["rag"]>): boolean {
   return Object.values(rag.embedderConfig ?? {}).some(
     (branch) =>
       branch !== undefined &&
@@ -260,12 +260,12 @@ type LegacyEmbedding = {
  */
 function translateLegacyEmbedder(
   embedder: "openai" | "ai-sdk",
-  config: AskDbConfig,
+  rag: NonNullable<AskDbConfig["rag"]>,
   table: Map<string, ProviderConnections>,
   languageProvider: string,
   warn: (message: string) => void,
 ): LegacyEmbedding {
-  const legacyOpenai = config.rag.embedderConfig?.openai ?? {};
+  const legacyOpenai = rag.embedderConfig?.openai ?? {};
   const provider = embedder === "openai" ? "openai" : languageProvider;
   warn(
     embedder === "openai"
@@ -400,7 +400,21 @@ export function normalizeAskDbConfig(config: AskDbConfig): {
     if (!deprecations.includes(message)) deprecations.push(message);
   };
   const ai = config.ai;
-  const rag = config.rag;
+  // An omitted `rag` block means "not using retrieval": the mock embedder and the in-memory store,
+  // which write no store keys. This is the only place that default lives (#226): the flat map,
+  // defineConfig and the runtime view (`rt.rag.store`) all read the normalized block.
+  const authored: NonNullable<AskDbConfig["rag"]> = config.rag ?? { embedder: "mock", store: "memory", storeConfig: {} };
+  // `storeConfig` is typed as required, but a JS config can leave it out (the memory store needs none).
+  const rag = { ...authored, storeConfig: authored.storeConfig ?? {} };
+  // The default can't be seen in the file, so refuse a config whose embedding model it would leave unused.
+  if (
+    (config.rag === undefined || config.rag === null) &&
+    Object.values(ai.embedding ?? {}).some((value) => value !== undefined && value !== null && String(value).trim() !== "")
+  ) {
+    throw new Error(
+      'askdb.config: ai.embedding is set but the config has no rag block; add rag: { embedder: "ai", store, storeConfig }, or remove ai.embedding.',
+    );
+  }
 
   if (!isMember(rag.embedder, ASKDB_RAG_EMBEDDERS)) {
     throw new Error(
@@ -500,7 +514,7 @@ export function normalizeAskDbConfig(config: AskDbConfig): {
 
     const legacy =
       rag.embedder === "openai" || rag.embedder === "ai-sdk"
-        ? translateLegacyEmbedder(rag.embedder, config, table, languageProvider, warn)
+        ? translateLegacyEmbedder(rag.embedder, rag, table, languageProvider, warn)
         : undefined;
     const section = ai.embedding ?? {};
     const embeddingModel = legacy?.model ?? nonBlank(section.model);

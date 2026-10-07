@@ -302,7 +302,7 @@ function resolveEmbedderConfig(opts: CliOptions, runtimeConfig: AskDbRuntimeConf
     if (opts.embedderModel !== undefined) {
       throw new Error(
         `--embedder-model applies to the ai embedder, but this run uses the mock embedder ` +
-          `(from ${opts.embedder ? "--embedder" : "rag.embedder"}). Drop --embedder-model, ` +
+          `(${opts.embedder ? "from --embedder" : configSource(runtimeConfig, "rag.embedder")}). Drop --embedder-model, ` +
           'or embed with ai.embedding (rag.embedder: "ai" in askdb.config.*).',
       );
     }
@@ -399,6 +399,8 @@ type StoreConfig = { kind: "memory" } | { kind: "file"; basePath: string } | Pgv
 
 type ConfiguredStore = {
   kind: CliStoreKind;
+  /** Where `kind` came from, for error messages. */
+  kindSource: string;
   fileBasePath: string | undefined;
   pgUrl: string | undefined;
   pgTable: string | undefined;
@@ -412,10 +414,10 @@ type ConfiguredStore = {
  * is configured.
  */
 function readConfiguredStore(runtimeConfig: AskDbRuntimeConfig): ConfiguredStore {
-  // Typed as required, but config load accepts a memory store without it.
-  const { store, storeConfig = {} } = runtimeConfig.structured.rag;
+  const { store, storeConfig } = runtimeConfig.rag;
   return {
     kind: store,
+    kindSource: configSource(runtimeConfig, "rag.store"),
     fileBasePath: trimmed(storeConfig.file?.basePath),
     pgUrl: trimmed(storeConfig.pgvector?.databaseUrl),
     pgTable: trimmed(storeConfig.pgvector?.table),
@@ -427,7 +429,7 @@ function readConfiguredStore(runtimeConfig: AskDbRuntimeConfig): ConfiguredStore
 function resolveStoreConfig(opts: CliOptions, runtimeConfig: AskDbRuntimeConfig, schemaDir: string): StoreConfig {
   const configured = readConfiguredStore(runtimeConfig);
   const kind = opts.store ?? configured.kind;
-  assertStoreFlagsApply(opts, kind);
+  assertStoreFlagsApply(opts, kind, opts.store ? "from --store" : configured.kindSource);
   if (kind === "memory") return { kind };
   if (kind === "file") {
     const basePath =
@@ -457,14 +459,23 @@ const STORE_FLAGS = [
 ] as const;
 
 /** A flag for another store than the one this run uses would be silently ignored, so refuse it. */
-function assertStoreFlagsApply(opts: CliOptions, kind: CliStoreKind): void {
+function assertStoreFlagsApply(opts: CliOptions, kind: CliStoreKind, kindSource: string): void {
   for (const [key, flag, store] of STORE_FLAGS) {
     if (opts[key] === undefined || kind === store) continue;
     throw new Error(
       `${flag} applies to the ${store} store, but this run uses the ${kind} store ` +
-        `(from ${opts.store ? "--store" : "rag.store"}). Pass --store ${store}, or drop ${flag}.`,
+        `(${kindSource}). Pass --store ${store}, or drop ${flag}.`,
     );
   }
+}
+
+/**
+ * Where a setting the flags didn't give came from, for error messages: the `rag` key, or the
+ * default when askdb.config.* has no `rag` block, which a message must not send the user to.
+ */
+function configSource(runtimeConfig: AskDbRuntimeConfig, key: "rag.store" | "rag.embedder"): string {
+  const { rag } = runtimeConfig.structured;
+  return rag === undefined || rag === null ? "the default: askdb.config.* has no rag block" : `from ${key}`;
 }
 
 /** setup-store provisions only the pgvector store, whatever `rag.store` is, so another store's flag is a mistake. */
@@ -491,7 +502,7 @@ function isIndexStrategy(value: string): value is PgvectorIndexStrategy {
 /**
  * Validated here because config load checks it only when `rag.store` is `pgvector`, while
  * setup-store and `--store pgvector` read it whatever the store is. Retire this once
- * @askdb/config validates the block wherever it's present (follow-up on #226).
+ * @askdb/config validates the block wherever it's present (#476).
  */
 function parseIndexStrategy(raw: string | undefined): PgvectorIndexStrategy | undefined {
   const value = raw?.toLowerCase();
