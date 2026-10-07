@@ -90,6 +90,16 @@ export function fencedSql(reply: string): string | undefined {
   return sql === undefined ? undefined : withoutTerminator(sql);
 }
 
+/**
+ * Whether a model's reply can be written as a cassette for the SQL `ask()` returned from it:
+ * its ```sql fence holds that statement, by `sameStatement`. `lab:record`'s gate. A reply whose
+ * SQL `ask()` read from somewhere the replay suites don't (an untagged fence) fails it.
+ */
+export function fenceHoldsSql(reply: string, sql: string): boolean {
+  const fenced = fencedSql(reply);
+  return fenced !== undefined && sameStatement(sql, fenced);
+}
+
 /** The SQL inside a cassette's ```sql fence, without its terminator: what AskDB should return for that question on that dialect. */
 export function cassetteSql(dialect: string, questionId: string, questions = loadQuestions()): string {
   const question = findQuestion(questionId, questions);
