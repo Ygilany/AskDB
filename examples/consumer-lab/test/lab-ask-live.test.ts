@@ -29,7 +29,8 @@
  * preloaded with `NODE_OPTIONS`, in the `lab ask` processes this spawns. It accepts only its
  * fake key, so no test needs a key or the network, and none can spend. Every spawned run has
  * an `OPENAI_API_KEY`, the fake one or an empty one, which wins over `.env.live`. The replies
- * run on SQLite, whose fixture copy is this checkout's own.
+ * run on SQLite, whose fixture copy is this checkout's own, so each scenario is one `[sqlite]`
+ * cell in the matrix (the refusals need no engine, and take the same cell).
  *
  * Not covered: a guarantee violation (exit 1): no SQL AskDB accepts makes the host refuse a
  * write today, so no reply reaches it (`grade.test.ts` owns the verdict).
@@ -73,7 +74,7 @@ beforeAll(() => {
 });
 afterAll(() => stub?.restore());
 
-describe("lab ask --model live", () => {
+describe("[sqlite] lab-ask-live", () => {
   it.for([
     ["a catalog question it answers right", text("agency-names"), "ok", 0, /^oracle: {5}pass$/],
     ["a catalog question it answers with the wrong rows", text("active-programs-per-agency"), "ok", 0, /^oracle: {5}miss — wrong rows \(got \d+, expected \d+\)$/],
@@ -121,7 +122,7 @@ function labAsk(args: string[], env: Record<string, string> = {}) {
   return { status: run.status, stdout: run.stdout, stderr: run.stderr };
 }
 
-describe("lab ask --model live, spawned", () => {
+describe("[sqlite] lab-ask-live-spawned", () => {
   const spawned = stubOpenAiEnv(REPLIES);
   afterAll(() => spawned.dispose());
 
@@ -155,7 +156,7 @@ describe("lab ask --model live, spawned", () => {
   });
 });
 
-describe("lab ask's --model refusals", () => {
+describe("[sqlite] lab-ask-live-refusals", () => {
   // Nothing printed on stdout: no target line, so nothing ran.
   it.for([
     ["a CI run", ["--model", "live", "q"], { CI: "true" }, /^lab ask: live mode calls a real model and never runs in CI/],
