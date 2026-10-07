@@ -19,9 +19,13 @@ export type OptionalDriverSpec<T> = {
   specifier?: string;
   /**
    * Imports the driver relative to the *engine package*. Must be a literal
-   * `() => import("pg")` written in the engine package, not here: the peer is
-   * declared (and installed next to) the engine package, and bundlers only
-   * see the dependency when the import is lexically in that package.
+   * `() => import("pg").catch(rethrowDriverImportError)` written in the engine package, not
+   * here: the peer is declared (and installed next to) the engine package, and
+   * bundlers only see the dependency when the import is lexically in that
+   * package. The `.catch()` chained on the `import()` (any handler that
+   * rethrows the error unchanged) is how bundlers such as esbuild tell an
+   * optional import from a required one; the catch inside this loader is
+   * invisible to them.
    */
   importDriver: () => Promise<T>;
   /** Message of the `AskDbError` thrown when the peer cannot be resolved from anywhere. */
@@ -156,4 +160,15 @@ export function missingDriverMessage(input: { engine: string; packageName: strin
     `(e.g. \`pnpm dlx -p askdb -p ${packageName} askdb ...\` or \`npx -p askdb -p ${packageName} askdb ...\`). ` +
     `You can also pass a custom catalog query runner to the ${engine} connector.`
   );
+}
+
+/**
+ * The handler an engine chains on its driver's `import()`:
+ * `() => import("pg").catch(rethrowDriverImportError)`. It rethrows unchanged,
+ * so the loader still classifies the error; its job is to sit on the
+ * `import()` expression, which is how bundlers such as esbuild tell an
+ * optional peer from a required one.
+ */
+export function rethrowDriverImportError(error: unknown): never {
+  throw error;
 }

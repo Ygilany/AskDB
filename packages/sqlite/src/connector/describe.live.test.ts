@@ -86,6 +86,20 @@ suite("describeSqlite (live in-memory database)", () => {
     });
   });
 
+  it("folds only ASCII case, as SQLite does: `Ä` and `ä` are two parents", async () => {
+    db.exec(`
+      CREATE TABLE "Ä" (a_id INTEGER PRIMARY KEY);
+      CREATE TABLE "ä" (code TEXT PRIMARY KEY);
+      CREATE TABLE kids (id INTEGER PRIMARY KEY, upper_ref INTEGER REFERENCES "Ä", lower_ref TEXT REFERENCES "ä");
+    `);
+    const kids = (await tables()).find((t) => t.name === "kids")!;
+    const byColumn = Object.fromEntries(kids.foreignKeys.map((fk) => [fk.columns[0], fk.references]));
+    expect(byColumn).toEqual({
+      upper_ref: { schema: "public", table: "Ä", columns: ["a_id"] },
+      lower_ref: { schema: "public", table: "ä", columns: ["code"] },
+    });
+  });
+
   it("keeps explicit FK target columns untouched", async () => {
     db.exec(`
       CREATE TABLE users (id INTEGER PRIMARY KEY, email TEXT UNIQUE);

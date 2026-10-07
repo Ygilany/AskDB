@@ -15,6 +15,7 @@ export {
   isDriverInstalled,
   isModuleResolutionFailure,
   missingDriverMessage,
+  rethrowDriverImportError,
   type DriverLoadOptions,
   type OptionalDriverLoader,
   type OptionalDriverSpec,

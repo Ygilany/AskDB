@@ -256,10 +256,14 @@ export async function describeMysql(input: DescribeMysqlInput): Promise<Introspe
     run<ViewRow>(sql.views),
   ]);
 
+  const readDatabases = new Set(tableRows.map((row) => row.table_schema));
   return foldMysqlResult({
     schemaId: input.schemaId ?? "introspected",
     namespaceOf: listed ? (database) => database : () => DEFAULT_NAMESPACE,
-    isIntrospected: listed ? (database) => databases.includes(database) : undefined,
+    // The databases the catalog returned rows for, spelled as the catalog spells
+    // them: with case-insensitive names (lower_case_table_names 1 or 2),
+    // `--schemas Shop` reads the database stored as `shop`.
+    isIntrospected: listed ? (database) => readDatabases.has(database) : undefined,
     tableFilter,
     tableRows,
     columnRows,

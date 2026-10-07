@@ -168,7 +168,7 @@ export type CatalogQueryRunner = (
 Rules:
 
 - The runner is **introspection-only**. It is never used to execute generated user SQL — that boundary is enforced in `@askdb/core`.
-- Drivers are optional peer dependencies. `@askdb/postgres` lazy-loads `pg` from inside `createPostgresCatalogQueryRunner` so consumers that only generate SQL never pull a driver into their dependency graph. Use `createOptionalDriverLoader` / `isDriverInstalled` from `@askdb/introspect/kit` for the same behavior (engine-package import first, then the caller's project root, cached per `resolveFrom`, retry after a missing-peer failure).
+- Drivers are optional peer dependencies. `@askdb/postgres` lazy-loads `pg` from inside `createPostgresCatalogQueryRunner` so consumers that only generate SQL never pull a driver into their dependency graph. Use `createOptionalDriverLoader` / `isDriverInstalled` from `@askdb/introspect/kit` for the same behavior (engine-package import first, then the caller's project root, cached per `resolveFrom`, retry after a missing-peer failure). Write the import in your package as `() => import("your-driver").catch(rethrowDriverImportError)`: a `.catch()` on the `import()` itself is how bundlers such as esbuild tell an optional peer from a required one.
 - Callers can BYO runners. Expose the type so tests and alternative drivers (e.g. `postgres.js`, Neon HTTP) can plug in without modifying the connector.
 
 ---

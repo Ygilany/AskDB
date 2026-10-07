@@ -45,7 +45,7 @@ Owns:
 - `ConnectorProviderAdapter` — the interface each concrete package implements (includes optional `getTemplates?()`).
 - `ConnectorRegistry` — `{ hasProvider, createConnector, getTemplates }`.
 - `createConnectorRegistry(adapters)` — registry factory.
-- `askDbConnectorProviderMissingMessage()` — actionable error helper.
+- `connectorProviderMissingMessage()` — actionable error helper.
 
 Dependency model:
 - `@askdb/introspect`: hard dependency (for `Connector<TInput>`, `IntrospectionFilters`, `SqlTemplateBundle`).

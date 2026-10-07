@@ -155,7 +155,7 @@ echo "smoke: tsc --noEmit (AI SDK 6 consumer)…"
 echo "smoke: tsx src/smoke.ts (AI SDK 6 consumer)…"
 (cd "$WORK/consumer-ai6" && npx --yes tsx src/smoke.ts)
 
-echo "smoke: staging bundled consumer (esbuild, only @ai-sdk/openai at the peer floor)…"
+echo "smoke: staging bundled consumer (esbuild, only @ai-sdk/openai at the peer floor, no database drivers)…"
 cp -R "$SCRIPT_DIR/consumer-bundle" "$WORK/consumer-bundle"
 node -e "
   const fs = require('fs');
@@ -165,19 +165,24 @@ node -e "
   j.dependencies['@askdb/client'] = 'file:$CLIENT_TARBALL';
   j.dependencies['@askdb/config'] = 'file:$CONFIG_TARBALL';
   j.dependencies['@askdb/core'] = 'file:$CORE_TARBALL';
+  j.dependencies['@askdb/introspect'] = 'file:$INTROSPECT_TARBALL';
+  j.dependencies['@askdb/mysql'] = 'file:$MYSQL_TARBALL';
+  j.dependencies['@askdb/postgres'] = 'file:$POSTGRES_TARBALL';
+  j.dependencies['@askdb/sqlite'] = 'file:$SQLITE_TARBALL';
+  j.dependencies['@askdb/sqlserver'] = 'file:$SQLSERVER_TARBALL';
   fs.writeFileSync(p, JSON.stringify(j, null, 2) + '\n');
 "
 
 echo "smoke: npm install bundled consumer…"
 (cd "$WORK/consumer-bundle" && npm install --silent --no-audit --no-fund --no-package-lock)
-for missing in @ai-sdk/azure @ai-sdk/google @ai-sdk/anthropic; do
+for missing in @ai-sdk/azure @ai-sdk/google @ai-sdk/anthropic pg mysql2 better-sqlite3 mssql; do
   if [ -d "$WORK/consumer-bundle/node_modules/$missing" ]; then
     echo "smoke: FAILED — $missing was installed in the bundled consumer; it must stay an optional peer." >&2
     exit 1
   fi
 done
 
-echo "smoke: esbuild bundle of @askdb/client without the other provider SDKs…"
+echo "smoke: esbuild bundle of @askdb/client and the engine packages without the other provider SDKs or any driver…"
 (cd "$WORK/consumer-bundle" && npm run --silent bundle)
 (cd "$WORK/consumer-bundle" && npm run --silent smoke)
 

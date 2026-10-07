@@ -20,8 +20,8 @@ const CORPUS: ReadonlyArray<readonly [input: string, label: string]> = [
   // Ordinary mssql:// URLs.
   ["mssql://sa:S3cret@localhost:1433/app", "sqlserver://localhost:1433/app"],
   ["mssql://localhost/app", "sqlserver://localhost/app"],
-  // Prisma-style strings. A {…} value is read differently by the parser before
-  // Prisma escaping (it kept the braces), so the label doesn't trust it.
+  // Prisma-style strings. A {…} value is read one way by AskDB (an escape only
+  // when it wraps a ;) and another by Prisma, so the label doesn't trust it.
   ["sqlserver://host:1433;database=db;user=sa;password=S3cret;encrypt=true", "sqlserver://host:1433/db"],
   ["sqlserver://host:1433;database=db;user=sa;password={S3;cr&et};encrypt=true", FALLBACK],
   ["sqlserver://host:1433;user={MyServer/User};password={Pass:Word;};database=db", FALLBACK],
