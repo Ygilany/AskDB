@@ -62,10 +62,15 @@ export type ConnectorRuntimeConfig = {
   /**
    * The authoring-time config (`getAskDbRuntimeConfig().structured`). Engines
    * without a first-class runtime field read their own block from
-   * `structured.introspection.providerConfig.<id>` here.
+   * `structured.introspection.providerConfig.<id>` here: `@askdb/config` passes
+   * it through unchanged, though its typed config doesn't declare third-party
+   * ids yet.
    */
   readonly structured?: unknown;
-  /** The flattened env-style map (`getAskDbRuntimeConfig().flat`). */
+  /**
+   * The flattened env-style map (`getAskDbRuntimeConfig().flat`). It holds only
+   * `@askdb/config`'s own canonical keys, never a third-party engine's.
+   */
   readonly flat?: Readonly<Record<string, string>>;
 };
 
@@ -142,7 +147,9 @@ export type ConnectorRegistry = {
   /**
    * Resolve a provider's connection via its adapter's `resolveConnection` hook
    * (or pass `explicit` through when the adapter has none), with `sourceLabel`
-   * from `connectionLabel`. Throws when the provider is not registered.
+   * from `connectionLabel`. A blank explicit value (empty or whitespace-only)
+   * counts as absent, so the configured connection applies. Throws when the
+   * provider is not registered.
    */
   resolveConnection(provider: string, request: ConnectorConnectionRequest): ConnectorConnectionResolution;
   /**
@@ -178,9 +185,12 @@ export function createConnectorRegistry(adapters: ConnectorProviderAdapters): Co
     },
     resolveConnection(provider, request) {
       const adapter = adapterFor(provider);
+      // A blank explicit value (an empty form field or env var a host forwards)
+      // is absent, so the configured connection still applies.
+      const normalized: ConnectorConnectionRequest = { ...request, explicit: withoutBlankValues(request.explicit) };
       const result: ConnectorConnectionResult = adapter.resolveConnection
-        ? adapter.resolveConnection(request)
-        : { ok: true, connection: { ...request.explicit } };
+        ? adapter.resolveConnection(normalized)
+        : { ok: true, connection: { ...normalized.explicit } };
       if (!result.ok) return result;
       return { ...result, sourceLabel: labelFor(adapter, provider, result.connection) };
     },
@@ -213,6 +223,13 @@ export function connectorProviderMissingMessage(provider: string): string {
     `Connector provider "${provider}" is not registered. ` +
     `${install} and pass its connector provider adapter to createConnectorRegistry().`
   );
+}
+
+function withoutBlankValues(explicit: ConnectorConnection | undefined): ConnectorConnection | undefined {
+  if (explicit === undefined) return undefined;
+  return Object.fromEntries(
+    Object.entries(explicit).filter(([, value]) => typeof value !== "string" || value.trim() !== ""),
+  ) as ConnectorConnection;
 }
 
 function normalizeAdapters(adapters: ConnectorProviderAdapters): Map<string, ConnectorProviderAdapter> {

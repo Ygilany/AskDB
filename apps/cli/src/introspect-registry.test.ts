@@ -24,8 +24,16 @@ const BASE_CONFIG: AskDbConfig = {
   rag: { embedder: "mock", embedderConfig: {}, store: "memory", storeConfig: { memory: {} } },
 };
 
-function installRuntime(): void {
-  setAskDbRuntimeForTests({ structured: BASE_CONFIG, flat: flattenAskDbConfig(BASE_CONFIG) });
+// A third-party engine's block rides in the structured config, which @askdb/config passes
+// through untyped (its typed config declares only the built-in engines).
+function installRuntime(acme?: { databaseUrl: string }): void {
+  const structured = acme
+    ? ({
+        ...BASE_CONFIG,
+        introspection: { ...BASE_CONFIG.introspection, providerConfig: { ...BASE_CONFIG.introspection!.providerConfig, acme } },
+      } as AskDbConfig)
+    : BASE_CONFIG;
+  setAskDbRuntimeForTests({ structured, flat: flattenAskDbConfig(structured) });
 }
 
 const acmeResult: IntrospectionResult = {
@@ -76,12 +84,13 @@ function acmeAdapter() {
     connector: { describe: vi.fn(async () => acmeResult) },
   }));
   const resolveConnection = vi.fn((request: ConnectorConnectionRequest) => {
-    // A third-party adapter's fallback reads a source it owns: @askdb/config's runtime
-    // carries only the built-in engines' keys (docs/integration/connectors.md).
-    const url = request.explicit?.url ?? process.env["ACME_URL"];
+    const structured = request.runtime.structured as
+      | { introspection?: { providerConfig?: { acme?: { databaseUrl?: string } } } }
+      | undefined;
+    const url = request.explicit?.url ?? structured?.introspection?.providerConfig?.acme?.databaseUrl;
     return url
       ? { ok: true as const, connection: { url } }
-      : { ok: false as const, error: "Set ACME_URL or pass --url." };
+      : { ok: false as const, error: "Set introspection.providerConfig.acme.databaseUrl or pass --url." };
   });
   const adapter: ConnectorProviderAdapter = { provider: "acme", createConnector, resolveConnection };
   return { adapter, createConnector, resolveConnection };
@@ -105,14 +114,12 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.restoreAllMocks();
-  vi.unstubAllEnvs();
   resetAskDbRuntimeForTests();
 });
 
 describe("askdb introspect — injected connector registry", () => {
   it("dispatches a third-party engine through its adapter's resolveConnection", async () => {
-    installRuntime();
-    vi.stubEnv("ACME_URL", "acme://configured");
+    installRuntime({ databaseUrl: "acme://configured" });
     const { adapter, createConnector, resolveConnection } = acmeAdapter();
     const connectorRegistry = createConnectorRegistry([adapter]);
 
@@ -132,8 +139,7 @@ describe("askdb introspect — injected connector registry", () => {
   });
 
   it("lets explicit --url win over the adapter's configured fallback", async () => {
-    installRuntime();
-    vi.stubEnv("ACME_URL", "acme://configured");
+    installRuntime({ databaseUrl: "acme://configured" });
     const { adapter, createConnector } = acmeAdapter();
 
     const code = await runIntrospectCli(["--engine", "acme", "--url", "acme://flag", "--print"], {
@@ -153,7 +159,7 @@ describe("askdb introspect — injected connector registry", () => {
     });
 
     expect(code).toBe(1);
-    expect(stderr).toContain("Set ACME_URL or pass --url.");
+    expect(stderr).toContain("Set introspection.providerConfig.acme.databaseUrl or pass --url.");
     expect(createConnector).not.toHaveBeenCalled();
   });
 

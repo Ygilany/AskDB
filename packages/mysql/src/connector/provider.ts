@@ -13,6 +13,7 @@ export const mysqlConnectorProvider = defineLiveConnectorProvider({
     config:
       "No MySQL connection configured. Set introspection.providerConfig.mysql.databaseUrl in askdb.config.ts (bound to an env var in .env).",
   },
+  fromExportUnsupported: "--from-export is currently supported only for --engine postgres (got mysql).",
   createConnector: createMysqlConnector,
   createRunner: (url) => createMysqlCatalogQueryRunner(url),
   connectionLabelParts: parseMysqlConnection,

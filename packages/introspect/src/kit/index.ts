@@ -44,6 +44,8 @@ export {
   type LiveConnectorProviderSpec,
 } from "./provider.js";
 
+export { runtimeIntrospectionString } from "../registry.js";
+
 export {
   formatConnectionLabel,
   parseConnectionUrl,

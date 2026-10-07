@@ -1,5 +1,5 @@
+import { runtimeIntrospectionString } from "@askdb/introspect/kit";
 import {
-  runtimeIntrospectionString,
   type Connector,
   type ConnectorConfig,
   type ConnectorProviderAdapter,

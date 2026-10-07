@@ -13,6 +13,7 @@ export const sqlServerConnectorProvider = defineLiveConnectorProvider({
     config:
       "No SQL Server connection configured. Set introspection.providerConfig.sqlserver.databaseUrl in askdb.config.ts (bound to an env var in .env).",
   },
+  fromExportUnsupported: "--from-export is currently supported only for --engine postgres (got sqlserver).",
   createConnector: createSqlServerConnector,
   createRunner: (url) => createSqlServerCatalogQueryRunner(url),
   connectionLabelParts: parseSqlServerConnection,

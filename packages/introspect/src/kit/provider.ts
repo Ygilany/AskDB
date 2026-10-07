@@ -25,6 +25,12 @@ export type LiveConnectorProviderSpec = {
   /** What `config.url` holds, for the missing-url error: `"a connection URL"`, `"a file path"`. */
   connectionNoun: string;
   /**
+   * Error when the caller passes an export bundle (`--from-export`), which a
+   * live-only engine can't read. Defaults to
+   * `--from-export is not supported for --engine <provider>.`
+   */
+  fromExportUnsupported?: string;
+  /**
    * Error when neither an explicit URL nor a configured one exists: `cli` names
    * `askdb introspect` flags, `config` names `askdb.config.ts` keys.
    */
@@ -71,7 +77,7 @@ export function defineLiveConnectorProvider(spec: LiveConnectorProviderSpec): Co
       if (explicit.fromExport) {
         return {
           ok: false,
-          error: `--from-export is currently supported only for --engine postgres (got ${spec.provider}).`,
+          error: spec.fromExportUnsupported ?? `--from-export is not supported for --engine ${spec.provider}.`,
         };
       }
       return { ok: true, connection: { url } };

@@ -54,8 +54,8 @@ ADR 0002 organized AskDB around one package per integration. Each integration ow
 - About 600 lines leave the engine packages. A new engine gets driver loading, filters, ids, row folding, connection labels, and, for live-only engines, a full `ConnectorProviderAdapter` from the kit.
 - A third-party engine plugs into any registry-driven host, programmatic or custom, without AskDB changes. The CLI's introspect command is written against an injected registry: `runIntrospectCli(argv, { connectorRegistry })` is internal and covered by a test that uses a custom adapter. So it contains no engine-specific code. The shipped `askdb` binary still registers only the first-party engines. There is no auto-discovery; see "Out of scope".
 - The CLI and Studio keep their user-facing error messages. The only visible change: `askdb introspect templates --engine prisma` now reports the generic "does not provide SQL templates" message instead of a Prisma-specific one.
-- `@askdb/config`'s `introspection.provider` is still a closed union in the typed config. Opening the typed config to third-party engines is separate work. A third-party adapter can already read its own values from `runtime.structured` or `runtime.flat`.
-- `@askdb/connectors` consumers keep working. The `ConnectorProvider` type widening from a closed union to an open string is the one type-level change, and it is released as a minor.
+- `@askdb/config`'s `introspection.provider` is still a closed union in the typed config. Opening the typed config to third-party engines is separate work. A third-party adapter can already read its own block from `runtime.structured` (`introspection.providerConfig.<id>`, which `@askdb/config` passes through untyped). `runtime.flat` holds only `@askdb/config`'s own keys, and adapters don't read `process.env` (ADR 0005).
+- `@askdb/connectors` consumers keep working. The widening from a closed union to an open string is the one type-level change: it reaches `ConnectorProvider` and the `provider` type of each engine package's exported adapter, so `@askdb/connectors` and the five engine packages are released as minors.
 
 ## Out of scope
 

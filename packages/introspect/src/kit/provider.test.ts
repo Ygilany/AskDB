@@ -52,8 +52,18 @@ describe("defineLiveConnectorProvider", () => {
 
     expect(resolve({ explicit: { fromExport: "./b" }, runtime: runtime("acme://h/db") })).toEqual({
       ok: false,
-      error: "--from-export is currently supported only for --engine postgres (got acme).",
+      error: "--from-export is not supported for --engine acme.",
     });
+  });
+
+  it("treats a blank explicit value as absent, so the configured connection applies", () => {
+    for (const url of ["", "  "]) {
+      expect(registry.resolveConnection("acme", { explicit: { url }, runtime: runtime("acme://config/db") })).toEqual({
+        ok: true,
+        connection: { url: "acme://config/db" },
+        sourceLabel: "acme://config/db",
+      });
+    }
   });
 
   it("reports a missing connection before rejecting --from-export (the CLI's historical check order)", () => {
