@@ -571,6 +571,23 @@ describe("askdb rag", () => {
       expect(new Set(server.requests.map((request) => request.model))).toEqual(new Set([model]));
     });
 
+    it("records the adapter's canonical provider, so foundry indexes as azure, as in Studio", async () => {
+      const server = await startEmbeddingServer();
+      installRuntime({
+        ...BASE_CONFIG,
+        ai: {
+          provider: "foundry",
+          providerConfig: { foundry: { apiKey: "test-key", baseUrl: `${server.baseUrl}/openai/v1` } },
+          language: { model: "chat-deployment" },
+          embedding: { model: "embedding-deployment", dimensions: 4 },
+        },
+        rag: { embedder: "ai", store: "file", storeConfig: { file: {} } },
+      });
+      const schemaDir = copyFixture();
+      expect(await runRagCli(["index", schemaDir])).toBe(0);
+      expect(readLock(schemaDir)).toMatchObject({ embedderId: "ai-sdk:azure:embedding-deployment:4" });
+    });
+
     it('falls back to rag.embedder, including its deprecated "openai"', async () => {
       const server = await startEmbeddingServer();
       installRuntime({
