@@ -94,6 +94,16 @@ describe("exec/mysql - lazy `mysql2` peer dependency", () => {
     tempDirs = [];
   });
 
+  // Hosts build a runner without the optional peer installed; an eager load() would
+  // reject unhandled at construction, which fails this test.
+  it("createMysqlCatalogQueryRunner() does not load `mysql2` at construction time", async () => {
+    const { createMysqlCatalogQueryRunner } = await import("./mysql.js");
+    mysql2State.shouldFail = true;
+
+    expect(() => createMysqlCatalogQueryRunner("mysql://nowhere")).not.toThrow();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  });
+
   it("invoking the runner when `mysql2` is missing rejects with a helpful AskDbError", async () => {
     const { createMysqlCatalogQueryRunner } = await import("./mysql.js");
     process.chdir(await createTempProject());

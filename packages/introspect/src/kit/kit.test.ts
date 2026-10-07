@@ -103,9 +103,10 @@ describe("grouping and ordering helpers", () => {
     ]);
   });
 
-  it("byName and sortedUnique use localeCompare", () => {
-    expect([{ name: "b" }, { name: "a" }].sort(byName)).toEqual([{ name: "a" }, { name: "b" }]);
-    expect(sortedUnique(["b", "a", "b"])).toEqual(["a", "b"]);
+  it("byName and sortedUnique use localeCompare, not code-unit order", () => {
+    // Code-unit order would put "B" first.
+    expect([{ name: "b" }, { name: "B" }, { name: "a" }].sort(byName)).toEqual([{ name: "a" }, { name: "b" }, { name: "B" }]);
+    expect(sortedUnique(["b", "B", "a", "b"])).toEqual(["a", "b", "B"]);
   });
 });
 

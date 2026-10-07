@@ -97,6 +97,16 @@ describe("exec/sqlserver - lazy `mssql` peer dependency", () => {
     tempDirs = [];
   });
 
+  // Hosts build a runner without the optional peer installed; an eager load() would
+  // reject unhandled at construction, which fails this test.
+  it("createSqlServerCatalogQueryRunner() does not load `mssql` at construction time", async () => {
+    const { createSqlServerCatalogQueryRunner } = await import("./sqlserver.js");
+    mssqlState.shouldFail = true;
+
+    expect(() => createSqlServerCatalogQueryRunner("mssql://nowhere")).not.toThrow();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  });
+
   it("invoking the runner when `mssql` is missing rejects with a helpful AskDbError", async () => {
     const { createSqlServerCatalogQueryRunner } = await import("./sqlserver.js");
     process.chdir(await createTempProject());

@@ -12,7 +12,6 @@
 export {
   createOptionalDriverLoader,
   isDriverInstalled,
-  isModuleResolutionFailure,
   missingDriverMessage,
   rethrowDriverImportError,
   type DriverLoadOptions,
@@ -22,7 +21,6 @@ export {
 
 export {
   ambiguousFilterWarnings,
-  compileGlob,
   compileTableFilters,
   type GlobMatcher,
 } from "./filters.js";
