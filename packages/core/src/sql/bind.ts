@@ -120,11 +120,16 @@ export type PlaceholderOccurrence = {
 };
 
 // `(?<!:)` keeps the type in a `value::type` cast from reading as a `:type` placeholder.
-const PLACEHOLDER_TOKEN_RE = /(?<!:):([a-z][a-z0-9_]*)/g;
+// The name runs over every identifier character, not just the lowercase ones a declared
+// name may use: `:status_nameOR` is one token (as the tenant guardrail reads it) and
+// matches no declaration, so it fails closed instead of rendering `'x'OR`.
+const PLACEHOLDER_TOKEN_RE = /(?<!:):([A-Za-z_][A-Za-z0-9_$\u0080-\uffff]*)/g;
 
 /**
  * Find `:name` placeholders only in code regions, in source order.
  * A quoted `':name'` or a commented-out `-- :name` is invisible by construction.
+ * A name in any other form than `[a-z][a-z0-9_]*` is still reported, whole, so a
+ * caller that requires a declaration for every occurrence refuses it.
  */
 export function scanPlaceholders(
   sql: string,

@@ -1213,6 +1213,25 @@ describe("ask — one guardrail decision point (ADR 0010)", () => {
     expect(result.verdict).toEqual({ outcome: "allow", findings: [] });
   });
 
+  it("returns no preparedQuery for a template whose placeholder is glued to an identifier", async () => {
+    const result = await ask({
+      question: "q",
+      schema: warn,
+      model: fakeModel,
+      dialect: "postgres",
+      tenantScope: agencyScope,
+      deps: replying(
+        reply3(
+          "SELECT id FROM orders WHERE agency_id = :tenant_agency_ids AND status = 'open'OR 1=1",
+          "SELECT id FROM orders WHERE agency_id = :tenant_agency_ids AND status = :statusOR 1=1",
+        ),
+      ),
+    });
+
+    expect(result.preparedQuery).toBeUndefined();
+    expect(result.unboundSql).toBeUndefined();
+  });
+
   it("turns a custom generator's failure without warnings into an UNPROVABLE_SCOPE tenant finding", async () => {
     const dialect: AskDialect = {
       generate: async () => ({

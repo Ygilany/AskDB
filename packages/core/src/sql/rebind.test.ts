@@ -214,6 +214,19 @@ describe("bindPreparedQuery — tenant IDs come from the bind-time scope", () =>
   });
 });
 
+// The tenant rule reads `:status_nameOR` as one token; a renderer that substituted
+// `:status_name` alone would leave `'open'OR 1=1`, an unscoped read the rule never saw.
+describe("bindPreparedQuery — a placeholder glued to an identifier", () => {
+  it.each([":status_nameOR 1=1", ":status_name$x", ":status_nameé"])("refuses `%s` instead of rendering part of it", (tail) => {
+    const sql = `SELECT id FROM orders WHERE agency_id = :tenant_agency_ids AND status = ${tail}`;
+    const error = catchError(() =>
+      bindPreparedQuery(template(sql), { status_name: "open" }, { schema: strictSchema, tenantScope: agencyIds("5") }),
+    );
+    expect(error).toBeInstanceOf(QueryParameterError);
+    expect((error as QueryParameterError).reason).toBe("UNRESOLVED_PLACEHOLDER");
+  });
+});
+
 describe("bindPreparedQuery — tenant placeholders nothing can render", () => {
   const unscoped = "SELECT count(*) FROM orders WHERE status = :status_name";
 
@@ -229,6 +242,19 @@ describe("bindPreparedQuery — tenant placeholders nothing can render", () => {
       tenantScope: globalScope,
     });
     expect(bound.sql).toBe("SELECT count(*) FROM orders WHERE status = 'open'");
+  });
+
+  it("throws UNRESOLVED_TENANT_PLACEHOLDER for an upper-case placeholder, even with a tenant policy", () => {
+    const sql = scopedOrders.replace(":tenant_agency_ids", ":TENANT_AGENCY_IDS");
+    const error = catchError(() =>
+      bindPreparedQuery(template(sql), { status_name: "open" }, {
+        schema: warnSchema,
+        tenantScope: agencyIds("2"),
+        acceptWarnings: ["tenant"],
+      }),
+    );
+    expect(error).toBeInstanceOf(TenantScopeError);
+    expect((error as TenantScopeError).reason).toBe("UNRESOLVED_TENANT_PLACEHOLDER");
   });
 
   it.each([
@@ -257,6 +283,17 @@ describe("bindPreparedQuery — the tenant check runs under the bind-time scope 
       ["MISSING_TENANT_PREDICATE", "table:public.orders"],
     ]);
     expect((error as TenantGuardrailError).verdict?.outcome).toBe("deny");
+
+    // acceptWarnings accepts a `warn`; it never unlocks a strict policy.
+    const accepted = catchError(() =>
+      bindPreparedQuery(prepared, { status_name: "open" }, {
+        schema: strictSchema,
+        tenantScope: agencyIds("2"),
+        acceptWarnings: ["tenant"],
+      }),
+    );
+    expect(accepted).toBeInstanceOf(TenantGuardrailError);
+    expect((accepted as Error).message).toMatch(/strict mode/);
   });
 
   // The #186 requirement: a warning is not seen once and then reused forever.
@@ -349,6 +386,20 @@ describe("bindPreparedQuery — the read-only and sensitive checks", () => {
     );
     expect(error).toBeInstanceOf(SensitiveReferenceError);
     expect((error as SensitiveReferenceError).rule).toBe("SENSITIVE_COLUMN_REFERENCED");
+  });
+
+  it("skips the sensitive check with sensitiveGuardrailMode off", () => {
+    const bound = bindPreparedQuery(readsPassword, { status_name: "1" }, { schema: sensitiveV1, sensitiveGuardrailMode: "off" });
+    expect(bound.verdict).toEqual({ outcome: "allow", findings: [] });
+  });
+
+  // A mode spelled any other way (a host reading it from its own config) must not turn a
+  // finding into `allow`, which the verdict documents as "no findings".
+  it.each(["Strict", "STRICT", "strict "])("refuses a sensitive read under an unrecognized mode %j", (mode) => {
+    const error = catchError(() =>
+      bindPreparedQuery(readsPassword, { status_name: "1" }, { schema: sensitiveV1, sensitiveGuardrailMode: mode as never }),
+    );
+    expect(error).toBeInstanceOf(SensitiveReferenceError);
   });
 
   it("refuses a non-SELECT template whatever the modes", () => {

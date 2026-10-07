@@ -2,7 +2,7 @@
  * Module layering (ADR 0010, "Module layering"): `@askdb/core` has no runtime import
  * cycles, and the mechanical renderer `sql/bind.ts` stays below tenant substitution and
  * the guardrails, which the checked binder `sql/rebind.ts` sits above. Type-only imports
- * are erased at build time and don't count.
+ * and re-exports are erased at build time and don't count; a barrel's re-exports do.
  */
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { dirname, join, relative } from "node:path";
@@ -19,12 +19,12 @@ function sourceFiles(dir: string): string[] {
   });
 }
 
-/** Each file's runtime imports of other files in `src`. */
+/** Each file's runtime imports of other files in `src`, re-exports (`export … from`) included. */
 function importGraph(): Map<string, string[]> {
   const graph = new Map<string, string[]>();
   for (const file of sourceFiles(src)) {
     const targets: string[] = [];
-    for (const m of readFileSync(file, "utf8").matchAll(/^import\s+(?!type\b)[^;]*?from\s+"(\.[^"]+)"/gms)) {
+    for (const m of readFileSync(file, "utf8").matchAll(/^(?:import|export)\s+(?!type\b)[^;]*?from\s+"(\.[^"]+)"/gms)) {
       const target = join(dirname(file), m[1]!).replace(/\.js$/, ".ts");
       targets.push(existsSync(target) ? target : target.replace(/\.ts$/, "/index.ts"));
     }

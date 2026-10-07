@@ -9,7 +9,7 @@ import { synthesizeRetrievedDdl } from "./retrieval/synthesize-ddl.js";
 import { unqualifiedNamespaceFor } from "./sql/prompt.js";
 import { promptIdentifierQuoter } from "./sql/prompt-identifiers.js";
 import type { NormalizedSchemaV2 } from "./schema/v2/normalized.js";
-import type { NormalizedTenantPolicy, TenantScope } from "./schema/v2/tenant-policy.js";
+import type { TenantScope } from "./schema/v2/tenant-policy.js";
 import {
   type BuiltInDialectId,
   type DialectSpec,
@@ -23,9 +23,8 @@ import {
   tenantFindings,
   tenantGuardrailResult,
   throwIfDenied,
-  type GuardrailModes,
 } from "./sql/guardrail-decide.js";
-import { evaluateGuardrails, logGuardrailVerdict } from "./sql/guardrails.js";
+import { evaluateGuardrails, guardrailPlan, logGuardrailVerdict } from "./sql/guardrails.js";
 import { bindTenantIntoUnboundSql } from "./sql/rebind.js";
 import type { TenantGuardrailResult } from "./sql/tenant-guardrail.js";
 import {
@@ -40,13 +39,11 @@ import {
 } from "./sql/tenant-scope-expand.js";
 import { validateTenantScope } from "./sql/tenant-scope-validate.js";
 import {
-  schemaHasSensitiveIdentifiers,
   type SensitiveGuardrailMode,
   type SensitiveGuardrailResult,
 } from "./sql/sensitive-guardrail.js";
 import {
   UnknownDialectError,
-  type GuardrailCheckId,
   type GuardrailFinding,
   type GuardrailVerdict,
 } from "./errors.js";
@@ -386,13 +383,14 @@ export async function ask(options: AskPipelineOptions): Promise<AskPipelineResul
   // still in place. Rendering below only swaps placeholders for literals or driver
   // markers, so one check covers every tenantSqlMode, dialect and output form. A custom
   // AskDialect (no DialectSpec) gets no read-only check: it may target non-SELECT SQL.
-  const sensitiveMode = options.sensitiveGuardrailMode ?? "warn";
-  const runSensitive = sensitiveMode !== "off" && schemaHasSensitiveIdentifiers(options.schema);
   const tenant = tenantPolicy && tenantScope ? { policy: tenantPolicy, scope: tenantScope } : undefined;
-  const checks: GuardrailCheckId[] = [];
-  if (dialectSpec) checks.push("read-only");
-  if (tenant) checks.push("tenant");
-  if (runSensitive) checks.push("sensitive");
+  const { checks, modes } = guardrailPlan("ask", {
+    dialect: dialectSpec,
+    schema: options.schema,
+    tenantPolicy: tenant?.policy,
+    sensitiveGuardrailMode: options.sensitiveGuardrailMode,
+  });
+  const runSensitive = checks.includes("sensitive");
   const findings = evaluateGuardrails(
     {
       forms: {
@@ -406,10 +404,6 @@ export async function ask(options: AskPipelineOptions): Promise<AskPipelineResul
     checks,
   );
   if (tenant) findings.push(...generatorFindings(generated.tenantGuardrail));
-  const modes: GuardrailModes = {
-    ...(tenantPolicy ? { tenant: tenantPolicy.enforcement } : {}),
-    sensitive: sensitiveMode,
-  };
   const verdict = decide(findings, modes, "return");
   logGuardrailVerdict(logger, verdict, { tenantPolicy, sensitiveChecked: runSensitive });
   throwIfDenied(verdict, modes, "return");

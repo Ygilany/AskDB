@@ -62,7 +62,8 @@ function outcomeOf(check: GuardrailCheckId, modes: GuardrailModes, point: Guardr
       if (point === "rebind" && !modes.acceptWarnings?.includes("tenant")) return "deny";
       return "warn";
     case "sensitive":
-      return modes.sensitive === "strict" ? "deny" : modes.sensitive === "warn" ? "warn" : "allow";
+      // Like the tenant case, a mode it doesn't recognize fails closed.
+      return modes.sensitive === "warn" ? "warn" : modes.sensitive === "off" ? "allow" : "deny";
   }
 }
 

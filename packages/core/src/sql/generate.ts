@@ -15,8 +15,8 @@ import {
 } from "./parameter-manifest.js";
 import { buildNlToSqlSystemPrompt, buildNlToSqlUserPrompt } from "./prompt.js";
 import { assertNlToSqlInputs, nlToSqlAmbiguityNotes } from "./schema-question-precheck.js";
-import { decide, tenantGuardrailResult, throwIfDenied, type GuardrailModes } from "./guardrail-decide.js";
-import { evaluateGuardrails, logGuardrailVerdict } from "./guardrails.js";
+import { decide, tenantGuardrailResult, throwIfDenied } from "./guardrail-decide.js";
+import { evaluateGuardrails, guardrailPlan, logGuardrailVerdict } from "./guardrails.js";
 import type { TenantGuardrailResult } from "./tenant-guardrail.js";
 import {
   buildSelectGuardrailExplanation,
@@ -102,6 +102,7 @@ export async function generateSelectSql(
   const generated = await runGenerateSelectSql(dialect, question, schema, model, deps);
   const tenant =
     deps.tenantPolicy && deps.tenantScope ? { policy: deps.tenantPolicy, scope: deps.tenantScope } : undefined;
+  const { checks, modes } = guardrailPlan("generate", { dialect, schema, tenantPolicy: tenant?.policy });
   const findings = evaluateGuardrails(
     {
       forms: {
@@ -112,9 +113,8 @@ export async function generateSelectSql(
       schema,
       ...(tenant ? { tenant } : {}),
     },
-    tenant ? ["read-only", "tenant"] : ["read-only"],
+    checks,
   );
-  const modes: GuardrailModes = { ...(tenant ? { tenant: tenant.policy.enforcement } : {}), sensitive: "off" };
   const verdict = decide(findings, modes, "return");
   logGuardrailVerdict(deps.logger, verdict, { tenantPolicy: tenant?.policy, sensitiveChecked: false });
   try {

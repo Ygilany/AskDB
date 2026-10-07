@@ -11,13 +11,18 @@ import type { AnyNormalizedSchema } from "../schema/types.js";
 import type { NormalizedTenantPolicy, TenantScope } from "../schema/v2/tenant-policy.js";
 import type { DialectSpec } from "./dialect-spec.js";
 import {
+  type GuardrailModes,
   formatSensitiveReference,
   sensitiveFindings,
   sensitiveGuardrailResult,
   tenantFindings,
   tenantWarnings,
 } from "./guardrail-decide.js";
-import { scanSensitiveReferences } from "./sensitive-guardrail.js";
+import {
+  scanSensitiveReferences,
+  schemaHasSensitiveIdentifiers,
+  type SensitiveGuardrailMode,
+} from "./sensitive-guardrail.js";
 import { tenantRuleWarnings } from "./tenant-guardrail.js";
 import { validateSelectSql } from "./validate.js";
 
@@ -67,6 +72,37 @@ const CHECKS: Record<GuardrailCheckId, GuardrailCheck> = {
 };
 
 const FORMS: readonly GuardrailForm[] = ["sql", "template"];
+
+/**
+ * ADR 0010, decision 3: which checks each enforcement point runs, and the modes `decide`
+ * reads there. `ask()` with a custom `AskDialect` has no `dialect`, so no read-only check;
+ * `generateSelectSql()` takes no sensitive mode, so no sensitive check; `acceptWarnings`
+ * means something at rebind only.
+ */
+export function guardrailPlan(
+  path: "ask" | "generate" | "rebind",
+  input: {
+    dialect: DialectSpec | undefined;
+    schema: AnyNormalizedSchema;
+    tenantPolicy: NormalizedTenantPolicy | undefined;
+    sensitiveGuardrailMode?: SensitiveGuardrailMode | "off";
+    acceptWarnings?: ReadonlyArray<"tenant">;
+  },
+): { checks: GuardrailCheckId[]; modes: GuardrailModes } {
+  const sensitive = path === "generate" ? "off" : (input.sensitiveGuardrailMode ?? "warn");
+  const checks: GuardrailCheckId[] = [];
+  if (input.dialect) checks.push("read-only");
+  if (input.tenantPolicy) checks.push("tenant");
+  if (sensitive !== "off" && schemaHasSensitiveIdentifiers(input.schema)) checks.push("sensitive");
+  return {
+    checks,
+    modes: {
+      ...(input.tenantPolicy ? { tenant: input.tenantPolicy.enforcement } : {}),
+      sensitive,
+      ...(path === "rebind" && input.acceptWarnings ? { acceptWarnings: input.acceptWarnings } : {}),
+    },
+  };
+}
 
 /** Run each listed check on every form in the candidate. */
 export function evaluateGuardrails(

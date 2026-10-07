@@ -1,4 +1,4 @@
-import { QueryParameterError, TenantScopeError, type GuardrailCheckId, type GuardrailVerdict } from "../errors.js";
+import { QueryParameterError, TenantScopeError, type GuardrailVerdict } from "../errors.js";
 import type { AnyNormalizedSchema } from "../schema/types.js";
 import type { NormalizedTenantPolicy, TenantScope } from "../schema/v2/tenant-policy.js";
 import {
@@ -12,8 +12,8 @@ import {
   type RenderedQuery,
 } from "./bind.js";
 import { BUILT_IN_DIALECTS, isBuiltInDialectId, type DialectSpec } from "./dialect-spec.js";
-import { decide, throwIfDenied, type GuardrailModes } from "./guardrail-decide.js";
-import { evaluateGuardrails } from "./guardrails.js";
+import { decide, throwIfDenied } from "./guardrail-decide.js";
+import { evaluateGuardrails, guardrailPlan } from "./guardrails.js";
 import type { SensitiveGuardrailMode } from "./sensitive-guardrail.js";
 import { findTenantPlaceholderAnyCase, resolveTenantSql, unexpandedSubtreeError } from "./tenant-placeholders.js";
 import { validateTenantScope } from "./tenant-scope-validate.js";
@@ -44,7 +44,15 @@ export type BindGuardrails = {
   acceptWarnings?: ReadonlyArray<"tenant">;
 };
 
-export type BoundQuery = RenderedQuery & {
+export type BoundQuery = {
+  /** Ready to run as-is: business values and tenant IDs inlined as escaped literals. */
+  sql: string;
+  /** The same statement with driver markers instead of literals; run it with `params`. */
+  unboundSql: string;
+  /** Values for `unboundSql`, in marker order, tenant IDs included. */
+  params: QueryParamSlot[];
+  /** The business parameters as bound, with the `params` indices they fill. */
+  bindings: QueryParameterBinding[];
   /** The guardrail verdict for the template under the bind-time schema, scope and modes. */
   verdict: GuardrailVerdict;
 };
@@ -96,21 +104,27 @@ export function bindPreparedQuery(prepared: PreparedQuery, values: Values, guard
     if (scope.access.kind === "subtree") {
       throw unexpandedSubtreeError(scope.access.tenantRoot, "bindPreparedQuery()");
     }
-  } else {
-    const placeholder = findTenantPlaceholderAnyCase(prepared.namedSql, spec);
-    if (placeholder !== undefined) {
-      throw new TenantScopeError(
-        `The template references ${placeholder}, but the schema has no tenant policy to render it ` +
-          "from. Refusing to bind a template with an unsubstituted tenant placeholder.",
-        "UNRESOLVED_TENANT_PLACEHOLDER",
-      );
-    }
+  }
+  // A placeholder nothing can render: any one without a policy, or one in another casing.
+  const placeholder = findTenantPlaceholderAnyCase(prepared.namedSql, spec);
+  if (placeholder !== undefined && (!policy || placeholder !== placeholder.toLowerCase())) {
+    throw new TenantScopeError(
+      policy
+        ? `The template references ${placeholder}, but tenant placeholders are case-sensitive and must ` +
+            `be written ${placeholder.toLowerCase()}. Refusing to bind an unsubstituted tenant placeholder.`
+        : `The template references ${placeholder}, but the schema has no tenant policy to render it ` +
+            "from. Refusing to bind a template with an unsubstituted tenant placeholder.",
+      "UNRESOLVED_TENANT_PLACEHOLDER",
+    );
   }
 
-  const sensitive = guardrails.sensitiveGuardrailMode ?? "warn";
-  const checks: GuardrailCheckId[] = ["read-only"];
-  if (policy) checks.push("tenant");
-  if (sensitive !== "off") checks.push("sensitive");
+  const { checks, modes } = guardrailPlan("rebind", {
+    dialect: spec,
+    schema,
+    tenantPolicy: policy,
+    sensitiveGuardrailMode: guardrails.sensitiveGuardrailMode,
+    acceptWarnings: guardrails.acceptWarnings,
+  });
   const findings = evaluateGuardrails(
     {
       forms: { template: prepared.namedSql },
@@ -120,11 +134,6 @@ export function bindPreparedQuery(prepared: PreparedQuery, values: Values, guard
     },
     checks,
   );
-  const modes: GuardrailModes = {
-    ...(policy ? { tenant: policy.enforcement } : {}),
-    sensitive,
-    ...(guardrails.acceptWarnings ? { acceptWarnings: guardrails.acceptWarnings } : {}),
-  };
   const verdict = decide(findings, modes, "rebind");
   throwIfDenied(verdict, modes, "rebind");
 

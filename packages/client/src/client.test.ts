@@ -4,7 +4,7 @@ import { describe, expect, it, vi } from "vitest";
 import type { AiConfig, AiProviderAdapter, AiRegistry } from "@askdb/ai";
 import type { AskDbRuntimeConfig } from "@askdb/config";
 import type { AnyNormalizedSchema, AskDialect } from "@askdb/core";
-import { loadSchema, loadSchemaFromJson, TenantGuardrailError } from "@askdb/core";
+import { loadSchema, loadSchemaFromJson, SensitiveReferenceError, TenantGuardrailError } from "@askdb/core";
 import type { DialectResolution } from "./client.js";
 import { createAskDb } from "./client.js";
 import {
@@ -657,6 +657,32 @@ describe("createAskDb — bind() rebinds a stored template under the guardrails 
     await expect(askdb.bind(unscoped, { status_name: "open" }, { tenantScope: agencyIds("7") })).rejects.toBeInstanceOf(
       TenantGuardrailError,
     );
+  });
+
+  it("forwards sensitiveGuardrailMode and checks under options.schema when it is set", async () => {
+    const askdb = askdbReplying("SELECT 1");
+    const readsEmail = {
+      version: 1 as const,
+      dialect: "postgres" as const,
+      namedSql: "SELECT c.email FROM clients c WHERE c.id IN (:tenant_client_ids) AND c.name = :status_name",
+      parameters: [
+        { name: "status_name", placeholder: ":status_name", type: "string" as const, cardinality: "one" as const, source: "question" as const },
+        { name: "tenant_client_ids", placeholder: ":tenant_client_ids", type: "string" as const, cardinality: "many" as const, source: "tenant" as const },
+      ],
+    };
+    const clientScope = { access: { kind: "ids" as const, tenantRoot: "table:public.clients", ids: ["5"] } };
+
+    const bound = await askdb.bind(readsEmail, { status_name: "x" }, { tenantScope: clientScope });
+    expect(bound.verdict.outcome).toBe("warn");
+    await expect(
+      askdb.bind(readsEmail, { status_name: "x" }, { tenantScope: clientScope, sensitiveGuardrailMode: "strict" }),
+    ).rejects.toBeInstanceOf(SensitiveReferenceError);
+
+    // The same template under a schema without a tenant policy can't render its placeholder.
+    const { tenantPolicy: _policy, ...noPolicy } = loadSchema(multiTenantPath);
+    await expect(
+      askdb.bind(readsEmail, { status_name: "x" }, { tenantScope: clientScope, schema: noPolicy as AnyNormalizedSchema }),
+    ).rejects.toMatchObject({ name: "TenantScopeError", reason: "UNRESOLVED_TENANT_PLACEHOLDER" });
   });
 
   it("expands a subtree scope with resolveTenantDescendants before binding", async () => {
