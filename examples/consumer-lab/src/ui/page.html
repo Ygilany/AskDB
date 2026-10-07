@@ -142,13 +142,16 @@ const engines = () => [...document.querySelectorAll("input[name=engine]:checked"
 const asksModel = () => mode() !== "sql";
 const paid = () => asksModel() && checked("model") === "live";
 
+/** A run in flight keeps the button disabled, whatever else changes, so no second run starts on top of it. */
+let running = false;
+
 /** The button says how many engines run and, on the live model, how many paid calls that makes. */
 function refresh() {
   for (const div of document.querySelectorAll("[data-mode]")) div.hidden = div.dataset.mode !== mode();
   for (const set of document.querySelectorAll("[data-asks-model]")) set.hidden = !asksModel();
   const n = engines().length;
   $("run").textContent = `Run on ${n} ${n === 1 ? "engine" : "engines"}${paid() ? ` · ${n} paid ${n === 1 ? "call" : "calls"}` : ""}`;
-  $("run").disabled = n === 0;
+  $("run").disabled = running || n === 0;
 }
 for (const input of document.querySelectorAll("input[name=mode], input[name=model], input[name=engine]")) input.addEventListener("change", refresh);
 refresh();
@@ -220,6 +223,7 @@ $("ask").addEventListener("submit", async (e) => {
   $("problem").hidden = true;
   $("summary").hidden = true;
   $("columns").replaceChildren(...chosen.map(column));
+  running = true;
   $("run").disabled = true;
   $("state").textContent = paid() ? `asking the live model on ${chosen.length} ${chosen.length === 1 ? "engine" : "engines"}…` : "running…";
   try {
@@ -248,6 +252,7 @@ $("ask").addEventListener("submit", async (e) => {
     $("problem").hidden = false;
     $("state").textContent = "";
   } finally {
+    running = false;
     refresh();
   }
 });

@@ -5,7 +5,10 @@
  * The authoring-gate answers are per scenario, above each group of tests. For all of them:
  * No production seam: the tests start the real `pnpm lab ui` command (through `tsx`, as
  * `pnpm lab` does) and the real `pnpm lab ask`, and send the requests the page sends. Every
- * `lab ui` here starts without a key (`support/lab-ui.ts`), so none can ask the live model. Engines
+ * `lab ui` here starts without a key (`support/lab-ui.ts`), so none can ask the live model,
+ * except the live scenarios', which get a fake key and the stand-in for OpenAI
+ * (`support/stub-openai-fetch.mjs`, preloaded with `NODE_OPTIONS`), which replaces `fetch` for
+ * `api.openai.com` only and accepts only that key: none can reach the network or spend. Engines
  * are made to fail only from outside: `ASKDB_FIXTURE_<ENGINE>_PORT`, the fixture's own
  * documented port override, points one engine at a closed port or at a socket that never
  * answers. `--timeout` is the command's own option.
@@ -18,8 +21,10 @@
  * fixture (`pnpm fixture:up`) and an installed lab (`pnpm lab:use .`).
  */
 import { spawn } from "node:child_process";
+import { readFileSync } from "node:fs";
 import { connect, createServer, type Server, type Socket } from "node:net";
 import { networkInterfaces } from "node:os";
+import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterAll, beforeAll, expect, it } from "vitest";
 import { ensureArtifact, requireInstallTarget } from "../src/artifacts.js";
@@ -30,12 +35,15 @@ import { freePort } from "../src/server-process.js";
 import { studioRequest } from "../src/studio.js";
 import type { UiInput } from "../src/ui/server.js";
 import { column, startLabUiProcess, uiRun, type LabUiProcess, type UiRun } from "./support/lab-ui.js";
+import { STUB_KEY, stubOpenAiEnv } from "./support/stub-openai.js";
 
 const LAB = fileURLToPath(new URL("..", import.meta.url));
 const AGENCY_NAMES = findQuestion("agency-names")!.text;
 /** Ordered decimals: the drivers return them as different JavaScript types, which normalization reconciles. */
 const TOP_PAID = findQuestion("top-paid-agencies")!.text;
 const NO_REPLY = "Which agency has the most volunteers?";
+/** The parameterized question, which the grader checks for more than its rows. */
+const PROGRAMS_SINCE = findQuestion("programs-started-since")!.text;
 const DIALECTS = SUPPORTED_DIALECTS.map((d) => [d] as [SupportedDialect]);
 
 interface CliRun {
@@ -117,8 +125,18 @@ beforeAll(async () => {
   ui = await startLabUiProcess();
 });
 
+/** A `lab ui` with the live model: the fake key, and the stand-in's replies. */
+const liveStub = stubOpenAiEnv({
+  [AGENCY_NAMES]: (JSON.parse(readFileSync(join(LAB, "cassettes", "sqlite", "agency-names.json"), "utf8")) as { reply: string }).reply,
+  // The right rows, but only the inline statement: no sql-unbound block, no manifest.
+  [PROGRAMS_SINCE]: "```sql\nSELECT agency_id, program_code FROM program WHERE starts_on >= '2022-01-01' ORDER BY agency_id, program_code\n```",
+});
+let liveUi: Promise<LabUiProcess> | undefined;
+const liveRun = async (input: UiInput) => uiRun(await (liveUi ??= startLabUiProcess({ env: liveStub.env })), input);
+
 afterAll(async () => {
-  await Promise.all([ui?.close(), failingUi?.close()]);
+  await Promise.all([ui?.close(), failingUi?.close(), liveUi?.then((u) => u.close())]);
+  liveStub.dispose();
   heldSockets.forEach((s) => s.destroy());
   await new Promise((resolve) => (silentServer ? silentServer.close(resolve) : resolve(undefined)));
 });
@@ -159,6 +177,45 @@ it.for(DIALECTS)("[%s] lab-ui-same-as-lab-ask: a catalog question through the cl
   expect(cli.stdout).toContain("via createAskDb() + @askdb/ai-openai");
   expect(cli.status).toBe(0);
   expect(printed(run, dialect)).toEqual(maskPorts(cli));
+});
+
+/*
+ * Protects: the page's live option (#448). With a key, a live run asks the live model, with
+ * that key, through the path picked (both documented paths work end to end), never the replay
+ * server; each column ends with the grader's verdict (`gradeCatalogAnswer`), and the summary's
+ * oracle chip shows that same verdict, which checks more than the rows (the parameterized
+ * question's form). Nothing the page receives holds the key.
+ * Catches: a live run that loses the live settings between the page, the server and the engine
+ * process and silently replays; a path the live run drops; and a summary that calls an answer
+ * a match while its column says the oracle missed it.
+ * Not covered elsewhere: `lab-ask-live` covers `lab ask --model live`, not the server or its
+ * engine processes; the scenarios above all run the replay model.
+ */
+it.for([
+  ["raw", "model:      live gpt-4o-mini at https://api.openai.com/v1, via createOpenAI() → ask()"],
+  ["client", "model:      live, via createAskDb() + @askdb/ai-openai (live/askdb.config.ts)"],
+] as const)("[sqlite] lab-ui-live: asks the live model with the key, through the %s path", async ([via, modelLine], ctx) => {
+  needsCapability(ctx, "cli-introspect-engine");
+  const before = liveStub.requests().length;
+
+  const run = await liveRun({ question: AGENCY_NAMES, model: "live", via, engines: ["sqlite"] });
+  const printed = column(run, "sqlite").lines.map((l) => l.text);
+
+  expect(printed).toContain(modelLine);
+  expect(printed.at(-1)).toBe("oracle:     pass");
+  expect(run.summary?.oracle?.sqlite).toEqual({ verdict: "match" });
+  expect(liveStub.requests().slice(before)).toEqual([expect.objectContaining({ question: AGENCY_NAMES, authorized: true })]);
+  expect(JSON.stringify(run)).not.toContain(STUB_KEY);
+});
+
+it("[sqlite] lab-ui-live: the summary's oracle verdict is the grader's, which checks more than the rows", async (ctx) => {
+  needsCapability(ctx, "cli-introspect-engine");
+
+  const run = await liveRun({ question: PROGRAMS_SINCE, model: "live", engines: ["sqlite"] });
+  const printed = column(run, "sqlite").lines.map((l) => l.text);
+
+  expect(printed.at(-1)).toMatch(/^oracle: {5}miss — no parameterized form/);
+  expect(run.summary?.oracle?.sqlite).toEqual({ verdict: "mismatch", reason: printed.at(-1)!.replace(/^oracle: {5}miss — /, "") });
 });
 
 it.for([

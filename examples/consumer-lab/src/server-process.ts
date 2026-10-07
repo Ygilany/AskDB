@@ -75,8 +75,8 @@ export async function startServerProcess(options: ServerProcessOptions): Promise
   if (!existsSync(options.bin)) throw new Error(`${options.bin} is missing; reinstall the lab with \`pnpm lab:use <target>\``);
   const port = await freePort();
   const env: NodeJS.ProcessEnv = { ...process.env, ...options.env };
-  // A key the caller blanks stays blank: `lab ui` would read a deleted one from `.env.live`.
-  for (const key of PROVIDER_KEYS) if (options.env?.[key] !== "") delete env[key];
+  // A key the caller sets stays as set: a blank one keeps `lab ui` from reading `.env.live`.
+  for (const key of PROVIDER_KEYS) if (options.env?.[key] === undefined) delete env[key];
   const child = spawn(options.bin, options.args(port), { cwd: options.cwd, env, stdio: ["ignore", "pipe", "pipe"] });
   let output = "";
   let spawnError: Error | undefined;

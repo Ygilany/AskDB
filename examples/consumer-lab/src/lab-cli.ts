@@ -17,13 +17,11 @@
  * through the same code path, side by side (`src/ui/server.ts`).
  */
 import { parseArgs, type ParseArgsConfig } from "node:util";
-import { askAndRun, VIAS, type Via } from "./ask-run.js";
+import { askAndRun, MODELS, VIAS, type Via } from "./ask-run.js";
 import { requireInstallTarget } from "./artifacts.js";
 import { SUPPORTED_DIALECTS, isSupportedDialect } from "./dialects.js";
 import { LiveModelError, liveSettings, type LiveSettings } from "./model/live.js";
 import { startLabUi } from "./ui/server.js";
-
-const MODELS = ["replay", "live"] as const;
 
 const USAGE = [
   `usage: pnpm lab ask --db <${SUPPORTED_DIALECTS.join("|")}> "<question>" [--via ${VIAS.join("|")}] [--model ${MODELS.join("|")}]`,

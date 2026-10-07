@@ -33,9 +33,10 @@ import { readFileSync } from "node:fs";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import type { AddressInfo } from "node:net";
 import { fileURLToPath } from "node:url";
-import { VIAS, type AskInput, type AskRun, type AskRunStatus, type TranscriptLine, type Via } from "../ask-run.js";
+import { MODELS, VIAS, type AskInput, type AskRun, type AskRunStatus, type Model, type TranscriptLine, type Via } from "../ask-run.js";
 import { installRecord, requireInstallTarget } from "../artifacts.js";
 import { SUPPORTED_DIALECTS, isSupportedDialect, type SupportedDialect } from "../dialects.js";
+import type { Verdict as GradeVerdict } from "../grade.js";
 import type { ExecuteResult } from "../host/execute.js";
 import { loadQuestions } from "../model/catalog.js";
 import { LiveModelError, liveSettings, type LiveSettings } from "../model/live.js";
@@ -45,8 +46,8 @@ import { summarize } from "./summary.js";
 
 const PAGE = new URL("./page.html", import.meta.url);
 const WORKER = fileURLToPath(new URL("./engine-worker.ts", import.meta.url));
-export const MODELS = ["replay", "live"] as const;
-export type Model = (typeof MODELS)[number];
+/** After `abort`, past the worker's own grace period (`ABORT_GRACE_MS` in `engine-worker.ts`). */
+const KILL_AFTER_ABORT_MS = 3_000;
 const BODY_LIMIT = 64 * 1024;
 
 export interface LabUiOptions {
@@ -100,19 +101,27 @@ function describeError(error: unknown): string {
   return error instanceof Error ? `${error.name}: ${error.message}` : String(error);
 }
 
-/** SIGKILL a run's whole process group: the worker, its introspection, its connections. */
-function killGroup(child: ChildProcess): void {
-  try {
-    process.kill(-child.pid!, "SIGKILL");
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code !== "ESRCH") throw error;
-  }
+/**
+ * Stop a run: `abort` lets it kill its introspection and clean up; one still going after the
+ * grace period (a database connection that hangs) is killed with its whole process group. A
+ * server that exits first leaves that to the process, which aborts when the server goes away.
+ */
+function stopRun(child: ChildProcess): void {
+  if (child.connected) child.send({ type: "abort" } satisfies WorkerRequest, () => {});
+  setTimeout(() => {
+    if (child.exitCode !== null || child.signalCode !== null) return;
+    try {
+      process.kill(-child.pid!, "SIGKILL");
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ESRCH") throw error;
+    }
+  }, KILL_AFTER_ABORT_MS).unref();
 }
 
 /**
  * Run the input on one engine in its own process (`engine-worker.ts`), giving up after
- * `timeoutMs`. Giving up, or `signal` (aborted when the server closes), kills the process
- * group, so nothing the run started outlives it.
+ * `timeoutMs`. Giving up, or `signal` (aborted when the server closes), stops the run
+ * (`stopRun`), so nothing it started outlives it.
  * Returns the engine's event, and the rows it read, which the summary needs and the page doesn't.
  */
 async function runEngine(
@@ -120,13 +129,18 @@ async function runEngine(
   input: AskInput,
   timeoutMs: number,
   signal: AbortSignal,
-): Promise<{ event: EngineEvent; rows?: ExecuteResult }> {
+): Promise<{ event: EngineEvent; rows?: ExecuteResult; verdict?: GradeVerdict }> {
   const started = performance.now();
   const lines: TranscriptLine[] = [];
   // Its own process group, so a kill reaches the processes it starts. It inherits the server's
   // execArgv, which load TypeScript as `tsx` does for `pnpm lab`.
   const child = fork(WORKER, [], { cwd: LAB_ROOT, detached: true, stdio: ["ignore", "inherit", "inherit", "ipc"] });
-  const stop = () => killGroup(child);
+  let stopped = false;
+  const stop = () => {
+    if (stopped) return;
+    stopped = true;
+    stopRun(child);
+  };
   signal.addEventListener("abort", stop, { once: true });
   let timer: NodeJS.Timeout | undefined;
   try {
@@ -139,7 +153,7 @@ async function runEngine(
       child.on("error", (error) => resolve({ exited: `engine process: ${error.message}` }));
       // `close`, not `exit`: it comes after every message the process sent.
       child.on("close", (code, sig) => resolve({ exited: `engine process exited (${sig ?? `code ${code}`}) before reporting a result` }));
-      child.send({ dialect, input } satisfies WorkerRequest);
+      child.send({ type: "run", dialect, input } satisfies WorkerRequest);
     });
     if (outcome === "timeout") {
       return { event: { type: "engine", dialect, status: "timeout", lines, error: `no result after ${timeoutMs} ms`, timings: { totalMs: performance.now() - started } } };
@@ -158,7 +172,7 @@ async function runEngine(
       truncated: outcome.rows?.truncated,
       timings: outcome.timings,
     };
-    return { event, rows: outcome.rows };
+    return { event, rows: outcome.rows, verdict: outcome.verdict };
   } finally {
     clearTimeout(timer);
     signal.removeEventListener("abort", stop);
@@ -283,7 +297,7 @@ export async function startLabUi(options: LabUiOptions = {}): Promise<LabUi> {
         }),
       );
       // Raw SQL is compared through the catalog question it's labelled with, if any.
-      const summary = summarize(input.question, runs.map(({ event, rows }) => ({ dialect: event.dialect, status: event.status, rows })));
+      const summary = summarize(input.question, runs.map(({ event, rows, verdict }) => ({ dialect: event.dialect, status: event.status, rows, verdict })));
       return void res.end(`${JSON.stringify({ type: "summary", summary })}\n`);
     }
 

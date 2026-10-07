@@ -24,22 +24,22 @@ import { createHash } from "node:crypto";
 import { openaiProvider } from "@askdb/ai-openai";
 import { createAskDb } from "@askdb/client";
 import { bootstrapAskDbEnv, getAskDbRuntimeConfig } from "@askdb/config";
-import { createOpenAI } from "@ai-sdk/openai";
 import { AskDbError } from "@askdb/core";
-import { join } from "node:path";
-import { askFixedSql, askRaw, askWithModel, type AskResult, type Settled } from "./ask.js";
+import { askFixedSql, askRaw, askWithModel, liveModel, useLiveConfig, type AskResult, type Settled } from "./ask.js";
 import { ensureArtifactAsync, requireInstallTarget } from "./artifacts.js";
 import type { SupportedDialect } from "./dialects.js";
 import { gradeCatalogAnswer, type Verdict } from "./grade.js";
 import { executeReadOnly, type ExecuteResult } from "./host/execute.js";
 import { loadQuestions } from "./model/catalog.js";
-import { DEFAULT_LIVE_MODEL_ID, redact, type LiveSettings } from "./model/live.js";
-import { replyText } from "./model/openai-wire.js";
+import { redact, type LiveSettings } from "./model/live.js";
 import { startReplayServer, type ReplayServer } from "./model/replay-server.js";
 import { LAB_ROOT } from "./paths.js";
 
 export const VIAS = ["raw", "client"] as const;
 export type Via = (typeof VIAS)[number];
+/** The model `lab ask --model` and `lab ui` ask: the replay server, or the live one (`live` in {@link AskInput}). */
+export const MODELS = ["replay", "live"] as const;
+export type Model = (typeof MODELS)[number];
 
 export interface AskInput {
   /** The question. With `sql`, only the question `ask()` is given; it may be empty. */
@@ -76,13 +76,12 @@ export interface AskRun {
   result?: AskResult;
   /** The rows the read-only role read, when `ok`. */
   rows?: ExecuteResult;
+  /** The oracle's verdict on a live answer to a catalog question, as the transcript's `oracle:` line says. */
+  verdict?: Verdict;
   error?: unknown;
   /** `askMs`: `ask()` (prompt, model, validation). `executeMs`: the read-only execution. */
   timings: { askMs?: number; executeMs?: number; totalMs: number };
 }
-
-/** Live mode's AskDB config, apart from the lab's own so no other surface sees a key. */
-const LIVE_PROJECT = join(LAB_ROOT, "live");
 
 /**
  * Path (b): `createAskDb` with the OpenAI adapter (path (a) is `askRaw`, in `ask.ts`).
@@ -95,10 +94,7 @@ const LIVE_PROJECT = join(LAB_ROOT, "live");
  */
 async function askClient(dialect: SupportedDialect, question: string, schemaDir: string, model: { replayURL: string } | { live: LiveSettings }, log: (text: string) => void): Promise<AskResult> {
   if ("live" in model) {
-    // This process asks once and ends: the key goes no further than its own environment.
-    process.env.OPENAI_API_KEY = model.live.apiKey;
-    if (model.live.modelId !== DEFAULT_LIVE_MODEL_ID) process.env.LAB_LIVE_MODEL_ID = model.live.modelId;
-    bootstrapAskDbEnv({ cwd: LIVE_PROJECT });
+    useLiveConfig(model.live);
   } else {
     process.env.LAB_REPLAY_BASE_URL = model.replayURL;
     bootstrapAskDbEnv({ cwd: LAB_ROOT });
@@ -132,24 +128,6 @@ function formatRows(result: ExecuteResult): string {
   const n = result.rows.length;
   const count = result.truncated ? `more than ${n} rows (showing ${n})` : `${n} ${n === 1 ? "row" : "rows"}`;
   return [header, "-".repeat(header.length), ...cells.slice(1).map((r) => line(r as string[])), "", count].join("\n");
-}
-
-/**
- * The raw path to the live model, and the reply it gave, read through the AI SDK's documented
- * `fetch` option: a rejection carries no SQL, so the reply is what shows why.
- */
-function askLiveRaw(dialect: SupportedDialect, question: string, schemaDir: string, live: LiveSettings): { answer: Promise<AskResult>; reply: () => string | null } {
-  let reply: string | null = null;
-  const openai = createOpenAI({
-    apiKey: live.apiKey,
-    baseURL: live.baseURL,
-    fetch: async (input, init) => {
-      const response = await fetch(input, init);
-      reply = replyText((await response.clone().json().catch(() => ({}))) as Record<string, unknown>);
-      return response;
-    },
-  });
-  return { answer: askWithModel(dialect, question, schemaDir, openai(live.modelId)), reply: () => reply };
 }
 
 /** The oracle line: `pass`, or the miss or violation with its reason. */
@@ -231,9 +209,9 @@ export async function askAndRun(dialect: SupportedDialect, input: AskInput, { on
         result = await timed("askMs", () => askFixedSql(dialect, sql, schemaDir, question || undefined));
       } else if (live && via === "raw") {
         out(`model:      live ${live.modelId} at ${live.baseURL}, via createOpenAI() → ask()`);
-        const asked = askLiveRaw(dialect, question, schemaDir, live);
-        liveReply = asked.reply;
-        result = await timed("askMs", () => asked.answer);
+        const { model, reply } = liveModel(live);
+        liveReply = reply;
+        result = await timed("askMs", () => askWithModel(dialect, question, schemaDir, model));
       } else if (live) {
         out("model:      live, via createAskDb() + @askdb/ai-openai (live/askdb.config.ts)");
         result = await timed("askMs", () => askClient(dialect, question, schemaDir, { live }, out));
@@ -266,8 +244,8 @@ export async function askAndRun(dialect: SupportedDialect, input: AskInput, { on
       out(`validation: rejected — ${error.name}${rule}`);
       out(`            ${error.message}`);
       // An error the grader doesn't count as a rejection of the model's SQL gets no verdict.
-      if (live) await grade({ ok: false, error }).catch(() => undefined);
-      return done("rejected", { exitCode: 1, error: scrubbed(error) });
+      const verdict = live ? await grade({ ok: false, error }).catch(() => undefined) : undefined;
+      return done("rejected", { exitCode: 1, error: scrubbed(error), verdict });
     } finally {
       await replay?.close();
     }
@@ -286,7 +264,7 @@ export async function askAndRun(dialect: SupportedDialect, input: AskInput, { on
     out(formatRows(rows));
     // The grader runs the SQL again as the host and compares the rows with the oracle's.
     const verdict = live ? await grade({ ok: true, result }) : undefined;
-    return done("ok", { exitCode: verdict?.status === "violation" ? 1 : 0, result, rows });
+    return done("ok", { exitCode: verdict?.status === "violation" ? 1 : 0, result, rows, verdict });
   } catch (error) {
     return done("failed", { error: scrubbed(error) });
   }
