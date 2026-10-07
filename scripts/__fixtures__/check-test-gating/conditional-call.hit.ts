@@ -8,3 +8,4 @@ if (process.env.DATABASE_URL) {
   it("explains the skip", () => {}); // HIT
 }
 const ready = hasDriver() || test("fallback", run); // HIT
+const pick = ready ? noop : (flag ? it("nested", run) : describe("nested", run)); // HIT

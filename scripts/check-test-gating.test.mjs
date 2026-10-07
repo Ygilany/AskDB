@@ -59,8 +59,8 @@ function workspace(t, testFiles, yaml = DEFAULT_YAML) {
   return root;
 }
 
-function run(root, scriptPath = script) {
-  return spawnSync(process.execPath, [scriptPath, root], { encoding: "utf8" });
+function run(root, scriptPath = script, nodeFlags = []) {
+  return spawnSync(process.execPath, [...nodeFlags, scriptPath, root], { encoding: "utf8" });
 }
 
 test("CLI scans every workspace package (not just src/) and skips excluded ones", (t) => {
@@ -101,9 +101,11 @@ test("CLI runs when invoked through a symlinked path", (t) => {
   const root = workspace(t, { "packages/a/src/a.test.ts": 'describe.skip("gated", () => {});\n' });
   const link = join(root, "linked-check.mjs");
   symlinkSync(script, link);
-  const result = run(root, link);
-  assert.equal(result.status, 1);
-  assert.match(result.stderr, /packages\/a\/src\/a\.test\.ts:1:/);
+  for (const flags of [[], ["--preserve-symlinks-main"]]) {
+    const result = run(root, link, flags);
+    assert.equal(result.status, 1, `flags ${flags.join(" ") || "(none)"}`);
+    assert.match(result.stderr, /packages\/a\/src\/a\.test\.ts:1:/);
+  }
 });
 
 test("CLI passes a clean workspace", (t) => {

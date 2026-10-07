@@ -206,6 +206,28 @@ function openParen(code, close) {
 }
 
 /**
+ * Whether the `:` at `colon` is a ternary's else branch: a `?` (not `?.` or `??`) sits before
+ * it at the same bracket depth. An object-literal or type-annotation `:` has none.
+ * @param {string} code blanked source
+ * @param {number} colon
+ */
+function isTernaryColon(code, colon) {
+  let depth = 0;
+  for (let k = colon - 1; k >= 0; k--) {
+    const c = code[k];
+    if (c === ")" || c === "]" || c === "}") depth++;
+    else if (c === "(" || c === "[" || c === "{") {
+      if (depth === 0) return false;
+      depth--;
+    } else if (depth === 0 && (c === ";" || c === ",")) return false;
+    else if (depth === 0 && c === "?" && code[k + 1] !== "." && code[k + 1] !== "?" && code[k - 1] !== "?") {
+      return true;
+    }
+  }
+  return false;
+}
+
+/**
  * Indexes of describe/suite/it/test calls that run only under a condition: right after
  * `?`, `:`, `&&`, `||`, `else`, or an `if (…)` header, directly or as the first statement
  * of a `{` block. Loops are not conditions.
@@ -217,7 +239,8 @@ function findConditionalCalls(code) {
     let prev = tokenBefore(code, m.index);
     if (prev.tok === "{") prev = tokenBefore(code, prev.start);
     const conditional =
-      ["?", ":", "&&", "||", "else"].includes(prev.tok) ||
+      ["?", "&&", "||", "else"].includes(prev.tok) ||
+      (prev.tok === ":" && isTernaryColon(code, prev.start)) ||
       (prev.tok === ")" && tokenBefore(code, openParen(code, prev.start)).tok === "if");
     if (conditional) found.push(m.index);
   }
@@ -340,6 +363,7 @@ function main() {
   console.log(`check-test-gating: OK (${scanned} test files in ${dirs.length} workspace packages, no hand-rolled gates)`);
 }
 
-// Compare real paths: Node resolves import.meta.url through symlinks, but argv[1] keeps the typed path.
+// Compare real paths on both sides: argv[1] keeps the typed (possibly symlinked) path, and
+// import.meta.url is resolved through symlinks unless --preserve-symlinks-main is set.
 const invokedPath = process.argv[1] && existsSync(process.argv[1]) ? realpathSync(process.argv[1]) : "";
-if (invokedPath === fileURLToPath(import.meta.url)) main();
+if (invokedPath === realpathSync(fileURLToPath(import.meta.url))) main();
