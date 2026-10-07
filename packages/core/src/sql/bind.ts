@@ -4,6 +4,7 @@ import {
 } from "../errors.js";
 import {
   BUILT_IN_DIALECTS,
+  isBuiltInDialectId,
   type BuiltInDialectId,
   type DialectSpec,
 } from "./dialect-spec.js";
@@ -34,7 +35,7 @@ export type QueryParameterBinding = {
   source: "question" | "tenant";
 };
 
-/** Serializable input to bindPreparedQuery(). Definitions and template only — no values. */
+/** Serializable input to `bindPreparedQuery()`. Definitions and template only — no values. */
 export type PreparedQuery = {
   version: 1;
   dialect: BuiltInDialectId;
@@ -50,7 +51,8 @@ export type PreparedQuery = {
   }>;
 };
 
-export type BoundQuery = {
+/** What the mechanical renderer produces: both rendered forms, the params and the bindings. */
+export type RenderedQuery = {
   /** Ready to run as-is — every placeholder replaced with an escaped literal. */
   sql: string;
   /** Same statement with driver markers instead of literals. */
@@ -155,7 +157,12 @@ export function scanTenantPlaceholders(
   sql: string,
   dialect?: Pick<DialectSpec, "id" | "backslashEscapes">,
 ): PlaceholderOccurrence[] {
-  return scanPlaceholders(sql, dialect).filter((p) => /^tenant_[a-z0-9_]+_ids$/.test(p.name));
+  return scanPlaceholders(sql, dialect).filter((p) => isTenantPlaceholderName(p.name));
+}
+
+/** Whether a placeholder name (without the colon) is a tenant placeholder, `tenant_<root>_ids`. */
+export function isTenantPlaceholderName(name: string): boolean {
+  return /^tenant_[a-z0-9_]+_ids$/.test(name);
 }
 
 // ---------------------------------------------------------------------------
@@ -316,7 +323,7 @@ function nextMarker(style: MarkerStyle, counters: { dollar: number; atp: number 
 }
 
 // ---------------------------------------------------------------------------
-// bindPreparedQuery
+// renderPreparedQuery
 // ---------------------------------------------------------------------------
 
 function paramError(reason: QueryParameterRejectionReason, message: string): QueryParameterError {
@@ -397,25 +404,34 @@ function assertScalar(value: unknown, type: QueryParameterType): QueryParameterV
 type Edit = { start: number; end: number; literal: string; marker: string };
 
 /**
- * Pure, synchronous binder. Substitutes placeholders with escaped literals and
- * allocates dialect-correct driver markers. Does not authorize tenant IDs.
+ * The mechanical renderer: substitutes placeholders with escaped literals and allocates
+ * dialect-correct driver markers. Runs no guardrail and doesn't know about tenant
+ * policies. Internal to `@askdb/core`: the public, checked `bindPreparedQuery()`
+ * (`rebind.ts`) and `ask()`'s consistency check call it.
+ *
+ * With `skipTenantPlaceholders`, every `:tenant_<root>_ids` placeholder is left in place,
+ * by name from the lexer scan, and its declaration is ignored: the caller renders tenant
+ * IDs from a tenant scope afterwards.
  */
-export function bindPreparedQuery(
+export function renderPreparedQuery(
   prepared: PreparedQuery,
   values: Record<string, QueryParameterValue | readonly QueryParameterValue[]>,
-): BoundQuery {
-  const spec = BUILT_IN_DIALECTS[prepared.dialect];
-  if (!spec) {
+  options: { skipTenantPlaceholders?: boolean } = {},
+): RenderedQuery {
+  if (!isBuiltInDialectId(prepared.dialect)) {
     throw paramError("DIALECT_UNSUPPORTED", `Unknown dialect '${prepared.dialect}'.`);
   }
+  const spec = BUILT_IN_DIALECTS[prepared.dialect];
   const listBinding = listBindingOf(spec);
   const style = markerStyleForDialect(prepared.dialect);
   const namedSql = prepared.namedSql;
+  const rendered = (name: string) => !(options.skipTenantPlaceholders && isTenantPlaceholderName(name));
 
-  const occurrences = scanPlaceholders(namedSql, spec);
-  const declByName = new Map(prepared.parameters.map((p) => [p.name, p]));
+  const occurrences = scanPlaceholders(namedSql, spec).filter((o) => rendered(o.name));
+  const declarations = prepared.parameters.filter((p) => rendered(p.name));
+  const declByName = new Map(declarations.map((p) => [p.name, p]));
 
-  for (const p of prepared.parameters) {
+  for (const p of declarations) {
     if (!occurrences.some((o) => o.name === p.name)) {
       throw paramError(
         "UNRESOLVED_PLACEHOLDER",
@@ -433,7 +449,7 @@ export function bindPreparedQuery(
   }
 
   const resolvedValues = new Map<string, QueryParameterValue | QueryParameterValue[]>();
-  for (const p of prepared.parameters) {
+  for (const p of declarations) {
     const raw = lookupValue(values, p.name, p.placeholder);
     if (raw === undefined) {
       throw paramError("MISSING_VALUE", `Missing value for parameter '${p.name}'.`);
@@ -572,7 +588,8 @@ export function bindPreparedQuery(
     unboundSql = unboundSql.slice(0, edit.start) + edit.marker + unboundSql.slice(edit.end);
   }
 
-  if (scanPlaceholders(sql, spec).length > 0 || scanPlaceholders(unboundSql, spec).length > 0) {
+  const remaining = (text: string) => scanPlaceholders(text, spec).some((o) => rendered(o.name));
+  if (remaining(sql) || remaining(unboundSql)) {
     throw paramError("UNRESOLVED_PLACEHOLDER", "One or more placeholders remain after binding.");
   }
 

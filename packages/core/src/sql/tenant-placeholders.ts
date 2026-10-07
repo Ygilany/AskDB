@@ -12,6 +12,7 @@ import {
   escapeSqlLiteral,
   escapeSqlLiteralLegacy,
   formatMarker,
+  isTenantPlaceholderName,
   markerStyleForDialect,
   scanTenantPlaceholders,
   tokenizeSqlSpans,
@@ -157,13 +158,14 @@ function buildIdsByRoot(access: TenantAccess): Map<string, string[]> {
  */
 export function unexpandedSubtreeError(
   tenantRoot: string,
-  caller: "resolveTenantSql()" | "buildTenantPromptBlock()",
+  caller: "resolveTenantSql()" | "buildTenantPromptBlock()" | "bindPreparedQuery()",
 ): TenantScopeError {
   return new TenantScopeError(
     `tenantScope.access is an unexpanded 'subtree' of '${tenantRoot}'. ${caller} does not walk ` +
-      "the hierarchy. Expand the subtree first: ask() does this when you pass " +
-      "resolveTenantDescendants; a direct caller passes a 'multi_root' access with each tenant " +
-      "root's IDs under that root (or an 'ids' access when the subtree is one root table).",
+      "the hierarchy. Expand the subtree first: ask() and askdb.bind() do this when you pass " +
+      "resolveTenantDescendants; a direct caller passes the scope through expandTenantScope(), " +
+      "or a 'multi_root' access with each tenant root's IDs under that root (or an 'ids' access " +
+      "when the subtree is one root table).",
     "SUBTREE_NOT_RESOLVABLE",
   );
 }
@@ -253,20 +255,32 @@ const ANY_CASE_PLACEHOLDER_RE = /(?<!:):([a-z][a-z0-9_]*)/gi;
  * Scans the same code regions as the substituter.
  */
 function rejectCaseVariantTenantPlaceholders(sql: string, dialect?: TenantSqlDialect): void {
-  // Same code regions the substituter scans, so both agree on what is a placeholder.
+  const placeholder = findTenantPlaceholderAnyCase(sql, dialect);
+  if (placeholder === undefined || placeholder === placeholder.toLowerCase()) return;
+  throw new TenantScopeError(
+    `Generated SQL references ${placeholder}, but tenant placeholders are case-sensitive and must be ` +
+      `written ${placeholder.toLowerCase()}. Refusing to emit SQL with an unsubstituted tenant placeholder.`,
+    "UNRESOLVED_TENANT_PLACEHOLDER",
+  );
+}
+
+/**
+ * The first `:tenant_<root>_ids` placeholder in a code region of `sql`, in any casing, or
+ * undefined. A case variant comes first when there is one, since it can never be rendered.
+ * Scans the same code regions as the substituter, so both agree on what is a placeholder.
+ */
+export function findTenantPlaceholderAnyCase(sql: string, dialect?: TenantSqlDialect): string | undefined {
+  let lowercase: string | undefined;
   for (const span of tokenizeSqlSpans(sql, lexerDialect(dialect))) {
     if (span.kind !== "code") continue;
     for (const m of sql.slice(span.start, span.end).matchAll(ANY_CASE_PLACEHOLDER_RE)) {
       const name = m[1]!;
-      const lower = name.toLowerCase();
-      if (name === lower || !/^tenant_[a-z0-9_]+_ids$/.test(lower)) continue;
-      throw new TenantScopeError(
-        `Generated SQL references ${m[0]}, but tenant placeholders are case-sensitive and must be ` +
-          `written :${lower}. Refusing to emit SQL with an unsubstituted tenant placeholder.`,
-        "UNRESOLVED_TENANT_PLACEHOLDER",
-      );
+      if (!isTenantPlaceholderName(name.toLowerCase())) continue;
+      if (name !== name.toLowerCase()) return m[0];
+      lowercase ??= m[0];
     }
   }
+  return lowercase;
 }
 
 const IN_LIST_BEFORE = /\bIN\s*\(\s*$/i;
@@ -435,8 +449,12 @@ export function replacePlaceholdersWithParams(
  * with no list form (`UNSUPPORTED_TENANT_PREDICATE`), and in `sql-only` mode when
  * a tenant ID holds a backslash but the dialect's escaping is unknown
  * (`UNESCAPABLE_TENANT_ID`). Throws `SchemaParseError` when two of the policy's roots
- * derive the same placeholder, rather than bind one root's IDs through the other's. `global` scope returns
- * `sql` unchanged.
+ * derive the same placeholder, rather than bind one root's IDs through the other's.
+ *
+ * A `global` scope binds no IDs: SQL without a tenant placeholder is returned unchanged,
+ * and SQL that still has one throws `UNRESOLVED_TENANT_PLACEHOLDER`, since nothing can
+ * fill it (ADR 0010). A placeholder in any casing but the exact lowercase form throws the
+ * same reason under every scope.
  */
 export function resolveTenantSql(
   sql: string,
@@ -449,7 +467,16 @@ export function resolveTenantSql(
   if (scope.access.kind === "subtree") {
     throw unexpandedSubtreeError(scope.access.tenantRoot, "resolveTenantSql()");
   }
+  rejectCaseVariantTenantPlaceholders(sql, dialect);
   if (scope.access.kind === "global") {
+    const placeholder = scanTenantPlaceholders(sql, lexerDialect(dialect))[0]?.placeholder;
+    if (placeholder !== undefined) {
+      throw new TenantScopeError(
+        `Generated SQL references ${placeholder}, but the tenant scope is 'global', which binds no ` +
+          "tenant IDs. Refusing to emit SQL with an unsubstituted tenant placeholder.",
+        "UNRESOLVED_TENANT_PLACEHOLDER",
+      );
+    }
     return mode === "sql-only"
       ? { mode: "sql-only", sql, bindings: [] }
       : { mode: "sql-params", sql, params: [], bindings: [], paramStartIndex };

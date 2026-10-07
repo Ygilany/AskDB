@@ -398,13 +398,17 @@ The mode is configurable per `ask()` call (`tenantSqlMode`).
 | `result.sql` | `result.tenantParams` (`sql-params` mode; nothing in `sql-only`) | Business values inlined as literals; tenant markers numbered from the first slot. |
 | `result.unboundSql` | `result.params` | All values as markers. In `sql-params` mode `params` already includes the tenant IDs: after the business values for numbered markers (`$N`, `@pN`), interleaved in source order for `?` dialects. `parameters[].indices` point into this array. In `sql-only` mode tenant IDs are inlined literals in `unboundSql` and `params` holds business values only. |
 
-`tenantBindings` keeps its tenant-only meaning for audit. `bindPreparedQuery()` binds tenant placeholders by name mechanically and **does not authorize** the IDs you pass; authorization remains the host's responsibility when constructing `tenantScope`.
+`tenantBindings` keeps its tenant-only meaning for audit.
+
+**Rebind.** `bindPreparedQuery(prepared, values, { schema, tenantScope, … })` ([ADR 0010](../adrs/0010-sql-guardrail-decision-point.md)) takes tenant IDs from `tenantScope`, never from `values` (a `:tenant_*` key there throws `QueryParameterError`, `TENANT_VALUE_SUPPLIED`). It re-runs this guardrail on the stored template under the bind-time scope and the policy as it is then, and renders each placeholder with the same substitution `ask()` uses: literals in `sql`, driver markers after the business markers in `unboundSql`, with the IDs folded into `params`. A placeholder the scope has no IDs for throws `UNRESOLVED_TENANT_PLACEHOLDER`, so a template scoped through one root can't bind under a scope for another. A `subtree` scope must be expanded first, with `expandTenantScope()` (`SUBTREE_NOT_RESOLVABLE` otherwise). Under `enforcement: strict` a failing template throws `TenantGuardrailError`; under `warn` it is refused too, unless the caller passes `acceptWarnings: ["tenant"]`. Authorizing `tenantScope` remains the host's responsibility, as for `ask()`.
+
+**`global` scope.** A `global` scope binds no IDs. SQL that still has a `:tenant_*` placeholder (in any casing) throws `TenantScopeError` (`UNRESOLVED_TENANT_PLACEHOLDER`) instead of being returned with the raw placeholder, in `ask()`, `resolveTenantSql()` and at rebind. SQL without one passes through unchanged.
 
 ---
 
 ## Guardrail validation
 
-The check runs on the model's SQL **before** tenant rendering: the bound statement and, when present, its `sql-unbound` block, with the `:tenant_<root>_ids` placeholders still in place. Tenant rendering (`resolveTenantSql()`) then only swaps each placeholder for literals (`sql-only`) or the dialect's driver markers (`sql-params`), so one check covers every `tenantSqlMode`, dialect and output form. `ask()` checks those forms for every dialect path, including custom `AskDialect` adapters, and `generateSelectSql()` checks the SQL it returns, whose placeholders are still named. A direct `validateTenantGuardrails()` call should likewise get the SQL with its placeholders. It is skipped for `global` scope.
+The check runs on the model's SQL **before** tenant rendering: the bound statement and, when present, its `sql-unbound` block, with the `:tenant_<root>_ids` placeholders still in place. Tenant rendering (`resolveTenantSql()`) then only swaps each placeholder for literals (`sql-only`) or the dialect's driver markers (`sql-params`), so one check covers every `tenantSqlMode`, dialect and output form. `ask()` checks those forms for every dialect path, including custom `AskDialect` adapters, `generateSelectSql()` checks the SQL it returns, whose placeholders are still named, and `bindPreparedQuery()` checks the stored template under the bind-time scope. A direct `validateTenantGuardrails()` call should likewise get the SQL with its placeholders. It is skipped for `global` scope.
 
 ### What the check requires
 

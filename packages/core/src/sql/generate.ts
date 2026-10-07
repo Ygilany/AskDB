@@ -1,6 +1,6 @@
 import { generateText as defaultGenerateText } from "ai";
 import type { AskDbLanguageModel } from "../ai/types.js";
-import { SqlGenerationError } from "../errors.js";
+import { SqlGenerationError, SqlValidationError, type GuardrailVerdict } from "../errors.js";
 import { AskDbLogEvent } from "../logging/log-events.js";
 import type { AskDbLogger } from "../logging/askdb-logger.js";
 import type { FormatNlToSqlOptions } from "../schema/normalize.js";
@@ -15,7 +15,9 @@ import {
 } from "./parameter-manifest.js";
 import { buildNlToSqlSystemPrompt, buildNlToSqlUserPrompt } from "./prompt.js";
 import { assertNlToSqlInputs, nlToSqlAmbiguityNotes } from "./schema-question-precheck.js";
-import { enforceTenantGuardrails, type TenantGuardrailResult } from "./tenant-guardrail.js";
+import { decide, tenantGuardrailResult, throwIfDenied, type GuardrailModes } from "./guardrail-decide.js";
+import { evaluateGuardrails, logGuardrailVerdict } from "./guardrails.js";
+import type { TenantGuardrailResult } from "./tenant-guardrail.js";
 import {
   buildSelectGuardrailExplanation,
   validateSelectSql,
@@ -65,6 +67,9 @@ export type GenerateSqlDeps = {
 export type GenerateSelectSqlResult = {
   sql: string;
   explain?: SelectGuardrailExplain;
+  /** The read-only and (with a tenant policy and scope) tenant findings, and the outcome. */
+  verdict: GuardrailVerdict;
+  /** Tenant guardrail result, derived from {@link verdict}. Present with a tenant policy and scope. */
   tenantGuardrail?: TenantGuardrailResult;
   /** Token usage for the generation call. Populated when the model provider returns usage data. */
   usage?: { promptTokens: number | null; completionTokens: number | null; totalTokens: number | null };
@@ -77,12 +82,15 @@ export type GenerateSelectSqlResult = {
 /**
  * Dialect-parameterized NL→SQL generator. Validates inputs, builds the user/system
  * prompt with the dialect's syntax brief, calls the model, extracts the fenced SQL,
- * and runs the shared read-only validator (plus any dialect-specific `extraValidate`).
+ * and runs the guardrails through the same decision point as `ask()`: the read-only
+ * check (plus any dialect-specific `extraValidate`), and, when `deps.tenantPolicy` and
+ * `deps.tenantScope` are supplied, the tenant check under the policy's `enforcement`.
+ * Both check the returned `sql` and, when returned, `unboundNamedSql`. No sensitive check:
+ * that needs a mode, which `ask()` takes.
  *
- * When `deps.tenantPolicy` and `deps.tenantScope` are supplied, the tenant guardrail
- * runs on the returned `sql` (and on `unboundNamedSql` when that is returned too);
- * `strict` policies throw `TenantGuardrailError`. Tenant placeholders are left in
- * place — `ask()` substitutes them and re-checks the final SQL.
+ * A `deny` throws the check's typed error (`SqlValidationError` before
+ * `TenantGuardrailError`) with the verdict attached; otherwise the result carries
+ * `verdict`. Tenant placeholders are left in place; `ask()` substitutes them.
  */
 export async function generateSelectSql(
   dialect: DialectSpec,
@@ -91,23 +99,48 @@ export async function generateSelectSql(
   model: AskDbLanguageModel,
   deps: GenerateSqlDeps = {},
 ): Promise<GenerateSelectSqlResult> {
-  return runGenerateSelectSql(dialect, question, schema, model, deps, true);
+  const generated = await runGenerateSelectSql(dialect, question, schema, model, deps);
+  const tenant =
+    deps.tenantPolicy && deps.tenantScope ? { policy: deps.tenantPolicy, scope: deps.tenantScope } : undefined;
+  const findings = evaluateGuardrails(
+    {
+      forms: {
+        sql: generated.sql,
+        ...(generated.unboundNamedSql !== undefined ? { template: generated.unboundNamedSql } : {}),
+      },
+      dialect,
+      schema,
+      ...(tenant ? { tenant } : {}),
+    },
+    tenant ? ["read-only", "tenant"] : ["read-only"],
+  );
+  const modes: GuardrailModes = { ...(tenant ? { tenant: tenant.policy.enforcement } : {}), sensitive: "off" };
+  const verdict = decide(findings, modes, "return");
+  logGuardrailVerdict(deps.logger, verdict, { tenantPolicy: tenant?.policy, sensitiveChecked: false });
+  try {
+    throwIfDenied(verdict, modes, "return");
+  } catch (e) {
+    logGenerateFailed(deps.logger, e);
+    throw e;
+  }
+  const out: GenerateSelectSqlResult = { ...generated, verdict };
+  if (tenant) out.tenantGuardrail = tenantGuardrailResult(findings);
+  return out;
 }
 
 /**
- * Internal entry used by `ask()`: identical to {@link generateSelectSql} but skips the
- * tenant guardrail, because `ask()` runs it once on the final SQL — after tenant
- * placeholder substitution and the unbound/bound consistency check. Not exported
- * from the package index.
+ * Internal entry used by `ask()`: the model call and extraction only. `sql` is returned
+ * even when it fails the read-only check, because `ask()` runs every guardrail itself,
+ * through one decision point, before rendering. Not exported from the package index.
  */
-export async function generateSelectSqlWithoutTenantGuardrail(
+export async function generateSelectSqlForAsk(
   dialect: DialectSpec,
   question: string,
   schema: AnyNormalizedSchema,
   model: AskDbLanguageModel,
   deps: GenerateSqlDeps = {},
-): Promise<GenerateSelectSqlResult> {
-  return runGenerateSelectSql(dialect, question, schema, model, deps, false);
+): Promise<Omit<GenerateSelectSqlResult, "verdict">> {
+  return runGenerateSelectSql(dialect, question, schema, model, deps);
 }
 
 async function runGenerateSelectSql(
@@ -116,8 +149,7 @@ async function runGenerateSelectSql(
   schema: AnyNormalizedSchema,
   model: AskDbLanguageModel,
   deps: GenerateSqlDeps,
-  runTenantGuardrail: boolean,
-): Promise<GenerateSelectSqlResult> {
+): Promise<Omit<GenerateSelectSqlResult, "verdict">> {
   assertNlToSqlInputs(schema, question);
   const ambiguityNotes = nlToSqlAmbiguityNotes(question, schema);
   const generateText = deps.generateText ?? defaultGenerateText;
@@ -195,8 +227,9 @@ async function runGenerateSelectSql(
       const message = e instanceof Error ? e.message : String(e);
       throw new SqlGenerationError(`Model call failed: ${message}`, e);
     }
-    const extracted = extractSqlFromModelText(text);
-    const sql = validateSelectSql(dialect, extracted);
+    // The read-only check is a guardrail finding, decided by the caller; here the SQL is
+    // only normalized (trailing `;` removed) when it passes.
+    const sql = normalizeSelectSql(dialect, extractSqlFromModelText(text));
 
     // Optional parameterized extras — any failure clears them (never throws).
     let unboundNamedSql: string | undefined;
@@ -207,22 +240,6 @@ async function runGenerateSelectSql(
       parameterManifest = extras.parameterManifest;
     }
 
-    // Tenant guardrail: check every SQL form this function returns — the bound
-    // `sql` callers execute, plus the unbound form when it is returned too. Never
-    // check only the unbound form: both blocks come from the model and can
-    // disagree (e.g. a scoped unbound block next to an unscoped bound one).
-    let tenantGuardrail: TenantGuardrailResult | undefined;
-    if (runTenantGuardrail && deps.tenantPolicy && deps.tenantScope) {
-      tenantGuardrail = enforceTenantGuardrails(
-        [sql, unboundNamedSql],
-        deps.tenantPolicy,
-        deps.tenantScope,
-        logger,
-        undefined,
-        dialect,
-      );
-    }
-
     const explain = deps.explain ? buildSelectGuardrailExplanation(sql) : undefined;
     logger?.info(
       {
@@ -231,23 +248,36 @@ async function runGenerateSelectSql(
       },
       "nl-to-sql generate complete",
     );
-    const out: GenerateSelectSqlResult = { sql };
+    const out: Omit<GenerateSelectSqlResult, "verdict"> = { sql };
     if (explain !== undefined) out.explain = explain;
-    if (tenantGuardrail !== undefined) out.tenantGuardrail = tenantGuardrail;
     if (usage !== undefined) out.usage = usage;
     if (unboundNamedSql !== undefined) out.unboundNamedSql = unboundNamedSql;
     if (parameterManifest !== undefined) out.parameterManifest = parameterManifest;
     return out;
   } catch (e) {
-    const msg = e instanceof Error ? e.message : String(e);
-    logger?.error(
-      {
-        event: AskDbLogEvent.PipelineFailed,
-        phase: "generate",
-        errMessage: msg,
-      },
-      "nl-to-sql generate failed",
-    );
+    logGenerateFailed(logger, e);
+    throw e;
+  }
+}
+
+function logGenerateFailed(logger: AskDbLogger | undefined, e: unknown): void {
+  const msg = e instanceof Error ? e.message : String(e);
+  logger?.error(
+    {
+      event: AskDbLogEvent.PipelineFailed,
+      phase: "generate",
+      errMessage: msg,
+    },
+    "nl-to-sql generate failed",
+  );
+}
+
+/** `validateSelectSql`'s normalized SQL when it passes; the trimmed SQL when it doesn't. */
+function normalizeSelectSql(dialect: DialectSpec, sql: string): string {
+  try {
+    return validateSelectSql(dialect, sql);
+  } catch (e) {
+    if (e instanceof SqlValidationError) return sql.trim();
     throw e;
   }
 }

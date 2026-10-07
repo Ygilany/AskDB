@@ -8,10 +8,12 @@ import {
   AskDbError,
   SchemaParseError,
   SensitiveReferenceError,
+  SqlValidationError,
   TenantGuardrailError,
   TenantScopeError,
   UnknownDialectError,
 } from "./errors.js";
+import { generateSelectSql } from "./sql/generate.js";
 import { AskDbLogEvent } from "./logging/log-events.js";
 import { formatSchemaForNlToSql } from "./schema/normalize.js";
 import type { NormalizedSchema } from "./schema/types.js";
@@ -702,7 +704,7 @@ describe("ask — parameterize", () => {
       parameterize: false,
       deps: { generateText },
     });
-    expect(result).toEqual({ sql: "SELECT id FROM users" });
+    expect(result).toEqual({ sql: "SELECT id FROM users", verdict: { outcome: "allow", findings: [] } });
     const prompt = (generateText.mock.calls[0]![0] as { prompt: string }).prompt;
     expect(prompt).not.toContain("Parameterized output format");
   });
@@ -1120,9 +1122,155 @@ describe("ask — tenant guardrail covers custom AskDialect implementations", ()
   it("without a tenant policy, custom dialect output is unchanged", async () => {
     const dialect: AskDialect = { generate: async () => ({ sql: "DELETE FROM orders" }) };
     const result = await ask({ question: "q", schema: minimalSchema, model: fakeModel, dialect });
-    expect(result).toEqual({ sql: "DELETE FROM orders" });
+    expect(result).toEqual({ sql: "DELETE FROM orders", verdict: { outcome: "allow", findings: [] } });
   });
 });
+
+describe("ask — one guardrail decision point (ADR 0010)", () => {
+  const strict = loadSchema(multiTenantDir);
+  const warn = { ...strict, tenantPolicy: { ...strict.tenantPolicy!, enforcement: "warn" as const } };
+  const replying = (text: string) => ({ generateText: vi.fn(async () => ({ text })) });
+  // Unscoped (tenant), reads clients.email (sensitive in the fixture).
+  const leaky = "SELECT o.id, c.email FROM orders o JOIN clients c ON o.client_id = c.id";
+
+  it("runs every check before throwing: the TenantGuardrailError's verdict holds the sensitive finding", async () => {
+    const error = await ask({
+      question: "q",
+      schema: strict,
+      model: fakeModel,
+      dialect: "postgres",
+      tenantScope: agencyScope,
+      sensitiveGuardrailMode: "strict",
+      parameterize: false,
+      deps: replying("```sql\n" + leaky + "\n```"),
+    }).catch((e: unknown) => e);
+
+    expect(error).toBeInstanceOf(TenantGuardrailError);
+    const checks = (error as TenantGuardrailError).verdict?.findings.map((f) => [f.check, f.rule]);
+    expect(checks).toContainEqual(["tenant", "MISSING_TENANT_PREDICATE"]);
+    expect(checks).toContainEqual(["sensitive", "SENSITIVE_COLUMN_REFERENCED"]);
+  });
+
+  it("throws SqlValidationError ahead of the tenant and sensitive errors, with their findings", async () => {
+    const error = await ask({
+      question: "q",
+      schema: strict,
+      model: fakeModel,
+      dialect: "postgres",
+      tenantScope: agencyScope,
+      sensitiveGuardrailMode: "strict",
+      parameterize: false,
+      deps: replying("```sql\n" + leaky + "; DELETE FROM orders\n```"),
+    }).catch((e: unknown) => e);
+
+    expect(error).toBeInstanceOf(SqlValidationError);
+    expect((error as SqlValidationError).rule).toBe("SQL_MULTI_STATEMENT");
+    expect(new Set((error as SqlValidationError).verdict?.findings.map((f) => f.check))).toEqual(
+      new Set(["read-only", "tenant", "sensitive"]),
+    );
+  });
+
+  it("refuses non-SELECT SQL from a built-in dialect whatever the modes", async () => {
+    const error = await ask({
+      question: "q",
+      schema: warn,
+      model: fakeModel,
+      dialect: "postgres",
+      tenantScope: agencyScope,
+      sensitiveGuardrailMode: "off",
+      parameterize: false,
+      deps: replying("```sql\nDELETE FROM orders WHERE agency_id = :tenant_agency_ids\n```"),
+    }).catch((e: unknown) => e);
+
+    expect(error).toBeInstanceOf(SqlValidationError);
+    expect((error as SqlValidationError).rule).toBe("SQL_NOT_SELECT_OR_WITH");
+  });
+
+  it("drops the reuse artifacts when the sql-unbound block fails the read-only check, and still returns sql", async () => {
+    const result = await ask({
+      question: "q",
+      schema: minimalSchema,
+      model: fakeModel,
+      dialect: "postgres",
+      deps: replying(
+        [
+          "```sql",
+          "SELECT id FROM users WHERE id = 1",
+          "```",
+          "```sql-unbound",
+          "SELECT id FROM users WHERE id = :user_id; DELETE FROM users",
+          "```",
+          "```json",
+          '{"parameters":[{"name":"user_id","type":"number","cardinality":"one","value":1}]}',
+          "```",
+        ].join("\n"),
+      ),
+    });
+
+    expect(result.sql).toBe("SELECT id FROM users WHERE id = 1");
+    expect(result.preparedQuery).toBeUndefined();
+    expect(result.unboundSql).toBeUndefined();
+    expect(result.verdict).toEqual({ outcome: "allow", findings: [] });
+  });
+
+  it("turns a custom generator's failure without warnings into an UNPROVABLE_SCOPE tenant finding", async () => {
+    const dialect: AskDialect = {
+      generate: async () => ({
+        sql: "SELECT count(*) FROM orders WHERE agency_id = :tenant_agency_ids",
+        tenantGuardrail: { passed: false, warnings: [] },
+      }),
+    };
+    const result = await ask({ question: "q", schema: warn, model: fakeModel, dialect, tenantScope: agencyScope });
+
+    expect(result.verdict.outcome).toBe("warn");
+    expect(result.verdict.findings).toEqual([
+      expect.objectContaining({ check: "tenant", form: "generator", rule: "UNPROVABLE_SCOPE" }),
+    ]);
+    expect(result.tenantGuardrail?.passed).toBe(false);
+  });
+
+  it("generateSelectSql() returns the same read-only and tenant findings as ask() for the same reply", async () => {
+    const text = reply3(
+      "SELECT * FROM orders WHERE status = 'open'",
+      "SELECT * FROM orders WHERE status = :status",
+    );
+    const viaAsk = await ask({
+      question: "q",
+      schema: warn,
+      model: fakeModel,
+      dialect: "postgres",
+      tenantScope: agencyScope,
+      deps: replying(text),
+    });
+    const viaGenerate = await generateSelectSql(POSTGRES_DIALECT, "q", warn, fakeModel, {
+      generateText: replying(text).generateText as never,
+      tenantPolicy: warn.tenantPolicy,
+      tenantScope: agencyScope,
+      parameterize: true,
+    });
+
+    expect(viaGenerate.verdict.outcome).toBe("warn");
+    expect(viaGenerate.verdict).toEqual(viaAsk.verdict);
+    expect(viaAsk.verdict.findings.map((f) => [f.check, f.form, f.rule])).toEqual([
+      ["tenant", "sql", "MISSING_TENANT_PREDICATE"],
+      ["tenant", "template", "MISSING_TENANT_PREDICATE"],
+    ]);
+  });
+});
+
+function reply3(sql: string, unbound: string): string {
+  return [
+    "```sql",
+    sql,
+    "```",
+    "```sql-unbound",
+    unbound,
+    "```",
+    "```json",
+    '{"parameters":[{"name":"status","type":"string","cardinality":"one","value":"open"}]}',
+    "```",
+  ].join("\n");
+}
 
 describe("ask — unknown dialect id", () => {
   it("throws a typed UnknownDialectError", async () => {

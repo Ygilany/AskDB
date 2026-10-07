@@ -37,7 +37,7 @@ const { sql } = await ask({
 | `tenantSqlMode` | `TenantSqlOutputMode` | no | `"sql-only"` | `"sql-only"` inlines escaped literal tenant values; `"sql-params"` replaces them with the dialect's driver markers (`$N` Postgres/CockroachDB and custom `AskDialect`s, `?` MySQL/MariaDB/SQLite, `@pN` SQL Server) and returns the IDs as `tenantParams`. See [Executing the result](#executing-the-result). |
 | `resolveTenantDescendants` | `ResolveTenantDescendants` | for `subtree` scopes | — | `(tenantRoot, seedIds) => TenantIdsByRoot \| Promise<TenantIdsByRoot>`, where `TenantIdsByRoot` is `Record<rootTableId, string[]>`. Returns the subtree's IDs grouped by tenant root: the seeds and same-table descendants under `tenantRoot`, each descendant root's IDs under that root, e.g. `{ "table:public.agencies": ["1"], "table:public.clients": ["5"] }`. `ask()` unions the seeds in and binds each root's IDs to its own placeholder (a `multi_root` scope). Without it, or when it returns a flat array or an invalid result, a `subtree` scope throws `TenantScopeError` (`SUBTREE_NOT_RESOLVABLE`). See [Hierarchical scope](/guides/multi-tenancy/#hierarchical-scope-subtree). |
 | `parameterize` | `boolean` | no | `true` | Ask the model for unbound SQL + a parameter manifest. Still exactly one model call. Set `false` to save output tokens. Inert for custom `AskDialect` implementations. |
-| `sensitiveGuardrailMode` | `"warn" \| "strict" \| "off"` | no | `"warn"` | How to treat SQL that references identifiers marked `sensitive`. `"warn"` populates `result.sensitiveGuardrail` and logs; `"strict"` throws `SensitiveReferenceError`; `"off"` skips the check. See [`validateSensitiveReferences`](#validatesensitivereferencessql-schema-options). |
+| `sensitiveGuardrailMode` | `"warn" \| "strict" \| "off"` | no | `"warn"` | How to treat SQL that references identifiers marked `sensitive`. `"warn"` reports them in `result.verdict` and `result.sensitiveGuardrail` and logs; `"strict"` throws `SensitiveReferenceError`; `"off"` skips the check. See [Guardrail verdict](#guardrail-verdict) and [`validateSensitiveReferences`](#validatesensitivereferencessql-schema-options). |
 | `retriever` | `Retriever` | no | — | RAG retriever from `@askdb/rag`. When supplied and schema chunk count exceeds `retrievalThresholdChunks`, retrieval replaces the full DDL in the prompt. |
 | `retrievalK` | `number` | no | `8` | Top-k passed to the retriever. |
 | `retrievalThresholdChunks` | `number` | no | `30` | Chunk count below which the full DDL is used even if a retriever is supplied. |
@@ -54,11 +54,12 @@ const { sql } = await ask({
 | `unboundSql` | `string \| undefined` | When `parameterize` is on and the model returned a consistent unbound block + manifest. Driver markers (`$N` / `?` / `@pN`) for every value; run it with `params`. |
 | `params` | `QueryParamSlot[] \| undefined` | Values for `unboundSql`, in marker order. In `"sql-params"` mode this already includes the tenant IDs. |
 | `parameters` | `QueryParameterBinding[] \| undefined` | Named bindings for form UIs (includes runtime `value`, `markers`, `indices`). |
-| `preparedQuery` | `PreparedQuery \| undefined` | Definitions + named template only (no runtime values). Input to `bindPreparedQuery()`. |
+| `preparedQuery` | `PreparedQuery \| undefined` | Definitions + named template only (no runtime values). Input to [`bindPreparedQuery()`](#bindpreparedqueryprepared-values-guardrails). |
+| `verdict` | `GuardrailVerdict` | Always. Every guardrail finding for the model's SQL and the outcome: `"allow"`, or `"warn"` when a check in `warn` mode found something. A `"deny"` throws instead. See [Guardrail verdict](#guardrail-verdict). |
 | `usage` | `AskUsage \| undefined` | When the model provider reports token counts. |
 | `explain` | `unknown \| undefined` | When `explain: true`. Heuristic guardrail metadata — which read-only rules fired and why. |
-| `sensitiveGuardrail` | `SensitiveGuardrailResult \| undefined` | When the schema declares at least one `sensitive` table/column and `sensitiveGuardrailMode` is not `"off"`. The sensitive identifiers the returned SQL references. |
-| `tenantGuardrail` | `TenantGuardrailResult \| undefined` | When a tenant policy is active. `{ passed, warnings }` from the heuristic tenant check, run on the model's SQL (and its `sql-unbound` block) before tenant binding. It requires each tenant-scoped table, and each root table the scope covers, to have a tenant predicate that filters: its tenant column compared with the placeholder, ANDed into a `WHERE`, inner-join `ON` or `HAVING` clause (see [What the tenant check requires](/guides/multi-tenancy/#what-the-tenant-check-requires)). Passing it doesn't prove the SQL is scoped. With `enforcement: strict`, a failure throws `TenantGuardrailError` instead. |
+| `sensitiveGuardrail` | `SensitiveGuardrailResult \| undefined` | When the schema declares at least one `sensitive` table/column and `sensitiveGuardrailMode` is not `"off"`. The sensitive identifiers the returned SQL references, derived from `verdict`. |
+| `tenantGuardrail` | `TenantGuardrailResult \| undefined` | When a tenant policy is active. `{ passed, warnings }` from the heuristic tenant check, derived from `verdict`, run on the model's SQL (and its `sql-unbound` block) before tenant binding. It requires each tenant-scoped table, and each root table the scope covers, to have a tenant predicate that filters: its tenant column compared with the placeholder, ANDed into a `WHERE`, inner-join `ON` or `HAVING` clause (see [What the tenant check requires](/guides/multi-tenancy/#what-the-tenant-check-requires)). Passing it doesn't prove the SQL is scoped. With `enforcement: strict`, a failure throws `TenantGuardrailError` instead. |
 | `tenantParams` | `unknown[] \| undefined` | When `tenantSqlMode: "sql-params"` and the SQL has tenant placeholders. The tenant IDs for the markers in `sql`, in marker order. |
 | `tenantBindings` | `TenantBinding[] \| undefined` | When a tenant policy is active. Structured binding metadata for audit. |
 
@@ -82,22 +83,86 @@ if (result.unboundSql && result.params) {
 
 Tenant substitution fails closed. It only replaces placeholders in SQL code (never inside string literals or quoted identifiers) and throws `TenantScopeError` when the SQL references a tenant root the scope has no IDs for (`UNRESOLVED_TENANT_PLACEHOLDER`), or when several IDs meet a predicate with no list form such as `<=` (`UNSUPPORTED_TENANT_PREDICATE`). With several IDs, `=` becomes `IN (…)` and `!=` / `<>` become `NOT IN (…)`. Inlined tenant IDs are escaped for the dialect: when a `DialectSpec` leaves `backslashEscapes` unset, a built-in `id` supplies it (on for MySQL and MariaDB). If the `id` isn't built-in, a tenant ID containing a backslash throws `UNESCAPABLE_TENANT_ID` in `"sql-only"` mode instead of being escaped by guesswork.
 
-### `bindPreparedQuery(prepared, values)`
+### Guardrail verdict
 
-Pure, synchronous local rebind — no model call. Returns both a ready-to-run `sql` and `unboundSql` + `params` for driver binding. Checks names, types, and cardinality only; **does not authorize tenant IDs**.
+`ask()` runs up to three checks on the model's SQL, before it renders tenant IDs or binds values: the read-only check (built-in dialects and `DialectSpec`s only), the tenant check (with a tenant policy), and the sensitive-identifier check (unless `sensitiveGuardrailMode` is `"off"`). Each check reads the model's bound `sql` and its `sql-unbound` block, and one decision maps their findings to an outcome:
+
+| Check | `ask()` returns | `bindPreparedQuery()` rebinds |
+| --- | --- | --- |
+| read-only | Always `deny`. A failing `sql-unbound` block is dropped with the reuse artifacts instead, and `sql` is still returned. | Always `deny`. |
+| tenant | Policy `enforcement: strict` → `deny`; `warn` → `warn`. | `strict` → `deny`; `warn` → `deny`, unless `acceptWarnings` includes `"tenant"`. |
+| sensitive | `sensitiveGuardrailMode: "strict"` → `deny`; `"warn"` → `warn`. | Same as `ask()`. |
+
+A `deny` throws the typed error of the highest-ranked denying check: `SqlValidationError`, then `TenantGuardrailError`, then `SensitiveReferenceError`. Every check runs first, and the error carries the whole verdict as `error.verdict`.
+
+```ts
+type GuardrailVerdict = {
+  outcome: "allow" | "warn" | "deny";
+  findings: GuardrailFinding[];
+};
+
+type GuardrailFinding =
+  | { check: "read-only"; form: "sql" | "template"; rule: SqlValidationRuleCode; message: string; hint?: string }
+  | { check: "tenant"; form: "sql" | "template" | "generator"; rule: TenantGuardrailRuleCode; message: string; tableId: string }
+  | {
+      check: "sensitive";
+      form: "sql" | "template";
+      rule: SensitiveReferenceRuleCode;
+      message: string;
+      reference?: SensitiveReference;         // SENSITIVE_TABLE_REFERENCED / SENSITIVE_COLUMN_REFERENCED
+      unresolvedScope?: SensitiveScopeReport; // UNRESOLVED_TABLE_SCOPE
+    };
+```
+
+`form` says which form the finding is about: `"sql"` is the model's bound SQL, `"template"` is its `sql-unbound` block (`preparedQuery.namedSql`), and `"generator"` is a finding a custom [`AskDialect`](#askdialect) reported. `generateSelectSql()` returns the same `verdict` for its read-only and tenant checks; it runs no sensitive check. The verdict is in-memory API: AskDB doesn't store it, so a host that wants to show "had warnings" later stores `result.verdict` itself. The checks are heuristics: they catch model mistakes early, and the database stays the boundary (see [Safety boundaries](/concepts/safety-boundaries/)).
+
+### `bindPreparedQuery(prepared, values, guardrails)`
+
+Local rebind of a stored `preparedQuery` with new business values, without a model call. Synchronous. It re-runs the guardrails on the template under the schema, tenant scope and modes you pass now, then renders the template. It returns a ready-to-run `sql`, `unboundSql` + `params` for driver binding, `bindings` for the business parameters, and the `verdict`.
 
 ```ts
 import { bindPreparedQuery } from "@askdb/core";
 
-const rebound = bindPreparedQuery(result.preparedQuery!, {
-  state_name: "Utah",
-  ":tenant_agency_ids": authorizedAgencyIds,
-});
+const rebound = bindPreparedQuery(
+  result.preparedQuery!,
+  { state_name: "Utah" },
+  { schema, tenantScope }, // the same schema and the caller's scope, as for ask()
+);
 await pool.query(rebound.sql);
 // or: await pool.query(rebound.unboundSql, rebound.params);
 ```
 
+The third argument, `BindGuardrails`, is required:
+
+| Field | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `schema` | `AnyNormalizedSchema` | yes | — | The schema to check the template under: its tenant policy and its `sensitive` markers. |
+| `tenantScope` | `TenantScope` | with a tenant policy | — | The caller's scope, as for `ask()`. Tenant IDs are rendered from it. A `subtree` scope must be expanded first with [`expandTenantScope()`](#expandtenantscopepolicy-scope-resolvetenantdescendants). |
+| `sensitiveGuardrailMode` | `"warn" \| "strict" \| "off"` | no | `"warn"` | As for `ask()`: `"warn"` binds and reports sensitive references in `verdict`; `"strict"` refuses them. |
+| `acceptWarnings` | `ReadonlyArray<"tenant">` | no | — | With a policy whose `enforcement` is `warn`, a template that fails the tenant check is refused unless this includes `"tenant"`. |
+
+Tenant IDs come from `tenantScope`, never from `values`. Each `:tenant_<root>_ids` placeholder is filled the way `ask()` fills it: escaped literals in `sql` (`col = :tenant_agency_ids` becomes `col IN ('7', '8')` with several IDs), and driver markers after the business markers in `unboundSql`, with the IDs in `params` (appended for `$N` / `@pN`, interleaved in source order for `?`, and `bindings[].indices` remapped).
+
+Every check uses the bind-time inputs, so a template refused today may have bound yesterday: a tightened policy, or a scope other than the one it was produced under, applies at the next rebind. It throws:
+
+- `QueryParameterError` (`MISSING_GUARDRAIL_CONTEXT`) without the third argument or its `schema`; (`TENANT_VALUE_SUPPLIED`) for a `:tenant_*` key in `values`; (`TENANT_PARAM_ALIGNMENT`) when the tenant markers can't be lined up with the business params; and the existing reasons for a wrong, missing or misplaced business value.
+- `TenantScopeError`: as in `ask()` for a missing or invalid scope; `SUBTREE_NOT_RESOLVABLE` for an unexpanded `subtree`; `UNRESOLVED_TENANT_PLACEHOLDER` for a placeholder the scope has no IDs for. That includes a template scoped through another root, any placeholder under a `global` scope, and any placeholder when the schema has no tenant policy.
+- `SqlValidationError`, `TenantGuardrailError` or `SensitiveReferenceError` for a `deny` verdict (see [Guardrail verdict](#guardrail-verdict)). A refused tenant warning throws `TenantGuardrailError` with a message naming `acceptWarnings`.
+
+`@askdb/client` users call [`askdb.bind()`](/reference/client-api/#clientbindprepared-values-options), which supplies the client's schema and expands a `subtree` scope.
+
 List parameters are arity-stable in `unboundSql` only on PostgreSQL/CockroachDB (`= ANY($n)`). Elsewhere a changed list length changes the marker count — rebind rather than swapping the array. Map SQL Server values via `parameters[].markers` (`@p0`-based).
+
+### `expandTenantScope(policy, scope, resolveTenantDescendants)`
+
+```ts
+import { expandTenantScope } from "@askdb/core";
+
+const expanded = await expandTenantScope(schema.tenantPolicy!, subtreeScope, resolveTenantDescendants);
+const rebound = bindPreparedQuery(prepared, values, { schema, tenantScope: expanded });
+```
+
+The `subtree` expansion `ask()` runs, as a function: it calls your [`resolveTenantDescendants`](#options) and returns a `multi_root` scope with one entry per root the subtree covers (an `ids` scope when the subtree is one root table), keeping a level with no IDs as `ids: []` so reading it fails closed. Other access kinds pass through. It validates the scope first and throws `TenantScopeError` (`SUBTREE_NOT_RESOLVABLE`) for a missing resolver or a malformed result, as `ask()` does.
 
 ### `AskUsage`
 
@@ -131,7 +196,7 @@ if (!passed) {
 }
 ```
 
-`ask()` runs this automatically over the SQL it returns and attaches the result as `result.sensitiveGuardrail`; use the standalone function for statements that did not come from this `ask()` call.
+`ask()` runs this check on the model's SQL and reports it in `result.verdict` and `result.sensitiveGuardrail`, and `bindPreparedQuery()` runs it again on every rebind. Use the standalone function for statements that don't come through either, such as SQL you store and replay yourself.
 
 #### Result — `SensitiveGuardrailResult`
 
@@ -334,10 +399,10 @@ It must return `AskDialectGenerateResult`:
 | --- | --- | --- |
 | `sql` | `string` | The generated SQL. |
 | `explain` | `unknown \| undefined` | Guardrail metadata when `options.explain` is true. |
-| `tenantGuardrail` | `TenantGuardrailResult \| undefined` | Optional extra tenant findings from your generator. These are merged into `ask()`'s own check and cannot replace it. |
+| `tenantGuardrail` | `TenantGuardrailResult \| undefined` | Optional extra tenant findings from your generator. With a tenant policy, each warning becomes a tenant finding with `form: "generator"` in `ask()`'s verdict, decided under the policy's `enforcement`, and `passed: false` with no warnings becomes one `UNPROVABLE_SCOPE` finding. They add to `ask()`'s own check and can't replace it. Without a tenant policy, it is passed through to `result.tenantGuardrail` unchanged. |
 | `usage` | `AskUsage \| undefined` | Token usage, if your generator has access to it. |
 
-A custom `AskDialect` is responsible for its own read-only validation. `ask()` does not run the SELECT-only validator on its output. If your generator should only emit read-only SQL, call `validateSelectSql(spec, sql)` before returning. Tenant enforcement is different: when the schema has a tenant policy, `ask()` runs the tenant guardrail on the returned `sql` (and its `sql-unbound` block), with the `:tenant_<root>_ids` placeholders still in place, and then substitutes them, whatever the dialect. Under `strict`, SQL that fails the tenant check throws `TenantGuardrailError`; passing it doesn't prove the SQL is scoped. A custom `AskDialect` doesn't tell the guardrail how its engine quotes strings, so the statement must pass under the standard-SQL, Postgres (`E'…'` escape strings), and MySQL (where `"…"` is a string) readings: a tenant column written only as `"agency_id"` doesn't count as a predicate.
+A custom `AskDialect` is responsible for its own read-only validation. `ask()` does not run the SELECT-only validator on its output. If your generator should only emit read-only SQL, call `validateSelectSql(spec, sql)` before returning. Tenant enforcement is different: when the schema has a tenant policy, `ask()` runs the tenant guardrail on the returned `sql` (and its `sql-unbound` block), with the `:tenant_<root>_ids` placeholders still in place, and then substitutes them, whatever the dialect. Under `strict`, SQL that fails the tenant check throws `TenantGuardrailError`; passing it doesn't prove the SQL is scoped. A custom `AskDialect` doesn't tell the guardrail how its engine quotes strings, so the statement must pass under the standard-SQL, Postgres (`E'…'` escape strings), and MySQL (where `"…"` is a string) readings: a tenant column written only as `"agency_id"` doesn't count as a predicate. The sensitive-identifier check runs on a custom dialect's SQL too, unless `sensitiveGuardrailMode` is `"off"`.
 
 Passing an unknown string dialect id throws `UnknownDialectError`, which extends `AskDbError`.
 
@@ -449,7 +514,7 @@ Access kinds:
 | `"ids"` | User can access specific root-entity ids. |
 | `"subtree"` | User can access a subtree rooted at specific ids, including descendant roots. Requires the `resolveTenantDescendants` option on `ask()`, which returns IDs per root; `ask()` expands the scope to `"multi_root"` before generation. |
 | `"multi_root"` | User has access across multiple tenant roots, each with their own id set. An entry's `ids` may be empty (a covered root with no IDs, which fails closed if read); at least one entry needs an ID. |
-| `"global"` | Super / admin access. Requires a `reason` string for audit. |
+| `"global"` | Super / admin access. Requires a `reason` string for audit. Binds no tenant IDs: SQL that still has a `:tenant_*` placeholder throws `TenantScopeError` (`UNRESOLVED_TENANT_PLACEHOLDER`), in `ask()` and at rebind. |
 
 ---
 

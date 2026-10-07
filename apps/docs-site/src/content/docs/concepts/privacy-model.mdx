@@ -45,7 +45,7 @@ The schema artifact lets you mark tables and columns as `sensitive: true`, eithe
 
 Either way, the *values* in those columns are never in the prompt — the flag is about the schema metadata, not the data.
 
-Both of those are **prompt-level**: they change what the model sees, not what can execute. SQL that reaches your database by another route — your own SQL cache, a stored or replayed statement, an artifact regenerated with the flags reset — is unaffected. For that, `@askdb/core` exports `validateSensitiveReferences(sql, schema)`, which reports the sensitive tables and columns a given statement references. `ask()` runs it for you and returns the result as `sensitiveGuardrail`; if you cache or replay SQL, call it on every execution path. See [Core API](/reference/core-api/#validatesensitivereferencessql-schema-options).
+Both of those are **prompt-level**: they change what the model sees, not what can execute. SQL that reaches your database by another route — your own SQL cache, a stored or replayed statement, an artifact regenerated with the flags reset — is unaffected. For that, `@askdb/core` exports `validateSensitiveReferences(sql, schema)`, which reports the sensitive tables and columns a given statement references. `ask()` runs it for you and returns the result as `sensitiveGuardrail`, and `bindPreparedQuery()` runs it again whenever you rebind a stored `preparedQuery`; if you cache or replay SQL any other way, call it on every execution path. See [Core API](/reference/core-api/#validatesensitivereferencessql-schema-options).
 
 ## Where logging lives
 
