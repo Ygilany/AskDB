@@ -264,6 +264,7 @@ export function createAskDb(options: CreateAskDbOptions): AskDbClient {
         dialect: dialectOverride,
         deps,
         reasoningEffort,
+        omitSensitiveIdentifiersFromNlToSqlPrompt,
         ...rest
       } = overrides;
       const schema = schemaOverride ? loadFromSource(schemaOverride, "request") : resolveDefaultSchema();
@@ -281,8 +282,15 @@ export function createAskDb(options: CreateAskDbOptions): AskDbClient {
             ? { ...deps, providerOptions: resolvedModel.providerOptions }
             : deps);
 
+      // Config `modes.omitSensitiveFromPrompt` is a floor: a per-call override can
+      // tighten it (true) but never loosen it (false) when the operator enabled it.
+      const omitSensitive =
+        omitSensitiveIdentifiersFromNlToSqlPrompt === true ||
+        config.modes?.omitSensitiveFromPrompt === true;
+
       return ask({
         ...rest,
+        ...(omitSensitive ? { omitSensitiveIdentifiersFromNlToSqlPrompt: true } : {}),
         question,
         schema,
         model: resolvedModel.model,

@@ -60,6 +60,8 @@ export type AskDialectGenerateOptions = {
   omitSensitiveIdentifiersFromNlToSqlPrompt?: boolean;
   generateText?: typeof defaultGenerateText;
   providerOptions?: Record<string, unknown>;
+  /** The caller's {@link AskPipelineOptions.abortSignal}. A custom dialect passes it to its model call. */
+  abortSignal?: AbortSignal;
   prebuiltDdl?: string;
   tenantPolicy?: import("./schema/v2/tenant-policy.js").NormalizedTenantPolicy;
   tenantScope?: TenantScope;
@@ -189,6 +191,13 @@ export type AskPipelineOptions = {
    */
   omitSensitiveIdentifiersFromNlToSqlPrompt?: boolean;
   deps?: AskGenerateDeps;
+  /**
+   * Cancels the NL→SQL model call (`generateText({ abortSignal })`), e.g.
+   * `AbortSignal.timeout(60_000)` for a per-request timeout. With a built-in dialect an
+   * aborted call rejects with `SqlGenerationError` (the abort reason is its `cause`). A
+   * custom {@link AskDialect} receives it in its `generate()` options and maps its own errors.
+   */
+  abortSignal?: AbortSignal;
   /** Optional structured logger (host-provided — e.g. `createAskDbLogger` wraps Pino). */
   logger?: AskDbLogger;
   /**
@@ -371,6 +380,7 @@ export async function ask(options: AskPipelineOptions): Promise<AskPipelineResul
       omitSensitiveIdentifiersFromNlToSqlPrompt: omitSensitive || undefined,
       generateText: options.deps?.generateText,
       providerOptions: options.deps?.providerOptions,
+      abortSignal: options.abortSignal,
       prebuiltDdl,
       tenantPolicy,
       tenantScope,

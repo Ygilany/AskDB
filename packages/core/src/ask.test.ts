@@ -121,6 +121,76 @@ describe("ask — providerOptions passthrough", () => {
   });
 });
 
+describe("ask — abortSignal", () => {
+  it("aborting the caller's controller aborts the model call and rejects with SqlGenerationError", async () => {
+    // Without a signal the model answers at once, so ask() only rejects if the
+    // caller's signal reached doGenerate and aborting it cancelled the call.
+    const doGenerate = vi.fn(async (opts: { abortSignal?: AbortSignal }) => {
+      const signal = opts.abortSignal;
+      if (signal) {
+        await new Promise<never>((_resolve, reject) => {
+          if (signal.aborted) reject(signal.reason);
+          signal.addEventListener("abort", () => reject(signal.reason), { once: true });
+        });
+      }
+      return {
+        content: [{ type: "text", text: "```sql\nSELECT 1\n```" }],
+        finishReason: { unified: "stop", raw: "stop" },
+        usage: {
+          inputTokens: { total: 1, noCache: 1, cacheRead: 0, cacheWrite: 0 },
+          outputTokens: { total: 1, text: 1, reasoning: 0 },
+        },
+        warnings: [],
+      };
+    });
+    const model = {
+      specificationVersion: "v3",
+      provider: "test",
+      modelId: "test",
+      supportedUrls: {},
+      doGenerate,
+      doStream: vi.fn(),
+    } as unknown as LanguageModel;
+    const controller = new AbortController();
+
+    const pending = ask({
+      question: "count users",
+      schema: minimalSchema,
+      model,
+      dialect: "postgres",
+      parameterize: false,
+      abortSignal: controller.signal,
+    });
+    await vi.waitFor(() => expect(doGenerate).toHaveBeenCalledTimes(1));
+    const reason = new Error("caller aborted");
+    controller.abort(reason);
+
+    await expect(pending).rejects.toMatchObject({ name: "SqlGenerationError", cause: reason });
+    expect(doGenerate.mock.calls[0]![0].abortSignal?.aborted).toBe(true);
+  });
+
+  it("passes abortSignal to a custom dialect's generate() options", async () => {
+    let seen: { abortSignal?: AbortSignal } | undefined;
+    const capturingDialect: AskDialect = {
+      async generate(_question, _schema, _model, options) {
+        seen = options;
+        return { sql: "SELECT COUNT(*) AS n FROM users" };
+      },
+    };
+    const controller = new AbortController();
+
+    await ask({
+      question: "count users",
+      schema: minimalSchema,
+      model: fakeModel,
+      dialect: capturingDialect,
+      abortSignal: controller.signal,
+    });
+
+    expect(seen?.abortSignal).toBe(controller.signal);
+  });
+});
+
 describe("ask — retriever wiring", () => {
   it("uses retrieved chunks to synthesize a focused DDL block for large v2 schemas", async () => {
     const schema = loadSchema(v2Dir);

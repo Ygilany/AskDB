@@ -69,7 +69,8 @@ All `AskPipelineOptions` fields can be overridden per call. In addition, `schema
 | `model` | `AskDbLanguageModel` | Override the default model for this call only. |
 | `dialect` | `AskDialectInput` | Override the dialect for this call only. |
 | `explain` | `boolean` | Include guardrail metadata in the result. |
-| `omitSensitiveIdentifiersFromNlToSqlPrompt` | `boolean` | Strip sensitive identifiers from the DDL prompt. |
+| `omitSensitiveIdentifiersFromNlToSqlPrompt` | `boolean` | Strip sensitive identifiers from the DDL prompt. Config `modes.omitSensitiveFromPrompt: true` is a floor: `true` here tightens a single call, but `false` can't loosen the config setting. |
+| `abortSignal` | `AbortSignal` | Core's [`ask()` option](/reference/core-api/#options), passed through: cancels the model call (`generateText({ abortSignal })`). Use `AbortSignal.timeout(ms)` to enforce a timeout. With a built-in dialect, an aborted call rejects with `SqlGenerationError`; a custom `AskDialect` receives it as `options.abortSignal` and maps its own errors. |
 | `mode` | `AskDbModeV1` | Trust boundary override. |
 | `tenantScope` | `TenantScope` | Required when the schema has a tenant policy. |
 | `tenantSqlMode` | `TenantSqlOutputMode` | `"sql-only"` or `"sql-params"`. |

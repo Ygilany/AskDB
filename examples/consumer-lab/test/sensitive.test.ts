@@ -20,9 +20,8 @@
  * `reference/client-api.mdx`, `reference/cli.mdx`, `reference/http-api.mdx`,
  * `reference/config.mdx`); the replay server and its request log are lab code.
  *
- * Known discrepancies, marked `it.fails`: `askdb-http` ignores config
- * `modes.omitSensitiveFromPrompt` (#376), and `ASKDB_OMIT_SENSITIVE_FROM_PROMPT` is never read
- * from the environment (#377).
+ * Known discrepancy, marked `it.fails`: `ASKDB_OMIT_SENSITIVE_FROM_PROMPT` is never read from
+ * the environment (#377).
  *
  * Needs the fixture (`pnpm fixture:up`) and an installed lab (`pnpm lab:use .`). Every
  * scenario needs `cli-introspect-engine`, and on MySQL and MariaDB `mysql-databases`, whose
@@ -554,8 +553,8 @@ async function expectOmittedKnown(run: () => Promise<boolean>): Promise<void> {
  * `modes.omitSensitiveFromPrompt: true` in `askdb.config.ts` (or pass
  * `--omit-sensitive-from-prompt`)"; `concepts/modes-and-dialects.mdx`), and over HTTP it is
  * the request field's default (`reference/http-api.mdx`: `omitSensitiveFromPrompt`, default
- * "env-driven"). The CLI honors it. `askdb-http` ignores it: a request without the field is
- * sent the sensitive columns, tagged (#376).
+ * `modes.omitSensitiveFromPrompt`). The CLI and `askdb-http` both honor it (`askdb-http` did
+ * not before #187: #376).
  * Catches: a deployment that sets the documented config switch and still sends the model its
  * sensitive column names, through the CLI or the HTTP API.
  * Not covered elsewhere: `sensitive-omit-cli` and `sensitive-omit-http` pass the switch per
@@ -570,13 +569,13 @@ describe("[postgres] sensitive-omit-config", () => {
     expectOmitted(prompt);
   });
 
-  it.fails("sensitive-omit-config: POST /ask without omitSensitiveFromPrompt, on a server whose config sets modes.omitSensitiveFromPrompt, sends a prompt without email and ssn (#376)", async (ctx) => {
+  it("sensitive-omit-config: POST /ask without omitSensitiveFromPrompt, on a server whose config sets modes.omitSensitiveFromPrompt, sends a prompt without email and ssn", async (ctx) => {
     needsSensitiveCapabilities(ctx, "postgres");
+    const http = await sensitiveHttpServer("omit-config", { cwd: omitConfigProject() });
 
-    await expectOmittedKnown(async () => {
-      const http = await sensitiveHttpServer("omit-config", { cwd: omitConfigProject() });
-      return (await postAsk(http, { question: question(CONTROL).text })).status === 200;
-    });
+    const prompt = await promptOf("postgres", CONTROL, async () => expect((await postAsk(http, { question: question(CONTROL).text })).status).toBe(200));
+
+    expectOmitted(prompt);
   });
 });
 
@@ -586,9 +585,8 @@ describe("[postgres] sensitive-omit-config", () => {
  * and `ASKDB_OMIT_SENSITIVE_FROM_PROMPT`. The variable is a flat key AskDB builds from
  * `askdb.config.ts`, never read from `process.env`, so setting it in the environment omits
  * nothing (#377; the same class of doc error as #282). Over HTTP, the request field's
- * "env-driven" default (`reference/http-api.mdx`) reads as this variable too; that case also
- * needs `askdb-http` to honor the runtime setting at all (#376), so it stays `known` until
- * both are fixed.
+ * "env-driven" default (`reference/http-api.mdx`) read as this variable too. `askdb-http` now
+ * honors the runtime setting (#376, fixed by #187), so the HTTP case is `known` for #377 only.
  * Catches: an operator who sets the documented variable and still sends the model its
  * sensitive column names, through the CLI or the HTTP API.
  * Not covered elsewhere: no other test sets the variable.
@@ -602,7 +600,7 @@ describe("[postgres] sensitive-omit-env", () => {
     await expectOmittedKnown(async () => (await cliAsk([], { env })).status === 0);
   });
 
-  it.fails("sensitive-omit-env: POST /ask without omitSensitiveFromPrompt, on a server started with ASKDB_OMIT_SENSITIVE_FROM_PROMPT=true, sends a prompt without email and ssn (#377) (#376)", async (ctx) => {
+  it.fails("sensitive-omit-env: POST /ask without omitSensitiveFromPrompt, on a server started with ASKDB_OMIT_SENSITIVE_FROM_PROMPT=true, sends a prompt without email and ssn (#377)", async (ctx) => {
     needsSensitiveCapabilities(ctx, "postgres");
 
     await expectOmittedKnown(async () => {

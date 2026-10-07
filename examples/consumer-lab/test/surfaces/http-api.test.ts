@@ -10,7 +10,9 @@
  *   `{ ok: false, correlationId, error: { code, message } }` and no `sql`: `not_found` 404,
  *   `bad_request` 400 (malformed JSON, missing `question`), `payload_too_large` 413 (one byte
  *   over the 1 MiB default `maxBodyBytes`, while a body of exactly 1 MiB is accepted),
- *   `schema_parse_error` 400 (inline `schemaJson`), `sql_validation_error` 400 (a write
+ *   `schema_override_disabled` 403 (inline `schemaJson` with overrides off, the default),
+ *   `schema_parse_error` 400 (inline `schemaJson` on a server that sets
+ *   `httpApi.allowSchemaOverride: true`), `sql_validation_error` 400 (a write
  *   statement from the model, with the core rule code), `sql_generation_error` 502 (the
  *   replay model refuses the call) and `generation_not_configured` 500 (a config with no
  *   API key).
@@ -19,10 +21,11 @@
  * - `http-health`: `GET /health` answers `200 { ok: true }`.
  * - `http-explain`: `explain: true` returns the guardrail metadata.
  * - `http-tenant-fail-closed`: a schema with `tenant-policy.md` served over HTTP, where the
- *   request has no scope field, fails closed: no SQL, and the model is never called
+ *   request has no scope field, fails closed with `500 internal_error`: no SQL, the model is
+ *   never called, and the server logs `TenantScopeError` under the correlation id
  *   (`docs/contracts/tenant-policy.md`: "`ask()` requires a valid `tenantScope`").
- * Catches: a packed server that maps an error to the wrong code or status (the model-call
- * failure already is, #299), drops the correlation id, lowers the body limit, picks the
+ * Catches: a packed server that maps an error to the wrong code or status (as the model-call
+ * failure did, #299), drops the correlation id, lowers the body limit, picks the
  * wrong dialect for an artifact, or returns SQL for a tenant-policy schema it can't scope.
  * Not covered elsewhere: `apps/http-api/src/server.integration.test.ts` runs workspace
  * source in-process with `createAskDbHttpServer`, never the packed bin, its config
@@ -33,11 +36,9 @@
  * model is the lab's replay server, reached through the documented `openai` provider's
  * `baseUrl`.
  *
- * Known discrepancies, marked `it.fails`: model-call failures answer 400 `bad_request`
- * (#299); `explain` is left out instead of `null` when not requested (#285); the
- * spec's `/ask` shapes (`docs/specs/http-api.md`) differ from the docs site's (#300).
- * Over HTTP a tenant-policy schema can only fail closed until the server accepts a scope
- * (#277), so that case asserts no status or code, which no document names.
+ * Known discrepancy, marked `it.fails`: `explain` is left out instead of `null` when not
+ * requested (#285). Over HTTP a tenant-policy schema can only fail closed until the server
+ * accepts a scope (#277).
  *
  * Needs the fixture (`pnpm fixture:up`) and an installed lab (`pnpm lab:use .`).
  */
@@ -211,8 +212,31 @@ describe("[postgres]", () => {
     expectSuccess(await postAsk(http, paddedBody(AGENCIES.text, MAX_BODY_BYTES)), cassetteSql("postgres", AGENCIES.id));
   });
 
-  it("http-schema-parse-error: an inline schemaJson that isn't JSON answers 400 schema_parse_error", async (ctx) => {
+  it("http-schema-override-disabled: an inline schemaJson answers 403 schema_override_disabled by default", async (ctx) => {
     const http = await labServer(ctx, "postgres");
+
+    expectError(await postAsk(http, { question: AGENCIES.text, schemaJson: '{"version":2,' }), 403, "schema_override_disabled");
+  });
+
+  it("http-schema-parse-error: with httpApi.allowSchemaOverride, an inline schemaJson that isn't JSON answers 400 schema_parse_error", async (ctx) => {
+    needsCapability(ctx, "cli-introspect-engine");
+    const http = await server("schema-override", () => {
+      const project = join(scratch, "schema-override");
+      mkdirSync(project);
+      writeFileSync(
+        join(project, "askdb.config.ts"),
+        `import { defineConfig } from "@askdb/config";
+
+export default defineConfig({
+  ai: { provider: "openai", providerConfig: { openai: { apiKey: "lab-replay-no-key" } } },
+  introspection: { provider: "postgres", providerConfig: { postgres: {} } },
+  rag: { embedder: "mock", embedderConfig: {}, store: "memory", storeConfig: { memory: {} } },
+  httpApi: { allowSchemaOverride: true },
+});
+`,
+      );
+      return { cwd: project, schemaPath: ensureArtifact("postgres") };
+    });
 
     expectError(await postAsk(http, { question: AGENCIES.text, schemaJson: '{"version":2,' }), 400, "schema_parse_error");
   });
@@ -228,7 +252,7 @@ describe("[postgres]", () => {
     expect(reply.body.error.rule).toBe("SQL_NOT_SELECT_OR_WITH");
   });
 
-  it.fails("http-generation-error: a failed model call answers 502 sql_generation_error (#299)", async (ctx) => {
+  it("http-generation-error: a failed model call answers 502 sql_generation_error (#299)", async (ctx) => {
     const http = await labServer(ctx, "postgres");
     const reply = await postAsk(http, { question: UNANSWERED });
 
@@ -291,16 +315,6 @@ export default defineConfig({
     expect((await postAsk(http, { question: AGENCIES.text })).body.explain).toBeNull();
   });
 
-  it.fails("http-spec-shape: POST /ask takes a body correlationId and answers { sql, warnings, correlationId }, as docs/specs/http-api.md says (#300)", async (ctx) => {
-    const http = await labServer(ctx, "postgres");
-    const id = `lab-spec-${randomUUID()}`;
-    const reply = await postAsk(http, { question: AGENCIES.text, correlationId: id });
-
-    expect(reply.status).toBe(200);
-    expect(reply.body.correlationId).toBe(id);
-    expect(reply.body.warnings).toEqual(expect.any(Array));
-  });
-
   it("http-tenant-fail-closed: a tenant-policy schema over HTTP, which has no scope field, returns no SQL and never calls the model", async (ctx) => {
     needsCapability(ctx, "cli-introspect-engine");
     const tenant = await server("tenant", () => {
@@ -331,11 +345,13 @@ Every order belongs to one agency.
       return { schemaPath: schema, env: { LAB_REPLAY_BASE_URL: replay.baseURL("postgres") } };
     });
     const before = modelCallsFor(AGENCIES.text).length;
-    const reply = await postAsk(tenant, { question: AGENCIES.text });
+    const id = `lab-tenant-${randomUUID()}`;
+    const reply = await postAsk(tenant, { question: AGENCIES.text }, { "x-correlation-id": id });
 
-    expect(reply.body).toMatchObject({ ok: false, error: { message: expect.stringMatching(/tenantScope/) } });
-    expect(reply.body).not.toHaveProperty("sql");
-    expect(reply.status).not.toBe(200);
+    // reference/http-api.mdx: the HTTP API can't supply a tenantScope, so ask() throws
+    // TenantScopeError, which answers a generic 500 and is logged under the correlation id.
+    expectError(reply, 500, "internal_error");
+    await expect.poll(() => tenant.output()).toMatch(new RegExp(`"correlationId":"${id}"[^\\n]*"errName":"TenantScopeError"`));
     expect(modelCallsFor(AGENCIES.text)).toHaveLength(before);
 
     // Control: the same artifact without the policy answers, and that call reaches the model.

@@ -52,6 +52,8 @@ export type GenerateSqlDeps = {
    * are unaffected.
    */
   providerOptions?: Record<string, unknown>;
+  /** Forwarded to the `generateText` call; an aborted call rejects with `SqlGenerationError`. */
+  abortSignal?: AbortSignal;
   /**
    * When true, ask the model for unbound SQL + parameter manifest and return
    * them as optional extras when valid. Forwarded from ask(); default decided there.
@@ -166,6 +168,7 @@ async function runGenerateSelectSql(
         ...(deps.providerOptions
           ? { providerOptions: deps.providerOptions as Parameters<typeof generateText>[0]["providerOptions"] }
           : {}),
+        ...(deps.abortSignal ? { abortSignal: deps.abortSignal } : {}),
       });
       text = result.text;
       const u = (result as {

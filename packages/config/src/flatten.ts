@@ -8,6 +8,7 @@ import {
   DEFAULT_MOCK_RAG_EMBEDDING_DIMENSIONS,
   DEFAULT_RAG_FILE_BASE_PATH,
   normalizePgvectorIndexStrategy,
+  parseHttpApiRequestTimeoutMs,
   parsePositiveInteger,
 } from "./defaults.js";
 import {
@@ -272,6 +273,17 @@ export function flattenNormalizedAskDbConfig(config: NormalizedAskDbConfig): Rec
   }
   if (httpListen?.host) {
     set(out, "HOST", httpListen.host);
+  }
+  const allowSchemaOverride = config.httpApi?.allowSchemaOverride;
+  if (allowSchemaOverride !== undefined) {
+    if (typeof allowSchemaOverride !== "boolean") {
+      throw new Error("askdb.config: httpApi.allowSchemaOverride must be a boolean.");
+    }
+    if (allowSchemaOverride) set(out, "ASKDB_HTTP_ALLOW_SCHEMA_OVERRIDE", "true");
+  }
+  const requestTimeoutMs = parseHttpApiRequestTimeoutMs(config.httpApi?.requestTimeoutMs, "httpApi.requestTimeoutMs");
+  if (requestTimeoutMs !== undefined) {
+    set(out, "ASKDB_HTTP_REQUEST_TIMEOUT_MS", String(requestTimeoutMs));
   }
 
   return out;

@@ -1565,3 +1565,91 @@ describe("bootstrapAskDbEnv", () => {
     }
   });
 });
+
+describe("getAskDbRuntimeConfig — httpApi", () => {
+  afterEach(() => resetAskDbRuntimeForTests());
+
+  function install(httpApi: AskDbConfig["httpApi"]): void {
+    const structured = minimalConfig(httpApi ? { httpApi } : {});
+    setAskDbRuntimeForTests({ structured, flat: flattenAskDbConfig(structured) });
+  }
+
+  it("defaults allowSchemaOverride to false and requestTimeoutMs to 60000", () => {
+    install(undefined);
+    const rt = getAskDbRuntimeConfig();
+    expect(rt.httpApi.allowSchemaOverride).toBe(false);
+    expect(rt.httpApi.requestTimeoutMs).toBe(60_000);
+  });
+
+  it("reads allowSchemaOverride and requestTimeoutMs from the structured config", () => {
+    install({ allowSchemaOverride: true, requestTimeoutMs: 1500 });
+    const rt = getAskDbRuntimeConfig();
+    expect(rt.httpApi.allowSchemaOverride).toBe(true);
+    expect(rt.httpApi.requestTimeoutMs).toBe(1500);
+    expect(rt.flat["ASKDB_HTTP_ALLOW_SCHEMA_OVERRIDE"]).toBe("true");
+    expect(rt.flat["ASKDB_HTTP_REQUEST_TIMEOUT_MS"]).toBe("1500");
+  });
+
+  // A JavaScript config isn't type-checked, and the string "false" is truthy.
+  it("rejects a non-boolean allowSchemaOverride at flatten time", () => {
+    for (const allowSchemaOverride of ["false", "true", 1, 0]) {
+      expect(() =>
+        flattenAskDbConfig(minimalConfig({ httpApi: { allowSchemaOverride } as unknown as AskDbConfig["httpApi"] })),
+      ).toThrow(/httpApi\.allowSchemaOverride must be a boolean/);
+    }
+  });
+
+  it("keeps schema overrides off for a non-boolean structured allowSchemaOverride that skipped flattening", () => {
+    const structured = minimalConfig({ httpApi: { allowSchemaOverride: "false" } as unknown as AskDbConfig["httpApi"] });
+    setAskDbRuntimeForTests({ structured, flat: flattenAskDbConfig(minimalConfig({})) });
+    expect(getAskDbRuntimeConfig().httpApi.allowSchemaOverride).toBe(false);
+  });
+
+  it("rejects a non-positive requestTimeoutMs at flatten time", () => {
+    expect(() => flattenAskDbConfig(minimalConfig({ httpApi: { requestTimeoutMs: 0 } }))).toThrow(
+      /httpApi\.requestTimeoutMs/,
+    );
+  });
+
+  // A JavaScript config isn't type-checked; these used to throw a bare TypeError from `.trim()`.
+  it("rejects a requestTimeoutMs that is neither a number nor a string with an error naming the key", () => {
+    for (const requestTimeoutMs of [true, null, {}]) {
+      expect(() =>
+        flattenAskDbConfig(minimalConfig({ httpApi: { requestTimeoutMs } as unknown as AskDbConfig["httpApi"] })),
+      ).toThrow(/askdb\.config: invalid httpApi\.requestTimeoutMs/);
+    }
+  });
+
+  // Node timers cap at 2^31 - 1 ms: a larger AbortSignal.timeout() fires after ~1 ms
+  // (or throws ERR_OUT_OF_RANGE past 2^32 - 1), so every request would fail.
+  it("accepts requestTimeoutMs up to the Node timer maximum and rejects anything larger at flatten time", () => {
+    expect(flattenAskDbConfig(minimalConfig({ httpApi: { requestTimeoutMs: 2_147_483_647 } }))["ASKDB_HTTP_REQUEST_TIMEOUT_MS"]).toBe(
+      "2147483647",
+    );
+    for (const requestTimeoutMs of [2_147_483_648, 3e9, 5e9]) {
+      expect(() => flattenAskDbConfig(minimalConfig({ httpApi: { requestTimeoutMs } }))).toThrow(
+        /httpApi\.requestTimeoutMs.*at most 2147483647/,
+      );
+    }
+  });
+
+  it("reads allowSchemaOverride and requestTimeoutMs from the flat keys when the structured config leaves them out", () => {
+    const structured = minimalConfig({});
+    setAskDbRuntimeForTests({
+      structured,
+      flat: { ...flattenAskDbConfig(structured), ASKDB_HTTP_ALLOW_SCHEMA_OVERRIDE: "true", ASKDB_HTTP_REQUEST_TIMEOUT_MS: "1500" },
+    });
+    const rt = getAskDbRuntimeConfig();
+    expect(rt.httpApi.allowSchemaOverride).toBe(true);
+    expect(rt.httpApi.requestTimeoutMs).toBe(1500);
+  });
+
+  it("rejects an out-of-range ASKDB_HTTP_REQUEST_TIMEOUT_MS in the flat fallback", () => {
+    const structured = minimalConfig({});
+    setAskDbRuntimeForTests({
+      structured,
+      flat: { ...flattenAskDbConfig(structured), ASKDB_HTTP_REQUEST_TIMEOUT_MS: "3000000000" },
+    });
+    expect(() => getAskDbRuntimeConfig()).toThrow(/ASKDB_HTTP_REQUEST_TIMEOUT_MS.*at most 2147483647/);
+  });
+});

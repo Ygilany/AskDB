@@ -2,9 +2,11 @@ import type { AskDbDialectId, AskDbIntrospectionProvider, AskDbStudioExecuteProv
 import { ASKDB_STUDIO_EXECUTE_PROVIDERS } from "./constants.js";
 import type { AskDbConfig } from "./types.js";
 import {
+  DEFAULT_HTTP_API_REQUEST_TIMEOUT_MS,
   DEFAULT_INTROSPECT_OUTPUT_DIR,
   DEFAULT_STUDIO_EXECUTE_MAX_ROWS,
   DEFAULT_STUDIO_EXECUTE_TIMEOUT_MS,
+  parseHttpApiRequestTimeoutMs,
   parsePositiveInteger,
 } from "./defaults.js";
 import { aiEmbeddingEnv, aiLanguageEnv } from "./flatten.js";
@@ -76,6 +78,10 @@ export type AskDbRuntimeHttpApiConfig = {
     port: number;
     host: string;
   };
+  /** Whether `POST /ask` accepts a per-request `schemaJson` override. Default `false`. */
+  allowSchemaOverride: boolean;
+  /** Model-call timeout per `POST /ask` request, in milliseconds (1 to 2147483647). Default `60000`. */
+  requestTimeoutMs: number;
 };
 
 export type AskDbRuntimeIntrospectionConfig = {
@@ -186,6 +192,10 @@ export type AskDbRuntimeConfig = {
   deprecations: readonly string[];
 };
 
+function isTruthyFlag(raw: string | undefined): boolean {
+  return raw !== undefined && ["1", "true", "yes"].includes(raw.toLowerCase());
+}
+
 /** Normalization is pure, so it runs once per installed config object. */
 const normalizedByConfig = new WeakMap<object, ReturnType<typeof normalizeAskDbConfig>>();
 
@@ -231,7 +241,7 @@ export function getAskDbRuntimeConfig(): AskDbRuntimeConfig {
   const openaiEmbedding = embedding?.provider === "openai" ? embedding : undefined;
 
   const logStdoutRaw = pickFlat(flat, "ASKDB_LOG_STDOUT");
-  const logStdout = logStdoutRaw !== undefined && ["1", "true", "yes"].includes(logStdoutRaw.toLowerCase());
+  const logStdout = isTruthyFlag(logStdoutRaw);
 
   const portRaw = pickFlat(flat, "PORT");
   const portParsed = portRaw !== undefined ? Number(portRaw) : NaN;
@@ -241,8 +251,7 @@ export function getAskDbRuntimeConfig(): AskDbRuntimeConfig {
   const host = structured.httpApi?.listen?.host ?? pickFlat(flat, "HOST") ?? "127.0.0.1";
 
   const omitRaw = pickFlat(flat, "ASKDB_OMIT_SENSITIVE_FROM_PROMPT");
-  const omitFromFlat =
-    omitRaw !== undefined && ["1", "true", "yes"].includes(omitRaw.toLowerCase());
+  const omitFromFlat = isTruthyFlag(omitRaw);
 
   const prismaSchemaPathRaw =
     structured.introspection.provider === "prisma"
@@ -318,6 +327,16 @@ export function getAskDbRuntimeConfig(): AskDbRuntimeConfig {
     },
     httpApi: {
       listen: { port, host },
+      // Only a real boolean counts: flattening rejects anything else, so a store installed
+      // without it falls back to the flat key, which is set only for `true`.
+      allowSchemaOverride:
+        typeof structured.httpApi?.allowSchemaOverride === "boolean"
+          ? structured.httpApi.allowSchemaOverride
+          : isTruthyFlag(pickFlat(flat, "ASKDB_HTTP_ALLOW_SCHEMA_OVERRIDE")),
+      requestTimeoutMs:
+        parseHttpApiRequestTimeoutMs(structured.httpApi?.requestTimeoutMs, "httpApi.requestTimeoutMs") ??
+        parseHttpApiRequestTimeoutMs(pickFlat(flat, "ASKDB_HTTP_REQUEST_TIMEOUT_MS"), "ASKDB_HTTP_REQUEST_TIMEOUT_MS") ??
+        DEFAULT_HTTP_API_REQUEST_TIMEOUT_MS,
     },
     dev: {
       mockSql: structured.dev?.mockSql ?? pickFlat(flat, "ASKDB_MOCK_SQL"),

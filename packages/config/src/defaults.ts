@@ -16,6 +16,13 @@ export const DEFAULT_GATEWAY_LANGUAGE_MODEL = "openai/gpt-4o-mini";
 /** @deprecated Use DEFAULT_GATEWAY_LANGUAGE_MODEL. Removed at 1.0. */
 export const DEFAULT_GATEWAY_CHAT_MODEL = DEFAULT_GATEWAY_LANGUAGE_MODEL;
 export const DEFAULT_INTROSPECT_OUTPUT_DIR = "./askdb/";
+/** Default model-call timeout for `@askdb/http-api` `POST /ask` (`httpApi.requestTimeoutMs`). */
+export const DEFAULT_HTTP_API_REQUEST_TIMEOUT_MS = 60_000;
+/**
+ * Largest `httpApi.requestTimeoutMs`: the Node timer maximum (2^31 - 1 ms, about 24.8 days).
+ * A larger `AbortSignal.timeout()` fires after 1 ms, or throws `ERR_OUT_OF_RANGE` past 2^32 - 1.
+ */
+export const MAX_HTTP_API_REQUEST_TIMEOUT_MS = 2_147_483_647;
 export const DEFAULT_LOCAL_POSTGRES_URL = "postgres://postgres:postgres@127.0.0.1:5432/postgres";
 /**
  * @deprecated AskDB has no default embedding model: set `ai.embedding.model`. This is only the
@@ -54,6 +61,23 @@ export function parsePositiveInteger(value: string | number | undefined): number
   if (t === "") return undefined;
   const n = Number(t);
   if (!Number.isInteger(n) || n <= 0) return undefined;
+  return n;
+}
+
+/**
+ * Parse `httpApi.requestTimeoutMs` (or its flat key `ASKDB_HTTP_REQUEST_TIMEOUT_MS`).
+ * Returns `undefined` when unset; throws naming `source` unless the value is a positive
+ * integer no larger than {@link MAX_HTTP_API_REQUEST_TIMEOUT_MS}.
+ */
+export function parseHttpApiRequestTimeoutMs(value: string | number | undefined, source: string): number | undefined {
+  if (value === undefined) return undefined;
+  // A JavaScript config can pass any type; only numbers and numeric strings are parsed.
+  const n = typeof value === "number" || typeof value === "string" ? parsePositiveInteger(value) : undefined;
+  if (n === undefined || n > MAX_HTTP_API_REQUEST_TIMEOUT_MS) {
+    throw new Error(
+      `askdb.config: invalid ${source} ${JSON.stringify(value)} (expected a positive integer number of milliseconds, at most ${MAX_HTTP_API_REQUEST_TIMEOUT_MS}).`,
+    );
+  }
   return n;
 }
 
