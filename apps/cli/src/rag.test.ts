@@ -430,6 +430,13 @@ describe("askdb rag", () => {
       expect(existsSync(`${flagPath}.embeddings.json`)).toBe(true);
     });
 
+    it("a memory store configured without rag.storeConfig indexes", async () => {
+      // AskDbConfig types storeConfig as required, but config load accepts a memory store without it.
+      installRuntime({ ...BASE_CONFIG, rag: { embedder: "mock", store: "memory" } as AskDbConfig["rag"] });
+      expect(await runRagCli(["index", copyFixture()])).toBe(0);
+      expect(JSON.parse(stdout.join(""))).toMatchObject({ schemaId: "orders-users" });
+    });
+
     it("pgvector settings come from rag.storeConfig.pgvector, and flags win", async () => {
       installRuntime({
         ...BASE_CONFIG,

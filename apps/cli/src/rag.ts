@@ -412,7 +412,8 @@ type ConfiguredStore = {
  * is configured.
  */
 function readConfiguredStore(runtimeConfig: AskDbRuntimeConfig): ConfiguredStore {
-  const { store, storeConfig } = runtimeConfig.structured.rag;
+  // Typed as required, but config load accepts a memory store without it.
+  const { store, storeConfig = {} } = runtimeConfig.structured.rag;
   return {
     kind: store,
     fileBasePath: trimmed(storeConfig.file?.basePath),
