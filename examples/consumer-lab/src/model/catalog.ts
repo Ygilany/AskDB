@@ -34,6 +34,15 @@ export function findQuestion(id: string, questions = loadQuestions()): Question 
   return questions.find((q) => q.id === id);
 }
 
+/**
+ * The id of the catalog question whose text this is (ignoring surrounding whitespace), or
+ * undefined for any other text: how `lab ask` and `lab ui` tell a catalog question, which has
+ * an oracle, from free text.
+ */
+export function catalogQuestionId(text: string, questions = loadQuestions()): string | undefined {
+  return questions.find((q) => q.text === text.trim())?.id;
+}
+
 export function cassettePath(dialect: string, questionId: string, dir = CASSETTES_DIR): string {
   return join(dir, dialect, `${questionId}.json`);
 }

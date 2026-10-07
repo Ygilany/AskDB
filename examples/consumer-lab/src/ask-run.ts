@@ -30,7 +30,7 @@ import { ensureArtifactAsync, requireInstallTarget } from "./artifacts.js";
 import type { SupportedDialect } from "./dialects.js";
 import { gradeCatalogAnswer, type Verdict } from "./grade.js";
 import { executeReadOnly, HostUnreachableError, type ExecuteResult } from "./host/execute.js";
-import { loadQuestions } from "./model/catalog.js";
+import { catalogQuestionId } from "./model/catalog.js";
 import { redact, type LiveSettings } from "./model/live.js";
 import { startReplayServer, type ReplayServer } from "./model/replay-server.js";
 import { LAB_ROOT } from "./paths.js";
@@ -180,7 +180,7 @@ export async function askAndRun(dialect: SupportedDialect, input: AskInput, { on
     return copy;
   };
   // A live answer to a catalog question is graded against its oracle.
-  const questionId = live ? loadQuestions().find((q) => q.text === question.trim())?.id : undefined;
+  const questionId = live ? catalogQuestionId(question) : undefined;
   const grade = async (answer: Settled): Promise<Verdict | undefined> => {
     if (!questionId) {
       out("oracle:     none (not a catalog question)");
