@@ -12,35 +12,43 @@
 // Comments, string literals, template literals, and regex literals are blanked before
 // matching, so text that merely mentions a gate does not trip the check.
 //
-// Allowed: a plain skipped test called directly, e.g. `it.skip("…", fn)`, `it.skip.each(…)(…)`.
-// Rejected: see RULES. To exempt one line, put this comment on the line above it, with a reason:
+// Allowed: a plain skipped test called directly, e.g. `it.skip("…", fn)`, `it.skip.each(…)(…)`,
+// and tests defined in a loop (`for (const c of cases) it(…)`), which is parametrization.
+// Rejected: see RULES, including a describe/suite/it/test call made only under a condition
+// (`if (…)`, `else`, `? :`, `&&`, `||`). To exempt one line, put a line comment on the line above
+// it with a non-empty reason; the marker inside a string or with no reason exempts nothing:
 //   // check-test-gating-ignore-next-line: <reason>
 //
+// Known limits: a conditional call is caught only as the first statement of its `if`/`else`
+// block; an early `return` before a call, a gate behind a helper or alias (`const d = describe`),
+// and `ctx.skip()` inside a test body are not detected.
+//
 // Usage: node scripts/check-test-gating.mjs [repo-root]
-import { readdirSync, readFileSync, existsSync } from "node:fs";
+import { readdirSync, readFileSync, existsSync, realpathSync } from "node:fs";
 import { join, relative } from "node:path";
-import { fileURLToPath, pathToFileURL } from "node:url";
+import { fileURLToPath } from "node:url";
 
 // Not a member access (`obj.test`), not part of a longer identifier (`describeThing`).
-const FN = String.raw`(?<![\w$.])`;
-const CHAIN = String.raw`(?:\s*\.\s*\w+)*?`;
+const NOT_MEMBER = String.raw`(?<![\w$.])`;
+// Zero or more `.modifier` links after the test function, e.g. `.concurrent.skip`.
+const MODIFIER_CHAIN = String.raw`(?:\s*\.\s*\w+)*?`;
 
 export const RULES = [
   {
     id: "suite-gate",
-    re: new RegExp(String.raw`${FN}(?:describe|suite)${CHAIN}\s*\.\s*(?:skip|skipIf|runIf)\b`, "g"),
+    re: new RegExp(String.raw`${NOT_MEMBER}(?:describe|suite)${MODIFIER_CHAIN}\s*\.\s*(?:skip|skipIf|runIf)\b`, "g"),
     why: "gates a suite by hand; use integrationSuite()",
   },
   {
     id: "test-gate",
-    re: new RegExp(String.raw`${FN}(?:it|test)${CHAIN}\s*\.\s*(?:skipIf|runIf)\b`, "g"),
+    re: new RegExp(String.raw`${NOT_MEMBER}(?:it|test)${MODIFIER_CHAIN}\s*\.\s*(?:skipIf|runIf)\b`, "g"),
     why: "gates a test by hand; use integrationSuite() around the suite",
   },
   {
     // `.skip` that is never invoked is being passed around as a value: a gate expression.
     id: "skip-as-value",
     re: new RegExp(
-      String.raw`${FN}(?:it|test)${CHAIN}\s*\.\s*skip\b(?!(?:\s*\.\s*\w+)*\s*[(\x60])`,
+      String.raw`${NOT_MEMBER}(?:it|test)${MODIFIER_CHAIN}\s*\.\s*skip\b(?!(?:\s*\.\s*\w+)*\s*[(\x60])`,
       "g",
     ),
     why: "uses it.skip/test.skip as a gate expression; use integrationSuite()",
@@ -50,9 +58,19 @@ export const RULES = [
     re: /\?\s*(?:describe|suite|it|test)\b(?:\s*\.\s*\w+)*\s*:/g,
     why: "selects describe/suite/it/test with a ternary; use integrationSuite()",
   },
+  {
+    // A describe/suite/it/test call that only runs when a condition holds.
+    id: "conditional-call",
+    find: findConditionalCalls,
+    why: "defines a suite or test only under a condition; use integrationSuite()",
+  },
 ];
 
-const PRAGMA = /\/\/\s*check-test-gating-ignore-next-line\b/;
+const PRAGMA = /^\/\/\s*check-test-gating-ignore-next-line\s*:\s*\S/;
+const TEST_CALL = new RegExp(
+  String.raw`${NOT_MEMBER}(?:describe|suite|it|test)${MODIFIER_CHAIN}\s*[(\x60]`,
+  "g",
+);
 
 const REGEX_AFTER_WORD = new Set([
   "return", "typeof", "case", "do", "else", "in", "of", "new", "delete", "void", "throw",
@@ -62,9 +80,11 @@ const REGEX_AFTER_WORD = new Set([
 /**
  * Replace the contents of comments, string, template, and regex literals with spaces,
  * keeping newlines (so line numbers survive) and code inside `${…}` template expressions.
+ * When `lineComments` is given, the [start, end) range of each `//` comment is pushed to it.
  * @param {string} src
+ * @param {[number, number][]} [lineComments]
  */
-export function blankNonCode(src) {
+function blankNonCode(src, lineComments) {
   const out = src.split("");
   const n = src.length;
   const blank = (a, b) => {
@@ -90,6 +110,7 @@ export function blankNonCode(src) {
     if (c === "/" && d === "/") {
       const e = src.indexOf("\n", i);
       const end = e === -1 ? n : e;
+      lineComments?.push([i, end]);
       blank(i, end);
       i = end;
       continue;
@@ -155,22 +176,72 @@ export function blankNonCode(src) {
 }
 
 /**
+ * The token that ends right before `end` in blanked code: a word, `&&`, `||`, or one character.
+ * @param {string} code
+ * @param {number} end
+ */
+function tokenBefore(code, end) {
+  let j = end - 1;
+  while (j >= 0 && /\s/.test(code[j])) j--;
+  if (j < 0) return { tok: "", start: 0 };
+  if (/[\w$]/.test(code[j])) {
+    let k = j;
+    while (k > 0 && /[\w$]/.test(code[k - 1])) k--;
+    return { tok: code.slice(k, j + 1), start: k };
+  }
+  if ((code[j] === "&" || code[j] === "|") && code[j - 1] === code[j]) {
+    return { tok: code[j] + code[j], start: j - 1 };
+  }
+  return { tok: code[j], start: j };
+}
+
+/** Index of the `(` matching the `)` at `close`, or -1. */
+function openParen(code, close) {
+  let depth = 0;
+  for (let k = close; k >= 0; k--) {
+    if (code[k] === ")") depth++;
+    else if (code[k] === "(" && --depth === 0) return k;
+  }
+  return -1;
+}
+
+/**
+ * Indexes of describe/suite/it/test calls that run only under a condition: right after
+ * `?`, `:`, `&&`, `||`, `else`, or an `if (…)` header, directly or as the first statement
+ * of a `{` block. Loops are not conditions.
+ * @param {string} code blanked source
+ */
+function findConditionalCalls(code) {
+  const found = [];
+  for (const m of code.matchAll(TEST_CALL)) {
+    let prev = tokenBefore(code, m.index);
+    if (prev.tok === "{") prev = tokenBefore(code, prev.start);
+    const conditional =
+      ["?", ":", "&&", "||", "else"].includes(prev.tok) ||
+      (prev.tok === ")" && tokenBefore(code, openParen(code, prev.start)).tok === "if");
+    if (conditional) found.push(m.index);
+  }
+  return found;
+}
+
+/**
  * Hand-rolled gates in one test file's source, one per line, under the first rule that matched.
  * @param {string} src
  * @returns {{ line: number; rule: string; why: string }[]}
  */
 export function findGates(src) {
-  const code = blankNonCode(src);
-  const lines = src.split("\n");
+  const lineComments = [];
+  const code = blankNonCode(src, lineComments);
+  const lineOf = (index) => code.slice(0, index).split("\n").length;
   const ignored = new Set();
-  lines.forEach((text, i) => {
-    if (PRAGMA.test(text)) ignored.add(i + 2); // 1-based number of the next line
-  });
+  for (const [start, end] of lineComments) {
+    if (PRAGMA.test(src.slice(start, end))) ignored.add(lineOf(start) + 1);
+  }
   const flagged = new Map();
   for (const rule of RULES) {
-    rule.re.lastIndex = 0;
-    for (const m of code.matchAll(rule.re)) {
-      const line = code.slice(0, m.index).split("\n").length;
+    const indexes = rule.find ? rule.find(code) : [...code.matchAll(rule.re)].map((m) => m.index);
+    for (const index of indexes) {
+      const line = lineOf(index);
       if (!ignored.has(line) && !flagged.has(line)) flagged.set(line, rule);
     }
   }
@@ -181,19 +252,22 @@ export function findGates(src) {
 
 /**
  * Workspace package directories from pnpm-workspace.yaml's `packages:` list.
- * Supports literal paths, a trailing `/*`, and `!` exclusions.
+ * Supports literal paths, a trailing `/*`, and `!` exclusions; anything else throws, so the
+ * check fails closed rather than skipping a package. Parsed here rather than asking
+ * `pnpm -r ls` so the check needs no pnpm process and no install.
  * @param {string} root
  */
-export function workspaceDirs(root) {
+function workspaceDirs(root) {
   const yaml = readFileSync(join(root, "pnpm-workspace.yaml"), "utf8").split("\n");
   const start = yaml.findIndex((l) => /^packages:\s*$/.test(l));
   if (start === -1) throw new Error("pnpm-workspace.yaml has no `packages:` list");
   const include = [];
   const exclude = new Set();
   for (const raw of yaml.slice(start + 1)) {
-    if (/^\S/.test(raw)) break; // next top-level key
+    if (/^\s*(?:#.*)?$/.test(raw)) continue; // blank or comment line, at any indent
+    if (/^[A-Za-z_][\w-]*\s*:/.test(raw)) break; // next top-level key
     const m = raw.match(/^\s*-\s*["']?([^"'#]+?)["']?\s*(?:#.*)?$/);
-    if (!m) continue; // blank or comment line
+    if (!m) throw new Error(`unrecognized line in the \`packages:\` list: ${JSON.stringify(raw)}`);
     const pattern = m[1];
     if (pattern.startsWith("!")) exclude.add(pattern.slice(1));
     else include.push(pattern);
@@ -266,4 +340,6 @@ function main() {
   console.log(`check-test-gating: OK (${scanned} test files in ${dirs.length} workspace packages, no hand-rolled gates)`);
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) main();
+// Compare real paths: Node resolves import.meta.url through symlinks, but argv[1] keeps the typed path.
+const invokedPath = process.argv[1] && existsSync(process.argv[1]) ? realpathSync(process.argv[1]) : "";
+if (invokedPath === fileURLToPath(import.meta.url)) main();

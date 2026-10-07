@@ -5,3 +5,4 @@ const d = ok ? /* gated */ test : noop; // HIT
 const e = hasDriver
   ? describe // HIT
   : noop;
+const f = `${ok ? describe : noop}`; // HIT

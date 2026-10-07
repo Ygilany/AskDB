@@ -4,7 +4,7 @@
 // lines marked `// HIT`, all under <rule>; every *.clean.ts must report nothing.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, mkdirSync, readdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { spawnSync } from "node:child_process";
@@ -44,12 +44,14 @@ for (const file of files) {
   }
 }
 
-function workspace(testFiles) {
+const DEFAULT_YAML =
+  'packages:\n  - "packages/*"\n  # comment\n  - "!packages/excluded"\n  - "fixtures/db"\nother: 1\n';
+
+/** A temp workspace removed after the test `t` finishes. */
+function workspace(t, testFiles, yaml = DEFAULT_YAML) {
   const root = mkdtempSync(join(tmpdir(), "check-test-gating-"));
-  writeFileSync(
-    join(root, "pnpm-workspace.yaml"),
-    'packages:\n  - "packages/*"\n  # comment\n  - "!packages/excluded"\n  - "fixtures/db"\nother: 1\n',
-  );
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  writeFileSync(join(root, "pnpm-workspace.yaml"), yaml);
   for (const [path, body] of Object.entries(testFiles)) {
     mkdirSync(join(root, path, ".."), { recursive: true });
     writeFileSync(join(root, path), body);
@@ -57,44 +59,61 @@ function workspace(testFiles) {
   return root;
 }
 
-function run(root) {
-  return spawnSync(process.execPath, [script, root], { encoding: "utf8" });
+function run(root, scriptPath = script) {
+  return spawnSync(process.execPath, [scriptPath, root], { encoding: "utf8" });
 }
 
-test("CLI scans every workspace package (not just src/) and skips excluded ones", () => {
-  const root = workspace({
+test("CLI scans every workspace package (not just src/) and skips excluded ones", (t) => {
+  const root = workspace(t, {
     "packages/a/src/a.test.ts": 'it("ok", () => {});\n',
     "packages/excluded/src/x.test.ts": 'describe.skip("excluded package", () => {});\n',
     "packages/a/node_modules/dep/y.test.ts": 'describe.skip("dependency", () => {});\n',
     "fixtures/db/test/db.integration.test.ts": 'describe.skip("outside src", () => {});\n',
   });
-  try {
-    const result = run(root);
-    assert.equal(result.status, 1);
-    assert.match(result.stderr, /fixtures\/db\/test\/db\.integration\.test\.ts:1:/);
-    assert.doesNotMatch(result.stderr, /excluded|node_modules/);
-  } finally {
-    rmSync(root, { recursive: true, force: true });
-  }
+  const result = run(root);
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /fixtures\/db\/test\/db\.integration\.test\.ts:1:/);
+  assert.doesNotMatch(result.stderr, /excluded|node_modules/);
 });
 
-test("CLI passes a clean workspace", () => {
-  const root = workspace({ "packages/a/src/a.test.ts": 'it("ok", () => {});\n' });
-  try {
-    const result = run(root);
-    assert.equal(result.status, 0, result.stderr);
-    assert.match(result.stdout, /OK \(1 test files/);
-  } finally {
-    rmSync(root, { recursive: true, force: true });
-  }
+test("CLI keeps reading the packages list past a column-0 comment", (t) => {
+  const root = workspace(
+    t,
+    {
+      "packages/a/src/a.test.ts": 'it("ok", () => {});\n',
+      "fixtures/db/test/db.test.ts": 'describe.skip("db", () => {});\n',
+    },
+    'packages:\n  - "packages/*"\n# Shared fixture\n  - "fixtures/db"\n',
+  );
+  const result = run(root);
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /fixtures\/db\/test\/db\.test\.ts:1:/);
 });
 
-test("CLI fails closed when it finds no test files or no workspace", () => {
-  const empty = workspace({});
-  try {
-    assert.equal(run(empty).status, 1);
-  } finally {
-    rmSync(empty, { recursive: true, force: true });
-  }
+test("CLI fails closed on a packages line it cannot read", (t) => {
+  const root = workspace(t, { "packages/a/src/a.test.ts": 'it("ok", () => {});\n' }, "packages:\n  packages/a\n");
+  const result = run(root);
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /unrecognized line/);
+});
+
+test("CLI runs when invoked through a symlinked path", (t) => {
+  const root = workspace(t, { "packages/a/src/a.test.ts": 'describe.skip("gated", () => {});\n' });
+  const link = join(root, "linked-check.mjs");
+  symlinkSync(script, link);
+  const result = run(root, link);
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /packages\/a\/src\/a\.test\.ts:1:/);
+});
+
+test("CLI passes a clean workspace", (t) => {
+  const root = workspace(t, { "packages/a/src/a.test.ts": 'it("ok", () => {});\n' });
+  const result = run(root);
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stdout, /OK \(1 test files/);
+});
+
+test("CLI fails closed when it finds no test files or no workspace", (t) => {
+  assert.equal(run(workspace(t, {})).status, 1);
   assert.equal(run(join(tmpdir(), "check-test-gating-does-not-exist")).status, 1);
 });
