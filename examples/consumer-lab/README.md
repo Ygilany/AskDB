@@ -97,7 +97,7 @@ It prints what a replay run prints, except that the `model:` line names the live
 | Exit | When |
 |---|---|
 | 0 | AskDB accepted the SQL and it ran, the oracle's miss included: a miss is model quality |
-| 1 | AskDB rejected the SQL; a guarantee violation (SQL AskDB accepted that the host refused as a write); or the model call failed (a bad key, a quota, an outage), printed as `model call failed: …` |
+| 1 | AskDB rejected the SQL; the engine refused SQL AskDB accepted, printed as `execution: refused — …` and graded (a miss such as `SQL error: …`, or a guarantee violation when the host refused it as a write); or the model call failed (a bad key, a quota, an outage), printed as `model call failed: …` |
 | 2 | Refused before anything runs: a CI run (`CI` or `GITHUB_ACTIONS` set, before any key is read), no key, a `--model` other than `replay` or `live`, or `--model live` with `--sql`, which calls no model. It never falls back to the replay model |
 
 The schema artifact comes from the installed `askdb introspect`, run as the read-only role, and is cached per install target under `.lab/artifacts/`. MySQL and MariaDB are introspected with `--schemas org,people,billing,ref` (one database per logical schema); MariaDB uses the `mysql` engine. SQLite has no URL, so the lab writes a config with `introspection.providerConfig.sqlite.file` into a fresh scratch directory under `.lab/` and introspects from there, as `guides/switch-engines` documents.

@@ -29,7 +29,7 @@ import { askFixedSql, askRaw, askWithModel, liveModel, useLiveConfig, type AskRe
 import { ensureArtifactAsync, requireInstallTarget } from "./artifacts.js";
 import type { SupportedDialect } from "./dialects.js";
 import { gradeCatalogAnswer, type Verdict } from "./grade.js";
-import { executeReadOnly, type ExecuteResult } from "./host/execute.js";
+import { executeReadOnly, HostUnreachableError, type ExecuteResult } from "./host/execute.js";
 import { loadQuestions } from "./model/catalog.js";
 import { redact, type LiveSettings } from "./model/live.js";
 import { startReplayServer, type ReplayServer } from "./model/replay-server.js";
@@ -58,8 +58,8 @@ export interface TranscriptLine {
 }
 
 /**
- * `ok`: accepted and executed. `rejected`: AskDB threw one of its documented errors.
- * `refused`: the model gave no reply: the replay server had none, or the live model call
+ * `ok`: accepted and executed. `rejected`: AskDB threw one of its documented errors, or, on
+ * the live model, the engine refused the SQL AskDB accepted (the model's SQL, graded). `refused`: the model gave no reply: the replay server had none, or the live model call
  * failed (a bad key, a quota, an outage). `failed`: anything else (an engine that's down, an
  * execution error, a lab bug); `lab ask` lets it propagate.
  */
@@ -260,7 +260,17 @@ export async function askAndRun(dialect: SupportedDialect, input: AskInput, { on
       out(`sensitive:  ${JSON.stringify(result.sensitiveGuardrail.references)}`);
     }
     out("");
-    const rows = await timed("executeMs", () => executeReadOnly(dialect, result.sql));
+    let rows: ExecuteResult;
+    try {
+      rows = await timed("executeMs", () => executeReadOnly(dialect, result.sql));
+    } catch (error) {
+      // SQL a live model wrote that the engine refuses is an answer to grade, not a lab failure;
+      // a host it can't reach is still a failure, as on the replay model.
+      if (!live || error instanceof HostUnreachableError) throw error;
+      out(`execution: refused — ${error instanceof Error ? `${error.name}: ${error.message.split("\n")[0]}` : String(error)}`);
+      const verdict = await grade({ ok: true, result });
+      return done("rejected", { exitCode: 1, result, verdict });
+    }
     out(formatRows(rows));
     // The grader runs the SQL again as the host and compares the rows with the oracle's.
     const verdict = live ? await grade({ ok: true, result }) : undefined;

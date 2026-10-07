@@ -6,15 +6,16 @@
  * the key and model `liveSettings` read, never the replay server; and through the shared ask → validate
  * → execute module (`src/ask-run.ts`) it prints the model and path, then for a catalog
  * question the oracle's verdict (`gradeCatalogAnswer`): `pass`, or the miss and its reason, a
- * validation rejection included. A question outside the catalog says it has no oracle. Exit
- * codes: 0 when the SQL ran (a miss is model quality), 1 for a rejection or a failed model
- * call, which is reported as that, not as a validation outcome, with the key the provider
- * echoed redacted. The CLI refuses before anything runs, exit 2: in CI, without a key, for a
+ * validation rejection included, and SQL the engine refuses, which is graded rather than
+ * failing the run. A question outside the catalog says it has no oracle. Exit codes: 0 when
+ * the SQL ran (a miss is model quality), 1 for a rejection, SQL the engine refused, or a
+ * failed model call, which is reported as that, not as a validation outcome, with the key
+ * the provider echoed redacted. The CLI refuses before anything runs, exit 2: in CI, without a key, for a
  * `--model` other than `replay|live`, and for `--model live` with `--sql`, which calls no
  * model. `LAB_LIVE_MODEL=1` alone doesn't switch `lab ask` to the live model (maintainer
  * decision on #448): only the flag spends.
  * Catches: `--model live` that loses the live settings on the way in and silently replays; the
- * two paths asking different models; a
+ * two paths asking different models; a live answer the engine refuses that crashes the run; a
  * live run that prints a key a provider echoed; a bad key reported as AskDB rejecting SQL; a
  * live answer with no verdict, or a miss that fails the exit code; a refusal that runs
  * introspection first or falls back to replay; and an exported `LAB_LIVE_MODEL=1` that makes
@@ -60,6 +61,8 @@ const REPLIES: StubReplies = {
   [text("active-programs-per-agency")]: fence("SELECT agency_id, COUNT(*) AS programs FROM program GROUP BY agency_id"),
   // A write: AskDB rejects it.
   [text("unpaid-orders")]: fence('DELETE FROM "order" WHERE is_paid = 0'),
+  // A column the table doesn't have: AskDB passes it, the engine refuses it.
+  [text("top-five-orders")]: fence('SELECT order_id, no_such_column FROM "order"'),
   [FREE_TEXT]: fence("SELECT COUNT(*) AS agencies FROM agency"),
   [text("client-named-sato")]: { status: 401 },
 };
@@ -75,6 +78,7 @@ describe("lab ask --model live", () => {
     ["a catalog question it answers right", text("agency-names"), "ok", 0, /^oracle: {5}pass$/],
     ["a catalog question it answers with the wrong rows", text("active-programs-per-agency"), "ok", 0, /^oracle: {5}miss — wrong rows \(got \d+, expected \d+\)$/],
     ["a catalog question it answers with SQL AskDB rejects", text("unpaid-orders"), "rejected", 1, /^oracle: {5}miss — rejected \(SqlValidationError SQL_NOT_SELECT_OR_WITH\)$/],
+    ["a catalog question it answers with SQL the engine refuses", text("top-five-orders"), "rejected", 1, /^oracle: {5}miss — SQL error: .*no_such_column/],
     ["a question outside the catalog", FREE_TEXT, "ok", 0, /^oracle: {5}none \(not a catalog question\)$/],
   ] as const)("ends %s with the oracle's verdict", async ([, question, status, exitCode, verdict], ctx) => {
     needsCapability(ctx, "cli-introspect-engine");
