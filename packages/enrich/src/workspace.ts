@@ -327,9 +327,9 @@ function isMissingPathError(e: unknown): boolean {
 /**
  * Turn a database identifier into a filename-safe slug. Path separators, NUL,
  * control characters, lone UTF-16 surrogates, and characters reserved on Windows
- * become `_`; names
- * that would be hidden files (including `.` / `..`) or Windows device names
- * get a `_` prefix; trailing dots and spaces (which Windows strips) become `_`.
+ * become `_`; names that would be hidden files (including `.` / `..`) or Windows
+ * device names get a `_` prefix; trailing dots and spaces (which Windows strips)
+ * become `_`.
  * Everything else, including non-ASCII letters, is kept so ordinary names
  * stay readable.
  */
@@ -503,7 +503,7 @@ function replaceTableFile(
       // Keep the replaced file's owner, group, and permission bits, before the content lands.
       if (existing) {
         const mode = existing.mode & 0o777;
-        fchmodSync(fd, keepOwnerAndGroup(fd, existing) ? mode : withoutGroupOnlyAccess(mode));
+        fchmodSync(fd, keepOwnerAndGroup(fd, existing) ? mode : withoutGroupChange(mode));
       }
       writeFileSync(fd, content, "utf8");
       fsyncSync(fd);
@@ -542,12 +542,13 @@ function keepOwnerAndGroup(fd: number, existing: Stats): boolean {
 }
 
 /**
- * `mode` with the group's bits cut down to what others may do, for a file whose
- * group could not be kept: the group it has now must not gain access the old
- * group had.
+ * `mode` for a file whose group could not be kept: the group and others both get
+ * only what both had before, so neither the group the file lands in nor the old
+ * group's non-members gain access (`0660` becomes `0600`, `0604` becomes `0600`).
  */
-function withoutGroupOnlyAccess(mode: number): number {
-  return (mode & 0o707) | (((mode >> 3) & mode & 0o007) << 3);
+export function withoutGroupChange(mode: number): number {
+  const shared = (mode >> 3) & mode & 0o007;
+  return (mode & 0o700) | (shared << 3) | shared;
 }
 
 /**
