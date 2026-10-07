@@ -502,7 +502,7 @@ function isIndexStrategy(value: string): value is PgvectorIndexStrategy {
 /**
  * Validated here because config load checks it only when `rag.store` is `pgvector`, while
  * setup-store and `--store pgvector` read it whatever the store is. Retire this once
- * @askdb/config validates the block wherever it's present (follow-up on #226).
+ * @askdb/config validates the block wherever it's present (#476).
  */
 function parseIndexStrategy(raw: string | undefined): PgvectorIndexStrategy | undefined {
   const value = raw?.toLowerCase();
