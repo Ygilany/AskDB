@@ -540,6 +540,7 @@ describe("optional rag block (#226)", () => {
     ["empty", {}],
     ["an unset env() read", { model: undefined }],
     ["a blank model", { model: "  " }],
+    ["a null model, as a JS config can write it", { model: null as unknown as string }],
   ] satisfies [string, NonNullable<AskDbConfig["ai"]["embedding"]>][])(
     "loads a config without a rag block when ai.embedding holds no value: %s",
     (_name, embedding) => {

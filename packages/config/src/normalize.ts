@@ -407,7 +407,7 @@ export function normalizeAskDbConfig(config: AskDbConfig): {
   // The default can't be seen in the file, so refuse a config whose embedding model it would leave unused.
   if (
     (config.rag === undefined || config.rag === null) &&
-    Object.values(ai.embedding ?? {}).some((value) => value !== undefined && String(value).trim() !== "")
+    Object.values(ai.embedding ?? {}).some((value) => value !== undefined && value !== null && String(value).trim() !== "")
   ) {
     throw new Error(
       'askdb.config: ai.embedding is set but the config has no rag block; add rag: { embedder: "ai", store, storeConfig }, or remove ai.embedding.',
