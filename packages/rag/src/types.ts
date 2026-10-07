@@ -19,8 +19,14 @@ export type ChunkType =
 /**
  * One slice of the v2 artifact, embedded as a single vector.
  *
- * `text` is what gets embedded. `id` is stable across runs (re-embedding is
- * gated on text changes via `schema.lock.json`).
+ * `text` is what gets embedded. `id` is stable across runs and scoped to the
+ * schema (`chunk:<schemaId>:<local-id>`, `%`/`:` in the schema id
+ * percent-encoded; e.g.
+ * `chunk:orders-users:table:public.orders`) so several schemas can share one
+ * vector store without overwriting each other. Re-embedding is gated on the
+ * hash the store reports for the chunk, which covers its text and the
+ * embedder id (or on `schema.lock.json`'s text hashes, for stores that cannot
+ * report hashes).
  */
 export type Chunk = {
   id: string;
@@ -30,9 +36,10 @@ export type Chunk = {
   /** Schema-v2 ids referenced by this chunk (for cross-link filtering). */
   refs: string[];
   /**
-   * True when the chunk's source content references a sensitive column.
-   * Default chunker excludes such chunks; this metadata flows through anyway
-   * so opt-in mode (`includeSensitiveDescribable: true`) can carry it for telemetry.
+   * True when the chunk carries describable content that references a
+   * sensitive column/table. The default chunker drops that content (or the
+   * whole chunk), so this is only `true` in opt-in mode
+   * (`includeSensitiveDescribable: true`) — it flows through for telemetry.
    */
   sensitive: boolean;
 };
@@ -66,7 +73,11 @@ export type UpsertRecord = {
   id: string;
   vector: number[];
   payload: ChunkPayload;
-  /** Optional content hash. Stores may persist it for `hashesByPrefix` reuse. */
+  /**
+   * Hash of the chunk text and the embedder id that produced `vector`. Stores
+   * that persist it and return it from `hashesByPrefix` let the indexer skip
+   * chunks they already hold.
+   */
   hash?: string;
 };
 
@@ -79,6 +90,35 @@ export type UpsertRecord = {
 export type Embedder = (texts: string[]) => Promise<number[][]>;
 
 /**
+ * Identity of a vector store, recorded in `schema.lock.json` so the indexer
+ * can tell when the lock was written against a different store.
+ */
+export type VectorStoreDescriptor = {
+  /** Adapter kind, e.g. `"memory"`, `"file"`, `"pgvector"`. */
+  kind: string;
+  /**
+   * Where the vectors live, e.g. the pgvector table name. It is written to
+   * `schema.lock.json`, which is usually committed, so keep it stable across
+   * machines: no absolute paths, never credentials.
+   */
+  location?: string;
+  /** Vector dimensions the store holds/expects, when known. */
+  dimensions?: number;
+  /**
+   * The store keeps nothing past the process (the memory store). The indexer
+   * neither reads nor writes `schema.lock.json` for it, since the lock
+   * describes a persisted index another process can query.
+   */
+  ephemeral?: boolean;
+  /**
+   * How to give this store a different vector width, appended to the
+   * indexer's width-mismatch error (e.g. which files to delete or table to
+   * drop). Not written to the lock.
+   */
+  widthHint?: string;
+};
+
+/**
  * BYO vector-store seam.
  *
  * Adapters: in-memory (default), file-backed, pgvector. Adding more is a
@@ -89,11 +129,32 @@ export type VectorStore = {
   query(vector: number[], k: number, filter?: Filter): Promise<QueryResult[]>;
   delete(ids: string[]): Promise<void>;
   /**
-   * Optional fast path used by the indexer to skip re-embedding unchanged
-   * chunks. Returns `chunkId → contentHash` for ids whose stored hash starts
-   * with `prefix`. Implementations without persistent hash storage can omit it.
+   * Returns `chunkId → hash` (the `UpsertRecord.hash` stored with it) for
+   * stored ids that start with `prefix` (records stored without a hash are
+   * omitted).
+   *
+   * When implemented, the indexer treats the store as the source of truth:
+   * a chunk is skipped only if the store reports the hash of the same text
+   * embedded by the same embedder for its id. Stores that omit it fall back to `schema.lock.json` bookkeeping
+   * (guarded by {@link VectorStore.describe} identity and dimensions); a store
+   * that implements neither re-embeds every chunk on each run.
    */
   hashesByPrefix?(prefix: string): Promise<Record<string, string>>;
+  /**
+   * Optional: every stored id whose payload `schemaId` matches. Lets the
+   * indexer prune orphaned chunks for one schema (including ids written in
+   * an older id format) without touching other schemas sharing the store.
+   * Without it, the indexer only prunes ids listed in the previous
+   * `schema.lock.json`.
+   */
+  idsBySchema?(schemaId: string): Promise<string[]>;
+  /**
+   * Optional: store identity recorded in the lock file. A store without
+   * `hashesByPrefix` needs it to reuse chunks from the lock: with neither,
+   * the indexer can't tell a fresh, empty instance from the one the lock
+   * describes, so it re-embeds everything.
+   */
+  describe?(): VectorStoreDescriptor;
 };
 
 /** Retriever shape consumed by `@askdb/core` `ask({ retriever })`. */

@@ -17,7 +17,7 @@ The retrieval trigger is configurable. By default `ask()` uses retrieval when a 
 
 ## Install
 
-<InstallTabs pkgs="@askdb/rag" />
+<InstallTabs pkgs="@askdb/rag ai" />
 
 For the pgvector store (recommended), add the Postgres driver:
 
@@ -61,21 +61,23 @@ export default defineConfig({
 
 Launch Studio (`npx askdb studio --schema ./my-app.schema`) and build the index from the **RAG Index** page; the first build creates the table.
 
-### Path 2: `askdb-rag setup-store` (CI / staging)
+### Path 2: `askdb rag setup-store` (CI / staging)
 
 One idempotent command. All DDL uses `IF NOT EXISTS` so it's safe to re-run on every deploy. `setup-store` has no embedding model to ask, so pass the width yours returns (1536 for `text-embedding-3-small`; `detectEmbeddingDimensions(embedder)` tells you for any model).
 
 ```bash
-askdb-rag setup-store \
+npx askdb rag setup-store \
   --pg-url "$PGVECTOR_URL" \
   --dimensions 1536
 ```
+
+`--dimensions` is required, and 1536 here is `text-embedding-3-small`'s width: use your model's. `--pg-url` and `--pg-table` fall back to `rag.storeConfig.pgvector` in `askdb.config.*`. If the table already exists with different dimensions, the command fails instead of silently keeping the old size. See [`askdb rag`](/reference/cli/#askdb-rag) for every flag.
 
 Drop it into a deploy step:
 
 ```yaml
 - name: Provision pgvector schema
-  run: askdb-rag setup-store --pg-url "${{ secrets.PGVECTOR_URL }}" --dimensions 1536
+  run: npx askdb rag setup-store --pg-url "${{ secrets.PGVECTOR_URL }}" --dimensions 1536  # text-embedding-3-small's width
 ```
 
 ### Path 3: Explicit migration (production)
@@ -124,11 +126,11 @@ const { retriever, stats } = await buildSchemaIndex({
   store,
   embedder,
   embedderId: "openai:text-embedding-3-small", // changes force a full re-embed
-  lockFilePath: "./my-app.schema/schema.lock.json", // skip unchanged chunks
+  lockFilePath: "./my-app.schema/schema.lock.json", // records embedder, store, dimensions
 });
 ```
 
-`buildSchemaIndex` chunks the artifact, embeds only what changed since the last run (tracked in `schema.lock.json`), and returns a ready-to-use `retriever` plus indexing stats.
+`buildSchemaIndex` chunks the artifact and embeds only the chunks the store doesn't already hold with the same content hash. It returns a ready-to-use `retriever` plus indexing stats. The lock file records the embedder id, store, and dimensions. If the embedder id changed, or the lock is missing, every chunk is re-embedded; a different store gets the chunks it doesn't already hold. Pass `force: true` to re-embed unconditionally.
 
 ## Wire retrieval into `ask()`
 
@@ -151,20 +153,22 @@ const { sql } = await askdb.ask(question, {
 
 ## Sensitive fields and embeddings
 
-Chunks marked as sensitive in the schema artifact carry that flag into the store. Configure your indexing policy to exclude sensitive content from embeddings if your trust model requires it — see the [sensitive fields contract on GitHub](https://github.com/Ygilany/AskDB/blob/main/docs/contracts/sensitive-fields-and-modes.md) for the full rules.
+Sensitive content stays out of the index by default. The chunker drops the describable layer (descriptions, aliases, primary entity, enum values, notes, common query language, example questions, business context) for sensitive tables and columns. It also drops any describable text that mentions a sensitive column by name (whole word, case-insensitive), wherever the text would appear, including the aliases and primary entity repeated in common query language and example question headings. Text that belongs to a table is checked against the sensitive columns of that same table. Concepts and tenant policy sections are checked against every sensitive column in the schema, so a concept that says "filter by SSN" is not embedded when any table's `ssn` column is sensitive. Column identifiers and types stay available to the model through `ask()`'s prompt.
+
+Set `chunkOptions: { includeSensitiveDescribable: true }` only if your trust model allows embedding that content. Chunks kept this way carry `sensitive: true`. See the [schema-v2 contract on GitHub](https://github.com/Ygilany/AskDB/blob/main/docs/contracts/schema-v2.md#sensitive-propagation) for the full rules.
 
 ## Custom table or dimensions
 
-To isolate multiple AskDB deployments in the same Postgres database, pass a custom table name and a matching embedding dimension:
+Several schemas can share one table: chunk ids are scoped by schema id (`chunk:<schemaId>:…`, with `%` and `:` in the schema id percent-encoded), and reindexing one schema never removes another schema's chunks. Use a separate table when deployments use different embedding models or dimensions. To isolate multiple AskDB deployments in the same Postgres database, pass a custom table name and a matching embedding dimension:
 
 ```bash
-askdb-rag setup-store \
+npx askdb rag setup-store \
   --pg-url "$DATABASE_URL" \
   --pg-table myapp_rag_chunks \
   --dimensions 1536
 ```
 
-Match the same `table` value in `askdb.config.ts` under `rag.storeConfig.pgvector.table`.
+1536 is `text-embedding-3-small`'s width; pass your model's. Match the same `table` value in `askdb.config.ts` under `rag.storeConfig.pgvector.table`, which Studio and `askdb rag` read; with it set there, `askdb rag` needs no `--pg-table`.
 
 ## Read next
 

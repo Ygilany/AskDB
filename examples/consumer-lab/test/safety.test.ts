@@ -16,8 +16,10 @@
  * The write-class cases are also proven meaningful: the same statement, run as the engine's
  * owner on a scratch copy of the fixture (`src/scratch.ts`), really changes observable state
  * (a row count, a dropped or altered table, a new table, a row lock another connection
- * can't get). The file, OS, server-control and sleep cases are rejection-only: they are
- * never executed, on any database, and cite the rule instead.
+ * can't get). File/OS, server-control, executable-comment and sleep effects run only on
+ * the guarded isolated fixture (`pnpm lab:safety:isolated`); the normal matrix only rejects
+ * them. Their bounded sentinels, owned victim sessions and one-second sleeps are described
+ * in the README. Disabled xp_cmdshell is verified and reported as n/a, never enabled.
  * Catches: a packed `@askdb/core` whose validator lets a write, DDL, a second statement, a
  * data-modifying CTE, `SELECT … INTO`, a locking read, a comment or a side-effecting call
  * through on some engine; one that rejects it under a different rule than documented (a
@@ -39,15 +41,19 @@
  * (#319). Its scratch proof still runs: the lock is real.
  *
  * Needs the `cli-introspect-engine` capability to build the schema artifacts, the fixture
- * (`pnpm fixture:up`) and an installed lab (`pnpm lab:use .`).
+ * and an installed lab (`pnpm lab:use .`). The isolated runner starts and seeds its own copy.
  */
+import { performance } from "node:perf_hooks";
+import pg from "pg";
+import mysql from "mysql2/promise";
 import { SqlValidationError } from "@askdb/core";
 import { afterAll, beforeAll, describe, expect, it, type TestContext } from "vitest";
 import { askFixedSql } from "../src/ask.js";
 import { ensureArtifact, requireInstallTarget } from "../src/artifacts.js";
 import { hasCapability, needsCapability } from "../src/capabilities.js";
 import { SUPPORTED_DIALECTS, type SupportedDialect } from "../src/dialects.js";
-import { loadRows, physicalName } from "../src/fixture.js";
+import { assertIsolatedTarget, docker } from "../src/isolated-fixture.js";
+import { connectionUrl, loadRows, physicalName } from "../src/fixture.js";
 import { executeReadOnly } from "../src/host/execute.js";
 import { createScratch, scalar, withOwner, type ScratchConnection, type ScratchDb } from "../src/scratch.js";
 
@@ -68,6 +74,8 @@ interface Case {
   known?: number;
   /** Run the same statement as the owner on a scratch copy and assert what it did. */
   proof?: (run: ProofContext) => Promise<void>;
+  /** Runs only through isolated-run.ts, after checking the actual target. */
+  isolatedProof?: (run: IsolatedProofContext) => Promise<void>;
 }
 
 interface ProofContext {
@@ -78,12 +86,131 @@ interface ProofContext {
   t: Name;
 }
 
+interface IsolatedProofContext extends ProofContext {
+  container: string;
+  ctx: TestContext;
+  /** Check the exact dynamically addressed statement before executing it. */
+  reject(statement: string): Promise<void>;
+}
+
 const ALL = SUPPORTED_DIALECTS;
 const SERVERS = ALL.filter((d) => d !== "sqlite");
 const MYSQL_FAMILY = ["mysql", "mariadb"] as const satisfies readonly SupportedDialect[];
 
 const ORDER_LINES = loadRows({ schema: "billing", name: "order_line" });
 const STATUSES = loadRows({ schema: "ref", name: "status" });
+
+/** A bounded sleep, timed on an already connected client (no connection latency). */
+async function elapsedSleep(p: ProofContext): Promise<void> {
+  await withOwner(p.scratch, async (c) => {
+    const start = performance.now();
+    await c.run(p.statement);
+    expect(performance.now() - start).toBeGreaterThanOrEqual(900);
+  });
+}
+
+/** Restrict MySQL to its default secure_file_priv directory; MariaDB permits /tmp. */
+const outfile = (d: SupportedDialect) => d === "mysql" ? "/var/lib/mysql-files/lab-agency.csv" : "/tmp/lab-agency.csv";
+const inputFile = (d: SupportedDialect) => d === "mysql" ? "/var/lib/mysql-files/lab-input.txt" : "/tmp/lab-input.txt";
+
+async function writesFile(p: IsolatedProofContext): Promise<void> {
+  const path = p.dialect === "postgres" ? "/tmp/lab-program.txt" : outfile(p.dialect);
+  docker(["exec", p.container, "rm", "-f", path]);
+  docker(["exec", p.container, "test", "!", "-e", path]);
+  try {
+    await withOwner(p.scratch, (c) => c.run(p.statement));
+    const content = docker(["exec", p.container, "cat", path]);
+    const expected = p.dialect === "postgres" ? [1] : AGENCIES.map((r) => Number(r.agency_id));
+    expect(content.split(/\s+/).map(Number).sort((a, b) => a - b)).toEqual([...expected].sort((a, b) => a - b));
+  } finally {
+    docker(["exec", p.container, "rm", "-f", path]);
+  }
+}
+
+async function readsProgram(p: IsolatedProofContext): Promise<void> {
+  await withOwner(p.scratch, async (c) => {
+    const sql = `SELECT status_code, label FROM ${p.t("ref", "status")} WHERE status_code = 'lab_program'`;
+    expect(await c.rows(sql)).toEqual([]);
+    await c.run(p.statement);
+    expect(await c.rows(sql)).toEqual([{ status_code: "lab_program", label: "Program proof" }]);
+  });
+}
+
+async function readsFile(p: IsolatedProofContext): Promise<void> {
+  const path = inputFile(p.dialect);
+  docker(["exec", p.container, "sh", "-c", `printf lab_file_sentinel > ${path} && chmod 644 ${path}`]);
+  try {
+    await withOwner(p.scratch, async (c) => {
+      expect(await c.rows(p.statement)).toEqual([{ f: Buffer.from("lab_file_sentinel") }]);
+    });
+  } finally {
+    docker(["exec", p.container, "rm", "-f", path]);
+  }
+}
+
+async function disabledShell(p: IsolatedProofContext): Promise<void> {
+  await withOwner(p.scratch, async (c) => {
+    expect(await scalar(c, "SELECT CAST(value_in_use AS int) AS n FROM sys.configurations WHERE name = 'xp_cmdshell'")).toBe(0);
+    await expect(c.run(p.statement)).rejects.toMatchObject({ number: 15281 });
+  });
+  p.ctx.skip("n/a: SQL Server disables xp_cmdshell by default (error 15281); the lab does not enable it");
+}
+
+/** Terminate only a second connection created by this proof, never a guessed session. */
+async function terminatesSession(p: IsolatedProofContext): Promise<void> {
+  let victim: Pick<ScratchConnection, "rows" | "close">;
+  if (p.dialect === "postgres") {
+    const client = new pg.Client({ connectionString: p.scratch.url! });
+    // Termination produces an asynchronous driver error on an idle connection.
+    client.on("error", () => undefined);
+    await client.connect();
+    victim = { rows: async (sql) => (await client.query(sql)).rows, close: () => client.end() };
+  } else if (p.dialect === "mysql" || p.dialect === "mariadb") {
+    const client = await mysql.createConnection(p.scratch.url!);
+    client.on("error", () => undefined);
+    victim = { rows: async (sql) => (await client.query(sql))[0] as Record<string, unknown>[], close: () => client.end() };
+  } else {
+    victim = await p.scratch.connect();
+  }
+  try {
+    const idSql = p.dialect === "postgres" ? "SELECT pg_backend_pid() AS n" : p.dialect === "sqlserver" ? "SELECT @@SPID AS n" : "SELECT CONNECTION_ID() AS n";
+    const [row] = await victim.rows(idSql);
+    const id = Number(row?.n);
+    expect(Number.isSafeInteger(id) && id > 0).toBe(true);
+    const statement = p.dialect === "postgres" ? p.statement.replace("pid = 1", `pid = ${id}`) : p.statement.replace(/KILL \d+/, `KILL ${id}`);
+    await p.reject(statement);
+    await withOwner(p.scratch, async (c) => {
+      expect(await scalar(c, idSql)).not.toBe(id);
+      const present = p.dialect === "postgres" ? `SELECT COUNT(*) AS n FROM pg_stat_activity WHERE pid = ${id}` :
+        p.dialect === "sqlserver" ? `SELECT COUNT(*) AS n FROM sys.dm_exec_sessions WHERE session_id = ${id}` :
+          `SELECT COUNT(*) AS n FROM information_schema.PROCESSLIST WHERE ID = ${id}`;
+      expect(await scalar(c, present)).toBe(1);
+      await c.run(statement);
+      await expect.poll(() => scalar(c, present), { timeout: 3000, interval: 50 }).toBe(0);
+      expect(await scalar(c, "SELECT 1 AS n")).toBe(1);
+    });
+  } finally {
+    await victim.close().catch(() => undefined);
+  }
+}
+
+/** Change a bounded global setting and verify its restoration even if the proof fails. */
+async function changesSetting(p: IsolatedProofContext): Promise<void> {
+  await withOwner(p.scratch, async (c) => {
+    const read = "SELECT @@GLOBAL.max_connections AS n";
+    const before = await scalar(c, read);
+    const after = before + 1;
+    const statement = p.statement.replace("= 1", `= ${after}`);
+    await p.reject(statement);
+    try {
+      await c.run(statement);
+      expect(await scalar(c, read)).toBe(after);
+    } finally {
+      await c.run(`SET GLOBAL max_connections = ${before}`);
+      expect(await scalar(c, read)).toBe(before);
+    }
+  });
+}
 
 // --- Proof helpers: each observes state on the scratch copy before and after the statement ---
 
@@ -294,39 +421,44 @@ const CASES: Case[] = [
   },
   {
     scenario: "safety-comment",
+    isolatedProof: writesFile,
     what: "INTO OUTFILE inside a MySQL /*! */ executable comment",
     dialects: MYSQL_FAMILY,
-    sql: (t) => `SELECT agency_id FROM ${t("org", "agency")} /*!50000 INTO OUTFILE '/tmp/lab-agency.csv' */`,
+    sql: (t, d) => `SELECT agency_id FROM ${t("org", "agency")} /*!50000 INTO OUTFILE '${outfile(d)}' */`,
     rule: "SQL_COMMENT",
   },
 
-  // File and OS access. Rejection-only: never executed.
+  // File and OS access. Execution requires the verified isolated fixture.
   {
     scenario: "safety-file-access",
     what: "COPY … TO PROGRAM",
     dialects: ["postgres"],
-    sql: () => `COPY (SELECT 1) TO PROGRAM 'id'`,
+    sql: () => `COPY (SELECT 1) TO PROGRAM 'cat > /tmp/lab-program.txt'`,
+    isolatedProof: writesFile,
     rule: "SQL_NOT_SELECT_OR_WITH",
   },
   {
     scenario: "safety-file-access",
     what: "COPY … FROM PROGRAM",
     dialects: ["postgres"],
-    sql: (t) => `COPY ${t("ref", "status")} FROM PROGRAM 'cat /etc/passwd'`,
+    sql: (t) => `COPY ${t("ref", "status")} FROM PROGRAM 'printf "lab_program,Program proof"' WITH (FORMAT csv)`,
+    isolatedProof: readsProgram,
     rule: "SQL_NOT_SELECT_OR_WITH",
   },
   {
     scenario: "safety-file-access",
     what: "SELECT … INTO OUTFILE",
     dialects: MYSQL_FAMILY,
-    sql: (t) => `SELECT agency_id FROM ${t("org", "agency")} INTO OUTFILE '/tmp/lab-agency.csv'`,
+    sql: (t, d) => `SELECT agency_id FROM ${t("org", "agency")} INTO OUTFILE '${outfile(d)}'`,
+    isolatedProof: writesFile,
     rule: "SQL_FORBIDDEN_KEYWORD",
   },
   {
     scenario: "safety-file-access",
     what: "LOAD_FILE()",
     dialects: MYSQL_FAMILY,
-    sql: () => `SELECT LOAD_FILE('/etc/passwd') AS f`,
+    sql: (_t, d) => `SELECT LOAD_FILE('${inputFile(d)}') AS f`,
+    isolatedProof: readsFile,
     rule: "SQL_FORBIDDEN_FUNCTION",
   },
   {
@@ -334,20 +466,23 @@ const CASES: Case[] = [
     what: "EXEC xp_cmdshell after a SELECT in one T-SQL batch",
     dialects: ["sqlserver"],
     sql: () => `SELECT 1 AS ok EXEC xp_cmdshell 'whoami'`,
+    isolatedProof: disabledShell,
     rule: "SQL_FORBIDDEN_KEYWORD",
   },
 
-  // Session and server control. Rejection-only: never executed.
+  // Session and server control. Only a proof-owned victim or restored setting is touched.
   {
     scenario: "safety-server-control",
     what: "pg_terminate_backend()",
+    isolatedProof: terminatesSession,
     dialects: ["postgres"],
-    sql: () => `SELECT pg_terminate_backend(pid) FROM pg_stat_activity`,
+    sql: () => `SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE pid = 1`,
     rule: "SQL_FORBIDDEN_FUNCTION",
   },
   {
     scenario: "safety-server-control",
     what: "KILL",
+    isolatedProof: terminatesSession,
     dialects: MYSQL_FAMILY,
     sql: () => `KILL 1`,
     rule: "SQL_NOT_SELECT_OR_WITH",
@@ -355,6 +490,7 @@ const CASES: Case[] = [
   {
     scenario: "safety-server-control",
     what: "KILL after a SELECT in one T-SQL batch",
+    isolatedProof: terminatesSession,
     dialects: ["sqlserver"],
     sql: () => `SELECT 1 AS ok KILL 52`,
     rule: "SQL_FORBIDDEN_KEYWORD",
@@ -362,32 +498,36 @@ const CASES: Case[] = [
   {
     scenario: "safety-server-control",
     what: "SET GLOBAL",
+    isolatedProof: changesSetting,
     dialects: MYSQL_FAMILY,
     sql: () => `SET GLOBAL max_connections = 1`,
     rule: "SQL_NOT_SELECT_OR_WITH",
   },
 
-  // Sleeps. Rejection-only: never executed.
+  // Bounded sleeps. Timed only on the verified isolated fixture.
   {
     scenario: "safety-sleep",
     what: "pg_sleep()",
     dialects: ["postgres"],
-    sql: () => `SELECT pg_sleep(10)`,
+    sql: () => `SELECT pg_sleep(1)`,
     rule: "SQL_FORBIDDEN_FUNCTION",
+    isolatedProof: elapsedSleep,
   },
   {
     scenario: "safety-sleep",
     what: "SLEEP()",
     dialects: MYSQL_FAMILY,
-    sql: () => `SELECT SLEEP(10) AS s`,
+    sql: () => `SELECT SLEEP(1) AS s`,
     rule: "SQL_FORBIDDEN_FUNCTION",
+    isolatedProof: elapsedSleep,
   },
   {
     scenario: "safety-sleep",
     what: "WAITFOR DELAY after a SELECT in one T-SQL batch",
     dialects: ["sqlserver"],
-    sql: () => `SELECT 1 AS ok WAITFOR DELAY '00:00:10'`,
+    sql: () => `SELECT 1 AS ok WAITFOR DELAY '00:00:01'`,
     rule: "SQL_FORBIDDEN_KEYWORD",
+    isolatedProof: elapsedSleep,
   },
 ];
 
@@ -425,6 +565,8 @@ const ACCEPTED_CASES: { what: string; sql: (t: Name, dialect: SupportedDialect) 
 ];
 
 // --- The suite ---------------------------------------------------------------------------
+
+const ISOLATED = process.env.ASKDB_LAB_ISOLATED === "1";
 
 const QUESTION = "Adversarial reply from the lab's safety suite.";
 
@@ -472,6 +614,7 @@ describe.each(ALL.map((d) => [d] as [SupportedDialect]))("[%s]", (dialect) => {
     // Built here, not in each test, so a failing introspection fails the suite's cells
     // instead of passing an `it.fails` test as its known issue. A target without the
     // capability builds nothing, and each test's `needsCapability` reports `n/a`.
+    if (ISOLATED && dialect !== "sqlite") assertIsolatedTarget(dialect, connectionUrl(dialect, "owner"));
     if (hasCapability("cli-introspect-engine")) schemaDir = ensureArtifact(dialect);
     else if (requireInstallTarget().thisCheckout) throw new Error("this checkout lacks the documented capability cli-introspect-engine");
     if (cases.some((c) => c.proof)) scratch = await createScratch(dialect);
@@ -492,6 +635,31 @@ describe.each(ALL.map((d) => [d] as [SupportedDialect]))("[%s]", (dialect) => {
       it.fails(`${name} (#${c.known})`, async (ctx: TestContext) => {
         needsCapability(ctx, "cli-introspect-engine");
         await expectRejectedKnown(dialect, schemaDir, c.sql(fixtureName(dialect), dialect), c.rule);
+      });
+    }
+
+    if (ISOLATED && c.isolatedProof) {
+      const proof = c.isolatedProof;
+      /**
+       * Protects: #323's claim that a rejected reply has an observable engine effect.
+       * Catches: invalid or harmless SQL passing a rejection-only safety case.
+       * Not covered elsewhere: normal scratch proofs cannot change shared server state.
+       * No production seam: installed ask(), real drivers, and the lab's isolation guard.
+       */
+      it(`${c.scenario}: isolated effect of ${c.what}`, async (ctx) => {
+        needsCapability(ctx, "cli-introspect-engine");
+        if (dialect === "sqlite") throw new Error("isolated server effect cannot run on SQLite");
+        const s = scratch!;
+        assertIsolatedTarget(dialect, connectionUrl(dialect, "owner"));
+        const container = assertIsolatedTarget(dialect, s.url!);
+        await s.reset();
+        const t: Name = (schema, name) => s.table({ schema, name });
+        const statement = c.sql(t, dialect);
+        expectRejected(await rejection(dialect, schemaDir, statement), c.rule);
+        await proof({
+          dialect, scratch: s, statement, t, container, ctx,
+          reject: async (sql) => expectRejected(await rejection(dialect, schemaDir, sql), c.rule),
+        });
       });
     }
 

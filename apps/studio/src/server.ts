@@ -43,6 +43,7 @@ import {
   buildSchemaIndex,
   chunkContentHash,
   chunkSchema,
+  aiSdkEmbedderId,
   createAiSdkEmbedder,
   createFileStore,
   createMemoryStore,
@@ -54,6 +55,7 @@ import {
   type ChunkType,
   type Embedder,
   type QueryResult,
+  type SchemaLockFile,
   type VectorStore,
 } from "@askdb/rag";
 import {
@@ -158,6 +160,12 @@ type StudioState = {
   workspace: Workspace | null;
   setupReason: SetupReason | null;
   ragMemoryStore?: ReturnType<typeof createMemoryStore>;
+  /**
+   * What the last build into `ragMemoryStore` recorded. The indexer writes no
+   * `schema.lock.json` for an ephemeral store, so Studio keeps the same
+   * fields in memory for the status check.
+   */
+  ragMemoryIndex?: StudioRagIndexRecord;
 };
 
 type StudioRagEmbedderConfig =
@@ -917,14 +925,20 @@ async function askSampleQuestion(
   };
 }
 
+/** The `schema.lock.json` fields the RAG status reads. */
+type StudioRagIndexRecord = Partial<
+  Pick<SchemaLockFile, "embedderId" | "updatedAt" | "dimensions" | "hashes" | "incomplete">
+>;
+
 async function getRagStatus(state: StudioState): Promise<StudioRagStatusDto> {
   const config = resolveStudioRagEmbedderConfig();
   const sources = loadChunkerSourcesFromDir(state.schemaDir);
   const chunkResult = chunkSchema(sources);
   const lockPath = join(state.schemaDir, "schema.lock.json");
-  const lock = readOptionalJson(lockPath) as
-    | { embedderId?: string; updatedAt?: string; dimensions?: number; hashes?: Record<string, string> }
-    | undefined;
+  const lock =
+    resolveStudioRagStoreConfig(state).kind === "memory"
+      ? state.ragMemoryIndex
+      : (readOptionalJson(lockPath) as StudioRagIndexRecord | undefined);
   const currentHashes = Object.fromEntries(
     chunkResult.chunks.map((chunk) => [chunk.id, chunkContentHash(chunk.text)]),
   );
@@ -935,6 +949,7 @@ async function getRagStatus(state: StudioState): Promise<StudioRagStatusDto> {
     const chunksIndexed = await countStudioRagStoreChunks(store, sources.schema.schemaId);
     const stale =
       !lock ||
+      lock.incomplete === true ||
       lock.embedderId !== config.embedderId ||
       Object.keys(lockHashes).length !== hashIds.length ||
       hashIds.some((id) => lockHashes[id] !== currentHashes[id]) ||
@@ -1013,6 +1028,14 @@ async function indexRag(state: StudioState): Promise<RagIndexResponse> {
       embedderId: config.embedderId,
       lockFilePath: join(state.schemaDir, "schema.lock.json"),
     });
+    if (store.kind === "memory") {
+      state.ragMemoryIndex = {
+        embedderId: config.embedderId,
+        updatedAt: new Date().toISOString(),
+        dimensions: store.store.describe?.().dimensions,
+        hashes: Object.fromEntries(result.chunks.map((chunk) => [chunk.id, chunkContentHash(chunk.text)])),
+      };
+    }
   } catch (error) {
     throw formatStudioRagOperationError(error, config);
   } finally {
@@ -1227,7 +1250,7 @@ function resolveStudioRagEmbedderConfig(): StudioRagEmbedderConfig {
     provider,
     configuredProvider: embedding.provider,
     connection: embedding.connection,
-    embedderId: `ai-sdk:${provider}:${model}:${dimensions ?? "default"}`,
+    embedderId: aiSdkEmbedderId({ provider, model, dimensions }),
     dimensions,
     configured: Boolean(aiConfig),
     label: `AI SDK (${provider})`,

@@ -4,7 +4,6 @@ import {
   createAiRegistry,
 } from "@askdb/ai";
 import { createAskDb, type DialectResolution } from "@askdb/client";
-import { randomUUID } from "node:crypto";
 import {
   AskDbError,
   AskDbLogEvent,
@@ -13,18 +12,17 @@ import {
   type AskGenerateDeps,
   SchemaParseError,
   formatAskDbModesV1,
-  formatSupportedAskDbLogLevels,
-  isSupportedAskDbLogLevel,
   parseAskDbModeV1,
   SqlValidationError,
-  createAskDbLogger,
   formatSensitiveReference,
   loadSchema,
 } from "@askdb/core";
 import { Command } from "commander";
 import { runInitCli, VALID_AI_PROVIDERS } from "./init.js";
 import { runIntrospectCli } from "./introspect.js";
+import { createCliLogger, resolveCliLogLevel } from "./logger.js";
 import { MissingAskDbConfigError, requireAskDbConfig } from "./project-config.js";
+import { runRagCli } from "./rag.js";
 import { readCliVersion } from "./version.js";
 
 // Batteries-included surface: every built-in provider is registered, and each
@@ -115,34 +113,6 @@ function resolveSchemaPathForAsk(
   return optionSchema ?? runtime.introspection.outputDir;
 }
 
-function resolveAskDbLogLevel(opts: {
-  verbose?: boolean;
-  logLevel?: string;
-  logFile?: string;
-  logStdout?: boolean;
-}): AskDbLogLevel {
-  if (opts.logLevel !== undefined && opts.logLevel !== "") {
-    const l = opts.logLevel.toLowerCase();
-    if (!isSupportedAskDbLogLevel(l)) {
-      throw new Error(
-        `Invalid --log-level: ${opts.logLevel} (expected one of ${formatSupportedAskDbLogLevels()})`,
-      );
-    }
-    return l;
-  }
-  const env = getAskDbRuntimeConfig().logging.level?.toLowerCase();
-  if (env && isSupportedAskDbLogLevel(env)) {
-    return env;
-  }
-  if (opts.verbose) {
-    return "info";
-  }
-  if (opts.logFile || opts.logStdout) {
-    return "info";
-  }
-  return "silent";
-}
-
 const program = new Command();
 program
   .name("askdb")
@@ -222,6 +192,11 @@ program
   .allowUnknownOption(true);
 
 program
+  .command("rag")
+  .description("Chunk, embed, and query a schema artifact for retrieval (see `askdb rag --help`)")
+  .allowUnknownOption(true);
+
+program
   .command("ask")
   .description("Generate SQL from schema + question")
   .hook("preAction", () => {
@@ -273,7 +248,7 @@ program
       let mode: AskDbModeV1;
       const runtime = getAskDbRuntimeConfig();
       try {
-        logLevel = resolveAskDbLogLevel(opts);
+        logLevel = resolveCliLogLevel(opts, runtime);
         mode = parseAskDbModeV1(opts.mode ?? runtime.modes.askdbMode);
       } catch (e) {
         printCliError(e);
@@ -281,14 +256,7 @@ program
         return;
       }
 
-      const correlationId =
-        opts.correlationId ?? runtime.logging.correlationId ?? randomUUID();
-      const logger = createAskDbLogger({
-        correlationId,
-        level: logLevel,
-        logFile: opts.logFile ?? runtime.logging.logFile,
-        logStdout: opts.logStdout ?? runtime.logging.logStdout,
-      });
+      const logger = createCliLogger(opts, runtime, logLevel);
 
       const mockSql = opts.mockSql ?? runtime.dev.mockSql;
       const aiConfig = mockSql ? undefined : ai.resolveAiConfig(runtime.ai.aiEnv);
@@ -381,6 +349,8 @@ program
     },
   );
 
+const RAG_NO_CONFIG_FLAGS = new Set(["--help", "-h", "--version", "-V"]);
+
 // Each command loads askdb.config itself, only on the path that reads it.
 async function main(argv: string[]): Promise<number | undefined> {
   const [command, ...rest] = argv.slice(2);
@@ -389,6 +359,10 @@ async function main(argv: string[]): Promise<number | undefined> {
       return runInitCli(rest);
     case "introspect":
       return runIntrospectCli(rest);
+    case "rag":
+      // Help, version and no args work without a config; every other rag command reads it.
+      if (rest.length > 0 && !rest.some((arg) => RAG_NO_CONFIG_FLAGS.has(arg))) requireAskDbConfig();
+      return runRagCli(rest);
     case "enrich":
     case "studio":
       return runStudioCommand(rest);

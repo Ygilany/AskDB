@@ -9,14 +9,19 @@ Dialect-agnostic NL→SQL pipeline for AskDB. Provides `ask()` orchestration, sc
 ## Install
 
 ```bash
-pnpm add @askdb/core
+# `ai` (Vercel AI SDK) is a required peer dependency — your app owns its version
+pnpm add @askdb/core ai
 # Plus a dialect adapter for the engine you target:
 pnpm add @askdb/postgres
-# Plus a model provider, for example:
+# Plus a model — either construct one directly with an AI SDK provider:
 pnpm add @ai-sdk/openai
 # Optional AskDB config/env model factory (uses the @ai-sdk/* package above):
 pnpm add @askdb/ai
 ```
+
+`ai` is a **peer dependency** (`^6.0.0 || ^7.0.51`: AI SDK 6, or 7.0.51 and later), not a bundled dependency: `ask()` receives a `LanguageModel` your app constructs, so core must use the same `ai` instance your app does. Hosts on AI SDK 6 (e.g. `@ai-sdk/openai@3`) and AI SDK 7 (`@ai-sdk/openai@4`) are both supported. The config-driven path (`@askdb/ai` and `@askdb/client`) currently requires AI SDK 7.
+
+`ai` is a required peer, not an optional one, and core loads it at import time. So any package that depends on `@askdb/core` needs `ai` installed, even for introspection only. That covers `@askdb/client`, `@askdb/connectors`, `@askdb/introspect`, the engine packages, `@askdb/prisma`, `@askdb/enrich` and `@askdb/rag`. npm 7+ and pnpm install the missing peer for you. Yarn doesn't, so add `ai` yourself. ADR 0006 records why (2026-09 amendment).
 
 `@askdb/core` itself does not depend on `pg`. The optional `pg` peer lives on `@askdb/postgres` for live Postgres introspection.
 

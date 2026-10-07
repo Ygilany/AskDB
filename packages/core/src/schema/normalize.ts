@@ -28,6 +28,11 @@ export type FormatNlToSqlOptions = {
    * `TABLE public.agency`). Set from the dialect's `DialectSpec.unqualifiedNamespace`.
    */
   unqualifiedNamespace?: string;
+  /**
+   * Schema v2 only: how each schema, table and column name is listed. Set from the dialect
+   * with `promptIdentifierQuoter(dialect)`, which quotes reserved words. Unset: names are listed as stored.
+   */
+  quoteIdentifier?: (name: string) => string;
 };
 
 /** Stats when building DDL for NL→SQL (meaning depends on {@link FormatNlToSqlOptions.omitSensitiveIdentifiersFromPrompt}). */

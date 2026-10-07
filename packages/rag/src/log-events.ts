@@ -16,6 +16,17 @@ export const AskDbRagLogEvent = {
   SensitiveChunksExcluded: "askdb.rag.sensitive_chunks_excluded",
   /** Counts only — opt-in `includeSensitiveDescribable: true` is in effect. */
   SensitiveChunksIncluded: "askdb.rag.sensitive_chunks_included",
+  /**
+   * The store has no `idsBySchema`, so orphan cleanup only prunes ids listed
+   * in the previous `schema.lock.json` (never other schemas' chunks).
+   */
+  OrphanCleanupLimited: "askdb.rag.orphan_cleanup_limited",
+  /**
+   * `schema.lock.json` names another schema id (a renamed schema, or a lock
+   * copied from another schema's directory). The run reindexes without it
+   * and deletes none of the ids it lists.
+   */
+  LockSchemaMismatch: "askdb.rag.lock_schema_mismatch",
   /** Retrieval ran for a question; counts only. */
   RetrievalCompleted: "askdb.rag.retrieval_completed",
 } as const;

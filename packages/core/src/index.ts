@@ -96,6 +96,7 @@ export {
   tenantScopeSchema,
   tenantAccessSchema,
   TENANT_POLICY_H2_SECTIONS,
+  findMentionedNames,
 } from "./schema/v2/index.js";
 export type {
   V2SchemaJson,
@@ -193,6 +194,7 @@ export {
   buildNlToSqlUserPrompt,
   buildNlToSqlSystemPrompt,
 } from "./sql/prompt.js";
+export { promptIdentifierQuoter } from "./sql/prompt-identifiers.js";
 export {
   assertNlToSqlInputs,
   nlToSqlAmbiguityNotes,

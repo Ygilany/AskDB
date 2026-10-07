@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { join, resolve } from "node:path";
 import { cpSync, mkdtempSync, readFileSync, rmSync, writeFileSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { chunkSchemaDir, chunkSchema } from "./index.js";
+import { chunkSchemaDir, chunkSchema, chunkIdPrefix } from "./index.js";
 import { loadChunkerSourcesFromDir } from "./sources.js";
 
 const FIXTURE_DIR = resolve(
@@ -23,12 +23,17 @@ describe("chunkSchemaDir — determinism + golden snapshot", () => {
       text: c.text,
     }));
 
-    const updateGolden = process.env.UPDATE_RAG_GOLDEN === "1";
-    if (updateGolden || !existsSync(GOLDEN_PATH)) {
+    if (process.env.UPDATE_RAG_GOLDEN === "1") {
       writeFileSync(
         GOLDEN_PATH,
         JSON.stringify({ chunks: snapshot }, null, 2) + "\n",
         "utf8",
+      );
+    } else if (!existsSync(GOLDEN_PATH)) {
+      throw new Error(
+        `Missing RAG chunk golden at ${GOLDEN_PATH}. Regenerate it with ` +
+          "UPDATE_RAG_GOLDEN=1 pnpm --filter @askdb/rag exec vitest run --config ../../vitest.config.ts src/chunker/chunker.test.ts " +
+          "and commit the file.",
       );
     }
     const golden = JSON.parse(readFileSync(GOLDEN_PATH, "utf8")) as {
@@ -37,34 +42,19 @@ describe("chunkSchemaDir — determinism + golden snapshot", () => {
     expect(snapshot).toEqual(golden.chunks);
   });
 
-  it("two consecutive runs produce byte-identical output", () => {
-    const a = chunkSchemaDir(FIXTURE_DIR).chunks;
-    const b = chunkSchemaDir(FIXTURE_DIR).chunks;
-    expect(JSON.stringify(a)).toEqual(JSON.stringify(b));
-  });
-
   it("chunks are sorted by id", () => {
     const { chunks } = chunkSchemaDir(FIXTURE_DIR);
     const ids = chunks.map((c) => c.id);
     const sorted = [...ids].sort();
     expect(ids).toEqual(sorted);
   });
-
-  it("emits expected chunk types for the fixture", () => {
-    const { stats } = chunkSchemaDir(FIXTURE_DIR);
-    expect(stats.byType.table).toBeGreaterThan(0);
-    expect(stats.byType.column).toBeGreaterThan(0);
-    expect(stats.byType.cql).toBeGreaterThan(0);
-    expect(stats.byType.question).toBeGreaterThan(0);
-    expect(stats.byType.concept).toBeGreaterThan(0);
-  });
 });
 
 describe("sensitive propagation", () => {
   it("excludes sensitive column chunks by default", () => {
     const { chunks } = chunkSchemaDir(FIXTURE_DIR);
-    expect(chunks.find((c) => c.id === "chunk:table:public.users#email")).toBeUndefined();
-    const usersTable = chunks.find((c) => c.id === "chunk:table:public.users");
+    expect(chunks.find((c) => c.id === "chunk:orders-users:table:public.users#email")).toBeUndefined();
+    const usersTable = chunks.find((c) => c.id === "chunk:orders-users:table:public.users");
     expect(usersTable?.text).not.toMatch(/email/);
     expect(usersTable?.refs).not.toContain("table:public.users#email");
   });
@@ -74,7 +64,7 @@ describe("sensitive propagation", () => {
     const { chunks, stats } = chunkSchemaDir(FIXTURE_DIR);
     expect(stats.sensitiveExcluded).toBeGreaterThan(0);
     const userBiz = chunks.find((c) =>
-      c.id.startsWith("chunk:table:public.users#biz"),
+      c.id.startsWith("chunk:orders-users:table:public.users#biz"),
     );
     expect(userBiz).toBeUndefined();
   });
@@ -84,9 +74,9 @@ describe("sensitive propagation", () => {
       includeSensitiveDescribable: true,
     });
     expect(stats.sensitiveIncluded).toBeGreaterThan(0);
-    expect(chunks.find((c) => c.id === "chunk:table:public.users#email")).toBeDefined();
+    expect(chunks.find((c) => c.id === "chunk:orders-users:table:public.users#email")).toBeDefined();
     const userBiz = chunks.find((c) =>
-      c.id.startsWith("chunk:table:public.users#biz"),
+      c.id.startsWith("chunk:orders-users:table:public.users#biz"),
     );
     expect(userBiz).toBeDefined();
   });
@@ -109,12 +99,12 @@ describe("front-matter sensitivity escalation (core loader)", () => {
 
       // Control: schema.json marks orders.status non-sensitive, so it is chunked by default.
       expect(
-        chunkSchemaDir(FIXTURE_DIR).chunks.find((c) => c.id === "chunk:table:public.orders#status"),
+        chunkSchemaDir(FIXTURE_DIR).chunks.find((c) => c.id === "chunk:orders-users:table:public.orders#status"),
       ).toBeDefined();
 
       const { chunks } = chunkSchemaDir(dir);
-      expect(chunks.find((c) => c.id === "chunk:table:public.orders#status")).toBeUndefined();
-      const ordersTable = chunks.find((c) => c.id === "chunk:table:public.orders");
+      expect(chunks.find((c) => c.id === "chunk:orders-users:table:public.orders#status")).toBeUndefined();
+      const ordersTable = chunks.find((c) => c.id === "chunk:orders-users:table:public.orders");
       expect(ordersTable?.refs).not.toContain("table:public.orders#status");
     } finally {
       rmSync(root, { recursive: true, force: true });
@@ -135,7 +125,7 @@ describe("ignored table propagation", () => {
     );
 
     expect(leaked).toHaveLength(0);
-    expect(chunks.find((chunk) => chunk.id === "chunk:table:public.orders")).toBeUndefined();
+    expect(chunks.find((chunk) => chunk.id === "chunk:orders-users:table:public.orders")).toBeUndefined();
     expect(stats.totalChunks).toBe(chunks.length);
   });
 });
@@ -154,7 +144,7 @@ describe("long-body splitting", () => {
 
     const { chunks } = chunkSchema(sources, { chunkSizeMaxChars: 600 });
     const bcChunks = chunks
-      .filter((c) => c.id.startsWith("chunk:table:public.orders#biz"))
+      .filter((c) => c.id.startsWith("chunk:orders-users:table:public.orders#biz"))
       .map((c) => c.id);
     expect(bcChunks.length).toBeGreaterThan(1);
     // First-Nth indexed; exactly the bc:N suffix shape.
@@ -178,23 +168,37 @@ describe("tenant policy chunking", () => {
   });
 
   it("emits one chunk per H2 section", () => {
-    const { chunks } = chunkSchemaDir(MULTI_TENANT_DIR);
+    const { chunks } = chunkSchemaDir(MULTI_TENANT_DIR, { includeSensitiveDescribable: true });
     const tpChunks = chunks.filter((c) => c.type === "tenant-policy");
     const ids = tpChunks.map((c) => c.id);
-    expect(ids).toContain("chunk:tenant-policy#hierarchy");
-    expect(ids).toContain("chunk:tenant-policy#scope-rules");
-    expect(ids).toContain("chunk:tenant-policy#sensitive-interactions");
+    expect(ids).toContain("chunk:agency-multi-tenant:tenant-policy#hierarchy");
+    expect(ids).toContain("chunk:agency-multi-tenant:tenant-policy#scope-rules");
+    expect(ids).toContain("chunk:agency-multi-tenant:tenant-policy#sensitive-interactions");
+  });
+
+  it("excludes a section that names a sensitive column unless opted in", () => {
+    // "Sensitive interactions" names the sensitive `clients.email` / `clients.phone` columns.
+    const sectionId = "chunk:agency-multi-tenant:tenant-policy#sensitive-interactions";
+    const { chunks } = chunkSchemaDir(MULTI_TENANT_DIR);
+    const tpChunks = chunks.filter((c) => c.type === "tenant-policy");
+    expect(tpChunks.map((c) => c.id)).toContain("chunk:agency-multi-tenant:tenant-policy#hierarchy");
+    expect(tpChunks.filter((c) => /PII columns/.test(c.text))).toEqual([]);
+
+    const optIn = chunkSchemaDir(MULTI_TENANT_DIR, { includeSensitiveDescribable: true });
+    const section = optIn.chunks.find((c) => c.id === sectionId);
+    expect(section?.text).toContain("PII columns (`email`, `phone`)");
+    expect(section?.sensitive).toBe(true);
   });
 
   it("chunk text includes section heading and body", () => {
     const { chunks } = chunkSchemaDir(MULTI_TENANT_DIR);
-    const hierarchy = chunks.find((c) => c.id === "chunk:tenant-policy#hierarchy");
+    const hierarchy = chunks.find((c) => c.id === "chunk:agency-multi-tenant:tenant-policy#hierarchy");
     expect(hierarchy).toBeDefined();
     expect(hierarchy!.text).toContain("Tenant policy — Hierarchy");
     expect(hierarchy!.text).toContain("Agencies");
   });
 
-  it("tenant-policy chunks are not sensitive", () => {
+  it("tenant-policy chunks are not sensitive by default", () => {
     const { chunks } = chunkSchemaDir(MULTI_TENANT_DIR);
     const tpChunks = chunks.filter((c) => c.type === "tenant-policy");
     for (const c of tpChunks) {
@@ -228,5 +232,275 @@ describe("filter inputs are tolerant", () => {
     const { chunks } = chunkSchemaDir(FIXTURE_DIR, { emitRelationships: true });
     const rel = chunks.filter((c) => c.type === "relationship");
     expect(rel.length).toBeGreaterThan(0);
+  });
+});
+
+describe("schema-scoped chunk ids", () => {
+  it("prefixes every chunk id with `chunk:<schemaId>:`", () => {
+    const { chunks } = chunkSchemaDir(FIXTURE_DIR, { emitRelationships: true });
+    expect(chunks.length).toBeGreaterThan(0);
+    for (const c of chunks) {
+      expect(c.id.startsWith(chunkIdPrefix("orders-users"))).toBe(true);
+      expect(c.schemaId).toBe("orders-users");
+    }
+    expect(chunks.map((c) => c.id)).toContain(
+      "chunk:orders-users:table:public.orders#cql",
+    );
+  });
+
+  it("two schemas with the same tables produce disjoint ids", () => {
+    const a = loadChunkerSourcesFromDir(FIXTURE_DIR);
+    const b = loadChunkerSourcesFromDir(FIXTURE_DIR);
+    b.schema.schemaId = "orders-users-copy";
+    const idsA = new Set(chunkSchema(a).chunks.map((c) => c.id));
+    const idsB = chunkSchema(b).chunks.map((c) => c.id);
+    expect(idsB.some((id) => idsA.has(id))).toBe(false);
+  });
+
+  it("keeps ids disjoint when a schema id contains `:`", () => {
+    // Unencoded, `shop` + `concept:eu:concept:tax` and `shop:concept:eu` +
+    // `concept:tax` would both be `chunk:shop:concept:eu:concept:tax`.
+    const a = loadChunkerSourcesFromDir(FIXTURE_DIR);
+    a.schema.schemaId = "shop";
+    a.concepts!.frontmatter.concepts = [{ id: "concept:eu:concept:tax", label: "EU tax" }];
+    const b = loadChunkerSourcesFromDir(FIXTURE_DIR);
+    b.schema.schemaId = "shop:concept:eu";
+    b.concepts!.frontmatter.concepts = [{ id: "concept:tax", label: "Tax" }];
+
+    const idsA = chunkSchema(a).chunks.map((c) => c.id);
+    const idsB = chunkSchema(b).chunks.map((c) => c.id);
+    expect(idsB.filter((id) => idsA.includes(id))).toEqual([]);
+    expect(idsB.filter((id) => id.startsWith(chunkIdPrefix("shop")))).toEqual([]);
+    expect(idsB).toContain("chunk:shop%3Aconcept%3Aeu:concept:tax");
+  });
+});
+
+describe("sensitive-mention filtering", () => {
+  function sources() {
+    return loadChunkerSourcesFromDir(FIXTURE_DIR);
+  }
+  function table(s: ReturnType<typeof sources>, id: string) {
+    const t = s.schema.tables.find((x) => x.id === id);
+    expect(t).toBeDefined();
+    return t!;
+  }
+
+  // Each case puts text naming the sensitive `users.email` column (in a
+  // different case than the column name) into one describable source. By
+  // default no chunk of any kind may embed it; opt-in embeds it in the named
+  // chunk, flagged sensitive.
+  it.each<{
+    source: string;
+    mutate: (s: ReturnType<typeof sources>) => void;
+    marker: RegExp;
+    optInId: string;
+    /** A chunk that must still be emitted by default (only the text is dropped). */
+    keptId?: string;
+    /** Increase of `stats.sensitiveExcluded` over the unmodified fixture. */
+    excludedDelta: number;
+  }>([
+    {
+      source: "concept description",
+      mutate: (s) =>
+        s.concepts!.frontmatter.concepts!.push({
+          id: "concept:contactability",
+          label: "Contactability",
+          description: "Filter by EMAIL domain to find reachable customers.",
+        }),
+      marker: /EMAIL domain/,
+      optInId: "chunk:orders-users:concept:contactability",
+      excludedDelta: 1,
+    },
+    {
+      source: "concept label",
+      mutate: (s) =>
+        s.concepts!.frontmatter.concepts!.push({ id: "concept:reach", label: "Email reach" }),
+      marker: /Email reach/,
+      optInId: "chunk:orders-users:concept:reach",
+      excludedDelta: 1,
+    },
+    {
+      source: "concept synonym",
+      mutate: (s) =>
+        s.concepts!.frontmatter.concepts!.push({
+          id: "concept:reach",
+          label: "Reach",
+          synonyms: ["Email reach"],
+        }),
+      marker: /Email reach/,
+      optInId: "chunk:orders-users:concept:reach",
+      excludedDelta: 1,
+    },
+    {
+      source: "common query language body",
+      mutate: (s) => {
+        table(s, "table:public.users").commonQueryLanguage = "Customers are reached via Email.";
+      },
+      marker: /reached via Email/,
+      optInId: "chunk:orders-users:table:public.users#cql",
+      excludedDelta: 1,
+    },
+    {
+      source: "table description",
+      mutate: (s) => {
+        table(s, "table:public.users").description = "Registered users keyed by their Email address.";
+      },
+      marker: /Email address/,
+      optInId: "chunk:orders-users:table:public.users",
+      keptId: "chunk:orders-users:table:public.users",
+      excludedDelta: 1,
+    },
+    {
+      source: "table alias (common query language heading)",
+      mutate: (s) => {
+        table(s, "table:public.users").aliases = ["accounts", "Email list"];
+      },
+      marker: /Email list/,
+      optInId: "chunk:orders-users:table:public.users#cql",
+      keptId: "chunk:orders-users:table:public.users#cql",
+      // The table chunk and the common query language chunk each drop it.
+      excludedDelta: 2,
+    },
+    {
+      source: "primary entity (example question heading)",
+      mutate: (s) => {
+        table(s, "table:public.users").primaryEntity = "Email subscriber";
+      },
+      marker: /Email subscriber/,
+      optInId: "chunk:orders-users:table:public.users#q:1",
+      keptId: "chunk:orders-users:table:public.users#q:1",
+      // The table chunk and both example-question chunks each drop it.
+      excludedDelta: 3,
+    },
+  ])("keeps a $source that names a sensitive column out of every chunk", (c) => {
+    const baseline = chunkSchema(sources());
+    const s = sources();
+    c.mutate(s);
+
+    const excluded = chunkSchema(s);
+    expect(excluded.chunks.filter((chunk) => c.marker.test(chunk.text))).toEqual([]);
+    if (c.keptId) expect(excluded.chunks.map((chunk) => chunk.id)).toContain(c.keptId);
+    expect(excluded.stats.sensitiveExcluded - baseline.stats.sensitiveExcluded).toBe(c.excludedDelta);
+
+    const optIn = chunkSchema(s, { includeSensitiveDescribable: true });
+    const chunk = optIn.chunks.find((x) => x.id === c.optInId);
+    expect(chunk?.text).toMatch(c.marker);
+    expect(chunk?.sensitive).toBe(true);
+  });
+
+  it.each<[string, (s: ReturnType<typeof sources>) => void]>([
+    [
+      "an example question names a sensitive column",
+      (s) => {
+        s.tables["table:public.users"]!.sections["Example questions"] =
+          "- How many users signed up last month?\n- Which users have an Email on file?";
+      },
+    ],
+    [
+      "a whole table is sensitive",
+      (s) => {
+        table(s, "table:public.orders").sensitive = true;
+      },
+    ],
+  ])("in opt-in mode, counts and flags every chunk the default leaves out or trims when %s", (_case, mutate) => {
+    const s = sources();
+    mutate(s);
+    const optIn = chunkSchema(s, { includeSensitiveDescribable: true });
+    const flagged = optIn.chunks.filter((c) => c.sensitive);
+    expect(flagged.length).toBeGreaterThan(0);
+    expect(optIn.stats.sensitiveIncluded).toBe(flagged.length);
+    // Every chunk the default leaves out is flagged in opt-in mode.
+    const defaultIds = new Set(chunkSchema(s).chunks.map((c) => c.id));
+    const leftOut = optIn.chunks.filter((c) => !defaultIds.has(c.id));
+    expect(leftOut.filter((c) => !c.sensitive)).toEqual([]);
+  });
+
+  it.each<[string, string, boolean]>([
+    ["ssn$", "Dedupe on the ssn$ hash.", true],
+    ["café", "Grouped by CAFÉ.", true],
+    ["café", "Grouped by cafés.", false],
+    ["caf", "Open the café.", false],
+  ])("uses core's mention rule for a sensitive column named %j (%j excluded: %s)", (name, text, excluded) => {
+    const s = sources();
+    table(s, "table:public.users").columns.find((c) => c.name === "email")!.name = name;
+    s.concepts!.frontmatter.concepts = [{ id: "concept:probe", label: "Probe", description: text }];
+    const ids = chunkSchema(s).chunks.map((c) => c.id);
+    expect(ids.includes("chunk:orders-users:concept:probe")).toBe(!excluded);
+  });
+
+  it("counts a sensitive source that splits into several chunks once per chunk", () => {
+    const opts = { chunkSizeMaxChars: 40 };
+    const optInOpts = { ...opts, includeSensitiveDescribable: true };
+    const baseline = chunkSchema(sources(), opts);
+    const baselineOptIn = chunkSchema(sources(), optInOpts);
+    const s = sources();
+    table(s, "table:public.users").commonQueryLanguage = [
+      "Customers are reached via Email.",
+      "Active means a login in the last 30 days.",
+      "Churned means no order in a year.",
+    ].join("\n\n");
+
+    const optIn = chunkSchema(s, optInOpts);
+    const parts = optIn.chunks.filter((c) => c.id.startsWith("chunk:orders-users:table:public.users#cql"));
+    expect(parts).toHaveLength(3);
+    expect(optIn.stats.sensitiveIncluded - baselineOptIn.stats.sensitiveIncluded).toBe(3);
+    expect(chunkSchema(s, opts).stats.sensitiveExcluded - baseline.stats.sensitiveExcluded).toBe(3);
+  });
+
+  it("drops table description / aliases that name a sensitive column", () => {
+    const s = sources();
+    const users = table(s, "table:public.users");
+    users.description = "Registered users keyed by their Email address.";
+    users.aliases = ["accounts", "email list"];
+    const { chunks } = chunkSchema(s);
+    const chunk = chunks.find((c) => c.id === "chunk:orders-users:table:public.users");
+    expect(chunk).toBeDefined();
+    expect(chunk!.text).not.toMatch(/email/i);
+    expect(chunk!.text).toContain("Aliases: accounts");
+    expect(chunk!.sensitive).toBe(false);
+
+    const optIn = chunkSchema(s, { includeSensitiveDescribable: true }).chunks.find(
+      (c) => c.id === "chunk:orders-users:table:public.users",
+    );
+    expect(optIn!.text).toContain("Email address");
+    expect(optIn!.sensitive).toBe(true);
+  });
+
+  it("drops the describable layer of a non-sensitive column that names a sensitive column", () => {
+    const s = sources();
+    const users = table(s, "table:public.users");
+    const createdAt = users.columns.find((c) => c.name === "created_at")!;
+    createdAt.description = "Set when the EMAIL is first verified.";
+    const { chunks } = chunkSchema(s);
+    const colChunk = chunks.find(
+      (c) => c.id === "chunk:orders-users:table:public.users#created_at",
+    );
+    // Identifier + type are kept; the describable text is not.
+    expect(colChunk).toBeDefined();
+    expect(colChunk!.text).toContain("public.users.created_at");
+    expect(colChunk!.text).not.toMatch(/email/i);
+    const tableChunk = chunks.find((c) => c.id === "chunk:orders-users:table:public.users");
+    expect(tableChunk!.text).not.toMatch(/email/i);
+
+    const optIn = chunkSchema(s, { includeSensitiveDescribable: true }).chunks.find(
+      (c) => c.id === "chunk:orders-users:table:public.users#created_at",
+    );
+    expect(optIn!.text).toContain("EMAIL is first verified");
+    expect(optIn!.sensitive).toBe(true);
+  });
+
+  it("treats relationship chunks touching a sensitive column as sensitive", () => {
+    const s = sources();
+    const users = table(s, "table:public.users");
+    users.columns.find((c) => c.name === "id")!.sensitive = true;
+    const { chunks } = chunkSchema(s, { emitRelationships: true });
+    expect(chunks.filter((c) => c.type === "relationship")).toHaveLength(0);
+
+    const optIn = chunkSchema(s, {
+      emitRelationships: true,
+      includeSensitiveDescribable: true,
+    }).chunks.filter((c) => c.type === "relationship");
+    expect(optIn).toHaveLength(1);
+    expect(optIn[0].sensitive).toBe(true);
   });
 });

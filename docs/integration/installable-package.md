@@ -25,9 +25,10 @@ Authoring a new integration: [**Connectors — what each connector needs**](conn
 ## Install
 
 ```bash
-pnpm add @askdb/core @askdb/postgres
+# `ai` (Vercel AI SDK 6 or 7) is a required peer dependency of @askdb/core — your app owns its version
+pnpm add @askdb/core @askdb/postgres ai
 # Example model provider; use any AI SDK-compatible provider you prefer
-pnpm add ai @ai-sdk/openai
+pnpm add @ai-sdk/openai
 # Optional: introspection
 pnpm add @askdb/introspect
 # Optional: build a custom Schema v2 enrichment authoring surface

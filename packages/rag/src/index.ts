@@ -14,6 +14,7 @@ export type {
   UpsertRecord,
   Embedder,
   VectorStore,
+  VectorStoreDescriptor,
   Retriever,
 } from "./types.js";
 
@@ -34,8 +35,11 @@ export {
   buildSchemaIndex,
   createRetriever,
   chunkContentHash,
+  checkIndexMatches,
   readLockFile,
   writeLockFile,
+  SCHEMA_LOCK_VERSION,
+  type IndexMatch,
   type BuildSchemaIndexOptions,
   type BuildSchemaIndexResult,
   type IndexProgressEvent,
@@ -63,7 +67,9 @@ export {
 
 // Embedders
 export {
+  aiSdkEmbedderId,
   createAiSdkEmbedder,
+  type AiSdkEmbedderIdOptions,
   type AiSdkProviderOptions,
   type CreateAiSdkEmbedderOptions,
   type AiSdkEmbedderUsage,

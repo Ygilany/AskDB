@@ -1,6 +1,6 @@
 ---
 title: "CLI reference"
-description: "Every askdb command and flag — init, introspect, enrich, studio, bundle, ask."
+description: "Every askdb command and flag — init, introspect, enrich, studio, bundle, ask, rag."
 ---
 
 import { Tabs, TabItem } from "@astrojs/starlight/components";
@@ -71,12 +71,12 @@ askdb --help
 
 | Flag | Description |
 | --- | --- |
-| `-h, --help` | Print usage. `init`, `ask`, `introspect`, and `studio` also take `--help` for their own flags (for example `askdb ask --help`). |
+| `-h, --help` | Print usage. `init`, `ask`, `introspect`, `studio`, and `rag` also take `--help` for their own flags (for example `askdb ask --help`). |
 | `-V, --version` | Print the installed `askdb` version. |
 
-Commands that don't read the config work in any directory, including one with no `askdb.config.*`: `--help`, `--version`, `help`, `init`, `bundle`, `introspect --help`, `introspect templates`, and [`studio`](#askdb-studio).
+Commands that don't read the config work in any directory, including one with no `askdb.config.*`: `--help`, `--version`, `help`, `init`, `bundle`, `introspect --help`, `introspect templates`, `rag --help`, `rag --version`, and [`studio`](#askdb-studio).
 
-`ask` and `introspect` need `askdb.config.*` (or `.config/askdb.*`) in the current directory. Without one they print ``No askdb.config.* or .config/askdb.* found in <cwd>. Run `npx askdb init` to create one.`` and exit `1`.
+`ask`, `introspect`, and the `rag` commands need `askdb.config.*` (or `.config/askdb.*`) in the current directory. Without one they print ``No askdb.config.* or .config/askdb.* found in <cwd>. Run `npx askdb init` to create one.`` and exit `1`.
 
 ## Commands
 
@@ -237,7 +237,7 @@ You never pass a SQL dialect — it resolves automatically: `dialect` in `askdb.
 
 ## Shared logging flags
 
-`askdb ask`, `askdb introspect`, and the `askdb-rag` binary all accept the same structured-logging flags:
+`askdb ask`, `askdb introspect`, `askdb rag index`, and `askdb rag query` all accept the same structured-logging flags:
 
 | Flag | Description |
 | --- | --- |
@@ -247,55 +247,100 @@ You never pass a SQL dialect — it resolves automatically: `dialect` in `askdb.
 | `--log-stdout` | Mirror structured JSON logs to stdout. |
 | `--correlation-id <id>` | Tag every log event with a correlation ID of your choosing. |
 
-## The `askdb-rag` binary
+## `askdb rag`
 
-`@askdb/rag` ships its own small binary with three commands.
+Chunks, embeds, and queries a schema artifact for [retrieval](/guides/rag-for-large-schemas/), with three commands: `setup-store`, `index`, and `query`.
 
-### `askdb-rag setup-store`
+**`askdb-rag` moved here.** The `askdb-rag` binary that `@askdb/rag` shipped is now `askdb rag`. Until 1.0, `askdb-rag` prints the `askdb rag` command to run and exits `1`; it doesn't run it for you, because `askdb rag` reads its store from `askdb.config.*` where `askdb-rag` always defaulted to the file store.
 
-Provisions the pgvector schema for `@askdb/rag` idempotently. Safe to run in CI / deploy steps.
+### Config and flags
+
+`askdb rag --help` and `askdb rag --version` work without a config. The commands read `askdb.config.*`, and a flag overrides the setting it falls back to. A flag takes its value as `--flag value` or `--flag=value`.
+
+| Flag | Falls back to |
+| --- | --- |
+| `[schema-dir]` (positional, `index` and `query`) | `introspection.outputDir` |
+| `--store memory\|file\|pgvector` | `rag.store` |
+| `--file-path <path>` | `rag.storeConfig.file.basePath`, else `<schema-dir>/schema` |
+| `--pg-url <connstr>` | `rag.storeConfig.pgvector.databaseUrl`, read even when `rag.store` is another store |
+| `--pg-table <name>` | `rag.storeConfig.pgvector.table`, else `askdb_rag_chunks` |
+| `--embedder mock\|ai` | `rag.embedder`: `"ai"` (or its deprecated `"openai"` and `"ai-sdk"`) selects `ai`, and `"mock"` selects `mock` |
+| `--embedder-model <id>` | `ai.embedding.model` |
+| `--dimensions <n>` | See [Vector width](#vector-width) |
+
+`rag.storeConfig.pgvector.indexStrategy` sets the index `setup-store` and `index` create on pgvector (default `hnsw`), whatever `rag.store` is. A store flag for a store the run doesn't use, such as `--file-path` when the store is pgvector or `--pg-url` when it's the file store, is an error rather than ignored. `setup-store` provisions only pgvector, whatever `rag.store` is, so it refuses `--store memory`, `--store file`, `--file-path` and a `[schema-dir]`.
+
+### Embedders
+
+- **`mock`**: a deterministic lexical hash, 64 dimensions unless `--dimensions`. It needs no API key, so it's the one to use in CI.
+- **`ai`**: the [`ai.embedding`](/reference/config/#aiembedding) model, with the key from its connection in `ai.providerConfig`. It needs `rag.embedder: "ai"` (or a deprecated alias of it), since that's the only setting under which AskDB resolves `ai.embedding`, so `--embedder ai` can't override `rag.embedder: "mock"`. `--embedder-model` overrides `ai.embedding.model`, and `--dimensions` requests a width. `--embedder-model` with the `mock` embedder is an error.
+
+An index built with `ai` records the embedder id `ai-sdk:<provider>:<model>:<dimensions>`, ending in `default` when no width was requested. Studio uses the same id, so either accepts an index the other built.
+
+`--embedder openai` and `--embedder ai-sdk` are deprecated aliases of `ai` until 1.0, as the same values are for `rag.embedder`, and print a warning. `--embedder openai` also requires `ai.embedding.provider` to be `openai`.
+
+`--api-key` was removed: a key on the command line leaks through shell history and the process list. Set the key on a connection in `ai.providerConfig` instead.
+
+### Vector width
+
+AskDB assumes no embedding width it doesn't know. The only width the CLI knows is the `mock` embedder's 64, because that embedder is AskDB's own.
+
+- **`setup-store`** requires `--dimensions`: it has no embedding model to ask.
+- **`index` and `query`** use `--dimensions`, else `ai.embedding.dimensions` (a size to request), else the model's own width (`mock`: 64). For a pgvector store with neither set, `index` first embeds one short text to learn the model's width.
+
+When a pgvector table already holds vectors of another width, `setup-store` and `index` exit `1` before embedding any chunk, and say how to fix it: drop the table and run again, pass `--pg-table <name>` for a new table, or pass `--dimensions <table width>` if your embedding model supports that width.
+
+### `askdb rag setup-store`
+
+Provisions the pgvector extension, table, and indexes for `@askdb/rag` idempotently. Safe to run in CI and deploy steps.
 
 ```bash
-askdb-rag setup-store --pg-url "$DATABASE_URL" --dimensions 1536
+askdb rag setup-store --pg-url "$DATABASE_URL" --dimensions 1536   # text-embedding-3-small's width
 ```
 
 | Flag | Description |
 | --- | --- |
-| `--pg-url <connstr>` | Postgres connection string (required). |
-| `--pg-table <name>` | Custom table name. Default `askdb_rag_chunks`. |
-| `--dimensions <n>` | Embedding dimensions. Default `1536`. |
+| `--dimensions <n>` | Vector width of your embedding model, the same value as `ai.embedding.dimensions` (required). `setup-store` creates an HNSW index by default, which pgvector supports only up to 2000 dimensions, so for a wider model such as `text-embedding-3-large` (3072) request 2000 or fewer (OpenAI's `text-embedding-3` models can shorten their vectors), or set `rag.storeConfig.pgvector.indexStrategy: "none"`. |
+| `--pg-url <connstr>` | Postgres connection string. Falls back to `rag.storeConfig.pgvector.databaseUrl`. |
+| `--pg-table <name>` | Table name. Falls back to `rag.storeConfig.pgvector.table`, else `askdb_rag_chunks`. |
 
-### `askdb-rag index`
+### `askdb rag index`
 
-Chunks and embeds a schema artifact into the configured store — the CLI equivalent of `buildSchemaIndex`.
+Chunks and embeds a schema artifact into the store — the CLI equivalent of `buildSchemaIndex`.
 
 ```bash
-askdb-rag index ./my-app.schema --store pgvector --embedder openai
+askdb rag index ./my-app.schema --store pgvector
 ```
 
 | Flag | Description |
 | --- | --- |
-| `--store <id>` | `memory`, `file` (default — persists next to the artifact), or `pgvector`. |
-| `--embedder <id>` | `mock` (default, deterministic, CI-safe) or `openai` (reads `OPENAI_API_KEY`, or pass `--api-key`). |
-| `--embedder-model <id>` | Embedding model. Default `text-embedding-3-small`. |
-| `--dimensions <n>` | Embedding dimensions, when the model needs them specified. |
-| `--pg-url` / `--pg-table` | pgvector connection when `--store pgvector`. |
+| `[schema-dir]` | Schema artifact directory. Falls back to `introspection.outputDir`. |
+| `--store <id>` | `memory`, `file` (persists next to the artifact), or `pgvector`. Falls back to `rag.store`. |
+| `--embedder <id>` | `mock` or `ai`. Falls back to `rag.embedder`. |
+| `--embedder-model <id>` | Overrides `ai.embedding.model` for the `ai` embedder. |
+| `--dimensions <n>` | Vector width: the size the `mock` embedder writes, or the size the `ai` embedder requests (falls back to `ai.embedding.dimensions`). See [Vector width](#vector-width). |
+| `--file-path <path>` | File store base path; vectors go to `<path>.embeddings.{bin,json}`. Falls back to `rag.storeConfig.file.basePath`, else `<schema-dir>/schema`. |
+| `--pg-url` / `--pg-table` | pgvector connection and table. The table is provisioned (idempotently) and its width checked before indexing. |
+| `--force` | Re-embed every chunk, even ones the store already holds. |
 
-### `askdb-rag query`
+Only chunks the store doesn't already hold (same id and content hash) are embedded. `schema.lock.json` records the embedder id, store, and dimensions; a different embedder id (which includes the requested width) re-embeds everything, and a different store gets whatever it doesn't hold. A different width needs a store with no vectors of the old width: a new or recreated pgvector table, or deleted file-store embeddings files.
+
+### `askdb rag query`
 
 Runs a similarity query against an indexed store — useful for checking what retrieval would hand the model.
 
 ```bash
-askdb-rag query ./my-app.schema --question "customer signups" -k 8
+askdb rag query ./my-app.schema --question "customer signups" -k 8
 ```
 
 | Flag | Description |
 | --- | --- |
 | `--question <text>` | The query text (required). |
 | `-k <n>` | Top-k chunks to return. Default `8`. |
-| `--types <list>` | Restrict chunk types, e.g. `table,column,cql`. |
+| `--types <list>` | Restrict chunk types, comma-separated: `table`, `column`, `cql`, `question`, `concept`, `relationship`, `tenant-policy`. Any other value is an error. |
+| `[schema-dir]`, `--store`, `--embedder`, `--embedder-model`, `--dimensions`, `--file-path`, `--pg-url`, `--pg-table` | As for `index`, and they must match the `index` run. `query` fails if the embedder id or dimensions differ from `schema.lock.json`, or if the lock records no embedder id. The memory store isn't supported: it only lives inside one process. |
 
-All three commands accept the [shared logging flags](#shared-logging-flags).
+`index` and `query` accept the [shared logging flags](#shared-logging-flags).
 
 ## Exit codes
 
@@ -304,6 +349,8 @@ All three commands accept the [shared logging flags](#shared-logging-flags).
 | `0` | Success. |
 | `1` | Generic error (config, IO, generation, validation). |
 | `2` | Invalid CLI arguments. |
+
+`askdb rag` exits `1` for every error, including invalid arguments.
 
 Errors print to stderr in human form; structured log events (with `-v`) follow the contract in [`@askdb/core` logging](/reference/packages/).
 
