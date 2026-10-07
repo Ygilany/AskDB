@@ -244,18 +244,19 @@ describe("bindPreparedQuery — tenant placeholders nothing can render", () => {
     expect(bound.sql).toBe("SELECT count(*) FROM orders WHERE status = 'open'");
   });
 
-  it("throws UNRESOLVED_TENANT_PLACEHOLDER for an upper-case placeholder, even with a tenant policy", () => {
-    const sql = scopedOrders.replace(":tenant_agency_ids", ":TENANT_AGENCY_IDS");
-    const error = catchError(() =>
-      bindPreparedQuery(template(sql), { status_name: "open" }, {
-        schema: warnSchema,
-        tenantScope: agencyIds("2"),
-        acceptWarnings: ["tenant"],
-      }),
-    );
-    expect(error).toBeInstanceOf(TenantScopeError);
-    expect((error as TenantScopeError).reason).toBe("UNRESOLVED_TENANT_PLACEHOLDER");
-  });
+  // A placeholder nothing can render is refused as such, before the tenant check reports
+  // the predicate it doesn't recognize as missing.
+  it.each([":TENANT_AGENCY_IDS", ":tenant_agency_idsOR"])(
+    "throws UNRESOLVED_TENANT_PLACEHOLDER for %s under a strict tenant policy",
+    (placeholder) => {
+      const sql = scopedOrders.replace(":tenant_agency_ids", placeholder);
+      const error = catchError(() =>
+        bindPreparedQuery(template(sql), { status_name: "open" }, { schema: strictSchema, tenantScope: agencyIds("2") }),
+      );
+      expect(error).toBeInstanceOf(TenantScopeError);
+      expect((error as TenantScopeError).reason).toBe("UNRESOLVED_TENANT_PLACEHOLDER");
+    },
+  );
 
   it.each([
     { name: "a v1 schema", schema: { tables: [] } satisfies NormalizedSchema },

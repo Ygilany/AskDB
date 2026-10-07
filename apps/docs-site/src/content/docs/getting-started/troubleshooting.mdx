@@ -221,7 +221,7 @@ The scope uses `access.kind: "subtree"`, but `ask()` couldn't expand it. Either 
 
 ### `TenantScopeError: UNRESOLVED_TENANT_PLACEHOLDER`
 
-The SQL uses a `:tenant_<root>_ids` placeholder that the scope has no IDs for, so AskDB refuses to return it with the placeholder unfilled. Common causes: the scope covers another root than the one the SQL filters on (a template stored under an agency scope, rebound under a client scope); a covered root has `ids: []`; the placeholder is written in another casing (`:TENANT_AGENCY_IDS`); or the scope is `global`, which binds no IDs at all, so SQL under it must not use a tenant placeholder. At rebind, a template with a placeholder also throws this when the schema has no tenant policy. Re-ask the question under the right scope.
+The SQL uses a `:tenant_<root>_ids` placeholder that the scope has no IDs for, so AskDB refuses to return it with the placeholder unfilled. Common causes: the scope covers another root than the one the SQL filters on (a template stored under an agency scope, rebound under a client scope); a covered root has `ids: []`; the placeholder is written in another casing (`:TENANT_AGENCY_IDS`) or runs into the next word (`:tenant_agency_idsOR`); or the scope is `global`, which binds no IDs at all, so SQL under it must not use a tenant placeholder. At rebind, a template with a placeholder also throws this when the schema has no tenant policy. Re-ask the question under the right scope.
 
 ### `SchemaParseError: Invalid tenant policy: roots … both map to the placeholder …`
 

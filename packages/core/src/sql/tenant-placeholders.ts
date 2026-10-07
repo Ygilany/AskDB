@@ -14,8 +14,8 @@ import {
   formatMarker,
   isTenantPlaceholderName,
   markerStyleForDialect,
+  scanPlaceholders,
   scanTenantPlaceholders,
-  tokenizeSqlSpans,
   type MarkerStyle,
   type PlaceholderOccurrence,
 } from "./bind.js";
@@ -244,43 +244,38 @@ function substituteTenantPlaceholders(
   return out;
 }
 
-// `(?<!:)` so a `::type` cast is not read as a placeholder (matches the substituter's scanner).
-const ANY_CASE_PLACEHOLDER_RE = /(?<!:):([a-z][a-z0-9_]*)/gi;
-
 /**
- * Tenant placeholders are case-sensitive: the prompt names the exact lowercase
- * form, and the substituter (like `bindPreparedQuery()`) only recognizes that
- * form. Any other casing (`:TENANT_AGENCY_IDS`) would otherwise pass through
- * unsubstituted, so reject it rather than return SQL with a raw placeholder.
- * Scans the same code regions as the substituter.
+ * Tenant placeholders are written exactly `:tenant_<root>_ids`, in lowercase: the prompt
+ * names that form, and the substituter (like `bindPreparedQuery()`) only renders it. A
+ * placeholder in another casing (`:TENANT_AGENCY_IDS`), or with an identifier glued to it
+ * (`:tenant_agency_idsOR`, which the scanner reads as one name), would otherwise pass
+ * through unsubstituted, so reject it rather than return SQL with a raw placeholder.
  */
 function rejectCaseVariantTenantPlaceholders(sql: string, dialect?: TenantSqlDialect): void {
   const placeholder = findTenantPlaceholderAnyCase(sql, dialect);
-  if (placeholder === undefined || placeholder === placeholder.toLowerCase()) return;
+  if (placeholder === undefined || isTenantPlaceholderName(placeholder.slice(1))) return;
   throw new TenantScopeError(
-    `Generated SQL references ${placeholder}, but tenant placeholders are case-sensitive and must be ` +
-      `written ${placeholder.toLowerCase()}. Refusing to emit SQL with an unsubstituted tenant placeholder.`,
+    `Generated SQL references ${placeholder}, which isn't a tenant placeholder AskDB can render: ` +
+      "they are written exactly :tenant_<root>_ids, in lowercase, with nothing glued to the name. " +
+      "Refusing to emit SQL with an unsubstituted tenant placeholder.",
     "UNRESOLVED_TENANT_PLACEHOLDER",
   );
 }
 
 /**
- * The first `:tenant_<root>_ids` placeholder in a code region of `sql`, in any casing, or
- * undefined. A case variant comes first when there is one, since it can never be rendered.
- * Scans the same code regions as the substituter, so both agree on what is a placeholder.
+ * The first placeholder in a code region of `sql` whose name starts with `tenant_` in any
+ * casing, or undefined. One that can't be rendered (another casing, or an identifier glued
+ * to the name) comes first when there is one. Reads placeholders with the same scanner as
+ * the substituter and the renderer, so all three agree on where a name ends.
  */
 export function findTenantPlaceholderAnyCase(sql: string, dialect?: TenantSqlDialect): string | undefined {
-  let lowercase: string | undefined;
-  for (const span of tokenizeSqlSpans(sql, lexerDialect(dialect))) {
-    if (span.kind !== "code") continue;
-    for (const m of sql.slice(span.start, span.end).matchAll(ANY_CASE_PLACEHOLDER_RE)) {
-      const name = m[1]!;
-      if (!isTenantPlaceholderName(name.toLowerCase())) continue;
-      if (name !== name.toLowerCase()) return m[0];
-      lowercase ??= m[0];
-    }
+  let renderable: string | undefined;
+  for (const occ of scanPlaceholders(sql, lexerDialect(dialect))) {
+    if (!/^tenant_/i.test(occ.name)) continue;
+    if (!isTenantPlaceholderName(occ.name)) return occ.placeholder;
+    renderable ??= occ.placeholder;
   }
-  return lowercase;
+  return renderable;
 }
 
 const IN_LIST_BEFORE = /\bIN\s*\(\s*$/i;

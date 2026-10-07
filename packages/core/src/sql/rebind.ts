@@ -2,6 +2,7 @@ import { QueryParameterError, TenantScopeError, type GuardrailVerdict } from "..
 import type { AnyNormalizedSchema } from "../schema/types.js";
 import type { NormalizedTenantPolicy, TenantScope } from "../schema/v2/tenant-policy.js";
 import {
+  isTenantPlaceholderName,
   markerStyleForDialect,
   renderPreparedQuery,
   scanPlaceholders,
@@ -107,11 +108,12 @@ export function bindPreparedQuery(prepared: PreparedQuery, values: Values, guard
   }
   // A placeholder nothing can render: any one without a policy, or one in another casing.
   const placeholder = findTenantPlaceholderAnyCase(prepared.namedSql, spec);
-  if (placeholder !== undefined && (!policy || placeholder !== placeholder.toLowerCase())) {
+  if (placeholder !== undefined && (!policy || !isTenantPlaceholderName(placeholder.slice(1)))) {
     throw new TenantScopeError(
       policy
-        ? `The template references ${placeholder}, but tenant placeholders are case-sensitive and must ` +
-            `be written ${placeholder.toLowerCase()}. Refusing to bind an unsubstituted tenant placeholder.`
+        ? `The template references ${placeholder}, which isn't a tenant placeholder AskDB can render: ` +
+            "they are written exactly :tenant_<root>_ids, in lowercase, with nothing glued to the name. " +
+            "Refusing to bind an unsubstituted tenant placeholder."
         : `The template references ${placeholder}, but the schema has no tenant policy to render it ` +
             "from. Refusing to bind a template with an unsubstituted tenant placeholder.",
       "UNRESOLVED_TENANT_PLACEHOLDER",
