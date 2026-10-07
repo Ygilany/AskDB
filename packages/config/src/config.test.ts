@@ -514,12 +514,8 @@ describe("optional rag block (#226)", () => {
 
   const { rag: _rag, ...noRag } = minimalConfig();
 
-  it("flattens a config without a rag block to the mock embedder", () => {
-    expect(flattenAskDbConfig(noRag).ASKDB_RAG_EMBEDDER).toBe("mock");
-  });
-
-  it("writes no store keys for a config without a rag block", () => {
-    expect(Object.keys(ragKeys(flattenAskDbConfig(noRag)))).toEqual(["ASKDB_RAG_EMBEDDER"]);
+  it("flattens a config without a rag block to the mock embedder, with no store keys", () => {
+    expect(ragKeys(flattenAskDbConfig(noRag))).toEqual({ ASKDB_RAG_EMBEDDER: "mock" });
   });
 
   it("treats an omitted rag block exactly like an explicit mock + memory block, with no deprecations", () => {
@@ -530,20 +526,35 @@ describe("optional rag block (#226)", () => {
   });
 
   it.each([
-    [
-      "with a model",
-      { model: "text-embedding-3-small" },
-      [
-        'askdb.config: ai.embedding is ignored because the config has no rag block; add rag: { embedder: "ai", store, storeConfig } to use it, or remove it.',
-      ],
-    ],
-    ["empty", {}, []],
-  ] satisfies [string, NonNullable<AskDbConfig["ai"]["embedding"]>, string[]][])(
-    "warns that ai.embedding does nothing without a rag block only when it holds a value: %s",
-    (_name, embedding, expected) => {
-      expect(defineConfig({ ...noRag, ai: { ...noRag.ai, embedding } }).deprecations).toEqual(expected);
+    ["omitted", noRag],
+    ["null, as a JS config can write it", { ...noRag, rag: null as unknown as AskDbConfig["rag"] }],
+  ])("refuses an ai.embedding model when the rag block is %s", (_name, config) => {
+    expect(() =>
+      defineConfig({ ...config, ai: { ...config.ai, embedding: { model: "text-embedding-3-small" } } }),
+    ).toThrow(
+      'askdb.config: ai.embedding is set but the config has no rag block; add rag: { embedder: "ai", store, storeConfig }, or remove ai.embedding.',
+    );
+  });
+
+  it.each([
+    ["empty", {}],
+    ["an unset env() read", { model: undefined }],
+    ["a blank model", { model: "  " }],
+  ] satisfies [string, NonNullable<AskDbConfig["ai"]["embedding"]>][])(
+    "loads a config without a rag block when ai.embedding holds no value: %s",
+    (_name, embedding) => {
+      expect(defineConfig({ ...noRag, ai: { ...noRag.ai, embedding } }).deprecations).toEqual([]);
     },
   );
+
+  it("still loads an explicit mock block next to an ai.embedding model, with no deprecation", () => {
+    const { deprecations } = defineConfig({
+      ...noRag,
+      ai: { ...noRag.ai, embedding: { model: "text-embedding-3-small" } },
+      rag: { embedder: "mock", store: "memory", storeConfig: {} },
+    });
+    expect(deprecations).toEqual([]);
+  });
 
   it.each([
     [

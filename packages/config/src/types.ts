@@ -439,7 +439,8 @@ export type AskDbConfig = {
   /**
    * Retrieval (RAG): the embedder and the vector store. Optional: omit it when you don't use
    * retrieval, and AskDB behaves as if `{ embedder: "mock", store: "memory", storeConfig: {} }`
-   * were set, so no store keys are written. When present, `embedder`, `store` and `storeConfig` are required.
+   * were set, so no store keys are written. Setting `ai.embedding` without it is an error, since
+   * nothing would use that model. When present, `embedder`, `store` and `storeConfig` are required.
    */
   rag?: {
     /** `"mock"` (a local lexical embedder) or `"ai"` (the `ai.embedding` model). `"openai"` and `"ai-sdk"` are deprecated. */

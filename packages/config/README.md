@@ -47,7 +47,7 @@ export default defineConfig({
 
 Your `.env` can use friendly names (`MY_OPENAI_API_KEY`, …). `defineConfig` runs `flattenAskDbConfig`, which maps the nested object onto the canonical environment variable names used in the **runtime flat map** (and in `aiEnv` for `@askdb/ai`). **Unset optional fields get defaults inside `flattenAskDbConfig`** (language model, introspection output dir, database URL fallbacks, the mock embedder's vector width, file-store base path, pgvector index strategy, etc. — see `packages/config/src/defaults.ts`).
 
-The `rag` block is optional. Omit it when you don't use retrieval: AskDB then uses the mock embedder and the in-memory store, as if `rag: { embedder: "mock", store: "memory", storeConfig: {} }` were set.
+The `rag` block is optional. Omit it when you don't use retrieval: AskDB then uses the mock embedder and the in-memory store, as if `rag: { embedder: "mock", store: "memory", storeConfig: {} }` were set. Setting `ai.embedding` without the block is an error, since nothing would use that model.
 
 `ai.providerConfig` holds provider connections only (one per provider, or a named list). The model choice lives in `ai.language` (the language model) and `ai.embedding` (the embedding model behind `rag.embedder: "ai"`), each with an optional `provider` and `connection`. Configs written in the older shape (`providerConfig.<provider>.model`, `ai.reasoning`, `rag.embedder: "openai" | "ai-sdk"`, `rag.embedderConfig`) still load: AskDB translates them at load, and `bootstrapAskDbEnv` emits one `DeprecationWarning` (code `ASKDB_CONFIG_DEPRECATED`) per old key. The old keys are removed at 1.0. See the [configuration reference](https://askdb.tools/reference/config/#the-ai-block).
 

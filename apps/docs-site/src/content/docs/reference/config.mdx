@@ -164,7 +164,7 @@ Every connection also takes `name`, which defaults to `"default"` and must be un
 
 ### `ai.embedding`
 
-Read only when `rag.embedder` is `"ai"`; ignored for `"mock"`, and ignored with a warning when the config has no `rag` block.
+Read only when `rag.embedder` is `"ai"`; ignored for `"mock"`. Setting it in a config with no `rag` block is an error.
 
 | Field | Default | Notes |
 | --- | --- | --- |
@@ -210,7 +210,7 @@ Azure identifies models by deployment name (e.g. `askdb-reporting`), which may n
 
 ## The `rag` block
 
-The block is optional. Without it, AskDB behaves as if `rag: { embedder: "mock", store: "memory", storeConfig: {} }` were set: Studio's RAG page uses the in-memory store and the mock embedder, and the only RAG key in the runtime snapshot is `ASKDB_RAG_EMBEDDER=mock`. When the block is present, `embedder`, `store` and `storeConfig` are required.
+The block is optional. Without it, AskDB behaves as if `rag: { embedder: "mock", store: "memory", storeConfig: {} }` were set: Studio's RAG page uses the in-memory store and the mock embedder, and the only RAG key in the runtime snapshot is `ASKDB_RAG_EMBEDDER=mock`. When the block is present, `embedder`, `store` and `storeConfig` are required. A config that sets `ai.embedding` but has no `rag` block fails to load, since nothing would use that model: add `rag: { embedder: "ai", … }`, or remove `ai.embedding`.
 
 | Field | What it configures |
 | --- | --- |

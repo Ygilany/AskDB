@@ -404,13 +404,13 @@ export function normalizeAskDbConfig(config: AskDbConfig): {
   // which write no store keys. This is the only place that default lives (#226): the flat map,
   // defineConfig and the runtime view (`rt.rag.store`) all read the normalized block.
   const rag: NonNullable<AskDbConfig["rag"]> = config.rag ?? { embedder: "mock", store: "memory", storeConfig: {} };
-  // The default can't be seen in the file, so say when it leaves an embedding model unused.
+  // The default can't be seen in the file, so refuse a config whose embedding model it would leave unused.
   if (
-    config.rag === undefined &&
+    (config.rag === undefined || config.rag === null) &&
     Object.values(ai.embedding ?? {}).some((value) => value !== undefined && String(value).trim() !== "")
   ) {
-    warn(
-      'askdb.config: ai.embedding is ignored because the config has no rag block; add rag: { embedder: "ai", store, storeConfig } to use it, or remove it.',
+    throw new Error(
+      'askdb.config: ai.embedding is set but the config has no rag block; add rag: { embedder: "ai", store, storeConfig }, or remove ai.embedding.',
     );
   }
 
