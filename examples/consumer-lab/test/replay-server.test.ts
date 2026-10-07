@@ -124,6 +124,8 @@ describe("replay server", () => {
 describe("record mode", () => {
   /** The key the server holds; the stand-in provider echoes it back in its 401, as a careless one might. */
   const KEY = "sk-lab-test-0123456789abcdefghij";
+  /** The key the way OpenAI's 401 shows it: its start and end, the middle masked. */
+  const MASKED = `${KEY.slice(0, 9)}${"*".repeat(KEY.length - 13)}${KEY.slice(-4)}`;
   const RECORDED_REPLY = "```sql\nSELECT COUNT(*) AS agencies FROM org.agency\n```";
   const received: { path: string; headers: IncomingHttpHeaders; body: Record<string, unknown> }[] = [];
   let upstreamStatus = 200;
@@ -138,7 +140,8 @@ describe("record mode", () => {
       received.push({ path: req.url ?? "", headers: req.headers, body });
       res.writeHead(upstreamStatus, { "content-type": "application/json" });
       if (upstreamStatus !== 200) {
-        res.end(JSON.stringify({ error: { message: `Incorrect API key provided: ${KEY}.`, type: "invalid_request_error", code: "invalid_api_key" } }));
+        // OpenAI's 401 shows the key half-masked, which never equals the key itself; a careless provider might echo it whole.
+        res.end(JSON.stringify({ error: { message: `Incorrect API key provided: ${MASKED}. (Sent: ${KEY}.)`, type: "invalid_request_error", code: "invalid_api_key" } }));
       } else if (req.url?.endsWith("/chat/completions")) {
         res.end(JSON.stringify({ id: "c1", object: "chat.completion", created: 1, model: "gpt-4o-mini-2024-07-18", choices: [{ index: 0, message: { role: "assistant", content: RECORDED_REPLY }, finish_reason: "stop" }], usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 } }));
       } else {
@@ -178,17 +181,18 @@ describe("record mode", () => {
     expect(JSON.stringify(log)).not.toContain(KEY);
   });
 
-  it("keeps the key out of a provider error, in what the client sees and in the request log", async () => {
+  it("keeps the key, whole or half-masked, out of a provider error, in what the client sees and in the request log", async () => {
     upstreamStatus = 401;
 
     const call = generateText({ model: recording("responses"), ...prompt(QUESTION.text), maxRetries: 0 });
 
     const error = await call.then(() => undefined, (e: unknown) => e);
     expect(String((error as Error)?.message)).toMatch(/Incorrect API key provided: \[redacted\]/);
-    expect(JSON.stringify(error, Object.getOwnPropertyNames(error))).not.toContain(KEY);
+    // `sk-lab-te` begins both the key and its masked form: neither may survive.
+    expect(JSON.stringify(error, Object.getOwnPropertyNames(error))).not.toContain(KEY.slice(0, 9));
     const log = await (await fetch(`${recorder.url}/__lab/requests`)).text();
     expect(log).toContain("[redacted]");
-    expect(log).not.toContain(KEY);
+    expect(log).not.toContain(KEY.slice(0, 9));
   });
 
   it("never forwards a prompt that holds no catalog question", async () => {

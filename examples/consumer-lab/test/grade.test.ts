@@ -30,8 +30,6 @@
  *
  * Needs the fixture and this checkout's SQLite copy, and an installed lab.
  */
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
 import { ask, loadSchema } from "@askdb/core";
 import { describe, expect, it } from "vitest";
 import { askFixedSql, settle, type AskResult, type Settled } from "../src/ask.js";
@@ -39,7 +37,7 @@ import { ensureArtifact } from "../src/artifacts.js";
 import { needsCapability } from "../src/capabilities.js";
 import { gradeCatalogAnswer, gradeSensitiveAnswer, gradeTenantAnswer } from "../src/grade.js";
 import { HostUnreachableError } from "../src/host/execute.js";
-import { LAB_ROOT } from "../src/paths.js";
+import { AUTHORED_SQLITE_REPLIES } from "./support/sqlite-replies.js";
 
 /** An answer whose SQL `ask()` accepted. */
 const returned = (sql: string): Settled => ({ ok: true, result: { sql } as AskResult });
@@ -101,7 +99,8 @@ describe("grade", () => {
 
   it("grades the parameterized question's unboundSql + params and its rebound query, not only its SQL", async (ctx) => {
     needsCapability(ctx, "cli-introspect-engine");
-    const authored = (JSON.parse(readFileSync(join(LAB_ROOT, "cassettes", "sqlite", "programs-started-since.json"), "utf8")) as { reply: string }).reply;
+    // The tests' own copy: `lab:record` rewrites the committed cassette with a model's reply.
+    const authored = AUTHORED_SQLITE_REPLIES["programs-started-since"];
     // The same reply with `>` for `>=`: 2022-01-01 and 2022-03-01 are both start dates, so its unbound form and its rebound query return other rows.
     const strict = authored.replaceAll("starts_on >= ", "starts_on > ");
     const right = await answerFor(authored);
@@ -149,6 +148,8 @@ describe("grade", () => {
   it("grades a denied read, and a shared locking read AskDB allows (#319), as misses, not violations", async () => {
     expect(await gradeCatalogAnswer("postgres", "agency-names", returned("SELECT oid::int, rolname FROM pg_authid"))).toMatchObject({ status: "miss", reason: expect.stringMatching(/^SQL error: permission denied/) });
     expect(await gradeCatalogAnswer("mysql", "agency-names", returned("SELECT 1, user FROM mysql.user"))).toMatchObject({ status: "miss", reason: expect.stringMatching(/^SQL error: SELECT command denied/) });
+    // SQL Server raises 229 for a denied read too: only a message naming a write makes it a violation.
+    expect(await gradeCatalogAnswer("sqlserver", "agency-names", returned("SELECT 1, name FROM msdb.dbo.sysjobs"))).toMatchObject({ status: "miss", reason: expect.stringMatching(/^SQL error: The SELECT permission was denied/) });
     expect(await gradeCatalogAnswer("postgres", "agency-names", returned("SELECT agency_id, name FROM org.agency FOR SHARE"))).toMatchObject({ status: "miss", reason: expect.stringMatching(/^locking read, which AskDB accepts \(#319\)/) });
   });
 

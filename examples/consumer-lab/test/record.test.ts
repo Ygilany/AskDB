@@ -47,12 +47,14 @@ import { loadQuestions } from "../src/model/catalog.js";
 import { LiveModelError, liveSettings, type LiveSettings } from "../src/model/live.js";
 import { LAB_ROOT } from "../src/paths.js";
 import { RecordAbort, RecordRefusal, portableTarget, record, writeRecordReport, type RecordOutcome } from "../src/record.js";
+import { AUTHORED_SQLITE_REPLIES } from "./support/sqlite-replies.js";
 
 const KEY = "sk-lab-test-0123456789abcdefghij";
 const MODEL = "gpt-4o-mini-2024-07-18";
 const CATALOG = loadQuestions();
 const text = (id: string) => CATALOG.find((q) => q.id === id)!.text;
-const sqlite = (id: string) => (JSON.parse(readFileSync(join(import.meta.dirname, "..", "cassettes", "sqlite", `${id}.json`), "utf8")) as { reply: string }).reply;
+/** An authored SQLite reply, from the tests' own copies: `lab:record` rewrites the committed cassettes. */
+const sqlite = (id: keyof typeof AUTHORED_SQLITE_REPLIES): string => AUTHORED_SQLITE_REPLIES[id];
 const fence = (sql: string) => `\`\`\`sql\n${sql}\n\`\`\``;
 
 /** The authored SQLite reply with a semicolon before its fence closes: `ask()` strips it, the replay suites wouldn't. */
