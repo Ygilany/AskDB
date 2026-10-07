@@ -48,7 +48,11 @@ export interface AskInput {
   sql?: string;
   /** Default `raw`. `client` loads an AskDB config, which a process does only once (see `askClient`). */
   via?: Via;
-  /** Ask the live model with these settings (`liveSettings`) instead of the replay server. Not with `sql`. */
+  /**
+   * Ask the live model with these settings (`liveSettings`) instead of the replay server. Not
+   * with `sql`, which calls no model: `askAndRun` refuses the pair, and the callers turn it into
+   * their own usage error first.
+   */
   live?: LiveSettings;
 }
 
@@ -145,6 +149,8 @@ export interface AskRunOptions {
 }
 
 export async function askAndRun(dialect: SupportedDialect, input: AskInput, { onLine, signal }: AskRunOptions = {}): Promise<AskRun> {
+  // Graded as the live model's answer, SQL nobody's model wrote would read as the model's pass.
+  if (input.live && input.sql !== undefined) throw new TypeError("askAndRun: `sql` calls no model, so it can't be asked of the live one: pass `live` or `sql`, not both");
   const started = performance.now();
   const lines: TranscriptLine[] = [];
   const { question, sql, via = "raw", live } = input;

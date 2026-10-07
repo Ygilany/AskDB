@@ -12,7 +12,7 @@
  * failed model call, which is reported as that, not as a validation outcome, with the key
  * the provider echoed redacted. The CLI refuses before anything runs, exit 2: in CI, without a key, for a
  * `--model` other than `replay|live`, and for `--model live` with `--sql`, which calls no
- * model. `LAB_LIVE_MODEL=1` alone doesn't switch `lab ask` to the live model (maintainer
+ * model (and `askAndRun` itself refuses that pair, rather than grade SQL no model wrote). `LAB_LIVE_MODEL=1` alone doesn't switch `lab ask` to the live model (maintainer
  * decision on #448): only the flag spends.
  * Catches: `--model live` that loses the live settings on the way in and silently replays; the
  * two paths asking different models; a live answer the engine refuses that crashes the run; a
@@ -89,6 +89,13 @@ describe("[sqlite] lab-ask-live", () => {
     expect(run.lines.map((l) => l.text).at(-1)).toMatch(verdict);
     expect(run.status).toBe(status);
     expect(run.exitCode).toBe(exitCode);
+  });
+
+  it("refuses live together with sql, which calls no model, instead of grading that SQL as the model's", async () => {
+    const before = stub.requests.length;
+
+    await expect(askAndRun("sqlite", { question: text("agency-names"), sql: "SELECT 1", live })).rejects.toThrow(/`sql` calls no model/);
+    expect(stub.requests.length).toBe(before);
   });
 
   it("shows a rejected answer's reply, since a rejection carries no SQL", async (ctx) => {
