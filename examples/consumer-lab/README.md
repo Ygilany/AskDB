@@ -8,6 +8,22 @@ A black-box test bed for AskDB. The lab installs AskDB the way an outside projec
 
 This directory is **not** a member of the AskDB pnpm workspace. It is its own pnpm root with its own lockfile, so it never resolves `workspace:` links.
 
+## What each kind of test exercises
+
+The packages' own tests, the lab on the replay model, and the lab on a live model each make different steps of a question's path real:
+
+| Step | Package tests (unit + fixture integration) | Lab, replay (`lab:matrix`, `lab ask`, `lab ui`) | Lab, live (`--model live`, `LAB_LIVE_MODEL=1`) |
+|---|---|---|---|
+| AskDB installed the way users get it (tarball or npm) | no, workspace source | real | real |
+| Schema introspected from a real engine | real, all 5 engines, through each connector's API; never through the installed CLI | real, 5 engines, through the installed CLI | real, 5 engines, through the installed CLI |
+| Prompt built, both model paths (raw + client) | raw path real and byte-tested; the client path never sends a prompt built from config, and nothing checks the two agree | real, and the two paths checked to agree | real |
+| The model's reply | stubbed | canned, reviewed | real OpenAI |
+| Reply extracted, validated, parameters bound | real, but binding is checked as strings; only SQLite binds through a real driver | real, bound by every engine's driver | real, bound by every engine's driver |
+| SQL executed on each engine, rows checked against the oracle | one `ask()` statement per engine, its row count checked against the seed data; no catalog, no parameters | the whole catalog, rows checked against the oracle | the whole catalog, rows checked against the oracle |
+| Same result every run, so it can gate CI | yes | yes | no: the model varies, and each call costs money |
+
+The package column's real-engine cells come from the fixture integration suites (`packages/*/src/connector/multi-engine.integration.test.ts`), which skip locally without `ASKDB_FIXTURE_HOST`; CI's `test` job sets `ASKDB_REQUIRE_INTEGRATION`, so there a skip fails instead. Replay fakes one step out of six, and stays deterministic, so a red cell is AskDB's fault and CI can gate on it. Live makes that step real too, so it finds what a hand-written reply can't (a provider's wire format, how real models format SQL), but its answers vary and it's for exploration only (see [Record and live](#record-and-live)).
+
 ## Commands
 
 From the repo root:
@@ -23,7 +39,8 @@ pnpm lab:use --check                 # re-verify the current install against its
 pnpm lab ask --db mysql "For each agency, show its id and how many active programs it runs."
 pnpm lab ask --db sqlserver --via client "Which three agencies have the highest paid order total? Show each agency's id and that total, highest first."
 pnpm lab ask --db postgres --sql "SELECT agency_id, name FROM org.agency"
-pnpm lab ui                          # a page on 127.0.0.1 that runs one input on every engine side by side
+pnpm lab ask --db postgres --model live "Which agencies run more than two programs?" # the live OpenAI model (needs OPENAI_API_KEY; see Record and live)
+pnpm lab ui                          # a page on 127.0.0.1 that runs one input on the engines you pick, side by side
 pnpm lab:test                        # the lab's own suite (needs the fixture, the lab's Postgres and an installed lab)
 pnpm lab:matrix                      # lab:up, then the suite as a scenario × dialect table
 pnpm lab:matrix -t introspect-golden # vitest flags pass through: one scenario (-t), one dialect (-t '\[mysql\]'), one file
@@ -50,7 +67,7 @@ To run a second copy of the fixture beside the usual one (for example, to try `l
 
 ## `pnpm lab ask`
 
-`pnpm lab ask --db <dialect> "<question>"` asks AskDB a question from the [catalog](#the-question-catalog-and-its-replies). No API key is needed: the model is the lab's replay server (`src/model/replay-server.ts`), a local OpenAI-compatible server that answers from hand-written replies. `--via` picks which of the two documented model paths calls it:
+`pnpm lab ask --db <dialect> "<question>"` asks AskDB a question from the [catalog](#the-question-catalog-and-its-replies). No API key is needed: the model is the lab's replay server (`src/model/replay-server.ts`), a local OpenAI-compatible server that answers from hand-written replies. `--model live` asks the live OpenAI model instead ([below](#--model-live)). `--via` picks which of the two documented model paths calls it:
 
 | `--via` | Path |
 |---|---|
@@ -71,6 +88,18 @@ Both paths must send the same prompt and return the same SQL; `lab:test` checks 
 
 A question with no reply fails: `lab ask` exits 1 and says which file to add. There is no default reply.
 
+### `--model live`
+
+`pnpm lab ask --db <dialect> --model live "<question>"` asks the live OpenAI model through either path: `--via raw` with `createOpenAI({ apiKey })`, `--via client` with `createAskDb` reading `live/askdb.config.ts`, apart from the lab's `askdb.config.ts` so no other surface sees a key. The key and the model come from the shell or `.env.live`, as in [Record and live](#record-and-live). Any question works, in the catalog or not. `--model` defaults to `replay`, and only the flag switches it: `LAB_LIVE_MODEL=1`, which turns on the live suite, doesn't, so a shell with it exported never spends without asking.
+
+It prints what a replay run prints, except that the `model:` line names the live model (`live gpt-4o-mini at https://api.openai.com/v1` on the raw path; the client path names its config and prints `resolved:`), there's no `prompt:` digest, and a rejection shows the model's `reply:` on the raw path only. A catalog question ends with the oracle's verdict (`src/grade.ts`), `oracle: pass` or `oracle: miss — <reason>` (wrong rows, other columns, a validation rejection); any other question ends with `oracle: none (not a catalog question)`. Nothing it prints holds the key: every line, and any error, is scrubbed with `redact`, so a provider echoing a rejected key shows `[redacted]`.
+
+| Exit | When |
+|---|---|
+| 0 | AskDB accepted the SQL and it ran, the oracle's miss included: a miss is model quality |
+| 1 | AskDB rejected the SQL; the engine refused SQL AskDB accepted, printed as `execution: refused — …` and graded (a miss such as `SQL error: …`, or a guarantee violation when the host refused it as a write); or the model call failed (a bad key, a quota, an outage), printed as `model call failed: …` |
+| 2 | Refused before anything runs: a CI run (`CI` or `GITHUB_ACTIONS` set, before any key is read), no key, a `--model` other than `replay` or `live`, or `--model live` with `--sql`, which calls no model. It never falls back to the replay model |
+
 The schema artifact comes from the installed `askdb introspect`, run as the read-only role, and is cached per install target under `.lab/artifacts/`. MySQL and MariaDB are introspected with `--schemas org,people,billing,ref` (one database per logical schema); MariaDB uses the `mysql` engine. SQLite has no URL, so the lab writes a config with `introspection.providerConfig.sqlite.file` into a fresh scratch directory under `.lab/` and introspects from there, as `guides/switch-engines` documents.
 
 ### Executing the SQL
@@ -89,15 +118,17 @@ The guide's wrapper is invalid on SQL Server and drops the statement's `ORDER BY
 
 ## `pnpm lab ui`
 
-`pnpm lab ui [--port <port>] [--timeout <ms>]` serves one page on `127.0.0.1` (a free port unless `--port` names one) and prints its URL. Enter an input once, as a catalog question, a free-text question, or raw SQL, and the page runs it on all five engines at once, one column per engine; the row of columns scrolls sideways when it doesn't fit.
+`pnpm lab ui [--port <port>] [--timeout <ms>]` serves one page on `127.0.0.1` (a free port unless `--port` names one) and prints its URL. Enter an input once, as a catalog question, a free-text question, or raw SQL, pick the model (replay or live), the path (`raw` or `client`) and the engines, and the page runs it on those engines at once, one column per engine; the row of columns scrolls sideways when it doesn't fit. Every page load starts on the replay model, the raw path and all five engines. Raw SQL calls no model, so the model and path aren't offered for it.
 
-Each column shows what `pnpm lab ask --db <engine>` prints for the same input, because both run the same module (`src/ask-run.ts`): the SQL (with `unbound:` and `params:` when present), the validation outcome or the error class and rule code, the sensitive-column note, and the rows the read-only role read with their count. Its header adds the status, the row count, the exit code `lab ask` would return, and how long `ask()` and the execution took. A column appears as soon as its engine finishes, and an engine that fails (down, rejected SQL, an execution error) fails only its own column. An engine with no result after `--timeout` (default 60 s, at most 2147483647 ms, Node's timer limit) is shown as timed out, and an introspection it was still running is killed; its database call isn't cancelled (no driver call takes a signal), so a hung connection stays open until it ends or `lab ui` stops. Stopping `lab ui` (Ctrl-C or SIGTERM) kills any introspection still running and exits, hung connections included.
+Each column shows what `pnpm lab ask --db <engine>` prints for the same input, model and path (`--model`, `--via`), because both run the same module (`src/ask-run.ts`): the SQL (with `unbound:` and `params:` when present), the validation outcome or the error class and rule code, the sensitive-column note, the rows the read-only role read with their count, and on the live model the oracle's verdict. Its header adds the status, the row count, the exit code `lab ask` would return, and how long `ask()` and the execution took. Each engine runs in its own process (`src/ui/engine-worker.ts`), which is what lets the client path work: `createAskDb` reads its config once per process. A column appears as soon as its engine finishes, and an engine that fails (down, rejected SQL, an execution error) fails only its own column. An engine with no result after `--timeout` (default 60 s, at most 2147483647 ms, Node's timer limit) is shown as timed out, and its run is stopped: its introspection is killed and its scratch directories removed, and a run still going after that (a database connection that hangs) is killed with everything it started. Stopping `lab ui` (Ctrl-C or SIGTERM) stops every engine's run the same way and exits.
 
-The summary strip says whether the engines agree and whether each matches the [oracle](#why-the-expected-answer-never-comes-from-sql). Both compare rows with the fixture's normalization rules, which need each column's logical type, and only a catalog question's oracle declares those. So a catalog question, or raw SQL labelled with the catalog question it answers, is compared (blank SQL is refused, never replaced by its label); any other input is shown but not compared. An engine that failed, whose result the row cap cut, or whose rows don't fit the question's columns (raw SQL labelled with a question it doesn't answer) isn't compared either; the oracle calls the last a mismatch.
+The summary strip says whether the engines agree and whether each matches the [oracle](#why-the-expected-answer-never-comes-from-sql). Both compare rows with the fixture's normalization rules, which need each column's logical type, and only a catalog question's oracle declares those. So a catalog question, or raw SQL labelled with the catalog question it answers, is compared (blank SQL is refused, never replaced by its label); any other input is shown but not compared. An engine that failed, whose result the row cap cut, or whose rows don't fit the question's columns (raw SQL labelled with a question it doesn't answer) isn't compared either; the oracle calls the last a mismatch. On the live model, each engine's oracle verdict is the one its column prints (`src/grade.ts`), which checks more than the rows: a rejection is a mismatch with its reason, and so is the parameterized question answered without its parameterized form.
 
-The header names the install target (`lab:use`'s label) and the model mode, always `replay`: `lab ui` asks the replay model only, so a free-text question outside the catalog gets the replay server's refusal on every engine. A live model is the live suite and `pnpm lab:record` (see [Record and live](#record-and-live)); `lab ask --model live` is #448. Questions always take the raw-model path: `--via client` reads `askdb.config.ts` once per process, which would pin every engine to the first engine's replay URL, so it stays a `lab ask` option. The install is the one in place when `lab ui` started, whose modules it loaded: if `lab:use` reinstalls while it runs (another target, or the same one at other versions) or is part-way through, the page and the API answer `409` until it's restarted.
+On the replay model, a free-text question outside the catalog gets the replay server's refusal on every engine; the live model answers anything. The live model is offered when `lab ui` finds a key at startup, as `lab ask --model live` does, and this isn't CI; the header names the model, or says why it's unavailable, and the API answers `409` to a live run then, starting no engine. On the live model the button says how many paid calls a run makes, one per engine. The key stays in the server and its engine processes (it reaches them over IPC, never on a command line) and never reaches the page: every line a run reports is scrubbed with `redact`.
 
-Like Studio's server ([ADR 0009](../../docs/adrs/0009-studio-local-api-protection.md)), it binds loopback only and answers `403` to any request whose `Host` isn't `127.0.0.1:<port>` or `localhost:<port>`, the page included, which stops DNS rebinding. `POST /api/run` also needs `Content-Type: application/json` (`415`) and a same-origin `Origin` when one is sent (`403`), so another site can't make the browser run SQL. There is no session token: the page holds no secret, and the SQL runs as the read-only role. A forwarded port that rewrites `Host` (a devcontainer, a remote preview browser) is refused.
+The header also names the install target (`lab:use`'s label). The install is the one in place when `lab ui` started, whose modules it loaded: if `lab:use` reinstalls while it runs (another target, or the same one at other versions) or is part-way through, the page and the API answer `409` until it's restarted.
+
+Like Studio's server ([ADR 0009](../../docs/adrs/0009-studio-local-api-protection.md)), it binds loopback only and answers `403` to any request whose `Host` isn't `127.0.0.1:<port>` or `localhost:<port>`, the page included, which stops DNS rebinding. `POST /api/run` also needs `Content-Type: application/json` (`415`) and a same-origin `Origin` when one is sent (`403`), so another site can't make the browser run SQL or start a paid live run. There is no session token: the page holds no secret, and the SQL runs as the read-only role. A forwarded port that rewrites `Host` (a devcontainer, a remote preview browser) is refused.
 
 ## The question catalog and its replies
 
@@ -159,11 +190,11 @@ The dialect comes from the base URL: `http://127.0.0.1:<port>/<dialect>/v1`. The
 
 ## Record and live
 
-Two modes call a real model; everything else replays. Both use OpenAI, through the same two model paths as `lab ask`, and both need a key: `OPENAI_API_KEY` in the shell, or in a `.env.live` file in `examples/consumer-lab/` or at the repo root (the first that exists is read). Both are gitignored; never commit a key. AskDB's config loads `.env`, so a key kept there would reach every replay run; `.env.live` is read only by these two modes. `lab:record` keeps the key in its proxy; the live suite sets `OPENAI_API_KEY` in its own test worker, for the adapter path's config. `LAB_LIVE_MODEL_ID` picks another model; the default is `gpt-4o-mini`, AskDB's own OpenAI default.
+Three things call a real model; everything else replays: `pnpm lab:record`, `LAB_LIVE_MODEL=1 pnpm lab:matrix`, and asking the live model by hand (`pnpm lab ask --model live` and `pnpm lab ui`'s live option). All use OpenAI, through the same two model paths as `lab ask`, and all need a key: `OPENAI_API_KEY` in the shell, or in a `.env.live` file in `examples/consumer-lab/` or at the repo root (the first that exists is read). Both are gitignored; never commit a key. AskDB's config loads `.env`, so a key kept there would reach every replay run; `.env.live` is read only by these modes. `lab:record` keeps the key in its proxy; the live suite sets `OPENAI_API_KEY` in its own test worker, and `lab ask` and each `lab ui` engine process in their own environment, for the adapter path's config. `LAB_LIVE_MODEL_ID` picks another model; the default is `gpt-4o-mini`, AskDB's own OpenAI default.
 
-Neither mode runs in CI: with `CI` or `GITHUB_ACTIONS` set, each refuses before reading a key, and without a key each fails with a message naming the variable and the file. Neither falls back to the replay model. CI's job never sets `LAB_LIVE_MODEL`, and `vitest.config.ts` leaves the live suite out unless it's `1`.
+None of them runs in CI: with `CI` or `GITHUB_ACTIONS` set, each refuses before reading a key, and without a key each fails with a message naming the variable and the file (`lab ui` shows the message and doesn't offer the live model). None falls back to the replay model. CI's job never sets `LAB_LIVE_MODEL`, and `vitest.config.ts` leaves the live suite out unless it's `1`. The tests of `lab ask --model live` and `lab ui` run with an empty `OPENAI_API_KEY`, which wins over `.env.live`, or with a fake one and a stand-in for OpenAI (`test/support/stub-openai-fetch.mjs`) that replaces `fetch` for `api.openai.com` only and accepts only that key, so they run the live paths without a key or the network.
 
-At `gpt-4o-mini`'s price, a full `lab:record` (15 questions × 5 dialects, about 1,100 prompt tokens each) costs about $0.03, and a live run (about 210 calls) about $0.10.
+At `gpt-4o-mini`'s price, a full `lab:record` (15 questions × 5 dialects, about 1,100 prompt tokens each) costs about $0.03, a live run (about 210 calls) about $0.10, and one `lab ask --model live` a small fraction of a cent.
 
 ### `pnpm lab:record`
 

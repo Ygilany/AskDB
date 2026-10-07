@@ -16,7 +16,11 @@ export interface LabUiProcess extends StudioAddress {
   stop(): Promise<ServerStop>;
 }
 
-/** Start `pnpm lab ui --port <free port>` with `args` and `env` added; ready once `GET /` answers 200. */
+/**
+ * Start `pnpm lab ui --port <free port>` with `args` and `env` added; ready once `GET /` answers 200.
+ * It has no key, from the shell or `.env.live` (an empty variable wins over the file), and doesn't
+ * see CI, so the live model is unavailable for want of a key: no test can make a paid call.
+ */
 export async function startLabUiProcess({ args = [], env = {} }: { args?: string[]; env?: Record<string, string> } = {}): Promise<LabUiProcess> {
   const address = (port: number): StudioAddress => ({ port, host: `127.0.0.1:${port}`, origin: `http://127.0.0.1:${port}` });
   const server: ServerProcess = await startServerProcess({
@@ -24,7 +28,7 @@ export async function startLabUiProcess({ args = [], env = {} }: { args?: string
     bin: join(LAB_ROOT, "node_modules", ".bin", "tsx"),
     args: (port) => ["src/lab-cli.ts", "ui", "--port", String(port), ...args],
     cwd: LAB_ROOT,
-    env,
+    env: { CI: "", GITHUB_ACTIONS: "", OPENAI_API_KEY: "", ...env },
     ready: async (port) => (await studioRequest(address(port))).status === 200,
     readyWhen: "GET /",
   });

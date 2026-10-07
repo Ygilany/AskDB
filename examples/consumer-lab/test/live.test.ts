@@ -48,26 +48,23 @@
  * Needs the fixture, an installed lab, `OPENAI_API_KEY` (shell or `.env.live`), and the
  * capabilities the replay suites need for the same questions.
  */
-import { createOpenAI } from "@ai-sdk/openai";
 import { openaiProvider } from "@askdb/ai-openai";
 import { createAskDb } from "@askdb/client";
-import { bootstrapAskDbEnv, getAskDbRuntimeConfig } from "@askdb/config";
+import { getAskDbRuntimeConfig } from "@askdb/config";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it, type TestContext } from "vitest";
-import { askWithModel, settle, type AskResult } from "../src/ask.js";
+import { askWithModel, liveModel, settle, useLiveConfig, type AskResult } from "../src/ask.js";
 import { ensureArtifact } from "../src/artifacts.js";
 import { needsCapability } from "../src/capabilities.js";
 import { SUPPORTED_DIALECTS, type SupportedDialect } from "../src/dialects.js";
 import { gradeCatalogAnswer, gradeSensitiveAnswer, gradeTenantAnswer, type Verdict } from "../src/grade.js";
 import { loadQuestions } from "../src/model/catalog.js";
-import { replyText } from "../src/model/openai-wire.js";
-import { DEFAULT_LIVE_MODEL_ID, liveSettings, redact, type LiveSettings } from "../src/model/live.js";
+import { liveSettings, redact, type LiveSettings } from "../src/model/live.js";
 import { LAB_ROOT, LAB_STATE } from "../src/paths.js";
 import { removeSensitiveArtifact, sensitiveArtifact } from "../src/sensitive.js";
 import { idsScope, removeTenantArtifact, tenantArtifact } from "../src/tenant.js";
 
-const LIVE_PROJECT = join(LAB_ROOT, "live");
 const QUESTIONS = loadQuestions();
 const TENANT_QUESTIONS = loadQuestions(join(LAB_ROOT, "scenarios", "tenant-questions.json"));
 const SENSITIVE_QUESTIONS = loadQuestions(join(LAB_ROOT, "scenarios", "sensitive-questions.json"));
@@ -87,11 +84,9 @@ const artifacts: { dir: string; remove: (dir: string) => void }[] = [];
 beforeAll(() => {
   // Throws in CI or without a key: every test then fails with that message.
   settings = liveSettings("live mode");
-  // For the adapter path's config (`live/askdb.config.ts`), which reads both from the environment:
-  // this test file's own worker, which ends with the run.
-  process.env.OPENAI_API_KEY = settings.apiKey;
-  if (settings.modelId !== DEFAULT_LIVE_MODEL_ID) process.env.LAB_LIVE_MODEL_ID = settings.modelId;
-  bootstrapAskDbEnv({ cwd: LIVE_PROJECT });
+  // The adapter path's config (`live/askdb.config.ts`) reads the key and model from the
+  // environment: this test file's own worker, which ends with the run.
+  useLiveConfig(settings);
 });
 
 afterAll(() => {
@@ -115,16 +110,8 @@ function askLive(via: Via, dialect: SupportedDialect, question: string, schemaDi
     const answer = createAskDb({ config: getAskDbRuntimeConfig(), providers: [openaiProvider], schema: { path: schemaDir }, dialect }).ask(question);
     return { answer, reply: () => null };
   }
-  let reply: string | null = null;
-  const openai = createOpenAI({
-    apiKey: settings.apiKey,
-    fetch: async (input, init) => {
-      const response = await fetch(input, init);
-      reply = replyText((await response.clone().json().catch(() => ({}))) as Record<string, unknown>);
-      return response;
-    },
-  });
-  return { answer: askWithModel(dialect, question, schemaDir, openai(settings.modelId), extras), reply: () => reply };
+  const { model, reply } = liveModel(settings);
+  return { answer: askWithModel(dialect, question, schemaDir, model, extras), reply };
 }
 
 /**

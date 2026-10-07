@@ -1,15 +1,19 @@
 /**
  * `pnpm lab ui`: one page that runs an input (a catalog question, free text, or raw SQL) on
- * every engine at once, through `askAndRun` (`src/ask-run.ts`), the code path `lab ask`
- * prints. Each engine's column shows that transcript, so it reads exactly as
- * `pnpm lab ask --db <engine>` would for the same input.
+ * the engines you pick at once, through `askAndRun` (`src/ask-run.ts`), the code path
+ * `lab ask` prints. Each engine's column shows that transcript, so it reads exactly as
+ * `pnpm lab ask --db <engine>` would for the same input, model and path.
  *
- *   GET  /          the page (`page.html`), naming the install target and model mode
- *   POST /api/run   `{ question, sql? }` → NDJSON: one `engine` event per engine as it
- *                   finishes, then one `summary` event (`summary.ts`)
+ *   GET  /          the page (`page.html`), naming the install target and the live model
+ *   POST /api/run   `{ question, sql?, via?, model?, engines? }` → NDJSON: one `engine`
+ *                   event per engine as it finishes, then one `summary` event (`summary.ts`)
  *
- * The model is always the raw path (`createOpenAI({ baseURL })` → `ask()`): `--via client`
- * reads `askdb.config.ts` once per process, which pins the first engine's replay URL.
+ * Each engine runs in its own process (`engine-worker.ts`), so both model paths work: the
+ * client path's config is read once per process. The model is the replay server unless the
+ * request asks for `live` (#448), which the page sends only when you pick it. The live model
+ * is available when `liveSettings` (`src/model/live.ts`) finds a key at startup and this
+ * isn't CI; otherwise the page shows why and the API refuses a live run (`409`). The key
+ * stays in the server and its engine processes, which scrub it from what they report.
  *
  * The install is the one `lab:use` recorded when the server started, whose modules the
  * process loaded. If `lab:use` reinstalls while the server runs (another target, or the
@@ -20,23 +24,30 @@
  * 127.0.0.1 only, and every request's `Host` must be `127.0.0.1:<port>` or
  * `localhost:<port>` (`403` otherwise), which defeats DNS rebinding. `POST /api/run` also
  * needs `Content-Type: application/json` (`415`), which forces a CORS preflight the server
- * never answers, and a same-origin `Origin` when one is sent (`403`). It has no session
- * token: the page reads nothing secret, and the SQL runs as the fixture's read-only role.
+ * never answers, and a same-origin `Origin` when one is sent (`403`), so no other site can
+ * start a run, a paid live one included. It has no session token: the page reads nothing
+ * secret, and the SQL runs as the fixture's read-only role.
  */
+import { fork, type ChildProcess } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import type { AddressInfo } from "node:net";
-import { askAndRun, type AskInput, type AskRun, type AskRunStatus, type TranscriptLine } from "../ask-run.js";
+import { fileURLToPath } from "node:url";
+import { MODELS, VIAS, type AskInput, type AskRun, type AskRunStatus, type Model, type TranscriptLine, type Via } from "../ask-run.js";
 import { installRecord, requireInstallTarget } from "../artifacts.js";
-import { SUPPORTED_DIALECTS, type SupportedDialect } from "../dialects.js";
+import { SUPPORTED_DIALECTS, isSupportedDialect, type SupportedDialect } from "../dialects.js";
+import type { Verdict as GradeVerdict } from "../grade.js";
 import type { ExecuteResult } from "../host/execute.js";
 import { loadQuestions } from "../model/catalog.js";
+import { LiveModelError, liveSettings, type LiveSettings } from "../model/live.js";
+import { LAB_ROOT } from "../paths.js";
+import type { WorkerMessage, WorkerRequest } from "./engine-worker.js";
 import { summarize } from "./summary.js";
 
-/** The model `lab ui` asks: the replay server. A live model is #247. */
-export const MODEL_MODE = "replay";
-
 const PAGE = new URL("./page.html", import.meta.url);
+const WORKER = fileURLToPath(new URL("./engine-worker.ts", import.meta.url));
+/** After `abort`, past the worker's own grace period (`ABORT_GRACE_MS` in `engine-worker.ts`). */
+const KILL_AFTER_ABORT_MS = 3_000;
 const BODY_LIMIT = 64 * 1024;
 
 export interface LabUiOptions {
@@ -46,14 +57,27 @@ export interface LabUiOptions {
   engineTimeoutMs?: number;
 }
 
+/** Whether the page can offer the live model: its id, or why not (no key, or CI). */
+export type LiveAvailability = { available: true; modelId: string } | { available: false; reason: string };
+
 export interface LabUi {
   /** `http://127.0.0.1:<port>` */
   readonly url: string;
+  readonly live: LiveAvailability;
   close(): Promise<void>;
 }
 
-/** What `POST /api/run` takes: `lab ask`'s input, always on the raw model path. */
-export type UiInput = Omit<AskInput, "via">;
+/** What `POST /api/run` takes: `lab ask`'s input, its model and path, and the engines to run it on. */
+export interface UiInput {
+  question: string;
+  sql?: string;
+  /** Default `raw`. */
+  via?: Via;
+  /** Default `replay`. `live` isn't taken with `sql`, which calls no model. */
+  model?: Model;
+  /** Default every engine. */
+  engines?: SupportedDialect[];
+}
 
 export type EngineStatus = AskRunStatus | "timeout";
 
@@ -78,60 +102,93 @@ function describeError(error: unknown): string {
 }
 
 /**
- * Run the input on one engine, giving up after `timeoutMs`. Giving up, or `signal` (aborted
- * when the server closes), kills the run's introspection. Its driver calls can't be
- * cancelled (none takes a signal): they end on their own, or with the process.
+ * Stop a run: `abort` lets it kill its introspection and clean up; one still going after the
+ * grace period (a database connection that hangs, a SQLite statement) is killed with its whole
+ * process group, by the engine process itself, which also aborts when the server goes away.
+ * The kill here is the fallback for an engine process that can't act on `abort`.
+ */
+function stopRun(child: ChildProcess): void {
+  if (child.connected) child.send({ type: "abort" } satisfies WorkerRequest, () => {});
+  setTimeout(() => {
+    if (child.exitCode !== null || child.signalCode !== null) return;
+    try {
+      process.kill(-child.pid!, "SIGKILL");
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ESRCH") throw error;
+    }
+  }, KILL_AFTER_ABORT_MS).unref();
+}
+
+/**
+ * Run the input on one engine in its own process (`engine-worker.ts`), giving up after
+ * `timeoutMs`. Giving up, or `signal` (aborted when the server closes), stops the run
+ * (`stopRun`), so nothing it started outlives it.
  * Returns the engine's event, and the rows it read, which the summary needs and the page doesn't.
  */
 async function runEngine(
   dialect: SupportedDialect,
-  input: UiInput,
+  input: AskInput,
   timeoutMs: number,
   signal: AbortSignal,
-): Promise<{ event: EngineEvent; rows?: ExecuteResult }> {
+): Promise<{ event: EngineEvent; rows?: ExecuteResult; verdict?: GradeVerdict }> {
   const started = performance.now();
   const lines: TranscriptLine[] = [];
-  const givenUp = new AbortController();
+  // Its own process group, so a kill reaches the processes it starts. It inherits the server's
+  // execArgv, which load TypeScript as `tsx` does for `pnpm lab`.
+  const child = fork(WORKER, [], { cwd: LAB_ROOT, detached: true, stdio: ["ignore", "inherit", "inherit", "ipc"] });
+  let stopped = false;
+  const stop = () => {
+    if (stopped) return;
+    stopped = true;
+    stopRun(child);
+  };
+  signal.addEventListener("abort", stop, { once: true });
   let timer: NodeJS.Timeout | undefined;
-  const deadline = new Promise<"timeout">((resolve) => {
-    timer = setTimeout(() => {
-      resolve("timeout");
-      givenUp.abort();
-    }, timeoutMs);
-  });
   try {
-    const run = await Promise.race([
-      askAndRun(dialect, input, { onLine: (line) => lines.push(line), signal: AbortSignal.any([signal, givenUp.signal]) }),
-      deadline,
-    ]);
-    const event: EngineEvent =
-      run === "timeout"
-        ? { type: "engine", dialect, status: "timeout", lines: [...lines], error: `no result after ${timeoutMs} ms`, timings: { totalMs: performance.now() - started } }
-        : {
-            type: "engine",
-            dialect,
-            status: run.status,
-            exitCode: run.exitCode,
-            lines: run.lines,
-            error: run.status === "failed" ? describeError(run.error) : undefined,
-            rowCount: run.rows?.rows.length,
-            truncated: run.rows?.truncated,
-            timings: run.timings,
-          };
-    return { event, rows: run === "timeout" ? undefined : run.rows };
+    const outcome = await new Promise<Extract<WorkerMessage, { type: "done" }> | "timeout" | { exited: string }>((resolve) => {
+      timer = setTimeout(() => resolve("timeout"), timeoutMs);
+      child.on("message", (message: WorkerMessage) => {
+        if (message.type === "line") lines.push(message.line);
+        else resolve(message);
+      });
+      child.on("error", (error) => resolve({ exited: `engine process: ${error.message}` }));
+      // `close`, not `exit`: it comes after every message the process sent.
+      child.on("close", (code, sig) => resolve({ exited: `engine process exited (${sig ?? `code ${code}`}) before reporting a result` }));
+      child.send({ type: "run", dialect, input } satisfies WorkerRequest);
+    });
+    if (outcome === "timeout") {
+      return { event: { type: "engine", dialect, status: "timeout", lines, error: `no result after ${timeoutMs} ms`, timings: { totalMs: performance.now() - started } } };
+    }
+    if ("exited" in outcome) {
+      return { event: { type: "engine", dialect, status: "failed", lines, error: outcome.exited, timings: { totalMs: performance.now() - started } } };
+    }
+    const event: EngineEvent = {
+      type: "engine",
+      dialect,
+      status: outcome.status,
+      exitCode: outcome.exitCode,
+      lines,
+      error: outcome.error,
+      rowCount: outcome.rows?.rows.length,
+      truncated: outcome.rows?.truncated,
+      timings: outcome.timings,
+    };
+    return { event, rows: outcome.rows, verdict: outcome.verdict };
   } finally {
     clearTimeout(timer);
+    signal.removeEventListener("abort", stop);
+    stop();
   }
 }
 
 const escapeHtml = (text: string) => text.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
 
-function page(target: string): string {
+function page(target: string, live: LiveAvailability): string {
   // `<` escaped, so no value can close the <script> element the JSON sits in.
-  const data = JSON.stringify({ dialects: SUPPORTED_DIALECTS, questions: loadQuestions() }).replace(/</g, "\\u003c");
+  const data = JSON.stringify({ dialects: SUPPORTED_DIALECTS, vias: VIAS, live, questions: loadQuestions() }).replace(/</g, "\\u003c");
   return readFileSync(PAGE, "utf8")
     .replace("<!--TARGET-->", () => escapeHtml(target))
-    .replace("<!--MODEL_MODE-->", () => escapeHtml(MODEL_MODE))
+    .replace("<!--LIVE_MODEL-->", () => escapeHtml(live.available ? live.modelId : `unavailable: ${live.reason}`))
     .replace("/*LAB_DATA*/null", () => data);
 }
 
@@ -159,16 +216,32 @@ function parseInput(body: string): UiInput | undefined {
     return undefined;
   }
   if (!value || typeof value !== "object") return undefined;
-  const { question = "", sql } = value as Record<string, unknown>;
+  const { question = "", sql, via = "raw", model = "replay", engines = SUPPORTED_DIALECTS } = value as Record<string, unknown>;
   if (typeof question !== "string" || (sql !== undefined && typeof sql !== "string")) return undefined;
-  // SQL that was sent is what runs: blank SQL is refused, never replaced by its question.
-  if (sql !== undefined) return sql.trim() ? { question: question.trim(), sql } : undefined;
-  return question.trim() ? { question: question.trim() } : undefined;
+  if (!(VIAS as readonly unknown[]).includes(via) || !(MODELS as readonly unknown[]).includes(model)) return undefined;
+  if (!Array.isArray(engines) || !engines.length || !engines.every((e) => typeof e === "string" && isSupportedDialect(e))) return undefined;
+  const choice = { via: via as Via, model: model as Model, engines: SUPPORTED_DIALECTS.filter((d) => engines.includes(d)) };
+  // SQL that was sent is what runs: blank SQL is refused, never replaced by its question. It
+  // calls no model, so it can't be asked of the live one.
+  if (sql !== undefined) return sql.trim() && model !== "live" ? { question: question.trim(), sql, ...choice } : undefined;
+  return question.trim() ? { question: question.trim(), ...choice } : undefined;
+}
+
+/** The live model's settings, or why the page can't offer it. Read once, when the server starts. */
+function readLive(): { settings?: LiveSettings; availability: LiveAvailability } {
+  try {
+    const settings = liveSettings("live mode");
+    return { settings, availability: { available: true, modelId: settings.modelId } };
+  } catch (error) {
+    if (!(error instanceof LiveModelError)) throw error;
+    return { availability: { available: false, reason: error.message } };
+  }
 }
 
 export async function startLabUi(options: LabUiOptions = {}): Promise<LabUi> {
   const engineTimeoutMs = options.engineTimeoutMs ?? 60_000;
   const target = requireInstallTarget().label;
+  const live = readLive();
   const installed = installRecord();
   // Aborted on close: kills every run's child processes.
   const closing = new AbortController();
@@ -185,7 +258,7 @@ export async function startLabUi(options: LabUiOptions = {}): Promise<LabUi> {
     const path = (req.url ?? "/").split("?")[0];
 
     if (req.method === "GET" && path === "/") {
-      const html = page(target);
+      const html = page(target, live.availability);
       res.writeHead(200, {
         "content-type": "text/html; charset=utf-8",
         "cache-control": "no-store",
@@ -202,19 +275,30 @@ export async function startLabUi(options: LabUiOptions = {}): Promise<LabUi> {
       const body = await readBody(req);
       if (body === undefined) return sendText(res, 413, "lab ui: request body too large");
       const input = parseInput(body);
-      if (!input) return sendText(res, 400, 'lab ui: send { "question": string, "sql"?: string } with a question, or with SQL that isn\'t blank');
+      if (!input) {
+        return sendText(
+          res,
+          400,
+          `lab ui: send { "question": string, "sql"?: string, "via"?: ${VIAS.map((v) => `"${v}"`).join(" | ")}, "model"?: ${MODELS.map((m) => `"${m}"`).join(" | ")}, "engines"?: [dialect, …] } ` +
+            "with a question, or with SQL that isn't blank (and no live model, which SQL doesn't call), and at least one engine",
+        );
+      }
+      if (input.model === "live" && !live.settings) {
+        return sendText(res, 409, `lab ui: the live model is unavailable: ${live.availability.available ? "" : live.availability.reason}`);
+      }
+      const ask: AskInput = { question: input.question, sql: input.sql, via: input.via, live: input.model === "live" ? live.settings : undefined };
 
       res.writeHead(200, { "content-type": "application/x-ndjson; charset=utf-8", "cache-control": "no-store" });
       // Engines run concurrently; each column is sent as soon as its engine finishes.
       const runs = await Promise.all(
-        SUPPORTED_DIALECTS.map(async (dialect) => {
-          const run = await runEngine(dialect, input, engineTimeoutMs, closing.signal);
+        input.engines!.map(async (dialect) => {
+          const run = await runEngine(dialect, ask, engineTimeoutMs, closing.signal);
           res.write(`${JSON.stringify(run.event)}\n`);
           return run;
         }),
       );
       // Raw SQL is compared through the catalog question it's labelled with, if any.
-      const summary = summarize(input.question, runs.map(({ event, rows }) => ({ dialect: event.dialect, status: event.status, rows })));
+      const summary = summarize(input.question, runs.map(({ event, rows, verdict }) => ({ dialect: event.dialect, status: event.status, rows, verdict })));
       return void res.end(`${JSON.stringify({ type: "summary", summary })}\n`);
     }
 
@@ -238,6 +322,7 @@ export async function startLabUi(options: LabUiOptions = {}): Promise<LabUi> {
   port = (server.address() as AddressInfo).port;
   return {
     url: `http://127.0.0.1:${port}`,
+    live: live.availability,
     close: () =>
       new Promise<void>((resolve, reject) => {
         closing.abort();

@@ -4,13 +4,16 @@
  * fixture's normalization rules (`normalizeRows`, `dataset/NORMALIZATION.md`), which need
  * each column's logical type. Only a catalog question's oracle (`src/oracle.ts`) declares
  * those, so an input that isn't a catalog question (or raw SQL not labelled with one) is
- * shown, not compared.
+ * shown, not compared. On the live model, an engine's oracle verdict is the grader's
+ * (`gradeCatalogAnswer`, `src/grade.ts`), the one its column prints, which checks more than
+ * the rows (the parameterized form, a rejection's reason).
  */
 import type { AskRunStatus } from "../ask-run.js";
 import type { SupportedDialect } from "../dialects.js";
 import { normalizeRows } from "../fixture.js";
+import type { Verdict as GradeVerdict } from "../grade.js";
 import type { ExecuteResult } from "../host/execute.js";
-import { loadQuestions } from "../model/catalog.js";
+import { catalogQuestionId } from "../model/catalog.js";
 import { ORACLES } from "../oracle.js";
 
 export interface EngineRows {
@@ -19,6 +22,8 @@ export interface EngineRows {
   rows?: ExecuteResult;
   /** Why there are no rows, shown when it isn't compared. */
   status: AskRunStatus | "timeout";
+  /** The grader's verdict, on a live answer to a catalog question. */
+  verdict?: GradeVerdict;
 }
 
 export type Verdict =
@@ -42,7 +47,7 @@ export interface Summary {
 const NO_TYPES = "not a catalog question: only the catalog's oracle declares the column types normalization needs";
 
 export function summarize(question: string, engines: EngineRows[]): Summary {
-  const questionId = loadQuestions().find((q) => q.text === question.trim())?.id ?? null;
+  const questionId = catalogQuestionId(question) ?? null;
   const oracle = questionId ? ORACLES[questionId] : undefined;
   if (!oracle) {
     return {
@@ -78,6 +83,11 @@ export function summarize(question: string, engines: EngineRows[]): Summary {
     }
     groups.set(key, [...(groups.get(key) ?? []), dialect]);
     verdicts[dialect] = key === expected ? { verdict: "match" } : { verdict: "mismatch" };
+  }
+
+  // The grader judged the live answers: its verdict is the oracle's, as the column says.
+  for (const { dialect, verdict } of engines) {
+    if (verdict) verdicts[dialect] = verdict.status === "pass" ? { verdict: "match" } : { verdict: "mismatch", reason: verdict.reason };
   }
 
   const compared = [...groups.values()];
