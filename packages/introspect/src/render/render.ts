@@ -127,6 +127,10 @@ function readExistingPhysical(existingArtifactDir: string): V2SchemaJson {
  * `renderSchemaV2Body` applies before merging with an existing artifact. Lets a
  * caller decide whether to pass `existingArtifactDir` without swallowing the
  * merge's other errors (for example malformed `tables/*.md` front matter).
+ *
+ * It checks the shape the merge reads (version, schema id, and each table's and
+ * column's ids, names and types, plus their optional boolean `sensitive`
+ * flags), not every field of Schema v2.
  */
 export function isSchemaV2Json(value: unknown): boolean {
   try {
@@ -150,6 +154,7 @@ function assertV2SchemaJson(value: unknown, filePath: string): V2SchemaJson {
       typeof table.id !== "string" ||
       typeof table.name !== "string" ||
       typeof table.schema !== "string" ||
+      !isOptionalBoolean(table.sensitive) ||
       !Array.isArray(table.columns)
     ) {
       throw new Error(`@askdb/introspect: invalid Schema v2 table in ${filePath}`);
@@ -160,7 +165,8 @@ function assertV2SchemaJson(value: unknown, filePath: string): V2SchemaJson {
         typeof column.id !== "string" ||
         typeof column.name !== "string" ||
         typeof column.type !== "string" ||
-        typeof column.nullable !== "boolean"
+        typeof column.nullable !== "boolean" ||
+        !isOptionalBoolean(column.sensitive)
       ) {
         throw new Error(
           `@askdb/introspect: invalid Schema v2 column in ${filePath}`,
@@ -169,6 +175,11 @@ function assertV2SchemaJson(value: unknown, filePath: string): V2SchemaJson {
     }
   }
   return value as V2SchemaJson;
+}
+
+// The merge copies `sensitive` into the new artifact, so only a boolean may pass.
+function isOptionalBoolean(value: unknown): boolean {
+  return value === undefined || typeof value === "boolean";
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

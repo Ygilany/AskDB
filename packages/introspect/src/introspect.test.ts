@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { introspect } from "./introspect.js";
-import { renderSchemaV2Body } from "./render/render.js";
+import { isSchemaV2Json, renderSchemaV2Body } from "./render/render.js";
 import type { Connector, IntrospectionResult, SqlSchema } from "./types.js";
 
 let workDir: string;
@@ -187,5 +187,24 @@ describe("renderSchemaV2Body() — shared by --out, --print and --diff", () => {
     });
     expect(merged.body).toBe(editedBody);
     expect(merged.warnings).toEqual([]);
+  });
+
+  it.each([
+    ["table", (t: { sensitive: unknown; columns: Array<{ sensitive: unknown }> }) => (t.sensitive = "yes")],
+    ["column", (t: { sensitive: unknown; columns: Array<{ sensitive: unknown }> }) => (t.columns[0]!.sensitive = 1)],
+  ])("rejects an existing artifact whose %s sensitive flag isn't a boolean instead of copying it", (_level, edit) => {
+    const existingDir = join(workDir, "non-boolean.schema");
+    const edited = JSON.parse(renderSchemaV2Body(fakeSchema, { schemaId: "fake" }).body) as {
+      tables: Array<{ sensitive: unknown; columns: Array<{ sensitive: unknown }> }>;
+    };
+    edit(edited.tables[0]!);
+    rmSync(existingDir, { recursive: true, force: true });
+    mkdirSync(existingDir, { recursive: true });
+    writeFileSync(join(existingDir, "schema.json"), JSON.stringify(edited), "utf8");
+
+    expect(isSchemaV2Json(edited)).toBe(false);
+    expect(() => renderSchemaV2Body(fakeSchema, { schemaId: "fake", existingArtifactDir: existingDir })).toThrow(
+      "invalid Schema v2",
+    );
   });
 });
