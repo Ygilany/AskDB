@@ -67,14 +67,21 @@ export function readCassette(dialect: string, question: Question, dir = CASSETTE
   return cassette;
 }
 
-/**
- * SQL without a single trailing `;`. A model's reply usually ends with one. Released AskDB removes
- * it from the SQL it returns (`concepts/safety-boundaries.mdx`, "Single statement"); #477 keeps it.
- * The lab compares SQL with it removed on both sides, so it reads either behavior, and still sees
- * a `;` anywhere else or any other change to the statement.
- */
-export function withoutTerminator(sql: string): string {
+/** SQL without a single trailing `;` (and the whitespace around the statement). */
+function withoutTerminator(sql: string): string {
   return sql.trim().replace(/;$/, "").trimEnd();
+}
+
+/**
+ * Whether `sql`, as `ask()` returned it, is the statement `expected` holds: the lab's one rule for
+ * comparing AskDB's SQL with a cassette's, used by the replay suites (`test/support/cassette-sql.ts`)
+ * and by `lab:record`'s fence gate. The two are equal once a single trailing `;` is removed from
+ * each. A model's reply usually ends with one; released AskDB removes it from the SQL it returns
+ * (`concepts/safety-boundaries.mdx`, "Single statement"), and #477 keeps it, so the lab reads either
+ * behavior, and still sees a `;` anywhere else or any other change to the statement.
+ */
+export function sameStatement(sql: string, expected: string): boolean {
+  return withoutTerminator(sql) === withoutTerminator(expected);
 }
 
 /** The SQL inside a reply's first ```sql fence, without its terminator, read the way the replay suites read a cassette. */

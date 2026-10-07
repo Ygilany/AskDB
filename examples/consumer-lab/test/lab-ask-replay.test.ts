@@ -28,7 +28,8 @@ import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { beforeAll, describe, expect, it } from "vitest";
 import { SUPPORTED_DIALECTS, type SupportedDialect } from "../src/dialects.js";
-import { cassetteSql, loadQuestions, withoutTerminator } from "../src/model/catalog.js";
+import { loadQuestions } from "../src/model/catalog.js";
+import { expectCassetteSql } from "./support/cassette-sql.js";
 
 const LAB = fileURLToPath(new URL("..", import.meta.url));
 const QUESTIONS = loadQuestions();
@@ -100,7 +101,7 @@ describe.each(SUPPORTED_DIALECTS.map((d) => [d] as [SupportedDialect]))("[%s] la
     expect(client.status).toBe(0);
     expect(printedPrompt(raw.out)).toBeDefined();
     expect(printedPrompt(client.out)).toBe(printedPrompt(raw.out));
-    expect(withoutTerminator(printedSql(raw.out) ?? "")).toBe(cassetteSql(dialect, id));
+    expectCassetteSql(printedSql(raw.out), dialect, id);
     expect(printedSql(client.out)).toBe(printedSql(raw.out));
   });
 });

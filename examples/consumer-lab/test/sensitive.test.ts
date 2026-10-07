@@ -42,7 +42,8 @@ import { SUPPORTED_DIALECTS, type SupportedDialect } from "../src/dialects.js";
 import { executeReadOnly } from "../src/host/execute.js";
 import { postAsk, startHttpServer, type HttpServer } from "../src/http-api.js";
 import { askdbAsync } from "../src/introspect.js";
-import { cassetteSql, loadQuestions, withoutTerminator, type Question } from "../src/model/catalog.js";
+import { loadQuestions, type Question } from "../src/model/catalog.js";
+import { expectCassetteSql } from "./support/cassette-sql.js";
 import { startReplayServer, type RecordedRequest, type ReplayServer } from "../src/model/replay-server.js";
 import { LAB_ROOT, LAB_STATE } from "../src/paths.js";
 import { removeSensitiveArtifact, seededSensitiveValues, sensitiveArtifact, sensitiveColumns } from "../src/sensitive.js";
@@ -223,7 +224,7 @@ function allSeededValuesOf(columns: readonly string[]): Record<string, number> {
 async function expectWarned(dialect: SupportedDialect, reading: Reading): Promise<void> {
   const result = await ask(dialect, reading.id);
 
-  expect(withoutTerminator(result.sql)).toBe(cassetteSql(dialect, reading.id, QUESTIONS));
+  expectCassetteSql(result.sql, dialect, reading.id, QUESTIONS);
   expect(result.sensitiveGuardrail, `${reading.shape} wasn't flagged`).toMatchObject({ passed: false });
   expect(sorted(result.sensitiveGuardrail?.references), `the references for ${reading.shape}`).toEqual(expectedReferences(dialect, reading.references));
   expect(await seededValuesReturned(dialect, result.sql), "run as the host, the seeded values the reply returns").toEqual(allSeededValuesOf(reading.returns));
@@ -321,7 +322,7 @@ describe.each(SUPPORTED_DIALECTS.map((d) => [d] as [SupportedDialect]))("[%s]", 
 
       const result = await ask(dialect, CONTROL);
 
-      expect(withoutTerminator(result.sql)).toBe(cassetteSql(dialect, CONTROL, QUESTIONS));
+      expectCassetteSql(result.sql, dialect, CONTROL, QUESTIONS);
       // Present only when the schema marks something sensitive: the overlay was loaded.
       expect(result.sensitiveGuardrail, "no sensitiveGuardrail: the schema has no sensitive marker").toEqual({ passed: true, references: [] });
       expect(await seededValuesReturned(dialect, result.sql)).toEqual(allSeededValuesOf([]));
@@ -367,7 +368,7 @@ describe.each(SUPPORTED_DIALECTS.map((d) => [d] as [SupportedDialect]))("[%s]", 
 
       const result = await ask(dialect, CONTROL, { sensitiveGuardrailMode: "strict" });
 
-      expect(withoutTerminator(result.sql)).toBe(cassetteSql(dialect, CONTROL, QUESTIONS));
+      expectCassetteSql(result.sql, dialect, CONTROL, QUESTIONS);
       expect(result.sensitiveGuardrail).toEqual({ passed: true, references: [] });
     });
   });
