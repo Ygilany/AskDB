@@ -188,6 +188,7 @@ describe("askdb rag", () => {
   });
 
   it.each<[string, string[], number]>([
+    ["8 chunks by default", [], 8],
     ["the top -k chunks", ["-k", "1"], 1],
     ["only the --types asked for", ["--types", "column", "-k", "3"], 3],
   ])("query prints %s", async (_case, flags, count) => {
@@ -278,10 +279,15 @@ describe("askdb rag", () => {
     expect(await runRagCli(["query", schemaDir, "--question", "paid orders"])).toBe(0);
   });
 
-  it("rejects a -k that isn't a positive integer", async () => {
-    const schemaDir = copyFixture();
-    expect(await runRagCli(["query", schemaDir, "--question", "x", "-k", "abc"])).toBe(1);
-    expect(stderr.join("")).toMatch(/-k must be a positive integer \(got abc\)/);
+  it.each([
+    ["-k", "abc"],
+    ["-k", "0"],
+    ["-k", "1.5"],
+    ["--dimensions", "0"],
+    ["--dimensions", "1.5"],
+  ])("rejects %s %s: it must be a positive integer", async (flag, value) => {
+    expect(await runRagCli(["query", "./schema", "--question", "x", flag, value])).toBe(1);
+    expect(stderr.join("")).toBe(`${flag} must be a positive integer (got ${value}).\n`);
   });
 
   it("rejects an unknown --types value instead of returning no results", async () => {
@@ -289,12 +295,6 @@ describe("askdb rag", () => {
     expect(stderr.join("")).toBe(
       "Unknown --types value: tabel (expected table, column, cql, question, concept, relationship, tenant-policy).\n",
     );
-  });
-
-  it("rejects a non-positive --dimensions", async () => {
-    const schemaDir = copyFixture();
-    expect(await runRagCli(["index", schemaDir, "--dimensions", "0"])).toBe(1);
-    expect(stderr.join("")).toMatch(/--dimensions must be a positive integer/);
   });
 
   it.each<[string, string[], string]>([
