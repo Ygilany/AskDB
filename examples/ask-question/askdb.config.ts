@@ -6,8 +6,13 @@ export default defineConfig({
     providerConfig: {
       openai: {
         apiKey: env("OPENAI_API_KEY"),
-        model: env("OPENAI_MODEL"),
       },
+    },
+    language: {
+      model: env("OPENAI_MODEL"),
+    },
+    embedding: {
+      model: env("OPENAI_EMBEDDING_MODEL") ?? "text-embedding-3-small",
     },
   },
   introspection: {
@@ -17,13 +22,7 @@ export default defineConfig({
     },
   },
   rag: {
-    embedder: "openai",
-    embedderConfig: {
-      openai: {
-        apiKey: env("OPENAI_API_KEY"),
-        model: env("OPENAI_EMBEDDING_MODEL"),
-      },
-    },
+    embedder: "ai",
     store: "memory",
     storeConfig: { memory: {} },
   },

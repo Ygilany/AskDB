@@ -21,7 +21,11 @@ import InstallTabs from "../../../components/InstallTabs.astro";
 
 The dialect-agnostic NL-to-SQL pipeline. Schema loading, prompt construction, validation, and tenant-scope handling all live here.
 
-<InstallTabs pkgs="@askdb/core" />
+<InstallTabs pkgs="@askdb/core ai" />
+
+`ai` (the Vercel AI SDK) is a required **peer dependency** of `@askdb/core`, with the range `^6.0.0 || ^7.0.51` (AI SDK 6, or 7.0.51 and later). Your app owns its version: `ask()` receives a model your app constructs, so core uses your app's `ai` instead of bundling its own — upgrading AskDB never forces an AI SDK upgrade on the rest of your app. Build the model with an AI SDK provider package (for example `@ai-sdk/openai`), or through the config-driven path (`@askdb/ai` and `@askdb/client`), which currently requires AI SDK 7.
+
+Every package on this page that depends on `@askdb/core` also needs `ai` installed, even if you only introspect and never generate SQL. That covers `@askdb/client`, `@askdb/connectors`, the engine adapters, `@askdb/introspect`, `@askdb/prisma`, `@askdb/enrich` and `@askdb/rag`. Core loads `ai` when it is imported. npm 7+ and pnpm install the missing peer for you. Yarn doesn't, so the install commands on this page list `ai` explicitly.
 
 **Key exports**
 
@@ -41,7 +45,7 @@ See the **[@askdb/core API reference](/reference/core-api/)** for the full optio
 
 Config-aware facade over `@askdb/core`. `createAskDb()` resolves the schema, model, and dialect from your `askdb.config.*` (with every `@askdb/ai` built-in provider registered by default), so call sites pass only a question. Install it when you want the shortest config-driven path; skip it when you construct the model and load the schema yourself and call `ask()` directly.
 
-<InstallTabs pkgs="@askdb/client @askdb/config @ai-sdk/openai" />
+<InstallTabs pkgs="@askdb/client @askdb/core @askdb/config ai @ai-sdk/openai" />
 
 **Key exports**
 
@@ -133,7 +137,7 @@ Optional config bootstrap: `.env` and `askdb.config.*` discovery, type-safe `def
 | `env`, `requiredEnv` | Typed env-var accessors. |
 | `isAskDbDebugEnabled()` | `true` when the `ASKDB_DEBUG` shell variable is `1` or `true`; works without a loaded config. |
 
-For tools that write a new `askdb.config.ts`, the `@askdb/config/scaffold` entry point exports `renderAskDbAiConfigScaffold(input)`. It renders the config's `ai` block and lists the env vars that block reads. `askdb init` and Studio's setup wizard use it. Your own `askdb.config.ts` never needs it.
+For tools that write a new `askdb.config.ts`, the `@askdb/config/scaffold` entry point exports `renderAskDbAiConfigScaffold(input)`. It renders the config's `ai` block (the provider connection in `ai.providerConfig`, plus `ai.language.model` read from an env var when one is given) and lists the env vars that block reads. `askdb init` and Studio's setup wizard use it. Your own `askdb.config.ts` never needs it.
 
 ## Engine adapters
 
@@ -141,25 +145,25 @@ Each engine package ships the introspection connector for its engine, any catalo
 
 ### `@askdb/postgres`
 
-<InstallTabs pkgs="@askdb/postgres" />
+<InstallTabs pkgs="@askdb/postgres ai" />
 
 PostgreSQL dialect, connector, catalog SQL templates, and an optional `pg`-based catalog query runner for live introspection. Pass `dialect: "postgres"` to `ask()`.
 
 ### `@askdb/mysql`
 
-<InstallTabs pkgs="@askdb/mysql" />
+<InstallTabs pkgs="@askdb/mysql ai" />
 
 MySQL dialect, connector, catalog SQL templates, and an optional `mysql2`-based catalog query runner for live introspection. Pass `dialect: "mysql"` to `ask()`.
 
 ### `@askdb/sqlite`
 
-<InstallTabs pkgs="@askdb/sqlite" />
+<InstallTabs pkgs="@askdb/sqlite ai" />
 
 SQLite dialect, connector, catalog SQL templates, and an optional `better-sqlite3`-based catalog query runner for live introspection. Works with embedded file-backed databases. Pass `dialect: "sqlite"` to `ask()`.
 
 ### `@askdb/sqlserver`
 
-<InstallTabs pkgs="@askdb/sqlserver" />
+<InstallTabs pkgs="@askdb/sqlserver ai" />
 
 SQL Server (T-SQL) dialect, connector, catalog SQL templates, and an optional `mssql`-based catalog query runner for live introspection. Pass `dialect: "sqlserver"` to `ask()`.
 
@@ -169,7 +173,7 @@ SQL Server (T-SQL) dialect, connector, catalog SQL templates, and an optional `m
 
 The engine-agnostic introspection contract and the schema-directory writer. Use directly only when you're calling introspection from your own code — the CLI wraps this for you.
 
-<InstallTabs pkgs="@askdb/introspect" />
+<InstallTabs pkgs="@askdb/introspect ai" />
 
 To get the exact `schema.json` bytes without writing anything (a preview or a drift check), call `renderSchemaV2Body(result.schema, { schemaId, provider: result.provider, existingArtifactDir })`. It returns `{ json, body, warnings }`, applies the same merge `introspect()` does when writing (human-set `sensitive` flags carried over from an existing artifact), and backs `askdb introspect --out`, `--print` and `--diff`. `isSchemaV2Json(value)` is the check it applies to an existing `schema.json` before merging, for callers that need to decide up front.
 
@@ -189,7 +193,7 @@ The `@askdb/introspect/kit` subpath holds the shared helpers the engine packages
 
 File-only connector that reads `.prisma` schema files and produces AskDB physical metadata — no live database needed. Pair with an engine adapter for SQL generation at runtime.
 
-<InstallTabs pkgs="@askdb/prisma @askdb/introspect" />
+<InstallTabs pkgs="@askdb/prisma @askdb/introspect ai" />
 
 See [the Prisma integration guide](/guides/integrations/prisma/).
 
@@ -218,15 +222,15 @@ See [Studio — driver packages](/studio/#driver-packages) and [Configuration re
 
 Headless schema-authoring helpers used by Studio. Use directly when building a custom authoring surface.
 
-<InstallTabs pkgs="@askdb/enrich" />
+<InstallTabs pkgs="@askdb/enrich ai" />
 
 ## Retrieval
 
 ### `@askdb/rag`
 
-Chunks the schema artifact, indexes it in a vector store, and retrieves relevant chunks per question. Use with `ask()`'s `retriever` option for large schemas. `ai`, `@ai-sdk/openai` and `pg` are optional peer dependencies: install the ones your embedder and vector store use. Their floors move the same way as the adapters' `ai` floor.
+Chunks the schema artifact, indexes it in a vector store, and retrieves relevant chunks per question. Use with `ask()`'s `retriever` option for large schemas. Always install `ai`: `@askdb/rag` depends on `@askdb/core`, which loads `ai` when it is imported, even with a custom embedder or the in-memory or file store. Install `@ai-sdk/openai` and `pg` only if your embedder and vector store use them; they are optional peers. Their AI SDK 7 floors (`ai` `^7.0.51`, `@ai-sdk/openai` `^4.0.29`) move the same way as the adapters' `ai` floor; the AI SDK 6 floors (`^6.0.0`, `^3.0.0`) move only on purpose, with the AI SDK 6 install smoke's pins.
 
-<InstallTabs pkgs="@askdb/rag" />
+<InstallTabs pkgs="@askdb/rag ai" />
 
 **Key exports**
 
@@ -236,9 +240,11 @@ Chunks the schema artifact, indexes it in a vector store, and retrieves relevant
 | `createAiSdkEmbedder({ model })` / `createOpenAiEmbedder(...)` | Wrap an AI SDK embedding model (or raw OpenAI) as the `embedder`. |
 | `createRetriever({ store, embedder })` | Build the retriever passed to `ask()`. |
 | `createPgvectorStore` | The pgvector store factory. |
+| `detectEmbeddingDimensions(embedder)` | Learn an embedder's vector width with one short embedding call, for a new pgvector table. |
+| `aiSdkEmbedderId({ provider, model, dimensions })` | The `embedderId` Studio and `askdb rag` record for an `ai.embedding` model, so a host can share their indexes. |
 | `loadChunkerSourcesFromDir(path)` | Load a schema directory into chunker format (includes markdown). |
 
-Ships a small CLI binary `askdb-rag` with three commands — `index`, `query`, and `setup-store` (pgvector provisioning). See [CLI reference — the askdb-rag binary](/reference/cli/#the-askdb-rag-binary) and [RAG for large schemas](/guides/rag-for-large-schemas/).
+The command line for it is the `askdb` package's [`askdb rag`](/reference/cli/#askdb-rag), with three commands — `index`, `query`, and `setup-store` (pgvector provisioning). The `askdb-rag` binary `@askdb/rag` used to run them only points there until 1.0. See [RAG for large schemas](/guides/rag-for-large-schemas/).
 
 See the **[@askdb/rag API reference](/reference/rag-api/)** for the full option and type documentation.
 
@@ -271,6 +277,7 @@ See [the CLI reference](/reference/cli/).
 
 | Package | Depends on |
 | --- | --- |
+| `@askdb/core` | AI SDK core package (`ai`, AI SDK 6 or 7) as a required peer |
 | `@askdb/introspect` | `@askdb/core` |
 | `@askdb/postgres`, `@askdb/mysql`, `@askdb/sqlite`, `@askdb/sqlserver` | `@askdb/core`, `@askdb/introspect` |
 | `@askdb/prisma` | `@askdb/introspect` |
@@ -288,7 +295,7 @@ Reusable packages stay small and layered. First-party surfaces (CLI, Studio, HTT
 
 <div class="home-path-grid">
   <a href="/quickstart/"><strong>Just trying it out</strong><span><code>askdb</code> alone is enough to introspect, enrich, and ask from the CLI.</span></a>
-  <a href="/guides/embed-in-node/"><strong>Embedding in a Node service</strong><span><code>@askdb/client</code> + <code>@askdb/config</code> + an AI provider adapter.</span></a>
+  <a href="/guides/embed-in-node/"><strong>Embedding in a Node service</strong><span><code>@askdb/client</code> + <code>@askdb/core</code> + <code>@askdb/config</code> + <code>ai</code> + an AI SDK provider package such as <code>@ai-sdk/openai</code>.</span></a>
   <a href="/guides/deploy-as-http-service/"><strong>Standing up an HTTP service</strong><span>Add <code>@askdb/http-api</code> on top of the embedding install.</span></a>
   <a href="/guides/rag-for-large-schemas/"><strong>Working with a large schema</strong><span>Add <code>@askdb/rag</code> and a vector store (pgvector recommended).</span></a>
 </div>

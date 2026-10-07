@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import type { PgClient } from "./pgvector.js";
-import { createPgvectorStore } from "./pgvector.js";
+import { createPgvectorStore, PgvectorDimensionMismatchError } from "./pgvector.js";
 
 describe("createPgvectorStore", () => {
   it("documents table, extension, and HNSW setup SQL without executing it", () => {
@@ -14,6 +14,57 @@ describe("createPgvectorStore", () => {
     expect(sql).toContain("CREATE EXTENSION IF NOT EXISTS vector");
     expect(sql).toContain("embedding vector(1536) NOT NULL");
     expect(sql).toContain("USING hnsw");
+  });
+
+  /** A client whose table, if any, has an `embedding` column of `existingWidth`; records every query. */
+  function clientWithTable(existingWidth: number | undefined) {
+    const queries: string[] = [];
+    const client: PgClient = {
+      query: vi.fn(async (sql: string) => {
+        queries.push(sql);
+        if (sql.includes("pg_attribute")) {
+          return { rows: existingWidth === undefined ? [] : [{ dimensions: existingWidth }] };
+        }
+        return { rows: [] };
+      }),
+    };
+    return { client, ddl: () => queries.filter((sql) => sql.includes("CREATE TABLE")) };
+  }
+
+  it("reads and writes without a width, but needs one to create the table", async () => {
+    const store = createPgvectorStore({ client: clientWithTable(undefined).client, table: "askdb_rag_chunks" });
+
+    expect(() => store.setupSql()).toThrow(/pass dimensions .*detectEmbeddingDimensions/);
+    await expect(store.ensureSchema()).rejects.toThrow(/pass dimensions to create table "askdb_rag_chunks"/);
+    await expect(store.count()).resolves.toBe(0);
+  });
+
+  it("reports the width of an existing table, and none when there's no table", async () => {
+    await expect(createPgvectorStore({ client: clientWithTable(1536).client }).tableDimensions()).resolves.toBe(1536);
+    await expect(createPgvectorStore({ client: clientWithTable(undefined).client }).tableDimensions()).resolves.toBeUndefined();
+  });
+
+  it("refuses to use an existing table of another width, and changes nothing", async () => {
+    const { client, ddl } = clientWithTable(1536);
+    const store = createPgvectorStore({ client, dimensions: 3072, table: "askdb_rag_chunks" });
+
+    const error = await store.ensureSchema().catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(PgvectorDimensionMismatchError);
+    expect(error).toMatchObject({ table: "askdb_rag_chunks", tableDimensions: 1536, dimensions: 3072 });
+    expect((error as Error).message).toMatch(
+      /pgvector table "askdb_rag_chunks" stores 1536-dimension vectors, but this store is set up for 3072/,
+    );
+    expect(ddl()).toEqual([]);
+  });
+
+  it.each<[string, number | undefined, number | undefined, string]>([
+    ["creates a new table at the given width", undefined, 768, "vector(768)"],
+    ["keeps an existing table of the same width", 768, 768, "vector(768)"],
+    ["adopts an existing table's width when given none", 768, undefined, "vector(768)"],
+  ])("ensureSchema %s", async (_case, existing, dimensions, column) => {
+    const { client, ddl } = clientWithTable(existing);
+    await createPgvectorStore({ client, dimensions }).ensureSchema();
+    expect(ddl()).toEqual([expect.stringContaining(column)]);
   });
 
   it("emits parameterized upsert SQL", async () => {
@@ -39,7 +90,7 @@ describe("createPgvectorStore", () => {
       },
     ]);
 
-    const [sql, params] = query.mock.calls[0] as [string, unknown[]];
+    const [sql, params] = query.mock.calls[0] as unknown as [string, unknown[]];
     expect(sql).toContain('INSERT INTO "askdb_rag_chunks"');
     expect(sql).toContain("ON CONFLICT (id) DO UPDATE");
     expect(params[0]).toEqual(["chunk:orders"]);
@@ -98,19 +149,66 @@ describe("createPgvectorStore", () => {
     ]);
   });
 
-  it("emits parameterized delete SQL", async () => {
+  it("rejects vectors whose dimensions don't match the table", async () => {
     const query = vi.fn(async () => ({ rows: [] }));
-    const store = createPgvectorStore({
-      client: { query },
-      dimensions: 2,
-      table: "askdb_rag_chunks",
-    });
+    const store = createPgvectorStore({ client: { query }, dimensions: 3 });
+    await expect(
+      store.upsert([
+        {
+          id: "x",
+          vector: [1, 0],
+          payload: { id: "x", type: "table", text: "x", schemaId: "s", refs: [], sensitive: false },
+        },
+      ]),
+    ).rejects.toThrow(/expects 3-dimension vectors; got 2/);
+    expect(query).not.toHaveBeenCalled();
+  });
 
-    await store.delete(["chunk:orders"]);
+  it("loads the installed `pg` for a connection string and reaches the network", async () => {
+    // Port 1 refuses connections: getting that far means `pg` loaded and `Pool` was found.
+    const store = createPgvectorStore({ connectionString: "postgres://u:p@127.0.0.1:1/none" });
+    try {
+      const error = (await store.count().catch((e: unknown) => e)) as Error & { code?: string };
+      expect(error.code).toBe("ECONNREFUSED");
+    } finally {
+      await store.close();
+    }
+  });
 
-    expect(query).toHaveBeenCalledWith(
-      'DELETE FROM "askdb_rag_chunks" WHERE id = ANY($1::text[])',
-      [["chunk:orders"]],
-    );
+  it("reports stored hashes by id prefix and ids by schema", async () => {
+    const query = vi.fn(async (sql: string) => ({
+      rows: sql.includes("content_hash")
+        ? [{ id: "chunk:s:a", content_hash: "h-a" }]
+        : [{ id: "chunk:s:a" }, { id: "chunk:table:legacy" }],
+    }));
+    const store = createPgvectorStore({ client: { query }, dimensions: 2, table: "t" });
+
+    expect(await store.hashesByPrefix!("chunk:s:")).toEqual({ "chunk:s:a": "h-a" });
+    const [hashSql, hashParams] = query.mock.calls[0] as unknown as [string, unknown[]];
+    expect(hashSql).toContain("left(id, char_length($1::text)) = $1::text");
+    expect(hashSql).toContain("content_hash IS NOT NULL");
+    expect(hashParams).toEqual(["chunk:s:"]);
+
+    expect(await store.idsBySchema!("s")).toEqual(["chunk:s:a", "chunk:table:legacy"]);
+    expect(query.mock.calls[1]).toEqual(['SELECT id FROM "t" WHERE schema_id = $1', ["s"]]);
+    expect(store.describe!()).toMatchObject({ kind: "pgvector", location: "t", dimensions: 2 });
+  });
+
+  it("reports and enforces an existing table's width once ensureSchema reads it, when given none", async () => {
+    const store = createPgvectorStore({ client: clientWithTable(768).client, table: "t" });
+    expect(store.describe!()).toMatchObject({ kind: "pgvector", location: "t" });
+    expect(store.describe!()).not.toHaveProperty("dimensions");
+
+    await store.ensureSchema();
+    expect(store.describe!()).toMatchObject({ kind: "pgvector", location: "t", dimensions: 768 });
+    await expect(
+      store.upsert([
+        {
+          id: "x",
+          vector: [1, 0],
+          payload: { id: "x", type: "table", text: "x", schemaId: "s", refs: [], sensitive: false },
+        },
+      ]),
+    ).rejects.toThrow(/expects 768-dimension vectors; got 2/);
   });
 });

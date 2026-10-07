@@ -1,0 +1,6 @@
+---
+"@askdb/core": minor
+"@askdb/rag": minor
+---
+
+**Sensitive-column mentions are matched schema-wide (ADR 0017).** `@askdb/rag` now checks every table's describable text (table, column, common query language, example question, and business context) against the sensitive columns of the whole schema, not only that table's, so an `orders` note that says "match via users.ssn" is excluded by default. A column that is sensitive only because its table is, now counts only when mentioned as `table.column`, so generic names of a sensitive table (`id`, `org_id`) no longer drop unrelated concepts and tenant policy sections. To support this, `loadSchema()` and `loadSchemaFromJson()` set `sensitiveFromTable: true` on columns that are sensitive solely through their table. `@askdb/core`'s mention rule takes a qualified name as `{ table, column }` (bare names stay literal, dots included) and gains `createMentionMatcher(names)`, which compiles a name list once for checking many texts; the [schema-v2 contract](https://github.com/Ygilany/AskDB/blob/main/docs/contracts/schema-v2.md#sensitive-propagation) states the full rule. Some schemas will exclude different chunks after upgrading, which re-embeds those chunks on the next index run.

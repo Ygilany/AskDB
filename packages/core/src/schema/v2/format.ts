@@ -14,6 +14,7 @@ export function formatSchemaV2ForNlToSql(
   options: FormatNlToSqlOptions = {},
 ): { ddl: string; stats: NlToSqlSchemaFormatStats } {
   const omit = options.omitSensitiveIdentifiersFromPrompt === true;
+  const quoteIdentifier = options.quoteIdentifier ?? listAsStored;
   let redactedColumnCount = 0;
   let sensitiveTableStubCount = 0;
   let listedSensitiveColumnCount = 0;
@@ -26,13 +27,13 @@ export function formatSchemaV2ForNlToSql(
       continue;
     }
 
-    // Table header — always qualify with database schema name; add alias annotation when present
-    const qualifiedName = `${t.schema}.${t.name}`;
+    // Table header — qualified with its schema unless that namespace isn't one; alias annotation when present
+    const listedName = promptTableName(t, options.unqualifiedNamespace, quoteIdentifier);
     const aliasNote =
       !t.sensitive && t.aliases?.length
         ? ` -- aliases: ${t.aliases.join(", ")}`
         : "";
-    lines.push(`TABLE ${qualifiedName}${aliasNote}`);
+    lines.push(`TABLE ${listedName}${aliasNote}`);
 
     // Table description as a comment line
     if (!t.sensitive && t.description) {
@@ -55,7 +56,7 @@ export function formatSchemaV2ForNlToSql(
           continue;
         }
         visibleColumns++;
-        lines.push(buildColumnLine(c, false, false));
+        lines.push(buildColumnLine(c, false, false, quoteIdentifier));
       }
       if (visibleColumns === 0 && t.columns.length > 0) {
         lines.push(`  (all columns marked sensitive — definitions withheld from model context)`);
@@ -63,7 +64,7 @@ export function formatSchemaV2ForNlToSql(
     } else {
       for (const c of t.columns) {
         if (c.sensitive) listedSensitiveColumnCount++;
-        lines.push(buildColumnLine(c, c.sensitive, t.sensitive));
+        lines.push(buildColumnLine(c, c.sensitive, t.sensitive, quoteIdentifier));
       }
     }
 
@@ -91,16 +92,35 @@ export function formatSchemaV2ForNlToSql(
   };
 }
 
+/**
+ * A table's name as the NL→SQL prompt lists it: `schema.name`, or `name` in the unqualified
+ * namespace, each part passed through `quoteIdentifier`.
+ */
+export function promptTableName(
+  table: Pick<NormalizedSchemaV2["tables"][0], "schema" | "name">,
+  unqualifiedNamespace: string | undefined,
+  quoteIdentifier: (name: string) => string = listAsStored,
+): string {
+  const name = quoteIdentifier(table.name);
+  return table.schema === unqualifiedNamespace ? name : `${quoteIdentifier(table.schema)}.${name}`;
+}
+
+/** The default `quoteIdentifier`: a name listed exactly as stored. */
+export function listAsStored(name: string): string {
+  return name;
+}
+
 function buildColumnLine(
   c: NormalizedSchemaV2["tables"][0]["columns"][0],
   colSensitive: boolean,
   tableSensitive: boolean,
+  quoteIdentifier: (name: string) => string,
 ): string {
   const effective = colSensitive || tableSensitive;
   const flags = [c.primaryKey ? "PK" : "", c.nullable ? "NULL" : "NOT NULL"]
     .filter(Boolean)
     .join(" ");
-  let line = `  - ${c.name} ${c.type}${flags ? ` (${flags})` : ""}`;
+  let line = `  - ${quoteIdentifier(c.name)} ${c.type}${flags ? ` (${flags})` : ""}`;
 
   if (effective) {
     line += " (sensitive)";

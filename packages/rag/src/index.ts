@@ -14,6 +14,7 @@ export type {
   UpsertRecord,
   Embedder,
   VectorStore,
+  VectorStoreDescriptor,
   Retriever,
 } from "./types.js";
 
@@ -34,8 +35,11 @@ export {
   buildSchemaIndex,
   createRetriever,
   chunkContentHash,
+  checkIndexMatches,
   readLockFile,
   writeLockFile,
+  SCHEMA_LOCK_VERSION,
+  type IndexMatch,
   type BuildSchemaIndexOptions,
   type BuildSchemaIndexResult,
   type IndexProgressEvent,
@@ -54,6 +58,7 @@ export { createMemoryStore, type MemoryStore } from "./stores/memory.js";
 export { createFileStore, type FileStore, type FileStoreOptions } from "./stores/file.js";
 export {
   createPgvectorStore,
+  PgvectorDimensionMismatchError,
   type PgvectorStore,
   type PgClient,
   type PgvectorIndexStrategy,
@@ -62,9 +67,12 @@ export {
 
 // Embedders
 export {
+  aiSdkEmbedderId,
   createAiSdkEmbedder,
+  type AiSdkEmbedderIdOptions,
   type AiSdkProviderOptions,
   type CreateAiSdkEmbedderOptions,
   type AiSdkEmbedderUsage,
 } from "./embedders/ai-sdk.js";
 export { createOpenAiEmbedder, type CreateOpenAiEmbedderOptions } from "./embedders/openai.js";
+export { detectEmbeddingDimensions } from "./embedders/dimensions.js";

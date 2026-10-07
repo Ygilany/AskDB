@@ -45,10 +45,11 @@ The detailed first-run paths live in the [docs-site quickstart](https://askdb.to
 ## Use as a library
 
 ```bash
-pnpm add @askdb/core
+# `ai` (Vercel AI SDK 6 or 7) is a required peer dependency — your app owns its version
+pnpm add @askdb/core ai
 pnpm add @askdb/postgres
 # Example provider for the code below
-pnpm add ai @ai-sdk/openai
+pnpm add @ai-sdk/openai
 ```
 
 `pg` is optional and only needed for live Postgres introspection through `@askdb/postgres`.

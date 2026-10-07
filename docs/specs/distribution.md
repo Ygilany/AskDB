@@ -5,7 +5,7 @@
 
 ## Overview
 
-AskDB packages are published to npm under the `@askdb` scope. The distribution model is developer-first: consumers run `pnpm add @askdb/core`, supply their own model and dialect adapter, and call `ask()` from their own runtime. No database connection or API key is bundled.
+AskDB packages are published to npm under the `@askdb` scope. The distribution model is developer-first: consumers run `pnpm add @askdb/core ai`, supply their own model and dialect adapter, and call `ask()` from their own runtime. No database connection or API key is bundled.
 
 Release tooling uses changesets for versioning and changelog generation. Packages use semantic versioning; pre-1.0 versions allow breaking changes with a clear changeset entry rather than a migrator.
 

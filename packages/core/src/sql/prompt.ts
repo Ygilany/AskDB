@@ -11,10 +11,24 @@ import {
 } from "../schema/v2/index.js";
 import type { NormalizedTenantPolicy, TenantScope } from "../schema/v2/tenant-policy.js";
 import type { DialectSpec } from "./dialect-spec.js";
+import { promptIdentifierQuoter, qualifiedNameQuotingRule } from "./prompt-identifiers.js";
 import { buildTenantPromptBlock } from "./tenant-prompt.js";
 
 function isV2(schema: AnyNormalizedSchema): schema is NormalizedSchemaV2 {
   return "schemaId" in schema;
+}
+
+/**
+ * The namespace whose tables the prompt lists unqualified: the dialect's
+ * `unqualifiedNamespace` when it is the schema's only namespace. Next to other
+ * namespaces it is a real name (a MySQL database list) and stays qualified.
+ */
+export function unqualifiedNamespaceFor(
+  schema: AnyNormalizedSchema,
+  namespace: string | undefined,
+): string | undefined {
+  if (namespace === undefined || !isV2(schema)) return undefined;
+  return schema.tables.every((t) => t.schema === namespace) ? namespace : undefined;
 }
 
 /**
@@ -28,7 +42,7 @@ export function buildNlToSqlUserPrompt(
   schema: AnyNormalizedSchema,
   ambiguityNotes: readonly string[] = [],
   logger?: AskDbLogger,
-  nlToSqlSchemaOptions?: FormatNlToSqlOptions,
+  nlToSqlSchemaOptions?: Omit<FormatNlToSqlOptions, "unqualifiedNamespace" | "quoteIdentifier">,
   /**
    * Optional pre-synthesized DDL block. When supplied, this replaces the
    * formatter output verbatim — used by `ask({ retriever })` to inject a
@@ -46,8 +60,13 @@ export function buildNlToSqlUserPrompt(
    */
   parameterize?: boolean,
 ): string {
+  const unqualifiedNamespace = unqualifiedNamespaceFor(schema, dialect.unqualifiedNamespace);
   const formatted = isV2(schema)
-    ? formatSchemaV2ForNlToSql(schema, nlToSqlSchemaOptions)
+    ? formatSchemaV2ForNlToSql(schema, {
+        ...nlToSqlSchemaOptions,
+        unqualifiedNamespace,
+        quoteIdentifier: promptIdentifierQuoter(dialect),
+      })
     : formatSchemaForNlToSql(schema, nlToSqlSchemaOptions);
   const ddl = prebuiltDdl ?? formatted.ddl;
   const stats = formatted.stats;
@@ -81,7 +100,11 @@ export function buildNlToSqlUserPrompt(
     "Rules:",
     `- Output exactly one ${dialect.displayName} SELECT query (CTE WITH is ok). End with optional semicolon.`,
     '- Put the SQL only inside one markdown fenced block labelled ```sql (preferred). No extra commentary.',
-    "- Use identifiers from the schema below; qualify table names where it helps readability.",
+    unqualifiedNamespace === undefined
+      ? "- Use identifiers from the schema below; qualify table names where it helps readability."
+      : `- Use identifiers from the schema below and write each table name exactly as it is listed. \`${unqualifiedNamespace}\` is not a schema in ${dialect.displayName}: never write \`${unqualifiedNamespace}.<table>\`, even where ids or notes below mention \`${unqualifiedNamespace}\`.`,
+    // Only a prompt that lists qualified names gets the rule; a v1 schema lists no schemas.
+    ...(isV2(schema) && unqualifiedNamespace === undefined ? [qualifiedNameQuotingRule(dialect)] : []),
     "- Do NOT use DDL or write statements (INSERT, UPDATE, DELETE, etc.). SELECT-only.",
     `- Dialect notes: ${dialect.promptBrief}`,
     "",

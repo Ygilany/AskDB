@@ -85,14 +85,15 @@ import { defineConfig, env, type AskDbConfig } from "@askdb/config";
 export default defineConfig({
   ai: {
     provider: "openai",
-    providerConfig: { openai: { apiKey: env("OPENAI_API_KEY"), model: env("OPENAI_MODEL") } },
+    providerConfig: { openai: { apiKey: env("OPENAI_API_KEY") } },
+    language: { model: env("OPENAI_MODEL") },
   },
   introspection: {
     provider: "sqlserver",
     providerConfig: { sqlserver: { databaseUrl: env("SQLSERVER_URL") } },
     outputDir: "./askdb",
   },
-  rag: { embedder: "mock", embedderConfig: {}, store: "file", storeConfig: { file: {} } },
+  rag: { embedder: "mock", store: "file", storeConfig: { file: {} } },
 } satisfies AskDbConfig);
 ```
 

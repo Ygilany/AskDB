@@ -1,0 +1,38 @@
+# Reuse the fixture's images, DDL and seeder; own every volume and network.
+# Internal networks do not publish ports. A fixed TCP relay admits lab clients,
+# while database containers have no external route or access to the host bridge.
+# !override requires Docker Compose 2.24.4+; isolated gateway mode needs Engine 28+.
+services:
+  postgres:
+    ports: !override []
+  mysql:
+    ports: !override []
+  mariadb:
+    ports: !override []
+  sqlserver:
+    ports: !override []
+  relay:
+    image: haproxy:3.2-alpine
+    depends_on:
+      - postgres
+      - mysql
+      - mariadb
+      - sqlserver
+    ports:
+      - "127.0.0.1:${ASKDB_FIXTURE_POSTGRES_PORT:-25432}:5432"
+      - "127.0.0.1:${ASKDB_FIXTURE_MYSQL_PORT:-23306}:3306"
+      - "127.0.0.1:${ASKDB_FIXTURE_MARIADB_PORT:-23307}:3307"
+      - "127.0.0.1:${ASKDB_FIXTURE_SQLSERVER_PORT:-21433}:1433"
+    volumes:
+      - ${ASKDB_LAB_RELAY_CONFIG:?use isolated-run.ts}:/usr/local/etc/haproxy/haproxy.cfg:ro
+    networks: [default, entry]
+    sysctls:
+      net.ipv4.ip_forward: "0"
+    read_only: true
+    cap_drop: [ALL]
+networks:
+  default:
+    internal: true
+    driver_opts:
+      com.docker.network.bridge.gateway_mode_ipv4: isolated
+  entry: {}

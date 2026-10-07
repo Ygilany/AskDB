@@ -18,11 +18,10 @@ export default defineConfig({
   ai: {
     provider: "openai",
     providerConfig: {
-      openai: {
-        apiKey: env("OPENAI_API_KEY"),
-        model: env("OPENAI_MODEL"),
-      },
+      openai: { apiKey: env("OPENAI_API_KEY") },
     },
+    language: { model: env("OPENAI_MODEL") },
+    embedding: { model: "text-embedding-3-small" },
   },
   introspection: {
     provider: "postgres",
@@ -32,7 +31,7 @@ export default defineConfig({
     outputDir: "./my-app.schema",
   },
   rag: {
-    embedder: "openai",
+    embedder: "ai",
     store: "pgvector",
     storeConfig: {
       pgvector: { databaseUrl: env("PGVECTOR_URL") },
@@ -52,15 +51,15 @@ Use the `env()` helper (rather than `process.env`) so AskDB can capture which en
 
 | Field | Required | What it configures |
 | --- | --- | --- |
-| `ai` | yes | Model provider (`provider` + `providerConfig` branch). See [Bring your own model](/guides/bring-your-own-model/). |
+| `ai` | yes | Provider connections (`provider`, `providerConfig`), the language model (`language`) and the embedding model (`embedding`). See [The `ai` block](#the-ai-block) and [Bring your own model](/guides/bring-your-own-model/). |
 | `introspection` | yes | Introspection engine (`provider`: `postgres`, `mysql`, `sqlite`, `sqlserver`, `prisma`), its connection (`providerConfig`), `outputDir` (default `./askdb/`), and optionally `schemas`: the schemas to introspect, like `askdb introspect --schemas` (which overrides it). On MySQL/MariaDB these are databases. |
-| `rag` | yes | Embedder (`mock`, `openai`) and vector store (`file`, `memory`, `pgvector`) plus their config branches. |
+| `rag` | no | Embedder (`mock`, or `ai` for the `ai.embedding` model) and vector store (`file`, `memory`, `pgvector`) plus the store's config branch. See [The `rag` block](#the-rag-block). Omit it when you don't use retrieval: AskDB then uses the mock embedder and the in-memory store. |
 | `dialect` | no | Override the NL-to-SQL dialect (`postgres`, `mysql`, `sqlite`, `sqlserver`). When unset, it's inferred from the schema artifact's recorded provider. |
 | `modes` | no | `askdbMode` (`schema_only` default, `bounded_results`) and `omitSensitiveFromPrompt` (default `false`). |
 | `host` | no | `schemaPath` — the default schema artifact for embedding hosts and the HTTP API. `schemaJson` — inline artifact JSON, for environments without a file system path. |
 | `logging` | no | `level`, plus `logFile`, `logStdout`, and `correlationId` defaults for the CLI's structured logs. |
 | `studio` | no | `listen.{host,port}` (defaults `127.0.0.1:5556`) and the `execute` block below. |
-| `httpApi` | no | `listen.{host,port}` for the HTTP API server (defaults `127.0.0.1:3000`). Use `env("PORT")` on platforms that inject a port. |
+| `httpApi` | no | `listen.{host,port}` for the HTTP API server (defaults `127.0.0.1:3000`). Use `env("PORT")` on platforms that inject a port. `allowSchemaOverride` (default `false`) — accept per-request `schemaJson`. `requestTimeoutMs` (default `60000`, at most `2147483647`) — model-call timeout per request. See [HTTP API → Server config](/reference/http-api/#server-config-httpapi). |
 | `dev` | no | `mockSql` — deterministic NL-to-SQL output for tests; bypasses the model call. |
 
 ### `dialect` — when inference is wrong
@@ -89,19 +88,108 @@ export default defineConfig({
 });
 ```
 
-### `ai.reasoning` — reasoning/latency effort
+## The `ai` block
 
-Optional, provider-portable knob for how much reasoning/thinking effort AskDB's model calls use. Leave it unset to keep the provider/model's own default (AskDB sends no reasoning options at all — this is the default, unchanged behavior).
+`ai` separates *how to reach a provider* from *which model to use for what*:
+
+- **`ai.providerConfig`** holds provider connections: keys, endpoints, Azure resources, API versions. No model names.
+- **`ai.language`** picks the language model AskDB writes SQL and enrichment suggestions with.
+- **`ai.embedding`** picks the embedding model behind `rag.embedder: "ai"`.
+- **`ai.provider`** is the default provider for both sections.
+
+A section's provider is its own `provider`, else `ai.provider`. Its connection is its own `connection`, else the connection named `"default"` within that provider. Loading fails when a section has no provider, names a connection that doesn't exist, or uses a built-in provider with no connection at all. Each section only ever receives its own connection's settings, so a key configured for one provider is never sent to another.
+
+Anthropic for SQL, OpenAI for embeddings:
+
+```ts
+export default defineConfig({
+  ai: {
+    provider: "anthropic",
+    providerConfig: {
+      anthropic: { apiKey: env("ANTHROPIC_API_KEY") },
+      openai: { apiKey: env("OPENAI_API_KEY") },
+    },
+    language: { model: "claude-sonnet-4-6" },
+    embedding: { provider: "openai", model: "text-embedding-3-small" },
+  },
+  rag: { embedder: "ai", store: "file", storeConfig: { file: {} } },
+  // ...
+});
+```
+
+Two Azure resources, one for each model:
+
+```ts
+export default defineConfig({
+  ai: {
+    provider: "azure",
+    providerConfig: {
+      azure: [
+        { resourceName: "eastus-chat", apiKey: env("AZURE_CHAT_KEY") },                  // name: "default"
+        { name: "westus", resourceName: "westus-embed", apiKey: env("AZURE_EMBED_KEY") },
+      ],
+    },
+    language: { model: "my-gpt-4o-deployment", modelFamily: "gpt-4o" },
+    embedding: { connection: "westus", model: "my-embedding-deployment", dimensions: 1536 },
+  },
+  rag: { embedder: "ai", store: "pgvector", storeConfig: { pgvector: { databaseUrl: env("PGVECTOR_URL") } } },
+  // ...
+});
+```
+
+### `ai.providerConfig`
+
+Keyed by provider id. Each value is one connection, or a list of connections when a provider needs more than one.
+
+| Provider key | Connection fields |
+| --- | --- |
+| `openai` | `apiKey`, `baseUrl` (any OpenAI-compatible endpoint) |
+| `azure`, `foundry` | `apiKey`, `secondaryApiKey`, `resourceName` (the subdomain of `https://<name>.openai.azure.com`), `baseUrl` (a full endpoint URL; overrides `resourceName`), `apiVersion`. One of `resourceName` or `baseUrl` is required. |
+| `anthropic` | `apiKey`, `baseUrl` |
+| `google` | `apiKey`, `baseUrl` |
+| `gateway` | `apiKey`, `baseUrl` (Vercel AI Gateway) |
+| any other id | `apiKey`, `baseUrl`, for a [custom provider](#custom-providers) |
+
+Every connection also takes `name`, which defaults to `"default"` and must be unique within its provider. A list needs a `"default"` entry unless every section that uses the provider sets `connection`.
+
+### `ai.language`
+
+| Field | Default | Notes |
+| --- | --- | --- |
+| `provider` | `ai.provider` | |
+| `connection` | `"default"` | A connection name in `ai.providerConfig.<provider>`. |
+| `model` | The provider's default language model | `openai`: `gpt-4o-mini`. `anthropic`: `claude-sonnet-4-6`. `google`: `gemini-2.0-flash`. `gateway`: `openai/gpt-4o-mini`. `azure` and `foundry`: the deployment name, default `gpt-4o-mini`. A custom provider has no default. |
+| `modelFamily` | none | Azure and Foundry: the underlying model id when `model` is a deployment name. See [Azure deployment names](#azure-deployment-names). |
+| `reasoning` | none | See [Reasoning effort](#reasoning-effort). |
+
+### `ai.embedding`
+
+Read only when `rag.embedder` is `"ai"`; ignored for `"mock"`. Setting it in a config with no `rag` block is an error.
+
+| Field | Default | Notes |
+| --- | --- | --- |
+| `provider` | `ai.provider` | Anthropic has no embeddings API, so a config whose `ai.embedding` provider resolves to `anthropic` fails to load. Set `provider` (for example `"openai"`) and give it a connection. |
+| `connection` | `"default"` | A connection name in `ai.providerConfig.<provider>`. |
+| `model` | none, required | AskDB has no default embedding model. On Azure, the embedding deployment name. On the AI Gateway, an `<upstream>/<model>` id such as `openai/text-embedding-3-small`. |
+| `dimensions` | The model's own width | A positive integer: the vector size to request from the provider, for models that let you choose one (OpenAI's `text-embedding-3` models, Gemini's; on the AI Gateway, `openai/…` and `google/…` models). Unset, AskDB assumes nothing: it uses the width the model returns, which it learns when it first builds the index, so the `pgvector` store doesn't need it either. |
+
+Changing the `ai.embedding` provider, model or dimensions changes the index's embedder id: Studio then reports the RAG index as stale and asks you to reindex before using it.
+
+### Reasoning effort
+
+`ai.language.reasoning` is an optional, provider-portable knob for how much reasoning/thinking effort AskDB's model calls use. Leave it unset to keep the provider/model's own default (AskDB sends no reasoning options at all — this is the default, unchanged behavior).
 
 ```ts
 export default defineConfig({
   ai: {
     provider: "openai",
     providerConfig: { openai: { apiKey: env("OPENAI_API_KEY") } },
-    reasoning: {
-      effort: "medium",     // global default for every AskDB model call
-      nlToSql: "high",      // override: accuracy-sensitive NL→SQL generation
-      enrichment: "low",    // override: non-critical enrichment suggestions
+    language: {
+      reasoning: {
+        effort: "medium",     // global default for every AskDB model call
+        nlToSql: "high",      // override: accuracy-sensitive NL→SQL generation
+        enrichment: "low",    // override: non-critical enrichment suggestions
+      },
     },
   },
   // ...
@@ -114,9 +202,50 @@ export default defineConfig({
 
 AskDB maps the portable value to each provider's native knob via `@askdb/ai`'s `resolveProviderOptions` — OpenAI/Azure `providerOptions.openai.reasoningEffort`, Google Gemini 3.x `providerOptions.google.thinkingConfig.thinkingLevel`, Gemini 2.5 `thinkingConfig.thinkingBudget`, Anthropic `thinking` (adaptive thinking plus `effort` on Claude Sonnet 4.6, Opus 4.6 and newer, and the 5.x models; a `budgetTokens` budget on Claude 3.7 Sonnet and the 4.0–4.5 models). Models that don't support reasoning tuning (e.g. `gpt-4o-mini`, `gpt-5-chat-latest`, `gemini-2.0-flash`, `claude-3-5-haiku`) never receive these options, even when `reasoning` is set. Where a model has no `minimal` level, AskDB sends `low` instead: OpenAI and Azure gpt-6 and later (which accept `low` through `max`), and Anthropic models that take `effort`. For the Vercel AI Gateway (`gateway`), AskDB uses the mapping of the model's upstream (`openai/…`, `google/…`, `anthropic/…`) on the id after the prefix, and the gateway passes the options on; models from other upstreams get no reasoning options.
 
-`@askdb/client`'s `createAskDb` resolves `ai.reasoning` automatically for `ask()` calls — no extra wiring needed. See [Bring your own model](/guides/bring-your-own-model/) for the client and programmatic APIs.
+`@askdb/client`'s `createAskDb` resolves `ai.language.reasoning` automatically for `ask()` calls — no extra wiring needed. See [Bring your own model](/guides/bring-your-own-model/) for the client and programmatic APIs.
 
-**Azure deployment names**: Azure identifies models by deployment name (e.g. `askdb-reporting`), which may not match the underlying model id AskDB uses to detect reasoning support. Set `providerConfig.azure.modelFamily` (or `ASKDB_AI_AZURE_MODEL_FAMILY`) to the real model id — e.g. `"gpt-5"` or `"o3-mini"` — when your deployment name doesn't already look like one.
+### Azure deployment names
+
+Azure identifies models by deployment name (e.g. `askdb-reporting`), which may not match the underlying model id AskDB uses to detect reasoning support. Set `ai.language.modelFamily` (or `ASKDB_AI_AZURE_MODEL_FAMILY`) to the real model id — e.g. `"gpt-5"` or `"o3-mini"` — when your deployment name doesn't already look like one.
+
+## The `rag` block
+
+The block is optional. Without it, AskDB behaves as if `rag: { embedder: "mock", store: "memory", storeConfig: {} }` were set: Studio's RAG page uses the in-memory store and the mock embedder, and the only RAG key in the runtime snapshot is `ASKDB_RAG_EMBEDDER=mock`. When the block is present, `embedder`, `store` and `storeConfig` are required. A config that sets `ai.embedding` but has no `rag` block fails to load, since nothing would use that model: add `rag: { embedder: "ai", … }`, or remove `ai.embedding`.
+
+| Field | What it configures |
+| --- | --- |
+| `embedder` | `"mock"`, a deterministic lexical embedder that needs no key, or `"ai"`, the [`ai.embedding`](#aiembedding) model. |
+| `store` | `"file"`, `"memory"` or `"pgvector"`. |
+| `storeConfig` | The selected store's branch: `file.{basePath, autoFlush}`, `memory: {}`, or `pgvector.{databaseUrl, table, indexStrategy, dimensions}`. |
+
+With `embedder: "ai"`, the pgvector table is created at the width the embedding model returns, learned when the index is first built (with `ai.embedding.dimensions` set, that's the size requested). An existing table of another width is refused, not overwritten. `storeConfig.pgvector.dimensions` is [deprecated](#deprecated-keys): with `embedder: "ai"` it moves to `ai.embedding.dimensions`, and with `embedder: "mock"`, whose vectors are always 64 wide, it's ignored.
+
+## Deprecated keys
+
+Configs written before the `ai.language` and `ai.embedding` sections still load, apart from the few cases below that fail with an error saying what to change. AskDB translates each old key at load and warns once per key with a Node `DeprecationWarning` (code `ASKDB_CONFIG_DEPRECATED`). The warning names the old and new location, never the value. `getAskDbRuntimeConfig().deprecations` lists the same messages. The old keys are removed at 1.0.
+
+| Old key | Use instead |
+| --- | --- |
+| `ai.providerConfig.<provider>.model` | `ai.language.model` |
+| `ai.providerConfig.azure.modelFamily`, `ai.providerConfig.foundry.modelFamily` | `ai.language.modelFamily` |
+| `ai.reasoning` | `ai.language.reasoning` |
+| `ai.providerConfig.custom` | `ai.providerConfig.<provider id>` |
+| `rag.embedder: "openai"` | `rag.embedder: "ai"` with `ai.embedding: { provider: "openai", model }` |
+| `rag.embedder: "ai-sdk"` | `rag.embedder: "ai"` with `ai.embedding: { model }` |
+| `rag.embedderConfig.openai.model`, `.dimension` | `ai.embedding.model`, `ai.embedding.dimensions` |
+| `rag.embedderConfig.openai.apiKey`, `.baseUrl` | A connection in `ai.providerConfig`, named in `ai.embedding.connection` if it isn't the default one |
+| `rag.storeConfig.pgvector.dimensions` with an AI embedder | `ai.embedding.dimensions` |
+| `rag.storeConfig.pgvector.dimensions` with `rag.embedder: "mock"` | Nothing: remove it. The mock embedder's vectors are always 64 wide. |
+
+How the old embedder keys translate:
+
+- A model left unset means `text-embedding-3-small` on `openai`, `azure` and `foundry`, as before. Any other provider fails to load and asks for `ai.embedding.model`.
+- `"ai-sdk"` embeds with the language model's provider, so with Anthropic, which has no embeddings API, it fails to load: move to `ai.embedding` with another provider.
+- The old embedders assumed a width when none was set: 3072 for `text-embedding-3-large`, 1536 for anything else, whatever the provider. AskDB no longer assumes one; it uses the width the model returns. A config in the old shape with no width set gets a warning naming the width an index built with an earlier version has: move to `ai.embedding` and set `dimensions` to it to keep that index, or rebuild the index.
+- A `rag.embedderConfig.openai.apiKey` or `.baseUrl` that differs from the default connection of the embedding model's provider moves to a connection named `"rag-embeddings"`. It can only move to an `openai`, `azure`, `foundry` or `gateway` connection; with any other embedding provider the config fails to load instead of sending the key there.
+- An empty `rag.embedderConfig: {}`, which earlier scaffolds wrote, is ignored without a warning.
+
+A model set in both places is fine: `ai.language.model` wins, and the warning says the old value is ignored. Other old keys set next to their replacement fail to load, and the error asks you to remove the old one: `ai.reasoning` with `ai.language.reasoning`, `ai.providerConfig.custom` with `ai.providerConfig.<provider id>`, `rag.embedderConfig` with `ai.embedding` or `rag.embedder: "ai"`, and two different widths in `rag.storeConfig.pgvector.dimensions` and the embedding section.
 
 ## File discovery
 
@@ -134,13 +263,13 @@ AskDB reads `.env` next to your process via `dotenv`, then evaluates your `askdb
 | Variable | Reads into (config field) | Notes |
 | --- | --- | --- |
 | `OPENAI_API_KEY` | `ai.providerConfig.openai.apiKey` | Standard OpenAI key. |
-| `OPENAI_MODEL` | `ai.providerConfig.openai.model` | Optional model override. Default: `gpt-4o-mini`. |
-| `ANTHROPIC_API_KEY` | `ai.providerConfig.anthropic.apiKey` | When `ai.provider = "anthropic"`. Default model: `claude-sonnet-4-6`. |
-| `GOOGLE_GENERATIVE_AI_API_KEY` | `ai.providerConfig.google.apiKey` | When `ai.provider = "google"`. Default model: `gemini-2.0-flash` (the scaffolded config reads a `model` override from `GOOGLE_AI_MODEL`). |
-| `AI_GATEWAY_API_KEY` | `ai.providerConfig.gateway.apiKey` | When `ai.provider = "gateway"` (Vercel AI Gateway). Set `model` to an `<upstream>/<model>` id. Default: `openai/gpt-4o-mini`. An id without the prefix is rejected when the model is built. That includes the RAG embedding model: AskDB's default (`text-embedding-3-small`) has no prefix, so set `rag.embedderConfig.openai.model` to e.g. `openai/text-embedding-3-small`. Embedding `dimensions` are sent for `openai/` and `google/` models; for other upstreams a dimension override is refused rather than dropped. |
-| `AZURE_OPENAI_API_KEY` | `ai.providerConfig.azure.apiKey` | When `ai.provider = "azure"` (use `ai.providerConfig.foundry.*` for `"foundry"`). |
-| `AZURE_OPENAI_DEPLOYMENT` | `ai.providerConfig.azure.model` | Your Azure deployment name. |
-| `AZURE_RESOURCE_NAME` | `ai.providerConfig.azure.resourceName` | The subdomain of `https://<name>.openai.azure.com`. Required unless you set `ai.providerConfig.azure.baseUrl` to a full endpoint URL instead. Also available: `apiVersion`, `modelFamily`, `secondaryApiKey`. |
+| `OPENAI_MODEL` | `ai.language.model` | Optional model override. Default: `gpt-4o-mini`. |
+| `ANTHROPIC_API_KEY` | `ai.providerConfig.anthropic.apiKey` | When `ai.provider = "anthropic"`. Default model: `claude-sonnet-4-6` (the scaffolded config reads an `ai.language.model` override from `ANTHROPIC_MODEL`). |
+| `GOOGLE_GENERATIVE_AI_API_KEY` | `ai.providerConfig.google.apiKey` | When `ai.provider = "google"`. Default model: `gemini-2.0-flash` (the scaffolded config reads an `ai.language.model` override from `GOOGLE_AI_MODEL`). |
+| `AI_GATEWAY_API_KEY` | `ai.providerConfig.gateway.apiKey` | When `ai.provider = "gateway"` (Vercel AI Gateway). Set `ai.language.model` to an `<upstream>/<model>` id. Default: `openai/gpt-4o-mini`. An id without the prefix is rejected when the model is built, and that includes `ai.embedding.model`: use e.g. `openai/text-embedding-3-small`. Embedding `dimensions` are sent for `openai/` and `google/` models; for other upstreams a dimension override is refused rather than dropped. |
+| `AZURE_OPENAI_API_KEY` | `ai.providerConfig.azure.apiKey` | When `ai.provider = "azure"` (use `ai.providerConfig.foundry` for `"foundry"`). |
+| `AZURE_OPENAI_DEPLOYMENT` | `ai.language.model` | Your Azure deployment name. |
+| `AZURE_RESOURCE_NAME` | `ai.providerConfig.azure.resourceName` | The subdomain of `https://<name>.openai.azure.com`. Required unless you set `ai.providerConfig.azure.baseUrl` to a full endpoint URL instead. Also available on the connection: `apiVersion`, `secondaryApiKey`. |
 | `DATABASE_URL` | `introspection.providerConfig.postgres.databaseUrl` | Postgres introspection connection. |
 
 Everything else AskDB needs — output directory, mode, log level, Studio query connection, the vector-store URL — is set the same way: a field in `askdb.config.ts`, bound to a name you choose with `env("…")`. You don't set any AskDB-prefixed variables yourself; AskDB derives its internal runtime values from your config.
@@ -191,7 +320,7 @@ Each execute provider requires its optional peer driver package (`pg`, `mysql2`,
 
 ## Custom providers
 
-`ai.provider` accepts any string — not just the first-party literals. When an unknown provider string is used, AskDB applies a generic branch: you supply `ai.providerConfig.custom.{apiKey, baseUrl, model}` (each bound to a name you choose with `env("…")`), and AskDB hands them to whatever adapter is registered under that provider name.
+`ai.provider` (and a section's `provider`) accepts any string — not just the first-party ids. Key a custom provider's connection by its id in `ai.providerConfig` (`apiKey`, `baseUrl`, each bound to a name you choose with `env("…")`), put its model in `ai.language.model`, and AskDB hands them to whatever adapter is registered under that provider name.
 
 ```ts
 import { defineConfig, env } from "@askdb/config";
@@ -200,11 +329,9 @@ export default defineConfig({
   ai: {
     provider: "mistral",           // any string
     providerConfig: {
-      custom: {
-        apiKey: env("MISTRAL_API_KEY"),
-        model: "mistral-large-latest",
-      },
+      mistral: { apiKey: env("MISTRAL_API_KEY") },
     },
+    language: { model: "mistral-large-latest" },
   },
   // ...
 });
@@ -227,8 +354,22 @@ import { bootstrapAskDbEnv, getAskDbRuntimeConfig } from "@askdb/config";
 bootstrapAskDbEnv({ cwd: process.cwd() });
 
 const rt = getAskDbRuntimeConfig();
-const aiEnv = rt.ai.aiEnv;                    // provider + key/model env map
+const aiEnv = rt.ai.aiEnv;                    // language model env map, for @askdb/ai
+const embedding = rt.ai.embedding;            // { provider, connection, model, dimensions, env } when rag.embedder is "ai"
+const store = rt.rag.store;                   // "file" | "memory" | "pgvector"; "memory" when the config has no rag block
 const outputDir = rt.introspection.outputDir; // resolved artifact directory
+```
+
+`rt.ai.language` and `rt.ai.embedding` each carry the section's resolved provider, connection name and model, plus an `env` map built from that section's connection only. To build the embedding model, pass `rt.ai.embedding.env` to `@askdb/ai`'s `createEmbeddingModelFromEnv`, with the configured width as an option, since the env map doesn't carry it:
+
+```ts
+import { createAiRegistry } from "@askdb/ai";
+
+const embeddingModel = rt.ai.embedding
+  ? await createAiRegistry().createEmbeddingModelFromEnv(rt.ai.embedding.env, {
+      dimensions: rt.ai.embedding.dimensions, // undefined leaves the model's own width
+    })
+  : undefined; // rag.embedder is "mock"
 ```
 
 AskDB does **not** copy the full config into `process.env`. The runtime snapshot is the source of truth — use `getAskDbRuntimeConfig` rather than `process.env` for anything AskDB-specific.

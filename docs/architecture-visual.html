@@ -1273,7 +1273,7 @@
           <tr><td><code>askdb introspect --out my.schema</code></td><td>Introspect using engine + URL from <code>askdb.config.ts</code> (zero-flag mode)</td></tr>
           <tr><td><code>askdb introspect --url $DB_URL --out my.schema</code></td><td>Live Postgres introspection (explicit URL)</td></tr>
           <tr><td><code>askdb introspect --prisma --out my.schema</code></td><td>Prisma schema-file introspection</td></tr>
-          <tr><td><code>askdb-rag setup-store --store pgvector --pg-url $URL</code></td><td>Auto-provision pgvector extension, table, and indexes</td></tr>
+          <tr><td><code>askdb rag setup-store --pg-url $URL --dimensions &lt;n&gt;</code></td><td>Auto-provision pgvector extension, table, and indexes</td></tr>
           <tr><td><code>askdb enrich --schema my.schema</code></td><td>Launch terminal enrichment UI</td></tr>
           <tr><td><code>askdb studio --schema my.schema</code></td><td>Launch browser Studio UI</td></tr>
           <tr><td><code>askdb bundle &lt;dir&gt; --out bundle.json</code></td><td>Bundle schema directory to JSON</td></tr>
@@ -1394,7 +1394,7 @@
           <td><strong>RAG with pgvector</strong></td>
           <td><code>@askdb/rag @askdb/core</code></td>
           <td><code>pg</code> + embedder package</td>
-          <td>Use <code>createPgvectorStore()</code>; call <code>store.ensureSchema()</code> once to auto-provision extension, table, and indexes. Or run <code>askdb-rag setup-store --store pgvector</code>. Studio auto-provisions on every request when <code>rag.store = "pgvector"</code>.</td>
+          <td>Use <code>createPgvectorStore()</code>; call <code>store.ensureSchema()</code> once to auto-provision extension, table, and indexes. Or run <code>askdb rag setup-store --dimensions &lt;n&gt;</code>. Studio auto-provisions on every request when <code>rag.store = "pgvector"</code>.</td>
         </tr>
         <tr>
           <td><strong>Batteries-included CLI</strong></td>

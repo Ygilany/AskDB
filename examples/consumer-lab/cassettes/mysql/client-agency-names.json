@@ -1,5 +1,10 @@
 {
   "question": "List every client's id and full name together with the name of their agency.",
-  "reply": "```sql\nSELECT c.client_id, c.full_name, a.name AS agency_name\nFROM people.client AS c\nJOIN org.agency AS a ON a.agency_id = c.agency_id\nORDER BY c.client_id\n```",
-  "source": "authored"
+  "reply": "```sql\nSELECT \n    `client`.`client_id`, \n    `client`.`full_name`, \n    `agency`.`name` AS `agency_name`\nFROM \n    `people`.`client` AS `client`\nJOIN \n    `org`.`agency` AS `agency` ON `client`.`agency_id` = `agency`.`agency_id`;\n```\n\n```sql-unbound\nSELECT \n    `client`.`client_id`, \n    `client`.`full_name`, \n    `agency`.`name` AS `agency_name`\nFROM \n    `people`.`client` AS `client`\nJOIN \n    `org`.`agency` AS `agency` ON `client`.`agency_id` = `agency`.`agency_id`;\n```\n\n```json\n{\"parameters\":[]}\n```",
+  "source": "recorded",
+  "recordedWith": {
+    "model": "gpt-4o-mini-2024-07-18",
+    "askdbTarget": "askdb@1.0.0-beta.43, checkout @ fd5f2a9f (consumer-lab/452-question-columns)",
+    "at": "2026-10-05"
+  }
 }

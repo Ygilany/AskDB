@@ -65,7 +65,8 @@ describe("postgres label parts match what pg resolves", () => {
   it.each(shown)("%s", (input) => {
     const parts = parsePostgresConnection(input) as { host?: string; port?: string; database?: string };
     const client = new pg.Client({ connectionString: input });
-    if (parts.host !== undefined) expect(parts.host).toBe(client.host);
+    // An IPv6 host is shown bracketed (`[::1]`); pg holds it bare.
+    if (parts.host !== undefined) expect(parts.host.replace(/^\[(.*)\]$/, "$1")).toBe(client.host);
     if (parts.port !== undefined) expect(Number(parts.port)).toBe(client.port);
     if (parts.database !== undefined) expect(parts.database).toBe(client.database);
   });

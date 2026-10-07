@@ -142,7 +142,8 @@ type TableEntry = {
   sensitive: boolean;
   order: number;
   columns: ColumnEntry[];
-  byColumn: Map<string, ColumnEntry>;
+  /** Columns by lowercased name: Postgres can hold `"SSN"` and `ssn` in one table, so a name can map to several. */
+  byColumn: Map<string, ColumnEntry[]>;
 };
 
 type SchemaIndex = {
@@ -188,7 +189,7 @@ function indexSchema(schema: AnyNormalizedSchema): SchemaIndex {
       sensitive: tableSensitive,
       order,
       columns,
-      byColumn: new Map(columns.map((c) => [c.lower, c])),
+      byColumn: columns.reduce((map, c) => map.set(c.lower, [...(map.get(c.lower) ?? []), c]), new Map<string, ColumnEntry[]>()),
     };
     tables.push(entry);
     const bucket = byName.get(entry.lower);
@@ -867,8 +868,10 @@ function scanTokens(
       ? bound.filter((e) => e.schemaLower === undefined || e.schemaLower === ref.qualifierSchema)
       : bound;
     for (const table of scoped) {
-      const column = table.byColumn.get(ref.column);
-      if (column?.sensitive) record(table, column.name, column.order, "qualified");
+      // Every column the name could mean: matching case-insensitively over-reports rather than misses.
+      for (const column of table.byColumn.get(ref.column) ?? []) {
+        if (column.sensitive) record(table, column.name, column.order, "qualified");
+      }
     }
   }
 

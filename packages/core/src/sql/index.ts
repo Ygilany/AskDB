@@ -28,6 +28,7 @@ export {
   buildNlToSqlUserPrompt,
   buildNlToSqlSystemPrompt,
 } from "./prompt.js";
+export { promptIdentifierQuoter } from "./prompt-identifiers.js";
 export {
   assertNlToSqlInputs,
   nlToSqlAmbiguityNotes,
@@ -42,6 +43,7 @@ export {
   MARIADB_DIALECT,
   SQLITE_DIALECT,
   SQLSERVER_DIALECT,
+  SINGLE_NAMESPACE_LABEL,
   BUILT_IN_DIALECTS,
   SUPPORTED_DIALECT_IDS,
   isBuiltInDialectId,

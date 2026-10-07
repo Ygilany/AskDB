@@ -8,6 +8,7 @@
  * multiple schemas, and ADR 0003 (a declaratively partitioned table renders as
  * its parent only). Also byte-identical output across runs, and that an
  * unfiltered run never reads system schemas.
+ * Also that SQL naming `billing."order"` the way the NL→SQL prompt lists it runs (#451).
  * Catches: catalog-query or renderer regressions that unit tests over pinned
  * catalog snapshots (fixtures/introspect) can't see, because those snapshots
  * don't change when Postgres's catalog output or our SQL against it does.
@@ -18,17 +19,19 @@
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { loadSchema } from "@askdb/core";
+import { ask, loadSchema } from "@askdb/core";
 import { introspect } from "@askdb/introspect";
 import { afterEach, beforeEach, expect, it } from "vitest";
 import { createPostgresCatalogQueryRunner } from "../exec/postgres.js";
 import { createPostgresConnector } from "./index.js";
 import { integrationSuite } from "../../../../scripts/test-utils/integration.mjs";
+import { askCopyingListedTableNames } from "../../../../scripts/test-utils/prompt-listed-names.mjs";
 import {
   FIXTURE_HOST_ENV,
   LOGICAL_SCHEMAS,
   compareToLogicalSchema,
   connectionUrl,
+  loadRows,
   type SchemaJson,
 } from "../../../../fixtures/multi-engine/src/index.js";
 
@@ -85,5 +88,13 @@ fixtureSuite("introspect() against the multi-engine fixture (live Postgres)", ()
     const schemaJson = JSON.parse(readFileSync(join(outDir, "schema.json"), "utf8")) as SchemaJson;
     const namespaces = new Set(schemaJson.tables.map((t) => t.schema));
     expect([...namespaces].filter((ns) => /^(pg_catalog|information_schema|pg_toast|pg_temp)/.test(ns))).toEqual([]);
+  });
+
+  it("runs SQL that names the reserved-word table `order` as the prompt lists it", async () => {
+    const outDir = join(workDir, "multi-engine.schema");
+    await introspectFixture(outDir);
+    const sql = await askCopyingListedTableNames(ask, loadSchema(outDir), "postgres");
+    const runner = createPostgresCatalogQueryRunner(connectionUrl("postgres", "reader"));
+    expect(Number((await runner(sql)).rows[0]![0])).toBe(loadRows({ schema: "billing", name: "order" }).length);
   });
 });

@@ -17,7 +17,8 @@
     "@askdb/postgres": "__ASKDB_POSTGRES_TARBALL__",
     "@askdb/prisma": "__ASKDB_PRISMA_TARBALL__",
     "@askdb/enrich": "__ASKDB_ENRICH_TARBALL__",
-    "@askdb/rag": "__ASKDB_RAG_TARBALL__"
+    "@askdb/rag": "__ASKDB_RAG_TARBALL__",
+    "ai": "^7.0.51"
   },
   "devDependencies": {
     "@types/node": "^22.13.14",

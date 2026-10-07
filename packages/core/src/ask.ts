@@ -6,6 +6,8 @@ import type { AnyNormalizedSchema } from "./schema/types.js";
 import { DEFAULT_ASKDB_MODE, type AskDbModeV1 } from "./modes/types.js";
 import type { Retriever } from "./retrieval/types.js";
 import { synthesizeRetrievedDdl } from "./retrieval/synthesize-ddl.js";
+import { unqualifiedNamespaceFor } from "./sql/prompt.js";
+import { promptIdentifierQuoter } from "./sql/prompt-identifiers.js";
 import type { NormalizedSchemaV2 } from "./schema/v2/normalized.js";
 import type {
   NormalizedTenantPolicy,
@@ -58,6 +60,8 @@ export type AskDialectGenerateOptions = {
   omitSensitiveIdentifiersFromNlToSqlPrompt?: boolean;
   generateText?: typeof defaultGenerateText;
   providerOptions?: Record<string, unknown>;
+  /** The caller's {@link AskPipelineOptions.abortSignal}. A custom dialect passes it to its model call. */
+  abortSignal?: AbortSignal;
   prebuiltDdl?: string;
   tenantPolicy?: import("./schema/v2/tenant-policy.js").NormalizedTenantPolicy;
   tenantScope?: TenantScope;
@@ -187,6 +191,13 @@ export type AskPipelineOptions = {
    */
   omitSensitiveIdentifiersFromNlToSqlPrompt?: boolean;
   deps?: AskGenerateDeps;
+  /**
+   * Cancels the NL→SQL model call (`generateText({ abortSignal })`), e.g.
+   * `AbortSignal.timeout(60_000)` for a per-request timeout. With a built-in dialect an
+   * aborted call rejects with `SqlGenerationError` (the abort reason is its `cause`). A
+   * custom {@link AskDialect} receives it in its `generate()` options and maps its own errors.
+   */
+  abortSignal?: AbortSignal;
   /** Optional structured logger (host-provided — e.g. `createAskDbLogger` wraps Pino). */
   logger?: AskDbLogger;
   /**
@@ -350,12 +361,14 @@ export async function ask(options: AskPipelineOptions): Promise<AskPipelineResul
   const explainRequested = options.explain ?? false;
   const omitSensitive = options.omitSensitiveIdentifiersFromNlToSqlPrompt ?? false;
   const parameterize = options.parameterize !== false; // default true
+  const dialectSpec = resolveDialectSpec(options.dialect);
   const prebuiltDdl = await maybeRetrieveDdl({
     options,
     logger,
     omitSensitive,
+    unqualifiedNamespace: unqualifiedNamespaceFor(options.schema, dialectSpec?.unqualifiedNamespace),
+    quoteIdentifier: dialectSpec ? promptIdentifierQuoter(dialectSpec) : undefined,
   });
-  const dialectSpec = resolveDialectSpec(options.dialect);
   const dialect = resolveDialect(options.dialect);
   const generated = await dialect.generate(
     options.question,
@@ -367,6 +380,7 @@ export async function ask(options: AskPipelineOptions): Promise<AskPipelineResul
       omitSensitiveIdentifiersFromNlToSqlPrompt: omitSensitive || undefined,
       generateText: options.deps?.generateText,
       providerOptions: options.deps?.providerOptions,
+      abortSignal: options.abortSignal,
       prebuiltDdl,
       tenantPolicy,
       tenantScope,
@@ -891,8 +905,10 @@ async function maybeRetrieveDdl(args: {
   options: AskPipelineOptions;
   logger: AskDbLogger | undefined;
   omitSensitive: boolean;
+  unqualifiedNamespace: string | undefined;
+  quoteIdentifier: ((name: string) => string) | undefined;
 }): Promise<string | undefined> {
-  const { options, logger, omitSensitive } = args;
+  const { options, logger, omitSensitive, unqualifiedNamespace, quoteIdentifier } = args;
   const retriever = options.retriever;
   if (!retriever) return undefined;
 
@@ -943,6 +959,8 @@ async function maybeRetrieveDdl(args: {
     schema: options.schema,
     results,
     omitSensitiveIdentifiersFromPrompt: omitSensitive,
+    unqualifiedNamespace,
+    quoteIdentifier,
   });
   logger?.info(
     {

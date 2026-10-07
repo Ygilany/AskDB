@@ -1,5 +1,10 @@
 {
   "question": "What are the client id and birth date of the client named 佐藤 花子?",
-  "reply": "```sql\nSELECT client_id, birth_date\nFROM people.client\nWHERE full_name = '佐藤 花子'\n```",
-  "source": "authored"
+  "reply": "```sql\nSELECT `client_id`, `birth_date` \nFROM `people`.`client` \nWHERE `full_name` LIKE '佐藤 花子';\n```\n\n```sql-unbound\nSELECT `client_id`, `birth_date` \nFROM `people`.`client` \nWHERE `full_name` LIKE :name;\n```\n\n```json\n{\"parameters\":[{\"name\":\"name\",\"type\":\"string\",\"cardinality\":\"one\",\"description\":\"The full name of the client\",\"value\":\"佐藤 花子\"}]}\n```",
+  "source": "recorded",
+  "recordedWith": {
+    "model": "gpt-4o-mini-2024-07-18",
+    "askdbTarget": "askdb@1.0.0-beta.43, checkout @ fd5f2a9f (consumer-lab/452-question-columns)",
+    "at": "2026-10-05"
+  }
 }

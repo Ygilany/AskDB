@@ -1,5 +1,10 @@
 {
   "question": "Which orders were placed in the first quarter of 2024? Show each order's id and when it was placed.",
-  "reply": "```sql\nSELECT order_id, placed_at\nFROM billing.\"order\"\nWHERE placed_at >= '2024-01-01' AND placed_at < '2024-04-01'\nORDER BY order_id\n```",
-  "source": "authored"
+  "reply": "```sql\nSELECT \"order_id\", \"placed_at\"\nFROM billing.\"order\"\nWHERE \"placed_at\" >= '2024-01-01' AND \"placed_at\" < '2024-04-01';\n```\n\n```sql-unbound\nSELECT \"order_id\", \"placed_at\"\nFROM billing.\"order\"\nWHERE \"placed_at\" >= :start_date AND \"placed_at\" < :end_date;\n```\n\n```json\n{\"parameters\":[{\"name\":\"start_date\",\"type\":\"date\",\"cardinality\":\"one\",\"description\":\"Start date for the first quarter of 2024\",\"value\":\"2024-01-01\"},{\"name\":\"end_date\",\"type\":\"date\",\"cardinality\":\"one\",\"description\":\"End date for the first quarter of 2024\",\"value\":\"2024-04-01\"}]}\n```",
+  "source": "recorded",
+  "recordedWith": {
+    "model": "gpt-4o-mini-2024-07-18",
+    "askdbTarget": "askdb@1.0.0-beta.43, checkout @ fd5f2a9f (consumer-lab/452-question-columns)",
+    "at": "2026-10-05"
+  }
 }

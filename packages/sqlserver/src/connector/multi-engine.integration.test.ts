@@ -6,6 +6,7 @@
  * every table, column, normalized type, nullability, primary key and composite
  * foreign key (in column order), the reserved-word table `order`, views and
  * multiple schemas, compared with the same golden logical schema every engine is held to.
+ * Also that SQL naming `billing.[order]` the way the NL→SQL prompt lists it runs (#451).
  * Catches: catalog-query or renderer regressions that mocked-runner unit tests
  * can't see, because they don't change when the engine's catalog output does.
  *
@@ -15,17 +16,19 @@
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { loadSchema } from "@askdb/core";
+import { ask, loadSchema } from "@askdb/core";
 import { introspect } from "@askdb/introspect";
 import { afterEach, beforeEach, expect, it } from "vitest";
 import { createSqlServerCatalogQueryRunner } from "../exec/sqlserver.js";
 import { createSqlServerConnector } from "./index.js";
 import { integrationSuite } from "../../../../scripts/test-utils/integration.mjs";
+import { askCopyingListedTableNames } from "../../../../scripts/test-utils/prompt-listed-names.mjs";
 import {
   FIXTURE_HOST_ENV,
   LOGICAL_SCHEMAS,
   compareToLogicalSchema,
   connectionUrl,
+  loadRows,
   type SchemaJson,
 } from "../../../../fixtures/multi-engine/src/index.js";
 
@@ -52,5 +55,17 @@ fixtureSuite("introspect() against the multi-engine fixture (live SQL Server)", 
     expect(loadSchema(outDir).warnings).toEqual([]);
     const schemaJson = JSON.parse(readFileSync(join(outDir, "schema.json"), "utf8")) as SchemaJson;
     expect(compareToLogicalSchema(schemaJson, { expectNamespaces: true })).toEqual([]);
+  });
+
+  it("runs SQL that names the reserved-word table `order` as the prompt lists it", async () => {
+    const outDir = join(workDir, "multi-engine.schema");
+    const runner = createSqlServerCatalogQueryRunner(connectionUrl("sqlserver", "reader"));
+    await introspect(
+      { mode: "live", runner, filters: { schemas: [...LOGICAL_SCHEMAS] } },
+      { outDir, schemaId: "multi-engine" },
+      { connector: createSqlServerConnector() },
+    );
+    const sql = await askCopyingListedTableNames(ask, loadSchema(outDir), "sqlserver");
+    expect(Number((await runner(sql)).rows[0]![0])).toBe(loadRows({ schema: "billing", name: "order" }).length);
   });
 });

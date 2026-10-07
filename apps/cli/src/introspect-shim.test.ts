@@ -111,14 +111,14 @@ describe("cli spawn: introspect subcommand", () => {
         join(tmp, "askdb.config.ts"),
         `import { defineConfig, type AskDbConfig } from "@askdb/config";
          export default defineConfig({
-           ai: { provider: "openai", providerConfig: { openai: { apiKey: "k", model: "gpt-4o-mini" } } },
+           ai: { provider: "openai", providerConfig: { openai: { apiKey: "k" } }, language: { model: "gpt-4o-mini" } },
            database: { provider: "postgres", providerConfig: { postgres: { databaseUrl: "postgres://localhost/db" } } },
            introspection: {
              provider: "prisma",
              providerConfig: { prisma: { schemaPath: ${JSON.stringify(prismaFixture)} } },
              outputDir: "./askdb/",
            },
-           rag: { embedder: "mock", embedderConfig: {}, store: "memory", storeConfig: { memory: {} } },
+           rag: { embedder: "mock", store: "memory", storeConfig: { memory: {} } },
          } satisfies AskDbConfig);
         `,
         "utf8",

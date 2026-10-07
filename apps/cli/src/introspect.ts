@@ -1,13 +1,6 @@
-import { randomUUID } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import { basename, join } from "node:path";
 import { isDeepStrictEqual } from "node:util";
-import {
-  createAskDbLogger,
-  formatSupportedAskDbLogLevels,
-  isSupportedAskDbLogLevel,
-  type AskDbLogLevel,
-} from "@askdb/core";
 import { getAskDbRuntimeConfig } from "@askdb/config";
 import {
   createConnectorRegistry,
@@ -27,6 +20,7 @@ import { mysqlConnectorProvider } from "@askdb/mysql";
 import { sqliteConnectorProvider } from "@askdb/sqlite";
 import { sqlServerConnectorProvider } from "@askdb/sqlserver";
 import { prismaConnectorProvider } from "@askdb/prisma";
+import { createCliLogger } from "./logger.js";
 import { requireAskDbConfig } from "./project-config.js";
 import { readCliVersion } from "./version.js";
 
@@ -155,15 +149,7 @@ async function runIntrospectCommand(
   }
 
   const schemaId = opts.schemaId ?? inferSchemaId(opts.out ?? opts.diff) ?? "introspected";
-  const logLevel = resolveLogLevel(opts, rt);
-  const correlationId =
-    opts.correlationId ?? rt.logging.correlationId ?? randomUUID();
-  const logger = createAskDbLogger({
-    correlationId,
-    level: logLevel,
-    logFile: opts.logFile ?? rt.logging.logFile,
-    logStdout: opts.logStdout ?? rt.logging.logStdout,
-  });
+  const logger = createCliLogger(opts, rt);
 
   const connectorConfig: ConnectorConfig = {
     provider: engine,
@@ -382,22 +368,6 @@ function inferSchemaId(path: string | undefined): string | undefined {
   if (!path) return undefined;
   const name = basename(path);
   return name.endsWith(".schema") ? name.slice(0, -".schema".length) : name;
-}
-
-function resolveLogLevel(opts: CliOptions, rt: ReturnType<typeof getAskDbRuntimeConfig>): AskDbLogLevel {
-  if (opts.logLevel !== undefined && opts.logLevel !== "") {
-    const level = opts.logLevel.toLowerCase();
-    if (!isSupportedAskDbLogLevel(level)) {
-      throw new Error(
-        `Invalid --log-level: ${opts.logLevel} (expected one of ${formatSupportedAskDbLogLevels()})`,
-      );
-    }
-    return level;
-  }
-  const env = rt.logging.level?.toLowerCase();
-  if (env && isSupportedAskDbLogLevel(env)) return env;
-  if (opts.verbose || opts.logFile || opts.logStdout) return "info";
-  return "silent";
 }
 
 function printHelp(): void {
