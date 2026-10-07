@@ -20,6 +20,8 @@ Existing tests can't catch the failures the lab targets. Unit tests import works
 - dialects that disagree on the answer to the same question;
 - a documented surface (CLI, HTTP API, Studio) that has drifted from its docs.
 
+The lab README's table, [What each kind of test exercises](../../examples/consumer-lab/README.md#what-each-kind-of-test-exercises), sets the package tests, the lab on the replay model and the lab on a live model side by side, step by step.
+
 ## Design principles
 
 - **Docs are the spec.** Every import, CLI flag, config key and HTTP route the lab uses must appear in `apps/docs-site/src/content/docs/` or `docs/` (contracts, specs, ADRs). Where docs and behavior disagree, the lab records a discrepancy. It never bends the test to match the code.
@@ -107,7 +109,7 @@ examples/consumer-lab/
     server-process.ts       # starts a server bin on 127.0.0.1 on a free port, waits for it, stops it
     lab-cli.ts              # `pnpm lab ask …`, `pnpm lab ui`
     ask-run.ts              # ask → validate → execute on one engine, shared by `lab ask` and `lab ui`
-    ui/                     # `lab ui`: the loopback server, its page, and the cross-engine summary
+    ui/                     # `lab ui`: the loopback server, its page, one process per engine run, and the cross-engine summary
     matrix-reporter.ts      # vitest reporter → dialect × scenario table
     scratch.ts              # writable scratch copies of the fixture, created, reset and dropped by the lab
   test/
@@ -173,17 +175,17 @@ It prints:
 2. the validation result: `ok`, or the thrown error's class and rule code, such as `SqlValidationError SQL_MULTI_STATEMENT`;
 3. `sensitiveGuardrail` and `tenantGuardrail`, when present;
 4. the rows, executed as `fixture_reader` and printed as a table;
-5. the oracle's verdict, when the question is in the catalog.
+5. on the live model, the oracle's verdict, when the question is in the catalog.
 
 Flags:
 
-- `--model` defaults to `replay`. It switches to `live` when `LAB_LIVE_MODEL=1` and a provider key is set. Not built yet: #247 built live mode as a suite and `lab:record`; the flag is #448.
+- `--model` defaults to `replay`; `--model live` asks the live OpenAI model through either path (#448). Only the flag switches it: `LAB_LIVE_MODEL=1`, which turns on the live suite, doesn't, so no exported variable spends (maintainer decision on #448). It refuses in CI and without a key, before anything runs, and never falls back to replay.
 - `--sql` bypasses the model through `deps.generateText`, which the docs name as the mock seam.
 - `--via` picks the model path: `raw` (default), a `createOpenAI({ baseURL })` model passed to `ask()`; or `client`, `createAskDb` with `@askdb/ai-openai` configured by `providerConfig.openai.baseUrl`. Both must send the same prompt and return the same SQL.
 
 ### `pnpm lab ui`
 
-A page on `127.0.0.1` that runs one input (a catalog question, free text, or raw SQL) on all five engines concurrently, one column per engine, each showing what `lab ask --db <engine>` prints, through the same module. A summary strip says whether the engines agree after normalization and, for catalog questions, whether each matches the oracle. It follows ADR 0009's local-server lessons: loopback bind and a `Host` allowlist on every request. Built in #262; the [lab README](../../examples/consumer-lab/README.md#pnpm-lab-ui) describes it.
+A page on `127.0.0.1` that runs one input (a catalog question, free text, or raw SQL) on the engines you pick concurrently, one column per engine, each showing what `lab ask --db <engine>` prints, through the same module. You pick the model (replay, or live when a key is set and it isn't CI) and the path (`raw` or `client`), so the page exercises both documented model paths end to end; each engine runs in its own process, because the client path reads its config once per process. A summary strip says whether the engines agree after normalization and, for catalog questions, whether each matches the oracle. It follows ADR 0009's local-server lessons: loopback bind and a `Host` allowlist on every request. Built in #262, with the model, path and engine picks in #448; the [lab README](../../examples/consumer-lab/README.md#pnpm-lab-ui) describes it.
 
 ## Model
 
@@ -214,12 +216,13 @@ A page on `127.0.0.1` that runs one input (a catalog question, free text, or raw
 
 ### Record and live
 
-Built in #247; the lab README's "Record and live" section is the reference.
+Built in #247, with asking the live model by hand in #448; the lab README's "Record and live" section is the reference.
 
-- **Provider and key:** OpenAI only (maintainer decision on #247), through both documented model paths. The key is `OPENAI_API_KEY`, from the shell or a gitignored `.env.live` in the lab or at the repo root, which only these modes read (AskDB's config loads `.env`). `LAB_LIVE_MODEL_ID` picks the model; the default is AskDB's OpenAI default, `gpt-4o-mini`. With `CI` or `GITHUB_ACTIONS` set, both modes refuse before reading a key; without a key, both fail with a message. Neither falls back to the replay model.
+- **Provider and key:** OpenAI only (maintainer decision on #247), through both documented model paths. The key is `OPENAI_API_KEY`, from the shell or a gitignored `.env.live` in the lab or at the repo root, which only these modes read (AskDB's config loads `.env`). `LAB_LIVE_MODEL_ID` picks the model; the default is AskDB's OpenAI default, `gpt-4o-mini`. With `CI` or `GITHUB_ACTIONS` set, every live mode refuses before reading a key; without a key, each fails with a message. None falls back to the replay model.
 - `pnpm lab:record [--db …]… [--only <id>]…` records the catalog questions only: the tenant and sensitive suites' replies are hand-written attackers, and their ids are refused before any call. The replay server proxies to OpenAI with the key (the clients send it a placeholder; its request log holds no header; provider errors are redacted). Each reply is graded first, with the results suite's checks (`src/grade.ts`): only a reply whose SQL returns the oracle's rows (and, on the parameterized question, comes back parameterized) replaces its cassette, as `"source": "recorded"` with `recordedWith`. Misses are listed in `.lab/record-misses.json` and leave the cassette alone. The maintainer reviews the cassette diff in git before committing it: staging accepts, `git restore` rejects.
 - `LAB_LIVE_MODEL=1 pnpm lab:matrix` adds `test/live.test.ts`, which asks the live model directly and writes no cassette. Every catalog question is asked through both paths and graded by its oracle; the scoped tenant questions and the sensitive questions (strict mode) through the raw path. A wrong answer, a validation rejection included, is a `miss (…)` cell, model quality, which doesn't fail the run. SQL that passed AskDB's checks but leaked another tenant's rows, returned seeded sensitive values in strict mode, or was refused by the host as a write is a guarantee violation: a `FAIL` cell.
-- CI never sets either of these.
+- `pnpm lab ask --model live` and `pnpm lab ui`'s live option ask the live model one input at a time, through either path, and print the oracle's verdict for a catalog question. Their tests ask a local stand-in provider, with an empty `OPENAI_API_KEY` that wins over `.env.live`.
+- CI never sets any of these.
 
 ## Scenario matrix
 

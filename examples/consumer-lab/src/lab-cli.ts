@@ -1,25 +1,32 @@
 /**
  * `pnpm lab <command>`: the maintainer's entry point to the consumer lab.
  *
- *   pnpm lab ask --db <dialect> "<catalog question>" [--via raw|client]
+ *   pnpm lab ask --db <dialect> "<question>" [--via raw|client] [--model replay|live]
  *   pnpm lab ask --db <dialect> --sql "SELECT …" ["question"]
  *   pnpm lab ui [--port <port>] [--timeout <ms>]
  *
  * `lab ask` asks AskDB the question on one engine, with the lab's replay model standing in
  * for OpenAI (or `--sql` standing in for the model), and prints the SQL, the validation
  * outcome and, for accepted SQL, the rows the read-only role reads (`src/ask-run.ts`).
+ * `--model live` asks the live OpenAI model instead (#448), with the key from
+ * `liveSettings` (`src/model/live.ts`): it refuses in CI and without a key, before anything
+ * runs, and never falls back to the replay model. Only the flag switches it:
+ * `LAB_LIVE_MODEL=1`, which turns on the live suite, doesn't, so no exported variable spends.
  *
- * `lab ui` serves a page on 127.0.0.1 that runs one input on every engine at once, through
- * the same code path, side by side (`src/ui/server.ts`).
+ * `lab ui` serves a page on 127.0.0.1 that runs one input on the engines you pick at once,
+ * through the same code path, side by side (`src/ui/server.ts`).
  */
 import { parseArgs, type ParseArgsConfig } from "node:util";
 import { askAndRun, VIAS, type Via } from "./ask-run.js";
 import { requireInstallTarget } from "./artifacts.js";
 import { SUPPORTED_DIALECTS, isSupportedDialect } from "./dialects.js";
-import { MODEL_MODE, startLabUi } from "./ui/server.js";
+import { LiveModelError, liveSettings, type LiveSettings } from "./model/live.js";
+import { startLabUi } from "./ui/server.js";
+
+const MODELS = ["replay", "live"] as const;
 
 const USAGE = [
-  `usage: pnpm lab ask --db <${SUPPORTED_DIALECTS.join("|")}> "<catalog question>" [--via ${VIAS.join("|")}]`,
+  `usage: pnpm lab ask --db <${SUPPORTED_DIALECTS.join("|")}> "<question>" [--via ${VIAS.join("|")}] [--model ${MODELS.join("|")}]`,
   `       pnpm lab ask --db <${SUPPORTED_DIALECTS.join("|")}> --sql "<sql>" ["question"]`,
   "       pnpm lab ui [--port <port>] [--timeout <ms>]",
 ].join("\n");
@@ -37,7 +44,7 @@ function parse<T extends ParseArgsConfig>(config: T): ReturnType<typeof parseArg
 async function askCommand(argv: string[]): Promise<number> {
   const parsed = parse({
     args: argv,
-    options: { db: { type: "string" }, sql: { type: "string" }, via: { type: "string", default: "raw" } },
+    options: { db: { type: "string" }, sql: { type: "string" }, via: { type: "string", default: "raw" }, model: { type: "string", default: "replay" } },
     allowPositionals: true,
   });
   if (!parsed) return 2;
@@ -47,12 +54,24 @@ async function askCommand(argv: string[]): Promise<number> {
   const question = positionals.join(" ");
   // `--sql` that was given is what runs: blank SQL is refused, never replaced by the question.
   const sqlOk = values.sql === undefined ? Boolean(question) : values.sql.trim() !== "";
-  if (!dialect || !isSupportedDialect(dialect) || !(VIAS as readonly string[]).includes(via) || !sqlOk) {
+  // `--sql` calls no model, so it can't be asked of the live one.
+  const modelOk = (MODELS as readonly string[]).includes(values.model) && !(values.model === "live" && values.sql !== undefined);
+  if (!dialect || !isSupportedDialect(dialect) || !(VIAS as readonly string[]).includes(via) || !sqlOk || !modelOk) {
     console.error(USAGE);
     return 2;
   }
+  let live: LiveSettings | undefined;
+  if (values.model === "live") {
+    try {
+      live = liveSettings("live mode");
+    } catch (error) {
+      if (!(error instanceof LiveModelError)) throw error;
+      console.error(`lab ask: ${error.message}`);
+      return 2;
+    }
+  }
 
-  const run = await askAndRun(dialect, { question, sql: values.sql, via }, {
+  const run = await askAndRun(dialect, { question, sql: values.sql, via, live }, {
     onLine: (line) => (line.stream === "stdout" ? console.log : console.error)(line.text),
   });
   if (run.status === "failed") throw run.error;
@@ -82,7 +101,7 @@ async function uiCommand(argv: string[]): Promise<number> {
   const ui = await startLabUi({ port, engineTimeoutMs });
   console.log(`lab ui:     ${ui.url}`);
   console.log(`target:     ${target.label}`);
-  console.log(`model:      ${MODEL_MODE}`);
+  console.log(`live model: ${ui.live.available ? ui.live.modelId : `unavailable: ${ui.live.reason}`}`);
   console.log("Ctrl-C stops it.");
   await new Promise<void>((resolve) => {
     const stop = () => void ui.close().then(resolve);

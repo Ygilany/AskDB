@@ -4,7 +4,8 @@
  *
  * The authoring-gate answers are per scenario, above each group of tests. For all of them:
  * No production seam: the tests start the real `pnpm lab ui` command (through `tsx`, as
- * `pnpm lab` does) and the real `pnpm lab ask`, and send the requests the page sends. Engines
+ * `pnpm lab` does) and the real `pnpm lab ask`, and send the requests the page sends. Every
+ * `lab ui` here starts without a key (`support/lab-ui.ts`), so none can ask the live model. Engines
  * are made to fail only from outside: `ASKDB_FIXTURE_<ENGINE>_PORT`, the fixture's own
  * documented port override, points one engine at a closed port or at a socket that never
  * answers. `--timeout` is the command's own option.
@@ -141,6 +142,25 @@ it.for(DIALECTS)("[%s] lab-ui-same-as-lab-ask: a catalog question", async ([dial
   expect(printed(run, dialect)).toEqual(maskPorts(cli));
 });
 
+/*
+ * Protects: the page's path switch (#448): a column asked through the client path
+ * (`createAskDb` + `@askdb/ai-openai`) holds what `pnpm lab ask --via client` prints, on every
+ * engine, so the page tests both documented model paths.
+ * Catches: the client path's config read once for the whole server, so every engine after the
+ * first asks the first engine's replay URL and gets its SQL; or a `via` the page sends that the
+ * server drops, so the "client" column is the raw path's.
+ * Not covered elsewhere: the raw-path scenario above; `lab-ask-replay` checks `lab ask --via
+ * client` itself, not the page's columns.
+ */
+it.for(DIALECTS)("[%s] lab-ui-same-as-lab-ask: a catalog question through the client path", async ([dialect], ctx) => {
+  needsCapability(ctx, "cli-introspect-engine");
+  const [cli, run] = await Promise.all([labAsk("--db", dialect, "--via", "client", TOP_PAID), runOnce({ question: TOP_PAID, via: "client" })]);
+
+  expect(cli.stdout).toContain("via createAskDb() + @askdb/ai-openai");
+  expect(cli.status).toBe(0);
+  expect(printed(run, dialect)).toEqual(maskPorts(cli));
+});
+
 it.for([
   ["a rejected statement", { question: "", sql: "DELETE FROM org.agency" }, ["--sql", "DELETE FROM org.agency"]],
   ["a question with no reply", { question: NO_REPLY }, [NO_REPLY]],
@@ -273,17 +293,37 @@ it("[postgres] lab-ui-shutdown: exits on SIGTERM while a timed-out engine's conn
 });
 
 /*
- * Protects: the page and `lab ask` run exactly the input they were given (issue #262). Blank
- * SQL is refused (`400` from the page, usage and exit 2 from `lab ask --sql ""`), not run as
- * the question it's labelled with.
+ * Protects: the page and `lab ask` run exactly the input they were given (issues #262, #448).
+ * Blank SQL is refused (`400` from the page, usage and exit 2 from `lab ask --sql ""`), not run
+ * as the question it's labelled with; so are a model, a path or an engine the server doesn't
+ * know, no engine at all, and SQL sent for the live model, which SQL doesn't call. Only the
+ * engines picked run, and the summary compares only them.
  * Catches: blank SQL silently dropped, so the label's replay question runs instead and rows
- * appear for SQL nobody wrote.
- * Not covered elsewhere: the other runs all send non-blank input.
+ * appear for SQL nobody wrote; an unknown model or path quietly replaced by the default, so a
+ * contributor reads replay or raw-path results as the ones they picked; and engines left out
+ * of the pick that run anyway.
+ * Not covered elsewhere: the other runs all send valid input, on every engine.
  */
-it("[postgres] lab-ui-input: refuses blank SQL instead of running its label", async () => {
-  const run = await uiRun(ui, { question: AGENCY_NAMES, sql: "   " });
+it.for([
+  ["blank SQL", { question: AGENCY_NAMES, sql: "   " }],
+  ["an unknown model", { question: AGENCY_NAMES, model: "gpt-4o" }],
+  ["an unknown path", { question: AGENCY_NAMES, via: "http" }],
+  ["an unknown engine", { question: AGENCY_NAMES, engines: ["sqlite", "oracle"] }],
+  ["no engine", { question: AGENCY_NAMES, engines: [] }],
+  ["SQL for the live model", { question: AGENCY_NAMES, sql: "SELECT 1", model: "live" }],
+] as const)("[postgres] lab-ui-input: refuses %s", async ([, input]) => {
+  const run = await uiRun(ui, input as unknown as UiInput);
 
   expect(run.status).toBe(400);
+});
+
+it("[postgres] lab-ui-input: runs only the engines picked, and compares only them", async (ctx) => {
+  needsCapability(ctx, "cli-introspect-engine");
+  const run = await uiRun(ui, { question: AGENCY_NAMES, engines: ["sqlite", "mariadb"] });
+
+  expect(run.engines.map((e) => e.dialect).sort()).toEqual(["mariadb", "sqlite"]);
+  expect(run.summary?.agreement.verdict).toBe("agree");
+  expect(Object.keys(run.summary?.oracle ?? {}).sort()).toEqual(["mariadb", "sqlite"]);
 });
 
 it("[postgres] lab-ui-input: lab ask refuses a blank --sql, as the page does", async () => {
@@ -329,19 +369,37 @@ it("[postgres] lab-ui-options: accepts the longest --timeout Node can hold", asy
 });
 
 /*
- * Protects: the page names what it tests (issue #262): the install target `lab:use`
- * recorded, and the model mode.
+ * Protects: the page names what it tests (issues #262, #448): the install target `lab:use`
+ * recorded, and whether the live model is available. Without a key (or in CI) the page says
+ * why, and the API refuses a live run (`409`) before any engine runs, never falling back to
+ * replay.
  * Catches: a page that names a stale or hard-coded target, so a contributor reads one
- * version's results as another's.
+ * version's results as another's; and a live run with no key that silently replays, or starts
+ * every engine only for each to fail.
  * Not covered elsewhere: `lab ask` prints its target; nothing checks the page's.
+ * `record.test.ts` owns `liveSettings`' CI and no-key rules; this checks the page acting on them.
  */
-it("[postgres] lab-ui-page: names the install target and the model mode", async () => {
+it("[postgres] lab-ui-page: names the install target, and why the live model is unavailable", async () => {
   const page = await studioRequest(ui);
   const shown = (id: string) => new RegExp(`<dd id="${id}">([^<]*)</dd>`).exec(page.text)?.[1];
 
   expect(page.status).toBe(200);
   expect(shown("target")).toBe(requireInstallTarget().label);
-  expect(shown("model")).toBe("replay");
+  expect(shown("live-model")).toMatch(/^unavailable: live mode needs an OpenAI API key and found none/);
+});
+
+it("[postgres] lab-ui-page: refuses a live run without a key, running no engine", async () => {
+  // Checked first, so a server that found a key fails here instead of making a paid call.
+  expect(/<dd id="live-model">unavailable: /.test((await studioRequest(ui)).text), "lab ui found a key: refusing to send a live run").toBe(true);
+  const reply = await studioRequest(ui, {
+    method: "POST",
+    path: "/api/run",
+    headers: { "content-type": "application/json", origin: ui.origin },
+    body: JSON.stringify({ question: AGENCY_NAMES, model: "live" }),
+  });
+
+  expect(reply.status).toBe(409);
+  expect(reply.text).toMatch(/^lab ui: the live model is unavailable: live mode needs an OpenAI API key/);
 });
 
 /*
