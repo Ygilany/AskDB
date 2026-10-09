@@ -75,13 +75,13 @@ export function isVitestLoaderCall(node, bindings) {
   const callee = unwrap(node.expression);
   if (callee.kind === ts.SyntaxKind.ImportKeyword) return true; // `import("vitest")`, `import("vitest", opts)`
   // `require`, `module.require`, `globalThis.require`, or a function from `createRequire(…)`.
-  if (ts.isIdentifier(callee)) return callee.text === "require" || bindings.resolve(callee)?.kind === "require";
+  if (ts.isIdentifier(callee)) return callee.text === "require" || kindOf(callee, bindings) === "require";
   return isMemberLink(callee) && linkName(callee) === "require";
 }
 
 /** Whether identifier `id` names a Vitest namespace. */
 export function isVitestNamespace(id, bindings) {
-  return bindings.resolve(id)?.kind === "ns";
+  return kindOf(id, bindings) === "ns";
 }
 
 /**
@@ -103,9 +103,9 @@ function suiteFactoryCall(node, bindings) {
 
 /** Whether `node` names `integrationSuite`: the import, or `I.integrationSuite` on a namespace import of its module. */
 export function isSuiteFactory(node, bindings) {
-  if (ts.isIdentifier(node)) return bindings.resolve(node)?.kind === "suiteFactory";
+  if (ts.isIdentifier(node)) return kindOf(node, bindings) === "suiteFactory";
   return isMemberLink(node) && linkName(node) === "integrationSuite" && ts.isIdentifier(unwrap(node.expression)) &&
-    bindings.resolve(unwrap(node.expression))?.kind === "integrationNs";
+    kindOf(unwrap(node.expression), bindings) === "integrationNs";
 }
 
 /** The Vitest function `node` names (`describe`, `v.describe`, a renamed import, an `.extend` alias), or undefined. */
@@ -200,4 +200,9 @@ function resolveDeclarations(symbol, bindings, isIntegrationModule) {
   if (vitest.length === 0) return undefined;
   const same = vitest.length === results.length && results.every((f) => f.kind === results[0].kind && f.name === results[0].name);
   return same ? results[0] : { kind: "ambiguous" };
+}
+
+/** The kind `bindings.resolve()` gives identifier `id` ("fn", "ns", "suiteFactory", …), or undefined. */
+export function kindOf(id, bindings) {
+  return bindings.resolve(id)?.kind;
 }

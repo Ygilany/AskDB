@@ -104,3 +104,4 @@ for (const [engine] of Object.entries({ sqlite: 1, ...(process.env.DATABASE_URL 
 (process.env.DATABASE_URL ? [1] : []).map((n) => n).forEach((n) => describe(`receiver pick ${n}`, run)); // HIT
 for (const u of new Set(process.env.DATABASE_URL ? [1] : [])) describe(`new Set over a pick ${u}`, run); // HIT
 for (const u of await Promise.resolve(process.env.DATABASE_URL ? [1] : [])) describe(`awaited pick ${u}`, run); // HIT
+for (const u of [process.env.DATABASE_URL ? [1] : []].flat()) describe(`a pick inside a flattened receiver ${u}`, run); // HIT

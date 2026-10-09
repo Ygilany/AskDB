@@ -45,3 +45,4 @@ describe.each((process.env.DATABASE_URL ? [1] : []).map((u) => [u]))("rows from 
 describe.each([...new Map(process.env.DATABASE_URL ? [[1, 2]] : [])])("rows from new Map %s", () => {}); // HIT
 /** @example // check-test-gating-ignore-next-line: a marker after a JSDoc tag is not a line comment
  */ describe.skip("a marker in JSDoc exempts nothing", () => {}); // HIT
+describe.each(Array.from({ length: process.env.DATABASE_URL ? 1 : 0 }, () => [1]))("a length picked inside a call %s", () => {}); // HIT

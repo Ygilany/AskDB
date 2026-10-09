@@ -39,7 +39,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 const selfPath = realpathSync(fileURLToPath(import.meta.url));
 const sibling = (name) => pathToFileURL(join(dirname(selfPath), "check-test-gating", name)).href;
 const { ts, isWrapper, outermostWrapper, unwrap, calleeOf, isMemberLink, linkName, lineOf, oneFileProgram, memberOn } = await import(sibling("ast.mjs"));
-const { EXTENDERS, vitestBindings, isVitestLoaderCall, isVitestNamespace, integrationModuleResolver, isSuiteFactory, testFnName, extendedFn } =
+const { EXTENDERS, kindOf, vitestBindings, isVitestLoaderCall, isVitestNamespace, integrationModuleResolver, isSuiteFactory, testFnName, extendedFn } =
   await import(sibling("bindings.mjs"));
 const { workspaceDirs, linkTarget } = await import(sibling("workspace.mjs"));
 export { integrationModuleResolver };
@@ -275,13 +275,21 @@ function isPicked(node) {
   if (pickBranches(node).length > 0) return true;
   // `Object.entries(url ? {…} : {})`, `new Set(url ? [url] : [])`, `(url ? [url] : []).map(f)`: a
   // call or `new` over a pick, or a method of one, yields a table whose size is picked too.
-  if ((ts.isCallExpression(node) || ts.isNewExpression(node)) && (node.arguments ?? []).some((arg) => isPicked(ts.isSpreadElement(arg) ? arg.expression : arg))) {
-    return true;
-  }
-  if (ts.isCallExpression(node) && isMemberLink(unwrap(node.expression)) && isPicked(unwrap(node.expression).expression)) return true;
+  if ((ts.isCallExpression(node) || ts.isNewExpression(node)) && (node.arguments ?? []).some(containsPick)) return true;
+  if (ts.isCallExpression(node) && isMemberLink(unwrap(node.expression)) && containsPick(unwrap(node.expression).expression)) return true;
   // `[a, ...(cond ? [b] : [])]`, `{ a, ...(cond ? { b } : {}) }`: how many rows there are depends on the condition.
   if (ts.isArrayLiteralExpression(node)) return node.elements.some((el) => ts.isSpreadElement(el) && isPicked(el.expression));
   return ts.isObjectLiteralExpression(node) && node.properties.some((p) => ts.isSpreadAssignment(p) && isPicked(p.expression));
+}
+
+/**
+ * Whether a pick sits anywhere in `node` outside a nested function: `Array.from({ length: url ? 1 : 0 })`,
+ * `[url ? [url] : []].flat()`. A call over such a value can yield a table whose size is picked.
+ */
+function containsPick(node) {
+  if (ts.isFunctionLike(node)) return false;
+  if (pickBranches(unwrap(node)).length > 0) return true;
+  return ts.forEachChild(node, (child) => (containsPick(child) ? true : undefined)) === true;
 }
 
 /**
@@ -316,8 +324,9 @@ function hasGateOption(call, suite) {
     // `describe(...args)`: the options could be in there, unread; fail closed.
     if (ts.isSpreadElement(arg)) return true;
     // `it(name, url ? fn : undefined)`: a body picked at run time can be missing, which makes the
-    // test a todo. Only a pick between plain strings or numbers (a timeout) is left alone.
-    if (i > 0 && isPicked(arg) && !picksOnlyLiterals(arg)) return true;
+    // test a todo. Only a pick between plain strings or numbers (a timeout) is left alone, and a
+    // value computed from a pick (`Number(env ?? 60_000)`) is always there.
+    if (i > 0 && pickBranches(unwrap(arg)).length > 0 && !picksOnlyLiterals(arg)) return true;
     visit(arg, false);
   }
   return gate;
@@ -533,7 +542,7 @@ export function findGates(src, fileName = "file.test.ts", { isIntegrationModule 
     // `integrationSuite` (or its module's namespace) used other than by calling it: an alias the
     // check can't follow, such as `const g = integrationSuite`.
     if (ts.isIdentifier(node) && isValueReference(node)) {
-      const bindingKind = bindings.resolve(node)?.kind;
+      const bindingKind = kindOf(node, bindings);
       const outer = outermostWrapper(node);
       if (bindingKind === "suiteFactory" && calleeOf(outer.parent) !== outer) refs.push(unreadableRef(node));
       if (bindingKind === "ambiguous") refs.push(unreadableRef(node));
@@ -546,7 +555,7 @@ export function findGates(src, fileName = "file.test.ts", { isIntegrationModule 
       }
     }
     // `import d = v.<name>` other than `v.describe`/`v.it`/…: an alias the check can't follow.
-    if (ts.isImportEqualsDeclaration(node) && ts.isQualifiedName(node.moduleReference) && bindings.resolve(node.name)?.kind !== "fn") {
+    if (ts.isImportEqualsDeclaration(node) && ts.isQualifiedName(node.moduleReference) && kindOf(node.name, bindings) !== "fn") {
       let root = node.moduleReference;
       while (ts.isQualifiedName(root)) root = root.left;
       // `import g = describe.skipIf`, `import f = I.integrationSuite`: any root the bindings know.

@@ -7,3 +7,4 @@ helpers.describe.skip("a member access, not Vitest's describe", () => {});
 const run = integrationSuite({ env: ["DATABASE_URL"] });
 run("gated the sanctioned way", () => {});
 describe("skip: false on a suite", { skip: false }, () => {});
+describe("a body computed from a pick", withDb(process.env.DATABASE_URL ?? ":memory:", () => {}));

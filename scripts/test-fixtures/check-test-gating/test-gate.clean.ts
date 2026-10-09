@@ -13,3 +13,5 @@ test.scoped({ skip: maybe });
 it("a computed literal key", { ["skip"]: true }, run);
 it("a timeout picked between numbers", () => {}, process.env.CI ? 60_000 : 5_000);
 it(process.env.NAME ?? "a name picked at run time", () => {});
+it("a timeout computed from a pick", async () => {}, Number(process.env.SLOW_TIMEOUT ?? 60_000));
+it.each(rows.filter((row) => row.enabled ?? true))("a pick inside a filter callback %o", () => {});

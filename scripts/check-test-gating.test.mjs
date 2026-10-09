@@ -189,10 +189,12 @@ test("CLI follows a symbolic link to a directory, once", (t) => {
   symlinkSync(join(root, "packages", "a", "src"), join(root, "packages", "a", "src", "loop"));
   symlinkSync(join(root, "does-not-exist"), join(root, "packages", "a", "src", "dangling"));
   symlinkSync(join(root, "does-not-exist"), join(root, "packages", "a", "src", ".#ok.test.ts"));
+  symlinkSync(join(root, "shared", "gated.test.ts"), join(root, "packages", "a", "src", "file-link.test.ts"));
   const result = run(root);
   assert.equal(result.status, 1, result.stderr);
-  assert.equal(result.stderr.match(/gated\.test\.ts:1:/g)?.length, 1);
+  assert.equal(result.stderr.match(/linked\/gated\.test\.ts:1:/g)?.length, 1);
   assert.match(result.stderr, /packages\/a\/src\/linked\/gated\.test\.ts:1:/);
+  assert.match(result.stderr, /packages\/a\/src\/file-link\.test\.ts:1:/);
 });
 
 test("CLI scans a package that is a symbolic link and skips a pattern that matches nothing", (t) => {
