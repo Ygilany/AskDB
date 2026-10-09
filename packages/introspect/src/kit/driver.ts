@@ -149,11 +149,11 @@ export function isDriverInstalled(packageName: string, options?: DriverLoadOptio
 }
 
 /**
- * The "optional peer missing" message of the first-party engine packages, e.g.
- * `missingDriverMessage({ engine: "Postgres", packageName: "pg" })`. It calls
- * the runner built-in and suggests a one-off `askdb` command, which registers
- * only the first-party engines, so a third-party engine writes its own
- * `missingMessage` instead.
+ * The install hint the first-party engines' built-in catalog runners throw when
+ * their driver peer is missing, e.g.
+ * `missingDriverMessage({ engine: "Postgres", packageName: "pg" })`. It
+ * suggests a one-off `askdb` command, and the `askdb` binary registers only the
+ * first-party engines, so a third-party engine writes its own `missingMessage`.
  */
 export function missingDriverMessage(input: { engine: string; packageName: string }): string {
   const { engine, packageName } = input;
