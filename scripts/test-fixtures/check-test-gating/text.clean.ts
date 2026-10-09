@@ -8,3 +8,5 @@ it("rejects describe.skip in text", () => {
   expect(source).toMatch(/describe\.skip|\? describe :/);
   expect(source).not.toMatch(/[/]it\.skipIf/);
 });
+expect(pkg.name).toBe("vitest");
+registry.lookup("vitest").describe.skip("a member call that is not a loader", () => {});

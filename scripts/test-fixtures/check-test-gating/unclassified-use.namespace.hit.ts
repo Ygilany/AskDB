@@ -14,3 +14,5 @@ await vi.importActual("vitest").then(({ describe }) => describe.skipIf(!process.
 const actualPromise = vi.importActual("vitest"); // HIT
 await vi.importMock("vitest").then(({ describe }) => describe.skipIf(!process.env.DATABASE_URL)("vi.importMock through .then", run)); // HIT
 await (vi.importActual as any)("vitest").then(({ describe }) => describe.skipIf(!process.env.DATABASE_URL)("a wrapped loader through .then", run)); // HIT
+const { describe: plainKey, ...restOfVitest } = vitest; // HIT
+const { it: plainIt, [key]: computedKey } = vitest; // HIT

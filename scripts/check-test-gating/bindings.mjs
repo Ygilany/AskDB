@@ -39,14 +39,14 @@ export function vitestBindings(program, isIntegrationModule) {
   const checker = program.getTypeChecker();
   const cache = new Map();
   const bindings = {};
+  /** The declarations of the symbol identifier `id` names, or none. */
+  bindings.declarationsOf = (id) => checker.getSymbolAtLocation(id)?.declarations ?? [];
   /**
    * What identifier `id` refers to: `{ kind: "fn", name }` for a Vitest function, `{ kind: "ns" }`
    * for a Vitest namespace, `{ kind: "suiteFactory" }` for `integrationSuite`, `{ kind: "require" }`
    * for a function from `createRequire(…)`, `{ kind: "ambiguous" }` for a name whose declarations
    * disagree about a Vitest value (see `resolveDeclarations`), or undefined.
    */
-  /** The declarations of the symbol identifier `id` names, or none. */
-  bindings.declarationsOf = (id) => checker.getSymbolAtLocation(id)?.declarations ?? [];
   bindings.resolve = (id) => {
     const parent = id.parent;
     const symbol = ts.isShorthandPropertyAssignment(parent) && parent.name === id
@@ -147,7 +147,7 @@ export function testFnName(node, bindings) {
 }
 
 /** The Vitest function an `x.extend(…)` call extends, or undefined for any other node. */
-export function extendedFn(node, bindings) {
+function extendedFn(node, bindings) {
   const callee = calleeOf(unwrap(node));
   if (callee === undefined) return undefined;
   const member = unwrap(callee);
@@ -198,6 +198,31 @@ function isSuiteBody(fn, bindings) {
   const outer = outermostWrapper(fn);
   const call = outer.parent;
   return ts.isCallExpression(call) && call.arguments.includes(outer) && vitestCallKind(call, bindings) === "suite";
+}
+
+/**
+ * Whether a suite call passes a body the check can't read for the test API Vitest passes it. An
+ * inline function is read (see `isSuiteBody`), and so are options, a timeout and a picked argument
+ * (the gate rules judge those). A name is read when it is bound to a local function with no
+ * parameter, to an options value, or to nothing in the file (a global). Anything else fails closed:
+ * `describe("db", body)` with `function body(test) {…}`, `suites.db`, `makeBody()`,
+ * `body.bind(null)`, `(0, body)`. A `.each` or `.for` body receives a row, not the test API.
+ */
+export function suiteBodyUnreadable(call, bindings) {
+  if (!ts.isCallExpression(call) || vitestCallKind(call, bindings) !== "suite") return false;
+  return call.arguments.slice(1).some((arg) => !isReadableSuiteArgument(unwrapValue(arg), bindings));
+}
+
+function isReadableSuiteArgument(arg, bindings) {
+  if (ts.isArrowFunction(arg) || ts.isFunctionExpression(arg)) return true;
+  if (ts.isObjectLiteralExpression(arg) || ts.isNumericLiteral(arg) || ts.isSpreadElement(arg)) return true;
+  if (ts.isConditionalExpression(arg) || (ts.isBinaryExpression(arg) && arg.operatorToken.kind !== ts.SyntaxKind.CommaToken)) return true;
+  if (!ts.isIdentifier(arg)) return false;
+  return bindings.declarationsOf(arg).every((d) => {
+    const value = ts.isVariableDeclaration(d) && d.initializer ? unwrapValue(d.initializer) : d;
+    if (ts.isFunctionDeclaration(value) || ts.isArrowFunction(value) || ts.isFunctionExpression(value)) return firstParameter(value) === undefined;
+    return ts.isObjectLiteralExpression(value) || ts.isNumericLiteral(value);
+  });
 }
 
 /** The parameter a binding element destructures, through nested patterns, or undefined. */

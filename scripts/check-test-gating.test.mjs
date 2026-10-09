@@ -60,7 +60,7 @@ test("a file that does not parse throws instead of passing", () => {
 });
 
 const DEFAULT_YAML =
-  'packages:\n  - "packages/*"\n  # comment\n  - "!packages/excluded"\n  - "fixtures/db"\nother: 1\n';
+  'packages:\n  - "packages/*"\n  # comment\n  - "!packages/excluded"\n  - "fixtures/db"\nother:\n  - "*turbo*"\n';
 
 /** A temp workspace removed after the test `t` finishes. */
 function workspace(t, testFiles, yaml = DEFAULT_YAML) {
@@ -203,14 +203,19 @@ test("CLI follows a symbolic link to a directory, once", (t) => {
 test("CLI scans a package that is a symbolic link and skips a pattern that matches nothing", (t) => {
   const root = workspace(
     t,
-    { "packages/a/src/a.test.ts": 'it("ok", () => {});\n', "vendor/b/src/b.test.ts": 'describe.skip("linked package", () => {});\n' },
-    'packages:\n  - "packages/*"\n  - "missing/*"\n  - "absent"\n',
+    {
+      "packages/a/src/a.test.ts": 'it("ok", () => {});\n',
+      "vendor/b/src/b.test.ts": 'describe.skip("linked package", () => {});\n',
+      "fixtures/db/db.test.ts": 'describe.skip("after a pattern that matches nothing", () => {});\n',
+    },
+    'packages:\n  - "packages/*"\n  - "missing/*"\n  - "absent"\n  - "fixtures/db"\n',
   );
   symlinkSync(join(root, "vendor", "b"), join(root, "packages", "b"));
   symlinkSync(join(root, "vendor", "gone"), join(root, "packages", "dangling"));
   const result = run(root);
   assert.equal(result.status, 1, result.stderr);
   assert.match(result.stderr, /packages\/b\/src\/b\.test\.ts:1:/);
+  assert.match(result.stderr, /fixtures\/db\/db\.test\.ts:1:/);
 });
 
 test("CLI reads a pnpm-workspace.yaml with CRLF line endings", (t) => {

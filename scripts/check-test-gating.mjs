@@ -20,10 +20,10 @@
 // `vi.importMock("vitest")`, `import v = require(…)`, and a member read straight off a loader,
 // `require("vitest").describe`) and variables holding `test.extend({…})`. `integrationSuite({…})`
 // and a variable holding its result are suite functions, so the sanctioned gate passes. A suite
-// body's first parameter is the test API Vitest passes it; a body passed by name that takes one
-// fails closed. Names resolve through TypeScript's binder, so any other local declaration that
-// shadows one (a callback's parameter `it`, an import of `test` from another module) is not
-// Vitest's.
+// body's first parameter is the test API Vitest passes it; a body other than an inline function or
+// a local function with no parameter fails closed. Names resolve through TypeScript's binder, so
+// any other local declaration that shadows one (a callback's parameter `it`, an import of `test`
+// from another module) is not Vitest's.
 //
 // What is rejected and allowed is listed once, in CONTRIBUTING.md ("Integration Tests"); RULES
 // below implements it, and ADR 0019 (docs/adrs/0019-test-gating-check-parses-with-typescript.md)
@@ -40,11 +40,11 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 // --preserve-symlinks-main invocation still finds them, and they find the repo's `typescript`.
 const selfPath = realpathSync(fileURLToPath(import.meta.url));
 const sibling = (name) => pathToFileURL(join(dirname(selfPath), "check-test-gating", name)).href;
-const { ts, isWrapper, outermostWrapper, unwrap, unwrapValue, someInside, calleeOf, isMemberLink, linkName, lineOf, oneFileProgram, memberOn, firstParameter } =
+const { ts, isWrapper, outermostWrapper, unwrap, unwrapValue, someInside, calleeOf, isMemberLink, linkName, lineOf, oneFileProgram, memberOn } =
   await import(sibling("ast.mjs"));
-const { EXTENDERS, MODIFIERS, SUITE_FNS, vitestCallKind, kindOf, isPromiseLoader, vitestBindings, isVitestLoaderCall, isVitestNamespace, integrationModuleResolver, isSuiteFactory, testFnName } =
+const { EXTENDERS, MODIFIERS, SUITE_FNS, vitestCallKind, suiteBodyUnreadable, kindOf, isPromiseLoader, vitestBindings, isVitestLoaderCall, isVitestNamespace, integrationModuleResolver, isSuiteFactory, testFnName } =
   await import(sibling("bindings.mjs"));
-const { workspaceDirs, linkTarget } = await import(sibling("workspace.mjs"));
+const { workspaceDirs, entryTarget } = await import(sibling("workspace.mjs"));
 
 const GATE_LINKS = new Set(["skipIf", "runIf"]);
 // `describe.todo(name, fn)` never runs the suite's tests, like `describe.skip`.
@@ -217,25 +217,10 @@ function testRef(start, fnName, bindings) {
     chain,
     invoked: call !== undefined,
     // `const t = it.each(rows)` stores the function that defines the tests, which the check can't follow.
-    unreadable: (call === undefined && !extendResultIsTracked(chain)) || eachResultStored || (suite && defines && (suiteResultHeld(call) || (rows === undefined && namedBodyTakesApi(call, bindings)))),
+    unreadable: (call === undefined && !extendResultIsTracked(chain)) || eachResultStored || (suite && defines && (suiteResultHeld(call) || suiteBodyUnreadable(call, bindings))),
     conditional: defines && underCondition(call, bindings),
     optionGate: defines && (hasGateOption(call, suite) || rowsSpread || (rows !== undefined && isPicked(rows))),
   };
-}
-
-/**
- * Whether a suite call passes its body by name to a function that takes a parameter
- * (`describe("db", body)` with `function body(test) {…}`): Vitest passes that parameter the test
- * API, which the check doesn't follow through the name.
- */
-function namedBodyTakesApi(call, bindings) {
-  return ts.isCallExpression(call) && call.arguments.slice(1).some((arg) => {
-    const body = unwrap(arg);
-    return ts.isIdentifier(body) && bindings.declarationsOf(body).some((d) => {
-      const fn = ts.isVariableDeclaration(d) && d.initializer ? unwrap(d.initializer) : d;
-      return (ts.isFunctionDeclaration(fn) || ts.isArrowFunction(fn) || ts.isFunctionExpression(fn)) && firstParameter(fn) !== undefined;
-    });
-  });
 }
 
 /**
@@ -602,7 +587,7 @@ function* walk(dir, seen = new Set()) {
   for (const entry of readdirSync(dir, { withFileTypes: true })) {
     if (SKIP_DIRS.has(entry.name)) continue;
     const path = join(dir, entry.name);
-    const target = entry.isSymbolicLink() ? linkTarget(path) : entry.isDirectory() ? "dir" : "file";
+    const target = entryTarget(entry, path);
     // A dangling link named like a test (an editor's `.#a.test.ts` lock) is no test file.
     if (target === "dir") yield* walk(path, seen);
     else if (target === "file" && /\.test\.tsx?$/.test(entry.name)) yield path;

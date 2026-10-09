@@ -37,3 +37,5 @@ describe("a this annotation before the test API", function (this: unknown, test)
 describe("a wrapped suite body", ((t) => {
   t.skipIf(!process.env.DATABASE_URL)("query", () => {}); // HIT
 }) as any);
+it.each(Array.from({ length: process.env.DATABASE_URL ? 1 : 0, other: 1 }))("a length beside another key %s", () => {}); // HIT
+it.each([[2], process.env.DATABASE_URL ? [1] : []].flat())("a picked element after a fixed one %s", () => {}); // HIT
