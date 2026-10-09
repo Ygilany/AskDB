@@ -8,3 +8,6 @@ const exported = { describe };
 function it(a: string): void;
 function it(a: any) {}
 it("an overloaded local function named it");
+rows.forEach(({ test }) => {
+  if (test) console.log(test);
+});

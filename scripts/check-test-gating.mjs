@@ -46,7 +46,6 @@ const {
   outermostWrapper,
   unwrap,
   unwrapValue,
-  someInside,
   calleeOf,
   isMemberLink,
   linkName,
@@ -54,7 +53,8 @@ const {
   oneFileProgram,
   memberOn,
   pickBranches,
-  isBinaryPick,
+  optionKey,
+  RUNTIME_KEY,
 } = await import(sibling("ast.mjs"));
 const {
   EXTENDERS,
@@ -62,7 +62,6 @@ const {
   GATE_LINKS,
   SUITE_GATE_LINKS,
   SUITE_FNS,
-  vitestCallKind,
   suiteBodyUnreadable,
   kindOf,
   KIND_FN,
@@ -77,6 +76,7 @@ const {
   isSuiteFactory,
   testFnName,
 } = await import(sibling("bindings.mjs"));
+const { isPicked, underCondition } = await import(sibling("conditions.mjs"));
 const { workspaceDirs, entryTarget } = await import(sibling("workspace.mjs"));
 
 // Function-protocol links that call the function indirectly, so the check can't read the call.
@@ -84,7 +84,7 @@ const INDIRECT_LINKS = new Set(["call", "apply", "bind"]);
 
 /** Whether `ref` gates by a link in `gateLinks`, a run-time modifier, or its options argument. */
 function gatedByHand(ref, gateLinks) {
-  return ref.links.some((l) => gateLinks.has(l)) || ref.computed || ref.optionGate;
+  return ref.links.some((l) => gateLinks.has(l)) || ref.computed || ref.runtimeGate;
 }
 
 export const RULES = [
@@ -154,7 +154,7 @@ function isReadableNamespaceUse(id) {
 function emptyRef(start) {
   return {
     suite: false, links: [], computed: false, chain: start, invoked: false, unreadable: false,
-    conditional: false, optionGate: false, line: lineOf(start),
+    conditional: false, runtimeGate: false, line: lineOf(start),
   };
 }
 
@@ -250,7 +250,7 @@ function testRef(start, fnName, bindings) {
     unreadable: (call === undefined && !extendResultIsTracked(chain)) || eachResultStored ||
       (suite && defines && (suiteResultHeld(call) || suiteBodyUnreadable(call, bindings))),
     conditional: defines && underCondition(call, bindings),
-    optionGate: defines && (hasGateOption(call, suite) || rowsSpread || (rows !== undefined && isPicked(rows))),
+    runtimeGate: defines && (hasGateOption(call, suite) || rowsSpread || (rows !== undefined && isPicked(rows))),
   };
 }
 
@@ -278,54 +278,6 @@ function extendResultIsTracked(chain) {
 
 // Options keys that skip: Vitest's options object, a separate vocabulary from the modifier links.
 const SKIP_OPTIONS = new Set(["skip", "todo"]);
-
-// An options key computed at run time (`{ [expr]: … }`), which could be `skip`.
-const RUNTIME_KEY = Symbol("runtime key");
-
-/** An options key as text, `RUNTIME_KEY` for `[expr]`, or undefined for a name the check skips. */
-function optionKey(name) {
-  if (!name) return undefined;
-  if (ts.isComputedPropertyName(name)) {
-    const expr = unwrap(name.expression);
-    return ts.isStringLiteralLike(expr) || ts.isNumericLiteral(expr) ? expr.text : RUNTIME_KEY;
-  }
-  return ts.isIdentifier(name) || ts.isStringLiteralLike(name) || ts.isNumericLiteral(name) ? name.text : undefined;
-}
-
-/**
- * Whether `node` (through wrappers and `await`) is picked at run time by `? :`, `&&`, `||` or `??`,
- * or is built from such a pick: spread into an array or object, passed to a call or `new`, or the
- * receiver of a method call.
- */
-function isPicked(node) {
-  node = unwrapValue(node);
-  if (pickBranches(node).length > 0) return true;
-  // `Object.entries(url ? {…} : {})`, `new Set(url ? [url] : [])`, `(url ? [url] : []).map(f)`: a
-  // call or `new` over a pick, or a method of one, yields a table whose size is picked too.
-  if ((ts.isCallExpression(node) || ts.isNewExpression(node)) && (node.arguments ?? []).some(pickDecidesSize)) return true;
-  if (ts.isCallExpression(node) && isMemberLink(unwrap(node.expression)) && pickDecidesSize(unwrap(node.expression).expression)) return true;
-  // `[a, ...(cond ? [b] : [])]`, `{ a, ...(cond ? { b } : {}) }`: how many rows there are depends on the condition.
-  if (ts.isArrayLiteralExpression(node)) return node.elements.some((el) => ts.isSpreadElement(el) && isPicked(el.expression));
-  return ts.isObjectLiteralExpression(node) && node.properties.some((p) => ts.isSpreadAssignment(p) && isPicked(p.expression));
-}
-
-/**
- * Whether a call over `node` can yield a table whose size a pick decides: `node` is itself picked,
- * or holds a pick where size comes from (anywhere in a `length`, an element a flattening call can drop:
- * `Array.from({ length: url ? 1 : 0 })`, `[url ? [url] : []].flat()`). A pick of a value inside a
- * fixed-size table (`{ pg: url ?? "postgres://localhost" }`) doesn't change its size.
- */
-function pickDecidesSize(node) {
-  node = unwrapValue(node);
-  if (ts.isSpreadElement(node)) return pickDecidesSize(node.expression);
-  if (isPicked(node)) return true;
-  if (ts.isObjectLiteralExpression(node)) {
-    return node.properties.some((p) =>
-      ts.isPropertyAssignment(p) && optionKey(p.name) === "length" && someInside(p.initializer, (n) => pickBranches(n).length > 0));
-  }
-  return ts.isArrayLiteralExpression(node) && node.elements.some((el) =>
-    pickBranches(unwrapValue(el)).some((branch) => ts.isArrayLiteralExpression(unwrap(branch))));
-}
 
 /**
  * Whether a suite or test call skips through its options argument (`{ skip: cond }`,
@@ -379,112 +331,6 @@ function picksOnlyLiterals(node) {
 function isTernaryBranch(node) {
   const p = node.parent;
   return ts.isConditionalExpression(p) && (p.whenTrue === node || p.whenFalse === node);
-}
-
-/** Whether the node `child` of `parent` runs only when a condition holds. */
-function conditionalEdge(parent, child) {
-  if (ts.isIfStatement(parent)) return child !== parent.expression;
-  if (ts.isConditionalExpression(parent)) return child !== parent.condition;
-  if (isBinaryPick(parent)) return child === parent.right;
-  // A `try` block with a `catch` runs only up to its first throw; the `catch` only after one.
-  if (ts.isTryStatement(parent)) return child === parent.tryBlock && parent.catchClause !== undefined;
-  // A loop or iteration callback over a table picked by a condition, like a `.each` table.
-  if ((ts.isForOfStatement(parent) || ts.isForInStatement(parent)) && child === parent.statement) return isPicked(parent.expression);
-  if (ts.isCallExpression(parent) && parent.arguments.includes(child) && isMemberLink(unwrap(parent.expression))) {
-    if (isPicked(unwrap(parent.expression).expression)) return true;
-  }
-  // `a?.b(arg)`, `a?.[key]`: the arguments and key run only when the chain doesn't short-circuit.
-  if (ts.isCallExpression(parent) && ts.isOptionalChain(parent) && parent.arguments.includes(child)) return true;
-  if (ts.isElementAccessExpression(parent) && ts.isOptionalChain(parent) && child === parent.argumentExpression) return true;
-  // A default value runs only when the value is `undefined`: in a declaration, a parameter, or a
-  // destructuring assignment (`[a = x] = …`, `({ a = x } = …)`).
-  if ((ts.isBindingElement(parent) || ts.isParameter(parent)) && child === parent.initializer) return true;
-  if (ts.isShorthandPropertyAssignment(parent) && child === parent.objectAssignmentInitializer) return true;
-  if (ts.isBinaryExpression(parent) && parent.operatorToken.kind === ts.SyntaxKind.EqualsToken && child === parent.right &&
-    isAssignmentPatternElement(parent)) {
-    return true;
-  }
-  return ts.isCaseClause(parent) || ts.isDefaultClause(parent) || ts.isCatchClause(parent);
-}
-
-/**
- * Whether a suite or test call runs only under a condition, looking outward to the nearest
- * enclosing suite or test call (which is checked on its own), named function, or the file.
- * Plain loops and `forEach`/`map`/`flatMap` callbacks are not conditions; a loop over an iterable
- * a condition picks is one (see `conditionalEdge`), and so is a callback passed to any other call.
- */
-function underCondition(call, bindings) {
-  let child = call;
-  // Set once the walk leaves a function, until a call it's passed to (directly or inside an
-  // argument such as `{ onReady: () => … }`) is reached.
-  let inCallback = false;
-  let grandchild;
-  for (let node = call.parent; node && !ts.isSourceFile(node); grandchild = child, child = node, node = node.parent) {
-    if (conditionalEdge(node, child)) return true;
-    if (ts.isFunctionDeclaration(node)) return false;
-    // A class member that runs later (a method, accessor, constructor or instance field) is a
-    // boundary; a static block, static field or `extends` clause runs when the class does.
-    if (ts.isClassLike(node)) {
-      // A member's computed key and decorators run with the class, like a static block.
-      const viaKeyOrDecorator = grandchild !== undefined && (child.name === grandchild || ts.isDecorator(grandchild));
-      if (isDeferredClassMember(child) && !viaKeyOrDecorator) return false;
-      continue;
-    }
-    if (calleeOf(node) !== undefined && node !== call && vitestCallKind(node, bindings) !== undefined) {
-      return false;
-    }
-    if (ts.isFunctionLike(node) && !ts.isClassStaticBlockDeclaration(node)) inCallback = true;
-    // A callback handed to any other call (`.then`, `setTimeout`, `new Promise`, a helper) may run
-    // later or never.
-    if (inCallback && ts.isTaggedTemplateExpression(node) && child === node.template) return true;
-    // `(async () => { … })().catch(…)`: a throw before the call is swallowed, so it may never run.
-    if (inCallback && ts.isCallExpression(node) && unwrap(node.expression) === unwrap(child) && rejectionSwallowed(node)) return true;
-    if (inCallback && (ts.isCallExpression(node) || ts.isNewExpression(node)) && node.arguments?.includes(child)) {
-      if (!isIterationCall(node)) return true;
-      inCallback = false;
-    }
-  }
-  return false;
-}
-
-/** Whether `a = x` is an element of a destructuring assignment target, not a plain assignment. */
-function isAssignmentPatternElement(binary) {
-  let node = binary;
-  let p = node.parent;
-  if (!(ts.isArrayLiteralExpression(p) || ts.isPropertyAssignment(p))) return false;
-  while (ts.isArrayLiteralExpression(p) || ts.isObjectLiteralExpression(p) || ts.isPropertyAssignment(p) || ts.isSpreadElement(p) ||
-    ts.isParenthesizedExpression(p)) {
-    node = p;
-    p = p.parent;
-  }
-  if (ts.isBinaryExpression(p) && p.operatorToken.kind === ts.SyntaxKind.EqualsToken && p.left === node) return true;
-  return (ts.isForOfStatement(p) || ts.isForInStatement(p)) && p.initializer === node;
-}
-
-/** Whether a class member's body runs after the class is defined, not while it is. */
-function isDeferredClassMember(member) {
-  if (ts.isMethodDeclaration(member) || ts.isConstructorDeclaration(member) || ts.isAccessor(member)) return true;
-  if (!ts.isPropertyDeclaration(member)) return false;
-  return !(ts.getCombinedModifierFlags(member) & ts.ModifierFlags.Static);
-}
-
-/** Whether a call's result is handed to `.catch(…)` or a two-argument `.then(…)`. */
-function rejectionSwallowed(call) {
-  const member = memberOn(call);
-  if (member === undefined) return false;
-  const handler = outermostWrapper(member).parent;
-  if (!ts.isCallExpression(handler) || handler.expression !== outermostWrapper(member)) return false;
-  const name = linkName(member);
-  return name === "catch" || (name === "then" && handler.arguments.length >= 2);
-}
-
-// Array methods whose callback runs once per element, now: parametrization, like a loop.
-const ITERATION_METHODS = new Set(["forEach", "map", "flatMap"]);
-
-/** Whether `node` is `rows.forEach(cb)`, `rows.map(cb)` or `rows.flatMap(cb)`. */
-function isIterationCall(node) {
-  const callee = ts.isCallExpression(node) ? unwrap(node.expression) : undefined;
-  return callee !== undefined && isMemberLink(callee) && ITERATION_METHODS.has(linkName(callee));
 }
 
 /** Line numbers exempted by a `// check-test-gating-ignore-next-line: <reason>` comment. */

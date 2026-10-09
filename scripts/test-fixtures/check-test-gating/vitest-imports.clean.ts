@@ -16,3 +16,6 @@ import localDescribe = Local.describe;
 const notVitest = localDescribe.skip;
 const { expect: expectFn } = v;
 expectFn(1);
+it("a destructured expect under a condition", () => {
+  if (ready) expectFn(1);
+});

@@ -126,3 +126,16 @@ export function someInside(node, test) {
   if (test(node)) return true;
   return ts.forEachChild(node, (child) => (someInside(child, test) ? true : undefined)) === true;
 }
+
+// An options key computed at run time (`{ [expr]: … }`), which could be `skip`.
+export const RUNTIME_KEY = Symbol("runtime key");
+
+/** An options key as text, `RUNTIME_KEY` for `[expr]`, or undefined for a name the check skips. */
+export function optionKey(name) {
+  if (!name) return undefined;
+  if (ts.isComputedPropertyName(name)) {
+    const expr = unwrap(name.expression);
+    return ts.isStringLiteralLike(expr) || ts.isNumericLiteral(expr) ? expr.text : RUNTIME_KEY;
+  }
+  return ts.isIdentifier(name) || ts.isStringLiteralLike(name) || ts.isNumericLiteral(name) ? name.text : undefined;
+}
