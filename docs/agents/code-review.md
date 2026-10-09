@@ -58,7 +58,7 @@ Rules a diff can break and a reviewer can check, each with its source. Read `AGE
 
 ### Decision records
 
-- Records: `docs/adrs/NNNN-title.md`. New records use Status, Context, Options considered, Decision and Consequences; older ones vary (`Alternatives`, `Alternatives considered`).
+- Records: `docs/adrs/NNNN-title.md`. New records use Status, Context, Options considered, Decision and Consequences; older ones vary (`Alternatives considered`, `Considered Options`).
 - Index: `docs/adrs/README.md`, one row per ADR (status, decision, what not to regress). Read it, then the Status and Decision sections of every ADR touching the changed paths.
 - Needs a record: any choice between two or more clean options, any reversal of an accepted record. A change that contradicts an ADR amends or supersedes it in the same PR (`docs/agents/domain.md`, "Flag ADR conflicts").
 - A new record adds its row to the index in the same PR; an amended or superseded record updates its row.

@@ -24,3 +24,7 @@ const exemptedAlias = require("vitest").describe;
 exemptedAlias.skip("through an alias whose own line is exempted", () => {}); // HIT
 const moduleRequire = module.createRequire(import.meta.url);
 moduleRequire("vitest").describe.skip("through module.createRequire", () => {}); // HIT
+const actual = await vi.importActual<typeof import("vitest")>("vitest");
+actual.describe.skipIf(!process.env.DATABASE_URL)("through vi.importActual", () => {}); // HIT
+const mocked = await vi.importMock("vitest");
+mocked.describe.skip("through vi.importMock", () => {}); // HIT

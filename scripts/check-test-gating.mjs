@@ -38,7 +38,8 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 // --preserve-symlinks-main invocation still finds them, and they find the repo's `typescript`.
 const selfPath = realpathSync(fileURLToPath(import.meta.url));
 const sibling = (name) => pathToFileURL(join(dirname(selfPath), "check-test-gating", name)).href;
-const { ts, isWrapper, outermostWrapper, unwrap, calleeOf, isMemberLink, linkName, lineOf, oneFileProgram, memberOn } = await import(sibling("ast.mjs"));
+const { ts, isWrapper, outermostWrapper, unwrap, unwrapValue, someInside, calleeOf, isMemberLink, linkName, lineOf, oneFileProgram, memberOn } =
+  await import(sibling("ast.mjs"));
 const { EXTENDERS, kindOf, vitestBindings, isVitestLoaderCall, isVitestNamespace, integrationModuleResolver, isSuiteFactory, testFnName, extendedFn } =
   await import(sibling("bindings.mjs"));
 const { workspaceDirs, linkTarget } = await import(sibling("workspace.mjs"));
@@ -152,7 +153,8 @@ function isValueReference(id) {
   if ((ts.isJsxOpeningElement(parent) || ts.isJsxSelfClosingElement(parent) || ts.isJsxClosingElement(parent)) && parent.tagName === id) {
     return false;
   }
-  return !(ts.isTypeReferenceNode(parent) || ts.isQualifiedName(parent) || ts.isTypeQueryNode(parent));
+  // `typeof import("vitest").describe` names a type: the qualifier of an import type.
+  return !(ts.isTypeReferenceNode(parent) || ts.isQualifiedName(parent) || ts.isTypeQueryNode(parent) || ts.isImportTypeNode(parent));
 }
 
 /**
@@ -283,26 +285,25 @@ function isPicked(node) {
 
 /**
  * Whether a call over `node` can yield a table whose size a pick decides: `node` is itself picked,
- * or holds a pick where size comes from (a `length`, an element a flattening call can drop:
+ * or holds a pick where size comes from (anywhere in a `length`, an element a flattening call can drop:
  * `Array.from({ length: url ? 1 : 0 })`, `[url ? [url] : []].flat()`). A pick of a value inside a
  * fixed-size table (`{ pg: url ?? "postgres://localhost" }`) doesn't change its size.
  */
+function hasPick(node) {
+  return pickBranches(node).length > 0;
+}
+
 function picksSize(node) {
   node = unwrapValue(node);
   if (ts.isSpreadElement(node)) return picksSize(node.expression);
   if (isPicked(node)) return true;
   if (ts.isObjectLiteralExpression(node)) {
-    return node.properties.some((p) => ts.isPropertyAssignment(p) && optionKey(p.name) === "length" && pickBranches(unwrapValue(p.initializer)).length > 0);
+    return node.properties.some((p) => ts.isPropertyAssignment(p) && optionKey(p.name) === "length" && someInside(p.initializer, hasPick));
   }
   return ts.isArrayLiteralExpression(node) && node.elements.some((el) =>
     pickBranches(unwrapValue(el)).some((branch) => ts.isArrayLiteralExpression(unwrap(branch))));
 }
 
-/** `node` with its wrappers and any `await` removed. */
-function unwrapValue(node) {
-  while (isWrapper(node) || ts.isAwaitExpression(node)) node = node.expression;
-  return node;
-}
 
 /**
  * Whether a suite or test call skips through its options argument (`{ skip: cond }`,

@@ -49,3 +49,4 @@ describe.each(Array.from({ length: process.env.DATABASE_URL ? 1 : 0 }, () => [1]
 async function awaitedOptions() {
   describe("awaited options pick", await (process.env.DATABASE_URL ? {} : { skip: true }), () => {}); // HIT
 }
+describe.each(Array.from({ length: Number(process.env.DATABASE_URL ? 1 : 0) }, () => [1]))("a length computed from a pick %s", () => {}); // HIT

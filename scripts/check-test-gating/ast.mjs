@@ -87,3 +87,16 @@ export function memberOn(node) {
   const p = outer.parent;
   return isMemberLink(p) && p.expression === outer ? p : undefined;
 }
+
+/** `node` with its wrappers and any `await` removed. */
+export function unwrapValue(node) {
+  while (isWrapper(node) || ts.isAwaitExpression(node)) node = node.expression;
+  return node;
+}
+
+/** Whether `test` holds for `node` or anything inside it, outside a nested function. */
+export function someInside(node, test) {
+  if (ts.isFunctionLike(node)) return false;
+  if (test(node)) return true;
+  return ts.forEachChild(node, (child) => (someInside(child, test) ? true : undefined)) === true;
+}

@@ -1,11 +1,13 @@
 // Resolves names in a test file to Vitest's describe/suite/it/test and to integrationSuite(), for
 // scripts/check-test-gating.mjs.
 import { dirname, resolve } from "node:path";
-import { calleeOf, isMemberLink, isWrapper, linkName, ts, unwrap } from "./ast.mjs";
+import { calleeOf, isMemberLink, linkName, ts, unwrap, unwrapValue } from "./ast.mjs";
 
 const TEST_FNS = new Set(["describe", "suite", "it", "test"]);
 // Links whose call returns a new test function: `test.extend({…})`, `test.override({…})`, `test.scoped({…})`.
 export const EXTENDERS = new Set(["extend", "override", "scoped"]);
+// Member calls that load a module by name: `module.require`, `vi.importActual`, `vi.importMock`.
+const MEMBER_LOADERS = new Set(["require", "importActual", "importMock"]);
 
 /** The module an import declaration names, through its specifier, clause or binding. */
 function importedFrom(decl) {
@@ -50,7 +52,7 @@ export function vitestBindings(program, isIntegrationModule) {
  * `require("vitest")`, or an identifier bound to a Vitest namespace.
  */
 function isVitestModule(node, bindings) {
-  while (isWrapper(node) || ts.isAwaitExpression(node)) node = node.expression;
+  node = unwrapValue(node);
   if (ts.isExternalModuleReference(node)) return isVitestSpecifier(node.expression);
   if (ts.isIdentifier(node)) return isVitestNamespace(node, bindings);
   return isVitestLoaderCall(node, bindings);
@@ -76,7 +78,8 @@ export function isVitestLoaderCall(node, bindings) {
   if (callee.kind === ts.SyntaxKind.ImportKeyword) return true; // `import("vitest")`, `import("vitest", opts)`
   // `require`, `module.require`, `globalThis.require`, or a function from `createRequire(…)`.
   if (ts.isIdentifier(callee)) return callee.text === "require" || kindOf(callee, bindings) === "require";
-  return isMemberLink(callee) && linkName(callee) === "require";
+  // `module.require`, `globalThis.require`, and Vitest's own `vi.importActual` / `vi.importMock`.
+  return isMemberLink(callee) && MEMBER_LOADERS.has(linkName(callee));
 }
 
 /** Whether identifier `id` names a Vitest namespace. */
