@@ -1,5 +1,65 @@
 # @askdb/core
 
+## 1.0.0-beta.44
+
+### Minor Changes
+
+- 9d2e2b4: **@askdb/core**: `ai` is now a **peer dependency** (`^6.0.0 || ^7.0.51`) instead of a bundled dependency, so the host application owns its AI SDK version.
+  
+  `ask()` takes a `LanguageModel` your app constructs, so core has to use the same `ai` instance your app does. Bundling `ai` pinned core's own copy: when `1.0.0-beta.41` moved that pin to `ai@^7`, hosts on AI SDK 6 (e.g. `ai@^6` + `@ai-sdk/openai@^3`) had to either migrate their whole AI stack or end up with two copies of `ai` whose `LanguageModel` types disagree. Both AI SDK 6 and AI SDK 7 hosts are now supported.
+  
+  **Migration (install-time breaking):** if you relied on `ai` arriving transitively through `@askdb/core` (or through `@askdb/postgres`, `@askdb/introspect`, `@askdb/rag`, …), add it to your own `package.json`:
+  
+  ```bash
+  pnpm add ai            # or: npm install ai
+  ```
+  
+  npm 7+ and pnpm (with the default `auto-install-peers`) install a missing required peer automatically, but declaring it pins the version you actually use. Yarn (classic and Berry) doesn't install peers, so Yarn users must add `ai` themselves. That includes introspection-only installs (`@askdb/introspect`, `@askdb/prisma`, the engine packages), because core loads `ai` when it is imported. No source changes are needed.
+  
+  Core now passes the NL→SQL and enrichment system prompts to `generateText` as `system`, which AI SDK 6 reads and AI SDK 7 still honors as a deprecated alias of `instructions`. This also fixes AI SDK 6 hosts silently losing the system prompt: AI SDK 6 ignores `instructions`.
+  
+  **@askdb/rag**: the optional `ai` and `@ai-sdk/openai` peers now accept AI SDK 6 as well (`ai` `^6.0.0 || ^7.0.51`, `@ai-sdk/openai` `^3.0.0 || ^4.0.29`), so AI SDK 6 hosts can install `@askdb/rag` without a peer conflict. `createAiSdkEmbedder` works with either major.
+  
+  **@askdb/studio**: the Playground's "Get the code" install lines now list the required peers. The `@askdb/client` snippet installs `@askdb/core` and `ai` (before, it had no `ai` at all with the AI Gateway provider), and the direct `@askdb/core` snippet installs `ai`, listed once even for the AI Gateway provider, whose SDK is `ai` itself.
+  
+  **@askdb/client**: the README's install line now lists `@askdb/core` and `ai`, the client's required peers, for package managers that don't install peers (Yarn).
+  
+  The config-driven path (`@askdb/ai` and `@askdb/client`) still requires AI SDK 7.
+- 224a05b: `ask()` takes an `abortSignal` option that cancels the NL→SQL model call (`generateText({ abortSignal })`), e.g. `ask({ ..., abortSignal: AbortSignal.timeout(60_000) })`. With a built-in dialect or `DialectSpec`, an aborted call rejects with `SqlGenerationError` whose `cause` is the abort reason. A custom `AskDialect` receives the signal as `options.abortSignal` (new on `AskDialectGenerateOptions`) and maps its own errors. `generateSelectSql()`'s deps accept `abortSignal` too.
+- d6e52ed: Export the `BundledSchemaV2` type: the shape of the single-file bundle that `askdb bundle` writes and `loadSchema()` / `loadSchemaFromJson()` read (`bundled`, `physical`, `tables`, `concepts?`, `tenantPolicy?`). Writers such as `@askdb/enrich`'s `bundleSchemaDirectory()` now use this type, so the bundler and the loader can't disagree about which files a bundle carries.
+- ce8d837: `ask()` keeps a model's single trailing `;` in the SQL it returns instead of removing it, so `sql` is the statement the model wrote. `validateSelectSql` returns the SQL trimmed and otherwise as written, including the `;` and any whitespace before it; `unboundSql`, `preparedQuery.namedSql` and `bindPreparedQuery`'s `sql` and `unboundSql` keep the `;` of the model block they come from. The single-statement check is unchanged: any `;` other than one trailing `;` still throws `SQL_MULTI_STATEMENT`, and a dialect's `extraValidate` still runs on the statement without it.
+  
+  If you wrap the SQL, remove the `;` first: `SELECT * FROM (${sql}) AS q LIMIT 1000` is a syntax error on every engine when `sql` ends in `;`. The [Row limits](https://askdb.tools/guides/run-safely-in-prod/#row-limits) guide now does this with `sql.replace(/;$/, "").trimEnd()`. Studio's Playground **Execute** removes it before its row cap. `askdb ask` prints the SQL as `ask()` returned it, instead of adding a `;` of its own, which printed `;;` for a reply that ends in one.
+- 9021e54: Raise the supported Node floor from `>=22.12` to `>=22.14` (`engines.node` in every published package). `better-sqlite3` 13, which the `@askdb/sqlite` and `@askdb/studio` peer ranges allow, segfaults on Node 22.12.0 through 22.13.1 and works from 22.14.0 (bisected on linux-x64; upstream WiseLibs/better-sqlite3#1514). Hosts on Node 22.12 or 22.13 should upgrade to Node 22.14 or newer.
+- f2f6239: **Sensitive-column mentions are matched schema-wide (ADR 0017).** `@askdb/rag` now checks every table's describable text (table, column, common query language, example question, and business context) against the sensitive columns of the whole schema, not only that table's, so an `orders` note that says "match via users.ssn" is excluded by default. A column that is sensitive only because its table is, now counts only when mentioned as `table.column`, so generic names of a sensitive table (`id`, `org_id`) no longer drop unrelated concepts and tenant policy sections. To support this, `loadSchema()` and `loadSchemaFromJson()` set `sensitiveFromTable: true` on columns that are sensitive solely through their table. `@askdb/core`'s mention rule takes a qualified name as `{ table, column }` (bare names stay literal, dots included) and gains `createMentionMatcher(names)`, which compiles a name list once for checking many texts; the [schema-v2 contract](https://github.com/Ygilany/AskDB/blob/main/docs/contracts/schema-v2.md#sensitive-propagation) states the full rule. Some schemas will exclude different chunks after upgrading, which re-embeds those chunks on the next index run.
+
+### Patch Changes
+
+- e7ea657: Accept `ai` from 7.0.51 again, and `@ai-sdk/openai` from 4.0.29 for `@askdb/rag`'s embedding peer. The last dependency bump raised every `ai` range to `^7.0.113` and `@askdb/rag`'s `@ai-sdk/openai` peer to `^4.0.74`, though AskDB needs nothing newer. A host that pins an older `ai` couldn't install the release with npm (`ERESOLVE`), and pnpm gave AskDB a second AI SDK instead of the host's. These ranges now rise only when AskDB needs a newer version or a security fix, and the changelog says which (#403).
+- c610168: **CLI: `--help` / `--version` work without a config; friendly missing-config error.**
+  
+  - `askdb` no longer loads `askdb.config.*` before parsing arguments, so `askdb --help`, `-h`, `--version`, `-V`, `help`, no-args, `init`, `bundle`, `introspect --help`, and `introspect templates` all work in a directory without a config. Commands that read config (`ask`, `introspect`) load it lazily.
+  - `askdb --version` / `-V` is now supported and prints the package version.
+  - When a command needs config and none exists, the CLI prints `No askdb.config.* or .config/askdb.* found in <cwd>. Run \`npx askdb init\` to create one.` and exits 1, with no stack trace. Other uncaught errors (for example a config that fails to load) print their message and a hint; set `ASKDB_DEBUG=1` (or `true`) to include the stack trace. Other values, including `0`, and the `debug` package's `DEBUG` variable leave it off.
+  - `askdb studio` / `askdb enrich` warn when `askdb.config.*` exists but fails to load, instead of ignoring it silently.
+  
+  **Docs:** the `@askdb/core` README states the pre-release beta status accurately.
+- cca5656: The NL→SQL prompt `ask()` sends now lists a schema, table or column whose name is one of the engine's reserved words quoted the engine's way: `TABLE billing."order"` on Postgres and CockroachDB, ``TABLE billing.`order` `` on MySQL and MariaDB, `TABLE billing.[order]` on SQL Server and `TABLE "order"` on SQLite, and the same on column lines. Models copied the bare listing and wrote `JOIN order o`, which SQLite and SQL Server refuse. Three more kinds of name are quoted the same way:
+  
+  - A word AskDB's own SQL checks reject unquoted (a column named `copy`, or `set` on SQL Server), which a model copying the listing would otherwise write bare and have rejected.
+  - A name that isn't a plain identifier (a space, a hyphen, a leading digit). On SQL Server, whose regular identifiers take letters from Unicode 3.2 only, any name beyond ASCII letters, digits, `_` and `$`.
+  - On Postgres and CockroachDB, which fold unquoted names to lowercase, a name with capitals: a Prisma table `Post` with a `createdAt` column is listed as `public."Post"` and `"createdAt"` (before, a model copying `Post` got `relation "post" does not exist`).
+  
+  Each engine family has its own reserved-word list, taken from its docs and checked against PostgreSQL 17, MySQL 8.4 and MariaDB 11.4 servers, set on the built-in spec as the new optional `DialectSpec.reservedWords`; a spec that spreads a built-in keeps it, and one that sets the field replaces it. The quote characters follow `id`. The full schema and the retrieved (`retriever`) schema are listed the same way. Schemas without reserved or unusual names (or, on Postgres and CockroachDB, capitals) produce the same schema block as before.
+  
+  Where the prompt lists tables with their schema (Postgres, CockroachDB, SQL Server, and MySQL or MariaDB with several databases), it gains one rule: when you quote a qualified name, quote each part separately (`"schema"."table"`), with the dialect's own quotes. Models quoted the whole dotted name (`` `org.program` ``), which MySQL reads as a table named `org.program` in the connection's database. The rule shows only the right form: with the wrong form added as a counter-example, `gpt-4o-mini` wrote it more often.
+  
+  `promptIdentifierQuoter(dialect)` is exported, and `formatSchemaV2ForNlToSql` and `synthesizeRetrievedDdl` accept it as `quoteIdentifier`; without it they list names as stored, as before. Table ids, schema artifacts, tenant policies and RAG indexes are unchanged. The tenant and sensitive-field checks already read quoted names part by part. The sensitive-field check now also catches a qualified reference to a sensitive column whose name differs only in case from another column in the same table (Postgres allows `"SSN"` and `ssn` side by side); before, the later one hid the other.
+- 7a0f777: **One rule for "mentions a sensitive column by name".** `@askdb/core` exports `findMentionedNames(text, names)`: a whole-word, case-insensitive match whose ends may not touch a letter, digit, or `_` of any script. `@askdb/rag`'s chunker and `@askdb/enrich`'s `findSensitiveColumnReferences` (Studio's authoring warning) both use it, so they agree on names like `ssn$` or `café`; before, enrich's `\b` boundaries missed `ssn$` and matched `caf` inside `café`. Studio keeps the details of a memory-store index in memory instead of `schema.lock.json`, which the indexer no longer writes for an ephemeral store.
+- 5d3a38b: On SQLite, MySQL and MariaDB, the NL→SQL prompt `ask()` sends no longer names tables `public.<table>`. Their connectors file the database's tables under `public` to keep table ids stable across engines, and the prompt printed that label as if it were a schema, so models wrote `FROM public.agency`, which the engine refuses (`no such table: public.agency` on SQLite; MySQL reads `public` as a database name). When `public` is the schema's only namespace, its tables are now listed unqualified (`TABLE agency`), and the rule about qualifying table names tells the model never to write `public.<table>`. A MySQL database list stays qualified (`TABLE sales.orders`), including a database actually named `public`. Postgres, CockroachDB and SQL Server prompts are unchanged, and so are table ids, so committed schema artifacts, tenant policies and RAG indexes need no change.
+  
+  `DialectSpec` gains an optional `unqualifiedNamespace` field that drives this; the built-in SQLite, MySQL and MariaDB specs set it to the new exported `SINGLE_NAMESPACE_LABEL` (`"public"`), which the SQLite and MySQL connectors now use for their namespace too, and a spec that spreads one of them keeps it.
+
 ## 1.0.0-beta.43
 
 ### Minor Changes

@@ -1,5 +1,40 @@
 # askdb-ask-question-example
 
+## 0.0.1-beta.21
+
+### Patch Changes
+
+- Updated dependencies [e57c734]
+- Updated dependencies [11e2457]
+- Updated dependencies [e7ea657]
+- Updated dependencies [f506c14]
+- Updated dependencies [e511e16]
+- Updated dependencies [c610168]
+- Updated dependencies [b01f9fc]
+- Updated dependencies [c6e289a]
+- Updated dependencies [0009bb1]
+- Updated dependencies [b01f9fc]
+- Updated dependencies [9847a87]
+- Updated dependencies [9d2e2b4]
+- Updated dependencies [224a05b]
+- Updated dependencies [d6e52ed]
+- Updated dependencies [ce8d837]
+- Updated dependencies [9021e54]
+- Updated dependencies [3ad781b]
+- Updated dependencies [cca5656]
+- Updated dependencies [ad0b170]
+- Updated dependencies [01f289a]
+- Updated dependencies [a62205d]
+- Updated dependencies [b668070]
+- Updated dependencies [f2f6239]
+- Updated dependencies [7a0f777]
+- Updated dependencies [5d3a38b]
+  - @askdb/ai@0.1.0-beta.8
+  - @askdb/config@1.0.0-beta.13
+  - @askdb/rag@0.2.0-beta.24
+  - @askdb/core@1.0.0-beta.44
+  - @askdb/client@1.0.0-beta.7
+
 ## 0.0.1-beta.20
 
 ### Patch Changes

@@ -1,6 +1,6 @@
 {
   "name": "@askdb/ai",
-  "version": "0.1.0-beta.7",
+  "version": "0.1.0-beta.8",
   "description": "AskDB AI provider registry: resolves AskDB config/env into AI SDK language and embedding models, with built-in OpenAI, Azure OpenAI, Google Gemini, Anthropic, and Vercel AI Gateway providers.",
   "keywords": [
     "askdb",
