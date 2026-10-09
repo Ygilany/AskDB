@@ -110,3 +110,8 @@ describe("a suite body's test API under an if", (t) => {
   if (process.env.DATABASE_URL) t("query", run); // HIT
 });
 for (const u of [process.env.DATABASE_URL ? [] : "x"].flat()) it(`a mixed pick inside a flattened receiver ${u}`, run); // HIT
+for (let i = 0; i < (process.env.DATABASE_URL ? 1 : 0); i++) describe(`a for bound picked by a condition ${i}`, run); // HIT
+while (process.env.DATABASE_URL ?? false) {
+  describe("a while condition holding a pick", run); // HIT
+  break;
+}

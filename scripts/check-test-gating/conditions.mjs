@@ -60,6 +60,12 @@ function conditionalEdge(parent, child) {
   if (ts.isTryStatement(parent)) return child === parent.tryBlock && parent.catchClause !== undefined;
   // A loop or iteration callback over a table picked by a condition, like a `.each` table.
   if ((ts.isForOfStatement(parent) || ts.isForInStatement(parent)) && child === parent.statement) return isPicked(parent.expression);
+  // A classic `for` or `while` whose condition holds a pick (`i < (url ? 1 : 0)`) runs its body only
+  // when the pick allows. A condition with no pick (`while (url)`) is a plain loop, a known limit.
+  if ((ts.isForStatement(parent) || ts.isWhileStatement(parent)) && (child === parent.statement || child === parent.incrementor)) {
+    const condition = ts.isForStatement(parent) ? parent.condition : parent.expression;
+    return condition !== undefined && someInside(condition, (n) => pickBranches(n).length > 0);
+  }
   if (ts.isCallExpression(parent) && parent.arguments.includes(child) && isMemberLink(unwrap(parent.expression))) {
     if (isPicked(unwrap(parent.expression).expression)) return true;
   }

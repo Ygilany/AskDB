@@ -22,8 +22,8 @@ const ROW_LINKS = new Set(["each", "for"]);
 export const GATE_LINKS = new Set(["skipIf", "runIf"]);
 // Modifiers that skip a suite. `describe.todo(name, fn)` never runs the suite's tests, like `describe.skip`.
 export const SUITE_GATE_LINKS = new Set(["skip", "todo", ...GATE_LINKS]);
-// Vitest's chainable modifiers. A call through any other link (`test.scoped`, `test.step`) is not
-// treated as defining a suite or test; `test.extend({…})` returns a test function, read on.
+// Vitest's chainable modifiers. A call through any other link (`test.step`, `test.runIf.foo`) is not
+// treated as defining a suite or test; an `EXTENDERS` call returns a test function, read on.
 export const MODIFIERS = new Set([
   ...SUITE_GATE_LINKS, ...ROW_LINKS, "only", "concurrent", "sequential", "shuffle", "fails",
   // `it.describe` is Vitest's `describe`.

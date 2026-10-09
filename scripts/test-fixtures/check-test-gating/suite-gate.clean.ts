@@ -61,3 +61,4 @@ describe("a timeout picked into a const, before a named body", pickedTimeout, no
 describe("a negative timeout before a named body", -1, noParameterBody);
 describe("a numeric timeout before a named body", 5_000, noParameterBody);
 describe("null options before a named body", null, noParameterBody);
+describe.each(["url|port\n"], "x", 5432)("template values without a pick $url", () => {});

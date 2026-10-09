@@ -39,13 +39,14 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 // The modules beside this file are loaded from its real path, so a symlinked or
 // --preserve-symlinks-main invocation still finds them, and they find the repo's `typescript`.
 const selfPath = realpathSync(fileURLToPath(import.meta.url));
-const sibling = (name) => pathToFileURL(join(dirname(selfPath), "check-test-gating", name)).href;
+const moduleUrl = (name) => pathToFileURL(join(dirname(selfPath), "check-test-gating", name)).href;
 const {
   ts,
   isWrapper,
   outermostWrapper,
   unwrap,
   unwrapValue,
+  someInside,
   calleeOf,
   isMemberLink,
   linkName,
@@ -55,7 +56,7 @@ const {
   pickBranches,
   optionKey,
   RUNTIME_KEY,
-} = await import(sibling("ast.mjs"));
+} = await import(moduleUrl("ast.mjs"));
 const {
   EXTENDERS,
   MODIFIERS,
@@ -75,9 +76,9 @@ const {
   integrationModuleResolver,
   isSuiteFactory,
   testFnName,
-} = await import(sibling("bindings.mjs"));
-const { isPicked, underCondition } = await import(sibling("conditions.mjs"));
-const { workspaceDirs, entryTarget } = await import(sibling("workspace.mjs"));
+} = await import(moduleUrl("bindings.mjs"));
+const { isPicked, underCondition } = await import(moduleUrl("conditions.mjs"));
+const { workspaceDirs, entryTarget } = await import(moduleUrl("workspace.mjs"));
 
 // Function-protocol links that call the function indirectly, so the check can't read the call.
 const INDIRECT_LINKS = new Set(["call", "apply", "bind"]);
@@ -216,9 +217,8 @@ function testRef(start, fnName, bindings) {
   }
   chain = outermostWrapper(chain);
   let call;
-  let rows;
+  let rowArgs = [];
   let eachResultStored = false;
-  let rowsSpread = false;
   const p = chain.parent;
   if (calleeOf(p) === chain) {
     call = p;
@@ -226,8 +226,8 @@ function testRef(start, fnName, bindings) {
     const last = links[links.length - 1];
     const outer = outermostWrapper(call).parent;
     if ((last === "each" || last === "for") && ts.isCallExpression(outer) && outer.expression === outermostWrapper(call)) {
-      rows = ts.isCallExpression(call) ? call.arguments[0] : undefined;
-      if (rows !== undefined && ts.isSpreadElement(rows)) rowsSpread = true;
+      // The table, or with the template form called directly (`.each(strings, ...values)`), every value.
+      rowArgs = ts.isCallExpression(call) ? [...call.arguments] : [];
       call = outer;
     } else if (last === "each" || last === "for") {
       eachResultStored = true;
@@ -250,8 +250,18 @@ function testRef(start, fnName, bindings) {
     unreadable: (call === undefined && !extendResultIsTracked(chain)) || eachResultStored ||
       (suite && defines && (suiteResultHeld(call) || suiteBodyUnreadable(call, bindings))),
     conditional: defines && underCondition(call, bindings),
-    runtimeGate: defines && (hasGateOption(call, suite) || rowsSpread || (rows !== undefined && isPicked(rows))),
+    runtimeGate: defines && (hasGateOption(call, suite) || rowsPicked(rowArgs)),
   };
+}
+
+/**
+ * Whether a `.each` or `.for` call's arguments let a condition decide how many rows there are: a
+ * spread argument, a picked table or value, or, in the template form called directly
+ * (`.each(["a|b\n"], …values)`), a pick anywhere in the header strings.
+ */
+function rowsPicked(rowArgs) {
+  if (rowArgs.some((arg) => ts.isSpreadElement(arg) || isPicked(arg))) return true;
+  return rowArgs.length > 1 && someInside(rowArgs[0], (n) => pickBranches(n).length > 0);
 }
 
 /**

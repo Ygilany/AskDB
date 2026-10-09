@@ -51,3 +51,6 @@ async function awaitedOptions() {
 }
 describe.each(Array.from({ length: Number(process.env.DATABASE_URL ? 1 : 0) }, () => [1]))("a length computed from a pick %s", () => {}); // HIT
 describe.each(Array.from(...(process.env.DATABASE_URL ? [[1]] : [[]])))("rows spread from a pick %s", () => {}); // HIT
+describe.each(["url|port\n"], ...(process.env.DATABASE_URL ? [process.env.DATABASE_URL, 5432] : [5432]))("template values spread from a pick $url", () => {}); // HIT
+describe.each([process.env.DATABASE_URL ? "url|port\n" : "port\n"], "x", 5432)("a template header picked $port", () => {}); // HIT
+describe.for(["url\n"], process.env.DATABASE_URL ? "a" : undefined)("a picked template value %s", () => {}); // HIT
