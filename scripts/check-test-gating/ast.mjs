@@ -103,6 +103,11 @@ export function calleeParts(call) {
   return { owner: ts.isIdentifier(receiver) ? receiver.text : undefined, name: linkName(callee) };
 }
 
+/** Whether `node` is the initializer of a variable declaration (`const x = node`). */
+export function isVariableInitializer(node) {
+  return ts.isVariableDeclaration(node.parent) && node.parent.initializer === node;
+}
+
 /** The receiver of a method call (`x` in `x.f(…)`), or undefined for any other call. */
 export function receiverOf(call) {
   const callee = ts.isCallExpression(call) ? unwrap(call.expression) : undefined;

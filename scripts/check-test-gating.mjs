@@ -58,6 +58,7 @@ const {
   everyPickLeaf,
   isPick,
   isPlainAssignment,
+  isVariableInitializer,
   someInside,
   calleeParts,
   receiverOf,
@@ -124,11 +125,11 @@ export const RULES = [
     why: "defines a suite or test only under a condition; use integrationSuite()",
   },
   {
-    // Anything else that isn't a direct call: an alias, an argument, `x && describe`,
-    // `describe.call(…)`. The check can't follow the value, so it fails closed.
+    // Anything the check can't follow: an alias, an argument, `x && describe`, `describe.call(…)`,
+    // a suite's result kept, options built at run time. It fails closed.
     id: "unclassified-use",
     test: (ref) => ref.unreadable || ref.links.some((l) => INDIRECT_LINKS.has(l)),
-    why: "uses describe/suite/it/test other than by calling it, so the check can't read the gate; call it directly or use integrationSuite()",
+    why: "uses describe/suite/it/test in a way the check can't read (an alias, a kept suite result, options built at run time); call it directly with literal options, or use integrationSuite()",
   },
 ];
 
@@ -151,7 +152,7 @@ function isReadableNamespaceUse(id) {
   const member = memberOn(outer);
   if (member !== undefined) return linkName(member) !== undefined;
   const p = outer.parent;
-  if (!ts.isVariableDeclaration(p) || p.initializer !== outer) return false;
+  if (!isVariableInitializer(outer)) return false;
   if (ts.isIdentifier(p.name)) return true;
   // `const { describe, it: t } = v`: plain keys only, no rest, computed key or nesting.
   return ts.isObjectBindingPattern(p.name) && p.name.elements.every((el) =>
@@ -255,7 +256,7 @@ function testRef(start, fnName, bindings) {
     invoked: call !== undefined,
     // `const t = it.each(rows)` stores the function that defines the tests, which the check can't follow.
     unreadable: (call === undefined && !extendResultIsTracked(chain)) || eachResultStored ||
-      (suite && defines && (suiteResultHeld(call) || suiteBodyUnreadable(call, bindings))),
+      (suite && defines && (suiteResultHeld(call) || suiteBodyUnreadable(call, bindings))) || (defines && optionsUnreadable(call)),
     conditional: defines && underCondition(call, bindings),
     runtimeGate: defines && (argumentsGate(call, suite) || rowsPicked(rowArgs)),
   };
@@ -268,7 +269,7 @@ function testRef(start, fnName, bindings) {
 function suiteResultHeld(call) {
   const outer = outermostWrapper(call);
   const p = outer.parent;
-  return memberOn(outer) !== undefined || (ts.isVariableDeclaration(p) && p.initializer === outer) ||
+  return memberOn(outer) !== undefined || isVariableInitializer(outer) ||
     (isPlainAssignment(p) && p.right === outer);
 }
 
@@ -281,7 +282,7 @@ function extendResultIsTracked(chain) {
   // `integrationSuite({…}) as typeof describe`: the call through its wrappers.
   if (!ts.isCallExpression(unwrap(chain))) return false;
   const p = chain.parent;
-  return (ts.isVariableDeclaration(p) && p.initializer === chain && ts.isIdentifier(p.name)) || ts.isExpressionStatement(p);
+  return (isVariableInitializer(chain) && ts.isIdentifier(p.name)) || ts.isExpressionStatement(p);
 }
 
 // Options keys that skip a test or invert its result (`fails`, which turns every failure from a
@@ -330,7 +331,7 @@ function argumentsGate(call, suite) {
       visitNested(child, childChosen, options);
     });
   };
-  const hasInlineBody = call.arguments.some((arg) => ts.isArrowFunction(unwrap(arg)) || ts.isFunctionExpression(unwrap(arg)));
+  const body = bodyIndex(call);
   for (const [i, arg] of call.arguments.entries()) {
     // `describe(...args)`: the options could be in there, unread; fail closed.
     if (ts.isSpreadElement(arg)) return true;
@@ -341,9 +342,9 @@ function argumentsGate(call, suite) {
     // `it(name, [{}, { skip: true }][url ? 0 : 1], fn)`, `[url ? fn : undefined][0]`: options or a
     // body read out of a pick.
     if (i > 0 && readsPickedValue(resultOf(arg))) return true;
-    // Options or a body built by a call (see `builtAtRunTime`). A numeric conversion
-    // (`Number(env ?? 60_000)`) is a timeout.
-    if (i > 0 && builtAtRunTime(resultOf(arg), hasInlineBody)) return true;
+    // A body built by a call over a pick (see `builtAtRunTime`). Options built by a call are
+    // `optionsUnreadable`.
+    if (i === body && builtAtRunTime(resultOf(arg))) return true;
     visit(arg, false);
     // `[{ skip: cond }][0]`, `Object.assign({}, { skip: cond })`: options literals inside the
     // argument, outside a nested function (the body).
@@ -353,27 +354,64 @@ function argumentsGate(call, suite) {
 }
 
 /**
- * Whether argument `node` of a test or suite call is built at run time in a way the check can't
- * clear: a call, `new` or tagged template (other than a numeric conversion). Beside an inline body
- * it can only be options or a timeout, which the check can't read, so it fails closed
- * (`Object.fromEntries([[key, !url]])`, `JSON.parse(…)`). As the body itself (`withDb(…)`), it
- * gates when a pick inside it chooses anything but an options value
+ * The index of the argument that can only be the body: the second, when no third follows or the
+ * third is a timeout. Undefined when two arguments follow the name (`it(name, a, b)`): either may
+ * be options, so both are read as options, and an inline function among them is never built.
+ */
+function bodyIndex(call) {
+  const [, , third] = call.arguments;
+  return third === undefined || isTimeout(third) ? 1 : undefined;
+}
+
+/** Whether `node` is a timeout: a number, a numeric conversion, or a pick between literals. */
+function isTimeout(node) {
+  node = resultOf(node);
+  if (ts.isNumericLiteral(node) || (ts.isPrefixUnaryExpression(node) && ts.isNumericLiteral(node.operand))) return true;
+  if (ts.isCallExpression(node) && isNumericConversion(node)) return true;
+  return isPick(node) && picksOnlyLiterals(node);
+}
+
+/**
+ * Whether a suite or test call passes options or a timeout the check can't read: a call, `new` or
+ * tagged template (other than a numeric conversion) in an argument after the name that isn't the
+ * body (`it(name, Object.fromEntries([[key, !url]]), fn)`, `it(name, fn, timeoutFor(env))`).
+ */
+function optionsUnreadable(call) {
+  if (!ts.isCallExpression(call)) return false;
+  const body = bodyIndex(call);
+  return [1, 2].some((i) => i !== body && call.arguments[i] !== undefined && isBuilt(resultOf(call.arguments[i])));
+}
+
+/** Whether `node` is a call, `new` or tagged template other than a numeric conversion. */
+function isBuilt(node) {
+  const built = ts.isCallExpression(node) || ts.isNewExpression(node) || ts.isTaggedTemplateExpression(node);
+  return built && !(ts.isCallExpression(node) && isNumericConversion(node));
+}
+
+/**
+ * Whether a body built by a call (`withDb(…)`, `Reflect.get(…)`) is chosen at run time: a pick
+ * inside it chooses anything but an options value passed to it
  * (`Reflect.get([fn, undefined], url ? 0 : 1)`, `withDb(url ?? ":memory:", fn)`).
  */
-function builtAtRunTime(node, beside) {
-  const isCall = ts.isCallExpression(node) || ts.isNewExpression(node);
-  if (!isCall && !ts.isTaggedTemplateExpression(node)) return false;
-  if (isNumericConversion(node)) return false;
-  if (beside) return true;
+function builtAtRunTime(node) {
+  if (!isBuilt(node)) return false;
+  const isCall = !ts.isTaggedTemplateExpression(node);
   const parts = isCall ? [...(node.arguments ?? []), receiverOf(node)] : [node.tag, node.template];
   return parts.some((part) => part !== undefined && someInside(part, (n) =>
     isPick(n) && (!picksOnlyLiterals(n) || !isOptionValue(n))));
 }
 
-/** Whether pick `node` is a property's value in an object literal (`{ timeout: url ? 1 : 2 }`). */
+/**
+ * Whether pick `node` is a property's value in an object literal passed straight to a call
+ * (`withOptions({ timeout: url ? 1 : 2 }, fn)`), not one read back by key (`{ i: url ? 0 : 1 }.i`).
+ */
 function isOptionValue(node) {
   const outer = outermostWrapper(node);
-  return ts.isPropertyAssignment(outer.parent) && outer.parent.initializer === outer;
+  const property = outer.parent;
+  if (!ts.isPropertyAssignment(property) || property.initializer !== outer) return false;
+  const object = outermostWrapper(property.parent);
+  const holder = object.parent;
+  return (ts.isCallExpression(holder) || ts.isNewExpression(holder)) && (holder.arguments ?? []).includes(object);
 }
 
 // Calls that turn a value into a number: a timeout computed from a pick, not options or a body.

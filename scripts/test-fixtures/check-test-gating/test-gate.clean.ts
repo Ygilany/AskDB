@@ -31,3 +31,8 @@ it("a timeout bounded by Math.max", () => {}, Math.max(Number(process.env.SLOW_T
 it("a body built by a helper naming no skip", withLogging("cache warm-up", async () => {}));
 it("a body built by a helper with a picked option value", withOptions({ timeout: process.env.CI ? 10_000 : 5_000 }, async () => {}));
 it("a body built by a helper whose string mentions todo: nothing", withLogging("todo: tracked in #12", async () => {}));
+const runDbClean = async () => {};
+it("a body built by a helper with a numeric timeout", withDb(runDbClean), 5_000);
+it("a body built by a helper alone", withDb(runDbClean));
+it("a body built by a helper with a picked timeout", withDb(runDbClean), process.env.CI ? 10_000 : 5_000);
+it("a body built by a helper with a converted timeout", withDb(runDbClean), Number(process.env.SLOW_TIMEOUT ?? 5_000));
