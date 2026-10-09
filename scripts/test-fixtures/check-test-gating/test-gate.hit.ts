@@ -64,3 +64,6 @@ const castExtended = test.extend({ db: 1 }) as typeof test;
 castExtended.skipIf(!process.env.DATABASE_URL)("a skipIf through a cast extend result", () => {}); // HIT
 it("options one level below the pick", Object.assign({}, process.env.DATABASE_URL ? Object.assign({}, { skip: true }) : {}), () => {}); // HIT
 it("an array read one level below the pick", Object.assign({}, process.env.DATABASE_URL ? [{ skip: true }][0] : {}), () => {}); // HIT
+it("options read back out of a meta key", { meta: { todo: !process.env.DATABASE_URL } }.meta, () => {}); // HIT
+it("options built by Object.fromEntries over a pick", Object.fromEntries(process.env.DATABASE_URL ? [] : [["skip", true]]), () => {}); // HIT
+it("options parsed from a picked string", JSON.parse(process.env.DATABASE_URL ? "{}" : '{"skip":true}'), () => {}); // HIT

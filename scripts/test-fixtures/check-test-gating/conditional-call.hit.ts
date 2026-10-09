@@ -129,3 +129,4 @@ process.env.DATABASE_URL && new (class { m = (() => describe("a class expression
 Promise.resolve().then(() => new (class { constructor() { describe("a class expression in a .then callback", run); } })()); // HIT
 for (const u of String.raw`${process.env.DATABASE_URL ?? ""}`.split("")) describe(`a loop over a tagged template ${u}`, run); // HIT
 new Foo(class { field = describe("a class expression's instance field passed to a call", run); }); // HIT
+[["pg"]].values().map(([e]) => describe(`a lazy iterator map taken by a pick ${e}`, run)).take(process.env.DATABASE_URL ? 1 : 0).toArray(); // HIT

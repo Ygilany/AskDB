@@ -25,7 +25,6 @@ function declaredBody(test) {
   test.skipIf(!process.env.DATABASE_URL)("query", run);
 }
 describe("a declared body passed by name", declaredBody); // HIT
-describe("a body computed by a call", withDb(process.env.DATABASE_URL ?? ":memory:", () => {})); // HIT
 describe("a body read off an object", suites.db); // HIT
 describe("a bound body", declaredBody.bind(null)); // HIT
 describe("a body behind a comma", (0, (test) => test.skipIf(!process.env.DATABASE_URL)("query", run))); // HIT

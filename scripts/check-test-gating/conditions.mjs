@@ -158,6 +158,9 @@ export function underCondition(call, bindings) {
     if (inCallback && ts.isCallExpression(node) && unwrap(node.expression) === unwrap(child) && rejectionSwallowed(node)) return true;
     if (inCallback && (ts.isCallExpression(node) || ts.isNewExpression(node)) && node.arguments?.includes(child)) {
       if (!isIterationCall(node)) return true;
+      // `rows.values().map(cb).take(url ? 1 : 0)`: an iterator's `map` runs the callback only as far
+      // as a later call lets it, so a pick in a call chained after it is a condition.
+      if (pickLaterInChain(node)) return true;
       inCallback = false;
     }
   }
@@ -197,6 +200,17 @@ function rejectionSwallowed(call) {
 
 // Array methods whose callback runs once per element, now: parametrization, like a loop.
 const ITERATION_METHODS = new Set(["forEach", "map", "flatMap"]);
+
+/** Whether a method call chained after `call` (`call.take(n)`, `call.slice(…).drop(n)`) holds a pick. */
+function pickLaterInChain(call) {
+  for (let member = memberOn(call); member !== undefined; ) {
+    const next = outermostWrapper(member).parent;
+    if (!ts.isCallExpression(next) || next.expression !== outermostWrapper(member)) return false;
+    if (next.arguments.some(holdsPick)) return true;
+    member = memberOn(next);
+  }
+  return false;
+}
 
 /** Whether `node` is `rows.forEach(cb)`, `rows.map(cb)` or `rows.flatMap(cb)`. */
 function isIterationCall(node) {

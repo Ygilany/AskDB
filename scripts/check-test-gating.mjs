@@ -58,6 +58,8 @@ const {
   everyPickLeaf,
   isPick,
   isPlainAssignment,
+  holdsPick,
+  receiverOf,
   optionKey,
   RUNTIME_KEY,
 } = await import(moduleUrl("ast.mjs"));
@@ -314,15 +316,16 @@ function hasGateOption(call, suite) {
     }
   };
   // A literal under a pick's branch (`Object.assign({}, url ? {} : { skip: true })`) is chosen.
-  const visitNested = (node, chosen) => {
+  const visitNested = (node, chosen, options) => {
     if (ts.isFunctionLike(node)) return;
-    // `{ meta: { todo: "#123" } }`: Vitest reads a task's mode from its options, never from `meta`.
-    if (ts.isPropertyAssignment(node) && optionKey(node.name) === "meta") return;
+    // `{ meta: { todo: "#123" } }`: Vitest reads a task's mode from the options' own keys, never
+    // from their `meta`. A `meta` anywhere else (`{ meta: { todo: c } }.meta`) is read like any value.
+    if (ts.isPropertyAssignment(node) && node.parent === options && optionKey(node.name) === "meta") return;
     const branches = pickBranches(node);
     ts.forEachChild(node, (child) => {
       const childChosen = chosen || branches.includes(child);
       if (ts.isObjectLiteralExpression(child)) visit(child, childChosen);
-      visitNested(child, childChosen);
+      visitNested(child, childChosen, options);
     });
   };
   for (const [i, arg] of call.arguments.entries()) {
@@ -335,12 +338,35 @@ function hasGateOption(call, suite) {
     // `it(name, [{}, { skip: true }][url ? 0 : 1], fn)`, `[url ? fn : undefined][0]`: options or a
     // body read out of a pick.
     if (i > 0 && readsPickedValue(resultOf(arg))) return true;
+    // `Object.fromEntries(url ? [] : [["skip", true]])`, `JSON.parse(url ? "{}" : …)`: options or a
+    // body built by a call over a pick. A numeric conversion (`Number(env ?? 60_000)`) is a timeout.
+    if (i > 0 && builtFromPick(resultOf(arg))) return true;
     visit(arg, false);
     // `[{ skip: cond }][0]`, `Object.assign({}, { skip: cond })`: options literals inside the
     // argument, outside a nested function (the body).
-    if (i > 0) visitNested(arg, false);
+    if (i > 0) visitNested(arg, false, resultOf(arg));
   }
   return gate;
+}
+
+/** Whether `node` is a call or `new` (other than a numeric conversion) over a pick in its arguments or receiver. */
+function builtFromPick(node) {
+  if (!ts.isCallExpression(node) && !ts.isNewExpression(node)) return false;
+  if (isNumericConversion(node)) return false;
+  const receiver = receiverOf(node);
+  return (node.arguments ?? []).some(holdsPick) || (receiver !== undefined && holdsPick(receiver));
+}
+
+// Calls that turn a value into a number: a timeout computed from a pick, not options or a body.
+const NUMERIC_CONVERSIONS = new Set(["Number", "parseInt", "parseFloat"]);
+
+/** Whether `call` is `Number(…)`, `parseInt(…)`, `parseFloat(…)`, `Number.parseInt(…)` or a `Math` method. */
+function isNumericConversion(call) {
+  const callee = unwrap(call.expression);
+  if (ts.isIdentifier(callee)) return NUMERIC_CONVERSIONS.has(callee.text);
+  if (!isMemberLink(callee) || !ts.isIdentifier(unwrap(callee.expression))) return false;
+  const owner = unwrap(callee.expression).text;
+  return owner === "Math" || (owner === "Number" && NUMERIC_CONVERSIONS.has(linkName(callee)));
 }
 
 /** Whether every value a run-time choice can produce is a string or number literal. */
