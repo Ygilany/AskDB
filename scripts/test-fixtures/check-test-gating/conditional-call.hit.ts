@@ -47,3 +47,4 @@ registered &&= it("&&=", run); // HIT
 registered ??= test("??=", run); // HIT
 if (ok) it.only("only", run); // HIT
 if (ok) it.for([1, 2])("for %s", run); // HIT
+optionalDriver?.register(describe("inside an optional call", run)); // HIT

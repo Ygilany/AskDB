@@ -3,8 +3,9 @@
 // `integrationSuite()` (scripts/test-utils/integration.mjs).
 //
 // Hand-rolled gates (`describe.skip`, `describe.skipIf(...)`, `cond ? describe : describe.skip`,
-// `describe(name, { skip: cond }, fn)`) skip silently when a prerequisite is missing, so CI's ASKDB_REQUIRE_INTEGRATION=1 can't turn
-// a missing database or driver into a failure. `integrationSuite()` is the one sanctioned gate.
+// `describe(name, { skip: cond }, fn)`) skip silently when a prerequisite is missing, so CI's
+// ASKDB_REQUIRE_INTEGRATION=1 can't turn a missing database or driver into a failure.
+// `integrationSuite()` is the one sanctioned gate.
 //
 // Scans every *.test.ts / *.test.tsx in the pnpm workspace packages listed in
 // pnpm-workspace.yaml (skipping node_modules, dist, and build caches). scripts/test-utils/,
@@ -14,24 +15,27 @@
 // not parse fails the check instead of passing unread.
 //
 // Vitest is recognized as the globals, renamed imports (`import { it as t } from "vitest"`),
-// namespace imports (`import * as v from "vitest"`) and variables holding `test.extend({…})`. A
-// local declaration that shadows a name (a parameter `it`, an import of `test` from another
-// module) is not Vitest's.
+// namespace imports (`import * as v from "vitest"`) and variables holding `test.extend({…})`.
+// Names resolve through TypeScript's binder, so a local declaration that shadows one (a parameter
+// `it`, an import of `test` from another module) is not Vitest's.
 //
 // Allowed: a plain skipped test called directly, e.g. `it.skip("…", fn)`, `it.skip.each(…)(…)`,
-// `it("…", { skip: true }, fn)`, and tests defined in a loop (`for (const c of cases) it(…)`), which is parametrization.
+// `it("…", { skip: true }, fn)`, and tests defined in a loop (`for (const c of cases) it(…)`),
+// which is parametrization.
 // Rejected: see RULES, including a describe/suite/it/test call made only under a condition
-// (`if`/`else`, `switch` cases, `try`/`catch`, `? :`, `&&`, `||`, `??`) anywhere between the
-// call and the nearest enclosing suite, test or named function. To exempt one line, put a line
-// comment on the line above it with a non-empty reason; the marker with no reason exempts nothing:
+// (`if`/`else`, `switch` cases, `try`/`catch`, `? :`, `&&`, `||`, `??`, an optional call's
+// arguments) or over a `.each` table chosen by one, anywhere between the call and the nearest
+// enclosing suite, test or named function. To exempt one line, put a line comment on the line
+// above it with a non-empty reason; the marker with no reason exempts nothing:
 //   // check-test-gating-ignore-next-line: <reason>
 //
 // A use the check can't read (an alias such as `const d = describe`, `x && describe`, an
 // argument, `describe.call(…)`, a spread or computed key in the options) fails closed.
 //
 // Known limits: an early `return` before a call, a gate inside a named helper that is called
-// under a condition, options passed in a variable (`it(name, opts, fn)`), a test API imported
-// from another module, and `ctx.skip()` inside a test body are not detected.
+// under a condition, options passed in a variable (`it(name, opts, fn)`), a `.each` table filtered
+// at run time (`describe.each(engines.filter(…))`), a test API imported from another module, and
+// `ctx.skip()` inside a test body are not detected.
 //
 // Usage: node scripts/check-test-gating.mjs [repo-root]
 import { readdirSync, readFileSync, existsSync, realpathSync } from "node:fs";
@@ -45,7 +49,10 @@ const selfPath = realpathSync(fileURLToPath(import.meta.url));
 const ts = createRequire(selfPath)("typescript");
 if (typeof ts.createSourceFile !== "function" || ts.SyntaxKind === undefined) {
   // TypeScript 7 moved the compiler API out of the package entry point (ADR 0019).
-  console.error(`check-test-gating: needs the TypeScript 5/6 compiler API; typescript ${ts.version} doesn't export it (see docs/adrs/0019-test-gating-check-parses-with-typescript.md).`);
+  console.error(
+    `check-test-gating: needs the TypeScript 5/6 compiler API; typescript ${ts.version} doesn't export it ` +
+      `(see docs/adrs/0019-test-gating-check-parses-with-typescript.md).`,
+  );
   process.exit(1);
 }
 
@@ -149,127 +156,70 @@ function linkName(node) {
   return undefined;
 }
 
-/**
- * The file's names for Vitest's describe/suite/it/test: the globals, local names from
- * `import { it as t } from "vitest"`, and namespaces from `import * as v from "vitest"`.
- * @param {import("typescript").SourceFile} sf
- */
-function vitestNames(sf) {
-  const locals = new Map([...TEST_FNS].map((n) => [n, n]));
-  const namespaces = new Set();
-  for (const stmt of sf.statements) {
-    if (!ts.isImportDeclaration(stmt) || !ts.isStringLiteral(stmt.moduleSpecifier)) continue;
-    if (stmt.moduleSpecifier.text !== "vitest") continue;
-    const bindings = stmt.importClause?.namedBindings;
-    if (bindings && ts.isNamespaceImport(bindings)) namespaces.add(bindings.name.text);
-    if (bindings && ts.isNamedImports(bindings)) {
-      for (const el of bindings.elements) {
-        const imported = (el.propertyName ?? el.name).text;
-        if (TEST_FNS.has(imported)) locals.set(el.name.text, imported);
-      }
-    }
-  }
-  const ctx = { sf, locals, namespaces, aliasDecls: new Set(), shadows: [] };
-  // `const dbTest = test.extend({…})` is a test function too. Repeat for chains of `.extend`.
-  for (let added = true; added; ) {
-    added = false;
-    const visit = (node) => {
-      if (ts.isVariableDeclaration(node) && ts.isIdentifier(node.name) && node.initializer && !locals.has(node.name.text)) {
-        const fnName = extendedFn(node.initializer, ctx);
-        if (fnName !== undefined) {
-          locals.set(node.name.text, fnName);
-          ctx.aliasDecls.add(node);
-          added = true;
-        }
-      }
-      ts.forEachChild(node, visit);
-    };
-    visit(sf);
-  }
-  ctx.shadows = shadowingDecls(ctx);
-  return ctx;
+/** The module an import declaration names, through its specifier, clause or binding. */
+function importedFrom(decl) {
+  let n = decl;
+  while (n && !ts.isImportDeclaration(n)) n = n.parent;
+  return n && ts.isStringLiteral(n.moduleSpecifier) ? n.moduleSpecifier.text : undefined;
 }
 
 /**
- * Local declarations that shadow a Vitest name (a parameter `it`, `const test = …`, an import of
- * `test` from another module), each with the node whose range it covers. `.extend` aliases and
- * imports from `vitest` are the Vitest names themselves, not shadows.
+ * Resolves names to Vitest's describe/suite/it/test with the binder of a one-file program, so
+ * JavaScript scoping decides: an unresolved name is a Vitest global, an import from `vitest` is
+ * Vitest, a variable holding `x.extend({…})` of a Vitest function is a test function, and any
+ * other declaration (a parameter `it`, an import of `test` from another module) is not Vitest's.
  */
-function shadowingDecls(ctx) {
-  const decls = [];
-  const add = (name, scope) => {
-    if (ts.isIdentifier(name)) {
-      if (ctx.locals.has(name.text) || TEST_FNS.has(name.text)) decls.push({ name: name.text, scope });
-    } else if (name && (ts.isObjectBindingPattern(name) || ts.isArrayBindingPattern(name))) {
-      for (const el of name.elements) if (ts.isBindingElement(el)) add(el.name, scope);
+function vitestBindings(sf, program) {
+  const checker = program.getTypeChecker();
+  const cache = new Map();
+  const bindings = { sf, checker };
+  /** What identifier `id` refers to: `{ fn }` for a Vitest function, `{ ns: true }` for a Vitest namespace, or undefined. */
+  bindings.resolve = (id) => {
+    const parent = id.parent;
+    const symbol = ts.isShorthandPropertyAssignment(parent) && parent.name === id
+      ? checker.getShorthandAssignmentValueSymbol(parent)
+      : checker.getSymbolAtLocation(id);
+    if (symbol === undefined) return TEST_FNS.has(id.text) ? { fn: id.text } : undefined;
+    if (cache.has(symbol)) return cache.get(symbol);
+    cache.set(symbol, undefined); // a cycle (`const t = t.extend(…)`) resolves to nothing
+    const decl = symbol.declarations?.[0];
+    let found;
+    if (decl && ts.isImportSpecifier(decl) && importedFrom(decl) === "vitest") {
+      const imported = (decl.propertyName ?? decl.name).text;
+      if (TEST_FNS.has(imported)) found = { fn: imported };
+    } else if (decl && ts.isNamespaceImport(decl) && importedFrom(decl) === "vitest") {
+      found = { ns: true };
+    } else if (decl && ts.isVariableDeclaration(decl) && decl.initializer && symbol.declarations.length === 1) {
+      const fn = extendedFn(decl.initializer, bindings);
+      if (fn !== undefined) found = { fn };
     }
+    cache.set(symbol, found);
+    return found;
   };
-  const blockScope = (node) => {
-    let n = node.parent;
-    while (n && !ts.isBlock(n) && !ts.isSourceFile(n) && !ts.isFunctionLike(n) && !ts.isCaseBlock(n) && !ts.isForStatement(n) &&
-      !ts.isForOfStatement(n) && !ts.isForInStatement(n) && !ts.isCatchClause(n)) {
-      n = n.parent;
-    }
-    return n;
-  };
-  const functionScope = (node) => {
-    let n = node.parent;
-    while (n && !ts.isSourceFile(n) && !ts.isFunctionLike(n)) n = n.parent;
-    return n;
-  };
-  const visit = (node) => {
-    if (ts.isParameter(node)) add(node.name, node.parent);
-    else if (ts.isVariableDeclaration(node) && !ctx.aliasDecls.has(node)) {
-      const list = node.parent;
-      const isVar = ts.isVariableDeclarationList(list) && (list.flags & ts.NodeFlags.BlockScoped) === 0;
-      add(node.name, ts.isCatchClause(list) ? list : isVar ? functionScope(node) : blockScope(node));
-    } else if ((ts.isFunctionDeclaration(node) || ts.isClassDeclaration(node) || ts.isEnumDeclaration(node)) && node.name) {
-      add(node.name, blockScope(node));
-    } else if ((ts.isFunctionExpression(node) || ts.isClassExpression(node)) && node.name) {
-      add(node.name, node);
-    } else if (ts.isImportDeclaration(node) && ts.isStringLiteral(node.moduleSpecifier) && node.moduleSpecifier.text !== "vitest") {
-      const clause = node.importClause;
-      if (clause?.name) add(clause.name, ctx.sf);
-      const b = clause?.namedBindings;
-      if (b && ts.isNamespaceImport(b)) add(b.name, ctx.sf);
-      if (b && ts.isNamedImports(b)) for (const el of b.elements) add(el.name, ctx.sf);
-    }
-    ts.forEachChild(node, visit);
-  };
-  visit(ctx.sf);
-  return decls;
+  return bindings;
 }
 
-/** Whether identifier `id` names a local declaration rather than Vitest's function. */
-function isShadowed(id, ctx) {
-  return ctx.shadows.some((d) => d.name === id.text && d.scope.pos <= id.pos && id.end <= d.scope.end);
+/** The Vitest function `node` names (`describe`, `v.describe`, a renamed import, an `.extend` alias), or undefined. */
+function testFnName(node, bindings) {
+  if (ts.isIdentifier(node)) return bindings.resolve(node)?.fn;
+  if (isMemberLink(node) && ts.isIdentifier(node.expression) && bindings.resolve(node.expression)?.ns) {
+    const name = linkName(node);
+    return TEST_FNS.has(name) ? name : undefined;
+  }
+  return undefined;
 }
 
 /** The Vitest function an `x.extend(…)` call extends, or undefined for any other node. */
-function extendedFn(node, ctx) {
+function extendedFn(node, bindings) {
   const callee = calleeOf(unwrap(node));
   if (callee === undefined) return undefined;
   const member = unwrap(callee);
   if (!isMemberLink(member) || linkName(member) !== "extend") return undefined;
   let base = unwrap(member.expression);
-  while (testFnName(base, ctx) === undefined && isMemberLink(base) && linkName(base) !== undefined) {
+  while (testFnName(base, bindings) === undefined && isMemberLink(base) && linkName(base) !== undefined) {
     base = unwrap(base.expression);
   }
-  return testFnName(base, ctx) ?? extendedFn(base, ctx);
-}
-
-/** The Vitest function `node` names (`describe`, `v.describe`, a renamed import), or undefined. */
-function testFnName(node, ctx) {
-  if (ts.isIdentifier(node)) return isShadowed(node, ctx) ? undefined : ctx.locals.get(node.text);
-  if (
-    isMemberLink(node) &&
-    ts.isIdentifier(node.expression) &&
-    ctx.namespaces.has(node.expression.text) &&
-    TEST_FNS.has(linkName(node))
-  ) {
-    return linkName(node);
-  }
-  return undefined;
+  return testFnName(base, bindings) ?? extendedFn(base, bindings);
 }
 
 /**
@@ -293,15 +243,17 @@ function isValueReference(id) {
  * tagged template that invokes it, and what the rules need to know about that call.
  * `it.skip.each(rows)(name, fn)` counts as invoked, through the call `each(rows)` returns.
  */
-function testRef(start, fnName, ctx) {
+function testRef(start, fnName, bindings) {
   const links = [];
   let computed = false;
+  let extendCallPending = false;
   let top = start;
   for (;;) {
     const inner = outermostWrapper(top);
     const up = inner.parent;
-    // `test.extend({…})` returns a test function: keep reading the chain through the call.
-    if (links[links.length - 1] === "extend" && calleeOf(up) === inner) {
+    // `test.extend({…})` returns a test function: read the chain on through that one call.
+    if (extendCallPending && calleeOf(up) === inner) {
+      extendCallPending = false;
       top = up;
       continue;
     }
@@ -314,10 +266,12 @@ function testRef(start, fnName, ctx) {
       break;
     }
     links.push(name);
+    extendCallPending = name === "extend";
     top = up;
   }
   top = outermostWrapper(top);
   let call;
+  let rows;
   const p = top.parent;
   if (calleeOf(p) === top) {
     call = p;
@@ -325,13 +279,14 @@ function testRef(start, fnName, ctx) {
     const last = links[links.length - 1];
     const outer = outermostWrapper(call).parent;
     if ((last === "each" || last === "for") && ts.isCallExpression(outer) && outer.expression === outermostWrapper(call)) {
+      rows = ts.isCallExpression(call) ? call.arguments[0] : undefined;
       call = outer;
     }
   }
   const suite = SUITE_FNS.has(fnName);
   // Links after the last `.extend`; a call through Vitest modifiers only defines a suite or test.
   const ownLinks = links.slice(links.lastIndexOf("extend") + 1);
-  const defines = call !== undefined && links[links.length - 1] !== "extend" && ownLinks.every((l) => MODIFIERS.has(l));
+  const defines = call !== undefined && !extendCallPending && ownLinks.every((l) => MODIFIERS.has(l));
   return {
     suite,
     links,
@@ -341,9 +296,9 @@ function testRef(start, fnName, ctx) {
     invoked: call !== undefined,
     escapes: call === undefined && !keptExtendResult(top, links),
     defines,
-    conditional: defines && underCondition(call, ctx),
-    optionGate: defines && hasGateOption(call, suite),
-    line: ctx.sf.getLineAndCharacterOfPosition(start.getStart(ctx.sf)).line + 1,
+    conditional: defines && underCondition(call, bindings),
+    optionGate: defines && (hasGateOption(call, suite) || (rows !== undefined && isChosen(rows))),
+    line: bindings.sf.getLineAndCharacterOfPosition(start.getStart(bindings.sf)).line + 1,
   };
 }
 
@@ -367,6 +322,12 @@ function optionKey(name) {
     return ts.isStringLiteralLike(expr) || ts.isNumericLiteral(expr) ? expr.text : null;
   }
   return ts.isIdentifier(name) || ts.isStringLiteralLike(name) || ts.isNumericLiteral(name) ? name.text : undefined;
+}
+
+/** Whether `node` (through wrappers) is picked at run time by `? :`, `&&`, `||` or `??`. */
+function isChosen(node) {
+  node = unwrap(node);
+  return ts.isConditionalExpression(node) || (ts.isBinaryExpression(node) && CONDITIONAL_OPERATORS.has(node.operatorToken.kind));
 }
 
 /**
@@ -426,6 +387,8 @@ function conditionalEdge(parent, child) {
   if (ts.isBinaryExpression(parent)) return CONDITIONAL_OPERATORS.has(parent.operatorToken.kind) && child === parent.right;
   // A `try` block with a `catch` runs only up to its first throw; the `catch` only after one.
   if (ts.isTryStatement(parent)) return child === parent.tryBlock && parent.catchClause !== undefined;
+  // `a?.b(arg)`: the arguments run only when the chain doesn't short-circuit.
+  if (ts.isCallExpression(parent) && ts.isOptionalChain(parent) && parent.arguments.includes(child)) return true;
   return ts.isCaseClause(parent) || ts.isDefaultClause(parent) || ts.isCatchClause(parent);
 }
 
@@ -434,12 +397,12 @@ function conditionalEdge(parent, child) {
  * enclosing suite or test call (which is checked on its own), named function, or the file.
  * Loops are not conditions.
  */
-function underCondition(call, ctx) {
+function underCondition(call, bindings) {
   let child = call;
   for (let node = call.parent; node && !ts.isSourceFile(node); child = node, node = node.parent) {
     if (conditionalEdge(node, child)) return true;
     if (ts.isFunctionDeclaration(node) || ts.isMethodDeclaration(node) || ts.isClassDeclaration(node)) return false;
-    if (calleeOf(node) !== undefined && node !== call && callsVitestFn(node, ctx)) {
+    if (calleeOf(node) !== undefined && node !== call && callsVitestFn(node, bindings)) {
       return false;
     }
   }
@@ -447,14 +410,14 @@ function underCondition(call, ctx) {
 }
 
 /** Whether a call or tagged template calls a Vitest describe/suite/it/test, through any links. */
-function callsVitestFn(node, ctx) {
+function callsVitestFn(node, bindings) {
   let callee = calleeOf(node);
   if (ts.isCallExpression(callee)) callee = callee.expression; // `.each(rows)(…)`
   for (;;) {
     callee = unwrap(callee);
-    if (testFnName(callee, ctx) !== undefined) return true;
+    if (testFnName(callee, bindings) !== undefined) return true;
     if (isMemberLink(callee)) callee = callee.expression;
-    else if (extendedFn(callee, ctx) !== undefined) return true; // `test.extend({…})(…)`
+    else if (extendedFn(callee, bindings) !== undefined) return true; // `test.extend({…})(…)`
     else return false;
   }
 }
@@ -491,8 +454,8 @@ function pragmaLines(sf) {
   return lines;
 }
 
-/** The file's syntax errors, through a one-file program (no type-checking, no emit, no I/O). */
-function syntaxErrors(sf) {
+/** A one-file program over `sf`: no lib, no module resolution, no emit, no I/O. */
+function oneFileProgram(sf) {
   const host = {
     getSourceFile: (n) => (n === sf.fileName ? sf : undefined),
     fileExists: (n) => n === sf.fileName,
@@ -505,7 +468,7 @@ function syntaxErrors(sf) {
     getNewLine: () => "\n",
   };
   const options = { noLib: true, noResolve: true, jsx: ts.JsxEmit.Preserve };
-  return ts.createProgram([sf.fileName], options, host).getSyntacticDiagnostics(sf);
+  return ts.createProgram([sf.fileName], options, host);
 }
 
 /**
@@ -519,18 +482,18 @@ export function findGates(src, fileName = "file.test.ts") {
   const kind = fileName.endsWith(".tsx") ? ts.ScriptKind.TSX : ts.ScriptKind.TS;
   const name = kind === ts.ScriptKind.TSX ? "/file.test.tsx" : "/file.test.ts";
   const sf = ts.createSourceFile(name, src, ts.ScriptTarget.Latest, true, kind);
-  const d = syntaxErrors(sf)[0];
+  const program = oneFileProgram(sf);
+  const d = program.getSyntacticDiagnostics(sf)[0];
   if (d) {
     const line = sf.getLineAndCharacterOfPosition(d.start ?? 0).line + 1;
     throw new Error(`does not parse at line ${line}: ${ts.flattenDiagnosticMessageText(d.messageText, " ")}`);
   }
-  const ctx = vitestNames(sf);
+  const bindings = vitestBindings(sf, program);
   const refs = [];
   const visit = (node) => {
-    if (ts.isIdentifier(node) && isValueReference(node) && testFnName(node, ctx) !== undefined) {
-      refs.push(testRef(node, testFnName(node, ctx), ctx));
-    } else if (!ts.isIdentifier(node) && testFnName(node, ctx) !== undefined) {
-      refs.push(testRef(node, testFnName(node, ctx), ctx));
+    if (!ts.isIdentifier(node) || isValueReference(node)) {
+      const fnName = testFnName(node, bindings);
+      if (fnName !== undefined) refs.push(testRef(node, fnName, bindings));
     }
     ts.forEachChild(node, visit);
   };

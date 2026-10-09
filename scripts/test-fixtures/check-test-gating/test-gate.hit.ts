@@ -12,3 +12,4 @@ it("quoted key", { "skip": !url }, () => {}); // HIT
 it("asserted options", ({ skip: !url }) as TestOptions, () => {}); // HIT
 it("satisfies options", { todo: !ok } satisfies TestOptions, () => {}); // HIT
 it.each([1, 2])("each with options %s", { skip: !ok }, () => {}); // HIT
+it.each((url && [url]) || [])("rows chosen by && and || %s", () => {}); // HIT

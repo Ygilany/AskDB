@@ -1,2 +1,7 @@
-import { test } from "./not-vitest";
-test.skip("a helper imported from another module");
+import { describe } from "./helpers";
+import test from "./default-helper";
+import * as it from "./namespace-helper";
+describe.skip("a named import from another module");
+test.skipIf(!ready)("a default import named test");
+const value = it.skip;
+const exported = { describe };

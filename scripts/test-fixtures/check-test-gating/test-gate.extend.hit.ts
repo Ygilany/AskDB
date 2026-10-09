@@ -5,3 +5,5 @@ dbTest.skipIf(!process.env.DATABASE_URL)("through a test.extend result", () => {
 pgTest.runIf(process.env.DATABASE_URL)("through a chained extend", () => {}); // HIT
 test.extend({}).skipIf(!process.env.DATABASE_URL)("inline extend", () => {}); // HIT
 dbTest("options on an extend result", { skip: !process.env.DATABASE_URL }, () => {}); // HIT
+test.extend({})("inline extend call with options", { skip: !process.env.DATABASE_URL }, () => {}); // HIT
+test.extend({}).extend({})("chained inline extend", { skip: !process.env.DATABASE_URL }, () => {}); // HIT

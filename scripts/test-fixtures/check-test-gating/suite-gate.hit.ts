@@ -31,3 +31,4 @@ describe("spread options", { ...opts }, () => {}); // HIT
 describe.each([1, 2])("describe.each with options %s", { skip: !ok }, () => {}); // HIT
 // see check-test-gating-ignore-next-line: for details
 describe.skip("a marker mid-comment exempts nothing", () => {}); // HIT
+describe.each(process.env.DATABASE_URL ? [process.env.DATABASE_URL] : [])("rows chosen by a ternary %s", () => {}); // HIT
