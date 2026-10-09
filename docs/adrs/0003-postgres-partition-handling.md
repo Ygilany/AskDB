@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted (2026-05-12).
+Accepted (2026-05-12). Amended 2026-10-09: partition foreign-key clones (#189).
 
 ## Context
 
@@ -31,6 +31,12 @@ Symptom in production: a single partitioned `events` table with 64 monthly parti
 **Filter partition leaves out at the SQL boundary.** Modify `TABLES_TEMPLATE` to `LEFT JOIN pg_inherits` against partitioned parents and exclude any relation that is a leaf of such a parent. The partitioned parent (`relkind = 'p'`) is retained and surfaced as the canonical table. Plain inheritance (non-declarative `INHERITS (...)`) is **not** filtered — those children are genuinely independent tables in PG semantics.
 
 The change is contained to `packages/postgres/src/connector/templates.ts` and a new fixture for partitioned snapshots. No type changes, no schema-v2 changes, no chunker changes.
+
+### Amendment (2026-10-09): partition foreign-key clones
+
+PG11+ clones a foreign key declared on a partitioned table onto every partition, and PG12+ also clones a foreign key that references a partitioned table once per referenced partition. Rendered as-is, those clones point at partition leaves the `tables` template already removed. `FOREIGN_KEYS_TEMPLATE` drops a constraint when either side is a leaf of a partitioned parent, using the same `pg_inherits` predicate as the `tables` template, so every relationship target is a table the artifact contains.
+
+The alternative was `con.conparentid = 0`, which keeps only the constraint the user declared. It lost because `conparentid` does not exist before PG11, while the templates otherwise run on PG10, and because it alone does not guarantee that a relationship's target is a table the artifact contains.
 
 ## Alternatives considered
 

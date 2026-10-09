@@ -265,6 +265,8 @@ describe("sqlserver:// backward compatibility with the parser before #189", () =
     "sqlserver://h;user=sa;password={ab;database=a}pp;user={me}",
     "sqlserver://h;password={ab;database=app;user=x}",
     "sqlserver://h;user=sa;password={a;b=c}",
+    // A } followed by more text doesn't close an escape.
+    "sqlserver://h;password={a;b}x;user=u",
   ])("reads %s exactly as before", (input) => {
     expect(resolveConnectionInput(input)).toEqual(legacyParsePrismaSqlServerUrl(input));
   });

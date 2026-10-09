@@ -75,9 +75,10 @@ const result = await introspect(
 
 In the Prisma form, wrap a value that contains `;` in curly braces, as Prisma does: `password={Pass:Word;}` is `Pass:Word;`. AskDB reads braces this way only where its earlier parser couldn't read the value, so strings that worked before keep connecting with the same values:
 
-- A value is an escape when it starts with `{`, has a `;` before its first `}`, and ends at a `}` whose last `;`-separated piece has no `=`. Everything between the braces is the value, read verbatim: `{{a;b}}` is `{a;b}`.
+- A value is an escape when it starts with `{`, has a `;` before its first `}`, and ends at the first `}` that is followed only by blanks and then a `;` or the end of the string, where the `;`-separated piece that ends at that `}` has no `=`. Everything between the braces is the value, read verbatim: `{{a;b}}` is `{a;b}`.
 - Any other brace is a plain character, as before: `password={abc}` is `{abc}`, and a `{` that is never closed is part of the value.
 - Prisma reads every `{…}` as an escape, so a URL shared with Prisma that braces a value without a `;` (such as `password={Pass:Word}`) reaches SQL Server with its braces when AskDB connects.
+- Prisma's credential keys `username`, `uid` and `pwd` are also read when `user` or `password` is absent (`username` before `uid`); the canonical key wins when both are set.
 
 **TLS / self-signed certificates**
 
