@@ -53,9 +53,9 @@ jobs:
   # `astro check`. None of these run anywhere else in CI. Turbo replays the
   # upstream `build` outputs (`lint` depends on `^build`) from the cache.
   # The root `lint` script first runs scripts/check-test-gating.mjs (and its
-  # node --test suite), which rejects hand-rolled test gates (`describe.skip`,
-  # `? describe :`) in every workspace package's tests in favor of
-  # integrationSuite().
+  # node --test suite), which rejects hand-rolled test gates in favor of
+  # integrationSuite(); the rules and the consumer-lab exclusion are listed in
+  # CONTRIBUTING.md ("Integration Tests").
   lint:
     needs: build
     runs-on: ubuntu-latest

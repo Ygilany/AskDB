@@ -1,7 +1,7 @@
 // node --test scripts/check-test-gating.test.mjs  (runs from the root `lint` script)
 //
-// Fixture corpus: scripts/__fixtures__/check-test-gating/<rule>.hit.ts must report exactly the
-// lines marked `// HIT`, all under <rule>; every *.clean.ts must report nothing.
+// Fixture corpus: scripts/__fixtures__/check-test-gating/<rule>.hit.ts(x) must report exactly the
+// lines marked `// HIT`, all under <rule>; every *.clean.ts(x) must report nothing.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { mkdtempSync, mkdirSync, readdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
@@ -25,24 +25,30 @@ test("every rule has a hit fixture and a clean fixture", () => {
 
 for (const file of files) {
   const src = readFileSync(join(fixtures, file), "utf8");
-  if (file.endsWith(".hit.ts")) {
-    const rule = file.slice(0, -".hit.ts".length);
+  const hit = file.match(/^(.+)\.hit\.tsx?$/);
+  if (hit) {
+    const rule = hit[1];
     test(`${file}: reports exactly the HIT lines under ${rule}`, () => {
       const expected = src
         .split("\n")
         .flatMap((line, i) => (/\/\/ HIT\b/.test(line) ? [{ line: i + 1, rule }] : []));
       assert.ok(expected.length > 0);
       assert.deepEqual(
-        findGates(src).map(({ line, rule }) => ({ line, rule })),
+        findGates(src, file).map(({ line, rule }) => ({ line, rule })),
         expected,
       );
     });
-  } else if (file.endsWith(".clean.ts")) {
+  } else if (/\.clean\.tsx?$/.test(file)) {
     test(`${file}: reports nothing`, () => {
-      assert.deepEqual(findGates(src), []);
+      assert.deepEqual(findGates(src, file), []);
     });
   }
 }
+
+test("a file that does not parse throws instead of passing", () => {
+  assert.throws(() => findGates('describe.skip("unterminated", () => {\n'), /line \d+:/);
+  assert.throws(() => findGates("const x = <p>jsx</p>;\n", "x.test.ts"));
+});
 
 const DEFAULT_YAML =
   'packages:\n  - "packages/*"\n  # comment\n  - "!packages/excluded"\n  - "fixtures/db"\nother: 1\n';
@@ -115,7 +121,24 @@ test("CLI passes a clean workspace", (t) => {
   assert.match(result.stdout, /OK \(1 test files/);
 });
 
-test("CLI fails closed when it finds no test files or no workspace", (t) => {
-  assert.equal(run(workspace(t, {})).status, 1);
-  assert.equal(run(join(tmpdir(), "check-test-gating-does-not-exist")).status, 1);
+test("CLI fails closed on a test file it cannot parse", (t) => {
+  const root = workspace(t, {
+    "packages/a/src/a.test.ts": 'it("ok", () => {});\n',
+    "packages/a/src/broken.test.ts": 'describe.skip("unterminated", () => {\n',
+  });
+  const result = run(root);
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /packages\/a\/src\/broken\.test\.ts: cannot be parsed/);
+});
+
+test("CLI fails closed when it finds no test files", (t) => {
+  const result = run(workspace(t, {}));
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /refusing to pass an empty scan/);
+});
+
+test("CLI fails closed when there is no workspace", () => {
+  const result = run(join(tmpdir(), "check-test-gating-does-not-exist"));
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /cannot read the workspace/);
 });

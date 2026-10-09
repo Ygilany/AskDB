@@ -6,3 +6,5 @@ const e = hasDriver
   ? describe // HIT
   : noop;
 const f = `${ok ? describe : noop}`; // HIT
+const g = ok ? (describe) : noop; // HIT
+const h = ok ? noop : describe; // HIT

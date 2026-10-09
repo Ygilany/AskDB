@@ -9,263 +9,244 @@
 // Scans every *.test.ts / *.test.tsx in the pnpm workspace packages listed in
 // pnpm-workspace.yaml (skipping node_modules, dist, and build caches). scripts/test-utils/,
 // which implements integrationSuite() with describe.skip, is not a workspace package.
-// Comments, string literals, template literals, and regex literals are blanked before
-// matching, so text that merely mentions a gate does not trip the check.
+// Each file is parsed with the TypeScript compiler (`typescript`, a root devDependency), so
+// comments, strings, templates, regexes and JSX text never trip a rule, and a file that does
+// not parse fails the check instead of passing unread.
 //
 // Allowed: a plain skipped test called directly, e.g. `it.skip("…", fn)`, `it.skip.each(…)(…)`,
 // and tests defined in a loop (`for (const c of cases) it(…)`), which is parametrization.
 // Rejected: see RULES, including a describe/suite/it/test call made only under a condition
-// (`if (…)`, `else`, `? :`, `&&`, `||`). To exempt one line, put a line comment on the line above
-// it with a non-empty reason; the marker inside a string or with no reason exempts nothing:
+// (`if`/`else`, `switch` cases, `? :`, `&&`, `||`, `??`) anywhere between the call and the
+// nearest enclosing suite, test or named function. To exempt one line, put a line comment on
+// the line above it with a non-empty reason; the marker with no reason exempts nothing:
 //   // check-test-gating-ignore-next-line: <reason>
 //
-// Known limits: a conditional call is caught only as the first statement of its `if`/`else`
-// block; an early `return` before a call, a gate behind a helper or alias (`const d = describe`),
-// and `ctx.skip()` inside a test body are not detected.
+// Known limits: an early `return` before a call, a gate behind a helper or alias
+// (`const d = describe`, a named function called under a condition), and `ctx.skip()` inside a
+// test body are not detected.
 //
 // Usage: node scripts/check-test-gating.mjs [repo-root]
 import { readdirSync, readFileSync, existsSync, realpathSync } from "node:fs";
+import { createRequire } from "node:module";
 import { join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 
-// Not a member access (`obj.test`), not part of a longer identifier (`describeThing`).
-const NOT_MEMBER = String.raw`(?<![\w$.])`;
-// Zero or more `.modifier` links after the test function, e.g. `.concurrent.skip`.
-const MODIFIER_CHAIN = String.raw`(?:\s*\.\s*\w+)*?`;
+// Resolve `typescript` from this file's real location, so a symlinked or
+// --preserve-symlinks-main invocation still finds the repo's install.
+const selfPath = realpathSync(fileURLToPath(import.meta.url));
+const ts = createRequire(selfPath)("typescript");
+
+const TEST_FNS = new Set(["describe", "suite", "it", "test"]);
+const SUITE_FNS = new Set(["describe", "suite"]);
+// Vitest's chainable modifiers. A chain with any other link (`test.extend`, `test.step`) is not
+// treated as defining a suite or test.
+const MODIFIERS = new Set([
+  "skip", "only", "todo", "concurrent", "sequential", "shuffle", "fails", "each", "for", "skipIf", "runIf",
+]);
 
 export const RULES = [
   {
     id: "suite-gate",
-    re: new RegExp(String.raw`${NOT_MEMBER}(?:describe|suite)${MODIFIER_CHAIN}\s*\.\s*(?:skip|skipIf|runIf)\b`, "g"),
+    test: (ref) => SUITE_FNS.has(ref.base) && ref.links.some((l) => l === "skip" || l === "skipIf" || l === "runIf"),
     why: "gates a suite by hand; use integrationSuite()",
   },
   {
     id: "test-gate",
-    re: new RegExp(String.raw`${NOT_MEMBER}(?:it|test)${MODIFIER_CHAIN}\s*\.\s*(?:skipIf|runIf)\b`, "g"),
+    test: (ref) => !SUITE_FNS.has(ref.base) && ref.links.some((l) => l === "skipIf" || l === "runIf"),
     why: "gates a test by hand; use integrationSuite() around the suite",
   },
   {
     // `.skip` that is never invoked is being passed around as a value: a gate expression.
     id: "skip-as-value",
-    re: new RegExp(
-      String.raw`${NOT_MEMBER}(?:it|test)${MODIFIER_CHAIN}\s*\.\s*skip\b(?!(?:\s*\.\s*\w+)*\s*[(\x60])`,
-      "g",
-    ),
+    test: (ref) => !SUITE_FNS.has(ref.base) && ref.links.includes("skip") && !ref.invoked,
     why: "uses it.skip/test.skip as a gate expression; use integrationSuite()",
   },
   {
     id: "ternary",
-    re: /\?\s*(?:describe|suite|it|test)\b(?:\s*\.\s*\w+)*\s*:/g,
+    test: (ref) => !ref.invoked && isTernaryBranch(ref.top),
     why: "selects describe/suite/it/test with a ternary; use integrationSuite()",
   },
   {
     // A describe/suite/it/test call that only runs when a condition holds.
     id: "conditional-call",
-    find: findConditionalCalls,
+    test: (ref) => ref.invoked && ref.links.every((l) => MODIFIERS.has(l)) && underCondition(ref.call),
     why: "defines a suite or test only under a condition; use integrationSuite()",
   },
 ];
 
 const PRAGMA = /^\/\/\s*check-test-gating-ignore-next-line\s*:\s*\S/;
-const TEST_CALL = new RegExp(
-  String.raw`${NOT_MEMBER}(?:describe|suite|it|test)${MODIFIER_CHAIN}\s*[(\x60]`,
-  "g",
-);
 
-const REGEX_AFTER_WORD = new Set([
-  "return", "typeof", "case", "do", "else", "in", "of", "new", "delete", "void", "throw",
-  "instanceof", "yield", "await",
+function stripParens(node) {
+  while (ts.isParenthesizedExpression(node.parent) && node.parent.expression === node) node = node.parent;
+  return node;
+}
+
+/** The property name of a `.name` or `["name"]` link, or undefined. */
+function linkName(node) {
+  if (ts.isPropertyAccessExpression(node)) return node.name.text;
+  if (ts.isElementAccessExpression(node) && ts.isStringLiteralLike(node.argumentExpression)) {
+    return node.argumentExpression.text;
+  }
+  return undefined;
+}
+
+/**
+ * A reference to Vitest's describe/suite/it/test: the identifier, its `.modifier` links, the
+ * outermost expression of the chain (`top`), and the call or tagged template that invokes it.
+ * `it.skip.each(rows)(name, fn)` counts as invoked, through the call `each(rows)` returns.
+ * @param {import("typescript").Identifier} id
+ */
+function testRef(id) {
+  const parent = id.parent;
+  if (!TEST_FNS.has(id.text)) return undefined;
+  // Only a value reference: not `obj.test`, `{ test: … }`, a declaration, an import or a type.
+  if (ts.isPropertyAccessExpression(parent) && parent.name === id) return undefined;
+  if (
+    (ts.isPropertyAssignment(parent) || ts.isMethodDeclaration(parent) || ts.isPropertyDeclaration(parent)) &&
+    parent.name === id
+  ) {
+    return undefined;
+  }
+  if (ts.isVariableDeclaration(parent) || ts.isParameter(parent) || ts.isFunctionDeclaration(parent)) {
+    if (parent.name === id) return undefined;
+  }
+  if (ts.isImportSpecifier(parent) || ts.isImportClause(parent) || ts.isTypeReferenceNode(parent)) return undefined;
+  if (ts.isQualifiedName(parent) || ts.isExportSpecifier(parent) || ts.isBindingElement(parent)) return undefined;
+
+  const links = [];
+  let top = id;
+  for (;;) {
+    const up = stripParens(top).parent;
+    const name = linkName(up);
+    if (name === undefined || up.expression !== stripParens(top)) break;
+    links.push(name);
+    top = up;
+  }
+  top = stripParens(top);
+  let call;
+  const p = top.parent;
+  if ((ts.isCallExpression(p) && p.expression === top) || (ts.isTaggedTemplateExpression(p) && p.tag === top)) {
+    call = p;
+    // `.each(rows)` / `.for(rows)` returns the function that defines the tests.
+    const last = links[links.length - 1];
+    const outer = stripParens(call).parent;
+    if ((last === "each" || last === "for") && ts.isCallExpression(outer) && outer.expression === stripParens(call)) {
+      call = outer;
+    }
+  }
+  return { base: id.text, links, top, call, invoked: call !== undefined, line: lineOf(id) };
+}
+
+let currentFile;
+function lineOf(node) {
+  return currentFile.getLineAndCharacterOfPosition(node.getStart(currentFile)).line + 1;
+}
+
+/** Whether `node` is the true or false branch of a `? :` (through parentheses). */
+function isTernaryBranch(node) {
+  const p = node.parent;
+  return ts.isConditionalExpression(p) && (p.whenTrue === node || p.whenFalse === node);
+}
+
+const CONDITIONAL_OPERATORS = new Set([
+  ts.SyntaxKind.AmpersandAmpersandToken,
+  ts.SyntaxKind.BarBarToken,
+  ts.SyntaxKind.QuestionQuestionToken,
+  ts.SyntaxKind.AmpersandAmpersandEqualsToken,
+  ts.SyntaxKind.BarBarEqualsToken,
+  ts.SyntaxKind.QuestionQuestionEqualsToken,
 ]);
 
-/**
- * Replace the contents of comments, string, template, and regex literals with spaces,
- * keeping newlines (so line numbers survive) and code inside `${…}` template expressions.
- * When `lineComments` is given, the [start, end) range of each `//` comment is pushed to it.
- * @param {string} src
- * @param {[number, number][]} [lineComments]
- */
-function blankNonCode(src, lineComments) {
-  const out = src.split("");
-  const n = src.length;
-  const blank = (a, b) => {
-    for (let k = a; k < Math.min(b, n); k++) if (out[k] !== "\n" && out[k] !== "\r") out[k] = " ";
-  };
-  // "code" | "brace" | "expr" (inside `${ }`) | "tpl" (template text)
-  const stack = ["code"];
-  let lastSig = ""; // last significant character outside literals; "w" for a word
-  let lastWord = "";
-  let i = 0;
-  while (i < n) {
-    const top = stack[stack.length - 1];
-    const c = src[i];
-    const d = src[i + 1];
-    if (top === "tpl") {
-      if (c === "\\") { blank(i, i + 2); i += 2; continue; }
-      if (c === "`") { stack.pop(); lastSig = "w"; lastWord = ""; i++; continue; }
-      if (c === "$" && d === "{") { stack.push("expr"); lastSig = "("; i += 2; continue; }
-      blank(i, i + 1);
-      i++;
-      continue;
-    }
-    if (c === "/" && d === "/") {
-      const e = src.indexOf("\n", i);
-      const end = e === -1 ? n : e;
-      lineComments?.push([i, end]);
-      blank(i, end);
-      i = end;
-      continue;
-    }
-    if (c === "/" && d === "*") {
-      const e = src.indexOf("*/", i + 2);
-      const end = e === -1 ? n : e + 2;
-      blank(i, end);
-      i = end;
-      continue;
-    }
-    if (c === "'" || c === '"') {
-      let j = i + 1;
-      while (j < n && src[j] !== c && src[j] !== "\n") j += src[j] === "\\" ? 2 : 1;
-      blank(i + 1, j);
-      lastSig = "w";
-      lastWord = "";
-      i = j + 1;
-      continue;
-    }
-    if (c === "`") { stack.push("tpl"); i++; continue; }
-    if (c === "/") {
-      const regexAllowed =
-        lastSig === "" ||
-        "(,=:[!&|?{};+-*%<>~^}".includes(lastSig) ||
-        (lastSig === "w" && REGEX_AFTER_WORD.has(lastWord));
-      if (regexAllowed) {
-        let j = i + 1;
-        let inClass = false;
-        while (j < n && src[j] !== "\n") {
-          if (src[j] === "\\") { j += 2; continue; }
-          if (src[j] === "[") inClass = true;
-          else if (src[j] === "]") inClass = false;
-          else if (src[j] === "/" && !inClass) break;
-          j++;
-        }
-        blank(i + 1, j);
-        lastSig = "w";
-        lastWord = "";
-        i = j + 1;
-        continue;
-      }
-    }
-    if (c === "{") stack.push("brace");
-    else if (c === "}") {
-      if (top === "expr") { stack.pop(); i++; continue; }
-      if (top === "brace") stack.pop();
-    }
-    if (/\s/.test(c)) { i++; continue; }
-    if (/[\w$]/.test(c)) {
-      let j = i;
-      while (j < n && /[\w$]/.test(src[j])) j++;
-      lastSig = "w";
-      lastWord = src.slice(i, j);
-      i = j;
-      continue;
-    }
-    lastSig = c;
-    lastWord = "";
-    i++;
-  }
-  return out.join("");
+/** Whether the node `child` of `parent` runs only when a condition holds. */
+function conditionalEdge(parent, child) {
+  if (ts.isIfStatement(parent)) return child !== parent.expression;
+  if (ts.isConditionalExpression(parent)) return child !== parent.condition;
+  if (ts.isBinaryExpression(parent)) return CONDITIONAL_OPERATORS.has(parent.operatorToken.kind) && child === parent.right;
+  return ts.isCaseClause(parent) || ts.isDefaultClause(parent);
 }
 
 /**
- * The token that ends right before `end` in blanked code: a word, `&&`, `||`, or one character.
- * @param {string} code
- * @param {number} end
+ * Whether a suite or test call runs only under a condition, looking outward to the nearest
+ * enclosing suite or test call (which is checked on its own), named function, or the file.
+ * Loops are not conditions.
  */
-function tokenBefore(code, end) {
-  let j = end - 1;
-  while (j >= 0 && /\s/.test(code[j])) j--;
-  if (j < 0) return { tok: "", start: 0 };
-  if (/[\w$]/.test(code[j])) {
-    let k = j;
-    while (k > 0 && /[\w$]/.test(code[k - 1])) k--;
-    return { tok: code.slice(k, j + 1), start: k };
-  }
-  if ((code[j] === "&" || code[j] === "|") && code[j - 1] === code[j]) {
-    return { tok: code[j] + code[j], start: j - 1 };
-  }
-  return { tok: code[j], start: j };
-}
-
-/** Index of the `(` matching the `)` at `close`, or -1. */
-function openParen(code, close) {
-  let depth = 0;
-  for (let k = close; k >= 0; k--) {
-    if (code[k] === ")") depth++;
-    else if (code[k] === "(" && --depth === 0) return k;
-  }
-  return -1;
-}
-
-/**
- * Whether the `:` at `colon` is a ternary's else branch: a `?` (not `?.` or `??`) sits before
- * it at the same bracket depth. An object-literal or type-annotation `:` has none.
- * @param {string} code blanked source
- * @param {number} colon
- */
-function isTernaryColon(code, colon) {
-  let depth = 0;
-  for (let k = colon - 1; k >= 0; k--) {
-    const c = code[k];
-    if (c === ")" || c === "]" || c === "}") depth++;
-    else if (c === "(" || c === "[" || c === "{") {
-      if (depth === 0) return false;
-      depth--;
-    } else if (depth === 0 && (c === ";" || c === ",")) return false;
-    else if (depth === 0 && c === "?" && code[k + 1] !== "." && code[k + 1] !== "?" && code[k - 1] !== "?") {
-      return true;
+function underCondition(call) {
+  let child = call;
+  for (let node = call.parent; node && !ts.isSourceFile(node); child = node, node = node.parent) {
+    if (conditionalEdge(node, child)) return true;
+    if (ts.isFunctionDeclaration(node) || ts.isMethodDeclaration(node) || ts.isClassDeclaration(node)) return false;
+    if ((ts.isCallExpression(node) || ts.isTaggedTemplateExpression(node)) && node !== call && isTestCall(node)) {
+      return false;
     }
   }
   return false;
 }
 
-/**
- * Indexes of describe/suite/it/test calls that run only under a condition: right after
- * `?`, `:`, `&&`, `||`, `else`, or an `if (…)` header, directly or as the first statement
- * of a `{` block. Loops are not conditions.
- * @param {string} code blanked source
- */
-function findConditionalCalls(code) {
-  const found = [];
-  for (const m of code.matchAll(TEST_CALL)) {
-    let prev = tokenBefore(code, m.index);
-    if (prev.tok === "{") prev = tokenBefore(code, prev.start);
-    const conditional =
-      ["?", "&&", "||", "else"].includes(prev.tok) ||
-      (prev.tok === ":" && isTernaryColon(code, prev.start)) ||
-      (prev.tok === ")" && tokenBefore(code, openParen(code, prev.start)).tok === "if");
-    if (conditional) found.push(m.index);
-  }
-  return found;
+function isTestCall(node) {
+  let callee = ts.isCallExpression(node) ? node.expression : node.tag;
+  if (ts.isCallExpression(callee)) callee = callee.expression; // `.each(rows)(…)`
+  while (ts.isParenthesizedExpression(callee)) callee = callee.expression;
+  while (linkName(callee) !== undefined) callee = callee.expression;
+  return ts.isIdentifier(callee) && TEST_FNS.has(callee.text);
+}
+
+/** Line numbers exempted by a `// check-test-gating-ignore-next-line: <reason>` comment. */
+function pragmaLines(sf) {
+  const text = sf.text;
+  const seen = new Set();
+  const lines = new Set();
+  const visit = (node) => {
+    if (node.kind === ts.SyntaxKind.JsxText) return;
+    if (node.kind < ts.SyntaxKind.FirstNode || node.kind === ts.SyntaxKind.EndOfFileToken) {
+      const comments = [
+        ...(ts.getLeadingCommentRanges(text, node.pos) ?? []),
+        ...(ts.getTrailingCommentRanges(text, node.end) ?? []),
+      ];
+      for (const c of comments) {
+        if (seen.has(c.pos) || c.kind !== ts.SyntaxKind.SingleLineCommentTrivia) continue;
+        seen.add(c.pos);
+        if (PRAGMA.test(text.slice(c.pos, c.end))) lines.add(sf.getLineAndCharacterOfPosition(c.pos).line + 2);
+      }
+    }
+    for (const child of node.getChildren(sf)) visit(child);
+  };
+  visit(sf);
+  return lines;
 }
 
 /**
  * Hand-rolled gates in one test file's source, one per line, under the first rule that matched.
+ * Throws when the file does not parse, so the check fails closed instead of skipping it.
  * @param {string} src
+ * @param {string} [fileName] decides TS or TSX parsing by extension
  * @returns {{ line: number; rule: string; why: string }[]}
  */
-export function findGates(src) {
-  const lineComments = [];
-  const code = blankNonCode(src, lineComments);
-  const lineOf = (index) => code.slice(0, index).split("\n").length;
-  const ignored = new Set();
-  for (const [start, end] of lineComments) {
-    if (PRAGMA.test(src.slice(start, end))) ignored.add(lineOf(start) + 1);
+export function findGates(src, fileName = "file.test.ts") {
+  const kind = fileName.endsWith(".tsx") ? ts.ScriptKind.TSX : ts.ScriptKind.TS;
+  const sf = ts.createSourceFile(fileName, src, ts.ScriptTarget.Latest, true, kind);
+  const diagnostics = sf.parseDiagnostics;
+  if (!Array.isArray(diagnostics)) throw new Error("this TypeScript version does not expose parse diagnostics");
+  if (diagnostics.length > 0) {
+    const d = diagnostics[0];
+    const line = sf.getLineAndCharacterOfPosition(d.start ?? 0).line + 1;
+    throw new Error(`line ${line}: ${ts.flattenDiagnosticMessageText(d.messageText, " ")}`);
   }
+  currentFile = sf;
+  const refs = [];
+  const visit = (node) => {
+    if (ts.isIdentifier(node)) {
+      const ref = testRef(node);
+      if (ref) refs.push(ref);
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(sf);
+
+  const ignored = pragmaLines(sf);
   const flagged = new Map();
   for (const rule of RULES) {
-    const indexes = rule.find ? rule.find(code) : [...code.matchAll(rule.re)].map((m) => m.index);
-    for (const index of indexes) {
-      const line = lineOf(index);
-      if (!ignored.has(line) && !flagged.has(line)) flagged.set(line, rule);
+    for (const ref of refs) {
+      if (rule.test(ref) && !ignored.has(ref.line) && !flagged.has(ref.line)) flagged.set(ref.line, rule);
     }
   }
   return [...flagged]
@@ -340,7 +321,14 @@ function main() {
       scanned++;
       const src = readFileSync(file, "utf8");
       const lines = src.split("\n");
-      for (const hit of findGates(src)) {
+      let gates;
+      try {
+        gates = findGates(src, file);
+      } catch (error) {
+        hits.push(`${relative(root, file)}: cannot be parsed, so it cannot be checked (${error.message})`);
+        continue;
+      }
+      for (const hit of gates) {
         hits.push(`${relative(root, file)}:${hit.line}: ${hit.why}\n    ${lines[hit.line - 1].trim()}`);
       }
     }
@@ -351,7 +339,7 @@ function main() {
     process.exit(1);
   }
   if (hits.length > 0) {
-    console.error(`check-test-gating: ${hits.length} hand-rolled test gate(s):\n`);
+    console.error(`check-test-gating: ${hits.length} hand-rolled test gate(s) or unreadable file(s):\n`);
     for (const hit of hits) console.error(`  ${hit}`);
     console.error(
       `\nGate integration, driver, and env-dependent suites with integrationSuite() from ` +
@@ -366,4 +354,4 @@ function main() {
 // Compare real paths on both sides: argv[1] keeps the typed (possibly symlinked) path, and
 // import.meta.url is resolved through symlinks unless --preserve-symlinks-main is set.
 const invokedPath = process.argv[1] && existsSync(process.argv[1]) ? realpathSync(process.argv[1]) : "";
-if (invokedPath === realpathSync(fileURLToPath(import.meta.url))) main();
+if (invokedPath === selfPath) main();
