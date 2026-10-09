@@ -6,10 +6,10 @@ import { calleeOf, firstParameter, isMemberLink, isPick, linkName, outermostWrap
 const TEST_FNS = new Set(["describe", "suite", "it", "test"]);
 // What `bindings.resolve()` finds a name to be, each spelt in one place.
 export const KIND_FN = "fn"; // a Vitest test or suite function, with its `name`
-export const KIND_NS = "ns"; // a Vitest namespace
+const KIND_NS = "ns"; // a Vitest namespace
 export const KIND_SUITE_FACTORY = "suiteFactory"; // `integrationSuite`
 export const KIND_INTEGRATION_NS = "integrationNs"; // a namespace import of integrationSuite's module
-export const KIND_REQUIRE = "require"; // a function from `createRequire(…)`
+const KIND_REQUIRE = "require"; // a function from `createRequire(…)`
 export const KIND_AMBIGUOUS = "ambiguous"; // declarations that disagree about a Vitest value
 // What `vitestCallKind()` finds a call to define.
 const CALL_SUITE = "suite";

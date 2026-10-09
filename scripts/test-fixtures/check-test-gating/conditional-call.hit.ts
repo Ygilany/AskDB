@@ -120,3 +120,5 @@ let repeats = 0;
 do {
   describe(`a do-while condition holding a pick ${repeats}`, run); // HIT
 } while (++repeats < (process.env.DATABASE_URL ? 2 : 1));
+let stepped = 0;
+for (; stepped < (process.env.DATABASE_URL ? 1 : 0); describe("a for incrementor under a picked condition", run)) stepped++; // HIT

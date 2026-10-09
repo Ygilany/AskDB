@@ -47,3 +47,9 @@ let assignedTestBody;
 it("a body picked in an assignment", assignedTestBody = process.env.DATABASE_URL ? () => {} : undefined); // HIT
 it.each([process.env.DATABASE_URL ? [1] : []][0])("an index into a picked table %s", () => {}); // HIT
 it("options indexed by a pick", [{}, { skip: true }][process.env.DATABASE_URL ? 0 : 1], () => {}); // HIT
+it("a test whose result a condition inverts", { fails: !process.env.DATABASE_URL }, () => {}); // HIT
+it("a body read out of a picked array", [process.env.DATABASE_URL ? () => {} : undefined][0]); // HIT
+it("options read out of a picked array", [process.env.DATABASE_URL ? {} : { skip: true }][0], () => {}); // HIT
+it.each([process.env.DATABASE_URL ? [[1]] : [[2], [3]]][0])("a table read out of a picked array %s", () => {}); // HIT
+it("a body read off a picked object", { f: process.env.DATABASE_URL ? () => {} : undefined }.f); // HIT
+it("a body read with a picked .at", [() => {}].at(process.env.DATABASE_URL ? 0 : 1)); // HIT

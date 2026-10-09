@@ -4,3 +4,5 @@ resolve("vitest");
 type Describe = typeof import("vitest").describe;
 const notARequire = mod.other(import.meta.url);
 notARequire("vitest").describe.skip("not a createRequire function", run);
+const alsoNotARequire = other(import.meta.url);
+alsoNotARequire("vitest").describe.skip("not a createRequire function either", run);

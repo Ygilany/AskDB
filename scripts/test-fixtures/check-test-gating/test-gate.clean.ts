@@ -18,3 +18,5 @@ it.each(rows.filter((row) => row.enabled ?? true))("a pick inside a filter callb
 var sameTest = test.extend({});
 var sameTest = test.extend({});
 sameTest("declarations that agree", () => {});
+it("a test expected to fail", { fails: true }, () => {});
+it("a body read out of a fixed array", [() => {}][0]);

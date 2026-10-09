@@ -16,9 +16,9 @@
 //
 // Vitest is recognized as the globals, renamed imports (`import { it as t } from "vitest"`),
 // namespace imports (`import * as v from "vitest"`, `await import("vitest")`, `require("vitest")`
-// through `require`, `module.require` or a `createRequire(…)` function, `vi.importActual("vitest")`,
-// `vi.importMock("vitest")`, `import v = require(…)`, and a member read straight off a loader,
-// `require("vitest").describe`) and variables holding `test.extend({…})`. `integrationSuite({…})`
+// through `require`, `module.require`, `globalThis.require` or a `createRequire(…)` function,
+// `vi.importActual("vitest")`, `vi.importMock("vitest")`, `import v = require(…)`, and a member
+// read straight off a loader, `require("vitest").describe`) and variables holding `test.extend({…})`. `integrationSuite({…})`
 // and a variable holding its result are suite functions, so the sanctioned gate passes. A suite
 // body's first parameter is the test API Vitest passes it; a body other than an inline function or
 // a `const` function with no parameter fails closed. Names resolve through TypeScript's binder, so
@@ -77,7 +77,7 @@ const {
   isSuiteFactory,
   testFnName,
 } = await import(moduleUrl("bindings.mjs"));
-const { isPicked, rowsPicked, underCondition } = await import(moduleUrl("conditions.mjs"));
+const { pickedAtRunTime, readsPickedValue, rowsPicked, underCondition } = await import(moduleUrl("conditions.mjs"));
 const { workspaceDirs, entryTarget } = await import(moduleUrl("workspace.mjs"));
 
 // Function-protocol links that call the function indirectly, so the check can't read the call.
@@ -276,8 +276,9 @@ function extendResultIsTracked(chain) {
   return (ts.isVariableDeclaration(p) && p.initializer === chain && ts.isIdentifier(p.name)) || ts.isExpressionStatement(p);
 }
 
-// Options keys that skip: Vitest's options object, a separate vocabulary from the modifier links.
-const SKIP_OPTIONS = new Set(["skip", "todo"]);
+// Options keys that skip a test or invert its result (`fails`, which turns every failure from a
+// missing database into a pass): Vitest's options object, a separate vocabulary from the links.
+const SKIP_OPTIONS = new Set(["skip", "todo", "fails"]);
 
 /**
  * Whether a suite or test call skips through its options argument (`{ skip: cond }`,
@@ -314,8 +315,9 @@ function hasGateOption(call, suite) {
     // test a todo. Only a pick between plain strings or numbers (a timeout) is left alone, and a
     // value computed from a pick (`Number(env ?? 60_000)`) is always there.
     if (i > 0 && isPick(unwrapValue(arg)) && !picksOnlyLiterals(arg)) return true;
-    // `it(name, [{}, { skip: true }][url ? 0 : 1], fn)`: options or a body indexed by a pick.
-    if (i > 0 && ts.isElementAccessExpression(unwrapValue(arg)) && isPicked(arg)) return true;
+    // `it(name, [{}, { skip: true }][url ? 0 : 1], fn)`, `[url ? fn : undefined][0]`: options or a
+    // body read out of a pick.
+    if (i > 0 && readsPickedValue(unwrapValue(arg))) return true;
     visit(arg, false);
   }
   return gate;

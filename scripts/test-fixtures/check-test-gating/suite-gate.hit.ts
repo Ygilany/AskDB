@@ -57,3 +57,5 @@ describe.for(["url\n"], process.env.DATABASE_URL ? "a" : undefined)("a picked te
 let pickedLater;
 describe("a picked body assigned inside the call", pickedLater = process.env.DATABASE_URL ? () => {} : undefined); // HIT
 describe.each((0, process.env.DATABASE_URL ? [1] : []))("a table picked behind a comma %s", () => {}); // HIT
+describe("a suite whose results a condition inverts", { fails: !process.env.DATABASE_URL }, () => {}); // HIT
+describe("a suite expected to fail", { fails: true }, () => {}); // HIT

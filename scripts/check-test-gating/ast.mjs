@@ -140,7 +140,7 @@ export function isBinaryPick(node) {
 }
 
 /** Whether `test` holds for `node` or anything inside it, outside a nested function. */
-export function someInside(node, test) {
+function someInside(node, test) {
   if (ts.isFunctionLike(node)) return false;
   if (test(node)) return true;
   return ts.forEachChild(node, (child) => (someInside(child, test) ? true : undefined)) === true;
