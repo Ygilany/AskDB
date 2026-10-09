@@ -10,3 +10,7 @@ import { integrationSuite as gate } from "../../../scripts/test-utils/integratio
 gate({ env: ["X"] })("renamed sanctioned gate", () => {
   it("inside", () => {});
 });
+import * as integration from "../../../scripts/test-utils/integration.mjs";
+integration.integrationSuite({ env: ["Y"] })("through a namespace import", () => {
+  it("inside", () => {});
+});

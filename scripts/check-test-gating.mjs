@@ -197,6 +197,8 @@ function vitestBindings(sf, program) {
     } else if (decl && ts.isImportSpecifier(decl) && (decl.propertyName ?? decl.name).text === "integrationSuite" &&
       INTEGRATION_MODULE.test(importedFrom(decl) ?? "")) {
       found = { kind: "suiteFactory" };
+    } else if (decl && ts.isNamespaceImport(decl) && INTEGRATION_MODULE.test(importedFrom(decl) ?? "")) {
+      found = { kind: "integrationNs" }; // `import * as I from ".../integration.mjs"`
     } else if (decl && ts.isVariableDeclaration(decl) && decl.initializer && symbol.declarations.length === 1) {
       const init = unwrap(decl.initializer);
       // `const w = v` keeps a Vitest namespace; `const t = test.extend({…})` is a test function.
@@ -243,22 +245,23 @@ function isReadableNamespaceUse(id) {
     !el.dotDotDotToken && ts.isIdentifier(el.name) && (!el.propertyName || ts.isIdentifier(el.propertyName)));
 }
 
-/** The 1-based line `node` starts on in `sf`. */
-function lineOf(node, sf) {
+/** The 1-based line `node` starts on. */
+function lineOf(node) {
+  const sf = node.getSourceFile();
   return sf.getLineAndCharacterOfPosition(node.getStart(sf)).line + 1;
 }
 
 /** A ref with nothing to report, for `testRef` and `escapedNamespaceRef` to fill in. */
-function emptyRef(start, bindings) {
+function emptyRef(start) {
   return {
     suite: false, links: [], computed: false, chain: start, invoked: false, escapes: false,
-    conditional: false, optionGate: false, line: lineOf(start, bindings.sf),
+    conditional: false, optionGate: false, line: lineOf(start),
   };
 }
 
 /** A Vitest namespace or loader passed on (`fn(v)`, `v2 = v`, `import("vitest").then(…)`): it fails closed. */
-function escapedNamespaceRef(id, bindings) {
-  return { ...emptyRef(id, bindings), escapes: true };
+function escapedNamespaceRef(id) {
+  return { ...emptyRef(id), escapes: true };
 }
 
 /**
@@ -301,13 +304,18 @@ function isVitestNamespace(id, bindings) {
 }
 
 // Where `integrationSuite()` lives, as the test files import it.
-const INTEGRATION_MODULE = /(?:^|\/)test-utils\/integration(?:\.mjs)?$/;
+const INTEGRATION_MODULE = /(?:^|\/)scripts\/test-utils\/integration\.mjs$/;
 
 /** Whether `node` is a call of `integrationSuite(…)`, which returns `describe` or its sanctioned gate. */
 function suiteFactoryCall(node, bindings) {
-  if (!ts.isCallExpression(node)) return false;
-  const callee = unwrap(node.expression);
-  return ts.isIdentifier(callee) && bindings.resolve(callee)?.kind === "suiteFactory";
+  return ts.isCallExpression(node) && isSuiteFactory(unwrap(node.expression), bindings);
+}
+
+/** Whether `node` names `integrationSuite`: the import, or `I.integrationSuite` on a namespace import of its module. */
+function isSuiteFactory(node, bindings) {
+  if (ts.isIdentifier(node)) return bindings.resolve(node)?.kind === "suiteFactory";
+  return isMemberLink(node) && linkName(node) === "integrationSuite" && ts.isIdentifier(unwrap(node.expression)) &&
+    bindings.resolve(unwrap(node.expression))?.kind === "integrationNs";
 }
 
 /** The Vitest function `node` names (`describe`, `v.describe`, a renamed import, an `.extend` alias), or undefined. */
@@ -389,6 +397,7 @@ function testRef(start, fnName, bindings) {
   let call;
   let rows;
   let eachResultStored = false;
+  let rowsSpread = false;
   const p = chain.parent;
   if (calleeOf(p) === chain) {
     call = p;
@@ -397,6 +406,7 @@ function testRef(start, fnName, bindings) {
     const outer = outermostWrapper(call).parent;
     if ((last === "each" || last === "for") && ts.isCallExpression(outer) && outer.expression === outermostWrapper(call)) {
       rows = ts.isCallExpression(call) ? call.arguments[0] : undefined;
+      if (rows !== undefined && ts.isSpreadElement(rows)) rowsSpread = true;
       call = outer;
     } else if (last === "each" || last === "for") {
       eachResultStored = true;
@@ -407,7 +417,7 @@ function testRef(start, fnName, bindings) {
   const ownLinks = links.slice(links.lastIndexOf("extend") + 1);
   const defines = call !== undefined && !extendCallPending && ownLinks.every((l) => MODIFIERS.has(l));
   return {
-    ...emptyRef(start, bindings),
+    ...emptyRef(start),
     suite,
     links,
     computed,
@@ -416,7 +426,7 @@ function testRef(start, fnName, bindings) {
     // `const t = it.each(rows)` stores the function that defines the tests, which the check can't follow.
     escapes: (call === undefined && !extendResultIsTracked(chain)) || eachResultStored,
     conditional: defines && underCondition(call, bindings),
-    optionGate: defines && (hasGateOption(call, suite) || (rows !== undefined && isChosen(rows))),
+    optionGate: defines && (hasGateOption(call, suite) || rowsSpread || (rows !== undefined && isChosen(rows))),
   };
 }
 
@@ -488,7 +498,11 @@ function hasGateOption(call, suite) {
       }
     }
   };
-  for (const arg of call.arguments) visit(arg, false);
+  for (const arg of call.arguments) {
+    // `describe(...args)`: the options could be in there, unread; fail closed.
+    if (ts.isSpreadElement(arg)) return true;
+    visit(arg, false);
+  }
   return gate;
 }
 
@@ -522,6 +536,8 @@ function conditionalEdge(parent, child) {
   // `a?.b(arg)`, `a?.[key]`: the arguments and key run only when the chain doesn't short-circuit.
   if (ts.isCallExpression(parent) && ts.isOptionalChain(parent) && parent.arguments.includes(child)) return true;
   if (ts.isElementAccessExpression(parent) && ts.isOptionalChain(parent) && child === parent.argumentExpression) return true;
+  // A default value runs only when the value is `undefined`.
+  if ((ts.isBindingElement(parent) || ts.isParameter(parent)) && child === parent.initializer) return true;
   return ts.isCaseClause(parent) || ts.isDefaultClause(parent) || ts.isCatchClause(parent);
 }
 
@@ -554,6 +570,7 @@ function underCondition(call, bindings) {
     if (ts.isFunctionLike(node) && !ts.isClassStaticBlockDeclaration(node)) inCallback = true;
     // A callback handed to any other call (`.then`, `setTimeout`, `new Promise`, a helper) may run
     // later or never.
+    if (inCallback && ts.isTaggedTemplateExpression(node) && child === node.template) return true;
     if (inCallback && (ts.isCallExpression(node) || ts.isNewExpression(node)) && node.arguments?.includes(child)) {
       if (!isIterationCall(node)) return true;
       inCallback = false;
@@ -663,14 +680,25 @@ export function findGates(src, fileName = "file.test.ts") {
       const fnName = testFnName(node, bindings);
       if (fnName !== undefined) refs.push(testRef(node, fnName, bindings));
       else if (((ts.isIdentifier(node) && isVitestNamespace(node, bindings)) || isVitestLoaderCall(node, bindings)) && !isReadableNamespaceUse(node)) {
-        refs.push(escapedNamespaceRef(node, bindings));
+        refs.push(escapedNamespaceRef(node));
+      }
+    }
+    // `integrationSuite` (or its module's namespace) used other than by calling it: an alias the
+    // check can't follow, such as `const g = integrationSuite`.
+    if (ts.isIdentifier(node) && isValueReference(node)) {
+      const kind = bindings.resolve(node)?.kind;
+      const outer = outermostWrapper(node);
+      if (kind === "suiteFactory" && calleeOf(outer.parent) !== outer) refs.push(escapedNamespaceRef(node));
+      if (kind === "integrationNs" && !(isMemberLink(outer.parent) && outer.parent.expression === outer && isSuiteFactory(outer.parent, bindings) &&
+        calleeOf(outermostWrapper(outer.parent).parent) === outermostWrapper(outer.parent))) {
+        refs.push(escapedNamespaceRef(node));
       }
     }
     // `import d = v.<name>` other than `v.describe`/`v.it`/…: an alias the check can't follow.
     if (ts.isImportEqualsDeclaration(node) && ts.isQualifiedName(node.moduleReference) && bindings.resolve(node.name)?.kind !== "fn") {
       let root = node.moduleReference;
       while (ts.isQualifiedName(root)) root = root.left;
-      if (isVitestNamespace(root, bindings)) refs.push(escapedNamespaceRef(node.moduleReference, bindings));
+      if (isVitestNamespace(root, bindings)) refs.push(escapedNamespaceRef(node.moduleReference));
     }
     ts.forEachChild(node, visit);
   };

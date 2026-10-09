@@ -12,7 +12,6 @@ if (ready) {
 const label = ok ? "describe(" : "it(";
 const value = cond ? helpers.describe("member") : other.it("member");
 const fixtures = { first: it("in an object literal", () => {}) };
-function typed(fn: (name: string) => void = test("default", () => {})) { return fn; }
 if (ready) test.extend({});
 while (pending.length) it(`drains ${pending.pop()}`, () => {});
 describe("suite", () => {

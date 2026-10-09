@@ -82,3 +82,6 @@ if (ok) register(class { static { describe("in a class expression's static block
 if (process.env.DATABASE_URL) { class Keyed { [describe("in a computed member key", run)]() {} } } // HIT
 if (process.env.DATABASE_URL) { class Decorated { @tag(describe("in a member decorator", run)) method() {} } } // HIT
 maybe?.[it("inside an optional element access key", run)]; // HIT
+function typed(fn: (name: string) => void = test("a default parameter value", () => {})) { return fn; } // HIT
+const [first = describe("a destructuring default", run)] = process.env.DATABASE_URL ? [] : [1]; // HIT
+maybe`${() => describe("in a tagged template's substitution", run)}`; // HIT

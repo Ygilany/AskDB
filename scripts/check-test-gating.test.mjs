@@ -135,6 +135,24 @@ test("CLI honors an exclusion written with a trailing slash", (t) => {
   assert.equal(result.status, 0, result.stderr);
 });
 
+test("CLI fails closed on a pnpm-workspace.yaml with no packages list", (t) => {
+  const root = workspace(t, { "packages/a/src/a.test.ts": 'it("ok", () => {});\n' }, "catalog:\n  vitest: ^4\n");
+  const result = run(root);
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /has no `packages:` list/);
+});
+
+test("CLI defaults to the repo root beside the script, not the working directory", (t) => {
+  const root = workspace(t, { "packages/a/src/a.test.ts": 'describe.skip("gated", () => {});\n' });
+  mkdirSync(join(root, "scripts", "check-test-gating"), { recursive: true });
+  copyFileSync(script, join(root, "scripts", "check-test-gating.mjs"));
+  copyFileSync(join(here, "check-test-gating", "workspace.mjs"), join(root, "scripts", "check-test-gating", "workspace.mjs"));
+  symlinkSync(join(here, "..", "node_modules"), join(root, "node_modules"));
+  const result = spawnSync(process.execPath, [join(root, "scripts", "check-test-gating.mjs")], { encoding: "utf8", cwd: tmpdir() });
+  assert.equal(result.status, 1, result.stderr);
+  assert.match(result.stderr, /packages\/a\/src\/a\.test\.ts:1:/);
+});
+
 test("CLI reads a pnpm-workspace.yaml with CRLF line endings", (t) => {
   const root = workspace(
     t,
@@ -193,12 +211,14 @@ test("CLI reports the right line and source for CRLF, lone-CR and U+2028 line br
     "packages/a/src/cr.test.ts": 'const a = 1;\rdescribe.skip("cr", () => {});\r',
     "packages/a/src/ls.test.ts": 'const s = 1;\u2028describe.skip("ls", () => {});\n',
     "packages/a/src/crlf.test.ts": 'const a = 1;\r\ndescribe.skip("crlf", () => {});\r\n',
+    "packages/a/src/ps.test.ts": 'const p = 1;\u2029describe.skip("ps", () => {});\n',
   });
   const result = run(root);
   assert.equal(result.status, 1);
   assert.match(result.stderr, /cr\.test\.ts:2: .*\n\s+describe\.skip\("cr"/);
   assert.match(result.stderr, /ls\.test\.ts:2: .*\n\s+describe\.skip\("ls"/);
   assert.match(result.stderr, /crlf\.test\.ts:2: .*\n\s+describe\.skip\("crlf"/);
+  assert.match(result.stderr, /ps\.test\.ts:2: .*\n\s+describe\.skip\("ps"/);
 });
 
 test("CLI scans .test.tsx files and parses them as TSX", (t) => {
