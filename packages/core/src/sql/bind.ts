@@ -586,11 +586,14 @@ export function bindPreparedQuery(
  * Compare two SQL strings structurally for the parameterize consistency check.
  */
 export function sqlStructurallyEqual(a: string, b: string): boolean {
+  // The trailing `;` goes first and the whitespace before it with the final trim:
+  // a pattern starting with `\s*` backtracks quadratically on a long whitespace run.
   const norm = (s: string) =>
     s
       .trim()
-      .replace(/;\s*$/, "")
+      .replace(/;$/, "")
       .replace(/\s+/g, " ")
+      .trim()
       .toLowerCase();
   return norm(a) === norm(b);
 }

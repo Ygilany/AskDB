@@ -7,8 +7,8 @@
  * it. Each reply is graded before anything is written (`src/grade.ts`): the SQL `ask()` returns,
  * run as the host, must return the oracle's rows, and the parameterized question must come back
  * parameterized. Its ```sql fence must also hold that SQL: the replay suites read a cassette's
- * fence (`fencedSql`, which drops a trailing semicolon as `ask()` does) and compare it with what
- * `ask()` returns, and `ask()` forgives another fence tag that they don't. A reply that passes
+ * fence (`fencedSql`) and compare it with what `ask()` returns by `sameStatement`, which ignores
+ * a trailing semicolon on both sides (`fenceHoldsSql`), and `ask()` forgives another fence tag that they don't. A reply that passes
  * replaces the cassette, with `"source": "recorded"` and `recordedWith` (the model the provider
  * says answered, the install target, the date). A reply that misses is listed, in the terminal and in `.lab/record-misses.json`, and leaves the
  * cassette as it was. The maintainer reviews the cassette diff in git: staging a file accepts it,
@@ -32,7 +32,7 @@ import { API_KEY, askWithModel, settle } from "./ask.js";
 import { ensureArtifact } from "./artifacts.js";
 import { SUPPORTED_DIALECTS, type SupportedDialect } from "./dialects.js";
 import { gradeCatalogAnswer } from "./grade.js";
-import { CASSETTES_DIR, QUESTIONS_FILE, cassettePath, displayPath, fencedSql, loadQuestions, type Cassette, type Question } from "./model/catalog.js";
+import { CASSETTES_DIR, QUESTIONS_FILE, cassettePath, displayPath, fenceHoldsSql, loadQuestions, type Cassette, type Question } from "./model/catalog.js";
 import { redact, type LiveSettings } from "./model/live.js";
 import { startReplayServer } from "./model/replay-server.js";
 
@@ -156,7 +156,7 @@ export async function record(opts: RecordOptions): Promise<RecordOutcome> {
           miss("the provider's reply had no text the lab could store");
           continue;
         }
-        if (answer.ok && fencedSql(raw) !== answer.result.sql) {
+        if (answer.ok && !fenceHoldsSql(raw, answer.result.sql)) {
           miss("the reply's ```sql fence doesn't hold the SQL ask() returned (another fence tag, a second fence), so the replay suites would read other SQL");
           continue;
         }
