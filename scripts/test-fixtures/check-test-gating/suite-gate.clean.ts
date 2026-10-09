@@ -31,7 +31,6 @@ function namedRowBody(row) {
 describe("a named body with options", { timeout: 5 }, noParameterBody, 1000);
 const suiteOptions = { timeout: 5 };
 describe("options held in a variable", suiteOptions, () => {});
-describe("a global body", globalBody);
 describe.each`
   a
   ${1}
@@ -54,3 +53,8 @@ describe("a function body whose nested function reads its own arguments", functi
     expect(count()).toBe(0);
   });
 });
+describe("options in a variable before a named body", suiteOptions, noParameterBody);
+describe("a picked timeout before an inline body", process.env.SLOW ? 60_000 : 5_000, () => {});
+describe("undefined options before an inline body", undefined, () => {});
+const pickedTimeout = process.env.SLOW ? 60_000 : 5_000;
+describe("a timeout picked into a const, before a named body", pickedTimeout, noParameterBody);

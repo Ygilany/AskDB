@@ -1,3 +1,4 @@
+const run = () => {};
 describe("always runs", () => {
   it("inside a suite", () => {});
 });

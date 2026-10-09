@@ -52,3 +52,8 @@ describe("a const body reading arguments", argumentsBody); // HIT
 async function awaitedBodies() {
   describe("an awaited body", await function (t) { t.skipIf(!process.env.DATABASE_URL)("query", run); }); // HIT
 }
+describe("a global body", globalBody); // HIT
+describe("a body third after undefined", undefined, declaredBody); // HIT
+describe("a body third after a picked timeout", process.env.SLOW ? 60_000 : 5_000, declaredBody); // HIT
+describe("an arrow inside a function body reading arguments", function () { it("q", () => arguments[0].skipIf(!process.env.DATABASE_URL)("q", run)); }); // HIT
+for (const loopBody of [() => {}]) describe("a for-of const body", loopBody); // HIT

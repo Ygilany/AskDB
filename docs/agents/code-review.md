@@ -160,7 +160,7 @@ Rules a diff can break and a reviewer can check, each with its source. Read `AGE
 - A package public API change or a new integration pattern updates `apps/docs-site` in the same PR; a package README alone is not the public docs surface, and the reference pages list every new export (`AGENTS.md`, "Where product/architecture decisions live" and "Conventions").
 - Docs-site claims name only package names, APIs and file paths that exist in source (`AGENTS.md`, "Conventions"), and no doc claims AskDB executes SQL, owns credentials or trains on customer data (`apps/docs-site/STYLE.md`, "Sources of truth").
 - Every documented install of a package that loads `@askdb/core` lists `ai`, because Yarn doesn't auto-install peers (#196).
-- **Changelog or changeset rule:** every change to a publishable package has a changeset (`pnpm changeset`; the bump level is *Architecture*'s versioning rule) (`AGENTS.md`, "Conventions"; `CONTRIBUTING.md`, "Before Opening a PR"); docs-site changes carry a patch changeset for `@askdb/docs-site`, which CI doesn't check (`apps/docs-site/STYLE.md`, "Process").
+- **Changelog or changeset rule:** every change to a publishable package has a changeset (`pnpm changeset`; the bump level is *Architecture*'s versioning rule) (`AGENTS.md`, "Conventions"; `CONTRIBUTING.md`, "Before Opening a PR"); docs-site changes carry a patch changeset for `@askdb/docs-site`, which CI doesn't check (`apps/docs-site/STYLE.md`, "Process"); a change with no behaviour or public-type change takes `pnpm changeset --empty` (`AGENTS.md`, "Conventions"; ADR 0020).
 - **House style:** `apps/docs-site/STYLE.md`. Its Terminology line naming the `@askdb/ai-*` adapters as a first-party path is stale (#456); follow `AGENTS.md` there.
 
 ## What code review flags

@@ -40,10 +40,41 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 // --preserve-symlinks-main invocation still finds them, and they find the repo's `typescript`.
 const selfPath = realpathSync(fileURLToPath(import.meta.url));
 const sibling = (name) => pathToFileURL(join(dirname(selfPath), "check-test-gating", name)).href;
-const { ts, isWrapper, outermostWrapper, unwrap, unwrapValue, someInside, calleeOf, isMemberLink, linkName, lineOf, oneFileProgram, memberOn, pickBranches, isBinaryPick } =
-  await import(sibling("ast.mjs"));
-const { EXTENDERS, MODIFIERS, SUITE_FNS, vitestCallKind, suiteBodyUnreadable, kindOf, KIND_FN, KIND_SUITE_FACTORY, KIND_AMBIGUOUS, KIND_INTEGRATION_NS, isPromiseLoader, vitestBindings, isVitestLoaderCall, isVitestNamespace, integrationModuleResolver, isSuiteFactory, testFnName } =
-  await import(sibling("bindings.mjs"));
+const {
+  ts,
+  isWrapper,
+  outermostWrapper,
+  unwrap,
+  unwrapValue,
+  someInside,
+  calleeOf,
+  isMemberLink,
+  linkName,
+  lineOf,
+  oneFileProgram,
+  memberOn,
+  pickBranches,
+  isBinaryPick,
+} = await import(sibling("ast.mjs"));
+const {
+  EXTENDERS,
+  MODIFIERS,
+  SUITE_FNS,
+  vitestCallKind,
+  suiteBodyUnreadable,
+  kindOf,
+  KIND_FN,
+  KIND_SUITE_FACTORY,
+  KIND_AMBIGUOUS,
+  KIND_INTEGRATION_NS,
+  isPromiseLoader,
+  vitestBindings,
+  isVitestLoaderCall,
+  isVitestNamespace,
+  integrationModuleResolver,
+  isSuiteFactory,
+  testFnName,
+} = await import(sibling("bindings.mjs"));
 const { workspaceDirs, entryTarget } = await import(sibling("workspace.mjs"));
 
 const GATE_LINKS = new Set(["skipIf", "runIf"]);
@@ -217,7 +248,8 @@ function testRef(start, fnName, bindings) {
     chain,
     invoked: call !== undefined,
     // `const t = it.each(rows)` stores the function that defines the tests, which the check can't follow.
-    unreadable: (call === undefined && !extendResultIsTracked(chain)) || eachResultStored || (suite && defines && (suiteResultHeld(call) || suiteBodyUnreadable(call, bindings))),
+    unreadable: (call === undefined && !extendResultIsTracked(chain)) || eachResultStored ||
+      (suite && defines && (suiteResultHeld(call) || suiteBodyUnreadable(call, bindings))),
     conditional: defines && underCondition(call, bindings),
     optionGate: defines && (hasGateOption(call, suite) || rowsSpread || (rows !== undefined && isPicked(rows))),
   };
@@ -288,7 +320,8 @@ function pickDecidesSize(node) {
   if (ts.isSpreadElement(node)) return pickDecidesSize(node.expression);
   if (isPicked(node)) return true;
   if (ts.isObjectLiteralExpression(node)) {
-    return node.properties.some((p) => ts.isPropertyAssignment(p) && optionKey(p.name) === "length" && someInside(p.initializer, (n) => pickBranches(n).length > 0));
+    return node.properties.some((p) =>
+      ts.isPropertyAssignment(p) && optionKey(p.name) === "length" && someInside(p.initializer, (n) => pickBranches(n).length > 0));
   }
   return ts.isArrayLiteralExpression(node) && node.elements.some((el) =>
     pickBranches(unwrapValue(el)).some((branch) => ts.isArrayLiteralExpression(unwrap(branch))));

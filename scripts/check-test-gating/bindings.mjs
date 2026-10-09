@@ -206,41 +206,65 @@ function isSuiteBody(fn, bindings) {
 }
 
 /**
- * Whether a suite call passes a body the check can't read for the test API Vitest passes it. Only
- * the body is judged; options and a timeout are left to the gate rules. A body is read when it is
- * an inline function (see `isSuiteBody`), a pick (which the gate rules report), a `const` bound to
- * a function with no parameter, or a name declared nowhere in the file (a global). Anything else
- * fails closed: `describe("db", body)` with `function body(test) {…}` or a `let`, `suites.db`,
- * `makeBody()`, `body.bind(null)`, `(0, body)`, `body = …`, `await body`, and a `function` body that
- * reads the API through `arguments`. A `.each` or `.for` body receives a row, not the test API.
+ * Whether a suite call passes a body the check can't read for the test API Vitest passes it.
+ * Vitest runs the second argument when it is a function, and otherwise the third, so when the
+ * second isn't known to be a function both are judged: each must be a body the check reads or a
+ * value that can't be a function (options, a timeout). A body is read when it is an inline
+ * function (see `isSuiteBody`), a pick (which the gate rules report), or a `const` bound to a
+ * function with no parameter. Anything else fails closed: `describe("db", body)` with
+ * `function body(test) {…}` or a `let`, a global, `suites.db`, `makeBody()`, `body.bind(null)`,
+ * `(0, body)`, `body = …`, `await body`, and a `function` body that reads the API through
+ * `arguments`. A `.each` or `.for` body receives a row, not the test API.
  */
 export function suiteBodyUnreadable(call, bindings) {
   if (!ts.isCallExpression(call) || vitestCallKind(call, bindings) !== "suite") return false;
   if (call.arguments.some(ts.isSpreadElement)) return false; // reported as a spread argument list
-  const body = suiteBodyArgument(call);
-  return body !== undefined && !isReadableSuiteBody(unwrap(body), bindings);
-}
-
-/**
- * The argument Vitest runs as a suite's body: the second, or the third after an options object or
- * when only the third is an inline function (`describe(name, { timeout }, fn)`, `describe(name, opts, () => …)`).
- */
-function suiteBodyArgument(call) {
-  const [, second, third] = call.arguments;
-  if (third !== undefined && (ts.isObjectLiteralExpression(unwrap(second)) || isInlineFunction(unwrap(third)))) return third;
-  return second;
+  const [, second, third] = call.arguments.map((arg) => unwrap(arg));
+  if (second === undefined) return false;
+  // A function second argument is the body, and Vitest rejects a function after it.
+  if (isInlineFunction(second) || constFunction(second, bindings) !== undefined) return !isReadableSuiteBody(second, bindings);
+  return [second, third].some((arg) => arg !== undefined && !isReadableSuiteBody(arg, bindings) && !isNonFunction(arg, bindings));
 }
 
 function isReadableSuiteBody(body, bindings) {
   if (isInlineFunction(body)) return !readsArguments(body);
   if (pickBranches(body).length > 0) return true;
-  if (!ts.isIdentifier(body)) return false;
-  return bindings.declarationsOf(body).every((d) => {
-    if (!ts.isVariableDeclaration(d) || !ts.isIdentifier(d.name) || !d.initializer) return false;
-    if (!ts.isVariableDeclarationList(d.parent) || !(d.parent.flags & ts.NodeFlags.Const)) return false;
-    const fn = unwrap(d.initializer);
-    return isInlineFunction(fn) && firstParameter(fn) === undefined && !readsArguments(fn);
-  });
+  const fn = constFunction(body, bindings);
+  return fn !== undefined && firstParameter(fn) === undefined && !readsArguments(fn);
+}
+
+/** The inline function a `const` name is bound to (`const body = () => {…}`), or undefined. */
+function constFunction(node, bindings) {
+  const init = ts.isIdentifier(node) ? constInitializer(node, bindings) : undefined;
+  return init !== undefined && isInlineFunction(init) ? init : undefined;
+}
+
+/** The initializer of the one `const` that declares identifier `id`, unwrapped, or undefined. */
+function constInitializer(id, bindings) {
+  const decls = bindings.declarationsOf(id);
+  if (decls.length !== 1) return undefined;
+  const [d] = decls;
+  if (!ts.isVariableDeclaration(d) || !ts.isIdentifier(d.name) || !d.initializer) return undefined;
+  if (!ts.isVariableDeclarationList(d.parent) || !(d.parent.flags & ts.NodeFlags.Const)) return undefined;
+  return unwrap(d.initializer);
+}
+
+/**
+ * Whether `node` can't be a function: options, a timeout or another literal (`{ timeout }`, `5_000`,
+ * `-1`, `undefined`), a pick between such values, or a `const` bound to one.
+ */
+function isNonFunction(node, bindings) {
+  node = unwrap(node);
+  if (ts.isObjectLiteralExpression(node) || ts.isArrayLiteralExpression(node) || ts.isNumericLiteral(node)) return true;
+  if (ts.isStringLiteralLike(node) || ts.isTemplateExpression(node)) return true;
+  if (ts.isPrefixUnaryExpression(node) || ts.isVoidExpression(node) || ts.isTypeOfExpression(node)) return true;
+  if ([ts.SyntaxKind.TrueKeyword, ts.SyntaxKind.FalseKeyword, ts.SyntaxKind.NullKeyword].includes(node.kind)) return true;
+  const branches = pickBranches(node);
+  if (branches.length > 0) return branches.every((b) => isNonFunction(b, bindings));
+  if (!ts.isIdentifier(node)) return false;
+  if (node.text === "undefined" && bindings.declarationsOf(node).length === 0) return true;
+  const init = constInitializer(node, bindings);
+  return init !== undefined && isNonFunction(init, bindings);
 }
 
 function isInlineFunction(node) {
