@@ -114,7 +114,7 @@ Add a changeset for publishable package changes:
 pnpm changeset
 ```
 
-A change that doesn't alter what a package ships (tests, or comments outside exported declarations) but still trips the Changesets check takes an empty one instead: `pnpm changeset --empty`.
+A change that alters no behavior and no public type (tests, or comments outside exported declarations) but still trips the Changesets check takes an empty one instead: `pnpm changeset --empty`.
 
 AskDB is currently pre-1.0. Breaking public API changes should normally use a minor changeset unless the project intentionally moves a package to 1.0.
 

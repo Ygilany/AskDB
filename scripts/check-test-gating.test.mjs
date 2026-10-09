@@ -1,10 +1,10 @@
 // node --test scripts/check-test-gating.test.mjs  (runs from the root `lint` script)
 //
-// Fixture corpus: scripts/__fixtures__/check-test-gating/<rule>[.<case>].hit.ts(x) must report exactly the
+// Fixture corpus: scripts/test-fixtures/check-test-gating/<rule>[.<case>].hit.ts(x) must report exactly the
 // lines marked `// HIT`, all under <rule>; every *.clean.ts(x) must report nothing.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, mkdirSync, readdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { copyFileSync, mkdtempSync, mkdirSync, readdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { spawnSync } from "node:child_process";
@@ -12,7 +12,7 @@ import { fileURLToPath } from "node:url";
 import { RULES, findGates } from "./check-test-gating.mjs";
 
 const here = fileURLToPath(new URL(".", import.meta.url));
-const fixtures = join(here, "__fixtures__", "check-test-gating");
+const fixtures = join(here, "test-fixtures", "check-test-gating");
 const script = join(here, "check-test-gating.mjs");
 const files = readdirSync(fixtures);
 
@@ -112,6 +112,35 @@ test("CLI fails closed on a workspace pattern it cannot expand", (t) => {
   const result = run(root);
   assert.equal(result.status, 1);
   assert.match(result.stderr, /unsupported workspace pattern/);
+});
+
+test("CLI skips plain files beside packages and reads a list item with a trailing comment", (t) => {
+  const root = workspace(
+    t,
+    {
+      "packages/.DS_Store": "",
+      "packages/a/src/a.test.ts": 'describe.skip("a", () => {});\n',
+      "fixtures/db/db.test.ts": 'describe.skip("db", () => {});\n',
+    },
+    'packages:\n  - "packages/*"\n  - "fixtures/db" # shared fixture\n',
+  );
+  const result = run(root);
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /packages\/a\/src\/a\.test\.ts:1:/);
+  assert.match(result.stderr, /fixtures\/db\/db\.test\.ts:1:/);
+});
+
+test("CLI exits with a message naming ADR 0019 when typescript lacks the compiler API", (t) => {
+  const dir = mkdtempSync(join(tmpdir(), "check-test-gating-ts7-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  mkdirSync(join(dir, "node_modules", "typescript"), { recursive: true });
+  writeFileSync(join(dir, "node_modules", "typescript", "package.json"), '{"name":"typescript","version":"7.0.0","main":"index.js"}');
+  writeFileSync(join(dir, "node_modules", "typescript", "index.js"), 'module.exports = { version: "7.0.0" };');
+  copyFileSync(script, join(dir, "check-test-gating.mjs"));
+  const result = run(workspace(t, { "packages/a/src/a.test.ts": 'it("ok", () => {});\n' }), join(dir, "check-test-gating.mjs"));
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /needs the TypeScript 5\/6 compiler API; typescript 7\.0\.0/);
+  assert.match(result.stderr, /0019-test-gating-check-parses-with-typescript/);
 });
 
 test("CLI runs when invoked through a symlinked path", (t) => {

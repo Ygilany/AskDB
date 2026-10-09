@@ -13,8 +13,10 @@
 // comments, strings, templates, regexes and JSX text never trip a rule, and a file that does
 // not parse fails the check instead of passing unread.
 //
-// Vitest is recognized as the globals, renamed imports (`import { it as t } from "vitest"`) and
-// namespace imports (`import * as v from "vitest"`).
+// Vitest is recognized as the globals, renamed imports (`import { it as t } from "vitest"`),
+// namespace imports (`import * as v from "vitest"`) and variables holding `test.extend({…})`. A
+// local declaration that shadows a name (a parameter `it`, an import of `test` from another
+// module) is not Vitest's.
 //
 // Allowed: a plain skipped test called directly, e.g. `it.skip("…", fn)`, `it.skip.each(…)(…)`,
 // `it("…", { skip: true }, fn)`, and tests defined in a loop (`for (const c of cases) it(…)`), which is parametrization.
@@ -28,8 +30,8 @@
 // argument, `describe.call(…)`, a spread or computed key in the options) fails closed.
 //
 // Known limits: an early `return` before a call, a gate inside a named helper that is called
-// under a condition, options passed in a variable (`it(name, opts, fn)`), and `ctx.skip()` inside
-// a test body are not detected.
+// under a condition, options passed in a variable (`it(name, opts, fn)`), a test API imported
+// from another module, and `ctx.skip()` inside a test body are not detected.
 //
 // Usage: node scripts/check-test-gating.mjs [repo-root]
 import { readdirSync, readFileSync, existsSync, realpathSync } from "node:fs";
@@ -49,8 +51,8 @@ if (typeof ts.createSourceFile !== "function" || ts.SyntaxKind === undefined) {
 
 const TEST_FNS = new Set(["describe", "suite", "it", "test"]);
 const SUITE_FNS = new Set(["describe", "suite"]);
-// Vitest's chainable modifiers. A chain with any other link (`test.extend`, `test.step`) is not
-// treated as defining a suite or test.
+// Vitest's chainable modifiers. A call through any other link (`test.scoped`, `test.step`) is not
+// treated as defining a suite or test; `test.extend({…})` returns a test function, read on.
 const MODIFIERS = new Set([
   "skip", "only", "todo", "concurrent", "sequential", "shuffle", "fails", "each", "for", "skipIf", "runIf",
 ]);
@@ -89,14 +91,14 @@ export const RULES = [
   {
     // A describe/suite/it/test call that only runs when a condition holds.
     id: "conditional-call",
-    test: (ref) => ref.invoked && ref.links.every((l) => MODIFIERS.has(l)) && ref.conditional,
+    test: (ref) => ref.conditional,
     why: "defines a suite or test only under a condition; use integrationSuite()",
   },
   {
     // Anything else that isn't a direct call: an alias, an argument, `x && describe`,
     // `describe.call(…)`. The check can't follow the value, so it fails closed.
     id: "unclassified-use",
-    test: (ref) => !ref.invoked || ref.links.some((l) => INDIRECT_LINKS.has(l)),
+    test: (ref) => ref.escapes || ref.links.some((l) => INDIRECT_LINKS.has(l)),
     why: "uses describe/suite/it/test other than by calling it, so the check can't read the gate; call it directly or use integrationSuite()",
   },
 ];
@@ -133,6 +135,11 @@ function calleeOf(node) {
   return undefined;
 }
 
+/** Whether `node` is a `.name` or `[key]` member access. */
+function isMemberLink(node) {
+  return ts.isPropertyAccessExpression(node) || ts.isElementAccessExpression(node);
+}
+
 /** The property name of a `.name` or `["name"]` link, or undefined. */
 function linkName(node) {
   if (ts.isPropertyAccessExpression(node)) return node.name.text;
@@ -162,14 +169,100 @@ function vitestNames(sf) {
       }
     }
   }
-  return { sf, locals, namespaces };
+  const ctx = { sf, locals, namespaces, aliasDecls: new Set(), shadows: [] };
+  // `const dbTest = test.extend({…})` is a test function too. Repeat for chains of `.extend`.
+  for (let added = true; added; ) {
+    added = false;
+    const visit = (node) => {
+      if (ts.isVariableDeclaration(node) && ts.isIdentifier(node.name) && node.initializer && !locals.has(node.name.text)) {
+        const fnName = extendedFn(node.initializer, ctx);
+        if (fnName !== undefined) {
+          locals.set(node.name.text, fnName);
+          ctx.aliasDecls.add(node);
+          added = true;
+        }
+      }
+      ts.forEachChild(node, visit);
+    };
+    visit(sf);
+  }
+  ctx.shadows = shadowingDecls(ctx);
+  return ctx;
+}
+
+/**
+ * Local declarations that shadow a Vitest name (a parameter `it`, `const test = …`, an import of
+ * `test` from another module), each with the node whose range it covers. `.extend` aliases and
+ * imports from `vitest` are the Vitest names themselves, not shadows.
+ */
+function shadowingDecls(ctx) {
+  const decls = [];
+  const add = (name, scope) => {
+    if (ts.isIdentifier(name)) {
+      if (ctx.locals.has(name.text) || TEST_FNS.has(name.text)) decls.push({ name: name.text, scope });
+    } else if (name && (ts.isObjectBindingPattern(name) || ts.isArrayBindingPattern(name))) {
+      for (const el of name.elements) if (ts.isBindingElement(el)) add(el.name, scope);
+    }
+  };
+  const blockScope = (node) => {
+    let n = node.parent;
+    while (n && !ts.isBlock(n) && !ts.isSourceFile(n) && !ts.isFunctionLike(n) && !ts.isCaseBlock(n) && !ts.isForStatement(n) &&
+      !ts.isForOfStatement(n) && !ts.isForInStatement(n) && !ts.isCatchClause(n)) {
+      n = n.parent;
+    }
+    return n;
+  };
+  const functionScope = (node) => {
+    let n = node.parent;
+    while (n && !ts.isSourceFile(n) && !ts.isFunctionLike(n)) n = n.parent;
+    return n;
+  };
+  const visit = (node) => {
+    if (ts.isParameter(node)) add(node.name, node.parent);
+    else if (ts.isVariableDeclaration(node) && !ctx.aliasDecls.has(node)) {
+      const list = node.parent;
+      const isVar = ts.isVariableDeclarationList(list) && (list.flags & ts.NodeFlags.BlockScoped) === 0;
+      add(node.name, ts.isCatchClause(list) ? list : isVar ? functionScope(node) : blockScope(node));
+    } else if ((ts.isFunctionDeclaration(node) || ts.isClassDeclaration(node) || ts.isEnumDeclaration(node)) && node.name) {
+      add(node.name, blockScope(node));
+    } else if ((ts.isFunctionExpression(node) || ts.isClassExpression(node)) && node.name) {
+      add(node.name, node);
+    } else if (ts.isImportDeclaration(node) && ts.isStringLiteral(node.moduleSpecifier) && node.moduleSpecifier.text !== "vitest") {
+      const clause = node.importClause;
+      if (clause?.name) add(clause.name, ctx.sf);
+      const b = clause?.namedBindings;
+      if (b && ts.isNamespaceImport(b)) add(b.name, ctx.sf);
+      if (b && ts.isNamedImports(b)) for (const el of b.elements) add(el.name, ctx.sf);
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(ctx.sf);
+  return decls;
+}
+
+/** Whether identifier `id` names a local declaration rather than Vitest's function. */
+function isShadowed(id, ctx) {
+  return ctx.shadows.some((d) => d.name === id.text && d.scope.pos <= id.pos && id.end <= d.scope.end);
+}
+
+/** The Vitest function an `x.extend(…)` call extends, or undefined for any other node. */
+function extendedFn(node, ctx) {
+  const callee = calleeOf(unwrap(node));
+  if (callee === undefined) return undefined;
+  const member = unwrap(callee);
+  if (!isMemberLink(member) || linkName(member) !== "extend") return undefined;
+  let base = unwrap(member.expression);
+  while (testFnName(base, ctx) === undefined && isMemberLink(base) && linkName(base) !== undefined) {
+    base = unwrap(base.expression);
+  }
+  return testFnName(base, ctx) ?? extendedFn(base, ctx);
 }
 
 /** The Vitest function `node` names (`describe`, `v.describe`, a renamed import), or undefined. */
 function testFnName(node, ctx) {
-  if (ts.isIdentifier(node)) return ctx.locals.get(node.text);
+  if (ts.isIdentifier(node)) return isShadowed(node, ctx) ? undefined : ctx.locals.get(node.text);
   if (
-    (ts.isPropertyAccessExpression(node) || ts.isElementAccessExpression(node)) &&
+    isMemberLink(node) &&
     ts.isIdentifier(node.expression) &&
     ctx.namespaces.has(node.expression.text) &&
     TEST_FNS.has(linkName(node))
@@ -179,22 +272,19 @@ function testFnName(node, ctx) {
   return undefined;
 }
 
-/** Whether identifier `id` is a value reference: not `obj.x`, `{ x: … }`, a declaration, an import or a type. */
+/**
+ * Whether identifier `id` is a value reference, not a name: a member (`obj.test`), a declared
+ * name (variable, parameter, function, property, method, enum member, type parameter, JSX
+ * attribute), an import or export name, a label, a JSX tag, or a type.
+ */
 function isValueReference(id) {
   const parent = id.parent;
-  if (ts.isPropertyAccessExpression(parent) && parent.name === id) return false;
-  if (
-    (ts.isPropertyAssignment(parent) || ts.isMethodDeclaration(parent) || ts.isPropertyDeclaration(parent)) &&
-    parent.name === id
-  ) {
+  if (parent.name === id) return ts.isShorthandPropertyAssignment(parent);
+  if (parent.propertyName === id || parent.label === id) return false;
+  if ((ts.isJsxOpeningElement(parent) || ts.isJsxSelfClosingElement(parent) || ts.isJsxClosingElement(parent)) && parent.tagName === id) {
     return false;
   }
-  if (ts.isVariableDeclaration(parent) || ts.isParameter(parent) || ts.isFunctionDeclaration(parent)) {
-    if (parent.name === id) return false;
-  }
-  if (ts.isImportSpecifier(parent) || ts.isImportClause(parent) || ts.isNamespaceImport(parent)) return false;
-  if (ts.isTypeReferenceNode(parent) || ts.isQualifiedName(parent) || ts.isTypeQueryNode(parent)) return false;
-  return !ts.isExportSpecifier(parent) && !ts.isBindingElement(parent);
+  return !(ts.isTypeReferenceNode(parent) || ts.isQualifiedName(parent) || ts.isTypeQueryNode(parent));
 }
 
 /**
@@ -203,14 +293,19 @@ function isValueReference(id) {
  * tagged template that invokes it, and what the rules need to know about that call.
  * `it.skip.each(rows)(name, fn)` counts as invoked, through the call `each(rows)` returns.
  */
-function testRef(start, base, ctx) {
+function testRef(start, fnName, ctx) {
   const links = [];
   let computed = false;
   let top = start;
   for (;;) {
     const inner = outermostWrapper(top);
     const up = inner.parent;
-    if (!(ts.isPropertyAccessExpression(up) || ts.isElementAccessExpression(up)) || up.expression !== inner) break;
+    // `test.extend({…})` returns a test function: keep reading the chain through the call.
+    if (links[links.length - 1] === "extend" && calleeOf(up) === inner) {
+      top = up;
+      continue;
+    }
+    if (!isMemberLink(up) || up.expression !== inner) break;
     const name = linkName(up);
     if (name === undefined) {
       // `describe[expr]`: a modifier chosen at run time can't be classified, so it fails closed.
@@ -233,7 +328,10 @@ function testRef(start, base, ctx) {
       call = outer;
     }
   }
-  const suite = SUITE_FNS.has(base);
+  const suite = SUITE_FNS.has(fnName);
+  // Links after the last `.extend`; a call through Vitest modifiers only defines a suite or test.
+  const ownLinks = links.slice(links.lastIndexOf("extend") + 1);
+  const defines = call !== undefined && links[links.length - 1] !== "extend" && ownLinks.every((l) => MODIFIERS.has(l));
   return {
     suite,
     links,
@@ -241,10 +339,22 @@ function testRef(start, base, ctx) {
     top,
     call,
     invoked: call !== undefined,
-    conditional: call !== undefined && underCondition(call, ctx),
-    optionGate: call !== undefined && hasGateOption(call, suite),
+    escapes: call === undefined && !keptExtendResult(top, links),
+    defines,
+    conditional: defines && underCondition(call, ctx),
+    optionGate: defines && hasGateOption(call, suite),
     line: ctx.sf.getLineAndCharacterOfPosition(start.getStart(ctx.sf)).line + 1,
   };
+}
+
+/**
+ * Whether `top` is a `test.extend({…})` result the check can still follow: assigned to a variable
+ * (tracked as a test function, see `vitestNames`) or discarded.
+ */
+function keptExtendResult(top, links) {
+  if (links[links.length - 1] !== "extend" || calleeOf(top) === undefined) return false;
+  const p = top.parent;
+  return (ts.isVariableDeclaration(p) && p.initializer === top && ts.isIdentifier(p.name)) || ts.isExpressionStatement(p);
 }
 
 const SKIP_OPTIONS = new Set(["skip", "todo"]);
@@ -329,20 +439,22 @@ function underCondition(call, ctx) {
   for (let node = call.parent; node && !ts.isSourceFile(node); child = node, node = node.parent) {
     if (conditionalEdge(node, child)) return true;
     if (ts.isFunctionDeclaration(node) || ts.isMethodDeclaration(node) || ts.isClassDeclaration(node)) return false;
-    if (calleeOf(node) !== undefined && node !== call && isTestCall(node, ctx)) {
+    if (calleeOf(node) !== undefined && node !== call && callsVitestFn(node, ctx)) {
       return false;
     }
   }
   return false;
 }
 
-function isTestCall(node, ctx) {
+/** Whether a call or tagged template calls a Vitest describe/suite/it/test, through any links. */
+function callsVitestFn(node, ctx) {
   let callee = calleeOf(node);
   if (ts.isCallExpression(callee)) callee = callee.expression; // `.each(rows)(…)`
   for (;;) {
     callee = unwrap(callee);
     if (testFnName(callee, ctx) !== undefined) return true;
-    if (ts.isPropertyAccessExpression(callee) || ts.isElementAccessExpression(callee)) callee = callee.expression;
+    if (isMemberLink(callee)) callee = callee.expression;
+    else if (extendedFn(callee, ctx) !== undefined) return true; // `test.extend({…})(…)`
     else return false;
   }
 }
@@ -415,8 +527,8 @@ export function findGates(src, fileName = "file.test.ts") {
   const ctx = vitestNames(sf);
   const refs = [];
   const visit = (node) => {
-    if (ts.isIdentifier(node) && isValueReference(node) && ctx.locals.has(node.text)) {
-      refs.push(testRef(node, ctx.locals.get(node.text), ctx));
+    if (ts.isIdentifier(node) && isValueReference(node) && testFnName(node, ctx) !== undefined) {
+      refs.push(testRef(node, testFnName(node, ctx), ctx));
     } else if (!ts.isIdentifier(node) && testFnName(node, ctx) !== undefined) {
       refs.push(testRef(node, testFnName(node, ctx), ctx));
     }

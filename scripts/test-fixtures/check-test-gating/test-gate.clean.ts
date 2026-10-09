@@ -7,3 +7,6 @@ it("a plain skipped test through options", { skip: true }, () => {});
 it("a todo through options", { todo: true }, () => {});
 it("other options", { timeout: 5_000, retry: 2 }, () => {});
 it.each([{ skip: maybe }])("table rows are data, not options %o", () => {});
+const dbTest = test.extend({ ...baseFixtures, todo: async ({}, use) => use([]) });
+it("skip: false", { skip: false }, () => {});
+test.scoped({ skip: maybe });

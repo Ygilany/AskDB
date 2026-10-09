@@ -28,3 +28,6 @@ describe[process.env.DATABASE_URL ? "concurrent" : "skip"]("computed modifier", 
 describe("computed literal key", { ["skip"]: true }, () => {}); // HIT
 describe("computed key", { [key]: false }, () => {}); // HIT
 describe("spread options", { ...opts }, () => {}); // HIT
+describe.each([1, 2])("describe.each with options %s", { skip: !ok }, () => {}); // HIT
+// see check-test-gating-ignore-next-line: for details
+describe.skip("a marker mid-comment exempts nothing", () => {}); // HIT
