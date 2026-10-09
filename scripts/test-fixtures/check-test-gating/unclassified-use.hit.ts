@@ -69,7 +69,6 @@ it("options merged by a call, which the check can't read", Object.assign({}, { t
 const SKIP = "skip";
 it("options built with a key held in a const", Object.fromEntries([[SKIP, !process.env.DATABASE_URL]]), () => {}); // HIT
 it("options from a helper over the environment", optionsFor(process.env.DATABASE_URL), () => {}); // HIT
-it("a computed timeout from a helper", () => {}, timeoutFor(process.env.CI)); // HIT
 it("options indexed by a literal pick inside a call", Object.assign({}, [{}, { skip: true }][process.env.DATABASE_URL ? 0 : 1]), () => {}); // HIT
 const runDb = async () => {};
 it("options built by a call beside a named body", Object.fromEntries([["skip", !process.env.DATABASE_URL]]), runDb); // HIT
@@ -77,3 +76,4 @@ it("options parsed from a template beside a named body", JSON.parse(`{"skip": ${
 it("options from a helper beside a bound body", optionsFor(process.env.DATABASE_URL), runDb.bind(null)); // HIT
 it("two arguments, neither clearly the body", withDb(runDb), optionsFor(process.env.DATABASE_URL)); // HIT
 describe("suite options merged by a call", Object.assign({}, { timeout: 1_000 }), () => {}); // HIT
+it("options built by a call on a call", getOpts()(process.env.DATABASE_URL), () => {}); // HIT

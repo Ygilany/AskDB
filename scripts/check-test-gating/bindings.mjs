@@ -1,7 +1,7 @@
 // Resolves names in a test file to Vitest's describe/suite/it/test and to integrationSuite(), for
 // scripts/check-test-gating.mjs.
 import { dirname, resolve } from "node:path";
-import { calleeOf, calleeParts, everyPickLeaf, firstParameter, isMemberLink, isPick, linkName, outermostWrapper, ts, unwrap, resultOf } from "./ast.mjs";
+import { calleeOf, calleeParts, everyPickLeaf, firstParameter, isMemberLink, isPick, linkName, outermostWrapper, receiverOf, resultOf, ts, unwrap } from "./ast.mjs";
 
 const TEST_FNS = new Set(["describe", "suite", "it", "test"]);
 // What `bindings.resolve()` finds a name to be, each spelt in one place.
@@ -273,6 +273,41 @@ function constInitializer(id, bindings) {
   return unwrap(d.initializer);
 }
 
+// Calls that turn a value into a number: a timeout computed from a pick, not options or a body.
+const NUMERIC_CONVERSIONS = new Set(["Number", "parseInt", "parseFloat"]);
+
+/** Whether `call` is `Number(…)`, `parseInt(…)`, `parseFloat(…)`, `Number.parseInt(…)` or a `Math` method. */
+export function isNumericConversion(call) {
+  const parts = calleeParts(call);
+  if (parts === undefined) return false;
+  if (parts.owner === undefined) return receiverOf(call) === undefined && NUMERIC_CONVERSIONS.has(parts.name);
+  return parts.owner === "Math" || (parts.owner === "Number" && NUMERIC_CONVERSIONS.has(parts.name));
+}
+
+// Operators whose result is a number when both sides are.
+const ARITHMETIC = new Set([
+  ts.SyntaxKind.PlusToken, ts.SyntaxKind.MinusToken, ts.SyntaxKind.AsteriskToken,
+  ts.SyntaxKind.SlashToken, ts.SyntaxKind.PercentToken, ts.SyntaxKind.AsteriskAsteriskToken,
+]);
+
+/**
+ * Whether `node` is a timeout: a number literal, arithmetic over numbers, a numeric conversion, a
+ * `const` bound to one, or a pick between such values or plain strings (`5_000`, `60 * 1000`,
+ * `const T = 5_000`, `Number(env ?? 60_000)`, `url ? 10_000 : 5_000`).
+ */
+export function isTimeoutValue(node, bindings) {
+  return everyPickLeaf(node, (leaf) => {
+    if (ts.isNumericLiteral(leaf) || ts.isStringLiteralLike(leaf)) return true;
+    if (ts.isPrefixUnaryExpression(leaf)) return isTimeoutValue(leaf.operand, bindings);
+    if (ts.isBinaryExpression(leaf) && ARITHMETIC.has(leaf.operatorToken.kind)) {
+      return isTimeoutValue(leaf.left, bindings) && isTimeoutValue(leaf.right, bindings);
+    }
+    if (ts.isCallExpression(leaf)) return isNumericConversion(leaf);
+    const init = ts.isIdentifier(leaf) ? constInitializer(leaf, bindings) : undefined;
+    return init !== undefined && isTimeoutValue(init, bindings);
+  });
+}
+
 /**
  * Whether `node` can't be a function, in the forms a suite passes before its body: options or a
  * timeout (`{ timeout }`, `5_000`, `-1`), `undefined` or `null`, a pick between such values, or a
@@ -280,8 +315,8 @@ function constInitializer(id, bindings) {
  */
 function isNonFunction(node, bindings) {
   return everyPickLeaf(node, (leaf) => {
-    if (ts.isObjectLiteralExpression(leaf) || ts.isNumericLiteral(leaf) || leaf.kind === ts.SyntaxKind.NullKeyword) return true;
-    if (ts.isPrefixUnaryExpression(leaf) && ts.isNumericLiteral(leaf.operand)) return true;
+    if (ts.isObjectLiteralExpression(leaf) || leaf.kind === ts.SyntaxKind.NullKeyword) return true;
+    if (!ts.isStringLiteralLike(leaf) && isTimeoutValue(leaf, bindings)) return true;
     if (!ts.isIdentifier(leaf)) return false;
     if (leaf.text === "undefined" && bindings.declarationsOf(leaf).length === 0) return true;
     const init = constInitializer(leaf, bindings);

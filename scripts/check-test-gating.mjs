@@ -15,11 +15,10 @@
 // not parse fails the check instead of passing unread.
 //
 // Vitest is recognized as the globals, renamed imports (`import { it as t } from "vitest"`),
-// namespace imports (`import * as v from "vitest"`, `await import("vitest")`, `require("vitest")`
-// through `require`, `module.require`, `globalThis.require` or a `createRequire(…)` function,
-// `vi.importActual("vitest")`, `vi.importMock("vitest")`, `import v = require(…)`, in-source
-// `import.meta.vitest`, and a member read straight off a loader, `require("vitest").describe`) and
-// variables holding `test.extend({…})`. `integrationSuite({…})` and a variable holding its result
+// namespace imports (`import * as v from "vitest"`, the loaders `MEMBER_LOADERS` and
+// `isVitestLoaderCall` in check-test-gating/bindings.mjs list, in-source `import.meta.vitest`, and a
+// member read straight off a loader, `require("vitest").describe`) and variables holding
+// `test.extend({…})`. `integrationSuite({…})` and a variable holding its result
 // are suite functions, so the sanctioned gate passes.
 // A suite body's first parameter is the test API Vitest passes it; a body other than an inline
 // function or a `const` function with no parameter fails closed. Names resolve through
@@ -60,7 +59,6 @@ const {
   isPlainAssignment,
   isVariableInitializer,
   someInside,
-  calleeParts,
   receiverOf,
   optionKey,
   RUNTIME_KEY,
@@ -68,6 +66,8 @@ const {
 const {
   EXTENDERS,
   MODIFIERS,
+  isNumericConversion,
+  isTimeoutValue,
   ROW_LINKS,
   GATE_LINKS,
   SUITE_GATE_LINKS,
@@ -256,9 +256,9 @@ function testRef(start, fnName, bindings) {
     invoked: call !== undefined,
     // `const t = it.each(rows)` stores the function that defines the tests, which the check can't follow.
     unreadable: (call === undefined && !extendResultIsTracked(chain)) || eachResultStored ||
-      (suite && defines && (suiteResultHeld(call) || suiteBodyUnreadable(call, bindings))) || (defines && optionsUnreadable(call)),
+      (suite && defines && (suiteResultHeld(call) || suiteBodyUnreadable(call, bindings))) || (defines && optionsUnreadable(call, bindings)),
     conditional: defines && underCondition(call, bindings),
-    runtimeGate: defines && (argumentsGate(call, suite) || rowsPicked(rowArgs)),
+    runtimeGate: defines && (argumentsGate(call, suite, bindings) || rowsPicked(rowArgs)),
   };
 }
 
@@ -296,7 +296,7 @@ const SKIP_OPTIONS = new Set(["skip", "todo", "fails"]);
  * a plain skipped or expected-to-fail test, like `it.skip`; on a suite, a literal `true` for
  * `skip`, `todo` or `fails` is a gate, like `describe.skip`.
  */
-function argumentsGate(call, suite) {
+function argumentsGate(call, suite, bindings) {
   if (!ts.isCallExpression(call)) return false;
   let gate = false;
   const visit = (node, chosen) => {
@@ -331,7 +331,7 @@ function argumentsGate(call, suite) {
       visitNested(child, childChosen, options);
     });
   };
-  const body = bodyIndex(call);
+  const body = bodyIndex(call, bindings);
   for (const [i, arg] of call.arguments.entries()) {
     // `describe(...args)`: the options could be in there, unread; fail closed.
     if (ts.isSpreadElement(arg)) return true;
@@ -358,17 +358,9 @@ function argumentsGate(call, suite) {
  * third is a timeout. Undefined when two arguments follow the name (`it(name, a, b)`): either may
  * be options, so both are read as options, and an inline function among them is never built.
  */
-function bodyIndex(call) {
+function bodyIndex(call, bindings) {
   const [, , third] = call.arguments;
-  return third === undefined || isTimeout(third) ? 1 : undefined;
-}
-
-/** Whether `node` is a timeout: a number, a numeric conversion, or a pick between literals. */
-function isTimeout(node) {
-  node = resultOf(node);
-  if (ts.isNumericLiteral(node) || (ts.isPrefixUnaryExpression(node) && ts.isNumericLiteral(node.operand))) return true;
-  if (ts.isCallExpression(node) && isNumericConversion(node)) return true;
-  return isPick(node) && picksOnlyLiterals(node);
+  return third === undefined || isTimeoutValue(third, bindings) ? 1 : 2;
 }
 
 /**
@@ -376,9 +368,9 @@ function isTimeout(node) {
  * tagged template (other than a numeric conversion) in an argument after the name that isn't the
  * body (`it(name, Object.fromEntries([[key, !url]]), fn)`, `it(name, fn, timeoutFor(env))`).
  */
-function optionsUnreadable(call) {
+function optionsUnreadable(call, bindings) {
   if (!ts.isCallExpression(call)) return false;
-  const body = bodyIndex(call);
+  const body = bodyIndex(call, bindings);
   return [1, 2].some((i) => i !== body && call.arguments[i] !== undefined && isBuilt(resultOf(call.arguments[i])));
 }
 
@@ -398,31 +390,21 @@ function builtAtRunTime(node) {
   const isCall = !ts.isTaggedTemplateExpression(node);
   const parts = isCall ? [...(node.arguments ?? []), receiverOf(node)] : [node.tag, node.template];
   return parts.some((part) => part !== undefined && someInside(part, (n) =>
-    isPick(n) && (!picksOnlyLiterals(n) || !isOptionValue(n))));
+    isPick(n) && (!picksOnlyLiterals(n) || !isOptionValue(n, node))));
 }
 
 /**
- * Whether pick `node` is a property's value in an object literal passed straight to a call
- * (`withOptions({ timeout: url ? 1 : 2 }, fn)`), not one read back by key (`{ i: url ? 0 : 1 }.i`).
+ * Whether pick `node` is a property's value in an object literal passed straight to `call`, the
+ * call that builds the body (`withOptions({ timeout: url ? 1 : 2 }, fn)`). Not one read back by key
+ * (`{ i: url ? 0 : 1 }.i`) or passed to another call inside it (`Object.values({ i: … })[0]`).
  */
-function isOptionValue(node) {
+function isOptionValue(node, call) {
   const outer = outermostWrapper(node);
   const property = outer.parent;
   if (!ts.isPropertyAssignment(property) || property.initializer !== outer) return false;
   const object = outermostWrapper(property.parent);
   const holder = object.parent;
-  return (ts.isCallExpression(holder) || ts.isNewExpression(holder)) && (holder.arguments ?? []).includes(object);
-}
-
-// Calls that turn a value into a number: a timeout computed from a pick, not options or a body.
-const NUMERIC_CONVERSIONS = new Set(["Number", "parseInt", "parseFloat"]);
-
-/** Whether `call` is `Number(…)`, `parseInt(…)`, `parseFloat(…)`, `Number.parseInt(…)` or a `Math` method. */
-function isNumericConversion(call) {
-  const parts = calleeParts(call);
-  if (parts === undefined) return false;
-  if (parts.owner === undefined) return receiverOf(call) === undefined && NUMERIC_CONVERSIONS.has(parts.name);
-  return parts.owner === "Math" || (parts.owner === "Number" && NUMERIC_CONVERSIONS.has(parts.name));
+  return holder === call && (call.arguments ?? []).includes(object);
 }
 
 /** Whether every value a run-time choice can produce is a string or number literal. */

@@ -68,3 +68,6 @@ it("options read back out of a meta key", { meta: { todo: !process.env.DATABASE_
 it("a body chosen by a literal pick inside a call", Reflect.get([() => {}, undefined], process.env.DATABASE_URL ? 0 : 1)); // HIT
 it("a body read by a key picked through an object", Reflect.get([async () => {}, undefined], { i: process.env.DATABASE_URL ? 0 : 1 }.i)); // HIT
 it("a body read by a key picked through an element read", Reflect.get([async () => {}, undefined], { i: process.env.DATABASE_URL ? 0 : 1 }["i"])); // HIT
+it("a body read through Object.values over a picked key", Reflect.get([async () => {}, undefined], Object.values({ i: process.env.DATABASE_URL ? 0 : 1 })[0])); // HIT
+it("a body read through a merged object's picked key", Reflect.get([async () => {}, undefined], Object.assign({}, { i: process.env.DATABASE_URL ? 0 : 1 }).i)); // HIT
+it("options first, then a body chosen by a pick", { timeout: 1 }, Reflect.get([async () => {}, undefined], process.env.DATABASE_URL ? 0 : 1)); // HIT

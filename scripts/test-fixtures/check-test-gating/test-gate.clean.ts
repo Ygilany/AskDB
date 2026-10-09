@@ -36,3 +36,9 @@ it("a body built by a helper with a numeric timeout", withDb(runDbClean), 5_000)
 it("a body built by a helper alone", withDb(runDbClean));
 it("a body built by a helper with a picked timeout", withDb(runDbClean), process.env.CI ? 10_000 : 5_000);
 it("a body built by a helper with a converted timeout", withDb(runDbClean), Number(process.env.SLOW_TIMEOUT ?? 5_000));
+it("a timeout computed by a helper (Vitest takes only a number there)", () => {}, timeoutFor(process.env.CI));
+it("options first, then a body built by a helper", { timeout: 30_000 }, withDb(runDbClean));
+const SUITE_TIMEOUT = 5_000;
+it("a body built by a helper with a const timeout", withDb(runDbClean), SUITE_TIMEOUT);
+it("a body built by a helper with an arithmetic timeout", withDb(runDbClean), 60 * 1000);
+it("a timeout parsed as a float", () => {}, parseFloat(process.env.SLOW_TIMEOUT ?? "5000"));

@@ -26,7 +26,7 @@ Rejected for now. The repo runs ESLint only in Studio; a root ESLint setup with 
 
 ### D. Fail CI's `test` job on any skipped test (not adopted here)
 
-The root and fixture Vitest configs already load `ciReporters()`, whose summary reporter counts skipped tests, and CI's `test` job runs with `ASKDB_REQUIRE_INTEGRATION=1`, under which `integrationSuite()` registers a test that fails instead of skipping the suite. A reporter that fails that job on any skipped test would catch what no syntax check can: `ctx.skip()`, options passed in a variable, a gate inside a helper. It is not adopted in this PR: it turns every `it.skip` and `it.todo` into a CI failure, a policy change for the maintainer, and it fires only in the run where the environment is broken, not when the gate is written. It would complement C, not replace it.
+The root and fixture Vitest configs already load `ciReporters()`, whose summary reporter counts skipped tests, and CI's `test` job runs with `ASKDB_REQUIRE_INTEGRATION=1`, under which `integrationSuite()` registers a test that fails instead of skipping the suite. A reporter that fails that job on any skipped test would catch what no syntax check can: `ctx.skip()`, options or a body passed in a variable, a gate inside a helper. It is not adopted in this PR: it turns every `it.skip` and `it.todo` into a CI failure, a policy change for the maintainer, and it fires only in the run where the environment is broken, not when the gate is written. It would complement C, not replace it.
 
 ## Decision
 
