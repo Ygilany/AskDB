@@ -29,7 +29,6 @@ it("a fails key under meta", { meta: { fails: process.env.CI === "true" } }, () 
 it("a timeout parsed from the environment", () => {}, parseInt(process.env.SLOW_TIMEOUT ?? "5000", 10));
 it("a timeout bounded by Math.max", () => {}, Math.max(Number(process.env.SLOW_TIMEOUT ?? 0), 5_000));
 it("a body built by a helper naming no skip", withLogging("cache warm-up", async () => {}));
-it("a body built by a helper with a picked option value", withOptions({ timeout: process.env.CI ? 10_000 : 5_000 }, async () => {}));
 it("a body built by a helper whose string mentions todo: nothing", withLogging("todo: tracked in #12", async () => {}));
 const runDbClean = async () => {};
 it("a body built by a helper with a numeric timeout", withDb(runDbClean), 5_000);
@@ -42,3 +41,4 @@ const SUITE_TIMEOUT = 5_000;
 it("a body built by a helper with a const timeout", withDb(runDbClean), SUITE_TIMEOUT);
 it("a body built by a helper with an arithmetic timeout", withDb(runDbClean), 60 * 1000);
 it("a timeout parsed as a float", () => {}, parseFloat(process.env.SLOW_TIMEOUT ?? "5000"));
+it("a picked arithmetic timeout", () => {}, process.env.CI ? 60 * 1000 : 5_000);

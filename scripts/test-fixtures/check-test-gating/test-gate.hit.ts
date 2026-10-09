@@ -71,3 +71,6 @@ it("a body read by a key picked through an element read", Reflect.get([async () 
 it("a body read through Object.values over a picked key", Reflect.get([async () => {}, undefined], Object.values({ i: process.env.DATABASE_URL ? 0 : 1 })[0])); // HIT
 it("a body read through a merged object's picked key", Reflect.get([async () => {}, undefined], Object.assign({}, { i: process.env.DATABASE_URL ? 0 : 1 }).i)); // HIT
 it("options first, then a body chosen by a pick", { timeout: 1 }, Reflect.get([async () => {}, undefined], process.env.DATABASE_URL ? 0 : 1)); // HIT
+it("a body built by a helper over a picked option, which the helper may read any way", withOptions({ timeout: process.env.CI ? 10_000 : 5_000 }, async () => {})); // HIT
+it("a body built by Math.constructor over a pick", Math.constructor(process.env.DATABASE_URL ? async () => {} : undefined)); // HIT
+it("a body built by Reflect.apply over a picked argument list", Reflect.apply(Array.prototype.at, [async () => {}, undefined], { 0: process.env.DATABASE_URL ? 0 : 1, length: 1 })); // HIT

@@ -275,13 +275,15 @@ function constInitializer(id, bindings) {
 
 // Calls that turn a value into a number: a timeout computed from a pick, not options or a body.
 const NUMERIC_CONVERSIONS = new Set(["Number", "parseInt", "parseFloat"]);
+// `Math` methods that return a number (not `Math.constructor`, which is `Object`).
+const MATH_NUMBERS = new Set(["abs", "ceil", "floor", "max", "min", "pow", "round", "trunc"]);
 
 /** Whether `call` is `Number(…)`, `parseInt(…)`, `parseFloat(…)`, `Number.parseInt(…)` or a `Math` method. */
 export function isNumericConversion(call) {
   const parts = calleeParts(call);
   if (parts === undefined) return false;
   if (parts.owner === undefined) return receiverOf(call) === undefined && NUMERIC_CONVERSIONS.has(parts.name);
-  return parts.owner === "Math" || (parts.owner === "Number" && NUMERIC_CONVERSIONS.has(parts.name));
+  return (parts.owner === "Math" && MATH_NUMBERS.has(parts.name)) || (parts.owner === "Number" && NUMERIC_CONVERSIONS.has(parts.name));
 }
 
 // Operators whose result is a number when both sides are.
