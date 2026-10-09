@@ -100,3 +100,7 @@ for ([forInDefault = describe("a for-in pattern default", run)] in obj) {} // HI
 [...[nestedDefault = describe("a default inside a spread pattern", run)]] = rows; // HIT
 Object.entries(process.env.DATABASE_URL ? { postgres: 1 } : {}).forEach(([engine]) => describe(engine, run)); // HIT
 for (const [engine] of Object.entries(process.env.DATABASE_URL ? { postgres: 1 } : {})) describe(engine, run); // HIT
+for (const [engine] of Object.entries({ sqlite: 1, ...(process.env.DATABASE_URL ? { postgres: 2 } : {}) })) describe(engine, run); // HIT
+(process.env.DATABASE_URL ? [1] : []).map((n) => n).forEach((n) => describe(`receiver pick ${n}`, run)); // HIT
+for (const u of new Set(process.env.DATABASE_URL ? [1] : [])) describe(`new Set over a pick ${u}`, run); // HIT
+for (const u of await Promise.resolve(process.env.DATABASE_URL ? [1] : [])) describe(`awaited pick ${u}`, run); // HIT

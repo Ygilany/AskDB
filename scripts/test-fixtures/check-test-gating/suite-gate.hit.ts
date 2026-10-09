@@ -41,3 +41,7 @@ describe("a body picked by a ternary", process.env.DATABASE_URL ? () => {} : und
 describe("todo: true on a suite", { todo: true }, () => {}); // HIT
 describe.todo("describe.todo never runs its tests", () => {}); // HIT
 describe.each(Object.entries(process.env.DATABASE_URL ? { postgres: 1 } : {}))("a table built from a pick %s", () => {}); // HIT
+describe.each((process.env.DATABASE_URL ? [1] : []).map((u) => [u]))("rows from a picked receiver %s", () => {}); // HIT
+describe.each([...new Map(process.env.DATABASE_URL ? [[1, 2]] : [])])("rows from new Map %s", () => {}); // HIT
+/** @example // check-test-gating-ignore-next-line: a marker after a JSDoc tag is not a line comment
+ */ describe.skip("a marker in JSDoc exempts nothing", () => {}); // HIT

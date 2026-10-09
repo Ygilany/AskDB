@@ -74,3 +74,5 @@ for (const engine of [...ENGINES, "extra"]) it(`a plain spread in a loop ${engin
 describe.each([...ROWS, 1])("a plain spread in a table %s", () => {});
 suites.push(...ROWS.map((row) => describe(`map result spread into push ${row}`, run)));
 await Promise.all(ROWS.map((row) => it(`map result passed on ${row}`, () => {})));
+for (const [engine] of Object.entries({ ...BASE_ENGINES })) describe(`a plain object spread ${engine}`, () => {});
+if (ready) test.beforeEach(() => {});

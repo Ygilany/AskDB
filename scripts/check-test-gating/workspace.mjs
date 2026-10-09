@@ -39,7 +39,7 @@ export function workspaceDirs(root) {
       if (!existsSync(join(root, parent))) continue;
       for (const e of readdirSync(join(root, parent), { withFileTypes: true })) {
         // A package may be a symbolic link to a directory, which pnpm lists too.
-        if (e.isDirectory() || (e.isSymbolicLink() && isDirectory(join(root, parent, e.name)))) dirs.push(`${parent}/${e.name}`);
+        if (e.isDirectory() || (e.isSymbolicLink() && linkTarget(join(root, parent, e.name)) === "dir")) dirs.push(`${parent}/${e.name}`);
       }
     } else if (GLOB.test(pattern)) {
       throw new Error(`unsupported workspace pattern "${pattern}"; extend workspaceDirs()`);
@@ -50,11 +50,12 @@ export function workspaceDirs(root) {
   return dirs.filter((d) => !exclude.has(d));
 }
 
-/** Whether `path` is a directory, following a symbolic link; false if the link dangles. */
-function isDirectory(path) {
+/** What a symbolic link points at: "dir", "file", or undefined for a dangling or looping link. */
+export function linkTarget(path) {
   try {
-    return statSync(path).isDirectory();
+    const stat = statSync(path);
+    return stat.isDirectory() ? "dir" : stat.isFile() ? "file" : undefined;
   } catch {
-    return false;
+    return undefined;
   }
 }

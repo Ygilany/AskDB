@@ -8,7 +8,7 @@
 // `integrationSuite()` is the one sanctioned gate.
 //
 // Scans every *.test.ts / *.test.tsx in the pnpm workspace packages listed in
-// pnpm-workspace.yaml (skipping node_modules, dist, and build caches). scripts/test-utils/,
+// pnpm-workspace.yaml (skipping node_modules, dist and .git, as Vitest does). scripts/test-utils/,
 // which implements integrationSuite() with describe.skip, is not a workspace package.
 // Each file is parsed with the TypeScript compiler (`typescript`, a root devDependency), so
 // comments, strings, templates, regexes and JSX text never trip a rule, and a file that does
@@ -30,7 +30,7 @@
 //   // check-test-gating-ignore-next-line: <reason>
 //
 // Usage: node scripts/check-test-gating.mjs [repo-root]
-import { readdirSync, readFileSync, existsSync, realpathSync, statSync } from "node:fs";
+import { readdirSync, readFileSync, existsSync, realpathSync } from "node:fs";
 import { dirname, join, relative } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
@@ -41,7 +41,7 @@ const sibling = (name) => pathToFileURL(join(dirname(selfPath), "check-test-gati
 const { ts, isWrapper, outermostWrapper, unwrap, calleeOf, isMemberLink, linkName, lineOf, oneFileProgram, memberOn } = await import(sibling("ast.mjs"));
 const { EXTENDERS, vitestBindings, isVitestLoaderCall, isVitestNamespace, integrationModuleResolver, isSuiteFactory, testFnName, extendedFn } =
   await import(sibling("bindings.mjs"));
-const { workspaceDirs } = await import(sibling("workspace.mjs"));
+const { workspaceDirs, linkTarget } = await import(sibling("workspace.mjs"));
 export { integrationModuleResolver };
 
 const SUITE_FNS = new Set(["describe", "suite"]);
@@ -223,7 +223,7 @@ function testRef(start, fnName, bindings) {
     // `const t = it.each(rows)` stores the function that defines the tests, which the check can't follow.
     unreadable: (call === undefined && !extendResultIsTracked(chain)) || eachResultStored,
     conditional: defines && underCondition(call, bindings),
-    optionGate: defines && (hasGateOption(call, suite) || rowsSpread || (rows !== undefined && isChosen(rows))),
+    optionGate: defines && (hasGateOption(call, suite) || rowsSpread || (rows !== undefined && isPicked(rows))),
   };
 }
 
@@ -254,28 +254,34 @@ function optionKey(name) {
 }
 
 /** The operands a run-time choice picks between (`a ? b : c` gives `b`, `c`; `a && b` gives both), or none. */
-function choiceBranches(node) {
+function pickBranches(node) {
   if (ts.isConditionalExpression(node)) return [node.whenTrue, node.whenFalse];
-  if (isBinaryChoice(node)) return [node.left, node.right];
+  if (isBinaryPick(node)) return [node.left, node.right];
   return [];
 }
 
 /** Whether `node` is `a && b`, `a || b`, `a ?? b` or one of their assignment forms. */
-function isBinaryChoice(node) {
-  return ts.isBinaryExpression(node) && CONDITIONAL_OPERATORS.has(node.operatorToken.kind);
+function isBinaryPick(node) {
+  return ts.isBinaryExpression(node) && PICK_OPERATORS.has(node.operatorToken.kind);
 }
 
 /**
- * Whether `node` (through wrappers) is picked at run time by `? :`, `&&`, `||` or `??`, or is an
- * array literal that spreads such a pick.
+ * Whether `node` (through wrappers and `await`) is picked at run time by `? :`, `&&`, `||` or `??`,
+ * or is built from such a pick: spread into an array or object, passed to a call or `new`, or the
+ * receiver of a method call.
  */
-function isChosen(node) {
-  node = unwrap(node);
-  if (choiceBranches(node).length > 0) return true;
-  // `Object.entries(url ? { pg: url } : {})`: a call over a pick yields a table whose size is picked too.
-  if (ts.isCallExpression(node) && node.arguments.some((arg) => isChosen(ts.isSpreadElement(arg) ? arg.expression : arg))) return true;
-  // `[a, ...(cond ? [b] : [])]`: how many rows there are depends on the condition.
-  return ts.isArrayLiteralExpression(node) && node.elements.some((el) => ts.isSpreadElement(el) && isChosen(el.expression));
+function isPicked(node) {
+  while (isWrapper(node) || ts.isAwaitExpression(node)) node = node.expression;
+  if (pickBranches(node).length > 0) return true;
+  // `Object.entries(url ? {…} : {})`, `new Set(url ? [url] : [])`, `(url ? [url] : []).map(f)`: a
+  // call or `new` over a pick, or a method of one, yields a table whose size is picked too.
+  if ((ts.isCallExpression(node) || ts.isNewExpression(node)) && (node.arguments ?? []).some((arg) => isPicked(ts.isSpreadElement(arg) ? arg.expression : arg))) {
+    return true;
+  }
+  if (ts.isCallExpression(node) && isMemberLink(unwrap(node.expression)) && isPicked(unwrap(node.expression).expression)) return true;
+  // `[a, ...(cond ? [b] : [])]`, `{ a, ...(cond ? { b } : {}) }`: how many rows there are depends on the condition.
+  if (ts.isArrayLiteralExpression(node)) return node.elements.some((el) => ts.isSpreadElement(el) && isPicked(el.expression));
+  return ts.isObjectLiteralExpression(node) && node.properties.some((p) => ts.isSpreadAssignment(p) && isPicked(p.expression));
 }
 
 /**
@@ -289,7 +295,7 @@ function hasGateOption(call, suite) {
   let gate = false;
   const visit = (node, chosen) => {
     node = unwrap(node);
-    const branches = choiceBranches(node);
+    const branches = pickBranches(node);
     if (branches.length > 0) {
       for (const branch of branches) visit(branch, true);
     } else if (ts.isObjectLiteralExpression(node)) {
@@ -311,7 +317,7 @@ function hasGateOption(call, suite) {
     if (ts.isSpreadElement(arg)) return true;
     // `it(name, url ? fn : undefined)`: a body picked at run time can be missing, which makes the
     // test a todo. Only a pick between plain strings or numbers (a timeout) is left alone.
-    if (i > 0 && isChosen(arg) && !picksOnlyLiterals(arg)) return true;
+    if (i > 0 && isPicked(arg) && !picksOnlyLiterals(arg)) return true;
     visit(arg, false);
   }
   return gate;
@@ -320,7 +326,7 @@ function hasGateOption(call, suite) {
 /** Whether every value a run-time choice can produce is a string or number literal. */
 function picksOnlyLiterals(node) {
   node = unwrap(node);
-  const branches = choiceBranches(node);
+  const branches = pickBranches(node);
   if (branches.length > 0) return branches.every(picksOnlyLiterals);
   return ts.isStringLiteralLike(node) || ts.isNumericLiteral(node);
 }
@@ -331,7 +337,7 @@ function isTernaryBranch(node) {
   return ts.isConditionalExpression(p) && (p.whenTrue === node || p.whenFalse === node);
 }
 
-const CONDITIONAL_OPERATORS = new Set([
+const PICK_OPERATORS = new Set([
   ts.SyntaxKind.AmpersandAmpersandToken,
   ts.SyntaxKind.BarBarToken,
   ts.SyntaxKind.QuestionQuestionToken,
@@ -344,13 +350,13 @@ const CONDITIONAL_OPERATORS = new Set([
 function conditionalEdge(parent, child) {
   if (ts.isIfStatement(parent)) return child !== parent.expression;
   if (ts.isConditionalExpression(parent)) return child !== parent.condition;
-  if (isBinaryChoice(parent)) return child === parent.right;
+  if (isBinaryPick(parent)) return child === parent.right;
   // A `try` block with a `catch` runs only up to its first throw; the `catch` only after one.
   if (ts.isTryStatement(parent)) return child === parent.tryBlock && parent.catchClause !== undefined;
   // A loop or iteration callback over a table picked by a condition, like a `.each` table.
-  if ((ts.isForOfStatement(parent) || ts.isForInStatement(parent)) && child === parent.statement) return isChosen(parent.expression);
+  if ((ts.isForOfStatement(parent) || ts.isForInStatement(parent)) && child === parent.statement) return isPicked(parent.expression);
   if (ts.isCallExpression(parent) && parent.arguments.includes(child) && isMemberLink(unwrap(parent.expression))) {
-    if (isChosen(unwrap(parent.expression).expression)) return true;
+    if (isPicked(unwrap(parent.expression).expression)) return true;
   }
   // `a?.b(arg)`, `a?.[key]`: the arguments and key run only when the chain doesn't short-circuit.
   if (ts.isCallExpression(parent) && ts.isOptionalChain(parent) && parent.arguments.includes(child)) return true;
@@ -475,7 +481,8 @@ function pragmaLines(sf) {
   collectJsxText(sf);
   const inJsxText = (pos) => jsxText.some(([a, b]) => pos >= a && pos < b);
   const visit = (node) => {
-    if (node.kind === ts.SyntaxKind.JsxText) return;
+    // JSX text and JSDoc are not line comments; a marker in either exempts nothing.
+    if (node.kind === ts.SyntaxKind.JsxText || ts.isJSDoc(node)) return;
     if (node.kind < ts.SyntaxKind.FirstNode || node.kind === ts.SyntaxKind.EndOfFileToken) {
       const comments = [
         ...(ts.getLeadingCommentRanges(text, node.pos) ?? []),
@@ -542,7 +549,8 @@ export function findGates(src, fileName = "file.test.ts", { isIntegrationModule 
     if (ts.isImportEqualsDeclaration(node) && ts.isQualifiedName(node.moduleReference) && bindings.resolve(node.name)?.kind !== "fn") {
       let root = node.moduleReference;
       while (ts.isQualifiedName(root)) root = root.left;
-      if (isVitestNamespace(root, bindings)) refs.push(unreadableRef(node.moduleReference));
+      // `import g = describe.skipIf`, `import f = I.integrationSuite`: any root the bindings know.
+      if (bindings.resolve(root) !== undefined) refs.push(unreadableRef(node.moduleReference));
     }
     ts.forEachChild(node, visit);
   };
@@ -563,15 +571,6 @@ export function findGates(src, fileName = "file.test.ts", { isIntegrationModule 
 // What the root vitest.config.ts and Vitest's defaults exclude; anything else Vitest would run.
 const SKIP_DIRS = new Set(["node_modules", "dist", ".git"]);
 
-/** What a symbolic link points at: "dir", "file", or undefined for a dangling or looping link. */
-function linkTarget(path) {
-  try {
-    const stat = statSync(path);
-    return stat.isDirectory() ? "dir" : stat.isFile() ? "file" : undefined;
-  } catch {
-    return undefined;
-  }
-}
 
 // Follows symbolic links to directories, as Vitest does, visiting each real directory once.
 function* walk(dir, seen = new Set()) {
