@@ -50,7 +50,9 @@ for (const file of files) {
 }
 
 test("findGates trusts no integration module unless told which one is", () => {
-  const src = 'import { integrationSuite } from "../../../scripts/test-utils/integration.mjs";\nintegrationSuite({})("db", () => {\n  it("q", () => {});\n});\n';
+  const src =
+    'import { integrationSuite } from "../../../scripts/test-utils/integration.mjs";\n' +
+    'integrationSuite({})("db", () => {\n  it("q", () => {});\n});\n';
   assert.deepEqual(findGates(src).map(({ line, rule }) => ({ line, rule })), [{ line: 3, rule: "conditional-call" }]);
 });
 
@@ -124,7 +126,11 @@ test("CLI fails closed on a packages line it cannot read", (t) => {
 
 test("CLI fails closed on a workspace pattern it cannot expand", (t) => {
   for (const pattern of ["packages/**", "apps/*/*", "packages/{a,z}", "packages/?", "packages/[a]", "packages/@(a|b)"]) {
-    const root = workspace(t, { "packages/a/src/a.test.ts": 'it("ok", () => {});\n', "apps/x/y/z.test.ts": 'it("ok", () => {});\n' }, `packages:\n  - "${pattern}"\n`);
+    const root = workspace(
+      t,
+      { "packages/a/src/a.test.ts": 'it("ok", () => {});\n', "apps/x/y/z.test.ts": 'it("ok", () => {});\n' },
+      `packages:\n  - "${pattern}"\n`,
+    );
     const result = run(root);
     assert.equal(result.status, 1, pattern);
     assert.match(result.stderr, /unsupported workspace pattern/, pattern);

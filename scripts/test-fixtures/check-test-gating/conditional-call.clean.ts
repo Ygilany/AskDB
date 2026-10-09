@@ -79,3 +79,8 @@ for (const [engine] of Object.entries({ ...BASE_ENGINES })) describe(`a plain ob
 if (ready) test.beforeEach(() => {});
 describe.each(Object.entries({ postgres: process.env.PG_URL ?? "postgres://localhost" }))("a value picked inside a fixed table %s", () => {});
 for (const [engine] of Object.entries({ postgres: process.env.PG_URL ?? "postgres://localhost" })) describe(`a fixed table ${engine}`, () => {});
+for (let i = 0; i < 2; i++) it(`a classic for loop ${i}`, () => {});
+let attempts = 0;
+do {
+  it(`a do-while loop ${attempts}`, () => {});
+} while (++attempts < 2);

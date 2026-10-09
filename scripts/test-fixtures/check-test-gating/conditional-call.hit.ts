@@ -109,3 +109,4 @@ for (const k in { sqlite: 1, ...(process.env.DATABASE_URL ? { postgres: 2 } : {}
 describe("a suite body's test API under an if", (t) => {
   if (process.env.DATABASE_URL) t("query", run); // HIT
 });
+for (const u of [process.env.DATABASE_URL ? [] : "x"].flat()) it(`a mixed pick inside a flattened receiver ${u}`, run); // HIT
