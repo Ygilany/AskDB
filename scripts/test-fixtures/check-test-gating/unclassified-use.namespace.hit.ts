@@ -17,3 +17,7 @@ await (vi.importActual as any)("vitest").then(({ describe }) => describe.skipIf(
 const { describe: plainKey, ...restOfVitest } = vitest; // HIT
 const { it: plainIt, [key]: computedKey } = vitest; // HIT
 register(import.meta.vitest); // HIT
+const holder = { ns: vitest }; // HIT
+class Holds { static ns = vitest; } // HIT
+function withDefault(ns = vitest) {} // HIT
+const loadedHolder = { ns: await import("vitest") }; // HIT

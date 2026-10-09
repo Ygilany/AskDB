@@ -257,7 +257,7 @@ function testRef(start, fnName, bindings) {
     unreadable: (call === undefined && !extendResultIsTracked(chain)) || eachResultStored ||
       (suite && defines && (suiteResultHeld(call) || suiteBodyUnreadable(call, bindings))),
     conditional: defines && underCondition(call, bindings),
-    runtimeGate: defines && (hasGateOption(call, suite) || rowsPicked(rowArgs)),
+    runtimeGate: defines && (argumentsGate(call, suite) || rowsPicked(rowArgs)),
   };
 }
 
@@ -289,12 +289,13 @@ function extendResultIsTracked(chain) {
 const SKIP_OPTIONS = new Set(["skip", "todo", "fails"]);
 
 /**
- * Whether a suite or test call skips or inverts through its options argument (`{ skip: cond }`,
- * `{ todo: cond }`, `{ fails: cond }`, or options picked by `? :`, `&&`, `||` or `??`). A literal
- * `true` on a test is a plain skipped or expected-to-fail test, like `it.skip`; on a suite, a
- * literal `true` for `skip`, `todo` or `fails` is a gate, like `describe.skip`.
+ * Whether a suite or test call's arguments after the name gate it: options that skip or invert
+ * (`{ skip: cond }`, `{ todo: cond }`, `{ fails: cond }`, options picked by `? :`, `&&`, `||` or
+ * `??`), a body or options picked or built at run time, or a spread. A literal `true` on a test is
+ * a plain skipped or expected-to-fail test, like `it.skip`; on a suite, a literal `true` for
+ * `skip`, `todo` or `fails` is a gate, like `describe.skip`.
  */
-function hasGateOption(call, suite) {
+function argumentsGate(call, suite) {
   if (!ts.isCallExpression(call)) return false;
   let gate = false;
   const visit = (node, chosen) => {
@@ -329,6 +330,7 @@ function hasGateOption(call, suite) {
       visitNested(child, childChosen, options);
     });
   };
+  const hasInlineBody = call.arguments.some((arg) => ts.isArrowFunction(unwrap(arg)) || ts.isFunctionExpression(unwrap(arg)));
   for (const [i, arg] of call.arguments.entries()) {
     // `describe(...args)`: the options could be in there, unread; fail closed.
     if (ts.isSpreadElement(arg)) return true;
@@ -339,9 +341,9 @@ function hasGateOption(call, suite) {
     // `it(name, [{}, { skip: true }][url ? 0 : 1], fn)`, `[url ? fn : undefined][0]`: options or a
     // body read out of a pick.
     if (i > 0 && readsPickedValue(resultOf(arg))) return true;
-    // `Object.fromEntries(url ? [] : [["skip", true]])`, `JSON.parse(url ? "{}" : …)`: options or a
-    // body built by a call over a pick. A numeric conversion (`Number(env ?? 60_000)`) is a timeout.
-    if (i > 0 && builtFromPick(resultOf(arg))) return true;
+    // Options or a body built by a call (see `builtAtRunTime`). A numeric conversion
+    // (`Number(env ?? 60_000)`) is a timeout.
+    if (i > 0 && builtAtRunTime(resultOf(arg), hasInlineBody)) return true;
     visit(arg, false);
     // `[{ skip: cond }][0]`, `Object.assign({}, { skip: cond })`: options literals inside the
     // argument, outside a nested function (the body).
@@ -351,31 +353,28 @@ function hasGateOption(call, suite) {
 }
 
 /**
- * Whether `node` builds options or a body at run time in a way that can skip: a call, `new` or
- * tagged template (other than a numeric conversion) whose arguments, receiver or template hold a
- * pick that isn't between plain strings or numbers, or name a skip option as a string
- * (`Object.fromEntries([["skip", !url]])`, `JSON.parse(url ? "{}" : …)`, `` opts`${url ? "" : "skip"}` ``).
+ * Whether argument `node` of a test or suite call is built at run time in a way the check can't
+ * clear: a call, `new` or tagged template (other than a numeric conversion). Beside an inline body
+ * it can only be options or a timeout, which the check can't read, so it fails closed
+ * (`Object.fromEntries([[key, !url]])`, `JSON.parse(…)`). As the body itself (`withDb(…)`), it
+ * gates when a pick inside it chooses anything but an options value
+ * (`Reflect.get([fn, undefined], url ? 0 : 1)`, `withDb(url ?? ":memory:", fn)`).
  */
-function builtFromPick(node) {
+function builtAtRunTime(node, beside) {
   const isCall = ts.isCallExpression(node) || ts.isNewExpression(node);
   if (!isCall && !ts.isTaggedTemplateExpression(node)) return false;
   if (isNumericConversion(node)) return false;
+  if (beside) return true;
   const parts = isCall ? [...(node.arguments ?? []), receiverOf(node)] : [node.tag, node.template];
   return parts.some((part) => part !== undefined && someInside(part, (n) =>
-    (isPick(n) && !picksOnlyLiterals(n)) || namesSkipOption(n)));
+    isPick(n) && (!picksOnlyLiterals(n) || !isOptionValue(n))));
 }
 
-/**
- * Whether `node` is a string or template text naming `skip`, `todo` or `fails`: the bare key
- * (`["skip", c]`) or the key written as one (`'{"skip":true}'`, `` `skip: ${c}` ``).
- */
-function namesSkipOption(node) {
-  const text = ts.isStringLiteralLike(node) || ts.isTemplateHead(node) || ts.isTemplateMiddle(node) || ts.isTemplateTail(node)
-    ? node.text : undefined;
-  return text !== undefined && (SKIP_OPTIONS.has(text) || SKIP_KEY_TEXT.test(text));
+/** Whether pick `node` is a property's value in an object literal (`{ timeout: url ? 1 : 2 }`). */
+function isOptionValue(node) {
+  const outer = outermostWrapper(node);
+  return ts.isPropertyAssignment(outer.parent) && outer.parent.initializer === outer;
 }
-
-const SKIP_KEY_TEXT = /\b(?:skip|todo|fails)\b["']?\s*:/;
 
 // Calls that turn a value into a number: a timeout computed from a pick, not options or a body.
 const NUMERIC_CONVERSIONS = new Set(["Number", "parseInt", "parseFloat"]);

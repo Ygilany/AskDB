@@ -73,3 +73,10 @@ it("options from a tagged template", opts`${process.env.DATABASE_URL ? "" : "ski
 it("options from a picked receiver", (process.env.DATABASE_URL ? fastOptions : slowOptions).build(), () => {}); // HIT
 it("options from a helper over a fallback", buildOptions(process.env.MODE ?? fallbackMode), () => {}); // HIT
 it("options from a look-alike parseInt", Foo.parseInt(process.env.MODE ?? fallbackMode), () => {}); // HIT
+it("options merged by a call, which the check can't read", Object.assign({}, { timeout: 5_000 }), () => {}); // HIT
+const SKIP = "skip";
+it("options built with a key held in a const", Object.fromEntries([[SKIP, !process.env.DATABASE_URL]]), () => {}); // HIT
+it("options from a helper over the environment", optionsFor(process.env.DATABASE_URL), () => {}); // HIT
+it("a computed timeout from a helper", () => {}, timeoutFor(process.env.CI)); // HIT
+it("options indexed by a literal pick inside a call", Object.assign({}, [{}, { skip: true }][process.env.DATABASE_URL ? 0 : 1]), () => {}); // HIT
+it("a body chosen by a literal pick inside a call", Reflect.get([() => {}, undefined], process.env.DATABASE_URL ? 0 : 1)); // HIT

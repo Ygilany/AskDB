@@ -24,10 +24,10 @@ it("an options object nested in a body's closure", () => {
   const options = { skip: !process.env.DATABASE_URL };
   expect(options).toBeDefined();
 });
-it("plain options merged", Object.assign({}, { timeout: 5_000 }), () => {});
 it("a string pick after the name", () => {}, process.env.CI ? "a" : "b");
 it("a fails key under meta", { meta: { fails: process.env.CI === "true" } }, () => {});
 it("a timeout parsed from the environment", () => {}, parseInt(process.env.SLOW_TIMEOUT ?? "5000", 10));
 it("a timeout bounded by Math.max", () => {}, Math.max(Number(process.env.SLOW_TIMEOUT ?? 0), 5_000));
-it("a timeout picked between numbers inside options", Object.assign({}, { timeout: process.env.CI ? 10_000 : 5_000 }), () => {});
 it("a body built by a helper naming no skip", withLogging("cache warm-up", async () => {}));
+it("a body built by a helper with a picked option value", withOptions({ timeout: process.env.CI ? 10_000 : 5_000 }, async () => {}));
+it("a body built by a helper whose string mentions todo: nothing", withLogging("todo: tracked in #12", async () => {}));

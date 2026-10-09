@@ -50,7 +50,7 @@ The check runs first in the root `lint` script, so it runs wherever lint runs: l
 - **First step of the root `lint` script (chosen).** CI's lint job, `scripts/release-preflight.sh` and a local `pnpm lint` all call it, so there is one place to wire and nothing to keep in step.
 - **Its own CI job.** Rejected: it would run in CI only, not in preflight or locally, and a second job is one more list of steps to keep in step with lint.
 - **A Vitest test in a workspace package.** Rejected: the check reads every package, so it belongs to none of them, and `pnpm test` with a filter would skip it.
-- **A Turborepo root task (`//#check-test-gating`), cached.** Rejected: the check reads every workspace package's test files, so its cache inputs would have to list all of them plus the script and its fixtures, and an input list that misses one turns a cache hit into a pass that never read the new file. The uncached cost is about a second for the check and five for its own suite, run once per `pnpm lint`.
+- **A Turborepo root task (`//#check-test-gating`), cached.** Rejected: the check reads every workspace package's test files, so its cache inputs would have to list all of them plus the script and its fixtures, and an input list that misses one turns a cache hit into a pass that never read the new file. The uncached cost is a second or two for the check and five to eight for its own suite, depending on the machine, run once per `pnpm lint`.
 
 ### Exempting a deliberate gate
 

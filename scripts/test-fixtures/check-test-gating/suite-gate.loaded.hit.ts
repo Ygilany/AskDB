@@ -28,3 +28,5 @@ const actual = await vi.importActual<typeof import("vitest")>("vitest");
 actual.describe.skipIf(!process.env.DATABASE_URL)("through vi.importActual", () => {}); // HIT
 const mocked = await vi.importMock("vitest");
 mocked.describe.skip("through vi.importMock", () => {}); // HIT
+const storedRequire = module.require("vitest");
+storedRequire.describe.skip("module.require result held in a const", () => {}); // HIT
