@@ -90,3 +90,7 @@ maybe`${() => describe("in a tagged template's substitution", run)}`; // HIT
 ({ key: renamedDefault = describe("a property default", run) } = {}); // HIT
 for ([looped = describe("a for-of pattern default", run)] of rows) {} // HIT
 await (async () => { await import("pg"); describe("in an async IIFE whose rejection is swallowed", run); })().catch(() => {}); // HIT
+for (const engine of ["sqlite", ...(process.env.DATABASE_URL ? ["postgres"] : [])]) it(`loop over a spread pick ${engine}`, run); // HIT
+if (process.env.DATABASE_URL) test.extend({ db: describe("under test.extend under an if", run) }); // HIT
+(async () => { describe("in an IIFE whose rejection is caught", run); })().catch(() => {}); // HIT
+(async () => { describe("in an IIFE with a two-argument then", run); })().then(ok, bad); // HIT

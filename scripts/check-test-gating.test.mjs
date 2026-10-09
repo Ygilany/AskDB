@@ -9,12 +9,15 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
-import { RULES, findGates } from "./check-test-gating.mjs";
+import { RULES, findGates, integrationModuleResolver } from "./check-test-gating.mjs";
 
 const here = fileURLToPath(new URL(".", import.meta.url));
 const fixtures = join(here, "test-fixtures", "check-test-gating");
 const script = join(here, "check-test-gating.mjs");
 const files = readdirSync(fixtures);
+const repoRoot = join(here, "..");
+// Resolve each fixture's imports as the CLI does, from the fixture's own path.
+const fixtureOptions = (file) => ({ isIntegrationModule: integrationModuleResolver(repoRoot, join(fixtures, file)) });
 
 test("every rule has a hit fixture and a clean fixture", () => {
   for (const { id } of RULES) {
@@ -34,13 +37,13 @@ for (const file of files) {
         .flatMap((line, i) => (/\/\/ HIT\b/.test(line) ? [{ line: i + 1, rule }] : []));
       assert.ok(expected.length > 0);
       assert.deepEqual(
-        findGates(src, file).map(({ line, rule }) => ({ line, rule })),
+        findGates(src, file, fixtureOptions(file)).map(({ line, rule }) => ({ line, rule })),
         expected,
       );
     });
   } else if (/\.clean\.tsx?$/.test(file)) {
     test(`${file}: reports nothing`, () => {
-      assert.deepEqual(findGates(src, file), []);
+      assert.deepEqual(findGates(src, file, fixtureOptions(file)), []);
     });
   }
 }
@@ -166,6 +169,18 @@ test("CLI trusts only the repo's own scripts/test-utils/integration.mjs", (t) =>
   assert.equal(result.status, 1);
   assert.match(result.stderr, /packages\/b\/src\/local\.test\.ts:3:/);
   assert.doesNotMatch(result.stderr, /real\.test\.ts/);
+});
+
+test("CLI follows a symbolic link to a directory, once", (t) => {
+  const root = workspace(t, {
+    "packages/a/src/a.test.ts": 'it("ok", () => {});\n',
+    "shared/gated.test.ts": 'describe.skip("behind a link", () => {});\n',
+  });
+  symlinkSync(join(root, "shared"), join(root, "packages", "a", "src", "linked"));
+  symlinkSync(join(root, "packages", "a", "src"), join(root, "packages", "a", "src", "loop"));
+  const result = run(root);
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /packages\/a\/src\/linked\/gated\.test\.ts:1:/);
 });
 
 test("CLI reads a pnpm-workspace.yaml with CRLF line endings", (t) => {

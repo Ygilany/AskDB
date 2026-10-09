@@ -28,6 +28,11 @@ Rejected for now. The repo runs ESLint only in Studio; a root ESLint setup with 
 
 The root and fixture Vitest configs already load `ciReporters()`, whose summary reporter counts skipped tests, and CI's `test` job runs with `ASKDB_REQUIRE_INTEGRATION=1`, under which `integrationSuite()` throws instead of skipping. A reporter that fails that job on any skipped test would catch what no syntax check can: `ctx.skip()`, options passed in a variable, a gate inside a helper. It is not adopted in this PR: it turns every `it.skip` and `it.todo` into a CI failure, a policy change for the maintainer, and it fires only in the run where the environment is broken, not when the gate is written. It would complement C, not replace it.
 
+### Reading the workspace list
+
+- **Parse `pnpm-workspace.yaml` directly (chosen).** `scripts/check-test-gating/workspace.mjs` reads the `packages:` list, expands a trailing `/*` and literal `!` exclusions, and throws on anything else, so `pnpm lint` doesn't spawn pnpm for one list.
+- **Ask pnpm (`pnpm -r ls --json --depth -1`), as `scripts/release-unpublished.mjs` does.** Rejected for now: it adds a pnpm process to every lint run. The cost of the choice: a new glob form or a flow-style list in `pnpm-workspace.yaml` fails `pnpm lint` until `workspaceDirs()` learns it, which is loud, not silent. Switching to pnpm supersedes this bullet.
+
 ### Where the check runs
 
 - **First step of the root `lint` script (chosen).** CI's lint job, `scripts/release-preflight.sh` and a local `pnpm lint` all call it, so there is one place to wire and nothing to keep in step.

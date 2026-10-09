@@ -58,3 +58,9 @@ registry = describe("a plain assignment", run);
 (() => {
   describe("an IIFE that always runs", run);
 })();
+(async () => {
+  describe("an IIFE with a one-argument then", run);
+})().then(() => {});
+(async () => {
+  describe("an IIFE with finally", run);
+})().finally(() => {});

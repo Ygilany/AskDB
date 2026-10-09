@@ -30,7 +30,7 @@
 //   // check-test-gating-ignore-next-line: <reason>
 //
 // Usage: node scripts/check-test-gating.mjs [repo-root]
-import { readdirSync, readFileSync, existsSync, realpathSync } from "node:fs";
+import { readdirSync, readFileSync, existsSync, realpathSync, statSync } from "node:fs";
 import { createRequire } from "node:module";
 import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -163,10 +163,10 @@ function importedFrom(decl) {
  * Vitest, a variable holding `x.extend({…})` of a Vitest function is a test function, and any
  * other declaration (a parameter `it`, an import of `test` from another module) is not Vitest's.
  */
-function vitestBindings(sf, program, isIntegrationModule) {
+function vitestBindings(program, isIntegrationModule) {
   const checker = program.getTypeChecker();
   const cache = new Map();
-  const bindings = { sf };
+  const bindings = {};
   /**
    * What identifier `id` refers to: `{ kind: "fn", name }` for a Vitest function, `{ kind: "ns" }`
    * for a Vitest namespace, `{ kind: "suiteFactory" }` for `integrationSuite`, `{ kind: "require" }`
@@ -306,8 +306,17 @@ function isVitestNamespace(id, bindings) {
   return bindings.resolve(id)?.kind === "ns";
 }
 
-// Where `integrationSuite()` lives, as the test files import it.
-const INTEGRATION_MODULE = /(?:^|\/)scripts\/test-utils\/integration\.mjs$/;
+/**
+ * The rule for which import names the sanctioned gate: a relative specifier that resolves, from the
+ * test file's directory, to `<root>/scripts/test-utils/integration.mjs`. A package-local copy at
+ * the same suffix is not it.
+ * @param {string} root the repo root
+ * @param {string} file the test file's path
+ */
+export function integrationModuleResolver(root, file) {
+  const target = resolve(root, "scripts", "test-utils", "integration.mjs");
+  return (specifier) => specifier.startsWith(".") && resolve(dirname(file), specifier) === target;
+}
 
 /** Whether `node` is a call of `integrationSuite(…)`, which returns `describe` or its sanctioned gate. */
 function suiteFactoryCall(node, bindings) {
@@ -464,10 +473,15 @@ function isBinaryChoice(node) {
   return ts.isBinaryExpression(node) && CONDITIONAL_OPERATORS.has(node.operatorToken.kind);
 }
 
-/** Whether `node` (through wrappers) is picked at run time by `? :`, `&&`, `||` or `??`. */
+/**
+ * Whether `node` (through wrappers) is picked at run time by `? :`, `&&`, `||` or `??`, or is an
+ * array literal that spreads such a pick.
+ */
 function isChosen(node) {
   node = unwrap(node);
-  return ts.isConditionalExpression(node) || isBinaryChoice(node);
+  if (ts.isConditionalExpression(node) || isBinaryChoice(node)) return true;
+  // `[a, ...(cond ? [b] : [])]`: how many rows there are depends on the condition.
+  return ts.isArrayLiteralExpression(node) && node.elements.some((el) => ts.isSpreadElement(el) && isChosen(el.expression));
 }
 
 /**
@@ -631,9 +645,12 @@ function isIterationCall(node) {
   return callee !== undefined && isMemberLink(callee) && ITERATION_METHODS.has(linkName(callee));
 }
 
-/** Whether a call or tagged template calls a Vitest describe/suite/it/test, through any links. */
+/** Whether a call or tagged template defines a suite or test: Vitest's describe/suite/it/test through modifier links. */
 function callsVitestFn(node, bindings) {
   let callee = calleeOf(node);
+  // `test.extend({…})` or `test.scoped({…})` defines nothing, so the walk goes on past it.
+  const outer = unwrap(callee);
+  if (isMemberLink(outer) && !MODIFIERS.has(linkName(outer)) && testFnName(outer, bindings) === undefined) return false;
   for (;;) {
     callee = unwrap(callee);
     if (testFnName(callee, bindings) !== undefined || extendedFn(callee, bindings) !== undefined) return true;
@@ -698,11 +715,11 @@ function oneFileProgram(sf) {
  * @param {string} src
  * @param {string} [fileName] decides TS or TSX parsing by extension
  * @param {{ isIntegrationModule?: (specifier: string) => boolean }} [options] which import specifiers
- *   name scripts/test-utils/integration.mjs; the CLI resolves them against the repo root, and the
- *   default matches the path's end
+ *   name the sanctioned gate (see `integrationModuleResolver`); by default none does, so an
+ *   `integrationSuite` the check can't place fails closed
  * @returns {{ line: number; rule: string; why: string }[]}
  */
-export function findGates(src, fileName = "file.test.ts", { isIntegrationModule = (specifier) => INTEGRATION_MODULE.test(specifier) } = {}) {
+export function findGates(src, fileName = "file.test.ts", { isIntegrationModule = () => false } = {}) {
   const kind = fileName.endsWith(".tsx") ? ts.ScriptKind.TSX : ts.ScriptKind.TS;
   const name = kind === ts.ScriptKind.TSX ? "/file.test.tsx" : "/file.test.ts";
   const sf = ts.createSourceFile(name, src, ts.ScriptTarget.Latest, true, kind);
@@ -712,7 +729,7 @@ export function findGates(src, fileName = "file.test.ts", { isIntegrationModule 
     const line = sf.getLineAndCharacterOfPosition(d.start ?? 0).line + 1;
     throw new Error(`does not parse at line ${line}: ${ts.flattenDiagnosticMessageText(d.messageText, " ")}`);
   }
-  const bindings = vitestBindings(sf, program, isIntegrationModule);
+  const bindings = vitestBindings(program, isIntegrationModule);
   const refs = [];
   const visit = (node) => {
     if (!ts.isIdentifier(node) || isValueReference(node)) {
@@ -725,14 +742,14 @@ export function findGates(src, fileName = "file.test.ts", { isIntegrationModule 
     // `integrationSuite` (or its module's namespace) used other than by calling it: an alias the
     // check can't follow, such as `const g = integrationSuite`.
     if (ts.isIdentifier(node) && isValueReference(node)) {
-      const kind = bindings.resolve(node)?.kind;
+      const bindingKind = bindings.resolve(node)?.kind;
       const outer = outermostWrapper(node);
-      if (kind === "suiteFactory" && calleeOf(outer.parent) !== outer) refs.push(unreadableRef(node));
+      if (bindingKind === "suiteFactory" && calleeOf(outer.parent) !== outer) refs.push(unreadableRef(node));
       // `I.isIntegrationRequired()` and other named members read through; `I.integrationSuite` must be called.
       const member = isMemberLink(outer.parent) && outer.parent.expression === outer ? outer.parent : undefined;
       const readable = member !== undefined && linkName(member) !== undefined &&
         (!isSuiteFactory(member, bindings) || calleeOf(outermostWrapper(member).parent) === outermostWrapper(member));
-      if (kind === "integrationNs" && !readable) {
+      if (bindingKind === "integrationNs" && !readable) {
         refs.push(unreadableRef(node));
       }
     }
@@ -760,11 +777,16 @@ export function findGates(src, fileName = "file.test.ts", { isIntegrationModule 
 
 const SKIP_DIRS = new Set(["node_modules", "dist", ".turbo", ".astro", ".lab"]);
 
-function* walk(dir) {
+// Follows symbolic links to directories, as Vitest does, visiting each real directory once.
+function* walk(dir, seen = new Set()) {
+  const real = realpathSync(dir);
+  if (seen.has(real)) return;
+  seen.add(real);
   for (const entry of readdirSync(dir, { withFileTypes: true })) {
     if (SKIP_DIRS.has(entry.name)) continue;
     const path = join(dir, entry.name);
-    if (entry.isDirectory()) yield* walk(path);
+    const isDir = entry.isDirectory() || (entry.isSymbolicLink() && statSync(path).isDirectory());
+    if (isDir) yield* walk(path, seen);
     else if (/\.test\.tsx?$/.test(entry.name)) yield path;
   }
 }
@@ -779,7 +801,6 @@ function main() {
     process.exit(1);
   }
 
-  const integrationModulePath = resolve(root, "scripts", "test-utils", "integration.mjs");
   const hits = [];
   let scanned = 0;
   for (const dir of dirs) {
@@ -790,10 +811,7 @@ function main() {
       const lines = src.split(/\r\n|[\r\n\u2028\u2029]/);
       let gates;
       try {
-        // Only the repo's own integration.mjs is the sanctioned gate, not a package-local copy.
-        const isIntegrationModule = (specifier) =>
-          specifier.startsWith(".") && resolve(dirname(file), specifier) === integrationModulePath;
-        gates = findGates(src, file, { isIntegrationModule });
+        gates = findGates(src, file, { isIntegrationModule: integrationModuleResolver(root, file) });
       } catch (error) {
         hits.push(`${relative(root, file)}: cannot be checked (${error.message})`);
         continue;

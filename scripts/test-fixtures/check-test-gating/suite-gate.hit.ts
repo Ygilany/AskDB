@@ -34,3 +34,4 @@ describe.skip("a marker mid-comment exempts nothing", () => {}); // HIT
 describe.each(process.env.DATABASE_URL ? [process.env.DATABASE_URL] : [])("rows chosen by a ternary %s", () => {}); // HIT
 describe(...["spread arguments", { skip: !process.env.DATABASE_URL }, () => {}]); // HIT
 describe.each(...rowsAndMore)("spread rows %s", () => {}); // HIT
+describe.each([["sqlite"], ...(process.env.DATABASE_URL ? [["postgres"]] : [])])("a row spread from a ternary %s", () => {}); // HIT
