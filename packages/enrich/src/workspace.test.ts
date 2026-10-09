@@ -17,6 +17,13 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { loadSchema, loadSchemaFromJson } from "@askdb/core";
 import { integrationSuite } from "../../../scripts/test-utils/integration.mjs";
+import {
+  otherGroup,
+  otherGroupUnavailable,
+  table,
+  tableMd,
+  writeSchema as writeSchemaIn,
+} from "./test-utils.js";
 import { buildFrontmatter, buildTableDraft } from "./draft.js";
 import {
   buildDefaultTableBody,
@@ -361,34 +368,7 @@ describe("workspace table filenames", () => {
   let tmp: string;
   let schemaDir: string;
 
-  const table = (schema: string, name: string) => ({
-    id: `table:${schema}.${name}`,
-    name,
-    schema,
-    sensitive: false,
-    columns: [
-      {
-        id: `table:${schema}.${name}#id`,
-        name: "id",
-        type: "integer",
-        nullable: false,
-        primaryKey: true,
-        sensitive: false,
-      },
-    ],
-  });
-
-  const writeSchema = (tables: ReturnType<typeof table>[]) => {
-    mkdirSync(join(schemaDir, "tables"), { recursive: true });
-    writeFileSync(
-      join(schemaDir, "schema.json"),
-      `${JSON.stringify({ version: 2, schemaId: "fname", tables }, null, 2)}\n`,
-      "utf8",
-    );
-  };
-
-  const tableMd = (schema: string, name: string, description: string) =>
-    `---\nid: table:${schema}.${name}\nname: ${name}\nschemaId: fname\n---\n\n# Table: ${name}\n\n${description}\n`;
+  const writeSchema = (tables: ReturnType<typeof table>[]) => writeSchemaIn(schemaDir, tables);
 
   const filenameOf = (ws: ReturnType<typeof loadWorkspace>, id: string) =>
     ws.tables.find((t) => t.physical.id === id)?.filename;
@@ -543,6 +523,13 @@ describe("workspace table filenames", () => {
     ]);
   });
 
+  it("keeps a character outside the BMP, which is a surrogate pair, in the filename", () => {
+    writeSchema([table("public", "a😀")]);
+    const ws = loadWorkspace(schemaDir);
+    expect(filenameOf(ws, "table:public.a😀")).toBe("a😀.md");
+    saveAllAndReload(ws);
+  });
+
   it("saveTable refuses a filename that resolves outside tables/", () => {
     writeSchema([table("public", "orders")]);
     const ws = loadWorkspace(schemaDir);
@@ -637,24 +624,7 @@ describe("workspace table filenames", () => {
     });
   });
 
-  // A group, other than the one new files in a temp directory get, that this
-  // process belongs to and so may give a file.
-  const otherGroup = (() => {
-    if (process.platform === "win32") return undefined;
-    const dir = mkdtempSync(join(tmpdir(), "askdb-enrich-gid-"));
-    const newFileGid = statSync(dir).gid;
-    rmSync(dir, { recursive: true });
-    return process.getgroups?.().find((g) => g !== newFileGid && g !== process.getegid?.());
-  })();
-
-  integrationSuite({
-    unavailable:
-      process.platform === "win32"
-        ? "POSIX owners and groups are required (not Windows)"
-        : otherGroup === undefined
-          ? "this user belongs to no second group to give the file"
-          : false,
-  })("saveTable and file ownership", () => {
+  integrationSuite({ unavailable: otherGroupUnavailable })("saveTable and file ownership", () => {
     it("keeps the replaced file's group", () => {
       writeSchema([table("public", "orders")]);
       const target = join(schemaDir, "tables", "orders.md");

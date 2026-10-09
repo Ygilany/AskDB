@@ -503,7 +503,7 @@ function replaceTableFile(
       // Keep the replaced file's owner, group, and permission bits, before the content lands.
       if (existing) {
         const mode = existing.mode & 0o777;
-        fchmodSync(fd, keepOwnerAndGroup(fd, existing) ? mode : withoutGroupChange(mode));
+        fchmodSync(fd, keepOwnerAndGroup(fd, existing) ? mode : modeWhenGroupLost(mode));
       }
       writeFileSync(fd, content, "utf8");
       fsyncSync(fd);
@@ -545,8 +545,10 @@ function keepOwnerAndGroup(fd: number, existing: Stats): boolean {
  * `mode` for a file whose group could not be kept: the group and others both get
  * only what both had before, so neither the group the file lands in nor the old
  * group's non-members gain access (`0660` becomes `0600`, `0604` becomes `0600`).
+ *
+ * @internal Exported for its tests; `index.ts` doesn't re-export it.
  */
-export function withoutGroupChange(mode: number): number {
+export function modeWhenGroupLost(mode: number): number {
   const shared = (mode >> 3) & mode & 0o007;
   return (mode & 0o700) | (shared << 3) | shared;
 }
