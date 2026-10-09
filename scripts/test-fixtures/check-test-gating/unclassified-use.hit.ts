@@ -98,3 +98,8 @@ const timeoutCycleA = timeoutCycleB, timeoutCycleB = timeoutCycleA;
 it("a timeout converted from a cycle of consts", withDb(runDb), Number(timeoutCycleA)); // HIT
 const viHolder = { vi }; // HIT
 const vitestHolder = { vitest }; // HIT
+const { SUITE_BODY = (t) => { t.skipIf(!process.env.PG_URL)("q", () => {}); } } = process.env;
+describe("a body defaulted in an env destructuring", SUITE_BODY); // HIT
+let { LET_BODY } = process.env;
+LET_BODY = (t) => { t.skipIf(!process.env.PG_URL)("q", () => {}); };
+describe("a body destructured from env into a let", LET_BODY); // HIT

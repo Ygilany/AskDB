@@ -125,7 +125,7 @@ function isPlainNumericCall(call, bindings) {
  * test of "can this be a function" for timeouts, picks and suite arguments.
  */
 function isPlainValue(node, bindings) {
-  return everyPickLeaf(node, (leaf) => {
+  return everyValueLeaf(node, bindings, (leaf) => {
     if (ts.isNumericLiteral(leaf) || ts.isStringLiteralLike(leaf)) return true;
     if ([ts.SyntaxKind.TrueKeyword, ts.SyntaxKind.FalseKeyword, ts.SyntaxKind.NullKeyword].includes(leaf.kind)) return true;
     if (ts.isTemplateExpression(leaf)) return leaf.templateSpans.every((span) => isPlainValue(span.expression, bindings));
@@ -136,9 +136,16 @@ function isPlainValue(node, bindings) {
     if (ts.isCallExpression(leaf)) return isPlainNumericCall(leaf, bindings);
     if (isEnvRead(leaf, bindings)) return true;
     if (!ts.isIdentifier(leaf)) return false;
-    if (leaf.text === "undefined" && isGlobalName(leaf, bindings)) return true;
-    return constHolds(leaf, bindings, (init) => isPlainValue(init, bindings));
+    return leaf.text === "undefined" && isGlobalName(leaf, bindings);
   });
+}
+
+/**
+ * Whether every value `node` can take passes `leafTest`: each branch of its picks, and a `const`
+ * leaf through its initializer (`const T = 5_000`). The walk `isPlainValue` and `isNonFunction` share.
+ */
+function everyValueLeaf(node, bindings, leafTest) {
+  return everyPickLeaf(node, (leaf) => leafTest(leaf) || constHolds(leaf, bindings, (init) => everyValueLeaf(init, bindings, leafTest)));
 }
 
 /**
@@ -215,11 +222,7 @@ const ARITHMETIC = new Set([
  * environment read), a pick between such values, or a `const` bound to one.
  */
 function isNonFunction(node, bindings) {
-  return everyPickLeaf(node, (leaf) => {
-    if (ts.isObjectLiteralExpression(leaf)) return true;
-    if (!ts.isStringLiteralLike(leaf) && isPlainValue(leaf, bindings)) return true;
-    return constHolds(leaf, bindings, (init) => isNonFunction(init, bindings));
-  });
+  return everyValueLeaf(node, bindings, (leaf) => ts.isObjectLiteralExpression(leaf) || (!ts.isStringLiteralLike(leaf) && isPlainValue(leaf, bindings)));
 }
 
 /** Whether a `function` reads its own `arguments`, where Vitest passes a suite body the test API. */

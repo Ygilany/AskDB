@@ -147,3 +147,34 @@ if (process.env.PG_URL) reassignedRows = [...reassignedRows, "pg"];
 describe.each(reassignedRows)("a let reassigned under an if %s", () => {}); // HIT
 import { env as processEnv } from "node:process";
 describe.each([processEnv.PG_URL, "sqlite"].filter(Boolean))("env from node:process filtered %s", () => {}); // HIT
+import { beforeAll as helperBeforeAll } from "./helpers";
+const pushedInHelperHook: string[] = [];
+helperBeforeAll(() => { if (process.env.PG_URL) pushedInHelperHook.push("pg"); });
+describe.each(pushedInHelperHook)("a table pushed to in a hook from another module %s", () => {}); // HIT
+import { env as bareProcessEnv } from "process";
+describe.each([bareProcessEnv.PG_URL, "sqlite"].filter(Boolean))("env from process filtered %s", () => {}); // HIT
+let letPicked = process.env.PG_URL ? ["pg", "sqlite"] : ["sqlite"];
+describe.each(letPicked)("a let declared with a pick %s", () => {}); // HIT
+let destructReassigned = ["sqlite"];
+if (process.env.PG_URL) [destructReassigned] = [["sqlite", "pg"]];
+describe.each(destructReassigned)("a let reassigned by destructuring under an if %s", () => {}); // HIT
+const dotTables = { sqlite: 1 };
+if (process.env.PG_URL) dotTables.pg = 2;
+describe.each(Object.keys(dotTables))("an object key written under an if %s", () => {}); // HIT
+const deletedTables = { sqlite: 1, pg: 2 };
+if (!process.env.PG_URL) delete deletedTables.pg;
+describe.each(Object.keys(deletedTables))("an object key deleted under an if %s", () => {}); // HIT
+import processDefault from "node:process";
+describe.each([processDefault.env.PG_URL, "sqlite"].filter(Boolean))("env through a default process import %s", () => {}); // HIT
+const aliasedEnv = process.env;
+describe.each([aliasedEnv.PG_URL, "sqlite"].filter(Boolean))("env through a const alias %s", () => {}); // HIT
+const orderA = ["sqlite"];
+const orderB: string[] = [];
+for (const x of orderB) orderA.push(x);
+if (process.env.PG_URL) orderA.push("pg");
+for (const x of orderA) orderB.push(x);
+describe.each(orderA)("the first of two tables that read each other %s", () => {}); // HIT
+describe.each(orderB)("the second of two tables that read each other %s", () => {}); // HIT
+let loopAssigned: string[] = [];
+for (loopAssigned of [["sqlite"], ["pg"]]) {}
+describe.each(loopAssigned)("a let assigned as a for-of target %s", () => {}); // HIT

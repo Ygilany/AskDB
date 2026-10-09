@@ -19,7 +19,7 @@ import {
   unwrap,
   resultOf,
 } from "./ast.mjs";
-import { CALL_TEST, constHolds, isEnvRead, isGlobalCallee, isVitestHookCall, vitestCallKind } from "./bindings.mjs";
+import { constHolds, definesTests, isEnvRead, isGlobalCallee, isVitestHookCall, vitestCallKind } from "./bindings.mjs";
 
 /**
  * Whether `node` (through wrappers and `await`) is picked at run time by `? :`, `&&`, `||` or `??`,
@@ -60,8 +60,9 @@ function valueIsPicked(node, bindings) {
 
 // Methods that add or remove entries of the array, `Set` or `Map` they are called on.
 const SIZE_CHANGING = new Set(["push", "pop", "shift", "unshift", "splice", "add", "set", "delete", "clear"]);
-// Each declaration's answer, set to false while it is worked out so a walk back to it ends.
+// Each declaration's settled answer, and the declarations being worked out now.
 const resized = new WeakMap();
+const resizing = new Set();
 
 /**
  * Whether identifier `node` names a table that some reference in the file resizes under a
@@ -75,15 +76,22 @@ function resizedUnderCondition(node, bindings) {
   if (decls.length !== 1) return false;
   const [decl] = decls;
   if (resized.has(decl)) return resized.get(decl);
-  resized.set(decl, false);
+  // A table already being worked out reads as not resized for now; an answer that leaned on that
+  // isn't kept, so the verdict doesn't depend on which table is asked about first.
+  if (resizing.has(decl)) return false;
+  resizing.add(decl);
   let found = false;
-  const visit = (n) => {
-    if (found) return;
-    if (ts.isIdentifier(n) && bindings.declarationsOf(n)[0] === decl && resizes(n, bindings)) found = true;
-    else ts.forEachChild(n, visit);
-  };
-  visit(node.getSourceFile());
-  resized.set(decl, found);
+  try {
+    const visit = (n) => {
+      if (found) return;
+      if (ts.isIdentifier(n) && bindings.declarationsOf(n)[0] === decl && resizes(n, bindings)) found = true;
+      else ts.forEachChild(n, visit);
+    };
+    visit(node.getSourceFile());
+  } finally {
+    resizing.delete(decl);
+  }
+  if (found || resizing.size === 0) resized.set(decl, found);
   return found;
 }
 
@@ -91,17 +99,41 @@ function resizedUnderCondition(node, bindings) {
 function resizes(ref, bindings) {
   if (runsAfterCollection(ref, bindings)) return false;
   const picksOrConditional = (write) => containsPick(write) || underCondition(write, bindings);
-  // `rows = [...rows, "pg"]`: a `let` reassigned.
-  const reassigned = writeOf(outermostWrapper(ref));
+  // `let rows = url ? ["pg"] : []`: a `let` or `var` is judged by its initializer, as a `const` is.
+  const declared = ref.parent;
+  if (ts.isVariableDeclaration(declared) && declared.name === ref && declared.initializer !== undefined) {
+    return valueIsPicked(declared.initializer, bindings);
+  }
+  // `rows = [...rows, "pg"]`, `[rows] = …`, `for (rows of …)`: the binding reassigned.
+  const target = assignmentTargetOf(outermostWrapper(ref));
+  if (ts.isForInOrOfStatement(target.parent) && target.parent.initializer === target) return true;
+  const reassigned = writeOf(target);
   if (reassigned !== undefined) return picksOrConditional(reassigned);
   const member = memberOn(ref);
   if (member === undefined) return false;
-  // `rows.length = n`, `rows.length -= 1`, `rows.length--`, `rows[1] = "pg"`.
-  const written = writeOf(outermostWrapper(member));
-  if (written !== undefined && (linkName(member) === "length" || ts.isElementAccessExpression(member))) return picksOrConditional(written);
+  // `rows.length = n`, `rows.length--`, `rows[1] = "pg"`, `tables.pg = 2`, `delete tables.pg`.
+  const outer = outermostWrapper(member);
+  const written = writeOf(outer) ?? (ts.isDeleteExpression(outer.parent) ? outer.parent : undefined);
+  if (written !== undefined) return picksOrConditional(written);
   const call = invokedBy(member);
   if (call === undefined || !SIZE_CHANGING.has(linkName(member))) return false;
   return picksOrConditional(call);
+}
+
+/**
+ * The outermost destructuring pattern `node` is an element of (`[rows]` in `[rows] = …`, `{ a: rows }`),
+ * or `node` itself.
+ */
+function assignmentTargetOf(node) {
+  let n = node;
+  for (;;) {
+    const p = n.parent;
+    const inPattern = ts.isArrayLiteralExpression(p) || ts.isObjectLiteralExpression(p) || ts.isSpreadElement(p) ||
+      ts.isSpreadAssignment(p) || ts.isShorthandPropertyAssignment(p) || (ts.isPropertyAssignment(p) && p.initializer === n) ||
+      ts.isParenthesizedExpression(p);
+    if (!inPattern) return n;
+    n = p;
+  }
 }
 
 /** The assignment (`=`, `+=`, …) or `++`/`--` that writes `target`, or undefined when it only reads it. */
@@ -123,7 +155,8 @@ function runsAfterCollection(node, bindings) {
     if (!ts.isFunctionLike(n)) continue;
     const call = outermostWrapper(n).parent;
     if (!ts.isCallExpression(call) || !call.arguments.includes(outermostWrapper(n))) continue;
-    if (vitestCallKind(call, bindings) === CALL_TEST || isVitestHookCall(call, bindings)) return true;
+    // A test's body, `it.each`'s included, runs at test time; a suite's, `describe.each`'s included, at collection.
+    if (definesTests(call, bindings) || isVitestHookCall(call, bindings)) return true;
   }
   return false;
 }

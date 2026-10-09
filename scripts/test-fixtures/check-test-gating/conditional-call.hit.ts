@@ -150,3 +150,8 @@ if (process.env.PG_URL) engineSet.add("pg");
 engineSet.forEach((e) => { describe(e, () => {}); }); // HIT
 const loopPgUrl = process.env.DATABASE_URL;
 for (const url of [loopPgUrl, "sqlite"].filter(Boolean)) describe(url, () => {}); // HIT
+var varUrls = process.env.DATABASE_URL ? [process.env.DATABASE_URL] : [];
+for (const u of varUrls) describe(u, () => {}); // HIT
+const forInTables = { sqlite: 1 };
+if (process.env.PG_URL) forInTables.pg = 2;
+for (const k in forInTables) describe(k, () => {}); // HIT
