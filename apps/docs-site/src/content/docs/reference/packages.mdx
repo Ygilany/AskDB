@@ -127,10 +127,12 @@ Connector provider registry — mirrors the `@askdb/ai` pattern for introspectio
 | Symbol | Purpose |
 | --- | --- |
 | `createConnectorRegistry(adapters)` | Build a registry from a set of provider adapters. |
-| `ConnectorRegistry` | Registry type — `createConnector(provider, config)`, `getTemplates(provider)`, `connectionLabel(provider, connection)`. |
+| `ConnectorRegistry` | Registry type — `createConnector(config)` (the provider is `config.provider`), `getTemplates(provider)`, `connectionLabel(provider, connection)`. |
 | `ConnectorProviderAdapter` | The adapter shape each engine package exports. |
 | `registry.connectionLabel(provider, { url?, fromExport?, schemaPath? })` | A label that is safe to display or log. The registry builds it with `formatConnectionLabel` from the parts the engine adapter parses (host, port, database, or a file path); a connection that doesn't parse cleanly, or an adapter without a parser, gets `configured <engine> connection`. |
-| `formatConnectionLabel(engine, parts)`, `parseConnectionUrl(input, schemes)` | The allowlisted label builder, and a strict standard-URL parser for engines whose driver has no parser to reuse. The built-in engines take their parts from their driver's own parser (`pg-connection-string`, `@tediousjs/connection-string`, `mysql2`'s URL handling). |
+| `ConnectorConnection` | The connection `connectionLabel` and an adapter's `connectionLabelParts` read: `{ url?, fromExport?, schemaPath? }`. |
+| `ConnectionLabelParts` | What an adapter's `connectionLabelParts` returns: `{ host?, port?, database? }`, or `{ file }` for a file path. |
+| `formatConnectionLabel(engine, parts)`, `parseConnectionUrl(input, schemes)` | The allowlisted label builder, and a strict standard-URL parser for engines whose driver has no parser to reuse. The built-in engines don't use it: Postgres takes its parts from `pg-connection-string` and SQL Server's ADO.NET strings from `@tediousjs/connection-string`, the parsers their drivers use; MySQL reads a `mysql://` URL with the mapping `mysql2` applies; SQL Server's `mssql://` and Prisma-style `sqlserver://` URLs go through `@askdb/sqlserver`'s own connection parser; SQLite labels the file path. |
 
 ### `@askdb/config`
 

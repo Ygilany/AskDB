@@ -403,6 +403,72 @@ describe("describeMysql", () => {
     ]);
   });
 
+  it("describeMysql with a database list keeps FKs into a listed database and skips FKs into an unlisted one", async () => {
+    const intCol = (database: string, table: string, column: string, pos: number, key = "") => ({
+      table_schema: database,
+      table_name: table,
+      column_name: column,
+      ordinal_position: pos,
+      column_default: null,
+      is_nullable: "NO",
+      data_type: "int",
+      column_type: "int",
+      column_key: key,
+      extra: "",
+      column_comment: "",
+    });
+    const fk = (constraint: string, column: string, referencedDatabase: string) => ({
+      constraint_name: constraint,
+      table_name: "orders",
+      column_name: column,
+      table_schema: "app",
+      referenced_table_schema: referencedDatabase,
+      referenced_table_name: "users",
+      referenced_column_name: "id",
+      ordinal_position: 1,
+      update_rule: "NO ACTION",
+      delete_rule: "NO ACTION",
+    });
+    const rows: Record<string, ReadonlyArray<Record<string, unknown>>> = {
+      tables: [
+        { table_schema: "app", table_name: "orders", table_type: "BASE TABLE", table_comment: "" },
+        { table_schema: "people", table_name: "users", table_type: "BASE TABLE", table_comment: "" },
+      ],
+      columns: [
+        intCol("app", "orders", "id", 1, "PRI"),
+        intCol("app", "orders", "user_id", 2, "MUL"),
+        intCol("app", "orders", "billing_user_id", 3, "MUL"),
+        intCol("people", "users", "id", 1, "PRI"),
+      ],
+      key_column_usage: [
+        fk("orders_people_fk", "user_id", "people"),
+        fk("orders_billing_fk", "billing_user_id", "billing"),
+      ],
+    };
+    const runner: CatalogQueryRunner = async (sql, params) => {
+      expect(params).toEqual(["app", "people"]);
+      const from = /FROM information_schema\.(\w+)/.exec(sql)?.[1] ?? "";
+      return rowsToResult(rows[from] ?? []);
+    };
+
+    const result = await describeMysql({ runner, filters: { schemas: ["app", "people"] } });
+    const orders = result.schema.schemas
+      .find((namespace) => namespace.name === "app")!
+      .tables.find((t) => t.name === "orders")!;
+    expect(orders.foreignKeys.map((f) => [f.name, f.references])).toEqual([
+      ["orders_people_fk", { schema: "people", table: "users", columns: ["id"] }],
+    ]);
+    expect(result.warnings).toEqual([
+      {
+        code: "cross_database_fk",
+        table: "table:app.orders",
+        constraint: "orders_billing_fk",
+        referencedDatabase: "billing",
+        referencedTable: "users",
+      },
+    ]);
+  });
+
   it("with a database list, keeps FKs into listed databases and skips FKs into unlisted ones", async () => {
     const fk = (constraint: string, referencedDatabase: string) => ({
       table_schema: "app",

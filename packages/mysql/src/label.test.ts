@@ -11,8 +11,8 @@ const connectionLabel = (url: string) => registry.connectionLabel("mysql", { url
 
 const FALLBACK = "configured mysql connection";
 
-// Inputs that leaked a secret through the earlier masking redactor (review
-// rounds 1-3 on #189/#195/#199) sit next to ordinary strings. The parts are
+// Inputs that leaked a secret through the earlier masking redactor (ADR 0011,
+// "Context") sit next to ordinary strings. The parts are
 // read the way mysql2 reads them (ADR 0011).
 const CORPUS: ReadonlyArray<readonly [input: string, label: string]> = [
   // Ordinary strings.
@@ -20,15 +20,15 @@ const CORPUS: ReadonlyArray<readonly [input: string, label: string]> = [
   ["mysql://localhost/shop?user=root&password=S3cret&ssl=true", "mysql://localhost/shop"],
   ["mysql://root:p@ss:w;rd@localhost/db", "mysql://localhost/db"],
   ["mysql://db:3306", "mysql://db:3306"],
-  // Round 1: a password with an unencoded /, ? or # was echoed unchanged.
+  // A password with an unencoded /, ? or # was echoed unchanged.
   ["mysql://root:pa/ss@db:3306/shop", FALLBACK],
   ["mysql://root:pa?ss@db:3306/shop", FALLBACK],
   ["mysql://root:p@ss#w0rd@db", FALLBACK],
-  // Round 2: leading whitespace. WHATWG URL (and so mysql2) strips it.
+  // Leading whitespace. WHATWG URL (and so mysql2) strips it.
   [" mysql://root:S3cret@localhost:3306/shop", "mysql://localhost:3306/shop"],
-  // Round 3: a quoted value with trailing text leaked the tail.
+  // A quoted value with trailing text leaked the tail.
   ["mysql://db/shop?password='ab'cd", "mysql://db/shop"],
-  // Round 3: JDBC and near-miss URL forms came back unchanged.
+  // JDBC and near-miss URL forms came back unchanged.
   ["jdbc:mysql://root:secret@h:3306/shop", FALLBACK],
   ['"mysql://root:secret@h/shop"', FALLBACK],
   ["mysql:/root:secret@h/shop", FALLBACK],

@@ -213,6 +213,12 @@ describe("cli spawn: introspect subcommand", () => {
       // --out persists the connector-detected provider; --diff must render the same body.
       expect(readFileSync(join(out, "schema.json"), "utf8")).toContain('"provider": "postgres"');
 
+      // --print renders the same bytes --out wrote, provider included (--out
+      // takes the schema ID from its directory name; --print has none).
+      const print = run("node", [...base, "--print", "--schema-id", "simple"]);
+      expect(print.status, print.stderr).toBe(0);
+      expect(print.stdout).toBe(readFileSync(join(out, "schema.json"), "utf8"));
+
       const same = run("node", [...base, "--diff", out]);
       expect(same.status).toBe(0);
       expect(JSON.parse(same.stdout)).toMatchObject({ changed: false });
@@ -230,6 +236,18 @@ describe("cli spawn: introspect subcommand", () => {
       const withSensitive = run("node", [...base, "--diff", out]);
       expect(withSensitive.status).toBe(0);
       expect(JSON.parse(withSensitive.stdout)).toMatchObject({ changed: false });
+
+      // The same JSON with other formatting and key order is not drift.
+      const reordered = (value: unknown): unknown =>
+        Array.isArray(value)
+          ? value.map(reordered)
+          : value !== null && typeof value === "object"
+            ? Object.fromEntries(Object.entries(value).reverse().map(([k, v]) => [k, reordered(v)]))
+            : value;
+      writeFileSync(join(out, "schema.json"), JSON.stringify(reordered(artifact)), "utf8");
+      const reformatted = run("node", [...base, "--diff", out]);
+      expect(reformatted.status).toBe(0);
+      expect(JSON.parse(reformatted.stdout)).toMatchObject({ changed: false });
 
       // A real source change (new model) is reported.
       writeFileSync(

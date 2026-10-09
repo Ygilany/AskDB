@@ -8,8 +8,8 @@ const connectionLabel = (url: string) => registry.connectionLabel("sqlite", { ur
 
 const FALLBACK = "configured sqlite connection";
 
-// Inputs that leaked a secret through the earlier masking redactor (review
-// rounds 2-3 on #189/#195/#199) sit next to ordinary paths. A label is the file
+// Inputs that leaked a secret through the earlier masking redactor (ADR 0011,
+// "Context") sit next to ordinary paths. A label is the file
 // path only; a `file:` URI's query string is never read.
 describe("sqlite connection label (sqliteConnectorProvider.connectionLabelParts through the registry)", () => {
   it.each([
@@ -21,11 +21,11 @@ describe("sqlite connection label (sqliteConnectorProvider.connectionLabelParts 
     ["file:./data/app.db?mode=ro&cache=shared", "./data/app.db"],
     ["file:///srv/app.db?mode=ro", "/srv/app.db"],
     ["file://localhost/srv/app.db", "/srv/app.db"],
-    // Round 2: encryption keys in a file: URI query.
+    // Encryption keys in a file: URI query.
     ["file:./data/app.db?mode=ro&key=S3cret&cache=shared", "./data/app.db"],
     ["file:app.db?hexkey=2DD29CA8&password=S3cret", "app.db"],
     ["file:app.db?key=S3&cret&mode=ro", "app.db"],
-    // Round 3: a percent-encoded key name was not recognised as a secret.
+    // A percent-encoded key name was not recognised as a secret.
     ["file:app.db?%6Bey=secret", "app.db"],
     ["file:app.db?k%65y=secret", "app.db"],
     // Not a plain path or a local file: URI.
