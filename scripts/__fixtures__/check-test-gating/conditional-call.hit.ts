@@ -38,3 +38,12 @@ try {
 if (ok) {
   rows.forEach((r) => it(`row ${r}`, run)); // HIT
 }
+switch (engine) {
+  default:
+    describe("default clause", run); // HIT
+}
+registered ||= describe("||=", run); // HIT
+registered &&= it("&&=", run); // HIT
+registered ??= test("??=", run); // HIT
+if (ok) it.only("only", run); // HIT
+if (ok) it.for([1, 2])("for %s", run); // HIT

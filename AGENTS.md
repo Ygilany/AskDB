@@ -78,7 +78,7 @@ Every change, whether you write it or review it, is checked against these three 
 
 - **Right layer, clean boundary.** Put each change in the package that owns the behavior, with imports pointing down the layers in `docs/architecture.md` ("Dependency boundaries"). Engine-specific code lives in its engine package, apart from the built-in `DialectSpec`s and dialect-keyed lexing and quoting, which stay in `@askdb/core` (ADR 0002); app-only concerns (transport, request guards, UI) stay in the app. Fix a defect at its owner, not in the caller that hit it.
 - **User-facing changes update the docs site in the same PR.** That covers a public API, CLI flag, config key, default, error text, Studio behavior, or integration pattern: update `apps/docs-site/src/content/docs/` in the same PR, not as a follow-up.
-- **Record choices between clean options in an ADR.** When a change picks between two or more viable designs, add `docs/adrs/NNNN-title.md` (status, context, decision, alternatives, consequences) and a row in `docs/adrs/README.md` in the same PR. To change an accepted decision, amend or supersede its ADR; don't just change the code.
+- **Record choices between clean options in an ADR.** When a change picks between two or more viable designs, add `docs/adrs/NNNN-title.md` (status, context, options considered, decision, consequences) and a row in `docs/adrs/README.md` in the same PR. To change an accepted decision, amend or supersede its ADR; don't just change the code.
 
 ## Conventions
 

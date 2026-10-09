@@ -1,6 +1,6 @@
 // node --test scripts/check-test-gating.test.mjs  (runs from the root `lint` script)
 //
-// Fixture corpus: scripts/__fixtures__/check-test-gating/<rule>.hit.ts(x) must report exactly the
+// Fixture corpus: scripts/__fixtures__/check-test-gating/<rule>[.<case>].hit.ts(x) must report exactly the
 // lines marked `// HIT`, all under <rule>; every *.clean.ts(x) must report nothing.
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -25,7 +25,7 @@ test("every rule has a hit fixture and a clean fixture", () => {
 
 for (const file of files) {
   const src = readFileSync(join(fixtures, file), "utf8");
-  const hit = file.match(/^(.+)\.hit\.tsx?$/);
+  const hit = file.match(/^([^.]+)(?:\.[^.]+)?\.hit\.tsx?$/);
   if (hit) {
     const rule = hit[1];
     test(`${file}: reports exactly the HIT lines under ${rule}`, () => {
@@ -74,12 +74,16 @@ test("CLI scans every workspace package (not just src/) and skips excluded ones"
     "packages/a/src/a.test.ts": 'it("ok", () => {});\n',
     "packages/excluded/src/x.test.ts": 'describe.skip("excluded package", () => {});\n',
     "packages/a/node_modules/dep/y.test.ts": 'describe.skip("dependency", () => {});\n',
+    "packages/a/dist/built.test.ts": 'describe.skip("build output", () => {});\n',
+    "packages/a/.turbo/cache.test.ts": 'describe.skip("turbo cache", () => {});\n',
+    "packages/a/.astro/gen.test.ts": 'describe.skip("astro output", () => {});\n',
+    "packages/a/.lab/scratch.test.ts": 'describe.skip("lab cache", () => {});\n',
     "fixtures/db/test/db.integration.test.ts": 'describe.skip("outside src", () => {});\n',
   });
   const result = run(root);
   assert.equal(result.status, 1);
   assert.match(result.stderr, /fixtures\/db\/test\/db\.integration\.test\.ts:1:/);
-  assert.doesNotMatch(result.stderr, /excluded|node_modules/);
+  assert.doesNotMatch(result.stderr, /excluded|node_modules|dist|\.turbo|\.astro|\.lab/);
 });
 
 test("CLI keeps reading the packages list past a column-0 comment", (t) => {
@@ -119,6 +123,17 @@ test("CLI runs when invoked through a symlinked path", (t) => {
     assert.equal(result.status, 1, `flags ${flags.join(" ") || "(none)"}`);
     assert.match(result.stderr, /packages\/a\/src\/a\.test\.ts:1:/);
   }
+});
+
+test("CLI reports the right line and source for lone-CR and U+2028 line breaks", (t) => {
+  const root = workspace(t, {
+    "packages/a/src/cr.test.ts": 'const a = 1;\rdescribe.skip("cr", () => {});\r',
+    "packages/a/src/ls.test.ts": 'const s = 1;\u2028describe.skip("ls", () => {});\n',
+  });
+  const result = run(root);
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /cr\.test\.ts:2: .*\n\s+describe\.skip\("cr"/);
+  assert.match(result.stderr, /ls\.test\.ts:2: .*\n\s+describe\.skip\("ls"/);
 });
 
 test("CLI passes a clean workspace", (t) => {

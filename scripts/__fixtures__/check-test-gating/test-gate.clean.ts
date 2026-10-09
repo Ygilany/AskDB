@@ -3,3 +3,7 @@ test.concurrent("concurrent test", () => {});
 it.each([1, 2])("table %s", () => {});
 expect(/skipIf/.test(source)).toBe(true);
 submit.skipIf("an unrelated member");
+it("a plain skipped test through options", { skip: true }, () => {});
+it("a todo through options", { todo: true }, () => {});
+it("other options", { timeout: 5_000, retry: 2 }, () => {});
+it.each([{ skip: maybe }])("table rows are data, not options %o", () => {});

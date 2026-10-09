@@ -29,3 +29,10 @@ try {
 } finally {
   cleanup();
 }
+if (ready) {
+  class Suites {
+    register() {
+      describe("in a method, reported where it is called", run);
+    }
+  }
+}

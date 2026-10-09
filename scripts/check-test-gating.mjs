@@ -2,8 +2,8 @@
 // Fails when a test file gates a suite or test by hand instead of through
 // `integrationSuite()` (scripts/test-utils/integration.mjs).
 //
-// Hand-rolled gates (`describe.skip`, `describe.skipIf(...)`, `cond ? describe : describe.skip`)
-// skip silently when a prerequisite is missing, so CI's ASKDB_REQUIRE_INTEGRATION=1 can't turn
+// Hand-rolled gates (`describe.skip`, `describe.skipIf(...)`, `cond ? describe : describe.skip`,
+// `describe(name, { skip: cond }, fn)`) skip silently when a prerequisite is missing, so CI's ASKDB_REQUIRE_INTEGRATION=1 can't turn
 // a missing database or driver into a failure. `integrationSuite()` is the one sanctioned gate.
 //
 // Scans every *.test.ts / *.test.tsx in the pnpm workspace packages listed in
@@ -13,8 +13,11 @@
 // comments, strings, templates, regexes and JSX text never trip a rule, and a file that does
 // not parse fails the check instead of passing unread.
 //
+// Vitest is recognized as the globals, renamed imports (`import { it as t } from "vitest"`) and
+// namespace imports (`import * as v from "vitest"`).
+//
 // Allowed: a plain skipped test called directly, e.g. `it.skip("…", fn)`, `it.skip.each(…)(…)`,
-// and tests defined in a loop (`for (const c of cases) it(…)`), which is parametrization.
+// `it("…", { skip: true }, fn)`, and tests defined in a loop (`for (const c of cases) it(…)`), which is parametrization.
 // Rejected: see RULES, including a describe/suite/it/test call made only under a condition
 // (`if`/`else`, `switch` cases, `try`/`catch`, `? :`, `&&`, `||`, `??`) anywhere between the
 // call and the nearest enclosing suite, test or named function. To exempt one line, put a line
@@ -22,8 +25,8 @@
 //   // check-test-gating-ignore-next-line: <reason>
 //
 // Known limits: an early `return` before a call, a gate behind a helper or alias
-// (`const d = describe`, a named function called under a condition), and `ctx.skip()` inside a
-// test body are not detected.
+// (`const d = describe`, a named function called under a condition), options passed in a
+// variable or spread (`it(name, opts, fn)`), and `ctx.skip()` inside a test body are not detected.
 //
 // Usage: node scripts/check-test-gating.mjs [repo-root]
 import { readdirSync, readFileSync, existsSync, realpathSync } from "node:fs";
@@ -43,22 +46,23 @@ const SUITE_FNS = new Set(["describe", "suite"]);
 const MODIFIERS = new Set([
   "skip", "only", "todo", "concurrent", "sequential", "shuffle", "fails", "each", "for", "skipIf", "runIf",
 ]);
+const GATE_LINKS = new Set(["skipIf", "runIf"]);
 
 export const RULES = [
   {
     id: "suite-gate",
-    test: (ref) => SUITE_FNS.has(ref.base) && ref.links.some((l) => l === "skip" || l === "skipIf" || l === "runIf"),
+    test: (ref) => ref.suite && (ref.links.some((l) => l === "skip" || GATE_LINKS.has(l)) || ref.computed || ref.optionGate),
     why: "gates a suite by hand; use integrationSuite()",
   },
   {
     id: "test-gate",
-    test: (ref) => !SUITE_FNS.has(ref.base) && ref.links.some((l) => l === "skipIf" || l === "runIf"),
+    test: (ref) => !ref.suite && (ref.links.some((l) => GATE_LINKS.has(l)) || ref.computed || ref.optionGate),
     why: "gates a test by hand; use integrationSuite() around the suite",
   },
   {
     // `.skip` that is never invoked is being passed around as a value: a gate expression.
     id: "skip-as-value",
-    test: (ref) => !SUITE_FNS.has(ref.base) && ref.links.includes("skip") && !ref.invoked,
+    test: (ref) => !ref.suite && ref.links.includes("skip") && !ref.invoked,
     why: "uses it.skip/test.skip as a gate expression; use integrationSuite()",
   },
   {
@@ -69,7 +73,7 @@ export const RULES = [
   {
     // A describe/suite/it/test call that only runs when a condition holds.
     id: "conditional-call",
-    test: (ref) => ref.invoked && ref.links.every((l) => MODIFIERS.has(l)) && underCondition(ref.call),
+    test: (ref) => ref.invoked && ref.links.every((l) => MODIFIERS.has(l)) && ref.conditional,
     why: "defines a suite or test only under a condition; use integrationSuite()",
   },
 ];
@@ -88,8 +92,14 @@ function isWrapper(node) {
 }
 
 /** The outermost wrapper around `node`, or `node` itself. */
-function stripParens(node) {
+function outermostWrapper(node) {
   while (isWrapper(node.parent) && node.parent.expression === node) node = node.parent;
+  return node;
+}
+
+/** `node` with its wrappers removed. */
+function unwrap(node) {
+  while (isWrapper(node)) node = node.expression;
   return node;
 }
 
@@ -103,58 +113,146 @@ function linkName(node) {
 }
 
 /**
- * A reference to Vitest's describe/suite/it/test: the identifier, its `.modifier` links, the
- * outermost expression of the chain (`top`), and the call or tagged template that invokes it.
- * `it.skip.each(rows)(name, fn)` counts as invoked, through the call `each(rows)` returns.
- * @param {import("typescript").Identifier} id
+ * The file's names for Vitest's describe/suite/it/test: the globals, local names from
+ * `import { it as t } from "vitest"`, and namespaces from `import * as v from "vitest"`.
+ * @param {import("typescript").SourceFile} sf
  */
-function testRef(id) {
+function vitestNames(sf) {
+  const locals = new Map([...TEST_FNS].map((n) => [n, n]));
+  const namespaces = new Set();
+  for (const stmt of sf.statements) {
+    if (!ts.isImportDeclaration(stmt) || !ts.isStringLiteral(stmt.moduleSpecifier)) continue;
+    if (stmt.moduleSpecifier.text !== "vitest") continue;
+    const bindings = stmt.importClause?.namedBindings;
+    if (bindings && ts.isNamespaceImport(bindings)) namespaces.add(bindings.name.text);
+    if (bindings && ts.isNamedImports(bindings)) {
+      for (const el of bindings.elements) {
+        const imported = (el.propertyName ?? el.name).text;
+        if (TEST_FNS.has(imported)) locals.set(el.name.text, imported);
+      }
+    }
+  }
+  return { sf, locals, namespaces };
+}
+
+/** The Vitest function `node` names (`describe`, `v.describe`, a renamed import), or undefined. */
+function testFnName(node, ctx) {
+  if (ts.isIdentifier(node)) return ctx.locals.get(node.text);
+  if (
+    ts.isPropertyAccessExpression(node) &&
+    ts.isIdentifier(node.expression) &&
+    ctx.namespaces.has(node.expression.text) &&
+    TEST_FNS.has(node.name.text)
+  ) {
+    return node.name.text;
+  }
+  return undefined;
+}
+
+/** Whether identifier `id` is a value reference: not `obj.x`, `{ x: … }`, a declaration, an import or a type. */
+function isValueReference(id) {
   const parent = id.parent;
-  if (!TEST_FNS.has(id.text)) return undefined;
-  // Only a value reference: not `obj.test`, `{ test: … }`, a declaration, an import or a type.
-  if (ts.isPropertyAccessExpression(parent) && parent.name === id) return undefined;
+  if (ts.isPropertyAccessExpression(parent) && parent.name === id) return false;
   if (
     (ts.isPropertyAssignment(parent) || ts.isMethodDeclaration(parent) || ts.isPropertyDeclaration(parent)) &&
     parent.name === id
   ) {
-    return undefined;
+    return false;
   }
   if (ts.isVariableDeclaration(parent) || ts.isParameter(parent) || ts.isFunctionDeclaration(parent)) {
-    if (parent.name === id) return undefined;
+    if (parent.name === id) return false;
   }
-  if (ts.isImportSpecifier(parent) || ts.isImportClause(parent) || ts.isTypeReferenceNode(parent)) return undefined;
-  if (ts.isQualifiedName(parent) || ts.isExportSpecifier(parent) || ts.isBindingElement(parent)) return undefined;
+  if (ts.isImportSpecifier(parent) || ts.isImportClause(parent) || ts.isNamespaceImport(parent)) return false;
+  if (ts.isTypeReferenceNode(parent) || ts.isQualifiedName(parent)) return false;
+  return !ts.isExportSpecifier(parent) && !ts.isBindingElement(parent);
+}
 
+/**
+ * A reference to Vitest's describe/suite/it/test, starting at the identifier or `v.describe`
+ * node `start`: its `.modifier` links, the outermost expression of the chain (`top`), the call or
+ * tagged template that invokes it, and what the rules need to know about that call.
+ * `it.skip.each(rows)(name, fn)` counts as invoked, through the call `each(rows)` returns.
+ */
+function testRef(start, base, ctx) {
   const links = [];
-  let top = id;
+  let computed = false;
+  let top = start;
   for (;;) {
-    const up = stripParens(top).parent;
+    const inner = outermostWrapper(top);
+    const up = inner.parent;
+    if (!(ts.isPropertyAccessExpression(up) || ts.isElementAccessExpression(up)) || up.expression !== inner) break;
     const name = linkName(up);
-    if (name === undefined || up.expression !== stripParens(top)) break;
+    if (name === undefined) {
+      // `describe[expr]`: a modifier chosen at run time can't be classified, so it fails closed.
+      computed = true;
+      top = up;
+      break;
+    }
     links.push(name);
     top = up;
   }
-  top = stripParens(top);
+  top = outermostWrapper(top);
   let call;
   const p = top.parent;
   if ((ts.isCallExpression(p) && p.expression === top) || (ts.isTaggedTemplateExpression(p) && p.tag === top)) {
     call = p;
     // `.each(rows)` / `.for(rows)` returns the function that defines the tests.
     const last = links[links.length - 1];
-    const outer = stripParens(call).parent;
-    if ((last === "each" || last === "for") && ts.isCallExpression(outer) && outer.expression === stripParens(call)) {
+    const outer = outermostWrapper(call).parent;
+    if ((last === "each" || last === "for") && ts.isCallExpression(outer) && outer.expression === outermostWrapper(call)) {
       call = outer;
     }
   }
-  return { base: id.text, links, top, call, invoked: call !== undefined, line: lineOf(id) };
+  const suite = SUITE_FNS.has(base);
+  return {
+    suite,
+    links,
+    computed,
+    top,
+    call,
+    invoked: call !== undefined,
+    conditional: call !== undefined && underCondition(call, ctx),
+    optionGate: call !== undefined && hasGateOption(call, suite),
+    line: ctx.sf.getLineAndCharacterOfPosition(start.getStart(ctx.sf)).line + 1,
+  };
 }
 
-let currentFile;
-function lineOf(node) {
-  return currentFile.getLineAndCharacterOfPosition(node.getStart(currentFile)).line + 1;
+const SKIP_OPTIONS = new Set(["skip", "todo"]);
+
+/**
+ * Whether a suite or test call skips through its options argument (`{ skip: cond }`,
+ * `{ todo: cond }`, or options picked by `? :`, `&&`, `||` or `??`). A literal `skip: true` or
+ * `todo: true` on a test is a plain skipped test, like `it.skip`; on a suite, `skip: true` is a
+ * gate, like `describe.skip`.
+ */
+function hasGateOption(call, suite) {
+  if (!ts.isCallExpression(call)) return false;
+  let gate = false;
+  const visit = (node, chosen) => {
+    node = unwrap(node);
+    if (ts.isConditionalExpression(node)) {
+      visit(node.whenTrue, true);
+      visit(node.whenFalse, true);
+    } else if (ts.isBinaryExpression(node) && CONDITIONAL_OPERATORS.has(node.operatorToken.kind)) {
+      visit(node.left, true);
+      visit(node.right, true);
+    } else if (ts.isObjectLiteralExpression(node)) {
+      for (const prop of node.properties) {
+        const key = prop.name && (ts.isIdentifier(prop.name) || ts.isStringLiteral(prop.name)) ? prop.name.text : undefined;
+        if (!SKIP_OPTIONS.has(key)) continue;
+        if (ts.isShorthandPropertyAssignment(prop)) { gate = true; continue; }
+        if (!ts.isPropertyAssignment(prop)) continue;
+        const value = unwrap(prop.initializer);
+        const literal = value.kind === ts.SyntaxKind.TrueKeyword || value.kind === ts.SyntaxKind.FalseKeyword;
+        if (chosen || !literal || (suite && key === "skip" && value.kind === ts.SyntaxKind.TrueKeyword)) gate = true;
+      }
+    }
+  };
+  for (const arg of call.arguments) visit(arg, false);
+  return gate;
 }
 
-/** Whether `node` is the true or false branch of a `? :` (through parentheses). */
+/** Whether `node` is the true or false branch of a `? :` (through wrappers). */
 function isTernaryBranch(node) {
   const p = node.parent;
   return ts.isConditionalExpression(p) && (p.whenTrue === node || p.whenFalse === node);
@@ -184,26 +282,27 @@ function conditionalEdge(parent, child) {
  * enclosing suite or test call (which is checked on its own), named function, or the file.
  * Loops are not conditions.
  */
-function underCondition(call) {
+function underCondition(call, ctx) {
   let child = call;
   for (let node = call.parent; node && !ts.isSourceFile(node); child = node, node = node.parent) {
     if (conditionalEdge(node, child)) return true;
     if (ts.isFunctionDeclaration(node) || ts.isMethodDeclaration(node) || ts.isClassDeclaration(node)) return false;
-    if ((ts.isCallExpression(node) || ts.isTaggedTemplateExpression(node)) && node !== call && isTestCall(node)) {
+    if ((ts.isCallExpression(node) || ts.isTaggedTemplateExpression(node)) && node !== call && isTestCall(node, ctx)) {
       return false;
     }
   }
   return false;
 }
 
-function isTestCall(node) {
+function isTestCall(node, ctx) {
   let callee = ts.isCallExpression(node) ? node.expression : node.tag;
   if (ts.isCallExpression(callee)) callee = callee.expression; // `.each(rows)(…)`
   for (;;) {
-    if (isWrapper(callee) || linkName(callee) !== undefined) callee = callee.expression;
-    else break;
+    callee = unwrap(callee);
+    if (testFnName(callee, ctx) !== undefined) return true;
+    if (ts.isPropertyAccessExpression(callee) || ts.isElementAccessExpression(callee)) callee = callee.expression;
+    else return false;
   }
-  return ts.isIdentifier(callee) && TEST_FNS.has(callee.text);
 }
 
 /** Line numbers exempted by a `// check-test-gating-ignore-next-line: <reason>` comment. */
@@ -271,12 +370,13 @@ export function findGates(src, fileName = "file.test.ts") {
     const line = sf.getLineAndCharacterOfPosition(d.start ?? 0).line + 1;
     throw new Error(`does not parse at line ${line}: ${ts.flattenDiagnosticMessageText(d.messageText, " ")}`);
   }
-  currentFile = sf;
+  const ctx = vitestNames(sf);
   const refs = [];
   const visit = (node) => {
-    if (ts.isIdentifier(node)) {
-      const ref = testRef(node);
-      if (ref) refs.push(ref);
+    if (ts.isIdentifier(node) && isValueReference(node) && ctx.locals.has(node.text)) {
+      refs.push(testRef(node, ctx.locals.get(node.text), ctx));
+    } else if (ts.isPropertyAccessExpression(node) && testFnName(node, ctx) !== undefined) {
+      refs.push(testRef(node, node.name.text, ctx));
     }
     ts.forEachChild(node, visit);
   };
@@ -298,7 +398,7 @@ export function findGates(src, fileName = "file.test.ts") {
  * Workspace package directories from pnpm-workspace.yaml's `packages:` list.
  * Supports literal paths, a trailing `/*`, and `!` exclusions; anything else throws, so the
  * check fails closed rather than skipping a package. Parsed here rather than asking
- * `pnpm -r ls` so the check needs no pnpm process and no install.
+ * `pnpm -r ls`, so `pnpm lint` doesn't spawn pnpm for one list it can read directly.
  * @param {string} root
  */
 function workspaceDirs(root) {
@@ -360,7 +460,8 @@ function main() {
     for (const file of walk(join(root, dir))) {
       scanned++;
       const src = readFileSync(file, "utf8");
-      const lines = src.split("\n");
+      // Split lines the way TypeScript counts them, so hit.line indexes the right one.
+      const lines = src.split(/\r\n|[\r\n\u2028\u2029]/);
       let gates;
       try {
         gates = findGates(src, file);
