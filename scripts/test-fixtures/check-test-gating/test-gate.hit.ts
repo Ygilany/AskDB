@@ -67,3 +67,9 @@ it("an array read one level below the pick", Object.assign({}, process.env.DATAB
 it("options read back out of a meta key", { meta: { todo: !process.env.DATABASE_URL } }.meta, () => {}); // HIT
 it("options built by Object.fromEntries over a pick", Object.fromEntries(process.env.DATABASE_URL ? [] : [["skip", true]]), () => {}); // HIT
 it("options parsed from a picked string", JSON.parse(process.env.DATABASE_URL ? "{}" : '{"skip":true}'), () => {}); // HIT
+it("options built from a skip entry", Object.fromEntries([["skip", !process.env.DATABASE_URL]]), () => {}); // HIT
+it("options parsed from a template", JSON.parse(`{"skip": ${!process.env.DATABASE_URL}}`), () => {}); // HIT
+it("options from a tagged template", opts`${process.env.DATABASE_URL ? "" : "skip"}`, () => {}); // HIT
+it("options from a picked receiver", (process.env.DATABASE_URL ? fastOptions : slowOptions).build(), () => {}); // HIT
+it("options from a helper over a fallback", buildOptions(process.env.MODE ?? fallbackMode), () => {}); // HIT
+it("options from a look-alike parseInt", Foo.parseInt(process.env.MODE ?? fallbackMode), () => {}); // HIT

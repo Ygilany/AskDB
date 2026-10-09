@@ -89,6 +89,20 @@ export function memberOn(node) {
   return isMemberLink(p) && p.expression === outer ? p : undefined;
 }
 
+/**
+ * A call's callee as `{ owner, name }`: `f(…)` gives `{ name: "f" }`, `o.f(…)` gives `{ owner: "o",
+ * name: "f" }` (`owner` only when the receiver is a plain name), through wrappers. Undefined for any
+ * other callee.
+ */
+export function calleeParts(call) {
+  if (!ts.isCallExpression(call)) return undefined;
+  const callee = unwrap(call.expression);
+  if (ts.isIdentifier(callee)) return { name: callee.text };
+  if (!isMemberLink(callee)) return undefined;
+  const receiver = unwrap(callee.expression);
+  return { owner: ts.isIdentifier(receiver) ? receiver.text : undefined, name: linkName(callee) };
+}
+
 /** The receiver of a method call (`x` in `x.f(…)`), or undefined for any other call. */
 export function receiverOf(call) {
   const callee = ts.isCallExpression(call) ? unwrap(call.expression) : undefined;
@@ -151,7 +165,11 @@ export function everyPickLeaf(node, isLeaf) {
   return branches.length > 0 ? branches.every((b) => everyPickLeaf(b, isLeaf)) : isLeaf(node);
 }
 
-/** Whether `node` holds a pick anywhere inside it, outside a nested function. */
+/**
+ * Whether `node` holds a pick anywhere inside it, outside a nested function, whatever the pick
+ * decides (`{ a: url ? 1 : 2 }` holds one). Compare `pickedAtRunTime` (the value itself is chosen)
+ * and `pickDecidesSize` (a table's length is) in `conditions.mjs`.
+ */
 export function holdsPick(node) {
   return someInside(node, isPick);
 }
@@ -162,7 +180,7 @@ export function isBinaryPick(node) {
 }
 
 /** Whether `test` holds for `node` or anything inside it, outside a nested function. */
-function someInside(node, test) {
+export function someInside(node, test) {
   if (ts.isFunctionLike(node)) return false;
   if (test(node)) return true;
   return ts.forEachChild(node, (child) => (someInside(child, test) ? true : undefined)) === true;

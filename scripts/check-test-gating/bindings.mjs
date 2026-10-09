@@ -1,7 +1,7 @@
 // Resolves names in a test file to Vitest's describe/suite/it/test and to integrationSuite(), for
 // scripts/check-test-gating.mjs.
 import { dirname, resolve } from "node:path";
-import { calleeOf, everyPickLeaf, firstParameter, isMemberLink, isPick, linkName, outermostWrapper, ts, unwrap, resultOf } from "./ast.mjs";
+import { calleeOf, calleeParts, everyPickLeaf, firstParameter, isMemberLink, isPick, linkName, outermostWrapper, ts, unwrap, resultOf } from "./ast.mjs";
 
 const TEST_FNS = new Set(["describe", "suite", "it", "test"]);
 // What `bindings.resolve()` finds a name to be, each spelt in one place.
@@ -106,9 +106,7 @@ export function isVitestModuleUse(node, bindings) {
 
 /** Whether `node` is `createRequire(…)` or `module.createRequire(…)`. */
 function isCreateRequireCall(node) {
-  if (!ts.isCallExpression(node)) return false;
-  const callee = unwrap(node.expression);
-  return (ts.isIdentifier(callee) && callee.text === "createRequire") || (isMemberLink(callee) && linkName(callee) === "createRequire");
+  return calleeParts(node)?.name === "createRequire";
 }
 
 /** Whether `node` (through parentheses and casts) is the string `"vitest"`. */

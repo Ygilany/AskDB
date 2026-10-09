@@ -58,7 +58,8 @@ const {
   everyPickLeaf,
   isPick,
   isPlainAssignment,
-  holdsPick,
+  someInside,
+  calleeParts,
   receiverOf,
   optionKey,
   RUNTIME_KEY,
@@ -349,24 +350,42 @@ function hasGateOption(call, suite) {
   return gate;
 }
 
-/** Whether `node` is a call or `new` (other than a numeric conversion) over a pick in its arguments or receiver. */
+/**
+ * Whether `node` builds options or a body at run time in a way that can skip: a call, `new` or
+ * tagged template (other than a numeric conversion) whose arguments, receiver or template hold a
+ * pick that isn't between plain strings or numbers, or name a skip option as a string
+ * (`Object.fromEntries([["skip", !url]])`, `JSON.parse(url ? "{}" : …)`, `` opts`${url ? "" : "skip"}` ``).
+ */
 function builtFromPick(node) {
-  if (!ts.isCallExpression(node) && !ts.isNewExpression(node)) return false;
+  const isCall = ts.isCallExpression(node) || ts.isNewExpression(node);
+  if (!isCall && !ts.isTaggedTemplateExpression(node)) return false;
   if (isNumericConversion(node)) return false;
-  const receiver = receiverOf(node);
-  return (node.arguments ?? []).some(holdsPick) || (receiver !== undefined && holdsPick(receiver));
+  const parts = isCall ? [...(node.arguments ?? []), receiverOf(node)] : [node.tag, node.template];
+  return parts.some((part) => part !== undefined && someInside(part, (n) =>
+    (isPick(n) && !picksOnlyLiterals(n)) || namesSkipOption(n)));
 }
+
+/**
+ * Whether `node` is a string or template text naming `skip`, `todo` or `fails`: the bare key
+ * (`["skip", c]`) or the key written as one (`'{"skip":true}'`, `` `skip: ${c}` ``).
+ */
+function namesSkipOption(node) {
+  const text = ts.isStringLiteralLike(node) || ts.isTemplateHead(node) || ts.isTemplateMiddle(node) || ts.isTemplateTail(node)
+    ? node.text : undefined;
+  return text !== undefined && (SKIP_OPTIONS.has(text) || SKIP_KEY_TEXT.test(text));
+}
+
+const SKIP_KEY_TEXT = /\b(?:skip|todo|fails)\b["']?\s*:/;
 
 // Calls that turn a value into a number: a timeout computed from a pick, not options or a body.
 const NUMERIC_CONVERSIONS = new Set(["Number", "parseInt", "parseFloat"]);
 
 /** Whether `call` is `Number(…)`, `parseInt(…)`, `parseFloat(…)`, `Number.parseInt(…)` or a `Math` method. */
 function isNumericConversion(call) {
-  const callee = unwrap(call.expression);
-  if (ts.isIdentifier(callee)) return NUMERIC_CONVERSIONS.has(callee.text);
-  if (!isMemberLink(callee) || !ts.isIdentifier(unwrap(callee.expression))) return false;
-  const owner = unwrap(callee.expression).text;
-  return owner === "Math" || (owner === "Number" && NUMERIC_CONVERSIONS.has(linkName(callee)));
+  const parts = calleeParts(call);
+  if (parts === undefined) return false;
+  if (parts.owner === undefined) return receiverOf(call) === undefined && NUMERIC_CONVERSIONS.has(parts.name);
+  return parts.owner === "Math" || (parts.owner === "Number" && NUMERIC_CONVERSIONS.has(parts.name));
 }
 
 /** Whether every value a run-time choice can produce is a string or number literal. */

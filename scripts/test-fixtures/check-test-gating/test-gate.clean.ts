@@ -29,3 +29,5 @@ it("a string pick after the name", () => {}, process.env.CI ? "a" : "b");
 it("a fails key under meta", { meta: { fails: process.env.CI === "true" } }, () => {});
 it("a timeout parsed from the environment", () => {}, parseInt(process.env.SLOW_TIMEOUT ?? "5000", 10));
 it("a timeout bounded by Math.max", () => {}, Math.max(Number(process.env.SLOW_TIMEOUT ?? 0), 5_000));
+it("a timeout picked between numbers inside options", Object.assign({}, { timeout: process.env.CI ? 10_000 : 5_000 }), () => {});
+it("a body built by a helper naming no skip", withLogging("cache warm-up", async () => {}));

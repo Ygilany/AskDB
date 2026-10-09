@@ -1,6 +1,7 @@
 // Whether a suite or test call runs only under a condition, and whether a value is picked at run
 // time, for scripts/check-test-gating.mjs.
 import {
+  calleeParts,
   calleeOf,
   holdsPick,
   isBinaryPick,
@@ -203,6 +204,9 @@ const ITERATION_METHODS = new Set(["forEach", "map", "flatMap"]);
 
 /** Whether a method call chained after `call` (`call.take(n)`, `call.slice(…).drop(n)`) holds a pick. */
 function pickLaterInChain(call) {
+  // `call[url ? "toArray" : "return"]()`: a method chosen by a pick.
+  const read = outermostWrapper(call).parent;
+  if (ts.isElementAccessExpression(read) && read.expression === outermostWrapper(call) && holdsPick(read.argumentExpression)) return true;
   for (let member = memberOn(call); member !== undefined; ) {
     const next = outermostWrapper(member).parent;
     if (!ts.isCallExpression(next) || next.expression !== outermostWrapper(member)) return false;
@@ -214,8 +218,8 @@ function pickLaterInChain(call) {
 
 /** Whether `node` is `rows.forEach(cb)`, `rows.map(cb)` or `rows.flatMap(cb)`. */
 function isIterationCall(node) {
-  const callee = ts.isCallExpression(node) ? unwrap(node.expression) : undefined;
-  return callee !== undefined && isMemberLink(callee) && ITERATION_METHODS.has(linkName(callee));
+  const parts = calleeParts(node);
+  return parts !== undefined && receiverOf(node) !== undefined && ITERATION_METHODS.has(parts.name);
 }
 
 /**

@@ -99,3 +99,8 @@ describe.each([["pg"]].slice(0 + 0))("a slice bound computed without a pick %s",
 describe.each([["pg"]].slice(-1))("a negative slice bound without a pick %s", () => {});
 describe.each([["pg"]].slice(`${1}`.length))("a template without a pick %s", () => {});
 register(class { static s = describe("a static field runs when the class does", run); });
+[["pg"]].values().map(([e]) => describe(`a lazy map drained with no pick ${e}`, run)).toArray();
+for (;;) {
+  describe("a for loop with no condition", run);
+  break;
+}
