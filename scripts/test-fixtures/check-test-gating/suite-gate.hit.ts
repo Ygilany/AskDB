@@ -46,3 +46,6 @@ describe.each([...new Map(process.env.DATABASE_URL ? [[1, 2]] : [])])("rows from
 /** @example // check-test-gating-ignore-next-line: a marker after a JSDoc tag is not a line comment
  */ describe.skip("a marker in JSDoc exempts nothing", () => {}); // HIT
 describe.each(Array.from({ length: process.env.DATABASE_URL ? 1 : 0 }, () => [1]))("a length picked inside a call %s", () => {}); // HIT
+async function awaitedOptions() {
+  describe("awaited options pick", await (process.env.DATABASE_URL ? {} : { skip: true }), () => {}); // HIT
+}

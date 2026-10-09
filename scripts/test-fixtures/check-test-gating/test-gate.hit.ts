@@ -16,3 +16,6 @@ it.each((url && [url]) || [])("rows chosen by && and || %s", () => {}); // HIT
 it("options chosen by a ternary", ok ? { skip: true } : {}, () => {}); // HIT
 it("a body picked by &&", process.env.DATABASE_URL && (async () => {})); // HIT
 it("a timeout or a body", () => {}, ok ? 5 : fn); // HIT
+async function awaitedBody() {
+  it("an awaited body pick", await (process.env.DATABASE_URL ? async () => {} : undefined)); // HIT
+}

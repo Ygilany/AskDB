@@ -14,3 +14,5 @@ namespace Local {
 }
 import localDescribe = Local.describe;
 const notVitest = localDescribe.skip;
+const { expect: expectFn } = v;
+expectFn(1);

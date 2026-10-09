@@ -13,3 +13,7 @@ function helper() {
   describe.skip("block-scoped shadow");
 }
 describe.skip("a real gate after the shadows", () => {}); // HIT
+interface describe {
+  readonly x: number;
+}
+describe.skip("an interface of the same name doesn't shadow the value", () => {}); // HIT

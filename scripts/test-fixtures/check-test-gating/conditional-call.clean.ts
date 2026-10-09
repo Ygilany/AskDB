@@ -76,3 +76,5 @@ suites.push(...ROWS.map((row) => describe(`map result spread into push ${row}`, 
 await Promise.all(ROWS.map((row) => it(`map result passed on ${row}`, () => {})));
 for (const [engine] of Object.entries({ ...BASE_ENGINES })) describe(`a plain object spread ${engine}`, () => {});
 if (ready) test.beforeEach(() => {});
+describe.each(Object.entries({ postgres: process.env.PG_URL ?? "postgres://localhost" }))("a value picked inside a fixed table %s", () => {});
+for (const [engine] of Object.entries({ postgres: process.env.PG_URL ?? "postgres://localhost" })) describe(`a fixed table ${engine}`, () => {});

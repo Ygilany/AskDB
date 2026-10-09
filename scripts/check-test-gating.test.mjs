@@ -9,7 +9,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
-import { RULES, findGates, integrationModuleResolver } from "./check-test-gating.mjs";
+import { RULES, findGates } from "./check-test-gating.mjs";
+import { integrationModuleResolver } from "./check-test-gating/bindings.mjs";
 
 const here = fileURLToPath(new URL(".", import.meta.url));
 const fixtures = join(here, "test-fixtures", "check-test-gating");
@@ -87,13 +88,15 @@ test("CLI scans every workspace package (not just src/) and skips what Vitest sk
     "packages/a/.astro/gen.test.ts": 'describe.skip("astro output", () => {});\n',
     "packages/a/.lab/scratch.test.ts": 'describe.skip("lab cache", () => {});\n',
     "packages/a/zz-after-skipped.test.ts": 'describe.skip("after skipped siblings", () => {});\n',
+    "packages/a/.git/hooks.test.ts": 'describe.skip("inside .git", () => {});\n',
+    "packages/a/src/backup.test.ts.bak": 'describe.skip("a backup, not a test file", () => {});\n',
     "fixtures/db/test/db.integration.test.ts": 'describe.skip("outside src", () => {});\n',
   });
   const result = run(root);
   assert.equal(result.status, 1);
   assert.match(result.stderr, /fixtures\/db\/test\/db\.integration\.test\.ts:1:/);
   assert.match(result.stderr, /packages\/a\/zz-after-skipped\.test\.ts:1:/);
-  assert.doesNotMatch(result.stderr, /excluded|node_modules|dist/);
+  assert.doesNotMatch(result.stderr, /excluded|node_modules|dist|\.git\/|\.bak/);
   // Vitest runs tests under dot-directories it doesn't exclude, so the check reads them too.
   for (const dir of [".turbo", ".astro", ".lab"]) assert.match(result.stderr, new RegExp(`packages/a/\\${dir}/`));
 });

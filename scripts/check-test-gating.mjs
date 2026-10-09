@@ -42,7 +42,6 @@ const { ts, isWrapper, outermostWrapper, unwrap, calleeOf, isMemberLink, linkNam
 const { EXTENDERS, kindOf, vitestBindings, isVitestLoaderCall, isVitestNamespace, integrationModuleResolver, isSuiteFactory, testFnName, extendedFn } =
   await import(sibling("bindings.mjs"));
 const { workspaceDirs, linkTarget } = await import(sibling("workspace.mjs"));
-export { integrationModuleResolver };
 
 const SUITE_FNS = new Set(["describe", "suite"]);
 // Vitest's chainable modifiers. A call through any other link (`test.scoped`, `test.step`) is not
@@ -271,25 +270,38 @@ function isBinaryPick(node) {
  * receiver of a method call.
  */
 function isPicked(node) {
-  while (isWrapper(node) || ts.isAwaitExpression(node)) node = node.expression;
+  node = unwrapValue(node);
   if (pickBranches(node).length > 0) return true;
   // `Object.entries(url ? {…} : {})`, `new Set(url ? [url] : [])`, `(url ? [url] : []).map(f)`: a
   // call or `new` over a pick, or a method of one, yields a table whose size is picked too.
-  if ((ts.isCallExpression(node) || ts.isNewExpression(node)) && (node.arguments ?? []).some(containsPick)) return true;
-  if (ts.isCallExpression(node) && isMemberLink(unwrap(node.expression)) && containsPick(unwrap(node.expression).expression)) return true;
+  if ((ts.isCallExpression(node) || ts.isNewExpression(node)) && (node.arguments ?? []).some(picksSize)) return true;
+  if (ts.isCallExpression(node) && isMemberLink(unwrap(node.expression)) && picksSize(unwrap(node.expression).expression)) return true;
   // `[a, ...(cond ? [b] : [])]`, `{ a, ...(cond ? { b } : {}) }`: how many rows there are depends on the condition.
   if (ts.isArrayLiteralExpression(node)) return node.elements.some((el) => ts.isSpreadElement(el) && isPicked(el.expression));
   return ts.isObjectLiteralExpression(node) && node.properties.some((p) => ts.isSpreadAssignment(p) && isPicked(p.expression));
 }
 
 /**
- * Whether a pick sits anywhere in `node` outside a nested function: `Array.from({ length: url ? 1 : 0 })`,
- * `[url ? [url] : []].flat()`. A call over such a value can yield a table whose size is picked.
+ * Whether a call over `node` can yield a table whose size a pick decides: `node` is itself picked,
+ * or holds a pick where size comes from (a `length`, an element a flattening call can drop:
+ * `Array.from({ length: url ? 1 : 0 })`, `[url ? [url] : []].flat()`). A pick of a value inside a
+ * fixed-size table (`{ pg: url ?? "postgres://localhost" }`) doesn't change its size.
  */
-function containsPick(node) {
-  if (ts.isFunctionLike(node)) return false;
-  if (pickBranches(unwrap(node)).length > 0) return true;
-  return ts.forEachChild(node, (child) => (containsPick(child) ? true : undefined)) === true;
+function picksSize(node) {
+  node = unwrapValue(node);
+  if (ts.isSpreadElement(node)) return picksSize(node.expression);
+  if (isPicked(node)) return true;
+  if (ts.isObjectLiteralExpression(node)) {
+    return node.properties.some((p) => ts.isPropertyAssignment(p) && optionKey(p.name) === "length" && pickBranches(unwrapValue(p.initializer)).length > 0);
+  }
+  return ts.isArrayLiteralExpression(node) && node.elements.some((el) =>
+    pickBranches(unwrapValue(el)).some((branch) => ts.isArrayLiteralExpression(unwrap(branch))));
+}
+
+/** `node` with its wrappers and any `await` removed. */
+function unwrapValue(node) {
+  while (isWrapper(node) || ts.isAwaitExpression(node)) node = node.expression;
+  return node;
 }
 
 /**
@@ -326,7 +338,7 @@ function hasGateOption(call, suite) {
     // `it(name, url ? fn : undefined)`: a body picked at run time can be missing, which makes the
     // test a todo. Only a pick between plain strings or numbers (a timeout) is left alone, and a
     // value computed from a pick (`Number(env ?? 60_000)`) is always there.
-    if (i > 0 && pickBranches(unwrap(arg)).length > 0 && !picksOnlyLiterals(arg)) return true;
+    if (i > 0 && pickBranches(unwrapValue(arg)).length > 0 && !picksOnlyLiterals(arg)) return true;
     visit(arg, false);
   }
   return gate;
@@ -334,7 +346,7 @@ function hasGateOption(call, suite) {
 
 /** Whether every value a run-time choice can produce is a string or number literal. */
 function picksOnlyLiterals(node) {
-  node = unwrap(node);
+  node = unwrapValue(node);
   const branches = pickBranches(node);
   if (branches.length > 0) return branches.every(picksOnlyLiterals);
   return ts.isStringLiteralLike(node) || ts.isNumericLiteral(node);
