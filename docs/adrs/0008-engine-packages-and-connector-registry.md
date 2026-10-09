@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted (2026-09-25).
+Accepted (2026-09-25). Decisions 1 and 2 (the engine kit) landed with #195; decisions 3 to 5 (the registry move, connection resolution, the `@askdb/connectors` shim) with #199 (2026-10-09).
 
 Supersedes in part:
 - [ADR 0002](0002-integration-package-layout.md): the rule that integration packages own their SQL dialect.
@@ -40,6 +40,8 @@ ADR 0002 organized AskDB around one package per integration. Each integration ow
 4. **Adapters own connection resolution; the registry builds the label.** `ConnectorProviderAdapter` gains an optional `resolveConnection({ explicit?, runtime, surface? })` hook. It turns explicit values (CLI flags) plus AskDB runtime config (`getAskDbRuntimeConfig()`, typed structurally so engines do not depend on `@askdb/config`) into `{ url?, fromExport?, schemaPath? }`, or an error that must not echo the connection string. `surface: "cli"` makes error messages name flags; other surfaces name config keys. The adapter's `connectionLabelParts` hook (from #189) supplies the label's parts; the adapter never returns label text ([ADR 0011](0011-connection-labels-from-parsed-parts.md)).
 
    The registry exposes `registry.resolveConnection(provider, request)`, which returns the adapter's result plus `sourceLabel = registry.connectionLabel(provider, connection)`. When an adapter has no `resolveConnection`, the registry passes `explicit` through; when it has no `connectionLabelParts`, the label is `configured <provider> connection`. The CLI and Studio switches are deleted. Both apps now dispatch through the registry, and the CLI accepts an injected registry (`runIntrospectCli(argv, { connectorRegistry })`).
+   The connection is one of the three source kinds a host can supply, `url`, `fromExport` or `schemaPath`, the fields ADR 0007's `ConnectorConfig` already had (`ConnectorConnection`). An engine whose source is something else maps it onto one of them, usually `url`; its connector input type stays engine-owned, as ADR 0002 requires, because `createConnector` builds it.
+
 5. **Deprecate `@askdb/connectors`.** It stays published as a re-export shim of the registry and the kit's connection-label helpers. `CONNECTOR_PROVIDERS` is kept as an alias of `BUILT_IN_CONNECTOR_PROVIDERS`, and `ConnectorProvider` as an alias of `ConnectorProviderId`. Engine packages and first-party apps no longer depend on it.
 
 ## Rationale
@@ -50,13 +52,21 @@ ADR 0002 organized AskDB around one package per integration. Each integration ow
 - **A kit, not a base class.** The kit is a set of plain functions. Engines take what they need, and nothing constrains their catalog SQL or input shapes.
 - **One copy to fix.** Driver-error classification (a missing peer versus an installed one that fails to load), glob matching and the label allowlist each live once, so a fix reaches every engine.
 
+## Alternatives considered
+
+- **Keep the registry in `@askdb/connectors` and open its ids there (rejected).** It fixes the closed union but keeps a second package that every engine and app installs and versions in step, and that hides nothing, since every engine already depends on `@askdb/introspect`.
+- **Keep connection resolution in the apps, driven by a per-engine table (rejected).** A table in the CLI and Studio of "which config key, which flags" is the per-engine switch ADR 0007 rules out under another name, and a third-party engine still couldn't add its row.
+- **Let the adapter return the display label from `resolveConnection` (rejected).** It makes the allowlist optional, which ADR 0011 rejects (its option A2): the registry builds `sourceLabel` from the adapter's parts.
+- **An engine-defined connection type instead of the three source kinds (rejected for now).** The hosts can only supply a URL, an export bundle or a schema path, so a free-form type would give the CLI and Studio nothing to fill in; an engine with a richer source maps it onto `url`.
+- **Remove `@askdb/connectors` now (rejected).** Pre-1.0 consumers import from it; a re-export shim costs nothing and a future major can drop it.
+
 ## Consequences
 
 - About 600 lines leave the engine packages. A new engine gets driver loading, filters, ids, row folding, connection labels, and, for live-only engines, a full `ConnectorProviderAdapter` from the kit.
 - The kit's driver loader throws `AskDbError`, so importing the kit loads `@askdb/core`, as `@askdb/introspect`'s main entry already does; documented installs of these packages list `ai`, `@askdb/core`'s peer.
 - A third-party engine plugs into any registry-driven host, programmatic or custom, without AskDB changes. The CLI's introspect command is written against an injected registry: `runIntrospectCli(argv, { connectorRegistry })` is internal and covered by a test that uses a custom adapter. So it contains no engine-specific code. The shipped `askdb` binary still registers only the first-party engines. There is no auto-discovery; see "Out of scope".
 - The CLI and Studio keep their user-facing error messages. Two visible changes: `askdb introspect templates --engine prisma` now reports the generic "does not provide SQL templates" message instead of a Prisma-specific one, and Studio labels a Prisma source with no configured schema path `configured prisma connection` instead of `auto-discovered prisma/schema.prisma`, because labels come only from the adapter's parsed parts and the path isn't known until the connector discovers it.
-- `@askdb/config`'s `introspection.provider` is still a closed union in the typed config. Opening the typed config to third-party engines is separate work. A third-party adapter can already read its own block from `runtime.structured` (`introspection.providerConfig.<id>`, which `@askdb/config` passes through untyped). `runtime.flat` holds only `@askdb/config`'s own keys, and adapters don't read `process.env` (ADR 0005).
+- `@askdb/config`'s `introspection.provider` is still a closed union in the typed config. Opening the typed config to third-party engines is separate work. A third-party adapter can already read its own block from `runtime.structured` (`introspection.providerConfig.<id>`, which `@askdb/config` passes through untyped). Adapters don't read `process.env` (ADR 0005).
 - `@askdb/connectors` consumers keep working. The widening from a closed union to an open string is the one type-level change: it reaches `ConnectorProvider` and the `provider` type of each engine package's exported adapter, so `@askdb/connectors` and the five engine packages are released as minors.
 
 ## Out of scope

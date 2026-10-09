@@ -28,4 +28,11 @@ describe("sqlServerConnectorProvider", () => {
         "No SQL Server connection configured. Set introspection.providerConfig.sqlserver.databaseUrl in askdb.config.ts (bound to an env var in .env).",
     });
   });
+
+  it("rejects --from-export next to a configured connection with the engine's own message", () => {
+    expect(resolve({ explicit: { fromExport: "./bundle" }, runtime: runtime("mssql://sa:S3cret@db:1433/app") })).toEqual({
+      ok: false,
+      error: "--from-export is currently supported only for --engine postgres (got sqlserver).",
+    });
+  });
 });

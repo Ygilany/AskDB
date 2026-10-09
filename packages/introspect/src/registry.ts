@@ -67,11 +67,6 @@ export type ConnectorRuntimeConfig = {
    * ids yet.
    */
   readonly structured?: unknown;
-  /**
-   * The flattened env-style map (`getAskDbRuntimeConfig().flat`). It holds only
-   * `@askdb/config`'s own canonical keys, never a third-party engine's.
-   */
-  readonly flat?: Readonly<Record<string, string>>;
 };
 
 export type ConnectorConnectionRequest = {

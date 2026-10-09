@@ -15,7 +15,7 @@
 | `@askdb/connectors` export | Replacement |
 | --- | --- |
 | `createConnectorRegistry`, `connectorProviderMissingMessage` | the same names from `@askdb/introspect` |
-| `ConnectorConfig`, `ConnectorConnection`, `ConnectorResult`, `ConnectorProviderAdapter`, `ConnectorProviderAdapters`, `ConnectorRegistry` (including `connectionLabel` and the `connectionLabelParts` hook) | the same names from `@askdb/introspect` |
+| `ConnectorConfig`, `ConnectorConnection`, `ConnectorResult`, `ConnectorProviderAdapter`, `ConnectorProviderAdapters`, `ConnectorRegistry` (including `connectionLabel`; the `connectionLabelParts` hook is on `ConnectorProviderAdapter`) | the same names from `@askdb/introspect` |
 | `CONNECTOR_PROVIDERS` | `BUILT_IN_CONNECTOR_PROVIDERS` from `@askdb/introspect` |
 | `ConnectorProvider` (was a closed union) | `ConnectorProviderId` from `@askdb/introspect`: an open string type (`BuiltInConnectorProvider \| (string & {})`), so third-party engines can register their own ids |
 | `formatConnectionLabel`, `parseConnectionUrl`, `ConnectionLabelParts` | the same names from `@askdb/introspect/kit` |

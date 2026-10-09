@@ -60,7 +60,7 @@ The integration package owns its own input type (e.g. `PostgresIntrospectionInpu
 
 ### Connector registry
 
-Hosts that pick the engine from configuration use the connector provider registry. Every engine package exports an adapter: `postgresConnectorProvider`, `mysqlConnectorProvider`, `sqliteConnectorProvider`, `sqlServerConnectorProvider`, `prismaConnectorProvider`. Provider ids are open strings (`ConnectorProviderId`), so a third-party engine package can export `{ provider: "oracle", ... }` and register it the same way.
+Hosts that pick the engine from configuration use the connector provider registry. The example below also uses `@askdb/config` (for `getAskDbRuntimeConfig()`) and `@askdb/mysql`; install the engine packages you register, and `@askdb/config` when you resolve connections from `askdb.config.ts`. Every engine package exports an adapter: `postgresConnectorProvider`, `mysqlConnectorProvider`, `sqliteConnectorProvider`, `sqlServerConnectorProvider`, `prismaConnectorProvider`. Provider ids are open strings (`ConnectorProviderId`), so a third-party engine package can export `{ provider: "oracle", ... }` and register it the same way.
 
 ```ts
 import { getAskDbRuntimeConfig } from "@askdb/config";

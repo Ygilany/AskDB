@@ -190,6 +190,20 @@ describe("createConnectorRegistry — open provider ids (third-party engines)", 
     expect(resolved).toEqual({ ok: true, connection: { url: "acme://configured" }, sourceLabel: "acme://configured" });
   });
 
+  it("resolveConnection drops blank explicit values before the adapter hook sees them", () => {
+    const resolveConnection = vi.fn(
+      (_request: ConnectorConnectionRequest): ConnectorConnectionResult => ({ ok: true, connection: {} }),
+    );
+    const registry = createConnectorRegistry([{ ...makeAdapter("acme"), resolveConnection }]);
+
+    registry.resolveConnection("acme", {
+      explicit: { url: "  ", fromExport: "", schemaPath: "\t" },
+      runtime,
+    });
+
+    expect(resolveConnection).toHaveBeenCalledWith({ explicit: {}, runtime });
+  });
+
   it("resolveConnection passes explicit values through when the adapter has no hook", () => {
     const registry = createConnectorRegistry([makeAdapter("acme")]);
     // Without the adapter's parser neither the URL nor a path is copied into the label (ADR 0011).

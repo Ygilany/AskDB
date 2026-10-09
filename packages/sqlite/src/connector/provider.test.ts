@@ -27,4 +27,11 @@ describe("sqliteConnectorProvider", () => {
       error: "No SQLite file configured. Set introspection.providerConfig.sqlite.file in askdb.config.ts.",
     });
   });
+
+  it("rejects --from-export next to a configured connection with the engine's own message", () => {
+    expect(resolve({ explicit: { fromExport: "./bundle" }, runtime: runtime("./app.db") })).toEqual({
+      ok: false,
+      error: "--from-export is currently supported only for --engine postgres (got sqlite).",
+    });
+  });
 });

@@ -26,6 +26,14 @@ describe("prismaConnectorProvider.resolveConnection", () => {
     });
   });
 
+  it("falls back to the configured schema path when --prisma-schema is blank", () => {
+    expect(resolve({ explicit: { schemaPath: "  " }, runtime: runtime("./config.prisma") })).toEqual({
+      ok: true,
+      connection: { schemaPath: "./config.prisma" },
+      sourceLabel: "./config.prisma",
+    });
+  });
+
   it("rejects --url and --from-export", () => {
     const error = "Use --prisma-schema with --engine prisma, not --url or --from-export.";
     expect(resolve({ explicit: { url: "postgres://h/db" }, runtime: runtime() })).toEqual({ ok: false, error });

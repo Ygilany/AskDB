@@ -266,7 +266,7 @@ export const oracleConnectorProvider = defineLiveConnectorProvider({
 });
 ```
 
-`@askdb/config`'s typed `introspection` block only knows the built-in engines, so `runtimeKey` never finds a value for a third-party engine: with `defineLiveConnectorProvider` the host must pass the URL as `explicit.url`. To fall back to configuration instead, write `resolveConnection` yourself and read your engine's block from `runtime.structured` (`introspection.providerConfig.<your id>` in `askdb.config.ts`). `@askdb/config` passes that block through unchanged, though its typed config doesn't declare third-party ids yet, so a TypeScript config needs a cast there. Don't read `runtime.flat` (it holds only `@askdb/config`'s own keys) or `process.env` (ADR 0005: `@askdb/config` owns env reading; bind the value with `env("ORACLE_URL")` in the config instead):
+`@askdb/config`'s typed `introspection` block only knows the built-in engines, so `runtimeKey` never finds a value for a third-party engine: with `defineLiveConnectorProvider` the host must pass the URL as `explicit.url`. To fall back to configuration instead, write `resolveConnection` yourself and read your engine's block from `runtime.structured` (`introspection.providerConfig.<your id>` in `askdb.config.ts`). `@askdb/config` passes that block through unchanged, though its typed config doesn't declare third-party ids yet, so a TypeScript config needs a cast there. Don't read `process.env` (ADR 0005: `@askdb/config` owns env reading; bind the value with `env("ORACLE_URL")` in the config instead):
 
 ```ts
 import type { ConnectorProviderAdapter } from "@askdb/introspect";

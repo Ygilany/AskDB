@@ -30,4 +30,11 @@ describe("mysqlConnectorProvider", () => {
         "No MySQL connection configured. Set introspection.providerConfig.mysql.databaseUrl in askdb.config.ts (bound to an env var in .env).",
     });
   });
+
+  it("rejects --from-export next to a configured connection with the engine's own message", () => {
+    expect(resolve({ explicit: { fromExport: "./bundle" }, runtime: runtime("mysql://root:S3cret@db:3306/shop") })).toEqual({
+      ok: false,
+      error: "--from-export is currently supported only for --engine postgres (got mysql).",
+    });
+  });
 });
