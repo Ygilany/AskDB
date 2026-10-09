@@ -11,15 +11,23 @@ export const KIND_SUITE_FACTORY = "suiteFactory"; // `integrationSuite`
 export const KIND_INTEGRATION_NS = "integrationNs"; // a namespace import of integrationSuite's module
 export const KIND_REQUIRE = "require"; // a function from `createRequire(…)`
 export const KIND_AMBIGUOUS = "ambiguous"; // declarations that disagree about a Vitest value
+// What `vitestCallKind()` finds a call to define.
+const CALL_SUITE = "suite";
+const CALL_TEST = "test";
+const CALL_ROWS = "rows"; // a `.each` or `.for` call, whose body receives a table row
 export const SUITE_FNS = new Set(["describe", "suite"]);
 // Links whose suite body receives a table row, not the test API: `describe.each(rows)(name, (row) => …)`.
 const ROW_LINKS = new Set(["each", "for"]);
+// Modifiers that skip a test by a condition.
+export const GATE_LINKS = new Set(["skipIf", "runIf"]);
+// Modifiers that skip a suite. `describe.todo(name, fn)` never runs the suite's tests, like `describe.skip`.
+export const SUITE_GATE_LINKS = new Set(["skip", "todo", ...GATE_LINKS]);
 // Vitest's chainable modifiers. A call through any other link (`test.scoped`, `test.step`) is not
 // treated as defining a suite or test; `test.extend({…})` returns a test function, read on.
 export const MODIFIERS = new Set([
-  "skip", "only", "todo", "concurrent", "sequential", "shuffle", "fails", "each", "for", "skipIf", "runIf",
+  ...SUITE_GATE_LINKS, ...ROW_LINKS, "only", "concurrent", "sequential", "shuffle", "fails",
   // `it.describe` is Vitest's `describe`.
-  "describe", "suite",
+  ...SUITE_FNS,
 ]);
 // Links whose call returns a new test function: `test.extend({…})`, `test.override({…})`, `test.scoped({…})`.
 export const EXTENDERS = new Set(["extend", "override", "scoped"]);
@@ -45,7 +53,8 @@ function importedFrom(decl) {
 export function vitestBindings(program, isIntegrationModule) {
   const checker = program.getTypeChecker();
   const cache = new Map();
-  const bindings = {};
+  // Which import specifiers name the sanctioned gate's module.
+  const bindings = { isIntegrationModule };
   /** The declarations of the symbol identifier `id` names, or none. */
   bindings.declarationsOf = (id) => checker.getSymbolAtLocation(id)?.declarations ?? [];
   /**
@@ -60,7 +69,7 @@ export function vitestBindings(program, isIntegrationModule) {
     if (symbol === undefined) return TEST_FNS.has(id.text) ? { kind: KIND_FN, name: id.text } : undefined;
     if (cache.has(symbol)) return cache.get(symbol);
     cache.set(symbol, undefined); // a cycle (`const t = t.extend(…)`) resolves to nothing
-    const found = resolveDeclarations(symbol, bindings, isIntegrationModule);
+    const found = resolveDeclarations(symbol, bindings);
     cache.set(symbol, found);
     return found;
   };
@@ -166,7 +175,7 @@ function extendedFn(node, bindings) {
 
 /**
  * What a call or tagged template defines through Vitest's describe/suite/it/test and modifier
- * links: "suite", "test", "rows" (a `.each` or `.for` call, whose body receives a table row), or
+ * links: `CALL_SUITE`, `CALL_TEST`, `CALL_ROWS` (a `.each` or `.for` call, whose body receives a row), or
  * undefined when it defines nothing (`test.extend({…})`, `test.scoped({…})`, any other call).
  */
 export function vitestCallKind(node, bindings) {
@@ -180,7 +189,7 @@ export function vitestCallKind(node, bindings) {
     callee = unwrap(callee);
     // `test.extend({…}).describe(…)`: the walk goes on past a call that returns a test function.
     const name = testFnName(callee, bindings) ?? extendedFn(callee, bindings);
-    if (name !== undefined) return rows ? "rows" : suite || SUITE_FNS.has(name) ? "suite" : "test";
+    if (name !== undefined) return rows ? CALL_ROWS : suite || SUITE_FNS.has(name) ? CALL_SUITE : CALL_TEST;
     if (isMemberLink(callee)) {
       rows ||= ROW_LINKS.has(linkName(callee));
       suite ||= SUITE_FNS.has(linkName(callee));
@@ -199,10 +208,10 @@ export function vitestCallKind(node, bindings) {
  * Vitest calls with the suite's test API. A `.each` or `.for` body receives a table row instead.
  */
 function isSuiteBody(fn, bindings) {
-  if (!ts.isArrowFunction(fn) && !ts.isFunctionExpression(fn)) return false;
+  if (!isInlineFunction(fn)) return false;
   const outer = outermostWrapper(fn);
   const call = outer.parent;
-  return ts.isCallExpression(call) && call.arguments.includes(outer) && vitestCallKind(call, bindings) === "suite";
+  return ts.isCallExpression(call) && call.arguments.includes(outer) && vitestCallKind(call, bindings) === CALL_SUITE;
 }
 
 /**
@@ -217,7 +226,7 @@ function isSuiteBody(fn, bindings) {
  * `arguments`. A `.each` or `.for` body receives a row, not the test API.
  */
 export function suiteBodyUnreadable(call, bindings) {
-  if (!ts.isCallExpression(call) || vitestCallKind(call, bindings) !== "suite") return false;
+  if (!ts.isCallExpression(call) || vitestCallKind(call, bindings) !== CALL_SUITE) return false;
   if (call.arguments.some(ts.isSpreadElement)) return false; // reported as a spread argument list
   const [, second, third] = call.arguments.map((arg) => unwrap(arg));
   if (second === undefined) return false;
@@ -250,15 +259,14 @@ function constInitializer(id, bindings) {
 }
 
 /**
- * Whether `node` can't be a function: options, a timeout or another literal (`{ timeout }`, `5_000`,
- * `-1`, `undefined`), a pick between such values, or a `const` bound to one.
+ * Whether `node` can't be a function, in the forms a suite passes before its body: options or a
+ * timeout (`{ timeout }`, `5_000`, `-1`), `undefined` or `null`, a pick between such values, or a
+ * `const` bound to one.
  */
 function isNonFunction(node, bindings) {
   node = unwrap(node);
-  if (ts.isObjectLiteralExpression(node) || ts.isArrayLiteralExpression(node) || ts.isNumericLiteral(node)) return true;
-  if (ts.isStringLiteralLike(node) || ts.isTemplateExpression(node)) return true;
-  if (ts.isPrefixUnaryExpression(node) || ts.isVoidExpression(node) || ts.isTypeOfExpression(node)) return true;
-  if ([ts.SyntaxKind.TrueKeyword, ts.SyntaxKind.FalseKeyword, ts.SyntaxKind.NullKeyword].includes(node.kind)) return true;
+  if (ts.isObjectLiteralExpression(node) || ts.isNumericLiteral(node) || node.kind === ts.SyntaxKind.NullKeyword) return true;
+  if (ts.isPrefixUnaryExpression(node) && ts.isNumericLiteral(node.operand)) return true;
   const branches = pickBranches(node);
   if (branches.length > 0) return branches.every((b) => isNonFunction(b, bindings));
   if (!ts.isIdentifier(node)) return false;
@@ -310,7 +318,8 @@ function resolveInitializer(init, bindings) {
  * What one declaration makes a name: the `{ kind, … }` record `resolve()` returns, or undefined.
  * A variable's initializer goes through `resolveInitializer`.
  */
-function resolveDeclaration(decl, bindings, isIntegrationModule) {
+function resolveDeclaration(decl, bindings) {
+  const { isIntegrationModule } = bindings;
   let found;
   if (decl && ts.isImportSpecifier(decl) && importedFrom(decl) === "vitest") {
     const imported = (decl.propertyName ?? decl.name).text;
@@ -355,10 +364,10 @@ function resolveDeclaration(decl, bindings, isIntegrationModule) {
  * agree on a Vitest function or namespace (`var t = test.extend({}); var t = other;`, or a
  * destructuring or parameter that redeclares it), the name is `ambiguous` and fails closed.
  */
-function resolveDeclarations(symbol, bindings, isIntegrationModule) {
+function resolveDeclarations(symbol, bindings) {
   const decls = (symbol.declarations ?? []).filter((d) =>
     !ts.isTypeAliasDeclaration(d) && !ts.isInterfaceDeclaration(d) && !(ts.isVariableDeclaration(d) && !d.initializer && ts.isIdentifier(d.name)));
-  const results = decls.map((d) => resolveDeclaration(d, bindings, isIntegrationModule));
+  const results = decls.map((d) => resolveDeclaration(d, bindings));
   if (results.length <= 1) return results[0];
   const vitest = results.filter((f) => f?.kind === KIND_FN || f?.kind === KIND_NS);
   if (vitest.length === 0) return undefined;

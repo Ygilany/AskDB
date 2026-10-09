@@ -25,9 +25,9 @@
 // any other local declaration that shadows one (a callback's parameter `it`, an import of `test`
 // from another module) is not Vitest's.
 //
-// What is rejected and allowed is listed once, in CONTRIBUTING.md ("Integration Tests"); RULES
-// below implements it, and ADR 0019 (docs/adrs/0019-test-gating-check-parses-with-typescript.md)
-// lists what the check can't see. A use the check can't read fails closed rather than passing. To exempt
+// What is rejected and allowed is listed in CONTRIBUTING.md ("Integration Tests"); RULES below
+// implements it, and ADR 0019 (docs/adrs/0019-test-gating-check-parses-with-typescript.md) records
+// why and lists what the check can't see. A use the check can't read fails closed rather than passing. To exempt
 // one line, put a line comment on the line above it with a non-empty reason:
 //   // check-test-gating-ignore-next-line: <reason>
 //
@@ -59,6 +59,8 @@ const {
 const {
   EXTENDERS,
   MODIFIERS,
+  GATE_LINKS,
+  SUITE_GATE_LINKS,
   SUITE_FNS,
   vitestCallKind,
   suiteBodyUnreadable,
@@ -77,9 +79,6 @@ const {
 } = await import(sibling("bindings.mjs"));
 const { workspaceDirs, entryTarget } = await import(sibling("workspace.mjs"));
 
-const GATE_LINKS = new Set(["skipIf", "runIf"]);
-// `describe.todo(name, fn)` never runs the suite's tests, like `describe.skip`.
-const SUITE_GATE_LINKS = new Set(["skip", "todo", "skipIf", "runIf"]);
 // Function-protocol links that call the function indirectly, so the check can't read the call.
 const INDIRECT_LINKS = new Set(["call", "apply", "bind"]);
 
@@ -277,6 +276,7 @@ function extendResultIsTracked(chain) {
   return (ts.isVariableDeclaration(p) && p.initializer === chain && ts.isIdentifier(p.name)) || ts.isExpressionStatement(p);
 }
 
+// Options keys that skip: Vitest's options object, a separate vocabulary from the modifier links.
 const SKIP_OPTIONS = new Set(["skip", "todo"]);
 
 // An options key computed at run time (`{ [expr]: … }`), which could be `skip`.

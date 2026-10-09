@@ -58,3 +58,6 @@ describe("a picked timeout before an inline body", process.env.SLOW ? 60_000 : 5
 describe("undefined options before an inline body", undefined, () => {});
 const pickedTimeout = process.env.SLOW ? 60_000 : 5_000;
 describe("a timeout picked into a const, before a named body", pickedTimeout, noParameterBody);
+describe("a negative timeout before a named body", -1, noParameterBody);
+describe("a numeric timeout before a named body", 5_000, noParameterBody);
+describe("null options before a named body", null, noParameterBody);
