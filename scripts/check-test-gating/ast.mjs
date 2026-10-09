@@ -14,10 +14,11 @@ if (typeof ts.createSourceFile !== "function" || ts.SyntaxKind === undefined) {
   process.exit(1);
 }
 
-// Wrappers that leave the value unchanged: `(x)`, `x!`, `x as T`, `<T>x`, `x satisfies T`.
+// Wrappers that leave the value unchanged: `(x)`, `x!`, `x as T`, `<T>x`, `x satisfies T`, `x<T>`.
 export function isWrapper(node) {
   return (
     ts.isParenthesizedExpression(node) ||
+    ts.isExpressionWithTypeArguments(node) ||
     ts.isNonNullExpression(node) ||
     ts.isAsExpression(node) ||
     ts.isTypeAssertionExpression(node) ||
@@ -136,13 +137,13 @@ export function isPick(node) {
 }
 
 /**
- * Whether `isLeaf` holds for every value a pick in `node` can produce, looking through each value
- * with `see` (`unwrap` or `resultOf`); a node that isn't a pick is its own only value.
+ * Whether `isLeaf` holds for every value a pick in `node` can produce, each seen through `resultOf`;
+ * a node that isn't a pick is its own only value.
  */
-export function everyPickLeaf(node, see, isLeaf) {
-  node = see(node);
+export function everyPickLeaf(node, isLeaf) {
+  node = resultOf(node);
   const branches = pickBranches(node);
-  return branches.length > 0 ? branches.every((b) => everyPickLeaf(b, see, isLeaf)) : isLeaf(node);
+  return branches.length > 0 ? branches.every((b) => everyPickLeaf(b, isLeaf)) : isLeaf(node);
 }
 
 /** Whether `node` holds a pick anywhere inside it, outside a nested function. */

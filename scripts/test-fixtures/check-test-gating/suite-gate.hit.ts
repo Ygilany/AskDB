@@ -63,3 +63,8 @@ describe.each([["pg"]].slice((process.env.DATABASE_URL ? 0 : 1) + 0))("a slice b
 describe.each(`${process.env.DATABASE_URL ?? ""}`.split(""))("a template over a pick %s", () => {}); // HIT
 describe.each([["pg"]].slice(-(process.env.DATABASE_URL ? 0 : 1)))("a negated pick %s", () => {}); // HIT
 describe.each([["pg"]].slice("" + (process.env.DATABASE_URL ? 0 : 1)))("a concatenated pick %s", () => {}); // HIT
+describe.each([["pg"]].slice(+(typeof (process.env.DATABASE_URL ?? 0) === "number")))("a typeof over a pick %s", () => {}); // HIT
+describe.each(String.raw`${process.env.DATABASE_URL ?? ""}`.split(""))("a tagged template over a pick %s", () => {}); // HIT
+describe.each([["pg"]].slice(...[process.env.DATABASE_URL ? 0 : 1]))("a pick spread as an argument %s", () => {}); // HIT
+describe.each([["pg"]].slice(`${1}${process.env.DATABASE_URL ? 0 : 1}`))("a second template span picked %s", () => {}); // HIT
+describe.each((process.env.DATABASE_URL ? [[1]] : [])<never>)("a picked table behind an instantiation expression %s", () => {}); // HIT

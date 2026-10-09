@@ -66,3 +66,5 @@ const names = { a: "postgres" };
 describe(names[process.env.ENGINE ?? "a"], () => {
   it("q", () => {});
 });
+describe("a timeout behind a comma, before a named body", (0, 5_000), noParameterBody);
+it("a timeout picked behind a comma", () => {}, process.env.SLOW ? (0, 60_000) : 5_000);

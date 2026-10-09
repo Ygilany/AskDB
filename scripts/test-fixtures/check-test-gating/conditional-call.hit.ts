@@ -127,3 +127,5 @@ if (process.env.DATABASE_URL) new (class { constructor() { describe("a class exp
 if (process.env.DATABASE_URL) new (class { suite = describe("a class expression's field under an if", run); })(); // HIT
 process.env.DATABASE_URL && new (class { m = (() => describe("a class expression's field IIFE under &&", run))(); })(); // HIT
 Promise.resolve().then(() => new (class { constructor() { describe("a class expression in a .then callback", run); } })()); // HIT
+for (const u of String.raw`${process.env.DATABASE_URL ?? ""}`.split("")) describe(`a loop over a tagged template ${u}`, run); // HIT
+new Foo(class { field = describe("a class expression's instance field passed to a call", run); }); // HIT

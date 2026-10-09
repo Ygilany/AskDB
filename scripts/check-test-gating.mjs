@@ -62,6 +62,7 @@ const {
 const {
   EXTENDERS,
   MODIFIERS,
+  ROW_LINKS,
   GATE_LINKS,
   SUITE_GATE_LINKS,
   SUITE_FNS,
@@ -73,7 +74,7 @@ const {
   KIND_INTEGRATION_NS,
   isPromiseLoader,
   vitestBindings,
-  isVitestModuleNode,
+  isVitestModuleUse,
   integrationModuleResolver,
   isSuiteFactory,
   testFnName,
@@ -226,11 +227,11 @@ function testRef(start, fnName, bindings) {
     // `.each(rows)` / `.for(rows)` returns the function that defines the tests.
     const last = links[links.length - 1];
     const outer = outermostWrapper(call).parent;
-    if ((last === "each" || last === "for") && ts.isCallExpression(outer) && outer.expression === outermostWrapper(call)) {
+    if (ROW_LINKS.has(last) && ts.isCallExpression(outer) && outer.expression === outermostWrapper(call)) {
       // The table, or with the template form called directly (`.each(strings, ...values)`), every value.
       rowArgs = ts.isCallExpression(call) ? [...call.arguments] : [];
       call = outer;
-    } else if (last === "each" || last === "for") {
+    } else if (ROW_LINKS.has(last)) {
       eachResultStored = true;
     }
   }
@@ -326,7 +327,7 @@ function hasGateOption(call, suite) {
 
 /** Whether every value a run-time choice can produce is a string or number literal. */
 function picksOnlyLiterals(node) {
-  return everyPickLeaf(node, resultOf, (leaf) => ts.isStringLiteralLike(leaf) || ts.isNumericLiteral(leaf));
+  return everyPickLeaf(node, (leaf) => ts.isStringLiteralLike(leaf) || ts.isNumericLiteral(leaf));
 }
 
 /** Whether `node` is the true or false branch of a `? :` (through wrappers). */
@@ -394,7 +395,7 @@ export function findGates(src, fileName = "file.test.ts", { isIntegrationModule 
     if (!ts.isIdentifier(node) || isValueReference(node)) {
       const fnName = testFnName(node, bindings);
       if (fnName !== undefined) refs.push(testRef(node, fnName, bindings));
-      else if (isVitestModuleNode(node, bindings) && !isReadableNamespaceUse(node)) {
+      else if (isVitestModuleUse(node, bindings) && !isReadableNamespaceUse(node)) {
         refs.push(unreadableRef(node));
       }
     }

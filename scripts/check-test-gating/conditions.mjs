@@ -20,8 +20,9 @@ import { vitestCallKind } from "./bindings.mjs";
 
 /**
  * Whether `node` (through wrappers and `await`) is picked at run time by `? :`, `&&`, `||` or `??`,
- * or is built from such a pick: by arithmetic, concatenation or a template, spread into an array or
- * object, passed to a call or `new`, or the receiver of a method call.
+ * or is built from such a pick: by an operator (`+`, `-x`, `typeof`), a template (tagged or not),
+ * spread into an array or object, passed to a call or `new`, or the receiver of a method call. A
+ * value returned by an inline function (`(() => url ? 0 : 1)()`) is not read: a known limit.
  */
 function pickedAtRunTime(node) {
   node = resultOf(node);
@@ -30,8 +31,11 @@ function pickedAtRunTime(node) {
   // `(url ? 0 : 1) + 1`, `-(url ? 1 : 0)`, `${url ?? ""}`: arithmetic, concatenation or a template
   // over a pick is decided by it too.
   if (ts.isBinaryExpression(node)) return pickedAtRunTime(node.left) || pickedAtRunTime(node.right);
-  if (ts.isPrefixUnaryExpression(node) || ts.isPostfixUnaryExpression(node)) return pickedAtRunTime(node.operand);
-  if (ts.isTemplateExpression(node)) return node.templateSpans.some((span) => pickedAtRunTime(span.expression));
+  if (ts.isPrefixUnaryExpression(node)) return pickedAtRunTime(node.operand);
+  if (ts.isTypeOfExpression(node) || ts.isVoidExpression(node) || ts.isDeleteExpression(node)) return pickedAtRunTime(node.expression);
+  // `` `${url ?? ""}` ``, `` String.raw`${url ?? ""}` ``: a template's values, tagged or not.
+  const template = ts.isTaggedTemplateExpression(node) ? node.template : node;
+  if (ts.isTemplateExpression(template)) return template.templateSpans.some((span) => pickedAtRunTime(span.expression));
   // `Object.entries(url ? {…} : {})`, `new Set(url ? [url] : [])`, `(url ? [url] : []).map(f)`: a
   // call or `new` over a pick, or a method of one, yields a table whose size is picked too.
   if ((ts.isCallExpression(node) || ts.isNewExpression(node)) && (node.arguments ?? []).some(pickDecidesSize)) return true;
@@ -67,7 +71,11 @@ export function readsPickedValue(node) {
  */
 function pickDecidesSize(node) {
   node = resultOf(node);
-  if (ts.isSpreadElement(node)) return pickDecidesSize(node.expression);
+  // `f(...[url ? 0 : 1])`: each element spread from an array literal is an argument of its own.
+  if (ts.isSpreadElement(node)) {
+    const spread = resultOf(node.expression);
+    return ts.isArrayLiteralExpression(spread) ? spread.elements.some(pickDecidesSize) : pickDecidesSize(spread);
+  }
   if (pickedAtRunTime(node)) return true;
   if (ts.isObjectLiteralExpression(node)) {
     return node.properties.some((p) =>

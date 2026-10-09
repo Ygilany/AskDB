@@ -17,7 +17,7 @@ const CALL_TEST = "test";
 const CALL_ROWS = "rows"; // a `.each` or `.for` call, whose body receives a table row
 export const SUITE_FNS = new Set(["describe", "suite"]);
 // Links whose suite body receives a table row, not the test API: `describe.each(rows)(name, (row) => …)`.
-const ROW_LINKS = new Set(["each", "for"]);
+export const ROW_LINKS = new Set(["each", "for"]);
 // Modifiers that skip a test by a condition.
 export const GATE_LINKS = new Set(["skipIf", "runIf"]);
 // Modifiers that skip a suite. `describe.todo(name, fn)` never runs the suite's tests, like `describe.skip`.
@@ -77,7 +77,7 @@ export function vitestBindings(program, isIntegrationModule) {
 }
 
 /** Whether `node` is `import.meta.vitest`, Vitest's in-source test API (through wrappers). */
-export function isImportMetaVitest(node) {
+function isImportMetaVitest(node) {
   if (!ts.isPropertyAccessExpression(node) || node.name.text !== "vitest") return false;
   const meta = unwrap(node.expression);
   return ts.isMetaProperty(meta) && meta.keywordToken === ts.SyntaxKind.ImportKeyword && meta.name.text === "meta";
@@ -87,18 +87,18 @@ export function isImportMetaVitest(node) {
  * Whether `node` (through wrappers and `await`) is the Vitest module: `import("vitest")`,
  * `require("vitest")`, `import.meta.vitest`, or an identifier bound to a Vitest namespace.
  */
-function isVitestModule(node, bindings) {
+function resolvesToVitestModule(node, bindings) {
   node = resultOf(node);
   // `import v = require("vitest")`: the declaration, not a use of the module.
   if (ts.isExternalModuleReference(node)) return isVitestSpecifier(node.expression);
-  return isVitestModuleNode(node, bindings);
+  return isVitestModuleUse(node, bindings);
 }
 
 /**
  * Whether `node` itself, with nothing unwrapped, is a use of the Vitest module: `import.meta.vitest`,
  * a loader call, or an identifier bound to a Vitest namespace.
  */
-export function isVitestModuleNode(node, bindings) {
+export function isVitestModuleUse(node, bindings) {
   if (isImportMetaVitest(node)) return true;
   if (ts.isIdentifier(node)) return isVitestNamespace(node, bindings);
   return isVitestLoaderCall(node, bindings);
@@ -123,7 +123,7 @@ export function isPromiseLoader(callee) {
 }
 
 /** Whether `node` is `import("vitest")` or `require("vitest")` (a string or plain template). */
-export function isVitestLoaderCall(node, bindings) {
+function isVitestLoaderCall(node, bindings) {
   if (!ts.isCallExpression(node) || !isVitestSpecifier(node.arguments[0])) return false;
   const callee = unwrap(node.expression);
   if (callee.kind === ts.SyntaxKind.ImportKeyword) return true; // `import("vitest")`, `import("vitest", opts)`
@@ -134,7 +134,7 @@ export function isVitestLoaderCall(node, bindings) {
 }
 
 /** Whether identifier `id` names a Vitest namespace. */
-export function isVitestNamespace(id, bindings) {
+function isVitestNamespace(id, bindings) {
   return kindOf(id, bindings) === KIND_NS;
 }
 
@@ -170,7 +170,7 @@ export function testFnName(node, bindings) {
     return found?.kind === KIND_FN ? found.name : undefined;
   }
   // `v.describe`, `require("vitest").describe`, `(await import("vitest")).describe`.
-  if (isMemberLink(node) && isVitestModule(node.expression, bindings)) {
+  if (isMemberLink(node) && resolvesToVitestModule(node.expression, bindings)) {
     const name = linkName(node);
     return TEST_FNS.has(name) ? name : undefined;
   }
@@ -281,7 +281,7 @@ function constInitializer(id, bindings) {
  * `const` bound to one.
  */
 function isNonFunction(node, bindings) {
-  return everyPickLeaf(node, unwrap, (leaf) => {
+  return everyPickLeaf(node, (leaf) => {
     if (ts.isObjectLiteralExpression(leaf) || ts.isNumericLiteral(leaf) || leaf.kind === ts.SyntaxKind.NullKeyword) return true;
     if (ts.isPrefixUnaryExpression(leaf) && ts.isNumericLiteral(leaf.operand)) return true;
     if (!ts.isIdentifier(leaf)) return false;
@@ -326,7 +326,7 @@ function isTestApiParameter(param, bindings) {
 function resolveInitializer(init, bindings) {
   const fn = testFnName(init, bindings) ?? extendedFn(init, bindings);
   if (fn !== undefined) return { kind: KIND_FN, name: fn };
-  if (isVitestModule(init, bindings)) return { kind: KIND_NS };
+  if (resolvesToVitestModule(init, bindings)) return { kind: KIND_NS };
   return isCreateRequireCall(init) ? { kind: KIND_REQUIRE } : undefined;
 }
 
@@ -342,7 +342,7 @@ function resolveDeclaration(decl, bindings) {
     if (TEST_FNS.has(imported)) found = { kind: KIND_FN, name: imported };
   } else if (decl && ts.isNamespaceImport(decl) && importedFrom(decl) === "vitest") {
     found = { kind: KIND_NS };
-  } else if (decl && ts.isImportEqualsDeclaration(decl) && isVitestModule(decl.moduleReference, bindings)) {
+  } else if (decl && ts.isImportEqualsDeclaration(decl) && resolvesToVitestModule(decl.moduleReference, bindings)) {
     found = { kind: KIND_NS }; // `import v = require("vitest")`
   } else if (decl && ts.isImportEqualsDeclaration(decl) && ts.isQualifiedName(decl.moduleReference)) {
     // `import d = v.describe`, on a Vitest namespace. A longer name (`v.describe.skip`) fails closed
@@ -367,7 +367,7 @@ function resolveDeclaration(decl, bindings) {
     const holder = decl.parent.parent;
     const init = ts.isVariableDeclaration(holder) && holder.initializer ? unwrap(holder.initializer) : undefined;
     const key = decl.propertyName ?? decl.name;
-    if (init && isVitestModule(init, bindings) && ts.isIdentifier(key) && TEST_FNS.has(key.text)) {
+    if (init && resolvesToVitestModule(init, bindings) && ts.isIdentifier(key) && TEST_FNS.has(key.text)) {
       found = { kind: KIND_FN, name: key.text };
     }
   }

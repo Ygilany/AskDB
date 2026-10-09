@@ -96,3 +96,6 @@ let attemptsLeft = 0;
 for (describe("a for initializer runs once", run); attemptsLeft < (process.env.DATABASE_URL ? 1 : 0); ) attemptsLeft++;
 new (class { constructor() { describe("a class expression constructed unconditionally", run); } })();
 describe.each([["pg"]].slice(0 + 0))("a slice bound computed without a pick %s", () => {});
+describe.each([["pg"]].slice(-1))("a negative slice bound without a pick %s", () => {});
+describe.each([["pg"]].slice(`${1}`.length))("a template without a pick %s", () => {});
+register(class { static s = describe("a static field runs when the class does", run); });
