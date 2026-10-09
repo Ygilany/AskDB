@@ -79,3 +79,5 @@ if (process.env.DATABASE_URL) {
   }
 }
 if (ok) register(class { static { describe("in a class expression's static block", run); } }); // HIT
+if (process.env.DATABASE_URL) { class Keyed { [describe("in a computed member key", run)]() {} } } // HIT
+if (process.env.DATABASE_URL) { class Decorated { @tag(describe("in a member decorator", run)) method() {} } } // HIT

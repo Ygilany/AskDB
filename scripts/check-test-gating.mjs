@@ -15,7 +15,8 @@
 // not parse fails the check instead of passing unread.
 //
 // Vitest is recognized as the globals, renamed imports (`import { it as t } from "vitest"`),
-// namespace imports (`import * as v from "vitest"`, `await import("vitest")`, `require("vitest")`,
+// namespace imports (`import * as v from "vitest"`, `await import("vitest")`, `require("vitest")`
+// through `require`, `module.require` or a `createRequire(…)` function, `import v = require(…)`,
 // and a member read straight off a loader, `require("vitest").describe`) and variables holding
 // `test.extend({…})`. `integrationSuite({…})` and a variable holding its result are suite
 // functions, so the sanctioned gate passes. Names resolve through TypeScript's binder, so a local
@@ -181,10 +182,11 @@ function importedFrom(decl) {
 function vitestBindings(sf, program) {
   const checker = program.getTypeChecker();
   const cache = new Map();
-  const bindings = { sf, checker };
+  const bindings = { sf };
   /**
    * What identifier `id` refers to: `{ kind: "fn", name }` for a Vitest function, `{ kind: "ns" }`
-   * for a Vitest namespace, `{ kind: "suiteFactory" }` for `integrationSuite`, or undefined.
+   * for a Vitest namespace, `{ kind: "suiteFactory" }` for `integrationSuite`, `{ kind: "require" }`
+   * for a function from `createRequire(…)`, or undefined.
    */
   bindings.resolve = (id) => {
     const parent = id.parent;
@@ -203,14 +205,19 @@ function vitestBindings(sf, program) {
       found = { kind: "ns" };
     } else if (decl && ts.isImportEqualsDeclaration(decl) && isVitestModule(decl.moduleReference, bindings)) {
       found = { kind: "ns" }; // `import v = require("vitest")`
+    } else if (decl && ts.isImportEqualsDeclaration(decl) && ts.isQualifiedName(decl.moduleReference)) {
+      // `import d = v.describe`, on a Vitest namespace.
+      const { left, right } = decl.moduleReference;
+      if (ts.isIdentifier(left) && isVitestNamespace(left, bindings) && TEST_FNS.has(right.text)) found = { kind: "fn", name: right.text };
     } else if (decl && ts.isImportSpecifier(decl) && (decl.propertyName ?? decl.name).text === "integrationSuite" &&
       INTEGRATION_MODULE.test(importedFrom(decl) ?? "")) {
       found = { kind: "suiteFactory" };
     } else if (decl && ts.isVariableDeclaration(decl) && decl.initializer && symbol.declarations.length === 1) {
       const init = unwrap(decl.initializer);
       // `const w = v` keeps a Vitest namespace; `const t = test.extend({…})` is a test function.
-      // `const w = v` or `const v = await import("vitest")` is a Vitest namespace.
-      found = isVitestModule(init, bindings) ? { kind: "ns" } : undefined;
+      // `const w = v` or `const v = await import("vitest")` is a Vitest namespace; `const r =
+      // createRequire(import.meta.url)` is a `require`.
+      found = isVitestModule(init, bindings) ? { kind: "ns" } : isCreateRequireCall(init) ? { kind: "require" } : undefined;
       // `const run = integrationSuite({…})` is a suite function; so is `const t = test.extend({…})`.
       const fn = suiteFactoryCall(init, bindings) ? "describe" : (testFnName(init, bindings) ?? extendedFn(decl.initializer, bindings));
       if (fn !== undefined) found = { kind: "fn", name: fn };
@@ -234,7 +241,7 @@ function vitestBindings(sf, program) {
  * `v["member"]`, or `const w = v` / `const { describe } = v` (both resolved as aliases). A computed
  * key, a rest element or a nested pattern fails closed.
  */
-function namespaceMemberUse(id) {
+function isReadableNamespaceUse(id) {
   let outer = outermostWrapper(id);
   // A loader is read through `await`: `(await import("vitest")).describe`. An `import()` that isn't
   // awaited is a promise (`.then(…)`, stored, passed on), which the check can't follow.
@@ -275,18 +282,32 @@ function escapedNamespaceRef(id, bindings) {
  */
 function isVitestModule(node, bindings) {
   while (isWrapper(node) || ts.isAwaitExpression(node)) node = node.expression;
-  if (ts.isExternalModuleReference(node)) node = node.expression;
-  if (ts.isStringLiteralLike(node)) return node.text === "vitest";
+  if (ts.isExternalModuleReference(node)) return isVitestSpecifier(node.expression);
   if (ts.isIdentifier(node)) return isVitestNamespace(node, bindings);
-  return isVitestLoaderCall(node);
+  return isVitestLoaderCall(node, bindings);
+}
+
+/** Whether `node` is `createRequire(…)` or `module.createRequire(…)`. */
+function isCreateRequireCall(node) {
+  if (!ts.isCallExpression(node)) return false;
+  const callee = unwrap(node.expression);
+  return (ts.isIdentifier(callee) && callee.text === "createRequire") || (isMemberLink(callee) && linkName(callee) === "createRequire");
+}
+
+/** Whether `node` (through parentheses and casts) is the string `"vitest"`. */
+function isVitestSpecifier(node) {
+  node = node && unwrap(node);
+  return node !== undefined && ts.isStringLiteralLike(node) && node.text === "vitest";
 }
 
 /** Whether `node` is `import("vitest")` or `require("vitest")` (a string or plain template). */
-function isVitestLoaderCall(node) {
-  if (!ts.isCallExpression(node) || node.arguments.length !== 1 || !ts.isStringLiteralLike(node.arguments[0])) return false;
-  const isLoader = node.expression.kind === ts.SyntaxKind.ImportKeyword ||
-    (ts.isIdentifier(node.expression) && node.expression.text === "require");
-  return isLoader && node.arguments[0].text === "vitest";
+function isVitestLoaderCall(node, bindings) {
+  if (!ts.isCallExpression(node) || !isVitestSpecifier(node.arguments[0])) return false;
+  const callee = unwrap(node.expression);
+  if (callee.kind === ts.SyntaxKind.ImportKeyword) return true; // `import("vitest")`, `import("vitest", opts)`
+  // `require`, `module.require`, `globalThis.require`, or a function from `createRequire(…)`.
+  if (ts.isIdentifier(callee)) return callee.text === "require" || bindings.resolve(callee)?.kind === "require";
+  return isMemberLink(callee) && linkName(callee) === "require";
 }
 
 /** Whether identifier `id` names a Vitest namespace. */
@@ -312,7 +333,7 @@ function testFnName(node, bindings) {
     return found?.kind === "fn" ? found.name : undefined;
   }
   // `v.describe`, `require("vitest").describe`, `(await import("vitest")).describe`.
-  if (isMemberLink(node) && !ts.isStringLiteralLike(unwrap(node.expression)) && isVitestModule(node.expression, bindings)) {
+  if (isMemberLink(node) && isVitestModule(node.expression, bindings)) {
     const name = linkName(node);
     return TEST_FNS.has(name) ? name : undefined;
   }
@@ -529,13 +550,16 @@ function underCondition(call, bindings) {
   // Set once the walk leaves a function, until a call it's passed to (directly or inside an
   // argument such as `{ onReady: () => … }`) is reached.
   let inCallback = false;
-  for (let node = call.parent; node && !ts.isSourceFile(node); child = node, node = node.parent) {
+  let grandchild;
+  for (let node = call.parent; node && !ts.isSourceFile(node); grandchild = child, child = node, node = node.parent) {
     if (conditionalEdge(node, child)) return true;
     if (ts.isFunctionDeclaration(node)) return false;
     // A class member that runs later (a method, accessor, constructor or instance field) is a
     // boundary; a static block, static field or `extends` clause runs when the class does.
     if (ts.isClassLike(node)) {
-      if (isDeferredClassMember(child)) return false;
+      // A member's computed key and decorators run with the class, like a static block.
+      const viaKeyOrDecorator = grandchild !== undefined && (child.name === grandchild || ts.isDecorator(grandchild));
+      if (isDeferredClassMember(child) && !viaKeyOrDecorator) return false;
       continue;
     }
     if (calleeOf(node) !== undefined && node !== call && callsVitestFn(node, bindings)) {
@@ -652,7 +676,7 @@ export function findGates(src, fileName = "file.test.ts") {
     if (!ts.isIdentifier(node) || isValueReference(node)) {
       const fnName = testFnName(node, bindings);
       if (fnName !== undefined) refs.push(testRef(node, fnName, bindings));
-      else if (((ts.isIdentifier(node) && isVitestNamespace(node, bindings)) || isVitestLoaderCall(node)) && !namespaceMemberUse(node)) {
+      else if (((ts.isIdentifier(node) && isVitestNamespace(node, bindings)) || isVitestLoaderCall(node, bindings)) && !isReadableNamespaceUse(node)) {
         refs.push(escapedNamespaceRef(node, bindings));
       }
     }

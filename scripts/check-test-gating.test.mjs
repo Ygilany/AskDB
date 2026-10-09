@@ -108,7 +108,7 @@ test("CLI fails closed on a packages line it cannot read", (t) => {
 });
 
 test("CLI fails closed on a workspace pattern it cannot expand", (t) => {
-  for (const pattern of ["packages/**", "apps/*/*"]) {
+  for (const pattern of ["packages/**", "apps/*/*", "packages/{a,z}", "packages/?", "packages/[a]"]) {
     const root = workspace(t, { "packages/a/src/a.test.ts": 'it("ok", () => {});\n', "apps/x/y/z.test.ts": 'it("ok", () => {});\n' }, `packages:\n  - "${pattern}"\n`);
     const result = run(root);
     assert.equal(result.status, 1, pattern);
@@ -117,12 +117,22 @@ test("CLI fails closed on a workspace pattern it cannot expand", (t) => {
 });
 
 test("CLI fails closed on a glob exclusion it cannot match", (t) => {
-  for (const exclusion of ["!examples/consumer-*", "!**/consumer-lab"]) {
+  for (const exclusion of ["!examples/consumer-*", "!**/consumer-lab", "!examples/la?"]) {
     const root = workspace(t, { "packages/a/src/a.test.ts": 'it("ok", () => {});\n' }, `packages:\n  - "packages/*"\n  - "${exclusion}"\n`);
     const result = run(root);
     assert.equal(result.status, 1, exclusion);
     assert.match(result.stderr, /unsupported workspace exclusion/, exclusion);
   }
+});
+
+test("CLI honors an exclusion written with a trailing slash", (t) => {
+  const root = workspace(
+    t,
+    { "packages/a/src/a.test.ts": 'it("ok", () => {});\n', "packages/lab/src/lab.test.ts": 'describe.skip("excluded", () => {});\n' },
+    'packages:\n  - "packages/*"\n  - "!packages/lab/"\n',
+  );
+  const result = run(root);
+  assert.equal(result.status, 0, result.stderr);
 });
 
 test("CLI reads a pnpm-workspace.yaml with CRLF line endings", (t) => {

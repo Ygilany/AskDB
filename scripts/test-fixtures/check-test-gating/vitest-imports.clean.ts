@@ -7,3 +7,5 @@ other.describe.skip("not Vitest's describe");
 import * as v from "vitest";
 const e = v.expect;
 (v as any).expect(1);
+const pkg = "vitest";
+expect(deps).toContain(pkg);
