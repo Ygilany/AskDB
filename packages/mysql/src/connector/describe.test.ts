@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { CatalogQueryResult, CatalogQueryRunner } from "@askdb/introspect";
-import { describeMysql, MYSQL_CATALOG_SQL } from "./describe.js";
+import { describeMysql, foldMysqlResult, MYSQL_CATALOG_SQL } from "./describe.js";
+import { compileTableFilters } from "./glob.js";
 
 type RowMap = Record<string, ReadonlyArray<Record<string, unknown>>>;
 
@@ -10,6 +11,7 @@ type RowMap = Record<string, ReadonlyArray<Record<string, unknown>>>;
  */
 function fakeRunner(rows: RowMap): CatalogQueryRunner {
   const bySql = new Map<string, ReadonlyArray<Record<string, unknown>>>();
+  bySql.set(MYSQL_CATALOG_SQL.current_database, rows.current_database ?? [{ database_name: "app" }]);
   bySql.set(MYSQL_CATALOG_SQL.tables, rows.tables ?? []);
   bySql.set(MYSQL_CATALOG_SQL.columns, rows.columns ?? []);
   bySql.set(MYSQL_CATALOG_SQL.constraints, rows.constraints ?? []);
@@ -268,5 +270,202 @@ describe("describeMysql", () => {
 
     expect(result.schema.schemas[0]!.tables.map((t) => t.name)).toEqual(["users"]);
     expect(result.warnings).toEqual([{ code: "ambiguous_filter", filter: "public.missing_*" }]);
+  });
+
+  it("throws a clear error when the connection has no default database (DATABASE() is NULL)", async () => {
+    const runner = fakeRunner({ current_database: [{ database_name: null }] });
+    await expect(describeMysql({ runner })).rejects.toThrow(
+      /no(ne)? selected \(DATABASE\(\) is NULL\).*mysql:\/\/user:password@host:3306\/<database>/s,
+    );
+  });
+
+  it("keeps FKs inside a listed database whose name the catalog spells in another case", async () => {
+    // lower_case_table_names=1/2: `table_schema IN ('Shop')` matches, rows come back as `shop`.
+    const rows: Record<string, ReadonlyArray<Record<string, unknown>>> = {
+      tables: [
+        { table_schema: "shop", table_name: "orders", table_type: "BASE TABLE", table_comment: "" },
+        { table_schema: "shop", table_name: "users", table_type: "BASE TABLE", table_comment: "" },
+      ],
+      columns: [
+        ["orders", "id", 1, "PRI"],
+        ["orders", "user_id", 2, "MUL"],
+        ["users", "id", 1, "PRI"],
+      ].map(([table, column, pos, key]) => ({
+        table_schema: "shop",
+        table_name: table,
+        column_name: column,
+        ordinal_position: pos,
+        column_default: null,
+        is_nullable: "NO",
+        data_type: "int",
+        column_type: "int",
+        column_key: key,
+        extra: "",
+        column_comment: "",
+      })),
+      key_column_usage: [
+        {
+          constraint_name: "orders_user_fk",
+          table_name: "orders",
+          column_name: "user_id",
+          table_schema: "shop",
+          referenced_table_schema: "shop",
+          referenced_table_name: "users",
+          referenced_column_name: "id",
+          ordinal_position: 1,
+          update_rule: "NO ACTION",
+          delete_rule: "NO ACTION",
+        },
+      ],
+    };
+    const runner: CatalogQueryRunner = async (sql, params) => {
+      expect(params).toEqual(["Shop"]);
+      const from = /FROM information_schema\.(\w+)/.exec(sql)?.[1] ?? "";
+      return rowsToResult(rows[from] ?? []);
+    };
+
+    const result = await describeMysql({ runner, filters: { schemas: ["Shop"] } });
+    const orders = result.schema.schemas[0]!.tables.find((t) => t.name === "orders")!;
+    expect(orders.foreignKeys.map((fk) => fk.references)).toEqual([{ schema: "shop", table: "users", columns: ["id"] }]);
+    expect(result.warnings).toEqual([]);
+  });
+
+  it("skips cross-database foreign keys with a cross_database_fk warning", async () => {
+    const intCol = (table: string, column: string, pos: number, key = "") => ({
+      table_schema: "app",
+      table_name: table,
+      column_name: column,
+      ordinal_position: pos,
+      column_default: null,
+      is_nullable: "NO",
+      data_type: "int",
+      column_type: "int",
+      column_key: key,
+      extra: "",
+      column_comment: "",
+    });
+    const runner = fakeRunner({
+      tables: [
+        { table_schema: "app", table_name: "orders", table_type: "BASE TABLE", table_comment: "" },
+        { table_schema: "app", table_name: "users", table_type: "BASE TABLE", table_comment: "" },
+      ],
+      columns: [
+        intCol("orders", "id", 1, "PRI"),
+        intCol("orders", "user_id", 2, "MUL"),
+        intCol("orders", "tenant_id", 3, "MUL"),
+        intCol("users", "id", 1, "PRI"),
+      ],
+      foreign_keys: [
+        {
+          constraint_name: "orders_tenant_fk",
+          table_name: "orders",
+          column_name: "tenant_id",
+          table_schema: "app",
+          referenced_table_schema: "billing",
+          referenced_table_name: "users",
+          referenced_column_name: "id",
+          ordinal_position: 1,
+          update_rule: "NO ACTION",
+          delete_rule: "NO ACTION",
+        },
+        {
+          constraint_name: "orders_user_fk",
+          table_name: "orders",
+          column_name: "user_id",
+          table_schema: "app",
+          referenced_table_schema: "app",
+          referenced_table_name: "users",
+          referenced_column_name: "id",
+          ordinal_position: 1,
+          update_rule: "NO ACTION",
+          delete_rule: "CASCADE",
+        },
+      ],
+    });
+
+    const result = await describeMysql({ runner });
+    const orders = result.schema.schemas[0]!.tables.find((t) => t.name === "orders")!;
+    // `billing.users` must not be rendered as the local `public.users`.
+    expect(orders.foreignKeys.map((fk) => fk.name)).toEqual(["orders_user_fk"]);
+    expect(orders.foreignKeys[0]!.references).toEqual({
+      schema: "public",
+      table: "users",
+      columns: ["id"],
+    });
+    expect(result.warnings).toEqual([
+      {
+        code: "cross_database_fk",
+        table: "table:public.orders",
+        constraint: "orders_tenant_fk",
+        referencedDatabase: "billing",
+        referencedTable: "users",
+      },
+    ]);
+  });
+
+  it("describeMysql with a database list keeps FKs into a listed database and skips FKs into an unlisted one", async () => {
+    const intCol = (database: string, table: string, column: string, pos: number, key = "") => ({
+      table_schema: database,
+      table_name: table,
+      column_name: column,
+      ordinal_position: pos,
+      column_default: null,
+      is_nullable: "NO",
+      data_type: "int",
+      column_type: "int",
+      column_key: key,
+      extra: "",
+      column_comment: "",
+    });
+    const fk = (constraint: string, column: string, referencedDatabase: string) => ({
+      constraint_name: constraint,
+      table_name: "orders",
+      column_name: column,
+      table_schema: "app",
+      referenced_table_schema: referencedDatabase,
+      referenced_table_name: "users",
+      referenced_column_name: "id",
+      ordinal_position: 1,
+      update_rule: "NO ACTION",
+      delete_rule: "NO ACTION",
+    });
+    const rows: Record<string, ReadonlyArray<Record<string, unknown>>> = {
+      tables: [
+        { table_schema: "app", table_name: "orders", table_type: "BASE TABLE", table_comment: "" },
+        { table_schema: "people", table_name: "users", table_type: "BASE TABLE", table_comment: "" },
+      ],
+      columns: [
+        intCol("app", "orders", "id", 1, "PRI"),
+        intCol("app", "orders", "user_id", 2, "MUL"),
+        intCol("app", "orders", "billing_user_id", 3, "MUL"),
+        intCol("people", "users", "id", 1, "PRI"),
+      ],
+      key_column_usage: [
+        fk("orders_people_fk", "user_id", "people"),
+        fk("orders_billing_fk", "billing_user_id", "billing"),
+      ],
+    };
+    const runner: CatalogQueryRunner = async (sql, params) => {
+      expect(params).toEqual(["app", "people"]);
+      const from = /FROM information_schema\.(\w+)/.exec(sql)?.[1] ?? "";
+      return rowsToResult(rows[from] ?? []);
+    };
+
+    const result = await describeMysql({ runner, filters: { schemas: ["app", "people"] } });
+    const orders = result.schema.schemas
+      .find((namespace) => namespace.name === "app")!
+      .tables.find((t) => t.name === "orders")!;
+    expect(orders.foreignKeys.map((f) => [f.name, f.references])).toEqual([
+      ["orders_people_fk", { schema: "people", table: "users", columns: ["id"] }],
+    ]);
+    expect(result.warnings).toEqual([
+      {
+        code: "cross_database_fk",
+        table: "table:app.orders",
+        constraint: "orders_billing_fk",
+        referencedDatabase: "billing",
+        referencedTable: "users",
+      },
+    ]);
   });
 });

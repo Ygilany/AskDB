@@ -45,6 +45,11 @@ export type DescribeSqlServerInput = {
 // sys.* catalog queries. Tables/views, columns (no comments/defaults yet —
 // follow-up), PKs + UNIQUE constraints via sys.indexes, FKs via sys.foreign_keys,
 // non-PK/non-UNIQUE indexes for completeness.
+//
+// Objects with `is_ms_shipped = 1` are created by SQL Server itself or its
+// features (replication `MS*` tables, CDC/change-tracking artifacts, etc.) —
+// often in `dbo`, so the system-schema list alone does not catch them. They are
+// excluded from the table/view listing (and their columns) at the source.
 
 const SQL_TABLES = `SELECT
   s.name AS schema_name,
@@ -52,6 +57,7 @@ const SQL_TABLES = `SELECT
   'BASE TABLE' AS table_type
 FROM sys.tables t
 JOIN sys.schemas s ON s.schema_id = t.schema_id
+WHERE t.is_ms_shipped = 0
 UNION ALL
 SELECT
   s.name AS schema_name,
@@ -59,6 +65,7 @@ SELECT
   'VIEW' AS table_type
 FROM sys.views v
 JOIN sys.schemas s ON s.schema_id = v.schema_id
+WHERE v.is_ms_shipped = 0
 ORDER BY schema_name, table_name`;
 
 const SQL_VIEWS = `SELECT
@@ -68,6 +75,7 @@ const SQL_VIEWS = `SELECT
 FROM sys.views v
 JOIN sys.schemas s ON s.schema_id = v.schema_id
 LEFT JOIN sys.sql_modules m ON m.object_id = v.object_id
+WHERE v.is_ms_shipped = 0
 ORDER BY s.name, v.name`;
 
 const SQL_COLUMNS = `SELECT
@@ -85,6 +93,7 @@ JOIN sys.objects o ON o.object_id = c.object_id
 JOIN sys.schemas s ON s.schema_id = o.schema_id
 JOIN sys.types typ ON typ.user_type_id = c.user_type_id
 WHERE o.type IN ('U','V')
+  AND o.is_ms_shipped = 0
 ORDER BY s.name, o.name, c.column_id`;
 
 const SQL_CONSTRAINTS = `SELECT

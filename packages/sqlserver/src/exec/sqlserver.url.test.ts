@@ -126,5 +126,181 @@ describe("resolveConnectionInput", () => {
     it("throws when server is missing", () => {
       expect(() => resolveConnectionInput("sqlserver://;database=db")).toThrow("Cannot parse server hostname");
     });
+
+    // Prisma's {…} escaping (Prisma's SQL Server docs; prisma/connection-string
+    // src/jdbc.rs), read only for a whole value that starts with {, ends with }
+    // and holds a ; in between.
+    it("reads a braced value holding a ; as Prisma's escape (the doc example yields the password Pass:Word;)", () => {
+      expect(resolveConnectionInput("sqlserver://host:1433;user=sa;password={Pass:Word;};database=db")).toEqual({
+        server: "host",
+        port: 1433,
+        database: "db",
+        user: "sa",
+        password: "Pass:Word;",
+        options: {},
+      });
+    });
+
+    it.each([
+      // Braces inside the escape are literal, so a value can hold both braces and a ;.
+      ["sqlserver://h;user=sa;password={{a;b}}", "{a;b}"],
+      // The escape ends at the } that ends the value (Prisma would end it at the first }: abc;}45}).
+      ["sqlserver://h:4200;User ID=musti;Password={abc;}}45}", "abc;}}45"],
+      // Blanks around the braces, as around any value.
+      ["sqlserver://h;user=sa;password=  {a;b}  ;database=app", "a;b"],
+    ])("reads %s as the password %s", (input, password) => {
+      expect((resolveConnectionInput(input) as { password?: string }).password).toBe(password);
+    });
+
+    it("keeps a ;database= inside a braced value out of the database", () => {
+      const result = resolveConnectionInput("sqlserver://h:1433;database=app;user=sa;password={S3c;database=ret;}") as {
+        database?: string;
+        password?: string;
+      };
+      expect(result).toMatchObject({ database: "app", password: "S3c;database=ret;" });
+    });
+  });
+});
+
+// The Prisma-form parser before #189 (packages/sqlserver/src/exec/sqlserver.ts
+// on main), copied as a fixture: every string it read correctly must still
+// connect with the same values.
+function legacyParsePrismaSqlServerUrl(connectionString: string) {
+  const withoutScheme = connectionString.slice("sqlserver://".length);
+  const firstSemiIdx = withoutScheme.indexOf(";");
+  const hostPart = firstSemiIdx === -1 ? withoutScheme : withoutScheme.slice(0, firstSemiIdx);
+  const paramsPart = firstSemiIdx === -1 ? "" : withoutScheme.slice(firstSemiIdx + 1);
+
+  const colonIdx = hostPart.lastIndexOf(":");
+  const server = colonIdx === -1 ? hostPart : hostPart.slice(0, colonIdx);
+  const portStr = colonIdx === -1 ? undefined : hostPart.slice(colonIdx + 1);
+  const port = portStr ? parseInt(portStr, 10) : undefined;
+
+  if (!server) throw new Error("Cannot parse server hostname from Prisma-style SQL Server URL.");
+
+  const params: Record<string, string> = {};
+  for (const part of paramsPart.split(";")) {
+    const eqIdx = part.indexOf("=");
+    if (eqIdx === -1) continue;
+    const key = part.slice(0, eqIdx).trim().toLowerCase();
+    const value = part.slice(eqIdx + 1).trim();
+    if (key && value) params[key] = value;
+  }
+
+  return {
+    server,
+    ...(port !== undefined && !Number.isNaN(port) ? { port } : {}),
+    ...(params["database"] ? { database: params["database"] } : {}),
+    ...(params["user"] ? { user: params["user"] } : {}),
+    ...(params["password"] ? { password: params["password"] } : {}),
+    options: {
+      ...(params["encrypt"] !== undefined ? { encrypt: params["encrypt"].toLowerCase() === "true" } : {}),
+      ...(params["trustservercertificate"] !== undefined
+        ? { trustServerCertificate: params["trustservercertificate"].toLowerCase() === "true" }
+        : {}),
+    },
+  };
+}
+
+describe("sqlserver:// backward compatibility with the parser before #189", () => {
+  it.each([
+    "sqlserver://db.example.com:1433;database=AppCatalog;user=appuser;password=Str0ngP4ss;encrypt=true",
+    "sqlserver://db.example.com;database=AppCatalog;user=appuser;password=Str0ngP4ss",
+    "sqlserver://db:1433;database=app;user=sa;password=S3cret;trustServerCertificate=true;",
+    // An unbraced = in a value: the key ends at the first =.
+    "sqlserver://h;user=sa;password=a=b;database=app",
+    "sqlserver://h;user=sa;password=abc==",
+    // Non-ASCII.
+    "sqlserver://h;user=sa;password=pässwörd€;database=datenbänk",
+    // Whitespace around keys and values.
+    "sqlserver://h:1433; database = app ;user = sa; password = S3 cret ;",
+    // An unbraced ; inside a value (ambiguous; the old reading is kept, the label falls back).
+    "sqlserver://h;user=sa;password=ab;cd;database=app",
+    "sqlserver://h;password=p;;database=leak",
+    // Quotes are not escapes.
+    'sqlserver://h;user=sa;password="S3c;database=ret;"',
+    "sqlserver://h;user=sa;password='S3c'",
+    // A lone } is an ordinary character.
+    "sqlserver://h;user=sa;password=ab}cd",
+    // Repeated keys: the last one wins.
+    "sqlserver://h;database=a;database=b;DATABASE=c",
+    // Ports the old parser read leniently, IPv6, a named instance, and other hosts.
+    "sqlserver://h:14x3;database=app",
+    "sqlserver://h:abc;database=app",
+    "sqlserver://[::1]:1433;database=app",
+    "sqlserver://h\\SQLEXPRESS:1433;database=app",
+    "sqlserver:// h:1433;database=app",
+    "sqlserver://h;user=admin@corp;password=S3cret",
+    // `initial catalog` is still ignored, as before.
+    "sqlserver://h;initial catalog=app;user=sa;password=S3cret",
+    // Empty keys and values are skipped.
+    "sqlserver://h;=x;user=;password=S3cret",
+    // An alias next to its canonical key: the canonical key wins, as when aliases were ignored.
+    "sqlserver://h;user=sa;uid=other;password=x",
+    "sqlserver://h;user=sa;password=a;pwd=b",
+    "sqlserver://h;uid=other;user=sa;pwd=b;password=a",
+    // Braces that wrap no ; are plain characters, as before (Prisma would read
+    // {abc} as abc), and an unclosed { is part of the value.
+    "sqlserver://h;user=sa;password={abc}",
+    "sqlserver://h;user=sa;password=a{b}c;database=app",
+    "sqlserver://h;user=sa;password=ab{cd",
+    "sqlserver://h;user=sa;password=ab{cd;database=app",
+    "sqlserver://h;user=sa;password=}{",
+    "sqlserver://h;user={MyServer/User};password={Pass:Word}",
+    "sqlserver://h;user=sa;password=x;database={app}",
+    "sqlserver://h;user=sa;password={a{b}}c",
+    // A { and a } in different values never pair up, and a } that doesn't end
+    // its value doesn't close an escape.
+    "sqlserver://h;user=sa;password=ab{cd;database=a}pp",
+    "sqlserver://h;user=sa;password=ab{cd;database=app;x=}",
+    "sqlserver://h;user=sa;password={ab;database=a}pp",
+    "sqlserver://h;user=sa;password={ab}cd;database=app",
+    // A value that closes its braces before any ; is plain text, so a } that
+    // ends a later value doesn't close it.
+    "sqlserver://h;password={ab}cd;user={MyServer/User}",
+    "sqlserver://h;user=sa;password={x}y;database={app}",
+    "sqlserver://h;password={S3c}r3t;user={me};database=app",
+    // A { with no } of its own: the } that ends a later key=value piece doesn't close it.
+    "sqlserver://h;database=app;password={Xy7;user={MyServer/User}",
+    "sqlserver://h;user=sa;password={ab;database=a}pp;user={me}",
+    "sqlserver://h;password={ab;database=app;user=x}",
+    "sqlserver://h;user=sa;password={a;b=c}",
+    // A } followed by more text doesn't close an escape.
+    "sqlserver://h;password={a;b}x;user=u",
+  ])("reads %s exactly as before", (input) => {
+    expect(resolveConnectionInput(input)).toEqual(legacyParsePrismaSqlServerUrl(input));
+  });
+
+  // The only strings that connect differently: the old reading couldn't log in.
+  it.each([
+    [
+      "Braces that wrap a ; (Prisma's escape): the old parser cut the value at the ; inside them",
+      "sqlserver://h;user={MyServer/User};password={Pass:Word;};database=db",
+      { user: "{MyServer/User}", password: "{Pass:Word" },
+      { user: "{MyServer/User}", password: "Pass:Word;" },
+    ],
+    [
+      "Prisma's pwd alias: the old parser dropped it, so there was no password",
+      "sqlserver://h;user=sa;pwd=S3cret",
+      { user: "sa", password: undefined },
+      { user: "sa", password: "S3cret" },
+    ],
+    [
+      "Prisma's uid alias: the old parser dropped it, so there was no user",
+      "sqlserver://h;uid=sa;password=S3cret",
+      { user: undefined, password: "S3cret" },
+      { user: "sa", password: "S3cret" },
+    ],
+    [
+      "Prisma's username alias, which wins over uid: the old parser dropped both",
+      "sqlserver://h;uid=b;username=a;password=S3cret",
+      { user: undefined, password: "S3cret" },
+      { user: "a", password: "S3cret" },
+    ],
+  ])("%s", (_reason, input, before, after) => {
+    const old = legacyParsePrismaSqlServerUrl(input) as { user?: string; password?: string };
+    const now = resolveConnectionInput(input) as { user?: string; password?: string };
+    expect({ user: old.user, password: old.password }).toEqual(before);
+    expect({ user: now.user, password: now.password }).toEqual(after);
   });
 });

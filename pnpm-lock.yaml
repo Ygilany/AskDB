@@ -170,9 +170,6 @@ importers:
       '@askdb/core':
         specifier: workspace:*
         version: link:../../packages/core
-      '@askdb/postgres':
-        specifier: workspace:*
-        version: link:../../packages/postgres
       ai:
         specifier: ^7.0.51
         version: 7.0.127(zod@4.6.5)
@@ -654,6 +651,9 @@ importers:
       '@askdb/introspect':
         specifier: workspace:*
         version: link:../introspect
+      pg-connection-string:
+        specifier: ^2.14.1
+        version: 2.14.1
     devDependencies:
       '@types/pg':
         specifier: ^8.23.1
@@ -748,6 +748,9 @@ importers:
       '@askdb/introspect':
         specifier: workspace:*
         version: link:../introspect
+      '@tediousjs/connection-string':
+        specifier: ^1.1.0
+        version: 1.1.0
     devDependencies:
       '@types/mssql':
         specifier: ^12.3.0

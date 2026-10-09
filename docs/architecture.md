@@ -86,7 +86,6 @@ flowchart TB
   cli --> studio
   cli --> aiPkg
   http --> core
-  http --> postgres
   http --> aiPkg
   studio --> core
   studio --> enrich
@@ -99,7 +98,7 @@ flowchart TB
 | --- | --- | --- |
 | `@askdb/ai` | AI provider registry: universal env-resolution contract (`resolveBaseConfig`, `ProviderEnvSpec`), the `createAiRegistry` factory, the `AiProviderAdapter` extension point, and built-in providers (OpenAI, Azure OpenAI / Foundry, Google Gemini, Anthropic, Vercel AI Gateway) described by one `BUILTIN_AI_PROVIDERS` table. | Provider SDKs (`@ai-sdk/openai`, `@ai-sdk/azure`, `@ai-sdk/google`, `@ai-sdk/anthropic`) are optional peers, imported lazily when a provider first builds a model; no NL-to-SQL logic. |
 | `@askdb/ai-openai`, `@askdb/ai-azure`, `@askdb/ai-google`, `@askdb/ai-anthropic` | **Deprecated** re-export shims of the matching `@askdb/ai` built-in (ADR 0006 amendment). Removed before 1.0 (#347). | Depend on `@askdb/ai` plus their `@ai-sdk/*` package so existing installs keep working. |
-| `@askdb/connectors` | Registry for database connector adapters, config-driven dispatch contract, and `createAskDbConnectorRegistry` factory. | No database drivers; engine packages supply those. |
+| `@askdb/connectors` | Registry for database connector adapters, config-driven dispatch contract, and `createConnectorRegistry` factory. | No database drivers; engine packages supply those. |
 | `@askdb/mysql` | MySQL / MariaDB connector adapter for `@askdb/connectors`; includes `MYSQL_DIALECT`, `MARIADB_DIALECT`, live connector, and `createMysqlCatalogQueryRunner`. | Wraps `mysql2` (optional peer); exports `mysqlConnectorProvider`. |
 | `@askdb/sqlite` | SQLite connector adapter for `@askdb/connectors`; includes `SQLITE_DIALECT`, live connector, and `createSqliteCatalogQueryRunner`. | Wraps `better-sqlite3` (optional peer); exports `sqliteConnectorProvider`. |
 | `@askdb/sqlserver` | SQL Server connector adapter for `@askdb/connectors`; includes `SQLSERVER_DIALECT`, live connector, and `createSqlServerCatalogQueryRunner`. | Wraps `mssql` (optional peer); exports `sqlServerConnectorProvider`. |
@@ -163,7 +162,6 @@ flowchart BT
   cli --> studio
   cli --> ai
   http --> core
-  http --> postgres
   http --> ai
 ```
 
