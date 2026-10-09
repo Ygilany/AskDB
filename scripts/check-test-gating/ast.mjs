@@ -99,6 +99,27 @@ export function unwrapValue(node) {
   return node;
 }
 
+const PICK_OPERATORS = new Set([
+  ts.SyntaxKind.AmpersandAmpersandToken,
+  ts.SyntaxKind.BarBarToken,
+  ts.SyntaxKind.QuestionQuestionToken,
+  ts.SyntaxKind.AmpersandAmpersandEqualsToken,
+  ts.SyntaxKind.BarBarEqualsToken,
+  ts.SyntaxKind.QuestionQuestionEqualsToken,
+]);
+
+/** The operands a run-time choice picks between (`a ? b : c` gives `b`, `c`; `a && b` gives both), or none. */
+export function pickBranches(node) {
+  if (ts.isConditionalExpression(node)) return [node.whenTrue, node.whenFalse];
+  if (isBinaryPick(node)) return [node.left, node.right];
+  return [];
+}
+
+/** Whether `node` is `a && b`, `a || b`, `a ?? b` or one of their assignment forms. */
+export function isBinaryPick(node) {
+  return ts.isBinaryExpression(node) && PICK_OPERATORS.has(node.operatorToken.kind);
+}
+
 /** Whether `test` holds for `node` or anything inside it, outside a nested function. */
 export function someInside(node, test) {
   if (ts.isFunctionLike(node)) return false;

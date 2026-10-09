@@ -21,7 +21,7 @@
 // `require("vitest").describe`) and variables holding `test.extend({…})`. `integrationSuite({…})`
 // and a variable holding its result are suite functions, so the sanctioned gate passes. A suite
 // body's first parameter is the test API Vitest passes it; a body other than an inline function or
-// a local function with no parameter fails closed. Names resolve through TypeScript's binder, so
+// a `const` function with no parameter fails closed. Names resolve through TypeScript's binder, so
 // any other local declaration that shadows one (a callback's parameter `it`, an import of `test`
 // from another module) is not Vitest's.
 //
@@ -40,9 +40,9 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 // --preserve-symlinks-main invocation still finds them, and they find the repo's `typescript`.
 const selfPath = realpathSync(fileURLToPath(import.meta.url));
 const sibling = (name) => pathToFileURL(join(dirname(selfPath), "check-test-gating", name)).href;
-const { ts, isWrapper, outermostWrapper, unwrap, unwrapValue, someInside, calleeOf, isMemberLink, linkName, lineOf, oneFileProgram, memberOn } =
+const { ts, isWrapper, outermostWrapper, unwrap, unwrapValue, someInside, calleeOf, isMemberLink, linkName, lineOf, oneFileProgram, memberOn, pickBranches, isBinaryPick } =
   await import(sibling("ast.mjs"));
-const { EXTENDERS, MODIFIERS, SUITE_FNS, vitestCallKind, suiteBodyUnreadable, kindOf, isPromiseLoader, vitestBindings, isVitestLoaderCall, isVitestNamespace, integrationModuleResolver, isSuiteFactory, testFnName } =
+const { EXTENDERS, MODIFIERS, SUITE_FNS, vitestCallKind, suiteBodyUnreadable, kindOf, KIND_FN, KIND_SUITE_FACTORY, KIND_AMBIGUOUS, KIND_INTEGRATION_NS, isPromiseLoader, vitestBindings, isVitestLoaderCall, isVitestNamespace, integrationModuleResolver, isSuiteFactory, testFnName } =
   await import(sibling("bindings.mjs"));
 const { workspaceDirs, entryTarget } = await import(sibling("workspace.mjs"));
 
@@ -260,18 +260,6 @@ function optionKey(name) {
   return ts.isIdentifier(name) || ts.isStringLiteralLike(name) || ts.isNumericLiteral(name) ? name.text : undefined;
 }
 
-/** The operands a run-time choice picks between (`a ? b : c` gives `b`, `c`; `a && b` gives both), or none. */
-function pickBranches(node) {
-  if (ts.isConditionalExpression(node)) return [node.whenTrue, node.whenFalse];
-  if (isBinaryPick(node)) return [node.left, node.right];
-  return [];
-}
-
-/** Whether `node` is `a && b`, `a || b`, `a ?? b` or one of their assignment forms. */
-function isBinaryPick(node) {
-  return ts.isBinaryExpression(node) && PICK_OPERATORS.has(node.operatorToken.kind);
-}
-
 /**
  * Whether `node` (through wrappers and `await`) is picked at run time by `? :`, `&&`, `||` or `??`,
  * or is built from such a pick: spread into an array or object, passed to a call or `new`, or the
@@ -282,8 +270,8 @@ function isPicked(node) {
   if (pickBranches(node).length > 0) return true;
   // `Object.entries(url ? {…} : {})`, `new Set(url ? [url] : [])`, `(url ? [url] : []).map(f)`: a
   // call or `new` over a pick, or a method of one, yields a table whose size is picked too.
-  if ((ts.isCallExpression(node) || ts.isNewExpression(node)) && (node.arguments ?? []).some(picksSize)) return true;
-  if (ts.isCallExpression(node) && isMemberLink(unwrap(node.expression)) && picksSize(unwrap(node.expression).expression)) return true;
+  if ((ts.isCallExpression(node) || ts.isNewExpression(node)) && (node.arguments ?? []).some(pickDecidesSize)) return true;
+  if (ts.isCallExpression(node) && isMemberLink(unwrap(node.expression)) && pickDecidesSize(unwrap(node.expression).expression)) return true;
   // `[a, ...(cond ? [b] : [])]`, `{ a, ...(cond ? { b } : {}) }`: how many rows there are depends on the condition.
   if (ts.isArrayLiteralExpression(node)) return node.elements.some((el) => ts.isSpreadElement(el) && isPicked(el.expression));
   return ts.isObjectLiteralExpression(node) && node.properties.some((p) => ts.isSpreadAssignment(p) && isPicked(p.expression));
@@ -295,9 +283,9 @@ function isPicked(node) {
  * `Array.from({ length: url ? 1 : 0 })`, `[url ? [url] : []].flat()`). A pick of a value inside a
  * fixed-size table (`{ pg: url ?? "postgres://localhost" }`) doesn't change its size.
  */
-function picksSize(node) {
+function pickDecidesSize(node) {
   node = unwrapValue(node);
-  if (ts.isSpreadElement(node)) return picksSize(node.expression);
+  if (ts.isSpreadElement(node)) return pickDecidesSize(node.expression);
   if (isPicked(node)) return true;
   if (ts.isObjectLiteralExpression(node)) {
     return node.properties.some((p) => ts.isPropertyAssignment(p) && optionKey(p.name) === "length" && someInside(p.initializer, (n) => pickBranches(n).length > 0));
@@ -359,15 +347,6 @@ function isTernaryBranch(node) {
   const p = node.parent;
   return ts.isConditionalExpression(p) && (p.whenTrue === node || p.whenFalse === node);
 }
-
-const PICK_OPERATORS = new Set([
-  ts.SyntaxKind.AmpersandAmpersandToken,
-  ts.SyntaxKind.BarBarToken,
-  ts.SyntaxKind.QuestionQuestionToken,
-  ts.SyntaxKind.AmpersandAmpersandEqualsToken,
-  ts.SyntaxKind.BarBarEqualsToken,
-  ts.SyntaxKind.QuestionQuestionEqualsToken,
-]);
 
 /** Whether the node `child` of `parent` runs only when a condition holds. */
 function conditionalEdge(parent, child) {
@@ -543,18 +522,18 @@ export function findGates(src, fileName = "file.test.ts", { isIntegrationModule 
     if (ts.isIdentifier(node) && isValueReference(node)) {
       const bindingKind = kindOf(node, bindings);
       const outer = outermostWrapper(node);
-      if (bindingKind === "suiteFactory" && calleeOf(outer.parent) !== outer) refs.push(unreadableRef(node));
-      if (bindingKind === "ambiguous") refs.push(unreadableRef(node));
+      if (bindingKind === KIND_SUITE_FACTORY && calleeOf(outer.parent) !== outer) refs.push(unreadableRef(node));
+      if (bindingKind === KIND_AMBIGUOUS) refs.push(unreadableRef(node));
       // `I.isIntegrationRequired()` and other named members read through; `I.integrationSuite` must be called.
       const member = memberOn(node);
       const readable = member !== undefined && linkName(member) !== undefined &&
         (!isSuiteFactory(member, bindings) || calleeOf(outermostWrapper(member).parent) === outermostWrapper(member));
-      if (bindingKind === "integrationNs" && !readable) {
+      if (bindingKind === KIND_INTEGRATION_NS && !readable) {
         refs.push(unreadableRef(node));
       }
     }
     // `import d = v.<name>` other than `v.describe`/`v.it`/…: an alias the check can't follow.
-    if (ts.isImportEqualsDeclaration(node) && ts.isQualifiedName(node.moduleReference) && kindOf(node.name, bindings) !== "fn") {
+    if (ts.isImportEqualsDeclaration(node) && ts.isQualifiedName(node.moduleReference) && kindOf(node.name, bindings) !== KIND_FN) {
       let root = node.moduleReference;
       while (ts.isQualifiedName(root)) root = root.left;
       // `import g = describe.skipIf`, `import f = I.integrationSuite`: any root the bindings know.

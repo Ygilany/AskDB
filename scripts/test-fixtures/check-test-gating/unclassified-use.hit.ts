@@ -35,3 +35,20 @@ assignedBody = (test) => {
 };
 describe("a body assigned after its declaration", assignedBody); // HIT
 describe("a named body after options", { timeout: 5 }, declaredBody); // HIT
+let assignedInline;
+describe("a body assigned inside the call", assignedInline = (test) => test.skipIf(!process.env.DATABASE_URL)("query", run)); // HIT
+let pickedLater;
+describe("a picked body assigned inside the call", pickedLater = process.env.DATABASE_URL ? () => {} : undefined); // HIT
+let reassignedBody = () => {};
+if (!process.env.DATABASE_URL) reassignedBody = undefined;
+describe("a let body reassigned under a condition", reassignedBody); // HIT
+function noParameterDeclaration() {}
+describe("a function declaration, which can be reassigned", noParameterDeclaration); // HIT
+describe("a function body reading arguments", function () { arguments[0].skipIf(!process.env.DATABASE_URL)("query", run); }); // HIT
+const argumentsBody = function () {
+  arguments[0].skipIf(!process.env.DATABASE_URL)("query", run);
+};
+describe("a const body reading arguments", argumentsBody); // HIT
+async function awaitedBodies() {
+  describe("an awaited body", await function (t) { t.skipIf(!process.env.DATABASE_URL)("query", run); }); // HIT
+}

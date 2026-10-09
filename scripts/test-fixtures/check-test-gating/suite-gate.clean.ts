@@ -37,3 +37,20 @@ describe.each`
   ${1}
 `("a tagged-template row body $a", namedRowBody);
 describe.for([1])("a .for row body %s", namedRowBody);
+describe("a timeout computed at run time", () => {}, Number(process.env.SLOW_TIMEOUT ?? 60_000));
+const suiteTimeout = 60 * 1000;
+describe("a timeout held in a constant", () => {}, suiteTimeout);
+describe("a negative timeout", () => {}, -1);
+function suiteInsideAFunction() {
+  describe("an arrow body, whose arguments are the outer function's", () => {
+    expect(arguments.length).toBe(0);
+  });
+}
+describe("a function body whose nested function reads its own arguments", function () {
+  function count() {
+    return arguments.length;
+  }
+  it("uses the helper", () => {
+    expect(count()).toBe(0);
+  });
+});
