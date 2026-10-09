@@ -116,23 +116,9 @@ The CLI, Studio, and the HTTP API already include all four SDKs. Unknown `ai.pro
 
 The `@askdb/ai-openai`, `@askdb/ai-azure`, `@askdb/ai-google`, and `@askdb/ai-anthropic` packages are **deprecated**. They re-export the built-in adapters from `@askdb/ai` and will be removed before 1.0 ([#347](https://github.com/Ygilany/AskDB/issues/347)).
 
-### `@askdb/connectors`
+### `@askdb/connectors` (deprecated)
 
-Connector provider registry — mirrors the `@askdb/ai` pattern for introspection. Each engine adapter exports a `ConnectorProviderAdapter` constant; `@askdb/connectors` wires them into a unified registry used by the CLI and apps. Install directly only when you are building a custom introspection flow.
-
-<InstallTabs pkgs="@askdb/connectors ai" />
-
-**Key exports**
-
-| Symbol | Purpose |
-| --- | --- |
-| `createConnectorRegistry(adapters)` | Build a registry from a set of provider adapters. |
-| `ConnectorRegistry` | Registry type — `createConnector(config)` (the provider is `config.provider`), `getTemplates(provider)`, `connectionLabel(provider, connection)`. |
-| `ConnectorProviderAdapter` | The adapter shape each engine package exports. |
-| `registry.connectionLabel(provider, { url?, fromExport?, schemaPath? })` | A label that is safe to display or log. The registry builds it with `formatConnectionLabel` from the parts the engine adapter parses (host, port, database, or a file path); a connection that doesn't parse cleanly, or an adapter without a parser, gets `configured <engine> connection`. |
-| `ConnectorConnection` | The connection `connectionLabel` and an adapter's `connectionLabelParts` read: `{ url?, fromExport?, schemaPath? }`. |
-| `ConnectionLabelParts` | What an adapter's `connectionLabelParts` returns: `{ host?, port?, database? }`, or `{ file }` for a file path. Re-exported from `@askdb/introspect/kit`. |
-| `formatConnectionLabel(engine, parts)`, `parseConnectionUrl(input, schemes)` | The allowlisted label builder, and a strict standard-URL parser for engines whose driver has no parser to reuse. The built-in engines don't use it: Postgres takes its parts from `pg-connection-string` and SQL Server's ADO.NET strings from `@tediousjs/connection-string`, the parsers their drivers use; MySQL reads a `mysql://` URL with the mapping `mysql2` applies; SQL Server's `mssql://` and Prisma-style `sqlserver://` URLs go through `@askdb/sqlserver`'s own connection parser; SQLite labels the file path. Re-exported from `@askdb/introspect/kit`; import them from there in new code. |
+The connector provider registry moved into [`@askdb/introspect`](#askdbintrospect). `@askdb/connectors` is now a compatibility shim that re-exports `createConnectorRegistry`, the adapter types, and the connection-label helpers. New code should import from `@askdb/introspect` and `@askdb/introspect/kit`, and should not install this package.
 
 ### `@askdb/config`
 
@@ -155,7 +141,7 @@ For tools that write a new `askdb.config.ts`, the `@askdb/config/scaffold` entry
 
 ## Engine adapters
 
-Each engine package ships the introspection connector for its engine, any catalog SQL templates, and a re-export of that engine's dialect constant. Its connector provider adapter parses the engine's connection strings into display-safe parts, so `registry.connectionLabel()` turns `postgres://app:S3cret@db:5432/app` into `postgres://db:5432/app`, and a string the engine can't parse cleanly into `configured <engine> connection`. The label never contains a user name, password, or query string. The dialect specs themselves (SQL generation + validation rules) live in `@askdb/core` — `ask()` needs only the dialect id, no engine package.
+Each engine package ships the introspection connector for its engine, any catalog SQL templates, and a re-export of that engine's dialect constant. Its connector provider adapter parses the engine's connection strings into display-safe parts, so `registry.connectionLabel()` and the `sourceLabel` from `registry.resolveConnection()` turn `postgres://app:S3cret@db:5432/app` into `postgres://db:5432/app`, and a string the engine can't parse cleanly into `configured <engine> connection`. The label never contains a user name, password, or query string. The dialect specs themselves (SQL generation + validation rules) live in `@askdb/core` — `ask()` needs only the dialect id, no engine package.
 
 ### `@askdb/postgres`
 
@@ -191,7 +177,25 @@ The engine-agnostic introspection contract and the schema-directory writer. Use 
 
 To get the exact `schema.json` bytes without writing anything (a preview or a drift check), call `renderSchemaV2Body(result.schema, { schemaId, provider: result.provider, existingArtifactDir })`. Its options type is `RenderBodyOptions` (`schemaId`, optional `provider` and `existingArtifactDir`), and it returns a `RenderBodyResult`: `{ json, body, warnings }`, the Schema v2 document, the exact file contents and the merge warnings. It applies the same merge `introspect()` does when writing (human-set `sensitive` flags carried over from an existing artifact), and backs `askdb introspect --out`, `--print` and `--diff`. `isSchemaV2Json(value)` is the check it applies to an existing `schema.json` before merging (the shape the merge reads: version, schema id, table and column ids, names and types, and boolean `sensitive` flags; not every field of Schema v2), for callers that need to decide up front.
 
-The `@askdb/introspect/kit` subpath holds the shared helpers the engine packages are built on — optional-driver loading (`createOptionalDriverLoader`, `isDriverInstalled`, `missingDriverMessage` for the first-party engines' install hint, and `rethrowDriverImportError` to chain on your driver's `import()` so bundlers treat it as optional), table-glob filters (`compileTableFilters`, `ambiguousFilterWarnings`), Schema v2 ids (`makeTableId`, `makeColumnId`), catalog-row folding (`rowsToRecords`, `groupBy`, `buildOrderedGroups`, `byName`, `sortedUnique`, `mapFkAction`), and connection labels (`formatConnectionLabel`, `parseConnectionUrl`). Its types are `OptionalDriverSpec` (what `createOptionalDriverLoader` takes), `OptionalDriverLoader` (what it returns), `DriverLoadOptions` (`{ resolveFrom? }`), `GlobMatcher` (what `compileTableFilters` returns), `RowsToRecordsOptions` and `ConnectionLabelParts`. Import it when you write a connector for a new engine.
+It also exports the **connector provider registry**, which config-driven hosts use to pick an engine by id. Each engine package exports a `ConnectorProviderAdapter` (`postgresConnectorProvider`, `mysqlConnectorProvider`, `sqliteConnectorProvider`, `sqlServerConnectorProvider`, `prismaConnectorProvider`). Provider ids are open strings, so a third-party engine can register its own id.
+
+| Symbol | Purpose |
+| --- | --- |
+| `introspect(input, renderOptions, { connector })` | Run a connector and write the schema directory. |
+| `createConnectorRegistry(adapters)` | Build a registry from provider adapters. Returns `{ hasProvider, providers, createConnector, getTemplates, resolveConnection, connectionLabel }`. |
+| `registry.resolveConnection(provider, { explicit?, runtime, surface? })` | Let the engine's adapter merge explicit values (for example `--url`) with AskDB runtime config (`getAskDbRuntimeConfig()`). Returns `{ ok, connection, sourceLabel }` or `{ ok: false, error }`. `sourceLabel` is `registry.connectionLabel(provider, connection)`, so it is safe to display for every adapter. |
+| `registry.connectionLabel(provider, { url?, fromExport?, schemaPath? })` | A label that is safe to display or log, for any adapter: the registry builds it with `formatConnectionLabel` from the parts the adapter's `connectionLabelParts` hook parses (host, port, database, or a file path). A connection that doesn't parse cleanly, or an adapter without the hook, gets `configured <engine> connection`. |
+| `ConnectorConnection` | The connection `connectionLabel` and an adapter's `connectionLabelParts` read: `{ url?, fromExport?, schemaPath? }`. |
+| `ConnectionLabelParts`, `formatConnectionLabel(engine, parts)`, `parseConnectionUrl(input, schemes)` | From `@askdb/introspect/kit`: what `connectionLabelParts` returns (`{ host?, port?, database? }`, or `{ file }`), the allowlisted label builder, and a strict standard-URL parser for engines whose driver has no parser to reuse. The built-in engines don't use the parser: Postgres takes its parts from `pg-connection-string` and SQL Server's ADO.NET strings from `@tediousjs/connection-string`, the parsers their drivers use; MySQL reads a `mysql://` URL with the mapping `mysql2` applies; SQL Server's `mssql://` and Prisma-style `sqlserver://` URLs go through `@askdb/sqlserver`'s own connection parser; SQLite labels the file path. |
+| `ConnectorProviderAdapter` | The adapter shape: `createConnector`, plus optional `resolveConnection`, `connectionLabelParts`, `getTemplates`. |
+| `ConnectorProviderAdapters` | What `createConnectorRegistry` takes: an array of adapters, or an object keyed by provider id. |
+| `ConnectorProviderId`, `BuiltInConnectorProvider`, `BUILT_IN_CONNECTOR_PROVIDERS` | A provider id is any string; `BuiltInConnectorProvider` is the union of the first-party ids, which `BUILT_IN_CONNECTOR_PROVIDERS` lists (`postgres`, `prisma`, `mysql`, `sqlite`, `sqlserver`). |
+| `connectorProviderMissingMessage(provider)` | The error text for an unregistered provider: `Install @askdb/<id>` for a built-in id, otherwise the package that provides it. |
+| `ConnectorConfig`, `ConnectorResult` | What `createConnector` takes (`provider`, the connection fields, `filters`, `schemaId`) and returns (`{ connector, input, mode }`). |
+| `ConnectorConnectionRequest`, `ConnectorRuntimeConfig` | What `resolveConnection` takes: `{ explicit?, runtime, surface? }`, where `runtime` is `getAskDbRuntimeConfig()` (typed structurally: `introspection` and optional `structured`). |
+| `ConnectorConnectionResult`, `ConnectorConnectionResolution` | What an adapter's `resolveConnection` hook returns (`{ ok, connection }` or `{ ok: false, error }`), and what `registry.resolveConnection` returns (the same, plus `sourceLabel`). |
+
+The `@askdb/introspect/kit` subpath holds the shared helpers the engine packages are built on — optional-driver loading (`createOptionalDriverLoader`, `isDriverInstalled`, `missingDriverMessage` for the first-party engines' install hint, and `rethrowDriverImportError` to chain on your driver's `import()` so bundlers treat it as optional), the live-catalog adapter builder (`defineLiveConnectorProvider`, with `LiveConnectorProviderSpec` and `LiveCatalogInput`), `runtimeIntrospectionString` for reading an engine's string from AskDB runtime config, table-glob filters (`compileTableFilters`, `ambiguousFilterWarnings`), Schema v2 ids (`makeTableId`, `makeColumnId`), catalog-row folding (`rowsToRecords`, `groupBy`, `buildOrderedGroups`, `byName`, `sortedUnique`, `mapFkAction`), and connection labels (`formatConnectionLabel`, `parseConnectionUrl`). Its types are `OptionalDriverSpec` (what `createOptionalDriverLoader` takes), `OptionalDriverLoader` (what it returns), `DriverLoadOptions` (`{ resolveFrom? }`), `GlobMatcher` (what `compileTableFilters` returns), `RowsToRecordsOptions` and `ConnectionLabelParts`. Import it when you write a connector for a new engine.
 
 ### `@askdb/prisma`
 
@@ -282,9 +286,10 @@ See [the CLI reference](/reference/cli/).
 | Package | Depends on |
 | --- | --- |
 | `@askdb/core` | AI SDK core package (`ai`, AI SDK 6 or 7) as a required peer |
-| `@askdb/postgres`, `@askdb/mysql`, `@askdb/sqlite`, `@askdb/sqlserver` | `@askdb/core`, `@askdb/introspect`, `@askdb/connectors` |
-| `@askdb/prisma` | `@askdb/introspect`, `@askdb/connectors` |
-| `@askdb/connectors` | `@askdb/introspect` |
+| `@askdb/introspect` | `@askdb/core` |
+| `@askdb/postgres`, `@askdb/mysql`, `@askdb/sqlite`, `@askdb/sqlserver` | `@askdb/core`, `@askdb/introspect` |
+| `@askdb/prisma` | `@askdb/introspect` |
+| `@askdb/connectors` (deprecated shim) | `@askdb/introspect` |
 | `@askdb/ai` | AI SDK core package (`ai`); `@ai-sdk/*` provider packages as optional peers |
 | `@askdb/ai-openai`, `@askdb/ai-azure`, `@askdb/ai-google`, `@askdb/ai-anthropic` (deprecated) | `@askdb/ai` + the matching AI SDK provider package |
 | `@askdb/enrich`, `@askdb/rag` | `@askdb/core` |

@@ -1,5 +1,10 @@
-import type { Connector } from "@askdb/introspect";
-import type { ConnectorConfig, ConnectorProviderAdapter, ConnectorResult } from "@askdb/connectors";
+import { runtimeIntrospectionString } from "@askdb/introspect/kit";
+import {
+  type Connector,
+  type ConnectorConfig,
+  type ConnectorProviderAdapter,
+  type ConnectorResult,
+} from "@askdb/introspect";
 import { createPostgresConnector } from "./index.js";
 import { createPostgresCatalogQueryRunner } from "../exec/postgres.js";
 import { parsePostgresConnection } from "../label.js";
@@ -31,6 +36,33 @@ export const postgresConnectorProvider: ConnectorProviderAdapter = {
   },
   getTemplates() {
     return createPostgresConnector().templates!();
+  },
+  /**
+   * An explicit URL or export bundle wins; otherwise fall back to the
+   * configured `introspection.providerConfig.postgres.databaseUrl`
+   * (→ `ASKDB_INTROSPECT_POSTGRES_URL`, as resolved by `@askdb/config`).
+   */
+  resolveConnection({ explicit = {}, runtime, surface }) {
+    let url = explicit.url;
+    if (!url && !explicit.fromExport) {
+      url = runtimeIntrospectionString(runtime, "postgresDatabaseUrl");
+      if (!url) {
+        return {
+          ok: false,
+          error:
+            surface === "cli"
+              ? "Provide either --url <postgres-url> or --from-export <bundle-dir>."
+              : "No Postgres connection configured. Set introspection.providerConfig.postgres.databaseUrl in askdb.config.ts (bound to an env var in .env).",
+        };
+      }
+    }
+    if (explicit.schemaPath) {
+      return { ok: false, error: "Use --prisma-schema only with --engine prisma." };
+    }
+    return {
+      ok: true,
+      connection: { url, fromExport: explicit.fromExport },
+    };
   },
   // Same precedence as createConnector: an export bundle is what gets read.
   connectionLabelParts({ url, fromExport }) {

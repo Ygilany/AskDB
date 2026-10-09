@@ -58,6 +58,7 @@ Option A, with the A1 contract.
 - **The allowlist stays as the second line of defense.** Whatever a parser returns, `formatConnectionLabel` still checks each part's characters and its shape: a value that isn't a plain object, or a part that isn't a string, gets the fallback. The registry also catches a throwing `connectionLabelParts` hook and uses the fallback, so an error message that quotes the connection string never becomes the label.
 - **No user name.** Labels show host, port and database only. The pre-#189 Studio label (`protocol//host/path`) did not show the user either, and no documented output depends on it.
 - **Apps don't parse connection strings or switch on the engine.** Studio (and any other host) asks the registry for the label (ADR 0007); it never inspects the raw string itself.
+- **Through connection resolution ([ADR 0008](0008-engine-packages-and-connector-registry.md)).** Once the registry resolves connections, an adapter's `resolveConnection` returns only the connection or an error, and `registry.resolveConnection()` adds `sourceLabel = registry.connectionLabel(provider, connection)`. `defineLiveConnectorProvider` takes the engine's parser as `connectionLabelParts`. Postgres export bundles and Prisma schema paths are `{ file }` parts; with no schema path, Prisma's label is `configured prisma connection`. Studio serves `sourceLabel` as-is and needs no second pass, because every label has already passed the allowlist. An adapter's `error` is still free text and must not echo the connection string.
 
 ## Consequences
 

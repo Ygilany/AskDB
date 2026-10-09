@@ -102,8 +102,8 @@ Product direction and technical baseline live in **`docs/`**:
 - [`packages/ai-anthropic`](packages/ai-anthropic) (`@askdb/ai-anthropic`) — Anthropic Claude provider adapter for `@askdb/ai`.
 - [`packages/client`](packages/client) (`@askdb/client`) — config-aware facade (`createAskDb`) that resolves schema, model, and dialect from config.
 - [`packages/config`](packages/config) (`@askdb/config`) — `defineConfig`, `env()`, and `askdb.config.*` discovery/bootstrap.
-- [`packages/connectors`](packages/connectors) (`@askdb/connectors`) — maps config-driven introspection provider selections to connector packages.
-- [`packages/introspect`](packages/introspect) (`@askdb/introspect`) — engine-agnostic introspection orchestrator and Schema v2 renderer.
+- [`packages/connectors`](packages/connectors) (`@askdb/connectors`) — deprecated re-export of the connector registry (now in `@askdb/introspect`).
+- [`packages/introspect`](packages/introspect) (`@askdb/introspect`) — connector contract, connector registry, `@askdb/introspect/kit` engine helpers, Schema v2 renderer.
 - [`packages/postgres`](packages/postgres) (`@askdb/postgres`) — Postgres dialect, introspection connector, catalog templates, and `pg`-backed runner.
 - [`packages/mysql`](packages/mysql) (`@askdb/mysql`) — MySQL introspection connector and `mysql2`-backed catalog runner.
 - [`packages/sqlite`](packages/sqlite) (`@askdb/sqlite`) — SQLite introspection connector and `better-sqlite3`-backed catalog runner.

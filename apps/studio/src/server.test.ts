@@ -1190,7 +1190,23 @@ describe("AskDB Studio server", () => {
     expect(plan).toEqual({ ok: true, engine, sourceLabel });
   });
 
-  it("GET /api/introspect/status labels a prisma source with no schemaPath as auto-discovered", async () => {
+  it("GET /api/introspect/status names the config key, not a CLI flag, when the engine has no connection", async () => {
+    installStudioRuntime({}, {
+      ...STUDIO_TEST_BASE,
+      introspection: { provider: "sqlite", providerConfig: { sqlite: {} }, outputDir: "./askdb/" },
+    });
+    const server = createStudioServer({ schema: copyFixture() });
+    servers.push(server);
+    const baseUrl = await listen(server);
+
+    const plan = await getJson(`${baseUrl}/api/introspect/status`);
+    expect(plan.ok).toBe(false);
+    expect(plan.engine).toBe("sqlite");
+    expect(plan.error).toContain("introspection.providerConfig.sqlite.file");
+    expect(plan.error).not.toContain("--url");
+  });
+
+  it("GET /api/introspect/status gives a prisma source with no schemaPath the generic label (the connector auto-discovers the schema)", async () => {
     installStudioRuntime({}, {
       ...STUDIO_TEST_BASE,
       introspection: { provider: "prisma", providerConfig: { prisma: {} }, outputDir: "./askdb/" },
@@ -1201,7 +1217,7 @@ describe("AskDB Studio server", () => {
     const baseUrl = await listen(server);
 
     const plan = await getJson(`${baseUrl}/api/introspect/status`);
-    expect(plan).toEqual({ ok: true, engine: "prisma", sourceLabel: "auto-discovered prisma/schema.prisma" });
+    expect(plan).toEqual({ ok: true, engine: "prisma", sourceLabel: "configured prisma connection" });
   });
 
   it("POST /api/introspect resyncs from a prisma source and preserves enrichment files", async () => {

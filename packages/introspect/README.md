@@ -58,6 +58,29 @@ A `Connector<TInput>` has two methods:
 
 The integration package owns its own input type (e.g. `PostgresIntrospectionInput`, `PrismaIntrospectionInput`). `@askdb/introspect` does not assume a live catalog runner exists, a bundle path exists, a schema-file path exists, or a template suite exists.
 
+### Connector registry
+
+Hosts that pick the engine from configuration use the connector provider registry. The example below also uses `@askdb/config` (for `getAskDbRuntimeConfig()`) and `@askdb/mysql`; install the engine packages you register, and `@askdb/config` when you resolve connections from `askdb.config.ts`. Every engine package exports an adapter: `postgresConnectorProvider`, `mysqlConnectorProvider`, `sqliteConnectorProvider`, `sqlServerConnectorProvider`, `prismaConnectorProvider`. Provider ids are open strings (`ConnectorProviderId`), so a third-party engine package can export `{ provider: "oracle", ... }` and register it the same way.
+
+```ts
+import { getAskDbRuntimeConfig } from "@askdb/config";
+import { createConnectorRegistry, introspect } from "@askdb/introspect";
+import { postgresConnectorProvider } from "@askdb/postgres";
+import { mysqlConnectorProvider } from "@askdb/mysql";
+
+const registry = createConnectorRegistry([postgresConnectorProvider, mysqlConnectorProvider]);
+
+// The adapter merges explicit values with askdb.config/env (explicit wins).
+const resolved = registry.resolveConnection("mysql", { runtime: getAskDbRuntimeConfig() });
+if (!resolved.ok) throw new Error(resolved.error);
+console.log(`Introspecting ${resolved.sourceLabel}`); // host, port and database only
+
+const { connector, input } = registry.createConnector({ provider: "mysql", ...resolved.connection });
+await introspect(input, { outDir: "./askdb", schemaId: "shop" }, { connector });
+```
+
+`ConnectorProviderAdapter` is `{ provider, createConnector(config), getTemplates?(), resolveConnection?(request), connectionLabelParts?(connection) }`. `resolveConnection` returns only the connection (or an error); the registry adds `sourceLabel`, which it always builds with `formatConnectionLabel` from the adapter's `connectionLabelParts` (host, port, database, or a file path). No adapter supplies label text, so `sourceLabel` is safe to display for any adapter; one without `connectionLabelParts` gets `configured <provider> connection` ([ADR 0011](../../docs/adrs/0011-connection-labels-from-parsed-parts.md)). See [Connector authoring](../../docs/integration/connectors.md#registering-with-askdb-hosts) for writing an adapter.
+
 ### Engine kit (`@askdb/introspect/kit`)
 
 The `@askdb/introspect/kit` subpath holds the engine-agnostic helpers every first-party engine package uses, so a new engine does not copy them:
@@ -69,6 +92,8 @@ The `@askdb/introspect/kit` subpath holds the engine-agnostic helpers every firs
 | `makeTableId(schema, table)`, `makeColumnId(schema, table, column)` | Schema v2 ids (`table:<schema>.<name>`, `table:<schema>.<name>#<column>`). |
 | `rowsToRecords(result, { expectedColumns?, source? })`, `groupBy`, `buildOrderedGroups`, `byName`, `sortedUnique`, `mapFkAction` | Folding positional `CatalogQueryResult` rows into Schema v2 tables, constraints, and indexes. |
 | `formatConnectionLabel`, `parseConnectionUrl`, `ConnectionLabelParts` | `ConnectionLabelParts` is what an adapter's `connectionLabelParts` hook returns (take the parts from your driver's own parser where it has one; `parseConnectionUrl` is a strict fallback for a standard URL). `formatConnectionLabel` is what `registry.connectionLabel()` applies to those parts: host, port and database (or a file path), else `configured <engine> connection` ([ADR 0011](../../docs/adrs/0011-connection-labels-from-parsed-parts.md)). |
+| `defineLiveConnectorProvider({ provider, displayName, runtimeKey, connectionNoun, missingConnection, fromExportUnsupported?, createConnector, createRunner, connectionLabelParts })` | The full `ConnectorProviderAdapter` for an engine that only introspects through a live `CatalogQueryRunner`. `@askdb/mysql`, `@askdb/sqlite`, and `@askdb/sqlserver` use it. |
+| `runtimeIntrospectionString(runtime, key)` | A non-empty string from `runtime.introspection[key]`, the per-engine values `@askdb/config` resolves (for example `postgresDatabaseUrl`). |
 
 ```ts
 import { createOptionalDriverLoader, rethrowDriverImportError } from "@askdb/introspect/kit";

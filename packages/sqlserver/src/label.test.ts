@@ -1,6 +1,6 @@
 import mssql from "mssql";
 import { describe, expect, it } from "vitest";
-import { createConnectorRegistry } from "@askdb/connectors";
+import { createConnectorRegistry } from "@askdb/introspect";
 import { sqlServerConnectorProvider } from "./connector/provider.js";
 import { resolveConnectionInput } from "./exec/sqlserver.js";
 import { parseSqlServerConnection } from "./label.js";

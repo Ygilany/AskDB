@@ -62,7 +62,6 @@
     "@ai-sdk/openai": "^4.0.83",
     "@askdb/ai": "workspace:*",
     "@askdb/config": "workspace:*",
-    "@askdb/connectors": "workspace:*",
     "@askdb/core": "workspace:*",
     "@askdb/enrich": "workspace:*",
     "@askdb/introspect": "workspace:*",
