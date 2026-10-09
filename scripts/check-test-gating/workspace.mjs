@@ -2,6 +2,10 @@
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
+// Glob syntax pnpm accepts (`*`, `?`, `[…]`, `{…}`, extglobs such as `@(a|b)`); only a trailing
+// `/*` is expanded here.
+const GLOB = /[*?[\]{}()|]/;
+
 /**
  * Workspace package directories from pnpm-workspace.yaml's `packages:` list.
  * Supports literal paths, a trailing `/*`, and literal `!` exclusions; anything else throws, so the
@@ -9,9 +13,6 @@ import { join } from "node:path";
  * `pnpm -r ls`, so `pnpm lint` doesn't spawn pnpm for one list it can read directly.
  * @param {string} root
  */
-// Glob syntax pnpm accepts (`*`, `?`, `[…]`, `{…}`); only a trailing `/*` is expanded here.
-const GLOB = /[*?[\]{}]/;
-
 export function workspaceDirs(root) {
   const yaml = readFileSync(join(root, "pnpm-workspace.yaml"), "utf8").split(/\r?\n/);
   const start = yaml.findIndex((l) => /^packages:\s*$/.test(l));
@@ -26,7 +27,7 @@ export function workspaceDirs(root) {
     const pattern = m[1].replace(/\/+$/, ""); // `packages/a/` names the same directory as `packages/a`
     if (pattern.startsWith("!")) {
       // A glob exclusion pnpm accepts but this reader can't match would scan an excluded package.
-      if (GLOB.test(pattern)) throw new Error(`check-test-gating: unsupported workspace exclusion "${pattern}"; extend workspaceDirs()`);
+      if (GLOB.test(pattern.slice(1))) throw new Error(`unsupported workspace exclusion "${pattern}"; extend workspaceDirs()`);
       exclude.add(pattern.slice(1));
     } else include.push(pattern);
   }
@@ -39,7 +40,7 @@ export function workspaceDirs(root) {
         if (e.isDirectory()) dirs.push(`${parent}/${e.name}`);
       }
     } else if (GLOB.test(pattern)) {
-      throw new Error(`check-test-gating: unsupported workspace pattern "${pattern}"; extend workspaceDirs()`);
+      throw new Error(`unsupported workspace pattern "${pattern}"; extend workspaceDirs()`);
     } else if (existsSync(join(root, pattern))) {
       dirs.push(pattern);
     }

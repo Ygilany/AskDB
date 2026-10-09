@@ -108,7 +108,7 @@ test("CLI fails closed on a packages line it cannot read", (t) => {
 });
 
 test("CLI fails closed on a workspace pattern it cannot expand", (t) => {
-  for (const pattern of ["packages/**", "apps/*/*", "packages/{a,z}", "packages/?", "packages/[a]"]) {
+  for (const pattern of ["packages/**", "apps/*/*", "packages/{a,z}", "packages/?", "packages/[a]", "packages/@(a|b)"]) {
     const root = workspace(t, { "packages/a/src/a.test.ts": 'it("ok", () => {});\n', "apps/x/y/z.test.ts": 'it("ok", () => {});\n' }, `packages:\n  - "${pattern}"\n`);
     const result = run(root);
     assert.equal(result.status, 1, pattern);
@@ -117,7 +117,7 @@ test("CLI fails closed on a workspace pattern it cannot expand", (t) => {
 });
 
 test("CLI fails closed on a glob exclusion it cannot match", (t) => {
-  for (const exclusion of ["!examples/consumer-*", "!**/consumer-lab", "!examples/la?"]) {
+  for (const exclusion of ["!examples/consumer-*", "!**/consumer-lab", "!examples/la?", "!examples/+(lab)"]) {
     const root = workspace(t, { "packages/a/src/a.test.ts": 'it("ok", () => {});\n' }, `packages:\n  - "packages/*"\n  - "${exclusion}"\n`);
     const result = run(root);
     assert.equal(result.status, 1, exclusion);

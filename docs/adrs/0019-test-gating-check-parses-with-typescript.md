@@ -24,6 +24,10 @@ Rejected for now. The repo runs ESLint only in Studio; a root ESLint setup with 
 
 `typescript` is already a root devDependency (`^6.0.3`, locked in `pnpm-lock.yaml`). `ts.createSourceFile` parses `.ts` and `.tsx` (JSX included) without type-checking, so the check stays fast and needs no `tsconfig`. Rules become predicates over a reference to `describe`/`suite`/`it`/`test` (the globals, a renamed or namespace import from `vitest`, `await import("vitest")` or `require("vitest")` (or a member read off one), or a variable holding `test.extend({…})`; names resolve through the binder of a one-file program, so a local declaration that shadows one is not Vitest's): its modifier links, whether it is invoked, whether it is a ternary branch, and whether a condition (`if`/`else`, `switch` case, `try`/`catch`, `? :`, `&&`, `||`, `??`, a loop over a table a condition picks, or a callback passed to a call other than `forEach`/`map`/`flatMap`) sits between the call and the nearest enclosing suite, test or named function. `integrationSuite({…})` and a variable holding its result are suite functions, so its own gate passes.
 
+### D. Fail CI's `test` job on any skipped test (not adopted here)
+
+The root and fixture Vitest configs already load `ciReporters()`, whose summary reporter counts skipped tests, and CI's `test` job runs with `ASKDB_REQUIRE_INTEGRATION=1`, under which `integrationSuite()` throws instead of skipping. A reporter that fails that job on any skipped test would catch what no syntax check can: `ctx.skip()`, options passed in a variable, a gate inside a helper. It is not adopted in this PR: it turns every `it.skip` and `it.todo` into a CI failure, a policy change for the maintainer, and it fires only in the run where the environment is broken, not when the gate is written. It would complement C, not replace it.
+
 ### Where the check runs
 
 - **First step of the root `lint` script (chosen).** CI's lint job, `scripts/release-preflight.sh` and a local `pnpm lint` all call it, so there is one place to wire and nothing to keep in step.

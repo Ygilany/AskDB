@@ -23,27 +23,11 @@
 // declaration that shadows one (a parameter `it`, an import of `test` from another module) is not
 // Vitest's.
 //
-// Allowed: a plain skipped test called directly, e.g. `it.skip("…", fn)`, `it.skip.each(…)(…)`,
-// `it("…", { skip: true }, fn)`, and tests defined in a loop (`for (const c of cases) it(…)`),
-// which is parametrization.
-// Rejected: see RULES, including a describe/suite/it/test call made only under a condition
-// (`if`/`else`, `switch` cases, `try`/`catch`, `? :`, `&&`, `||`, `??`, an optional call's
-// arguments, a callback passed to any call but `forEach`/`map`/`flatMap`) or over a `.each`
-// table or loop iterable chosen by one, anywhere between the call and the nearest enclosing
-// suite, test, named function or class member that runs later (a static block or static field
-// runs with its class, so the walk goes on). To exempt one line, put a line comment on the line
-// above it with a non-empty reason; the marker with no reason exempts nothing:
+// What is rejected and allowed is listed once, in CONTRIBUTING.md ("Integration Tests"); RULES
+// below implements it, and ADR 0019 (docs/adrs/0019-test-gating-check-parses-with-typescript.md)
+// lists what the check can't see. A use the check can't read fails closed rather than passing. To exempt
+// one line, put a line comment on the line above it with a non-empty reason:
 //   // check-test-gating-ignore-next-line: <reason>
-//
-// A use the check can't read (an alias such as `const d = describe`, `x && describe`, an
-// argument, `describe.call(…)`, a spread or computed key in the options, a Vitest namespace or
-// loader passed on, assigned, or read through `.then`) fails closed.
-//
-// Known limits: an early `return` before a call, a gate inside a named helper that is called
-// under a condition, options passed in a variable (`it(name, opts, fn)`), a `.each` table or loop
-// filtered at run time (`describe.each(engines.filter(…))`, `while (…)`), a test API imported from
-// another module, a module specifier built at run time (`import(name)`), and `ctx.skip()` inside a
-// test body are not detected.
 //
 // Usage: node scripts/check-test-gating.mjs [repo-root]
 import { readdirSync, readFileSync, existsSync, realpathSync } from "node:fs";
@@ -206,7 +190,8 @@ function vitestBindings(sf, program) {
     } else if (decl && ts.isImportEqualsDeclaration(decl) && isVitestModule(decl.moduleReference, bindings)) {
       found = { kind: "ns" }; // `import v = require("vitest")`
     } else if (decl && ts.isImportEqualsDeclaration(decl) && ts.isQualifiedName(decl.moduleReference)) {
-      // `import d = v.describe`, on a Vitest namespace.
+      // `import d = v.describe`, on a Vitest namespace. A longer name (`v.describe.skip`) fails closed
+      // in findGates.
       const { left, right } = decl.moduleReference;
       if (ts.isIdentifier(left) && isVitestNamespace(left, bindings) && TEST_FNS.has(right.text)) found = { kind: "fn", name: right.text };
     } else if (decl && ts.isImportSpecifier(decl) && (decl.propertyName ?? decl.name).text === "integrationSuite" &&
@@ -534,8 +519,9 @@ function conditionalEdge(parent, child) {
   if (ts.isCallExpression(parent) && parent.arguments.includes(child) && isMemberLink(unwrap(parent.expression))) {
     if (isChosen(unwrap(parent.expression).expression)) return true;
   }
-  // `a?.b(arg)`: the arguments run only when the chain doesn't short-circuit.
+  // `a?.b(arg)`, `a?.[key]`: the arguments and key run only when the chain doesn't short-circuit.
   if (ts.isCallExpression(parent) && ts.isOptionalChain(parent) && parent.arguments.includes(child)) return true;
+  if (ts.isElementAccessExpression(parent) && ts.isOptionalChain(parent) && child === parent.argumentExpression) return true;
   return ts.isCaseClause(parent) || ts.isDefaultClause(parent) || ts.isCatchClause(parent);
 }
 
@@ -680,6 +666,12 @@ export function findGates(src, fileName = "file.test.ts") {
         refs.push(escapedNamespaceRef(node, bindings));
       }
     }
+    // `import d = v.<name>` other than `v.describe`/`v.it`/…: an alias the check can't follow.
+    if (ts.isImportEqualsDeclaration(node) && ts.isQualifiedName(node.moduleReference) && bindings.resolve(node.name)?.kind !== "fn") {
+      let root = node.moduleReference;
+      while (ts.isQualifiedName(root)) root = root.left;
+      if (isVitestNamespace(root, bindings)) refs.push(escapedNamespaceRef(node.moduleReference, bindings));
+    }
     ts.forEachChild(node, visit);
   };
   visit(sf);
@@ -708,7 +700,7 @@ function* walk(dir) {
 }
 
 function main() {
-  const root = process.argv[2] ?? join(fileURLToPath(new URL(".", import.meta.url)), "..");
+  const root = process.argv[2] ?? join(dirname(selfPath), "..");
   let dirs;
   try {
     dirs = workspaceDirs(root);

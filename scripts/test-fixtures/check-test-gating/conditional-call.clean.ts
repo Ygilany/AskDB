@@ -54,3 +54,4 @@ if (ready) {
     }
   }
 }
+describe("a suite on the left of &&", run) && done();

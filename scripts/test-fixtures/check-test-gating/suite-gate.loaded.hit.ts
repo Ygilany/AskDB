@@ -22,3 +22,5 @@ qualified.skip("import d = v.describe", () => {}); // HIT
 // check-test-gating-ignore-next-line: exercises gating through an exempted alias
 const exemptedAlias = require("vitest").describe;
 exemptedAlias.skip("through an alias whose own line is exempted", () => {}); // HIT
+const moduleRequire = module.createRequire(import.meta.url);
+moduleRequire("vitest").describe.skip("through module.createRequire", () => {}); // HIT
