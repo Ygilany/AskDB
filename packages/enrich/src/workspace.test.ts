@@ -22,7 +22,7 @@ import {
   otherGroupUnavailable,
   table,
   tableMd,
-  writeSchema as writeSchemaIn,
+  writeSchema,
 } from "./test-utils.js";
 import { buildFrontmatter, buildTableDraft } from "./draft.js";
 import {
@@ -368,8 +368,6 @@ describe("workspace table filenames", () => {
   let tmp: string;
   let schemaDir: string;
 
-  const writeSchema = (tables: ReturnType<typeof table>[]) => writeSchemaIn(schemaDir, tables);
-
   const filenameOf = (ws: ReturnType<typeof loadWorkspace>, id: string) =>
     ws.tables.find((t) => t.physical.id === id)?.filename;
 
@@ -396,7 +394,7 @@ describe("workspace table filenames", () => {
   });
 
   it("uses schema-qualified filenames when bare table names collide", () => {
-    writeSchema([table("public", "orders"), table("archive", "orders"), table("public", "users")]);
+    writeSchema(schemaDir, [table("public", "orders"), table("archive", "orders"), table("public", "users")]);
     const ws = loadWorkspace(schemaDir);
     expect(filenameOf(ws, "table:public.orders")).toBe("public.orders.md");
     expect(filenameOf(ws, "table:archive.orders")).toBe("archive.orders.md");
@@ -414,7 +412,7 @@ describe("workspace table filenames", () => {
     ["full case folding (ß vs SS)", "straße", "STRASSE"],
     ["full case folding (ß vs capital sharp s ẞ)", "straße", "STRA\u1e9eE"],
   ])("gives names that differ only by %s distinct default files", (_, first, second) => {
-    writeSchema([table("public", first), table("public", second)]);
+    writeSchema(schemaDir, [table("public", first), table("public", second)]);
     const ws = loadWorkspace(schemaDir);
     expect(ws.tables.map((t) => t.filename)).toEqual([
       `public.${first}.md`,
@@ -424,7 +422,7 @@ describe("workspace table filenames", () => {
   });
 
   it("keeps existing filenames stable and does not overwrite them", () => {
-    writeSchema([table("public", "orders"), table("archive", "orders")]);
+    writeSchema(schemaDir, [table("public", "orders"), table("archive", "orders")]);
     const existing = tableMd("public", "orders", "Live orders.");
     writeFileSync(join(schemaDir, "tables/orders.md"), existing, "utf8");
     writeFileSync(
@@ -446,7 +444,7 @@ describe("workspace table filenames", () => {
   });
 
   it("does not reuse a filename already on disk for a new table", () => {
-    writeSchema([table("public", "orders"), table("archive", "orders")]);
+    writeSchema(schemaDir, [table("public", "orders"), table("archive", "orders")]);
     const existing = tableMd("public", "orders", "Live orders.");
     writeFileSync(join(schemaDir, "tables/orders.md"), existing, "utf8");
 
@@ -466,7 +464,7 @@ describe("workspace table filenames", () => {
     );
 
     // An orphaned file (id not in schema.json) also blocks its name.
-    writeSchema([table("public", "orders"), table("public", "legacy")]);
+    writeSchema(schemaDir, [table("public", "orders"), table("public", "legacy")]);
     const orphan = tableMd("public", "gone", "Orphan.");
     writeFileSync(join(schemaDir, "tables/legacy.md"), orphan, "utf8");
     const ws2 = loadWorkspace(schemaDir);
@@ -474,13 +472,13 @@ describe("workspace table filenames", () => {
 
     // So does one whose name is the same file on a case-insensitive filesystem.
     rmSync(join(schemaDir, "tables"), { recursive: true });
-    writeSchema([table("public", "straße")]);
+    writeSchema(schemaDir, [table("public", "straße")]);
     writeFileSync(join(schemaDir, "tables/STRASSE.md"), tableMd("public", "gone", "Orphan."), "utf8");
     expect(filenameOf(loadWorkspace(schemaDir), "table:public.straße")).toBe("public.straße.md");
 
     // And so does a file AskDB itself ignores, such as one with an upper-case extension.
     rmSync(join(schemaDir, "tables"), { recursive: true });
-    writeSchema([table("public", "orders")]);
+    writeSchema(schemaDir, [table("public", "orders")]);
     writeFileSync(join(schemaDir, "tables/Orders.MD"), "precious notes\n", "utf8");
     const ws3 = loadWorkspace(schemaDir);
     expect(filenameOf(ws3, "table:public.orders")).toBe("public.orders.md");
@@ -489,7 +487,7 @@ describe("workspace table filenames", () => {
   });
 
   it("sanitizes identifiers so default filenames stay inside tables/", () => {
-    writeSchema([
+    writeSchema(schemaDir, [
       table("public", "../../escape"),
       table("public", ".."),
       table("public", "a\\b\u0000c"),
@@ -508,7 +506,7 @@ describe("workspace table filenames", () => {
   it("gives names that differ only by a lone UTF-16 surrogate distinct files", () => {
     // Node writes a lone surrogate in a path as U+FFFD, so left alone these two
     // would both be `a\ufffd.md` on disk.
-    writeSchema([table("public", "a\ud800"), table("public", "a\ud801")]);
+    writeSchema(schemaDir, [table("public", "a\ud800"), table("public", "a\ud801")]);
     const ws = loadWorkspace(schemaDir);
     expect(ws.tables.map((t) => t.filename)).toEqual(["public.a_.md", "public.a_-2.md"]);
     // The frontmatter escapes each id, so both read back; the descriptions avoid
@@ -524,14 +522,14 @@ describe("workspace table filenames", () => {
   });
 
   it("keeps a character outside the BMP, which is a surrogate pair, in the filename", () => {
-    writeSchema([table("public", "a😀")]);
+    writeSchema(schemaDir, [table("public", "a😀")]);
     const ws = loadWorkspace(schemaDir);
     expect(filenameOf(ws, "table:public.a😀")).toBe("a😀.md");
     saveAllAndReload(ws);
   });
 
   it("saveTable refuses a filename that resolves outside tables/", () => {
-    writeSchema([table("public", "orders")]);
+    writeSchema(schemaDir, [table("public", "orders")]);
     const ws = loadWorkspace(schemaDir);
     const fm = { id: "table:public.orders", name: "orders", schemaId: "fname" };
     for (const bad of ["../escape.md", "sub/orders.md", "..", "/tmp/abs.md", "orders.txt"]) {
@@ -544,7 +542,7 @@ describe("workspace table filenames", () => {
   });
 
   it("saveTable refuses to write through a symbolic link in tables/", () => {
-    writeSchema([table("public", "orders")]);
+    writeSchema(schemaDir, [table("public", "orders")]);
     const ws = loadWorkspace(schemaDir);
     const outside = join(tmp, "outside.md");
     writeFileSync(outside, "untouched\n", "utf8");
@@ -556,7 +554,7 @@ describe("workspace table filenames", () => {
   });
 
   it("saveTable replaces a hard-linked file in tables/ instead of writing through the link", () => {
-    writeSchema([table("public", "orders")]);
+    writeSchema(schemaDir, [table("public", "orders")]);
     const ws = loadWorkspace(schemaDir);
     const outside = join(tmp, "outside.md");
     writeFileSync(outside, "untouched\n", "utf8");
@@ -571,7 +569,7 @@ describe("workspace table filenames", () => {
   });
 
   it("saveTable reports a failed replace and leaves no temp file behind", () => {
-    writeSchema([table("public", "orders")]);
+    writeSchema(schemaDir, [table("public", "orders")]);
     const ws = loadWorkspace(schemaDir);
     // A non-empty directory at the target passes the link and permission checks,
     // then makes the rename fail after the temp file has been written.
@@ -594,7 +592,7 @@ describe("workspace table filenames", () => {
           : false,
   })("saveTable on a read-only table file", () => {
     it("refuses with EACCES and leaves the file unchanged", () => {
-      writeSchema([table("public", "orders")]);
+      writeSchema(schemaDir, [table("public", "orders")]);
       const target = join(schemaDir, "tables", "orders.md");
       const original = tableMd("public", "orders", "Checked out read-only.");
       writeFileSync(target, original, "utf8");
@@ -612,7 +610,7 @@ describe("workspace table filenames", () => {
     unavailable: process.platform === "win32" ? "POSIX file modes are required (not Windows)" : false,
   })("saveTable and file permission bits", () => {
     it("keeps the replaced file's mode", () => {
-      writeSchema([table("public", "orders")]);
+      writeSchema(schemaDir, [table("public", "orders")]);
       const target = join(schemaDir, "tables", "orders.md");
       writeFileSync(target, tableMd("public", "orders", "Private notes."), "utf8");
       chmodSync(target, 0o600);
@@ -626,7 +624,7 @@ describe("workspace table filenames", () => {
 
   integrationSuite({ unavailable: otherGroupUnavailable })("saveTable and file ownership", () => {
     it("keeps the replaced file's group", () => {
-      writeSchema([table("public", "orders")]);
+      writeSchema(schemaDir, [table("public", "orders")]);
       const target = join(schemaDir, "tables", "orders.md");
       writeFileSync(target, tableMd("public", "orders", "Shared with one team."), "utf8");
       chownSync(target, -1, otherGroup!);
@@ -644,7 +642,7 @@ describe("workspace table filenames", () => {
     unavailable: process.platform === "win32" ? "`\\` separates paths on Windows" : false,
   })("saveTable and a backslash in a filename", () => {
     it("saves a table whose existing file has a backslash in its name", () => {
-      writeSchema([table("public", "ord\\ers")]);
+      writeSchema(schemaDir, [table("public", "ord\\ers")]);
       const target = join(schemaDir, "tables", "ord\\ers.md");
       writeFileSync(target, tableMd("public", "ord\\ers", "Written before."), "utf8");
       const ws = loadWorkspace(schemaDir);
@@ -657,7 +655,7 @@ describe("workspace table filenames", () => {
   });
 
   it("saveTable refuses to write when tables/ is a symbolic link", () => {
-    writeSchema([table("public", "orders")]);
+    writeSchema(schemaDir, [table("public", "orders")]);
     rmSync(join(schemaDir, "tables"), { recursive: true });
     const elsewhere = join(tmp, "elsewhere");
     mkdirSync(elsewhere);
@@ -673,7 +671,7 @@ describe("workspace table filenames", () => {
     // 260 bytes, and 128 CJK characters are 384 bytes even unqualified. Most file
     // systems cap one name at 255 bytes.
     const long = "n".repeat(128);
-    writeSchema([
+    writeSchema(schemaDir, [
       table("s".repeat(128), long),
       table("x".repeat(128), long),
       table("public", "表".repeat(128)),
@@ -689,7 +687,7 @@ describe("workspace table filenames", () => {
 
   it("keeps long names that share a truncated prefix apart by their hash", () => {
     const shared = "n".repeat(250);
-    writeSchema([table("public", `${shared}a`), table("public", `${shared}b`)]);
+    writeSchema(schemaDir, [table("public", `${shared}a`), table("public", `${shared}b`)]);
     const ws = loadWorkspace(schemaDir);
     const [first, second] = ws.tables.map((t) => t.filename);
     // Both keep the bare-name form: the hash, not the schema-qualified fallback or a

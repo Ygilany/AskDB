@@ -503,7 +503,8 @@ function replaceTableFile(
       // Keep the replaced file's owner, group, and permission bits, before the content lands.
       if (existing) {
         const mode = existing.mode & 0o777;
-        fchmodSync(fd, keepOwnerAndGroup(fd, existing) ? mode : modeWhenGroupLost(mode));
+        const groupKept = keepOwnerAndGroup(fd, existing);
+        fchmodSync(fd, groupKept ? mode : modeWhenGroupLost(mode));
       }
       writeFileSync(fd, content, "utf8");
       fsyncSync(fd);

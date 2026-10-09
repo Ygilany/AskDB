@@ -2,7 +2,8 @@ import { mkdirSync, mkdtempSync, rmSync, statSync, writeFileSync } from "node:fs
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-// Fixtures shared by the workspace test files. Not part of the build.
+// Fixtures shared by the workspace test files. `tsconfig.build.json` leaves this
+// file out of `dist`; `pnpm lint` type-checks it with the tests.
 
 /** A physical table with one integer primary key, in schema `fname`. */
 export const table = (schema: string, name: string) => ({
