@@ -8,7 +8,7 @@ Proposed (2026-10-09, #326). Implemented in `scripts/check-test-gating.mjs`, run
 
 CI sets `ASKDB_REQUIRE_INTEGRATION=1` so a missing database or driver fails an integration suite instead of skipping it. That works only for suites gated through `integrationSuite()` (`scripts/test-utils/integration.mjs`). A hand-rolled gate (`describe.skip`, `describe.skipIf(…)`, `cond ? describe : describe.skip`, `{ skip: cond }` options, or a suite defined under an `if`) skips silently, so a misconfigured job passes by running nothing. `pnpm lint` runs a check that rejects these gates in the `*.test.ts` and `*.test.tsx` files of every workspace package in `pnpm-workspace.yaml` except the consumer lab, which is its own pnpm root and fails on a missing fixture by design.
 
-The first version matched regexes over the source after blanking comments and string, template and regex literals with a hand-written lexer. Review of #326 found two problems with that design. The lexer did not understand JSX text, so a `/*` or a backtick in a `.test.tsx` file blanked the rest of the file and the check passed it unread. And the conditional-call rule looked only at the token before a call, so a suite defined as the second statement of an `if` block was missed.
+The first version matched regexes over the source after blanking comments and string, template and regex literals with a hand-written lexer. That design had two problems. The lexer did not understand JSX text, so a `/*` or a backtick in a `.test.tsx` file blanked the rest of the file and the check passed it unread. And the conditional-call rule looked only at the token before a call, so a suite defined as the second statement of an `if` block was missed.
 
 ## Options considered
 
@@ -22,7 +22,13 @@ Rejected for now. The repo runs ESLint only in Studio; a root ESLint setup with 
 
 ### C. Walk the TypeScript AST (chosen)
 
-`typescript` is already a root devDependency (`^6.0.3`, locked in `pnpm-lock.yaml`). `ts.createSourceFile` parses `.ts` and `.tsx` (JSX included) without type-checking, so the check stays fast and needs no `tsconfig`. Rules become predicates over a reference to `describe`/`suite`/`it`/`test` (the globals, a renamed or namespace import from `vitest`, or a variable holding `test.extend({…})`; names resolve through the binder of a one-file program, so a local declaration that shadows one is not Vitest's): its modifier links, whether it is invoked, whether it is a ternary branch, and whether a condition (`if`/`else`, `switch` case, `try`/`catch`, `? :`, `&&`, `||`, `??`) sits between the call and the nearest enclosing suite, test or named function.
+`typescript` is already a root devDependency (`^6.0.3`, locked in `pnpm-lock.yaml`). `ts.createSourceFile` parses `.ts` and `.tsx` (JSX included) without type-checking, so the check stays fast and needs no `tsconfig`. Rules become predicates over a reference to `describe`/`suite`/`it`/`test` (the globals, a renamed or namespace import from `vitest`, or a variable holding `test.extend({…})`; names resolve through the binder of a one-file program, so a local declaration that shadows one is not Vitest's): its modifier links, whether it is invoked, whether it is a ternary branch, and whether a condition (`if`/`else`, `switch` case, `try`/`catch`, `? :`, `&&`, `||`, `??`, a loop over a table a condition picks, or a callback passed to a call other than `forEach`/`map`/`flatMap`) sits between the call and the nearest enclosing suite, test or named function. `integrationSuite({…})` and a variable holding its result are suite functions, so its own gate passes.
+
+### Where the check runs
+
+- **First step of the root `lint` script (chosen).** CI's lint job, `scripts/release-preflight.sh` and a local `pnpm lint` all call it, so there is one place to wire and nothing to keep in step.
+- **Its own CI job.** Rejected: it would run in CI only, not in preflight or locally, and a second job is one more list of steps to keep in step with lint.
+- **A Vitest test in a workspace package.** Rejected: the check reads every package, so it belongs to none of them, and `pnpm test` with a filter would skip it.
 
 ## Decision
 

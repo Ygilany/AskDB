@@ -47,7 +47,7 @@ for (const file of files) {
 
 test("a file that does not parse throws instead of passing", () => {
   assert.throws(() => findGates('describe.skip("unterminated", () => {\n'), /does not parse at line \d+:/);
-  assert.throws(() => findGates("const x = <p>jsx</p>;\n", "x.test.ts"));
+  assert.throws(() => findGates("const x = <p>jsx</p>;\n", "x.test.ts"), /does not parse at line 1:/);
 });
 
 const DEFAULT_YAML =

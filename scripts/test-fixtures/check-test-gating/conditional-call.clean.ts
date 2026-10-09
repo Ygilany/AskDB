@@ -40,3 +40,5 @@ describe.each([1, 2])("each %s", () => {
   if (verbose) log();
   it("inside describe.each", () => {});
 });
+rows.map((r) => it(`map ${r}`, () => {}));
+rows.flatMap((r) => [it(`flatMap ${r}`, () => {})]);

@@ -16,15 +16,17 @@
 //
 // Vitest is recognized as the globals, renamed imports (`import { it as t } from "vitest"`),
 // namespace imports (`import * as v from "vitest"`) and variables holding `test.extend({…})`.
-// Names resolve through TypeScript's binder, so a local declaration that shadows one (a parameter
-// `it`, an import of `test` from another module) is not Vitest's.
+// `integrationSuite({…})` and a variable holding its result are suite functions, so the sanctioned
+// gate passes. Names resolve through TypeScript's binder, so a local declaration that shadows one
+// (a parameter `it`, an import of `test` from another module) is not Vitest's.
 //
 // Allowed: a plain skipped test called directly, e.g. `it.skip("…", fn)`, `it.skip.each(…)(…)`,
 // `it("…", { skip: true }, fn)`, and tests defined in a loop (`for (const c of cases) it(…)`),
 // which is parametrization.
 // Rejected: see RULES, including a describe/suite/it/test call made only under a condition
 // (`if`/`else`, `switch` cases, `try`/`catch`, `? :`, `&&`, `||`, `??`, an optional call's
-// arguments) or over a `.each` table or loop iterable chosen by one, anywhere between the call
+// arguments, a callback passed to any call but `forEach`/`map`/`flatMap`) or over a `.each`
+// table or loop iterable chosen by one, anywhere between the call
 // and the nearest enclosing suite, test or named function. To exempt one line, put a line comment
 // on the line above it with a non-empty reason; the marker with no reason exempts nothing:
 //   // check-test-gating-ignore-next-line: <reason>
@@ -189,11 +191,15 @@ function vitestBindings(sf, program) {
       if (TEST_FNS.has(imported)) found = { fn: imported };
     } else if (decl && ts.isNamespaceImport(decl) && importedFrom(decl) === "vitest") {
       found = { ns: true };
+    } else if (decl && ts.isImportSpecifier(decl) && (decl.propertyName ?? decl.name).text === "integrationSuite" &&
+      INTEGRATION_MODULE.test(importedFrom(decl) ?? "")) {
+      found = { suiteFactory: true };
     } else if (decl && ts.isVariableDeclaration(decl) && decl.initializer && symbol.declarations.length === 1) {
       const init = unwrap(decl.initializer);
       // `const w = v` keeps a Vitest namespace; `const t = test.extend({…})` is a test function.
       found = ts.isIdentifier(init) && bindings.resolve(init)?.ns ? { ns: true } : undefined;
-      const fn = extendedFn(decl.initializer, bindings);
+      // `const run = integrationSuite({…})` is a suite function; so is `const t = test.extend({…})`.
+      const fn = suiteFactoryCall(init, bindings) ? "describe" : extendedFn(decl.initializer, bindings);
       if (fn !== undefined) found = { fn };
     } else if (decl && ts.isBindingElement(decl) && ts.isObjectBindingPattern(decl.parent)) {
       // `const { describe } = v`, from a Vitest namespace.
@@ -212,13 +218,18 @@ function vitestBindings(sf, program) {
 
 /**
  * Whether a Vitest namespace identifier is used in a form the check reads: `v.member`,
- * `v["member"]`, or `const w = v` / `const { describe } = v` (both resolved as aliases).
+ * `v["member"]`, or `const w = v` / `const { describe } = v` (both resolved as aliases). A computed
+ * key, a rest element or a nested pattern fails closed.
  */
 function namespaceMemberUse(id) {
   const outer = outermostWrapper(id);
   const p = outer.parent;
-  if (isMemberLink(p) && p.expression === outer) return true;
-  return ts.isVariableDeclaration(p) && p.initializer === outer;
+  if (isMemberLink(p) && p.expression === outer) return linkName(p) !== undefined;
+  if (!ts.isVariableDeclaration(p) || p.initializer !== outer) return false;
+  if (ts.isIdentifier(p.name)) return true;
+  // `const { describe, it: t } = v`: plain keys only, no rest, computed key or nesting.
+  return ts.isObjectBindingPattern(p.name) && p.name.elements.every((el) =>
+    !el.dotDotDotToken && ts.isIdentifier(el.name) && (!el.propertyName || ts.isIdentifier(el.propertyName)));
 }
 
 /** A Vitest namespace passed on (`fn(v)`, `[v]`), which the check can't follow: it fails closed. */
@@ -230,8 +241,19 @@ function escapedNamespaceRef(id, bindings) {
   };
 }
 
+// Where `integrationSuite()` lives, as the test files import it.
+const INTEGRATION_MODULE = /(?:^|\/)test-utils\/integration(?:\.mjs)?$/;
+
+/** Whether `node` is a call of `integrationSuite(…)`, which returns `describe` or its sanctioned gate. */
+function suiteFactoryCall(node, bindings) {
+  if (!ts.isCallExpression(node)) return false;
+  const callee = unwrap(node.expression);
+  return ts.isIdentifier(callee) && bindings.resolve(callee)?.suiteFactory === true;
+}
+
 /** The Vitest function `node` names (`describe`, `v.describe`, a renamed import, an `.extend` alias), or undefined. */
 function testFnName(node, bindings) {
+  if (suiteFactoryCall(node, bindings)) return "describe";
   if (ts.isIdentifier(node)) return bindings.resolve(node)?.fn;
   if (isMemberLink(node) && ts.isIdentifier(unwrap(node.expression)) && bindings.resolve(unwrap(node.expression))?.ns) {
     const name = linkName(node);
@@ -329,7 +351,7 @@ function testRef(start, fnName, bindings) {
     call,
     invoked: call !== undefined,
     // `const t = it.each(rows)` stores the function that defines the tests, which the check can't follow.
-    escapes: (call === undefined && !extendResultIsTracked(chain, links)) || eachResultStored,
+    escapes: (call === undefined && !extendResultIsTracked(chain)) || eachResultStored,
     defines,
     conditional: defines && underCondition(call, bindings),
     optionGate: defines && (hasGateOption(call, suite) || (rows !== undefined && isChosen(rows))),
@@ -338,11 +360,12 @@ function testRef(start, fnName, bindings) {
 }
 
 /**
- * Whether a `test.extend({…})` result is one the check can still follow: assigned to a variable
- * (resolved as a test function, see `vitestBindings`) or discarded.
+ * Whether a `test.extend({…})` or `integrationSuite({…})` result is one the check can still
+ * follow: assigned to a variable (resolved as a test or suite function, see `vitestBindings`) or
+ * discarded.
  */
-function extendResultIsTracked(chain, links) {
-  if (links[links.length - 1] !== "extend" || calleeOf(chain) === undefined) return false;
+function extendResultIsTracked(chain) {
+  if (!ts.isCallExpression(chain)) return false;
   const p = chain.parent;
   return (ts.isVariableDeclaration(p) && p.initializer === chain && ts.isIdentifier(p.name)) || ts.isExpressionStatement(p);
 }
@@ -440,7 +463,8 @@ function conditionalEdge(parent, child) {
 /**
  * Whether a suite or test call runs only under a condition, looking outward to the nearest
  * enclosing suite or test call (which is checked on its own), named function, or the file.
- * Loops are not conditions.
+ * Plain loops and `forEach`/`map`/`flatMap` callbacks are not conditions; a loop over an iterable
+ * a condition picks is one (see `conditionalEdge`), and so is a callback passed to any other call.
  */
 function underCondition(call, bindings) {
   let child = call;
@@ -450,19 +474,31 @@ function underCondition(call, bindings) {
     if (calleeOf(node) !== undefined && node !== call && callsVitestFn(node, bindings)) {
       return false;
     }
+    // A callback handed to any other call (`.then`, `setTimeout`, a helper) may run later or never.
+    if ((ts.isCallExpression(node) || ts.isNewExpression(node)) && ts.isFunctionLike(child) && node.arguments?.includes(child)) {
+      if (!isIterationCall(node)) return true;
+    }
   }
   return false;
+}
+
+// Array methods whose callback runs once per element, now: parametrization, like a loop.
+const ITERATION_METHODS = new Set(["forEach", "map", "flatMap"]);
+
+/** Whether `node` is `rows.forEach(cb)`, `rows.map(cb)` or `rows.flatMap(cb)`. */
+function isIterationCall(node) {
+  const callee = ts.isCallExpression(node) ? unwrap(node.expression) : undefined;
+  return callee !== undefined && isMemberLink(callee) && ITERATION_METHODS.has(linkName(callee));
 }
 
 /** Whether a call or tagged template calls a Vitest describe/suite/it/test, through any links. */
 function callsVitestFn(node, bindings) {
   let callee = calleeOf(node);
-  if (ts.isCallExpression(callee)) callee = callee.expression; // `.each(rows)(…)`
   for (;;) {
     callee = unwrap(callee);
-    if (testFnName(callee, bindings) !== undefined) return true;
+    if (testFnName(callee, bindings) !== undefined || extendedFn(callee, bindings) !== undefined) return true;
     if (isMemberLink(callee)) callee = callee.expression;
-    else if (extendedFn(callee, bindings) !== undefined) return true; // `test.extend({…})(…)`
+    else if (ts.isCallExpression(callee)) callee = callee.expression; // `.each(rows)(…)`
     else return false;
   }
 }

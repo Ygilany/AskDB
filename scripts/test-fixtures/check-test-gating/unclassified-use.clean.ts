@@ -24,3 +24,4 @@ try { load(); } catch (test) { report(test); }
 it: for (;;) {
   break it;
 }
+let qualified: Foo.it;

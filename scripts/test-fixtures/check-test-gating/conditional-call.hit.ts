@@ -55,3 +55,11 @@ if (ok) {
     it("reported once, at describe.each", run);
   });
 }
+await import("better-sqlite3").then(() => describe("in a .then callback", run)).catch(() => {}); // HIT
+setTimeout(() => it("in a timer callback", run), 0); // HIT
+if (ok) describe.concurrent("concurrent", run); // HIT
+if (ok) describe.sequential("sequential", run); // HIT
+if (ok) describe.shuffle("shuffle", run); // HIT
+if (ok) it.fails("fails", run); // HIT
+if (ok) it.todo("todo"); // HIT
+for (const k in process.env.DATABASE_URL ? { a: 1 } : {}) it(`for-in over a chosen object ${k}`, run); // HIT
