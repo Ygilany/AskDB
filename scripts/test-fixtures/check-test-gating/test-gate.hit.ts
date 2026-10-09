@@ -19,3 +19,12 @@ it("a timeout or a body", () => {}, ok ? 5 : fn); // HIT
 async function awaitedBody() {
   it("an awaited body pick", await (process.env.DATABASE_URL ? async () => {} : undefined)); // HIT
 }
+describe("a suite body's test API", (test) => {
+  test.skipIf(!process.env.DATABASE_URL)("query", () => {}); // HIT
+  test.describe("a nested suite", (inner) => {
+    inner.runIf(process.env.DATABASE_URL)("nested query", () => {}); // HIT
+  });
+});
+describe.concurrent("a renamed test API under a modifier", function (t) {
+  t.runIf(process.env.DATABASE_URL)("query", () => {}); // HIT
+});

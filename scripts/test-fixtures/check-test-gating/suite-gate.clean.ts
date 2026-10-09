@@ -8,3 +8,16 @@ const run = integrationSuite({ env: ["DATABASE_URL"] });
 run("gated the sanctioned way", () => {});
 describe("skip: false on a suite", { skip: false }, () => {});
 describe("a body computed from a pick", withDb(process.env.DATABASE_URL ?? ":memory:", () => {}));
+describe.each(Array.from({ length: rows.filter((r) => r.a ?? r.b).length }, () => [1]))("a pick inside a callback in a length %s", () => {});
+describe("a suite body's test API, called directly", (test) => {
+  test("query", () => {});
+});
+describe.each([1, 2])("a row, not the test API %s", (test) => {
+  expect(test).toBeGreaterThan(0);
+});
+it("a test context, not the test API", (test) => {
+  expect(test).toBeDefined();
+});
+describe("a second parameter", (test, extra) => {
+  expect(extra).toBeUndefined();
+});

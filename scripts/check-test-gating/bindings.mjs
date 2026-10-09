@@ -1,13 +1,18 @@
 // Resolves names in a test file to Vitest's describe/suite/it/test and to integrationSuite(), for
 // scripts/check-test-gating.mjs.
 import { dirname, resolve } from "node:path";
-import { calleeOf, isMemberLink, linkName, ts, unwrap, unwrapValue } from "./ast.mjs";
+import { calleeOf, isMemberLink, linkName, outermostWrapper, ts, unwrap, unwrapValue } from "./ast.mjs";
 
 const TEST_FNS = new Set(["describe", "suite", "it", "test"]);
+export const SUITE_FNS = new Set(["describe", "suite"]);
+// Links whose suite body receives a table row, not the test API: `describe.each(rows)(name, (row) => …)`.
+const ROW_LINKS = new Set(["each", "for"]);
 // Links whose call returns a new test function: `test.extend({…})`, `test.override({…})`, `test.scoped({…})`.
 export const EXTENDERS = new Set(["extend", "override", "scoped"]);
 // Member calls that load a module by name: `module.require`, `vi.importActual`, `vi.importMock`.
 const MEMBER_LOADERS = new Set(["require", "importActual", "importMock"]);
+// Of those, the ones that return a promise, as `import()` does.
+const PROMISE_MEMBER_LOADERS = new Set(["importActual", "importMock"]);
 
 /** The module an import declaration names, through its specifier, clause or binding. */
 function importedFrom(decl) {
@@ -19,8 +24,9 @@ function importedFrom(decl) {
 /**
  * Resolves names to Vitest's describe/suite/it/test with the binder of a one-file program, so
  * JavaScript scoping decides: an unresolved name is a Vitest global, an import from `vitest` is
- * Vitest, a variable holding `x.extend({…})` of a Vitest function is a test function, and any
- * other declaration (a parameter `it`, an import of `test` from another module) is not Vitest's.
+ * Vitest, a variable holding `x.extend({…})` of a Vitest function is a test function, a suite
+ * body's first parameter is the test API Vitest passes it, and any other declaration (a callback's
+ * parameter `it`, an import of `test` from another module) is not Vitest's.
  */
 export function vitestBindings(program, isIntegrationModule) {
   const checker = program.getTypeChecker();
@@ -69,6 +75,11 @@ function isCreateRequireCall(node) {
 function isVitestSpecifier(node) {
   node = node && unwrap(node);
   return node !== undefined && ts.isStringLiteralLike(node) && node.text === "vitest";
+}
+
+/** Whether loader callee `callee` returns a promise: `import` or `vi.importActual` / `vi.importMock`. */
+export function isPromiseLoader(callee) {
+  return callee.kind === ts.SyntaxKind.ImportKeyword || (isMemberLink(callee) && PROMISE_MEMBER_LOADERS.has(linkName(callee)));
 }
 
 /** Whether `node` is `import("vitest")` or `require("vitest")` (a string or plain template). */
@@ -140,6 +151,44 @@ export function extendedFn(node, bindings) {
 }
 
 /**
+ * Whether function `fn` is a suite body: an argument of a call that defines a suite through Vitest
+ * (`describe(…)`, `describe.skipIf(c)(…)`, `it.describe(…)`, an `integrationSuite(…)` result), which
+ * Vitest calls with the suite's test API. A `.each` or `.for` body receives a table row instead.
+ */
+function isSuiteBody(fn, bindings) {
+  if (!ts.isArrowFunction(fn) && !ts.isFunctionExpression(fn)) return false;
+  const outer = outermostWrapper(fn);
+  const call = outer.parent;
+  if (!ts.isCallExpression(call) || !call.arguments.includes(outer)) return false;
+  let callee = unwrap(call.expression);
+  let suite = false;
+  for (;;) {
+    const name = testFnName(callee, bindings);
+    if (name !== undefined) return suite || SUITE_FNS.has(name);
+    if (ts.isCallExpression(callee)) {
+      callee = unwrap(callee.expression); // `describe.skipIf(c)(…)`, `test.extend({…}).describe(…)`
+      continue;
+    }
+    const link = isMemberLink(callee) ? linkName(callee) : undefined;
+    if (link === undefined || ROW_LINKS.has(link)) return false;
+    if (SUITE_FNS.has(link)) suite = true;
+    callee = unwrap(callee.expression);
+  }
+}
+
+/** The parameter a binding element destructures, through nested patterns, or undefined. */
+function parameterOf(element) {
+  let n = element;
+  while (ts.isBindingElement(n) || ts.isObjectBindingPattern(n) || ts.isArrayBindingPattern(n)) n = n.parent;
+  return ts.isParameter(n) ? n : undefined;
+}
+
+/** Whether parameter `param` receives the test API: the first parameter of a suite body. */
+function isTestApiParameter(param, bindings) {
+  return param.parent.parameters[0] === param && isSuiteBody(param.parent, bindings);
+}
+
+/**
  * What a variable's initializer makes it: a Vitest namespace (`const w = v`, `await import("vitest")`),
  * a `require` (`createRequire(…)`), or a test or suite function (`integrationSuite({…})`,
  * `test.extend({…})`, `require("vitest").describe`).
@@ -176,6 +225,12 @@ function resolveDeclaration(decl, bindings, isIntegrationModule) {
     found = { kind: "integrationNs" }; // `import * as I from ".../integration.mjs"`
   } else if (decl && ts.isVariableDeclaration(decl) && decl.initializer) {
     found = resolveInitializer(unwrap(decl.initializer), bindings);
+  } else if (decl && ts.isParameter(decl) && isTestApiParameter(decl, bindings)) {
+    // `describe("db", (test) => { test.skipIf(…)(…) })`. A rest parameter holds the API in an array.
+    found = ts.isIdentifier(decl.name) && !decl.dotDotDotToken ? { kind: "fn", name: "test" } : { kind: "ambiguous" };
+  } else if (decl && ts.isBindingElement(decl) && parameterOf(decl) !== undefined) {
+    // `describe("db", ({ skipIf }) => …)`: the test API taken apart, which the check can't follow.
+    if (isTestApiParameter(parameterOf(decl), bindings)) found = { kind: "ambiguous" };
   } else if (decl && ts.isBindingElement(decl) && ts.isObjectBindingPattern(decl.parent)) {
     // `const { describe } = v`, from a Vitest namespace.
     const holder = decl.parent.parent;

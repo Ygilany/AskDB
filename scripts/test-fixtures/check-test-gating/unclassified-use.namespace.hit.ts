@@ -10,3 +10,5 @@ import("vitest").then(({ describe }) => describe("through .then", run)); // HIT
 let assigned;
 assigned = await import("vitest"); // HIT
 const [first] = await Promise.all([import("vitest")]); // HIT
+await vi.importActual("vitest").then(({ describe }) => describe.skipIf(!process.env.DATABASE_URL)("vi.importActual through .then", run)); // HIT
+const actualPromise = vi.importActual("vitest"); // HIT

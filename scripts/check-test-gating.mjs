@@ -16,12 +16,13 @@
 //
 // Vitest is recognized as the globals, renamed imports (`import { it as t } from "vitest"`),
 // namespace imports (`import * as v from "vitest"`, `await import("vitest")`, `require("vitest")`
-// through `require`, `module.require` or a `createRequire(…)` function, `import v = require(…)`,
-// and a member read straight off a loader, `require("vitest").describe`) and variables holding
-// `test.extend({…})`. `integrationSuite({…})` and a variable holding its result are suite
-// functions, so the sanctioned gate passes. Names resolve through TypeScript's binder, so a local
-// declaration that shadows one (a parameter `it`, an import of `test` from another module) is not
-// Vitest's.
+// through `require`, `module.require` or a `createRequire(…)` function, `vi.importActual("vitest")`,
+// `vi.importMock("vitest")`, `import v = require(…)`, and a member read straight off a loader,
+// `require("vitest").describe`) and variables holding `test.extend({…})`. `integrationSuite({…})`
+// and a variable holding its result are suite functions, so the sanctioned gate passes. A suite
+// body's first parameter is the test API Vitest passes it. Names resolve through TypeScript's
+// binder, so any other local declaration that shadows one (a callback's parameter `it`, an import
+// of `test` from another module) is not Vitest's.
 //
 // What is rejected and allowed is listed once, in CONTRIBUTING.md ("Integration Tests"); RULES
 // below implements it, and ADR 0019 (docs/adrs/0019-test-gating-check-parses-with-typescript.md)
@@ -40,11 +41,10 @@ const selfPath = realpathSync(fileURLToPath(import.meta.url));
 const sibling = (name) => pathToFileURL(join(dirname(selfPath), "check-test-gating", name)).href;
 const { ts, isWrapper, outermostWrapper, unwrap, unwrapValue, someInside, calleeOf, isMemberLink, linkName, lineOf, oneFileProgram, memberOn } =
   await import(sibling("ast.mjs"));
-const { EXTENDERS, kindOf, vitestBindings, isVitestLoaderCall, isVitestNamespace, integrationModuleResolver, isSuiteFactory, testFnName, extendedFn } =
+const { EXTENDERS, SUITE_FNS, kindOf, isPromiseLoader, vitestBindings, isVitestLoaderCall, isVitestNamespace, integrationModuleResolver, isSuiteFactory, testFnName, extendedFn } =
   await import(sibling("bindings.mjs"));
 const { workspaceDirs, linkTarget } = await import(sibling("workspace.mjs"));
 
-const SUITE_FNS = new Set(["describe", "suite"]);
 // Vitest's chainable modifiers. A call through any other link (`test.scoped`, `test.step`) is not
 // treated as defining a suite or test; `test.extend({…})` returns a test function, read on.
 const MODIFIERS = new Set([
@@ -109,10 +109,11 @@ const PRAGMA = /^\/\/\s*check-test-gating-ignore-next-line\s*:\s*\S/;
  */
 function isReadableNamespaceUse(id) {
   let outer = outermostWrapper(id);
-  // A loader is read through `await`: `(await import("vitest")).describe`. An `import()` that isn't
-  // awaited is a promise (`.then(…)`, stored, passed on), which the check can't follow.
+  // A loader is read through `await`: `(await import("vitest")).describe`. An `import()` or
+  // `vi.importActual()` that isn't awaited is a promise (`.then(…)`, stored, passed on), which the
+  // check can't follow.
   if (ts.isCallExpression(id)) {
-    if (!ts.isAwaitExpression(outer.parent) && id.expression.kind === ts.SyntaxKind.ImportKeyword) return false;
+    if (!ts.isAwaitExpression(outer.parent) && isPromiseLoader(unwrap(id.expression))) return false;
     while (ts.isAwaitExpression(outer.parent) || isWrapper(outer.parent)) outer = outer.parent;
   }
   const member = memberOn(outer);
@@ -222,10 +223,21 @@ function testRef(start, fnName, bindings) {
     chain,
     invoked: call !== undefined,
     // `const t = it.each(rows)` stores the function that defines the tests, which the check can't follow.
-    unreadable: (call === undefined && !extendResultIsTracked(chain)) || eachResultStored,
+    unreadable: (call === undefined && !extendResultIsTracked(chain)) || eachResultStored || (suite && defines && suiteResultHeld(call)),
     conditional: defines && underCondition(call, bindings),
     optionGate: defines && (hasGateOption(call, suite) || rowsSpread || (rows !== undefined && isPicked(rows))),
   };
+}
+
+/**
+ * Whether a suite call's result is kept or read (`const c = describe(…)`, `describe(…).test`): the
+ * collector it returns carries a test API the check can't follow.
+ */
+function suiteResultHeld(call) {
+  const outer = outermostWrapper(call);
+  const p = outer.parent;
+  return memberOn(outer) !== undefined || (ts.isVariableDeclaration(p) && p.initializer === outer) ||
+    (ts.isBinaryExpression(p) && p.right === outer && p.operatorToken.kind === ts.SyntaxKind.EqualsToken);
 }
 
 /**
@@ -283,27 +295,27 @@ function isPicked(node) {
   return ts.isObjectLiteralExpression(node) && node.properties.some((p) => ts.isSpreadAssignment(p) && isPicked(p.expression));
 }
 
+/** Whether `node` is itself a pick: `? :`, `&&`, `||` or `??`. */
+function isPickExpression(node) {
+  return pickBranches(node).length > 0;
+}
+
 /**
  * Whether a call over `node` can yield a table whose size a pick decides: `node` is itself picked,
  * or holds a pick where size comes from (anywhere in a `length`, an element a flattening call can drop:
  * `Array.from({ length: url ? 1 : 0 })`, `[url ? [url] : []].flat()`). A pick of a value inside a
  * fixed-size table (`{ pg: url ?? "postgres://localhost" }`) doesn't change its size.
  */
-function hasPick(node) {
-  return pickBranches(node).length > 0;
-}
-
 function picksSize(node) {
   node = unwrapValue(node);
   if (ts.isSpreadElement(node)) return picksSize(node.expression);
   if (isPicked(node)) return true;
   if (ts.isObjectLiteralExpression(node)) {
-    return node.properties.some((p) => ts.isPropertyAssignment(p) && optionKey(p.name) === "length" && someInside(p.initializer, hasPick));
+    return node.properties.some((p) => ts.isPropertyAssignment(p) && optionKey(p.name) === "length" && someInside(p.initializer, isPickExpression));
   }
   return ts.isArrayLiteralExpression(node) && node.elements.some((el) =>
     pickBranches(unwrapValue(el)).some((branch) => ts.isArrayLiteralExpression(unwrap(branch))));
 }
-
 
 /**
  * Whether a suite or test call skips through its options argument (`{ skip: cond }`,
@@ -592,7 +604,6 @@ export function findGates(src, fileName = "file.test.ts", { isIntegrationModule 
 
 // What the root vitest.config.ts and Vitest's defaults exclude; anything else Vitest would run.
 const SKIP_DIRS = new Set(["node_modules", "dist", ".git"]);
-
 
 // Follows symbolic links to directories, as Vitest does, visiting each real directory once.
 function* walk(dir, seen = new Set()) {
