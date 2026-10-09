@@ -39,7 +39,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 const selfPath = realpathSync(fileURLToPath(import.meta.url));
 const sibling = (name) => pathToFileURL(join(dirname(selfPath), "check-test-gating", name)).href;
 const { ts, isWrapper, outermostWrapper, unwrap, calleeOf, isMemberLink, linkName, lineOf, oneFileProgram } = await import(sibling("ast.mjs"));
-const { vitestBindings, isVitestLoaderCall, isVitestNamespace, integrationModuleResolver, isSuiteFactory, testFnName, extendedFn } =
+const { EXTENDERS, vitestBindings, isVitestLoaderCall, isVitestNamespace, integrationModuleResolver, isSuiteFactory, testFnName, extendedFn } =
   await import(sibling("bindings.mjs"));
 const { workspaceDirs } = await import(sibling("workspace.mjs"));
 export { integrationModuleResolver };
@@ -49,6 +49,8 @@ const SUITE_FNS = new Set(["describe", "suite"]);
 // treated as defining a suite or test; `test.extend({…})` returns a test function, read on.
 const MODIFIERS = new Set([
   "skip", "only", "todo", "concurrent", "sequential", "shuffle", "fails", "each", "for", "skipIf", "runIf",
+  // `it.describe` is Vitest's `describe`.
+  "describe", "suite",
 ]);
 const GATE_LINKS = new Set(["skipIf", "runIf"]);
 const SUITE_GATE_LINKS = new Set(["skip", "skipIf", "runIf"]);
@@ -92,7 +94,7 @@ export const RULES = [
     // Anything else that isn't a direct call: an alias, an argument, `x && describe`,
     // `describe.call(…)`. The check can't follow the value, so it fails closed.
     id: "unclassified-use",
-    test: (ref) => ref.escapes || ref.links.some((l) => INDIRECT_LINKS.has(l)),
+    test: (ref) => ref.unreadable || ref.links.some((l) => INDIRECT_LINKS.has(l)),
     why: "uses describe/suite/it/test other than by calling it, so the check can't read the gate; call it directly or use integrationSuite()",
   },
 ];
@@ -124,7 +126,7 @@ function isReadableNamespaceUse(id) {
 /** A ref with nothing to report, for `testRef` and `unreadableRef` to fill in. */
 function emptyRef(start) {
   return {
-    suite: false, links: [], computed: false, chain: start, invoked: false, escapes: false,
+    suite: false, links: [], computed: false, chain: start, invoked: false, unreadable: false,
     conditional: false, optionGate: false, line: lineOf(start),
   };
 }
@@ -134,7 +136,7 @@ function emptyRef(start) {
  * .then(…)`), `integrationSuite` or its module aliased, or `import d = v.x`. It fails closed.
  */
 function unreadableRef(id) {
-  return { ...emptyRef(id), escapes: true };
+  return { ...emptyRef(id), unreadable: true };
 }
 
 /**
@@ -181,7 +183,7 @@ function testRef(start, fnName, bindings) {
       break;
     }
     links.push(name);
-    extendCallPending = name === "extend";
+    extendCallPending = EXTENDERS.has(name);
     chain = up;
   }
   chain = outermostWrapper(chain);
@@ -203,9 +205,11 @@ function testRef(start, fnName, bindings) {
       eachResultStored = true;
     }
   }
-  const suite = SUITE_FNS.has(fnName);
+  const lastExtender = links.findLastIndex((l) => EXTENDERS.has(l));
+  const ownLinks = links.slice(lastExtender + 1);
+  // `it.describe(…)` defines a suite, like `describe(…)`.
+  const suite = SUITE_FNS.has(fnName) || ownLinks.some((l) => SUITE_FNS.has(l));
   // Links after the last `.extend`; a call through Vitest modifiers only defines a suite or test.
-  const ownLinks = links.slice(links.lastIndexOf("extend") + 1);
   const defines = call !== undefined && !extendCallPending && ownLinks.every((l) => MODIFIERS.has(l));
   return {
     ...emptyRef(start),
@@ -215,7 +219,7 @@ function testRef(start, fnName, bindings) {
     chain,
     invoked: call !== undefined,
     // `const t = it.each(rows)` stores the function that defines the tests, which the check can't follow.
-    escapes: (call === undefined && !extendResultIsTracked(chain)) || eachResultStored,
+    unreadable: (call === undefined && !extendResultIsTracked(chain)) || eachResultStored,
     conditional: defines && underCondition(call, bindings),
     optionGate: defines && (hasGateOption(call, suite) || rowsSpread || (rows !== undefined && isChosen(rows))),
   };
@@ -247,6 +251,13 @@ function optionKey(name) {
   return ts.isIdentifier(name) || ts.isStringLiteralLike(name) || ts.isNumericLiteral(name) ? name.text : undefined;
 }
 
+/** The operands a run-time choice picks between (`a ? b : c` gives `b`, `c`; `a && b` gives both), or none. */
+function choiceBranches(node) {
+  if (ts.isConditionalExpression(node)) return [node.whenTrue, node.whenFalse];
+  if (isBinaryChoice(node)) return [node.left, node.right];
+  return [];
+}
+
 /** Whether `node` is `a && b`, `a || b`, `a ?? b` or one of their assignment forms. */
 function isBinaryChoice(node) {
   return ts.isBinaryExpression(node) && CONDITIONAL_OPERATORS.has(node.operatorToken.kind);
@@ -258,7 +269,7 @@ function isBinaryChoice(node) {
  */
 function isChosen(node) {
   node = unwrap(node);
-  if (ts.isConditionalExpression(node) || isBinaryChoice(node)) return true;
+  if (choiceBranches(node).length > 0) return true;
   // `[a, ...(cond ? [b] : [])]`: how many rows there are depends on the condition.
   return ts.isArrayLiteralExpression(node) && node.elements.some((el) => ts.isSpreadElement(el) && isChosen(el.expression));
 }
@@ -274,12 +285,9 @@ function hasGateOption(call, suite) {
   let gate = false;
   const visit = (node, chosen) => {
     node = unwrap(node);
-    if (ts.isConditionalExpression(node)) {
-      visit(node.whenTrue, true);
-      visit(node.whenFalse, true);
-    } else if (isBinaryChoice(node)) {
-      visit(node.left, true);
-      visit(node.right, true);
+    const branches = choiceBranches(node);
+    if (branches.length > 0) {
+      for (const branch of branches) visit(branch, true);
     } else if (ts.isObjectLiteralExpression(node)) {
       for (const prop of node.properties) {
         // A spread or a key computed at run time could carry `skip`; fail closed.
@@ -539,12 +547,13 @@ export function findGates(src, fileName = "file.test.ts", { isIntegrationModule 
 
 const SKIP_DIRS = new Set(["node_modules", "dist", ".turbo", ".astro", ".lab"]);
 
-/** Whether a symbolic link points at a directory; a dangling or looping link points at none. */
-function linksToDirectory(path) {
+/** What a symbolic link points at: "dir", "file", or undefined for a dangling or looping link. */
+function linkTarget(path) {
   try {
-    return statSync(path).isDirectory();
+    const stat = statSync(path);
+    return stat.isDirectory() ? "dir" : stat.isFile() ? "file" : undefined;
   } catch {
-    return false;
+    return undefined;
   }
 }
 
@@ -556,9 +565,10 @@ function* walk(dir, seen = new Set()) {
   for (const entry of readdirSync(dir, { withFileTypes: true })) {
     if (SKIP_DIRS.has(entry.name)) continue;
     const path = join(dir, entry.name);
-    const isDir = entry.isDirectory() || (entry.isSymbolicLink() && linksToDirectory(path));
-    if (isDir) yield* walk(path, seen);
-    else if (/\.test\.tsx?$/.test(entry.name)) yield path;
+    const target = entry.isSymbolicLink() ? linkTarget(path) : entry.isDirectory() ? "dir" : "file";
+    // A dangling link named like a test (an editor's `.#a.test.ts` lock) is no test file.
+    if (target === "dir") yield* walk(path, seen);
+    else if (target === "file" && /\.test\.tsx?$/.test(entry.name)) yield path;
   }
 }
 

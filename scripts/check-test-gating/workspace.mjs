@@ -1,5 +1,5 @@
 // The pnpm workspace reader for scripts/check-test-gating.mjs: which package directories to scan.
-import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 
 // Glob syntax pnpm accepts (`*`, `?`, `[…]`, `{…}`, extglobs such as `@(a|b)`); only a trailing
@@ -8,8 +8,9 @@ const GLOB = /[*?[\]{}()|]/;
 
 /**
  * Workspace package directories from pnpm-workspace.yaml's `packages:` list.
- * Supports literal paths, a trailing `/*`, and literal `!` exclusions; anything else throws, so the
- * check fails closed rather than skipping a package. Parsed here rather than asking
+ * Supports literal paths, a trailing `/*`, and literal `!` exclusions; any other pattern throws, so
+ * the check fails closed rather than skipping a package. A pattern that matches nothing (a missing
+ * path, or `dir/*` under a missing `dir`) adds nothing, as it does for pnpm. Parsed here rather than asking
  * `pnpm -r ls`, so `pnpm lint` doesn't spawn pnpm for one list it can read directly.
  * @param {string} root
  */
@@ -37,7 +38,8 @@ export function workspaceDirs(root) {
       const parent = pattern.slice(0, -2);
       if (!existsSync(join(root, parent))) continue;
       for (const e of readdirSync(join(root, parent), { withFileTypes: true })) {
-        if (e.isDirectory()) dirs.push(`${parent}/${e.name}`);
+        // A package may be a symbolic link to a directory, which pnpm lists too.
+        if (e.isDirectory() || (e.isSymbolicLink() && isDirectory(join(root, parent, e.name)))) dirs.push(`${parent}/${e.name}`);
       }
     } else if (GLOB.test(pattern)) {
       throw new Error(`unsupported workspace pattern "${pattern}"; extend workspaceDirs()`);
@@ -46,4 +48,13 @@ export function workspaceDirs(root) {
     }
   }
   return dirs.filter((d) => !exclude.has(d));
+}
+
+/** Whether `path` is a directory, following a symbolic link; false if the link dangles. */
+function isDirectory(path) {
+  try {
+    return statSync(path).isDirectory();
+  } catch {
+    return false;
+  }
 }

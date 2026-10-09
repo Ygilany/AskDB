@@ -9,3 +9,8 @@ const e = v.expect;
 (v as any).expect(1);
 const pkg = "vitest";
 expect(deps).toContain(pkg);
+namespace Local {
+  export const describe = { skip: 1 };
+}
+import localDescribe = Local.describe;
+const notVitest = localDescribe.skip;

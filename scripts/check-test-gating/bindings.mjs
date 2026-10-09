@@ -3,10 +3,12 @@
 import { dirname, resolve } from "node:path";
 import { calleeOf, isMemberLink, isWrapper, linkName, ts, unwrap } from "./ast.mjs";
 
-export const TEST_FNS = new Set(["describe", "suite", "it", "test"]);
+const TEST_FNS = new Set(["describe", "suite", "it", "test"]);
+// Links whose call returns a new test function: `test.extend({…})`, `test.override({…})`, `test.scoped({…})`.
+export const EXTENDERS = new Set(["extend", "override", "scoped"]);
 
 /** The module an import declaration names, through its specifier, clause or binding. */
-export function importedFrom(decl) {
+function importedFrom(decl) {
   let n = decl;
   while (n && !ts.isImportDeclaration(n)) n = n.parent;
   return n && ts.isStringLiteral(n.moduleSpecifier) ? n.moduleSpecifier.text : undefined;
@@ -82,7 +84,7 @@ export function vitestBindings(program, isIntegrationModule) {
  * Whether `node` (through wrappers and `await`) is the Vitest module: `import("vitest")`,
  * `require("vitest")`, or an identifier bound to a Vitest namespace.
  */
-export function isVitestModule(node, bindings) {
+function isVitestModule(node, bindings) {
   while (isWrapper(node) || ts.isAwaitExpression(node)) node = node.expression;
   if (ts.isExternalModuleReference(node)) return isVitestSpecifier(node.expression);
   if (ts.isIdentifier(node)) return isVitestNamespace(node, bindings);
@@ -90,14 +92,14 @@ export function isVitestModule(node, bindings) {
 }
 
 /** Whether `node` is `createRequire(…)` or `module.createRequire(…)`. */
-export function isCreateRequireCall(node) {
+function isCreateRequireCall(node) {
   if (!ts.isCallExpression(node)) return false;
   const callee = unwrap(node.expression);
   return (ts.isIdentifier(callee) && callee.text === "createRequire") || (isMemberLink(callee) && linkName(callee) === "createRequire");
 }
 
 /** Whether `node` (through parentheses and casts) is the string `"vitest"`. */
-export function isVitestSpecifier(node) {
+function isVitestSpecifier(node) {
   node = node && unwrap(node);
   return node !== undefined && ts.isStringLiteralLike(node) && node.text === "vitest";
 }
@@ -130,7 +132,7 @@ export function integrationModuleResolver(root, file) {
 }
 
 /** Whether `node` is a call of `integrationSuite(…)`, which returns `describe` or its sanctioned gate. */
-export function suiteFactoryCall(node, bindings) {
+function suiteFactoryCall(node, bindings) {
   return ts.isCallExpression(node) && isSuiteFactory(unwrap(node.expression), bindings);
 }
 
@@ -161,7 +163,7 @@ export function extendedFn(node, bindings) {
   const callee = calleeOf(unwrap(node));
   if (callee === undefined) return undefined;
   const member = unwrap(callee);
-  if (!isMemberLink(member) || linkName(member) !== "extend") return undefined;
+  if (!isMemberLink(member) || !EXTENDERS.has(linkName(member))) return undefined;
   let base = unwrap(member.expression);
   while (testFnName(base, bindings) === undefined && isMemberLink(base) && linkName(base) !== undefined) {
     base = unwrap(base.expression);

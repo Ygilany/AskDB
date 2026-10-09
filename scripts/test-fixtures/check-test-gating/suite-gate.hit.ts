@@ -35,3 +35,5 @@ describe.each(process.env.DATABASE_URL ? [process.env.DATABASE_URL] : [])("rows 
 describe(...["spread arguments", { skip: !process.env.DATABASE_URL }, () => {}]); // HIT
 describe.each(...rowsAndMore)("spread rows %s", () => {}); // HIT
 describe.each([["sqlite"], ...(process.env.DATABASE_URL ? [["postgres"]] : [])])("a row spread from a ternary %s", () => {}); // HIT
+it.describe.skip("it.describe is Vitest's describe", () => {}); // HIT
+describe("a timeout before the skip key", { timeout: 5000, skip: !process.env.DATABASE_URL }, () => {}); // HIT

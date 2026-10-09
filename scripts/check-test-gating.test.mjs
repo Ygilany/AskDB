@@ -86,11 +86,13 @@ test("CLI scans every workspace package (not just src/) and skips excluded ones"
     "packages/a/.turbo/cache.test.ts": 'describe.skip("turbo cache", () => {});\n',
     "packages/a/.astro/gen.test.ts": 'describe.skip("astro output", () => {});\n',
     "packages/a/.lab/scratch.test.ts": 'describe.skip("lab cache", () => {});\n',
+    "packages/a/zz-after-skipped.test.ts": 'describe.skip("after skipped siblings", () => {});\n',
     "fixtures/db/test/db.integration.test.ts": 'describe.skip("outside src", () => {});\n',
   });
   const result = run(root);
   assert.equal(result.status, 1);
   assert.match(result.stderr, /fixtures\/db\/test\/db\.integration\.test\.ts:1:/);
+  assert.match(result.stderr, /packages\/a\/zz-after-skipped\.test\.ts:1:/);
   assert.doesNotMatch(result.stderr, /excluded|node_modules|dist|\.turbo|\.astro|\.lab/);
 });
 
@@ -184,9 +186,23 @@ test("CLI follows a symbolic link to a directory, once", (t) => {
   symlinkSync(join(root, "shared"), join(root, "packages", "a", "src", "linked"));
   symlinkSync(join(root, "packages", "a", "src"), join(root, "packages", "a", "src", "loop"));
   symlinkSync(join(root, "does-not-exist"), join(root, "packages", "a", "src", "dangling"));
+  symlinkSync(join(root, "does-not-exist"), join(root, "packages", "a", "src", ".#ok.test.ts"));
   const result = run(root);
-  assert.equal(result.status, 1);
+  assert.equal(result.status, 1, result.stderr);
+  assert.equal(result.stderr.match(/gated\.test\.ts:1:/g)?.length, 1);
   assert.match(result.stderr, /packages\/a\/src\/linked\/gated\.test\.ts:1:/);
+});
+
+test("CLI scans a package that is a symbolic link and skips a pattern that matches nothing", (t) => {
+  const root = workspace(
+    t,
+    { "packages/a/src/a.test.ts": 'it("ok", () => {});\n', "vendor/b/src/b.test.ts": 'describe.skip("linked package", () => {});\n' },
+    'packages:\n  - "packages/*"\n  - "missing/*"\n  - "absent"\n',
+  );
+  symlinkSync(join(root, "vendor", "b"), join(root, "packages", "b"));
+  const result = run(root);
+  assert.equal(result.status, 1, result.stderr);
+  assert.match(result.stderr, /packages\/b\/src\/b\.test\.ts:1:/);
 });
 
 test("CLI reads a pnpm-workspace.yaml with CRLF line endings", (t) => {

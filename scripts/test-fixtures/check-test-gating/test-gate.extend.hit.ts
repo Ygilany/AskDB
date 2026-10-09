@@ -9,3 +9,8 @@ test.extend({})("inline extend call with options", { skip: !process.env.DATABASE
 test.extend({}).extend({})("chained inline extend", { skip: !process.env.DATABASE_URL }, () => {}); // HIT
 const twice = test.extend({}).extend({});
 twice.skipIf(!process.env.DATABASE_URL)("through a stored chained extend", () => {}); // HIT
+const overridden = test.override({});
+overridden.skipIf(!process.env.DATABASE_URL)("through test.override", () => {}); // HIT
+test.scoped({}).skipIf(!process.env.DATABASE_URL)("through an inline test.scoped", () => {}); // HIT
+const concurrentExtended = test.concurrent.extend({});
+concurrentExtended.skipIf(!process.env.DATABASE_URL)("extend behind a modifier", () => {}); // HIT

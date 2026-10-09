@@ -30,7 +30,7 @@ The root and fixture Vitest configs already load `ciReporters()`, whose summary 
 
 ### Reading the workspace list
 
-- **Parse `pnpm-workspace.yaml` directly (chosen).** `scripts/check-test-gating/workspace.mjs` reads the `packages:` list, expands a trailing `/*` and literal `!` exclusions, and throws on anything else, so `pnpm lint` doesn't spawn pnpm for one list.
+- **Parse `pnpm-workspace.yaml` directly (chosen).** `scripts/check-test-gating/workspace.mjs` reads the `packages:` list, expands a trailing `/*` and literal `!` exclusions, throws on any other pattern, and skips a pattern that matches nothing, as pnpm does, so `pnpm lint` doesn't spawn pnpm for one list.
 - **Ask pnpm (`pnpm -r ls --json --depth -1`), as `scripts/release-unpublished.mjs` does.** Rejected for now: it adds a pnpm process to every lint run. The cost of the choice: a new glob form or a flow-style list in `pnpm-workspace.yaml` fails `pnpm lint` until `workspaceDirs()` learns it, which is loud, not silent. Switching to pnpm supersedes this bullet.
 
 ### Where the check runs
@@ -41,7 +41,7 @@ The root and fixture Vitest configs already load `ciReporters()`, whose summary 
 
 ## Decision
 
-The check parses each test file with `ts.createSourceFile` and applies its rules to the AST. A use of a Vitest function it can't read (an alias, an argument, `x && describe`, `describe.call(…)`, a spread in the argument list, a spread or computed key in the options) fails the check rather than passing. A file with parse errors fails the check, naming the file, instead of being skipped. Wrappers that leave a value unchanged (`(x)`, `x!`, `x as T`, `<T>x`, `x satisfies T`) are seen through. The script loads its modules (`scripts/check-test-gating/ast.mjs`, `bindings.mjs`, `workspace.mjs`) from its own real path, and `ast.mjs` loads `typescript` from its own, so a symlinked invocation finds the repo's install.
+The check parses each test file with `ts.createSourceFile` and applies its rules to the AST. A use of a Vitest function it can't read (an alias, an argument, `x && describe`, `describe.call(…)`, a spread in the argument list, a spread or computed key in the options) fails the check rather than passing. A file with parse errors fails the check, naming the file, instead of being skipped. Vitest loaded by `import()`, `require`, `module.require`, `globalThis.require`, a `createRequire(…)` function or `import … = require(…)` is recognized on purpose, though no test loads it that way: each is a route to `describe` that would otherwise pass unread. Wrappers that leave a value unchanged (`(x)`, `x!`, `x as T`, `<T>x`, `x satisfies T`) are seen through. The script loads its modules (`scripts/check-test-gating/ast.mjs`, `bindings.mjs`, `workspace.mjs`) from its own real path, and `ast.mjs` loads `typescript` from its own, so a symlinked invocation finds the repo's install.
 
 The check runs first in the root `lint` script, so it runs wherever lint runs: locally, in CI's lint job and in `scripts/release-preflight.sh`. A line that needs a gate on purpose takes `// check-test-gating-ignore-next-line: <reason>` on the line above; a marker with no reason, or one in a block comment, string or JSX text, exempts nothing. The script's own tests use `node --test` with a fixture corpus beside it (`scripts/test-fixtures/check-test-gating/`), because `scripts/` is not a workspace package that `pnpm test` runs and the root `vitest.config.ts` includes only `*.test.ts(x)`; `pnpm lint` runs them before the check.
 
