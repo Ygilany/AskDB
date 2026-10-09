@@ -2,6 +2,7 @@ import type { Connector } from "@askdb/introspect";
 import type { ConnectorConfig, ConnectorProviderAdapter, ConnectorResult } from "@askdb/connectors";
 import { createMysqlConnector } from "./index.js";
 import { createMysqlCatalogQueryRunner } from "../exec/mysql.js";
+import { parseMysqlConnection } from "../label.js";
 
 export const mysqlConnectorProvider: ConnectorProviderAdapter = {
   provider: "mysql",
@@ -18,5 +19,8 @@ export const mysqlConnectorProvider: ConnectorProviderAdapter = {
       },
       connector: createMysqlConnector() as Connector<unknown>,
     };
+  },
+  connectionLabelParts({ url }) {
+    return url === undefined ? undefined : parseMysqlConnection(url);
   },
 };

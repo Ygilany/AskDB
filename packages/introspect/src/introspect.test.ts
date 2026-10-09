@@ -1,8 +1,9 @@
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { introspect } from "./introspect.js";
+import { isSchemaV2Json, renderSchemaV2Body } from "./render/render.js";
 import type { Connector, IntrospectionResult, SqlSchema } from "./types.js";
 
 let workDir: string;
@@ -142,5 +143,66 @@ describe("introspect() — engine-agnostic orchestrator", () => {
     expect(result.warnings).toEqual([
       { code: "ambiguous_filter", filter: "public.missing" },
     ]);
+  });
+});
+
+describe("renderSchemaV2Body() — shared by --out, --print and --diff", () => {
+  it("introspect() forwards the connector's provider into the schema.json it writes", async () => {
+    const connector: Connector<FakeInput> = {
+      async describe() {
+        return {
+          schema: fakeSchema,
+          warnings: [],
+          isEmpty: false,
+          viewDefinitions: {},
+          provider: "postgres",
+        };
+      },
+    };
+    const outDir = join(workDir, "fake.schema");
+    await introspect<FakeInput>({ tag: "out" }, { outDir, schemaId: "fake" }, { connector });
+    const written = readFileSync(join(outDir, "schema.json"), "utf8");
+
+    expect((JSON.parse(written) as { provider?: string }).provider).toBe("postgres");
+  });
+
+  it("preserves human-set sensitive flags from an existing artifact", () => {
+    const existingDir = join(workDir, "existing.schema");
+    const first = renderSchemaV2Body(fakeSchema, { schemaId: "fake" });
+    const edited = JSON.parse(first.body) as {
+      tables: Array<{ sensitive: boolean; columns: Array<{ sensitive: boolean }> }>;
+    };
+    edited.tables[0]!.sensitive = true;
+    edited.tables[0]!.columns[0]!.sensitive = true;
+    const editedBody = JSON.stringify(edited, null, 2) + "\n";
+    rmSync(existingDir, { recursive: true, force: true });
+    mkdirSync(existingDir, { recursive: true });
+    writeFileSync(join(existingDir, "schema.json"), editedBody, "utf8");
+
+    const merged = renderSchemaV2Body(fakeSchema, {
+      schemaId: "fake",
+      existingArtifactDir: existingDir,
+    });
+    expect(merged.body).toBe(editedBody);
+    expect(merged.warnings).toEqual([]);
+  });
+
+  it.each([
+    ["table", (t: { sensitive: unknown; columns: Array<{ sensitive: unknown }> }) => (t.sensitive = "yes")],
+    ["column", (t: { sensitive: unknown; columns: Array<{ sensitive: unknown }> }) => (t.columns[0]!.sensitive = 1)],
+  ])("rejects an existing artifact whose %s sensitive flag isn't a boolean instead of copying it", (_level, edit) => {
+    const existingDir = join(workDir, "non-boolean.schema");
+    const edited = JSON.parse(renderSchemaV2Body(fakeSchema, { schemaId: "fake" }).body) as {
+      tables: Array<{ sensitive: unknown; columns: Array<{ sensitive: unknown }> }>;
+    };
+    edit(edited.tables[0]!);
+    rmSync(existingDir, { recursive: true, force: true });
+    mkdirSync(existingDir, { recursive: true });
+    writeFileSync(join(existingDir, "schema.json"), JSON.stringify(edited), "utf8");
+
+    expect(isSchemaV2Json(edited)).toBe(false);
+    expect(() => renderSchemaV2Body(fakeSchema, { schemaId: "fake", existingArtifactDir: existingDir })).toThrow(
+      "invalid Schema v2",
+    );
   });
 });

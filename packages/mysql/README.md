@@ -60,7 +60,7 @@ const result = await introspect(
 );
 ```
 
-By default the connector reads the connection URL's database and renders it under the `public` namespace. To introspect several databases, list them in `filters.schemas`. Each database then becomes its own namespace, and foreign keys that cross databases keep the referenced database:
+By default the connector reads the connection URL's database and renders it under the `public` namespace. In that mode the connection string must name a database (`mysql://user:pass@host:3306/<database>`); introspection throws a clear error when the connection has no default database instead of returning an empty schema. To introspect several databases, list them in `filters.schemas`. Each database then becomes its own namespace, and foreign keys into another listed database keep the referenced database:
 
 ```ts
 await introspect(
@@ -76,9 +76,11 @@ await introspect(
 
 With the `askdb` CLI, set `introspection.schemas` in `askdb.config.ts`, or pass `--schemas app,sales`.
 
+`mysqlConnectorProvider` parses a connection into display-safe parts, so a connector registry's `connectionLabel()` shows only the host, port and database of a `mysql://` URL, read the way `mysql2` reads it (WHATWG `URL`; `mysql://root:S3cret@db:3306/shop` → `mysql://db:3306/shop`). Anything else becomes `configured mysql connection`.
+
 ## Captured metadata
 
-Tables, views, columns (MySQL-native type strings), primary keys, unique constraints, foreign keys (with referential actions), and indexes.
+Tables, views, columns (MySQL-native type strings), primary keys, unique constraints, foreign keys (with referential actions), and indexes. Only the connection's database, or the databases listed in `filters.schemas`, is introspected: foreign keys that reference a table in any other database are omitted and reported as a `cross_database_fk` warning.
 
 ## License
 

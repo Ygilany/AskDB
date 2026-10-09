@@ -20,7 +20,12 @@ import type {
   SqlTable,
   SqlView,
 } from "../types.js";
-import type { RenderOptions, RenderResult } from "./types.js";
+import type {
+  RenderBodyOptions,
+  RenderBodyResult,
+  RenderOptions,
+  RenderResult,
+} from "./types.js";
 
 /**
  * Render a `SqlSchema` to a Schema v2 directory.
@@ -43,18 +48,35 @@ export function renderToSchemaV2(
   schema: SqlSchema,
   options: RenderOptions,
 ): RenderResult {
-  const warnings: IntrospectionWarning[] = [];
-  const fresh = toV2SchemaJson(schema, options.schemaId, options.provider);
-  const v2 = options.existingArtifactDir
-    ? mergeWithExistingArtifact(fresh, options.existingArtifactDir, warnings)
-    : fresh;
+  const { body, warnings } = renderSchemaV2Body(schema, options);
 
   mkdirSync(options.outDir, { recursive: true });
   const schemaJsonPath = resolve(options.outDir, "schema.json");
-  const body = JSON.stringify(v2, null, 2) + "\n";
   writeFileSync(schemaJsonPath, body, "utf8");
 
   return { schemaJsonPath, warnings };
+}
+
+/**
+ * Pure (no-write) form of {@link renderToSchemaV2}: produces the exact
+ * `schema.json` bytes `--out` would write, including the ID-anchored merge
+ * with `existingArtifactDir` (human-set `sensitive` flags preserved) and the
+ * connector-detected `provider`.
+ *
+ * `askdb introspect --out`, `--print`, and `--diff` all go through this one
+ * function so `--diff` against an artifact produced by `--out` from the same
+ * source reports no change.
+ */
+export function renderSchemaV2Body(
+  schema: SqlSchema,
+  options: RenderBodyOptions,
+): RenderBodyResult {
+  const warnings: IntrospectionWarning[] = [];
+  const fresh = toV2SchemaJson(schema, options.schemaId, options.provider);
+  const json = options.existingArtifactDir
+    ? mergeWithExistingArtifact(fresh, options.existingArtifactDir, warnings)
+    : fresh;
+  return { json, body: JSON.stringify(json, null, 2) + "\n", warnings };
 }
 
 function mergeWithExistingArtifact(
@@ -100,6 +122,25 @@ function readExistingPhysical(existingArtifactDir: string): V2SchemaJson {
   return assertV2SchemaJson(parsed, schemaJsonPath);
 }
 
+/**
+ * True when `value` (a parsed `schema.json`) passes the same check
+ * `renderSchemaV2Body` applies before merging with an existing artifact. Lets a
+ * caller decide whether to pass `existingArtifactDir` without swallowing the
+ * merge's other errors (for example malformed `tables/*.md` front matter).
+ *
+ * It checks the shape the merge reads (version, schema id, and each table's and
+ * column's ids, names and types, plus their optional boolean `sensitive`
+ * flags), not every field of Schema v2.
+ */
+export function isSchemaV2Json(value: unknown): boolean {
+  try {
+    assertV2SchemaJson(value, "schema.json");
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 function assertV2SchemaJson(value: unknown, filePath: string): V2SchemaJson {
   if (!isRecord(value) || value.version !== 2) {
     throw new Error(`@askdb/introspect: invalid Schema v2 file at ${filePath}`);
@@ -113,6 +154,7 @@ function assertV2SchemaJson(value: unknown, filePath: string): V2SchemaJson {
       typeof table.id !== "string" ||
       typeof table.name !== "string" ||
       typeof table.schema !== "string" ||
+      !isOptionalBoolean(table.sensitive) ||
       !Array.isArray(table.columns)
     ) {
       throw new Error(`@askdb/introspect: invalid Schema v2 table in ${filePath}`);
@@ -123,7 +165,8 @@ function assertV2SchemaJson(value: unknown, filePath: string): V2SchemaJson {
         typeof column.id !== "string" ||
         typeof column.name !== "string" ||
         typeof column.type !== "string" ||
-        typeof column.nullable !== "boolean"
+        typeof column.nullable !== "boolean" ||
+        !isOptionalBoolean(column.sensitive)
       ) {
         throw new Error(
           `@askdb/introspect: invalid Schema v2 column in ${filePath}`,
@@ -132,6 +175,11 @@ function assertV2SchemaJson(value: unknown, filePath: string): V2SchemaJson {
     }
   }
   return value as V2SchemaJson;
+}
+
+// The merge copies `sensitive` into the new artifact, so only a boolean may pass.
+function isOptionalBoolean(value: unknown): boolean {
+  return value === undefined || typeof value === "boolean";
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

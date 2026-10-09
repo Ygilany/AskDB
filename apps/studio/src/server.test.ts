@@ -1081,6 +1081,102 @@ describe("AskDB Studio server", () => {
     expect(typeof workspace.schemaPathRelative).toBe("string");
   });
 
+  // Every class of input that leaked a secret through the earlier masking
+  // redactor (ADR 0011, "Context"), plus ordinary strings per engine.
+  // The label is built only from parsed host/port/database (or a SQLite path);
+  // anything that doesn't parse cleanly is "configured <engine> connection".
+  it.each([
+    // Ordinary strings.
+    ["postgres", "postgres://app:S3cret@db:5432/app?sslmode=require", "postgres://db:5432/app"],
+    ["mysql", "mysql://root:S3cret@db:3306/shop", "mysql://db:3306/shop"],
+    ["sqlserver", "mssql://sa:S3cret@db:1433/app", "sqlserver://db:1433/app"],
+    ["sqlserver", "sqlserver://db:1433;database=app;user=sa;password=S3cret;encrypt=true", "sqlserver://db:1433/app"],
+    ["sqlserver", "Server=db,1433;Database=app;User Id=sa;Password=p@ss/w#rd;", "sqlserver://db:1433/app"],
+    ["sqlite", "./data/app.db", "./data/app.db"],
+    // A password containing @, / or #.
+    ["postgres", "postgres://app:pa/ss@db:5432/app", "configured postgres connection"],
+    ["postgres", "postgres://app:p@ss/w#rd@db:5432/app", "configured postgres connection"],
+    ["mysql", "mysql://root:pa/ss@db:3306/shop", "configured mysql connection"],
+    ["sqlserver", "mssql://sa:S3/cr@t#@db:1433/app", "configured sqlserver connection"],
+    ["sqlserver", "sqlserver://db:1433;database=app;user=sa;password=p@ssw0rd", "configured sqlserver connection"],
+    ["sqlserver", "sqlserver://db:1433;database=app;user=sa;password={p@ss;w0rd};encrypt=true", "configured sqlserver connection"],
+    // An unescaped ; inside an unquoted password; SQLite URI keys.
+    // The driver reads `cd;Database` as one key, so no database is shown.
+    ["sqlserver", "Server=db;User Id=sa;Password=ab;cd;Database=app", "sqlserver://db"],
+    // An unbraced ; inside a value is ambiguous: the label falls back.
+    ["sqlserver", "sqlserver://db:1433;user=sa;password=ab;cd;database=app", "configured sqlserver connection"],
+    ["sqlite", "file:./data/app.db?mode=ro&key=S3cret", "./data/app.db"],
+    // A quoted or braced value followed by trailing text.
+    ["postgres", "postgres://db:5432/app?password='ab'cd", "postgres://db:5432/app"],
+    ["sqlserver", "Server=db;Database=app;Password='ab'cd;", "configured sqlserver connection"],
+    ["sqlserver", "sqlserver://db:1433;database=app;password={ab}cd", "configured sqlserver connection"],
+    // JDBC and near-miss URL forms.
+    ["postgres", "jdbc:postgresql://u:secret@h/db", "configured postgres connection"],
+    ["postgres", '"postgres://u:secret@h/db"', "configured postgres connection"],
+    ["postgres", "postgres:/u:secret@h/db", "configured postgres connection"],
+    ["sqlserver", "sqlserver://sa:se;cret@h", "configured sqlserver connection"],
+    // A percent-encoded SQLite key name.
+    ["sqlite", "file:app.db?%6Bey=secret", "app.db"],
+    // Inputs that were only in the engine tables: leading whitespace, and a # or / in a URL password.
+    // (@askdb/config trims config values, so the leading space never reaches the parser.)
+    ["postgres", " postgres://app:S3cret@db:5432/app", "postgres://db:5432/app"],
+    ["postgres", "postgres://app:pa#ss@db:5432/app", "configured postgres connection"],
+    ["sqlserver", "mssql://sa:S3/cret@host:1433/db", "configured sqlserver connection"],
+    // ADO.NET spellings the driver reads as part of the password.
+    // The driver reads the rest as part of the password: no database comes from it.
+    ["sqlserver", "Server=h;User Id=sa;Password=p;;Database=leak", "sqlserver://h"],
+    ["sqlserver", "Server=h;User Id=sa;Password=;Database=leak", "sqlserver://h"],
+    ["sqlserver", "Data Source=h;Password=x;;Initial Catalog=leak", "sqlserver://h"],
+    ["sqlserver", "User Id=sa;Password=p;;Server=leakhost", "configured sqlserver connection"],
+    // Unicode whitespace before ";" (NBSP, U+FEFF).
+    ["sqlserver", "Server=h;User Id=sa;Password=\u00a0;Database=leak", "sqlserver://h"],
+    ["sqlserver", "Server=h;User Id=sa;Password=\ufeff;Database=leak", "sqlserver://h"],
+    ["sqlserver", "User Id=sa;Password=\u00a0;Server=leakhost", "configured sqlserver connection"],
+    // A ;database= inside a Prisma {…} value or a quote. The
+    // string can be read more than one way, so the label falls back.
+    ["sqlserver", "sqlserver://h:1433;database=app;user=sa;password={S3c;database=ret;}", "configured sqlserver connection"],
+    ["sqlserver", "sqlserver://h;user={a;database=leak;}", "configured sqlserver connection"],
+    ["sqlserver", 'sqlserver://h;user=sa;password="S3c;database=ret;"', "configured sqlserver connection"],
+    // Prisma schema paths go through the same allowlist.
+    ["prisma", "./prisma/schema.prisma", "./prisma/schema.prisma"],
+    ["prisma", "file:schema.prisma?key=S3cret", "configured prisma connection"],
+  ] as const)("GET /api/introspect/status labels %s %s as %s", async (engine, url, sourceLabel) => {
+    installStudioRuntime({}, {
+      ...STUDIO_TEST_BASE,
+      introspection: {
+        provider: engine,
+        providerConfig:
+          engine === "sqlite"
+            ? { sqlite: { file: url } }
+            : engine === "prisma"
+              ? { prisma: { schemaPath: url } }
+              : { [engine]: { databaseUrl: url } },
+        outputDir: "./askdb/",
+      },
+    });
+    const schemaDir = copyFixture();
+    const server = createStudioServer({ schema: schemaDir });
+    servers.push(server);
+    const baseUrl = await listen(server);
+
+    const plan = await getJson(`${baseUrl}/api/introspect/status`);
+    expect(plan).toEqual({ ok: true, engine, sourceLabel });
+  });
+
+  it("GET /api/introspect/status labels a prisma source with no schemaPath as auto-discovered", async () => {
+    installStudioRuntime({}, {
+      ...STUDIO_TEST_BASE,
+      introspection: { provider: "prisma", providerConfig: { prisma: {} }, outputDir: "./askdb/" },
+    });
+    const schemaDir = copyFixture();
+    const server = createStudioServer({ schema: schemaDir });
+    servers.push(server);
+    const baseUrl = await listen(server);
+
+    const plan = await getJson(`${baseUrl}/api/introspect/status`);
+    expect(plan).toEqual({ ok: true, engine: "prisma", sourceLabel: "auto-discovered prisma/schema.prisma" });
+  });
+
   it("POST /api/introspect resyncs from a prisma source and preserves enrichment files", async () => {
     const prismaConfig: AskDbConfig = {
       ...STUDIO_TEST_BASE,

@@ -116,3 +116,61 @@ describe("createConnectorRegistry", () => {
     expect(registry.getTemplates("postgres")).toBeUndefined();
   });
 });
+
+// ADR 0011: adapters return parts, never label text, so the allowlist in
+// formatConnectionLabel applies to every adapter, including a third-party one
+// that hands back something unsafe.
+describe("createConnectorRegistry — connectionLabel", () => {
+  const url = "acme://scott:S3cret@db:1521/orcl";
+  it.each<[string, ConnectorProviderAdapter["connectionLabelParts"], string]>([
+    ["well-formed parts", () => ({ host: "db", port: "1521", database: "orcl" }), "postgres://db:1521/orcl"],
+    ["the raw URL as the host", ({ url: raw }) => ({ host: raw }), "configured postgres connection"],
+    ["a masked URL as the host", () => ({ host: "scott:****@db" }), "configured postgres connection"],
+    ["the raw URL as a file", ({ url: raw }) => ({ file: raw! }), "configured postgres connection"],
+    ["undefined (did not parse)", () => undefined, "configured postgres connection"],
+    ["no hook", undefined, "configured postgres connection"],
+    // Plain-JS adapters bypass the type: none of these may throw (the error text
+    // would quote the URL) or reach the label.
+    ["the raw URL string instead of parts", (({ url: raw }: { url?: string }) => raw) as never, "configured postgres connection"],
+    ["{ file: undefined }", (() => ({ file: undefined })) as never, "configured postgres connection"],
+    ["a non-string host", (() => ({ host: 42 })) as never, "configured postgres connection"],
+    ["a URL object", (({ url: raw }: { url?: string }) => new URL(raw!)) as never, "configured postgres connection"],
+    [
+      "a hook that throws with the URL in its message",
+      ({ url: raw }) => {
+        throw new Error(`cannot parse ${raw}`);
+      },
+      "configured postgres connection",
+    ],
+    [
+      "parts whose getter throws with the URL in its message",
+      ({ url: raw }) =>
+        ({
+          get host(): string {
+            throw new Error(`cannot read ${raw}`);
+          },
+        }) as never,
+      "configured postgres connection",
+    ],
+    [
+      "a Proxy whose trap throws with the URL in its message",
+      ({ url: raw }) =>
+        new Proxy({}, {
+          has() {
+            throw new Error(`cannot read ${raw}`);
+          },
+          get() {
+            throw new Error(`cannot read ${raw}`);
+          },
+        }) as never,
+      "configured postgres connection",
+    ],
+  ])("builds the label from the adapter's parts: %s", (_name, connectionLabelParts, label) => {
+    const registry = createConnectorRegistry([{ ...makeAdapter("postgres"), connectionLabelParts }]);
+    expect(registry.connectionLabel("postgres", { url })).toBe(label);
+  });
+
+  it("labels an unregistered provider without throwing", () => {
+    expect(createConnectorRegistry([]).connectionLabel("mysql", { url })).toBe("configured mysql connection");
+  });
+});

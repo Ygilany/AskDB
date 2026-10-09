@@ -13,7 +13,7 @@ import type {
   SqlUnique,
   SqlView,
 } from "@askdb/introspect";
-import { SINGLE_NAMESPACE_LABEL } from "@askdb/core";
+import { AskDbError, SINGLE_NAMESPACE_LABEL } from "@askdb/core";
 import { compileTableFilters } from "./glob.js";
 import { makeColumnId, makeTableId } from "./ids.js";
 
@@ -26,10 +26,14 @@ import { makeColumnId, makeTableId } from "./ids.js";
  *   across engines.
  * - **Database list (`filters.schemas`)**: the connector reads every listed
  *   database (`table_schema IN (…)`) and each becomes its own namespace, named
- *   after the database. Foreign keys that cross databases keep the referenced
- *   database. `filters.excludeSchemas` removes entries from the list.
+ *   after the database. Foreign keys into another listed database keep the
+ *   referenced database. `filters.excludeSchemas` removes entries from the list.
  *   `introspection.schemas` (askdb.config.ts) and
  *   `askdb introspect --schemas` both feed this list.
+ *
+ * In both modes a foreign key into a database that wasn't introspected has no
+ * target in the artifact; it is skipped and reported as a `cross_database_fk`
+ * warning.
  */
 const DEFAULT_NAMESPACE = SINGLE_NAMESPACE_LABEL;
 
@@ -43,6 +47,13 @@ export type DescribeMysqlInput = {
 // information_schema is well-documented; pinning the SQL inside the package
 // keeps the surface stable. Every query is scoped by one predicate on the
 // schema column: `= DATABASE()` by default, or `IN (?, …)` for a database list.
+//
+// In the default mode `DATABASE()` is NULL when the connection has no default
+// database (e.g. `mysql://host:3306` with no path) — every catalog query would
+// then silently match nothing, so we check it up front and fail loudly instead
+// of emitting an empty schema.
+const SQL_CURRENT_DATABASE = `SELECT DATABASE() AS database_name`;
+
 type Scope = (column: string) => string;
 
 const connectionDatabase: Scope = (column) => `${column} = DATABASE()`;
@@ -140,7 +151,10 @@ ORDER BY table_schema, table_name`,
 }
 
 /** Internal: the default (connection-database) catalog SQL strings, exposed for snapshot-based tests. */
-export const MYSQL_CATALOG_SQL = catalogSql(connectionDatabase);
+export const MYSQL_CATALOG_SQL = {
+  current_database: SQL_CURRENT_DATABASE,
+  ...catalogSql(connectionDatabase),
+} as const;
 
 type TableRow = {
   table_schema: string;
@@ -174,6 +188,7 @@ type ForeignKeyRow = {
   constraint_name: string;
   table_name: string;
   column_name: string;
+  /** Database owning the referenced table — differs for cross-database FKs. */
   referenced_table_schema: string | null;
   referenced_table_name: string;
   referenced_column_name: string;
@@ -219,6 +234,19 @@ export async function describeMysql(input: DescribeMysqlInput): Promise<Introspe
     });
   };
 
+  // The default mode reads the connection's database; a database list names its own.
+  if (!listed) {
+    const [current] = await run<{ database_name: string | null }>(SQL_CURRENT_DATABASE);
+    if (!current?.database_name) {
+      throw new AskDbError(
+        "MySQL introspection needs a target database, but the connection has none selected " +
+          "(DATABASE() is NULL). Put the database name in the connection URL path, e.g. " +
+          "mysql://user:password@host:3306/<database>, or list databases with " +
+          "`introspection.schemas` / `--schemas`.",
+      );
+    }
+  }
+
   const [tableRows, columnRows, constraintRows, fkRows, indexRows, viewRows] = await Promise.all([
     run<TableRow>(sql.tables),
     run<ColumnRow>(sql.columns),
@@ -228,9 +256,14 @@ export async function describeMysql(input: DescribeMysqlInput): Promise<Introspe
     run<ViewRow>(sql.views),
   ]);
 
+  const readDatabases = new Set(tableRows.map((row) => row.table_schema));
   return foldMysqlResult({
     schemaId: input.schemaId ?? "introspected",
     namespaceOf: listed ? (database) => database : () => DEFAULT_NAMESPACE,
+    // The databases the catalog returned rows for, spelled as the catalog spells
+    // them: with case-insensitive names (lower_case_table_names 1 or 2),
+    // `--schemas Shop` reads the database stored as `shop`.
+    isIntrospected: listed ? (database) => readDatabases.has(database) : undefined,
     tableFilter,
     tableRows,
     columnRows,
@@ -249,6 +282,13 @@ type FoldInput = {
    * itself for a database list, `"public"` for the connection's database.
    */
   namespaceOf: (database: string) => string;
+  /**
+   * Whether a referenced database was introspected (for a database list: it is
+   * listed). Defaults to "the FK's own database", since the connection-database
+   * mode reads exactly one database. FKs into any other database are skipped
+   * with a `cross_database_fk` warning.
+   */
+  isIntrospected?: (database: string) => boolean;
   tableFilter: ReturnType<typeof compileTableFilters>;
   tableRows: TableRow[];
   columnRows: ColumnRow[];
@@ -319,7 +359,7 @@ export function foldMysqlResult(input: FoldInput): IntrospectionResult {
       comment: t.table_comment ?? undefined,
       columns,
       primaryKey: pkColumns.length > 0 ? { columns: pkColumns } : undefined,
-      foreignKeys: buildForeignKeys(fksByTable.get(key) ?? [], input.namespaceOf),
+      foreignKeys: buildForeignKeys(fksByTable.get(key) ?? [], input, warnings),
       uniqueConstraints: buildUniques(constraints),
       indexes: buildIndexes(indexesByTable.get(key) ?? []),
       checkConstraints: [],
@@ -385,7 +425,11 @@ function buildUniques(constraints: ConstraintRow[]): SqlUnique[] {
   })).sort((a, b) => a.name.localeCompare(b.name));
 }
 
-function buildForeignKeys(rows: ForeignKeyRow[], namespaceOf: (database: string) => string): SqlForeignKey[] {
+function buildForeignKeys(
+  rows: ForeignKeyRow[],
+  input: Pick<FoldInput, "namespaceOf" | "isIntrospected">,
+  warnings: IntrospectionWarning[],
+): SqlForeignKey[] {
   const byName = new Map<string, ForeignKeyRow[]>();
   for (const r of rows) {
     const list = byName.get(r.constraint_name) ?? [];
@@ -396,12 +440,29 @@ function buildForeignKeys(rows: ForeignKeyRow[], namespaceOf: (database: string)
   for (const [name, list] of byName) {
     const ordered = list.slice().sort((a, b) => a.ordinal_position - b.ordinal_position);
     const sample = ordered[0]!;
+    const referencedDatabase = sample.referenced_table_schema ?? sample.table_schema;
+    const introspected = input.isIntrospected
+      ? input.isIntrospected(referencedDatabase)
+      : referencedDatabase === sample.table_schema;
+    // A FK into a database that wasn't introspected has no target in the
+    // artifact. Rendering it (e.g. as `public.<table>` in the default mode)
+    // would point at the wrong (or a missing) table — skip it and say so.
+    if (!introspected) {
+      warnings.push({
+        code: "cross_database_fk",
+        table: makeTableId(input.namespaceOf(sample.table_schema), sample.table_name),
+        constraint: name,
+        referencedDatabase,
+        referencedTable: sample.referenced_table_name,
+      });
+      continue;
+    }
     fks.push({
       name,
       columns: ordered.map((r) => r.column_name),
       references: {
-        // A cross-database FK keeps its referenced database; the default mode maps it to `public`.
-        schema: namespaceOf(sample.referenced_table_schema ?? sample.table_schema),
+        // A FK into another listed database keeps that database as its namespace.
+        schema: input.namespaceOf(referencedDatabase),
         table: sample.referenced_table_name,
         columns: ordered.map((r) => r.referenced_column_name),
       },

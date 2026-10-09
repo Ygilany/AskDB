@@ -53,6 +53,21 @@ const result = await introspect(
 
 The connector input shape (`PostgresIntrospectionInput`) lives in this package — `@askdb/introspect` is engine-agnostic and does not know about live vs. from-export modes.
 
+Declarative partitions are folded into their partitioned parent ([ADR 0003](../../docs/adrs/0003-postgres-partition-handling.md)): partition leaves are not listed as tables, and per-partition clones of foreign keys (on either side of the constraint) are not rendered as relationships.
+
+### Connection labels
+
+`postgresConnectorProvider` parses a connection into display-safe parts, so a connector registry's `connectionLabel()` shows only the host, port and database of a `postgres://` or `postgresql://` URL as `pg-connection-string` (the parser `pg` uses, a dependency of this package) reads them, including a `?host=` override, or an export bundle's path. Anything else (a libpq `key=value` string, a JDBC or malformed URL) becomes `configured postgres connection`:
+
+```ts
+import { createConnectorRegistry } from "@askdb/connectors";
+import { postgresConnectorProvider } from "@askdb/postgres";
+
+const registry = createConnectorRegistry([postgresConnectorProvider]);
+registry.connectionLabel("postgres", { url: "postgres://app:S3cret@db:5432/app?sslmode=require" }); // "postgres://db:5432/app"
+registry.connectionLabel("postgres", { url: "jdbc:postgresql://app:S3cret@db/app" }); // "configured postgres connection"
+```
+
 ## License
 
 Apache-2.0 © [Yahya Gilany](https://yahyagilany.io). See [LICENSE](./LICENSE) and [NOTICE](./NOTICE).

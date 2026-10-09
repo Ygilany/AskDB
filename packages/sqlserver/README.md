@@ -73,6 +73,13 @@ const result = await introspect(
 | Prisma `sqlserver://` | `sqlserver://localhost:1433;database=MyDb;user=sa;password=pass;encrypt=true` |
 | ADO.NET (`Key=Value;`) | `Server=localhost,1433;Database=MyDb;User Id=sa;Password=pass;` |
 
+In the Prisma form, wrap a value that contains `;` in curly braces, as Prisma does: `password={Pass:Word;}` is `Pass:Word;`. AskDB reads braces this way only where its earlier parser couldn't read the value, so strings that worked before keep connecting with the same values:
+
+- A value is an escape when it starts with `{`, has a `;` before its first `}`, and ends at the first `}` that is followed only by blanks and then a `;` or the end of the string, where the `;`-separated piece that ends at that `}` has no `=`. Everything between the braces is the value, read verbatim: `{{a;b}}` is `{a;b}`.
+- Any other brace is a plain character, as before: `password={abc}` is `{abc}`, and a `{` that is never closed is part of the value.
+- Prisma reads every `{…}` as an escape, so a URL shared with Prisma that braces a value without a `;` (such as `password={Pass:Word}`) reaches SQL Server with its braces when AskDB connects.
+- Prisma's credential keys `username`, `uid` and `pwd` are also read when `user` or `password` is absent (`username` before `uid`); the canonical key wins when both are set.
+
 **TLS / self-signed certificates**
 
 SQL Server uses TLS by default. If you connect to a local or dev instance with a self-signed certificate you will see a `self-signed certificate` error unless you tell the driver to trust it:
@@ -92,9 +99,13 @@ SQL Server uses TLS by default. If you connect to a local or dev instance with a
 
 > **Never set `TrustServerCertificate=True` in production** unless you have verified the server's certificate through another means. Use a properly signed certificate, or install the CA cert in the system trust store (`NODE_EXTRA_CA_CERTS` / `--use-system-ca`).
 
+**Labels for display**
+
+`sqlServerConnectorProvider` parses a connection into display-safe parts, so a connector registry's `connectionLabel()` shows only the host, port and database from any of the three formats: `Server=localhost,1433;Database=app;User Id=sa;Password=pass;` becomes `sqlserver://localhost:1433/app`. The parts come from the same code the connection uses: `resolveConnectionInput()` for `mssql://` and `sqlserver://`, and `@tediousjs/connection-string` (the parser `mssql` uses, a dependency of this package) for ADO.NET strings, so the label names the host and database the driver will use. A string the driver rejects, a named instance or pipe, an `@` in the `sqlserver://` form, a `sqlserver://` string that can be read more than one way (it holds a `{`, a quote, a piece without `=`, or an empty piece before another one), or JDBC becomes `configured sqlserver connection`.
+
 ## Captured metadata
 
-Tables, views, columns (SQL Server native type strings), primary keys, unique constraints, foreign keys (with referential actions), and indexes.
+Tables, views, columns (SQL Server native type strings), primary keys, unique constraints, foreign keys (with referential actions), and indexes. Objects shipped by SQL Server itself (`is_ms_shipped = 1`, e.g. replication `MS*` tables) are excluded.
 
 ## License
 
