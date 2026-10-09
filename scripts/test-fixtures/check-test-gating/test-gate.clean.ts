@@ -25,3 +25,4 @@ it("an options object nested in a body's closure", () => {
   expect(options).toBeDefined();
 });
 it("plain options merged", Object.assign({}, { timeout: 5_000 }), () => {});
+it("a string pick after the name", () => {}, process.env.CI ? "a" : "b");

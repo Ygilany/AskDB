@@ -1,5 +1,6 @@
-// The pnpm workspace reader for scripts/check-test-gating.mjs: which package directories to scan.
-import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
+// The pnpm workspace reader for scripts/check-test-gating.mjs: which package directories to scan,
+// and which test files in them.
+import { existsSync, readdirSync, readFileSync, realpathSync, statSync } from "node:fs";
 import { join } from "node:path";
 
 // Glob syntax pnpm accepts (`*`, `?`, `[…]`, `{…}`, extglobs such as `@(a|b)`); only a trailing
@@ -54,7 +55,7 @@ export function workspaceDirs(root) {
  * What directory entry `entry` at `path` is, following a symbolic link: "dir", "file", or undefined
  * for a dangling or looping link.
  */
-export function entryTarget(entry, path) {
+function entryTarget(entry, path) {
   if (entry.isSymbolicLink()) return linkTarget(path);
   return entry.isDirectory() ? "dir" : "file";
 }
@@ -66,5 +67,23 @@ function linkTarget(path) {
     return stat.isDirectory() ? "dir" : stat.isFile() ? "file" : undefined;
   } catch {
     return undefined;
+  }
+}
+
+// What the root vitest.config.ts and Vitest's defaults exclude; anything else Vitest would run.
+const SKIP_DIRS = new Set(["node_modules", "dist", ".git"]);
+
+// Follows symbolic links to directories, as Vitest does, visiting each real directory once.
+export function* walk(dir, seen = new Set()) {
+  const real = realpathSync(dir);
+  if (seen.has(real)) return;
+  seen.add(real);
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    if (SKIP_DIRS.has(entry.name)) continue;
+    const path = join(dir, entry.name);
+    const target = entryTarget(entry, path);
+    // A dangling link named like a test (an editor's `.#a.test.ts` lock) is no test file.
+    if (target === "dir") yield* walk(path, seen);
+    else if (target === "file" && /\.test\.tsx?$/.test(entry.name)) yield path;
   }
 }

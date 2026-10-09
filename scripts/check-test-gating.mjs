@@ -34,7 +34,7 @@
 //   // check-test-gating-ignore-next-line: <reason>
 //
 // Usage: node scripts/check-test-gating.mjs [repo-root]
-import { readdirSync, readFileSync, existsSync, realpathSync } from "node:fs";
+import { readFileSync, existsSync, realpathSync } from "node:fs";
 import { dirname, join, relative } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
@@ -82,14 +82,14 @@ const {
   testFnName,
 } = await import(moduleUrl("bindings.mjs"));
 const { readsPickedValue, rowsPicked, underCondition } = await import(moduleUrl("conditions.mjs"));
-const { workspaceDirs, entryTarget } = await import(moduleUrl("workspace.mjs"));
+const { workspaceDirs, walk } = await import(moduleUrl("workspace.mjs"));
 
 // Function-protocol links that call the function indirectly, so the check can't read the call.
 const INDIRECT_LINKS = new Set(["call", "apply", "bind"]);
 
 /** Whether `ref` gates by a link in `gateLinks`, a run-time modifier, or its options argument. */
 function gatedByHand(ref, gateLinks) {
-  return ref.links.some((l) => gateLinks.has(l)) || ref.computed || ref.runtimeGate;
+  return ref.links.some((l) => gateLinks.has(l)) || ref.runtimeModifier || ref.runtimeGate;
 }
 
 export const RULES = [
@@ -158,7 +158,7 @@ function isReadableNamespaceUse(id) {
 /** A ref with nothing to report, for `testRef` and `unreadableRef` to fill in. */
 function emptyRef(start) {
   return {
-    suite: false, links: [], computed: false, chain: start, invoked: false, unreadable: false,
+    suite: false, links: [], runtimeModifier: false, chain: start, invoked: false, unreadable: false,
     conditional: false, runtimeGate: false, line: lineOf(start),
   };
 }
@@ -195,7 +195,7 @@ function isValueReference(id) {
  */
 function testRef(start, fnName, bindings) {
   const links = [];
-  let computed = false;
+  let runtimeModifier = false;
   let extendCallPending = false;
   let chain = start;
   for (;;) {
@@ -211,7 +211,7 @@ function testRef(start, fnName, bindings) {
     const name = linkName(up);
     if (name === undefined) {
       // `describe[expr]`: a modifier chosen at run time can't be classified, so it fails closed.
-      computed = true;
+      runtimeModifier = true;
       chain = up;
       break;
     }
@@ -247,7 +247,7 @@ function testRef(start, fnName, bindings) {
     ...emptyRef(start),
     suite,
     links,
-    computed,
+    runtimeModifier,
     chain,
     invoked: call !== undefined,
     // `const t = it.each(rows)` stores the function that defines the tests, which the check can't follow.
@@ -312,11 +312,14 @@ function hasGateOption(call, suite) {
       }
     }
   };
-  const visitNested = (node) => {
+  // A literal under a pick's branch (`Object.assign({}, url ? {} : { skip: true })`) is chosen.
+  const visitNested = (node, chosen) => {
     if (ts.isFunctionLike(node)) return;
+    const branches = pickBranches(node);
     ts.forEachChild(node, (child) => {
-      if (ts.isObjectLiteralExpression(child)) visit(child, false);
-      visitNested(child);
+      const childChosen = chosen || branches.includes(child);
+      if (ts.isObjectLiteralExpression(child)) visit(child, childChosen);
+      visitNested(child, childChosen);
     });
   };
   for (const [i, arg] of call.arguments.entries()) {
@@ -332,7 +335,7 @@ function hasGateOption(call, suite) {
     visit(arg, false);
     // `[{ skip: cond }][0]`, `Object.assign({}, { skip: cond })`: options literals inside the
     // argument, outside a nested function (the body).
-    if (i > 0) visitNested(arg);
+    if (i > 0) visitNested(arg, false);
   }
   return gate;
 }
@@ -447,24 +450,6 @@ export function findGates(src, fileName = "file.test.ts", { isIntegrationModule 
   return [...flagged]
     .sort((a, b) => a[0] - b[0])
     .map(([line, rule]) => ({ line, rule: rule.id, why: rule.why }));
-}
-
-// What the root vitest.config.ts and Vitest's defaults exclude; anything else Vitest would run.
-const SKIP_DIRS = new Set(["node_modules", "dist", ".git"]);
-
-// Follows symbolic links to directories, as Vitest does, visiting each real directory once.
-function* walk(dir, seen = new Set()) {
-  const real = realpathSync(dir);
-  if (seen.has(real)) return;
-  seen.add(real);
-  for (const entry of readdirSync(dir, { withFileTypes: true })) {
-    if (SKIP_DIRS.has(entry.name)) continue;
-    const path = join(dir, entry.name);
-    const target = entryTarget(entry, path);
-    // A dangling link named like a test (an editor's `.#a.test.ts` lock) is no test file.
-    if (target === "dir") yield* walk(path, seen);
-    else if (target === "file" && /\.test\.tsx?$/.test(entry.name)) yield path;
-  }
 }
 
 function main() {

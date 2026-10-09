@@ -58,3 +58,5 @@ it("options behind an instantiation expression", { skip: !process.env.DATABASE_U
 it("options read out of an array", [{ skip: !process.env.DATABASE_URL }][0], () => {}); // HIT
 it("options merged by Object.assign", Object.assign({}, { skip: !process.env.DATABASE_URL }), () => {}); // HIT
 it("options read off an object", { o: { todo: !process.env.DATABASE_URL } }.o, () => {}); // HIT
+it("options picked inside Object.assign", Object.assign({}, process.env.DATABASE_URL ? {} : { skip: true }), () => {}); // HIT
+it("options picked inside structuredClone", structuredClone(!process.env.DATABASE_URL && { fails: true }), () => {}); // HIT

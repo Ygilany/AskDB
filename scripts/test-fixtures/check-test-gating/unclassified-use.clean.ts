@@ -27,3 +27,6 @@ it: for (;;) {
 let qualified: Foo.it;
 const selfRef = selfRef.extend({});
 selfRef("a cycle resolves to nothing", run);
+interface Gate { name: string }
+const Gate = integrationSuite({ env: ["DATABASE_URL"] });
+Gate("an interface merged with a sanctioned gate", () => {});
