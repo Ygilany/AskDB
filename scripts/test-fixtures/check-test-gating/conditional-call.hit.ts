@@ -131,3 +131,7 @@ for (const u of String.raw`${process.env.DATABASE_URL ?? ""}`.split("")) describ
 new Foo(class { field = describe("a class expression's instance field passed to a call", run); }); // HIT
 [["pg"]].values().map(([e]) => describe(`a lazy iterator map taken by a pick ${e}`, run)).take(process.env.DATABASE_URL ? 1 : 0).toArray(); // HIT
 [["pg"]].values().map(([e]) => describe(`a lazy map drained by a picked method ${e}`, run))[process.env.DATABASE_URL ? "toArray" : "return"](); // HIT
+[process.env.PG_URL ? "pg" : null, "sqlite"].filter(Boolean).forEach((e) => describe(`forEach over a filtered pick ${e}`, run)); // HIT
+for (const e of [process.env.PG_URL ? "pg" : null, "sqlite"].filter(Boolean)) describe(`for-of over a filtered pick ${e}`, run); // HIT
+for (let i = process.env.DATABASE_URL ? 0 : 1; i < 1; i++) describe("a for initializer holding a pick", run); // HIT
+for (let i = 0, n = process.env.DATABASE_URL ? 1 : 0; i < n; i++) describe("a for initializer bound by a pick", run); // HIT

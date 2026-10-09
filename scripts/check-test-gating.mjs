@@ -27,8 +27,9 @@
 //
 // What is rejected and allowed is listed in CONTRIBUTING.md ("Integration Tests"); RULES below
 // implements it, and ADR 0019 (docs/adrs/0019-test-gating-check-parses-with-typescript.md) records
-// why and lists what the check can't see. A use the check can't read fails closed rather than
-// passing.
+// why and lists what the check can't see (among them an early `return`, a gate inside a helper
+// called under a condition, options or a body in a variable, and `ctx.skip()`). A use the check
+// can't read fails closed rather than passing.
 // To exempt one line, put a line comment on the line above it with a non-empty reason:
 //   // check-test-gating-ignore-next-line: <reason>
 //
@@ -54,6 +55,7 @@ const {
   memberOn,
   isPlainAssignment,
   isVariableInitializer,
+  invokedBy,
 } = await import(moduleUrl("ast.mjs"));
 const {
   EXTENDERS,
@@ -62,7 +64,6 @@ const {
   GATE_LINKS,
   SUITE_GATE_LINKS,
   SUITE_FNS,
-  suiteBodyUnreadable,
   kindOf,
   KIND_FN,
   KIND_SUITE_FACTORY,
@@ -76,7 +77,7 @@ const {
   testFnName,
 } = await import(moduleUrl("bindings.mjs"));
 const { rowsPicked, underCondition } = await import(moduleUrl("conditions.mjs"));
-const { argumentsGate, optionsUnreadable } = await import(moduleUrl("arguments.mjs"));
+const { argumentsGate, optionsUnreadable, suiteBodyUnreadable } = await import(moduleUrl("arguments.mjs"));
 const { workspaceDirs, walk } = await import(moduleUrl("workspace.mjs"));
 
 // Function-protocol links that call the function indirectly, so the check can't read the call.
@@ -223,8 +224,8 @@ function testRef(start, fnName, bindings) {
     call = p;
     // `.each(rows)` / `.for(rows)` returns the function that defines the tests.
     const last = links[links.length - 1];
-    const outer = outermostWrapper(call).parent;
-    if (ROW_LINKS.has(last) && ts.isCallExpression(outer) && outer.expression === outermostWrapper(call)) {
+    const outer = invokedBy(call);
+    if (ROW_LINKS.has(last) && outer !== undefined) {
       // The table, or with the template form called directly (`.each(strings, ...values)`), every value.
       rowArgs = ts.isCallExpression(call) ? [...call.arguments] : [];
       call = outer;

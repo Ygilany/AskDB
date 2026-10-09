@@ -1,13 +1,13 @@
 // Whether a suite or test call runs only under a condition, and whether a value is picked at run
 // time, for scripts/check-test-gating.mjs.
 import {
+  invokedBy,
   calleeParts,
   calleeOf,
   holdsPick,
   isBinaryPick,
   isPick,
   isPlainAssignment,
-  isMemberLink,
   linkName,
   memberOn,
   optionKey,
@@ -43,6 +43,12 @@ function pickedAtRunTime(node) {
   // call or `new` over a pick, or a method of one, yields a table whose size is picked too.
   if ((ts.isCallExpression(node) || ts.isNewExpression(node)) && (node.arguments ?? []).some(pickDecidesSize)) return true;
   if (receiverOf(node) !== undefined && pickDecidesSize(receiverOf(node))) return true;
+  // `[url ? "pg" : null, "sqlite"].filter(Boolean)`: a method that can drop elements of a literal
+  // array lets a pick in any element decide the size.
+  const receiver = receiverOf(node) && resultOf(receiverOf(node));
+  if (receiver !== undefined && ts.isArrayLiteralExpression(receiver) && !SIZE_KEEPING.has(calleeParts(node)?.name)) {
+    if (receiver.elements.some(holdsPick)) return true;
+  }
   // `[a, ...(cond ? [b] : [])]`, `{ a, ...(cond ? { b } : {}) }`: how many rows there are depends on the condition.
   if (ts.isArrayLiteralExpression(node)) return node.elements.some((el) => ts.isSpreadElement(el) && pickedAtRunTime(el.expression));
   return ts.isObjectLiteralExpression(node) && node.properties.some((p) => ts.isSpreadAssignment(p) && pickedAtRunTime(p.expression));
@@ -97,13 +103,15 @@ function conditionalEdge(parent, child) {
   if (ts.isTryStatement(parent)) return child === parent.tryBlock && parent.catchClause !== undefined;
   // A loop or iteration callback over a table picked by a condition, like a `.each` table.
   if ((ts.isForOfStatement(parent) || ts.isForInStatement(parent)) && child === parent.statement) return pickedAtRunTime(parent.expression);
-  // A classic `for`, `while` or `do … while` whose condition holds a pick (`i < (url ? 1 : 0)`) runs
-  // its body, or repeats it, only when the pick allows. A condition with no pick (`while (url)`) is a
+  // A classic `for`, `while` or `do … while` whose condition (or a `for`'s initializer) holds a pick
+  // (`i < (url ? 1 : 0)`) runs its body, or repeats it, only when the pick allows. A condition with no pick (`while (url)`) is a
   // plain loop, a known limit.
   if ((ts.isForStatement(parent) || ts.isWhileStatement(parent) || ts.isDoStatement(parent)) &&
     (child === parent.statement || child === parent.incrementor)) {
     const condition = ts.isForStatement(parent) ? parent.condition : parent.expression;
-    return condition !== undefined && holdsPick(condition);
+    // `for (let i = url ? 0 : 1; i < 1; i++)`: the initializer decides the first test of the condition.
+    const initializer = ts.isForStatement(parent) ? parent.initializer : undefined;
+    return (condition !== undefined && holdsPick(condition)) || (initializer !== undefined && holdsPick(initializer));
   }
   if (receiverOf(parent) !== undefined && parent.arguments.includes(child) && pickedAtRunTime(receiverOf(parent))) return true;
   // `a?.b(arg)`, `a?.[key]`: the arguments and key run only when the chain doesn't short-circuit.
@@ -193,11 +201,14 @@ function isDeferredClassMember(member) {
 function rejectionSwallowed(call) {
   const member = memberOn(call);
   if (member === undefined) return false;
-  const handler = outermostWrapper(member).parent;
-  if (!ts.isCallExpression(handler) || handler.expression !== outermostWrapper(member)) return false;
+  const handler = invokedBy(member);
+  if (handler === undefined) return false;
   const name = linkName(member);
   return name === "catch" || (name === "then" && handler.arguments.length >= 2);
 }
+
+// Array methods that return as many elements as their receiver has.
+const SIZE_KEEPING = new Set(["map", "with", "toSorted", "toReversed", "keys", "values", "entries", "forEach"]);
 
 // Array methods whose callback runs once per element, now: parametrization, like a loop.
 const ITERATION_METHODS = new Set(["forEach", "map", "flatMap"]);
@@ -208,8 +219,8 @@ function pickLaterInChain(call) {
   const read = outermostWrapper(call).parent;
   if (ts.isElementAccessExpression(read) && read.expression === outermostWrapper(call) && holdsPick(read.argumentExpression)) return true;
   for (let member = memberOn(call); member !== undefined; ) {
-    const next = outermostWrapper(member).parent;
-    if (!ts.isCallExpression(next) || next.expression !== outermostWrapper(member)) return false;
+    const next = invokedBy(member);
+    if (next === undefined) return false;
     if (next.arguments.some(holdsPick)) return true;
     member = memberOn(next);
   }

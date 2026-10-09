@@ -103,6 +103,13 @@ export function calleeParts(call) {
   return { owner: ts.isIdentifier(receiver) ? receiver.text : undefined, name: linkName(callee) };
 }
 
+/** The call whose callee is `node`, through wrappers (`node(…)`, `(node as T)(…)`), or undefined. */
+export function invokedBy(node) {
+  const outer = outermostWrapper(node);
+  const call = outer.parent;
+  return ts.isCallExpression(call) && call.expression === outer ? call : undefined;
+}
+
 /** Whether `node` is the initializer of a variable declaration (`const x = node`). */
 export function isVariableInitializer(node) {
   return ts.isVariableDeclaration(node.parent) && node.parent.initializer === node;
@@ -185,7 +192,7 @@ export function isBinaryPick(node) {
 }
 
 /** Whether `test` holds for `node` or anything inside it, outside a nested function. */
-export function someInside(node, test) {
+function someInside(node, test) {
   if (ts.isFunctionLike(node)) return false;
   if (test(node)) return true;
   return ts.forEachChild(node, (child) => (someInside(child, test) ? true : undefined)) === true;

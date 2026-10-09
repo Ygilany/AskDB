@@ -104,3 +104,4 @@ for (;;) {
   describe("a for loop with no condition", run);
   break;
 }
+[process.env.PG_URL ? "pg" : "sqlite"].map(String).forEach((e) => describe(`map keeps the size ${e}`, run));

@@ -42,3 +42,7 @@ it("a body built by a helper with a const timeout", withDb(runDbClean), SUITE_TI
 it("a body built by a helper with an arithmetic timeout", withDb(runDbClean), 60 * 1000);
 it("a timeout parsed as a float", () => {}, parseFloat(process.env.SLOW_TIMEOUT ?? "5000"));
 it("a picked arithmetic timeout", () => {}, process.env.CI ? 60 * 1000 : 5_000);
+it("a rounded timeout", withDb(runDbClean), Math.round(5.5));
+it("a divided timeout", withDb(runDbClean), 120 / 2);
+it("a power timeout", withDb(runDbClean), 2 ** 6);
+it("a floored timeout", withDb(runDbClean), Math.floor(Math.abs(-60_000) % 70_000 + 1 - 1));

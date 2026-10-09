@@ -77,3 +77,7 @@ it("options from a helper beside a bound body", optionsFor(process.env.DATABASE_
 it("two arguments, neither clearly the body", withDb(runDb), optionsFor(process.env.DATABASE_URL)); // HIT
 describe("suite options merged by a call", Object.assign({}, { timeout: 1_000 }), () => {}); // HIT
 it("options built by a call on a call", getOpts()(process.env.DATABASE_URL), () => {}); // HIT
+function shadowedParseFloat() {
+  function parseFloat(x) { return x; }
+  it("options through a local parseFloat", parseFloat(process.env.DATABASE_URL), () => {}); // HIT
+}

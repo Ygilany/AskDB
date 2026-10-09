@@ -70,3 +70,4 @@ describe.each([["pg"]].slice(`${1}${process.env.DATABASE_URL ? 0 : 1}`))("a seco
 describe.each((process.env.DATABASE_URL ? [[1]] : [])<never>)("a picked table behind an instantiation expression %s", () => {}); // HIT
 describe("a body computed by a call", withDb(process.env.DATABASE_URL ?? ":memory:", () => {})); // HIT
 describe.each([["pg"], ["my"]].slice(...[0, process.env.DATABASE_URL ? 1 : 2]))("a mixed spread with a picked element %s", () => {}); // HIT
+describe.each([process.env.PG_URL ? "pg" : null, "sqlite"].filter(Boolean))("a table filtered over a picked element %s", () => {}); // HIT

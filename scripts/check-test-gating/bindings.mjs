@@ -1,7 +1,7 @@
 // Resolves names in a test file to Vitest's describe/suite/it/test and to integrationSuite(), for
 // scripts/check-test-gating.mjs.
 import { dirname, resolve } from "node:path";
-import { calleeOf, calleeParts, everyPickLeaf, firstParameter, isMemberLink, isPick, linkName, outermostWrapper, receiverOf, resultOf, ts, unwrap } from "./ast.mjs";
+import { calleeOf, calleeParts, firstParameter, isMemberLink, linkName, outermostWrapper, resultOf, ts, unwrap } from "./ast.mjs";
 
 const TEST_FNS = new Set(["describe", "suite", "it", "test"]);
 // What `bindings.resolve()` finds a name to be, each spelt in one place.
@@ -12,7 +12,7 @@ export const KIND_INTEGRATION_NS = "integrationNs"; // a namespace import of int
 const KIND_REQUIRE = "require"; // a function from `createRequire(…)`
 export const KIND_AMBIGUOUS = "ambiguous"; // declarations that disagree about a Vitest value
 // What `vitestCallKind()` finds a call to define.
-const CALL_SUITE = "suite";
+export const CALL_SUITE = "suite";
 const CALL_TEST = "test";
 const CALL_ROWS = "rows"; // a `.each` or `.for` call, whose body receives a table row
 export const SUITE_FNS = new Set(["describe", "suite"]);
@@ -160,7 +160,11 @@ export function isSuiteFactory(node, bindings) {
     kindOf(unwrap(node.expression), bindings) === KIND_INTEGRATION_NS;
 }
 
-/** The Vitest function `node` names (`describe`, `v.describe`, a renamed import, an `.extend` alias), or undefined. */
+/**
+ * The Vitest function `node` names (`describe`, `v.describe`, a renamed import, an `.extend` alias),
+ * or undefined. An `integrationSuite(…)` call stands for `describe`, which is how the sanctioned gate
+ * counts as a suite.
+ */
 export function testFnName(node, bindings) {
   if (suiteFactoryCall(node, bindings)) return "describe";
   if (ts.isIdentifier(node)) {
@@ -229,42 +233,8 @@ function isSuiteBody(fn, bindings) {
   return ts.isCallExpression(call) && call.arguments.includes(outer) && vitestCallKind(call, bindings) === CALL_SUITE;
 }
 
-/**
- * Whether a suite call passes a body the check can't read for the test API Vitest passes it.
- * Vitest runs the second argument when it is a function, and otherwise the third, so when the
- * second isn't known to be a function both are judged: each must be a body the check reads or a
- * value that can't be a function (options, a timeout). A body is read when it is an inline
- * function (see `isSuiteBody`), a pick (which the gate rules report), or a `const` bound to a
- * function with no parameter. Anything else fails closed: `describe("db", body)` with
- * `function body(test) {…}` or a `let`, a global, `suites.db`, `makeBody()`, `body.bind(null)`,
- * `(0, body)`, `body = …`, `await body`, and a `function` body that reads the API through
- * `arguments`. A `.each` or `.for` body receives a row, not the test API.
- */
-export function suiteBodyUnreadable(call, bindings) {
-  if (!ts.isCallExpression(call) || vitestCallKind(call, bindings) !== CALL_SUITE) return false;
-  if (call.arguments.some(ts.isSpreadElement)) return false; // reported as a spread argument list
-  const [, second, third] = call.arguments.map((arg) => unwrap(arg));
-  if (second === undefined) return false;
-  // A function second argument is the body, and Vitest rejects a function after it.
-  if (isInlineFunction(second) || constFunction(second, bindings) !== undefined) return !isReadableSuiteBody(second, bindings);
-  return [second, third].some((arg) => arg !== undefined && !isReadableSuiteBody(arg, bindings) && !isNonFunction(arg, bindings));
-}
-
-function isReadableSuiteBody(body, bindings) {
-  if (isInlineFunction(body)) return !readsArguments(body);
-  if (isPick(body)) return true;
-  const fn = constFunction(body, bindings);
-  return fn !== undefined && firstParameter(fn) === undefined && !readsArguments(fn);
-}
-
-/** The inline function a `const` name is bound to (`const body = () => {…}`), or undefined. */
-function constFunction(node, bindings) {
-  const init = ts.isIdentifier(node) ? constInitializer(node, bindings) : undefined;
-  return init !== undefined && isInlineFunction(init) ? init : undefined;
-}
-
 /** The initializer of the one `const` that declares identifier `id`, unwrapped, or undefined. */
-function constInitializer(id, bindings) {
+export function constInitializer(id, bindings) {
   const decls = bindings.declarationsOf(id);
   if (decls.length !== 1) return undefined;
   const [d] = decls;
@@ -273,72 +243,8 @@ function constInitializer(id, bindings) {
   return unwrap(d.initializer);
 }
 
-// Calls that turn a value into a number: a timeout computed from a pick, not options or a body.
-const NUMERIC_CONVERSIONS = new Set(["Number", "parseInt", "parseFloat"]);
-// `Math` methods that return a number (not `Math.constructor`, which is `Object`).
-const MATH_NUMBERS = new Set(["abs", "ceil", "floor", "max", "min", "pow", "round", "trunc"]);
-
-/** Whether `call` is `Number(…)`, `parseInt(…)`, `parseFloat(…)`, `Number.parseInt(…)` or a `Math` method. */
-export function isNumericConversion(call) {
-  const parts = calleeParts(call);
-  if (parts === undefined) return false;
-  if (parts.owner === undefined) return receiverOf(call) === undefined && NUMERIC_CONVERSIONS.has(parts.name);
-  return (parts.owner === "Math" && MATH_NUMBERS.has(parts.name)) || (parts.owner === "Number" && NUMERIC_CONVERSIONS.has(parts.name));
-}
-
-// Operators whose result is a number when both sides are.
-const ARITHMETIC = new Set([
-  ts.SyntaxKind.PlusToken, ts.SyntaxKind.MinusToken, ts.SyntaxKind.AsteriskToken,
-  ts.SyntaxKind.SlashToken, ts.SyntaxKind.PercentToken, ts.SyntaxKind.AsteriskAsteriskToken,
-]);
-
-/**
- * Whether `node` is a timeout: a number literal, arithmetic over numbers, a numeric conversion, a
- * `const` bound to one, or a pick between such values or plain strings (`5_000`, `60 * 1000`,
- * `const T = 5_000`, `Number(env ?? 60_000)`, `url ? 10_000 : 5_000`).
- */
-export function isTimeoutValue(node, bindings) {
-  return everyPickLeaf(node, (leaf) => {
-    if (ts.isNumericLiteral(leaf) || ts.isStringLiteralLike(leaf)) return true;
-    if (ts.isPrefixUnaryExpression(leaf)) return isTimeoutValue(leaf.operand, bindings);
-    if (ts.isBinaryExpression(leaf) && ARITHMETIC.has(leaf.operatorToken.kind)) {
-      return isTimeoutValue(leaf.left, bindings) && isTimeoutValue(leaf.right, bindings);
-    }
-    if (ts.isCallExpression(leaf)) return isNumericConversion(leaf);
-    const init = ts.isIdentifier(leaf) ? constInitializer(leaf, bindings) : undefined;
-    return init !== undefined && isTimeoutValue(init, bindings);
-  });
-}
-
-/**
- * Whether `node` can't be a function, in the forms a suite passes before its body: options or a
- * timeout (`{ timeout }`, `5_000`, `-1`), `undefined` or `null`, a pick between such values, or a
- * `const` bound to one.
- */
-function isNonFunction(node, bindings) {
-  return everyPickLeaf(node, (leaf) => {
-    if (ts.isObjectLiteralExpression(leaf) || leaf.kind === ts.SyntaxKind.NullKeyword) return true;
-    if (!ts.isStringLiteralLike(leaf) && isTimeoutValue(leaf, bindings)) return true;
-    if (!ts.isIdentifier(leaf)) return false;
-    if (leaf.text === "undefined" && bindings.declarationsOf(leaf).length === 0) return true;
-    const init = constInitializer(leaf, bindings);
-    return init !== undefined && isNonFunction(init, bindings);
-  });
-}
-
-function isInlineFunction(node) {
+export function isInlineFunction(node) {
   return ts.isArrowFunction(node) || ts.isFunctionExpression(node);
-}
-
-/** Whether a `function` reads its own `arguments`, where Vitest passes a suite body the test API. */
-function readsArguments(fn) {
-  if (ts.isArrowFunction(fn)) return false;
-  const visit = (node) => {
-    if (ts.isIdentifier(node) && node.text === "arguments") return true;
-    if (ts.isFunctionLike(node) && !ts.isArrowFunction(node)) return undefined;
-    return ts.forEachChild(node, visit);
-  };
-  return ts.forEachChild(fn.body, visit) === true;
 }
 
 /** The parameter a binding element destructures, through nested patterns, or undefined. */
