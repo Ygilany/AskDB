@@ -1,15 +1,16 @@
 name: Release
 
-# Automated releases with Changesets, gated on CI and a maintainer approval.
+# Automated releases with Changesets, gated on CI and the maintainer's approval of the
+# Version PR.
 #
 # Flow (see docs/release.md):
 #   1. Feature PRs land on `main` with a changeset (enforced by changesets.yml).
 #   2. CI passes on that push, which triggers this workflow. The `version` job opens or
 #      updates the "chore: version packages (beta)" PR, which applies every pending
 #      changeset (version bumps and CHANGELOG entries). It publishes nothing.
-#   3. Merging that PR puts versions on `main` that npm doesn't have yet. Once CI passes
-#      on the merge commit, `publish` waits for approval in the `npm-publish`
-#      environment, then publishes them. `tag` then creates their git tags.
+#   3. The maintainer approves and merges that PR, which puts versions on `main` that
+#      npm doesn't have yet. Once CI passes on the merge commit, `publish` publishes
+#      them with no further approval, and `tag` creates their git tags.
 #
 # Why each piece is shaped this way:
 # - `workflow_run` on `CI`, not `push`: publishing only starts after the full CI run
@@ -20,9 +21,14 @@ name: Release
 #   bases the Version PR commit on `github.sha`, which for `workflow_run` is the newest
 #   commit on `main`, not the one CI tested. When `main` has moved on, this run does
 #   nothing; the newer commit's CI run triggers the release instead.
+# - The release approval is the Version PR review. CODEOWNERS and the `main` ruleset's
+#   code-owner review keep the App-authored Version PR from merging until the
+#   maintainer approves it, and changesets.yml fails any other PR that adds a public
+#   `name@version` npm doesn't have. So a version npm doesn't have reaches `main` only
+#   through an approved Version PR, and nothing here asks again.
 # - npm auth is trusted publishing (OIDC): no npm token is stored anywhere. Only
 #   `publish` has `id-token: write`, and it runs in the `npm-publish` environment
-#   (required reviewer, `main` only). pnpm 11 does the OIDC exchange itself, and adds
+#   (`main` only, no required reviewer). pnpm 11 does the OIDC exchange itself, and adds
 #   provenance because the repo and the packages are public. Each package's trusted
 #   publisher on npmjs.com must name this file (`release.yml`) and that environment.
 # - Betas publish under the `latest` dist-tag (`--tag latest`), not the `beta` tag from
