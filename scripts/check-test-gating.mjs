@@ -275,7 +275,8 @@ function suiteResultHeld(call) {
  * discarded.
  */
 function extendResultIsTracked(chain) {
-  if (!ts.isCallExpression(chain)) return false;
+  // `integrationSuite({…}) as typeof describe`: the call through its wrappers.
+  if (!ts.isCallExpression(unwrap(chain))) return false;
   const p = chain.parent;
   return (ts.isVariableDeclaration(p) && p.initializer === chain && ts.isIdentifier(p.name)) || ts.isExpressionStatement(p);
 }
@@ -315,6 +316,8 @@ function hasGateOption(call, suite) {
   // A literal under a pick's branch (`Object.assign({}, url ? {} : { skip: true })`) is chosen.
   const visitNested = (node, chosen) => {
     if (ts.isFunctionLike(node)) return;
+    // `{ meta: { todo: "#123" } }`: Vitest reads a task's mode from its options, never from `meta`.
+    if (ts.isPropertyAssignment(node) && optionKey(node.name) === "meta") return;
     const branches = pickBranches(node);
     ts.forEachChild(node, (child) => {
       const childChosen = chosen || branches.includes(child);

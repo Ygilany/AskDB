@@ -19,3 +19,5 @@ expectFn(1);
 it("a destructured expect under a condition", () => {
   if (ready) expectFn(1);
 });
+const castTest = test.extend({ db: 1 }) as typeof test;
+castTest("an extended test behind a cast", () => {});

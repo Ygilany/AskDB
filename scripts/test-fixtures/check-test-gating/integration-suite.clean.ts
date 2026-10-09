@@ -17,3 +17,7 @@ integration.integrationSuite({ env: ["Y"] })("through a namespace import", () =>
 it("reads the flag through the namespace", () => {
   integration.isIntegrationRequired();
 });
+const castSuite = integrationSuite({ env: ["URL"] }) as typeof describe;
+castSuite("a sanctioned suite behind a cast", () => {});
+const bangSuite = integrationSuite({ env: ["URL"] })!;
+bangSuite("a sanctioned suite behind !", () => {});

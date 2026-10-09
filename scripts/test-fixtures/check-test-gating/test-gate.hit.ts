@@ -60,3 +60,7 @@ it("options merged by Object.assign", Object.assign({}, { skip: !process.env.DAT
 it("options read off an object", { o: { todo: !process.env.DATABASE_URL } }.o, () => {}); // HIT
 it("options picked inside Object.assign", Object.assign({}, process.env.DATABASE_URL ? {} : { skip: true }), () => {}); // HIT
 it("options picked inside structuredClone", structuredClone(!process.env.DATABASE_URL && { fails: true }), () => {}); // HIT
+const castExtended = test.extend({ db: 1 }) as typeof test;
+castExtended.skipIf(!process.env.DATABASE_URL)("a skipIf through a cast extend result", () => {}); // HIT
+it("options one level below the pick", Object.assign({}, process.env.DATABASE_URL ? Object.assign({}, { skip: true }) : {}), () => {}); // HIT
+it("an array read one level below the pick", Object.assign({}, process.env.DATABASE_URL ? [{ skip: true }][0] : {}), () => {}); // HIT

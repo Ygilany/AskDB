@@ -26,3 +26,4 @@ it("an options object nested in a body's closure", () => {
 });
 it("plain options merged", Object.assign({}, { timeout: 5_000 }), () => {});
 it("a string pick after the name", () => {}, process.env.CI ? "a" : "b");
+it("a fails key under meta", { meta: { fails: process.env.CI === "true" } }, () => {});
