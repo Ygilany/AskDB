@@ -526,6 +526,7 @@ export function findGates(src, fileName = "file.test.ts", { isIntegrationModule 
       const bindingKind = bindings.resolve(node)?.kind;
       const outer = outermostWrapper(node);
       if (bindingKind === "suiteFactory" && calleeOf(outer.parent) !== outer) refs.push(unreadableRef(node));
+      if (bindingKind === "ambiguous") refs.push(unreadableRef(node));
       // `I.isIntegrationRequired()` and other named members read through; `I.integrationSuite` must be called.
       const member = isMemberLink(outer.parent) && outer.parent.expression === outer ? outer.parent : undefined;
       const readable = member !== undefined && linkName(member) !== undefined &&

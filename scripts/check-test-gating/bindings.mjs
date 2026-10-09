@@ -27,7 +27,8 @@ export function vitestBindings(program, isIntegrationModule) {
   /**
    * What identifier `id` refers to: `{ kind: "fn", name }` for a Vitest function, `{ kind: "ns" }`
    * for a Vitest namespace, `{ kind: "suiteFactory" }` for `integrationSuite`, `{ kind: "require" }`
-   * for a function from `createRequire(…)`, or undefined.
+   * for a function from `createRequire(…)`, `{ kind: "ambiguous" }` for a variable whose several
+   * initializers include a Vitest one, or undefined.
    */
   bindings.resolve = (id) => {
     const parent = id.parent;
@@ -37,7 +38,8 @@ export function vitestBindings(program, isIntegrationModule) {
     if (symbol === undefined) return TEST_FNS.has(id.text) ? { kind: "fn", name: id.text } : undefined;
     if (cache.has(symbol)) return cache.get(symbol);
     cache.set(symbol, undefined); // a cycle (`const t = t.extend(…)`) resolves to nothing
-    const decl = symbol.declarations?.[0];
+    // A value and a type can share a name (`type t = …; const t = test.extend<t>(…)`); read the value.
+    const decl = symbol.valueDeclaration ?? symbol.declarations?.[0];
     let found;
     if (decl && ts.isImportSpecifier(decl) && importedFrom(decl) === "vitest") {
       const imported = (decl.propertyName ?? decl.name).text;
@@ -56,16 +58,14 @@ export function vitestBindings(program, isIntegrationModule) {
       found = { kind: "suiteFactory" };
     } else if (decl && ts.isNamespaceImport(decl) && isIntegrationModule(importedFrom(decl) ?? "")) {
       found = { kind: "integrationNs" }; // `import * as I from ".../integration.mjs"`
-    } else if (decl && ts.isVariableDeclaration(decl) && initializedDecl(symbol)) {
+    } else if (decl && ts.isVariableDeclaration(decl)) {
       // `var t = test.extend({}); var t: typeof t;` declares one variable twice; read its initializer.
-      const init = unwrap(initializedDecl(symbol).initializer);
-      // `const w = v` keeps a Vitest namespace; `const t = test.extend({…})` is a test function.
-      // `const w = v` or `const v = await import("vitest")` is a Vitest namespace; `const r =
-      // createRequire(import.meta.url)` is a `require`.
-      found = isVitestModule(init, bindings) ? { kind: "ns" } : isCreateRequireCall(init) ? { kind: "require" } : undefined;
-      // `const run = integrationSuite({…})` is a suite function; so is `const t = test.extend({…})`.
-      const fn = suiteFactoryCall(init, bindings) ? "describe" : (testFnName(init, bindings) ?? extendedFn(init, bindings));
-      if (fn !== undefined) found = { kind: "fn", name: fn };
+      // Two initializers, either of them Vitest's, can't be told apart: the name fails closed.
+      const found_ = symbol.declarations
+        .filter((d) => ts.isVariableDeclaration(d) && d.initializer)
+        .map((d) => resolveInitializer(unwrap(d.initializer), bindings));
+      if (found_.length === 1) found = found_[0];
+      else if (found_.some((f) => f?.kind === "fn" || f?.kind === "ns")) found = { kind: "ambiguous" };
     } else if (decl && ts.isBindingElement(decl) && ts.isObjectBindingPattern(decl.parent)) {
       // `const { describe } = v`, from a Vitest namespace.
       const holder = decl.parent.parent;
@@ -172,8 +172,14 @@ export function extendedFn(node, bindings) {
   return testFnName(base, bindings) ?? extendedFn(base, bindings);
 }
 
-/** The one declaration of a variable symbol that has an initializer, or undefined if none or several do. */
-function initializedDecl(symbol) {
-  const withInit = symbol.declarations.filter((d) => ts.isVariableDeclaration(d) && d.initializer);
-  return withInit.length === 1 ? withInit[0] : undefined;
+/**
+ * What a variable's initializer makes it: a Vitest namespace (`const w = v`, `await import("vitest")`),
+ * a `require` (`createRequire(…)`), or a test or suite function (`integrationSuite({…})`,
+ * `test.extend({…})`, `require("vitest").describe`).
+ */
+function resolveInitializer(init, bindings) {
+  const fn = testFnName(init, bindings) ?? extendedFn(init, bindings);
+  if (fn !== undefined) return { kind: "fn", name: fn };
+  if (isVitestModule(init, bindings)) return { kind: "ns" };
+  return isCreateRequireCall(init) ? { kind: "require" } : undefined;
 }
