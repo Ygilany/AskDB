@@ -197,7 +197,7 @@ export function isBinaryPick(node) {
 }
 
 /** Whether `test` holds for `node` or anything inside it, outside a nested function. */
-function someInside(node, test) {
+export function someInside(node, test) {
   if (ts.isFunctionLike(node)) return false;
   if (test(node)) return true;
   return ts.forEachChild(node, (child) => (someInside(child, test) ? true : undefined)) === true;
@@ -221,4 +221,27 @@ export function importedFrom(decl) {
   let n = decl;
   while (n && !ts.isImportDeclaration(n)) n = n.parent;
   return n && ts.isStringLiteral(n.moduleSpecifier) ? n.moduleSpecifier.text : undefined;
+}
+
+/**
+ * The declaration a destructured name belongs to, through nested patterns: the variable
+ * declaration or parameter (`const { a: { b } } = x` gives the `const` declaration), or undefined
+ * when `element` isn't a binding element.
+ */
+export function bindingHolder(element) {
+  if (element === undefined || !ts.isBindingElement(element)) return undefined;
+  let n = element;
+  while (ts.isBindingElement(n) || ts.isObjectBindingPattern(n) || ts.isArrayBindingPattern(n)) n = n.parent;
+  return n;
+}
+
+/**
+ * The initializer binding element `element` reads a key of directly (`k` in `const { k } = init`),
+ * or undefined when it sits in a nested or array pattern, a parameter, or a declaration with no
+ * initializer.
+ */
+export function destructuredFrom(element) {
+  const holder = bindingHolder(element);
+  return holder !== undefined && ts.isVariableDeclaration(holder) && holder.name === element.parent &&
+    ts.isObjectBindingPattern(element.parent) ? holder.initializer : undefined;
 }

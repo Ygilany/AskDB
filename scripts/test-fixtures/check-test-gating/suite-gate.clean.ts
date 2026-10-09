@@ -158,3 +158,21 @@ describe.each(pushedInOtherHooks)("a table pushed to in every other hook %s", ()
   describe.each(fromFixedHolder)("a table destructured from a fixed literal %s", () => {});
 }
 describe.each([settings.process.env.LABEL, "sqlite"].filter(Boolean))("a process member of another object %s", () => {});
+{
+  const { LABELS: { PG_URL: nestedLabel } } = process.env;
+  describe.each([nestedLabel, "sqlite"].filter(Boolean))("a name nested under an env key is not an env read %s", () => {});
+  const [fromArrayPattern] = process.env;
+  describe.each([fromArrayPattern, "sqlite"].filter(Boolean))("an array pattern reads no env key %s", () => {});
+}
+{
+  describe.each([{ name: "pg", url: process.env.PG_URL }, { name: "sqlite", url: ":memory:" }])("env read inside rows no step filters %s", () => {});
+  const plainProcessAlias = { env: {} };
+  describe.each([plainProcessAlias.env.LABEL, "sqlite"].filter(Boolean))("an object named like process holds no env %s", () => {});
+  const callNoResize = ["pg", "sqlite"];
+  if (process.env.CI) callNoResize.slice.call(callNoResize, 0);
+  describe.each(callNoResize)("a non-resizing method called through call %s", () => {});
+}
+{
+  const { process: notGlobalProcess } = settings;
+  describe.each([notGlobalProcess.env.LABEL, "sqlite"].filter(Boolean))("process destructured from another object %s", () => {});
+}

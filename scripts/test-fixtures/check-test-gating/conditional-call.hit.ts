@@ -159,3 +159,13 @@ for (const k in forInTables) describe(k, () => {}); // HIT
   const { PG_URL: loopDefaulted = "" } = process.env;
   for (const e of [loopDefaulted, "sqlite"].filter(Boolean)) describe(e, () => {}); // HIT
 }
+{
+  const loopCfg = { engines: process.env.PG_URL ? ["pg"] : [] };
+  const { engines: loopEngines } = loopCfg;
+  for (const e of loopEngines) describe(e, () => {}); // HIT
+}
+{
+  const loopUrl = process.env.DATABASE_URL;
+  const loopRows = [{ name: "pg", url: loopUrl }, { name: "sqlite", url: ":memory:" }];
+  for (const e of loopRows.filter((e) => e.url)) describe(e.name, () => {}); // HIT
+}

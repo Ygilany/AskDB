@@ -250,3 +250,58 @@ describe.each([processNs.env.PG_URL, "sqlite"].filter(Boolean))("env through a n
   if (process.env.PG_URL) { var onlyBranchVar = ["pg", "sqlite"]; }
   describe.each(onlyBranchVar)("a var declared only under an if %s", () => {}); // HIT
 }
+{
+  const cfgHolder = { engines: process.env.PG_URL ? ["pg"] : [] };
+  const { engines: viaConstHolder } = cfgHolder;
+  describe.each(viaConstHolder)("a table destructured from a const holding a pick %s", () => {}); // HIT
+}
+{
+  describe.each([{ name: "pg", url: process.env.PG_URL }, { name: "sqlite", url: ":memory:" }].filter((e) => e.url))("env read inside an object row %s", () => {}); // HIT
+  const objectRows = [{ name: "pg", url: process.env.PG_URL }, { name: "sqlite", url: ":memory:" }];
+  describe.each(objectRows.filter((e) => e.url))("env read inside a const table's object row %s", () => {}); // HIT
+  describe.each([["pg", process.env.PG_URL], ["sqlite", ":memory:"]].filter(([, u]) => u))("env read inside a tuple row %s", () => {}); // HIT
+  describe.each(Object.entries({ pg: { url: process.env.PG_URL }, sqlite: { url: ":memory:" } }).filter(([, c]) => c.url))("env read inside an object value %s", () => {}); // HIT
+  describe.each([process.env.PG_URL?.trim(), "sqlite"].filter(Boolean))("env read under a method call %s", () => {}); // HIT
+  const trimmedUrl = process.env.PG_URL?.trim();
+  describe.each([trimmedUrl, "sqlite"].filter(Boolean))("a const holding a trimmed env read %s", () => {}); // HIT
+}
+{
+  const processAlias = process;
+  describe.each([processAlias.env.PG_URL, "sqlite"].filter(Boolean))("env through a const alias of process %s", () => {}); // HIT
+  const { PG_URL: viaAliasEnv } = processAlias.env;
+  describe.each([viaAliasEnv, "sqlite"].filter(Boolean))("env destructured through a process alias %s", () => {}); // HIT
+  const { process: fromGlobalThis } = globalThis;
+  describe.each([fromGlobalThis.env.PG_URL, "sqlite"].filter(Boolean))("process destructured from globalThis %s", () => {}); // HIT
+}
+{
+  const pushedByCall = ["sqlite"];
+  if (process.env.PG_URL) pushedByCall.push.call(pushedByCall, "pg");
+  describe.each(pushedByCall)("a table pushed to through call under an if %s", () => {}); // HIT
+  const pushedByApply = ["sqlite"];
+  if (process.env.PG_URL) pushedByApply.push.apply(pushedByApply, ["pg"]);
+  describe.each(pushedByApply)("a table pushed to through apply under an if %s", () => {}); // HIT
+  const aliasedTable = ["sqlite"];
+  const tableAlias = aliasedTable;
+  if (process.env.PG_URL) tableAlias.push("pg");
+  describe.each(aliasedTable)("a table pushed to through an alias under an if %s", () => {}); // HIT
+}
+{
+  const popRows = ["pg", "sqlite"];
+  if (!process.env.PG_URL) popRows.pop();
+  describe.each(popRows)("a table resized by pop under an if %s", () => {}); // HIT
+  const shiftRows = ["pg", "sqlite"];
+  if (!process.env.PG_URL) shiftRows.shift();
+  describe.each(shiftRows)("a table resized by shift under an if %s", () => {}); // HIT
+  const unshiftRows = ["sqlite"];
+  if (process.env.PG_URL) unshiftRows.unshift("pg");
+  describe.each(unshiftRows)("a table resized by unshift under an if %s", () => {}); // HIT
+  const spliceRows = ["pg", "sqlite"];
+  if (!process.env.PG_URL) spliceRows.splice(1);
+  describe.each(spliceRows)("a table resized by splice under an if %s", () => {}); // HIT
+  const clearedSet = new Set(["pg", "sqlite"]);
+  if (!process.env.PG_URL) clearedSet.clear();
+  describe.each([...clearedSet])("a Set cleared under an if %s", () => {}); // HIT
+  const deletedMap = new Map([["pg", 1], ["sqlite", 2]]);
+  if (!process.env.PG_URL) deletedMap.delete("pg");
+  describe.each([...deletedMap])("a Map entry deleted under an if %s", () => {}); // HIT
+}

@@ -1,23 +1,26 @@
 // Whether a suite or test call runs only under a condition, and whether a value is picked at run
 // time, for scripts/check-test-gating.mjs.
 import {
-  isCallOrNew,
-  invokedBy,
-  calleeParts,
+  bindingHolder,
   calleeOf,
+  calleeParts,
   containsPick,
+  invokedBy,
   isBinaryPick,
+  isCallOrNew,
   isPick,
   isPlainAssignment,
+  isVariableInitializer,
   linkName,
   memberOn,
-  propertyKey,
   outermostWrapper,
   pickBranches,
+  propertyKey,
   receiverOf,
+  resultOf,
+  someInside,
   ts,
   unwrap,
-  resultOf,
 } from "./ast.mjs";
 import { constHolds, definesTests, isVitestHookCall, vitestCallKind } from "./bindings.mjs";
 import { isGlobalCallee, mayReadEnv } from "./globals.mjs";
@@ -63,6 +66,8 @@ function valueIsPicked(node, bindings) {
 
 // Methods that add or remove entries of the array, `Set` or `Map` they are called on.
 const SIZE_CHANGING = new Set(["push", "pop", "shift", "unshift", "splice", "add", "set", "delete", "clear"]);
+// Function-protocol links that call the method before them (`rows.push.call(rows, x)`).
+const INDIRECT_CALLS = new Set(["call", "apply"]);
 // Each declaration's settled answer, and the declarations being worked out now.
 const resized = new WeakMap();
 const resizing = new Set();
@@ -117,13 +122,20 @@ function resizes(ref, bindings) {
   if (reassigned !== undefined) return resizedBy(reassigned);
   // `rows.length = n`, `rows.length--`, `[rows.length] = [1]`, `rows[1] = "pg"`, `tables.pg = 2`, `delete tables.pg`,
   // at any depth (`config.engines.push("pg")`, `config.engines.length = 1`).
-  for (let member = memberOn(ref); member !== undefined; member = memberOn(member)) {
+  // `rows.push.call(rows, "pg")`, `rows.push.apply(rows, ["pg"])`: the method called indirectly.
+  let previous;
+  for (let member = memberOn(ref); member !== undefined; previous = member, member = memberOn(member)) {
     const outer = outermostWrapper(member);
     const written = writeOf(outer) ?? (ts.isDeleteExpression(outer.parent) ? outer.parent : undefined);
     if (written !== undefined) return resizedBy(written);
     const call = invokedBy(member);
-    if (call !== undefined) return SIZE_CHANGING.has(linkName(member)) && picksOrConditional(call);
+    if (call === undefined) continue;
+    const method = INDIRECT_CALLS.has(linkName(member)) && previous !== undefined ? linkName(previous) : linkName(member);
+    return SIZE_CHANGING.has(method) && picksOrConditional(call);
   }
+  // `const all = rows; if (url) all.push("pg")`: an alias resizes the same table.
+  const aliased = outermostWrapper(ref);
+  if (isVariableInitializer(aliased) && ts.isIdentifier(aliased.parent.name)) return resizedUnderCondition(aliased.parent.name, bindings);
   return false;
 }
 
@@ -134,12 +146,20 @@ function resizes(ref, bindings) {
 function destructuredFromPick(node, bindings) {
   if (!ts.isIdentifier(node)) return false;
   const [d, ...rest] = bindings.declarationsOf(node);
-  if (d === undefined || rest.length > 0 || !ts.isBindingElement(d)) return false;
-  let holder = d.parent;
-  while (holder && !ts.isVariableDeclaration(holder)) holder = holder.parent;
-  if (holder?.initializer === undefined) return false;
+  const holder = rest.length === 0 ? bindingHolder(d) : undefined;
+  if (holder === undefined || !ts.isVariableDeclaration(holder) || holder.initializer === undefined) return false;
   const init = resultOf(holder.initializer);
-  return valueIsPicked(init, bindings) || ((ts.isArrayLiteralExpression(init) || ts.isObjectLiteralExpression(init)) && containsPick(init));
+  return valueIsPicked(init, bindings) || holdsPickedLiteral(init, bindings);
+}
+
+/**
+ * Whether `value` is an array or object literal holding a pick, inline (`{ engines: url ? … : … }`)
+ * or through the `const` that holds it. A read of it (`cfg.engines`) or a destructuring of it may
+ * get the picked part.
+ */
+function holdsPickedLiteral(value, bindings) {
+  const literalHoldsPick = (v) => (ts.isArrayLiteralExpression(v) || ts.isObjectLiteralExpression(v)) && containsPick(v);
+  return literalHoldsPick(value) || constHolds(value, bindings, (init) => literalHoldsPick(resultOf(init)));
 }
 
 /**
@@ -206,10 +226,7 @@ export function readsPickedValue(node, bindings) {
   if (key !== undefined && containsPick(key)) return true;
   const value = resultOf(object);
   // `{ engines: url ? … : … }.engines`, or the same literal held in a `const` (`cfg.engines`).
-  const literalHoldsPick = (v) => (ts.isArrayLiteralExpression(v) || ts.isObjectLiteralExpression(v)) && containsPick(v);
-  if (literalHoldsPick(value)) return true;
-  if (constHolds(value, bindings, (init) => literalHoldsPick(resultOf(init)))) return true;
-  return valueIsPicked(value, bindings);
+  return holdsPickedLiteral(value, bindings) || valueIsPicked(value, bindings);
 }
 
 /**
@@ -386,14 +403,15 @@ function carriesPick(node, bindings) {
 }
 
 /**
- * Whether table entry `node` can be dropped by a condition: it holds a pick or reads the environment
- * (`[process.env.PG_URL, process.env.MYSQL_URL].filter(Boolean)`), inline or through a `const`
- * (`const url = process.env.DATABASE_URL; [url].filter(Boolean)`).
+ * Whether table entry `node` can be dropped by a condition: it holds a pick or an environment read
+ * anywhere inside it, outside a nested function (`[process.env.PG_URL, "sqlite"]`,
+ * `[{ name: "pg", url: process.env.PG_URL }]`, `[process.env.PG_URL?.trim()]`), inline or through a
+ * `const` (`const url = process.env.DATABASE_URL; [{ name: "pg", url }]`).
  */
 function decidesEntry(node, bindings) {
   node = resultOf(node);
-  if (containsPick(node) || mayReadEnv(node, bindings)) return true;
-  return constHolds(node, bindings, (init) => decidesEntry(init, bindings));
+  if (containsPick(node)) return true;
+  return someInside(node, (n) => mayReadEnv(n, bindings) || constHolds(n, bindings, (init) => decidesEntry(init, bindings)));
 }
 
 /** Whether object literal `node` has a computed key holding a pick (`{ [url ? "pg" : "x"]: 1 }`). */

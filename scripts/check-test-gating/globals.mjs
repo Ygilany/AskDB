@@ -1,7 +1,7 @@
 // Globals and the environment, for scripts/check-test-gating.mjs: whether a name is the global it
 // spells (`Number`, `Array`, `undefined`), and whether a value reads `process.env`. Separate from
 // bindings.mjs, which resolves names to Vitest.
-import { importedFrom, isMemberLink, linkName, propertyKey, ts, unwrap } from "./ast.mjs";
+import { bindingHolder, destructuredFrom, importedFrom, isMemberLink, linkName, propertyKey, ts, unwrap } from "./ast.mjs";
 import { constHolds } from "./bindings.mjs";
 
 /**
@@ -21,8 +21,8 @@ export function isGlobalName(id, bindings) {
 export function isEnvRead(node, bindings) {
   if (ts.isIdentifier(node)) {
     const d = envBinding(node, bindings);
-    return d !== undefined && !d.initializer && ts.isVariableDeclarationList(d.parent.parent.parent) &&
-      (d.parent.parent.parent.flags & ts.NodeFlags.Const) !== 0;
+    const list = d !== undefined ? bindingHolder(d).parent : undefined;
+    return d !== undefined && !d.initializer && ts.isVariableDeclarationList(list) && (list.flags & ts.NodeFlags.Const) !== 0;
   }
   return isMemberLink(node) && isEnvObject(node.expression, bindings);
 }
@@ -38,9 +38,8 @@ export function mayReadEnv(node, bindings) {
 /** The binding element `id` is declared by when it is destructured from the environment (`const { PG_URL } = process.env`), or undefined. */
 function envBinding(id, bindings) {
   const [d, ...rest] = bindings.declarationsOf(id);
-  const holder = d?.parent?.parent;
-  return d !== undefined && rest.length === 0 && ts.isBindingElement(d) && !d.dotDotDotToken && ts.isObjectBindingPattern(d.parent) &&
-    ts.isVariableDeclaration(holder) && holder.initializer !== undefined && isEnvObject(holder.initializer, bindings) ? d : undefined;
+  const init = d !== undefined && rest.length === 0 && !d.dotDotDotToken ? destructuredFrom(d) : undefined;
+  return init !== undefined && isEnvObject(init, bindings) ? d : undefined;
 }
 
 /**
@@ -55,9 +54,8 @@ function isEnvObject(node, bindings) {
     const [d, ...rest] = bindings.declarationsOf(node);
     if (d !== undefined && rest.length === 0 && ts.isImportSpecifier(d) && (d.propertyName ?? d.name).text === "env" &&
       PROCESS_MODULES.has(importedFrom(d))) return true;
-    if (d !== undefined && rest.length === 0 && ts.isBindingElement(d) && propertyKey(d.propertyName ?? d.name) === "env" &&
-      ts.isObjectBindingPattern(d.parent) && ts.isVariableDeclaration(d.parent.parent) && d.parent.parent.initializer !== undefined &&
-      isProcessObject(d.parent.parent.initializer, bindings)) return true;
+    const init = d !== undefined && rest.length === 0 ? destructuredFrom(d) : undefined;
+    if (init !== undefined && propertyKey(d.propertyName ?? d.name) === "env" && isProcessObject(init, bindings)) return true;
     return constHolds(node, bindings, (init) => isEnvObject(init, bindings));
   }
   if (!isMemberLink(node) || linkName(node) !== "env") return false;
@@ -68,8 +66,9 @@ function isEnvObject(node, bindings) {
 const PROCESS_MODULES = new Set(["process", "node:process"]);
 
 /**
- * Whether `node` is Node's `process`: the global (also as `globalThis.process` or `global.process`),
- * or a default or namespace import of `"process"` / `"node:process"`.
+ * Whether `node` is Node's `process`: the global (also as `globalThis.process`, `global.process` or
+ * `const { process } = globalThis`), a default or namespace import of `"process"` / `"node:process"`,
+ * or a `const` bound to one.
  */
 function isProcessObject(node, bindings) {
   node = unwrap(node);
@@ -78,9 +77,18 @@ function isProcessObject(node, bindings) {
     return ts.isIdentifier(holder) && ["globalThis", "global"].includes(holder.text) && isGlobalName(holder, bindings);
   }
   if (!ts.isIdentifier(node)) return false;
-  const decls = bindings.declarationsOf(node);
-  if (decls.length === 0) return node.text === "process";
-  return decls.length === 1 && (ts.isImportClause(decls[0]) || ts.isNamespaceImport(decls[0])) && PROCESS_MODULES.has(importedFrom(decls[0]));
+  const [d, ...rest] = bindings.declarationsOf(node);
+  if (d === undefined) return node.text === "process";
+  if (rest.length > 0) return false;
+  if ((ts.isImportClause(d) || ts.isNamespaceImport(d)) && PROCESS_MODULES.has(importedFrom(d))) return true;
+  // `const { process: p } = globalThis`
+  const init = destructuredFrom(d);
+  if (init !== undefined && propertyKey(d.propertyName ?? d.name) === "process") {
+    const holder = unwrap(init);
+    return ts.isIdentifier(holder) && ["globalThis", "global"].includes(holder.text) && isGlobalName(holder, bindings);
+  }
+  // `const p = process`
+  return constHolds(node, bindings, (value) => isProcessObject(value, bindings));
 }
 
 /**

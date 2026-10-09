@@ -1,7 +1,7 @@
 // Resolves names in a test file to Vitest's describe/suite/it/test and to integrationSuite(), for
 // scripts/check-test-gating.mjs.
 import { dirname, resolve } from "node:path";
-import { calleeOf, calleeParts, firstParameter, importedFrom, isMemberLink, linkName, memberOn, outermostWrapper, resultOf, ts, unwrap } from "./ast.mjs";
+import { bindingHolder, calleeOf, calleeParts, destructuredFrom, firstParameter, importedFrom, isMemberLink, linkName, memberOn, outermostWrapper, resultOf, ts, unwrap } from "./ast.mjs";
 
 const TEST_FNS = new Set(["describe", "suite", "it", "test"]);
 // Vitest's `vi` object, under both names it exports (`const vi = vitest`).
@@ -357,9 +357,8 @@ export function isInlineFunction(node) {
 
 /** The parameter a binding element destructures, through nested patterns, or undefined. */
 function parameterOf(element) {
-  let n = element;
-  while (ts.isBindingElement(n) || ts.isObjectBindingPattern(n) || ts.isArrayBindingPattern(n)) n = n.parent;
-  return ts.isParameter(n) ? n : undefined;
+  const holder = bindingHolder(element);
+  return holder !== undefined && ts.isParameter(holder) ? holder : undefined;
 }
 
 /** Whether parameter `param` receives the test API: the first parameter of a suite body. */
@@ -414,12 +413,10 @@ function kindOfDeclaration(decl, bindings) {
   } else if (decl && ts.isBindingElement(decl) && parameterOf(decl) !== undefined) {
     // `describe("db", ({ skipIf }) => …)`: the test API taken apart, which the check can't follow.
     if (isTestApiParameter(parameterOf(decl), bindings)) found = { kind: KIND_AMBIGUOUS };
-  } else if (decl && ts.isBindingElement(decl) && ts.isObjectBindingPattern(decl.parent)) {
+  } else if (decl && destructuredFrom(decl) !== undefined) {
     // `const { describe } = v`, from a Vitest namespace.
-    const holder = decl.parent.parent;
-    const init = ts.isVariableDeclaration(holder) && holder.initializer ? unwrap(holder.initializer) : undefined;
     const key = decl.propertyName ?? decl.name;
-    if (init && resolvesToVitestModule(init, bindings) && ts.isIdentifier(key)) found = exportKind(key.text);
+    if (resolvesToVitestModule(unwrap(destructuredFrom(decl)), bindings) && ts.isIdentifier(key)) found = exportKind(key.text);
   }
   return found;
 }

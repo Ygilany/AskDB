@@ -57,3 +57,7 @@ it("a timeout converted from typeof", withDb(runDbClean), Number(typeof process.
 it("a timeout converted from a template of plain values", withDb(runDbClean), parseInt(`${process.env.SLOW ?? 5}${0}`));
 it("a timeout converted from false", withDb(runDbClean), Number(process.env.CI ? false : 0));
 it.todo("a literal todo on a test");
+it("a min timeout", withDb(runDbClean), Math.min(Number(process.env.SLOW_TIMEOUT ?? 0), 5_000));
+it("a ceil timeout", withDb(runDbClean), Math.ceil(Number(process.env.SLOW_TIMEOUT ?? 0)));
+it("a pow timeout", withDb(runDbClean), Math.pow(10, 3));
+it("a trunc timeout", withDb(runDbClean), Math.trunc(Number(process.env.SLOW_TIMEOUT ?? 0)));

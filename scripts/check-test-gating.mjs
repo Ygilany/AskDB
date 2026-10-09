@@ -28,7 +28,7 @@
 // What is rejected and allowed is listed in CONTRIBUTING.md ("Integration Tests"); RULES below
 // implements it, and ADR 0019 (docs/adrs/0019-test-gating-check-parses-with-typescript.md) records
 // why and lists what the check can't see (among them an early `return`, a gate inside a helper
-// called under a condition, options or a body in a variable, and `ctx.skip()`). A use the check
+// called under a condition, options in a variable, and `ctx.skip()`). A use the check
 // can't read fails closed rather than passing.
 // To exempt one line, put a line comment on the line above it with a non-empty reason:
 //   // check-test-gating-ignore-next-line: <reason>
