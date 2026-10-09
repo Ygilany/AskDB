@@ -240,7 +240,7 @@ export function collectRefs(sf, bindings) {
     // the call loads a module the check can't name.
     if (isDetachedLoader(node)) refs.push(unreadableRef(node));
     // `Reflect.get(vi, "importActual")`, `vi[k]`: `vi` used where the loader it reads can't be named.
-    if (ts.isIdentifier(node) && isValueReference(node) && isUnreadableViUse(node, bindings)) refs.push(unreadableRef(node));
+    if ((!ts.isIdentifier(node) || isValueReference(node)) && isUnreadableViUse(node, bindings)) refs.push(unreadableRef(node));
     // `import d = v.<name>` other than `v.describe`/`v.it`/…: an alias the check can't follow.
     if (ts.isImportEqualsDeclaration(node) && ts.isQualifiedName(node.moduleReference) && kindOf(node.name, bindings) !== KIND_FN) {
       let root = node.moduleReference;

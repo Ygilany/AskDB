@@ -33,3 +33,9 @@ Gate("an interface merged with a sanctioned gate", () => {});
 vi.fn();
 vi["useFakeTimers"]();
 function takesLocalVi(vi) { register(vi); }
+const { vi: notVitestVi } = notVitest;
+register(notVitestVi);
+const holder = { vi: () => {} };
+register(holder.vi);
+const { importActual: helperActual } = helpers;
+const { importMock: helperMock } = require("./mocks");

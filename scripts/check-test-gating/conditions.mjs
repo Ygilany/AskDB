@@ -19,10 +19,7 @@ import {
   unwrap,
   resultOf,
 } from "./ast.mjs";
-import { constInitializer, isGlobalCallee, vitestCallKind } from "./bindings.mjs";
-
-// The `const` initializers `valueIsPicked` is reading through, so a cycle of `const`s ends.
-const following = new Set();
+import { CALL_TEST, constHolds, isEnvRead, isGlobalCallee, vitestCallKind } from "./bindings.mjs";
 
 /**
  * Whether `node` (through wrappers and `await`) is picked at run time by `? :`, `&&`, `||` or `??`,
@@ -34,17 +31,10 @@ const following = new Set();
 function valueIsPicked(node, bindings) {
   node = resultOf(node);
   if (isPick(node)) return true;
-  // `const urls = url ? [url] : []; describe.each(urls)`: a `const` is judged by its initializer,
-  // once per walk (`const a = b, b = a` would loop).
-  const init = constInitializer(node, bindings);
-  if (init !== undefined && !following.has(init)) {
-    following.add(init);
-    try {
-      return valueIsPicked(init, bindings);
-    } finally {
-      following.delete(init);
-    }
-  }
+  // `const urls = url ? [url] : []; describe.each(urls)`: a `const` is judged by its initializer.
+  if (constHolds(node, bindings, (init) => valueIsPicked(init, bindings))) return true;
+  // `const engines = ["sqlite"]; if (url) engines.push("pg")`: a table resized under a condition.
+  if (resizedUnderCondition(node, bindings)) return true;
   if (readsPickedValue(node, bindings)) return true;
   // `(url ? 0 : 1) + 1`, `-(url ? 1 : 0)`, `${url ?? ""}`: arithmetic, concatenation or a template
   // over a pick is decided by it too.
@@ -66,6 +56,65 @@ function valueIsPicked(node, bindings) {
   // `[a, ...(cond ? [b] : [])]`, `{ a, ...(cond ? { b } : {}) }`: how many rows there are depends on the condition.
   if (ts.isArrayLiteralExpression(node)) return node.elements.some((el) => ts.isSpreadElement(el) && valueIsPicked(el.expression, bindings));
   return ts.isObjectLiteralExpression(node) && node.properties.some((p) => ts.isSpreadAssignment(p) && valueIsPicked(p.expression, bindings));
+}
+
+// Methods that add or remove entries of the array, `Set` or `Map` they are called on.
+const SIZE_CHANGING = new Set(["push", "pop", "shift", "unshift", "splice", "add", "delete", "clear"]);
+// Each declaration's answer, set to false while it is worked out so a walk back to it ends.
+const resized = new WeakMap();
+
+/**
+ * Whether identifier `node` names a table that some reference in the file resizes under a
+ * condition or by a pick: `if (url) rows.push(url)`, `rows.push(...(url ? [url] : []))`,
+ * `if (!url) rows.length = 0`. A table passed to a helper that resizes it is not seen.
+ */
+function resizedUnderCondition(node, bindings) {
+  if (!ts.isIdentifier(node)) return false;
+  const decls = bindings.declarationsOf(node);
+  if (decls.length !== 1) return false;
+  const [decl] = decls;
+  if (resized.has(decl)) return resized.get(decl);
+  resized.set(decl, false);
+  let found = false;
+  const visit = (n) => {
+    if (found) return;
+    if (ts.isIdentifier(n) && bindings.declarationsOf(n)[0] === decl && resizes(n, bindings)) found = true;
+    else ts.forEachChild(n, visit);
+  };
+  visit(node.getSourceFile());
+  resized.set(decl, found);
+  return found;
+}
+
+/** Whether reference `ref` resizes its table under a condition or by a pick (see `resizedUnderCondition`). */
+function resizes(ref, bindings) {
+  const member = memberOn(ref);
+  if (member === undefined || runsAfterCollection(ref, bindings)) return false;
+  const outer = outermostWrapper(member);
+  // `rows.length = n`
+  if (linkName(member) === "length" && isPlainAssignment(outer.parent) && outer.parent.left === outer) {
+    return containsPick(outer.parent.right) || underCondition(outer.parent, bindings);
+  }
+  const call = invokedBy(member);
+  if (call === undefined || !SIZE_CHANGING.has(linkName(member))) return false;
+  return call.arguments.some(containsPick) || underCondition(call, bindings);
+}
+
+// Vitest hooks, whose callbacks run after the suites and tests are collected.
+const HOOKS = new Set(["beforeAll", "beforeEach", "afterAll", "afterEach", "onTestFinished", "onTestFailed"]);
+
+/**
+ * Whether `node` sits in a test body or a hook callback, which run after Vitest has read every
+ * `.each` table, so a resize there can't change which tests exist.
+ */
+function runsAfterCollection(node, bindings) {
+  for (let n = node; n !== undefined && !ts.isSourceFile(n); n = n.parent) {
+    if (!ts.isFunctionLike(n)) continue;
+    const call = outermostWrapper(n).parent;
+    if (!ts.isCallExpression(call) || !call.arguments.includes(outermostWrapper(n))) continue;
+    if (vitestCallKind(call, bindings) === CALL_TEST || HOOKS.has(calleeParts(call)?.name)) return true;
+  }
+  return false;
 }
 
 /**
@@ -258,8 +307,13 @@ function keepsSize(node, bindings) {
 function carriesPick(node, bindings) {
   if (node === undefined) return false;
   node = resultOf(node);
-  if (ts.isArrayLiteralExpression(node)) return node.elements.some(containsPick);
-  if (ts.isObjectLiteralExpression(node)) return node.properties.some(containsPick);
+  // `[process.env.PG_URL, process.env.MYSQL_URL].filter(Boolean)`: an environment read decides an
+  // entry as a pick does.
+  const decides = (n) => containsPick(n) || isEnvRead(resultOf(n), bindings);
+  if (ts.isArrayLiteralExpression(node)) return node.elements.some(decides);
+  if (ts.isObjectLiteralExpression(node)) {
+    return node.properties.some((p) => containsPick(p) || (ts.isPropertyAssignment(p) && isEnvRead(resultOf(p.initializer), bindings)));
+  }
   if (!keepsSize(node, bindings)) return false;
   return carriesPick(isArrayFrom(node, bindings) || isObjectStatic(node, bindings) ? node.arguments[0] : receiverOf(node), bindings);
 }

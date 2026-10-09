@@ -31,3 +31,16 @@ const loaderKey = "importActual";
 const { [loaderKey]: computedLoader } = vi; // HIT
 import { vi as importedVi } from "vitest";
 const importedReflected = Reflect.get(importedVi, "importMock"); // HIT
+const nsReflected = Reflect.get(vitest.vi, "importActual"); // HIT
+vitest.vi[loaderKey]("vitest"); // HIT
+const { vi: destructuredVi } = vitest;
+const destructuredReflected = Reflect.get(destructuredVi, "importMock"); // HIT
+const requiredVi = require("vitest").vi; // HIT
+const awaitedVi = (await import("vitest")).vi; // HIT
+const inSourceVi = import.meta.vitest.vi; // HIT
+import { vitest as vitestExport } from "vitest";
+const exportReflected = Reflect.get(vitestExport, "importActual"); // HIT
+const nsVitestExport = Reflect.get(vitest.vitest, "importMock"); // HIT
+const { importActual: nsMemberActual } = vitest.vi; // HIT
+const { vi: loadedVi } = await import("vitest");
+const { importMock: aliasMock } = loadedVi; // HIT

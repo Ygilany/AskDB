@@ -142,3 +142,9 @@ _.forEach(process.env.PG_URL ? ["pg"] : [], (e) => { describe(e, () => {}); }); 
 const loopUrls = process.env.DATABASE_URL ? [process.env.DATABASE_URL] : [];
 for (const url of loopUrls) describe(url, () => {}); // HIT
 loopUrls.forEach((url) => { describe(url, () => {}); }); // HIT
+const pushedEngines = ["sqlite"];
+if (process.env.PG_URL) pushedEngines.push("pg");
+for (const e of pushedEngines) describe(e, () => {}); // HIT
+const engineSet = new Set(["sqlite"]);
+if (process.env.PG_URL) engineSet.add("pg");
+engineSet.forEach((e) => { describe(e, () => {}); }); // HIT

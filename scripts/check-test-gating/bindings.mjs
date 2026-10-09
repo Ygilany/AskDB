@@ -13,9 +13,9 @@ const KIND_REQUIRE = "require"; // a function from `createRequire(…)`
 export const KIND_AMBIGUOUS = "ambiguous"; // declarations that disagree about a Vitest value
 // What `vitestCallKind()` finds a call to define.
 export const CALL_SUITE = "suite";
-const CALL_TEST = "test";
+export const CALL_TEST = "test";
 const CALL_ROWS = "rows"; // a `.each` or `.for` call, whose body receives a table row
-export const SUITE_FNS = new Set(["describe", "suite"]);
+const SUITE_FNS = new Set(["describe", "suite"]);
 // Links whose suite body receives a table row, not the test API: `describe.each(rows)(name, (row) => …)`.
 export const ROW_LINKS = new Set(["each", "for"]);
 // Modifiers that skip a test by a condition.
@@ -50,6 +50,15 @@ function importedFrom(decl) {
  */
 export function isGlobalName(id, bindings) {
   return ts.isIdentifier(id) && bindings.declarationsOf(id).length === 0;
+}
+
+/** Whether `node` reads an environment variable from the global `process.env` (`process.env.X`, `process.env["X"]`). */
+export function isEnvRead(node, bindings) {
+  if (!isMemberLink(node)) return false;
+  const env = unwrap(node.expression);
+  if (!ts.isPropertyAccessExpression(env) || env.name.text !== "env") return false;
+  const process = unwrap(env.expression);
+  return ts.isIdentifier(process) && process.text === "process" && isGlobalName(process, bindings);
 }
 
 /**
@@ -140,31 +149,49 @@ export function isPromiseLoader(callee) {
 
 /**
  * Whether `node` takes `vi.importActual` or `vi.importMock` off its object without calling it there
- * (`const ia = vi.importActual`, `const { importActual } = vi`, `vi.importActual.call(vi, "vitest")`).
- * The module the detached loader loads isn't read, so a use like this fails closed.
+ * (`const ia = vi.importActual`, `vi.importActual.call(vi, "vitest")`). The module the detached loader
+ * loads isn't read, so a use like this fails closed. Destructuring `vi` (`const { importActual } = vi`)
+ * is `isUnreadableViUse`'s.
  */
 export function isDetachedLoader(node) {
-  if (ts.isBindingElement(node)) return PROMISE_MEMBER_LOADERS.has(optionKey(node.propertyName ?? node.name));
   if (!isMemberLink(node) || !PROMISE_MEMBER_LOADERS.has(linkName(node))) return false;
   const outer = outermostWrapper(node);
   return calleeOf(outer.parent) !== outer;
 }
 
 /**
- * Whether identifier `id` is Vitest's `vi` (the global, or imported from `"vitest"`) used other than
- * through a member written out (`vi.fn()`, `vi["mock"]`): passed on (`Reflect.get(vi, …)`), read
- * by a computed key (`vi[k]`), or destructured or aliased (`const { [k]: f } = vi`). Its loaders
- * load Vitest, so a use the check can't name fails closed.
+ * Whether `node` is Vitest's `vi` used other than through a member written out (`vi.fn()`,
+ * `vi["mock"]`): passed on (`Reflect.get(vi, …)`), read by a computed key (`vi[k]`), or destructured
+ * or aliased. Its loaders load Vitest, so a use the check can't name fails closed.
  */
-export function isUnreadableViUse(id, bindings) {
-  if (!ts.isIdentifier(id)) return false;
-  const decls = bindings.declarationsOf(id);
-  const isVi = decls.length === 0
-    ? id.text === "vi"
-    : decls.every((d) => ts.isImportSpecifier(d) && (d.propertyName ?? d.name).text === "vi" && importedFrom(d) === "vitest");
-  if (!isVi) return false;
-  const member = memberOn(id);
+export function isUnreadableViUse(node, bindings) {
+  if (!namesVi(node, bindings)) return false;
+  const member = memberOn(node);
   return member === undefined || linkName(member) === undefined;
+}
+
+// Vitest's `vi` object, under both names it exports (`const vi = vitest`).
+const VI_NAMES = new Set(["vi", "vitest"]);
+
+/**
+ * Whether `node` is Vitest's `vi` (or `vitest`, the same object): the global, an import from `"vitest"` (renamed or not), a name
+ * destructured from a Vitest module (`const { vi: m } = v`), or read off one (`v.vi`,
+ * `require("vitest").vi`, `import.meta.vitest.vi`).
+ */
+function namesVi(node, bindings) {
+  if (isMemberLink(node)) return VI_NAMES.has(linkName(node)) && resolvesToVitestModule(node.expression, bindings);
+  if (!ts.isIdentifier(node)) return false;
+  const decls = bindings.declarationsOf(node);
+  if (decls.length === 0) return VI_NAMES.has(node.text);
+  return decls.every((d) => (ts.isImportSpecifier(d) && importedFrom(d) === "vitest" && VI_NAMES.has((d.propertyName ?? d.name).text)) ||
+    destructuresVi(d, bindings));
+}
+
+/** Whether declaration `d` is `{ vi }`, `{ vi: m }` or `{ vitest }` destructured from a Vitest module. */
+function destructuresVi(d, bindings) {
+  if (!ts.isBindingElement(d) || !VI_NAMES.has(optionKey(d.propertyName ?? d.name))) return false;
+  const decl = d.parent.parent;
+  return ts.isVariableDeclaration(decl) && decl.initializer !== undefined && resolvesToVitestModule(decl.initializer, bindings);
 }
 
 /** Whether `node` is `import("vitest")` or `require("vitest")` (a string or plain template). */
@@ -242,7 +269,7 @@ function extendedFn(node, bindings) {
 /**
  * Whether a reference to Vitest function `fnName`, through `links` (the ones after its last
  * `.extend`), defines a suite: `describe(…)`, `it.describe(…)`. The one suite test for
- * `vitestCallKind` and the entry's reference walk.
+ * `vitestCallKind` and the reference walk in `refs.mjs`.
  */
 export function definesSuite(fnName, links) {
   return SUITE_FNS.has(fnName) || links.some((l) => SUITE_FNS.has(l));
@@ -299,6 +326,24 @@ export function constInitializer(node, bindings) {
   if (!ts.isVariableDeclaration(d) || !ts.isIdentifier(d.name) || !d.initializer) return undefined;
   if (!ts.isVariableDeclarationList(d.parent) || !(d.parent.flags & ts.NodeFlags.Const)) return undefined;
   return unwrap(d.initializer);
+}
+
+// The `const` initializers `constHolds` is reading through, so a cycle (`const a = b, b = a`) ends.
+const following = new Set();
+
+/**
+ * Whether `node` is a name bound by one `const` whose initializer passes `test`, reading each
+ * initializer once per walk. The one way the check follows a `const` to its value.
+ */
+export function constHolds(node, bindings, test) {
+  const init = constInitializer(node, bindings);
+  if (init === undefined || following.has(init)) return false;
+  following.add(init);
+  try {
+    return test(init);
+  } finally {
+    following.delete(init);
+  }
 }
 
 export function isInlineFunction(node) {

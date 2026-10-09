@@ -2,7 +2,7 @@
 // or build the body at run time, or pass options the check can't read. For
 // scripts/check-test-gating.mjs.
 import { calleeParts, isCallOrNew, isMemberLink, everyPickLeaf, firstParameter, containsPick, isPick, optionKey, pickBranches, receiverOf, resultOf, RUNTIME_KEY, ts, unwrap } from "./ast.mjs";
-import { CALL_SUITE, constInitializer, isGlobalCallee, isGlobalName, isInlineFunction, vitestCallKind } from "./bindings.mjs";
+import { CALL_SUITE, constHolds, constInitializer, isEnvRead, isGlobalCallee, isGlobalName, isInlineFunction, vitestCallKind } from "./bindings.mjs";
 import { readsPickedValue } from "./conditions.mjs";
 
 // Options keys that skip a test or invert its result (`fails`, which turns every failure from a
@@ -99,10 +99,11 @@ export function optionsUnreadable(call, bindings) {
  * conversion that can only produce a number (see `isPlainNumericCall`).
  */
 function builtByCall(node, bindings) {
-  return isCallLike(node) && !isPlainNumericCall(node, bindings);
+  return isCallOrTaggedTemplate(node) && !isPlainNumericCall(node, bindings);
 }
 
-function isCallLike(node) {
+/** Whether `node` is a call, `new` or tagged template: `isCallOrNew` plus `` tag`…` ``, which also calls a function. */
+function isCallOrTaggedTemplate(node) {
   return isCallOrNew(node) || ts.isTaggedTemplateExpression(node);
 }
 
@@ -136,18 +137,8 @@ function isPlainValue(node, bindings) {
     if (isEnvRead(leaf, bindings)) return true;
     if (!ts.isIdentifier(leaf)) return false;
     if (leaf.text === "undefined" && isGlobalName(leaf, bindings)) return true;
-    const init = constInitializer(leaf, bindings);
-    return init !== undefined && isPlainValue(init, bindings);
+    return constHolds(leaf, bindings, (init) => isPlainValue(init, bindings));
   });
-}
-
-/** Whether `node` reads an environment variable from the global `process.env` (`process.env.X`, `process.env["X"]`). */
-function isEnvRead(node, bindings) {
-  if (!isMemberLink(node)) return false;
-  const env = unwrap(node.expression);
-  if (!ts.isPropertyAccessExpression(env) || env.name.text !== "env") return false;
-  const process = unwrap(env.expression);
-  return ts.isIdentifier(process) && process.text === "process" && isGlobalName(process, bindings);
 }
 
 /**
@@ -158,7 +149,7 @@ function isEnvRead(node, bindings) {
  */
 function bodyBuiltFromPick(node, bindings) {
   // A numeric conversion is never a real body, so it gets no exemption here.
-  if (!isCallLike(node)) return false;
+  if (!isCallOrTaggedTemplate(node)) return false;
   const parts = ts.isTaggedTemplateExpression(node) ? [node.tag, node.template] : [...(node.arguments ?? []), receiverOf(node)];
   return parts.some((part) => part !== undefined && containsPick(part));
 }
@@ -227,8 +218,7 @@ function isNonFunction(node, bindings) {
   return everyPickLeaf(node, (leaf) => {
     if (ts.isObjectLiteralExpression(leaf)) return true;
     if (!ts.isStringLiteralLike(leaf) && isPlainValue(leaf, bindings)) return true;
-    const init = constInitializer(leaf, bindings);
-    return init !== undefined && isNonFunction(init, bindings);
+    return constHolds(leaf, bindings, (init) => isNonFunction(init, bindings));
   });
 }
 

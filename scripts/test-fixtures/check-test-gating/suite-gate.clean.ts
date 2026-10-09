@@ -83,3 +83,14 @@ const fixedEngines = ["pg", process.env.CI ? "sqlite" : "mysql"];
 describe.each(fixedEngines)("a const table with a picked element but a fixed size %s", () => {});
 const cycleA = cycleB, cycleB = cycleA;
 describe.each(cycleA)("a cycle of consts ends %s", () => {});
+const alwaysPushed = ["sqlite"];
+alwaysPushed.push("pg");
+describe.each(alwaysPushed)("a table pushed to unconditionally %s", () => {});
+describe.each([process.env.PG_URL ?? "pg", "sqlite"].map((e) => e))("env values mapped keep the size %s", () => {});
+const pushedInTest: string[] = [];
+describe.each(pushedInTest)("a table only pushed to inside a test %s", () => {
+  it("pushes", () => { if (process.env.CI) pushedInTest.push("x"); });
+});
+const pushedInHook: string[] = [];
+beforeAll(() => { if (process.env.CI) pushedInHook.push("x"); });
+describe.each(pushedInHook)("a table only pushed to in a hook %s", () => {});

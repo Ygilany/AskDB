@@ -98,3 +98,20 @@ const pickedUrls = process.env.DATABASE_URL ? [process.env.DATABASE_URL] : [];
 describe.each(pickedUrls)("a picked table held in a const %s", () => {}); // HIT
 const filteredEngines = [process.env.PG_URL ? "pg" : null, "sqlite"].filter(Boolean);
 describe.each(filteredEngines)("a filtered table held in a const %s", () => {}); // HIT
+const pushedUrls: string[] = [];
+if (process.env.DATABASE_URL) pushedUrls.push(process.env.DATABASE_URL);
+describe.each(pushedUrls)("a table pushed to under an if %s", () => {}); // HIT
+const spreadPushed = ["sqlite"];
+spreadPushed.push(...(process.env.PG_URL ? ["pg"] : []));
+describe.each(spreadPushed)("a table pushed a picked spread %s", () => {}); // HIT
+const truncated = ["pg", "sqlite"];
+if (!process.env.PG_URL) truncated.length = 1;
+describe.each(truncated)("a table truncated under an if %s", () => {}); // HIT
+describe.each([process.env.PG_URL, process.env.MYSQL_URL].filter(Boolean))("env values filtered %s", () => {}); // HIT
+describe.each(Object.values({ pg: process.env.PG_URL }).filter(Boolean))("env values in an object filtered %s", () => {}); // HIT
+const pushedInSuite: string[] = [];
+describe("a suite body runs at collection", () => { if (process.env.PG_URL) pushedInSuite.push("pg"); });
+describe.each(pushedInSuite)("a table pushed to under an if in a suite body %s", () => {}); // HIT
+const pickTruncated = ["pg", "sqlite"];
+pickTruncated.length = process.env.PG_URL ? 2 : 1;
+describe.each(pickTruncated)("a table truncated to a picked length %s", () => {}); // HIT

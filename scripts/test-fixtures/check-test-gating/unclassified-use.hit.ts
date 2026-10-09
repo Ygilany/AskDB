@@ -94,3 +94,5 @@ it("a timeout converted from another object's env", withDb(runDb), Number(other.
 it("a timeout converted from another global's env", withDb(runDb), Number(proc.env.SLOW_TIMEOUT)); // HIT
 it("a timeout converted from a process member that is a function", withDb(runDb), Number(process.hrtime.bigint)); // HIT
 describe("a string in the options slot", "not options", () => { it("q", () => {}); }); // HIT
+const timeoutCycleA = timeoutCycleB, timeoutCycleB = timeoutCycleA;
+it("a timeout converted from a cycle of consts", withDb(runDb), Number(timeoutCycleA)); // HIT
