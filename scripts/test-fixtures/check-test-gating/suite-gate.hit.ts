@@ -71,3 +71,8 @@ describe.each((process.env.DATABASE_URL ? [[1]] : [])<never>)("a picked table be
 describe("a body computed by a call", withDb(process.env.DATABASE_URL ?? ":memory:", () => {})); // HIT
 describe.each([["pg"], ["my"]].slice(...[0, process.env.DATABASE_URL ? 1 : 2]))("a mixed spread with a picked element %s", () => {}); // HIT
 describe.each([process.env.PG_URL ? "pg" : null, "sqlite"].filter(Boolean))("a table filtered over a picked element %s", () => {}); // HIT
+describe.each([process.env.PG_URL ? "pg" : null, "sqlite"].map((x) => x).filter(Boolean))("a map then filter over a picked element %s", () => {}); // HIT
+describe.each(Array.from([process.env.PG_URL ? "pg" : null, "sqlite"]).filter(Boolean))("Array.from then filter %s", () => {}); // HIT
+describe.each([...new Set(["sqlite", process.env.ENGINE ?? "sqlite"])])("a Set merging a picked engine %s", () => {}); // HIT
+describe.each(Object.keys({ [process.env.PG_URL ? "pg" : "sqlite"]: 1, sqlite: 1 }))("a picked computed key %s", () => {}); // HIT
+describe.each(Object.values({ pg: process.env.PG_URL ? "pg" : null, sqlite: "sqlite" }).filter(Boolean))("Object.values then filter %s", () => {}); // HIT

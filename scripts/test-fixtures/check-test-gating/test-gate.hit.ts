@@ -80,3 +80,10 @@ function shadowedNumbers() {
   const Math = { max: (x) => x };
   it("a body through a local Math.max", Math.max(process.env.DATABASE_URL ? async () => {} : undefined)); // HIT
 }
+function reassignedNumber() {
+  globalThis.Number = (x) => x;
+  it("a body through a reassigned Number", Number(process.env.DATABASE_URL ? async () => {} : undefined)); // HIT
+  it("a timeout slot through a reassigned Number", {}, Number(process.env.DATABASE_URL ? async () => {} : undefined)); // HIT
+}
+it("a timeout slot holding an inline function through Number", {}, Number(process.env.DATABASE_URL ? async () => {} : null)); // HIT
+it("a number as the body", Number(process.env.DATABASE_URL ? 1 : 2)); // HIT

@@ -94,10 +94,30 @@ export function optionsUnreadable(call, bindings) {
   return [1, 2].some((i) => i !== body && call.arguments[i] !== undefined && builtByCall(resultOf(call.arguments[i]), bindings));
 }
 
-/** Whether `node` is built by a call: a call, `new` or tagged template, other than a numeric conversion. */
+/**
+ * Whether `node` is built by a call: a call, `new` or tagged template, other than a numeric
+ * conversion that can only produce a number (see `isNumberCall`).
+ */
 function builtByCall(node, bindings) {
-  const built = ts.isCallExpression(node) || ts.isNewExpression(node) || ts.isTaggedTemplateExpression(node);
-  return built && !(ts.isCallExpression(node) && isNumericConversion(node, bindings));
+  return isCallLike(node) && !isNumberCall(node, bindings);
+}
+
+function isCallLike(node) {
+  return ts.isCallExpression(node) || ts.isNewExpression(node) || ts.isTaggedTemplateExpression(node);
+}
+
+/**
+ * Whether `call` is a numeric conversion none of whose arguments can be a function or `undefined`
+ * (`Number(env ?? 60_000)`), so it yields a number however `Number` is bound. With a function among
+ * them (`Number(url ? fn : undefined)` after `globalThis.Number = (x) => x`) it can yield the body.
+ */
+function isNumberCall(call, bindings) {
+  if (!ts.isCallExpression(call) || !isNumericConversion(call, bindings)) return false;
+  return call.arguments.every((arg) => everyPickLeaf(arg, (leaf) => {
+    leaf = unwrap(leaf);
+    if (isInlineFunction(leaf)) return false;
+    return !ts.isIdentifier(leaf) || (leaf.text !== "undefined" && constFunction(leaf, bindings) === undefined);
+  }));
 }
 
 /**
@@ -107,7 +127,8 @@ function builtByCall(node, bindings) {
  * (`withDb(url ?? ":memory:", fn)`, `Reflect.get([fn, undefined], url ? 0 : 1)`).
  */
 function bodyBuiltFromPick(node, bindings) {
-  if (!builtByCall(node, bindings)) return false;
+  // A numeric conversion is never a real body, so it gets no exemption here.
+  if (!isCallLike(node)) return false;
   const parts = ts.isTaggedTemplateExpression(node) ? [node.tag, node.template] : [...(node.arguments ?? []), receiverOf(node)];
   return parts.some((part) => part !== undefined && holdsPick(part));
 }
@@ -152,7 +173,7 @@ const NUMERIC_CONVERSIONS = new Set(["Number", "parseInt", "parseFloat"]);
 const MATH_NUMBERS = new Set(["abs", "ceil", "floor", "max", "min", "pow", "round", "trunc"]);
 
 /** Whether `call` is the global `Number(…)`, `parseInt(…)`, `parseFloat(…)`, `Number.parseInt(…)` or a numeric `Math` method. */
-export function isNumericConversion(call, bindings) {
+function isNumericConversion(call, bindings) {
   const parts = calleeParts(call);
   if (parts === undefined) return false;
   // `const Number = (x) => x`: a name declared in the file is not the global.
@@ -174,14 +195,14 @@ const ARITHMETIC = new Set([
  * `const` bound to one, or a pick between such values or plain strings (`5_000`, `60 * 1000`,
  * `const T = 5_000`, `Number(env ?? 60_000)`, `url ? 10_000 : 5_000`).
  */
-export function isTimeoutValue(node, bindings) {
+function isTimeoutValue(node, bindings) {
   return everyPickLeaf(node, (leaf) => {
     if (ts.isNumericLiteral(leaf) || ts.isStringLiteralLike(leaf)) return true;
     if (ts.isPrefixUnaryExpression(leaf)) return isTimeoutValue(leaf.operand, bindings);
     if (ts.isBinaryExpression(leaf) && ARITHMETIC.has(leaf.operatorToken.kind)) {
       return isTimeoutValue(leaf.left, bindings) && isTimeoutValue(leaf.right, bindings);
     }
-    if (ts.isCallExpression(leaf)) return isNumericConversion(leaf, bindings);
+    if (ts.isCallExpression(leaf)) return isNumberCall(leaf, bindings);
     const init = ts.isIdentifier(leaf) ? constInitializer(leaf, bindings) : undefined;
     return init !== undefined && isTimeoutValue(init, bindings);
   });

@@ -135,3 +135,6 @@ new Foo(class { field = describe("a class expression's instance field passed to 
 for (const e of [process.env.PG_URL ? "pg" : null, "sqlite"].filter(Boolean)) describe(`for-of over a filtered pick ${e}`, run); // HIT
 for (let i = process.env.DATABASE_URL ? 0 : 1; i < 1; i++) describe("a for initializer holding a pick", run); // HIT
 for (let i = 0, n = process.env.DATABASE_URL ? 1 : 0; i < n; i++) describe("a for initializer bound by a pick", run); // HIT
+for (const e of new Set(["sqlite", process.env.ENGINE ?? "sqlite"])) describe(`for-of over a Set with a picked engine ${e}`, run); // HIT
+new Set(["sqlite", process.env.ENGINE ?? "sqlite"]).forEach((e) => describe(`forEach over a Set with a picked engine ${e}`, run)); // HIT
+[process.env.PG_URL ? "pg" : null, "sqlite"].values().toArray().filter(Boolean).forEach((e) => describe(`iterator copy then filter ${e}`, run)); // HIT

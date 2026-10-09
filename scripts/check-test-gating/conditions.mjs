@@ -43,12 +43,11 @@ function pickedAtRunTime(node) {
   // call or `new` over a pick, or a method of one, yields a table whose size is picked too.
   if ((ts.isCallExpression(node) || ts.isNewExpression(node)) && (node.arguments ?? []).some(pickDecidesSize)) return true;
   if (receiverOf(node) !== undefined && pickDecidesSize(receiverOf(node))) return true;
-  // `[url ? "pg" : null, "sqlite"].filter(Boolean)`: a method that can drop elements of a literal
-  // array lets a pick in any element decide the size.
-  const receiver = receiverOf(node) && resultOf(receiverOf(node));
-  if (receiver !== undefined && ts.isArrayLiteralExpression(receiver) && !SIZE_KEEPING.has(calleeParts(node)?.name)) {
-    if (receiver.elements.some(holdsPick)) return true;
-  }
+  // `[url ? "pg" : null, "sqlite"].map(f).filter(Boolean)`, `new Set(["sqlite", env ?? "sqlite"])`,
+  // `Object.keys({ [url ? "pg" : "sqlite"]: 1, sqlite: 1 })`: a step that can drop or merge entries
+  // of a table holding a pick lets the pick decide its size.
+  if (dropsEntries(node) && carriesPick(tableOf(node))) return true;
+  if (isObjectStatic(node) && (node.arguments ?? []).some((arg) => keyHoldsPick(resultOf(arg)))) return true;
   // `[a, ...(cond ? [b] : [])]`, `{ a, ...(cond ? { b } : {}) }`: how many rows there are depends on the condition.
   if (ts.isArrayLiteralExpression(node)) return node.elements.some((el) => ts.isSpreadElement(el) && pickedAtRunTime(el.expression));
   return ts.isObjectLiteralExpression(node) && node.properties.some((p) => ts.isSpreadAssignment(p) && pickedAtRunTime(p.expression));
@@ -207,8 +206,56 @@ function rejectionSwallowed(call) {
   return name === "catch" || (name === "then" && handler.arguments.length >= 2);
 }
 
-// Array methods that return as many elements as their receiver has.
-const SIZE_KEEPING = new Set(["map", "with", "toSorted", "toReversed", "keys", "values", "entries", "forEach"]);
+// Array and iterator methods that return as many elements as their receiver has.
+const SIZE_KEEPING = new Set(["map", "with", "toSorted", "toReversed", "keys", "values", "entries", "forEach", "toArray"]);
+// Constructors that merge equal entries of the table they're given.
+const DEDUPING = new Set(["Set", "Map"]);
+
+/** The table a call or `new` works on: a method's receiver, or a constructor's first argument. */
+function tableOf(node) {
+  return receiverOf(node) ?? node.arguments?.[0];
+}
+
+/**
+ * Whether `node` is a step that can drop or merge entries: a method outside `SIZE_KEEPING`
+ * (`.filter`, `.slice`), or `new Set(…)` / `new Map(…)`.
+ */
+function dropsEntries(node) {
+  if (ts.isNewExpression(node)) return ts.isIdentifier(node.expression) && DEDUPING.has(node.expression.text);
+  return receiverOf(node) !== undefined && !SIZE_KEEPING.has(calleeParts(node)?.name);
+}
+
+/**
+ * Whether table `node` holds a pick in an element or property, carried through steps that keep its
+ * size (`[url ? "pg" : null].map(f)`, `Array.from([…])`, `Object.values({ pg: url ? "pg" : null })`).
+ */
+function carriesPick(node) {
+  if (node === undefined) return false;
+  node = resultOf(node);
+  if (ts.isArrayLiteralExpression(node)) return node.elements.some((el) => ts.isSpreadElement(el) ? carriesPick(el.expression) : holdsPick(el));
+  if (ts.isObjectLiteralExpression(node)) return node.properties.some(holdsPick);
+  if (!ts.isCallExpression(node)) return false;
+  if (isObjectStatic(node) || isArrayFrom(node)) return carriesPick(node.arguments[0]);
+  return SIZE_KEEPING.has(calleeParts(node)?.name) && carriesPick(receiverOf(node));
+}
+
+/** Whether object literal `node` has a computed key holding a pick (`{ [url ? "pg" : "x"]: 1 }`). */
+function keyHoldsPick(node) {
+  return ts.isObjectLiteralExpression(node) &&
+    node.properties.some((p) => p.name !== undefined && ts.isComputedPropertyName(p.name) && holdsPick(p.name));
+}
+
+/** Whether `node` is `Object.keys(…)`, `Object.values(…)` or `Object.entries(…)`. */
+function isObjectStatic(node) {
+  const parts = calleeParts(node);
+  return parts?.owner === "Object" && ["keys", "values", "entries"].includes(parts.name);
+}
+
+/** Whether `node` is `Array.from(table)` with one argument, which keeps its size. */
+function isArrayFrom(node) {
+  const parts = calleeParts(node);
+  return parts?.owner === "Array" && parts.name === "from" && node.arguments.length === 1;
+}
 
 // Array methods whose callback runs once per element, now: parametrization, like a loop.
 const ITERATION_METHODS = new Set(["forEach", "map", "flatMap"]);

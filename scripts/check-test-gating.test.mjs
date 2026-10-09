@@ -58,11 +58,18 @@ test("findGates trusts no integration module unless told which one is", () => {
 
 test("a file that does not parse throws instead of passing", () => {
   assert.throws(() => findGates('describe.skip("unterminated", () => {\n'), /does not parse at line \d+:/);
+  assert.throws(() => findGates("it('a', () => {});\nconst x = ;\n"), /does not parse at line 2: /);
   assert.throws(() => findGates("const x = <p>jsx</p>;\n", "x.test.ts"), /does not parse at line 1:/);
 });
 
 const DEFAULT_YAML =
   'packages:\n  - "packages/*"\n  # comment\n  - "!packages/excluded"\n  - "fixtures/db"\nother:\n  - "*turbo*"\n';
+
+/** Copies the check and its sibling modules into `dir`, as they sit in `scripts/`. */
+function copyCheckerTo(dir) {
+  copyFileSync(script, join(dir, "check-test-gating.mjs"));
+  cpSync(join(here, "check-test-gating"), join(dir, "check-test-gating"), { recursive: true });
+}
 
 /** A temp workspace removed after the test `t` finishes. */
 function workspace(t, testFiles, yaml = DEFAULT_YAML) {
@@ -166,8 +173,7 @@ test("CLI fails closed on a pnpm-workspace.yaml with no packages list", (t) => {
 test("CLI defaults to the repo root beside the script, not the working directory", (t) => {
   const root = workspace(t, { "packages/a/src/a.test.ts": 'describe.skip("gated", () => {});\n' });
   mkdirSync(join(root, "scripts"), { recursive: true });
-  copyFileSync(script, join(root, "scripts", "check-test-gating.mjs"));
-  cpSync(join(here, "check-test-gating"), join(root, "scripts", "check-test-gating"), { recursive: true });
+  copyCheckerTo(join(root, "scripts"));
   symlinkSync(join(here, "..", "node_modules"), join(root, "node_modules"));
   const result = spawnSync(process.execPath, [join(root, "scripts", "check-test-gating.mjs")], { encoding: "utf8", cwd: tmpdir() });
   assert.equal(result.status, 1, result.stderr);
@@ -257,8 +263,7 @@ test("CLI exits with a message naming ADR 0019 when typescript lacks the compile
   mkdirSync(join(dir, "node_modules", "typescript"), { recursive: true });
   writeFileSync(join(dir, "node_modules", "typescript", "package.json"), '{"name":"typescript","version":"7.0.0","main":"index.js"}');
   writeFileSync(join(dir, "node_modules", "typescript", "index.js"), 'module.exports = { version: "7.0.0" };');
-  copyFileSync(script, join(dir, "check-test-gating.mjs"));
-  cpSync(join(here, "check-test-gating"), join(dir, "check-test-gating"), { recursive: true });
+  copyCheckerTo(dir);
   const result = run(workspace(t, { "packages/a/src/a.test.ts": 'it("ok", () => {});\n' }), join(dir, "check-test-gating.mjs"));
   assert.equal(result.status, 1);
   assert.match(result.stderr, /needs the TypeScript 5\/6 compiler API; typescript 7\.0\.0/);
