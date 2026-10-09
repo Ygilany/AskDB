@@ -1,7 +1,20 @@
 // The reference walk of check-test-gating: finds each use of Vitest's describe/suite/it/test, or of
 // the sanctioned gate, in one parsed file and records what `RULES` (in the entry script) needs to
 // judge it. Also reads the `check-test-gating-ignore-next-line` pragmas.
-import { calleeOf, invokedBy, isMemberLink, isPlainAssignment, isVariableInitializer, isWrapper, lineOf, linkName, memberOn, outermostWrapper, ts, unwrap } from "./ast.mjs";
+import {
+  calleeOf,
+  invokedBy,
+  isMemberLink,
+  isPlainAssignment,
+  isVariableInitializer,
+  isWrapper,
+  lineOf,
+  linkName,
+  memberOn,
+  outermostWrapper,
+  ts,
+  unwrap,
+} from "./ast.mjs";
 import {
   EXTENDERS,
   MODIFIERS,

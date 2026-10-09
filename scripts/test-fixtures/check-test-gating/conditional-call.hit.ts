@@ -155,3 +155,7 @@ for (const u of varUrls) describe(u, () => {}); // HIT
 const forInTables = { sqlite: 1 };
 if (process.env.PG_URL) forInTables.pg = 2;
 for (const k in forInTables) describe(k, () => {}); // HIT
+{
+  const { PG_URL: loopDefaulted = "" } = process.env;
+  for (const e of [loopDefaulted, "sqlite"].filter(Boolean)) describe(e, () => {}); // HIT
+}

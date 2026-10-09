@@ -140,3 +140,21 @@ for (const x of plainA) plainB.push(x);
 describe.each(plainA)("two tables that read each other with no condition %s", () => {});
 import configDefault from "./config";
 describe.each([configDefault.env.LABEL, "sqlite"].filter(Boolean))("a default import from another module %s", () => {});
+const pushedInOtherHooks: string[] = [];
+beforeEach(() => { if (process.env.CI) pushedInOtherHooks.push("x"); });
+afterAll(() => { if (process.env.CI) pushedInOtherHooks.push("x"); });
+afterEach(() => { if (process.env.CI) pushedInOtherHooks.push("x"); });
+onTestFinished(() => { if (process.env.CI) pushedInOtherHooks.push("x"); });
+onTestFailed(() => { if (process.env.CI) pushedInOtherHooks.push("x"); });
+describe.each(pushedInOtherHooks)("a table pushed to in every other hook %s", () => {});
+{
+  const plainConfig = { engines: ["pg", "sqlite"] };
+  plainConfig.engines.push("mysql");
+  describe.each(plainConfig.engines)("a nested table pushed to unconditionally %s", () => {});
+  const TypedFixed = ["pg", "sqlite"];
+  type TypedFixed = string[];
+  describe.each(TypedFixed)("a fixed const beside a type of the same name %s", () => {});
+  const { engines: fromFixedHolder } = { engines: ["pg", "sqlite"] };
+  describe.each(fromFixedHolder)("a table destructured from a fixed literal %s", () => {});
+}
+describe.each([settings.process.env.LABEL, "sqlite"].filter(Boolean))("a process member of another object %s", () => {});

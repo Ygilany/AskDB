@@ -1,8 +1,23 @@
 // What a suite or test call's arguments after the name do: skip or invert through options, pick
 // or build the body at run time, or pass options the check can't read. For
 // scripts/check-test-gating.mjs.
-import { calleeParts, isCallOrNew, isMemberLink, everyPickLeaf, firstParameter, containsPick, isPick, propertyKey, pickBranches, receiverOf, resultOf, RUNTIME_KEY, ts, unwrap } from "./ast.mjs";
-import { CALL_SUITE, constHolds, constInitializer, isEnvRead, isGlobalCallee, isGlobalName, isInlineFunction, vitestCallKind } from "./bindings.mjs";
+import {
+  calleeParts,
+  isCallOrNew,
+  everyPickLeaf,
+  firstParameter,
+  containsPick,
+  isPick,
+  propertyKey,
+  pickBranches,
+  receiverOf,
+  resultOf,
+  RUNTIME_KEY,
+  ts,
+  unwrap,
+} from "./ast.mjs";
+import { CALL_SUITE, constHolds, constInitializer, isInlineFunction, vitestCallKind } from "./bindings.mjs";
+import { isEnvRead, isGlobalCallee, isGlobalName } from "./globals.mjs";
 import { readsPickedValue } from "./conditions.mjs";
 
 // Options keys that skip a test or invert its result (`fails`, which turns every failure from a

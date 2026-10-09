@@ -178,3 +178,75 @@ describe.each(orderB)("the second of two tables that read each other %s", () => 
 let loopAssigned: string[] = [];
 for (loopAssigned of [["sqlite"], ["pg"]]) {}
 describe.each(loopAssigned)("a let assigned as a for-of target %s", () => {}); // HIT
+const patternLength = ["pg", "sqlite"];
+if (!process.env.PG_URL) [patternLength.length] = [1];
+describe.each(patternLength)("a length written by array destructuring under an if %s", () => {}); // HIT
+const objectPatternLength = ["pg", "sqlite"];
+if (!process.env.PG_URL) ({ n: objectPatternLength.length } = { n: 1 });
+describe.each(objectPatternLength)("a length written by object destructuring under an if %s", () => {}); // HIT
+const loopLength = ["pg", "sqlite"];
+if (!process.env.PG_URL) for (loopLength.length of [1]) {}
+describe.each(loopLength)("a length written as a loop target %s", () => {}); // HIT
+import * as processNs from "node:process";
+describe.each([processNs.env.PG_URL, "sqlite"].filter(Boolean))("env through a namespace process import %s", () => {}); // HIT
+{
+  const { PG_URL: defaultedPgUrl = "" } = process.env;
+  describe.each([defaultedPgUrl, "sqlite"].filter(Boolean))("an env name destructured with a default, filtered %s", () => {}); // HIT
+}
+{
+  let { PG_URL: letPgUrl } = process.env;
+  describe.each([letPgUrl, "sqlite"].filter(Boolean))("an env name destructured into a let, filtered %s", () => {}); // HIT
+}
+{
+  const TypedEngines = process.env.PG_URL ? ["pg", "sqlite"] : ["sqlite"];
+  type TypedEngines = string[];
+  describe.each(TypedEngines)("a picked const beside a type of the same name %s", () => {}); // HIT
+}
+{
+  const IfaceEngines: string[] = ["sqlite"];
+  interface IfaceEngines { length: number }
+  if (process.env.PG_URL) IfaceEngines.push("pg");
+  describe.each(IfaceEngines)("a resized const beside an interface of the same name %s", () => {}); // HIT
+}
+{
+  var redeclared = ["sqlite"];
+  var redeclared = ["sqlite", "pg"];
+  describe.each(redeclared)("a var declared twice %s", () => {}); // HIT
+}
+{
+  if (process.env.PG_URL) { var branchVar = ["pg", "sqlite"]; } else { var branchVar = ["sqlite"]; }
+  describe.each(branchVar)("a var declared in each branch of an if %s", () => {}); // HIT
+}
+{
+  const config = { engines: ["sqlite"] };
+  if (process.env.PG_URL) config.engines.push("pg");
+  describe.each(config.engines)("a nested table pushed to under an if %s", () => {}); // HIT
+}
+{
+  const nestedLength = { engines: ["pg", "sqlite"] };
+  if (!process.env.PG_URL) nestedLength.engines.length = 1;
+  describe.each(nestedLength.engines)("a nested table truncated under an if %s", () => {}); // HIT
+}
+{
+  const pickedProperty = { engines: process.env.PG_URL ? ["pg", "sqlite"] : ["sqlite"] };
+  describe.each(pickedProperty.engines)("a picked property of a const object %s", () => {}); // HIT
+}
+{
+  const { engines: fromPickedHolder } = process.env.PG_URL ? { engines: ["pg"] } : { engines: [] };
+  describe.each(fromPickedHolder)("a table destructured from a picked holder %s", () => {}); // HIT
+}
+{
+  const { engines: fromLiteralPick } = { engines: process.env.PG_URL ? ["pg"] : [] };
+  describe.each(fromLiteralPick)("a table destructured from a literal holding a pick %s", () => {}); // HIT
+}
+{
+  const { env: destructuredEnv } = process;
+  describe.each([destructuredEnv.PG_URL, "sqlite"].filter(Boolean))("env destructured from process %s", () => {}); // HIT
+  describe.each([process["env"].PG_URL, "sqlite"].filter(Boolean))("process element-read env %s", () => {}); // HIT
+  describe.each([globalThis.process.env.PG_URL, "sqlite"].filter(Boolean))("globalThis.process env %s", () => {}); // HIT
+  describe.each([import.meta.env.PG_URL, "sqlite"].filter(Boolean))("import.meta.env %s", () => {}); // HIT
+}
+{
+  if (process.env.PG_URL) { var onlyBranchVar = ["pg", "sqlite"]; }
+  describe.each(onlyBranchVar)("a var declared only under an if %s", () => {}); // HIT
+}

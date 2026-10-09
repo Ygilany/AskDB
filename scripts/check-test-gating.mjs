@@ -88,7 +88,8 @@ export const RULES = [
     // a suite's result kept, options built at run time. It fails closed.
     id: "unclassified-use",
     test: (ref) => ref.unreadable || ref.links.some((l) => INDIRECT_LINKS.has(l)),
-    why: "uses describe/suite/it/test in a way the check can't read (an alias, a kept suite result, options built at run time); call it directly with literal options, or use integrationSuite()",
+    why: "uses describe/suite/it/test in a way the check can't read (an alias, a kept suite result, options built at run time); " +
+      "call it directly with literal options, or use integrationSuite()",
   },
 ];
 
@@ -97,7 +98,6 @@ function isTernaryBranch(node) {
   const p = node.parent;
   return ts.isConditionalExpression(p) && (p.whenTrue === node || p.whenFalse === node);
 }
-
 
 /**
  * Hand-rolled gates in one test file's source, one per line, under the first rule that matched.

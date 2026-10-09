@@ -215,3 +215,10 @@ export function propertyKey(name) {
   }
   return ts.isIdentifier(name) || ts.isStringLiteralLike(name) || ts.isNumericLiteral(name) ? name.text : undefined;
 }
+
+/** The module an import declaration names, through its specifier, clause or binding. */
+export function importedFrom(decl) {
+  let n = decl;
+  while (n && !ts.isImportDeclaration(n)) n = n.parent;
+  return n && ts.isStringLiteral(n.moduleSpecifier) ? n.moduleSpecifier.text : undefined;
+}

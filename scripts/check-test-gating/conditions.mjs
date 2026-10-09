@@ -19,7 +19,8 @@ import {
   unwrap,
   resultOf,
 } from "./ast.mjs";
-import { constHolds, definesTests, isEnvRead, isGlobalCallee, isVitestHookCall, vitestCallKind } from "./bindings.mjs";
+import { constHolds, definesTests, isVitestHookCall, vitestCallKind } from "./bindings.mjs";
+import { isGlobalCallee, mayReadEnv } from "./globals.mjs";
 
 /**
  * Whether `node` (through wrappers and `await`) is picked at run time by `? :`, `&&`, `||` or `??`,
@@ -33,6 +34,8 @@ function valueIsPicked(node, bindings) {
   if (isPick(node)) return true;
   // `const urls = url ? [url] : []; describe.each(urls)`: a `const` is judged by its initializer.
   if (constHolds(node, bindings, (init) => valueIsPicked(init, bindings))) return true;
+  // `const { engines } = url ? a : b`, `const { engines } = { engines: url ? … : … }`: destructured from a pick.
+  if (destructuredFromPick(node, bindings)) return true;
   // `const engines = ["sqlite"]; if (url) engines.push("pg")`: a table resized under a condition.
   if (resizedUnderCondition(node, bindings)) return true;
   if (readsPickedValue(node, bindings)) return true;
@@ -73,6 +76,8 @@ const resizing = new Set();
 function resizedUnderCondition(node, bindings) {
   if (!ts.isIdentifier(node)) return false;
   const decls = bindings.declarationsOf(node);
+  // `var rows = …; … var rows = …`: two value declarations, either of which may be the table; fail closed.
+  if (decls.length > 1) return decls.every((d) => ts.isVariableDeclaration(d));
   if (decls.length !== 1) return false;
   const [decl] = decls;
   if (resized.has(decl)) return resized.get(decl);
@@ -101,23 +106,40 @@ function resizes(ref, bindings) {
   const picksOrConditional = (write) => containsPick(write) || underCondition(write, bindings);
   // `let rows = url ? ["pg"] : []`: a `let` or `var` is judged by its initializer, as a `const` is.
   const declared = ref.parent;
+  // `if (url) { var rows = […]; } else { var rows = […]; }`: a declaration that runs only under a condition.
   if (ts.isVariableDeclaration(declared) && declared.name === ref && declared.initializer !== undefined) {
-    return valueIsPicked(declared.initializer, bindings);
+    return valueIsPicked(declared.initializer, bindings) || underCondition(declared, bindings);
   }
+  // A loop target is rewritten once per row of an iterable the check doesn't follow, so it fails closed.
+  const resizedBy = (write) => ts.isForInOrOfStatement(write) || picksOrConditional(write);
   // `rows = [...rows, "pg"]`, `[rows] = …`, `for (rows of …)`: the binding reassigned.
-  const target = assignmentTargetOf(outermostWrapper(ref));
-  if (ts.isForInOrOfStatement(target.parent) && target.parent.initializer === target) return true;
-  const reassigned = writeOf(target);
-  if (reassigned !== undefined) return picksOrConditional(reassigned);
-  const member = memberOn(ref);
-  if (member === undefined) return false;
-  // `rows.length = n`, `rows.length--`, `rows[1] = "pg"`, `tables.pg = 2`, `delete tables.pg`.
-  const outer = outermostWrapper(member);
-  const written = writeOf(outer) ?? (ts.isDeleteExpression(outer.parent) ? outer.parent : undefined);
-  if (written !== undefined) return picksOrConditional(written);
-  const call = invokedBy(member);
-  if (call === undefined || !SIZE_CHANGING.has(linkName(member))) return false;
-  return picksOrConditional(call);
+  const reassigned = writeOf(outermostWrapper(ref));
+  if (reassigned !== undefined) return resizedBy(reassigned);
+  // `rows.length = n`, `rows.length--`, `[rows.length] = [1]`, `rows[1] = "pg"`, `tables.pg = 2`, `delete tables.pg`,
+  // at any depth (`config.engines.push("pg")`, `config.engines.length = 1`).
+  for (let member = memberOn(ref); member !== undefined; member = memberOn(member)) {
+    const outer = outermostWrapper(member);
+    const written = writeOf(outer) ?? (ts.isDeleteExpression(outer.parent) ? outer.parent : undefined);
+    if (written !== undefined) return resizedBy(written);
+    const call = invokedBy(member);
+    if (call !== undefined) return SIZE_CHANGING.has(linkName(member)) && picksOrConditional(call);
+  }
+  return false;
+}
+
+/**
+ * Whether identifier `node` is destructured from a value a pick decides: the holder is picked
+ * (`const { engines } = url ? a : b`) or is a literal holding a pick (`const { engines } = { engines: url ? … : … }`).
+ */
+function destructuredFromPick(node, bindings) {
+  if (!ts.isIdentifier(node)) return false;
+  const [d, ...rest] = bindings.declarationsOf(node);
+  if (d === undefined || rest.length > 0 || !ts.isBindingElement(d)) return false;
+  let holder = d.parent;
+  while (holder && !ts.isVariableDeclaration(holder)) holder = holder.parent;
+  if (holder?.initializer === undefined) return false;
+  const init = resultOf(holder.initializer);
+  return valueIsPicked(init, bindings) || ((ts.isArrayLiteralExpression(init) || ts.isObjectLiteralExpression(init)) && containsPick(init));
 }
 
 /**
@@ -136,14 +158,22 @@ function assignmentTargetOf(node) {
   }
 }
 
-/** The assignment (`=`, `+=`, …) or `++`/`--` that writes `target`, or undefined when it only reads it. */
+/**
+ * What writes `target`: an assignment (`=`, `+=`, …) or `++`/`--` on it, the destructuring
+ * assignment it is an element of (`[target] = …`, `({ k: target } = …)`), or the `for…of`/`for…in`
+ * it is the target of. Undefined when it is only read. The one test of "is this written" for a
+ * binding, a member and a pattern's default.
+ */
 function writeOf(target) {
-  const p = target.parent;
-  if (ts.isBinaryExpression(p) && p.left === target &&
-    p.operatorToken.kind >= ts.SyntaxKind.FirstAssignment && p.operatorToken.kind <= ts.SyntaxKind.LastAssignment) return p;
   const step = [ts.SyntaxKind.PlusPlusToken, ts.SyntaxKind.MinusMinusToken];
-  if ((ts.isPrefixUnaryExpression(p) || ts.isPostfixUnaryExpression(p)) && step.includes(p.operator)) return p;
-  return undefined;
+  if ((ts.isPrefixUnaryExpression(target.parent) || ts.isPostfixUnaryExpression(target.parent)) && step.includes(target.parent.operator)) {
+    return target.parent;
+  }
+  const pattern = assignmentTargetOf(target);
+  const p = pattern.parent;
+  if (ts.isBinaryExpression(p) && p.left === pattern &&
+    p.operatorToken.kind >= ts.SyntaxKind.FirstAssignment && p.operatorToken.kind <= ts.SyntaxKind.LastAssignment) return p;
+  return ts.isForInOrOfStatement(p) && p.initializer === pattern ? p : undefined;
 }
 
 /**
@@ -175,7 +205,10 @@ export function readsPickedValue(node, bindings) {
   else return false;
   if (key !== undefined && containsPick(key)) return true;
   const value = resultOf(object);
-  if (ts.isArrayLiteralExpression(value) || ts.isObjectLiteralExpression(value)) return containsPick(value);
+  // `{ engines: url ? … : … }.engines`, or the same literal held in a `const` (`cfg.engines`).
+  const literalHoldsPick = (v) => (ts.isArrayLiteralExpression(v) || ts.isObjectLiteralExpression(v)) && containsPick(v);
+  if (literalHoldsPick(value)) return true;
+  if (constHolds(value, bindings, (init) => literalHoldsPick(resultOf(init)))) return true;
   return valueIsPicked(value, bindings);
 }
 
@@ -285,16 +318,7 @@ export function underCondition(call, bindings) {
 
 /** Whether `a = x` is an element of a destructuring assignment target, not a plain assignment. */
 function isAssignmentPatternElement(binary) {
-  let node = binary;
-  let p = node.parent;
-  if (!(ts.isArrayLiteralExpression(p) || ts.isPropertyAssignment(p))) return false;
-  while (ts.isArrayLiteralExpression(p) || ts.isObjectLiteralExpression(p) || ts.isPropertyAssignment(p) || ts.isSpreadElement(p) ||
-    ts.isParenthesizedExpression(p)) {
-    node = p;
-    p = p.parent;
-  }
-  if (isPlainAssignment(p) && p.left === node) return true;
-  return (ts.isForOfStatement(p) || ts.isForInStatement(p)) && p.initializer === node;
+  return (ts.isArrayLiteralExpression(binary.parent) || ts.isPropertyAssignment(binary.parent)) && writeOf(binary) !== undefined;
 }
 
 /** Whether a class member's body runs after the class is defined, not while it is. */
@@ -368,7 +392,7 @@ function carriesPick(node, bindings) {
  */
 function decidesEntry(node, bindings) {
   node = resultOf(node);
-  if (containsPick(node) || isEnvRead(node, bindings)) return true;
+  if (containsPick(node) || mayReadEnv(node, bindings)) return true;
   return constHolds(node, bindings, (init) => decidesEntry(init, bindings));
 }
 
@@ -380,14 +404,18 @@ function keyHoldsPick(node) {
 
 /** Whether `node` is the global `Object.keys(…)`, `Object.values(…)` or `Object.entries(…)`. */
 function isObjectStatic(node, bindings) {
-  const parts = calleeParts(node);
-  return parts?.owner === "Object" && ["keys", "values", "entries"].includes(parts.name) && isGlobalCallee(node, bindings);
+  return isGlobalStatic(node, "Object", ["keys", "values", "entries"], bindings);
 }
 
 /** Whether `node` is the global `Array.from(table)` with one argument, which keeps its size. */
 function isArrayFrom(node, bindings) {
+  return isGlobalStatic(node, "Array", ["from"], bindings) && node.arguments.length === 1;
+}
+
+/** Whether `node` calls one of `names` on the global `owner` (`Array.from`), not on a local of that name. */
+function isGlobalStatic(node, owner, names, bindings) {
   const parts = calleeParts(node);
-  return parts?.owner === "Array" && parts.name === "from" && node.arguments.length === 1 && isGlobalCallee(node, bindings);
+  return parts?.owner === owner && names.includes(parts.name) && isGlobalCallee(node, bindings);
 }
 
 // Array methods whose callback runs once per element, now: parametrization, like a loop.

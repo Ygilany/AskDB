@@ -1,7 +1,7 @@
 // Resolves names in a test file to Vitest's describe/suite/it/test and to integrationSuite(), for
 // scripts/check-test-gating.mjs.
 import { dirname, resolve } from "node:path";
-import { calleeOf, calleeParts, firstParameter, isMemberLink, linkName, memberOn, propertyKey, outermostWrapper, resultOf, ts, unwrap } from "./ast.mjs";
+import { calleeOf, calleeParts, firstParameter, importedFrom, isMemberLink, linkName, memberOn, outermostWrapper, resultOf, ts, unwrap } from "./ast.mjs";
 
 const TEST_FNS = new Set(["describe", "suite", "it", "test"]);
 // Vitest's `vi` object, under both names it exports (`const vi = vitest`).
@@ -43,70 +43,6 @@ const MEMBER_LOADERS = new Set(["require", "importActual", "importMock"]);
 // Of those, the ones that return a promise, as `import()` does.
 const PROMISE_MEMBER_LOADERS = new Set(["importActual", "importMock"]);
 
-/** The module an import declaration names, through its specifier, clause or binding. */
-function importedFrom(decl) {
-  let n = decl;
-  while (n && !ts.isImportDeclaration(n)) n = n.parent;
-  return n && ts.isStringLiteral(n.moduleSpecifier) ? n.moduleSpecifier.text : undefined;
-}
-
-/**
- * Whether identifier `id` names a global (`Number`, `Array`, `process`, `undefined`): the file
- * declares nothing it resolves to. The check's program has no lib, so a built-in has no declaration
- * and a local shadow (`const Array = …`, a parameter named `undefined`) has one.
- */
-export function isGlobalName(id, bindings) {
-  return ts.isIdentifier(id) && bindings.declarationsOf(id).length === 0;
-}
-
-/** Whether `node` reads an environment variable: `process.env.X`, `process.env["X"]`, `env.X` from `node:process`, or a name destructured from one. */
-export function isEnvRead(node, bindings) {
-  // `const { PG_URL } = process.env`: a name destructured from the environment.
-  // Only a `const` with no default or rest: `const { X = fn } = process.env` or a `let` can hold a function.
-  if (ts.isIdentifier(node)) {
-    const [d, ...rest] = bindings.declarationsOf(node);
-    const holder = d?.parent?.parent;
-    return d !== undefined && rest.length === 0 && ts.isBindingElement(d) && !d.initializer && !d.dotDotDotToken &&
-      ts.isObjectBindingPattern(d.parent) && ts.isVariableDeclaration(holder) && holder.initializer !== undefined &&
-      ts.isVariableDeclarationList(holder.parent) && (holder.parent.flags & ts.NodeFlags.Const) !== 0 &&
-      isEnvObject(holder.initializer, bindings);
-  }
-  return isMemberLink(node) && isEnvObject(node.expression, bindings);
-}
-
-/** Whether `node` is the environment object: the global `process.env`, or `env` imported from `"process"` / `"node:process"`. */
-function isEnvObject(node, bindings) {
-  node = unwrap(node);
-  if (ts.isIdentifier(node)) {
-    const decls = bindings.declarationsOf(node);
-    if (decls.length === 1 && ts.isImportSpecifier(decls[0]) && (decls[0].propertyName ?? decls[0].name).text === "env" &&
-      PROCESS_MODULES.has(importedFrom(decls[0]))) return true;
-    // `const env = process.env`
-    return constHolds(node, bindings, (init) => isEnvObject(init, bindings));
-  }
-  return ts.isPropertyAccessExpression(node) && node.name.text === "env" && isProcessObject(node.expression, bindings);
-}
-
-const PROCESS_MODULES = new Set(["process", "node:process"]);
-
-/** Whether `node` is Node's `process`: the global, or a default or namespace import of `"process"` / `"node:process"`. */
-function isProcessObject(node, bindings) {
-  node = unwrap(node);
-  if (!ts.isIdentifier(node)) return false;
-  const decls = bindings.declarationsOf(node);
-  if (decls.length === 0) return node.text === "process";
-  return decls.length === 1 && (ts.isImportClause(decls[0]) || ts.isNamespaceImport(decls[0])) && PROCESS_MODULES.has(importedFrom(decls[0]));
-}
-
-/**
- * Whether the plain name `call` is made through is a global: the callee of `Number(…)`, or the
- * object of `Array.from(…)` / `Math.max(…)`, through wrappers. Any other callee isn't.
- */
-export function isGlobalCallee(call, bindings) {
-  const callee = unwrap(call.expression);
-  return isGlobalName(isMemberLink(callee) ? unwrap(callee.expression) : callee, bindings);
-}
-
 /**
  * Resolves names to Vitest's describe/suite/it/test with the binder of a one-file program, so
  * JavaScript scoping decides: an unresolved name is a Vitest global, an import from `vitest` is
@@ -129,8 +65,12 @@ export function vitestBindings(program, isIntegrationModule) {
       ? checker.getShorthandAssignmentValueSymbol(parent)
       : checker.getSymbolAtLocation(id);
   };
-  /** The declarations of the value identifier `id` names (see `valueSymbol`), or none. */
-  bindings.declarationsOf = (id) => valueSymbol(id)?.declarations ?? [];
+  /**
+   * The value declarations of identifier `id` (see `valueSymbol`), or none. A type alias or
+   * interface of the same name (`type Engines = …` beside `const Engines`) declares no value.
+   */
+  bindings.declarationsOf = (id) =>
+    (valueSymbol(id)?.declarations ?? []).filter((d) => !ts.isTypeAliasDeclaration(d) && !ts.isInterfaceDeclaration(d));
   /**
    * What identifier `id` refers to, as `{ kind, name? }` with one of the `KIND_*` constants above
    * (`name` for `KIND_FN`; `KIND_AMBIGUOUS` is explained at `resolveDeclarations`), or undefined.
@@ -291,11 +231,11 @@ function exportKind(name) {
 /**
  * The Vitest export (one of `READ_EXPORTS`) that `node` denotes, or undefined: a global, an import
  * from `"vitest"` (renamed or not), a name destructured from a Vitest module, a `const` alias, an
- * `import x = v.name`, a suite body's test API, or a member of a Vitest namespace or loader
+ * `import d = v.describe` (a test function only), a suite body's test API, or a member of a Vitest namespace or loader
  * (`v.describe`, `require("vitest").vi`, `(await import("vitest")).beforeAll`). The one resolver
  * behind `testFnName`, the `vi` rule and `isVitestHookCall`.
  */
-export function vitestExportName(node, bindings) {
+function vitestExportName(node, bindings) {
   if (ts.isIdentifier(node)) {
     const found = bindings.resolve(node);
     return found?.kind === KIND_FN || found?.kind === KIND_EXPORT ? found.name : undefined;
@@ -459,7 +399,8 @@ function kindOfDeclaration(decl, bindings) {
     // `import d = v.describe`, on a Vitest namespace. A longer name (`v.describe.skip`) fails closed
     // in findGates.
     const { left, right } = decl.moduleReference;
-    if (ts.isIdentifier(left) && isVitestNamespace(left, bindings)) found = exportKind(right.text);
+    // Only a test function: any other `import x = v.name` is an alias `findGates` fails closed on.
+    if (ts.isIdentifier(left) && isVitestNamespace(left, bindings) && TEST_FNS.has(right.text)) found = exportKind(right.text);
   } else if (decl && ts.isImportSpecifier(decl) && (decl.propertyName ?? decl.name).text === "integrationSuite" &&
     isIntegrationModule(importedFrom(decl) ?? "")) {
     found = { kind: KIND_SUITE_FACTORY };

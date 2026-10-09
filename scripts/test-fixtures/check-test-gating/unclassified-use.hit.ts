@@ -103,3 +103,5 @@ describe("a body defaulted in an env destructuring", SUITE_BODY); // HIT
 let { LET_BODY } = process.env;
 LET_BODY = (t) => { t.skipIf(!process.env.PG_URL)("q", () => {}); };
 describe("a body destructured from env into a let", LET_BODY); // HIT
+let letItAlias = it; // HIT
+letItAlias("through a let alias of it", () => {});
