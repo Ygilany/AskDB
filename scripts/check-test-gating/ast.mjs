@@ -88,6 +88,11 @@ export function memberOn(node) {
   return isMemberLink(p) && p.expression === outer ? p : undefined;
 }
 
+/** A function's first parameter, past a TypeScript `this` annotation, or undefined. */
+export function firstParameter(fn) {
+  return fn.parameters.find((p) => !(ts.isIdentifier(p.name) && p.name.text === "this"));
+}
+
 /** `node` with its wrappers and any `await` removed. */
 export function unwrapValue(node) {
   while (isWrapper(node) || ts.isAwaitExpression(node)) node = node.expression;

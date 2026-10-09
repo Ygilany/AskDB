@@ -20,9 +20,10 @@
 // `vi.importMock("vitest")`, `import v = require(…)`, and a member read straight off a loader,
 // `require("vitest").describe`) and variables holding `test.extend({…})`. `integrationSuite({…})`
 // and a variable holding its result are suite functions, so the sanctioned gate passes. A suite
-// body's first parameter is the test API Vitest passes it. Names resolve through TypeScript's
-// binder, so any other local declaration that shadows one (a callback's parameter `it`, an import
-// of `test` from another module) is not Vitest's.
+// body's first parameter is the test API Vitest passes it; a body passed by name that takes one
+// fails closed. Names resolve through TypeScript's binder, so any other local declaration that
+// shadows one (a callback's parameter `it`, an import of `test` from another module) is not
+// Vitest's.
 //
 // What is rejected and allowed is listed once, in CONTRIBUTING.md ("Integration Tests"); RULES
 // below implements it, and ADR 0019 (docs/adrs/0019-test-gating-check-parses-with-typescript.md)
@@ -39,19 +40,12 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 // --preserve-symlinks-main invocation still finds them, and they find the repo's `typescript`.
 const selfPath = realpathSync(fileURLToPath(import.meta.url));
 const sibling = (name) => pathToFileURL(join(dirname(selfPath), "check-test-gating", name)).href;
-const { ts, isWrapper, outermostWrapper, unwrap, unwrapValue, someInside, calleeOf, isMemberLink, linkName, lineOf, oneFileProgram, memberOn } =
+const { ts, isWrapper, outermostWrapper, unwrap, unwrapValue, someInside, calleeOf, isMemberLink, linkName, lineOf, oneFileProgram, memberOn, firstParameter } =
   await import(sibling("ast.mjs"));
-const { EXTENDERS, SUITE_FNS, kindOf, isPromiseLoader, vitestBindings, isVitestLoaderCall, isVitestNamespace, integrationModuleResolver, isSuiteFactory, testFnName, extendedFn } =
+const { EXTENDERS, MODIFIERS, SUITE_FNS, vitestCallKind, kindOf, isPromiseLoader, vitestBindings, isVitestLoaderCall, isVitestNamespace, integrationModuleResolver, isSuiteFactory, testFnName } =
   await import(sibling("bindings.mjs"));
 const { workspaceDirs, linkTarget } = await import(sibling("workspace.mjs"));
 
-// Vitest's chainable modifiers. A call through any other link (`test.scoped`, `test.step`) is not
-// treated as defining a suite or test; `test.extend({…})` returns a test function, read on.
-const MODIFIERS = new Set([
-  "skip", "only", "todo", "concurrent", "sequential", "shuffle", "fails", "each", "for", "skipIf", "runIf",
-  // `it.describe` is Vitest's `describe`.
-  "describe", "suite",
-]);
 const GATE_LINKS = new Set(["skipIf", "runIf"]);
 // `describe.todo(name, fn)` never runs the suite's tests, like `describe.skip`.
 const SUITE_GATE_LINKS = new Set(["skip", "todo", "skipIf", "runIf"]);
@@ -223,10 +217,25 @@ function testRef(start, fnName, bindings) {
     chain,
     invoked: call !== undefined,
     // `const t = it.each(rows)` stores the function that defines the tests, which the check can't follow.
-    unreadable: (call === undefined && !extendResultIsTracked(chain)) || eachResultStored || (suite && defines && suiteResultHeld(call)),
+    unreadable: (call === undefined && !extendResultIsTracked(chain)) || eachResultStored || (suite && defines && (suiteResultHeld(call) || (rows === undefined && namedBodyTakesApi(call, bindings)))),
     conditional: defines && underCondition(call, bindings),
     optionGate: defines && (hasGateOption(call, suite) || rowsSpread || (rows !== undefined && isPicked(rows))),
   };
+}
+
+/**
+ * Whether a suite call passes its body by name to a function that takes a parameter
+ * (`describe("db", body)` with `function body(test) {…}`): Vitest passes that parameter the test
+ * API, which the check doesn't follow through the name.
+ */
+function namedBodyTakesApi(call, bindings) {
+  return ts.isCallExpression(call) && call.arguments.slice(1).some((arg) => {
+    const body = unwrap(arg);
+    return ts.isIdentifier(body) && bindings.declarationsOf(body).some((d) => {
+      const fn = ts.isVariableDeclaration(d) && d.initializer ? unwrap(d.initializer) : d;
+      return (ts.isFunctionDeclaration(fn) || ts.isArrowFunction(fn) || ts.isFunctionExpression(fn)) && firstParameter(fn) !== undefined;
+    });
+  });
 }
 
 /**
@@ -295,11 +304,6 @@ function isPicked(node) {
   return ts.isObjectLiteralExpression(node) && node.properties.some((p) => ts.isSpreadAssignment(p) && isPicked(p.expression));
 }
 
-/** Whether `node` is itself a pick: `? :`, `&&`, `||` or `??`. */
-function isPickExpression(node) {
-  return pickBranches(node).length > 0;
-}
-
 /**
  * Whether a call over `node` can yield a table whose size a pick decides: `node` is itself picked,
  * or holds a pick where size comes from (anywhere in a `length`, an element a flattening call can drop:
@@ -311,7 +315,7 @@ function picksSize(node) {
   if (ts.isSpreadElement(node)) return picksSize(node.expression);
   if (isPicked(node)) return true;
   if (ts.isObjectLiteralExpression(node)) {
-    return node.properties.some((p) => ts.isPropertyAssignment(p) && optionKey(p.name) === "length" && someInside(p.initializer, isPickExpression));
+    return node.properties.some((p) => ts.isPropertyAssignment(p) && optionKey(p.name) === "length" && someInside(p.initializer, (n) => pickBranches(n).length > 0));
   }
   return ts.isArrayLiteralExpression(node) && node.elements.some((el) =>
     pickBranches(unwrapValue(el)).some((branch) => ts.isArrayLiteralExpression(unwrap(branch))));
@@ -429,7 +433,7 @@ function underCondition(call, bindings) {
       if (isDeferredClassMember(child) && !viaKeyOrDecorator) return false;
       continue;
     }
-    if (calleeOf(node) !== undefined && node !== call && callsVitestFn(node, bindings)) {
+    if (calleeOf(node) !== undefined && node !== call && vitestCallKind(node, bindings) !== undefined) {
       return false;
     }
     if (ts.isFunctionLike(node) && !ts.isClassStaticBlockDeclaration(node)) inCallback = true;
@@ -484,21 +488,6 @@ const ITERATION_METHODS = new Set(["forEach", "map", "flatMap"]);
 function isIterationCall(node) {
   const callee = ts.isCallExpression(node) ? unwrap(node.expression) : undefined;
   return callee !== undefined && isMemberLink(callee) && ITERATION_METHODS.has(linkName(callee));
-}
-
-/** Whether a call or tagged template defines a suite or test: Vitest's describe/suite/it/test through modifier links. */
-function callsVitestFn(node, bindings) {
-  let callee = calleeOf(node);
-  // `test.extend({…})` or `test.scoped({…})` defines nothing, so the walk goes on past it.
-  const outer = unwrap(callee);
-  if (isMemberLink(outer) && !MODIFIERS.has(linkName(outer)) && testFnName(outer, bindings) === undefined) return false;
-  for (;;) {
-    callee = unwrap(callee);
-    if (testFnName(callee, bindings) !== undefined || extendedFn(callee, bindings) !== undefined) return true;
-    if (isMemberLink(callee)) callee = callee.expression;
-    else if (calleeOf(callee) !== undefined) callee = calleeOf(callee); // `.each(rows)(…)`, `.each\`table\`(…)`
-    else return false;
-  }
 }
 
 /** Line numbers exempted by a `// check-test-gating-ignore-next-line: <reason>` comment. */

@@ -21,3 +21,11 @@ it("a test context, not the test API", (test) => {
 describe("a second parameter", (test, extra) => {
   expect(extra).toBeUndefined();
 });
+const noParameterBody = () => {
+  it("inside", () => {});
+};
+describe("a body passed by name that takes no parameter", noParameterBody);
+describe.each([1, 2])("a row body passed by name %s", namedRowBody);
+function namedRowBody(row) {
+  expect(row).toBeGreaterThan(0);
+}

@@ -1,12 +1,19 @@
 // Resolves names in a test file to Vitest's describe/suite/it/test and to integrationSuite(), for
 // scripts/check-test-gating.mjs.
 import { dirname, resolve } from "node:path";
-import { calleeOf, isMemberLink, linkName, outermostWrapper, ts, unwrap, unwrapValue } from "./ast.mjs";
+import { calleeOf, firstParameter, isMemberLink, linkName, outermostWrapper, ts, unwrap, unwrapValue } from "./ast.mjs";
 
 const TEST_FNS = new Set(["describe", "suite", "it", "test"]);
 export const SUITE_FNS = new Set(["describe", "suite"]);
 // Links whose suite body receives a table row, not the test API: `describe.each(rows)(name, (row) => …)`.
 const ROW_LINKS = new Set(["each", "for"]);
+// Vitest's chainable modifiers. A call through any other link (`test.scoped`, `test.step`) is not
+// treated as defining a suite or test; `test.extend({…})` returns a test function, read on.
+export const MODIFIERS = new Set([
+  "skip", "only", "todo", "concurrent", "sequential", "shuffle", "fails", "each", "for", "skipIf", "runIf",
+  // `it.describe` is Vitest's `describe`.
+  "describe", "suite",
+]);
 // Links whose call returns a new test function: `test.extend({…})`, `test.override({…})`, `test.scoped({…})`.
 export const EXTENDERS = new Set(["extend", "override", "scoped"]);
 // Member calls that load a module by name: `module.require`, `vi.importActual`, `vi.importMock`.
@@ -38,6 +45,8 @@ export function vitestBindings(program, isIntegrationModule) {
    * for a function from `createRequire(…)`, `{ kind: "ambiguous" }` for a name whose declarations
    * disagree about a Vitest value (see `resolveDeclarations`), or undefined.
    */
+  /** The declarations of the symbol identifier `id` names, or none. */
+  bindings.declarationsOf = (id) => checker.getSymbolAtLocation(id)?.declarations ?? [];
   bindings.resolve = (id) => {
     const parent = id.parent;
     const symbol = ts.isShorthandPropertyAssignment(parent) && parent.name === id
@@ -151,6 +160,35 @@ export function extendedFn(node, bindings) {
 }
 
 /**
+ * What a call or tagged template defines through Vitest's describe/suite/it/test and modifier
+ * links: "suite", "test", "rows" (a `.each` or `.for` call, whose body receives a table row), or
+ * undefined when it defines nothing (`test.extend({…})`, `test.scoped({…})`, any other call).
+ */
+export function vitestCallKind(node, bindings) {
+  let callee = calleeOf(node);
+  if (callee === undefined) return undefined;
+  const outer = unwrap(callee);
+  if (isMemberLink(outer) && !MODIFIERS.has(linkName(outer)) && testFnName(outer, bindings) === undefined) return undefined;
+  let rows = false;
+  let suite = false;
+  for (;;) {
+    callee = unwrap(callee);
+    // `test.extend({…}).describe(…)`: the walk goes on past a call that returns a test function.
+    const name = testFnName(callee, bindings) ?? extendedFn(callee, bindings);
+    if (name !== undefined) return rows ? "rows" : suite || SUITE_FNS.has(name) ? "suite" : "test";
+    if (isMemberLink(callee)) {
+      rows ||= ROW_LINKS.has(linkName(callee));
+      suite ||= SUITE_FNS.has(linkName(callee));
+      callee = callee.expression;
+    } else if (calleeOf(callee) !== undefined) {
+      callee = calleeOf(callee); // `describe.skipIf(c)(…)`, `.each(rows)(…)`, `.each\`table\`(…)`
+    } else {
+      return undefined;
+    }
+  }
+}
+
+/**
  * Whether function `fn` is a suite body: an argument of a call that defines a suite through Vitest
  * (`describe(…)`, `describe.skipIf(c)(…)`, `it.describe(…)`, an `integrationSuite(…)` result), which
  * Vitest calls with the suite's test API. A `.each` or `.for` body receives a table row instead.
@@ -159,21 +197,7 @@ function isSuiteBody(fn, bindings) {
   if (!ts.isArrowFunction(fn) && !ts.isFunctionExpression(fn)) return false;
   const outer = outermostWrapper(fn);
   const call = outer.parent;
-  if (!ts.isCallExpression(call) || !call.arguments.includes(outer)) return false;
-  let callee = unwrap(call.expression);
-  let suite = false;
-  for (;;) {
-    const name = testFnName(callee, bindings);
-    if (name !== undefined) return suite || SUITE_FNS.has(name);
-    if (ts.isCallExpression(callee)) {
-      callee = unwrap(callee.expression); // `describe.skipIf(c)(…)`, `test.extend({…}).describe(…)`
-      continue;
-    }
-    const link = isMemberLink(callee) ? linkName(callee) : undefined;
-    if (link === undefined || ROW_LINKS.has(link)) return false;
-    if (SUITE_FNS.has(link)) suite = true;
-    callee = unwrap(callee.expression);
-  }
+  return ts.isCallExpression(call) && call.arguments.includes(outer) && vitestCallKind(call, bindings) === "suite";
 }
 
 /** The parameter a binding element destructures, through nested patterns, or undefined. */
@@ -185,7 +209,7 @@ function parameterOf(element) {
 
 /** Whether parameter `param` receives the test API: the first parameter of a suite body. */
 function isTestApiParameter(param, bindings) {
-  return param.parent.parameters[0] === param && isSuiteBody(param.parent, bindings);
+  return firstParameter(param.parent) === param && isSuiteBody(param.parent, bindings);
 }
 
 /**

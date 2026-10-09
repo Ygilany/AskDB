@@ -28,3 +28,12 @@ describe("a suite body's test API", (test) => {
 describe.concurrent("a renamed test API under a modifier", function (t) {
   t.runIf(process.env.DATABASE_URL)("query", () => {}); // HIT
 });
+test.extend({}).describe("an extended test API's suite", (t) => {
+  t.skipIf(!process.env.DATABASE_URL)("query", () => {}); // HIT
+});
+describe("a this annotation before the test API", function (this: unknown, test) {
+  test.skipIf(!process.env.DATABASE_URL)("query", () => {}); // HIT
+});
+describe("a wrapped suite body", ((t) => {
+  t.skipIf(!process.env.DATABASE_URL)("query", () => {}); // HIT
+}) as any);

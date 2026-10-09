@@ -15,3 +15,13 @@ describe("a destructured test API", ({ skipIf }) => {
 describe("a rest test API", (...api) => {
   api[0].skipIf(!process.env.DATABASE_URL)("query", run); // HIT
 });
+let registry;
+registry = describe("an assigned suite", () => {}); // HIT
+const namedBody = (test) => {
+  test.skipIf(!process.env.DATABASE_URL)("query", run);
+};
+describe("a body passed by name", namedBody); // HIT
+function declaredBody(test) {
+  test.skipIf(!process.env.DATABASE_URL)("query", run);
+}
+describe("a declared body passed by name", declaredBody); // HIT
